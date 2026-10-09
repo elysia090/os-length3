@@ -4,6 +4,21 @@ static int lane(const pl_x86_operand *o,pl_u32 bits)
     return o->kind==PL_X86_OPERAND_REGISTER&&o->value.reg.class_id==PL_X86_REGISTER_VECTOR&&o->value.reg.bits==128u
         &&o->value.reg.index<16u&&!o->value.reg.flags&&(o->bits==bits||o->bits==128u);
 }
+int pl_x86_vector_extract_lower(const pl_x86_instruction *i,pl_x86_vector_extract *out)
+{
+    const pl_u32 required=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;
+    if(!i||!out||i->status!=PL_X86_DECODE_VALID||i->encoding!=PL_X86_ENCODING_LEGACY||i->flow!=PL_X86_FLOW_NEXT
+        ||i->machine_operation!=PL_X86_MACHINE_VECTOR||(i->machine_argument&255u)!=22u||i->opcode!=0xc5u||i->visible_operand_count!=3u
+        ||(i->flags&required)!=required||!i->source_bytes||i->source_bytes>15u||i->source_bytes!=i->length||i->fallthrough-i->rip!=i->length
+        ||(i->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED|PL_X86_INSTRUCTION_TRAP_AFTER|PL_X86_INSTRUCTION_PRIVILEGED|PL_X86_INSTRUCTION_READS_MEMORY|PL_X86_INSTRUCTION_WRITES_MEMORY)))return 0;
+    const pl_x86_operand *d=i->operands,*s=d+1u,*c=d+2u;pl_u32 mmx=s->value.reg.class_id==PL_X86_REGISTER_MMX,width=mmx?64u:128u;
+    if(d->kind!=PL_X86_OPERAND_REGISTER||d->bits!=32u||d->value.reg.class_id!=PL_X86_REGISTER_GPR||d->value.reg.bits!=32u||d->value.reg.index>=16u||d->value.reg.flags
+        ||s->kind!=PL_X86_OPERAND_REGISTER||s->bits!=width||s->value.reg.bits!=width||s->value.reg.flags||s->value.reg.index>=(mmx?8u:16u)
+        ||(!mmx&&s->value.reg.class_id!=PL_X86_REGISTER_VECTOR)||c->kind!=PL_X86_OPERAND_IMMEDIATE||c->bits!=8u||c->value.immediate>255u)return 0;
+    pl_u32 word=(pl_u32)c->value.immediate&(mmx?3u:7u);
+    if(i->machine_argument!=(22u|((pl_u64)d->value.reg.index<<8u)|((pl_u64)s->value.reg.index<<16u)|((pl_u64)(word|(mmx<<3u))<<32u)))return 0;
+    *out=(pl_x86_vector_extract){s->value.reg.index,d->value.reg.index,(pl_u8)word,(pl_u8)mmx};return 1;
+}
 int pl_x86_scalar_vector_transfer_lower(const pl_x86_instruction *i,pl_x86_scalar_vector_transfer *out)
 {
     const pl_u32 required=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;

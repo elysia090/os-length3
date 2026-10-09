@@ -38,6 +38,12 @@ SOURCES += src/lower-vector-unpack.c
 SOURCES += src/emit-vector-binary.c
 SOURCES += src/lower-vector-integer-float.c
 .PHONY: cr0-clear-check
+.PHONY: cache-barrier-check
+check: cache-barrier-check
+cache-barrier-check: $(BUILD)/cache-barrier-check
+	$(BUILD)/cache-barrier-check
+$(BUILD)/cache-barrier-check: check/cache-barrier.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 check: cr0-clear-check
 cr0-clear-check: $(BUILD)/cr0-clear-check
 	$(BUILD)/cr0-clear-check
@@ -50,6 +56,7 @@ scalar-vector-transfer-check: $(BUILD)/scalar-vector-transfer-check
 $(BUILD)/scalar-vector-transfer-check: check/scalar-vector-transfer.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 SOURCES += src/lower-float-compare.c
+SOURCES += src/lower-float-arithmetic.c
 SOURCES += src/lower-selector-query.c
 SOURCES += src/lower-far-transfer.c
 .PHONY: far-transfer-check
@@ -65,6 +72,18 @@ selector-query-check: $(BUILD)/selector-query-check
 $(BUILD)/selector-query-check: check/selector-query.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 .PHONY: float-compare-check
+.PHONY: float-arithmetic-check
+.PHONY: vector-extract-check
+check: vector-extract-check
+vector-extract-check: $(BUILD)/vector-extract-check
+	$(BUILD)/vector-extract-check
+$(BUILD)/vector-extract-check: check/vector-extract.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+check: float-arithmetic-check
+float-arithmetic-check: $(BUILD)/float-arithmetic-check
+	$(BUILD)/float-arithmetic-check
+$(BUILD)/float-arithmetic-check: check/float-arithmetic.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 check: float-compare-check
 float-compare-check: $(BUILD)/float-compare-check
 	$(BUILD)/float-compare-check
@@ -131,6 +150,12 @@ SOURCES += src/emit-image-metadata.c
 SOURCES += src/lower-x87-snapshot.c
 SOURCES += src/lower-x87-environment.c
 .PHONY: x87-environment-check
+.PHONY: x87-bcd-check
+check: x87-bcd-check
+x87-bcd-check: $(BUILD)/x87-bcd-check
+	$(BUILD)/x87-bcd-check
+$(BUILD)/x87-bcd-check: check/x87-bcd.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 check: x87-environment-check
 x87-environment-check: $(BUILD)/x87-environment-check
 	$(BUILD)/x87-environment-check

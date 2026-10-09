@@ -23,6 +23,11 @@ static int memory_order_supported(const pl_x86_instruction *instruction)
 int cut_system_supported(const pl_x86_instruction *instruction)
 {
     if(pl_x86_x87_wait_supported(instruction))return CUT_SYSTEM_X87_WAIT;
+    if(pl_x86_cache_barrier_supported(instruction))return CUT_SYSTEM_MEMORY_ORDER;
+    pl_x86_float_arithmetic ieee;if(pl_x86_float_arithmetic_lower(instruction,&ieee)
+        &&(!ieee.source_memory||cut_memory_address_supported(instruction,&instruction->operands[1].value.memory)))return CUT_SYSTEM_FLOAT_ARITHMETIC;
+    pl_x86_x87_bcd bcd;if(pl_x86_x87_bcd_lower(instruction,&bcd)
+        &&cut_memory_address_supported(instruction,&instruction->operands[0].value.memory))return bcd.store?CUT_SYSTEM_X87_STORE:CUT_SYSTEM_X87_LOAD;
     pl_x86_far_transfer transfer;if(pl_x86_far_transfer_lower(instruction,&transfer)
         &&cut_memory_address_supported(instruction,&instruction->operands[0].value.memory))return CUT_SYSTEM_FAR_TRANSFER;
     if(pl_x86_cr0_clear_supported(instruction))return CUT_SYSTEM_CONTROL_WRITE;
@@ -435,8 +440,21 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
     pl_x86_vector_integer_float integer_float;if(pl_x86_vector_integer_float_lower(instruction,&integer_float)){cut_lower_vector_integer_float(cut,instruction);return;}
     pl_x86_vector_float_integer float_integer;if(pl_x86_vector_float_integer_lower(instruction,&float_integer)){cut_lower_vector_float_integer(cut,instruction);return;}
     pl_x86_float_compare floating_compare;if(pl_x86_float_compare_lower(instruction,&floating_compare)){cut_lower_float_compare(cut,instruction);return;}
+    pl_x86_float_arithmetic ieee;if(pl_x86_float_arithmetic_lower(instruction,&ieee)){cut_lower_float_arithmetic(cut,instruction);return;}
     pl_x86_selector_query query;if(pl_x86_selector_query_lower(instruction,&query)){cut_lower_selector_query(cut,instruction);return;}
     pl_x86_far_transfer transfer;if(pl_x86_far_transfer_lower(instruction,&transfer)){cut_lower_far_transfer(cut,instruction);return;}
+    if(pl_x86_cache_barrier_supported(instruction)){
+        /* Ordinary RAM commits are synchronous and this machine has no CPU
+         * data-cache lines or pending writeback owner. Neither INVD nor WBINVD
+         * discards resident pages or compiler proofs. Privilege is still an
+         * architectural observation before this empty-set action. */
+        cut_load(cut,offsetof(machine_state,system)+MACHINE_SYSTEM_CS*8u);cut_const(cut,3u);cut_op(cut,0x83u);
+        cut_op(cut,0x50u);cut_op(cut,0x45u);cut_op(cut,0x04u);cut_op(cut,0x40u);
+        cut_load(cut,offsetof(machine_state,rip));port_store(cut,offsetof(machine_memory_port,fault_address),8u);
+        cut_const(cut,13u);port_store(cut,offsetof(machine_memory_port,fault_vector),4u);
+        cut_const(cut,0u);port_store(cut,offsetof(machine_memory_port,fault_error),4u);
+        cut_const(cut,machine_result_make(MACHINE_RESULT_FAULT,13u));cut_op(cut,0x0fu);cut_op(cut,0x0bu);return;
+    }
     if(memory_order_supported(instruction)) {
         _Static_assert((PL_X86_CPUID_1_EDX&((1u<<25u)|(1u<<26u)))==((1u<<25u)|(1u<<26u)),
             "fences require the fixed SSE/SSE2 CPU contract");
@@ -461,10 +479,11 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
     if(pl_x86_x87_status_compare_lower(instruction,&status)){cut_lower_x87_status_compare(cut,instruction);return;}
     pl_x86_x87_integer_load integer;
     pl_x86_x87_raw_load raw_load;
-    if(pl_x86_x87_integer_load_lower(instruction,&integer)||pl_x86_x87_memory_load_lower(instruction,&integer)||pl_x86_x87_raw_load_lower(instruction,&raw_load)){
+    pl_x86_x87_bcd bcd;
+    if((pl_x86_x87_bcd_lower(instruction,&bcd)&&!bcd.store)||pl_x86_x87_integer_load_lower(instruction,&integer)||pl_x86_x87_memory_load_lower(instruction,&integer)||pl_x86_x87_raw_load_lower(instruction,&raw_load)){
         cut_lower_x87_load(cut,instruction);return;}
     pl_x86_x87_integer_store integer_store;
-    if(pl_x86_x87_integer_store_lower(instruction,&integer_store)){cut_lower_x87_store(cut,instruction);return;}
+    if((pl_x86_x87_bcd_lower(instruction,&bcd)&&bcd.store)||pl_x86_x87_integer_store_lower(instruction,&integer_store)){cut_lower_x87_store(cut,instruction);return;}
     pl_x86_x87_float_store float_store;
     if(pl_x86_x87_float_store_lower(instruction,&float_store)){cut_lower_x87_store(cut,instruction);return;}
     pl_x86_x87_integer_arithmetic arithmetic;

@@ -1,4 +1,4 @@
-# Remaining work — 2026-10-09
+# Remaining work — 2026-10-10
 
 ## Fixed input and product contract
 
@@ -23,9 +23,9 @@ Cold shell3s remains a target, not an achieved claim.
 
 ## Current authoritative state
 
-Same make/every-final-PF_X-byte population:233320/233455 lowerable,135 missing,
-zero missing fault cuts/fetch/capacity refusals. Remaining floating48,
-SIMD86,atomic1. FirstFBLD at0xd885. This complete byte inventory is
+Same make/every-final-PF_X-byte population:233428/233455 lowerable,27 missing,
+zero missing fault cuts/fetch/capacity refusals. Remaining floating25,
+SIMD2,atomic0. FirstFSIN at0x17193. This complete byte inventory is
 not an execution trace, kernel/image publication or browser boot proof.
 
 FLDCW uses a two-input pure control/status projection and exact source cut.
@@ -55,6 +55,15 @@ one count/width law;12288 independent comparisons pass. Unpack closes the
 4/8/16-byte source geometry;5376 independent comparisons pass. All MMX
 shuffle immediates use the shared static coordinate rule;24576 comparisons pass.
 Superseded packed-shift encoders are deleted, not runtime alternatives.
+BCD load/store share exact integer conversion/rounding and packed decimal
+fields;8192/16384 independent complete-state comparisons pass. INVD/WBINVD
+use the privilege/machine cache-owner boundary, not resident-page eviction.
+SSE scalar/packed add/sub/mul/div share the existing exact arithmetic residual
+with target-format rounding, DAZ/FTZ and SIMD exception frontier.131072 native
+numeric/MXCSR and196608 C-VM complete-state comparisons pass. PEXTRW is a
+coordinate projection;98304 constructors/393216 refusals and32768 independent
+complete-state comparisons pass. These graph bounds are not global minima.
+See [common arithmetic and publication](../vm/check/browser/evidence/2026-10-10-arithmetic-publication.md).
 
 Successful MMU walks have bounded exact ancestor/value witnesses, not
 architecturally stale TLB entries.1920 cached/fresh whole-RAM/port/write-order
@@ -76,9 +85,18 @@ native phram boot itself reaches interactive-ready; full source self-build is
 NOT green. Current minimal direct/projected selection passes, but an equivalent
 normalized Boolean group lacked the pending sibling entry-generation condition.
 That group is now refused until its entry readers publish; the structural red
-and65536 independent CPU comparisons pass. This alone does NOT repair already
-published ELF bytes. Validate/repair the actual whole-ELF producer and frozen
-userland inputs before attributing every s6 failure to browser latency or VM.
+and65536 independent CPU comparisons pass. A second real BusyBox red was an
+ALU left-prefix overwriting its right operand's entry accumulator generation.
+The shared measure/write pair now captures that generation through its scratch
+schedule or selects a safe compile-time source candidate.65536 full/projected
+CPU comparisons pass. The locked GNU tar/BusyBox sources, exact BusyBox config,
+ordinary linker, current postlink and proof checker now pass actual PAX/mv
+execution. Isolated native full C checks and ASan/UBSan pass (receipt source
+74be09759d35c04fcfa370d64582bd4d37b5f3961c3198a1dd92d797b488bbb8).
+This does NOT repair already published bytes or establish full release/native
+self-build. The separately identified boot candidate is diagnostic only;
+package database/signatures must be regenerated at publication, never rewritten
+in an installed release. Do not attribute every s6 failure to latency or VM.
 The unrestricted intermittent native CALL RAM-payload equivalence red remains
 separate; scoped/positive gates do not assert that it is solved.
 

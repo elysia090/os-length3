@@ -17,14 +17,15 @@ static void write_payload(cut_lowering *c,pl_u32 offset,pl_u32 local,pl_u32 shif
 }
 void cut_lower_x87_store(cut_lowering *c,const pl_x86_instruction *i)
 {
-    pl_x86_x87_integer_store integer;pl_x86_x87_float_store floating;
+    pl_x86_x87_integer_store integer;pl_x86_x87_float_store floating;pl_x86_x87_bcd decimal;
+    int bcd=pl_x86_x87_bcd_lower(i,&decimal)&&decimal.store;
     int integral=pl_x86_x87_integer_store_lower(i,&integer);
-    if(!integral&&!pl_x86_x87_float_store_lower(i,&floating)){c->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
-    pl_u32 bytes=integral?integer.bytes:floating.bytes,pop=integral?integer.pop:floating.pop,
-        opcode=integral?integer.opcode:floating.opcode,memory=integral||floating.memory,no_check=!integral&&floating.no_check;
+    if(!bcd&&!integral&&!pl_x86_x87_float_store_lower(i,&floating)){c->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
+    pl_u32 bytes=bcd?10u:integral?integer.bytes:floating.bytes,pop=bcd?1u:integral?integer.pop:floating.pop,
+        opcode=bcd?decimal.opcode:integral?integer.opcode:floating.opcode,memory=bcd||integral||floating.memory,no_check=!bcd&&!integral&&floating.no_check;
     _Alignas(8) pl_u8 scratch[65536];pl_arena arena={scratch,sizeof scratch,0u};pl_plan pure;
-    if(!no_check){int status=integral?pl_x86_x87_integer_store_plan(bytes*8u,integer.truncate,&arena,&pure):pl_x86_x87_float_store_plan(bytes*8u,&arena,&pure);
-        if(status||pure.node_count>PL_X86_X87_FLOAT_STORE_MAX_NODES){c->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}}
+    if(!no_check){int status=bcd?pl_x86_x87_bcd_store_plan(&arena,&pure):integral?pl_x86_x87_integer_store_plan(bytes*8u,integer.truncate,&arena,&pure):pl_x86_x87_float_store_plan(bytes*8u,&arena,&pure);
+        if(status||pure.node_count>(bcd?PL_X86_X87_BCD_STORE_MAX_NODES:PL_X86_X87_FLOAT_STORE_MAX_NODES)){c->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}}
     cut_x87_wait_guard(c,IS_CW,IS_SW);word(c,offsetof(machine_state,x87_tag),IS_TAG,0);
     cut_get(c,IS_SW);cut_const(c,11u);cut_op(c,0x88u);cut_const(c,7u);cut_op(c,0x83u);cut_set(c,IS_TOP);
     cut_get(c,IS_TAG);cut_get(c,IS_TOP);cut_const(c,1u);cut_op(c,0x86u);cut_op(c,0x88u);cut_const(c,3u);cut_op(c,0x83u);

@@ -40,6 +40,8 @@ make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/x87-control-check
 "$temporary/wasm-compiler/build/x87-control-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/x87-environment-check
 "$temporary/wasm-compiler/build/x87-environment-check"
+make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/x87-bcd-check
+"$temporary/wasm-compiler/build/x87-bcd-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/divide-check
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/return-check
 "$temporary/wasm-compiler/build/return-check"
@@ -56,12 +58,18 @@ make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/scalar-projection-c
 "$temporary/wasm-compiler/build/scalar-projection-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/float-compare-check
 "$temporary/wasm-compiler/build/float-compare-check"
+make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/float-arithmetic-check
+"$temporary/wasm-compiler/build/float-arithmetic-check"
+make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/vector-extract-check
+"$temporary/wasm-compiler/build/vector-extract-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/selector-query-check
 "$temporary/wasm-compiler/build/selector-query-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/scalar-vector-transfer-check
 "$temporary/wasm-compiler/build/scalar-vector-transfer-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/cr0-clear-check
 "$temporary/wasm-compiler/build/cr0-clear-check"
+make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/cache-barrier-check
+"$temporary/wasm-compiler/build/cache-barrier-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/far-transfer-check
 "$temporary/wasm-compiler/build/far-transfer-check"
 "$temporary/wasm-compiler/build/mmx-transfer-check"

@@ -8,9 +8,12 @@ import {createHash} from 'node:crypto';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {finished} from 'node:stream/promises';
+import {zstdDecompressSync} from 'node:zlib';
 const repo=await realpath(fileURLToPath(new URL('../..',import.meta.url)));
 const [qemuArg,imgArg,sourceArg,workArg,...extra]=process.argv.slice(2);
-if(!workArg||extra.length)throw new Error('QEMU QEMU-IMG SOURCE-TAR NEW-WORK-DIRECTORY');
+const candidate=extra.includes('--candidate-root'),publication=extra.includes('--publication');
+if(!workArg||new Set(extra).size!==extra.length||extra.some(x=>!['--publication','--candidate-root'].includes(x))||candidate&&!publication)
+  throw new Error('QEMU QEMU-IMG SOURCE-TAR NEW-WORK-DIRECTORY [--publication [--candidate-root]]');
 const work=path.resolve(workArg),temp=path.join(repo,'temp')+path.sep;
 if(!work.startsWith(temp)||work===path.join(repo,'temp'))throw new Error('fresh oracle workspace below repository temp');
 await mkdir(work); // Never replace an existing disk or diagnostic receipt.
@@ -32,6 +35,22 @@ const lines=(await readFile(path.join(repo,'data/bootstrap/packages.sha256'),'ut
 const packages=new Map();
 for(const line of lines){const m=/^([a-f0-9]{64})\s+\.\/([A-Za-z0-9_.+-]+\.apk)$/.exec(line);if(!m)throw new Error('pinned APK manifest');packages.set(m[2],m[1]);}
 const sourceHash=await digest(source,'sha256');
+const sourceOptions=[];
+if(publication){const inputs=await readFile(path.join(repo,'data/sources.env'),'utf8');
+  for(const [role,extension] of [['TAR','tar.xz'],['BUSYBOX','tar.bz2']]){
+    const version=new RegExp(`^${role}_VERSION=([0-9.]+)$`,'m').exec(inputs)?.[1],sha=new RegExp(`^${role}_SHA256=([a-f0-9]{64})$`,'m').exec(inputs)?.[1];
+    if(!version||!sha)throw new Error('pinned userland source identity');
+    const file=path.join(repo,'data/upstream',`${role.toLowerCase()}-${version}.${extension}`);
+    if(await digest(file,'sha256')!==sha)throw new Error('userland source digest');
+    sourceOptions.push('-drive',`file=${file.replaceAll('\\','/')},format=raw,if=virtio,readonly=on`);
+  }
+}
+if(candidate){for(const [name,sha] of [['system.squashfs','6c7f0ea12300984eb1f9e9d4e33eef2be8db642e22afa9f776342a17a888bda9'],['initramfs','90ad6681efc64bbbf5d10b92ac3aa62cc12eafc6dc88b790cec055a4bffb4ff1']]){
+  const file=path.join(repo,'temp/native-delivery-boot-1a0bddc2340a',name);if(await digest(file,'sha256')!==sha)throw new Error('frozen candidate base identity');
+  sourceOptions.push('-drive',`file=${file.replaceAll('\\','/')},format=raw,if=virtio,readonly=on`);
+}}
+if(candidate){const directory=path.join(work,'candidate-files');await mkdir(directory);
+  sourceOptions.push('-drive',`file=fat:rw:${directory.replaceAll('\\','/')},format=raw,if=virtio`);}
 const packageArchive=path.join(work,'packages.tar');
 run('tar',['--format=ustar','-cf',packageArchive,'-C',path.join(upstream,'packages'),...packages.keys()]);
 const transportLog=createWriteStream(path.join(work,'transport.log'),{flags:'wx'});
@@ -50,6 +69,7 @@ make -j4 -C src/v2/optimized-x86 all
 make -j4 -C src/v2/postlink-compiler all check
 make -j4 -C src/v2/wasm-compiler all packed-shift-check vector-unpack-check x87-control-check x87-environment-check
 make -j4 -C src/v2/vm all check
+${publication?`sh data/oracle/check-userland-publication.sh ${candidate?'--candidate-root':''}`:''}
 bash src/v2/wasm-compiler/check/sanitizers.sh
 trap - EXIT
 printf '\\nselfhost-oracle: pass\\n'
@@ -78,22 +98,46 @@ const args=['-L',path.join(path.dirname(qemu),'share'),'-machine','q35','-accel'
   '-m','4096','-smp','4','-drive',`file=${disk.replaceAll('\\','/')},format=qcow2,if=virtio`,
   '-drive',`file=${source.replaceAll('\\','/')},format=raw,if=virtio,readonly=on`,
   '-drive',`file=${packageArchive.replaceAll('\\','/')},format=raw,if=virtio,readonly=on`,
+  ...sourceOptions,
   '-netdev',`user,id=n0,restrict=on,guestfwd=tcp:10.0.2.100:80-tcp:127.0.0.1:${port}`,
   '-device','virtio-net-pci,netdev=n0',
   '-smbios','type=1,serial=ds=nocloud;s=http://10.0.2.100/seed/','-display','none','-monitor','none','-serial','stdio','-no-reboot'];
 const child=spawn(qemu,args,{windowsHide:true,stdio:['ignore','pipe','pipe']});
 let tail='',outcome,bytes=0;const began=performance.now();
+let receiptName=null,receiptHash=null,receiptLines='',partial='';const receipts=[],candidateReceipts=new Map();
+function receiveReceipts(chunk){if(!publication)return;partial+=chunk.toString();let end;
+  while((end=partial.indexOf('\n'))>=0){const line=partial.slice(0,end).replace(/\r$/, '');partial=partial.slice(end+1);
+    const object=/^oracle-candidate (initramfs|system\.squashfs) ([0-9]+) ([a-f0-9]{64})$/.exec(line);
+    if(object){if(!candidate||candidateReceipts.has(object[1]))throw new Error('candidate role ownership');
+      candidateReceipts.set(object[1],{bytes:Number(object[2]),sha256:object[3]});continue;}
+    const begin=/^oracle-elf-begin (busybox-input|busybox-optimized|tar-input|tar-optimized) ([a-f0-9]{64})$/.exec(line);
+    if(begin){if(receiptName)throw new Error('nested ELF receipt');receiptName=begin[1];receiptHash=begin[2];receiptLines='';continue;}
+    if(line==='oracle-elf-end'){
+      if(!receiptName)throw new Error('unowned ELF receipt');
+      const payload=zstdDecompressSync(Buffer.from(receiptLines,'base64'),{maxOutputLength:32*1024*1024});
+      if(payload.subarray(0,4).toString('hex')!=='7f454c46'||createHash('sha256').update(payload).digest('hex')!==receiptHash)throw new Error('authenticated ELF receipt');
+      const stream=createWriteStream(path.join(work,receiptName+'.elf'),{flags:'wx'});stream.end(payload);receipts.push(finished(stream));
+      transportLog.write(`ELF ${receiptName} ${payload.length} ${createHash('sha256').update(payload).digest('hex')}\n`);receiptName=null;receiptLines='';continue;}
+    if(receiptName){if(!/^[A-Za-z0-9+/=]+$/.test(line)||receiptLines.length+line.length>45*1024*1024)throw new Error('malformed ELF receipt');receiptLines+=line;}
+  }
+}
 function stop(reason){if(outcome!==undefined)return;outcome=reason;child.kill();}
 const timeout=setTimeout(()=>stop('independent C oracle timeout'),900000);
-function consume(b){bytes+=b.length;log.write(b);tail=(tail+b.toString()).slice(-16384);
+function consume(b){bytes+=b.length;log.write(b);try{receiveReceipts(b);}catch(e){stop(e.message);}tail=(tail+b.toString()).slice(-16384);
   if(bytes>64*1024*1024)stop('bounded oracle log exhausted');
   if(/(?:^|[\r\n])selfhost-oracle: failed\r?\n/.test(tail))stop('C gate failed');
   if(/(?:^|[\r\n])selfhost-oracle: pass\r?\n/.test(tail))stop(null);
   if(tail.includes('Kernel panic - not syncing'))stop('oracle kernel panic');}
 child.stdout.on('data',consume);child.stderr.on('data',consume);child.once('error',e=>stop(e.message));
 await new Promise(resolve=>child.once('close',(code,signal)=>{if(outcome===undefined)outcome=`oracle exited ${code}/${signal}`;resolve();}));
-clearTimeout(timeout);server.close();log.end();transportLog.end();await Promise.all([finished(log),finished(transportLog)]);
+clearTimeout(timeout);server.close();log.end();transportLog.end();await Promise.all([finished(log),finished(transportLog),...receipts]);
+const candidateOutput={};
+if(outcome===null&&candidate){try{for(const name of ['initramfs','system.squashfs']){
+  const role=candidateReceipts.get(name),file=path.join(work,'candidate-files',name);
+  if(!role||!Number.isSafeInteger(role.bytes)||role.bytes<1||role.bytes>128*1024*1024||(await stat(file)).size!==role.bytes||await digest(file,'sha256')!==role.sha256)throw new Error('candidate readback identity');
+  candidateOutput[name]=role;
+}}catch(e){outcome=e.message;}}
 console.log(JSON.stringify({format:'isolated-linux-c-oracle-v1',status:outcome===null?'pass':'fail',reason:outcome,
   imageSha256:lock.image.sha256,sourceSha256:sourceHash,accelerator:'WHPX',ssh:'none',network:'explicit loopback seed only; source/APKs are read-only block inputs; no outside routing',
-  elapsedMs:performance.now()-began,logBytes:bytes,work,linuxBrowserBoot:'not-tested'},null,2));
+  elapsedMs:performance.now()-began,logBytes:bytes,work,candidateOutput,linuxBrowserBoot:'not-tested'},null,2));
 if(outcome!==null)process.exitCode=1;

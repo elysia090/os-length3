@@ -1,5 +1,37 @@
 #include <x86/semantics.h>
 #include "x87-expression.h"
+int pl_x86_x87_bcd_lower(const pl_x86_instruction *i,pl_x86_x87_bcd *out)
+{
+    const pl_u32 required=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;
+    if(!i||!out||i->status!=PL_X86_DECODE_VALID||i->encoding!=PL_X86_ENCODING_LEGACY||i->opcode!=0xdfu
+        ||i->machine_operation!=PL_X86_MACHINE_X87||i->visible_operand_count!=1u||(i->flow!=PL_X86_FLOW_NEXT&&i->flow!=PL_X86_FLOW_SYSTEM)
+        ||(i->flags&required)!=required||!i->source_bytes||i->source_bytes>15u||i->length!=i->source_bytes||i->fallthrough-i->rip!=i->length
+        ||(i->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED|PL_X86_INSTRUCTION_PRIVILEGED|PL_X86_INSTRUCTION_TRAP_AFTER)))return 0;
+    pl_u32 kind=(pl_u32)i->machine_argument&255u,fop=(pl_u32)(i->machine_argument>>16u)&0x7ffu;
+    if(kind!=27u&&kind!=28u)return 0;
+    pl_u32 store=kind==28u;
+    if(i->operands[0].kind!=PL_X86_OPERAND_MEMORY||i->operands[0].bits!=80u
+        ||!!(i->flags&PL_X86_INSTRUCTION_WRITES_MEMORY)!=store||!!(i->flags&PL_X86_INSTRUCTION_READS_MEMORY)==store
+        ||(fop>>8u)!=7u||((fop>>3u)&7u)!=(store?6u:4u)||(fop&0xc0u)==0xc0u
+        ||i->machine_argument!=(kind|(10ull<<8u)|((pl_u64)fop<<16u)))return 0;
+    *out=(pl_x86_x87_bcd){(pl_u8)store,(pl_u16)fop};return 1;
+}
+static integer_expression bcd_value(expression *e,pl_operand low,pl_operand high)
+{
+    /* Pair decimal nibbles, then base100/base10000/base10^8 fields. Each
+     * intermediate fits its physical lane, so no carry crosses a boundary.
+     * Valid18-digit magnitudes fit60 bits; loads require no rounding. */
+    pl_operand mask=constant(0x0f0f0f0f0f0f0f0full),a=bit_and(e,low,mask),b=shift(e,low,4u);b=bit_and(e,b,mask);
+    b=binary(e,PL_OPCODE_MULR,b,constant(10u));pl_operand value=binary(e,89u,a,b);
+    const pl_u64 masks[]={0x00ff00ff00ff00ffull,0x0000ffff0000ffffull,0xffffffffull};
+    const pl_u64 radix[]={100u,10000u,100000000u};
+    for(pl_u32 n=0u;n<3u;++n){a=bit_and(e,value,constant(masks[n]));b=shift(e,value,8u<<n);b=bit_and(e,b,constant(masks[n]));
+        b=binary(e,PL_OPCODE_MULR,b,constant(radix[n]));value=binary(e,89u,a,b);}
+    a=bit_and(e,high,constant(15u));b=shift(e,high,4u);b=bit_and(e,b,constant(15u));b=binary(e,PL_OPCODE_MULR,b,constant(10u));
+    a=binary(e,89u,a,b);a=binary(e,PL_OPCODE_MULR,a,constant(10000000000000000ull));value=binary(e,89u,value,a);
+    integer_expression result=integer_value(e,64u,value);
+    pl_operand sign=bit_and(e,high,constant(0x8000u));result.se=bit_or(e,result.se,sign);return result;
+}
 /* Raw binary interchange -> exact extended fields. NaN signaling/payload
  * and source denormal class survive; consuming operations own exceptions. */
 ieee_expression ieee_value(expression *e,pl_u32 bits,pl_operand x)
@@ -73,12 +105,13 @@ int pl_x86_x87_raw_load_lower(const pl_x86_instruction *i,pl_x86_x87_raw_load *o
 }
 int pl_x86_x87_load_plan(pl_u32 bits,pl_u32 format,pl_arena *arena,pl_plan *out)
 {
-    if(!arena||!out||format>2u||(format==2u?bits!=80u:format==1u?(bits!=16u&&bits!=32u&&bits!=64u):(bits!=32u&&bits!=64u)))return PL_ERROR_PLAN;
+    if(!arena||!out||format>3u||(format>=2u?bits!=80u:format==1u?(bits!=16u&&bits!=32u&&bits!=64u):(bits!=32u&&bits!=64u)))return PL_ERROR_PLAN;
     pl_plan raw={.instructions=1u};expression e={0};
     if(pl_builder_open(&e.builder,&raw,arena,96u,384u,0u,5u))return PL_ERROR_ARENA;
     pl_operand input={PL_OPERAND_LOCAL,0u},cw={PL_OPERAND_LOCAL,1u},full={PL_OPERAND_LOCAL,2u},sig,se,zero,denormal=constant(0u),signaling=constant(0u);
     pl_operand source_empty=format==2u?(pl_operand){PL_OPERAND_LOCAL,4u}:constant(0u),stack_fault=bit_or(&e,full,source_empty);
-    if(format==1u){integer_expression v=integer_value(&e,bits,input);sig=v.sig;se=v.se;zero=v.zero;}
+    if(format==3u){integer_expression v=bcd_value(&e,input,(pl_operand){PL_OPERAND_LOCAL,3u});sig=v.sig;se=v.se;zero=v.zero;}
+    else if(format==1u){integer_expression v=integer_value(&e,bits,input);sig=v.sig;se=v.se;zero=v.zero;}
     else if(format==2u){sig=input;se=(pl_operand){PL_OPERAND_LOCAL,3u};
         pl_operand exp=bit_and(&e,se,constant(32767u)),ze=equal(&e,exp,constant(0u)),zs=equal(&e,sig,constant(0u));zero=bit_and(&e,ze,zs);}
     else{ieee_expression v=ieee_value(&e,bits,input);sig=v.sig;se=v.se;denormal=bit_and(&e,v.classes,constant(1u));

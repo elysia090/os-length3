@@ -2934,6 +2934,8 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
                  pl_arena *arena, pl_x86_semantic *out)
 {
     if (!instruction || !arena || !out) return PL_ERROR_X86_SEMANTIC;
+    if(instruction->machine_operation==PL_X86_MACHINE_MEMORY_ORDER&&((instruction->machine_argument&255u)==2u||(instruction->machine_argument&255u)==3u)
+        &&!pl_x86_cache_barrier_supported(instruction))return PL_ERROR_X86_SEMANTIC;
     if(instruction->machine_operation==PL_X86_MACHINE_FAR_TRANSFER){pl_x86_far_transfer law;
         if(!pl_x86_far_transfer_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_CR0_STATUS&&(instruction->machine_argument&255u)==PL_X86_CR0_CLEAR_TASK_SWITCHED
@@ -2946,9 +2948,15 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
         pl_x86_vector_unpack law;if(!pl_x86_vector_unpack_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_X87&&(instruction->machine_argument&255u)==38u){
         pl_x86_mmx_shuffle law;if(!pl_x86_mmx_shuffle_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
+    if(instruction->machine_operation==PL_X86_MACHINE_X87&&((instruction->machine_argument&255u)==27u||(instruction->machine_argument&255u)==28u)){
+        pl_x86_x87_bcd law;if(!pl_x86_x87_bcd_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_SYSTEM_SELECTOR
         &&(instruction->opcode==2u||instruction->opcode==3u||instruction->visible_operand_count==2u)){
         pl_x86_selector_query law;if(!pl_x86_selector_query_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
+    if(instruction->machine_operation==PL_X86_MACHINE_VECTOR&&(instruction->machine_argument&255u)==22u){
+        pl_x86_vector_extract law;if(!pl_x86_vector_extract_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
+    if(pl_x86_float_arithmetic_candidate(instruction)){
+        pl_x86_float_arithmetic law;if(!pl_x86_float_arithmetic_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_VECTOR&&(instruction->machine_argument&255u)==PL_X86_VECTOR_SCALAR_FLOAT
         &&(((instruction->machine_argument>>32u)&255u)==PL_X86_SCALAR_FLOAT_COMPARE_ORDERED||((instruction->machine_argument>>32u)&255u)==PL_X86_SCALAR_FLOAT_COMPARE_UNORDERED)){
         pl_x86_float_compare law;if(!pl_x86_float_compare_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}

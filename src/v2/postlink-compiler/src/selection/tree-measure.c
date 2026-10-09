@@ -2506,7 +2506,13 @@ int pl_select_measure_alu_pair(const pl_x86_frontend *frontend,
             frontend, block, selection, destination, left, left_bits,
             output_at, remaining - 1u, scratch_mask,
             &prefix, &prefix_work);
+        /* A left prefix publishes the accumulator. A right LOCAL still
+         * names its ENTRY generation, even if its register number is equal.
+         * Capture that generation through the existing scratch schedule;
+         * never silently turn x-y into x-x after destructive publication. */
         if (status > 0
+                && !(prefix_work && right.kind == PL_OPERAND_LOCAL
+                     && right.value == destination)
                 && pl_select_emit_alu_instruction(
                     destination, right, bits, mode, preserves_carry,
                     (pl_u8 *)0, &operation)
@@ -2517,7 +2523,8 @@ int pl_select_measure_alu_pair(const pl_x86_frontend *frontend,
             return 1;
         }
         selection->fixup_count = fixup_checkpoint;
-        if (status < 0 || right.kind != PL_OPERAND_CONST)
+        if (status < 0 || (right.kind != PL_OPERAND_CONST
+                && !(right.kind == PL_OPERAND_LOCAL && right.value == destination)))
             return status < 0 ? status : 0;
         /* A constant that the immediate form cannot encode (`add r64,
          * imm64-only`) falls through so the scratch path materializes it into a
@@ -2531,7 +2538,7 @@ int pl_select_measure_alu_pair(const pl_x86_frontend *frontend,
         return 0;
     for (pl_u32 scratch = 0u; scratch < PL_X86_GPR_COUNT; ++scratch) {
         pl_u32 scratch_bit = 1u << scratch;
-        if (!(scratch_mask & scratch_bit) || (left_sources & scratch_bit))
+        if (scratch == destination || !(scratch_mask & scratch_bit) || (left_sources & scratch_bit))
             continue;
         selection->fixup_count = fixup_checkpoint;
         pl_u32 right_bytes = 0u, right_work = 0u;

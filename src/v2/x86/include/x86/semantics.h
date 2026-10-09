@@ -134,10 +134,17 @@ enum {PL_X86_X87_TRANSFER_CONDITIONAL,PL_X86_X87_TRANSFER_NEGATE,PL_X86_X87_TRAN
 #define PL_X86_X87_TRANSFER_MAX_NODES 32u
 int pl_x86_x87_transfer_lower(const pl_x86_instruction *instruction,pl_x86_x87_transfer *out);
 int pl_x86_x87_transfer_plan(const pl_x86_x87_transfer *law,pl_arena *arena,pl_plan *out);
-/* Exact load/push. Format0 IEEE,1 signed integer,2 extended80. Inputs raw
- * word,CW,full-stack; format2 also uses high sign/exp and source-empty bits.
+/* Exact load/push. Format0 IEEE,1 signed integer,2 extended80,3 packed BCD.
+ * Inputs raw word,CW,full-stack; formats2/3 also use the high source word.
+ * Format2 additionally uses the source-empty predicate.
  * Outputs extended fields and the exception/tag publication word. */
 int pl_x86_x87_load_plan(pl_u32 bits,pl_u32 format,pl_arena *arena,pl_plan *out);
+typedef struct {pl_u8 store;pl_u16 opcode;} pl_x86_x87_bcd;
+int pl_x86_x87_bcd_lower(const pl_x86_instruction *instruction,pl_x86_x87_bcd *out);
+#define PL_X86_X87_BCD_STORE_MAX_NODES 192u
+/* Same rounding/exception core as integer stores; four outputs are the two
+ * packed payload words, raised flags and the exact store/pop suppression. */
+int pl_x86_x87_bcd_store_plan(pl_arena *arena,pl_plan *out);
 /* Integer-memory add/subtract. Inputs: ST0 significand/sign-exponent,
  * signed operand, control word, empty predicate. Outputs: significand,
  * sign-exponent, outcome (new exception bits, C1, suppress bit16, tag18..19).
@@ -256,6 +263,8 @@ typedef struct {pl_u8 bytes,source_memory,target_memory,source,target,clear,alia
 /* MOVSS/MOVSD and register MOVQ project a scalar region; memory loads/MOVQ
  * clear the remaining region, scalar register moves preserve it. No FP math. */
 int pl_x86_scalar_vector_transfer_lower(const pl_x86_instruction *instruction,pl_x86_scalar_vector_transfer *out);
+typedef struct {pl_u8 source,target,word,mmx;} pl_x86_vector_extract;
+int pl_x86_vector_extract_lower(const pl_x86_instruction *instruction,pl_x86_vector_extract *out);
 typedef struct {pl_u8 source_memory,source,target,source_class,source_bytes,target_bytes;} pl_x86_vector_integer_float;
 int pl_x86_vector_integer_float_lower(const pl_x86_instruction *instruction,pl_x86_vector_integer_float *out);
 /* Inputs signed word and RC, outputs raw IEEE bits and inexact predicate.
@@ -267,6 +276,13 @@ int pl_x86_float_compare_lower(const pl_x86_instruction *instruction,pl_x86_floa
 /* Inputs raw A,B,MXCSR; outputs CF/PF/ZF and newly raised IE/DE. */
 #define PL_X86_FLOAT_COMPARE_MAX_NODES 96u
 int pl_x86_float_compare_plan(pl_u32 bits,pl_u32 ordered,pl_u32 alias,pl_arena *arena,pl_plan *out);
+
+typedef struct {pl_u8 bytes,lanes,operation,source_memory,source,target;} pl_x86_float_arithmetic;
+int pl_x86_float_arithmetic_candidate(const pl_x86_instruction *instruction);
+int pl_x86_float_arithmetic_lower(const pl_x86_instruction *instruction,pl_x86_float_arithmetic *out);
+/* Raw A,B,MXCSR -> raw result,new exceptions. One target-format rounding
+ * of the shared exact arithmetic residual, including gradual underflow. */
+int pl_x86_float_arithmetic_plan(pl_u32 bits,pl_u32 operation,pl_arena *arena,pl_plan *out);
 typedef struct {
     pl_u8 source_memory,source_bytes,truncate,source,target;
     pl_u8 element_bytes,target_class,target_bytes;
@@ -281,6 +297,7 @@ int pl_x86_selector_query_lower(const pl_x86_instruction *instruction,pl_x86_sel
 int pl_x86_selector_query_plan(pl_u32 limit,pl_u32 bits,pl_arena *arena,pl_plan *out);
 /* Privileged CLTS changes only CR0.TS. Prefixes do not change its width. */
 int pl_x86_cr0_clear_supported(const pl_x86_instruction *instruction);
+int pl_x86_cache_barrier_supported(const pl_x86_instruction *instruction);
 typedef struct {pl_u8 bytes,call;} pl_x86_far_transfer;
 int pl_x86_far_transfer_lower(const pl_x86_instruction *instruction,pl_x86_far_transfer *out);
 

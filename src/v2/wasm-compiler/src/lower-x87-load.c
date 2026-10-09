@@ -17,13 +17,14 @@ static void read_register(cut_lowering *c,pl_u32 offset,pl_u32 local,pl_u32 shif
 }
 void cut_lower_x87_load(cut_lowering *c,const pl_x86_instruction *i)
 {
-    pl_x86_x87_integer_load law;pl_x86_x87_raw_load raw;
+    pl_x86_x87_integer_load law;pl_x86_x87_raw_load raw;pl_x86_x87_bcd decimal;
+    int bcd=pl_x86_x87_bcd_lower(i,&decimal)&&!decimal.store;
     int integer=pl_x86_x87_integer_load_lower(i,&law),extended=0;
-    if(!integer&&!pl_x86_x87_memory_load_lower(i,&law)){
+    if(!bcd&&!integer&&!pl_x86_x87_memory_load_lower(i,&law)){
         if(!pl_x86_x87_raw_load_lower(i,&raw)){c->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}extended=1;}
-    pl_u32 bytes=extended?raw.bytes:law.bytes,memory=!extended||raw.memory,opcode=extended?raw.opcode:law.opcode;
+    pl_u32 bytes=bcd?10u:extended?raw.bytes:law.bytes,memory=!extended||raw.memory,opcode=bcd?decimal.opcode:extended?raw.opcode:law.opcode;
     _Alignas(8) pl_u8 scratch[32768];pl_arena arena={scratch,sizeof scratch,0u};pl_plan pure;
-    if(pl_x86_x87_load_plan(bytes*8u,extended?2u:(pl_u32)integer,&arena,&pure)){c->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
+    if(pl_x86_x87_load_plan(bytes*8u,bcd?3u:extended?2u:(pl_u32)integer,&arena,&pure)){c->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
     cut_x87_wait_guard(c,FI_CW,FI_SW);
     word(c,offsetof(machine_state,x87_tag),FI_TAG,0);
     cut_get(c,FI_SW);cut_const(c,11u);cut_op(c,0x88u);cut_const(c,7u);cut_op(c,0x83u);cut_set(c,FI_TOP);
@@ -33,7 +34,7 @@ void cut_lower_x87_load(cut_lowering *c,const pl_x86_instruction *i)
     cut_const(c,0u);cut_set(c,FI_EMPTY);
     if(memory){const pl_x86_memory *address=&i->operands[0].value.memory;
         cut_effective_address(c,i,address);cut_set(c,CUT_ADDRESS);c->report.memory_access=MACHINE_MEMORY_READ|cut_memory_role(address);
-        if(extended){cut_op(c,0x20u);wasm_writer_uleb(c->writer,1u);cut_get(c,CUT_ADDRESS);cut_i32_const(c,bytes);cut_i32_const(c,c->report.memory_access);
+        if(extended||bcd){cut_op(c,0x20u);wasm_writer_uleb(c->writer,1u);cut_get(c,CUT_ADDRESS);cut_i32_const(c,bytes);cut_i32_const(c,c->report.memory_access);
             cut_call(c,WASM_IMPORT_READ_PAIR);cut_access_status(c);
             cut_op(c,0x20u);wasm_writer_uleb(c->writer,1u);cut_op(c,0x29u);wasm_writer_uleb(c->writer,3u);wasm_writer_uleb(c->writer,offsetof(machine_memory_pair_port,high));cut_set(c,FI_HIGH);
         }else{cut_const(c,0u);cut_set(c,CUT_VALUE);cut_access(c);}
@@ -45,7 +46,7 @@ void cut_lower_x87_load(cut_lowering *c,const pl_x86_instruction *i)
         cut_get(c,FI_EMPTY);cut_get(c,FI_FULL);cut_op(c,0x84u);cut_op(c,0x50u);cut_op(c,0x04u);cut_op(c,0x40u);
         read_register(c,offsetof(machine_state,x87_significand),FI_INPUT,3u);read_register(c,offsetof(machine_state,x87_sign_exponent),FI_HIGH,1u);cut_op(c,0x0bu);
     }
-    const pl_u32 input[]={FI_INPUT,FI_CW,FI_FULL,extended?FI_HIGH:FI_INPUT,FI_EMPTY},output[]={FI_SIG,FI_SE,FI_KIND};
+    const pl_u32 input[]={FI_INPUT,FI_CW,FI_FULL,extended||bcd?FI_HIGH:FI_INPUT,FI_EMPTY},output[]={FI_SIG,FI_SE,FI_KIND};
     cut_emit_scalar_plan(c,&pure,input,FI_FIRST,output);
     cut_get(c,FI_KIND);cut_const(c,16u);cut_op(c,0x88u);cut_const(c,1u);cut_op(c,0x83u);cut_set(c,FI_SUPPRESS);
     cut_get(c,FI_SW);cut_const(c,~0x200ull);cut_op(c,0x83u);cut_get(c,FI_KIND);cut_const(c,0x27fu);cut_op(c,0x83u);cut_op(c,0x84u);cut_set(c,FI_SW);

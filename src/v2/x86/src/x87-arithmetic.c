@@ -109,18 +109,79 @@ static rounded round_value(expression *e,pair a,pl_operand exponent,pl_operand d
     pl_operand sig=add(e,base,delta),carry=less(e,sig,base);sig=select(e,constant(0x8000000000000000ull),sig,carry);
     exponent=add(e,exponent,carry);return(rounded){sig,exponent,increment,inexact};
 }
-static int arithmetic_plan(pl_u32 bits,pl_u32 integer,pl_u32 operation,pl_arena *arena,pl_plan *out)
+static int ieee_result(expression *e,pl_plan *raw,pl_u32 bits,pl_u32 operation,pl_u64 bias,
+    pl_operand hi,pl_operand lo,pl_operand exponent,pl_operand sign,pl_operand nonzero,
+    pl_operand a,pl_operand sa,pl_operand b,pl_operand sb,pl_operand da,pl_operand db,
+    pl_operand original_a,pl_operand original_b,pl_operand mxcsr,pl_arena *arena,pl_plan *out)
+{
+    pl_u32 f=bits==32u?23u:52u,format_bias=bits==32u?127u:1023u,drop=63u-f;
+    pl_u64 full=bits==32u?255u:2047u,fraction_mask=(1ull<<f)-1u,min=16384u-format_bias+bias,max=16383u-format_bias+full+bias;
+    pl_operand rc=shift(e,mxcsr,13u);rc=bit_and(e,rc,constant(3u));
+    rounded normal=round_value(e,(pair){hi,lo},exponent,constant(drop),rc,sign);
+    pl_operand below=less(e,exponent,constant(min)),distance=sub(e,constant(min),exponent);distance=select(e,distance,constant(0u),below);
+    pair scaled=right_jam(e,(pair){hi,lo},distance);
+    rounded gradual=round_value(e,scaled,constant(min),constant(drop),rc,sign);
+    pl_operand sig=select(e,gradual.sig,normal.sig,below),adjusted=select(e,gradual.exp,normal.exp,below);
+    pl_operand top=shift(e,gradual.sig,63u),stored_exp=sub(e,adjusted,constant(16383u-format_bias+bias));
+    stored_exp=select(e,top,stored_exp,below);stored_exp=select(e,stored_exp,constant(0u),nonzero);
+    pl_operand overflow=not(e,less(e,normal.exp,constant(max))),tiny=less(e,normal.exp,constant(min));tiny=bit_and(e,tiny,nonzero);
+    pl_operand inexact=select(e,gradual.inexact,normal.inexact,below),um=bit(e,mxcsr,11u),ftz=bit(e,mxcsr,15u);
+    pl_operand flush=bit_and(e,tiny,um);flush=bit_and(e,flush,ftz);
+    pl_operand u=bit_or(e,inexact,not(e,um));u=bit_or(e,u,flush);u=bit_and(e,u,tiny);
+    pl_operand masked_overflow=bit_and(e,overflow,bit(e,mxcsr,10u));pl_operand p=bit_or(e,inexact,masked_overflow);p=bit_or(e,p,flush);
+    // Unmasked tininess stops before denormalization rounding. Its precision
+    // flag describes the unbounded-exponent working-precision result.
+    pl_operand unmasked_tiny=bit_and(e,tiny,not(e,um));p=select(e,normal.inexact,p,unmasked_tiny);
+    pl_operand near=equal(e,rc,constant(0u)),down=equal(e,rc,constant(1u)),up=equal(e,rc,constant(2u));
+    down=bit_and(e,down,sign);up=bit_and(e,up,not(e,sign));pl_operand inf=bit_or(e,near,down);inf=bit_or(e,inf,up);
+    pl_operand payload=shift(e,sig,drop);payload=bit_and(e,payload,constant(fraction_mask));stored_exp=shl(e,stored_exp,constant(f));payload=bit_or(e,payload,stored_exp);
+    pl_operand over_value=select(e,constant(full<<f),constant(((full-1u)<<f)|fraction_mask),inf);payload=select(e,over_value,payload,overflow);
+    payload=select(e,constant(0u),payload,flush);pl_operand sign_bits=shl(e,sign,constant(bits-1u));payload=bit_or(e,payload,sign_bits);
+    pl_operand raised=shl(e,overflow,constant(3u)),u_bits=shl(e,u,constant(4u)),p_bits=shl(e,p,constant(5u));raised=bit_or(e,raised,u_bits);raised=bit_or(e,raised,p_bits);
+    pl_operand ea=bit_and(e,sa,constant(32767u)),eb=bit_and(e,sb,constant(32767u)),all_a=equal(e,ea,constant(32767u)),all_b=equal(e,eb,constant(32767u));
+    pl_operand fraction_a=bit_and(e,a,constant(0x7fffffffffffffffull)),fraction_b=bit_and(e,b,constant(0x7fffffffffffffffull));
+    pl_operand nan_a=bit_and(e,all_a,nz(e,fraction_a)),nan_b=bit_and(e,all_b,nz(e,fraction_b)),nan=bit_or(e,nan_a,nan_b);
+    pl_operand sna=bit_and(e,nan_a,not(e,bit(e,a,62u))),snb=bit_and(e,nan_b,not(e,bit(e,b,62u))),invalid=bit_or(e,sna,snb);
+    pl_operand za=equal(e,a,constant(0u)),zb=equal(e,b,constant(0u)),both_all=bit_and(e,all_a,all_b),conflict,ze=constant(0u);
+    if(operation==1u){pl_operand ai_bz=bit_and(e,all_a,zb),bi_az=bit_and(e,all_b,za);conflict=bit_or(e,ai_bz,bi_az);}
+    else if(operation>=4u){pl_operand both_zero=bit_and(e,za,zb);conflict=bit_or(e,both_all,both_zero);ze=bit_and(e,zb,not(e,za));ze=bit_and(e,ze,not(e,all_a));}
+    else{pl_operand as=bit(e,sa,15u),bs=bit(e,sb,15u);if(operation==2u)bs=xor(e,bs,constant(1u));conflict=bit_and(e,both_all,not(e,equal(e,as,bs)));}
+    conflict=bit_and(e,conflict,not(e,nan));invalid=bit_or(e,invalid,conflict);
+    pl_operand priority=bit_or(e,nan,invalid);priority=bit_or(e,priority,ze);pl_operand de=bit_or(e,da,db);de=bit_and(e,de,not(e,priority));
+    // Precomputation exceptions stop later flags only when unmasked. QNaN,
+    // invalid and zero-divide results never enter numeric rounding.
+    pl_operand early=bit_or(e,nan,conflict);early=bit_or(e,early,ze);early=bit_or(e,early,all_a);early=bit_or(e,early,all_b);
+    pl_operand unmask_d=bit_and(e,de,not(e,bit(e,mxcsr,8u)));raised=select(e,constant(0u),raised,early);raised=select(e,constant(0u),raised,unmask_d);
+    pl_operand de_bits=shl(e,de,constant(1u)),ze_bits=shl(e,ze,constant(2u));raised=bit_or(e,raised,invalid);raised=bit_or(e,raised,de_bits);raised=bit_or(e,raised,ze_bits);
+    pl_operand inf_sign=sign;if(operation<4u&&operation!=1u){inf_sign=select(e,bit(e,sa,15u),bit(e,sb,15u),all_a);if(operation==2u){pl_operand source_sign=xor(e,bit(e,sb,15u),constant(1u));inf_sign=select(e,bit(e,sa,15u),source_sign,all_a);}}
+    pl_operand inf_bits=shl(e,inf_sign,constant(bits-1u));inf_bits=bit_or(e,inf_bits,constant(full<<f));pl_operand special=inf_bits;
+    if(operation>=4u){pl_operand result_zero=bit_or(e,all_b,za);special=select(e,sign_bits,special,result_zero);}
+    pl_operand any_all=bit_or(e,all_a,all_b);any_all=bit_or(e,any_all,ze);payload=select(e,special,payload,any_all);
+    pl_operand nan_bits=select(e,original_a,original_b,nan_a);nan_bits=bit_or(e,nan_bits,constant(1ull<<(f-1u)));payload=select(e,nan_bits,payload,nan);
+    payload=select(e,constant((1ull<<(bits-1u))|(full<<f)|(1ull<<(f-1u))),payload,conflict);
+    raw->locals[0]=payload;raw->locals[1]=raised;raw->locals[2]=(pl_operand){PL_OPERAND_LOCAL,2u};
+    if(e->failed)return PL_ERROR_ARENA;
+    const pl_u8 live[]={1u,1u,0u};return pl_compact_projected(raw,live,arena,out);
+}
+static int arithmetic_plan(pl_u32 bits,pl_u32 integer,pl_u32 operation,pl_u32 ieee,pl_arena *arena,pl_plan *out)
 {
     if(!arena||!out||(bits&&(integer?(bits!=16u&&bits!=32u):(bits!=32u&&bits!=64u)))||operation>5u)return PL_ERROR_PLAN;
     int division=operation>=4u,multiplication=operation==1u;pl_u64 bias=(division||multiplication)?65536u:128u;
     pl_plan raw={.instructions=1u};expression e={0};
-    pl_u32 locals=bits?5u:6u;
+    pl_u32 locals=ieee?3u:bits?5u:6u;
     if(pl_builder_open(&e.builder,&raw,arena,PL_X86_X87_ARITHMETIC_MAX_NODES,2048u,0u,locals))return PL_ERROR_ARENA;
     pl_operand a={PL_OPERAND_LOCAL,0u},sa={PL_OPERAND_LOCAL,1u},input={PL_OPERAND_LOCAL,2u};
     pl_operand cw={PL_OPERAND_LOCAL,bits?3u:4u},empty={PL_OPERAND_LOCAL,bits?4u:5u};
     pl_operand b=input,sb={PL_OPERAND_LOCAL,3u};
-    pl_operand source_denormal=constant(0u);
-    if(bits&&integer){integer_expression value=integer_value(&e,bits,input);b=value.sig;sb=value.se;}
+    pl_operand source_denormal=constant(0u),original_a=a,original_b=sa,den_a=constant(0u),den_b=constant(0u),mxcsr=input;
+    if(ieee){
+        ieee_expression av=ieee_value(&e,ieee,original_a),bv=ieee_value(&e,ieee,original_b);
+        den_a=bit_and(&e,av.classes,constant(1u));den_b=bit_and(&e,bv.classes,constant(1u));pl_operand daz=bit(&e,mxcsr,6u);
+        pl_operand flush_a=bit_and(&e,den_a,daz),flush_b=bit_and(&e,den_b,daz),sign_a=bit_and(&e,av.se,constant(32768u)),sign_b=bit_and(&e,bv.se,constant(32768u));
+        a=select(&e,constant(0u),av.sig,flush_a);sa=select(&e,sign_a,av.se,flush_a);b=select(&e,constant(0u),bv.sig,flush_b);sb=select(&e,sign_b,bv.se,flush_b);
+        den_a=bit_and(&e,den_a,not(&e,daz));den_b=bit_and(&e,den_b,not(&e,daz));pl_operand rc_bits=shift(&e,mxcsr,3u);rc_bits=bit_and(&e,rc_bits,constant(3u<<10u));cw=bit_or(&e,constant(0x37fu),rc_bits);
+    }
+    else if(bits&&integer){integer_expression value=integer_value(&e,bits,input);b=value.sig;sb=value.se;}
     else if(bits){ieee_expression value=ieee_value(&e,bits,input);b=value.sig;sb=value.se;source_denormal=bit_and(&e,value.classes,constant(1u));}
     pl_operand ea=bit_and(&e,sa,constant(0x7fffu)),eb=bit_and(&e,sb,constant(0x7fffu));
     pl_operand za=equal(&e,ea,constant(0u)),zb=equal(&e,eb,constant(0u));
@@ -192,6 +253,7 @@ static int arithmetic_plan(pl_u32 bits,pl_u32 integer,pl_u32 operation,pl_arena 
     pl_operand rc=shift(&e,cw,10u);rc=bit_and(&e,rc,constant(3u));
     pl_operand negative_zero=equal(&e,rc,constant(1u)),zero_sign=select(&e,as,negative_zero,same_sign);
     if(!division&&!multiplication)sign=select(&e,sign,zero_sign,nonzero);
+    if(ieee)return ieee_result(&e,&raw,ieee,operation,bias,hi,lo,exponent,sign,nonzero,a,sa,b,sb,den_a,den_b,original_a,original_b,mxcsr,arena,out);
     pl_operand pc=shift(&e,cw,8u);pc=bit_and(&e,pc,constant(3u));
     pl_operand short_pc=equal(&e,pc,constant(0u)),double_pc=equal(&e,pc,constant(2u));
     pl_operand drop=select(&e,constant(11u),constant(0u),double_pc);drop=select(&e,constant(40u),drop,short_pc);
@@ -288,8 +350,10 @@ static int arithmetic_plan(pl_u32 bits,pl_u32 integer,pl_u32 operation,pl_arena 
     const pl_u8 live[]={1u,1u,1u,0u,0u,0u};return pl_compact_projected(&raw,live,arena,out);
 }
 int pl_x86_x87_integer_arithmetic_plan(pl_u32 bits,pl_u32 operation,pl_arena *arena,pl_plan *out)
-{return bits==16u||bits==32u?arithmetic_plan(bits,1u,operation,arena,out):PL_ERROR_PLAN;}
+{return bits==16u||bits==32u?arithmetic_plan(bits,1u,operation,0u,arena,out):PL_ERROR_PLAN;}
 int pl_x86_x87_memory_arithmetic_plan(pl_u32 bits,pl_u32 operation,pl_arena *arena,pl_plan *out)
-{return bits==32u||bits==64u?arithmetic_plan(bits,0u,operation,arena,out):PL_ERROR_PLAN;}
+{return bits==32u||bits==64u?arithmetic_plan(bits,0u,operation,0u,arena,out):PL_ERROR_PLAN;}
 int pl_x86_x87_register_arithmetic_plan(pl_u32 operation,pl_arena *arena,pl_plan *out)
-{return arithmetic_plan(0u,0u,operation,arena,out);}
+{return arithmetic_plan(0u,0u,operation,0u,arena,out);}
+int pl_x86_float_arithmetic_plan(pl_u32 bits,pl_u32 operation,pl_arena *arena,pl_plan *out)
+{return (bits==32u||bits==64u)&&operation<=3u?arithmetic_plan(0u,0u,operation==3u?4u:operation,bits,arena,out):PL_ERROR_PLAN;}

@@ -31,7 +31,16 @@ PROGRAM = $(BUILD)/postlink-compiler
 .PHONY: all library check elf-proof-check observed-compile-check relocation-free-product-check product-gate-check shared-product-gate-check runtime-elf-check modular-address-check physical-entry-check code-grid-check relative-code-pointer-check table-alternative-bound-check stack-slot-table-check copied-memory-table-check backward-exit-table-check backward-loop-table-check chained-table-cut-check nested-table-guards-check local-code-address-check pie-address-difference-check final-flags-after-value-check observed-code-span-check mutable-code-site-check trap-continuation-check alternative-record-check linked-field-authority-check table-side-exit-check call-cut-check dispatch-alias-check profile-extension-check overlapping-control-check patch-trampoline-check mixed-load-check nonimage-control-check dynamic-runtime-check metadata-closure-check entry-check native-closure-check select-x86-check native-layout-check population-check direct-control-check scalar-check physical-check quotient-check normal-form-check global-minimum-check instruction-law-check catalog block-catalog native-benchmark distribution-population-check production-benchmark-fixture-check production-benchmark-check linked-completeness-check \
 	clean dependencies
 all: $(PROGRAM)
+.PHONY: boolean-entry-capture-check
+.PHONY: entry-alu-capture-check
+check: boolean-entry-capture-check entry-alu-capture-check
 .PHONY: publication-lifetime-check
+.PHONY: entry-alu-generation-check
+check: entry-alu-generation-check
+entry-alu-generation-check: $(BUILD)/entry-alu-generation-check
+	$(BUILD)/entry-alu-generation-check
+$(BUILD)/entry-alu-generation-check: check/entry-alu-generation.c $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -mno-red-zone $< $(LIBRARY) ../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a ../support/build/libsupport.a -o $@
 check: publication-lifetime-check
 publication-lifetime-check: $(BUILD)/publication-lifetime-check
 	$(BUILD)/publication-lifetime-check
@@ -1378,7 +1387,7 @@ bit-scan-passthrough-check: $(PROGRAM)
 	done
 
 .PHONY: cpuid-inputs-check partial-clear-after-flags-check atomic-inputs-check mutable-immediate-field-check unowned-relative-field-check mixed-relative-field-check prefixed-rel32-site-check exception-table-root-check bug-table-root-check tail-call-table-check tail-call-table-rejection-check indirect-flags-frontier-check entry-flags-preload-check
-cpuid-inputs-check partial-clear-after-flags-check atomic-inputs-check mutable-immediate-field-check unowned-relative-field-check mixed-relative-field-check prefixed-rel32-site-check exception-table-root-check bug-table-root-check tail-call-table-check indirect-flags-frontier-check: $(PROGRAM)
+entry-alu-capture-check boolean-entry-capture-check cpuid-inputs-check partial-clear-after-flags-check atomic-inputs-check mutable-immediate-field-check unowned-relative-field-check mixed-relative-field-check prefixed-rel32-site-check exception-table-root-check bug-table-root-check tail-call-table-check indirect-flags-frontier-check: $(PROGRAM)
 	@set -e; temporary=$$(mktemp -d); \
 	trap 'rm -rf "$$temporary"' EXIT; \
 	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none \

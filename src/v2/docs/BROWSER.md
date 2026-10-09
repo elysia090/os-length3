@@ -9,12 +9,17 @@ no shell acceptance is claimed. Explicit interactive lifetime is now separate
 from that regression quota; source, per-call work and residency bounds remain.
 Kernel entry/PID1 output is not offline terminal/development acceptance.
 
-The same fixed make ELF now has233,320/233,455 lowerable final byte coordinates,
-135 remaining valid instructions; no missing fault/fetch/capacity cuts.
+The same fixed make ELF now has233,428/233,455 lowerable final byte coordinates,
+27 remaining valid instructions; no missing fault/fetch/capacity cuts.
 This static inventory is not an execution trace or whole-release closure.
 Environment formats, packed shifts, unpack and MMX shuffle add49 coordinates;
 their independent full-state CPU comparisons are2048/12288/5376/24576.
 The old duplicate packed-shift encoders are removed.
+BCD conversion, serialized cache barriers, SSE arithmetic and PEXTRW close108
+more coordinates. SSE shares exact arithmetic SSA rather than default-rounding
+host float semantics:131072 native numeric/MXCSR and196608 C-VM full-state
+comparisons pass. PEXTRW has32768 physical full-state comparisons. Remaining
+25 x87 and2 SIMD coordinates remain explicit; no whole-release claim.
 
 An exact successful walk can be reused only while control/CPL/access, virtual
 page, every ancestor word and its physical descriptor identity stay equal.
@@ -30,9 +35,14 @@ However, the frozen release GNU tar segfaults on a normal PAX source archive
 USTAR ingestion works and allows independent compilation before that mv red.
 The current minimal selector passes; an equivalent normalized Boolean group
 needed a missing sibling entry-generation guard, now red-tested and repaired.
-These observations do not establish that the existing published ELF is repaired,
+The actual BusyBox failure was separately traced to an ALU prefix destroying
+its right operand's entry generation;65536 independent CPU comparisons and
+the locked whole-ELF GNU tar PAX/BusyBox mv publication tests now pass. Isolated
+full native C and ASan/UBSan gates pass. These observations do not establish
+that the existing published ELF is repaired,
 nor that browser s6 failures are exclusively timing faults. Do not patch a guest
 RIP, replace Linux syscalls or relax service timeouts to hide them.
+See [derivation, receipts and scope](../vm/check/browser/evidence/2026-10-10-arithmetic-publication.md).
 
 Native publication and human-facing index/UI remain unchanged. Full native
 self-build, complete ISA/whole-release publication, browser shell/toolchain,

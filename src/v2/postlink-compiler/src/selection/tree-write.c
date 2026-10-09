@@ -1406,6 +1406,8 @@ int pl_select_write_alu_pair(const pl_x86_block *block,
         if (pl_select_write_alu_tree(
                 block, selection, destination, left, left_bits, output_at,
                 remaining - 1u, scratch_mask, output, &prefix)
+                && !(prefix && right.kind == PL_OPERAND_LOCAL
+                     && right.value == destination)
                 && pl_select_emit_alu_instruction(
                     destination, right, bits, mode, preserves_carry,
                     output + prefix, &operation)
@@ -1413,7 +1415,8 @@ int pl_select_write_alu_pair(const pl_x86_block *block,
             *written = prefix + operation;
             return 1;
         }
-        if (right.kind != PL_OPERAND_CONST) return 0;
+        if (right.kind != PL_OPERAND_CONST
+                && !(right.kind == PL_OPERAND_LOCAL && right.value == destination)) return 0;
         /* A constant the immediate form cannot encode falls through so the
          * scratch path materializes it into a register first. */
     }
@@ -1425,7 +1428,7 @@ int pl_select_write_alu_pair(const pl_x86_block *block,
         return 0;
     for (pl_u32 scratch = 0u; scratch < PL_X86_GPR_COUNT; ++scratch) {
         pl_u32 scratch_bit = 1u << scratch;
-        if (!(scratch_mask & scratch_bit) || (left_sources & scratch_bit))
+        if (scratch == destination || !(scratch_mask & scratch_bit) || (left_sources & scratch_bit))
             continue;
         pl_u32 right_bytes = 0u;
         if (!pl_select_write_alu_tree(
