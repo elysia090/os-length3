@@ -3,6 +3,7 @@
 #include <vm/memory.h>
 
 const vm_memory_page *vm_memory_find(vm_memory *memory, pl_u64 address);
+const vm_memory_page *vm_memory_find_readonly(const vm_memory *memory,pl_u64 address);
 static inline void vm_memory_before_write(vm_memory *memory, pl_u32 offset, pl_u32 bytes)
 {
     if (memory->before_write) memory->before_write(memory->write_owner,offset,bytes);

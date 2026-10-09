@@ -9,8 +9,15 @@ no shell acceptance is claimed. Explicit interactive lifetime is now separate
 from that regression quota; source, per-call work and residency bounds remain.
 Kernel entry/PID1 output is not offline terminal/development acceptance.
 
-The same fixed make ELF now has233,428/233,455 lowerable final byte coordinates,
-27 remaining valid instructions; no missing fault/fetch/capacity cuts.
+The separately rebuilt official kernel/init/root now passes independent native
+PID1/services/C/make-j4/Git/apk/COW. In the actual browser, its32-bank source
+owner removes64-row eviction churn and reaches/run/service plus console/boot
+directory transitions. This is still not shell acceptance. The exact physical
+write/refusal gates and scoped observations are in
+[source ownership evidence](../vm/check/browser/evidence/2026-10-10-source-banks.md).
+
+The same fixed make ELF now has233,429/233,455 lowerable final byte coordinates,
+26 remaining valid instructions; no missing fault/fetch/capacity cuts.
 This static inventory is not an execution trace or whole-release closure.
 Environment formats, packed shifts, unpack and MMX shuffle add49 coordinates;
 their independent full-state CPU comparisons are2048/12288/5376/24576.
@@ -19,7 +26,19 @@ BCD conversion, serialized cache barriers, SSE arithmetic and PEXTRW close108
 more coordinates. SSE shares exact arithmetic SSA rather than default-rounding
 host float semantics:131072 native numeric/MXCSR and196608 C-VM full-state
 comparisons pass. PEXTRW has32768 physical full-state comparisons. Remaining
-25 x87 and2 SIMD coordinates remain explicit; no whole-release claim.
+24 x87 and2 SIMD coordinates remain explicit; no whole-release claim.
+FRNDINT reuses integer/BCD rounding with unrestricted integral exponents;
+30720 independent physical complete-state comparisons pass.
+
+A separately identified candidate rebuilds the locked official kernel and
+init profile through the existing build/postlink/Kbuild/package recipes.
+Native PID1/offline/C/make-j4/Git/AES/apk/COW passes,1096.2ms ready; not a
+browser result or signed package publication. The actual-browser same
+rebuilt candidate is under test. Earlier repaired-root/old-kernel execution
+reaches/init but times out at supervision-ready. No timeout/clock softening.
+Profile-only directory-transition observations borrow at most2 C resident
+fragments without A/D/cache/port/reservation/counter/CPU/RAM mutation. They
+do not resolve a pathname, implement a syscall or supply a missing page.
 
 An exact successful walk can be reused only while control/CPL/access, virtual
 page, every ancestor word and its physical descriptor identity stay equal.

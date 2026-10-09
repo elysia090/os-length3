@@ -10,5 +10,6 @@ flags='-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize
 # preserve ordinary native objects and distribution/boot checkpoints.
 make -j4 -C "$root" BUILD="$temporary" CFLAGS="$flags" \
     "$temporary/clock-check" "$temporary/pit-check" "$temporary/pic-check" \
-    "$temporary/rtc-check" "$temporary/uart-check" "$temporary/execution-check"
-for test in clock pit pic rtc uart execution;do "$temporary/$test-check";done
+    "$temporary/rtc-check" "$temporary/uart-check" "$temporary/execution-check" \
+    "$temporary/source-banks-check"
+for test in clock pit pic rtc uart execution source-banks;do "$temporary/$test-check";done

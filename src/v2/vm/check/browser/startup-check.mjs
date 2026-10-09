@@ -45,7 +45,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   const idtPage = await read('call.extra-page'), cmdlinePage = await read('cmdline.extra-page');
   const optionPage = await read('option.extra-page');
   const maximumMemoryPages = extended ? 512 : 128;
-  const memory = new WebAssembly.Memory({initial:16,maximum:maximumMemoryPages});
+  const memory = new WebAssembly.Memory({initial:32,maximum:maximumMemoryPages});
   const provider = await WebAssembly.compile(providerBytes);
   assert.deepEqual(WebAssembly.Module.imports(provider),[{module:'machine',name:'memory',kind:'memory'}]);
   const vm = (await WebAssembly.instantiate(provider,{machine:{memory}})).exports;
@@ -73,7 +73,10 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     table:vm.vm_table,far_return:vm.vm_return,control:vm.vm_control,iret:vm.vm_iret,msr:vm.vm_msr,interrupt_flag:vm.vm_flag,
     software_interrupt:vm.vm_software_interrupt,system_transfer:vm.vm_system,floating_wait:vm.vm_floating_wait,checkpoint:vm.vm_checkpoint,descriptor:vm.vm_descriptor,far_transfer:vm.vm_transfer,
     io:vm.vm_io,time:vm.vm_time,debug:vm.vm_debug}};
-  let engines = new CompiledModules(engineImports,{maximumEntries:1024,maximumBytes:262144});
+  // Construction references can retain two MiB of exact topologies. Keep
+  // their byte index in the same bounded lifetime, otherwise still-resident
+  // bodies get compiled again merely because their index was evicted first.
+  let engines = new CompiledModules(engineImports,{maximumEntries:8192,maximumBytes:2097152});
   let prepared=new PreparedCode();
   let compilerOutput = cc.compiler_arena_min();
   let compilerReport = compilerOutput + 65536;
@@ -200,7 +203,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     assert(output>=replacement.compiler_static_min()&&output+65536+80<=input,'replacement remains inside private construction reservation');
     cc=replacement;compilerOutput=output;compilerReport=output+65536;
     compilerOutputWitness=new CompilerOutput(cold,compilerOutput,65536,compilerReport,memory);
-    engines=new CompiledModules(engineImports,{maximumEntries:1024,maximumBytes:262144});prepared=new PreparedCode();
+    engines=new CompiledModules(engineImports,{maximumEntries:8192,maximumBytes:2097152});prepared=new PreparedCode();
     assert.equal(vm.vm_source_versions_start(versionOffset,versionCount,machineGeneration),0);
     assert.equal(rip(),oldRip);assert.equal(view.getBigUint64(base+1128,true),oldRetired);
     compilerReplacements.push({epoch:++compilerEpoch,entry:refusal.entry,bytes:bytes.length,retired});return true;
@@ -215,9 +218,19 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   function systemProfile(){
     if(typeof vm.vm_system_profile!=='function')return null;
     const count=vm.vm_system_profile(0n,12),rows=[];
-    for(let serial=count>128n?count-127n:1n;serial<=count;++serial)
-      rows.push({serial:String(serial),words:Array.from({length:12},(_,word)=>`0x${BigInt.asUintN(64,vm.vm_system_profile(serial,word)).toString(16)}`)});
-    return {count:String(count),columns:['operation','rip','cr3','retired','rax','rdi','rsi','rdx','r10','r8','r9','nextRip'],rows};
+    for(let serial=count>128n?count-127n:1n;serial<=count;++serial){
+      const row={serial:String(serial),words:Array.from({length:12},(_,word)=>`0x${BigInt.asUintN(64,vm.vm_system_profile(serial,word)).toString(16)}`)};
+      rows.push(row);
+    }
+    const paths=[];
+    if(typeof vm.vm_system_path_word==='function'){
+      const total=vm.vm_system_profile_path(0n,64);
+      for(let rank=0;rank<Math.min(128,Number(total));++rank){const serial=BigInt(rank+1),length=Number(vm.vm_system_profile_path(serial,64));
+        const row={words:Array.from({length:13},(_,word)=>`0x${BigInt.asUintN(64,vm.vm_system_path_word(rank,word)).toString(16)}`)};
+        row.path=length>0&&length<=64?new TextDecoder().decode(Uint8Array.from({length},(_,byte)=>Number(vm.vm_system_profile_path(serial,byte)))).replace(/\0.*$/s,''):length?'[not resident]':'[descriptor]';paths.push(row);
+      }
+    }
+    return {count:String(count),columns:['operation','rip','cr3','retired','rax','rdi','rsi','rdx','r10','r8','r9','nextRip'],rows,paths};
   }
   function reportProgress() {
     reportedRetired=retired;reportedAdmissions=admissions;
@@ -619,15 +632,19 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       // The C mask is a validated demand hint, never execution authority.
       // One host refresh per distinct cohort rank avoids per-cut Map churn.
       if(cutBudget>1){
-        const mask=vm.vm_source_demands();
-        for(let bank=0;bank<2;++bank){
+        const banked=typeof vm.vm_source_demand_banks==='function';
+        let banks=banked?vm.vm_source_demand_banks()>>>0:1;
+        while(banks){const group=31-Math.clz32(banks&-banks);banks=(banks&(banks-1))>>>0;
+          const mask=banked?vm.vm_source_demand_word(group):vm.vm_source_demands();
+          for(let bank=0;bank<2;++bank){
           let bits=Number(bank ? mask>>32n : mask&0xffffffffn)>>>0;
           while(bits){
-            const rank=bank*32+31-Math.clz32(bits&-bits);bits=(bits&(bits-1))>>>0;
+            const rank=group*64+bank*32+31-Math.clz32(bits&-bits);bits=(bits&(bits-1))>>>0;
             assert(rank<sourceCapacity && installedSlots.has(firstSlot+rank),'C demand needs its installed engine');
             if(demandedAfterMiss[rank]!==sourceMisses){
               engines.demand(installedSlots.get(firstSlot+rank));demandedAfterMiss[rank]=sourceMisses;
             }
+          }
           }
         }
       }

@@ -39,6 +39,7 @@ WASM_FLAGS += -Wl,--export=vm_source_versions_start,--export=vm_source_stamp
 WASM_FLAGS += -Wl,--export=vm_source_capacity,--export=vm_source_metadata_bytes
 WASM_FLAGS += -Wl,--export=vm_entry_abi
 WASM_FLAGS += -Wl,--export=vm_source_demands,--export=vm_source_admissions,--export=vm_run_interrupted
+WASM_FLAGS += -Wl,--export=vm_source_demand_banks,--export=vm_source_demand_word
 WASM_FLAGS += -Wl,--export=vm_run_source
 WASM_FLAGS += -Wl,--export=vm_directory_bind,--export=vm_directory_query,--export=vm_directory_request
 WASM_FLAGS += -Wl,--export=vm_directory_node_commit,--export=vm_directory_object_commit
@@ -49,10 +50,11 @@ WASM_FLAGS += -Wl,--export=vm_directory_image_select
 WASM_FLAGS += -Wl,--export=vm_floating_wait
 WASM_FLAGS += -Wl,--export=vm_checkpoint
 ifeq ($(WASM_PROFILE),1)
-WASM_FLAGS += -DVM_SOURCE_PROFILE -Wl,--export=vm_source_profile,--export=vm_system_profile
+WASM_FLAGS += -DVM_SOURCE_PROFILE -Wl,--export=vm_source_profile,--export=vm_system_profile,--export=vm_system_profile_path,--export=vm_system_path_word
 endif
 SOURCES = core/resource.c core/memory.c core/mmu.c core/boot.c core/supply.c core/execution.c core/segments.c core/tables.c core/control.c core/registers.c core/msr.c core/debug.c core/exception.c core/interrupt.c core/source.c core/clock.c core/pit.c core/pic.c core/rtc.c core/uart.c core/console.c core/io.c
 SOURCES += core/system.c
+SOURCES += core/source-banks.c
 SOURCES += core/descriptor.c
 SOURCES += core/transfer.c
 SOURCES += core/directory.c
@@ -63,6 +65,12 @@ WASM_SOURCES = wasm/entry.c $(SOURCES) $(ARTIFACT_PROVIDER_SOURCES)
 OBJECTS = $(patsubst core/%.c,$(BUILD)/%.o,$(SOURCES))
 
 .PHONY: all check wasm clean
+.PHONY: source-banks-check
+check: source-banks-check
+source-banks-check: $(BUILD)/source-banks-check
+	$(BUILD)/source-banks-check
+$(BUILD)/source-banks-check: check/source-banks.c $(BUILD)/libvm.a
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
 .PHONY: far-transfer-check
 check: far-transfer-check
 far-transfer-check: $(BUILD)/far-transfer-check

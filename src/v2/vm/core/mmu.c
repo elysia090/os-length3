@@ -1,6 +1,7 @@
 #include <vm/mmu.h>
 #include "memory-internal.h"
 #include <stddef.h>
+#include <stdint.h>
 
 #define PHYSICAL_MASK 0x000000fffffff000ull
 #define NX (1ull << 63u)
@@ -30,9 +31,9 @@ static machine_result exception(pl_u8 *port, pl_u64 address, pl_u32 vector, pl_u
 
 static machine_result resident_word(vm_memory *memory, pl_u8 *port,
                                     pl_u64 address, pl_u32 access, pl_u32 bytes,
-                                    pl_u8 **result, pl_u32 *discard)
+                                    pl_u8 **result, pl_u32 *discard,int observe)
 {
-    const vm_memory_page *page = vm_memory_find(memory, address);
+    const vm_memory_page *page = observe?vm_memory_find_readonly(memory,address):vm_memory_find(memory, address);
     if (!page || (page->kind != VM_MEMORY_RAM && page->kind != VM_MEMORY_ROM)
             || (page->rights & access) != access)
         return pending(port, address, bytes, access);
@@ -57,10 +58,10 @@ static int context_supported(const vm_mmu_context *context)
 
 static machine_result walk(vm_memory *memory, pl_u8 *port,
                             const vm_mmu_context *context, pl_u64 address,
-                            pl_u32 access, pl_u64 *physical)
+                            pl_u32 access, pl_u64 *physical,int observe)
 {
     vm_walk_proof *retained=&memory->walks[(address>>12u)&63u];
-    if(retained->depth&&retained->depth<=4u&&retained->virtual_page==(address&~4095ull)
+    if(!observe&&retained->depth&&retained->depth<=4u&&retained->virtual_page==(address&~4095ull)
         &&retained->access==access&&retained->cpl==context->cpl
         &&retained->control[0]==context->cr0&&retained->control[1]==context->cr3
         &&retained->control[2]==context->cr4&&retained->control[3]==context->efer){
@@ -80,7 +81,7 @@ static machine_result walk(vm_memory *memory, pl_u8 *port,
         }
     }
 #ifdef VM_SOURCE_PROFILE
-    ++memory->walk_proof_misses;
+    if(!observe)++memory->walk_proof_misses;
 #endif
     vm_walk_proof fresh={.virtual_page=address&~4095ull,
         .control={context->cr0,context->cr3,context->cr4,context->efer},.cpl=context->cpl,.access=access};
@@ -97,7 +98,7 @@ static machine_result walk(vm_memory *memory, pl_u8 *port,
         pl_u64 at = table + ((address >> shifts[level]) & 511u) * 8u;
         pl_u8 *entry_bytes = NULL;
         pl_u32 discard = 0u;
-        machine_result status = resident_word(memory, port, at, MACHINE_MEMORY_READ, 8u, &entry_bytes,&discard);
+        machine_result status = resident_word(memory, port, at, MACHINE_MEMORY_READ, 8u, &entry_bytes,&discard,observe);
         if (status) return status;
         pl_u64 entry = vm_memory_load(entry_bytes, 8u);
         if (!(entry & PRESENT)) return exception(port, address, 14u, error);
@@ -115,9 +116,9 @@ static machine_result walk(vm_memory *memory, pl_u8 *port,
                 || (write && !writable && (is_user || (context->cr0 & 0x10000u)))))
             return exception(port, address, 14u, error | 1u);
         pl_u32 set = ACCESSED | (leaf && write ? DIRTY : 0u);
-        if (set & ~(pl_u32)entry) {
+        if (!observe&&(set & ~(pl_u32)entry)) {
             pl_u8 *writable_entry = NULL;
-            status = resident_word(memory, port, at, MACHINE_MEMORY_WRITE, 8u, &writable_entry,NULL);
+            status = resident_word(memory, port, at, MACHINE_MEMORY_WRITE, 8u, &writable_entry,NULL,0);
             if (status) return status;
             /* Serialized, pinned owner: no competing CPU/device/table writer
              * can occur between this load and store. This is not SMP CAS. */
@@ -127,7 +128,7 @@ static machine_result walk(vm_memory *memory, pl_u8 *port,
                 memory->write_touched = 1u;
             }
         }
-        const vm_memory_page *owner=vm_memory_find(memory,at);
+        const vm_memory_page *owner=observe?vm_memory_find_readonly(memory,at):vm_memory_find(memory,at);
         pl_u64 current_entry=vm_memory_load(entry_bytes,8u);
         /* A ROM walk with missing A/D still performs the write-rights check
          * on every access. It has no successful substitution witness. */
@@ -137,12 +138,31 @@ static machine_result walk(vm_memory *memory, pl_u8 *port,
         if (leaf) {
             pl_u64 offset_mask = (1ull << shift) - 1u;
             *physical = (entry & PHYSICAL_MASK & ~offset_mask) | (address & offset_mask);
-            if(retainable){fresh.physical_page=*physical&~4095ull;fresh.depth=level+1u;*retained=fresh;}
+            if(!observe&&retainable){fresh.physical_page=*physical&~4095ull;fresh.depth=level+1u;*retained=fresh;}
             return 0u;
         }
         table = entry & PHYSICAL_MASK;
     }
     return machine_result_make(MACHINE_RESULT_ENTRY_MAP, 0u);
+}
+int vm_mmu_observe_string(vm_memory *memory,const vm_mmu_context *context,pl_u64 address,pl_u8 target[64])
+{
+    if(!memory||!memory->bytes||!target||!context_supported(context))return -1;
+    uintptr_t output=(uintptr_t)target,storage=(uintptr_t)memory->bytes;
+    if(output>UINTPTR_MAX-64u||storage>UINTPTR_MAX-memory->byte_count
+        ||(output<storage+memory->byte_count&&storage<output+64u))return -1;
+    pl_u8 port[sizeof(machine_memory_port)]={0};pl_u32 copied=0u;
+    while(copied<64u){pl_u64 current=address+copied,physical;
+        if(current<address||(current>>47u!=0u&&current>>47u!=0x1ffffu)
+            ||walk(memory,port,context,current,MACHINE_MEMORY_READ,&physical,1))return -1;
+        const vm_memory_page *page=vm_memory_find_readonly(memory,physical);
+        if(!page||(page->kind!=VM_MEMORY_RAM&&page->kind!=VM_MEMORY_ROM)||!(page->rights&MACHINE_MEMORY_READ)
+            ||(pl_u64)page->offset+4096u>memory->byte_count)return -1;
+        pl_u32 offset=(pl_u32)(physical&4095u),count=4096u-offset;if(count>64u-copied)count=64u-copied;
+        const pl_u8 *source=memory->bytes+page->offset+offset;
+        for(pl_u32 n=0u;n<count;++n){pl_u8 byte=source[n];target[copied++]=byte;if(!byte)return (int)copied;}
+    }
+    return 64;
 }
 
 static machine_result preflight(vm_memory *memory, pl_u32 port_offset,
@@ -174,13 +194,13 @@ static machine_result preflight(vm_memory *memory, pl_u32 port_offset,
     pl_u32 consumed = 0u;
     while (consumed < bytes) {
         pl_u64 current = address + consumed, physical = 0u;
-        machine_result status = walk(memory, port, context, current, access, &physical);
+        machine_result status = walk(memory, port, context, current, access, &physical,0);
         if (status) return status;
         pl_u32 length = 4096u - (pl_u32)(current & 4095u);
         if (length > bytes - consumed) length = bytes - consumed;
         pl_u8 *fragment = NULL;
         pl_u32 discard = 0u;
-        status = resident_word(memory, port, physical, access & 3u, length, &fragment,&discard);
+        status = resident_word(memory, port, physical, access & 3u, length, &fragment,&discard,0);
         if (status) return status;
         ready->discard |= discard << ready->parts;
         ready->offsets[ready->parts] = (pl_u32)(fragment - memory->bytes);

@@ -17,6 +17,12 @@ typedef struct {
     pl_u64 address, generation;
     pl_u32 offset, bytes;
 } vm_code_page;
+/* Privileged diagnostic snapshot only. At most two resident page walks;
+ * no A/D update, port/reservation/cache mutation or missing-page supply.
+ * Return bytes including NUL,64 for truncation,or -1 if unavailable. The
+ * target is a private64-byte buffer, disjoint from physical guest storage. */
+int vm_mmu_observe_string(vm_memory *physical,const vm_mmu_context *context,
+                          pl_u64 address,pl_u8 target[64]);
 
 /* The directory describes resident PHYSICAL pages, not guest translations.
  * All context/rows/residency are pinned by a serialized single-vCPU owner.

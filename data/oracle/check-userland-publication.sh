@@ -3,7 +3,10 @@
 # These are oracle inputs, never substitutions for published release bytes.
 set -eu
 candidate_root=0
-if [ "$#" = 1 ] && [ "$1" = --candidate-root ];then candidate_root=1;elif [ "$#" != 0 ];then exit 2;fi
+init_profile=0
+kernel=0
+for option;do case "$option" in --candidate-root)candidate_root=1;;--init-profile)init_profile=1;;--kernel)kernel=1;;*)exit 2;;esac;done
+if [ "$init_profile" = 1 ] && [ "$candidate_root" != 1 ];then exit 2;fi
 scratch=$(mktemp -d /tmp/length3-publication-XXXXXX)
 trap 'rm -rf -- "$scratch"' EXIT HUP INT TERM
 compiler=src/v2/postlink-compiler/build/postlink-compiler
@@ -68,6 +71,39 @@ if [ "$candidate_root" = 1 ];then
     unsquashfs -d "$scratch/candidate-root" /dev/vdf >/dev/null
     cat "$scratch/busybox-optimized" >"$scratch/candidate-root/bin/busybox"
     cat "$scratch/tar-optimized" >"$scratch/candidate-root/usr/bin/tar"
+    if [ "$init_profile" = 1 ];then
+        mkdir -p data/upstream "$scratch/init-output" "$scratch/init-forest"
+        tar -xf /dev/vdi -C data/upstream
+        # Reuse the authoritative recipe and package postlink transaction,
+        # not another hand-written service build or opcode substitution.
+        init_set=$(QM_INIT_BUILD_ROOT="$scratch/init-build" QM_OUTPUT_ROOT="$scratch/init-output" QM_JOBS=4 bash data/distribution/build-init.sh)
+        test "$(head -n 1 "$init_set")" = package-root-set-v1
+        tail -n +2 "$init_set" | while IFS="$(printf '\t')" read -r package root;do
+            mkdir "$scratch/init-forest/$package"
+            cp -al "$root/." "$scratch/init-forest/$package/"
+        done
+        make -j4 -C src/v2 all
+        bash data/distribution/optimize-payload.sh "$scratch/init-forest" "$scratch/init-optimized" \
+            src/v2/build/artifact-executable-stage "$verify"
+        for package in "$scratch/init-optimized"/*;do
+            bash data/distribution/clone-tree.sh "$package" "$scratch/candidate-root"
+        done
+        printf 'userland candidate: locked init profile rebuilt through authoritative recipe/postlink\n'
+    fi
+    roles='initramfs system.squashfs'
+    if [ "$kernel" = 1 ];then
+        # Reuse the official kernel recipe and Kbuild wrapper. No host/WSL
+        # kernel or separately invented image enters this diagnostic.
+        head -c "$LENGTH3_KERNEL_SOURCE_BYTES" /dev/vdj >"data/upstream/linux-$LINUX_VERSION.tar.xz"
+        QM_LINKED_KERNEL_ROOT="$scratch/kernel-build" QM_JOBS=4 bash data/build-linked-kernel.sh bzImage
+        kernel_build=$(find "$scratch/kernel-build/output" -mindepth 1 -maxdepth 1 -type d)
+        test -f "$kernel_build/vmlinux.unstripped"
+        "$compiler" "$kernel_build/vmlinux.unstripped" -o "$scratch/kernel-optimized.elf"
+        "$verify" "$kernel_build/vmlinux.unstripped" "$scratch/kernel-optimized.elf"
+        bash data/oracle/package-postlinked-kernel.sh "$scratch/kernel-optimized.elf" "$kernel_build" "$scratch/candidate.kernel"
+        cat "$scratch/candidate.kernel" >"$scratch/candidate-root/boot/kernel"
+        roles="kernel $roles"
+    fi
     mkdir "$scratch/boot-root"
     (cd "$scratch/boot-root";cpio -id </dev/vdg)
     cat "$scratch/busybox-optimized" >"$scratch/boot-root/bin/busybox"
@@ -77,7 +113,7 @@ if [ "$candidate_root" = 1 ];then
     output_device=/dev/vdh1
     if [ ! -b "$output_device" ];then output_device=/dev/vdh;fi
     mount -t vfat "$output_device" "$scratch/output"
-    for role in initramfs system.squashfs;do
+    for role in $roles;do
         file=$scratch/candidate.$role
         cp "$file" "$scratch/output/$role"
         printf 'oracle-candidate %s %s %s\n' "$role" "$(wc -c <"$file" | tr -d ' ')" "$(sha256sum "$file" | cut -d ' ' -f 1)"

@@ -91,6 +91,22 @@ static void walk_proof_models(void)
 int main(void)
 {
     walk_proof_models();
+    /* Observation uses the SAME walk, but cannot create A/D writes, proof
+     * rows, ports, reservations or counters. Only resident fragments exist. */
+    for(pl_u32 mode=0u;mode<4u;++mode){vm_mmu_context cpu=context();cpu.cpl=3u;reset(base);
+        const char path[]="/run/service/s6rc-fdholder";pl_u64 address=base+4087u;
+        for(pl_u32 n=0u;n<sizeof path;++n){pl_u32 at=4087u+n;arena[at<4096u?pages[4].offset+at:pages[5].offset+at-4096u]=(pl_u8)path[n];}
+        if(mode==1u)pages[5].rights=0u;
+        if(mode==2u)cpu.cr4|=1ull<<21u;
+        if(mode==3u)put(entries[3],0u);
+        vm_memory before=memory;memcpy(saved,arena,sizeof arena);pl_u8 observed[64]={0};
+        int size=vm_mmu_observe_string(&memory,&cpu,address,observed);
+        EXPECT(mode?size==-1:size==(int)sizeof path);
+        if(!mode)EXPECT(!memcmp(observed,path,sizeof path));
+        EXPECT(!memcmp(&before,&memory,sizeof memory));EXPECT(!memcmp(saved,arena,sizeof arena));
+        EXPECT(vm_mmu_observe_string(&memory,&cpu,address,arena+1024u)==-1);
+        EXPECT(!memcmp(saved,arena,sizeof arena));
+    }
     /* Read-only 128-bit operands have the same complete preflight, without
      * the aligned RMW pair's write rights or retained reservation. */
     for (pl_u32 mode=0u;mode<8u;++mode) {

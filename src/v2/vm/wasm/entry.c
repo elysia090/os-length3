@@ -14,6 +14,7 @@
 #include <vm/exception.h>
 #include <vm/interrupt.h>
 #include <vm/source.h>
+#include <vm/source-banks.h>
 #include <vm/directory.h>
 #include <vm/module.h>
 #include <machine/state.h>
@@ -45,9 +46,11 @@ static void artifact_witness_clear(void)
     artifact_module=(vm_module){0};artifact_image=(vm_image_module){0};
 }
 static pl_u32 source_limit;
-static pl_u64 source_demands;
+static pl_u64 source_demands[VM_SOURCE_BANKS];
+static pl_u32 source_demand_banks;
 static pl_u32 source_admissions, run_interrupted;
-static vm_sources sources;
+static vm_source_banks source_banks;
+#define sources (source_banks.banks[source_banks.active])
 static vm_source_versions source_versions;
 static pl_u64 source_version_ticket;
 #ifdef VM_SOURCE_PROFILE
@@ -57,6 +60,18 @@ static pl_u64 source_profile[11];
 /* Opt-in bounded transfer observations. No guest bytes are read and no
  * provider is called: this cannot alter translation A/D bits or a frontier. */
 static pl_u64 system_profile[128][12],system_profile_count;
+static pl_u8 system_paths[128][64];static pl_i32 system_path_bytes[128];
+static pl_u64 system_path_rows[128][13],system_path_count;
+pl_u64 vm_system_path_word(pl_u32 rank,pl_u32 word)
+{return rank<system_path_count&&rank<128u&&word<13u?system_path_rows[rank][word]:~0ull;}
+pl_u64 vm_system_profile_path(pl_u64 serial,pl_u32 byte)
+{
+    if(!serial&&byte==64u)return system_path_count;
+    if(!serial||serial>system_path_count||serial>128u)return ~0ull;
+    pl_u32 row=(pl_u32)(serial-1u);
+    if(byte==64u)return (pl_u64)(pl_i64)system_path_bytes[row];
+    return byte<64u&&system_path_bytes[row]>0&&byte<(pl_u32)system_path_bytes[row]?system_paths[row][byte]:~0ull;
+}
 pl_u64 vm_system_profile(pl_u64 serial,pl_u32 word)
 {
     if(word==12u)return system_profile_count;
@@ -68,11 +83,10 @@ pl_u64 vm_source_profile(pl_u32 index)
 { return index<11u ? source_profile[index] : index==11u?resident.walk_proof_hits:index==12u?resident.walk_proof_misses:0u; }
 static void source_profile_write(void *owner, pl_u32 offset, pl_u32 bytes)
 {
-    vm_sources *owned=owner;
-    pl_u64 before=owned->valid;pl_u32 pending=owned->pending;
-    vm_sources_write(owner,offset,bytes);
-    source_profile[9]+=(pl_u64)__builtin_popcountll(before&~owned->valid);
-    source_profile[10]+=(pl_u64)(pending && !owned->pending);
+    vm_source_banks *owned=owner;pl_u64 before=owned->revoked,pending=owned->cancelled;
+    vm_source_banks_write(owner,offset,bytes);
+    source_profile[9]+=owned->revoked-before;
+    source_profile[10]+=owned->cancelled-pending;
 }
 #define SOURCE_WRITE_OBSERVER source_profile_write
 static void source_profile_before(const vm_code_page *page, pl_u64 entry, pl_u32 limit)
@@ -99,7 +113,7 @@ static void source_profile_before(const vm_code_page *page, pl_u64 entry, pl_u32
 }
 #endif
 #ifndef VM_SOURCE_PROFILE
-#define SOURCE_WRITE_OBSERVER vm_sources_write
+#define SOURCE_WRITE_OBSERVER vm_source_banks_write
 #endif
 static pl_u32 run_source_rank=VM_SOURCE_ROWS;
 static void source_effect(void *owner,pl_u32 offset,pl_u32 bytes)
@@ -127,10 +141,10 @@ static machine_result call_entry(void *pointer, pl_u32 slot, pl_u64 binding, pl_
 static machine_result source_entry(void *pointer, pl_u64 address, const vm_execution_row **row);
 static int clock_boundary_pending(void)
 { return clock_owner.stage && clock_owner.key==VM_CLOCK_BOUNDARY_KEY; }
-pl_u32 vm_source_capacity(void) { return VM_SOURCE_ROWS; }
+pl_u32 vm_source_capacity(void) { return VM_SOURCE_CAPACITY; }
 pl_u32 vm_entry_abi(void) { return MACHINE_ENTRY_ABI_VERSION; }
 pl_u32 vm_halted(void) { return activity.state == MACHINE_ACTIVITY_HALTED; }
-pl_u32 vm_source_metadata_bytes(void) { return sizeof(vm_sources); }
+pl_u32 vm_source_metadata_bytes(void) { return sizeof(vm_source_banks); }
 
 pl_u32 vm_slot_min(void)
 {
@@ -153,6 +167,7 @@ void vm_close(void)
 #ifdef VM_SOURCE_PROFILE
     for(pl_u32 i=0u;i<11u;++i)source_profile[i]=0u;
     system_profile_count=0u;
+    system_path_count=0u;
 #endif
     table_frontier=(vm_table_frontier){0};
     vm_clock_close(&clock_owner); vm_pit_reset(&pit); vm_pic_reset(&pic);
@@ -161,7 +176,7 @@ void vm_close(void)
     vm_uart_reset(&uart);
     input_sequence=0u;input_byte=0u;
     post=(vm_post){0};
-    vm_sources_open(&sources,0u,vm_slot_min());
+    vm_source_banks_open(&source_banks,0u,vm_slot_min());
     source_versions=(vm_source_versions){0};
     vm_supply_reset(&supply);
     delivery = (vm_fault_delivery){0};
@@ -177,7 +192,8 @@ void vm_close(void)
     vm_directory_close(&artifact_directory);
     artifact_witness_clear();artifact_image_source_bound=0u;
     source_limit = 0u;
-    source_demands=0u;source_admissions=run_interrupted=0u;
+    for(pl_u32 b=0u;b<VM_SOURCE_BANKS;++b)source_demands[b]=0u;
+    source_demand_banks=0u;source_admissions=run_interrupted=0u;
     run_source_rank=VM_SOURCE_ROWS;
 }
 
@@ -275,8 +291,8 @@ int vm_open(pl_u32 base, pl_u32 bytes, pl_u32 reserved,
     if (vm_memory_open(&resident, (pl_u8 *)(uintptr_t)base, bytes, reserved,
                        (vm_memory_page *)(uintptr_t)directory,
                        count, capacity, (vm_memory_branch *)(uintptr_t)branches, generation)) return -1;
-    vm_sources_open(&sources,generation,vm_slot_min());
-    resident.before_write = source_effect; resident.write_owner = &sources;
+    vm_source_banks_open(&source_banks,generation,vm_slot_min());
+    resident.before_write = source_effect; resident.write_owner = &source_banks;
     arena_base = base;
     boot = prepared_boot; boot_header = header; boot_header_bytes = header_bytes; boot_command = command;
     return 0;
@@ -299,7 +315,7 @@ int vm_bind_state(pl_u32 state)
     table_frontier=(vm_table_frontier){0};
     vm_clock_abort(&clock_owner);
     vm_console_abort(&console_owner);
-    vm_sources_open(&sources,resident.generation,vm_slot_min());
+    vm_source_banks_open(&source_banks,resident.generation,vm_slot_min());
     delivery = (vm_fault_delivery){0};
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
@@ -319,7 +335,7 @@ int vm_bind_segments(pl_u32 segments)
     table_frontier=(vm_table_frontier){0};
     vm_clock_abort(&clock_owner);
     vm_console_abort(&console_owner);
-    vm_sources_open(&sources,resident.generation,vm_slot_min());
+    vm_source_banks_open(&source_banks,resident.generation,vm_slot_min());
     delivery = (vm_fault_delivery){0};
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
@@ -361,7 +377,7 @@ static int execution_record(pl_u32 rows, pl_u32 bytes)
 int vm_source_versions_start(pl_u32 words,pl_u32 count,pl_u64 generation)
 {
     if(generation!=resident.generation||!count||count>0x100000u||source_version_ticket==~0ull
-        ||!execution_record(words,count*4u)||sources.valid||sources.pending||execution.generation||execution.in_call
+        ||!execution_record(words,count*4u)||!vm_source_banks_empty(&source_banks)||execution.generation||execution.in_call
         ||delivery.stage||table_frontier.stage||clock_owner.stage||resident.reservation.parts)return -1;
     if(vm_source_versions_open(&source_versions,(pl_u32 *)(uintptr_t)words,count,generation))return -1;
     ++source_version_ticket;return 0;
@@ -510,8 +526,10 @@ int vm_directory_source_publish(pl_u64 generation,pl_u64 ticket,pl_u32 row_targe
     /* Install the exact C-selected engine export in the reserved typed slot
      * first. As with ordinary trusted compilation, table identity/type and
      * immutable buffer pinning are supervisor obligations, not opcode checks. */
-    return vm_sources_publish(&sources,selected.source_bytes,selected.source_instructions,selected.operand_binding,
+    int published=vm_sources_publish(&sources,selected.source_bytes,selected.source_instructions,selected.operand_binding,
         (vm_execution_row *)(uintptr_t)row_target);
+    if(!published)vm_source_banks_published(&source_banks);
+    return published;
 }
 
 /* Bind the source identity from an authenticated exact (0,0) source row.
@@ -582,7 +600,9 @@ int vm_directory_image_publish(pl_u64 generation,pl_u64 ticket,pl_u32 row_target
     if(!execution_record(row_target,sizeof(vm_execution_row))
         || !separate(row_target,sizeof(vm_execution_row),artifact_module_offset,artifact_module_bytes))return VM_MODULE_ERROR_INPUT;
     vm_module_entry selected;int status=directory_image_entry(generation,ticket,&selected);if(status)return status;
-    return vm_sources_publish(&sources,selected.source_bytes,1u,0u,(vm_execution_row *)(uintptr_t)row_target);
+    int published=vm_sources_publish(&sources,selected.source_bytes,1u,0u,(vm_execution_row *)(uintptr_t)row_target);
+    if(!published)vm_source_banks_published(&source_banks);
+    return published;
 }
 
 int vm_page_prepare(pl_u32 port, pl_u32 record)
@@ -614,7 +634,9 @@ static void after_guest_write(pl_u64 admitted)
     if (!resident.write_touched) return;
     /* Valid bits can only be removed during this serialized physical effect:
      * no guest import can publish a source. Equality therefore proves the
-     * write is disjoint from ALL retained executable extents. The owned next
+     * write is disjoint from the executing bank's retained extents. Other
+     * banks are invalidated by the same physical observer before this check.
+     * The owned next
      * cut still rewalks the MMU and checks original context/physical identity.
      * Flat directories retain the coarse fence. A resumed source instruction
      * can use its exact still-owned row, not a fresh virtual lookup: the next
@@ -748,6 +770,7 @@ machine_result vm_source_query(pl_u32 port, pl_u64 entry, pl_u32 limit,
     machine_result result = vm_mmu_code_page(&resident,port - arena_base,&context,entry,&page);
     if (resident.write_touched) execution.generation = 0u;
     if (result) return memory_result(port,result);
+    (void)vm_source_banks_select(&source_banks,entry);
 #ifdef VM_SOURCE_PROFILE
     int was_full=sources.valid==~0ull;
     source_profile_before(&page,entry,limit);
@@ -784,14 +807,16 @@ int vm_source_publish(pl_u32 bytes, pl_u32 instructions, pl_u32 operand_binding,
             || !execution_record(row_target,sizeof(vm_execution_row))) {
         sources.pending = 0u; return -1;
     }
-    return vm_sources_publish(&sources,bytes,instructions,operand_binding,
+    int published=vm_sources_publish(&sources,bytes,instructions,operand_binding,
         (vm_execution_row *)(uintptr_t)row_target);
+    if(!published)vm_source_banks_published(&source_banks);
+    return published;
 }
 int vm_sources_reset(void)
 {
     run_source_rank=VM_SOURCE_ROWS;
     if (delivery.stage || table_frontier.stage || execution.continuation.slot) return -1;
-    vm_sources_open(&sources,resident.generation,vm_slot_min());
+    vm_source_banks_open(&source_banks,resident.generation,vm_slot_min());
     source_versions=(vm_source_versions){0};
     vm_execution_close(&execution); return 0;
 }
@@ -1213,6 +1238,12 @@ machine_result vm_system(pl_u32 port, pl_u32 operation, pl_u64 next_rip)
     pl_u64 observation[12]={operation,before->rip,before->cr3,before->retired,
         before->registers[0],before->registers[7],before->registers[6],before->registers[2],
         before->registers[10],before->registers[8],before->registers[9],next_rip};
+    pl_u8 observed_path[64]={0};pl_i32 observed_bytes=0;
+    int path_event=operation==MACHINE_SYSTEM_CALL64&&(before->registers[0]==80u||before->registers[0]==81u);
+    if(path_event&&before->registers[0]==80u&&system_path_count<128u){
+        vm_mmu_context context={before->cr0,before->cr3,before->cr4,before->efer,(pl_u32)before->system[MACHINE_SYSTEM_CS]&3u};
+        observed_bytes=vm_mmu_observe_string(&resident,&context,before->registers[7],observed_path);
+    }
 #endif
     machine_result result=vm_system_transfer(&resident,port-arena_base,
         (machine_state *)(uintptr_t)state_offset,(machine_segments *)(uintptr_t)segments_offset,operation,next_rip);
@@ -1220,7 +1251,16 @@ machine_result vm_system(pl_u32 port, pl_u32 operation, pl_u64 next_rip)
         execution.generation=0u;
 #ifdef VM_SOURCE_PROFILE
         if(system_profile_count!=~0ull){pl_u64 *row=system_profile[system_profile_count&127u];
-            for(pl_u32 i=0u;i<12u;++i)row[i]=observation[i];++system_profile_count;}
+            for(pl_u32 i=0u;i<12u;++i)row[i]=observation[i];
+            ++system_profile_count;}
+        /* Preserve the first bounded directory transitions, not a growing
+         * history or a ring overwritten by unrelated polls/idle syscalls. */
+        if(path_event&&system_path_count!=~0ull){
+            if(system_path_count<128u){pl_u32 index=(pl_u32)system_path_count;
+                for(pl_u32 i=0u;i<12u;++i)system_path_rows[index][i]=observation[i];system_path_rows[index][12]=clock_owner.now;
+                system_path_bytes[index]=observed_bytes;for(pl_u32 i=0u;i<64u;++i)system_paths[index][i]=observed_path[i];}
+            ++system_path_count;
+        }
 #endif
     }
     return result;
@@ -1273,6 +1313,9 @@ int vm_bind_execution(pl_u32 rows, pl_u32 count, pl_u64 generation)
     /* A published source rank is already the immutable metadata owner. Do
      * not copy/sort its cohort into another directory. Flat trusted test
      * directories use this same dispatcher; they are not ISA fallbacks. */
+    if(!status&&count==1u&&directory_rows->slot>=vm_slot_min()
+            &&directory_rows->slot-vm_slot_min()<VM_SOURCE_CAPACITY)
+        source_banks.active=(directory_rows->slot-vm_slot_min())/VM_SOURCE_ROWS;
     if (!status && count==1u && sources.valid && directory_rows->slot>=sources.first_slot
             && directory_rows->slot-sources.first_slot<VM_SOURCE_ROWS) {
         pl_u32 rank=directory_rows->slot-sources.first_slot;
@@ -1321,6 +1364,7 @@ static machine_result source_entry(void *pointer, pl_u64 address, const vm_execu
     if (resident.write_touched) execution.generation=0u;
     if (result) return memory_result(owner->port,result);
     if (execution.generation!=resident.generation) return MACHINE_RESULT_STALE_GENERATION;
+    (void)vm_source_banks_select(&source_banks,address);
     int status=vm_sources_reuse(&sources,&first,0,address,limit,row);
     if (status==2) {
         resident.write_touched=0u;
@@ -1334,7 +1378,8 @@ static machine_result source_entry(void *pointer, pl_u64 address, const vm_execu
     if (status==1) *row=0; /* Exact prefix yield; no eviction or cold reservation. */
     else {
         run_source_rank=(*row)->slot-sources.first_slot;
-        source_demands |= 1ull << run_source_rank;
+        source_demands[source_banks.active] |= 1ull << run_source_rank;
+        source_demand_banks |= 1u << source_banks.active;
         ++source_admissions;
     }
     return 0u;
@@ -1419,7 +1464,9 @@ machine_result vm_checkpoint(pl_u32 port,pl_u32 operation,pl_u64 cursor,pl_u64 f
 machine_result vm_run(pl_u32 port, pl_u64 generation, pl_u32 maximum_cuts)
 {
     vm_memory_abort(&resident);
-    source_demands=0u;source_admissions=run_interrupted=0u;
+    pl_u32 demanded=source_demand_banks;
+    while(demanded){pl_u32 b=(pl_u32)__builtin_ctz(demanded);demanded&=demanded-1u;source_demands[b]=0u;}
+    source_demand_banks=0u;source_admissions=run_interrupted=0u;
     run_source_rank=VM_SOURCE_ROWS;
     execution.completed = 0u; execution.retired = 0u;
     if (!private_port(port))
@@ -1442,7 +1489,9 @@ pl_u32 vm_completed(void) { return execution.completed; }
 pl_u64 vm_source_retired(void) { return execution.retired; }
 /* Read-only supervisor observations of the LAST run. They are demand hints,
  * not source, execution or table admission authority. No retained history. */
-pl_u64 vm_source_demands(void) { return source_demands; }
+pl_u64 vm_source_demands(void) { return source_demands[0]; }
+pl_u32 vm_source_demand_banks(void) { return source_demand_banks; }
+pl_u64 vm_source_demand_word(pl_u32 bank) { return bank<VM_SOURCE_BANKS?source_demands[bank]:0u; }
 pl_u32 vm_source_admissions(void) { return source_admissions; }
 pl_u32 vm_run_interrupted(void) { return run_interrupted; }
 /* Failed-cut observation only. Borrow the last still-owned physical source,

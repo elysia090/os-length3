@@ -6,6 +6,28 @@ static void return_if(cut_lowering *cut)
     cut_const(cut, machine_result_make(MACHINE_RESULT_ENTRY_MAP, 0u));
     cut_op(cut, 0x0fu); cut_op(cut, 0x0bu);
 }
+/* Nonempty intervals are disjoint iff the lower interval ends before the
+ * upper interval starts. Then only the upper end needs a memory bound:
+ * lower.end <= upper.start <= upper.end <= memory.size. U32 pointers are
+ * widened BEFORE addition, so this implication includes the 4GiB edge. */
+static void validate_regions(cut_lowering *c,pl_u32 port_bytes)
+{
+    cut_get(c,0u);
+    if(port_bytes){cut_op(c,0x20u);wasm_writer_uleb(c->writer,1u);cut_op(c,0x72u);}
+    cut_i32_const(c,7u);cut_op(c,0x71u);return_if(c);
+    if(port_bytes){cut_get(c,0u);cut_op(c,0x20u);wasm_writer_uleb(c->writer,1u);cut_op(c,0x4du);
+        cut_op(c,0x04u);cut_op(c,0x7fu);
+        for(pl_u32 arm=0u;arm<2u;++arm){
+            pl_u32 lower=arm?1u:0u,upper=arm?0u:1u,low_size=arm?port_bytes:(pl_u32)sizeof(machine_state),high_size=arm?(pl_u32)sizeof(machine_state):port_bytes;
+            cut_op(c,0x20u);wasm_writer_uleb(c->writer,lower);cut_op(c,0xadu);cut_const(c,low_size);cut_op(c,0x7cu);
+            cut_op(c,0x20u);wasm_writer_uleb(c->writer,upper);cut_op(c,0xadu);cut_op(c,0x56u);
+            cut_op(c,0x20u);wasm_writer_uleb(c->writer,upper);cut_op(c,0xadu);cut_const(c,high_size);cut_op(c,0x7cu);
+            cut_op(c,0x3fu);cut_op(c,0u);cut_op(c,0xadu);cut_const(c,65536u);cut_op(c,0x7eu);cut_op(c,0x56u);cut_op(c,0x72u);
+            cut_op(c,arm?0x0bu:0x05u);
+        }return_if(c);
+    }else{cut_get(c,0u);cut_op(c,0xadu);cut_const(c,sizeof(machine_state));cut_op(c,0x7cu);
+        cut_op(c,0x3fu);cut_op(c,0u);cut_op(c,0xadu);cut_const(c,65536u);cut_op(c,0x7eu);cut_op(c,0x56u);return_if(c);}
+}
 
 static int flag_dependencies(cut_plan *plan)
 {
@@ -337,33 +359,9 @@ static int prologue(wasm_writer *writer,const cut_plan *plan,cut_lowering *state
     wasm_writer_uleb(writer, locals);
     wasm_writer_byte(writer, 0x7eu);
     if(permutation_local) {wasm_writer_uleb(writer,permutation_local);wasm_writer_byte(writer,0x7bu);}
-    cut_get(&cut, 0u); cut_op(&cut, 0x41u); wasm_writer_uleb(writer, 7u);
-    cut_op(&cut, 0x71u); return_if(&cut);
-    /* Validate the whole state reservation before any access. i64 arithmetic
-     * prevents wasm32 offset wrapping at the top of linear memory. */
-    cut_get(&cut, 0u); cut_op(&cut, 0xadu);
-    cut_const(&cut, sizeof(machine_state)); cut_op(&cut, 0x7cu);
-    cut_op(&cut, 0x3fu); cut_op(&cut, 0u); cut_op(&cut, 0xadu);
-    cut_const(&cut, 65536u); cut_op(&cut, 0x7eu);
-    cut_op(&cut, 0x56u); return_if(&cut);
-    if (cut.has_port) {
-        cut_op(&cut, 0x20u); wasm_writer_uleb(writer, 1u);
-        cut_op(&cut, 0x41u); wasm_writer_uleb(writer, 7u); cut_op(&cut, 0x71u); return_if(&cut);
-        cut_op(&cut, 0x20u); wasm_writer_uleb(writer, 1u); cut_op(&cut, 0xadu);
-        pl_u32 port_bytes=checkpoint?sizeof(machine_memory_checkpoint_port):plan->system_cut==CUT_SYSTEM_SELECTOR_QUERY?sizeof(machine_memory_pair_port):plan->system_cut==CUT_SYSTEM_FXRSTOR ? sizeof(machine_memory_extent_port)
-            : (plan->report.memory_bytes==10u||plan->report.memory_bytes==16u) ? sizeof(machine_memory_pair_port) : sizeof(machine_memory_port);
-        cut_const(&cut, port_bytes); cut_op(&cut, 0x7cu);
-        cut_op(&cut, 0x3fu); cut_op(&cut, 0u); cut_op(&cut, 0xadu);
-        cut_const(&cut, 65536u); cut_op(&cut, 0x7eu); cut_op(&cut, 0x56u); return_if(&cut);
-        /* Both ranges have been validated with non-wrapping i64 arithmetic. */
-        cut_op(&cut, 0x20u); wasm_writer_uleb(writer, 1u); cut_op(&cut, 0xadu);
-        cut_get(&cut, 0u); cut_op(&cut, 0xadu); cut_const(&cut, sizeof(machine_state));
-        cut_op(&cut, 0x7cu); cut_op(&cut, 0x54u);
-        cut_get(&cut, 0u); cut_op(&cut, 0xadu);
-        cut_op(&cut, 0x20u); wasm_writer_uleb(writer, 1u); cut_op(&cut, 0xadu);
-        cut_const(&cut, port_bytes); cut_op(&cut, 0x7cu); cut_op(&cut, 0x54u);
-        cut_op(&cut, 0x71u); return_if(&cut);
-    }
+    pl_u32 port_bytes=cut.has_port?(checkpoint?sizeof(machine_memory_checkpoint_port):plan->system_cut==CUT_SYSTEM_SELECTOR_QUERY?sizeof(machine_memory_pair_port):plan->system_cut==CUT_SYSTEM_FXRSTOR?sizeof(machine_memory_extent_port)
+        :(plan->report.memory_bytes==10u||plan->report.memory_bytes==16u)?sizeof(machine_memory_pair_port):sizeof(machine_memory_port)):0u;
+    validate_regions(&cut,port_bytes);
     cut_load(&cut,offsetof(machine_state,system)+(MACHINE_SYSTEM_DR0+7u)*8u);
     cut_const(&cut,255u); cut_op(&cut,0x83u); cut_op(&cut,0x50u); cut_op(&cut,0x45u);
     return_if(&cut);

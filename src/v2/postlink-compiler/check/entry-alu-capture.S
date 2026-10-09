@@ -14,6 +14,16 @@ _start:
     jne failed
     test %ebx, %ebx
     jne failed
+    mov $1, %eax
+    mov $3, %ebx
+    xor %edx, %edx
+    call sum
+    cmp $4, %eax
+    jne failed
+    cmp $4, %rdx
+    jne failed
+    test %ebx, %ebx
+    jne failed
     mov $42, %edi
     jmp finish
 failed:
@@ -30,6 +40,14 @@ transfer:
     movslq %eax, %rdx
     ret
 .size transfer,.-transfer
+.type sum,@function
+sum:
+    xchg %rax, %rdx
+    xchg %eax, %ebx
+    add %edx, %eax
+    movslq %eax, %rdx
+    ret
+.size sum,.-sum
 .section .note.GNU-stack,"",@progbits
 .section .debug_fixture,"",@progbits
 .fill 4096,1,0

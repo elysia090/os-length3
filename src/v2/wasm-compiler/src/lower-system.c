@@ -24,6 +24,7 @@ int cut_system_supported(const pl_x86_instruction *instruction)
 {
     if(pl_x86_x87_wait_supported(instruction))return CUT_SYSTEM_X87_WAIT;
     if(pl_x86_cache_barrier_supported(instruction))return CUT_SYSTEM_MEMORY_ORDER;
+    if(pl_x86_x87_round_supported(instruction))return CUT_SYSTEM_X87_ARITHMETIC;
     pl_x86_float_arithmetic ieee;if(pl_x86_float_arithmetic_lower(instruction,&ieee)
         &&(!ieee.source_memory||cut_memory_address_supported(instruction,&instruction->operands[1].value.memory)))return CUT_SYSTEM_FLOAT_ARITHMETIC;
     pl_x86_x87_bcd bcd;if(pl_x86_x87_bcd_lower(instruction,&bcd)
@@ -491,6 +492,7 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
     if(pl_x86_x87_integer_arithmetic_lower(instruction,&arithmetic)||pl_x86_x87_register_arithmetic_lower(instruction,&register_arithmetic)
         ||pl_x86_x87_memory_arithmetic_lower(instruction,&arithmetic)){
         cut_lower_x87_arithmetic(cut,instruction);return;}
+    if(pl_x86_x87_round_supported(instruction)){cut_lower_x87_arithmetic(cut,instruction);return;}
     if(pl_x86_x87_wait_supported(instruction)){cut_lower_x87_wait(cut);return;}
     pl_x86_x87_stack fpu_stack;if(pl_x86_x87_stack_lower(instruction,&fpu_stack)){cut_lower_x87_stack(cut,instruction);return;}
     if (instruction->machine_operation==PL_X86_MACHINE_X87

@@ -42,6 +42,8 @@ make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/x87-environment-che
 "$temporary/wasm-compiler/build/x87-environment-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/x87-bcd-check
 "$temporary/wasm-compiler/build/x87-bcd-check"
+make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/x87-round-check
+"$temporary/wasm-compiler/build/x87-round-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/divide-check
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/return-check
 "$temporary/wasm-compiler/build/return-check"

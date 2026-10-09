@@ -11,9 +11,9 @@ import {finished} from 'node:stream/promises';
 import {zstdDecompressSync} from 'node:zlib';
 const repo=await realpath(fileURLToPath(new URL('../..',import.meta.url)));
 const [qemuArg,imgArg,sourceArg,workArg,...extra]=process.argv.slice(2);
-const candidate=extra.includes('--candidate-root'),publication=extra.includes('--publication');
-if(!workArg||new Set(extra).size!==extra.length||extra.some(x=>!['--publication','--candidate-root'].includes(x))||candidate&&!publication)
-  throw new Error('QEMU QEMU-IMG SOURCE-TAR NEW-WORK-DIRECTORY [--publication [--candidate-root]]');
+const kernel=extra.includes('--kernel'),initProfile=extra.includes('--init-profile'),candidate=extra.includes('--candidate-root'),publication=extra.includes('--publication');
+if(!workArg||new Set(extra).size!==extra.length||extra.some(x=>!['--publication','--candidate-root','--init-profile','--kernel'].includes(x))||candidate&&!publication||initProfile&&!candidate||kernel&&!initProfile)
+  throw new Error('QEMU QEMU-IMG SOURCE-TAR NEW-WORK-DIRECTORY [--publication [--candidate-root [--init-profile [--kernel]]]]');
 const work=path.resolve(workArg),temp=path.join(repo,'temp')+path.sep;
 if(!work.startsWith(temp)||work===path.join(repo,'temp'))throw new Error('fresh oracle workspace below repository temp');
 await mkdir(work); // Never replace an existing disk or diagnostic receipt.
@@ -35,7 +35,7 @@ const lines=(await readFile(path.join(repo,'data/bootstrap/packages.sha256'),'ut
 const packages=new Map();
 for(const line of lines){const m=/^([a-f0-9]{64})\s+\.\/([A-Za-z0-9_.+-]+\.apk)$/.exec(line);if(!m)throw new Error('pinned APK manifest');packages.set(m[2],m[1]);}
 const sourceHash=await digest(source,'sha256');
-const sourceOptions=[];
+const sourceOptions=[];let kernelSourceBytes=0;
 if(publication){const inputs=await readFile(path.join(repo,'data/sources.env'),'utf8');
   for(const [role,extension] of [['TAR','tar.xz'],['BUSYBOX','tar.bz2']]){
     const version=new RegExp(`^${role}_VERSION=([0-9.]+)$`,'m').exec(inputs)?.[1],sha=new RegExp(`^${role}_SHA256=([a-f0-9]{64})$`,'m').exec(inputs)?.[1];
@@ -51,6 +51,20 @@ if(candidate){for(const [name,sha] of [['system.squashfs','6c7f0ea12300984eb1f9e
 }}
 if(candidate){const directory=path.join(work,'candidate-files');await mkdir(directory);
   sourceOptions.push('-drive',`file=fat:rw:${directory.replaceAll('\\','/')},format=raw,if=virtio`);}
+if(initProfile){const lockText=await readFile(path.join(repo,'data/sources.env'),'utf8'),names=[];
+  for(const [role,name] of [['SKALIBS','skalibs'],['EXECLINE','execline'],['S6','s6'],['S6_RC','s6-rc'],['MDEVD','mdevd']]){
+    const version=new RegExp(`^${role}_VERSION=([0-9.]+)$`,'m').exec(lockText)?.[1],sha=new RegExp(`^${role}_SHA512=([a-f0-9]{128})$`,'m').exec(lockText)?.[1];
+    if(!version||!sha)throw new Error('locked init source');const file=`${name}-${version}.tar.gz`;
+    if(await digest(path.join(repo,'data/upstream',file),'sha512')!==sha)throw new Error('init source digest');names.push(file);
+  }
+  const archive=path.join(work,'init-inputs.tar');run('tar',['--format=ustar','-cf',archive,'-C',path.join(repo,'data/upstream'),...names]);
+  sourceOptions.push('-drive',`file=${archive.replaceAll('\\','/')},format=raw,if=virtio,readonly=on`);
+}
+if(kernel){const lockText=await readFile(path.join(repo,'data/sources.env'),'utf8'),version=/^LINUX_VERSION=([0-9.]+)$/m.exec(lockText)?.[1],sha=/^LINUX_SHA256=([a-f0-9]{64})$/m.exec(lockText)?.[1];
+  if(!version||!sha)throw new Error('locked kernel source');const file=path.join(repo,'data/upstream',`linux-${version}.tar.xz`);
+  if(await digest(file,'sha256')!==sha)throw new Error('kernel source digest');kernelSourceBytes=(await stat(file)).size;
+  sourceOptions.push('-drive',`file=${file.replaceAll('\\','/')},format=raw,if=virtio,readonly=on`);
+}
 const packageArchive=path.join(work,'packages.tar');
 run('tar',['--format=ustar','-cf',packageArchive,'-C',path.join(upstream,'packages'),...packages.keys()]);
 const transportLog=createWriteStream(path.join(work,'transport.log'),{flags:'wx'});
@@ -69,7 +83,9 @@ make -j4 -C src/v2/optimized-x86 all
 make -j4 -C src/v2/postlink-compiler all check
 make -j4 -C src/v2/wasm-compiler all packed-shift-check vector-unpack-check x87-control-check x87-environment-check
 make -j4 -C src/v2/vm all check
-${publication?`sh data/oracle/check-userland-publication.sh ${candidate?'--candidate-root':''}`:''}
+bash src/v2/vm/check/sanitizers.sh
+export LENGTH3_KERNEL_SOURCE_BYTES=${kernelSourceBytes}
+${publication?`sh data/oracle/check-userland-publication.sh ${candidate?'--candidate-root':''} ${initProfile?'--init-profile':''} ${kernel?'--kernel':''}`:''}
 bash src/v2/wasm-compiler/check/sanitizers.sh
 trap - EXIT
 printf '\\nselfhost-oracle: pass\\n'
@@ -107,7 +123,7 @@ let tail='',outcome,bytes=0;const began=performance.now();
 let receiptName=null,receiptHash=null,receiptLines='',partial='';const receipts=[],candidateReceipts=new Map();
 function receiveReceipts(chunk){if(!publication)return;partial+=chunk.toString();let end;
   while((end=partial.indexOf('\n'))>=0){const line=partial.slice(0,end).replace(/\r$/, '');partial=partial.slice(end+1);
-    const object=/^oracle-candidate (initramfs|system\.squashfs) ([0-9]+) ([a-f0-9]{64})$/.exec(line);
+    const object=/^oracle-candidate (kernel|initramfs|system\.squashfs) ([0-9]+) ([a-f0-9]{64})$/.exec(line);
     if(object){if(!candidate||candidateReceipts.has(object[1]))throw new Error('candidate role ownership');
       candidateReceipts.set(object[1],{bytes:Number(object[2]),sha256:object[3]});continue;}
     const begin=/^oracle-elf-begin (busybox-input|busybox-optimized|tar-input|tar-optimized) ([a-f0-9]{64})$/.exec(line);
@@ -122,7 +138,7 @@ function receiveReceipts(chunk){if(!publication)return;partial+=chunk.toString()
   }
 }
 function stop(reason){if(outcome!==undefined)return;outcome=reason;child.kill();}
-const timeout=setTimeout(()=>stop('independent C oracle timeout'),900000);
+const timeout=setTimeout(()=>stop('independent C oracle timeout'),kernel?2100000:900000);
 function consume(b){bytes+=b.length;log.write(b);try{receiveReceipts(b);}catch(e){stop(e.message);}tail=(tail+b.toString()).slice(-16384);
   if(bytes>64*1024*1024)stop('bounded oracle log exhausted');
   if(/(?:^|[\r\n])selfhost-oracle: failed\r?\n/.test(tail))stop('C gate failed');
@@ -132,7 +148,7 @@ child.stdout.on('data',consume);child.stderr.on('data',consume);child.once('erro
 await new Promise(resolve=>child.once('close',(code,signal)=>{if(outcome===undefined)outcome=`oracle exited ${code}/${signal}`;resolve();}));
 clearTimeout(timeout);server.close();log.end();transportLog.end();await Promise.all([finished(log),finished(transportLog),...receipts]);
 const candidateOutput={};
-if(outcome===null&&candidate){try{for(const name of ['initramfs','system.squashfs']){
+if(outcome===null&&candidate){try{for(const name of kernel?['kernel','initramfs','system.squashfs']:['initramfs','system.squashfs']){
   const role=candidateReceipts.get(name),file=path.join(work,'candidate-files',name);
   if(!role||!Number.isSafeInteger(role.bytes)||role.bytes<1||role.bytes>128*1024*1024||(await stat(file)).size!==role.bytes||await digest(file,'sha256')!==role.sha256)throw new Error('candidate readback identity');
   candidateOutput[name]=role;

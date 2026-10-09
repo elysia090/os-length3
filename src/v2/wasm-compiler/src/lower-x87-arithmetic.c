@@ -22,11 +22,13 @@ static void empty(cut_lowering *c,pl_u32 local)
 }
 void cut_lower_x87_arithmetic(cut_lowering *c,const pl_x86_instruction *i)
 {
-    pl_x86_x87_register_arithmetic reg={0};int registers=pl_x86_x87_register_arithmetic_lower(i,&reg);
+    int round=pl_x86_x87_round_supported(i);
+    pl_x86_x87_register_arithmetic reg={0};int registers=round||pl_x86_x87_register_arithmetic_lower(i,&reg);
+    if(round)reg.opcode=0x1fcu;
     pl_x86_x87_integer_arithmetic law={0};int integer=pl_x86_x87_integer_arithmetic_lower(i,&law);
     if(!registers&&!integer&&!pl_x86_x87_memory_arithmetic_lower(i,&law)){c->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
     _Alignas(8) pl_u8 scratch[131072];pl_arena arena={scratch,sizeof scratch,0u};pl_plan pure;
-    int status=registers?pl_x86_x87_register_arithmetic_plan(reg.operation,&arena,&pure)
+    int status=round?pl_x86_x87_round_plan(&arena,&pure):registers?pl_x86_x87_register_arithmetic_plan(reg.operation,&arena,&pure)
         :integer?pl_x86_x87_integer_arithmetic_plan(law.bytes*8u,law.operation,&arena,&pure)
         :pl_x86_x87_memory_arithmetic_plan(law.bytes*8u,law.operation,&arena,&pure);
     if(status){c->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
@@ -41,9 +43,9 @@ void cut_lower_x87_arithmetic(cut_lowering *c,const pl_x86_instruction *i)
     payload(c,FA_DEST,offsetof(machine_state,x87_significand),FA_A,3u,0);
     payload(c,FA_DEST,offsetof(machine_state,x87_sign_exponent),FA_SE,1u,0);
     empty(c,FA_DEST);
-    if(registers){index(c,reg.source,FA_SOURCE);empty(c,FA_SOURCE);cut_op(c,0x84u);}
+    if(registers&&!round){index(c,reg.source,FA_SOURCE);empty(c,FA_SOURCE);cut_op(c,0x84u);}
     cut_set(c,FA_EMPTY);
-    if(registers){payload(c,FA_SOURCE,offsetof(machine_state,x87_significand),FA_INPUT,3u,0);
+    if(registers&&!round){payload(c,FA_SOURCE,offsetof(machine_state,x87_significand),FA_INPUT,3u,0);
         payload(c,FA_SOURCE,offsetof(machine_state,x87_sign_exponent),FA_B_SE,1u,0);}
     pl_u32 input[]={FA_A,FA_SE,FA_INPUT,FA_B_SE,FA_CW,FA_EMPTY};
     if(!registers){input[3]=FA_CW;input[4]=FA_EMPTY;}

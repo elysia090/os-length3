@@ -70,7 +70,7 @@ int vm_memory_open(vm_memory *memory, pl_u8 *bytes, pl_u64 byte_count,
     return 0;
 }
 
-const vm_memory_page *vm_memory_find(vm_memory *memory, pl_u64 address)
+const vm_memory_page *vm_memory_find_readonly(const vm_memory *memory,pl_u64 address)
 {
     if (!memory || !memory->generation || !memory->page_count) return NULL;
     pl_u64 page = address & ~4095ull;
@@ -80,8 +80,17 @@ const vm_memory_page *vm_memory_find(vm_memory *memory, pl_u64 address)
     pl_u32 ref = leaf_rank(memory,page);
     const vm_memory_page *result = memory->pages + (ref & ~LEAF);
     if (result->address != page) return NULL;
-    memory->recent[lane] = result;
     return result;
+}
+const vm_memory_page *vm_memory_find(vm_memory *memory,pl_u64 address)
+{
+    if(!memory||!memory->generation||!memory->page_count)return NULL;
+    pl_u32 lane=(pl_u32)(address>>12u)&255u;
+    const vm_memory_page *recent=memory->recent[lane];
+    if(recent&&recent->address==(address&~4095ull))return recent;
+    const vm_memory_page *page=vm_memory_find_readonly(memory,address);
+    if(page)memory->recent[lane]=page;
+    return page;
 }
 
 static int append(vm_memory *memory, pl_u64 address, pl_u32 offset, pl_u32 rights, pl_u32 kind)

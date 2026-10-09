@@ -1663,8 +1663,8 @@ static void classify_machine_operation(
         break;
     case ZYDIS_MNEMONIC_FRNDINT:
         if (!out->visible_operand_count) {
-            pl_u32 fop = ((pl_u32)(out->source[0] & 7u) << 8u)
-                       | out->source[1];
+            pl_u32 fop=((pl_u32)(source->opcode&7u)<<8u)|((pl_u32)source->raw.modrm.mod<<6u)
+                |((pl_u32)source->raw.modrm.reg<<3u)|source->raw.modrm.rm;
             out->machine_operation = PL_X86_MACHINE_X87;
             out->machine_argument = 49u | ((pl_u64)fop << 16u);
             out->flags |= PL_X86_INSTRUCTION_MAY_TRAP

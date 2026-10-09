@@ -1,5 +1,29 @@
 # x86 semantic oracles
 
+### Independent source rebuild and browser reservation checks
+
+`check-linux-selfhost.mjs QEMU QEMU-IMG SOURCE-TAR NEW-TEMP-DIRECTORY`
+uses the pinned, signed Linux reference image and read-only source/APK inputs,
+with loopback seed transport only and no SSH credential. It runs product C
+checks and VM/compiler sanitizers. `--publication --candidate-root` separately
+rebuilds the locked GNU tar/BusyBox sources; `--init-profile --kernel` also
+uses the fixed init and official kernel recipes. Host readback verifies the
+candidate bytes/digests. Candidates are diagnostic, not signed-package release
+updates or browser acceptance; installed package signatures are not rewritten.
+
+`check-entry-regions.mjs COMPILER.WASM` invokes the actual emitted public cut
+ABI and compares exact interval legality, both orders, alignment, adjacency,
+overlap and u32-wrap edges. Invalid calls must return before any import or
+memory mutation. Representative module sizes are reported independently.
+
+The banked C VM reserves335872 bytes before its arena. For shared-memory
+browser fixtures build the independent compiler with an explicit disjoint
+reservation: `wasm-tools.ps1 -Compiler -StaticMin 524288 -Output NEW-FILE`.
+Standalone compiler builds retain their131072 default; this is memory layout,
+not a VM import or backend dependency. `prepare-browser-startup.mjs` requires
+a fresh output for root/init/kernel overrides, and an explicit trusted kernel
+digest. Neither the old native publication nor a retained fixture is replaced.
+
 MMX64 and XMM128 now share33 packed binary operators. The existing FPU capture
 adds actual full saved tags and RAX; `mmx-binary-observe.c DIRECTORY [--wide|
 --transfer|--tag-first]` records the independent populations. Execute via

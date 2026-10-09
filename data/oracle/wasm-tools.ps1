@@ -1,8 +1,13 @@
 # Scope-local build tool; it is neither a release dependency nor a guest libc.
 [CmdletBinding()]
-param([string]$Output = 'temp/wasm-tools-34/vm.wasm', [switch]$Compiler, [switch]$Profile)
+param([string]$Output = 'temp/wasm-tools-34/vm.wasm', [switch]$Compiler, [switch]$Profile,
+    [int]$StaticMin = 131072)
 $ErrorActionPreference = 'Stop'
 if ($Profile -and $Compiler) { throw 'Source profiling belongs to the VM, not the compiler' }
+if ($StaticMin -lt 65536 -or $StaticMin -gt 2097152 -or ($StaticMin % 65536) -ne 0 -or
+    (!$Compiler -and $PSBoundParameters.ContainsKey('StaticMin'))) {
+    throw 'StaticMin is an explicit compiler-only 64KiB-aligned private memory reservation'
+}
 if ($Compiler -and !$PSBoundParameters.ContainsKey('Output')) {
     $Output = 'temp/wasm-tools-34/wasm-compiler.wasm'
 }
@@ -36,7 +41,8 @@ try {
     $taskProfile = if ($Profile) { '1' } else { '0' }
     # Mode flags are not ordinary timestamp dependencies. Rebuild this small
     # standalone module so changing profile mode cannot retain a stale target.
-    & $taskMake.Source -B -C "src/v2/$taskProduct" wasm "WASM_CC=$taskCompiler" "WASM_OUTPUT=$taskTarget" "WASM_PROFILE=$taskProfile"
+    $taskLayout = if ($Compiler) { @("COLD_STATIC_MIN=$StaticMin") } else { @() }
+    & $taskMake.Source -B -C "src/v2/$taskProduct" wasm "WASM_CC=$taskCompiler" "WASM_OUTPUT=$taskTarget" "WASM_PROFILE=$taskProfile" @taskLayout
     if ($LASTEXITCODE) { throw "C $taskProduct Wasm build failed" }
 } finally { Pop-Location }
 Get-FileHash -Algorithm SHA256 -LiteralPath $taskOutput

@@ -23,8 +23,8 @@ Cold shell3s remains a target, not an achieved claim.
 
 ## Current authoritative state
 
-Same make/every-final-PF_X-byte population:233428/233455 lowerable,27 missing,
-zero missing fault cuts/fetch/capacity refusals. Remaining floating25,
+Same make/every-final-PF_X-byte population:233429/233455 lowerable,26 missing,
+zero missing fault cuts/fetch/capacity refusals. Remaining floating24,
 SIMD2,atomic0. FirstFSIN at0x17193. This complete byte inventory is
 not an execution trace, kernel/image publication or browser boot proof.
 
@@ -64,6 +64,11 @@ numeric/MXCSR and196608 C-VM complete-state comparisons pass. PEXTRW is a
 coordinate projection;98304 constructors/393216 refusals and32768 independent
 complete-state comparisons pass. These graph bounds are not global minima.
 See [common arithmetic and publication](../vm/check/browser/evidence/2026-10-10-arithmetic-publication.md).
+FRNDINT shares the integer/BCD integral-rounding core without an integer
+destination range limit;30720 independent complete-state comparisons pass.
+The ALU generation test now covers7 operations ×4 widths, both carry inputs:
+1835008 comparisons. A separate preload could also overwrite its deferred
+right arm; the same complete entry-source condition now guards both emitters.
 
 Successful MMU walks have bounded exact ancestor/value witnesses, not
 architecturally stale TLB entries.1920 cached/fresh whole-RAM/port/write-order
@@ -73,6 +78,30 @@ shell proof. Construction reuse is separately fenced by C physical source
 revisions and owner nonce, with no cached source copy.
 
 Actual browser executes Linux7.2.7 and /init, but offline shell remains red.
+Separately rebuilt official kernel and the locked init profile now use the
+current postlink/packaging recipes, with no WSL/host kernel. Native candidate
+boot reaches PID1/services/offline/C/make-j4/Git/AES/apk/COW,1096.2ms ready;
+not a browser speed claim or signed release update. Kernel/init/root digests:
+7206ac5f64fcfae50d17d090fad4de4ad83e048222d509807d93af951d9929ff,
+0477439503da04f0675224d54692ccd1d196880aa8ab276aee10312e26062e2b,
+f971b50b806cb226172d88afbd6b45258da1cf7a89b1472e067f58006d29d280.
+The earlier repaired-root/old-kernel browser reaches/init but s6-rc-init
+times out waiting for supervision. Keep guest timeouts/clock policy unchanged.
+The profile-only C MMU observer reads at most2 resident fragments without
+A/D/cache/port/reservation/counter/CPU/RAM changes; first128 directory
+transitions survive unrelated polls. It is diagnostic, never path authority.
+The64-row execution owner caused102210153 cold reservations in166623476
+browser queries. A32-bank/2048-row physical owner now passes131072 all-bank
+write comparisons, existing source/MMU controls and independent Linux C
+checks plus ASan/UBSan (source251aef6caaadbfeb731368442cb5e1b252d34f52de530ef922a030b7f63b1aec).
+The public interval predicate passes18790 actual-Wasm boundary cases and
+shrinks representative modules by10 bytes.196608 SSE and30720 FRNDINT
+whole-state comparisons pass with this C provider. Actual browser reaches
+/init and/run/service -> console/boot directory transitions; shell remains
+unverified. See [physical source ownership](../vm/check/browser/evidence/2026-10-10-source-banks.md).
+The engine byte index was only256KiB while construction references already
+retained2MiB of bodies; align those bounded lifetimes before the next run.
+Do not substitute increased service timeouts for actual runtime fixes.
 A bounded run reaches266481582 retired /150000000 admissions and ends at
 the diagnostic quota, not an ISA miss. Explicit interactive lifetime is now
 separate from that regression quota; bounded work/memory/source ownership

@@ -12,7 +12,7 @@ WASM_OUTPUT ?= $(BUILD)/wasm-compiler.wasm
 WASM_CC ?= clang
 # Disjoint cold static/stack placement in a caller-owned imported memory.
 # Stack follows this module's data, not address zero in another module.
-COLD_STATIC_MIN = 131072
+COLD_STATIC_MIN ?= 131072
 WASM_FLAGS = --target=wasm32-unknown-unknown -O2 -ffreestanding -nostdlib \
 	-Wl,--no-entry,--strip-all -Xlinker --import-memory=machine,memory \
 	-DCOLD_STATIC_MIN=$(COLD_STATIC_MIN) -Wl,--global-base=$(COLD_STATIC_MIN),--no-stack-first \
@@ -74,6 +74,12 @@ $(BUILD)/selector-query-check: check/selector-query.c $(BUILD)/libwasm-compiler.
 .PHONY: float-compare-check
 .PHONY: float-arithmetic-check
 .PHONY: vector-extract-check
+.PHONY: x87-round-check
+check: x87-round-check
+x87-round-check: $(BUILD)/x87-round-check
+	$(BUILD)/x87-round-check
+$(BUILD)/x87-round-check: check/x87-round.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 check: vector-extract-check
 vector-extract-check: $(BUILD)/vector-extract-check
 	$(BUILD)/vector-extract-check

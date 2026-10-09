@@ -1057,6 +1057,14 @@ int pl_select_flag_value_preload_shape(
         if (local != destination && (pending & (1u << local)))
             others_read |= frame_sources[local];
     if (others_read & (1u << destination)) return 0;
+    /* The deferred right arm also observes an ENTRY generation. A preload
+     * cannot publish over it merely because no sibling output reads it.
+     * Include the entire arm's source set, not only a direct register leaf. */
+    pl_u32 other_entry_reads = 0u;
+    if (!pl_select_operand_entry_gpr_sources(plan, other,
+            plan->node_count + 1u, plan->node_count + 1u, &other_entry_reads)
+            || (other_entry_reads & (1u << destination)))
+        return 0;
     if (other.kind == PL_OPERAND_LOCAL
             && pl_select_frame_local_publication_clobbers_flags(
                 plan, (pl_u32)other.value))

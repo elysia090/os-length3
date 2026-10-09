@@ -2953,6 +2953,8 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
     if(instruction->machine_operation==PL_X86_MACHINE_SYSTEM_SELECTOR
         &&(instruction->opcode==2u||instruction->opcode==3u||instruction->visible_operand_count==2u)){
         pl_x86_selector_query law;if(!pl_x86_selector_query_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
+    if(instruction->machine_operation==PL_X86_MACHINE_X87&&(instruction->machine_argument&255u)==49u
+        &&!pl_x86_x87_round_supported(instruction))return PL_ERROR_X86_SEMANTIC;
     if(instruction->machine_operation==PL_X86_MACHINE_VECTOR&&(instruction->machine_argument&255u)==22u){
         pl_x86_vector_extract law;if(!pl_x86_vector_extract_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(pl_x86_float_arithmetic_candidate(instruction)){

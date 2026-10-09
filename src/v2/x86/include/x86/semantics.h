@@ -163,6 +163,10 @@ int pl_x86_x87_integer_store_lower(const pl_x86_instruction *instruction,pl_x86_
 /* Inputs sig,sign/exp,CW,empty; outputs signed payload,raised/C1/SF,suppress.
  * PC does not round integer destinations; FISTTP overrides RC to truncation. */
 int pl_x86_x87_integer_store_plan(pl_u32 bits,pl_u32 truncate,pl_arena *arena,pl_plan *out);
+int pl_x86_x87_round_supported(const pl_x86_instruction *instruction);
+/* Same integral-rounding core without an integer destination range limit.
+ * Inputs sig,se,unused,unused,CW,empty; outputs sig,se,publication word. */
+int pl_x86_x87_round_plan(pl_arena *arena,pl_plan *out);
 typedef struct {pl_u8 bytes,memory,destination,pop,no_check;pl_u16 opcode;} pl_x86_x87_float_store;
 int pl_x86_x87_float_store_lower(const pl_x86_instruction *instruction,pl_x86_x87_float_store *out);
 /* Inputs extended significand/sign-exponent,CW,empty. Outputs low/high
