@@ -23,6 +23,18 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+Six floating-to-integer mnemonics/eight source-output forms now use one checked
+law and emitter for MMX/GPR32/GPR64/XMM.8840 constructors/141440 malformed
+laws,131072 independent physical states (55168 actual Windows exceptions),
+38016 C boundary models/552 exact-state residency retries, scoped/postlink and
+positive sanitizers pass without warnings. Unmasked invalid's priority over
+another lane's precision is fixed; no new VM numeric callback or fallback.
+Same make460->445 (15 recovered),233010/233455 lowerable. Remaining SIMD169/
+x87154/far91/other31 still belong to ZERO and complete browser acceptance.
+Native publication/UI unchanged. See [common conversion and exact boundaries](../vm/check/browser/evidence/2026-10-09-float-integer.md).
+
+## Preceding packed-conversion checkpoint
+
 Shared MMX/XMM lane law now includes9 multiply/dot/even-multiply/round/pack/SAD
 families, with20736 new physical rows and14448/115584 construction/refusal
 gates. CVTPI2PS uses exact binary64 widening plus directed IEEE adjacency,

@@ -2924,6 +2924,11 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
                  pl_arena *arena, pl_x86_semantic *out)
 {
     if (!instruction || !arena || !out) return PL_ERROR_X86_SEMANTIC;
+    if(instruction->machine_operation==PL_X86_MACHINE_VECTOR&&((instruction->machine_argument&255u)==17u
+        ||(instruction->machine_argument&255u)==21u||(instruction->machine_argument&255u)==32u
+        ||((instruction->machine_argument&255u)==PL_X86_VECTOR_SCALAR_FLOAT&&((instruction->machine_argument>>32u)&255u)==PL_X86_SCALAR_FLOAT_TO_INTEGER_TRUNCATE)
+        ||((instruction->machine_argument&255u)==PL_X86_VECTOR_PACKED_CONVERT&&((instruction->machine_argument>>32u)&255u)==PL_X86_PACKED_CONVERT_FLOAT64_TO_SIGNED_DWORD_TRUNCATE))){
+        pl_x86_vector_float_integer law;if(!pl_x86_vector_float_integer_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_VECTOR&&(instruction->machine_argument&255u)==30u){
         pl_x86_vector_integer_float law;if(!pl_x86_vector_integer_float_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_X87&&(instruction->machine_argument&255u)==21u){

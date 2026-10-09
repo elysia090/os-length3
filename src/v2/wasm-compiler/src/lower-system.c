@@ -25,6 +25,8 @@ int cut_system_supported(const pl_x86_instruction *instruction)
     if(pl_x86_x87_wait_supported(instruction))return CUT_SYSTEM_X87_WAIT;
     pl_x86_vector_integer_float integer_float;if(pl_x86_vector_integer_float_lower(instruction,&integer_float)
         &&(!integer_float.source_memory||cut_memory_address_supported(instruction,&instruction->operands[1].value.memory)))return CUT_SYSTEM_VECTOR_INTEGER_FLOAT;
+    pl_x86_vector_float_integer float_integer;if(pl_x86_vector_float_integer_lower(instruction,&float_integer)
+        &&(!float_integer.source_memory||cut_memory_address_supported(instruction,&instruction->operands[1].value.memory)))return CUT_SYSTEM_VECTOR_FLOAT_INTEGER;
     pl_x86_x87_stack fpu_stack;if(pl_x86_x87_stack_lower(instruction,&fpu_stack))return CUT_SYSTEM_X87_STACK;
     pl_x86_return returning;
     if(pl_x86_return_lower(instruction,&returning))return returning.interrupt?CUT_SYSTEM_INTERRUPT_RETURN:CUT_SYSTEM_FAR_RETURN;
@@ -419,6 +421,7 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
     if (cut_vector_supported(instruction)) { cut_lower_vector(cut,instruction); return; }
     if (cut_vector_scalar_supported(instruction)) { cut_lower_vector_scalar(cut,instruction); return; }
     pl_x86_vector_integer_float integer_float;if(pl_x86_vector_integer_float_lower(instruction,&integer_float)){cut_lower_vector_integer_float(cut,instruction);return;}
+    pl_x86_vector_float_integer float_integer;if(pl_x86_vector_float_integer_lower(instruction,&float_integer)){cut_lower_vector_float_integer(cut,instruction);return;}
     if(memory_order_supported(instruction)) {
         _Static_assert((PL_X86_CPUID_1_EDX&((1u<<25u)|(1u<<26u)))==((1u<<25u)|(1u<<26u)),
             "fences require the fixed SSE/SSE2 CPU contract");

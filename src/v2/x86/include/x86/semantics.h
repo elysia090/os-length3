@@ -228,5 +228,10 @@ typedef struct {pl_u8 bytes,source_memory,target_memory,source_mmx,target_mmx,al
 int pl_x86_mmx_transfer_lower(const pl_x86_instruction *instruction,pl_x86_mmx_transfer *out);
 typedef struct {pl_u8 source_memory,source,target;} pl_x86_vector_integer_float;
 int pl_x86_vector_integer_float_lower(const pl_x86_instruction *instruction,pl_x86_vector_integer_float *out);
+typedef struct {
+    pl_u8 source_memory,source_bytes,truncate,source,target;
+    pl_u8 element_bytes,target_class,target_bytes;
+} pl_x86_vector_float_integer;
+int pl_x86_vector_float_integer_lower(const pl_x86_instruction *instruction,pl_x86_vector_float_integer *out);
 
 #endif /* X86_SEMANTICS_H */

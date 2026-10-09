@@ -37,6 +37,13 @@ SOURCES += src/lower-vector.c
 SOURCES += src/lower-vector-unpack.c
 SOURCES += src/emit-vector-binary.c
 SOURCES += src/lower-vector-integer-float.c
+SOURCES += src/lower-vector-float-integer.c
+.PHONY: vector-float-integer-check
+check: vector-float-integer-check
+vector-float-integer-check: $(BUILD)/vector-float-integer-check
+	$(BUILD)/vector-float-integer-check
+$(BUILD)/vector-float-integer-check: check/vector-float-integer.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 .PHONY: vector-integer-float-check
 check: vector-integer-float-check
 vector-integer-float-check: $(BUILD)/vector-integer-float-check
