@@ -47,7 +47,7 @@ static inline pl_operand leading_zeros(expression *e,pl_operand a)
     pl_operand index={PL_OPERAND_PROJECTION,(scan.value<<8u)|16u};
     return binary(e,96u,constant(63u),index);
 }
-typedef struct {pl_operand sig,se,zero;} integer_expression;
+typedef struct {pl_operand sig,se,zero,sign,leading;} integer_expression;
 typedef struct {pl_operand sig,se,classes;} ieee_expression;
 ieee_expression ieee_value(expression *e,pl_u32 bits,pl_operand input);
 typedef struct {pl_operand quotient,remainder,invalid;} quotient_expression;
@@ -66,6 +66,6 @@ static inline integer_expression integer_value(expression *e,pl_u32 bits,pl_oper
     pl_operand exponent=binary(e,96u,constant(16383u+63u),leading);
     pl_operand zero=equal(e,magnitude,constant(0u));exponent=select(e,constant(0u),exponent,zero);
     pl_operand sign_word=binary(e,PL_OPCODE_LANE64_SHL,sign,constant(15u));
-    pl_operand se=bit_or(e,sign_word,exponent);return(integer_expression){sig,se,zero};
+    pl_operand se=bit_or(e,sign_word,exponent);return(integer_expression){sig,se,zero,sign,leading};
 }
 #endif

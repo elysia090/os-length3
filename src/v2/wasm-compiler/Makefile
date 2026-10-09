@@ -37,6 +37,19 @@ SOURCES += src/lower-vector.c
 SOURCES += src/lower-vector-unpack.c
 SOURCES += src/emit-vector-binary.c
 SOURCES += src/lower-vector-integer-float.c
+SOURCES += src/lower-float-compare.c
+.PHONY: float-compare-check
+check: float-compare-check
+float-compare-check: $(BUILD)/float-compare-check
+	$(BUILD)/float-compare-check
+$(BUILD)/float-compare-check: check/float-compare.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+.PHONY: scalar-projection-check
+check: scalar-projection-check
+scalar-projection-check: $(BUILD)/scalar-projection-check
+	$(BUILD)/scalar-projection-check
+$(BUILD)/scalar-projection-check: check/scalar-projection.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 SOURCES += src/lower-vector-float-integer.c
 .PHONY: vector-float-integer-check
 check: vector-float-integer-check

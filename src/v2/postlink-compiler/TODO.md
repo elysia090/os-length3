@@ -23,6 +23,21 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+Signed32/64 -> IEEE32/64 and COMISS/UCOMISS/COMISD/UCOMISD now share exact
+x86 SSA, one MXCSR/exception publisher and minimal output-region stores.
+163840+98304 independent physical rows,262144 official numeric rows,
+4352/69632+5440/87040 constructor/refusal gates,44352 new boundary models/
+896 exact retries and previous populations pass. Shared CMP now emits only
+live CF/ZF: old exact-body gate red25 vs12 bytes; current green,254 refusals.
+Paired unchanged-SSA Node execution is0.866..0.896 old time; module bodies
+shrink, not a native/Linux/boot speed claim. Integer graph50/26->44/24 is an
+upper bound, not a minimum. Scoped/postlink/positive sanitizers are warning-free.
+Same make445->397 (48 recovered),233058/233455 lowerable. Remaining SIMD121/
+x87154/far91/other31 still belong to ZERO and complete browser acceptance.
+Native publication/UI unchanged. See [shared numeric, relation and live frontier](../vm/check/browser/evidence/2026-10-09-floating-ssa.md).
+
+## Preceding float-to-integer checkpoint
+
 Six floating-to-integer mnemonics/eight source-output forms now use one checked
 law and emitter for MMX/GPR32/GPR64/XMM.8840 constructors/141440 malformed
 laws,131072 independent physical states (55168 actual Windows exceptions),
@@ -665,9 +680,10 @@ PID 1/root mount/shell/tooling/browser acceptance remain unachieved.
    normalized transfer and delete replaced rules. Red-test emitted work and
    dependency structure against common normalization: merely linking that
    library does not prove backend use.
-   Pure scalar-plan CMP still spells both CF and ZF even when only one
-   projection is live; lower its actual projected frontier, benchmark emitted
-   execution and keep raw/unsupported flag views refused. The new arithmetic
+   Pure scalar-plan CMP now emits only the demanded CF/ZF frontier, with an
+   exact-body old-red/current-green gate and paired execution measurements;
+   raw/unsupported flag views remain refused. Extend live-frontier substitution
+   to other proven projection families without dropping their effects. The arithmetic
    baseline is exact but its 313/83 graph is not a work/span minimum.
    Preserve exact faults/access order, live flags, partial registers, CPU
    profiles, aliases and continuation ownership. SSA is transient evidence,

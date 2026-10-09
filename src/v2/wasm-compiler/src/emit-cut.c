@@ -163,8 +163,9 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                     plan->report.memory_bytes=instruction.operands[0].bits/8u;
                 else if (system==CUT_SYSTEM_X87_STATUS_COMPARE&&instruction.visible_operand_count&&instruction.operands[0].kind==PL_X86_OPERAND_MEMORY) plan->report.memory_bytes=instruction.operands[0].bits/8u;
                 else if(system==CUT_SYSTEM_STRING_IO)plan->report.memory_bytes=(pl_u32)instruction.machine_argument&255u;
-                else if(system==CUT_SYSTEM_VECTOR_INTEGER_FLOAT)plan->report.memory_bytes=instruction.operands[1].kind==PL_X86_OPERAND_MEMORY?8u:0u;
+                else if(system==CUT_SYSTEM_VECTOR_INTEGER_FLOAT)plan->report.memory_bytes=instruction.operands[1].kind==PL_X86_OPERAND_MEMORY?instruction.operands[1].bits/8u:0u;
                 else if(system==CUT_SYSTEM_VECTOR_FLOAT_INTEGER)plan->report.memory_bytes=instruction.operands[1].kind==PL_X86_OPERAND_MEMORY?instruction.operands[1].bits/8u:0u;
+                else if(system==CUT_SYSTEM_FLOAT_COMPARE)plan->report.memory_bytes=instruction.operands[1].kind==PL_X86_OPERAND_MEMORY?instruction.operands[1].bits/8u:0u;
                 else if (system==CUT_SYSTEM_VECTOR_TRANSFER)
                 {pl_x86_vector_binary law;plan->report.memory_bytes=pl_x86_vector_binary_lower(&instruction,&law)?(law.source_memory?law.register_bytes:0u):(instruction.machine_argument&(3ull<<24u))?16u:0u;}
                 else if (system==CUT_SYSTEM_VECTOR_SCALAR)
@@ -280,8 +281,11 @@ static int prologue(wasm_writer *writer,const cut_plan *plan,cut_lowering *state
         if(binary_locals>permutation_local)permutation_local=binary_locals;
     }
     pl_u32 locals=cut.has_repeat?CUT_REPEAT_LOCALS:cut.has_port?CUT_MEMORY_LOCALS:CUT_LOCAL_COUNT;
-    if(plan->system_cut==CUT_SYSTEM_VECTOR_INTEGER_FLOAT){permutation_local=5u;locals=26u;}
+    if(plan->system_cut==CUT_SYSTEM_VECTOR_INTEGER_FLOAT){pl_x86_instruction i;pl_x86_vector_integer_float law;
+        if(pl_x86_decode_profile(&plan->image,rip,&i)||!pl_x86_vector_integer_float_lower(&i,&law))return WASM_COMPILER_ERROR_GRAMMAR;
+        if(law.source_class==PL_X86_REGISTER_MMX){permutation_local=5u;locals=26u;}else locals=32u+PL_X86_SIGNED_FLOAT_MAX_NODES;}
     if(plan->system_cut==CUT_SYSTEM_VECTOR_FLOAT_INTEGER){permutation_local=3u;locals=26u;}
+    if(plan->system_cut==CUT_SYSTEM_FLOAT_COMPARE)locals=32u+PL_X86_FLOAT_COMPARE_MAX_NODES;
     if(plan->system_cut==CUT_SYSTEM_VECTOR_TRANSFER){pl_x86_instruction i;pl_x86_vector_binary law;
         if(!pl_x86_decode_profile(&plan->image,rip,&i)&&pl_x86_vector_binary_lower(&i,&law)&&law.register_bytes==8u)locals=26u;}
     if(plan->system_cut==CUT_SYSTEM_VECTOR_SCALAR){pl_x86_instruction i;pl_x86_mmx_transfer law;

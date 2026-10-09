@@ -7,16 +7,6 @@ static void mask32(cut_lowering *c,pl_u32 n)
     const pl_u8 select[]={0,1,2,3,8,9,10,11,0,1,2,3,8,9,10,11};
     vg(c,n);vg(c,n);simd(c,0x0du);for(pl_u32 i=0u;i<16u;++i)cut_op(c,select[i]);
 }
-static void fault(cut_lowering *c,pl_u32 vector)
-{
-    cut_op(c,0x20u);wasm_writer_uleb(c->writer,1u);cut_load(c,offsetof(machine_state,rip));cut_op(c,0x37u);
-    wasm_writer_uleb(c->writer,3u);wasm_writer_uleb(c->writer,offsetof(machine_memory_port,fault_address));
-    cut_op(c,0x20u);wasm_writer_uleb(c->writer,1u);cut_i32_const(c,vector);cut_op(c,0x36u);
-    wasm_writer_uleb(c->writer,2u);wasm_writer_uleb(c->writer,offsetof(machine_memory_port,fault_vector));
-    cut_op(c,0x20u);wasm_writer_uleb(c->writer,1u);cut_i32_const(c,0u);cut_op(c,0x36u);
-    wasm_writer_uleb(c->writer,2u);wasm_writer_uleb(c->writer,offsetof(machine_memory_port,fault_error));
-    cut_const(c,machine_result_make(MACHINE_RESULT_FAULT,vector));cut_op(c,0x0fu);
-}
 static void double_constant(cut_lowering *c,pl_u64 bits){cut_const(c,bits);simd(c,0x12u);}
 void cut_lower_vector_float_integer(cut_lowering *c,const pl_x86_instruction *i)
 {
@@ -73,12 +63,7 @@ void cut_lower_vector_float_integer(cut_lowering *c,const pl_x86_instruction *i)
     cut_get(c,CUT_STATUS);cut_op(c,0x50u);cut_op(c,0x45u);
     cut_get(c,CUT_LEFT);cut_const(c,128u);cut_op(c,0x83u);cut_op(c,0x50u);cut_op(c,0x71u);cut_op(c,0x04u);cut_op(c,0x40u);
     cut_get(c,CUT_VALUE);cut_const(c,1u);cut_op(c,0x83u);cut_set(c,CUT_VALUE);cut_op(c,0x0bu);
-    cut_get(c,CUT_LEFT);cut_get(c,CUT_VALUE);cut_op(c,0x84u);cut_set(c,CUT_LEFT);
-    cut_get(c,0u);cut_get(c,CUT_LEFT);cut_op(c,0x3eu);wasm_writer_uleb(c->writer,2u);wasm_writer_uleb(c->writer,offsetof(machine_state,mxcsr));
-    cut_get(c,CUT_LEFT);cut_const(c,7u);cut_op(c,0x88u);cut_const(c,~0ull);cut_op(c,0x85u);cut_get(c,CUT_VALUE);cut_op(c,0x83u);
-    cut_op(c,0x50u);cut_op(c,0x45u);cut_op(c,0x04u);cut_op(c,0x40u);
-    if(law.target_class==PL_X86_REGISTER_MMX)cut_mmx_publish(c,8u);
-    cut_load(c,offsetof(machine_state,cr4));cut_const(c,1024u);cut_op(c,0x83u);cut_op(c,0x50u);cut_op(c,0x04u);cut_op(c,0x40u);fault(c,6u);cut_op(c,0x0bu);fault(c,19u);cut_op(c,0x0bu);
+    cut_get(c,CUT_VALUE);cut_set(c,CUT_STATUS);cut_sse_raise(c,law.target_class==PL_X86_REGISTER_MMX?1u:0u);
     if(law.target_bytes==8u){
         cut_const(c,0x8000000000000000ull);vg(c,c->vector_aux);simd(c,0x21u);cut_op(c,0u);cut_op(c,0xfcu);wasm_writer_uleb(c->writer,6u);
         vg(c,c->vector_result);simd(c,0xc4u);cut_op(c,0x1bu);cut_set(c,CUT_VALUE);

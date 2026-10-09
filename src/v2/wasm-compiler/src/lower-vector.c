@@ -79,6 +79,19 @@ void cut_mmx_guard(cut_lowering *cut)
     cut_load(cut,offsetof(machine_state,cr0));cut_const(cut,8u);cut_op(cut,0x83u);cut_op(cut,0x50u);cut_op(cut,0x45u);fault_if(cut,7u);
     cut_x87_pending_guard(cut,CUT_LEFT,CUT_RIGHT);
 }
+void cut_sse_raise(cut_lowering *c,pl_u32 mmx_transition)
+{
+    // The raised-flag slot is disjoint from MMX's scratch frontier.
+    cut_get(c,CUT_STATUS);cut_set(c,CUT_SSE_RAISED);
+    cut_get(c,CUT_LEFT);cut_get(c,CUT_SSE_RAISED);cut_op(c,0x84u);cut_set(c,CUT_LEFT);
+    cut_get(c,0u);cut_get(c,CUT_LEFT);cut_op(c,0x3eu);wasm_writer_uleb(c->writer,2u);wasm_writer_uleb(c->writer,offsetof(machine_state,mxcsr));
+    if(mmx_transition==2u)cut_mmx_publish(c,8u);
+    cut_get(c,CUT_LEFT);cut_const(c,7u);cut_op(c,0x88u);cut_const(c,~0ull);cut_op(c,0x85u);cut_get(c,CUT_SSE_RAISED);cut_op(c,0x83u);
+    cut_op(c,0x50u);cut_op(c,0x45u);cut_op(c,0x04u);cut_op(c,0x40u);
+    if(mmx_transition==1u)cut_mmx_publish(c,8u);
+    cut_load(c,offsetof(machine_state,cr4));cut_const(c,1024u);cut_op(c,0x83u);cut_op(c,0x50u);fault_if(c,6u);
+    cut_i32_const(c,1u);fault_if(c,19u);cut_op(c,0x0bu);
+}
 static void write_word(cut_lowering *cut,pl_u32 offset,pl_u32 local)
 {
     cut_op(cut,0x20u);wasm_writer_uleb(cut->writer,1u);

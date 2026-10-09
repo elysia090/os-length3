@@ -37,6 +37,10 @@ make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/vector-integer-floa
 "$temporary/wasm-compiler/build/vector-integer-float-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/vector-float-integer-check
 "$temporary/wasm-compiler/build/vector-float-integer-check"
+make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/scalar-projection-check
+"$temporary/wasm-compiler/build/scalar-projection-check"
+make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/float-compare-check
+"$temporary/wasm-compiler/build/float-compare-check"
 "$temporary/wasm-compiler/build/mmx-transfer-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/flags-low-check
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/translate-byte-check

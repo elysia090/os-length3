@@ -9,7 +9,7 @@
 #include <x86/semantics.h>
 #include <stddef.h>
 enum { CUT_FLAGS = 17, CUT_LEFT, CUT_RIGHT, CUT_VALUE, CUT_NEXT,
-       CUT_ADDRESS, CUT_STATUS, CUT_REPEAT_BUDGET,
+       CUT_ADDRESS, CUT_STATUS, CUT_REPEAT_BUDGET, CUT_SSE_RAISED,
        CUT_LOCAL_COUNT = 21, CUT_MEMORY_LOCALS = 23, CUT_REPEAT_LOCALS = 24 };
 enum { CUT_SYSTEM_NONE, CUT_SYSTEM_INTERRUPT_FLAG, CUT_SYSTEM_SEGMENT, CUT_SYSTEM_TABLE,
        CUT_SYSTEM_FAR_RETURN, CUT_SYSTEM_CONTROL_READ, CUT_SYSTEM_CONTROL_WRITE,
@@ -19,7 +19,7 @@ enum { CUT_SYSTEM_NONE, CUT_SYSTEM_INTERRUPT_FLAG, CUT_SYSTEM_SEGMENT, CUT_SYSTE
        CUT_SYSTEM_MXCSR, CUT_SYSTEM_VECTOR_TRANSFER, CUT_SYSTEM_VECTOR_SCALAR,
        CUT_SYSTEM_MEMORY_ORDER, CUT_SYSTEM_FXRSTOR, CUT_SYSTEM_PRIVILEGE_TRANSFER,
        CUT_SYSTEM_HALT, CUT_SYSTEM_COUNTER_BRANCH, CUT_SYSTEM_SELECTOR_SNAPSHOT, CUT_SYSTEM_X87_SNAPSHOT,
-       CUT_SYSTEM_X87_COMPARE, CUT_SYSTEM_X87_LOAD, CUT_SYSTEM_X87_ARITHMETIC, CUT_SYSTEM_X87_STATUS_COMPARE, CUT_SYSTEM_STRING_IO, CUT_SYSTEM_X87_STORE, CUT_SYSTEM_X87_WAIT, CUT_SYSTEM_X87_STACK, CUT_SYSTEM_X87_EXCHANGE, CUT_SYSTEM_VECTOR_INTEGER_FLOAT, CUT_SYSTEM_VECTOR_FLOAT_INTEGER };
+       CUT_SYSTEM_X87_COMPARE, CUT_SYSTEM_X87_LOAD, CUT_SYSTEM_X87_ARITHMETIC, CUT_SYSTEM_X87_STATUS_COMPARE, CUT_SYSTEM_STRING_IO, CUT_SYSTEM_X87_STORE, CUT_SYSTEM_X87_WAIT, CUT_SYSTEM_X87_STACK, CUT_SYSTEM_X87_EXCHANGE, CUT_SYSTEM_VECTOR_INTEGER_FLOAT, CUT_SYSTEM_VECTOR_FLOAT_INTEGER, CUT_SYSTEM_FLOAT_COMPARE };
 #define CUT_X87_LOCALS 140u
 #define CUT_X87_ARITHMETIC_LOCALS (44u+PL_X86_X87_ARITHMETIC_MAX_NODES)
 #define CUT_X87_STATUS_LOCALS (40u+PL_X86_X87_MEMORY_RELATION_MAX_NODES)
@@ -159,6 +159,7 @@ int cut_vector_supported(const pl_x86_instruction *instruction);
 void cut_lower_vector(cut_lowering *cut,const pl_x86_instruction *instruction);
 void cut_lower_vector_integer_float(cut_lowering *cut,const pl_x86_instruction *instruction);
 void cut_lower_vector_float_integer(cut_lowering *cut,const pl_x86_instruction *instruction);
+void cut_lower_float_compare(cut_lowering *cut,const pl_x86_instruction *instruction);
 /* Element width, with bit 7 selecting the old high 64-bit word; zero rejects. */
 pl_u32 cut_vector_unpack_shape(const pl_x86_instruction *instruction);
 void cut_lower_vector_unpack(cut_lowering *cut,const pl_x86_instruction *instruction,pl_u32 shape);
@@ -176,6 +177,9 @@ void cut_lower_vector_shift(cut_lowering *cut,const pl_x86_instruction *instruct
 int cut_vector_scalar_supported(const pl_x86_instruction *instruction);
 void cut_lower_vector_scalar(cut_lowering *cut,const pl_x86_instruction *instruction);
 void cut_sse_guard(cut_lowering *cut);
+/* CUT_LEFT is old MXCSR, CUT_STATUS the newly raised flags. Preserve result
+ * CUT_VALUE. MMX transition: 0 none, 1 before fault only, 2 before either arm. */
+void cut_sse_raise(cut_lowering *cut,pl_u32 mmx_transition);
 void cut_mmx_guard(cut_lowering *cut);
 void cut_mmx_publish(cut_lowering *cut,pl_u32 destination);
 void cut_lower_io(cut_lowering *cut, const pl_x86_instruction *instruction);

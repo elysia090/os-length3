@@ -226,8 +226,17 @@ int pl_x86_vector_binary_lower(const pl_x86_instruction *instruction,
                                pl_x86_vector_binary *out);
 typedef struct {pl_u8 bytes,source_memory,target_memory,source_mmx,target_mmx,aligned;} pl_x86_mmx_transfer;
 int pl_x86_mmx_transfer_lower(const pl_x86_instruction *instruction,pl_x86_mmx_transfer *out);
-typedef struct {pl_u8 source_memory,source,target;} pl_x86_vector_integer_float;
+typedef struct {pl_u8 source_memory,source,target,source_class,source_bytes,target_bytes;} pl_x86_vector_integer_float;
 int pl_x86_vector_integer_float_lower(const pl_x86_instruction *instruction,pl_x86_vector_integer_float *out);
+/* Inputs signed word and RC, outputs raw IEEE bits and inexact predicate.
+ * Exact normalization followed by one format rounding; no host FP state. */
+#define PL_X86_SIGNED_FLOAT_MAX_NODES 64u
+int pl_x86_signed_float_plan(pl_u32 input_bits,pl_u32 output_bits,pl_arena *arena,pl_plan *out);
+typedef struct {pl_u8 bytes,ordered,source_memory,source,target,alias;} pl_x86_float_compare;
+int pl_x86_float_compare_lower(const pl_x86_instruction *instruction,pl_x86_float_compare *out);
+/* Inputs raw A,B,MXCSR; outputs CF/PF/ZF and newly raised IE/DE. */
+#define PL_X86_FLOAT_COMPARE_MAX_NODES 96u
+int pl_x86_float_compare_plan(pl_u32 bits,pl_u32 ordered,pl_u32 alias,pl_arena *arena,pl_plan *out);
 typedef struct {
     pl_u8 source_memory,source_bytes,truncate,source,target;
     pl_u8 element_bytes,target_class,target_bytes;
