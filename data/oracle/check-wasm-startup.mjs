@@ -4,9 +4,11 @@ import {checkStartup} from '../../src/v2/vm/check/browser/startup-check.mjs';
 import {decompressionOracle} from './decompression-oracle.mjs';
 import {waitForClock} from '../../src/v2/web/idle-clock.mjs';
 import {progressLog} from './progress-log.mjs';
+import {createHash} from 'node:crypto';
+import {setTimeout as delay} from 'node:timers/promises';
 
 const [providerFile,compilerFile,directory,...flags] = process.argv.slice(2);
-if (!directory || flags.some(flag=>!['--extended','--progress','--idle'].includes(flag)
+if (!directory || flags.some(flag=>!['--extended','--progress','--idle','--live'].includes(flag)
       && !flag.startsWith('--segments=') && !flag.startsWith('--image=') && !flag.startsWith('--warm-cuts=') && !flag.startsWith('--progress-file='))
     || new Set(flags).size!==flags.length
     || ['--segments=','--image=','--warm-cuts=','--progress-file='].some(prefix=>flags.filter(flag=>flag.startsWith(prefix)).length>1))
@@ -19,6 +21,11 @@ const warmFlag=flags.find(flag=>flag.startsWith('--warm-cuts='))?.slice('--warm-
 if(warmFlag!==undefined && (!/^[1-9][0-9]?$/.test(warmFlag) || Number(warmFlag)>64))
   throw new Error('usage: --warm-cuts=1..64');
 const warmCuts=warmFlag===undefined?1:Number(warmFlag);
+const initialCompiler=await readFile(compilerFile),compilerDigest=bytes=>createHash('sha256').update(bytes).digest('hex');
+let acceptedCompilerDigest=compilerDigest(initialCompiler);
+const live=flags.includes('--live'),input=new Uint8Array(8192);let inputHead=0,inputCount=0;
+if(live){process.stdin.on('data',bytes=>{if(bytes.length>input.length-inputCount)throw new Error('console input backpressure');
+  for(const byte of bytes){input[(inputHead+inputCount)&8191]=byte;++inputCount;}});process.stdin.resume();}
 const immutableImage=imageFile ? {address:'0x30000000',bytes:(await stat(imageFile)).size} : undefined;
 const log=flags.includes('--progress') || progressFile!==undefined ? progressLog(progressFile) : null;
 const onProgress=log ? progress=>log.write({
@@ -26,9 +33,20 @@ const onProgress=log ? progress=>log.write({
   residentPages:progress.residentPages,memoryBytes:progress.memoryBytes,consoleBytes:progress.console?.acceptedBytes,
   engineReuse:progress.engineReuse,compilerOutput:progress.compilerOutput,timingMs:progress.timingMs,
   sourceReuse:progress.sourceReuse,
+  preparedCode:progress.preparedCode,
+  console:progress.console,
   sourceProfile:progress.sourceProfile,
+  systemProfile:progress.systemProfile,
   idleEvents:progress.idleEvents,idleNanoseconds:progress.idleNanoseconds,
 }) : undefined;
+const onCompilerRefusal=live?async refusal=>{
+  log?.write({status:'running',awaiting:'compiler-update',refusal});
+  for(;;){await delay(1000);const bytes=await readFile(compilerFile),digest=compilerDigest(bytes);
+    if(digest===acceptedCompilerDigest)continue;
+    try{await WebAssembly.compile(bytes);}catch{continue;}
+    acceptedCompilerDigest=digest;return bytes;}
+}:undefined;
+const readInput=live?consume=>{if(!inputCount)return null;const byte=input[inputHead];if(consume){inputHead=(inputHead+1)&8191;--inputCount;}return byte;}:undefined;
 async function extent(kind,offset,bytes) {
   const fileName = kind === 2 ? path.join(directory,'boot.kernel-object')
     : kind === 3 ? path.join(directory,'boot.initramfs-object') : kind===5 ? imageFile : null;
@@ -46,7 +64,8 @@ try{
   log?.write({status:'running',phase:'starting',pid:process.pid,warmCuts,idle:flags.includes('--idle')});
   console.log(JSON.stringify(await checkStartup(name => readFile(name==='boot.segments' && segmentFile
     ? segmentFile : path.join(directory,name)),
-  await readFile(providerFile),await readFile(compilerFile),extent,
-  {extended:flags.includes('--extended'),onProgress,immutableImage,warmCuts,idleWait:flags.includes('--idle')?waitForClock:undefined,
+  await readFile(providerFile),initialCompiler,extent,
+  {extended:flags.includes('--extended'),keepAlive:live,onProgress,immutableImage,warmCuts,idleWait:flags.includes('--idle')?waitForClock:undefined,
+    onCompilerRefusal,readInput,
     decompression:decompressionOracle(await readFile(path.join(directory,'boot.kernel-object')))}),null,2));
-}finally{log?.close();}
+}finally{log?.close();if(live)process.stdin.pause();}

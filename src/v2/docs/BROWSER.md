@@ -1,5 +1,43 @@
 # Browser projection of OS Length3 Linux
 
+## Current actual observation — 2026-10-09/10
+
+The actual in-app browser runs the published Linux7.2.7 kernel and `/init`
+through cold C emission and the C MMU/table owner. A bounded run retires
+266,481,582 instructions /150,000,000 admissions before its diagnostic quota;
+no shell acceptance is claimed. Explicit interactive lifetime is now separate
+from that regression quota; source, per-call work and residency bounds remain.
+Kernel entry/PID1 output is not offline terminal/development acceptance.
+
+The same fixed make ELF now has233,320/233,455 lowerable final byte coordinates,
+135 remaining valid instructions; no missing fault/fetch/capacity cuts.
+This static inventory is not an execution trace or whole-release closure.
+Environment formats, packed shifts, unpack and MMX shuffle add49 coordinates;
+their independent full-state CPU comparisons are2048/12288/5376/24576.
+The old duplicate packed-shift encoders are removed.
+
+An exact successful walk can be reused only while control/CPL/access, virtual
+page, every ancestor word and its physical descriptor identity stay equal.
+It retains no stale architectural TLB semantics.1920 whole-RAM/port/write-order
+cached/fresh models and existing49152 permission cases pass. Early actual-browser
+observations count210,001,176 reused /11,455,610 fresh walks; not a paired speedup.
+Source construction reuse separately uses a fresh C-MMU pin, physical revisions
+and owner nonce, rather than copied source or a second execution format.
+
+Independent native phram boot of the SAME kernel/root reaches interactive-ready.
+However, the frozen release GNU tar segfaults on a normal PAX source archive
+(ELF offset1d781), and source self-build finds a failing mv publication exit.
+USTAR ingestion works and allows independent compilation before that mv red.
+The current minimal selector passes; an equivalent normalized Boolean group
+needed a missing sibling entry-generation guard, now red-tested and repaired.
+These observations do not establish that the existing published ELF is repaired,
+nor that browser s6 failures are exclusively timing faults. Do not patch a guest
+RIP, replace Linux syscalls or relax service timeouts to hide them.
+
+Native publication and human-facing index/UI remain unchanged. Full native
+self-build, complete ISA/whole-release publication, browser shell/toolchain,
+storage/recovery/network and cold shell3s remain required acceptance gates.
+
 New actual in-app Worker pass includes an accepted ELF with the recovered
 extended compare, 81 additional C-authenticated image execution comparisons
 (1,251 total). Separate direct Windows CPU observations cover 16,384 compare

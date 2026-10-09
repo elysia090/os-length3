@@ -65,6 +65,12 @@ int main(int argc,char **argv)
     EXPECT(!memcmp(&uart,&immutable,sizeof uart));
     vm_uart_advance(&uart,timeout_at-1u);EXPECT(!vm_uart_irq(&uart));
     vm_uart_advance(&uart,timeout_at);EXPECT(vm_uart_irq(&uart) && !vm_uart_next_irq(&uart,&timeout_at));
+    vm_uart_reset(&uart);uart.ier=1u;uart.fcr=0x41u;
+    for(pl_u32 byte_in=0u;byte_in<16u;++byte_in)EXPECT(vm_uart_receive(&uart,0u,byte_in)==1);
+    vm_uart full=uart;EXPECT(vm_uart_receive(&uart,0u,99u)==0&&!memcmp(&uart,&full,sizeof uart));
+    EXPECT(vm_uart_irq(&uart));for(pl_u32 byte_in=0u;byte_in<16u;++byte_in)EXPECT(read_reg(0u)==byte_in);
+    EXPECT(!vm_uart_irq(&uart));vm_uart clean=uart;EXPECT(vm_uart_receive(&uart,0u,256u)==-1&&!memcmp(&uart,&clean,sizeof uart));
+    uart.mcr=16u;clean=uart;EXPECT(vm_uart_receive(&uart,0u,1u)==-1&&!memcmp(&uart,&clean,sizeof uart));
     if(failures)return 1;
     printf("C UART: %u register/FIFO/IRQ observations green; external sink and silicon baud fidelity NOT tested\n",reads);
     return 0;

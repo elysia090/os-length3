@@ -81,4 +81,14 @@ int vm_sources_publish(vm_sources *sources, pl_u32 bytes, pl_u32 instructions,
 int vm_sources_extend(vm_sources *sources, const vm_code_page *next,
     vm_execution_row *row);
 void vm_sources_write(void *sources, pl_u32 offset, pl_u32 bytes);
+/* Direct physical-slot revisions for construction reuse outside the hot
+ * cohort. They confer no fetch, permission or execution authority. A source
+ * must still be pinned by current C-MMU admission before reading its stamp.
+ * Every physical write invalidates its slot, including A/D and equal stores.
+ * Zero permanently retires an exhausted 32-bit revision until owner close;
+ * it never wraps to an old cache key. The caller owns the bounded word arena. */
+typedef struct {pl_u32 *words,count;pl_u64 generation;} vm_source_versions;
+int vm_source_versions_open(vm_source_versions *versions,pl_u32 *words,pl_u32 count,pl_u64 generation);
+void vm_source_versions_write(vm_source_versions *versions,pl_u32 offset,pl_u32 bytes);
+int vm_sources_stamp(const vm_sources *sources,const vm_source_versions *versions,pl_u32 owners[2],pl_u32 revisions[2]);
 #endif

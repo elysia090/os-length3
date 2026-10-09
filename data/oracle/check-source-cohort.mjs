@@ -133,7 +133,9 @@ try{
     await prime(all);
     assert.equal(vm.vm_source_query(port,entry+512n,8,codeView,rows),1n);
     assert.equal(metric(2),1n);++profileModels;
-    assert.equal(vm.vm_source_profile(11),0n);
+    assert(vm.vm_source_profile(11)>0n,'exact successful walks are reused');
+    assert(vm.vm_source_profile(12)>0n,'new walks remain explicit');
+    assert.equal(vm.vm_source_profile(13),0n);
   }
   // Reusing a short transfer must retain the current demand policy, not its
   // old 1024 cap. The next owned two-instruction prefix cannot run under 1.

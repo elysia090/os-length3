@@ -2,6 +2,7 @@
 // JavaScript transports bounded pages/metadata; it does not decode or execute
 // guest instructions, resolve guest branches, or implement guest exceptions.
 import {CompiledModules} from '../../../web/compiled-modules.mjs';
+import {PreparedCode} from '../../../web/prepared-code.mjs';
 import {CutTrace} from './cut-trace.mjs';
 import {CompilerOutput} from './compiler-output.mjs';
 import {equal} from './assertion.mjs';
@@ -24,9 +25,10 @@ assert.deepEqual = (a,b) => assert(JSON.stringify(a) === JSON.stringify(b),'star
 
 export async function checkStartup(reader,providerBytes,compilerBytes,readExtent,
     {extended = false,onProgress = () => {},decompression,immutableImage,warmCuts=1,
-      utcSeconds = BigInt(Math.floor(Date.now()/1000)),idleWait} = {}) {
+      utcSeconds = BigInt(Math.floor(Date.now()/1000)),idleWait,onCompilerRefusal,readInput,keepAlive=false} = {}) {
   const startedAt=performance.now();
   assert(Number.isInteger(warmCuts) && warmCuts>=1 && warmCuts<=64,'bounded warm cut quantum');
+  assert(typeof keepAlive==='boolean','explicit interactive lifetime');
   const read = async name => new Bytes(await reader(name));
   const header = await read('boot.header');
   let command = await read('boot.command');
@@ -51,17 +53,18 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     if(typeof vm.vm_source_profile!=='function')return null;
     const names=['queries','coldReservations','quotaReplacements','sampledQueries',
       'sampledAbsentEntry','sampledRemappedOwner','sampledBudgetReject',
-      'sampledReusable','sampledValidRowsSum','writeRevokedRows','pendingWriteCancellations'];
+      'sampledReusable','sampledValidRowsSum','writeRevokedRows','pendingWriteCancellations',
+      'walkProofHits','walkProofMisses'];
     return Object.fromEntries(names.map((name,i)=>[name,String(vm.vm_source_profile(i))]));
   };
   const compilerModule = await WebAssembly.compile(compilerBytes);
   assert.deepEqual(WebAssembly.Module.imports(compilerModule),[{module:'machine',name:'memory',kind:'memory'}]);
-  const cc = (await WebAssembly.instantiate(compilerModule,{machine:{memory}})).exports;
+  let cc = (await WebAssembly.instantiate(compilerModule,{machine:{memory}})).exports;
   assert.equal(vm.vm_entry_abi(),4);assert.equal(cc.compiler_entry_abi(),4);
   for(const name of ['vm_source_demands','vm_source_admissions','vm_run_interrupted','vm_run_source'])
     assert.equal(typeof vm[name],'function','C warm admission observations required');
   assert(vm.vm_arena_min()<=cc.compiler_static_min(),'disjoint VM and cold static/stack reservations');
-  const engines = new CompiledModules({machine:{memory,
+  const engineImports={machine:{memory,
     access:vm.vm_access,segment:vm.vm_segment,reserve:vm.vm_reserve,commit:vm.vm_commit,
     reserve_pair:vm.vm_reserve_pair,commit_pair:vm.vm_commit_pair,
     read_pair:vm.vm_read_pair,
@@ -69,15 +72,22 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     write_begin:vm.vm_write_begin,write_word:vm.vm_write_word,write_end:vm.vm_write_end,
     table:vm.vm_table,far_return:vm.vm_return,control:vm.vm_control,iret:vm.vm_iret,msr:vm.vm_msr,interrupt_flag:vm.vm_flag,
     software_interrupt:vm.vm_software_interrupt,system_transfer:vm.vm_system,floating_wait:vm.vm_floating_wait,checkpoint:vm.vm_checkpoint,descriptor:vm.vm_descriptor,far_transfer:vm.vm_transfer,
-    io:vm.vm_io,time:vm.vm_time,debug:vm.vm_debug}},
-    {maximumEntries:1024,maximumBytes:262144});
-  const compilerOutput = cc.compiler_arena_min();
-  const compilerReport = compilerOutput + 65536;
+    io:vm.vm_io,time:vm.vm_time,debug:vm.vm_debug}};
+  let engines = new CompiledModules(engineImports,{maximumEntries:1024,maximumBytes:262144});
+  let prepared=new PreparedCode();
+  let compilerOutput = cc.compiler_arena_min();
+  let compilerReport = compilerOutput + 65536;
   // Compiler output/stack and VM metadata are outside all guest mappings.
   // Cold input borrows the exact C-MMU resident fragments, never a copy arena.
-  const input = (compilerReport + 80 + 4095) & ~4095;
-  const rows = input + 8192, directoryOffset = input + 12288;
-  const capacity = extended ? 8192 : 4096, branches = directoryOffset + capacity * 32;
+  // Construction capacity is a distinct private lifetime, never guest RAM.
+  // Reserve bounded room for a replacement frontend without moving a running
+  // machine, relaxing code admission or restoring an observed CPU checkpoint.
+  const input = ((compilerReport + 80 + 4095) & ~4095)+524288;
+  const rows = input + 8192;
+  const capacity = extended ? 8192 : 4096;
+  const versionOffset=input+12288,versionCount=capacity+32;
+  const directoryOffset=(versionOffset+versionCount*4+4095)&~4095;
+  const branches = directoryOffset + capacity * 32;
   const base = (branches + (capacity - 1) * 16 + 4095) & ~4095;
   const port = base + 2048, segments = base + 1408, codeView = base + 2112, pageRequest = base + 2176;
   const codeOffset = base + 32768, gdtOffset = base + 45056, stackOffset = base + 49152;
@@ -120,6 +130,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   view.setBigUint64(port,machineGeneration,true);
   assert.equal(vm.vm_open(base,data.length - base,4096,directoryOffset,pages.length,capacity,branches,machineGeneration),0);
   assert.equal(vm.vm_bind_state(base),0); assert.equal(vm.vm_bind_segments(segments),0);
+  assert.equal(vm.vm_source_versions_start(versionOffset,versionCount,machineGeneration),0);
   assert.equal(vm.vm_rtc_start(port,machineGeneration,utcSeconds),0);
   // No A/D warmup, candidate RIP list or native prefix modules. C vm_code
   // projects the current translation. This single-owner Worker pins RAM,
@@ -140,7 +151,15 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   let idleEvents=0,idleNanoseconds=0n;
   if(idleWait!==undefined)assert(typeof idleWait==='function' && typeof vm.vm_idle_clock==='function','C idle clock transport');
   const consoleOutput=new Uint8Array(16384);
-  let consoleBytes=0;
+  let consoleBytes=0,consoleHead=0,consoleAccepted=0n;
+  function consoleText(){
+    const decoder=new TextDecoder();
+    if(!consoleHead)return decoder.decode(consoleOutput.subarray(0,consoleBytes));
+    return decoder.decode(consoleOutput.subarray(consoleHead),{stream:true})
+      +decoder.decode(consoleOutput.subarray(0,consoleHead));
+  }
+  function consoleObservation(){return {acceptedBytes:Number(consoleAccepted),retainedBytes:consoleBytes,
+    evictedBytes:String(consoleAccepted-BigInt(consoleBytes)),text:consoleText()};}
   let repeatInitialState, repeatInitialSegments, repeatComparedBytes = 0;
   let relocationRegisterCheckpoint;
   let firstRepeatWait;
@@ -152,9 +171,54 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   const trace = new CutTrace();
   const relocationTrace = [];
   let cold = data, report = view;
-  const compilerOutputWitness=new CompilerOutput(cold,compilerOutput,65536,compilerReport,memory);
+  let compilerOutputWitness=new CompilerOutput(cold,compilerOutput,65536,compilerReport,memory);
+  let compilerEpoch=1,inputSequence=0n;
+  const compilerReplacements=[];
   const rip = () => view.getBigUint64(base + 384,true);
+  function sourceIdentity(entry,limit,generation){
+    const at=base+2304;
+    if(vm.vm_source_stamp(port,generation,at))return null;
+    return `${entry}:${limit}:${view.getBigUint64(at,true)}:${view.getBigUint64(at+8,true)}:${view.getUint32(at+16,true)}:${view.getUint32(at+20,true)}:${view.getUint32(at+24,true)}:${view.getUint32(at+28,true)}`;
+  }
+  async function replaceCompiler(refusal){
+    if(typeof onCompilerRefusal!=='function')return false;
+    const bytes=await onCompilerRefusal(refusal);if(!(bytes instanceof Uint8Array)||!bytes.length)throw new Error('replacement compiler bytes');
+    const module=await WebAssembly.compile(bytes);assert.deepEqual(WebAssembly.Module.imports(module),[{module:'machine',name:'memory',kind:'memory'}]);
+    // Probe this trusted compiler in a disposable private memory BEFORE its
+    // data initialization is allowed to touch the live machine's memory.
+    const probeMemory=new WebAssembly.Memory({initial:Math.ceil(input/65536)});
+    const probe=(await WebAssembly.instantiate(module,{machine:{memory:probeMemory}})).exports;
+    assert.equal(probe.compiler_entry_abi(),4);const output=probe.compiler_arena_min();
+    assert(probe.compiler_static_min()>=vm.vm_arena_min()&&output>=probe.compiler_static_min()&&output+65536+80<=input,
+      'replacement remains inside private construction reservation');probe.compiler_close();
+    const oldRip=rip(),oldRetired=view.getBigUint64(base+1128,true);
+    cc.compiler_close();prepared.close();engines.close();
+    for(const slot of installedSlots.keys())table.set(slot,null);installedSlots.clear();
+    assert.equal(vm.vm_sources_reset(),0);
+    const replacement=(await WebAssembly.instantiate(module,{machine:{memory}})).exports;
+    assert.equal(replacement.compiler_entry_abi(),4);assert.equal(replacement.compiler_arena_min(),output);
+    assert(output>=replacement.compiler_static_min()&&output+65536+80<=input,'replacement remains inside private construction reservation');
+    cc=replacement;compilerOutput=output;compilerReport=output+65536;
+    compilerOutputWitness=new CompilerOutput(cold,compilerOutput,65536,compilerReport,memory);
+    engines=new CompiledModules(engineImports,{maximumEntries:1024,maximumBytes:262144});prepared=new PreparedCode();
+    assert.equal(vm.vm_source_versions_start(versionOffset,versionCount,machineGeneration),0);
+    assert.equal(rip(),oldRip);assert.equal(view.getBigUint64(base+1128,true),oldRetired);
+    compilerReplacements.push({epoch:++compilerEpoch,entry:refusal.entry,bytes:bytes.length,retired});return true;
+  }
+  function receiveInput(){
+    if(typeof readInput!=='function')return;
+    for(let n=0;n<16;++n){const byte=readInput(false);if(byte===null||byte===undefined)return;
+      const accepted=vm.vm_console_receive(port,machineGeneration,inputSequence+1n,byte);
+      if(accepted===2)return;assert.equal(accepted,1);++inputSequence;readInput(true);}
+  }
   let reportedRetired=0,reportedAdmissions=0;
+  function systemProfile(){
+    if(typeof vm.vm_system_profile!=='function')return null;
+    const count=vm.vm_system_profile(0n,12),rows=[];
+    for(let serial=count>128n?count-127n:1n;serial<=count;++serial)
+      rows.push({serial:String(serial),words:Array.from({length:12},(_,word)=>`0x${BigInt.asUintN(64,vm.vm_system_profile(serial,word)).toString(16)}`)});
+    return {count:String(count),columns:['operation','rip','cr3','retired','rax','rdi','rsi','rdx','r10','r8','r9','nextRip'],rows};
+  }
   function reportProgress() {
     reportedRetired=retired;reportedAdmissions=admissions;
     // Read-only diagnostics: neither a CPU snapshot nor a source retirement.
@@ -163,10 +227,12 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       retired,admissions,nextRip:`0x${rip().toString(16)}`,quantumYields,idleEvents,idleNanoseconds:String(idleNanoseconds),
       architecturalRCX:`0x${view.getBigUint64(base+8,true).toString(16)}`,
       residentPages:vm.vm_page_count(),memoryBytes:memory.buffer.byteLength,
-      console:{acceptedBytes:consoleBytes,text:new TextDecoder().decode(consoleOutput.subarray(0,consoleBytes))},
+      console:consoleObservation(),
       sourceReuse:{hits:sourceHits,misses:sourceMisses,warmAdmissions,warmRuns,warmCompleted,capacity:sourceCapacity},engineReuse:engines.stats(),
+      preparedCode:prepared.stats(),
       compilerOutput:compilerOutputWitness.stats(),
       sourceProfile:sourceProfile(),
+      systemProfile:systemProfile(),
       timingMs:{cold:coldMs,engine:engineMs,execution:executionMs,supply:supplyMs,admission:admissionMs,
         elapsedCheck:performance.now()-startedAt}});
   }
@@ -342,7 +408,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   }
   async function idleBoundary(){
     if(!idleWait)return {awaiting:'accepted machine wake event; idle transport not selected'};
-    if(idleEvents>=4096)return {awaiting:'idle event diagnostic bound',idleEvents};
+    if(!keepAlive&&idleEvents>=4096)return {awaiting:'idle event diagnostic bound',idleEvents};
     // Account for the retiring HLT's real execution before selecting its
     // next deadline. A hardware edge may already be due; never ask the host
     // to wait for a timestamp earlier than the current virtual observation.
@@ -350,7 +416,15 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     acceptClock(machineGeneration);assert.equal(vm.vm_clock_poll(port,machineGeneration),0n);++boundaryClockEvents;
     const result=vm.vm_idle_clock(port,machineGeneration);
     if(result===1n)return null; // An already pending C event needs no host delay.
-    if(result===4n)return {awaiting:'external wake event; no currently eligible timer deadline'};
+    if(result===4n){
+      if(!keepAlive)return {awaiting:'external wake event; no currently eligible timer deadline'};
+      // No eligible deadline is not the end of a terminal session. Wait for
+      // input while reporting only the actually measured idle duration.
+      const began=performance.now();await new Promise(resolve=>setTimeout(resolve,16));
+      idleNanoseconds+=BigInt(Math.floor((performance.now()-began)*1000000));receiveInput();
+      assert.equal(vm.vm_clock_poll(port,machineGeneration),18n);acceptClock(machineGeneration);
+      assert.equal(vm.vm_clock_poll(port,machineGeneration),0n);++idleEvents;return null;
+    }
     assert.equal(result,18n);
     const deadlineNanoseconds=view.getBigUint64(port+8,true);
     const virtualNanoseconds=BigInt(Math.round(executionMs*1000000))+idleNanoseconds;
@@ -440,6 +514,10 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     assert(slot >= firstSlot && slot < firstSlot + sourceCapacity,'C-chosen bounded engine slot');
     if (projection === 1n) {
       ++sourceMisses;
+      const identity=sourceIdentity(entry,limit,generation),cached=identity===null?null:prepared.get(identity);
+      let instance,sourceBytes,instructions,binding;
+      if(cached){({instance,sourceBytes,instructions,binding}=cached);}
+      else{
       const construct = () => {
         const count = view.getUint32(codeView + 44,true) ? 2 : 1;
         for (let page = 0; page < count; ++page) {
@@ -475,7 +553,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       }
       if (status) {
         const available = Math.min(15,4096 - Number(entry & 4095n));
-        return {kind:'compile',status,entry:`0x${entry.toString(16)}`,
+        const refusal={kind:'compile',status,entry:`0x${entry.toString(16)}`,
           source:Array.from(data.subarray(offset + Number(entry & 4095n),offset + Number(entry & 4095n) + available)),
           sourceAvailable:available,
           cpu:{registers:Array.from({length:16},(_,i) => `0x${view.getBigUint64(base + i*8,true).toString(16)}`),
@@ -486,19 +564,25 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
             efer:`0x${view.getBigUint64(base + 424,true).toString(16)}`,
             mxcsr:`0x${view.getUint32(base + 612,true).toString(16)}`,
             xmm:Array.from({length:32},(_,i)=>`0x${view.getBigUint64(base + 128 + i*8,true).toString(16)}`)}};
+        if(status===-102&&await replaceCompiler(refusal))return null;
+        return refusal;
       }
       const length = Number(report.getBigUint64(compilerReport + 40,true));
-      const sourceBytes = Number(report.getBigUint64(compilerReport + 32,true));
-      const instructions = Number(report.getBigUint64(compilerReport + 24,true));
+      sourceBytes = Number(report.getBigUint64(compilerReport + 32,true));
+      instructions = Number(report.getBigUint64(compilerReport + 24,true));
+      binding=report.getUint32(compilerReport+76,true);
       assert(length > 0 && length <= 65536 && instructions > 0 && instructions <= limit);
       const beforeEngine = performance.now();
       // C owns each source coordinate and binding; the engine owner shares
       // only an exact newly emitted topology, not a per-coordinate instance.
-      const instance = await engines.get(cold.subarray(compilerOutput,compilerOutput + length));
+      instance = await engines.get(cold.subarray(compilerOutput,compilerOutput + length));
       engineMs += performance.now() - beforeEngine; emittedBytes += length;
+      const currentIdentity=sourceIdentity(entry,limit,generation);
+      if(currentIdentity!==null)prepared.put(currentIdentity,{instance,sourceBytes,instructions,binding,bytes:length});
+      }
       table.set(slot,instance.exports.cut); installedSlots.set(slot,instance);
       beforeAdmission = performance.now();
-      assert.equal(vm.vm_source_publish(sourceBytes,instructions,report.getUint32(compilerReport+76,true),rows),0);
+      assert.equal(vm.vm_source_publish(sourceBytes,instructions,binding,rows),0);
       admissionMs += performance.now() - beforeAdmission;
     } else {
       ++sourceHits; assert(installedSlots.has(slot),'C hit requires its installed engine handle');
@@ -578,14 +662,18 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
         assert(byte>=0 && byte<=255);
         // Reserve bounded observation capacity BEFORE transport acceptance.
         // This is a local byte sink, not a JS UART or Linux console model.
-        if(consoleBytes===consoleOutput.length){
+        if(consoleBytes===consoleOutput.length&&!keepAlive){
           retired+=progress.retired;
           return {kind:'console-capacity',result:'26',
             entry:`0x${waitingEntry.toString(16)}`,acceptedBytes:consoleBytes,capacity:consoleOutput.length,
             completed:progress.completed,sourceRetired:progress.retired};
         }
+        assert(consoleAccepted<BigInt(Number.MAX_SAFE_INTEGER),'console observation counter exhausted');
         assert.equal(vm.vm_console_commit(port,generation,ticket,byte),1);
-        consoleOutput[consoleBytes++]=byte;
+        // A live terminal retains a fixed window, not an ever-growing log.
+        // The bounded regression still stops BEFORE accepting an excess byte.
+        consoleOutput[(consoleHead+consoleBytes)%consoleOutput.length]=byte;++consoleAccepted;
+        if(consoleBytes===consoleOutput.length)consoleHead=(consoleHead+1)%consoleOutput.length;else++consoleBytes;
         assert.equal(vm.vm_console_commit(port,generation,ticket,byte),0);continue;
       }
       if (result === 18n) {
@@ -733,12 +821,19 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     let stopped;
     // Real scalar startup loops can retire far more than a tiny probe quota.
     // These are diagnostic limits, never synthetic execution completion.
-    const maximumAdmissions = extended ? 150000000 : 1000000;
-    const maximumRetired = extended ? 300000000 : 2000000;
+    // A bounded regression ends at its quota. An explicitly interactive owner
+    // must not destroy a running guest merely because that regression ended.
+    // Per-call work, source, module, input and resident-memory bounds stay fixed;
+    // closing the Worker/session still disposes every execution owner below.
+    const maximumAdmissions = keepAlive ? Number.MAX_SAFE_INTEGER : extended ? 150000000 : 1000000;
+    const maximumRetired = keepAlive ? Number.MAX_SAFE_INTEGER : extended ? 300000000 : 2000000;
     while (admissions < maximumAdmissions && retired < maximumRetired) {
+      receiveInput();
       stopped = await step(view.getUint32(segments + 4,true) ? 1 : 1024);
       if (stopped) break;
       if (extended && (retired-reportedRetired>=1000000 || admissions-reportedAdmissions>=1000000))reportProgress();
+      // Let console/close messages enter even when every construction is hot.
+      if(keepAlive&&!(admissions&4095))await new Promise(resolve=>setTimeout(resolve,0));
     }
     if (!stopped) stopped = {kind:'quota',entry:`0x${rip().toString(16)}`,admissions,retired,
       maximumAdmissions,maximumRetired,
@@ -747,7 +842,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
         cr3:`0x${view.getBigUint64(base + 408,true).toString(16)}`}};
     assert(retired >= 379,'REP really completed, not only accepted');
     assert.equal(repeatComparedBytes,kernelBytes);
-    return {format:'browser-bzimage-startup-v1',status:'pass',linuxBoot:'not-achieved',
+    return {format:'browser-bzimage-startup-v1',status:extended?'stopped':'pass',probeStatus:'pass',linuxBoot:'not-achieved',
       decompressedOutput,linuxEntry,
       retired,modules:engines.stats().compilations,admissions,liveSlots:installedSlots.size,manualBranchEntries:0,
       independentStateCheckpoint:86,relocationRegisterCheckpoint,
@@ -758,8 +853,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       firstRepeatWait,pageSupplies,sourceExtentBytes,quantumYields,clockEvents,boundaryClockEvents,deferredClockPolls,externalInterrupts,
       idleEvents,idleNanoseconds:String(idleNanoseconds),
       postCode:vm.vm_post_read(machineGeneration),
-      console:{acceptedBytes:consoleBytes,capacity:consoleOutput.length,
-        text:new TextDecoder().decode(consoleOutput.subarray(0,consoleBytes)),
+      console:{...consoleObservation(),capacity:consoleOutput.length,
         ownership:'bounded local sink; C accepts generation/ticket/exact byte before UART commit/retirement; not a guest tty implementation'},
       rtcSeed:{utcSeconds:String(utcSeconds),source:'explicit supervisor UTC snapshot; not authenticated network time'},
       clockContract:`active C execution nanoseconds${idleWait?' plus measured idle transport time':''}, guest clock requests plus safe cut-boundary poll each >=1 ms; virtual TSC 1 GHz, PIT 1193182 Hz, C RTC 32768 Hz; compilation/delivery paused`,
@@ -769,8 +863,11 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       guestExecution:'C-Wasm table dispatcher/MMU',coldCompilation:'C-Wasm decoder/planner/emitter',
       guestMemoryCallback:'C-Wasm, not JavaScript',sourceProjection:'C-MMU borrowed page, no JS virtual-to-physical mapping',
       emittedBytes,copiedCodeBytes:0,borrowedCodeBytes,engineReuse:engines.stats(),compilerOutput:compilerOutputWitness.stats(),
+      preparedCode:prepared.stats(),codeRevisionBytes:versionCount*4,
+      compilerEpoch,compilerReplacements,inputBytes:String(inputSequence),
       sourceProfile:sourceProfile(),
       warmCuts,admissionUnit:'supervisor source query/bind; C warm admissions counted separately',
+      systemProfile:systemProfile(),
       sourceReuse:{hits:sourceHits,misses:sourceMisses,warmAdmissions,warmRuns,warmCompleted,capacity:sourceCapacity,metadataBytes:vm.vm_source_metadata_bytes(),sourcePayloadBytes:0},
       timingMs:{cold:coldMs,engine:engineMs,execution:executionMs,supply:supplyMs,admission:admissionMs,
         elapsedCheck:performance.now()-startedAt},trace:trace.read(),relocationTrace,
@@ -793,11 +890,11 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       request:{address:`0x${view.getBigUint64(port+32,true).toString(16)}`,
         bytes:view.getUint32(port+40,true),access:view.getUint32(port+44,true)},
       trace:trace.read(4),residentPages:vm.vm_page_count(),memoryBytes:memory.buffer.byteLength,
-      console:{acceptedBytes:consoleBytes,text:new TextDecoder().decode(consoleOutput.subarray(0,consoleBytes))},
+      console:consoleObservation(),
       sourceReuse:{hits:sourceHits,misses:sourceMisses},decompressedOutput,linuxEntry};
     throw error;
   } finally {
     for (const slot of installedSlots.keys()) table.set(slot,null);
-    engines.close(); cc.compiler_close(); vm.vm_close();
+    prepared.close();engines.close(); cc.compiler_close(); vm.vm_close();
   }
 }

@@ -48,9 +48,49 @@ static void expect_fault(machine_result result, pl_u64 address, pl_u32 vector, p
     EXPECT(get(port + 16u) == address);
     EXPECT(get(port + 24u) == ((pl_u64)error << 32u | vector));
 }
+static _Alignas(8) pl_u8 reference_arena[65536];
+typedef struct {pl_u64 count,order;} write_observation;
+static void observe_write(void *owner,pl_u32 offset,pl_u32 bytes)
+{write_observation *o=owner;++o->count;o->order=o->order*65599u+offset+((pl_u64)bytes<<32u);}
+static void walk_proof_models(void)
+{
+    unsigned comparisons=0u;
+    for(unsigned pattern=0u;pattern<4u;++pattern)
+    for(unsigned level=0u;level<4u;++level)for(unsigned mode=0u;mode<20u;++mode)
+    for(unsigned role=0u;role<3u;++role)for(unsigned user=0u;user<2u;++user){
+        reset(base);vm_mmu_context cpu=context();cpu.cpl=user?3u:0u;
+        pl_u32 flags=role==0u?MACHINE_MEMORY_READ:role==1u?MACHINE_MEMORY_WRITE:MACHINE_MEMORY_READ|VM_MMU_EXECUTE;
+        pl_u64 initial=pattern==0u?0u:pattern==1u?~0ull:pattern==2u?0x1122334455667788ull:0x8000000000000001ull;
+        put(pages[4].offset,initial);put(pages[5].offset,~initial);
+        EXPECT(!access(&cpu,base,8u,flags,initial));
+        EXPECT(memory.walks[(base>>12u)&63u].depth==4u);
+        pl_u64 entry=get(entries[level]),address=base;
+        switch(mode){case 0u:break;case 1u:put(entries[level],entry&~32ull);break;
+        case 2u:put(entries[level],entry&~64ull);break;case 3u:put(entries[level],entry&~1ull);break;
+        case 4u:put(entries[level],entry&~4ull);break;case 5u:put(entries[level],entry&~2ull);break;
+        case 6u:put(entries[level],entry|(1ull<<63u));break;case 7u:put(entries[level],entry|(1ull<<40u));break;
+        case 8u:put(entries[level],entry|128u);break;case 9u:put(entries[level],0x9007u);break;
+        case 10u:pages[level].rights=0u;break;case 11u:pages[level].kind=VM_MEMORY_DEFERRED;break;
+        case 12u:pages[level].offset=pages[4].offset;break;case 13u:cpu.cr3=0x9000u;break;
+        case 14u:cpu.cr0^=0x10000u;break;case 15u:cpu.cpl^=3u;break;
+        case 16u:cpu.cr4|=1ull<<12u;break;case 17u:cpu.efer^=1ull<<11u;break;
+        case 18u:address=base+1u;break;default:address=base+4092u;break;}
+        memcpy(reference_arena,arena,sizeof arena);vm_memory reference=memory;reference.bytes=reference_arena;
+        memset(reference.walks,0,sizeof reference.walks);
+        write_observation observed[2]={{0},{0}};memory.before_write=observe_write;memory.write_owner=observed;
+        reference.before_write=observe_write;reference.write_owner=observed+1u;
+        machine_result actual=access(&cpu,address,8u,flags,~initial);
+        machine_result expected=vm_mmu_access(&reference,port,&cpu,address,8u,flags,~initial);
+        EXPECT(actual==expected);EXPECT(!memcmp(arena,reference_arena,sizeof arena));
+        EXPECT(!memcmp(observed,observed+1u,sizeof *observed));
+        EXPECT(!memcmp(&memory.reservation,&reference.reservation,sizeof memory.reservation));++comparisons;
+    }
+    printf("walk proof: %u cached/fresh whole-RAM/port/write-order comparisons; ancestor/control/access/cross-page mutation\n",comparisons);
+}
 
 int main(void)
 {
+    walk_proof_models();
     /* Read-only 128-bit operands have the same complete preflight, without
      * the aligned RMW pair's write rights or retained reservation. */
     for (pl_u32 mode=0u;mode<8u;++mode) {

@@ -23,9 +23,9 @@ Cold shell3s remains a target, not an achieved claim.
 
 ## Current authoritative state
 
-Same make/every-final-PF_X-byte population:233271/233455 lowerable,184 missing,
-zero missing fault cuts/fetch/capacity refusals. Remaining floating97,
-SIMD86,atomic1. FirstDD32 at0xd382. This complete byte inventory is
+Same make/every-final-PF_X-byte population:233320/233455 lowerable,135 missing,
+zero missing fault cuts/fetch/capacity refusals. Remaining floating48,
+SIMD86,atomic1. FirstFBLD at0xd885. This complete byte inventory is
 not an execution trace, kernel/image publication or browser boot proof.
 
 FLDCW uses a two-input pure control/status projection and exact source cut.
@@ -49,12 +49,46 @@ common construction gates pass. Data-only writes from a resumed source-owned
 instruction preserve its exact retained row; real code writes still revoke.
 Current receipts and scope are in [region and retained source](../vm/check/browser/evidence/2026-10-09-regions-and-resume.md).
 Earlier completed work is archived as evidence, not repeated as pending work.
+FNSTENV/FLDENV/FNSAVE/FRSTOR use exact14/28/94/108-byte physical extents;
+2048 independent full-state observations pass. Packed MMX/XMM shifts share
+one count/width law;12288 independent comparisons pass. Unpack closes the
+4/8/16-byte source geometry;5376 independent comparisons pass. All MMX
+shuffle immediates use the shared static coordinate rule;24576 comparisons pass.
+Superseded packed-shift encoders are deleted, not runtime alternatives.
+
+Successful MMU walks have bounded exact ancestor/value witnesses, not
+architecturally stale TLB entries.1920 cached/fresh whole-RAM/port/write-order
+comparisons and existing49152 permission cases pass. An actual-browser early
+sample gives210001176 reused /11455610 fresh walks; not a paired speedup or
+shell proof. Construction reuse is separately fenced by C physical source
+revisions and owner nonce, with no cached source copy.
+
+Actual browser executes Linux7.2.7 and /init, but offline shell remains red.
+A bounded run reaches266481582 retired /150000000 admissions and ends at
+the diagnostic quota, not an ISA miss. Explicit interactive lifetime is now
+separate from that regression quota; bounded work/memory/source ownership
+remain. UART input, compiler replacement and a bounded console window are
+transport/lifetime controls, never a guest POSIX implementation.
+
+The frozen native bundle also has a reproduced GNU tar PAX extraction
+segfault (RIP offset1d781) and an mv build-publication exit failure. Independent
+native phram boot itself reaches interactive-ready; full source self-build is
+NOT green. Current minimal direct/projected selection passes, but an equivalent
+normalized Boolean group lacked the pending sibling entry-generation condition.
+That group is now refused until its entry readers publish; the structural red
+and65536 independent CPU comparisons pass. This alone does NOT repair already
+published ELF bytes. Validate/repair the actual whole-ELF producer and frozen
+userland inputs before attributing every s6 failure to browser latency or VM.
 The unrestricted intermittent native CALL RAM-payload equivalence red remains
 separate; scoped/positive gates do not assert that it is solved.
 
 ## Next work, in order
 
 1. Close the remaining common ISA families to ZERO.
+   Also reproduce frozen tar/mv/s6 failures in the current whole-ELF publication
+   path, repair their actual producer, and verify a separately identified new
+   candidate. No observed-RIP patches, service-timeout relaxation or in-place
+   mutation of the frozen native publication.
    Floating/SIMD and remaining atomic meaning, not
    Linux-function or observed-RIP cases. Use shared x86 SSA, exact formats,
    effects and machine owners; preserve fault/access order, partial regions,

@@ -119,6 +119,19 @@ for(let byte=0;byte<256;++byte){
   assert.equal(vm.vm_bind_state(base),0);assert.equal(vm.vm_console_commit(port,9n,newer,byte),-1);++consoleRejectedReplies;
 }
 assert.deepEqual(accepted,Array.from({length:256},(_,i)=>i));
+let inputAccepts=0,inputRefusals=0;
+reset();await run(0x3fa,1,1,1,0); // Enable the actual C receive FIFO.
+const inputCpu=Buffer.from(data.subarray(base,base+1256));
+for(let i=1;i<=16;++i){assert.equal(vm.vm_console_receive(port,9n,BigInt(i),i+64),1);++inputAccepts;
+  assert.equal(vm.vm_console_receive(port,9n,BigInt(i),i+64),0,'exact receive retry is idempotent');}
+assert.equal(vm.vm_console_receive(port,9n,17n,81),2,'backpressure cannot consume the next input sequence');
+for(const [p,g,s,b]of [[port,8n,17n,81],[port+8,9n,17n,81],[port,9n,0n,81],[port,9n,18n,81],[port,9n,16n,80^1],[port,9n,17n,256]]){
+  assert.equal(vm.vm_console_receive(p,g,s,b),-1);++inputRefusals;}
+assert(data.subarray(base,base+1256).equals(inputCpu),'receiving bytes cannot retire or modify CPU state');
+for(let i=1;i<=16;++i)await run(0x3f8,1,0,0,i+64);
+assert.equal(vm.vm_console_receive(port,9n,17n,81),1);++inputAccepts;await run(0x3f8,1,0,0,81);
+reset();assert.equal(vm.vm_console_receive(port,9n,1n,90),1,'close/reopen has a new input owner');++inputAccepts;
+await run(0x3f8,1,0,0,90);
 let independentSerial;
 if(qemu){
   await mkdir(oracleOutput,{recursive:true});
@@ -133,7 +146,7 @@ if(qemu){
   });
 }
 console.log(JSON.stringify({format:'compiled-uart-c-provider-v1',status:'pass',modules:cuts.size,comparisons,faults,refusals,
-  consoleWaits,consoleAccepts,consoleRejectedReplies,
+  consoleWaits,consoleAccepts,consoleRejectedReplies,inputAccepts,inputRefusals,
   independentSerial,
   externalTransmission:'C-owned byte/ticket frontier; no guest retirement before sink acceptance; exact duplicate has no output',linuxBoot:'not-tested',
   oracle:'complete CPU/segment plus privilege/FIFO model; independent QEMU device observations are a separate test'},null,2));

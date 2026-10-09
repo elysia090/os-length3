@@ -6,12 +6,18 @@ import { createWriteStream, realpathSync, statSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { finished } from 'node:stream/promises';
 
-if (process.argv.length !== 6 && process.argv.length !== 7) {
-  console.error('usage: node check-native-boot.mjs QEMU KERNEL INITRAMFS OUTPUT-LOG [SYSTEM-SQUASHFS]');
+const [qemuArg,kernelArg,initArg,outputArg,...options]=process.argv.slice(2);
+const systemArg=options[0]&&!options[0].startsWith('--')?options.shift():undefined;
+if (!outputArg||options.some(x=>!x.startsWith('--source=')&&!x.startsWith('--accel='))
+    ||['--source=','--accel='].some(prefix=>options.filter(x=>x.startsWith(prefix)).length>1)) {
+  console.error('usage: node check-native-boot.mjs QEMU KERNEL INITRAMFS OUTPUT-LOG [SYSTEM-SQUASHFS] [--source=SOURCE-TAR] [--accel=tcg|whpx]');
   process.exit(2);
 }
-const [qemu, kernel, initramfs] = process.argv.slice(2, 5).map(path => realpathSync(path));
-const system = process.argv[6] === undefined ? undefined : realpathSync(process.argv[6]);
+const [qemu, kernel, initramfs] = [qemuArg,kernelArg,initArg].map(path => realpathSync(path));
+const system = systemArg === undefined ? undefined : realpathSync(systemArg);
+const sourceOption=options.find(x=>x.startsWith('--source=')),source=sourceOption?realpathSync(sourceOption.slice(9)):undefined;
+const accelerator=options.find(x=>x.startsWith('--accel='))?.slice(8)??'tcg';
+if(!['tcg','whpx'].includes(accelerator)||source&&!system)throw new Error('explicit native oracle accelerator/source domain');
 const fullSystem = system !== undefined;
 let append = 'console=ttyS0,115200n8 earlyprintk=serial nokaslr rdinit=/init panic=-1';
 const systemOptions = [];
@@ -26,7 +32,14 @@ if (fullSystem) {
   append += ` memmap=${extent}$0x30000000 phram.phram=system,0x30000000,${extent}`;
   systemOptions.push('-device', `loader,file=${system},addr=0x30000000,force-raw=on`);
 }
-const output = resolve(process.argv[5]);
+let sourceExtent;
+if(source){const bytes=statSync(source).size;
+  if(!Number.isSafeInteger(bytes)||bytes<1||bytes>67108864)throw new Error('bounded read-only test-source extent');
+  sourceExtent=`0x${(Math.ceil(bytes/4096)*4096).toString(16)}`;
+  append+=` memmap=${sourceExtent}$0x38000000`;
+  systemOptions.push('-device',`loader,file=${source},addr=0x38000000,force-raw=on`);
+}
+const output = resolve(outputArg);
 realpathSync(dirname(output));
 const log = createWriteStream(output, { flags: 'wx' });
 await new Promise((resolve, reject) => {
@@ -36,7 +49,7 @@ await new Promise((resolve, reject) => {
 const cpu = 'qemu64,+ssse3,+sse4.1,+sse4.2,+popcnt,+cx16,-xsave,-avx,-aes,-pclmulqdq,-monitor';
 const started = performance.now();
 const args = [
-  '-machine', 'pc,accel=tcg', '-cpu', cpu, '-m', fullSystem ? '1024M' : '512M', '-smp', '1',
+  '-machine', `pc,accel=${accelerator}`, '-cpu', cpu, '-m', fullSystem ? '1024M' : '512M', '-smp', '1',
   '-kernel', kernel, '-initrd', initramfs,
   '-append', append, ...systemOptions,
   '-nodefaults', '-no-reboot', '-display', 'none', '-serial', 'stdio', '-monitor', 'none',
@@ -53,7 +66,7 @@ const stop = reason => {
   outcome = reason;
   child.kill();
 };
-const timeoutMs = fullSystem ? 120_000 : 45_000;
+const timeoutMs = source ? 600_000 : fullSystem ? 120_000 : 45_000;
 const timeout = setTimeout(() => stop(`boot/command timeout after ${timeoutMs / 1000} seconds`), timeoutMs);
 const sendCommands = async () => {
   const fullCommands = [
@@ -85,6 +98,21 @@ const sendCommands = async () => {
     'cmp /tmp/oracle-lower-hosts /run/release/etc/hosts',
     'test -f /run/cow/upper/etc/hosts',
     'test ! -e /run/cow/upper/usr',
+    ...(source?[
+      `printf '%s\\n' 'source,0x38000000,${sourceExtent}' >/sys/module/phram/parameters/phram`,
+      'mkdir -p /tmp/native-source',
+      // The frozen release GNU tar has a separately retained PAX parsing red.
+      // Test source uses portable USTAR until that separate red is solved.
+      'tar -xf /dev/mtd1 -C /tmp/native-source',
+      'cd /tmp/native-source',
+      'make -j2 -C src/v2/support all',
+      'make -j2 -C src/v2/x86 all',
+      'make -j2 -C src/v2/optimized-x86 all',
+      'make -j2 -C src/v2/postlink-compiler all check',
+      'make -j2 -C src/v2/wasm-compiler all packed-shift-check vector-unpack-check x87-control-check x87-environment-check',
+      'make -j2 -C src/v2/vm all check',
+      'printf "oracle-c-selfhosted\\n"',
+    ]:[]),
   ].join('\n');
   // An `(...) && success || failure` list suppresses errexit inside the
   // subshell. Execute an independent shell instead: any failed prerequisite
@@ -157,6 +185,6 @@ if (outcome !== null) {
   const milestone = fullSystem
     ? 'installed root -> PID 1/services/offline -> C/make -j4/Git/AES/apk'
     : 'kernel -> init -> shell/exec/arithmetic';
-  console.log(`native ${fullSystem ? 'system boot' : 'boot probe'}: green (${milestone}, ready=${readyMs.toFixed(1)}ms, QEMU TCG)`);
+  console.log(`native ${fullSystem ? 'system boot' : 'boot probe'}: green (${milestone}${source?' -> self-hosted C gates':''}, ready=${readyMs.toFixed(1)}ms, QEMU ${accelerator.toUpperCase()})`);
   console.log(`serial log: ${output}`);
 }

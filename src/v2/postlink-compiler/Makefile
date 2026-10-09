@@ -31,6 +31,12 @@ PROGRAM = $(BUILD)/postlink-compiler
 .PHONY: all library check elf-proof-check observed-compile-check relocation-free-product-check product-gate-check shared-product-gate-check runtime-elf-check modular-address-check physical-entry-check code-grid-check relative-code-pointer-check table-alternative-bound-check stack-slot-table-check copied-memory-table-check backward-exit-table-check backward-loop-table-check chained-table-cut-check nested-table-guards-check local-code-address-check pie-address-difference-check final-flags-after-value-check observed-code-span-check mutable-code-site-check trap-continuation-check alternative-record-check linked-field-authority-check table-side-exit-check call-cut-check dispatch-alias-check profile-extension-check overlapping-control-check patch-trampoline-check mixed-load-check nonimage-control-check dynamic-runtime-check metadata-closure-check entry-check native-closure-check select-x86-check native-layout-check population-check direct-control-check scalar-check physical-check quotient-check normal-form-check global-minimum-check instruction-law-check catalog block-catalog native-benchmark distribution-population-check production-benchmark-fixture-check production-benchmark-check linked-completeness-check \
 	clean dependencies
 all: $(PROGRAM)
+.PHONY: publication-lifetime-check
+check: publication-lifetime-check
+publication-lifetime-check: $(BUILD)/publication-lifetime-check
+	$(BUILD)/publication-lifetime-check
+$(BUILD)/publication-lifetime-check: check/publication-lifetime.c $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) -mno-red-zone $(INCLUDES) $< $(LIBRARY) ../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a ../support/build/libsupport.a -o $@
 library: $(LIBRARY)
 
 dependencies:

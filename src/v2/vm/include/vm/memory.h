@@ -33,6 +33,14 @@ typedef struct {
 /* One branch per non-first resident page. References name stable row ranks,
  * so appending a page moves neither a descriptor nor guest RAM. */
 typedef struct { pl_u64 bit; pl_u32 child[2]; } vm_memory_branch;
+/* An exact successful walk witness, not an architectural TLB. The current
+ * ancestor words and physical descriptor identities must all still match. */
+typedef struct {pl_u64 page,entry;pl_u32 rank,offset;} vm_walk_ancestor;
+typedef struct {
+    pl_u64 virtual_page,physical_page,control[4];
+    pl_u32 cpl,access,depth;
+    vm_walk_ancestor ancestors[4];
+} vm_walk_proof;
 /* Optional serialized invalidation hook, invoked before each physical RAM
  * fragment is changed, including paging A/D and reservation commit. Offsets
  * are relative to bytes, not guest virtual addresses. The hook cannot reenter
@@ -54,6 +62,8 @@ typedef struct {
     void *write_owner;
     vm_memory_reservation reservation;
     const vm_memory_page *recent[256];
+    vm_walk_proof walks[64];
+    pl_u64 walk_proof_hits,walk_proof_misses;
 } vm_memory;
 
 /* Validate the initial borrowed sorted rows once; all later rows append into

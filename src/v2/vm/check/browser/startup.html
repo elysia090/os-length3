@@ -2,9 +2,18 @@
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="./startup.css">
 <title>bzImage startup: running</title>
-<h1>Published bzImage → cold C-Wasm compiler → C VM</h1>
-<p>Bounded startup diagnostic. This is NOT Linux boot or a replacement UI.</p>
+<header><small>Machine boundary / live verification</small><h1>Linux console</h1>
+<p>Published bzImage → cold C compiler → C VM. Boot is verified by guest behavior, not this page's status.</p></header>
+<main>
+<section aria-label="Guest console"><pre id="console" aria-live="polite">Waiting for guest bytes…</pre>
+<form id="input-form"><label for="input-line">Console input</label><input id="input-line" autocomplete="off" spellcheck="false" placeholder="Send a line to the guest UART"><button>Send line</button></form></section>
+<aside><p id="phase" role="status">Starting</p>
+<form id="compiler-form"><label for="compiler-fixture">Updated compiler fixture</label><input id="compiler-fixture" value="generated-startup-shift-1009" spellcheck="false"><button id="compiler-load" disabled>Load compiler</button></form>
+<p class="note">Only construction state is replaced. Guest CPU, RAM, device and clock state stay live.</p></aside>
+</main>
+<h2>Diagnostic receipt</h2>
 <pre id="result">Running…</pre>
 <script type="module" src="./startup.mjs"></script>
 </html>

@@ -827,6 +827,12 @@ int pl_select_compare_boolean_group_shape(const pl_plan *plan, pl_u32 pending,
         frontier |= dependencies[local];
     }
     if (frontier & pending & ~booleans) return 0;
+    /* A Boolean publication overwrites its complete parent register, including
+     * any preparatory zero. Pending siblings can still need that register's
+     * entry generation; publish those readers before selecting this group.
+     * New-value consumers are producer dependencies, not entry readers. */
+    for(pl_u32 local=0u;local<PL_X86_GPR_COUNT;++local)
+        if((pending&(1u<<local))&&!(booleans&(1u<<local))&&(sources[local]&booleans))return 0;
     out->zero_before = booleans & ~reads;
     return 1;
 }

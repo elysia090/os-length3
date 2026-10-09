@@ -48,12 +48,24 @@ static pl_u32 source_limit;
 static pl_u64 source_demands;
 static pl_u32 source_admissions, run_interrupted;
 static vm_sources sources;
+static vm_source_versions source_versions;
+static pl_u64 source_version_ticket;
 #ifdef VM_SOURCE_PROFILE
 /* Construction-side observations, not CPU state, code identity or authority.
  * Every 4096th supervisor query samples only the bounded resident owner. */
 static pl_u64 source_profile[11];
+/* Opt-in bounded transfer observations. No guest bytes are read and no
+ * provider is called: this cannot alter translation A/D bits or a frontier. */
+static pl_u64 system_profile[128][12],system_profile_count;
+pl_u64 vm_system_profile(pl_u64 serial,pl_u32 word)
+{
+    if(word==12u)return system_profile_count;
+    if(word>=12u||!serial||serial>system_profile_count
+        ||system_profile_count-serial>=128u)return ~0ull;
+    return system_profile[(serial-1u)&127u][word];
+}
 pl_u64 vm_source_profile(pl_u32 index)
-{ return index<11u ? source_profile[index] : 0u; }
+{ return index<11u ? source_profile[index] : index==11u?resident.walk_proof_hits:index==12u?resident.walk_proof_misses:0u; }
 static void source_profile_write(void *owner, pl_u32 offset, pl_u32 bytes)
 {
     vm_sources *owned=owner;
@@ -90,6 +102,11 @@ static void source_profile_before(const vm_code_page *page, pl_u64 entry, pl_u32
 #define SOURCE_WRITE_OBSERVER vm_sources_write
 #endif
 static pl_u32 run_source_rank=VM_SOURCE_ROWS;
+static void source_effect(void *owner,pl_u32 offset,pl_u32 bytes)
+{
+    SOURCE_WRITE_OBSERVER(owner,offset,bytes);
+    vm_source_versions_write(&source_versions,offset,bytes);
+}
 static vm_page_supply supply;
 static vm_fault_delivery delivery;
 static vm_table_frontier table_frontier;
@@ -98,6 +115,8 @@ static vm_pit pit;
 static vm_pic pic;
 static vm_rtc rtc;
 static vm_uart uart;
+static pl_u64 input_sequence;
+static pl_u32 input_byte;
 static vm_post post;
 static vm_console console_owner;
 static pl_u32 boot_header, boot_header_bytes, boot_command;
@@ -116,7 +135,7 @@ pl_u32 vm_source_metadata_bytes(void) { return sizeof(vm_sources); }
 pl_u32 vm_slot_min(void)
 {
     pl_u32 fetch = (pl_u32)(uintptr_t)fetch_entry, call = (pl_u32)(uintptr_t)call_entry;
-    pl_u32 write = (pl_u32)(uintptr_t)SOURCE_WRITE_OBSERVER;
+    pl_u32 write = (pl_u32)(uintptr_t)source_effect;
     pl_u32 last = fetch > call ? fetch : call;
     if (last < write) last = write;
     pl_u32 select = (pl_u32)(uintptr_t)source_entry;
@@ -133,14 +152,17 @@ void vm_close(void)
     io_admission=(vm_io_admission){0};
 #ifdef VM_SOURCE_PROFILE
     for(pl_u32 i=0u;i<11u;++i)source_profile[i]=0u;
+    system_profile_count=0u;
 #endif
     table_frontier=(vm_table_frontier){0};
     vm_clock_close(&clock_owner); vm_pit_reset(&pit); vm_pic_reset(&pic);
     vm_console_close(&console_owner);
     vm_rtc_reset(&rtc);
     vm_uart_reset(&uart);
+    input_sequence=0u;input_byte=0u;
     post=(vm_post){0};
     vm_sources_open(&sources,0u,vm_slot_min());
+    source_versions=(vm_source_versions){0};
     vm_supply_reset(&supply);
     delivery = (vm_fault_delivery){0};
     resident = (vm_memory){ 0 };
@@ -254,7 +276,7 @@ int vm_open(pl_u32 base, pl_u32 bytes, pl_u32 reserved,
                        (vm_memory_page *)(uintptr_t)directory,
                        count, capacity, (vm_memory_branch *)(uintptr_t)branches, generation)) return -1;
     vm_sources_open(&sources,generation,vm_slot_min());
-    resident.before_write = SOURCE_WRITE_OBSERVER; resident.write_owner = &sources;
+    resident.before_write = source_effect; resident.write_owner = &sources;
     arena_base = base;
     boot = prepared_boot; boot_header = header; boot_header_bytes = header_bytes; boot_command = command;
     return 0;
@@ -332,6 +354,27 @@ static int execution_record(pl_u32 rows, pl_u32 bytes)
             (resident.page_capacity - 1u) * (pl_u32)sizeof(vm_memory_branch)))
         && (!boot.header || (separate(rows,bytes,boot_header,boot_header_bytes)
             && separate(rows,bytes,boot_command,boot.command_bytes)));
+}
+/* A physical-slot version is construction reuse evidence only. A fresh
+ * executable C-MMU source pin is mandatory before every exported stamp.
+ * The revision arena is private metadata, never guest RAM or a code copy. */
+int vm_source_versions_start(pl_u32 words,pl_u32 count,pl_u64 generation)
+{
+    if(generation!=resident.generation||!count||count>0x100000u||source_version_ticket==~0ull
+        ||!execution_record(words,count*4u)||sources.valid||sources.pending||execution.generation||execution.in_call
+        ||delivery.stage||table_frontier.stage||clock_owner.stage||resident.reservation.parts)return -1;
+    if(vm_source_versions_open(&source_versions,(pl_u32 *)(uintptr_t)words,count,generation))return -1;
+    ++source_version_ticket;return 0;
+}
+int vm_source_stamp(pl_u32 port,pl_u64 generation,pl_u32 target)
+{
+    if(!private_port(port)||generation!=resident.generation||vm_memory_load((const pl_u8 *)(uintptr_t)port,8u)!=generation
+        ||!private_record(target,32u)||!separate(target,32u,port,sizeof(machine_memory_port))
+        ||!sources.pending||sources.pending_entry!=((machine_state *)(uintptr_t)state_offset)->rip||execution.in_call
+        ||delivery.stage||table_frontier.stage||resident.reservation.parts)return -1;
+    pl_u32 owners[2],revisions[2];if(vm_sources_stamp(&sources,&source_versions,owners,revisions))return -1;
+    pl_u8 *out=(pl_u8 *)(uintptr_t)target;vm_memory_store(out,generation,8u);vm_memory_store(out+8u,source_version_ticket,8u);
+    for(pl_u32 n=0u;n<2u;++n){vm_memory_store(out+16u+n*8u,owners[n],4u);vm_memory_store(out+20u+n*8u,revisions[n],4u);}return 0;
 }
 
 /* Supervisor-only Artifact transport. The bytes are a bounded projection of
@@ -749,6 +792,7 @@ int vm_sources_reset(void)
     run_source_rank=VM_SOURCE_ROWS;
     if (delivery.stage || table_frontier.stage || execution.continuation.slot) return -1;
     vm_sources_open(&sources,resident.generation,vm_slot_min());
+    source_versions=(vm_source_versions){0};
     vm_execution_close(&execution); return 0;
 }
 machine_result vm_reserve(pl_u32 port, pl_u64 address, pl_u32 bytes, pl_u32 access)
@@ -1001,6 +1045,19 @@ int vm_clock_commit(pl_u32 port, pl_u64 generation, pl_u64 ticket, pl_u64 nanose
     }
     return result;
 }
+/* Supervisor transport only. Linux owns the tty and its input semantics.
+ * One retained byte/sequence provides exact duplicate acknowledgement;
+ * no history, host terminal parser or guest register mutation is needed. */
+int vm_console_receive(pl_u32 port,pl_u64 generation,pl_u64 sequence,pl_u32 byte)
+{
+    if(!private_port(port)||generation!=resident.generation||!sequence||byte>255u
+        ||vm_memory_load((const pl_u8 *)(uintptr_t)port,8u)!=generation||execution.in_call
+        ||delivery.stage||table_frontier.stage||resident.reservation.parts||clock_boundary_pending())return -1;
+    if(sequence==input_sequence)return byte==input_byte?0:-1;
+    if(input_sequence==~0ull||sequence!=input_sequence+1u)return -1;
+    int accepted=vm_uart_receive(&uart,clock_owner.now,byte);if(accepted<0)return -1;if(!accepted)return 2;
+    input_sequence=sequence;input_byte=byte;vm_pic_set_irq(&pic,4u,(pl_u32)vm_uart_irq(&uart));return 1;
+}
 /* Supervisor-only UTC seed. Guest code receives only the IN/OUT import;
  * it cannot re-seed, alter event generations or access a host clock. */
 int vm_rtc_start(pl_u32 port, pl_u64 generation, pl_u64 utc_seconds)
@@ -1151,9 +1208,21 @@ machine_result vm_system(pl_u32 port, pl_u32 operation, pl_u64 next_rip)
     vm_supply_reset(&supply);vm_memory_abort(&resident);
     if(table_frontier.stage || delivery.stage || !segments_offset || !private_port(port))
         return MACHINE_RESULT_ENTRY_MAP;
+#ifdef VM_SOURCE_PROFILE
+    const machine_state *before=(const machine_state *)(uintptr_t)state_offset;
+    pl_u64 observation[12]={operation,before->rip,before->cr3,before->retired,
+        before->registers[0],before->registers[7],before->registers[6],before->registers[2],
+        before->registers[10],before->registers[8],before->registers[9],next_rip};
+#endif
     machine_result result=vm_system_transfer(&resident,port-arena_base,
         (machine_state *)(uintptr_t)state_offset,(machine_segments *)(uintptr_t)segments_offset,operation,next_rip);
-    if(!result)execution.generation=0u;
+    if(!result){
+        execution.generation=0u;
+#ifdef VM_SOURCE_PROFILE
+        if(system_profile_count!=~0ull){pl_u64 *row=system_profile[system_profile_count&127u];
+            for(pl_u32 i=0u;i<12u;++i)row[i]=observation[i];++system_profile_count;}
+#endif
+    }
     return result;
 }
 

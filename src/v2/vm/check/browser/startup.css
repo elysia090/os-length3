@@ -1,0 +1,21 @@
+:root { color-scheme: dark; font-family: "Iosevka", "Cascadia Code", Consolas, monospace; background: #1a1b1d; color: #d3dae2; }
+body { margin: 32px auto; width: min(1120px, calc(100% - 40px)); font-size: 12px; line-height: 1.6; }
+header { max-width: 80ch; margin-bottom: 28px; }
+small { color: #91a9b4; letter-spacing: .08em; text-transform: uppercase; }
+h1 { font-size: 26px; font-weight: 450; letter-spacing: -.04em; margin: 8px 0; }
+h2 { font-size: 12px; font-weight: 500; color: #91a9b4; margin-top: 32px; }
+header p, .note { color: #929da7; }
+main { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 24px; }
+section, aside { min-width: 0; }
+#console { height: 42vh; min-height: 240px; overflow: auto; background: #111519; border: 1px solid #47525c; padding: 16px; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0 0 16px; }
+form { display: flex; gap: 8px; flex-wrap: wrap; }
+label { flex: 0 0 100%; color: #a9b8c2; }
+input, button { font: inherit; color: inherit; border: 1px solid #53616c; background: #23282d; padding: 8px 10px; border-radius: 3px; }
+input { min-width: 0; flex: 1; }
+button { cursor: pointer; }
+button:disabled { opacity: .4; cursor: default; }
+input:focus-visible, button:focus-visible { outline: 2px solid #9fc3cb; outline-offset: 2px; }
+#compiler-form input { flex-basis: 100%; }
+#phase { margin-top: 0; color: #a8c5ca; }
+#result { font-size: 11px; color: #a3afb9; max-height: 30vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 700px) { body { margin-top: 20px; } main { grid-template-columns: 1fr; } #console { height: 48vh; } }

@@ -3,6 +3,27 @@
 #include <string.h>
 static vm_sources sources;
 static int failures;
+static void construction_versions(void)
+{
+    pl_u32 words[8],owners[2]={123u,456u},versions[2]={789u,1011u};vm_source_versions v={0};vm_sources s;
+    if(vm_source_versions_open(&v,words,8u,9u)){++failures;return;}
+    vm_sources_open(&s,9u,3u);vm_execution_row r;vm_code_page p={0x400000u,9u,8192u,4096u};
+    if(vm_sources_probe(&s,&p,0x400080u,1u,&r)!=1||vm_sources_stamp(&s,&v,owners,versions)
+        ||owners[0]!=8192u||owners[1]||versions[0]!=1u||versions[1]){++failures;return;}
+    vm_source_versions_write(&v,16384u,8u);
+    if(vm_sources_stamp(&s,&v,owners,versions)||versions[0]!=1u){++failures;return;}
+    vm_source_versions_write(&v,8192u,8u);
+    if(vm_sources_stamp(&s,&v,owners,versions)||versions[0]!=2u){++failures;return;}
+    words[2]=~0u;vm_source_versions_write(&v,8192u,8u);vm_source_versions_write(&v,8192u,8u);
+    owners[0]=123u;versions[0]=789u;
+    if(words[2]||vm_sources_stamp(&s,&v,owners,versions)!=-1||owners[0]!=123u||versions[0]!=789u){++failures;return;}
+    if(vm_source_versions_open(&v,words,8u,9u)){++failures;return;}
+    vm_code_page next={0x401000u,9u,20480u,4096u};
+    if(vm_sources_extend(&s,&next,&r)!=1||vm_sources_stamp(&s,&v,owners,versions)||owners[1]!=20480u||versions[1]!=1u){++failures;return;}
+    vm_source_versions_write(&v,20479u,2u);
+    if(words[4]!=2u||words[5]!=2u||vm_sources_stamp(&s,&v,owners,versions)||versions[1]!=2u){++failures;return;}
+    v.generation=10u;if(vm_sources_stamp(&s,&v,owners,versions)!=-1)++failures;
+}
 #define EXPECT(x) do { if (!(x)) { fprintf(stderr,"source: line %u\n",(unsigned)__LINE__); ++failures; } } while (0)
 static vm_code_page page = {0x400000u,9u,8192u,4096u};
 static vm_execution_row row;
@@ -453,6 +474,7 @@ int main(void)
     EXPECT(!vm_sources_publish(&sources,3u,1u,0u,&row));
     vm_sources_write(&sources,0u,0xffffffffu); EXPECT(probe(0x400080u,1u) == 1);
     page.offset = 8192u;
+    construction_versions();
     demand_lifetime();
     budget_independent();
     budget_working_set();

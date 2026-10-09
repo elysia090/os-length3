@@ -4,7 +4,7 @@ const result = {textContent:''};
 const saved = Object.fromEntries(['document','location','Worker'].map(key => [key,Object.getOwnPropertyDescriptor(globalThis,key)]));
 let worker, expectedMessage={extended:true}, creations=0;
 try {
-  globalThis.document = {getElementById:name => {assert.equal(name,'result'); return result;}};
+  globalThis.document = {getElementById:name => name==='result'?result:null};
   globalThis.location = {href:'http://localhost/startup.html?budget=extended'};
   globalThis.Worker = class {
     constructor(url,options) { assert.equal(url,'./startup-worker.mjs'); assert.equal(options.type,'module'); this.stops = 0; worker = this; ++creations; }

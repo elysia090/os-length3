@@ -21,4 +21,7 @@ int vm_uart_transmit_commit(vm_uart *uart, pl_u32 value);
 void vm_uart_advance(vm_uart *uart, pl_u64 now);
 int vm_uart_irq(const vm_uart *uart);
 int vm_uart_next_irq(const vm_uart *uart, pl_u64 *nanoseconds);
+/* Serialized external byte, with backpressure rather than fabricated
+ * overrun. 1 accepts once, 0 waits for FIFO space, -1 refuses unchanged. */
+int vm_uart_receive(vm_uart *uart,pl_u64 now,pl_u32 byte);
 #endif

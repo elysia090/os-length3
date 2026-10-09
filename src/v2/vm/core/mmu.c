@@ -59,6 +59,32 @@ static machine_result walk(vm_memory *memory, pl_u8 *port,
                             const vm_mmu_context *context, pl_u64 address,
                             pl_u32 access, pl_u64 *physical)
 {
+    vm_walk_proof *retained=&memory->walks[(address>>12u)&63u];
+    if(retained->depth&&retained->depth<=4u&&retained->virtual_page==(address&~4095ull)
+        &&retained->access==access&&retained->cpl==context->cpl
+        &&retained->control[0]==context->cr0&&retained->control[1]==context->cr3
+        &&retained->control[2]==context->cr4&&retained->control[3]==context->efer){
+        pl_u32 matched=1u;
+        for(pl_u32 n=0u;n<retained->depth;++n){const vm_walk_ancestor *a=retained->ancestors+n;
+            if(a->rank>=memory->page_count||(pl_u64)a->offset+8u>memory->byte_count){matched=0u;break;}
+            const vm_memory_page *page=memory->pages+a->rank;
+            if(page->address!=a->page||page->offset!=(a->offset&~4095u)
+                ||(page->kind!=VM_MEMORY_RAM&&page->kind!=VM_MEMORY_ROM)||!(page->rights&MACHINE_MEMORY_READ)
+                ||vm_memory_load(memory->bytes+a->offset,8u)!=a->entry){matched=0u;break;}
+        }
+        if(matched){
+#ifdef VM_SOURCE_PROFILE
+            ++memory->walk_proof_hits;
+#endif
+            *physical=retained->physical_page|(address&4095u);return 0u;
+        }
+    }
+#ifdef VM_SOURCE_PROFILE
+    ++memory->walk_proof_misses;
+#endif
+    vm_walk_proof fresh={.virtual_page=address&~4095ull,
+        .control={context->cr0,context->cr3,context->cr4,context->efer},.cpl=context->cpl,.access=access};
+    pl_u32 retainable=1u;
     const pl_u32 shifts[] = { 39u, 30u, 21u, 12u };
     pl_u64 table = context->cr3 & PHYSICAL_MASK;
     pl_u32 writable = WRITABLE, user = USER, nx = 0u;
@@ -101,9 +127,17 @@ static machine_result walk(vm_memory *memory, pl_u8 *port,
                 memory->write_touched = 1u;
             }
         }
+        const vm_memory_page *owner=vm_memory_find(memory,at);
+        pl_u64 current_entry=vm_memory_load(entry_bytes,8u);
+        /* A ROM walk with missing A/D still performs the write-rights check
+         * on every access. It has no successful substitution witness. */
+        if(set&~(pl_u32)current_entry)retainable=0u;
+        fresh.ancestors[level]=(vm_walk_ancestor){owner->address,current_entry,
+            (pl_u32)(owner-memory->pages),(pl_u32)(entry_bytes-memory->bytes)};
         if (leaf) {
             pl_u64 offset_mask = (1ull << shift) - 1u;
             *physical = (entry & PHYSICAL_MASK & ~offset_mask) | (address & offset_mask);
+            if(retainable){fresh.physical_page=*physical&~4095ull;fresh.depth=level+1u;*retained=fresh;}
             return 0u;
         }
         table = entry & PHYSICAL_MASK;

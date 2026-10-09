@@ -56,6 +56,12 @@ int vm_uart_transmit_commit(vm_uart *uart,pl_u32 value)
     if(!uart || value>255u || (uart->lcr&128u) || (uart->mcr&16u))return -1;
     uart->thre_pending=1u;return 0;
 }
+int vm_uart_receive(vm_uart *uart,pl_u64 now,pl_u32 byte)
+{
+    if(!uart||byte>255u||(uart->mcr&16u))return -1;
+    if(uart->count>=(uart->fcr&1u?16u:1u))return 0;
+    receive(uart,now,(pl_u8)byte);return 1;
+}
 int vm_uart_transfer(vm_uart *uart,pl_u64 now,pl_u32 coordinate,pl_u32 write,pl_u32 *value)
 {
     if(!uart || !value || !vm_uart_accepts(coordinate) || write>1u || (write && *value>255u))return -1;
