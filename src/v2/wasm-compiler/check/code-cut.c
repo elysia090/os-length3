@@ -563,8 +563,8 @@ int main(int argc, char **argv)
             && !report.flags_written);
         EXPECT(report.written_registers == (family && form != 2u ? 16u : form == 2u ? 1u : 0u));
     }
-    static const pl_u8 rejected[][3] = {
-        {0xffu,0x28u,0x90u}, /* Far control is not near JMP. */
+    static const pl_u8 far_or_invalid[][3] = {
+        {0xffu,0x28u,0x90u}, /* Far control owns a descriptor transaction. */
         {0xf0u,0xffu,0xe0u}, {0xffu,0x18u,0x90u},
     };
     /* ADC/SBB consume CF even if a later instruction overwrites every flag.
@@ -725,13 +725,12 @@ int main(int argc, char **argv)
         memset(pages,0x90,sizeof pages); memcpy(pages,exchange_rejected[i],sizeof exchange_rejected[0]);
         EXPECT(!check_fault_admission(&source,&options,6u));
     }
-    for (pl_u32 form = 0u; form < sizeof rejected / sizeof rejected[0]; ++form) {
-        memset(pages,0x90,sizeof pages); memcpy(pages,rejected[form],sizeof rejected[0]);
+    for (pl_u32 form = 0u; form < sizeof far_or_invalid / sizeof far_or_invalid[0]; ++form) {
+        memset(pages,0x90,sizeof pages); memcpy(pages,far_or_invalid[form],sizeof far_or_invalid[0]);
         if(form==1u){EXPECT(!check_fault_admission(&source,&options,6u));continue;}
-        memset(output,0xa5,sizeof output);
-        EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
-            == WASM_COMPILER_ERROR_GRAMMAR);
-        for (pl_u32 i = 0u; i < sizeof output; ++i) EXPECT(output[i] == 0xa5u);
+        EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
+        EXPECT(bytes&&report.source_bytes==2u&&report.source_instructions==1u
+            &&report.boundary==WASM_CUT_CONTROL&&report.memory_bytes==6u);
     }
     memset(pages,0x90,sizeof pages);
     pages[0] = 0xfcu; pages[1] = 0xfau; pages[2] = 0x90u;

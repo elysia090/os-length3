@@ -167,6 +167,7 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                 else if(system==CUT_SYSTEM_VECTOR_FLOAT_INTEGER)plan->report.memory_bytes=instruction.operands[1].kind==PL_X86_OPERAND_MEMORY?instruction.operands[1].bits/8u:0u;
                 else if(system==CUT_SYSTEM_FLOAT_COMPARE)plan->report.memory_bytes=instruction.operands[1].kind==PL_X86_OPERAND_MEMORY?instruction.operands[1].bits/8u:0u;
                 else if(system==CUT_SYSTEM_SELECTOR_QUERY)plan->report.memory_bytes=instruction.operands[1].kind==PL_X86_OPERAND_MEMORY?2u:0u;
+                else if(system==CUT_SYSTEM_FAR_TRANSFER)plan->report.memory_bytes=instruction.operands[0].bits/8u;
                 else if (system==CUT_SYSTEM_VECTOR_TRANSFER)
                 {pl_x86_vector_binary law;plan->report.memory_bytes=pl_x86_vector_binary_lower(&instruction,&law)?(law.source_memory?law.register_bytes:0u):(instruction.machine_argument&(3ull<<24u))?16u:0u;}
                 else if (system==CUT_SYSTEM_VECTOR_SCALAR)
@@ -198,7 +199,7 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                     }
                 }
                 if (system == CUT_SYSTEM_FAR_RETURN || system == CUT_SYSTEM_INTERRUPT_RETURN || system==CUT_SYSTEM_COUNTER_BRANCH
-                        || system == CUT_SYSTEM_SOFTWARE_INTERRUPT || system==CUT_SYSTEM_PRIVILEGE_TRANSFER)
+                        || system == CUT_SYSTEM_SOFTWARE_INTERRUPT || system==CUT_SYSTEM_PRIVILEGE_TRANSFER || system==CUT_SYSTEM_FAR_TRANSFER)
                     plan->report.boundary = WASM_CUT_CONTROL;
                 rip = instruction.fallthrough;
             }
@@ -293,6 +294,7 @@ static int prologue(wasm_writer *writer,const cut_plan *plan,cut_lowering *state
     if(plan->system_cut==CUT_SYSTEM_VECTOR_SCALAR){pl_x86_instruction i;pl_x86_mmx_transfer law;
         if(!pl_x86_decode_profile(&plan->image,rip,&i)&&pl_x86_mmx_transfer_lower(&i,&law)){locals=26u;permutation_local=1u;}}
     pl_u32 checkpoint=0u;
+    if(plan->system_cut==CUT_SYSTEM_FAR_TRANSFER){locals=32u;checkpoint=1u;}
     if(plan->system_cut==CUT_SYSTEM_SELECTOR_QUERY){pl_x86_instruction i;pl_x86_selector_query law;
         if(pl_x86_decode_profile(&plan->image,rip,&i)||!pl_x86_selector_query_lower(&i,&law))return WASM_COMPILER_ERROR_GRAMMAR;
         checkpoint=law.source_memory;}

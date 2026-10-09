@@ -51,7 +51,7 @@ const realImports={memory:ram,access:vm.vm_access,reserve:vm.vm_reserve,commit:v
   segment:vm.vm_segment,reserve_pair:vm.vm_reserve_pair,commit_pair:vm.vm_commit_pair,table:vm.vm_table,
   read_pair:vm.vm_read_pair,read_extent:vm.vm_read_extent,far_return:vm.vm_return,control:vm.vm_control,
   iret:vm.vm_iret,msr:vm.vm_msr,debug:vm.vm_debug,io:vm.vm_io,time:vm.vm_time,interrupt_flag:vm.vm_flag,
-  software_interrupt:vm.vm_software_interrupt,system_transfer:vm.vm_system,descriptor:vm.vm_descriptor,checkpoint:vm.vm_checkpoint};
+  software_interrupt:vm.vm_software_interrupt,system_transfer:vm.vm_system,descriptor:vm.vm_descriptor,checkpoint:vm.vm_checkpoint,far_transfer:vm.vm_transfer};
 assert.throws(()=>new WebAssembly.Instance(module,{machine:{...realImports,
   image_bias:new WebAssembly.Global({value:'i64',mutable:true},0n)}}),WebAssembly.LinkError,
   'image bias must be immutable throughout this instance lifetime');

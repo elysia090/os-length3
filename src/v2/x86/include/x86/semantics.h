@@ -255,5 +255,7 @@ int pl_x86_selector_query_lower(const pl_x86_instruction *instruction,pl_x86_sel
 int pl_x86_selector_query_plan(pl_u32 limit,pl_u32 bits,pl_arena *arena,pl_plan *out);
 /* Privileged CLTS changes only CR0.TS. Prefixes do not change its width. */
 int pl_x86_cr0_clear_supported(const pl_x86_instruction *instruction);
+typedef struct {pl_u8 bytes,call;} pl_x86_far_transfer;
+int pl_x86_far_transfer_lower(const pl_x86_instruction *instruction,pl_x86_far_transfer *out);
 
 #endif /* X86_SEMANTICS_H */

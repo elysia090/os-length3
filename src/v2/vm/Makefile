@@ -19,6 +19,7 @@ WASM_FLAGS += -Wl,--export=vm_reserve,--export=vm_commit,--export=vm_abort,--exp
 WASM_FLAGS += -Wl,--export=vm_reserve_pair,--export=vm_commit_pair
 WASM_FLAGS += -Wl,--export=vm_read_pair
 WASM_FLAGS += -Wl,--export=vm_descriptor
+WASM_FLAGS += -Wl,--export=vm_transfer
 WASM_FLAGS += -Wl,--export=vm_read_extent
 WASM_FLAGS += -Wl,--export=vm_write_begin,--export=vm_write_word,--export=vm_write_end
 WASM_FLAGS += -Wl,--export=vm_control,--export=vm_code,--export=vm_grow,--export=vm_page_prepare,--export=vm_page_commit,--export=vm_page_count
@@ -51,6 +52,7 @@ endif
 SOURCES = core/resource.c core/memory.c core/mmu.c core/boot.c core/supply.c core/execution.c core/segments.c core/tables.c core/control.c core/registers.c core/msr.c core/debug.c core/exception.c core/interrupt.c core/source.c core/clock.c core/pit.c core/pic.c core/rtc.c core/uart.c core/console.c core/io.c
 SOURCES += core/system.c
 SOURCES += core/descriptor.c
+SOURCES += core/transfer.c
 SOURCES += core/directory.c
 SOURCES += core/module.c
 include ../artifact/sources.mk
@@ -59,6 +61,12 @@ WASM_SOURCES = wasm/entry.c $(SOURCES) $(ARTIFACT_PROVIDER_SOURCES)
 OBJECTS = $(patsubst core/%.c,$(BUILD)/%.o,$(SOURCES))
 
 .PHONY: all check wasm clean
+.PHONY: far-transfer-check
+check: far-transfer-check
+far-transfer-check: $(BUILD)/far-transfer-check
+	$(BUILD)/far-transfer-check
+$(BUILD)/far-transfer-check: check/far-transfer.c $(BUILD)/libvm.a
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
 .PHONY: descriptor-query-check
 check: descriptor-query-check
 descriptor-query-check: $(BUILD)/descriptor-query-check

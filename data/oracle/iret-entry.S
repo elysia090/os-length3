@@ -111,6 +111,9 @@ long_start:
     mov $user_handler,%esi
     call write_gate
     movb $0xee,idt+128*16+5(%rip)
+.ifdef far_transfer_oracle
+    .include "data/oracle/far-transfer-cases.inc"
+.else
     xor %r12d,%r12d
 case_loop:
     cli
@@ -406,6 +409,7 @@ print_record:
     mov $0x10,%eax
     out %eax,$0xf4
     hlt
+.endif
 write_gate:
     mov %si,(%rdi)
     movw $8,2(%rdi)
@@ -434,6 +438,9 @@ hex:
 gdt:
 .quad 0,0x00af9b000000ffff,0x00cf93000000ffff
 .quad 0x00affb000000ffff,0x00cff3000000ffff,0,0
+.ifdef far_transfer_oracle
+.quad 0,0,0
+.endif
 gdt_end:
 gdt_pointer:
 .word gdt_end-gdt-1

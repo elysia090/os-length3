@@ -42,7 +42,8 @@ static const machine_import interface[WASM_IMPORT_COUNT]={
     {"system_transfer",{3u,{I32,I32,I64}}},
     {"floating_wait",{1u,{I32}}},
     {"checkpoint",{4u,{I32,I32,I64,I64}}},
-    {"descriptor",{2u,{I32,I32}}}
+    {"descriptor",{2u,{I32,I32}}},
+    {"far_transfer",{5u,{I32,I32,I64,I32,I64}}}
 };
 static pl_u32 text_bytes(const char *text)
 { pl_u32 bytes=0u;while(text[bytes])++bytes;return bytes; }

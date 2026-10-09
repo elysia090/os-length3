@@ -50,7 +50,7 @@ async function context(){
     segment:vm.vm_segment,reserve_pair:vm.vm_reserve_pair,commit_pair:vm.vm_commit_pair,table:vm.vm_table,
     read_pair:vm.vm_read_pair,read_extent:vm.vm_read_extent,far_return:vm.vm_return,control:vm.vm_control,
     iret:vm.vm_iret,msr:vm.vm_msr,debug:vm.vm_debug,io:vm.vm_io,time:vm.vm_time,interrupt_flag:vm.vm_flag,
-    software_interrupt:vm.vm_software_interrupt,system_transfer:vm.vm_system,floating_wait:vm.vm_floating_wait,checkpoint:vm.vm_checkpoint,descriptor:vm.vm_descriptor};
+    software_interrupt:vm.vm_software_interrupt,system_transfer:vm.vm_system,floating_wait:vm.vm_floating_wait,checkpoint:vm.vm_checkpoint,descriptor:vm.vm_descriptor,far_transfer:vm.vm_transfer};
   function seed(entry,bias){
     const stack=BigInt.asUintN(64,sourcePage+bias)+BigInt(sourcePages*4096);
     a.fill(0,cpu,cpu+1256);a.fill(0,segments,segments+136);a.fill(0,port,port+48);

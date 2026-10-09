@@ -68,7 +68,7 @@ const actual=new WebAssembly.Instance(compiled,{machine:{memory:ram,access:vm.vm
   segment:vm.vm_segment,reserve_pair:vm.vm_reserve_pair,commit_pair:vm.vm_commit_pair,table:vm.vm_table,
   read_pair:vm.vm_read_pair,read_extent:vm.vm_read_extent,far_return:vm.vm_return,control:vm.vm_control,
   iret:vm.vm_iret,msr:vm.vm_msr,debug:vm.vm_debug,io:vm.vm_io,time:vm.vm_time,interrupt_flag:vm.vm_flag,
-  software_interrupt:vm.vm_software_interrupt,system_transfer:vm.vm_system,descriptor:vm.vm_descriptor,checkpoint:vm.vm_checkpoint}}).exports;
+  software_interrupt:vm.vm_software_interrupt,system_transfer:vm.vm_system,descriptor:vm.vm_descriptor,checkpoint:vm.vm_checkpoint,far_transfer:vm.vm_transfer}}).exports;
 const a=Buffer.from(ram.buffer),v=new DataView(ram.buffer),dir=vm.vm_arena_min(),cpu=dir+4096;
 const rows=dir+512,branches=dir+2048,p=cpu+2048,segments=cpu+1408,codeView=p+64,code=cpu+24576,payload=cpu+28672;
 const table=vm.__indirect_function_table,first=vm.vm_slot_min();table.grow(Math.max(0,first+vm.vm_source_capacity()-table.length));

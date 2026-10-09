@@ -1027,6 +1027,15 @@ machine_result vm_table(pl_u32 port, pl_u64 address, pl_u32 rank, pl_u32 access)
     return memory_result(port,result);
 }
 
+machine_result vm_transfer(pl_u32 port,pl_u32 word,pl_u64 target,pl_u32 selector,pl_u64 next_rip)
+{
+    if(table_frontier.stage||!segments_offset||!private_port(port)||(delivery.stage&&delivery.kind!=VM_EVENT_TRANSFER))return MACHINE_RESULT_ENTRY_MAP;
+    vm_supply_reset(&supply);vm_memory_abort(&resident);pl_u64 admitted=sources.valid;resident.write_touched=0u;
+    machine_result result=vm_far_transfer(&resident,port-arena_base,(machine_state *)(uintptr_t)state_offset,
+        (machine_segments *)(uintptr_t)segments_offset,&delivery,word,target,selector,next_rip);
+    if(!result)execution.generation=0u;else after_guest_write(admitted);
+    return memory_result(port,result);
+}
 machine_result vm_return(pl_u32 port, pl_u32 return_word)
 {
     if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
@@ -1284,7 +1293,7 @@ static machine_result pending_boundary(pl_u32 port)
             || (vm_console_pending(&console_owner) && !execution.continuation.slot)) return MACHINE_RESULT_ENTRY_MAP;
     if (delivery.stage) {
         if (delivery.kind==VM_EVENT_INTERRUPT) return interrupt_boundary(port);
-        return (delivery.kind==VM_EVENT_SOFTWARE||delivery.kind==VM_EVENT_DEBUG_TRAP)
+        return (delivery.kind==VM_EVENT_SOFTWARE||delivery.kind==VM_EVENT_DEBUG_TRAP||delivery.kind==VM_EVENT_TRANSFER)
             && execution.continuation.slot ? 0u : MACHINE_RESULT_ENTRY_MAP;
     }
     const machine_state *state=(const machine_state *)(uintptr_t)state_offset;

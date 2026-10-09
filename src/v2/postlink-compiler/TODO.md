@@ -23,12 +23,16 @@ Cold shell3s remains a target, not an achieved claim.
 
 ## Current authoritative state
 
-Same make/every-final-PF_X-byte population:233127/233455 lowerable,328 missing,
+Same make/every-final-PF_X-byte population:233218/233455 lowerable,237 missing,
 zero missing fault cuts/fetch/capacity refusals. Remaining floating150,
-SIMD86,far91,other1. FirstFF29/far jump at0xc753. This complete byte inventory is
+SIMD86,atomic1. FirstDD32 at0xd382. This complete byte inventory is
 not an execution trace, kernel/image publication or browser boot proof.
 
-CLTS now uses the exact TS field/control owner, privilege before identity.
+Far call/jump now shares the descriptor/MMU/event owner, including conforming
+code, call gates, inner stack changes, partial frame faults and exact retries.
+All91 far coordinates are recovered;384 independent CPU frames and3456
+compiled boundary models pass. See [far control transaction](../vm/check/browser/evidence/2026-10-09-far-transfer.md).
+CLTS uses the exact TS field/control owner, privilege before identity.
 8/128 construction/refusal gates,1024 C models and128 independent CPL0 rows/
 256 compiled comparisons pass. See [precise TS/control boundary](../vm/check/browser/evidence/2026-10-09-cr0-clear.md).
 The common frontend also closes24 additional floating status encodings and
@@ -43,7 +47,7 @@ separate; scoped/positive gates do not assert that it is solved.
 ## Next work, in order
 
 1. Close the remaining common ISA families to ZERO.
-   First the whole far call/jump family, then floating/SIMD and remaining atomic meaning, not
+   Floating/SIMD and remaining atomic meaning, not
    Linux-function or observed-RIP cases. Use shared x86 SSA, exact formats,
    effects and machine owners; preserve fault/access order, partial regions,
    flags, aliases, CPU profile and continuation ownership. Keep unsupported

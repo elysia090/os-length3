@@ -21,6 +21,8 @@ make -j4 -C "$temporary/vm" CFLAGS="$flags" build/return-widths-check
 "$temporary/vm/build/return-widths-check"
 make -j4 -C "$temporary/vm" CFLAGS="$flags" build/descriptor-query-check
 "$temporary/vm/build/descriptor-query-check"
+make -j4 -C "$temporary/vm" CFLAGS="$flags" build/far-transfer-check
+"$temporary/vm/build/far-transfer-check"
 make -j4 -C "$temporary/artifact" CFLAGS="$flags" build/index-stream-check
 "$temporary/artifact/build/index-stream-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" \
@@ -49,6 +51,8 @@ make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/scalar-vector-trans
 "$temporary/wasm-compiler/build/scalar-vector-transfer-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/cr0-clear-check
 "$temporary/wasm-compiler/build/cr0-clear-check"
+make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/far-transfer-check
+"$temporary/wasm-compiler/build/far-transfer-check"
 "$temporary/wasm-compiler/build/mmx-transfer-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/flags-low-check
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/translate-byte-check

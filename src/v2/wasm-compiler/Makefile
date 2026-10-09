@@ -51,6 +51,13 @@ $(BUILD)/scalar-vector-transfer-check: check/scalar-vector-transfer.c $(BUILD)/l
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 SOURCES += src/lower-float-compare.c
 SOURCES += src/lower-selector-query.c
+SOURCES += src/lower-far-transfer.c
+.PHONY: far-transfer-check
+check: far-transfer-check
+far-transfer-check: $(BUILD)/far-transfer-check
+	$(BUILD)/far-transfer-check
+$(BUILD)/far-transfer-check: check/far-transfer.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 .PHONY: selector-query-check
 check: selector-query-check
 selector-query-check: $(BUILD)/selector-query-check

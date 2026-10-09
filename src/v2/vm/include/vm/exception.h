@@ -3,7 +3,7 @@
 #include <vm/segments.h>
 #include <vm/pic.h>
 #include <machine/exception.h>
-enum vm_event_kind { VM_EVENT_FAULT, VM_EVENT_INTERRUPT, VM_EVENT_SOFTWARE, VM_EVENT_DEBUG_TRAP };
+enum vm_event_kind { VM_EVENT_FAULT, VM_EVENT_INTERRUPT, VM_EVENT_SOFTWARE, VM_EVENT_DEBUG_TRAP, VM_EVENT_TRANSFER };
 
 /* One serialized architectural event, not a CPU snapshot. Completed frame
  * stores must not be replayed after a residency wait: they can alias the IDT,

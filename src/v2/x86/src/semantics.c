@@ -2934,6 +2934,8 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
                  pl_arena *arena, pl_x86_semantic *out)
 {
     if (!instruction || !arena || !out) return PL_ERROR_X86_SEMANTIC;
+    if(instruction->machine_operation==PL_X86_MACHINE_FAR_TRANSFER){pl_x86_far_transfer law;
+        if(!pl_x86_far_transfer_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_CR0_STATUS&&(instruction->machine_argument&255u)==PL_X86_CR0_CLEAR_TASK_SWITCHED
         &&!pl_x86_cr0_clear_supported(instruction))return PL_ERROR_X86_SEMANTIC;
     if(instruction->machine_operation==PL_X86_MACHINE_VECTOR&&(instruction->machine_argument&255u)==39u){
