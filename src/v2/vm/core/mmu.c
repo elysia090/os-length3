@@ -274,6 +274,9 @@ machine_result vm_mmu_fill(vm_memory *memory,pl_u32 port,const vm_mmu_context *c
                 if(index+1u<count)count=(pl_u32)index+1u;
             }
         }
+        if(memory->span_prefix){pl_u32 permitted=memory->span_prefix(memory->write_owner,ready.offsets[0],count,word_bytes,reverse,value);
+            if(!permitted||permitted>count)return MACHINE_RESULT_ENTRY_MAP;
+            count=permitted;}
         bytes=count*word_bytes;tail=bytes-word_bytes;pl_u32 offset=ready.offsets[0]-(reverse?tail:0u);
         vm_memory_before_write(memory,offset,bytes);
         for(pl_u32 i=0u;i<bytes;i+=word_bytes)vm_memory_store(memory->bytes+offset+i,value,word_bytes);

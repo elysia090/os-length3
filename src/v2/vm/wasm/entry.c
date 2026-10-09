@@ -49,6 +49,7 @@ static pl_u32 source_limit;
 static pl_u64 source_demands[VM_SOURCE_BANKS];
 static pl_u32 source_demand_banks;
 static pl_u32 source_admissions, run_interrupted;
+static pl_u32 span_code_depth,span_code_begin,span_code_bytes,span_code_ancestors[4];
 static vm_source_banks source_banks;
 #define sources (source_banks.banks[source_banks.active])
 static vm_source_versions source_versions;
@@ -121,6 +122,43 @@ static void source_effect(void *owner,pl_u32 offset,pl_u32 bytes)
     SOURCE_WRITE_OBSERVER(owner,offset,bytes);
     vm_source_versions_write(&source_versions,offset,bytes);
 }
+static void span_code_prepare(pl_u64 rip)
+{
+    span_code_depth=0u;
+    const vm_walk_proof *proof=&resident.walks[vm_memory_walk_rank(rip)];
+    if(!proof->depth||proof->depth>4u||proof->virtual_page!=(rip&~4095ull)
+        ||proof->access!=((pl_u32)MACHINE_MEMORY_READ|(pl_u32)VM_MMU_EXECUTE)
+        ||!execution.source_bytes||(rip&4095u)+execution.source_bytes>4096u)return;
+    const vm_memory_page *page=vm_memory_find_readonly(&resident,proof->physical_page);
+    if(!page||!(page->rights&MACHINE_MEMORY_READ)||(pl_u64)page->offset+4096u>resident.byte_count)return;
+    span_code_begin=page->offset+(pl_u32)(rip&4095u);span_code_bytes=execution.source_bytes;
+    for(pl_u32 n=0u;n<proof->depth;++n)span_code_ancestors[n]=proof->ancestors[n].offset;
+    span_code_depth=proof->depth;
+}
+static pl_u32 span_code_prefix(void *owner,pl_u32 first,pl_u32 count,pl_u32 width,pl_u32 reverse,pl_u64 value)
+{
+    (void)owner;if(!execution.in_call||execution.source_bound<=1u)return count;
+    if(!span_code_depth||(run_source_rank<VM_SOURCE_ROWS&&!(sources.valid&(1ull<<run_source_rank))))return 1u;
+    pl_u64 low=(pl_u64)first-(reverse?(pl_u64)(count-1u)*width:0u),end=low+(pl_u64)count*width;
+    pl_u32 permitted=count;
+    if(span_code_begin<end&&(pl_u64)span_code_begin+span_code_bytes>low){
+        pl_u64 at=reverse?((pl_u64)span_code_begin+span_code_bytes<end?(pl_u64)span_code_begin+span_code_bytes:end)-1u
+            :(span_code_begin>low?span_code_begin:low);
+        pl_u64 index=reverse?(at>=first?0u:((pl_u64)first-1u-at)/width+1u):(at-first)/width;
+        if(index+1u<permitted)permitted=(pl_u32)index+1u;
+    }
+    for(pl_u32 n=0u;n<span_code_depth;++n){pl_u32 offset=span_code_ancestors[n];
+        if((pl_u64)offset+8u<=low||offset>=end)continue;
+        pl_u64 entry=vm_memory_load(resident.bytes+offset,8u);
+        for(pl_u32 j=0u;j<8u;++j){pl_u64 at=(pl_u64)offset+j;if(at<low||at>=end)continue;
+            pl_u32 shift=(pl_u32)((at-low)&(width-1u))*8u;
+            if((pl_u8)(entry>>(j*8u))==(pl_u8)(value>>shift))continue;
+            pl_u64 index=reverse?(at>=first?0u:((pl_u64)first-1u-at)/width+1u):(at-first)/width;
+            if(index+1u<permitted)permitted=(pl_u32)index+1u;
+        }
+    }
+    return permitted;
+}
 static vm_page_supply supply;
 static vm_fault_delivery delivery;
 static vm_table_frontier table_frontier;
@@ -143,7 +181,7 @@ static int clock_boundary_pending(void)
 { return clock_owner.stage && clock_owner.key==VM_CLOCK_BOUNDARY_KEY; }
 pl_u32 vm_source_capacity(void) { return VM_SOURCE_CAPACITY; }
 pl_u32 vm_entry_abi(void) { return MACHINE_ENTRY_ABI_VERSION; }
-pl_u32 vm_memory_features(void) { return MACHINE_MEMORY_FEATURE_PATTERN; }
+pl_u32 vm_memory_features(void) { return MACHINE_MEMORY_FEATURE_PATTERN|MACHINE_MEMORY_FEATURE_PREFIX; }
 pl_u32 vm_halted(void) { return activity.state == MACHINE_ACTIVITY_HALTED; }
 pl_u32 vm_source_metadata_bytes(void) { return sizeof(vm_source_banks); }
 
@@ -153,6 +191,8 @@ pl_u32 vm_slot_min(void)
     pl_u32 write = (pl_u32)(uintptr_t)source_effect;
     pl_u32 last = fetch > call ? fetch : call;
     if (last < write) last = write;
+    pl_u32 span = (pl_u32)(uintptr_t)span_code_prefix;
+    if(last<span)last=span;
     pl_u32 select = (pl_u32)(uintptr_t)source_entry;
     return (last > select ? last : select) + 1u;
 }
@@ -294,6 +334,7 @@ int vm_open(pl_u32 base, pl_u32 bytes, pl_u32 reserved,
                        count, capacity, (vm_memory_branch *)(uintptr_t)branches, generation)) return -1;
     vm_source_banks_open(&source_banks,generation,vm_slot_min());
     resident.before_write = source_effect; resident.write_owner = &source_banks;
+    resident.span_prefix=span_code_prefix;
     arena_base = base;
     boot = prepared_boot; boot_header = header; boot_header_bytes = header_bytes; boot_command = command;
     return 0;
@@ -688,6 +729,7 @@ machine_result vm_access(pl_u32 port, pl_u64 address, pl_u32 bytes,
     };
     pl_u64 admitted=sources.valid;
     resident.write_touched = 0u;
+    if(pattern&&execution.in_call&&execution.source_bound>1u)span_code_prepare(((const machine_state *)(uintptr_t)state_offset)->rip);
     machine_result result = pattern?vm_mmu_fill(&resident,port-arena_base,&context,address,bytes,word_bytes,reverse,value)
         :vm_mmu_access(&resident, port - arena_base, &context, address, bytes, access, value);
     after_guest_write(admitted);

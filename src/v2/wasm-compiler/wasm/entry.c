@@ -24,7 +24,7 @@ pl_u32 compiler_arena_min(void)
 { return ((pl_u32)(uintptr_t)&__heap_base + 4095u) & ~4095u; }
 pl_u32 compiler_report_bytes(void) { return sizeof(wasm_cut_report); }
 pl_u32 compiler_entry_abi(void) { return MACHINE_ENTRY_ABI_VERSION; }
-pl_u32 compiler_memory_features(void) { return MACHINE_MEMORY_FEATURE_PATTERN; }
+pl_u32 compiler_memory_features(void) { return MACHINE_MEMORY_FEATURE_PATTERN|MACHINE_MEMORY_FEATURE_PREFIX; }
 
 static int range(pl_u32 offset, pl_u64 bytes)
 {

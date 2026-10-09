@@ -37,6 +37,13 @@ SOURCES += src/lower-paired-exchange.c
 SOURCES += src/lower-fxsave.c
 SOURCES += src/lower-fxrstor.c
 SOURCES += src/lower-double-shift.c
+SOURCES += src/store-span.c
+.PHONY: store-span-check
+check: store-span-check
+store-span-check: $(BUILD)/store-span-check
+	$(BUILD)/store-span-check
+$(BUILD)/store-span-check: check/store-span.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 SOURCES += src/lower-mxcsr.c
 SOURCES += src/lower-vector.c
 SOURCES += src/lower-vector-unpack.c

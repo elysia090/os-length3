@@ -769,7 +769,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       assert.equal(result,1n);assert.equal(view.getBigUint64(base+1128,true),BigInt(retired));
       return null;
     }
-    if(cutBudget===1){assert.equal(completed,1);assert.equal(done,instructions);}
+    if(cutBudget===1){assert.equal(completed,1);assert(done>=1&&done<=instructions,'exact committed source prefix fits its attested row');}
     else assert(completed<=cutBudget && done>=completed,'bounded committed cohort');
     retired += done; assert.equal(view.getBigUint64(base + 1128,true),BigInt(retired));
     if (decompression && !linuxEntry && entry === linuxEntryAddress) {

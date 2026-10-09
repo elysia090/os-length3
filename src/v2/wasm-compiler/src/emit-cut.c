@@ -87,6 +87,7 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
     plan->indirect_cut = 0u;
     plan->operand_binding_kind = CUT_BIND_NONE;
     plan->fault_vector=0u;
+    plan->store_span=0u;
     plan->report.entry = rip;
     for (pl_u32 i = 0u; i < options->maximum_source_instructions; ++i) {
         if (i && (rip >> 12u) != (options->entry >> 12u)) {
@@ -225,6 +226,7 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                         || system == CUT_SYSTEM_SOFTWARE_INTERRUPT || system==CUT_SYSTEM_PRIVILEGE_TRANSFER || system==CUT_SYSTEM_FAR_TRANSFER)
                     plan->report.boundary = WASM_CUT_CONTROL;
                 rip = instruction.fallthrough;
+                if(!system&&!stack&&!string&&!indirect)rip=cut_prepare_store_span(plan,&instruction,options->maximum_source_instructions);
             }
             break;
         }
@@ -309,6 +311,7 @@ static int prologue(wasm_writer *writer,const cut_plan *plan,cut_lowering *state
         pl_x86_mmx_shuffle shuffle;if(pl_x86_mmx_shuffle_lower(&instruction,&shuffle))permutation_local=1u;
     }
     pl_u32 locals=cut.has_repeat?CUT_REPEAT_LOCALS:cut.has_port?CUT_MEMORY_LOCALS:CUT_LOCAL_COUNT;
+    if(plan->store_span)locals=CUT_REPEAT_LOCALS;
     if(plan->system_cut==CUT_SYSTEM_VECTOR_TRANSFER){pl_x86_instruction i;pl_x86_vector_shift law;
         if(!pl_x86_decode_profile(&plan->image,rip,&i)&&pl_x86_vector_shift_lower(&i,&law))locals=28u;}
     if(plan->system_cut==CUT_SYSTEM_VECTOR_TRANSFER){pl_x86_instruction i;pl_x86_vector_unpack law;
@@ -388,6 +391,7 @@ static int instruction_fragment(wasm_writer *writer,const cut_plan *plan,pl_u32 
     pl_u64 *rip,cut_lowering *state)
 {
     cut_lowering cut=*state;cut.writer=writer;pl_x86_instruction instruction;
+    if(plan->store_span){if(!rank)cut_lower_store_span(&cut,plan);*rip=plan->report.continuation;*state=cut;return writer->error;}
     if(pl_x86_decode_profile(&plan->image,*rip,&instruction))return WASM_COMPILER_ERROR_GRAMMAR;
     cut.wanted_flags=plan->flag_frontier[rank]>>16u;
     if(plan->system_cut)cut_lower_system(&cut,&instruction);
@@ -402,6 +406,7 @@ static int instruction_fragment(wasm_writer *writer,const cut_plan *plan,pl_u32 
 static int epilogue(wasm_writer *writer,const cut_plan *plan,pl_u64 rip,cut_lowering *state)
 {
     cut_lowering cut=*state;cut.writer=writer;
+    if(plan->store_span){cut_op(&cut,0x0bu);*state=cut;return writer->error;}
     if (cut.report.boundary != WASM_CUT_CONTROL) {
         cut_coordinate(&cut, rip); cut_set(&cut, CUT_NEXT);
     }

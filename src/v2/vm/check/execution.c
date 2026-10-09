@@ -12,6 +12,7 @@ static pl_u64 fetched[2], called_entry;
 static pl_u32 selections, miss_selection, change_context, debug_after_call;
 static pl_u32 halting;
 static pl_u32 alter_flags;
+static pl_u32 partial_mode,partial_count;
 static int failures;
 #define EXPECT(x) do { if (!(x)) { fprintf(stderr, "execution: line %u\n", (unsigned)__LINE__); ++failures; } } while (0)
 static machine_result fetch(void *owner, pl_u64 address)
@@ -28,6 +29,9 @@ static machine_result call(void *owner, pl_u32 slot, pl_u64 entry, pl_u32 operan
     called_entry = entry;
     called_operand = operand_binding;
     EXPECT(entry == state.rip);
+    if(partial_mode){state.rip+=partial_count;state.retired+=partial_count;
+        if(partial_count)state.rflags^=0x8d5u;
+        return call_fault?107u:yielding?MACHINE_RESULT_BARRIER:MACHINE_RESULT_RESOLVE_RIP;}
     if (call_fault) return 107u;
     if(alter_flags && yielding)state.rflags^=0x8d5u;
     if (yielding) {
@@ -60,7 +64,7 @@ static void reset(void)
     memset(&state, 0, sizeof state); calls = fetches = stop = revoke = revoke_fetch = 0u;
     load_ss = call_fault = yielding = called_slot = 0u; segments = (machine_segments){0};
     selections=miss_selection=change_context=debug_after_call=halting=0u;
-    alter_flags=0u;
+    alter_flags=partial_mode=partial_count=0u;
     activity = (machine_activity){ MACHINE_ACTIVITY_RUNNING };
     segments.version = MACHINE_SEGMENTS_ABI_VERSION;
     rows[0] = (vm_execution_row){ 0x400000u, 1u, 1u, 1u, 0u };
@@ -71,6 +75,14 @@ static void reset(void)
 }
 int main(void)
 {
+    for(pl_u32 result=0u;result<3u;++result)for(pl_u32 count=0u;count<=9u;++count){
+        reset();rows[0].source_bytes=16u;rows[0].source_instructions=8u;
+        partial_mode=1u;partial_count=count;call_fault=result==1u;yielding=result==2u;
+        machine_result actual=run(9u,1u),wanted=result==1u?107u:result==2u?2u:1u;
+        if(count>8u||(!count&&!result)||((result!=0u)&&count==8u))EXPECT(actual==6u);
+        else{EXPECT(actual==wanted);EXPECT(execution.retired==count&&execution.completed==(count!=0u));
+            EXPECT(!execution.continuation.slot);if(count)EXPECT(state.rflags==0x8d5u);}
+    }
     /* Internal yields are not new source instructions. A subsequent precise
      * fault must recover their original arithmetic flag definitions. */
     for(pl_u32 rank=0u;rank<64u;++rank){

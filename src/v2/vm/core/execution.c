@@ -127,19 +127,24 @@ machine_result vm_execution_run(vm_execution *execution, machine_state *state,
         pl_u16 flags_before=resuming?execution->continuation_flags
             :(pl_u16)(state->rflags&MACHINE_X86_ARITHMETIC_FLAGS);
         if(!resuming)execution->frontier[0]=execution->frontier[1]=0u;
-        execution->in_call=1u;execution->call_generation=generation;
+        pl_u64 before_retired=state->retired;
+        execution->in_call=1u;execution->source_bound=source_instructions;execution->source_bytes=row->source_bytes;execution->call_generation=generation;
         result = call(owner, row->slot, row->entry, row->operand_binding);
-        execution->in_call=0u;execution->call_generation=0u;
+        execution->in_call=0u;execution->source_bound=execution->source_bytes=0u;execution->call_generation=0u;
+        pl_u64 committed=state->retired-before_retired;
+        if(committed>source_instructions
+            ||(committed&&committed<source_instructions
+                &&(state->rip<=row->entry||state->rip>=row->entry+row->source_bytes)))return MACHINE_RESULT_ENTRY_MAP;
         if (machine_result_kind(result) == MACHINE_RESULT_BARRIER
                 && machine_result_payload(result) <= MACHINE_BARRIER_FLOATING
-                && source_instructions == 1u && state->rip == row->entry) {
+                && source_instructions == 1u && !committed && state->rip == row->entry) {
             execution->continuation = *row; execution->continuation_generation = generation;
             execution->continuation_flags=flags_before;
             execution->continuation_interruptible=(pl_u8)(machine_result_payload(result)==MACHINE_BARRIER_QUANTUM
                 ||machine_result_payload(result)==MACHINE_BARRIER_FLOATING);
             return result;
         }
-        if(machine_result_kind(result)==MACHINE_RESULT_FAULT && source_instructions==1u && state->rip==row->entry)
+        if(machine_result_kind(result)==MACHINE_RESULT_FAULT && !committed && source_instructions==1u && state->rip==row->entry)
             state->rflags=(state->rflags&~(pl_u64)MACHINE_X86_ARITHMETIC_FLAGS)|flags_before;
         execution->continuation = (vm_execution_row){0}; execution->continuation_generation = 0u;
         execution->continuation_flags=0u;execution->continuation_interruptible=0u;
@@ -150,10 +155,15 @@ machine_result vm_execution_run(vm_execution *execution, machine_state *state,
                     || state->rip != row->entry + row->source_bytes)
                 return MACHINE_RESULT_ENTRY_MAP;
             execution->activity->state = MACHINE_ACTIVITY_HALTED;
-        } else if (result != machine_result_make(MACHINE_RESULT_RESOLVE_RIP, 0u)) return result;
+        } else if (result != machine_result_make(MACHINE_RESULT_RESOLVE_RIP, 0u)) {
+            if(committed){if(committed>=source_instructions||state->rip<=row->entry||state->rip>=row->entry+row->source_bytes)return MACHINE_RESULT_ENTRY_MAP;
+                ++execution->completed;execution->retired+=committed;}
+            return result;
+        }
+        if(!committed)return MACHINE_RESULT_ENTRY_MAP;
         if (shadow) execution->segments->interrupt_shadow = 0u;
         ++execution->completed;
-        execution->retired += source_instructions;
+        execution->retired += committed;
         /* A payload write may revoke inside the compiled function's access
          * call. Never invoke the next entry, even at the quantum boundary. */
         if (execution->generation != generation)

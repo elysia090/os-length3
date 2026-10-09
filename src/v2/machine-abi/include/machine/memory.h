@@ -6,6 +6,7 @@
 
 #define MACHINE_MEMORY_ABI_VERSION 2u
 #define MACHINE_MEMORY_FEATURE_PATTERN 2u
+#define MACHINE_MEMORY_FEATURE_PREFIX 4u
 
 enum machine_memory_access {
     MACHINE_MEMORY_READ = 1u,

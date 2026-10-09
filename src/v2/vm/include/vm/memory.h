@@ -47,6 +47,8 @@ typedef struct {
  * or mutate RAM/context/directory. External host writes must revoke separately.
  * A cancelled reservation never invokes it; an equal-value store still does. */
 typedef void (*vm_memory_write_observer)(void *owner, pl_u32 offset, pl_u32 bytes);
+typedef pl_u32 (*vm_memory_span_prefix)(void *owner,pl_u32 first,pl_u32 count,
+    pl_u32 word_bytes,pl_u32 reverse,pl_u64 value);
 typedef struct {
     pl_u8 *bytes;
     pl_u64 byte_count;
@@ -60,6 +62,7 @@ typedef struct {
     pl_u32 write_touched; /* Caller-cleared mutation bit, not a counter/epoch. */
     vm_memory_write_observer before_write;
     void *write_owner;
+    vm_memory_span_prefix span_prefix; /* Serialized executable-boundary cut. */
     vm_memory_reservation reservation;
     const vm_memory_page *recent[256];
     vm_walk_proof walks[64];

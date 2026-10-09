@@ -120,6 +120,14 @@ bytes remain verified while C warm cohorts begin earlier. Profiled browser
 passes supervision initialization, but offline service transition still times
 out. Production no-counter provider is under test; CPU/deadline/clock unchanged.
 See [span/startup evidence](../vm/check/browser/evidence/2026-10-10-span-and-startup.md).
+The same frontend now groups ordinary adjacent64-bit same-value stores,
+not only REP.4096 construction and six actual C/Wasm prefix/fault/code/paging
+models pass. Shared execution accounts exact committed prefixes; independent
+full C/sanitizers and196608/30720 SSE/FRNDINT states remain green. Same-provider
+8-store ratio0.3226;2648 ->446 module bytes. Actual offline transition remains
+red, so a separately labeled failure-only rescue root is being prepared to
+inspect Linux processes; not normal readiness or a changed deadline/profile.
+See [ordinary store prefix evidence](../vm/check/browser/evidence/2026-10-10-store-prefix.md).
 A bounded run reaches266481582 retired /150000000 admissions and ends at
 the diagnostic quota, not an ISA miss. Explicit interactive lifetime is now
 separate from that regression quota; bounded work/memory/source ownership

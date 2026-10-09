@@ -35,27 +35,29 @@ void cut_repeat_frontier(cut_lowering *cut)
     }
 }
 
-static void pattern_count(cut_lowering *c,pl_u32 bytes)
+void cut_pattern_count(cut_lowering *c,pl_u32 bytes,pl_u32 count_local,int reverse)
 {
     pl_u32 shift=bytes==8u?3u:bytes==4u?2u:bytes==2u?1u:0u;
     cut_get(c,CUT_ADDRESS);cut_const(c,4095u);cut_op(c,0x83u);cut_const(c,shift);cut_op(c,0x88u);cut_const(c,1u);cut_op(c,0x7cu);
     cut_const(c,4096u);cut_get(c,CUT_ADDRESS);cut_const(c,4095u);cut_op(c,0x83u);cut_op(c,0x7du);cut_const(c,shift);cut_op(c,0x88u);
-    cut_get(c,CUT_FLAGS);cut_const(c,0x400u);cut_op(c,0x83u);cut_op(c,0xa7u);cut_op(c,0x1bu);cut_set(c,CUT_NEXT);
+    if(reverse){cut_get(c,CUT_FLAGS);cut_const(c,0x400u);cut_op(c,0x83u);cut_op(c,0xa7u);}else cut_i32_const(c,0u);
+    cut_op(c,0x1bu);cut_set(c,CUT_NEXT);
     /* A word crossing the page is exactly one ordinary scalar transaction. */
     cut_const(c,1u);cut_get(c,CUT_NEXT);cut_get(c,CUT_NEXT);cut_op(c,0x50u);cut_op(c,0x1bu);cut_set(c,CUT_NEXT);
     cut_const(c,1u);cut_get(c,CUT_NEXT);cut_get(c,CUT_ADDRESS);cut_const(c,4095u);cut_op(c,0x83u);
     cut_const(c,4096u-bytes);cut_op(c,0x56u);cut_op(c,0x1bu);cut_set(c,CUT_NEXT);
-    for(pl_u32 i=0u;i<2u;++i){pl_u32 limit=i?CUT_REPEAT_BUDGET:2u;
+    for(pl_u32 i=0u;i<2u;++i){pl_u32 limit=i?CUT_REPEAT_BUDGET:count_local;
         cut_get(c,CUT_NEXT);cut_get(c,limit);cut_get(c,CUT_NEXT);cut_get(c,limit);cut_op(c,0x54u);cut_op(c,0x1bu);cut_set(c,CUT_NEXT);}
 }
 
-static void pattern_access(cut_lowering *c,pl_u32 bytes)
+void cut_pattern_access(cut_lowering *c,pl_u32 bytes,int reverse)
 {
     pl_u32 shift=bytes==8u?3u:bytes==4u?2u:bytes==2u?1u:0u;
     cut_op(c,0x20u);wasm_writer_uleb(c->writer,1u);cut_get(c,CUT_ADDRESS);
     cut_get(c,CUT_NEXT);cut_const(c,shift);cut_op(c,0x86u);cut_op(c,0xa7u);
-    cut_get(c,CUT_FLAGS);cut_const(c,0x400u);cut_op(c,0x83u);cut_const(c,2u);cut_op(c,0x86u);
-    cut_const(c,MACHINE_MEMORY_WRITE|MACHINE_MEMORY_PATTERN|(shift<<10u));cut_op(c,0x84u);cut_op(c,0xa7u);
+    if(reverse){cut_get(c,CUT_FLAGS);cut_const(c,0x400u);cut_op(c,0x83u);cut_const(c,2u);cut_op(c,0x86u);
+        cut_const(c,MACHINE_MEMORY_WRITE|MACHINE_MEMORY_PATTERN|(shift<<10u));cut_op(c,0x84u);cut_op(c,0xa7u);}
+    else cut_i32_const(c,MACHINE_MEMORY_WRITE|MACHINE_MEMORY_PATTERN|(shift<<10u));
     cut_get(c,CUT_LEFT);cut_call(c,WASM_IMPORT_ACCESS);cut_access_status(c);
     cut_access_value(c);cut_set(c,CUT_NEXT);
 }
@@ -120,7 +122,7 @@ void cut_lower_string(cut_lowering *cut, const pl_x86_instruction *instruction)
     if(law.reads_target || law.writes_target){
         cut_get(cut,8u);cut_mask(cut,width);cut_set(cut,CUT_ADDRESS);
         cut->report.memory_access=law.writes_target?MACHINE_MEMORY_WRITE:MACHINE_MEMORY_READ;
-        if(pattern){pattern_count(cut,bytes);pattern_access(cut,bytes);}else cut_access(cut);
+        if(pattern){cut_pattern_count(cut,bytes,2u,1);cut_pattern_access(cut,bytes,1);}else cut_access(cut);
         if(compare){
             cut_access_value(cut);cut_set(cut,CUT_RIGHT);
             cut_get(cut,CUT_LEFT);cut_get(cut,CUT_RIGHT);cut_op(cut,0x7du);cut_mask(cut,law.bits);cut_set(cut,CUT_VALUE);

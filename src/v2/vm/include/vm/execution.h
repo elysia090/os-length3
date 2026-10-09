@@ -39,6 +39,8 @@ typedef struct {
     pl_u16 continuation_flags; /* Six sparse pre-instruction arithmetic bits. */
     pl_u8 continuation_interruptible; /* Only a completed quantum frontier. */
     pl_u8 in_call;
+    pl_u32 source_bound; /* Last trusted row's maximum retirement, during call. */
+    pl_u32 source_bytes;
     pl_u64 call_generation;
     pl_u64 frontier[2]; /* Opaque minimal compiled-transfer residual. */
     vm_execution_select select;
@@ -60,6 +62,10 @@ typedef machine_result (*vm_execution_call)(void *owner, pl_u32 slot, pl_u64 ent
  * cannot be assumed disjoint. Host remaps/code/table changes revoke admission.
  * No mutable directory or concurrent CPU/device/host writer is admitted.
  * Failed open revokes the previous admission. */
+/* A compiled function publishes its actual committed source prefix through
+ * state.retired. A fault/yield after that prefix keeps its next precise RIP.
+ * The counter delta must fit the attested row; partial RIP stays inside it.
+ * A single suspended instruction retires nothing until final completion. */
 int vm_execution_open(vm_execution *execution, const vm_execution_row *rows,
                        pl_u32 count, pl_u64 generation, const machine_state *state);
 void vm_execution_close(vm_execution *execution);

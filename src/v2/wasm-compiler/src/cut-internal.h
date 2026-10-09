@@ -62,6 +62,7 @@ typedef struct {
     pl_u32 operand_binding_kind;
     pl_u32 imports;
     pl_u32 fault_vector;
+    pl_u32 store_span;
 } cut_plan;
 typedef struct { pl_u32 length,imports,binding,span; } cut_body_extent;
 typedef struct {
@@ -125,6 +126,10 @@ void cut_lower_indirect(cut_lowering *cut, const pl_x86_instruction *instruction
 void cut_reject_target(cut_lowering *cut);
 int cut_string_supported(const pl_x86_instruction *instruction);
 void cut_lower_string(cut_lowering *cut, const pl_x86_instruction *instruction);
+void cut_pattern_count(cut_lowering *cut,pl_u32 bytes,pl_u32 count_local,int reverse);
+void cut_pattern_access(cut_lowering *cut,pl_u32 bytes,int reverse);
+pl_u64 cut_prepare_store_span(cut_plan *plan,const pl_x86_instruction *first,pl_u32 limit);
+void cut_lower_store_span(cut_lowering *cut,const cut_plan *plan);
 void cut_repeat_frontier(cut_lowering *cut);
 int cut_system_supported(const pl_x86_instruction *instruction);
 void cut_lower_counter_branch(cut_lowering *cut,const pl_x86_instruction *instruction);
