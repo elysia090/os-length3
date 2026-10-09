@@ -7,6 +7,7 @@ import {CutTrace} from './cut-trace.mjs';
 import {CompilerOutput} from './compiler-output.mjs';
 import {equal} from './assertion.mjs';
 import {CutProgress} from './cut-progress.mjs';
+import {memoryBudget,memoryGrowth} from '../../../web/memory-budget.mjs';
 class Bytes extends Uint8Array {
   constructor(value,offset,length) {
     super(value,offset,length);
@@ -44,7 +45,10 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   const kernelBytes = header.readUInt32LE(0x1f4) * 16;
   const idtPage = await read('call.extra-page'), cmdlinePage = await read('cmdline.extra-page');
   const optionPage = await read('option.extra-page');
-  const maximumMemoryPages = extended ? 512 : 128;
+  // A live machine may touch its declared RAM and immutable device pages.
+  // Directory/branch/version words and private construction are NOT payload.
+  // No payload population is allocated here: C supplies each demanded page.
+  const {capacity,maximumPages:maximumMemoryPages}=memoryBudget(meta.ramBytes,immutableImage?.bytes??0,keepAlive,extended);
   const memory = new WebAssembly.Memory({initial:32,maximum:maximumMemoryPages});
   const provider = await WebAssembly.compile(providerBytes);
   assert.deepEqual(WebAssembly.Module.imports(provider),[{module:'machine',name:'memory',kind:'memory'}]);
@@ -89,7 +93,6 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   // machine, relaxing code admission or restoring an observed CPU checkpoint.
   const input = ((compilerReport + 80 + 4095) & ~4095)+524288;
   const rows = input + 8192;
-  const capacity = extended ? 8192 : 4096;
   const versionOffset=input+12288,versionCount=capacity+32;
   const directoryOffset=(versionOffset+versionCount*4+4095)&~4095;
   const branches = directoryOffset + capacity * 32;
@@ -99,7 +102,9 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   const idtCodeOffset = base + 53248, bssOffset = base + 57344;
   const cmdlineCodeOffset = base + 61440, optionOffset = base + 65536;
   const initialPages=Math.ceil((optionOffset+4096)/65536);
-  if (initialPages>16) memory.grow(initialPages-16);
+  assert(initialPages+Math.ceil(capacity*4096/65536)<=maximumMemoryPages,'private plus physical population fits its single reservation');
+  const existingPages=memory.buffer.byteLength/65536;
+  if (initialPages>existingPages) memory.grow(initialPages-existingPages);
   let data = new Bytes(memory.buffer), view = new DataView(memory.buffer);
   const relocated = 0x1000000n + BigInt(header.readUInt32LE(0x260)) - 0x320000n;
   const stack = relocated + 0x2ea400n, gdt = 0x12e6000n;
@@ -255,7 +260,10 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   async function supplyPhysical() {
     let status = vm.vm_page_prepare(port,pageRequest);
     if (status === -3 && vm.vm_page_count() < capacity && memory.buffer.byteLength < maximumMemoryPages * 65536) {
-      memory.grow(8); data = new Bytes(memory.buffer); view = new DataView(memory.buffer);
+      const currentPages=memory.buffer.byteLength/65536;
+      const growth=memoryGrowth(currentPages,Math.min(currentPages+8,maximumMemoryPages),maximumMemoryPages);
+      assert(growth>0,'remaining private/payload memory budget');
+      memory.grow(growth); data = new Bytes(memory.buffer); view = new DataView(memory.buffer);
       cold=data; report=view; compilerOutputWitness.refresh();
       assert.equal(vm.vm_grow(),0); status = vm.vm_page_prepare(port,pageRequest);
     }

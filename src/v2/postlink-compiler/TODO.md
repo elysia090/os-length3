@@ -128,6 +128,13 @@ full C/sanitizers and196608/30720 SSE/FRNDINT states remain green. Same-provider
 red, so a separately labeled failure-only rescue root is being prepared to
 inspect Linux processes; not normal readiness or a changed deadline/profile.
 See [ordinary store prefix evidence](../vm/check/browser/evidence/2026-10-10-store-prefix.md).
+Actual rescue shell executes ps/s6/proc. Same10s manual warm transitions reach
+interactive-ready with RC0; NOT initial automatic boot/3s. Real guest GCC
+reaches520052835 retired but hits a mismatched Wasm memory cap at7567 resident
+pages. One derived live RAM/device/private/metadata reservation fixes that cap,
+the stale16-vs32 initial growth and final-batch overshoot. Growth remains lazy;
+no page eviction/GC claim. Actual same-root toolchain re-test is in progress.
+See [console/memory observations](../vm/check/browser/evidence/2026-10-10-linux-console-and-memory.md).
 A bounded run reaches266481582 retired /150000000 admissions and ends at
 the diagnostic quota, not an ISA miss. Explicit interactive lifetime is now
 separate from that regression quota; bounded work/memory/source ownership
