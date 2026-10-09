@@ -86,6 +86,10 @@ typedef struct { pl_u8 status,memory; } pl_x86_x87_snapshot;
 /* No-wait FNSTCW/FNSTSW: one current 16-bit word, no floating exception
  * consumption. EM/TS #NM precedes operand access; AX preserves its parent. */
 int pl_x86_x87_snapshot_lower(const pl_x86_instruction *instruction,pl_x86_x87_snapshot *out);
+int pl_x86_x87_control_load_supported(const pl_x86_instruction *instruction);
+/* Waiting control load: source word, old SW -> canonical CW, recomputed
+ * ES/B. New pending exceptions are deferred, never raised by the load. */
+int pl_x86_x87_control_load_plan(pl_arena *arena,pl_plan *out);
 /* WAIT is its own instruction, not a prefix or an x87 value operation. */
 int pl_x86_x87_wait_supported(const pl_x86_instruction *instruction);
 typedef struct {pl_u8 free_register,source,step;} pl_x86_x87_stack;

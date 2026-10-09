@@ -6,6 +6,22 @@ static void port_store(cut_lowering *cut,pl_u32 offset,pl_u32 bytes)
     cut_op(cut,bytes==4u?0x36u:0x37u);wasm_writer_uleb(cut->writer,bytes==4u?2u:3u);
     wasm_writer_uleb(cut->writer,offset);
 }
+void cut_lower_x87_control_load(cut_lowering *cut,const pl_x86_instruction *instruction)
+{
+    if(!pl_x86_x87_control_load_supported(instruction)){cut->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
+    _Alignas(8) pl_u8 scratch[16384];pl_arena arena={scratch,sizeof scratch,0u};pl_plan pure;
+    if(pl_x86_x87_control_load_plan(&arena,&pure)){cut->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
+    cut_x87_wait_guard(cut,26u,27u);
+    const pl_x86_memory *address=&instruction->operands[0].value.memory;
+    cut_effective_address(cut,instruction,address);cut_set(cut,CUT_ADDRESS);
+    cut->report.memory_access=MACHINE_MEMORY_READ|cut_memory_role(address);
+    cut_const(cut,0u);cut_set(cut,CUT_VALUE);cut_access(cut);cut_access_value(cut);cut_set(cut,26u);
+    const pl_u32 inputs[]={26u,27u},outputs[]={26u,27u};cut_emit_scalar_projection(cut,&pure,inputs,28u,outputs,2u);
+    for(pl_u32 n=0u;n<2u;++n){cut_get(cut,0u);cut_get(cut,26u+n);cut_op(cut,0x3du);wasm_writer_uleb(cut->writer,1u);
+        wasm_writer_uleb(cut->writer,n?offsetof(machine_state,x87_status):offsetof(machine_state,x87_control));}
+    // The control operation neither changes FIP/FDP/FOP nor consumes the
+    // newly unmasked exception; the next waiting instruction owns that cut.
+}
 void cut_lower_x87_snapshot(cut_lowering *cut,const pl_x86_instruction *instruction)
 {
     pl_x86_x87_snapshot law;

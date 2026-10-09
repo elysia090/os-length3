@@ -150,6 +150,7 @@ typedef struct {pl_u32 top,tag,sw,cw,relation,raised,empty,unmasked,opcode,pop,m
 void cut_publish_x87_comparison(cut_lowering *cut,const pl_x86_instruction *instruction,const cut_x87_comparison *view);
 void cut_x87_wait_guard(cut_lowering *cut,pl_u32 cw,pl_u32 sw);
 void cut_lower_x87_transfer(cut_lowering *cut,const pl_x86_instruction *instruction);
+void cut_lower_x87_control_load(cut_lowering *cut,const pl_x86_instruction *instruction);
 void cut_x87_pending_guard(cut_lowering *cut,pl_u32 cw,pl_u32 sw);
 void cut_lower_x87_wait(cut_lowering *cut);
 void cut_lower_x87_stack(cut_lowering *cut,const pl_x86_instruction *instruction);

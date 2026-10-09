@@ -117,6 +117,12 @@ SOURCES += src/lower-register-update.c
 SOURCES += src/image.c src/image-stream.c
 SOURCES += src/emit-image-metadata.c
 SOURCES += src/lower-x87-snapshot.c
+.PHONY: x87-control-check
+check: x87-control-check
+x87-control-check: $(BUILD)/x87-control-check
+	$(BUILD)/x87-control-check
+$(BUILD)/x87-control-check: check/x87-control.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 SOURCES += src/emit-scalar-plan.c src/lower-x87-compare.c
 SOURCES += src/lower-x87-load.c
 SOURCES += src/lower-x87-exchange.c

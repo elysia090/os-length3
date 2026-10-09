@@ -1,5 +1,30 @@
 #include <x86/semantics.h>
 #include "x87-expression.h"
+int pl_x86_x87_control_load_supported(const pl_x86_instruction *i)
+{
+    const pl_u32 required=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER|PL_X86_INSTRUCTION_READS_MEMORY;
+    return i&&i->status==PL_X86_DECODE_VALID&&i->encoding==PL_X86_ENCODING_LEGACY&&i->machine_operation==PL_X86_MACHINE_X87
+        &&i->machine_argument==(30u|(2ull<<8u))&&i->opcode==0xd9u&&i->visible_operand_count==1u
+        &&i->operands[0].kind==PL_X86_OPERAND_MEMORY&&i->operands[0].bits==16u
+        &&(i->flow==PL_X86_FLOW_NEXT||i->flow==PL_X86_FLOW_SYSTEM)&&(i->flags&required)==required
+        &&!(i->flags&(PL_X86_INSTRUCTION_WRITES_MEMORY|PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED
+            |PL_X86_INSTRUCTION_PRIVILEGED|PL_X86_INSTRUCTION_TRAP_AFTER))
+        &&i->source_bytes&&i->source_bytes<=15u&&i->length==i->source_bytes&&i->fallthrough-i->rip==i->source_bytes;
+}
+int pl_x86_x87_control_load_plan(pl_arena *arena,pl_plan *out)
+{
+    if(!arena||!out)return PL_ERROR_PLAN;
+    pl_plan raw={.instructions=1u};expression e={0};if(pl_builder_open(&e.builder,&raw,arena,32u,96u,0u,2u))return PL_ERROR_ARENA;
+    pl_operand cw={PL_OPERAND_LOCAL,0u},sw={PL_OPERAND_LOCAL,1u};
+    // Only the incoming six mask bits determine ES/B. Substitute them before
+    // canonicalizing unrelated CW fields, so both output chains run in parallel.
+    pl_operand inverse=binary(&e,86u,cw,constant(~0ull)),pending=bit_and(&e,inverse,sw);pending=bit_and(&e,pending,constant(63u));
+    cw=bit_and(&e,cw,constant(0x1f3fu));cw=bit_or(&e,cw,constant(0x40u));
+    pending=not(&e,pending);pl_operand summary=select(&e,constant(0u),constant(0x8080u),pending);
+    sw=bit_and(&e,sw,constant(0x7f7fu));sw=bit_or(&e,sw,summary);raw.locals[0]=cw;raw.locals[1]=sw;
+    if(e.failed)return PL_ERROR_ARENA;
+    const pl_u8 live[]={1u,1u};return pl_compact_projected(&raw,live,arena,out);
+}
 int pl_x86_x87_transfer_lower(const pl_x86_instruction *i,pl_x86_x87_transfer *out)
 {
     const pl_u32 required=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;

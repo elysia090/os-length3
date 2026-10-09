@@ -23,12 +23,16 @@ Cold shell3s remains a target, not an achieved claim.
 
 ## Current authoritative state
 
-Same make/every-final-PF_X-byte population:233263/233455 lowerable,192 missing,
-zero missing fault cuts/fetch/capacity refusals. Remaining floating105,
+Same make/every-final-PF_X-byte population:233271/233455 lowerable,184 missing,
+zero missing fault cuts/fetch/capacity refusals. Remaining floating97,
 SIMD86,atomic1. FirstDD32 at0xd382. This complete byte inventory is
 not an execution trace, kernel/image publication or browser boot proof.
 
-FCMOV/sign/constants now share pure x86 transfer SSA, with no latent payload
+FLDCW uses a two-input pure control/status projection and exact source cut.
+The generic scalar emitter no longer requires five/six inputs;1..19 bounded
+inputs use the same validated path. Mask-bit substitution reduces span8 ->6.
+See [control-field normalization](../vm/check/browser/evidence/2026-10-09-x87-control.md).
+FCMOV/sign/constants share pure x86 transfer SSA, with no latent payload
 read for false/identity/empty arms. 37376 independent physical comparisons and
 56064 compiled boundary models pass;45 more coordinates are recovered.
 See [raw x87 transfer](../vm/check/browser/evidence/2026-10-09-x87-transfer.md).

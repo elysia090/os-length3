@@ -30,7 +30,7 @@ static void mark_projection(const pl_plan *p,pl_operand a,pl_u8 *projections)
 void cut_emit_scalar_projection(cut_lowering *c,const pl_plan *p,const pl_u32 *input,pl_u32 first,const pl_u32 *output,pl_u32 count)
 {
     if(!p||!input||!output||!count||count>p->local_count||p->node_count>PL_X86_X87_ARITHMETIC_MAX_NODES
-        ||(p->local_count!=5u&&p->local_count!=6u)){c->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
+        ||p->local_count>PL_X86_LOCAL_COUNT){c->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
     pl_u8 projections[PL_X86_X87_ARITHMETIC_MAX_NODES+1u]={0};
     for(pl_u32 n=0u;n<p->node_count;++n){const pl_node *node=p->nodes+n;
         if(node->argument_at>p->argument_count||node->argument_count>p->argument_count-node->argument_at)goto bad;

@@ -3004,6 +3004,8 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
         && ((instruction->machine_argument&255u)==PL_X86_X87_STORE_CONTROL_WORD
             || (instruction->machine_argument&255u)==PL_X86_X87_STORE_STATUS_WORD)){
         pl_x86_x87_snapshot law;if(!pl_x86_x87_snapshot_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
+    if(instruction->machine_operation==PL_X86_MACHINE_X87&&(instruction->machine_argument&255u)==30u
+        &&!pl_x86_x87_control_load_supported(instruction))return PL_ERROR_X86_SEMANTIC;
     if(instruction->machine_operation==PL_X86_MACHINE_READ_SELECTOR){pl_x86_selector_read law;
         if(!pl_x86_selector_read_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if (instruction->status != PL_X86_DECODE_VALID
