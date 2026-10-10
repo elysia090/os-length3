@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+# Only an already granted/attached carrier permits the cold service graph.
+# Linux retains address, firewall, DHCP, socket and clock authority.
+carrier=0
+for link in /sys/class/net/*/carrier;do
+    case $link in */lo/*)continue;;esac
+    test "$(cat "$link" 2>/dev/null || true)" = 1 && carrier=1
+done
+test "$carrier" = 1 || { echo 'No granted network carrier.' >&2;exit 1; }
+/usr/bin/s6-rc-update -t 10000 -l /run/s6-rc /etc/s6-rc/compiled/current
+exec /usr/bin/s6-rc -t 10000 -l /run/s6-rc -u change network-ready

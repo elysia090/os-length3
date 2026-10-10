@@ -1,0 +1,7 @@
+<!doctype html><meta charset="utf-8"><title>Linux product Worker verification</title>
+<link rel="stylesheet" href="./startup.css">
+<h1>Linux product Worker</h1><p>Same production Worker and Linux boot, no rescue shell or substitute filesystem.</p>
+<form id="boot"><label>Release URL <input id="release" size="70"></label><label>SHA-256 <input id="digest" size="70"></label><button>Cold boot</button></form>
+<button id="close">Close and flush</button><button id="reopen">Reopen saved volume</button>
+<pre id="console"></pre><form id="input-form"><input id="input-line" size="100"><button>Send line</button></form><pre id="result">Not started</pre>
+<script type="module" src="./product.mjs"></script>

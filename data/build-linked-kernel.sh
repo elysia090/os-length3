@@ -4,8 +4,8 @@ set -euo pipefail
 here=$(cd -- "$(dirname -- "$0")" && pwd)
 target=${1:-vmlinux}
 case $target in
-  vmlinux|bzImage) ;;
-  *) printf 'usage: %s [vmlinux|bzImage]\n' "$0" >&2; exit 2;;
+  vmlinux|bzImage|config) ;;
+  *) printf 'usage: %s [vmlinux|bzImage|config]\n' "$0" >&2; exit 2;;
 esac
 
 . "$here/bootstrap/environment.sh"
@@ -84,6 +84,12 @@ while IFS= read -r option; do
   esac
 done < "$here/config/linux.fragment"
 make -C "$source_root" O="$output_root" ARCH=x86_64 olddefconfig
+if [[ $target == config ]]; then
+  # Explicit maintenance product: resolve the fragment using locked upstream
+  # Kconfig, without publishing a kernel or weakening the normal lock gate.
+  printf 'linked-kernel-config=%s\n' "$output_root/.config"
+  exit 0
+fi
 if ! cmp -s "$output_root/.config" "$config_lock"; then
   printf 'resolved linked-kernel config differs from lock: %s\n' \
     "$config_lock" >&2

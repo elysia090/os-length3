@@ -1,309 +1,66 @@
-// Disposable host for the native x86 machine.
-//
-// The Worker owns only artifact/page delivery and scheduling. CPU state, MMU,
-// exceptions, control flow, and QM state-step execution remain in vm.wasm.
-// Missing native coverage is an error: there is no interpreter fallback.
-
-import { openDirectArtifact } from './artifact.js';
-import {
-  openDirectX86Machine,
-  release as releaseVM,
-} from './vm.js';
-
-const sessions = new Map();
-const profiles = new Map();
-let nextHandle = 1;
-let queue = Promise.resolve();
-
-const DEFAULT_BLOCK_QUANTUM = 1024;
-const DEFAULT_MAX_QUANTA = 16384;
-const PROGRESS_QUANTA = 4;
-
-function consoleState() {
-  return {
-    decoder: new TextDecoder(),
-    tail: '',
-    boot: true,
-    ready: false,
-  };
+// One disposable Worker, one C CPU/MMU/device owner and one execution engine.
+// The main thread supplies authority/keys; storage tiers never supply trust.
+import {runMachine} from './machine-runtime.mjs';
+import {openMachineArtifact} from './machine-artifact.mjs';
+import {MachineDevices} from './machine-devices.mjs';
+import {PersistentBlock,IndexedBlockStore} from './persistent-block.mjs';
+import {NetworkTransport} from './network-transport.mjs';
+import {waitForClock} from './idle-clock.mjs';
+const send=(type,payload={})=>self.postMessage({type,...payload});
+let owner=null,closing=false,pending=null,artifact=null,running=null,ready=false,normal=false,closeFailure=null;
+let tail='',input=new Uint8Array(8192),head=0,count=0,consoleBytes=new Uint8Array(2048),consoleCount=0;
+const decoder=new TextDecoder();
+function flushConsole(){if(!consoleCount)return;let raw='';for(let i=0;i<consoleCount;++i)raw+=String.fromCharCode(consoleBytes[i]);
+  send('trace',{event:{operation:'console_write',data_base64:btoa(raw)}});consoleCount=0;}
+function consoleWrite(bytes){for(const b of bytes){consoleBytes[consoleCount++]=b;if(b===10||consoleCount===consoleBytes.length)flushConsole();}
+  tail=(tail+decoder.decode(bytes,{stream:true})).slice(-4096);
+  if(tail.includes('interactive-ready'))normal=true;
+  if(!normal&&(tail.includes('Offline service transition failed; terminal remains down.')||tail.includes('Boot root handoff failed.')))
+    throw new Error('Linux normal boot failed; inspect the C machine diagnostic (no rescue fallback)');
+  ready=normal&&/(?:^|\r?\n)[^\r\n]{0,128}[#$] $/.test(tail);
+  if(ready&&pending){flushConsole();send('result',{id:pending,ok:true,handle:1,result:{ready:true,state:{halted:false},layout:artifact.stats}});pending=null;}
 }
-
-function observeConsole(runtime, bytes) {
-  runtime.tail = (runtime.tail
-    + runtime.decoder.decode(bytes, { stream: true })).slice(-4096);
-  const prompt = /(?:^|\r?\n)# $/.test(runtime.tail);
-  runtime.ready = prompt
-    && (!runtime.boot || runtime.tail.includes('BusyBox is ready.'));
+function consume(take){if(!count)return null;const b=input[head];if(take){head=(head+1)&8191;--count;}return b;}
+async function boot(message){
+  if(owner||running)throw new Error('one live machine per Worker');
+  if(message.architecture&&message.architecture!=='x86-64')throw new Error('x86-64 release required');
+  if(!message.releaseUrl||!message.releaseSha256||!message.storage)throw new Error('pinned Linux release and workspace authority required');
+  if(typeof message.generation!=='bigint'||message.generation<1n||message.generation>0xffffffffffffffffn)throw new Error('supervisor machine generation required');
+  closing=false;closeFailure=null;pending=message.id;ready=false;normal=false;tail='';head=count=0;
+  send('progress',{id:message.id,phase:'download',label:'Authenticating Linux release'});
+  artifact=await openMachineArtifact(message.releaseUrl,message.releaseSha256);
+  const m=artifact.manifest,s=message.storage,store=await IndexedBlockStore.open(s.name);
+  let volume;
+  try{volume=await PersistentBlock.open({...s,store,onHead:envelope=>send('storage-head',{envelope})});}
+  catch(e){store.close();artifact.close();throw e;}
+  owner=new MachineDevices({volume,binding:s.binding,network:message.network?new NetworkTransport(message.network):null});
+  const system=m.objects.system,command=m.command+
+    ' virtio_mmio.device=4K@'+owner.address+':10 virtio_mmio.device=4K@0x'+(BigInt(owner.address)+4096n).toString(16)+':11'+
+    (volume.fresh?' length3.workspace=new':'');
+  // Boot header and fixed command are the only initial inputs. C creates the
+  // boot parameters/CPU; every image/RAM/MMIO page thereafter is demanded.
+  const header=await artifact.read('kernel',0,4096),metadata=new TextEncoder().encode(JSON.stringify({imageBytes:m.objects.kernel.bytes,initramfsBytes:m.objects.initramfs.bytes,ramBytes:m.ramBytes}));
+  const reader=async name=>name==='boot.header'?header:name==='boot.command'?new TextEncoder().encode(command):name==='boot.json'?metadata:Promise.reject(new Error('undeclared runtime input'));
+  const readExtent=(kind,at,n)=>artifact.read(({2:'kernel',3:'initramfs',5:'system'})[kind],at,n);
+  const entropy=crypto.getRandomValues(new Uint8Array(64));
+  const provider=await artifact.read('vm',0,m.objects.vm.bytes),compiler=await artifact.read('compiler',0,m.objects.compiler.bytes);
+  send('booted',{id:message.id,handle:1,architecture:'x86-64'});
+  running=runMachine(reader,provider,compiler,readExtent,{extended:true,keepAlive:true,warmCuts:64,bootEntropy:entropy,generation:message.generation,
+    immutableImage:{address:'0x30000000',bytes:system.bytes},devices:owner,onConsole:consoleWrite,readInput:consume,idleWait:waitForClock,shouldClose:()=>closing,
+    onProgress:p=>{flushConsole();send('progress',{id:pending,phase:'execute',label:ready?'Linux is resident':'Starting Linux',detail:p.retired+' source instructions',profile:p});}})
+    .then(result=>{if(!closing)throw new Error('C machine stopped: '+JSON.stringify(result.nextGate));return result;})
+    .catch(error=>{flushConsole();if(pending)send('result',{id:pending,ok:false,error:error.message,diagnostic:error.diagnostic});else send('fault',{error:error.message});throw error;})
+    .finally(async()=>{try{await owner?.close();}catch(e){closeFailure=e;throw e;}
+      finally{artifact.close();owner=null;running=null;}});
+  running.catch(()=>{});
 }
-
-function send(type, payload = {}) {
-  self.postMessage(Object.assign({ type }, payload));
-}
-
-function base64(bytes) {
-  let raw = '';
-  for (const byte of bytes) raw += String.fromCharCode(byte);
-  return btoa(raw);
-}
-
-function positiveInteger(value, fallback, name) {
-  const result = Number(value ?? fallback);
-  if (!Number.isSafeInteger(result) || result <= 0) {
-    throw new Error(`${name} must be a positive safe integer`);
-  }
-  return result;
-}
-
-function sessionHandle(value) {
-  const result = Number(value);
-  if (!Number.isSafeInteger(result) || !sessions.has(result)) {
-    throw new Error('Linux session handle is not resident');
-  }
-  return result;
-}
-
-function profileStart(id) {
-  const profile = { started: performance.now(), marks: {} };
-  profiles.set(id, profile);
-  return profile;
-}
-
-function profileMark(id, name) {
-  const profile = profiles.get(id);
-  if (!profile) return;
-  profile.marks[name] = Math.round(
-    (performance.now() - profile.started) * 1000,
-  ) / 1000;
-}
-
-function profileLayout(id) {
-  return { ...(profiles.get(id)?.marks || {}) };
-}
-
-function status(machine, raw = machine.status()) {
-  return {
-    halted: raw.halted,
-    rip_hex: raw.rip.toString(16).padStart(16, '0'),
-    retired: raw.retired.toString(),
-    work: raw.work.toString(),
-    span: raw.span.toString(),
-    engine: Object.fromEntries(Object.entries(raw.engine || {}).map(
-      ([name, value]) => [name, value.toString()],
-    )),
-    stopped: raw.halted,
-  };
-}
-
-function machineArtifact(message) {
-  const explicit = message.machineArtifact || message.x86?.machineArtifact;
-  if (explicit) return String(explicit);
-  const source = String(message.kernelArtifact || 'linux-x86-64');
-  return source.endsWith('-machine') ? source : `${source}-machine`;
-}
-
-async function drive(id, handle, options = {}) {
-  handle = sessionHandle(handle);
-  const session = sessions.get(handle);
-  const quantum = positiveInteger(
-    options.quantum ?? options.maxBlocks,
-    DEFAULT_BLOCK_QUANTUM,
-    'x86 block quantum',
-  );
-  const maxQuanta = positiveInteger(
-    options.maxQuanta, DEFAULT_MAX_QUANTA, 'x86 quanta',
-  );
-  const started = performance.now();
-  let completedBlocks = 0;
-  let raw = session.machine.status();
-  for (let count = 0; count < maxQuanta; count += 1) {
-    raw = await session.machine.advance(quantum);
-    completedBlocks += raw.completedBlocks || 0;
-    if (raw.missingBlock != null) {
-      const rip = raw.missingBlock.toString(16).padStart(16, '0');
-      throw new Error(
-        `native QM artifact has no x86 block at RIP 0x${rip}`,
-      );
-    }
-    if (raw.halted && session.machine.interrupt?.({ timer: true })) continue;
-    if (raw.halted || session.console.ready) break;
-    if ((count + 1) % PROGRESS_QUANTA === 0) {
-      const elapsedMilliseconds = performance.now() - started;
-      send('progress', {
-        id,
-        phase: 'execute',
-        label: 'Running Linux in vm.wasm',
-        detail: `${raw.retired.toString()} source instructions · `
-          + `${completedBlocks} blocks · ${Math.round(elapsedMilliseconds)} ms`,
-        profile: {
-          elapsedMilliseconds,
-          quanta: count + 1,
-          completedBlocks,
-          retired: raw.retired.toString(),
-          work: raw.work.toString(),
-          span: raw.span.toString(),
-          hostBarriers: raw.hostBarriers,
-          layout: session.artifact.layout(),
-        },
-      });
-      // A scheduling yield is not an execution fallback or guest barrier.
-      // Keep it off the timer queue: nested setTimeout(0) is clamped to 4 ms
-      // by the HTML specification, and a boot runs thousands of quanta.  The
-      // contribution has not been isolated on its own; this is the cheaper
-      // primitive regardless.
-      await yieldToEventLoop();
-    }
-  }
-  return {
-    state: status(session.machine, raw),
-    ready: session.console.ready,
-    layout: session.artifact.layout(),
-  };
-}
-
-// Hand the event loop one turn so queued messages are delivered, without
-// entering the timer queue.  A MessageChannel port delivers a macrotask at
-// once; setImmediate is the Node equivalent when no channel exists.
-const yieldChannel = typeof MessageChannel === 'function'
-  ? new MessageChannel() : null;
-if (yieldChannel) yieldChannel.port2.start?.();
-function yieldToEventLoop() {
-  if (yieldChannel) {
-    return new Promise((resolve) => {
-      yieldChannel.port2.onmessage = () => resolve();
-      yieldChannel.port1.postMessage(0);
-    });
-  }
-  if (typeof setImmediate === 'function') {
-    return new Promise((resolve) => setImmediate(resolve));
-  }
-  return new Promise((resolve) => setTimeout(resolve, 0));
-}
-
-async function boot(message) {
-  if ((message.architecture || 'x86-64') !== 'x86-64') {
-    throw new Error('Linux browser runtime currently accepts native x86-64 artifacts only');
-  }
-  profileStart(message.id);
-  const name = machineArtifact(message);
-  send('progress', {
-    id: message.id,
-    phase: 'download',
-    label: 'Opening the native Linux machine',
-    asset: name,
-  });
-  const artifact = await openDirectArtifact(name, {
-    root: message.artifactRoot || null,
-  });
-  profileMark(message.id, 'artifact_mapped');
-  let machine;
-  const console = consoleState();
-  try {
-    machine = await openDirectX86Machine({
-      root: artifact.root,
-      deliveryRoot: artifact.deliveryRoot,
-      source: artifact.source,
-      devices: {
-        consoleWrite(bytes) {
-          observeConsole(console, bytes);
-          send('trace', {
-            event: {
-              operation: 'console_write',
-              data_base64: base64(bytes),
-            },
-          });
-        },
-        entropy({ rip }) {
-          // Boot closure and browser replay share one deterministic entropy
-          // barrier. A deployment may record a host-provided seed once, but
-          // must not choose a different control-flow path on every resume.
-          return BigInt.asUintN(
-            64,
-            rip * 0x9e3779b97f4a7c15n + 0xd1b54a32d192ed03n,
-          );
-        },
-      },
-    });
-    profileMark(message.id, 'physical_pages_opened');
-    profileMark(message.id, 'vm_opened');
-  } catch (error) {
-    artifact.release();
-    throw error;
-  }
-  const handle = nextHandle++;
-  sessions.set(handle, { artifact, machine, console });
-  send('booted', { id: message.id, handle, architecture: 'x86-64' });
-  try {
-    const result = await drive(
-      message.id, handle, message.options || {},
-    );
-    profileMark(message.id, 'first_drive_complete');
-    send('result', {
-      id: message.id,
-      ok: true,
-      handle,
-      result,
-      profile: profileLayout(message.id),
-    });
-  } finally {
-    profiles.delete(message.id);
-  }
-}
-
-function releaseSession(handle) {
-  handle = sessionHandle(handle);
-  const session = sessions.get(handle);
-  session.machine.release();
-  session.artifact.release();
-  sessions.delete(handle);
-  if (!sessions.size) releaseVM();
-  return handle;
-}
-
-async function handleMessage(message) {
-  if (message.action === 'boot') {
-    await boot(message);
-    return;
-  }
-  if (message.action === 'drive') {
-    const handle = sessionHandle(message.handle);
-    const result = await drive(message.id, handle, message.options || {});
-    send('result', { id: message.id, ok: true, handle, result });
-    return;
-  }
-  if (message.action === 'release') {
-    const handle = releaseSession(message.handle);
-    send('result', { id: message.id, ok: true, handle });
-    return;
-  }
-  if (message.action === 'input') {
-    const handle = sessionHandle(message.handle);
-    const session = sessions.get(handle);
-    const bytes = new TextEncoder().encode(String(message.data || ''));
-    session.console.tail = '';
-    session.console.boot = false;
-    session.console.ready = false;
-    const accepted = session.machine.feedConsole(bytes);
-    send('result', { id: message.id, ok: true, handle, accepted });
-    return;
-  }
-  throw new Error(`unknown Linux worker action ${message.action}`);
-}
-
-self.onmessage = (event) => {
-  const message = event.data || {};
-  queue = queue.then(
-    () => handleMessage(message),
-    () => handleMessage(message),
-  ).catch((error) => {
-    profileMark(message.id, 'failed');
-    send('result', {
-      id: message.id,
-      ok: false,
-      error: error?.message || String(error),
-      profile: profileLayout(message.id),
-    });
-    profiles.delete(message.id);
-  });
-};
-
+self.onmessage=async({data:m})=>{try{
+  if(m.action==='boot'){await boot(m);return;}
+  if(m.action==='input'){if(!owner||closing||typeof m.data!=='string'||m.data.length>4096)throw new Error('bounded console input');
+    const bytes=new TextEncoder().encode(m.data);if(count+bytes.length>input.length)throw new Error('console backpressure');
+    ready=false;tail='';for(const b of bytes){input[(head+count)&8191]=b;++count;}send('result',{id:m.id,ok:true,handle:1,accepted:bytes.length});return;}
+  if(m.action==='drive'){if(!owner||closing)throw new Error('machine not resident');pending=m.id;if(ready){send('result',{id:m.id,ok:true,handle:1,result:{ready:true,state:{halted:false}}});pending=null;}return;}
+  if(m.action==='release'){closing=true;await running?.catch(()=>{});if(closeFailure)throw closeFailure;flushConsole();send('result',{id:m.id,ok:true,handle:1});return;}
+  throw new Error('unknown machine action');
+}catch(e){send('result',{id:m.id,ok:false,error:e.message});}};
 send('ready');

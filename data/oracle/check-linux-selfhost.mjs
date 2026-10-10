@@ -9,6 +9,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {finished} from 'node:stream/promises';
 import {zstdDecompressSync} from 'node:zlib';
+import {seedImage} from './seed-image.mjs';
 const repo=await realpath(fileURLToPath(new URL('../..',import.meta.url)));
 const [qemuArg,imgArg,sourceArg,workArg,...extra]=process.argv.slice(2);
 const observations=extra.includes('--observations'),rescue=extra.includes('--rescue-root'),kernel=extra.includes('--kernel'),initProfile=extra.includes('--init-profile'),candidate=extra.includes('--candidate-root'),publication=extra.includes('--publication');
@@ -132,14 +133,16 @@ const server=createServer(async(req,res)=>{
 });
 await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
 const port=server.address().port,log=createWriteStream(path.join(work,'serial.log'),{flags:'wx'});
+const seed=await seedImage(work,script,'length3-offline-c-oracle');
 const args=['-L',path.join(path.dirname(qemu),'share'),'-machine','q35','-accel','whpx','-cpu','qemu64,+ssse3,+sse4.1,+sse4.2,+popcnt,+cx16,-svm',
   '-m','4096','-smp','4','-drive',`file=${disk.replaceAll('\\','/')},format=qcow2,if=virtio`,
   '-drive',`file=${source.replaceAll('\\','/')},format=raw,if=virtio,readonly=on`,
   '-drive',`file=${packageArchive.replaceAll('\\','/')},format=raw,if=virtio,readonly=on`,
   ...sourceOptions,
+  '-drive',`file=${seed.replaceAll('\\','/')},media=cdrom,format=raw,if=ide,readonly=on`,
   '-netdev',`user,id=n0,restrict=on,guestfwd=tcp:10.0.2.100:80-tcp:127.0.0.1:${port}`,
   '-device','virtio-net-pci,netdev=n0',
-  '-smbios','type=1,serial=ds=nocloud;s=http://10.0.2.100/seed/','-display','none','-monitor','none','-serial','stdio','-no-reboot'];
+  '-vga','none','-display','none','-monitor','none','-serial','stdio','-no-reboot'];
 const child=spawn(qemu,args,{windowsHide:true,stdio:['ignore','pipe','pipe']});
 let tail='',outcome,bytes=0;const began=performance.now();
 let receiptName=null,receiptHash=null,receiptLines='',partial='',observationReceipt=null;const receipts=[],candidateReceipts=new Map();
@@ -148,7 +151,7 @@ function receiveReceipts(chunk){if(!publication&&!rescue&&!observations)return;p
     const observation=/^oracle-observations paired\.tar ([0-9]+) ([a-f0-9]{64})$/.exec(line);
     if(observation){if(!observations||observationReceipt)throw new Error('one observation archive owner');
       observationReceipt={bytes:Number(observation[1]),sha256:observation[2]};continue;}
-    const object=/^oracle-candidate (kernel|initramfs|system\.squashfs) ([0-9]+) ([a-f0-9]{64})$/.exec(line);
+    const object=/^oracle-candidate (kernel|linux\.config|initramfs|system\.squashfs) ([0-9]+) ([a-f0-9]{64})$/.exec(line);
     if(object){if((!candidate&&!rescue)||candidateReceipts.has(object[1]))throw new Error('candidate role ownership');
       candidateReceipts.set(object[1],{bytes:Number(object[2]),sha256:object[3]});continue;}
     const begin=/^oracle-elf-begin (busybox-input|busybox-optimized|tar-input|tar-optimized) ([a-f0-9]{64})$/.exec(line);
@@ -184,7 +187,7 @@ if(outcome===null&&observations){try{
   if(types.length!==names.length||types.some(line=>line[0]!=='-'&&line[0]!=='d'))throw new Error('observation archive regular entries only');
   run('tar',['-xf',archive,'-C',directory]);
 }catch(e){outcome=e.message;}}
-if(outcome===null&&(candidate||rescue)){try{for(const name of rescue?['system.squashfs']:kernel?['kernel','initramfs','system.squashfs']:['initramfs','system.squashfs']){
+if(outcome===null&&(candidate||rescue)){try{for(const name of rescue?['system.squashfs']:kernel?['kernel','linux.config','initramfs','system.squashfs']:['initramfs','system.squashfs']){
   const role=candidateReceipts.get(name),file=path.join(work,'candidate-files',name);
   if(!role||!Number.isSafeInteger(role.bytes)||role.bytes<1||role.bytes>128*1024*1024||(await stat(file)).size!==role.bytes||await digest(file,'sha256')!==role.sha256)throw new Error('candidate readback identity');
   candidateOutput[name]=role;

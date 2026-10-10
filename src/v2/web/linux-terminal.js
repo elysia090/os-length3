@@ -53,7 +53,8 @@ export function readLinuxConfig(search = location.search) {
     || queryValue(query, 'linux-artifact');
   const machineArtifact = supplied.machineArtifact
     || queryValue(query, 'linux-machine-artifact');
-  if (!kernelUrl && !kernelArtifact && !machineArtifact) return null;
+  const releaseUrl=supplied.releaseUrl||queryValue(query,'linux-release');
+  if (!kernelUrl && !kernelArtifact && !machineArtifact && !releaseUrl) return null;
   const rootfsBytes = finite(
     supplied.rootfsBytes ?? queryValue(query, 'linux-rootfs-bytes'),
   );
@@ -65,6 +66,10 @@ export function readLinuxConfig(search = location.search) {
     machineArtifact,
     artifactRoot: supplied.artifactRoot
       || queryValue(query, 'linux-artifact-root'),
+    releaseUrl,
+    releaseSha256: supplied.releaseSha256 || queryValue(query,'linux-release-sha256'),
+    storage: supplied.storage || null,
+    network: supplied.network || null,
     initrdUrl: supplied.initrdUrl || queryValue(query, 'linux-initrd'),
     rootfsUrl: supplied.rootfsUrl || queryValue(query, 'linux-rootfs'),
     rootfsBytes,
@@ -166,7 +171,14 @@ export class LinuxTerminal {
   }
 
   onMessage(message) {
+    if(message.type==='storage-head'){
+      if(this.config.storage)this.config.storage.expectedHead=new Uint8Array(message.envelope);
+      return;
+    }
     if (message.type === 'ready') {
+      const generation=(this.config.storage?.generation??0n)+1n;
+      if(this.config.storage)this.config.storage.generation=generation;
+      this.config.generation=generation;
       this.send('boot', this.config);
       return;
     }

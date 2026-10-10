@@ -31,6 +31,8 @@ enum machine_barrier_reason {
     /* A waiting x87 operation is frozen before any new numeric effect while
      * the guest's legacy IRQ13 handler consumes the already pending error. */
     MACHINE_BARRIER_FLOATING = 4u,
+    MACHINE_BARRIER_NETWORK = 5u,
+    MACHINE_BARRIER_BLOCK = 6u,
 };
 #define MACHINE_REPEAT_MAX_ELEMENTS 256u
 

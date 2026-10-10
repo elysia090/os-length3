@@ -51,9 +51,20 @@ int vm_boot_attach_image(vm_boot *boot, pl_u64 address, pl_u64 bytes)
     boot->image_address = boot->image_bytes = 0u;
     if (!boot->header || !bytes || bytes > 0x10000000u || (address & 4095u)
             || address < boot->ram_bytes || address >= 0x40000000u
-            || bytes > 0x40000000u - address) return -1;
+            || bytes > 0x40000000u - address
+            ||(boot->device_bytes&&address<boot->device_address+boot->device_bytes
+                &&boot->device_address<address+bytes)) return -1;
     boot->image_address = address; boot->image_bytes = bytes;
     return 0;
+}
+
+int vm_boot_attach_devices(vm_boot *b,pl_u64 address,pl_u32 bytes)
+{
+    if(!b||!b->header||(address&4095u)||(bytes!=4096u&&bytes!=8192u)
+        ||address<b->ram_bytes||address>=0x40000000u||bytes>0x40000000u-address
+        ||(b->image_bytes&&address<b->image_address+((b->image_bytes+4095u)&~4095ull)
+            &&b->image_address<address+bytes))return -1;
+    b->device_address=address;b->device_bytes=bytes;return 0;
 }
 
 int vm_boot_set_entropy(vm_boot *boot,const pl_u8 *bytes,pl_u32 length)
@@ -76,6 +87,9 @@ int vm_boot_page(vm_boot *boot, pl_u64 address, pl_u8 *target,
             || (address >= 0xa0000u && address < 0xc0000u)
             || (address==ENTROPY&&boot->entropy_stage==2u))
         return -1;
+    if(boot->device_bytes&&address>=boot->device_address&&address-boot->device_address<boot->device_bytes){
+        *source=(vm_boot_source){0u,0u,VM_BOOT_DEVICE};return VM_BOOT_DEVICE;
+    }
     if (boot->image_bytes && address >= boot->image_address
             && address - boot->image_address < boot->image_bytes) {
         pl_u64 offset = address - boot->image_address;
@@ -108,7 +122,7 @@ int vm_boot_page(vm_boot *boot, pl_u64 address, pl_u8 *target,
     if (address == PARAMS) {
         for (pl_u32 i = 0x1f1u; i < boot->header_end; ++i) target[i] = boot->header[i];
         target[0x210u] = 0xffu; /* Unregistered loader; no real-mode setup. */
-        target[0x1e8u] = (pl_u8)(boot->image_bytes ? 4u : 3u);
+        target[0x1e8u] = (pl_u8)(3u+!!boot->image_bytes+!!boot->device_bytes);
         vm_memory_store(target + 0x214u, boot->kernel_address, 4u);
         vm_memory_store(target + 0x218u, boot->initramfs_address, 4u);
         vm_memory_store(target + 0x21cu, boot->initramfs_bytes, 4u);
@@ -125,6 +139,7 @@ int vm_boot_page(vm_boot *boot, pl_u64 address, pl_u8 *target,
         e820(target, 2u, 0x100000u, boot->ram_bytes - 0x100000u, 1u);
         if (boot->image_bytes)
             e820(target, 3u, boot->image_address, (boot->image_bytes + 4095u) & ~4095ull, 2u);
+        if(boot->device_bytes)e820(target,3u+!!boot->image_bytes,boot->device_address,boot->device_bytes,2u);
     } else if(address==ENTROPY&&boot->entropy_stage==1u){
         vm_memory_store(target+8u,9u,4u); // Standard x86 SETUP_RNG_SEED.
         vm_memory_store(target+12u,sizeof boot->entropy,4u);

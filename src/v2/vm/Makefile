@@ -15,6 +15,11 @@ WASM_FLAGS += -flto
 WASM_FLAGS += -Wl,--export=vm_boot_prepare,--export=vm_boot_project,--export=vm_boot_initial_state
 WASM_FLAGS += -Wl,--export=vm_boot_image
 WASM_FLAGS += -Wl,--export=vm_boot_entropy
+WASM_FLAGS += -Wl,--export=vm_boot_devices
+WASM_FLAGS += -Wl,--export=vm_boot_volume,--export=vm_block_grant,--export=vm_block_request,--export=vm_block_offset,--export=vm_block_extent,--export=vm_block_payload,--export=vm_block_reply
+WASM_FLAGS += -Wl,--export=vm_device_profile
+WASM_FLAGS += -Wl,--export=vm_network_grant_bytes,--export=vm_network_ticket_bytes,--export=vm_network_grant,--export=vm_network_revoke_grant
+WASM_FLAGS += -Wl,--export=vm_network_transmit,--export=vm_network_transmit_address,--export=vm_network_transmit_commit,--export=vm_network_receive_frame
 WASM_FLAGS += -Wl,--export-table,--growable-table,--export=vm_slot_min,--export=vm_bind_execution,--export=vm_run,--export=vm_completed,--export=vm_source_retired
 WASM_FLAGS += -Wl,--export=vm_boot_initial_segments,--export=vm_bind_segments,--export=vm_segment
 WASM_FLAGS += -Wl,--export=vm_reserve,--export=vm_commit,--export=vm_abort,--export=vm_table,--export=vm_return
@@ -43,6 +48,7 @@ WASM_FLAGS += -Wl,--export=vm_entry_abi
 WASM_FLAGS += -Wl,--export=vm_memory_features
 WASM_FLAGS += -Wl,--export=vm_source_demands,--export=vm_source_admissions,--export=vm_run_interrupted
 WASM_FLAGS += -Wl,--export=vm_source_demand_banks,--export=vm_source_demand_word
+WASM_FLAGS += -Wl,--export=vm_source_demand_groups,--export=vm_source_demand_group
 WASM_FLAGS += -Wl,--export=vm_run_source
 WASM_FLAGS += -Wl,--export=vm_directory_bind,--export=vm_directory_query,--export=vm_directory_request
 WASM_FLAGS += -Wl,--export=vm_directory_node_commit,--export=vm_directory_object_commit
@@ -62,12 +68,32 @@ SOURCES += core/descriptor.c
 SOURCES += core/transfer.c
 SOURCES += core/directory.c
 SOURCES += core/module.c
+SOURCES += core/dma.c
+SOURCES += core/virtio.c
+SOURCES += core/network.c
+SOURCES += core/block.c
 include ../artifact/sources.mk
 ARTIFACT_PROVIDER_SOURCES = $(addprefix ../artifact/,$(ARTIFACT_INDEX_SOURCES)) ../support/src/sha256.c
 WASM_SOURCES = wasm/entry.c $(SOURCES) $(ARTIFACT_PROVIDER_SOURCES)
 OBJECTS = $(patsubst core/%.c,$(BUILD)/%.o,$(SOURCES))
 
 .PHONY: all check wasm clean
+.PHONY: mmio-check
+check: mmio-check network-check block-check
+.PHONY: block-check
+block-check: $(BUILD)/block-check
+	$(BUILD)/block-check
+$(BUILD)/block-check: check/block.c $(BUILD)/libvm.a
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
+.PHONY: network-check
+network-check: $(BUILD)/network-check
+	$(BUILD)/network-check
+$(BUILD)/network-check: check/network.c $(BUILD)/libvm.a
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
+mmio-check: $(BUILD)/mmio-check
+	$(BUILD)/mmio-check
+$(BUILD)/mmio-check: check/mmio.c $(BUILD)/libvm.a
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
 .PHONY: word-access-check
 check: word-access-check
 word-access-check: $(BUILD)/word-access-check

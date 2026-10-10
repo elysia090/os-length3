@@ -43,7 +43,7 @@ int vm_execution_open(vm_execution *execution, const vm_execution_row *rows,
         if (!canonical(row->entry) || !row->source_bytes || row->source_bytes > 4096u
                 || !row->source_instructions || row->source_instructions > 1024u
                 || row->source_instructions > row->source_bytes || !row->slot
-                || row->slot > VM_EXECUTION_MAX_ROWS
+                || row->slot > VM_EXECUTION_MAX_SLOTS
                 || row->entry > ~0ull - (row->source_bytes - 1u)
                 || !canonical(row->entry + row->source_bytes - 1u)
                 || (i && rows[i - 1u].entry >= row->entry)) return -1;

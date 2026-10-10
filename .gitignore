@@ -15,6 +15,8 @@ src/v2/data/out/
 
 # Native download bytes are release assets, not Git history. Keep receipts.
 /artifact/native/*.tar.zst
+/artifact/browser-*/**/*.object
+/artifact/browser-*/*.object
 /src/v2/vm/check/browser/generated/
 /src/v2/vm/check/browser/generated-startup/
 # Independently generated diagnostic runs are reproducible, not release assets.

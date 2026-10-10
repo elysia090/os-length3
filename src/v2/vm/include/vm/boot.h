@@ -6,7 +6,7 @@
 
 enum vm_boot_page_kind {
     VM_BOOT_ZERO = 0, VM_BOOT_METADATA, VM_BOOT_KERNEL, VM_BOOT_INITRAMFS,
-    VM_BOOT_ROM, VM_BOOT_IMAGE,
+    VM_BOOT_ROM, VM_BOOT_IMAGE, VM_BOOT_DEVICE,
 };
 typedef struct {
     const pl_u8 *header;
@@ -22,6 +22,7 @@ typedef struct {
     pl_u64 initramfs_address;
     pl_u64 image_address;
     pl_u64 image_bytes;
+    pl_u64 device_address,device_bytes;
     pl_u8 entropy[64];
     pl_u32 entropy_stage;
 } vm_boot;
@@ -50,6 +51,7 @@ int vm_boot_open(vm_boot *boot, const pl_u8 *header, pl_u32 header_bytes,
  * The serialized caller pins this plan after projection; the Wasm loader
  * rejects attachment once any page/state has been projected or RAM opened. */
 int vm_boot_attach_image(vm_boot *boot, pl_u64 address, pl_u64 bytes);
+int vm_boot_attach_devices(vm_boot *boot,pl_u64 address,pl_u32 bytes);
 /* Fresh supervisor CSPRNG bytes, never an artifact/replayable seed. Accept
  * once before pinning the boot plan. Standard SETUP_RNG_SEED is projected
  * once at0x7000, then this private copy is erased. Linux owns mixing/credit

@@ -4,6 +4,10 @@
 
 const vm_memory_page *vm_memory_find(vm_memory *memory, pl_u64 address);
 const vm_memory_page *vm_memory_find_readonly(const vm_memory *memory,pl_u64 address);
+machine_result vm_memory_device_check(vm_memory *memory,pl_u64 address,pl_u32 bytes,pl_u32 access);
+machine_result vm_memory_device_word(vm_memory *memory,pl_u32 port,pl_u64 address,pl_u32 bytes,pl_u32 access,pl_u64 value);
+void vm_memory_walk_publish(vm_memory *memory,pl_u32 rank,const vm_walk_proof *proof);
+void vm_memory_walk_write(vm_memory *memory,pl_u32 offset,pl_u32 bytes);
 static inline pl_u32 vm_memory_walk_rank(pl_u64 address)
 {
     pl_u64 page=address>>12u;
@@ -13,6 +17,7 @@ static inline pl_u32 vm_memory_walk_rank(pl_u64 address)
 }
 static inline void vm_memory_before_write(vm_memory *memory, pl_u32 offset, pl_u32 bytes)
 {
+    vm_memory_walk_write(memory,offset,bytes);
     if (memory->before_write) memory->before_write(memory->write_owner,offset,bytes);
 }
 static inline pl_u64 vm_memory_load(const pl_u8 *bytes, pl_u32 count)

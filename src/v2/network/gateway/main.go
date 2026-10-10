@@ -24,6 +24,8 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -71,7 +73,7 @@ type hello struct {
 	Stride     uint32 `json:"stride"`
 }
 
-func runSession(s *webtransport.Session, echo bool, tap *os.File) error {
+func runSession(s *webtransport.Session, echo bool, tap *os.File, factory ...func() (ethernetLink, error)) error {
 	defer s.CloseWithError(0, "link closed")
 	ctx, cancel := context.WithTimeout(s.Context(), time.Hour)
 	defer cancel()
@@ -92,10 +94,22 @@ func runSession(s *webtransport.Session, echo bool, tap *os.File) error {
 	if h.Version != 1 || h.Generation == 0 || h.Stride < 32 || h.Stride > 1068 {
 		return errFrame
 	}
-	if err = json.NewEncoder(control).Encode(map[string]any{"version": 1, "generation": fmt.Sprint(h.Generation), "stride": h.Stride, "mtu": 1500, "mode": map[bool]string{true: "diagnostic-echo", false: "ethernet-tap"}[echo]}); err != nil {
+	if err = json.NewEncoder(control).Encode(map[string]any{"version": 1, "generation": fmt.Sprint(h.Generation), "stride": h.Stride, "mtu": 1500, "mode": map[bool]string{true: "diagnostic-echo", false: "granted-ethernet"}[echo]}); err != nil {
 		return err
 	}
 	control.Close()
+	var link ethernetLink
+	if !echo {
+		if len(factory) > 0 && factory[0] != nil {
+			link, err = factory[0]()
+			if err != nil {
+				return err
+			}
+		} else {
+			link = tapLink{tap}
+		}
+		defer link.Close()
+	}
 	// No unbounded ingress backlog: one serialized reassembly owner and one
 	// bounded synchronous frame handoff. Congestion is loss, not TCP retry.
 	w := frameWindow{generation: h.Generation, stride: h.Stride}
@@ -109,7 +123,7 @@ func runSession(s *webtransport.Session, echo bool, tap *os.File) error {
 			buf := make([]byte, maximumFrame+1)
 			var outgoing uint64
 			for {
-				n, err := readTAP(ctx, tap, buf)
+				n, err := link.ReadFrame(ctx, buf)
 				if err != nil {
 					return
 				}
@@ -154,7 +168,7 @@ func runSession(s *webtransport.Session, echo bool, tap *os.File) error {
 			if err := fragments(frame, h.Generation, rank, h.Stride, s.SendDatagram); err != nil {
 				return err
 			}
-		} else if err = writeTAP(tap, frame); err != nil {
+		} else if err = link.WriteFrame(frame); err != nil {
 			return err
 		}
 	}
@@ -166,6 +180,9 @@ func main() {
 	origin := flag.String("origin", "http://127.0.0.1:8084", "exact authorized browser Origin")
 	echo := flag.Bool("diagnostic-echo", false, "opaque Ethernet echo; NOT Internet connectivity")
 	tapFD := flag.Int("tap-fd", -1, "already authorized/opened Ethernet TAP descriptor; never created here")
+	userNetwork := flag.String("user-network-dll", "", "optional pinned official libslirp Windows packet NAT; never a guest CPU/backend")
+	userDigest := flag.String("user-network-sha256", "", "independently pinned DLL SHA-256")
+	assets := flag.String("assets", "", "optional local browser verification repository; restricted public paths only")
 	flag.Parse()
 	for _, address := range []string{*listen, *controlAddress} {
 		if err := localAddress(address); err != nil {
@@ -176,11 +193,17 @@ func main() {
 	if err != nil || allowed.Scheme != "http" && allowed.Scheme != "https" || allowed.Host == "" || allowed.Path != "" || allowed.RawQuery != "" || allowed.Fragment != "" || allowed.User != nil {
 		log.Fatal("exact HTTP(S) origin required")
 	}
-	if *echo == (*tapFD >= 0) {
-		log.Fatal("choose exactly one explicit diagnostic-echo or authorized tap-fd backend")
+	selected := 0
+	for _, value := range []bool{*echo, *tapFD >= 0, *userNetwork != ""} {
+		if value {
+			selected++
+		}
+	}
+	if selected != 1 || (*userNetwork != "") != (*userDigest != "") {
+		log.Fatal("choose one explicit diagnostic echo, authorized TAP, or pinned user-network DLL")
 	}
 	var tap *os.File
-	if !*echo {
+	if *tapFD >= 0 {
 		tap = os.NewFile(uintptr(*tapFD), "authorized-tap")
 		if tap == nil {
 			log.Fatal("invalid TAP descriptor")
@@ -201,7 +224,7 @@ func main() {
 	token := base64.RawURLEncoding.EncodeToString(tokenBytes)
 	var occupied atomic.Bool
 	h3 := &http3.Server{Addr: *listen, TLSConfig: &tls.Config{MinVersion: tls.VersionTLS13, NextProtos: []string{http3.NextProtoH3}, Certificates: []tls.Certificate{cert}},
-		QUICConfig: &quic.Config{EnableDatagrams: true, EnableStreamResetPartialDelivery: true, MaxIncomingStreams: 4, MaxIncomingUniStreams: 4, MaxIdleTimeout: 30 * time.Second}}
+		QUICConfig: &quic.Config{EnableDatagrams: true, EnableStreamResetPartialDelivery: true, MaxIncomingStreams: 4, MaxIncomingUniStreams: 4, MaxIdleTimeout: 30 * time.Second, KeepAlivePeriod: 5 * time.Second}}
 	server := &webtransport.Server{H3: h3, CheckOrigin: func(r *http.Request) bool { return r.Header.Get("Origin") == *origin }}
 	mux := http.NewServeMux()
 	h3.Handler = mux
@@ -220,7 +243,11 @@ func main() {
 			log.Printf("upgrade: %v", err)
 			return
 		}
-		if err := runSession(s, *echo, tap); err != nil {
+		var factory func() (ethernetLink, error)
+		if *userNetwork != "" {
+			factory = func() (ethernetLink, error) { return openUserNetwork(*userNetwork, *userDigest) }
+		}
+		if err := runSession(s, *echo, tap, factory); err != nil {
 			log.Printf("link: %v", err)
 		}
 	})
@@ -232,6 +259,10 @@ func main() {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
+		if r.Header.Get("Origin") == *origin {
+			w.Header().Set("Access-Control-Allow-Origin", *origin)
+			w.Header().Set("Vary", "Origin")
+		}
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
 		json.NewEncoder(w).Encode(map[string]any{"url": "https://" + *listen + "/network?grant=" + token, "certificateHash": hash, "diagnostic": *echo})
@@ -245,6 +276,49 @@ func main() {
 		w.Header().Set("Content-Type", "text/javascript")
 		fmt.Fprint(w, probeJS)
 	})
+	if *assets != "" {
+		root, err := filepath.Abs(*assets)
+		if err != nil {
+			log.Fatal(err)
+		}
+		controlMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			p := r.URL.Path
+			if (r.Method != "GET" && r.Method != "HEAD") ||
+				!(strings.HasPrefix(p, "/src/v2/web/") || strings.HasPrefix(p, "/src/v2/vm/check/browser/") || strings.HasPrefix(p, "/artifact/browser-")) {
+				http.NotFound(w, r)
+				return
+			}
+			for _, part := range strings.Split(p, "/") {
+				if strings.HasPrefix(part, ".") || strings.Contains(part, "\\") {
+					http.NotFound(w, r)
+					return
+				}
+			}
+			file, err := filepath.EvalSymlinks(filepath.Join(root, filepath.FromSlash(p)))
+			if err != nil || !strings.HasPrefix(file, root+string(filepath.Separator)) {
+				http.NotFound(w, r)
+				return
+			}
+			f, err := os.Open(file)
+			if err != nil {
+				http.NotFound(w, r)
+				return
+			}
+			defer f.Close()
+			info, err := f.Stat()
+			if err != nil || !info.Mode().IsRegular() {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self' https://"+*listen+"; style-src 'self'; base-uri 'none'")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.Header().Set("Cache-Control", "no-store")
+			if strings.HasSuffix(file, ".mjs") || strings.HasSuffix(file, ".js") {
+				w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+			}
+			http.ServeContent(w, r, info.Name(), info.ModTime(), f)
+		})
+	}
 	localControl := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Pin Host as well as Origin. A rebinding DNS name must not acquire
 		// the loopback control capability merely by reaching this socket.
@@ -272,6 +346,9 @@ func main() {
 		}
 	}()
 	mode := "authorized-tap"
+	if *userNetwork != "" {
+		mode = "pinned-packet-nat"
+	}
 	if *echo {
 		mode = "diagnostic-echo"
 	}

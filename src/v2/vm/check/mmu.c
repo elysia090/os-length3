@@ -13,10 +13,11 @@ static const pl_u64 base = 0x400000u;
 static const pl_u32 port = 2048u;
 static int failures;
 static vm_memory_branch branches[5];
-#define EXPECT(x) do { if (!(x)) { fprintf(stderr, "mmu: line %u\n", (unsigned)__LINE__); ++failures; } } while (0)
+#define EXPECT(x) do { if (!(x)) { if(failures<20)fprintf(stderr, "mmu: line %u\n", (unsigned)__LINE__); ++failures; } } while (0)
 
 static void put(pl_u32 at, pl_u64 value)
-{ for (pl_u32 i = 0u; i < 8u; ++i) arena[at + i] = (pl_u8)(value >> (8u * i)); }
+{ if(memory.bytes==arena&&memory.generation&&at>=memory.reserved_bytes)EXPECT(!vm_memory_external_write(&memory,at,8u));
+  for (pl_u32 i = 0u; i < 8u; ++i) arena[at + i] = (pl_u8)(value >> (8u * i)); }
 static pl_u64 get(pl_u32 at)
 {
     pl_u64 value = 0u;
@@ -27,6 +28,7 @@ static vm_mmu_context context(void)
 { return (vm_mmu_context){ 0x80010001ull, 0x1000u, 32u, 0xd00u, 0u }; }
 static void reset(pl_u64 address)
 {
+    memory=(vm_memory){0}; /* Previous observer's stack lifetime has ended. */
     const pl_u32 shifts[] = {39u, 30u, 21u, 12u};
     memset(arena, 0, sizeof arena); put(port, 9u);
     for (pl_u32 i = 0u; i < 4u; ++i) {
@@ -66,6 +68,7 @@ static void walk_proof_models(void)
         EXPECT(!access(&cpu,base,8u,flags,initial));
         EXPECT(memory.walks[vm_memory_walk_rank(base)].depth==4u);
         pl_u64 entry=get(entries[level]),address=base;
+        if(mode>=10u&&mode<=12u)vm_memory_forget_walks(&memory);
         switch(mode){case 0u:break;case 1u:put(entries[level],entry&~32ull);break;
         case 2u:put(entries[level],entry&~64ull);break;case 3u:put(entries[level],entry&~1ull);break;
         case 4u:put(entries[level],entry&~4ull);break;case 5u:put(entries[level],entry&~2ull);break;
@@ -77,7 +80,7 @@ static void walk_proof_models(void)
         case 16u:cpu.cr4|=1ull<<12u;break;case 17u:cpu.efer^=1ull<<11u;break;
         case 18u:address=base+1u;break;default:address=base+4092u;break;}
         memcpy(reference_arena,arena,sizeof arena);vm_memory reference=memory;reference.bytes=reference_arena;
-        memset(reference.walks,0,sizeof reference.walks);
+        vm_memory_forget_walks(&reference);
         write_observation observed[2]={{0},{0}};memory.before_write=observe_write;memory.write_owner=observed;
         reference.before_write=observe_write;reference.write_owner=observed+1u;
         machine_result actual=access(&cpu,address,8u,flags,~initial);

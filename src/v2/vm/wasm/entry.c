@@ -17,6 +17,8 @@
 #include <vm/source-banks.h>
 #include <vm/directory.h>
 #include <vm/module.h>
+#include <vm/network.h>
+#include <vm/block.h>
 #include <machine/state.h>
 #include <support/checked.h>
 #include "../core/memory-internal.h"
@@ -47,7 +49,7 @@ static void artifact_witness_clear(void)
 }
 static pl_u32 source_limit;
 static pl_u64 source_demands[VM_SOURCE_BANKS];
-static pl_u32 source_demand_banks;
+static pl_u32 source_demand_banks[VM_SOURCE_GROUPS];
 static pl_u32 source_admissions, run_interrupted;
 static pl_u32 span_code_depth,span_code_begin,span_code_bytes,span_code_ancestors[4];
 static vm_source_banks source_banks;
@@ -101,7 +103,7 @@ static void source_profile_before(const vm_code_page *page, pl_u64 entry, pl_u32
     while(valid) {
         pl_u32 rank=(pl_u32)__builtin_ctzll(valid);
         const vm_source_row *row=sources.rows+rank;
-        if(row->row.entry==entry) {
+        if((row->row.entry&4095u)==(entry&4095u)) {
             same_entry=1;
             if(row->offset==page->offset) {
                 same_owner=1;
@@ -125,7 +127,9 @@ static void source_effect(void *owner,pl_u32 offset,pl_u32 bytes)
 static void span_code_prepare(pl_u64 rip)
 {
     span_code_depth=0u;
-    const vm_walk_proof *proof=&resident.walks[vm_memory_walk_rank(rip)];
+    pl_u32 rank=vm_memory_walk_rank(rip);
+    const vm_walk_proof *proof=&resident.walks[rank];
+    if(!(resident.walk_live&(1ull<<rank)))return;
     if(!proof->depth||proof->depth>4u||proof->virtual_page!=(rip&~4095ull)
         ||proof->access!=((pl_u32)MACHINE_MEMORY_READ|(pl_u32)VM_MMU_EXECUTE)
         ||!execution.source_bytes||(rip&4095u)+execution.source_bytes>4096u)return;
@@ -171,6 +175,20 @@ static pl_u64 input_sequence;
 static pl_u32 input_byte;
 static vm_post post;
 static vm_console console_owner;
+static vm_network network;
+static vm_block workspace;
+static pl_u64 boot_volume_bytes;
+static machine_result device_bus(void *owner,pl_u64 address,pl_u32 bytes,pl_u32 access,pl_u32 phase,pl_u64 *value)
+{
+    (void)owner;
+    vm_virtio *device=NULL;pl_u32 irq=0u;
+    if(network.device.epoch&&address>=network.device.address&&address-network.device.address<4096u){device=&network.device;irq=10u;}
+    else if(workspace.device.epoch&&address>=workspace.device.address&&address-workspace.device.address<4096u){device=&workspace.device;irq=11u;}
+    if(!device)return MACHINE_RESULT_ENTRY_MAP;
+    machine_result result=vm_virtio_register(device,(pl_u32)(address-device->address),bytes,access,phase,value);
+    if(!result&&phase)vm_pic_set_irq(&pic,irq,(device->status&4u)?!!device->interrupt:0u);
+    return result;
+}
 static pl_u32 boot_header, boot_header_bytes, boot_command;
 static pl_u32 boot_projected;
 static machine_result fetch_entry(void *pointer, pl_u64 address);
@@ -193,6 +211,7 @@ pl_u32 vm_slot_min(void)
     if (last < write) last = write;
     pl_u32 span = (pl_u32)(uintptr_t)span_code_prefix;
     if(last<span)last=span;
+    pl_u32 bus=(pl_u32)(uintptr_t)device_bus;if(last<bus)last=bus;
     pl_u32 select = (pl_u32)(uintptr_t)source_entry;
     return (last > select ? last : select) + 1u;
 }
@@ -215,6 +234,8 @@ void vm_close(void)
     vm_console_close(&console_owner);
     vm_rtc_reset(&rtc);
     vm_uart_reset(&uart);
+    network=(vm_network){0};
+    workspace=(vm_block){0};boot_volume_bytes=0u;
     input_sequence=0u;input_byte=0u;
     post=(vm_post){0};
     vm_source_banks_open(&source_banks,0u,vm_slot_min());
@@ -236,7 +257,8 @@ void vm_close(void)
     artifact_witness_clear();artifact_image_source_bound=0u;
     source_limit = 0u;
     for(pl_u32 b=0u;b<VM_SOURCE_BANKS;++b)source_demands[b]=0u;
-    source_demand_banks=0u;source_admissions=run_interrupted=0u;
+    for(pl_u32 g=0u;g<VM_SOURCE_GROUPS;++g)source_demand_banks[g]=0u;
+    source_admissions=run_interrupted=0u;
     run_source_rank=VM_SOURCE_ROWS;
 }
 
@@ -273,6 +295,16 @@ int vm_boot_image(pl_u64 address, pl_u64 bytes)
 {
     if (resident.generation || boot_projected) return -1;
     return vm_boot_attach_image(&boot,address,bytes);
+}
+int vm_boot_devices(pl_u64 address,pl_u32 bytes)
+{
+    if(resident.generation||boot_projected)return -1;
+    return vm_boot_attach_devices(&boot,address,bytes);
+}
+int vm_boot_volume(pl_u64 bytes)
+{
+    if(resident.generation||boot_projected||boot.device_bytes!=8192u||!bytes||(bytes&511u))return -1;
+    boot_volume_bytes=bytes;return 0;
 }
 int vm_boot_entropy(pl_u32 bytes,pl_u32 length)
 {
@@ -322,6 +354,7 @@ int vm_open(pl_u32 base, pl_u32 bytes, pl_u32 reserved,
     if(boot.entropy_stage==1u){vm_close();return -1;}
     vm_boot prepared_boot = boot;
     pl_u32 header = boot_header, header_bytes = boot_header_bytes, command = boot_command;
+    pl_u64 volume_bytes=boot_volume_bytes;
     vm_close();
     pl_u64 extent = (pl_u64)__builtin_wasm_memory_size(0) * 65536u;
     pl_u64 end = (pl_u64)base + bytes;
@@ -345,8 +378,12 @@ int vm_open(pl_u32 base, pl_u32 bytes, pl_u32 reserved,
     vm_source_banks_open(&source_banks,generation,vm_slot_min());
     resident.before_write = source_effect; resident.write_owner = &source_banks;
     resident.span_prefix=span_code_prefix;
+    resident.device_transfer=device_bus;
     arena_base = base;
     boot = prepared_boot; boot_header = header; boot_header_bytes = header_bytes; boot_command = command;
+    if(boot.device_bytes){const pl_u8 mac[6]={2u,0x6cu,0x33u,0u,0u,1u};
+        if(vm_network_open(&network,boot.device_address,mac))return -1;}
+    if(boot.device_bytes==8192u&&(!volume_bytes||vm_block_open(&workspace,boot.device_address+4096u,volume_bytes)))return -1;
     return 0;
 }
 
@@ -698,7 +735,7 @@ static void after_guest_write(pl_u64 admitted)
         const vm_execution_row *latched=&execution.continuation;
         rank=latched->slot>=sources.first_slot?latched->slot-sources.first_slot:VM_SOURCE_ROWS;
         if(rank<VM_SOURCE_ROWS){const vm_execution_row *owned=&sources.rows[rank].row;
-            if(owned->entry!=latched->entry||owned->source_bytes!=latched->source_bytes
+            if((owned->entry&4095u)!=(latched->entry&4095u)||owned->source_bytes!=latched->source_bytes
                 ||owned->source_instructions!=latched->source_instructions||owned->slot!=latched->slot
                 ||owned->operand_binding!=latched->operand_binding)rank=VM_SOURCE_ROWS;
         }
@@ -830,7 +867,7 @@ machine_result vm_source_query(pl_u32 port, pl_u64 entry, pl_u32 limit,
     machine_result result = vm_mmu_code_page(&resident,port - arena_base,&context,entry,&page);
     if (resident.write_touched) execution.generation = 0u;
     if (result) return memory_result(port,result);
-    (void)vm_source_banks_select(&source_banks,entry);
+    (void)vm_source_banks_select(&source_banks,entry,page.offset);
 #ifdef VM_SOURCE_PROFILE
     int was_full=sources.valid==~0ull;
     source_profile_before(&page,entry,limit);
@@ -1381,7 +1418,8 @@ int vm_bind_execution(pl_u32 rows, pl_u32 count, pl_u64 generation)
         pl_u32 rank=directory_rows->slot-sources.first_slot;
         const vm_source_row *owned=sources.rows+rank;
         if (sources.generation!=generation || !(sources.valid & (1ull<<rank))
-                || directory_rows->entry!=owned->row.entry
+                || (directory_rows->entry!=owned->row.entry&&(!sources.projected||directory_rows->entry!=sources.projection.entry))
+                || (directory_rows->entry&4095u)!=(owned->row.entry&4095u)
                 || directory_rows->source_bytes!=owned->row.source_bytes
                 || directory_rows->source_instructions!=owned->row.source_instructions
                 || directory_rows->operand_binding!=owned->row.operand_binding) {
@@ -1393,7 +1431,7 @@ int vm_bind_execution(pl_u32 rows, pl_u32 count, pl_u64 generation)
          * admits different code or bypasses the execution fetch boundary. */
         source_limit=sources.newest==rank && sources.demand_limit>=owned->row.source_instructions
             && sources.demand_limit<=1024u ? sources.demand_limit : owned->limit;
-        execution.rows=&owned->row;
+        execution.rows=directory_rows->entry==owned->row.entry?&owned->row:&sources.projection;
         execution.select=source_entry;
     }
     return status;
@@ -1424,7 +1462,7 @@ static machine_result source_entry(void *pointer, pl_u64 address, const vm_execu
     if (resident.write_touched) execution.generation=0u;
     if (result) return memory_result(owner->port,result);
     if (execution.generation!=resident.generation) return MACHINE_RESULT_STALE_GENERATION;
-    (void)vm_source_banks_select(&source_banks,address);
+    (void)vm_source_banks_select(&source_banks,address,first.offset);
     int status=vm_sources_reuse(&sources,&first,0,address,limit,row);
     if (status==2) {
         resident.write_touched=0u;
@@ -1439,7 +1477,7 @@ static machine_result source_entry(void *pointer, pl_u64 address, const vm_execu
     else {
         run_source_rank=(*row)->slot-sources.first_slot;
         source_demands[source_banks.active] |= 1ull << run_source_rank;
-        source_demand_banks |= 1u << source_banks.active;
+        source_demand_banks[source_banks.active/32u] |= 1u << (source_banks.active&31u);
         ++source_admissions;
     }
     return 0u;
@@ -1470,6 +1508,20 @@ static machine_result pending_boundary(pl_u32 port)
         return (delivery.kind==VM_EVENT_SOFTWARE||delivery.kind==VM_EVENT_DEBUG_TRAP||delivery.kind==VM_EVENT_TRANSFER)
             && execution.continuation.slot ? 0u : MACHINE_RESULT_ENTRY_MAP;
     }
+    if(!execution.continuation.slot&&network.device.epoch){
+        pl_u64 admitted=sources.valid;resident.write_touched=0u;
+        machine_result result=vm_network_poll(&network,&resident,port-arena_base);
+        after_guest_write(admitted);
+        vm_pic_set_irq(&pic,10u,(network.device.status&4u)?!!network.device.interrupt:0u);
+        if(result)return result==MACHINE_RESULT_BARRIER?memory_result(port,result):result;
+    }
+    if(!execution.continuation.slot&&workspace.device.epoch){
+        pl_u64 admitted=sources.valid;resident.write_touched=0u;
+        machine_result result=vm_block_poll(&workspace,&resident,port-arena_base);
+        after_guest_write(admitted);
+        vm_pic_set_irq(&pic,11u,(workspace.device.status&4u)?!!workspace.device.interrupt:0u);
+        if(result)return result==MACHINE_RESULT_BARRIER?memory_result(port,result):result;
+    }
     const machine_state *state=(const machine_state *)(uintptr_t)state_offset;
     if ((!execution.continuation.slot || (execution.continuation_interruptible && !table_frontier.stage
             && !vm_console_pending(&console_owner))) && (state->rflags&0x200u) && vm_pic_pending(&pic)
@@ -1486,6 +1538,71 @@ machine_result vm_boundary(pl_u32 port, pl_u64 generation)
     if (generation!=resident.generation || vm_memory_load((const pl_u8 *)(uintptr_t)port,8u)!=generation)
         return MACHINE_RESULT_STALE_GENERATION;
     return pending_boundary(port);
+}
+
+/* Privileged opaque-frame transport; no guest module imports these exports.
+ * Captured bindings/tickets must accompany every delayed callback. */
+pl_u32 vm_network_grant_bytes(void){return sizeof(vm_resource_grant);}
+pl_u32 vm_network_ticket_bytes(void){return sizeof(vm_resource_ticket);}
+int vm_network_grant(pl_u32 grant)
+{
+    if(!execution_record(grant,sizeof(vm_resource_grant))||execution.in_call||delivery.stage||table_frontier.stage)return -1;
+    const vm_resource_grant *g=(const vm_resource_grant *)(uintptr_t)grant;
+    if(g->address.generation!=resident.generation)return VM_RESOURCE_ERROR_STALE;
+    int status=vm_network_bind(&network,g);if(!status)vm_pic_set_irq(&pic,10u,(network.device.status&4u)?!!network.device.interrupt:0u);return status;
+}
+int vm_network_revoke_grant(pl_u64 generation)
+{
+    if(generation!=resident.generation||execution.in_call)return VM_RESOURCE_ERROR_STALE;
+    int status=vm_network_revoke(&network);if(!status)vm_pic_set_irq(&pic,10u,(network.device.status&4u)?!!network.device.interrupt:0u);return status;
+}
+pl_u32 vm_network_transmit(pl_u32 ticket)
+{
+    if(network.transmit_pending!=1u||!execution_record(ticket,sizeof(vm_resource_ticket))||execution.in_call)return 0u;
+    *(vm_resource_ticket *)(uintptr_t)ticket=network.tx_ticket;return network.transmit_bytes;
+}
+pl_u32 vm_network_transmit_address(void)
+{return network.transmit_pending==1u?(pl_u32)(uintptr_t)network.transmit:0u;}
+int vm_network_transmit_commit(pl_u32 ticket)
+{
+    if(!execution_record(ticket,sizeof(vm_resource_ticket))||execution.in_call)return VM_RESOURCE_ERROR_INPUT;
+    return vm_network_transmitted(&network,(const vm_resource_ticket *)(uintptr_t)ticket);
+}
+int vm_network_receive_frame(pl_u32 binding,pl_u64 sequence,pl_u32 frame,pl_u32 bytes)
+{
+    if(!execution_record(binding,sizeof(vm_resource_address))||!execution_record(frame,bytes)||bytes<14u||bytes>VM_NETWORK_FRAME_BYTES
+        ||execution.in_call||delivery.stage||table_frontier.stage||resident.reservation.parts)return VM_RESOURCE_ERROR_INPUT;
+    return vm_network_receive(&network,(const vm_resource_address *)(uintptr_t)binding,sequence,(const pl_u8 *)(uintptr_t)frame,bytes);
+}
+int vm_block_grant(pl_u32 grant)
+{
+    if(!execution_record(grant,sizeof(vm_resource_grant))||execution.in_call||delivery.stage||table_frontier.stage)return VM_RESOURCE_ERROR_INPUT;
+    const vm_resource_grant *g=(const vm_resource_grant *)(uintptr_t)grant;
+    if(g->address.generation!=resident.generation)return VM_RESOURCE_ERROR_STALE;
+    return vm_block_bind(&workspace,g);
+}
+pl_u32 vm_block_request(pl_u32 ticket)
+{
+    if(workspace.stage!=1u||!execution_record(ticket,sizeof(vm_resource_ticket))||execution.in_call)return 0u;
+    *(vm_resource_ticket *)(uintptr_t)ticket=workspace.ticket;return workspace.operation+1u;
+}
+pl_u64 vm_block_offset(void){return workspace.offset;}
+pl_u32 vm_block_extent(void){return workspace.bytes;}
+pl_u32 vm_block_payload(void){return workspace.stage==1u?(pl_u32)(uintptr_t)workspace.payload:0u;}
+pl_u64 vm_device_profile(pl_u32 device,pl_u32 word)
+{
+    const vm_virtio *d=device?&workspace.device:&network.device;
+    switch(word){case 0:return d->status;case 1:return d->notified;case 2:return d->notifications;
+    case 3:return d->polls;case 4:return d->queues[0].ready;case 5:return d->queues[0].last_available;
+    case 6:return d->queues[0].last_used;case 7:return d->interrupt;case 8:return device?workspace.stage:network.transmit_pending;
+    case 9:return device?workspace.gate.issued:network.rx.completed;default:return ~0ull;}
+}
+int vm_block_reply(pl_u32 ticket,pl_u32 payload,pl_u32 bytes,pl_u32 error)
+{
+    if(!execution_record(ticket,sizeof(vm_resource_ticket))||(bytes&&!execution_record(payload,bytes))
+        ||execution.in_call||delivery.stage||table_frontier.stage||resident.reservation.parts)return VM_RESOURCE_ERROR_INPUT;
+    return vm_block_complete(&workspace,(const vm_resource_ticket *)(uintptr_t)ticket,
+        bytes?(const pl_u8 *)(uintptr_t)payload:NULL,bytes,error);
 }
 static machine_result fetch_entry(void *pointer, pl_u64 address)
 {
@@ -1524,9 +1641,10 @@ machine_result vm_checkpoint(pl_u32 port,pl_u32 operation,pl_u64 cursor,pl_u64 f
 machine_result vm_run(pl_u32 port, pl_u64 generation, pl_u32 maximum_cuts)
 {
     vm_memory_abort(&resident);
-    pl_u32 demanded=source_demand_banks;
-    while(demanded){pl_u32 b=(pl_u32)__builtin_ctz(demanded);demanded&=demanded-1u;source_demands[b]=0u;}
-    source_demand_banks=0u;source_admissions=run_interrupted=0u;
+    for(pl_u32 g=0u;g<VM_SOURCE_GROUPS;++g){pl_u32 demanded=source_demand_banks[g];
+        while(demanded){pl_u32 b=g*32u+(pl_u32)__builtin_ctz(demanded);demanded&=demanded-1u;source_demands[b]=0u;}
+        source_demand_banks[g]=0u;}
+    source_admissions=run_interrupted=0u;
     run_source_rank=VM_SOURCE_ROWS;
     execution.completed = 0u; execution.retired = 0u;
     if (!private_port(port))
@@ -1550,7 +1668,9 @@ pl_u64 vm_source_retired(void) { return execution.retired; }
 /* Read-only supervisor observations of the LAST run. They are demand hints,
  * not source, execution or table admission authority. No retained history. */
 pl_u64 vm_source_demands(void) { return source_demands[0]; }
-pl_u32 vm_source_demand_banks(void) { return source_demand_banks; }
+pl_u32 vm_source_demand_banks(void) { return source_demand_banks[0]; }
+pl_u32 vm_source_demand_groups(void){return VM_SOURCE_GROUPS;}
+pl_u32 vm_source_demand_group(pl_u32 group){return group<VM_SOURCE_GROUPS?source_demand_banks[group]:0u;}
 pl_u64 vm_source_demand_word(pl_u32 bank) { return bank<VM_SOURCE_BANKS?source_demands[bank]:0u; }
 pl_u32 vm_source_admissions(void) { return source_admissions; }
 pl_u32 vm_run_interrupted(void) { return run_interrupted; }

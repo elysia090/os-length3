@@ -10,6 +10,12 @@ const root = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..
 const isolated = process.argv.includes('--isolated');
 const portOption = process.argv.find(value => value.startsWith('--port='));
 const port = portOption ? Number(portOption.slice(7)) : 8080;
+const gatewayOption=process.argv.find(v=>v.startsWith('--gateway='));
+const gateway=gatewayOption?new URL(gatewayOption.slice(10)):null;
+if(gateway&&(gateway.protocol!=='https:'||gateway.hostname!=='127.0.0.1'||gateway.pathname!=='/'||gateway.search||gateway.hash))throw new Error('explicit loopback gateway origin');
+const controlOption=process.argv.find(v=>v.startsWith('--control='));
+const control=controlOption?new URL(controlOption.slice(10)):null;
+if(control&&(control.protocol!=='http:'||control.hostname!=='127.0.0.1'||control.pathname!=='/'||control.search||control.hash))throw new Error('explicit loopback gateway control');
 if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('invalid port');
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -30,7 +36,7 @@ const server = http.createServer(async (request, response) => {
   response.setHeader('Cache-Control', 'no-store');
   response.setHeader('Content-Security-Policy',
     "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; "
-    + "connect-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; frame-ancestors 'none'");
+    + `connect-src 'self'${gateway?' '+gateway.origin:''}${control?' '+control.origin:''}; style-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; frame-ancestors 'none'`);
   if (isolated) {
     response.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
     response.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');

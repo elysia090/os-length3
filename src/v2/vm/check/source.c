@@ -24,7 +24,7 @@ static void construction_versions(void)
     if(words[4]!=2u||words[5]!=2u||vm_sources_stamp(&s,&v,owners,versions)||versions[1]!=2u){++failures;return;}
     v.generation=10u;if(vm_sources_stamp(&s,&v,owners,versions)!=-1)++failures;
 }
-#define EXPECT(x) do { if (!(x)) { fprintf(stderr,"source: line %u\n",(unsigned)__LINE__); ++failures; } } while (0)
+#define EXPECT(x) do { if (!(x)) { if(failures<20)fprintf(stderr,"source: line %u\n",(unsigned)__LINE__); ++failures; } } while (0)
 static vm_code_page page = {0x400000u,9u,8192u,4096u};
 static vm_execution_row row;
 static void put(pl_u8 *bytes, pl_u32 at, pl_u64 value)
@@ -61,6 +61,23 @@ static void mmu_alias(void)
 }
 static int probe(pl_u64 entry, pl_u32 limit)
 { return vm_sources_probe(&sources,&page,entry,limit,&row); }
+static void physical_aliases(void)
+{
+    vm_sources s;vm_execution_row origin,bound;const vm_execution_row *borrowed;
+    vm_code_page a={0x400000u,9u,8192u,4096u},b={0x7f0000000000ull,9u,8192u,4096u};
+    vm_sources_open(&s,9u,3u);
+    EXPECT(vm_sources_probe(&s,&a,a.address+128u,16u,&origin)==1);
+    EXPECT(!vm_sources_publish(&s,7u,1u,0xdeadbeefu,&origin));
+    for(pl_u32 i=0u;i<100000u;++i){b.address=0x7f0000000000ull+(pl_u64)i*4096u;
+        EXPECT(!vm_sources_probe(&s,&b,b.address+128u,16u,&bound));
+        EXPECT(bound.entry==b.address+128u&&bound.slot==origin.slot&&bound.operand_binding==origin.operand_binding);
+        EXPECT(!vm_sources_reuse(&s,&b,0,b.address+128u,16u,&borrowed));
+        EXPECT(borrowed->entry==bound.entry&&borrowed->slot==origin.slot&&__builtin_popcountll(s.valid)==1);
+    }
+    vm_sources_write(&s,8192u+128u,1u);
+    EXPECT(!s.valid&&!s.projected&&vm_sources_probe(&s,&b,b.address+128u,16u,&bound)==1);
+    vm_sources_write(&s,8192u+256u,1u);EXPECT(vm_sources_publish(&s,7u,1u,0u,&bound)==-1);
+}
 static void budget_independent(void)
 {
     const pl_u64 entry=page.address+128u;
@@ -185,7 +202,8 @@ static void reference_check(void)
         for (pl_u32 i=0u;i<VM_SOURCE_ROWS;++i) {
             if (!reference[i].valid) continue;
             if (((reference[i].offset>>12u)&(VM_SOURCE_WATCH_BUCKETS-1u))==b) watch |= 1ull<<i;
-            if (((pl_u32)(reference[i].entry^(reference[i].entry>>8u))
+            pl_u64 physical=(pl_u64)reference[i].offset+(reference[i].entry&4095u);
+            if (((pl_u32)(physical^(physical>>8u))
                     &(VM_SOURCE_WATCH_BUCKETS-1u))==b) lookup |= 1ull<<i;
         }
         EXPECT(sources.watch[b]==watch && sources.lookup[b]==lookup);
@@ -465,7 +483,8 @@ int main(void)
         EXPECT(!vm_sources_publish(&sources,6u,2u,0u,&row));
     }
     vm_sources_open(&sources,0u,3u); EXPECT(probe(0x400000u,1u) == -1);
-    vm_sources_open(&sources,9u,VM_EXECUTION_MAX_ROWS); EXPECT(probe(0x400000u,1u) == -1);
+    vm_sources_open(&sources,9u,VM_EXECUTION_MAX_SLOTS); EXPECT(probe(0x400000u,1u) == -1);
+    vm_sources_open(&sources,9u,5000u); EXPECT(probe(0x400000u,1u) == 1);
     vm_sources_open(&sources,9u,3u); page.offset = 0x102000u;
     EXPECT(probe(0x400080u,1u) == 1); EXPECT(!vm_sources_publish(&sources,3u,1u,0u,&row));
     vm_sources_write(&sources,8192u+128u,1u); /* Same watch bucket, different physical page. */
@@ -475,6 +494,7 @@ int main(void)
     vm_sources_write(&sources,0u,0xffffffffu); EXPECT(probe(0x400080u,1u) == 1);
     page.offset = 8192u;
     construction_versions();
+    physical_aliases();
     demand_lifetime();
     budget_independent();
     budget_working_set();

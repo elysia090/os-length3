@@ -7,6 +7,31 @@ static int canonical(pl_u64 address)
 { return address >> 47u == 0u || address >> 47u == 0x1ffffu; }
 
 #define LEAF 0x80000000u
+void vm_memory_forget_walks(vm_memory *m)
+{if(!m)return;m->walk_live=0u;for(pl_u32 i=0u;i<64u;++i)m->walks[i].depth=0u;for(pl_u32 i=0u;i<256u;++i)m->walk_watch[i]=0u;}
+void vm_memory_walk_publish(vm_memory *m,pl_u32 rank,const vm_walk_proof *proof)
+{
+    pl_u64 bit=1ull<<rank;vm_walk_proof *old=m->walks+rank;
+    for(pl_u32 i=0u;i<old->depth;++i)m->walk_watch[(old->ancestors[i].offset>>12u)&255u]&=~bit;
+    *old=*proof;for(pl_u32 i=0u;i<proof->depth;++i)m->walk_watch[(proof->ancestors[i].offset>>12u)&255u]|=bit;
+    m->walk_live|=bit;
+}
+void vm_memory_walk_write(vm_memory *m,pl_u32 offset,pl_u32 bytes)
+{
+    if(!m||!bytes||!m->walk_live)return;
+    pl_u64 end=(pl_u64)offset+bytes,first=offset>>12u,last=(end-1u)>>12u,candidates=0u;
+    if(last-first>=255u)candidates=m->walk_live;
+    else for(pl_u64 page=first;page<=last;++page)candidates|=m->walk_watch[page&255u];
+    candidates&=m->walk_live;
+    while(candidates){pl_u32 rank=(pl_u32)__builtin_ctzll(candidates);pl_u64 bit=1ull<<rank;const vm_walk_proof *p=m->walks+rank;
+        for(pl_u32 i=0u;i<p->depth;++i){pl_u32 at=p->ancestors[i].offset;if(offset<(pl_u64)at+8u&&at<end){m->walk_live&=~bit;break;}}
+        candidates&=candidates-1u;}
+}
+int vm_memory_external_write(vm_memory *m,pl_u32 offset,pl_u32 bytes)
+{
+    if(!m||!m->bytes||!m->generation||m->reservation.parts||!bytes||offset<m->reserved_bytes||(pl_u64)offset+bytes>m->byte_count)return -1;
+    vm_memory_before_write(m,offset,bytes);return 0;
+}
 static pl_u32 leaf_rank(const vm_memory *memory, pl_u64 address)
 {
     pl_u32 ref = memory->root;
@@ -111,6 +136,29 @@ int vm_memory_append(vm_memory *memory, pl_u64 address, pl_u32 offset, pl_u32 ri
 int vm_memory_append_rom(vm_memory *memory, pl_u64 address, pl_u32 offset)
 { return append(memory,address,offset,3u,VM_MEMORY_ROM); }
 
+int vm_memory_append_device(vm_memory *m,pl_u64 address)
+{
+    if(!m||!m->generation||m->reservation.parts||m->page_count>=m->page_capacity
+        ||(address&4095u)||!canonical(address)||vm_memory_find(m,address))return -1;
+    pl_u32 rank=m->page_count;
+    m->pages[rank]=(vm_memory_page){address,0u,3u,VM_MEMORY_DEVICE,0u,0u};
+    index_append(m,rank);++m->page_count;return 0;
+}
+machine_result vm_memory_device_check(vm_memory *m,pl_u64 address,pl_u32 bytes,pl_u32 access)
+{
+    if(!m||!m->device_transfer||(bytes!=1u&&bytes!=2u&&bytes!=4u&&bytes!=8u)
+        ||(address&4095u)+bytes>4096u||(access&~7u)
+        ||((access&3u)!=MACHINE_MEMORY_READ&&(access&3u)!=MACHINE_MEMORY_WRITE))return MACHINE_RESULT_ENTRY_MAP;
+    pl_u64 ignored=0u;return m->device_transfer(m->device_owner,address,bytes,access,0u,&ignored);
+}
+machine_result vm_memory_device_word(vm_memory *m,pl_u32 port,pl_u64 address,pl_u32 bytes,pl_u32 access,pl_u64 value)
+{
+    machine_result result=vm_memory_device_check(m,address,bytes,access);if(result)return result;
+    result=m->device_transfer(m->device_owner,address,bytes,access,(access&2u)?2u:1u,&value);
+    if(!result&&(access&1u))vm_memory_store(m->bytes+port+offsetof(machine_memory_port,value),value,8u);
+    return result;
+}
+
 static pl_u64 read_word(const pl_u8 *bytes)
 { return vm_memory_load(bytes, 8u); }
 static void write_word(pl_u8 *bytes, pl_u64 value, pl_u32 count)
@@ -159,6 +207,10 @@ machine_result vm_memory_access(vm_memory *memory, pl_u32 port_offset,
         const vm_memory_page *page = vm_memory_find(memory, current);
         if (!page || page->kind == VM_MEMORY_DEFERRED)
             return defer(port, address, bytes, access);
+        if(page->kind==VM_MEMORY_DEVICE){
+            if(consumed)return MACHINE_RESULT_ENTRY_MAP;
+            return vm_memory_device_word(memory,port_offset,address,bytes,access,value);
+        }
         if (page->kind == VM_MEMORY_FAULT && (page->rights & (access & 3u)))
             return fault(port, current, page->fault_vector, page->fault_error);
         if ((page->kind != VM_MEMORY_RAM && page->kind != VM_MEMORY_ROM)
@@ -252,7 +304,10 @@ static machine_result write_frontier(vm_memory *memory, pl_u32 port_offset)
     const vm_memory_reservation *saved=&memory->reservation;
     if (saved->generation!=memory->generation || saved->port!=port_offset
             || !saved->parts || saved->parts>2u || !(saved->discard & VM_MEMORY_WRITE_FRONTIER))
-        return MACHINE_RESULT_ENTRY_MAP;
+            return MACHINE_RESULT_ENTRY_MAP;
+    if(saved->discard&VM_MEMORY_DEVICE_FRONTIER)
+        return saved->parts==1u&&saved->lengths[0]<=8u&&saved->cursor<=saved->lengths[0]
+            ?0u:MACHINE_RESULT_ENTRY_MAP;
     pl_u32 total=0u;
     for (pl_u32 i=0u;i<saved->parts;++i) {
         if (!saved->lengths[i] || saved->lengths[i]>VM_MEMORY_MAX_WRITE_BYTES
@@ -269,6 +324,10 @@ machine_result vm_memory_write_word(vm_memory *memory, pl_u32 port_offset,
     machine_result status=write_frontier(memory,port_offset);
     if (status) { vm_memory_abort(memory); return status; }
     vm_memory_reservation *saved=&memory->reservation;
+    if(saved->discard&VM_MEMORY_DEVICE_FRONTIER){
+        if(offset||saved->cursor||bytes!=saved->lengths[0]){vm_memory_abort(memory);return MACHINE_RESULT_ENTRY_MAP;}
+        saved->device_value=value;saved->cursor=bytes;return 0u;
+    }
     pl_u32 total=saved->lengths[0]+(saved->parts==2u ? saved->lengths[1] : 0u);
     if (!bytes || bytes>8u || offset<saved->cursor || offset>total || bytes>total-offset) {
         vm_memory_abort(memory); return MACHINE_RESULT_ENTRY_MAP;
@@ -292,6 +351,11 @@ machine_result vm_memory_write_word(vm_memory *memory, pl_u32 port_offset,
 machine_result vm_memory_write_end(vm_memory *memory, pl_u32 port_offset)
 {
     machine_result status=write_frontier(memory,port_offset);
+    vm_memory_reservation saved=memory?memory->reservation:(vm_memory_reservation){0};
     vm_memory_abort(memory);
+    if(!status&&(saved.discard&VM_MEMORY_DEVICE_FRONTIER)){
+        if(saved.cursor!=saved.lengths[0])return MACHINE_RESULT_ENTRY_MAP;
+        return vm_memory_device_word(memory,port_offset,saved.device_address,saved.lengths[0],MACHINE_MEMORY_WRITE,saved.device_value);
+    }
     return status;
 }

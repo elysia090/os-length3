@@ -29,6 +29,11 @@ static pl_u32 bucket(pl_u32 offset)
 { return (offset >> 12u) & (VM_SOURCE_WATCH_BUCKETS - 1u); }
 static pl_u32 key(pl_u64 entry)
 { return (pl_u32)(entry ^ (entry >> 8u)) & (VM_SOURCE_WATCH_BUCKETS - 1u); }
+static pl_u64 coordinate(pl_u32 offset,pl_u64 entry)
+{return (pl_u64)offset+(entry&4095u);}
+static const vm_execution_row *project(vm_sources *s,const vm_source_row *r,pl_u64 entry)
+{if(r->row.entry==entry){s->projected=0u;return &r->row;}
+ s->projection=r->row;s->projection.entry=entry;s->projected=1u;return &s->projection;}
 static int crosses(const vm_source_row *row)
 { return (row->row.entry & 4095u) + row->row.source_bytes > 4096u; }
 static void unlink_rank(vm_sources *sources, pl_u32 rank)
@@ -63,7 +68,8 @@ static void discard(vm_sources *sources, pl_u32 rank)
         sources->watch[bucket(sources->rows[rank].offset)] &= ~bit;
         if (crosses(sources->rows + rank))
             sources->watch[bucket(sources->rows[rank].next_offset)] &= ~bit;
-        sources->lookup[key(sources->rows[rank].row.entry)] &= ~bit;
+        sources->lookup[key(coordinate(sources->rows[rank].offset,sources->rows[rank].row.entry))] &= ~bit;
+        if(sources->projected&&sources->projection.slot==sources->first_slot+rank)sources->projected=0u;
     }
     sources->valid &= ~bit;
 }
@@ -71,6 +77,7 @@ void vm_sources_open(vm_sources *sources, pl_u64 generation, pl_u32 first_slot)
 {
     if (!sources) return;
     sources->valid = 0u; sources->pending = 0u; sources->demand_limit = 0u;
+    sources->projected=0u;sources->projection=(vm_execution_row){0};
     sources->generation = generation; sources->first_slot = first_slot;
     for (pl_u32 i = 0u; i < VM_SOURCE_WATCH_BUCKETS; ++i)
         sources->watch[i] = sources->lookup[i] = 0u;
@@ -80,7 +87,7 @@ static int page_valid(const vm_sources *sources, const vm_code_page *page,
     pl_u64 entry, pl_u32 limit)
 {
     return sources && page && sources->generation && page->generation == sources->generation
-            && sources->first_slot && sources->first_slot <= VM_EXECUTION_MAX_ROWS - VM_SOURCE_ROWS + 1u
+            && sources->first_slot && sources->first_slot <= VM_EXECUTION_MAX_SLOTS - VM_SOURCE_ROWS + 1u
             && limit && limit <= 1024u && page->bytes == 4096u && !(page->address & 4095u)
             && !(page->offset & 4095u) && (pl_u64)page->offset + 4096u <= 0x100000000ull
             && entry >= page->address && entry - page->address < 4096u
@@ -89,12 +96,12 @@ static int page_valid(const vm_sources *sources, const vm_code_page *page,
 static pl_u32 match(const vm_sources *sources, const vm_code_page *page,
     pl_u64 entry, pl_u32 limit)
 {
-    pl_u64 candidates = sources->lookup[key(entry)] & sources->valid;
+    pl_u64 candidates = sources->lookup[key(coordinate(page->offset,entry))] & sources->valid;
     pl_u32 selected = VM_SOURCE_ROWS;
     while (candidates) {
         pl_u32 rank = (pl_u32)__builtin_ctzll(candidates);
         const vm_source_row *candidate = sources->rows + rank;
-        if (candidate->row.entry == entry && candidate->offset == page->offset
+        if ((candidate->row.entry&4095u) == (entry&4095u) && candidate->offset == page->offset
                 && vm_source_budget_fits(candidate,limit)) {
             const vm_source_row *previous = selected < VM_SOURCE_ROWS
                 ? sources->rows + selected : 0;
@@ -125,7 +132,7 @@ int vm_sources_reuse(vm_sources *sources, const vm_code_page *page,
     }
     demand(sources,rank);
     sources->demand_limit = limit;
-    *row = &candidate->row;
+    *row = project(sources,candidate,entry);
     return 0;
 }
 int vm_sources_probe(vm_sources *sources, const vm_code_page *page,
@@ -133,6 +140,7 @@ int vm_sources_probe(vm_sources *sources, const vm_code_page *page,
 {
     if (!sources) return -1;
     sources->pending = 0u;
+    sources->projected=0u;
     if (!row || !page_valid(sources,page,entry,limit)) return -1;
     pl_u32 hit = match(sources,page,entry,limit);
     if (hit < VM_SOURCE_ROWS) {
@@ -141,11 +149,11 @@ int vm_sources_probe(vm_sources *sources, const vm_code_page *page,
             sources->pending_page = *page; sources->pending_entry = entry;
             sources->pending_limit = limit; sources->pending_rank = hit;
             sources->pending = sources->pending_pages = 1u;
-            *row = candidate->row; return 2;
+            *row = *project(sources,candidate,entry); return 2;
         }
         demand(sources,hit);
         sources->demand_limit = limit;
-        *row = candidate->row; return 0;
+        *row = *project(sources,candidate,entry); return 0;
     }
     /* No demand may keep an invalid row alive. Free ranks precede eviction;
      * a full owner replaces only its least recently validated demand. */
@@ -175,7 +183,7 @@ int vm_sources_extend(vm_sources *sources, const vm_code_page *next, vm_executio
             && candidate->next_offset == next->offset) {
         demand(sources,rank);
         sources->demand_limit = sources->pending_limit;
-        *row = candidate->row; sources->pending = 0u; return 0;
+        *row = *project(sources,candidate,sources->pending_entry); sources->pending = 0u; return 0;
     }
     discard(sources,rank);
     sources->pending_next = *next; sources->pending_pages = 2u;
@@ -201,11 +209,11 @@ int vm_sources_publish(vm_sources *sources, pl_u32 bytes, pl_u32 instructions,
     target->next_offset = crossing ? sources->pending_next.offset : 0u;
     sources->watch[bucket(target->offset)] |= 1ull << rank;
     if (crossing) sources->watch[bucket(target->next_offset)] |= 1ull << rank;
-    sources->lookup[key(target->row.entry)] |= 1ull << rank;
+    sources->lookup[key(coordinate(target->offset,target->row.entry))] |= 1ull << rank;
     sources->valid |= 1ull << rank;
     append_rank(sources,rank);
     sources->demand_limit = sources->pending_limit;
-    *row = target->row;
+    *row = *project(sources,target,target->row.entry);
     return 0;
 }
 void vm_sources_write(void *owner, pl_u32 offset, pl_u32 bytes)

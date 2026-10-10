@@ -8,6 +8,7 @@
 #include <machine/memory.h>
 
 #define VM_EXECUTION_MAX_ROWS 4096u
+#define VM_EXECUTION_MAX_SLOTS 65535u
 #define VM_EXECUTION_MAX_QUANTUM 65536u
 typedef struct {
     pl_u64 entry;

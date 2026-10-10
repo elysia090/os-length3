@@ -289,8 +289,16 @@ separate; scoped/positive gates do not assert that it is solved.
    from interactive-ready and keep service deadlines/guest clocks unchanged.
    The [local packet gateway](../network/gateway/README.md) passes actual pinned
    WebTransport datagram roundtrip and independent QUIC/boundary/fuzz checks;
-   it is not yet a C virtual NIC or a guest HTTPS result. Permanent dirty-page
-   storage and the product Worker migration remain real implementation gaps.
+   C virtio-MMIO/DMA now owns net/block queues and interrupts in the same VM.
+   Actual browser ext4 creation, mount, FLUSH, Worker close and same-UUID
+   journal recovery from encrypted IndexedDB blocks pass. The supervisor keeps
+   keys and the pinned head; storage alone cannot restore lost authority.
+   Product linux-worker.js and diagnostics use one machine-runtime.mjs/C
+   engine; the unused legacy DirectX86Machine and its helpers are removed.
+   Ordinary service readiness and guest HTTPS remain red. Do not substitute
+   the earlier rescue-shell results. Boot now has a derived offline service
+   closure pending native/browser validation; deadlines and guest clocks stay
+   unchanged. Keep cold network supervisors outside interactive readiness.
 
 ## Responsibility contracts
 

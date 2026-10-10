@@ -37,7 +37,7 @@ static void reset(void)
 int main(void)
 {
     pl_u32 comparisons=0u;
-    EXPECT(sizeof(vm_memory_reservation)==40u);
+    EXPECT(sizeof(vm_memory_reservation)==56u);
     /* Every page offset, both single and split words, sparse untouched bytes
      * and all widths. The expected array is test-only, not a runtime image. */
     for(pl_u32 row=0u;row<4096u;++row) {

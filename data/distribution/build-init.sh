@@ -99,7 +99,8 @@ service_source=$here/services
 bash "$here/check-service-sources.sh" "$service_source"
 service_key=$(
   cd "$here"
-  find services boot -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | \
+  { find services boot -type f -print0 | sort -z | xargs -0 sha256sum; \
+    sha256sum project-boot-services.sh; } | sha256sum | \
     cut -d' ' -f1
 )
 prefix=$build/$recipe_key
@@ -173,12 +174,15 @@ if [[ ! -f $publication/.complete ]]; then
   done
   service_root=$prepared_root/base-services
   install -d -m 0755 "$service_root/usr/libexec/system"
-  for script in init boot console halt ready; do
+for script in init boot console halt ready network; do
     install -m 0755 "$here/boot/$script" "$service_root/usr/libexec/system/$script"
   done
   compiled=$service_root/etc/s6-rc/compiled/current
   mkdir -p "$(dirname -- "$compiled")"
   "$candidate/usr/bin/s6-rc-compile" "$compiled" "$service_source"
+  bash "$here/project-boot-services.sh" "$service_source" "$compiled" \
+    "$service_root/etc/s6-rc/compiled/boot" \
+    "$candidate/usr/bin/s6-rc-db" "$candidate/usr/bin/s6-rc-compile"
   for path in n db resolve.cdb; do
     if [[ ! -f $compiled/$path ]]; then
       printf 'compiled service database is incomplete: %s\n' "$path" >&2

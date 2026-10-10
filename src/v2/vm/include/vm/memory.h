@@ -10,6 +10,7 @@ enum vm_memory_page_kind {
     VM_MEMORY_FAULT,
     VM_MEMORY_DEFERRED,
     VM_MEMORY_ROM,
+    VM_MEMORY_DEVICE,
 };
 typedef struct {
     pl_u64 generation;
@@ -17,9 +18,11 @@ typedef struct {
     pl_u32 offsets[2], lengths[2];
     pl_u32 discard; /* Physical ROM fragments; guest paging rights checked first. */
     pl_u32 cursor; /* Ordered sparse stores; occupies the former tail padding. */
+    pl_u64 device_address, device_value;
 } vm_memory_reservation;
 
 #define VM_MEMORY_WRITE_FRONTIER 0x80000000u
+#define VM_MEMORY_DEVICE_FRONTIER 0x40000000u
 #define VM_MEMORY_MAX_WRITE_BYTES 512u
 
 typedef struct {
@@ -49,6 +52,11 @@ typedef struct {
 typedef void (*vm_memory_write_observer)(void *owner, pl_u32 offset, pl_u32 bytes);
 typedef pl_u32 (*vm_memory_span_prefix)(void *owner,pl_u32 first,pl_u32 count,
     pl_u32 word_bytes,pl_u32 reverse,pl_u64 value);
+/* Validate(0), read(1), write(2). Validation is pure. A read/write performs
+ * exactly one synchronous bus transaction; no yield, RAM/directory mutation
+ * or CPU reentry is allowed. DMA and asynchronous transport use a later cut. */
+typedef machine_result (*vm_memory_device_transfer)(void *owner,pl_u64 address,
+    pl_u32 bytes,pl_u32 access,pl_u32 phase,pl_u64 *value);
 typedef struct {
     pl_u8 *bytes;
     pl_u64 byte_count;
@@ -63,9 +71,12 @@ typedef struct {
     vm_memory_write_observer before_write;
     void *write_owner;
     vm_memory_span_prefix span_prefix; /* Serialized executable-boundary cut. */
+    vm_memory_device_transfer device_transfer;
+    void *device_owner;
     vm_memory_reservation reservation;
     const vm_memory_page *recent[256];
     vm_walk_proof walks[64];
+    pl_u64 walk_live,walk_watch[256];
     pl_u64 walk_proof_hits,walk_proof_misses;
 } vm_memory;
 
@@ -92,6 +103,15 @@ int vm_memory_append(vm_memory *memory, pl_u64 address, pl_u32 offset, pl_u32 ri
  * Initial vm_memory_open rows do not admit ROM: reconstruct it after open;
  * neither a RAM permission miss nor a deferred device is implicitly ROM. */
 int vm_memory_append_rom(vm_memory *memory, pl_u64 address, pl_u32 offset);
+/* One descriptor, no payload slot. Device bytes are never admitted as RAM,
+ * page tables or executable code. Bind the serialized C bus owner separately. */
+int vm_memory_append_device(vm_memory *memory,pl_u64 address);
+/* A closed serialized RAM owner reports any foreign payload write BEFORE
+ * changing bytes. Runtime guest stores already use this same invalidation
+ * frontier. Old directory rows must stay immutable until reopen; this is
+ * not permission to mutate a retained mapping or race a reserved access. */
+void vm_memory_forget_walks(vm_memory *memory);
+int vm_memory_external_write(vm_memory *memory,pl_u32 offset,pl_u32 bytes);
 machine_result vm_memory_access(vm_memory *memory, pl_u32 port_offset,
                                 pl_u64 address, pl_u32 bytes,
                                 pl_u32 access, pl_u64 value);

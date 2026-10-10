@@ -56,7 +56,8 @@ int vm_supply_prepare(vm_page_supply *supply, vm_memory *memory, vm_boot *boot,
     if (!boot || !boot->header || memory->next_offset > 0xfffff000u
             || vm_memory_find(memory,page) || supply->sequence == ~0ull) return -1;
     if (memory->page_count >= memory->page_capacity) return -2;
-    if (memory->next_offset + 4096u > memory->byte_count) return -3;
+    pl_u32 device=boot->device_bytes&&page>=boot->device_address&&page-boot->device_address<boot->device_bytes;
+    if (!device&&memory->next_offset + 4096u > memory->byte_count) return -3;
     vm_boot_source source;
     int kind = vm_boot_page(boot,page,memory->bytes + memory->next_offset,&source);
     if (kind < 0) return VM_SUPPLY_SOURCE_UNMAPPED;
@@ -70,7 +71,7 @@ int vm_supply_commit(vm_page_supply *supply, vm_memory *memory,
 {
     if (!current(supply,memory,state,port) || !ticket || ticket != supply->prepared.ticket) return -1;
     const vm_page_request *request = &supply->prepared;
-    int status = request->source_kind == VM_BOOT_ROM
+    int status = request->source_kind == VM_BOOT_DEVICE?vm_memory_append_device(memory,request->address):request->source_kind == VM_BOOT_ROM
         ? vm_memory_append_rom(memory,request->address,request->target_offset)
         : vm_memory_append(memory,request->address,request->target_offset,request->rights);
     if (status) return -1;

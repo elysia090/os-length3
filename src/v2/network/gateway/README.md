@@ -37,6 +37,26 @@ authorize and enforce the interface's address, source, route, ingress and
 private-network policy. TAP adoption is not proof that public Internet access
 is authorized or functional. Windows deliberately rejects the TAP mode.
 
+Windows can explicitly select the official libslirp 4.9.3 packet NAT instead
+of a TAP. This is an external Ethernet backend, not a guest CPU, POSIX layer,
+or TLS terminator. The full-width socket API is mandatory. Deprecated int-fd
+polling is rejected. Loopback connections, TFTP and unsafe emulation are off.
+The SHA256 pin authenticates the DLL from the already verified QEMU installer;
+loading it creates no Windows adapter, route or firewall rule.
+
+```powershell
+./data/oracle/prepare-packet-api.ps1
+$env:CGO_ENABLED='1'
+$env:CC='C:/msys64/ucrt64/bin/gcc.exe'
+cd src/v2/network/gateway
+go build -o ../../../../temp/gateway.exe .
+../../../../temp/gateway.exe '-user-network-dll=ABSOLUTE-PATH/libslirp-0.dll' `
+  '-user-network-sha256=INDEPENDENTLY-VERIFIED-SHA256'
+```
+
+An actual pinned-DLL ARP response passes `TestPinnedPacketNAT`. QUIC keepalive
+preserves a granted but quiet carrier; it does not change guest timeouts.
+
 ## Authority and bounded state
 
 Listeners bind explicit loopback IPs only. The HTTP control listener checks
@@ -75,7 +95,7 @@ independent Go client/server test uses real loopback QUIC, a verified root
 certificate and the same frame geometry. Boundary tests and 1,572,781 fuzz
 executions passed. The Windows executable and Linux executable both compile.
 
-This is transport acceptance, not guest NIC acceptance. The C VM still needs
-the virtio-MMIO register/DMA/interrupt owner and its bounded network barrier.
-Guest DNS, curl/Git HTTPS, IPv4/IPv6, revocation and service publication remain
-end-to-end gates. A transport PASS cannot satisfy those gates or Linux boot.
+The C virtio-MMIO register, split-ring DMA, interrupt and captured resource
+ticket boundary now exists in vm.wasm. Actual-browser DNS, curl/Git HTTPS,
+IPv4/IPv6, revocation and service publication remain end-to-end gates.
+ARP/transport or finite C queue tests do not satisfy those gates or Linux boot.

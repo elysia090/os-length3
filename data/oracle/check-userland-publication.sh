@@ -95,6 +95,10 @@ if [ "$candidate_root" = 1 ];then
         # Reuse the official kernel recipe and Kbuild wrapper. No host/WSL
         # kernel or separately invented image enters this diagnostic.
         head -c "$LENGTH3_KERNEL_SOURCE_BYTES" /dev/vdj >"data/upstream/linux-$LINUX_VERSION.tar.xz"
+        QM_LINKED_KERNEL_ROOT="$scratch/kernel-build" QM_JOBS=4 bash data/build-linked-kernel.sh config
+        kernel_build=$(find "$scratch/kernel-build/output" -mindepth 1 -maxdepth 1 -type d)
+        cp "$kernel_build/.config" "data/config/linux-$LINUX_VERSION.config"
+        cp "$kernel_build/.config" "$scratch/candidate.linux.config"
         QM_LINKED_KERNEL_ROOT="$scratch/kernel-build" QM_JOBS=4 bash data/build-linked-kernel.sh bzImage
         kernel_build=$(find "$scratch/kernel-build/output" -mindepth 1 -maxdepth 1 -type d)
         test -f "$kernel_build/vmlinux.unstripped"
@@ -102,10 +106,11 @@ if [ "$candidate_root" = 1 ];then
         "$verify" "$kernel_build/vmlinux.unstripped" "$scratch/kernel-optimized.elf"
         bash data/oracle/package-postlinked-kernel.sh "$scratch/kernel-optimized.elf" "$kernel_build" "$scratch/candidate.kernel"
         cat "$scratch/candidate.kernel" >"$scratch/candidate-root/boot/kernel"
-        roles="kernel $roles"
+        roles="kernel linux.config $roles"
     fi
     mkdir "$scratch/boot-root"
     (cd "$scratch/boot-root";cpio -id </dev/vdg)
+    cp data/initramfs/init "$scratch/boot-root/init"
     cat "$scratch/busybox-optimized" >"$scratch/boot-root/bin/busybox"
     (cd "$scratch/boot-root";find . -print0 | LC_ALL=C sort -z | cpio --null -o --format=newc --owner=0:0 --reproducible) >"$scratch/candidate.initramfs"
     mksquashfs "$scratch/candidate-root" "$scratch/candidate.system.squashfs" -noappend -comp zstd -processors 1 -mkfs-time 0 -no-progress >/dev/null

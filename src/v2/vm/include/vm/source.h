@@ -19,6 +19,8 @@ typedef struct {
     pl_u64 pending_entry;
     pl_u32 pending_limit, pending_rank, pending, pending_pages;
     pl_u32 first_slot, demand_limit;
+    vm_execution_row projection;
+    pl_u32 projected;
     pl_u8 previous[VM_SOURCE_ROWS], next[VM_SOURCE_ROWS];
     pl_u8 oldest, newest;
 } vm_sources;
@@ -31,7 +33,12 @@ static inline int vm_source_budget_fits(const vm_source_row *row, pl_u32 limit)
         && (row->limit == limit || row->row.source_instructions < row->limit);
 }
 
-/* One serialized compiler/engine owner. Page views must come from executable
+/* Entry bodies receive their virtual origin as the third ABI argument. Only
+ * origin-independent compiled bodies may be admitted: decoder-owned RIP
+ * coordinates are relative to that argument; literal operands remain literal.
+ * Physical source plus within-page offset owns one body across virtual aliases.
+ * projection is one short-lived execution binding, never another code image.
+ * One serialized compiler/engine owner. Page views must come from executable
  * C-MMU admission on EVERY lookup; permission checks are never cached. The
  * exact source extent is pinned without copying bytes. All physical guest
  * writes (including A/D and descriptor writes) call vm_sources_write BEFORE

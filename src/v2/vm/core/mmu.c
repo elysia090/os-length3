@@ -31,9 +31,12 @@ static machine_result exception(pl_u8 *port, pl_u64 address, pl_u32 vector, pl_u
 
 static machine_result resident_word(vm_memory *memory, pl_u8 *port,
                                     pl_u64 address, pl_u32 access, pl_u32 bytes,
-                                    pl_u8 **result, pl_u32 *discard,int observe)
+                                    pl_u8 **result, pl_u32 *discard,int observe,
+                                    const vm_memory_page **found)
 {
     const vm_memory_page *page = observe?vm_memory_find_readonly(memory,address):vm_memory_find(memory, address);
+    if(found)*found=page;
+    if(page&&page->kind==VM_MEMORY_DEVICE)return MACHINE_RESULT_ENTRY_MAP;
     if (!page || (page->kind != VM_MEMORY_RAM && page->kind != VM_MEMORY_ROM)
             || (page->rights & access) != access)
         return pending(port, address, bytes, access);
@@ -60,26 +63,22 @@ static machine_result walk(vm_memory *memory, pl_u8 *port,
                             const vm_mmu_context *context, pl_u64 address,
                             pl_u32 access, pl_u64 *physical,int observe)
 {
-    vm_walk_proof *retained=&memory->walks[vm_memory_walk_rank(address)];
-    if(!observe&&retained->depth&&retained->depth<=4u&&retained->virtual_page==(address&~4095ull)
+    pl_u32 proof_rank=vm_memory_walk_rank(address);
+    vm_walk_proof *retained=&memory->walks[proof_rank];
+    if(!observe&&(memory->walk_live&(1ull<<proof_rank))&&retained->depth&&retained->depth<=4u&&retained->virtual_page==(address&~4095ull)
         &&retained->access==access&&retained->cpl==context->cpl
         &&retained->control[0]==context->cr0&&retained->control[1]==context->cr3
         &&retained->control[2]==context->cr4&&retained->control[3]==context->efer){
-        pl_u32 matched=1u;
-        for(pl_u32 n=0u;n<retained->depth;++n){const vm_walk_ancestor *a=retained->ancestors+n;
-            if(a->rank>=memory->page_count||(pl_u64)a->offset+8u>memory->byte_count){matched=0u;break;}
-            const vm_memory_page *page=memory->pages+a->rank;
-            if(page->address!=a->page||page->offset!=(a->offset&~4095u)
-                ||(page->kind!=VM_MEMORY_RAM&&page->kind!=VM_MEMORY_ROM)||!(page->rights&MACHINE_MEMORY_READ)
-                ||vm_memory_load(memory->bytes+a->offset,8u)!=a->entry){matched=0u;break;}
-        }
-        if(matched){
+        /* Exact PTE byte ranges were registered before this witness became
+         * live. Every physical store invalidates overlapping witnesses before
+         * mutation, including DMA, A/D and alias stores. No writer can interpose
+         * in this serialized owner, and old directory rows are immutable. */
 #ifdef VM_SOURCE_PROFILE
             ++memory->walk_proof_hits;
 #endif
             *physical=retained->physical_page|(address&4095u);return 0u;
-        }
     }
+    if(!observe)memory->walk_live&=~(1ull<<proof_rank);
 #ifdef VM_SOURCE_PROFILE
     if(!observe)++memory->walk_proof_misses;
 #endif
@@ -98,7 +97,7 @@ static machine_result walk(vm_memory *memory, pl_u8 *port,
         pl_u64 at = table + ((address >> shifts[level]) & 511u) * 8u;
         pl_u8 *entry_bytes = NULL;
         pl_u32 discard = 0u;
-        machine_result status = resident_word(memory, port, at, MACHINE_MEMORY_READ, 8u, &entry_bytes,&discard,observe);
+        machine_result status = resident_word(memory, port, at, MACHINE_MEMORY_READ, 8u, &entry_bytes,&discard,observe,NULL);
         if (status) return status;
         pl_u64 entry = vm_memory_load(entry_bytes, 8u);
         if (!(entry & PRESENT)) return exception(port, address, 14u, error);
@@ -118,7 +117,7 @@ static machine_result walk(vm_memory *memory, pl_u8 *port,
         pl_u32 set = ACCESSED | (leaf && write ? DIRTY : 0u);
         if (!observe&&(set & ~(pl_u32)entry)) {
             pl_u8 *writable_entry = NULL;
-            status = resident_word(memory, port, at, MACHINE_MEMORY_WRITE, 8u, &writable_entry,NULL,0);
+            status = resident_word(memory, port, at, MACHINE_MEMORY_WRITE, 8u, &writable_entry,NULL,0,NULL);
             if (status) return status;
             /* Serialized, pinned owner: no competing CPU/device/table writer
              * can occur between this load and store. This is not SMP CAS. */
@@ -138,7 +137,7 @@ static machine_result walk(vm_memory *memory, pl_u8 *port,
         if (leaf) {
             pl_u64 offset_mask = (1ull << shift) - 1u;
             *physical = (entry & PHYSICAL_MASK & ~offset_mask) | (address & offset_mask);
-            if(!observe&&retainable){fresh.physical_page=*physical&~4095ull;fresh.depth=level+1u;*retained=fresh;}
+            if(!observe&&retainable){fresh.physical_page=*physical&~4095ull;fresh.depth=level+1u;vm_memory_walk_publish(memory,proof_rank,&fresh);}
             return 0u;
         }
         table = entry & PHYSICAL_MASK;
@@ -198,9 +197,14 @@ static machine_result preflight(vm_memory *memory, pl_u32 port_offset,
         if (status) return status;
         pl_u32 length = 4096u - (pl_u32)(current & 4095u);
         if (length > bytes - consumed) length = bytes - consumed;
-        pl_u8 *fragment = NULL;
-        pl_u32 discard = 0u;
-        status = resident_word(memory, port, physical, access & 3u, length, &fragment,&discard,0);
+        pl_u8 *fragment = NULL;pl_u32 discard = 0u;const vm_memory_page *device=NULL;
+        status = resident_word(memory,port,physical,access&3u,length,&fragment,&discard,0,&device);
+        if(device&&device->kind==VM_MEMORY_DEVICE){
+            if(consumed||bytes>length)return MACHINE_RESULT_ENTRY_MAP;
+            status=vm_memory_device_check(memory,physical,bytes,access);if(status)return status;
+            ready->parts=1u;ready->lengths[0]=bytes;
+            ready->discard=VM_MEMORY_DEVICE_FRONTIER;ready->device_address=physical;return 0u;
+        }
         if (status) return status;
         ready->discard |= discard << ready->parts;
         ready->offsets[ready->parts] = (pl_u32)(fragment - memory->bytes);
@@ -221,6 +225,8 @@ machine_result vm_mmu_access(vm_memory *memory, pl_u32 port_offset,
     vm_memory_reservation ready;
     machine_result status = preflight(memory, port_offset, context, address, bytes, access,16u,&ready);
     if (status) return status;
+    if(ready.discard&VM_MEMORY_DEVICE_FRONTIER)
+        return vm_memory_device_word(memory,port_offset,ready.device_address,bytes,access,value);
     pl_u32 consumed = 0u;
     if (access & MACHINE_MEMORY_WRITE) {
         for (pl_u32 i = 0u; i < ready.parts; ++i) {
@@ -256,13 +262,13 @@ machine_result vm_mmu_fill(vm_memory *memory,pl_u32 port,const vm_mmu_context *c
     vm_memory_reservation ready;
     machine_result result=preflight(memory,port,context,first,word_bytes,MACHINE_MEMORY_WRITE,8u,&ready);
     if(result)return result;
-    if(ready.parts!=1u)return MACHINE_RESULT_ENTRY_MAP;
+    if(ready.parts!=1u||(ready.discard&VM_MEMORY_DEVICE_FRONTIER))return MACHINE_RESULT_ENTRY_MAP;
     pl_u32 count=bytes/word_bytes;
     /* A store may itself overwrite a paging ancestor. Stop immediately
      * AFTER the first such word, then rewalk at the next source frontier.
      * The same exact ancestor witness supplies the physical hazard cut. */
-    if(!ready.discard){const vm_walk_proof *proof=&memory->walks[vm_memory_walk_rank(first)];
-        if(proof->depth>4u||!proof->depth||proof->virtual_page!=(first&~4095ull)||proof->access!=MACHINE_MEMORY_WRITE)count=1u;
+    if(!ready.discard){pl_u32 rank=vm_memory_walk_rank(first);const vm_walk_proof *proof=&memory->walks[rank];
+        if(!(memory->walk_live&(1ull<<rank))||proof->depth>4u||!proof->depth||proof->virtual_page!=(first&~4095ull)||proof->access!=MACHINE_MEMORY_WRITE)count=1u;
         else for(pl_u32 n=0u;n<proof->depth;++n){const vm_walk_ancestor *ancestor=proof->ancestors+n;
             pl_u64 a=ready.offsets[0],low=a-(reverse?tail:0u);
             if((pl_u64)ancestor->offset+8u<=low||ancestor->offset>=low+bytes)continue;
@@ -296,6 +302,7 @@ machine_result vm_mmu_reserve(vm_memory *memory, pl_u32 port_offset,
     vm_memory_reservation ready;
     machine_result status = preflight(memory, port_offset, context, address, bytes, access,16u,&ready);
     if (status) return status;
+    if(ready.discard&VM_MEMORY_DEVICE_FRONTIER)return MACHINE_RESULT_ENTRY_MAP;
     pl_u64 value = 0u;
     pl_u32 consumed = 0u;
     for (pl_u32 i = 0u; i < ready.parts; ++i) {
@@ -321,6 +328,7 @@ machine_result vm_mmu_reserve_record_access(vm_memory *memory, pl_u32 port_offse
     vm_memory_reservation ready;
     machine_result status=preflight(memory,port_offset,context,address,bytes,access,16u,&ready);
     if (status) return status;
+    if(ready.discard&VM_MEMORY_DEVICE_FRONTIER)return MACHINE_RESULT_ENTRY_MAP;
     pl_u32 consumed=0u;
     for (pl_u32 i=0u;i<ready.parts;++i)
         for (pl_u32 j=0u;j<ready.lengths[i];++j)
@@ -341,6 +349,11 @@ machine_result vm_mmu_read_record(vm_memory *memory, pl_u32 port_offset,
     vm_memory_reservation ready;
     machine_result status = preflight(memory, port_offset, context, address, bytes, access,16u,&ready);
     if (status) return status;
+    if(ready.discard&VM_MEMORY_DEVICE_FRONTIER){
+        status=vm_memory_device_word(memory,port_offset,ready.device_address,bytes,access,0u);if(status)return status;
+        pl_u64 word=vm_memory_load(memory->bytes+port_offset+offsetof(machine_memory_port,value),8u);
+        vm_memory_store(target,word,bytes);return 0u;
+    }
     pl_u32 consumed = 0u;
     for (pl_u32 i = 0u; i < ready.parts; ++i)
         for (pl_u32 j = 0u; j < ready.lengths[i]; ++j)
@@ -360,6 +373,10 @@ machine_result vm_mmu_read_pair(vm_memory *memory, pl_u32 port_offset,
     vm_memory_reservation ready;
     machine_result result=preflight(memory,port_offset,context,address,bytes,access,16u,&ready);
     if (result) return result;
+    if(ready.discard&VM_MEMORY_DEVICE_FRONTIER){
+        result=vm_memory_device_word(memory,port_offset,ready.device_address,bytes,access,0u);if(result)return result;
+        vm_memory_store(memory->bytes+port_offset+offsetof(machine_memory_pair_port,high),0u,8u);return 0u;
+    }
     /* Substitute the exact 1..16-byte extent into the two final words. There
      * is no sixteen-byte intermediate record or second translation. Each
      * fragment ends at its physical page; each word ends at bit 63. */
@@ -393,6 +410,10 @@ machine_result vm_mmu_read_extent(vm_memory *memory, pl_u32 port_offset,
     vm_memory_reservation ready;
     machine_result result=preflight(memory,port_offset,context,address,bytes,access,512u,&ready);
     if (result) return result;
+    if(ready.discard&VM_MEMORY_DEVICE_FRONTIER){
+        result=vm_memory_device_word(memory,port_offset,ready.device_address,bytes,access,0u);if(result)return result;
+        ready.offsets[0]=port_offset+(pl_u32)offsetof(machine_memory_port,value);
+    }
     for (pl_u32 i=0u;i<2u;++i) {
         vm_memory_store(memory->bytes+port_offset+offsetof(machine_memory_extent_port,offsets)+i*4u,
             i<ready.parts ? ready.offsets[i] : 0u,4u);
