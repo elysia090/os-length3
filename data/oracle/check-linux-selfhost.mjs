@@ -11,9 +11,9 @@ import {finished} from 'node:stream/promises';
 import {zstdDecompressSync} from 'node:zlib';
 const repo=await realpath(fileURLToPath(new URL('../..',import.meta.url)));
 const [qemuArg,imgArg,sourceArg,workArg,...extra]=process.argv.slice(2);
-const rescue=extra.includes('--rescue-root'),kernel=extra.includes('--kernel'),initProfile=extra.includes('--init-profile'),candidate=extra.includes('--candidate-root'),publication=extra.includes('--publication');
-if(!workArg||new Set(extra).size!==extra.length||extra.some(x=>!['--publication','--candidate-root','--init-profile','--kernel','--rescue-root'].includes(x))||candidate&&!publication||initProfile&&!candidate||kernel&&!initProfile||rescue&&extra.length!==1)
-  throw new Error('QEMU QEMU-IMG SOURCE-TAR NEW-WORK-DIRECTORY [--publication [--candidate-root [--init-profile [--kernel]]]] | --rescue-root');
+const observations=extra.includes('--observations'),rescue=extra.includes('--rescue-root'),kernel=extra.includes('--kernel'),initProfile=extra.includes('--init-profile'),candidate=extra.includes('--candidate-root'),publication=extra.includes('--publication');
+if(!workArg||new Set(extra).size!==extra.length||extra.some(x=>!['--publication','--candidate-root','--init-profile','--kernel','--rescue-root','--observations'].includes(x))||candidate&&!publication||initProfile&&!candidate||kernel&&!initProfile||(rescue||observations)&&extra.length!==1)
+  throw new Error('QEMU QEMU-IMG SOURCE-TAR NEW-WORK-DIRECTORY [--publication [--candidate-root [--init-profile [--kernel]]]] | --rescue-root | --observations');
 const work=path.resolve(workArg),temp=path.join(repo,'temp')+path.sep;
 if(!work.startsWith(temp)||work===path.join(repo,'temp'))throw new Error('fresh oracle workspace below repository temp');
 await mkdir(work); // Never replace an existing disk or diagnostic receipt.
@@ -36,6 +36,8 @@ const packages=new Map();
 for(const line of lines){const m=/^([a-f0-9]{64})\s+\.\/([A-Za-z0-9_.+-]+\.apk)$/.exec(line);if(!m)throw new Error('pinned APK manifest');packages.set(m[2],m[1]);}
 const sourceHash=await digest(source,'sha256');
 const sourceOptions=[];let kernelSourceBytes=0;
+if(observations){const directory=path.join(work,'observations');await mkdir(directory);
+  sourceOptions.push('-drive',`file=fat:rw:${directory.replaceAll('\\','/')},format=raw,if=virtio`);}
 if(rescue){const file=path.join(repo,'temp/isolated-kernel-1010m/candidate-files/system.squashfs');
   if(await digest(file,'sha256')!=='f971b50b806cb226172d88afbd6b45258da1cf7a89b1472e067f58006d29d280')throw new Error('rebuilt diagnostic root identity');
   const directory=path.join(work,'candidate-files');await mkdir(directory);
@@ -86,13 +88,26 @@ make -j4 -C src/v2/support all
 make -j4 -C src/v2/x86 all vector-projection-check
 make -j4 -C src/v2/optimized-x86 all
 make -j4 -C src/v2/postlink-compiler all check
-make -j4 -C src/v2/wasm-compiler all packed-shift-check vector-unpack-check x87-control-check x87-environment-check float-arithmetic-check float-compare-check scalar-vector-transfer-check
+make -j4 -C src/v2/wasm-compiler all packed-binary-check packed-shift-check vector-unpack-check x87-control-check x87-environment-check float-arithmetic-check float-compare-check scalar-vector-transfer-check
 make -j4 -C src/v2/vm all check
 bash src/v2/vm/check/sanitizers.sh
 export LENGTH3_KERNEL_SOURCE_BYTES=${kernelSourceBytes}
 ${publication?`sh data/oracle/check-userland-publication.sh ${candidate?'--candidate-root':''} ${initProfile?'--init-profile':''} ${kernel?'--kernel':''}`:''}
 ${rescue?'sh data/oracle/prepare-rescue-root.sh':''}
 bash src/v2/wasm-compiler/check/sanitizers.sh
+${observations?`mkdir -p /run/observations
+mkdir /run/observations/paired
+make -C src/v2/wasm-compiler build/paired-exchange-check
+src/v2/wasm-compiler/build/paired-exchange-check /run/observations/paired
+tar -cf /run/paired.tar -C /run/observations paired
+mkdir /run/observation-transport
+output_device=/dev/vdd1; test -b "$output_device" || output_device=/dev/vdd
+mount -t vfat "$output_device" /run/observation-transport
+cp /run/paired.tar /run/observation-transport/paired.tar
+printf 'oracle-observations paired.tar %s %s\\n' "$(wc -c </run/paired.tar | tr -d ' ')" "$(sha256sum /run/paired.tar | cut -d ' ' -f 1)"
+sync
+umount /run/observation-transport
+printf 'selfhost-oracle: paired observations exported\\n'`:''}
 trap - EXIT
 printf '\\nselfhost-oracle: pass\\n'
 `;
@@ -126,9 +141,12 @@ const args=['-L',path.join(path.dirname(qemu),'share'),'-machine','q35','-accel'
   '-smbios','type=1,serial=ds=nocloud;s=http://10.0.2.100/seed/','-display','none','-monitor','none','-serial','stdio','-no-reboot'];
 const child=spawn(qemu,args,{windowsHide:true,stdio:['ignore','pipe','pipe']});
 let tail='',outcome,bytes=0;const began=performance.now();
-let receiptName=null,receiptHash=null,receiptLines='',partial='';const receipts=[],candidateReceipts=new Map();
-function receiveReceipts(chunk){if(!publication&&!rescue)return;partial+=chunk.toString();let end;
+let receiptName=null,receiptHash=null,receiptLines='',partial='',observationReceipt=null;const receipts=[],candidateReceipts=new Map();
+function receiveReceipts(chunk){if(!publication&&!rescue&&!observations)return;partial+=chunk.toString();let end;
   while((end=partial.indexOf('\n'))>=0){const line=partial.slice(0,end).replace(/\r$/, '');partial=partial.slice(end+1);
+    const observation=/^oracle-observations paired\.tar ([0-9]+) ([a-f0-9]{64})$/.exec(line);
+    if(observation){if(!observations||observationReceipt)throw new Error('one observation archive owner');
+      observationReceipt={bytes:Number(observation[1]),sha256:observation[2]};continue;}
     const object=/^oracle-candidate (kernel|initramfs|system\.squashfs) ([0-9]+) ([a-f0-9]{64})$/.exec(line);
     if(object){if((!candidate&&!rescue)||candidateReceipts.has(object[1]))throw new Error('candidate role ownership');
       candidateReceipts.set(object[1],{bytes:Number(object[2]),sha256:object[3]});continue;}
@@ -154,6 +172,17 @@ child.stdout.on('data',consume);child.stderr.on('data',consume);child.once('erro
 await new Promise(resolve=>child.once('close',(code,signal)=>{if(outcome===undefined)outcome=`oracle exited ${code}/${signal}`;resolve();}));
 clearTimeout(timeout);server.close();log.end();transportLog.end();await Promise.all([finished(log),finished(transportLog),...receipts]);
 const candidateOutput={};
+if(outcome===null&&observations){try{
+  const directory=path.join(work,'observations'),archive=path.join(directory,'paired.tar'),role=observationReceipt;
+  if(!role||!Number.isSafeInteger(role.bytes)||role.bytes<1||role.bytes>64*1024*1024
+      ||(await stat(archive)).size!==role.bytes||await digest(archive,'sha256')!==role.sha256)throw new Error('observation readback identity');
+  const names=run('tar',['-tf',archive]).trim().split(/\r?\n/),expected=['paired/'];
+  for(let i=0;i<72;++i)for(const suffix of ['json','source-page','cases','faults','wasm'])expected.push(`paired/paired-exchange-${i}.${suffix}`);
+  if(new Set(names).size!==names.length||JSON.stringify([...names].sort())!==JSON.stringify(expected.sort()))throw new Error('complete observation archive population');
+  const types=run('tar',['-tvf',archive]).trim().split(/\r?\n/);
+  if(types.length!==names.length||types.some(line=>line[0]!=='-'&&line[0]!=='d'))throw new Error('observation archive regular entries only');
+  run('tar',['-xf',archive,'-C',directory]);
+}catch(e){outcome=e.message;}}
 if(outcome===null&&(candidate||rescue)){try{for(const name of rescue?['system.squashfs']:kernel?['kernel','initramfs','system.squashfs']:['initramfs','system.squashfs']){
   const role=candidateReceipts.get(name),file=path.join(work,'candidate-files',name);
   if(!role||!Number.isSafeInteger(role.bytes)||role.bytes<1||role.bytes>128*1024*1024||(await stat(file)).size!==role.bytes||await digest(file,'sha256')!==role.sha256)throw new Error('candidate readback identity');
@@ -161,5 +190,7 @@ if(outcome===null&&(candidate||rescue)){try{for(const name of rescue?['system.sq
 }}catch(e){outcome=e.message;}}
 console.log(JSON.stringify({format:'isolated-linux-c-oracle-v1',status:outcome===null?'pass':'fail',reason:outcome,
   imageSha256:lock.image.sha256,sourceSha256:sourceHash,accelerator:'WHPX',ssh:'none',network:'explicit loopback seed only; source/APKs are read-only block inputs; no outside routing',
-  elapsedMs:performance.now()-began,logBytes:bytes,work,candidateOutput,linuxBrowserBoot:'not-tested'},null,2));
+  elapsedMs:performance.now()-began,logBytes:bytes,work,candidateOutput,
+  ...(observations?{observations:path.join(work,'observations','paired'),observationReceipt,
+    observationScope:'native paired-exchange CPU/fault/RAM and current native-C emission; NOT browser acceptance'}:{}),linuxBrowserBoot:'not-tested'},null,2));
 if(outcome!==null)process.exitCode=1;

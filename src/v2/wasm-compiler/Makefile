@@ -277,6 +277,8 @@ x87-arithmetic-check: $(BUILD)/x87-arithmetic-check
 $(BUILD)/x87-arithmetic-check: check/x87-arithmetic.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 # Independent physical-Windows observer; never linked into product execution.
+$(BUILD)/mmx-binary-observe: check/mmx-binary-observe.c check/x87-hardware.h check/x87-observation.h | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< -o $@
 $(BUILD)/debug-trap-observe: check/debug-trap-observe.c | $(BUILD)
 	$(CC) $(CFLAGS) $(WARN) $< -o $@
 $(BUILD)/x87-arithmetic-observe: check/x87-arithmetic-observe.c check/x87-hardware.h check/x87-observation.h | $(BUILD)

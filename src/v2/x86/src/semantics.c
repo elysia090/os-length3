@@ -3270,7 +3270,9 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
             if (kind == 1u || kind == 2u || kind == 3u || kind == 4u || kind == 24u
                     || (kind == 10u && (subtype == 12u || subtype == 15u
                         || subtype == 48u || subtype == 51u || subtype == 52u
-                        || subtype == 56u || subtype == 57u))) {
+                        || subtype == 56u || subtype == 57u
+                        || (subtype>=PL_X86_PACKED_ABSOLUTE&&subtype<=PL_X86_PACKED_ABSOLUTE+2u)
+                        || (subtype>=PL_X86_PACKED_MIN_SIGNED_BYTE&&subtype<=PL_X86_PACKED_NARROW_UNSIGNED_DWORD)))) {
                 pl_x86_vector_binary law;
                 if (!pl_x86_vector_binary_lower(instruction, &law))
                     return PL_ERROR_X86_SEMANTIC;

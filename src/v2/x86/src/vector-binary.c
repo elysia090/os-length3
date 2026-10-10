@@ -52,6 +52,21 @@ static int packed(pl_u64 operation,pl_x86_vector_binary *law)
     case 40u:law->operation=PL_X86_VECTOR_BINARY_NARROW;law->lane_bytes=4u;law->signed_lanes=1u;break;
     case 46u:law->operation=PL_X86_VECTOR_BINARY_NARROW;law->lane_bytes=2u;law->signed_lanes=1u;break;
     case 9u:law->operation=PL_X86_VECTOR_BINARY_SUM_ABSOLUTE;law->lane_bytes=1u;break;
+    case PL_X86_PACKED_MIN_SIGNED_BYTE:law->operation=PL_X86_VECTOR_BINARY_MINIMUM;law->lane_bytes=1u;law->signed_lanes=1u;break;
+    case PL_X86_PACKED_MIN_SIGNED_DWORD:law->operation=PL_X86_VECTOR_BINARY_MINIMUM;law->lane_bytes=4u;law->signed_lanes=1u;break;
+    case PL_X86_PACKED_MIN_UNSIGNED_WORD:law->operation=PL_X86_VECTOR_BINARY_MINIMUM;law->lane_bytes=2u;break;
+    case PL_X86_PACKED_MIN_UNSIGNED_DWORD:law->operation=PL_X86_VECTOR_BINARY_MINIMUM;law->lane_bytes=4u;break;
+    case PL_X86_PACKED_MAX_SIGNED_BYTE:law->operation=PL_X86_VECTOR_BINARY_MAXIMUM;law->lane_bytes=1u;law->signed_lanes=1u;break;
+    case PL_X86_PACKED_MAX_SIGNED_DWORD:law->operation=PL_X86_VECTOR_BINARY_MAXIMUM;law->lane_bytes=4u;law->signed_lanes=1u;break;
+    case PL_X86_PACKED_MAX_UNSIGNED_WORD:law->operation=PL_X86_VECTOR_BINARY_MAXIMUM;law->lane_bytes=2u;break;
+    case PL_X86_PACKED_MAX_UNSIGNED_DWORD:law->operation=PL_X86_VECTOR_BINARY_MAXIMUM;law->lane_bytes=4u;break;
+    case PL_X86_PACKED_EQUAL_QWORD:law->operation=PL_X86_VECTOR_BINARY_EQUAL;law->lane_bytes=8u;break;
+    case PL_X86_PACKED_GREATER_QWORD:law->operation=PL_X86_VECTOR_BINARY_GREATER;law->lane_bytes=8u;law->signed_lanes=1u;break;
+    case PL_X86_PACKED_MULTIPLY_DWORD:law->operation=PL_X86_VECTOR_BINARY_MULTIPLY;law->lane_bytes=4u;break;
+    case PL_X86_PACKED_MULTIPLY_SIGNED_EVEN_DWORD:law->operation=PL_X86_VECTOR_BINARY_MULTIPLY_EVEN;law->lane_bytes=4u;law->signed_lanes=1u;break;
+    case PL_X86_PACKED_NARROW_UNSIGNED_DWORD:law->operation=PL_X86_VECTOR_BINARY_NARROW;law->lane_bytes=4u;break;
+    case PL_X86_PACKED_ABSOLUTE:case PL_X86_PACKED_ABSOLUTE+1u:case PL_X86_PACKED_ABSOLUTE+2u:
+        law->operation=PL_X86_VECTOR_BINARY_ABSOLUTE;law->lane_bytes=(pl_u8)(1u<<(operation-PL_X86_PACKED_ABSOLUTE));break;
     default:return 0;
     }
     return 1;
@@ -83,7 +98,7 @@ int pl_x86_vector_binary_lower(const pl_x86_instruction *instruction,
         else if(kind==18u&&!operation){law.operation=PL_X86_VECTOR_BINARY_ADD;law.lane_bytes=4u;}
         else if(kind==24u&&!operation){law.operation=PL_X86_VECTOR_BINARY_EQUAL;law.lane_bytes=1u;}
         else if(kind==25u&&!operation){law.operation=PL_X86_VECTOR_BINARY_GREATER;law.lane_bytes=4u;law.signed_lanes=1u;}
-        else if(kind==37u){if(!packed(operation,&law))return 0;}
+        else if(kind==37u){if(operation>=PL_X86_PACKED_MIN_SIGNED_BYTE||!packed(operation,&law))return 0;}
         else return 0;
         pl_u64 descriptor=kind|((pl_u64)(memory?8u:0u)<<8u)|(instruction->machine_argument&(0x7ffull<<16u))
             |((pl_u64)(memory?0u:source->value.reg.index)<<32u)|((pl_u64)target->value.reg.index<<36u)|(operation<<40u);

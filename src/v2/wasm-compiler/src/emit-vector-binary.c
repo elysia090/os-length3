@@ -25,8 +25,9 @@ static void source(cut_lowering *cut, const pl_x86_instruction *instruction,
 }
 static pl_u32 operation(const pl_x86_vector_binary *law)
 {
-    const pl_u32 bitwise[]={0x4eu,0x50u,0x51u,0x4fu},add[]={0x6eu,0x8eu,0xaeu,0xceu},eq[]={0x23u,0x2du,0x37u};
-    const pl_u32 sub[]={0x71u,0x91u,0xb1u,0xd1u},gt[]={0x27u,0x31u,0x3bu};
+    const pl_u32 bitwise[]={0x4eu,0x50u,0x51u,0x4fu},add[]={0x6eu,0x8eu,0xaeu,0xceu},eq[]={0x23u,0x2du,0x37u,0xd6u};
+    const pl_u32 sub[]={0x71u,0x91u,0xb1u,0xd1u},gt[]={0x27u,0x31u,0x3bu,0xd9u};
+    const pl_u32 min[]={0x76u,0x96u,0xb6u},max[]={0x78u,0x98u,0xb8u};
     pl_u32 lane=law->lane_bytes==1u?0u:law->lane_bytes==2u?1u:law->lane_bytes==4u?2u:3u;
     switch(law->operation){
     case PL_X86_VECTOR_BINARY_AND:case PL_X86_VECTOR_BINARY_OR:case PL_X86_VECTOR_BINARY_XOR:case PL_X86_VECTOR_BINARY_AND_NOT:return bitwise[law->operation];
@@ -34,12 +35,13 @@ static pl_u32 operation(const pl_x86_vector_binary *law)
     case PL_X86_VECTOR_BINARY_SUBTRACT:return sub[lane];case PL_X86_VECTOR_BINARY_GREATER:return gt[lane];
     case PL_X86_VECTOR_BINARY_ADD_SAT:return (lane?0x8fu:0x6fu)+(law->signed_lanes?0u:1u);
     case PL_X86_VECTOR_BINARY_SUBTRACT_SAT:return (lane?0x92u:0x72u)+(law->signed_lanes?0u:1u);
-    case PL_X86_VECTOR_BINARY_MINIMUM:return (lane?0x96u:0x76u)+(law->signed_lanes?0u:1u);
-    case PL_X86_VECTOR_BINARY_MAXIMUM:return (lane?0x98u:0x78u)+(law->signed_lanes?0u:1u);
+    case PL_X86_VECTOR_BINARY_MINIMUM:return min[lane]+(law->signed_lanes?0u:1u);
+    case PL_X86_VECTOR_BINARY_MAXIMUM:return max[lane]+(law->signed_lanes?0u:1u);
     case PL_X86_VECTOR_BINARY_AVERAGE:return lane?0x9bu:0x7bu;
-    case PL_X86_VECTOR_BINARY_MULTIPLY:return 0x95u;
+    case PL_X86_VECTOR_BINARY_MULTIPLY:return lane==2u?0xb5u:0x95u;
     case PL_X86_VECTOR_BINARY_MULTIPLY_ADD:return 0xbau;
-    case PL_X86_VECTOR_BINARY_NARROW:return law->lane_bytes==4u?0x85u:law->signed_lanes?0x65u:0x66u;
+    case PL_X86_VECTOR_BINARY_NARROW:return law->lane_bytes==4u?(law->signed_lanes?0x85u:0x86u):law->signed_lanes?0x65u:0x66u;
+    case PL_X86_VECTOR_BINARY_ABSOLUTE:return lane==0u?0x60u:lane==1u?0x80u:0xa0u;
     default:return ~0u;
     }
 }
@@ -78,7 +80,7 @@ static void composite(cut_lowering *c,const pl_x86_vector_binary *law)
         shuffle(c,select);return;
     }
     case PL_X86_VECTOR_BINARY_MULTIPLY_EVEN:
-        even_dwords(c,c->vector_local);even_dwords(c,c->vector_aux);simd(c,0xdeu);return;
+        even_dwords(c,c->vector_local);even_dwords(c,c->vector_aux);simd(c,law->signed_lanes?0xdcu:0xdeu);return;
     case PL_X86_VECTOR_BINARY_SUM_ABSOLUTE:{
         const pl_u8 neighbor[]={4,5,6,7,0,1,2,3,12,13,14,15,8,9,10,11};
         get_vector(c,c->vector_local);get_vector(c,c->vector_aux);simd(c,0x79u);
@@ -146,6 +148,8 @@ void cut_emit_vector_binary(cut_lowering *cut, const pl_x86_instruction *instruc
     if (law->result != PL_X86_VECTOR_BINARY_VALUE) {
         cut_const(cut, law->result == PL_X86_VECTOR_BINARY_ONES ? ~0ull : 0u);
         simd(cut, 0x12u);
+    } else if(law->operation==PL_X86_VECTOR_BINARY_ABSOLUTE){
+        source(cut,instruction,law);simd(cut,operation(law));
     } else {
         int expanded=law->operation==PL_X86_VECTOR_BINARY_MULTIPLY_HIGH||law->operation==PL_X86_VECTOR_BINARY_MULTIPLY_EVEN
             ||law->operation==PL_X86_VECTOR_BINARY_MULTIPLY_ROUND||law->operation==PL_X86_VECTOR_BINARY_SUM_ABSOLUTE;

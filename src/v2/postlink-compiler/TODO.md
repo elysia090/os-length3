@@ -23,6 +23,15 @@ Cold shell3s remains a target, not an achieved claim.
 
 ## Current authoritative state
 
+The wider499-row/476838-record ordinary input population is now required.
+391755 compile to valid Wasm (391746 ordinary,9 deliberate fault witnesses);
+85083 ordinary inputs still refuse. Before:105504 refusals and1 invalid module.
+Shared integer SIMD, the8-byte paired-exchange ABI and absent entropy features
+recover20422 records without narrowing CPUID.1179648 exhaustive byte-ALU,
+25632 physical SIMD states, independent C/sanitizers and72-module C-MMU atomic
+comparisons pass. These scopes are not interchangeable or universal proof;
+see [ordinary input evidence](../vm/check/browser/evidence/2026-10-10-ordinary-inputs.md).
+
 Same make/every-final-PF_X-byte population:233429/233455 lowerable,26 missing,
 zero missing fault cuts/fetch/capacity refusals. Remaining floating24,
 SIMD2,atomic0. FirstFSIN at0x17193. This complete byte inventory is
@@ -168,8 +177,8 @@ the same ordinary root is under re-test. See
 Read-only ADD/ADC/SUB/SBB/AND/OR/XOR/CMP/TEST also share that body, retaining
 incoming flags at the fault frontier even when success overwrites them.
 90 exact differential models and full independent C/sanitizers pass;
-same-provider ADD/CMP ratio0.760972,6072->4896 bytes. Plain-prefix boot still
-exceeds its unchanged service deadline; read-only-ALU boot is under test.
+same-provider ADD/CMP ratio0.760972,6072->4896 bytes. Plain-prefix and
+read-only-ALU ordinary boots still exceed the unchanged service deadline.
 A bounded run reaches266481582 retired /150000000 admissions and ends at
 the diagnostic quota, not an ISA miss. Explicit interactive lifetime is now
 separate from that regression quota; bounded work/memory/source ownership
@@ -200,6 +209,12 @@ separate; scoped/positive gates do not assert that it is solved.
 ## Next work, in order
 
 1. Close the remaining common ISA families to ZERO.
+   The broader [ordinary input contract](../docs/INPUTS.md) is mandatory, not
+   just the make inventory above. A499-row/476838-input independent assembler
+   population exposes advertised families absent from that observed workload.
+   Keep construction, valid-Wasm, exact extents, complete execution observations
+   and full-program/Linux acceptance as separate gates. Required skips,
+   unsupported contexts and quota exhaustion never count as green inputs.
    Also reproduce frozen tar/mv/s6 failures in the current whole-ELF publication
    path, repair their actual producer, and verify a separately identified new
    candidate. No observed-RIP patches, service-timeout relaxation or in-place

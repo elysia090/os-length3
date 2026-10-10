@@ -40,6 +40,15 @@ int main(int argc, char **argv)
         {{0x64u,0x48u,0x0fu,0xb1u,0x0fu},5u,3u}, {{0x64u,0x48u,0x0fu,0xc7u,0x0fu},5u,3u},
     };
     options.maximum_source_instructions=1u;
+    for(pl_u32 seed=0u;seed<2u;++seed)
+    for(pl_u32 width=16u;width<=64u;width*=2u)
+    for(pl_u32 index=0u;index<16u;++index){
+        memset(pages,0x90,sizeof pages);pl_u32 at=0u;
+        if(width==16u)pages[at++]=0x66u;
+        if(width==64u||index>=8u)pages[at++]=(pl_u8)(0x40u|(width==64u?8u:0u)|(index>=8u?1u:0u));
+        pages[at++]=0x0fu;pages[at++]=0xc7u;pages[at++]=(pl_u8)(0xf0u|(seed?8u:0u)|(index&7u));
+        EXPECT(!check_fault_admission(&source,&options,6u));
+    }
     for(pl_u32 segment=0u;segment<2u;++segment)
     for(pl_u32 rank=0u;rank<sizeof segment_cases/sizeof segment_cases[0];++rank){
         memset(pages,0x90,sizeof pages);memcpy(pages,segment_cases[rank].code,segment_cases[rank].size);

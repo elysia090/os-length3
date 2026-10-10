@@ -648,6 +648,12 @@ static int outside_delivery_profile(ZydisISASet isa_set)
     if (!(PL_X86_CPUID_1_ECX & (1u << 25u))
             && isa_set == ZYDIS_ISA_SET_AES)
         return 1;
+    if (!(PL_X86_CPUID_1_ECX & (1u << 30u))
+            && isa_set == ZYDIS_ISA_SET_RDRAND)
+        return 1;
+    if (!(PL_X86_CPUID_7_0_EBX & (1u << 18u))
+            && isa_set == ZYDIS_ISA_SET_RDSEED)
+        return 1;
     if (!(PL_X86_CPUID_7_0_EBX & (1u << 2u))
             && (isa_set == ZYDIS_ISA_SET_SGX
                 || isa_set == ZYDIS_ISA_SET_SGX_ENCLV))
@@ -4050,6 +4056,19 @@ static void classify_machine_operation(
     case ZYDIS_MNEMONIC_PABSB:
     case ZYDIS_MNEMONIC_PABSW:
     case ZYDIS_MNEMONIC_PABSD:
+    case ZYDIS_MNEMONIC_PMINSB:
+    case ZYDIS_MNEMONIC_PMINSD:
+    case ZYDIS_MNEMONIC_PMINUW:
+    case ZYDIS_MNEMONIC_PMINUD:
+    case ZYDIS_MNEMONIC_PMAXSB:
+    case ZYDIS_MNEMONIC_PMAXSD:
+    case ZYDIS_MNEMONIC_PMAXUW:
+    case ZYDIS_MNEMONIC_PMAXUD:
+    case ZYDIS_MNEMONIC_PCMPEQQ:
+    case ZYDIS_MNEMONIC_PCMPGTQ:
+    case ZYDIS_MNEMONIC_PMULLD:
+    case ZYDIS_MNEMONIC_PMULDQ:
+    case ZYDIS_MNEMONIC_PACKUSDW:
     case ZYDIS_MNEMONIC_PHSUBW: {
         if (out->visible_operand_count != 2u) break;
         const pl_x86_operand *target = &out->operands[0];
@@ -4136,6 +4155,32 @@ static void classify_machine_operation(
                            ? PL_X86_PACKED_ABSOLUTE + 1u
                          : source->mnemonic == ZYDIS_MNEMONIC_PABSD
                            ? PL_X86_PACKED_ABSOLUTE + 2u
+                         : source->mnemonic == ZYDIS_MNEMONIC_PMINSB
+                           ? PL_X86_PACKED_MIN_SIGNED_BYTE
+                         : source->mnemonic == ZYDIS_MNEMONIC_PMINSD
+                           ? PL_X86_PACKED_MIN_SIGNED_DWORD
+                         : source->mnemonic == ZYDIS_MNEMONIC_PMINUW
+                           ? PL_X86_PACKED_MIN_UNSIGNED_WORD
+                         : source->mnemonic == ZYDIS_MNEMONIC_PMINUD
+                           ? PL_X86_PACKED_MIN_UNSIGNED_DWORD
+                         : source->mnemonic == ZYDIS_MNEMONIC_PMAXSB
+                           ? PL_X86_PACKED_MAX_SIGNED_BYTE
+                         : source->mnemonic == ZYDIS_MNEMONIC_PMAXSD
+                           ? PL_X86_PACKED_MAX_SIGNED_DWORD
+                         : source->mnemonic == ZYDIS_MNEMONIC_PMAXUW
+                           ? PL_X86_PACKED_MAX_UNSIGNED_WORD
+                         : source->mnemonic == ZYDIS_MNEMONIC_PMAXUD
+                           ? PL_X86_PACKED_MAX_UNSIGNED_DWORD
+                         : source->mnemonic == ZYDIS_MNEMONIC_PCMPEQQ
+                           ? PL_X86_PACKED_EQUAL_QWORD
+                         : source->mnemonic == ZYDIS_MNEMONIC_PCMPGTQ
+                           ? PL_X86_PACKED_GREATER_QWORD
+                         : source->mnemonic == ZYDIS_MNEMONIC_PMULLD
+                           ? PL_X86_PACKED_MULTIPLY_DWORD
+                         : source->mnemonic == ZYDIS_MNEMONIC_PMULDQ
+                           ? PL_X86_PACKED_MULTIPLY_SIGNED_EVEN_DWORD
+                         : source->mnemonic == ZYDIS_MNEMONIC_PACKUSDW
+                           ? PL_X86_PACKED_NARROW_UNSIGNED_DWORD
                          : source->mnemonic == ZYDIS_MNEMONIC_PHSUBW
                            ? PL_X86_PACKED_HORIZONTAL_SUBTRACT_WORD
                             : 18u;

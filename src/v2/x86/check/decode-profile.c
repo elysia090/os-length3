@@ -60,6 +60,20 @@ int main(void)
                 || instruction.flow==PL_X86_FLOW_FAULT || instruction.machine_operation!=PL_X86_MACHINE_EXTENSION)++failed;
         ++cases;
     }
+    for(pl_u32 seed=0u;seed<2u;++seed)
+    for(pl_u32 width=16u;width<=64u;width*=2u)
+    for(pl_u32 index=0u;index<16u;++index){
+        memset(bytes,0x90,sizeof bytes);pl_u32 at=0u;
+        if(width==16u)bytes[at++]=0x66u;
+        if(width==64u||index>=8u)bytes[at++]=(pl_u8)(0x40u|(width==64u?8u:0u)|(index>=8u?1u:0u));
+        bytes[at++]=0x0fu;bytes[at++]=0xc7u;bytes[at++]=(pl_u8)(0xf0u|(seed?8u:0u)|(index&7u));
+        pl_x86_instruction instruction;pl_x86_fault_cut law;
+        if(pl_x86_decode_profile(&image,image.entry,&instruction)
+                ||!pl_x86_fault_cut_lower(&instruction,&law)||law.vector!=6u||law.bytes!=at)++failed;
+        if(pl_x86_decode(&image,image.entry,&instruction)||instruction.flow==PL_X86_FLOW_FAULT
+                ||instruction.machine_operation!=PL_X86_MACHINE_EXTENSION)++failed;
+        ++cases;
+    }
     if (failed) return 1;
     printf("Profile-dependent legacy/count scan decode: green (%u cases; profile unchanged)\n",cases);
     return 0;

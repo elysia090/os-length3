@@ -34,7 +34,7 @@ void cut_lower_paired_exchange(cut_lowering *cut,const pl_x86_instruction *instr
     cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u); cut_get(cut,CUT_ADDRESS);
     cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,cut->report.memory_bytes);
     cut_i32_const(cut,cut->report.memory_access);
-    cut_call(cut,WASM_IMPORT_RESERVE_PAIR); cut_access_status(cut);
+    cut_call(cut,wide?WASM_IMPORT_RESERVE_PAIR:WASM_IMPORT_RESERVE); cut_access_status(cut);
     cut_access_value(cut); cut_set(cut,CUT_LEFT);
     if (wide) {
         cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
@@ -58,7 +58,7 @@ void cut_lower_paired_exchange(cut_lowering *cut,const pl_x86_instruction *instr
     cut_get(cut,CUT_ADDRESS); cut_op(cut,0xa7u); cut_op(cut,0x1bu); cut_set(cut,CUT_NEXT);
     cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u); cut_get(cut,CUT_VALUE); cut_get(cut,CUT_NEXT);
     if (!wide) { cut_const(cut,32u); cut_op(cut,0x86u); cut_op(cut,0x84u); }
-    cut_call(cut,WASM_IMPORT_COMMIT_PAIR); cut_access_status(cut);
+    cut_call(cut,wide?WASM_IMPORT_COMMIT_PAIR:WASM_IMPORT_COMMIT); cut_access_status(cut);
     cut_get(cut,CUT_ADDRESS); cut_op(cut,0x50u); cut_op(cut,0x04u); cut_op(cut,0x40u);
     cut_get(cut,CUT_LEFT); cut_set(cut,CUT_VALUE); cut_write_register(cut,&ax.value.reg);
     cut_get(cut,CUT_RIGHT); cut_set(cut,CUT_VALUE); cut_write_register(cut,&dx.value.reg);

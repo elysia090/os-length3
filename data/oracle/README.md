@@ -1,5 +1,30 @@
 # x86 semantic oracles
 
+### Ordinary input acceptance
+
+The [input contract](../../src/v2/docs/INPUTS.md) separates advertised ISA
+coverage, execution equivalence, final-ELF closure and actual Linux acceptance.
+`prepare-profile-inputs.mjs AS OBJCOPY NM NEW-TEMP-DIRECTORY` prepares the full
+independent GNU-assembler population; `--boundary` is an explicitly smaller
+diagnostic. `check-profile-inputs.mjs COMPILER.WASM INPUTS.json` validates its
+entire declared population before checking construction, valid Wasm, exact
+source extents and architectural fault expectations. Unsupported forms remain
+in the denominator and make the gate red. `check-profile-fixture.mjs` checks
+that missing/renamed/changed inputs cannot become a smaller green population.
+`check-byte-alu-inputs.mjs COMPILER.WASM INPUTS.json` exhausts nine 8-bit AL/CL
+operations and both CF inputs against independent arithmetic/flag equations;
+not a universal 64-bit, MMU or Linux proof.
+
+`mmx-binary-observe NEW-DIRECTORY --standard` records the added standard-profile
+integer SIMD families on the physical CPU. Compare them with
+`check-x87-state.mjs VM.WASM COMPILER.WASM DIRECTORY --packed-standard` through
+the real C VM/MMU. `--absolute` / `--mmx-absolute` does the same for MMX absolute
+widths. `check-linux-selfhost.mjs ... --observations` additionally
+exports independent Linux paired-exchange CPU/fault/RAM and native C emission
+records into its fresh `observations/paired` directory. Run
+`check-paired-exchange.mjs VM.WASM COMPILER.WASM DIRECTORY` on those exact bytes.
+These test-only observations are never product payload or runtime fallbacks.
+
 ### Independent source rebuild and browser reservation checks
 
 `check-linux-selfhost.mjs QEMU QEMU-IMG SOURCE-TAR NEW-TEMP-DIRECTORY`
