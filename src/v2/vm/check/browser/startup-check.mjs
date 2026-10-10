@@ -648,7 +648,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     let result;
     for (let resumes = 0; resumes < 8192; ++resumes) {
       const beforeExecution = performance.now();
-      const remaining=cutBudget-progress.completed;
+      const remaining=progress.remaining(cutBudget);
       assert(remaining>0,'barrier needs an unretired cut');
       result = vm.vm_run(port,generation,remaining);
       executionMs += performance.now() - beforeExecution;
@@ -678,7 +678,11 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       if (result !== 2n && result !== 10n && result !== 18n && result !== 26n) break;
       const waitingEntry=rip();
       assert.equal(view.getBigUint64(base + 1128,true),BigInt(retired+progress.retired));
-      if(cutBudget===1){assert.equal(progress.completed,0);assert.equal(waitingEntry,entry);}
+      if(cutBudget===1){
+        if(!progress.completed)assert.equal(waitingEntry,entry);
+        else{assert.equal(progress.completed,1);assert(progress.retired>0&&progress.retired<instructions
+          &&waitingEntry>entry&&waitingEntry<entry+BigInt(sourceBytes),'exact nonempty prefix ends at its memory instruction');}
+      }
       if (result === 10n) {
         ++quantumYields;
         if(extended && !(quantumYields&255))reportProgress();
@@ -733,6 +737,12 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       if (!supplied) {
         retired+=progress.retired;
         return {...resourceGate,entry:`0x${waitingEntry.toString(16)}`,completed:progress.completed,sourceRetired:progress.retired};
+      }
+      if(!progress.remaining(cutBudget)){
+        // A final partial cut spent the cohort budget and committed its
+        // pure prefix. The pending memory instruction is a FRESH C entry,
+        // not a zero-budget resume or a replay of that prefix.
+        retired+=progress.retired;trace.append(entry,progress.retired,rip(),result,view,base);return null;
       }
     }
     const done=progress.retired,completed=progress.completed;
@@ -873,7 +883,11 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     const maximumRetired = keepAlive ? Number.MAX_SAFE_INTEGER : extended ? 300000000 : 2000000;
     while (admissions < maximumAdmissions && retired < maximumRetired) {
       receiveInput();
-      stopped = await step(view.getUint32(segments + 4,true) ? 1 : 1024);
+      // This independent diagnostic observes the complete decompressed image
+      // BEFORE its first ELF-header read. Demand one-source frontiers until
+      // that observation is complete; the compiler has no kernel/RIP rule.
+      const observing=decompression&&!decompressedOutput;
+      stopped = await step(view.getUint32(segments + 4,true)||observing ? 1 : 1024);
       if (stopped) break;
       if (extended && (retired-reportedRetired>=1000000 || admissions-reportedAdmissions>=1000000))reportProgress();
       // Let console/close messages enter even when every construction is hot.
@@ -900,7 +914,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       console:{...consoleObservation(),capacity:consoleOutput.length,
         ownership:'bounded local sink; C accepts generation/ticket/exact byte before UART commit/retirement; not a guest tty implementation'},
       rtcSeed:{utcSeconds:String(utcSeconds),source:'explicit supervisor UTC snapshot; not authenticated network time'},
-      bootEntropy:{supplied:bootEntropy!==undefined,source:'fresh supervisor CSPRNG -> standard Linux SETUP_RNG_SEED; never saved in artifacts'},
+      bootEntropy:{supplied:bootEntropy!==undefined,source:'supervisor64-byte input -> standard Linux SETUP_RNG_SEED; caller owns CSPRNG quality; never saved in artifacts'},
       clockContract:`active C execution nanoseconds${idleWait?' plus measured idle transport time':''}, guest clock requests plus safe cut-boundary poll each >=1 ms; virtual TSC 1 GHz, PIT 1193182 Hz, C RTC 32768 Hz; compilation/delivery paused`,
       repeatComparedBytes,bssComparedBytes,
       memsetComparedBytes,memsetReturns,

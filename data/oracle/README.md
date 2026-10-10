@@ -1112,3 +1112,12 @@ in a fixture or replay log. `check-boot-entropy.mjs VM.WASM` checks exact
 one-use/pinning/extent/close refusal gates with explicitly deterministic test
 input. The unchanged unseeded Node regression is not an entropy-quality or
 normal Linux readiness test. See [contract/evidence](../../src/v2/vm/check/browser/evidence/2026-10-10-boot-entropy.md).
+
+`check-memory-prefix.mjs VM.WASM SPLIT.WASM FUSED.WASM` compares exact compiled
+CPU/RAM/fault and real resource-wait/retry outcomes. The split module is an
+oracle input only, never a product fallback. `benchmark-memory-prefix.mjs`
+uses those same arguments for emitted C-VM execution, not compilation timing.
+Mandatory diagnostic decompression witnesses use one-source frontiers until
+their independent byte comparison; no kernel-coordinate compiler exception
+is introduced. Partial retirement can exhaust a cohort before its final
+memory operation: supply then fresh admission, never zero-budget replay.

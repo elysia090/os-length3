@@ -31,6 +31,7 @@ typedef struct {
     wasm_writer *writer;
     wasm_cut_report report;
     pl_u32 loaded;
+    pl_u32 changed_registers;
     pl_u32 wanted_flags;
     pl_u32 has_memory;
     pl_u32 has_port;
@@ -63,6 +64,7 @@ typedef struct {
     pl_u32 imports;
     pl_u32 fault_vector;
     pl_u32 store_span;
+    pl_u32 memory_prefix;
 } cut_plan;
 typedef struct { pl_u32 length,imports,binding,span; } cut_body_extent;
 typedef struct {

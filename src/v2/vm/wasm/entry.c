@@ -317,6 +317,9 @@ int vm_open(pl_u32 base, pl_u32 bytes, pl_u32 reserved,
             pl_u32 directory, pl_u32 count, pl_u32 capacity,
             pl_u32 branches, pl_u64 generation)
 {
+    // Secret boot input must already be in its one-use bootstrap RAM page.
+    // Do not duplicate an unprojected seed in a saved plan/stack frame.
+    if(boot.entropy_stage==1u){vm_close();return -1;}
     vm_boot prepared_boot = boot;
     pl_u32 header = boot_header, header_bytes = boot_header_bytes, command = boot_command;
     vm_close();

@@ -7,6 +7,10 @@ export class CutProgress {
     if(!Number.isSafeInteger(retired) || retired<0)throw new Error('invalid retired base');
     this.base=retired;this.completed=0;this.retired=0;
   }
+  remaining(budget) {
+    if(!Number.isInteger(budget)||budget<1||this.completed>budget)throw new Error('invalid C cohort budget');
+    return budget-this.completed;
+  }
   add(completed,retired,architecturalRetired,budget) {
     if(!Number.isInteger(budget) || budget<1 || !Number.isInteger(completed)
         || completed<0 || completed>budget || typeof retired!=='bigint'

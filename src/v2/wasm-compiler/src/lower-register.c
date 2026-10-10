@@ -280,6 +280,7 @@ void cut_write_register(cut_lowering *cut, const pl_x86_register *reg)
     } else cut_get(cut, CUT_VALUE);
     cut_set(cut, index + 1u); cut->loaded |= 1u << index;
     cut->report.written_registers |= 1u << index;
+    cut->changed_registers |= 1u << index;
 }
 
 static void flag_bit(cut_lowering *cut, pl_u32 bit)

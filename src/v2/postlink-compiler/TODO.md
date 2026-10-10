@@ -157,6 +157,14 @@ The ordinary root initializes CRNG at0s, but mdevd event subscription still
 exceeds unchanged deadlines. Keep this red while reducing actual memory-cut
 fetch/dispatch/materialization cost. See
 [boot entropy evidence](../vm/check/browser/evidence/2026-10-10-boot-entropy.md).
+Plain memory operations now share a body with a preceding pure slice while
+retaining an exact fault/wait frontier.36 compiled whole-state/RAM/fault models
+match the former split, including page wait/retry. Same-provider16-instruction
+ratio0.786422,16->8 bodies,5248->4008 bytes; NOT whole-Linux speed/minimum.
+Full C/sanitizers and complete actual-browser decompression/entry witnesses
+pass. The final-cut partial wait exposed/fixed diagnostic cohort accounting;
+the same ordinary root is under re-test. See
+[exact memory prefix](../vm/check/browser/evidence/2026-10-10-memory-prefix.md).
 A bounded run reaches266481582 retired /150000000 admissions and ends at
 the diagnostic quota, not an ISA miss. Explicit interactive lifetime is now
 separate from that regression quota; bounded work/memory/source ownership

@@ -17,4 +17,11 @@ for(const args of invalid){
 const progress=new CutProgress(Number.MAX_SAFE_INTEGER);
 assert.throws(()=>progress.add(1,1n,BigInt(Number.MAX_SAFE_INTEGER)+1n,1));
 assert.throws(()=>new CutProgress(-1));assert.throws(()=>progress.reset(1.5));
+const finalPrefix=new CutProgress(135104112);
+finalPrefix.add(63,105n,135104217n,64);
+assert.equal(finalPrefix.remaining(64),1);
+finalPrefix.add(1,2n,135104219n,1);
+assert.equal(finalPrefix.remaining(64),0);assert.equal(finalPrefix.retired,107);
+assert.throws(()=>finalPrefix.remaining(63));assert.throws(()=>finalPrefix.remaining(0));
+finalPrefix.reset(135104219);assert.equal(finalPrefix.remaining(64),64);
 console.log(`Cut prefix accounting: ${cases} bounded prefix/reset/refusal cases plus overflow; not Linux boot`);

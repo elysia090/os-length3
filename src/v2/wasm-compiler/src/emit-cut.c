@@ -88,6 +88,7 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
     plan->operand_binding_kind = CUT_BIND_NONE;
     plan->fault_vector=0u;
     plan->store_span=0u;
+    plan->memory_prefix=0u;
     plan->report.entry = rip;
     for (pl_u32 i = 0u; i < options->maximum_source_instructions; ++i) {
         if (i && (rip >> 12u) != (options->entry >> 12u)) {
@@ -130,10 +131,24 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
             plan->report.boundary = indirect ? (i ? WASM_CUT_LIMIT : WASM_CUT_CONTROL)
                                             : system ? WASM_CUT_SYSTEM : WASM_CUT_MEMORY;
             plan->report.boundary_operation = instruction.operation;
-            /* Commit the preceding pure slice before this possibly faulting
-             * transfer. A memory cut starts at the transfer and contains no
-             * earlier architectural writes to roll back. */
-            if (!i) {
+            /* A plain transfer may share its emitted body with a pure prefix,
+             * but that prefix commits at the precise memory frontier. Other
+             * transfers retain their distinct entry/continuation owner. */
+            const pl_x86_operand *other=instruction.operands+(instruction.operands[0].kind==PL_X86_OPERAND_MEMORY?1u:0u);
+            if(i&&!system&&!stack&&!string&&!indirect&&instruction.machine_operation==PL_X86_MACHINE_NONE&&instruction.visible_operand_count==2u
+                &&((other->kind==PL_X86_OPERAND_REGISTER&&cut_gpr(&other->value.reg))||other->kind==PL_X86_OPERAND_IMMEDIATE)
+                &&(instruction.operation==PL_X86_OPERATION_MOVE||instruction.operation==PL_X86_OPERATION_MOVE_ZERO_EXTEND||instruction.operation==PL_X86_OPERATION_MOVE_SIGN_EXTEND)){
+                // A pure prefix has no effects that can change this fetch.
+                // Publish only its residual CPU differences before the ONE
+                // precise plain-memory operation, never erase that fault cut.
+                plan->memory_prefix=i;
+                plan->operand_binding_kind=CUT_BIND_NONE;plan->report.operand_binding=0u;
+                if(remember_flags(plan,i,&instruction))return WASM_COMPILER_ERROR_GRAMMAR;
+                const pl_x86_operand *m=instruction.operands+(instruction.operands[0].kind==PL_X86_OPERAND_MEMORY?0u:1u);
+                plan->report.memory_bytes=m->bits/8u;
+                ++plan->report.source_instructions;plan->report.source_bytes=instruction.fallthrough-options->entry;
+                rip=instruction.fallthrough;
+            }else if (!i) {
                 plan->system_cut = (pl_u32)system;
                 plan->string_cut = (pl_u32)string;
                 plan->indirect_cut = (pl_u32)indirect;
@@ -373,7 +388,7 @@ static int prologue(wasm_writer *writer,const cut_plan *plan,cut_lowering *state
     cut_load(&cut, (pl_u32)offsetof(machine_state, rip));
     cut_coordinate(&cut, rip); cut_op(&cut, 0x52u); return_if(&cut);
     cut_load(&cut, (pl_u32)offsetof(machine_state, rflags)); cut_set(&cut, CUT_FLAGS);
-    cut_get(&cut, CUT_FLAGS); cut_const(&cut, (cut.has_memory || cut.has_table) ? 0x40100u : 0x100u);
+    cut_get(&cut, CUT_FLAGS); cut_const(&cut, ((cut.has_memory || cut.has_table)&&!plan->memory_prefix) ? 0x40100u : 0x100u);
     cut_op(&cut, 0x83u); cut_op(&cut, 0x50u); cut_op(&cut, 0x45u); return_if(&cut);
     if(plan->fault_vector){
         /* No register, RIP, RF or retirement is published by a pending fault.
@@ -389,18 +404,33 @@ static int prologue(wasm_writer *writer,const cut_plan *plan,cut_lowering *state
     *state=cut;return writer->error;
 }
 
+static void publish_memory_prefix(cut_lowering *c,pl_u64 rip,pl_u32 count)
+{
+    for(pl_u32 r=0u;r<MACHINE_X86_REGISTER_COUNT;++r)if(c->changed_registers&(1u<<r))
+        cut_store(c,offsetof(machine_state,registers)+r*8u,r+1u);
+    c->changed_registers=0u;
+    cut_get(c,CUT_FLAGS);cut_const(c,~0x10000ull);cut_op(c,0x83u);cut_set(c,CUT_FLAGS);
+    cut_store(c,offsetof(machine_state,rflags),CUT_FLAGS);
+    cut_coordinate(c,rip);cut_set(c,CUT_NEXT);cut_store(c,offsetof(machine_state,rip),CUT_NEXT);
+    cut_load(c,offsetof(machine_state,retired));cut_const(c,count);cut_op(c,0x7cu);cut_set(c,CUT_VALUE);
+    cut_store(c,offsetof(machine_state,retired),CUT_VALUE);
+    // The existing unsupported AC context is refused at the memory frontier,
+    // AFTER the same pure prefix that the unfused sequence would retire.
+    cut_get(c,CUT_FLAGS);cut_const(c,0x40000u);cut_op(c,0x83u);cut_op(c,0x50u);cut_op(c,0x45u);return_if(c);
+}
 static int instruction_fragment(wasm_writer *writer,const cut_plan *plan,pl_u32 rank,
     pl_u64 *rip,cut_lowering *state)
 {
     cut_lowering cut=*state;cut.writer=writer;pl_x86_instruction instruction;
     if(plan->store_span){if(!rank)cut_lower_store_span(&cut,plan);*rip=plan->report.continuation;*state=cut;return writer->error;}
     if(pl_x86_decode_profile(&plan->image,*rip,&instruction))return WASM_COMPILER_ERROR_GRAMMAR;
+    if(plan->memory_prefix&&rank==plan->memory_prefix)publish_memory_prefix(&cut,*rip,rank);
     cut.wanted_flags=plan->flag_frontier[rank]>>16u;
     if(plan->system_cut)cut_lower_system(&cut,&instruction);
     else if(plan->indirect_cut)cut_lower_indirect(&cut,&instruction);
     else if(plan->string_cut)cut_lower_string(&cut,&instruction);
     else if(cut.has_memory && cut_stack_supported(&instruction))cut_lower_stack(&cut,&instruction);
-    else if(cut.has_memory)cut_lower_memory(&cut,&instruction);
+    else if(cut.has_memory&&(!plan->memory_prefix||rank==plan->memory_prefix))cut_lower_memory(&cut,&instruction);
     else cut_lower_instruction(&cut,&instruction);
     *rip=instruction.fallthrough;*state=cut;return writer->error;
 }
@@ -414,7 +444,7 @@ static int epilogue(wasm_writer *writer,const cut_plan *plan,pl_u64 rip,cut_lowe
     }
     if (plan->system_cut != CUT_SYSTEM_PRIVILEGE_TRANSFER) {
         for (pl_u32 i = 0u; i < MACHINE_X86_REGISTER_COUNT; ++i)
-            if (cut.report.written_registers & (1u << i))
+            if ((plan->memory_prefix?cut.changed_registers:cut.report.written_registers) & (1u << i))
                 cut_store(&cut, (pl_u32)offsetof(machine_state, registers) + i * 8u, i + 1u);
         /* RF is restored by IRETQ, and otherwise cleared only on successful
          * retirement. A pending fault or residency wait returns before here. */
@@ -422,12 +452,12 @@ static int epilogue(wasm_writer *writer,const cut_plan *plan,pl_u64 rip,cut_lowe
             cut_get(&cut,CUT_FLAGS); cut_const(&cut,~0x10000ull); cut_op(&cut,0x83u);
             cut_set(&cut,CUT_FLAGS);
         }
-        if (cut.report.flags_written || !cut.has_interrupt_return)
+        if (!plan->memory_prefix&&(cut.report.flags_written || !cut.has_interrupt_return))
             cut_store(&cut, (pl_u32)offsetof(machine_state, rflags), CUT_FLAGS);
         cut_store(&cut, (pl_u32)offsetof(machine_state, rip), CUT_NEXT);
     }
     cut_load(&cut, (pl_u32)offsetof(machine_state, retired));
-    cut_const(&cut, cut.report.source_instructions); cut_op(&cut, 0x7cu);
+    cut_const(&cut, plan->memory_prefix?1u:cut.report.source_instructions); cut_op(&cut, 0x7cu);
     cut_set(&cut, CUT_VALUE);
     cut_store(&cut, (pl_u32)offsetof(machine_state, retired), CUT_VALUE);
     cut_const(&cut, machine_result_make(plan->system_cut == CUT_SYSTEM_HALT
