@@ -68,7 +68,7 @@ This is not IP fragmentation, a socket implementation or a reliable tunnel.
 The gateway still returns ordinary ICMP packet-too-big for a smaller *onward*
 IP path.
 
-The not-yet-implemented bridge protocol uses one fixed 32-byte little-endian
+The bridge protocol uses one fixed 32-byte little-endian
 header, including on single-fragment frames:
 
 ```
@@ -162,6 +162,14 @@ declared link-down/up contract unless a full network/device suspend cut has
 been proved. No browser or Service Worker API promises immortal TCP sessions.
 
 ## Implementation order
+
+The [local packet gateway](../network/gateway/README.md) now implements the
+bounded fragment protocol, real WebTransport datagrams and explicit pinned
+loopback admission. Its actual-browser1514-byte reverse/duplicate-fragment
+roundtrip passes. Its diagnostic echo is not Internet connectivity, and its
+Linux TAP backend requires a separately authorized interface/route policy.
+The C VM NIC and complete guest network connection remain unimplemented;
+the following end-to-end gates are not replaced by the transport receipt.
 
 1. Enable the upstream Linux network stack and `virtio-mmio`/`virtio-net`
    drivers without patching kernel networking code.

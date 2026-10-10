@@ -96,6 +96,9 @@ physical bit mismatches and fails. `check-profile-inputs.mjs` validates the
 entire independently assembled population without `--boundary` reduction.
 
 Native release bytes, human UI, guest clocks and service deadlines are unchanged.
+The independent full C and ASan/UBSan gate passes with frozen source archive
+SHA256 `94a1e5d5ab4dd7cff09bccf29dabf356bfbf2bd33b6085eba9d5dc8e9338618b`
+in196560.5ms. This is a source/test receipt, not a browser or publication gate.
 Normal browser offline service startup remains red. Whole-image executable
 generation, debug/alignment contexts, page fault/retry, actual Linux services,
 toolchain/VFS/network and lifecycle gates remain separate required work.

@@ -93,6 +93,10 @@ static int prepare(const wasm_compiler *compiler, const pl_x86_image *source,
     int status=prepare_plan(compiler,source,generation,options,plan);
     if (!status) status = cut_measure_body(&body, plan, &measured,&plan->imports);
     if (status) return status;
+    /* Region geometry selects the prologue and therefore belongs to the
+     * plan, before measuring. A late backend discovery must not change the
+     * second pass's body length or publish an incorrectly framed module. */
+    if(measured.memory_bytes!=plan->report.memory_bytes)return WASM_COMPILER_ERROR_GRAMMAR;
     wasm_module_prefix(&header,plan->imports,1u,1u+wasm_uleb_bytes(body.used)+body.used);
     wasm_writer_uleb(&header,body.used);
     if (!pl_checked_add_u64(header.used, body.used, &measured.module_bytes)

@@ -216,6 +216,8 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                 else if(system==CUT_SYSTEM_FLOAT_ARITHMETIC)plan->report.memory_bytes=instruction.operands[1].kind==PL_X86_OPERAND_MEMORY?instruction.operands[1].bits/8u:0u;
                 else if(system==CUT_SYSTEM_SELECTOR_QUERY)plan->report.memory_bytes=instruction.operands[1].kind==PL_X86_OPERAND_MEMORY?2u:0u;
                 else if(system==CUT_SYSTEM_FAR_TRANSFER)plan->report.memory_bytes=instruction.operands[0].bits/8u;
+                else if(system==CUT_SYSTEM_VECTOR_TRANSFER&&cut_masked_store_supported(&instruction))
+                    plan->report.memory_bytes=((instruction.machine_argument>>36u)&1u)?16u:8u;
                 else if (system==CUT_SYSTEM_VECTOR_TRANSFER)
                 {pl_x86_vector_binary law;pl_x86_vector_shift shift;pl_x86_vector_unpack unpack;pl_x86_mmx_shuffle shuffle;pl_x86_vector_widen widen;pl_x86_vector_swizzle swizzle;pl_x86_vector_projection projection;
                 plan->report.memory_bytes=pl_x86_vector_project(&instruction,&projection)?pl_x86_vector_projection_extent(&projection):pl_x86_vector_widen_lower(&instruction,&widen)?(widen.source_memory?widen.source_bytes:0u):pl_x86_vector_swizzle_lower(&instruction,&swizzle)?(swizzle.source_memory?swizzle.register_bytes:0u):pl_x86_mmx_shuffle_lower(&instruction,&shuffle)?(shuffle.source_memory?8u:0u):pl_x86_vector_unpack_lower(&instruction,&unpack)?(unpack.source_memory?unpack.source_bytes:0u):pl_x86_vector_shift_lower(&instruction,&shift)?(shift.source_memory?shift.register_bytes:0u):pl_x86_vector_binary_lower(&instruction,&law)?(law.source_memory?law.register_bytes:0u):(instruction.machine_argument&(3ull<<24u))?16u:0u;}
@@ -339,8 +341,11 @@ static int prologue(wasm_writer *writer,const cut_plan *plan,cut_lowering *state
         pl_x86_vector_shift shift;if(pl_x86_vector_shift_lower(&instruction,&shift)&&shift.register_bytes==8u)permutation_local=1u;
         pl_x86_vector_unpack unpack;if(pl_x86_vector_unpack_lower(&instruction,&unpack)&&unpack.register_bytes==8u)permutation_local=1u;
         pl_x86_mmx_shuffle shuffle;if(pl_x86_mmx_shuffle_lower(&instruction,&shuffle))permutation_local=1u;
+        if(cut_masked_store_supported(&instruction)&&!((instruction.machine_argument>>36u)&1u))permutation_local=1u;
     }
     pl_u32 locals=cut.has_repeat?CUT_REPEAT_LOCALS:cut.has_port?CUT_MEMORY_LOCALS:CUT_LOCAL_COUNT;
+    if(plan->system_cut==CUT_SYSTEM_VECTOR_TRANSFER){pl_x86_instruction i;
+        if(!pl_x86_decode_profile(&plan->image,rip,&i)&&cut_masked_store_supported(&i))locals=36u;}
     if(plan->store_span)locals=CUT_REPEAT_LOCALS;
     if(plan->system_cut==CUT_SYSTEM_VECTOR_TRANSFER){pl_x86_instruction i;pl_x86_vector_shift law;
         if(!pl_x86_decode_profile(&plan->image,rip,&i)&&pl_x86_vector_shift_lower(&i,&law))locals=28u;}

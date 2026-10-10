@@ -4,7 +4,9 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 const [vmFile,compilerFile]=process.argv.slice(2);
 const memory=new WebAssembly.Memory({initial:16}),vm=(await WebAssembly.instantiate(await readFile(vmFile),{machine:{memory}})).instance.exports;
-const cm=new WebAssembly.Memory({initial:16}),cc=(await WebAssembly.instantiate(await readFile(compilerFile),{machine:{memory:cm}})).instance.exports;
+// Private construction reservation; the guest C-MMU population stays16 pages.
+// Current frontend data/stack requires17 pages before its bounded output arena.
+const cm=new WebAssembly.Memory({initial:32}),cc=(await WebAssembly.instantiate(await readFile(compilerFile),{machine:{memory:cm}})).instance.exports;
 const a=Buffer.from(memory.buffer),v=new DataView(memory.buffer),c=Buffer.from(cm.buffer),cv=new DataView(cm.buffer);
 const ci=cc.compiler_arena_min(),co=ci+8192,cr=co+65536,dir=vm.vm_arena_min(),cpu=dir+4096,rows=dir+512,
   port=cpu+2048,segments=cpu+1408,codeView=port+64,payload=i=>cpu+(i+2)*4096;

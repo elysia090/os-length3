@@ -10,6 +10,7 @@ static int xmm(const pl_x86_operand *operand, int selected_half)
 }
 int cut_vector_supported(const pl_x86_instruction *instruction)
 {
+    if(cut_masked_store_supported(instruction))return 1;
     pl_x86_vector_string_compare text;if(pl_x86_vector_string_compare_lower(instruction,&text))return !text.source_memory
         ||cut_memory_address_supported(instruction,&instruction->operands[1].value.memory);
     pl_x86_vector_window_distance distance;if(pl_x86_vector_window_distance_lower(instruction,&distance))return !distance.source_memory
@@ -120,6 +121,7 @@ static void write_word(cut_lowering *cut,pl_u32 offset,pl_u32 local)
 }
 void cut_lower_vector(cut_lowering *cut,const pl_x86_instruction *instruction)
 {
+    if(cut_masked_store_supported(instruction)){cut_lower_masked_store(cut,instruction);return;}
     pl_x86_vector_string_compare text;if(pl_x86_vector_string_compare_lower(instruction,&text)){cut_lower_vector_string_compare(cut,instruction,&text);return;}
     pl_x86_vector_window_distance distance;if(pl_x86_vector_window_distance_lower(instruction,&distance)){cut_lower_vector_window_distance(cut,instruction,&distance);return;}
     pl_x86_vector_widen widened;if(pl_x86_vector_widen_lower(instruction,&widened)){cut_lower_vector_widen(cut,instruction,&widened);return;}

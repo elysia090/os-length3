@@ -262,6 +262,18 @@ SOURCES += src/lower-x87-load.c
 SOURCES += src/lower-x87-exchange.c
 SOURCES += src/lower-x87-transfer.c
 SOURCES += src/lower-x87-extract.c
+SOURCES += src/lower-vector-masked-store.c
+.PHONY: masked-store-check
+check: masked-store-check
+masked-store-check: $(BUILD)/masked-store-check
+	$(BUILD)/masked-store-check
+$(BUILD)/masked-store-check: check/masked-store.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+.PHONY: masked-store-native-check
+masked-store-native-check: $(BUILD)/masked-store-native-check
+	$(BUILD)/masked-store-native-check
+$(BUILD)/masked-store-native-check: check/masked-store-native.c | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) -msse2 $< -o $@
 .PHONY: x87-transfer-check
 check: x87-transfer-check
 x87-transfer-check: $(BUILD)/x87-transfer-check

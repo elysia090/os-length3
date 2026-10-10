@@ -8,6 +8,7 @@ import {CompilerOutput} from './compiler-output.mjs';
 import {equal} from './assertion.mjs';
 import {CutProgress} from './cut-progress.mjs';
 import {memoryBudget,memoryGrowth} from '../../../web/memory-budget.mjs';
+import {isMachineBarrier} from '../../../web/machine-barrier.mjs';
 class Bytes extends Uint8Array {
   constructor(value,offset,length) {
     super(value,offset,length);
@@ -675,7 +676,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
           }
         }
       }
-      if (result !== 2n && result !== 10n && result !== 18n && result !== 26n) break;
+      if (!isMachineBarrier(result)) break;
       const waitingEntry=rip();
       assert.equal(view.getBigUint64(base + 1128,true),BigInt(retired+progress.retired));
       if(cutBudget===1){

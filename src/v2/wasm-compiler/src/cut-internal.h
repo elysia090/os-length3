@@ -211,6 +211,8 @@ void cut_sse_guard(cut_lowering *cut);
 void cut_sse_raise(cut_lowering *cut,pl_u32 mmx_transition);
 void cut_mmx_guard(cut_lowering *cut);
 void cut_mmx_publish(cut_lowering *cut,pl_u32 destination);
+int cut_masked_store_supported(const pl_x86_instruction *instruction);
+void cut_lower_masked_store(cut_lowering *cut,const pl_x86_instruction *instruction);
 void cut_lower_io(cut_lowering *cut, const pl_x86_instruction *instruction);
 void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction);
 int cut_instruction_supported(const pl_x86_instruction *instruction);

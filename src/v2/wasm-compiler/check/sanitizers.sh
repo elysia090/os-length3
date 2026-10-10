@@ -68,6 +68,8 @@ make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/float-round-check b
 "$temporary/wasm-compiler/build/profile-additions-check"
 "$temporary/wasm-compiler/build/vector-select-check"
 "$temporary/wasm-compiler/build/vector-widen-check"
+make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/masked-store-check
+"$temporary/wasm-compiler/build/masked-store-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/compensated-check build/angle-check
 "$temporary/wasm-compiler/build/compensated-check"
 "$temporary/wasm-compiler/build/angle-check"

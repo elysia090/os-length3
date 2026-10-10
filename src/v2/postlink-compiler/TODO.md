@@ -39,9 +39,16 @@ previously recovered20422 records without narrowing CPUID.1179648 exhaustive byt
 comparisons pass. These scopes are not interchangeable or universal proof;
 see [ordinary input evidence](../vm/check/browser/evidence/2026-10-10-ordinary-inputs.md).
 
-Same make/every-final-PF_X-byte population:233429/233455 lowerable,26 missing,
-zero missing fault cuts/fetch/capacity refusals. Remaining floating24,
-SIMD2,atomic0. FirstFSIN at0x17193. This complete byte inventory is
+Same make/every-final-PF_X-byte population:233455/233455 lowerable,0 missing,
+zero missing fault cuts/fetch/capacity refusals. MASKMOVQ at0x30fd5 (`0ff7ff`)
+now uses the same complete write preflight and sparse byte-store frontier.
+The separate4480 constructor/26880 refusal,65792 physical memory-output and
+131584 C-MMU state/RAM model gates pass. Physical exception/FPU-state equality
+remains distinct from those finite gates. Measure-time region geometry now
+must match the preselected plan, preventing a late prologue/body-length drift.
+The input remains339960 bytes, SHA256
+dd0023829f36b764b9ba537a0c4965bba1d54b20beaebc5681e27ea56c25cd14.
+This complete byte inventory is
 not an execution trace, kernel/image publication or browser boot proof.
 
 FLDCW uses a two-input pure control/status projection and exact source cut.
@@ -270,6 +277,20 @@ separate; scoped/positive gates do not assert that it is solved.
    Run x86,signal,futex,clone3,exec,timers,ptrace,pipe/IPC,mm,tty,seccomp,net and
    revocation/stale-reply/corruption/Worker corners. Tests stay data, not release.
    A bounded prefix, /init announcement or fixture/probe pass is not completion.
+
+   Actual browser rescue-shell execution now completes C compile/link/run,
+   four actual C compiler jobs and executions under make-j4, local Git
+   init/add/commit/clean status, tar write/remove/extract/content equality and
+   musl package inspection. Normal cold service
+   startup still times out: a diagnostic retry starts mount-api-filesystems
+   and mdevd-ready, then times out at coldplug. A later warm retry starts
+   coldplug and root-and-workspace-ready but still times out at interactive-ready.
+   Keep the rescue profile distinct
+   from interactive-ready and keep service deadlines/guest clocks unchanged.
+   The [local packet gateway](../network/gateway/README.md) passes actual pinned
+   WebTransport datagram roundtrip and independent QUIC/boundary/fuzz checks;
+   it is not yet a C virtual NIC or a guest HTTPS result. Permanent dirty-page
+   storage and the product Worker migration remain real implementation gaps.
 
 ## Responsibility contracts
 

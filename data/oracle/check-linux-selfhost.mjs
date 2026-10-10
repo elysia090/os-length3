@@ -88,7 +88,7 @@ make -j4 -C src/v2/support all
 make -j4 -C src/v2/x86 all vector-projection-check
 make -j4 -C src/v2/optimized-x86 all
 make -j4 -C src/v2/postlink-compiler all check
-make -j4 -C src/v2/wasm-compiler all packed-binary-check packed-shift-check vector-unpack-check vector-select-check vector-widen-check profile-additions-check compensated-check angle-check x87-control-check x87-environment-check float-arithmetic-check float-round-check float-sqrt-check float-compare-check scalar-vector-transfer-check
+make -j4 -C src/v2/wasm-compiler all packed-binary-check packed-shift-check vector-unpack-check vector-select-check vector-widen-check masked-store-check profile-additions-check compensated-check angle-check x87-control-check x87-environment-check float-arithmetic-check float-round-check float-sqrt-check float-compare-check scalar-vector-transfer-check
 make -j4 -C src/v2/x86 crc32-check
 make -j4 -C src/v2/vm all check
 bash src/v2/vm/check/sanitizers.sh

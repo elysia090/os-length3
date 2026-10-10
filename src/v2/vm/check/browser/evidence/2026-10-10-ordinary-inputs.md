@@ -1,5 +1,10 @@
 # Ordinary input coverage and independent comparisons
 
+This receipt is a historical checkpoint. The unchanged population's latest
+construction result is476838/476838 with zero entrance misses; see
+[wide input and transcendental evidence](2026-10-10-wide-inputs-and-transcendentals.md).
+The numbers and hashes below retain their original observation scope.
+
 The full GNU-assembler population contains499 declared rows and476838 input
 records. It is independent of the product decoder and includes integer/MMX/
 SSE/SSE2/SSE3/SSSE3/SSE4 forms, legal register pairs, aliases, address-size/SIB/
