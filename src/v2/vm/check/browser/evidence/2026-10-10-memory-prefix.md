@@ -56,3 +56,24 @@ RIP afresh; a zero-budget resume would be wrong. The exact observed arithmetic
 and the one-cut partial case now have explicit accounting checks.
 The same ordinary root is being re-tested; automatic readiness is still not
 claimed. Cold construction/decompression is NOT called faster from this change.
+
+## Read-only ALU frontier
+
+The same rule now admits ADD/ADC/SUB/SBB/AND/OR/XOR/CMP/TEST whose memory
+operand is read-only. Memory RMW, DIV and other continuation owners are not
+included. Reverse flag liveness retains ALL incoming flags at the final
+access, even if that instruction would kill them on success: an earlier
+access fault observes the prefix's flags. The final successful instruction
+publishes its own live flags. Ninety whole-state/RAM/fault/wait comparisons
+pass, including a CF/AF/SF-producing prefix before each read-only operation.
+
+Same16-instruction ADD/CMP source, same provider, seven16384-iteration samples:
+16 bodies/6072 bytes/35.7281ms ->8 bodies/4896 bytes/27.1881ms, ratio0.760972.
+The ADD/store control remains ratio0.800013. These are local execution
+measurements, NOT Linux-ready speedups. Compiler bytes863810, SHA256
+`a75b771a5b531bb45952c4e13be5ebf3ab05c42105720445728bd5dcada0d27a`.
+Full independent C/ASan/UBSan pass164104ms, source
+`4d28ee6a6b6c4c085ba0078db933cd496598bcb0d547407bbe261e3b304d3e65`.
+The preceding plain-prefix actual boot passes the partial-wait fix but still
+times out in its offline transition at239667940 retired /348577ms wall.
+The same ordinary root is now under read-only-ALU actual-browser test.

@@ -165,6 +165,11 @@ Full C/sanitizers and complete actual-browser decompression/entry witnesses
 pass. The final-cut partial wait exposed/fixed diagnostic cohort accounting;
 the same ordinary root is under re-test. See
 [exact memory prefix](../vm/check/browser/evidence/2026-10-10-memory-prefix.md).
+Read-only ADD/ADC/SUB/SBB/AND/OR/XOR/CMP/TEST also share that body, retaining
+incoming flags at the fault frontier even when success overwrites them.
+90 exact differential models and full independent C/sanitizers pass;
+same-provider ADD/CMP ratio0.760972,6072->4896 bytes. Plain-prefix boot still
+exceeds its unchanged service deadline; read-only-ALU boot is under test.
 A bounded run reaches266481582 retired /150000000 admissions and ends at
 the diagnostic quota, not an ISA miss. Explicit interactive lifetime is now
 separate from that regression quota; bounded work/memory/source ownership

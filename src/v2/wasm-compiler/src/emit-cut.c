@@ -43,6 +43,9 @@ static int flag_dependencies(cut_plan *plan)
          * operation writes flags. Conditional zero-count shifts never kill
          * their predecessor. No future use is confused with a later kill. */
         live = (live & ~kills) | reads;
+        // The final access may fault BEFORE defining its flags. Its incoming
+        // architectural flags therefore remain observable at that frontier.
+        if(plan->memory_prefix&&rank==plan->memory_prefix)live|=0xfffu;
     }
     return 0;
 }
@@ -135,9 +138,13 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
              * but that prefix commits at the precise memory frontier. Other
              * transfers retain their distinct entry/continuation owner. */
             const pl_x86_operand *other=instruction.operands+(instruction.operands[0].kind==PL_X86_OPERAND_MEMORY?1u:0u);
+            pl_u32 op=instruction.operation;
+            int read_alu=!(instruction.flags&PL_X86_INSTRUCTION_WRITES_MEMORY)
+                &&(op==PL_X86_OPERATION_ADD||op==PL_X86_OPERATION_ADD_CARRY||op==PL_X86_OPERATION_SUBTRACT||op==PL_X86_OPERATION_SUBTRACT_BORROW
+                    ||op==PL_X86_OPERATION_AND||op==PL_X86_OPERATION_OR||op==PL_X86_OPERATION_XOR||op==PL_X86_OPERATION_COMPARE||op==PL_X86_OPERATION_TEST);
             if(i&&!system&&!stack&&!string&&!indirect&&instruction.machine_operation==PL_X86_MACHINE_NONE&&instruction.visible_operand_count==2u
                 &&((other->kind==PL_X86_OPERAND_REGISTER&&cut_gpr(&other->value.reg))||other->kind==PL_X86_OPERAND_IMMEDIATE)
-                &&(instruction.operation==PL_X86_OPERATION_MOVE||instruction.operation==PL_X86_OPERATION_MOVE_ZERO_EXTEND||instruction.operation==PL_X86_OPERATION_MOVE_SIGN_EXTEND)){
+                &&(read_alu||instruction.operation==PL_X86_OPERATION_MOVE||instruction.operation==PL_X86_OPERATION_MOVE_ZERO_EXTEND||instruction.operation==PL_X86_OPERATION_MOVE_SIGN_EXTEND)){
                 // A pure prefix has no effects that can change this fetch.
                 // Publish only its residual CPU differences before the ONE
                 // precise plain-memory operation, never erase that fault cut.
@@ -452,7 +459,8 @@ static int epilogue(wasm_writer *writer,const cut_plan *plan,pl_u64 rip,cut_lowe
             cut_get(&cut,CUT_FLAGS); cut_const(&cut,~0x10000ull); cut_op(&cut,0x83u);
             cut_set(&cut,CUT_FLAGS);
         }
-        if (!plan->memory_prefix&&(cut.report.flags_written || !cut.has_interrupt_return))
+        if ((!plan->memory_prefix&&(cut.report.flags_written || !cut.has_interrupt_return))
+            ||(plan->memory_prefix&&(plan->flag_frontier[plan->memory_prefix]>>16u)))
             cut_store(&cut, (pl_u32)offsetof(machine_state, rflags), CUT_FLAGS);
         cut_store(&cut, (pl_u32)offsetof(machine_state, rip), CUT_NEXT);
     }

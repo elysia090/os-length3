@@ -18,7 +18,10 @@ const sources=[
   [0x48,0x8d,0x78,4,0x66,0x8b,0x07],
   [0x48,0xc7,0xc0,0x25,0,0,0,0x48,0x89,0x07],
   [0x48,0x8d,0x78,4,0x48,0x0f,0xbe,0x17]
-].map(x=>Buffer.from(x));
+];
+for(const opcode of [0x03,0x13,0x2b,0x1b,0x23,0x0b,0x33,0x3b,0x85])
+  sources.push([0x31,0xc9,0x83,0xe9,1,0x48,opcode,0x07]); // Prefix CF/AF/SF must survive a later access fault.
+const programs=sources.map(x=>Buffer.from(x));
 const modes=['normal','absent','write-protect','noncanonical','alignment-context','wait'];
 function reset(source,mode){vm.vm_close();a.fill(0,dir);
   const header=dir+4096,command=header+4096;
@@ -69,7 +72,7 @@ async function run(compiler,source,mode){reset(source,mode);let calls=0,last;
   return {calls,last,state:Buffer.from(a.subarray(base,base+1256)),ram:Buffer.from(a.subarray(page(0x1000),page(0xa000)+4096)),fault:Buffer.from(a.subarray(port+16,port+32))};
 }
 let comparisons=0,reduced=0;
-for(const source of sources)for(const mode of modes){const old=await run(compilers[0],source,mode),now=await run(compilers[1],source,mode);
+for(const source of programs)for(const mode of modes){const old=await run(compilers[0],source,mode),now=await run(compilers[1],source,mode);
   assert.equal(now.last,old.last,`${source.toString('hex')} ${mode} result`);
   assert(now.state.equals(old.state),`${source.toString('hex')} ${mode} whole CPU: ${Array.from(old.state.entries()).filter(([i,x])=>now.state[i]!==x).slice(0,10).map(([i,x])=>`${i}:${now.state[i]}/${x}`)}`);
   assert(now.ram.equals(old.ram),`${mode} whole physical table/data/code bytes`);assert(now.fault.equals(old.fault));

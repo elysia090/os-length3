@@ -1,7 +1,8 @@
 // Same x86 source, same C provider; no host guest-instruction evaluator.
 import assert from 'node:assert/strict';import {readFile} from 'node:fs/promises';
-const [vmFile,...compilers]=process.argv.slice(2);if(compilers.length!==2)throw new Error('VM.WASM SPLIT.WASM FUSED.WASM');
-const source=[];for(let n=0;n<8;++n){source.push(0x48,0x83,0xc0,1);source.push(0x48,0x89,n?0x47:0x07);if(n)source.push(n*8);}
+const [vmFile,oldFile,newFile,mode]=process.argv.slice(2),compilers=[oldFile,newFile],readonly=mode==='--readonly';
+if(!newFile||(mode&&!readonly))throw new Error('VM.WASM SPLIT.WASM FUSED.WASM [--readonly]');
+const source=[];for(let n=0;n<8;++n){source.push(0x48,0x83,0xc0,1);source.push(0x48,readonly?0x3b:0x89,n?0x47:0x07);if(n)source.push(n*8);}
 const runs=[];
 for(const compiler of compilers){const memory=new WebAssembly.Memory({initial:32}),cm=new WebAssembly.Memory({initial:32});
  const vm=(await WebAssembly.instantiate(await readFile(vmFile),{machine:{memory}})).instance.exports,
@@ -14,6 +15,7 @@ for(const compiler of compilers){const memory=new WebAssembly.Memory({initial:32
  put(dir+i*32,address);v.setUint32(dir+i*32+8,(i+2)*4096,true);v.setUint32(dir+i*32+12,3,true);v.setUint32(dir+i*32+16,1,true);}
  put(cpu+8192,0x2067);put(cpu+12288,0x3067);put(cpu+16384+16,0x4067);put(cpu+20480,0x8067);put(cpu+20480+256*8,0x9067);
  put(cpu+400,0x80010001);put(cpu+408,0x1000);put(cpu+416,32);put(cpu+424,0xd00);put(cpu+384,entry);put(cpu+392,2);put(port,9);
+ if(readonly)for(let n=0;n<8;++n)put(cpu+28672+n*8,n+1);
  v.setUint32(segments,2,true);v.setUint32(segments+36,0xa09b,true);a.set(source,cpu+24576);c.fill(0x90,input,input+4096);c.set(source,input);
  assert.equal(cc.compiler_open_pages(input,1,entry,9n),0);assert.equal(vm.vm_open(cpu,a.length-cpu,4096,dir,6,6,dir+2048,9n),0);
  assert.equal(vm.vm_bind_state(cpu),0);assert.equal(vm.vm_bind_segments(segments),0);
@@ -34,5 +36,5 @@ for(const compiler of compilers){const memory=new WebAssembly.Memory({initial:32
  for(let n=0;n<8;++n)assert.equal(v.getBigUint64(cpu+28672+n*8,true),BigInt(n+1));
  runs.push({compiler,blocks,totalModuleBytes:totalBytes,medianMs:[...samples].sort((x,y)=>x-y)[3],samples});
 }
-console.log(JSON.stringify({format:'same-provider-memory-prefix-benchmark-v1',sourceInstructions:16,iterationsPerSample:16384,runs,
+console.log(JSON.stringify({format:'same-provider-memory-prefix-benchmark-v1',operation:readonly?'ADD/CMP':'ADD/store',sourceInstructions:16,iterationsPerSample:16384,runs,
  ratio:runs[1].medianMs/runs[0].medianMs,scope:'actual emitted Wasm/C table/source/MMU; reset/bind included; not Linux cold-ready'},null,2));
