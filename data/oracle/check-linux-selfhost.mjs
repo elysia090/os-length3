@@ -83,7 +83,7 @@ tar -xf /dev/vdc -C /build/bootstrap/packages
 cd /build/source
 QM_BOOTSTRAP_WORK=/build/bootstrap sh data/bootstrap/install-tools.sh install
 make -j4 -C src/v2/support all
-make -j4 -C src/v2/x86 all
+make -j4 -C src/v2/x86 all vector-projection-check
 make -j4 -C src/v2/optimized-x86 all
 make -j4 -C src/v2/postlink-compiler all check
 make -j4 -C src/v2/wasm-compiler all packed-shift-check vector-unpack-check x87-control-check x87-environment-check float-arithmetic-check float-compare-check scalar-vector-transfer-check

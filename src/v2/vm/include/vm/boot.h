@@ -22,6 +22,8 @@ typedef struct {
     pl_u64 initramfs_address;
     pl_u64 image_address;
     pl_u64 image_bytes;
+    pl_u8 entropy[64];
+    pl_u32 entropy_stage;
 } vm_boot;
 typedef struct {
     pl_u64 offset; /* authenticated object's coordinate, not a URL */
@@ -48,6 +50,11 @@ int vm_boot_open(vm_boot *boot, const pl_u8 *header, pl_u32 header_bytes,
  * The serialized caller pins this plan after projection; the Wasm loader
  * rejects attachment once any page/state has been projected or RAM opened. */
 int vm_boot_attach_image(vm_boot *boot, pl_u64 address, pl_u64 bytes);
+/* Fresh supervisor CSPRNG bytes, never an artifact/replayable seed. Accept
+ * once before pinning the boot plan. Standard SETUP_RNG_SEED is projected
+ * once at0x7000, then this private copy is erased. Linux owns mixing/credit
+ * and erases the guest seed. Its default trust_bootloader policy is unchanged. */
+int vm_boot_set_entropy(vm_boot *boot,const pl_u8 *bytes,pl_u32 length);
 /* For ZERO/METADATA/ROM, write exactly one page. For source pages, return a bounded
  * object extent without touching target: the caller authenticates/copies that
  * extent and zeroes only its final padding. Never reconstruct the whole image.
@@ -59,7 +66,7 @@ int vm_boot_attach_image(vm_boot *boot, pl_u64 address, pl_u64 bytes);
  * RAM in E820. ROM is reconstructible immutable machine state, not dirty COW.
  * This projects INITIAL content only: it is not a post-execution cache-miss
  * resolver. Dirty/COW and suspend state must never be replaced by these zeros. */
-int vm_boot_page(const vm_boot *boot, pl_u64 address, pl_u8 *target,
+int vm_boot_page(vm_boot *boot, pl_u64 address, pl_u8 *target,
                   vm_boot_source *source);
 int vm_boot_state(const vm_boot *boot, machine_state *state);
 int vm_boot_segments(const vm_boot *boot, machine_segments *segments);

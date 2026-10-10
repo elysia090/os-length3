@@ -20,6 +20,22 @@ static int form(pl_u32 family, pl_u32 control, pl_u32 location,
 int main(void)
 {
     pl_u32 cases = 0u, refusals = 0u;
+    for(pl_u32 count=0u;count<256u;++count)for(pl_u32 location=0u;location<3u;++location){
+        pl_u8 code[]={0x66u,0x0fu,0x3au,0x0fu,(pl_u8)(location==2u?0u:location==1u?0xc0u:0xc1u),(pl_u8)count};
+        pl_x86_map map={code,0x400000u,sizeof code,sizeof code,PL_ELF_FLAG_EXECUTE,1u};pl_x86_image image={&map,1u,0u,map.address};
+        pl_x86_instruction i;pl_x86_vector_projection p;
+        if(pl_x86_decode_profile(&image,map.address,&i)||!pl_x86_vector_project(&i,&p))return 1;
+        pl_u8 d[16],s[16],actual[16],expected[16];for(pl_u32 b=0u;b<16u;++b){d[b]=(pl_u8)(b*11u+3u);s[b]=location==1u?d[b]:(pl_u8)(b*7u+129u);}
+        const pl_u8 *first=!count&&location==0u?s:d;
+        for(pl_u32 b=0u;b<16u;++b){pl_u32 k=b+count;expected[b]=k<16u?s[k]:k<32u?d[k-16u]:0u;
+            pl_u32 c=pl_x86_vector_project_byte(&p,b);if(c>=32u)return 1;
+            actual[b]=c<16u?first[c]:p.start>=16u?0u:s[c-16u];
+            if(location==2u&&!count)actual[b]=s[c];}
+        if(memcmp(actual,expected,16u)||p.identity!=(location!=2u&&(count==16u||(!count&&location==1u))))return 1;
+        _Alignas(8) pl_u8 storage[8192];pl_arena arena={storage,sizeof storage,0u};pl_x86_semantic semantic;
+        if(pl_x86_lower(&i,&arena,&semantic))return 1;
+        ++cases;
+    }
     for(pl_u32 left=0u;left<2u;++left)for(pl_u32 count=0u;count<256u;++count)
         for(pl_u32 target=0u;target<16u;++target) {
             pl_u8 code[16]={0};pl_u32 at=0u;code[at++]=0x66u;

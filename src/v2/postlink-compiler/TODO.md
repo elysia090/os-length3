@@ -144,6 +144,19 @@ The coherent memory bound now passes the former32MiB failure and grows lazily
 beyond65MiB. Real GCC completion, automatic cold-ready and release-wide zero
 closure remain separate required gates. See
 [SSE selection observations](../vm/check/browser/evidence/2026-10-10-sse-selection.md).
+PALIGNR also reuses the static byte-coordinate projection, with131072 native/
+C-VM states and precise memory preflight even for unused value arms. Actual
+diagnostic Linux now completes GCC/link/hello, four strict Make-j4 jobs,
+Git init/status and apk info. This is still rescue/manual-warm, not automatic
+cold-ready or parallel GCC/publication/network/syscall-suite acceptance.
+See [byte projection and actual toolchain](../vm/check/browser/evidence/2026-10-10-byte-alignment.md).
+Fresh64-byte supervisor CSPRNG input now uses standard Linux SETUP_RNG_SEED,
+not a JS getrandom substitute or saved seed. Native/C-Wasm one-use/freeze/
+erase/close gates, startup regression and full independent C/sanitizers pass.
+The ordinary root initializes CRNG at0s, but mdevd event subscription still
+exceeds unchanged deadlines. Keep this red while reducing actual memory-cut
+fetch/dispatch/materialization cost. See
+[boot entropy evidence](../vm/check/browser/evidence/2026-10-10-boot-entropy.md).
 A bounded run reaches266481582 retired /150000000 admissions and ends at
 the diagnostic quota, not an ISA miss. Explicit interactive lifetime is now
 separate from that regression quota; bounded work/memory/source ownership

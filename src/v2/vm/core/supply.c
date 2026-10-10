@@ -47,7 +47,7 @@ static int current(const vm_page_supply *supply, const vm_memory *memory,
         if (supply->context[i] != context_word(state,i)) return 0;
     return 1;
 }
-int vm_supply_prepare(vm_page_supply *supply, vm_memory *memory, const vm_boot *boot,
+int vm_supply_prepare(vm_page_supply *supply, vm_memory *memory, vm_boot *boot,
                        const machine_state *state, pl_u32 port, vm_page_request *request)
 {
     if (!request || !current(supply,memory,state,port)) return -1;

@@ -3634,9 +3634,10 @@ static void classify_machine_operation(
                 | ((pl_u64)(source_vector
                             ? source_operand->value.reg.index : 0u)
                    << PL_X86_VECTOR_SOURCE_SHIFT)
-                | (source_vector_memory ? PL_X86_VECTOR_SOURCE_MEMORY : 0u)
+                | (source_vector_memory ? PL_X86_VECTOR_SOURCE_MEMORY|PL_X86_VECTOR_MEMORY_READ : 0u)
                 | ((amount->value.immediate & 0xffu)
                    << PL_X86_VECTOR_IMMEDIATE_SHIFT);
+            out->flags |= PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;
             break;
         }
         int source_mmx = source_operand->kind == PL_X86_OPERAND_REGISTER

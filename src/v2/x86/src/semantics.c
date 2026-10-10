@@ -3259,7 +3259,7 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
     {
         if (out->machine_operation == PL_X86_MACHINE_VECTOR) {
             pl_u32 kind = (pl_u32)out->machine_argument & 255u;
-            if (kind == 7u || kind == 8u || kind == 23u || kind == 27u || kind == 40u
+            if (kind == 7u || kind == 8u || kind == 23u || kind == 27u || kind == 40u || kind == PL_X86_VECTOR_ALIGN_RIGHT
                     || kind == PL_X86_VECTOR_SHUFFLE_LOW_WORDS
                     || kind == PL_X86_VECTOR_FIXED_DWORD_SHUFFLE) {
                 pl_x86_vector_projection projection;

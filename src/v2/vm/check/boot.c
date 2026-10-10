@@ -154,6 +154,24 @@ int main(int argc, char **argv)
     }
 
     vm_boot before = boot;
+    pl_u8 entropy[64];for(pl_u32 i=0u;i<sizeof entropy;++i)entropy[i]=(pl_u8)(i*29u+7u);
+    for(pl_u32 length=0u;length<=128u;++length)if(length!=sizeof entropy){
+        EXPECT(vm_boot_set_entropy(&boot,entropy,length)==-1);EXPECT(!memcmp(&boot,&before,sizeof boot));}
+    EXPECT(vm_boot_set_entropy(&boot,NULL,64u)==-1);EXPECT(!memcmp(&boot,&before,sizeof boot));
+    EXPECT(vm_boot_set_entropy(&boot,entropy,64u)==0);
+    EXPECT(vm_boot_set_entropy(&boot,entropy,64u)==-1);
+    EXPECT(vm_boot_page(&boot,0x1000u,page,&source)==VM_BOOT_METADATA);
+    EXPECT(get(page+0x250u,8u)==0x7000u);
+    EXPECT(vm_boot_page(&boot,0x7000u,page,&source)==VM_BOOT_METADATA);
+    EXPECT(!get(page,8u)&&get(page+8u,4u)==9u&&get(page+12u,4u)==64u);
+    EXPECT(!memcmp(page+16u,entropy,64u)&&boot.entropy_stage==2u);
+    for(pl_u32 i=0u;i<64u;++i)EXPECT(!boot.entropy[i]);
+    for(pl_u32 i=80u;i<4096u;++i)EXPECT(!page[i]);
+    pl_u8 old_page[4096];memcpy(old_page,page,sizeof page);vm_boot_source old_source=source;
+    EXPECT(vm_boot_page(&boot,0x7000u,page,&source)==-1);
+    EXPECT(!memcmp(page,old_page,sizeof page)&&!memcmp(&source,&old_source,sizeof source));
+    EXPECT(vm_boot_set_entropy(&boot,entropy,64u)==-1);
+    boot=before;
     EXPECT(vm_boot_open(&boot, header, 0x200u, image_bytes, initramfs_bytes,
                         0x8000000u, command, sizeof command - 1u) == -1);
     EXPECT(!boot.header);

@@ -26,7 +26,7 @@ assert.deepEqual = (a,b) => assert(JSON.stringify(a) === JSON.stringify(b),'star
 
 export async function checkStartup(reader,providerBytes,compilerBytes,readExtent,
     {extended = false,onProgress = () => {},decompression,immutableImage,warmCuts=1,
-      utcSeconds = BigInt(Math.floor(Date.now()/1000)),idleWait,onCompilerRefusal,readInput,keepAlive=false} = {}) {
+      utcSeconds = BigInt(Math.floor(Date.now()/1000)),idleWait,onCompilerRefusal,readInput,keepAlive=false,bootEntropy} = {}) {
   const startedAt=performance.now();
   assert(Number.isInteger(warmCuts) && warmCuts>=1 && warmCuts<=64,'bounded warm cut quantum');
   assert(typeof keepAlive==='boolean','explicit interactive lifetime');
@@ -99,6 +99,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   const base = (branches + (capacity - 1) * 16 + 4095) & ~4095;
   const port = base + 2048, segments = base + 1408, codeView = base + 2112, pageRequest = base + 2176;
   const codeOffset = base + 32768, gdtOffset = base + 45056, stackOffset = base + 49152;
+  const entropyPageOffset=base+36864;
   const idtCodeOffset = base + 53248, bssOffset = base + 57344;
   const cmdlineCodeOffset = base + 61440, optionOffset = base + 65536;
   const initialPages=Math.ceil((optionOffset+4096)/65536);
@@ -112,10 +113,19 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   data.set(header,input); data.set(command,input + 4096);
   assert.equal(vm.vm_boot_prepare(input,header.length,BigInt(meta.imageBytes),
     BigInt(meta.initramfsBytes),BigInt(meta.ramBytes),input + 4096,command.length),0);
+  if(bootEntropy!==undefined){
+    assert(bootEntropy instanceof Uint8Array&&bootEntropy.length===64&&typeof vm.vm_boot_entropy==='function','fresh64-byte boot entropy contract');
+    const seedOffset=input-64;data.set(bootEntropy,seedOffset);
+    assert.equal(vm.vm_boot_entropy(seedOffset,64),0);
+    data.fill(0,seedOffset,input);bootEntropy.fill(0);
+  }
   if (immutableImage)
     assert.equal(vm.vm_boot_image(BigInt(immutableImage.address),BigInt(immutableImage.bytes)),0);
   for (let i = 0; i < 6; ++i)
     assert.equal(vm.vm_boot_project(BigInt((i + 1) * 4096),base + (i + 2) * 4096,rows),1);
+  // A one-use seed is committed as bootstrap RAM before execution, never
+  // held across an asynchronous demand/reservation or regenerated from cache.
+  if(bootEntropy!==undefined)assert.equal(vm.vm_boot_project(0x7000n,entropyPageOffset,rows),1);
   assert.equal(vm.vm_boot_project(gdt,gdtOffset,rows),2);
   assert.equal(view.getBigUint64(rows,true),BigInt(meta.kernelOffset) + gdt - BigInt(meta.kernelAddress));
   assert.equal(view.getUint32(rows + 8,true),1024);
@@ -128,6 +138,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   assert.equal(vm.vm_boot_project(0x12ea000n,bssOffset,rows),0);
   assert.equal(vm.vm_boot_initial_state(base),0); assert.equal(vm.vm_boot_initial_segments(segments),0);
   const pages = Array.from({length:6},(_,i) => [BigInt((i + 1) * 4096),base + (i + 2) * 4096]);
+  if(bootEntropy!==undefined)pages.push([0x7000n,entropyPageOffset]);
   pages.push([0x1000000n,codeOffset],[0x12e2000n,cmdlineCodeOffset],[0x12e3000n,idtCodeOffset],
     [0x12e4000n,optionOffset],[gdt,gdtOffset],[0x12ea000n,bssOffset],[stack & ~4095n,stackOffset]);
   for (const [i,[address,offset]] of pages.entries()) {
@@ -889,6 +900,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       console:{...consoleObservation(),capacity:consoleOutput.length,
         ownership:'bounded local sink; C accepts generation/ticket/exact byte before UART commit/retirement; not a guest tty implementation'},
       rtcSeed:{utcSeconds:String(utcSeconds),source:'explicit supervisor UTC snapshot; not authenticated network time'},
+      bootEntropy:{supplied:bootEntropy!==undefined,source:'fresh supervisor CSPRNG -> standard Linux SETUP_RNG_SEED; never saved in artifacts'},
       clockContract:`active C execution nanoseconds${idleWait?' plus measured idle transport time':''}, guest clock requests plus safe cut-boundary poll each >=1 ms; virtual TSC 1 GHz, PIT 1193182 Hz, C RTC 32768 Hz; compilation/delivery paused`,
       repeatComparedBytes,bssComparedBytes,
       memsetComparedBytes,memsetReturns,

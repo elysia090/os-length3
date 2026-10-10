@@ -33,7 +33,7 @@ static void load_vector(cut_lowering *cut, pl_u32 index)
 static void load_source(cut_lowering *cut,
                          const pl_x86_vector_projection *projection)
 {
-    if (projection->lane_bytes == 1u) {
+    if (projection->lane_bytes == 1u&&(projection->control<2u||projection->start>=16u)) {
         cut_const(cut,0u);
         simd(cut,0x12u);
         return;
@@ -62,8 +62,9 @@ void cut_emit_vector_projection(cut_lowering *cut,
 {
     if (projection->identity) return;
     cut_get(cut, 0u);
+    int first_only=projection->inputs==2u&&unchanged(projection);
     if (projection->inputs == 2u) load_vector(cut, projection->first_register);
-    load_source(cut, projection);
+    if(!first_only)load_source(cut, projection);
     if (projection->inputs && !unchanged(projection)) {
         if (projection->inputs == 1u) {
             cut_op(cut, 0x22u);

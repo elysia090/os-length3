@@ -55,8 +55,10 @@ self.onmessage = async ({data}) => {
     };
     const transport = diagnosticExtents(manifest.objects,root);
     active=true;
+    const bootEntropy=new Uint8Array(64);crypto.getRandomValues(bootEntropy);
     const result = await checkStartup(read,await read('vm.wasm'),await read('wasm-compiler.wasm'),transport.read,
       {extended:data?.extended === true,onProgress:progress => self.postMessage(progress),
+        bootEntropy,
         keepAlive:data?.interactive===true,
         warmCuts:data?.warmCuts??1,idleWait:data?.idle===true?waitForClock:undefined,
         onCompilerRefusal:data?.interactive===true?refusal=>new Promise(resolve=>{compilerReply=resolve;self.postMessage({status:'running',awaiting:'compiler-update',refusal});}):undefined,

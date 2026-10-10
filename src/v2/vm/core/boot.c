@@ -3,7 +3,7 @@
 #include <stddef.h>
 
 enum { PARAMS = 0x1000, COMMAND = 0x2000, GDT = 0x3000,
-       PML4 = 0x4000, PDPT = 0x5000, PD = 0x6000 };
+       PML4 = 0x4000, PDPT = 0x5000, PD = 0x6000, ENTROPY = 0x7000 };
 
 int vm_boot_open(vm_boot *boot, const pl_u8 *header, pl_u32 header_bytes,
                   pl_u64 image_bytes, pl_u64 initramfs_bytes, pl_u64 ram_bytes,
@@ -56,6 +56,12 @@ int vm_boot_attach_image(vm_boot *boot, pl_u64 address, pl_u64 bytes)
     return 0;
 }
 
+int vm_boot_set_entropy(vm_boot *boot,const pl_u8 *bytes,pl_u32 length)
+{
+    if(!boot||!boot->header||!bytes||length!=sizeof boot->entropy||boot->entropy_stage)return -1;
+    for(pl_u32 i=0u;i<length;++i)boot->entropy[i]=bytes[i];
+    boot->entropy_stage=1u;return 0;
+}
 static void e820(pl_u8 *page, pl_u32 row, pl_u64 address, pl_u64 bytes, pl_u32 type)
 {
     pl_u8 *at = page + 0x2d0u + row * 20u;
@@ -63,11 +69,12 @@ static void e820(pl_u8 *page, pl_u32 row, pl_u64 address, pl_u64 bytes, pl_u32 t
     vm_memory_store(at + 16u, type, 4u);
 }
 
-int vm_boot_page(const vm_boot *boot, pl_u64 address, pl_u8 *target,
+int vm_boot_page(vm_boot *boot, pl_u64 address, pl_u8 *target,
                   vm_boot_source *source)
 {
     if (!boot || !boot->header || !target || !source || (address & 4095u)
-            || (address >= 0xa0000u && address < 0xc0000u))
+            || (address >= 0xa0000u && address < 0xc0000u)
+            || (address==ENTROPY&&boot->entropy_stage==2u))
         return -1;
     if (boot->image_bytes && address >= boot->image_address
             && address - boot->image_address < boot->image_bytes) {
@@ -112,12 +119,19 @@ int vm_boot_page(const vm_boot *boot, pl_u64 address, pl_u8 *target,
         vm_memory_store(target + 0x224u, 0u, 4u);
         vm_memory_store(target + 0x23cu, 0u, 4u);
         vm_memory_store(target + 0x240u, 0u, 8u);
-        vm_memory_store(target + 0x250u, 0u, 8u);
+        vm_memory_store(target + 0x250u, boot->entropy_stage?ENTROPY:0u, 8u);
         e820(target, 0u, 0u, 0xa0000u, 1u);
         e820(target, 1u, 0xa0000u, 0x60000u, 2u);
         e820(target, 2u, 0x100000u, boot->ram_bytes - 0x100000u, 1u);
         if (boot->image_bytes)
             e820(target, 3u, boot->image_address, (boot->image_bytes + 4095u) & ~4095ull, 2u);
+    } else if(address==ENTROPY&&boot->entropy_stage==1u){
+        vm_memory_store(target+8u,9u,4u); // Standard x86 SETUP_RNG_SEED.
+        vm_memory_store(target+12u,sizeof boot->entropy,4u);
+        for(pl_u32 i=0u;i<sizeof boot->entropy;++i)target[16u+i]=boot->entropy[i];
+        volatile pl_u8 *private_seed=boot->entropy;
+        for(pl_u32 i=0u;i<sizeof boot->entropy;++i)private_seed[i]=0u;
+        boot->entropy_stage=2u;
     } else if (address == COMMAND) {
         for (pl_u32 i = 0u; i < boot->command_bytes; ++i) target[i] = boot->command[i];
     } else if (address == GDT) {

@@ -33,7 +33,7 @@ void vm_supply_capture(vm_page_supply *supply, const vm_memory *memory,
  * physical request outside the initial boot source map, -1 for invalid/stale
  * input. -4 never publishes bytes/a ticket or manufactures a guest fault;
  * firmware/device admission is a separate machine contract, not zero RAM. */
-int vm_supply_prepare(vm_page_supply *supply, vm_memory *memory, const vm_boot *boot,
+int vm_supply_prepare(vm_page_supply *supply, vm_memory *memory, vm_boot *boot,
                        const machine_state *state, pl_u32 port, vm_page_request *request);
 int vm_supply_commit(vm_page_supply *supply, vm_memory *memory,
                       const machine_state *state, pl_u32 port, pl_u64 ticket);

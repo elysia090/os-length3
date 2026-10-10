@@ -77,6 +77,25 @@ int pl_x86_vector_project(const pl_x86_instruction *instruction,
                 | PL_X86_INSTRUCTION_REPEATED | PL_X86_INSTRUCTION_TRAP_AFTER)))
         return 0;
     pl_u32 kind = (pl_u32)instruction->machine_argument & 255u;
+    if(kind==PL_X86_VECTOR_ALIGN_RIGHT){
+        const pl_x86_operand *d=instruction->operands,*s=d+1u,*a=d+2u;
+        pl_u32 memory=s->kind==PL_X86_OPERAND_MEMORY;
+        const pl_u32 required=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;
+        if(instruction->encoding!=PL_X86_ENCODING_LEGACY||instruction->opcode!=0x0fu||instruction->visible_operand_count!=3u
+            ||(instruction->flags&required)!=required||!instruction->source_bytes||instruction->source_bytes>15u||instruction->length!=instruction->source_bytes
+            ||instruction->fallthrough-instruction->rip!=instruction->length||!xmm(d)||(memory?s->bits!=128u:!xmm(s))
+            ||a->kind!=PL_X86_OPERAND_IMMEDIATE||a->bits!=8u||a->value.immediate>255u
+            ||(instruction->flags&(PL_X86_INSTRUCTION_WRITES_MEMORY|PL_X86_INSTRUCTION_PRIVILEGED))
+            ||!!(instruction->flags&PL_X86_INSTRUCTION_READS_MEMORY)!=memory
+            ||instruction->machine_argument!=(kind|((pl_u64)d->value.reg.index<<8u)|((pl_u64)(memory?0u:s->value.reg.index)<<16u)
+                |((pl_u64)memory<<24u)|((pl_u64)memory<<26u)|(a->value.immediate<<32u)))return 0;
+        pl_u32 count=a->value.immediate>32u?32u:(pl_u32)a->value.immediate;
+        int alias=!memory&&d->value.reg.index==s->value.reg.index;
+        pl_u32 inputs=count>=32u?0u:(!count||(count<16u&&alias))?1u:2u;
+        *out=(pl_x86_vector_projection){1u,(pl_u8)count,2u,(pl_u8)inputs,
+            (pl_u8)(!count&&!memory?s->value.reg.index:d->value.reg.index),(pl_u8)(memory?0u:s->value.reg.index),(pl_u8)memory,
+            (pl_u8)(!memory&&(count==16u||(!count&&alias)))};return 1;
+    }
     if (kind == 23u) {
         const pl_x86_operand *target=instruction->operands,*amount=target+1u;
         if(instruction->visible_operand_count!=2u || !xmm(target)
@@ -144,6 +163,14 @@ int pl_x86_vector_project(const pl_x86_instruction *instruction,
 pl_u32 pl_x86_vector_project_byte(const pl_x86_vector_projection *projection,
                                   pl_u32 byte)
 {
+    if(projection&&projection->lane_bytes==1u&&projection->control==2u&&byte<16u&&projection->start<=32u){
+        pl_u32 count=projection->start;
+        if(projection->inputs==0u)return count==32u?16u:32u;
+        if(projection->inputs==1u){if(!count)return byte;if(count>=16u)return 32u;return(byte+count)&15u;}
+        if(projection->inputs!=2u)return 32u;
+        if(count<16u)return byte+count<16u?16u+byte+count:byte+count-16u;
+        return byte+count<32u?byte+count-16u:16u;
+    }
     if(projection && projection->lane_bytes==1u && byte<16u
             && projection->start<=16u && projection->control<=1u) {
         pl_u32 count=projection->start;

@@ -1099,8 +1099,16 @@ existing console's Load compiler action admits it without restoring guest
 CPU/RAM/devices or relaxing a memory/ABI gate. It is not a Linux release.
 The native observation producers have `--minmax` / `--predicate`
 (`float-arithmetic-observe`), `--half` / `--shuffle-double`
-(`scalar-vector-transfer-observe`) and `--mask` (`vector-extract-observe`).
+(`scalar-vector-transfer-observe`; also `--align` for PALIGNR) and `--mask`
+(`vector-extract-observe`).
 Pass the same mode to `check-x87-state.mjs VM.WASM COMPILER.WASM DIRECTORY MODE`.
 They compare actual native full-state receipts with emitted ordinary Wasm
 using the C VM/MMU. Numeric-only comparisons, constructed descriptor refusals
 and actual browser behavior remain separately reported.
+
+Actual startup Workers provide fresh WebCrypto CSPRNG boot entropy through
+the privileged C loader's standard Linux SETUP_RNG_SEED node. No seed is kept
+in a fixture or replay log. `check-boot-entropy.mjs VM.WASM` checks exact
+one-use/pinning/extent/close refusal gates with explicitly deterministic test
+input. The unchanged unseeded Node regression is not an entropy-quality or
+normal Linux readiness test. See [contract/evidence](../../src/v2/vm/check/browser/evidence/2026-10-10-boot-entropy.md).

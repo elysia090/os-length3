@@ -17,19 +17,21 @@ int main(int argc,char **argv)
 #ifndef _WIN32
     (void)argc;(void)argv;return 2;
 #else
-    int half=argc==3&&!strcmp(argv[2],"--half"),shuffle=argc==3&&!strcmp(argv[2],"--shuffle-double");if(argc!=2&&!half&&!shuffle)return 2;
+    int half=argc==3&&!strcmp(argv[2],"--half"),shuffle=argc==3&&!strcmp(argv[2],"--shuffle-double"),align=argc==3&&!strcmp(argv[2],"--align");if(argc!=2&&!half&&!shuffle&&!align)return 2;
     pl_u8 *code=check_x87_allocate(8192u);if(!code)return 1;const pl_u8 coordinates[]={0u,5u,7u,9u,15u};
     unsigned form=0u;pl_u64 seed=0xde8911ce23ab5713ull;
-    for(unsigned width=half||shuffle?8u:4u;width<=8u;width+=4u)for(unsigned direction=0u;direction<(shuffle?8u:half?2u:4u);++direction)
-    for(unsigned dst=0u;dst<5u;++dst)for(unsigned src=0u;src<(shuffle||direction<2u?5u:1u);++src)for(unsigned prefix=0u;prefix<2u;++prefix,++form){
-        unsigned memory=!shuffle&&direction>=2u,store=!shuffle&&direction==3u,target=coordinates[dst],source=memory?0u:coordinates[src],n=0u;DWORD old;
+    for(unsigned width=half||shuffle||align?8u:4u;width<=8u;width+=4u)for(unsigned direction=0u;direction<(align?256u:shuffle?8u:half?2u:4u);++direction)
+    for(unsigned dst=0u;dst<(align?2u:5u);++dst)for(unsigned src=0u;src<(align?2u:shuffle||direction<2u?5u:1u);++src)for(unsigned prefix=0u;prefix<2u;++prefix,++form){
+        unsigned memory=!align&&!shuffle&&direction>=2u,store=!align&&!shuffle&&direction==3u,target=coordinates[dst],source=memory?0u:coordinates[src],n=0u;DWORD old;
         if(!VirtualProtect(code,4096u,PAGE_READWRITE,&old))return 1;
         if(prefix)code[n++]=0x67u;
-        if(shuffle)code[n++]=0x66u;else if(!half)code[n++]=(pl_u8)(width==4u?0xf3u:0xf2u);
-        unsigned reg=shuffle||half||direction==0u||direction==2u?target:store?target:source,rm=shuffle||half||direction==0u?source:direction==1u?target:5u;
+        if(shuffle||align)code[n++]=0x66u;else if(!half)code[n++]=(pl_u8)(width==4u?0xf3u:0xf2u);
+        unsigned reg=align||shuffle||half||direction==0u||direction==2u?target:store?target:source,rm=align||shuffle||half||direction==0u?source:direction==1u?target:5u;
         unsigned rex=(reg>=8u?4u:0u)|(!memory&&rm>=8u?1u:0u);if(rex)code[n++]=(pl_u8)(0x40u|rex);
-        code[n++]=0x0fu;code[n++]=(pl_u8)(shuffle?0xc6u:half?(direction?0x16u:0x12u):direction==1u||store?0x11u:0x10u);code[n++]=(pl_u8)((memory?0u:0xc0u)|((reg&7u)<<3u)|(rm&7u));
+        code[n++]=0x0fu;if(align)code[n++]=0x3au;
+        code[n++]=(pl_u8)(align?0x0fu:shuffle?0xc6u:half?(direction?0x16u:0x12u):direction==1u||store?0x11u:0x10u);code[n++]=(pl_u8)((memory?0u:0xc0u)|((reg&7u)<<3u)|(rm&7u));
         if(shuffle)code[n++]=(pl_u8)((direction&3u)|(direction>=4u?252u:0u));
+        if(align)code[n++]=(pl_u8)direction;
         if(memory){put(code+n,4096u-n-4u,4u);n+=4u;}code[n]=0xc3u;
         if(!VirtualProtect(code,4096u,PAGE_EXECUTE_READ,&old)||!FlushInstructionCache(GetCurrentProcess(),code,n+1u))return 1;
         for(unsigned row=0u;row<ROWS;++row){unsigned top=row&7u;_Alignas(16) pl_u8 input[512]={0},before[512],after[512];pl_u16 tags[2];
@@ -49,6 +51,6 @@ int main(int argc,char **argv)
             ||save(argv[1],form,"cases",records,sizeof records)||save(argv[1],form,"integers",operands,sizeof operands)||(store&&save(argv[1],form,"written",written,sizeof written)))return 1;
     }
     if(!VirtualFree(code,0u,MEM_RELEASE))return 1;
-    printf("%s: %u forms/%u complete FP/MXCSR/tag/flags/memory rows\n",shuffle?"SHUFPD":half?"MOVHLPS/MOVLHPS":"MOVSS/MOVSD",form,form*ROWS);return 0;
+    printf("%s: %u forms/%u complete FP/MXCSR/tag/flags/memory rows\n",align?"PALIGNR":shuffle?"SHUFPD":half?"MOVHLPS/MOVLHPS":"MOVSS/MOVSD",form,form*ROWS);return 0;
 #endif
 }

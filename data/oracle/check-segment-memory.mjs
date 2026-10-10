@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 const [vmFile,compilerFile,directory,...extra]=process.argv.slice(2);
 if(!compilerFile||extra.length)throw new Error('usage: check-segment-memory.mjs VM.WASM COMPILER.WASM [NATIVE-DIRECTORY]');
-const memory=new WebAssembly.Memory({initial:16}),coldMemory=new WebAssembly.Memory({initial:16});
+const memory=new WebAssembly.Memory({initial:16}),coldMemory=new WebAssembly.Memory({initial:32});
 const vmBytes=await readFile(vmFile),compilerBytes=await readFile(compilerFile);
 const vm=(await WebAssembly.instantiate(vmBytes,{machine:{memory}})).instance.exports;
 const cc=(await WebAssembly.instantiate(compilerBytes,{machine:{memory:coldMemory}})).instance.exports;
@@ -109,6 +109,7 @@ if(directory)for(let form=0;form<24;++form){
 // compare the existing unprefixed C cut with a segmented cut at the same
 // linear coordinate. Native instruction semantics are checked separately.
 const families=[
+  ...[0,4,15,16,17,32,255].map(count=>({name:`PALIGNR ${count}`,code:[0x66,0x0f,0x3a,0x0f,0x06,count],size:16,aligned:true})),
   {name:'MOVDQU load',code:[0xf3,0x0f,0x6f,0x06],size:16},
   {name:'MOVDQU store',code:[0xf3,0x0f,0x7f,0x06],size:16},
   {name:'MOVQ scalar',code:[0xf3,0x0f,0x7e,0x06],size:8},
@@ -236,6 +237,17 @@ for(const segment of [0,1]){
   assert.equal(vm.vm_run(port,9n,1),1n);assert.equal(v.getBigUint64(base,true),v.getBigUint64(ramAt+512,true));++msrFresh;
 }
 // Invalid source roles/profile never become a different architectural segment.
+// Ignoring a value is not permission to erase the operand's precise fault.
+// Counts16/32/255 need no source payload in the result, but m128 still faults.
+for(const count of [0,4,16,32,255]){
+  const source=Buffer.alloc(4096,0xcc);source.set([0x66,0x0f,0x3a,0x0f,0x06,count]);
+  const made=emit(source),cut=await load(made.body);
+  reset(source,made,index=>index===16?0x202n:index===6?0x500001n:0n);
+  const before=cpu(),hidden=cache(),payload=ram();
+  assert.equal(cut(base,port,entry,made.operandBinding),107n,'unaligned PALIGNR source raises #GP');
+  assert.equal(v.getUint32(port+24,true),13);assert.equal(v.getUint32(port+28,true),0);
+  assert(cpu().equals(before)&&cache().equals(hidden)&&ram().equals(payload));++models;
+}
 for(const role of [64,128])for(const invalid of ['two-roles','stack','fetch','base','version','compatibility']){
   reset(page,{...exact,segment:role===64?0:1},index=>index===16?0x202n:index===38?0x500200n:0n);
   let access=role|1;

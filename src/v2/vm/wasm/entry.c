@@ -225,6 +225,8 @@ void vm_close(void)
     arena_base = 0u;
     state_offset = 0u;
     segments_offset = 0u;
+    volatile pl_u8 *private_seed=boot.entropy;
+    for(pl_u32 i=0u;i<sizeof boot.entropy;++i)private_seed[i]=0u;
     boot = (vm_boot){ 0 };
     boot_header = boot_header_bytes = boot_command = 0u;
     boot_projected = 0u;
@@ -271,6 +273,11 @@ int vm_boot_image(pl_u64 address, pl_u64 bytes)
 {
     if (resident.generation || boot_projected) return -1;
     return vm_boot_attach_image(&boot,address,bytes);
+}
+int vm_boot_entropy(pl_u32 bytes,pl_u32 length)
+{
+    if(resident.generation||boot_projected||!range(bytes,length))return -1;
+    return vm_boot_set_entropy(&boot,(const pl_u8 *)(uintptr_t)bytes,length);
 }
 
 int vm_boot_project(pl_u64 address, pl_u32 target, pl_u32 source)
