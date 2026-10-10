@@ -11,8 +11,12 @@ void cut_lower_float_compare(cut_lowering *c,const pl_x86_instruction *i)
     cut_mask(c,law.bytes*8u);cut_set(c,CUT_VALUE);
     cut_get(c,0u);cut_op(c,0x35u);wasm_writer_uleb(c->writer,2u);wasm_writer_uleb(c->writer,offsetof(machine_state,mxcsr));cut_set(c,CUT_LEFT);
     _Alignas(8) pl_u8 scratch[32768];pl_arena arena={scratch,sizeof scratch,0u};pl_plan pure;
-    if(pl_x86_float_compare_plan(law.bytes*8u,law.ordered,law.alias,&arena,&pure)){c->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
+    int status=law.result_mask?pl_x86_float_predicate_plan(law.bytes*8u,law.predicate,law.alias,&arena,&pure)
+        :pl_x86_float_compare_plan(law.bytes*8u,law.ordered,law.alias,&arena,&pure);
+    if(status){c->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
     const pl_u32 inputs[]={CUT_RIGHT,CUT_VALUE,CUT_LEFT,CUT_NEXT,CUT_FLAGS},outputs[]={CUT_VALUE,CUT_STATUS};
     cut_emit_scalar_projection(c,&pure,inputs,32u,outputs,2u);cut_sse_raise(c,0u);
-    cut_get(c,CUT_FLAGS);cut_const(c,~0x8d5ull);cut_op(c,0x83u);cut_get(c,CUT_VALUE);cut_op(c,0x84u);cut_set(c,CUT_FLAGS);c->report.flags_written=1u;
+    if(law.result_mask){cut_get(c,0u);cut_get(c,CUT_VALUE);cut_op(c,law.bytes==4u?0x3eu:0x37u);
+        wasm_writer_uleb(c->writer,law.bytes==4u?2u:3u);wasm_writer_uleb(c->writer,offsetof(machine_state,xmm)+law.target*16u);}
+    else{cut_get(c,CUT_FLAGS);cut_const(c,~0x8d5ull);cut_op(c,0x83u);cut_get(c,CUT_VALUE);cut_op(c,0x84u);cut_set(c,CUT_FLAGS);c->report.flags_written=1u;}
 }

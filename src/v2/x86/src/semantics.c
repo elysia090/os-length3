@@ -2940,7 +2940,7 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
         if(!pl_x86_far_transfer_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_CR0_STATUS&&(instruction->machine_argument&255u)==PL_X86_CR0_CLEAR_TASK_SWITCHED
         &&!pl_x86_cr0_clear_supported(instruction))return PL_ERROR_X86_SEMANTIC;
-    if(instruction->machine_operation==PL_X86_MACHINE_VECTOR&&(instruction->machine_argument&255u)==39u){
+    if(instruction->machine_operation==PL_X86_MACHINE_VECTOR&&((instruction->machine_argument&255u)==39u||(instruction->machine_argument&255u)==PL_X86_VECTOR_MOVE_LANE)){
         pl_x86_scalar_vector_transfer law;if(!pl_x86_scalar_vector_transfer_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_VECTOR&&(instruction->machine_argument&255u)==PL_X86_VECTOR_PACKED_SHIFT){
         pl_x86_vector_shift law;if(!pl_x86_vector_shift_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
@@ -2955,12 +2955,15 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
         pl_x86_selector_query law;if(!pl_x86_selector_query_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_X87&&(instruction->machine_argument&255u)==49u
         &&!pl_x86_x87_round_supported(instruction))return PL_ERROR_X86_SEMANTIC;
+    if((instruction->machine_operation==PL_X86_MACHINE_VECTOR&&((instruction->machine_argument&255u)==PL_X86_VECTOR_BYTE_SIGN_MASK||(instruction->machine_argument&255u)==41u))
+        ||(instruction->machine_operation==PL_X86_MACHINE_X87&&(instruction->machine_argument&255u)==55u)){
+        pl_x86_vector_signmask law;if(!pl_x86_vector_signmask_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_VECTOR&&(instruction->machine_argument&255u)==22u){
         pl_x86_vector_extract law;if(!pl_x86_vector_extract_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(pl_x86_float_arithmetic_candidate(instruction)){
         pl_x86_float_arithmetic law;if(!pl_x86_float_arithmetic_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_VECTOR&&(instruction->machine_argument&255u)==PL_X86_VECTOR_SCALAR_FLOAT
-        &&(((instruction->machine_argument>>32u)&255u)==PL_X86_SCALAR_FLOAT_COMPARE_ORDERED||((instruction->machine_argument>>32u)&255u)==PL_X86_SCALAR_FLOAT_COMPARE_UNORDERED)){
+        &&(((instruction->machine_argument>>32u)&255u)==PL_X86_SCALAR_FLOAT_COMPARE_ORDERED||((instruction->machine_argument>>32u)&255u)==PL_X86_SCALAR_FLOAT_COMPARE_UNORDERED||((instruction->machine_argument>>32u)&255u)==PL_X86_SCALAR_FLOAT_PREDICATE)){
         pl_x86_float_compare law;if(!pl_x86_float_compare_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_VECTOR&&((instruction->machine_argument&255u)==17u
         ||(instruction->machine_argument&255u)==21u||(instruction->machine_argument&255u)==32u
@@ -3169,8 +3172,6 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
                                 == PL_X86_VECTOR_INSERT_LANE
                              || (out->machine_argument & 0xffu) == 19u
                              || (out->machine_argument & 0xffu) == 27u
-                             || (out->machine_argument & 0xffu)
-                                == PL_X86_VECTOR_MOVE_LANE
                              || (out->machine_argument & 0xffu) == 40u
                              || (out->machine_argument & 0xffu) == 44u
                              || (out->machine_argument & 0xffu)
@@ -3258,7 +3259,7 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
     {
         if (out->machine_operation == PL_X86_MACHINE_VECTOR) {
             pl_u32 kind = (pl_u32)out->machine_argument & 255u;
-            if (kind == 7u || kind == 8u || kind == 23u || kind == 27u
+            if (kind == 7u || kind == 8u || kind == 23u || kind == 27u || kind == 40u
                     || kind == PL_X86_VECTOR_SHUFFLE_LOW_WORDS
                     || kind == PL_X86_VECTOR_FIXED_DWORD_SHUFFLE) {
                 pl_x86_vector_projection projection;

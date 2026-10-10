@@ -25,7 +25,9 @@ int main(int argc,char **argv)
 #ifndef _WIN32
     (void)argc;(void)argv;return 2;
 #else
-    if(argc!=2)return 2;
+    int minmax=argc==3&&!strcmp(argv[2],"--minmax");
+    int predicate=argc==3&&!strcmp(argv[2],"--predicate");
+    if(argc!=2&&!minmax&&!predicate)return 2;
     pl_u8 *code=check_x87_allocate(8192u);if(!code)return 1;
     PVOID handler=AddVectoredExceptionHandler(1u,fp_exception);if(!handler)return 1;
     const pl_u32 floats[]={0u,0x80000000u,0x3f800000u,0xbf800000u,0x3fc00000u,0xbfc00000u,0x7f800000u,0xff800000u,
@@ -35,14 +37,16 @@ int main(int argc,char **argv)
         0x7ff8123456789abcull,0xfff8123456789abcull,0x7ff0123456789abcull,0xfff0123456789abcull,1u,0x8000000000000001ull,0x000fffffffffffffull,0x800fffffffffffffull,
         0x0010000000000000ull,0x8010000000000000ull,0x3fefffffffffffffull,0xbfefffffffffffffull,0x7fefffffffffffffull,0xffefffffffffffffull,0x7ff8000000000000ull,0x7ff0000000000001ull};
     unsigned form=0u;pl_u64 seed=0xdf714adb255b36edull;
-    for(unsigned width=4u;width<=8u;width+=4u)for(unsigned packed=0u;packed<2u;++packed)for(unsigned op=0u;op<4u;++op)
+    for(unsigned width=4u;width<=8u;width+=4u)for(unsigned packed=0u;packed<(minmax||predicate?1u:2u);++packed)for(unsigned op=minmax?4u:0u;op<(minmax?6u:predicate?8u:4u);++op)
     for(unsigned memory=0u;memory<2u;++memory)for(unsigned profile=0u;profile<16u;++profile)for(unsigned mask=0u;mask<8u;++mask,++form){
         unsigned target=9u,source=7u,n=0u;DWORD old;
         if(!VirtualProtect(code,4096u,PAGE_READWRITE,&old))return 1;
         if(packed){if(width==8u)code[n++]=0x66u;}else code[n++]=(pl_u8)(width==8u?0xf2u:0xf3u);
-        code[n++]=0x44u;code[n++]=0x0fu;code[n++]=(pl_u8)(op==0u?0x58u:op==1u?0x59u:op==2u?0x5cu:0x5eu);
+        code[n++]=0x44u;code[n++]=0x0fu;code[n++]=(pl_u8)(predicate?0xc2u:op==0u?0x58u:op==1u?0x59u:op==2u?0x5cu:op==3u?0x5eu:op==4u?0x5du:0x5fu);
         code[n++]=(pl_u8)((memory?0u:0xc0u)|((target&7u)<<3u)|(memory?5u:source));
-        if(memory){put(code+n,4096u-n-4u,4u);n+=4u;}code[n]=0xc3u;
+        if(memory){put(code+n,4096u-n-4u-(predicate?1u:0u),4u);n+=4u;}
+        if(predicate)code[n++]=(pl_u8)(op|(profile<<4u));
+        code[n]=0xc3u;
         if(!VirtualProtect(code,4096u,PAGE_EXECUTE_READ,&old)||!FlushInstructionCache(GetCurrentProcess(),code,n+1u))return 1;
         target_rip=(uintptr_t)code;resume_rip=(uintptr_t)(code+n);
         for(unsigned row=0u;row<ROWS;++row){unsigned top=row&7u;_Alignas(16) pl_u8 input[512]={0},before[512],after[512];pl_u16 tags[2];
@@ -70,6 +74,6 @@ int main(int argc,char **argv)
             ||save(argv[1],form,"cases",records,sizeof records)||save(argv[1],form,"integers",operands,sizeof operands)||save(argv[1],form,"faults",faults,sizeof faults))return 1;
     }
     if(!RemoveVectoredExceptionHandler(handler)||!VirtualFree(code,0u,MEM_RELEASE))return 1;
-    printf("SSE add/sub/mul/div: %u profiles/%u complete FP/MXCSR/tag/flags rows\n",form,form*ROWS);return 0;
+    printf("SSE %s: %u profiles/%u complete FP/MXCSR/tag/flags rows\n",minmax?"min/max":predicate?"predicates":"add/sub/mul/div",form,form*ROWS);return 0;
 #endif
 }

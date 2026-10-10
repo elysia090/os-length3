@@ -1090,3 +1090,17 @@ enables that same source under the scoped compiler sanitizers.
 descriptor/UMIP/memory path against explicitly labeled ISA models, not host
 Linux UMIP emulation or a native ring0 proof. See
 [measurements and remaining actual Linux blockers](../../src/v2/vm/check/browser/evidence/2026-10-07-image-directory.md).
+
+### Live compiler replacement and SSE selection
+
+`prepare-browser-compiler.mjs COMPILER.WASM generated-startup-NAME` creates a
+fresh construction-only diagnostic fixture with an exact SHA-256/extent. The
+existing console's Load compiler action admits it without restoring guest
+CPU/RAM/devices or relaxing a memory/ABI gate. It is not a Linux release.
+The native observation producers have `--minmax` / `--predicate`
+(`float-arithmetic-observe`), `--half` / `--shuffle-double`
+(`scalar-vector-transfer-observe`) and `--mask` (`vector-extract-observe`).
+Pass the same mode to `check-x87-state.mjs VM.WASM COMPILER.WASM DIRECTORY MODE`.
+They compare actual native full-state receipts with emitted ordinary Wasm
+using the C VM/MMU. Numeric-only comparisons, constructed descriptor refusals
+and actual browser behavior remain separately reported.

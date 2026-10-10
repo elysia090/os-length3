@@ -135,6 +135,15 @@ pages. One derived live RAM/device/private/metadata reservation fixes that cap,
 the stale16-vs32 initial growth and final-batch overshoot. Growth remains lazy;
 no page eviction/GC claim. Actual same-root toolchain re-test is in progress.
 See [console/memory observations](../vm/check/browser/evidence/2026-10-10-linux-console-and-memory.md).
+The retained real GCC run crosses MINSD/CMP/MOVHLPS/SHUFPD/PMOVMSKB construction
+misses through shared IEEE relations, exact half transfers, static coordinate
+substitution and sign-mask geometry. Actual native/full C-VM observations pass;
+CPU/RAM/device/clock stay live across integrity/ABI checked compiler replacement.
+These are general family fixes, not kernel-coordinate rules or fallback.
+The coherent memory bound now passes the former32MiB failure and grows lazily
+beyond65MiB. Real GCC completion, automatic cold-ready and release-wide zero
+closure remain separate required gates. See
+[SSE selection observations](../vm/check/browser/evidence/2026-10-10-sse-selection.md).
 A bounded run reaches266481582 retired /150000000 admissions and ends at
 the diagnostic quota, not an ISA miss. Explicit interactive lifetime is now
 separate from that regression quota; bounded work/memory/source ownership

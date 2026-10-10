@@ -15,6 +15,7 @@ static int scalar(const pl_x86_operand *operand,pl_u32 width)
 }
 int cut_vector_scalar_supported(const pl_x86_instruction *instruction)
 {
+    pl_x86_vector_signmask mask;if(pl_x86_vector_signmask_lower(instruction,&mask))return 1;
     pl_x86_vector_extract extraction;if(pl_x86_vector_extract_lower(instruction,&extraction))return 1;
     pl_x86_scalar_vector_transfer transfer;
     if(pl_x86_scalar_vector_transfer_lower(instruction,&transfer))return !(transfer.source_memory||transfer.target_memory)
@@ -57,6 +58,17 @@ int cut_vector_scalar_supported(const pl_x86_instruction *instruction)
 
 void cut_lower_vector_scalar(cut_lowering *cut,const pl_x86_instruction *instruction)
 {
+    pl_x86_vector_signmask mask;if(pl_x86_vector_signmask_lower(instruction,&mask)){
+        if(mask.mmx){cut_mmx_guard(cut);cut_load(cut,offsetof(machine_state,x87_significand)+mask.source*8u);
+            cut_op(cut,0xfdu);wasm_writer_uleb(cut->writer,0x12u);}
+        else{cut_sse_guard(cut);cut_get(cut,0u);cut_op(cut,0xfdu);wasm_writer_uleb(cut->writer,0u);
+            wasm_writer_uleb(cut->writer,4u);wasm_writer_uleb(cut->writer,offsetof(machine_state,xmm)+mask.source*16u);}
+        cut_op(cut,0xfdu);wasm_writer_uleb(cut->writer,mask.bytes==1u?0x64u:mask.bytes==4u?0xa4u:0xc4u);cut_op(cut,0xadu);
+        if(mask.mmx)cut_mask(cut,8u);
+        cut_set(cut,CUT_VALUE);cut_write_register(cut,&instruction->operands[0].value.reg);
+        if(mask.mmx)cut_mmx_publish(cut,~0u);
+        return;
+    }
     pl_x86_vector_extract extraction;if(pl_x86_vector_extract_lower(instruction,&extraction)){
         if(extraction.mmx)cut_mmx_guard(cut);else cut_sse_guard(cut);
         pl_u32 base=extraction.mmx?offsetof(machine_state,x87_significand)+extraction.source*8u:offsetof(machine_state,xmm)+extraction.source*16u+(extraction.word/4u)*8u;
@@ -77,7 +89,7 @@ void cut_lower_vector_scalar(cut_lowering *cut,const pl_x86_instruction *instruc
     if(read)cut_const(cut,0u);
     else if(mmx&&law.source_mmx){cut_load(cut,offsetof(machine_state,x87_significand)+source->value.reg.index*8u);cut_mask(cut,width);}
     else if(vector(source,width)) {
-        cut_load(cut,(pl_u32)offsetof(machine_state,xmm)+source->value.reg.index*16u+selected);
+        cut_load(cut,(pl_u32)offsetof(machine_state,xmm)+source->value.reg.index*16u+(scalar_lane?transfer.source_offset:selected));
         cut_mask(cut,width);
     } else cut_read_operand(cut,source,width);
     cut_set(cut,CUT_VALUE);
@@ -98,7 +110,7 @@ void cut_lower_vector_scalar(cut_lowering *cut,const pl_x86_instruction *instruc
         cut_mmx_publish(cut,law.target_mmx?target->value.reg.index:~0u);return;
     }
     if(vector(target,width)) {
-        pl_u32 offset=(pl_u32)offsetof(machine_state,xmm)+target->value.reg.index*16u;
+        pl_u32 offset=(pl_u32)offsetof(machine_state,xmm)+target->value.reg.index*16u+(scalar_lane?transfer.target_offset:0u);
         if(scalar_lane){
             cut_get(cut,0u);cut_get(cut,CUT_VALUE);
             if(transfer.clear){

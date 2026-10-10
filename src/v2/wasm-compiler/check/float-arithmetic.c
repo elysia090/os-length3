@@ -10,7 +10,7 @@ static pl_u8 page[4096],module[65536];
 int main(void)
 {
     unsigned work=0u,span=0u;
-    for(pl_u32 bits=32u;bits<=64u;bits+=32u)for(pl_u32 op=0u;op<4u;++op){
+    for(pl_u32 bits=32u;bits<=64u;bits+=32u)for(pl_u32 op=0u;op<6u;++op){
         pl_arena arena={scratch,sizeof scratch,0u};pl_plan p;
         int s=pl_x86_float_arithmetic_plan(bits,op,&arena,&p);if(s){printf("plan %u/%u = %d used%llu\n",bits,op,s,(unsigned long long)arena.used);return 1;}
         if(p.node_count>work)work=p.node_count;
@@ -31,8 +31,8 @@ int main(void)
             unsigned csr=0x1f80u|((profile&3u)<<13u)|((profile&4u)?64u:0u)|((profile&8u)?32768u:0u),saved=_mm_getcsr(),observed;pl_u64 actual;
             _mm_setcsr(csr);
 #define OBSERVE(MNEMONIC) __asm__ volatile("movq %2,%%xmm0;movq %3,%%xmm1;" MNEMONIC " %%xmm1,%%xmm0;movq %%xmm0,%0;stmxcsr %1" : "=r"(actual),"=m"(observed) : "r"(av),"r"(bv) : "xmm0","xmm1","memory")
-            if(bits==32u){switch(op){case 0:OBSERVE("addss");break;case 1:OBSERVE("mulss");break;case 2:OBSERVE("subss");break;default:OBSERVE("divss");break;}actual&=0xffffffffu;}
-            else{switch(op){case 0:OBSERVE("addsd");break;case 1:OBSERVE("mulsd");break;case 2:OBSERVE("subsd");break;default:OBSERVE("divsd");break;}}
+            if(bits==32u){switch(op){case 0:OBSERVE("addss");break;case 1:OBSERVE("mulss");break;case 2:OBSERVE("subss");break;case 3:OBSERVE("divss");break;case 4:OBSERVE("minss");break;default:OBSERVE("maxss");break;}actual&=0xffffffffu;}
+            else{switch(op){case 0:OBSERVE("addsd");break;case 1:OBSERVE("mulsd");break;case 2:OBSERVE("subsd");break;case 3:OBSERVE("divsd");break;case 4:OBSERVE("minsd");break;default:OBSERVE("maxsd");break;}}
 #undef OBSERVE
             _mm_setcsr(saved);args[0]=av;args[1]=bv;args[2]=csr;
             if(check_scalar_projection(&p,args,out,2u)||out[0]!=actual||out[1]!=(observed&63u)){
@@ -41,12 +41,12 @@ int main(void)
     }
     unsigned forms=0u,refusals=0u;
     pl_x86_map map={page,0x400000u,4096u,4096u,PL_ELF_FLAG_EXECUTE,9u};pl_x86_image image={&map,1u,0u,map.address};wasm_cut_options options={map.address,1u,sizeof module};
-    for(unsigned width=4u;width<=8u;width+=4u)for(unsigned packed=0u;packed<2u;++packed)for(unsigned op=0u;op<4u;++op)
+    for(unsigned width=4u;width<=8u;width+=4u)for(unsigned packed=0u;packed<2u;++packed)for(unsigned op=0u;op<(packed?4u:6u);++op)
     for(unsigned dst=0u;dst<16u;++dst)for(unsigned src=0u;src<17u;++src){
         unsigned memory=src==16u,n=0u;memset(page,0x90,sizeof page);
         if(packed){if(width==8u)page[n++]=0x66u;}else page[n++]=(pl_u8)(width==8u?0xf2u:0xf3u);
         unsigned rex=(dst>=8u?4u:0u)|(!memory&&src>=8u?1u:0u);if(rex)page[n++]=(pl_u8)(0x40u|rex);
-        page[n++]=0x0fu;page[n++]=(pl_u8)(op==0u?0x58u:op==1u?0x59u:op==2u?0x5cu:0x5eu);page[n++]=(pl_u8)((memory?0u:0xc0u)|((dst&7u)<<3u)|(memory?7u:src&7u));
+        page[n++]=0x0fu;page[n++]=(pl_u8)(op==0u?0x58u:op==1u?0x59u:op==2u?0x5cu:op==3u?0x5eu:op==4u?0x5du:0x5fu);page[n++]=(pl_u8)((memory?0u:0xc0u)|((dst&7u)<<3u)|(memory?7u:src&7u));
         pl_x86_instruction i;pl_x86_float_arithmetic law;
         if(pl_x86_decode_profile(&image,map.address,&i)||!pl_x86_float_arithmetic_lower(&i,&law)||law.bytes!=width||law.operation!=op||law.lanes!=(packed?16u/width:1u)
             ||law.target!=dst||law.source_memory!=memory||(!memory&&law.source!=src))return 1;
@@ -67,5 +67,5 @@ int main(void)
         }++forms;
     }
     page[0]=0xf0u;page[1]=0x0fu;page[2]=0x58u;page[3]=0xc0u;if(check_fault_admission(&image,&options,6u))return 1;
-    printf("shared SSE arithmetic: 131072 physical numeric/MXCSR comparisons, %u constructors/%u refusals; maximum work/span %u/%u; full-state/fault execution separate\n",forms,refusals,work,span);return 0;
+    printf("shared SSE arithmetic: 196608 physical numeric/MXCSR comparisons, %u constructors/%u refusals; maximum work/span %u/%u; full-state/fault execution separate\n",forms,refusals,work,span);return 0;
 }

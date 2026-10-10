@@ -12,14 +12,16 @@ int main(int argc,char **argv)
 #ifndef _WIN32
     (void)argc;(void)argv;return 2;
 #else
-    if(argc!=2)return 2;
+    int mask=argc==3&&!strcmp(argv[2],"--mask");if(argc!=2&&!mask)return 2;
     pl_u8 *code=check_x87_allocate(4096u);if(!code)return 1;
     pl_u64 seed=0x98173564abfce023ull;
-    for(unsigned form=0u;form<1024u;++form){unsigned control=form&255u,mmx=(form>>8u)&1u,wide=form>>9u,n=0u;DWORD old;
+    for(unsigned form=0u;form<(mask?8u:1024u);++form){unsigned control=form&255u,mmx=mask?(form&3u)==0u:(form>>8u)&1u,wide=mask?form>>2u:form>>9u,n=0u;DWORD old;
         if(!VirtualProtect(code,4096u,PAGE_READWRITE,&old))return 1;
-        if(!mmx)code[n++]=0x66u;
+        if(mask?(form&3u)==1u||(form&3u)==3u:!mmx)code[n++]=0x66u;
         // This observer captures actual RAX; other GPRs are invariance-only.
-        code[n++]=(pl_u8)(wide?0x48u:0x40u);code[n++]=0x0fu;code[n++]=0xc5u;code[n++]=0xc3u;code[n++]=(pl_u8)control;code[n]=0xc3u;
+        code[n++]=(pl_u8)(wide?0x48u:0x40u);code[n++]=0x0fu;code[n++]=(pl_u8)(mask?((form&3u)<2u?0xd7u:0x50u):0xc5u);code[n++]=0xc3u;
+        if(!mask)code[n++]=(pl_u8)control;
+        code[n]=0xc3u;
         if(!VirtualProtect(code,4096u,PAGE_EXECUTE_READ,&old)||!FlushInstructionCache(GetCurrentProcess(),code,n+1u))return 1;
         for(unsigned row=0u;row<32u;++row){unsigned top=row&7u;_Alignas(16) pl_u8 input[512]={0},before[512],after[512];pl_u16 tags[2];
             put(input,0x37fu,2u);put(input+2u,0x4700u|(top<<11u),2u);input[4]=(pl_u8)(row&8u?0x5au:255u);
@@ -36,6 +38,6 @@ int main(int argc,char **argv)
         if(m<1||(size_t)m>=sizeof json||save(argv[1],form,"json",json,(size_t)m)||save(argv[1],form,"source",code,n)||save(argv[1],form,"cases",records,sizeof records))return 1;
     }
     if(!VirtualFree(code,0u,MEM_RELEASE))return 1;
-    puts("PEXTRW:32768 complete physical states; all immediates, MMX/XMM and ignored REX.W");return 0;
+    puts(mask?"PMOVMSKB/MOVMSKPS/MOVMSKPD:256 complete physical states; MMX/XMM and ignored REX.W":"PEXTRW:32768 complete physical states; all immediates, MMX/XMM and ignored REX.W");return 0;
 #endif
 }

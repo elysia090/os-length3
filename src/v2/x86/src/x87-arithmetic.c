@@ -356,4 +356,7 @@ int pl_x86_x87_memory_arithmetic_plan(pl_u32 bits,pl_u32 operation,pl_arena *are
 int pl_x86_x87_register_arithmetic_plan(pl_u32 operation,pl_arena *arena,pl_plan *out)
 {return arithmetic_plan(0u,0u,operation,0u,arena,out);}
 int pl_x86_float_arithmetic_plan(pl_u32 bits,pl_u32 operation,pl_arena *arena,pl_plan *out)
-{return (bits==32u||bits==64u)&&operation<=3u?arithmetic_plan(0u,0u,operation==3u?4u:operation,bits,arena,out):PL_ERROR_PLAN;}
+{
+    if(operation==4u||operation==5u)return pl_x86_float_minmax_plan(bits,operation-4u,arena,out);
+    return (bits==32u||bits==64u)&&operation<=3u?arithmetic_plan(0u,0u,operation==3u?4u:operation,bits,arena,out):PL_ERROR_PLAN;
+}

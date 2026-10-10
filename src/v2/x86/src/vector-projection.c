@@ -92,7 +92,8 @@ int pl_x86_vector_project(const pl_x86_instruction *instruction,
         return 1;
     }
     int fixed = kind == PL_X86_VECTOR_FIXED_DWORD_SHUFFLE;
-    if (kind != 7u && kind != 8u && kind != 27u
+    int doubles=kind==40u;
+    if (kind != 7u && kind != 8u && kind != 27u && !doubles
             && kind != PL_X86_VECTOR_SHUFFLE_LOW_WORDS && !fixed)
         return 0;
     if (instruction->visible_operand_count != (fixed ? 2u : 3u))
@@ -103,11 +104,12 @@ int pl_x86_vector_project(const pl_x86_instruction *instruction,
     if (!xmm(target) || (memory ? source->bits != 128u : !xmm(source)))
         return 0;
     pl_u64 control = instruction->machine_argument >> 32u;
-    if (control > 255u || (fixed && control != 0xa0u && control != 0xf5u))
+    if (control > (doubles?3u:255u) || (fixed && control != 0xa0u && control != 0xf5u))
         return 0;
     if (!fixed && (instruction->operands[2].kind != PL_X86_OPERAND_IMMEDIATE
             || instruction->operands[2].bits != 8u
-            || instruction->operands[2].value.immediate != control))
+            || instruction->operands[2].value.immediate>255u
+            || (doubles?(instruction->operands[2].value.immediate&3u):instruction->operands[2].value.immediate) != control))
         return 0;
     pl_u64 descriptor = kind
         | ((pl_u64)target->value.reg.index << 8u)
@@ -115,7 +117,11 @@ int pl_x86_vector_project(const pl_x86_instruction *instruction,
         | ((pl_u64)memory << 24u) | ((pl_u64)memory << 26u)
         | (control << 32u);
     if (instruction->machine_argument != descriptor) return 0;
-    int paired = kind == 8u;
+    int paired = kind == 8u||doubles;
+    /* A qword selector is two adjacent dword coordinates. The common byte
+     * projection therefore needs neither a new executor nor a new format. */
+    if(doubles){pl_u32 lo=((pl_u32)control&1u)*2u,hi=(((pl_u32)control>>1u)&1u)*2u;
+        control=lo|((lo+1u)<<2u)|(hi<<4u)|((hi+1u)<<6u);}
     int alias = !memory && source->value.reg.index == target->value.reg.index;
     *out = (pl_x86_vector_projection){
         (pl_u8)((kind == 27u || kind == PL_X86_VECTOR_SHUFFLE_LOW_WORDS) ? 2u : 4u),

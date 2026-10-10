@@ -333,6 +333,8 @@ static int prologue(wasm_writer *writer,const cut_plan *plan,cut_lowering *state
         if(!pl_x86_decode_profile(&plan->image,rip,&i)&&pl_x86_mmx_transfer_lower(&i,&law)){locals=26u;permutation_local=1u;}}
     if(plan->system_cut==CUT_SYSTEM_VECTOR_SCALAR){pl_x86_instruction i;pl_x86_vector_extract law;
         if(!pl_x86_decode_profile(&plan->image,rip,&i)&&pl_x86_vector_extract_lower(&i,&law)&&law.mmx){locals=26u;permutation_local=1u;}}
+    if(plan->system_cut==CUT_SYSTEM_VECTOR_SCALAR){pl_x86_instruction i;pl_x86_vector_signmask law;
+        if(!pl_x86_decode_profile(&plan->image,rip,&i)&&pl_x86_vector_signmask_lower(&i,&law)&&law.mmx){locals=26u;permutation_local=1u;}}
     pl_u32 checkpoint=0u;
     if(plan->system_cut==CUT_SYSTEM_FAR_TRANSFER){locals=32u;checkpoint=1u;}
     if(plan->system_cut==CUT_SYSTEM_SELECTOR_QUERY){pl_x86_instruction i;pl_x86_selector_query law;

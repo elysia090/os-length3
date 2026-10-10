@@ -3794,16 +3794,15 @@ static void classify_machine_operation(
             out->machine_argument = PL_X86_VECTOR_BYTE_SIGN_MASK
                 | ((pl_u64)target->value.reg.index << 8u)
                 | ((pl_u64)source_operand->value.reg.index << 16u);
+            out->flags |= PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;
             break;
         }
         if (source_operand->value.reg.class_id != PL_X86_REGISTER_MMX
                 || source_operand->bits != 64u
                 || source_operand->value.reg.index >= 8u)
             break;
-        pl_u32 fop = ((pl_u32)(out->source[0] & 7u) << 8u)
-                   | out->source[1];
         out->machine_operation = PL_X86_MACHINE_X87;
-        out->machine_argument = 55u | ((pl_u64)fop << 16u)
+        out->machine_argument = 55u
             | ((pl_u64)source_operand->value.reg.index << 32u)
             | ((pl_u64)target->value.reg.index << 44u);
         out->flags |= PL_X86_INSTRUCTION_MAY_TRAP
@@ -3829,6 +3828,9 @@ static void classify_machine_operation(
             | ((pl_u64)out->operands[1].value.reg.index << 16u)
             | ((pl_u64)(source->mnemonic == ZYDIS_MNEMONIC_MOVLHPS)
                << PL_X86_VECTOR_IMMEDIATE_SHIFT);
+        out->flags |= PL_X86_INSTRUCTION_MAY_TRAP
+                    | PL_X86_INSTRUCTION_PRECISE_CUT
+                    | PL_X86_INSTRUCTION_BARRIER;
         break;
     }
     case ZYDIS_MNEMONIC_LDMXCSR:
@@ -3952,7 +3954,7 @@ static void classify_machine_operation(
         const pl_x86_operand *input = &out->operands[1];
         if (target->kind != PL_X86_OPERAND_REGISTER
                 || target->value.reg.class_id != PL_X86_REGISTER_GPR
-                || target->bits != 32u || target->value.reg.index >= 16u
+                || (target->bits != 32u && target->bits != 64u) || target->value.reg.index >= 16u
                 || input->kind != PL_X86_OPERAND_REGISTER
                 || input->value.reg.class_id != PL_X86_REGISTER_VECTOR
                 || input->bits != 128u || input->value.reg.index >= 16u)
@@ -3963,6 +3965,7 @@ static void classify_machine_operation(
             | ((pl_u64)input->value.reg.index << 16u)
             | ((pl_u64)(source->mnemonic == ZYDIS_MNEMONIC_MOVMSKPD)
                << 32u);
+        out->flags |= PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;
         break;
     }
     case ZYDIS_MNEMONIC_PSHUFW: {

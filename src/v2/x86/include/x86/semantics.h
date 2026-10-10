@@ -263,23 +263,29 @@ int pl_x86_vector_binary_lower(const pl_x86_instruction *instruction,
                                pl_x86_vector_binary *out);
 typedef struct {pl_u8 bytes,source_memory,target_memory,source_mmx,target_mmx,aligned;} pl_x86_mmx_transfer;
 int pl_x86_mmx_transfer_lower(const pl_x86_instruction *instruction,pl_x86_mmx_transfer *out);
-typedef struct {pl_u8 bytes,source_memory,target_memory,source,target,clear,alias;} pl_x86_scalar_vector_transfer;
+typedef struct {pl_u8 bytes,source_memory,target_memory,source,target,clear,alias,source_offset,target_offset;} pl_x86_scalar_vector_transfer;
 /* MOVSS/MOVSD and register MOVQ project a scalar region; memory loads/MOVQ
  * clear the remaining region, scalar register moves preserve it. No FP math. */
 int pl_x86_scalar_vector_transfer_lower(const pl_x86_instruction *instruction,pl_x86_scalar_vector_transfer *out);
 typedef struct {pl_u8 source,target,word,mmx;} pl_x86_vector_extract;
 int pl_x86_vector_extract_lower(const pl_x86_instruction *instruction,pl_x86_vector_extract *out);
+typedef struct {pl_u8 bytes,mmx,source,target;} pl_x86_vector_signmask;
+int pl_x86_vector_signmask_lower(const pl_x86_instruction *instruction,pl_x86_vector_signmask *out);
 typedef struct {pl_u8 source_memory,source,target,source_class,source_bytes,target_bytes;} pl_x86_vector_integer_float;
 int pl_x86_vector_integer_float_lower(const pl_x86_instruction *instruction,pl_x86_vector_integer_float *out);
 /* Inputs signed word and RC, outputs raw IEEE bits and inexact predicate.
  * Exact normalization followed by one format rounding; no host FP state. */
 #define PL_X86_SIGNED_FLOAT_MAX_NODES 64u
 int pl_x86_signed_float_plan(pl_u32 input_bits,pl_u32 output_bits,pl_arena *arena,pl_plan *out);
-typedef struct {pl_u8 bytes,ordered,source_memory,source,target,alias;} pl_x86_float_compare;
+typedef struct {pl_u8 bytes,ordered,source_memory,source,target,alias,predicate,result_mask;} pl_x86_float_compare;
 int pl_x86_float_compare_lower(const pl_x86_instruction *instruction,pl_x86_float_compare *out);
 /* Inputs raw A,B,MXCSR; outputs CF/PF/ZF and newly raised IE/DE. */
 #define PL_X86_FLOAT_COMPARE_MAX_NODES 96u
 int pl_x86_float_compare_plan(pl_u32 bits,pl_u32 ordered,pl_u32 alias,pl_arena *arena,pl_plan *out);
+int pl_x86_float_predicate_plan(pl_u32 bits,pl_u32 predicate,pl_u32 alias,pl_arena *arena,pl_plan *out);
+/* MIN/MAX select the second operand on equality or unordered, without
+ * quieting its NaN payload. DAZ applies before comparison and selection. */
+int pl_x86_float_minmax_plan(pl_u32 bits,pl_u32 maximum,pl_arena *arena,pl_plan *out);
 
 typedef struct {pl_u8 bytes,lanes,operation,source_memory,source,target;} pl_x86_float_arithmetic;
 int pl_x86_float_arithmetic_candidate(const pl_x86_instruction *instruction);

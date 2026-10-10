@@ -7,11 +7,11 @@ static int form(pl_u32 family, pl_u32 control, pl_u32 location,
 {
     pl_u8 code[16] = {0};
     pl_u32 at = 0u;
-    if (family != 1u) code[at++] = family == 0u ? 0x66u : family == 3u ? 0xf2u : 0xf3u;
+    if (family != 1u) code[at++] = family == 0u||family==6u ? 0x66u : family == 3u ? 0xf2u : 0xf3u;
     code[at++] = 0x0fu;
-    code[at++] = family == 1u ? 0xc6u : family == 4u ? 0x16u : family == 5u ? 0x12u : 0x70u;
+    code[at++] = family == 1u||family==6u ? 0xc6u : family == 4u ? 0x16u : family == 5u ? 0x12u : 0x70u;
     code[at++] = location == 2u ? 0x00u : location == 1u ? 0xc0u : 0xc1u;
-    if (family < 4u) code[at++] = (pl_u8)control;
+    if (family < 4u||family==6u) code[at++] = (pl_u8)control;
     pl_x86_map map = {code, 0x400000u, at, at, PL_ELF_FLAG_EXECUTE, 1u};
     pl_x86_image image = {&map, 1u, 0u, map.address};
     return pl_x86_decode_profile(&image, map.address, instruction);
@@ -49,8 +49,8 @@ int main(void)
             if(pl_x86_lower(&instruction,&arena,&semantic))return 1;
             ++cases;
         }
-    for (pl_u32 family = 0u; family < 6u; ++family)
-        for (pl_u32 control = 0u; control < (family < 4u ? 256u : 1u); ++control)
+    for (pl_u32 family = 0u; family < 7u; ++family)
+        for (pl_u32 control = 0u; control < (family < 4u||family==6u ? 256u : 1u); ++control)
             for (pl_u32 location = 0u; location < 3u; ++location) {
                 pl_x86_instruction instruction;
                 pl_x86_vector_projection projection;
@@ -61,12 +61,14 @@ int main(void)
                     left[i] = (pl_u8)(i * 11u + 3u);
                     right[i] = (pl_u8)(i * 7u + 129u);
                 }
-                int paired = family == 1u && location != 1u;
+                int paired = (family == 1u||family==6u) && location != 1u;
                 const pl_u8 *source = paired ? right : left;
                 memcpy(expected, source, sizeof expected);
                 pl_u32 bytes = family == 2u || family == 3u ? 2u : 4u;
                 pl_u32 start = family == 2u ? 8u : 0u;
                 pl_u32 selectors = family == 4u ? 0xf5u : family == 5u ? 0xa0u : control;
+                if(family==6u){pl_u32 lo=(control&1u)*2u,hi=((control>>1u)&1u)*2u;
+                    selectors=lo|((lo+1u)<<2u)|(hi<<4u)|((hi+1u)<<6u);}
                 for (pl_u32 lane = 0u; lane < 4u; ++lane) {
                     const pl_u8 *owner = paired && lane < 2u ? left : source;
                     memcpy(expected + start + lane * bytes,
