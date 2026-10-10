@@ -222,9 +222,17 @@ typedef struct {
     pl_u8 source_memory;
     pl_u8 identity;
 } pl_x86_vector_projection;
+#define PL_X86_VECTOR_SELECT_COORDINATES 32u
+#define PL_X86_VECTOR_INSERT_COORDINATES 48u
+#define PL_X86_VECTOR_DUPLICATE_COORDINATES 64u
+pl_u32 pl_x86_vector_projection_extent(const pl_x86_vector_projection *projection);
 
 int pl_x86_vector_project(const pl_x86_instruction *instruction,
                            pl_x86_vector_projection *out);
+typedef struct {pl_u8 control,source_memory,source,target;} pl_x86_vector_window_distance;
+int pl_x86_vector_window_distance_lower(const pl_x86_instruction *instruction,pl_x86_vector_window_distance *out);
+typedef struct {pl_u8 control,explicit_length,index_result,length_bytes,source_memory,source,target;} pl_x86_vector_string_compare;
+int pl_x86_vector_string_compare_lower(const pl_x86_instruction *instruction,pl_x86_vector_string_compare *out);
 typedef struct {pl_u8 register_bytes,lane_bits,left,arithmetic,immediate,count,source_memory,source,target;} pl_x86_vector_shift;
 int pl_x86_vector_shift_lower(const pl_x86_instruction *instruction,pl_x86_vector_shift *out);
 typedef struct {pl_u8 source_memory,source,target,control;} pl_x86_mmx_shuffle;
@@ -248,7 +256,9 @@ enum pl_x86_vector_binary_operator {
     PL_X86_VECTOR_BINARY_MULTIPLY_HIGH,PL_X86_VECTOR_BINARY_MULTIPLY_ADD,
     PL_X86_VECTOR_BINARY_MULTIPLY_EVEN,PL_X86_VECTOR_BINARY_MULTIPLY_ROUND,
     PL_X86_VECTOR_BINARY_NARROW,PL_X86_VECTOR_BINARY_SUM_ABSOLUTE,
-    PL_X86_VECTOR_BINARY_ABSOLUTE
+    PL_X86_VECTOR_BINARY_ABSOLUTE,PL_X86_VECTOR_BINARY_HORIZONTAL_ADD,
+    PL_X86_VECTOR_BINARY_HORIZONTAL_SUBTRACT,PL_X86_VECTOR_BINARY_SIGN,
+    PL_X86_VECTOR_BINARY_MULTIPLY_ADD_BYTES,PL_X86_VECTOR_BINARY_SELECT
 };
 enum pl_x86_vector_binary_result {
     PL_X86_VECTOR_BINARY_VALUE, PL_X86_VECTOR_BINARY_IDENTITY,
@@ -272,13 +282,27 @@ typedef struct {pl_u8 source,target,word,mmx;} pl_x86_vector_extract;
 int pl_x86_vector_extract_lower(const pl_x86_instruction *instruction,pl_x86_vector_extract *out);
 typedef struct {pl_u8 bytes,mmx,source,target;} pl_x86_vector_signmask;
 int pl_x86_vector_signmask_lower(const pl_x86_instruction *instruction,pl_x86_vector_signmask *out);
+typedef struct {pl_u8 source_memory,source,target,source_lane_bytes,target_lane_bytes,signed_lanes,source_bytes;} pl_x86_vector_widen;
+/* Exactly the low source lanes needed to fill one 128-bit destination.
+ * Repeated low-half extension is a vector wave, not scalar lane extraction. */
+int pl_x86_vector_widen_lower(const pl_x86_instruction *instruction,pl_x86_vector_widen *out);
+typedef struct {pl_u8 register_bytes,source_memory,source,target,alias;} pl_x86_vector_swizzle;
+int pl_x86_vector_swizzle_lower(const pl_x86_instruction *instruction,pl_x86_vector_swizzle *out);
+typedef struct {pl_u8 minimum_position,source_memory,source,target,alias;} pl_x86_vector_reduction;
+int pl_x86_vector_reduction_lower(const pl_x86_instruction *instruction,pl_x86_vector_reduction *out);
+typedef struct {pl_u8 insert,memory,bytes,lane,vector,general;} pl_x86_vector_lane;
+int pl_x86_vector_lane_lower(const pl_x86_instruction *instruction,pl_x86_vector_lane *out);
+#define PL_X86_CRC32_MAX_NODES 384u
+/* Exact reflected Castagnoli remainder. Inputs32-bit residual and one
+ * little-endian8/16/32/64-bit word; only the new32-bit residual is live. */
+int pl_x86_crc32_plan(pl_u32 bits,pl_arena *arena,pl_plan *out);
 typedef struct {pl_u8 source_memory,source,target,source_class,source_bytes,target_bytes;} pl_x86_vector_integer_float;
 int pl_x86_vector_integer_float_lower(const pl_x86_instruction *instruction,pl_x86_vector_integer_float *out);
 /* Inputs signed word and RC, outputs raw IEEE bits and inexact predicate.
  * Exact normalization followed by one format rounding; no host FP state. */
 #define PL_X86_SIGNED_FLOAT_MAX_NODES 64u
 int pl_x86_signed_float_plan(pl_u32 input_bits,pl_u32 output_bits,pl_arena *arena,pl_plan *out);
-typedef struct {pl_u8 bytes,ordered,source_memory,source,target,alias,predicate,result_mask;} pl_x86_float_compare;
+typedef struct {pl_u8 bytes,ordered,source_memory,source,target,alias,predicate,result_mask,lanes;} pl_x86_float_compare;
 int pl_x86_float_compare_lower(const pl_x86_instruction *instruction,pl_x86_float_compare *out);
 /* Inputs raw A,B,MXCSR; outputs CF/PF/ZF and newly raised IE/DE. */
 #define PL_X86_FLOAT_COMPARE_MAX_NODES 96u
@@ -294,6 +318,64 @@ int pl_x86_float_arithmetic_lower(const pl_x86_instruction *instruction,pl_x86_f
 /* Raw A,B,MXCSR -> raw result,new exceptions. One target-format rounding
  * of the shared exact arithmetic residual, including gradual underflow. */
 int pl_x86_float_arithmetic_plan(pl_u32 bits,pl_u32 operation,pl_arena *arena,pl_plan *out);
+typedef struct {pl_u8 bytes,lanes,control,source_memory,source,target;} pl_x86_float_round;
+int pl_x86_float_round_lower(const pl_x86_instruction *instruction,pl_x86_float_round *out);
+/* Raw IEEE word and MXCSR -> integral IEEE word and newly raised IE/PE.
+ * Immediate bits 2/3 select MXCSR.RC and suppress precision respectively. */
+#define PL_X86_FLOAT_ROUND_MAX_NODES 128u
+int pl_x86_float_round_plan(pl_u32 bits,pl_u32 control,pl_arena *arena,pl_plan *out);
+typedef struct {pl_u8 bytes,control,source_memory,source,target;} pl_x86_float_dot;
+int pl_x86_float_dot_lower(const pl_x86_instruction *instruction,pl_x86_float_dot *out);
+typedef struct {pl_u8 bytes,lanes,source_memory,source,target,operation;} pl_x86_float_unary;
+/* Operation 0 is exact sqrt, 1/2 are ISA-bounded reciprocal/reciprocal-root.
+ * Approximation never reads RC/DAZ/FTZ or raises a SIMD FP exception. */
+int pl_x86_float_unary_lower(const pl_x86_instruction *instruction,pl_x86_float_unary *out);
+#define PL_X86_SCALAR_PLAN_MAX_NODES 1024u
+int pl_x86_float_sqrt_plan(pl_u32 bits,pl_arena *arena,pl_plan *out);
+typedef struct {pl_u8 source_bytes,target_bytes,lanes,zero_high,source_memory,source,target;} pl_x86_float_convert;
+int pl_x86_float_convert_lower(const pl_x86_instruction *instruction,pl_x86_float_convert *out);
+int pl_x86_float_convert_plan(pl_u32 source_bits,pl_u32 target_bits,pl_arena *arena,pl_plan *out);
+int pl_x86_x87_examine_supported(const pl_x86_instruction *instruction);
+#define PL_X86_X87_EXAMINE_MAX_NODES 64u
+/* Raw significand, sign/exponent, status, empty -> status classification.
+ * No arithmetic, numeric exception, tag or payload replacement. */
+int pl_x86_x87_examine_plan(pl_arena *arena,pl_plan *out);
+int pl_x86_x87_root_supported(const pl_x86_instruction *instruction);
+/* Raw A,SE,unused,unused,CW,empty -> significand,SE,publication outcome. */
+int pl_x86_x87_root_plan(pl_arena *arena,pl_plan *out);
+/* Pure compensated pair [high,low,integer exponent shift,CW,unused] ->
+ * extended rounded value, including gradual underflow and deferred wrap. */
+int pl_x86_compensated_round_plan(pl_arena *arena,pl_plan *out);
+int pl_x86_compensated_divide_plan(pl_arena *arena,pl_plan *out);
+/* Pure range-reduced sin/cos; input extended fields, output binary64 pair. */
+int pl_x86_x87_trig_value_plan(pl_u32 cosine,pl_arena *arena,pl_plan *out);
+int pl_x86_x87_trig_supported(const pl_x86_instruction *instruction);
+/* Original A,SE,CW,empty,full,computed sig,SE,outcome -> publication. */
+int pl_x86_x87_trig_result_plan(pl_u32 cosine,pl_arena *arena,pl_plan *out);
+int pl_x86_x87_exponential_supported(const pl_x86_instruction *instruction);
+int pl_x86_x87_exponential_value_plan(pl_arena *arena,pl_plan *out);
+int pl_x86_x87_exponential_result_plan(pl_arena *arena,pl_plan *out);
+/* Pure positive finite X,Y fields -> compensated Y*log2(X), exponent shift.
+ * Architectural domains, special values and publication are separate. */
+int pl_x86_x87_logarithm_value_plan(pl_arena *arena,pl_plan *out);
+int pl_x86_x87_logarithm_supported(const pl_x86_instruction *instruction);
+/* X,SE,Y,SE,CW,empty,computed significand,SE,outcome -> publication. */
+int pl_x86_x87_logarithm_result_plan(pl_arena *arena,pl_plan *out);
+int pl_x86_x87_logarithm_one_supported(const pl_x86_instruction *instruction);
+int pl_x86_x87_logarithm_one_value_plan(pl_arena *arena,pl_plan *out);
+int pl_x86_x87_logarithm_one_result_plan(pl_arena *arena,pl_plan *out);
+int pl_x86_x87_arctangent_supported(const pl_x86_instruction *instruction);
+int pl_x86_x87_arctangent_prepare_plan(pl_arena *arena,pl_plan *out);
+int pl_x86_x87_arctangent_value_plan(pl_arena *arena,pl_plan *out);
+int pl_x86_x87_arctangent_finish_plan(pl_arena *arena,pl_plan *out);
+int pl_x86_x87_arctangent_result_plan(pl_arena *arena,pl_plan *out);
+int pl_x86_x87_extract_supported(const pl_x86_instruction *instruction);
+#define PL_X86_X87_EXTRACT_MAX_NODES 128u
+/* Raw A,SE,CW,empty,full,unused -> significand pair, exponent pair,
+ * packed flags/tags, suppress publication. Both destinations are atomic. */
+int pl_x86_x87_extract_plan(pl_arena *arena,pl_plan *out);
+int pl_x86_x87_scale_supported(const pl_x86_instruction *instruction);
+int pl_x86_x87_remainder_supported(const pl_x86_instruction *instruction);
 typedef struct {
     pl_u8 source_memory,source_bytes,truncate,source,target;
     pl_u8 element_bytes,target_class,target_bytes;

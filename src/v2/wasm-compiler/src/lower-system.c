@@ -23,8 +23,21 @@ static int memory_order_supported(const pl_x86_instruction *instruction)
 int cut_system_supported(const pl_x86_instruction *instruction)
 {
     if(pl_x86_x87_wait_supported(instruction))return CUT_SYSTEM_X87_WAIT;
+    if(pl_x86_x87_arctangent_supported(instruction))return CUT_SYSTEM_X87_ARITHMETIC;
+    if(pl_x86_x87_exponential_supported(instruction))return CUT_SYSTEM_X87_ARITHMETIC;
+    if(pl_x86_x87_logarithm_supported(instruction)||pl_x86_x87_logarithm_one_supported(instruction))return CUT_SYSTEM_X87_ARITHMETIC;
     if(pl_x86_cache_barrier_supported(instruction))return CUT_SYSTEM_MEMORY_ORDER;
-    if(pl_x86_x87_round_supported(instruction))return CUT_SYSTEM_X87_ARITHMETIC;
+    if(pl_x86_x87_round_supported(instruction)||pl_x86_x87_root_supported(instruction)||pl_x86_x87_trig_supported(instruction)||pl_x86_x87_scale_supported(instruction)||pl_x86_x87_remainder_supported(instruction))return CUT_SYSTEM_X87_ARITHMETIC;
+    if(pl_x86_x87_examine_supported(instruction))return CUT_SYSTEM_X87_STACK;
+    if(pl_x86_x87_extract_supported(instruction))return CUT_SYSTEM_X87_TRANSFER;
+    pl_x86_float_convert converted;if(pl_x86_float_convert_lower(instruction,&converted)
+        &&(!converted.source_memory||cut_memory_address_supported(instruction,&instruction->operands[1].value.memory)))return CUT_SYSTEM_FLOAT_ARITHMETIC;
+    pl_x86_float_unary radical;if(pl_x86_float_unary_lower(instruction,&radical)
+        &&(!radical.source_memory||cut_memory_address_supported(instruction,&instruction->operands[1].value.memory)))return CUT_SYSTEM_FLOAT_ARITHMETIC;
+    pl_x86_float_dot dot;if(pl_x86_float_dot_lower(instruction,&dot)
+        &&(!dot.source_memory||cut_memory_address_supported(instruction,&instruction->operands[1].value.memory)))return CUT_SYSTEM_FLOAT_ARITHMETIC;
+    pl_x86_float_round rounded;if(pl_x86_float_round_lower(instruction,&rounded)
+        &&(!rounded.source_memory||cut_memory_address_supported(instruction,&instruction->operands[1].value.memory)))return CUT_SYSTEM_FLOAT_ARITHMETIC;
     pl_x86_float_arithmetic ieee;if(pl_x86_float_arithmetic_lower(instruction,&ieee)
         &&(!ieee.source_memory||cut_memory_address_supported(instruction,&instruction->operands[1].value.memory)))return CUT_SYSTEM_FLOAT_ARITHMETIC;
     pl_x86_x87_bcd bcd;if(pl_x86_x87_bcd_lower(instruction,&bcd)
@@ -441,6 +454,10 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
     pl_x86_vector_integer_float integer_float;if(pl_x86_vector_integer_float_lower(instruction,&integer_float)){cut_lower_vector_integer_float(cut,instruction);return;}
     pl_x86_vector_float_integer float_integer;if(pl_x86_vector_float_integer_lower(instruction,&float_integer)){cut_lower_vector_float_integer(cut,instruction);return;}
     pl_x86_float_compare floating_compare;if(pl_x86_float_compare_lower(instruction,&floating_compare)){cut_lower_float_compare(cut,instruction);return;}
+    pl_x86_float_convert converted;if(pl_x86_float_convert_lower(instruction,&converted)){cut_lower_float_convert(cut,instruction);return;}
+    pl_x86_float_unary radical;if(pl_x86_float_unary_lower(instruction,&radical)){cut_lower_float_unary(cut,instruction);return;}
+    pl_x86_float_dot dot;if(pl_x86_float_dot_lower(instruction,&dot)){cut_lower_float_dot(cut,instruction);return;}
+    pl_x86_float_round rounded;if(pl_x86_float_round_lower(instruction,&rounded)){cut_lower_float_round(cut,instruction);return;}
     pl_x86_float_arithmetic ieee;if(pl_x86_float_arithmetic_lower(instruction,&ieee)){cut_lower_float_arithmetic(cut,instruction);return;}
     pl_x86_selector_query query;if(pl_x86_selector_query_lower(instruction,&query)){cut_lower_selector_query(cut,instruction);return;}
     pl_x86_far_transfer transfer;if(pl_x86_far_transfer_lower(instruction,&transfer)){cut_lower_far_transfer(cut,instruction);return;}
@@ -492,9 +509,13 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
     if(pl_x86_x87_integer_arithmetic_lower(instruction,&arithmetic)||pl_x86_x87_register_arithmetic_lower(instruction,&register_arithmetic)
         ||pl_x86_x87_memory_arithmetic_lower(instruction,&arithmetic)){
         cut_lower_x87_arithmetic(cut,instruction);return;}
-    if(pl_x86_x87_round_supported(instruction)){cut_lower_x87_arithmetic(cut,instruction);return;}
+    if(pl_x86_x87_round_supported(instruction)||pl_x86_x87_root_supported(instruction)||pl_x86_x87_trig_supported(instruction)||pl_x86_x87_scale_supported(instruction)||pl_x86_x87_remainder_supported(instruction)){cut_lower_x87_arithmetic(cut,instruction);return;}
     if(pl_x86_x87_wait_supported(instruction)){cut_lower_x87_wait(cut);return;}
-    pl_x86_x87_stack fpu_stack;if(pl_x86_x87_stack_lower(instruction,&fpu_stack)){cut_lower_x87_stack(cut,instruction);return;}
+    if(pl_x86_x87_arctangent_supported(instruction)){cut_lower_x87_arithmetic(cut,instruction);return;}
+    if(pl_x86_x87_exponential_supported(instruction)){cut_lower_x87_arithmetic(cut,instruction);return;}
+    if(pl_x86_x87_logarithm_supported(instruction)||pl_x86_x87_logarithm_one_supported(instruction)){cut_lower_x87_arithmetic(cut,instruction);return;}
+    if(pl_x86_x87_extract_supported(instruction)){cut_lower_x87_extract(cut,instruction);return;}
+    pl_x86_x87_stack fpu_stack;if(pl_x86_x87_examine_supported(instruction)||pl_x86_x87_stack_lower(instruction,&fpu_stack)){cut_lower_x87_stack(cut,instruction);return;}
     if (instruction->machine_operation==PL_X86_MACHINE_X87
             && (instruction->machine_argument==PL_X86_X87_INITIALIZE||instruction->machine_argument==PL_X86_X87_CLEAR_EXCEPTIONS)) {
         /* FNINIT is no-wait: pending x87 exceptions do not become #MF here.
@@ -674,6 +695,8 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
         cut_get(cut,CUT_STATUS); cut_op(cut,0x0fu); cut_op(cut,0x0bu);
         return;
     }
+    if(instruction->machine_operation!=PL_X86_MACHINE_INTERRUPT_FLAG||instruction->machine_argument>1u
+        ||instruction->visible_operand_count){cut->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
     /* C owns IF/shadow publication and precise privilege failure. There is
      * no source opcode import or duplicate segment-state pointer in Wasm. */
     cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);

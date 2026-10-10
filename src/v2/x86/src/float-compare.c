@@ -7,21 +7,24 @@ int pl_x86_float_compare_lower(const pl_x86_instruction *i,pl_x86_float_compare 
         ||i->machine_operation!=PL_X86_MACHINE_VECTOR||(i->flags&required)!=required
         ||!i->source_bytes||i->source_bytes>15u||i->length!=i->source_bytes||i->fallthrough-i->rip!=i->source_bytes
         ||(i->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED|PL_X86_INSTRUCTION_TRAP_AFTER|PL_X86_INSTRUCTION_WRITES_MEMORY|PL_X86_INSTRUCTION_PRIVILEGED)))return 0;
-    const pl_x86_operand *d=i->operands,*s=d+1u;pl_u32 bytes=d->bits/8u,memory=s->kind==PL_X86_OPERAND_MEMORY;
-    pl_u32 op=(pl_u32)(i->machine_argument>>32u)&255u;
-    pl_u32 mask=op==PL_X86_SCALAR_FLOAT_PREDICATE;
+    pl_u32 kind=(pl_u32)i->machine_argument&255u,packed=kind==19u||kind==PL_X86_VECTOR_PACKED_FLOAT_PREDICATE64;
+    const pl_x86_operand *d=i->operands,*s=d+1u;pl_u32 bytes=packed?(kind==19u?4u:8u):d->bits/8u,memory=s->kind==PL_X86_OPERAND_MEMORY;
+    pl_u32 op=packed?PL_X86_SCALAR_FLOAT_PREDICATE:(pl_u32)(i->machine_argument>>32u)&255u;
+    pl_u32 mask=op==PL_X86_SCALAR_FLOAT_PREDICATE,width=packed?128u:bytes*8u;
     if(i->visible_operand_count!=(mask?3u:2u))return 0;
     pl_u64 immediate=mask?i->operands[2].value.immediate:0u;
     if((mask&&(i->operands[2].kind!=PL_X86_OPERAND_IMMEDIATE||i->operands[2].bits!=8u||immediate>255u))
         ||(!mask&&op!=PL_X86_SCALAR_FLOAT_COMPARE_ORDERED&&op!=PL_X86_SCALAR_FLOAT_COMPARE_UNORDERED)
-        ||(bytes!=4u&&bytes!=8u)||d->bits!=bytes*8u||s->bits!=d->bits||d->kind!=PL_X86_OPERAND_REGISTER
+        ||(bytes!=4u&&bytes!=8u)||d->bits!=width||s->bits!=d->bits||d->kind!=PL_X86_OPERAND_REGISTER
         ||d->value.reg.class_id!=PL_X86_REGISTER_VECTOR||d->value.reg.bits!=128u||d->value.reg.index>=16u||d->value.reg.flags
         ||(!memory&&(s->kind!=PL_X86_OPERAND_REGISTER||s->value.reg.class_id!=PL_X86_REGISTER_VECTOR||s->value.reg.bits!=128u||s->value.reg.index>=16u||s->value.reg.flags))
-        ||!!(i->flags&PL_X86_INSTRUCTION_READS_MEMORY)!=memory||i->opcode!=(mask?0xc2u:op==PL_X86_SCALAR_FLOAT_COMPARE_ORDERED?0x2fu:0x2eu)
-        ||i->machine_argument!=(PL_X86_VECTOR_SCALAR_FLOAT|((pl_u64)d->value.reg.index<<8u)|((pl_u64)(memory?0u:s->value.reg.index)<<16u)
-            |((pl_u64)memory<<24u)|((pl_u64)op<<32u)|((pl_u64)bytes<<40u)|((pl_u64)bytes<<48u)|((immediate&7u)<<56u)))return 0;
+        ||!!(i->flags&PL_X86_INSTRUCTION_READS_MEMORY)!=memory||i->opcode!=(mask?0xc2u:op==PL_X86_SCALAR_FLOAT_COMPARE_ORDERED?0x2fu:0x2eu))return 0;
+    pl_u64 expected=kind|((pl_u64)d->value.reg.index<<8u)|((pl_u64)(memory?0u:s->value.reg.index)<<16u)|((pl_u64)memory<<24u);
+    if(packed)expected|=(immediate&7u)<<32u;
+    else{if(kind!=PL_X86_VECTOR_SCALAR_FLOAT)return 0;expected|=((pl_u64)op<<32u)|((pl_u64)bytes<<40u)|((pl_u64)bytes<<48u)|((immediate&7u)<<56u);}
+    if(i->machine_argument!=expected)return 0;
     *out=(pl_x86_float_compare){(pl_u8)bytes,(pl_u8)(op==PL_X86_SCALAR_FLOAT_COMPARE_ORDERED),(pl_u8)memory,
-        (pl_u8)(memory?0u:s->value.reg.index),d->value.reg.index,(pl_u8)(!memory&&s->value.reg.index==d->value.reg.index),(pl_u8)(immediate&7u),(pl_u8)mask};return 1;
+        (pl_u8)(memory?0u:s->value.reg.index),d->value.reg.index,(pl_u8)(!memory&&s->value.reg.index==d->value.reg.index),(pl_u8)(immediate&7u),(pl_u8)mask,(pl_u8)(packed?16u/bytes:1u)};return 1;
 }
 typedef struct {pl_operand mag,sign,nan,signal,denormal;} operand_view;
 static operand_view view(expression *e,pl_u32 bits,pl_operand raw,pl_operand daz)

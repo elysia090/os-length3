@@ -1,4 +1,30 @@
 #include <x86/semantics.h>
+int pl_x86_vector_lane_lower(const pl_x86_instruction *i,pl_x86_vector_lane *out)
+{
+    const pl_u32 required=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;
+    if(!i||!out||i->status!=PL_X86_DECODE_VALID||i->encoding!=PL_X86_ENCODING_LEGACY||i->flow!=PL_X86_FLOW_NEXT
+        ||i->machine_operation!=PL_X86_MACHINE_VECTOR||i->visible_operand_count!=3u||(i->flags&required)!=required
+        ||(i->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED|PL_X86_INSTRUCTION_PRIVILEGED|PL_X86_INSTRUCTION_TRAP_AFTER)))return 0;
+    pl_u32 kind=(pl_u32)i->machine_argument&255u,insert=kind==PL_X86_VECTOR_INSERT_LANE,bytes=(pl_u32)(i->machine_argument>>40u)&255u;
+    if((!insert&&kind!=PL_X86_VECTOR_EXTRACT_LANE)||(bytes!=1u&&bytes!=2u&&bytes!=4u&&bytes!=8u))return 0;
+    const pl_x86_operand *v=i->operands+(insert?0u:1u),*g=i->operands+(insert?1u:0u),*a=i->operands+2u;
+    pl_u32 memory=g->kind==PL_X86_OPERAND_MEMORY;
+    if(v->kind!=PL_X86_OPERAND_REGISTER||v->bits!=128u||v->value.reg.class_id!=PL_X86_REGISTER_VECTOR
+        ||v->value.reg.bits!=128u||v->value.reg.index>=16u||v->value.reg.flags
+        ||(memory?g->bits!=bytes*8u:g->kind!=PL_X86_OPERAND_REGISTER||g->value.reg.class_id!=PL_X86_REGISTER_GPR
+            ||(g->bits!=(bytes==8u?64u:32u)&&g->bits!=64u)||g->value.reg.bits!=g->bits||g->value.reg.index>=16u||g->value.reg.flags)
+        ||a->kind!=PL_X86_OPERAND_IMMEDIATE||a->bits!=8u||a->value.immediate>255u
+        ||!!(i->flags&PL_X86_INSTRUCTION_READS_MEMORY)!=(memory&&insert)
+        ||!!(i->flags&PL_X86_INSTRUCTION_WRITES_MEMORY)!=(memory&&!insert))return 0;
+    pl_u32 selected=(pl_u32)a->value.immediate&(16u/bytes-1u);
+    pl_u64 expected=kind|((pl_u64)(insert?v->value.reg.index:memory?0u:g->value.reg.index)<<8u)
+        |((pl_u64)(insert?(memory?0u:g->value.reg.index):v->value.reg.index)<<16u)
+        |((pl_u64)(memory&&insert)<<24u)|((pl_u64)(memory&&!insert)<<25u)|((pl_u64)selected<<32u)|((pl_u64)bytes<<40u);
+    if(i->machine_argument!=expected)return 0;
+    pl_u32 opcode=insert?bytes==1u?0x20u:bytes==2u?0xc4u:0x22u:bytes==1u?0x14u:bytes==2u?0x15u:0x16u;
+    if(i->opcode!=opcode&&!(bytes==4u&&!insert&&i->opcode==0x17u))return 0;
+    *out=(pl_x86_vector_lane){(pl_u8)insert,(pl_u8)memory,(pl_u8)bytes,(pl_u8)selected,v->value.reg.index,(pl_u8)(memory?0u:g->value.reg.index)};return 1;
+}
 static int lane(const pl_x86_operand *o,pl_u32 bits)
 {
     return o->kind==PL_X86_OPERAND_REGISTER&&o->value.reg.class_id==PL_X86_REGISTER_VECTOR&&o->value.reg.bits==128u

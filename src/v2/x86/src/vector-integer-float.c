@@ -5,23 +5,27 @@ int pl_x86_vector_integer_float_lower(const pl_x86_instruction *i,pl_x86_vector_
     const pl_u32 required=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;
     if(!i||!out||i->status!=PL_X86_DECODE_VALID||i->encoding!=PL_X86_ENCODING_LEGACY||i->flow!=PL_X86_FLOW_NEXT
         ||i->machine_operation!=PL_X86_MACHINE_VECTOR||i->visible_operand_count!=2u||(i->flags&required)!=required
-        ||!i->source_bytes||i->source_bytes>15u||i->length!=i->source_bytes||i->fallthrough-i->rip!=i->source_bytes||i->opcode!=0x2au
+        ||!i->source_bytes||i->source_bytes>15u||i->length!=i->source_bytes||i->fallthrough-i->rip!=i->source_bytes
         ||(i->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED|PL_X86_INSTRUCTION_TRAP_AFTER
             |PL_X86_INSTRUCTION_WRITES_MEMORY|PL_X86_INSTRUCTION_PRIVILEGED)))return 0;
     const pl_x86_operand *d=i->operands,*s=d+1u;pl_u32 memory=s->kind==PL_X86_OPERAND_MEMORY,kind=(pl_u32)i->machine_argument&255u;
     pl_u32 source_class,source_bytes,target_bytes;
     pl_u64 argument=kind|((pl_u64)d->value.reg.index<<8u)|((pl_u64)(memory?0u:s->value.reg.index)<<16u)|((pl_u64)memory<<24u);
-    if(kind==30u){source_class=PL_X86_REGISTER_MMX;source_bytes=8u;target_bytes=4u;if(d->bits!=64u)return 0;}
+    if(kind==16u||kind==PL_X86_VECTOR_PACKED_CONVERT){
+        source_class=PL_X86_REGISTER_VECTOR;source_bytes=kind==16u?16u:8u;target_bytes=kind==16u?4u:8u;
+        if(d->bits!=128u||i->opcode!=(kind==16u?0x5bu:0xe6u))return 0;
+    }else if(kind==30u){source_class=PL_X86_REGISTER_MMX;source_bytes=8u;target_bytes=4u;if(d->bits!=64u)return 0;}
     else if(kind==PL_X86_VECTOR_SCALAR_FLOAT){source_class=PL_X86_REGISTER_GPR;source_bytes=s->bits/8u;target_bytes=d->bits/8u;
         if((source_bytes!=4u&&source_bytes!=8u)||(target_bytes!=4u&&target_bytes!=8u))return 0;
         argument|=(memory?0u:PL_X86_SCALAR_FLOAT_SOURCE_GPR)
             |((pl_u64)PL_X86_SCALAR_FLOAT_INTEGER_TO_FLOAT<<PL_X86_SCALAR_FLOAT_OPERATION_SHIFT)
             |((pl_u64)target_bytes<<PL_X86_SCALAR_FLOAT_TARGET_BYTES_SHIFT)|((pl_u64)source_bytes<<PL_X86_SCALAR_FLOAT_SOURCE_BYTES_SHIFT);
     }else return 0;
+    if(source_class!=PL_X86_REGISTER_VECTOR&&i->opcode!=0x2au)return 0;
     if(d->kind!=PL_X86_OPERAND_REGISTER||d->value.reg.class_id!=PL_X86_REGISTER_VECTOR
         ||d->value.reg.bits!=128u||d->value.reg.index>=16u||d->value.reg.flags||s->bits!=source_bytes*8u
         ||(!memory&&(s->kind!=PL_X86_OPERAND_REGISTER||s->value.reg.class_id!=source_class
-            ||s->value.reg.bits!=s->bits||s->value.reg.index>=(source_class==PL_X86_REGISTER_MMX?8u:16u)||s->value.reg.flags))
+            ||s->value.reg.bits!=(source_class==PL_X86_REGISTER_VECTOR?128u:s->bits)||s->value.reg.index>=(source_class==PL_X86_REGISTER_MMX?8u:16u)||s->value.reg.flags))
         ||!!(i->flags&PL_X86_INSTRUCTION_READS_MEMORY)!=memory
         ||i->machine_argument!=argument)return 0;
     *out=(pl_x86_vector_integer_float){(pl_u8)memory,(pl_u8)(memory?0u:s->value.reg.index),(pl_u8)d->value.reg.index,

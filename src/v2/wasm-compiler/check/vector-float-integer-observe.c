@@ -23,7 +23,8 @@ int main(int argc,char **argv)
 #ifndef _WIN32
     (void)argc;(void)argv;return 2;
 #else
-    if(argc!=2)return 2;
+    int rounded_mode=argc==3&&!strcmp(argv[2],"--rounded"),quad_mode=argc==3&&!strcmp(argv[2],"--quad");
+    if(argc!=2&&!rounded_mode&&!quad_mode)return 2;
     pl_u8 *code=check_x87_allocate(8192u);if(!code)return 1;
     PVOID handler=AddVectoredExceptionHandler(1u,conversion_exception);if(!handler)return 1;
     const pl_u8 targets[]={0u,5u,7u},sources[]={0u,7u,15u};
@@ -38,17 +39,18 @@ int main(int argc,char **argv)
         0x0010000000000000ull,0x8010000000000000ull,0x41dfffffffe00000ull,0xc1e0000000100000ull,0x41dfffffffd00000ull,0xc1dfffffffd00000ull,0x7fefffffffffffffull,0xffefffffffffffffull,
         0x43dfffffffffffffull,0xc3dfffffffffffffull,0x43e0000000000000ull,0xc3e0000000000000ull,0x43e0000000000001ull,0xc3e0000000000001ull,0x43b0000000000000ull,0xc3b0000000000000ull};
     unsigned form=0u;pl_u64 seed=0x291a8f0305657badull;
-    for(unsigned kind=0u;kind<8u;++kind)for(unsigned dst=0u;dst<(kind>=3u&&kind<=6u?1u:3u);++dst)for(unsigned src=0u;src<4u;++src)
+    for(unsigned kind=quad_mode?8u:0u;kind<(quad_mode?10u:8u);++kind)for(unsigned dst=0u;dst<(kind>=3u&&kind<=6u?1u:3u);++dst)for(unsigned src=0u;src<4u;++src)
     for(unsigned rc=0u;rc<4u;++rc)for(unsigned daz=0u;daz<2u;++daz)for(unsigned masks=0u;masks<4u;++masks,++form){
         unsigned scalar=kind>=3u&&kind<=6u,wide=kind==2u||kind==4u||kind==6u||kind==7u;
-        unsigned memory=src==3u,target=scalar?0u:kind==7u?sources[dst]:targets[dst],source=memory?0u:sources[src],n=0u,bytes=scalar?(wide?8u:4u):wide?16u:8u;DWORD old;
+        unsigned memory=src==3u,target=scalar?0u:kind>=7u?sources[dst]:targets[dst],source=memory?0u:sources[src],n=0u,bytes=kind>=8u?16u:scalar?(wide?8u:4u):wide?16u:8u;DWORD old;
         if(!VirtualProtect(code,4096u,PAGE_READWRITE,&old))return 1;
         if(scalar)code[n++]=(pl_u8)(wide?0xf2u:0xf3u);
         else if(kind==2u)code[n++]=0x66u;
-        else if(kind==7u)code[n++]=0x66u;
+        else if(kind==7u)code[n++]=(pl_u8)(rounded_mode?0xf2u:0x66u);
+        else if(kind>=8u)code[n++]=(pl_u8)(kind==8u?0x66u:0xf3u);
         unsigned rex=(kind==5u||kind==6u?8u:0u)|(target>=8u?4u:0u)|(source>=8u?1u:0u);
         if(rex)code[n++]=(pl_u8)(0x40u|rex);
-        code[n++]=0x0fu;code[n++]=(pl_u8)(kind==7u?0xe6u:kind==1u?0x2du:0x2cu);
+        code[n++]=0x0fu;code[n++]=(pl_u8)(kind>=8u?0x5bu:kind==7u?0xe6u:kind==1u||(rounded_mode&&scalar)?0x2du:0x2cu);
         code[n++]=(pl_u8)((memory?0u:0xc0u)|((target&7u)<<3u)|(memory?5u:source&7u));
         if(memory){put(code+n,4096u-n-4u,4u);n+=4u;}code[n]=0xc3u;
         if(!VirtualProtect(code,4096u,PAGE_EXECUTE_READ,&old)||!FlushInstructionCache(GetCurrentProcess(),code,n+1u))return 1;

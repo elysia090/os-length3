@@ -10,6 +10,18 @@ static int xmm(const pl_x86_operand *operand, int selected_half)
 }
 int cut_vector_supported(const pl_x86_instruction *instruction)
 {
+    pl_x86_vector_string_compare text;if(pl_x86_vector_string_compare_lower(instruction,&text))return !text.source_memory
+        ||cut_memory_address_supported(instruction,&instruction->operands[1].value.memory);
+    pl_x86_vector_window_distance distance;if(pl_x86_vector_window_distance_lower(instruction,&distance))return !distance.source_memory
+        ||cut_memory_address_supported(instruction,&instruction->operands[1].value.memory);
+    pl_x86_vector_widen widened;
+    if(pl_x86_vector_widen_lower(instruction,&widened))return !widened.source_memory
+        ||cut_memory_address_supported(instruction,&instruction->operands[1].value.memory);
+    pl_x86_vector_swizzle swizzle;
+    if(pl_x86_vector_swizzle_lower(instruction,&swizzle))return !swizzle.source_memory
+        ||cut_memory_address_supported(instruction,&instruction->operands[1].value.memory);
+    pl_x86_vector_reduction reduction;if(pl_x86_vector_reduction_lower(instruction,&reduction))return !reduction.source_memory
+        ||cut_memory_address_supported(instruction,&instruction->operands[1].value.memory);
     pl_x86_mmx_shuffle mmx_shuffle;
     if(pl_x86_mmx_shuffle_lower(instruction,&mmx_shuffle))return !mmx_shuffle.source_memory
         ||cut_memory_address_supported(instruction,&instruction->operands[1].value.memory);
@@ -41,8 +53,7 @@ int cut_vector_supported(const pl_x86_instruction *instruction)
     pl_u64 operation=instruction->machine_argument>>32u;
     pl_u32 unpack=cut_vector_unpack_shape(instruction);
     int packed=kind==10u && unpack;
-    int shuffle=kind==61u;
-    if(kind && !packed && !shuffle)return 0;
+    if(kind && !packed)return 0;
     int read=source->kind==PL_X86_OPERAND_MEMORY,write=target->kind==PL_X86_OPERAND_MEMORY;
     if((read && write) || (kind && write))return 0;
     if((read?source->bits!=128u:!xmm(source,!!unpack))
@@ -53,7 +64,6 @@ int cut_vector_supported(const pl_x86_instruction *instruction)
     pl_u64 argument=kind|((pl_u64)(write?0u:target->value.reg.index)<<8u)
         |((pl_u64)(read?0u:source->value.reg.index)<<16u)|((pl_u64)read<<24u)|((pl_u64)write<<25u);
     if(packed)argument|=(operation<<32u)|((pl_u64)read<<26u);
-    else if(shuffle)argument|=(pl_u64)read<<26u;
     else if(read || write)argument|=instruction->machine_argument&(1ull<<26u);
     return instruction->machine_argument==argument;
 }
@@ -110,6 +120,11 @@ static void write_word(cut_lowering *cut,pl_u32 offset,pl_u32 local)
 }
 void cut_lower_vector(cut_lowering *cut,const pl_x86_instruction *instruction)
 {
+    pl_x86_vector_string_compare text;if(pl_x86_vector_string_compare_lower(instruction,&text)){cut_lower_vector_string_compare(cut,instruction,&text);return;}
+    pl_x86_vector_window_distance distance;if(pl_x86_vector_window_distance_lower(instruction,&distance)){cut_lower_vector_window_distance(cut,instruction,&distance);return;}
+    pl_x86_vector_widen widened;if(pl_x86_vector_widen_lower(instruction,&widened)){cut_lower_vector_widen(cut,instruction,&widened);return;}
+    pl_x86_vector_swizzle swizzle;if(pl_x86_vector_swizzle_lower(instruction,&swizzle)){cut_lower_vector_shuffle(cut,instruction);return;}
+    pl_x86_vector_reduction reduction;if(pl_x86_vector_reduction_lower(instruction,&reduction)){cut_lower_vector_reduction(cut,instruction,&reduction);return;}
     pl_x86_mmx_shuffle shuffle;if(pl_x86_mmx_shuffle_lower(instruction,&shuffle)){cut_lower_mmx_shuffle(cut,instruction,&shuffle);return;}
     pl_x86_vector_shift shifted;if(pl_x86_vector_shift_lower(instruction,&shifted)){cut_lower_vector_shift(cut,instruction,0u);return;}
     pl_x86_vector_unpack unpacked;if(pl_x86_vector_unpack_lower(instruction,&unpacked)&&unpacked.register_bytes==8u){cut_lower_vector_unpack(cut,instruction,0u);return;}
@@ -117,7 +132,6 @@ void cut_lower_vector(cut_lowering *cut,const pl_x86_instruction *instruction)
     int binary_value=pl_x86_vector_binary_lower(instruction,&binary),mmx=binary_value&&binary.register_bytes==8u;
     int read=binary_value?binary.source_memory:!!(instruction->machine_argument&(1ull<<24u));
     int write=mmx?0:!!(instruction->machine_argument&(1ull<<25u));
-    pl_u32 kind=(pl_u32)(instruction->machine_argument&255u);
     if(mmx)cut_mmx_guard(cut);else cut_sse_guard(cut);
     pl_u32 shift=cut_vector_shift_shape(instruction);
     if(shift) {cut_lower_vector_shift(cut,instruction,shift);return;}
@@ -134,7 +148,9 @@ void cut_lower_vector(cut_lowering *cut,const pl_x86_instruction *instruction)
         /* All sixteen bytes obtain their rights/residency before either
          * XMM publication or the first store. Two scalar access calls would
          * expose a partial operand on a second-page fault. */
-        if(mmx){cut_const(cut,0u);cut_set(cut,CUT_VALUE);cut_access(cut);}
+        if(mmx||(projected&&pl_x86_vector_projection_extent(&projection)<=8u)){
+            if(!mmx)cut->report.memory_bytes=pl_x86_vector_projection_extent(&projection);
+            cut_const(cut,0u);cut_set(cut,CUT_VALUE);cut_access(cut);}
         else{cut_op(cut,0x20u);wasm_writer_uleb(cut->writer,1u);cut_get(cut,CUT_ADDRESS);
         cut_op(cut,0x41u);wasm_writer_uleb(cut->writer,16u);
         cut_i32_const(cut,cut->report.memory_access);
@@ -144,7 +160,6 @@ void cut_lower_vector(cut_lowering *cut,const pl_x86_instruction *instruction)
     if(projected) {cut_emit_vector_projection(cut,instruction,&projection);return;}
     if(binary_value) {cut_emit_vector_binary(cut,instruction,&binary);return;}
     if(unpack) {cut_lower_vector_unpack(cut,instruction,unpack);return;}
-    if(kind==61u) {cut_lower_vector_shuffle(cut,instruction);return;}
     if(read) {
         cut_access_value(cut);cut_set(cut,CUT_LEFT);
         cut_op(cut,0x20u);wasm_writer_uleb(cut->writer,1u);

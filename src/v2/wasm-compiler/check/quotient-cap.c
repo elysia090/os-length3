@@ -70,19 +70,21 @@ int main(void)
     for(pl_u32 i=0u;i<COUNT;++i)options[i].maximum_module_bytes=(pl_u32)bytes;
     EXPECT(!wasm_compiler_emit_code_projection(&image,9u,options,COUNT,output,bytes,&bytes,reports));
     EXPECT(bytes==7646u && !memcmp(reference,output,(size_t)bytes));
-    /* Final capacity, declared cap and late unlowered cuts all refuse before
+    /* Final capacity, declared cap and a late outside-image entry refuse before
      * target/report publication. There is no raw-size rejection shortcut. */
     for(pl_u32 kind=0u;kind<3u;++kind){
         memset(output,0xa5,sizeof output);memcpy(reference,output,sizeof output);
         memset(reports,0xa5,sizeof reports);memcpy(saved,reports,sizeof reports);bytes=77u;
         for(pl_u32 i=0u;i<COUNT;++i)options[i].maximum_module_bytes=kind==1u?7645u:8000u;
-        /* FPTAN still needs its value law; ordinary INT 1 is closed. */
-        if(kind==2u){page[64u+(COUNT-1u)*16u]=0xd9u;page[65u+(COUNT-1u)*16u]=0xf2u;}
+        // Admission grows; an advertised instruction is not a stable negative
+        // fixture. Use an absent executable coordinate for late input failure.
+        pl_u64 last_entry=options[COUNT-1u].entry;
+        if(kind==2u)options[COUNT-1u].entry=map.address+map.memory_bytes;
         int status=wasm_compiler_emit_code_projection(&image,9u,options,COUNT,output,
             kind==0u?7645u:sizeof output,&bytes,reports);
-        EXPECT(status==(kind==2u?WASM_COMPILER_ERROR_GRAMMAR:WASM_COMPILER_ERROR_CAPACITY));
+        EXPECT(status==(kind==2u?WASM_COMPILER_ERROR_INPUT:WASM_COMPILER_ERROR_CAPACITY));
         EXPECT(bytes==77u && !memcmp(reference,output,sizeof output) && !memcmp(saved,reports,sizeof reports));
-        page[64u+(COUNT-1u)*16u]=0xb8u;
+        options[COUNT-1u].entry=last_entry;
     }
     /* Six long bodies agree beyond the first comparison window, then split
      * on an immediate. Exact equality must examine the complete stream. */

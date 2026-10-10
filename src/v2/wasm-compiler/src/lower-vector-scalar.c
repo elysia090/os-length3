@@ -15,6 +15,8 @@ static int scalar(const pl_x86_operand *operand,pl_u32 width)
 }
 int cut_vector_scalar_supported(const pl_x86_instruction *instruction)
 {
+    pl_x86_vector_lane element;if(pl_x86_vector_lane_lower(instruction,&element))return !element.memory
+        ||cut_memory_address_supported(instruction,&instruction->operands[element.insert?1u:0u].value.memory);
     pl_x86_vector_signmask mask;if(pl_x86_vector_signmask_lower(instruction,&mask))return 1;
     pl_x86_vector_extract extraction;if(pl_x86_vector_extract_lower(instruction,&extraction))return 1;
     pl_x86_scalar_vector_transfer transfer;
@@ -58,6 +60,7 @@ int cut_vector_scalar_supported(const pl_x86_instruction *instruction)
 
 void cut_lower_vector_scalar(cut_lowering *cut,const pl_x86_instruction *instruction)
 {
+    pl_x86_vector_lane lane;if(pl_x86_vector_lane_lower(instruction,&lane)){cut_lower_vector_lane(cut,instruction,&lane);return;}
     pl_x86_vector_signmask mask;if(pl_x86_vector_signmask_lower(instruction,&mask)){
         if(mask.mmx){cut_mmx_guard(cut);cut_load(cut,offsetof(machine_state,x87_significand)+mask.source*8u);
             cut_op(cut,0xfdu);wasm_writer_uleb(cut->writer,0x12u);}

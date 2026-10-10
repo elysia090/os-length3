@@ -9,7 +9,16 @@
 
 #include <support/types.h>
 
-#define PL_OPCODE_COUNT 218u
+#define PL_OPCODE_COUNT 225u
+/* Stateless nearest-even binary64 operations over raw word bindings. These
+ * are pure refinement operations, not guest MXCSR/flags producers. */
+#define PL_OPCODE_IEEE64_ADD 218u
+#define PL_OPCODE_IEEE64_SUBTRACT 219u
+#define PL_OPCODE_IEEE64_MULTIPLY 220u
+#define PL_OPCODE_IEEE64_DIVIDE 221u
+#define PL_OPCODE_IEEE64_FROM_UNSIGNED 222u
+#define PL_OPCODE_IEEE64_TO_UNSIGNED_SAT 223u
+#define PL_OPCODE_IEEE64_NEAREST 224u
 /* lane32 and lane64 use the same 70-operation physical vocabulary. */
 #define PL_LANE_OPCODE_STRIDE 70u
 /* The memory access shape, as decode_memory_shape reads it. */

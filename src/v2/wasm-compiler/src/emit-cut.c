@@ -92,6 +92,7 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
     plan->fault_vector=0u;
     plan->store_span=0u;
     plan->memory_prefix=0u;
+    plan->scalar_nodes=0u;
     plan->report.entry = rip;
     for (pl_u32 i = 0u; i < options->maximum_source_instructions; ++i) {
         if (i && (rip >> 12u) != (options->entry >> 12u)) {
@@ -129,6 +130,7 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
         int string = cut_string_supported(&instruction);
         int indirect = cut_indirect_supported(&instruction);
         if (system || stack || string || indirect || cut_memory_supported(&instruction)) {
+            if(instruction.operation==PL_X86_OPERATION_CRC32)plan->scalar_nodes=PL_X86_CRC32_MAX_NODES;
             /* CONTROL describes a branch actually emitted in this cut,
              * never the possibly faulting successor of a pure prefix. */
             plan->report.boundary = indirect ? (i ? WASM_CUT_LIMIT : WASM_CUT_CONTROL)
@@ -215,9 +217,10 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                 else if(system==CUT_SYSTEM_SELECTOR_QUERY)plan->report.memory_bytes=instruction.operands[1].kind==PL_X86_OPERAND_MEMORY?2u:0u;
                 else if(system==CUT_SYSTEM_FAR_TRANSFER)plan->report.memory_bytes=instruction.operands[0].bits/8u;
                 else if (system==CUT_SYSTEM_VECTOR_TRANSFER)
-                {pl_x86_vector_binary law;pl_x86_vector_shift shift;pl_x86_vector_unpack unpack;pl_x86_mmx_shuffle shuffle;plan->report.memory_bytes=pl_x86_mmx_shuffle_lower(&instruction,&shuffle)?(shuffle.source_memory?8u:0u):pl_x86_vector_unpack_lower(&instruction,&unpack)?(unpack.source_memory?unpack.source_bytes:0u):pl_x86_vector_shift_lower(&instruction,&shift)?(shift.source_memory?shift.register_bytes:0u):pl_x86_vector_binary_lower(&instruction,&law)?(law.source_memory?law.register_bytes:0u):(instruction.machine_argument&(3ull<<24u))?16u:0u;}
+                {pl_x86_vector_binary law;pl_x86_vector_shift shift;pl_x86_vector_unpack unpack;pl_x86_mmx_shuffle shuffle;pl_x86_vector_widen widen;pl_x86_vector_swizzle swizzle;pl_x86_vector_projection projection;
+                plan->report.memory_bytes=pl_x86_vector_project(&instruction,&projection)?pl_x86_vector_projection_extent(&projection):pl_x86_vector_widen_lower(&instruction,&widen)?(widen.source_memory?widen.source_bytes:0u):pl_x86_vector_swizzle_lower(&instruction,&swizzle)?(swizzle.source_memory?swizzle.register_bytes:0u):pl_x86_mmx_shuffle_lower(&instruction,&shuffle)?(shuffle.source_memory?8u:0u):pl_x86_vector_unpack_lower(&instruction,&unpack)?(unpack.source_memory?unpack.source_bytes:0u):pl_x86_vector_shift_lower(&instruction,&shift)?(shift.source_memory?shift.register_bytes:0u):pl_x86_vector_binary_lower(&instruction,&law)?(law.source_memory?law.register_bytes:0u):(instruction.machine_argument&(3ull<<24u))?16u:0u;}
                 else if (system==CUT_SYSTEM_VECTOR_SCALAR)
-                {pl_x86_mmx_transfer law;pl_x86_scalar_vector_transfer lane;plan->report.memory_bytes=pl_x86_scalar_vector_transfer_lower(&instruction,&lane)?(lane.source_memory||lane.target_memory?lane.bytes:0u):pl_x86_mmx_transfer_lower(&instruction,&law)?(law.source_memory||law.target_memory?law.bytes:0u):
+                {pl_x86_mmx_transfer law;pl_x86_scalar_vector_transfer lane;pl_x86_vector_lane element;plan->report.memory_bytes=pl_x86_vector_lane_lower(&instruction,&element)?(element.memory?element.bytes:0u):pl_x86_scalar_vector_transfer_lower(&instruction,&lane)?(lane.source_memory||lane.target_memory?lane.bytes:0u):pl_x86_mmx_transfer_lower(&instruction,&law)?(law.source_memory||law.target_memory?law.bytes:0u):
                     (instruction.machine_argument&(3ull<<24u))?(instruction.machine_argument&255u)==9u?4u:8u:0u;}
                 else if((system==CUT_SYSTEM_SELECTOR_SNAPSHOT || system==CUT_SYSTEM_X87_SNAPSHOT)
                     && instruction.operands[0].kind==PL_X86_OPERAND_MEMORY)
@@ -258,6 +261,7 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
             plan->report.boundary_operation = instruction.operation;
             break;
         }
+        if(instruction.operation==PL_X86_OPERATION_CRC32)plan->scalar_nodes=PL_X86_CRC32_MAX_NODES;
         /* A single MOV has one value binding, not a different body for every
          * literal. Do not split a stronger multi-instruction slice to obtain
          * this sharing, or rebind another immediate in that slice. */
@@ -328,6 +332,10 @@ static int prologue(wasm_writer *writer,const cut_plan *plan,cut_lowering *state
         permutation_local=(pl_u32)cut_vector_projection_local(&instruction);
         pl_u32 binary_locals=(pl_u32)cut_vector_binary_local(&instruction);
         if(binary_locals>permutation_local)permutation_local=binary_locals;
+        pl_x86_vector_reduction reduction;if(pl_x86_vector_reduction_lower(&instruction,&reduction)&&reduction.minimum_position)permutation_local=2u;
+        pl_x86_vector_window_distance distance;if(pl_x86_vector_window_distance_lower(&instruction,&distance))permutation_local=3u;
+        pl_x86_vector_string_compare text;if(pl_x86_vector_string_compare_lower(&instruction,&text))permutation_local=3u;
+        pl_x86_vector_swizzle swizzle;if(pl_x86_vector_swizzle_lower(&instruction,&swizzle)&&(swizzle.alias||swizzle.register_bytes==8u))permutation_local=1u;
         pl_x86_vector_shift shift;if(pl_x86_vector_shift_lower(&instruction,&shift)&&shift.register_bytes==8u)permutation_local=1u;
         pl_x86_vector_unpack unpack;if(pl_x86_vector_unpack_lower(&instruction,&unpack)&&unpack.register_bytes==8u)permutation_local=1u;
         pl_x86_mmx_shuffle shuffle;if(pl_x86_mmx_shuffle_lower(&instruction,&shuffle))permutation_local=1u;
@@ -336,6 +344,8 @@ static int prologue(wasm_writer *writer,const cut_plan *plan,cut_lowering *state
     if(plan->store_span)locals=CUT_REPEAT_LOCALS;
     if(plan->system_cut==CUT_SYSTEM_VECTOR_TRANSFER){pl_x86_instruction i;pl_x86_vector_shift law;
         if(!pl_x86_decode_profile(&plan->image,rip,&i)&&pl_x86_vector_shift_lower(&i,&law))locals=28u;}
+    if(plan->system_cut==CUT_SYSTEM_VECTOR_TRANSFER){pl_x86_instruction i;pl_x86_vector_string_compare law;
+        if(!pl_x86_decode_profile(&plan->image,rip,&i)&&pl_x86_vector_string_compare_lower(&i,&law))locals=40u;}
     if(plan->system_cut==CUT_SYSTEM_VECTOR_TRANSFER){pl_x86_instruction i;pl_x86_vector_unpack law;
         if(!pl_x86_decode_profile(&plan->image,rip,&i)&&pl_x86_vector_unpack_lower(&i,&law)&&law.register_bytes==8u)locals=64u;}
     if(plan->system_cut==CUT_SYSTEM_VECTOR_TRANSFER){pl_x86_instruction i;pl_x86_mmx_shuffle law;
@@ -344,13 +354,17 @@ static int prologue(wasm_writer *writer,const cut_plan *plan,cut_lowering *state
         if(!pl_x86_decode_profile(&plan->image,rip,&i)&&pl_x86_x87_environment_lower(&i,&law))locals=48u;}
     if(plan->system_cut==CUT_SYSTEM_VECTOR_INTEGER_FLOAT){pl_x86_instruction i;pl_x86_vector_integer_float law;
         if(pl_x86_decode_profile(&plan->image,rip,&i)||!pl_x86_vector_integer_float_lower(&i,&law))return WASM_COMPILER_ERROR_GRAMMAR;
-        if(law.source_class==PL_X86_REGISTER_MMX){permutation_local=5u;locals=26u;}else locals=32u+PL_X86_SIGNED_FLOAT_MAX_NODES;}
+        if(law.source_class!=PL_X86_REGISTER_GPR){permutation_local=5u;locals=26u;}else locals=32u+PL_X86_SIGNED_FLOAT_MAX_NODES;}
     if(plan->system_cut==CUT_SYSTEM_VECTOR_FLOAT_INTEGER){permutation_local=3u;locals=26u;}
-    if(plan->system_cut==CUT_SYSTEM_FLOAT_COMPARE)locals=32u+PL_X86_FLOAT_COMPARE_MAX_NODES;
+    if(plan->system_cut==CUT_SYSTEM_FLOAT_COMPARE)locals=40u+PL_X86_FLOAT_COMPARE_MAX_NODES;
     if(plan->system_cut==CUT_SYSTEM_FLOAT_ARITHMETIC)locals=40u+PL_X86_X87_ARITHMETIC_MAX_NODES;
+    if(plan->system_cut==CUT_SYSTEM_FLOAT_ARITHMETIC){pl_x86_instruction i;pl_x86_float_unary law;
+        if(!pl_x86_decode_profile(&plan->image,rip,&i)&&pl_x86_float_unary_lower(&i,&law))locals=40u+PL_X86_SCALAR_PLAN_MAX_NODES;}
     if(plan->system_cut==CUT_SYSTEM_SELECTOR_QUERY)locals=32u+PL_X86_SELECTOR_QUERY_MAX_NODES;
     if(plan->system_cut==CUT_SYSTEM_VECTOR_TRANSFER){pl_x86_instruction i;pl_x86_vector_binary law;
         if(!pl_x86_decode_profile(&plan->image,rip,&i)&&pl_x86_vector_binary_lower(&i,&law)&&law.register_bytes==8u)locals=26u;}
+    if(plan->system_cut==CUT_SYSTEM_VECTOR_TRANSFER){pl_x86_instruction i;pl_x86_vector_swizzle law;
+        if(!pl_x86_decode_profile(&plan->image,rip,&i)&&pl_x86_vector_swizzle_lower(&i,&law)&&law.register_bytes==8u)locals=26u;}
     if(plan->system_cut==CUT_SYSTEM_VECTOR_SCALAR){pl_x86_instruction i;pl_x86_mmx_transfer law;
         if(!pl_x86_decode_profile(&plan->image,rip,&i)&&pl_x86_mmx_transfer_lower(&i,&law)){locals=26u;permutation_local=1u;}}
     if(plan->system_cut==CUT_SYSTEM_VECTOR_SCALAR){pl_x86_instruction i;pl_x86_vector_extract law;
@@ -367,19 +381,28 @@ static int prologue(wasm_writer *writer,const cut_plan *plan,cut_lowering *state
     if(plan->system_cut==CUT_SYSTEM_X87_COMPARE)locals=CUT_X87_LOCALS;
     if(plan->system_cut==CUT_SYSTEM_X87_EXCHANGE)locals=72u;
     if(plan->system_cut==CUT_SYSTEM_X87_TRANSFER)locals=80u;
+    if(plan->system_cut==CUT_SYSTEM_X87_TRANSFER){pl_x86_instruction i;
+        if(!pl_x86_decode_profile(&plan->image,rip,&i)&&pl_x86_x87_extract_supported(&i))locals=40u+PL_X86_X87_EXTRACT_MAX_NODES;}
     /* Logical slot 1 is the first declared local (engine index 4). */
     if(plan->system_cut==CUT_SYSTEM_X87_STACK)locals=28u+PL_X86_X87_STACK_MAX_NODES;
+    if(plan->system_cut==CUT_SYSTEM_X87_STACK){pl_x86_instruction i;
+        if(!pl_x86_decode_profile(&plan->image,rip,&i)&&pl_x86_x87_examine_supported(&i))locals=34u+PL_X86_X87_EXAMINE_MAX_NODES;}
     if(plan->system_cut==CUT_SYSTEM_X87_LOAD)locals=CUT_X87_LOCALS;
     if(plan->system_cut==CUT_SYSTEM_X87_STORE)locals=38u+PL_X86_X87_FLOAT_STORE_MAX_NODES;
     if(plan->system_cut==CUT_SYSTEM_X87_STORE){pl_x86_instruction i;pl_x86_x87_bcd law;
         if(!pl_x86_decode_profile(&plan->image,rip,&i)&&pl_x86_x87_bcd_lower(&i,&law))locals=38u+PL_X86_X87_BCD_STORE_MAX_NODES;}
     if(plan->system_cut==CUT_SYSTEM_X87_ARITHMETIC)locals=CUT_X87_ARITHMETIC_LOCALS;
+    if(plan->system_cut==CUT_SYSTEM_X87_ARITHMETIC){pl_x86_instruction i;
+        if(!pl_x86_decode_profile(&plan->image,rip,&i)){if(pl_x86_x87_root_supported(&i))locals=44u+PL_X86_SCALAR_PLAN_MAX_NODES;
+            if(pl_x86_x87_trig_supported(&i)||pl_x86_x87_exponential_supported(&i)||pl_x86_x87_logarithm_supported(&i)||pl_x86_x87_logarithm_one_supported(&i))locals=64u+PL_X86_SCALAR_PLAN_MAX_NODES;
+            if(pl_x86_x87_arctangent_supported(&i))locals=84u+PL_X86_SCALAR_PLAN_MAX_NODES;}}
     if(plan->system_cut==CUT_SYSTEM_X87_STATUS_COMPARE)locals=CUT_X87_STATUS_LOCALS;
     if(plan->report.boundary_operation==PL_X86_OPERATION_DIVIDE_UNSIGNED||plan->report.boundary_operation==PL_X86_OPERATION_DIVIDE_SIGNED){
         pl_x86_instruction division;
         if(pl_x86_decode_profile(&plan->image,rip,&division))return WASM_COMPILER_ERROR_GRAMMAR;
         if(division.operand_width==64u)locals=192u;
     }
+    if(plan->scalar_nodes&&locals<32u+plan->scalar_nodes)locals=32u+plan->scalar_nodes;
     cut.vector_local = locals + 4u; /* Four typed bindings precede locals. */
     cut.vector_aux=cut.vector_local+1u;cut.vector_result=cut.vector_local+2u;
     wasm_writer_uleb(writer, permutation_local?2u:1u);

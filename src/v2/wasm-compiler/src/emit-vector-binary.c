@@ -71,6 +71,29 @@ static void product_half(cut_lowering *c,const pl_x86_vector_binary *law,pl_u32 
 static void composite(cut_lowering *c,const pl_x86_vector_binary *law)
 {
     switch(law->operation){
+    case PL_X86_VECTOR_BINARY_HORIZONTAL_ADD:case PL_X86_VECTOR_BINARY_HORIZONTAL_SUBTRACT:{
+        pl_u8 even[16],odd[16];pl_u32 bytes=law->lane_bytes,half=law->register_bytes/2u;
+        for(pl_u32 b=0u;b<16u;++b){pl_u32 within=b%law->register_bytes,which=within>=half?16u:0u;
+            pl_u32 selected=which+2u*(within%half/bytes)*bytes+within%bytes;
+            even[b]=(pl_u8)selected;odd[b]=(pl_u8)(selected+bytes);}
+        get_vector(c,c->vector_local);get_vector(c,c->vector_aux);shuffle(c,even);
+        get_vector(c,c->vector_local);get_vector(c,c->vector_aux);shuffle(c,odd);
+        simd(c,law->operation==PL_X86_VECTOR_BINARY_HORIZONTAL_ADD
+            ?law->signed_lanes?0x8fu:bytes==2u?0x8eu:0xaeu
+            :law->signed_lanes?0x92u:bytes==2u?0x91u:0xb1u);return;
+    }
+    case PL_X86_VECTOR_BINARY_SIGN:{
+        pl_u32 bytes=law->lane_bytes,eq=bytes==1u?0x23u:bytes==2u?0x2du:0x37u;
+        get_vector(c,c->vector_aux);cut_const(c,0u);simd(c,0x12u);simd(c,eq);set_vector(c,c->vector_result);
+        get_vector(c,c->vector_aux);cut_const(c,0u);simd(c,0x12u);simd(c,eq+2u);set_vector(c,c->vector_aux);
+        get_vector(c,c->vector_local);get_vector(c,c->vector_aux);simd(c,0x51u);get_vector(c,c->vector_aux);
+        simd(c,bytes==1u?0x71u:bytes==2u?0x91u:0xb1u);get_vector(c,c->vector_result);simd(c,0x4fu);return;
+    }
+    case PL_X86_VECTOR_BINARY_MULTIPLY_ADD_BYTES:
+        for(pl_u32 high=0u;high<(law->register_bytes==16u?2u:1u);++high){
+            get_vector(c,c->vector_local);simd(c,0x89u+high);get_vector(c,c->vector_aux);simd(c,0x87u+high);simd(c,0xbau);}
+        if(law->register_bytes==8u){cut_op(c,0x22u);wasm_writer_uleb(c->writer,c->vector_result);get_vector(c,c->vector_result);}
+        simd(c,0x85u);return;
     case PL_X86_VECTOR_BINARY_MULTIPLY_HIGH:case PL_X86_VECTOR_BINARY_MULTIPLY_ROUND:{
         const pl_u8 select[]={0,1,4,5,8,9,12,13,16,17,20,21,24,25,28,29};
         product_half(c,law,0u);set_vector(c,c->vector_result);get_vector(c,c->vector_result);
@@ -135,7 +158,9 @@ int cut_vector_binary_local(const pl_x86_instruction *instruction)
     if(!pl_x86_vector_binary_lower(instruction,&law))return 0;
     if(law.result==PL_X86_VECTOR_BINARY_VALUE&&(law.operation==PL_X86_VECTOR_BINARY_MULTIPLY_HIGH
         ||law.operation==PL_X86_VECTOR_BINARY_MULTIPLY_EVEN||law.operation==PL_X86_VECTOR_BINARY_MULTIPLY_ROUND
-        ||law.operation==PL_X86_VECTOR_BINARY_SUM_ABSOLUTE||law.operation==PL_X86_VECTOR_BINARY_NARROW))return 3;
+        ||law.operation==PL_X86_VECTOR_BINARY_SUM_ABSOLUTE||law.operation==PL_X86_VECTOR_BINARY_NARROW
+        ||law.operation==PL_X86_VECTOR_BINARY_HORIZONTAL_ADD||law.operation==PL_X86_VECTOR_BINARY_HORIZONTAL_SUBTRACT
+        ||law.operation==PL_X86_VECTOR_BINARY_SIGN||law.operation==PL_X86_VECTOR_BINARY_MULTIPLY_ADD_BYTES))return 3;
     return law.register_bytes==8u||(law.alias&&law.result==PL_X86_VECTOR_BINARY_VALUE);
 }
 
@@ -148,11 +173,17 @@ void cut_emit_vector_binary(cut_lowering *cut, const pl_x86_instruction *instruc
     if (law->result != PL_X86_VECTOR_BINARY_VALUE) {
         cut_const(cut, law->result == PL_X86_VECTOR_BINARY_ONES ? ~0ull : 0u);
         simd(cut, 0x12u);
+    } else if(law->operation==PL_X86_VECTOR_BINARY_SELECT){
+        source(cut,instruction,law);load_vector(cut,index,16u);load_vector(cut,0u,16u);
+        cut_i32_const(cut,law->lane_bytes*8u-1u);simd(cut,law->lane_bytes==1u?0x6cu:law->lane_bytes==4u?0xacu:0xccu);
+        simd(cut,0x52u);
     } else if(law->operation==PL_X86_VECTOR_BINARY_ABSOLUTE){
         source(cut,instruction,law);simd(cut,operation(law));
     } else {
         int expanded=law->operation==PL_X86_VECTOR_BINARY_MULTIPLY_HIGH||law->operation==PL_X86_VECTOR_BINARY_MULTIPLY_EVEN
-            ||law->operation==PL_X86_VECTOR_BINARY_MULTIPLY_ROUND||law->operation==PL_X86_VECTOR_BINARY_SUM_ABSOLUTE;
+            ||law->operation==PL_X86_VECTOR_BINARY_MULTIPLY_ROUND||law->operation==PL_X86_VECTOR_BINARY_SUM_ABSOLUTE
+            ||law->operation==PL_X86_VECTOR_BINARY_HORIZONTAL_ADD||law->operation==PL_X86_VECTOR_BINARY_HORIZONTAL_SUBTRACT
+            ||law->operation==PL_X86_VECTOR_BINARY_SIGN||law->operation==PL_X86_VECTOR_BINARY_MULTIPLY_ADD_BYTES;
         if(expanded){
             load_vector(cut,index,law->register_bytes);set_vector(cut,cut->vector_local);
             if(law->alias)get_vector(cut,cut->vector_local);else source(cut,instruction,law);set_vector(cut,cut->vector_aux);

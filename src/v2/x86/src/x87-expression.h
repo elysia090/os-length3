@@ -52,6 +52,8 @@ typedef struct {pl_operand sig,se,classes;} ieee_expression;
 ieee_expression ieee_value(expression *e,pl_u32 bits,pl_operand input);
 typedef struct {pl_operand quotient,remainder,invalid;} quotient_expression;
 quotient_expression unsigned_divide_value(expression *e,pl_operand high,pl_operand low,pl_operand divisor);
+typedef struct {pl_operand root,exact,above_half;} radical_expression;
+radical_expression unsigned_radical_value(expression *e,pl_operand normalized_significand,pl_operand exponent_parity);
 typedef struct {pl_operand relation,raised,empty;} relation_expression;
 relation_expression x87_relation(expression *e,pl_u32 ordered,pl_operand a,pl_operand sa,
     pl_operand b,pl_operand sb,pl_operand empty,pl_operand source_denormal);

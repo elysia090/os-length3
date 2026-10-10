@@ -27,7 +27,15 @@ int main(int argc,char **argv)
 #else
     int minmax=argc==3&&!strcmp(argv[2],"--minmax");
     int predicate=argc==3&&!strcmp(argv[2],"--predicate");
-    if(argc!=2&&!minmax&&!predicate)return 2;
+    int integral_round=argc==3&&!strcmp(argv[2],"--integral-round");
+    int pairwise=argc==3&&!strcmp(argv[2],"--pairwise");
+    int dot=argc==3&&!strcmp(argv[2],"--dot");
+    int square_root=argc==3&&!strcmp(argv[2],"--square-root");
+    int approximate=argc==3&&!strcmp(argv[2],"--approximate");
+    int format_change=argc==3&&!strcmp(argv[2],"--format-change");
+    int packed_only=argc==3&&(!strcmp(argv[2],"--packed-minmax")||!strcmp(argv[2],"--packed-predicate"));
+    if(packed_only){minmax=!strcmp(argv[2],"--packed-minmax");predicate=!minmax;}
+    if(argc!=2&&!minmax&&!predicate&&!integral_round&&!pairwise&&!dot&&!square_root&&!approximate&&!format_change)return 2;
     pl_u8 *code=check_x87_allocate(8192u);if(!code)return 1;
     PVOID handler=AddVectoredExceptionHandler(1u,fp_exception);if(!handler)return 1;
     const pl_u32 floats[]={0u,0x80000000u,0x3f800000u,0xbf800000u,0x3fc00000u,0xbfc00000u,0x7f800000u,0xff800000u,
@@ -37,22 +45,27 @@ int main(int argc,char **argv)
         0x7ff8123456789abcull,0xfff8123456789abcull,0x7ff0123456789abcull,0xfff0123456789abcull,1u,0x8000000000000001ull,0x000fffffffffffffull,0x800fffffffffffffull,
         0x0010000000000000ull,0x8010000000000000ull,0x3fefffffffffffffull,0xbfefffffffffffffull,0x7fefffffffffffffull,0xffefffffffffffffull,0x7ff8000000000000ull,0x7ff0000000000001ull};
     unsigned form=0u;pl_u64 seed=0xdf714adb255b36edull;
-    for(unsigned width=4u;width<=8u;width+=4u)for(unsigned packed=0u;packed<(minmax||predicate?1u:2u);++packed)for(unsigned op=minmax?4u:0u;op<(minmax?6u:predicate?8u:4u);++op)
-    for(unsigned memory=0u;memory<2u;++memory)for(unsigned profile=0u;profile<16u;++profile)for(unsigned mask=0u;mask<8u;++mask,++form){
+    for(unsigned width=4u;width<=(approximate?4u:8u);width+=4u)for(unsigned packed=packed_only||pairwise||dot?1u:0u;packed<(packed_only||pairwise||dot?2u:minmax||predicate?1u:2u);++packed)for(unsigned op=minmax?4u:0u;op<(approximate?2u:square_root||format_change?1u:dot?256u:pairwise?3u:integral_round?16u:minmax?6u:predicate?8u:4u);++op)
+    for(unsigned memory=0u;memory<2u;++memory)for(unsigned profile=0u;profile<(dot?4u:integral_round?8u:16u);++profile)for(unsigned mask=0u;mask<(dot||integral_round?3u:8u);++mask,++form){
         unsigned target=9u,source=7u,n=0u;DWORD old;
         if(!VirtualProtect(code,4096u,PAGE_READWRITE,&old))return 1;
-        if(packed){if(width==8u)code[n++]=0x66u;}else code[n++]=(pl_u8)(width==8u?0xf2u:0xf3u);
-        code[n++]=0x44u;code[n++]=0x0fu;code[n++]=(pl_u8)(predicate?0xc2u:op==0u?0x58u:op==1u?0x59u:op==2u?0x5cu:op==3u?0x5eu:op==4u?0x5du:0x5fu);
+        if(integral_round||dot)code[n++]=0x66u;
+        else if(pairwise)code[n++]=(pl_u8)(width==8u?0x66u:0xf2u);
+        else if(packed){if(width==8u)code[n++]=0x66u;}else code[n++]=(pl_u8)(width==8u?0xf2u:0xf3u);
+        code[n++]=0x44u;code[n++]=0x0fu;
+        if(dot){code[n++]=0x3au;code[n++]=(pl_u8)(width==8u?0x41u:0x40u);}
+        else if(integral_round){code[n++]=0x3au;code[n++]=(pl_u8)(packed?(width==8u?0x09u:0x08u):(width==8u?0x0bu:0x0au));}
+        else code[n++]=(pl_u8)(format_change?0x5au:approximate?(op?0x52u:0x53u):square_root?0x51u:pairwise?(op==0u?0x7cu:op==1u?0x7du:0xd0u):predicate?0xc2u:op==0u?0x58u:op==1u?0x59u:op==2u?0x5cu:op==3u?0x5eu:op==4u?0x5du:0x5fu);
         code[n++]=(pl_u8)((memory?0u:0xc0u)|((target&7u)<<3u)|(memory?5u:source));
-        if(memory){put(code+n,4096u-n-4u-(predicate?1u:0u),4u);n+=4u;}
-        if(predicate)code[n++]=(pl_u8)(op|(profile<<4u));
+        if(memory){put(code+n,4096u-n-4u-(predicate||integral_round||dot?1u:0u),4u);n+=4u;}
+        if(predicate||integral_round||dot)code[n++]=(pl_u8)(op|(dot?0u:profile<<4u));
         code[n]=0xc3u;
         if(!VirtualProtect(code,4096u,PAGE_EXECUTE_READ,&old)||!FlushInstructionCache(GetCurrentProcess(),code,n+1u))return 1;
         target_rip=(uintptr_t)code;resume_rip=(uintptr_t)(code+n);
         for(unsigned row=0u;row<ROWS;++row){unsigned top=row&7u;_Alignas(16) pl_u8 input[512]={0},before[512],after[512];pl_u16 tags[2];
             put(input,0x37fu,2u);put(input+2u,0x4700u|(top<<11u),2u);input[4]=(pl_u8)(row&8u?0x5au:255u);
             put(input+6u,0x123u,2u);put(input+8u,0x12340000u,8u);put(input+16u,0x56780000u,8u);
-            unsigned clear=mask==7u?63u:mask?1u<<(mask-1u):0u;
+            unsigned clear=integral_round||dot?(mask==2u?32u:mask==1u?1u:0u):mask==7u?63u:mask?1u<<(mask-1u):0u;
             put(input+24u,(0x1f80u&~(clear<<7u))|((profile&3u)<<13u)|((profile&4u)?64u:0u)|((profile&8u)?32768u:0u),4u);
             for(unsigned r=0u;r<8u;++r){unsigned logical=(r+8u-top)&7u;put(input+32u+logical*16u,random_word(&seed),8u);put(input+40u+logical*16u,0x3fffu,2u);}
             for(unsigned r=0u;r<32u;++r)put(input+160u+r*8u,random_word(&seed),8u);
@@ -69,11 +82,11 @@ int main(int argc,char **argv)
             check_x87_project(a,before);check_x87_project(b,after);a->x87_tag=tags[0];b->x87_tag=tags[1];faults[row]=(pl_u8)!!trapped;
             if(!trapped){b->rip+=n;++b->retired;}
         }
-        char json[256];int m=snprintf(json,sizeof json,"{\"sourceBytes\":%u,\"stateBytes\":%zu,\"native\":%u,\"bytes\":%u,\"operandOffset\":4096,\"operandStride\":16,\"width\":%u,\"packed\":%u,\"op\":%u}\n",n,sizeof(machine_state),ROWS,memory?(packed?16u:width):0u,width,packed,op);
+        char json[256];int m=snprintf(json,sizeof json,"{\"sourceBytes\":%u,\"stateBytes\":%zu,\"native\":%u,\"bytes\":%u,\"operandOffset\":4096,\"operandStride\":16,\"width\":%u,\"packed\":%u,\"op\":%u,\"target\":9,\"source\":7}\n",n,sizeof(machine_state),ROWS,memory?(packed?(format_change?width*2u:16u):width):0u,width,packed,op);
         if(m<1||(size_t)m>=sizeof json||save(argv[1],form,"json",json,(size_t)m)||save(argv[1],form,"source",code,n)
             ||save(argv[1],form,"cases",records,sizeof records)||save(argv[1],form,"integers",operands,sizeof operands)||save(argv[1],form,"faults",faults,sizeof faults))return 1;
     }
     if(!RemoveVectoredExceptionHandler(handler)||!VirtualFree(code,0u,MEM_RELEASE))return 1;
-    printf("SSE %s: %u profiles/%u complete FP/MXCSR/tag/flags rows\n",minmax?"min/max":predicate?"predicates":"add/sub/mul/div",form,form*ROWS);return 0;
+    printf("SSE %s: %u profiles/%u complete FP/MXCSR/tag/flags rows\n",integral_round?"integral round":minmax?"min/max":predicate?"predicates":"add/sub/mul/div",form,form*ROWS);return 0;
 #endif
 }

@@ -22,6 +22,11 @@ int cut_stack_supported(const pl_x86_instruction *instruction)
             && (instruction->flow == PL_X86_FLOW_NEXT || instruction->flow == PL_X86_FLOW_SYSTEM)
             && instruction->machine_operation == (instruction->operation == PL_X86_OPERATION_POP_FLAGS
                 ? PL_X86_MACHINE_POP_FLAGS : PL_X86_MACHINE_NONE);
+    if((instruction->operation==PL_X86_OPERATION_PUSH||instruction->operation==PL_X86_OPERATION_POP)&&count==1u
+        &&operand->kind==PL_X86_OPERAND_REGISTER)
+        return instruction->flow==PL_X86_FLOW_NEXT&&instruction->machine_operation==PL_X86_MACHINE_NONE
+            &&(instruction->operand_width==16u||instruction->operand_width==64u)&&operand->bits==instruction->operand_width
+            &&cut_gpr(&operand->value.reg)&&operand->value.reg.bits==instruction->operand_width;
     if ((instruction->operation == PL_X86_OPERATION_POP || instruction->operation == PL_X86_OPERATION_PUSH) && count == 1u
             && operand->kind == PL_X86_OPERAND_MEMORY) {
         const pl_x86_memory *memory = &operand->value.memory;

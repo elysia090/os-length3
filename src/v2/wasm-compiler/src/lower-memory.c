@@ -171,6 +171,7 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
 {
     const pl_x86_operand *translation=pl_x86_translate_byte_memory(instruction);
     if(translation)return cut_memory_address_supported(instruction,&translation->value.memory);
+    if(cut_crc32_supported(instruction)&&instruction->operands[1].kind==PL_X86_OPERAND_MEMORY)return 1;
     if (cut_paired_exchange_supported(instruction)) return 1;
     int unary = unary_arithmetic(instruction->operation);
     int set = instruction->operation == PL_X86_OPERATION_CONDITIONAL_SET;
@@ -384,6 +385,7 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
     } else cut_access(cut);
     if (!store) {
         cut_access_value(cut);
+        if(instruction->operation==PL_X86_OPERATION_CRC32){cut_crc32_value(cut,instruction);return;}
         if (instruction->operation == PL_X86_OPERATION_BIT_SUMMARY) {
             /* One precise read returns before shared scan/count SSA. Zero
              * input cannot bypass #PF/#SS/#GP or a residency wait, nor publish

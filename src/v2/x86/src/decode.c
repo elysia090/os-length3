@@ -1361,6 +1361,10 @@ static int classify_scalar_float(
     case ZYDIS_MNEMONIC_CVTTSD2SI:
         operation = PL_X86_SCALAR_FLOAT_TO_INTEGER_TRUNCATE;
         break;
+    case ZYDIS_MNEMONIC_CVTSS2SI:
+    case ZYDIS_MNEMONIC_CVTSD2SI:
+        operation = PL_X86_SCALAR_FLOAT_TO_INTEGER;
+        break;
     case ZYDIS_MNEMONIC_CVTSS2SD:
         operation = PL_X86_SCALAR_FLOAT_WIDEN;
         break;
@@ -1369,6 +1373,9 @@ static int classify_scalar_float(
         break;
     case ZYDIS_MNEMONIC_RCPSS:
         operation = PL_X86_SCALAR_FLOAT_RECIPROCAL;
+        break;
+    case ZYDIS_MNEMONIC_RSQRTSS:
+        operation = PL_X86_SCALAR_FLOAT_RECIPROCAL_ROOT;
         break;
     case ZYDIS_MNEMONIC_SQRTSS:
     case ZYDIS_MNEMONIC_SQRTSD:
@@ -1403,6 +1410,7 @@ static int classify_scalar_float(
     case PL_X86_SCALAR_FLOAT_COMPARE_ORDERED:
     case PL_X86_SCALAR_FLOAT_COMPARE_UNORDERED:
     case PL_X86_SCALAR_FLOAT_RECIPROCAL:
+    case PL_X86_SCALAR_FLOAT_RECIPROCAL_ROOT:
     case PL_X86_SCALAR_FLOAT_SQUARE_ROOT:
         valid = target_vector && (source_vector || source_memory)
              && target->bits == input->bits
@@ -1414,6 +1422,7 @@ static int classify_scalar_float(
              && (input->bits == 32u || input->bits == 64u);
         break;
     case PL_X86_SCALAR_FLOAT_TO_INTEGER_TRUNCATE:
+    case PL_X86_SCALAR_FLOAT_TO_INTEGER:
         valid = target_gpr && (source_vector || source_memory)
              && (target->bits == 32u || target->bits == 64u)
              && (input->bits == 32u || input->bits == 64u);
@@ -1512,9 +1521,12 @@ static void classify_machine_operation(
     case ZYDIS_MNEMONIC_CVTSI2SD:
     case ZYDIS_MNEMONIC_CVTTSS2SI:
     case ZYDIS_MNEMONIC_CVTTSD2SI:
+    case ZYDIS_MNEMONIC_CVTSS2SI:
+    case ZYDIS_MNEMONIC_CVTSD2SI:
     case ZYDIS_MNEMONIC_CVTSS2SD:
     case ZYDIS_MNEMONIC_CVTSD2SS:
     case ZYDIS_MNEMONIC_RCPSS:
+    case ZYDIS_MNEMONIC_RSQRTSS:
     case ZYDIS_MNEMONIC_SQRTSS:
     case ZYDIS_MNEMONIC_SQRTSD:
     case ZYDIS_MNEMONIC_CMPSS:
@@ -1638,8 +1650,10 @@ static void classify_machine_operation(
                            : source->mnemonic == ZYDIS_MNEMONIC_FSIN ? 1u
                            : source->mnemonic == ZYDIS_MNEMONIC_FSINCOS
                              ? 2u : 3u;
-            pl_u32 fop = ((pl_u32)(out->source[0] & 7u) << 8u)
-                       | out->source[1];
+            pl_u32 fop = ((pl_u32)(source->opcode & 7u) << 8u)
+                       | ((pl_u32)source->raw.modrm.mod << 6u)
+                       | ((pl_u32)source->raw.modrm.reg << 3u)
+                       | source->raw.modrm.rm;
             out->machine_operation = PL_X86_MACHINE_X87;
             out->machine_argument = 48u | ((pl_u64)fop << 16u)
                                   | ((pl_u64)variant << 44u);
@@ -1653,8 +1667,10 @@ static void classify_machine_operation(
     case ZYDIS_MNEMONIC_FYL2XP1:
     case ZYDIS_MNEMONIC_FPATAN:
         if (!out->visible_operand_count) {
-            pl_u32 fop = ((pl_u32)(out->source[0] & 7u) << 8u)
-                       | out->source[1];
+            pl_u32 fop = ((pl_u32)(source->opcode & 7u) << 8u)
+                       | ((pl_u32)source->raw.modrm.mod << 6u)
+                       | ((pl_u32)source->raw.modrm.reg << 3u)
+                       | source->raw.modrm.rm;
             pl_u32 variant = source->mnemonic == ZYDIS_MNEMONIC_F2XM1 ? 0u
                            : source->mnemonic == ZYDIS_MNEMONIC_FYL2X ? 1u
                            : source->mnemonic == ZYDIS_MNEMONIC_FYL2XP1
@@ -1680,8 +1696,8 @@ static void classify_machine_operation(
         break;
     case ZYDIS_MNEMONIC_FSCALE:
         if (!out->visible_operand_count) {
-            pl_u32 fop = ((pl_u32)(out->source[0] & 7u) << 8u)
-                       | out->source[1];
+            pl_u32 fop=((pl_u32)(source->opcode&7u)<<8u)|((pl_u32)source->raw.modrm.mod<<6u)
+                |((pl_u32)source->raw.modrm.reg<<3u)|source->raw.modrm.rm;
             out->machine_operation = PL_X86_MACHINE_X87;
             out->machine_argument = 50u | ((pl_u64)fop << 16u);
             out->flags |= PL_X86_INSTRUCTION_MAY_TRAP
@@ -1691,8 +1707,8 @@ static void classify_machine_operation(
         break;
     case ZYDIS_MNEMONIC_FSQRT:
         if (!out->visible_operand_count) {
-            pl_u32 fop = ((pl_u32)(out->source[0] & 7u) << 8u)
-                       | out->source[1];
+            pl_u32 fop=((pl_u32)(source->opcode&7u)<<8u)|((pl_u32)source->raw.modrm.mod<<6u)
+                |((pl_u32)source->raw.modrm.reg<<3u)|source->raw.modrm.rm;
             out->machine_operation = PL_X86_MACHINE_X87;
             out->machine_argument = 52u | ((pl_u64)fop << 16u);
             out->flags |= PL_X86_INSTRUCTION_MAY_TRAP
@@ -1703,8 +1719,8 @@ static void classify_machine_operation(
     case ZYDIS_MNEMONIC_FPREM:
     case ZYDIS_MNEMONIC_FPREM1:
         if (!out->visible_operand_count) {
-            pl_u32 fop = ((pl_u32)(out->source[0] & 7u) << 8u)
-                       | out->source[1];
+            pl_u32 fop=((pl_u32)(source->opcode&7u)<<8u)|((pl_u32)source->raw.modrm.mod<<6u)
+                |((pl_u32)source->raw.modrm.reg<<3u)|source->raw.modrm.rm;
             pl_u32 nearest = source->mnemonic == ZYDIS_MNEMONIC_FPREM1;
             out->machine_operation = PL_X86_MACHINE_X87;
             out->machine_argument = 53u | ((pl_u64)fop << 16u)
@@ -1727,6 +1743,13 @@ static void classify_machine_operation(
                         | PL_X86_INSTRUCTION_PRECISE_CUT
                         | PL_X86_INSTRUCTION_BARRIER;
         }
+        break;
+    case ZYDIS_MNEMONIC_CVTPS2DQ:case ZYDIS_MNEMONIC_CVTTPS2DQ:
+        if(out->visible_operand_count==2u){pl_u32 memory=out->operands[1].kind==PL_X86_OPERAND_MEMORY;
+            out->machine_operation=PL_X86_MACHINE_VECTOR;out->machine_argument=PL_X86_VECTOR_PACKED_CONVERT
+                |((pl_u64)out->operands[0].value.reg.index<<8u)|((pl_u64)(memory?0u:out->operands[1].value.reg.index)<<16u)|((pl_u64)memory<<24u)
+                |((pl_u64)(source->mnemonic==ZYDIS_MNEMONIC_CVTPS2DQ?PL_X86_PACKED_CONVERT_FLOAT32_TO_SIGNED_DWORD:PL_X86_PACKED_CONVERT_FLOAT32_TO_SIGNED_DWORD_TRUNCATE)<<32u);
+            out->flags|=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;}
         break;
     case ZYDIS_MNEMONIC_CVTDQ2PS:
         if (out->visible_operand_count == 2u
@@ -1756,6 +1779,7 @@ static void classify_machine_operation(
         break;
     case ZYDIS_MNEMONIC_CVTDQ2PD:
     case ZYDIS_MNEMONIC_CVTTPD2DQ:
+    case ZYDIS_MNEMONIC_CVTPD2DQ:
         if (out->visible_operand_count == 2u
                 && out->operands[0].kind == PL_X86_OPERAND_REGISTER
                 && out->operands[0].value.reg.class_id
@@ -1777,6 +1801,7 @@ static void classify_machine_operation(
             int memory = out->operands[1].kind == PL_X86_OPERAND_MEMORY;
             pl_u32 operation = source->mnemonic == ZYDIS_MNEMONIC_CVTDQ2PD
                 ? PL_X86_PACKED_CONVERT_SIGNED_DWORD_TO_FLOAT64
+                : source->mnemonic==ZYDIS_MNEMONIC_CVTPD2DQ?PL_X86_PACKED_CONVERT_FLOAT64_TO_SIGNED_DWORD
                 : PL_X86_PACKED_CONVERT_FLOAT64_TO_SIGNED_DWORD_TRUNCATE;
             out->machine_operation = PL_X86_MACHINE_VECTOR;
             out->machine_argument = PL_X86_VECTOR_PACKED_CONVERT
@@ -1817,6 +1842,12 @@ static void classify_machine_operation(
                         | PL_X86_INSTRUCTION_PRECISE_CUT
                         | PL_X86_INSTRUCTION_BARRIER;
         }
+        break;
+    case ZYDIS_MNEMONIC_CVTPD2PS:
+        if(out->visible_operand_count==2u){pl_u32 memory=out->operands[1].kind==PL_X86_OPERAND_MEMORY;
+            out->machine_operation=PL_X86_MACHINE_VECTOR;out->machine_argument=PL_X86_VECTOR_FLOAT_NARROW
+                |((pl_u64)out->operands[0].value.reg.index<<8u)|((pl_u64)(memory?0u:out->operands[1].value.reg.index)<<16u)|((pl_u64)memory<<24u);
+            out->flags|=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;}
         break;
     case ZYDIS_MNEMONIC_CVTPS2PD:
         if (out->visible_operand_count == 2u
@@ -1965,7 +1996,25 @@ static void classify_machine_operation(
                         | PL_X86_INSTRUCTION_BARRIER;
         }
         break;
+    case ZYDIS_MNEMONIC_ROUNDPS:
+    case ZYDIS_MNEMONIC_ROUNDPD:
+    case ZYDIS_MNEMONIC_ROUNDSS:
+    case ZYDIS_MNEMONIC_ROUNDSD:
+        if(out->visible_operand_count==3u&&out->operands[0].kind==PL_X86_OPERAND_REGISTER
+            &&out->operands[0].value.reg.class_id==PL_X86_REGISTER_VECTOR
+            &&out->operands[0].value.reg.index<16u&&out->operands[2].kind==PL_X86_OPERAND_IMMEDIATE){
+            pl_u32 scalar=source->mnemonic==ZYDIS_MNEMONIC_ROUNDSS||source->mnemonic==ZYDIS_MNEMONIC_ROUNDSD;
+            pl_u32 bytes=source->mnemonic==ZYDIS_MNEMONIC_ROUNDPD||source->mnemonic==ZYDIS_MNEMONIC_ROUNDSD?8u:4u;
+            pl_u32 memory=out->operands[1].kind==PL_X86_OPERAND_MEMORY;
+            out->machine_operation=PL_X86_MACHINE_VECTOR;
+            out->machine_argument=PL_X86_VECTOR_FLOAT_ROUND|((pl_u64)out->operands[0].value.reg.index<<8u)
+                |((pl_u64)(memory?0u:out->operands[1].value.reg.index)<<16u)|((pl_u64)memory<<24u)
+                |((out->operands[2].value.immediate&15u)<<32u)|((pl_u64)bytes<<40u)|((pl_u64)scalar<<48u);
+            out->flags|=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;
+        }
+        break;
     case ZYDIS_MNEMONIC_SQRTPS:
+    case ZYDIS_MNEMONIC_SQRTPD:
     case ZYDIS_MNEMONIC_RCPPS:
     case ZYDIS_MNEMONIC_RSQRTPS:
         if (out->visible_operand_count == 2u
@@ -1982,7 +2031,8 @@ static void classify_machine_operation(
                     || (out->operands[1].kind == PL_X86_OPERAND_MEMORY
                         && out->operands[1].bits == 128u))) {
             int memory = out->operands[1].kind == PL_X86_OPERAND_MEMORY;
-            pl_u32 kind = source->mnemonic == ZYDIS_MNEMONIC_SQRTPS ? 18u
+            pl_u32 kind = source->mnemonic == ZYDIS_MNEMONIC_SQRTPD ? PL_X86_VECTOR_FLOAT_SQRT64
+                        : source->mnemonic == ZYDIS_MNEMONIC_SQRTPS ? 18u
                         : source->mnemonic == ZYDIS_MNEMONIC_RCPPS ? 37u
                         : 38u;
             out->machine_operation = PL_X86_MACHINE_VECTOR;
@@ -1997,6 +2047,7 @@ static void classify_machine_operation(
         }
         break;
     case ZYDIS_MNEMONIC_CMPPS:
+    case ZYDIS_MNEMONIC_CMPPD:
         if (out->visible_operand_count == 3u
                 && out->operands[0].kind == PL_X86_OPERAND_REGISTER
                 && out->operands[0].value.reg.class_id
@@ -2014,7 +2065,7 @@ static void classify_machine_operation(
                 && out->operands[2].bits == 8u) {
             int memory = out->operands[1].kind == PL_X86_OPERAND_MEMORY;
             out->machine_operation = PL_X86_MACHINE_VECTOR;
-            out->machine_argument = 19u
+            out->machine_argument = (source->mnemonic==ZYDIS_MNEMONIC_CMPPD?PL_X86_VECTOR_PACKED_FLOAT_PREDICATE64:19u)
                 | ((pl_u64)out->operands[0].value.reg.index << 8u)
                 | ((pl_u64)(memory ? 0u
                     : out->operands[1].value.reg.index) << 16u)
@@ -2023,6 +2074,25 @@ static void classify_machine_operation(
             out->flags |= PL_X86_INSTRUCTION_MAY_TRAP
                         | PL_X86_INSTRUCTION_PRECISE_CUT
                         | PL_X86_INSTRUCTION_BARRIER;
+        }
+        break;
+    case ZYDIS_MNEMONIC_HADDPS:
+    case ZYDIS_MNEMONIC_HADDPD:
+    case ZYDIS_MNEMONIC_HSUBPS:
+    case ZYDIS_MNEMONIC_HSUBPD:
+    case ZYDIS_MNEMONIC_ADDSUBPS:
+    case ZYDIS_MNEMONIC_ADDSUBPD:
+        if(out->visible_operand_count==2u&&out->operands[0].kind==PL_X86_OPERAND_REGISTER
+            &&out->operands[0].value.reg.class_id==PL_X86_REGISTER_VECTOR&&out->operands[0].bits==128u){
+            pl_u32 bytes=source->mnemonic==ZYDIS_MNEMONIC_HADDPD||source->mnemonic==ZYDIS_MNEMONIC_HSUBPD||source->mnemonic==ZYDIS_MNEMONIC_ADDSUBPD?8u:4u;
+            pl_u32 operation=source->mnemonic==ZYDIS_MNEMONIC_HADDPS||source->mnemonic==ZYDIS_MNEMONIC_HADDPD?6u:
+                source->mnemonic==ZYDIS_MNEMONIC_HSUBPS||source->mnemonic==ZYDIS_MNEMONIC_HSUBPD?7u:8u;
+            pl_u32 memory=out->operands[1].kind==PL_X86_OPERAND_MEMORY;
+            out->machine_operation=PL_X86_MACHINE_VECTOR;
+            out->machine_argument=PL_X86_VECTOR_FLOAT_PAIRWISE|((pl_u64)out->operands[0].value.reg.index<<8u)
+                |((pl_u64)(memory?0u:out->operands[1].value.reg.index)<<16u)|((pl_u64)memory<<24u)
+                |((pl_u64)operation<<32u)|((pl_u64)bytes<<40u);
+            out->flags|=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;
         }
         break;
     case ZYDIS_MNEMONIC_ADDPS:
@@ -2383,8 +2453,8 @@ static void classify_machine_operation(
         break;
     case ZYDIS_MNEMONIC_FXAM:
         if (!out->visible_operand_count) {
-            pl_u32 fop = ((pl_u32)(out->source[0] & 7u) << 8u)
-                       | out->source[1];
+            pl_u32 fop=((pl_u32)(source->opcode&7u)<<8u)|((pl_u32)source->raw.modrm.mod<<6u)
+                |((pl_u32)source->raw.modrm.reg<<3u)|source->raw.modrm.rm;
             out->machine_operation = PL_X86_MACHINE_X87;
             out->machine_argument = 56u | ((pl_u64)fop << 16u);
             out->flags |= PL_X86_INSTRUCTION_MAY_TRAP
@@ -2394,8 +2464,8 @@ static void classify_machine_operation(
         break;
     case ZYDIS_MNEMONIC_FXTRACT:
         if (!out->visible_operand_count) {
-            pl_u32 fop = ((pl_u32)(out->source[0] & 7u) << 8u)
-                       | out->source[1];
+            pl_u32 fop=((pl_u32)(source->opcode&7u)<<8u)|((pl_u32)source->raw.modrm.mod<<6u)
+                |((pl_u32)source->raw.modrm.reg<<3u)|source->raw.modrm.rm;
             out->machine_operation = PL_X86_MACHINE_X87;
             out->machine_argument = 57u | ((pl_u64)fop << 16u);
             out->flags |= PL_X86_INSTRUCTION_MAY_TRAP
@@ -3130,6 +3200,17 @@ static void classify_machine_operation(
                         | PL_X86_INSTRUCTION_BARRIER;
         }
         break;
+    case ZYDIS_MNEMONIC_MOVDDUP:
+        if(out->visible_operand_count==2u&&out->operands[0].kind==PL_X86_OPERAND_REGISTER
+            &&out->operands[0].value.reg.class_id==PL_X86_REGISTER_VECTOR&&out->operands[0].bits==128u){
+            pl_u32 memory=out->operands[1].kind==PL_X86_OPERAND_MEMORY;
+            out->machine_operation=PL_X86_MACHINE_VECTOR;
+            out->machine_argument=PL_X86_VECTOR_DUPLICATE_QWORD|((pl_u64)out->operands[0].value.reg.index<<8u)
+                |((pl_u64)(memory?0u:out->operands[1].value.reg.index)<<16u)|((pl_u64)memory<<24u);
+            out->flags|=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;
+        }
+        break;
+    case ZYDIS_MNEMONIC_MOVNTDQA:
     case ZYDIS_MNEMONIC_MOVDQA:
     case ZYDIS_MNEMONIC_MOVDQU:
     case ZYDIS_MNEMONIC_MOVAPS:
@@ -3183,7 +3264,8 @@ static void classify_machine_operation(
                         | PL_X86_INSTRUCTION_BARRIER;
             break;
         }
-        int move = source->mnemonic == ZYDIS_MNEMONIC_MOVDQA
+        int move = source->mnemonic == ZYDIS_MNEMONIC_MOVNTDQA
+                   || source->mnemonic == ZYDIS_MNEMONIC_MOVDQA
                    || source->mnemonic == ZYDIS_MNEMONIC_MOVDQU
                    || source->mnemonic == ZYDIS_MNEMONIC_MOVAPS
                    || source->mnemonic == ZYDIS_MNEMONIC_MOVAPD
@@ -3220,7 +3302,8 @@ static void classify_machine_operation(
                    || source->mnemonic == ZYDIS_MNEMONIC_ANDPS
                    || source->mnemonic == ZYDIS_MNEMONIC_ANDPD ? 2u : 3u;
         pl_u32 aligned = (target_memory || source_memory)
-                      && (source->mnemonic == ZYDIS_MNEMONIC_MOVDQA
+                      && (source->mnemonic == ZYDIS_MNEMONIC_MOVNTDQA
+                          || source->mnemonic == ZYDIS_MNEMONIC_MOVDQA
                           || source->mnemonic == ZYDIS_MNEMONIC_MOVAPS
                           || source->mnemonic == ZYDIS_MNEMONIC_MOVAPD
                           || source->mnemonic == ZYDIS_MNEMONIC_MOVNTPS
@@ -3438,7 +3521,9 @@ static void classify_machine_operation(
             | ((pl_u64)!to_vector << PL_X86_VECTOR_IMMEDIATE_SHIFT);
         break;
     }
-    case ZYDIS_MNEMONIC_PBLENDVB: {
+    case ZYDIS_MNEMONIC_PBLENDVB:
+    case ZYDIS_MNEMONIC_BLENDVPS:
+    case ZYDIS_MNEMONIC_BLENDVPD: {
         if (out->visible_operand_count != 2u) break;
         const pl_x86_operand *target = &out->operands[0];
         const pl_x86_operand *source_operand = &out->operands[1];
@@ -3455,34 +3540,8 @@ static void classify_machine_operation(
                 || (!source_vector && !source_memory))
             break;
         out->machine_operation = PL_X86_MACHINE_VECTOR;
-        out->machine_argument = PL_X86_VECTOR_BYTE_BLEND
-            | ((pl_u64)target->value.reg.index
-               << PL_X86_VECTOR_TARGET_SHIFT)
-            | ((pl_u64)(source_vector
-                        ? source_operand->value.reg.index : 0u)
-               << PL_X86_VECTOR_SOURCE_SHIFT)
-            | (source_memory ? PL_X86_VECTOR_SOURCE_MEMORY
-                             | PL_X86_VECTOR_MEMORY_READ : 0u);
-        break;
-    }
-    case ZYDIS_MNEMONIC_PMOVZXDQ: {
-        if (out->visible_operand_count != 2u) break;
-        const pl_x86_operand *target = &out->operands[0];
-        const pl_x86_operand *source_operand = &out->operands[1];
-        int source_vector = source_operand->kind == PL_X86_OPERAND_REGISTER
-                         && source_operand->value.reg.class_id
-                            == PL_X86_REGISTER_VECTOR
-                         && source_operand->value.reg.index < 16u
-                         && source_operand->bits == 64u;
-        int source_memory = source_operand->kind == PL_X86_OPERAND_MEMORY
-                         && source_operand->bits == 64u;
-        if (target->kind != PL_X86_OPERAND_REGISTER
-                || target->value.reg.class_id != PL_X86_REGISTER_VECTOR
-                || target->bits != 128u || target->value.reg.index >= 16u
-                || (!source_vector && !source_memory))
-            break;
-        out->machine_operation = PL_X86_MACHINE_VECTOR;
-        out->machine_argument = 10u
+        pl_u32 bytes=source->mnemonic==ZYDIS_MNEMONIC_PBLENDVB?1u:source->mnemonic==ZYDIS_MNEMONIC_BLENDVPS?4u:8u;
+        out->machine_argument = (bytes==1u?PL_X86_VECTOR_BYTE_BLEND:PL_X86_VECTOR_VARIABLE_BLEND)
             | ((pl_u64)target->value.reg.index
                << PL_X86_VECTOR_TARGET_SHIFT)
             | ((pl_u64)(source_vector
@@ -3490,8 +3549,50 @@ static void classify_machine_operation(
                << PL_X86_VECTOR_SOURCE_SHIFT)
             | (source_memory ? PL_X86_VECTOR_SOURCE_MEMORY
                              | PL_X86_VECTOR_MEMORY_READ : 0u)
-            | ((pl_u64)PL_X86_PACKED_ZERO_EXTEND_DWORD_TO_QWORD
-               << PL_X86_VECTOR_IMMEDIATE_SHIFT);
+            |((pl_u64)(bytes==1u?0u:bytes)<<32u);
+        break;
+    }
+    case ZYDIS_MNEMONIC_PTEST:case ZYDIS_MNEMONIC_PHMINPOSUW:{
+        if(out->visible_operand_count!=2u)break;
+        const pl_x86_operand *d=out->operands,*s=d+1u;pl_u32 memory=s->kind==PL_X86_OPERAND_MEMORY;
+        if(d->kind!=PL_X86_OPERAND_REGISTER||d->value.reg.class_id!=PL_X86_REGISTER_VECTOR||d->bits!=128u||d->value.reg.index>=16u
+            ||s->bits!=128u||(!memory&&(s->kind!=PL_X86_OPERAND_REGISTER||s->value.reg.class_id!=PL_X86_REGISTER_VECTOR||s->value.reg.index>=16u)))break;
+        out->machine_operation=PL_X86_MACHINE_VECTOR;
+        out->machine_argument=(source->mnemonic==ZYDIS_MNEMONIC_PTEST?PL_X86_VECTOR_TEST:PL_X86_VECTOR_MINIMUM_POSITION)
+            |((pl_u64)d->value.reg.index<<8u)|((pl_u64)(memory?0u:s->value.reg.index)<<16u)|((pl_u64)memory<<24u)|((pl_u64)memory<<26u);break;
+    }
+    case ZYDIS_MNEMONIC_PMOVSXBW:case ZYDIS_MNEMONIC_PMOVSXBD:case ZYDIS_MNEMONIC_PMOVSXBQ:
+    case ZYDIS_MNEMONIC_PMOVSXWD:case ZYDIS_MNEMONIC_PMOVSXWQ:case ZYDIS_MNEMONIC_PMOVSXDQ:
+    case ZYDIS_MNEMONIC_PMOVZXBW:case ZYDIS_MNEMONIC_PMOVZXBD:case ZYDIS_MNEMONIC_PMOVZXBQ:
+    case ZYDIS_MNEMONIC_PMOVZXWD:case ZYDIS_MNEMONIC_PMOVZXWQ:case ZYDIS_MNEMONIC_PMOVZXDQ: {
+        if (out->visible_operand_count != 2u) break;
+        const pl_x86_operand *target = &out->operands[0];
+        const pl_x86_operand *source_operand = &out->operands[1];
+        pl_u32 shape=source->opcode&15u;
+        if(shape>5u)break;
+        pl_u32 from=shape<3u?1u:shape<5u?2u:4u,to=shape==0u?2u:shape==1u||shape==3u?4u:8u;
+        pl_u32 extent=16u/to*from,sign=!(source->opcode&16u);
+        int source_vector = source_operand->kind == PL_X86_OPERAND_REGISTER
+                         && source_operand->value.reg.class_id
+                            == PL_X86_REGISTER_VECTOR
+                         && source_operand->value.reg.index < 16u
+                         && source_operand->bits == extent*8u;
+        int source_memory = source_operand->kind == PL_X86_OPERAND_MEMORY
+                         && source_operand->bits == extent*8u;
+        if (target->kind != PL_X86_OPERAND_REGISTER
+                || target->value.reg.class_id != PL_X86_REGISTER_VECTOR
+                || target->bits != 128u || target->value.reg.index >= 16u
+                || (!source_vector && !source_memory))
+            break;
+        out->machine_operation = PL_X86_MACHINE_VECTOR;
+        out->machine_argument = PL_X86_VECTOR_INTEGER_WIDEN
+            | ((pl_u64)target->value.reg.index
+               << PL_X86_VECTOR_TARGET_SHIFT)
+            | ((pl_u64)(source_vector
+                        ? source_operand->value.reg.index : 0u)
+               << PL_X86_VECTOR_SOURCE_SHIFT)
+            | (source_memory ? PL_X86_VECTOR_SOURCE_MEMORY : 0u)
+            | ((pl_u64)from<<32u)|((pl_u64)to<<40u)|((pl_u64)sign<<48u);
         break;
     }
     case ZYDIS_MNEMONIC_PSHUFB: {
@@ -3532,12 +3633,9 @@ static void classify_machine_operation(
                 || target->bits != 64u || target->value.reg.index >= 8u
                 || (!source_mmx && !source_mmx_memory))
             break;
-        pl_u32 fop = ((pl_u32)(out->source[0] & 7u) << 8u)
-                   | out->source[1];
         out->machine_operation = PL_X86_MACHINE_X87;
         out->machine_argument = PL_X86_X87_BYTE_SHUFFLE
             | ((pl_u64)(source_mmx_memory ? 8u : 0u) << 8u)
-            | ((pl_u64)fop << 16u)
             | ((pl_u64)(source_mmx
                         ? source_operand->value.reg.index : 0u) << 32u)
             | ((pl_u64)target->value.reg.index << 36u);
@@ -3546,16 +3644,60 @@ static void classify_machine_operation(
                     | PL_X86_INSTRUCTION_BARRIER;
         break;
     }
+    case ZYDIS_MNEMONIC_DPPS:case ZYDIS_MNEMONIC_DPPD:
+        if(out->visible_operand_count==3u){pl_u32 memory=out->operands[1].kind==PL_X86_OPERAND_MEMORY,bytes=source->mnemonic==ZYDIS_MNEMONIC_DPPD?8u:4u;
+            out->machine_operation=PL_X86_MACHINE_VECTOR;
+            out->machine_argument=PL_X86_VECTOR_FLOAT_DOT|((pl_u64)out->operands[0].value.reg.index<<8u)
+                |((pl_u64)(memory?0u:out->operands[1].value.reg.index)<<16u)|((pl_u64)memory<<24u)
+                |((out->operands[2].value.immediate&(bytes==8u?0x33u:255u))<<32u)|((pl_u64)bytes<<40u);
+            out->flags|=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;}
+        break;
+    case ZYDIS_MNEMONIC_PCMPESTRM:case ZYDIS_MNEMONIC_PCMPESTRI:
+    case ZYDIS_MNEMONIC_PCMPISTRM:case ZYDIS_MNEMONIC_PCMPISTRI:
+        if(out->visible_operand_count==3u){pl_u32 memory=out->operands[1].kind==PL_X86_OPERAND_MEMORY;
+            out->machine_operation=PL_X86_MACHINE_VECTOR;
+            out->machine_argument=PL_X86_VECTOR_STRING_COMPARE|((pl_u64)out->operands[0].value.reg.index<<8u)
+                |((pl_u64)(memory?0u:out->operands[1].value.reg.index)<<16u)|((pl_u64)memory<<24u)
+                |((out->operands[2].value.immediate&127u)<<32u)|((pl_u64)(source->opcode<0x62u)<<40u)
+                |((pl_u64)(source->opcode&1u)<<41u)|((pl_u64)source->raw.rex.W<<48u);
+            out->flags|=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;}
+        break;
+    case ZYDIS_MNEMONIC_MPSADBW:
+        if(out->visible_operand_count==3u){pl_u32 memory=out->operands[1].kind==PL_X86_OPERAND_MEMORY;
+            out->machine_operation=PL_X86_MACHINE_VECTOR;
+            out->machine_argument=PL_X86_VECTOR_WINDOW_DISTANCE|((pl_u64)out->operands[0].value.reg.index<<8u)
+                |((pl_u64)(memory?0u:out->operands[1].value.reg.index)<<16u)|((pl_u64)memory<<24u)
+                |((out->operands[2].value.immediate&7u)<<32u);
+            out->flags|=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;}
+        break;
+    case ZYDIS_MNEMONIC_BLENDPS:case ZYDIS_MNEMONIC_BLENDPD:case ZYDIS_MNEMONIC_PBLENDW:
+    case ZYDIS_MNEMONIC_INSERTPS:{
+        if(out->visible_operand_count!=3u)break;
+        const pl_x86_operand *d=out->operands,*s=d+1u,*a=d+2u;pl_u32 memory=s->kind==PL_X86_OPERAND_MEMORY,insert=source->mnemonic==ZYDIS_MNEMONIC_INSERTPS;
+        if(d->kind!=PL_X86_OPERAND_REGISTER||d->value.reg.class_id!=PL_X86_REGISTER_VECTOR||d->bits!=128u||d->value.reg.index>=16u
+            ||(memory?s->bits!=(insert?32u:128u):s->kind!=PL_X86_OPERAND_REGISTER||s->value.reg.class_id!=PL_X86_REGISTER_VECTOR||s->value.reg.index>=16u)
+            ||a->kind!=PL_X86_OPERAND_IMMEDIATE||a->bits!=8u)break;
+        pl_u32 lane=source->mnemonic==ZYDIS_MNEMONIC_PBLENDW?2u:source->mnemonic==ZYDIS_MNEMONIC_BLENDPD?8u:4u;
+        pl_u32 control=(pl_u32)a->value.immediate&(insert?255u:(1u<<(16u/lane))-1u);
+        if(insert&&memory)control&=63u;
+        out->machine_operation=PL_X86_MACHINE_VECTOR;
+        out->machine_argument=(insert?PL_X86_VECTOR_INSERT_FLOAT_LANE:PL_X86_VECTOR_IMMEDIATE_BLEND)
+            |((pl_u64)d->value.reg.index<<8u)|((pl_u64)(memory?0u:s->value.reg.index)<<16u)|((pl_u64)memory<<24u)
+            |((pl_u64)(memory&&!insert)<<26u)|((pl_u64)control<<32u)|((pl_u64)(insert?0u:lane)<<40u);
+        break;
+    }
+    case ZYDIS_MNEMONIC_PEXTRB:
+    case ZYDIS_MNEMONIC_EXTRACTPS:
     case ZYDIS_MNEMONIC_PEXTRD:
     case ZYDIS_MNEMONIC_PEXTRQ: {
         if (out->visible_operand_count != 3u) break;
         const pl_x86_operand *target = &out->operands[0];
         const pl_x86_operand *source_operand = &out->operands[1];
         const pl_x86_operand *lane = &out->operands[2];
-        pl_u32 bits = source->mnemonic == ZYDIS_MNEMONIC_PEXTRQ ? 64u : 32u;
+        pl_u32 bits = source->mnemonic == ZYDIS_MNEMONIC_PEXTRQ ? 64u : source->mnemonic==ZYDIS_MNEMONIC_PEXTRB?8u:32u;
         int target_gpr = target->kind == PL_X86_OPERAND_REGISTER
                       && target->value.reg.class_id == PL_X86_REGISTER_GPR
-                      && target->bits == bits && target->value.reg.index < 16u;
+                      && (target->bits == (bits<32u?32u:bits)||target->bits==64u) && target->value.reg.index < 16u;
         int target_memory = target->kind == PL_X86_OPERAND_MEMORY
                          && target->bits == bits;
         if ((!target_gpr && !target_memory)
@@ -3574,22 +3716,21 @@ static void classify_machine_operation(
             | ((pl_u64)source_operand->value.reg.index
                << PL_X86_VECTOR_SOURCE_SHIFT)
             | (target_memory ? PL_X86_VECTOR_TARGET_MEMORY : 0u)
-            | (((lane->value.immediate & (bits == 64u ? 1u : 3u))
-                | (bits == 64u ? 4u : 0u))
-               << PL_X86_VECTOR_IMMEDIATE_SHIFT);
+            |((lane->value.immediate&(128u/bits-1u))<<32u)|((pl_u64)(bits/8u)<<40u);
         break;
     }
+    case ZYDIS_MNEMONIC_PINSRB:
     case ZYDIS_MNEMONIC_PINSRD:
     case ZYDIS_MNEMONIC_PINSRQ: {
         if (out->visible_operand_count != 3u) break;
         const pl_x86_operand *target = &out->operands[0];
         const pl_x86_operand *source_operand = &out->operands[1];
         const pl_x86_operand *lane = &out->operands[2];
-        pl_u32 bits = source->mnemonic == ZYDIS_MNEMONIC_PINSRQ ? 64u : 32u;
+        pl_u32 bits = source->mnemonic == ZYDIS_MNEMONIC_PINSRQ ? 64u : source->mnemonic==ZYDIS_MNEMONIC_PINSRB?8u:32u;
         int source_general = source_operand->kind == PL_X86_OPERAND_REGISTER
                           && source_operand->value.reg.class_id
                              == PL_X86_REGISTER_GPR
-                          && source_operand->bits == bits
+                          && source_operand->bits == (bits<32u?32u:bits)
                           && source_operand->value.reg.index < 16u;
         int source_memory = source_operand->kind == PL_X86_OPERAND_MEMORY
                          && source_operand->bits == bits;
@@ -3608,9 +3749,7 @@ static void classify_machine_operation(
                         ? source_operand->value.reg.index : 0u)
                << PL_X86_VECTOR_SOURCE_SHIFT)
             | (source_memory ? PL_X86_VECTOR_SOURCE_MEMORY : 0u)
-            | (((lane->value.immediate & (bits == 64u ? 1u : 3u))
-                | (bits == 64u ? 4u : 0u))
-               << PL_X86_VECTOR_IMMEDIATE_SHIFT);
+            |((lane->value.immediate&(128u/bits-1u))<<32u)|((pl_u64)(bits/8u)<<40u);
         break;
     }
     case ZYDIS_MNEMONIC_PALIGNR: {
@@ -3724,12 +3863,12 @@ static void classify_machine_operation(
                 && target->bits == 128u && target->value.reg.index < 16u
                 && (source_general || source_memory)) {
             out->machine_operation = PL_X86_MACHINE_VECTOR;
-            out->machine_argument = 15u
+            out->machine_argument = PL_X86_VECTOR_INSERT_LANE
                 | ((pl_u64)target->value.reg.index << 8u)
                 | ((pl_u64)(source_general
                             ? source_operand->value.reg.index : 0u) << 16u)
                 | ((pl_u64)source_memory << 24u)
-                | ((lane->value.immediate & 7u) << 32u);
+                | ((lane->value.immediate & 7u) << 32u)|(2ull<<40u);
             break;
         }
         if (target->kind != PL_X86_OPERAND_REGISTER
@@ -3756,6 +3895,14 @@ static void classify_machine_operation(
         const pl_x86_operand *target = &out->operands[0];
         const pl_x86_operand *source_operand = &out->operands[1];
         const pl_x86_operand *lane = &out->operands[2];
+        if(source->opcode==0x15u&&source_operand->kind==PL_X86_OPERAND_REGISTER
+            &&source_operand->value.reg.class_id==PL_X86_REGISTER_VECTOR&&source_operand->bits==128u&&source_operand->value.reg.index<16u
+            &&(target->kind==PL_X86_OPERAND_MEMORY?target->bits==16u:target->kind==PL_X86_OPERAND_REGISTER&&target->value.reg.class_id==PL_X86_REGISTER_GPR
+                &&(target->bits==32u||target->bits==64u)&&target->value.reg.index<16u)
+            &&lane->kind==PL_X86_OPERAND_IMMEDIATE&&lane->bits==8u){pl_u32 memory=target->kind==PL_X86_OPERAND_MEMORY;
+            out->machine_operation=PL_X86_MACHINE_VECTOR;
+            out->machine_argument=PL_X86_VECTOR_EXTRACT_LANE|((pl_u64)(memory?0u:target->value.reg.index)<<8u)
+                |((pl_u64)source_operand->value.reg.index<<16u)|((pl_u64)memory<<25u)|((lane->value.immediate&7u)<<32u)|(2ull<<40u);break;}
         int source_mmx = source_operand->kind == PL_X86_OPERAND_REGISTER
                       && source_operand->value.reg.class_id
                          == PL_X86_REGISTER_MMX
@@ -4048,9 +4195,12 @@ static void classify_machine_operation(
     case ZYDIS_MNEMONIC_PACKSSWB:
     case ZYDIS_MNEMONIC_PSUBUSW:
     case ZYDIS_MNEMONIC_PHADDD:
+    case ZYDIS_MNEMONIC_PHADDSW:
     case ZYDIS_MNEMONIC_PMULHRSW:
     case ZYDIS_MNEMONIC_PHSUBD:
+    case ZYDIS_MNEMONIC_PHSUBSW:
     case ZYDIS_MNEMONIC_PSIGNB:
+    case ZYDIS_MNEMONIC_PSIGNW:
     case ZYDIS_MNEMONIC_PHADDW:
     case ZYDIS_MNEMONIC_PSIGND:
     case ZYDIS_MNEMONIC_PABSB:
@@ -4139,12 +4289,18 @@ static void classify_machine_operation(
                            ? 47u
                          : source->mnemonic == ZYDIS_MNEMONIC_PHADDD
                            ? PL_X86_PACKED_HORIZONTAL_ADD_DWORD
+                         : source->mnemonic == ZYDIS_MNEMONIC_PHADDSW
+                           ? PL_X86_PACKED_HORIZONTAL_ADD_SAT_WORD
                          : source->mnemonic == ZYDIS_MNEMONIC_PMULHRSW
                            ? PL_X86_PACKED_MULTIPLY_HIGH_ROUND_SCALE_WORD
                          : source->mnemonic == ZYDIS_MNEMONIC_PHSUBD
                            ? PL_X86_PACKED_HORIZONTAL_SUBTRACT_DWORD
+                         : source->mnemonic == ZYDIS_MNEMONIC_PHSUBSW
+                           ? PL_X86_PACKED_HORIZONTAL_SUBTRACT_SAT_WORD
                          : source->mnemonic == ZYDIS_MNEMONIC_PSIGNB
                             ? PL_X86_PACKED_SIGN_BYTE
+                         : source->mnemonic == ZYDIS_MNEMONIC_PSIGNW
+                           ? PL_X86_PACKED_SIGN_WORD
                          : source->mnemonic == ZYDIS_MNEMONIC_PHADDW
                            ? PL_X86_PACKED_HORIZONTAL_ADD_WORD
                          : source->mnemonic == ZYDIS_MNEMONIC_PSIGND
@@ -4218,8 +4374,8 @@ static void classify_machine_operation(
                                 == ((operation == 18u || operation == 29u
                                      || operation == 39u)
                                     ? 32u : 64u);
-        if (operation
-                > PL_X86_PACKED_MULTIPLY_ADD_UNSIGNED_SIGNED_BYTE
+        if ((operation>PL_X86_PACKED_MULTIPLY_ADD_UNSIGNED_SIGNED_BYTE
+                &&(operation<PL_X86_PACKED_HORIZONTAL_ADD_SAT_WORD||operation>PL_X86_PACKED_SIGN_WORD))
                 || target->kind != PL_X86_OPERAND_REGISTER
                 || target->value.reg.class_id != PL_X86_REGISTER_MMX
                 || target->bits != 64u || target->value.reg.index >= 8u

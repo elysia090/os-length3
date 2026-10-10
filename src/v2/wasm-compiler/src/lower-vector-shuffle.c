@@ -24,24 +24,27 @@ static void load_xmm(cut_lowering *cut,pl_u32 index)
 }
 void cut_lower_vector_shuffle(cut_lowering *cut,const pl_x86_instruction *instruction)
 {
-    pl_u32 target=instruction->operands[0].value.reg.index;
-    /* State and the complete memory operand have already passed the precise
-     * frontier. Keep both old vectors on the stack, including self-alias. */
-    cut_get(cut,0u);load_xmm(cut,target);
-    if(instruction->machine_argument&(1ull<<24u)) {
-        /* The pair port has noncontiguous words: do not read its fault fields
-         * as vector payload or construct a sixteen-byte intermediate image. */
-        cut_access_value(cut);simd(cut,0x12u); /* i64x2.splat */
-        cut_op(cut,0x20u);wasm_writer_uleb(cut->writer,1u);
-        cut_op(cut,0x29u);wasm_writer_uleb(cut->writer,3u);
-        wasm_writer_uleb(cut->writer,offsetof(machine_memory_pair_port,high));
-        simd(cut,0x1eu);cut_op(cut,1u); /* i64x2.replace_lane 1 */
-    } else load_xmm(cut,instruction->operands[1].value.reg.index);
-    /* PSHUFB: bit 7 zeroes, bits 3:0 select, bits 6:4 are irrelevant.
-     * Masking by 0x8f retains exactly those distinctions. Deterministic
-     * i8x16.swizzle zeroes every index >= 16; relaxed swizzle is not used. */
-    simd(cut,0x0cu);for(pl_u32 i=0u;i<16u;++i)cut_op(cut,0x8fu);
+    pl_x86_vector_swizzle law;if(!pl_x86_vector_swizzle_lower(instruction,&law)){cut->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
+    pl_u32 target=law.target,narrow=law.register_bytes==8u;
+    if(narrow)cut_mmx_guard(cut);else cut_sse_guard(cut);
+    if(law.source_memory){const pl_x86_memory *m=&instruction->operands[1].value.memory;
+        cut_effective_address(cut,instruction,m);cut_set(cut,CUT_ADDRESS);
+        cut->report.memory_bytes=law.register_bytes;cut->report.memory_access=MACHINE_MEMORY_READ|cut_memory_role(m);
+        if(narrow){cut_const(cut,0u);cut_set(cut,CUT_VALUE);cut_access(cut);}
+        else{cut->report.memory_access|=MACHINE_MEMORY_ALIGNED16;cut_op(cut,0x20u);wasm_writer_uleb(cut->writer,1u);cut_get(cut,CUT_ADDRESS);
+            cut_i32_const(cut,16u);cut_i32_const(cut,cut->report.memory_access);cut_call(cut,WASM_IMPORT_READ_PAIR);cut_access_status(cut);}
+    }
+    cut_get(cut,0u);
+    if(narrow){cut_load(cut,offsetof(machine_state,x87_significand)+target*8u);simd(cut,0x12u);}else load_xmm(cut,target);
+    if(law.alias){cut_op(cut,0x22u);wasm_writer_uleb(cut->writer,cut->vector_local);cut_op(cut,0x20u);wasm_writer_uleb(cut->writer,cut->vector_local);}
+    else if(law.source_memory){cut_access_value(cut);simd(cut,0x12u);
+        if(!narrow){cut_op(cut,0x20u);wasm_writer_uleb(cut->writer,1u);cut_op(cut,0x29u);wasm_writer_uleb(cut->writer,3u);
+            wasm_writer_uleb(cut->writer,offsetof(machine_memory_pair_port,high));simd(cut,0x1eu);cut_op(cut,1u);}
+    }else if(narrow){cut_load(cut,offsetof(machine_state,x87_significand)+law.source*8u);simd(cut,0x12u);}else load_xmm(cut,law.source);
+    /* The high bit requests zero; only log2(register bytes) select bits live. */
+    simd(cut,0x0cu);for(pl_u32 i=0u;i<16u;++i)cut_op(cut,(pl_u8)(0x80u|(law.register_bytes-1u)));
     simd(cut,0x4eu);simd(cut,0x0eu); /* v128.and; i8x16.swizzle */
-    simd(cut,0x0bu);wasm_writer_uleb(cut->writer,4u);
-    wasm_writer_uleb(cut->writer,offsetof(machine_state,xmm)+target*16u);
+    if(narrow){simd(cut,0x1du);cut_op(cut,0u);cut_op(cut,0x37u);wasm_writer_uleb(cut->writer,3u);
+        wasm_writer_uleb(cut->writer,offsetof(machine_state,x87_significand)+target*8u);cut_mmx_publish(cut,target);}
+    else{simd(cut,0x0bu);wasm_writer_uleb(cut->writer,4u);wasm_writer_uleb(cut->writer,offsetof(machine_state,xmm)+target*16u);}
 }

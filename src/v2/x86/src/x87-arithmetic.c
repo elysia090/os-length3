@@ -163,10 +163,54 @@ static int ieee_result(expression *e,pl_plan *raw,pl_u32 bits,pl_u32 operation,p
     if(e->failed)return PL_ERROR_ARENA;
     const pl_u8 live[]={1u,1u,0u};return pl_compact_projected(raw,live,arena,out);
 }
+int pl_x86_float_convert_plan(pl_u32 source_bits,pl_u32 target_bits,pl_arena *arena,pl_plan *out)
+{
+    if((source_bits!=32u&&source_bits!=64u)||(target_bits!=32u&&target_bits!=64u)||source_bits==target_bits||!arena||!out)return PL_ERROR_PLAN;
+    pl_plan raw={.instructions=1u};expression e={0};
+    if(pl_builder_open(&e.builder,&raw,arena,256u,1024u,0u,3u))return PL_ERROR_ARENA;
+    pl_operand original={PL_OPERAND_LOCAL,0u},csr={PL_OPERAND_LOCAL,1u};ieee_expression x=ieee_value(&e,source_bits,original);
+    pl_operand den=bit_and(&e,x.classes,constant(1u)),daz=bit(&e,csr,6u),flush=bit_and(&e,den,daz);
+    pl_operand sig=select(&e,constant(0u),x.sig,flush),sign_se=bit_and(&e,x.se,constant(32768u));
+    pl_operand se=select(&e,sign_se,x.se,flush);den=bit_and(&e,den,not(&e,daz));
+    pl_operand exponent=bit_and(&e,se,constant(32767u));exponent=add(&e,exponent,constant(128u));
+    pl_operand sign=shift(&e,se,15u),nonzero=nz(&e,sig),nan_payload;
+    if(source_bits==32u){nan_payload=bit_and(&e,original,constant(0x7fffffu));nan_payload=shl(&e,nan_payload,constant(29u));}
+    else{nan_payload=shift(&e,original,29u);nan_payload=bit_and(&e,nan_payload,constant(0x7fffffu));}
+    pl_u64 full=target_bits==32u?0x7f800000u:0x7ff0000000000000ull;
+    nan_payload=bit_or(&e,nan_payload,constant(full));pl_operand sign_bits=shl(&e,sign,constant(target_bits-1u));nan_payload=bit_or(&e,nan_payload,sign_bits);
+    // Format conversion is the exact normalized residual, not a multiplication
+    // by one. Reuse its single target-format rounding and exception frontier.
+    return ieee_result(&e,&raw,target_bits,1u,128u,sig,constant(0u),exponent,sign,nonzero,
+        sig,se,constant(0x8000000000000000ull),constant(16383u),den,constant(0u),nan_payload,
+        constant(target_bits==32u?0x3f800000u:0x3ff0000000000000ull),csr,arena,out);
+}
+int pl_x86_x87_scale_supported(const pl_x86_instruction *i)
+{
+    pl_u32 required=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;
+    return i&&i->status==PL_X86_DECODE_VALID&&i->encoding==PL_X86_ENCODING_LEGACY
+        &&i->machine_operation==PL_X86_MACHINE_X87&&i->machine_argument==(50u|(0x1fdull<<16u))&&i->opcode==0xd9u
+        &&!i->visible_operand_count&&(i->flow==PL_X86_FLOW_NEXT||i->flow==PL_X86_FLOW_SYSTEM)
+        &&(i->flags&required)==required&&!(i->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED
+            |PL_X86_INSTRUCTION_PRIVILEGED|PL_X86_INSTRUCTION_READS_MEMORY|PL_X86_INSTRUCTION_WRITES_MEMORY|PL_X86_INSTRUCTION_TRAP_AFTER))
+        &&i->source_bytes&&i->source_bytes<=15u&&i->source_bytes==i->length&&i->fallthrough-i->rip==i->length;
+}
+int pl_x86_x87_remainder_supported(const pl_x86_instruction *i)
+{
+    if(!i)return 0;
+    pl_u32 required=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;
+    pl_u32 nearest=(pl_u32)(i->machine_argument>>44u)&1u;
+    return i->status==PL_X86_DECODE_VALID&&i->encoding==PL_X86_ENCODING_LEGACY
+        &&i->machine_operation==PL_X86_MACHINE_X87&&i->machine_argument==(53u|((nearest?0x1f5ull:0x1f8ull)<<16u)|((pl_u64)nearest<<44u))&&i->opcode==0xd9u
+        &&!i->visible_operand_count&&(i->flow==PL_X86_FLOW_NEXT||i->flow==PL_X86_FLOW_SYSTEM)
+        &&(i->flags&required)==required&&!(i->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED
+            |PL_X86_INSTRUCTION_PRIVILEGED|PL_X86_INSTRUCTION_READS_MEMORY|PL_X86_INSTRUCTION_WRITES_MEMORY|PL_X86_INSTRUCTION_TRAP_AFTER))
+        &&i->source_bytes&&i->source_bytes<=15u&&i->source_bytes==i->length&&i->fallthrough-i->rip==i->length;
+}
 static int arithmetic_plan(pl_u32 bits,pl_u32 integer,pl_u32 operation,pl_u32 ieee,pl_arena *arena,pl_plan *out)
 {
-    if(!arena||!out||(bits&&(integer?(bits!=16u&&bits!=32u):(bits!=32u&&bits!=64u)))||operation>5u)return PL_ERROR_PLAN;
-    int division=operation>=4u,multiplication=operation==1u;pl_u64 bias=(division||multiplication)?65536u:128u;
+    if(!arena||!out||(bits&&(integer==1u?(bits!=16u&&bits!=32u):integer==2u?(bits!=64u||operation):(bits!=32u&&bits!=64u)))||operation>8u||(operation>=6u&&(bits||ieee)))return PL_ERROR_PLAN;
+    int division=operation==4u||operation==5u,multiplication=operation==1u,scale=operation==6u,remainder=operation>=7u;
+    pl_u64 bias=scale?131072u:(division||multiplication||integer==2u)?65536u:128u;
     pl_plan raw={.instructions=1u};expression e={0};
     pl_u32 locals=ieee?3u:bits?5u:6u;
     if(pl_builder_open(&e.builder,&raw,arena,PL_X86_X87_ARITHMETIC_MAX_NODES,2048u,0u,locals))return PL_ERROR_ARENA;
@@ -181,6 +225,12 @@ static int arithmetic_plan(pl_u32 bits,pl_u32 integer,pl_u32 operation,pl_u32 ie
         a=select(&e,constant(0u),av.sig,flush_a);sa=select(&e,sign_a,av.se,flush_a);b=select(&e,constant(0u),bv.sig,flush_b);sb=select(&e,sign_b,bv.se,flush_b);
         den_a=bit_and(&e,den_a,not(&e,daz));den_b=bit_and(&e,den_b,not(&e,daz));pl_operand rc_bits=shift(&e,mxcsr,3u);rc_bits=bit_and(&e,rc_bits,constant(3u<<10u));cw=bit_or(&e,constant(0x37fu),rc_bits);
     }
+    else if(integer==2u){
+        // A compensated finite pair enters the same exact extended addition
+        // and one final rounding. Internal binary64 lanes never update MXCSR.
+        ieee_expression av=ieee_value(&e,64u,a),bv=ieee_value(&e,64u,sa);
+        a=av.sig;sa=av.se;b=bv.sig;sb=bv.se;empty=constant(0u);cw=bit_or(&e,cw,constant(0x300u));
+    }
     else if(bits&&integer){integer_expression value=integer_value(&e,bits,input);b=value.sig;sb=value.se;}
     else if(bits){ieee_expression value=ieee_value(&e,bits,input);b=value.sig;sb=value.se;source_denormal=bit_and(&e,value.classes,constant(1u));}
     pl_operand ea=bit_and(&e,sa,constant(0x7fffu)),eb=bit_and(&e,sb,constant(0x7fffu));
@@ -189,8 +239,43 @@ static int arithmetic_plan(pl_u32 bits,pl_u32 integer,pl_u32 operation,pl_u32 ie
     pl_operand as=shift(&e,sa,15u),bs=shift(&e,sb,15u);
     if(operation==3u)as=xor(&e,as,constant(1u));
     if(operation==2u)bs=xor(&e,bs,constant(1u));
-    pl_operand hi,lo,exponent,sign,nonzero,same_sign=equal(&e,as,bs);
-    if(division){
+    pl_operand hi,lo,exponent,sign,nonzero,same_sign=equal(&e,as,bs),scale_changed=constant(1u);
+    pl_operand remainder_flags=constant(0u),remainder_partial=constant(0u);
+    if(remainder){
+        pl_operand al=leading_zeros(&e,a),bl=leading_zeros(&e,b),numerator=shl(&e,a,al),denominator=shl(&e,b,bl);
+        pl_operand an=add(&e,ae,constant(128u)),bn=add(&e,be,constant(128u));an=sub(&e,an,al);bn=sub(&e,bn,bl);
+        pl_operand negative=less(&e,an,bn),distance=sub(&e,an,bn),large=not(&e,less(&e,distance,constant(64u)));
+        remainder_partial=bit_and(&e,large,not(&e,negative));pl_operand window=bit_and(&e,distance,constant(31u));window=add(&e,window,constant(32u));
+        pl_operand used=select(&e,window,distance,remainder_partial);used=select(&e,constant(0u),used,negative);
+        pl_operand high=shr(&e,numerator,sub(&e,constant(64u),used));high=select(&e,constant(0u),high,equal(&e,used,constant(0u)));
+        pl_operand low=shl(&e,numerator,used),den_nonzero=nz(&e,denominator);denominator=select(&e,denominator,constant(0x8000000000000000ull),den_nonzero);
+        quotient_expression divided=unsigned_divide_value(&e,high,low,denominator);
+        pl_operand q=select(&e,constant(0u),divided.quotient,negative),r=select(&e,numerator,divided.remainder,negative),reverse=constant(0u);
+        if(operation==8u){pl_operand complementary=sub(&e,denominator,r),above=less(&e,complementary,r),tie=equal(&e,complementary,r);
+            pl_operand odd=bit_and(&e,q,constant(1u));tie=bit_and(&e,tie,odd);reverse=bit_or(&e,above,tie);
+            reverse=bit_and(&e,reverse,not(&e,remainder_partial));reverse=bit_and(&e,reverse,not(&e,negative));
+            pl_operand last_half=equal(&e,add(&e,an,constant(1u)),bn),over_half=less(&e,denominator,numerator);last_half=bit_and(&e,last_half,over_half);
+            pl_operand finite_modulus=not(&e,equal(&e,eb,constant(32767u)));last_half=bit_and(&e,last_half,finite_modulus);
+            reverse=bit_or(&e,reverse,last_half);q=add(&e,q,reverse);
+            pl_operand twice=shl(&e,denominator,constant(1u)),negative_difference=sub(&e,twice,numerator);
+            complementary=select(&e,negative_difference,complementary,negative);r=select(&e,complementary,r,reverse);}
+        sign=xor(&e,as,reverse);pl_operand q0=bit_and(&e,q,constant(1u)),q1=bit_and(&e,q,constant(2u)),q2=bit_and(&e,q,constant(4u));
+        q0=shl(&e,q0,constant(9u));q1=shl(&e,q1,constant(13u));q2=shl(&e,q2,constant(6u));remainder_flags=bit_or(&e,q0,q1);remainder_flags=bit_or(&e,remainder_flags,q2);
+        remainder_flags=select(&e,constant(0x400u),remainder_flags,remainder_partial);
+        pl_operand leading=leading_zeros(&e,r);hi=shl(&e,r,leading);lo=constant(0u);nonzero=nz(&e,r);
+        exponent=sub(&e,an,used);exponent=sub(&e,exponent,leading);exponent=select(&e,exponent,constant(128u),nonzero);
+    }else if(scale){
+        pl_operand distance=sub(&e,constant(16446u),eb),magnitude=shr(&e,b,distance);
+        pl_operand small=less(&e,eb,constant(16383u)),huge=not(&e,less(&e,eb,constant(16399u)));
+        magnitude=select(&e,constant(65536u),magnitude,huge);magnitude=select(&e,constant(0u),magnitude,small);
+        scale_changed=nz(&e,b);
+        // |k|>=65536 cannot return to a finite exponent even after the
+        // architectural +/-24576 unmasked wrap. It is one absorbing class.
+        pl_operand negative=sub(&e,constant(0u),bs),signed_scale=xor(&e,magnitude,negative);signed_scale=sub(&e,signed_scale,negative);
+        pl_operand leading=leading_zeros(&e,a);hi=shl(&e,a,leading);lo=constant(0u);nonzero=nz(&e,a);sign=as;
+        exponent=add(&e,ae,constant(bias));exponent=sub(&e,exponent,leading);exponent=add(&e,exponent,signed_scale);
+        exponent=select(&e,exponent,constant(bias),nonzero);
+    }else if(division){
         pl_operand numerator=operation==5u?b:a,denominator=operation==5u?a:b;
         pl_operand ne=operation==5u?be:ae,de=operation==5u?ae:be;
         pl_operand nl=leading_zeros(&e,numerator),dl=leading_zeros(&e,denominator);
@@ -251,12 +336,14 @@ static int arithmetic_plan(pl_u32 bits,pl_u32 integer,pl_u32 operation,pl_u32 ie
     exponent=select(&e,exponent,constant(bias),nonzero);
     }
     pl_operand rc=shift(&e,cw,10u);rc=bit_and(&e,rc,constant(3u));
+    if(integer==2u)exponent=add(&e,exponent,(pl_operand){PL_OPERAND_LOCAL,2u});
     pl_operand negative_zero=equal(&e,rc,constant(1u)),zero_sign=select(&e,as,negative_zero,same_sign);
-    if(!division&&!multiplication)sign=select(&e,sign,zero_sign,nonzero);
+    if(!division&&!multiplication&&!scale&&!remainder)sign=select(&e,sign,zero_sign,nonzero);
     if(ieee)return ieee_result(&e,&raw,ieee,operation,bias,hi,lo,exponent,sign,nonzero,a,sa,b,sb,den_a,den_b,original_a,original_b,mxcsr,arena,out);
     pl_operand pc=shift(&e,cw,8u);pc=bit_and(&e,pc,constant(3u));
     pl_operand short_pc=equal(&e,pc,constant(0u)),double_pc=equal(&e,pc,constant(2u));
     pl_operand drop=select(&e,constant(11u),constant(0u),double_pc);drop=select(&e,constant(40u),drop,short_pc);
+    if(scale||remainder)drop=constant(0u);
     rounded normal=round_value(&e,(pair){hi,lo},exponent,drop,rc,sign);
     pl_operand subnormal=less(&e,exponent,constant(1u+bias)),under_shift=sub(&e,constant(1u+bias),exponent);
     under_shift=select(&e,under_shift,constant(0u),subnormal);
@@ -269,9 +356,14 @@ static int arithmetic_plan(pl_u32 bits,pl_u32 integer,pl_u32 operation,pl_u32 ie
     pl_operand overflow=less(&e,normal.exp,constant(32767u+bias));overflow=not(&e,overflow);
     pl_operand um=bit(&e,cw,4u),unmasked_um=not(&e,um),om=bit(&e,cw,3u),unmasked_om=not(&e,om);
     pl_operand tiny_cause=bit_or(&e,gradual.inexact,unmasked_um),underflow=bit_and(&e,tiny,tiny_cause);
+    if(scale)underflow=bit_and(&e,underflow,scale_changed);
+    if(remainder){pl_operand modulus_inf=equal(&e,eb,constant(32767u));underflow=bit_and(&e,underflow,not(&e,modulus_inf));}
     pl_operand wrapped_under=bit_and(&e,underflow,unmasked_um),wrapped_over=bit_and(&e,overflow,unmasked_om);
     pl_operand wrapped=bit_or(&e,wrapped_under,wrapped_over),wrapped_exp=add(&e,normal.exp,constant(24576u));
     pl_operand over_exp=sub(&e,normal.exp,constant(24576u));wrapped_exp=select(&e,over_exp,wrapped_exp,wrapped_over);
+    pl_operand wrap_valid=constant(1u);
+    if(scale||integer==2u){pl_operand below_wrap=less(&e,wrapped_exp,constant(bias+1u)),above_wrap=not(&e,less(&e,wrapped_exp,constant(bias+32767u)));
+        wrap_valid=bit_or(&e,below_wrap,above_wrap);wrap_valid=not(&e,wrap_valid);wrapped=bit_and(&e,wrapped,wrap_valid);}
     pl_operand down=equal(&e,rc,constant(1u)),up=equal(&e,rc,constant(2u)),positive=not(&e,sign),near=equal(&e,rc,constant(0u));
     down=bit_and(&e,down,sign);up=bit_and(&e,up,positive);pl_operand to_inf=bit_or(&e,down,up);to_inf=bit_or(&e,to_inf,near);
     pl_operand unit=shl(&e,constant(1u),drop),mask=sub(&e,unit,constant(1u)),max_sig=xor(&e,mask,constant(~0ull));
@@ -280,10 +372,16 @@ static int arithmetic_plan(pl_u32 bits,pl_u32 integer,pl_u32 operation,pl_u32 ie
     pl_operand result_sig=select(&e,overflow_sig,gradual.sig,overflow),result_exp=select(&e,overflow_exp,gradual_exp,overflow);
     result_sig=select(&e,normal.sig,result_sig,wrapped);result_exp=select(&e,wrapped_exp,result_exp,wrapped);
     pl_operand increment=select(&e,normal.increment,gradual.increment,wrapped),inexact=select(&e,normal.inexact,gradual.inexact,wrapped);
-    pl_operand masked_over=bit_and(&e,overflow,om);inexact=bit_or(&e,inexact,masked_over);
+    pl_operand effective_om=om;if(scale||integer==2u)effective_om=bit_or(&e,om,not(&e,wrap_valid));
+    pl_operand masked_over=bit_and(&e,overflow,effective_om);inexact=bit_or(&e,inexact,masked_over);
     /* Masked overflow rounds to infinity or the finite maximum even when
      * the unbounded significand addition had no discarded fraction. */
     increment=select(&e,to_inf,increment,masked_over);
+    if(scale||integer==2u){pl_operand terminal_over=bit_and(&e,wrapped_over,not(&e,wrap_valid)),terminal_under=bit_and(&e,wrapped_under,not(&e,wrap_valid));
+        result_sig=select(&e,constant(0x8000000000000000ull),result_sig,terminal_over);result_exp=select(&e,constant(32767u+bias),result_exp,terminal_over);
+        result_sig=select(&e,constant(0u),result_sig,terminal_under);result_exp=select(&e,constant(bias),result_exp,terminal_under);
+        pl_operand terminal=bit_or(&e,terminal_over,terminal_under);inexact=select(&e,constant(1u),inexact,terminal);
+        increment=select(&e,constant(1u),increment,terminal_over);increment=select(&e,constant(0u),increment,terminal_under);}
     pl_operand raised=shl(&e,overflow,constant(3u)),u=shl(&e,underflow,constant(4u)),p=shl(&e,inexact,constant(5u));
     raised=bit_or(&e,raised,u);raised=bit_or(&e,raised,p);
     result_exp=sub(&e,result_exp,constant(bias));pl_operand sign_word=shl(&e,sign,constant(15u)),result_se=bit_or(&e,result_exp,sign_word);
@@ -306,6 +404,9 @@ static int arithmetic_plan(pl_u32 bits,pl_u32 integer,pl_u32 operation,pl_u32 ie
     pl_operand nan_sig=(bits&&integer)?a_quiet:select(&e,a_quiet,b_quiet,choose_a),nan_se=(bits&&integer)?sa:select(&e,sa,sb,choose_a);
     pl_operand both_all=bit_and(&e,all_ea,all_eb),opposed=not(&e,same_sign),conflict=bit_and(&e,both_all,opposed);
     pl_operand a_zero=equal(&e,a,constant(0u)),b_zero=equal(&e,b,constant(0u));a_zero=bit_and(&e,a_zero,za);b_zero=bit_and(&e,b_zero,zb);
+    if(scale){pl_operand inf_to_zero=bit_and(&e,all_ea,bs),zero_to_inf=bit_and(&e,a_zero,not(&e,bs));
+        conflict=bit_or(&e,inf_to_zero,zero_to_inf);conflict=bit_and(&e,conflict,all_eb);}
+    if(remainder)conflict=bit_or(&e,all_ea,b_zero);
     pl_operand zero_division=constant(0u);
     if(multiplication){pl_operand ai_bz=bit_and(&e,all_ea,b_zero),bi_az=bit_and(&e,all_eb,a_zero);conflict=bit_or(&e,ai_bz,bi_az);}
     if(division){pl_operand both_zero=bit_and(&e,a_zero,b_zero);conflict=bit_or(&e,both_all,both_zero);
@@ -318,13 +419,17 @@ static int arithmetic_plan(pl_u32 bits,pl_u32 integer,pl_u32 operation,pl_u32 ie
     pl_operand no_invalid=not(&e,invalid);zero_division=bit_and(&e,zero_division,no_invalid);zero_division=bit_and(&e,zero_division,no_nan);
     special=bit_or(&e,special,zero_division);
     raised=select(&e,constant(0u),raised,special);increment=select(&e,constant(0u),increment,special);
-    pl_operand inf_sign=(division||multiplication)?sign:select(&e,as,bs,all_ea);inf_sign=shl(&e,inf_sign,constant(15u));
+    pl_operand inf_sign=(division||multiplication||scale)?sign:select(&e,as,bs,all_ea);inf_sign=shl(&e,inf_sign,constant(15u));
     pl_operand inf_se=bit_or(&e,inf_sign,constant(32767u)),special_sig=select(&e,nan_sig,constant(0x8000000000000000ull),nan);
     pl_operand special_se=select(&e,nan_se,inf_se,nan);
     if(division){pl_operand den_all=operation==5u?all_ea:all_eb,num_zero=operation==5u?b_zero:a_zero;
         pl_operand result_zero=bit_or(&e,den_all,num_zero);special_sig=select(&e,constant(0u),special_sig,result_zero);
         special_se=select(&e,sign_word,special_se,result_zero);
         special_sig=select(&e,nan_sig,special_sig,nan);special_se=select(&e,nan_se,special_se,nan);}
+    if(scale){pl_operand result_zero=bit_and(&e,all_eb,bs);result_zero=bit_or(&e,result_zero,a_zero);
+        special_sig=select(&e,constant(0u),special_sig,result_zero);special_se=select(&e,sign_word,special_se,result_zero);
+        special_sig=select(&e,nan_sig,special_sig,nan);special_se=select(&e,nan_se,special_se,nan);}
+    if(remainder){special_sig=select(&e,nan_sig,result_sig,nan);special_se=select(&e,nan_se,result_se,nan);}
     pl_operand special_result=bit_or(&e,any_all,zero_division);
     result_sig=select(&e,special_sig,result_sig,special_result);result_se=select(&e,special_se,result_se,special_result);
     result_sig=select(&e,constant(0xc000000000000000ull),result_sig,indefinite);result_se=select(&e,constant(0xffffu),result_se,indefinite);
@@ -344,6 +449,16 @@ static int arithmetic_plan(pl_u32 bits,pl_u32 integer,pl_u32 operation,pl_u32 ie
     pl_operand tag=select(&e,constant(2u),constant(0u),special_tag);tag=select(&e,constant(1u),tag,result_zero);
     pl_operand c1=shl(&e,increment,constant(9u)),no_write=shl(&e,suppress,constant(16u)),tag_word=shl(&e,tag,constant(18u));
     pl_operand outcome=bit_or(&e,raised,c1);outcome=bit_or(&e,outcome,no_write);outcome=bit_or(&e,outcome,tag_word);
+    if(remainder){
+        // Invalid/NaN/early denormal clears C2 but leaves C0/C3 undefined.
+        // Numeric partial waves use the fixed
+        // 32+(D mod32) window and reset their otherwise undefined quotient bits.
+        pl_operand condition_invalid=bit_or(&e,invalid,nan),clear=select(&e,constant(0x400u),constant(0x4500u),condition_invalid);
+        pl_operand condition=select(&e,constant(0u),remainder_flags,condition_invalid);
+        pl_operand denormal_clear=constant(0x400u);
+        clear=select(&e,denormal_clear,clear,unmask_d);condition=select(&e,constant(0u),condition,unmask_d);
+        clear=shl(&e,clear,constant(32u));outcome=bit_or(&e,outcome,clear);outcome=bit_or(&e,outcome,condition);
+    }
     raw.locals[0]=result_sig;raw.locals[1]=result_se;raw.locals[2]=outcome;
     for(pl_u32 local=3u;local<locals;++local)raw.locals[local]=(pl_operand){PL_OPERAND_LOCAL,local};
     if(e.failed)return PL_ERROR_ARENA;
@@ -355,6 +470,8 @@ int pl_x86_x87_memory_arithmetic_plan(pl_u32 bits,pl_u32 operation,pl_arena *are
 {return bits==32u||bits==64u?arithmetic_plan(bits,0u,operation,0u,arena,out):PL_ERROR_PLAN;}
 int pl_x86_x87_register_arithmetic_plan(pl_u32 operation,pl_arena *arena,pl_plan *out)
 {return arithmetic_plan(0u,0u,operation,0u,arena,out);}
+int pl_x86_compensated_round_plan(pl_arena *arena,pl_plan *out)
+{return arithmetic_plan(64u,2u,0u,0u,arena,out);}
 int pl_x86_float_arithmetic_plan(pl_u32 bits,pl_u32 operation,pl_arena *arena,pl_plan *out)
 {
     if(operation==4u||operation==5u)return pl_x86_float_minmax_plan(bits,operation-4u,arena,out);

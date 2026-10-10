@@ -29,9 +29,9 @@ static void mark_projection(const pl_plan *p,pl_operand a,pl_u8 *projections)
 }
 void cut_emit_scalar_projection(cut_lowering *c,const pl_plan *p,const pl_u32 *input,pl_u32 first,const pl_u32 *output,pl_u32 count)
 {
-    if(!p||!input||!output||!count||count>p->local_count||p->node_count>PL_X86_X87_ARITHMETIC_MAX_NODES
+    if(!p||!input||!output||!count||count>p->local_count||p->node_count>PL_X86_SCALAR_PLAN_MAX_NODES
         ||p->local_count>PL_X86_LOCAL_COUNT){c->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
-    pl_u8 projections[PL_X86_X87_ARITHMETIC_MAX_NODES+1u]={0};
+    pl_u8 projections[PL_X86_SCALAR_PLAN_MAX_NODES+1u]={0};
     for(pl_u32 n=0u;n<p->node_count;++n){const pl_node *node=p->nodes+n;
         if(node->argument_at>p->argument_count||node->argument_count>p->argument_count-node->argument_at)goto bad;
         const pl_operand *args=p->arguments+node->argument_at;
@@ -40,7 +40,9 @@ void cut_emit_scalar_projection(cut_lowering *c,const pl_plan *p,const pl_u32 *i
         if(node->opcode!=86u&&node->opcode!=87u&&node->opcode!=88u&&node->opcode!=89u&&node->opcode!=96u
             &&node->opcode!=PL_OPCODE_LANE64_SHL&&node->opcode!=PL_OPCODE_LANE64_SHR&&node->opcode!=PL_OPCODE_LANE64_SAR
             &&node->opcode!=PL_OPCODE_LANE64_SELECT&&node->opcode!=PL_OPCODE_X86_COMPARE&&node->opcode!=PL_OPCODE_X86_BIT_SUMMARY
-            &&node->opcode!=PL_OPCODE_MULR&&node->opcode!=PL_OPCODE_X86_DIVIDE)goto bad;
+            &&node->opcode!=PL_OPCODE_MULR&&node->opcode!=PL_OPCODE_X86_DIVIDE
+            &&(node->opcode<PL_OPCODE_IEEE64_ADD||node->opcode>PL_OPCODE_IEEE64_NEAREST))goto bad;
+        if(node->opcode>=PL_OPCODE_IEEE64_FROM_UNSIGNED&&(args[1].kind!=PL_OPERAND_CONST||args[1].value))goto bad;
         if(node->opcode==PL_OPCODE_X86_DIVIDE&&(args[0].kind!=PL_OPERAND_CONST||args[0].value
             ||args[3].kind!=PL_OPERAND_CONST||args[3].value!=64u))goto bad;
         if(node->opcode==PL_OPCODE_X86_COMPARE&&(args[0].kind!=PL_OPERAND_CONST||args[0].value
@@ -64,6 +66,15 @@ void cut_emit_scalar_projection(cut_lowering *c,const pl_plan *p,const pl_u32 *i
             // engine-total too; the caller owns the separate #DE predicate.
             operand_emit(c,a[1],input,first,projections);operand_emit(c,a[2],input,first,projections);cut_const(c,1u);
             operand_emit(c,a[2],input,first,projections);cut_op(c,0x50u);cut_op(c,0x45u);cut_op(c,0x1bu);cut_op(c,0x80u);
+        }else if(node->opcode>=PL_OPCODE_IEEE64_ADD&&node->opcode<=PL_OPCODE_IEEE64_NEAREST){
+            operand_emit(c,a[0],input,first,projections);
+            if(node->opcode==PL_OPCODE_IEEE64_FROM_UNSIGNED)cut_op(c,0xbau);
+            else{cut_op(c,0xbfu);
+                if(node->opcode<=PL_OPCODE_IEEE64_DIVIDE){operand_emit(c,a[1],input,first,projections);cut_op(c,0xbfu);
+                    cut_op(c,(pl_u8)(0xa0u+node->opcode-PL_OPCODE_IEEE64_ADD));}
+                else if(node->opcode==PL_OPCODE_IEEE64_NEAREST)cut_op(c,0x9eu);
+                else{cut_op(c,0xfcu);wasm_writer_uleb(c->writer,7u);}}
+            if(node->opcode!=PL_OPCODE_IEEE64_TO_UNSIGNED_SAT)cut_op(c,0xbdu);
         }else{
             operand_emit(c,a[0],input,first,projections);operand_emit(c,a[1],input,first,projections);
             if(node->opcode==PL_OPCODE_LANE64_SELECT){operand_emit(c,a[2],input,first,projections);cut_op(c,0x50u);cut_op(c,0x45u);cut_op(c,0x1bu);}

@@ -1,6 +1,61 @@
 /* Static vector permutations are one coordinate substitution. */
 #include <x86/semantics.h>
 #include "x87-expression.h"
+int pl_x86_vector_window_distance_lower(const pl_x86_instruction *i,pl_x86_vector_window_distance *out)
+{
+    const pl_u32 required=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;
+    if(!i||!out||i->status!=PL_X86_DECODE_VALID||i->encoding!=PL_X86_ENCODING_LEGACY||i->flow!=PL_X86_FLOW_NEXT
+        ||i->machine_operation!=PL_X86_MACHINE_VECTOR||(i->machine_argument&255u)!=PL_X86_VECTOR_WINDOW_DISTANCE
+        ||i->visible_operand_count!=3u||i->opcode!=0x42u||(i->flags&required)!=required
+        ||(i->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED|PL_X86_INSTRUCTION_PRIVILEGED
+            |PL_X86_INSTRUCTION_WRITES_MEMORY|PL_X86_INSTRUCTION_TRAP_AFTER)))return 0;
+    const pl_x86_operand *d=i->operands,*s=d+1u,*a=d+2u;pl_u32 memory=s->kind==PL_X86_OPERAND_MEMORY;
+    if(d->kind!=PL_X86_OPERAND_REGISTER||d->bits!=128u||d->value.reg.class_id!=PL_X86_REGISTER_VECTOR
+        ||d->value.reg.bits!=128u||d->value.reg.index>=16u||d->value.reg.flags||s->bits!=128u
+        ||(!memory&&(s->kind!=PL_X86_OPERAND_REGISTER||s->value.reg.class_id!=PL_X86_REGISTER_VECTOR
+            ||s->value.reg.bits!=128u||s->value.reg.index>=16u||s->value.reg.flags))
+        ||a->kind!=PL_X86_OPERAND_IMMEDIATE||a->bits!=8u||a->value.immediate>255u
+        ||!!(i->flags&PL_X86_INSTRUCTION_READS_MEMORY)!=memory
+        ||i->machine_argument!=(PL_X86_VECTOR_WINDOW_DISTANCE|((pl_u64)d->value.reg.index<<8u)
+            |((pl_u64)(memory?0u:s->value.reg.index)<<16u)|((pl_u64)memory<<24u)|((a->value.immediate&7u)<<32u)))return 0;
+    *out=(pl_x86_vector_window_distance){(pl_u8)(a->value.immediate&7u),(pl_u8)memory,(pl_u8)(memory?0u:s->value.reg.index),d->value.reg.index};return 1;
+}
+int pl_x86_vector_reduction_lower(const pl_x86_instruction *i,pl_x86_vector_reduction *out)
+{
+    const pl_u32 required=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;
+    if(!i||!out||i->status!=PL_X86_DECODE_VALID||i->encoding!=PL_X86_ENCODING_LEGACY||i->flow!=PL_X86_FLOW_NEXT
+        ||i->machine_operation!=PL_X86_MACHINE_VECTOR||i->visible_operand_count!=2u||(i->flags&required)!=required
+        ||(i->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED|PL_X86_INSTRUCTION_PRIVILEGED|PL_X86_INSTRUCTION_WRITES_MEMORY|PL_X86_INSTRUCTION_TRAP_AFTER)))return 0;
+    pl_u32 kind=(pl_u32)i->machine_argument&255u,position=kind==PL_X86_VECTOR_MINIMUM_POSITION;
+    if((kind!=PL_X86_VECTOR_TEST&&!position)||i->opcode!=(position?0x41u:0x17u))return 0;
+    const pl_x86_operand *d=i->operands,*s=d+1u;pl_u32 memory=s->kind==PL_X86_OPERAND_MEMORY;
+    for(pl_u32 n=0u;n<2u;++n){const pl_x86_operand *o=i->operands+n;
+        if(o->bits!=128u||((!n||!memory)&&(o->kind!=PL_X86_OPERAND_REGISTER||o->value.reg.class_id!=PL_X86_REGISTER_VECTOR
+            ||o->value.reg.bits!=128u||o->value.reg.index>=16u||o->value.reg.flags)))return 0;}
+    if(!!(i->flags&PL_X86_INSTRUCTION_READS_MEMORY)!=memory||i->machine_argument!=(kind|((pl_u64)d->value.reg.index<<8u)
+        |((pl_u64)(memory?0u:s->value.reg.index)<<16u)|((pl_u64)memory<<24u)|((pl_u64)memory<<26u)))return 0;
+    *out=(pl_x86_vector_reduction){(pl_u8)position,(pl_u8)memory,(pl_u8)(memory?0u:s->value.reg.index),d->value.reg.index,
+        (pl_u8)(!memory&&s->value.reg.index==d->value.reg.index)};return 1;
+}
+int pl_x86_vector_swizzle_lower(const pl_x86_instruction *i,pl_x86_vector_swizzle *out)
+{
+    const pl_u32 required=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;
+    if(!i||!out||i->status!=PL_X86_DECODE_VALID||i->encoding!=PL_X86_ENCODING_LEGACY||i->flow!=PL_X86_FLOW_NEXT
+        ||i->opcode!=0u||i->visible_operand_count!=2u||(i->flags&required)!=required||!i->source_bytes||i->source_bytes>15u
+        ||i->source_bytes!=i->length||i->fallthrough-i->rip!=i->length
+        ||(i->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED|PL_X86_INSTRUCTION_PRIVILEGED|PL_X86_INSTRUCTION_WRITES_MEMORY|PL_X86_INSTRUCTION_TRAP_AFTER)))return 0;
+    pl_u32 narrow=i->machine_operation==PL_X86_MACHINE_X87,kind=(pl_u32)i->machine_argument&255u;
+    if(narrow?(kind!=PL_X86_X87_BYTE_SHUFFLE):(i->machine_operation!=PL_X86_MACHINE_VECTOR||kind!=PL_X86_VECTOR_BYTE_SHUFFLE))return 0;
+    const pl_x86_operand *d=i->operands,*s=d+1u;pl_u32 memory=s->kind==PL_X86_OPERAND_MEMORY,bits=narrow?64u:128u,cls=narrow?PL_X86_REGISTER_MMX:PL_X86_REGISTER_VECTOR;
+    if(d->kind!=PL_X86_OPERAND_REGISTER||d->bits!=bits||d->value.reg.class_id!=cls||d->value.reg.bits!=bits
+        ||d->value.reg.flags||d->value.reg.index>=(narrow?8u:16u)||s->bits!=bits
+        ||(!memory&&(s->kind!=PL_X86_OPERAND_REGISTER||s->value.reg.class_id!=cls||s->value.reg.bits!=bits||s->value.reg.flags||s->value.reg.index>=(narrow?8u:16u)))
+        ||!!(i->flags&PL_X86_INSTRUCTION_READS_MEMORY)!=memory)return 0;
+    pl_u64 expected=narrow?kind|((pl_u64)(memory?8u:0u)<<8u)|((pl_u64)(memory?0u:s->value.reg.index)<<32u)|((pl_u64)d->value.reg.index<<36u)
+        :kind|((pl_u64)d->value.reg.index<<8u)|((pl_u64)(memory?0u:s->value.reg.index)<<16u)|((pl_u64)memory<<24u)|((pl_u64)memory<<26u);
+    if(i->machine_argument!=expected)return 0;
+    *out=(pl_x86_vector_swizzle){(pl_u8)(bits/8u),(pl_u8)memory,(pl_u8)(memory?0u:s->value.reg.index),d->value.reg.index,(pl_u8)(!memory&&s->value.reg.index==d->value.reg.index)};return 1;
+}
 int pl_x86_mmx_shuffle_lower(const pl_x86_instruction *i,pl_x86_mmx_shuffle *out)
 {
     const pl_u32 required=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;
@@ -77,6 +132,44 @@ int pl_x86_vector_project(const pl_x86_instruction *instruction,
                 | PL_X86_INSTRUCTION_REPEATED | PL_X86_INSTRUCTION_TRAP_AFTER)))
         return 0;
     pl_u32 kind = (pl_u32)instruction->machine_argument & 255u;
+    if(kind==PL_X86_VECTOR_DUPLICATE_QWORD){
+        const pl_x86_operand *d=instruction->operands,*s=d+1u;pl_u32 memory=s->kind==PL_X86_OPERAND_MEMORY;
+        const pl_u32 required=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;
+        if(instruction->encoding!=PL_X86_ENCODING_LEGACY||instruction->opcode!=0x12u||instruction->visible_operand_count!=2u
+            ||(instruction->flags&required)!=required||!xmm(d)||(memory?s->bits!=64u:s->kind!=PL_X86_OPERAND_REGISTER
+                ||s->value.reg.class_id!=PL_X86_REGISTER_VECTOR||s->value.reg.bits!=128u||s->value.reg.index>=16u||s->value.reg.flags
+                ||(s->bits!=64u&&s->bits!=128u))||!!(instruction->flags&PL_X86_INSTRUCTION_READS_MEMORY)!=memory
+            ||(instruction->flags&(PL_X86_INSTRUCTION_PRIVILEGED|PL_X86_INSTRUCTION_WRITES_MEMORY))
+            ||instruction->machine_argument!=(kind|((pl_u64)d->value.reg.index<<8u)
+                |((pl_u64)(memory?0u:s->value.reg.index)<<16u)|((pl_u64)memory<<24u)))return 0;
+        *out=(pl_x86_vector_projection){8u,PL_X86_VECTOR_DUPLICATE_COORDINATES,0u,1u,
+            (pl_u8)(memory?0u:s->value.reg.index),0u,(pl_u8)memory,0u};return 1;
+    }
+    if(kind==PL_X86_VECTOR_IMMEDIATE_BLEND||kind==PL_X86_VECTOR_INSERT_FLOAT_LANE){
+        const pl_x86_operand *d=instruction->operands,*s=d+1u,*a=d+2u;pl_u32 memory=s->kind==PL_X86_OPERAND_MEMORY,insert=kind==PL_X86_VECTOR_INSERT_FLOAT_LANE;
+        pl_u32 bytes=insert?4u:(pl_u32)(instruction->machine_argument>>40u)&255u;
+        const pl_u32 required=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;
+        if((bytes!=2u&&bytes!=4u&&bytes!=8u)||instruction->visible_operand_count!=3u||!xmm(d)
+            ||(memory?s->bits!=(insert?32u:128u):s->kind!=PL_X86_OPERAND_REGISTER||s->value.reg.class_id!=PL_X86_REGISTER_VECTOR
+                ||s->value.reg.bits!=128u||s->value.reg.flags||s->value.reg.index>=16u||(insert?(s->bits!=32u&&s->bits!=128u):s->bits!=128u))
+            ||a->kind!=PL_X86_OPERAND_IMMEDIATE||a->bits!=8u||a->value.immediate>255u
+            ||(instruction->flags&required)!=required||(instruction->flags&(PL_X86_INSTRUCTION_WRITES_MEMORY|PL_X86_INSTRUCTION_PRIVILEGED))
+            ||!!(instruction->flags&PL_X86_INSTRUCTION_READS_MEMORY)!=memory
+            ||instruction->opcode!=(insert?0x21u:bytes==2u?0x0eu:bytes==4u?0x0cu:0x0du))return 0;
+        pl_u32 full=(1u<<(16u/bytes))-1u,control=(pl_u32)a->value.immediate&(insert?255u:full);
+        if(insert&&memory)control&=63u;
+        pl_u64 expected=kind|((pl_u64)d->value.reg.index<<8u)|((pl_u64)(memory?0u:s->value.reg.index)<<16u)
+            |((pl_u64)memory<<24u)|((pl_u64)(memory&&!insert)<<26u)|((pl_u64)control<<32u)|((pl_u64)(insert?0u:bytes)<<40u);
+        if(instruction->machine_argument!=expected)return 0;
+        pl_u32 alias=!memory&&d->value.reg.index==s->value.reg.index,inputs=alias?1u:2u,first=d->value.reg.index;
+        if(!insert&&!memory&&(!control||control==full)){inputs=1u;if(control==full)first=s->value.reg.index;}
+        if(insert){if((control&15u)==15u)inputs=0u;else if(control&(1u<<((control>>4u)&3u)))inputs=1u;}
+        *out=(pl_x86_vector_projection){(pl_u8)bytes,(pl_u8)(insert?PL_X86_VECTOR_INSERT_COORDINATES:PL_X86_VECTOR_SELECT_COORDINATES),
+            (pl_u8)control,(pl_u8)inputs,(pl_u8)first,(pl_u8)(memory?0u:s->value.reg.index),(pl_u8)memory,0u};
+        if(!memory&&!insert&&(!control||alias))out->identity=1u;
+        if(!memory&&insert&&!(control&15u)&&alias&&((control>>4u)&3u)==(control>>6u))out->identity=1u;
+        return 1;
+    }
     if(kind==PL_X86_VECTOR_ALIGN_RIGHT){
         const pl_x86_operand *d=instruction->operands,*s=d+1u,*a=d+2u;
         pl_u32 memory=s->kind==PL_X86_OPERAND_MEMORY;
@@ -163,6 +256,17 @@ int pl_x86_vector_project(const pl_x86_instruction *instruction,
 pl_u32 pl_x86_vector_project_byte(const pl_x86_vector_projection *projection,
                                   pl_u32 byte)
 {
+    if(projection&&byte<16u&&projection->start==PL_X86_VECTOR_DUPLICATE_COORDINATES
+        &&projection->lane_bytes==8u&&projection->inputs==1u)return byte&7u;
+    if(projection&&byte<16u&&projection->start==PL_X86_VECTOR_SELECT_COORDINATES
+        &&(projection->lane_bytes==2u||projection->lane_bytes==4u||projection->lane_bytes==8u)
+        &&(projection->inputs==1u||projection->inputs==2u))
+        return byte+(projection->inputs==2u&&((projection->control>>(byte/projection->lane_bytes))&1u)?16u:0u);
+    if(projection&&byte<16u&&projection->start==PL_X86_VECTOR_INSERT_COORDINATES&&projection->lane_bytes==4u){
+        pl_u32 lane=byte/4u,control=projection->control;
+        if((control&(1u<<lane))||lane!=((control>>4u)&3u))return byte;
+        return (projection->inputs==2u?16u:0u)+(control>>6u)*4u+byte%4u;
+    }
     if(projection&&projection->lane_bytes==1u&&projection->control==2u&&byte<16u&&projection->start<=32u){
         pl_u32 count=projection->start;
         if(projection->inputs==0u)return count==32u?16u:32u;
@@ -192,3 +296,5 @@ pl_u32 pl_x86_vector_project_byte(const pl_x86_vector_projection *projection,
     pl_u32 second = projection->inputs == 2u && lane >= 2u ? 16u : 0u;
     return second + start + bytes * selected + (byte - start) % bytes;
 }
+pl_u32 pl_x86_vector_projection_extent(const pl_x86_vector_projection *p)
+{return p->source_memory?(p->start==PL_X86_VECTOR_INSERT_COORDINATES?4u:p->start==PL_X86_VECTOR_DUPLICATE_COORDINATES?8u:16u):0u;}

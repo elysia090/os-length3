@@ -65,6 +65,7 @@ typedef struct {
     pl_u32 fault_vector;
     pl_u32 store_span;
     pl_u32 memory_prefix;
+    pl_u32 scalar_nodes;
 } cut_plan;
 typedef struct { pl_u32 length,imports,binding,span; } cut_body_extent;
 typedef struct {
@@ -168,10 +169,22 @@ void cut_emit_scalar_projection(cut_lowering *cut,const pl_plan *plan,const pl_u
 void cut_lower_mxcsr(cut_lowering *cut, const pl_x86_instruction *instruction);
 int cut_vector_supported(const pl_x86_instruction *instruction);
 void cut_lower_vector(cut_lowering *cut,const pl_x86_instruction *instruction);
+void cut_lower_vector_widen(cut_lowering *cut,const pl_x86_instruction *instruction,const pl_x86_vector_widen *law);
+void cut_lower_vector_reduction(cut_lowering *cut,const pl_x86_instruction *instruction,const pl_x86_vector_reduction *law);
 void cut_lower_vector_integer_float(cut_lowering *cut,const pl_x86_instruction *instruction);
 void cut_lower_vector_float_integer(cut_lowering *cut,const pl_x86_instruction *instruction);
 void cut_lower_float_compare(cut_lowering *cut,const pl_x86_instruction *instruction);
+void cut_capture_float_operands(cut_lowering *cut,const pl_x86_instruction *instruction,pl_u32 bytes,pl_u32 lanes,
+    pl_u32 source,pl_u32 target,pl_u32 source_memory,pl_u32 first,pl_u32 second);
 void cut_lower_float_arithmetic(cut_lowering *cut,const pl_x86_instruction *instruction);
+void cut_lower_float_round(cut_lowering *cut,const pl_x86_instruction *instruction);
+void cut_sse_raise_wave(cut_lowering *cut,pl_u32 raised_local);
+void cut_lower_float_dot(cut_lowering *cut,const pl_x86_instruction *instruction);
+void cut_lower_float_unary(cut_lowering *cut,const pl_x86_instruction *instruction);
+void cut_lower_float_convert(cut_lowering *cut,const pl_x86_instruction *instruction);
+void cut_lower_x87_extract(cut_lowering *cut,const pl_x86_instruction *instruction);
+void cut_lower_vector_window_distance(cut_lowering *cut,const pl_x86_instruction *instruction,const pl_x86_vector_window_distance *law);
+void cut_lower_vector_string_compare(cut_lowering *cut,const pl_x86_instruction *instruction,const pl_x86_vector_string_compare *law);
 void cut_lower_selector_query(cut_lowering *cut,const pl_x86_instruction *instruction);
 void cut_lower_far_transfer(cut_lowering *cut,const pl_x86_instruction *instruction);
 /* Element width, with bit 7 selecting the old high 64-bit word; zero rejects. */
@@ -191,6 +204,7 @@ pl_u32 cut_vector_shift_shape(const pl_x86_instruction *instruction);
 void cut_lower_vector_shift(cut_lowering *cut,const pl_x86_instruction *instruction,pl_u32 shape);
 int cut_vector_scalar_supported(const pl_x86_instruction *instruction);
 void cut_lower_vector_scalar(cut_lowering *cut,const pl_x86_instruction *instruction);
+void cut_lower_vector_lane(cut_lowering *cut,const pl_x86_instruction *instruction,const pl_x86_vector_lane *lane);
 void cut_sse_guard(cut_lowering *cut);
 /* CUT_LEFT is old MXCSR, CUT_STATUS the newly raised flags. Preserve result
  * CUT_VALUE. MMX transition: 0 none, 1 before fault only, 2 before either arm. */
@@ -217,6 +231,9 @@ void cut_multiply_value(cut_lowering *cut, pl_u32 width);
 void cut_implicit_multiply_value(cut_lowering *cut, pl_u32 width, int signed_product);
 void cut_lower_multiply(cut_lowering *cut, const pl_x86_instruction *instruction);
 void cut_lower_summary(cut_lowering *cut,const pl_x86_instruction *instruction);
+int cut_crc32_supported(const pl_x86_instruction *instruction);
+void cut_lower_crc32(cut_lowering *cut,const pl_x86_instruction *instruction);
+void cut_crc32_value(cut_lowering *cut,const pl_x86_instruction *instruction);
 void cut_summary_value(cut_lowering *cut,const pl_x86_instruction *instruction);
 int cut_divide_supported(const pl_x86_instruction *instruction);
 void cut_divide_value(cut_lowering *cut, const pl_x86_instruction *instruction);

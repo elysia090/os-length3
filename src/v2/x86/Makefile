@@ -16,6 +16,12 @@ ZYDIS_OBJECTS = $(patsubst %,$(BUILD)/zydis/%.o,$(ZYDIS_SOURCES))
 
 .PHONY: all check clean
 .PHONY: unsigned-divide-check
+.PHONY: crc32-check
+check: crc32-check
+crc32-check: $(BUILD)/crc32-check
+	$(BUILD)/crc32-check
+$(BUILD)/crc32-check: check/crc32.c check/scalar-plan.h $(BUILD)/libx86.a
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libx86.a ../support/build/libsupport.a -o $@
 check: unsigned-divide-check
 unsigned-divide-check: $(BUILD)/unsigned-divide-check
 	$(BUILD)/unsigned-divide-check

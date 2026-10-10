@@ -33,6 +33,20 @@ code-generation closure too. A finite test suite, successful decode, valid
 Wasm, source-coordinate count or boot announcement alone does not discharge
 the quantified obligation.
 
+Transcendental and reciprocal approximations obey the architecture's error
+and special-value contracts, not an undocumented polynomial from one CPU.
+The product emits stateless common SSA operations into ordinary Wasm; host
+numeric libraries remain independent test references. Tests keep exact
+accesses, aliases, defined faults and publication boundaries separate from
+numeric error enclosures. C1 and the result tag must describe the emitted
+implementation's own final rounding and value. At an analytically established
+normal/subnormal boundary, an approximate physical CPU can choose a different
+underflow transition; the compiler representative and its pending-error/FOP
+equation are checked independently, not masked without a boundary proof.
+For FYL2XP1 the documented out-of-range result is undefined. Its explicit
+floating-invalid representative is tested on those inputs without deleting
+them or replacing the valid instruction with an illegal-opcode fault.
+
 ## Required input domains
 
 | Domain | Required population and observations |

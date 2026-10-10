@@ -2942,12 +2942,18 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
         &&!pl_x86_cr0_clear_supported(instruction))return PL_ERROR_X86_SEMANTIC;
     if(instruction->machine_operation==PL_X86_MACHINE_VECTOR&&((instruction->machine_argument&255u)==39u||(instruction->machine_argument&255u)==PL_X86_VECTOR_MOVE_LANE)){
         pl_x86_scalar_vector_transfer law;if(!pl_x86_scalar_vector_transfer_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
+    if(instruction->machine_operation==PL_X86_MACHINE_VECTOR&&((instruction->machine_argument&255u)==PL_X86_VECTOR_INSERT_LANE
+        ||(instruction->machine_argument&255u)==PL_X86_VECTOR_EXTRACT_LANE)){
+        pl_x86_vector_lane law;if(!pl_x86_vector_lane_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_VECTOR&&(instruction->machine_argument&255u)==PL_X86_VECTOR_PACKED_SHIFT){
         pl_x86_vector_shift law;if(!pl_x86_vector_shift_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(pl_x86_vector_unpack_candidate(instruction)){
         pl_x86_vector_unpack law;if(!pl_x86_vector_unpack_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_X87&&(instruction->machine_argument&255u)==38u){
         pl_x86_mmx_shuffle law;if(!pl_x86_mmx_shuffle_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
+    if((instruction->machine_operation==PL_X86_MACHINE_X87&&(instruction->machine_argument&255u)==PL_X86_X87_BYTE_SHUFFLE)
+        ||(instruction->machine_operation==PL_X86_MACHINE_VECTOR&&(instruction->machine_argument&255u)==PL_X86_VECTOR_BYTE_SHUFFLE)){
+        pl_x86_vector_swizzle law;if(!pl_x86_vector_swizzle_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_X87&&((instruction->machine_argument&255u)==27u||(instruction->machine_argument&255u)==28u)){
         pl_x86_x87_bcd law;if(!pl_x86_x87_bcd_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_SYSTEM_SELECTOR
@@ -2955,6 +2961,21 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
         pl_x86_selector_query law;if(!pl_x86_selector_query_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_X87&&(instruction->machine_argument&255u)==49u
         &&!pl_x86_x87_round_supported(instruction))return PL_ERROR_X86_SEMANTIC;
+    if(instruction->machine_operation==PL_X86_MACHINE_X87&&(instruction->machine_argument&255u)==48u
+        &&!pl_x86_x87_trig_supported(instruction))return PL_ERROR_X86_SEMANTIC;
+    if(instruction->machine_operation==PL_X86_MACHINE_X87&&(instruction->machine_argument&255u)==58u
+        &&!pl_x86_x87_exponential_supported(instruction)&&!pl_x86_x87_logarithm_supported(instruction)
+        &&!pl_x86_x87_logarithm_one_supported(instruction)&&!pl_x86_x87_arctangent_supported(instruction))return PL_ERROR_X86_SEMANTIC;
+    if(instruction->machine_operation==PL_X86_MACHINE_X87&&(instruction->machine_argument&255u)==56u
+        &&!pl_x86_x87_examine_supported(instruction))return PL_ERROR_X86_SEMANTIC;
+    if(instruction->machine_operation==PL_X86_MACHINE_X87&&(instruction->machine_argument&255u)==52u
+        &&!pl_x86_x87_root_supported(instruction))return PL_ERROR_X86_SEMANTIC;
+    if(instruction->machine_operation==PL_X86_MACHINE_X87&&(instruction->machine_argument&255u)==57u
+        &&!pl_x86_x87_extract_supported(instruction))return PL_ERROR_X86_SEMANTIC;
+    if(instruction->machine_operation==PL_X86_MACHINE_X87&&(instruction->machine_argument&255u)==50u
+        &&!pl_x86_x87_scale_supported(instruction))return PL_ERROR_X86_SEMANTIC;
+    if(instruction->machine_operation==PL_X86_MACHINE_X87&&(instruction->machine_argument&255u)==53u
+        &&!pl_x86_x87_remainder_supported(instruction))return PL_ERROR_X86_SEMANTIC;
     if((instruction->machine_operation==PL_X86_MACHINE_VECTOR&&((instruction->machine_argument&255u)==PL_X86_VECTOR_BYTE_SIGN_MASK||(instruction->machine_argument&255u)==41u))
         ||(instruction->machine_operation==PL_X86_MACHINE_X87&&(instruction->machine_argument&255u)==55u)){
         pl_x86_vector_signmask law;if(!pl_x86_vector_signmask_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
@@ -2962,15 +2983,33 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
         pl_x86_vector_extract law;if(!pl_x86_vector_extract_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(pl_x86_float_arithmetic_candidate(instruction)){
         pl_x86_float_arithmetic law;if(!pl_x86_float_arithmetic_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
+    if(instruction->machine_operation==PL_X86_MACHINE_VECTOR&&((instruction->machine_argument&255u)==31u
+        ||(instruction->machine_argument&255u)==PL_X86_VECTOR_FLOAT_NARROW
+        ||((instruction->machine_argument&255u)==PL_X86_VECTOR_SCALAR_FLOAT
+            &&(((instruction->machine_argument>>32u)&255u)==PL_X86_SCALAR_FLOAT_WIDEN||((instruction->machine_argument>>32u)&255u)==PL_X86_SCALAR_FLOAT_NARROW)))){
+        pl_x86_float_convert law;if(!pl_x86_float_convert_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
+    if(instruction->machine_operation==PL_X86_MACHINE_VECTOR&&((instruction->machine_argument&255u)==18u
+        ||(instruction->machine_argument&255u)==37u||(instruction->machine_argument&255u)==38u
+        ||(instruction->machine_argument&255u)==PL_X86_VECTOR_FLOAT_SQRT64
+        ||((instruction->machine_argument&255u)==PL_X86_VECTOR_SCALAR_FLOAT
+            &&(((instruction->machine_argument>>32u)&255u)==PL_X86_SCALAR_FLOAT_SQUARE_ROOT
+                ||((instruction->machine_argument>>32u)&255u)==PL_X86_SCALAR_FLOAT_RECIPROCAL
+                ||((instruction->machine_argument>>32u)&255u)==PL_X86_SCALAR_FLOAT_RECIPROCAL_ROOT)))){
+        pl_x86_float_unary law;if(!pl_x86_float_unary_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
+    if(instruction->machine_operation==PL_X86_MACHINE_VECTOR&&(instruction->machine_argument&255u)==PL_X86_VECTOR_FLOAT_DOT){
+        pl_x86_float_dot law;if(!pl_x86_float_dot_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
+    if(instruction->machine_operation==PL_X86_MACHINE_VECTOR&&(instruction->machine_argument&255u)==PL_X86_VECTOR_FLOAT_ROUND){
+        pl_x86_float_round law;if(!pl_x86_float_round_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_VECTOR&&(instruction->machine_argument&255u)==PL_X86_VECTOR_SCALAR_FLOAT
         &&(((instruction->machine_argument>>32u)&255u)==PL_X86_SCALAR_FLOAT_COMPARE_ORDERED||((instruction->machine_argument>>32u)&255u)==PL_X86_SCALAR_FLOAT_COMPARE_UNORDERED||((instruction->machine_argument>>32u)&255u)==PL_X86_SCALAR_FLOAT_PREDICATE)){
         pl_x86_float_compare law;if(!pl_x86_float_compare_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_VECTOR&&((instruction->machine_argument&255u)==17u
         ||(instruction->machine_argument&255u)==21u||(instruction->machine_argument&255u)==32u
-        ||((instruction->machine_argument&255u)==PL_X86_VECTOR_SCALAR_FLOAT&&((instruction->machine_argument>>32u)&255u)==PL_X86_SCALAR_FLOAT_TO_INTEGER_TRUNCATE)
-        ||((instruction->machine_argument&255u)==PL_X86_VECTOR_PACKED_CONVERT&&((instruction->machine_argument>>32u)&255u)==PL_X86_PACKED_CONVERT_FLOAT64_TO_SIGNED_DWORD_TRUNCATE))){
+        ||((instruction->machine_argument&255u)==PL_X86_VECTOR_SCALAR_FLOAT&&(((instruction->machine_argument>>32u)&255u)==PL_X86_SCALAR_FLOAT_TO_INTEGER_TRUNCATE||((instruction->machine_argument>>32u)&255u)==PL_X86_SCALAR_FLOAT_TO_INTEGER))
+        ||((instruction->machine_argument&255u)==PL_X86_VECTOR_PACKED_CONVERT&&((instruction->machine_argument>>32u)&255u)>=PL_X86_PACKED_CONVERT_FLOAT64_TO_SIGNED_DWORD_TRUNCATE&&((instruction->machine_argument>>32u)&255u)<=PL_X86_PACKED_CONVERT_FLOAT32_TO_SIGNED_DWORD_TRUNCATE))){
         pl_x86_vector_float_integer law;if(!pl_x86_vector_float_integer_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
-    if(instruction->machine_operation==PL_X86_MACHINE_VECTOR&&((instruction->machine_argument&255u)==30u
+    if(instruction->machine_operation==PL_X86_MACHINE_VECTOR&&((instruction->machine_argument&255u)==30u||(instruction->machine_argument&255u)==16u
+        ||((instruction->machine_argument&255u)==PL_X86_VECTOR_PACKED_CONVERT&&((instruction->machine_argument>>32u)&255u)==PL_X86_PACKED_CONVERT_SIGNED_DWORD_TO_FLOAT64)
         ||((instruction->machine_argument&255u)==PL_X86_VECTOR_SCALAR_FLOAT&&((instruction->machine_argument>>32u)&255u)==PL_X86_SCALAR_FLOAT_INTEGER_TO_FLOAT))){
         pl_x86_vector_integer_float law;if(!pl_x86_vector_integer_float_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_X87&&((instruction->machine_argument&255u)==36u
@@ -3174,6 +3213,13 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
                              || (out->machine_argument & 0xffu) == 27u
                              || (out->machine_argument & 0xffu) == 40u
                              || (out->machine_argument & 0xffu) == 44u
+                             || (out->machine_argument & 0xffu) == PL_X86_VECTOR_IMMEDIATE_BLEND
+                             || (out->machine_argument & 0xffu) == PL_X86_VECTOR_INSERT_FLOAT_LANE
+                             || (out->machine_argument & 0xffu) == PL_X86_VECTOR_PACKED_FLOAT_PREDICATE64
+                             || (out->machine_argument & 0xffu) == PL_X86_VECTOR_FLOAT_ROUND
+                             || (out->machine_argument & 0xffu) == PL_X86_VECTOR_WINDOW_DISTANCE
+                             || (out->machine_argument & 0xffu) == PL_X86_VECTOR_STRING_COMPARE
+                             || (out->machine_argument & 0xffu) == PL_X86_VECTOR_FLOAT_DOT
                              || (out->machine_argument & 0xffu)
                                 == PL_X86_VECTOR_SHUFFLE_LOW_WORDS)
                             ? 3u : 2u))))
@@ -3259,15 +3305,25 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
     {
         if (out->machine_operation == PL_X86_MACHINE_VECTOR) {
             pl_u32 kind = (pl_u32)out->machine_argument & 255u;
+            if(kind==PL_X86_VECTOR_INTEGER_WIDEN){pl_x86_vector_widen law;
+                if(!pl_x86_vector_widen_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
+            if(kind==PL_X86_VECTOR_WINDOW_DISTANCE){pl_x86_vector_window_distance law;
+                if(!pl_x86_vector_window_distance_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
+            if(kind==PL_X86_VECTOR_STRING_COMPARE){pl_x86_vector_string_compare law;
+                if(!pl_x86_vector_string_compare_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
+            if(kind==PL_X86_VECTOR_TEST||kind==PL_X86_VECTOR_MINIMUM_POSITION){pl_x86_vector_reduction law;
+                if(!pl_x86_vector_reduction_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
             if (kind == 7u || kind == 8u || kind == 23u || kind == 27u || kind == 40u || kind == PL_X86_VECTOR_ALIGN_RIGHT
                     || kind == PL_X86_VECTOR_SHUFFLE_LOW_WORDS
-                    || kind == PL_X86_VECTOR_FIXED_DWORD_SHUFFLE) {
+                    || kind == PL_X86_VECTOR_IMMEDIATE_BLEND || kind == PL_X86_VECTOR_INSERT_FLOAT_LANE
+                    || kind == PL_X86_VECTOR_FIXED_DWORD_SHUFFLE || kind == PL_X86_VECTOR_DUPLICATE_QWORD) {
                 pl_x86_vector_projection projection;
                 if (!pl_x86_vector_project(instruction, &projection))
                     return PL_ERROR_X86_SEMANTIC;
             }
             pl_u64 subtype = out->machine_argument >> 32u;
             if (kind == 1u || kind == 2u || kind == 3u || kind == 4u || kind == 24u
+                    ||kind==PL_X86_VECTOR_BYTE_BLEND||kind==PL_X86_VECTOR_VARIABLE_BLEND
                     || (kind == 10u && (subtype == 12u || subtype == 15u
                         || subtype == 48u || subtype == 51u || subtype == 52u
                         || subtype == 56u || subtype == 57u

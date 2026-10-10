@@ -16,15 +16,22 @@ int pl_x86_vector_float_integer_lower(const pl_x86_instruction *i,pl_x86_vector_
         if(d->bits!=64u||d->value.reg.bits!=64u||d->value.reg.index>=8u)return 0;
     }else if(kind==PL_X86_VECTOR_PACKED_CONVERT){
         bytes=16u;element=8u;target_class=PL_X86_REGISTER_VECTOR;target_bytes=4u;
-        argument|=(pl_u64)PL_X86_PACKED_CONVERT_FLOAT64_TO_SIGNED_DWORD_TRUNCATE<<PL_X86_VECTOR_IMMEDIATE_SHIFT;
+        pl_u32 op=(pl_u32)(i->machine_argument>>32u)&255u;
+        if(op<PL_X86_PACKED_CONVERT_FLOAT64_TO_SIGNED_DWORD_TRUNCATE||op>PL_X86_PACKED_CONVERT_FLOAT32_TO_SIGNED_DWORD_TRUNCATE)return 0;
+        if(op>=PL_X86_PACKED_CONVERT_FLOAT32_TO_SIGNED_DWORD)element=4u;
+        truncate=op==PL_X86_PACKED_CONVERT_FLOAT64_TO_SIGNED_DWORD_TRUNCATE||op==PL_X86_PACKED_CONVERT_FLOAT32_TO_SIGNED_DWORD_TRUNCATE;
+        argument|=(pl_u64)op<<PL_X86_VECTOR_IMMEDIATE_SHIFT;
         if(d->bits!=128u||d->value.reg.bits!=128u||d->value.reg.index>=16u)return 0;
     }else if(kind==PL_X86_VECTOR_SCALAR_FLOAT){
         bytes=s->bits/8u;element=bytes;target_class=PL_X86_REGISTER_GPR;target_bytes=d->bits/8u;
-        argument|=PL_X86_SCALAR_FLOAT_TARGET_GPR|((pl_u64)PL_X86_SCALAR_FLOAT_TO_INTEGER_TRUNCATE<<PL_X86_SCALAR_FLOAT_OPERATION_SHIFT)
+        pl_u32 op=(pl_u32)(i->machine_argument>>32u)&255u;
+        if(op!=PL_X86_SCALAR_FLOAT_TO_INTEGER_TRUNCATE&&op!=PL_X86_SCALAR_FLOAT_TO_INTEGER)return 0;
+        truncate=op==PL_X86_SCALAR_FLOAT_TO_INTEGER_TRUNCATE;
+        argument|=PL_X86_SCALAR_FLOAT_TARGET_GPR|((pl_u64)op<<PL_X86_SCALAR_FLOAT_OPERATION_SHIFT)
             |((pl_u64)target_bytes<<PL_X86_SCALAR_FLOAT_TARGET_BYTES_SHIFT)|((pl_u64)bytes<<PL_X86_SCALAR_FLOAT_SOURCE_BYTES_SHIFT);
         if((bytes!=4u&&bytes!=8u)||(target_bytes!=4u&&target_bytes!=8u)||d->value.reg.bits!=d->bits||d->value.reg.index>=16u)return 0;
     }else return 0;
-    if(i->opcode!=(kind==PL_X86_VECTOR_PACKED_CONVERT?0xe6u:kind==21u?0x2du:0x2cu))return 0;
+    if(i->opcode!=(kind==PL_X86_VECTOR_PACKED_CONVERT?(element==4u?0x5bu:0xe6u):truncate?0x2cu:0x2du))return 0;
     if(d->kind!=PL_X86_OPERAND_REGISTER||d->value.reg.class_id!=target_class||d->value.reg.flags||s->bits!=bytes*8u
         ||(!memory&&(s->kind!=PL_X86_OPERAND_REGISTER||s->value.reg.class_id!=PL_X86_REGISTER_VECTOR
             ||s->value.reg.bits!=128u||s->value.reg.index>=16u||s->value.reg.flags))

@@ -62,6 +62,15 @@ make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/float-compare-check
 "$temporary/wasm-compiler/build/float-compare-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/float-arithmetic-check
 "$temporary/wasm-compiler/build/float-arithmetic-check"
+make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/float-round-check build/float-sqrt-check build/profile-additions-check build/vector-select-check build/vector-widen-check
+"$temporary/wasm-compiler/build/float-round-check"
+"$temporary/wasm-compiler/build/float-sqrt-check"
+"$temporary/wasm-compiler/build/profile-additions-check"
+"$temporary/wasm-compiler/build/vector-select-check"
+"$temporary/wasm-compiler/build/vector-widen-check"
+make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/compensated-check build/angle-check
+"$temporary/wasm-compiler/build/compensated-check"
+"$temporary/wasm-compiler/build/angle-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/vector-extract-check
 "$temporary/wasm-compiler/build/vector-extract-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/selector-query-check

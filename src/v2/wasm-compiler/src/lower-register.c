@@ -176,6 +176,7 @@ int cut_instruction_supported(const pl_x86_instruction *instruction)
     if (instruction->flow != PL_X86_FLOW_NEXT || !count
             || operands[0].kind != PL_X86_OPERAND_REGISTER || !cut_gpr(&operands[0].value.reg)) return 0;
     pl_x86_register_update update;
+    if(instruction->operation==PL_X86_OPERATION_CRC32)return cut_crc32_supported(instruction)&&operands[1].kind==PL_X86_OPERAND_REGISTER;
     if(pl_x86_register_update_lower(instruction,&update))return 1;
     switch (instruction->operation) {
     case PL_X86_OPERATION_BYTE_SWAP:
@@ -465,6 +466,7 @@ void cut_lower_instruction(cut_lowering *cut, const pl_x86_instruction *instruct
         cut_lower_multiply(cut, instruction); return;
     }
     if (operation == PL_X86_OPERATION_BIT_SUMMARY) { cut_lower_summary(cut,instruction); return; }
+    if(operation==PL_X86_OPERATION_CRC32){cut_lower_crc32(cut,instruction);return;}
     if (operation == PL_X86_OPERATION_BIT_TEST) {
         pl_u32 width = operands[0].bits;
         if (!instruction->condition && !(cut->wanted_flags & 1u)) return;

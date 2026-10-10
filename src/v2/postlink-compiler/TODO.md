@@ -24,10 +24,17 @@ Cold shell3s remains a target, not an achieved claim.
 ## Current authoritative state
 
 The wider499-row/476838-record ordinary input population is now required.
-391755 compile to valid Wasm (391746 ordinary,9 deliberate fault witnesses);
-85083 ordinary inputs still refuse. Before:105504 refusals and1 invalid module.
+All476838 compile to valid Wasm (476829 ordinary,9 deliberate fault witnesses);
+missing, invalid-module, false-fault, extent and interface counts are zero.
+The exact assembly/instruction hashes and499 rows are unchanged. Before the
+latest checkpoint there were85083 ordinary refusals; the final8 x87
+transcendental encodings now use shared compensated SSA, one extended rounding
+and the existing FPU exception/stack owner. Numeric approximation contracts,
+algebraically exact boundaries and undefined-domain representatives remain
+explicitly distinct from physical CPU bit equality. See
+[wide input and transcendental evidence](../vm/check/browser/evidence/2026-10-10-wide-inputs-and-transcendentals.md).
 Shared integer SIMD, the8-byte paired-exchange ABI and absent entropy features
-recover20422 records without narrowing CPUID.1179648 exhaustive byte-ALU,
+previously recovered20422 records without narrowing CPUID.1179648 exhaustive byte-ALU,
 25632 physical SIMD states, independent C/sanitizers and72-module C-MMU atomic
 comparisons pass. These scopes are not interchangeable or universal proof;
 see [ordinary input evidence](../vm/check/browser/evidence/2026-10-10-ordinary-inputs.md).
@@ -208,7 +215,7 @@ separate; scoped/positive gates do not assert that it is solved.
 
 ## Next work, in order
 
-1. Close the remaining common ISA families to ZERO.
+1. Preserve zero common ISA entrance misses and finish the remaining execution gates.
    The broader [ordinary input contract](../docs/INPUTS.md) is mandatory, not
    just the make inventory above. A499-row/476838-input independent assembler
    population exposes advertised families absent from that observed workload.

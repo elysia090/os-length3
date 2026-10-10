@@ -49,6 +49,35 @@ SOURCES += src/lower-vector.c
 SOURCES += src/lower-vector-unpack.c
 SOURCES += src/emit-vector-binary.c
 SOURCES += src/lower-vector-integer-float.c
+SOURCES += src/lower-vector-widen.c
+SOURCES += src/lower-vector-reduction.c
+SOURCES += src/lower-vector-window-distance.c
+SOURCES += src/lower-vector-string-compare.c
+$(BUILD)/vector-string-observe: check/vector-string-observe.c check/x87-hardware.h check/x87-observation.h | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< -o $@
+$(BUILD)/vector-integer-float-observe: check/vector-integer-float-observe.c check/x87-hardware.h check/x87-observation.h | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< -o $@
+$(BUILD)/vector-float-integer-observe: check/vector-float-integer-observe.c check/x87-hardware.h check/x87-observation.h | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< -o $@
+$(BUILD)/x87-stack-observe: check/x87-stack-observe.c check/x87-hardware.h check/x87-observation.h | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< -o $@
+$(BUILD)/x87-round-observe: check/x87-round-observe.c check/x87-hardware.h check/x87-observation.h | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< -o $@
+$(BUILD)/x87-binary-special-observe: check/x87-binary-special-observe.c check/x87-hardware.h check/x87-observation.h | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< -o $@
+SOURCES += src/lower-crc32.c
+.PHONY: vector-select-check
+check: vector-select-check
+vector-select-check: $(BUILD)/vector-select-check
+	$(BUILD)/vector-select-check
+$(BUILD)/vector-select-check: check/vector-select.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+.PHONY: vector-widen-check
+check: vector-widen-check
+vector-widen-check: $(BUILD)/vector-widen-check
+	$(BUILD)/vector-widen-check
+$(BUILD)/vector-widen-check: check/vector-widen.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 .PHONY: cr0-clear-check
 .PHONY: cache-barrier-check
 check: cache-barrier-check
@@ -68,7 +97,49 @@ scalar-vector-transfer-check: $(BUILD)/scalar-vector-transfer-check
 $(BUILD)/scalar-vector-transfer-check: check/scalar-vector-transfer.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 SOURCES += src/lower-float-compare.c
+SOURCES += src/float-operands.c
 SOURCES += src/lower-float-arithmetic.c
+SOURCES += src/lower-float-round.c
+SOURCES += src/lower-float-dot.c
+SOURCES += src/lower-float-unary.c
+SOURCES += src/lower-float-convert.c
+.PHONY: profile-additions-check
+check: profile-additions-check
+profile-additions-check: $(BUILD)/profile-additions-check
+	$(BUILD)/profile-additions-check
+$(BUILD)/profile-additions-check: check/profile-additions.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+.PHONY: float-sqrt-check
+.PHONY: compensated-check
+.PHONY: angle-check
+.PHONY: trig-check
+# Independent quadmath oracle target; not a product dependency. The pinned
+# Linux sanitizer population separately checks the freestanding constructors.
+trig-check: $(BUILD)/trig-check
+	$(BUILD)/trig-check
+$(BUILD)/trig-check: check/trig.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -lquadmath -o $@
+check: angle-check
+angle-check: $(BUILD)/angle-check
+	$(BUILD)/angle-check
+$(BUILD)/angle-check: check/angle.c ../x86/src/angle.h ../x86/src/compensated.h $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+check: compensated-check
+compensated-check: $(BUILD)/compensated-check
+	$(BUILD)/compensated-check
+$(BUILD)/compensated-check: check/compensated.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+check: float-sqrt-check
+float-sqrt-check: $(BUILD)/float-sqrt-check
+	$(BUILD)/float-sqrt-check
+$(BUILD)/float-sqrt-check: check/float-sqrt.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+.PHONY: float-round-check
+check: float-round-check
+float-round-check: $(BUILD)/float-round-check
+	$(BUILD)/float-round-check
+$(BUILD)/float-round-check: check/float-round.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 SOURCES += src/lower-selector-query.c
 SOURCES += src/lower-far-transfer.c
 .PHONY: far-transfer-check
@@ -160,6 +231,7 @@ packed-shift-check: $(BUILD)/packed-shift-check
 $(BUILD)/packed-shift-check: check/packed-shift.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 SOURCES += src/lower-vector-scalar.c
+SOURCES += src/lower-vector-lane.c
 SOURCES += src/emit-interface.c
 SOURCES += src/coverage.c
 SOURCES += src/lower-register-update.c
@@ -189,6 +261,7 @@ SOURCES += src/emit-scalar-plan.c src/lower-x87-compare.c
 SOURCES += src/lower-x87-load.c
 SOURCES += src/lower-x87-exchange.c
 SOURCES += src/lower-x87-transfer.c
+SOURCES += src/lower-x87-extract.c
 .PHONY: x87-transfer-check
 check: x87-transfer-check
 x87-transfer-check: $(BUILD)/x87-transfer-check
@@ -278,6 +351,8 @@ $(BUILD)/x87-arithmetic-check: check/x87-arithmetic.c $(BUILD)/libwasm-compiler.
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 # Independent physical-Windows observer; never linked into product execution.
 $(BUILD)/mmx-binary-observe: check/mmx-binary-observe.c check/x87-hardware.h check/x87-observation.h | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< -o $@
+$(BUILD)/float-arithmetic-observe: check/float-arithmetic-observe.c check/x87-hardware.h check/x87-observation.h | $(BUILD)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< -o $@
 $(BUILD)/debug-trap-observe: check/debug-trap-observe.c | $(BUILD)
 	$(CC) $(CFLAGS) $(WARN) $< -o $@
