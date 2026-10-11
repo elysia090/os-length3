@@ -77,6 +77,9 @@ typedef struct {
     const vm_memory_page *recent[256];
     vm_walk_proof walks[64];
     pl_u64 walk_live,walk_watch[256];
+    /* A bucket is empty, one exact page+1, or UINT32_MAX (mixed pages).
+     * This derived rejection tag is not a translation or permission witness. */
+    pl_u32 walk_tag[256];
     pl_u64 walk_proof_hits,walk_proof_misses;
 } vm_memory;
 

@@ -8,12 +8,20 @@ static int canonical(pl_u64 address)
 
 #define LEAF 0x80000000u
 void vm_memory_forget_walks(vm_memory *m)
-{if(!m)return;m->walk_live=0u;for(pl_u32 i=0u;i<64u;++i)m->walks[i].depth=0u;for(pl_u32 i=0u;i<256u;++i)m->walk_watch[i]=0u;}
+{if(!m)return;m->walk_live=0u;for(pl_u32 i=0u;i<64u;++i)m->walks[i].depth=0u;for(pl_u32 i=0u;i<256u;++i){m->walk_watch[i]=0u;m->walk_tag[i]=0u;}}
 void vm_memory_walk_publish(vm_memory *m,pl_u32 rank,const vm_walk_proof *proof)
 {
     pl_u64 bit=1ull<<rank;vm_walk_proof *old=m->walks+rank;
     for(pl_u32 i=0u;i<old->depth;++i)m->walk_watch[(old->ancestors[i].offset>>12u)&255u]&=~bit;
-    *old=*proof;for(pl_u32 i=0u;i<proof->depth;++i)m->walk_watch[(proof->ancestors[i].offset>>12u)&255u]|=bit;
+    *old=*proof;for(pl_u32 i=0u;i<proof->depth;++i){
+        pl_u32 page=proof->ancestors[i].offset>>12u,bucket=page&255u,tag=page+1u;
+        /* Include even inactive candidate bits: stale mixed tags only lose
+         * a shortcut. Distinct ancestors of this newly published row must
+         * already participate before its live bit is finally installed. */
+        if(!m->walk_watch[bucket])m->walk_tag[bucket]=tag;
+        else if(m->walk_tag[bucket]!=tag)m->walk_tag[bucket]=~0u;
+        m->walk_watch[bucket]|=bit;
+    }
     m->walk_live|=bit;
 }
 void vm_memory_walk_write(vm_memory *m,pl_u32 offset,pl_u32 bytes)
@@ -21,7 +29,8 @@ void vm_memory_walk_write(vm_memory *m,pl_u32 offset,pl_u32 bytes)
     if(!m||!bytes||!m->walk_live)return;
     pl_u64 end=(pl_u64)offset+bytes,first=offset>>12u,last=(end-1u)>>12u,candidates=0u;
     if(last-first>=255u)candidates=m->walk_live;
-    else for(pl_u64 page=first;page<=last;++page)candidates|=m->walk_watch[page&255u];
+    else for(pl_u64 page=first;page<=last;++page){pl_u32 bucket=(pl_u32)page&255u,tag=m->walk_tag[bucket];
+        if(tag==~0u||(pl_u64)tag==page+1u)candidates|=m->walk_watch[bucket];}
     candidates&=m->walk_live;
     while(candidates){pl_u32 rank=(pl_u32)__builtin_ctzll(candidates);pl_u64 bit=1ull<<rank;const vm_walk_proof *p=m->walks+rank;
         for(pl_u32 i=0u;i<p->depth;++i){pl_u32 at=p->ancestors[i].offset;if(offset<(pl_u64)at+8u&&at<end){m->walk_live&=~bit;break;}}

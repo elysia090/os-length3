@@ -211,6 +211,77 @@ Initial service readiness still times out. Different restoration work and
 concurrent tests prevent a paired Linux speed claim. Default TLS and candidate
 optimize-before-package republication remain unresolved.
 
+### Bounded paging-ancestor rejection
+
+The same low8-page watcher collision also selected unrelated successful MMU
+walks. Each of the256 buckets now has one32-bit derived tag: zero for empty,
+the unique full physical page plus one, or UINT32_MAX for mixed pages. An exact
+tag certifies that every registered ancestor in that bucket belongs to that
+page. A write to another page therefore cannot revoke any of those witnesses.
+Mixed tags retain the existing candidate scan and exact8-byte overlap test.
+No translation, permission, paging value or guest observation comes from a tag.
+
+Publishing a row includes its first ancestor immediately, before installing its
+live bit. Otherwise two differently located ancestors of the SAME new row in
+one bucket could incorrectly leave the last exact tag. Inactive candidate bits
+are conservative: they can keep a mixed tag, never hide a live ancestor. Empty
+bucket replacement and whole-walk reset recover precise tags. Metadata grows
+by1024 bytes, independently of resident RAM and observed-page population.
+
+The native MMU gate adds131072 independent all-row invalidation models,
+same-row mixed buckets, exact false collisions, last-page and overflowing
+write extents. Existing1920 cached/fresh full-RAM/port/write-order models,
+4032 homogeneous-span models and49152 permissions remain green. The full
+native VM check and production/UBSan-trapping source/RTC gates pass; this is
+not a new full independent Linux ASan receipt.
+
+The optional `--walk-alias` benchmark fills64 actual C walks and retains8192
+source rows, then writes an unretained data page256 pages from a paging
+ancestor. First seven-round median:1.1356 ->0.5845ms, ratio0.51471. A repeat
+while the browser/oracle ran gave1.4495 ->0.6156ms, ratio0.42470. All28800
+revision advances, exact stored values and8192 source admissions are checked.
+These are collision-specific C store measurements, not Linux startup speedups.
+
+Provider144156 bytes, SHA256
+`4a14da3a861d5b877a77db9334e2db20baf19eb06b5d43310e75e16703a9dccc`;
+554 fewer wire bytes than the preceding page-frontier provider. Manifest
+`089001a40360870369d08308c33a066bae7f6f13199a5d130c033ce1c07f90db`
+in `artifact/browser-walk-frontier-1011` retains the same kernel/init/root and
+compiler; directory-inclusive delivery95646733 bytes. It is unpublished.
+
+Actual browser generation5 starts ordinary Linux/PID1, recovers ext4 UUID
+`855e59f3-c3f7-41c7-91f5-3792f9b2bd4a`, verifies the stored candidate ELF hash,
+executes it as UID65534 and checks the permission-file content:
+`walk-frontier-cold-restore-exit:0`. Receipt/screenshot:
+`temp/browser-walk-frontier-cold-1011.{json,jpg}`. Close/flush completes with
+Worker termination5. Initial supervision still times out under the unchanged
+policy; concurrent work and different recovery costs prevent a paired speed
+claim. This is not a complete service-readiness or three-second boot pass.
+
+### DHCP publication witness
+
+Starting the shipped network service from the normal browser reached repeated
+dhcpcd segfaults at ELF coordinate0x4fe8a, across different ASLR bases. The
+gateway remained connected/bound but no receive frames arrived. The own
+failed service was stopped through its existing supervision directory; the
+console and close/flush remained operational. Actual receipt:
+`temp/browser-dhcp-fault-1011.{json,jpg}`. A NIC grant is not DHCP/HTTPS success.
+
+`check-dhcp-publication.sh` rebuilds pinned official dhcpcd10.5.2 and applies
+the current independent C postlink compiler. The independent CPU gate requests
+a real DHCP lease through privilege-separated packet dispatch, using the
+official TEST hook. Both original and optimized ELF return0, with exact lease
+fields rather than version/help or exit-only evidence. The first test lacked
+the installed hook and correctly failed its lease-field assertion despite
+both exits0; it is not counted as passing. Source archive digest
+`fe1fff0e4dc4a67ef91be3f1d7834800a201782ecfb8fb6ab7a62cd9d9ab9189`
+passes in73715ms under the independent restricted-NAT oracle. Candidate
+484280 bytes, SHA256
+`9f54aea4f272b65ada2d25651a18fb105c2399872eb702f5c284ce08ca6c2108`.
+This native packet witness does not repair the installed package or substitute
+for browser DHCP. Browser candidate execution and optimize-before-package
+publication remain separately required.
+
 ### Earlier release
 
 Release `c588c7920ecec616ae9311ed009353b321007b95bc63814242cdfd1e3532cdd9`

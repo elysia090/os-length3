@@ -123,6 +123,53 @@ static void pattern_models(void)
     expect_fault(vm_mmu_fill(&memory,port,&alias,base+8u,2048u,8u,0u,0u),base+8u,14u,2u);
 }
 
+static void walk_watch_models(void)
+{
+    static vm_memory watched;
+    vm_walk_proof proof={.depth=2u,.ancestors={{.offset=0x1000u},{.offset=0x101000u}}};
+    /* Two full pages in one low-byte bucket, even within one new row, must
+     * produce the conservative mixed tag, not the last page's exact tag. */
+    vm_memory_walk_publish(&watched,0u,&proof);
+    EXPECT(watched.walk_tag[1u]==~0u);
+    vm_memory_walk_write(&watched,0x1000u,1u);EXPECT(!watched.walk_live);
+    vm_memory_forget_walks(&watched);proof.depth=1u;
+    vm_memory_walk_publish(&watched,0u,&proof);EXPECT(watched.walk_tag[1u]==2u);
+    vm_memory_walk_write(&watched,0x101000u,8u);EXPECT(watched.walk_live==1u);
+    vm_memory_walk_write(&watched,0x1007u,1u);EXPECT(!watched.walk_live);
+
+    pl_u32 seed=0x238591adu;pl_u64 expected=0u;
+    vm_memory_forget_walks(&watched);
+    for(pl_u32 turn=0u;turn<131072u;++turn){
+        seed^=seed<<13u;seed^=seed>>17u;seed^=seed<<5u;
+        pl_u32 rank=seed&63u;proof.depth=1u+(seed>>6u&3u);
+        for(pl_u32 i=0u;i<proof.depth;++i){
+            seed=seed*1664525u+1013904223u;
+            proof.ancestors[i].offset=(turn&1u)?seed&~7u:((seed&255u)<<12u)+(i&1u)*0x100000u;
+        }
+        vm_memory_walk_publish(&watched,rank,&proof);expected|=1ull<<rank;
+        /* A single-page tag certifies every candidate's registered page.
+         * Dead bits may be conservative, but can never certify a wrong page. */
+        for(pl_u32 i=0u;i<proof.depth;++i){pl_u32 bucket=(proof.ancestors[i].offset>>12u)&255u;
+            pl_u32 tag=watched.walk_tag[bucket];pl_u64 candidates=watched.walk_watch[bucket]&watched.walk_live;
+            while(candidates){pl_u32 r=(pl_u32)__builtin_ctzll(candidates);candidates&=candidates-1u;
+                const vm_walk_proof *row=watched.walks+r;
+                for(pl_u32 n=0u;n<row->depth;++n){pl_u32 page=row->ancestors[n].offset>>12u;
+                    if((page&255u)==bucket)EXPECT(tag==~0u||tag==page+1u);}}
+        }
+        pl_u32 offset=(turn&3u)?proof.ancestors[seed%proof.depth].offset+(seed&7u):seed;
+        pl_u32 bytes=(turn&127u)?1u:1048576u;pl_u64 end=(pl_u64)offset+bytes;
+        for(pl_u32 r=0u;r<64u;++r)if(expected&(1ull<<r)){
+            const vm_walk_proof *row=watched.walks+r;
+            for(pl_u32 i=0u;i<row->depth;++i){pl_u32 at=row->ancestors[i].offset;
+                if(offset<(pl_u64)at+8u&&at<end){expected&=~(1ull<<r);break;}}}
+        vm_memory_walk_write(&watched,offset,bytes);EXPECT(watched.walk_live==expected);
+    }
+    vm_memory_forget_walks(&watched);proof.depth=1u;proof.ancestors[0].offset=0xfffffff8u;
+    vm_memory_walk_publish(&watched,63u,&proof);
+    vm_memory_walk_write(&watched,0xfffffff0u,32u);EXPECT(!watched.walk_live);
+    printf("walk page tags: 131072 independent all-row invalidation models; single/mixed/same-row collisions, last byte and overflow\n");
+}
+
 int main(void)
 {
     // Same capacity, two meanings of one page. Every alternating access used
@@ -138,6 +185,7 @@ int main(void)
         EXPECT((memory.walk_live&((1ull<<read_rank)|(1ull<<code_rank)))==((1ull<<read_rank)|(1ull<<code_rank)));
     }
     walk_proof_models();
+    walk_watch_models();
     pattern_models();
     reset(base);vm_mmu_context alias_cpu=context();
     for(pl_u32 rank=0u;rank<8u;++rank){put(pages[3].offset+rank*64u*8u,0x8067u);

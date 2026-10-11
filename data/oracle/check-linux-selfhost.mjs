@@ -173,7 +173,7 @@ function receiveReceipts(chunk){if(!publication&&!rescue&&!observations&&!guestC
     const object=/^oracle-candidate (kernel|linux\.config|initramfs|system\.squashfs) ([0-9]+) ([a-f0-9]{64})$/.exec(line);
     if(object){if((!candidate&&!rescue)||candidateReceipts.has(object[1]))throw new Error('candidate role ownership');
       candidateReceipts.set(object[1],{bytes:Number(object[2]),sha256:object[3]});continue;}
-    const begin=/^oracle-elf-begin (busybox-input|busybox-optimized|tar-input|tar-optimized|su-input|su-optimized|table-call-input|table-call-broken) ([a-f0-9]{64})$/.exec(line);
+    const begin=/^oracle-elf-begin (busybox-input|busybox-optimized|tar-input|tar-optimized|su-input|su-optimized|dhcpcd-input|dhcpcd-optimized|table-call-input|table-call-broken) ([a-f0-9]{64})$/.exec(line);
     if(begin){if(receiptName)throw new Error('nested ELF receipt');receiptName=begin[1];receiptHash=begin[2];receiptLines='';continue;}
     if(line==='oracle-elf-end'){
       if(!receiptName)throw new Error('unowned ELF receipt');

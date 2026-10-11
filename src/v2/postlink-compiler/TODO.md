@@ -1,4 +1,4 @@
-# Remaining work — 2026-10-10
+# Remaining work — 2026-10-11
 
 ## Fixed input and product contract
 
@@ -23,15 +23,18 @@ Cold shell3s remains a target, not an achieved claim.
 
 ## Current authoritative state
 
-Actual production browser generation4 with the direct retained-page write
-frontier reaches normal PID1/console and cold-restores the saved ELF hash,
-non-root UID65534 and permission-file content, assertion0. The native VM
-check and production/UBSan-trap source/RTC boundaries pass. The observed but
-unretained page collision benchmark is40.8291 ->0.4002ms, not a whole-Linux
-speed claim; provider adds1264 wire bytes and128KiB derived private metadata.
-See the current userland evidence below. Initial service readiness, default
-TLS and optimize-before-package publication of the repaired shadow binary
-remain red. No quota, deadline, clock or frozen native release is changed.
+Actual production browser generation5 with retained-page and paging-ancestor
+write rejection reaches ordinary PID1/console and cold-restores the saved ELF
+hash, non-root UID65534 and content, assertion0. Native VM and production/
+UBSan-trap source/RTC gates pass, including131072 independent walk invalidation
+models. Paging rejection adds1KiB metadata and reduces its deliberate alias
+benchmark median by about half; NOT a whole-Linux speed claim. Provider144156
+bytes, verification manifest089001a40360870369d08308c33a066bae7f6f13199a5d130c033ce1c07f90db.
+The actual network attempt exposes repeated shipped dhcpcd segfaults at0x4fe8a.
+A pinned official-source/current-postlink native packet gate passes actual
+lease fields for both ELFs; browser execution and package publication remain
+required. Initial readiness, default TLS and optimize-before-package repair
+of shadow/DHCP remain red. No quota/deadline/clock/frozen release is changed.
 
 The2026-10-11 full independent C/sanitizer gate passes with source digest
 `db4d8267f3578ed6e67efbaafd9fc67e069746f5b3ae0d0d77809c7f7fd02bf6`.
