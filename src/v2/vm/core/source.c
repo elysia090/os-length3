@@ -3,7 +3,19 @@
 int vm_source_versions_open(vm_source_versions *v,pl_u32 *words,pl_u32 count,pl_u64 generation)
 {
     if(!v||!words||((uintptr_t)words&3u)||!count||count>0x100000u||!generation)return -1;
-    *v=(vm_source_versions){words,count,generation};for(pl_u32 n=0u;n<count;++n)words[n]=1u;return 0;
+    *v=(vm_source_versions){words,count,generation};for(pl_u32 n=0u;n<count;++n)words[n]=0u;return 0;
+}
+void vm_source_versions_touch(vm_source_versions *v,pl_u32 offset)
+{pl_u32 rank=offset>>12u;if(v&&v->generation&&rank<v->count&&!v->words[rank])v->words[rank]=1u;}
+int vm_source_versions_observed(const vm_source_versions *v,pl_u32 offset,pl_u32 bytes)
+{
+    if(!v||!v->generation)return 1; /* Unbound C callers still report every write. */
+    if(!bytes)return 0;
+    pl_u32 first=offset>>12u;pl_u64 last=((pl_u64)offset+bytes-1u)>>12u;
+    if(first>=v->count)return 0;
+    if(last>=v->count)last=v->count-1u;
+    for(pl_u32 n=first;n<=last;++n)if(v->words[n])return 1;
+    return 0;
 }
 void vm_source_versions_write(vm_source_versions *v,pl_u32 offset,pl_u32 bytes)
 {
@@ -11,7 +23,7 @@ void vm_source_versions_write(vm_source_versions *v,pl_u32 offset,pl_u32 bytes)
     pl_u32 first=offset>>12u;pl_u64 last=((pl_u64)offset+bytes-1u)>>12u;
     if(first>=v->count)return;
     if(last>=v->count)last=v->count-1u;
-    for(pl_u32 n=first;n<=last;++n)if(v->words[n])++v->words[n];
+    for(pl_u32 n=first;n<=last;++n)if(v->words[n]&&v->words[n]!=~0u)++v->words[n];
 }
 int vm_sources_stamp(const vm_sources *s,const vm_source_versions *v,pl_u32 owners[2],pl_u32 revisions[2])
 {
@@ -19,7 +31,7 @@ int vm_sources_stamp(const vm_sources *s,const vm_source_versions *v,pl_u32 owne
         ||!v->generation||s->generation!=v->generation)return -1;
     pl_u32 owner[2]={s->pending_page.offset,s->pending_pages==2u?s->pending_next.offset:0u},revision[2]={0u,0u};
     for(pl_u32 n=0u;n<s->pending_pages;++n){pl_u32 rank=owner[n]>>12u;
-        if((owner[n]&4095u)||rank>=v->count||!v->words[rank])return -1;
+        if((owner[n]&4095u)||rank>=v->count||!v->words[rank]||v->words[rank]==~0u)return -1;
         revision[n]=v->words[rank];}
     owners[0]=owner[0];owners[1]=owner[1];revisions[0]=revision[0];revisions[1]=revision[1];return 0;
 }

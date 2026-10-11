@@ -52,7 +52,7 @@ int vm_network_receive(vm_network *n,const vm_resource_address *address,pl_u64 s
 int vm_network_transmitted(vm_network *n,const vm_resource_ticket *ticket)
 {
     if(!n||!ticket)return VM_RESOURCE_ERROR_INPUT;
-    if(n->transmit_pending==1u&&n->tx_chain.epoch!=n->device.epoch)return VM_RESOURCE_ERROR_STALE;
+    if(n->transmit_pending==1u&&(n->tx_chain.epoch!=n->device.epoch||n->tx_chain.queue_epoch!=n->device.queues[1].epoch||!n->device.queues[1].ready))return VM_RESOURCE_ERROR_STALE;
     vm_resource_gate gate=n->tx;
     int status=vm_resource_complete(&gate,ticket,ticket->sequence==gate.completed?gate.completed_bytes:n->transmit_bytes);
     if(!status){if(n->transmit_pending!=1u)return VM_RESOURCE_ERROR_STALE;n->tx=gate;n->transmit_pending=2u;}
@@ -73,7 +73,7 @@ machine_result vm_network_poll(vm_network *n,vm_memory *m,pl_u32 port)
     if(!n||!n->device.epoch)return 0;
     if(n->transmit_pending){
         if(n->tx_ticket.address.generation!=m->generation)return MACHINE_RESULT_STALE_GENERATION;
-        if(n->tx_chain.epoch!=n->device.epoch){vm_resource_cancel(&n->tx,&n->tx_ticket);n->transmit_pending=0u;}
+        if(n->tx_chain.epoch!=n->device.epoch||n->tx_chain.queue_epoch!=n->device.queues[1].epoch||!n->device.queues[1].ready){vm_resource_cancel(&n->tx,&n->tx_ticket);n->transmit_pending=0u;}
         else if(n->transmit_pending==1u)return machine_result_make(MACHINE_RESULT_BARRIER,MACHINE_BARRIER_NETWORK);
         else {machine_result r=vm_virtqueue_finish(&n->device,1u,m,port,&n->tx_chain,0u);if(r)return r;n->transmit_pending=0u;}
     }

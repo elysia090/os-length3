@@ -41,9 +41,12 @@ machine_result vm_mmu_fill(vm_memory *physical,pl_u32 port,const vm_mmu_context 
  * CPL0, long-mode, IST=0). General IRQ/TSS/IST/double-fault handling and a
  * retained architectural TLB remain separate work. */
 /* In particular INVLPG targets the empty translation-cache set in this ABI.
- * Every fetch/payload access checks current ancestor words. A successful
+ * Every fetch/payload access checks the current exact witness. A successful
  * walk can be substituted only while all four control words, CPL, access,
- * virtual page and every ancestor's descriptor/value remain equal. Any A/D,
+ * virtual page and every ancestor's descriptor/value remain equal. Exact
+ * before-write invalidation proves ancestor equality without reloading them
+ * at every cache hit in the serialized owner. Read/write/fetch and context
+ * select independent candidates within the same 64-row capacity. Any A/D,
  * permission, remap or reserved-bit change invalidates that witness before
  * use. This preserves empty-TLB semantics, including PGE and large pages;
  * it does not retain an architecturally stale translation across INVLPG. */

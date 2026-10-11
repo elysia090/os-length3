@@ -8,12 +8,17 @@ machine_result vm_memory_device_check(vm_memory *memory,pl_u64 address,pl_u32 by
 machine_result vm_memory_device_word(vm_memory *memory,pl_u32 port,pl_u64 address,pl_u32 bytes,pl_u32 access,pl_u64 value);
 void vm_memory_walk_publish(vm_memory *memory,pl_u32 rank,const vm_walk_proof *proof);
 void vm_memory_walk_write(vm_memory *memory,pl_u32 offset,pl_u32 bytes);
-static inline pl_u32 vm_memory_walk_rank(pl_u64 address)
+static inline pl_u32 vm_memory_walk_rank(pl_u64 address,pl_u32 access,pl_u32 cpl,pl_u64 cr3)
 {
     pl_u64 page=address>>12u;
     /* Preserve low-page locality without mapping every64-page stride onto
      * one slot. This only selects a candidate; the complete witness matches. */
-    return (pl_u32)(page^(page>>6u)^(page>>12u)^(page>>18u))&63u;
+    pl_u64 root=cr3>>12u;
+    /* Read, write and executable observations of one page are independent
+     * witnesses, not reasons to evict each other on every alternating cut.
+     * Context tags still undergo exact equality; this rank is not authority. */
+    return (pl_u32)(page^(page>>6u)^(page>>12u)^(page>>18u)
+        ^root^(root>>6u)^((pl_u64)access*13u)^((pl_u64)cpl*7u))&63u;
 }
 static inline void vm_memory_before_write(vm_memory *memory, pl_u32 offset, pl_u32 bytes)
 {

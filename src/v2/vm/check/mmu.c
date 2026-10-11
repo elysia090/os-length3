@@ -66,7 +66,7 @@ static void walk_proof_models(void)
         pl_u64 initial=pattern==0u?0u:pattern==1u?~0ull:pattern==2u?0x1122334455667788ull:0x8000000000000001ull;
         put(pages[4].offset,initial);put(pages[5].offset,~initial);
         EXPECT(!access(&cpu,base,8u,flags,initial));
-        EXPECT(memory.walks[vm_memory_walk_rank(base)].depth==4u);
+        EXPECT(memory.walks[vm_memory_walk_rank(base,flags,cpu.cpl,cpu.cr3)].depth==4u);
         pl_u64 entry=get(entries[level]),address=base;
         if(mode>=10u&&mode<=12u)vm_memory_forget_walks(&memory);
         switch(mode){case 0u:break;case 1u:put(entries[level],entry&~32ull);break;
@@ -125,6 +125,18 @@ static void pattern_models(void)
 
 int main(void)
 {
+    // Same capacity, two meanings of one page. Every alternating access used
+    // to evict the other witness; both must remain after the first warm pair.
+    reset(base);vm_mmu_context mixed=context();
+    pl_u32 read_rank=vm_memory_walk_rank(base,MACHINE_MEMORY_READ,mixed.cpl,mixed.cr3);
+    pl_u32 code_rank=vm_memory_walk_rank(base,MACHINE_MEMORY_READ|VM_MMU_EXECUTE,mixed.cpl,mixed.cr3);
+    EXPECT(read_rank!=code_rank);
+    EXPECT(!access(&mixed,base,8u,MACHINE_MEMORY_READ,0u));
+    EXPECT(!access(&mixed,base,8u,MACHINE_MEMORY_READ|VM_MMU_EXECUTE,0u));
+    for(pl_u32 n=0u;n<100000u;++n){
+        EXPECT(!access(&mixed,base,8u,(n&1u)?MACHINE_MEMORY_READ:MACHINE_MEMORY_READ|VM_MMU_EXECUTE,0u));
+        EXPECT((memory.walk_live&((1ull<<read_rank)|(1ull<<code_rank)))==((1ull<<read_rank)|(1ull<<code_rank)));
+    }
     walk_proof_models();
     pattern_models();
     reset(base);vm_mmu_context alias_cpu=context();

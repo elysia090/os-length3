@@ -354,7 +354,7 @@ if [[ ! -f $dhcpcd_root/.complete ]]; then
       LDFLAGS="-static $base_ld" \
       ./configure --prefix=/usr --bindir=/usr/bin --sbindir=/usr/bin \
         --libexecdir=/usr/libexec --sysconfdir=/etc --dbdir=/var/lib/dhcpcd \
-        --rundir=/run --without-udev --without-openssl
+        --rundir=/run --privsepuser=dhcpcd --without-udev --without-openssl
     make -j"$jobs"
     make DESTDIR="$dhcpcd_root" install
   )

@@ -10,6 +10,16 @@ class Store {
 }
 const masterKey=await importStorageMasterKey(crypto.getRandomValues(new Uint8Array(32))),volumeId=new Uint8Array(16).fill(1),volumeSalt=new Uint8Array(32).fill(2),store=new Store();
 const config={store,masterKey,volumeId,volumeSalt,bytes:1073741824};
+// An interrupted boot before the first guest write retains initial creation
+// authority; a committed all-zero write must never regain it.
+const untouched=new Store(),emptyConfig={...config,store:untouched};
+let empty=await PersistentBlock.open({...emptyConfig,create:true});
+const emptyHead=await untouched.read();await empty.close();
+empty=await PersistentBlock.open({...emptyConfig,expectedHead:emptyHead});
+assert(empty.fresh);assert.equal(empty.revision,1n);assert.equal(empty.root,null);
+await empty.write(0,new Uint8Array(4096));await empty.close();
+empty=await PersistentBlock.open({...emptyConfig,expectedHead:await untouched.read()});
+assert(!empty.fresh);assert.equal(empty.revision,2n);assert.equal(empty.root,null);await empty.close();
 let v=await PersistentBlock.open({...config,create:true});assert(v.fresh);assert.deepEqual(await v.read(8000,32),new Uint8Array(32));
 const payload=Uint8Array.from({length:4096},(_,i)=>i*31&255);await v.write(4000,payload);await v.flush();const pinned=await store.read();await v.close();
 v=await PersistentBlock.open({...config,expectedHead:pinned});assert(!v.fresh);assert.deepEqual(await v.read(4000,4096),payload);
@@ -20,4 +30,4 @@ await assert.rejects(()=>PersistentBlock.open({...config,create:true}),/formatte
 await v.close();v=await PersistentBlock.open(config);assert.deepEqual(await v.read(70000000,4096),payload);
 const pageKey=await v.leaf(0);store.objects.get(pageKey)[40]^=1;v.cache.clear();await assert.rejects(()=>v.read(4000,32),/corrupt/);
 store.objects.delete(pageKey);await assert.rejects(()=>v.read(4000,32),/missing/);
-console.log('Persistent block: cross-page write/flush/close/reopen, authenticated sparse holes, corruption/missing rejection, pinned rollback and competing-root CAS fences');
+console.log('Persistent block: untouched creation resume, no reformat after zero-write commit, cross-page write/flush/close/reopen, authenticated sparse holes, corruption/missing rejection, pinned rollback and competing-root CAS fences');

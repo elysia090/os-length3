@@ -26,7 +26,8 @@ int vm_block_complete(vm_block *b,const vm_resource_ticket *ticket,const pl_u8 *
          * over a newer request's payload or repeat guest DMA. */
         return VM_RESOURCE_DUPLICATE;
     }
-    if(!b->stage||b->chain.epoch!=b->device.epoch
+    if(b->stage&&(b->chain.epoch!=b->device.epoch||b->chain.queue_epoch!=b->device.queues[0].epoch||!b->device.queues[0].ready))return VM_RESOURCE_ERROR_STALE;
+    if(!b->stage
         ||(b->operation==0u&&!error&&(count!=b->bytes||!bytes))
         ||(b->operation!=0u&&count)||(error&&count))return VM_RESOURCE_ERROR_INPUT;
     vm_resource_gate gate=b->gate;
@@ -67,7 +68,8 @@ static machine_result write_stream(vm_memory *m,pl_u32 port,const vm_virtqueue_c
 machine_result vm_block_poll(vm_block *b,vm_memory *m,pl_u32 port)
 {
     if(!b||!b->device.epoch)return 0;
-    if(b->stage&&b->chain.epoch!=b->device.epoch){vm_resource_cancel(&b->gate,&b->ticket);b->stage=0u;}
+    if(b->stage&&(b->chain.epoch!=b->device.epoch||b->chain.queue_epoch!=b->device.queues[0].epoch||!b->device.queues[0].ready)){
+        vm_resource_cancel(&b->gate,&b->ticket);b->stage=0u;}
     if(b->stage==1u)return machine_result_make(MACHINE_RESULT_BARRIER,MACHINE_BARRIER_BLOCK);
     if(b->stage==2u){
         machine_result r=vm_dma_check(m,port,b->status_address,1u,2u);if(r)return r;

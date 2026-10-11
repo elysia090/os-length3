@@ -45,7 +45,12 @@ export class PersistentBlock {
       const raw=await openRootDescriptor(keys.rootKey,head,aad);if(raw.length!==52)throw new Error('volume root extent');
       const view=new DataView(raw.buffer,raw.byteOffset,raw.length);
       if(view.getUint32(0,true)!==1||view.getBigUint64(4,true)!==BigInt(bytes))throw new Error('volume root contract');
-      v.revision=view.getBigUint64(12,true);v.root=raw.subarray(20).some(Boolean)?hex(raw.subarray(20)):null;v.head=head;v.fresh=false;}
+      v.revision=view.getBigUint64(12,true);v.root=raw.subarray(20).some(Boolean)?hex(raw.subarray(20)):null;v.head=head;
+      // Creation publishes revision1 before Linux writes its first block.
+      // Closing that untouched owner must not turn it into an existing
+      // filesystem. A later empty root is NOT fresh: zeroing/wiping never
+      // authorizes formatting. No host filesystem signature is inspected.
+      v.fresh=v.revision===1n&&v.root===null;}
     return v;
   }
   context(role,coordinate){const suffix=utf8.encode(`physical-block-v1/${role}/${coordinate}`),out=new Uint8Array(this.aad.length+suffix.length);out.set(this.aad);out.set(suffix,this.aad.length);return out;}

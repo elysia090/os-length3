@@ -7,7 +7,7 @@
 #define VM_VIRTIO_STATUS_FEATURES_OK 8u
 #define VM_VIRTIO_STATUS_NEEDS_RESET 64u
 typedef struct {
-    pl_u64 descriptor,available,used;
+    pl_u64 descriptor,available,used,epoch;
     pl_u32 size,ready;
     pl_u16 last_available,last_used;
 } vm_virtqueue;
@@ -22,7 +22,7 @@ typedef struct {pl_u64 address;pl_u32 bytes,writable;} vm_virtqueue_buffer;
 typedef struct {
     vm_virtqueue_buffer buffers[VM_VIRTIO_QUEUE_SIZE];
     pl_u32 count,total,head,interrupt;
-    pl_u64 epoch,used_entry,used_index;
+    pl_u64 epoch,queue_epoch,used_entry,used_index;
 } vm_virtqueue_chain;
 int vm_virtio_open(vm_virtio *device,pl_u64 address,pl_u32 id,pl_u32 queues,pl_u64 features,const pl_u8 *config,pl_u32 config_bytes);
 machine_result vm_virtio_register(vm_virtio *device,pl_u32 offset,pl_u32 bytes,pl_u32 access,pl_u32 phase,pl_u64 *value);

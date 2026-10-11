@@ -23,6 +23,15 @@ Cold shell3s remains a target, not an achieved claim.
 
 ## Current authoritative state
 
+The2026-10-11 full independent C/sanitizer gate passes with source digest
+`db4d8267f3578ed6e67efbaafd9fc67e069746f5b3ae0d0d77809c7f7fd02bf6`.
+The gate now includes postlink ASan/UBSan as well as VM/Wasm checks. New red
+witnesses exposed and fixed misaligned u64 CFG workspace arrays and leaked
+diagnostic CLI allocations on `--list-tables`. Sanitizers are not weakened.
+Original/optimized official shadow `su` execution is separately green; the
+published browser root still needs optimize-before-package republication.
+See [current userland acceptance](../vm/check/browser/evidence/2026-10-11-userland-acceptance.md).
+
 The wider499-row/476838-record ordinary input population is now required.
 All476838 compile to valid Wasm (476829 ordinary,9 deliberate fault witnesses);
 missing, invalid-module, false-fault, extent and interface counts are zero.
@@ -295,10 +304,41 @@ separate; scoped/positive gates do not assert that it is solved.
    keys and the pinned head; storage alone cannot restore lost authority.
    Product linux-worker.js and diagnostics use one machine-runtime.mjs/C
    engine; the unused legacy DirectX86Machine and its helpers are removed.
-   Ordinary service readiness and guest HTTPS remain red. Do not substitute
-   the earlier rescue-shell results. Boot now has a derived offline service
-   closure pending native/browser validation; deadlines and guest clocks stay
-   unchanged. Keep cold network supervisors outside interactive readiness.
+   The ordinary supervised console now passes C, four independent targets
+   under `make -j4`, incremental unchanged-ELF checks, Git and apk info (not install), plus sync;
+   the saved text and ELF survive Worker close and Linux cold reopening.
+   Auxiliary cold service readiness remains red. Actual browser DNS/TCP and
+   certificate-verified TLS 1.3/X25519 now pass: kernel.org HTTP 200, curl 0,
+   exact 19137-byte expected HTML. Default hybrid TLS/other peer timing remains
+   unresolved; do not conflate it with the explicit X25519 witness.
+   The same kernel/root passes DNS/getaddrinfo/certificate-verified HTTPS
+   under the independent native microvm oracle. One service DB replaces the
+   failed boot/full DB-switch path. Deadlines and guest clocks stay unchanged;
+   eight-millisecond safe-cut host task opportunities prevent IO starvation.
+   Complete the [eleven-area browser acceptance](../vm/check/browser/evidence/2026-10-11-userland-acceptance.md).
+   The locked BusyBox pipefail feature and original/optimized ELF parity now
+   pass. Normal-browser release f2cfd24093ad passes all eight userland groups,
+   independent135-hash/metadata checks, sync/host flush/Worker destruction and
+   cold restore/execution of the stored ELF. Signed local APK dependencies,
+   install/run/remove and wrong-key rejection pass in that same guest. Actual
+   Ctrl-Z/jobs/bg/fg and shifted Ctrl-C/SIGINT130/shell return pass; plain API
+   Ctrl-C is intercepted as copying. Actual line editing and the standard
+   BusyBox resize/ioctl path now pass, including viewport change/reset and
+   matching guest stty sizes17x153 ->18x132 ->17x153. This does not certify
+   automatic resize notifications for arbitrary running applications.
+   The expanded four-target exit/end, incremental hash preservation and
+   multi-source link gate passes in the actual browser; maximum live4,
+   all compiler/product exits0 and final foreground exit0.
+   Unit checks of receipts and terminal bytes are not guest execution.
+
+   Shipped shadow su is independently red (native/browser139; freshly built
+   original0/old postlink132). General table candidate closure and equality
+   propagation recover the missing eight-row encoding; independent original/
+   optimized su now both exit0. Clobbered registers and escaped private spills
+   must not become closed domains. A branch into an instruction immediate is
+   another required refusal. Rebuild final package bytes/DB/signatures before
+   publishing this repair; do not patch an installed package-owned file.
+   Keep native publication and human UI unchanged.
 
 ## Responsibility contracts
 

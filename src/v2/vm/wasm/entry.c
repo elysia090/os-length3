@@ -121,13 +121,16 @@ static void source_profile_before(const vm_code_page *page, pl_u64 entry, pl_u32
 static pl_u32 run_source_rank=VM_SOURCE_ROWS;
 static void source_effect(void *owner,pl_u32 offset,pl_u32 bytes)
 {
+    if(!vm_source_versions_observed(&source_versions,offset,bytes))return;
     SOURCE_WRITE_OBSERVER(owner,offset,bytes);
     vm_source_versions_write(&source_versions,offset,bytes);
 }
 static void span_code_prepare(pl_u64 rip)
 {
     span_code_depth=0u;
-    pl_u32 rank=vm_memory_walk_rank(rip);
+    const machine_state *state=(const machine_state *)(uintptr_t)state_offset;
+    pl_u32 rank=vm_memory_walk_rank(rip,(pl_u32)MACHINE_MEMORY_READ|(pl_u32)VM_MMU_EXECUTE,
+        (pl_u32)state->system[MACHINE_SYSTEM_CS]&3u,state->cr3);
     const vm_walk_proof *proof=&resident.walks[rank];
     if(!(resident.walk_live&(1ull<<rank)))return;
     if(!proof->depth||proof->depth>4u||proof->virtual_page!=(rip&~4095ull)
@@ -829,6 +832,7 @@ static machine_result source_tail(pl_u32 port, pl_u32 view_target, pl_u32 row_ta
         first.address+4096u,&next);
     if (resident.write_touched) execution.generation = 0u;
     if (result) return memory_result(port,result);
+    vm_source_versions_touch(&source_versions,next.offset);
     int status = vm_sources_extend(&sources,&next,&row);
     if (status < 0) return MACHINE_RESULT_STALE_GENERATION;
     first.offset += arena_base; next.offset += arena_base;
@@ -867,6 +871,7 @@ machine_result vm_source_query(pl_u32 port, pl_u64 entry, pl_u32 limit,
     machine_result result = vm_mmu_code_page(&resident,port - arena_base,&context,entry,&page);
     if (resident.write_touched) execution.generation = 0u;
     if (result) return memory_result(port,result);
+    vm_source_versions_touch(&source_versions,page.offset);
     (void)vm_source_banks_select(&source_banks,entry,page.offset);
 #ifdef VM_SOURCE_PROFILE
     int was_full=sources.valid==~0ull;

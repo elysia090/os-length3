@@ -92,10 +92,14 @@ void vm_sources_write(void *sources, pl_u32 offset, pl_u32 bytes);
  * cohort. They confer no fetch, permission or execution authority. A source
  * must still be pinned by current C-MMU admission before reading its stamp.
  * Every physical write invalidates its slot, including A/D and equal stores.
- * Zero permanently retires an exhausted 32-bit revision until owner close;
- * it never wraps to an old cache key. The caller owns the bounded word arena. */
+ * Zero is an unobserved slot; the first C-admitted source pin activates it.
+ * UINT32_MAX permanently retires an exhausted revision until owner close;
+ * it never wraps to an old cache key. Unobserved slots have no saved code
+ * difference to invalidate. The caller owns the bounded word arena. */
 typedef struct {pl_u32 *words,count;pl_u64 generation;} vm_source_versions;
 int vm_source_versions_open(vm_source_versions *versions,pl_u32 *words,pl_u32 count,pl_u64 generation);
+void vm_source_versions_touch(vm_source_versions *versions,pl_u32 offset);
+int vm_source_versions_observed(const vm_source_versions *versions,pl_u32 offset,pl_u32 bytes);
 void vm_source_versions_write(vm_source_versions *versions,pl_u32 offset,pl_u32 bytes);
 int vm_sources_stamp(const vm_sources *sources,const vm_source_versions *versions,pl_u32 owners[2],pl_u32 revisions[2]);
 #endif

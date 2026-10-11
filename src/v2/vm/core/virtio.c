@@ -60,6 +60,7 @@ machine_result vm_virtio_register(vm_virtio *d,pl_u32 at,pl_u32 bytes,pl_u32 acc
                 ||(q->descriptor&15u)||(q->available&1u)||(q->used&3u)
                 ||!ring_extent(q->descriptor,16u*q->size)||!ring_extent(q->available,4u+2u*q->size)
                 ||!ring_extent(q->used,4u+8u*q->size)))return MACHINE_RESULT_ENTRY_MAP;
+            if(word&&!q->ready){if(q->epoch==~0ull)return MACHINE_RESULT_ENTRY_MAP;++q->epoch;}
             q->ready=word;if(!word)d->notified&=~(1u<<d->queue_selector);}break;
     default:
         if(q){if(q->ready)return MACHINE_RESULT_ENTRY_MAP;
@@ -82,7 +83,7 @@ machine_result vm_virtqueue_peek(vm_virtio *d,pl_u32 rank,vm_memory *m,pl_u32 po
     pl_u32 available=(pl_u32)(word>>16u);pl_u32 delta=(pl_u16)(available-q->last_available);
     if(!delta){d->notified&=~(1u<<rank);return MACHINE_RESULT_RESOLVE_RIP;}
     if(delta>q->size)return MACHINE_RESULT_ENTRY_MAP;
-    vm_virtqueue_chain chain={.epoch=d->epoch,.interrupt=!(word&1u)};
+    vm_virtqueue_chain chain={.epoch=d->epoch,.queue_epoch=q->epoch,.interrupt=!(word&1u)};
     result=read_word(m,port,q->available+4u+(pl_u64)(q->last_available&(q->size-1u))*2u,2u,&word);if(result)return result;
     chain.head=(pl_u32)word;pl_u32 next=chain.head;
     for(;;){if(next>=q->size||chain.count>=q->size)return MACHINE_RESULT_ENTRY_MAP;
@@ -101,13 +102,14 @@ machine_result vm_virtqueue_peek(vm_virtio *d,pl_u32 rank,vm_memory *m,pl_u32 po
 }
 machine_result vm_virtqueue_finish(vm_virtio *d,pl_u32 rank,vm_memory *m,pl_u32 port,const vm_virtqueue_chain *c,pl_u32 bytes)
 {
-    if(!d||!c||rank>=d->queue_count||c->epoch!=d->epoch||!d->queues[rank].ready||bytes>c->total)return MACHINE_RESULT_ENTRY_MAP;
+    if(!d||!c||rank>=d->queue_count||c->epoch!=d->epoch||c->queue_epoch!=d->queues[rank].epoch||!d->queues[rank].ready||bytes>c->total)return MACHINE_RESULT_ENTRY_MAP;
     vm_virtqueue *q=d->queues+rank;
     if(c->used_index!=q->used+2u||c->used_entry!=q->used+4u+(pl_u64)(q->last_used&(q->size-1u))*8u)return MACHINE_RESULT_ENTRY_MAP;
     machine_result r=vm_dma_check(m,port,c->used_entry,8u,2u);if(r)return r;
     r=vm_dma_check(m,port,c->used_index,2u,2u);if(r)return r;
+    pl_u64 flags;r=read_word(m,port,q->available,2u,&flags);if(r)return r;
     pl_u8 record[8];vm_memory_store(record,c->head,4u);vm_memory_store(record+4u,bytes,4u);
     r=vm_dma_write(m,port,c->used_entry,8u,record);if(r)return r;
     vm_memory_store(record,(pl_u16)(q->last_used+1u),2u);r=vm_dma_write(m,port,c->used_index,2u,record);if(r)return r;
-    ++q->last_used;++q->last_available;if(c->interrupt)d->interrupt|=1u;return 0;
+    ++q->last_used;++q->last_available;if(!(flags&1u))d->interrupt|=1u;return 0;
 }

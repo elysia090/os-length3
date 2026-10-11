@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {CompilerOutput} from '../../src/v2/vm/check/browser/compiler-output.mjs';
 const [providerFile,compilerFile]=process.argv.slice(2);
 if (!providerFile || !compilerFile) throw new Error('usage: check-compiler-borrow.mjs VM.WASM COMPILER.WASM');
-const memory=new WebAssembly.Memory({initial:32,maximum:64});
+const memory=new WebAssembly.Memory({initial:64,maximum:128});
 const vm=(await WebAssembly.instantiate(await readFile(providerFile),{machine:{memory}})).instance.exports;
 const vmEnd=vm.vm_arena_min();
 const low=new Uint8Array(memory.buffer,0,vmEnd).slice();
@@ -42,7 +42,12 @@ for (let rank=0;rank<512;++rank) compare(cases[rank%cases.length],rank%32,1,1+ra
 assert.equal(compare(cases[1],4092,2,1),0);
 assert.equal(compare(Uint8Array.of(0x48),4095,1,1),-105);
 assert.equal(compare(Uint8Array.of(0x48,0x90),4095,2,1),0);
-assert.equal(compare(Uint8Array.of(0x0f,0x0b),0,1,1),-102);
+// UD2 is an intentional architectural fault body, not a grammar refusal.
+assert.equal(compare(Uint8Array.of(0x0f,0x0b),0,1,1),0);
+assert.equal(view.getBigUint64(report+24,true),1n);
+assert.equal(view.getBigUint64(report+32,true),2n);
+assert.equal(view.getUint32(report+60,true),4);
+assert(WebAssembly.validate(bytes.subarray(output,output+Number(view.getBigUint64(report+40,true)))));
 assert.equal(compare(cases[0],0,1,0),-100);
 // Reversed and aliased physical slots are valid: virtual order alone matters.
 bytes.fill(0x90,first,first+4096);

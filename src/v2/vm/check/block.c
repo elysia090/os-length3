@@ -44,6 +44,10 @@ int main(void)
     request(0,0,512,5);EXPECT(vm_block_poll(&block,&m,2048)==50);old=block.ticket;++grant.address.revision;
     EXPECT(!vm_block_bind(&block,&grant));EXPECT(vm_block_complete(&block,&old,content,512,0)==VM_RESOURCE_ERROR_STALE);
     EXPECT(!vm_block_poll(&block,&m,2048));EXPECT(get(0x7000,1)==1);
+    request(0,0,512,6);EXPECT(vm_block_poll(&block,&m,2048)==50);old=block.ticket;
+    reg(0x44,0);reg(0x44,1);
+    EXPECT(vm_block_complete(&block,&old,content,512,0)==VM_RESOURCE_ERROR_STALE);
+    block.device.notified=0;EXPECT(!vm_block_poll(&block,&m,2048));EXPECT(get(0x7000,1)==0xa5);
     pl_u64 value=0u;EXPECT(vm_virtio_register(&block.device,0u,4u,1u,2u,&value)==MACHINE_RESULT_ENTRY_MAP);
     reg(0x44,0);reg(0x84,0xffffffffu);reg(0x80,0xfffffff0u);value=1u;
     EXPECT(vm_virtio_register(&block.device,0x44u,4u,2u,2u,&value)==MACHINE_RESULT_ENTRY_MAP);

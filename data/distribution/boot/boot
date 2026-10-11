@@ -1,13 +1,21 @@
 #!/bin/sh
 set -eu
-trap 'echo "Offline service transition failed; terminal remains down." >&2' EXIT
+trap 'echo "Service initialization failed; inspect its live state from the console." >&2' EXIT
 # This bootstrap service runs once, under the already operational supervisor.
 # Readiness is the compiled DAG's completed transition, not svscan startup.
 /usr/bin/s6-svc -O /run/service/boot
-/usr/bin/s6-rc-init -t 10000 -c /etc/s6-rc/compiled/boot \
+# The console needs an authenticated mounted root and an operational PID1,
+# not device coldplug or a service repository. These are the same predicates
+# used by interactive-ready. Console startup is unconditional after they
+# succeed; service failures never create another shell or kernel path.
+/usr/libexec/system/ready api
+/usr/libexec/system/ready root
+/usr/libexec/system/ready interactive
+printf 'console-ready\n'
+/usr/bin/s6-svc -u /run/service/console
+/usr/bin/s6-rc-init -t 10000 -c /etc/s6-rc/compiled/current \
     -l /run/s6-rc /run/service
 /usr/bin/s6-rc -t 10000 -l /run/s6-rc -u change boot-offline
 /usr/libexec/system/ready interactive
 printf 'interactive-ready\n'
-/usr/bin/s6-svc -u /run/service/console
 trap - EXIT

@@ -28,5 +28,13 @@ case ${1:-} in
             test -x "$program"
         done
         ;;
-    *) echo 'usage: ready api|root|interactive' >&2; exit 2 ;;
+    network)
+        # Process liveness alone cannot publish network readiness. Linux
+        # owns address, route and resolver state; NTP is a separate branch.
+        /usr/bin/ip -4 addr show scope global | /bin/grep -q 'inet '
+        /bin/awk '$1 != "lo" && $2 == "00000000" && $4 == "0003" { ready = 1 }
+            END { exit !ready }' /proc/net/route
+        /bin/grep -Eq '^[[:space:]]*nameserver[[:space:]]+[^[:space:]]+' /etc/resolv.conf
+        ;;
+    *) echo 'usage: ready api|root|interactive|network' >&2; exit 2 ;;
 esac

@@ -63,7 +63,7 @@ static machine_result walk(vm_memory *memory, pl_u8 *port,
                             const vm_mmu_context *context, pl_u64 address,
                             pl_u32 access, pl_u64 *physical,int observe)
 {
-    pl_u32 proof_rank=vm_memory_walk_rank(address);
+    pl_u32 proof_rank=vm_memory_walk_rank(address,access,context->cpl,context->cr3);
     vm_walk_proof *retained=&memory->walks[proof_rank];
     if(!observe&&(memory->walk_live&(1ull<<proof_rank))&&retained->depth&&retained->depth<=4u&&retained->virtual_page==(address&~4095ull)
         &&retained->access==access&&retained->cpl==context->cpl
@@ -267,7 +267,7 @@ machine_result vm_mmu_fill(vm_memory *memory,pl_u32 port,const vm_mmu_context *c
     /* A store may itself overwrite a paging ancestor. Stop immediately
      * AFTER the first such word, then rewalk at the next source frontier.
      * The same exact ancestor witness supplies the physical hazard cut. */
-    if(!ready.discard){pl_u32 rank=vm_memory_walk_rank(first);const vm_walk_proof *proof=&memory->walks[rank];
+    if(!ready.discard){pl_u32 rank=vm_memory_walk_rank(first,MACHINE_MEMORY_WRITE,context->cpl,context->cr3);const vm_walk_proof *proof=&memory->walks[rank];
         if(!(memory->walk_live&(1ull<<rank))||proof->depth>4u||!proof->depth||proof->virtual_page!=(first&~4095ull)||proof->access!=MACHINE_MEMORY_WRITE)count=1u;
         else for(pl_u32 n=0u;n<proof->depth;++n){const vm_walk_ancestor *ancestor=proof->ancestors+n;
             pl_u64 a=ready.offsets[0],low=a-(reverse?tail:0u);

@@ -50,5 +50,8 @@ export class MachineDevices {
     const current=new Uint8Array(this.memory.buffer);current.set(ticket,this.ticket);if(reply)current.set(reply,this.reply);
     ok(vm.vm_block_reply(this.ticket,this.reply,reply?.length??0,0),'block completion');
   }
+  status(){return {networkRequested:!!this.network,networkConnected:!!this.linkReady,
+    networkBound:!!this.linkBound,networkFailure:this.networkError?.name??null,
+    receivedFrames:String(this.rxSequence),closed:this.closed};}
   async close(){if(this.closed)return;this.closed=true;await this.network?.close();await this.volume.close();}
 }

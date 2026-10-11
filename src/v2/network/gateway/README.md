@@ -99,3 +99,17 @@ The C virtio-MMIO register, split-ring DMA, interrupt and captured resource
 ticket boundary now exists in vm.wasm. Actual-browser DNS, curl/Git HTTPS,
 IPv4/IPv6, revocation and service publication remain end-to-end gates.
 ARP/transport or finite C queue tests do not satisfy those gates or Linux boot.
+
+The explicit `TestPinnedPacketNATDNS` integration probe now verifies a real
+upstream DNS response through the SHA-pinned Windows backend. It is opt-in,
+not a deterministic CI dependency. `TestOraclePacketUDP` is a test-only
+loopback Ethernet carrier for an independent QEMU CPU; its ports, DLL and
+traffic capture must be explicitly selected. It is not compiled into the
+product gateway and never substitutes for browser/C-VM acceptance.
+
+The Windows backend uses full-width Winsock `select` and the version-6
+socket API. Its earlier WSAPoll adapter ACKed guest TCP payload but failed
+to forward subsequent HTTPS data in the independent CPU/carrier test. The
+replacement passes that same guest DNS/getaddrinfo/certificate-verified
+HTTPS test. Host-only HTTPS reachability is tested separately and never
+counted as a guest result. Browser acceptance remains independently required.

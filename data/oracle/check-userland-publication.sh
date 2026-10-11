@@ -65,6 +65,27 @@ test "$mv_status" = 0
 test ! -e "$scratch/one"
 test "$(cat "$scratch/two")" = R
 printf 'userland publication: pristine tar PAX and BusyBox mv green\n'
+# Exercise normal address parsing and bounded ping in both independently
+# runnable ELFs. Device transport is not involved in this loopback witness.
+for executable in "$busybox_input" "$scratch/busybox-optimized";do
+    "$executable" ip link set lo up
+    "$executable" ping -c 1 -W 4 127.0.0.1
+    "$executable" getopt -o c: -- -c 1 >"$scratch/getopt.out"
+    grep -q "1" "$scratch/getopt.out"
+    # pipefail is a locked development-shell requirement, not inferred from
+    # the existence of /bin/sh or from the pipeline's last command.
+    set +e
+    "$executable" sh -c 'set -o pipefail; (exit 7) | cat'
+    pipeline_status=$?
+    set -e
+    test "$pipeline_status" = 7
+    test "$("$executable" find "$scratch/input" -type f | wc -l)" = 1
+    chmod 640 "$scratch/input/a"
+    test "$("$executable" stat -c %a "$scratch/input/a")" = 640
+    "$executable" sha256sum "$scratch/input/a" >"$scratch/sha-check"
+    "$executable" sha256sum -c "$scratch/sha-check"
+done
+printf 'userland publication: original/optimized networking argument gates green\n'
 if [ "$candidate_root" = 1 ];then
     # Isolated boot candidate only: package database/signatures are NOT
     # republished by this diagnostic. Preserve the immutable shipped inputs.
@@ -85,12 +106,39 @@ if [ "$candidate_root" = 1 ];then
         make -j4 -C src/v2 all
         bash data/distribution/optimize-payload.sh "$scratch/init-forest" "$scratch/init-optimized" \
             src/v2/build/artifact-executable-stage "$verify"
+        # This is an explicitly new diagnostic root, not an apk install or
+        # a merge of two package owners. Only base-services' old boot script
+        # changes; every other overlapping coordinate must still compare.
+        old_boot="$scratch/candidate-root/usr/libexec/system/boot"
+        test -f "$old_boot" && test ! -L "$old_boot"
+        case $(realpath "$old_boot") in "$scratch/candidate-root/usr/libexec/system/boot") ;; *)exit 2;;esac
+        rm -f -- "$old_boot"
+        old_ready="$scratch/candidate-root/usr/libexec/system/ready"
+        test -f "$old_ready" && test ! -L "$old_ready"
+        case $(realpath "$old_ready") in "$scratch/candidate-root/usr/libexec/system/ready") ;; *)exit 2;;esac
+        rm -f -- "$old_ready"
+        old_database="$scratch/candidate-root/etc/s6-rc/compiled/current"
+        test -d "$old_database" && test ! -L "$old_database"
+        case $(realpath "$old_database") in "$scratch/candidate-root/etc/s6-rc/compiled/current") ;; *)exit 2;;esac
+        rm -rf -- "$old_database"
         for package in "$scratch/init-optimized"/*;do
             bash data/distribution/clone-tree.sh "$package" "$scratch/candidate-root"
         done
         printf 'userland candidate: locked init profile rebuilt through authoritative recipe/postlink\n'
     fi
+    # The candidate uses the authoritative account inputs too. The native
+    # package publication remains separate; never mutate its signed payload.
+    install -m 0644 data/config/passwd "$scratch/candidate-root/etc/passwd"
+    install -m 0644 data/config/group "$scratch/candidate-root/etc/group"
+    install -m 0600 data/config/shadow "$scratch/candidate-root/etc/shadow"
+    install -m 0600 data/config/gshadow "$scratch/candidate-root/etc/gshadow"
     roles='initramfs system.squashfs'
+    if [ "${LENGTH3_KERNEL_INPUT_BYTES:-0}" != 0 ];then
+        head -c "$LENGTH3_KERNEL_INPUT_BYTES" /dev/vdj >"$scratch/candidate.kernel"
+        printf '%s  %s\n' "$LENGTH3_KERNEL_INPUT_SHA256" "$scratch/candidate.kernel" | sha256sum -c -
+        cat "$scratch/candidate.kernel" >"$scratch/candidate-root/boot/kernel"
+        roles="kernel $roles"
+    fi
     if [ "$kernel" = 1 ];then
         # Reuse the official kernel recipe and Kbuild wrapper. No host/WSL
         # kernel or separately invented image enters this diagnostic.

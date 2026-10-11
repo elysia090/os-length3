@@ -3,6 +3,7 @@
 /* Host NAT adapter only. Do not decode guest instructions or terminate TLS.
  * Full-width socket API is mandatory; no deprecated int-fd fallback. */
 #include "slirp_windows.h"
+#define FD_SETSIZE 256
 #include <libslirp.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,6 +11,7 @@
 #define FRAME_BYTES 2048u
 #define SOCKETS 256u
 typedef struct {SlirpTimerCb callback;void *owner;int64_t expiry;int active;} nat_timer;
+typedef struct {slirp_os_socket socket;int events,revents;} socket_poll;
 struct packet_nat {
     HMODULE library;Slirp *slirp;SlirpCb callbacks;
     Slirp *(*create)(const SlirpConfig *,const SlirpCb *,void *);
@@ -18,7 +20,7 @@ struct packet_nat {
     void (*fill)(Slirp *,uint32_t *,SlirpAddPollSocketCb,void *);
     void (*poll)(Slirp *,int,SlirpGetREventsCb,void *);
     const char *(*version)(void);
-    WSAPOLLFD sockets[SOCKETS];unsigned socket_count;
+    socket_poll sockets[SOCKETS];unsigned socket_count;
     uint8_t frame[FRAMES][FRAME_BYTES];unsigned length[FRAMES],head,count;
     nat_timer timers[8];
 };
@@ -34,14 +36,29 @@ static void *timer_new(SlirpTimerCb cb,void *owner,void *opaque){packet_nat *p=o
 static void timer_free(void *timer,void *opaque){(void)opaque;((nat_timer *)timer)->active=0;}
 static void timer_mod(void *timer,int64_t expiry,void *opaque){(void)opaque;((nat_timer *)timer)->expiry=expiry;}
 static int add_socket(slirp_os_socket socket,int events,void *opaque){packet_nat *p=opaque;if(p->socket_count==SOCKETS)return -1;
-    unsigned at=p->socket_count++;short flags=0;if(events&SLIRP_POLL_IN)flags|=POLLRDNORM;if(events&SLIRP_POLL_OUT)flags|=POLLWRNORM;if(events&SLIRP_POLL_PRI)flags|=POLLPRI;
-    p->sockets[at]=(WSAPOLLFD){socket,flags,0};return (int)at;}
+    unsigned at=p->socket_count++;p->sockets[at]=(socket_poll){socket,events,0};return (int)at;}
 static int revents(int at,void *opaque){packet_nat *p=opaque;if(at<0||(unsigned)at>=p->socket_count)return SLIRP_POLL_ERR;
-    short value=p->sockets[at].revents;int flags=0;if(value&(POLLRDNORM|POLLRDBAND))flags|=SLIRP_POLL_IN;if(value&POLLWRNORM)flags|=SLIRP_POLL_OUT;
-    if(value&POLLPRI)flags|=SLIRP_POLL_PRI;
-    if(value&(POLLERR|POLLNVAL))flags|=SLIRP_POLL_ERR;
-    if(value&POLLHUP)flags|=SLIRP_POLL_HUP;
-    return flags;}
+    return p->sockets[at].revents;}
+static int poll_sockets(packet_nat *p,uint32_t timeout)
+{
+    fd_set reads,writes,exceptions;FD_ZERO(&reads);FD_ZERO(&writes);FD_ZERO(&exceptions);
+    _Static_assert(FD_SETSIZE>=SOCKETS,"full-width bounded Winsock sets");
+    for(unsigned i=0u;i<p->socket_count;++i){const socket_poll *s=p->sockets+i;
+        if(s->events&SLIRP_POLL_IN)FD_SET(s->socket,&reads);
+        if(s->events&SLIRP_POLL_OUT)FD_SET(s->socket,&writes);
+        if(s->events&(SLIRP_POLL_PRI|SLIRP_POLL_ERR))FD_SET(s->socket,&exceptions);}
+    struct timeval wait={(long)(timeout/1000u),(long)((timeout%1000u)*1000u)};
+    /* Winsock select ignores nfds and keeps complete SOCKET handles. A
+     * connected read/EOF and a pending-connect write are different events;
+     * no deprecated int-descriptor API or guest protocol enters this owner. */
+    int result=select(0,&reads,&writes,&exceptions,&wait);
+    if(result<0)return result;
+    for(unsigned i=0u;i<p->socket_count;++i){socket_poll *s=p->sockets+i;
+        if(FD_ISSET(s->socket,&reads))s->revents|=SLIRP_POLL_IN;
+        if(FD_ISSET(s->socket,&writes))s->revents|=SLIRP_POLL_OUT;
+        if(FD_ISSET(s->socket,&exceptions))s->revents|=(s->events&SLIRP_POLL_PRI)?SLIRP_POLL_PRI:SLIRP_POLL_ERR;}
+    return result;
+}
 #define RESOLVE(field,name) do{FARPROC function=GetProcAddress(p->library,name);if(!function)goto failed;_Static_assert(sizeof p->field==sizeof function,"Windows function pointer width");memcpy(&p->field,&function,sizeof function);}while(0)
 packet_nat *packet_nat_open(const uint16_t *path){WSADATA winsock;if(WSAStartup(MAKEWORD(2,2),&winsock))return NULL;
     packet_nat *p=calloc(1,sizeof *p);if(!p){WSACleanup();return NULL;}
@@ -56,7 +73,7 @@ failed: if(p->library)FreeLibrary(p->library);free(p);WSACleanup();return NULL;}
 int packet_nat_input(packet_nat *p,const uint8_t *bytes,int length){if(!p||!bytes||length<14||length>(int)FRAME_BYTES)return -1;p->input(p->slirp,bytes,length);return 0;}
 int packet_nat_read(packet_nat *p,uint8_t *out,int capacity){if(!p||!out||capacity<(int)FRAME_BYTES)return -1;
     if(!p->count){uint32_t timeout=10u;p->socket_count=0u;p->fill(p->slirp,&timeout,add_socket,p);
-        int ready=p->socket_count?WSAPoll(p->sockets,p->socket_count,(INT)timeout):0;if(!p->socket_count)Sleep(timeout);
+        int ready=p->socket_count?poll_sockets(p,timeout):0;if(!p->socket_count)Sleep(timeout);
         p->poll(p->slirp,ready<0,revents,p);int64_t time=now_ns(NULL)/1000000ll;
         for(unsigned i=0;i<8u;++i){nat_timer *t=p->timers+i;if(t->active&&t->expiry<=time){t->expiry=INT64_MAX;t->callback(t->owner);}}
     }

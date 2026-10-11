@@ -35,7 +35,9 @@ int main(void)
     EXPECT(vm_mmu_access(&m,2048u,&cpu,0x400000u,8u,1u,0u)==MACHINE_RESULT_ENTRY_MAP);
     EXPECT(vm_mmu_access(&m,2048u,&cpu,0x400fffu,4u,1u,0u)==MACHINE_RESULT_ENTRY_MAP);
     EXPECT(!vm_memory_access(&m,2048u,0x9000u,4u,2u,0x76543210u));EXPECT(writes==2u&&reg==0x76543210u);
-    unsigned before=checks+reads+writes;vm_memory_store(arena+20480,0x9065u,8u);
+    unsigned before=checks+reads+writes;
+    EXPECT(!vm_memory_external_write(&m,20480u,8u));
+    vm_memory_store(arena+20480,0x9065u,8u);
     EXPECT(vm_mmu_access(&m,2048u,&cpu,0x400000u,4u,2u,1u)==115u);EXPECT(checks+reads+writes==before);
     vm_memory_store(arena+2048,8u,8u);EXPECT(vm_mmu_access(&m,2048u,&cpu,0x400000u,4u,1u,0u)==5u);
     EXPECT(checks+reads+writes==before);EXPECT(!m.write_touched);

@@ -5,15 +5,18 @@
 static _Alignas(8) pl_u8 arena[32768];
 static int failures;
 static vm_memory_branch branches[3];
+static vm_memory *physical;
 #define EXPECT(x) do { if (!(x)) { fprintf(stderr, "segments: line %u\n", (unsigned)__LINE__); ++failures; } } while (0)
 static void put(pl_u32 at, pl_u64 value)
-{ for (pl_u32 i = 0u; i < 8u; ++i) arena[at + i] = (pl_u8)(value >> (i * 8u)); }
+{ if(physical&&at>=physical->reserved_bytes)EXPECT(!vm_memory_external_write(physical,at,8u));
+  for (pl_u32 i = 0u; i < 8u; ++i) arena[at + i] = (pl_u8)(value >> (i * 8u)); }
 static pl_u64 get(pl_u32 at)
 { pl_u64 value = 0u; for (pl_u32 i = 0u; i < 8u; ++i) value |= (pl_u64)arena[at + i] << (i * 8u); return value; }
 static machine_state state, saved;
 static machine_segments segments, old;
 static void reset(pl_u32 cpl)
 {
+    if(physical)vm_memory_forget_walks(physical);
     state = (machine_state){0}; state.cr0 = 0x80010001u; state.cr3 = 0x1000u;
     state.cr4 = 32u; state.efer = 0x500u; state.rip = 0x1000204u;
     state.system[MACHINE_SYSTEM_CS] = 16u | cpl;
@@ -45,6 +48,7 @@ int main(void)
     };
     vm_memory memory;
     EXPECT(!vm_memory_open(&memory, arena, sizeof arena, 4096u, pages, 4u, 4u, branches, 9u));
+    physical=&memory;
     /* Every null selector and CPL; null SS is legal only for CPL<3, RPL=CPL. */
     unsigned cases = 0u;
     for (pl_u32 cpl = 0u; cpl < 4u; ++cpl)

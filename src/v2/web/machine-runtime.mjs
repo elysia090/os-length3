@@ -7,6 +7,7 @@ import {CutTrace} from './machine-trace.mjs';
 import {CompilerOutput} from './compiler-output.mjs';
 import {equal} from './assertion.mjs';
 import {CutProgress} from './cut-progress.mjs';
+import {MachineYield} from './machine-yield.mjs';
 import {memoryBudget,memoryGrowth} from './memory-budget.mjs';
 import {isMachineBarrier} from './machine-barrier.mjs';
 class Bytes extends Uint8Array {
@@ -29,6 +30,7 @@ export async function runMachine(reader,providerBytes,compilerBytes,readExtent,
     {extended = false,onProgress = () => {},decompression,immutableImage,warmCuts=1,
       utcSeconds = BigInt(Math.floor(Date.now()/1000)),idleWait,onCompilerRefusal,readInput,keepAlive=false,bootEntropy,diagnostic=false,devices,onConsole=()=>{},shouldClose=()=>false,generation=9n} = {}) {
   const startedAt=performance.now();
+  const taskOpportunity=new MachineYield();
   assert(Number.isInteger(warmCuts) && warmCuts>=1 && warmCuts<=64,'bounded warm cut quantum');
   assert(typeof keepAlive==='boolean','explicit interactive lifetime');
   const read = async name => new Bytes(await reader(name));
@@ -265,7 +267,7 @@ export async function runMachine(reader,providerBytes,compilerBytes,readExtent,
     // Read-only diagnostics: neither a CPU snapshot nor a source retirement.
     // Admission/quantum progress also exposes work inside long instructions.
     onProgress({format:'browser-bzimage-startup-v1',status:'running',linuxBoot:'not-achieved',
-      retired,admissions,nextRip:`0x${rip().toString(16)}`,quantumYields,idleEvents,idleNanoseconds:String(idleNanoseconds),
+      retired,admissions,nextRip:`0x${rip().toString(16)}`,quantumYields,taskYields:taskOpportunity.count,idleEvents,idleNanoseconds:String(idleNanoseconds),
       architecturalRCX:`0x${view.getBigUint64(base+8,true).toString(16)}`,
       residentPages:vm.vm_page_count(),memoryBytes:memory.buffer.byteLength,
       console:consoleObservation(),
@@ -702,6 +704,11 @@ export async function runMachine(reader,providerBytes,compilerBytes,readExtent,
       if (result === 10n) {
         ++quantumYields;
         if(extended && !(quantumYields&255))reportProgress();
+        // A latched long instruction still has completed a bounded C quantum.
+        // Host tasks may enqueue opaque input, but cannot enter guest state or
+        // DMA here. The same continuation resumes through the C owner.
+        if(keepAlive&&taskOpportunity.due())await taskOpportunity.yield();
+        if(shouldClose())return {kind:'closed',entry:`0x${waitingEntry.toString(16)}`};
         continue;
       }
       if(result===42n||result===50n){
@@ -906,6 +913,8 @@ export async function runMachine(reader,providerBytes,compilerBytes,readExtent,
     const maximumAdmissions = keepAlive ? Number.MAX_SAFE_INTEGER : extended ? 150000000 : 1000000;
     const maximumRetired = keepAlive ? Number.MAX_SAFE_INTEGER : extended ? 300000000 : 2000000;
     while (!shouldClose() && admissions < maximumAdmissions && retired < maximumRetired) {
+      if(keepAlive&&taskOpportunity.due())await taskOpportunity.yield();
+      if(shouldClose())break;
       receiveInput();
       // This independent diagnostic observes the complete decompressed image
       // BEFORE its first ELF-header read. Demand one-source frontiers until
@@ -915,7 +924,8 @@ export async function runMachine(reader,providerBytes,compilerBytes,readExtent,
       if (stopped) break;
       if (extended && (retired-reportedRetired>=1000000 || admissions-reportedAdmissions>=1000000))reportProgress();
       // Let console/close messages enter even when every construction is hot.
-      if(keepAlive&&!(admissions&4095))await new Promise(resolve=>setTimeout(resolve,0));
+      // Task opportunity is wall-budgeted above, not dependent on an exact
+      // admission count that cannot bound long/coalesced C work or microtasks.
     }
     if (!stopped) stopped = {kind:'quota',entry:`0x${rip().toString(16)}`,admissions,retired,
       maximumAdmissions,maximumRetired,
@@ -977,6 +987,7 @@ export async function runMachine(reader,providerBytes,compilerBytes,readExtent,
       sourceReuse:{hits:sourceHits,misses:sourceMisses},sourceProfile:sourceProfile(),systemProfile:systemProfile(),decompressedOutput,linuxEntry};
     throw error;
   } finally {
+    taskOpportunity.close();
     try { if(devices)await devices.close(); }
     finally {
       for (const slot of installedSlots.keys()) table.set(slot,null);
