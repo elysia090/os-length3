@@ -115,6 +115,10 @@ After repair it passes: four aliases, 1,048,576 apparent bytes, 262,144 unique
 bytes (75% less fixture storage), identical SHA-256
 `d30eb241f95e7c37c033251a78eae1610ac9b02dc99625442158180d35818c1b`, separate
 source/output owners and unchanged source link count. CI includes this check.
+The first CI run exposed the checker's assumption that ignored `temp/` already
+exists in a fresh checkout. The checker now explicitly creates that parent
+before creating its isolated fixture; the destructive recipe target remains
+fresh, absent and restricted to the newly created fixture directory.
 
 Per-release transfer, expanded native storage and RAM/startup optimizations
 remain future measured decisions. The preferred delivery plan remains a

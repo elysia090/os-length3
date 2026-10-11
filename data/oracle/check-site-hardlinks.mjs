@@ -7,6 +7,7 @@ import {promisify} from 'node:util';
 import {createHash} from 'node:crypto';
 
 const [make='make']=process.argv.slice(2),repo=fileURLToPath(new URL('../..',import.meta.url));
+await mkdir(join(repo,'temp'),{recursive:true});
 const scratch=await mkdtemp(join(repo,'temp/site-ownership-'));
 const fixture=join(scratch,'artifact'),site=resolve(scratch,'site');
 // The site recipe removes its target. Only a fresh, absent descendant of our
