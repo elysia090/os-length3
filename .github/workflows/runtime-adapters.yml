@@ -6,6 +6,8 @@ on:
     paths:
       - '.github/workflows/runtime-adapters.yml'
       - 'src/v2/web/**'
+      - 'src/v2/Makefile'
+      - 'data/oracle/check-site-hardlinks.mjs'
       - 'data/oracle/check-persistent-block*.mjs'
       - 'data/oracle/check-machine-devices-close.mjs'
       - 'data/oracle/check-memory-budget.mjs'
@@ -14,6 +16,8 @@ on:
     paths:
       - '.github/workflows/runtime-adapters.yml'
       - 'src/v2/web/**'
+      - 'src/v2/Makefile'
+      - 'data/oracle/check-site-hardlinks.mjs'
       - 'data/oracle/check-persistent-block*.mjs'
       - 'data/oracle/check-machine-devices-close.mjs'
       - 'data/oracle/check-memory-budget.mjs'
@@ -37,3 +41,4 @@ jobs:
           node data/oracle/check-machine-devices-close.mjs
           node data/oracle/check-memory-budget.mjs
           node data/oracle/check-machine-yield.mjs
+          node data/oracle/check-site-hardlinks.mjs

@@ -21,7 +21,8 @@ site:
 	rm -rf "$(SITE)"
 	mkdir -p "$(SITE)"
 	cp -R web/. "$(SITE)"/
-	@if [ -d "$(ARTIFACT)" ]; then cp -R "$(ARTIFACT)" "$(SITE)"/artifact; fi
+	# Keep digest-pool/release hardlinks shared inside the independent site copy.
+	@if [ -d "$(ARTIFACT)" ]; then cp -a "$(ARTIFACT)" "$(SITE)"/artifact; fi
 
 # Recursive makes do not share a dependency graph. Finish each provider before
 # starting its consumers, including on an empty tree under `make -j`.
