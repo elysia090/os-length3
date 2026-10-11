@@ -181,3 +181,9 @@ mdevd-ready start successfully; coldplug starts, then the transition times
 out with exit2. This warm retry is not a cold readiness pass. An additional
 diagnostic found `pidof` absent from the current root; the process ID was
 obtained from `ps` instead, without substituting another guest implementation.
+The standard standalone coldplug then exits0, with guest `time` reporting
+real2.52s/user0.13s/sys1.20s (not browser wall time). A further same-DB,
+same10000ms transition starts only the unfinished coldplug/root/interactive
+services and exits0. This confirms warm convergence, not initial cold
+readiness. Readiness markers now require an entire newline-terminated line;
+`service interactive-ready: starting` cannot falsely publish readiness.

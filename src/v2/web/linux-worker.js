@@ -7,6 +7,7 @@ import {PersistentBlock,IndexedBlockStore} from './persistent-block.mjs';
 import {NetworkTransport} from './network-transport.mjs';
 import {waitForClock} from './idle-clock.mjs';
 import {ConsoleStream} from './console-stream.mjs';
+import {hasReadinessLine} from './console-readiness.mjs';
 const send=(type,payload={})=>self.postMessage({type,...payload});
 let owner=null,closing=false,pending=null,artifact=null,running=null,ready=false,normal=false,serviceReady=false,closeFailure=null;
 let tail='',input=new Uint8Array(8192),head=0,count=0;
@@ -16,8 +17,8 @@ const consoleStream=new ConsoleStream(bytes=>{let raw='';for(const b of bytes)ra
 function flushConsole(){consoleStream.flush();}
 function consoleWrite(bytes){consoleStream.write(bytes);
   tail=(tail+decoder.decode(bytes,{stream:true})).slice(-4096);
-  if(tail.includes('console-ready'))normal=true;
-  if(tail.includes('interactive-ready'))serviceReady=true;
+  if(hasReadinessLine(tail,'console-ready'))normal=true;
+  if(hasReadinessLine(tail,'interactive-ready'))serviceReady=true;
   if(!normal&&(tail.includes('Offline service transition failed; terminal remains down.')||tail.includes('Boot root handoff failed.')))
     throw new Error('Linux normal boot failed; inspect the C machine diagnostic (no rescue fallback)');
   ready=normal&&/(?:^|\r?\n)[^\r\n]{0,128}[#$] $/.test(tail);
