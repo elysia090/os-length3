@@ -3,6 +3,7 @@
 /* Discover and prove finite targets of indirect control transfers. */
 
 #include <support/checked.h>
+#include <stdint.h>
 
 #define R_X86_64_PC32 2u
 
@@ -10,6 +11,16 @@ enum table_proof_pass {
     TABLE_PROOF_COMPLETE = 1,
     TABLE_PROOF_CANDIDATE = 2,
 };
+
+typedef struct {
+    pl_u64 start;
+    pl_u64 end;
+    pl_u64 maximum_end;
+} function_extent;
+
+static int extent_find(const function_extent *items,
+                       pl_u32 begin, pl_u32 end, pl_u64 address,
+                       pl_u64 *start, pl_u64 *limit);
 
 static int add_signed(pl_u64 base, pl_u64 addend_bits,
                       pl_u64 correction, pl_u64 *out)
@@ -1957,7 +1968,9 @@ static int relation_value_equal(const dispatch_relation_value *left,
         return left->is_constant && right->is_constant
             && left->constant == right->constant;
     return left->item.value == right->item.value
-        && left->item.bits == right->item.bits;
+        && left->item.bits == right->item.bits
+        && (left->item.value < 17u
+            || left->item.coordinate == right->item.coordinate);
 }
 
 static int relation_value_less(const dispatch_relation_value *left,
@@ -1968,7 +1981,110 @@ static int relation_value_less(const dispatch_relation_value *left,
     if (left->is_constant) return left->constant < right->constant;
     if (left->item.value != right->item.value)
         return left->item.value < right->item.value;
+    if (left->item.value >= 17u
+            && left->item.coordinate != right->item.coordinate)
+        return left->item.coordinate < right->item.coordinate;
     return left->item.bits < right->item.bits;
+}
+
+/* A linked leaf's complete extent can prove more than the external ABI.
+ * Do not assume caller-saved registers change when no reachable instruction
+ * can write them. Unknown calls, transfers and machine operations refuse the
+ * refinement; closed local jump tables must stay within that same extent. */
+static int leaf_preserves_gpr(
+    const pl_elf_image *elf, const pl_x86_frontend *frontend,
+    const pl_x86_instruction *call,
+    const function_extent *functions, pl_u32 function_count,
+    const pl_x86_table *tables, pl_u32 table_count, pl_u8 value)
+{
+    pl_u64 begin = 0u, limit = 0u;
+    if (!(call->flags & PL_X86_INSTRUCTION_DIRECT_TARGET)
+            || !extent_find(functions, 0u, function_count,
+                            call->target, &begin, &limit)
+            || begin != call->target || limit - begin > 8192u)
+        return 0;
+    pl_u8 starts[1024] = { 0u }, targets[1024] = { 0u };
+    pl_x86_register tracked = { PL_X86_REGISTER_GPR, value, 64u, 0u };
+    int returns = 0;
+    for (pl_u64 at = begin; at < limit;) {
+        pl_x86_instruction instruction;
+        if (pl_x86_frontend_decode(frontend, at, &instruction)
+                || instruction.fallthrough <= at
+                || instruction.fallthrough > limit
+                || (value < 16u && writes_gpr(&instruction, tracked))
+                || (value >= 16u
+                    && (instruction.flags & PL_X86_INSTRUCTION_WRITES_MEMORY))
+                || instruction.flow == PL_X86_FLOW_CALL
+                || (instruction.flow != PL_X86_FLOW_NEXT
+                    && instruction.flow != PL_X86_FLOW_RETURN
+                    && instruction.flow != PL_X86_FLOW_JUMP
+                    && instruction.flow != PL_X86_FLOW_CONDITIONAL))
+            return 0;
+        if (instruction.flow == PL_X86_FLOW_RETURN) returns = 1;
+        pl_u64 relative = at - begin;
+        starts[relative / 8u] |= (pl_u8)(1u << (relative % 8u));
+        if (instruction.flow == PL_X86_FLOW_JUMP
+                || instruction.flow == PL_X86_FLOW_CONDITIONAL) {
+            if (instruction.flags & PL_X86_INSTRUCTION_DIRECT_TARGET) {
+                if (instruction.target < begin || instruction.target >= limit)
+                    return 0;
+                pl_u64 target = instruction.target - begin;
+                targets[target / 8u] |= (pl_u8)(1u << (target % 8u));
+            } else {
+                int closed = 0;
+                for (pl_u32 table = 0u; table < table_count; ++table)
+                    if (tables[table].consumer == at
+                            && tables[table].domain_closed) {
+                        closed = 1;
+                        break;
+                    }
+                if (!closed) return 0;
+            }
+        }
+        at = instruction.fallthrough;
+    }
+    /* A branch into an immediate can execute another instruction stream.
+     * Preservation requires every local edge to use the decoded boundaries. */
+    for (pl_u32 byte = 0u; byte < sizeof(starts); ++byte)
+        if (targets[byte] & (pl_u8)~starts[byte]) return 0;
+    for (pl_u32 table = 0u; table < table_count; ++table) {
+        const pl_x86_table *descriptor = &tables[table];
+        if (descriptor->consumer < begin || descriptor->consumer >= limit)
+            continue;
+        pl_elf_section section = { 0 };
+        int mapped = 0;
+        for (pl_u32 index = 0u; index < elf->section_count; ++index) {
+            if (pl_elf_section_read(elf, index, &section)) return 0;
+            if ((section.flags & PL_ELF_SECTION_ALLOC)
+                    && descriptor->base >= section.address
+                    && descriptor->base - section.address < section.file_bytes) {
+                mapped = 1;
+                break;
+            }
+        }
+        if (!mapped || !descriptor->rows) return 0;
+        pl_u64 offset = descriptor->base - section.address;
+        if ((pl_u64)descriptor->rows * 4u > section.file_bytes - offset
+                || section.file_offset > elf->length
+                || offset > elf->length - section.file_offset
+                || (pl_u64)descriptor->rows * 4u
+                    > elf->length - section.file_offset - offset)
+            return 0;
+        for (pl_u32 row = 0u; row < descriptor->rows; ++row) {
+            const pl_u8 *bytes = elf->bytes + section.file_offset + offset
+                               + (pl_u64)row * 4u;
+            pl_u32 raw = (pl_u32)bytes[0] | (pl_u32)bytes[1] << 8u
+                        | (pl_u32)bytes[2] << 16u | (pl_u32)bytes[3] << 24u;
+            pl_u64 target = 0u;
+            if (!add_signed(descriptor->base, (pl_u64)(pl_i64)(pl_i32)raw,
+                            0u, &target)
+                    || target < begin || target >= limit)
+                return 0;
+            pl_u64 relative = target - begin;
+            if (!(starts[relative / 8u] & (1u << (relative % 8u)))) return 0;
+        }
+    }
+    return returns;
 }
 
 static void relation_order(dispatch_relation_state *state)
@@ -1980,6 +2096,11 @@ static void relation_order(dispatch_relation_state *state)
 }
 
 static int relation_inverse(
+    const pl_elf_image *elf,
+    const pl_x86_frontend *frontend,
+    const function_extent *functions, pl_u32 function_count,
+    const pl_x86_table *tables, pl_u32 table_count,
+    int provisional,
     const pl_x86_instruction *instruction,
     const dispatch_relation_value *value,
     const pl_x86_operand *slot,
@@ -1987,11 +2108,65 @@ static int relation_inverse(
 {
     *source = *value;
     if (value->is_constant) return 1;
-    dispatch_slice_item item_source = value->item;
+    if (instruction->flow == PL_X86_FLOW_CALL && value->item.value >= 17u) {
+        /* An opaque callee can alias a spill through a passed pointer. The
+         * encoding discovery pass may over-approximate the source prefix,
+         * but that assumption must never become a closed control proof. */
+        if (value->item.value == 17u) return 0;
+        return provisional || leaf_preserves_gpr(
+            elf, frontend, instruction, functions, function_count,
+            tables, table_count, DISPATCH_SLICE_SLOT);
+    }
+    if (instruction->flow == PL_X86_FLOW_CALL
+            && value->item.value < 16u
+            && !call_preserves_gpr(value->item.value))
+        return leaf_preserves_gpr(elf, frontend, instruction,
+                                 functions, function_count,
+                                 tables, table_count, value->item.value);
+    /* Keep a private frame coordinate in the residual value, not an entire
+     * memory history. This also covers a register saved across a leaf call
+     * and restored before the later dispatch guard. */
+    if (value->item.value < 16u
+            && instruction->operation == PL_X86_OPERATION_MOVE
+            && instruction->visible_operand_count >= 2u
+            && instruction->operands[0].kind == PL_X86_OPERAND_REGISTER
+            && instruction->operands[0].value.reg.index == value->item.value
+            && instruction->operands[0].value.reg.class_id == PL_X86_REGISTER_GPR
+            && width_code(instruction->operands[0].bits) >= value->item.bits
+            && frame_slot_operand(&instruction->operands[1])) {
+        const pl_x86_operand *input = &instruction->operands[1];
+        if (input->value.memory.segment.class_id != PL_X86_REGISTER_SEGMENT
+                || input->value.memory.segment.index != 2u)
+            return 0;
+        pl_i64 displacement = input->value.memory.displacement;
+        if (displacement < -2147483647ll - 1ll || displacement > 2147483647ll)
+            return 0;
+        source->item.coordinate = (pl_u32)(pl_i32)displacement;
+        source->item.value = input->value.memory.base.index == 4u ? 17u : 18u;
+        source->item.bits = width_code(input->bits);
+        return source->item.bits != 0xffu;
+    }
+    pl_x86_operand private_slot = { 0 };
+    dispatch_slice_item tracked = value->item;
+    if (tracked.value >= 17u) {
+        private_slot.kind = PL_X86_OPERAND_MEMORY;
+        private_slot.value.memory.segment = (pl_x86_register){
+            PL_X86_REGISTER_SEGMENT, 2u, 16u, 0u
+        };
+        private_slot.bits = (pl_u16)(8u << tracked.bits);
+        private_slot.value.memory.base = (pl_x86_register){
+            PL_X86_REGISTER_GPR, tracked.value == 17u ? 4u : 5u, 64u, 0u
+        };
+        private_slot.value.memory.has_displacement = 1u;
+        private_slot.value.memory.displacement = (pl_i32)tracked.coordinate;
+        tracked.value = DISPATCH_SLICE_SLOT;
+        slot = &private_slot;
+    }
+    dispatch_slice_item item_source = tracked;
     int bounded = 0;
     pl_u32 maximum = 0u;
     int definition = slice_definition(
-        instruction, &value->item, slot,
+        instruction, &tracked, slot,
         &item_source, &bounded, &maximum);
     if (!definition) return 0;
     if (definition == 2) return 1;
@@ -2067,11 +2242,16 @@ static int function_entry_contains(const pl_u64 *entries, pl_u32 count,
  * by slice_definition unless the System V preserved register/private-frame
  * contract makes them irrelevant. */
 static int relation_proves_equal(
+    const pl_elf_image *elf,
     const pl_x86_frontend *frontend,
+    const function_extent *functions, pl_u32 functions_count,
     pl_u64 function_start,
     const pl_u64 *function_entries, pl_u32 function_count,
     const pl_u32 *predecessor_offsets, const pl_u32 *predecessors,
     const pl_u8 *reachable,
+    const pl_x86_table *tables, pl_u32 table_count,
+    const pl_u64 *table_base,
+    int provisional,
     const pl_u8 *speculative_targets, pl_u32 speculative_jump,
     const pl_x86_operand *slot,
     dispatch_relation_state *states, pl_u8 *seen, pl_u32 *queue,
@@ -2092,6 +2272,45 @@ static int relation_proves_equal(
         pl_u32 begin = predecessor_offsets[state.coordinate];
         pl_u32 end = predecessor_offsets[state.coordinate + 1u];
         pl_u32 live_predecessors = 0u;
+        /* A case label is a real join, even without a lexical predecessor.
+         * Carry both values through every established table consumer. The
+         * delta-load/add frontier must preserve both; an omitted indirect
+         * edge is not evidence that two unrelated values are equal. */
+        pl_u64 base = table_base[state.coordinate];
+        if (base == 0xffffffffffffffffull) return 0;
+        if (base) {
+            pl_u32 low = 0u, high = table_count;
+            while (low < high) {
+                pl_u32 middle = low + (high - low) / 2u;
+                if (tables[middle].base < base) low = middle + 1u;
+                else high = middle;
+            }
+            int matched = 0;
+            for (pl_u32 index = low;
+                    index < table_count && tables[index].base == base;
+                    ++index) {
+                const pl_x86_table *table = &tables[index];
+                if (table->consumer < function_start
+                        || table->consumer - function_start >= extent)
+                    continue;
+                const dispatch_relation_value *values[2] = {
+                    &state.left, &state.right
+                };
+                for (pl_u32 value = 0u; value < 2u; ++value)
+                    if (!values[value]->is_constant
+                            && values[value]->item.value < DISPATCH_SLICE_SLOT
+                            && (table->clobber_mask
+                                & (1u << values[value]->item.value)))
+                        return 0;
+                dispatch_relation_state source = state;
+                source.coordinate = (pl_u32)(table->consumer - function_start);
+                if (!relation_enqueue(states, seen, queue, extent, &queued, source))
+                    return 0;
+                matched = 1;
+                ++live_predecessors;
+            }
+            if (!matched) return 0;
+        }
         if (speculative_targets[state.coordinate]) {
             pl_x86_instruction jump;
             if (pl_x86_frontend_decode(
@@ -2100,8 +2319,10 @@ static int relation_proves_equal(
             dispatch_relation_state source = state;
             source.coordinate = speculative_jump;
             if (!relation_inverse(
+                    elf, frontend, functions, functions_count, tables, table_count, provisional,
                     &jump, &state.left, slot, &source.left)
                     || !relation_inverse(
+                        elf, frontend, functions, functions_count, tables, table_count, provisional,
                         &jump, &state.right, slot, &source.right)
                     || !relation_enqueue(
                         states, seen, queue, extent, &queued, source))
@@ -2119,8 +2340,10 @@ static int relation_proves_equal(
             dispatch_relation_state source = state;
             source.coordinate = predecessor;
             if (!relation_inverse(
+                    elf, frontend, functions, functions_count, tables, table_count, provisional,
                     &instruction, &state.left, slot, &source.left)
                     || !relation_inverse(
+                        elf, frontend, functions, functions_count, tables, table_count, provisional,
                         &instruction, &state.right, slot, &source.right))
                 return 0;
             if (!relation_enqueue(
@@ -2147,6 +2370,7 @@ static int cfg_dispatch_rows(
     const pl_elf_image *elf,
     const pl_elf_section *table_section,
     const pl_x86_frontend *frontend,
+    const function_extent *functions, pl_u32 functions_count,
     pl_u64 function_start, pl_u64 function_limit,
     const pl_u64 *function_entries, pl_u32 function_count,
     const pl_x86_table *known_tables, pl_u32 known_table_count,
@@ -2167,7 +2391,7 @@ static int cfg_dispatch_rows(
             || index_register.class_id != PL_X86_REGISTER_GPR
             || index_register.index >= 16u)
         return 0;
-    int have_slot = dispatch_index_slot(
+    (void)dispatch_index_slot(
         frontend, function_start, dispatch_start,
         index_register, &slot, &reload);
     pl_u64 extent64 = function_limit - function_start;
@@ -2180,6 +2404,7 @@ static int cfg_dispatch_rows(
         workspace = local.bytes;
         workspace_bytes = sizeof local.bytes;
     }
+    if ((uintptr_t)workspace & 7u) return 0;
     (void)workspace_bytes;
     pl_u32 extent = (pl_u32)extent64;
     pl_u64 offset = extent;
@@ -2192,12 +2417,14 @@ static int cfg_dispatch_rows(
     offset += (pl_u64)extent * sizeof *cursor;
     pl_u32 *predecessors = (pl_u32 *)(void *)(workspace + offset);
     offset += (pl_u64)extent * 2u * sizeof *predecessors;
+    offset = (offset + 7u) & ~7ull;
     pl_u64 *visited = (pl_u64 *)(void *)(workspace + offset);
     offset += (pl_u64)extent * 2u * sizeof *visited;
     pl_u64 *table_base = (pl_u64 *)(void *)(workspace + offset);
     offset += (pl_u64)extent * sizeof *table_base;
     pl_u8 *speculative_targets = workspace + offset;
     offset += extent;
+    offset = (offset + 7u) & ~7ull;
     dispatch_slice_item *queue =
         (dispatch_slice_item *)(void *)(workspace + offset);
     pl_u32 queue_capacity = extent * 16u;
@@ -2383,14 +2610,16 @@ static int cfg_dispatch_rows(
     }
 
     pl_u32 queued = 0u;
-    pl_u8 seed_bits = have_slot
-        ? width_code(slot.bits) : width_code(index_register.bits);
-    pl_u8 seed_value = have_slot
-        ? DISPATCH_SLICE_SLOT : index_register.index;
+    /* Start at the consumer, not at an earlier reload. A later guard may
+     * bound that register after the spill was restored, including through a
+     * different register proved equal at the guard. Substitution reaches the
+     * slot only if that guard has not already discharged the live value. */
+    pl_u8 seed_bits = width_code(index_register.bits);
+    pl_u8 seed_value = index_register.index;
     if (seed_bits == 0xffu
             || !slice_enqueue(
                 queue, queue_capacity, &queued, visited,
-                (pl_u32)(reload - function_start),
+                (pl_u32)(dispatch_start - function_start),
                 seed_value, seed_bits))
         return 0;
     pl_u32 maximum = 0u;
@@ -2477,10 +2706,12 @@ static int cfg_dispatch_rows(
                 };
                 if (branch_bits != 0xffu)
                     same_branch_value = relation_proves_equal(
-                        frontend, function_start,
+                        elf, frontend, functions, functions_count, function_start,
                         function_entries, function_count,
                         predecessor_offsets, predecessors,
                         starts,
+                        known_tables, known_table_count, table_base,
+                        provisional,
                         speculative_targets,
                         (pl_u32)(speculative_consumer - function_start),
                         item.value == DISPATCH_SLICE_SLOT
@@ -2531,6 +2762,8 @@ static int cfg_dispatch_rows(
 static int shared_base_consumer(const pl_x86_frontend *frontend,
                                 const pl_elf_image *elf,
                                 const pl_elf_section *table_section,
+                                const function_extent *functions,
+                                pl_u32 functions_count,
                                 pl_u64 function_start,
                                 pl_u64 function_limit,
                                 const pl_u64 *function_entries,
@@ -2663,6 +2896,7 @@ static int shared_base_consumer(const pl_x86_frontend *frontend,
                     bounded_index, &bounded_rows)
                 && (!proof_pass || !cfg_dispatch_rows(
                     elf, table_section, frontend,
+                    functions, functions_count,
                     function_start, function_limit,
                     function_entries, function_count,
                     known_tables, known_table_count,
@@ -2716,12 +2950,6 @@ static int shared_base_consumer(const pl_x86_frontend *frontend,
  *
  * Requiring the complete adjacent slice prevents an arbitrary PC32 datum from
  * being promoted to a control entry. */
-typedef struct {
-    pl_u64 start;
-    pl_u64 end;
-    pl_u64 maximum_end;
-} function_extent;
-
 int pl_x86_table_function_index_measure(
     const pl_elf_image *elf, pl_u32 *symbol_rows, pl_u64 *maximum_extent)
 {
@@ -2950,6 +3178,7 @@ static int shared_base_dispatch(const pl_elf_image *elf,
 
         if (shared_base_consumer(
                 &frontend, elf, table_section,
+                function_index, function_index_count,
                 function_start, function_limit,
                 function_entries, function_count,
                 known_tables, known_table_count, proof_pass,
@@ -3005,6 +3234,7 @@ static int shared_base_dispatch(const pl_elf_image *elf,
         for (pl_u64 at = begin; at < lexical_limit;) {
             if (shared_base_consumer(
                     &frontend, elf, table_section,
+                    function_index, function_index_count,
                     function_start, function_limit,
                     function_entries, function_count,
                     known_tables, known_table_count, proof_pass,
@@ -3214,6 +3444,34 @@ int pl_x86_table_base_write(
     if (status) return status;
     status = sort_unique_tables(tables, scratch, populated, count);
     if (status) return status;
+    /* Discovery itself has dependencies: an earlier indirect join can expose
+     * the equality needed by a later consumer. Close the candidate population
+     * monotonically before pruning strict proofs. A table found only during
+     * pruning must not be discarded merely because it was absent on pass one.
+     * Every addition has a distinct relocated base, so capacity bounds this
+     * worklist without a convergence guess or a serialized intermediate. */
+    for (;;) {
+        pl_u32 known_count = *count;
+        status = visit_base_candidates(
+            elf, image, function_index, function_index_count,
+            function_entries, function_count,
+            tables, known_count, TABLE_PROOF_CANDIDATE,
+            scratch, scratch_capacity,
+            analysis_workspace, analysis_workspace_bytes,
+            &populated);
+        if (status) return status;
+        pl_u32 appended = known_count;
+        for (pl_u32 index = 0u; index < populated; ++index) {
+            pl_u32 prior = lower_bound(tables, known_count, scratch[index].base);
+            if (prior < known_count && tables[prior].base == scratch[index].base)
+                continue;
+            if (appended >= capacity) return PL_ERROR_ELF_RANGE;
+            tables[appended++] = scratch[index];
+        }
+        if (appended == known_count) break;
+        status = sort_unique_tables(tables, scratch, appended, count);
+        if (status) return status;
+    }
     /* Shared rejected loops may contain mutually dependent dispatch tables.
      * Discover their algebraic candidates first, then remove every candidate
      * whose complete guard proof fails. Repeat after each removal so a table

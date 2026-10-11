@@ -565,11 +565,11 @@ int main(int argc, char **argv)
     pl_u8 *bytes = 0;
     pl_u64 extent = 0u;
     if (!load(argv[1], &bytes, &extent)) return 2;
-    pl_elf_image elf;
-    pl_x86_entry_population entry_measure;
-    pl_x86_entry_population entry_written;
+    pl_elf_image elf = { 0 };
+    pl_x86_entry_population entry_measure = { 0 };
+    pl_x86_entry_population entry_written = { 0 };
     pl_x86_map maps[MAP_CAPACITY];
-    pl_x86_image image;
+    pl_x86_image image = { 0 };
     pl_u32 map_count = 0u;
     int status = pl_elf_open(bytes, extent, &elf);
     if (!status) status = pl_x86_elf_code_map_count(&elf, &map_count);
@@ -626,6 +626,11 @@ int main(int argc, char **argv)
             table_scratch, entry_measure.table_base_candidate_count,
             analysis, analysis_bytes,
             &entry_written);
+    pl_x86_native_population population = { 0 };
+    pl_u32 *live_outputs = 0;
+    pl_u8 *future_workspace = 0;
+    pl_u64 future_workspace_bytes = 0u;
+    pl_x86_native_future future = { 0 };
     if (!status && list_tables) {
         pl_u32 closed = 0u, closed_rows = 0u;
         for (pl_u32 index = 0u; index < entry_written.table_base_count;
@@ -644,14 +649,9 @@ int main(int argc, char **argv)
                    (unsigned long long)tables[index].consumer,
                    tables[index].rows, tables[index].index_register,
                    tables[index].domain_closed);
-        return 0;
+        goto cleanup;
     }
-    pl_x86_native_population population;
     pl_u32 native_code_grid_count = entry_written.code_grid_count;
-    pl_u32 *live_outputs = 0;
-    pl_u8 *future_workspace = 0;
-    pl_u64 future_workspace_bytes = 0u;
-    pl_x86_native_future future = { 0 };
     if (!status)
         status = pl_x86_native_analyze(
             &image, &elf, entries, entry_roles, entry_written.primary_count,
@@ -922,6 +922,7 @@ int main(int argc, char **argv)
                     &population.normalization_escape_sample[sample], 0);
         }
     }
+cleanup:
     free(future_workspace);
     free(live_outputs);
     free(workspace);

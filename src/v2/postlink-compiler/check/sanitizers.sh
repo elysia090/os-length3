@@ -6,7 +6,7 @@ case "$mode" in
   address,undefined) checks=(select-x86-check selector-reentrancy-check selection-policy-check
     compiler-boundaries-check
     physical-check block-observation-check slice-observation-check
-    shift-width-check native-closure-check) ;;
+    shift-width-check native-closure-check table-call-alias-check) ;;
   thread) checks=(selector-reentrancy-check) ;;
   *) printf 'unsupported sanitizer mode: %s\n' "$mode" >&2; exit 2 ;;
 esac

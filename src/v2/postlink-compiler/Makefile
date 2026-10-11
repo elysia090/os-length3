@@ -907,6 +907,39 @@ dispatch-alias-check: $(PROGRAM)
 	set +e; "$$temporary/output"; output_status=$$?; set -e; \
 	test $$output_status -eq 42
 
+.PHONY: table-call-alias-check
+table-call-alias-check: $(PROGRAM) $(BUILD)/native-closure
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none \
+		check/table-call-alias.S -o "$$temporary/input"; \
+	$(BUILD)/native-closure "$$temporary/input" --list-tables \
+		> "$$temporary/tables"; cat "$$temporary/tables"; \
+	grep -Eq '^tables=2 targets=7$$' "$$temporary/tables"; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify "$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/input"; source_status=$$?; \
+	"$$temporary/output"; output_status=$$?; set -e; \
+	printf 'table-call-alias: source=%s output=%s\n' "$$source_status" "$$output_status"; \
+	test $$source_status -eq 42; test $$output_status -eq 42; \
+	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none -DCLOBBER_ALIAS \
+		check/table-call-alias.S -o "$$temporary/broken"; \
+	$(BUILD)/native-closure "$$temporary/broken" --list-tables \
+		> "$$temporary/broken-tables"; cat "$$temporary/broken-tables"; \
+	grep -Eq '^tables=1 targets=2$$' "$$temporary/broken-tables"; \
+	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none -DESCAPED_SPILL \
+		check/table-call-alias.S -o "$$temporary/escaped"; \
+	$(BUILD)/native-closure "$$temporary/escaped" --list-tables \
+		> "$$temporary/escaped-tables"; cat "$$temporary/escaped-tables"; \
+	grep -Eq '^tables=1 targets=2$$' "$$temporary/escaped-tables"; \
+	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none -DMID_INSTRUCTION_CLOBBER \
+		check/table-call-alias.S -o "$$temporary/interior"; \
+	$(BUILD)/native-closure "$$temporary/interior" --list-tables \
+		> "$$temporary/interior-tables"; cat "$$temporary/interior-tables"; \
+	grep -Eq '^tables=1 targets=2$$' "$$temporary/interior-tables"
+
+check: table-call-alias-check
+
 profile-extension-check: $(PROGRAM)
 	@set -e; temporary=$$(mktemp -d); \
 	trap 'rm -rf "$$temporary"' EXIT; \

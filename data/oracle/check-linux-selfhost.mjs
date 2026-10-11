@@ -13,7 +13,14 @@ import {seedImage} from './seed-image.mjs';
 const repo=await realpath(fileURLToPath(new URL('../..',import.meta.url)));
 const [qemuArg,imgArg,sourceArg,workArg,...extra]=process.argv.slice(2);
 const observations=extra.includes('--observations'),rescue=extra.includes('--rescue-root'),kernel=extra.includes('--kernel'),initProfile=extra.includes('--init-profile'),candidate=extra.includes('--candidate-root'),publication=extra.includes('--publication');
-if(!workArg||new Set(extra).size!==extra.length||extra.some(x=>!['--publication','--candidate-root','--init-profile','--kernel','--rescue-root','--observations'].includes(x))||candidate&&!publication||initProfile&&!candidate||kernel&&!initProfile||(rescue||observations)&&extra.length!==1)
+const publicationOnly=extra.includes('--publication-only');
+const guestCheckOption=extra.find(x=>x.startsWith('--guest-check='))?.slice(14);
+const guestCheck=guestCheckOption?await realpath(guestCheckOption):null;
+if(guestCheck&&(!guestCheck.startsWith(path.join(repo,'data','oracle')+path.sep)||extra.length!==1))throw new Error('one checked-in custom oracle gate');
+const kernelInput=extra.find(x=>x.startsWith('--kernel-input='))?.slice(15),kernelPin=extra.find(x=>x.startsWith('--kernel-input-sha256='))?.slice(22);
+if(!workArg||new Set(extra).size!==extra.length||extra.some(x=>!['--publication','--publication-only','--candidate-root','--init-profile','--kernel','--rescue-root','--observations'].includes(x)&&!x.startsWith('--guest-check=')&&!x.startsWith('--kernel-input=')&&!x.startsWith('--kernel-input-sha256='))||candidate&&!publication||publicationOnly&&!publication||initProfile&&!candidate||kernel&&!initProfile||(rescue||observations)&&extra.length!==1
+    ||['--kernel-input=','--kernel-input-sha256='].some(prefix=>extra.filter(x=>x.startsWith(prefix)).length>1)
+    ||!!kernelInput!==!!kernelPin||kernelInput&&(!initProfile||kernel||!/^[a-f0-9]{64}$/.test(kernelPin)))
   throw new Error('QEMU QEMU-IMG SOURCE-TAR NEW-WORK-DIRECTORY [--publication [--candidate-root [--init-profile [--kernel]]]] | --rescue-root | --observations');
 const work=path.resolve(workArg),temp=path.join(repo,'temp')+path.sep;
 if(!work.startsWith(temp)||work===path.join(repo,'temp'))throw new Error('fresh oracle workspace below repository temp');
@@ -24,7 +31,11 @@ const upstream=path.join(repo,'data/upstream/bootstrap'),image=path.join(upstrea
 async function digest(file,algorithm){const h=createHash(algorithm);for await(const bytes of createReadStream(file))h.update(bytes);return h.digest('hex');}
 if(await digest(image,'sha256')!==lock.image.sha256
     ||await digest(path.join(upstream,lock.qemu.file),'sha512')!==lock.qemu.sha512)throw new Error('pinned oracle input digest');
-function run(program,args){const r=spawnSync(program,args,{windowsHide:true,encoding:'utf8'});
+function run(program,args){
+  // The Windows archive reader accepts drive-letter paths literally. GNU tar
+  // found earlier on PATH can instead parse C: as a remote archive host.
+  if(program==='tar'&&process.platform==='win32')program=path.join(process.env.SystemRoot??'C:/Windows','System32','tar.exe');
+  const r=spawnSync(program,args,{windowsHide:true,encoding:'utf8'});
   if(r.error||r.status!==0)throw new Error(`${program}: ${r.error?.message??r.stderr}`);return r.stdout;}
 const gpg=process.platform==='win32'?'C:/Program Files/GnuPG/bin/gpg.exe':'gpg';
 const gnupg=path.join(work,'gnupg');await mkdir(gnupg);
@@ -73,6 +84,10 @@ if(kernel){const lockText=await readFile(path.join(repo,'data/sources.env'),'utf
   if(await digest(file,'sha256')!==sha)throw new Error('kernel source digest');kernelSourceBytes=(await stat(file)).size;
   sourceOptions.push('-drive',`file=${file.replaceAll('\\','/')},format=raw,if=virtio,readonly=on`);
 }
+let kernelInputBytes=0;
+if(kernelInput){const file=await realpath(kernelInput);if(await digest(file,'sha256')!==kernelPin)throw new Error('explicit accepted kernel checkpoint identity');
+  kernelInputBytes=(await stat(file)).size;if(kernelInputBytes<4096||kernelInputBytes>16777216)throw new Error('bounded accepted kernel checkpoint');
+  sourceOptions.push('-drive',`file=${file.replaceAll('\\','/')},format=raw,if=virtio,readonly=on`);}
 const packageArchive=path.join(work,'packages.tar');
 run('tar',['--format=ustar','-cf',packageArchive,'-C',path.join(upstream,'packages'),...packages.keys()]);
 const transportLog=createWriteStream(path.join(work,'transport.log'),{flags:'wx'});
@@ -85,18 +100,22 @@ tar -xf /dev/vdb -C /build/source
 tar -xf /dev/vdc -C /build/bootstrap/packages
 cd /build/source
 QM_BOOTSTRAP_WORK=/build/bootstrap sh data/bootstrap/install-tools.sh install
-make -j4 -C src/v2/support all
+${guestCheck?`make -j4 -C src/v2/postlink-compiler all
+sh ${path.relative(repo,guestCheck).replaceAll('\\','/')}`:publicationOnly?'make -j4 -C src/v2/postlink-compiler all':`make -j4 -C src/v2/support all
 make -j4 -C src/v2/x86 all vector-projection-check
 make -j4 -C src/v2/optimized-x86 all
 make -j4 -C src/v2/postlink-compiler all check
+bash src/v2/postlink-compiler/check/sanitizers.sh
 make -j4 -C src/v2/wasm-compiler all packed-binary-check packed-shift-check vector-unpack-check vector-select-check vector-widen-check masked-store-check profile-additions-check compensated-check angle-check x87-control-check x87-environment-check float-arithmetic-check float-round-check float-sqrt-check float-compare-check scalar-vector-transfer-check
 make -j4 -C src/v2/x86 crc32-check
 make -j4 -C src/v2/vm all check
-bash src/v2/vm/check/sanitizers.sh
+bash src/v2/vm/check/sanitizers.sh`}
 export LENGTH3_KERNEL_SOURCE_BYTES=${kernelSourceBytes}
+export LENGTH3_KERNEL_INPUT_BYTES=${kernelInputBytes}
+export LENGTH3_KERNEL_INPUT_SHA256=${kernelPin??''}
 ${publication?`sh data/oracle/check-userland-publication.sh ${candidate?'--candidate-root':''} ${initProfile?'--init-profile':''} ${kernel?'--kernel':''}`:''}
 ${rescue?'sh data/oracle/prepare-rescue-root.sh':''}
-bash src/v2/wasm-compiler/check/sanitizers.sh
+${publicationOnly||guestCheck?'':'bash src/v2/wasm-compiler/check/sanitizers.sh'}
 ${observations?`mkdir -p /run/observations
 mkdir /run/observations/paired
 make -C src/v2/wasm-compiler build/paired-exchange-check
@@ -146,7 +165,7 @@ const args=['-L',path.join(path.dirname(qemu),'share'),'-machine','q35','-accel'
 const child=spawn(qemu,args,{windowsHide:true,stdio:['ignore','pipe','pipe']});
 let tail='',outcome,bytes=0;const began=performance.now();
 let receiptName=null,receiptHash=null,receiptLines='',partial='',observationReceipt=null;const receipts=[],candidateReceipts=new Map();
-function receiveReceipts(chunk){if(!publication&&!rescue&&!observations)return;partial+=chunk.toString();let end;
+function receiveReceipts(chunk){if(!publication&&!rescue&&!observations&&!guestCheck)return;partial+=chunk.toString();let end;
   while((end=partial.indexOf('\n'))>=0){const line=partial.slice(0,end).replace(/\r$/, '');partial=partial.slice(end+1);
     const observation=/^oracle-observations paired\.tar ([0-9]+) ([a-f0-9]{64})$/.exec(line);
     if(observation){if(!observations||observationReceipt)throw new Error('one observation archive owner');
@@ -154,7 +173,7 @@ function receiveReceipts(chunk){if(!publication&&!rescue&&!observations)return;p
     const object=/^oracle-candidate (kernel|linux\.config|initramfs|system\.squashfs) ([0-9]+) ([a-f0-9]{64})$/.exec(line);
     if(object){if((!candidate&&!rescue)||candidateReceipts.has(object[1]))throw new Error('candidate role ownership');
       candidateReceipts.set(object[1],{bytes:Number(object[2]),sha256:object[3]});continue;}
-    const begin=/^oracle-elf-begin (busybox-input|busybox-optimized|tar-input|tar-optimized) ([a-f0-9]{64})$/.exec(line);
+    const begin=/^oracle-elf-begin (busybox-input|busybox-optimized|tar-input|tar-optimized|su-input|su-optimized|table-call-input|table-call-broken) ([a-f0-9]{64})$/.exec(line);
     if(begin){if(receiptName)throw new Error('nested ELF receipt');receiptName=begin[1];receiptHash=begin[2];receiptLines='';continue;}
     if(line==='oracle-elf-end'){
       if(!receiptName)throw new Error('unowned ELF receipt');
@@ -187,7 +206,7 @@ if(outcome===null&&observations){try{
   if(types.length!==names.length||types.some(line=>line[0]!=='-'&&line[0]!=='d'))throw new Error('observation archive regular entries only');
   run('tar',['-xf',archive,'-C',directory]);
 }catch(e){outcome=e.message;}}
-if(outcome===null&&(candidate||rescue)){try{for(const name of rescue?['system.squashfs']:kernel?['kernel','linux.config','initramfs','system.squashfs']:['initramfs','system.squashfs']){
+if(outcome===null&&(candidate||rescue)){try{for(const name of rescue?['system.squashfs']:kernel?['kernel','linux.config','initramfs','system.squashfs']:kernelInput?['kernel','initramfs','system.squashfs']:['initramfs','system.squashfs']){
   const role=candidateReceipts.get(name),file=path.join(work,'candidate-files',name);
   if(!role||!Number.isSafeInteger(role.bytes)||role.bytes<1||role.bytes>128*1024*1024||(await stat(file)).size!==role.bytes||await digest(file,'sha256')!==role.sha256)throw new Error('candidate readback identity');
   candidateOutput[name]=role;
@@ -195,6 +214,8 @@ if(outcome===null&&(candidate||rescue)){try{for(const name of rescue?['system.sq
 console.log(JSON.stringify({format:'isolated-linux-c-oracle-v1',status:outcome===null?'pass':'fail',reason:outcome,
   imageSha256:lock.image.sha256,sourceSha256:sourceHash,accelerator:'WHPX',ssh:'none',network:'explicit loopback seed only; source/APKs are read-only block inputs; no outside routing',
   elapsedMs:performance.now()-began,logBytes:bytes,work,candidateOutput,
+  cCoreTests:guestCheck?'custom-checked-in-gate':publicationOnly?'not-run-publication-only':'full-C-and-sanitizers',
+  ...(guestCheck?{guestCheck:path.relative(repo,guestCheck).replaceAll('\\','/')}:{ }),
   ...(observations?{observations:path.join(work,'observations','paired'),observationReceipt,
     observationScope:'native paired-exchange CPU/fault/RAM and current native-C emission; NOT browser acceptance'}:{}),linuxBrowserBoot:'not-tested'},null,2));
 if(outcome!==null)process.exitCode=1;

@@ -29,7 +29,20 @@ int main(int argc,char **argv)
                 (unsigned long long)r.rax,(unsigned long long)r.rip,(unsigned long long)r.rdi,(unsigned long long)r.rsi,(unsigned long long)r.rdx,(unsigned long long)r.eflags,
                 (unsigned long)ptrace(PTRACE_PEEKTEXT,child,(void *)r.rip,0));
             if(!stepping&&r.orig_rax==157u&&r.rdi==16u){if(prctl_entry)stepping=1;else prctl_entry=1;}
-        }else if(s!=SIGTRAP)signal=s;
+        }else if(s!=SIGTRAP){
+            if(s==SIGSEGV||s==SIGBUS||s==SIGILL){
+                struct user_regs_struct r;siginfo_t info;
+                if(ptrace(PTRACE_GETREGS,child,0,&r)<0||ptrace(PTRACE_GETSIGINFO,child,0,&info)<0)return 2;
+                printf("oracle-trace fault signal=%d address=%p rip=%llx rsp=%llx rbp=%llx rdi=%llx rsi=%llx rdx=%llx flags=%llx code=%lx\n",
+                    s,info.si_addr,(unsigned long long)r.rip,(unsigned long long)r.rsp,(unsigned long long)r.rbp,
+                    (unsigned long long)r.rdi,(unsigned long long)r.rsi,(unsigned long long)r.rdx,(unsigned long long)r.eflags,
+                    (unsigned long)ptrace(PTRACE_PEEKTEXT,child,(void *)r.rip,0));
+                for(unsigned i=0;i<16;++i){errno=0;long word=ptrace(PTRACE_PEEKDATA,child,(void *)(r.rsp+8u*i),0);
+                    if(errno)break;
+                    printf("oracle-trace stack[%u]=%lx\n",i,(unsigned long)word);}
+            }
+            signal=s;
+        }
     }
     kill(child,SIGKILL);waitpid(child,&status,0);fprintf(stderr,"oracle-trace bounded stops exhausted\n");return 2;
 }
