@@ -363,7 +363,7 @@ check: all $(BUILD)/resource-check $(BUILD)/memory-check $(BUILD)/page-index-che
 	$(BUILD)/interrupt-check
 	$(BUILD)/uart-check
 	$(BUILD)/console-check
-	@! grep -REn '#include <(x86|optimized-x86|postlink|wasm-compiler)/|Pyodide|Python|STEP' include core
+	@grep -REn '#include <(x86|optimized-x86|postlink|wasm-compiler)/|Pyodide|Python|STEP' include core; status=$$?; test "$$status" -eq 1
 
 clean:
 	rm -rf $(BUILD)

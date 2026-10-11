@@ -25,6 +25,12 @@ static void compare_calendar(pl_u64 seconds, unsigned mode)
     vm_rtc r; open_rtc(&r,seconds);
     write_register(&r,0u,11u,mode);
     time_t input=(time_t)seconds; const struct tm *converted=gmtime(&input);
+    /* Windows libc ends before year9999. Keep the complete maximum-epoch
+     * check with the independently known UTC boundary, not a required skip.
+     * 253402300799 = 9999-12-31T23:59:59Z, Friday, day364 of a common year. */
+    const struct tm last={.tm_sec=59,.tm_min=59,.tm_hour=23,.tm_mday=31,
+        .tm_mon=11,.tm_year=8099,.tm_wday=5,.tm_yday=364,.tm_isdst=0};
+    if(!converted&&seconds==VM_RTC_MAX_SECONDS)converted=&last;
     if (!converted) {
         fprintf(stderr,"rtc: libc calendar cannot represent %llu seconds\n",(unsigned long long)seconds);
         ++failures; return;
@@ -191,6 +197,6 @@ int main(int argc, char **argv)
     EXPECT(r.bytes[7]==day && read_register(&r,~0ull,7u)==day);
     vm_rtc_reset(&r); value=0u; before=r;
     EXPECT(vm_rtc_transfer(&r,0u,0x71u,0u,&value)==-1 && !memcmp(&r,&before,sizeof r));
-    if (!failures) printf("C RTC: %u independent libc calendars/inverses, %u invalid dates, %u brute alarm matches; SET/UIP/period/read-clear/refusal checks green (not Linux boot)\n",calendars,invalid_dates,alarms);
+    if (!failures) printf("C RTC: %u independent UTC calendars/inverses (libc and fixed maximum epoch), %u invalid dates, %u brute alarm matches; SET/UIP/period/read-clear/refusal checks green (not Linux boot)\n",calendars,invalid_dates,alarms);
     return failures ? 1 : 0;
 }

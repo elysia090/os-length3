@@ -23,6 +23,16 @@ Cold shell3s remains a target, not an achieved claim.
 
 ## Current authoritative state
 
+Actual production browser generation4 with the direct retained-page write
+frontier reaches normal PID1/console and cold-restores the saved ELF hash,
+non-root UID65534 and permission-file content, assertion0. The native VM
+check and production/UBSan-trap source/RTC boundaries pass. The observed but
+unretained page collision benchmark is40.8291 ->0.4002ms, not a whole-Linux
+speed claim; provider adds1264 wire bytes and128KiB derived private metadata.
+See the current userland evidence below. Initial service readiness, default
+TLS and optimize-before-package publication of the repaired shadow binary
+remain red. No quota, deadline, clock or frozen native release is changed.
+
 The2026-10-11 full independent C/sanitizer gate passes with source digest
 `db4d8267f3578ed6e67efbaafd9fc67e069746f5b3ae0d0d77809c7f7fd02bf6`.
 The gate now includes postlink ASan/UBSan as well as VM/Wasm checks. New red

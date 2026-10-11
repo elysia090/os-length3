@@ -163,6 +163,54 @@ assertion exits0. Receipts and the visible cold result are retained in
 and storage recovery, not optimize-before-package republication. Initial
 service readiness and default TLS negotiation remain red.
 
+### Direct retained-page write frontier
+
+The production revision owner already rejects never-observed physical pages.
+The remaining collision is an observed page with no currently retained code
+row: the low8 page bits can still select banks holding unrelated live rows.
+The C source owner now derives one bit per possible32-bit physical4KiB page
+from its sole live rows. A negative bit rejects that bank search; a positive
+bit still requires the existing exact extent checks. The serialized unpublished
+reservation always bypasses this rejection, including a noncontiguous tail.
+
+The derived bitmap uses128KiB, no source payload copy or new execution format.
+Every8192 successful publications rebuilds it and the old bank candidates from
+the live rows, removing historical positives with bounded amortized work.
+Every observed-page write still advances its physical construction revision.
+No source/engine quotas, permission rules, clock policy or deadlines change.
+
+`benchmark-source-writes.mjs` retains8192 actual C-admitted source rows and
+performs4096 C-MMU stores per sample into a separately observed, unretained
+page deliberately256 pages away. Seven alternating rounds give median
+40.8291ms before and0.4002ms after, ratio0.00980183. The stored value, all8192
+source admissions and all28800 revision advances remain exact. This is a
+collision-specific write benchmark, NOT a whole-Linux or cold-boot speedup.
+
+The native VM `make check` passes, including131072 all-bank invalidation
+comparisons, pending/cross-page/last-page/overflow extents and two full
+publication epochs. The Windows RTC test keeps its year9999 boundary by an
+independent fixed UTC expectation where host libc cannot represent it; no
+required test is skipped and product RTC behavior is unchanged. The final
+responsibility-boundary grep now also rejects tool errors, rather than negating
+any failure or relying on a standalone shell `!` on Windows.
+Production and UBSan-trapping Wasm providers pass source cohort, admission
+and RTC boundary models. This is not a new full independent Linux ASan receipt.
+
+Provider144710 bytes, SHA256
+`f5289167dd4c656d92f4921e07150c60e488193351e956320f133a27d83ab279`:
+1264 additional wire bytes, in exchange for the128KiB derived private bitmap.
+Manifest `20c3af3157564fab77ce44e5e327142ac95bfed33e35f2cf0d5f2fa2ef418cec`
+in `artifact/browser-page-frontier-1011` has95647287 delivery bytes including
+directory, with unchanged kernel/init/root/compiler. It is unpublished.
+
+Actual browser generation4 starts the ordinary kernel/PID1 and console,
+recovers the same volume UUID and verifies the retained candidate ELF hash,
+UID65534 and permission-file content: `frontier-cold-restore-exit:0`.
+Receipt/screenshot: `temp/browser-page-frontier-cold-1011.{json,jpg}`.
+Initial service readiness still times out. Different restoration work and
+concurrent tests prevent a paired Linux speed claim. Default TLS and candidate
+optimize-before-package republication remain unresolved.
+
 ### Earlier release
 
 Release `c588c7920ecec616ae9311ed009353b321007b95bc63814242cdfd1e3532cdd9`
