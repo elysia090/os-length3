@@ -71,7 +71,8 @@ The optimized `su` is179896 bytes
 Encoding recovery is not a closed control-domain proof: its eight-row table
 remains `domain_closed=0` because an opaque callee can alias the spill.
 The already distributed browser root still contains the broken old `su`;
-these new bytes require a separate package publication and browser execution.
+these new bytes require a separate package publication. The candidate's
+actual browser execution and cold restoration pass below.
 
 The full independent C/sanitizer oracle subsequently passes with source
 digest `db4d8267f3578ed6e67efbaafd9fc67e069746f5b3ae0d0d77809c7f7fd02bf6`
@@ -84,6 +85,83 @@ One post-restart profile while testing packages reports cold41595.5ms,
 engine89846.9ms and execution241124.2ms,590746 compilations and582554 quota
 evictions in the unchanged8192-entry/4MiB module cache. These are one evolving
 execution profile, not a fixed benchmark or achievement of the3s target.
+
+### Exact body lifetime and production provider
+
+The module byte index and the construction directory previously had independent
+eviction lifetimes. A construction could retain a live instance after its
+exact byte index had been removed, so an identical emission compiled another
+instance. `check-code-owners.mjs` reproduces that failure with64 unrelated cold
+bodies. Coordinated ownership now preserves the retained instance, with one
+compilation of that body. Entry and byte pressure, all-alias removal, foreign
+handles, last-alias replacement and close are checked separately.
+
+The quotas remain8192 module entries/4MiB and16384 construction keys/4MiB.
+Unreferenced bodies are preferred eviction victims. When the hard quota wins,
+every dependent construction key is removed with its body index. Already
+admitted C table placements remain subject to their own source lease; the host
+index does not admit code or mutate those handles. Exact whole-byte comparison
+remains required after every hash match. These quotas bound encoded witnesses,
+not engine-native code or immediate renderer RSS reclamation.
+
+The separately packaged production provider has no source/system profile
+exports:143446 bytes, SHA256
+`f9cb405c932a7ffaa9f5103e87c1eb5be2d75ca4ae0ea85c4c3a03b9dbd3ccb5`.
+The profiled provider is146587 bytes, a3141-byte difference, not a distribution
+compression or Linux speedup claim. Release manifest
+`0f1df54f4eb2a8af4606a5aa45579ae988ab7ec654a024fddafc2bd97137fc16`
+in `artifact/browser-production-vm-1011b` retains the same kernel, init,
+system root and compiler. Its total delivery including directory is95646023
+bytes. It is an unpublished verification projection, not a new signed native
+release or an installed-package repair.
+
+The actual production Worker reaches normal PID1/console and reports matching
+retained body counts in both owners. Its baseline boot formatted a fresh
+volume, whereas the updated boot restored it. Different checkpoints and boot
+work prevent a paired speedup claim. Auxiliary cold service readiness still
+times out under the unchanged deadline.
+
+The source-cohort/admission and RTC tests now use the current64-page private
+bootstrap envelope. Cohort demands check every C-selected bank/rank, including
+both32-bit halves of a full64-rank word. Page-table changes pass through the
+real C store observer, rather than silently modifying retained walk evidence
+with a host DataView. The production provider passes233 emissions/42 complete
+CPU models/47 demand checks,536 admission emissions/512 cold and512 hot CPU
+comparisons, and4479 RTC comparisons with168 faults/1426 waits/1907 refusals.
+These finite boundary gates are distinct from Linux boot.
+
+Changing `WASM_PROFILE` at the same output path previously left Make's old
+provider untouched. A timestamp-only command stamp also failed a rapid switch
+on Windows. The build now compares the exact compiler/flags command, retaining
+the output only for an unchanged command. `check-vm-wasm-rebuild.mjs` passes
+real0/1/0 builds, exact diagnostic export removal, deterministic production
+bytes and two unchanged-command mtime checks. No compiler/provider filename
+change is required to apply new flags.
+
+### Repaired shadow execution and cold restoration
+
+The same production Worker imports the179896-byte candidate into the test-only
+directory `/run/workspace/browser-check/su-1011` through the guest UART,
+base64 and gzip programs. All91 input rows are acknowledged before completion.
+Guest restoration exits0 and its SHA256 matches the externally held
+`d8d362e886e64101bcd83d77887ee6dbb71fd7de610cfd30d20885d5b4e58995`.
+The candidate executes as existing `nobody`, UID/GID65534, and exits0.
+
+A root-owned600 file is actually read through that candidate: `cat` exits1,
+stdout is empty and stderr contains Permission denied. After chmod644 the
+same non-root read matches the expected content and exits0. The combined
+denial assertion is0. The installed `/usr/bin/su` is not overwritten.
+
+Guest sync, host flush and Worker termination complete before generation3
+starts the ordinary kernel/PID1 again. Linux journal recovery mounts the same
+ext4 UUID `855e59f3-c3f7-41c7-91f5-3792f9b2bd4a`. The stored candidate's hash,
+UID65534 and permission-file content all match; the complete restoration
+assertion exits0. Receipts and the visible cold result are retained in
+`temp/browser-repaired-su-1011.json`,
+`temp/browser-repaired-su-cold-1011.json` and
+`temp/browser-repaired-su-cold-1011.jpg`. This confirms candidate execution
+and storage recovery, not optimize-before-package republication. Initial
+service readiness and default TLS negotiation remain red.
 
 ### Earlier release
 

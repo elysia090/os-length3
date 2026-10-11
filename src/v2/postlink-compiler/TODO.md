@@ -338,6 +338,21 @@ separate; scoped/positive gates do not assert that it is solved.
    must not become closed domains. A branch into an instruction immediate is
    another required refusal. Rebuild final package bytes/DB/signatures before
    publishing this repair; do not patch an installed package-owned file.
+   The exact179896-byte candidate now passes real browser UID/GID65534,
+   actual600 denial/644 content read, and sync/flush/Worker destruction/
+   normal cold restore with externally held SHA256. The installed root is
+   still unchanged; package republication remains pending.
+
+   Module byte indexing and construction references now share one bounded
+   lifetime. Hard quota eviction removes every dependent key, while C source
+   leases remain execution authority. The64-cold-body red is green without
+   raising8192-entry/4MiB or16384-key/4MiB quotas. Production/cohort/admission/
+   RTC gates pass against the actual143446-byte no-profile provider. The
+   unpublished production verification artifact reaches normal console and
+   cold workspace recovery, but still fails initial auxiliary service readiness.
+   Same-path0/1/0 provider builds now track exact flags, including fast Windows
+   switches; unchanged commands do not recompile. Neither the ownership fix
+   nor different cold checkpoints establish a whole-Linux speedup.
    Keep native publication and human UI unchanged.
 
 ## Responsibility contracts

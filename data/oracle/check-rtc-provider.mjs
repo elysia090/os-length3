@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 const [vmFile,compilerFile]=process.argv.slice(2);
 if (!compilerFile) throw new Error('usage: check-rtc-provider.mjs VM.WASM COMPILER.WASM');
-const memory=new WebAssembly.Memory({initial:8}),cm=new WebAssembly.Memory({initial:16});
+const memory=new WebAssembly.Memory({initial:64}),cm=new WebAssembly.Memory({initial:64});
 const vm=(await WebAssembly.instantiate(await readFile(vmFile),{machine:{memory}})).instance.exports;
 const cc=(await WebAssembly.instantiate(await readFile(compilerFile),{machine:{memory:cm}})).instance.exports;
 const cold=Buffer.from(cm.buffer),cv=new DataView(cm.buffer),input=cc.compiler_arena_min();

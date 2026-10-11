@@ -84,11 +84,18 @@ export async function runMachine(reader,providerBytes,compilerBytes,readExtent,
     table:vm.vm_table,far_return:vm.vm_return,control:vm.vm_control,iret:vm.vm_iret,msr:vm.vm_msr,interrupt_flag:vm.vm_flag,
     software_interrupt:vm.vm_software_interrupt,system_transfer:vm.vm_system,floating_wait:vm.vm_floating_wait,checkpoint:vm.vm_checkpoint,descriptor:vm.vm_descriptor,far_transfer:vm.vm_transfer,
     io:vm.vm_io,time:vm.vm_time,debug:vm.vm_debug}};
-  // Construction references can retain two MiB of exact topologies. Keep
-  // their byte index in the same bounded lifetime, otherwise still-resident
-  // bodies get compiled again merely because their index was evicted first.
-  let engines = new CompiledModules(engineImports,{maximumEntries:8192,maximumBytes:4194304});
-  let prepared=new PreparedCode({maximumEntries:16384,maximumBytes:4194304});
+  // A retained construction shares the exact body owner's lifetime, not only
+  // its nominal byte quota. Prefer unreferenced victims; if the hard limit
+  // wins, discard every dependent construction key at that same boundary.
+  // C source leases/table placements remain the sole execution authority.
+  let engines,prepared;
+  function openCodeOwners(){
+    engines=new CompiledModules(engineImports,{maximumEntries:8192,maximumBytes:4194304,
+      onEvict:instance=>prepared.discardInstance(instance)});
+    prepared=new PreparedCode({maximumEntries:16384,maximumBytes:4194304,
+      retain:instance=>engines.retain(instance),release:instance=>engines.release(instance)});
+  }
+  openCodeOwners();
   let compilerOutput = cc.compiler_arena_min();
   let compilerReport = compilerOutput + 65536;
   // Compiler output/stack and VM metadata are outside all guest mappings.
@@ -233,7 +240,7 @@ export async function runMachine(reader,providerBytes,compilerBytes,readExtent,
     assert(output>=replacement.compiler_static_min()&&output+65536+80<=input,'replacement remains inside private construction reservation');
     cc=replacement;compilerOutput=output;compilerReport=output+65536;
     compilerOutputWitness=new CompilerOutput(cold,compilerOutput,65536,compilerReport,memory);
-    engines=new CompiledModules(engineImports,{maximumEntries:8192,maximumBytes:4194304});prepared=new PreparedCode({maximumEntries:16384,maximumBytes:4194304});
+    openCodeOwners();
     assert.equal(vm.vm_source_versions_start(versionOffset,versionCount,machineGeneration),0);
     assert.equal(rip(),oldRip);assert.equal(view.getBigUint64(base+1128,true),oldRetired);
     compilerReplacements.push({epoch:++compilerEpoch,entry:refusal.entry,bytes:bytes.length,retired});return true;

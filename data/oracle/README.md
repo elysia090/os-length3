@@ -1146,3 +1146,18 @@ Mandatory diagnostic decompression witnesses use one-source frontiers until
 their independent byte comparison; no kernel-coordinate compiler exception
 is introduced. Partial retirement can exhaust a cohort before its final
 memory operation: supply then fresh admission, never zero-budget replay.
+
+### Compiled body lifetime and build identity
+
+`check-code-owners.mjs` requires an exact source-retained body to survive64
+unrelated cold bodies, then checks entry/byte quota pressure, every dependent
+alias, foreign-handle refusal and release. It complements
+`check-compiled-modules.mjs` and `check-prepared-code.mjs`; it is not Linux
+execution or a renderer RSS bound.
+
+`check-vm-wasm-rebuild.mjs MAKE_EXECUTABLE WASM_CLANG` runs real0/1/0 profile
+builds at one output path and verifies imports, diagnostic exports and exact
+production bytes. Two unchanged-command builds must leave output mtime
+unchanged. Use the actual Make executable rather than a Windows cmd wrapper;
+its normal build-tool PATH must be present. Generated output stays in Windows
+`temp/`, outside the distribution.

@@ -6,6 +6,7 @@ WARN = -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion
 INCLUDES = -Iinclude -I../support/include -I../machine-abi/include -I../artifact/include
 BUILD ?= build
 WASM_OUTPUT ?= $(BUILD)/vm.wasm
+WASM_CONFIG = $(WASM_OUTPUT).config
 WASM_CC ?= clang
 WASM_PROFILE ?= 0
 WASM_FLAGS = --target=wasm32-unknown-unknown -O2 -ffreestanding -nostdlib \
@@ -77,7 +78,7 @@ ARTIFACT_PROVIDER_SOURCES = $(addprefix ../artifact/,$(ARTIFACT_INDEX_SOURCES)) 
 WASM_SOURCES = wasm/entry.c $(SOURCES) $(ARTIFACT_PROVIDER_SOURCES)
 OBJECTS = $(patsubst core/%.c,$(BUILD)/%.o,$(SOURCES))
 
-.PHONY: all check wasm clean
+.PHONY: all check wasm clean wasm-config-force
 .PHONY: mmio-check
 check: mmio-check network-check block-check
 .PHONY: block-check
@@ -179,7 +180,21 @@ $(WASM_OUTPUT): ../machine-abi/include/machine/module.h
 # The provider shares ordinary machine memory with generated functions. It has
 # no WASI, source-decoder or JavaScript instruction/byte callback imports.
 wasm: $(WASM_OUTPUT)
-$(WASM_OUTPUT): $(WASM_SOURCES) $(wildcard core/*.h) Makefile ../artifact/sources.mk \
+# Preserve the stamp time for an unchanged command. In particular a profile
+# switch must never reuse a provider built with the previous export set.
+# Compare content as well as timestamps: a fast switch can share the output's
+# timestamp on filesystems where make observes only whole seconds.
+WASM_COMMAND = $(WASM_CC) $(WASM_FLAGS) $(WARN) $(INCLUDES)
+ifneq ($(file <$(WASM_CONFIG)),$(WASM_COMMAND))
+$(WASM_OUTPUT): wasm-config-force
+endif
+wasm-config-force:
+$(WASM_CONFIG): wasm-config-force
+	@mkdir -p "$(dir $@)"
+	@previous=''; if test -r "$@"; then IFS= read -r previous < "$@"; fi; \
+	command='$(subst ','\'',$(WASM_COMMAND))'; \
+	if test "$$previous" != "$$command"; then printf '%s\n' "$$command" > "$@"; fi
+$(WASM_OUTPUT): $(WASM_CONFIG) $(WASM_SOURCES) $(wildcard core/*.h) Makefile ../artifact/sources.mk \
 	$(wildcard ../artifact/include/artifact/*.h ../support/include/support/*.h include/vm/*.h)
 
 $(WASM_OUTPUT): wasm/entry.c core/memory.c core/mmu.c core/boot.c core/supply.c include/vm/supply.h core/execution.c core/segments.c core/tables.c core/control.c core/registers.c core/msr.c include/vm/msr.h ../machine-abi/include/machine/msr.h core/exception.c include/vm/exception.h core/source.c include/vm/source.h core/memory-internal.h core/segments-internal.h \

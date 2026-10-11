@@ -17,15 +17,18 @@ function equal(left,right) {
   return true;
 }
 export class CompiledModules {
-  constructor(imports,{maximumEntries=64,maximumBytes=262144,maximumModuleBytes=65536}={}) {
+  constructor(imports,{maximumEntries=64,maximumBytes=262144,maximumModuleBytes=65536,onEvict}={}) {
     for(const value of [maximumEntries,maximumBytes,maximumModuleBytes])
       if(!Number.isSafeInteger(value)||value<=0)throw new RangeError('positive bounded module quota');
     if(maximumModuleBytes>65536)throw new RangeError('small emitted module quota');
+    if(onEvict!==undefined&&typeof onEvict!=='function')throw new TypeError('synchronous body release');
+    this.onEvict=onEvict;
     this.imports=Object.fromEntries(Object.entries(imports)
       .map(([module,values])=>[module,Object.freeze({...values})]));
     this.maximumEntries=maximumEntries;this.maximumBytes=maximumBytes;
     this.maximumModuleBytes=maximumModuleBytes;
-    this.entries=new Map();this.buckets=new Map();this.instances=new WeakMap();
+    this.entries=new Map();this.unreferenced=new Map();this.buckets=new Map();this.instances=new WeakMap();
+    this.referencedEntries=0;
     this.bytes=0;this.hits=0;this.compilations=0;this.quotaEvictions=0;
     this.validatedDemands=0;this.newestInstance=null;this.closed=false;
   }
@@ -37,8 +40,23 @@ export class CompiledModules {
   touch(entry) {
     if(this.newestInstance!==entry.instance) {
       this.entries.delete(entry);this.entries.set(entry,true);
+      if(!entry.references){this.unreferenced.delete(entry);this.unreferenced.set(entry,true);}
       this.newestInstance=entry.instance;
     }
+  }
+  retain(instance) {
+    if(this.closed)throw new Error('module owner closed');
+    const entry=this.instances.get(instance);
+    if(!entry||!this.entries.has(entry))return false;
+    if(!entry.references++){this.unreferenced.delete(entry);++this.referencedEntries;}
+    return true;
+  }
+  release(instance) {
+    if(this.closed)throw new Error('module owner closed');
+    const entry=this.instances.get(instance);
+    if(!entry||!entry.references)return false;
+    if(!--entry.references){this.unreferenced.set(entry,true);--this.referencedEntries;}
+    return true;
   }
   demand(instance) {
     if(this.closed)throw new Error('module owner closed');
@@ -66,25 +84,30 @@ export class CompiledModules {
     const module=new WebAssembly.Module(owned),instance=new WebAssembly.Instance(module,this.imports);
     if(this.closed)throw new Error('module owner closed during compilation');
     while(this.entries.size>=this.maximumEntries||this.bytes+owned.length>this.maximumBytes) {
-      const victim=this.entries.keys().next().value,bucket=this.buckets.get(victim.hash);
+      // Keep the exact byte index while a source directory retains its body.
+      // The hard quota still wins when every candidate is referenced; release
+      // all dependent source keys rather than leave an unindexed live body.
+      const victim=(this.unreferenced.size?this.unreferenced:this.entries).keys().next().value,bucket=this.buckets.get(victim.hash);
       this.entries.delete(victim);this.instances.delete(victim.instance);
+      this.unreferenced.delete(victim);if(victim.references)--this.referencedEntries;
       bucket.delete(victim);if(!bucket.size)this.buckets.delete(victim.hash);
       this.bytes-=victim.bytes.length;++this.quotaEvictions;
+      this.onEvict?.(victim.instance);
     }
-    const entry={bytes:owned,instance,hash};
+    const entry={bytes:owned,instance,hash,references:0};
     let bucket=this.buckets.get(hash);
     if(!bucket){bucket=new Set();this.buckets.set(hash,bucket);}
-    bucket.add(entry);this.entries.set(entry,true);this.instances.set(instance,entry);
+    bucket.add(entry);this.entries.set(entry,true);this.unreferenced.set(entry,true);this.instances.set(instance,entry);
     this.bytes+=owned.length;++this.compilations;this.newestInstance=instance;
     return instance;
   }
   stats() {
     return {compilations:this.compilations,hits:this.hits,entries:this.entries.size,
       quotaEvictions:this.quotaEvictions,validatedDemands:this.validatedDemands,
-      retainedModuleBytes:this.bytes,maximumEntries:this.maximumEntries,maximumBytes:this.maximumBytes};
+      retainedModuleBytes:this.bytes,referencedEntries:this.referencedEntries,maximumEntries:this.maximumEntries,maximumBytes:this.maximumBytes};
   }
   close() {
-    this.closed=true;this.entries.clear();this.buckets.clear();this.instances=new WeakMap();
-    this.bytes=0;this.imports=null;this.newestInstance=null;
+    this.closed=true;this.entries.clear();this.unreferenced.clear();this.buckets.clear();this.instances=new WeakMap();
+    this.bytes=0;this.referencedEntries=0;this.imports=null;this.newestInstance=null;this.onEvict=null;
   }
 }

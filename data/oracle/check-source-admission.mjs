@@ -4,22 +4,29 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 const [vmFile,compilerFile] = process.argv.slice(2);
 if (!compilerFile) throw new Error('usage: check-source-admission.mjs VM.WASM COMPILER.WASM');
-const memory = new WebAssembly.Memory({initial:8,maximum:16});
+const memory = new WebAssembly.Memory({initial:64,maximum:66});
 const provider = await WebAssembly.compile(await readFile(vmFile));
 assert.deepEqual(WebAssembly.Module.imports(provider),[{module:'machine',name:'memory',kind:'memory'}]);
-const sharedMemory = new WebAssembly.Memory({initial:8,maximum:16,shared:true});
+const sharedMemory = new WebAssembly.Memory({initial:64,maximum:66,shared:true});
 await assert.rejects(() => WebAssembly.instantiate(provider,{machine:{memory:sharedMemory}}),WebAssembly.LinkError);
 const vm = (await WebAssembly.instantiate(provider,{machine:{memory}})).exports;
-const coldMemory = new WebAssembly.Memory({initial:16});
+const coldMemory = new WebAssembly.Memory({initial:64});
 const cc = (await WebAssembly.instantiate(await readFile(compilerFile),{machine:{memory:coldMemory}})).instance.exports;
 const cold = new Uint8Array(coldMemory.buffer), report = new DataView(coldMemory.buffer);
 let data = new Uint8Array(memory.buffer), view = new DataView(memory.buffer);
 const directory = vm.vm_arena_min(), rows = directory + 1024, branches = directory + 2048, base = directory + 4096;
 const port = base + 2048, segments = base + 1408, codeView = base + 2112;
 const code = base + 24576, firstSlot = vm.vm_slot_min(), table = vm.__indirect_function_table;
+let memoryLive=false;
 table.grow(Math.max(0,firstSlot + vm.vm_source_capacity() - table.length));
 data.fill(0,directory);
-function put(at,value) { view.setBigUint64(at,BigInt(value),true); }
+function put(at,value) {
+  if(memoryLive&&(at===base+20480||at===base+20488)){
+    // Change page tables through the C physical-store observer, not an
+    // unannounced host edit behind its successful-walk certificates.
+    assert.equal(vm.vm_access(port,0x400000n+510n*4096n+BigInt(at-base-20480),8,2,BigInt(value)),0n);
+  }else view.setBigUint64(at,BigInt(value),true);
+}
 for (let i = 0; i < 6; ++i) {
   const row = directory + i * 32;
   put(row,i < 4 ? (i+1)*4096 : (i+4)*4096);
@@ -28,12 +35,14 @@ for (let i = 0; i < 6; ++i) {
 }
 put(base + 8192,0x2007); put(base + 12288,0x3007);
 put(base + 16384 + 16,0x4007); put(base + 20480,0x8007); put(base + 20488,0x9007);
+put(base+20480+510*8,0x4067);
 put(port,9); put(base + 384,0x400000); put(base + 392,3);
 put(base + 400,0x80010001); put(base + 408,0x1000); put(base + 416,32); put(base + 424,0xd00);
 put(base + 488,16); put(base + 504,24);
 view.setUint32(segments,2,true); view.setUint32(segments + 36,0xa09b,true);
 data[code] = 0x90;
 assert.equal(vm.vm_open(base,memory.buffer.byteLength-base,4096,directory,6,6,branches,9n),0);
+memoryLive=true;
 assert.equal(vm.vm_bind_state(base),0); assert.equal(vm.vm_bind_segments(segments),0);
 let emitted = 0;
 function query(limit = 1,entry = 0x400000n) { return vm.vm_source_query(port,entry,limit,codeView,rows); }
@@ -83,8 +92,7 @@ assert.equal(query(),0n);
 assert.equal(vm.vm_reserve(port,0x400000n,1,3),0n);
 assert.equal(vm.vm_commit(port,0x90n),0n);
 assert.equal(query(),1n); await publish();
-// Permission must be checked before a cache hit, even in this intentionally
-// hostile fixture with an unannounced supervisor PTE change.
+// Permission must be checked before a cache hit after an announced PTE store.
 const leaf = base + 20480, previous = view.getBigUint64(leaf,true);
 put(leaf,previous | (1n << 63n));
 data.fill(0xa5,codeView,codeView + 48); data.fill(0xa5,rows,rows + 24);
@@ -287,7 +295,7 @@ for(let rank=1;rank<=512;++rank) {
   const coldEntry=0x400000n+BigInt(rank);
   assert.equal(query(1,coldEntry),1n); await publish(coldEntry);
   observeExecution(coldEntry,3n); ++coldDemands;
-  assert.equal(query(),0n,'hot C source survives cold traffic at the unchanged 64-slot quota');
+  assert.equal(query(),0n,'hot C source survives distributed traffic at the unchanged banked quota');
   assert.equal(view.getUint32(rows+16,true),hotSlot);
   observeExecution(0x400000n,2n); ++hotDemands;
 }
