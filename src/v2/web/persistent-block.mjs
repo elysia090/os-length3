@@ -38,7 +38,7 @@ export class PersistentBlock {
   static async open({store,masterKey,volumeId,volumeSalt,bytes,create=false,expectedHead=null,onHead=()=>{}}){
     if(!store||!Number.isSafeInteger(bytes)||bytes<4096||bytes%4096||bytes/4096>maxPages)throw new TypeError('bounded persistent volume');
     const keys=await deriveVolumeStorageKeys(masterKey,volumeSalt,volumeId),aad=encodeVolumeRootAad({volumeId,volumeSalt});
-    const v=new PersistentBlock();Object.assign(v,{store,keys,aad,bytes,onHead,cache:new Map(),dirty:new Map(),revision:0n,root:null,failed:false});
+    const v=new PersistentBlock();Object.assign(v,{store,keys,aad,bytes,onHead,cache:new Map(),dirty:new Map(),revision:0n,root:null,failed:false,closed:false});
     const head=await store.read();if(expectedHead!==null&&!same(head,expectedHead))throw new Error('persistent head rollback or replacement');
     if(head===null){if(!create)throw new Error('persistent volume missing; explicit creation required');v.head=null;await v.publish(null);v.fresh=true;}
     else{if(create)throw new Error('existing volume cannot be formatted as new');
@@ -65,12 +65,13 @@ export class PersistentBlock {
   async saveNode(node,level){if(!node.size)return null;const raw=new Uint8Array(2+node.size*33);new DataView(raw.buffer).setUint16(0,node.size,true);let at=2;
     for(const [rank,key]of [...node].sort((a,b)=>a[0]-b[0])){raw[at]=rank;raw.set(unhex(key),at+1);at+=33;}return this.save(raw,'directory',level);}
   async leaf(page){let key=this.root;for(let level=2;level>=0;--level){const node=await this.node(key,level);key=node.get((page>>>(8*level))&255)??null;if(!key)return null;}return key;}
-  async page(page){if(this.failed)throw new Error('persistent volume failed');if(this.dirty.has(page))return this.dirty.get(page);
+  active(){if(this.failed)throw new Error('persistent volume failed');if(this.closed)throw new Error('persistent volume closed');}
+  async page(page){this.active();if(this.dirty.has(page))return this.dirty.get(page);
     if(this.cache.has(page)){const p=this.cache.get(page);this.cache.delete(page);this.cache.set(page,p);return p;}
     const key=await this.leaf(page),raw=key?await this.object(key,'page',page):zero.slice();if(raw.length!==4096)throw new Error('physical page extent');
     if(this.cache.size>=32){const rank=this.cache.keys().next().value;this.cache.get(rank).fill(0);this.cache.delete(rank);}this.cache.set(page,raw);return raw;}
   async read(offset,bytes){extent(offset,bytes,this.bytes);const out=new Uint8Array(bytes);for(let at=0;at<bytes;){const pos=offset+at,page=Math.floor(pos/4096),within=pos%4096,n=Math.min(bytes-at,4096-within);out.set((await this.page(page)).subarray(within,within+n),at);at+=n;}return out;}
-  async write(offset,input){extent(offset,input?.length,this.bytes);if(!(input instanceof Uint8Array))throw new TypeError('physical block bytes');
+  async write(offset,input){this.active();extent(offset,input?.length,this.bytes);if(!(input instanceof Uint8Array))throw new TypeError('physical block bytes');
     if(this.dirty.size>=256)await this.flush();for(let at=0;at<input.length;){const pos=offset+at,page=Math.floor(pos/4096),within=pos%4096,n=Math.min(input.length-at,4096-within);
       let raw=this.dirty.get(page);if(!raw){raw=(await this.page(page)).slice();this.dirty.set(page,raw);}raw.set(input.subarray(at,at+n),within);at+=n;}}
   async replaceMany(key,level,changes){const node=await this.node(key,level),groups=new Map();
@@ -81,10 +82,14 @@ export class PersistentBlock {
     view.setUint32(0,1,true);view.setBigUint64(4,BigInt(this.bytes),true);view.setBigUint64(12,this.revision+1n,true);if(root)raw.set(unhex(root),20);
     const envelope=await prepareRootPublication({key:this.keys.rootKey,descriptor:raw,additionalData:this.aad});
     await commitRootPublication({register:this.store,expectedEnvelope:this.head,envelope});this.head=envelope;this.root=root;++this.revision;await this.onHead(envelope.slice());}
-  async flush(){if(this.failed)throw new Error('persistent volume failed');if(!this.dirty.size)return;
+  async flush(){this.active();if(!this.dirty.size)return;
     try{const changes=[];for(const [page,raw]of this.dirty)changes.push([page,raw.some(Boolean)?await this.save(raw,'page',page):null]);
       const root=await this.replaceMany(this.root,2,changes);
       await this.publish(root);for(const [page,raw]of this.dirty){this.cache.get(page)?.fill(0);this.cache.delete(page);raw.fill(0);}this.dirty.clear();
     }catch(e){this.failed=true;throw e;}}
-  async close(){await this.flush();for(const raw of this.cache.values())raw.fill(0);this.cache.clear();this.store.close?.();}
+  async close(){if(!this.closing)this.closing=(async()=>{
+    try{await this.flush();}
+    finally{this.closed=true;for(const raw of this.cache.values())raw.fill(0);this.cache.clear();
+      for(const raw of this.dirty.values())raw.fill(0);this.dirty.clear();await this.store.close?.();}
+  })();return this.closing;}
 }

@@ -53,5 +53,7 @@ export class MachineDevices {
   status(){return {networkRequested:!!this.network,networkConnected:!!this.linkReady,
     networkBound:!!this.linkBound,networkFailure:this.networkError?.name??null,
     receivedFrames:String(this.rxSequence),closed:this.closed};}
-  async close(){if(this.closed)return;this.closed=true;await this.network?.close();await this.volume.close();}
+  async close(){if(!this.closing){this.closed=true;this.closing=(async()=>{
+    try{await this.network?.close();}finally{await this.volume.close();}
+  })();}return this.closing;}
 }

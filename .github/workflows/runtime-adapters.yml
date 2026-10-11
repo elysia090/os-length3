@@ -1,0 +1,39 @@
+name: Runtime adapter checks
+
+on:
+  push:
+    branches: [main, codex/native-release-wasm-1002]
+    paths:
+      - '.github/workflows/runtime-adapters.yml'
+      - 'src/v2/web/**'
+      - 'data/oracle/check-persistent-block*.mjs'
+      - 'data/oracle/check-machine-devices-close.mjs'
+      - 'data/oracle/check-memory-budget.mjs'
+      - 'data/oracle/check-machine-yield.mjs'
+  pull_request:
+    paths:
+      - '.github/workflows/runtime-adapters.yml'
+      - 'src/v2/web/**'
+      - 'data/oracle/check-persistent-block*.mjs'
+      - 'data/oracle/check-machine-devices-close.mjs'
+      - 'data/oracle/check-memory-budget.mjs'
+      - 'data/oracle/check-machine-yield.mjs'
+
+permissions:
+  contents: read
+
+jobs:
+  adapters:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Check isolated storage, cleanup, and memory reservation
+        run: |
+          node data/oracle/check-persistent-block.mjs
+          node data/oracle/check-persistent-block-failures.mjs
+          node data/oracle/check-machine-devices-close.mjs
+          node data/oracle/check-memory-budget.mjs
+          node data/oracle/check-machine-yield.mjs
