@@ -748,6 +748,8 @@ input:disabled { opacity: .45; }
   padding: 4px; font: 500 10px/1 var(--sans); cursor: pointer;
 }
 .terminal-clear:hover { color: var(--ink-2); }
+.terminal-actions { display: flex; gap: 12px; align-items: center; }
+.terminal-actions button:disabled { opacity: .4; cursor: default; }
 .pane-resizer {
   position: absolute; z-index: 6; top: 12px; left: -4px; bottom: 12px;
   width: 7px; cursor: col-resize; touch-action: none;

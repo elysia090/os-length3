@@ -8,6 +8,8 @@ on:
       - 'src/v2/web/**'
       - 'src/v2/vm/check/browser/storage-failures*'
       - 'src/v2/vm/check/browser/product.*'
+      - 'src/v2/vm/check/browser/prepared-*'
+      - 'src/v2/vm/check/browser/prepared-cache-fixture/**'
       - 'src/v2/Makefile'
       - 'data/oracle/check-site-hardlinks.mjs'
       - 'data/oracle/check-persistent-block*.mjs'
@@ -33,6 +35,8 @@ on:
       - 'src/v2/web/**'
       - 'src/v2/vm/check/browser/storage-failures*'
       - 'src/v2/vm/check/browser/product.*'
+      - 'src/v2/vm/check/browser/prepared-*'
+      - 'src/v2/vm/check/browser/prepared-cache-fixture/**'
       - 'src/v2/Makefile'
       - 'data/oracle/check-site-hardlinks.mjs'
       - 'data/oracle/check-persistent-block*.mjs'
@@ -69,6 +73,7 @@ jobs:
           node data/oracle/check-persistent-block.mjs
           node data/oracle/check-persistent-block-failures.mjs
           node data/oracle/check-persistent-block-restore.mjs
+          node data/oracle/check-persistent-block-system.mjs
           node data/oracle/check-machine-devices-close.mjs
           node data/oracle/check-memory-budget.mjs
           node data/oracle/check-machine-yield.mjs
@@ -79,6 +84,11 @@ jobs:
           node --check src/v2/vm/check/browser/storage-failures-worker.mjs
           node --check src/v2/vm/check/browser/product.mjs
           node --check src/v2/web/workspace-authority.mjs
+          node --check src/v2/web/prepared-release.mjs
+          node --check src/v2/web/workspace-release.mjs
+          node --check src/v2/web/linux-worker.js
+          node --check src/v2/web/linux-terminal.js
+          node --check src/v2/vm/check/browser/prepared-release.mjs
           node --check src/v2/vm/check/browser/workspace-recovery.mjs
           node --check data/oracle/seed-image.mjs
           bash -n data/oracle/check-native-producer-dhcp.sh

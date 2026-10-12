@@ -10,12 +10,16 @@ const unhex=s=>Uint8Array.from(s.match(/../g),x=>parseInt(x,16));
 const same=(a,b)=>a===null?b===null:b!==null&&a.length===b.length&&a.every((x,i)=>x===b[i]);
 function extent(offset,bytes,total){if(!Number.isSafeInteger(offset)||!Number.isInteger(bytes)||offset<0||bytes<1||bytes>4096||offset>total-bytes)throw new RangeError('bounded physical block extent');}
 function rootDescriptor(raw,bytes){
-  if(raw.length!==52)throw new Error('volume root extent');
+  if(raw.length!==52&&raw.length!==84)throw new Error('volume root extent');
   const view=new DataView(raw.buffer,raw.byteOffset,raw.length);
-  if(view.getUint32(0,true)!==1||view.getBigUint64(4,true)!==BigInt(bytes)||view.getBigUint64(12,true)<1n)
+  const version=view.getUint32(0,true);
+  if((version!==1&&version!==2)||(version===1?raw.length!==52:raw.length!==84)
+    ||view.getBigUint64(4,true)!==BigInt(bytes)||view.getBigUint64(12,true)<1n)
     throw new Error('volume root contract');
-  return {revision:view.getBigUint64(12,true),root:raw.subarray(20).some(Boolean)?hex(raw.subarray(20)):null};
+  return {revision:view.getBigUint64(12,true),root:raw.subarray(20,52).some(Boolean)?hex(raw.subarray(20,52)):null,
+    systemRoot:version===2?hex(raw.subarray(52,84)):null};
 }
+function systemIdentity(value){if(value!==null&&(typeof value!=='string'||!/^[a-f0-9]{64}$/.test(value)))throw new TypeError('opaque system root identity');}
 export class IndexedBlockStore {
   static async open(name,{fence=null}={}){
     if(typeof name!=='string'||!/^[a-z0-9._-]{1,100}$/.test(name))throw new TypeError('opaque storage namespace');
@@ -52,14 +56,17 @@ export class IndexedBlockStore {
 }
 function txAbort(store){store.transaction.abort();}
 export class PersistentBlock {
-  static async open({store,masterKey,volumeId,volumeSalt,bytes,create=false,expectedHead=null,onHead=()=>{}}){
+  static async open({store,masterKey,volumeId,volumeSalt,bytes,create=false,expectedHead=null,systemRoot=null,onHead=()=>{}}){
+    systemIdentity(systemRoot);
     if(!store||!Number.isSafeInteger(bytes)||bytes<4096||bytes%4096||bytes/4096>maxPages)throw new TypeError('bounded persistent volume');
     const keys=await deriveVolumeStorageKeys(masterKey,volumeSalt,volumeId),aad=encodeVolumeRootAad({volumeId,volumeSalt});
-    const v=new PersistentBlock();Object.assign(v,{store,keys,aad,bytes,onHead,cache:new Map(),dirty:new Map(),revision:0n,root:null,failed:false,closed:false});
+    const v=new PersistentBlock();Object.assign(v,{store,keys,aad,bytes,onHead,systemRoot,cache:new Map(),dirty:new Map(),revision:0n,root:null,failed:false,closed:false});
     const head=await store.read();if(expectedHead!==null&&!same(head,expectedHead))throw new Error('persistent head rollback or replacement');
     if(head===null){if(!create)throw new Error('persistent volume missing; explicit creation required');v.head=null;await v.publish(null);v.fresh=true;}
     else{if(create)throw new Error('existing volume cannot be formatted as new');
       const saved=rootDescriptor(await openRootDescriptor(keys.rootKey,head,aad),bytes);
+      if(systemRoot!==null&&systemRoot!==saved.systemRoot)throw new Error('workspace system root differs; explicit prepared selection required');
+      v.systemRoot=saved.systemRoot;
       v.revision=saved.revision;v.root=saved.root;v.head=head;
       // Creation publishes revision1 before Linux writes its first block.
       // Closing that untouched owner must not turn it into an existing
@@ -93,10 +100,12 @@ export class PersistentBlock {
     for(const [page,leaf]of changes){const rank=(page>>>(8*level))&255;if(!groups.has(rank))groups.set(rank,[]);groups.get(rank).push([page,leaf]);}
     for(const [rank,rows]of groups){const child=level?await this.replaceMany(node.get(rank)??null,level-1,rows):rows[0][1];
       if(child)node.set(rank,child);else node.delete(rank);}return this.saveNode(node,level);}
-  async publish(root){if(this.revision===0xffffffffffffffffn)throw new Error('volume revision exhausted');const raw=new Uint8Array(52),view=new DataView(raw.buffer);
-    view.setUint32(0,1,true);view.setBigUint64(4,BigInt(this.bytes),true);view.setBigUint64(12,this.revision+1n,true);if(root)raw.set(unhex(root),20);
+  async publish(root,{systemRoot=this.systemRoot}={}){systemIdentity(systemRoot);
+    if(this.revision===0xffffffffffffffffn)throw new Error('volume revision exhausted');const raw=new Uint8Array(systemRoot===null?52:84),view=new DataView(raw.buffer);
+    view.setUint32(0,systemRoot===null?1:2,true);view.setBigUint64(4,BigInt(this.bytes),true);view.setBigUint64(12,this.revision+1n,true);if(root)raw.set(unhex(root),20);
+    if(systemRoot!==null)raw.set(unhex(systemRoot),52);
     const envelope=await prepareRootPublication({key:this.keys.rootKey,descriptor:raw,additionalData:this.aad});
-    await commitRootPublication({register:this.store,expectedEnvelope:this.head,envelope});this.head=envelope;this.root=root;++this.revision;await this.onHead(envelope.slice());}
+    await commitRootPublication({register:this.store,expectedEnvelope:this.head,envelope});this.head=envelope;this.root=root;this.systemRoot=systemRoot;++this.revision;await this.onHead(envelope.slice());}
   async flush(){this.active();if(!this.dirty.size)return;
     try{const changes=[];for(const [page,raw]of this.dirty)changes.push([page,raw.some(Boolean)?await this.save(raw,'page',page):null]);
       const root=await this.replaceMany(this.root,2,changes);
@@ -105,6 +114,16 @@ export class PersistentBlock {
   async checkpoint(){this.active();await this.flush();
     if(!same(await this.store.read(),this.head))throw new Error('checkpoint head changed');
     return this.head.slice();}
+  // An opaque system id joins the data directory in the authenticated head.
+  // The Supervisor must prepare/approve its objects and data compatibility
+  // before calling this; a digest supplied by a tier grants no release trust.
+  async selectSystemRoot(identity){this.active();systemIdentity(identity);
+    if(identity===null)throw new TypeError('selected system identity required');
+    if(this.dirty.size)throw new Error('commit dirty physical writes before system selection');
+    await this.verifyTree(this.root,2);
+    try{await this.publish(this.root,{systemRoot:identity});}catch(error){this.failed=true;throw error;}
+    this.fresh=false;
+  }
   async verifyTree(key,level,prefix=0){
     const node=await this.node(key,level);
     for(const [rank,child]of node){const page=prefix+rank*256**level;
@@ -123,8 +142,14 @@ export class PersistentBlock {
     const saved=rootDescriptor(await openRootDescriptor(this.keys.rootKey,checkpoint,this.aad),this.bytes);
     if(saved.revision>this.revision)throw new Error('checkpoint is ahead of current volume');
     await this.verifyTree(saved.root,2);
-    try{await this.publish(saved.root);}catch(error){this.failed=true;throw error;}
+    try{await this.publish(saved.root,{systemRoot:saved.systemRoot});}catch(error){this.failed=true;throw error;}
     for(const raw of this.cache.values())raw.fill(0);this.cache.clear();this.fresh=false;
+  }
+  async inspectCheckpoint(checkpoint){this.active();
+    if(!(checkpoint instanceof Uint8Array))throw new TypeError('retained checkpoint envelope');
+    const saved=rootDescriptor(await openRootDescriptor(this.keys.rootKey,checkpoint,this.aad),this.bytes);
+    if(saved.revision>this.revision)throw new Error('checkpoint is ahead of current volume');
+    return {revision:saved.revision,systemRoot:saved.systemRoot};
   }
   async close(){if(!this.closing)this.closing=(async()=>{
     try{await this.flush();}

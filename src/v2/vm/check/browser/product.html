@@ -6,5 +6,11 @@
 <button id="interrupt" hidden>Terminate test Worker without flush</button>
 <span id="checkpoint-controls" hidden><label>Checkpoint <input id="checkpoint-name" value="before-change"></label>
 <button id="checkpoint">Retain closed workspace checkpoint</button><button id="restore-checkpoint">Restore closed workspace checkpoint</button></span>
+<fieldset id="release-controls" hidden><legend>Prepared release selection · diagnostic candidates</legend>
+<p>Close and flush first. The supplied release pin and data compatibility come from the Supervisor, not from the download cache.</p>
+<button id="prepare-release" type="button">Prepare supplied release</button>
+<label>Compatible prior release <input id="prior-release" size="70" placeholder="SHA-256, or explicit unbound"></label>
+<button id="select-release" type="button">Select prepared release and retain checkpoint</button>
+<button id="restore-release" type="button">Restore release and workspace checkpoint</button></fieldset>
 <pre id="console" tabindex="0" aria-label="Guest terminal output"></pre><form id="input-form"><input id="input-line" size="100" aria-label="Guest terminal input"><button>Send line</button></form><pre id="result">Not started</pre>
 <script type="module" src="./product.mjs"></script>

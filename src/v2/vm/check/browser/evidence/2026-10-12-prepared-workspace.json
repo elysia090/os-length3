@@ -1,0 +1,64 @@
+{
+  "format": "prepared-workspace-browser-evidence-v1",
+  "date": "2026-10-12",
+  "scope": "actual browser cache and Linux diagnostic workspace; no release qualification",
+  "browserProcessRestart": "not-tested",
+  "softwareRootUpdate": "pending-new-signed-candidate",
+  "preparedRelease": {
+    "scope": "public immutable release bodies; no workspace selection",
+    "browserProcessRestart": "not-tested",
+    "identity": "089001a40360870369d08308c33a066bae7f6f13199a5d130c033ce1c07f90db",
+    "roles": {
+      "kernel": {
+        "bytes": 3499008,
+        "sha256": "a2295e89a6a9f6c35b8587798b2c9fb1da8d829039265066e82603434e48319f"
+      },
+      "initramfs": {
+        "bytes": 438272,
+        "sha256": "5a580322246b1cf883514b4df5bb0820be00e332e51fe8934cfe3023aa5a860c"
+      },
+      "system": {
+        "bytes": 90329088,
+        "sha256": "f911b9a5f12bc0494d8475996d74adfa2710f1092567f8d218ded41548059c36"
+      },
+      "vm": {
+        "bytes": 144156,
+        "sha256": "4a14da3a861d5b877a77db9334e2db20baf19eb06b5d43310e75e16703a9dccc"
+      },
+      "compiler": {
+        "bytes": 1137376,
+        "sha256": "263e444dc64d0cd93a52a9413e1046e9379ae5ad8a7900c87129b8289849e565"
+      }
+    },
+    "networkFetchesDuringReopen": 0,
+    "status": "pass"
+  },
+  "cacheFailures": {
+    "scope": "public immutable release bodies; no workspace selection",
+    "browserProcessRestart": "not-tested",
+    "corruptDescriptor": "rejected",
+    "corruptBody": "rejected",
+    "occupiedBody": "retained",
+    "corruptCacheNetworkFallback": "refused",
+    "missingBody": "rejected",
+    "fixtureRestored": "exact",
+    "status": "pass"
+  },
+  "linuxRecovery": {
+    "status": "pass",
+    "scope": "prepared diagnostic release and physical data binding; release qualification pending",
+    "releaseSelection": {
+      "operation": "select",
+      "label": "before-system-binding",
+      "beforeSequence": "59",
+      "afterSequence": "60",
+      "previousSystemRoot": null,
+      "systemRoot": "089001a40360870369d08308c33a066bae7f6f13199a5d130c033ce1c07f90db"
+    },
+    "generation": "16",
+    "fileSha256": "638c2eded19609057c2af41bc156187d71b996ce332aec3352b752cb4779df3e",
+    "filesystemUUID": "2a89680a-f15b-4ab5-8f49-b8518ce835a1",
+    "serviceReady": false,
+    "browserProcessRestart": "not-tested"
+  }
+}

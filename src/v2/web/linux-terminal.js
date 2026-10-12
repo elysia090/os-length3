@@ -2,6 +2,8 @@
 // x86 state pages, but browser execution receives only artifact progress,
 // physical page/barrier observations and console bytes from vm.wasm.
 import {openWorkspaceSession} from './workspace-authority.mjs';
+import {ensurePreparedMachineRelease,openPreparedMachineRelease} from './prepared-release.mjs';
+import {readSelectedWorkspaceRelease} from './workspace-release.mjs';
 
 const textDecoder = new TextDecoder();
 
@@ -104,6 +106,15 @@ export class LinuxTerminal {
     this.output = root.getElementById('shell-out');
     this.input = root.getElementById('shell-in');
     this.session = root.getElementById('shell-state');
+    this.closeButton=root.getElementById('btn-shell-close');
+    this.resumeButton=root.getElementById('btn-shell-resume');
+    this.closeButton?.addEventListener('click',()=>this.release());
+    this.resumeButton?.addEventListener('click',()=>{
+      if(this.worker||!this.config)return;
+      const config={...this.config};if(config.storage?.trusted)config.storage=null;
+      this.started=false;this.cancelled=false;this.serviceReady=false;this.outputStarted=false;
+      this.start(config);
+    });
     this.input.addEventListener('keydown', (event) => {
       if (event.key !== 'Enter' || this.input.disabled) return;
       event.preventDefault();
@@ -252,8 +263,12 @@ export class LinuxTerminal {
       this.worker.terminate();
       this.worker = null;
       this.handle = null;
-      this.workspaceSession?.close();this.workspaceSession=null;
+      this.pending.clear();this.progress.hidden=true;
+      this.input.placeholder='Resume to reopen this workspace';
+      const session=this.workspaceSession;this.workspaceSession=null;
       this.setSession('idle');
+      if(this.closeButton)this.closeButton.disabled=true;
+      Promise.resolve(session?.close()).then(()=>{if(this.resumeButton)this.resumeButton.disabled=false;});
       return;
     }
     this.handle = message.handle ?? this.handle;
@@ -298,12 +313,28 @@ export class LinuxTerminal {
     this.started = true;
     this.startedAt = performance.now();
     this.config = config;
+    if(this.closeButton)this.closeButton.disabled=true;
+    if(this.resumeButton)this.resumeButton.disabled=true;
     this.setSession('starting', true);
     this.showProgress({ label: 'Opening the boot image' });
     if(config.releaseUrl&&!config.storage){
       try{this.workspaceSession=await openWorkspaceSession(config.workspace,{bytes:config.workspaceBytes});
         config.storage=this.workspaceSession.storage;}
       catch(error){this.onMessage({type:'result',id:0,ok:false,error:error.message});return false;}
+    }
+    if(config.releaseUrl){
+      try{
+        if(config.storage?.trusted&&!config.storage.create){
+          // Recovery follows the authenticated selected head, including a
+          // previous explicit rollback, instead of a new catalog/config pin.
+          config.releaseSha256=await readSelectedWorkspaceRelease(config.storage);
+          const prepared=await openPreparedMachineRelease(config.releaseSha256);
+          try{await prepared.verify();}finally{prepared.close();}
+        }else await ensurePreparedMachineRelease(config.releaseUrl,config.releaseSha256,{onProgress:p=>
+          this.showProgress({label:'Saving the Linux release for recovery',loaded:p.completed,total:p.total,asset:p.name})});
+        config.preparedRelease=true;
+      }catch(error){await this.workspaceSession?.close();this.workspaceSession=null;
+        this.onMessage({type:'result',id:0,ok:false,error:error.message});return false;}
     }
     if(this.cancelled){this.workspaceSession?.close();this.workspaceSession=null;return false;}
     try{this.worker = new Worker(new URL('linux-worker.js', import.meta.url), {
@@ -317,17 +348,23 @@ export class LinuxTerminal {
       type: 'result', id: 0, ok: false,
       error: event.message || 'Linux worker failed',
     }));
+    if(this.closeButton)this.closeButton.disabled=false;
     return true;
   }
 
   release() {
     this.cancelled=true;
-    if (!this.worker) {this.workspaceSession?.close();this.workspaceSession=null;return;}
+    this.input.disabled=true;
+    if(this.closeButton)this.closeButton.disabled=true;
+    const enableResume=()=>{if(this.resumeButton)this.resumeButton.disabled=false;};
+    if (!this.worker) {Promise.resolve(this.workspaceSession?.close()).then(enableResume);this.workspaceSession=null;return;}
     if (this.handle != null) this.send('release', { handle: this.handle });
     else {
       this.worker.terminate();
       this.worker = null;
+      this.pending.clear();this.progress.hidden=true;
       this.workspaceSession?.close();this.workspaceSession=null;
+      enableResume();this.setSession('idle');
     }
   }
 }

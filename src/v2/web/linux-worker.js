@@ -2,6 +2,7 @@
 // The main thread supplies authority/keys; storage tiers never supply trust.
 import {runMachine} from './machine-runtime.mjs';
 import {openMachineArtifact} from './machine-artifact.mjs';
+import {openPreparedMachineRelease} from './prepared-release.mjs';
 import {MachineDevices} from './machine-devices.mjs';
 import {PersistentBlock,IndexedBlockStore} from './persistent-block.mjs';
 import {NetworkTransport} from './network-transport.mjs';
@@ -34,11 +35,15 @@ async function boot(message){
   if(typeof message.generation!=='bigint'||message.generation<1n||message.generation>0xffffffffffffffffn)throw new Error('supervisor machine generation required');
   closing=false;closeFailure=null;pending=message.id;ready=false;normal=false;serviceReady=false;tail='';head=count=0;
   send('progress',{id:message.id,phase:'download',label:'Authenticating Linux release'});
-  artifact=await openMachineArtifact(message.releaseUrl,message.releaseSha256);
+  artifact=message.preparedRelease===true?await openPreparedMachineRelease(message.releaseSha256):
+    await openMachineArtifact(message.releaseUrl,message.releaseSha256);
   const m=artifact.manifest,s=message.storage,store=await IndexedBlockStore.open(s.name,{fence:s.fence??null});
   let volume;
-  try{volume=await PersistentBlock.open({...s,store,onHead:envelope=>send('storage-head',{envelope})});}
-  catch(e){store.close();artifact.close();throw e;}
+  try{volume=await PersistentBlock.open({...s,store,
+    systemRoot:message.preparedRelease===true?message.releaseSha256:null,
+    onHead:envelope=>send('storage-head',{envelope})});
+    if(volume.systemRoot!==null&&message.preparedRelease!==true)throw new Error('selected workspace requires its prepared release');}
+  catch(e){await volume?.close();store.close();artifact.close();throw e;}
   owner=new MachineDevices({volume,binding:s.binding,network:message.network?new NetworkTransport(message.network):null});
   const system=m.objects.system,command=m.command+
     ' virtio_mmio.device=4K@'+owner.address+':10 virtio_mmio.device=4K@0x'+(BigInt(owner.address)+4096n).toString(16)+':11'+
@@ -69,5 +74,7 @@ self.onmessage=async({data:m})=>{try{
   if(m.action==='drive'){if(!owner||closing)throw new Error('machine not resident');pending=m.id;if(ready){send('result',{id:m.id,ok:true,handle:1,result:{ready:true,serviceReady,state:{halted:false}}});pending=null;}return;}
   if(m.action==='release'){closing=true;await running?.catch(()=>{});if(closeFailure)throw closeFailure;flushConsole();send('result',{id:m.id,ok:true,handle:1});return;}
   throw new Error('unknown machine action');
-}catch(e){send('result',{id:m.id,ok:false,error:e.message});}};
+}catch(e){if(m.action==='boot'&&!running){try{await owner?.close();}catch(closeError){closeFailure=closeError;}
+  finally{owner=null;artifact?.close();artifact=null;}}
+  send('result',{id:m.id,ok:false,error:e.message});}};
 send('ready',{protocol:'linux-machine-worker-v2'});
