@@ -39,3 +39,14 @@ writers, competing tabs and recovery refusal. It uses an explicit disposable
 `fixture-` name. A fresh document is a smaller check than complete browser
 process exit/restart; the latter and real Linux file recovery remain required
 before calling Web a qualified distribution.
+
+Retained physical checkpoints can restore a committed workspace in a new head
+sequence. Restore first authenticates every referenced historical object,
+refuses dirty pending writes and invalidates cached current pages after its CAS.
+A missing/corrupt snapshot or failed publication retains the current durable
+head. Restoring an initially empty snapshot never grants formatting authority.
+The diagnostic page exposes retain/restore controls only with both a named
+workspace and `faults=1`, and requires its Linux Worker to be closed and flushed.
+Up to eight labeled checkpoint envelopes remain in trusted origin metadata;
+an occupied label is never silently replaced. Software-root selection and
+compatibility validation are separate requirements.

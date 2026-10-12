@@ -68,6 +68,7 @@ jobs:
         run: |
           node data/oracle/check-persistent-block.mjs
           node data/oracle/check-persistent-block-failures.mjs
+          node data/oracle/check-persistent-block-restore.mjs
           node data/oracle/check-machine-devices-close.mjs
           node data/oracle/check-memory-budget.mjs
           node data/oracle/check-machine-yield.mjs

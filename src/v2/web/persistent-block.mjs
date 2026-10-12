@@ -9,6 +9,13 @@ const hash=async b=>hex(new Uint8Array(await crypto.subtle.digest('SHA-256',b)))
 const unhex=s=>Uint8Array.from(s.match(/../g),x=>parseInt(x,16));
 const same=(a,b)=>a===null?b===null:b!==null&&a.length===b.length&&a.every((x,i)=>x===b[i]);
 function extent(offset,bytes,total){if(!Number.isSafeInteger(offset)||!Number.isInteger(bytes)||offset<0||bytes<1||bytes>4096||offset>total-bytes)throw new RangeError('bounded physical block extent');}
+function rootDescriptor(raw,bytes){
+  if(raw.length!==52)throw new Error('volume root extent');
+  const view=new DataView(raw.buffer,raw.byteOffset,raw.length);
+  if(view.getUint32(0,true)!==1||view.getBigUint64(4,true)!==BigInt(bytes)||view.getBigUint64(12,true)<1n)
+    throw new Error('volume root contract');
+  return {revision:view.getBigUint64(12,true),root:raw.subarray(20).some(Boolean)?hex(raw.subarray(20)):null};
+}
 export class IndexedBlockStore {
   static async open(name,{fence=null}={}){
     if(typeof name!=='string'||!/^[a-z0-9._-]{1,100}$/.test(name))throw new TypeError('opaque storage namespace');
@@ -52,10 +59,8 @@ export class PersistentBlock {
     const head=await store.read();if(expectedHead!==null&&!same(head,expectedHead))throw new Error('persistent head rollback or replacement');
     if(head===null){if(!create)throw new Error('persistent volume missing; explicit creation required');v.head=null;await v.publish(null);v.fresh=true;}
     else{if(create)throw new Error('existing volume cannot be formatted as new');
-      const raw=await openRootDescriptor(keys.rootKey,head,aad);if(raw.length!==52)throw new Error('volume root extent');
-      const view=new DataView(raw.buffer,raw.byteOffset,raw.length);
-      if(view.getUint32(0,true)!==1||view.getBigUint64(4,true)!==BigInt(bytes))throw new Error('volume root contract');
-      v.revision=view.getBigUint64(12,true);v.root=raw.subarray(20).some(Boolean)?hex(raw.subarray(20)):null;v.head=head;
+      const saved=rootDescriptor(await openRootDescriptor(keys.rootKey,head,aad),bytes);
+      v.revision=saved.revision;v.root=saved.root;v.head=head;
       // Creation publishes revision1 before Linux writes its first block.
       // Closing that untouched owner must not turn it into an existing
       // filesystem. A later empty root is NOT fresh: zeroing/wiping never
@@ -97,6 +102,30 @@ export class PersistentBlock {
       const root=await this.replaceMany(this.root,2,changes);
       await this.publish(root);for(const [page,raw]of this.dirty){this.cache.get(page)?.fill(0);this.cache.delete(page);raw.fill(0);}this.dirty.clear();
     }catch(e){this.failed=true;throw e;}}
+  async checkpoint(){this.active();await this.flush();
+    if(!same(await this.store.read(),this.head))throw new Error('checkpoint head changed');
+    return this.head.slice();}
+  async verifyTree(key,level,prefix=0){
+    const node=await this.node(key,level);
+    for(const [rank,child]of node){const page=prefix+rank*256**level;
+      if(page>=this.bytes/4096)throw new Error('snapshot physical page outside volume');
+      if(level)await this.verifyTree(child,level-1,page);
+      else{const raw=await this.object(child,'page',page);
+        try{if(raw.length!==4096)throw new Error('physical page extent');}finally{raw.fill(0);}}
+    }
+  }
+  // Supervisor supplies a retained checkpoint, not an untrusted tier's head.
+  // Restore appends a new sequence. Missing historical objects or a lost CAS
+  // cannot replace the current durable root; no filesystem paths are decoded.
+  async restore(checkpoint){this.active();
+    if(this.dirty.size)throw new Error('commit dirty physical writes before restore');
+    if(!(checkpoint instanceof Uint8Array))throw new TypeError('retained checkpoint envelope');
+    const saved=rootDescriptor(await openRootDescriptor(this.keys.rootKey,checkpoint,this.aad),this.bytes);
+    if(saved.revision>this.revision)throw new Error('checkpoint is ahead of current volume');
+    await this.verifyTree(saved.root,2);
+    try{await this.publish(saved.root);}catch(error){this.failed=true;throw error;}
+    for(const raw of this.cache.values())raw.fill(0);this.cache.clear();this.fresh=false;
+  }
   async close(){if(!this.closing)this.closing=(async()=>{
     try{await this.flush();}
     finally{this.closed=true;for(const raw of this.cache.values())raw.fill(0);this.cache.clear();

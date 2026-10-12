@@ -2,7 +2,8 @@
 // retains trusted key/head across disposable Workers; tiers retain ciphertext.
 import {importStorageMasterKey} from '../../../web/ciphertext-storage.js';
 import {terminalKey,TerminalReplies} from '../../../web/terminal-bytes.mjs';
-import {openWorkspaceSession} from '../../../web/workspace-authority.mjs';
+import {openWorkspaceSession,rememberWorkspaceCheckpoint,readWorkspaceCheckpoint} from '../../../web/workspace-authority.mjs';
+import {IndexedBlockStore,PersistentBlock} from '../../../web/persistent-block.mjs';
 const $=id=>document.getElementById(id),query=new URL(location.href).searchParams;
 const volumeMiB=Number(query.get('volumeMiB')??256),faultsEnabled=query.get('faults')==='1';
 if(!Number.isInteger(volumeMiB)||volumeMiB<16||volumeMiB>256||(volumeMiB&(volumeMiB-1)))throw new Error('diagnostic volume must be 16,32,64,128 or256 MiB');
@@ -10,18 +11,19 @@ $('interrupt').hidden=!faultsEnabled;
 const gateway=query.get('gateway'),network=gateway?await(await fetch(gateway==='1'?'/config':gateway)).json():null;
 $('release').value=query.get('release')??'';$('digest').value=query.get('sha256')??'';
 const workspace=query.get('workspace');let workspaceSession=null,storage;
+$('checkpoint-controls').hidden=!(workspace&&faultsEnabled);
 if(workspace){workspaceSession=await openWorkspaceSession(workspace,{bytes:volumeMiB*1048576});storage=workspaceSession.storage;}
 else{const raw=crypto.getRandomValues(new Uint8Array(32)),masterKey=await importStorageMasterKey(raw);raw.fill(0);
   const volumeId=crypto.getRandomValues(new Uint8Array(16)),volumeSalt=crypto.getRandomValues(new Uint8Array(32)),words=new BigUint64Array(4);crypto.getRandomValues(words);
   storage={masterKey,volumeId,volumeSalt,bytes:volumeMiB*1048576,create:true,name:Array.from(volumeId,x=>x.toString(16).padStart(2,'0')).join(''),binding:[...words],expectedHead:null};}
-let worker,id=0,closing=null,booting=false;const decoder=new TextDecoder(),receipt={status:'idle',linuxBoot:'not-achieved',worker:'production-linux-worker',restore:'not-tested'};
+let worker,id=0,closing=null,booting=false,checkpointBusy=false;const decoder=new TextDecoder(),receipt={status:'idle',linuxBoot:'not-achieved',worker:'production-linux-worker',restore:'not-tested'};
 const profileFields=['retired','admissions','taskYields','nextRip','memoryBytes','residentPages','timingMs','sourceReuse','engineReuse','preparedCode','compilerOutput','sourceProfile','systemProfile','devices','transport'];
 const terminalSize=()=>({rows:Math.max(1,Math.min(1000,Math.floor($('console').clientHeight/19.2))),columns:Math.max(1,Math.min(1000,Math.floor($('console').clientWidth/7.2)))});
 let terminal=new TerminalReplies(terminalSize,data=>input(data));
 function show(){receipt.liveWorkers=worker?1:0;receipt.testVolume={name:storage.name,bytes:storage.bytes}; $('result').textContent=JSON.stringify(receipt,(_,v)=>typeof v==='bigint'?String(v):v,2); }
 function retireWorker(){receipt.lastWorkerSample={generation:receipt.generation,memoryBytes:receipt.memoryBytes,residentPages:receipt.residentPages};
   worker.terminate();worker=null;for(const field of profileFields)delete receipt[field];}
-async function boot(){if(worker||booting)throw new Error('close the live Worker first');booting=true;
+async function boot(){if(worker||booting||checkpointBusy)throw new Error('close the live Worker or checkpoint operation first');booting=true;
   try{if(workspace){if(!workspaceSession)workspaceSession=await openWorkspaceSession(workspace,{bytes:volumeMiB*1048576});
       storage=await workspaceSession.renew();}
     worker=new Worker('../../../web/linux-worker.js',{type:'module'});
@@ -53,6 +55,26 @@ $('interrupt').onclick=()=>{if(!faultsEnabled||!worker)return;retireWorker();clo
   receipt.workerTerminations=(receipt.workerTerminations??0)+1;receipt.workerInterruptions=(receipt.workerInterruptions??0)+1;
   receipt.status='interrupted';receipt.restore='ready-to-reopen';show();};
 $('reopen').onclick=async()=>{try{storage.create=false;await boot();}catch(e){receipt.error=e.message;show();}};
+async function checkpointAction(restore){
+  if(worker||booting||checkpointBusy)throw new Error('close and flush the Linux Worker before checkpoint operations');
+  checkpointBusy=true;let session,volume;
+  try{
+    if(workspaceSession){await workspaceSession.close();workspaceSession=null;}
+    session=await openWorkspaceSession(workspace,{bytes:volumeMiB*1048576});storage=session.storage;
+    if(storage.create)throw new Error('committed Linux workspace required');
+    const store=await IndexedBlockStore.open(storage.name,{fence:storage.fence});
+    try{volume=await PersistentBlock.open({...storage,store,onHead:head=>{storage.expectedHead=head;}});}
+    catch(error){store.close();throw error;}
+    const label=$('checkpoint-name').value;
+    if(restore){const head=await readWorkspaceCheckpoint(storage,label),before=volume.revision;
+      await volume.restore(head);receipt.checkpoint={label,operation:'restore',beforeSequence:String(before),afterSequence:String(volume.revision)};
+    }else{await volume.checkpoint();await rememberWorkspaceCheckpoint(storage,label);
+      receipt.checkpoint={label,operation:'retain',sequence:String(volume.revision)};}
+    receipt.status='closed';delete receipt.error;show();
+  }finally{try{await volume?.close();}finally{await session?.close();checkpointBusy=false;}}
+}
+$('checkpoint').onclick=async()=>{try{await checkpointAction(false);}catch(error){receipt.error=error.message;show();}};
+$('restore-checkpoint').onclick=async()=>{try{await checkpointAction(true);}catch(error){receipt.error=error.message;show();}};
 function input(data){if(!worker)return;worker.postMessage({id:++id,action:'input',handle:1,data});worker.postMessage({id:++id,action:'drive',handle:1});}
 $('input-form').onsubmit=e=>{e.preventDefault();const line=$('input-line').value+'\n';$('input-line').value='';input(line);};
 // Transport terminal bytes, not host signals. The guest line discipline alone
