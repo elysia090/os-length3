@@ -4,7 +4,7 @@ import {mkdir,writeFile} from 'node:fs/promises';import {spawnSync} from 'node:c
 export async function seedImage(work,script,instance){
  if(!/^[a-z0-9-]{1,80}$/.test(instance)||!work.includes(`${path.sep}temp${path.sep}`))throw new Error('isolated seed scope');
  const directory=path.join(work,'seed');await mkdir(directory);
- const content='#cloud-config\ngrowpart:\n  mode: auto\n  devices: [\'/\']\nresize_rootfs: true\nwrite_files:\n  - path: /run/check.sh\n    permissions: "0700"\n    content: |\n'+script.trimEnd().split('\n').map(l=>'      '+l).join('\n')+'\nruncmd:\n  - [sh, -c, "sh /run/check.sh >/dev/ttyS0 2>&1"]\n';
+ const content='#cloud-config\nssh_deletekeys: false\nssh_genkeytypes: []\nusers: []\ngrowpart:\n  mode: auto\n  devices: [\'/\']\nresize_rootfs: true\nwrite_files:\n  - path: /run/check.sh\n    permissions: "0700"\n    content: |\n'+script.trimEnd().split('\n').map(l=>'      '+l).join('\n')+'\nruncmd:\n  - [sh, -c, "sh /run/check.sh >/dev/ttyS0 2>&1"]\n';
  await writeFile(path.join(directory,'user-data'),content,{flag:'wx'});
  await writeFile(path.join(directory,'meta-data'),`instance-id: ${instance}\nlocal-hostname: c-oracle\n`,{flag:'wx'});
  const tar=process.platform==='win32'?path.join(process.env.SystemRoot??'C:/Windows','System32','tar.exe'):'tar';

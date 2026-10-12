@@ -1,0 +1,38 @@
+{
+  "format": "clean-linux-producer-dhcp-evidence-v1",
+  "status": "pass",
+  "sourceArchive": {"sha256": "b2d3ceb6e7a4e8e1aaac864bd48ceae66d7ce44cc62b4e5b04a6c60214975373", "bytes": 32460800, "role": "working-tree snapshot consumed by isolated oracle; not clean Git HEAD"},
+  "producerSourceInventorySha256": "cd003deccf82661a109f8dd7188978735a0f3c91ebd78b2be6a1aa4f00e739c9",
+  "build": {"host": "Linux 6.18.35-0-virt x86_64", "compiler": "gcc (Alpine 15.2.0) 15.2.0", "bootstrapIdentity": "df4026a1c7c02b49c8d36782c1a361dca0e89f4616349c42f0458b95fcc15dd9", "command": "make -j2 -C CLEAN-TREE/src/v2 CC=/usr/bin/gcc AR=/usr/bin/ar CFLAGS=-O2 all", "independentCleanTrees": 2, "outputsByteEqual": true},
+  "consumedBootstrapExecutables": {
+    "gcc": "d44e2fec81dd67b0be9608ea49eb995dd182f906b53025c3ecb1dbc036e33e8a",
+    "ld": "48c952c44302d407c9f8e2944fc2f9291785875494e8fdc5e63b67ad032504af",
+    "ar": "b7989aadd8b335bbd7d53f95f1838c75cbb9475a89e7277b9ce1ced3f821a252",
+    "make": "a75fd4f07fadd6506b7be7d4684af96d22d6cebf7847acdad4270d503d020f63"
+  },
+  "producerOutputs": {
+    "postlink-compiler": "bcd5915019582878cefbc5c0663ca450bd09c422c6c03adc3049a94efb71da26",
+    "postlink-verify": "af9cd8a8f1e1acb1e877f37782347a559561a2ffcc3d11bb9abcdedb138d0796",
+    "artifact-executable-stage": "504b61bcf6d9649424d9da89ab64439399fc9c2f05bed0e19093edb22411b0a4",
+    "artifact-measure-root": "806b1758e07dbbeb8db4d41957d8f779781f667bf30cc6acb50999b107a67775"
+  },
+  "dhcp": {
+    "upstreamVersion": "10.5.2",
+    "linkedInput": {"bytes": 2275264, "sha256": "0e486d6963969bb76762aacd5694c385363ba61a7af1e156df9378a339a541e7"},
+    "optimizedOutput": {"bytes": 484280, "sha256": "9f54aea4f272b65ada2d25651a18fb105c2399872eb702f5c284ce08ca6c2108"},
+    "producer": "first clean postlink-compiler above, consumed directly",
+    "proofreader": "first clean postlink-verify above, pass",
+    "invocation": "-B -4 -1 -t 10 eth0",
+    "syslog": "enabled",
+    "privilegeSeparation": "enabled",
+    "linkedExit": 0,
+    "optimizedExit": 0,
+    "freshOfferAndAck": true,
+    "ackMessageType": 5,
+    "actualKernelAddress": "10.0.2.15/24",
+    "networkScope": "QEMU restrict=on reference NAT; observed ACK does not advertise gateway or DNS"
+  },
+  "limitations": ["Proves only these clean producer builds and this actual DHCP input/output execution.", "Does not reconstruct the older frozen release input or establish source provenance of cached release/toolchain outputs.", "Does not qualify a signed root, cold services, product gateway/DNS, HTTPS, browser process restart, update/rollback or public release."],
+  "diagnosticObserverExecution": false,
+  "newSigningKeys": false
+}
