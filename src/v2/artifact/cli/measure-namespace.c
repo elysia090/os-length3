@@ -4,6 +4,7 @@
 #include <artifact/factor-index.h>
 #include <artifact/namespace.h>
 #include <artifact/namespace-posix.h>
+#include <support/sha256.h>
 
 #include <dirent.h>
 #include <errno.h>
@@ -377,8 +378,8 @@ void artifact_namespace_posix_close(artifact_namespace_posix *value)
     *value = (artifact_namespace_posix){ 0 };
 }
 
-int artifact_namespace_posix_open(
-    const char *root, artifact_namespace_posix *out)
+static int namespace_posix_open(const char *root,
+    artifact_namespace_posix *out, int keep_source)
 {
     if (!root || !out) return ARTIFACT_ERROR_NAMESPACE_RANGE;
     *out = (artifact_namespace_posix){ 0 };
@@ -485,7 +486,7 @@ int artifact_namespace_posix_open(
     if (!status)
         status = artifact_namespace_project(
             &population, &out->workspace, &out->projection);
-    if (!status) {
+    if (!status && !keep_source) {
         discard_construction(owner);
         out->workspace.first_path = 0;
         out->workspace.first_path_capacity = 0u;
@@ -497,11 +498,103 @@ int artifact_namespace_posix_open(
     return status;
 }
 
+int artifact_namespace_posix_open(
+    const char *root, artifact_namespace_posix *out)
+{
+    return namespace_posix_open(root, out, 0);
+}
+
 #ifndef ARTIFACT_NAMESPACE_LIBRARY
+static int same_source(const struct stat *a, const struct stat *b)
+{
+    return a->st_dev == b->st_dev && a->st_ino == b->st_ino
+        && a->st_mode == b->st_mode && a->st_uid == b->st_uid
+        && a->st_gid == b->st_gid && a->st_rdev == b->st_rdev
+        && a->st_size == b->st_size && a->st_nlink == b->st_nlink
+        && a->st_mtim.tv_sec == b->st_mtim.tv_sec
+        && a->st_mtim.tv_nsec == b->st_mtim.tv_nsec
+        && a->st_ctim.tv_sec == b->st_ctim.tv_sec
+        && a->st_ctim.tv_nsec == b->st_ctim.tv_nsec;
+}
+
+static void identity_extent(pl_sha256 *hash, pl_u64 value)
+{
+    pl_u8 bytes[8];
+    for (unsigned i = 0u; i < 8u; ++i) {
+        bytes[i] = (pl_u8)value;
+        value >>= 8u;
+    }
+    pl_sha256_write(hash, bytes, sizeof(bytes));
+}
+
+/* Build-cache identity, not an Artifact size or a publication certificate.
+ * Reuse the existing canonical namespace spelling; frame exact regular bytes
+ * once per inode in its canonical first-path order. Physical inode numbers,
+ * root location and timestamps are not identity coordinates. */
+static int root_identity(const char *root)
+{
+    artifact_namespace_posix value = { 0 };
+    int status = namespace_posix_open(root, &value, 1);
+    namespace_posix_owner *owner = value.owner;
+    pl_sha256 hash;
+    pl_sha256_open(&hash);
+    static const pl_u8 domain[] = "package-root-content-v1";
+    pl_sha256_write(&hash, domain, sizeof(domain));
+    identity_extent(&hash, value.projection.descriptor_bytes);
+    if (!status) pl_sha256_write(&hash, value.workspace.descriptor,
+                                value.projection.descriptor_bytes);
+    pl_u32 next_inode = 0u;
+    for (size_t i = 0u; !status && i < owner->tree.count; ++i) {
+        if (owner->path[i].inode < next_inode) continue;
+        if (owner->path[i].inode != next_inode++) { status = -1; break; }
+        source_entry *entry = &owner->tree.entry[i];
+        if (!S_ISREG(entry->status.st_mode)) continue;
+        int fd = open(entry->full, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+        struct stat before, after;
+        if (fd < 0 || fstat(fd, &before)
+                || !same_source(&entry->status, &before)) {
+            if (fd >= 0) close(fd);
+            status = -1; break;
+        }
+        identity_extent(&hash, (pl_u64)before.st_size);
+        pl_u8 buffer[65536];
+        pl_u64 read_bytes = 0u;
+        for (;;) {
+            ssize_t n = read(fd, buffer, sizeof(buffer));
+            if (n < 0 && errno == EINTR) continue;
+            if (n < 0) { status = -1; break; }
+            if (!n) break;
+            pl_sha256_write(&hash, buffer, (pl_u64)n);
+            read_bytes += (pl_u64)n;
+        }
+        if (fstat(fd, &after) || !same_source(&before, &after)
+                || read_bytes != (pl_u64)before.st_size) status = -1;
+        if (close(fd)) status = -1;
+    }
+    for (size_t i = 0u; !status && i < owner->tree.count; ++i) {
+        struct stat after;
+        if (llistxattr(owner->tree.entry[i].full, 0, 0u) < 0
+                || lstat(owner->tree.entry[i].full, &after)
+                || !same_source(&owner->tree.entry[i].status, &after))
+            status = -1;
+    }
+    if (!status) {
+        pl_u8 digest[PL_SHA256_BYTES];
+        pl_sha256_close(&hash, digest);
+        for (unsigned i = 0u; i < PL_SHA256_BYTES; ++i)
+            printf("%02x", (unsigned)digest[i]);
+        putchar('\n');
+    } else fprintf(stderr, "package root identity failed or source changed: %s\n", root);
+    artifact_namespace_posix_close(&value);
+    return status ? 1 : 0;
+}
+
 int main(int argc, char **argv)
 {
+    if (argc == 3 && !strcmp(argv[1], "--identity"))
+        return root_identity(argv[2]);
     if (argc != 3) {
-        fprintf(stderr, "usage: %s ROOT REPORT\n", argv[0]);
+        fprintf(stderr, "usage: %s ROOT REPORT | --identity ROOT\n", argv[0]);
         return 2;
     }
     artifact_namespace_posix namespace = { 0 };

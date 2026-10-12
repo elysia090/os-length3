@@ -18,6 +18,9 @@ on:
       - 'data/oracle/inspect-dhcp-printf-table.mjs'
       - 'data/oracle/check-readiness-mounts.mjs'
       - 'data/distribution/boot/ready'
+      - 'data/distribution/*package-set*.sh'
+      - 'src/v2/artifact/**'
+      - 'src/v2/support/**'
       - 'src/v2/vm/check/browser/evidence/2026-10-12-dhcp-syslog-root-cause.json'
       - 'src/v2/vm/check/browser/evidence/2026-10-12-storage-failures-browser.json'
   pull_request:
@@ -36,6 +39,9 @@ on:
       - 'data/oracle/inspect-dhcp-printf-table.mjs'
       - 'data/oracle/check-readiness-mounts.mjs'
       - 'data/distribution/boot/ready'
+      - 'data/distribution/*package-set*.sh'
+      - 'src/v2/artifact/**'
+      - 'src/v2/support/**'
       - 'src/v2/vm/check/browser/evidence/2026-10-12-dhcp-syslog-root-cause.json'
       - 'src/v2/vm/check/browser/evidence/2026-10-12-storage-failures-browser.json'
 
@@ -66,3 +72,7 @@ jobs:
           node --check data/oracle/inspect-dhcp-printf-table.mjs
           bash -n data/distribution/boot/ready
           node data/oracle/check-readiness-mounts.mjs
+      - name: Check package-set input cuts and reuse
+        run: |
+          make -C src/v2/artifact -j2 all namespace-check
+          sudo bash data/distribution/check-package-set-content.sh
