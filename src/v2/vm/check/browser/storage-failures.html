@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Isolated browser storage failures</title>
+<h1>Isolated browser storage failures</h1>
+<p>Production encrypted blocks and real IndexedDB in disposable test namespaces.
+Injected quota errors never fill a disk. Linux/ext4 recovery and host RSS are separate checks.</p>
+<button id="run">Run isolated checks</button>
+<pre><output id="result" data-status="idle">Not started</output></pre>
+<script type="module" src="./storage-failures.mjs"></script>
+</html>

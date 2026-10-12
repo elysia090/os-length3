@@ -1,0 +1,150 @@
+{
+  "format": "browser-persistent-block-failures-v1",
+  "status": "pass",
+  "scope": "real IndexedDB; injected bounded quota; Worker loss before head publication",
+  "linuxBoot": "not-tested",
+  "engineQuotaExhaustion": "not-tested",
+  "hostRss": "not-measured",
+  "cases": [
+    {
+      "scenario": "publication-count",
+      "publicationPuts": 7,
+      "baseline": {
+        "objects": 7,
+        "ciphertextBytes": 12718
+      },
+      "after": {
+        "objects": 14,
+        "ciphertextBytes": 25436
+      },
+      "plaintextErased": true
+    },
+    {
+      "scenario": "quota",
+      "faultAt": 1,
+      "plaintextErased": true,
+      "storeClosedOnce": true,
+      "oldRootRestored": true,
+      "crossPageSha256": "7915e9e7ee7e14e6a1a2a8bcafb908fc0d36f7f0c69c760744661d7a9624f8fc",
+      "distantSha256": "e2cf0b5e67167d2473db0d7150e733d19844d1323e10001620e1269ee7fa72fa"
+    },
+    {
+      "scenario": "quota",
+      "faultAt": 2,
+      "plaintextErased": true,
+      "storeClosedOnce": true,
+      "oldRootRestored": true,
+      "crossPageSha256": "7915e9e7ee7e14e6a1a2a8bcafb908fc0d36f7f0c69c760744661d7a9624f8fc",
+      "distantSha256": "e2cf0b5e67167d2473db0d7150e733d19844d1323e10001620e1269ee7fa72fa"
+    },
+    {
+      "scenario": "quota",
+      "faultAt": 3,
+      "plaintextErased": true,
+      "storeClosedOnce": true,
+      "oldRootRestored": true,
+      "crossPageSha256": "7915e9e7ee7e14e6a1a2a8bcafb908fc0d36f7f0c69c760744661d7a9624f8fc",
+      "distantSha256": "e2cf0b5e67167d2473db0d7150e733d19844d1323e10001620e1269ee7fa72fa"
+    },
+    {
+      "scenario": "quota",
+      "faultAt": 4,
+      "plaintextErased": true,
+      "storeClosedOnce": true,
+      "oldRootRestored": true,
+      "crossPageSha256": "7915e9e7ee7e14e6a1a2a8bcafb908fc0d36f7f0c69c760744661d7a9624f8fc",
+      "distantSha256": "e2cf0b5e67167d2473db0d7150e733d19844d1323e10001620e1269ee7fa72fa"
+    },
+    {
+      "scenario": "quota",
+      "faultAt": 5,
+      "plaintextErased": true,
+      "storeClosedOnce": true,
+      "oldRootRestored": true,
+      "crossPageSha256": "7915e9e7ee7e14e6a1a2a8bcafb908fc0d36f7f0c69c760744661d7a9624f8fc",
+      "distantSha256": "e2cf0b5e67167d2473db0d7150e733d19844d1323e10001620e1269ee7fa72fa"
+    },
+    {
+      "scenario": "quota",
+      "faultAt": 6,
+      "plaintextErased": true,
+      "storeClosedOnce": true,
+      "oldRootRestored": true,
+      "crossPageSha256": "7915e9e7ee7e14e6a1a2a8bcafb908fc0d36f7f0c69c760744661d7a9624f8fc",
+      "distantSha256": "e2cf0b5e67167d2473db0d7150e733d19844d1323e10001620e1269ee7fa72fa"
+    },
+    {
+      "scenario": "quota",
+      "faultAt": 7,
+      "plaintextErased": true,
+      "storeClosedOnce": true,
+      "oldRootRestored": true,
+      "crossPageSha256": "7915e9e7ee7e14e6a1a2a8bcafb908fc0d36f7f0c69c760744661d7a9624f8fc",
+      "distantSha256": "e2cf0b5e67167d2473db0d7150e733d19844d1323e10001620e1269ee7fa72fa"
+    },
+    {
+      "scenario": "head-abort",
+      "plaintextErased": true,
+      "storeClosedOnce": true,
+      "oldRootRestored": true,
+      "crossPageSha256": "7915e9e7ee7e14e6a1a2a8bcafb908fc0d36f7f0c69c760744661d7a9624f8fc",
+      "distantSha256": "e2cf0b5e67167d2473db0d7150e733d19844d1323e10001620e1269ee7fa72fa"
+    },
+    {
+      "scenario": "corruption",
+      "corruptionRefused": true,
+      "retainedCiphertextRestore": true,
+      "automaticRepair": false,
+      "oldRootRestored": true,
+      "crossPageSha256": "7915e9e7ee7e14e6a1a2a8bcafb908fc0d36f7f0c69c760744661d7a9624f8fc",
+      "distantSha256": "e2cf0b5e67167d2473db0d7150e733d19844d1323e10001620e1269ee7fa72fa"
+    },
+    {
+      "scenario": "quota-close",
+      "plaintextErased": true,
+      "storeClosedOnce": true,
+      "oldRootRestored": true,
+      "crossPageSha256": "7915e9e7ee7e14e6a1a2a8bcafb908fc0d36f7f0c69c760744661d7a9624f8fc",
+      "distantSha256": "e2cf0b5e67167d2473db0d7150e733d19844d1323e10001620e1269ee7fa72fa"
+    },
+    {
+      "scenario": "worker-interruption",
+      "oldRootRestored": true,
+      "crossPageSha256": "7915e9e7ee7e14e6a1a2a8bcafb908fc0d36f7f0c69c760744661d7a9624f8fc",
+      "distantSha256": "e2cf0b5e67167d2473db0d7150e733d19844d1323e10001620e1269ee7fa72fa",
+      "persistedBeforeInterruption": 3,
+      "workerTerminatedWithoutClose": true
+    }
+  ],
+  "deletedDatabases": [
+    "oracle-20261012-7a84665e-cd69-4049-a46a-94d13c184a9b-count",
+    "oracle-20261012-7a84665e-cd69-4049-a46a-94d13c184a9b-quota-1",
+    "oracle-20261012-7a84665e-cd69-4049-a46a-94d13c184a9b-quota-2",
+    "oracle-20261012-7a84665e-cd69-4049-a46a-94d13c184a9b-quota-3",
+    "oracle-20261012-7a84665e-cd69-4049-a46a-94d13c184a9b-quota-4",
+    "oracle-20261012-7a84665e-cd69-4049-a46a-94d13c184a9b-quota-5",
+    "oracle-20261012-7a84665e-cd69-4049-a46a-94d13c184a9b-quota-6",
+    "oracle-20261012-7a84665e-cd69-4049-a46a-94d13c184a9b-quota-7",
+    "oracle-20261012-7a84665e-cd69-4049-a46a-94d13c184a9b-head-abort",
+    "oracle-20261012-7a84665e-cd69-4049-a46a-94d13c184a9b-corruption",
+    "oracle-20261012-7a84665e-cd69-4049-a46a-94d13c184a9b-quota-close",
+    "oracle-20261012-7a84665e-cd69-4049-a46a-94d13c184a9b-worker-interrupt"
+  ],
+  "errors": [],
+  "secureContext": true,
+  "isolated": true,
+  "publicationPuts": 7,
+  "provenance": {
+    "Browser": "Codex In-app Browser (iab)",
+    "Origin": "http://127.0.0.1:63699",
+    "Server": "approval-reviewed loopback server; no settings or installs",
+    "ObservedUtc": "2026-10-12T01:48:58.8140923Z",
+    "SourceBaseHead": "379d3c3d5537da2792ab01b4cdf61424e91d62d3",
+    "HarnessWasUncommittedDuringObservation": true,
+    "HarnessSha256": {
+      "storage-failures.html": "7aa58ebc5a36507c18d1a5d321c95c5619ea03b52486b8be82323c579371559a",
+      "storage-failures.mjs": "47a2be70bf45beaa3e1bbfebab11e5634acb08dc738b21be9317e78df90b2d96",
+      "storage-failures-worker.mjs": "5eb6ffe14c6405494dd9e67f9826cd5a1f3060de2e705521a135971adc0cbf43"
+    }
+  }
+}

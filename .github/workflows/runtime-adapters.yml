@@ -6,22 +6,30 @@ on:
     paths:
       - '.github/workflows/runtime-adapters.yml'
       - 'src/v2/web/**'
+      - 'src/v2/vm/check/browser/storage-failures*'
+      - 'src/v2/vm/check/browser/product.*'
       - 'src/v2/Makefile'
       - 'data/oracle/check-site-hardlinks.mjs'
       - 'data/oracle/check-persistent-block*.mjs'
       - 'data/oracle/check-machine-devices-close.mjs'
       - 'data/oracle/check-memory-budget.mjs'
       - 'data/oracle/check-machine-yield.mjs'
+      - 'data/oracle/check-browser-storage-failure-receipt*.mjs'
+      - 'src/v2/vm/check/browser/evidence/2026-10-12-storage-failures-browser.json'
   pull_request:
     paths:
       - '.github/workflows/runtime-adapters.yml'
       - 'src/v2/web/**'
+      - 'src/v2/vm/check/browser/storage-failures*'
+      - 'src/v2/vm/check/browser/product.*'
       - 'src/v2/Makefile'
       - 'data/oracle/check-site-hardlinks.mjs'
       - 'data/oracle/check-persistent-block*.mjs'
       - 'data/oracle/check-machine-devices-close.mjs'
       - 'data/oracle/check-memory-budget.mjs'
       - 'data/oracle/check-machine-yield.mjs'
+      - 'data/oracle/check-browser-storage-failure-receipt*.mjs'
+      - 'src/v2/vm/check/browser/evidence/2026-10-12-storage-failures-browser.json'
 
 permissions:
   contents: read
@@ -42,3 +50,8 @@ jobs:
           node data/oracle/check-memory-budget.mjs
           node data/oracle/check-machine-yield.mjs
           node data/oracle/check-site-hardlinks.mjs
+          node data/oracle/check-browser-storage-failure-receipt-test.mjs
+          node data/oracle/check-browser-storage-failure-receipt.mjs src/v2/vm/check/browser/evidence/2026-10-12-storage-failures-browser.json
+          node --check src/v2/vm/check/browser/storage-failures.mjs
+          node --check src/v2/vm/check/browser/storage-failures-worker.mjs
+          node --check src/v2/vm/check/browser/product.mjs
