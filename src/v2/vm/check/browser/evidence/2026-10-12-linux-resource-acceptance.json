@@ -146,7 +146,10 @@
     "tls": "not repeated without guest network setup",
     "hotDisconnectReconnect": "unconfirmed",
     "parallelGuestTraffic": "unconfirmed",
-    "scope": "fresh regular shipped daemon; not the earlier separate diagnostic candidate ELF"
+    "scope": "fresh regular shipped daemon; not the earlier separate diagnostic candidate ELF",
+    "comparisonEvidence": "2026-10-12-network-service-comparison.json",
+    "shippedDhcpSha256": "3d58cbeb19b9c6071cb3c0687317edea6848237b3caf92b246dd3a251764a613",
+    "compatibilityLinkAloneExit": 139
   },
   "serviceReadiness": "s6 initial timeout reproduced; normal PID1 console available",
   "publishedRelease": "unchanged",
@@ -157,6 +160,14 @@
     "linux-ram-cycles.json": "66d8bd5e4d8870cad08a7075dbd6af8472b028ce78ac48917ca19dbc450d9153",
     "linux-network-shipped-dhcp.json": "c05a8e57e3d752418cc5642cdfa3f0291c82a326cdc51169da9f82500c744663",
     "linux-network-closed.json": "9898672484c2f344e21bb4d2c6e1b535ba343f1ae19a33d7d45f0bc1fb49bca5",
-    "linux-network-reopen-initial.json": "ec71ad62851f711001ba7d0385e30d14db02b3315cc14515c653e84bfec9f098"
+    "linux-network-reopen-initial.json": "ec71ad62851f711001ba7d0385e30d14db02b3315cc14515c653e84bfec9f098",
+    "linux-service-comparison.json": "ae1b1d31003d0de463a86553b11bb602ad7325efb718fd77b38c5c9fd0ed1faa",
+    "linux-linked-shipped-dhcp.json": "91e541f5b6fabe570929e0d491db2e430c2c871094813af3fcc48a0b3598c8f1",
+    "linux-network-comparison-closed.json": "ab65abcbfc316c884101072774b4da9d0f02e056099be859e227c84b5908910f"
+  },
+  "serviceTransitions": {
+    "coldAutomatic": "timeout",
+    "same10000msWarmExit": 0,
+    "scope": "manual warm recovery only"
   }
 }
