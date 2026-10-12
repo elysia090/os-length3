@@ -15,6 +15,8 @@ on:
       - 'data/oracle/check-memory-budget.mjs'
       - 'data/oracle/check-machine-yield.mjs'
       - 'data/oracle/check-browser-storage-failure-receipt*.mjs'
+      - 'data/oracle/inspect-dhcp-printf-table.mjs'
+      - 'src/v2/vm/check/browser/evidence/2026-10-12-dhcp-syslog-root-cause.json'
       - 'src/v2/vm/check/browser/evidence/2026-10-12-storage-failures-browser.json'
   pull_request:
     paths:
@@ -29,6 +31,8 @@ on:
       - 'data/oracle/check-memory-budget.mjs'
       - 'data/oracle/check-machine-yield.mjs'
       - 'data/oracle/check-browser-storage-failure-receipt*.mjs'
+      - 'data/oracle/inspect-dhcp-printf-table.mjs'
+      - 'src/v2/vm/check/browser/evidence/2026-10-12-dhcp-syslog-root-cause.json'
       - 'src/v2/vm/check/browser/evidence/2026-10-12-storage-failures-browser.json'
 
 permissions:
@@ -55,3 +59,4 @@ jobs:
           node --check src/v2/vm/check/browser/storage-failures.mjs
           node --check src/v2/vm/check/browser/storage-failures-worker.mjs
           node --check src/v2/vm/check/browser/product.mjs
+          node --check data/oracle/inspect-dhcp-printf-table.mjs

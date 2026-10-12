@@ -149,7 +149,15 @@
     "scope": "fresh regular shipped daemon; not the earlier separate diagnostic candidate ELF",
     "comparisonEvidence": "2026-10-12-network-service-comparison.json",
     "shippedDhcpSha256": "3d58cbeb19b9c6071cb3c0687317edea6848237b3caf92b246dd3a251764a613",
-    "compatibilityLinkAloneExit": 139
+    "compatibilityLinkAloneExit": 139,
+    "rootCauseEvidence": "2026-10-12-dhcp-syslog-root-cause.json",
+    "diagnosticNoSyslog": {
+      "exit": 0,
+      "ipv4": "10.0.2.15/24",
+      "defaultRoute": "10.0.2.2",
+      "nameserver": "10.0.2.3",
+      "scope": "diagnostic; default shipped behavior still fails"
+    }
   },
   "serviceReadiness": "s6 initial timeout reproduced; normal PID1 console available",
   "publishedRelease": "unchanged",

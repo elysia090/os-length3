@@ -138,7 +138,8 @@
     "faultStartsInsideInstruction": true,
     "faultBytesMatchGuestKernelDump": true,
     "nearbyRelativeSwitchTableContainsFaultTarget": false,
-    "scope": "a malformed control target is a hypothesis; this inspection does not identify whether the artifact, relocation or runtime formed it; no ELF patch or diagnostic execution"
+    "scope": "a malformed control target is a hypothesis; this inspection does not identify whether the artifact, relocation or runtime formed it; no ELF patch or diagnostic execution",
+    "refinedAttribution": "printf %n secondary table at 0x677a0 routes into the strftime instruction, independently matching kernel-core registers"
   },
   "closedAfterFault": {
     "status": "closed",
@@ -147,7 +148,7 @@
     "storageRevision": 32
   },
   "remaining": [
-    "exact native comparison of shipped ELF and runtime control target",
+    "regenerate and verify signed root using the current postlink source",
     "normal automatic cold service readiness",
     "shipped DHCP ACK/address/route/DNS",
     "default HTTPS, hot carrier reconnect and parallel traffic",
@@ -158,5 +159,6 @@
     "linux-service-comparison.json": "ae1b1d31003d0de463a86553b11bb602ad7325efb718fd77b38c5c9fd0ed1faa",
     "linux-linked-shipped-dhcp.json": "91e541f5b6fabe570929e0d491db2e430c2c871094813af3fcc48a0b3598c8f1",
     "linux-network-comparison-closed.json": "ab65abcbfc316c884101072774b4da9d0f02e056099be859e227c84b5908910f"
-  }
+  },
+  "rootCauseEvidence": "2026-10-12-dhcp-syslog-root-cause.json"
 }
