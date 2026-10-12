@@ -29,6 +29,54 @@ the receipt/quorum and root-CAS contract below can acknowledge a durable commit.
 User-selected plaintext import/export is an explicitly granted transfer outside
 the managed ciphertext tiers. It never creates a browser POSIX filesystem.
 
+## Key custody and recovery authority — current implementation
+
+Package verification uses public keys; writable storage uses secrets. Their
+authorities are not interchangeable. Package custody/download bootstrap are in
+[PACKAGE.md](PACKAGE.md). This section describes actual browser code, not
+completion of every derivation below.
+
+| Material | Owner / purpose | Can an untrusted tier supply authority? |
+| --- | --- | --- |
+| master `CryptoKey` | Supervisor-supplied HKDF secret; imported and derived keys are non-extractable | No. Ciphertext availability is not key recovery. |
+| volume ID and salt | Public 128-bit ID and 256-bit CSPRNG salt, bound to root AAD / derivation | Bytes may be stored, but selecting the volume context requires retained trusted authority. Salt is not a recovery secret. |
+| expected head envelope | Supervisor's exact committed head pin | No. An older valid head still passes AEAD; comparison with the retained pin detects replacement/rollback. |
+| machine generation / resource binding | Fresh execution and operation authority | No. Neither is an encryption key or a substitute for head freshness. |
+
+`ciphertext-storage.js` derives volume roles `volume-root`, `volume-metadata`
+and `row-locator`, and object roles `row-aead` and `row-auth`. HKDF info includes
+the fixed domain, protocol version, length-delimited role and context; object
+context includes volume ID, canonical digest and generation. Root/metadata keys
+use AES-256-GCM; locator/row-auth keys use HMAC-SHA256. HMAC keys are symmetric
+secrets, **not** APK signing/public key pairs.
+
+Production `PersistentBlock` uses its root key for encrypted heads and its
+metadata key for encrypted directory/page objects, with role/coordinate-bound
+AAD and ciphertext-hash locators. It does not yet route those pages through
+the prototype's object-row AEAD/erasure projection. Encrypted-block recovery
+does not prove completion of the row/ECC or C-only admission design.
+
+The verification page creates a fresh 32-byte CSPRNG master input, imports a
+non-extractable HKDF `CryptoKey` and clears the input buffer. The live supervisor
+page retains that key, volume context and latest exact head and passes authority
+to replacement Workers. IndexedDB stores ciphertext objects/head, not that raw
+key. Worker close/reopen cold-boots Linux; it does not restore guest processes.
+
+Page reload, browser exit, supervisor loss or another device is different.
+There is no implemented persistent key vault, recovery-key export, password
+wrapping, cross-device key distribution or authenticated head-recovery UI.
+Non-extractability does not protect a compromised supervisor origin, guarantee
+memory erasure or recover a volume after key loss. Such ciphertext must not be
+relabeled as recoverable, silently reformatted or accepted with a provider's
+replacement key/head.
+
+A durable supervisor still needs a separately trusted recovery mechanism
+binding volume context, wrapped/key-provider authority and committed head.
+Master-key rotation needs old-volume access, a new key/context and verified
+migration, not simply a new secret at the old coordinates. These are remaining
+contracts, not present UI features. [RFC 5869](https://www.rfc-editor.org/rfc/rfc5869.html)
+defines the derivation interface; it is not a security audit of this product.
+
 ## Required properties
 
 Let `A` be the canonical executable or filesystem object and let `T_i` be any
@@ -238,6 +286,15 @@ With `group < 2^32` and `slot < 2^16`, (13) is injective into 96 bits.  The
 implementation must never encrypt the same `(object salt, generation, group,
 slot)` twice.  A retry returns the retained immutable ciphertext; it does not
 invoke AES-GCM again.  A new encryption uses a new object generation and salt.
+
+Equation (13) is the browser row prototype's little-endian `ROW1` spelling.
+The C coordinate helper currently spells `LE64(group) || LE32(slot)` instead;
+it is not a byte-compatible AEAD row implementation of (13). Production
+`PersistentBlock` currently uses fresh random96-bit root/metadata envelope
+nonces, not either row spelling. These are explicit implementation gaps, not
+three interchangeable storage formats. Consolidation must bind the chosen
+spelling/version to keys and authenticated metadata, without accepting the
+other spelling as an implicit fallback.
 
 AEAD associated data binds:
 
@@ -614,11 +671,14 @@ Implemented C structure:
 | injective 64-bit-group/32-bit-slot nonce spelling | `storage/src/crypto.c` |
 | erasure shape validation | `storage/src/erasure.c` |
 
-The browser ciphertext and erasure files are prototypes, not the product
-authority. In particular, the C library does not yet implement HKDF, AEAD,
-Reed--Solomon reconstruction, lease ownership, root publication or recovery.
-Those properties remain red until their C implementation and independent
-falsification tests exist.
+The production Worker currently uses browser `PersistentBlock` with WebCrypto
+HKDF/AES-GCM and encrypted IndexedDB objects/head. Worker replacement with
+retained supervisor key/context/head is tested separately from browser-exit
+recovery. The object-row/erasure files are still prototypes, not that production
+page path. C does not yet implement this complete HKDF/AEAD/erasure/root
+admission route, nor all derived lease/arena/recovery policies. Their general
+C-only and independent falsification gates remain incomplete; browser encrypted
+storage success must not be counted as those proofs.
 
 Remaining normative gaps:
 
@@ -634,9 +694,9 @@ Remaining normative gaps:
 * the 64-bit atomic slot layout, arena retirement, cross-worker reclamation,
   and starvation policy are specified here but are not all implemented in the
   production VM;
-* the current distribution build has no Artifact release-word publisher, so a
-  Storage delivery for the new optimized-ELF route cannot yet be produced or
-  measured.
+* current fixed browser delivery has a digest-pinned descriptor and bounded
+  object chunks, not the complete signed canonical release-word projection.
+  That broader release-word/Storage publication gate remains incomplete.
 
 Old readers are deleted only after the new canonical artifact reproduces every
 logical lookup, every cryptographic admission test, VM parity, and recovery.

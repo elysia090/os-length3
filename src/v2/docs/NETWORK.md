@@ -87,7 +87,8 @@ never advance completion twice, and admit a complete frame only once. Loss
 remains normal link packet loss; the bridge does not retransmit or ACK fragments.
 The frame rank is only a reassembly coordinate, not a TCP/QUIC reliability
 sequence. It cannot wrap under the same session/generation. Raw peer traffic
-remains untrusted input, and this design is not yet an implemented NIC.
+remains untrusted input. Implemented bridge geometry is not by itself a
+complete guest networking or recovery acceptance proof.
 
 The WebTransport session already preserves datagram boundaries and QUIC
 authenticates its records. Authority scope and grant revision are immutable
@@ -96,12 +97,12 @@ captured binding rather than acquiring the latest grant at delivery time.
 Regrant opens a newly authorized session. Trace order is recorded at
 `network_poll`; reliable control records are not a second packet transport.
 
-The WebTransport connection lives outside the disposable VM worker. Restarting
-the VM publishes a new generation before any frame is admitted. Frames and
-control records from an older generation are discarded. A bounded ingress
-queue may survive a worker restart, but Linux RAM and virtqueues do not. The
-initial recovery contract is therefore an ordinary link down/up transition;
-survival of established TCP connections is not claimed.
+A supervisor-owned transport broker may outlive a disposable CPU Worker.
+Currently the production Linux Worker owns its `NetworkTransport`; close
+releases the session and a new Worker opens a new generation. Old frames and
+control records cannot acquire that generation. Linux RAM and virtqueues do
+not survive a cold reopen. Recovery is an ordinary link down/up transition,
+not survival of established TCP connections or a persisted bearer grant.
 
 ## Gateway
 
@@ -116,6 +117,32 @@ anchor for guest applications. HTTPS and SSH remain end-to-end from Linux. The
 gateway must authenticate the browser origin and session, constrain source
 addresses and advertised routes, reject spoofed frames, bound queues and rates,
 and deny private-network reachability unless it is explicitly granted.
+
+### Transport credentials are not guest trust roots
+
+The local gateway generates an in-memory ECDSA P-256 private key/self-signed
+certificate at process start, valid for thirteen days. The browser receives
+Base64 SHA-256 of the **complete DER certificate**, not a PEM-file digest or
+public-key-only fingerprint, and supplies WebTransport `serverCertificateHashes`.
+Restart generates a new certificate/pin. Obtain it from the authorized local
+broker, never by disabling validation or accepting a substituted remote pin.
+The control listener/supervisor are explicit trust boundaries, not a public CA.
+
+The separate256-bit CSPRNG bearer in the URL grants carrier access. Unlike
+the certificate pin it is secret: do not commit `grant=` URLs, put them in
+public receipts/docs, or ship them in the Linux root. `/config` is
+loopback/Host/origin-scoped and `no-store`; the broker is single-link, not
+multi-user authentication. One-hour/byte limits bound an admitted session,
+not an independently rotated bearer. Generation fencing does not make a
+disclosed capability harmless.
+
+These are not the APK signing key, a workspace master key, the guest CA bundle,
+an SSH host/user key, or a grant to publish guest ports. Linux applications
+still validate their own HTTPS certificate/hostname against guest CA roots and
+their own SSH trust policy. The gateway terminates QUIC only; accepting its
+certificate pin is not guest HTTPS success. See the
+[WebTransport certificate-hash interface](https://www.w3.org/TR/webtransport/#dom-webtransportoptions-servercertificatehashes)
+and [local broker scope](../network/gateway/README.md).
 
 ## Physical state
 
@@ -168,8 +195,13 @@ bounded fragment protocol, real WebTransport datagrams and explicit pinned
 loopback admission. Its actual-browser1514-byte reverse/duplicate-fragment
 roundtrip passes. Its diagnostic echo is not Internet connectivity, and its
 Linux TAP backend requires a separately authorized interface/route policy.
-The C VM NIC and complete guest network connection remain unimplemented;
-the following end-to-end gates are not replaced by the transport receipt.
+The C virtio-MMIO NIC is implemented and actual browser DNS/TCP, normal DHCP
+ACK/address/route/DNS and an earlier explicit-X25519 verified HTTPS response
+have separate receipts. The latest default and explicit-X25519 HTTPS attempts
+still time out before HTTP/body; full IPv4/IPv6, regrant, ingress and prolonged
+recovery acceptance are not implied. See
+[current userland evidence](../vm/check/browser/evidence/2026-10-11-userland-acceptance.md).
+The following end-to-end gates remain the contract, not a transport-only pass.
 
 1. Enable the upstream Linux network stack and `virtio-mmio`/`virtio-net`
    drivers without patching kernel networking code.

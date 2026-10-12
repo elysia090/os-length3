@@ -118,6 +118,15 @@ signature outside the bundle when publishing the downloadable file. A
 `QM_ALLOW_TEST_SIGNING_KEY=1` run only validates the pipeline; it is not a
 public release.
 
+See [signing keys and bootstrap trust](../src/v2/docs/PACKAGE.md#signing-keys-public-keys-and-bootstrap-trust)
+for custody, provisioning and rotation limits. The public key is an owned
+`/etc/apk/keys/<basename>` payload; the private key never enters a bundle/source
+asset. Release inputs record SHA-256 of the **exact public PEM file**; the
+publisher separately compares DER public-component digests to check the pair.
+A bundle checksum is not a detached publisher signature, and a downloaded
+checksum/key cannot approve its own download. No test key is promoted to
+production by this flag.
+
 Before building the kernel or the release-wide ELF population, the build also
 post-link compiles the toolchain's linked `readelf`, `objcopy`, and `as`, verifies their
 ELFs, and compares `readelf -rW` on linked GCC and `objcopy -O binary` on

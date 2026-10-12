@@ -1736,6 +1736,26 @@ CR3 and physical page coordinates can prove a mapping but do not belong in a
 reusable arithmetic transfer.  CPL, paging mode, CS mode, and feature
 assumptions cannot be dropped merely because two byte strings match.
 
+### Identity is not publisher authority
+
+A digest fixes which bytes are requested, not who may publish them. An ELF
+proof binds an output to its declared linked input, not that input's origin.
+Package signatures, Artifact commitments, delivery pins and workspace AEAD
+are distinct checks, never alternatives around one another.
+
+Authenticate the native download before trusting its internal manifest/keys.
+Current `openMachineArtifact` requires an independently supplied SHA-256 of
+the complete `release.json`, then authenticates exact object chunks/extents.
+It has no release-signature verifier or key-rotation resolver. A digest fetched
+beside the descriptor is not an independent trust anchor; no key is learned
+from an unauthenticated descriptor itself.
+
+The signed delivery-root design in [STORAGE.md](STORAGE.md) does not mean this
+digest-pinned reader already verifies publisher signatures. Signing-key
+custody, exact public-file/DER fingerprints and external-download bootstrap
+are in [PACKAGE.md](PACKAGE.md). Volume secrets/head pins and gateway
+certificate pins approve different objects, never an Artifact release.
+
 ### Ordinary ELF proof spelling
 
 The optimized native program remains an ELF64 x86-64 `ET_EXEC` or `ET_DYN`.

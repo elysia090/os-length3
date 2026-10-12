@@ -66,6 +66,80 @@ release code store would make the outputs cease to be ordinary ELFs.
 A union of raw package roots is useful only as an analysis population. It is
 not a package payload, installed system, release root, or publication gate.
 
+## Signing keys, public keys and bootstrap trust
+
+The publisher, not the guest VM or storage provider, holds the private key.
+`publish-apk.sh` accepts these explicit operator inputs:
+
+| Input / product | Meaning and custody |
+| --- | --- |
+| `QM_APK_SIGNING_KEY` | Existing PEM private key, outside the repository by default; used by `apk mkpkg` and `apk mkndx`. Never a package, Artifact, source/download asset, browser setting or log value. |
+| `QM_APK_PUBLIC_KEY` | Matching PEM public key. Its basename is installed under `/etc/apk/keys/` and owned by `package-trust`. Public bytes are distributable; their authority must be established independently. |
+| `QM_APK_OPENSSL` | Actual OpenSSL executable for key-pair checking, not a signing/trust shim. The ordinary build supplies its toolchain OpenSSL. |
+| `QM_ALLOW_TEST_SIGNING_KEY=1` | Relaxes only the private-key repository-location guard for disposable tests. It neither disables signature verification nor approves/labels a production release automatically. |
+
+Before the first transaction, publication seeds the candidate's trust directory
+with the same public bytes which the signed `package-trust` package will own.
+Every package and `Packages.adb` must pass real `apk verify`; the offline
+transaction, ownership and audit gates follow. There is no `--allow-untrusted`
+publication path or public-key mutation after installation.
+
+Two deliberately different fingerprints exist:
+
+```text
+key_pair_id = SHA256(DER public component of the private/public key)
+package.public-key.sha256 = SHA256(exact public PEM file bytes)
+```
+
+`publish-apk.sh` compares the first on both inputs and rejects mismatch or
+private-key material in the public input. `data/build.sh` records the second
+in release inputs and the publication checkpoint. PEM reformatting can change
+the second without changing the first. Neither is a certificate fingerprint
+or a storage-encryption key.
+
+For an already provisioned key, derive a **new** public file outside the tree
+and inspect only public identities:
+
+```sh
+umask 077
+test ! -e /secure/release.public.pem
+openssl pkey -in /secure/release.private.pem -pubout -out /secure/release.public.pem
+openssl pkey -pubin -in /secure/release.public.pem -outform DER | sha256sum
+sha256sum /secure/release.public.pem
+
+QM_APK_SIGNING_KEY=/secure/release.private.pem \
+QM_APK_PUBLIC_KEY=/secure/release.public.pem \
+  ./data/build.sh
+```
+
+Paths are examples, not shipped files. Provisioning, backup, access control and
+production approval remain operator obligations. Do not print private
+components or put passphrases in command arguments/logs. The file-based CLI
+has no HSM, key-agent, automatic rotation/revocation or protected-key unattended
+signing integration. The public-output options are specified by
+[OpenSSL pkey](https://docs.openssl.org/3.5/man1/openssl-pkey/).
+
+Signing is outside the expensive post-link checkpoint: a new public key
+re-signs packages/index, repeats transaction/audit checks and produces a new
+publication/root/download identity without recompiling unchanged x86.
+A successor key must be approved through an already trusted or independent
+channel, never merely supplied by a mirror. Revoking a compromised key also
+requires an independently trusted policy update; these deployment operations
+are not automated here.
+
+APK signatures do **not** authenticate the enclosing native archive or browser
+release descriptor before it is opened. Obtain the download's expected
+digest/signature and publisher trust independently first. An internal public
+key, manifest, checksum or ELF proof cannot approve its own untrusted container.
+`publish-native-bundle.sh` currently emits a digest, not a detached publisher
+signature; that external-authentication gate still applies.
+
+The frozen native candidate's key remains local/test-only; its public-file
+fingerprint is in [`artifact/native/README.md`](../../../artifact/native/README.md).
+Browser volume secrets and network credentials are separate authorities in
+[STORAGE.md](STORAGE.md) and [NETWORK.md](NETWORK.md), never derived from the
+package private key.
+
 ## Package information and dependencies
 
 Every package fixes, at minimum:

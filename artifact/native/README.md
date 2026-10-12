@@ -13,6 +13,24 @@ the user accepts that small difference for the current correctness stage.
 It is not the active blocker and is not evidence of a speedup. Neither global
 minimality nor browser completion is claimed.
 
+## Key and download trust
+
+The frozen publication records `package.public-key.sha256` as
+`872070838751f9ba52b49c4198277d071f91ce1a1e130e10df59a203de13271e`
+in `verification/release-1a0bddc2340a...inputs`. This is SHA-256 of the exact
+**public PEM file**, not the DER key-pair ID, a certificate pin or a production
+endorsement. Matching public bytes are owned by `package-trust` under
+`/etc/apk/keys`; no signing private key is a release/source payload.
+
+The archive digest is separately
+`4438d58897f8795a69b77d46fcfd45259717c739f9a0419fd7c1541d089c77cc`.
+`SHA256SUMS` records byte identity, but the publisher has not emitted a detached
+signature. Obtain the expected digest/signature through an independently
+trusted channel before extraction. A checksum, key or manifest downloaded
+inside/beside the same untrusted bundle cannot self-authenticate it. This
+test-key candidate remains a pre-release. See
+[key custody, fingerprints and rotation](../../src/v2/docs/PACKAGE.md#signing-keys-public-keys-and-bootstrap-trust).
+
 ## Actual measurements
 
 | Measurement | Result |

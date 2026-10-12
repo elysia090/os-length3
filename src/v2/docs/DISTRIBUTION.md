@@ -110,6 +110,13 @@ reproducible bundle
 verification, and
 a separately authenticated digest or signature tied to the release key.
 
+Signing/public-key custody and fingerprint meanings are in
+[PACKAGE.md](PACKAGE.md#signing-keys-public-keys-and-bootstrap-trust). The native
+publisher reports a checksum but creates no detached release signature; APK
+signatures inside the archive cannot authenticate it before opening. The frozen
+candidate's public key remains test-only. Storage secrets and gateway pins are
+separate authorities, not a second distribution signing identity.
+
 ## Standard 75 MB profile
 
 The standard profile is one functional closure, not an accidental list of

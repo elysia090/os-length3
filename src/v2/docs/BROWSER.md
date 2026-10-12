@@ -441,6 +441,17 @@ tier does not change a root. Remembering a connection preference does not
 restore a revoked browser permission. A reopened machine rechecks actual
 permission and receives new generation-bound operation tickets.
 
+Trust also has separate lifetimes: an independently approved release digest,
+installed APK public keys, workspace master key/context/exact committed head,
+and gateway certificate pin/bearer. None is learned by trusting a cache or
+substituted for another role. The verification supervisor currently retains
+volume authority only while its page lives. Worker disposal/reopen is
+implemented; page reload/browser exit/key-loss recovery is not. IndexedDB
+persistence must not imply otherwise. See
+[storage key custody](STORAGE.md#key-custody-and-recovery-authority--current-implementation),
+[package bootstrap](PACKAGE.md#signing-keys-public-keys-and-bootstrap-trust) and
+[network credentials](NETWORK.md#transport-credentials-are-not-guest-trust-roots).
+
 Effective access is the intersection, never the union, of:
 
 ```

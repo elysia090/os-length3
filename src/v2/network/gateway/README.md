@@ -66,6 +66,16 @@ it expires after one hour and 64 MiB of received datagrams. The rate allowance
 is 1 MiB plus 1 MiB per elapsed second. Public exposure and multi-workspace
 authentication are not implemented by this local broker.
 
+The certificate SHA-256 covers complete DER certificate bytes, not a public
+PEM or SPKI key ID. Its P-256 private key stays in the gateway process; restart
+creates a different certificate and pin. The `grant` bearer returned by
+`/config` is secret even though the certificate pin is public. Do not commit
+the URL, include it in public logs/docs, or export it with the distribution.
+There is no automatic bearer rotation, durable credential vault or public
+identity service here. Package keys, storage master keys, guest HTTPS CA roots
+and SSH keys are unrelated; see
+[credential boundaries](../../docs/NETWORK.md#transport-credentials-are-not-guest-trust-roots).
+
 A reliable control stream exchanges only version, generation, fragment stride
 and link metadata. Its initial record is limited to 1024 bytes and 5 seconds.
 Generation is a decimal string in control JSON and an exact uint64 in the
