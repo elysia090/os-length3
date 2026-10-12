@@ -9,6 +9,17 @@ also completes a fresh browser boot, with no manual transition retry and zero
 network body fetches from the prepared cache. The earlier r2 timeout remains
 recorded as historical diagnostic evidence.
 
+The final browser root also passes normal syslog/privsep DHCP with the actual
+type-5 ACK, address, default route and DNS. Its ordinary curl call to
+`https://www.kernel.org/` returns HTTP 200, certificate verification result 0,
+exit 0 and the expected kernel archive title in a 19,148-byte body. This call
+uses no special curve override. The original saved file hash and filesystem
+UUID remain unchanged after selecting this root.
+Reloading the normal terminal page also recovers that selected root and original
+file, despite a deliberately different configured catalog pin. It observes
+service completion and then closes and flushes its Worker. The exact same browser
+process has not yet been restarted.
+
 These observations do not qualify a public release. Browser process exit and
 restart are still untested, and the native runtime receipt deliberately keeps
 producer source binding `unknown` and product qualification `pending`.
@@ -70,6 +81,7 @@ The export accepts only the eight declared public product roles and checks
 their lengths, SHA-256 digests and flushed owner writes.
 
 The source fixes and regression checks passed both push and PR Linux CI at
-[bba4dfe](https://github.com/elysia090/libqm-prototype/actions/runs/38279775946).
+[c3dd9fe](https://github.com/elysia090/libqm-prototype/actions/runs/38287774054),
+including the boot archive normalizer and its package/source-preservation checks.
 CI success is independent of the actual cold-browser result and still-required
 full browser-restart observation.
