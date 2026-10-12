@@ -10,18 +10,24 @@ const unhex=s=>Uint8Array.from(s.match(/../g),x=>parseInt(x,16));
 const same=(a,b)=>a===null?b===null:b!==null&&a.length===b.length&&a.every((x,i)=>x===b[i]);
 function extent(offset,bytes,total){if(!Number.isSafeInteger(offset)||!Number.isInteger(bytes)||offset<0||bytes<1||bytes>4096||offset>total-bytes)throw new RangeError('bounded physical block extent');}
 export class IndexedBlockStore {
-  static async open(name){
+  static async open(name,{fence=null}={}){
     if(typeof name!=='string'||!/^[a-z0-9._-]{1,100}$/.test(name))throw new TypeError('opaque storage namespace');
-    const db=await new Promise((resolve,reject)=>{const r=indexedDB.open(`length3-block-${name}`,1);
-      r.onupgradeneeded=()=>{r.result.createObjectStore('objects');r.result.createObjectStore('head');};
-      r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);r.onblocked=()=>reject(new Error('storage upgrade blocked'));});
-    db.onversionchange=()=>db.close();return new IndexedBlockStore(db);
+    const db=await new Promise((resolve,reject)=>{let blocked=false;const r=indexedDB.open(`length3-block-${name}`,2);
+      r.onupgradeneeded=()=>{if(blocked){r.transaction.abort();return;}for(const store of ['objects','head','authority'])
+        if(!r.result.objectStoreNames.contains(store))r.result.createObjectStore(store);};
+      r.onsuccess=()=>{if(blocked)r.result.close();else resolve(r.result);};r.onerror=()=>reject(r.error);
+      r.onblocked=()=>{blocked=true;reject(new Error('storage upgrade blocked'));};});
+    db.onversionchange=()=>db.close();return new IndexedBlockStore(db,fence);
   }
-  constructor(db){this.db=db;}
+  constructor(db,fence=null){this.db=db;this.fence=fence;}
   transaction(store,write,body){return new Promise((resolve,reject)=>{
-    const tx=this.db.transaction(store,write?'readwrite':'readonly',write?{durability:'strict'}:undefined);
-    let output;tx.oncomplete=()=>resolve(output);tx.onabort=()=>reject(tx.error??new Error('storage transaction aborted'));
-    tx.onerror=()=>{};body(tx.objectStore(store),v=>{output=v;});
+    const tx=this.db.transaction([store,'authority'],write?'readwrite':'readonly',write?{durability:'strict'}:undefined);
+    let output,failure;tx.oncomplete=()=>resolve(output);tx.onabort=()=>reject(failure??tx.error??new Error('storage transaction aborted'));
+    tx.onerror=()=>{};
+    const r=tx.objectStore('authority').get(1);r.onsuccess=()=>{
+      if((r.result??null)!==this.fence){failure=new Error('workspace supervisor fence lost');tx.abort();return;}
+      try{body(tx.objectStore(store),v=>{output=v;});}
+      catch(error){failure=error;tx.abort();}};
   });}
   async get(key){return this.transaction('objects',false,(s,done)=>{const r=s.get(key);r.onsuccess=()=>done(r.result?new Uint8Array(r.result):null);});}
   async put(key,bytes){return this.transaction('objects',true,(s,done)=>{const r=s.get(key);r.onsuccess=()=>{
@@ -30,7 +36,11 @@ export class IndexedBlockStore {
   async read(){return this.transaction('head',false,(s,done)=>{const r=s.get(0);r.onsuccess=()=>done(r.result?new Uint8Array(r.result):null);});}
   async compareAndSwap(expected,replacement){return this.transaction('head',true,(s,done)=>{const r=s.get(0);r.onsuccess=()=>{
     const current=r.result?new Uint8Array(r.result):null;if(!same(expected,current)){done(false);return;}
-    s.put(replacement.slice(),0);done(true);};});}
+    const authority=s.transaction.objectStore('authority'),a=authority.get(0);a.onsuccess=()=>{
+      if(a.result){if(!(a.result.expectedHead===null||a.result.expectedHead instanceof Uint8Array)
+        ||!same(a.result.expectedHead,current)){txAbort(s);return;}
+        authority.put({...a.result,expectedHead:replacement.slice()},0);}
+      s.put(replacement.slice(),0);done(true);};};});}
   close(){this.db.close();}
 }
 function txAbort(store){store.transaction.abort();}

@@ -11,6 +11,8 @@ on:
       - 'src/v2/Makefile'
       - 'data/oracle/check-site-hardlinks.mjs'
       - 'data/oracle/check-persistent-block*.mjs'
+      - 'data/oracle/check-native-producer-dhcp.sh'
+      - 'data/oracle/seed-image.mjs'
       - 'data/oracle/check-machine-devices-close.mjs'
       - 'data/oracle/check-memory-budget.mjs'
       - 'data/oracle/check-machine-yield.mjs'
@@ -34,6 +36,8 @@ on:
       - 'src/v2/Makefile'
       - 'data/oracle/check-site-hardlinks.mjs'
       - 'data/oracle/check-persistent-block*.mjs'
+      - 'data/oracle/check-native-producer-dhcp.sh'
+      - 'data/oracle/seed-image.mjs'
       - 'data/oracle/check-machine-devices-close.mjs'
       - 'data/oracle/check-memory-budget.mjs'
       - 'data/oracle/check-machine-yield.mjs'
@@ -73,6 +77,10 @@ jobs:
           node --check src/v2/vm/check/browser/storage-failures.mjs
           node --check src/v2/vm/check/browser/storage-failures-worker.mjs
           node --check src/v2/vm/check/browser/product.mjs
+          node --check src/v2/web/workspace-authority.mjs
+          node --check src/v2/vm/check/browser/workspace-recovery.mjs
+          node --check data/oracle/seed-image.mjs
+          bash -n data/oracle/check-native-producer-dhcp.sh
           node --check data/oracle/inspect-dhcp-printf-table.mjs
           bash -n data/distribution/boot/ready
           node data/oracle/check-readiness-mounts.mjs

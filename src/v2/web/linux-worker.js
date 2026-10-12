@@ -18,7 +18,9 @@ function flushConsole(){consoleStream.flush();}
 function consoleWrite(bytes){consoleStream.write(bytes);
   tail=(tail+decoder.decode(bytes,{stream:true})).slice(-4096);
   if(hasReadinessLine(tail,'console-ready'))normal=true;
-  if(hasReadinessLine(tail,'interactive-ready'))serviceReady=true;
+  if(!serviceReady&&hasReadinessLine(tail,'interactive-ready')){
+    serviceReady=true;send('service-ready');
+  }
   if(!normal&&(tail.includes('Offline service transition failed; terminal remains down.')||tail.includes('Boot root handoff failed.')))
     throw new Error('Linux normal boot failed; inspect the C machine diagnostic (no rescue fallback)');
   ready=normal&&/(?:^|\r?\n)[^\r\n]{0,128}[#$] $/.test(tail);
@@ -33,7 +35,7 @@ async function boot(message){
   closing=false;closeFailure=null;pending=message.id;ready=false;normal=false;serviceReady=false;tail='';head=count=0;
   send('progress',{id:message.id,phase:'download',label:'Authenticating Linux release'});
   artifact=await openMachineArtifact(message.releaseUrl,message.releaseSha256);
-  const m=artifact.manifest,s=message.storage,store=await IndexedBlockStore.open(s.name);
+  const m=artifact.manifest,s=message.storage,store=await IndexedBlockStore.open(s.name,{fence:s.fence??null});
   let volume;
   try{volume=await PersistentBlock.open({...s,store,onHead:envelope=>send('storage-head',{envelope})});}
   catch(e){store.close();artifact.close();throw e;}
@@ -64,7 +66,7 @@ self.onmessage=async({data:m})=>{try{
   if(m.action==='input'){if(!owner||closing||typeof m.data!=='string'||m.data.length>4096)throw new Error('bounded console input');
     const bytes=new TextEncoder().encode(m.data);if(count+bytes.length>input.length)throw new Error('console backpressure');
     ready=false;tail='';for(const b of bytes){input[(head+count)&8191]=b;++count;}send('result',{id:m.id,ok:true,handle:1,accepted:bytes.length});return;}
-  if(m.action==='drive'){if(!owner||closing)throw new Error('machine not resident');pending=m.id;if(ready){send('result',{id:m.id,ok:true,handle:1,result:{ready:true,state:{halted:false}}});pending=null;}return;}
+  if(m.action==='drive'){if(!owner||closing)throw new Error('machine not resident');pending=m.id;if(ready){send('result',{id:m.id,ok:true,handle:1,result:{ready:true,serviceReady,state:{halted:false}}});pending=null;}return;}
   if(m.action==='release'){closing=true;await running?.catch(()=>{});if(closeFailure)throw closeFailure;flushConsole();send('result',{id:m.id,ok:true,handle:1});return;}
   throw new Error('unknown machine action');
 }catch(e){send('result',{id:m.id,ok:false,error:e.message});}};

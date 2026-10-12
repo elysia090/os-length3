@@ -1,6 +1,7 @@
 // One terminal owns one disposable Linux worker. Build tools may produce the
 // x86 state pages, but browser execution receives only artifact progress,
 // physical page/barrier observations and console bytes from vm.wasm.
+import {openWorkspaceSession} from './workspace-authority.mjs';
 
 const textDecoder = new TextDecoder();
 
@@ -69,6 +70,8 @@ export function readLinuxConfig(search = location.search) {
     releaseUrl,
     releaseSha256: supplied.releaseSha256 || queryValue(query,'linux-release-sha256'),
     storage: supplied.storage || null,
+    workspace: supplied.workspace || queryValue(query,'linux-workspace','default'),
+    workspaceBytes: supplied.workspaceBytes ?? Number(queryValue(query,'linux-workspace-bytes',256*1048576)),
     network: supplied.network || null,
     initrdUrl: supplied.initrdUrl || queryValue(query, 'linux-initrd'),
     rootfsUrl: supplied.rootfsUrl || queryValue(query, 'linux-rootfs'),
@@ -87,6 +90,7 @@ export class LinuxTerminal {
     this.request = 0;
     this.pending = new Map();
     this.started = false;
+    this.cancelled = false;
     this.startedAt = null;
     this.coldMs = null;
     this.outputStarted = false;
@@ -171,12 +175,21 @@ export class LinuxTerminal {
   }
 
   onMessage(message) {
+    if(message.type==='fault'){
+      this.onMessage({type:'result',id:0,ok:false,error:message.error});
+      return;
+    }
+    if(message.type==='service-ready'){
+      this.serviceReady=true;
+      if(!this.input.disabled)this.setSession('local',true);
+      return;
+    }
     if(message.type==='storage-head'){
       if(this.config.storage)this.config.storage.expectedHead=new Uint8Array(message.envelope);
       return;
     }
     if (message.type === 'ready') {
-      const generation=(this.config.storage?.generation??0n)+1n;
+      const generation=this.config.storage?.trusted?this.config.storage.generation:(this.config.storage?.generation??0n)+1n;
       if(this.config.storage)this.config.storage.generation=generation;
       this.config.generation=generation;
       this.send('boot', this.config);
@@ -239,6 +252,7 @@ export class LinuxTerminal {
       this.worker.terminate();
       this.worker = null;
       this.handle = null;
+      this.workspaceSession?.close();this.workspaceSession=null;
       this.setSession('idle');
       return;
     }
@@ -273,20 +287,31 @@ export class LinuxTerminal {
       detail: `${Math.round(this.coldMs)} ms cold`,
     });
     this.setSession('local', true);
+    this.serviceReady=message.result.serviceReady===true||this.serviceReady===true;
+    if(!this.serviceReady)this.session.lastChild.textContent=' local · services pending';
     this.input.disabled = false;
     this.input.placeholder = 'shell input';
   }
 
-  start(config) {
+  async start(config) {
     if (!config || this.started) return false;
     this.started = true;
     this.startedAt = performance.now();
     this.config = config;
     this.setSession('starting', true);
     this.showProgress({ label: 'Opening the boot image' });
-    this.worker = new Worker(new URL('linux-worker.js', import.meta.url), {
+    if(config.releaseUrl&&!config.storage){
+      try{this.workspaceSession=await openWorkspaceSession(config.workspace,{bytes:config.workspaceBytes});
+        config.storage=this.workspaceSession.storage;}
+      catch(error){this.onMessage({type:'result',id:0,ok:false,error:error.message});return false;}
+    }
+    if(this.cancelled){this.workspaceSession?.close();this.workspaceSession=null;return false;}
+    try{this.worker = new Worker(new URL('linux-worker.js', import.meta.url), {
       type: 'module',
-    });
+    });}catch(error){
+      this.workspaceSession?.close();this.workspaceSession=null;
+      this.onMessage({type:'result',id:0,ok:false,error:error.message});return false;
+    }
     this.worker.addEventListener('message', (event) => this.onMessage(event.data || {}));
     this.worker.addEventListener('error', (event) => this.onMessage({
       type: 'result', id: 0, ok: false,
@@ -296,11 +321,13 @@ export class LinuxTerminal {
   }
 
   release() {
-    if (!this.worker) return;
+    this.cancelled=true;
+    if (!this.worker) {this.workspaceSession?.close();this.workspaceSession=null;return;}
     if (this.handle != null) this.send('release', { handle: this.handle });
     else {
       this.worker.terminate();
       this.worker = null;
+      this.workspaceSession?.close();this.workspaceSession=null;
     }
   }
 }
