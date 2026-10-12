@@ -110,7 +110,7 @@ jobs:
           node data/oracle/check-readiness-mounts.mjs
       - name: Check package-set input cuts and reuse
         run: |
-          make -C src/v2/artifact -j2 all namespace-check
+          make -C src/v2/artifact -j2 all namespace-check namespace-xattrs-check
           sudo bash data/distribution/check-package-set-content.sh
           bash data/distribution/check-package-payload.sh
           bash data/distribution/check-service-sources-fixture.sh

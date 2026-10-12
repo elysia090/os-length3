@@ -13,7 +13,7 @@ DEPS = $(OBJECTS:.o=.d)
 .PHONY: all check index-check immutable-check share-check layout-check factor-check \
 	factor-index-check payload-check derive-check archive-check \
 	factor-codec-check rank-map-check future-check complete-check \
-	namespace-check namespace-measure-check clean
+	namespace-check namespace-measure-check namespace-xattrs-check clean
 
 .PHONY: program-check executable-check factor-benchmark
 all: $(BUILD)/libartifact.a $(BUILD)/artifact-measure-root \
@@ -153,6 +153,23 @@ $(BUILD)/namespace-check: check/namespace.c $(BUILD)/libartifact.a | $(BUILD)
 namespace-check: $(BUILD)/namespace-check
 	$(BUILD)/namespace-check
 
+$(BUILD)/namespace-xattrs-check: cli/measure-namespace.c check/namespace-xattrs.c $(BUILD)/libartifact.a ../support/build/libsupport.a | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) cli/measure-namespace.c \
+		check/namespace-xattrs.c $(BUILD)/libartifact.a \
+		../support/build/libsupport.a -Wl,--wrap=llistxattr -o $@
+
+namespace-xattrs-check: $(BUILD)/artifact-measure-namespace $(BUILD)/namespace-xattrs-check
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	mkdir "$$temporary/root"; printf x >"$$temporary/root/tool"; \
+	ln -s tool "$$temporary/root/link"; \
+	expected=$$($(BUILD)/artifact-measure-namespace --identity "$$temporary/root"); \
+	test "$$($(BUILD)/namespace-xattrs-check --identity "$$temporary/root")" = "$$expected"; \
+	if ARTIFACT_TEST_LINK_XATTR_ERROR=io $(BUILD)/namespace-xattrs-check --identity "$$temporary/root" >/dev/null 2>&1; then \
+		echo 'namespace identity accepted an xattr I/O error' >&2; exit 1; \
+	fi; \
+	echo 'namespace xattrs: unsupported links agree; I/O errors rejected'
+
 namespace-measure-check: $(BUILD)/artifact-measure-namespace
 	@temporary=$$(mktemp -d); \
 	trap 'rm -rf "$$temporary"' EXIT; \
@@ -194,7 +211,7 @@ archive-check: $(BUILD)/archive-check
 	test "$$($(AR) t "$$temporary/generated.a")" = \
 		"$$(printf 'a.o\nsame-meaning-at-another-name.o')"
 
-check: all index-check immutable-check share-check payload-check derive-check layout-check factor-check factor-index-check factor-codec-check archive-check rank-map-check future-check program-check executable-check complete-check namespace-check namespace-measure-check
+check: all index-check immutable-check share-check payload-check derive-check layout-check factor-check factor-index-check factor-codec-check archive-check rank-map-check future-check program-check executable-check complete-check namespace-check namespace-measure-check namespace-xattrs-check
 	@! grep -REn '#include <(x86|optimized-x86|postlink|machine|wasm-compiler|storage|vm)/' include src
 	bash check/measure-root.sh $(BUILD)/artifact-measure-root
 
