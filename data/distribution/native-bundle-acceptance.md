@@ -82,7 +82,7 @@ pending product gates. This receipt grants none of them.
 
 ## Isolated verification
 
-`python3 data/distribution/check-native-bundle-acceptance.py` checks 16 portable
+`python3 data/distribution/check-native-bundle-acceptance.py` checks 17 portable
 binding fixtures. Linux root with `zstd` also runs six end-to-end capture
 fixtures, replacing checks only in a disposable policy copy. They cover a
 successful archive cut and actual retest, failed-check/no-receipt, retained prior
@@ -90,7 +90,8 @@ green after a failed retest, embedded manifest mismatch, and controlled original
 archive/verifier substitutions before consumption. Portable negative
 fixtures cover artifact/source/verifier/policy/conditions drift, old green and
 legacy records, unbacked provenance/product claims, duplicate fields,
-no-clobber/idempotence, detached input copies, and diagnostic override rejection.
+no-clobber/idempotence, retained existing directories, detached input copies,
+and diagnostic override rejection.
 Each rejected ordinary operation preserves inputs, an existing receipt, and a
 caller-work sentinel. The controlled substitution fixture retains its deliberate
 input change and emits no receipt. Neither fixture suite executes the real

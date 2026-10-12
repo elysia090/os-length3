@@ -134,6 +134,16 @@ class BindingFixture(FixtureSetup, unittest.TestCase):
         self.output.write_bytes(b'{"format":"old", "format":"new"}\n')
         self.unchanged(lambda: acceptance.load_record(self.output))
 
+    def test_existing_receipt_directory_retained(self):
+        self.output.mkdir()
+        retained = self.output / "caller-data"
+        retained.write_bytes(b"retain directory contents\n")
+        with self.assertRaises(OSError):
+            acceptance.publish_record(self.output, self.receipt)
+        self.assertEqual(list(self.output.iterdir()), [retained])
+        self.assertEqual(retained.read_bytes(), b"retain directory contents\n")
+        self.assertEqual(self.sentinel.read_bytes(), b"retain\n")
+
     def test_owned_copies_detach_original_inodes(self):
         stage = self.scratch / "cut"
         captured = acceptance.context(self.repo, self.inputs, stage)

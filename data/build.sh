@@ -40,9 +40,10 @@ work=${QM_LINUX_WORK_ROOT:-${QM_SCRATCH_ROOT:-${TMPDIR:-/tmp}}/libqm-linux-work/
 distribution_build=$build/distribution
 mkdir -p "$upstream" "$build" "$out" "$work" "$distribution_build"
 
-# The CLI and the release-wide stage link the same post-link library, but are
-# separate executables. Rebuild both from this checkout before choosing a
-# checkpoint key; an old stage must never publish against a new CLI.
+# The CLI and release-wide stage are separate executables. Refresh checkout
+# builds unless all four producers are explicitly supplied. Executable hashes
+# identify cache inputs; neither overrides nor incremental make prove a clean
+# source/toolchain/flags-to-binary correspondence.
 if [[ -z ${QM_POSTLINK_COMPILER:-} || -z ${QM_POSTLINK_VERIFY:-} \
       || -z ${QM_ARTIFACT_EXECUTABLE_STAGE:-} \
       || -z ${QM_ARTIFACT_AUDIT:-} ]]; then
@@ -725,8 +726,12 @@ else
   native_receipt=$native_bundle.acceptance-$(sha256sum -- "$native_receipt_candidate" | cut -d' ' -f1).json
   # Retain the immutable record next to the downloadable artifact. Both name
   # publications are no-clobber; a partial pair grants no product qualification.
-  if ! ln -- "$native_receipt_candidate" "$native_receipt"; then
-    [[ ! -L $native_receipt ]] && cmp -- "$native_receipt_candidate" "$native_receipt"
+  if ! ln -T -- "$native_receipt_candidate" "$native_receipt"; then
+    if [[ -L $native_receipt || ! -f $native_receipt ]] || \
+       ! cmp -- "$native_receipt_candidate" "$native_receipt"; then
+      printf 'native acceptance publication coordinate conflicts\n' >&2
+      exit 1
+    fi
   fi
   mv -T -n -- "$native_candidate" "$native_bundle"
   if [[ -e $native_candidate ]]; then
