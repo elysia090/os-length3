@@ -709,9 +709,10 @@ else
     exit 1
   fi
   native_candidate=$native_stage/$(basename -- "$native_bundle")
+  native_receipt_candidate=$native_stage/receipt.json
   cleanup_native_stage() {
     if [[ -d ${native_stage:-} ]]; then
-      rm -f -- "$native_candidate"
+      rm -f -- "$native_candidate" "$native_receipt_candidate"
       rmdir -- "$native_stage"
     fi
   }
@@ -720,10 +721,25 @@ else
     "$release_root" "$release_inputs" "$native_candidate"
   bash "$here/distribution/check-native-bundle-runtime.sh" \
     "$native_candidate" "$release_inputs" "$postlink_verify" \
+    "$upstream/zlib-$ZLIB_VERSION.tar.xz" "$native_receipt_candidate"
+  native_receipt=$native_bundle.acceptance-$(sha256sum -- "$native_receipt_candidate" | cut -d' ' -f1).json
+  # Retain the immutable record next to the downloadable artifact. Both name
+  # publications are no-clobber; a partial pair grants no product qualification.
+  if ! ln -- "$native_receipt_candidate" "$native_receipt"; then
+    [[ ! -L $native_receipt ]] && cmp -- "$native_receipt_candidate" "$native_receipt"
+  fi
+  mv -T -n -- "$native_candidate" "$native_bundle"
+  if [[ -e $native_candidate ]]; then
+    printf 'native bundle publication coordinate already exists\n' >&2
+    exit 1
+  fi
+  python3 "$here/distribution/native-bundle-acceptance.py" verify \
+    "$native_receipt" "$native_bundle" "$release_inputs" "$postlink_verify" \
     "$upstream/zlib-$ZLIB_VERSION.tar.xz"
-  mv -- "$native_candidate" "$native_bundle"
+  rm -f -- "$native_receipt_candidate"
   rmdir -- "$native_stage"
   trap - EXIT
+  printf 'native-acceptance=%s\n' "$native_receipt"
 fi
 printf '%s\n' \
   "native-download=$native_bundle" \

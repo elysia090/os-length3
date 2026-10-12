@@ -19,6 +19,8 @@ on:
       - 'data/oracle/check-readiness-mounts.mjs'
       - 'data/distribution/boot/ready'
       - 'data/distribution/*package-set*.sh'
+      - 'data/distribution/*native-bundle*'
+      - 'data/build.sh'
       - 'src/v2/artifact/**'
       - 'src/v2/support/**'
       - 'src/v2/vm/check/browser/evidence/2026-10-12-dhcp-syslog-root-cause.json'
@@ -40,6 +42,8 @@ on:
       - 'data/oracle/check-readiness-mounts.mjs'
       - 'data/distribution/boot/ready'
       - 'data/distribution/*package-set*.sh'
+      - 'data/distribution/*native-bundle*'
+      - 'data/build.sh'
       - 'src/v2/artifact/**'
       - 'src/v2/support/**'
       - 'src/v2/vm/check/browser/evidence/2026-10-12-dhcp-syslog-root-cause.json'
@@ -76,3 +80,6 @@ jobs:
         run: |
           make -C src/v2/artifact -j2 all namespace-check
           sudo bash data/distribution/check-package-set-content.sh
+      - name: Check native acceptance artifact and policy binding
+        run: |
+          sudo python3 data/distribution/check-native-bundle-acceptance.py --require-capture
