@@ -16,6 +16,8 @@ on:
       - 'data/oracle/check-machine-yield.mjs'
       - 'data/oracle/check-browser-storage-failure-receipt*.mjs'
       - 'data/oracle/inspect-dhcp-printf-table.mjs'
+      - 'data/oracle/check-readiness-mounts.mjs'
+      - 'data/distribution/boot/ready'
       - 'src/v2/vm/check/browser/evidence/2026-10-12-dhcp-syslog-root-cause.json'
       - 'src/v2/vm/check/browser/evidence/2026-10-12-storage-failures-browser.json'
   pull_request:
@@ -32,6 +34,8 @@ on:
       - 'data/oracle/check-machine-yield.mjs'
       - 'data/oracle/check-browser-storage-failure-receipt*.mjs'
       - 'data/oracle/inspect-dhcp-printf-table.mjs'
+      - 'data/oracle/check-readiness-mounts.mjs'
+      - 'data/distribution/boot/ready'
       - 'src/v2/vm/check/browser/evidence/2026-10-12-dhcp-syslog-root-cause.json'
       - 'src/v2/vm/check/browser/evidence/2026-10-12-storage-failures-browser.json'
 
@@ -60,3 +64,5 @@ jobs:
           node --check src/v2/vm/check/browser/storage-failures-worker.mjs
           node --check src/v2/vm/check/browser/product.mjs
           node --check data/oracle/inspect-dhcp-printf-table.mjs
+          bash -n data/distribution/boot/ready
+          node data/oracle/check-readiness-mounts.mjs

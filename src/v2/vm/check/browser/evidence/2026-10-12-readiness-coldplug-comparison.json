@@ -1,0 +1,167 @@
+{
+  "format": "linux-readiness-and-coldplug-comparison-v1",
+  "observedDate": "2026-10-12",
+  "status": "readiness launch reduction verified; browser cold initialization still fails",
+  "manifestSha256": "089001a40360870369d08308c33a066bae7f6f13199a5d130c033ce1c07f90db",
+  "systemImageSha256": "f911b9a5f12bc0494d8475996d74adfa2710f1092567f8d218ded41548059c36",
+  "readinessChange": {
+    "path": "data/distribution/boot/ready",
+    "beforeSha256": "e56b755e758b32a6b61a52a25d36b09c0f6849ea292342e6dffc2601459a79ee",
+    "afterSha256": "b1dc411cfacce2e4d61f9215783a6f9dacddcb01903e6e7d2e9e09e946f4c3f7",
+    "awkLaunchesBefore": 6,
+    "awkLaunchesAfter": 2,
+    "unchangedConditions": "exact API mount path/types, overlay root, readonly squashfs release, character console, package/account/service DB existence, writable root probe, PID1 identity, executable development tools and network readiness",
+    "mountFixtureCases": 43,
+    "fixtureResult": "pass using the actual two embedded AWK programs; independent positive/negative expected results",
+    "oldNewPredicateDifferentialCases": 43
+  },
+  "warmLinuxComparison": {
+    "generation": "4",
+    "order": [
+      "before",
+      "after",
+      "after",
+      "before"
+    ],
+    "phaseOrder": [
+      "api",
+      "root",
+      "interactive"
+    ],
+    "seconds": [
+      [
+        1.42,
+        1.42,
+        0.8
+      ],
+      [
+        0.9,
+        1.2,
+        0.78
+      ],
+      [
+        0.99,
+        1.26,
+        0.73
+      ],
+      [
+        1.39,
+        1.39,
+        0.76
+      ]
+    ],
+    "successfulInvocations": 12,
+    "meanPhaseSumBeforeSeconds": 3.59,
+    "meanPhaseSumAfterSeconds": 2.93,
+    "scope": "same running guest, same shell and measuring /proc/uptime; includes measurement overhead, small warm sample, not a cold full-boot performance claim"
+  },
+  "browserColdCandidate": {
+    "generation": "5",
+    "ramBytes": 536870912,
+    "persistentDiskBytes": 33554432,
+    "serviceTransitionTimeoutMs": 10000,
+    "result": "s6-rc transition timed out; s6-sudoc later could not obtain exit status",
+    "databaseCheckExit": 0,
+    "activeServicesBeforeRecovery": [
+      "s6rc-oneshot-runner",
+      "mdevd-ready",
+      "mount-api-filesystems"
+    ],
+    "directColdplugBeforeRestart": {
+      "argv": [
+        "timeout",
+        "10",
+        "/usr/bin/mdevd-coldplug",
+        "-O",
+        "4"
+      ],
+      "exit": 143
+    },
+    "scope": "normal daemon running with full capabilities and no reported netlink drops; startup failure remains unresolved"
+  },
+  "daemonRecoveryControl": {
+    "daemonArgv": [
+      "/usr/bin/mdevd",
+      "-D",
+      "3",
+      "-O",
+      "4"
+    ],
+    "originalArgumentsRestored": true,
+    "coldplugExitAfterRestart": 0,
+    "ueventSequenceBefore": 529,
+    "ueventSequenceAfter": 644,
+    "sameTimeoutWarmTransitionExit": 0,
+    "activeOfflineServices": [
+      "s6rc-oneshot-runner",
+      "mdevd-ready",
+      "coldplug",
+      "interactive-ready",
+      "mount-api-filesystems",
+      "root-and-workspace-ready"
+    ],
+    "interpretation": "initial daemon state or startup ordering is implicated; restart recovery alone does not establish the defect or justify a restart workaround",
+    "scope": "only the daemon in the owned virtual guest; no host services or inherited long-running checks changed"
+  },
+  "nativeSameImageControl": {
+    "harness": "data/oracle/check-native-boot.mjs",
+    "executor": "existing QEMU TCG",
+    "result": "pass",
+    "completionReceipt": "exec session 21999 completed with exit 0 and native system boot: green; UART log independently contains standalone oracle-system-ready and oracle-system-command: 42",
+    "ramBytes": 1073741824,
+    "upper": "RAM-backed; no persistent virtio disk",
+    "consoleMs": 5002.3,
+    "commandCompletionUpperBoundMs": 34232.9,
+    "checks": [
+      "PID1 identity",
+      "root/API predicates",
+      "console process identity",
+      "interactive-ready active without manual service activation",
+      "network/time branches inactive",
+      "C compile/run with make -j4",
+      "local Git",
+      "AES round trip",
+      "apk info",
+      "overlay copy-up"
+    ],
+    "timingScope": "interactive-ready marker interleaved with echoed command; reported ready time falls back to full-command completion, not isolated service timing",
+    "comparisonLimit": "same kernel/initramfs/system bytes but different CPU/device profile, RAM size and upper storage; this does not isolate an emulator instruction defect"
+  },
+  "cleanup": {
+    "readyRestoredSha256": "e56b755e758b32a6b61a52a25d36b09c0f6849ea292342e6dffc2601459a79ee",
+    "daemonRunRestored": "exec /usr/bin/mdevd -D 3 -O 4",
+    "flush": {
+      "generation": "5",
+      "lastWorkerSample": {
+        "generation": "5",
+        "memoryBytes": 44957696,
+        "residentPages": 8102
+      },
+      "liveWorkers": 0,
+      "status": "closed",
+      "storageRevision": 109,
+      "tail": "\r\ncoldplug\r\ninteractive-ready\r\nmount-api-filesystems\r\nroot-and-workspace-ready\r\nmdevd-original-restart-end\r\n~ # echo readiness-cow-restore-start; cp /run/workspace/ready-check.Phklgn/ready\r\r\n-before /usr/libexec/system/ready; sha256sum /usr/libexec/system/ready; cat /run\r\r\n/s6-rc/servicedirs/mdevd-ready/run; sync; echo readiness-cow-restore-exit:$?\r\nreadiness-cow-restore-start\r\ne56b755e758b32a6b61a52a25d36b09c0f6849ea292342e6dffc2601459a79ee  /usr/libexec/system/ready\r\n#!/bin/sh\r\nexec /usr/bin/mdevd -D 3 -O 4\r\nreadiness-cow-restore-exit:0\r\n~ # ",
+      "workerTerminations": 5
+    },
+    "scope": "owned COW volume only; retained evidence/workspace and existing keys"
+  },
+  "references": [
+    "https://skarnet.org/software/s6-rc/s6-rc.html",
+    "https://skarnet.org/software/s6-rc/s6-rc-db.html",
+    "https://skarnet.org/software/s6/s6-sudoc.html",
+    "https://skarnet.org/software/mdevd/mdevd-coldplug.html"
+  ],
+  "pinnedMdevdSourceVersion": "0.1.8.2",
+  "pinnedSourceInterpretation": "both -O options are compatible bitmasks in the verified cached source; daemon notification occurs after socket/configuration setup",
+  "publishedRelease": "unchanged",
+  "localReceipts": {
+    "readiness-mount-differential.json": "759ebcd6259729464374aebf29afd87828af366af5a981df77186882d2a9bf0e",
+    "linux-readiness-compare.json": "b23868d1d99127af1c69f79a548cce60539185e192e53442ddf0cca1aa5816f0",
+    "linux-readiness-cold-candidate.json": "129523bf5adc24bfbb942beafeff41b8e19cfabd4f7a2223ad12dbe35c1c9c1a",
+    "linux-mdevd-verbose.json": "5850fc42aa9253b147a73ab4570d4bda1f719a11aa0d5629b7a0f2d56bbe1c1f",
+    "linux-mdevd-original-restart.json": "3e0d470bdff4e77fa23049276657b7974221c8538786245812c005400219640c",
+    "linux-readiness-restored.json": "62d8b88008a89ebe42efe2f780c8addbfcdf593346f776eb5d7cfa20ccbf4ad8",
+    "linux-readiness-closed.json": "60bfbf1ff661d7ca54598ecf844bb03e6e38b6fa1392777b2a83076d9012d552",
+    "native-same-root-boot.log": "4245a1c468cef7ecb3f323024014f54a67089b96c77f17df9daf124461379d66"
+  }
+}

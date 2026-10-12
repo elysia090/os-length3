@@ -1,0 +1,143 @@
+{
+  "format": "current-producer-and-pinned-root-audit-v1",
+  "observedDate": "2026-10-12",
+  "status": "current producer verified; signed replacement root pending",
+  "manifestSha256": "089001a40360870369d08308c33a066bae7f6f13199a5d130c033ce1c07f90db",
+  "systemImageSha256": "f911b9a5f12bc0494d8475996d74adfa2710f1092567f8d218ded41548059c36",
+  "currentProducer": {
+    "sourceHeadAtBuild": "726a0ac77e1f906f4afd4795703654974637c952",
+    "sourceTreeSha256": "0cfbfbd560e81d0eb52eba1311889de0b0aba89cc2ec1a64bc94f6f4553a5b11",
+    "sourceFileCount": 944,
+    "zydisCommit": "a2278f1d254e492f6a6b39f6cb5d1f5d515659dc",
+    "zycoreCommit": "0b2432ced0884fd152b471d97ecf0258ff4d859f",
+    "build": {
+      "exit": 0,
+      "elapsedSeconds": 23.891,
+      "sourceTreeSha256": "0cfbfbd560e81d0eb52eba1311889de0b0aba89cc2ec1a64bc94f6f4553a5b11",
+      "route": "normal approval-reviewed execution; isolated source snapshot"
+    },
+    "dhcpCompilation": {
+      "format": "current-source-dhcp-postlink-v1",
+      "compileExit": 0,
+      "verifyExit": 0,
+      "verifyOutput": "postlink proof: green (2275264 -> 484280 bytes, 54 -> 54 work, 54 -> 26 span)",
+      "elapsedSeconds": 6.938,
+      "compilerSha256": "aedaa76698fe1527ad4183718960aa9b854dbdc7702cbd43303ba5acad603631",
+      "verifierSha256": "7b157877d16dda24c8a0018a99bbb2540ab6b4728a80d584f63623b8d0573ee2",
+      "inputSha256": "0e486d6963969bb76762aacd5694c385363ba61a7af1e156df9378a339a541e7",
+      "outputSha256": "9f54aea4f272b65ada2d25651a18fb105c2399872eb702f5c284ce08ca6c2108",
+      "bytes": 484280,
+      "matchesEarlierCorrectCandidate": true,
+      "scope": "compiler and proof reader only; output ELF neither executed nor transferred"
+    },
+    "scope": "isolated snapshot of four source projects; source inventory includes the inherited TODO document; fresh compiler and verifier only, generated daemon ELF not executed or transferred"
+  },
+  "frozenDhcpSourceIdentity": {
+    "format": "frozen-dhcp-source-proof-identity-v1",
+    "sourceSha256": "40ac5e2002f7c837a06ce55b4d097f44f8cadc558f3f320faec774999f3deb2a",
+    "sourceBytes": 846408,
+    "proofVersion": 3,
+    "localOriginalInputMatches": [],
+    "scope": "serialized proof identity; does not establish a current producer build or excuse the bad dispatch"
+  },
+  "existingSignedIndex": {
+    "format": "existing-root-adb-signature-verification-v1",
+    "valid": true,
+    "keyId": "dcc1fc9d597cfcd7f395f21ca41b88bd",
+    "publicKeyPemSha256": "872070838751f9ba52b49c4198277d071f91ce1a1e130e10df59a203de13271e",
+    "publicKeySpkiSha256": "d6cc372442390df7549026e6ccf00941ed40b51a70f079dcc10866bcce0a2fa9",
+    "modulusBits": 3072,
+    "metadataBytes": 11120,
+    "signatureBytes": 384,
+    "alteredMetadataRejected": true,
+    "alteredSignatureRejected": true,
+    "algorithm": "RSA PKCS1 v1.5 / SHA512; APK v0 schema/header/metadata digest",
+    "referenceSourceSha256": "e81c64a6e7c3806d45d4622c253e757aee970be84048554fa0eed79310e9453e",
+    "scope": "signed installed package index and pinned root public key; local test trust anchor, not all APK payloads or production trust; no new keys/signatures"
+  },
+  "installedContentAudit": {
+    "packages": 45,
+    "logicalFileDigestChecks": 6052,
+    "missing": 0,
+    "unsupported": 0,
+    "digestAlgorithm": "SHA256_160 for installed package f:S entries, per pinned apk-tools database.c; Q1 alone does not imply SHA1",
+    "mismatches": [
+      {
+        "path": "/etc/s6-rc/compiled/current/db",
+        "package": "base-services"
+      },
+      {
+        "path": "/etc/s6-rc/compiled/current/n",
+        "package": "base-services"
+      },
+      {
+        "path": "/usr/libexec/system/boot",
+        "package": "base-services"
+      },
+      {
+        "path": "/usr/libexec/system/ready",
+        "package": "base-services"
+      },
+      {
+        "path": "/bin/busybox",
+        "package": "busybox"
+      },
+      {
+        "path": "/boot/kernel",
+        "package": "linux-boot"
+      },
+      {
+        "path": "/etc/group",
+        "package": "system-config"
+      },
+      {
+        "path": "/etc/gshadow",
+        "package": "system-config"
+      },
+      {
+        "path": "/etc/passwd",
+        "package": "system-config"
+      },
+      {
+        "path": "/etc/shadow",
+        "package": "system-config"
+      },
+      {
+        "path": "/usr/bin/tar",
+        "package": "tar"
+      }
+    ],
+    "scope": "all recorded installed-DB content digests against the pinned image; directory ownership/modes, APK archive signatures and full producer provenance are separate",
+    "interpretation": "unpublished patched verification image; a valid index signature does not establish consistency of every installed file"
+  },
+  "signingConfiguration": {
+    "documentation": "data/README.md:100-101",
+    "requiredEnvironment": [
+      "QM_APK_SIGNING_KEY",
+      "QM_APK_PUBLIC_KEY"
+    ],
+    "observedEnvironment": "both unset",
+    "documentedPaths": "/secure/release.private.pem and /secure/release.public.pem are examples, not discovered existing files",
+    "mandatoryGuard": "data/distribution/publish-apk.sh:17-18 and data/build.sh:550",
+    "existingPublicKeySha256": "872070838751f9ba52b49c4198277d071f91ce1a1e130e10df59a203de13271e",
+    "remainingInput": "location/access to the existing external private key on the intended build host",
+    "newKeysCreated": false
+  },
+  "safetyScope": {
+    "formalOriginalChatRead": "original parent public read returned no turns; implementation public summary mentions cyber risk but contains no exact denied command, file or receiver",
+    "exactHistoricalRejectedOperation": "unavailable from formal public evidence; diagnostic observer ELF transfer/execution route remains excluded under inherited scope",
+    "independentOperations": "read-only image/signature/content audits, ordinary isolated producer build and proof verification, existing native boot harness, ordinary guest shell/service diagnostics",
+    "currentCyberRejection": "none in these tool results",
+    "observedSandboxError": "default MSYS named-object creation returned NTSTATUS 0xC0000022; the same isolated build succeeded through the normal approval-reviewed route"
+  },
+  "publishedRelease": "unchanged",
+  "localReceipts": {
+    "source-provenance.json": "608f6ada2b5efc2725422e95caea29b79e5937f53b9ac44bbd08898f2802db06",
+    "build-approved-result.json": "36ebd801a602ae919a18054808069634eb84293b2f8e27ff053d5ec4fdd8dd2f",
+    "dhcp-compile-result.json": "9a708548f2ed7fbab58bdfd6f17e0843f1670cbdc5b4d2cc677986488c151943",
+    "root-content.json": "8d2a847ff97596e227f5e9db7c64abf476ef319a4903fd057975463a1fdac33a",
+    "root-index-signature.json": "038558bfb493a1f30937d530642e2dbe453dc415f943516fc5e28399c75c2fac",
+    "root-content-audit.json": "d5921d04e3a869a7d50e4da7a7c26487023ee2f07e13e557ab8bcbb40745fa23",
+    "frozen-dhcp-source-identity.json": "15313b33f65d7296a04a2a181743f3c9407081cab62b9e44524d3d2c619669cb"
+  }
+}

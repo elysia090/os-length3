@@ -137,7 +137,7 @@
     "frozenRootProducerProvenance": "exact original input/compiler/source chain not available here; file times alone are not build provenance"
   },
   "repairRequired": [
-    "rebuild the postlink producer from the verified current source instead of reusing the old cached executable",
+    "current-source producer rebuild completed; use its verified compiler rather than the old cached executable for signed root regeneration",
     "regenerate optimized, signed and installed package root; do not edit table bytes in the signed ELF or disable syslog",
     "verify native default-syslog behavior and ordinary browser DHCP before publishing a replacement release"
   ],
@@ -147,11 +147,14 @@
     "validation": "actual shipped and old cached-compiler output mismatch; original input and correct candidate match",
     "scope": "narrow diagnostic, not a general ELF acceptance proof"
   },
-  "s6": "cold initialization timeout remains unresolved; captured generation 3 also reports s6-sudoc exit-status timeout. No timeout/clock/quota change is proposed from this evidence.",
+  "s6": "browser cold initialization still times out at coldplug; original daemon arguments after an owned-guest restart complete actual uevents and the same-timeout warm transition, but the initial-state defect remains unresolved",
   "https": "not rerun during the safety-scope clarification; no new HTTPS success claim",
   "safetyBoundary": {
-    "excluded": "previously rejected diagnostic observer ELF transfer/execution; no retry or alternate execution route",
-    "currentRejectionMessage": "not present in the recent local tool results; requested from the user before further execution diagnostics"
+    "formalOriginalChatRead": "original parent public read returned no turns; implementation public summary mentions cyber risk but contains no exact denied command, file or receiver",
+    "exactHistoricalRejectedOperation": "unavailable from formal public evidence; diagnostic observer ELF transfer/execution route remains excluded under inherited scope",
+    "independentOperations": "read-only image/signature/content audits, ordinary isolated producer build and proof verification, existing native boot harness, ordinary guest shell/service diagnostics",
+    "currentCyberRejection": "none in these tool results",
+    "observedSandboxError": "default MSYS named-object creation returned NTSTATUS 0xC0000022; the same isolated build succeeded through the normal approval-reviewed route"
   },
   "publishedRelease": "unchanged",
   "localReceipts": {
@@ -159,5 +162,12 @@
     "linux-dhcp-timestamp-log.json": "656e1eb54c55cdfb86eff5a449515cf001a47fcb16803bd8e67529d38a1cae15",
     "linux-dhcp-core-hex.json": "74fae9f5dc371ae7fa43a562580fd3abfc25944a50f578cff52fcc97e60406c0",
     "dhcpcd-core-registers.json": "4b337f1ed299950715718d17dfa25b4f7c87ef77c8d549af3f6dd98e8f390481"
+  },
+  "currentSourceProducer": {
+    "evidence": "2026-10-12-producer-root-audit.json",
+    "compilerSha256": "aedaa76698fe1527ad4183718960aa9b854dbdc7702cbd43303ba5acad603631",
+    "outputSha256": "9f54aea4f272b65ada2d25651a18fb105c2399872eb702f5c284ce08ca6c2108",
+    "proofReaderExit": 0,
+    "executedOrTransferredGeneratedElf": false
   }
 }

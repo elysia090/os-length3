@@ -2,19 +2,22 @@
 set -eu
 case ${1:-} in
     api)
-        for pair in '/dev devtmpfs' '/proc proc' '/sys sysfs' '/run tmpfs'; do
-            set -- $pair
-            awk -v path="$1" -v kind="$2" \
-                '$2 == path && $3 == kind { found = 1 } END { exit !found }' \
-                /proc/mounts
-        done
+        awk 'BEGIN {
+                required["/dev"] = "devtmpfs"
+                required["/proc"] = "proc"
+                required["/sys"] = "sysfs"
+                required["/run"] = "tmpfs"
+            }
+            $2 in required && $3 == required[$2] { found[$2] = 1 }
+            END { for (path in required) if (!found[path]) exit 1 }' \
+            /proc/mounts
         test -c /dev/console
         ;;
     root)
-        awk '$2 == "/" && $3 == "overlay" { found = 1 } END { exit !found }' \
-            /proc/mounts
-        awk '$2 == "/run/release" && $3 == "squashfs" && \
-            $4 ~ /(^|,)ro(,|$)/ { found = 1 } END { exit !found }' /proc/mounts
+        awk '$2 == "/" && $3 == "overlay" { root = 1 }
+            $2 == "/run/release" && $3 == "squashfs" && \
+                $4 ~ /(^|,)ro(,|$)/ { release = 1 }
+            END { exit !(root && release) }' /proc/mounts
         test -s /etc/apk/world
         test -s /lib/apk/db/installed
         test -s /etc/passwd
