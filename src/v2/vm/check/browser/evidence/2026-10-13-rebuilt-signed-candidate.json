@@ -1,0 +1,108 @@
+{
+  "format": "rebuilt-signed-candidate-evidence-v1",
+  "date": "2026-10-13",
+  "scope": "local test-signed r2 candidate; r3 cold-start repair is a separate pending rebuild",
+  "publicReleaseModified": false,
+  "issuer": "existing local test key; no production promotion",
+  "publicKeySha256": "872070838751f9ba52b49c4198277d071f91ce1a1e130e10df59a203de13271e",
+  "source": {
+    "archiveSha256": "7d0d32906c1c8bc5f7a1cc90f2e13eb714f96db3d82c549f81585b93f4974bdb",
+    "bootstrapIdentity": "df4026a1c7c02b49c8d36782c1a361dca0e89f4616349c42f0458b95fcc15dd9",
+    "nativeProducers": "two independent clean builds; all four outputs identical",
+    "webProducers": "fresh pinned WASI SDK build; see 2026-10-12-web-producer-reproduction.json",
+    "componentSourceDeltas": [
+      "busybox.fragment lock reconciliation",
+      "build-system-tools.sh package-set v2 validator",
+      "package-recipes.sh r1 population and base-services r2",
+      "prepare-package-payload.sh signed /run mountpoint"
+    ]
+  },
+  "native": {
+    "results": {
+      "development": "passed",
+      "https": "passed",
+      "root": "passed",
+      "runtime": "passed"
+    },
+    "bundle": {
+      "bytes": 63653071,
+      "sha256": "1ae2ff74bbd5d08a0fb1a606707ffb7a0dcf64b47443607e91f22b11a700b10c"
+    },
+    "inputs": {
+      "bytes": 2068,
+      "sha256": "29772b42683faa17cbd8571b8947d36c7e0104de08264ec122cb31eb3d9db9ef"
+    },
+    "producerSourceBindingInReceipt": "unknown",
+    "productQualification": "pending",
+    "coldBoot": {
+      "physicalRamMiB": 1024,
+      "status": "passed",
+      "checks": "actual PID1 s6-svscan, six offline services, C/make/Git/AES/apk/network tools/overlay copy-up"
+    },
+    "linuxUsable512MiB": {
+      "physicalRamMiB": 1024,
+      "kernelArgument": "mem=512M",
+      "status": "passed",
+      "scope": "different underlying e820 geometry; not a sole-RAM causal claim"
+    }
+  },
+  "canonicalNamespace": {
+    "native": "bba25dfceb501661c2d5f33c298b04eca62f8bb3466ac1e8f345b4980bea8210",
+    "readOnlySquashfs": "bba25dfceb501661c2d5f33c298b04eca62f8bb3466ac1e8f345b4980bea8210",
+    "status": "equal",
+    "validatorSha256": "023c5510ba9cb685190144559947766aa3b06c769c7f4711e4622da821100425",
+    "finalPass": "same xattr reader as initial pass; full name/value equality; unsupported no-attribute SquashFS links retain strict empty expectation"
+  },
+  "web": {
+    "manifestSha256": "10987ff0d4ff3b09d79a52bb8a97c38e6e87ef5cd45d1b04e5a923c052354649",
+    "roles": {
+      "kernel": {
+        "bytes": 3499008,
+        "sha256": "a2295e89a6a9f6c35b8587798b2c9fb1da8d829039265066e82603434e48319f"
+      },
+      "initramfs": {
+        "bytes": 438272,
+        "sha256": "052bb96765632ca61452625ea73b61f7a98c0f0d21666c5cfafc5c42c91baa03"
+      },
+      "system": {
+        "bytes": 90341376,
+        "sha256": "5b2c59a9fffc8688fe9979462c363c03cd217dd78c934ca72aafc6fc895f8b16"
+      },
+      "vm": {
+        "bytes": 144156,
+        "sha256": "4a14da3a861d5b877a77db9334e2db20baf19eb06b5d43310e75e16703a9dccc"
+      },
+      "compiler": {
+        "bytes": 1137376,
+        "sha256": "263e444dc64d0cd93a52a9413e1046e9379ae5ad8a7900c87129b8289849e565"
+      }
+    },
+    "workspaceUuid": "2a89680a-f15b-4ab5-8f49-b8518ce835a1",
+    "savedDataSha256": "638c2eded19609057c2af41bc156187d71b996ce332aec3352b752cb4779df3e",
+    "normalDhcp": {
+      "status": "passed",
+      "argv": [
+        "dhcpcd",
+        "-B",
+        "-4",
+        "-1",
+        "-t",
+        "20",
+        "eth0"
+      ],
+      "syslog": "normal",
+      "privsep": "enabled",
+      "exit": 0,
+      "address": "10.0.2.15/24",
+      "router": "10.0.2.2",
+      "dns": "10.0.2.3"
+    },
+    "coldServices": {
+      "status": "failed-10-second-deadline",
+      "sameDaemonLaterReady": true,
+      "manualFirstColdplugTransition": "passed in 10 guest seconds; diagnostic only",
+      "oldDisplayFalsePositive": "service list contains interactive-ready; fixed by a distinct boot-offline-complete observation; no cold acceptance claimed"
+    },
+    "browserProcessRestart": "not-tested"
+  }
+}

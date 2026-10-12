@@ -2,7 +2,8 @@
 // The main thread supplies authority/keys; storage tiers never supply trust.
 import {runMachine} from './machine-runtime.mjs';
 import {openMachineArtifact} from './machine-artifact.mjs';
-import {openPreparedMachineRelease} from './prepared-release.mjs';
+import {openPreparedMachineRelease,ensurePreparedMachineRelease} from './prepared-release.mjs';
+import {retainLegacyWorkspace} from './workspace-authority.mjs';
 import {MachineDevices} from './machine-devices.mjs';
 import {PersistentBlock,IndexedBlockStore} from './persistent-block.mjs';
 import {NetworkTransport} from './network-transport.mjs';
@@ -10,7 +11,7 @@ import {waitForClock} from './idle-clock.mjs';
 import {ConsoleStream} from './console-stream.mjs';
 import {hasReadinessLine} from './console-readiness.mjs';
 const send=(type,payload={})=>self.postMessage({type,...payload});
-let owner=null,closing=false,pending=null,artifact=null,running=null,ready=false,normal=false,serviceReady=false,closeFailure=null;
+let owner=null,closing=false,pending=null,artifact=null,running=null,ready=false,normal=false,serviceReady=false,closeFailure=null,workspaceLease=null;
 let tail='',input=new Uint8Array(8192),head=0,count=0;
 const decoder=new TextDecoder();
 const consoleStream=new ConsoleStream(bytes=>{let raw='';for(const b of bytes)raw+=String.fromCharCode(b);
@@ -19,7 +20,7 @@ function flushConsole(){consoleStream.flush();}
 function consoleWrite(bytes){consoleStream.write(bytes);
   tail=(tail+decoder.decode(bytes,{stream:true})).slice(-4096);
   if(hasReadinessLine(tail,'console-ready'))normal=true;
-  if(!serviceReady&&hasReadinessLine(tail,'interactive-ready')){
+  if(!serviceReady&&hasReadinessLine(tail,'boot-offline-complete')){
     serviceReady=true;send('service-ready');
   }
   if(!normal&&(tail.includes('Offline service transition failed; terminal remains down.')||tail.includes('Boot root handoff failed.')))
@@ -35,6 +36,14 @@ async function boot(message){
   if(typeof message.generation!=='bigint'||message.generation<1n||message.generation>0xffffffffffffffffn)throw new Error('supervisor machine generation required');
   closing=false;closeFailure=null;pending=message.id;ready=false;normal=false;serviceReady=false;tail='';head=count=0;
   send('progress',{id:message.id,phase:'download',label:'Authenticating Linux release'});
+  const retain=message.retainLegacyWorkspace===true||new URL(message.releaseUrl,self.location.href).hash==='#retain-workspace';
+  if(retain){
+    await ensurePreparedMachineRelease(message.releaseUrl,message.releaseSha256);
+    workspaceLease=await retainLegacyWorkspace(message.storage,{generation:message.generation,systemRoot:message.releaseSha256,
+      onHead:envelope=>send('storage-head',{envelope})});
+    message.storage=workspaceLease.storage;message.preparedRelease=true;
+    send('workspace-retained',{workspace:message.storage.workspace});
+  }
   artifact=message.preparedRelease===true?await openPreparedMachineRelease(message.releaseSha256):
     await openMachineArtifact(message.releaseUrl,message.releaseSha256);
   const m=artifact.manifest,s=message.storage,store=await IndexedBlockStore.open(s.name,{fence:s.fence??null});
@@ -61,7 +70,7 @@ async function boot(message){
     onProgress:p=>{flushConsole();send('progress',{id:pending,phase:'execute',label:ready?'Linux is resident':'Starting Linux',detail:p.retired+' source instructions',profile:{...p,transport:owner.status()}});}})
     .then(result=>{if(!closing){const error=new Error('C machine stopped: '+JSON.stringify(result.nextGate,(_,v)=>typeof v==='bigint'?String(v):v));error.diagnostic=result;throw error;}return result;})
     .finally(async()=>{try{await owner?.close();}catch(e){closeFailure=e;throw e;}
-      finally{artifact.close();owner=null;running=null;}})
+      finally{artifact.close();owner=null;running=null;await workspaceLease?.close();workspaceLease=null;}})
     .catch(error=>{send('fault',{error:error.message??String(error)});flushConsole();
       if(pending)send('result',{id:pending,ok:false,error:error.message??String(error),diagnostic:error.diagnostic});throw error;});
   running.catch(()=>{});
@@ -75,6 +84,6 @@ self.onmessage=async({data:m})=>{try{
   if(m.action==='release'){closing=true;await running?.catch(()=>{});if(closeFailure)throw closeFailure;flushConsole();send('result',{id:m.id,ok:true,handle:1});return;}
   throw new Error('unknown machine action');
 }catch(e){if(m.action==='boot'&&!running){try{await owner?.close();}catch(closeError){closeFailure=closeError;}
-  finally{owner=null;artifact?.close();artifact=null;}}
+  finally{owner=null;artifact?.close();artifact=null;await workspaceLease?.close();workspaceLease=null;}}
   send('result',{id:m.id,ok:false,error:e.message});}};
 send('ready',{protocol:'linux-machine-worker-v2'});

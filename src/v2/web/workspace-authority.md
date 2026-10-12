@@ -81,3 +81,19 @@ qualify diagnostic images. The public cache fixture
 [prepared-release.html](../vm/check/browser/prepared-release.html) also checks
 missing/corrupt bodies, occupied-coordinate refusal and no corrupt-cache network
 fallback using a small synthetic population that is never executed.
+
+A legacy diagnostic page can explicitly retain the key it still holds: close
+and flush its Worker, append `#retain-workspace` to the same pinned Release URL,
+then reopen once. The normal Worker verifies the caller's key/head, all current
+physical objects and the complete prepared release before registering origin
+authority in that existing database. It generates no replacement key and copies
+no physical data. It binds an unbound head to the explicitly supplied current
+release; an already bound head must match. Existing authority cannot be replaced
+with a different context, invalid key/head or stale generation.
+
+The recovery name is `legacy-` followed by the displayed 32-character legacy
+volume name. This name form is reserved for explicitly retained volumes and
+refuses missing authority without generating a key. After the old Worker closes,
+ordinary terminal recovery can use that name, profile and origin. The old page
+must remain open until retention succeeds; neither a destroyed page-local key
+nor deleted site data can be reconstructed by this migration.

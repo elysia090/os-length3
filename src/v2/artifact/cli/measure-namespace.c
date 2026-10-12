@@ -505,6 +505,28 @@ int artifact_namespace_posix_open(
 }
 
 #ifndef ARTIFACT_NAMESPACE_LIBRARY
+static int same_xattrs(const char *path,
+                       const artifact_namespace_inode *expected)
+{
+    artifact_namespace_inode current = { 0 };
+    if (read_xattrs(path, &current)) return 0;
+    int same = current.xattr_count == expected->xattr_count;
+    for (pl_u32 i = 0u; same && i < current.xattr_count; ++i) {
+        const artifact_namespace_xattr *a = &current.xattr[i];
+        const artifact_namespace_xattr *b = &expected->xattr[i];
+        same = a->name_bytes == b->name_bytes
+            && a->value_bytes == b->value_bytes
+            && !memcmp(a->name, b->name, a->name_bytes)
+            && (!a->value_bytes || !memcmp(a->value, b->value, a->value_bytes));
+    }
+    for (pl_u32 i = 0u; i < current.xattr_count; ++i) {
+        free((void *)current.xattr[i].name);
+        free((void *)current.xattr[i].value);
+    }
+    free((void *)current.xattr);
+    return same;
+}
+
 static int same_source(const struct stat *a, const struct stat *b)
 {
     return a->st_dev == b->st_dev && a->st_ino == b->st_ino
@@ -573,7 +595,8 @@ static int root_identity(const char *root)
     }
     for (size_t i = 0u; !status && i < owner->tree.count; ++i) {
         struct stat after;
-        if (llistxattr(owner->tree.entry[i].full, 0, 0u) < 0
+        if (!same_xattrs(owner->tree.entry[i].full,
+                         &owner->inode[owner->path[i].inode])
                 || lstat(owner->tree.entry[i].full, &after)
                 || !same_source(&owner->tree.entry[i].status, &after))
             status = -1;

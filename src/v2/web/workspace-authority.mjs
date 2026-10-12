@@ -1,9 +1,11 @@
 // User-approved device/origin authority, separate from ciphertext object rows.
 // The non-extractable key stays in the browser. No raw-key export or new VFS.
-import {IndexedBlockStore} from './persistent-block.mjs';
-import {importStorageMasterKey} from './ciphertext-storage.js';
+import {IndexedBlockStore,PersistentBlock} from './persistent-block.mjs';
+import {importStorageMasterKey,deriveVolumeStorageKeys,encodeVolumeRootAad,openRootDescriptor} from './ciphertext-storage.js';
 const same=(a,b)=>a===null?b===null:b!==null&&a.length===b.length&&a.every((x,i)=>x===b[i]);
 const limit=0xffffffffffffffffn;
+const legacyName=name=>/^legacy-[a-f0-9]{32}$/.test(name)?name.slice(7):null;
+const hex=bytes=>Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
 function validate(record){
   if(record?.format!=='browser-workspace-authority-v1'||!(record.masterKey instanceof CryptoKey)||record.masterKey?.type!=='secret'
     ||record.masterKey.extractable!==false||record.masterKey.algorithm?.name!=='HKDF'
@@ -22,7 +24,7 @@ export async function claimWorkspace(name,{bytes=256*1048576}={}){
   if(typeof name!=='string'||!/^[a-z0-9._-]{1,64}$/.test(name))throw new TypeError('workspace name');
   if(!Number.isSafeInteger(bytes)||bytes<16*1048576||bytes>256*1048576||bytes%4096)
     throw new TypeError('workspace extent');
-  const storageName=`workspace-${name}`,store=await IndexedBlockStore.open(storageName);
+  const legacy=legacyName(name),storageName=legacy??`workspace-${name}`,store=await IndexedBlockStore.open(storageName);
   try{
     const existing=await new Promise((resolve,reject)=>{
       const tx=store.db.transaction(['authority','head','objects'],'readonly');let record,head,count,generation;
@@ -38,6 +40,7 @@ export async function claimWorkspace(name,{bytes=256*1048576}={}){
       tx.onabort=()=>reject(tx.error??new Error('workspace authority read aborted'));tx.onerror=()=>{};
     });
     let candidate=existing;
+    if(legacy&&!candidate)throw new Error('legacy workspace was not explicitly retained; existing data preserved');
     if(!candidate){
       const raw=crypto.getRandomValues(new Uint8Array(32));let masterKey;
         try{masterKey=await importStorageMasterKey(raw);}finally{raw.fill(0);}
@@ -45,6 +48,7 @@ export async function claimWorkspace(name,{bytes=256*1048576}={}){
           volumeId:crypto.getRandomValues(new Uint8Array(16)),volumeSalt:crypto.getRandomValues(new Uint8Array(32)),bytes,expectedHead:null};
     }
     validate(candidate);
+    if(legacy&&hex(candidate.volumeId)!==legacy)throw new Error('retained legacy volume identity differs');
     // Key/context registration, retained head and the monotone incarnation share
     // one strict transaction with the physical head. An existing unidentified
     // volume is never adopted or formatted under a newly generated key.
@@ -109,7 +113,57 @@ async function checkpointAuthority(storage,label,remember){
 }
 export const rememberWorkspaceCheckpoint=(storage,label)=>checkpointAuthority(storage,label,true);
 export const readWorkspaceCheckpoint=(storage,label)=>checkpointAuthority(storage,label,false);
+// Transitional input for a controller already holding a page-local key/head.
+// The explicit request comes from that controller, never an object-store row.
+// No key is generated or exported, and no physical objects are copied.
+export async function retainLegacyWorkspace(storage,{generation,systemRoot,onHead=()=>{}}){
+  if(!/^[a-f0-9]{32}$/.test(storage.name)||hex(storage.volumeId)!==storage.name||storage.create
+    ||typeof generation!=='bigint'||generation<1n||generation>limit
+    ||typeof systemRoot!=='string'||!/^[a-f0-9]{64}$/.test(systemRoot))throw new Error('existing page-local workspace and explicit release pin required');
+  const name=`legacy-${storage.name}`;
+  return holdWorkspaceLease(name,async()=>{
+    const store=await IndexedBlockStore.open(storage.name);let volume;
+    try{
+      const before=await new Promise((resolve,reject)=>{const tx=store.db.transaction('authority','readonly');let record,fence;
+        tx.objectStore('authority').get(0).onsuccess=e=>{record=e.target.result??null;};
+        tx.objectStore('authority').get(1).onsuccess=e=>{fence=e.target.result??null;};
+        tx.oncomplete=()=>resolve({record,fence});tx.onabort=()=>reject(tx.error);tx.onerror=()=>{};});
+      const record=before.record??{format:'browser-workspace-authority-v1',masterKey:storage.masterKey,
+        volumeId:storage.volumeId,volumeSalt:storage.volumeSalt,bytes:storage.bytes,expectedHead:storage.expectedHead};
+      validate(record);
+      if(record.bytes!==storage.bytes||!same(record.volumeId,storage.volumeId)||!same(record.volumeSalt,storage.volumeSalt)
+        ||!same(record.expectedHead,storage.expectedHead)||record.expectedHead===null
+        ||(before.record?(typeof before.fence!=='bigint'||before.fence+1n!==generation):before.fence!==null))
+        throw new Error('legacy retention authority or generation differs');
+      store.fence=before.fence;
+      // Authenticate the caller's current key/head before persisting authority.
+      volume=await PersistentBlock.open({...storage,store,create:false,systemRoot:null});
+      if(before.record){const keys=await deriveVolumeStorageKeys(record.masterKey,record.volumeSalt,record.volumeId);
+        await openRootDescriptor(keys.rootKey,record.expectedHead,encodeVolumeRootAad(record));}
+      if(volume.fresh||volume.systemRoot!==null&&volume.systemRoot!==systemRoot)throw new Error('legacy retention requires the current initialized system');
+      await volume.verifyTree(volume.root,2);
+      await new Promise((resolve,reject)=>{const tx=store.db.transaction(['head','authority'],'readwrite',{durability:'strict'});let failure;
+        const authority=tx.objectStore('authority'),fail=message=>{failure=new Error(message);tx.abort();};
+        tx.oncomplete=resolve;tx.onabort=()=>reject(failure??tx.error);tx.onerror=()=>{};
+        const g=authority.get(1);g.onsuccess=()=>{
+          if((g.result??null)!==before.fence){fail('legacy retention fence changed');return;}
+          const h=tx.objectStore('head').get(0);h.onsuccess=()=>{
+            if(!h.result||!same(new Uint8Array(h.result),storage.expectedHead)){fail('legacy retention head changed');return;}
+            authority.put(record,0);authority.put(generation,1);
+          };};});
+      store.fence=generation;
+      volume.onHead=head=>{storage.expectedHead=head;onHead(head);};
+      if(volume.systemRoot===null)await volume.selectSystemRoot(systemRoot);
+      const words=new BigUint64Array(4);crypto.getRandomValues(words);
+      return {...record,name:storage.name,generation,fence:generation,binding:[...words],create:false,
+        expectedHead:volume.head.slice(),recovery:'browser-origin',trusted:true,workspace:name};
+    }finally{await volume?.close();if(!volume)store.close();}
+  });
+}
 export async function openWorkspaceSession(name,options={}){
+  return holdWorkspaceLease(name,()=>claimWorkspace(name,options),()=>claimWorkspace(name,options));
+}
+async function holdWorkspaceLease(name,claim,renew=claim){
   if(!navigator.locks?.request)throw new Error('browser workspace recovery requires Web Locks');
   let unlock,closed=false,request;
   const held=new Promise(resolve=>{unlock=resolve;});
@@ -117,8 +171,8 @@ export async function openWorkspaceSession(name,options={}){
   const opened=new Promise((resolve,fail)=>{accept=resolve;reject=fail;});
   request=navigator.locks.request(`length3-workspace-${name}`,{ifAvailable:true},async lock=>{
     if(!lock){reject(new Error('workspace is open in another browser tab'));return;}
-    try{const storage=await claimWorkspace(name,options);
-      accept({storage,async renew(){if(closed)throw new Error('workspace session closed');return claimWorkspace(name,options);},
+    try{const storage=await claim();
+      accept({storage,async renew(){if(closed)throw new Error('workspace session closed');return renew();},
         close(){if(!closed){closed=true;unlock();}return request;}});
       await held;
     }catch(error){reject(error);}

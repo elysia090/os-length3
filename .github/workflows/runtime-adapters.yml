@@ -9,6 +9,7 @@ on:
       - 'src/v2/vm/check/browser/storage-failures*'
       - 'src/v2/vm/check/browser/product.*'
       - 'src/v2/vm/check/browser/prepared-*'
+      - 'src/v2/vm/check/browser/legacy-retention.*'
       - 'src/v2/vm/check/browser/prepared-cache-fixture/**'
       - 'src/v2/Makefile'
       - 'data/oracle/check-site-hardlinks.mjs'
@@ -18,10 +19,14 @@ on:
       - 'data/oracle/check-machine-devices-close.mjs'
       - 'data/oracle/check-memory-budget.mjs'
       - 'data/oracle/check-machine-yield.mjs'
+      - 'data/oracle/check-console-readiness.mjs'
       - 'data/oracle/check-browser-storage-failure-receipt*.mjs'
       - 'data/oracle/inspect-dhcp-printf-table.mjs'
       - 'data/oracle/check-readiness-mounts.mjs'
       - 'data/distribution/boot/ready'
+      - 'data/distribution/boot/boot'
+      - 'data/distribution/*package-payload.sh'
+      - 'data/distribution/package-recipes.sh'
       - 'data/distribution/*package-set*.sh'
       - 'data/distribution/*native-bundle*'
       - 'data/build.sh'
@@ -36,6 +41,7 @@ on:
       - 'src/v2/vm/check/browser/storage-failures*'
       - 'src/v2/vm/check/browser/product.*'
       - 'src/v2/vm/check/browser/prepared-*'
+      - 'src/v2/vm/check/browser/legacy-retention.*'
       - 'src/v2/vm/check/browser/prepared-cache-fixture/**'
       - 'src/v2/Makefile'
       - 'data/oracle/check-site-hardlinks.mjs'
@@ -45,10 +51,14 @@ on:
       - 'data/oracle/check-machine-devices-close.mjs'
       - 'data/oracle/check-memory-budget.mjs'
       - 'data/oracle/check-machine-yield.mjs'
+      - 'data/oracle/check-console-readiness.mjs'
       - 'data/oracle/check-browser-storage-failure-receipt*.mjs'
       - 'data/oracle/inspect-dhcp-printf-table.mjs'
       - 'data/oracle/check-readiness-mounts.mjs'
       - 'data/distribution/boot/ready'
+      - 'data/distribution/boot/boot'
+      - 'data/distribution/*package-payload.sh'
+      - 'data/distribution/package-recipes.sh'
       - 'data/distribution/*package-set*.sh'
       - 'data/distribution/*native-bundle*'
       - 'data/build.sh'
@@ -77,6 +87,7 @@ jobs:
           node data/oracle/check-machine-devices-close.mjs
           node data/oracle/check-memory-budget.mjs
           node data/oracle/check-machine-yield.mjs
+          node data/oracle/check-console-readiness.mjs
           node data/oracle/check-site-hardlinks.mjs
           node data/oracle/check-browser-storage-failure-receipt-test.mjs
           node data/oracle/check-browser-storage-failure-receipt.mjs src/v2/vm/check/browser/evidence/2026-10-12-storage-failures-browser.json
@@ -90,15 +101,19 @@ jobs:
           node --check src/v2/web/linux-terminal.js
           node --check src/v2/vm/check/browser/prepared-release.mjs
           node --check src/v2/vm/check/browser/workspace-recovery.mjs
+          node --check src/v2/vm/check/browser/legacy-retention.mjs
           node --check data/oracle/seed-image.mjs
           bash -n data/oracle/check-native-producer-dhcp.sh
           node --check data/oracle/inspect-dhcp-printf-table.mjs
           bash -n data/distribution/boot/ready
+          bash -n data/distribution/boot/boot
           node data/oracle/check-readiness-mounts.mjs
       - name: Check package-set input cuts and reuse
         run: |
           make -C src/v2/artifact -j2 all namespace-check
           sudo bash data/distribution/check-package-set-content.sh
+          bash data/distribution/check-package-payload.sh
+          bash data/distribution/check-service-sources-fixture.sh
       - name: Check native acceptance artifact and policy binding
         run: |
           sudo python3 data/distribution/check-native-bundle-acceptance.py --require-capture

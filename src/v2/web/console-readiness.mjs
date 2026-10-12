@@ -3,5 +3,6 @@
 export function hasReadinessLine(text,marker){
   if(marker==='console-ready')return /(?:^|\r?\n)console-ready\r?\n/.test(text);
   if(marker==='interactive-ready')return /(?:^|\r?\n)interactive-ready\r?\n/.test(text);
+  if(marker==='boot-offline-complete')return /(?:^|\r?\n)boot-offline-complete\r?\n/.test(text);
   throw new TypeError('known bootstrap readiness marker');
 }

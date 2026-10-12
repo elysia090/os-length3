@@ -40,6 +40,16 @@ trap cleanup EXIT HUP INT TERM
 # Removing names before mkpkg keeps signatures and the installed DB aligned;
 # deleting them from the installed root would instead corrupt apk ownership.
 cp -al -- "$source_root/." "$payload/"
+if [[ $name == base-services ]]; then
+  # The compatibility link belongs to this package and must resolve in the
+  # installed root before Linux mounts its tmpfs. Include the empty mountpoint
+  # in the signed payload, rather than adding it after the apk transaction.
+  if [[ -L $payload/run || ( -e $payload/run && ! -d $payload/run ) ]]; then
+    printf 'base-services run mountpoint is not a directory\n' >&2
+    exit 1
+  fi
+  install -d -m 0755 "$payload/run"
+fi
 omitted=0
 while IFS= read -r -d '' kind && IFS= read -r -d '' path; do
   case $kind in

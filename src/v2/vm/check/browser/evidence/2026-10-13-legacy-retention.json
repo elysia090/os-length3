@@ -1,0 +1,27 @@
+{
+  "format": "legacy-workspace-retention-evidence-v1",
+  "date": "2026-10-13",
+  "positive": {
+    "status": "passed-fresh-document",
+    "origin": "http://127.0.0.1:63700",
+    "workspace": "legacy-c98cb3b36c0f950636712c3ff280d8d3",
+    "existingKey": "retained non-extractable CryptoKey; no new key or raw export",
+    "uuid": "3808a73e-bc99-4eb0-9043-d9f5d4db979a",
+    "file": "/root/retention-marker.txt",
+    "sha256": "c4d3e7a401354e5d660ed08fe4216d1608bc4833825ba6017ba58c74c6701329",
+    "oldDiagnosticRootServices": "failed; data recovery is not product qualification"
+  },
+  "negative": {
+    "scope": "closed existing legacy authority refusal; no new keys or authority deletion",
+    "browserProcessRestart": "not-tested",
+    "changedHead": "rejected",
+    "changedContext": "rejected",
+    "staleGeneration": "rejected",
+    "wrongExistingKey": "rejected",
+    "unregisteredLegacy": "refused-without-key",
+    "head": "exactly-retained",
+    "keyExtractable": false,
+    "status": "pass"
+  },
+  "browserProcessRestart": "not-tested"
+}

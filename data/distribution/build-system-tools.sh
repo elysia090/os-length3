@@ -102,20 +102,17 @@ if [[ -n ${QM_TOOLCHAIN_ROOT:-} ]]; then
       "$toolchain_root" >&2
     exit 1
   fi
-  if [[ ! -f $toolchain_root.package-set || \
-        $(<"$toolchain_root.package-set") != "$toolchain_digest" ]]; then
-    printf 'provided toolchain sysroot does not match its package set: %s\n' \
-      "$toolchain_root" >&2
-    exit 2
-  fi
 else
   # Package roots are durable Windows-side checkpoints.  Assemble the
   # build-only sysroot beside them so clone-tree can preserve hard-link
   # identity without copying the entire toolchain across filesystems.
   toolchain_root=$build/toolchain/$toolchain_digest/root
-  bash "$here/assemble-package-set.sh" \
-    "$QM_TOOLCHAIN_PACKAGE_SET" "$toolchain_root" >/dev/null
 fi
+# Validate caller-provided and locally assembled roots with the same content
+# companion and namespace checks. The assembly marker has a versioned contract;
+# a legacy one-line manifest digest cannot substitute for its content binding.
+bash "$here/assemble-package-set.sh" \
+  "$QM_TOOLCHAIN_PACKAGE_SET" "$toolchain_root" >/dev/null
 
 archives=(
   "apk-tools-v$APK_TOOLS_VERSION.tar.gz|$APK_TOOLS_URL|$APK_TOOLS_SHA256"

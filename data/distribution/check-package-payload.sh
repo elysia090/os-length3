@@ -47,4 +47,22 @@ if bash "$here/prepare-package-payload.sh" "$source_root" \
   printf 'package projection overwrote an existing checkpoint\n' >&2
   exit 1
 fi
-printf 'package payload profile: green (old checkpoint, owner sharing, idempotence)\n'
+services=$temporary/services
+mkdir -p "$services/var"
+ln -s ../run "$services/var/run"
+bash "$here/prepare-package-payload.sh" "$services" "$temporary/output/base-services" >/dev/null
+test -d "$temporary/output/base-services/run"
+test ! -L "$temporary/output/base-services/run"
+test "$(stat -c %a "$temporary/output/base-services/run")" = 755
+test "$(realpath -e "$temporary/output/base-services/var/run")" = "$temporary/output/base-services/run"
+test ! -e "$services/run"
+for conflict in file symlink; do
+  mkdir -p "$temporary/$conflict/var" "$temporary/$conflict-out"
+  ln -s ../run "$temporary/$conflict/var/run"
+  if [[ $conflict == file ]]; then printf 'occupied\n' >"$temporary/$conflict/run";
+  else ln -s / "$temporary/$conflict/run"; fi
+  if bash "$here/prepare-package-payload.sh" "$temporary/$conflict" "$temporary/$conflict-out/base-services" >/dev/null 2>&1; then
+    printf 'package payload accepted a conflicting run mountpoint\n' >&2; exit 1
+  fi
+done
+printf 'package payload profile: green (old checkpoint, owner sharing, idempotence, signed run mountpoint)\n'

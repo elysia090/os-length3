@@ -3,6 +3,11 @@ set -euo pipefail
 
 here=$(cd -- "$(dirname -- "$0")" && pwd)
 repo=$(cd -- "$here/.." && pwd)
+build_phase=${QM_BUILD_PHASE:-full}
+if [[ $build_phase != full && $build_phase != installed-root ]]; then
+  printf 'QM_BUILD_PHASE must be full or installed-root\n' >&2
+  exit 2
+fi
 
 # The release recipe always enters through the checked-in bootstrap lock.  A
 # caller may choose scratch/output coordinates, but cannot silently substitute
@@ -595,9 +600,6 @@ initramfs=$release_root/boot/initramfs
 # command, dynamic dependency, runtime-discovered resource, service input and
 # proof-bearing ELF must resolve in this one candidate root.
 "$here/distribution/check-root.sh" "$release_root" "$postlink_verify"
-bash "$here/distribution/check-native-runtime.sh" "$release_root"
-bash "$here/distribution/check-native-development.sh" \
-  "$release_root" "$upstream/zlib-$ZLIB_VERSION.tar.xz"
 
 release_population="$out/release-$package_publication_key.population"
 bash "$here/distribution/measure-root.sh" \
@@ -681,6 +683,19 @@ release_inputs="$out/release-$package_publication_key.inputs"
   printf 'bootstrap.lock.sha256=%s\n' "$bootstrap_lock_digest"
 } > "$release_inputs.tmp"
 mv "$release_inputs.tmp" "$release_inputs"
+
+# An explicitly selected intermediate build can regenerate signed package/root
+# bytes without running runtime suites that create scratch cryptographic keys.
+# It publishes no download or runtime acceptance. Full mode keeps all checks.
+if [[ $build_phase == installed-root ]]; then
+  printf '%s\n' 'installed signed root candidate: built; product qualification pending' \
+    "root=$release_root" "inputs=$release_inputs" \
+    "repository=$apk_publication/repository/Packages.adb"
+  exit 0
+fi
+bash "$here/distribution/check-native-runtime.sh" "$release_root"
+bash "$here/distribution/check-native-development.sh" \
+  "$release_root" "$upstream/zlib-$ZLIB_VERSION.tar.xz"
 
 printf '%s\n' \
   'signed apk publication: green' \

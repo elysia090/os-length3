@@ -1,0 +1,48 @@
+{
+  "format": "prepared-release-linux-rollback-evidence-v1",
+  "date": "2026-10-13",
+  "scope": "actual saved Linux filesystem and prepared diagnostic images; not release qualification",
+  "status": "passed",
+  "rootA": "089001a40360870369d08308c33a066bae7f6f13199a5d130c033ce1c07f90db",
+  "rootB": "10987ff0d4ff3b09d79a52bb8a97c38e6e87ef5cd45d1b04e5a923c052354649",
+  "update": {
+    "status": "closed",
+    "linuxBoot": "not-achieved",
+    "worker": "production-linux-worker",
+    "restore": "not-tested",
+    "preparedReleaseMode": true,
+    "liveWorkers": 0,
+    "testVolume": {
+      "name": "workspace-fixture-linux-recovery-1012",
+      "bytes": 33554432
+    },
+    "releaseSelection": {
+      "operation": "select",
+      "label": "before-clean-producer-update",
+      "beforeSequence": "93",
+      "afterSequence": "94",
+      "previousSystemRoot": "089001a40360870369d08308c33a066bae7f6f13199a5d130c033ce1c07f90db",
+      "systemRoot": "10987ff0d4ff3b09d79a52bb8a97c38e6e87ef5cd45d1b04e5a923c052354649"
+    }
+  },
+  "restore": {
+    "operation": "restore",
+    "label": "before-clean-producer-update",
+    "beforeSequence": "115",
+    "afterSequence": "116",
+    "systemRoot": "089001a40360870369d08308c33a066bae7f6f13199a5d130c033ce1c07f90db"
+  },
+  "workspaceUuid": "2a89680a-f15b-4ab5-8f49-b8518ce835a1",
+  "file": "/root/recovery-fixture/saved.txt",
+  "dataB": "ed0d626b6e51aafc13e65d45618916f96f02e2e1b439e5bb4a6b8ba7ad2e7c54",
+  "restoredDataA": "638c2eded19609057c2af41bc156187d71b996ce332aec3352b752cb4779df3e",
+  "restoredPackage": "base-services-0.1.0-r0",
+  "restoredLinux": {
+    "generation": "27",
+    "consoleReady": true,
+    "actualDataHashRead": true,
+    "bodyNetworkFetches": 0
+  },
+  "oldRootServiceTimeout": "observed and not counted as successful cold services",
+  "browserProcessRestart": "not-tested"
+}
