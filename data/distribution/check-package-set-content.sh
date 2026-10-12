@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 export LC_ALL=C
+umask 022
 here=$(cd -- "$(dirname -- "$0")" && pwd)
 tool=$here/../../src/v2/artifact/build/artifact-measure-namespace
 [[ $(id -u) == 0 ]] || { printf 'fixture requires root for uid/gid cases\n' >&2; exit 2; }
@@ -129,3 +130,10 @@ PY
 test "$("$tool" --identity "$temporary/order-a")" = "$("$tool" --identity "$temporary/order-b")"
 cases=$((cases+1))
 printf 'package-set content fixtures: green (%s cases; input cuts, metadata, reuse, drift rejection and preservation)\n' "$cases"
+printf 'format=package-set-fixture-acceptance-v1\ncontract=package-root-content-v1\n'
+printf 'cases=%s\nuid=%s\numask=022\n' "$cases" "$(id -u)"
+printf 'tool.sha256=%s\nfixture.sha256=%s\n' \
+  "$(sha256sum "$tool" | cut -d' ' -f1)" \
+  "$(sha256sum "$here/check-package-set-content.sh" | cut -d' ' -f1)"
+printf 'fixture.output.sha256=%s\nfixture.marker.sha256=%s\n' "$baseline" "$marker_sha"
+printf 'scope=isolated-Linux-package-set-fixtures-only\n'

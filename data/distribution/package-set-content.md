@@ -23,7 +23,7 @@ The domain is `package-root-content-v1`. No archive normalization rewrites
 the hashed payload. Filesystem xattr/read errors fail instead of producing a
 partial identity.
 
-Absolute root location, physical inode/device numbers, timestamps, external
+Absolute root location, filesystem st_dev/st_ino values, timestamps, external
 hardlink counts and producer/compiler revisions are not identity coordinates.
 They are not copied-byte semantics for this gate. Stat generations/timestamps
 are checked only for changes *during* a read. A namespace-format change needs
