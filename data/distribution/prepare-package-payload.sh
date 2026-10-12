@@ -40,6 +40,18 @@ trap cleanup EXIT HUP INT TERM
 # Removing names before mkpkg keeps signatures and the installed DB aligned;
 # deleting them from the installed root would instead corrupt apk ownership.
 cp -al -- "$source_root/." "$payload/"
+if [[ $name == linux-boot ]]; then
+  if [[ -L $payload/boot || ! -d $payload/boot \
+      || -L $payload/boot/initramfs || ! -f $payload/boot/initramfs ]]; then
+    printf 'linux-boot requires a regular owned initramfs\n' >&2
+    exit 1
+  fi
+  # Write a distinct inode before replacing the payload link. The checkpoint's
+  # archive, member data and optimized ELF bytes remain untouched.
+  python3 "$here/normalize-initramfs.py" "$payload/boot/initramfs" \
+    "$payload/boot/.initramfs.normalized"
+  mv -- "$payload/boot/.initramfs.normalized" "$payload/boot/initramfs"
+fi
 if [[ $name == base-services ]]; then
   # The compatibility link belongs to this package and must resolve in the
   # installed root before Linux mounts its tmpfs. Include the empty mountpoint

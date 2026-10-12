@@ -65,4 +65,24 @@ for conflict in file symlink; do
     printf 'package payload accepted a conflicting run mountpoint\n' >&2; exit 1
   fi
 done
+boot_source=$temporary/boot-source
+mkdir -p "$boot_source/boot"
+printf 'kernel fixture\n' >"$boot_source/boot/kernel"
+python3 - "$boot_source/boot/initramfs" <<'PY'
+from pathlib import Path
+import sys
+fields = [0, 0, 0, 0, 1, 123, 0, 0, 0, 0, 0, 11, 0]
+data = b'070701' + b''.join(f'{value:08x}'.encode() for value in fields) + b'TRAILER!!!\0'
+Path(sys.argv[1]).write_bytes(data + b'\0' * (-len(data) % 512))
+PY
+boot_before=$(sha256sum "$boot_source/boot/initramfs" | cut -d' ' -f1)
+bash "$here/prepare-package-payload.sh" "$boot_source" "$temporary/output/linux-boot" >/dev/null
+test "$(sha256sum "$boot_source/boot/initramfs" | cut -d' ' -f1)" = "$boot_before"
+test ! "$temporary/output/linux-boot/boot/initramfs" -ef "$boot_source/boot/initramfs"
+test "$temporary/output/linux-boot/boot/kernel" -ef "$boot_source/boot/kernel"
+python3 - "$temporary/output/linux-boot/boot/initramfs" <<'PY'
+from pathlib import Path
+import sys
+assert Path(sys.argv[1]).read_bytes()[46:54] == b'00000000'
+PY
 printf 'package payload profile: green (old checkpoint, owner sharing, idempotence, signed run mountpoint)\n'

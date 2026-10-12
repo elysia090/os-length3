@@ -567,6 +567,7 @@ package_publication_tools_digest=$(
     sha256sum "$here/distribution/package-recipes.sh"
     sha256sum "$here/distribution/publish-apk.sh"
     sha256sum "$here/distribution/prepare-package-payload.sh"
+    sha256sum "$here/distribution/normalize-initramfs.py"
     sha256sum "$here/distribution/check-package-recipes.sh"
     sha256sum "$here/distribution/check-package-publication.sh"
     sha256sum "$here/distribution/check-package-state.sh"

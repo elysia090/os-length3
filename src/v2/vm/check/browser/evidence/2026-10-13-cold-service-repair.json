@@ -1,0 +1,111 @@
+{
+  "format": "cold-service-repair-evidence-v1",
+  "date": "2026-10-13",
+  "scope": "local test-signed candidate; browser process restart and product qualification pending",
+  "publicReleaseModified": false,
+  "newIssuerKeys": false,
+  "privateKeyExport": false,
+  "originalBackingMetadataUnchanged": true,
+  "revisions": {
+    "base-services": "0.1.0-r3",
+    "linux-boot": "7.2.7-r2"
+  },
+  "archiveNormalization": {
+    "status": "passed",
+    "field": "newc member mtime",
+    "epoch": 0,
+    "sourcePreserved": true,
+    "memberDataPreserved": true,
+    "actualTwoBuildsNormalizeTo": "d2f4b01f179eba808a74e4fdcd0232d7f98bdd84c82124a1cafbdbc510e54a20",
+    "completeNativeComparison": {
+      "paths": 6300,
+      "regularElfMembers": 210,
+      "changedElfs": 0,
+      "changedPaths": [
+        "manifest",
+        "root/boot/initramfs",
+        "root/etc/apk/world",
+        "root/lib/apk/db/installed",
+        "root/system/apk/Packages.adb"
+      ]
+    }
+  },
+  "native": {
+    "results": {
+      "development": "passed",
+      "https": "passed",
+      "root": "passed",
+      "runtime": "passed"
+    },
+    "bundle": {
+      "bytes": 63652664,
+      "sha256": "c97f2eed201a8b8f9fbdb4ae14e4a73d096add1cfe496f7c7eb86adecd4ce3f7"
+    },
+    "inputs": {
+      "bytes": 2068,
+      "sha256": "d4646eafa4868b6a7167671778c0f299a0a6fc3c0dd952e27d55fba7f934d766"
+    },
+    "runtimeReceiptSourceBinding": "unknown",
+    "productQualification": "pending",
+    "coldBoot": {
+      "status": "passed",
+      "physicalRamMiB": 1024,
+      "consoleMs": 1037.7,
+      "serviceAndCommandMs": 32778.1
+    },
+    "linuxUsable512MiB": {
+      "status": "passed",
+      "physicalRamMiB": 1024,
+      "kernelArgument": "mem=512M",
+      "consoleMs": 990.2,
+      "serviceAndCommandMs": 32691.1
+    }
+  },
+  "canonicalNamespace": {
+    "native": "e51726b70e1937e797f1176b188dd0a664e533a069c3a613ec96be77981fc799",
+    "readOnlySquashfs": "e51726b70e1937e797f1176b188dd0a664e533a069c3a613ec96be77981fc799",
+    "status": "equal"
+  },
+  "web": {
+    "manifestSha256": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+    "roles": {
+      "kernel": {
+        "bytes": 3499008,
+        "sha256": "a2295e89a6a9f6c35b8587798b2c9fb1da8d829039265066e82603434e48319f"
+      },
+      "initramfs": {
+        "bytes": 438272,
+        "sha256": "d2f4b01f179eba808a74e4fdcd0232d7f98bdd84c82124a1cafbdbc510e54a20"
+      },
+      "system": {
+        "bytes": 90341376,
+        "sha256": "74b1d35af3a1c2082f1bb5290eb562bd60463d09ded586dd525f01c9889fe53d"
+      },
+      "vm": {
+        "bytes": 144156,
+        "sha256": "4a14da3a861d5b877a77db9334e2db20baf19eb06b5d43310e75e16703a9dccc"
+      },
+      "compiler": {
+        "bytes": 1137376,
+        "sha256": "263e444dc64d0cd93a52a9413e1046e9379ae5ad8a7900c87129b8289849e565"
+      }
+    },
+    "selection": {
+      "operation": "select",
+      "label": "before-cold-service-repair",
+      "beforeSequence": "127",
+      "afterSequence": "128",
+      "previousSystemRoot": "089001a40360870369d08308c33a066bae7f6f13199a5d130c033ce1c07f90db",
+      "systemRoot": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde"
+    },
+    "coldServices": {
+      "status": "passed",
+      "generation": "30",
+      "manualRetry": false,
+      "bootstrapCompletionMarker": "boot-offline-complete",
+      "bodyNetworkFetches": 0,
+      "workspaceUuid": "2a89680a-f15b-4ab5-8f49-b8518ce835a1"
+    },
+    "browserProcessRestart": "not-tested"
+  }
+}

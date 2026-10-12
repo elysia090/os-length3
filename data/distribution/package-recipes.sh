@@ -31,7 +31,7 @@ package_recipe gzip "$GZIP_VERSION-r1" 'GNU gzip compressor' "$GZIP_URL" 'GPL-3.
 package_recipe iproute2 "$IPROUTE2_VERSION-r1" 'Linux routing and network configuration tools' "$IPROUTE2_URL" 'GPL-2.0-or-later' iproute2 '' '' '' none
 package_recipe kmod "$KMOD_VERSION-r1" 'Linux kernel module tools' "$KMOD_URL" 'LGPL-2.1-or-later' kmod '' '' '' none
 package_recipe libcap "$LIBCAP_VERSION-r1" 'Linux capability tools' "$LIBCAP_URL" 'BSD-3-Clause OR GPL-2.0-only' libcap '' '' '' none
-package_recipe linux-boot "$LINUX_VERSION-r1" 'Linux kernel and deterministic rescue initramfs' "$LINUX_URL" 'GPL-2.0-only' linux 'busybox base-services' '' '' none
+package_recipe linux-boot "$LINUX_VERSION-r2" 'Linux kernel and deterministic rescue initramfs' "$LINUX_URL" 'GPL-2.0-only' linux 'busybox base-services' '' '' none
 package_recipe linux-headers "$LINUX_VERSION-r1" 'Linux userspace API headers' "$LINUX_URL" 'GPL-2.0-only WITH Linux-syscall-note' linux '' '' '' none
 package_recipe make "$MAKE_VERSION-r1" 'GNU make' "$MAKE_URL" 'GPL-3.0-or-later' make 'busybox' '' '' none
 package_recipe mdevd "$MDEVD_VERSION-r1" 'small device event manager' "$MDEVD_URL" 'ISC' mdevd 'skalibs' '' '' none

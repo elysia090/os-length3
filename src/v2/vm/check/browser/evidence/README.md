@@ -1,5 +1,12 @@
 # Browser boundary observations
 
+2026-10-13: [signed root rebuild and workspace recovery](2026-10-13-signed-root-and-recovery.md)
+collects actual native runtime/HTTPS/cold boot, equal native/Web namespace,
+normal browser DHCP, software-root/data rollback and legacy key retention.
+It retains the failed initial Web service transition, the subsequently passed
+signed startup repair, and the pending full browser-process restart separately
+from CI success.
+
 New independent native/C/Node work:
 [exact body quotient](2026-10-07-body-quotient.md) and
 [receipt](2026-10-07-body-quotient-green.json). Not a new browser/Linux acceptance.
