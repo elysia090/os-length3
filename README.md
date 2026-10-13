@@ -54,13 +54,13 @@ QM makes of each of them is in [`src/v2/README.md`](src/v2/README.md).
 
 ## Quick start
 
-The **OS Length3 Linux** native distribution candidate is distributed as a
-[GitHub pre-release asset](https://github.com/elysia090/libqm-prototype/releases/tag/os-length3-linux-v0.1.0-rc.1),
-not committed as a binary in Git. See
-[`artifact/native/`](artifact/native/README.md)
-for its checksum, scope, verification receipts and source inputs. The next
-product milestone is to run that same authenticated Linux bundle through the
-Wasm projection, without replacing Linux syscall/VFS semantics in JavaScript.
+The initial **OS Length3 Linux 0.1.0** stable native bundle is distributed as a
+[GitHub Release asset](https://github.com/elysia090/libqm-prototype/releases/tag/os-length3-linux-v0.1.0).
+See [release scope and verification](artifact/native/RELEASE-0.1.0.md) and
+[bootstrap trust / object delivery](src/v2/docs/DELIVERY.md).
+The corresponding Web projection has passed the common offline guest workload
+and current storage fault tests; browser performance and complete product
+qualification remain pending. The previous RC and its receipts remain historical.
 
 The native products build and check as ordinary C:
 

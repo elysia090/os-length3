@@ -56,22 +56,27 @@ AAD and ciphertext-hash locators. It does not yet route those pages through
 the prototype's object-row AEAD/erasure projection. Encrypted-block recovery
 does not prove completion of the row/ECC or C-only admission design.
 
-The verification page creates a fresh 32-byte CSPRNG master input, imports a
-non-extractable HKDF `CryptoKey` and clears the input buffer. The live supervisor
-page retains that key, volume context and latest exact head and passes authority
-to replacement Workers. IndexedDB stores ciphertext objects/head, not that raw
-key. Worker close/reopen cold-boots Linux; it does not restore guest processes.
+An explicit new workspace creates a 32-byte CSPRNG master input, imports a
+non-extractable HKDF `CryptoKey` and clears the input buffer. The user-approved
+origin/profile retains that CryptoKey, volume context, exact committed head
+and Supervisor generation in an IndexedDB authority store. Head and recovery
+pin advance in the same strict transaction; Web Locks and generation fencing
+prevent concurrent/stale Supervisors. The implemented browser-restart recovery
+and explicit retention of existing page-local workspaces are described in
+[workspace-authority.md](../web/workspace-authority.md). Ciphertext objects
+remain separate from this trusted authority. Worker close/reopen cold-boots
+Linux; it does not restore guest processes.
 
-Page reload, browser exit, supervisor loss or another device is different.
-There is no implemented persistent key vault, recovery-key export, password
-wrapping, cross-device key distribution or authenticated head-recovery UI.
-Non-extractability does not protect a compromised supervisor origin, guarantee
-memory erasure or recover a volume after key loss. Such ciphertext must not be
-relabeled as recoverable, silently reformatted or accepted with a provider's
-replacement key/head.
+The local browser profile is part of the trusted coordinate. Site-data deletion
+loses its key and recovery metadata. Non-extractability does not protect a
+compromised origin, detect rollback of the entire trusted profile, guarantee
+memory erasure or recover after key loss. There is no portable recovery-key
+export, password wrapping or cross-device key distribution. Existing unknown
+ciphertext is never silently reformatted or adopted under a replacement key/head.
 
-A durable supervisor still needs a separately trusted recovery mechanism
-binding volume context, wrapped/key-provider authority and committed head.
+Cloud recovery still needs a separately trusted durable intent/head mechanism.
+The optional HTTP ciphertext transport and its fetch/push contract are in
+[DELIVERY.md](DELIVERY.md); no cloud tier is configured by default.
 Master-key rotation needs old-volume access, a new key/context and verified
 migration, not simply a new secret at the old coordinates. These are remaining
 contracts, not present UI features. [RFC 5869](https://www.rfc-editor.org/rfc/rfc5869.html)
@@ -672,9 +677,9 @@ Implemented C structure:
 | erasure shape validation | `storage/src/erasure.c` |
 
 The production Worker currently uses browser `PersistentBlock` with WebCrypto
-HKDF/AES-GCM and encrypted IndexedDB objects/head. Worker replacement with
-retained supervisor key/context/head is tested separately from browser-exit
-recovery. The object-row/erasure files are still prototypes, not that production
+HKDF/AES-GCM and encrypted IndexedDB objects/head. Worker replacement and
+browser-restart recovery with approved origin authority are separate tested
+behaviors; portable key-loss recovery is not implemented. The object-row/erasure files are still prototypes, not that production
 page path. C does not yet implement this complete HKDF/AEAD/erasure/root
 admission route, nor all derived lease/arena/recovery policies. Their general
 C-only and independent falsification gates remain incomplete; browser encrypted

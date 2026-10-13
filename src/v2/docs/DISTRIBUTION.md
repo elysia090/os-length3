@@ -65,6 +65,15 @@ distribution, but more complete than a rescue image or build appliance.
 
 ## First native download
 
+The operator approved the initial stable native bundle milestone on
+2026-10-13. [Release 0.1.0](../../../artifact/native/RELEASE-0.1.0.md) records
+the exact repaired archive, passed acceptance and accepted limits. This
+publication uses an independently approved authenticated GitHub publisher
+channel and retained asset digests; it does not add a detached signature or
+promote the unchanged local APK key to a production repository authority.
+[DELIVERY.md](DELIVERY.md) specifies bootstrap trust and object fetch/push.
+Later formal-product gates below keep their measured pass/fail/pending states.
+
 The first GitHub release deliverable is a **single reproducible Linux x86-64
 `.tar.zst` root bundle**. It must not wait for the theoretical release-word
 publisher or the browser delivery format. Its members, in sorted path order,
@@ -220,8 +229,9 @@ and [initramfs root handoff](https://docs.kernel.org/filesystems/ramfs-rootfs-in
 
 `/usr/libexec/system/init` becomes the installed `s6-svscan` PID 1. A supervised
 one-attempt bootstrap initializes the immutable compiled s6-rc database and
-requests `boot-offline`; it enables the console only after the complete
-transition succeeds. `mdevd-ready` uses notification fd 3 and the coldplug
+requests `boot-offline`. The local supervised console starts independently;
+the Supervisor reports services pending, ready or failed until the complete
+transition is observed. `mdevd-ready` uses notification fd 3 and the coldplug
 acknowledgement multicast mask shared with `mdevd-coldplug`. Readiness oneshots
 check actual mounts, account/package/service files, writable COW, and PID 1;
 supervisor startup alone is not interactive readiness. Longrun `run` files

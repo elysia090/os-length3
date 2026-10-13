@@ -136,6 +136,10 @@ signature; that external-authentication gate still applies.
 
 The frozen native candidate's key remains local/test-only; its public-file
 fingerprint is in [`artifact/native/README.md`](../../../artifact/native/README.md).
+The 2026-10-13 initial stable native publication authenticates that unchanged
+key as installed content through the approved external archive digest; it
+does not promote it to a production repository authority. Bootstrap and future
+key-transition policy are in [DELIVERY.md](DELIVERY.md).
 Browser volume secrets and network credentials are separate authorities in
 [STORAGE.md](STORAGE.md) and [NETWORK.md](NETWORK.md), never derived from the
 package private key.

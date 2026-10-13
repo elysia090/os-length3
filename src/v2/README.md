@@ -83,8 +83,11 @@ distribution shared by native and browser execution.
 Key/trust roles are deliberately separate: [package signing and public keys](docs/PACKAGE.md#signing-keys-public-keys-and-bootstrap-trust),
 [volume secrets and recovery pins](docs/STORAGE.md#key-custody-and-recovery-authority--current-implementation),
 and [gateway certificates/capabilities](docs/NETWORK.md#transport-credentials-are-not-guest-trust-roots).
-The current native candidate is test-key signed; browser volume reopening
-retains supervisor authority and is not page-exit/key-loss recovery.
+The initial stable native archive uses an approved GitHub publisher/digest
+bootstrap while retaining the unchanged local APK key; see
+[delivery policy](docs/DELIVERY.md). The browser profile/origin retains the
+non-extractable workspace key, context and committed head across browser
+restart. Site-data deletion/key loss and portable recovery remain distinct.
 
 The one production path is:
 

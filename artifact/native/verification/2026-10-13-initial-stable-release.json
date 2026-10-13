@@ -1,0 +1,150 @@
+{
+  "format": "native-release-publication-v1",
+  "version": "0.1.0",
+  "channel": "stable-native",
+  "releaseTag": "os-length3-linux-v0.1.0",
+  "nativePackagePublication": "ffb53450f0f41900f1cda2cd072b9405b43c7b44f97c400794c57019578f32a9",
+  "nativeNamespace": "13a2b910a90971ed2e4f8d9f1ab3a1edeb1e3fdfaffd1978bb69908ea1f1c8fd",
+  "webQualificationDescriptor": "7ae8a85018b49656c8212e4984baf9500656ee3a2ef642a149752954924729f9",
+  "publisherBootstrap": {
+    "kind": "authenticated-github-release",
+    "repository": "elysia090/libqm-prototype",
+    "detachedSignature": false,
+    "policy": "Approve this publisher/channel independently; retain the exact version and asset digests before using any mirror."
+  },
+  "packageKey": {
+    "sha256": "872070838751f9ba52b49c4198277d071f91ce1a1e130e10df59a203de13271e",
+    "file": "package-public.pem",
+    "status": "unchanged local APK signing key authenticated as installed content by the external archive digest; no production repository-key adoption or rotation"
+  },
+  "producerSource": {
+    "sha256": "2a96a04e464be6bbaffe4b17e0d6a32e84a63a7a4054ca8b969b467268fffbf8",
+    "bytes": 32194560
+  },
+  "publicationOverrides": [
+    {
+      "path": "data/distribution/boot/boot",
+      "bytes": 1322,
+      "sha256": "bc38975f6ec3be626656a51309f484a05ca86d41ad6da23630357c25783c6ee9"
+    },
+    {
+      "path": "data/distribution/build-producer-cut.sh",
+      "bytes": 3818,
+      "sha256": "58924bc2bfedddd26df690000e8c9148b7cc6d7af8a28e094253863a44062035"
+    },
+    {
+      "path": "data/build.sh",
+      "bytes": 35021,
+      "sha256": "9f12e807da1938eebc722521b250c31324cca3f11c26f7de9caf8c0c0fc6b563"
+    },
+    {
+      "path": "data/config/busybox-1.36.1.config",
+      "bytes": 37087,
+      "sha256": "1942505c27fc5a815e04bd71a2d153a8886a1f47bcf818ce37e0e495da2e3cb4"
+    },
+    {
+      "path": "data/config/busybox.fragment",
+      "bytes": 2483,
+      "sha256": "6fcd483c9a96ec2e1fabfa94187fd9569ff6de26c1251c51f82451ad58257a1b"
+    },
+    {
+      "path": "data/distribution/check-normalize-initramfs.py",
+      "bytes": 2326,
+      "sha256": "c59659938f03c2147b17592af8b1e9df732853fbcd99fbb5fd439973ead68aea"
+    },
+    {
+      "path": "data/distribution/check-postlink-toolchain.sh",
+      "bytes": 7130,
+      "sha256": "690184a3bc6ef24134876f38a85de1d6322be96f3494e665a118f96755ec7ea7"
+    },
+    {
+      "path": "data/distribution/boot/console",
+      "bytes": 412,
+      "sha256": "f17c195768fc2d1dd12bce799a98d348a52eed6b6b9660dbeb4a64cb4ab26336"
+    },
+    {
+      "path": "data/initramfs/init",
+      "bytes": 2014,
+      "sha256": "456e64dfde8789fa3bc02651f274a187be54beceebcb2c95795ee53030934881"
+    },
+    {
+      "path": "src/v2/artifact/cli/measure-namespace.c",
+      "bytes": 28186,
+      "sha256": "9b4c24e76afe2ac2890af35ce6a595e6fb41281b1346ec7359190ab4e9d48e98"
+    },
+    {
+      "path": "data/distribution/normalize-initramfs.py",
+      "bytes": 2818,
+      "sha256": "bb24ba8ee89dbc193a8e10b10c2819d2ab8d865dc8225dec49621b1facbb30ce"
+    },
+    {
+      "path": "data/distribution/optimize-payload.sh",
+      "bytes": 23076,
+      "sha256": "d65e906427f0e5ff7530f0534562407d1030b86ef1f9c3d68c605016b48119da"
+    },
+    {
+      "path": "data/distribution/package-recipes.sh",
+      "bytes": 7227,
+      "sha256": "e8f8a985b75296067ba34d7365cda7fd025a8a04ddb4707b834220b1eb2edc0d"
+    },
+    {
+      "path": "data/distribution/prepare-package-payload.sh",
+      "bytes": 2908,
+      "sha256": "36fcdf885b685792684e6b3965b7179969ba99a80740a08843ba31fa29bf6960"
+    },
+    {
+      "path": "data/distribution/producer-execution.py",
+      "bytes": 3805,
+      "sha256": "0ec32a3da6b1e6cbf5328e3b060df3ce334a7c94c002e7a1118902ab563fd87a"
+    },
+    {
+      "path": "data/distribution/producer-run.sh",
+      "bytes": 547,
+      "sha256": "61b5b6721a92f8fe0a4ce35fb1d68a3533be19b7d16ee91f3cec8c9f24222ceb"
+    }
+  ],
+  "upstreamArchiveCount": 48,
+  "qualification": {
+    "nativeRuntimeDevelopmentHttps": "pass",
+    "pairedNativeWebOffline": "pass",
+    "completeSemanticEquivalenceChecker": "not-implemented",
+    "canonicalReleaseWord75MB": "not-tested",
+    "webThreeSecondColdPrompt": "fail",
+    "webReleaseChannel": "preview",
+    "scope": "operator-approved initial native bundle publication; historical formal-product gates remain separately reported"
+  },
+  "assets": {
+    "os-length3-linux-0.1.0-x86_64-ffb53450f0f41900f1cda2cd072b9405b43c7b44f97c400794c57019578f32a9.tar.zst": {
+      "bytes": 63651568,
+      "sha256": "56229f242fd8860583cb8b17b5f64f21aced1abad99770b306a0432fc260d7b4"
+    },
+    "os-length3-linux-0.1.0-sources.tar": {
+      "bytes": 483133440,
+      "sha256": "9f47675f671078c8bc359575be76301736e3bd249e5bf23bb469fd48cfd1f60a"
+    },
+    "os-length3-linux-0.1.0-evidence.tar": {
+      "bytes": 2355200,
+      "sha256": "38d39dcec466d3f23d471d476048de34d683eda6f002b927b4da2ff5715b92de"
+    },
+    "package-public.pem": {
+      "bytes": 636,
+      "sha256": "872070838751f9ba52b49c4198277d071f91ce1a1e130e10df59a203de13271e"
+    },
+    "release.inputs": {
+      "bytes": 2068,
+      "sha256": "69efe08b784af085cdb321547f539f4e4aa99d52c7db9a31a52f9073911973b3"
+    },
+    "SOURCE-INPUTS.txt": {
+      "bytes": 1071,
+      "sha256": "c7cef37c8b70f48a39eafaaf866499024ab5b4086498cb2b438767363a897ef7"
+    },
+    "README.md": {
+      "bytes": 5265,
+      "sha256": "a82f98a42ee6d2946b65596b18f21f04aee7f2a33469ff120377388c3f16cf93"
+    },
+    "DELIVERY.md": {
+      "bytes": 7785,
+      "sha256": "3498d5aede770c8af2382072c5f09cbfa6614c11334e244fbd75a5798e8e84f8"
+    }
+  }
+}

@@ -16,6 +16,8 @@ on:
       - 'src/v2/Makefile'
       - 'data/oracle/check-site-hardlinks.mjs'
       - 'data/oracle/check-persistent-block*.mjs'
+      - 'data/oracle/check-object-store-transport.mjs'
+      - 'data/distribution/prepare-qualified-native-release.py'
       - 'data/oracle/check-native-producer-dhcp.sh'
       - 'data/oracle/seed-image.mjs'
       - 'data/oracle/network-host-linux.go'
@@ -57,6 +59,8 @@ on:
       - 'src/v2/Makefile'
       - 'data/oracle/check-site-hardlinks.mjs'
       - 'data/oracle/check-persistent-block*.mjs'
+      - 'data/oracle/check-object-store-transport.mjs'
+      - 'data/distribution/prepare-qualified-native-release.py'
       - 'data/oracle/check-native-producer-dhcp.sh'
       - 'data/oracle/seed-image.mjs'
       - 'data/oracle/network-host-linux.go'
@@ -102,6 +106,8 @@ jobs:
           node data/oracle/check-persistent-block-failures.mjs
           node data/oracle/check-persistent-block-restore.mjs
           node data/oracle/check-persistent-block-system.mjs
+          node data/oracle/check-object-store-transport.mjs
+          python3 -m py_compile data/distribution/prepare-qualified-native-release.py
           node data/oracle/check-machine-devices-close.mjs
           node data/oracle/check-machine-network-reconnect.mjs
           node data/oracle/check-service-observation.mjs

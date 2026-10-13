@@ -1,5 +1,9 @@
 # OS Length3 Linux — native candidate, 2026-10-02
 
+This page retains the original RC measurements. The current initial stable
+native delivery is [Release 0.1.0](RELEASE-0.1.0.md), with its new repaired
+bundle, external bootstrap policy and separately reported acceptance limits.
+
 The downloadable candidate is
 `os-length3-linux-0.1.0-x86_64-1a0bddc2340a976d859fabfe7c67eeea66efb3a0d4ae21dc24a1299da2753195.tar.zst`.
 It contains the complete fixed `development-standard-v1` root, its manifest,
