@@ -36,6 +36,7 @@ partial="$parent/.${name}.partial.$$"
 regular_list="$parent/.${name}.regular.$$"
 stage_report="$parent/.${name}.executable-stage.$$"
 script_directory=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+. "$script_directory/producer-run.sh"
 archive_normalizer=${QM_ARCHIVE_NORMALIZER:-$script_directory/../../src/v2/artifact/build/artifact-normalize-archive}
 if [[ ! -x $archive_normalizer ]]; then
   printf 'archive normalizer is unavailable: %s\n' "$archive_normalizer" >&2
@@ -229,7 +230,7 @@ for relative in "${archive_paths[@]}"; do
   archive_inodes=$((archive_inodes + 1))
   archive_unique_source_bytes=$((archive_unique_source_bytes + source_size))
   temporary_archive="$target.normalized.$$"
-  "$archive_normalizer" "$source" "$temporary_archive" >/dev/null
+  producer_run archive "$archive_normalizer" "$source" "$temporary_archive" >/dev/null
   chmod --reference="$source" "$temporary_archive"
   mv -- "$temporary_archive" "$target"
   archive_stage_arguments+=("$target")
@@ -253,7 +254,7 @@ for relative in "${archive_alias_paths[@]}"; do
 done
 
 if (( input_inodes != 0 )); then
-  "$stage" --stage "$stage_report" \
+  producer_run stage "$stage" --stage "$stage_report" \
     --namespace-root "$input" --payload-root "$partial" \
     --archives "${#archive_stage_arguments[@]}" \
     "${archive_stage_arguments[@]}" \
@@ -423,7 +424,7 @@ fi
 for relative in "${unique_paths[@]}"; do
   source="$input/$relative"
   target="$partial/$relative"
-  "$verify" "$source" "$target"
+  producer_run verifier "$verify" "$source" "$target"
   target_size=$(stat -c %s -- "$target")
   target_identity=$(sha256sum "$target" | cut -d' ' -f1)
   logical_optimized_bytes=$((logical_optimized_bytes + target_size))
@@ -436,7 +437,7 @@ for relative in "${unique_paths[@]}"; do
     printf 'post-link output is not a linked x86 ELF: /%s\n' "$relative" >&2
     exit 1
   }
-  "$verify" "$target" >/dev/null
+  producer_run verifier "$verify" "$target" >/dev/null
 done
 
 for relative in "${alias_paths[@]}"; do

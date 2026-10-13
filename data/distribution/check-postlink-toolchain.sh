@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+. "$(dirname -- "${BASH_SOURCE[0]}")/producer-run.sh"
 
 if [[ $# != 4 ]]; then
   printf 'usage: %s LINKED_TOOLCHAIN_ROOT COMPILER VERIFIER SCRATCH_ROOT\n' "$0" >&2
@@ -61,8 +62,8 @@ cleanup() {
 trap cleanup EXIT
 ulimit -c 0
 
-"$compiler" "$readelf" -o "$stage/readelf"
-"$verifier" "$readelf" "$stage/readelf"
+producer_run compiler "$compiler" "$readelf" -o "$stage/readelf"
+producer_run verifier "$verifier" "$readelf" "$stage/readelf"
 
 if ! timeout 30 "$readelf" -rW "$sample" \
     >"$stage/source-relocs" 2>"$stage/source-errors"; then
@@ -81,8 +82,8 @@ if ! cmp -s -- "$stage/source-relocs" "$stage/optimized-relocs" \
   exit 1
 fi
 
-"$compiler" "$objcopy" -o "$stage/objcopy"
-"$verifier" "$objcopy" "$stage/objcopy"
+producer_run compiler "$compiler" "$objcopy" -o "$stage/objcopy"
+producer_run verifier "$verifier" "$objcopy" "$stage/objcopy"
 # GCC retains a local-exec TLS construction marker that both upstream BFD
 # versions reject when reopening the linked image. Use the linked readelf
 # image for extraction; the relocation parser still exercises GCC above.
@@ -101,8 +102,8 @@ if ! cmp -s -- "$stage/source-binary" "$stage/optimized-binary"; then
   exit 1
 fi
 
-"$compiler" "$assembler" -o "$stage/as"
-"$verifier" "$assembler" "$stage/as"
+producer_run compiler "$compiler" "$assembler" -o "$stage/as"
+producer_run verifier "$verifier" "$assembler" "$stage/as"
 timeout 30 "$assembler" --64 --fatal-warnings -o "$stage/source-object" "$assembly"
 timeout 30 "$stage/as" --64 --fatal-warnings -o "$stage/optimized-object" "$assembly"
 if ! cmp -s -- "$stage/source-object" "$stage/optimized-object"; then
@@ -110,8 +111,8 @@ if ! cmp -s -- "$stage/source-object" "$stage/optimized-object"; then
   exit 1
 fi
 
-"$compiler" "$preprocessor" -o "$stage/cpp"
-"$verifier" "$preprocessor" "$stage/cpp"
+producer_run compiler "$compiler" "$preprocessor" -o "$stage/cpp"
+producer_run verifier "$verifier" "$preprocessor" "$stage/cpp"
 # This isolated driver test moves cpp outside its installed prefix. Give both
 # drivers the same pinned cc1 dependency explicitly; installed-root tests
 # below still have to prove ordinary prefix discovery without this option.
@@ -132,8 +133,8 @@ fi
 
 # An option switch can pass --version while its first real key operation
 # jumps into an instruction interior. Reject that before the full bake.
-"$compiler" "$keygen" -o "$stage/ssh-keygen"
-"$verifier" "$keygen" "$stage/ssh-keygen"
+producer_run compiler "$compiler" "$keygen" -o "$stage/ssh-keygen"
+producer_run verifier "$verifier" "$keygen" "$stage/ssh-keygen"
 for variant in source optimized; do
   program=$keygen
   if [[ $variant == optimized ]]; then program=$stage/ssh-keygen; fi
@@ -150,8 +151,8 @@ done
 # A memory-indexed range-coder switch exercises effective-address substitution
 # that --version and decompression alone do not reach. Pair the actual streams
 # and recover the original input, with both serial and threaded encoders.
-"$compiler" "$xz" -o "$stage/xz"
-"$verifier" "$xz" "$stage/xz"
+producer_run compiler "$compiler" "$xz" -o "$stage/xz"
+producer_run verifier "$verifier" "$xz" "$stage/xz"
 for threads in 1 2 0; do
   timeout 30 "$xz" -T"$threads" -c "$preprocessing" >"$stage/source.xz"
   timeout 30 "$stage/xz" -T"$threads" -c "$preprocessing" >"$stage/optimized.xz"

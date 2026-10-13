@@ -4,6 +4,7 @@
 <form id="boot"><label>Release URL <input id="release" size="70"></label><label>SHA-256 <input id="digest" size="70"></label><button>Cold boot</button></form>
 <button id="close">Close and flush</button><button id="reopen">Reopen saved volume</button>
 <button id="interrupt" hidden>Terminate test Worker without flush</button>
+<span id="network-controls" hidden><button id="network-disconnect">Disconnect granted carrier</button><button id="network-reconnect">Reconnect same granted carrier</button></span>
 <span id="checkpoint-controls" hidden><label>Checkpoint <input id="checkpoint-name" value="before-change"></label>
 <button id="checkpoint">Retain closed workspace checkpoint</button><button id="restore-checkpoint">Restore closed workspace checkpoint</button></span>
 <fieldset id="release-controls" hidden><legend>Prepared release selection · diagnostic candidates</legend>

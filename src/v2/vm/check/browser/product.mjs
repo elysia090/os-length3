@@ -11,6 +11,9 @@ const volumeMiB=Number(query.get('volumeMiB')??256),faultsEnabled=query.get('fau
 if(!Number.isInteger(volumeMiB)||volumeMiB<16||volumeMiB>256||(volumeMiB&(volumeMiB-1)))throw new Error('diagnostic volume must be 16,32,64,128 or256 MiB');
 $('interrupt').hidden=!faultsEnabled;
 const gateway=query.get('gateway'),network=gateway?await(await fetch(gateway==='1'?'/config':gateway)).json():null;
+$('network-controls').hidden=!network;
+for(const action of ['disconnect','reconnect'])$('network-'+action).onclick=()=>{
+  if(worker)worker.postMessage({id:++id,action:'network-'+action});};
 $('release').value=query.get('release')??'';$('digest').value=query.get('sha256')??'';
 const workspace=query.get('workspace');let workspaceSession=null,storage;
 const preparedRelease=query.get('prepared')==='1';
@@ -40,12 +43,15 @@ async function boot(){if(worker||booting||checkpointBusy)throw new Error('close 
   worker.onmessage=({data:m})=>{
   if(m.type==='ready'){receipt.workerProtocol=m.protocol;const generation=storage.trusted?storage.generation:(storage.generation??0n)+1n;storage.generation=generation;
       receipt.generation=String(generation);show();
-      worker.postMessage({id:++id,action:'boot',generation,preparedRelease,releaseUrl:$('release').value,releaseSha256:$('digest').value,storage,network});return;}
+      worker.postMessage({id:++id,action:'boot',generation,preparedRelease,releaseUrl:$('release').value,releaseSha256:$('digest').value,storage,network,
+        serviceDeadlineMs:Number(query.get('serviceDeadlineMs')??300000)});return;}
     if(m.type==='storage-head'){storage.expectedHead=new Uint8Array(m.envelope);receipt.storageRevision=(receipt.storageRevision??0)+1;show();return;}
     if(m.type==='service-ready'){receipt.serviceReady=true;show();return;}
+    if(m.type==='service-status'){receipt.serviceStatus=m;(receipt.serviceEvents??=[]).push(m);show();return;}
     if(m.type==='trace'){const raw=Uint8Array.from(atob(m.event.data_base64),b=>b.charCodeAt(0)),text=decoder.decode(raw,{stream:true});$('console').textContent+=text;terminal.feed(text);return;}
     if(m.type==='progress'){Object.assign(receipt,{status:'running',retired:m.profile?.retired,admissions:m.profile?.admissions,taskYields:m.profile?.taskYields,nextRip:m.profile?.nextRip,memoryBytes:m.profile?.memoryBytes,residentPages:m.profile?.residentPages,console:m.profile?.console?.text,timingMs:m.profile?.timingMs,sourceReuse:m.profile?.sourceReuse,engineReuse:m.profile?.engineReuse,preparedCode:m.profile?.preparedCode,compilerOutput:m.profile?.compilerOutput,sourceProfile:m.profile?.sourceProfile,systemProfile:m.profile?.systemProfile,devices:m.profile?.devices,transport:m.profile?.transport});show();return;}
     if(m.type==='result'){if(!m.ok){Object.assign(receipt,{status:'fail',error:m.error,diagnostic:m.diagnostic});show();return;}
+      if(m.carrierRequested){receipt.carrierRequested=m.carrierRequested;show();return;}
       if(Number.isInteger(m.accepted)){receipt.inputAcceptedBytes=(receipt.inputAcceptedBytes??0)+m.accepted;show();return;}
       if(closing===m.id){retireWorker();closing=null;storage.create=false;workspaceSession?.close();workspaceSession=null;
         receipt.workerTerminations=(receipt.workerTerminations??0)+1;receipt.status='closed';receipt.restore=workspace?'browser-restart-recovery-ready':'ready-to-reopen';show();return;}

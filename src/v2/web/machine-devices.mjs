@@ -21,12 +21,36 @@ export class MachineDevices {
       this.networkGrant=new Uint8Array(memory.buffer,grant,96).slice();this.rx=this.networkGrant.slice(0,64);
       // A granted but unreachable network must not postpone offline boot.
       // Transport setup has no C access. Admit link-up later at a safe poll.
-      this.connecting=this.network.open(generation).then(()=>{this.linkReady=true;},e=>{this.networkError=e;});
+      const selected=this.network;
+      this.connecting=selected.open(generation).then(()=>{if(this.network===selected&&!this.closed&&!selected.closed)this.linkReady=true;},
+        e=>{if(this.network===selected&&!this.closed)this.networkError=e;});
     }
   }
-  async poll(){if(this.closed||!this.network||this.networkError)return;
+  requestNetwork(action){
+    if(this.closed||!this.network||!['disconnect','reconnect'].includes(action)||this.networkControl)
+      throw new Error('existing network grant and one pending carrier operation required');
+    this.networkControl=action;
+  }
+  async poll(){if(this.closed||!this.network)return;
+    if(this.networkControl){
+      const action=this.networkControl;this.networkControl=null;
+      // Carrier callbacks have no C access. Revoke/rebind only at this safe poll.
+      await this.network.close();
+      if(this.linkBound)ok(this.vm.vm_network_revoke_grant(this.generation),'carrier revocation');
+      this.linkBound=false;this.linkReady=false;this.networkError=null;
+      if(action==='reconnect'){
+        const view=new DataView(this.networkGrant.buffer),revision=view.getBigUint64(48,true);
+        if(revision===0xffffffffffffffffn)throw new Error('network revision exhausted');
+        view.setBigUint64(48,revision+1n,true);this.rx=this.networkGrant.slice(0,64);
+        this.network=this.network.replacement();this.reconnections=(this.reconnections??0)+1;
+        const selected=this.network;
+        this.connecting=selected.open(this.generation).then(()=>{if(this.network===selected&&!this.closed)this.linkReady=true;},
+          e=>{if(this.network===selected&&!this.closed)this.networkError=e;});
+      }
+    }
+    if(this.networkError||this.network.closed)return;
     if(this.network.error){this.networkError=this.network.error;
-      if(this.linkBound)ok(this.vm.vm_network_revoke_grant(this.generation),'network revocation');this.linkBound=false;return;}
+      if(this.linkBound)ok(this.vm.vm_network_revoke_grant(this.generation),'network revocation');this.linkBound=false;this.linkReady=false;return;}
     if(this.linkReady&&!this.linkBound){new Uint8Array(this.memory.buffer).set(this.networkGrant,this.scratch);
       const status=this.vm.vm_network_grant(this.scratch);if(status===-1)return;ok(status,'network grant');this.linkBound=true;}
     if(!this.linkBound)return;const frame=this.network.take();if(!frame)return;
@@ -39,7 +63,7 @@ export class MachineDevices {
     if(result===42n){if(!this.network)throw new Error('network transfer without grant');
       const count=vm.vm_network_transmit(this.ticket),at=vm.vm_network_transmit_address();if(count<14||count>2048||!at)throw new Error('bounded C network request');
       const ticket=bytes.slice(this.ticket,this.ticket+72),frame=bytes.slice(at,at+count);
-      try{await this.network.send(frame);}catch(error){this.networkError=error;ok(vm.vm_network_revoke_grant(this.generation),'failed network revocation');this.linkBound=false;return;}
+      try{await this.network.send(frame);}catch(error){this.networkError=error;ok(vm.vm_network_revoke_grant(this.generation),'failed network revocation');this.linkBound=false;this.linkReady=false;return;}
       new Uint8Array(this.memory.buffer).set(ticket,this.ticket);ok(vm.vm_network_transmit_commit(this.ticket),'network TX commit');return;}
     if(result!==50n)throw new Error(`unhandled device barrier ${result}`);
     const encoded=vm.vm_block_request(this.ticket);if(!encoded)throw new Error('C block request absent');
@@ -52,7 +76,7 @@ export class MachineDevices {
   }
   status(){return {networkRequested:!!this.network,networkConnected:!!this.linkReady,
     networkBound:!!this.linkBound,networkFailure:this.networkError?.name??null,
-    receivedFrames:String(this.rxSequence),closed:this.closed};}
+    receivedFrames:String(this.rxSequence),reconnections:this.reconnections??0,carrierOperation:this.networkControl??null,closed:this.closed};}
   async close(){if(!this.closing){this.closed=true;this.closing=(async()=>{
     try{await this.network?.close();}finally{await this.volume.close();}
   })();}return this.closing;}

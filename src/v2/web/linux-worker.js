@@ -10,15 +10,17 @@ import {NetworkTransport} from './network-transport.mjs';
 import {waitForClock} from './idle-clock.mjs';
 import {ConsoleStream} from './console-stream.mjs';
 import {hasReadinessLine} from './console-readiness.mjs';
+import {ServiceObservation} from './service-observation.mjs';
 const send=(type,payload={})=>self.postMessage({type,...payload});
 let owner=null,closing=false,pending=null,artifact=null,running=null,ready=false,normal=false,serviceReady=false,closeFailure=null,workspaceLease=null;
-let tail='',input=new Uint8Array(8192),head=0,count=0;
+let tail='',input=new Uint8Array(8192),head=0,count=0,services=null;
 const decoder=new TextDecoder();
 const consoleStream=new ConsoleStream(bytes=>{let raw='';for(const b of bytes)raw+=String.fromCharCode(b);
   send('trace',{event:{operation:'console_write',data_base64:btoa(raw)}});});
 function flushConsole(){consoleStream.flush();}
 function consoleWrite(bytes){consoleStream.write(bytes);
-  tail=(tail+decoder.decode(bytes,{stream:true})).slice(-4096);
+  const text=decoder.decode(bytes,{stream:true});services?.feed(text);
+  tail=(tail+text).slice(-4096);
   if(hasReadinessLine(tail,'console-ready'))normal=true;
   if(!serviceReady&&hasReadinessLine(tail,'boot-offline-complete')){
     serviceReady=true;send('service-ready');
@@ -35,6 +37,8 @@ async function boot(message){
   if(!message.releaseUrl||!message.releaseSha256||!message.storage)throw new Error('pinned Linux release and workspace authority required');
   if(typeof message.generation!=='bigint'||message.generation<1n||message.generation>0xffffffffffffffffn)throw new Error('supervisor machine generation required');
   closing=false;closeFailure=null;pending=message.id;ready=false;normal=false;serviceReady=false;tail='';head=count=0;
+  services?.close();services=new ServiceObservation({deadlineMs:message.serviceDeadlineMs??300000,
+    notify:status=>send('service-status',{...status,releaseSha256:message.releaseSha256,generation:String(message.generation)})});
   send('progress',{id:message.id,phase:'download',label:'Authenticating Linux release'});
   const retain=message.retainLegacyWorkspace===true||new URL(message.releaseUrl,self.location.href).hash==='#retain-workspace';
   if(retain){
@@ -71,7 +75,7 @@ async function boot(message){
     .then(result=>{if(!closing){const error=new Error('C machine stopped: '+JSON.stringify(result.nextGate,(_,v)=>typeof v==='bigint'?String(v):v));error.diagnostic=result;throw error;}return result;})
     .finally(async()=>{try{await owner?.close();}catch(e){closeFailure=e;throw e;}
       finally{artifact.close();owner=null;running=null;await workspaceLease?.close();workspaceLease=null;}})
-    .catch(error=>{send('fault',{error:error.message??String(error)});flushConsole();
+    .catch(error=>{services?.fault();send('fault',{error:error.message??String(error)});flushConsole();
       if(pending)send('result',{id:pending,ok:false,error:error.message??String(error),diagnostic:error.diagnostic});throw error;});
   running.catch(()=>{});
 }
@@ -81,9 +85,12 @@ self.onmessage=async({data:m})=>{try{
     const bytes=new TextEncoder().encode(m.data);if(count+bytes.length>input.length)throw new Error('console backpressure');
     ready=false;tail='';for(const b of bytes){input[(head+count)&8191]=b;++count;}send('result',{id:m.id,ok:true,handle:1,accepted:bytes.length});return;}
   if(m.action==='drive'){if(!owner||closing)throw new Error('machine not resident');pending=m.id;if(ready){send('result',{id:m.id,ok:true,handle:1,result:{ready:true,serviceReady,state:{halted:false}}});pending=null;}return;}
-  if(m.action==='release'){closing=true;await running?.catch(()=>{});if(closeFailure)throw closeFailure;flushConsole();send('result',{id:m.id,ok:true,handle:1});return;}
+  if(m.action==='network-disconnect'||m.action==='network-reconnect'){
+    if(!owner||closing)throw new Error('machine not resident');owner.requestNetwork(m.action.slice(8));
+    send('result',{id:m.id,ok:true,handle:1,carrierRequested:m.action.slice(8)});return;}
+  if(m.action==='release'){closing=true;services?.close();await running?.catch(()=>{});if(closeFailure)throw closeFailure;flushConsole();send('result',{id:m.id,ok:true,handle:1});return;}
   throw new Error('unknown machine action');
 }catch(e){if(m.action==='boot'&&!running){try{await owner?.close();}catch(closeError){closeFailure=closeError;}
-  finally{owner=null;artifact?.close();artifact=null;await workspaceLease?.close();workspaceLease=null;}}
+    finally{owner=null;artifact?.close();artifact=null;services?.fault();services?.close();await workspaceLease?.close();workspaceLease=null;}}
   send('result',{id:m.id,ok:false,error:e.message});}};
 send('ready',{protocol:'linux-machine-worker-v2'});

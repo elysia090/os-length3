@@ -29,6 +29,7 @@ export class NetworkTransport {
       row.bytes.set(p.subarray(32),at);row.mask|=bit;if(row.mask===(1n<<BigInt(Math.ceil(size/stride)))-1n){row.done=true;if(this.frames.length<64)this.frames.push(row.bytes);}
     }}
   take(){if(this.error)throw this.error;return this.frames.shift()??null;}
+  replacement(){return new NetworkTransport({url:this.url,certificateHash:this.certificateHash});}
   requeue(frame){if(this.frames.length<64)this.frames.unshift(frame);}
   async close(){if(this.closed)return;this.closed=true;await this.reader?.cancel().catch(()=>{});this.transport?.close();await this.reading;this.frames.length=0;this.rows.clear();}
 }

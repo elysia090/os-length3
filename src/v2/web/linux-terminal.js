@@ -186,12 +186,24 @@ export class LinuxTerminal {
   }
 
   onMessage(message) {
+    if(message.type==='service-status'){
+      this.serviceStatus=message;this.progress.dataset.serviceStatus=JSON.stringify(message);
+      if(message.state==='failed'){
+        this.serviceReady=false;
+        this.showProgress({state:'error',label:message.reason==='readiness-deadline'
+          ?'Services did not become ready before the observation deadline':'Service initialization failed',
+          detail:'The local console remains available'});
+        if(!this.input.disabled)this.session.lastChild.textContent=' local · services failed';
+      }
+      return;
+    }
     if(message.type==='fault'){
       this.onMessage({type:'result',id:0,ok:false,error:message.error});
       return;
     }
     if(message.type==='service-ready'){
       this.serviceReady=true;
+      this.showProgress({state:'complete',label:'Linux services are ready'});
       if(!this.input.disabled)this.setSession('local',true);
       return;
     }
@@ -207,7 +219,9 @@ export class LinuxTerminal {
       return;
     }
     if (message.type === 'progress') {
-      this.showProgress(message);
+      if(this.serviceStatus?.state==='failed'){
+        if(message.profile)this.progress.dataset.liveProfile=JSON.stringify(message.profile);
+      }else this.showProgress(message);
       return;
     }
     if (message.type === 'stage') {
@@ -303,7 +317,8 @@ export class LinuxTerminal {
     });
     this.setSession('local', true);
     this.serviceReady=message.result.serviceReady===true||this.serviceReady===true;
-    if(!this.serviceReady)this.session.lastChild.textContent=' local · services pending';
+    if(!this.serviceReady)this.session.lastChild.textContent=this.serviceStatus?.state==='failed'
+      ?' local · services failed':' local · services pending';
     this.input.disabled = false;
     this.input.placeholder = 'shell input';
   }

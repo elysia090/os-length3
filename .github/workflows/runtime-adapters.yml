@@ -7,6 +7,7 @@ on:
       - '.github/workflows/runtime-adapters.yml'
       - 'src/v2/web/**'
       - 'src/v2/vm/check/browser/storage-failures*'
+      - 'src/v2/vm/check/browser/candidate-storage*'
       - 'src/v2/vm/check/browser/product.*'
       - 'src/v2/vm/check/browser/prepared-*'
       - 'src/v2/vm/check/browser/legacy-retention.*'
@@ -18,6 +19,8 @@ on:
       - 'data/oracle/check-native-producer-dhcp.sh'
       - 'data/oracle/seed-image.mjs'
       - 'data/oracle/check-machine-devices-close.mjs'
+      - 'data/oracle/check-machine-network-reconnect.mjs'
+      - 'data/oracle/check-service-observation.mjs'
       - 'data/oracle/check-memory-budget.mjs'
       - 'data/oracle/check-machine-yield.mjs'
       - 'data/oracle/check-console-readiness.mjs'
@@ -31,6 +34,9 @@ on:
       - 'data/distribution/*normalize-initramfs.py'
       - 'data/distribution/*package-set*.sh'
       - 'data/distribution/*native-bundle*'
+      - 'data/distribution/*producer*'
+      - 'data/distribution/optimize-payload.sh'
+      - 'data/distribution/check-postlink-toolchain.sh'
       - 'data/build.sh'
       - 'src/v2/artifact/**'
       - 'src/v2/support/**'
@@ -41,6 +47,7 @@ on:
       - '.github/workflows/runtime-adapters.yml'
       - 'src/v2/web/**'
       - 'src/v2/vm/check/browser/storage-failures*'
+      - 'src/v2/vm/check/browser/candidate-storage*'
       - 'src/v2/vm/check/browser/product.*'
       - 'src/v2/vm/check/browser/prepared-*'
       - 'src/v2/vm/check/browser/legacy-retention.*'
@@ -52,6 +59,8 @@ on:
       - 'data/oracle/check-native-producer-dhcp.sh'
       - 'data/oracle/seed-image.mjs'
       - 'data/oracle/check-machine-devices-close.mjs'
+      - 'data/oracle/check-machine-network-reconnect.mjs'
+      - 'data/oracle/check-service-observation.mjs'
       - 'data/oracle/check-memory-budget.mjs'
       - 'data/oracle/check-machine-yield.mjs'
       - 'data/oracle/check-console-readiness.mjs'
@@ -65,6 +74,9 @@ on:
       - 'data/distribution/*normalize-initramfs.py'
       - 'data/distribution/*package-set*.sh'
       - 'data/distribution/*native-bundle*'
+      - 'data/distribution/*producer*'
+      - 'data/distribution/optimize-payload.sh'
+      - 'data/distribution/check-postlink-toolchain.sh'
       - 'data/build.sh'
       - 'src/v2/artifact/**'
       - 'src/v2/support/**'
@@ -89,6 +101,8 @@ jobs:
           node data/oracle/check-persistent-block-restore.mjs
           node data/oracle/check-persistent-block-system.mjs
           node data/oracle/check-machine-devices-close.mjs
+          node data/oracle/check-machine-network-reconnect.mjs
+          node data/oracle/check-service-observation.mjs
           node data/oracle/check-memory-budget.mjs
           node data/oracle/check-machine-yield.mjs
           node data/oracle/check-console-readiness.mjs
@@ -97,6 +111,8 @@ jobs:
           node data/oracle/check-browser-storage-failure-receipt.mjs src/v2/vm/check/browser/evidence/2026-10-12-storage-failures-browser.json
           node --check src/v2/vm/check/browser/storage-failures.mjs
           node --check src/v2/vm/check/browser/storage-failures-worker.mjs
+          node --check src/v2/vm/check/browser/candidate-storage.mjs
+          node --check src/v2/vm/check/browser/candidate-storage-worker.mjs
           node --check src/v2/vm/check/browser/product.mjs
           node --check src/v2/web/workspace-authority.mjs
           node --check src/v2/web/prepared-release.mjs
@@ -123,3 +139,5 @@ jobs:
       - name: Check native acceptance artifact and policy binding
         run: |
           sudo python3 data/distribution/check-native-bundle-acceptance.py --require-capture
+          sudo python3 data/distribution/check-producer-execution.py --require-native
+          bash -n data/distribution/build-producer-cut.sh data/distribution/producer-run.sh data/distribution/optimize-payload.sh data/distribution/check-postlink-toolchain.sh data/build.sh

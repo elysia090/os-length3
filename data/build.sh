@@ -24,6 +24,7 @@ if [[ $(id -u) != 0 && ${QM_RELEASE_USERNS:-0} != 1 ]]; then
 fi
 . "$here/sources.env"
 . "$here/distribution/profile.env"
+. "$here/distribution/producer-run.sh"
 
 bootstrap_lock_digest=$(
   {
@@ -320,9 +321,9 @@ optimized_kernel="$postlinked_kernel/vmlinux"
 kernel_image="$postlinked_kernel/bzImage"
 mkdir -p "$postlinked_kernel"
 if [[ ! -f $postlinked_kernel/.complete ]]; then
-  "$postlink_compiler" "$linked_kernel" \
+  producer_run compiler "$postlink_compiler" "$linked_kernel" \
     -o "$postlinked_kernel/vmlinux.tmp"
-  "$postlink_verify" "$linked_kernel" \
+  producer_run verifier "$postlink_verify" "$linked_kernel" \
     "$postlinked_kernel/vmlinux.tmp"
   mv "$postlinked_kernel/vmlinux.tmp" "$optimized_kernel"
   bash "$here/oracle/package-postlinked-kernel.sh" \
@@ -342,7 +343,7 @@ if [[ ! -f $postlinked_kernel/.complete ]]; then
   mv "$postlinked_kernel/inputs.tmp" "$postlinked_kernel/inputs"
   touch "$postlinked_kernel/.complete"
 fi
-"$postlink_verify" "$linked_kernel" "$optimized_kernel"
+producer_run verifier "$postlink_verify" "$linked_kernel" "$optimized_kernel"
 optimized_kernel_digest=$(sha256sum "$optimized_kernel" | cut -d' ' -f1)
 kernel_image_digest=$(sha256sum "$kernel_image" | cut -d' ' -f1)
 
@@ -606,7 +607,7 @@ release_population="$out/release-$package_publication_key.population"
 bash "$here/distribution/measure-root.sh" \
   "$release_root" "$release_population"
 release_page_population="$out/release-$package_publication_key.exact-pages.population"
-"$artifact_audit" "$release_root" "$release_page_population"
+producer_run audit "$artifact_audit" "$release_root" "$release_page_population"
 grep -qxF 'format=artifact-immutable-page-population-v4' \
   "$release_page_population"
 grep -qxF 'identity=extent-and-exact-bytes' "$release_page_population"
