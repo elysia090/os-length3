@@ -1,0 +1,134 @@
+{
+  "format": "formal-release-qualification-audit-v1",
+  "date": "2026-10-13",
+  "candidate": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+  "status": "fail",
+  "formallyQualified": false,
+  "normativeContract": "src/v2/docs/DISTRIBUTION.md#publication-gates",
+  "observations": [
+    {
+      "case": "producer-binding",
+      "status": "pass",
+      "path": "2026-10-13-final-producer-binding.json",
+      "sha256": "ca54f5323d533a39bb69b5b8fc7bdf0565e115c7b963f5fb8946af79bd286581"
+    },
+    {
+      "case": "daemon-validation",
+      "status": "pass",
+      "path": "2026-10-13-final-daemon-validation.json",
+      "sha256": "5b6a505ec4c4a472c7267ea4a47612b2a9737106422649a7f10a6a9a1bf30340"
+    },
+    {
+      "case": "root-data-rollback",
+      "status": "pass",
+      "path": "2026-10-13-final-root-data-rollback.json",
+      "sha256": "a9a5b439d0aa7e59a142b319bbf93f9da0afeec4abff19435be69df967aedcf1"
+    },
+    {
+      "case": "resource-validation",
+      "status": "pass",
+      "path": "2026-10-13-final-resource-validation.json",
+      "sha256": "fe64ff542b2a7a706f1a2eb3834b27781fbb093d829182f7a4197fd3ef56904e"
+    },
+    {
+      "case": "network-validation",
+      "status": "pass",
+      "path": "2026-10-13-final-network-validation.json",
+      "sha256": "cde7c933431ac278c6962ddff7f7ccddd3b6320bdf1717e6a9ed792c249dc7d0"
+    }
+  ],
+  "gates": [
+    {
+      "id": 1,
+      "status": "pass",
+      "scope": "fixed upstream/service inputs; newly executed and reproduced producer cut"
+    },
+    {
+      "id": 2,
+      "status": "pass",
+      "scope": "compiled DAG and actual e67 offline completion; separate real-daemon fault notifications"
+    },
+    {
+      "id": 3,
+      "status": "pass",
+      "scope": "local-test signed package metadata/dependency/world/installed-db/ownership receipts; production trust excluded"
+    },
+    {
+      "id": 4,
+      "status": "fail",
+      "scope": "required provider exists, but ordinary console selects BusyBox ip and route replacement faults; source repair not in e67"
+    },
+    {
+      "id": 5,
+      "status": "pass",
+      "scope": "named complete local ELF/CPU/proof build receipts and new exact executed-producer binding"
+    },
+    {
+      "id": 6,
+      "status": "pass",
+      "scope": "existing local root runtime/build-payload audit"
+    },
+    {
+      "id": 7,
+      "status": "not-tested",
+      "scope": "complete canonical Artifact word reader and 75000000-byte standard_release_size not emitted/measured"
+    },
+    {
+      "id": 8,
+      "status": "fail",
+      "scope": "named native/Web cold/development/TLS checks pass; default ip defect persists; full network/SSH/time-synced script not established"
+    },
+    {
+      "id": 9,
+      "status": "not-tested",
+      "scope": "exact process continuation after clean-page eviction absent; cold workspace recovery separately passes"
+    },
+    {
+      "id": 10,
+      "status": "not-tested",
+      "scope": "namespace identity matches, but same full acceptance script on final native/Web pair not completed"
+    }
+  ],
+  "additionalRequirements": [
+    {
+      "case": "web-cold-prompt-3000ms",
+      "status": "fail",
+      "observedMs": [
+        144379.7,
+        150519.2,
+        171485.4,
+        223349.4
+      ],
+      "scope": "prepared cache; different concurrency; no performance cohort equivalence claimed"
+    },
+    {
+      "case": "paired-source-optimized-native-runtime",
+      "status": "not-tested"
+    },
+    {
+      "case": "native-product-resource-manager",
+      "status": "not-tested"
+    },
+    {
+      "case": "integrated-default-web-editor-run-files",
+      "status": "not-tested"
+    },
+    {
+      "case": "production-issuer-and-release-publication",
+      "status": "not-tested",
+      "scope": "excluded actions; existing local test issuer unchanged"
+    }
+  ],
+  "correctiveSource": {
+    "path": "data/distribution/boot/console",
+    "status": "pass",
+    "test": "actual e67 fresh interactive ash ENV selected iproute2 7.2.0; candidate root is not rebuilt"
+  },
+  "sourceRepairInCandidate": false,
+  "releasePublished": false,
+  "issuerKeysChanged": false,
+  "workspaceKeysChanged": false,
+  "permissionsChanged": false,
+  "allPreTaskFilesPreserved": 15,
+  "details": "2026-10-13-release-qualification.md"
+}

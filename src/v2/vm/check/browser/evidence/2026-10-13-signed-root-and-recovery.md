@@ -32,6 +32,10 @@ user-driven process restart separately from the measured recovery results.
 These observations do not qualify a public release. Browser process exit and
 restart recovery has passed, while the native runtime receipt deliberately keeps
 producer source binding `unknown` and product qualification `pending`.
+The [subsequent final-candidate qualification](2026-10-13-release-qualification.md)
+adds a separate executed-producer/fixed-source reproduction chain bound to the
+exact e67 outputs. The historical v1 runtime receipt is not rewritten to claim
+that chain; remaining formal gates and actual candidate defects stay explicit.
 The separate source/build witnesses record the actual reconstructed inputs;
 they do not recover the original defective binary's unavailable build inputs.
 

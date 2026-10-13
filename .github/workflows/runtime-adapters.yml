@@ -134,6 +134,7 @@ jobs:
           node --check data/oracle/inspect-dhcp-printf-table.mjs
           bash -n data/distribution/boot/ready
           bash -n data/distribution/boot/boot
+          bash -n data/distribution/boot/console
           node data/oracle/check-readiness-mounts.mjs
       - name: Check package-set input cuts and reuse
         run: |

@@ -1,5 +1,10 @@
 # Browser boundary observations
 
+2026-10-13: [final candidate qualification and remaining distribution work](2026-10-13-release-qualification.md)
+records executed-producer binding, real daemon failure notifications, exact e67
+root/data rollback, current storage faults, actual quota and network conditions.
+It separates pass, fail and not-tested and retains formal publication as pending.
+
 2026-10-13: [signed root rebuild and workspace recovery](2026-10-13-signed-root-and-recovery.md)
 collects actual native runtime/HTTPS/cold boot, equal native/Web namespace,
 normal browser DHCP, software-root/data rollback and legacy key retention.
