@@ -117,12 +117,17 @@
       "case": "production-issuer-and-release-publication",
       "status": "not-tested",
       "scope": "excluded actions; existing local test issuer unchanged"
+    },
+    {
+      "case": "independent-whole-program-semantic-verification",
+      "status": "not-tested",
+      "scope": "not implemented by the current metadata reader; known old bad optimized output is still accepted"
     }
   ],
   "correctiveSource": {
     "path": "data/config/busybox.fragment and src/v2/postlink-compiler/src/jump-table.c",
-    "status": "not-tested",
-    "test": "interactive alias was a limited diagnostic repair; general provider configuration and relative-table fix are now awaiting the fresh source-cut candidate"
+    "status": "pass",
+    "test": "relative-table 13-case regression passes and same-kernel ordinary/old/fixed route exits are 0/139/0; fresh r5 root/provider and complete projection acceptance pending"
   },
   "sourceRepairInCandidate": false,
   "releasePublished": false,

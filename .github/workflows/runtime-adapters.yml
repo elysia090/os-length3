@@ -137,6 +137,7 @@ jobs:
           bash -n data/distribution/boot/console
           bash -n data/initramfs/init
           bash -n data/oracle/standard-provider-check.sh
+          bash -n data/oracle/standard-distribution-check.sh
           node data/oracle/check-readiness-mounts.mjs
       - name: Check package-set input cuts and reuse
         run: |

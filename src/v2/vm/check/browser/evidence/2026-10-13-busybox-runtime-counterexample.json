@@ -41,7 +41,7 @@
     "reason": "multicall executable was incorrectly named linked-busybox; corrected basename busybox; original log retained"
   },
   "diagnosis": {
-    "status": "source-fix-pending-validation",
+    "status": "source-fix-runtime-verified; fresh complete candidate pending",
     "shape": "sign-extended shared-base table delta; ADD forms target in RAX; LEA reuses RDX for an argument before indirect JMP RAX",
     "issue": "shared_base_consumer rejected a base-register write after target formation, so the finite relative table was not registered",
     "correction": "after ADD, only a write to the actual delta/target register invalidates the completed target; preserve both-register checks before ADD"
@@ -54,5 +54,34 @@
   "publicReleaseModified": false,
   "newIssuerKeys": false,
   "workspaceKeysChanged": false,
-  "hostPermissionsChanged": false
+  "hostPermissionsChanged": false,
+  "fixValidation": {
+    "status": "pass",
+    "sameE67Kernel": true,
+    "ordinaryExit": 0,
+    "oldOutputExit": 139,
+    "fixedOutputExit": 0,
+    "fixedOutputSha256": "ae5250691672e14ccfc6912234bae01415c47cd649ff88e3beea2d248db3d9cd",
+    "scope": "the retained ordinary input was transformed by the repaired project compiler in a separate native smoke build; not the fresh final producer-cut artifact",
+    "log": {
+      "bytes": 13644,
+      "sha256": "9dffd06ac7410b7442458a6ea05d8acd4dc7218a1cfeef7b55bed587962887ec"
+    }
+  },
+  "verifierLimitation": {
+    "status": "fail",
+    "oldBadOutputAccepted": true,
+    "observedExit": 0,
+    "actualCoverage": "optimized ELF/proof structure, build identity, source hash and reported cost constraints; does not establish whole-program runtime equivalence",
+    "correctionNeeded": "independently replay/check semantic transformation witnesses and relocated control/data targets; do not add an ELF hash denylist or rename metadata integrity as equivalence",
+    "sourceFiles": [
+      "src/v2/optimized-x86/cli/main.c",
+      "src/v2/optimized-x86/src/proof.c",
+      "src/v2/optimized-x86/src/reader.c"
+    ],
+    "smokeLog": {
+      "bytes": 30195,
+      "sha256": "c8f9596174ce36bc402cad24c92764e5c6f114ed8b63f796d7b32de342c14360"
+    }
+  }
 }
