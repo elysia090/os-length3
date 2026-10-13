@@ -37,6 +37,7 @@ async function boot(){if(worker||booting||checkpointBusy)throw new Error('close 
     worker=new Worker('../../../web/linux-worker.js',{type:'module'});
   }finally{booting=false;}
   receipt.status='starting';receipt.console='';receipt.linuxBoot='not-achieved';receipt.serviceReady=false;
+  receipt.bootStartedAt=performance.now();delete receipt.coldPromptMs;receipt.serviceEvents=[];delete receipt.serviceStatus;
   delete receipt.error;delete receipt.diagnostic;for(const field of profileFields)delete receipt[field];
   $('console').textContent='';show();
   terminal=new TerminalReplies(terminalSize,data=>input(data));
@@ -55,7 +56,8 @@ async function boot(){if(worker||booting||checkpointBusy)throw new Error('close 
       if(Number.isInteger(m.accepted)){receipt.inputAcceptedBytes=(receipt.inputAcceptedBytes??0)+m.accepted;show();return;}
       if(closing===m.id){retireWorker();closing=null;storage.create=false;workspaceSession?.close();workspaceSession=null;
         receipt.workerTerminations=(receipt.workerTerminations??0)+1;receipt.status='closed';receipt.restore=workspace?'browser-restart-recovery-ready':'ready-to-reopen';show();return;}
-      if(m.result?.ready){receipt.status='shell-ready';receipt.linuxBoot='normal-PID1-and-console-ready';receipt.serviceReady=m.result.serviceReady;
+      if(m.result?.ready){if(receipt.coldPromptMs===undefined)receipt.coldPromptMs=performance.now()-receipt.bootStartedAt;
+        receipt.status='shell-ready';receipt.linuxBoot='normal-PID1-and-console-ready';receipt.serviceReady=m.result.serviceReady;
         if(m.result.layout)receipt.delivery=m.result.layout;if(!storage.create)receipt.restore='Linux-reboot-with-saved-block-root';show();}
     }
     if(m.type==='fault'){Object.assign(receipt,{status:'fail',error:m.error,diagnostic:m.diagnostic});show();}

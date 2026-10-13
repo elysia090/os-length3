@@ -23,7 +23,7 @@ export class MachineDevices {
       // Transport setup has no C access. Admit link-up later at a safe poll.
       const selected=this.network;
       this.connecting=selected.open(generation).then(()=>{if(this.network===selected&&!this.closed&&!selected.closed)this.linkReady=true;},
-        e=>{if(this.network===selected&&!this.closed)this.networkError=e;});
+        e=>{if(this.network===selected&&!this.closed&&!selected.closed)this.networkError=e;});
     }
   }
   requestNetwork(action){
@@ -44,8 +44,8 @@ export class MachineDevices {
         view.setBigUint64(48,revision+1n,true);this.rx=this.networkGrant.slice(0,64);
         this.network=this.network.replacement();this.reconnections=(this.reconnections??0)+1;
         const selected=this.network;
-        this.connecting=selected.open(this.generation).then(()=>{if(this.network===selected&&!this.closed)this.linkReady=true;},
-          e=>{if(this.network===selected&&!this.closed)this.networkError=e;});
+        this.connecting=selected.open(this.generation).then(()=>{if(this.network===selected&&!this.closed&&!selected.closed)this.linkReady=true;},
+          e=>{if(this.network===selected&&!this.closed&&!selected.closed)this.networkError=e;});
       }
     }
     if(this.networkError||this.network.closed)return;
@@ -76,6 +76,7 @@ export class MachineDevices {
   }
   status(){return {networkRequested:!!this.network,networkConnected:!!this.linkReady,
     networkBound:!!this.linkBound,networkFailure:this.networkError?.name??null,
+    networkFailureMessage:this.networkError?String(this.networkError.message).replace(/grant=[A-Za-z0-9_-]+/g,'grant=REDACTED'):null,
     receivedFrames:String(this.rxSequence),reconnections:this.reconnections??0,carrierOperation:this.networkControl??null,closed:this.closed};}
   async close(){if(!this.closing){this.closed=true;this.closing=(async()=>{
     try{await this.network?.close();}finally{await this.volume.close();}

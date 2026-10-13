@@ -1,0 +1,38 @@
+{
+  "format": "final-candidate-root-data-rollback-v1",
+  "status": "pass",
+  "candidate": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+  "date": "2026-10-13",
+  "conditions": {
+    "workspace": "fixture-linux-recovery-1012",
+    "bytes": 33554432,
+    "uuid": "2a89680a-f15b-4ab5-8f49-b8518ce835a1"
+  },
+  "selectComparison": {
+    "operation": "select",
+    "label": "",
+    "beforeSequence": "254",
+    "afterSequence": "255",
+    "previousSystemRoot": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+    "systemRoot": "10987ff0d4ff3b09d79a52bb8a97c38e6e87ef5cd45d1b04e5a923c052354649"
+  },
+  "comparisonDataSha256": "5db87ec19667577ea8eaffd2d8522e658f84c715ceffe455cdbe7ab045737cd7",
+  "restoreFinal": {
+    "operation": "restore",
+    "label": "final-e67-before-qualification",
+    "beforeSequence": "270",
+    "afterSequence": "271",
+    "systemRoot": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde"
+  },
+  "restoredDataSha256": "638c2eded19609057c2af41bc156187d71b996ce332aec3352b752cb4779df3e",
+  "coldLinux": {
+    "generation": "45",
+    "serviceReady": true,
+    "baseServices": "0.1.0-r3",
+    "linuxBoot": "7.2.7-r2"
+  },
+  "scope": "actual final e67 checkpoint restored after another root and filesystem data were selected/changed; older A/B rollback remains historical",
+  "newKeys": false,
+  "publicReleaseModified": false,
+  "linuxConsoleSha256": "a9e4b89b520d73ccc29cdac0c84cb935454263e529ef1750532f2f01bcc77438"
+}

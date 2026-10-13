@@ -8,8 +8,8 @@ export class ServiceObservation {
     this.tail='';this.state='not-started';this.timer=null;this.closed=false;
   }
   publish(state,reason) {
-    if(this.closed||this.state===state)return;
-    this.state=state;
+    if(this.closed||this.state===state&&this.reason===reason)return;
+    this.state=state;this.reason=reason;
     if(this.timer!==null){this.cancel(this.timer);this.timer=null;}
     this.notify({state,reason,deadlineMs:this.deadlineMs});
   }
@@ -20,9 +20,10 @@ export class ServiceObservation {
       this.publish('pending','console-ready');
       this.timer=this.schedule(()=>this.publish('failed','readiness-deadline'),this.deadlineMs);
     }
-    if(/(?:^|\r?\n)Service initialization failed; inspect its live state from the console\.\r?\n/.test(this.tail))
-      this.publish('failed','bootstrap-exit');
-    else if(/(?:^|\r?\n)boot-offline-complete\r?\n/.test(this.tail))this.publish('ready','dag-complete');
+    const failure=[...this.tail.matchAll(/(?:^|\r?\n)Service initialization failed; inspect its live state from the console\.\r?\n/g)].at(-1)?.index??-1;
+    const complete=[...this.tail.matchAll(/(?:^|\r?\n)boot-offline-complete\r?\n/g)].at(-1)?.index??-1;
+    if(failure>complete)this.publish('failed','bootstrap-exit');
+    else if(complete>=0)this.publish('ready','dag-complete');
   }
   fault(){if(this.state!=='ready')this.publish('failed','machine-fault');}
   close(){this.closed=true;if(this.timer!==null)this.cancel(this.timer);this.timer=null;this.tail='';}

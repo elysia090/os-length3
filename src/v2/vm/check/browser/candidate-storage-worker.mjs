@@ -23,19 +23,33 @@ async function run(m){
   source.fence=state.generation;
   ensure(state.record?.masterKey?.extractable===false&&same(state.head,state.record.expectedHead),'existing key and exact head');
   const storage={...state.record,expectedHead:state.head,create:false,systemRoot:m.release};
+  if(m.restoreOnly){
+    ensure(m.branch===m.namespace+'-interrupt','isolated retained branch');
+    const stored=await IndexedBlockStore.open(m.branch),saved=await authority(stored);stored.fence=saved.generation;
+    const readOnly={read:()=>stored.read(),get:async k=>await stored.get(k)??source.get(k),close:()=>stored.close()};
+    const restored=await PersistentBlock.open({...saved.record,store:readOnly,expectedHead:saved.head,create:false,systemRoot:m.release});
+    const hashes=await Promise.all([4000,16*1048576].map(async at=>sha(await restored.read(at,4096))));
+    ensure(hashes.every((h,i)=>h===m.expectedHashes[i]),'actual Worker loss restores exact candidate blocks');
+    await restored.close();source.close();
+    return {status:'pass',publicationPuts:m.publicationPuts,retainedBranches:m.retainedBranches,keyExtractable:false,
+      interruption:{scenario:'worker-interruption',status:'pass',candidate:m.release,persistedObjects:3,
+        workerTerminatedWithoutClose:true,restoredHashes:hashes,oldHeadRetained:true}};
+  }
   let publicationPuts=0;const retained=[];
   async function one(scenario,faultAt=0){
     const name=m.namespace+'-'+scenario+(faultAt?'-'+faultAt:''),store=await branch(name,state);retained.push(name);
     let puts=0,closes=0,corrupt=false;
     const wrapped={read:()=>store.read(),async get(k){const bytes=await store.get(k)??await source.get(k);
         if(corrupt&&bytes){const copy=bytes.slice();copy[40]^=1;return copy;}return bytes;},
-      async put(k,b){if(++puts===faultAt)throw new DOMException('injected bounded candidate publication quota','QuotaExceededError');await store.put(k,b);},
+      async put(k,b){if(++puts===faultAt)throw new DOMException('injected bounded candidate publication quota','QuotaExceededError');await store.put(k,b);
+        if(scenario==='interrupt'&&puts===3){self.postMessage({event:'interruptible',namespace:m.namespace,branch:name,
+          expectedHashes:await Promise.all(original.map(sha)),publicationPuts,retainedBranches:retained});await new Promise(()=>{});}},
       compareAndSwap(a,b){if(scenario!=='head-abort')return store.compareAndSwap(a,b);
         return store.transaction('head',true,s=>{s.put(b,0);s.transaction.abort();});},
       close(){++closes;store.close();}};
-    const volume=await PersistentBlock.open({...storage,store:wrapped});
+    let original;const volume=await PersistentBlock.open({...storage,store:wrapped});
     ensure(volume.systemRoot===m.release&&!volume.fresh,'actual candidate selected in saved head');
-    const offsets=[4000,16*1048576],before=await Promise.all(offsets.map(at=>volume.read(at,4096)));
+    const offsets=[4000,16*1048576],before=await Promise.all(offsets.map(at=>volume.read(at,4096)));original=before;
     if(scenario==='corruption'){
       volume.cache.clear();corrupt=true;
       await rejects(()=>volume.read(4000,4096),e=>/corrupt/.test(e.message));corrupt=false;
@@ -64,9 +78,9 @@ async function run(m){
     const memory=new WebAssembly.Memory({initial:1,maximum:2});ensure(memory.grow(1)===1,'actual engine growth');
     await rejects(()=>Promise.resolve(memory.grow(1)),e=>e instanceof RangeError);
     ensure(memory.buffer.byteLength===131072,'engine maximum failure preserves current extent');
-    return {status:'pass',publicationPuts,retainedBranches:retained,keyExtractable:false,
-      engineMemoryMaximum:{status:'pass',initialPages:1,maximumPages:2,bytesAfterRefusal:131072,
-        scope:'actual browser engine declared memory maximum; not global engine/code or physical IndexedDB quota'}};
+    self.postMessage({event:'case',result:{scenario:'engine-memory-maximum',status:'pass',initialPages:1,maximumPages:2,bytesAfterRefusal:131072,
+      scope:'actual browser engine declared memory maximum; not global engine/code or physical IndexedDB quota'}});
+    await one('interrupt');throw new Error('interrupted Worker resumed unexpectedly');
   }finally{source.close();}
 }
 self.onmessage=async({data})=>{try{self.postMessage({event:'result',result:await run(data)});}

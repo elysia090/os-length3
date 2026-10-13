@@ -1,0 +1,255 @@
+{
+  "format": "final-candidate-resource-evidence-v1",
+  "candidate": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+  "date": "2026-10-13",
+  "status": "pass",
+  "conditions": {
+    "origin": "http://127.0.0.1:63700",
+    "workspace": "fixture-linux-recovery-1012",
+    "workspaceBytes": 33554432,
+    "guestRamBytes": 536870912,
+    "softwareRoot": "base-services-r3 / linux-boot-r2",
+    "source": "current persistent-block, workspace-authority and production Linux Worker"
+  },
+  "ext4Capacity": {
+    "status": "pass",
+    "error": "ENOSPC",
+    "writeExit": 1,
+    "partialFillBytes": 25706496,
+    "cleanupExit": 0,
+    "savedDataSha256": "638c2eded19609057c2af41bc156187d71b996ce332aec3352b752cb4779df3e"
+  },
+  "tmpfsRam": {
+    "status": "pass",
+    "cycles": 4,
+    "bytesPerCycle": 2097152,
+    "shmemBeforeKiB": 84,
+    "shmemPeakKiB": 2132,
+    "shmemAfterKiB": 84,
+    "scope": "actual /run tmpfs allocation/release; earlier /tmp page-cache cycles not substituted"
+  },
+  "processMemoryBudget": {
+    "status": "pass",
+    "limit": "RLIMIT_AS",
+    "maximumBytes": 16777216,
+    "requestedMmapBytes": 33554432,
+    "errno": 12,
+    "exit": 0,
+    "scope": "real guest process ENOMEM under an explicit address-space budget; not whole-host OOM"
+  },
+  "injectedIndexedDb": {
+    "format": "candidate-storage-failures-v1",
+    "status": "pass",
+    "candidate": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+    "workspace": "fixture-linux-recovery-1012",
+    "newKeys": false,
+    "sourceWrites": false,
+    "databaseDeletion": false,
+    "engineGlobalQuota": "not-tested",
+    "indexedDbPhysicalQuota": "not-tested",
+    "cases": [
+      {
+        "scenario": "count",
+        "status": "pass",
+        "publicationPuts": 7
+      },
+      {
+        "scenario": "quota",
+        "faultAt": 1,
+        "status": "pass",
+        "candidate": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+        "exactHeadRetained": true,
+        "restoredHashes": [
+          "c370d8b8dfba9d4d0f215540a6616e13be11f73bff47197dabbe432ddbf89f9f",
+          "bc90aaece27881f917ae10d7e14fb75ba96b58df8182f08a861773c89f1bfb81"
+        ],
+        "plaintextErased": true
+      },
+      {
+        "scenario": "quota",
+        "faultAt": 2,
+        "status": "pass",
+        "candidate": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+        "exactHeadRetained": true,
+        "restoredHashes": [
+          "c370d8b8dfba9d4d0f215540a6616e13be11f73bff47197dabbe432ddbf89f9f",
+          "bc90aaece27881f917ae10d7e14fb75ba96b58df8182f08a861773c89f1bfb81"
+        ],
+        "plaintextErased": true
+      },
+      {
+        "scenario": "quota",
+        "faultAt": 3,
+        "status": "pass",
+        "candidate": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+        "exactHeadRetained": true,
+        "restoredHashes": [
+          "c370d8b8dfba9d4d0f215540a6616e13be11f73bff47197dabbe432ddbf89f9f",
+          "bc90aaece27881f917ae10d7e14fb75ba96b58df8182f08a861773c89f1bfb81"
+        ],
+        "plaintextErased": true
+      },
+      {
+        "scenario": "quota",
+        "faultAt": 4,
+        "status": "pass",
+        "candidate": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+        "exactHeadRetained": true,
+        "restoredHashes": [
+          "c370d8b8dfba9d4d0f215540a6616e13be11f73bff47197dabbe432ddbf89f9f",
+          "bc90aaece27881f917ae10d7e14fb75ba96b58df8182f08a861773c89f1bfb81"
+        ],
+        "plaintextErased": true
+      },
+      {
+        "scenario": "quota",
+        "faultAt": 5,
+        "status": "pass",
+        "candidate": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+        "exactHeadRetained": true,
+        "restoredHashes": [
+          "c370d8b8dfba9d4d0f215540a6616e13be11f73bff47197dabbe432ddbf89f9f",
+          "bc90aaece27881f917ae10d7e14fb75ba96b58df8182f08a861773c89f1bfb81"
+        ],
+        "plaintextErased": true
+      },
+      {
+        "scenario": "quota",
+        "faultAt": 6,
+        "status": "pass",
+        "candidate": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+        "exactHeadRetained": true,
+        "restoredHashes": [
+          "c370d8b8dfba9d4d0f215540a6616e13be11f73bff47197dabbe432ddbf89f9f",
+          "bc90aaece27881f917ae10d7e14fb75ba96b58df8182f08a861773c89f1bfb81"
+        ],
+        "plaintextErased": true
+      },
+      {
+        "scenario": "quota",
+        "faultAt": 7,
+        "status": "pass",
+        "candidate": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+        "exactHeadRetained": true,
+        "restoredHashes": [
+          "c370d8b8dfba9d4d0f215540a6616e13be11f73bff47197dabbe432ddbf89f9f",
+          "bc90aaece27881f917ae10d7e14fb75ba96b58df8182f08a861773c89f1bfb81"
+        ],
+        "plaintextErased": true
+      },
+      {
+        "scenario": "head-abort",
+        "faultAt": 0,
+        "status": "pass",
+        "candidate": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+        "exactHeadRetained": true,
+        "restoredHashes": [
+          "c370d8b8dfba9d4d0f215540a6616e13be11f73bff47197dabbe432ddbf89f9f",
+          "bc90aaece27881f917ae10d7e14fb75ba96b58df8182f08a861773c89f1bfb81"
+        ],
+        "plaintextErased": true
+      },
+      {
+        "scenario": "corruption",
+        "status": "pass",
+        "candidate": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+        "corruptionRefused": true,
+        "sourceBytesUnchanged": true
+      },
+      {
+        "scenario": "engine-memory-maximum",
+        "status": "pass",
+        "initialPages": 1,
+        "maximumPages": 2,
+        "bytesAfterRefusal": 131072,
+        "scope": "actual browser engine declared memory maximum; not global engine/code or physical IndexedDB quota"
+      },
+      {
+        "scenario": "worker-interruption",
+        "status": "pass",
+        "candidate": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+        "persistedObjects": 3,
+        "workerTerminatedWithoutClose": true,
+        "restoredHashes": [
+          "c370d8b8dfba9d4d0f215540a6616e13be11f73bff47197dabbe432ddbf89f9f",
+          "bc90aaece27881f917ae10d7e14fb75ba96b58df8182f08a861773c89f1bfb81"
+        ],
+        "oldHeadRetained": true
+      }
+    ],
+    "publicationPuts": 7,
+    "retainedBranches": [
+      "qualification-20261013-54e6f50a-76e6-432b-a0a2-286c81a80310-count",
+      "qualification-20261013-54e6f50a-76e6-432b-a0a2-286c81a80310-quota-1",
+      "qualification-20261013-54e6f50a-76e6-432b-a0a2-286c81a80310-quota-2",
+      "qualification-20261013-54e6f50a-76e6-432b-a0a2-286c81a80310-quota-3",
+      "qualification-20261013-54e6f50a-76e6-432b-a0a2-286c81a80310-quota-4",
+      "qualification-20261013-54e6f50a-76e6-432b-a0a2-286c81a80310-quota-5",
+      "qualification-20261013-54e6f50a-76e6-432b-a0a2-286c81a80310-quota-6",
+      "qualification-20261013-54e6f50a-76e6-432b-a0a2-286c81a80310-quota-7",
+      "qualification-20261013-54e6f50a-76e6-432b-a0a2-286c81a80310-head-abort",
+      "qualification-20261013-54e6f50a-76e6-432b-a0a2-286c81a80310-corruption",
+      "qualification-20261013-54e6f50a-76e6-432b-a0a2-286c81a80310-interrupt"
+    ],
+    "keyExtractable": false,
+    "interruption": {
+      "scenario": "worker-interruption",
+      "status": "pass",
+      "candidate": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+      "persistedObjects": 3,
+      "workerTerminatedWithoutClose": true,
+      "restoredHashes": [
+        "c370d8b8dfba9d4d0f215540a6616e13be11f73bff47197dabbe432ddbf89f9f",
+        "bc90aaece27881f917ae10d7e14fb75ba96b58df8182f08a861773c89f1bfb81"
+      ],
+      "oldHeadRetained": true
+    }
+  },
+  "actualEngineQuota": {
+    "format": "candidate-engine-quota-v1",
+    "candidate": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+    "status": "pass",
+    "newKeys": false,
+    "permissionChanges": false,
+    "databaseDeletion": false,
+    "globalCodeRssExhaustion": "not-tested",
+    "originDiskExhaustion": "not-tested",
+    "moduleAdmission": {
+      "status": "pass",
+      "definedFunctions": 1000001,
+      "wireBytes": 4000033,
+      "error": "WebAssembly.Module(): functions count of 1000001 exceeds internal limit of 1000000 @+18",
+      "scope": "actual engine per-module declared function quota; not total live native-code/RSS exhaustion"
+    },
+    "bucket": {
+      "name": "qualification-a5b4bc55-371a-44b9-ac52-e907f4741716",
+      "requestedQuota": 1048576,
+      "estimate": {
+        "quota": 1048576,
+        "usage": 0,
+        "usageDetails": {}
+      },
+      "maximumAttemptedBytes": 2097152
+    },
+    "indexedDbQuota": {
+      "status": "pass",
+      "fillBytes": 1032192,
+      "error": "QuotaExceededError",
+      "publicationError": "QuotaExceededError",
+      "candidateHeadRetained": true,
+      "plaintextErased": true,
+      "scope": "actual browser Storage Bucket quota and current PersistentBlock publication; isolated default-origin source remains untouched"
+    }
+  },
+  "globalNativeCodeRssExhaustion": "not-tested",
+  "hostRssReturn": "not-measured",
+  "defaultOriginDiskExhaustion": "not-tested",
+  "diskFilling": false,
+  "newMasterKeys": false,
+  "permissionChanges": false,
+  "publicReleaseModified": false,
+  "console": {
+    "bytes": 19066,
+    "sha256": "55ac3010681d709811edeff90efdb273931e103694393bca722c2de4b9401951"
+  }
+}

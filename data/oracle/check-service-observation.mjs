@@ -17,6 +17,7 @@ function fixture(){const events=[];let timer,cancelled=0;
 {
   const f=fixture();f.observer.feed('console-ready\nService initialization failed; inspect its live state from the console.\n');
   assert.equal(f.events.at(-1).reason,'bootstrap-exit');assert.equal(f.cancelled(),1);
+  f.observer.feed('boot-offline-complete\n');assert.equal(f.events.at(-1).state,'ready');
 }
 {
   const f=fixture();f.observer.feed('console-ready\n');f.observer.close();f.expire();assert.equal(f.events.length,1);

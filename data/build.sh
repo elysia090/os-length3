@@ -714,9 +714,29 @@ printf '%s\n' \
 native_bundle="$out/os-length3-linux-$DISTRIBUTION_RELEASE_VERSION-x86_64-$package_publication_key.tar.zst"
 if [[ -f $native_bundle ]]; then
   zstd -q -t -- "$native_bundle"
+  # Every full retest gets an artifact/policy-bound receipt, including reuse.
+  # Keep the immutable archive and all previous receipts; publish by digest.
+  native_retest_stage=$(mktemp -d -- "$out/.native-retest.XXXXXXXX")
+  if [[ $(dirname -- "$(realpath -e -- "$native_retest_stage")") != "$(realpath -e -- "$out")" ]]; then
+    printf 'native retest staging escaped output root\n' >&2
+    exit 1
+  fi
+  native_retest_receipt=$native_retest_stage/receipt.json
+  cleanup_native_retest() { rm -f -- "$native_retest_receipt"; rmdir -- "$native_retest_stage"; }
+  trap cleanup_native_retest EXIT
   bash "$here/distribution/check-native-bundle-runtime.sh" \
     "$native_bundle" "$release_inputs" "$postlink_verify" \
-    "$upstream/zlib-$ZLIB_VERSION.tar.xz"
+    "$upstream/zlib-$ZLIB_VERSION.tar.xz" "$native_retest_receipt"
+  native_receipt=$native_bundle.acceptance-$(sha256sum -- "$native_retest_receipt" | cut -d' ' -f1).json
+  if ! ln -T -- "$native_retest_receipt" "$native_receipt"; then
+    if [[ -L $native_receipt || ! -f $native_receipt ]] || ! cmp -- "$native_retest_receipt" "$native_receipt"; then
+      printf 'native acceptance publication coordinate conflicts\n' >&2
+      exit 1
+    fi
+  fi
+  cleanup_native_retest
+  trap - EXIT
+  printf 'native-acceptance=%s\n' "$native_receipt"
 else
   # Validation must run on the exact downloadable bytes before the stable
   # download name becomes visible. A failing runtime leaves no false release.

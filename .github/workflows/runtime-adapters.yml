@@ -7,7 +7,7 @@ on:
       - '.github/workflows/runtime-adapters.yml'
       - 'src/v2/web/**'
       - 'src/v2/vm/check/browser/storage-failures*'
-      - 'src/v2/vm/check/browser/candidate-storage*'
+      - 'src/v2/vm/check/browser/candidate-*'
       - 'src/v2/vm/check/browser/product.*'
       - 'src/v2/vm/check/browser/prepared-*'
       - 'src/v2/vm/check/browser/legacy-retention.*'
@@ -18,6 +18,7 @@ on:
       - 'data/oracle/check-persistent-block*.mjs'
       - 'data/oracle/check-native-producer-dhcp.sh'
       - 'data/oracle/seed-image.mjs'
+      - 'data/oracle/network-host-linux.go'
       - 'data/oracle/check-machine-devices-close.mjs'
       - 'data/oracle/check-machine-network-reconnect.mjs'
       - 'data/oracle/check-service-observation.mjs'
@@ -47,7 +48,7 @@ on:
       - '.github/workflows/runtime-adapters.yml'
       - 'src/v2/web/**'
       - 'src/v2/vm/check/browser/storage-failures*'
-      - 'src/v2/vm/check/browser/candidate-storage*'
+      - 'src/v2/vm/check/browser/candidate-*'
       - 'src/v2/vm/check/browser/product.*'
       - 'src/v2/vm/check/browser/prepared-*'
       - 'src/v2/vm/check/browser/legacy-retention.*'
@@ -58,6 +59,7 @@ on:
       - 'data/oracle/check-persistent-block*.mjs'
       - 'data/oracle/check-native-producer-dhcp.sh'
       - 'data/oracle/seed-image.mjs'
+      - 'data/oracle/network-host-linux.go'
       - 'data/oracle/check-machine-devices-close.mjs'
       - 'data/oracle/check-machine-network-reconnect.mjs'
       - 'data/oracle/check-service-observation.mjs'
@@ -113,6 +115,10 @@ jobs:
           node --check src/v2/vm/check/browser/storage-failures-worker.mjs
           node --check src/v2/vm/check/browser/candidate-storage.mjs
           node --check src/v2/vm/check/browser/candidate-storage-worker.mjs
+          node --check src/v2/vm/check/browser/candidate-engine.mjs
+          node --check src/v2/vm/check/browser/candidate-engine-worker.mjs
+          node --check src/v2/vm/check/browser/candidate-fork.mjs
+          node --check src/v2/vm/check/browser/candidate-carrier.mjs
           node --check src/v2/vm/check/browser/product.mjs
           node --check src/v2/web/workspace-authority.mjs
           node --check src/v2/web/prepared-release.mjs
@@ -140,4 +146,5 @@ jobs:
         run: |
           sudo python3 data/distribution/check-native-bundle-acceptance.py --require-capture
           sudo python3 data/distribution/check-producer-execution.py --require-native
+          python3 data/distribution/check-producer-binding.py
           bash -n data/distribution/build-producer-cut.sh data/distribution/producer-run.sh data/distribution/optimize-payload.sh data/distribution/check-postlink-toolchain.sh data/build.sh
