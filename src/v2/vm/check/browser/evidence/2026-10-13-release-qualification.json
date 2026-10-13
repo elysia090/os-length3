@@ -60,8 +60,8 @@
     },
     {
       "id": 5,
-      "status": "pass",
-      "scope": "named complete local ELF/CPU/proof build receipts and new exact executed-producer binding"
+      "status": "fail",
+      "scope": "structural local proof receipts and producer binding pass, but actual optimized BusyBox differs from the retained ordinary input on the same native kernel; source correction and fresh candidate verification pending"
     },
     {
       "id": 6,
@@ -120,9 +120,9 @@
     }
   ],
   "correctiveSource": {
-    "path": "data/distribution/boot/console",
-    "status": "pass",
-    "test": "actual e67 fresh interactive ash ENV selected iproute2 7.2.0; candidate root is not rebuilt"
+    "path": "data/config/busybox.fragment and src/v2/postlink-compiler/src/jump-table.c",
+    "status": "not-tested",
+    "test": "interactive alias was a limited diagnostic repair; general provider configuration and relative-table fix are now awaiting the fresh source-cut candidate"
   },
   "sourceRepairInCandidate": false,
   "releasePublished": false,
@@ -130,5 +130,6 @@
   "workspaceKeysChanged": false,
   "permissionsChanged": false,
   "allPreTaskFilesPreserved": 15,
-  "details": "2026-10-13-release-qualification.md"
+  "details": "2026-10-13-release-qualification.md",
+  "runtimeCounterexample": "2026-10-13-busybox-runtime-counterexample.json"
 }

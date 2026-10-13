@@ -2857,6 +2857,8 @@ static int shared_base_consumer(const pl_x86_frontend *frontend,
             break;
         }
         if (candidate.flow != PL_X86_FLOW_NEXT) break;
+        /* ADD has already captured the shared base in delta. Reusing the
+         * base register for a call argument no longer changes the target. */
         int clobbers_target = 0;
         for (pl_u32 operand = 0u;
                 operand < candidate.operand_count; ++operand)
@@ -2865,10 +2867,8 @@ static int shared_base_consumer(const pl_x86_frontend *frontend,
                     && (candidate.operands[operand].flags
                         & (PL_X86_OPERAND_WRITE
                            | PL_X86_OPERAND_CONDITIONAL_WRITE))
-                    && (same_register(
-                            candidate.operands[operand].value.reg, delta)
-                        || same_register(
-                            candidate.operands[operand].value.reg, base))) {
+                    && same_register(
+                        candidate.operands[operand].value.reg, delta)) {
                 clobbers_target = 1;
                 break;
             }

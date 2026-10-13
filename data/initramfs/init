@@ -21,7 +21,7 @@ test -x /run/release/usr/libexec/system/init
 # or corrupt restored filesystem fails closed instead of silently becoming
 # an empty workspace. Native boot without this device retains its RAM upper.
 if test -b /dev/vda; then
-    case " $(cat /proc/cmdline) " in
+    case " $(/bin/busybox cat /proc/cmdline) " in
       *' length3.workspace=new '*)
         /run/release/usr/bin/mke2fs -t ext4 -F -m 0 /dev/vda ;;
     esac

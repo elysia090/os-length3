@@ -373,6 +373,30 @@ code-grid-check: $(PROGRAM)
 	set +e; "$$temporary/output"; output_status=$$?; set -e; \
 	test $$output_status -eq 42
 
+.PHONY: table-base-reuse-after-target-check
+table-base-reuse-after-target-check: $(PROGRAM) $(BUILD)/native-closure
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none \
+		check/table-base-reuse-after-target.S -o "$$temporary/input"; \
+	$(BUILD)/native-closure "$$temporary/input" --list-tables \
+		| grep -Eq '^table base=0x[0-9a-f]+ consumer=0x[0-9a-f]+ rows=13 '; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify "$$temporary/input" "$$temporary/output"; \
+	set --; i=0; \
+	while test $$i -lt 13; do \
+		set +e; "$$temporary/input" "$$@"; before=$$?; \
+		"$$temporary/output" "$$@"; after=$$?; set -e; \
+		test $$before -eq $$((42+i)); test $$after -eq $$before; \
+		set -- "$$@" argument; i=$$((i+1)); \
+	done; \
+	$(CC) $(BARE_FIXTURE_FLAGS) -DBREAK_TARGET=1 -Wl,--build-id=none \
+		check/table-base-reuse-after-target.S -o "$$temporary/bad"; \
+	if $(BUILD)/native-closure "$$temporary/bad" --list-tables \
+		| grep -Eq '^table .* rows=13 '; then \
+		echo 'overwritten target promoted to a relative table' >&2; exit 1; \
+	fi
+
 relative-code-pointer-check: $(PROGRAM)
 	@set -e; temporary=$$(mktemp -d); \
 	trap 'rm -rf "$$temporary"' EXIT; \
@@ -1503,7 +1527,7 @@ tail-call-table-rejection-check: $(PROGRAM) $(BUILD)/entry
 		"$$temporary/entries" >/dev/null; \
 	done
 
-check: closed-table-set-check interior-trampoline-check stack-code-continuation-check observed-call-site-check partial-pointer-clear-check relative-function-table-check bit-scan-passthrough-check cpuid-inputs-check partial-clear-after-flags-check atomic-inputs-check mutable-immediate-field-check unowned-relative-field-check mixed-relative-field-check prefixed-rel32-site-check exception-table-root-check bug-table-root-check tail-call-table-check tail-call-table-rejection-check indirect-flags-frontier-check entry-flags-preload-check
+check: closed-table-set-check interior-trampoline-check stack-code-continuation-check observed-call-site-check partial-pointer-clear-check relative-function-table-check bit-scan-passthrough-check cpuid-inputs-check partial-clear-after-flags-check atomic-inputs-check mutable-immediate-field-check unowned-relative-field-check mixed-relative-field-check prefixed-rel32-site-check exception-table-root-check bug-table-root-check tail-call-table-check tail-call-table-rejection-check indirect-flags-frontier-check entry-flags-preload-check table-base-reuse-after-target-check
 
 check: $(PROGRAM) $(BUILD)/completeness elf-proof-check observed-compile-check relocation-free-product-check product-gate-check shared-product-gate-check runtime-elf-check modular-address-check physical-entry-check code-grid-check relative-code-pointer-check table-alternative-bound-check stack-slot-table-check copied-memory-table-check backward-exit-table-check backward-loop-table-check chained-table-cut-check nested-table-guards-check local-code-address-check pie-address-difference-check final-flags-after-value-check observed-code-span-check mutable-code-site-check trap-continuation-check alternative-record-check linked-field-authority-check table-side-exit-check call-cut-check dispatch-alias-check profile-extension-check overlapping-control-check patch-trampoline-check mixed-load-check nonimage-control-check dynamic-runtime-check metadata-closure-check entry-check native-closure-check select-x86-check native-layout-check population-check direct-control-check scalar-check physical-check quotient-check normal-form-check global-minimum-check block-observation-check slice-observation-check instruction-law-check distribution-population-check production-benchmark-fixture-check
 	@! grep -REn 'PL_VM_|pl_vm_|wasm-compiler|machine-artifact|delivery|worker' \

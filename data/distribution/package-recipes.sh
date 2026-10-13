@@ -14,9 +14,9 @@
 package_recipe acl "$ACL_VERSION-r1" 'POSIX access control list tools' "$ACL_URL" 'LGPL-2.1-or-later AND GPL-2.0-or-later' acl 'attr' '' '' none
 package_recipe apk-tools "$APK_TOOLS_VERSION-r1" 'apk package manager' "$APK_TOOLS_URL" 'GPL-2.0-only' apk-tools '' '' '' none
 package_recipe attr "$ATTR_VERSION-r1" 'extended attribute tools' "$ATTR_URL" 'LGPL-2.1-or-later AND GPL-2.0-or-later' attr '' '' '' none
-package_recipe base-services "$DISTRIBUTION_RELEASE_VERSION-r3" 'compiled standard service graph' 'https://github.com/elysia090/libqm-prototype' 'LicenseRef-libqm-prototype' base-services 'busybox s6-rc mdevd' '' '' none
+package_recipe base-services "$DISTRIBUTION_RELEASE_VERSION-r5" 'compiled standard service graph' 'https://github.com/elysia090/libqm-prototype' 'LicenseRef-libqm-prototype' base-services 'busybox s6-rc mdevd' '' '' none
 package_recipe binutils "$BINUTILS_VERSION-r1" 'GNU binary utilities' "$BINUTILS_URL" 'GPL-3.0-or-later' binutils 'zlib' '' '' none
-package_recipe busybox "$BUSYBOX_VERSION-r1" 'small POSIX/Linux userland and rescue init' "$BUSYBOX_URL" 'GPL-2.0-only' busybox '' 'cmd:sh cmd:cpio' '' none
+package_recipe busybox "$BUSYBOX_VERSION-r2" 'small POSIX/Linux userland and rescue init' "$BUSYBOX_URL" 'GPL-2.0-only' busybox '' 'cmd:sh cmd:cpio' '' none
 package_recipe bzip2 "$BZIP2_VERSION-r1" 'bzip2 compressor' "$BZIP2_URL" 'bzip2-1.0.6' bzip2 '' '' '' none
 package_recipe ca-certificates "${CA_CERTIFICATES_DATE//-/}-r1" 'Mozilla CA certificate bundle' "$CA_CERTIFICATES_URL" 'MPL-2.0' ca-certificates '' '' '' none
 package_recipe chrony "$CHRONY_VERSION-r1" 'network time synchronization' "$CHRONY_URL" 'GPL-2.0-only' chrony '' '' '' none
@@ -31,7 +31,7 @@ package_recipe gzip "$GZIP_VERSION-r1" 'GNU gzip compressor' "$GZIP_URL" 'GPL-3.
 package_recipe iproute2 "$IPROUTE2_VERSION-r1" 'Linux routing and network configuration tools' "$IPROUTE2_URL" 'GPL-2.0-or-later' iproute2 '' '' '' none
 package_recipe kmod "$KMOD_VERSION-r1" 'Linux kernel module tools' "$KMOD_URL" 'LGPL-2.1-or-later' kmod '' '' '' none
 package_recipe libcap "$LIBCAP_VERSION-r1" 'Linux capability tools' "$LIBCAP_URL" 'BSD-3-Clause OR GPL-2.0-only' libcap '' '' '' none
-package_recipe linux-boot "$LINUX_VERSION-r2" 'Linux kernel and deterministic rescue initramfs' "$LINUX_URL" 'GPL-2.0-only' linux 'busybox base-services' '' '' none
+package_recipe linux-boot "$LINUX_VERSION-r3" 'Linux kernel and deterministic rescue initramfs' "$LINUX_URL" 'GPL-2.0-only' linux 'busybox base-services' '' '' none
 package_recipe linux-headers "$LINUX_VERSION-r1" 'Linux userspace API headers' "$LINUX_URL" 'GPL-2.0-only WITH Linux-syscall-note' linux '' '' '' none
 package_recipe make "$MAKE_VERSION-r1" 'GNU make' "$MAKE_URL" 'GPL-3.0-or-later' make 'busybox' '' '' none
 package_recipe mdevd "$MDEVD_VERSION-r1" 'small device event manager' "$MDEVD_URL" 'ISC' mdevd 'skalibs' '' '' none
