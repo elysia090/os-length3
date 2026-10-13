@@ -1,0 +1,86 @@
+{
+  "format": "web-release-qualification-v1",
+  "status": "pass-scoped",
+  "releaseTag": "os-length3-linux-v0.1.0",
+  "channel": "web-preview",
+  "releaseSha256": "7ae8a85018b49656c8212e4984baf9500656ee3a2ef642a149752954924729f9",
+  "nativeNamespace": "13a2b910a90971ed2e4f8d9f1ab3a1edeb1e3fdfaffd1978bb69908ea1f1c8fd",
+  "webSourceCommit": "90ea11b242be33c9daf2a35808f5089fca0f9c08",
+  "assets": {
+    "os-length3-linux-0.1.0-web-7ae8a85018b49656c8212e4984baf9500656ee3a2ef642a149752954924729f9.zip": {
+      "bytes": 94990744,
+      "sha256": "a2232ac08a952610783cf23daa44668a7a235520e1e772bea55146812447703b"
+    },
+    "WEB-MANIFEST.json": {
+      "bytes": 9766,
+      "sha256": "8fb8f6fdd672817d30dd2f2136b6a666ecd610021f383a1ff4be9dbf8adcd0cc"
+    },
+    "WEB-README.md": {
+      "bytes": 3921,
+      "sha256": "821e5bc4b1a693f1ee4c6040c96b6a4ade59eebec5018a5e40a5c712395ed60b"
+    },
+    "WEB-SHA256SUMS": {
+      "bytes": 326,
+      "sha256": "04ada83bc8004bf932e22317bb4f7500b9ae067d7c6aa768db58f2380da26b9d"
+    }
+  },
+  "package": {
+    "members": 64,
+    "uncompressedTransportBytes": 97008819,
+    "canonicalArtifactSize": "not-measured",
+    "zipReadback": "all member SHA-256 matched manifest",
+    "immutableRoles": "5 whole and all 64KiB chunk identities matched",
+    "reproducibleZip": "two independent packaging runs byte-identical",
+    "privateOrGatewayMaterialIncluded": false
+  },
+  "browser": {
+    "origin": "http://127.0.0.1:63710",
+    "ui": "packaged production app.js/linux-terminal.js",
+    "worker": "production linux-worker.js",
+    "guestRamBytes": 536870912,
+    "workspaceBytes": 33554432,
+    "workspace": "os-length3-0.1.0",
+    "ext4Uuid": "0ac75209-7a44-40d6-831c-6d84bb9e5e09",
+    "coldConsole": "pass",
+    "realOfflineDag": "pass",
+    "iprouteProvider": "ip utility, iproute2-7.2.0",
+    "kernel": "7.2.7",
+    "normalCloseFlush": "pass",
+    "normalResume": "pass",
+    "savedFile": "/root/web-release-proof.txt",
+    "savedFileSha256": "91d1b7c570cf9619f07ef22c1a7cc5f6656cc36815a2abbb3da2e2421b24accd",
+    "sameSavedFileAfterResume": "pass",
+    "browserFullRestartOnThisPackage": "not-repeated",
+    "initialFixtureFailure": {
+      "path": "/work/web-release-proof.txt",
+      "reason": "nonexistent directory; first unconditional marker not counted as pass",
+      "correction": "existing /root COW path and successful && chain"
+    },
+    "rawLogs": {
+      "firstBoot": {
+        "bytes": 11648,
+        "sha256": "1f27e49744fc9b41785568cee8002e7c92e71af2a5bccebf762636056246cd1d"
+      },
+      "resume": {
+        "bytes": 10727,
+        "sha256": "c9721dbbaea54e9637f6a565c383cbe9c8eb82a7860855715f2a8a6f0dfc3bd3"
+      }
+    }
+  },
+  "httpServer": "real Node child fixture passed entry/full/HEAD/bounded Range/refusal cases",
+  "priorCandidateEvidence": [
+    "src/v2/vm/check/browser/evidence/2026-10-13-fixed-root-common-acceptance.json",
+    "src/v2/vm/check/browser/evidence/2026-10-13-fixed-producer-and-provider-root.json"
+  ],
+  "limits": {
+    "webThreeSecondPrompt": "fail; not a new performance benchmark",
+    "editorRunFrontend": "not-connected",
+    "newRootFullGrantedNetwork": "not-tested",
+    "independentSemanticChecker": "not-implemented",
+    "cloudStorageConfigured": false,
+    "portableKeyRecovery": "not-implemented"
+  },
+  "existingIssuerAndWorkspaceKeyChanges": false,
+  "existingUserDataDeleted": false,
+  "userApplicationsTerminated": false
+}
