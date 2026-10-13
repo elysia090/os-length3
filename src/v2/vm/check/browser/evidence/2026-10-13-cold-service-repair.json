@@ -1,7 +1,7 @@
 {
   "format": "cold-service-repair-evidence-v1",
   "date": "2026-10-13",
-  "scope": "local test-signed candidate; browser process restart and product qualification pending",
+  "scope": "local test-signed candidate; browser process restart recovery passed; public release qualification pending",
   "publicReleaseModified": false,
   "newIssuerKeys": false,
   "privateKeyExport": false,
@@ -106,7 +106,12 @@
       "bodyNetworkFetches": 0,
       "workspaceUuid": "2a89680a-f15b-4ab5-8f49-b8518ce835a1"
     },
-    "browserProcessRestart": "not-tested",
+    "browserProcessRestart": {
+      "status": "passed",
+      "record": "2026-10-13-browser-process-restart.json",
+      "origin": "http://127.0.0.1:63700",
+      "savedDataSha256": "638c2eded19609057c2af41bc156187d71b996ce332aec3352b752cb4779df3e"
+    },
     "normalDhcp": {
       "status": "passed",
       "syslog": "normal",

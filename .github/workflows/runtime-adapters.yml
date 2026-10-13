@@ -10,6 +10,7 @@ on:
       - 'src/v2/vm/check/browser/product.*'
       - 'src/v2/vm/check/browser/prepared-*'
       - 'src/v2/vm/check/browser/legacy-retention.*'
+      - 'src/v2/vm/check/browser/restart-authority.*'
       - 'src/v2/vm/check/browser/prepared-cache-fixture/**'
       - 'src/v2/Makefile'
       - 'data/oracle/check-site-hardlinks.mjs'
@@ -43,6 +44,7 @@ on:
       - 'src/v2/vm/check/browser/product.*'
       - 'src/v2/vm/check/browser/prepared-*'
       - 'src/v2/vm/check/browser/legacy-retention.*'
+      - 'src/v2/vm/check/browser/restart-authority.*'
       - 'src/v2/vm/check/browser/prepared-cache-fixture/**'
       - 'src/v2/Makefile'
       - 'data/oracle/check-site-hardlinks.mjs'
@@ -104,6 +106,7 @@ jobs:
           node --check src/v2/vm/check/browser/prepared-release.mjs
           node --check src/v2/vm/check/browser/workspace-recovery.mjs
           node --check src/v2/vm/check/browser/legacy-retention.mjs
+          node --check src/v2/vm/check/browser/restart-authority.mjs
           node --check data/oracle/seed-image.mjs
           bash -n data/oracle/check-native-producer-dhcp.sh
           node --check data/oracle/inspect-dhcp-printf-table.mjs

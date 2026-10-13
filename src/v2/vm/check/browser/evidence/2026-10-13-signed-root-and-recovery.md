@@ -17,11 +17,20 @@ uses no special curve override. The original saved file hash and filesystem
 UUID remain unchanged after selecting this root.
 Reloading the normal terminal page also recovers that selected root and original
 file, despite a deliberately different configured catalog pin. It observes
-service completion and then closes and flushes its Worker. The exact same browser
-process has not yet been restarted.
+service completion and then closes and flushes its Worker.
+
+After the user returns from the requested full browser/app exit and restart,
+the browser has no previous tabs and the local server is no longer listening.
+A read-only check finds the existing non-extractable key, exact trusted head,
+selected release and authenticated physical tree. The normal terminal then
+remounts the same UUID, reads the original saved file hash, runs PID1 s6-svscan,
+and completes the offline services. The legacy retained authority also survives
+and authenticates its original tree. No replacement master key or formatting
+is used. [Restart evidence](2026-10-13-browser-process-restart.json) records the
+user-driven process restart separately from the measured recovery results.
 
 These observations do not qualify a public release. Browser process exit and
-restart are still untested, and the native runtime receipt deliberately keeps
+restart recovery has passed, while the native runtime receipt deliberately keeps
 producer source binding `unknown` and product qualification `pending`.
 The separate source/build witnesses record the actual reconstructed inputs;
 they do not recover the original defective binary's unavailable build inputs.
@@ -44,6 +53,7 @@ they do not recover the original defective binary's unavailable build inputs.
 
 - [Rebuilt native candidate, same namespace and normal Web DHCP](2026-10-13-rebuilt-signed-candidate.json)
 - [Final signed candidate, reproducible initramfs and cold services](2026-10-13-cold-service-repair.json)
+- [Browser process restart and saved workspace recovery](2026-10-13-browser-process-restart.json)
 - [Actual release and Linux filesystem rollback](2026-10-13-release-rollback.json)
 - [Existing legacy key retention and refusal cases](2026-10-13-legacy-retention.json)
 - [Fresh Web producer source/toolchain reproduction](2026-10-12-web-producer-reproduction.json)
@@ -60,7 +70,8 @@ The native 1 GiB cold run and a separate `mem=512M` run both complete the
 installed service/development checks. The latter still has a 1 GiB physical
 oracle geometry; it is not a sole-RAM causal comparison. The browser diagnostic
 workspace is 32 MiB and retains the same ext4 UUID across the measured update
-and rollback. A fresh document is not a browser-process restart.
+and rollback. Fresh-document recovery and the subsequent user-driven full
+browser restart are separate measured cases.
 
 ## Referenced upstream behavior
 
@@ -83,5 +94,5 @@ their lengths, SHA-256 digests and flushed owner writes.
 The source fixes and regression checks passed both push and PR Linux CI at
 [c3dd9fe](https://github.com/elysia090/libqm-prototype/actions/runs/38287774054),
 including the boot archive normalizer and its package/source-preservation checks.
-CI success is independent of the actual cold-browser result and still-required
-full browser-restart observation.
+CI success is independent of the actual cold-browser and full browser-restart
+recovery results.
