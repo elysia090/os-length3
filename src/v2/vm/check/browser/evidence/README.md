@@ -4,6 +4,10 @@
 records executed-producer binding, real daemon failure notifications, exact e67
 root/data rollback, current storage faults, actual quota and network conditions.
 It separates pass, fail and not-tested and retains formal publication as pending.
+The [later fixed source cut/root](2026-10-13-fixed-producer-and-provider-root.json)
+and [common native/Web offline acceptance](2026-10-13-fixed-root-common-acceptance.json)
+are pinned to 7ae8a8, separately from the e67 runtime counterexample and network
+observations. The metadata verifier's false acceptance remains explicit.
 
 2026-10-13: [signed root rebuild and workspace recovery](2026-10-13-signed-root-and-recovery.md)
 collects actual native runtime/HTTPS/cold boot, equal native/Web namespace,

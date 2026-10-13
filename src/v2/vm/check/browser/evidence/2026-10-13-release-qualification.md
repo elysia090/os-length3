@@ -33,6 +33,14 @@ The repaired project's verifier still accepts the actual old bad ELF with exit 0
 
 ## Formal publication gates still open
 
+### Subsequent fixed candidate
+
+The separate local successor is `7ae8a85018b49656c8212e4984baf9500656ee3a2ef642a149752954924729f9`, with base-services r5, BusyBox r2 and linux-boot r3. [Fixed producer/root evidence](2026-10-13-fixed-producer-and-provider-root.json) records two clean producer builds, the unchanged 7,694-file tool population, and actual read-only descriptor execution (compiler 7, verifier 400, archive 31, stage 1, audit 1). Native runtime/development/HTTPS passes and native/SquashFS namespaces both equal `13a2b910a90971ed2e4f8d9f1ab3a1edeb1e3fdfaffd1978bb69908ea1f1c8fd`. The same measured bytes form the five-role Web projection.
+
+[The exact common offline workload](2026-10-13-fixed-root-common-acceptance.json) now passes on both native and Web: standard provider selection in shell/xargs, address/route configuration, all eight userland groups, C/make -j4, Git, AES decrypt equality, package inspection and archive round-trip. Web cold boot reaches real DAG completion with the production 300-second observation deadline. The new root also passes twelve current persistence failures, actual module/Storage Bucket quota, ext4 ENOSPC and four bounded tmpfs allocation/release cycles. The saved file digest remains unchanged. Two native fixture-preparation failures and a diagnostic guest job pause/resume are retained separately; only the final completed exit 0 qualifies the common workload.
+
+These results close the named source repair, default-provider and common **offline** acceptance gaps for 7ae; e67 remains the historical failed candidate. They do not promote e67's network/daemon-fault cases to 7ae. Web network reconnect/concurrent traffic on 7ae, authenticated SSH and clock synchronization are not repeated by this offline workload. Cold prompt is 160,397.6 ms and still fails 3 seconds. The independent semantic-witness checker, canonical word/75 MB measurement, suspend/resume, native product lifecycle and paired performance gates remain open. No successor is labeled formally qualified.
+
 The authoritative requirements are [DISTRIBUTION.md](../../../../docs/DISTRIBUTION.md#publication-gates) and [the product contract](../../../../README.md). These are implementation/acceptance tasks, not permission requests.
 
 | Priority | Requirement | State | Remaining concrete work |

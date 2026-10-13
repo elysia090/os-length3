@@ -1,6 +1,6 @@
 const query=new URL(location.href).searchParams;
 const workspace=query.get('workspace'),release=query.get('sha256');
-if(workspace!=='fixture-linux-recovery-1012'||!/^[a-f0-9]{64}$/.test(release??''))throw new Error('existing diagnostic workspace and exact candidate required');
+if(!['fixture-linux-recovery-1012','fixture-e67-services-1013'].includes(workspace)||!/^[a-f0-9]{64}$/.test(release??''))throw new Error('existing diagnostic workspace and exact candidate required');
 const report={format:'candidate-storage-failures-v1',status:'running',candidate:release,
   workspace,newKeys:false,sourceWrites:false,databaseDeletion:false,
   engineGlobalQuota:'not-tested',indexedDbPhysicalQuota:'not-tested',cases:[]};

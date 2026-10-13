@@ -1,0 +1,178 @@
+{
+  "format": "fixed-relative-table-and-standard-provider-candidate-v1",
+  "date": "2026-10-13",
+  "candidate": "7ae8a85018b49656c8212e4984baf9500656ee3a2ef642a149752954924729f9",
+  "status": "partial",
+  "formallyQualified": false,
+  "source": {
+    "format": "fixed-source-derivative-v1",
+    "baseArchiveSha256": "7d0d32906c1c8bc5f7a1cc90f2e13eb714f96db3d82c549f81585b93f4974bdb",
+    "archive": "temp\\fixed-source-switch-1013\\producer-source-switch-fixed.tar",
+    "archiveSha256": "2a96a04e464be6bbaffe4b17e0d6a32e84a63a7a4054ca8b969b467268fffbf8",
+    "bytes": 32194560,
+    "changes": [
+      {
+        "path": "src/v2/postlink-compiler/src/jump-table.c",
+        "bytes": 155732,
+        "sha256": "f633033413e5735c63283a2aba24b7858b5494d1cc8778ae3d01cfd47753432b"
+      },
+      {
+        "path": "src/v2/postlink-compiler/Makefile",
+        "bytes": 68224,
+        "sha256": "d8a2c37ffa78b5d072833654bd7b9e9fe0282bf9dc78dbebb144dc31ed632ff1"
+      },
+      {
+        "path": "src/v2/postlink-compiler/check/table-base-reuse-after-target.S",
+        "bytes": 1451,
+        "sha256": "37e9d34aadc694ca1cc812665c7e26bf2cb741da414c1509b7430cf5239b5446"
+      },
+      {
+        "path": "data/config/busybox.fragment",
+        "bytes": 2483,
+        "sha256": "6fcd483c9a96ec2e1fabfa94187fd9569ff6de26c1251c51f82451ad58257a1b"
+      },
+      {
+        "path": "data/config/busybox-1.36.1.config",
+        "bytes": 37087,
+        "sha256": "1942505c27fc5a815e04bd71a2d153a8886a1f47bcf818ce37e0e495da2e3cb4"
+      },
+      {
+        "path": "data/initramfs/init",
+        "bytes": 2014,
+        "sha256": "456e64dfde8789fa3bc02651f274a187be54beceebcb2c95795ee53030934881"
+      },
+      {
+        "path": "data/distribution/boot/console",
+        "bytes": 412,
+        "sha256": "f17c195768fc2d1dd12bce799a98d348a52eed6b6b9660dbeb4a64cb4ab26336"
+      },
+      {
+        "path": "data/distribution/package-recipes.sh",
+        "bytes": 7227,
+        "sha256": "e8f8a985b75296067ba34d7365cda7fd025a8a04ddb4707b834220b1eb2edc0d"
+      },
+      {
+        "path": "data/oracle/standard-provider-check.sh",
+        "bytes": 949,
+        "sha256": "0e759d4291b086ba443efac796cba625d80738c94b09bcc6b499e48244498ed4"
+      }
+    ],
+    "scope": "exact derivative source bytes; not a claim of an unchanged Git commit or publisher authentication"
+  },
+  "nativeProducerCut": {
+    "bootstrapIdentity": "df4026a1c7c02b49c8d36782c1a361dca0e89f4616349c42f0458b95fcc15dd9",
+    "cleanReplicas": 2,
+    "compilerVersion": "gcc (Alpine 15.2.0) 15.2.0",
+    "conditions": {
+      "AR": "/usr/bin/ar",
+      "CC": "/usr/bin/gcc",
+      "CFLAGS": "-O2",
+      "LANG": "C",
+      "LC_ALL": "C",
+      "SOURCE_DATE_EPOCH": "0",
+      "TZ": "UTC",
+      "command": "make -C src/v2 -j4 CC=/usr/bin/gcc AR=/usr/bin/ar CFLAGS=-O2 all",
+      "jobs": 4
+    },
+    "format": "fixed-native-producer-cut-v1",
+    "producers": {
+      "archive": {
+        "bytes": 27936,
+        "sha256": "3c45ef71c25c0bf93de34accc24dd65a6ad32c7d18e9ba64b7b71cf099fa8924"
+      },
+      "audit": {
+        "bytes": 41144,
+        "sha256": "806b1758e07dbbeb8db4d41957d8f779781f667bf30cc6acb50999b107a67775"
+      },
+      "compiler": {
+        "bytes": 1458928,
+        "sha256": "f370828f9b6f47817438616b840d67fa1bcd11ac16ba8476a827fbfe722ba90e"
+      },
+      "stage": {
+        "bytes": 1555864,
+        "sha256": "1387679ef9ce456da6f9d3aa2e7445a4c7eec3e512e1148b3a12e468c6d70af5"
+      },
+      "verifier": {
+        "bytes": 23432,
+        "sha256": "af9cd8a8f1e1acb1e877f37782347a559561a2ffcc3d11bb9abcdedb138d0796"
+      }
+    },
+    "scope": "two clean builds and fixed executable cut; product output binding follows actual execution",
+    "sourceArchiveSha256": "2a96a04e464be6bbaffe4b17e0d6a32e84a63a7a4054ca8b969b467268fffbf8",
+    "toolchainFiles": 7694,
+    "toolchainFilesSha256": "9fddd47f59cf7fb81a528a271ac04ab97537a8def8ff2eb0b2d0258c50bf29e1"
+  },
+  "actualExecutions": {
+    "compiler": 7,
+    "verifier": 400,
+    "archive": 31,
+    "stage": 1,
+    "audit": 1
+  },
+  "executionLog": {
+    "bytes": 1032383,
+    "sha256": "86f50960102973b9b2f3bcb6a834c1251d4dcca832ea5475d867cc8db9c52fa3"
+  },
+  "nativeBuild": {
+    "status": "pass",
+    "originalBackingMetadataUnchanged": true,
+    "guestExit": "0",
+    "results": {
+      "development": "passed",
+      "https": "passed",
+      "root": "passed",
+      "runtime": "passed"
+    },
+    "receiptSourceBinding": "unknown",
+    "productQualification": "pending",
+    "revisions": {
+      "base-services": "0.1.0-r5",
+      "busybox": "1.36.1-r2",
+      "linux-boot": "7.2.7-r3"
+    }
+  },
+  "canonicalNamespace": {
+    "native": "13a2b910a90971ed2e4f8d9f1ab3a1edeb1e3fdfaffd1978bb69908ea1f1c8fd",
+    "readOnlySquashfs": "13a2b910a90971ed2e4f8d9f1ab3a1edeb1e3fdfaffd1978bb69908ea1f1c8fd",
+    "status": "pass",
+    "scope": "filesystem identity, not the canonical Artifact word/size gate"
+  },
+  "projection": {
+    "roles": {
+      "kernel": {
+        "bytes": 3499008,
+        "sha256": "a2295e89a6a9f6c35b8587798b2c9fb1da8d829039265066e82603434e48319f"
+      },
+      "initramfs": {
+        "bytes": 438272,
+        "sha256": "86a168fa31c025eda260dbfd4ac69f8fe945e6d374a9bcf1c50360fd34b8675f"
+      },
+      "system": {
+        "bytes": 90337280,
+        "sha256": "77ce37ebbe353a4f692f79472852a907db90bb1238f0eb2b8906c8b8f3ce0bb8"
+      },
+      "vm": {
+        "bytes": 144156,
+        "sha256": "4a14da3a861d5b877a77db9334e2db20baf19eb06b5d43310e75e16703a9dccc"
+      },
+      "compiler": {
+        "bytes": 1137376,
+        "sha256": "263e444dc64d0cd93a52a9413e1046e9379ae5ad8a7900c87129b8289849e565"
+      }
+    },
+    "reusedVmCompiler": "exact verified C roles from e67; producer fix affects native postlink only"
+  },
+  "nativeCommonAcceptance": "pass: same pinned offline script",
+  "webCommonAcceptance": "pass: same pinned offline script",
+  "storageAndQuotaRetest": "pass: 12 current persistence cases and actual engine/bucket quota",
+  "knownSourceFix": "same e67 kernel ordinary/old/fixed route exit 0/139/0; separate smoke evidence",
+  "semanticVerifier": "not-implemented; metadata-only reader still accepts actual old bad ELF; no formal semantic-equivalence claim",
+  "canonicalArtifactWordSize": "not-tested",
+  "webColdPromptTarget": "fail; see separately measured Web receipt",
+  "issuer": "existing local test issuer; no production promotion",
+  "newIssuerKeys": false,
+  "workspaceKeysChanged": false,
+  "hostPermissionsChanged": false,
+  "publicReleaseModified": false,
+  "offlineAcceptanceReceipt": "2026-10-13-fixed-root-common-acceptance.json"
+}

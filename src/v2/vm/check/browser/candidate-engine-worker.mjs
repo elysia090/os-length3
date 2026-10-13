@@ -13,7 +13,7 @@ async function tx(db,stores,write,body){return new Promise((resolve,reject)=>{
   const t=db.transaction(stores,write?'readwrite':'readonly',write?{durability:'strict'}:undefined);let out;
   t.oncomplete=()=>resolve(out);t.onabort=()=>reject(t.error??new Error('transaction aborted'));t.onerror=()=>{};body(t,v=>{out=v;});});}
 async function run(m){
-  ensure(m.workspace==='fixture-linux-recovery-1012'&&/^[a-f0-9]{64}$/.test(m.candidate??''),'existing fixture and exact candidate');
+  ensure(['fixture-linux-recovery-1012','fixture-e67-services-1013'].includes(m.workspace)&&/^[a-f0-9]{64}$/.test(m.candidate??''),'existing fixture and exact candidate');
   const release=await openPreparedMachineRelease(m.candidate);try{await release.verify();}finally{release.close();}
   const report={format:'candidate-engine-quota-v1',candidate:m.candidate,status:'partial',newKeys:false,
     permissionChanges:false,databaseDeletion:false,globalCodeRssExhaustion:'not-tested',originDiskExhaustion:'not-tested'};

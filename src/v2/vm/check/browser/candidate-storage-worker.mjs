@@ -16,7 +16,7 @@ async function branch(name,state){const store=await IndexedBlockStore.open(name,
     tx.objectStore('head').put(state.head,0);tx.objectStore('authority').put(state.record,0);tx.objectStore('authority').put(state.generation,1);
     tx.oncomplete=resolve;tx.onabort=()=>reject(tx.error);tx.onerror=()=>{};});return store;}
 async function run(m){
-  ensure(m.workspace==='fixture-linux-recovery-1012'&&/^qualification-20261013-[a-f0-9-]{36}$/.test(m.namespace),'isolated branch names');
+  ensure(['fixture-linux-recovery-1012','fixture-e67-services-1013'].includes(m.workspace)&&/^qualification-20261013-[a-f0-9-]{36}$/.test(m.namespace),'isolated branch names');
   const release=await openPreparedMachineRelease(m.release);try{await release.verify();}finally{release.close();}
   ensure((await indexedDB.databases()).some(d=>d.name==='length3-block-workspace-'+m.workspace),'existing source database required');
   const source=await IndexedBlockStore.open('workspace-'+m.workspace),state=await authority(source);
