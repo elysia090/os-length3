@@ -13,7 +13,7 @@ import {hasReadinessLine} from './console-readiness.mjs';
 import {ServiceObservation} from './service-observation.mjs';
 const send=(type,payload={})=>self.postMessage({type,...payload});
 let owner=null,closing=false,pending=null,artifact=null,running=null,ready=false,normal=false,serviceReady=false,closeFailure=null,workspaceLease=null;
-let tail='',input=new Uint8Array(8192),head=0,count=0,services=null;
+let tail='',input=new Uint8Array(8192),head=0,count=0,services=null,commandActive=false;
 const decoder=new TextDecoder();
 const consoleStream=new ConsoleStream(bytes=>{let raw='';for(const b of bytes)raw+=String.fromCharCode(b);
   send('trace',{event:{operation:'console_write',data_base64:btoa(raw)}});});
@@ -28,6 +28,7 @@ function consoleWrite(bytes){consoleStream.write(bytes);
   if(!normal&&(tail.includes('Offline service transition failed; terminal remains down.')||tail.includes('Boot root handoff failed.')))
     throw new Error('Linux normal boot failed; inspect the C machine diagnostic (no rescue fallback)');
   ready=normal&&/(?:^|\r?\n)[^\r\n]{0,128}[#$] $/.test(tail);
+  if(ready)commandActive=false;
   if(ready&&pending){flushConsole();send('result',{id:pending,ok:true,handle:1,result:{ready:true,serviceReady,state:{halted:false},layout:artifact.stats}});pending=null;}
 }
 function consume(take){if(!count)return null;const b=input[head];if(take){head=(head+1)&8191;--count;}return b;}
@@ -36,7 +37,7 @@ async function boot(message){
   if(message.architecture&&message.architecture!=='x86-64')throw new Error('x86-64 release required');
   if(!message.releaseUrl||!message.releaseSha256||!message.storage)throw new Error('pinned Linux release and workspace authority required');
   if(typeof message.generation!=='bigint'||message.generation<1n||message.generation>0xffffffffffffffffn)throw new Error('supervisor machine generation required');
-  closing=false;closeFailure=null;pending=message.id;ready=false;normal=false;serviceReady=false;tail='';head=count=0;
+  closing=false;closeFailure=null;pending=message.id;ready=false;normal=false;serviceReady=false;commandActive=false;tail='';head=count=0;
   services?.close();services=new ServiceObservation({deadlineMs:message.serviceDeadlineMs??300000,
     notify:status=>send('service-status',{...status,releaseSha256:message.releaseSha256,generation:String(message.generation)})});
   send('progress',{id:message.id,phase:'download',label:'Authenticating Linux release'});
@@ -71,7 +72,7 @@ async function boot(message){
   send('booted',{id:message.id,handle:1,architecture:'x86-64'});
   running=runMachine(reader,provider,compiler,readExtent,{extended:true,keepAlive:true,warmCuts:64,bootEntropy:entropy,generation:message.generation,
     immutableImage:{address:'0x30000000',bytes:system.bytes},devices:owner,onConsole:consoleWrite,readInput:consume,idleWait:waitForClock,shouldClose:()=>closing,
-    onProgress:p=>{flushConsole();send('progress',{id:pending,phase:'execute',label:ready?'Linux is resident':'Starting Linux',detail:p.retired+' source instructions',profile:{...p,transport:owner.status()}});}})
+    onProgress:p=>{flushConsole();send('progress',{id:pending,phase:'execute',label:commandActive?'Executing shell command':ready?'Linux is resident':'Starting Linux',detail:p.retired+' source instructions',profile:{...p,transport:owner.status()}});}})
     .then(result=>{if(!closing){const error=new Error('C machine stopped: '+JSON.stringify(result.nextGate,(_,v)=>typeof v==='bigint'?String(v):v));error.diagnostic=result;throw error;}return result;})
     .finally(async()=>{try{await owner?.close();}catch(e){closeFailure=e;throw e;}
       finally{artifact.close();owner=null;running=null;await workspaceLease?.close();workspaceLease=null;}})
@@ -83,7 +84,7 @@ self.onmessage=async({data:m})=>{try{
   if(m.action==='boot'){await boot(m);return;}
   if(m.action==='input'){if(!owner||closing||typeof m.data!=='string'||m.data.length>4096)throw new Error('bounded console input');
     const bytes=new TextEncoder().encode(m.data);if(count+bytes.length>input.length)throw new Error('console backpressure');
-    ready=false;tail='';for(const b of bytes){input[(head+count)&8191]=b;++count;}send('result',{id:m.id,ok:true,handle:1,accepted:bytes.length});return;}
+    ready=false;commandActive=true;tail='';for(const b of bytes){input[(head+count)&8191]=b;++count;}send('result',{id:m.id,ok:true,handle:1,accepted:bytes.length});return;}
   if(m.action==='drive'){if(!owner||closing)throw new Error('machine not resident');pending=m.id;if(ready){send('result',{id:m.id,ok:true,handle:1,result:{ready:true,serviceReady,state:{halted:false}}});pending=null;}return;}
   if(m.action==='network-disconnect'||m.action==='network-reconnect'){
     if(!owner||closing)throw new Error('machine not resident');owner.requestNetwork(m.action.slice(8));

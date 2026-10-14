@@ -37,9 +37,10 @@ The deployment receipt identifies the build commit and the accepted Web/root
 identities separately. The hosted shell is separate from the accepted runtime
 Web snapshot, and its exact file hashes are recorded in `/deployment.json`.
 
-The deployed transport overlays `machine-artifact.mjs` and
-`prepared-release.mjs` from the current source after authenticating the original
-ZIP. `/deployment.json` lists their effective SHA-256 identities and source
+The deployed transport overlays `machine-artifact.mjs`,
+`prepared-release.mjs` and the command-state display in `linux-worker.js` from
+the current source after authenticating the original ZIP. `/deployment.json`
+lists their effective SHA-256 identities and source
 commit separately from the archived Web snapshot. Root, VM/compiler objects,
 `vm.wasm` and the release descriptor keep their accepted identities. Browser
 preparation does not download or extract the ZIP. Each 1 MiB response is still
@@ -65,14 +66,18 @@ qm and os have different IndexedDB/localStorage and non-extractable key
 authority. A redirect does not migrate Linux data or its keys. Editor files can
 be exported/imported; a portable Linux guest-file export/import interface is not
 connected. Old Linux data must be reopened on qm with its original workspace
-configuration. The redirect makes it unavailable through the ordinary qm root;
-the legacy URL and unchanged browser site data are the recovery path.
+configuration. The qm root currently remains the old entry. If its redirect
+is enabled later, the legacy URL and unchanged browser site data remain the
+recovery path.
 
 The shell follows issue #15's light Length³ frame, dark work surface, real
 editor-file sidebar, three work contexts and collapsed boot diagnostics. Run
 can boot the Linux backend, compile the selected C file and execute it without
 separate preparation buttons. The newer proposed scrolling sequence of file
 diffs and execution results is a subsequent design task, not implemented here.
+Run escapes source control characters for `printf %b` before using the
+single-line console input, retaining C source newlines and literal backslashes.
+Inputs above the console's 4 KB bound are refused visibly before dispatch.
 
 The data and recovery authority remain in the user's browser profile/origin,
 using `IndexedBlockStore`. The Worker has no workspace-write or cloud-sync API.

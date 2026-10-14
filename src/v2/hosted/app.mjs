@@ -15,15 +15,17 @@ document.querySelectorAll('nav button').forEach((b,i,buttons)=>{b.onclick=()=>ch
   if(n!==null){e.preventDefault();buttons[n].focus();choose(buttons[n].dataset.surface);}};});
 const focus=new URL(location).searchParams.get('focus');choose(!focus||['source','run','editor','playground'].includes(focus)?'playground':focus==='files'?'files':'terminal');
 $('playground').after($('terminal'));let foldedBoot=false;
+$('btn-shell-resume').addEventListener('click',()=>{foldedBoot=false;});
 $('start').onclick=()=>{if(hasStarted){const retry=new URL(location);retry.searchParams.set('boot','1');location.replace(retry);return;}hasStarted=true;$('start').disabled=true;terminal.start(config);};
 function update(){
   const label=$('shell-state').textContent,ready=!$('shell-in').disabled,phase=$('boot-transfer-phase').textContent,failed=$('shell-state').classList.contains('is-error');
-  $('user-state').textContent=failed?'起動できません。診断を確認してください':ready
+  $('user-state').textContent=phase==='Executing shell command'?'Linuxで実行中':failed?'起動できません。診断を確認してください':ready
     ?label.includes('services failed')?'入力できます · サービスの初期化に失敗':'入力できます'
     :label.includes('idle')?(hasStarted?'Linuxを閉じました':'Linuxは未起動')
     :phase.includes('Saving')?'必要なデータを取得中':'Linuxを起動中';
   for(const id of ['send','list-linux'])$(id).disabled=!ready;
-  $('compile').disabled=pendingRun!==null;
+  $('compile').disabled=pendingRun!==null||phase==='Executing shell command';
+  if(!pendingRun)$('compile').textContent=phase==='Executing shell command'?'実行中…':'Run ↗';
   if(ready&&pendingRun&&terminal.serviceReady){const text=pendingRun;pendingRun=null;$('compile').disabled=false;$('compile').textContent='Run ↗';$('shell-in').value=text;$('send').click();}
   else if(ready&&pendingRun){$('compile').textContent='サービスを準備中…';
     if(terminal.serviceStatus?.state==='failed'){pendingRun=null;$('compile').disabled=false;$('compile').textContent='Runを再試行';$('run-context').textContent='サービス初期化に失敗。診断を確認してください。Linuxの端末は利用できます。';}}
@@ -65,9 +67,11 @@ $('import-files').onchange=async e=>{try{const file=e.target.files[0];if(!file||
 }catch(error){$('file-status').textContent='読み込めませんでした：'+error.message;}finally{e.target.value='';}};
 const quote=s=>"'"+s.replaceAll("'","'\\''")+"'";
 $('compile').onclick=()=>{save();if(!validName($('filename').value))return;const name='/root/'+$('filename').value;
-  if($('shell-out').textContent.trim()){const previous=document.createElement('pre');previous.textContent=$('shell-out').textContent;$('run-history').append(previous);$('shell-out').replaceChildren();}
+  if(hasStarted&&foldedBoot&&$('shell-out').textContent.trim()){const previous=document.createElement('pre');previous.textContent=$('shell-out').textContent;$('run-history').append(previous);$('shell-out').replaceChildren();}
   $('run-context').textContent=$('filename').value+' — Linuxで実行';choose('playground');
-  const text=`printf %s ${quote($('source').value)} > ${quote(name)} && gcc ${quote(name)} -o /root/playground && /root/playground`;
+  const escaped=$('source').value.replace(/[\x00-\x1f\x7f\\]/g,c=>'\\0'+c.charCodeAt(0).toString(8).padStart(3,'0'));
+  const text=`printf %b ${quote(escaped)} > ${quote(name)} && gcc ${quote(name)} -o /root/playground && /root/playground`;
+  if(new TextEncoder().encode(text+'\n').length>4096){$('run-context').textContent='この実行入力は4 KBを超えています。Terminalからファイルを用意してください。';return;}
   if(!$('shell-in').disabled&&terminal.serviceReady){$('shell-in').value=text;$('send').click();return;}
   if($('shell-state').classList.contains('is-error')){$('start').click();return;}
   pendingRun=text;$('compile').disabled=true;$('compile').textContent='起動してRun…';

@@ -72,7 +72,7 @@ for(const [name,row] of Object.entries(manifest.files)){
 }
 // Separate hosted shell; the accepted Release's Web/runtime bytes stay intact.
 await cp(path.join(repo,'src','v2','hosted'),path.join(dist,'os'),{recursive:true});
-const runtimeOverlays={};for(const name of ['machine-artifact.mjs','prepared-release.mjs']){
+const runtimeOverlays={};for(const name of ['machine-artifact.mjs','prepared-release.mjs','linux-worker.js']){
   const bytes=await readFile(path.join(repo,'src','v2','web',name));await writeChanged(path.join(dist,'web',name),bytes);
   runtimeOverlays[name]={bytes:bytes.length,sha256:hash(bytes)};
 }
