@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';import {readFile} from 'node:fs/promises';import {SourceDemands,openBatchedSourceDemands} from '../../src/v2/web/source-demands.mjs';
+const leb=n=>{const out=[];do{let b=n&127;n>>>=7;out.push(b|(n?128:0));}while(n);return out;};const section=(id,a)=>[id,...leb(a.length),...a],name=s=>[...leb(s.length),...new TextEncoder().encode(s)];
+const exports=[['memory',2,0],['groups',0,0],['group',0,1],['word',0,2]];
+const bodies=[[0,0x41,0,0x28,2,0,0x0b],[0,0x20,0,0x41,4,0x6c,0x28,2,4,0x0b],[0,0x20,0,0x41,8,0x6c,0x29,3,32,0x0b]];
+const fixture=Uint8Array.from([0,97,115,109,1,0,0,0,...section(1,[3,0x60,0,1,0x7f,0x60,1,0x7f,1,0x7f,0x60,1,0x7f,1,0x7e]),...section(3,[3,0,1,2]),...section(5,[1,1,1,1]),...section(7,[4,...exports.flatMap(([n,k,i])=>[...name(n),k,i])]),...section(10,[3,...bodies.flatMap(b=>[...leb(b.length),...b])])]);
+const e=(await WebAssembly.instantiate(fixture)).instance.exports,view=new DataView(e.memory.buffer);view.setUint32(0,4,true);
+const vm={vm_source_demand_groups:e.groups,vm_source_demand_group:e.group,vm_source_demand_word:e.word},bytes=await readFile(new URL('../../src/v2/web/source-demands.wasm',import.meta.url));
+const batch=await openBatchedSourceDemands(vm,8192,bytes),js=new SourceDemands(8192);let seed=3,count=0;const random=()=>{seed^=seed<<13;seed^=seed>>>17;seed^=seed<<5;return seed>>>0;};
+for(let round=0;round<1200;round++){const epoch=Math.floor(round/7)+1;for(let c=0;c<4;c++)view.setUint32(4+c*4,0,true);for(let i=0;i<8;i++){const group=random()%128,c=group>>>5;view.setUint32(4+c*4,view.getUint32(4+c*4,true)|(1<<(group&31)),true);view.setBigUint64(32+group*8,(BigInt(random())<<32n)|BigInt(random()),true);}
+ const expected=[];for(let c=0;c<4;c++){let banks=e.group(c)>>>0;while(banks){const g=c*32+31-Math.clz32(banks&-banks);banks=(banks&(banks-1))>>>0;let fresh=js.fresh(g,e.word(g),epoch);while(fresh){let low=Number(fresh&0xffffffffn)>>>0;if(low){const b=31-Math.clz32(low&-low);expected.push(g*64+b);fresh&=~(1n<<BigInt(b));}else{const high=Number(fresh>>32n)>>>0,b=31-Math.clz32(high&-high)+32;expected.push(g*64+b);fresh&=~(1n<<BigInt(b));}}}}
+ const n=batch.read(epoch);assert.deepEqual(Array.from(batch.ranks.subarray(0,n)),expected);count+=n;if(round===500){batch.reset();js.reset();}}
+view.setUint32(0,5,true);assert.throws(()=>batch.read(500),/observation/);view.setUint32(0,4,true);assert.throws(()=>batch.read(-1),RangeError);
+const corrupt=bytes.slice();corrupt[corrupt.length-1]^=1;await assert.rejects(openBatchedSourceDemands(vm,8192,corrupt),/identity/);
+const own=(await WebAssembly.instantiate(bytes,{source:{groups:e.groups,group:e.group,word:e.word}})).instance.exports;assert.equal(own.memory.buffer.byteLength,65536);assert.throws(()=>own.memory.grow(1),RangeError);
+console.log(JSON.stringify({status:'pass',rows:count,batches:1200,imports:'three readonly VM getters; no guest memory',stats:batch.stats(),cases:['same ordered ranks as JS','all banks/signed i64','epoch/reset','invalid provider metadata','corrupt helper refused','fixed 64 KiB memory']}));

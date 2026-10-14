@@ -71,6 +71,7 @@ async function boot(message){
   const provider=await artifact.read('vm',0,m.objects.vm.bytes),compiler=await artifact.read('compiler',0,m.objects.compiler.bytes);
   send('booted',{id:message.id,handle:1,architecture:'x86-64'});
   running=runMachine(reader,provider,compiler,readExtent,{extended:true,keepAlive:true,warmCuts:64,bootEntropy:entropy,generation:message.generation,
+    codeCache:'stamp',sourceMode:'batch',
     immutableImage:{address:'0x30000000',bytes:system.bytes},devices:owner,onConsole:consoleWrite,readInput:consume,idleWait:waitForClock,shouldClose:()=>closing,
     onProgress:p=>{flushConsole();send('progress',{id:pending,phase:'execute',label:commandActive?'Executing shell command':ready?'Linux is resident':'Starting Linux',detail:p.retired+' source instructions',profile:{...p,transport:owner.status()}});}})
     .then(result=>{if(!closing){const error=new Error('C machine stopped: '+JSON.stringify(result.nextGate,(_,v)=>typeof v==='bigint'?String(v):v));error.diagnostic=result;throw error;}return result;})

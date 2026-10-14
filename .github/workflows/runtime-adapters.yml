@@ -121,6 +121,12 @@ jobs:
           node data/oracle/check-service-observation.mjs
           node data/oracle/check-memory-budget.mjs
           node data/oracle/check-machine-yield.mjs
+          node data/oracle/check-compiled-modules.mjs
+          node data/oracle/check-prepared-code.mjs
+          node data/oracle/check-code-owners.mjs
+          node data/oracle/check-stamped-code.mjs
+          node data/oracle/check-source-demands.mjs
+          node data/oracle/check-source-demands-batch.mjs
           node data/oracle/check-console-readiness.mjs
           node data/oracle/check-site-hardlinks.mjs
           node data/oracle/check-browser-storage-failure-receipt-test.mjs

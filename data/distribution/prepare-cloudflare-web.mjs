@@ -70,9 +70,10 @@ for(const [name,row] of Object.entries(manifest.files)){
     objects['/'+name].rangeTransfers=transfers;
   }
 }
-// Separate hosted shell; the accepted Release's Web/runtime bytes stay intact.
+// Authenticate the accepted Linux bundle, then record each reviewed host overlay.
 await cp(path.join(repo,'src','v2','hosted'),path.join(dist,'os'),{recursive:true});
-const runtimeOverlays={};for(const name of ['machine-artifact.mjs','prepared-release.mjs','linux-worker.js']){
+const runtimeOverlays={};for(const name of ['machine-artifact.mjs','prepared-release.mjs','linux-worker.js',
+  'machine-runtime.mjs','machine-yield.mjs','stamped-code.mjs','source-demands.mjs','source-demands.wasm']){
   const bytes=await readFile(path.join(repo,'src','v2','web',name));await writeChanged(path.join(dist,'web',name),bytes);
   runtimeOverlays[name]={bytes:bytes.length,sha256:hash(bytes)};
 }
@@ -90,7 +91,8 @@ const deploymentCommit=execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encodin
 await writeFile(path.join(dist,'web-bundle.json'),raw);
 await writeChanged(path.join(work,'selected-source.txt'),path.basename(source));
 const config={releaseSha256:pin,webSourceCommit:sourceCommit,runtimeOverlayCommit:deploymentCommit,archiveSha256:archiveHash,redirectQm:routing.redirectQm,
-  versionPrefix:`/releases/${pin}`,files:['/web-bundle.json',...hostedFiles.map(n=>'/os/'+n),...Object.keys(manifest.files).filter(n=>n!=='serve.mjs'&&n!=='web/_headers').map(n=>'/'+n)],legacyFiles,objects};
+  versionPrefix:`/releases/${pin}`,runtimeOverlayPaths:Object.keys(runtimeOverlays).map(n=>'/web/'+n),
+  files:[...new Set(['/web-bundle.json',...hostedFiles.map(n=>'/os/'+n),...Object.keys(runtimeOverlays).map(n=>'/web/'+n),...Object.keys(manifest.files).filter(n=>n!=='serve.mjs'&&n!=='web/_headers').map(n=>'/'+n)])],legacyFiles,objects};
 await writeChanged(path.join(repo,'data','distribution','cloudflare-release.generated.json'),JSON.stringify(config));
 const hostedFileIdentities={};for(const name of hostedFiles){const bytes=await readFile(path.join(dist,'os',name));hostedFileIdentities[name]={bytes:bytes.length,sha256:hash(bytes)};}
 await writeFile(path.join(dist,'deployment.json'),JSON.stringify({format:'length3-hosted-web-v1',deploymentCommit,

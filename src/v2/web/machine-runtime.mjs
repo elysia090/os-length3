@@ -3,11 +3,13 @@
 // guest instructions, resolve guest branches, or implement guest exceptions.
 import {CompiledModules} from './compiled-modules.mjs';
 import {PreparedCode} from './prepared-code.mjs';
+import {StampedCode} from './stamped-code.mjs';
 import {CutTrace} from './machine-trace.mjs';
 import {CompilerOutput} from './compiler-output.mjs';
 import {equal} from './assertion.mjs';
 import {CutProgress} from './cut-progress.mjs';
 import {MachineYield} from './machine-yield.mjs';
+import {SourceDemands,openBatchedSourceDemands} from './source-demands.mjs';
 import {memoryBudget,memoryGrowth} from './memory-budget.mjs';
 import {isMachineBarrier} from './machine-barrier.mjs';
 class Bytes extends Uint8Array {
@@ -28,10 +30,12 @@ assert.deepEqual = (a,b) => assert(JSON.stringify(a) === JSON.stringify(b),'star
 
 export async function runMachine(reader,providerBytes,compilerBytes,readExtent,
     {extended = false,onProgress = () => {},decompression,immutableImage,warmCuts=1,
-      utcSeconds = BigInt(Math.floor(Date.now()/1000)),idleWait,onCompilerRefusal,readInput,keepAlive=false,bootEntropy,diagnostic=false,devices,onConsole=()=>{},shouldClose=()=>false,generation=9n} = {}) {
+      utcSeconds = BigInt(Math.floor(Date.now()/1000)),idleWait,onCompilerRefusal,readInput,keepAlive=false,bootEntropy,diagnostic=false,devices,onConsole=()=>{},shouldClose=()=>false,generation=9n,sourceDemandsFactory,sourceMode='legacy',codeCache='legacy',maximumCodeAliases=16384} = {}) {
   const startedAt=performance.now();
   const taskOpportunity=new MachineYield();
   assert(Number.isInteger(warmCuts) && warmCuts>=1 && warmCuts<=64,'bounded warm cut quantum');
+  assert(['legacy','filtered','batch'].includes(sourceMode),'source metadata mode');
+  assert(['legacy','stamp'].includes(codeCache),'source receipt cache mode');
   assert(typeof keepAlive==='boolean','explicit interactive lifetime');
   const read = async name => new Bytes(await reader(name));
   const header = await read('boot.header');
@@ -88,14 +92,14 @@ export async function runMachine(reader,providerBytes,compilerBytes,readExtent,
   // its nominal byte quota. Prefer unreferenced victims; if the hard limit
   // wins, discard every dependent construction key at that same boundary.
   // C source leases/table placements remain the sole execution authority.
-  let engines,prepared;
+  let engines,prepared,sourceVersionPages;
   function openCodeOwners(){
     engines=new CompiledModules(engineImports,{maximumEntries:8192,maximumBytes:4194304,
       onEvict:instance=>prepared.discardInstance(instance)});
-    prepared=new PreparedCode({maximumEntries:16384,maximumBytes:4194304,
-      retain:instance=>engines.retain(instance),release:instance=>engines.release(instance)});
+    const options={maximumEntries:16384,maximumBytes:4194304,
+      retain:instance=>engines.retain(instance),release:instance=>engines.release(instance)};
+    prepared=codeCache==='stamp'?new StampedCode({...options,maximumAliases:maximumCodeAliases,maximumPages:sourceVersionPages}):new PreparedCode(options);
   }
-  openCodeOwners();
   let compilerOutput = cc.compiler_arena_min();
   let compilerReport = compilerOutput + 65536;
   // Compiler output/stack and VM metadata are outside all guest mappings.
@@ -106,6 +110,7 @@ export async function runMachine(reader,providerBytes,compilerBytes,readExtent,
   const input = ((compilerReport + 80 + 4095) & ~4095)+524288;
   const rows = input + 8192;
   const versionOffset=input+24576,versionCount=capacity+32;
+  sourceVersionPages=versionCount;openCodeOwners();
   const directoryOffset=(versionOffset+versionCount*4+4095)&~4095;
   const branches = directoryOffset + capacity * 32;
   const base = (branches + (capacity - 1) * 16 + 4095) & ~4095;
@@ -176,7 +181,9 @@ export async function runMachine(reader,providerBytes,compilerBytes,readExtent,
   // directory and CPU context across async engine compilation/admission.
   const table = vm.__indirect_function_table, firstSlot = vm.vm_slot_min();
   const sourceCapacity = vm.vm_source_capacity(), installedSlots = new Map();
-  const demandedAfterMiss=new Uint32Array(sourceCapacity);
+  const demandedAfterMiss=new Float64Array(sourceCapacity);
+  const observeSources=sourceDemandsFactory??(sourceMode==='batch'?openBatchedSourceDemands:null);
+  const sourceDemands=observeSources?await observeSources(vm,sourceCapacity):sourceMode==='filtered'?new SourceDemands(sourceCapacity):null;
   table.grow(Math.max(0,firstSlot + sourceCapacity - table.length));
   let admissions = 0, retired = 0, emittedBytes = 0, borrowedCodeBytes = 0;
   const exceptions = [];
@@ -185,6 +192,9 @@ export async function runMachine(reader,providerBytes,compilerBytes,readExtent,
   const progress=new CutProgress(0); // One serialized lane, no per-cut allocation/history.
   let resourceGate;
   let engineMs = 0, coldMs = 0, executionMs = 0;
+  let deviceMs=0,reportMs=0;
+  async function handleDevices(result){const began=performance.now();
+    try{await devices.handle(result);}finally{deviceMs+=performance.now()-began;}}
   let supplyMs = 0, pageSupplies = 0, sourceExtentBytes = 0, quantumYields = 0;
   let clockEvents = 0, boundaryClockEvents = 0, deferredClockPolls = 0, sampledClockMs = 0;
   let idleEvents=0,idleNanoseconds=0n;
@@ -214,9 +224,12 @@ export async function runMachine(reader,providerBytes,compilerBytes,readExtent,
   let compilerEpoch=1,inputSequence=0n;
   const compilerReplacements=[];
   const rip = () => view.getBigUint64(base + 384,true);
+  const numericStamp=new Uint32Array(10);
   function sourceIdentity(entry,limit,generation){
     const at=base+2304;
     if(vm.vm_source_stamp(port,generation,at))return null;
+    if(codeCache==='stamp'){numericStamp[0]=Number(entry&4095n);numericStamp[1]=limit;
+      for(let word=0;word<8;word++)numericStamp[word+2]=view.getUint32(at+word*4,true);return numericStamp;}
     return `${entry&4095n}:${limit}:${view.getBigUint64(at,true)}:${view.getBigUint64(at+8,true)}:${view.getUint32(at+16,true)}:${view.getUint32(at+20,true)}:${view.getUint32(at+24,true)}:${view.getUint32(at+28,true)}`;
   }
   async function replaceCompiler(refusal){
@@ -241,6 +254,7 @@ export async function runMachine(reader,providerBytes,compilerBytes,readExtent,
     cc=replacement;compilerOutput=output;compilerReport=output+65536;
     compilerOutputWitness=new CompilerOutput(cold,compilerOutput,65536,compilerReport,memory);
     openCodeOwners();
+    sourceDemands?.reset();demandedAfterMiss.fill(0);
     assert.equal(vm.vm_source_versions_start(versionOffset,versionCount,machineGeneration),0);
     assert.equal(rip(),oldRip);assert.equal(view.getBigUint64(base+1128,true),oldRetired);
     compilerReplacements.push({epoch:++compilerEpoch,entry:refusal.entry,bytes:bytes.length,retired});return true;
@@ -270,6 +284,7 @@ export async function runMachine(reader,providerBytes,compilerBytes,readExtent,
     return {count:String(count),columns:['operation','rip','cr3','retired','rax','rdi','rsi','rdx','r10','r8','r9','nextRip'],rows,paths};
   }
   function reportProgress() {
+    const began=performance.now();
     reportedRetired=retired;reportedAdmissions=admissions;
     // Read-only diagnostics: neither a CPU snapshot nor a source retirement.
     // Admission/quantum progress also exposes work inside long instructions.
@@ -280,12 +295,15 @@ export async function runMachine(reader,providerBytes,compilerBytes,readExtent,
       console:consoleObservation(),
       sourceReuse:{hits:sourceHits,misses:sourceMisses,warmAdmissions,warmRuns,warmCompleted,capacity:sourceCapacity},engineReuse:engines.stats(),
       preparedCode:prepared.stats(),
+      sourceDemands:sourceDemands?.stats()??{mode:'legacy'},
       compilerOutput:compilerOutputWitness.stats(),
       sourceProfile:sourceProfile(),
       systemProfile:systemProfile(),
       devices:typeof vm.vm_device_profile==='function'?Object.fromEntries(['network','block'].map((name,id)=>[name,Array.from({length:10},(_,word)=>String(vm.vm_device_profile(id,word)))])):null,
       timingMs:{cold:coldMs,engine:engineMs,execution:executionMs,supply:supplyMs,admission:admissionMs,
+        taskYield:taskOpportunity.waitMs,devices:deviceMs,report:reportMs,
         elapsedCheck:performance.now()-startedAt}});
+    reportMs+=performance.now()-began;
   }
   async function supplyPhysical() {
     let status = vm.vm_page_prepare(port,pageRequest);
@@ -680,13 +698,23 @@ export async function runMachine(reader,providerBytes,compilerBytes,readExtent,
       // The C mask is a validated demand hint, never execution authority.
       // One host refresh per distinct cohort rank avoids per-cut Map churn.
       if(cutBudget>1){
+        if(typeof sourceDemands?.read==='function'){
+          const count=sourceDemands.read(sourceMisses);
+          for(let i=0;i<count;++i){const rank=sourceDemands.ranks[i];
+            assert(rank<sourceCapacity&&installedSlots.has(firstSlot+rank),'C demand needs its installed engine');
+            if(demandedAfterMiss[rank]!==sourceMisses){
+              engines.demand(installedSlots.get(firstSlot+rank));demandedAfterMiss[rank]=sourceMisses;
+            }
+          }
+        }else{
         const banked=typeof vm.vm_source_demand_banks==='function';
         const groupCount=typeof vm.vm_source_demand_groups==='function'?vm.vm_source_demand_groups():1;
         assert(Number.isInteger(groupCount)&&groupCount>0&&groupCount<=4,'bounded source demand groups');
         for(let cohort=0;cohort<groupCount;++cohort){
         let banks=groupCount>1?vm.vm_source_demand_group(cohort)>>>0:banked?vm.vm_source_demand_banks()>>>0:1;
         while(banks){const group=cohort*32+31-Math.clz32(banks&-banks);banks=(banks&(banks-1))>>>0;
-          const mask=banked?vm.vm_source_demand_word(group):vm.vm_source_demands();
+          const observedMask=banked?vm.vm_source_demand_word(group):vm.vm_source_demands();
+          const mask=sourceDemands?sourceDemands.fresh(group,observedMask,sourceMisses):observedMask;
           for(let bank=0;bank<2;++bank){
           let bits=Number(bank ? mask>>32n : mask&0xffffffffn)>>>0;
           while(bits){
@@ -697,6 +725,7 @@ export async function runMachine(reader,providerBytes,compilerBytes,readExtent,
             }
           }
           }
+        }
         }
         }
       }
@@ -720,7 +749,7 @@ export async function runMachine(reader,providerBytes,compilerBytes,readExtent,
       }
       if(result===42n||result===50n){
         retired+=progress.retired;trace.append(entry,progress.retired,rip(),result,view,base);
-        assert(devices,'explicit device transport');await devices.handle(result);return null;
+        assert(devices,'explicit device transport');await handleDevices(result);return null;
       }
       if(result===34n){
         // Internal C FERR/IRQ ownership, not a host floating-point exception
@@ -732,7 +761,7 @@ export async function runMachine(reader,providerBytes,compilerBytes,readExtent,
           if(!supplied)return {...resourceGate,entry:`0x${rip().toString(16)}`};
           boundary=vm.vm_boundary(port,generation);
         }
-        if(boundary===42n||boundary===50n){assert(devices,'explicit device transport');await devices.handle(boundary);return null;}
+        if(boundary===42n||boundary===50n){assert(devices,'explicit device transport');await handleDevices(boundary);return null;}
         if(boundary===1n){++externalInterrupts;return null;}
         if(!boundary)return {kind:'floating-wait',result:'34',entry:`0x${rip().toString(16)}`,
           awaiting:'guest interrupt enable/controller/handler; no fabricated #MF or retirement'};
@@ -964,12 +993,14 @@ export async function runMachine(reader,providerBytes,compilerBytes,readExtent,
       guestMemoryCallback:'C-Wasm, not JavaScript',sourceProjection:'C-MMU borrowed page, no JS virtual-to-physical mapping',
       emittedBytes,copiedCodeBytes:0,borrowedCodeBytes,engineReuse:engines.stats(),compilerOutput:compilerOutputWitness.stats(),
       preparedCode:prepared.stats(),codeRevisionBytes:versionCount*4,
+      sourceDemands:sourceDemands?.stats()??{mode:'legacy'},
       compilerEpoch,compilerReplacements,inputBytes:String(inputSequence),
       sourceProfile:sourceProfile(),
       warmCuts,admissionUnit:'supervisor source query/bind; C warm admissions counted separately',
       systemProfile:systemProfile(),
       sourceReuse:{hits:sourceHits,misses:sourceMisses,warmAdmissions,warmRuns,warmCompleted,capacity:sourceCapacity,metadataBytes:vm.vm_source_metadata_bytes(),sourcePayloadBytes:0},
       timingMs:{cold:coldMs,engine:engineMs,execution:executionMs,supply:supplyMs,admission:admissionMs,
+        taskYield:taskOpportunity.waitMs,devices:deviceMs,report:reportMs,
         elapsedCheck:performance.now()-startedAt},trace:trace.read(),relocationTrace,
       providerBytes:providerBytes.byteLength,compilerBytes:compilerBytes.byteLength,
       memoryBytes:memory.buffer.byteLength,coldMemoryBytes:0,

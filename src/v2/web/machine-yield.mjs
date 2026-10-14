@@ -5,7 +5,7 @@
 export class MachineYield {
   constructor({budgetMs=8,now=()=>performance.now(),pause}={}) {
     if(!Number.isFinite(budgetMs)||budgetMs<=0||typeof now!=='function'||pause!==undefined&&typeof pause!=='function')throw new TypeError('bounded task opportunity');
-    this.budgetMs=budgetMs;this.now=now;this.last=now();this.count=0;this.closed=false;this.pending=null;
+    this.budgetMs=budgetMs;this.now=now;this.last=now();this.count=0;this.waitMs=0;this.closed=false;this.pending=null;
     if(pause)this.pause=pause;
     else{
       this.pause=()=>new Promise(resolve=>{
@@ -18,7 +18,9 @@ export class MachineYield {
     }
   }
   due(){return this.now()-this.last>=this.budgetMs;}
-  async yield(){if(this.closed||this.pending)throw new Error('serialized live task owner');await this.pause();this.last=this.now();++this.count;}
+  async yield(){if(this.closed||this.pending)throw new Error('serialized live task owner');
+    const began=this.now();await this.pause();const finished=this.now();
+    this.waitMs+=finished-began;this.last=finished;++this.count;}
   close(){if(this.closed)return;this.closed=true;this.channel?.port1.close();this.channel?.port2.close();
     const waiting=this.pending;this.pending=null;waiting?.();}
 }

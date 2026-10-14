@@ -9,6 +9,7 @@ const entry='/os/index.html?'+new URLSearchParams({focus:'source',
   'linux-release-sha256':release.releaseSha256,'linux-workspace':'os-length3-0.1.0','linux-workspace-bytes':'33554432'});
 const publicPaths=new Set([...release.files,'/deployment.json']);
 const legacyPaths=new Set(release.legacyFiles);
+const runtimeOverlayPaths=new Set(release.runtimeOverlayPaths??[]);
 function finish(response,{immutable=false,mime=null,fixedBody}={}){
   const headers=new Headers(response.headers);for(const [k,v] of Object.entries(securityHeaders))headers.set(k,v);
   headers.set('Cache-Control',immutable?'public, max-age=31536000, immutable, no-transform':'no-store, no-transform');
@@ -35,6 +36,8 @@ export default {async fetch(request,env){
       return finish(new Response(null,{status:302,headers:{Location:next.pathname+next.search}}));}
     const versioned=url.pathname.startsWith(release.versionPrefix+'/');
     const pathname=versioned?url.pathname.slice(release.versionPrefix.length):url.pathname;
+    // Host overlays can change independently of the immutable Linux release.
+    const immutable=versioned&&!runtimeOverlayPaths.has(pathname)&&!pathname.startsWith('/os/')&&pathname!='/deployment.json';
     if(!publicPaths.has(pathname))return error(404,'Release file not found');
     const object=release.objects[pathname];
     if(object){
@@ -80,7 +83,7 @@ export default {async fetch(request,env){
     const mime=pathname.endsWith('.wasm')?'application/wasm':pathname.endsWith('.json')?'application/json':null;
     if(request.method==='GET'&&pathname.endsWith('.json')&&response.status===200){const bytes=new Uint8Array(await response.arrayBuffer());
       const headers=new Headers(response.headers);headers.set('Content-Encoding','identity');headers.set('Content-Length',String(bytes.length));
-      return finish(new Response(null,{status:200,headers}),{immutable:versioned,mime,fixedBody:bytes});}
-    return finish(response,{immutable:versioned,mime});
+      return finish(new Response(null,{status:200,headers}),{immutable,mime,fixedBody:bytes});}
+    return finish(response,{immutable,mime});
   }catch{return error(503,'Release delivery failed; retry this immutable release');}
 }};

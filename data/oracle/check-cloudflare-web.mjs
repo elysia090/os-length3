@@ -35,6 +35,16 @@ for(const [name,row] of Object.entries(release.objects)){
 const wasm=await get('/web/vm.wasm');assert.equal(wasm.headers.get('Content-Type'),'application/wasm');
 assert.equal(wasm.headers.get('Cross-Origin-Opener-Policy'),'same-origin');assert.equal(wasm.headers.get('Cross-Origin-Embedder-Policy'),'require-corp');
 const descriptor=await get(release.versionPrefix+'/artifact/release/release.json');assert.equal(sha(Buffer.from(await descriptor.arrayBuffer())),release.releaseSha256);
+const receipt=JSON.parse(await readFile(path.join(dist,'deployment.json'),'utf8'));
+for(const [name,row] of Object.entries(receipt.runtimeOverlays)){
+  for(const prefix of ['',release.versionPrefix]){
+    const reply=await get(prefix+'/web/'+name);assert.equal(reply.status,200);
+    const bytes=Buffer.from(await reply.arrayBuffer());assert.equal(bytes.length,row.bytes);assert.equal(sha(bytes),row.sha256);
+    assert.equal(reply.headers.get('Cache-Control'),'no-store, no-transform');
+    if(name.endsWith('.wasm'))assert.equal(reply.headers.get('Content-Type'),'application/wasm');
+  }
+}
+assert.equal((await get(release.versionPrefix+'/os/index.html')).headers.get('Cache-Control'),'no-store, no-transform');
 assert.equal((await get('/not-published.txt')).status,404);assert.equal((await get('/release-parts/private')).status,404);
 assert.equal((await get('/web/index.html',{method:'POST'})).status,405);
 const legacy=await worker.fetch(new Request('https://qm.length3.com/legacy/?focus=files'),env);assert.equal(legacy.status,200);
