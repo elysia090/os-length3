@@ -48,20 +48,30 @@ export default {async fetch(request,env){
         return finish(new Response(body,{status,headers}),{immutable:versioned});}
       // ASSETS may ignore Range. Public chunk assets bound each fetch to 64 KiB.
       if(status===206){const pieces=[];for(let at=start;at<=end;){const rank=Math.floor(at/65536),offset=rank*65536;
-        const last=Math.min(end,offset+65535),response=await env.ASSETS.fetch(new Request(new URL(object.rangeChunks[rank],url.origin)));
+        const last=Math.min(end,offset+65535),response=await env.ASSETS.fetch(new Request(new URL(object.rangeChunks[rank],url.origin),{headers:{'Accept-Encoding':'identity'}}));
         const bytes=new Uint8Array(await response.arrayBuffer());
         if(response.status!==200||bytes.length!==Math.min(65536,object.bytes-offset))throw new Error('Release chunk unavailable');
         pieces.push(bytes.subarray(at-offset,last-offset+1));at=last+1;}
         return finish(new Response(new Blob(pieces),{status,headers}),{immutable:versioned});}
+      if(globalThis.FixedLengthStream){
+        // Native stream piping avoids a JavaScript callback for every 64 KiB
+        // of a full 90 MB response, within the existing Worker's CPU budget.
+        const fixed=new FixedLengthStream(object.bytes);
+        (async()=>{for(const part of object.parts){
+          const response=await env.ASSETS.fetch(new Request(new URL(part,url.origin),{headers:{'Accept-Encoding':'identity'}}));
+          if(response.status!==200||!response.body)throw new Error('Release part unavailable');
+          await response.body.pipeTo(fixed.writable,{preventClose:true});
+        }const writer=fixed.writable.getWriter();await writer.close();writer.releaseLock();})().catch(e=>fixed.writable.abort(e).catch(()=>{}));
+        return finish(new Response(fixed.readable,{status,headers}),{immutable:versioned});
+      }
       let rank=0,reader;
       const body=new ReadableStream({async pull(controller){
         try{for(;;){if(!reader){if(rank===object.parts.length){controller.close();return;}
-          const response=await env.ASSETS.fetch(new Request(new URL(object.parts[rank++],url.origin)));
+          const response=await env.ASSETS.fetch(new Request(new URL(object.parts[rank++],url.origin),{headers:{'Accept-Encoding':'identity'}}));
           if(response.status!==200||!response.body)throw new Error('Release part unavailable');reader=response.body.getReader();}
           const {value,done}=await reader.read();if(done){reader.releaseLock();reader=null;}else {controller.enqueue(value);return;}}
         }catch(e){controller.error(e);}},async cancel(){await reader?.cancel();}});
-      let stream=body;if(globalThis.FixedLengthStream){const fixed=new FixedLengthStream(object.bytes);body.pipeTo(fixed.writable).catch(()=>{});stream=fixed.readable;}
-      return finish(new Response(stream,{status,headers}),{immutable:versioned});
+      return finish(new Response(body,{status,headers}),{immutable:versioned});
     }
     const target=new URL(pathname,url.origin);target.search=url.search;
     const response=await env.ASSETS.fetch(new Request(target,{method:request.method}));
