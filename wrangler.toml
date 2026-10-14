@@ -4,27 +4,32 @@
 #
 # This lives at the repository root because that is where Workers Builds looks
 # when the git integration runs, and because `name` has to match the connected
-# Worker script.  The product shell is plain static files in src/v2/web; its
-# authenticated object tree is the sibling src/v2/artifact.  `make site`
-# assembles both into ./dist, so deployment depends on nothing outside the
-# repository and there is no JavaScript build script.
+# Worker script. The build authenticates the pinned official Web Release ZIP
+# and stages its exact public files, plus transport parts, into ./dist.
 #
-# There is no Worker script: `assets` alone serves the site, so every request is
-# a static file and the whole product still runs on the visitor's machine.
+# The small delivery Worker redirects to the pinned Terminal and serves bounded
+# object ranges. Linux still runs entirely on the visitor's machine.
 
 name = "libqm-prototype"
+main = "data/distribution/cloudflare-web.mjs"
 compatibility_date = "2026-08-01"
 
 [build]
 # Runs before deploy, locally and in Workers Builds alike, so neither path
 # depends on a build command configured outside the repository.
-command = "make -C src/v2 site"
+command = "node data/distribution/prepare-cloudflare-web.mjs"
 
 [assets]
 directory = "./dist"
-# Unknown paths return the shell rather than a 404, so a shared link with a
-# fragment (Share Source) resolves to the tool.
-not_found_handling = "single-page-application"
+binding = "ASSETS"
+run_worker_first = true
+html_handling = "none"
+# Missing objects must be a 404, never an HTML shell pretending to be root data.
+not_found_handling = "none"
+
+[[routes]]
+pattern = "os.length3.com"
+custom_domain = true
 
 [[routes]]
 pattern = "qm.length3.com"

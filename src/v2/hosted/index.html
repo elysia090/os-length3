@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Length³ OS — ブラウザで動くLinux</title>
+<meta name="description" content="ブラウザで動くLinux。端末、コードと、このブラウザの作業ファイル。">
+<link rel="stylesheet" href="/os/styles.css">
+<header class="masthead"><a class="length-mark" href="https://length3.com">Length<sup>3</sup></a><span class="slash">/</span><h1>OS</h1><span class="edition">LINUX 0.1.0 · WEB PREVIEW</span><span id="user-state" role="status">Linuxは未起動</span></header>
+<main>
+<div class="workspace-title"><div><span class="eyebrow">YOUR WORKSPACE</span><h2>ブラウザで動くLinux。</h2></div><p>作業は、このブラウザに。<br>まず端末を開いて、いつものコマンドから。</p></div>
+<div class="workspace-layout"><aside class="place-rail"><span class="eyebrow">作業場所</span><h3>このブラウザ</h3><p>ローカル保存 · os.length3.com</p><h4>編集ファイル</h4><div id="place-files"></div><button id="rail-new">＋ 新しいファイル</button><div class="place-footer"><h4>Linux /root</h4><p>ファイルの確認と操作は端末で。</p><button id="rail-terminal">ここでターミナルを開く</button><h4>遠隔ストレージ</h4><p>未接続</p></div></aside><div class="work-area">
+<nav aria-label="作業先"><button data-surface="terminal" aria-current="page">01 <span>Terminal</span></button><button data-surface="playground">02 <span>Playground</span></button><button data-surface="files">03 <span>Files</span></button></nav>
+<section id="terminal" aria-label="Linux Terminal">
+  <div class="surface-head"><div><h3>Terminal</h3><p>Linux shell · 1行ずつコマンドを送信</p></div><div class="actions"><button id="start">Linuxを起動</button><button id="btn-shell-close" disabled>保存して閉じる</button><button id="btn-shell-resume" disabled>保存から起動</button></div></div>
+  <div class="terminal-meta"><span id="shell-state"><i></i> idle</span><button id="clear">表示を消去</button></div>
+  <div class="shell-terminal"><pre id="shell-out" tabindex="0">ここにLinuxの出力が表示されます。
+
+初回は約96 MBを取得します。起動には数分かかることがあります。
+Linux内の作成ファイルは「保存して閉じる」でこのブラウザに保存されます。
+</pre><div class="input-line"><span aria-hidden="true">$</span><input id="shell-in" aria-label="Linux shell入力" placeholder="Linuxを起動すると入力できます" autocomplete="off" autocapitalize="off" spellcheck="false" disabled><button id="send" disabled>送信 ↵</button></div></div>
+  <div class="under-surface"><p id="save-state">保存先：この端末のブラウザ · 遠隔同期は未接続</p><details><summary>起動の診断を開く</summary><section id="boot-transfer" hidden aria-live="off"><span id="boot-transfer-label">Linux起動</span> <span id="boot-transfer-value"></span><div id="boot-transfer-track" role="progressbar" aria-labelledby="boot-transfer-label" aria-valuemin="0" aria-valuemax="100"><span id="boot-transfer-fill"></span></div><p><span id="boot-transfer-phase"></span><br><span id="boot-transfer-bytes"></span></p></section><p>shellの準備とサービスの準備は別の状態です。外部ネットワークへの接続権限は含まれません。</p></details></div>
+</section>
+<section id="playground" aria-label="Playground" hidden>
+  <div class="surface-head"><div><h3>Playground</h3><p>編集ファイル · Linux端末でコンパイルして実行</p></div><button id="compile">Run ↗</button></div>
+  <div class="editor-heading"><label>ファイル名 <input id="filename" value="hello.c" aria-label="編集ファイル名"></label><span id="editor-save" role="status"></span></div>
+  <textarea id="source" aria-label="Cプログラムの編集" spellcheck="false" autocomplete="off">#include &lt;stdio.h&gt;
+int main(void) {
+    puts("Hello, Length³ OS.");
+    return 0;
+}
+</textarea><p class="note">実行結果はLinuxのTerminalに表示されます。QMの最小化エンジンは<a href="https://qm.length3.com/legacy/?focus=source">旧Playground</a>から利用できます。</p>
+</section>
+<section id="files" aria-label="Files" hidden>
+  <div class="surface-head"><div><h3>Files</h3><p>このブラウザに保存する編集ファイル</p></div><div class="actions"><button id="new-file">新しいファイル</button><button id="export-files">書き出す</button><label class="button">読み込む<input id="import-files" type="file" accept="application/json,.json" hidden></label></div></div>
+  <div id="file-list"></div><p id="file-status" role="status"></p>
+  <div class="file-scope"><h4>Linux内のファイル</h4><p>上の一覧は編集ファイルです。Linuxのディレクトリ木とは別に保存されます。Linux内は端末から <code>ls /root</code> などで確認できます。</p><button id="list-linux" disabled>Terminalで /root を見る</button></div>
+</section>
+</div></div><footer><span>ブラウザのデータ削除で保存も失われます。作業を終える前に保存して閉じてください。</span><a href="https://qm.length3.com/legacy/?focus=files">旧qmのファイルを回収 ↗</a></footer>
+</main><script type="module" src="/os/app.mjs"></script>
+</html>

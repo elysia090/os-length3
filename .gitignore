@@ -9,6 +9,7 @@ src/v2/data/out/
 /data/toolchain/build/
 /temp/
 /.tmp/
+/data/distribution/cloudflare-release.generated.json
 /.pytest_cache/
 /.uv-cache/
 /*.obj
