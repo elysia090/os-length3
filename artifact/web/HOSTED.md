@@ -5,11 +5,18 @@ GitHub Workers Builds connection. The root opens the Terminal, with the
 independently pinned `7ae8a85018b49656c8212e4984baf9500656ee3a2ef642a149752954924729f9`
 release and the normal `os-length3-0.1.0` origin-local workspace.
 
-The Worker build downloads the official Web ZIP from `os-length3-linux-v0.1.0`,
+The Worker build reads the official Web ZIP from `os-length3-linux-v0.1.0`,
 verifies its externally recorded archive and manifest hashes, and verifies all
 63 packaged files. Its UI code is the accepted `90ea11b242be33c9daf2a35808f5089fca0f9c08`
 snapshot. It does not replace that snapshot with a newer UI paired with an old
 root, rebuild signed packages, introduce credentials, or configure cloud sync.
+
+The Release repository is private. Workers Builds' GitHub connection reads the
+source checkout but does not authorize a separate anonymous Release download.
+The exact authenticated 94,990,744-byte Web ZIP is therefore retained as a
+deployment input in `artifact/web/`, through the existing private Git source
+connection. It has the same `a2232ac0…` archive identity; no new download token is
+provisioned. Native bundles and private/browser credentials are not added.
 
 Cloudflare assets have a 25 MiB individual-file limit. The 90,337,280-byte system
 object has six parts of at most 16 MiB for streaming full reads, and separate

@@ -17,7 +17,11 @@ await mkdir(work,{recursive:true});await mkdir(source,{recursive:true});await mk
 let zip;
 if(process.env.LENGTH3_WEB_ZIP)zip=await readFile(process.env.LENGTH3_WEB_ZIP);
 else {
-  try{zip=await readFile(path.join(work,archiveName));}catch(error){if(error.code!=='ENOENT')throw error;}
+  // The repository/Release is private. Workers Builds can read its checkout,
+  // but has no independent Release-download credential. Carry the approved
+  // exact archive through that existing GitHub source connection.
+  try{zip=await readFile(path.join(repo,'artifact','web',archiveName));}catch(error){if(error.code!=='ENOENT')throw error;}
+  if(!zip)try{zip=await readFile(path.join(work,archiveName));}catch(error){if(error.code!=='ENOENT')throw error;}
   if(!zip){const response=await fetch(releaseUrl);if(!response.ok)throw new Error(`Release download HTTP ${response.status}`);
     zip=Buffer.from(await response.arrayBuffer());}
 }
