@@ -1,6 +1,6 @@
 // Deploy the authenticated Release ZIP, without rebuilding or mixing Linux roots.
 import {createHash} from 'node:crypto';
-import {mkdir,readFile,writeFile,copyFile,cp,readdir} from 'node:fs/promises';
+import {mkdir,mkdtemp,readFile,writeFile,copyFile,cp,readdir} from 'node:fs/promises';
 import {execFileSync} from 'node:child_process';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -11,7 +11,7 @@ const manifestHash='8fb8f6fdd672817d30dd2f2136b6a666ecd610021f383a1ff4be9dbf8adc
 const sourceCommit='90ea11b242be33c9daf2a35808f5089fca0f9c08';
 const archiveName=`os-length3-linux-0.1.0-web-${pin}.zip`;
 const releaseUrl=`https://github.com/elysia090/libqm-prototype/releases/download/os-length3-linux-v0.1.0/${archiveName}`;
-const work=path.join(repo,'temp','cloudflare-web',pin),source=path.join(work,'source');
+const work=path.join(repo,'temp','cloudflare-web',pin);let source=path.join(work,'source');
 const dist=path.join(repo,'dist'),hash=b=>createHash('sha256').update(b).digest('hex');
 await mkdir(work,{recursive:true});await mkdir(source,{recursive:true});await mkdir(dist,{recursive:true});
 let zip;
@@ -27,8 +27,18 @@ else {
 }
 if(zip.length!==94990744||hash(zip)!==archiveHash)throw new Error('Release Web ZIP identity differs');
 const archive=path.join(work,archiveName);await writeFile(archive,zip);
-execFileSync(process.platform==='win32'?'tar.exe':'unzip',process.platform==='win32'
-  ?['-xf',archive,'-C',source]:['-q','-o',archive,'-d',source],{stdio:'inherit'});
+// Reuse only fully authenticated unpacked bytes. Reconstruct an invalid cache
+// in a new directory, without overwriting a concurrent reader or user files.
+try{const pointer=(await readFile(path.join(work,'selected-source.txt'),'utf8')).trim();
+  if(!/^source(?:-[A-Za-z0-9]+)?$/.test(pointer))throw new Error('invalid unpacked cache pointer');source=path.join(work,pointer);
+}catch(e){if(e.code!=='ENOENT')throw e;}
+let complete=false;try{const cached=await readFile(path.join(source,'web-bundle.json'));
+  if(hash(cached)===manifestHash){complete=true;for(const [name,row] of Object.entries(JSON.parse(cached).files)){
+    const bytes=await readFile(path.join(source,name));if(bytes.length!==row.bytes||hash(bytes)!==row.sha256){complete=false;break;}}}
+}catch{complete=false;}
+if(!complete){source=await mkdtemp(path.join(work,'source-'));
+  execFileSync(process.platform==='win32'?'tar.exe':'unzip',process.platform==='win32'
+    ?['-xf',archive,'-C',source]:['-q','-o',archive,'-d',source],{stdio:'inherit'});}
 const raw=await readFile(path.join(source,'web-bundle.json'));
 if(hash(raw)!==manifestHash)throw new Error('Web bundle manifest identity differs');
 const manifest=JSON.parse(raw);
@@ -55,10 +65,17 @@ for(const [name,row] of Object.entries(manifest.files)){
       const chunkName=`release-chunks/${identity}.object`;await mkdir(path.dirname(path.join(dist,chunkName)),{recursive:true});
       await writeChanged(path.join(dist,chunkName),chunk);rangeChunks.push('/'+chunkName);}
     objects['/'+name].rangeChunks=rangeChunks;
+    const transfers=[];for(let at=0;at<bytes.length;at+=1048576){const transfer=bytes.subarray(at,at+1048576),transferName=`release-transfers/${hash(transfer)}.object`;
+      await mkdir(path.dirname(path.join(dist,transferName)),{recursive:true});await writeChanged(path.join(dist,transferName),transfer);transfers.push('/'+transferName);}
+    objects['/'+name].rangeTransfers=transfers;
   }
 }
 // Separate hosted shell; the accepted Release's Web/runtime bytes stay intact.
 await cp(path.join(repo,'src','v2','hosted'),path.join(dist,'os'),{recursive:true});
+const runtimeOverlays={};for(const name of ['machine-artifact.mjs','prepared-release.mjs']){
+  const bytes=await readFile(path.join(repo,'src','v2','web',name));await writeChanged(path.join(dist,'web',name),bytes);
+  runtimeOverlays[name]={bytes:bytes.length,sha256:hash(bytes)};
+}
 await cp(path.join(repo,'src','v2','web'),path.join(dist,'legacy-ui'),{recursive:true});
 for(const name of ['compiler','vm','postlink-compiler'])await cp(path.join(repo,'artifact',name),path.join(dist,'legacy-ui','artifact',name),{recursive:true});
 await copyFile(path.join(repo,'artifact','index.json'),path.join(dist,'legacy-ui','artifact','index.json'));
@@ -68,15 +85,17 @@ async function listFiles(root,prefix=''){const out=[];for(const dirent of await 
   const name=prefix+dirent.name;if(dirent.isDirectory())out.push(...await listFiles(path.join(root,dirent.name),name+'/'));else if(dirent.isFile())out.push(name);}return out;}
 const hostedFiles=await listFiles(path.join(dist,'os')),legacyFiles=await listFiles(path.join(dist,'legacy-ui'));
 const routing=JSON.parse(await readFile(path.join(repo,'data','distribution','hosted-routing.json'),'utf8'));
+const deploymentCommit=execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8'}).trim();
 // Only this independently approved bundle's public files are addressable.
 await writeFile(path.join(dist,'web-bundle.json'),raw);
-const config={releaseSha256:pin,webSourceCommit:sourceCommit,archiveSha256:archiveHash,redirectQm:routing.redirectQm,
+await writeChanged(path.join(work,'selected-source.txt'),path.basename(source));
+const config={releaseSha256:pin,webSourceCommit:sourceCommit,runtimeOverlayCommit:deploymentCommit,archiveSha256:archiveHash,redirectQm:routing.redirectQm,
   versionPrefix:`/releases/${pin}`,files:['/web-bundle.json',...hostedFiles.map(n=>'/os/'+n),...Object.keys(manifest.files).filter(n=>n!=='serve.mjs'&&n!=='web/_headers').map(n=>'/'+n)],legacyFiles,objects};
 await writeChanged(path.join(repo,'data','distribution','cloudflare-release.generated.json'),JSON.stringify(config));
-const deploymentCommit=execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8'}).trim();
 const hostedFileIdentities={};for(const name of hostedFiles){const bytes=await readFile(path.join(dist,'os',name));hostedFileIdentities[name]={bytes:bytes.length,sha256:hash(bytes)};}
 await writeFile(path.join(dist,'deployment.json'),JSON.stringify({format:'length3-hosted-web-v1',deploymentCommit,
-  hostedShellCommit:deploymentCommit,hostedFiles:hostedFileIdentities,webSourceCommit:sourceCommit,releaseSha256:pin,archiveSha256:archiveHash,roles,
+  hostedShellCommit:deploymentCommit,hostedFiles:hostedFileIdentities,runtimeOverlayCommit:deploymentCommit,runtimeOverlays,
+  webSourceCommit:sourceCommit,releaseSha256:pin,archiveSha256:archiveHash,roles,
   persistence:'browser-origin IndexedBlockStore',cloudSynchronization:false,source:releaseUrl},null,2)+'\n');
 console.log(JSON.stringify({status:'prepared',deploymentCommit,releaseSha256:pin,webSourceCommit:sourceCommit,
   checkedFiles:Object.keys(manifest.files).length,systemParts:objects['/artifact/release/system.object'].parts.length}));

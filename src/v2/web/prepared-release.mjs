@@ -21,7 +21,16 @@ async function cache(){
           fail('occupied immutable release body differs; retained');return;}}
         else s.add(bytes.slice(),key);done(true);
       };
-    });}};
+    });},putChunks(rows){
+      const unique=new Map();for(const [key,bytes] of rows){const previous=unique.get(key);
+        if(previous&&(previous.length!==bytes.length||!previous.every((v,i)=>v===bytes[i])))throw new Error('duplicate immutable chunk differs');unique.set(key,bytes);}
+      return transaction('chunks',true,(s,done,fail)=>{
+        for(const [key,bytes] of unique){const r=s.get(key);r.onsuccess=()=>{
+          if(r.result){const old=new Uint8Array(r.result);if(old.length!==bytes.length||!old.every((v,i)=>v===bytes[i])){fail('occupied immutable release body differs; retained');return;}}
+          else s.add(bytes.slice(),key);
+        };}done(true);
+      });
+    }};
 }
 export async function prepareMachineRelease(url,pin,{onProgress=()=>{}}={}){
   const artifact=await openMachineArtifact(url,pin);let store;
@@ -29,8 +38,15 @@ export async function prepareMachineRelease(url,pin,{onProgress=()=>{}}={}){
     store=await cache();
     let completed=0,total=names.reduce((n,name)=>n+artifact.manifest.objects[name].bytes,0);
     for(const name of names){const row=artifact.manifest.objects[name],whole=new Uint8Array(row.bytes);
-      for(let at=0;at<row.bytes;at+=65536){const n=Math.min(65536,row.bytes-at),bytes=await artifact.read(name,at,n);
-        whole.set(bytes,at);await store.put('chunks',row.chunks[at/65536],bytes);completed+=n;onProgress({completed,total,name});}
+      let next=0,failure=null;const transferBytes=1048576;
+      await Promise.all(Array.from({length:Math.min(4,Math.ceil(row.bytes/transferBytes))},async()=>{
+        while(!failure&&next<row.bytes){const at=next,n=Math.min(transferBytes,row.bytes-at);next+=n;
+          try{const bytes=await artifact.readTransfer(name,at,n),chunks=[];
+            for(let done=0;done<n;done+=65536)chunks.push([row.chunks[(at+done)/65536],bytes.subarray(done,Math.min(n,done+65536))]);
+            await store.putChunks(chunks);whole.set(bytes,at);completed+=n;onProgress({completed,total,name});
+          }catch(error){failure??=error;}
+        }
+      }));if(failure)throw failure;
       if(await digest(whole)!==row.sha256)throw new Error('prepared release whole-object identity differs');
     }
     // An interrupted preparation leaves unselected chunks. Its descriptor is

@@ -4,7 +4,7 @@ export const securityHeaders={
   'Cross-Origin-Opener-Policy':'same-origin','Cross-Origin-Embedder-Policy':'require-corp',
   'Cross-Origin-Resource-Policy':'same-origin',
 };
-const entry='/os/index.html?'+new URLSearchParams({focus:'terminal',
+const entry='/os/index.html?'+new URLSearchParams({focus:'source',
   'linux-release':`..${release.versionPrefix}/artifact/release/release.json`,
   'linux-release-sha256':release.releaseSha256,'linux-workspace':'os-length3-0.1.0','linux-workspace-bytes':'33554432'});
 const publicPaths=new Set([...release.files,'/deployment.json']);
@@ -13,6 +13,7 @@ function finish(response,{immutable=false,mime=null,fixedBody}={}){
   const headers=new Headers(response.headers);for(const [k,v] of Object.entries(securityHeaders))headers.set(k,v);
   headers.set('Cache-Control',immutable?'public, max-age=31536000, immutable, no-transform':'no-store, no-transform');
   headers.set('X-Length3-Release',release.releaseSha256);headers.set('X-Length3-Web-Commit',release.webSourceCommit);
+  headers.set('X-Length3-Runtime-Commit',release.runtimeOverlayCommit??release.webSourceCommit);
   if(mime)headers.set('Content-Type',mime);
   return new Response(fixedBody??response.body,{status:response.status,headers,encodeBody:'manual'});
 }
@@ -39,7 +40,7 @@ export default {async fetch(request,env){
     if(object){
       let start=0,end=object.bytes-1,status=200;const range=request.headers.get('Range');
       if(range){const match=/^bytes=(\d+)-(\d+)$/.exec(range);start=match?Number(match[1]):-1;end=match?Number(match[2]):-1;
-        if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||end<start||end>=object.bytes||end-start+1>65536)
+        if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||end<start||end>=object.bytes||end-start+1>1048576)
           return error(416,'Exact bounded Range required',{'Content-Range':`bytes */${object.bytes}`});status=206;}
       const headers={'Content-Type':'application/octet-stream','Content-Length':String(end-start+1),
         'Accept-Ranges':'bytes','ETag':`"${object.sha256}"`};
@@ -47,10 +48,11 @@ export default {async fetch(request,env){
       if(request.method==='HEAD'){const body=globalThis.FixedLengthStream?new FixedLengthStream(end-start+1).readable:null;
         return finish(new Response(body,{status,headers}),{immutable:versioned});}
       // ASSETS may ignore Range. Public chunk assets bound each fetch to 64 KiB.
-      if(status===206){const pieces=[];for(let at=start;at<=end;){const rank=Math.floor(at/65536),offset=rank*65536;
-        const last=Math.min(end,offset+65535),response=await env.ASSETS.fetch(new Request(new URL(object.rangeChunks[rank],url.origin),{headers:{'Accept-Encoding':'identity'}}));
+      if(status===206){const pieces=[],unit=end-start+1>65536?1048576:65536,paths=unit===65536?object.rangeChunks:object.rangeTransfers;
+        for(let at=start;at<=end;){const rank=Math.floor(at/unit),offset=rank*unit;
+        const last=Math.min(end,offset+unit-1),response=await env.ASSETS.fetch(new Request(new URL(paths[rank],url.origin),{headers:{'Accept-Encoding':'identity'}}));
         const bytes=new Uint8Array(await response.arrayBuffer());
-        if(response.status!==200||bytes.length!==Math.min(65536,object.bytes-offset))throw new Error('Release chunk unavailable');
+        if(response.status!==200||bytes.length!==Math.min(unit,object.bytes-offset))throw new Error('Release chunk unavailable');
         pieces.push(bytes.subarray(at-offset,last-offset+1));at=last+1;}
         return finish(new Response(new Blob(pieces),{status,headers}),{immutable:versioned});}
       if(globalThis.FixedLengthStream){

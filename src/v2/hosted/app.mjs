@@ -6,14 +6,15 @@ const config=readLinuxConfig()??readLinuxConfig('?'+new URLSearchParams({'linux-
 let wasRunning=false,hasStarted=false,pendingRun=null;
 const key='length3.os.files.v1';let files=[],active=0,timer;
 function choose(name){
-  for(const section of ['terminal','playground','files'])$(section).hidden=section!==name;
+  for(const section of ['terminal','playground','files'])$(section).hidden=section!==name&&!(name==='playground'&&section==='terminal');
   for(const b of document.querySelectorAll('nav button')){if(b.dataset.surface===name)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');}
   const url=new URL(location);url.searchParams.set('focus',name);history.replaceState(null,'',url);
 }
 document.querySelectorAll('nav button').forEach((b,i,buttons)=>{b.onclick=()=>choose(b.dataset.surface);b.onkeydown=e=>{
   let n=e.key==='Home'?0:e.key==='End'?buttons.length-1:e.key==='ArrowRight'?(i+1)%buttons.length:e.key==='ArrowLeft'?(i+buttons.length-1)%buttons.length:null;
   if(n!==null){e.preventDefault();buttons[n].focus();choose(buttons[n].dataset.surface);}};});
-const focus=new URL(location).searchParams.get('focus');choose(['source','run','editor','playground'].includes(focus)?'playground':focus==='files'?'files':'terminal');
+const focus=new URL(location).searchParams.get('focus');choose(!focus||['source','run','editor','playground'].includes(focus)?'playground':focus==='files'?'files':'terminal');
+$('playground').after($('terminal'));let foldedBoot=false;
 $('start').onclick=()=>{if(hasStarted){const retry=new URL(location);retry.searchParams.set('boot','1');location.replace(retry);return;}hasStarted=true;$('start').disabled=true;terminal.start(config);};
 function update(){
   const label=$('shell-state').textContent,ready=!$('shell-in').disabled,phase=$('boot-transfer-phase').textContent,failed=$('shell-state').classList.contains('is-error');
@@ -23,10 +24,13 @@ function update(){
     :phase.includes('Saving')?'必要なデータを取得中':'Linuxを起動中';
   for(const id of ['send','list-linux'])$(id).disabled=!ready;
   $('compile').disabled=pendingRun!==null;
-  if(ready&&pendingRun){const text=pendingRun;pendingRun=null;$('compile').disabled=false;$('compile').textContent='Run ↗';command(text);}
+  if(ready&&pendingRun&&terminal.serviceReady){const text=pendingRun;pendingRun=null;$('compile').disabled=false;$('compile').textContent='Run ↗';$('shell-in').value=text;$('send').click();}
+  else if(ready&&pendingRun){$('compile').textContent='サービスを準備中…';
+    if(terminal.serviceStatus?.state==='failed'){pendingRun=null;$('compile').disabled=false;$('compile').textContent='Runを再試行';$('run-context').textContent='サービス初期化に失敗。診断を確認してください。Linuxの端末は利用できます。';}}
   if(failed&&pendingRun){pendingRun=null;$('compile').disabled=false;$('compile').textContent='Runを再試行';}
   if(failed){$('start').disabled=false;$('start').textContent='再試行';$('save-state').textContent='再試行はLinuxを起動し直します。編集ファイルと最後に保存したLinuxデータは保持されます。';}
   if(terminal.worker)wasRunning=true;
+  if(ready&&!foldedBoot){$('boot-console').textContent=$('shell-out').textContent;$('shell-out').replaceChildren();foldedBoot=true;}
   if(wasRunning&&!terminal.worker&&label.includes('idle')){$('save-state').textContent='保存しました。このブラウザから再び起動できます。';wasRunning=false;}
 }
 new MutationObserver(update).observe($('shell-state'),{subtree:true,childList:true,attributes:true});
@@ -43,12 +47,13 @@ function save(){clearTimeout(timer);if(!validName($('filename').value)){$('edito
 }
 try{const stored=JSON.parse(localStorage.getItem(key)||'null');if(Array.isArray(stored)&&stored.length&&stored.every(f=>validName(f.name)&&typeof f.source==='string'))files=stored;}catch{$('editor-save').textContent='保存を読み込めませんでした';}
 if(!files.length)files=[{name:$('filename').value,source:$('source').value}];
-function open(i){active=i;$('filename').value=files[i].name;$('source').value=files[i].source;choose('playground');}
+function open(i){active=i;$('filename').value=files[i].name;$('source').value=files[i].source;choose('playground');list();resizeSource();}
 function list(){const target=$('file-list'),rail=$('place-files');target.replaceChildren();rail.replaceChildren();files.forEach((f,i)=>{const row=document.createElement('div');row.className='file-row';
   const b=document.createElement('button');b.textContent=f.name;b.onclick=()=>{save();open(i);};const size=document.createElement('small');size.textContent=new TextEncoder().encode(f.source).length+' B · 編集ファイル';row.append(b,size);target.append(row);
-  const rb=document.createElement('button');rb.textContent=f.name;rb.onclick=()=>{save();open(i);};rail.append(rb);});}
+  const rb=document.createElement('button');rb.textContent=f.name;if(i===active)rb.setAttribute('aria-current','page');rb.onclick=()=>{save();open(i);list();resizeSource();};rail.append(rb);});}
 $('filename').value=files[0].name;$('source').value=files[0].source;list();
-for(const id of ['source','filename'])$(id).oninput=()=>{clearTimeout(timer);$('editor-save').textContent='保存中…';timer=setTimeout(save,300);};
+function resizeSource(){$('source').style.height='auto';$('source').style.height=Math.max(96,$('source').scrollHeight)+'px';}
+for(const id of ['source','filename'])$(id).oninput=()=>{clearTimeout(timer);$('editor-save').textContent='保存中…';timer=setTimeout(save,300);resizeSource();};
 $('new-file').onclick=()=>{save();let n=files.length+1;while(files.some(f=>f.name===`file-${n}.c`))n++;files.push({name:`file-${n}.c`,source:''});open(files.length-1);save();};
 $('export-files').onclick=()=>{save();const blob=new Blob([JSON.stringify({format:'length3-editor-files-v1',files},null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='length3-editor-files.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
 $('import-files').onchange=async e=>{try{const file=e.target.files[0];if(!file||file.size>4194304)throw new Error('4 MB以内の編集ファイル書き出しを選んでください');
@@ -60,10 +65,12 @@ $('import-files').onchange=async e=>{try{const file=e.target.files[0];if(!file||
 }catch(error){$('file-status').textContent='読み込めませんでした：'+error.message;}finally{e.target.value='';}};
 const quote=s=>"'"+s.replaceAll("'","'\\''")+"'";
 $('compile').onclick=()=>{save();if(!validName($('filename').value))return;const name='/root/'+$('filename').value;
+  if($('shell-out').textContent.trim()){const previous=document.createElement('pre');previous.textContent=$('shell-out').textContent;$('run-history').append(previous);$('shell-out').replaceChildren();}
+  $('run-context').textContent=$('filename').value+' — Linuxで実行';choose('playground');
   const text=`printf %s ${quote($('source').value)} > ${quote(name)} && gcc ${quote(name)} -o /root/playground && /root/playground`;
-  if(!$('shell-in').disabled){command(text);return;}
+  if(!$('shell-in').disabled&&terminal.serviceReady){$('shell-in').value=text;$('send').click();return;}
   if($('shell-state').classList.contains('is-error')){$('start').click();return;}
-  pendingRun=text;$('compile').disabled=true;$('compile').textContent='起動してRun…';choose('terminal');
+  pendingRun=text;$('compile').disabled=true;$('compile').textContent='起動してRun…';
   if(!hasStarted)$('start').click();else if(!terminal.worker&&!$('btn-shell-resume').disabled)$('btn-shell-resume').click();};
 $('list-linux').onclick=()=>command('ls -la /root');
 $('rail-new').onclick=()=>$('new-file').click();
@@ -71,5 +78,5 @@ $('rail-terminal').onclick=()=>{choose('terminal');if(!$('shell-in').disabled)co
 const shared=new URLSearchParams(location.hash.slice(1)).get('src');
 if(shared){try{const bytes=Uint8Array.from(atob(shared),c=>c.charCodeAt(0)),source=new TextDecoder('utf-8',{fatal:true}).decode(bytes);
   let n=1;while(files.some(f=>f.name===`shared-${n}.c`))n++;files.push({name:`shared-${n}.c`,source});open(files.length-1);save();}catch{$('file-status').textContent='共有リンクを読み込めませんでした';}}
-addEventListener('pagehide',()=>{save();terminal.release();},{once:true});update();
+addEventListener('pagehide',()=>{save();terminal.release();},{once:true});update();resizeSource();
 if(new URL(location).searchParams.get('boot')==='1')$('start').click();

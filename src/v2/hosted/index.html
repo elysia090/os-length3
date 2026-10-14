@@ -11,13 +11,13 @@
 <nav aria-label="作業先"><button data-surface="terminal" aria-current="page">01 <span>Terminal</span></button><button data-surface="playground">02 <span>Playground</span></button><button data-surface="files">03 <span>Files</span></button></nav>
 <section id="terminal" aria-label="Linux Terminal">
   <div class="surface-head"><div><h3>Terminal</h3><p>Linux shell · 1行ずつコマンドを送信</p></div><div class="actions"><button id="start">Linuxを起動</button><button id="btn-shell-close" disabled>保存して閉じる</button><button id="btn-shell-resume" disabled>保存から起動</button></div></div>
-  <div class="terminal-meta"><span id="shell-state"><i></i> idle</span><button id="clear">表示を消去</button></div>
+  <div id="run-history"></div><p id="run-context"></p><div class="terminal-meta"><span id="shell-state"><i></i> idle</span><button id="clear">表示を消去</button></div>
   <div class="shell-terminal"><pre id="shell-out" tabindex="0">ここにLinuxの出力が表示されます。
 
 初回は約96 MBを取得します。起動には数分かかることがあります。
 Linux内の作成ファイルは「保存して閉じる」でこのブラウザに保存されます。
 </pre><div class="input-line"><span aria-hidden="true">$</span><input id="shell-in" aria-label="Linux shell入力" placeholder="Linuxを起動すると入力できます" autocomplete="off" autocapitalize="off" spellcheck="false" disabled><button id="send" disabled>送信 ↵</button></div></div>
-  <div class="under-surface"><p id="save-state">保存先：この端末のブラウザ · 遠隔同期は未接続</p><details><summary>起動の診断を開く</summary><section id="boot-transfer" hidden aria-live="off"><span id="boot-transfer-label">Linux起動</span> <span id="boot-transfer-value"></span><div id="boot-transfer-track" role="progressbar" aria-labelledby="boot-transfer-label" aria-valuemin="0" aria-valuemax="100"><span id="boot-transfer-fill"></span></div><p><span id="boot-transfer-phase"></span><br><span id="boot-transfer-bytes"></span></p></section><p>shellの準備とサービスの準備は別の状態です。外部ネットワークへの接続権限は含まれません。</p></details></div>
+  <div class="under-surface"><p id="save-state">保存先：この端末のブラウザ · 遠隔同期は未接続</p><details><summary>起動の診断を開く</summary><section id="boot-transfer" hidden aria-live="off"><span id="boot-transfer-label">Linux起動</span> <span id="boot-transfer-value"></span><div id="boot-transfer-track" role="progressbar" aria-labelledby="boot-transfer-label" aria-valuemin="0" aria-valuemax="100"><span id="boot-transfer-fill"></span></div><p><span id="boot-transfer-phase"></span><br><span id="boot-transfer-bytes"></span></p></section><pre id="boot-console"></pre><p>shellの準備とサービスの準備は別の状態です。外部ネットワークへの接続権限は含まれません。</p></details></div>
 </section>
 <section id="playground" aria-label="Playground" hidden>
   <div class="surface-head"><div><h3>Playground</h3><p>編集ファイル · Linux端末でコンパイルして実行</p></div><button id="compile">Run ↗</button></div>

@@ -23,8 +23,10 @@ object has six parts of at most 16 MiB for streaming full reads, and separate
 content-addressed 64 KiB chunks for bounded reads. The delivery Worker serves
 the original bytes and original object identity, including exact bounded Range
 responses. ASSETS does not supply the required partial responses in the local
-runtime, so the Worker fetches at most two 64 KiB chunks per bounded Range. It
-never loads a whole 16 MiB part for that request. Full reads stream the parts.
+runtime. Small reads use at most two 64 KiB chunks; preparation uses separate
+1 MiB transfer blocks, with a bounded 1 MiB HTTP Range and up to four transfers
+in flight. It never loads a whole 16 MiB part for a bounded request. Full reads
+stream the parts through native Worker pipes.
 
 Versioned `/releases/<descriptor SHA-256>/artifact/release/` paths are immutable.
 The unversioned aliases, UI, and `/deployment.json` have `no-store` responses so
@@ -34,6 +36,23 @@ CORP and Wasm MIME are supplied for browser isolation. Unknown objects return
 The deployment receipt identifies the build commit and the accepted Web/root
 identities separately. The hosted shell is separate from the accepted runtime
 Web snapshot, and its exact file hashes are recorded in `/deployment.json`.
+
+The deployed transport overlays `machine-artifact.mjs` and
+`prepared-release.mjs` from the current source after authenticating the original
+ZIP. `/deployment.json` lists their effective SHA-256 identities and source
+commit separately from the archived Web snapshot. Root, VM/compiler objects,
+`vm.wasm` and the release descriptor keep their accepted identities. Browser
+preparation does not download or extract the ZIP. Each 1 MiB response is still
+authenticated as individual 64 KiB chunks. A strict IndexedDB transaction stores
+the verified group; the descriptor is published only after every role's whole
+hash and all durable transactions pass. Corruption/quota browser fixtures verify
+that a failed preparation does not publish its descriptor.
+
+Run retains the editor and puts actual output below it, folds boot logs into
+diagnostics, highlights the selected browser file and avoids a fixed empty
+terminal canvas. A queued compile waits for the real service DAG completion,
+as distinct from the earlier shell prompt. This avoids starting GCC during the
+initial s6 supervision transition; the exact failure is not hidden as success.
 
 The first deployment keeps `redirectQm` false while os startup/persistence is
 checked. Only after os qualification does a second deployment redirect the old

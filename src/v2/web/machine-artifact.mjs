@@ -30,5 +30,17 @@ export async function openMachineArtifact(url,expectedDigest){
     ++stats.fetches;stats.fetchedBytes+=n;while(cachedBytes+n>262144&&cache.size){const k=cache.keys().next().value;cachedBytes-=cache.get(k).length;cache.delete(k);}cache.set(key,raw);cachedBytes+=n;return raw;}
   async function read(name,at,n){const r=manifest.objects[name];if(!r||!Number.isSafeInteger(at)||!Number.isInteger(n)||at<0||n<1||n>4194304||at>r.bytes-n)throw new Error('bounded artifact extent');
     const out=new Uint8Array(n);for(let done=0;done<n;){const pos=at+done,raw=await chunk(name,Math.floor(pos/65536)),within=pos%65536,take=Math.min(n-done,raw.length-within);out.set(raw.subarray(within,within+take),done);done+=take;}return out;}
-  return {manifest,raw:raw.slice(),identity:expectedDigest,read,stats,close(){closed=true;cache.clear();cachedBytes=0;}};
+  async function readTransfer(name,at,n){const r=manifest.objects[name];
+    if(closed||!r||!Number.isSafeInteger(at)||at<0||at%65536||!Number.isInteger(n)||n<1||n>1048576||at>r.bytes-n)throw new Error('bounded release transfer');
+    const reply=await fetch(new URL(r.file,manifestUrl),{headers:{Range:`bytes=${at}-${at+n-1}`},cache:'force-cache'});
+    // Older standalone launchers have a 64KiB transfer limit. Their bytes still
+    // undergo the same chunk authentication through the original reader.
+    if(reply.status===416&&n>65536){await reply.body?.cancel();return read(name,at,n);}
+    if(reply.status!==206||reply.headers.get('Content-Range')!==`bytes ${at}-${at+n-1}/${r.bytes}`){await reply.body?.cancel();throw new Error('exact bounded delivery range required');}
+    const bytes=await boundedResponse(reply,n);
+    for(let done=0;done<n;done+=65536){const rank=(at+done)/65536,take=Math.min(65536,r.bytes-at-done);
+      if(await digest(bytes.subarray(done,done+take))!==r.chunks[rank])throw new Error('artifact chunk authentication failed');}
+    ++stats.fetches;stats.fetchedBytes+=n;return bytes;
+  }
+  return {manifest,raw:raw.slice(),identity:expectedDigest,read,readTransfer,stats,close(){closed=true;cache.clear();cachedBytes=0;}};
 }
