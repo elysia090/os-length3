@@ -18,6 +18,8 @@ PATH=/usr/bin:/usr/sbin:/bin:/sbin
 HOME=/root
 export PATH HOME
 if [ "${QM_NATIVE_TRACE:-0}" = 1 ]; then set -x; fi
+test -L /var/run
+test "$(readlink /var/run)" = ../run
 # Resolve the real offline service graph before development checks. This is
 # not PID 1 or boot validation, but it catches a broken installed CLI/DB pair
 # without constructing a second service database or reaching the network.

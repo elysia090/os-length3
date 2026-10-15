@@ -63,7 +63,34 @@ for specification in "${DISTRIBUTION_PATH_OWNERS[@]}"; do
   [[ -z $extra ]] || exit 1
   target=$work/roots/$owner$path
   if [[ ! -e $target && ! -L $target ]]; then
-    install -D -m 0644 /dev/null "$target"
+    if [[ $path == /var/run ]]; then
+      install -d -m 0755 "$(dirname -- "$target")"
+      ln -s ../run "$target"
+    elif [[ $path == /boot/initramfs ]]; then
+      # Keep the synthetic boot input valid for production newc normalization.
+      install -d -m 0755 "$(dirname -- "$target")"
+      python3 - "$target" <<'PY'
+from pathlib import Path
+import sys
+
+archive = bytearray()
+for inode, name, mode, body in [(1, ".", 0o40755, b""),
+                               (2, "init", 0o100755, b"#!/bin/sh\nexit 0\n"),
+                               (0, "TRAILER!!!", 0, b"")]:
+    encoded = name.encode() + b"\0"
+    fields = [inode, mode, 0, 0, 1, 0, len(body), 0, 0, 0, 0, len(encoded), 0]
+    archive += b"070701" + b"".join(f"{value:08x}".encode() for value in fields)
+    archive += encoded
+    archive += b"\0" * (-len(archive) % 4)
+    archive += body
+    archive += b"\0" * (-len(archive) % 4)
+archive += b"\0" * (-len(archive) % 512)
+with Path(sys.argv[1]).open("xb") as output:
+    output.write(archive)
+PY
+    else
+      install -D -m 0644 /dev/null "$target"
+    fi
   fi
 done
 manifest=$(bash "$here/emit-package-set.sh" "$work" \
@@ -82,6 +109,26 @@ expect_publication_rejection() {
     exit 1
   fi
 }
+
+# Ownership alone cannot prove the runtime layout. Each wrong representation
+# must fail even with the same installed owner and unchanged signed repository.
+runtime_link=$output/root/var/run
+[[ -L $runtime_link && $(readlink -- "$runtime_link") == ../run ]]
+rm -- "$runtime_link"
+expect_publication_rejection 'an absent runtime compatibility link'
+printf 'not a link\n' >"$runtime_link"
+expect_publication_rejection 'a regular file at the runtime link coordinate'
+rm -- "$runtime_link"
+mkdir "$runtime_link"
+expect_publication_rejection 'a separate persistent runtime directory'
+rmdir -- "$runtime_link"
+for target in /run ../tmp ../../run; do
+  ln -s "$target" "$runtime_link"
+  expect_publication_rejection "a noncanonical runtime link: $target"
+  rm -- "$runtime_link"
+done
+ln -s ../run "$runtime_link"
+bash "$here/check-package-publication.sh" "$output" >/dev/null
 
 # These are the four distinct authorities checked by publication: filesystem
 # ownership, solver metadata, trigger state, and lifecycle scripts. Keep a real

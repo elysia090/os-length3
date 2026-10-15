@@ -144,7 +144,7 @@ configure_install "$mdevd_source" "$mdevd_root" \
   --with-lib="$skalibs_root/usr/lib"
 
 publication_key=$(printf '%s\n' "$recipe_key" "$service_key" \
-  'component-linked-init-package-set-v3' | \
+  'component-linked-init-package-set-v4-runtime-link' | \
   sha256sum | cut -d' ' -f1)
 publication=$build/$publication_key
 candidate=$publication/root.partial
@@ -173,7 +173,12 @@ if [[ ! -f $publication/.complete ]]; then
   done
   service_root=$prepared_root/base-services
   install -d -m 0755 "$service_root/usr/libexec/system"
-for script in init boot console halt ready network; do
+  # Legacy runtime users and /run share one tmpfs. Publish the compatibility
+  # link as package payload, before optimization, signing and installation;
+  # do not create another persistent PID directory in a boot/install script.
+  install -d -m 0755 "$service_root/var"
+  ln -s ../run "$service_root/var/run"
+  for script in init boot console halt ready network; do
     install -m 0755 "$here/boot/$script" "$service_root/usr/libexec/system/$script"
   done
   compiled=$service_root/etc/s6-rc/compiled/current

@@ -36,6 +36,41 @@ uses the fixed init and official kernel recipes. Host readback verifies the
 candidate bytes/digests. Candidates are diagnostic, not signed-package release
 updates or browser acceptance; installed package signatures are not rewritten.
 
+`--guest-check=data/oracle/check-dhcp-publication.sh` rebuilds the pinned
+official dhcpcd and tests original/current-postlink ELFs through actual
+privilege-separated DHCP packet dispatch. Its TEST hook must report the
+isolated oracle's fresh OFFER, interface, address and subnet, not merely exit
+zero. A saved bootstrap lease is moved into the disposable test workspace
+before each role: official TEST mode exits on OFFER during discovery, whereas
+an old ACK can select the distinct reboot path. ACK/address/route/DNS
+installation must be checked separately with the normal daemon.
+In a normally booted browser guest, run `browser-dhcp-check.sh ELF SHA256`
+against an independently pinned candidate in the test workspace. Retain the
+complete guest output and the production NIC's received-frame counter. Test
+mode does not apply routes/DNS, prove HTTPS or publish an updated package.
+`browser-dhcp-normal.sh ELF SHA256` separately requires normal oneshot exit0,
+the saved ACK's exact fields, the actual Linux address/default route and the
+official resolver hook's DNS entry. The TEST gate preserves an old lease out
+of its coordinate while testing discovery and restores it without overwriting
+a concurrently created lease. Never run these gates against a live daemon.
+
+`--guest-check=data/oracle/check-runtime-publication.sh` runs an actual signed
+APK publication fixture with the pinned bootstrap apk, including six negative
+representations of the package-owned `/var/run -> ../run` compatibility link.
+The base-services producer owns that link before packaging, not in a boot or
+post-install mutation. The synthetic command payloads test publication policy,
+not the production commands or a republished distribution.
+Include `--upstream=OPENSSL` when preparing its source archive: the independent
+CPU image has the library/development files but not the OpenSSL CLI. The gate
+builds the pinned official CLI for its disposable test-only signing key; it
+does not replace signatures with a helper or weaken the installed trust root.
+
+`--guest-check=data/oracle/check-trace-userland.sh` builds the test-only ptrace
+observer and checks child exits0/7, a real SIGSEGV139 and invalid arguments2.
+It exports an independently identified ELF for browser fault observation.
+`trace-userland.c --fault-only PROGRAM ...` omits the verbose syscall/single-
+step stream without changing child fault forwarding or the bounded stop limit.
+
 `check-entry-regions.mjs COMPILER.WASM` invokes the actual emitted public cut
 ABI and compares exact interval legality, both orders, alignment, adjacency,
 overlap and u32-wrap edges. Invalid calls must return before any import or

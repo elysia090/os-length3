@@ -282,6 +282,62 @@ This native packet witness does not repair the installed package or substitute
 for browser DHCP. Browser candidate execution and optimize-before-package
 publication remain separately required.
 
+The earlier tightened gate also required `interface=eth0`, `protocol=dhcp`,
+`reason=TEST`, ACK message type5 and the oracle's exact address/subnet.
+Both independently runnable ELFs pass in101295ms with source archive
+`e70b3b5b35c850697c578fa4bd11439556de1ad130e43f7a612e710efc841ec8`,
+receipt `temp/dhcp-publication-oracle-1011c/serial.log`.
+These are native oracle observations, not browser results.
+The bootstrap's saved lease selected the distinct reboot/ACK path in this
+run; it did not establish a fresh-discovery TEST witness.
+
+The current gate preserves that bootstrap file outside the lease coordinate
+before each role. Official TEST mode stops at OFFER (message2), not ACK.
+Both original/current-postlink ELFs pass the fresh OFFER and exact six fields
+in188774ms, source archive
+`b0587789dc5e72e5010d7c965cdf2d43b19dc8df3ff32369f6581ad3b4dfbafe`,
+`temp/dhcp-publication-oracle-1011d/serial.log`. Candidate digest is unchanged.
+
+### Runtime layout and actual normal DHCP
+
+The candidate was imported through the ordinary browser terminal into its
+dedicated workspace, independently hashed, synced/flushed and recovered by a
+fresh Worker from ext4 UUID `383a9c49-47f6-455b-9d7a-38d9a56a7a62`.
+`temp/browser-dhcp-import-1011.{json,jpg}` records that scope, not installation.
+Its first TEST failed1 because `/var/run` was absent: official pidfile fallback
+uses that compatibility path even with the configured `/run` directory.
+Creating the exact diagnostic COW link `/var/run -> ../run` exposed a second
+independent red: a fresh OFFER is reported, but TEST faults139 at candidate
+coordinate0x2a496 (`testb $4,0x3c(%rax)` in `ipv4ll_start`).
+`temp/browser-dhcp-missing-var-run-1011.{json,jpg}` and
+`temp/browser-dhcp-offer-fault-1011.{json,jpg}` retain both failures. No RIP,
+clock, timeout or upstream source patch is used.
+
+The candidate's normal `-B -4 -1 -t10 eth0` run then exits0 after a real ACK:
+it leases10.0.2.15/24, installs the default route via10.0.2.2 and the official
+resolver hook writes nameserver10.0.2.3. These are actual Linux observations,
+not host address/route/DNS injection. They do not repair the installed signed
+daemon, prove service-DAG readiness or erase the separate TEST fault.
+
+The producer now packages the relative compatibility link as a base-services
+payload before optimization/signing/install. Path ownership and exact link
+representation are both required. The independent real signed45-package
+publication fixture passes the existing dependency/trigger/lifecycle/signature
+gates plus six negative layouts: absent, regular file, separate directory,
+absolute `/run`, wrong `../tmp` and escaping `../../run` links. Source archive
+`0e90e981ef736e4da7274b9a845b0301ab086cb46f11f5dca8ce6a899c621ac3`
+passes in170147ms (`temp/runtime-publication-oracle-1011b/serial.log`). Its
+OpenSSL CLI is built from pinned official3.5.8 source solely for disposable
+test signatures; the frozen publication remains unchanged.
+
+After actual normal DHCP, default curl still times out28 with HTTP000 and
+0 bytes under the unchanged15s connect/30s overall policy. Explicit X25519
+TLS1.3 completes server certificate/hostname/chain verification (OpenSSL0)
+but this run also times out28 before an HTTP result/body. Verification0 by
+itself is not HTTPS success. The historical explicit-X25519 HTTP200 witness
+above remains scoped to its earlier run, not this fresh attempt.
+`temp/browser-dhcp-normal-default-tls-1011.json` retains the default failure.
+
 ### Earlier release
 
 Release `c588c7920ecec616ae9311ed009353b321007b95bc63814242cdfd1e3532cdd9`

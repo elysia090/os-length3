@@ -8,8 +8,11 @@
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 int main(int argc,char **argv)
 {
+    int fault_only=argc>1&&!strcmp(argv[1],"--fault-only");
+    if(fault_only){++argv;--argc;}
     if(argc<2)return 2;
     pid_t child=fork();if(child<0)return 2;
     if(!child){if(ptrace(PTRACE_TRACEME,0,0,0)<0)_exit(125);raise(SIGSTOP);execv(argv[1],argv+1);_exit(126);}
@@ -25,16 +28,17 @@ int main(int argc,char **argv)
         int s=WSTOPSIG(status);
         if(s==(SIGTRAP|128)||(stepping&&s==SIGTRAP)){struct user_regs_struct r;
             if(ptrace(PTRACE_GETREGS,child,0,&r)<0)return 2;
-            printf("oracle-trace %s syscall=%lld rax=%llx rip=%llx rdi=%llx rsi=%llx rdx=%llx flags=%llx code=%lx\n",stepping?"step":"boundary",(long long)r.orig_rax,
+            if(!fault_only)printf("oracle-trace %s syscall=%lld rax=%llx rip=%llx rdi=%llx rsi=%llx rdx=%llx flags=%llx code=%lx\n",stepping?"step":"boundary",(long long)r.orig_rax,
                 (unsigned long long)r.rax,(unsigned long long)r.rip,(unsigned long long)r.rdi,(unsigned long long)r.rsi,(unsigned long long)r.rdx,(unsigned long long)r.eflags,
                 (unsigned long)ptrace(PTRACE_PEEKTEXT,child,(void *)r.rip,0));
-            if(!stepping&&r.orig_rax==157u&&r.rdi==16u){if(prctl_entry)stepping=1;else prctl_entry=1;}
+            if(!fault_only&&!stepping&&r.orig_rax==157u&&r.rdi==16u){if(prctl_entry)stepping=1;else prctl_entry=1;}
         }else if(s!=SIGTRAP){
             if(s==SIGSEGV||s==SIGBUS||s==SIGILL){
                 struct user_regs_struct r;siginfo_t info;
                 if(ptrace(PTRACE_GETREGS,child,0,&r)<0||ptrace(PTRACE_GETSIGINFO,child,0,&info)<0)return 2;
-                printf("oracle-trace fault signal=%d address=%p rip=%llx rsp=%llx rbp=%llx rdi=%llx rsi=%llx rdx=%llx flags=%llx code=%lx\n",
+                printf("oracle-trace fault signal=%d address=%p rip=%llx rsp=%llx rbp=%llx rax=%llx rbx=%llx rdi=%llx rsi=%llx rdx=%llx flags=%llx code=%lx\n",
                     s,info.si_addr,(unsigned long long)r.rip,(unsigned long long)r.rsp,(unsigned long long)r.rbp,
+                    (unsigned long long)r.rax,(unsigned long long)r.rbx,
                     (unsigned long long)r.rdi,(unsigned long long)r.rsi,(unsigned long long)r.rdx,(unsigned long long)r.eflags,
                     (unsigned long)ptrace(PTRACE_PEEKTEXT,child,(void *)r.rip,0));
                 for(unsigned i=0;i<16;++i){errno=0;long word=ptrace(PTRACE_PEEKDATA,child,(void *)(r.rsp+8u*i),0);

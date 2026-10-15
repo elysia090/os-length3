@@ -32,6 +32,15 @@ for role in dhcpcd-input dhcpcd-optimized; do
     printf 'oracle-elf-begin %s %s\n' "$role" "$(sha256sum "$file" | cut -d ' ' -f 1)"
     zstd -q -c "$file" | base64
     printf 'oracle-elf-end\n'
+    # The bootstrap NIC may already have a saved ACK. Preserve that oracle
+    # file outside dhcpcd's coordinate so each role exercises fresh discovery.
+    # Official TEST mode stops at OFFER; it is not an ACK/address install gate.
+    lease=/var/lib/dhcpcd/eth0.lease
+    test ! -L "$lease"
+    if test -e "$lease"; then
+        test -f "$lease"
+        mv "$lease" "$scratch/$role.bootstrap.lease"
+    fi
     # Test mode requests a real DHCP lease without applying addresses or
     # spawning a persistent daemon. The oracle NIC has only restricted NAT.
     set +e
@@ -40,7 +49,15 @@ for role in dhcpcd-input dhcpcd-optimized; do
     set -e
     cat "$scratch/$role.log"
     printf 'dhcp-publication:status:%s:%s\n' "$role" "$status"
-    if test "$status" != 0 || ! grep -q '^new_ip_address=' "$scratch/$role.log"; then failed=1; fi
+    # The isolated oracle owns this fixed NAT lease. Require the OFFER and its
+    # complete address geometry; a zero exit or a cached address is not a
+    # privilege-separated DHCP packet-dispatch witness by itself.
+    if test "$status" != 0; then failed=1; fi
+    for field in "interface='eth0'" "protocol='dhcp'" "reason='TEST'" \
+        "new_dhcp_message_type='2'" "new_ip_address='10.0.2.15'" \
+        "new_subnet_mask='255.255.255.0'"; do
+        if ! grep -Fqx "$field" "$scratch/$role.log"; then failed=1; fi
+    done
 done
 test "$failed" = 0
-printf 'dhcp-publication:PASS:original-and-optimized-packet-dispatch\n'
+printf 'dhcp-publication:PASS:original-and-optimized-fresh-offer\n'

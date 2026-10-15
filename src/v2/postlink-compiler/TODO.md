@@ -31,9 +31,14 @@ models. Paging rejection adds1KiB metadata and reduces its deliberate alias
 benchmark median by about half; NOT a whole-Linux speed claim. Provider144156
 bytes, verification manifest089001a40360870369d08308c33a066bae7f6f13199a5d130c033ce1c07f90db.
 The actual network attempt exposes repeated shipped dhcpcd segfaults at0x4fe8a.
-A pinned official-source/current-postlink native packet gate passes actual
-lease fields for both ELFs; browser execution and package publication remain
-required. Initial readiness, default TLS and optimize-before-package repair
+A pinned official-source/current-postlink native gate passes fresh OFFER
+fields for both ELFs. The imported candidate survives browser cold recovery;
+normal oneshot reaches ACK/address/default-route/DNS and exit0 without host
+configuration injection. Fresh TEST still faults139 at0x2a496. The absent
+`/var/run` path is now fixed at package production, with an independent signed
+45-package fixture and six negative link-layout gates passing. The diagnostic
+browser COW link is not a signed-root repair. Initial readiness, default TLS
+(HTTP000/exit28) and optimize-before-package republication
 of shadow/DHCP remain red. No quota/deadline/clock/frozen release is changed.
 
 The2026-10-11 full independent C/sanitizer gate passes with source digest

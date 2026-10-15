@@ -259,6 +259,13 @@ while IFS= read -r trust_path; do
   check_owner "/${trust_path#"$root"/}" package-trust
 done < <(find "$root/etc/apk/keys" -type f -print)
 
+# An owned file/directory at this coordinate is still the wrong runtime ABI.
+# The relative link remains inside the guest root, even before /run is mounted.
+if [[ ! -L $root/var/run || $(readlink -- "$root/var/run") != ../run ]]; then
+  printf 'runtime compatibility path must be /var/run -> ../run\n' >&2
+  exit 1
+fi
+
 # Every retained non-directory has exactly one authority. Apk transaction
 # state is the only non-package class; logs, caches, locks and extraction
 # scratch are deliberately absent from the immutable release.
