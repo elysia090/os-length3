@@ -1,15 +1,18 @@
 #!/usr/bin/env node
-// node runtime/run.mjs [--root DIR] [--cwd DIR] PROGRAM [args...]
+// node runtime/run.mjs [--root DIR | --pack DIR] [--cwd DIR] PROGRAM [args...]
 //
 // Run a static x86-64 program translated by xlat. PROGRAM is a host path
-// (placed at /bin/<name>) or, with --root, a path inside that tree.
+// (placed at /bin/<name>) or, with --root, a path inside that tree; --pack
+// mounts a web root (root.json and its pack, scripts/webroot.mjs) as the
+// browser does, each file read from the pack when first opened.
 // stdin/stdout/stderr attach to this process.
 import {execFileSync, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, writeFileSync} from 'node:fs';
+import {closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, readlinkSync, writeFileSync} from 'node:fs';
 import {basename, dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {Dir, File, Link, Vfs} from './fs.mjs';
+import {mountPack} from './pack.mjs';
 import {Kernel} from './process.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -67,17 +70,24 @@ function mount(vfs, host, at) {
 }
 
 const args = process.argv.slice(2);
-let root = null, cwd = '/root';
+let root = null, pack = null, cwd = '/root';
 while (args[0]?.startsWith('--')) {
   const flag = args.shift();
   if (flag === '--root') root = args.shift();
+  else if (flag === '--pack') pack = args.shift();
   else if (flag === '--cwd') cwd = args.shift();
 }
 const [program, ...rest] = args;
 const vfs = new Vfs();
 if (root) mount(vfs, root, '/');
+if (pack) {
+  const index = JSON.parse(readFileSync(join(pack, 'root.json'), 'utf8'));
+  const fd = openSync(join(pack, index.pack), 'r');
+  mountPack(vfs, index, (at, len) => { const b = new Uint8Array(len); readSync(fd, b, 0, len, at); return b; });
+  process.on('exit', () => closeSync(fd));
+}
 let path = program;
-if (!root) {
+if (!root && !pack) {
   path = '/bin/' + basename(program);
   vfs.writeFile(path, new Uint8Array(readFileSync(program)), 0o755);
 }

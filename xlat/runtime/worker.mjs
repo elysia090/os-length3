@@ -16,9 +16,14 @@
 // With `mirror: '/root/<repo>'` in 'start', what the guest changes there is
 // sent after each run as {type: 'changes', dirs, files, removed} (see
 // mirror.mjs), and {type: 'put', path, what} puts an outside change in.
+//
+// With `root: {index, url}` in 'start', the whole root (a pack and its
+// index, pack.mjs) fills in around the files given: each file of it is
+// fetched from `url` when a program first reads it.
 
 import {Vfs} from './fs.mjs';
 import {Mirror} from './mirror.mjs';
+import {mountPack, syncRange} from './pack.mjs';
 import {Kernel} from './process.mjs';
 import {loadTranslator} from './translator.mjs';
 
@@ -59,6 +64,8 @@ self.onmessage = async ({data}) => {
     for (const d of data.dirs ?? []) vfs.mkdirp(d);
     for (const f of data.files) vfs.writeFile(f.path, f.bytes, f.mode ?? 0o644);
     for (const l of data.links ?? []) vfs.symlink(l.target, l.path);
+    // The root after the files given, so what was given (l3, its BusyBox) is what runs.
+    if (data.root) mountPack(vfs, data.root.index, syncRange(data.root.url));
     vfs.mkdirp(data.cwd);
     kernel = new Kernel({
       vfs,

@@ -36,6 +36,18 @@ export class GuestTrap extends Error {
   }
 }
 
+/**
+ * The signal a fault in guest code ends its process with: an instruction
+ * that cannot run (SIGILL), a crash on purpose (hlt, as musl's a_crash,
+ * SIGSEGV as Linux gives it), a divide error (SIGFPE), a stray access out
+ * of its memory (SIGSEGV). Null for anything else, which is the host's.
+ */
+function fault(e) {
+  if (e instanceof GuestTrap) return {1: 4, 2: 4, 3: 11, 4: 8}[e.code] ?? 4;
+  if (e instanceof WebAssembly.RuntimeError && /out of bounds|unreachable/i.test(e.message)) return 11;
+  return null;
+}
+
 /** Thrown through wasm frames to end a process image. */
 export class Exit { constructor(status) { this.status = status; } }
 /** Thrown through wasm frames after execve replaced the image. */
@@ -331,6 +343,14 @@ export class Process {
         if (e instanceof Exec) continue;
         if (e instanceof Exit) return this.finish(e.status);
         if (e instanceof Wait) return null;
+        // A fault ends this process only, as a signal would: the shell, and
+        // anything else, runs on and sees how it ended.
+        const sig = fault(e);
+        if (sig) {
+          // What the translator cannot run yet is said, so it is not taken for the program's own fault.
+          if (e instanceof GuestTrap && (e.code === 1 || e.code === 2)) this.kernel.console.write(2, enc.encode(`xlat: ${e.message}\n`));
+          return this.finish(sig);
+        }
         throw e;
       }
     }

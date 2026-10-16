@@ -62,6 +62,14 @@ jobs:
           # The base is the 0.1.0 release's root; root-release.sh checks its digest.
           gh release download os-length3-linux-v0.1.0 --pattern 'os-length3-linux-0.1.0-x86_64-*.tar.zst' --output "$RUNNER_TEMP/base.tar.zst"
           sh scripts/root-release.sh "$RUNNER_TEMP/base.tar.zst" "$GITHUB_WORKSPACE/out" "$VERSION"
+      - name: The root for the browser
+        if: env.SKIP != '1'
+        working-directory: src/desktop
+        run: |
+          # The same root, as a pack the browser's Prompt reads file by file (scripts/webroot.mjs).
+          mkdir -p "$RUNNER_TEMP/opened"
+          tar --zstd -xf "$GITHUB_WORKSPACE"/out/os-length3-linux-$VERSION-x86_64-*.tar.zst -C "$RUNNER_TEMP/opened"
+          node scripts/webroot.mjs "$RUNNER_TEMP/opened/root" public/root
       - name: Web
         if: env.SKIP != '1'
         working-directory: src/desktop
@@ -78,7 +86,7 @@ jobs:
           {
             echo "# OS Length3 Linux $VERSION"
             echo
-            echo "The 0.1.0 root with l3, its profile and shell from \`$GITHUB_SHA\`, and the web build of the same tree."
+            echo "The 0.1.0 root with l3, its profile and shell from \`$GITHUB_SHA\`, and the web build of the same tree, whose Prompt runs that whole root (each file fetched when a program first reads it)."
             echo
             echo "| File | Bytes | SHA-256 |"
             echo "| --- | --- | --- |"

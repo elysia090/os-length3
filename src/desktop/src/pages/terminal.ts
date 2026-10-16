@@ -3,7 +3,7 @@ import {onChange, store} from '../repos.ts';
 import {bytes, h} from '../dom.ts';
 import {isNative, promptOpen, rootStatus, type Held, type Stopped} from '../host.ts';
 import {currentLang, t, tn} from '../i18n.ts';
-import {loadUserland, watchLoad, type Stage} from '../userland.ts';
+import {loadUserland, loadWebRoot, watchLoad, type Stage} from '../userland.ts';
 
 // A shell per repo, running translated BusyBox (and l3) in a Worker. Sessions
 // outlive page switches: the workbench re-attaches the same element. A
@@ -214,7 +214,7 @@ export class Session {
       this.on = 'l3';
       // While l3 comes, the status says how far it is and what it is doing.
       const unwatch = watchLoad((s) => { this.status.textContent = loadWords(s); });
-      const [land, copy] = await Promise.all([loadUserland(), snapshot(this.repo)]).finally(unwatch);
+      const [land, copy, root] = await Promise.all([loadUserland(), snapshot(this.repo), loadWebRoot()]).finally(unwatch);
       const worker = new Worker(new URL('../../../../xlat/runtime/worker.mjs', import.meta.url), {type: 'module'});
       this.worker = worker;
       worker.onmessage = ({data}) => {
@@ -238,9 +238,12 @@ export class Session {
         files: [...land.files, ...dotfiles.asFiles(), ...copy.files],
         dirs: [...land.dirs, ...copy.dirs],
         links: land.links,
+        // The whole root, where this build has it: the same programs as the app's Prompt.
+        ...(root ? {root: {index: root.index, url: root.url}} : {}),
         argv: ['/bin/sh', '-i'],
-        // l3 here sees repos where the shell does, under /root.
-        env: ['HOME=/root', 'PATH=/bin', 'TERM=dumb', 'PS1=$PWD $ ', 'LENGTH3_REPOS=/root', 'L3_PROMPT=1', `LENGTH3_LANG=${currentLang()}`],
+        // l3 here sees repos where the shell does, under /root; with the root, its shell reads as the app's.
+        env: ['HOME=/root', 'TERM=dumb', 'LENGTH3_REPOS=/root', 'L3_PROMPT=1', `LENGTH3_LANG=${currentLang()}`, `LENGTH3_REPO=${this.repo}`,
+          ...(root ? ['PATH=/bin:/usr/bin:/sbin:/usr/sbin', 'ENV=/etc/length3/shrc'] : ['PATH=/bin', 'PS1=$PWD $ '])],
         cwd,
         mirror: cwd,
       });

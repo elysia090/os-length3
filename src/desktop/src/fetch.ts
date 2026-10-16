@@ -66,10 +66,13 @@ export async function download(url: string, expect: Expect = {}, progress?: Prog
     let timer: ReturnType<typeof setTimeout> | undefined;
     let lastByte = Date.now();
     const arm = () => { clearTimeout(timer); lastByte = Date.now(); timer = setTimeout(() => abort.abort(), stallMs); };
-    // A quiet line is said while it is quiet, before it counts as broken.
+    // A quiet line is said while it is quiet, before it counts as broken:
+    // each second once, even when a late tick and the next land in the same one.
+    let said = 0;
     const quiet = setInterval(() => {
       const s = Math.floor((Date.now() - lastByte) / 1000);
-      if (s >= 2) progress?.waiting?.(s);
+      if (s < 2) { said = 0; return; }
+      if (s > said) { said = s; progress?.waiting?.(s); }
     }, 1000);
     try {
       const headers: Record<string, string> = {};

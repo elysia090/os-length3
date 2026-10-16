@@ -66,6 +66,21 @@ export function watchLoad(fn: (s: Stage) => void): () => void {
 export const about = (): Promise<About | null> =>
   fetch('/userland/l3.json', {cache: 'no-store'}).then((r) => (r.ok ? r.json() as Promise<About> : null)).catch(() => null);
 
+/**
+ * The whole root for the browser's Prompt, when this build carries one
+ * (scripts/webroot.mjs): its index, and where its pack is. Each file comes
+ * from the pack only when a program first reads it.
+ */
+export interface WebRoot { index: {version: string; pack: string; files: unknown[]}; url: string }
+let rooting: Promise<WebRoot | null> | null = null;
+export const loadWebRoot = (): Promise<WebRoot | null> => (rooting ??= fetch('/root/root.json', {cache: 'no-cache'})
+  .then(async (r) => {
+    if (!r.ok || !r.headers.get('content-type')?.includes('json')) return null;
+    const index = await r.json() as WebRoot['index'];
+    return {index, url: new URL(`/root/${index.pack}`, location.href).href};
+  })
+  .catch(() => null));
+
 let loading: Promise<Userland> | null = null;
 export const loadUserland = (): Promise<Userland> => (loading ??= (async () => {
   const a = await download('/userland/l3.json', {}, undefined, {attempts: 4}).then((b) => JSON.parse(new TextDecoder().decode(b)) as About);
