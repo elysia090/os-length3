@@ -61,12 +61,17 @@ fn touches_git(path: &Path) -> bool {
 
 pub struct Repos {
     root: PathBuf,
+    /// Whether a repo here is seen through the work it is on (work.rs):
+    /// the person's repos on the host are; a Prompt's /root and tests are not.
+    lines: bool,
 }
 
 impl Repos {
     /// The repos of this person, where the app keeps them.
     pub fn open() -> Result<Repos> {
-        Repos::new(crate::paths::repos_dir())
+        let mut r = Repos::new(crate::paths::repos_dir())?;
+        r.lines = std::env::var_os("L3_PROMPT").is_none();
+        Ok(r)
     }
 
     pub fn root(&self) -> &Path { &self.root }
@@ -79,7 +84,23 @@ impl Repos {
         } else {
             fs::create_dir_all(&root).map_err(|e| e.to_string())?;
         }
-        Ok(Repos { root })
+        Ok(Repos { root, lines: false })
+    }
+
+    /// The line of work `name` shows now: main, or an issue's (work.rs).
+    pub fn line(&self, name: &str) -> String {
+        if self.lines { crate::work::current(name) } else { crate::work::MAIN.into() }
+    }
+
+    /// Where `name`'s files are now: its own directory (main), or the
+    /// worktree of the issue it is being worked on for.
+    pub fn place(&self, name: &str) -> Result<PathBuf> {
+        let main = self.repo(name)?;
+        if !self.lines {
+            return Ok(main);
+        }
+        let line = crate::work::current(name);
+        Ok(if line == crate::work::MAIN { main } else { crate::work::worktree(name, &line) })
     }
 
     fn repo(&self, name: &str) -> Result<PathBuf> {
@@ -91,7 +112,7 @@ impl Repos {
 
     /// The repo's own directory, once its name is checked and it exists.
     pub fn dir(&self, repo: &str) -> Result<PathBuf> {
-        if !self.repo(repo)?.is_dir() {
+        if !self.repo(repo)?.is_dir() || !self.place(repo)?.is_dir() {
             return Err(crate::tr!("There is no repo {}", "repo {} はありません", repo));
         }
         self.inside(repo, "")
@@ -101,7 +122,7 @@ impl Repos {
     /// the repo, and anything in its `.git` (by name or through a symlink)
     /// are refused.
     fn inside(&self, repo: &str, relative: &str) -> Result<PathBuf> {
-        let base = self.repo(repo)?;
+        let base = self.place(repo)?;
         let mut path = base.clone();
         for c in Path::new(relative).components() {
             match c {
@@ -135,7 +156,7 @@ impl Repos {
     }
 
     pub fn summary(&self, name: &str) -> Result<Summary> {
-        let dir = self.repo(name)?;
+        let dir = self.place(name)?;
         let (mut files, mut bytes, mut modified) = (0, 0, 0);
         // Bounded walk: summaries must stay cheap for large repos.
         let mut stack = vec![dir.clone()];

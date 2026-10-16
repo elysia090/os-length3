@@ -19,6 +19,7 @@ pub mod repos;
 pub mod system;
 pub mod templates;
 pub mod usage;
+pub mod work;
 pub mod text;
 
 pub type Result<T> = std::result::Result<T, String>;

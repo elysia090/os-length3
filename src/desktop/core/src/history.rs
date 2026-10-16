@@ -1,9 +1,18 @@
-//! History in the issues' terms. The draft (remote.rs) is always on the
-//! Remote; history is made only by 区切る: the draft at a version becomes a
-//! cut, named like an issue ("Fix：件名") and tied to its file when made
-//! under one. What is not yet cut is the draft against the last cut, shown
+//! History in the issues' terms (issue #17). An issue is the unit of work;
+//! its branch and worktree are the OS's to keep (work.rs). The operations
+//! a person does are few, and are the same from the app, l3 and a browser
+//! (src/history.ts):
+//!
+//!   Commit         what is not committed becomes history on the work's line,
+//!                  named after its issue ("Fix：件名")
+//!   Push           the line's commits are handed to the Remote as its state
+//!   Submit change  what was pushed goes to main as a change; again after more
+//!                  commits, as its next version; Reset takes it back
+//!   Review         of one version of a change: approve, ask for changes, comment
+//!   Merge, Reject  the receiver's: main takes the change, or does not
+//!
+//! What is not committed is the draft against the line's last commit, shown
 //! by the folder it is in, so a reader enters from the area they look after.
-//! The same on every host: the app, l3, and the browser (src/history.ts).
 
 use crate::linediff::{self, Kind};
 use crate::remote::{self, Client, Reply, Tree};
@@ -59,6 +68,8 @@ pub struct Cut {
     pub files: usize,
     pub added: u64,
     pub removed: u64,
+    /// For a merge: the line's commit main took.
+    pub merged: Option<String>,
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
@@ -90,25 +101,29 @@ fn folder_of(path: &str) -> String {
 #[derive(Serialize, Deserialize, Default)]
 struct Head { id: Option<String>, tree: Tree }
 
-fn head_file(repo: &str) -> std::path::PathBuf {
-    crate::paths::data_dir().join("sync").join(format!("{repo}.head.json"))
+fn head_file(key: &str) -> std::path::PathBuf {
+    crate::paths::data_dir().join("sync").join(format!("{key}.head.json"))
 }
 
-/// The tree of the cut the draft is on (empty before the first).
-fn head_tree(client: &Client, repo: &str, head: Option<&str>) -> Result<Tree> {
+/// The tree of a commit (empty before the first), kept for the line `key` it was last asked for.
+fn head_tree(client: &Client, repo: &str, key: &str, head: Option<&str>) -> Result<Tree> {
     let Some(id) = head else { return Ok(Tree::new()) };
-    let kept: Head = fs::read(head_file(repo)).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+    let kept: Head = fs::read(head_file(key)).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
     if kept.id.as_deref() == Some(id) {
         return Ok(kept.tree);
     }
-    let tree = match client.call("GET", &format!("/v1/repos/{repo}/cuts/{id}"), None)? {
-        Reply::Ok(v) => remote::tree_of(&v["tree"]),
-        _ => return Err("Remote に区切りがありません".into()),
-    };
+    let tree = tree_at(client, repo, id)?;
     if let Ok(b) = serde_json::to_vec(&Head { id: Some(id.into()), tree: tree.clone() }) {
-        let _ = fs::write(head_file(repo), b);
+        let _ = fs::write(head_file(key), b);
     }
     Ok(tree)
+}
+
+fn tree_at(client: &Client, repo: &str, id: &str) -> Result<Tree> {
+    match client.call("GET", &format!("/v1/repos/{repo}/cuts/{id}"), None)? {
+        Reply::Ok(v) => Ok(remote::tree_of(&v["tree"])),
+        _ => Err(crate::tr!("The Remote has no such commit", "Remote にその区切りがありません")),
+    }
 }
 
 fn blobs() -> &'static Mutex<HashMap<String, Vec<u8>>> {
@@ -134,8 +149,10 @@ fn text(bytes: &[u8]) -> Option<String> {
 /// One file's before and after: (status, before text, after text, binary).
 struct Pair { path: String, status: &'static str, before: Option<String>, after: Option<String>, binary: bool }
 
-fn pairs(client: Option<&Client>, repos: &Repos, repo: &str, then: &Tree, now: &Tree) -> Result<Vec<Pair>> {
-    let dir = repos.dir(repo)?;
+/// Where the newer side's bytes are: the files here, or the Remote's blobs.
+enum After<'a> { Here(std::path::PathBuf), Remote(&'a Client) }
+
+fn pairs(client: Option<&Client>, after_from: After, then: &Tree, now: &Tree) -> Result<Vec<Pair>> {
     let mut out = Vec::new();
     let paths: std::collections::BTreeSet<&String> = then.keys().chain(now.keys()).collect();
     for path in paths {
@@ -148,7 +165,11 @@ fn pairs(client: Option<&Client>, repos: &Repos, repo: &str, then: &Tree, now: &
             (Some(c), Some(Some(sha))) => Some(blob(c, sha)?),
             _ => None,
         };
-        let after = match is { Some(Some(_)) => fs::read(dir.join(path)).ok(), _ => None };
+        let after = match (is, &after_from) {
+            (Some(Some(_)), After::Here(dir)) => fs::read(dir.join(path)).ok(),
+            (Some(Some(sha)), After::Remote(c)) => Some(blob(c, sha)?),
+            _ => None,
+        };
         let binary = before.as_deref().is_some_and(|b| text(b).is_none()) || after.as_deref().is_some_and(|b| text(b).is_none());
         out.push(Pair {
             path: path.clone(), status, binary,
@@ -158,12 +179,13 @@ fn pairs(client: Option<&Client>, repos: &Repos, repo: &str, then: &Tree, now: &
     Ok(out)
 }
 
-/// The draft here and the last cut, as the Remote has them.
+/// The draft here and the work's last commit, as the Remote has them.
 fn draft_and_head(repos: &Repos, repo: &str) -> Result<(Option<Client>, Tree, Tree)> {
     let now = remote::local_tree(&repos.dir(repo)?).tree;
     let Ok(client) = Client::open() else { return Ok((None, Tree::new(), now)) };
-    let head = remote::base(repo).and_then(|b| b.head);
-    let then = head_tree(&client, repo, head.as_deref())?;
+    let (key, _) = remote::key(repos, repo);
+    let head = remote::base(&key).and_then(|b| b.head);
+    let then = head_tree(&client, repo, &key, head.as_deref())?;
     Ok((Some(client), then, now))
 }
 
@@ -182,8 +204,8 @@ fn group(files: Vec<FileChange>, connected: bool) -> Changes {
     Changes { connected, folders, files, added, removed }
 }
 
-fn changes_of(client: Option<&Client>, repos: &Repos, repo: &str, then: &Tree, now: &Tree) -> Result<Changes> {
-    let files = pairs(client, repos, repo, then, now)?.into_iter().map(|p| {
+fn changes_of(client: Option<&Client>, after: After, then: &Tree, now: &Tree) -> Result<Changes> {
+    let files = pairs(client, after, then, now)?.into_iter().map(|p| {
         let (added, removed) = if p.binary { (0, 0) } else {
             linediff::counts(&linediff::ops(p.before.as_deref().unwrap_or(""), p.after.as_deref().unwrap_or("")))
         };
@@ -192,18 +214,22 @@ fn changes_of(client: Option<&Client>, repos: &Repos, repo: &str, then: &Tree, n
     Ok(group(files, client.is_some()))
 }
 
-/// What is not yet cut, folder by folder.
+/// What is not committed yet, folder by folder.
 pub fn changes(repos: &Repos, repo: &str) -> Result<Changes> {
     let (client, then, now) = draft_and_head(repos, repo)?;
-    changes_of(client.as_ref(), repos, repo, &then, &now)
+    changes_of(client.as_ref(), After::Here(repos.dir(repo)?), &then, &now)
 }
 
 /// The same, line by line, at most `limit` lines in all.
 pub fn diff(repos: &Repos, repo: &str, limit: usize) -> Result<Vec<FileDiff>> {
     let (client, then, now) = draft_and_head(repos, repo)?;
+    diff_of(pairs(client.as_ref(), After::Here(repos.dir(repo)?), &then, &now)?, limit)
+}
+
+fn diff_of(pairs: Vec<Pair>, limit: usize) -> Result<Vec<FileDiff>> {
     let mut left = limit;
     let mut out = Vec::new();
-    for p in pairs(client.as_ref(), repos, repo, &then, &now)? {
+    for p in pairs {
         let mut lines = Vec::new();
         if !p.binary {
             let ops = linediff::ops(p.before.as_deref().unwrap_or(""), p.after.as_deref().unwrap_or(""));
@@ -224,13 +250,16 @@ pub fn diff(repos: &Repos, repo: &str, limit: usize) -> Result<Vec<FileDiff>> {
     Ok(out)
 }
 
-/// The words a cut goes by: an issue's first line (and its file), or the line given.
+/// The words a commit goes by: an issue's first line (and its file), or the line given.
 fn words(repos: &Repos, repo: &str, issue: Option<&str>, line: &str) -> Result<(Option<String>, String, String)> {
+    // Work on an issue commits under it, whatever else is said.
+    let on = repos.line(repo);
+    let issue = issue.map(String::from).or_else(|| (on != crate::work::MAIN).then(|| format!("issue/{on}.md")));
     match issue {
         Some(file) => {
-            let file = file.trim_start_matches("issue/");
-            let text = repos.read(repo, &format!("issue/{file}"), 256 * 1024)?.text.ok_or("Issue がバイナリです")?;
-            let i = crate::issues::parse(repo, file, &text);
+            let file = file.trim_start_matches("issue/").to_string();
+            let text = repos.read(repo, &format!("issue/{file}"), 256 * 1024)?.text.ok_or_else(|| crate::tr!("The issue is not text", "Issue がバイナリです"))?;
+            let i = crate::issues::parse(repo, &file, &text);
             Ok((i.kind, i.title, format!("issue/{file}")))
         }
         None => {
@@ -240,51 +269,57 @@ fn words(repos: &Repos, repo: &str, issue: Option<&str>, line: &str) -> Result<(
     }
 }
 
-/// 区切る: bring the draft into step with the Remote, then make it a cut,
-/// under `issue` (its file in issue/) and named after it, or named by `line`.
+/// Commit: bring the draft into step with the Remote, then make it history
+/// on the line the repo shows, under `issue` (its file in issue/) and named
+/// after it, or named by `line`. Work on an issue commits under that issue.
 pub fn cut(repos: &Repos, repo: &str, issue: Option<&str>, line: &str, note: &str) -> Result<Cut> {
     let (kind, title, issue) = words(repos, repo, issue, line)?;
     if title.trim().is_empty() {
-        return Err("区切るには件名がいります（例: Fix：件名）".into());
+        return Err(crate::tr!("A commit needs a title (for example Fix：title)", "区切るには件名がいります（例: Fix：件名）"));
     }
-    let client = Client::open().map_err(|_| "区切りは Remote に残ります。先につないでください（l3 login）".to_string())?;
+    let client = Client::open().map_err(|_| crate::tr!("Commits are kept on the Remote. Connect first (l3 login)", "区切りは Remote に残ります。先につないでください（l3 login）"))?;
+    let (key, on) = remote::key(repos, repo);
     for _ in 0..4 {
         let s = remote::sync(repos, repo)?;
         if let Some((path, why)) = s.unsynced.first() {
-            return Err(format!("Remote に送れないものがあります（{path}: {why}）。送れるようにしてから区切ってください"));
+            return Err(crate::tr!("Something cannot be sent to the Remote ({}: {}); make it sendable, then commit", "Remote に送れないものがあります（{}: {}）。送れるようにしてから区切ってください", path, why));
         }
-        let b = remote::base(repo).unwrap_or_default();
-        let then = head_tree(&client, repo, b.head.as_deref())?;
-        let c = changes_of(Some(&client), repos, repo, &then, &b.tree)?;
+        let b = remote::base(&key).unwrap_or_default();
+        let then = head_tree(&client, repo, &key, b.head.as_deref())?;
+        let c = changes_of(Some(&client), After::Here(repos.dir(repo)?), &then, &b.tree)?;
         if c.files == 0 {
-            return Err("まだ区切っていない変更がありません".into());
+            return Err(crate::tr!("Nothing to commit", "まだ区切っていない変更がありません"));
         }
         let body = serde_json::json!({
             "version": s.version, "parent": b.head, "kind": kind.clone().unwrap_or_default(), "title": title.trim(),
             "issue": issue, "note": note.trim(), "added": c.added, "removed": c.removed,
         });
-        match client.call("POST", &format!("/v1/repos/{repo}/cuts"), Some(body))? {
+        match client.call("POST", &remote::at_path(repo, &on, "/cuts"), Some(body))? {
             Reply::Ok(v) => {
                 let id = v["id"].as_str().unwrap_or_default().to_string();
-                let _ = remote::set_head(repo, &id);
+                let _ = remote::set_head(&key, &id);
                 return Ok(Cut {
                     id, issue: (!issue.is_empty()).then_some(issue), kind, title: title.trim().into(), note: note.trim().into(),
                     time: v["time"].as_u64().unwrap_or(0), folders: c.folders.iter().map(|f| f.folder.clone()).collect(),
-                    files: c.files, added: c.added, removed: c.removed,
+                    files: c.files, added: c.added, removed: c.removed, merged: None,
                 });
             }
-            // Another device moved the draft or cut first: in step again, and once more.
-            Reply::Conflict(v) => { let _ = remote::set_head_from(repo, &v); }
-            Reply::NotFound => return Err("Remote にこの repo がありません".into()),
+            // Another device moved the draft or committed first: in step again, and once more.
+            Reply::Conflict(v) => { let _ = remote::set_head_from(&key, &v); }
+            Reply::NotFound => return Err(crate::tr!("The Remote does not have this repo", "Remote にこの repo がありません")),
         }
     }
-    Err("Remote が動き続けていて区切れませんでした".into())
+    Err(crate::tr!("The Remote kept moving; could not commit", "Remote が動き続けていて区切れませんでした"))
 }
 
-/// The cuts so far, newest first.
-pub fn log(repo: &str, n: usize) -> Result<Vec<Cut>> {
+/// The commits of the line `repo` shows (or of `line`), newest first.
+pub fn log(repos: &Repos, repo: &str, n: usize) -> Result<Vec<Cut>> {
+    log_of(repo, &repos.line(repo), n)
+}
+
+pub fn log_of(repo: &str, line: &str, n: usize) -> Result<Vec<Cut>> {
     let Ok(client) = Client::open() else { return Ok(Vec::new()) };
-    let v = match client.call("GET", &format!("/v1/repos/{repo}/log?limit={n}"), None)? {
+    let v = match client.call("GET", &format!("{}{}limit={n}", remote::at_path(repo, line, "/log"), if line == crate::work::MAIN { "?" } else { "&" }), None)? {
         Reply::Ok(v) => v,
         _ => return Ok(Vec::new()),
     };
@@ -293,21 +328,204 @@ pub fn log(repo: &str, n: usize) -> Result<Vec<Cut>> {
     Ok(list.iter().map(|c| {
         let tree = remote::tree_of(&c["tree"]);
         let parent = c["parent"].as_str().and_then(|p| trees.get(p)).cloned().unwrap_or_default();
-        let changed: Vec<&String> = tree.keys().chain(parent.keys()).filter(|p| tree.get(*p) != parent.get(*p))
-            .filter(|p| matches!(tree.get(*p), Some(Some(_))) || matches!(parent.get(*p), Some(Some(_)))).collect();
-        let mut folders: Vec<String> = Vec::new();
-        let mut seen = std::collections::BTreeSet::new();
-        for p in &changed { if seen.insert((*p).clone()) { let f = folder_of(p); if !folders.contains(&f) { folders.push(f); } } }
+        let (folders, files) = places(&parent, &tree);
         let s = |k: &str| c[k].as_str().unwrap_or_default().to_string();
         Cut {
             id: s("id"), issue: Some(s("issue")).filter(|i| !i.is_empty()), kind: Some(s("kind")).filter(|k| !k.is_empty()),
-            title: s("title"), note: s("note"), time: c["time"].as_u64().unwrap_or(0), folders, files: seen.len(),
+            title: s("title"), note: s("note"), time: c["time"].as_u64().unwrap_or(0), folders, files,
             added: c["added"].as_u64().unwrap_or(0), removed: c["removed"].as_u64().unwrap_or(0),
+            merged: c["merged"].as_str().map(String::from),
         }
     }).collect())
 }
 
-/// "Fix：件名" for a cut.
+/// The folders a change touches (each once, in order) and how many files.
+fn places(then: &Tree, now: &Tree) -> (Vec<String>, usize) {
+    let mut folders: Vec<String> = Vec::new();
+    let mut files = 0;
+    let paths: std::collections::BTreeSet<&String> = then.keys().chain(now.keys()).collect();
+    for p in paths {
+        if then.get(p) == now.get(p) || !(matches!(now.get(p), Some(Some(_))) || matches!(then.get(p), Some(Some(_)))) { continue; }
+        files += 1;
+        let f = folder_of(p);
+        if !folders.contains(&f) { folders.push(f); }
+    }
+    (folders, files)
+}
+
+/// "Fix：件名" for a commit.
 pub fn line(c: &Cut) -> String {
     named(c.kind.as_deref(), &c.title)
+}
+
+// ---- the work on an issue, and what it hands to main ----
+
+/// The work the repo shows now: main, or an issue's, and where it stands.
+#[derive(Serialize, Debug, Clone)]
+pub struct Work {
+    /// "main", or the issue's line ("001").
+    pub line: String,
+    pub issue: Option<String>,
+    /// Who started it and when (ms): how a person tells works apart.
+    pub started_by: String,
+    pub started_at: u64,
+    /// Commits made on it, and how many of them are not pushed yet.
+    pub commits: usize,
+    pub unpushed: usize,
+    /// The change it was submitted as, if it was.
+    pub change: Option<Change>,
+}
+
+pub fn work(repos: &Repos, repo: &str) -> Result<Work> {
+    let on = repos.line(repo);
+    if on == crate::work::MAIN {
+        return Ok(Work { line: on, issue: None, started_by: String::new(), started_at: 0, commits: 0, unpushed: 0, change: None });
+    }
+    let l = crate::work::line(repo, &on)?.ok_or_else(|| crate::tr!("The Remote has no such work", "Remote にその作業がありません"))?;
+    let log = log_of(repo, &on, 200)?;
+    let mine: Vec<&Cut> = log.iter().take_while(|c| Some(&c.id) != l.base.as_ref()).collect();
+    let unpushed = mine.iter().take_while(|c| Some(&c.id) != l.pushed.as_ref()).count();
+    let change = changes_of_repo(repo)?.into_iter().find(|c| c.line == on);
+    Ok(Work { line: on, issue: Some(l.issue), started_by: l.started_by, started_at: l.started_at, commits: mine.len(),
+        unpushed: if l.pushed == l.base && !mine.is_empty() { mine.len() } else { unpushed }, change })
+}
+
+/// Push: the work's commits become the line's state on the Remote.
+pub fn push(repos: &Repos, repo: &str) -> Result<String> {
+    let on = repos.line(repo);
+    if on == crate::work::MAIN {
+        return Err(crate::tr!("main is pushed by merging changes into it; work on an issue to push", "main には変更を Merge して入れます。Issue の作業で push してください"));
+    }
+    let client = Client::open()?;
+    let (key, _) = remote::key(repos, repo);
+    let head = remote::base(&key).and_then(|b| b.head).ok_or_else(|| crate::tr!("Nothing committed yet", "まだ何も区切っていません"))?;
+    let v = client.json("POST", &format!("/v1/repos/{repo}/lines/{on}/push"), Some(serde_json::json!({"head": head})))?;
+    Ok(v["pushed"].as_str().unwrap_or_default().to_string())
+}
+
+/// A change handed to main.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Change {
+    pub id: String,
+    pub repo: String,
+    pub line: String,
+    #[serde(default)]
+    pub issue: String,
+    #[serde(default)]
+    pub kind: String,
+    pub title: String,
+    pub version: i64,
+    pub base: Option<String>,
+    pub head: String,
+    /// "open", "merged", "rejected" or "reset".
+    pub state: String,
+    #[serde(default)]
+    pub note: String,
+    #[serde(default, rename = "submittedBy")]
+    pub submitted_by: String,
+    #[serde(default, rename = "updatedAt")]
+    pub updated_at: u64,
+    #[serde(default)]
+    pub reviews: Vec<Review>,
+    /// The folders it touches and how many files, filled in here.
+    #[serde(default)]
+    pub folders: Vec<String>,
+    #[serde(default)]
+    pub files: usize,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Review {
+    pub version: i64,
+    /// "approve", "changes" or "comment".
+    pub verdict: String,
+    #[serde(default)]
+    pub note: String,
+    #[serde(default)]
+    pub by: String,
+    #[serde(default)]
+    pub time: u64,
+}
+
+/// The changes handed to `repo`'s main, newest first, each with where it reaches.
+pub fn changes_of_repo(repo: &str) -> Result<Vec<Change>> {
+    let client = Client::open()?;
+    let mut list: Vec<Change> = serde_json::from_value(client.json("GET", &format!("/v1/repos/{repo}/changes"), None)?).map_err(|e| e.to_string())?;
+    for c in &mut list {
+        let then = c.base.as_deref().map_or_else(|| Ok(Tree::new()), |b| tree_at(&client, repo, b))?;
+        let now = tree_at(&client, repo, &c.head)?;
+        (c.folders, c.files) = places(&then, &now);
+    }
+    Ok(list)
+}
+
+/// Submit change: what the work pushed goes to main (again: a new version).
+pub fn submit(repos: &Repos, repo: &str, note: &str) -> Result<Change> {
+    let on = repos.line(repo);
+    if on == crate::work::MAIN {
+        return Err(crate::tr!("A change is submitted from the work on an issue", "変更は Issue の作業から提出します"));
+    }
+    let (kind, title, _) = words(repos, repo, None, "")?;
+    let client = Client::open()?;
+    let v = client.call("POST", &format!("/v1/repos/{repo}/changes"), Some(serde_json::json!({
+        "line": on, "kind": kind.unwrap_or_default(), "title": title.trim(), "note": note.trim()})))?;
+    match v {
+        Reply::Ok(v) => serde_json::from_value(v).map_err(|e| e.to_string()),
+        Reply::Conflict(v) if v["error"] == "push first" => Err(crate::tr!("Push first: the change is what was pushed", "先に push してください。変更は push したものです")),
+        Reply::Conflict(_) => Err(crate::tr!("Nothing committed since the work began", "作業を始めてから何も区切っていません")),
+        Reply::NotFound => Err(crate::tr!("The Remote has no such work", "Remote にその作業がありません")),
+    }
+}
+
+fn change_call(repo: &str, id: &str, verb: &str, body: serde_json::Value) -> Result<serde_json::Value> {
+    match Client::open()?.call("POST", &format!("/v1/repos/{repo}/changes/{id}/{verb}"), Some(body))? {
+        Reply::Ok(v) => Ok(v),
+        Reply::Conflict(v) if v["conflicts"].is_array() => Err(crate::tr!("Both changed these files; resolve them in the work, push and submit again: {}", "両方で変わったファイルがあります。作業の側で直して push し、もう一度提出してください: {}",
+            v["conflicts"].as_array().unwrap().iter().filter_map(|p| p.as_str()).collect::<Vec<_>>().join(", "))),
+        Reply::Conflict(v) if v["version"].is_number() => Err(crate::tr!("The change has a newer version ({}); look at it first", "変更に新しい版があります（{}）。先にそれを見てください", v["version"])),
+        Reply::Conflict(v) => Err(crate::tr!("The change is {} already", "この変更はもう {} です", v["error"].as_str().unwrap_or("?"))),
+        Reply::NotFound => Err(crate::tr!("No such change", "その変更はありません")),
+    }
+}
+
+fn find(repo: &str, id: &str) -> Result<Change> {
+    changes_of_repo(repo)?.into_iter().find(|c| c.id == id || c.id.starts_with(id) || c.line == id)
+        .ok_or_else(|| crate::tr!("No such change: {}", "その変更はありません: {}", id))
+}
+
+/// Review the change's current version.
+pub fn review(repo: &str, id: &str, verdict: &str, note: &str) -> Result<Change> {
+    let c = find(repo, id)?;
+    if !["approve", "changes", "comment"].contains(&verdict) {
+        return Err(crate::tr!("A review is approve, changes or comment", "レビューは approve、changes、comment のどれかです"));
+    }
+    serde_json::from_value(change_call(repo, &c.id, "reviews", serde_json::json!({"version": c.version, "verdict": verdict, "note": note}))?).map_err(|e| e.to_string())
+}
+
+/// Merge: main takes the change's current version.
+pub fn merge(repo: &str, id: &str) -> Result<Change> {
+    let c = find(repo, id)?;
+    serde_json::from_value(change_call(repo, &c.id, "merge", serde_json::json!({"version": c.version}))?).map_err(|e| e.to_string())
+}
+
+/// Reject: main does not take it (the receiver's decision; the issue stays open).
+pub fn reject(repo: &str, id: &str, note: &str) -> Result<Change> {
+    let c = find(repo, id)?;
+    serde_json::from_value(change_call(repo, &c.id, "reject", serde_json::json!({"note": note}))?).map_err(|e| e.to_string())
+}
+
+/// Reset: take back the change the work submitted (the submitter's decision).
+pub fn reset(repos: &Repos, repo: &str) -> Result<Change> {
+    let on = repos.line(repo);
+    let c = find(repo, &on)?;
+    serde_json::from_value(change_call(repo, &c.id, "reset", serde_json::json!({}))?).map_err(|e| e.to_string())
+}
+
+/// A change's diff against where it began, line by line.
+pub fn change_diff(repo: &str, id: &str, limit: usize) -> Result<Vec<FileDiff>> {
+    let c = find(repo, id)?;
+    let client = Client::open()?;
+    let then = c.base.as_deref().map_or_else(|| Ok(Tree::new()), |b| tree_at(&client, repo, b))?;
+    let now = tree_at(&client, repo, &c.head)?;
+    diff_of(pairs(Some(&client), After::Remote(&client), &then, &now)?, limit)
 }

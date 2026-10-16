@@ -336,9 +336,31 @@ pub struct Base {
     pub head: Option<String>,
 }
 
-/// Bases are kept one file per repo: `<data>/sync/<repo>.json`.
+/// Bases are kept one file per line: `<data>/sync/<repo>.json` for main,
+/// `<data>/sync/<repo>@<line>.json` for an issue's work. A key names one.
 fn sync_dir() -> PathBuf {
     crate::paths::data_dir().join("sync")
+}
+
+/// The key of the line `repo` shows now, and that line.
+pub fn key(repos: &Repos, repo: &str) -> (String, String) {
+    let line = repos.line(repo);
+    (key_of(repo, &line), line)
+}
+
+pub fn key_of(repo: &str, line: &str) -> String {
+    if line == crate::work::MAIN { repo.to_string() } else { format!("{repo}@{line}") }
+}
+
+/// The Remote's address of a line: the repo, and the line when not main.
+fn at(repo: &str, line: &str, rest: &str) -> String {
+    let q = if line == crate::work::MAIN { String::new() } else { format!("?line={line}") };
+    format!("/v1/repos/{repo}{rest}{q}")
+}
+
+/// An issue's work was brought here afresh: nothing is agreed for it yet.
+pub fn forget_line(repo: &str, line: &str) {
+    forget_base(&key_of(repo, line));
 }
 
 fn base_file(repo: &str) -> PathBuf {
@@ -360,13 +382,15 @@ fn set_base(repo: &str, b: &Base) -> Result<()> {
 }
 
 /// A cut was made at the base's version: it is the head now.
-pub(crate) fn set_head(repo: &str, id: &str) -> Result<()> {
+pub(crate) fn set_head(key: &str, id: &str) -> Result<()> {
+    let repo = key;
     let b = base(repo).unwrap_or_default();
     set_base(repo, &Base { head: Some(id.into()), ..b })
 }
 
 /// A refused cut says where the Remote's head is.
-pub(crate) fn set_head_from(repo: &str, v: &serde_json::Value) -> Result<()> {
+pub(crate) fn set_head_from(key: &str, v: &serde_json::Value) -> Result<()> {
+    let repo = key;
     let b = base(repo).unwrap_or_default();
     set_base(repo, &Base { head: v["head"].as_str().map(String::from), ..b })
 }
@@ -526,6 +550,8 @@ fn apply(client: &Client, dir: &Path, here: &Tree, p: &Plan) -> Result<Vec<Strin
     Ok(aside)
 }
 
+pub(crate) fn at_path(repo: &str, line: &str, rest: &str) -> String { at(repo, line, rest) }
+
 pub(crate) fn tree_of(v: &serde_json::Value) -> Tree {
     v.as_object().map(|o| o.iter().map(|(k, v)| (k.clone(), v.as_str().map(String::from))).collect()).unwrap_or_default()
 }
@@ -547,16 +573,19 @@ pub struct Synced {
 /// what changed there, until both hold the same draft.
 pub fn sync(repos: &Repos, repo: &str) -> Result<Synced> {
     let client = Client::open()?;
-    let _held = lock(repo)?;
+    let (key, _) = key(repos, repo);
+    let _held = lock(&key)?;
     sync_with(&client, repos, repo)
 }
 
 fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
     let dir = repos.dir(repo)?;
-    let path = format!("/v1/repos/{repo}");
+    let (key, line) = key(repos, repo);
+    let path = at(repo, &line, "");
+    let draft = at(repo, &line, "/draft");
     let mut out = Synced::default();
     for _ in 0..12 {
-        let base = base(repo).unwrap_or_default();
+        let base = base(&key).unwrap_or_default();
         let here = local_tree(&dir);
         out.unsynced = here.unsynced.clone();
         // Before sending, see whether the Remote moved.
@@ -571,7 +600,7 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
             let p = plan(&base.tree, &here.tree, &tree);
             out.both.extend(apply(client, &dir, &here.tree, &p)?);
             out.taken += p.take.len();
-            set_base(repo, &Base { version: remote_version, tree, head: v["head"].as_str().map(String::from) })?;
+            set_base(&key, &Base { version: remote_version, tree, head: v["head"].as_str().map(String::from) })?;
             continue;
         }
         let mut set: Vec<(&String, &Option<String>)> = here.tree.iter().filter(|(p, v)| base.tree.get(*p) != Some(*v)).collect();
@@ -589,7 +618,7 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
             let missing = client.json("POST", "/v1/blobs/missing", Some(serde_json::json!(shas)))?;
             let mut moved = false;
             for sha in missing.as_array().into_iter().flatten().filter_map(|s| s.as_str()) {
-                let from = here.files.get(sha).ok_or("ファイルが途中で変わりました")?;
+                let from = here.files.get(sha).ok_or_else(|| crate::tr!("A file changed meanwhile", "ファイルが途中で変わりました"))?;
                 let bytes = fs::read(from).map_err(|e| e.to_string())?;
                 // Changed since it was read: read the tree again.
                 if sha256(&bytes) != sha { moved = true; break; }
@@ -603,7 +632,7 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
             "remove": remove,
         });
         // A conflict (someone else moved it, or a blob went missing) goes round again.
-        if let Reply::Ok(v) = client.call("PATCH", &format!("{path}/draft"), Some(body))? {
+        if let Reply::Ok(v) = client.call("PATCH", &draft, Some(body))? {
             let version = v["version"].as_i64().unwrap_or(base.version + 1);
             let mut tree = base.tree.clone();
             for p in &remove {
@@ -614,7 +643,7 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
             for (p, v) in &set { tree.insert((*p).clone(), (*v).clone()); }
             out.sent += set.len() + remove.len();
             out.version = version;
-            set_base(repo, &Base { version, tree, head: base.head })?;
+            set_base(&key, &Base { version, tree, head: base.head })?;
         }
     }
     Ok(out)
@@ -641,7 +670,7 @@ pub fn sync_all(repos: &Repos) -> Result<Vec<(String, Result<Synced>)>> {
     let client = Client::open()?;
     let mut out = Vec::new();
     for s in repos.list()? {
-        let r = lock(&s.name).and_then(|_held| sync_with(&client, repos, &s.name));
+        let r = lock(&key(repos, &s.name).0).and_then(|_held| sync_with(&client, repos, &s.name));
         out.push((s.name, r));
     }
     Ok(out)
@@ -653,14 +682,16 @@ pub fn fetch(repos: &Repos, repo: &str) -> Result<Synced> {
         return sync(repos, repo);
     }
     if !crate::repos::valid_name(repo) {
-        return Err(format!("{repo} は repo の名前になりません"));
+        return Err(crate::tr!("{} is not a repo name", "{} は repo の名前になりません", repo));
     }
     let client = Client::open()?;
     let _held = lock(repo)?;
     if let Reply::NotFound = client.call("GET", &format!("/v1/repos/{repo}"), None)? {
-        return Err(format!("Remote に {repo} はありません"));
+        return Err(crate::tr!("The Remote has no repo {}", "Remote に {} はありません", repo));
     }
+    // It comes as main; the work on its issues comes when chosen.
     forget_base(repo);
+    let _ = fs::remove_file(crate::paths::data_dir().join("sync").join(format!("{repo}.line")));
     fs::create_dir_all(repos.root().join(repo)).map_err(|e| e.to_string())?;
     sync_with(&client, repos, repo)
 }
@@ -681,7 +712,7 @@ pub struct Status {
 
 pub fn status_of(repos: &Repos, name: &str) -> Result<Status> {
     let here = local_tree(&repos.dir(name)?);
-    let b = base(name);
+    let b = base(&key(repos, name).0);
     let changed = match &b {
         Some(b) => here.tree.iter().filter(|(p, v)| b.tree.get(*p) != Some(*v)).count() + b.tree.keys().filter(|p| !here.tree.contains_key(*p)).count(),
         None => here.tree.len(),
@@ -698,31 +729,48 @@ pub fn status(repos: &Repos) -> Result<Vec<Status>> {
 
 /// 同期して空ける: once the Remote holds exactly what is here, and nothing here
 /// cannot go there, the copy here goes; it comes back when the repo is opened.
-/// Returns the bytes the copy took.
+/// Every copy of the repo goes: main's and each issue's being worked on.
+/// Returns the bytes they took.
 pub fn free(repos: &Repos, repo: &str) -> Result<u64> {
     let client = Client::open()?;
-    let _held = lock(repo)?;
-    let s = sync_with(&client, repos, repo)?;
-    if let Some((path, why)) = s.unsynced.first() {
-        return Err(format!("Remote に送れないものがあります（{path}: {why}）"));
+    let shown = repos.line(repo);
+    let mut copies: Vec<String> = crate::work::worktrees(repo).into_iter().map(|(l, _)| l).collect();
+    copies.push(crate::work::MAIN.into());
+    // Each copy is brought into step and checked, all before any goes.
+    let mut gone = Vec::new();
+    for line in &copies {
+        let key = key_of(repo, line);
+        let _held = lock(&key)?;
+        let dir = if line == crate::work::MAIN { repos.root().join(repo) } else { crate::work::worktree(repo, line) };
+        let _ = crate::work::show_for_free(repo, line);
+        let s = sync_with(&client, repos, repo);
+        let _ = crate::work::show_for_free(repo, &shown);
+        let s = s?;
+        if let Some((path, why)) = s.unsynced.first() {
+            return Err(crate::tr!("Something cannot be sent to the Remote ({}: {})", "Remote に送れないものがあります（{}: {}）", path, why));
+        }
+        if let Some(p) = s.both.first() {
+            return Err(crate::tr!("Another device's change was put beside yours; check it before freeing ({})", "別の端末の変更を横に置きました。確かめてから空けてください（{}）", p));
+        }
+        let here = local_tree(&dir);
+        let b = base(&key).ok_or_else(|| crate::tr!("Not synced yet", "まだ同期していません"))?;
+        if here.tree != b.tree {
+            return Err(crate::tr!("It changed while syncing; try again", "同期のあいだに変わりました。もう一度どうぞ"));
+        }
+        // Asked once more: the Remote's draft must be this very tree.
+        let there = client.json("GET", &at(repo, line, ""), None)?;
+        if tree_of(&there["draft"]) != here.tree {
+            return Err(crate::tr!("The Remote's copy is not complete yet", "Remote の写しがまだ揃っていません"));
+        }
+        gone.push((key, dir));
     }
-    if let Some(p) = s.both.first() {
-        return Err(format!("別の端末の変更を横に置きました。確かめてから空けてください（{p}）"));
+    let mut bytes = 0;
+    for (key, dir) in gone {
+        bytes += crate::usage::allocated(&dir);
+        fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
+        forget_base(&key);
     }
-    let dir = repos.dir(repo)?;
-    let here = local_tree(&dir);
-    let b = base(repo).ok_or("まだ同期していません")?;
-    if here.tree != b.tree {
-        return Err("同期のあいだに変わりました。もう一度どうぞ".into());
-    }
-    // Asked once more: the Remote's draft must be this very tree.
-    let there = client.json("GET", &format!("/v1/repos/{repo}"), None)?;
-    if tree_of(&there["draft"]) != here.tree {
-        return Err("Remote の写しがまだ揃っていません".into());
-    }
-    let bytes = crate::usage::allocated(&dir);
-    fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
-    forget_base(repo);
+    let _ = crate::work::show_for_free(repo, crate::work::MAIN);
     Ok(bytes)
 }
 
