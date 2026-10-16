@@ -4,7 +4,7 @@
 // Run a static x86-64 program translated by xlat. PROGRAM is a host path
 // (placed at /bin/<name>) or, with --root, a path inside that tree.
 // stdin/stdout/stderr attach to this process.
-import {execFileSync} from 'node:child_process';
+import {execFileSync, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, writeFileSync} from 'node:fs';
 import {basename, dirname, join} from 'node:path';
@@ -42,7 +42,11 @@ translate.more = function more(bytes, seeds, known, base) {
     if (!existsSync(elf)) writeFileSync(elf, bytes);
     writeFileSync(`${wasm}.seeds`, seeds.join('\n'));
     writeFileSync(`${wasm}.known`, known.join('\n'));
-    execFileSync(translator, [`--more=${wasm}.seeds`, `--known=${wasm}.known`, `--base=${base}`, elf, wasm], {stdio: ['ignore', 'ignore', 'ignore']});
+    const done = spawnSync(translator, [`--more=${wasm}.seeds`, `--known=${wasm}.known`, `--base=${base}`, elf, wasm], {stdio: ['ignore', 'ignore', 'pipe']});
+    if (done.status !== 0) throw new Error(`xlat --more failed: ${done.stderr}`);
+    const report = done.stderr.toString();
+    // XLAT_UNSUPPORTED=1: say which instructions code reached later uses that are not translated yet.
+    if (process.env.XLAT_UNSUPPORTED && !report.includes('"unsupported":{}')) process.stderr.write(`xlat: at ${seeds}: ${report.trim()}\n`);
   }
   return readFileSync(wasm);
 };

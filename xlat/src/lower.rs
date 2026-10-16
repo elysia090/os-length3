@@ -1023,7 +1023,8 @@ impl Fx<'_> {
     }
 
     fn cpuid(&mut self) {
-        // A plain x86-64-v2 core: SSE through SSE4.2 and POPCNT, no AVX.
+        // A plain core: SSE2 and SSE3, CMPXCHG16B and POPCNT; no SSSE3, SSE4 or AVX, so a
+        // libc choosing its string routines by cpuid takes the SSE2 ones xlat translates.
         self.get(l_reg(RAX)); self.c64(0xffff_ffff); self.e(W::I64And); self.e(W::I64Eqz);
         self.e(W::If(BlockType::Empty));
         self.c64(1); self.set(l_reg(RAX));
@@ -1033,7 +1034,7 @@ impl Fx<'_> {
         self.e(W::Else);
         self.c64(0x0006_06a6); self.set(l_reg(RAX));
         self.c64(0); self.set(l_reg(3));
-        self.c64((1 << 0) | (1 << 9) | (1 << 13) | (1 << 19) | (1 << 20) | (1 << 23)); self.set(l_reg(RCX));
+        self.c64((1 << 0) | (1 << 13) | (1 << 23)); self.set(l_reg(RCX));
         self.c64((1 << 0) | (1 << 4) | (1 << 8) | (1 << 15) | (1 << 23) | (1 << 25) | (1 << 26)); self.set(l_reg(RDX));
         self.e(W::End);
     }
@@ -1439,6 +1440,29 @@ impl Fx<'_> {
                     self.xwrite(i, 0, 16, l_v(0))
                 } else { false }
             }
+            // Half moves: one qword of an xmm register from or to memory, the other kept.
+            Movhps | Movhpd | Movlps | Movlpd => {
+                let lane = if matches!(m, Movhps | Movhpd) { 1 } else { 0 };
+                if is_x0 && i.op1_kind() == OpKind::Memory {
+                    self.xread(i, 0, 16);
+                    self.address(i); self.e(W::I64Load(mem(0)));
+                    self.e(W::I64x2ReplaceLane(lane)); self.set(l_v(0));
+                    self.xwrite(i, 0, 16, l_v(0))
+                } else if is_x1 && i.op0_kind() == OpKind::Memory {
+                    self.address(i);
+                    self.xread(i, 1, 16); self.e(W::I64x2ExtractLane(lane));
+                    self.e(W::I64Store(mem(0)));
+                    true
+                } else { false }
+            }
+            // Between registers: movhlps puts the source's high qword low, movlhps its low qword high.
+            Movhlps | Movlhps if is_x0 && is_x1 => {
+                let (from, to) = if m == Movhlps { (1, 0) } else { (0, 1) };
+                self.xread(i, 0, 16);
+                self.xread(i, 1, 16); self.e(W::I64x2ExtractLane(from));
+                self.e(W::I64x2ReplaceLane(to)); self.set(l_v(0));
+                self.xwrite(i, 0, 16, l_v(0))
+            }
             Pxor | Xorps | Xorpd => {
                 if is_x1 && i.op0_register() == i.op1_register() {
                     self.e(W::V128Const(0)); self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0))
@@ -1465,6 +1489,15 @@ impl Fx<'_> {
             Mulps => binary(self, W::F32x4Mul), Divps => binary(self, W::F32x4Div),
             Unpcklpd => binary(self, W::I8x16Shuffle([0, 1, 2, 3, 4, 5, 6, 7, 16, 17, 18, 19, 20, 21, 22, 23])),
             Unpckhpd => binary(self, W::I8x16Shuffle([8, 9, 10, 11, 12, 13, 14, 15, 24, 25, 26, 27, 28, 29, 30, 31])),
+            // Packs narrow with saturation: the destination's lanes low, the source's high.
+            Packuswb => binary(self, W::I8x16NarrowI16x8U), Packsswb => binary(self, W::I8x16NarrowI16x8S),
+            Packssdw => binary(self, W::I16x8NarrowI32x4S), Packusdw => binary(self, W::I16x8NarrowI32x4U),
+            Paddusb => binary(self, W::I8x16AddSatU), Paddusw => binary(self, W::I16x8AddSatU),
+            Paddsb => binary(self, W::I8x16AddSatS), Paddsw => binary(self, W::I16x8AddSatS),
+            Psubusb => binary(self, W::I8x16SubSatU), Psubusw => binary(self, W::I16x8SubSatU),
+            Psubsb => binary(self, W::I8x16SubSatS), Psubsw => binary(self, W::I16x8SubSatS),
+            Pavgb => binary(self, W::I8x16AvgrU), Pavgw => binary(self, W::I16x8AvgrU),
+            Pmullw => binary(self, W::I16x8Mul), Pmulld => binary(self, W::I32x4Mul),
             Pminub => binary(self, W::I8x16MinU), Pmaxub => binary(self, W::I8x16MaxU),
             Pminsw => binary(self, W::I16x8MinS), Pmaxsw => binary(self, W::I16x8MaxS),
             Pminud => binary(self, W::I32x4MinU), Pmaxud => binary(self, W::I32x4MaxU),
@@ -1590,6 +1623,29 @@ impl Fx<'_> {
                         self.c32(n.min(width - 1)); self.e(op);
                     }
                     self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0))
+                }
+            }
+            // Shifts by a count in an xmm register or memory (its low qword): past the lane's
+            // width a logical shift gives zero and an arithmetic one the sign in every bit.
+            Psllw | Pslld | Psllq | Psrlw | Psrld | Psrlq | Psraw | Psrad => {
+                let (op, width) = match m {
+                    Psllw => (W::I16x8Shl, 16), Pslld => (W::I32x4Shl, 32), Psllq => (W::I64x2Shl, 64),
+                    Psrlw => (W::I16x8ShrU, 16), Psrld => (W::I32x4ShrU, 32), Psrlq => (W::I64x2ShrU, 64),
+                    Psraw => (W::I16x8ShrS, 16), _ => (W::I32x4ShrS, 32),
+                };
+                let arith = matches!(m, Psraw | Psrad);
+                self.xread(i, 1, 16) && {
+                    self.e(W::I64x2ExtractLane(0)); self.set(l_t(0));
+                    self.xread(i, 0, 16) && {
+                        self.set(l_v(1));
+                        self.get(l_t(0)); self.c64(width as i64); self.e(W::I64GeU);
+                        self.e(W::If(BlockType::Result(ValType::V128)));
+                        if arith { self.get(l_v(1)); self.c32(width - 1); self.e(op.clone()); } else { self.e(W::V128Const(0)); }
+                        self.e(W::Else);
+                        self.get(l_v(1)); self.get(l_t(0)); self.e(W::I32WrapI64); self.e(op);
+                        self.e(W::End);
+                        self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0))
+                    }
                 }
             }
             _ => false,
