@@ -21,8 +21,11 @@
   --motion: 120ms; --move: 280ms;
   /* Lines are 1px; the file being worked on is drawn a little heavier. */
   --line-work: 1.5px;
-  /* Forge's extra room on its outer sides, so the work sits a little inward. */
+  /* Everything, rail included, sits a little inward from the window's edges,
+     against the instinct to run to them. */
   --outer: clamp(var(--s5), 3vw, 64px);
+  --outer-y: clamp(var(--s3), 2.5vh, var(--s5));
+  --inner-h: calc(100vh - 2 * var(--outer-y));
   /* Forge's band of repo chips sits this far down, between Home and the next rail icon. */
   --band: 64px;
   --rail: 72px;
@@ -32,6 +35,7 @@
 html, body { height: 100%; }
 body {
   margin: 0;
+  padding: var(--outer-y) var(--outer);
   display: grid;
   grid-template-columns: var(--rail) minmax(0, 1fr);
   background: var(--ground);
@@ -60,7 +64,7 @@ a { color: var(--ink); }
 .rail-item[aria-expanded='true'], .me[aria-expanded='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 
 /* ---- 1. Rail ---- */
-.rail { border-right: 1px solid var(--rule); height: 100vh; position: sticky; top: 0; z-index: 6; display: flex; flex-direction: column; }
+.rail { border-right: 1px solid var(--rule); height: var(--inner-h); position: sticky; top: var(--outer-y); z-index: 6; display: flex; flex-direction: column; }
 .rail-tabs { display: flex; flex-direction: column; align-items: center; gap: var(--s1); flex: 1; min-height: 0; padding: var(--s5) 0 var(--s3); }
 /* The rail starts a little low, so its weight sits below the middle of its top. */
 
@@ -215,12 +219,10 @@ a { color: var(--ink); }
 /* Forge: a band of repo chips set low, the center (3/4) an endless page of
    files with a prompt box at its foot, and a narrow side (1/4) that stays out
    of the way. The only line is the one between the center and the side. */
-.page.page-work { padding: 0; height: 100vh; overflow: hidden; }
+.page.page-work { padding: 0; height: var(--inner-h); overflow: hidden; }
 .page.page-work > .work { max-width: none; }
-/* Pulled a little toward the middle: generous room on the outer sides,
-   against the instinct to run to the window's edges. */
 .work {
-  height: 100vh; display: grid; padding-inline: var(--outer);
+  height: var(--inner-h); display: grid;
   grid-template-columns: minmax(0, 3fr) minmax(280px, 1fr); grid-template-rows: auto minmax(0, 1fr);
 }
 /* The band sits low: its chips line up between Home and the next rail icon. */
@@ -334,7 +336,7 @@ mark { background: var(--ink); color: var(--ground); }
    under it moves. It opens under the pointer and stays a while after it
    leaves (tree.ts). */
 .tree {
-  position: fixed; top: 0; bottom: 0; left: var(--rail); z-index: 5; width: clamp(260px, 20vw, 340px); overflow: auto;
+  position: fixed; top: var(--outer-y); bottom: var(--outer-y); left: calc(var(--outer) + var(--rail)); z-index: 5; width: clamp(260px, 20vw, 340px); overflow: auto;
   padding: var(--s3) var(--s2) var(--s5); background: var(--ground); border-right: 1px solid var(--rule);
   visibility: hidden; opacity: 0;
   transition: opacity var(--motion), visibility 0s var(--motion);
