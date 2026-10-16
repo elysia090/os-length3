@@ -9,7 +9,8 @@
     "build": "tsc --noEmit && vite build",
     "check": "tsc --noEmit && node --test \"src/**/*.test.ts\"",
     "tauri": "tauri",
-    "userland": "sh scripts/userland.sh"
+    "userland": "sh scripts/userland.sh",
+    "web-release": "sh scripts/web-release.sh"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.12.3",
