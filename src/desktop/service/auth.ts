@@ -1,25 +1,31 @@
-// Who someone is, on the Remote: Better Auth, with passkeys as the way in.
+// Who someone is, on the Remote: Better Auth, the ordinary way.
 //
-//   start      a blank account is made (anonymous), and a passkey is added
-//              to it at once; if that does not happen, the blank one goes
-//   sign in    a passkey (discoverable: no name or address to type)
-//   recover    the recovery code (recovery.ts), or GitHub if it was linked
-//   app, l3    device authorization: the app shows a code, it is approved in
-//              a browser with a passkey, and the device gets its own session
+//   sign in   with GitHub or Google (OAuth): the account is that identity
+//   then      a passkey, added from the first session, so later sign-ins
+//             need no provider (discoverable: nothing to type)
+//   recover   sign in with the provider again, and add a passkey there
+//   app, l3   device authorization: the app shows a code, a browser where
+//             the person is signed in approves it, and the device gets a
+//             session of its own
 //
-// Every client holds a session token (the bearer plugin) rather than a
-// cookie, so the web app, the desktop app and l3 work the same way and a
-// session can be seen and ended from any of them.
+// There are no blank accounts: every account is held by a provider's
+// identity, which is also what keeps the Remote from being anyone's free,
+// anonymous store or relay (app.ts sets the limits).
+//
+// Clients hold a session token (the bearer plugin): the web app reads its
+// own once the provider sends it back, the app and l3 get theirs from the
+// device flow, so a session can be seen and ended from any of them.
 
 import {passkey} from '@better-auth/passkey';
 import {betterAuth} from 'better-auth';
 import {drizzleAdapter} from 'better-auth/adapters/drizzle';
-import {anonymous, bearer, deviceAuthorization} from 'better-auth/plugins';
-import {recovery} from './recovery.ts';
+import {bearer, deviceAuthorization, genericOAuth} from 'better-auth/plugins';
 import * as schema from './schema.ts';
 
 /** The desktop app and l3, the only clients that may ask for a device code. */
 export const DEVICE_CLIENTS = ['length3-app', 'l3'] as const;
+
+export interface Provider { clientId: string; clientSecret: string }
 
 export interface AuthConfig {
   // Drizzle database of any Postgres driver (Neon in production, PGlite in tests).
@@ -32,10 +38,17 @@ export interface AuthConfig {
   appOrigin: string;
   /** Other pages that may call (the desktop app's webview, local development). */
   origins?: string[];
-  github?: {clientId: string; clientSecret: string};
+  github?: Provider;
+  google?: Provider;
+  /** A stand-in provider on this service itself (devoauth.ts): development and tests only. */
+  dev?: boolean;
   /** Off only in tests, where every request comes from the same address. */
   rateLimit?: boolean;
 }
+
+/** Which providers a Remote offers, in the order its sign-in shows them. */
+export const providers = (c: Pick<AuthConfig, 'github' | 'google' | 'dev'>) =>
+  [c.github && 'github', c.google && 'google', c.dev && 'dev'].filter(Boolean) as ('github' | 'google' | 'dev')[];
 
 export function createAuth(c: AuthConfig) {
   const rpID = new URL(c.appOrigin).hostname;
@@ -45,21 +58,22 @@ export function createAuth(c: AuthConfig) {
     secret: c.secret,
     database: drizzleAdapter(c.db, {provider: 'pg', schema}),
     trustedOrigins: [c.appOrigin, ...(c.origins ?? [])],
-    // Nobody signs in with a password here.
     emailAndPassword: {enabled: false},
-    socialProviders: c.github ? {github: {clientId: c.github.clientId, clientSecret: c.github.clientSecret}} : {},
-    account: {accountLinking: {enabled: true, trustedProviders: ['github']}},
+    socialProviders: {
+      ...(c.github ? {github: {clientId: c.github.clientId, clientSecret: c.github.clientSecret}} : {}),
+      ...(c.google ? {google: {clientId: c.google.clientId, clientSecret: c.google.clientSecret, prompt: 'select_account' as const}} : {}),
+    },
+    // One person, one account: a second provider with the same verified address joins it.
+    account: {accountLinking: {enabled: true, trustedProviders: ['github', 'google', 'dev']}},
     session: {expiresIn: 60 * 60 * 24 * 60, updateAge: 60 * 60 * 24},
     rateLimit: {enabled: c.rateLimit ?? true, window: 60, max: 120},
     plugins: [
-      anonymous({emailDomainName: 'users.length3.invalid', generateName: () => ''}),
       passkey({
         rpID,
         rpName: 'Length³ OS',
         origin: c.appOrigin,
         authenticatorSelection: {residentKey: 'required', userVerification: 'preferred'},
       }),
-      recovery(),
       bearer(),
       deviceAuthorization({
         verificationUri: `${c.appOrigin}/?device`,
@@ -67,6 +81,13 @@ export function createAuth(c: AuthConfig) {
         expiresIn: '10m',
         interval: '2s',
       }),
+      ...(c.dev ? [genericOAuth({config: [{
+        providerId: 'dev', clientId: 'dev', clientSecret: 'dev',
+        authorizationUrl: `${c.baseURL}/dev-oauth/authorize`,
+        tokenUrl: `${c.baseURL}/dev-oauth/token`,
+        userInfoUrl: `${c.baseURL}/dev-oauth/userinfo`,
+        scopes: ['profile', 'email'],
+      }]})] : []),
     ],
   });
 }

@@ -2,7 +2,7 @@
 // tests). /api/auth/* is Better Auth. Everything under /v1 but the release
 // bundles needs a session, sent as a bearer token.
 //
-//   GET    /v1/about                  what this Remote offers (GitHub sign-in or not)
+//   GET    /v1/about                  what this Remote offers: its sign-in providers
 //   GET    /v1/os/:sha                a release bundle, to anyone, by digest (Range)
 //   POST   /v1/blobs/missing [sha]    which of these the account does not have yet
 //   PUT    /v1/blobs/:sha             bytes, refused unless they are that digest
@@ -22,6 +22,7 @@ import {and, desc, eq, inArray, sql} from 'drizzle-orm';
 import {Hono, type MiddlewareHandler} from 'hono';
 import {cors} from 'hono/cors';
 import type {Auth} from './auth.ts';
+import {devOAuth} from './devoauth.ts';
 import type {Bucket} from './bucket.ts';
 import {blob, cut, home, repo, type Tree} from './schema.ts';
 
@@ -32,7 +33,8 @@ export interface Deps {
   bucket: Bucket;
   /** Pages that may call: the web app, the desktop app's webview. */
   origins: string[];
-  github: boolean;
+  /** The providers offered for sign-in (auth.ts providers()). */
+  providers: string[];
 }
 
 const HEX = /^[0-9a-f]{64}$/;
@@ -87,7 +89,8 @@ export function createApp(d: Deps) {
 
   app.on(['GET', 'POST'], '/api/auth/*', (c) => d.auth.handler(c.req.raw));
 
-  app.get('/v1/about', (c) => c.json({passkey: true, recovery: true, github: d.github}));
+  app.get('/v1/about', (c) => c.json({passkey: true, providers: d.providers}));
+  if (d.providers.includes('dev')) app.route('/dev-oauth', devOAuth());
 
   // The OS is public: its canonical copy is the release, named by its digest.
   app.on(['GET', 'HEAD'], '/v1/os/:sha', async (c) => {

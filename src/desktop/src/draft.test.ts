@@ -17,8 +17,8 @@ Object.assign(globalThis, {localStorage: {
 const URL_ = 'http://remote.test', APP = 'http://app.test';
 const db = drizzle(new PGlite(), {schema});
 await migrate(db, {migrationsFolder: new URL('../service/migrations', import.meta.url).pathname});
-const auth = createAuth({db, secret: 'test-secret-'.repeat(4), baseURL: URL_, appOrigin: APP, rateLimit: false});
-const app = createApp({db, auth, bucket: memoryBucket(), origins: [APP], github: false});
+const auth = createAuth({db, secret: 'test-secret-'.repeat(4), baseURL: URL_, appOrigin: APP, rateLimit: false, dev: true});
+const app = createApp({db, auth, bucket: memoryBucket(), origins: [APP], providers: ['dev']});
 Object.assign(globalThis, {fetch: (url: string, init?: RequestInit) => {
   const headers = new Headers(init?.headers);
   headers.set('Origin', APP);
@@ -31,9 +31,16 @@ const history = await import('./history.ts');
 const {setState, getState} = await import('./state.ts');
 const enc = new TextEncoder();
 
+/** Signing in as the browser does: the stand-in provider's page, then back. */
 const signIn = async () => {
-  const r = await fetch(`${URL_}/api/auth/sign-in/anonymous`, {method: 'POST', body: '{}', headers: {'Content-Type': 'application/json'}});
-  return r.headers.get('set-auth-token')!;
+  const asked = await fetch(`${URL_}/api/auth/sign-in/social`, {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({provider: 'dev', callbackURL: `${APP}/`})});
+  const cookies = asked.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
+  const go = new URL(((await asked.json()) as {url: string}).url);
+  const approve = new URL(`${URL_}/dev-oauth/approve`);
+  for (const k of ['redirect_uri', 'state']) approve.searchParams.set(k, go.searchParams.get(k) ?? '');
+  const back = (await fetch(approve.toString())).headers.get('Location')!;
+  return (await fetch(back, {headers: {Cookie: cookies}})).headers.get('set-auth-token')!;
 };
 const token = await signIn();
 await setState('remote', JSON.stringify({url: URL_, token}));

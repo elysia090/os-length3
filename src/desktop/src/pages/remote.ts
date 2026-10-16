@@ -1,5 +1,6 @@
 import {ago, bytes, h} from '../dom.ts';
 import {isNative} from '../host.ts';
+import {t, tn} from '../i18n.ts';
 import {bring, onSync, remoteOnly, repoState, type RepoSync} from '../lifecycle.ts';
 import * as account from '../remote.ts';
 import {store} from '../repos.ts';
@@ -8,24 +9,24 @@ import type {Context} from './context.ts';
 
 // Remote: where the canonical copy is, and who this device is there.
 //
-// Not in yet: one sentence on what it means, and the ways in. A browser
-// makes the account with a passkey (はじめる) or uses one it has (パスキーで
-// 入る), or the recovery code when every passkey is gone; the app and l3
-// show a code that a browser approves.
+// Not signed in: one sentence on what it means, and the ways in. A browser
+// signs in with GitHub or Google, or with a passkey it already has; the app
+// and l3 show a code that a browser approves.
 //
-// In: the repos, here and on the Remote only, each with where it stands;
-// then what keeps the account: passkeys, the recovery code, the devices.
+// Signed in: the repos, here and on the Remote only, each with where it
+// stands; then what keeps the account: passkeys, the providers it can sign
+// in with, the devices.
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /** Where a repo stands, in words. */
 export function syncWord(s: RepoSync | undefined): string {
   if (!s) return '';
-  if (s.where === 'local') return 'この端末だけ';
-  if (s.where === 'sending') return '送っています';
-  if (s.where === 'offline') return `まだ送れていません${s.changed ? `（${s.changed} 件）` : ''}`;
-  if (s.unsynced.length) return `同期済み · 送れないもの ${s.unsynced.length}`;
-  return '同期済み';
+  if (s.where === 'local') return t('Only on this device');
+  if (s.where === 'sending') return t('Sending');
+  if (s.where === 'offline') return s.changed ? tn('Not sent yet ({n} change)', 'Not sent yet ({n} changes)', s.changed) : t('Not sent yet');
+  if (s.unsynced.length) return tn('In step · {n} thing cannot be sent', 'In step · {n} things cannot be sent', s.unsynced.length);
+  return t('In step');
 }
 
 function button(text: string, kind = ''): HTMLButtonElement {
@@ -39,36 +40,24 @@ async function pressing(b: HTMLButtonElement, error: HTMLElement, f: () => Promi
   try { await f(); } catch (e) { error.textContent = message(e); } finally { b.disabled = false; }
 }
 
-/** A recovery code, shown this once, to keep. */
-function shownCode(code: string, done: () => void): HTMLElement {
-  const text = h('input', {class: 'line-in mono', readonly: '', value: code, 'aria-label': '復旧コード'}) as HTMLInputElement;
-  const copy = button('コピー');
-  copy.addEventListener('click', () => { text.select(); void navigator.clipboard?.writeText(code); copy.textContent = 'コピーしました'; });
-  const kept = button('控えました', 'primary');
-  kept.addEventListener('click', done);
-  queueMicrotask(() => text.select());
-  return h('div', {class: 'remote-join'},
-    h('p', {}, 'パスキーがすべて使えなくなったとき、このコードで一度だけ入れます。表示はこの一度だけです。パスワードマネージャーか紙に控えてください。'),
-    h('div', {class: 'row'}, text, copy), h('div', {class: 'row'}, kept));
-}
-
 /**
- * The ways in. On the web: はじめる, パスキーで入る, 復旧コード. In the app: a
- * code approved in the browser. `done` runs once this device is in.
+ * The ways in. On the web: a provider, or a passkey. In the app: a code
+ * approved in the browser. `done` runs once this device is in; a provider
+ * leaves the page and comes back to `back`.
  */
-export function signInBox(done: () => void, words = isNative
-  ? '正本は Remote に置かれます。つなぐと、変えたものはすぐ送られ、ほかの端末でも開けます。'
-  : '正本は Remote に置かれます。変えたものはすぐ送られ、このタブを閉じるとこのブラウザの写しは消えます。'): HTMLElement {
+export function signInBox(done: () => void, words?: string, back?: string): HTMLElement {
   const error = h('p', {class: 'error', role: 'alert'});
-  const box = h('div', {class: 'remote-join'}, h('p', {class: 'muted'}, words));
+  const box = h('div', {class: 'remote-join'}, h('p', {class: 'muted'}, words ?? (isNative
+    ? t('The canonical copy is kept on the Remote. Once this device is connected, what you change is sent at once, and your other devices can open it.')
+    : t('The canonical copy is kept on the Remote. Once you are signed in, what you change is sent at once; closing this tab lets go of this browser\'s copy.'))));
   if (isNative) {
-    const go = button('ブラウザでつなぐ', 'primary');
+    const go = button(t('Connect in the browser'), 'primary');
     const waiting = h('div', {class: 'remote-join', hidden: ''});
     go.addEventListener('click', () => void pressing(go, error, async () => {
       const s = await account.appSignIn();
       waiting.hidden = false;
       waiting.replaceChildren(
-        h('p', {}, '開いたブラウザで、このコードと同じか確かめて承認してください。'),
+        h('p', {}, t('In the browser that opened, check that it shows this code, then approve.')),
         h('p', {class: 'device-code mono'}, s.code),
         h('p', {class: 'muted small'}, s.url));
       go.hidden = true;
@@ -78,50 +67,26 @@ export function signInBox(done: () => void, words = isNative
     box.append(h('div', {class: 'row'}, go), waiting, error);
     return box;
   }
-  const start = button('はじめる', 'primary');
-  const enter = button('パスキーで入る');
-  const lost = button('復旧コードで入る', 'link');
-  const code = h('input', {class: 'line-in mono', placeholder: 'XXXX-XXXX-XXXX-XXXX-XXXX-XXXX', 'aria-label': '復旧コード', spellcheck: 'false', autocomplete: 'off'}) as HTMLInputElement;
-  const use = button('入る');
-  const recovering = h('div', {class: 'row', hidden: ''}, code, use);
-  start.addEventListener('click', () => void pressing(start, error, async () => { await account.start(); done(); }));
-  enter.addEventListener('click', () => void pressing(enter, error, async () => { await account.signIn(); done(); }));
-  lost.addEventListener('click', () => { recovering.hidden = false; lost.hidden = true; code.focus(); });
-  const recover = () => void pressing(use, error, async () => {
-    await account.recover(code.value);
-    // The code is spent: a new passkey, then a new code.
-    box.replaceChildren(afterRecovery(done));
+  const providers = h('div', {class: 'row sign-in-row'});
+  void account.about().then(({providers: list}) => {
+    providers.replaceChildren(...list.map((p, i) => {
+      const b = button(t('Continue with {name}', {name: account.PROVIDER_NAME[p]}), i === 0 ? 'primary' : '');
+      b.addEventListener('click', () => void pressing(b, error, () => account.signInWith(p, back)));
+      return b;
+    }));
+    if (!list.length) providers.replaceChildren(h('span', {class: 'muted'}, t('This Remote offers no way to sign in yet.')));
   });
-  use.addEventListener('click', recover);
-  code.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) recover(); });
-  box.append(
-    h('div', {class: 'row'}, start, h('span', {class: 'muted small'}, 'パスキーをひとつ作るだけです。名前もメールもいりません。')),
-    h('div', {class: 'row'}, enter),
-    h('div', {class: 'row'}, lost), recovering, error);
-  return box;
-}
-
-/** In by the recovery code: make a passkey now, then a new code to keep. */
-function afterRecovery(finish: () => void): HTMLElement {
-  const done = () => { account.joined(); finish(); };
-  const error = h('p', {class: 'error', role: 'alert'});
-  const make = button('パスキーを作る', 'primary');
-  const later = button('あとで', 'link');
-  later.addEventListener('click', done);
-  const box = h('div', {class: 'remote-join'},
-    h('p', {}, '入りました。復旧コードは使い切りです。この端末でパスキーを作り、新しい復旧コードを控えてください。'),
-    h('div', {class: 'row'}, make, later), error);
-  make.addEventListener('click', () => void pressing(make, error, async () => {
-    await account.addPasskey();
-    box.replaceChildren(shownCode(await account.makeRecovery(), done));
-  }));
+  const passkey = button(t('Sign in with a passkey'));
+  passkey.addEventListener('click', () => void pressing(passkey, error, async () => { await account.signIn(); done(); }));
+  box.append(providers, h('div', {class: 'row'}, passkey),
+    h('p', {class: 'muted small'}, t('Lost every passkey? Sign in with GitHub or Google again and add a new one.')), error);
   return box;
 }
 
 function repoSection(ctx: Context): HTMLElement {
   const rows = h('div', {class: 'rows'});
-  const section = h('section', {class: 'section', 'aria-labelledby': 'remote-repos'}, h('h2', {id: 'remote-repos'}, 'repo'), rows);
   const error = h('p', {class: 'error', role: 'alert'});
+  const section = h('section', {class: 'section', 'aria-labelledby': 'remote-repos'}, h('h2', {id: 'remote-repos'}, t('Repos')), rows, error);
   const paint = async () => {
     const here = await store.list().catch(() => []);
     const items: Node[] = here.map((r) => {
@@ -132,18 +97,32 @@ function repoSection(ctx: Context): HTMLElement {
       row.addEventListener('click', () => ctx.openRepo(r.name));
       return row;
     });
-    for (const t of remoteOnly()) {
-      const open = button('開く', 'small-button');
-      open.addEventListener('click', () => void pressing(open, error, async () => { await bring(t.name); ctx.openRepo(t.name); }));
-      items.push(h('div', {class: 'row-item usage-prompt'}, h('span', {class: 'row-name'}, t.name),
-        h('span', {class: 'row-meta'}, `Remote だけ · ${bytes(t.bytes)}`), open));
+    for (const r of remoteOnly()) {
+      const open = button(t('Open'), 'small-button');
+      open.addEventListener('click', () => void pressing(open, error, async () => { await bring(r.name); ctx.openRepo(r.name); }));
+      items.push(h('div', {class: 'row-item usage-prompt'}, h('span', {class: 'row-name'}, r.name),
+        h('span', {class: 'row-meta'}, t('Only on the Remote · {size}', {size: bytes(r.bytes)})), open));
     }
-    rows.replaceChildren(...(items.length ? items : [h('div', {class: 'row-item muted'}, 'repoはまだありません')]));
+    rows.replaceChildren(...(items.length ? items : [h('div', {class: 'row-item muted'}, t('No repos yet'))]));
   };
-  section.append(error);
   void paint();
   const stop = onSync(() => { if (!section.isConnected) { stop(); return; } void paint(); });
   return section;
+}
+
+/** No passkey yet: one line and the button, above everything else. */
+function passkeyOffer(): HTMLElement {
+  const box = h('section', {class: 'section offer', hidden: ''});
+  const error = h('p', {class: 'error', role: 'alert'});
+  void account.passkeys().then((list) => {
+    if (list.length) return;
+    const add = button(t('Add a passkey'), 'primary');
+    add.addEventListener('click', () => void pressing(add, error, async () => { await account.addPasskey(); box.hidden = true; }));
+    box.hidden = false;
+    box.replaceChildren(h('div', {class: 'row reclaim-act'},
+      h('span', {class: 'grow'}, t('Add a passkey for this device, so next time you sign in without GitHub or Google.')), add), error);
+  }, () => {});
+  return box;
 }
 
 function passkeySection(): HTMLElement {
@@ -151,37 +130,44 @@ function passkeySection(): HTMLElement {
   const error = h('p', {class: 'error', role: 'alert'});
   const paint = async () => {
     const list = await account.passkeys().catch((e) => { error.textContent = message(e); return []; });
-    const add = button('パスキーを足す', 'small-button');
+    const add = button(t('Add a passkey'), 'small-button');
     add.addEventListener('click', () => void pressing(add, error, async () => { await account.addPasskey(); await paint(); }));
-    section.replaceChildren(h('h2', {id: 'remote-keys'}, h('span', {}, 'パスキー', h('small', {}, `${list.length}`)), add),
+    section.replaceChildren(h('h2', {id: 'remote-keys'}, h('span', {}, t('Passkeys'), h('small', {}, `${list.length}`)), add),
       h('div', {class: 'rows'}, ...(list.length ? list.map((k) => {
-        const remove = button('外す', 'small-button');
-        // The last way in is not taken away from here.
-        remove.disabled = list.length < 2;
-        if (remove.disabled) remove.title = '最後のパスキーは外せません';
+        const remove = button(t('Remove'), 'small-button');
         remove.addEventListener('click', () => void pressing(remove, error, async () => { await account.removePasskey(k.id); await paint(); }));
-        return h('div', {class: 'row-item usage-prompt'}, h('span', {class: 'row-name'}, k.name || 'パスキー'),
-          h('span', {class: 'row-meta'}, `${ago(Date.parse(k.createdAt))}に作成${k.backedUp ? ' · 同期されるパスキー' : ''}`), remove);
-      }) : [h('div', {class: 'row-item muted'}, 'パスキーがありません。足しておくと、ほかの端末からも入れます')])), error);
+        return h('div', {class: 'row-item usage-prompt'}, h('span', {class: 'row-name'}, k.name || t('Passkey')),
+          h('span', {class: 'row-meta'}, `${t('Made {when}', {when: ago(Date.parse(k.createdAt))})}${k.backedUp ? ` · ${t('synced passkey')}` : ''}`), remove);
+      }) : [h('div', {class: 'row-item muted'}, t('No passkeys. With one, you sign in from any device without a provider.'))])), error);
   };
   void paint();
   return section;
 }
 
-function recoverySection(): HTMLElement {
-  const section = h('section', {class: 'section', 'aria-labelledby': 'remote-recovery'});
+/** The providers this account signs in with: each is also the way back in. */
+function providerSection(): HTMLElement {
+  const section = h('section', {class: 'section', 'aria-labelledby': 'remote-providers'});
   const error = h('p', {class: 'error', role: 'alert'});
   const paint = async () => {
-    const has = await account.hasRecovery().catch(() => null);
-    const make = button(has ? '作り直す' : '作る', has ? 'small-button' : 'primary');
-    make.addEventListener('click', () => void pressing(make, error, async () => {
-      const code = await account.makeRecovery();
-      section.replaceChildren(h('h2', {id: 'remote-recovery'}, '復旧コード'), shownCode(code, () => void paint()));
-    }));
-    section.replaceChildren(h('h2', {id: 'remote-recovery'}, '復旧コード'),
-      h('div', {class: 'row reclaim-act'}, h('span', {class: 'grow muted'}, has === null ? '' : has
-        ? 'あります。作り直すと前のコードは使えなくなります。'
-        : 'まだありません。パスキーをすべてなくしたとき、これがないと入れません。'), make), error);
+    const [mine, offered] = await Promise.all([account.linked().catch(() => []), account.about()]);
+    const have = new Set(mine.map((a) => a.providerId));
+    const rows = mine.map((a) => {
+      const off = button(t('Unlink'), 'small-button');
+      // The last provider is the way back in: it stays.
+      off.disabled = mine.length < 2;
+      if (off.disabled) off.title = t('The last way to sign in stays');
+      off.addEventListener('click', () => void pressing(off, error, async () => { await account.unlink(a.providerId); await paint(); }));
+      return h('div', {class: 'row-item usage-prompt'},
+        h('span', {class: 'row-name'}, account.PROVIDER_NAME[a.providerId as account.Provider] ?? a.providerId),
+        h('span', {class: 'row-meta'}, t('Linked {when}', {when: ago(Date.parse(a.createdAt))})), off);
+    });
+    const more = offered.providers.filter((p) => !have.has(p)).map((p) => {
+      const b = button(t('Link {name}', {name: account.PROVIDER_NAME[p]}), 'small-button');
+      b.addEventListener('click', () => void pressing(b, error, () => account.link(p)));
+      return b;
+    });
+    section.replaceChildren(h('h2', {id: 'remote-providers'}, t('Sign-in providers')), h('div', {class: 'rows'}, ...rows),
+      ...(more.length ? [h('div', {class: 'row work-act'}, ...more)] : []), error);
   };
   void paint();
   return section;
@@ -192,15 +178,15 @@ function deviceSection(): HTMLElement {
   const error = h('p', {class: 'error', role: 'alert'});
   const paint = async () => {
     const list = await account.devices().catch((e) => { error.textContent = message(e); return []; });
-    section.replaceChildren(h('h2', {id: 'remote-devices'}, h('span', {}, '端末', h('small', {}, `${list.length}`))),
+    section.replaceChildren(h('h2', {id: 'remote-devices'}, h('span', {}, t('Devices'), h('small', {}, `${list.length}`))),
       h('div', {class: 'rows'}, ...list.map((d) => {
-        const act: Node = d.current ? h('span', {class: 'row-meta'}, 'この端末') : (() => {
-          const end = button('外す', 'small-button');
+        const act: Node = d.current ? h('span', {class: 'row-meta'}, t('This device')) : (() => {
+          const end = button(t('Remove'), 'small-button');
           end.addEventListener('click', () => void pressing(end, error, async () => { await account.endDevice(d.token); await paint(); }));
           return end;
         })();
         return h('div', {class: 'row-item usage-prompt'}, h('span', {class: 'row-name'}, account.deviceWord(d.userAgent)),
-          h('span', {class: 'row-meta'}, `${ago(Date.parse(d.updatedAt))}に使用`), act);
+          h('span', {class: 'row-meta'}, t('Used {when}', {when: ago(Date.parse(d.updatedAt))})), act);
       })), error);
   };
   void paint();
@@ -219,14 +205,16 @@ export function remote(ctx: Context): Node[] {
       holder.replaceChildren(h('section', {class: 'section'}, signInBox(() => paint())));
       return;
     }
-    const leave = button('この端末を外す', 'small-button');
+    const leave = button(t('Sign out on this device'), 'small-button');
     leave.addEventListener('click', () => void account.signOut());
     holder.replaceChildren(
+      ...(isNative ? [] : [passkeyOffer()]),
       repoSection(ctx),
-      ...(isNative ? [] : [passkeySection(), recoverySection()]),
+      ...(isNative ? [] : [passkeySection(), providerSection()]),
       deviceSection(),
       h('section', {class: 'section'},
-        h('div', {class: 'row reclaim-act'}, h('span', {class: 'muted grow'}, `つながっています · ${new URL(c.url || location.origin).host}${isNative ? ' · パスキーと復旧コードはブラウザで扱います' : ''}`), leave)));
+        h('div', {class: 'row reclaim-act'}, h('span', {class: 'muted grow'},
+          `${t('Connected · {host}', {host: new URL(c.url || location.origin).host})}${isNative ? ` · ${t('passkeys and providers are managed in the browser')}` : ''}`), leave)));
   };
   paint();
   const stop = account.onConnection(() => { if (!holder.isConnected) { stop(); return; } paint(); });

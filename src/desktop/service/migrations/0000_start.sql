@@ -106,10 +106,7 @@ CREATE TABLE "user" (
 	"image" text,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL,
-	"is_anonymous" boolean DEFAULT false,
-	"recovery_digest" text,
-	CONSTRAINT "user_email_unique" UNIQUE("email"),
-	CONSTRAINT "user_recovery_digest_unique" UNIQUE("recovery_digest")
+	CONSTRAINT "user_email_unique" UNIQUE("email")
 );
 --> statement-breakpoint
 CREATE TABLE "verification" (

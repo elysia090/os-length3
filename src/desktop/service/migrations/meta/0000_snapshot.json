@@ -1,5 +1,5 @@
 {
-  "id": "642b34b2-85ed-430e-a87f-3503225bc398",
+  "id": "0e35f76f-303e-43ec-addb-5337fcb871bd",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -855,19 +855,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "is_anonymous": {
-          "name": "is_anonymous",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": false,
-          "default": false
-        },
-        "recovery_digest": {
-          "name": "recovery_digest",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {},
@@ -879,13 +866,6 @@
           "nullsNotDistinct": false,
           "columns": [
             "email"
-          ]
-        },
-        "user_recovery_digest_unique": {
-          "name": "user_recovery_digest_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "recovery_digest"
           ]
         }
       },

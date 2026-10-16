@@ -14,9 +14,13 @@ const APP = 'http://app.test';
 async function service() {
   const db = drizzle(new PGlite(), {schema});
   await migrate(db, {migrationsFolder: new URL('./migrations', import.meta.url).pathname});
-  const auth = createAuth({db, secret: 'test-secret-'.repeat(4), baseURL: BASE, appOrigin: APP, rateLimit: false});
+  const auth = createAuth({db, secret: 'test-secret-'.repeat(4), baseURL: BASE, appOrigin: APP, rateLimit: false, dev: true});
   const bucket = memoryBucket();
-  const app = createApp({db, auth, bucket, origins: [APP], github: false});
+  const app = createApp({db, auth, bucket, origins: [APP], providers: ['dev']});
+  // The service asks its own stand-in provider for tokens over the network: here, itself.
+  const real = globalThis.fetch;
+  globalThis.fetch = ((url: string | URL | Request, init?: RequestInit) =>
+    (String(url instanceof Request ? url.url : url).startsWith(BASE) ? app.request(url as string, init) : real(url, init))) as typeof fetch;
   const call = async (method: string, path: string, opts: {token?: string; body?: unknown; bytes?: Uint8Array; headers?: Record<string, string>} = {}) => {
     const r = await app.request(BASE + path, {
       method,
@@ -28,11 +32,21 @@ async function service() {
     try { json = JSON.parse(text); } catch { /* not json */ }
     return {status: r.status, json: json as Record<string, unknown> & unknown[], headers: r.headers};
   };
-  /** A new account, as the app makes one before its first passkey. */
-  const start = async () => {
-    const r = await call('POST', '/api/auth/sign-in/anonymous', {body: {}});
-    assert.equal(r.status, 200, JSON.stringify(r.json));
-    const token = r.headers.get('set-auth-token');
+  /** Signing in as a browser does: the provider's page, then back through the callback. */
+  const start = async (name = 'Ren') => {
+    const asked = await app.request(`${BASE}/api/auth/sign-in/social`, {method: 'POST', headers: {Origin: APP, 'Content-Type': 'application/json'},
+      body: JSON.stringify({provider: 'dev', callbackURL: `${APP}/?signed-in`})});
+    assert.equal(asked.status, 200, await asked.clone().text());
+    const cookies = asked.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
+    const go = new URL(((await asked.json()) as {url: string}).url);
+    const approve = new URL(`${BASE}/dev-oauth/approve`);
+    for (const k of ['redirect_uri', 'state']) approve.searchParams.set(k, go.searchParams.get(k) ?? '');
+    approve.searchParams.set('name', name);
+    const back = (await app.request(approve.toString())).headers.get('Location')!;
+    const done = await app.request(back, {headers: {Cookie: cookies}});
+    assert.equal(done.status, 302, await done.clone().text());
+    assert.equal(done.headers.get('Location'), `${APP}/?signed-in`);
+    const token = done.headers.get('set-auth-token');
     assert.ok(token);
     return token!;
   };
@@ -45,41 +59,23 @@ test('nothing of the work is answered without a session', async () => {
   const s = await service();
   assert.equal((await s.call('GET', '/v1/repos')).status, 401);
   assert.equal((await s.call('GET', '/v1/repos', {token: 'not-a-session'})).status, 401);
-  assert.deepEqual((await s.call('GET', '/v1/about')).json, {passkey: true, recovery: true, github: false});
   const t = await s.start();
   assert.deepEqual((await s.call('GET', '/v1/repos', {token: t})).json, []);
 });
 
-test('a recovery code opens the account once, and only its digest is kept', async () => {
+test('an account is a provider identity: the same person signs in to the same account', async () => {
   const s = await service();
-  const t = await s.start();
-  const made = await s.call('POST', '/api/auth/recovery/create', {token: t, body: {}});
-  const code = made.json.code as string;
-  assert.match(code, /^([2-9A-HJ-NP-Z]{4}-){5}[2-9A-HJ-NP-Z]{4}$/);
-  assert.deepEqual((await s.call('GET', '/api/auth/recovery/status', {token: t})).json, {hasCode: true});
-  // Nothing stored is the code itself.
-  const rows = await s.db.select().from(schema.user);
-  assert.ok(rows.every((u) => !JSON.stringify(u).includes(code.replaceAll('-', ''))));
-  // Typed loosely: lower case, spaces instead of dashes.
-  const back = await s.call('POST', '/api/auth/sign-in/recovery', {body: {code: code.toLowerCase().replaceAll('-', ' ')}});
-  assert.equal(back.status, 200);
-  const t2 = back.headers.get('set-auth-token')!;
-  assert.ok(t2 && t2 !== t);
-  // The same account, and the code is spent.
-  const me1 = await s.call('GET', '/api/auth/get-session', {token: t});
-  const me2 = await s.call('GET', '/api/auth/get-session', {token: t2});
-  assert.equal((me1.json as unknown as {user: {id: string}}).user.id, (me2.json as unknown as {user: {id: string}}).user.id);
-  assert.equal((await s.call('POST', '/api/auth/sign-in/recovery', {body: {code}})).status, 401);
-  assert.deepEqual((await s.call('GET', '/api/auth/recovery/status', {token: t2})).json, {hasCode: false});
-  // With a way back in, the account is no longer blank: a browser holding a
-  // blank one that signs in to it loses only the blank one.
-  const blank = await s.start();
-  const again = await s.call('POST', '/api/auth/recovery/create', {token: t2, body: {}});
-  const via = await s.call('POST', '/api/auth/sign-in/recovery', {token: blank, body: {code: again.json.code}});
-  assert.equal(via.status, 200);
-  const users = await s.db.select().from(schema.user);
-  assert.equal(users.length, 1);
-  assert.equal(users[0].isAnonymous, false);
+  const a = await s.start('Ren'), b = await s.start('Ren'), other = await s.start('Mio');
+  const who = async (t: string) => ((await s.call('GET', '/api/auth/get-session', {token: t})).json as unknown as {user: {id: string; name: string}}).user;
+  assert.equal((await who(a)).id, (await who(b)).id);
+  assert.notEqual((await who(a)).id, (await who(other)).id);
+  assert.equal((await who(a)).name, 'Ren');
+  // The session's own token (as get-session gives it) works as the bearer too.
+  const raw = ((await s.call('GET', '/api/auth/get-session', {token: a})).json as unknown as {session: {token: string}}).session.token;
+  assert.equal((await s.call('GET', '/v1/repos', {token: raw})).status, 200);
+  // No way in without a provider: there are no blank accounts.
+  assert.notEqual((await s.call('POST', '/api/auth/sign-in/anonymous', {body: {}})).status, 200);
+  assert.deepEqual((await s.call('GET', '/v1/about')).json, {passkey: true, providers: ['dev']});
 });
 
 test('a device asks for a code, a signed-in browser approves it, the device gets its own session', async () => {
@@ -156,7 +152,7 @@ test('a draft changes only from the version it was read at; a cut records it', a
 
 test('an account sees only its own: blobs, repos, settings', async () => {
   const s = await service();
-  const a = await s.start(), b = await s.start();
+  const a = await s.start('A'), b = await s.start('B');
   const bytes = enc.encode('mine');
   const sha = await sha256(bytes);
   await s.call('PUT', `/v1/blobs/${sha}`, {token: a, bytes});
@@ -175,8 +171,8 @@ test('only the app\'s pages may call, and they can read a new session\'s token',
   const s = await service();
   const ok = await s.call('OPTIONS', '/v1/repos', {headers: {'Access-Control-Request-Method': 'GET'}});
   assert.equal(ok.headers.get('Access-Control-Allow-Origin'), APP);
-  const r = await s.call('POST', '/api/auth/sign-in/anonymous', {body: {}});
-  assert.match(r.headers.get('Access-Control-Expose-Headers') ?? '', /set-auth-token/);
+  const r = await s.call('POST', '/api/auth/sign-in/social', {body: {provider: 'dev', callbackURL: `${APP}/`}});
+  assert.equal(r.headers.get('Access-Control-Allow-Credentials'), 'true');
   const other = await s.call('OPTIONS', '/v1/repos', {headers: {Origin: 'http://evil.test', 'Access-Control-Request-Method': 'GET'}});
   assert.notEqual(other.headers.get('Access-Control-Allow-Origin'), 'http://evil.test');
 });

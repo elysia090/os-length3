@@ -20,8 +20,6 @@ export const user = pgTable("user", {
     .defaultNow()
     .$onUpdate(() => /* @__PURE__ */ new Date())
     .notNull(),
-  isAnonymous: boolean("is_anonymous").default(false),
-  recoveryDigest: text("recovery_digest").unique(),
 });
 
 export const session = pgTable(

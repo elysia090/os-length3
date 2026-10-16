@@ -128,8 +128,17 @@ const asking = new URLSearchParams(location.search);
 if (asking.has('device')) {
   void loadState().finally(() => { useLang(getState('lang')); document.body.replaceChildren(devicePage(asking.get('user_code') ?? '')); });
 } else {
-  void loadState().finally(() => {
+  void loadState().finally(async () => {
     useLang(getState('lang'));
+    // Back from a provider: take up the session it made, then go on as usual.
+    if (asking.has('signed-in')) {
+      const {claim} = await import('./remote.ts');
+      await claim().catch(() => false);
+      const u = new URL(location.href);
+      u.searchParams.delete('signed-in');
+      history.replaceState(null, '', u);
+      save(PURPOSE_KEY, 'remote');
+    }
     select(restorePurpose(load(PURPOSE_KEY)));
     void begin().then(() => render());
   });

@@ -35,8 +35,9 @@ await migrate(db, {migrationsFolder: new URL('./migrations', import.meta.url).pa
 const secretFile = join(dir, 'secret');
 if (!existsSync(secretFile)) writeFileSync(secretFile, crypto.randomUUID() + crypto.randomUUID(), {mode: 0o600});
 const baseURL = `http://127.0.0.1:${port}`;
-const auth = createAuth({db, secret: readFileSync(secretFile, 'utf8'), baseURL, appOrigin, origins: others});
-const app = createApp({db, auth, bucket, origins: [appOrigin, ...others], github: false});
+// Sign-in here is the stand-in provider (devoauth.ts): a name, and you are in.
+const auth = createAuth({db, secret: readFileSync(secretFile, 'utf8'), baseURL, appOrigin, origins: others, dev: true});
+const app = createApp({db, auth, bucket, origins: [appOrigin, ...others], providers: ['dev']});
 
 createServer(async (req, res) => {
   const chunks: Buffer[] = [];

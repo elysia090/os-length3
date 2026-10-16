@@ -1,10 +1,9 @@
 // Who this device is on the Remote (service/), and how it talks to it.
 //
-//   web    はじめる: a blank account, and at once a passkey for it (a blank
-//          one that gets no passkey is removed again). パスキーで入る on any
-//          device after. 復旧コード when every passkey is gone: it opens the
-//          account once, and a new passkey and a new code follow.
-//   app    the browser does the passkey: the app shows a code, the browser
+//   web    sign in with GitHub or Google; then a passkey for this device,
+//          so the next sign-in needs no provider. Lost every passkey: sign in
+//          with the provider again.
+//   app    the browser does the signing in: the app shows a code, the browser
 //          approves it on the Remote's page, and the app gets a session of
 //          its own (core/src/remote.rs). l3 does the same.
 //
@@ -12,6 +11,7 @@
 // is a session that can be seen and ended from any other.
 
 import {isNative} from './host.ts';
+import {t} from './i18n.ts';
 import {getState, loadState, setState} from './state.ts';
 
 /** The Remote this build signs in to; '' is this page's own origin (development). */
@@ -32,7 +32,7 @@ export class RemoteError extends Error {
   constructor(status: number, message: string, detail: Record<string, unknown> = {}) { super(message); this.status = status; this.detail = detail; }
 }
 
-const OFFLINE = 'Remote に届きません';
+
 
 /** A request to the Remote, as this device's session (or none). */
 export async function api(path: string, init: RequestInit = {}, c: Connection | null = connection(), url = c?.url ?? REMOTE_URL): Promise<Response> {
@@ -40,8 +40,8 @@ export async function api(path: string, init: RequestInit = {}, c: Connection | 
   if (c) headers.set('Authorization', `Bearer ${c.token}`);
   if (typeof init.body === 'string' && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   let r: Response;
-  try { r = await fetch(url + path, {...init, headers, credentials: 'include'}); } catch { throw new RemoteError(0, OFFLINE); }
-  if (r.status === 401 && c) throw new RemoteError(401, 'Remote がこの端末を知りません。もう一度入ってください');
+  try { r = await fetch(url + path, {...init, headers, credentials: 'include'}); } catch { throw new RemoteError(0, t('The Remote cannot be reached')); }
+  if (r.status === 401 && c) throw new RemoteError(401, t('The Remote no longer knows this device. Sign in again.'));
   if (r.status >= 400 && r.status !== 404 && r.status !== 409) {
     const body = await r.json().catch(() => ({})) as {message?: string; error?: string};
     throw new RemoteError(r.status, body.message ?? body.error ?? `Remote: ${r.status}`);
@@ -57,74 +57,91 @@ const listeners = new Set<() => void>();
 /** Hear when this device joins or leaves a Remote. */
 export function onConnection(fn: () => void): () => void { listeners.add(fn); return () => listeners.delete(fn); }
 const told = () => { for (const fn of [...listeners]) fn(); };
-/** Say this device is in now (after the steps that follow recovery). */
-export const joined = told;
 
-async function keep(token: string, url = REMOTE_URL, tell = true) {
+async function keep(token: string, url = REMOTE_URL) {
   await setState('remote', JSON.stringify({url, token}));
-  if (tell) told();
+  told();
 }
 
 /** The token a sign-in answered with (the bearer plugin's header). */
 function tokenOf(r: Response): string {
-  const t = r.headers.get('set-auth-token');
-  if (!t) throw new RemoteError(r.status, '入れませんでした');
-  return t;
+  const token = r.headers.get('set-auth-token');
+  if (!token) throw new RemoteError(r.status, t('Could not sign in'));
+  return token;
 }
+
+// ---- signing in (web) ----
+
+export type Provider = 'github' | 'google' | 'dev';
+export const PROVIDER_NAME: Record<Provider, string> = {github: 'GitHub', google: 'Google', dev: 'Development'};
+
+/** What this Remote offers to sign in with. */
+export async function about(): Promise<{providers: Provider[]}> {
+  try { return await (await api('/v1/about', {}, null)).json() as {providers: Provider[]}; } catch { return {providers: []}; }
+}
+
+/** Sign in with a provider: the page goes there and comes back to `back` (then claim()). */
+export async function signInWith(provider: Provider, back = signedInURL()): Promise<void> {
+  const r = await api('/api/auth/sign-in/social', {method: 'POST', body: JSON.stringify({provider, callbackURL: back})}, null);
+  const {url} = await r.json() as {url: string};
+  location.assign(url);
+}
+
+/** Where a provider sends the page back: here, marked so the session is taken up. */
+export function signedInURL(): string {
+  const u = new URL(location.href);
+  u.searchParams.set('signed-in', '');
+  return u.toString();
+}
+
+/** Back from a provider: the Remote set its session cookie; keep the session's token here. */
+export async function claim(): Promise<boolean> {
+  const r = await api('/api/auth/get-session', {}, null).catch(() => null);
+  const s = r ? await r.json().catch(() => null) as {session?: {token: string}} | null : null;
+  if (!s?.session?.token) return false;
+  await keep(s.session.token);
+  return true;
+}
+
+/** Another provider for the same account (a second way back in). */
+export async function link(provider: Provider): Promise<void> {
+  const {url} = await json<{url: string}>('/api/auth/link-social', {method: 'POST', body: JSON.stringify({provider, callbackURL: location.href})});
+  location.assign(url);
+}
+
+export interface Linked { id: string; providerId: string; accountId: string; createdAt: string }
+export const linked = async () => (await json<Linked[]>('/api/auth/list-accounts')).filter((a) => a.providerId !== 'credential');
+export const unlink = (providerId: string) => json('/api/auth/unlink-account', {method: 'POST', body: JSON.stringify({providerId})});
 
 // ---- passkeys (web) ----
 
 const webauthn = () => import('@simplewebauthn/browser');
+const cancelled = (e: unknown) => (e as {name?: string}).name === 'NotAllowedError';
 
-/** Add a passkey to the account this device is in. */
+/** Add a passkey for this device to the account it is signed in to. */
 export async function addPasskey(name = deviceName()): Promise<void> {
   const {startRegistration} = await webauthn();
   const options = await json<Record<string, unknown>>(`/api/auth/passkey/generate-register-options?name=${encodeURIComponent(name)}`);
-  // The browser and the authenticator make it; a cancel is not an error to explain.
   const response = await startRegistration({optionsJSON: options as never}).catch((e: unknown) => {
-    throw new RemoteError(0, (e as {name?: string}).name === 'NotAllowedError' ? 'パスキーの作成をやめました' : `パスキーを作れませんでした（${String(e)}）`);
+    throw new RemoteError(0, cancelled(e) ? t('The passkey was not made.') : t('Could not make a passkey ({why}).', {why: String(e)}));
   });
   await json('/api/auth/passkey/verify-registration', {method: 'POST', body: JSON.stringify({response, name})});
 }
 
-/** はじめる: a new account, held by a passkey made now. */
-export async function start(): Promise<void> {
-  const r = await api('/api/auth/sign-in/anonymous', {method: 'POST', body: '{}'}, null);
-  // Not in yet, as far as the pages go: only once the passkey holds it.
-  await keep(tokenOf(r), REMOTE_URL, false);
-  try { await addPasskey(); told(); } catch (e) {
-    // Without a way back in, the account is not worth keeping.
-    await api('/api/auth/delete-anonymous-user', {method: 'POST', body: '{}'}).catch(() => {});
-    await forget();
-    throw e;
-  }
-}
-
-/** パスキーで入る. */
+/** Sign in with a passkey (any of the account's, on this device or synced to it). */
 export async function signIn(): Promise<void> {
   const {startAuthentication} = await webauthn();
   const options = await (await api('/api/auth/passkey/generate-authenticate-options', {}, null)).json();
   const response = await startAuthentication({optionsJSON: options}).catch((e: unknown) => {
-    throw new RemoteError(0, (e as {name?: string}).name === 'NotAllowedError' ? 'やめました' : `パスキーで入れませんでした（${String(e)}）`);
+    throw new RemoteError(0, cancelled(e) ? t('Signing in was stopped.') : t('Could not sign in with a passkey ({why}).', {why: String(e)}));
   });
   const r = await api('/api/auth/passkey/verify-authentication', {method: 'POST', body: JSON.stringify({response})}, null);
   await keep(tokenOf(r));
 }
 
-/** 復旧コードで入る: the code is spent; a new passkey and code should follow. */
-export async function recover(code: string): Promise<void> {
-  const r = await api('/api/auth/sign-in/recovery', {method: 'POST', body: JSON.stringify({code})}, null);
-  // In, but the pages wait: a new passkey and a new code come first (joined()).
-  await keep(tokenOf(r), REMOTE_URL, false);
-}
-
 export interface Passkey { id: string; name?: string | null; createdAt: string; deviceType?: string; backedUp?: boolean }
 export const passkeys = () => json<Passkey[]>('/api/auth/passkey/list-user-passkeys');
 export const removePasskey = (id: string) => json('/api/auth/passkey/delete-passkey', {method: 'POST', body: JSON.stringify({id})});
-
-/** A new recovery code (the one before stops working); shown once. */
-export const makeRecovery = async () => (await json<{code: string}>('/api/auth/recovery/create', {method: 'POST', body: '{}'})).code;
-export const hasRecovery = async () => (await json<{hasCode: boolean}>('/api/auth/recovery/status')).hasCode;
 
 // ---- devices: each a session ----
 
@@ -151,10 +168,10 @@ export const denyDevice = (userCode: string) => json('/api/auth/device/deny', {m
 /** What a session's user agent is, in a word. */
 export function deviceWord(ua: string | null | undefined): string {
   const u = ua ?? '';
-  if (/^l3\b|ureq/i.test(u)) return 'l3 / アプリ';
+  if (/^l3\b|ureq/i.test(u)) return t('l3 / the app');
   const os = /iPhone|iPad/.test(u) ? 'iOS' : /Android/.test(u) ? 'Android' : /Mac OS X/.test(u) ? 'macOS' : /Windows/.test(u) ? 'Windows' : /Linux/.test(u) ? 'Linux' : '';
   const browser = /Edg\//.test(u) ? 'Edge' : /Chrome\//.test(u) ? 'Chrome' : /Firefox\//.test(u) ? 'Firefox' : /Safari\//.test(u) ? 'Safari' : '';
-  return [browser, os].filter(Boolean).join(' · ') || '端末';
+  return [browser, os].filter(Boolean).join(' · ') || t('A device');
 }
 
 function deviceName(): string {

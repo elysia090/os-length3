@@ -488,3 +488,5 @@ mark { background: var(--ink); color: var(--ground); }
 .card.repo.away { border-style: dashed; }
 .me-head { padding: var(--s2) var(--s3) 0; }
 .me-item[aria-checked='true'] { font-weight: 600; }
+.sign-in-row { flex-wrap: wrap; }
+.section.offer { padding: var(--s4); border: var(--line-work) solid var(--edge); border-radius: var(--r-place); }
