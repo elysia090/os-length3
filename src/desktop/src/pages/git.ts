@@ -14,7 +14,7 @@ import {issueForm} from './issue-form.ts';
  * makes it current: it shows in full on the right, and the sections under
  * the list turn to its repo, where the changes not yet cut can be cut under
  * it (区切る: a commit named after the issue) and its cuts are listed.
- * Handing a cut out (提出) comes with a Remote; whoever receives it settles it
+ * Handing a cut to someone else (提出) is not here yet; whoever receives it will settle it
  * by Merge or Reject, never Close, which is for issues only.
  */
 
@@ -111,7 +111,7 @@ export function git(ctx: Context): Node[] {
     ...work.sections,
     h('section', {class: 'section', 'aria-labelledby': 'handed-title'},
       h('h2', {id: 'handed-title'}, '提出された変更'),
-      h('div', {class: 'empty'}, 'Remote とつながると、ここに届きます')));
+      h('div', {class: 'empty'}, '提出はまだ使えません')));
   const workbench = bench({main, reveal: (path) => { if (at) ctx.openRepo(at, path); }});
   // Issues written anywhere (here, in the shell, with l3 in the Prompt) show
   // up at once, and any change in the repo looked at is read again.

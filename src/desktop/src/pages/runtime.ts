@@ -1,6 +1,5 @@
 import {bytes, h} from '../dom.ts';
-import {readCapacity, readUsage, reclaim, type Certainty, type Reclaim, type Usage} from '../host.ts';
-import {has} from '../fetch.ts';
+import {isNative, readCapacity, readUsage, reclaim, type Certainty, type Reclaim, type Usage} from '../host.ts';
 import {about} from '../userland.ts';
 import {pageHead} from './common.ts';
 import {allSessions} from './terminal.ts';
@@ -15,15 +14,14 @@ const known = (c: Certainty) => (c === 'Verified' ? '' : c === 'Estimated' ? '�
  */
 function environment(): HTMLElement {
   const body = h('div', {}, h('p', {class: 'muted'}, '読み込み中…'));
-  void about().then(async (a) => {
+  void about().then((a) => {
     if (!a) { body.replaceChildren(h('div', {class: 'empty'}, 'l3 がありません（npm run userland）')); return; }
-    const here = await has(a.bundle.sha256);
     const part = (name: string, version: string, note: string, sha = '') =>
       h('div', {class: 'env-row env-part'}, h('span', {}, name), h('span', {}, version), h('span', {class: 'muted'}, note),
         h('code', {class: 'muted', title: sha}, sha.slice(0, 12)));
     body.replaceChildren(h('div', {class: 'env-one'},
       h('div', {class: 'env-row env-head'}, h('b', {}, a.name), h('span', {}, a.version),
-        h('span', {class: 'muted'}, `${bytes(a.bundle.size)} · ${here ? 'この端末にあります' : '最初の Prompt で読み込みます'}`),
+        h('span', {class: 'muted'}, `${bytes(a.bundle.size)} · ${isNative ? 'アプリと一緒' : '開くたびに取ります'}`),
         h('code', {class: 'muted', title: a.bundle.sha256}, a.bundle.sha256.slice(0, 12))),
       part(a.root.name, a.root.version, 'root'),
       part(a.base.name, a.base.version, `${a.base.applets} コマンド · ${a.base.from}`, a.base.sha256),
@@ -32,6 +30,31 @@ function environment(): HTMLElement {
       h('p', {class: 'muted small env-note'}, 'Dotfiles はまだありません'));
   });
   return body;
+}
+
+/**
+ * What comes by itself, what closing ends and what goes to the Remote, for
+ * each thing this OS holds, as it is on this host (lifecycle.ts). The
+ * canonical copy of each is on the Remote, or for the OS its release.
+ */
+function holding(): HTMLElement {
+  const close = isNative ? '窓を閉じると' : 'タブを閉じると';
+  const rows: [string, string, string, string][] = isNative ? [
+    ['OS（l3）', 'アプリと一緒', '残る', 'リリース'],
+    ['repo', '開く・戻るたびに取り込む', '残る', '区切るたびに push'],
+    ['Home', '開く・戻るたびに取り込む', '残る', '変わるたびに push'],
+    ['Prompt', 'repo を開くと起動', '終わる', '—'],
+  ] : [
+    ['OS（l3）', '開くたびに取る', '消える', 'リリース'],
+    ['repo', '開くたびに取り込む', 'push 済みなら消える', '区切るたびに push'],
+    ['Home', '開くたびに取り込む', 'push 済みなら消える', '変わるたびに push'],
+    ['Prompt', 'repo を開くと起動', '終わる', '—'],
+  ];
+  const row = (cells: string[], head = false) => h('div', {class: head ? 'hold-row row-head' : 'hold-row'}, ...cells.map((c) => h('span', {}, c)));
+  return h('section', {class: 'section', 'aria-labelledby': 'hold-title'},
+    h('h2', {id: 'hold-title'}, '持ち方'),
+    h('div', {class: 'rows'}, row(['', '取ってくる', close, 'Remote'], true), ...rows.map((r) => row(r))),
+    h('p', {class: 'muted small env-note'}, '未 push のものは、push するまで消えません。'));
 }
 
 /** A bar of the whole: this OS's part, everything else's, and what is free. */
@@ -145,6 +168,6 @@ export function runtime(): Node[] {
     });
   });
   read();
-  return [pageHead('runtime'), holder, prompts(),
+  return [pageHead('runtime'), holding(), holder, prompts(),
     h('section', {class: 'section', 'aria-labelledby': 'env-title'}, h('h2', {id: 'env-title'}, '有効な環境'), environment())];
 }

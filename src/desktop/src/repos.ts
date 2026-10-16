@@ -1,8 +1,10 @@
 // Repos the app manages. Natively they are directories under the app's data
-// directory; in a plain browser they live in memory for this page only,
-// and `persistent` says so.
+// directory. In a plain browser they are kept in this browser's storage
+// (KeptStore, IndexedDB), so closing or reloading the tab ends only what
+// runs; the work stays until the site's data is cleared. MemoryStore is
+// the same without keeping, for tests.
 
-import {isNative} from './host.ts';
+import {askToKeep, isNative} from './host.ts';
 import shared from '../shared/templates.json' with {type: 'json'};
 
 export interface RepoSummary {
@@ -92,9 +94,13 @@ export function templateFiles(name: string, template: Template): Map<string, str
   return files;
 }
 
+export interface Kept { files: [string, string | null][]; modified: number }
+
 export class MemoryStore implements RepoStore {
-  readonly persistent = false;
-  private repos = new Map<string, {files: Map<string, string | null>; modified: number}>();
+  readonly persistent: boolean = false;
+  protected repos = new Map<string, {files: Map<string, string | null>; modified: number}>();
+  /** Called after each change to `repo` (KeptStore keeps it). */
+  protected touched(_repo: string) {}
 
   async list() {
     return [...this.repos].map(([name, r]) => this.summary(name, r)).sort((a, b) => b.modified - a.modified);
@@ -109,6 +115,7 @@ export class MemoryStore implements RepoStore {
     if (this.repos.has(name)) throw new Error(`repo ${name} already exists`);
     const r = {files: templateFiles(name, template), modified: Date.now()};
     this.repos.set(name, r);
+    this.touched(name);
     return this.summary(name, r);
   }
   async tree(repo: string, path: string) {
@@ -140,6 +147,7 @@ export class MemoryStore implements RepoStore {
     if (!r || old === undefined || old === null) throw new Error(`no file ${path}`);
     r.files.set(path, text);
     r.modified = Date.now();
+    this.touched(repo);
     return new TextEncoder().encode(text).length;
   }
   async mkdir(repo: string, path: string) {
@@ -154,6 +162,7 @@ export class MemoryStore implements RepoStore {
       if (!r.files.has(at)) r.files.set(at, null);
     }
     r.modified = Date.now();
+    this.touched(repo);
   }
   async remove(repo: string, path: string) {
     const r = this.repos.get(repo);
@@ -163,6 +172,7 @@ export class MemoryStore implements RepoStore {
     if (!gone.length) throw new Error(`no ${path}`);
     for (const p of gone) r.files.delete(p);
     r.modified = Date.now();
+    this.touched(repo);
   }
   async add(repo: string, dir: string, name: string, text: string) {
     const r = this.repos.get(repo);
@@ -175,8 +185,103 @@ export class MemoryStore implements RepoStore {
     if (r.files.has(path)) throw new Error(`${path} already exists`);
     r.files.set(path, text);
     r.modified = Date.now();
+    this.touched(repo);
     return new TextEncoder().encode(text).length;
   }
+}
+
+/** Where a KeptStore keeps repos: one record per repo. */
+export interface Shelf {
+  all(): Promise<[string, Kept][]>;
+  put(name: string, repo: Kept): Promise<void>;
+  /** Remove these repos; the work starts synchronously, so it can run while the page is left. */
+  drop(names: string[]): Promise<void>;
+}
+
+/**
+ * Repos kept in this browser: read whole at start, and each change written
+ * back shortly after (or at once when the page is being left), so closing
+ * or reloading the tab loses nothing that was saved.
+ */
+export class KeptStore extends MemoryStore {
+  override readonly persistent = true;
+  private dirty = new Set<string>();
+  private timer: ReturnType<typeof setTimeout> | undefined;
+  private shelf: Shelf;
+  readonly ready: Promise<void>;
+  constructor(shelf: Shelf) {
+    super();
+    this.shelf = shelf;
+    this.ready = shelf.all().then((all) => {
+      for (const [name, r] of all) if (validName(name)) this.repos.set(name, {files: new Map(r.files), modified: r.modified});
+    }, () => {});
+  }
+  protected override touched(repo: string) {
+    this.dirty.add(repo);
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => void this.flush(), 300);
+  }
+  /**
+   * Let these repos go from this browser (their copy holds nothing the
+   * Remote lacks). Started at once, so it runs while the page is left.
+   */
+  letGo(names: string[]): Promise<void> {
+    for (const n of names) { this.repos.delete(n); this.dirty.delete(n); }
+    return this.shelf.drop(names);
+  }
+
+  /** Whether `repo` has changes not yet written to the shelf. */
+  waiting(repo: string) { return this.dirty.has(repo); }
+
+  /** Write every changed repo now. */
+  async flush() {
+    clearTimeout(this.timer);
+    const names = [...this.dirty];
+    this.dirty.clear();
+    await Promise.all(names.map((n) => {
+      const r = this.repos.get(n);
+      return r ? this.shelf.put(n, {files: [...r.files], modified: r.modified}) : Promise.resolve();
+    }));
+  }
+  // Nothing is answered before what was kept is read.
+  override async list() { await this.ready; return super.list(); }
+  override async create(name: string, template: Template) {
+    await this.ready;
+    const r = await super.create(name, template);
+    // Work now exists here: ask the browser not to clear it when room runs short.
+    void askToKeep();
+    return r;
+  }
+  override async tree(repo: string, path: string) { await this.ready; return super.tree(repo, path); }
+  override async read(repo: string, path: string) { await this.ready; return super.read(repo, path); }
+  override async write(repo: string, path: string, text: string) { await this.ready; return super.write(repo, path, text); }
+  override async add(repo: string, dir: string, name: string, text: string) { await this.ready; return super.add(repo, dir, name, text); }
+  override async mkdir(repo: string, path: string) { await this.ready; return super.mkdir(repo, path); }
+  override async remove(repo: string, path: string) { await this.ready; return super.remove(repo, path); }
+}
+
+/** IndexedDB, as a Shelf. */
+export function indexedShelf(name = 'length3-repos'): Shelf {
+  const open = () => new Promise<IDBDatabase>((resolve, reject) => {
+    const req = indexedDB.open(name, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('repos');
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  const db = open();
+  const done = <T>(r: IDBRequest<T>) => new Promise<T>((resolve, reject) => { r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
+  return {
+    async all() {
+      const s = (await db).transaction('repos').objectStore('repos');
+      const [keys, values] = await Promise.all([done(s.getAllKeys()), done(s.getAll())]);
+      return keys.map((k, i) => [String(k), values[i] as Kept]);
+    },
+    async put(n, repo) { await done((await db).transaction('repos', 'readwrite').objectStore('repos').put(repo, n)); },
+    async drop(names) {
+      const s = (await db).transaction('repos', 'readwrite').objectStore('repos');
+      await Promise.all(names.map((n) => done(s.delete(n))));
+    },
+  };
 }
 
 /** A change made through the store: a file's new text, a new directory, or a removal. */
@@ -228,7 +333,10 @@ class Observed implements RepoStore {
   }
 }
 
-export const store = new Observed(isNative ? new NativeStore() : new MemoryStore());
+export const kept = isNative || typeof indexedDB === 'undefined' ? null : new KeptStore(indexedShelf());
+// Leaving the page writes what is still waiting.
+if (kept) addEventListener('pagehide', () => void kept.flush());
+export const store = new Observed(isNative ? new NativeStore() : kept ?? new MemoryStore());
 
 /** Hear every change made through the store; returns the way to stop. */
 export function onChange(listen: (c: Change) => void): () => void {

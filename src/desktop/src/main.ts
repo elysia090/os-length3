@@ -7,8 +7,10 @@ import {git} from './pages/git.ts';
 import {currentProfile, home, startEditing} from './pages/home.ts';
 import {Me} from './pages/me.ts';
 import {newRepo} from './pages/new-repo.ts';
+import {remote} from './pages/remote.ts';
 import {runtime} from './pages/runtime.ts';
 import {FileTree} from './pages/tree.ts';
+import {begin} from './lifecycle.ts';
 import {loadState} from './state.ts';
 import {NEW_REPO, PURPOSES, purpose, restorePurpose, stepPurpose, type PurposeId} from './purposes.ts';
 
@@ -95,6 +97,7 @@ function render() {
     : current === 'new-repo' ? newRepo(ctx)
     : current === 'runtime' ? runtime()
     : current === 'git' ? git(ctx)
+    : current === 'remote' ? remote(ctx)
     : placeholder(current);
   page.replaceChildren(...nodes);
   me.paint();
@@ -106,7 +109,11 @@ $('rail-me').append(me.element);
 $('rail-tabs').append(...PURPOSES.map((p) => railButton(p.id)), railButton(NEW_REPO.id));
 // Home's state is read before the first page, and again when the window
 // comes back, so what l3 changed meanwhile is what the page shows.
-void loadState().finally(() => select(restorePurpose(load(PURPOSE_KEY))));
+// Then what the Remote has is taken in; the page shows as it comes.
+void loadState().finally(() => {
+  select(restorePurpose(load(PURPOSE_KEY)));
+  void begin().then(() => render());
+});
 window.addEventListener('focus', () => {
   void loadState().then(() => { if (current === 'home') render(); else me.paint(); });
 });

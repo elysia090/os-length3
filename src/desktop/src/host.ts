@@ -53,3 +53,19 @@ export async function readCapacity(): Promise<Capacity | null> {
     return null;
   }
 }
+
+/**
+ * Whether this browser has agreed not to clear what this site keeps when
+ * room runs short (StorageManager.persisted); null where it cannot say.
+ * The app keeps everything on disk, so there it is always true.
+ */
+export async function persisted(): Promise<boolean | null> {
+  if (isNative) return true;
+  try { return await navigator.storage?.persisted?.() ?? null; } catch { return null; }
+}
+
+/** Ask the browser to keep this site's data (once work exists to keep). */
+export async function askToKeep(): Promise<boolean | null> {
+  if (isNative) return true;
+  try { return await navigator.storage?.persist?.() ?? null; } catch { return null; }
+}

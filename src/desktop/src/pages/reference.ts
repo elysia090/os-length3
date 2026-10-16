@@ -199,7 +199,7 @@ export class Reference {
   private async diff() {
     const repo = this.repo;
     if (!repo) { this.empty('repoを開くと出ます'); return; }
-    if (!gitops.hasGit) { this.empty('diff はデスクトップ版で出ます'); return; }
+    if (!gitops.canCut()) { this.empty('Remote につなぐと、区切っていない変更が出ます'); return; }
     const run = ++this.run;
     let files: gitops.FileDiff[];
     try { files = await gitops.diff(repo); } catch (e) {

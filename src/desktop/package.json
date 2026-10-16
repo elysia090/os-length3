@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "check": "tsc --noEmit && node --test \"src/**/*.test.ts\"",
+    "check": "tsc --noEmit && node --test \"src/**/*.test.ts\" \"remote/*.test.ts\"",
     "tauri": "tauri",
     "userland": "sh scripts/userland.sh",
     "web-release": "sh scripts/web-release.sh"

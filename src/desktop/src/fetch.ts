@@ -4,7 +4,6 @@
 // notices a stall instead of waiting forever, continues from the byte it
 // reached (a Range request, guarded so two versions are never spliced), and
 // accepts the result only when it is exactly the file the manifest names.
-// What is verified is kept by its digest, so it is never fetched twice.
 
 export interface Expect { size?: number; sha256?: string }
 
@@ -122,40 +121,18 @@ export async function download(url: string, expect: Expect = {}, progress?: Prog
   throw new Error(why || '読み込めませんでした');
 }
 
-/** Bytes kept by digest in the page's Cache Storage, when it has one. */
+/** Where an earlier build kept copies of l3; nothing is kept there now. */
 const STORE = 'length3-userland';
-const key = (sha: string) => `/userland/by-digest/${sha}`;
 
-async function store(): Promise<Cache | null> {
-  try { return 'caches' in globalThis ? await caches.open(STORE) : null; } catch { return null; }
-}
-
-export async function cached(sha: string): Promise<Uint8Array | null> {
-  const c = await store();
-  const r = await c?.match(key(sha)).catch(() => undefined);
-  if (!r) return null;
-  const bytes = new Uint8Array(await r.arrayBuffer());
-  // A kept copy is trusted only as far as its digest.
-  return await digest(bytes) === sha ? bytes : null;
-}
-
-/** Whether a copy is kept by that digest (not checked; cached() checks). */
-export async function has(sha: string): Promise<boolean> {
-  const c = await store();
-  return !!(await c?.match(key(sha)).catch(() => undefined));
-}
-
-export async function keep(sha: string, bytes: Uint8Array) {
-  const c = await store();
-  await c?.put(key(sha), new Response(bytes as BodyInit)).catch(() => {});
-}
-
-/** Give back every kept copy not named in `live` (an older userland's). */
+/** Give back every copy an earlier build kept in Cache Storage except those named in `live`. */
 export async function forgetExcept(live: Set<string>) {
-  const c = await store();
-  if (!c) return;
-  for (const req of await c.keys().catch(() => [] as readonly Request[])) {
-    const sha = new URL(req.url).pathname.split('/').at(-1)!;
-    if (!live.has(sha)) await c.delete(req).catch(() => false);
-  }
+  try {
+    if (!('caches' in globalThis)) return;
+    const c = await caches.open(STORE);
+    for (const req of await c.keys()) {
+      const sha = new URL(req.url).pathname.split('/').at(-1)!;
+      if (!live.has(sha)) await c.delete(req);
+    }
+    if (!live.size) await caches.delete(STORE);
+  } catch { /* nothing to give back */ }
 }

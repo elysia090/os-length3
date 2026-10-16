@@ -42,3 +42,34 @@ test('the memory store adds, makes directories and removes like the native side'
   await assert.rejects(s.remove('a', '.git'));
   assert.equal((await s.read('a', 'note.txt')).text, 'hello\n');
 });
+
+test('repos kept in the browser come back in a new page, as they were left', async () => {
+  const {KeptStore} = await import('./repos.ts');
+  const shelf = new Map<string, import('./repos.ts').Kept>();
+  const fake = {
+    async all() { return [...shelf].map(([k, v]) => [k, structuredClone(v)] as [string, import('./repos.ts').Kept]); },
+    async put(n: string, r: import('./repos.ts').Kept) { shelf.set(n, structuredClone(r)); },
+    async drop(names: string[]) { for (const n of names) shelf.delete(n); },
+  };
+  const a = new KeptStore(fake);
+  await a.create('notes', 'standard');
+  await a.add('notes', '', 'todo.md', 'one');
+  await a.mkdir('notes', 'src/deep');
+  await a.write('notes', 'todo.md', 'two');
+  await a.flush();
+  // A new page: what was saved is there; nothing else is.
+  const b = new KeptStore(fake);
+  assert.deepEqual((await b.list()).map((r) => r.name), ['notes']);
+  assert.equal((await b.read('notes', 'todo.md')).text, 'two');
+  assert.deepEqual((await b.tree('notes', 'src')).map((e) => [e.name, e.kind]), [['deep', 'dir']]);
+  await b.remove('notes', 'todo.md');
+  await b.flush();
+  const c = new KeptStore(fake);
+  // Asked at once, before it has read the shelf: it waits, then answers.
+  assert.equal((await c.tree('notes', '')).some((e) => e.name === 'todo.md'), false);
+  assert.equal((await new KeptStore(fake).read('notes', 'README.md')).text?.startsWith('# notes'), true);
+  // Let go: gone here and from the shelf.
+  await c.letGo(['notes']);
+  assert.deepEqual(await c.list(), []);
+  assert.deepEqual(await new KeptStore(fake).list(), []);
+});

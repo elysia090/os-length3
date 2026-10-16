@@ -1,10 +1,12 @@
-import {cached, download, Fatal, forgetExcept, keep} from './fetch.ts';
+import {download, Fatal} from './fetch.ts';
 
 // l3, the one thing the Prompt depends on: the distribution's root, the l3
 // command and the translator, in one file (scripts/bundle.mjs). l3.json
-// names it by size and digest; the bundle is fetched once (taken up again
-// where a proxy cut it), kept on this device by its digest, and unpacked
-// and compiled once per page. Every Prompt's worker gets the same compiled
+// names it by size and digest. It is the OS, and its canonical copy is the
+// release: nothing here is kept of it. In a browser it is fetched by itself
+// at each visit's first Prompt (taken up again where a proxy cut it); in the
+// app it comes with the app and is read from beside it. Either way it is
+// checked against its digest, then unpacked and compiled once per page. Every Prompt's worker gets the same compiled
 // modules: a Module is shared, not copied.
 
 export interface About {
@@ -35,7 +37,7 @@ export type Stage =
   | {at: 'fetch'; got: number; of: number; quiet?: number}
   | {at: 'retry'; attempt: number; why: string; got: number; of: number}
   | {at: 'prepare'}
-  | {at: 'ready'; kept: boolean}
+  | {at: 'ready'}
   | {at: 'failed'; message: string};
 
 const HEAD = 12;
@@ -68,20 +70,13 @@ let loading: Promise<Userland> | null = null;
 export const loadUserland = (): Promise<Userland> => (loading ??= (async () => {
   const a = await download('/userland/l3.json', {}, undefined, {attempts: 4}).then((b) => JSON.parse(new TextDecoder().decode(b)) as About);
   const {size, sha256} = a.bundle;
-  let packed = await cached(sha256);
-  const kept = packed !== null;
-  if (!packed) {
-    tell({at: 'fetch', got: 0, of: size});
-    let got = 0;
-    packed = await download(`/userland/${a.bundle.path}`, {size, sha256}, {
-      bytes(n) { got = n; tell({at: 'fetch', got: n, of: size}); },
-      retry(attempt, why) { tell({at: 'retry', attempt, why, got, of: size}); },
-      waiting(quiet) { tell({at: 'fetch', got, of: size, quiet}); },
-    });
-    await keep(sha256, packed);
-  }
-  // An older l3 kept here is given back.
-  void forgetExcept(new Set([sha256]));
+  tell({at: 'fetch', got: 0, of: size});
+  let got = 0;
+  const packed = await download(`/userland/${a.bundle.path}`, {size, sha256}, {
+    bytes(n) { got = n; tell({at: 'fetch', got: n, of: size}); },
+    retry(attempt, why) { tell({at: 'retry', attempt, why, got, of: size}); },
+    waiting(quiet) { tell({at: 'fetch', got, of: size, quiet}); },
+  });
   tell({at: 'prepare'});
   const {index, bytes} = await unpack(packed);
   const slice = (p: {at: number; size: number}) => bytes.slice(p.at, p.at + p.size);
@@ -90,7 +85,7 @@ export const loadUserland = (): Promise<Userland> => (loading ??= (async () => {
     ...index.files.map((f) => (f.translation ? WebAssembly.compile(slice(f.translation) as BufferSource).catch(() => null) : null)),
   ]);
   const files = index.files.map((f, k) => ({path: f.path, bytes: slice(f), module: modules[k], mode: f.mode}));
-  tell({at: 'ready', kept});
+  tell({at: 'ready'});
   return {about: a, translator, files, dirs: index.dirs, links: index.links};
 })().catch((e) => {
   loading = null;

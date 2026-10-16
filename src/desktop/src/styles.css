@@ -300,6 +300,10 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .reclaimed { display: grid; gap: var(--s1); margin-bottom: var(--s3); }
 .work-act .grow { flex: 1; }
 .reclaim-act { align-items: center; }
+.hold-row { display: grid; grid-template-columns: 7rem repeat(3, minmax(0, 1fr)); gap: var(--s3); padding: var(--s1) var(--s3); font-size: var(--t-meta); line-height: calc(var(--h-row) - 2 * var(--s1)); }
+.hold-row > span:first-child { font-weight: 600; }
+.remote-join { display: grid; gap: var(--s3); max-width: 560px; }
+.remote-join .line-in { flex: 1; }
 
 /* Forge: a band of repo chips set low, the center (3/4) an endless page of
    files with a prompt box at its foot, and a narrow side (1/4) that stays out

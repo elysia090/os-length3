@@ -10,7 +10,7 @@ use std::fs;
 use std::path::PathBuf;
 
 /// The state the OS keeps for Home. Anything else is refused.
-pub const KEYS: [&str; 3] = ["profile", "todo", "band"];
+pub const KEYS: [&str; 5] = ["profile", "todo", "band", "remote", "sync"];
 
 fn file(key: &str) -> Result<PathBuf> {
     if !KEYS.contains(&key) {

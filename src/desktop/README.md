@@ -56,9 +56,9 @@ separate surface and nothing here depends on it.
   (`public/userland/l3-<digest>.bin`, named with its size and digest in
   `l3.json`) carrying the distribution's root (BusyBox from its pinned
   source and config, its `/etc` and `os-release`), the l3 command and the
-  translator with ready translations, gzip'd from 12 MB to 2.7 MB. It is
-  fetched once, continued from where a proxy cut or stalled it, checked
-  against its digest and kept on the device by it. Make it with `npm run
+  translator with ready translations, gzip'd from 12 MB to 2.7 MB. In a
+  browser it is fetched at each visit, continued from where a proxy cut or
+  stalled it, and checked against its digest; nothing of it is kept. Make it with `npm run
   userland` (`scripts/userland.sh`, then `scripts/bundle.mjs`).
 
 ## l3: the same OS on the command line
@@ -94,8 +94,16 @@ TODO, making repos and the device are left to the app.
   "Fix：件名"), filtered by repo chips; a row opens the file in Forge, and
   「Issue を書く」 adds the next numbered file (natively through `repo_add`,
   which only makes new files in existing directories), as `l3 issue new`
-  does. Changes pushed by
-  others need a Remote, and the page says so.
+  does. 区切る cuts the changes under the current issue and pushes the cut
+  to the Remote.
+- Remote: the canonical copy (`remote/`): make an account (a token shown
+  once) or join with one; each repo and Home setting with where it stands
+  (push 済み, 未 push, Remote が先, ここだけ). Opening takes in what the
+  Remote has; in a browser, closing the tab lets go of every copy that is
+  pushed, and keeps what is not. Run one here with `node remote/serve.ts
+  DIR 8790 http://localhost:1420` and build or serve the app with
+  `VITE_LENGTH3_REMOTE=http://127.0.0.1:8790`; on Cloudflare it is
+  `remote/worker.ts` over R2 (`remote/wrangler.toml`, not deployed).
 - Runtime shows what this OS holds on the device, counted from allocated
   blocks (each repo, how much of it is history), the host's free and total
   marked as estimates, and its own leftover temporaries, which 空ける

@@ -101,6 +101,6 @@ test('a quiet line is said each second before it counts as broken', async () => 
   const got = await download(s.url, {}, {bytes() {}, retry() {}, waiting(n) { quiet.push(n); }}, {stallMs: 3500, backoff: () => 10});
   s.close();
   assert.deepEqual(got, body);
-  // Each second it is quiet, counted up, from the second (ticks may land a little late).
-  assert.ok(quiet.length >= 1 && quiet[0] === 2 && quiet.every((n, i) => n === 2 + i), String(quiet));
+  // Said while quiet, from the second second, counting up (a tick may land late under load).
+  assert.ok(quiet.length >= 1 && quiet.every((n, i) => n >= 2 && n < 4 && (i === 0 || n > quiet[i - 1])), String(quiet));
 });

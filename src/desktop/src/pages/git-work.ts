@@ -7,7 +7,8 @@ import {named} from '../text.ts';
 // the changes not cut yet, folder by folder, with 区切る under the current
 // issue; and the cuts so far (the current issue's only, when one is chosen).
 // Both are cards of rows, like the File tree. A section with nothing in it
-// is not shown, and git is only on the desktop.
+// is not shown. 区切る is the push (git.ts): in the app the repo's git and
+// then the Remote; in a browser, once it has a Remote, the Remote alone.
 
 export interface GitWork {
   sections: HTMLElement[];
@@ -32,6 +33,7 @@ export function gitWork(events: {open(repo: string, path: string): void}): GitWo
   let issue: Issue | null = null;
   let run = 0;
   let timer = 0;
+  let lastPush = '';
 
   const changeRows = (at: string, c: gitops.Changes) => h('div', {class: 'rows'}, ...c.folders.flatMap((f) => [
     h('div', {class: 'row-item row-head'}, h('span', {class: 'mono row-name'}, f.folder ? `${f.folder}/` : `${at}/`)),
@@ -59,11 +61,14 @@ export function gitWork(events: {open(repo: string, path: string): void}): GitWo
     const cut = h('button', {class: 'button primary', type: 'button', title: named(under.kind, under.title)}, '区切る') as HTMLButtonElement;
     const go = async () => {
       cut.disabled = true;
-      try { await gitops.cut(at, under.file, '', note.value); } catch (e) {
+      let done: gitops.Cut;
+      try { done = await gitops.cut(at, under.file, '', note.value); } catch (e) {
         error.textContent = e instanceof Error ? e.message : String(e);
         cut.disabled = false;
         return;
       }
+      // A cut here that did not reach the Remote is said once, plainly: it is still only here.
+      lastPush = done.push && 'error' in done.push ? `区切りました。Remote にはまだ届いていません（${done.push.error}）` : '';
       paint();
     };
     cut.addEventListener('click', () => void go());
@@ -74,12 +79,13 @@ export function gitWork(events: {open(repo: string, path: string): void}): GitWo
   const paint = () => {
     const at = repo;
     const mine = ++run;
-    if (!at || !gitops.hasGit) { changes.hidden = cuts.hidden = true; return; }
+    if (!at || !gitops.canCut()) { changes.hidden = cuts.hidden = true; return; }
     void Promise.all([gitops.changes(at), gitops.log(at)]).then(([c, log]) => {
       if (mine !== run) return;
       changes.hidden = !c.files;
       changesSmall.textContent = c.files ? `${c.files}` : '';
       changesBody.replaceChildren(changeRows(at, c), ...(issue ? cutAction(at, issue) : []));
+      if (lastPush) { changes.hidden = false; changesBody.append(h('p', {class: 'error', role: 'alert'}, lastPush)); lastPush = ''; }
       const shown = issue ? log.filter((x) => x.issue === `issue/${issue!.file}`) : log;
       cuts.hidden = !shown.length;
       cutsSmall.textContent = `${shown.length}`;

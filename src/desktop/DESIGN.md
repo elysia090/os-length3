@@ -11,7 +11,7 @@ top, then the page each icon leads to.
 - Icons only, top to bottom in the order of the work:
   **Home** (who you are, what you are doing) → **Forge** (where you work;
   a terminal icon) → **File** (the tree of "/") → **Git** (what happened
-  outside) → **Runtime** (the environment) → **Remote** (sync) →
+  outside) → **Runtime** (the environment) → **Remote** (the canonical copy) →
   **Topic** (posts) → **Inbox** (what was sent to you). **+** (a new repo)
   comes right under them, a step apart, and is round because it starts
   something rather than opening a place (§4, shapes).
@@ -103,13 +103,14 @@ files and binaries not copied in, what could not be written back). The chosen re
 
 The Prompt never goes silent while something takes time:
 
-- **Coming up.** The first Prompt fetches l3 (2.7 MB) and says how far it
+- **Coming up.** The first Prompt of a visit fetches l3 (2.7 MB) and says how far it
   is (`l3 を読み込み中 1.5 MB / 2.7 MB`). When the line goes quiet it counts
   the seconds (`応答待ち 4秒`); at ten it counts as broken and is taken up
   again from the byte it reached (`回線が止まりました。続きから読み込みます`),
   the same after a cut or a server error, a few times with growing waits.
-  What came stays for もう一度起動. Later Prompts, in this page or after a
-  reload, take l3 from this device at once.
+  What came stays for もう一度起動, and later Prompts in the page use it at
+  once. Nothing of it stays on the device: it is the OS, and its copy is
+  the release's (the app has it beside itself).
 - **Running.** A line done within two seconds says nothing. Past that, under
   the output: `実行中 N秒` with 中断 (Ctrl-C in the prompt box, when nothing
   is selected, does the same); `入力待ち` with 中断 when what runs reads
@@ -187,12 +188,16 @@ at it.
 - **区切り**: the cuts so far, newest first, the current issue's only when
   one is chosen, one row each: name, folders, when.
 - A section with nothing in it is not shown; counts are bare numbers.
-- **提出された変更**: cuts handed out (提出) and received, settled by Merge or
-  Reject; Close is for issues only. Nothing can be handed out or arrive
-  before a Remote is joined, so there is no 提出 button yet, and this says
-  so in a dashed box instead of showing anything made up.
+- **提出された変更**: cuts handed to someone else (提出) and received,
+  settled by Merge or Reject; Close is for issues only. Handing out between
+  accounts is not built yet, so there is no 提出 button, and this says so
+  in a dashed box instead of showing anything made up.
 
-In the browser there is no git, and the two sections are not shown.
+区切る is also the push (§3): in the app it is a commit in the repo's git
+and then the same cut on the Remote; a cut that did not reach the Remote is
+said once, under the button, and the repo stays 未 push. In the browser,
+which has no git, the two sections appear once a Remote is joined: changes
+are this copy against the cut it came from, and the cuts are the Remote's.
 
 ### New repo (+)
 
@@ -239,12 +244,49 @@ files, and Home's state is the same files, so anything done in one shows in
 the other. The Prompt's shell works on the repo itself: what it changes is
 written back, and what is saved elsewhere comes in.
 
+### The canonical copy is on the Remote
+
+As with GitHub, the copy that counts is the Remote's, and work on a device
+is not trusted until it is there; here that reaches to the whole OS. The
+Remote (`remote/`) names everything by its content: a file by its sha256,
+a cut by the sha256 of its record (the repo's whole tree, its parent, its
+words). A repo there is only a head pointing at one cut, and it moves by
+compare-and-set: a push whose parent is not the head is refused with the
+head, so nothing pushed is ever overwritten. A device checks what comes
+from the Remote against those names. Home's settings (profile, TODO) are
+kept there too, each changed only from the version it was read at; the
+band is the device's own.
+
+A device holds a checkout. For each repo it knows the cut it came from (its
+base), so a repo is always in one of four states, shown on Home's cards and
+on the Remote page: **push 済み** (nothing here the Remote lacks), **未 push**
+(with how many files: the only state that can be lost), **Remote が先**
+(another device pushed; 取り込む takes it in) and **ここだけ** (never
+pushed). Taking in is file by file against the base: a file only the
+Remote changed is taken, one only changed here is kept, and when one
+changed on both sides nothing is taken and those files are named.
+
+What each host keeps, and when (lifecycle.ts, and Runtime's 持ち方):
+
+|             | comes by itself | closing ends | goes to the Remote |
+|-------------|-----------------|--------------|--------------------|
+| OS (l3)     | web: fetched each visit; app: with the app | web: nothing of it is kept; app: stays | — (it is the release) |
+| repo        | taken in at open (and when the app's window comes back) | web: its copy goes if pushed; app: stays | at each 区切る |
+| Home        | taken in at open | web: goes if pushed; app: stays | on each change |
+| Prompt      | when a repo opens | ends | — |
+
+Unpushed work is never let go: in the browser it waits in this browser's
+storage (asked to be kept) until it is pushed. An account is a token made
+by the Remote and shown once; the Remote keeps only its digest. The token
+is kept on the device (in the app with its settings, 0600).
+
 What leaves this system is kept to what is said here:
 
 - **Network.** The Prompt's guests have no sockets: every socket call answers
-  "not implemented", so a program in it can reach nothing. The web build
-  carries a Content-Security-Policy that allows only its own origin (and
-  workers and wasm from it); the desktop leaves that to Tauri.
+  "not implemented", so a program in it can reach nothing. The page itself
+  may reach its own origin and the Remote, nothing else: the web build
+  carries that Content-Security-Policy, and the desktop's (Tauri's) says the
+  same. The Remote answers only the app's origins.
 - **Host.** git is the one program the desktop runs, and it runs with an
   empty environment (only PATH, HOME, LC_ALL and git's own switches), no
   global or system configuration, no prompts, and every setting that could
