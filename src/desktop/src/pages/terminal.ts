@@ -1,5 +1,6 @@
-import {h} from '../dom.ts';
 import {onChange, store} from '../repos.ts';
+import {bytes, h} from '../dom.ts';
+import {loadUserland, watchLoad, type Stage} from '../userland.ts';
 
 // A shell per repo, running translated BusyBox (and l3) in a Worker. Sessions
 // outlive page switches: the workbench re-attaches the same element. A
@@ -24,34 +25,17 @@ const RUNS = 50;
 /** One line sent from the prompt box and what came out until the prompt returned. */
 export interface Run { line: string; output: string; started: number; ms: number | null }
 
-async function fetchBytes(path: string): Promise<Uint8Array> {
-  const r = await fetch(path);
-  if (!r.ok) throw new Error(`${path}: ${r.status}`);
-  return new Uint8Array(await r.arrayBuffer());
+/** One line for where loading l3 is; nothing once it is ready. */
+function loadWords(s: Stage): string {
+  const of = (got: number, all: number) => (all ? `${bytes(got)} / ${bytes(all)}` : '');
+  switch (s.at) {
+    case 'fetch': return `l3 を読み込み中 ${of(s.got, s.of)}${s.quiet ? ` · 応答待ち ${s.quiet}秒` : ''}`;
+    case 'retry': return `${s.why}。続きから読み込みます（${s.attempt}回目）${s.got ? ` ${of(s.got, s.of)}` : ''}`;
+    case 'prepare': return '準備中…';
+    case 'ready': return '起動中…';
+    case 'failed': return '';
+  }
 }
-
-/** A program the Prompt runs, with its translation made ahead of time if there is one. */
-interface Program { bytes: Uint8Array; module: WebAssembly.Module | null }
-interface Userland { translator: WebAssembly.Module; busybox: Program; l3: Program | null; applets: string[] }
-
-const program = async (path: string): Promise<Program> => {
-  const [bytes, module] = await Promise.all([fetchBytes(path),
-    fetchBytes(`${path}.wasm`).then((b) => WebAssembly.compile(b as BufferSource)).catch(() => null)]);
-  return {bytes, module};
-};
-
-/**
- * The userland, fetched and compiled once for the page; every session's
- * worker gets the same compiled modules (a Module is shared, not copied).
- */
-let userland: Promise<Userland> | null = null;
-const loadUserland = () => (userland ??= (async () => {
-  const [translator, busybox, l3, applets] = await Promise.all([
-    fetchBytes('/userland/xlat.wasm').then((b) => WebAssembly.compile(b as BufferSource)),
-    program('/userland/busybox'), program('/userland/l3').catch(() => null),
-    fetch('/userland/applets').then((r) => r.text())]);
-  return {translator, busybox, l3, applets: applets.split('\n').filter((a) => a && a !== 'busybox')};
-})().catch((e) => { userland = null; throw e; }));
 
 /** Copy a repo's files for the guest: [{path, bytes}] under /root/<repo>. */
 async function snapshot(repo: string) {
@@ -94,7 +78,8 @@ export class Session {
     this.repo = repo;
     this.output = h('pre', {class: 'term-out', 'aria-live': 'polite'});
     this.status = h('p', {class: 'muted small'}, '起動中…');
-    this.element = h('div', {class: 'term'}, this.status, this.output);
+    this.activity = h('div', {class: 'term-activity small', 'aria-live': 'polite'});
+    this.element = h('div', {class: 'term'}, this.status, this.output, this.activity);
     void this.start();
   }
 
@@ -109,6 +94,9 @@ export class Session {
     this.print(lines);
     this.runs.push({line: lines.trimEnd(), output: '', started: Date.now(), ms: null});
     if (this.runs.length > RUNS) this.runs.shift();
+    this.inputWait = false;
+    this.heard = Date.now();
+    this.follow();
     this.tell();
     const bytes = new TextEncoder().encode(lines);
     this.worker.postMessage({type: 'input', bytes}, [bytes.buffer]);
@@ -132,12 +120,18 @@ export class Session {
     if (!run || run.ms !== null) return;
     run.output += strip(s);
     const end = PROMPT.exec(run.output);
-    if (end) { run.output = run.output.slice(0, end.index); run.ms = Date.now() - run.started; }
+    if (end) { run.output = run.output.slice(0, end.index); run.ms = Date.now() - run.started; this.follow(); }
     else if (run.output.length > 100_000) run.output = run.output.slice(-80_000);
     this.tell();
   }
 
   private readonly id = `shell:${Math.random().toString(36).slice(2)}`;
+  private activity: HTMLElement;
+  /** When the worker last said anything. */
+  private heard = 0;
+  /** Paused with a run open: what runs reads what is typed. */
+  private inputWait = false;
+  private ticker = 0;
   private unwatch: (() => void) | null = null;
   private queue: Promise<void> = Promise.resolve();
   /** What the shell may still write back, in files and bytes: the snapshot's limits. */
@@ -168,23 +162,31 @@ export class Session {
 
   private async start() {
     try {
-      const [{translator, busybox, l3, applets}, copy] = await Promise.all([loadUserland(), snapshot(this.repo)]);
+      // While l3 comes, the status says how far it is and what it is doing.
+      const unwatch = watchLoad((s) => { this.status.textContent = loadWords(s); });
+      const [land, copy] = await Promise.all([loadUserland(), snapshot(this.repo)]).finally(unwatch);
       const worker = new Worker(new URL('../../../../xlat/runtime/worker.mjs', import.meta.url), {type: 'module'});
       this.worker = worker;
       worker.onmessage = ({data}) => {
+        this.heard = Date.now();
         if (data.type === 'output') this.received(new TextDecoder().decode(data.bytes));
         else if (data.type === 'changes') this.writeBack(data);
-        else if (data.type === 'waiting') { this.memory = data.memory ?? 0; this.tell(); }
+        else if (data.type === 'waiting') {
+          this.memory = data.memory ?? 0;
+          // Paused with a run still open: what runs is reading what is typed.
+          this.inputWait = this.runs.at(-1)?.ms === null;
+          this.follow();
+          this.tell();
+        }
         else if (data.type === 'exit') this.end(`終了しました（${data.status >> 8}）`);
         else if (data.type === 'error') this.end(`停止しました: ${data.message.split('\n')[0]}`);
       };
       const cwd = `/root/${this.repo}`;
       worker.postMessage({
-        type: 'start', translator,
-        files: [{path: '/bin/busybox', bytes: busybox.bytes, module: busybox.module, mode: 0o755},
-          ...(l3 ? [{path: '/bin/l3', bytes: l3.bytes, module: l3.module, mode: 0o755}] : []), ...copy.files],
-        dirs: copy.dirs,
-        links: applets.map((a) => ({path: `/bin/${a}`, target: 'busybox'})),
+        type: 'start', translator: land.translator,
+        files: [...land.files, ...copy.files],
+        dirs: [...land.dirs, ...copy.dirs],
+        links: land.links,
         argv: ['/bin/sh', '-i'],
         // l3 here sees repos where the shell does, under /root.
         env: ['HOME=/root', 'PATH=/bin', 'TERM=dumb', 'PS1=$PWD $ ', 'LENGTH3_REPOS=/root', 'L3_PROMPT=1'],
@@ -198,10 +200,10 @@ export class Session {
         this.worker?.postMessage({type: 'put', path: c.path, what});
       });
       // Running is the usual state and says nothing; only what is missing is said.
-      this.status.textContent = copy.complete ? '' : '大きいfileとバイナリは入っていません';
+      this.status.textContent = copy.complete ? '' : '大きいファイルとバイナリは入っていません';
       this.live = true;
     } catch (e) {
-      this.end(`起動できませんでした: ${String(e)}`);
+      this.end(`起動できませんでした: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -215,7 +217,55 @@ export class Session {
    */
   stop() { this.end('止めました'); }
 
+  /**
+   * While a line runs, say what it is doing, once it has taken a moment:
+   * reading input (中断 reaches it: the kernel is paused), running and
+   * still talking (中断 lands when it next stops), or running without a
+   * word for a while, when a busy worker cannot hear anything and only
+   * starting again is sure (what it changed since the last line is not
+   * written back).
+   */
+  private follow() {
+    clearInterval(this.ticker);
+    const run = this.runs.at(-1);
+    if (!this.live || !run || run.ms !== null) { this.activity.replaceChildren(); return; }
+    const paint = () => {
+      if (run.ms !== null || !this.live) { clearInterval(this.ticker); this.activity.replaceChildren(); return; }
+      const s = Math.floor((Date.now() - run.started) / 1000);
+      const quiet = Math.floor((Date.now() - this.heard) / 1000);
+      const cut = h('button', {class: 'button small-button', type: 'button'}, '中断');
+      cut.addEventListener('click', () => this.interrupt());
+      if (this.inputWait) { this.activity.replaceChildren(h('span', {class: 'muted'}, '入力待ち'), cut); return; }
+      if (s < 2) { this.activity.replaceChildren(); return; }
+      const parts: Node[] = [h('span', {class: 'muted'}, `実行中 ${s}秒${quiet >= 5 ? ' · 出力なし' : ''}`), cut];
+      if (quiet >= 10) {
+        const again = h('button', {class: 'button small-button', type: 'button'}, '止めてやり直す');
+        again.addEventListener('click', () => this.restart());
+        parts.push(again);
+      }
+      this.activity.replaceChildren(...parts);
+    };
+    paint();
+    this.ticker = window.setInterval(paint, 1000);
+  }
+
+  /** Ctrl-C: what runs in front of the shell ends, and the shell goes on. */
+  interrupt() {
+    if (!this.live || !this.worker) return;
+    this.worker.postMessage({type: 'interrupt'});
+    this.inputWait = false;
+  }
+
+  /** A new shell for this repo in this place. */
+  private restart() {
+    this.stop();
+    sessions.delete(this.repo);
+    this.element.replaceWith(terminalFor(this.repo));
+  }
+
   private end(message: string) {
+    clearInterval(this.ticker);
+    this.activity.replaceChildren();
     this.unwatch?.();
     this.unwatch = null;
     this.worker?.terminate();
@@ -224,10 +274,7 @@ export class Session {
     this.memory = 0;
     this.tell();
     const restart = h('button', {class: 'button', type: 'button'}, 'もう一度起動');
-    restart.addEventListener('click', () => {
-      sessions.delete(this.repo);
-      this.element.replaceWith(terminalFor(this.repo));
-    });
+    restart.addEventListener('click', () => this.restart());
     this.status.replaceChildren(message, ' ', restart);
   }
 }

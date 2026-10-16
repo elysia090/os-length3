@@ -1,0 +1,161 @@
+// Fetching the Prompt's userland (about 12 MB) through whatever lies between
+// the page and its server: a proxy may cut a transfer midway, stall it, or
+// answer with an error for a moment. A download here keeps what it has,
+// notices a stall instead of waiting forever, continues from the byte it
+// reached (a Range request, guarded so two versions are never spliced), and
+// accepts the result only when it is exactly the file the manifest names.
+// What is verified is kept by its digest, so it is never fetched twice.
+
+export interface Expect { size?: number; sha256?: string }
+
+export interface Progress {
+  /** Bytes received so far; may go back to 0 when a server cannot continue. */
+  bytes(got: number): void;
+  /** The transfer broke and will be taken up again: which attempt is next, and why. */
+  retry(attempt: number, why: string): void;
+  /** No byte has come for this many seconds (said each second, from the second). */
+  waiting?(seconds: number): void;
+}
+
+export interface Options {
+  /** No byte for this long counts as broken. */
+  stallMs?: number;
+  /** Tries in all, the first included. */
+  attempts?: number;
+  /** Wait before the n-th retry (n from 1). */
+  backoff?: (n: number) => number;
+  fetch?: typeof fetch;
+}
+
+/** A failure that another try would not change (the file is missing, refused…). */
+export class Fatal extends Error {}
+
+/** What a broken download had, kept for the next try in this page. */
+interface Partial { parts: Uint8Array[]; got: number; validator: string | null }
+const partials = new Map<string, Partial>();
+
+const join = (parts: Uint8Array[], got: number) => {
+  const out = new Uint8Array(got);
+  let at = 0;
+  for (const p of parts) { out.set(p, at); at += p.length; }
+  return out;
+};
+
+export async function digest(bytes: Uint8Array): Promise<string> {
+  const d = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as BufferSource));
+  return [...d].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const transient = (status: number) => status === 408 || status === 425 || status === 429 || status >= 500;
+
+/**
+ * `url`'s bytes, taken up again after a cut or stall from where they
+ * stopped, and checked against `expect` when it is given.
+ */
+export async function download(url: string, expect: Expect = {}, progress?: Progress, options: Options = {}): Promise<Uint8Array> {
+  const {stallMs = 10_000, attempts = 6, backoff = (n) => Math.min(8000, 500 * 2 ** (n - 1)), fetch: get = fetch} = options;
+  const state = partials.get(url) ?? {parts: [], got: 0, validator: null};
+  partials.set(url, state);
+  const reset = () => { state.parts = []; state.got = 0; state.validator = null; progress?.bytes(0); };
+  let why = '';
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    if (attempt > 1) { progress?.retry(attempt, why); await sleep(backoff(attempt - 1)); }
+    const abort = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let lastByte = Date.now();
+    const arm = () => { clearTimeout(timer); lastByte = Date.now(); timer = setTimeout(() => abort.abort(), stallMs); };
+    // A quiet line is said while it is quiet, before it counts as broken.
+    const quiet = setInterval(() => {
+      const s = Math.floor((Date.now() - lastByte) / 1000);
+      if (s >= 2) progress?.waiting?.(s);
+    }, 1000);
+    try {
+      const headers: Record<string, string> = {};
+      // Continue only against the same version: If-Range makes a server that
+      // changed the file send all of it again instead of the rest.
+      if (state.got && state.validator) { headers.Range = `bytes=${state.got}-`; headers['If-Range'] = state.validator; }
+      else if (state.got) reset();
+      arm();
+      const r = await get(url, {headers, signal: abort.signal, cache: 'no-store'});
+      if (r.status === 206) {
+        const start = Number(/bytes (\d+)-/.exec(r.headers.get('Content-Range') ?? '')?.[1]);
+        if (start !== state.got) { reset(); why = '続きを受け取れませんでした'; await r.body?.cancel(); continue; }
+      } else if (r.ok) {
+        if (state.got) reset();
+      } else if (transient(r.status)) {
+        why = `${r.status}`; await r.body?.cancel(); continue;
+      } else {
+        throw new Fatal(`${url}: ${r.status}`);
+      }
+      // A strong ETag or a date names this version; a weak one cannot guard a splice.
+      // Bytes counted after a proxy's own compression are not the file's
+      // offsets, so such a transfer starts over rather than continuing.
+      const etag = r.headers.get('ETag');
+      const encoded = (r.headers.get('Content-Encoding') ?? 'identity') !== 'identity';
+      state.validator = encoded ? null : etag && !etag.startsWith('W/') ? etag : r.headers.get('Last-Modified');
+      const reader = r.body!.getReader();
+      for (;;) {
+        arm();
+        const {done, value} = await reader.read();
+        if (done) break;
+        state.parts.push(value);
+        state.got += value.length;
+        progress?.bytes(state.got);
+      }
+      clearTimeout(timer);
+      const bytes = join(state.parts, state.got);
+      if (expect.size !== undefined && bytes.length !== expect.size) { reset(); why = '大きさが合いません'; continue; }
+      if (expect.sha256 && await digest(bytes) !== expect.sha256) { reset(); why = '中身が合いません'; continue; }
+      partials.delete(url);
+      return bytes;
+    } catch (e) {
+      if (e instanceof Fatal) { partials.delete(url); throw e; }
+      why = abort.signal.aborted ? '回線が止まりました' : '回線が切れました';
+    } finally {
+      // Every way out of a try (done, continue, broken) stops its clocks.
+      clearTimeout(timer);
+      clearInterval(quiet);
+    }
+  }
+  // What came is kept: the next try in this page continues from it.
+  throw new Error(why || '読み込めませんでした');
+}
+
+/** Bytes kept by digest in the page's Cache Storage, when it has one. */
+const STORE = 'length3-userland';
+const key = (sha: string) => `/userland/by-digest/${sha}`;
+
+async function store(): Promise<Cache | null> {
+  try { return 'caches' in globalThis ? await caches.open(STORE) : null; } catch { return null; }
+}
+
+export async function cached(sha: string): Promise<Uint8Array | null> {
+  const c = await store();
+  const r = await c?.match(key(sha)).catch(() => undefined);
+  if (!r) return null;
+  const bytes = new Uint8Array(await r.arrayBuffer());
+  // A kept copy is trusted only as far as its digest.
+  return await digest(bytes) === sha ? bytes : null;
+}
+
+/** Whether a copy is kept by that digest (not checked; cached() checks). */
+export async function has(sha: string): Promise<boolean> {
+  const c = await store();
+  return !!(await c?.match(key(sha)).catch(() => undefined));
+}
+
+export async function keep(sha: string, bytes: Uint8Array) {
+  const c = await store();
+  await c?.put(key(sha), new Response(bytes as BodyInit)).catch(() => {});
+}
+
+/** Give back every kept copy not named in `live` (an older userland's). */
+export async function forgetExcept(live: Set<string>) {
+  const c = await store();
+  if (!c) return;
+  for (const req of await c.keys().catch(() => [] as readonly Request[])) {
+    const sha = new URL(req.url).pathname.split('/').at(-1)!;
+    if (!live.has(sha)) await c.delete(req).catch(() => false);
+  }
+}

@@ -58,6 +58,12 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   prompt.addEventListener('input', fit);
   prompt.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') { setPrompting(false); prompt.blur(); return; }
+    // Ctrl-C with nothing selected (so not a copy) interrupts what runs, as in a terminal.
+    if (event.key === 'c' && event.ctrlKey && !event.altKey && !event.metaKey && prompt.selectionStart === prompt.selectionEnd && repo) {
+      event.preventDefault();
+      sessionFor(repo).interrupt();
+      return;
+    }
     if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
     event.preventDefault();
     if (!repo) return;

@@ -1,31 +1,35 @@
 import {bytes, h} from '../dom.ts';
 import {readCapacity, readUsage, reclaim, type Certainty, type Reclaim, type Usage} from '../host.ts';
+import {has} from '../fetch.ts';
+import {about} from '../userland.ts';
 import {pageHead} from './common.ts';
 import {allSessions} from './terminal.ts';
-
-interface Manifest {
-  base: {name: string; version: string; from: string; sha256: string; applets: number};
-  tools: {name: string; version: string; sha256: string}[];
-  dotfiles: {path: string; from: string}[];
-}
 
 /** How a figure is known, in one word; a counted figure needs none. */
 const known = (c: Certainty) => (c === 'Verified' ? '' : c === 'Estimated' ? '推定' : '不明');
 
-/** The environment the Prompt actually runs, from the manifest written with it. */
+/**
+ * What the Prompt runs, from l3.json written with it: l3 is the one thing it
+ * depends on, and what l3 carries (the distribution's root, its BusyBox, the
+ * translator) is shown inside it, so it cannot claim what is not there.
+ */
 function environment(): HTMLElement {
   const body = h('div', {}, h('p', {class: 'muted'}, '読み込み中…'));
-  void fetch('/userland/manifest.json').then((r) => (r.ok ? r.json() as Promise<Manifest> : null)).catch(() => null).then((m) => {
-    if (!m) { body.replaceChildren(h('div', {class: 'empty'}, 'Prompt の環境がありません（npm run userland）')); return; }
-    const row = (name: string, version: string, note: string, sha: string) =>
-      h('div', {class: 'env-row'}, h('b', {}, name), h('span', {}, version), h('span', {class: 'muted'}, note),
+  void about().then(async (a) => {
+    if (!a) { body.replaceChildren(h('div', {class: 'empty'}, 'l3 がありません（npm run userland）')); return; }
+    const here = await has(a.bundle.sha256);
+    const part = (name: string, version: string, note: string, sha = '') =>
+      h('div', {class: 'env-row env-part'}, h('span', {}, name), h('span', {}, version), h('span', {class: 'muted'}, note),
         h('code', {class: 'muted', title: sha}, sha.slice(0, 12)));
-    body.replaceChildren(
-      h('div', {class: 'env-rows'},
-        row(m.base.name, m.base.version, `base · ${m.base.applets} コマンド · ${m.base.from}`, m.base.sha256),
-        ...m.tools.map((t) => row(t.name, t.version, 'ツール', t.sha256))),
-      ...m.dotfiles.map((d) => row(d.path, '', `Dotfiles · ${d.from}`, '')),
-      ...(m.dotfiles.length ? [] : [h('p', {class: 'muted small env-note'}, 'Dotfiles はまだありません')]));
+    body.replaceChildren(h('div', {class: 'env-one'},
+      h('div', {class: 'env-row env-head'}, h('b', {}, a.name), h('span', {}, a.version),
+        h('span', {class: 'muted'}, `${bytes(a.bundle.size)} · ${here ? 'この端末にあります' : '最初の Prompt で読み込みます'}`),
+        h('code', {class: 'muted', title: a.bundle.sha256}, a.bundle.sha256.slice(0, 12))),
+      part(a.root.name, a.root.version, 'root'),
+      part(a.base.name, a.base.version, `${a.base.applets} コマンド · ${a.base.from}`, a.base.sha256),
+      part('l3', a.version, 'コマンド', a.l3.sha256),
+      part(a.translator.name, a.translator.version, '翻訳器')),
+      h('p', {class: 'muted small env-note'}, 'Dotfiles はまだありません'));
   });
   return body;
 }

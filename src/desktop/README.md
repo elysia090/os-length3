@@ -52,8 +52,14 @@ separate surface and nothing here depends on it.
   Worker, on the open repo. What the shell changes under `/root/<repo>` is
   written back through the store (text files up to the read limit), and
   what is saved anywhere else is put into the shell's copy, so the shell,
-  File, Forge and Git see one repo. Prepare its files with `npm run
-  userland` (see `scripts/userland.sh`).
+  File, Forge and Git see one repo. Its one dependency is l3: one file
+  (`public/userland/l3-<digest>.bin`, named with its size and digest in
+  `l3.json`) carrying the distribution's root (BusyBox from its pinned
+  source and config, its `/etc` and `os-release`), the l3 command and the
+  translator with ready translations, gzip'd from 12 MB to 2.7 MB. It is
+  fetched once, continued from where a proxy cut or stalled it, checked
+  against its digest and kept on the device by it. Make it with `npm run
+  userland` (`scripts/userland.sh`, then `scripts/bundle.mjs`).
 
 ## l3: the same OS on the command line
 

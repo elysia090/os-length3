@@ -225,6 +225,10 @@ a { color: var(--ink); }
   padding: var(--s3) var(--s4); border: 1px solid var(--rule); border-radius: var(--r-place);
 }
 .env-row code { font: var(--t-meta) var(--mono); }
+/* l3 is one place; what it carries are its rows, a step in. */
+.env-one { display: grid; gap: var(--s1); padding: var(--s2); border: 1px solid var(--rule); border-radius: var(--r-card); }
+.env-one .env-row { border: 0; padding: var(--s1) var(--s3); }
+.env-one .env-part { padding-left: calc(var(--s3) + var(--s4)); font-size: var(--t-meta); }
 .env-note { margin-top: var(--s3); }
 
 /* Git: issues read from each repo's issue/, rows named by kind and title */
@@ -458,7 +462,14 @@ mark { background: var(--ink); color: var(--ground); }
 .tree-note { padding: var(--s1) var(--s2) var(--s1) calc(var(--depth, 0) * var(--s4) + var(--s5) + var(--s1)); font-size: var(--t-meta); }
 
 /* Terminal output; input comes from the prompt box */
-.term { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; gap: var(--s2); margin-top: var(--s2); }
+.term { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; gap: var(--s2); margin-top: var(--s2); }
+/* What the running line is doing, under its output; empty while it is quick. */
+/* Each part keeps its row when another is empty and hidden. */
+.term > p { grid-row: 1; }
+.term-out { grid-row: 2; }
+.term-activity { grid-row: 3; display: flex; align-items: center; gap: var(--s2); min-height: 0; }
+.term-activity:empty { display: none; }
+.small-button { min-height: var(--h-row); padding: 0 var(--s3); font-size: var(--t-meta); }
 .term-out { margin: 0; overflow: auto; min-height: 0; font: var(--t-meta)/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 
 @media (prefers-reduced-motion: reduce) {

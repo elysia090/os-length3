@@ -118,6 +118,20 @@ export class Kernel {
     return {status: this.status};
   }
 
+  /**
+   * Ctrl-C while the kernel is paused: every process in front of the first
+   * one (the shell) ends as killed by SIGINT, so the shell takes its turn
+   * again, and the wait status says so. A process that catches SIGINT is
+   * ended too: there is no frame to run a handler in. One that ignores it
+   * (SIG_IGN, as under nohup) keeps running, and so does everything waiting
+   * on it. False when nothing was interrupted.
+   */
+  interrupt(sig = 2) {
+    if (this.chain.length < 2 || this.chain.at(-1).signals.get(sig)?.handler === 1n) return false;
+    for (const p of this.chain.splice(1).reverse()) p.finish(sig & 0x7f);
+    return true;
+  }
+
   /** Start and run to the end; for hosts whose input is all known up front. */
   spawn(path, argv, env, cwd = '/') {
     this.start(path, argv, env, cwd);

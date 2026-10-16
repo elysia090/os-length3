@@ -3,7 +3,9 @@
 //    links: [{path, target}], argv, env, cwd}
 // (`translator` and a file's optional `module`, its translation made ahead
 // of time, may be compiled WebAssembly.Modules, shared between workers.)
-// then {type: 'input', bytes} as the person types and {type: 'eof'}.
+// then {type: 'input', bytes} as the person types and {type: 'eof'}, and
+// {type: 'interrupt'} for Ctrl-C: what was typed and not read yet is
+// dropped, and what runs in front of the shell ends (Kernel.interrupt).
 // It receives {type: 'output', fd, bytes}, {type: 'waiting', memory},
 // {type: 'exit', status} or {type: 'error', message}; `memory` is the bytes
 // the guest's running processes hold.
@@ -48,6 +50,7 @@ function pump() {
 self.onmessage = async ({data}) => {
   if (data.type === 'input') { pending.push(data.bytes); if (kernel) pump(); return; }
   if (data.type === 'eof') { ended = true; if (kernel) pump(); return; }
+  if (data.type === 'interrupt') { pending.length = 0; if (kernel?.interrupt()) pump(); return; }
   if (data.type === 'put') { mirror?.put(data.path, data.what); return; }
   if (data.type !== 'start') return;
   try {

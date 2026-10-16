@@ -101,6 +101,24 @@ itself scrolls on, this keeps the record). The Prompt's own status line is
 empty while it simply runs; it speaks only when something is missing (large
 files and binaries not copied in, what could not be written back). The chosen reference is remembered on this device.
 
+The Prompt never goes silent while something takes time:
+
+- **Coming up.** The first Prompt fetches l3 (2.7 MB) and says how far it
+  is (`l3 を読み込み中 1.5 MB / 2.7 MB`). When the line goes quiet it counts
+  the seconds (`応答待ち 4秒`); at ten it counts as broken and is taken up
+  again from the byte it reached (`回線が止まりました。続きから読み込みます`),
+  the same after a cut or a server error, a few times with growing waits.
+  What came stays for もう一度起動. Later Prompts, in this page or after a
+  reload, take l3 from this device at once.
+- **Running.** A line done within two seconds says nothing. Past that, under
+  the output: `実行中 N秒` with 中断 (Ctrl-C in the prompt box, when nothing
+  is selected, does the same); `入力待ち` with 中断 when what runs reads
+  input (whatever is typed in the box goes to it); `出力なし` after five
+  quiet seconds; and after ten, 止めてやり直す, because a worker busy in a
+  loop cannot hear 中断, and only a new shell is sure. 中断 ends what runs
+  in front of the shell as SIGINT would, and the shell goes on (`$?` is
+  130).
+
 ### Runtime
 
 What this device holds, what can be given back, what is running, then the
@@ -124,11 +142,14 @@ environment actually in effect.
 - **動いている Prompt** is shown only while one runs: each with the memory its
   guest processes hold and 止める, which ends the worker and everything in
   it at once.
-- **有効な環境**: the base the Prompt runs (BusyBox, its version and command
-  count, where the version is pinned), the tools (l3, xlat) with short
-  digests, and Dotfiles as differences from the base (none yet, and it says
-  so). The list comes from the manifest written with the userland, so it
-  cannot claim what is not there.
+- **有効な環境**: l3, the one thing the Prompt depends on, as one place: its
+  version, size, digest and whether this device has it. Inside it, a step
+  in, what it carries: the distribution's root (OS Length3 Linux and its
+  version), its BusyBox (version, command count, where the version is
+  pinned), the l3 command and the xlat translator, with short digests.
+  Then Dotfiles as differences from the root (none yet, and it says so).
+  It is read from l3.json, written with the bundle, so it cannot claim
+  what is not there.
 
 In a browser only the origin's share is known, and it says so (このブラウザ,
 推定); nothing there is the OS's to give back.
