@@ -156,7 +156,7 @@ fn run(a: Args) -> Result<(), String> {
             _ => None,
         };
         if let Some(what) = elsewhere {
-            return Err(format!("{what}はこの Prompt からは扱えません。アプリか、端末の l3 でどうぞ"));
+            return Err(format!("{what} はこの Prompt からは扱えません。アプリか、端末の l3 でどうぞ"));
         }
     }
     match w.as_slice() {
