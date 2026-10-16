@@ -122,7 +122,7 @@ fn head_tree(client: &Client, repo: &str, key: &str, head: Option<&str>) -> Resu
 fn tree_at(client: &Client, repo: &str, id: &str) -> Result<Tree> {
     match client.call("GET", &format!("/v1/repos/{repo}/cuts/{id}"), None)? {
         Reply::Ok(v) => Ok(remote::tree_of(&v["tree"])),
-        _ => Err(crate::tr!("The Remote has no such commit", "Remote にその区切りがありません")),
+        _ => Err(crate::tr!("The Remote has no such commit", "Remote にそのコミットがありません")),
     }
 }
 
@@ -275,20 +275,20 @@ fn words(repos: &Repos, repo: &str, issue: Option<&str>, line: &str) -> Result<(
 pub fn cut(repos: &Repos, repo: &str, issue: Option<&str>, line: &str, note: &str) -> Result<Cut> {
     let (kind, title, issue) = words(repos, repo, issue, line)?;
     if title.trim().is_empty() {
-        return Err(crate::tr!("A commit needs a title (for example Fix：title)", "区切るには件名がいります（例: Fix：件名）"));
+        return Err(crate::tr!("A commit needs a title (for example Fix：title)", "Commit するには件名がいります（例: Fix：件名）"));
     }
-    let client = Client::open().map_err(|_| crate::tr!("Commits are kept on the Remote. Connect first (l3 login)", "区切りは Remote に残ります。先につないでください（l3 login）"))?;
+    let client = Client::open().map_err(|_| crate::tr!("Commits are kept on the Remote. Connect first (l3 login)", "コミットは Remote に残ります。先につないでください（l3 login）"))?;
     let (key, on) = remote::key(repos, repo);
     for _ in 0..4 {
         let s = remote::sync(repos, repo)?;
         if let Some((path, why)) = s.unsynced.first() {
-            return Err(crate::tr!("Something cannot be sent to the Remote ({}: {}); make it sendable, then commit", "Remote に送れないものがあります（{}: {}）。送れるようにしてから区切ってください", path, why));
+            return Err(crate::tr!("Something cannot be sent to the Remote ({}: {}); make it sendable, then commit", "Remote に送れないものがあります（{}: {}）。送れるようにしてから Commit してください", path, why));
         }
         let b = remote::base(&key).unwrap_or_default();
         let then = head_tree(&client, repo, &key, b.head.as_deref())?;
         let c = changes_of(Some(&client), After::Here(repos.dir(repo)?), &then, &b.tree)?;
         if c.files == 0 {
-            return Err(crate::tr!("Nothing to commit", "まだ区切っていない変更がありません"));
+            return Err(crate::tr!("Nothing to commit", "まだ Commit していない変更がありません"));
         }
         let body = serde_json::json!({
             "version": s.version, "parent": b.head, "kind": kind.clone().unwrap_or_default(), "title": title.trim(),
@@ -309,7 +309,7 @@ pub fn cut(repos: &Repos, repo: &str, issue: Option<&str>, line: &str, note: &st
             Reply::NotFound => return Err(crate::tr!("The Remote does not have this repo", "Remote にこの repo がありません")),
         }
     }
-    Err(crate::tr!("The Remote kept moving; could not commit", "Remote が動き続けていて区切れませんでした"))
+    Err(crate::tr!("The Remote kept moving; could not commit", "Remote が動き続けていて Commit できませんでした"))
 }
 
 /// The commits of the line `repo` shows (or of `line`), newest first.
@@ -394,11 +394,11 @@ pub fn work(repos: &Repos, repo: &str) -> Result<Work> {
 pub fn push(repos: &Repos, repo: &str) -> Result<String> {
     let on = repos.line(repo);
     if on == crate::work::MAIN {
-        return Err(crate::tr!("main is pushed by merging changes into it; work on an issue to push", "main には変更を Merge して入れます。Issue の作業で push してください"));
+        return Err(crate::tr!("main is pushed by merging changes into it; work on an issue to push", "main には変更を Merge して入れます。Issue の作業で Push してください"));
     }
     let client = Client::open()?;
     let (key, _) = remote::key(repos, repo);
-    let head = remote::base(&key).and_then(|b| b.head).ok_or_else(|| crate::tr!("Nothing committed yet", "まだ何も区切っていません"))?;
+    let head = remote::base(&key).and_then(|b| b.head).ok_or_else(|| crate::tr!("Nothing committed yet", "まだ何も Commit していません"))?;
     let v = client.json("POST", &format!("/v1/repos/{repo}/lines/{on}/push"), Some(serde_json::json!({"head": head})))?;
     Ok(v["pushed"].as_str().unwrap_or_default().to_string())
 }
@@ -471,8 +471,8 @@ pub fn submit(repos: &Repos, repo: &str, note: &str) -> Result<Change> {
         "line": on, "kind": kind.unwrap_or_default(), "title": title.trim(), "note": note.trim()})))?;
     match v {
         Reply::Ok(v) => serde_json::from_value(v).map_err(|e| e.to_string()),
-        Reply::Conflict(v) if v["error"] == "push first" => Err(crate::tr!("Push first: the change is what was pushed", "先に push してください。変更は push したものです")),
-        Reply::Conflict(_) => Err(crate::tr!("Nothing committed since the work began", "作業を始めてから何も区切っていません")),
+        Reply::Conflict(v) if v["error"] == "push first" => Err(crate::tr!("Push first: the change is what was pushed", "先に Push してください。変更は Push したものです")),
+        Reply::Conflict(_) => Err(crate::tr!("Nothing committed since the work began", "作業を始めてから何も Commit していません")),
         Reply::NotFound => Err(crate::tr!("The Remote has no such work", "Remote にその作業がありません")),
     }
 }
@@ -480,7 +480,7 @@ pub fn submit(repos: &Repos, repo: &str, note: &str) -> Result<Change> {
 fn change_call(repo: &str, id: &str, verb: &str, body: serde_json::Value) -> Result<serde_json::Value> {
     match Client::open()?.call("POST", &format!("/v1/repos/{repo}/changes/{id}/{verb}"), Some(body))? {
         Reply::Ok(v) => Ok(v),
-        Reply::Conflict(v) if v["conflicts"].is_array() => Err(crate::tr!("Both changed these files; resolve them in the work, push and submit again: {}", "両方で変わったファイルがあります。作業の側で直して push し、もう一度提出してください: {}",
+        Reply::Conflict(v) if v["conflicts"].is_array() => Err(crate::tr!("Both changed these files; resolve them in the work, push and submit again: {}", "両方で変わったファイルがあります。作業の側で直して Push し、もう一度提出してください: {}",
             v["conflicts"].as_array().unwrap().iter().filter_map(|p| p.as_str()).collect::<Vec<_>>().join(", "))),
         Reply::Conflict(v) if v["version"].is_number() => Err(crate::tr!("The change has a newer version ({}); look at it first", "変更に新しい版があります（{}）。先にそれを見てください", v["version"])),
         Reply::Conflict(v) => Err(crate::tr!("The change is {} already", "この変更はもう {} です", v["error"].as_str().unwrap_or("?"))),

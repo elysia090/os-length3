@@ -145,16 +145,16 @@ Git
   l3 issue new REPO \"Fix：件名\" [-m 詳細]
   l3 work REPO/issue/NNN.md   その Issue の作業をする（repo の写しがその作業になる）
   l3 work REPO main           main に戻る
-  l3 commit REPO [-m メモ]    作業を区切る（Issue の名前で）
-  l3 commit REPO \"Fix：件名\"  main で区切る
-  l3 push REPO                作業の区切りを push
-  l3 submit REPO [-m メモ]    Submit change（区切りを足したらもう一度）
+  l3 commit REPO [-m メモ]    作業を Commit（Issue の名前で）
+  l3 commit REPO \"Fix：件名\"  main で Commit
+  l3 push REPO                作業のコミットを Push
+  l3 submit REPO [-m メモ]    Submit change（コミットを足したらもう一度）
   l3 reset REPO               提出した変更を取り下げる
   l3 changes REPO             main に届いた変更とレビュー
   l3 review REPO ID approve|changes|comment [-m メモ]
   l3 merge REPO ID            main に取り込む
   l3 reject REPO ID [-m 理由] 取り込まない
-  l3 log REPO                 いまの作業の区切り
+  l3 log REPO                 いまの作業のコミット
 Runtime
   l3 runtime                  root と この端末: 容量順、空けられるもの
   l3 free ID… | l3 free all   空ける（変更があれば送ってから）
@@ -323,7 +323,7 @@ fn run(a: Args) -> Result<(), String> {
         ["commit", repo, line] => cut_done(&a, history::cut(&Repos::open()?, repo, None, line, &a.detail)?),
         ["push", repo] => {
             let head = history::push(&Repos::open()?, repo)?;
-            out(tr!("Pushed {}", "push しました {}", short(&head)));
+            out(tr!("Pushed {}", "Push しました {}", short(&head)));
             Ok(())
         }
         ["submit", repo] => {
@@ -357,7 +357,7 @@ fn run(a: Args) -> Result<(), String> {
         ["log", repo] => {
             let list = history::log(&Repos::open()?, repo, 50)?;
             if a.json { return json(&list); }
-            if list.is_empty() { out(tr!("No commits yet", "区切りはまだありません")); }
+            if list.is_empty() { out(tr!("No commits yet", "コミットはまだありません")); }
             for c in &list { cut_line(c); }
             Ok(())
         }
@@ -616,7 +616,7 @@ fn git_page(a: &Args, repo: &str) -> Result<(), String> {
         match history::work(&r, repo) {
             Ok(wk) if wk.line != work::MAIN => {
                 out(tr!("Work: {} · {} · started {}", "作業: {} · {} · {} に開始", wk.issue.as_deref().unwrap_or(&wk.line), if wk.started_by.is_empty() { "—" } else { &wk.started_by }, ago(wk.started_at)));
-                out(tr!("  {} commits, {} not pushed{}", "  区切り {} · 未 push {}{}", wk.commits, wk.unpushed,
+                out(tr!("  {} commits, {} not pushed{}", "  コミット {} · 未 Push {}{}", wk.commits, wk.unpushed,
                     wk.change.as_ref().map(|c| tr!(" · submitted (version {}, {})", " · 提出済み（第 {} 版 · {}）", c.version, state_word(&c.state))).unwrap_or_default()));
             }
             Ok(_) => out(tr!("Work: main", "作業: main")),
@@ -662,7 +662,7 @@ fn changes_in(a: &Args, repo: &str) -> Result<(), String> {
 
 fn cut_done(a: &Args, c: history::Cut) -> Result<(), String> {
     if a.json { return json(c); }
-    out(tr!("Committed {}  {} ({} files +{} −{})", "区切りました {}  {}（{} ファイル +{} −{}）", short(&c.id), history::line(&c), c.files, c.added, c.removed));
+    out(tr!("Committed {}  {} ({} files +{} −{})", "Commit しました {}  {}（{} ファイル +{} −{}）", short(&c.id), history::line(&c), c.files, c.added, c.removed));
     Ok(())
 }
 
@@ -689,8 +689,8 @@ fn ago(ms: u64) -> String {
 fn changes(a: &Args, repo: &str) -> Result<(), String> {
     let c = history::changes(&Repos::open()?, repo)?;
     if a.json { return json(&c); }
-    if c.files == 0 { out(tr!("Nothing uncommitted", "まだ区切っていない変更はありません")); return Ok(()); }
-    out(tr!("Not committed  {} files +{} −{}", "まだ区切っていない変更  {} ファイル +{} −{}", c.files, c.added, c.removed));
+    if c.files == 0 { out(tr!("Nothing uncommitted", "まだ Commit していない変更はありません")); return Ok(()); }
+    out(tr!("Not committed  {} files +{} −{}", "まだ Commit していない変更  {} ファイル +{} −{}", c.files, c.added, c.removed));
     for f in &c.folders {
         out(format!("  {}/  +{} −{}", if f.folder.is_empty() { repo } else { &f.folder }, f.added, f.removed));
         for x in &f.files {
@@ -698,8 +698,8 @@ fn changes(a: &Args, repo: &str) -> Result<(), String> {
             out(format!("      {word}  {}{}", x.path, if x.binary { tr!("  (binary)", "  （バイナリ）") } else { format!("  +{} −{}", x.added, x.removed) }));
         }
     }
-    if c.connected { out(tr!("To commit: l3 commit REPO (the work's issue names it), or l3 commit REPO \"Fix：title\" on main", "区切るには: l3 commit REPO（作業の Issue の名前で）か、main なら l3 commit REPO \"Fix：件名\"")); }
-    else { out(tr!("Commits are kept on the Remote; connect with l3 login to commit", "区切りは Remote に残ります。l3 login でつなぐと区切れます")); }
+    if c.connected { out(tr!("To commit: l3 commit REPO (the work's issue names it), or l3 commit REPO \"Fix：title\" on main", "Commit するには: l3 commit REPO（作業の Issue の名前で）か、main なら l3 commit REPO \"Fix：件名\"")); }
+    else { out(tr!("Commits are kept on the Remote; connect with l3 login to commit", "コミットは Remote に残ります。l3 login でつなぐと Commit できます")); }
     Ok(())
 }
 

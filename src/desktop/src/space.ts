@@ -25,7 +25,7 @@ export async function readSpace(open: string[] = []): Promise<Space | null> {
       : s?.where === 'synced' ? ['Free', t('The Remote has the same; opening it brings it back')]
       : ['SyncFree', s?.changed ? t('{n} changes are sent, then it is freed', {n: s.changed}) : t('Its changes are sent, then it is freed')];
     const works = store.copies(r.name).length - 1;
-    items.push({id: `repo:${r.name}`, what: r.name, detail: works ? t('repo · {files} · {n} works', {files: tn('{n} file', '{n} files', r.files), n: works}) : `repo · ${tn('{n} file', '{n} files', r.files)}`, allocated: r.bytes, room, why});
+    items.push({id: `repo:${r.name}`, what: r.name, detail: works ? t('repo · {files} · {works}', {files: tn('{n} file', '{n} files', r.files), works: tn('{n} work', '{n} works', works)}) : `repo · ${tn('{n} file', '{n} files', r.files)}`, allocated: r.bytes, room, why});
   }
   items.sort((a, b) => b.allocated - a.allocated || a.what.localeCompare(b.what));
   return {

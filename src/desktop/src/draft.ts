@@ -236,10 +236,10 @@ export async function status(): Promise<Status[]> {
 }
 
 /** The copy here has gone (freed, or left with the page): forget what was agreed for it. */
-export async function forget(repo: string) {
+export async function forget(repo: string, keepLine = false) {
   const s = syncState();
   for (const k of Object.keys(s.repos)) if (k === repo || k.startsWith(`${repo}@`)) delete s.repos[k];
-  if (s.lines) delete s.lines[repo];
+  if (s.lines && !keepLine) delete s.lines[repo];
   await saveState(s);
 }
 

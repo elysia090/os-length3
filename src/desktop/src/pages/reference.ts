@@ -111,6 +111,7 @@ export class Reference {
   /** Show one issue in full, with the way into its file. */
   showIssue(issue: {repo: string; file: string; kind: string | null; title: string; detail: string}, open: () => void) {
     this.pinned = true;
+    this.element.closest('.work')?.classList.remove('reviewing');
     this.query.value = '';
     for (const chip of this.chips.values()) chip.removeAttribute('aria-current');
     const go = h('button', {type: 'button', class: 'button'}, t('Open in Forge'));
@@ -139,6 +140,7 @@ export class Reference {
 
   private paint() {
     this.pinned = false;
+    this.element.closest('.work')?.classList.remove('reviewing');
     this.unwatch?.();
     this.unwatch = null;
     this.mark();
@@ -228,6 +230,8 @@ export class Reference {
   /** A change handed in, to review: its name, what to do with it, then its diff (only `folder`'s when given). */
   showChange(head: Node, actions: Node[], files: Promise<gitops.FileDiff[]>, folder: string | null = null) {
     this.pinned = true;
+    // A change under review takes the whole side: the Prompt steps aside until the reference shows something else.
+    this.element.closest('.work')?.classList.add('reviewing');
     this.query.value = '';
     for (const chip of this.chips.values()) chip.removeAttribute('aria-current');
     const diff = h('div', {}, h('p', {class: 'muted small'}, t('Reading…')));

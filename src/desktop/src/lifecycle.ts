@@ -127,7 +127,8 @@ function leave() {
   const go = [...states].filter(([r, s]) => s.where === 'synced' && !s.unsynced.length && !timers.has(r) && !kept!.waiting(r)).map(([r]) => r);
   if (go.length) {
     void kept.letGo(go);
-    for (const r of go) void draft.forget(r);
+    // Which work a repo showed stays: the next visit fetches that work's copy and shows it again.
+    for (const r of go) void draft.forget(r, true);
   }
   for (const k of draft.HOME_KEYS) dropState(k);
 }

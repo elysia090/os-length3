@@ -301,8 +301,11 @@ fn repo_item(repos: &crate::repos::Repos, name: &str, connected: bool, open: &[S
     // Every copy of it counts: main's and each issue's being worked on.
     let works = crate::work::worktrees(name);
     let size = allocated(&dir) + works.iter().map(|(_, p)| allocated(p)).sum::<u64>();
-    let detail = if works.is_empty() { crate::tr!("repo · {} files", "repo · {} ファイル", files) }
-        else { crate::tr!("repo · {} files · {} works", "repo · {} ファイル · 作業 {}", files, works.len()) };
+    let detail = match works.len() {
+        0 => crate::tr!("repo · {} files", "repo · {} ファイル", files),
+        1 => crate::tr!("repo · {} files · 1 work", "repo · {} ファイル · 作業 1", files),
+        n => crate::tr!("repo · {} files · {} works", "repo · {} ファイル · 作業 {}", files, n),
+    };
     Some(Item { id: format!("repo:{name}"), what: name.into(), detail, allocated: size, room, why })
 }
 

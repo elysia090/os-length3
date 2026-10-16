@@ -4,7 +4,7 @@
 //!
 //!   draft   the working tree, sent as a diff after every change, each on
 //!           the version it was read at (so nothing sent is overwritten)
-//!   cut     区切る: the draft at a version becomes history (history.rs)
+//!   cut     Commit: the draft at a version becomes history (history.rs)
 //!
 //! Taking in is file by file against the last version agreed with the
 //! Remote (the base): a file only changed there is written here, one only

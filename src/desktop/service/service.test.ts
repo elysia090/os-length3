@@ -134,7 +134,7 @@ test('a draft changes only from the version it was read at; a cut records it', a
   for (const p of ['../x', '.git/config', 'a//b', 'src/.GIT./hooks']) {
     assert.equal((await s.call('PATCH', '/v1/repos/notes/draft', {token: t, body: {version: 2, set: {[p]: null}, remove: []}})).status, 400, p);
   }
-  // 区切る: the draft as it is at version 2.
+  // Commit: the draft as it is at version 2.
   const first = await s.call('POST', '/v1/repos/notes/cuts', {token: t, body: {version: 2, parent: null, kind: 'Fix', title: '最初', issue: 'issue/001.md', note: '', added: 2, removed: 0}});
   assert.equal(first.status, 201);
   const id = first.json.id as string;

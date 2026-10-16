@@ -161,7 +161,7 @@ export const changes = (repo: string) => (isNative ? invoke<Changes>('history_ch
 export const diff = (repo: string) => (isNative ? invoke<FileDiff[]>('history_diff', {repo}) : webDiff(repo));
 export const log = (repo: string) => (isNative ? invoke<Cut[]>('history_log', {repo}) : webLog(repo));
 
-/** 区切る under `issue` (its file name in issue/), or without one, named by `line`. */
+/** Commit under `issue` (its file name in issue/), or without one, named by `line`. */
 export const cut = (repo: string, issue: string | null, line: string, note: string): Promise<Cut> =>
   isNative ? invoke<Cut>('history_cut', {repo, issue, line, note}) : webCut(repo, issue, line, note);
 

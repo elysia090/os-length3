@@ -55,7 +55,9 @@ export default {
   'The Remote has the same; opening it brings it back': 'Remote と同じです。開けばまた来ます',
   '{n} changes are sent, then it is freed': '{n} 件の変更を送ってから空けます',
   'Its changes are sent, then it is freed': '変更を送ってから空けます',
-  'repo · {files} · {n} works': 'repo · {files} · 作業 {n}',
+  'repo · {files} · {works}': 'repo · {files} · {works}',
+  '{n} work': '作業 {n}',
+  '{n} works': '作業 {n}',
   'Another device\'s change was put beside yours; check it before freeing ({path})': '別の端末の変更を横に置きました。確かめてから空けてください（{path}）',
   'It changed while syncing; try again': '同期のあいだに変わりました。もう一度どうぞ',
 } as Record<string, string>;

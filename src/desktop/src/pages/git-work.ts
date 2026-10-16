@@ -1,8 +1,9 @@
 import {ago, h} from '../dom.ts';
 import * as git from '../history.ts';
 import {t, tn} from '../i18n.ts';
-import type {Issue} from '../issues.ts';
+import {parseIssue, type Issue} from '../issues.ts';
 import {connection} from '../remote.ts';
+import {store} from '../repos.ts';
 import {named} from '../text.ts';
 
 // The sections under the issues on the Git page, for one repo at a time
@@ -90,7 +91,7 @@ export function gitWork(events: GitWorkEvents): GitWork {
       h('span', {class: 'row-meta'}, ago(c.time)))));
 
   /** The work card: where the repo stands, and what can be done next. */
-  const workCard = (at: string, w: git.Work, c: git.Changes): Node[] => {
+  const workCard = (at: string, w: git.Work, c: git.Changes, own: Issue | null): Node[] => {
     const error = h('p', {class: 'error', role: 'alert'});
     const chosen = issue ? `issue/${issue.file}` : null;
     const onIt = w.line !== 'main' && (!chosen || w.issue === chosen);
@@ -137,7 +138,7 @@ export function gitWork(events: GitWorkEvents): GitWork {
       ? t('Submitted · version {n} · {state}', {n: w.change.version, state: STATE(w.change.state)})
       : t('Not submitted');
     return [h('div', {class: 'work-card', 'aria-current': 'true'},
-      h('div', {class: 'work-head'}, h('b', {}, issue ? named(issue.kind, issue.title) : w.issue ?? w.line),
+      h('div', {class: 'work-head'}, h('b', {}, issue ? named(issue.kind, issue.title) : own ? named(own.kind, own.title) : w.issue ?? w.line),
         h('span', {class: 'muted'}, t('{who} · started {when}', {who: w.started_by || '—', when: ago(w.started_at)}))),
       h('p', {class: 'muted small'}, `${tn('{n} commit', '{n} commits', w.commits)} · ${tn('{n} not pushed', '{n} not pushed', w.unpushed)} · ${state}`),
       h('div', {class: 'row work-act'}, note, commit),
@@ -154,7 +155,7 @@ export function gitWork(events: GitWorkEvents): GitWork {
     const reviewing = (folder: string | null = null) => {
       const note = h('input', {class: 'line-in', placeholder: t('Note'), 'aria-label': t('The review\'s note')}) as HTMLInputElement;
       const verdicts = (['approve', 'changes', 'comment'] as const).map((v) => {
-        const b = button(v === 'approve' ? t('Approve') : v === 'changes' ? t('Ask for changes') : t('Comment'), v === 'approve' ? 'primary' : '');
+        const b = button(v === 'approve' ? t('Approve') : v === 'changes' ? t('Ask for changes') : t('Comment'), v === 'approve' ? 'small-button primary' : 'small-button');
         b.addEventListener('click', doing(b, error, () => git.review(at, c, v, note.value)));
         return b;
       });
@@ -204,10 +205,12 @@ export function gitWork(events: GitWorkEvents): GitWork {
       connected ? git.log(at) : Promise.resolve([] as git.Cut[]),
       connected ? git.work(at).catch(() => ({line: 'main', issue: null, started_by: '', started_at: 0, commits: 0, unpushed: 0, change: null}) as git.Work) : Promise.resolve({line: 'main', issue: null, started_by: '', started_at: 0, commits: 0, unpushed: 0, change: null} as git.Work),
       connected ? git.changesOf(at).catch(() => [] as git.Change[]) : Promise.resolve([] as git.Change[]),
-    ]).then(([c, log, w, handed]) => {
+    ]).then(async ([c, log, w, handed]) => {
+      // The work's own issue, named by its title even when no issue is chosen above.
+      const own = !issue && w.issue ? await store.read(at, w.issue).then((r) => (r.text == null ? null : parseIssue(at, w.issue!.slice('issue/'.length), r.text)), () => null) : null;
       if (mine !== run) return;
       workS.el.hidden = false;
-      workS.body.replaceChildren(...workCard(at, w, c));
+      workS.body.replaceChildren(...workCard(at, w, c, own));
       changesS.el.hidden = !c.files;
       changesS.small.textContent = c.files ? `${c.files}` : '';
       changesS.body.replaceChildren(changeRows(at, c));

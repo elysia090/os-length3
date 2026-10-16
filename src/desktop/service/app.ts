@@ -321,12 +321,22 @@ export function createApp(d: Deps) {
     const issue = typeof b?.issue === 'string' ? b.issue : '';
     const stem = /^issue\/([A-Za-z0-9][A-Za-z0-9._-]{0,60})\.md$/.exec(issue)?.[1];
     if (!stem || !validLine(stem)) return c.json({error: 'an issue file, issue/NNN.md'}, 400);
-    const main = await lineRow(user, name, 'main');
+    let main = await lineRow(user, name, 'main');
     if (!main) return c.json({error: 'no repo'}, 404);
     const existing = await lineRow(user, name, stem);
     if (existing) return c.json(lineShown(existing));
-    // Work starts from what main last committed, not from main's uncommitted draft.
-    const from = main.head ? await treeAt(user, name, main.head) : (main.draft as Tree);
+    // Work starts from what main last committed, not from main's uncommitted draft. A repo
+    // nobody has committed yet gets its first commit (what it was made with) here, so the
+    // work shows only what it changes.
+    if (!main.head) {
+      await commit(user, name, 'main', main, {parent: null, merged: null, tree: main.draft as Tree, kind: '', title: 'Start', issue: '', note: '', added: 0, removed: 0});
+      main = (await lineRow(user, name, 'main'))!;
+      if (!main.head) return c.json({error: 'main moved; try again'}, 409);
+    }
+    // The issue itself comes along when main has it written but not committed: the work is about it.
+    const from = {...await treeAt(user, name, main.head)};
+    const written = (main.draft as Tree)[issue];
+    if (written && !from[issue]) from[issue] = written;
     await d.db.insert(repo).values({userId: user, name, line: stem, issue, base: main.head, head: main.head, pushed: main.head,
       draft: from, draftBase: main.head, version: 1, bytes: await bytesOf(user, from), startedBy: await whoIs(c)}).onConflictDoNothing();
     return c.json(lineShown((await lineRow(user, name, stem))!), 201);
