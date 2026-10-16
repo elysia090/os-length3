@@ -1490,6 +1490,36 @@ impl Fx<'_> {
                     self.xwrite(i, 0, 16, l_v(0))
                 }
             }
+            // Insert a byte/word/dword/qword from a register or memory into one lane.
+            Pinsrb | Pinsrw | Pinsrd | Pinsrq if is_x0 => {
+                let lane = i.immediate8();
+                let (size, op) = match m {
+                    Pinsrb => (1, W::I8x16ReplaceLane(lane & 15)),
+                    Pinsrw => (2, W::I16x8ReplaceLane(lane & 7)),
+                    Pinsrd => (4, W::I32x4ReplaceLane(lane & 3)),
+                    _ => (8, W::I64x2ReplaceLane(lane & 1)),
+                };
+                self.xread(i, 0, 16) && self.read(i, 1, size) && {
+                    if size < 8 { self.e(W::I32WrapI64); }
+                    self.e(op); self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0))
+                }
+            }
+            // Take one lane out, zero-extended, to a register or memory.
+            Pextrb | Pextrw | Pextrd | Pextrq if is_x1 => {
+                let lane = i.immediate8();
+                self.xread(i, 1, 16) && {
+                    let size = match m {
+                        Pextrb => { self.e(W::I8x16ExtractLaneU(lane & 15)); self.e(W::I64ExtendI32U); 1 }
+                        Pextrw => { self.e(W::I16x8ExtractLaneU(lane & 7)); self.e(W::I64ExtendI32U); 2 }
+                        Pextrd => { self.e(W::I32x4ExtractLane(lane & 3)); self.e(W::I64ExtendI32U); 4 }
+                        _ => { self.e(W::I64x2ExtractLane(lane & 1)); 8 }
+                    };
+                    self.set(l_t(0));
+                    // A register destination takes the whole zero-extended value.
+                    let width = if i.op0_kind() == OpKind::Register { i.op0_register().size() as u8 } else { size };
+                    self.write(i, 0, width, l_t(0))
+                }
+            }
             Pslldq | Psrldq => {
                 let n = i.immediate8().min(16);
                 self.xread(i, 0, 16) && {

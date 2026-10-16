@@ -236,6 +236,37 @@ function pipe(p, address, flags) {
   return 0;
 }
 
+const POLLIN = 1, POLLOUT = 4, POLLERR = 8, POLLHUP = 0x10, POLLNVAL = 0x20;
+
+/**
+ * poll/ppoll over the descriptors this kernel has. Files are always ready;
+ * a pipe is readable with data or with no writer left; the console says it
+ * is readable only when it can tell (console.ready). With nothing ready and a
+ * timeout other than 0 the call waits, like a blocking read.
+ */
+function poll(p, address, count, timeout) {
+  const at = N(address), n = N(count);
+  let ready = 0;
+  for (let i = 0; i < n; i++) {
+    const slot = at + i * 8;
+    const fd = p.view.getInt32(slot, true), events = p.view.getInt16(slot + 4, true);
+    let revents = 0;
+    if (fd >= 0) {
+      const d = p.fds.get(fd);
+      if (!d) revents = POLLNVAL;
+      else if (d.kind === 'pipe-r') revents = (d.pipe.size > 0 ? POLLIN : 0) | (d.pipe.writers === 0 ? POLLHUP : 0);
+      else if (d.kind === 'pipe-w') revents = d.pipe.readers === 0 ? POLLERR : POLLOUT;
+      else if (d.kind === 'console') revents = POLLOUT | (p.kernel.console.ready?.() ? POLLIN : 0);
+      else revents = POLLIN | POLLOUT;
+      revents &= events | POLLERR | POLLHUP | POLLNVAL;
+    }
+    p.view.setInt16(slot + 6, revents, true);
+    if (revents) ready++;
+  }
+  if (ready || timeout === 0) return ready;
+  throw new Wait();
+}
+
 function dup(p, oldfd, newfd, cloexec) {
   const d = descriptor(p, oldfd);
   return p.fds.install(d, {fd: newfd, cloexec});
@@ -249,6 +280,11 @@ export const FILE_CALLS = {
   4(name, st) { return writeStat(this, st, this.kernel.vfs.lookup(path(this, name), this.cwd)); },
   5(fd, st) { return writeStat(this, st, describe(descriptor(this, fd))); },
   6(name, st) { return writeStat(this, st, this.kernel.vfs.lookup(path(this, name), this.cwd, false)); },
+  7(fds, count, timeout) { return poll(this, fds, count, Number(BigInt.asIntN(32, timeout))); },
+  271(fds, count, spec) {
+    const t = N(spec) ? Number(this.view.getBigInt64(N(spec), true)) * 1000 + Number(this.view.getBigInt64(N(spec) + 8, true)) / 1e6 : -1;
+    return poll(this, fds, count, t);
+  },
   8(fd, offset, whence) {
     const d = descriptor(this, fd);
     if (d.kind === 'pipe-r' || d.kind === 'pipe-w' || d.kind === 'console') fail(E.SPIPE);

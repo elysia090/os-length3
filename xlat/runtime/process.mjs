@@ -296,6 +296,7 @@ export class Process {
   syscall(nr, a, b, c, d, e, f, next) {
     this.resumeAt = next;
     const handler = CALLS[Number(nr)];
+    if (TRACE_SYSCALLS) console.error(`[${this.pid}] syscall ${nr}${handler ? '' : ' (none)'} ${[a, b, c].map((x) => '0x' + BigInt.asUintN(64, x).toString(16)).join(' ')}`);
     if (!handler) return BigInt(-E.NOSYS);
     try {
       const r = handler.call(this, a, b, c, d, e, f);
@@ -309,6 +310,9 @@ export class Process {
     }
   }
 }
+
+/** XLAT_SYSCALLS=1 lists every system call on stderr (node only). */
+const TRACE_SYSCALLS = typeof process !== 'undefined' && !!process.env?.XLAT_SYSCALLS;
 
 function div128(hi, lo, d, signed) {
   let n = (BigInt.asUintN(64, hi) << 64n) | BigInt.asUintN(64, lo);
