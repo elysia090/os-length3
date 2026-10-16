@@ -16,6 +16,12 @@ const tag = (b: Uint8Array) => `"${createHash('sha256').update(b).digest('hex').
 const bucket: Bucket = {
   async get(key) { const f = file(key); if (!existsSync(f)) return null; const bytes = new Uint8Array(readFileSync(f)); return {bytes, etag: tag(bytes)}; },
   async head(key) { return existsSync(file(key)); },
+  async range(key, start, end) {
+    const f = file(key);
+    if (!existsSync(f)) return null;
+    const all = readFileSync(f);
+    return {bytes: new Uint8Array(all.subarray(start, end === null ? undefined : end + 1)), size: all.length};
+  },
   async put(key, bytes, onlyIf) {
     const f = file(key);
     // One process, and these steps do not yield: the check and the write are one.

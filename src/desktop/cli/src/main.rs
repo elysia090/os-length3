@@ -100,7 +100,8 @@ const HELP: &str = "l3 — Length³ OS をコマンドで。アプリと同じ r
   l3 runtime                 この端末: ホストの空き、このOSの実割当、空けられるもの
   l3 reclaim                 この端末の容量を空ける（このOS自身の残り物だけ）
   l3 root                    この端末にある root（ディストリ）
-  l3 root install BUNDLE     リリースの root を入れる（digest で確かめてから）
+  l3 root fetch              Remote からリリースの root を取って入れる
+  l3 root install BUNDLE     手元のリリースの root を入れる（digest で確かめてから）
   l3 open REPO [-- CMD…]     root の中で repo を開く（ホストのカーネルで、権限なしで）
       --network              ネットワークを渡す（既定ではなし）
 
@@ -243,6 +244,22 @@ fn run(a: Args) -> Result<(), String> {
             for (r, current) in held {
                 out(format!("{} {}  {} ファイル · {}  {}{}", r.name, r.version, r.files, bytes(r.bytes), &r.sha256[..12], if current { "  使用中" } else { "" }));
             }
+            Ok(())
+        }
+        ["root", "fetch"] => {
+            let remote = std::env::var("LENGTH3_REMOTE").unwrap_or_else(|_| "https://remote.length3.com".into());
+            let mut last = 0u64;
+            let r = length3_core::root::fetch_and_install(&paths::data_dir(), &remote, |p| match p {
+                length3_core::fetch::Progress::Bytes(got, all) if got - last >= 4 << 20 || got == all => {
+                    last = got;
+                    eprint!("\r取得中 {} / {}", bytes(got), bytes(all));
+                }
+                length3_core::fetch::Progress::Retry(n, why) => eprintln!("\n{why}。続きから取ります（{n}回目）"),
+                _ => {}
+            })?;
+            eprintln!();
+            if a.json { return json(r); }
+            out(format!("{} {} を入れました（{} ファイル · {}）", r.name, r.version, r.files, bytes(r.bytes)));
             Ok(())
         }
         ["root", "install", bundle] => {

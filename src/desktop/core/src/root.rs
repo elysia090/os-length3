@@ -37,6 +37,25 @@ pub const RELEASES: &[Release] = &[Release {
     file: "os-length3-linux-0.1.0-x86_64-ffb53450f0f41900f1cda2cd072b9405b43c7b44f97c400794c57019578f32a9.tar.zst",
 }];
 
+/// The Remote serves releases by digest, to anyone (remote/remote.ts, /v1/os).
+pub fn release_url(remote: &str, r: &Release) -> String {
+    format!("{}/v1/os/{}", remote.trim_end_matches('/'), r.sha256)
+}
+
+/// Fetch the newest pinned release from the Remote and install it; the
+/// bundle is let go once its root is in place.
+pub fn fetch_and_install(data: &Path, remote: &str, progress: impl FnMut(crate::fetch::Progress)) -> Result<Installed, String> {
+    let r = &RELEASES[0];
+    let bundles = system_dir(data).join(".bundles");
+    crate::boundary::private_dir(&system_dir(data)).map_err(|e| e.to_string())?;
+    fs::create_dir_all(&bundles).map_err(|e| e.to_string())?;
+    let bundle = bundles.join(format!("{}.tar.zst", r.sha256));
+    crate::fetch::fetch(&release_url(remote, r), r.sha256, r.bytes, &bundle, progress)?;
+    let installed = install(data, &bundle)?;
+    let _ = fs::remove_file(&bundle);
+    Ok(installed)
+}
+
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone, PartialEq)]
 pub struct Installed {
     pub name: String,

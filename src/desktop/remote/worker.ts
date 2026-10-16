@@ -3,9 +3,9 @@
 // may call it.
 import {handle, type Bucket} from './remote.ts';
 
-interface R2Object { etag: string; arrayBuffer(): Promise<ArrayBuffer> }
+interface R2Object { etag: string; size: number; arrayBuffer(): Promise<ArrayBuffer> }
 interface R2Bucket {
-  get(key: string): Promise<R2Object | null>;
+  get(key: string, options?: {range?: {offset: number; length?: number}}): Promise<R2Object | null>;
   head(key: string): Promise<{etag: string} | null>;
   put(key: string, value: Uint8Array, options?: {onlyIf?: {etagMatches?: string} | Headers}): Promise<{etag: string} | null>;
 }
@@ -14,6 +14,10 @@ function r2(b: R2Bucket): Bucket {
   return {
     async get(key) { const o = await b.get(key); return o ? {bytes: new Uint8Array(await o.arrayBuffer()), etag: o.etag} : null; },
     async head(key) { return (await b.head(key)) !== null; },
+    async range(key, start, end) {
+      const o = await b.get(key, {range: {offset: start, ...(end === null ? {} : {length: end - start + 1})}});
+      return o ? {bytes: new Uint8Array(await o.arrayBuffer()), size: o.size} : null;
+    },
     async put(key, bytes, onlyIf) {
       // R2 answers null when the condition does not hold.
       const options = onlyIf?.absent ? {onlyIf: new Headers({'If-None-Match': '*'})}

@@ -21,6 +21,8 @@
 //                                          -> 201 {id} | 409 {head} | 409 {missing}
 //   GET  /v1/cuts/:id
 //   GET  /v1/home/:key (204 when not set) / PUT with If-Match (a version) or If-None-Match: *
+//   GET  /v1/os/:sha                       a release bundle, to anyone, by its digest
+//                                          (Range for a cut transfer; placed by the operator)
 
 export interface Stored { bytes: Uint8Array; etag: string }
 
@@ -30,6 +32,8 @@ export interface Bucket {
   /** null when `onlyIf` did not hold. */
   put(key: string, bytes: Uint8Array, onlyIf?: {etag?: string; absent?: boolean}): Promise<{etag: string} | null>;
   head(key: string): Promise<boolean>;
+  /** Bytes [start, end] of an object and its whole size; null when absent. */
+  range(key: string, start: number, end: number | null): Promise<{bytes: Uint8Array; size: number} | null>;
 }
 
 export interface Cut {
@@ -136,6 +140,21 @@ async function route(request: Request, bucket: Bucket, options: Options): Promis
   if (parts[0] !== 'v1') return fail(404, 'not found');
   const [, what, a, b] = parts;
   const now = options.now ?? Date.now;
+
+  // The OS is public: its canonical copy is the release, named by its digest.
+  if (what === 'os' && a && HEX.test(a) && !b && (request.method === 'GET' || request.method === 'HEAD')) {
+    const m = /^bytes=(\d+)-(\d*)$/.exec(request.headers.get('Range') ?? '');
+    const start = m ? Number(m[1]) : 0;
+    const end = m && m[2] ? Number(m[2]) : null;
+    const o = await bucket.range(`os/${a}`, start, end);
+    if (!o) return fail(404, 'no release');
+    if (start >= o.size && o.size > 0) return new Response(null, {status: 416, headers: {'Content-Range': `bytes */${o.size}`}});
+    const last = start + o.bytes.length - 1;
+    const headers: Record<string, string> = {'Content-Type': 'application/octet-stream', 'Accept-Ranges': 'bytes', ETag: `"${a}"`,
+      'Content-Length': String(o.bytes.length)};
+    if (m) headers['Content-Range'] = `bytes ${start}-${last}/${o.size}`;
+    return new Response(request.method === 'HEAD' ? null : o.bytes as BodyInit, {status: m ? 206 : 200, headers});
+  }
 
   if (what === 'accounts' && !a && request.method === 'POST') {
     const t = token();
@@ -284,6 +303,7 @@ export function memoryBucket(): Bucket & {entries(): [string, Uint8Array][]} {
     entries() { return [...m].map(([k, o]) => [k, o.bytes]); },
     async get(k) { const o = m.get(k); return o ? {bytes: o.bytes.slice(), etag: o.etag} : null; },
     async head(k) { return m.has(k); },
+    async range(k, start, end) { const o = m.get(k); return o ? {bytes: o.bytes.slice(start, end === null ? undefined : end + 1), size: o.bytes.length} : null; },
     async put(k, bytes, onlyIf) {
       const o = m.get(k);
       if (onlyIf?.absent && o) return null;

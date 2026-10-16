@@ -119,3 +119,18 @@ test('only the app\'s origin may call from a page', async () => {
   const other = await c.call('OPTIONS', '/v1/repos', {headers: {Origin: 'https://evil.test'}});
   assert.equal(other.headers.get('Access-Control-Allow-Origin'), null);
 });
+
+test('a release is there for anyone, by its digest, and continues where a transfer stopped', async () => {
+  const c = client();
+  const bundle = enc.encode('the whole root, packed');
+  const sha = await sha256(bundle);
+  await c.bucket.put(`os/${sha}`, bundle);
+  const all = await c.call('GET', `/v1/os/${sha}`);
+  assert.equal(all.status, 200);
+  assert.equal(await all.text(), 'the whole root, packed');
+  const rest = await c.call('GET', `/v1/os/${sha}`, {headers: {Range: 'bytes=10-'}});
+  assert.equal(rest.status, 206);
+  assert.equal(rest.headers.get('Content-Range'), `bytes 10-21/22`);
+  assert.equal(await rest.text(), 'root, packed');
+  assert.equal((await c.call('GET', `/v1/os/${'1'.repeat(64)}`)).status, 404);
+});
