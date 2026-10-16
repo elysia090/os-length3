@@ -46,10 +46,11 @@ a { color: var(--ink); }
 
 /* The three states, the same everywhere: hover is a raised fill, the
    current or chosen thing is an ink fill, focus is a 2px ink ring. */
-.rail-item:hover, .button:hover, .choice:hover, .repo-tab:hover, .tree-row:hover, .todo-mark:hover,
+.rail-item:hover, .button:hover, .choice:hover, .chip:hover, .tree-row:hover, .todo-mark:hover,
 .card.repo:hover, .card.new:hover { background: var(--raised); }
 .rail-item[aria-selected='true'], .button.primary, .choice:has(input:checked),
-.repo-tab[aria-current='page'], .tree-row:has(> [aria-current='page']) { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+.chip[aria-current='page'], .tree-row:has(> [aria-current='page']),
+.rail-item[aria-expanded='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 
 /* ---- 1. Rail ---- */
 .rail { border-right: 1px solid var(--rule); height: 100vh; position: sticky; top: 0; }
@@ -59,7 +60,7 @@ a { color: var(--ink); }
   width: var(--h-place); height: var(--h-place); border: 0; border-radius: var(--r-place);
   background: transparent; color: var(--ink); cursor: pointer;
 }
-/* □+ starts something rather than opening a place, so it has the action
+/* + starts something rather than opening a place, so it has the action
    shape: round, outlined like every button, right under the places. */
 .rail-new { margin-top: var(--s4); width: var(--h-control); height: var(--h-control); border-radius: var(--r-round); border: 1px solid var(--edge); }
 .rail-tag {
@@ -183,17 +184,17 @@ a { color: var(--ink); }
 .legend { margin-top: var(--s3); display: flex; flex-wrap: wrap; gap: var(--s5); }
 .legend b { font-size: var(--t-card); font-weight: 600; display: block; }
 
-/* File: the tree's edge, the strip on top, center flow and side at equal weight */
+/* Forge: the repo chips on top, the center read like a page, and the side
+   at equal weight. */
 .page.page-work { padding: 0; height: 100vh; overflow: hidden; }
 .page.page-work > .work { max-width: none; }
-.work { --tree-open: clamp(260px, 20vw, 340px); height: 100vh; display: grid; grid-template-columns: var(--s6) minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
-.repo-strip { grid-column: 2 / -1; display: flex; gap: var(--s1); align-items: center; padding: var(--s3) var(--s5); border-bottom: 1px solid var(--rule); overflow-x: auto; }
-.repo-tab {
-  min-height: var(--h-row); padding: 0 var(--s3); border: 0; border-radius: var(--r-field);
+.work { height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+.repo-strip { grid-column: 1 / -1; display: flex; gap: var(--s2); align-items: center; padding: var(--s3) var(--s5); border-bottom: 1px solid var(--rule); overflow-x: auto; }
+/* A chip picks one of several, like the template choice: round, outlined. */
+.chip {
+  flex: none; min-height: var(--h-row); padding: 0 var(--s4); border: 1px solid var(--edge); border-radius: var(--r-round);
   background: transparent; cursor: pointer; white-space: nowrap;
 }
-.repo-tab.add { display: grid; place-items: center; width: var(--h-row); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); margin-left: var(--s2); }
-.repo-tab.add .icon { width: var(--s4); height: var(--s4); }
 .flow { overflow-y: auto; padding: var(--s5) var(--s5) var(--s6); border-right: 1px solid var(--rule); }
 .flow:focus-visible { outline-offset: -2px; }
 .flow-title { font-size: var(--t-title); font-weight: 700; margin-bottom: var(--s3); }
@@ -206,8 +207,6 @@ a { color: var(--ink); }
 }
 .path span { font-weight: 400; }
 .dir > .path { justify-content: start; }
-.index { list-style: none; margin: var(--s3) 0 0; padding: 0; columns: 2 220px; }
-.index li { display: flex; justify-content: space-between; gap: var(--s3); padding: var(--s1) 0; break-inside: avoid; }
 .code { margin: 0; padding: var(--s3) 0; font: var(--t-meta)/1.6 var(--mono); white-space: pre; overflow-x: auto; tab-size: 4; }
 .side { display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); min-height: 0; }
 .pane { padding: var(--s5); overflow: auto; min-height: 0; }
@@ -216,22 +215,17 @@ a { color: var(--ink); }
 .pane .empty { margin-top: var(--s3); padding: var(--s5); }
 .flow .revealed > .path { background: var(--raised); }
 
-/* File tree of "/": lies over the left edge, so the center and the right
-   never move. It opens under the pointer and stays a while after it
+/* File: the tree of "/" laid over the page beside the rail, so nothing
+   under it moves. It opens under the pointer and stays a while after it
    leaves (tree.ts). */
-.tree { grid-row: 1 / -1; position: relative; z-index: 3; border-right: 1px solid var(--rule); }
-.tree-handle, .tree-root { display: block; font: 600 var(--t-body)/var(--h-row) var(--mono); color: var(--sub); }
-.tree-handle { margin-top: var(--s3); text-align: center; }
-.tree-panel {
-  position: absolute; inset: 0 auto 0 0; width: var(--tree-open); overflow: auto;
+.tree {
+  position: fixed; top: 0; bottom: 0; left: var(--rail); z-index: 5; width: clamp(260px, 20vw, 340px); overflow: auto;
   padding: var(--s3) var(--s2) var(--s5); background: var(--ground); border-right: 1px solid var(--rule);
   visibility: hidden; opacity: 0;
   transition: opacity var(--motion), visibility 0s var(--motion);
 }
-.tree.open .tree-panel, .tree:has(:focus-visible) .tree-panel {
-  visibility: visible; opacity: 1;
-  transition: opacity var(--motion), visibility 0s;
-}
+.tree.open { visibility: visible; opacity: 1; transition: opacity var(--motion), visibility 0s; }
+.tree-root { display: block; font: 600 var(--t-body)/var(--h-row) var(--mono); color: var(--sub); }
 .tree-root { padding: 0 var(--s2); }
 .tree ul { list-style: none; margin: 0; padding: 0; }
 .tree-row { display: flex; align-items: center; min-height: var(--h-row); padding-left: calc(var(--depth, 0) * var(--s4)); border-radius: var(--r-field); }

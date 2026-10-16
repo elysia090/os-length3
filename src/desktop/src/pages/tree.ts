@@ -1,22 +1,25 @@
 import {bytes, h} from '../dom.ts';
 import {inRepo, list, ORIGIN_LABEL, type SystemEntry} from '../system.ts';
 
-// The File tree of "/", the whole system. It lies over the left edge of the
-// page, so the center and the right never move. It opens when the pointer
-// rests on the edge (or keyboard focus is in it) and, once out, stays for
-// LINGER after the pointer leaves, so reaching across the page and back
-// does not lose it. A press outside or Escape closes it at once. A folder's triangle comes before its
-// name: ▷ closed, ▽ open.
+// File is an operation, not a page: the tree of "/", the whole system, laid
+// over whatever page is showing, right beside the rail. It opens when the
+// pointer rests on the File icon or on the tree, or when File is pressed;
+// once out it stays for LINGER after the pointer leaves, so reaching across
+// the page and back does not lose it. A press outside or Escape closes it at
+// once. Nothing under it moves. A folder's triangle comes before its name:
+// ▷ closed, ▽ open.
 
 const OPEN_DELAY = 80;
 const LINGER = 8000;
 
-/** Open folders by absolute path, kept across page switches. */
-const open = new Set<string>(['/root']);
+/** Open folders by absolute path, kept while the app runs. */
+const expandedPaths = new Set<string>(['/root']);
 
-export interface TreeEvents {
+export interface FileTreeEvents {
   /** A repo or a path inside one was chosen; path '' is the repo itself. */
   choose(repo: string, path: string): void;
+  /** The repo Forge shows, marked in the tree. */
+  current(): string | null;
 }
 
 /** One outlined triangle pointing down; CSS turns it to point right while closed. */
@@ -34,19 +37,90 @@ function triangle(): SVGSVGElement {
 
 const note = (text: string, depth: number) => h('li', {class: 'tree-note muted', style: `--depth:${depth}`}, text);
 
-export interface Tree {
-  element: HTMLElement;
-  /** Mark the repo the page shows. */
-  current(repo: string): void;
-}
+export class FileTree {
+  readonly element: HTMLElement;
+  private root: HTMLElement;
+  private events: FileTreeEvents;
+  private trigger: HTMLElement | null = null;
+  private timer = 0;
 
-export function tree(current: string | null, events: TreeEvents): Tree {
-  const root = h('ul', {class: 'tree-children', role: 'tree', 'aria-label': '/'});
-  const panel = h('div', {class: 'tree-panel'}, h('p', {class: 'tree-root'}, '/'), root);
-  const pane = h('nav', {class: 'tree', 'aria-label': 'ファイル（/）'},
-    h('span', {class: 'tree-handle', 'aria-hidden': 'true'}, '/'), panel);
+  constructor(events: FileTreeEvents) {
+    this.events = events;
+    this.root = h('ul', {class: 'tree-children', role: 'tree', 'aria-label': '/'});
+    this.element = h('nav', {class: 'tree', id: 'file-tree', 'aria-label': 'File（/）'},
+      h('p', {class: 'tree-root'}, '/'), this.root);
+    this.element.addEventListener('pointerenter', () => this.enter());
+    this.element.addEventListener('pointerleave', () => this.leave());
+    this.element.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') return;
+      this.close();
+      this.trigger?.focus();
+    });
+    this.element.addEventListener('focusout', (event) => {
+      const to = event.relatedTarget as Node | null;
+      if (to && !this.element.contains(to) && to !== this.trigger) this.close();
+    });
+    document.addEventListener('pointerdown', (event) => {
+      const at = event.target as Node;
+      if (!this.element.contains(at) && !this.trigger?.contains(at)) this.close();
+    });
+  }
 
-  const add = (e: SystemEntry, into: HTMLElement, depth: number) => {
+  get isOpen() { return this.element.classList.contains('open'); }
+
+  /** The rail's File button: hovering it opens the tree, pressing it opens it at once. */
+  attach(button: HTMLElement) {
+    this.trigger = button;
+    button.setAttribute('aria-controls', 'file-tree');
+    button.setAttribute('aria-expanded', 'false');
+    button.addEventListener('pointerenter', () => this.enter());
+    button.addEventListener('pointerleave', () => this.leave());
+    // A press never closes what the hover just opened; from the keyboard
+    // (detail 0) it toggles and moves focus into the tree.
+    button.addEventListener('click', (event) => {
+      const keyboard = event.detail === 0;
+      if (keyboard && this.isOpen) this.close(); else this.open(keyboard);
+    });
+  }
+
+  enter() { this.later(true, this.isOpen ? 0 : OPEN_DELAY); }
+  leave() { this.later(false, LINGER); }
+
+  open(focus = false) {
+    clearTimeout(this.timer);
+    if (!this.isOpen) this.build(focus);
+    this.element.classList.add('open');
+    this.trigger?.setAttribute('aria-expanded', 'true');
+  }
+
+  close() {
+    clearTimeout(this.timer);
+    this.element.classList.remove('open');
+    this.trigger?.setAttribute('aria-expanded', 'false');
+  }
+
+  /** Mark the repo Forge shows. */
+  mark(repo: string | null) {
+    for (const b of this.root.querySelectorAll<HTMLElement>('.tree-name[data-repo]')) {
+      if (b.dataset.repo === repo) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+    }
+  }
+
+  private later(open: boolean, after: number) {
+    clearTimeout(this.timer);
+    this.timer = window.setTimeout(() => (open ? this.open() : this.close()), after);
+  }
+
+  /** Read the tree afresh each time it comes out, so new repos are there. */
+  private build(focus: boolean) {
+    void list('/').then((top) => {
+      this.root.replaceChildren();
+      for (const e of top) this.add(e, this.root, 0);
+      if (focus) this.root.querySelector<HTMLElement>('.tree-name')?.focus();
+    });
+  }
+
+  private add(e: SystemEntry, into: HTMLElement, depth: number) {
     const at = inRepo(e.path);
     const isRepo = at !== null && at.path === '';
     const row = h('div', {class: 'tree-row', style: `--depth:${depth}`});
@@ -55,27 +129,26 @@ export function tree(current: string | null, events: TreeEvents): Tree {
 
     if (e.kind !== 'dir') {
       // A link is shown by its name only: /bin/ls is a command, whatever it points to.
-      const text = e.name;
       row.append(h('span', {class: 'tree-spacer', 'aria-hidden': 'true'}));
       if (at) {
-        const name = h('button', {class: 'tree-name', type: 'button'}, text);
-        name.addEventListener('click', () => events.choose(at.repo, at.path));
+        const name = h('button', {class: 'tree-name', type: 'button'}, e.name);
+        name.addEventListener('click', () => this.events.choose(at.repo, at.path));
         row.append(name);
       } else {
-        row.append(h('span', {class: 'tree-name plain'}, text));
+        row.append(h('span', {class: 'tree-name plain'}, e.name));
       }
       if (meta) row.append(h('span', {class: 'tree-meta'}, meta));
       into.append(item);
       return;
     }
 
-    let expanded = open.has(e.path);
+    let expanded = expandedPaths.has(e.path);
     const toggle = h('button', {class: 'tree-toggle', type: 'button'}) as HTMLButtonElement;
     toggle.append(triangle());
     const name = h('button', {class: 'tree-name', type: 'button'}, e.name);
     if (isRepo) {
       name.dataset.repo = at.repo;
-      if (at.repo === current) name.setAttribute('aria-current', 'page');
+      if (at.repo === this.events.current()) name.setAttribute('aria-current', 'page');
     }
     const children = h('ul', {class: 'tree-children', role: 'group'});
     row.append(toggle, name);
@@ -90,12 +163,12 @@ export function tree(current: string | null, events: TreeEvents): Tree {
         return;
       }
       children.replaceChildren();
-      for (const c of entries) add(c, children, depth + 1);
+      for (const c of entries) this.add(c, children, depth + 1);
       if (!entries.length) children.append(note(e.path === '/root' ? 'repoはまだありません' : '空', depth + 1));
     };
     const show = (now: boolean) => {
       expanded = now;
-      if (now) open.add(e.path); else open.delete(e.path);
+      if (now) expandedPaths.add(e.path); else expandedPaths.delete(e.path);
       toggle.setAttribute('aria-expanded', String(now));
       toggle.setAttribute('aria-label', `${e.name}を${now ? '閉じる' : '開く'}`);
       item.setAttribute('aria-expanded', String(now));
@@ -103,44 +176,14 @@ export function tree(current: string | null, events: TreeEvents): Tree {
       if (now) void fill();
     };
     toggle.addEventListener('click', () => show(!expanded));
-    // Inside a repo the name also shows the place in the center; elsewhere it
+    // Inside a repo the name also opens that place in Forge; elsewhere it
     // only opens and closes, like the triangle.
     name.addEventListener('click', () => {
       if (!at) { show(!expanded); return; }
       if (!expanded) show(true);
-      events.choose(at.repo, at.path);
+      this.events.choose(at.repo, at.path);
     });
     show(expanded);
     into.append(item);
-  };
-
-  void list('/').then((top) => { for (const e of top) add(e, root, 0); });
-
-  let timer = 0;
-  const set = (open: boolean, after: number) => {
-    clearTimeout(timer);
-    timer = window.setTimeout(() => pane.classList.toggle('open', open), after);
-  };
-  pane.addEventListener('pointerenter', () => set(true, pane.classList.contains('open') ? 0 : OPEN_DELAY));
-  pane.addEventListener('pointerleave', () => set(false, LINGER));
-  pane.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape') return;
-    set(false, 0);
-    (document.activeElement as HTMLElement | null)?.blur();
-  });
-  const outside = (event: PointerEvent) => {
-    if (!pane.isConnected) { document.removeEventListener('pointerdown', outside); return; }
-    if (!pane.contains(event.target as Node)) set(false, 0);
-  };
-  document.addEventListener('pointerdown', outside);
-
-  return {
-    element: pane,
-    current(repo) {
-      current = repo;
-      for (const b of root.querySelectorAll<HTMLElement>('.tree-name[data-repo]')) {
-        if (b.dataset.repo === repo) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
-      }
-    },
-  };
+  }
 }

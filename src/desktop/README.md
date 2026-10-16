@@ -9,18 +9,18 @@ separate surface and nothing here depends on it.
 ```
 ┌────┬──────────────────────────────────────────────┐
 │ ⌂  │                                              │
-│ ▤  │   the chosen purpose, full width             │
+│ >_ │   the chosen purpose, full width             │
 │ ⑂  │                                              │
-│ …  │   Home: a profile page — avatar, name,       │
-│    │   @handle, bio, repo cards, posts            │
-│ ⊞  │                                              │
+│ ▤  │   Home: a profile page — avatar, name,       │
+│ …  │   @handle, bio, repo cards, posts            │
+│ ⊕  │                                              │
 └────┴──────────────────────────────────────────────┘
 ```
 
-- **Rail**: icons only (Home / File / Git / Forge / Runtime / Remote / Topic /
-  Inbox, and the square-plus for a new repo). A name appears beside an icon
-  on hover or keyboard focus. Choosing one replaces the main area; there is
-  no second pane.
+- **Rail**: icons only (Home / Forge / Git / File / Runtime / Remote / Topic /
+  Inbox, and a round + for a new repo). A name appears beside an icon
+  on hover or keyboard focus. Choosing one replaces the main area; File is
+  the one operation, laying the tree of "/" over the page instead.
 - **Home** is a profile, somewhere between a Twitter and a GitHub profile.
   It looks the same to its owner and to anyone else; the owner also gets
   "edit". Until accounts exist the profile is stored on this device.
@@ -34,19 +34,19 @@ separate surface and nothing here depends on it.
   one from a template (standard, C, minimal) and runs `git init` without
   the host's git configuration. Inbox and TODO belong to the app, not to
   repos: TODO is a list on Home. Home lists the repos as cards.
-- Terminal (File, bottom right): translated BusyBox `sh` running on the
+- Terminal (Forge, bottom right): translated BusyBox `sh` running on the
   xlat kernel in a Worker, on a copy of the open repo. Changes there are
   not written back yet, and the pane says so. Prepare its files with
   `npm run userland` (see `scripts/userland.sh`).
-- File: the tree of "/" — the whole system as the shell sees it (`/bin` from
-  the fetched distribution, repos under `/root`) — lies over the left edge
-  and opens under the pointer (staying 8 s after it leaves), so the center
-  and right never move. ▷/▽
-  before a folder opens it; a name inside a repo scrolls the center to it.
-  The repo strip on top, then the repo read top to bottom —
-  directory index, then each directory and file in order, loaded as they
-  scroll near. The right half holds the reference (top) and the terminal
-  (bottom), both not connected yet. Every path from the webview is checked
+- Forge: the repos as chips across the top, the open repo read top to
+  bottom like a page (each directory and file in order, loaded as they
+  scroll near), and the reference (top, not connected yet) and terminal
+  (bottom) on the right. No tabs: files are chosen from File.
+- File: hovering or pressing its icon lays the tree of "/" over any page —
+  the whole system as the shell sees it (`/bin` from the fetched
+  distribution, repos under `/root`) — and it stays 8 s after the pointer
+  leaves. ▷/▽ before a folder opens it; a name inside a repo opens that
+  place in Forge. Every path from the webview is checked
   to stay inside its repo after following symlinks.
 - Runtime shows this device's storage: what the app holds, used, free and
   total, measured by the `capacity` command (statvfs plus allocated bytes

@@ -1,26 +1,32 @@
 import {bytes, h} from '../dom.ts';
-import {icon} from '../icons.ts';
 import {store, type Entry} from '../repos.ts';
 import type {Context} from './context.ts';
 import {terminalFor} from './terminal.ts';
-import {tree} from './tree.ts';
 
 /**
- * File: the tree of "/" lies over the left edge and opens under the pointer;
- * the repo strip on top, the repo read top to bottom in the center
- * (directories open into their files as you scroll), and the reference and
- * terminal on the right at the same weight as the center. Choosing a path
- * inside a repo in the tree scrolls the center to it.
+ * Forge, the place you work: the repos as a strip of chips across the top,
+ * the open repo read like a page in a browser in the large center (scrolled
+ * to the file chosen in File), and the reference and terminal on the right
+ * at the same weight. There are no tabs here; files are chosen from File.
  */
 
-export function file(ctx: Context): Node[] {
+/** A path to scroll to once Forge is drawn. */
+let pending: string | null = null;
+/** The Forge on screen, so File can move it in place. */
+let live: {element: HTMLElement; show(repo: string, path: string): void} | null = null;
+
+/** Show `repo` at `path` in the Forge on screen; false when Forge is not showing. */
+export function showInForge(repo: string, path: string): boolean {
+  if (!live?.element.isConnected) return false;
+  live.show(repo, path);
+  return true;
+}
+
+/** Scroll to `path` when Forge is next drawn. */
+export function revealNext(path: string) { pending = path || null; }
+
+export function forge(ctx: Context): Node[] {
   let reader: Reader | null = null;
-  const left = tree(ctx.repo, {
-    choose(repo, path) {
-      if (reader?.repo !== repo) show(repo);
-      void reader?.reveal(path);
-    },
-  });
   const strip = h('nav', {class: 'repo-strip', 'aria-label': 'repo'});
   const flow = h('section', {class: 'flow', tabindex: '0', 'aria-label': 'repoの中身'});
   const terminalTitle = h('h2', {id: 'terminal-title'}, 'Terminal');
@@ -30,35 +36,38 @@ export function file(ctx: Context): Node[] {
       h('h2', {id: 'reference-title'}, '参照'),
       h('div', {class: 'empty'}, 'プレビュー・diff・実行結果・関連Issueを、今の作業に合わせて切り替えて見る場所です。まだ接続していません。')),
     terminalPane);
+  const work = h('div', {class: 'work'}, strip, flow, side);
 
-  /** Show `repo` in the strip, the center and the terminal, in place: the tree stays as it is. */
-  const show = (repo: string) => {
-    ctx.remember(repo);
-    left.current(repo);
-    for (const tab of strip.querySelectorAll<HTMLElement>('.repo-tab[data-repo]')) {
-      if (tab.dataset.repo === repo) tab.setAttribute('aria-current', 'page'); else tab.removeAttribute('aria-current');
+  /** Show `repo` in the strip, the center and the terminal, in place. */
+  const show = (repo: string, path = '') => {
+    if (reader?.repo !== repo) {
+      ctx.remember(repo);
+      for (const chip of strip.querySelectorAll<HTMLElement>('.chip')) {
+        if (chip.dataset.repo === repo) chip.setAttribute('aria-current', 'page'); else chip.removeAttribute('aria-current');
+      }
+      reader = new Reader(repo);
+      flow.replaceChildren(h('h1', {class: 'flow-title'}, repo), reader.directory('', 0));
+      flow.scrollTop = 0;
+      terminalPane.replaceChildren(terminalTitle, terminalFor(repo));
     }
-    reader = new Reader(repo);
-    flow.replaceChildren(h('h1', {class: 'flow-title'}, repo), reader.directory('', 0));
-    flow.scrollTop = 0;
-    terminalPane.replaceChildren(terminalTitle, terminalFor(repo));
+    if (path) void reader.reveal(path);
   };
+  live = {element: work, show};
 
   void store.list().then((repos) => {
     const current = ctx.repo && repos.some((r) => r.name === ctx.repo) ? ctx.repo : repos[0]?.name ?? null;
     for (const r of repos) {
-      const tab = h('button', {type: 'button', class: 'repo-tab', 'data-repo': r.name}, r.name);
-      tab.addEventListener('click', () => show(r.name));
-      strip.append(tab);
+      const chip = h('button', {type: 'button', class: 'chip', 'data-repo': r.name}, r.name);
+      chip.addEventListener('click', () => show(r.name));
+      strip.append(chip);
     }
-    const add = h('button', {type: 'button', class: 'repo-tab add', 'aria-label': '新しいrepo'}, icon('new-repo'));
-    add.addEventListener('click', () => ctx.go('new-repo'));
-    strip.append(add);
-    if (current) { show(current); return; }
-    flow.append(h('div', {class: 'empty'}, 'repoがありません。上の ＋ から作れます。'));
+    const path = pending ?? '';
+    pending = null;
+    if (current) { show(current, path); return; }
+    flow.append(h('div', {class: 'empty'}, 'repoがありません。左の ＋ から作れます。'));
     terminalPane.append(h('div', {class: 'empty'}, 'repoを開くと、そのrepoでshellが動きます。'));
   });
-  return [h('div', {class: 'work'}, left.element, strip, flow, side)];
+  return [work];
 }
 
 const join = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
@@ -111,14 +120,8 @@ class Reader {
     let entries: Entry[];
     try { entries = await store.tree(this.repo, path); } catch (e) { body.replaceChildren(h('p', {class: 'muted'}, String(e))); return; }
     if (!entries.length) { body.replaceChildren(h('p', {class: 'muted'}, '空のディレクトリ')); return; }
-    // An index of this directory, then each entry in the same order.
-    const index = h('ul', {class: 'index'}, ...entries.map((e) => {
-      const target = join(path, e.name);
-      const link = h('a', {href: `#${encodeURIComponent(target)}`}, e.kind === 'dir' ? `${e.name}/` : e.name);
-      link.addEventListener('click', (event) => { event.preventDefault(); void this.reveal(target); });
-      return h('li', {}, link, e.kind === 'file' ? h('span', {class: 'muted'}, bytes(e.size)) : null);
-    }));
-    body.replaceChildren(index, ...entries.map((e) =>
+    // Each entry in order, like one long page; there is no index to click.
+    body.replaceChildren(...entries.map((e) =>
       e.kind === 'dir' ? this.directory(join(path, e.name), depth + 1) : this.file(join(path, e.name), e)));
   }
 

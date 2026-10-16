@@ -3,7 +3,7 @@ import {store, TEMPLATES, validName, type Template} from '../repos.ts';
 import {pageHead} from './common.ts';
 import type {Context} from './context.ts';
 
-/** □+: name a repo, pick a template, see exactly what it will contain. */
+/** +: name a repo, pick a template, see exactly what it will contain. */
 export function newRepo(ctx: Context): Node[] {
   const name = h('input', {id: 'repo-name', maxlength: '64', autocapitalize: 'off', spellcheck: 'false',
     placeholder: 'my-repo', 'aria-describedby': 'repo-name-rule'}) as HTMLInputElement;
