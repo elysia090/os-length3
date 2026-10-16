@@ -1,6 +1,9 @@
 /* Paired native process benchmark for one source/optimized ELF pair. */
 
-#define _POSIX_C_SOURCE 200809L
+#define _DEFAULT_SOURCE
+
+#include <math.h>
+#include <sys/resource.h>
 
 #include <support/sha256.h>
 
@@ -134,8 +137,17 @@ static pl_u64 clock_nanoseconds(void)
     return (pl_u64)now.tv_sec * 1000000000ull + (pl_u64)now.tv_nsec;
 }
 
+/* One measured run: wall time, the child's own CPU time (user + system, from
+ * wait4) and its minor page faults. CPU time is not wall time; both are
+ * reported under their own names. */
+typedef struct {
+    pl_u64 wall_ns;
+    pl_u64 cpu_ns;
+    pl_u64 faults;
+} sample;
+
 static int timed(const char *path, char *arguments[],
-                 int null_descriptor, pl_u64 *nanoseconds)
+                 int null_descriptor, sample *out)
 {
     pl_u64 begin = clock_nanoseconds();
     if (!begin) return 0;
@@ -149,12 +161,63 @@ static int timed(const char *path, char *arguments[],
         _exit(127);
     }
     int status;
-    if (!child_status(child, &status)) return 0;
+    struct rusage usage;
+    for (;;) {
+        if (wait4(child, &status, 0, &usage) == child) break;
+        if (errno != EINTR) return 0;
+    }
     pl_u64 end = clock_nanoseconds();
     if (!end || end < begin || !WIFEXITED(status)
             || WEXITSTATUS(status) != 0) return 0;
-    *nanoseconds = end - begin;
+    out->wall_ns = end - begin;
+    out->cpu_ns = ((pl_u64)usage.ru_utime.tv_sec + (pl_u64)usage.ru_stime.tv_sec)
+                    * 1000000000ull
+                + ((pl_u64)usage.ru_utime.tv_usec + (pl_u64)usage.ru_stime.tv_usec)
+                    * 1000ull;
+    out->faults = (pl_u64)usage.ru_minflt + (pl_u64)usage.ru_majflt;
     return 1;
+}
+
+/* The paired ratio optimized/source as a geometric mean of the per-pair
+ * ratios, with a 95% interval (normal approximation; 401 pairs). Pairs ran
+ * back to back, so drift of the machine cancels within each pair. An
+ * interval that contains 1 says the difference is not resolved. */
+typedef struct {
+    double ratio;
+    double low;
+    double high;
+    int resolved;
+} interval;
+
+static interval paired(const sample *source, const sample *optimized,
+                       pl_u32 count, int cpu)
+{
+    double total = 0.0, square = 0.0;
+    pl_u32 used = 0u;
+    for (pl_u32 index = 0u; index < count; ++index) {
+        double a = (double)(cpu ? source[index].cpu_ns : source[index].wall_ns);
+        double b = (double)(cpu ? optimized[index].cpu_ns : optimized[index].wall_ns);
+        if (a <= 0.0 || b <= 0.0) continue; /* CPU time below the clock's step */
+        double d = log(b / a);
+        total += d;
+        square += d * d;
+        ++used;
+    }
+    interval out = { 1.0, 0.0, INFINITY, 0 };
+    if (used < 2u) return out;
+    double mean_log = total / used;
+    double variance = (square - total * mean_log) / (used - 1u);
+    double half = 1.959963985 * sqrt(variance > 0.0 ? variance : 0.0) / sqrt((double)used);
+    out.ratio = exp(mean_log);
+    out.low = exp(mean_log - half);
+    out.high = exp(mean_log + half);
+    out.resolved = out.high < 1.0 || out.low > 1.0;
+    return out;
+}
+
+static const char *verdict(interval i)
+{
+    return !i.resolved ? "within-noise" : i.high < 1.0 ? "faster" : "slower";
 }
 
 static int compare_u64(const void *left, const void *right)
@@ -169,6 +232,16 @@ static long double mean(const pl_u64 *samples, pl_u32 count)
     long double total = 0.0L;
     for (pl_u32 index = 0u; index < count; ++index)
         total += (long double)samples[index];
+    return total / count;
+}
+
+static long double mean_of(const sample *samples, pl_u32 count, int field)
+{
+    long double total = 0.0L;
+    for (pl_u32 index = 0u; index < count; ++index)
+        total += (long double)(field == 0 ? samples[index].wall_ns
+                             : field == 1 ? samples[index].cpu_ns
+                             : samples[index].faults);
     return total / count;
 }
 
@@ -207,16 +280,20 @@ int main(int argc, char **argv)
     }
 
     FILE *null_file = fopen("/dev/null", "w");
+    sample *source_runs = malloc((size_t)runs * sizeof *source_runs);
+    sample *optimized_runs = malloc((size_t)runs * sizeof *optimized_runs);
     pl_u64 *source = malloc((size_t)runs * sizeof *source);
     pl_u64 *optimized = malloc((size_t)runs * sizeof *optimized);
-    if (!null_file || !source || !optimized) {
+    if (!null_file || !source || !optimized || !source_runs || !optimized_runs) {
         if (null_file) fclose(null_file);
         free(optimized);
         free(source);
+        free(optimized_runs);
+        free(source_runs);
         return 1;
     }
     int null_descriptor = fileno(null_file);
-    pl_u64 discarded;
+    sample discarded;
     for (pl_u32 warm = 0u; warm < PRODUCTION_WARMUPS; ++warm)
         if (!timed(warm & 1u ? argv[1] : argv[2],
                    warm & 1u ? source_arguments : optimized_arguments,
@@ -224,16 +301,22 @@ int main(int argc, char **argv)
             return 1;
     for (pl_u32 rank = 0u; rank < runs; ++rank) {
         if (rank & 1u) {
-            if (!timed(argv[2], optimized_arguments, null_descriptor, &optimized[rank])
+            if (!timed(argv[2], optimized_arguments, null_descriptor, &optimized_runs[rank])
                     || !timed(argv[1], source_arguments,
-                              null_descriptor, &source[rank]))
+                              null_descriptor, &source_runs[rank]))
                 return 1;
-        } else if (!timed(argv[1], source_arguments, null_descriptor, &source[rank])
+        } else if (!timed(argv[1], source_arguments, null_descriptor, &source_runs[rank])
                 || !timed(argv[2], optimized_arguments,
-                          null_descriptor, &optimized[rank]))
+                          null_descriptor, &optimized_runs[rank]))
             return 1;
     }
     fclose(null_file);
+    for (pl_u32 rank = 0u; rank < runs; ++rank) {
+        source[rank] = source_runs[rank].wall_ns;
+        optimized[rank] = optimized_runs[rank].wall_ns;
+    }
+    interval wall = paired(source_runs, optimized_runs, runs, 0);
+    interval cpu = paired(source_runs, optimized_runs, runs, 1);
     long double source_mean = mean(source, runs);
     long double optimized_mean = mean(optimized, runs);
     qsort(source, runs, sizeof *source, compare_u64);
@@ -255,6 +338,25 @@ int main(int argc, char **argv)
     printf("median_ratio=%.9Lf\n",
            (long double)optimized[runs / 2u]
              / (long double)source[runs / 2u]);
+    /* What the samples can resolve: paired geometric ratios with their 95%
+     * interval, for wall time and for the child's CPU time, and page faults. */
+    printf("wall_paired_ratio=%.9f\n", wall.ratio);
+    printf("wall_ratio_low=%.9f\n", wall.low);
+    printf("wall_ratio_high=%.9f\n", wall.high);
+    printf("wall_verdict=%s\n", verdict(wall));
+    printf("source_cpu_mean_ns=%.0Lf\n", mean_of(source_runs, runs, 1));
+    printf("optimized_cpu_mean_ns=%.0Lf\n", mean_of(optimized_runs, runs, 1));
+    printf("cpu_paired_ratio=%.9f\n", cpu.ratio);
+    printf("cpu_ratio_low=%.9f\n", cpu.low);
+    printf("cpu_ratio_high=%.9f\n", cpu.high);
+    printf("cpu_verdict=%s\n", verdict(cpu));
+    printf("source_faults_mean=%.1Lf\n", mean_of(source_runs, runs, 2));
+    printf("optimized_faults_mean=%.1Lf\n", mean_of(optimized_runs, runs, 2));
+    /* Hardware counters are not sampled by this runner. */
+    printf("instructions=unavailable\n");
+    printf("cycles=unavailable\n");
+    free(optimized_runs);
+    free(source_runs);
     free(optimized);
     free(source);
     close_arguments(optimized_arguments, argument_count);

@@ -82,12 +82,27 @@ from a header-free C input, so a fast driver `--version` cannot conceal a slow
 or crashing `cc1`. Source and optimized drivers find their respective `cc1`
 relative to their own installed executable paths; separate native-parity checks
 compare their actual assembly bytes.
-The current runner measures paired process wall time only. Retired
-instructions, cycles, branches, branch misses, faults and peak resident bytes
-are not sampled by this runner; no wall-time result may be described as one of
-those counters. A future native counter record must mark unsupported counters
-as unavailable, never as zero, and keep their sampling overhead outside these
-paired wall-time samples.
+Besides wall time, each sample records the child's own CPU time (user +
+system) and its page faults, read from `wait4` after the measured interval
+closed, so their sampling adds nothing to it. They are reported under their
+own names (`*_cpu_mean_ns`, `*_faults_mean`); CPU time is never described as
+wall time. Retired instructions and cycles are not sampled and are printed
+as `unavailable`, never as zero; no result may be described as one of those
+counters.
+
+### What the samples can resolve
+
+A mean ratio alone cannot say whether a difference is real. On the
+qualification VM, BusyBox against a byte-identical copy of itself gave mean
+ratios from 0.93 to 1.006 for a startup-bound workload: the machine's own
+run-to-run variation is larger than most differences the compiler makes.
+So each result also reports the paired ratio, the geometric mean of the
+per-pair ratios (pairs run back to back, so drift cancels within a pair),
+with its 95% interval and a verdict: `faster` (interval below 1), `slower`
+(above 1) or `within-noise` (contains 1). The production aggregate combines
+the workloads' log ratios with the same weights as its weighted mean (each
+workload's weight times its source time) and their intervals as independent
+errors. The weighted mean ratio is still reported, unchanged.
 
 A measured speed regression still writes the complete comparison with
 `comparison=red-speed` and exits unsuccessfully. Losing its per-workload
@@ -108,7 +123,8 @@ Publication requires all of the following on the same accepted identities:
 4. output code, physical work, and critical span do not regress, with at least
    one strict improvement;
 5. every fixed native workload is behaviorally identical and its declared
-   aggregate does not regress;
+   aggregate does not regress: the aggregate interval does not lie wholly
+   above 1 (`speed_verdict` is `faster` or `within-noise`);
 6. the browser projection is measured only after the native result passes.
 
 The current product is red at the native-emission gate. Consequently there is

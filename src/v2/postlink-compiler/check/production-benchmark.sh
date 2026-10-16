@@ -49,7 +49,11 @@ printf '%s\n' \
   optimized_mean_ns=80 \
   optimized_median_ns=79 \
   mean_ratio=0.800000000 \
-  median_ratio=0.797979798
+  median_ratio=0.797979798 \
+  wall_paired_ratio=0.800000000 \
+  wall_ratio_low=0.780000000 \
+  wall_ratio_high=0.820000000 \
+  wall_verdict=faster
 EOF
 chmod +x "$mock"
 report=$temporary/report
@@ -59,8 +63,10 @@ grep -Eq '^workload_inputs_sha256=[0-9a-f]{64}$' "$report"
 grep -q '^paired_samples_per_workload=401$' "$report"
 grep -q '^weighted_mean_ratio=0.800000000$' "$report"
 grep -qxF 'comparison=green' "$report"
+grep -qxF 'speed_verdict=faster' "$report"
+grep -qxF 'weighted_paired_ratio=0.800000000' "$report"
 
-sed 's/optimized_mean_ns=80/optimized_mean_ns=120/;s/mean_ratio=0.800000000/mean_ratio=1.200000000/' \
+sed 's/optimized_mean_ns=80/optimized_mean_ns=120/;s/^  mean_ratio=0.800000000/  mean_ratio=1.200000000/;s/wall_paired_ratio=0.800000000/wall_paired_ratio=1.200000000/;s/wall_ratio_low=0.780000000/wall_ratio_low=1.150000000/;s/wall_ratio_high=0.820000000/wall_ratio_high=1.250000000/;s/wall_verdict=faster/wall_verdict=slower/' \
   "$mock" >"$temporary/slow-native-benchmark"
 chmod +x "$temporary/slow-native-benchmark"
 if bash "$runner" "$source_root" "$optimized_root" \
@@ -70,6 +76,18 @@ if bash "$runner" "$source_root" "$optimized_root" \
 fi
 grep -qxF 'comparison=red-speed' "$temporary/slow-report"
 grep -qxF 'weighted_mean_ratio=1.200000000' "$temporary/slow-report"
+grep -qxF 'speed_verdict=slower' "$temporary/slow-report"
+
+# A difference inside the machine's own variation is not a regression: a
+# point ratio above 1 whose interval contains 1 stays green, said as such.
+sed 's/optimized_mean_ns=80/optimized_mean_ns=101/;s/^  mean_ratio=0.800000000/  mean_ratio=1.010000000/;s/wall_paired_ratio=0.800000000/wall_paired_ratio=1.010000000/;s/wall_ratio_low=0.780000000/wall_ratio_low=0.980000000/;s/wall_ratio_high=0.820000000/wall_ratio_high=1.040000000/;s/wall_verdict=faster/wall_verdict=within-noise/' \
+  "$mock" >"$temporary/noise-native-benchmark"
+chmod +x "$temporary/noise-native-benchmark"
+bash "$runner" "$source_root" "$optimized_root" \
+  "$temporary/noise-native-benchmark" "$temporary/noise-report" >/dev/null
+grep -qxF 'comparison=green' "$temporary/noise-report"
+grep -qxF 'speed_verdict=within-noise' "$temporary/noise-report"
+grep -qxF 'weighted_mean_ratio=1.010000000' "$temporary/noise-report"
 
 bad=$temporary/bad-native-benchmark
 sed 's/paired_samples=401/paired_samples=400/' "$mock" >"$bad"

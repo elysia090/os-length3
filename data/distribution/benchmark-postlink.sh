@@ -160,22 +160,32 @@ while IFS= read -r line; do
   source_median=$(sed -n 's/^source_median_ns=//p' "$result")
   optimized_median=$(sed -n 's/^optimized_median_ns=//p' "$result")
   ratio=$(sed -n 's/^mean_ratio=//p' "$result")
+  # What the 401 pairs can resolve: the paired ratio and its 95% interval.
+  paired=$(sed -n 's/^wall_paired_ratio=//p' "$result")
+  low=$(sed -n 's/^wall_ratio_low=//p' "$result")
+  high=$(sed -n 's/^wall_ratio_high=//p' "$result")
+  verdict=$(sed -n 's/^wall_verdict=//p' "$result")
+  number='^[0-9]+([.][0-9]+)?$'
   if [[ ! $source_mean =~ ^[0-9]+$ || ! $optimized_mean =~ ^[0-9]+$ \
       || ! $source_median =~ ^[0-9]+$ \
       || ! $optimized_median =~ ^[0-9]+$ \
-      || ! $ratio =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+      || ! $ratio =~ $number || ! $paired =~ $number \
+      || ! $low =~ $number || ! $high =~ $number \
+      || ! $verdict =~ ^(faster|slower|within-noise)$ ]]; then
     printf 'fixed workload timing is incomplete: %s\n' "$id" >&2
     exit 1
   fi
-  printf 'native workload %s: parity green, mean ratio %s\n' "$id" "$ratio"
+  printf 'native workload %s: parity green, mean ratio %s, paired %s [%s, %s] %s\n' \
+    "$id" "$ratio" "$paired" "$low" "$high" "$verdict"
   source_identity=$(sha256sum "$source_executable" | cut -d' ' -f1)
   optimized_identity=$(sha256sum "$optimized_executable" | cut -d' ' -f1)
   source_extent=$(stat -c %s -- "$source_executable")
   optimized_extent=$(stat -c %s -- "$optimized_executable")
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$id" "$weight" "$source_mean" "$optimized_mean" \
     "$source_median" "$optimized_median" "$source_identity" \
-    "$optimized_identity" "$source_extent" "$optimized_extent" >>"$rows"
+    "$optimized_identity" "$source_extent" "$optimized_extent" \
+    "$paired" "$low" "$high" "$verdict" >>"$rows"
   workload_count=$((workload_count + 1))
   weight_total=$((weight_total + weight))
 done < <(tail -n +2 -- "$manifest")
@@ -194,8 +204,26 @@ read -r weighted_source weighted_optimized aggregate_ratio < <(
     }
   ' "$rows"
 )
+# The aggregate the samples can resolve: each workload's paired log ratio,
+# weighted by its share of the source time (as the mean above is), with the
+# intervals combined as independent normal errors. Speed is red only when
+# the whole interval lies above 1: a difference smaller than the machine's
+# own run-to-run variation is reported as within-noise, not as a result.
+read -r paired_ratio paired_low paired_high speed_verdict < <(
+  awk -F '\t' '
+    { w = $2 * $3; s = (log($13) - log($12)) / (2 * 1.959963985)
+      total += w; mean += w * log($11); variance += w * w * s * s }
+    END {
+      if (total <= 0) exit 1
+      m = mean / total; half = 1.959963985 * sqrt(variance) / total
+      low = exp(m - half); high = exp(m + half)
+      verdict = high < 1 ? "faster" : low > 1 ? "slower" : "within-noise"
+      printf "%.9f %.9f %.9f %s\n", exp(m), low, high, verdict
+    }
+  ' "$rows"
+)
 comparison=green
-if awk -v ratio="$aggregate_ratio" 'BEGIN { exit !(ratio >= 1.0) }'; then
+if [[ $speed_verdict == slower ]]; then
   comparison=red-speed
 fi
 
@@ -227,6 +255,10 @@ temporary_report=$report.partial.$$
   printf 'weighted_source_mean_ns=%s\n' "$weighted_source"
   printf 'weighted_optimized_mean_ns=%s\n' "$weighted_optimized"
   printf 'weighted_mean_ratio=%s\n' "$aggregate_ratio"
+  printf 'weighted_paired_ratio=%s\n' "$paired_ratio"
+  printf 'weighted_ratio_low=%s\n' "$paired_low"
+  printf 'weighted_ratio_high=%s\n' "$paired_high"
+  printf 'speed_verdict=%s\n' "$speed_verdict"
   printf 'benchmark_cpu=%s\n' "$benchmark_cpu"
   printf 'cpu_allowed_list=%s\n' "$allowed_cpus"
   governor=/sys/devices/system/cpu/cpu$benchmark_cpu/cpufreq/scaling_governor
@@ -255,7 +287,7 @@ temporary_report=$report.partial.$$
   printf 'uname='; uname -srvm | tr '\n' ' '; printf '\n'
   while IFS=$'\t' read -r id weight source_mean optimized_mean \
       source_median optimized_median source_identity optimized_identity \
-      source_extent optimized_extent; do
+      source_extent optimized_extent paired low high verdict; do
     printf 'workload.%s.weight=%s\n' "$id" "$weight"
     printf 'workload.%s.source_mean_ns=%s\n' "$id" "$source_mean"
     printf 'workload.%s.optimized_mean_ns=%s\n' "$id" "$optimized_mean"
@@ -267,13 +299,17 @@ temporary_report=$report.partial.$$
       "$id" "$optimized_identity"
     printf 'workload.%s.source_bytes=%s\n' "$id" "$source_extent"
     printf 'workload.%s.optimized_bytes=%s\n' "$id" "$optimized_extent"
+    printf 'workload.%s.paired_ratio=%s\n' "$id" "$paired"
+    printf 'workload.%s.ratio_low=%s\n' "$id" "$low"
+    printf 'workload.%s.ratio_high=%s\n' "$id" "$high"
+    printf 'workload.%s.verdict=%s\n' "$id" "$verdict"
   done <"$rows"
 } >"$temporary_report"
 mv -- "$temporary_report" "$report"
 if [[ $comparison != green ]]; then
-  printf 'fixed native workload aggregate regressed: ratio=%s; evidence=%s\n' \
-    "$aggregate_ratio" "$report" >&2
+  printf 'fixed native workload aggregate regressed: paired ratio=%s [%s, %s]; evidence=%s\n' \
+    "$paired_ratio" "$paired_low" "$paired_high" "$report" >&2
   exit 1
 fi
-printf 'post-link production comparison: green (%s -> %s bytes, ratio %s)\n' \
-  "$source_bytes" "$optimized_bytes" "$aggregate_ratio"
+printf 'post-link production comparison: green (%s -> %s bytes, speed %s: paired ratio %s [%s, %s])\n' \
+  "$source_bytes" "$optimized_bytes" "$speed_verdict" "$paired_ratio" "$paired_low" "$paired_high"
