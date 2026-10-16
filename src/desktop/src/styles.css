@@ -48,11 +48,11 @@ a { color: var(--ink); }
 
 /* The three states, the same everywhere: hover is a raised fill, the
    current or chosen thing is an ink fill, focus is a 2px ink ring. */
-.rail-item:hover, .button:hover, .choice:hover, .chip:hover, .pill:hover, .band-add:hover, .me:hover, .me-item:hover:not(:disabled), .tree-row:hover, .todo-mark:hover,
+.rail-item:hover, .button:hover, .choice:hover, .chip:hover, .pill:hover, .band-add:hover:not(:disabled), .me:hover, .me-item:hover:not(:disabled), .tree-row:hover, .todo-mark:hover,
 .card.repo:hover, .card.new:hover { background: var(--raised); }
 .rail-item[aria-selected='true'], .button.primary, .choice:has(input:checked),
 .chip[aria-current], .pill[aria-current], .tree-row:has(> [aria-current='page']),
-.rail-item[aria-expanded='true'], .band-add[aria-expanded='true'], .me[aria-expanded='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+.rail-item[aria-expanded='true'], .me[aria-expanded='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 
 /* ---- 1. Rail ---- */
 .rail { border-right: 1px solid var(--rule); height: 100vh; position: sticky; top: 0; z-index: 6; display: flex; flex-direction: column; }
@@ -219,8 +219,8 @@ a { color: var(--ink); }
 /* The band sits low: its chips line up between Home and the next rail icon. */
 .repo-strip { grid-column: 1; display: flex; gap: var(--s2); align-items: center; padding: var(--band) var(--s5) var(--s3); overflow-x: auto; border-right: 1px solid var(--rule); }
 /* The band: pills for the repos out, ⊕ to bring more out beside them. */
-.pills, .offer { display: flex; gap: var(--s2); align-items: center; }
-.offer[hidden], .pills:empty { display: none; }
+.pills { display: flex; gap: var(--s2); align-items: center; }
+.pills:empty { display: none; }
 .pill {
   flex: none; display: flex; align-items: center; min-height: var(--h-row); padding-left: var(--s3);
   border: 1px solid var(--edge); border-radius: var(--r-round); font-size: var(--t-meta);
@@ -229,8 +229,8 @@ a { color: var(--ink); }
 .pill-close { display: grid; place-items: center; width: var(--h-row); height: calc(var(--h-row) - 2px); border: 0; padding: 0; background: transparent; color: inherit; cursor: pointer; border-radius: var(--r-round); }
 .pill-close .mark, .band-add .mark { width: var(--s4); height: var(--s4); }
 .band-add { flex: none; display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; cursor: pointer; }
-/* Repos not on the band yet: dashed, the one meaning of dashed. */
-.chip.candidate { border-style: dashed; }
+/* Nothing left to bring out: ⊕ steps back. */
+.band-add:disabled { opacity: .5; cursor: default; background: transparent; }
 .topic { padding-top: var(--s3); }
 .topic .empty { margin-top: var(--s5); }
 /* A chip picks one of several, like the template choice: round, outlined. */
@@ -251,7 +251,14 @@ a { color: var(--ink); }
 }
 .path span { font-weight: 400; }
 .file { margin-bottom: var(--s5); }
-.code { margin: 0; padding: var(--s3) 0; font: var(--t-meta)/1.6 var(--mono); white-space: pre; overflow-x: auto; tab-size: 4; }
+/* A file reads like a plain text editor: line numbers in a quiet gutter,
+   the text beside them, on the same lines. */
+.file-facts { font-weight: 400; white-space: nowrap; }
+.sheet { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--s4); padding: var(--s2) 0 var(--s3); }
+.gutter, .code { margin: 0; font: var(--t-meta)/1.6 var(--mono); white-space: pre; tab-size: 4; }
+.gutter { color: var(--sub); text-align: right; user-select: none; min-width: 2ch; font-variant-numeric: tabular-nums; }
+.code { overflow-x: auto; }
+.sheet-note { padding: var(--s2) 0 var(--s3); font-size: var(--t-meta); }
 .flow .revealed > .path { background: var(--raised); }
 
 /* The prompt box at the foot of the center, and the slot just above it

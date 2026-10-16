@@ -4,7 +4,7 @@ import {mark} from '../icons.ts';
 import {store, type Entry} from '../repos.ts';
 import {pageHead} from './common.ts';
 import type {Context} from './context.ts';
-import {readingOrder} from '../reading.ts';
+import {kindOf, lineCount, readingOrder} from '../reading.ts';
 import {Reference} from './reference.ts';
 import {sessionFor, terminalFor} from './terminal.ts';
 
@@ -70,7 +70,7 @@ export function forge(ctx: Context): Node[] {
   const dock = h('div', {class: 'dock'}, termSlot, h('form', {class: 'prompt'}, prompt), note);
   const center = h('div', {class: 'center'}, flow, dock);
 
-  const reference = new Reference({reveal: (path) => { chosen = path; soon(); void reader?.reveal(path); }});
+  const reference = new Reference({reveal: (path) => void reader?.reveal(path)});
   const side = h('aside', {class: 'side', 'aria-label': '参照とターミナル'}, reference.element, termHome);
   const work = h('div', {class: 'work'}, strip, center, side);
 
@@ -106,61 +106,24 @@ export function forge(ctx: Context): Node[] {
     prompt.focus();
   });
 
-  // The reference follows the file at the top of the center as it scrolls,
-  // or the file just chosen in File until the person scrolls themselves
-  // (a short file near the end may never reach the top).
-  let frame = 0;
-  let chosen: string | null = null;
-  const follow = () => {
-    frame = 0;
-    const top = flow.getBoundingClientRect().top + 48;
-    let at: HTMLElement | null = chosen ? flow.querySelector<HTMLElement>(`section.file[data-path="${CSS.escape(chosen)}"]`) : null;
-    if (!at) for (const f of flow.querySelectorAll<HTMLElement>('section.file')) {
-      const r = f.getBoundingClientRect();
-      if (r.top <= top + 1 && r.bottom > top) { at = f; break; }
-      if (r.top > top) { at ??= f; break; }
-    }
-    reference.setFile(at ? {path: at.dataset.path!, size: Number(at.dataset.size),
-      lines: at.dataset.lines ? Number(at.dataset.lines) : null} : null);
-  };
-  const soon = () => { frame ||= requestAnimationFrame(follow); };
-  flow.addEventListener('scroll', soon, {passive: true});
-  for (const type of ['wheel', 'keydown', 'touchmove']) {
-    flow.addEventListener(type, () => { chosen = null; }, {passive: true});
-  }
-  new MutationObserver(soon).observe(flow, {subtree: true, childList: true, attributes: true, attributeFilter: ['data-lines']});
 
-  // The band: the repos out to work on, each a pill that comes off with its
-  // ×. ⊕ lays the repos not on the band out beside it (dashed: not here
-  // yet). With no pill left the center shows Topic.
+  // The band: ⊕ at its left, then the repos out to work on, each a pill that
+  // comes off with its ×. One press of ⊕ brings every repo not on the band
+  // out at once, on the right; this is not adding tabs one by one. With no
+  // pill left the center shows Topic.
   let band: string[] = [];
   let all: string[] = [];
   const pills = h('div', {class: 'pills'});
-  const add = h('button', {type: 'button', class: 'band-add', 'aria-label': 'repoを帯に出す', 'aria-expanded': 'false'}, mark('plus'));
-  const offer = h('div', {class: 'offer', role: 'group', 'aria-label': '帯に出せるrepo', hidden: ''});
-  strip.append(pills, add, offer);
+  const add = h('button', {type: 'button', class: 'band-add', 'aria-label': 'repoを全部帯に出す'}, mark('plus')) as HTMLButtonElement;
+  strip.append(add, pills);
   const saveBand = () => { try { localStorage.setItem(BAND_KEY, JSON.stringify(band)); } catch { /* convenience only */ } };
-
-  const paintOffer = () => {
+  add.addEventListener('click', () => {
     const rest = offBand(band, all);
-    offer.replaceChildren(...(rest.length ? rest.map((name) => {
-      const b = h('button', {type: 'button', class: 'chip candidate'}, name);
-      b.addEventListener('click', () => { show(name); if (!offBand(band, all).length) setOffer(false); });
-      return b;
-    }) : [h('span', {class: 'muted small'}, 'すべてのrepoが帯に出ています')]));
-  };
-  const setOffer = (on: boolean) => {
-    offer.hidden = !on;
-    add.setAttribute('aria-expanded', String(on));
-    if (on) paintOffer();
-  };
-  add.addEventListener('click', () => setOffer(offer.hidden));
-  strip.addEventListener('keydown', (event) => { if (event.key === 'Escape') setOffer(false); });
-  const outside = (event: PointerEvent) => {
-    if (!strip.isConnected) { document.removeEventListener('pointerdown', outside); return; }
-    if (!strip.contains(event.target as Node)) setOffer(false);
-  };
-  document.addEventListener('pointerdown', outside);
+    if (!rest.length) return;
+    for (const name of rest) band = addToBand(band, name);
+    saveBand();
+    if (repo) paintBand(); else show(rest[0]);
+  });
 
   const paintBand = () => {
     pills.replaceChildren(...band.map((name) => {
@@ -172,7 +135,9 @@ export function forge(ctx: Context): Node[] {
       if (name === repo) pill.setAttribute('aria-current', 'page');
       return pill;
     }));
-    if (!offer.hidden) paintOffer();
+    const rest = offBand(band, all).length;
+    add.disabled = rest === 0;
+    add.title = rest ? `repoを全部帯に出す（あと ${rest}）` : 'すべてのrepoが帯に出ています';
   };
 
   const takeOff = (name: string) => {
@@ -214,7 +179,7 @@ export function forge(ctx: Context): Node[] {
       prompt.placeholder = 'コマンドを入力して Enter（このrepoの sh に送られます）';
     }
     paintBand();
-    if (path) { chosen = path; soon(); void reader!.reveal(path); }
+    if (path) void reader!.reveal(path);
   };
   live = {element: work, show};
 
@@ -285,24 +250,29 @@ class Reader {
       e.kind === 'dir' ? this.directory(join(path, e.name)) : this.file(join(path, e.name), e)));
   }
 
+  /** A file shown like a plain text editor: a header with what it is, line numbers, the text. */
   private file(path: string, entry: Entry): HTMLElement {
+    const facts = h('span', {class: 'file-facts muted'}, kindOf(path), ' · ', bytes(entry.size));
     // The heading is the file's place in "/": the repo part quiet, the rest plain.
-    const section = h('section', {class: 'file', 'data-path': path, 'data-size': String(entry.size)},
-      h('h2', {class: 'path'}, h('span', {}, h('span', {class: 'muted'}, `/root/${this.repo}/`), path),
-        h('span', {class: 'muted'}, bytes(entry.size))));
+    const head = h('h2', {class: 'path'}, h('span', {}, h('span', {class: 'muted'}, `/root/${this.repo}/`), path), facts);
+    const section = h('section', {class: 'file', 'data-path': path}, head);
     this.sections.set(path, section);
-    const body = h('pre', {class: 'code'}, '…');
-    section.append(body);
-    if (entry.kind === 'link') { body.textContent = 'シンボリックリンク'; return section; }
+    const gutter = h('pre', {class: 'gutter', 'aria-hidden': 'true'});
+    const code = h('pre', {class: 'code'}, '…');
+    const sheet = h('div', {class: 'sheet'}, gutter, code);
+    section.append(sheet);
+    if (entry.kind === 'link') { code.textContent = 'シンボリックリンク'; return section; }
     lazy(section, async () => {
       try {
         const c = await store.read(this.repo, path);
-        if (c.text === null) { body.replaceWith(h('p', {class: 'muted'}, `バイナリ · ${bytes(c.size)}`)); return; }
-        body.textContent = c.text || '（空）';
-        section.dataset.lines = String(c.text ? c.text.split('\n').length - (c.text.endsWith('\n') ? 1 : 0) : 0);
-        if (c.truncated) section.append(h('p', {class: 'muted'}, `先頭 ${bytes(new TextEncoder().encode(c.text).length)} だけ表示しています（全体 ${bytes(c.size)}）`));
+        if (c.text === null) { sheet.replaceWith(h('p', {class: 'muted sheet-note'}, `バイナリ · ${bytes(c.size)}`)); return; }
+        const n = lineCount(c.text);
+        code.textContent = c.text || ' ';
+        gutter.textContent = Array.from({length: Math.max(n, 1)}, (_, i) => String(i + 1)).join('\n');
+        facts.replaceChildren(kindOf(path), ' · ', `${n} 行`, ' · ', bytes(c.size), ' · 読むだけ');
+        if (c.truncated) section.append(h('p', {class: 'muted sheet-note'}, `先頭 ${bytes(new TextEncoder().encode(c.text).length)} だけ表示しています（全体 ${bytes(c.size)}）`));
       } catch (e) {
-        body.textContent = String(e);
+        code.textContent = String(e);
       }
     });
     return section;

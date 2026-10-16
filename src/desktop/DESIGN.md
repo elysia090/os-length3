@@ -10,8 +10,8 @@ top, then the page each icon leads to.
 
 - Icons only, top to bottom in the order of the work:
   **Home** (who you are, what you are doing) → **Forge** (where you work;
-  a terminal icon) → **Git** (what happened outside) → **File** (the tree
-  of "/") → **Runtime** (the environment) → **Remote** (sync) →
+  a terminal icon) → **File** (the tree of "/") → **Git** (what happened
+  outside) → **Runtime** (the environment) → **Remote** (sync) →
   **Topic** (posts) → **Inbox** (what was sent to you). **+** (a new repo)
   comes right under them, a step apart, and is round because it starts
   something rather than opening a place (§3, shapes).
@@ -55,15 +55,18 @@ strikes through and fades the first line only.
 Where you work. The repos out to work on run as pills in a band set low at
 the top: they line up between Home and the next rail icon, lower than one
 would first put them, and the reference's chips on the right sit on the
-same line. Each pill comes off the band with its × (the repo itself is
-untouched). ⊕ lays the repos not on the band out beside it, dashed because
-they are not here yet; pressing one brings it out. Opening a repo from
-File, Home or a new repo puts it on the band. With every pill off, the
+same line. ⊕ stands at the left end. One press brings every repo not on
+the band out at once, on the right; this is not adding tabs one at a time.
+Each pill comes off the band with its × (the repo itself is untouched).
+With nothing left to bring out, ⊕ steps back. Opening a repo from File,
+Home or a new repo puts it on the band. With every pill off, the
 center shows Topic. The band is remembered on this device. Below the band the center is the open repo's files one after another,
 an endless page scrolled like a browser and opened at the file chosen in
 File. There are no tabs, no title, no index of links and no headings for
-directories. Each file is headed by its place in "/" (`/root/<repo>/` quiet,
-the rest plain). In each directory README comes first, then the other
+directories. Each file reads like a plain text editor: a header with its
+place in "/" (`/root/<repo>/` quiet, the rest plain) and, on the right,
+what it is, its lines, its size and 読むだけ (editing is not there yet);
+then line numbers in a quiet gutter beside the text. In each directory README comes first, then the other
 files, then the directories. The only line in Forge is the one between the
 center and the right pane.
 
@@ -76,11 +79,9 @@ and the reference grows down into the room it leaves; leaving the prompt
 
 The center takes three quarters of the width; the right pane takes one
 quarter (at least 280 px) so it never gets in the way. Its bottom is the
-terminal's home. Its top is one reference at a time, switched freely with chips:
-いまのfile (name, its place in "/", size and lines of the file at the top
-of the center, or the one just chosen in File), Issue (the repo's
-`issue/`, one file each), diff and 実行結果 (each says plainly that it is
-not connected yet). The chosen reference is remembered on this device.
+terminal's home. Its top is one reference at a time, switched freely with
+chips: Issue (the repo's `issue/`, one file each), diff and 実行結果 (each
+says plainly that it is not connected yet). The chosen reference is remembered on this device.
 
 ### File
 

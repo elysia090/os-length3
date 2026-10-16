@@ -4,7 +4,7 @@ import {DEFAULT_PURPOSE, NEW_REPO, PURPOSES, RAIL, purpose, restorePurpose, step
 
 test('the rail lists the eight purposes in order, then the new repo square', () => {
   assert.deepEqual(PURPOSES.map((p) => p.label),
-    ['Home', 'Forge', 'Git', 'File', 'Runtime', 'Remote', 'Topic', 'Inbox']);
+    ['Home', 'Forge', 'File', 'Git', 'Runtime', 'Remote', 'Topic', 'Inbox']);
   assert.equal(RAIL.at(-1), NEW_REPO);
   assert.equal(new Set(RAIL.map((p) => p.id)).size, RAIL.length);
 });

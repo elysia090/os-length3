@@ -17,7 +17,7 @@ separate surface and nothing here depends on it.
 └────┴──────────────────────────────────────────────┘
 ```
 
-- **Rail**: icons only (Home / Forge / Git / File / Runtime / Remote / Topic /
+- **Rail**: icons only (Home / Forge / File / Git / Runtime / Remote / Topic /
   Inbox, and a round + for a new repo). A name appears beside an icon
   on hover or keyboard focus. Choosing one replaces the main area; File is
   the one operation, laying the tree of "/" over the page instead.
@@ -36,13 +36,14 @@ separate surface and nothing here depends on it.
   the host's git configuration. Inbox and TODO belong to the app, not to
   repos: TODO is a list on Home. Home lists the repos as cards.
 - Forge: the repos out to work on as pills in a band set low at the top
-  (⊕ brings more out, × takes one off; with none left the center shows
-  Topic); the center (3/4)
+  (⊕ at the left brings every other repo out at once, × takes one off;
+  with none left the center shows Topic); the center (3/4)
   is the open repo's files one after another like an endless page (README
-  first, loaded as they scroll near), with a prompt box at its foot that
+  first, loaded as they scroll near), each shown like a plain text editor
+  with line numbers, kind, lines and size, with a prompt box at its foot that
   types into the repo's `sh`. While the prompt is in use the terminal flies
-  up above it from the right pane, where the reference (current file, the
-  repo's `issue/`; diff and run output not connected yet) grows into the
+  up above it from the right pane, where the reference (the repo's
+  `issue/`; diff and run output not connected yet) grows into the
   room. No tabs: files are chosen from File.
 - Terminal: translated BusyBox `sh` running on the xlat kernel in a
   Worker, on a copy of the open repo. Changes there are not written back
