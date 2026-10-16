@@ -388,6 +388,12 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .hit { display: grid; grid-template-columns: 4ch minmax(0, 1fr); gap: var(--s2); font: var(--t-meta)/1.6 var(--mono); }
 .hit-file:hover, .hit:hover { background: var(--raised); }
 /* diff: added lines raised, removed lines quiet and struck, no colours of their own. */
+/* The Prompt's status line says something only when something is missing. */
+.term > p:empty { display: none; }
+/* 実行結果: the line as typed, then what came out, quiet. */
+.run-head { display: flex; justify-content: space-between; gap: var(--s2); min-height: var(--h-row); align-items: center; }
+.run-line { font: 600 var(--t-meta) var(--mono); overflow-wrap: anywhere; }
+.run-out { margin: 0; color: var(--sub); font: var(--t-meta)/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .diff { display: grid; font: var(--t-meta)/1.6 var(--mono); }
 .diff-line { padding: 0 var(--s1); white-space: pre-wrap; overflow-wrap: anywhere; }
 .diff-line.add { background: var(--raised); }

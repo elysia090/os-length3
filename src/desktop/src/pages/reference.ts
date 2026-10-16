@@ -2,6 +2,7 @@ import {h} from '../dom.ts';
 import * as gitops from '../git.ts';
 import {onChange, store} from '../repos.ts';
 import {findInText, nameMatches, type Hit} from '../search.ts';
+import {sessionIfAny, type Run} from './terminal.ts';
 
 // The top of Forge's right pane: a search box over the band line, then one
 // reference at a time, switched freely with chips. While something is
@@ -16,6 +17,8 @@ const VIEWS: readonly {id: View; label: string}[] = [
 ];
 const KEY = 'length3.os.reference';
 const FILE_LIMIT = 2000;
+/** Lines of a run's output shown before "ほか n 行". */
+const RUN_LINES = 40;
 const HIT_LIMIT = 200;
 
 function load(): View {
@@ -60,6 +63,7 @@ export class Reference {
   private run = 0;
   /** An issue shown in full stays until the person chooses something else. */
   private pinned = false;
+  private unwatch: (() => void) | null = null;
 
   constructor(events: ReferenceEvents) {
     this.events = events;
@@ -113,7 +117,7 @@ export class Reference {
     this.body.replaceChildren(h('article', {class: 'issue-one'},
       h('h3', {}, issue.kind ? h('span', {class: 'issue-kind'}, `${issue.kind}：`) : null, issue.title),
       h('p', {class: 'issue-where muted'}, `${issue.repo} · issue/${issue.file}`),
-      issue.detail ? h('p', {class: 'issue-body'}, issue.detail) : h('p', {class: 'muted small'}, '詳細はまだありません。'),
+      issue.detail ? h('p', {class: 'issue-body'}, issue.detail) : null,
       h('div', {class: 'row'}, go)));
   }
 
@@ -134,16 +138,18 @@ export class Reference {
 
   private paint() {
     this.pinned = false;
+    this.unwatch?.();
+    this.unwatch = null;
     this.mark();
     if (this.query.value.trim()) { void this.search(this.query.value.trim()); return; }
     if (this.view === 'issue') void this.issues();
     else if (this.view === 'diff') void this.diff();
-    else this.empty('実行結果はまだ接続していません。今はPromptに直接出ます。');
+    else this.runs();
   }
 
   private async search(query: string) {
     const repo = this.repo;
-    if (!repo) { this.empty('repoを帯に出すと、そのrepoを検索できます。'); return; }
+    if (!repo) { this.empty('repoを開くと検索できます'); return; }
     const run = ++this.run;
     this.body.replaceChildren(h('p', {class: 'muted small'}, '検索中…'));
     this.files ??= readAll(repo);
@@ -175,11 +181,25 @@ export class Reference {
       }));
   }
 
+  /** What was run in this repo's Prompt, newest first, following it as it runs. */
+  private runs() {
+    const repo = this.repo;
+    const session = repo ? sessionIfAny(repo) : undefined;
+    const draw = () => {
+      if (this.pinned || this.view !== 'run' || this.query.value.trim() || this.repo !== repo) return;
+      const list = session?.runs ?? [];
+      if (!list.length) { this.body.replaceChildren(h('p', {class: 'muted small'}, 'まだ実行していません')); return; }
+      this.body.replaceChildren(...list.slice().reverse().map((r) => runView(r)));
+    };
+    draw();
+    if (session) this.unwatch = session.watch(draw);
+  }
+
   /** The changes not yet cut, file by file, line by line. */
   private async diff() {
     const repo = this.repo;
-    if (!repo) { this.empty('repoを開くと、その変更が出ます。'); return; }
-    if (!gitops.hasGit) { this.empty('diff はデスクトップ版で出ます。'); return; }
+    if (!repo) { this.empty('repoを開くと出ます'); return; }
+    if (!gitops.hasGit) { this.empty('diff はデスクトップ版で出ます'); return; }
     const run = ++this.run;
     let files: gitops.FileDiff[];
     try { files = await gitops.diff(repo); } catch (e) {
@@ -202,20 +222,30 @@ export class Reference {
   /** The repo's issue/ directory, one line per file. */
   private async issues() {
     const repo = this.repo;
-    if (!repo) { this.empty('repoを開くと、そのrepoのissue/が出ます。'); return; }
+    if (!repo) { this.empty('repoを開くと出ます'); return; }
     let names: string[];
     try {
       names = (await store.tree(repo, 'issue')).filter((e) => e.kind === 'file').map((e) => e.name);
     } catch {
-      if (this.repo === repo && this.view === 'issue' && !this.query.value.trim() && !this.pinned) this.empty('このrepoには issue/ がありません。');
+      if (this.repo === repo && this.view === 'issue' && !this.query.value.trim() && !this.pinned) this.empty('issue/ がありません');
       return;
     }
     if (this.repo !== repo || this.view !== 'issue' || this.query.value.trim() || this.pinned) return;
-    if (!names.length) { this.empty('issue/ はまだ空です。'); return; }
+    if (!names.length) { this.empty('Issue はまだありません'); return; }
     this.body.replaceChildren(h('ul', {class: 'issue-list'}, ...names.map((n) => {
       const b = h('button', {type: 'button', class: 'link'}, n);
       b.addEventListener('click', () => this.events.reveal(`issue/${n}`));
       return h('li', {}, b);
     })));
   }
+}
+
+/** One run: the line, how long it took (or that it is running), then its output. */
+function runView(r: Run): HTMLElement {
+  const lines = r.output.replace(/\n$/, '').split('\n');
+  const shown = r.output ? lines.slice(0, RUN_LINES) : [];
+  return h('div', {class: 'hit-group run'},
+    h('div', {class: 'run-head'}, h('span', {class: 'run-line'}, r.line), h('span', {class: 'row-meta'}, r.ms === null ? '実行中' : `${r.ms} ms`)),
+    ...(shown.length ? [h('pre', {class: 'run-out'}, shown.join('\n'))] : []),
+    ...(lines.length > RUN_LINES ? [h('p', {class: 'muted small'}, `ほか ${lines.length - RUN_LINES} 行`)] : []));
 }

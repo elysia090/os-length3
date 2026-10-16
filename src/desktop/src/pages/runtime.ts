@@ -12,7 +12,7 @@ interface Manifest {
 function environment(): HTMLElement {
   const body = h('div', {}, h('p', {class: 'muted'}, '読み込み中…'));
   void fetch('/userland/manifest.json').then((r) => (r.ok ? r.json() as Promise<Manifest> : null)).catch(() => null).then((m) => {
-    if (!m) { body.replaceChildren(h('div', {class: 'empty'}, 'Prompt の環境がまだ用意されていません（npm run userland）。')); return; }
+    if (!m) { body.replaceChildren(h('div', {class: 'empty'}, 'Prompt の環境がありません（npm run userland）')); return; }
     const row = (name: string, version: string, note: string, sha: string) =>
       h('div', {class: 'env-row'}, h('b', {}, name), h('span', {}, version), h('span', {class: 'muted'}, note),
         h('code', {class: 'muted', title: sha}, sha.slice(0, 12)));
@@ -21,7 +21,7 @@ function environment(): HTMLElement {
         row(m.base.name, m.base.version, `base · ${m.base.applets} コマンド · ${m.base.from}`, m.base.sha256),
         ...m.tools.map((t) => row(t.name, t.version, 'ツール', t.sha256))),
       ...m.dotfiles.map((d) => row(d.path, '', `Dotfiles · ${d.from}`, '')),
-      ...(m.dotfiles.length ? [] : [h('p', {class: 'muted small env-note'}, 'Dotfiles はまだありません。base からの差分として、ここに適用元とともに出ます。')]));
+      ...(m.dotfiles.length ? [] : [h('p', {class: 'muted small env-note'}, 'Dotfiles はまだありません')]));
   });
   return body;
 }

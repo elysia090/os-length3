@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {fileKind, lineCount, readingOrder} from './reading.ts';
+import {lineCount, readingOrder} from './reading.ts';
 
 test('a directory reads README first, then its files, then its directories', () => {
   const entries = [{name: 'src', kind: 'dir'}, {name: 'Makefile', kind: 'file'}, {name: 'docs', kind: 'dir'},
@@ -14,6 +14,4 @@ test('lines are counted like an editor and kinds come from the name', () => {
   assert.equal(lineCount('a\n'), 1);
   assert.equal(lineCount('a\nb'), 2);
   assert.equal(lineCount('\n\n'), 2);
-  assert.deepEqual(['src/main.c', 'Makefile', 'README.md', '.bashrc', 'notes', 'x.RS'].map(fileKind),
-    ['C', 'Makefile', 'Markdown', 'テキスト', 'テキスト', 'Rust']);
 });

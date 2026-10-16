@@ -61,7 +61,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
     event.preventDefault();
     if (!repo) return;
-    if (!sessionFor(repo).send(prompt.value)) { note.textContent = 'shellはまだ起動していません'; return; }
+    if (!sessionFor(repo).send(prompt.value)) { note.textContent = '起動中です'; return; }
     note.textContent = '';
     prompt.value = '';
     fit();
@@ -77,13 +77,13 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     prompt.focus();
   });
 
-  const setRepo = (name: string | null, none = 'repoを開くと、そのrepoでshellが動きます。') => {
+  const setRepo = (name: string | null, none = 'repoを開くと動きます') => {
     if (name === repo && name) return;
     repo = name;
     reference.setRepo(name);
     termBox.replaceChildren(termTitle, name ? terminalFor(name) : h('div', {class: 'empty'}, none));
     prompt.disabled = !name;
-    prompt.placeholder = name ? `コマンドを入力して Enter（${name} の sh に送られます）` : 'repoを開くと、そのrepoの sh に送れます';
+    prompt.placeholder = name ? `${name} で実行` : '';
   };
   setRepo(null);
   return {element: work, reference, setRepo};

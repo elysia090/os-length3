@@ -94,8 +94,12 @@ repo: plain, case-insensitive, line by line; results are grouped by file,
 and a line pressed opens the center there with the line selected. Below,
 on the band line, one reference at a time, switched freely with chips: Issue (the repo's `issue/`, one file each), diff (the changes not yet
 cut, file by file: added lines raised, removed lines quiet and struck,
-following every save; desktop only, as git is) and 実行結果 (it says plainly
-that it is not connected yet). The chosen reference is remembered on this device.
+following every save; desktop only, as git is) and 実行結果 (each line sent
+from the prompt box, newest first: the line, how long it took or that it
+is still running, and what came out until the prompt returned; the Prompt
+itself scrolls on, this keeps the record). The Prompt's own status line is
+empty while it simply runs; it speaks only when something is missing (large
+files and binaries not copied in, what could not be written back). The chosen reference is remembered on this device.
 
 ### Runtime
 

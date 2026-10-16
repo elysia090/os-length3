@@ -15,6 +15,14 @@ const LIMIT_BYTES = 32 << 20;
 
 /** Escape sequences are dropped; the console is plain lines for now. */
 const strip = (s: string) => s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\r\n?/g, '\n');
+/** sh -i says this once because the console is not a terminal; it means nothing here. */
+const NO_TTY = "/bin/sh: can't access tty; job control turned off\n";
+/** The prompt the shell prints (PS1 is "$PWD $ "): a run is over when it comes back. */
+const PROMPT = /\/\S* \$ $/;
+const RUNS = 50;
+
+/** One line sent from the prompt box and what came out until the prompt returned. */
+export interface Run { line: string; output: string; started: number; ms: number | null }
 
 async function fetchBytes(path: string): Promise<Uint8Array> {
   const r = await fetch(path);
@@ -75,6 +83,10 @@ export class Session {
   private worker: Worker | null = null;
   private text = '';
   private repo: string;
+  /** What was run here, newest last. */
+  readonly runs: Run[] = [];
+  private watchers = new Set<() => void>();
+  private ttySaid = false;
 
   constructor(repo: string) {
     this.repo = repo;
@@ -84,11 +96,18 @@ export class Session {
     void this.start();
   }
 
+  /** Hear when a run starts, grows or ends; returns how to stop. */
+  watch(fn: () => void): () => void { this.watchers.add(fn); return () => this.watchers.delete(fn); }
+  private tell() { for (const fn of this.watchers) fn(); }
+
   /** Type `text` into the shell, one line per line. False while it is not running. */
   send(text: string): boolean {
     if (!this.live || !this.worker) return false;
     const lines = text.endsWith('\n') ? text : `${text}\n`;
     this.print(lines);
+    this.runs.push({line: lines.trimEnd(), output: '', started: Date.now(), ms: null});
+    if (this.runs.length > RUNS) this.runs.shift();
+    this.tell();
     const bytes = new TextEncoder().encode(lines);
     this.worker.postMessage({type: 'input', bytes}, [bytes.buffer]);
     return true;
@@ -96,10 +115,24 @@ export class Session {
 
   private print(s: string) {
     this.text += strip(s);
+    // It may come in pieces; it goes once whole.
+    if (!this.ttySaid && this.text.includes(NO_TTY)) { this.text = this.text.replace(NO_TTY, ''); this.ttySaid = true; }
     // Keep the last 200k characters; older output scrolls away.
     if (this.text.length > 200_000) this.text = this.text.slice(-150_000);
     this.output.textContent = this.text;
     this.output.scrollTop = this.output.scrollHeight;
+  }
+
+  /** Output goes on screen and into the run in progress, which ends at the next prompt. */
+  private received(s: string) {
+    this.print(s);
+    const run = this.runs.at(-1);
+    if (!run || run.ms !== null) return;
+    run.output += strip(s);
+    const end = PROMPT.exec(run.output);
+    if (end) { run.output = run.output.slice(0, end.index); run.ms = Date.now() - run.started; }
+    else if (run.output.length > 100_000) run.output = run.output.slice(-80_000);
+    this.tell();
   }
 
   private readonly id = `shell:${Math.random().toString(36).slice(2)}`;
@@ -127,7 +160,7 @@ export class Session {
         await ok.catch(() => skipped.push(f.path));
       }
       for (const r of c.removed) await store.remove(this.repo, r, this.id).catch(() => skipped.push(r));
-      if (skipped.length) this.status.textContent = `repoに書き戻せなかったもの（バイナリ・大きすぎる等）: ${skipped.slice(0, 5).join(', ')}${skipped.length > 5 ? ' …' : ''}`;
+      if (skipped.length) this.status.textContent = `repoに戻らなかったもの: ${skipped.slice(0, 5).join(', ')}${skipped.length > 5 ? ' …' : ''}`;
     });
   }
 
@@ -137,7 +170,7 @@ export class Session {
       const worker = new Worker(new URL('../../../../xlat/runtime/worker.mjs', import.meta.url), {type: 'module'});
       this.worker = worker;
       worker.onmessage = ({data}) => {
-        if (data.type === 'output') this.print(new TextDecoder().decode(data.bytes));
+        if (data.type === 'output') this.received(new TextDecoder().decode(data.bytes));
         else if (data.type === 'changes') this.writeBack(data);
         else if (data.type === 'exit') this.end(`終了しました（${data.status >> 8}）`);
         else if (data.type === 'error') this.end(`停止しました: ${data.message.split('\n')[0]}`);
@@ -161,9 +194,8 @@ export class Session {
         const what = c.what === 'file' ? new TextEncoder().encode(c.text ?? '') : c.what === 'dir' ? 'dir' : null;
         this.worker?.postMessage({type: 'put', path: c.path, what});
       });
-      this.status.textContent = copy.complete
-        ? 'このrepoで動いています。ここで変えたファイルはrepoに書き戻されます（テキストのみ）。'
-        : 'このrepoで動いています（大きいファイル・バイナリは入っていません）。ここで変えたファイルはrepoに書き戻されます。';
+      // Running is the usual state and says nothing; only what is missing is said.
+      this.status.textContent = copy.complete ? '' : '大きいfileとバイナリは入っていません';
       this.live = true;
     } catch (e) {
       this.end(`起動できませんでした: ${String(e)}`);
@@ -184,6 +216,9 @@ export class Session {
     this.status.replaceChildren(message, ' ', restart);
   }
 }
+
+/** The repo's session if one is running, without starting one. */
+export const sessionIfAny = (repo: string): Session | undefined => sessions.get(repo);
 
 export function sessionFor(repo: string): Session {
   let s = sessions.get(repo);

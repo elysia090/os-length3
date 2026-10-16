@@ -90,9 +90,9 @@ export function forge(ctx: Context): Node[] {
   const topic = () => {
     repo = null;
     reader = null;
-    work.setRepo(null, '帯にrepoを出すと、そのrepoでshellが動きます。');
+    work.setRepo(null, '帯にrepoを出すと動きます');
     flow.replaceChildren(h('div', {class: 'topic'}, pageHead('topic'),
-      h('div', {class: 'empty'}, 'まだ投稿はありません。帯の ⊕ からrepoを出すと、ここはそのrepoのfileになります。')));
+      h('div', {class: 'empty'}, 'まだ投稿はありません')));
     flow.scrollTop = 0;
     paintBand();
   };
@@ -225,7 +225,7 @@ class Reader {
     let entries: Entry[];
     try { entries = await store.tree(this.repo, path); } catch (e) { section.replaceChildren(h('p', {class: 'muted'}, String(e))); return; }
     // An empty directory shows nothing; only an empty repo says so.
-    if (!entries.length) { section.replaceChildren(path ? '' : h('div', {class: 'empty'}, 'このrepoにはまだfileがありません。')); return; }
+    if (!entries.length) { section.replaceChildren(path ? '' : h('div', {class: 'empty'}, 'fileはまだありません')); return; }
     section.replaceChildren(...readingOrder(entries).map((e) =>
       e.kind === 'dir' ? this.directory(join(path, e.name)) : this.file(join(path, e.name), e)));
   }
