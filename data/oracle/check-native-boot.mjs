@@ -167,8 +167,7 @@ const sendCommands = async () => {
       'make -j2 -C src/v2/x86 all',
       'make -j2 -C src/v2/optimized-x86 all',
       'make -j2 -C src/v2/postlink-compiler all check',
-      'make -j2 -C src/v2/wasm-compiler all packed-shift-check vector-unpack-check x87-control-check x87-environment-check',
-      'make -j2 -C src/v2/vm all check',
+      'make -j2 -C src/v2/artifact all',
       'printf "oracle-c-selfhosted\\n"',
     ]:[]),
   ].join('\n');

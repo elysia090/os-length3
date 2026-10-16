@@ -5,36 +5,28 @@ compilation: the kernel and every linked x86-64 ELF in the fixed profile are
 reduced to equivalent, ordinary, optimized ELF executables, each proved against
 its ordinary linked input, and the result is measured for canonical size and
 paired native execution. `src/v2` holds the products that produce that result:
-the native compiler, the proof and artifact machinery, and the two execution
-projections of the accepted output.
-
-The system has one compiler product and two execution/delivery products over
-one canonical Linux distribution identity:
+the native compiler, the proof and artifact machinery, and the release tooling.
 
 1. `postlink-compiler`: a native CLI that accepts a linked x86-64 ELF and
    emits a smaller, independently runnable optimized x86-64 ELF.
 2. native: the optimized kernel and user ELFs run directly. Its delivery
    adapter may exploit native `mmap`, page faults, NUMA, asynchronous I/O,
    process lifetime, and ordinary network devices.
-3. `vm` + `web`: the same optimized ELFs are lowered by a VM-internal backend
-   and run in the browser. Its delivery adapter uses authenticated page faults,
-   dirty COW, Worker lifetime, browser persistence, and a virtual NIC.
 
 The Linux kernel, root filesystem, POSIX/C/git/HTTPS toolchain, object
-identities, and authenticated root form one canonical distribution. A release
-publishes native and browser delivery projections of that root; it does not
-build two semantically independent distributions. Wasm modules are derived
-browser execution objects, never the canonical program identity.
+identities, and authenticated root form one canonical distribution. Length³
+OS (`src/desktop`) runs it: `l3` installs the release root on a device and
+opens a repo inside it without privilege, on the host's kernel. The earlier
+browser VM projection (`vm`, `wasm-compiler`, `web`) has been removed; the app
+in a browser runs programs through `xlat` instead.
 
 The native profile is a development sandbox, not a second conventional host
-distribution. It presents the same shell, files and workspace lifecycle as
-the browser profile, while executing accepted optimized ELFs directly on the
-host CPU under a compatible Linux syscall boundary. Native `mmap`, page faults,
+distribution. It executes accepted optimized ELFs directly on the host CPU
+under a compatible Linux syscall boundary. Native `mmap`, page faults,
 namespaces, cgroup v2, asynchronous I/O and ordinary devices manage the same
 authenticated objects. It has no CPU-virtualization or KVM dependency. Opening
 a workspace yields an immediately usable Linux environment; closing it retains
-only its immutable root and committed workspace/config objects. Backend and
-cache policy are implementation details, not different user environments.
+only its immutable root and committed workspace/config objects.
 
 The release-size gate applies to that shared distribution after every linked
 ET_EXEC/ET_DYN has been replaced by its independently runnable optimized ELF.
@@ -49,9 +41,7 @@ The historical machine-artifact normalization reduced the former
 number must not be reported as the distribution's storage coefficient.  Its
 137,510,610-byte directory-bearing pack still opens a separate
 114,575,792-byte SquashFS delivery.  Including the 1,888 fixed root bytes, its
-actual binary cold-delivery closure is therefore 252,088,290 bytes.  The web
-loader now requires and checks that complete transitive extent instead of
-silently reporting only the first pack.  None of these four historical
+actual binary cold-delivery closure is therefore 252,088,290 bytes.  None of these four historical
 `linux-x86-64`, machine-pack, merged-toolchain, or SquashFS projections is named
 by the production artifact catalog; a current distribution cannot fall back
 to them while the fixed recipe is being rebuilt.
@@ -67,27 +57,23 @@ machine pack, SquashFS extent, Wasm cache, or transfer compression cannot be
 used as either side of that ratio.  The target remains at most 75,000,000
 canonical bytes before a replaceable Storage projection.
 
-Storage and networking are adapter boundaries shared by both profiles. They
-authenticate, fetch, cache, evict, recover, and synchronize physical objects,
-but do not acquire CPU, MMU, VFS, or x86 semantics. The Linux kernel remains
-the sole owner of VFS, process, credential, signal, socket, and time semantics:
-the compatible host kernel in native execution and the release kernel in the
-browser machine. The browser has no POSIX/syscall fallback.
+Storage and networking are adapter boundaries. They authenticate, fetch,
+cache, evict, recover, and synchronize physical objects, but do not acquire
+CPU, MMU, VFS, or x86 semantics. The Linux kernel remains the sole owner of
+VFS, process, credential, signal, socket, and time semantics.
 
 The normative standard-profile, service, sandbox, and lifecycle contract is
 [DISTRIBUTION.md](docs/DISTRIBUTION.md). Package metadata, dependency,
 ownership, script/trigger, signing, installation, and audit policy is
 [PACKAGE.md](docs/PACKAGE.md). Together they define one 75 MB development
-distribution shared by native and browser execution.
+distribution.
 
 Key/trust roles are deliberately separate: [package signing and public keys](docs/PACKAGE.md#signing-keys-public-keys-and-bootstrap-trust),
 [volume secrets and recovery pins](docs/STORAGE.md#key-custody-and-recovery-authority--current-implementation),
 and [gateway certificates/capabilities](docs/NETWORK.md#transport-credentials-are-not-guest-trust-roots).
 The initial stable native archive uses an approved GitHub publisher/digest
 bootstrap while retaining the unchanged local APK key; see
-[delivery policy](docs/DELIVERY.md). The browser profile/origin retains the
-non-extractable workspace key, context and committed head across browser
-restart. Site-data deletion/key loss and portable recovery remain distinct.
+[delivery policy](docs/DELIVERY.md).
 
 The one production path is:
 
@@ -95,11 +81,7 @@ The one production path is:
 linked x86 ELF
     -> postlink-compiler
     -> optimized x86 ELF + proof
-    |-> native execution + native delivery adapter
-    `-> wasm-compiler (VM-internal)
-         -> ordinary Wasm modules
-         -> vm.wasm + browser delivery adapter
-         -> browser execution
+    `-> native execution + native delivery adapter
 ```
 
 The optimized program is still an ordinary x86 ELF. Its proof is carried by
@@ -138,18 +120,6 @@ src/v2/
 │  ├─ src/
 │  ├─ cli/main.c
 │  └─ check/
-├─ machine-abi/
-│  ├─ include/machine/
-│  │  ├─ state.h
-│  │  ├─ event.h
-│  │  ├─ barrier.h
-│  │  └─ result.h
-│  └─ src/
-├─ wasm-compiler/
-│  ├─ include/wasm-compiler/compiler.h
-│  ├─ src/
-│  ├─ cli/main.c
-│  └─ check/
 ├─ artifact/
 │  ├─ include/artifact/
 │  │  ├─ root.h
@@ -164,31 +134,8 @@ src/v2/
 │  ├─ src/
 │  ├─ cli/
 │  └─ check/
-├─ storage/
-│  ├─ include/storage/
-│  │  ├─ identity.h
-│  │  ├─ delivery.h
-│  │  ├─ compression.h
-│  │  ├─ crypto.h
-│  │  └─ erasure.h
-│  ├─ src/
-│  ├─ cli/
-│  └─ check/
-├─ vm/
-│  ├─ include/vm/
-│  │  ├─ machine.h
-│  │  ├─ memory.h
-│  │  ├─ mmu.h
-│  │  ├─ device.h
-│  │  ├─ lifecycle.h
-│  │  └─ resource.h
-│  ├─ core/resource.c       scoped host-batch admission; machine core pending
-│  ├─ wasm/
-│  └─ check/
-└─ web/
-   ├─ runtime/
-   ├─ worker/
-   └─ ui/
+├─ check/                  product-level checks
+└─ docs/
 ```
 
 Directories are product or library boundaries, not historical phases. A
@@ -202,46 +149,18 @@ exercise; there is no global catch-all `tools/` or `tests/` ownership boundary.
 support
    ├──▶ x86
    ├──▶ optimized-x86
-   ├──▶ machine-abi
-   ├──▶ artifact
-   └──▶ storage
+   └──▶ artifact
 
 x86 + optimized-x86
           │
           ▼
  postlink-compiler
-
-x86 (cold decoder) + optimized-x86 + machine-abi
-          │
-          ▼
-    wasm-compiler
-
-machine-abi + artifact + storage
-          │
-          ▼
-          vm
-          │
-          ▼
-         web
 ```
 
 An arrow means “may include or link”. Reverse edges are build failures.
-Notably:
-
-- `postlink-compiler` does not know Wasm, VM layout, browser delivery, or the
-  artifact store.
-- `wasm-compiler` decodes only the accepted optimized ELF through the public
-  cold `x86` frontend and lowers the machine ABI. It never reopens the original
-  linked input or imports a decoder into execution. Native post-link selection
-  remains independent from the Wasm backend.
-  Exact instruction laws and transient SSA composition/normalization are
-  owned by `x86`, not copied into either backend. The current vector projection
-  consumes those shared coordinate laws; migration of the remaining
-  instruction-wise scalar emitter to the shared SSA is still required.
-- `vm` executes the machine ABI and faults immutable objects through
-  `artifact` and `storage`; it does not link either compiler.
-- `web` owns orchestration and presentation only. It does not implement x86,
-  MMU, VFS, or artifact semantics in JavaScript.
+`postlink-compiler` does not know the artifact store or any delivery.
+Exact instruction laws and transient SSA composition/normalization are owned
+by `x86`.
 
 ## Product contracts
 
@@ -251,32 +170,9 @@ requires a proof of total coordinate coverage, exact fault cuts, the fixed
 machine ABI, direct control, and improved cost. The proof is bound to the ELF
 build identity; absence or mismatch is a compile error.
 
-The standalone Wasm compiler accepts only a proved optimized x86 ELF and emits
-ordinary bounded Wasm modules. The VM imports those modules lazily into its
-function table and provides CPU state, RAM, MMU, events, devices, and lifecycle.
-Missing code is rejected before publication rather than interpreted at run
-time.
-
-The Playground is a thin invocation of the same products:
-
-```text
-source file
-    -> ordinary compiler and linker
-    -> linked x86 ELF
-    -> postlink-compiler
-    -> optimized x86 ELF + proof
-    -> VM
-    -> Run terminal
-```
-
-There is no Playground-only language runtime. A source with `main` follows this
-path and executes; a source without `main` follows the same compile path and
-reports the accepted functions and proof without inventing an execution entry.
-
 Artifact identity and delivery are separate. `artifact` defines authenticated
-roots, objects, indexes, and resources. `storage` defines content identity,
-compression, encryption, erasure coding, and untrusted delivery locations.
-Neither subsystem gives storage tiers semantic authority.
+roots, objects, indexes, and resources; delivery locations have no semantic
+authority.
 
 The derivations and invariants are normative in:
 
@@ -285,7 +181,6 @@ The derivations and invariants are normative in:
 - [STORAGE.md](docs/STORAGE.md)
 - [NETWORK.md](docs/NETWORK.md)
 - [DISTRIBUTION.md](docs/DISTRIBUTION.md)
-- [BROWSER.md](docs/BROWSER.md): browser constraints, release binding, red gates
   and implementation order for the shipped native bundle.
 
 ## Deletion rule

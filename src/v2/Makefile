@@ -1,35 +1,19 @@
-PRODUCTS = support x86 optimized-x86 machine-abi artifact storage \
-	postlink-compiler wasm-compiler vm
+PRODUCTS = support x86 optimized-x86 artifact postlink-compiler
 BUILD ?= build
-SITE ?= ../../dist
-ARTIFACT ?= ../../artifact
 CC ?= cc
 CFLAGS ?= -O2
 WARN = -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion
 INCLUDES = -Iartifact/include -Ipostlink-compiler/include \
 	-Ioptimized-x86/include -Ix86/include -Isupport/include
 
-.PHONY: all check site release-sharing-check artifact-executable-stage-check native-bundle-check postlinked-kernel-package-check service-source-check package-payload-check \
+.PHONY: all check release-sharing-check artifact-executable-stage-check native-bundle-check postlinked-kernel-package-check service-source-check package-payload-check \
 	clean $(PRODUCTS)
 all: $(PRODUCTS) $(BUILD)/artifact-executable-stage
 
-# Assemble the static browser shell and its sibling artifact root. The page is
-# plain files under web/; there is no JavaScript build step. The browser opens
-# objects from a sibling artifact/ directory, which is the generated tree at
-# the repository root and is copied only when it exists.
-site:
-	rm -rf "$(SITE)"
-	mkdir -p "$(SITE)"
-	cp -R web/. "$(SITE)"/
-	# Keep digest-pool/release hardlinks shared inside the independent site copy.
-	@if [ -d "$(ARTIFACT)" ]; then cp -a "$(ARTIFACT)" "$(SITE)"/artifact; fi
-
 # Recursive makes do not share a dependency graph. Finish each provider before
 # starting its consumers, including on an empty tree under `make -j`.
-x86 optimized-x86 machine-abi artifact storage: support
+x86 optimized-x86 artifact: support
 postlink-compiler: x86 optimized-x86
-wasm-compiler: x86 optimized-x86 machine-abi
-vm: machine-abi artifact storage
 
 $(PRODUCTS):
 	$(MAKE) -C $@ all
@@ -160,15 +144,14 @@ check: release-sharing-check artifact-executable-stage-check native-bundle-check
 	@! test -e tests
 	@! test -e tools
 	@! test -e machine-artifact
-	@! test -e vm/wasm/vm.c
-	@! test -e wasm-compiler/src/lower-vector-permutation.c
-	@! test -e wasm-compiler/src/lower-vector-arithmetic.c
+	@! test -e web
+	@! test -e vm
+	@! test -e wasm-compiler
 	@! test -e postlink-compiler/src/instruction-semantics.c
 	@! test -e postlink-compiler/src/normalize-ssa.c
-	@test -d web
 	@! grep -REn 'Pyodide|pyodide|from qm|import qm|from kernel|import kernel|machine-artifact/' \
 		--exclude=Makefile --exclude='*.md' --exclude-dir=build \
-		--exclude-dir=third_party web vm postlink-compiler wasm-compiler
+		--exclude-dir=third_party postlink-compiler
 
 clean:
 	@for product in $(PRODUCTS); do $(MAKE) -C $$product clean || exit; done

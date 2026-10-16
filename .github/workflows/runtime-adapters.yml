@@ -1,36 +1,15 @@
-name: Runtime adapter checks
+name: Native distribution checks
 
 on:
   push:
     branches: [main, codex/native-release-wasm-1002]
     paths:
       - '.github/workflows/runtime-adapters.yml'
-      - 'src/v2/web/**'
-      - 'src/v2/vm/check/browser/storage-failures*'
-      - 'src/v2/vm/check/browser/candidate-*'
-      - 'src/v2/vm/check/browser/product.*'
-      - 'src/v2/vm/check/browser/prepared-*'
-      - 'src/v2/vm/check/browser/legacy-retention.*'
-      - 'src/v2/vm/check/browser/restart-authority.*'
-      - 'src/v2/vm/check/browser/prepared-cache-fixture/**'
       - 'src/v2/Makefile'
-      - 'data/oracle/check-site-hardlinks.mjs'
-      - 'data/oracle/check-persistent-block*.mjs'
-      - 'data/oracle/check-object-store-transport.mjs'
       - 'data/distribution/prepare-qualified-native-release.py'
-      - 'data/distribution/prepare-web-release.py'
-      - 'data/distribution/serve-web-release.mjs'
-      - 'data/oracle/check-web-release-server.mjs'
       - 'data/oracle/check-native-producer-dhcp.sh'
       - 'data/oracle/seed-image.mjs'
       - 'data/oracle/network-host-linux.go'
-      - 'data/oracle/check-machine-devices-close.mjs'
-      - 'data/oracle/check-machine-network-reconnect.mjs'
-      - 'data/oracle/check-service-observation.mjs'
-      - 'data/oracle/check-memory-budget.mjs'
-      - 'data/oracle/check-machine-yield.mjs'
-      - 'data/oracle/check-console-readiness.mjs'
-      - 'data/oracle/check-browser-storage-failure-receipt*.mjs'
       - 'data/oracle/inspect-dhcp-printf-table.mjs'
       - 'data/oracle/check-readiness-mounts.mjs'
       - 'data/distribution/boot/ready'
@@ -44,39 +23,17 @@ on:
       - 'data/distribution/optimize-payload.sh'
       - 'data/distribution/check-postlink-toolchain.sh'
       - 'data/build.sh'
+      - 'artifact/native/evidence/2026-10-12-dhcp-syslog-root-cause.json'
       - 'src/v2/artifact/**'
       - 'src/v2/support/**'
-      - 'src/v2/vm/check/browser/evidence/2026-10-12-dhcp-syslog-root-cause.json'
-      - 'src/v2/vm/check/browser/evidence/2026-10-12-storage-failures-browser.json'
   pull_request:
     paths:
       - '.github/workflows/runtime-adapters.yml'
-      - 'src/v2/web/**'
-      - 'src/v2/vm/check/browser/storage-failures*'
-      - 'src/v2/vm/check/browser/candidate-*'
-      - 'src/v2/vm/check/browser/product.*'
-      - 'src/v2/vm/check/browser/prepared-*'
-      - 'src/v2/vm/check/browser/legacy-retention.*'
-      - 'src/v2/vm/check/browser/restart-authority.*'
-      - 'src/v2/vm/check/browser/prepared-cache-fixture/**'
       - 'src/v2/Makefile'
-      - 'data/oracle/check-site-hardlinks.mjs'
-      - 'data/oracle/check-persistent-block*.mjs'
-      - 'data/oracle/check-object-store-transport.mjs'
       - 'data/distribution/prepare-qualified-native-release.py'
-      - 'data/distribution/prepare-web-release.py'
-      - 'data/distribution/serve-web-release.mjs'
-      - 'data/oracle/check-web-release-server.mjs'
       - 'data/oracle/check-native-producer-dhcp.sh'
       - 'data/oracle/seed-image.mjs'
       - 'data/oracle/network-host-linux.go'
-      - 'data/oracle/check-machine-devices-close.mjs'
-      - 'data/oracle/check-machine-network-reconnect.mjs'
-      - 'data/oracle/check-service-observation.mjs'
-      - 'data/oracle/check-memory-budget.mjs'
-      - 'data/oracle/check-machine-yield.mjs'
-      - 'data/oracle/check-console-readiness.mjs'
-      - 'data/oracle/check-browser-storage-failure-receipt*.mjs'
       - 'data/oracle/inspect-dhcp-printf-table.mjs'
       - 'data/oracle/check-readiness-mounts.mjs'
       - 'data/distribution/boot/ready'
@@ -90,10 +47,9 @@ on:
       - 'data/distribution/optimize-payload.sh'
       - 'data/distribution/check-postlink-toolchain.sh'
       - 'data/build.sh'
+      - 'artifact/native/evidence/2026-10-12-dhcp-syslog-root-cause.json'
       - 'src/v2/artifact/**'
       - 'src/v2/support/**'
-      - 'src/v2/vm/check/browser/evidence/2026-10-12-dhcp-syslog-root-cause.json'
-      - 'src/v2/vm/check/browser/evidence/2026-10-12-storage-failures-browser.json'
 
 permissions:
   contents: read
@@ -106,49 +62,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Check isolated storage, cleanup, and memory reservation
+      - name: Check release scripts, boot and readiness
         run: |
-          node data/oracle/check-persistent-block.mjs
-          node data/oracle/check-persistent-block-failures.mjs
-          node data/oracle/check-persistent-block-restore.mjs
-          node data/oracle/check-persistent-block-system.mjs
-          node data/oracle/check-object-store-transport.mjs
           python3 -m py_compile data/distribution/prepare-qualified-native-release.py
-          python3 -m py_compile data/distribution/prepare-web-release.py
-          node data/oracle/check-web-release-server.mjs
-          node data/oracle/check-machine-devices-close.mjs
-          node data/oracle/check-machine-network-reconnect.mjs
-          node data/oracle/check-service-observation.mjs
-          node data/oracle/check-memory-budget.mjs
-          node data/oracle/check-machine-yield.mjs
-          node data/oracle/check-compiled-modules.mjs
-          node data/oracle/check-prepared-code.mjs
-          node data/oracle/check-code-owners.mjs
-          node data/oracle/check-stamped-code.mjs
-          node data/oracle/check-source-demands.mjs
-          node data/oracle/check-source-demands-batch.mjs
-          node data/oracle/check-console-readiness.mjs
-          node data/oracle/check-site-hardlinks.mjs
-          node data/oracle/check-browser-storage-failure-receipt-test.mjs
-          node data/oracle/check-browser-storage-failure-receipt.mjs src/v2/vm/check/browser/evidence/2026-10-12-storage-failures-browser.json
-          node --check src/v2/vm/check/browser/storage-failures.mjs
-          node --check src/v2/vm/check/browser/storage-failures-worker.mjs
-          node --check src/v2/vm/check/browser/candidate-storage.mjs
-          node --check src/v2/vm/check/browser/candidate-storage-worker.mjs
-          node --check src/v2/vm/check/browser/candidate-engine.mjs
-          node --check src/v2/vm/check/browser/candidate-engine-worker.mjs
-          node --check src/v2/vm/check/browser/candidate-fork.mjs
-          node --check src/v2/vm/check/browser/candidate-carrier.mjs
-          node --check src/v2/vm/check/browser/product.mjs
-          node --check src/v2/web/workspace-authority.mjs
-          node --check src/v2/web/prepared-release.mjs
-          node --check src/v2/web/workspace-release.mjs
-          node --check src/v2/web/linux-worker.js
-          node --check src/v2/web/linux-terminal.js
-          node --check src/v2/vm/check/browser/prepared-release.mjs
-          node --check src/v2/vm/check/browser/workspace-recovery.mjs
-          node --check src/v2/vm/check/browser/legacy-retention.mjs
-          node --check src/v2/vm/check/browser/restart-authority.mjs
           node --check data/oracle/seed-image.mjs
           bash -n data/oracle/check-native-producer-dhcp.sh
           node --check data/oracle/inspect-dhcp-printf-table.mjs

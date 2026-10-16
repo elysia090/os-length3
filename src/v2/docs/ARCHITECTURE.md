@@ -4,7 +4,7 @@ The responsibility contracts are [POST-COMPILE.md](POST-COMPILE.md),
 [ARTIFACT.md](ARTIFACT.md), [STORAGE.md](STORAGE.md),
 [PACKAGE.md](PACKAGE.md), [NETWORK.md](NETWORK.md) and
 [DISTRIBUTION.md](DISTRIBUTION.md). Browser acceptance and its exact current
-evidence are in [BROWSER.md](BROWSER.md). None of these contracts is fulfilled
+evidence are in BROWSER.md (removed with the old web product). None of these contracts is fulfilled
 merely by an instruction fixture or a partial startup.
 
 ## One program, two execution projections
@@ -85,7 +85,7 @@ descriptor/state publication and C-owned deferred FERR boundary are separate.
 Cold arena support is active, not merely dead-linked SSA sources. Native/cold
 bytes are deterministic; local hardware and C event models have explicit scopes.
 This does not migrate the remaining scalar ALU or certify a complete Linux
-projection. See [exact evidence](../vm/check/browser/evidence/2026-10-07-x87-compare.md).
+projection. See [exact evidence](../../../artifact/native/evidence/2026-10-07-x87-compare.md).
 
 ## Current machine and publication boundary
 
@@ -109,7 +109,7 @@ per-coordinate object fetch and whole-code rehash. Small images pass the same
 Node and actual-browser test; complete Linux ISA/context/generation closure is
 still missing. The same-bundle raw-page startup is not migrated or a published
 browser execution product. See
-[boundary and exact scope](../vm/check/browser/evidence/2026-10-07-image-admission.md).
+[boundary and exact scope](../../../artifact/native/evidence/2026-10-07-image-admission.md).
 Linux owns syscall, VFS, process, signal and network semantics; there is no
 browser POSIX or Linux-function fallback.
 
@@ -135,7 +135,7 @@ The reader retains 304 bytes, not an opened directory. A loaded module still
 requires ordinary engine validation and independent compiler/source/MMU/table
 admission. Root selection/authentication, whole-ELF projection production,
 encrypted/erasure delivery and the Linux startup caller are not completed by
-this loader fixture. See [scope](../vm/check/browser/evidence/2026-10-06-directory.md).
+this loader fixture. See [scope](../../../artifact/native/evidence/2026-10-06-directory.md).
 
 ## Verification
 
@@ -145,7 +145,7 @@ frames, source/context refusal and full-state comparisons. Model counts,
 native reference-VM observations, Node-engine execution and actual browser
 observations are reported separately.
 
-Publication requires the full [BROWSER.md](BROWSER.md) acceptance: real Linux
+Publication requires the full BROWSER.md (removed with the old web product) acceptance: real Linux
 PID 1/offline shell, C/make/Git/package use, authenticated bounded delivery,
 workspace recovery, granted networking and browser service reachability.
 Cold shell three seconds remains a measured target, not a fixture result.

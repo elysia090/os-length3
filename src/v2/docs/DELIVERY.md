@@ -58,7 +58,7 @@ formatting. The approved browser origin is the implemented recovery authority;
 deleting its site data loses its non-extractable key/context. Portable recovery,
 automatic rotation and cross-device recovery are not implemented. A public
 release key must never derive a workspace secret. See
-[workspace authority](../web/workspace-authority.md).
+workspace authority (removed with the old web product).
 
 ## Fetch: resolve a retained reference, then admit bytes
 
@@ -103,7 +103,7 @@ trusted pin. A durable cloud synchronizer must journal this intent and
 coordinate its local pin before it becomes a recovery authority. That
 synchronizer is not connected to the product UI in this release.
 
-The optional [`HttpCiphertextStore`](../web/object-store-transport.mjs) implements
+The optional `HttpCiphertextStore` (removed with the old web product) implements
 bounded opaque transfers, immutable readback, strong conditional writes and
 explicit uncertain-outcome reconciliation. The normal product still uses its
 strict origin-local `IndexedBlockStore`. There is no implicit cloud upload,

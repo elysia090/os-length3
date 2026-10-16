@@ -2,24 +2,15 @@ __pycache__/
 *.py[cod]
 dist/
 node_modules/
-.wrangler/
 src/v2/data/out/
 /data/out/
 /data/upstream/
 /data/toolchain/build/
 /temp/
 /.tmp/
-/data/distribution/cloudflare-release.generated.json
 /.pytest_cache/
 /.uv-cache/
 /*.obj
 
 # Native download bytes are release assets, not Git history. Keep receipts.
 /artifact/native/*.tar.zst
-/artifact/browser-*/**/*.object
-/artifact/browser-*/*.object
-/artifact/objects/*.object
-/src/v2/vm/check/browser/generated/
-/src/v2/vm/check/browser/generated-startup/
-# Independently generated diagnostic runs are reproducible, not release assets.
-/src/v2/vm/check/browser/generated-startup-*/

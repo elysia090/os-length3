@@ -89,14 +89,14 @@ adds actual full saved tags and RAX; `mmx-binary-observe.c DIRECTORY [--wide|
 --transfer|--tag-first]` records the independent populations. Execute via
 `check-x87-state.mjs` modes `--mmx`, `--packed`, `--mmx-transfer`. Guard and
 FS-before-alignment C models are separate from physical observations. See
-[packed lane and transfer closure](../../src/v2/vm/check/browser/evidence/2026-10-08-packed-mmx.md).
+[packed lane and transfer closure](../../artifact/native/evidence/2026-10-08-packed-mmx.md).
 
 Return widths reuse the existing system observer with a low INT landing pad:
 `prepare-return-widths.sh NEW-DIRECTORY` generates16/32/64-bit IRET and far RET
 with0/7 release. Both `check-iret-system.mjs` and `check-outer-iret.mjs` accept
 `--return=BYTES,FAR,DISCARD`; old IRETQ and frame-priority controls remain default.
 Only the former launches an independent test VM; neither is a product guest
-interpreter. See [return closure and exact reference scope](../../src/v2/vm/check/browser/evidence/2026-10-08-return-widths.md).
+interpreter. See [return closure and exact reference scope](../../artifact/native/evidence/2026-10-08-return-widths.md).
 
 FIST/FISTP/FISTTP and FLD32/64 also consume the common physical SSA and C
 memory/push/store owners. Observer/checker modes `--store` and `--load` provide
@@ -105,7 +105,7 @@ memory/push/store owners. Observer/checker modes `--store` and `--load` provide
 `x87-store-fault-observe` captures real protected-page ordering; use checker
 `--store-fault` for the same C-MMU comparison. `check-x87-fault.mjs --store`
 or `--load` adds #NM/#MF-before-access and cross-page/refusal models. See
-[transfer publication and reference scopes](../../src/v2/vm/check/browser/evidence/2026-10-08-x87-transfers.md).
+[transfer publication and reference scopes](../../artifact/native/evidence/2026-10-08-x87-transfers.md).
 
 The SAME arithmetic observer closes integer/register division, binary32/64
 memory add/sub/div, and all three multiply locations through shared SSA.
@@ -117,7 +117,7 @@ Official SoftFloat is an independent reference, never product runtime.
 Register `--finite` checks all six operations. Common U128/U64 SSA replaces
 the old bit loop. `benchmark-divide.mjs BASELINE-COMPILER CURRENT-COMPILER`
 compares actual execution with equal state writes, compilation excluded. See
-[shared closure, derivation and measurements](../../src/v2/vm/check/browser/evidence/2026-10-08-division.md).
+[shared closure, derivation and measurements](../../artifact/native/evidence/2026-10-08-division.md).
 
 `prepare-shift-cuts.sh NEW-DIRECTORY carry-rotate` covers RCL/RCR width/count/
 composition. Existing memory-shift now has 476 forms through C reserve/commit.
@@ -135,7 +135,7 @@ COMPILER.WASM WHPX-TRACE [--faults]` compares actual C frame/debug effects,
 including retained effects after a secondary fault. TCG differs here; do NOT
 use its observer-induced nested #DB as the original trap. The separate
 physical-Windows `debug-trap-observe.c` checks page-end RIP/RFLAGS at CPL3.
-See [scope, rejected oracle conflation and reproduction](../../src/v2/vm/check/browser/evidence/2026-10-08-debug-trap.md).
+See [scope, rejected oracle conflation and reproduction](../../artifact/native/evidence/2026-10-08-debug-trap.md).
 
 The existing `x87-arithmetic-observe` also accepts `DIRECTORY --register`:
 72 raw register add/sub encodings, both operand directions/pop/alias, plus
@@ -145,10 +145,10 @@ uses the SAME C-MMU/table gate; the original DC ED red is now green at all
 numeric/outcome plan against these records; `--finite` adds 240,000 canonical
 finite samples. Build this checker with the shared arithmetic/compact/sweep/
 arena sources, as shown in the
-[current closure and reproduction](../../src/v2/vm/check/browser/evidence/2026-10-08-x87-register.md).
+[current closure and reproduction](../../artifact/native/evidence/2026-10-08-x87-register.md).
 `check-x87-register.c` checks only the canonical masked numeric subset against
 official SoftFloat, never supplying a product implementation. See
-[original red population and exception publication](../../src/v2/vm/check/browser/evidence/2026-10-08-x87-register-red.md).
+[original red population and exception publication](../../artifact/native/evidence/2026-10-08-x87-register-red.md).
 
 `check-string-io.mjs VM.WASM COMPILER.WASM RECORDS` executes compiled INS/OUTS
 against independent reference-system CPU/RAM records. The primary WHPX route
@@ -158,7 +158,7 @@ TCG overlay of the original official Alpine image supplies the full gate;
 WHPX denied-only cases corroborate permission/zero-count priority. Neither
 reference backend is a product path. `check-string-io-boundary.mjs` adds C UART
 read-once, console-byte latch and bounded-REP continuation models. See
-[exact scope, reproducibility and limits](../../src/v2/vm/check/browser/evidence/2026-10-08-string-io.md).
+[exact scope, reproducibility and limits](../../artifact/native/evidence/2026-10-08-string-io.md).
 
 `check-enter.mjs VM.WASM COMPILER.WASM NATIVE-RECORDS` compares common compiled
 ENTER with independent reference-x86 CPU/partial-RAM observations. Its synthetic
@@ -166,7 +166,7 @@ deferred-page cases resume through the C-owned two-word checkpoint, including
 aliasing and a retained read awaiting store. They are not production storage
 authentication or Worker-recovery claims. `check-cold-code.mjs` generalizes
 the former x87 byte-identity helper to every 1..15-byte source instruction.
-See [ENTER, minimal residual and actual coverage](../../src/v2/vm/check/browser/evidence/2026-10-08-enter.md).
+See [ENTER, minimal residual and actual coverage](../../artifact/native/evidence/2026-10-08-enter.md).
 
 `prepare-float.ps1 -Verify` authenticates pinned official SoftFloat/TestFloat
 3e archives, retains unmodified upstream sources/licenses under `data/upstream`
@@ -177,7 +177,7 @@ SSA with that reference; its caller must use the same FAST_INT64/LITTLEENDIAN
 interface layout as the library. `check-x87-state.mjs` independently compares
 FILD C-Wasm/C-MMU execution with physical Windows FPU/RFLAGS observations;
 `check-x87-fault.mjs` covers separate fault-priority models. See
-[derivation, measured coverage and reproduction](../../src/v2/vm/check/browser/evidence/2026-10-08-x87-integer.md).
+[derivation, measured coverage and reproduction](../../artifact/native/evidence/2026-10-08-x87-integer.md).
 
 Its `--arithmetic` mode is the strict full-state gate for
 FIADD/FISUB/FISUBR hardware records. Both modes use ONE C-MMU/table driver;
@@ -188,14 +188,14 @@ unmasked result publication outside that reference's domain. Its `--ssa`
 mode independently tests common numeric/outcome SSA against all hardware rows.
 `check-x87-finite.c` adds 240,000 canonical finite/precision/rounding samples
 against the pinned reference. Fault-model `--arithmetic` mode uses the SAME
-driver as FILD. See [closed numeric/state path and limits](../../src/v2/vm/check/browser/evidence/2026-10-08-x87-arithmetic.md).
+driver as FILD. See [closed numeric/state path and limits](../../artifact/native/evidence/2026-10-08-x87-arithmetic.md).
 
 `--status` covers FCOM/FUCOM, memory/integer comparisons, two-pop and FTST.
 `check-x87-ieee.c` tests exact raw IEEE32/64 -> extended fields against official
 SoftFloat, retaining source denormal and signaling classes explicitly.
 `check-x87-status.c` compares the SAME relation SSA with independent hardware
 records; the state driver checks complete C-MMU/table execution. See
-[derivation, full-state gates and actual-browser scope](../../src/v2/vm/check/browser/evidence/2026-10-08-x87-status.md).
+[derivation, full-state gates and actual-browser scope](../../artifact/native/evidence/2026-10-08-x87-status.md).
 Browser image staging now preflights every candidate through the shared C
 admission/execution check before copying any assets; an older authenticated
 directory lacking source-admission metadata is refused, not silently staged.
@@ -205,14 +205,14 @@ absent ISA-DMA page ports and three absent legacy UART ranges through actual
 cold C emission and C table/MMU execution. It neither creates phantom devices
 nor accepts arbitrary unknown I/O. The old DMA-only check was expanded and
 renamed, not kept as a second implementation. See
-[DMA contract](../../src/v2/vm/check/browser/evidence/2026-10-05-absent-dma.md) and
-[serial absence](../../src/v2/vm/check/browser/evidence/2026-10-05-absent-serial.md).
+[DMA contract](../../artifact/native/evidence/2026-10-05-absent-dma.md) and
+[serial absence](../../artifact/native/evidence/2026-10-05-absent-serial.md).
 
 `check-source-cohort.mjs VM.WASM COMPILER.WASM` proves source-owned warm
 quanta through actual C-MMU/table execution and measures a paired fixed
 65,536-retirement boundary workload. It tests partial prefixes, fault/remap/
 write/shadow/context and later-cut console/growth continuation, not Linux
-speedup. See [derivation and limits](../../src/v2/vm/check/browser/evidence/2026-10-05-source-cohort.md).
+speedup. See [derivation and limits](../../artifact/native/evidence/2026-10-05-source-cohort.md).
 
 ## C-Wasm browser boundary — 2026-10-02
 
@@ -282,7 +282,7 @@ coordinates. The original compiler failed all ten families; ABI 2 now passes
 their exact-template condition. `--observe` separates fresh/warmed Module
 and Instance construction under
 unchanged bounded-owner quotas. It never edits Wasm bytes or removes entry
-checks. The original [red and factorization](../../src/v2/vm/check/browser/evidence/2026-10-05-coordinate-sharing.md)
+checks. The original [red and factorization](../../artifact/native/evidence/2026-10-05-coordinate-sharing.md)
 remain historical evidence. `check-entry-binding.mjs VM.WASM COMPILER.WASM`
 separately exercises shared templates through the actual C-MMU/typed table,
 including literal preservation, relative/absolute targets, #DE/fetch faults,
@@ -290,7 +290,7 @@ REP descriptor mutation/growth and old-ABI type refusal. Its explicit models
 do not replace independent native instruction observations or Linux boot.
 Use fresh native-emitted fixtures with the current compiler: stored ABI-1
 modules are not adapted into ABI-2 validation. See
-[ABI-2 evidence](../../src/v2/vm/check/browser/evidence/2026-10-05-entry-binding.md).
+[ABI-2 evidence](../../artifact/native/evidence/2026-10-05-entry-binding.md).
 
 The current table type is ABI 3, adding a latched signed operand binding without
 growing the row/report. `check-cut-operand-sharing.mjs COMPILER.WASM BZIMAGE`
@@ -302,7 +302,7 @@ The sharing grid explicitly separates matched release bytes from synthetic
 coordinates; it does not turn local body counts into Linux speedup claims.
 `prepare-operand-cuts.sh NEW-OUTPUT COMPILER-BUILD` requires an explicit fresh
 native build. Neither probe establishes Linux boot or browser acceptance.
-See [scope and receipts](../../src/v2/vm/check/browser/evidence/2026-10-05-operand-binding.md).
+See [scope and receipts](../../artifact/native/evidence/2026-10-05-operand-binding.md).
 
 `prepare-entry-cuts.sh NEW-OUTPUT COMPILER-BUILD` regenerates native PUSH/POP,
 ordinary CALL/JMP, table, FXSAVE and vector/scalar/segment fixtures using an
@@ -322,7 +322,7 @@ records native results independently before compiler support; normal mode also
 requires exact emission. `fxrstor-observe.c` separately checks protected-page /
 invalid-MXCSR fault priority in the reference x86 VM. `vm/check/read-extent.c`
 checks generic zero-copy physical projection. None is a product interpreter.
-See [derivation and bounds](../../src/v2/vm/check/browser/evidence/2026-10-05-fxrstor.md).
+See [derivation and bounds](../../artifact/native/evidence/2026-10-05-fxrstor.md).
 
 `src/v2/wasm-compiler/check/memory-order.c` records GPR/flags/FPU preservation
 on native x86 before and after lowering, with `--observe` available before
@@ -330,7 +330,7 @@ compiler support. `check-memory-order.mjs VM.WASM COMPILER.WASM EMITTED-DIR
 OBSERVED-DIR` requires byte-identical independent observations, exact cold-C
 emission, real C-MMU/dispatcher execution, shared-Memory refusal and crossing
 fetch/growth checks. Concurrent memory ordering is not inferred from a native
-value-state fixture. See [the empty-frontier derivation](../../src/v2/vm/check/browser/evidence/2026-10-05-memory-order.md).
+value-state fixture. See [the empty-frontier derivation](../../artifact/native/evidence/2026-10-05-memory-order.md).
 
 ### Accelerator provenance and near CALL faults — 2026-10-04
 
@@ -341,7 +341,7 @@ imply a particular accelerator: on this Windows run the active process and
 "TCG" is an attribution error, not a changed byte receipt. Explicit system
 observers that launch `-accel tcg` remain TCG observations. Neither backend
 is a product dependency, a universal hardware oracle or an equivalence proof
-by itself. The [CALL evidence](../../src/v2/vm/check/browser/evidence/2026-10-04-call-fault.md)
+by itself. The [CALL evidence](../../artifact/native/evidence/2026-10-04-call-fault.md)
 records that distinction and retains the strict product red.
 
 The standalone `call-fault-observe.c/.S` has no product/compiler dependency.
@@ -374,7 +374,7 @@ This uses Win32 vectored exception contexts, not a claimed architectural
 exception vector or bare-metal CPU oracle. CPUID provenance is retained.
 Recovery does not retry the faulting CALL. The parser requires all 216 groups
 and their complete totals; mixed payloads remain observations, never an
-equivalence pass. See [Windows evidence](../../src/v2/vm/check/browser/evidence/2026-10-05-call-fault-windows.md).
+equivalence pass. See [Windows evidence](../../artifact/native/evidence/2026-10-05-call-fault-windows.md).
 
 ### Cold output witness without per-cut capacity poisoning
 
@@ -395,7 +395,7 @@ The component requires exact full-capacity/report parity on 513 real C emissions
 and three refusals, including genuine one-page tail refusal -> two-page supply.
 It separately exposes undeclared tail publication, partial refusal output,
 invalid length, host-trap reuse, shared memory and invalid reservations.
-The [fixed-work receipt](../../src/v2/vm/check/browser/evidence/2026-10-04-compiler-output.md)
+The [fixed-work receipt](../../artifact/native/evidence/2026-10-04-compiler-output.md)
 counts initialization and steady-state stores separately. Reduced poison traffic
 does not mean reduced artifact size, engine RSS, x86 work/span or cold-shell time.
 
@@ -502,7 +502,7 @@ can later be selected with `startup.html?fixture=generated-startup-NAME`;
 only those same-origin diagnostic names are accepted. Do not restage/reload a
 retained running Worker. The local hash manifest is not production signed
 admission, and page/extent checks never certify a Linux root mount or shell.
-Current [evidence and remaining SIMD gate](../../src/v2/vm/check/browser/evidence/2026-10-04-boot-image.md)
+Current [evidence and remaining SIMD gate](../../artifact/native/evidence/2026-10-04-boot-image.md)
 distinguish independent Node receipts from browser acceptance.
 
 Use a full candidate installed root to build that test image; the image is
@@ -703,7 +703,7 @@ records include `.segments` as well as `.state`; the frozen register cut alone
 cannot represent hidden segment caches or MOV SS inhibition. Run
 `check-wasm-segments.mjs VM.WASM NEW-CODE-PREFIX` for the generated selector
 matrix against the actual C boundary. It is NOT a hardware fault-entry oracle
-or Linux/browser boot. See vm/check/browser/evidence/2026-10-02-segments.md.
+or Linux/browser boot. See ../../artifact/native/evidence/2026-10-02-segments.md.
 The last command adapts only diagnostic fixture delivery/self under Node;
 it is NOT an actual browser Worker/consent observation. `provider.html` v3
 constructs the cut using the cold C-Wasm compiler before C table dispatch;
@@ -715,7 +715,7 @@ source/CPU/load/generation attestation and exception/device boot remain open.
 
 ### Authenticated bundle and cold compiler construction
 
-The latest [common indirect-JMP checkpoint](../../src/v2/vm/check/browser/evidence/2026-10-03-indirect-jmp.md)
+The latest [common indirect-JMP checkpoint](../../artifact/native/evidence/2026-10-03-indirect-jmp.md)
 uses actual native x86 receipts and the C VM/MMU, not a JS memory callback:
 
 ```sh
@@ -737,7 +737,7 @@ C loader derive the actual startup entry, and invokes the standalone C CLI.
 The exact published archive generates 11 kernel modules/14 instructions and
 two BusyBox modules/five instructions. Exit 3, `closed:false` and the retained
 whole-image -104 diagnostic explicitly mean partial construction, not boot.
-See [BROWSER.md](../../src/v2/docs/BROWSER.md#compile-directly-from-the-shipped-native-bundle).
+See BROWSER.md (removed with the old web product).
 
 Build the same C decoder/planner/emitter as freestanding Wasm:
 
@@ -778,7 +778,7 @@ operations against the same cut. Device I/O, clock, entropy and physical-page
 delivery are the only host events. `WRMSR`, `LGDT`, control-register moves,
 `IRET`, `SYSCALL` and page faults are machine semantics, not host barriers.
 
-The [current browser arithmetic/CPU-control checkpoint](../../src/v2/vm/check/browser/evidence/2026-10-03-misc-arithmetic.md)
+The [current browser arithmetic/CPU-control checkpoint](../../artifact/native/evidence/2026-10-03-misc-arithmetic.md)
 keeps independent reference scopes explicit. `prepare-msr.sh DIR misc` plus
 `check-msr-misc-system.mjs` compares nine legal QEMU MISC_ENABLE rows. TCG's
 unchanged CPUID after those writes does not prove the architectural Limit/XD
@@ -789,7 +789,7 @@ direct cuts and C table dispatch. `prepare-memory-bit-cuts.sh` plus
 `check-wasm-provider.mjs` covers immediate memory BT/BTS/BTR/BTC CPU/RAM and
 protection-fault results, not exception entry. None is a Linux/PID 1 boot gate.
 
-The [memory-unary/source-tail checkpoint](../../src/v2/vm/check/browser/evidence/2026-10-03-memory-unary-source-tail.md)
+The [memory-unary/source-tail checkpoint](../../artifact/native/evidence/2026-10-03-memory-unary-source-tail.md)
 adds `prepare-memory-unary-cuts.sh NEW-DIRECTORY` (22 ordinary post-linked
 INC/DEC/NEG/NOT forms). `check-wasm-provider.mjs VM.WASM NEW-DIRECTORY` compares
 CPU/RAM, actual native faults and separately RF success/failure semantics.
@@ -801,20 +801,20 @@ boundary regression, not boot or a cryptographic compilation attestation.
 Regenerate fixtures for current compiler/ABI bytes; a stale fixture rejection
 must not be relabeled as a pass.
 
-The [scalar memory exchange checkpoint](../../src/v2/vm/check/browser/evidence/2026-10-03-memory-exchange.md)
+The [scalar memory exchange checkpoint](../../artifact/native/evidence/2026-10-03-memory-exchange.md)
 adds `prepare-memory-exchange-cuts.sh NEW-DIRECTORY` (32 ordinary post-linked
 CMPXCHG forms, LOCK/no-LOCK). At that checkpoint `check-source-admission.mjs VM.WASM
 COMPILER.WASM` performed 14 real cold emissions, including four both-arm/LOCK
 source-alias writes through C dispatch, and rejects shared-memory linking.
 LOCK coverage assumes one serialized owner of ordinary memory, not SMP.
 
-The [memory condition checkpoint](../../src/v2/vm/check/browser/evidence/2026-10-03-memory-condition.md)
+The [memory condition checkpoint](../../artifact/native/evidence/2026-10-03-memory-condition.md)
 adds `prepare-memory-condition-cuts.sh NEW-DIRECTORY` (25 ordinary post-linked
 SETcc forms). At that checkpoint the source-admission driver performed 16 actual cold
 emissions, including both SETcc truth values and equal-byte source invalidation.
 The prior ten/fourteen-operation receipts remain historical observations.
 
-The [signed memory bit-string checkpoint](../../src/v2/vm/check/browser/evidence/2026-10-03-memory-index.md)
+The [signed memory bit-string checkpoint](../../artifact/native/evidence/2026-10-03-memory-index.md)
 adds `prepare-memory-index-cuts.sh NEW-DIRECTORY` (38 ordinary post-linked
 BT/BTS/BTR/BTC forms). It covers signed register indexes, negative/word/page
 crossings, all widths/address sizes and shared bit/SIB indexes through the
@@ -842,7 +842,7 @@ destinations and undefined flags are not asserted as defined hardware values;
 the drivers separately test the chosen whole-parent destination representative.
 No such rewrite, CPU feature change or interpreter exists in product execution.
 
-The [common rotate checkpoint](../../src/v2/vm/check/browser/evidence/2026-10-03-rotate.md)
+The [common rotate checkpoint](../../artifact/native/evidence/2026-10-03-rotate.md)
 uses `prepare-shift-cuts.sh NEW-DIRECTORY rotate`, followed by direct and C-table
 `check-wasm-cuts.mjs` / `check-wasm-dispatch.mjs` comparison. 110 ordinary
 post-linked forms cover all widths/count masks, narrow/high/extended aliases,
@@ -851,7 +851,7 @@ script still prepares the 156 SHL/SHR/SAR regressions. The observer distinguishe
 masked flag count from modulo-width value rotation and excludes only undefined
 multi-bit OF per input. Memory and through-carry forms remain explicit refusals.
 
-The [visible-selector checkpoint](../../src/v2/vm/check/browser/evidence/2026-10-03-selector.md)
+The [visible-selector checkpoint](../../artifact/native/evidence/2026-10-03-selector.md)
 uses `prepare-selector-cuts.sh NEW-DIRECTORY`, then direct/C-dispatch register
 and C-MMU memory comparisons on its two subdirectories. Test-only selector
 capture binds native observations to the oracle's actual process state; product
@@ -887,7 +887,7 @@ The pinned official QEMU from the existing oracle recipe is used only for
 reference. The last command compares its 17 observed arbitrary ROM words
 against C-MMU writes and reservations. Repeat with the ASan/UBSan C binary.
 These are bus transfer checks, not full instruction flags/exception proof or
-Linux boot. [Derivation and limitations](../../src/v2/vm/check/browser/evidence/2026-10-03-rom.md)
+Linux boot. [Derivation and limitations](../../artifact/native/evidence/2026-10-03-rom.md)
 record the actual browser's next memory POP refusal.
 
 ### Ordered POP stack read and memory destination
@@ -907,7 +907,7 @@ The new test is also part of normal `make check`. Native and actual C-MMU
 checks compare the post-increment destination, separate 64-bit stack address,
 fault priority, complete CPU/payload, retries and RF. The high test stack is
 in a mapping disjoint from ASan's shadow; sanitizer coverage is explicitly
-scoped in [the evidence](../../src/v2/vm/check/browser/evidence/2026-10-03-pop-memory.md).
+scoped in [the evidence](../../artifact/native/evidence/2026-10-03-pop-memory.md).
 Regenerate CALL receipts with the current `call-check NEW-DIRECTORY` before
 running `check-call.mjs`: old emitted modules predate successful RF clearing.
 The fresh driver compares both fault-time preservation and successful clearing,
@@ -962,7 +962,7 @@ Run `check-interrupt-provider.mjs VM.WASM COMPILER.WASM ROWS.txt` to compare
 generated C-Wasm transfers and C PIC/IDT/IRET entry. Installed QEMU 11.1.0
 sets saved RF for ordinary vector-32 IRQs; that one discrepancy is explicitly
 excluded against Intel's boundary rule, with RF=0/1 separately modeled.
-See [the exact scope and browser receipt](../../src/v2/vm/check/browser/evidence/2026-10-04-interrupt.md).
+See [the exact scope and browser receipt](../../artifact/native/evidence/2026-10-04-interrupt.md).
 No IRQ frame test, including this one, establishes Linux/PID 1 acceptance.
 
 ### Shared memory shift/rotate SSA
@@ -1048,7 +1048,7 @@ emission is compared byte-for-byte before actual C table execution. CR0/CR4
 priority, residency waits, RF and poisoned unrelated-state preservation are
 explicit models, not physical-CPU or complete SIMD arithmetic observations.
 Existing AC/TF and FS/GS admission refusals remain explicit, with no silent
-successful retirement. See [MXCSR evidence](../../src/v2/vm/check/browser/evidence/2026-10-04-mxcsr.md).
+successful retirement. See [MXCSR evidence](../../artifact/native/evidence/2026-10-04-mxcsr.md).
 
 ### Bounded host construction and numeric trace
 
@@ -1074,7 +1074,7 @@ all 64 demand bits. `check-wasm-startup.mjs` accepts `--warm-cuts=1..64`;
 only independently verified decompression and the Linux-entry witness enable
 warm execution. Preproof cuts remain single and all cache quotas stay fixed.
 No formatted history is materialized per cut. See
-[measurements and scope](../../src/v2/vm/check/browser/evidence/2026-10-04-engine-construction.md).
+[measurements and scope](../../artifact/native/evidence/2026-10-04-engine-construction.md).
 
 ### Direct-branch residual binding
 
@@ -1088,7 +1088,7 @@ checks 102 cold-C body/attestation identities and 52,224 native comparisons.
 `check-wasm-dispatch.mjs VM.WASM NEW-DIRECTORY` checks the same cases through
 the real C dispatcher. Fresh records must contain `operandBinding`; no old
 zero-binding adapter is provided. The row/report/entry ABI and cache quotas
-are unchanged. See [derivation and scope](../../src/v2/vm/check/browser/evidence/2026-10-05-branch-binding.md).
+are unchanged. See [derivation and scope](../../artifact/native/evidence/2026-10-05-branch-binding.md).
 
 ### Outer IRET system observations
 
@@ -1101,12 +1101,12 @@ TCG is not interchangeable with the hardware-assisted oracle: Accessed writes,
 nonpresent SS and noncanonical-RIP fault state differ and remain reported.
 Only hardware-assisted rows belong in the first optional argument. Neither
 test supplies a product VM fallback or proves Linux boot. See
-[frontier, measured disagreement and scope](../../src/v2/vm/check/browser/evidence/2026-10-05-outer-iret.md).
+[frontier, measured disagreement and scope](../../artifact/native/evidence/2026-10-05-outer-iret.md).
 For competing frame faults, assemble with `--defsym FRAME_FAULT_PROFILE=1`
 and add `--frame-priority` after the accelerator argument. This records 352
 rows with CR2, including exact two-byte selector extents; the same C checker
 accepts that complete profile and checks every row through compiled dispatch.
-See [frame provenance](../../src/v2/vm/check/browser/evidence/2026-10-05-iret-frame.md).
+See [frame provenance](../../artifact/native/evidence/2026-10-05-iret-frame.md).
 
 ### Virtual body capacity and construction continuation
 
@@ -1119,7 +1119,7 @@ rank and wrapped real-decoder traversal checks. It rejects replaying a growing
 body for every window: 4,224 -> 1,664 calls for 128 instructions.
 `bench-quotient-cap.mjs OLD-COMPILER.WASM COMPILER.WASM` compares unchanged
 bytes and alternating paired generation time, not Linux/native/browser speed.
-See [derivation, scope and regression](../../src/v2/vm/check/browser/evidence/2026-10-07-virtual-body.md).
+See [derivation, scope and regression](../../artifact/native/evidence/2026-10-07-virtual-body.md).
 
 ### Complete bounded final-ELF dispatch
 
@@ -1133,7 +1133,7 @@ compiler now emits a complete bounded image; larger domains still refuse
 without publishing a prefix. `projection-check` requires VM_WASM,
 COLD_COMPILER_WASM and REFERENCE_COMPILER_WASM in addition to INPUT, and calls
 the executable comparator rather than an always-red placeholder.
-See [contract and scope](../../src/v2/vm/check/browser/evidence/2026-10-07-image-dispatch.md).
+See [contract and scope](../../artifact/native/evidence/2026-10-07-image-dispatch.md).
 
 ### Whole-image directory producer and authenticated range delivery
 
@@ -1149,7 +1149,7 @@ enables that same source under the scoped compiler sanitizers.
 `check-selector-snapshot.mjs VM.WASM COLD.WASM` checks the recovered selector
 descriptor/UMIP/memory path against explicitly labeled ISA models, not host
 Linux UMIP emulation or a native ring0 proof. See
-[measurements and remaining actual Linux blockers](../../src/v2/vm/check/browser/evidence/2026-10-07-image-directory.md).
+[measurements and remaining actual Linux blockers](../../artifact/native/evidence/2026-10-07-image-directory.md).
 
 ### Live compiler replacement and SSE selection
 
@@ -1171,7 +1171,7 @@ the privileged C loader's standard Linux SETUP_RNG_SEED node. No seed is kept
 in a fixture or replay log. `check-boot-entropy.mjs VM.WASM` checks exact
 one-use/pinning/extent/close refusal gates with explicitly deterministic test
 input. The unchanged unseeded Node regression is not an entropy-quality or
-normal Linux readiness test. See [contract/evidence](../../src/v2/vm/check/browser/evidence/2026-10-10-boot-entropy.md).
+normal Linux readiness test. See [contract/evidence](../../artifact/native/evidence/2026-10-10-boot-entropy.md).
 
 `check-memory-prefix.mjs VM.WASM SPLIT.WASM FUSED.WASM` compares exact compiled
 CPU/RAM/fault and real resource-wait/retry outcomes. The split module is an

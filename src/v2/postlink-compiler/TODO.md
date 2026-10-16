@@ -48,7 +48,7 @@ witnesses exposed and fixed misaligned u64 CFG workspace arrays and leaked
 diagnostic CLI allocations on `--list-tables`. Sanitizers are not weakened.
 Original/optimized official shadow `su` execution is separately green; the
 published browser root still needs optimize-before-package republication.
-See [current userland acceptance](../vm/check/browser/evidence/2026-10-11-userland-acceptance.md).
+See [current userland acceptance](../../../artifact/native/evidence/2026-10-11-userland-acceptance.md).
 
 The wider499-row/476838-record ordinary input population is now required.
 All476838 compile to valid Wasm (476829 ordinary,9 deliberate fault witnesses);
@@ -59,12 +59,12 @@ transcendental encodings now use shared compensated SSA, one extended rounding
 and the existing FPU exception/stack owner. Numeric approximation contracts,
 algebraically exact boundaries and undefined-domain representatives remain
 explicitly distinct from physical CPU bit equality. See
-[wide input and transcendental evidence](../vm/check/browser/evidence/2026-10-10-wide-inputs-and-transcendentals.md).
+[wide input and transcendental evidence](../../../artifact/native/evidence/2026-10-10-wide-inputs-and-transcendentals.md).
 Shared integer SIMD, the8-byte paired-exchange ABI and absent entropy features
 previously recovered20422 records without narrowing CPUID.1179648 exhaustive byte-ALU,
 25632 physical SIMD states, independent C/sanitizers and72-module C-MMU atomic
 comparisons pass. These scopes are not interchangeable or universal proof;
-see [ordinary input evidence](../vm/check/browser/evidence/2026-10-10-ordinary-inputs.md).
+see [ordinary input evidence](../../../artifact/native/evidence/2026-10-10-ordinary-inputs.md).
 
 Same make/every-final-PF_X-byte population:233455/233455 lowerable,0 missing,
 zero missing fault cuts/fetch/capacity refusals. MASKMOVQ at0x30fd5 (`0ff7ff`)
@@ -81,23 +81,23 @@ not an execution trace, kernel/image publication or browser boot proof.
 FLDCW uses a two-input pure control/status projection and exact source cut.
 The generic scalar emitter no longer requires five/six inputs;1..19 bounded
 inputs use the same validated path. Mask-bit substitution reduces span8 ->6.
-See [control-field normalization](../vm/check/browser/evidence/2026-10-09-x87-control.md).
+See [control-field normalization](../../../artifact/native/evidence/2026-10-09-x87-control.md).
 FCMOV/sign/constants share pure x86 transfer SSA, with no latent payload
 read for false/identity/empty arms. 37376 independent physical comparisons and
 56064 compiled boundary models pass;45 more coordinates are recovered.
-See [raw x87 transfer](../vm/check/browser/evidence/2026-10-09-x87-transfer.md).
+See [raw x87 transfer](../../../artifact/native/evidence/2026-10-09-x87-transfer.md).
 Far call/jump shares the descriptor/MMU/event owner, including conforming
 code, call gates, inner stack changes, partial frame faults and exact retries.
 All91 far coordinates are recovered;384 independent CPU frames and3456
-compiled boundary models pass. See [far control transaction](../vm/check/browser/evidence/2026-10-09-far-transfer.md).
+compiled boundary models pass. See [far control transaction](../../../artifact/native/evidence/2026-10-09-far-transfer.md).
 CLTS uses the exact TS field/control owner, privilege before identity.
 8/128 construction/refusal gates,1024 C models and128 independent CPL0 rows/
-256 compiled comparisons pass. See [precise TS/control boundary](../vm/check/browser/evidence/2026-10-09-cr0-clear.md).
+256 compiled comparisons pass. See [precise TS/control boundary](../../../artifact/native/evidence/2026-10-09-cr0-clear.md).
 The common frontend also closes24 additional floating status encodings and
 MOVSS/MOVSD exact4/8-byte regions. Their independent physical comparisons and
 common construction gates pass. Data-only writes from a resumed source-owned
 instruction preserve its exact retained row; real code writes still revoke.
-Current receipts and scope are in [region and retained source](../vm/check/browser/evidence/2026-10-09-regions-and-resume.md).
+Current receipts and scope are in [region and retained source](../../../artifact/native/evidence/2026-10-09-regions-and-resume.md).
 Earlier completed work is archived as evidence, not repeated as pending work.
 FNSTENV/FLDENV/FNSAVE/FRSTOR use exact14/28/94/108-byte physical extents;
 2048 independent full-state observations pass. Packed MMX/XMM shifts share
@@ -113,7 +113,7 @@ with target-format rounding, DAZ/FTZ and SIMD exception frontier.131072 native
 numeric/MXCSR and196608 C-VM complete-state comparisons pass. PEXTRW is a
 coordinate projection;98304 constructors/393216 refusals and32768 independent
 complete-state comparisons pass. These graph bounds are not global minima.
-See [common arithmetic and publication](../vm/check/browser/evidence/2026-10-10-arithmetic-publication.md).
+See [common arithmetic and publication](../../../artifact/native/evidence/2026-10-10-arithmetic-publication.md).
 FRNDINT shares the integer/BCD integral-rounding core without an integer
 destination range limit;30720 independent complete-state comparisons pass.
 The ALU generation test now covers7 operations ×4 widths, both carry inputs:
@@ -148,7 +148,7 @@ The public interval predicate passes18790 actual-Wasm boundary cases and
 shrinks representative modules by10 bytes.196608 SSE and30720 FRNDINT
 whole-state comparisons pass with this C provider. Actual browser reaches
 /init and/run/service -> console/boot directory transitions; shell remains
-unverified. See [physical source ownership](../vm/check/browser/evidence/2026-10-10-source-banks.md).
+unverified. See [physical source ownership](../../../artifact/native/evidence/2026-10-10-source-banks.md).
 The engine byte index was only256KiB while construction references already
 retained2MiB of bodies; align those bounded lifetimes before the next run.
 Do not substitute increased service timeouts for actual runtime fixes.
@@ -159,7 +159,7 @@ checks and196608/30720 SSE/FRNDINT states. Equal C-MMU read/write/cross-page
 median ratios are0.8652/0.8556/0.9169; provider bytes increase110272 ->119044.
 The new browser run retains the same kernel/root/deadline/clock and aligns the
 engine index with the existing construction lifetime; no shell claim yet.
-See [word/VM evidence](../vm/check/browser/evidence/2026-10-10-word-access.md).
+See [word/VM evidence](../../../artifact/native/evidence/2026-10-10-word-access.md).
 The same64 walk rows now avoid periodic address collisions; the alias workload
 ratio is0.5989, not a general40% improvement. Homogeneous page-local stores
 use one bounded C memory geometry, clipping at actually changed paging
@@ -169,7 +169,7 @@ ASan/UBSan gates pass. Initial REP/BSS/three-memset and all14622864 decompressio
 bytes remain verified while C warm cohorts begin earlier. Profiled browser
 passes supervision initialization, but offline service transition still times
 out. Production no-counter provider is under test; CPU/deadline/clock unchanged.
-See [span/startup evidence](../vm/check/browser/evidence/2026-10-10-span-and-startup.md).
+See [span/startup evidence](../../../artifact/native/evidence/2026-10-10-span-and-startup.md).
 The same frontend now groups ordinary adjacent64-bit same-value stores,
 not only REP.4096 construction and six actual C/Wasm prefix/fault/code/paging
 models pass. Shared execution accounts exact committed prefixes; independent
@@ -177,14 +177,14 @@ full C/sanitizers and196608/30720 SSE/FRNDINT states remain green. Same-provider
 8-store ratio0.3226;2648 ->446 module bytes. Actual offline transition remains
 red, so a separately labeled failure-only rescue root is being prepared to
 inspect Linux processes; not normal readiness or a changed deadline/profile.
-See [ordinary store prefix evidence](../vm/check/browser/evidence/2026-10-10-store-prefix.md).
+See [ordinary store prefix evidence](../../../artifact/native/evidence/2026-10-10-store-prefix.md).
 Actual rescue shell executes ps/s6/proc. Same10s manual warm transitions reach
 interactive-ready with RC0; NOT initial automatic boot/3s. Real guest GCC
 reaches520052835 retired but hits a mismatched Wasm memory cap at7567 resident
 pages. One derived live RAM/device/private/metadata reservation fixes that cap,
 the stale16-vs32 initial growth and final-batch overshoot. Growth remains lazy;
 no page eviction/GC claim. Actual same-root toolchain re-test is in progress.
-See [console/memory observations](../vm/check/browser/evidence/2026-10-10-linux-console-and-memory.md).
+See [console/memory observations](../../../artifact/native/evidence/2026-10-10-linux-console-and-memory.md).
 The retained real GCC run crosses MINSD/CMP/MOVHLPS/SHUFPD/PMOVMSKB construction
 misses through shared IEEE relations, exact half transfers, static coordinate
 substitution and sign-mask geometry. Actual native/full C-VM observations pass;
@@ -193,20 +193,20 @@ These are general family fixes, not kernel-coordinate rules or fallback.
 The coherent memory bound now passes the former32MiB failure and grows lazily
 beyond65MiB. Real GCC completion, automatic cold-ready and release-wide zero
 closure remain separate required gates. See
-[SSE selection observations](../vm/check/browser/evidence/2026-10-10-sse-selection.md).
+[SSE selection observations](../../../artifact/native/evidence/2026-10-10-sse-selection.md).
 PALIGNR also reuses the static byte-coordinate projection, with131072 native/
 C-VM states and precise memory preflight even for unused value arms. Actual
 diagnostic Linux now completes GCC/link/hello, four strict Make-j4 jobs,
 Git init/status and apk info. This is still rescue/manual-warm, not automatic
 cold-ready or parallel GCC/publication/network/syscall-suite acceptance.
-See [byte projection and actual toolchain](../vm/check/browser/evidence/2026-10-10-byte-alignment.md).
+See [byte projection and actual toolchain](../../../artifact/native/evidence/2026-10-10-byte-alignment.md).
 Fresh64-byte supervisor CSPRNG input now uses standard Linux SETUP_RNG_SEED,
 not a JS getrandom substitute or saved seed. Native/C-Wasm one-use/freeze/
 erase/close gates, startup regression and full independent C/sanitizers pass.
 The ordinary root initializes CRNG at0s, but mdevd event subscription still
 exceeds unchanged deadlines. Keep this red while reducing actual memory-cut
 fetch/dispatch/materialization cost. See
-[boot entropy evidence](../vm/check/browser/evidence/2026-10-10-boot-entropy.md).
+[boot entropy evidence](../../../artifact/native/evidence/2026-10-10-boot-entropy.md).
 Plain memory operations now share a body with a preceding pure slice while
 retaining an exact fault/wait frontier.36 compiled whole-state/RAM/fault models
 match the former split, including page wait/retry. Same-provider16-instruction
@@ -214,7 +214,7 @@ ratio0.786422,16->8 bodies,5248->4008 bytes; NOT whole-Linux speed/minimum.
 Full C/sanitizers and complete actual-browser decompression/entry witnesses
 pass. The final-cut partial wait exposed/fixed diagnostic cohort accounting;
 the same ordinary root is under re-test. See
-[exact memory prefix](../vm/check/browser/evidence/2026-10-10-memory-prefix.md).
+[exact memory prefix](../../../artifact/native/evidence/2026-10-10-memory-prefix.md).
 Read-only ADD/ADC/SUB/SBB/AND/OR/XOR/CMP/TEST also share that body, retaining
 incoming flags at the fault frontier even when success overwrites them.
 90 exact differential models and full independent C/sanitizers pass;
@@ -314,7 +314,7 @@ separate; scoped/positive gates do not assert that it is solved.
    coldplug and root-and-workspace-ready but still times out at interactive-ready.
    Keep the rescue profile distinct
    from interactive-ready and keep service deadlines/guest clocks unchanged.
-   The [local packet gateway](../network/gateway/README.md) passes actual pinned
+   The local packet gateway (removed with the old web product) passes actual pinned
    WebTransport datagram roundtrip and independent QUIC/boundary/fuzz checks;
    C virtio-MMIO/DMA now owns net/block queues and interrupts in the same VM.
    Actual browser ext4 creation, mount, FLUSH, Worker close and same-UUID
@@ -333,7 +333,7 @@ separate; scoped/positive gates do not assert that it is solved.
    under the independent native microvm oracle. One service DB replaces the
    failed boot/full DB-switch path. Deadlines and guest clocks stay unchanged;
    eight-millisecond safe-cut host task opportunities prevent IO starvation.
-   Complete the [eleven-area browser acceptance](../vm/check/browser/evidence/2026-10-11-userland-acceptance.md).
+   Complete the [eleven-area browser acceptance](../../../artifact/native/evidence/2026-10-11-userland-acceptance.md).
    The locked BusyBox pipefail feature and original/optimized ELF parity now
    pass. Normal-browser release f2cfd24093ad passes all eight userland groups,
    independent135-hash/metadata checks, sync/host flush/Worker destruction and
@@ -377,6 +377,6 @@ separate; scoped/positive gates do not assert that it is solved.
 
 [ARCHITECTURE.md](../docs/ARCHITECTURE.md), [CONTRACT.md](CONTRACT.md),
 [BENCHMARK.md](BENCHMARK.md), [ARTIFACT.md](../docs/ARTIFACT.md),
-[STORAGE.md](../docs/STORAGE.md) and [BROWSER.md](../docs/BROWSER.md).
+[STORAGE.md](../docs/STORAGE.md) and BROWSER.md (removed with the old web product).
 Fixed recipe/workloads/upstream identities remain unchanged. Product
 Makefiles and shared x86 sources.mk are the sole native/cold build definitions.

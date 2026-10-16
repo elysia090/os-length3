@@ -1,9 +1,0 @@
-Before unpack lowering:
-vector transfers/additions/logic/unpack: 29696 actual x86 CPU/RAM observations, 13328 fault frames; lowering not tested; CR0/CR4 require separate models
-vector 136 red: compiler=-102
-
-After first low-half-only admission (not the adopted boundary):
-vector 168 red: compiler=-102 decode=0 argument=d000b090a operand-bits=128/64 register-bits=128/128
-The decoder also describes the selected high half as a 64-bit operand of a
-128-bit XMM register. Only recognized unpack classes admit that selected-half
-description; other vector operations still require their complete operand.

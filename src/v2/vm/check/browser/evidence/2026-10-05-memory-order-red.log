@@ -1,2 +1,0 @@
-Fences: 7680 native GPR/flags/FPU observations; 120 forms; not SMP ordering or Linux boot; lowering not tested
-memory order red: compiler=-102, entry=400000

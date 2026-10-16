@@ -1,5 +1,0 @@
-make: Entering directory '/build/source/src/v2/wasm-compiler'
-cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -I../support/include -I../optimized-x86/include -I../machine-abi/include -I../x86/include -fPIE -pie check/vector-transfer.c check/native-vector.S check/native-stack.S /build/vector-1004/libwasm-compiler.a ../optimized-x86/build/liboptimized-x86.a ../x86/build/libx86.a ../support/build/libsupport.a -o /build/vector-1004/vector-transfer-check
-make: Leaving directory '/build/source/src/v2/wasm-compiler'
-vector transfers: 5120 actual x86 CPU/RAM observations, 1808 fault frames; lowering not tested; CR0/CR4 require separate models
-vector 32 red: compiler=-102

@@ -21,7 +21,7 @@ outside disposable Workers, and drops Worker-owned Wasm memory on eviction.
 The tier mechanism changes; admission through the canonical root does not.
 
 Browser resource/consent and workspace behavior are specified in
-[BROWSER.md](BROWSER.md). OPFS, IndexedDB, Cache and Web Locks are adapters,
+BROWSER.md (removed with the old web product). OPFS, IndexedDB, Cache and Web Locks are adapters,
 not guest VFS or a distributed root authority. A successful cache write or
 `persist()` grant does not prove remote durability. Connection operation ACKs
 must pass generation/revision fencing and then storage authentication; only
@@ -63,7 +63,7 @@ and Supervisor generation in an IndexedDB authority store. Head and recovery
 pin advance in the same strict transaction; Web Locks and generation fencing
 prevent concurrent/stale Supervisors. The implemented browser-restart recovery
 and explicit retention of existing page-local workspaces are described in
-[workspace-authority.md](../web/workspace-authority.md). Ciphertext objects
+workspace-authority.md (removed with the old web product). Ciphertext objects
 remain separate from this trusted authority. Worker close/reopen cold-boots
 Linux; it does not restore guest processes.
 

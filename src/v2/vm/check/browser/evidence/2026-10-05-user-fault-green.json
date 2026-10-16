@@ -1,8 +1,0 @@
-{
-  "format": "c-outer-exception-v1",
-  "status": "pass",
-  "comparisons": 208,
-  "waits": 2,
-  "oracle": "independent hardware-assisted CPL1/2/3 fetch #PF frames plus whole C-state models; no bare-metal/cache-bit claim",
-  "linuxBoot": "not-tested"
-}

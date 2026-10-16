@@ -1,8 +1,7 @@
 # Length³ OS desktop shell
 
 Native work shell for Length³ OS (issue #17). Tauri v2 with a TypeScript
-frontend and no UI framework. The browser preview (`src/v2/hosted`) is a
-separate surface and nothing here depends on it.
+frontend and no UI framework; the same frontend is the web build.
 
 ## Layout
 

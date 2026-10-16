@@ -15,23 +15,23 @@ compiled before its package is signed, each optimized ELF is independently
 checked against its ordinary linked input, and the optimized packages are
 assembled into one candidate root that actually boots. Publication then
 requires a same-identity reduction in canonical release size and in paired
-native execution, measured natively first and through the browser projection
-second. Native optimized x86 is the primary executable result; the browser Wasm
-modules are a verified lowering of exactly that accepted output.
+native execution. Native optimized x86 is the executable result.
 
-QM is the same quotient-and-minimum idea at an interactive scale: paste a small
-C function and see how little machine computation its observable meaning
-actually requires. It removes distinctions that no declared observer or future
-computation can detect, then chooses the cheapest remaining physical
-representative — and verifies the result.
+The distribution is what Length³ OS ([`src/desktop/`](src/desktop/)) runs: `l3`
+installs the release root on a device and opens a repo inside it, without
+privilege, on the host's own kernel.
+
+QM is the same quotient-and-minimum idea at the scale of a small C function:
+it removes distinctions that no declared observer or future computation can
+detect, then chooses the cheapest remaining physical representative — and
+verifies the result.
 
 ```
 C / C++  →  Clang -O2  →  semantics  →  quotient  →  normalized action
          →  minimum physical representative  →  verification
 
 linked x86-64 ELF  →  post-link compiler  →  optimized ELF + proof
-                                             |-> native execution
-                                             `-> verified Wasm projection
+                                             `-> native execution
 ```
 
 The grammar QM normalizes into is GF(2)-linear maps, convolutions, lane-local
@@ -44,7 +44,9 @@ QM makes of each of them is in [`src/v2/README.md`](src/v2/README.md).
 
 | path | what it is |
 | --- | --- |
-| [`src/v2/`](src/v2/) | **the product**: post-link compiler, VM and browser over one Linux distribution identity |
+| [`src/v2/`](src/v2/) | the post-link compiler and release tooling over one Linux distribution identity |
+| [`src/desktop/`](src/desktop/) | **Length³ OS**: the desktop app, `l3`, and the Remote |
+| [`xlat/`](xlat/) | static x86-64 Linux programs as WebAssembly, for the app in a browser |
 | [`src/v2/postlink-compiler/`](src/v2/postlink-compiler/) | the x86-64 post-link compiler, its acceptance contract and remaining work |
 | [`src/v2/docs/DISTRIBUTION.md`](src/v2/docs/DISTRIBUTION.md) | the bootable-distribution contract and publication gates |
 | [`data/distribution/`](data/distribution/) | the fixed `development-standard-v1` profile, recipes and checks |
@@ -58,9 +60,9 @@ The initial **OS Length3 Linux 0.1.0** stable native bundle is distributed as a
 [GitHub Release asset](https://github.com/elysia090/libqm-prototype/releases/tag/os-length3-linux-v0.1.0).
 See [release scope and verification](artifact/native/RELEASE-0.1.0.md) and
 [bootstrap trust / object delivery](src/v2/docs/DELIVERY.md).
-The corresponding Web projection has passed the common offline guest workload
-and current storage fault tests; browser performance and complete product
-qualification remain pending. The previous RC and its receipts remain historical.
+The previous RC and its receipts remain historical. The earlier browser VM
+(the Web Release ZIP, os.length3.com and the qm.length3.com UI) has been
+removed from this repository; its release asset stays on the release page.
 
 The native products build and check as ordinary C:
 

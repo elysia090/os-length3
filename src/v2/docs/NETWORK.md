@@ -142,7 +142,7 @@ still validate their own HTTPS certificate/hostname against guest CA roots and
 their own SSH trust policy. The gateway terminates QUIC only; accepting its
 certificate pin is not guest HTTPS success. See the
 [WebTransport certificate-hash interface](https://www.w3.org/TR/webtransport/#dom-webtransportoptions-servercertificatehashes)
-and [local broker scope](../network/gateway/README.md).
+and local broker scope (removed with the old web product).
 
 ## Physical state
 
@@ -165,7 +165,7 @@ queue policy.
 ## Workspace connections and ingress
 
 The product model is the workspace connection defined in
-[BROWSER.md](BROWSER.md), not a list of emulated PC hardware. A network grant
+BROWSER.md (removed with the old web product), not a list of emulated PC hardware. A network grant
 binds workspace, authority scope, resource/lane, machine generation, grant revision,
 gateway policy, direction, routes, expiry and byte/queue budgets. The C resource
 gate fences operation completions; the gateway independently enforces origin,
@@ -190,7 +190,7 @@ been proved. No browser or Service Worker API promises immortal TCP sessions.
 
 ## Implementation order
 
-The [local packet gateway](../network/gateway/README.md) now implements the
+The local packet gateway (removed with the old web product) now implements the
 bounded fragment protocol, real WebTransport datagrams and explicit pinned
 loopback admission. Its actual-browser1514-byte reverse/duplicate-fragment
 roundtrip passes. Its diagnostic echo is not Internet connectivity, and its
@@ -200,7 +200,7 @@ ACK/address/route/DNS and an earlier explicit-X25519 verified HTTPS response
 have separate receipts. The latest default and explicit-X25519 HTTPS attempts
 still time out before HTTP/body; full IPv4/IPv6, regrant, ingress and prolonged
 recovery acceptance are not implied. See
-[current userland evidence](../vm/check/browser/evidence/2026-10-11-userland-acceptance.md).
+[current userland evidence](../../../artifact/native/evidence/2026-10-11-userland-acceptance.md).
 The following end-to-end gates remain the contract, not a transport-only pass.
 
 1. Enable the upstream Linux network stack and `virtio-mmio`/`virtio-net`
