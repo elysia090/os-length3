@@ -1929,6 +1929,11 @@ pub struct Translation {
     pub report: Report,
 }
 
+/// Where the lowest loaded segment starts, page aligned.
+pub fn image_start(elf: &Elf) -> u64 {
+    elf.segments.iter().map(|s| s.vaddr).min().unwrap_or(0) & !4095
+}
+
 /// Lowest address above every loaded segment, page aligned.
 pub fn image_end(elf: &Elf) -> u64 {
     elf.segments.iter().map(|s| s.vaddr + s.memsz).max().unwrap_or(0).next_multiple_of(4096)
@@ -2036,8 +2041,8 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
     // Loader facts for the host, as a small JSON custom section.
     let tls = elf.tls.as_ref().map(|t| format!(",\"tls\":{{\"vaddr\":{},\"filesz\":{},\"memsz\":{},\"align\":{}}}", t.vaddr, t.filesz, t.memsz, t.align)).unwrap_or_default();
     let facts = format!(
-        "{{\"entry\":{},\"imageEnd\":{},\"phdr\":{},\"phnum\":{},\"phent\":56{}}}",
-        elf.entry, end, elf.phdr_address().unwrap_or(0), elf.phnum, tls
+        "{{\"entry\":{},\"imageStart\":{},\"imageEnd\":{},\"phdr\":{},\"phnum\":{},\"phent\":56{}}}",
+        elf.entry, image_start(elf), end, elf.phdr_address().unwrap_or(0), elf.phnum, tls
     );
     module.section(&CustomSection { name: Cow::Borrowed("xlat.facts"), data: Cow::Owned(facts.into_bytes()) });
     module.section(&CustomSection { name: Cow::Borrowed("xlat.fpu"), data: Cow::Owned(X87_OPS.join(",").into_bytes()) });

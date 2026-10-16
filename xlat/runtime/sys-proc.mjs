@@ -47,7 +47,10 @@ export const PROC_CALLS = {
     const length = N(len), fixed = N(flags) & 0x10, anonymous = N(flags) & 0x20;
     if (length <= 0) fail(E.INVAL);
     const start = fixed ? N(addr) : this.reserve(length);
-    if (fixed) this.bytes.fill(0, start, start + length);
+    if (fixed) {
+      this.bytes.fill(0, start, start + length);
+      if (start < this.mapBase) this.fixed.push({start, length});
+    }
     if (!anonymous) {
       const d = this.fds.get(N(fd));
       if (!d || d.kind !== 'file') fail(E.BADF);

@@ -63,7 +63,7 @@ export class Kernel {
     this.translate = translate;
     this.console = console;
     this.nextPid = 1;
-    this.images = new WeakMap(); // File node -> {size, mtime, image}
+    this.images = new WeakMap(); // File node -> {version, image}
     this.chain = []; // running process last; each one's parent before it
     this.status = null;
   }
@@ -71,13 +71,20 @@ export class Kernel {
   /** The image for an executable file, translating it once per version. */
   image(node) {
     const cached = this.images.get(node);
-    if (cached && cached.size === node.size && cached.mtime === node.mtime) return cached.image;
+    if (cached && cached.version === node.version) return cached.image;
     const bytes = node.bytes();
     if (bytes[0] !== 0x7f || bytes[1] !== 0x45 || bytes[2] !== 0x4c || bytes[3] !== 0x46) throw new FsError(E.NOEXEC);
     const image = new Image(new WebAssembly.Module(this.translate(bytes)));
-    this.images.set(node, {size: node.size, mtime: node.mtime, image});
+    this.images.set(node, {version: node.version, image});
     return image;
   }
+
+  /**
+   * A file whose translation was made ahead of time (by the same translator,
+   * from exactly these bytes). It holds only while the file is unchanged; a
+   * write makes it translate again.
+   */
+  prebuilt(node, module) { this.images.set(node, {version: node.version, image: new Image(module)}); }
 
   /** Create the first process, attached to the console. */
   start(path, argv, env, cwd = '/') {
@@ -208,6 +215,7 @@ export class Process {
     this.mapBase = Math.ceil((this.stackTop + GUARD) / WASM_PAGE) * WASM_PAGE;
     this.mapEnd = this.mapBase;
     this.free = [];
+    this.fixed = []; // MAP_FIXED mappings below mapBase
     this.memory = new WebAssembly.Memory({initial: this.mapBase / WASM_PAGE, maximum: 65536});
     this.fpu = new Fpu(() => this.bytes, image.fpuOps);
     this.instance = new WebAssembly.Instance(image.module, this.imports());
@@ -258,6 +266,25 @@ export class Process {
   // ---- fork ----
 
   /**
+   * Copy what this process can be using into `child`: the image, the stack
+   * from just under the stack pointer (the 128-byte red zone) to its top,
+   * everything mapped, and fixed mappings placed elsewhere. The untouched
+   * rest of the 8 MiB stack and the room below the image stay zero, as
+   * they are in the parent.
+   */
+  copyLive(child) {
+    const from = this.bytes, to = child.bytes;
+    const span = (a, b) => { if (b > a) to.set(from.subarray(a, b), a); };
+    const f = this.image.facts;
+    span(f.imageStart ?? 0, Math.min(f.imageEnd, this.stackLow));
+    const sp = Number(this.instance.exports.r4.value);
+    const low = sp > this.stackLow && sp <= this.stackTop ? Math.max(this.stackLow, (sp - 128) & ~15) : this.stackLow;
+    span(low, this.mapBase);
+    span(this.mapBase, from.length);
+    for (const r of this.fixed) span(r.start, Math.min(r.start + r.length, this.mapBase));
+  }
+
+  /**
    * fork, first call: copy this process, make the copy the running one
    * (starting at `resume`) and wait. Restarted after the child exited:
    * return its pid.
@@ -275,10 +302,13 @@ export class Process {
     child.image = this.image;
     for (const k of ['stackLow', 'stackTop', 'mapBase', 'mapEnd', 'argv']) child[k] = this[k];
     child.free = this.free.map((r) => ({...r}));
+    child.fixed = this.fixed.map((r) => ({...r}));
     child.memory = new WebAssembly.Memory({initial: this.memory.buffer.byteLength / WASM_PAGE, maximum: 65536});
-    child.bytes.set(this.bytes);
     child.fpu = this.fpu.clone(() => child.bytes);
+    // Instantiating writes the image's first data; the parent's memory goes
+    // over it afterwards, so the child sees what the parent changed.
     child.instance = new WebAssembly.Instance(this.image.module, child.imports());
+    this.copyLive(child);
     const from = this.instance.exports, to = child.instance.exports;
     for (let n = 0; n < 16; n++) to[`r${n}`].value = from[`r${n}`].value;
     to.fs.value = from.fs.value;
