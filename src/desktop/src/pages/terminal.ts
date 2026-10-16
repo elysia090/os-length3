@@ -1,7 +1,8 @@
+import * as dotfiles from '../dotfiles.ts';
 import {onChange, store} from '../repos.ts';
 import {bytes, h} from '../dom.ts';
 import {isNative, promptOpen, rootStatus, type Held, type Stopped} from '../host.ts';
-import {t, tn} from '../i18n.ts';
+import {currentLang, t, tn} from '../i18n.ts';
 import {loadUserland, watchLoad, type Stage} from '../userland.ts';
 
 // A shell per repo, running translated BusyBox (and l3) in a Worker. Sessions
@@ -233,12 +234,13 @@ export class Session {
       const cwd = `/root/${this.repo}`;
       worker.postMessage({
         type: 'start', translator: land.translator,
-        files: [...land.files, ...copy.files],
+        // The person's dotfiles, fresh in every Prompt.
+        files: [...land.files, ...dotfiles.asFiles(), ...copy.files],
         dirs: [...land.dirs, ...copy.dirs],
         links: land.links,
         argv: ['/bin/sh', '-i'],
         // l3 here sees repos where the shell does, under /root.
-        env: ['HOME=/root', 'PATH=/bin', 'TERM=dumb', 'PS1=$PWD $ ', 'LENGTH3_REPOS=/root', 'L3_PROMPT=1'],
+        env: ['HOME=/root', 'PATH=/bin', 'TERM=dumb', 'PS1=$PWD $ ', 'LENGTH3_REPOS=/root', 'L3_PROMPT=1', `LENGTH3_LANG=${currentLang()}`],
         cwd,
         mirror: cwd,
       });

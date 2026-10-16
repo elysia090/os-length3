@@ -35,6 +35,9 @@ export async function claim(name: string, domain?: string): Promise<string> {
   throw new RemoteError(r.status, body.error === 'taken' ? t('That address is taken') : body.error === 'name' ? t('A name is 2–31 letters, digits, dots, dashes or underscores') : String(body.error));
 }
 
+/** What a domain's DNS must say for this account to hold addresses on it here, and whether it says so now. */
+export const domainRecord = (domain: string) => json<{name: string; type: string; value: string; found: boolean}>(`/v1/inbox/domains/${enc(domain.trim().toLowerCase())}`);
+
 /** A domain must publish this before an address on it can be claimed. */
 export class Published extends Error {
   readonly doc: unknown;

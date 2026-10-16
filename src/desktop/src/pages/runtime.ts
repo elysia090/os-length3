@@ -3,6 +3,8 @@ import {isNative, rootFetch, rootStatus, type Certainty, type Freed, type Space}
 import {t, tn} from '../i18n.ts';
 import {bring, onSync, remoteOnly, repoState} from '../lifecycle.ts';
 import {connection} from '../remote.ts';
+import * as dotfiles from '../dotfiles.ts';
+import * as inbox from '../inbox.ts';
 import {free, readSpace} from '../space.ts';
 import {about} from '../userland.ts';
 import {pageHead} from './common.ts';
@@ -41,8 +43,7 @@ function environment(): HTMLElement {
       body.replaceChildren(h('div', {class: 'env-one'},
         h('div', {class: 'env-row env-head'}, h('b', {}, r.name), h('span', {}, r.version),
           h('span', {class: 'muted'}, t('{size} · {files} files · on this device\'s kernel', {size: bytes(r.bytes), files: r.files})),
-          h('code', {class: 'muted', title: r.sha256}, r.sha256.slice(0, 12)))),
-        h('p', {class: 'muted small env-note'}, t('No Dotfiles yet')));
+          h('code', {class: 'muted', title: r.sha256}, r.sha256.slice(0, 12)))));
       return;
     }
     void about().then((a) => {
@@ -57,8 +58,7 @@ function environment(): HTMLElement {
         part(a.root.name, a.root.version, 'root'),
         part(a.base.name, a.base.version, t('{n} commands · {from}', {n: a.base.applets, from: a.base.from}), a.base.sha256),
         part('l3', a.version, t('command'), a.l3.sha256),
-        part(a.translator.name, a.translator.version, t('translator'))),
-        h('p', {class: 'muted small env-note'}, t('No Dotfiles yet')));
+        part(a.translator.name, a.translator.version, t('translator'))));
     });
   });
   return body;
@@ -188,7 +188,15 @@ function result(r: Freed): HTMLElement {
     ...r.kept.map(([id, why]) => h('p', {class: 'muted small'}, t('Kept {what}: {why}', {what: id.replace(/^(repo|root|path):/, '').split('/').at(-1) ?? id, why}))));
 }
 
-/** Prompts running in this window, each with what it holds and Stop. Shown only when one runs. */
+/** A small card: what it is, quietly what it holds, and its action at the bottom right. */
+function card(name: string, lines: (string | Node)[], act: Node | null, extra = ''): HTMLElement {
+  return h('div', {class: `card small-card ${extra}`.trim()},
+    h('span', {class: 'card-title'}, name),
+    ...lines.filter(Boolean).map((l) => (typeof l === 'string' ? h('span', {class: 'muted small'}, l) : l)),
+    act ? h('div', {class: 'card-foot'}, h('span', {class: 'grow'}), act) : null);
+}
+
+/** The Prompts running, each a small card: where it runs, the memory it holds, and Stop. Shown only when one runs. */
 function prompts(): HTMLElement {
   const section = h('section', {class: 'section', 'aria-labelledby': 'prompts-title', hidden: ''});
   // Each session is watched once, for as long as the page is shown.
@@ -200,23 +208,100 @@ function prompts(): HTMLElement {
     // Running ones, and ones stopped here, with what stopping gave back.
     const shown = allSessions().filter(([, s]) => s.running || s.stopped);
     section.hidden = !shown.length;
-    section.replaceChildren(h('h2', {id: 'prompts-title'}, t('Prompts running')),
-      h('div', {class: 'rows'}, ...shown.map(([repo, s]) => {
+    const running = shown.filter(([, s]) => s.running).length;
+    section.replaceChildren(h('h2', {id: 'prompts-title'}, h('span', {}, t('Prompts running'), running ? h('small', {}, `${running}`) : null)),
+      h('div', {class: 'grid small-grid'}, ...shown.map(([repo, s]) => {
         if (!watched.has(s)) watched.set(s, s.watch(paint));
         if (!s.running && s.stopped) {
           const st = s.stopped;
-          return h('div', {class: 'row-item usage-prompt', 'data-state': 'stopped'},
-            h('span', {class: 'row-name'}, repo),
-            h('span', {class: 'row-meta'}, st.left ? tn('{n} left', '{n} left', st.left)
-              : `${t('Stopped · gave back {size}', {size: bytes(st.before.memory)})}${st.ms !== null ? ` · ${st.ms} ms` : ''}`));
+          return card(repo, [st.left ? tn('{n} left', '{n} left', st.left)
+            : `${t('Stopped · gave back {size}', {size: bytes(st.before.memory)})}${st.ms !== null ? ` · ${st.ms} ms` : ''}`], null, 'quiet');
         }
-        const stop = h('button', {class: 'button', type: 'button'}, t('Stop'));
+        const stop = button(t('Stop'), 'small-button');
         stop.addEventListener('click', () => s.stop());
-        return h('div', {class: 'row-item usage-prompt'},
-          h('span', {class: 'row-name'}, repo),
-          h('span', {class: 'row-meta'}, s.on === 'root' ? `root · ${tn('{n} process', '{n} processes', s.processes)}` : 'l3'),
-          h('span', {class: 'row-meta usage-size'}, s.memory ? bytes(s.memory) : ''), stop);
+        return card(repo, [s.on === 'root' ? `root · ${tn('{n} process', '{n} processes', s.processes)}` : 'l3', s.memory ? bytes(s.memory) : ''], stop);
       })));
+  };
+  paint();
+  return section;
+}
+
+/**
+ * SSH, per Inbox address: a power switch that says whether the address may
+ * be reached over SSH. Turning it on records that it is allowed; connecting
+ * over SSH is not built yet, and the card says so.
+ */
+function ssh(): HTMLElement {
+  const section = h('section', {class: 'section', 'aria-labelledby': 'ssh-title', hidden: ''});
+  const paint = async () => {
+    if (!connection()) return;
+    const me = await inbox.me().catch(() => null);
+    if (!me?.addresses.length) return;
+    section.hidden = false;
+    section.replaceChildren(h('h2', {id: 'ssh-title'}, 'SSH'),
+      h('div', {class: 'grid small-grid'}, ...me.addresses.map((a) => {
+        const power = h('button', {type: 'button', class: 'power', role: 'switch', 'aria-checked': String(a.ssh),
+          'aria-label': a.ssh ? t('Do not allow SSH to {address}', {address: a.address}) : t('Allow SSH to {address}', {address: a.address})}, h('span', {class: 'knob'})) as HTMLButtonElement;
+        power.addEventListener('click', async () => { power.disabled = true; await inbox.setSsh(a.address, !a.ssh).catch(() => {}); void paint(); });
+        return card(a.address, [a.ssh ? t('Allowed') : t('Not allowed'), t('Connecting is not built yet')], power, 'mono-title');
+      })));
+  };
+  void paint();
+  return section;
+}
+
+/**
+ * Dotfiles: a small card each (name, size), a dashed one to make another;
+ * a card opens its text under them to edit. Every Prompt starts with them
+ * in /root, and the Remote keeps them in step across devices.
+ */
+function dotfilesSection(): HTMLElement {
+  const section = h('section', {class: 'section', 'aria-labelledby': 'dot-title'});
+  const editor = h('div', {});
+  const paint = (open: string | null = null) => {
+    const all = dotfiles.read();
+    const names = Object.keys(all).sort();
+    const cards = names.map((n) => {
+      const c = card(n, [bytes(new TextEncoder().encode(all[n]).length)], null, `mono-title openable${n === open ? ' current' : ''}`);
+      c.tabIndex = 0;
+      c.setAttribute('role', 'button');
+      c.addEventListener('click', () => paint(n));
+      c.addEventListener('keydown', (e) => { if (e.key === 'Enter') paint(n); });
+      return c;
+    });
+    const make = h('button', {type: 'button', class: 'card small-card new'}, '+', h('span', {}, t('New dotfile')));
+    make.addEventListener('click', () => {
+      const name = dotfiles.COMMON.find((c) => !(c in all)) ?? '.config';
+      editor.replaceChildren(edit(name, '', true));
+      editor.querySelector<HTMLInputElement>('input')?.select();
+    });
+    section.replaceChildren(h('h2', {id: 'dot-title'}, h('span', {}, t('Dotfiles'), names.length ? h('small', {}, `${names.length}`) : null)),
+      h('div', {class: 'grid small-grid'}, ...cards, make), editor);
+    editor.replaceChildren(...(open && open in all ? [edit(open, all[open], false)] : []));
+  };
+  // The file's text in a box like Forge's, its name above (editable when new), Save and Remove.
+  const edit = (name: string, text: string, fresh: boolean): HTMLElement => {
+    const error = h('p', {class: 'error', role: 'alert'});
+    const title = h('input', {class: 'line-in mono dot-name', value: name, 'aria-label': t('Name'), spellcheck: 'false'}) as HTMLInputElement;
+    title.disabled = !fresh;
+    const body = h('textarea', {class: 'line-in mono dot-text', rows: '12', spellcheck: 'false', 'aria-label': name}) as HTMLTextAreaElement;
+    body.value = text;
+    const save = button(t('Save'), 'primary');
+    save.addEventListener('click', async () => {
+      const n = title.value.trim();
+      if (!dotfiles.validName(n)) { error.textContent = t('A dotfile is named with a dot first: .profile'); return; }
+      const all = dotfiles.read();
+      all[n] = body.value;
+      await dotfiles.write(all);
+      paint(n);
+    });
+    const remove = button(t('Remove'));
+    remove.hidden = fresh;
+    remove.addEventListener('click', async () => { const all = dotfiles.read(); delete all[name]; await dotfiles.write(all); paint(); });
+    const close = button(t('Close'));
+    close.addEventListener('click', () => paint());
+    return h('div', {class: 'dot-editor'}, h('div', {class: 'row dot-head'}, h('span', {class: 'muted mono'}, '/root/'), title), body, error,
+      h('div', {class: 'row work-act'}, remove, h('span', {class: 'grow'}), close, save));
   };
   paint();
   return section;
@@ -233,6 +318,7 @@ export function runtime(ctx: Context): Node[] {
   read();
   // What the Remote holds changes what can come here.
   const stop = onSync(() => { if (!holder.isConnected) { stop(); return; } read(); });
-  return [pageHead('runtime'), holder, prompts(),
-    h('section', {class: 'section', 'aria-labelledby': 'env-title'}, h('h2', {id: 'env-title'}, t('Environment in effect')), environment())];
+  return [pageHead('runtime'), holder, prompts(), ssh(),
+    h('section', {class: 'section', 'aria-labelledby': 'env-title'}, h('h2', {id: 'env-title'}, t('Environment in effect')), environment()),
+    dotfilesSection()];
 }

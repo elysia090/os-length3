@@ -289,7 +289,7 @@ export async function setHead(repo: string, head: string | null) {
 
 // ---- Home's settings that are the person's (the band is the device's) ----
 
-export const HOME_KEYS = ['profile', 'todo'] as const;
+export const HOME_KEYS = ['profile', 'todo', 'dotfiles'] as const;
 export type HomeKey = typeof HOME_KEYS[number];
 
 /** Two TODO lists as one: every item from both, this device's where both have it. */

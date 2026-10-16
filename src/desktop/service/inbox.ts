@@ -1,9 +1,16 @@
 // Inbox: messages between people, found by address (name@domain).
 //
 // Publication and discovery go through the domain: a name on this Remote's
-// own domain is claimed here; a name on any other domain is that domain's
-// to publish, at https://<domain>/.well-known/length3, naming this Remote
-// and the account. To reach an address its domain is asked the same way.
+// own domain is claimed here; a name on any other domain needs its owner to
+// say so in the domain's DNS, as mail says where it goes with MX:
+//
+//   _length3.example.org  TXT  "v=length3; remote=remote.length3.com; proof=<26 letters>"
+//
+// remote= is which Remote holds the domain's addresses (what another Remote
+// asks to reach one), and proof= is an HMAC of the account and the domain
+// under this Remote's secret: only that account can be handed it, it proves
+// whoever controls the domain's DNS put it there for that account, nothing
+// is kept to check it, and it is checked again whenever it matters.
 // The address is also what an SSH connection will be made to, and being
 // reachable over SSH is its own opt-in, off unless asked for.
 //
@@ -34,10 +41,27 @@ export interface InboxDeps {
   db: any;
   /** This Remote's own domain: names claimed here are name@domain. */
   domain: string;
-  /** This Remote's address, as a domain's well-known names it. */
+  /** This Remote's address; a domain's record names its host. */
   baseURL: string;
-  /** How a domain's well-known is read (fetch, or a stand-in in tests). */
-  wellKnown?: (domain: string) => Promise<unknown>;
+  /** The key a domain's proof is made with (the service's secret). */
+  secret: string;
+  /** A name's TXT records (DNS over HTTPS, or a stand-in in tests). */
+  txt?: (name: string) => Promise<string[]>;
+}
+
+/** A name's TXT records through DNS over HTTPS (Cloudflare's resolver), each record's strings joined. */
+export async function txtOverHttps(name: string): Promise<string[]> {
+  const r = await fetch(`https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=TXT`,
+    {headers: {accept: 'application/dns-json'}, signal: AbortSignal.timeout(5000)});
+  if (!r.ok) return [];
+  const body = await r.json() as {Answer?: {type: number; data: string}[]};
+  return (body.Answer ?? []).filter((a) => a.type === 16).map((a) => [...a.data.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]).join('') || a.data);
+}
+
+/** The fields of a length3 record ("v=length3; remote=…; proof=…"), or null for another record. */
+export function readRecord(text: string): {remote: string; proof: string} | null {
+  const f = Object.fromEntries(text.split(';').map((p) => p.trim().split('=').map((x) => x.trim())).filter((kv) => kv.length === 2)) as Record<string, string>;
+  return f.v === 'length3' && f.remote ? {remote: f.remote.toLowerCase(), proof: f.proof ?? ''} : null;
 }
 
 /** An address as typed: lower case, and the domain checked. */
@@ -50,10 +74,20 @@ export function parseAddress(a: string): {name: string; domain: string} | null {
 type Vars = {Variables: {userId: string; sessionId: string}};
 
 export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
-  const readWellKnown = d.wellKnown ?? (async (domain: string) => {
-    const r = await fetch(`https://${domain}/.well-known/length3`, {redirect: 'error', signal: AbortSignal.timeout(5000)});
-    return r.ok ? r.json() : null;
-  });
+  const txt = d.txt ?? txtOverHttps;
+  const host = new URL(d.baseURL || 'https://localhost').host.toLowerCase();
+  /** The proof for an account on a domain: HMAC-SHA256 under the secret, 26 letters of base32. */
+  const proofOf = async (userId: string, domain: string) => {
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(d.secret), {name: 'HMAC', hash: 'SHA-256'}, false, ['sign']);
+    const mac = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`length3-domain\n${userId}\n${domain}`)));
+    const abc = 'abcdefghijklmnopqrstuvwxyz234567';
+    let bits = 0, value = 0, out = '';
+    for (const byte of mac) { value = (value << 8) | byte; bits += 8; while (bits >= 5 && out.length < 26) { out += abc[(value >>> (bits - 5)) & 31]; bits -= 5; } }
+    return out;
+  };
+  const recordName = (domain: string) => `_length3.${domain}`;
+  /** What the domain's DNS says of Length³: its records, read now. */
+  const published = async (domain: string) => (await txt(recordName(domain)).catch(() => [] as string[])).map(readRecord).filter(Boolean) as {remote: string; proof: string}[];
 
   /** Whom an address reaches on this Remote, if anyone. */
   const resolve = async (a: string): Promise<{userId: string; address: string} | {why: string}> => {
@@ -62,10 +96,10 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const [row] = await d.db.select().from(address).where(eq(address.address, `${p.name}@${p.domain}`));
     if (row) return {userId: row.userId, address: row.address};
     if (p.domain === d.domain) return {why: 'no such address'};
-    // Another domain: it says which Remote holds the name.
-    const known = await readWellKnown(p.domain).catch(() => null) as {remote?: string; names?: Record<string, string>} | null;
-    if (!known?.remote) return {why: 'the domain publishes no Length³ address'};
-    if (known.remote.replace(/\/$/, '') !== d.baseURL.replace(/\/$/, '')) return {why: 'on another Remote, which this one does not reach yet'};
+    // Another domain: its DNS says which Remote holds its addresses.
+    const records = await published(p.domain);
+    if (!records.length) return {why: 'the domain publishes no Length³ address'};
+    if (!records.some((r) => r.remote === host)) return {why: 'on another Remote, which this one does not reach yet'};
     return {why: 'no such address'};
   };
 
@@ -77,6 +111,16 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   });
 
   const mine = async (userId: string) => (await d.db.select().from(address).where(eq(address.userId, userId)).orderBy(address.createdAt)) as (typeof address.$inferSelect)[];
+
+  // What to put in a domain's DNS so this account may use it here.
+  v1.get('/inbox/domains/:domain', async (c) => {
+    const domain = c.req.param('domain').toLowerCase();
+    if (!DOMAIN.test(domain) || domain === d.domain) return c.json({error: 'domain'}, 400);
+    const proof = await proofOf(c.get('userId'), domain);
+    const records = await published(domain);
+    return c.json({name: recordName(domain), type: 'TXT', value: `v=length3; remote=${host}; proof=${proof}`,
+      found: records.some((r) => r.remote === host && r.proof === proof)});
+  });
 
   v1.get('/inbox/me', async (c) => {
     const list = await mine(c.get('userId'));
@@ -93,9 +137,10 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     if (!DOMAIN.test(domain) && domain !== d.domain) return c.json({error: 'domain'}, 400);
     if ((await mine(c.get('userId'))).length >= 5) return c.json({error: 'too many addresses'}, 409);
     if (domain !== d.domain) {
-      const known = await readWellKnown(domain).catch(() => null) as {remote?: string; names?: Record<string, string>} | null;
-      if (known?.remote?.replace(/\/$/, '') !== d.baseURL.replace(/\/$/, '') || known.names?.[name] !== c.get('userId')) {
-        return c.json({error: 'not published', publish: {remote: d.baseURL, names: {[name]: c.get('userId')}}}, 409);
+      // The domain's owner says, in its DNS, that this Remote holds it for this account.
+      const proof = await proofOf(c.get('userId'), domain);
+      if (!(await published(domain)).some((r) => r.remote === host && r.proof === proof)) {
+        return c.json({error: 'not published', publish: {name: recordName(domain), type: 'TXT', value: `v=length3; remote=${host}; proof=${proof}`}}, 409);
       }
     }
     const done = await d.db.insert(address).values({address: `${name}@${domain}`, userId: c.get('userId'), name, domain}).onConflictDoNothing().returning({a: address.address});

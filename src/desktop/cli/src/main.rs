@@ -205,7 +205,7 @@ fn prompt(a: &Args, repo: &str, rest: &[&str]) -> Result<(), String> {
         [] => vec!["/bin/sh".into(), "-i".into()],
         _ => return Err("l3 prompt REPO [-- CMD…]".into()),
     };
-    let s = length3_core::launch::Sandbox { root, repo: dir, name: repo.to_string(), argv, network: a.network };
+    let s = length3_core::launch::Sandbox { root, repo: dir, name: repo.to_string(), argv, network: a.network, dotfiles: length3_core::launch::dotfiles() };
     let code = length3_core::launch::run(&s).map_err(|e| e.to_string())?;
     send(repo);
     std::process::exit(code);

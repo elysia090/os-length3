@@ -7,7 +7,7 @@ import {onChange, store} from '../repos.ts';
 import {bench} from './bench.ts';
 import {pageHead} from './common.ts';
 import type {Context} from './context.ts';
-import {issueBox, issueStages, issueHead, unmerged, type RepoState} from './git-issue.ts';
+import {issueBox, issueHead, unmerged, type RepoState} from './git-issue.ts';
 import {issueForm} from './issue-form.ts';
 
 /**
@@ -85,7 +85,6 @@ export function git(ctx: Context): Node[] {
     });
     prev.hidden = k === 0;
     next.hidden = k === shown.length - 1;
-    below.replaceChildren(...issueStages(i, states.get(i.repo), events, again));
   };
   prev.addEventListener('click', () => go(k - 1));
   next.addEventListener('click', () => go(k + 1));

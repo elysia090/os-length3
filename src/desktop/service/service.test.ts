@@ -11,14 +11,15 @@ import * as schema from './schema.ts';
 const BASE = 'http://remote.test';
 const APP = 'http://app.test';
 
-async function service(domains: Record<string, unknown> = {}) {
+async function service(records: Record<string, string[]> = {}) {
   const db = drizzle(new PGlite(), {schema});
   await migrate(db, {migrationsFolder: new URL('./migrations', import.meta.url).pathname});
   const auth = createAuth({db, secret: 'test-secret-'.repeat(4), baseURL: BASE, appOrigin: APP, rateLimit: false, dev: true});
   const bucket = memoryBucket();
-  const published = new Map(Object.entries(domains));
+  // DNS as a map of name → TXT records.
+  const dns = new Map(Object.entries(records));
   const app = createApp({db, auth, bucket, origins: [APP], providers: ['dev'], domain: 'length3.test', baseURL: BASE,
-    wellKnown: async (domain) => published.get(domain) ?? null});
+    secret: 'test-secret-'.repeat(4), txt: async (name) => dns.get(name) ?? []});
   // The service asks its own stand-in provider for tokens over the network: here, itself.
   const real = globalThis.fetch;
   globalThis.fetch = ((url: string | URL | Request, init?: RequestInit) =>
@@ -52,7 +53,7 @@ async function service(domains: Record<string, unknown> = {}) {
     assert.ok(token);
     return token!;
   };
-  const publish = (domain: string, doc: unknown) => published.set(domain, doc);
+  const publish = (name: string, value: string) => dns.set(name, [...(dns.get(name) ?? []), value]);
   return {db, call, start, bucket, publish};
 }
 
@@ -300,20 +301,29 @@ test('a file both sides changed stops the merge; reject is the receiver\'s, rese
 });
 
 test('Inbox: an address is claimed or published by its domain; messages are small, and strangers are held to a few', async () => {
-  const s = await service({'example.org': {remote: BASE, names: {}}});
+  const s = await service({'_length3.example.org': ['some other record'], '_length3.elsewhere.example': ['v=length3; remote=remote.elsewhere.example; proof=x']});
   const ren = await s.start('Ren'), mio = await s.start('Mio');
-  const mioId = ((await s.call('GET', '/api/auth/get-session', {token: mio})).json as unknown as {user: {id: string}}).user.id;
   // Nobody sends before having an address.
   assert.equal((await s.call('POST', '/v1/inbox/messages', {token: ren, body: {to: 'mio@length3.test', body: 'hi'}})).status, 409);
   assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'ren'}})).status, 201);
   assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'ren'}})).status, 409);
-  // A name on another domain needs that domain to say so; it then says what to publish.
+  // A name on another domain needs that domain's DNS to say so, with a proof made for this account.
   const unpublished = await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'mio', domain: 'example.org'}});
-  assert.deepEqual([unpublished.status, unpublished.json.publish], [409, {remote: BASE, names: {mio: mioId}}]);
-  s.publish('example.org', {remote: BASE, names: {mio: mioId}});
+  const record = unpublished.json.publish as unknown as {name: string; type: string; value: string};
+  assert.deepEqual([unpublished.status, record.name, record.type], [409, '_length3.example.org', 'TXT']);
+  assert.match(record.value, /^v=length3; remote=remote\.test; proof=[a-z2-7]{26}$/);
+  // The same domain's record for another account does not do for this one.
+  const renRecord = (await s.call('GET', '/v1/inbox/domains/example.org', {token: ren})).json as unknown as {value: string; found: boolean};
+  assert.notEqual(renRecord.value, record.value);
+  s.publish('_length3.example.org', renRecord.value);
+  assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'mio', domain: 'example.org'}})).status, 409);
+  s.publish('_length3.example.org', record.value);
+  assert.equal(((await s.call('GET', '/v1/inbox/domains/example.org', {token: mio})).json as unknown as {found: boolean}).found, true);
   assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'mio', domain: 'example.org'}})).status, 201);
   assert.deepEqual((await s.call('GET', '/v1/inbox/lookup?address=mio@example.org', {token: ren})).json, {address: 'mio@example.org', reachable: true});
   assert.equal(((await s.call('GET', '/v1/inbox/lookup?address=x@nowhere.example', {token: ren})).json).reachable, false);
+  // A domain held by another Remote is found through its record, and said to be elsewhere.
+  assert.match(String((await s.call('GET', '/v1/inbox/lookup?address=xy@elsewhere.example', {token: ren})).json.why), /another Remote/);
   // Ren writes: a request to Mio, of which Mio holds only a few unanswered.
   const sent = await s.call('POST', '/v1/inbox/messages', {token: ren, body: {to: 'mio@example.org', type: 'review', target: {repo: 'notes', change: 'abc'}, body: 'could you look?'}});
   assert.deepEqual([sent.status, sent.json.request], [201, true]);

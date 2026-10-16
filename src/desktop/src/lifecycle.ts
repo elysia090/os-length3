@@ -165,7 +165,7 @@ export async function begin() {
   draft.restoreLines();
   // Every change a person (or a Prompt) makes is sent; sync's own writes are not news.
   onChange((c) => { if (c.by !== draft.BY) schedule(c.repo); else tell(); });
-  onState((k) => { if ((k === 'profile' || k === 'todo') && connection()) void draft.syncHome(k).catch(() => {}); });
+  onState((k) => { if ((k === 'profile' || k === 'todo' || k === 'dotfiles') && connection()) void draft.syncHome(k).catch(() => {}); });
   onConnection(() => void look());
   // The Remote's changes are seen within five seconds while the page is in view.
   polling = setInterval(() => { if (document.visibilityState === 'visible' && connection()) void look(); }, 5000);

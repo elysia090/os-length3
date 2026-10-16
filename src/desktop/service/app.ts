@@ -41,9 +41,12 @@ export interface Deps {
   quota?: number;
   /** This Remote's own domain, for Inbox addresses (name@domain). */
   domain?: string;
-  /** The Remote's own address (for Inbox discovery through a domain's well-known). */
+  /** The Remote's own address (a domain's DNS record names its host). */
   baseURL?: string;
-  wellKnown?: (domain: string) => Promise<unknown>;
+  /** The key Inbox domain proofs are made with (the service's secret). */
+  secret?: string;
+  /** TXT records of a name (DNS over HTTPS by default; a stand-in in tests). */
+  txt?: (name: string) => Promise<string[]>;
 }
 
 /** What one account may keep, unless the deployment says otherwise. */
@@ -542,7 +545,7 @@ export function createApp(d: Deps) {
     return c.json({version: done[0].version});
   });
 
-  inbox({db: d.db, domain: d.domain ?? 'length3.com', baseURL: d.baseURL ?? '', wellKnown: d.wellKnown}, v1, app);
+  inbox({db: d.db, domain: d.domain ?? 'length3.com', baseURL: d.baseURL ?? '', secret: d.secret ?? '', txt: d.txt}, v1, app);
 
   app.route('/v1', v1);
   return app;

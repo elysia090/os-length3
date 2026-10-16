@@ -98,6 +98,7 @@ export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEv
     issue.detail ? h('p', {class: 'issue-body'}, issue.detail) : null,
     say ? h('p', {class: 'muted small'}, say) : null,
     ...(here && s?.work ? [steps(issue, s, events, after)] : []),
+    reviewPart(issue, s, events, after),
     acts.length ? h('div', {class: 'row work-act'}, ...acts) : null, error);
 }
 
@@ -152,14 +153,6 @@ function steps(issue: Issue, s: RepoState, events: IssueEvents, after: () => voi
     slot(push, pushed, t('Pushed')), h('div', {class: 'step-about'}, where), error);
 }
 
-/** A step of the work as a box of the issue's width: its name, a check once it is done, its body, its one action at the bottom right. */
-function stage(title: string, done: boolean, body: Node[], act: Node[] = [], extra = ''): HTMLElement {
-  return h('section', {class: `stage-box ${extra}`.trim(), 'data-done': String(done)},
-    h('header', {class: 'stage-head'}, h('h3', {}, title), done ? h('span', {class: 'done-mark', role: 'img', 'aria-label': t('Done')}) : null),
-    ...body,
-    act.length ? h('div', {class: 'stage-act'}, ...act) : null);
-}
-
 /** A diff whose lines can be marked, as with a highlighter: `marked` shows, `pending` collects what is pressed now. */
 function markedDiff(files: git.FileDiff[], marked: Set<string>, pending: Set<string> | null): HTMLElement[] {
   return files.map((f) => {
@@ -184,18 +177,16 @@ function markedDiff(files: git.FileDiff[], marked: Set<string>, pending: Set<str
 }
 
 /**
- * Under the box, once there is a change: its Review, a larger box whose diff
- * can be marked, with what was said under it and room to say more. A change
- * is reviewed the same way without being worked on here.
+ * The change's Review, inside the issue's box under Commit and Push: its
+ * diff (marked where reviewers marked it, scrolling in place), what was said
+ * as a conversation, and room to say more. A change is reviewed the same way
+ * without being worked on here.
  */
-export function issueStages(issue: Issue, s: RepoState | undefined, events: IssueEvents, after: () => void): Node[] {
+function reviewPart(issue: Issue, s: RepoState | undefined, events: IssueEvents, after: () => void): HTMLElement | null {
   const at = issue.repo;
   const change = changeOf(s, issue);
   const here = hereOf(s, issue);
-  const out: Node[] = [];
-  if (!connection()) return out;
-
-  if (!change || change.state === 'reset') return out;
+  if (!connection() || !change || change.state === 'reset') return null;
 
   // Review: the change's diff, marked where reviewers marked it, what was said, and room to say more.
   const error = h('p', {class: 'error', role: 'alert'});
@@ -205,12 +196,13 @@ export function issueStages(issue: Issue, s: RepoState | undefined, events: Issu
   const diff = h('div', {class: 'review-diff'}, h('p', {class: 'muted small'}, t('Reading…')));
   void git.changeDiff(at, change).then((files) => diff.replaceChildren(...markedDiff(files, marked, pending)), (e) => diff.replaceChildren(h('p', {class: 'error'}, message(e))));
   // What was said, in order: a verdict with its note, or a comment alone.
-  const said = change.reviews.slice().reverse().map((r) => h('div', {class: 'said'},
+  // What was said, in order, as a conversation: a verdict with its note, or a comment alone.
+  const said = h('div', {class: 'review-chat'}, ...change.reviews.slice().reverse().map((r) => h('div', {class: 'bubble'},
     h('span', {class: 'muted small'}, `${r.by} · ${ago(r.time)}${r.version !== change.version ? ` · ${t('version {n} (older)', {n: r.version})}` : ''}`),
-    r.verdict !== 'comment' ? h('b', {}, r.verdict === 'approve' ? t('Approved') : t('Asked for changes')) : null,
-    r.note ? h('p', {class: 'bubble-text'}, r.note) : null));
+    r.verdict !== 'comment' ? h('span', {class: 'state-chip'}, r.verdict === 'approve' ? t('Approved') : t('Asked for changes')) : null,
+    r.note ? h('p', {class: 'bubble-text'}, r.note) : null)));
   const acts: Node[] = [];
-  const body: Node[] = [diff, ...said];
+  const body: Node[] = [diff, ...(change.reviews.length ? [said] : [])];
   if (change.state === 'open') {
     const text = h('textarea', {class: 'line-in bubble-in', rows: '2', placeholder: t('Comment… (Enter sends)'), 'aria-label': t('Comment'), maxlength: '4000'}) as HTMLTextAreaElement;
     const send = (verdict: git.Review['verdict'], b: HTMLButtonElement) => doing(b, error, async () => {
@@ -244,6 +236,7 @@ export function issueStages(issue: Issue, s: RepoState | undefined, events: Issu
     }
   }
   body.push(error);
-  out.push(stage(t('Review'), change.state === 'merged', body, acts, 'review'));
-  return out;
+  return h('section', {class: 'review-part'},
+    h('header', {class: 'stage-head'}, h('h3', {}, t('Review')), h('span', {class: 'muted small'}, t('Change · version {n} · {state}', {n: change.version, state: STATE(change.state)}))),
+    ...body, acts.length ? h('div', {class: 'stage-act'}, ...acts) : null);
 }

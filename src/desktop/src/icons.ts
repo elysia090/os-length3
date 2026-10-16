@@ -29,9 +29,10 @@ export function icon(id: PurposeId): SVGSVGElement {
 const MARKS = {
   plus: 'M12 5v14M5 12h14',
   close: 'M7 7l10 10M17 7L7 17',
+  gear: 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1',
 } as const;
 
-/** A small mark drawn like the icons: + to add, × to take off. */
+/** A small mark drawn like the icons: + to add, × to take off, the gear for settings. */
 export function mark(name: keyof typeof MARKS): SVGSVGElement {
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');

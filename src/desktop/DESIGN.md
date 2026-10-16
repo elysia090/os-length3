@@ -151,9 +151,10 @@ each thing says what can be done with it.
   to say what happened: the bytes removed (counted before removal), the
   host's free space as it was seen to change and how long it took to show,
   and anything kept with the reason.
-- **動いている Prompt** is shown while one runs: where it runs (root, with
-  its process count, or l3), the memory its processes hold (Pss, from the
-  host's /proc), and 止める. On the root, stopping ends everything in the
+- **動いている Prompt** is shown while one runs, a small card each (the
+  size of Home's cards, smaller, so a few do not stretch across the page):
+  where it runs (root, with its process count, or l3), the memory its
+  processes hold (Pss, from the host's /proc), and 止める at its bottom right. On the root, stopping ends everything in the
   Prompt's pid namespace and is called done only once the host shows none
   left; the row then says what was given back and how long it took
   (止めました · 2.5 MB を返しました · 11 ms), or how many are still there.
@@ -163,8 +164,14 @@ each thing says what can be done with it.
   version, size, digest; inside it, a step in, what it carries (the
   distribution's BusyBox, the l3 command, the xlat translator). In the app
   that row ends with 入れる: fetching the root from the Remote, saying how
-  far it is. Then Dotfiles as differences from the root (none yet, and it
-  says so).
+  far it is.
+- **SSH**, once there is an Inbox address: a small card per address with
+  the power switch at its bottom right, whether it may be reached over SSH.
+- **Dotfiles**: a small card each (its name, its size), and a dashed one to
+  make another. A card opens its text under the cards, `/root/` and its name
+  above it, Remove at the left, Close and Save at the right. Every Prompt
+  starts with them in `/root` (the app's root and the browser's alike), and
+  the Remote keeps them in step across devices, as it does Home's settings.
 
 In a browser the same list is the browser's copy of the repos (このブラウザ,
 its share an estimate), and the same three answers apply.
@@ -195,13 +202,14 @@ all); choosing a repo also points the right pane and the Prompt at it.
   copy of the repo, which File, Forge and the Prompt show; the layout says
   this, no sentence explains it. A merged work is done: the repo shows main
   again on its own, and the copy goes.
-- **Under the box**, once it is worked on, its steps, each a box of the
-  issue's width with its name, a done mark (a circle with a check, `done`)
-  once the step is done, and its one action at the bottom right:
-  **Commit** (what is not committed, its diff closed inside the box until
-  opened), **Push** (a roomy box with nothing else in it; pushing hands the
-  work to main as its change, again as the next version), and **Review**, a
-  larger box whose diff scrolls inside it. A reviewer marks lines in the
+- **Inside the box**, once it is worked on here, its steps, one row each,
+  the button at the left (its done mark, a circle with a check in `done`,
+  in its place once done) and what it is about beside it: **Commit** (what
+  is not committed, its diff closed until opened) and **Push** (pushing
+  hands the work to main as its change, again as the next version). Under
+  them, in the same box, **Review**: the change's diff, scrolling inside
+  the box, then what was said in order, then the field to write in. One box
+  holds the whole issue, so the column reads as one conversation. A reviewer marks lines in the
   diff as with a highlighter (`marker`), and what is written goes under the
   diff with the marks: a comment, or a verdict (Ask for changes, Approve;
   once approved, Merge). What was said shows in order in the same box; a
@@ -233,7 +241,18 @@ place a page is switched, because its parts are unrelated):
 
 ### Inbox
 
-Your address on one line (Copy, SSH), then one tall box: conversations on
+Your address as a stub: a field-sized place about as wide as an address,
+the address in it (pressing it copies it, and it says Copied for a moment
+in the same place; there is no Copy button), its gear at the right end.
+Before there is one, the stub is the name to claim, with `@domain` after
+it; Enter claims. The gear opens your own domain: name `@` domain, then the
+one DNS record that proves it (`_length3.<domain>` TXT
+`v=length3; remote=<host>; proof=<…>`, each part copied by pressing it).
+The proof is the Remote's keyed digest of the account and the domain, so
+only the domain's holder can publish it and no other account can reuse it;
+it is looked for while the gear is open, and the address is claimed the
+moment it is found. The same record says which Remote holds the domain's
+addresses, as MX does for mail. SSH is Runtime's. Then one tall box: conversations on
 the left (requests apart, with Accept and Block), the chosen one on the
 right. Writing is one line that grows as it is written: a message is named
 the way an issue is ("Review：…", "Question：…"), and a `/root/…` path in it
