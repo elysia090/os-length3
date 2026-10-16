@@ -29,12 +29,15 @@ separate surface and nothing here depends on it.
 
 ## What is real in this step
 
-- The rail, the profile (edit, validate, save locally).
+- The rail, with the person's own icon at its foot (profile, edit, this
+  device), and the profile (edit, validate, save locally).
 - Repos the app manages under its data directory (`repos/`). + creates
   one from a template (standard, C, minimal) and runs `git init` without
   the host's git configuration. Inbox and TODO belong to the app, not to
   repos: TODO is a list on Home. Home lists the repos as cards.
-- Forge: the repos as chips in a band set low at the top; the center (3/4)
+- Forge: the repos out to work on as pills in a band set low at the top
+  (⊕ brings more out, × takes one off; with none left the center shows
+  Topic); the center (3/4)
   is the open repo's files one after another like an endless page (README
   first, loaded as they scroll near), with a prompt box at its foot that
   types into the repo's `sh`. While the prompt is in use the terminal flies

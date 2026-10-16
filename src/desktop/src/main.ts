@@ -3,7 +3,8 @@ import {icon} from './icons.ts';
 import {placeholder} from './pages/common.ts';
 import type {Context} from './pages/context.ts';
 import {forge, revealNext, showInForge} from './pages/forge.ts';
-import {home} from './pages/home.ts';
+import {currentProfile, home, startEditing} from './pages/home.ts';
+import {Me} from './pages/me.ts';
 import {newRepo} from './pages/new-repo.ts';
 import {runtime} from './pages/runtime.ts';
 import {FileTree} from './pages/tree.ts';
@@ -93,7 +94,11 @@ function render() {
     : current === 'runtime' ? runtime()
     : placeholder(current);
   page.replaceChildren(...nodes);
+  me.paint();
 }
+
+const me = new Me(ctx, currentProfile, {editProfile: () => startEditing(ctx)});
+$('rail-me').append(me.element);
 
 $('rail-tabs').append(...PURPOSES.map((p) => railButton(p.id)), railButton(NEW_REPO.id));
 select(restorePurpose(load(PURPOSE_KEY)));

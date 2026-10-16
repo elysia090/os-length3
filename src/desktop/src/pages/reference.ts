@@ -49,7 +49,7 @@ export class Reference {
   }
 
   /** The repo Forge shows. */
-  setRepo(repo: string) {
+  setRepo(repo: string | null) {
     this.repo = repo;
     this.current = null;
     this.paint();

@@ -18,6 +18,16 @@ function save(key: string, value: string): boolean {
 let profile: Profile = parse(load(PROFILE_KEY));
 let editing = false;
 
+/** The profile as it stands, for the rail's own icon. */
+export const currentProfile = (): Profile => profile;
+
+/** Open Home with the profile form out. */
+export function startEditing(ctx: Context) {
+  editing = true;
+  ctx.go('home');
+  document.getElementById('profile-name')?.focus();
+}
+
 /** Home: a profile that reads the same for its owner and for anyone else. */
 export function home(ctx: Context): Node[] {
   const owner = true;

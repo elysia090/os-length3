@@ -1,13 +1,16 @@
+import {addToBand, offBand, parseBand, removeFromBand} from '../band.ts';
 import {bytes, h} from '../dom.ts';
+import {mark} from '../icons.ts';
 import {store, type Entry} from '../repos.ts';
+import {pageHead} from './common.ts';
 import type {Context} from './context.ts';
 import {readingOrder} from '../reading.ts';
 import {Reference} from './reference.ts';
 import {sessionFor, terminalFor} from './terminal.ts';
 
 /**
- * Forge, the place you work. The repos run as chips in a band set low at the
- * top. The large center is the open repo's files one after another, an
+ * Forge, the place you work. The repos out to work on run as pills in a band
+ * set low at the top; ⊕ brings more out and each pill comes off with its ×. The large center is the open repo's files one after another, an
  * endless page you scroll through, opened at the file chosen in File; there
  * are no tabs. A prompt box sits at the bottom of the center. The narrow
  * right pane holds a reference switched freely on top and the terminal
@@ -15,8 +18,13 @@ import {sessionFor, terminalFor} from './terminal.ts';
  * above the box, and the reference grows down into the room it leaves.
  */
 
-/** A path to scroll to once Forge is drawn. */
+/** Set when Forge is opened for a repo: the path to scroll to ('' for the top). */
 let pending: string | null = null;
+const BAND_KEY = 'length3.os.band';
+
+function load(key: string): string | null {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
 /** The Forge on screen, so File can move it in place. */
 let live: {element: HTMLElement; show(repo: string, path: string): void} | null = null;
 
@@ -27,8 +35,8 @@ export function showInForge(repo: string, path: string): boolean {
   return true;
 }
 
-/** Scroll to `path` when Forge is next drawn. */
-export function revealNext(path: string) { pending = path || null; }
+/** Forge is next drawn for the repo just asked for, at `path` ('' for its top). */
+export function revealNext(path: string) { pending = path; }
 
 const MOVE = 280;
 
@@ -122,38 +130,104 @@ export function forge(ctx: Context): Node[] {
   }
   new MutationObserver(soon).observe(flow, {subtree: true, childList: true, attributes: true, attributeFilter: ['data-lines']});
 
+  // The band: the repos out to work on, each a pill that comes off with its
+  // ×. ⊕ lays the repos not on the band out beside it (dashed: not here
+  // yet). With no pill left the center shows Topic.
+  let band: string[] = [];
+  let all: string[] = [];
+  const pills = h('div', {class: 'pills'});
+  const add = h('button', {type: 'button', class: 'band-add', 'aria-label': 'repoを帯に出す', 'aria-expanded': 'false'}, mark('plus'));
+  const offer = h('div', {class: 'offer', role: 'group', 'aria-label': '帯に出せるrepo', hidden: ''});
+  strip.append(pills, add, offer);
+  const saveBand = () => { try { localStorage.setItem(BAND_KEY, JSON.stringify(band)); } catch { /* convenience only */ } };
+
+  const paintOffer = () => {
+    const rest = offBand(band, all);
+    offer.replaceChildren(...(rest.length ? rest.map((name) => {
+      const b = h('button', {type: 'button', class: 'chip candidate'}, name);
+      b.addEventListener('click', () => { show(name); if (!offBand(band, all).length) setOffer(false); });
+      return b;
+    }) : [h('span', {class: 'muted small'}, 'すべてのrepoが帯に出ています')]));
+  };
+  const setOffer = (on: boolean) => {
+    offer.hidden = !on;
+    add.setAttribute('aria-expanded', String(on));
+    if (on) paintOffer();
+  };
+  add.addEventListener('click', () => setOffer(offer.hidden));
+  strip.addEventListener('keydown', (event) => { if (event.key === 'Escape') setOffer(false); });
+  const outside = (event: PointerEvent) => {
+    if (!strip.isConnected) { document.removeEventListener('pointerdown', outside); return; }
+    if (!strip.contains(event.target as Node)) setOffer(false);
+  };
+  document.addEventListener('pointerdown', outside);
+
+  const paintBand = () => {
+    pills.replaceChildren(...band.map((name) => {
+      const open = h('button', {type: 'button', class: 'pill-name'}, name);
+      open.addEventListener('click', () => show(name));
+      const close = h('button', {type: 'button', class: 'pill-close', 'aria-label': `${name}を帯から外す`}, mark('close'));
+      close.addEventListener('click', () => takeOff(name));
+      const pill = h('span', {class: 'pill', 'data-repo': name}, open, close);
+      if (name === repo) pill.setAttribute('aria-current', 'page');
+      return pill;
+    }));
+    if (!offer.hidden) paintOffer();
+  };
+
+  const takeOff = (name: string) => {
+    const r = removeFromBand(band, name, repo);
+    band = r.band;
+    saveBand();
+    if (!r.active) topic();
+    else if (r.active !== repo) show(r.active);
+    else paintBand();
+  };
+
+  /** Nothing on the band: the center is Topic. */
+  const topic = () => {
+    repo = null;
+    reader = null;
+    reference.setRepo(null);
+    flow.replaceChildren(h('div', {class: 'topic'}, pageHead('topic'),
+      h('div', {class: 'empty'}, 'まだ投稿はありません。帯の ⊕ からrepoを出すと、ここはそのrepoのfileになります。')));
+    flow.scrollTop = 0;
+    termBox.replaceChildren(termBox.firstChild!, h('div', {class: 'empty'}, 'repoを帯に出すと、そのrepoでshellが動きます。'));
+    prompt.disabled = true;
+    prompt.placeholder = '帯にrepoを出すと、そのrepoの sh に送れます';
+    paintBand();
+  };
+
   /** Show `name` in the band, the center and the terminal, in place. */
   const show = (name: string, path = '') => {
+    band = addToBand(band, name);
+    saveBand();
     if (repo !== name) {
       repo = name;
       ctx.remember(name);
-      for (const chip of strip.querySelectorAll<HTMLElement>('.chip')) {
-        if (chip.dataset.repo === name) chip.setAttribute('aria-current', 'page'); else chip.removeAttribute('aria-current');
-      }
       reader = new Reader(name);
       reference.setRepo(name);
       flow.replaceChildren(reader.directory(''));
       flow.scrollTop = 0;
       termBox.replaceChildren(termBox.firstChild!, terminalFor(name));
       prompt.disabled = false;
+      prompt.placeholder = 'コマンドを入力して Enter（このrepoの sh に送られます）';
     }
+    paintBand();
     if (path) { chosen = path; soon(); void reader!.reveal(path); }
   };
   live = {element: work, show};
 
   prompt.disabled = true;
   void store.list().then((repos) => {
-    const current = ctx.repo && repos.some((r) => r.name === ctx.repo) ? ctx.repo : repos[0]?.name ?? null;
-    for (const r of repos) {
-      const chip = h('button', {type: 'button', class: 'chip', 'data-repo': r.name}, r.name);
-      chip.addEventListener('click', () => show(r.name));
-      strip.append(chip);
-    }
-    const path = pending ?? '';
+    all = repos.map((r) => r.name);
+    band = parseBand(load(BAND_KEY), all, ctx.repo);
+    const asked = pending;
     pending = null;
-    if (current) { show(current, path); return; }
-    flow.append(h('div', {class: 'empty'}, 'repoがありません。左の ＋ から作れます。'));
-    termBox.append(h('div', {class: 'empty'}, 'repoを開くと、そのrepoでshellが動きます。'));
+    // Opened for a repo (from File, Home or a new repo): it goes on the band.
+    if (asked !== null && ctx.repo && all.includes(ctx.repo)) { show(ctx.repo, asked); return; }
+    const first = ctx.repo && band.includes(ctx.repo) ? ctx.repo : band[0];
+    if (first) show(first); else topic();
   });
   return [work];
 }

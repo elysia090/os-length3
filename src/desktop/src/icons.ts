@@ -25,3 +25,21 @@ export function icon(id: PurposeId): SVGSVGElement {
   svg.append(path);
   return svg;
 }
+
+const MARKS = {
+  plus: 'M12 5v14M5 12h14',
+  close: 'M7 7l10 10M17 7L7 17',
+} as const;
+
+/** A small mark drawn like the icons: + to add, × to take off. */
+export function mark(name: keyof typeof MARKS): SVGSVGElement {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.classList.add('icon', 'mark');
+  const path = document.createElementNS(ns, 'path');
+  path.setAttribute('d', MARKS[name]);
+  svg.append(path);
+  return svg;
+}

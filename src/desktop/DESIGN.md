@@ -21,6 +21,11 @@ top, then the page each icon leads to.
 - Item 48×48, radius 12, icon 24 px with a 1.6 px stroke; + is a 40 px
   round button with an `edge` outline. States as everywhere (§3).
 - The rail starts 24 px down, so its weight sits a little low.
+- The person's own icon (initials in a circle) sits at the foot of the
+  rail. Touching it brings out what comes before settings: the name, see
+  the profile, edit the profile, this device's storage, and 設定 (not
+  there yet, and it says so). It goes on leaving, a press outside or
+  Escape.
 
 ## 2. Pages
 
@@ -47,10 +52,14 @@ strikes through and fades the first line only.
 
 ### Forge
 
-Where you work. The repos run as chips in a band set low at the top: the
-chips line up between Home and the next rail icon, lower than one would
-first put them, and the reference's chips on the right sit on the same
-line. Below the band the center is the open repo's files one after another,
+Where you work. The repos out to work on run as pills in a band set low at
+the top: they line up between Home and the next rail icon, lower than one
+would first put them, and the reference's chips on the right sit on the
+same line. Each pill comes off the band with its × (the repo itself is
+untouched). ⊕ lays the repos not on the band out beside it, dashed because
+they are not here yet; pressing one brings it out. Opening a repo from
+File, Home or a new repo puts it on the band. With every pill off, the
+center shows Topic. The band is remembered on this device. Below the band the center is the open repo's files one after another,
 an endless page scrolled like a browser and opened at the file chosen in
 File. There are no tabs, no title, no index of links and no headings for
 directories. Each file is headed by its place in "/" (`/root/<repo>/` quiet,
