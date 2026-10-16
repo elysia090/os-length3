@@ -1,7 +1,8 @@
 import {addToBand, offBand, parseBand, removeFromBand} from '../band.ts';
+import {getState, setState} from '../state.ts';
 import {bytes, h} from '../dom.ts';
 import {mark} from '../icons.ts';
-import {store, type Entry} from '../repos.ts';
+import {onChange, store, type Change, type Entry} from '../repos.ts';
 import {pageHead} from './common.ts';
 import type {Context} from './context.ts';
 import {lineCount, readingOrder} from '../reading.ts';
@@ -21,11 +22,7 @@ import {bench} from './bench.ts';
 
 /** Set when Forge is opened for a repo: the path to scroll to ('' for the top). */
 let pending: string | null = null;
-const BAND_KEY = 'length3.os.band';
 
-function load(key: string): string | null {
-  try { return localStorage.getItem(key); } catch { return null; }
-}
 /** The Forge on screen, so File can move it in place. */
 let live: {element: HTMLElement; show(repo: string, path: string): void} | null = null;
 
@@ -56,7 +53,7 @@ export function forge(ctx: Context): Node[] {
   const pills = h('div', {class: 'pills'});
   const add = h('button', {type: 'button', class: 'band-add', 'aria-label': 'repoを全部帯に出す'}, mark('plus')) as HTMLButtonElement;
   strip.append(add, pills);
-  const saveBand = () => { try { localStorage.setItem(BAND_KEY, JSON.stringify(band)); } catch { /* convenience only */ } };
+  const saveBand = () => { void setState('band', JSON.stringify(band)).catch(() => { /* the band is a convenience */ }); };
   add.addEventListener('click', () => {
     const rest = offBand(band, all);
     if (!rest.length) return;
@@ -117,9 +114,26 @@ export function forge(ctx: Context): Node[] {
   };
   live = {element: work.element, show};
 
+  // The repo changed through the store (the shell, l3's twin in the Prompt,
+  // Git…): open files take the new text, new or removed entries redraw the
+  // page where it was.
+  let again = 0;
+  const stop = onChange((c) => {
+    if (!work.element.isConnected) { stop(); return; }
+    if (c.repo !== repo || !reader || !reader.take(c)) return;
+    clearTimeout(again);
+    again = window.setTimeout(() => {
+      if (!repo) return;
+      const top = flow.scrollTop;
+      reader = new Reader(repo, flow);
+      flow.replaceChildren(reader.directory(''));
+      requestAnimationFrame(() => { flow.scrollTop = top; });
+    }, 150);
+  });
+
   void store.list().then((repos) => {
     all = repos.map((r) => r.name);
-    band = parseBand(load(BAND_KEY), all, ctx.repo);
+    band = parseBand(getState('band'), all, ctx.repo);
     const asked = pending;
     pending = null;
     // Opened for a repo (from File, Home or a new repo): it goes on the band.
@@ -160,9 +174,23 @@ class Reader {
   /** File loaders and the editors they made, by path. */
   private fileLoads = new Map<string, () => Promise<void>>();
   private editors = new Map<string, HTMLTextAreaElement>();
+  /** For each open editor: take a text saved elsewhere; false when the person has unsaved edits. */
+  private takers = new Map<string, (text: string) => boolean>();
   private flow: HTMLElement;
 
   constructor(repo: string, flow: HTMLElement) { this.repo = repo; this.flow = flow; }
+
+  /**
+   * A change made through the store: an open file takes the new text; true
+   * when the page must be read again (a file or directory came or went).
+   */
+  take(c: Change): boolean {
+    if (c.what !== 'file') return true;
+    const taker = this.takers.get(c.path);
+    if (taker) { taker(c.text ?? ''); return false; }
+    // Not open yet: shown when it comes into view, if it is already listed.
+    return !this.sections.has(c.path);
+  }
 
   /** Load the directories down to `path`, scroll it into view, and at `line` put the caret there. */
   async reveal(path: string, line = 0) {
@@ -244,6 +272,16 @@ class Reader {
       requestAnimationFrame(fit);
       let saved = c.text;
       let timer = 0;
+      // A text saved elsewhere (the shell, l3, Git) comes in unless this one has unsaved edits.
+      this.takers.set(path, (text) => {
+        if (text === area.value) { saved = text; return true; }
+        if (area.value !== saved) { state.textContent = '外で変更されました。保存するとこちらで上書きします'; return false; }
+        saved = text;
+        area.value = text;
+        fit();
+        number(text);
+        return true;
+      });
       const save = async () => {
         clearTimeout(timer);
         if (area.value === saved) { state.textContent = ''; return; }

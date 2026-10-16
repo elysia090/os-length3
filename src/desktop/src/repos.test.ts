@@ -27,3 +27,18 @@ test('the memory store lists directories first and reads files', async () => {
   assert.match((await s.read('a', 'src/main.c')).text!, /puts/);
   assert.equal((await s.list())[0].name, 'a');
 });
+
+test('the memory store adds, makes directories and removes like the native side', async () => {
+  const s = new MemoryStore();
+  await s.create('a', 'standard');
+  await s.add('a', '', 'note.txt', 'hello\n');
+  await s.add('a', 'issue', '001.md', 'Fix：x\n');
+  await assert.rejects(s.add('a', 'issue', '001.md', 'again'));
+  await assert.rejects(s.add('a', 'missing', 'x', ''));
+  await s.mkdir('a', 'src/deep');
+  assert.deepEqual((await s.tree('a', 'src')).map((e) => e.name), ['deep']);
+  await s.remove('a', 'src');
+  await assert.rejects(s.tree('a', 'src'));
+  await assert.rejects(s.remove('a', '.git'));
+  assert.equal((await s.read('a', 'note.txt')).text, 'hello\n');
+});

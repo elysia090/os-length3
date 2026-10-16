@@ -3,6 +3,7 @@
 // and `persistent` says so.
 
 import {isNative} from './host.ts';
+import shared from '../shared/templates.json' with {type: 'json'};
 
 export interface RepoSummary {
   name: string;
@@ -24,7 +25,7 @@ export interface Contents {
   truncated: boolean;
 }
 
-export type Template = 'standard' | 'c' | 'empty';
+export type Template = string;
 
 export interface RepoStore {
   readonly persistent: boolean;
@@ -36,13 +37,17 @@ export interface RepoStore {
   write(repo: string, path: string, text: string): Promise<number>;
   /** Make a new file `name` in the existing directory `dir`; never replaces one. */
   add(repo: string, dir: string, name: string, text: string): Promise<number>;
+  /** Make a directory (and its parents) inside the repo. */
+  mkdir(repo: string, path: string): Promise<void>;
+  /** Remove a file, or a directory with all it holds, inside the repo (never the repo or its .git). */
+  remove(repo: string, path: string): Promise<void>;
 }
 
-export const TEMPLATES: readonly {id: Template; label: string; files: readonly string[]}[] = [
-  {id: 'standard', label: '標準', files: ['README.md', 'docs/', 'issue/']},
-  {id: 'c', label: 'C', files: ['README.md', 'docs/', 'issue/', 'src/main.c', 'Makefile']},
-  {id: 'empty', label: '最小', files: ['README.md']},
-];
+interface SharedTemplate { id: string; label: string; dirs: string[]; files: [string, string][] }
+
+/** Templates as l3 and the native side read them: shared/templates.json. */
+export const TEMPLATES: readonly {id: Template; label: string; files: readonly string[]}[] =
+  (shared as SharedTemplate[]).map((t) => ({id: t.id, label: t.label, files: [...t.files.map(([p]) => p), ...t.dirs.map((d) => `${d}/`)]}));
 
 /** Same rule as the native side: a plain directory name. */
 export function validName(name: string): boolean {
@@ -61,20 +66,18 @@ class NativeStore implements RepoStore {
   read(repo: string, path: string) { return this.call<Contents>('repo_read', {repo, path}); }
   write(repo: string, path: string, text: string) { return this.call<number>('repo_write', {repo, path, text}); }
   add(repo: string, dir: string, name: string, text: string) { return this.call<number>('repo_add', {repo, dir, name, text}); }
+  mkdir(repo: string, path: string) { return this.call<void>('repo_mkdir', {repo, path}); }
+  remove(repo: string, path: string) { return this.call<void>('repo_remove', {repo, path}); }
 }
 
-/** Files of a new repo, mirroring the native templates. Inbox and TODO
- * belong to the app, so no template carries them. */
+/** Files of a new repo, from the same shared/templates.json as the native
+ * side and l3. Inbox and TODO belong to the OS, so no template carries them.
+ * Directories map to null. */
 export function templateFiles(name: string, template: Template): Map<string, string | null> {
-  const files = new Map<string, string | null>([['README.md', `# ${name}\n`]]);
-  if (template !== 'empty') {
-    files.set('docs', null);
-    files.set('issue', null);
-  }
-  if (template === 'c') {
-    files.set('src/main.c', '#include <stdio.h>\n\nint main(void) {\n    puts("hello");\n    return 0;\n}\n');
-    files.set('Makefile', `${name}: src/main.c\n\tcc -O2 -o $@ src/main.c\n`);
-  }
+  const t = (shared as SharedTemplate[]).find((x) => x.id === template);
+  if (!t) throw new Error(`unknown template ${template}`);
+  const files = new Map<string, string | null>(t.files.map(([p, text]) => [p, text.replaceAll('{name}', name)]));
+  for (const d of t.dirs) files.set(d, null);
   return files;
 }
 
@@ -128,13 +131,36 @@ export class MemoryStore implements RepoStore {
     r.modified = Date.now();
     return new TextEncoder().encode(text).length;
   }
+  async mkdir(repo: string, path: string) {
+    const r = this.repos.get(repo);
+    if (!r) throw new Error(`no repo ${repo}`);
+    const clean = path.replace(/\/+$/, '');
+    if (!clean || clean.split('/').some((p) => p === '..' || p === '.git' || !p)) throw new Error(`path ${path} leaves the repo`);
+    const parts = clean.split('/');
+    for (let i = 1; i <= parts.length; i++) {
+      const at = parts.slice(0, i).join('/');
+      if (typeof r.files.get(at) === 'string') throw new Error(`${at} is in the way of a file`);
+      if (!r.files.has(at)) r.files.set(at, null);
+    }
+    r.modified = Date.now();
+  }
+  async remove(repo: string, path: string) {
+    const r = this.repos.get(repo);
+    const clean = path.replace(/\/+$/, '');
+    if (!r || !clean || clean.split('/').includes('.git') || clean.split('/').includes('..')) throw new Error(`cannot remove ${path}`);
+    const gone = [...r.files.keys()].filter((p) => p === clean || p.startsWith(`${clean}/`));
+    if (!gone.length) throw new Error(`no ${path}`);
+    for (const p of gone) r.files.delete(p);
+    r.modified = Date.now();
+  }
   async add(repo: string, dir: string, name: string, text: string) {
     const r = this.repos.get(repo);
     if (!r) throw new Error(`no repo ${repo}`);
     if (!name || name.startsWith('.') || name.includes('/')) throw new Error(`invalid file name ${name}`);
-    const hasDir = r.files.get(dir) === null || [...r.files.keys()].some((p) => p.startsWith(`${dir}/`));
+    // '' is the repo's own top.
+    const hasDir = dir === '' || r.files.get(dir) === null || [...r.files.keys()].some((p) => p.startsWith(`${dir}/`));
     if (!hasDir) throw new Error(`no directory ${dir}`);
-    const path = `${dir}/${name}`;
+    const path = dir ? `${dir}/${name}` : name;
     if (r.files.has(path)) throw new Error(`${path} already exists`);
     r.files.set(path, text);
     r.modified = Date.now();
@@ -142,4 +168,60 @@ export class MemoryStore implements RepoStore {
   }
 }
 
-export const store: RepoStore = isNative ? new NativeStore() : new MemoryStore();
+/** A change made through the store: a file's new text, a new directory, or a removal. */
+export interface Change {
+  repo: string;
+  path: string;
+  what: 'file' | 'dir' | 'removed' | 'repo';
+  text?: string;
+  /** Who made it, so a listener can leave its own changes alone. */
+  by?: string;
+}
+
+/**
+ * Every write goes through here, and each one that succeeds is announced, so
+ * the shell's copy, Forge, Git and File all see one repo. `by` names the
+ * writer (a shell writing back its own changes passes its id).
+ */
+class Observed implements RepoStore {
+  readonly changes = new EventTarget();
+  private inner: RepoStore;
+  constructor(inner: RepoStore) { this.inner = inner; }
+  get persistent() { return this.inner.persistent; }
+  private tell(c: Change) { this.changes.dispatchEvent(new CustomEvent<Change>('change', {detail: c})); }
+  list() { return this.inner.list(); }
+  tree(repo: string, path: string) { return this.inner.tree(repo, path); }
+  read(repo: string, path: string) { return this.inner.read(repo, path); }
+  async create(name: string, template: Template, by?: string) {
+    const r = await this.inner.create(name, template);
+    this.tell({repo: name, path: '', what: 'repo', by});
+    return r;
+  }
+  async write(repo: string, path: string, text: string, by?: string) {
+    const n = await this.inner.write(repo, path, text);
+    this.tell({repo, path, what: 'file', text, by});
+    return n;
+  }
+  async add(repo: string, dir: string, name: string, text: string, by?: string) {
+    const n = await this.inner.add(repo, dir, name, text);
+    this.tell({repo, path: dir ? `${dir}/${name}` : name, what: 'file', text, by});
+    return n;
+  }
+  async mkdir(repo: string, path: string, by?: string) {
+    await this.inner.mkdir(repo, path);
+    this.tell({repo, path, what: 'dir', by});
+  }
+  async remove(repo: string, path: string, by?: string) {
+    await this.inner.remove(repo, path);
+    this.tell({repo, path, what: 'removed', by});
+  }
+}
+
+export const store = new Observed(isNative ? new NativeStore() : new MemoryStore());
+
+/** Hear every change made through the store; returns the way to stop. */
+export function onChange(listen: (c: Change) => void): () => void {
+  const f = (e: Event) => listen((e as CustomEvent<Change>).detail);
+  store.changes.addEventListener('change', f);
+  return () => store.changes.removeEventListener('change', f);
+}

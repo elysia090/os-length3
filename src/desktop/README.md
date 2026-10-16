@@ -48,10 +48,35 @@ separate surface and nothing here depends on it.
   top and the reference (the repo's
   `issue/`; diff and run output not connected yet) grows into the
   room. No tabs: files are chosen from File.
-- Terminal: translated BusyBox `sh` running on the xlat kernel in a
-  Worker, on a copy of the open repo. Changes there are not written back
-  yet, and it says so. Prepare its files with `npm run userland` (see
-  `scripts/userland.sh`).
+- Prompt: translated BusyBox `sh` and `l3` running on the xlat kernel in a
+  Worker, on the open repo. What the shell changes under `/root/<repo>` is
+  written back through the store (text files up to the read limit), and
+  what is saved anywhere else is put into the shell's copy, so the shell,
+  File, Forge and Git see one repo. Prepare its files with `npm run
+  userland` (see `scripts/userland.sh`).
+
+## l3: the same OS on the command line
+
+`l3` speaks the app's words and goes through the same Rust core
+(`core/`), so the app and the command cannot disagree about a repo, a file,
+an issue or a TODO. Templates and the naming rules live once in `shared/`,
+read by the core, the app and both test suites.
+
+```
+l3                          what is here
+l3 repo [new NAME -t c]     repos (Home, +)
+l3 file [REPO[/PATH]]       File: a directory's entries or a file's text
+l3 file write REPO/PATH     replace a file with standard input (Forge's save)
+l3 issue [REPO|new …]       Git's issues: numbered files in issue/
+l3 git [REPO]               the Git page: issues and changes handed in
+l3 todo [add …|done N]      Home's TODO
+l3 runtime                  this device's room
+```
+
+On the host it uses the app's data directory (`$LENGTH3_HOME` overrides):
+`cargo install --path cli`. The same binary, built static for xlat, is
+`/bin/l3` in the Prompt, where only the open repo is present and Home's
+TODO, making repos and the device are left to the app.
 - File: hovering or pressing its icon lays the tree of "/" over any page —
   the whole system as the shell sees it (`/bin` from the fetched
   distribution, repos under `/root`) — and it stays 8 s after the pointer
@@ -61,7 +86,8 @@ separate surface and nothing here depends on it.
 - Git: the repos' issues, read from each `issue/` (one file each, first line
   "Fix：件名"), filtered by repo chips; a row opens the file in Forge, and
   「Issue を書く」 adds the next numbered file (natively through `repo_add`,
-  which only makes new files in existing directories). Changes pushed by
+  which only makes new files in existing directories), as `l3 issue new`
+  does. Changes pushed by
   others need a Remote, and the page says so.
 - Runtime shows this device's storage: what the app holds, used, free and
   total, measured by the `capacity` command (statvfs plus allocated bytes

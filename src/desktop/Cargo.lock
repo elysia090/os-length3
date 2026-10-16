@@ -1647,10 +1647,28 @@ dependencies = [
 ]
 
 [[package]]
-name = "length3-os"
+name = "l3"
+version = "0.1.0"
+dependencies = [
+ "length3-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "length3-core"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "length3-os"
+version = "0.1.0"
+dependencies = [
+ "length3-core",
  "serde",
  "tauri",
  "tauri-build",

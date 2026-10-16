@@ -1,6 +1,6 @@
 import {h} from '../dom.ts';
 import {issueText, nextIssueName, parseIssue, type Issue} from '../issues.ts';
-import {store} from '../repos.ts';
+import {onChange, store} from '../repos.ts';
 import {kindOf} from '../todo.ts';
 import {bench} from './bench.ts';
 import {pageHead} from './common.ts';
@@ -140,5 +140,10 @@ export function git(ctx: Context): Node[] {
       h('h2', {id: 'changes-title'}, '提出された変更'),
       h('div', {class: 'empty'}, 'まだ届いた変更はありません。Remote とつながると、誰がいつ push した変更かがここに並びます。')));
   const work = bench({main, reveal: () => {}});
+  // Issues written anywhere (here, in the shell, with l3 in the Prompt) show up at once.
+  const stop = onChange((c) => {
+    if (!work.element.isConnected) { stop(); return; }
+    if (c.what === 'repo' || c.path === 'issue' || c.path.startsWith('issue/')) void paint();
+  });
   return [work.element];
 }

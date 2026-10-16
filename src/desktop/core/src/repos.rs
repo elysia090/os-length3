@@ -8,7 +8,8 @@ use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::time::UNIX_EPOCH;
 
-pub type Result<T> = std::result::Result<T, String>;
+pub use crate::Result;
+use crate::{issues, templates};
 
 #[derive(Serialize, Debug)]
 pub struct Summary {
@@ -47,6 +48,13 @@ pub struct Repos {
 }
 
 impl Repos {
+    /// The repos of this person, where the app keeps them.
+    pub fn open() -> Result<Repos> {
+        Repos::new(crate::paths::repos_dir())
+    }
+
+    pub fn root(&self) -> &Path { &self.root }
+
     pub fn new(root: PathBuf) -> Result<Repos> {
         fs::create_dir_all(&root).map_err(|e| e.to_string())?;
         Ok(Repos { root })
@@ -112,33 +120,20 @@ impl Repos {
         Ok(Summary { name: name.to_string(), files, bytes, modified, git: dir.join(".git").is_dir() })
     }
 
-    /// Create a repo from a template. Inbox and TODO are the app's, not the
-    /// repo's, so templates hold only the repo's own files.
+    /// Create a repo from a template (shared/templates.json). Inbox and TODO
+    /// are the OS's, not the repo's, so templates hold only the repo's own files.
     pub fn create(&self, name: &str, template: &str) -> Result<Summary> {
         let dir = self.repo(name)?;
         if dir.exists() {
             return Err(format!("repo {name} already exists"));
         }
-        let mut files: Vec<(&str, String)> = Vec::new();
-        let mut dirs: Vec<&str> = Vec::new();
-        match template {
-            "empty" => files.push(("README.md", format!("# {name}\n"))),
-            "standard" | "c" => {
-                files.push(("README.md", format!("# {name}\n")));
-                dirs.extend(["docs", "issue"]);
-                if template == "c" {
-                    files.push(("src/main.c", "#include <stdio.h>\n\nint main(void) {\n    puts(\"hello\");\n    return 0;\n}\n".into()));
-                    files.push(("Makefile", format!("{name}: src/main.c\n\tcc -O2 -o $@ src/main.c\n")));
-                }
-            }
-            _ => return Err(format!("unknown template {template:?}")),
-        }
+        let t = templates::find(template).ok_or_else(|| format!("unknown template {template:?}"))?;
         fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        for d in dirs {
+        for d in &t.dirs {
             fs::create_dir_all(dir.join(d)).map_err(|e| e.to_string())?;
         }
-        for (path, text) in files {
-            let target = dir.join(path);
+        for (path, text) in t.files_for(name) {
+            let target = dir.join(&path);
             if let Some(parent) = target.parent() {
                 fs::create_dir_all(parent).map_err(|e| e.to_string())?;
             }
@@ -230,6 +225,68 @@ impl Repos {
             .map_err(|e| e.to_string())?;
         file.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
         Ok(text.len() as u64)
+    }
+}
+
+impl Repos {
+    /// Make a directory (and its parents) inside `repo`. Nothing outside the
+    /// repo can be reached: each part is a plain name.
+    pub fn mkdir(&self, repo: &str, relative: &str) -> Result<()> {
+        let base = self.inside(repo, "")?;
+        let mut path = base.clone();
+        for c in Path::new(relative).components() {
+            match c {
+                Component::Normal(part) if part != ".git" => path.push(part),
+                Component::CurDir => {}
+                _ => return Err(format!("path {relative:?} leaves the repo")),
+            }
+            match fs::symlink_metadata(&path) {
+                Ok(m) if m.is_dir() => {}
+                Ok(_) => return Err(format!("{relative:?} is in the way of a file")),
+                Err(_) => fs::create_dir(&path).map_err(|e| e.to_string())?,
+            }
+        }
+        Ok(())
+    }
+
+    /// Remove a file, or a directory with everything in it, inside `repo`.
+    /// The repo itself and its .git are never removed this way.
+    pub fn remove(&self, repo: &str, relative: &str) -> Result<()> {
+        if Path::new(relative).components().any(|c| c.as_os_str() == ".git") {
+            return Err("the repo's .git is not removed this way".into());
+        }
+        let base = self.inside(repo, "")?;
+        let path = self.inside(repo, relative)?;
+        if path == base {
+            return Err("the repo itself is not removed this way".into());
+        }
+        let meta = fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
+        if meta.is_dir() { fs::remove_dir_all(&path) } else { fs::remove_file(&path) }.map_err(|e| e.to_string())
+    }
+
+    /// The repo's issues, newest written first; None when it has no issue/.
+    pub fn issues(&self, repo: &str) -> Result<Option<Vec<issues::Issue>>> {
+        let Ok(entries) = self.tree(repo, "issue") else { return Ok(None) };
+        let mut out = Vec::new();
+        for e in entries.into_iter().filter(|e| e.kind == "file") {
+            if let Ok(Contents { text: Some(text), .. }) = self.read(repo, &format!("issue/{}", e.name), 256 * 1024) {
+                out.push(issues::parse(repo, &e.name, &text));
+            }
+        }
+        issues::sort(&mut out);
+        Ok(Some(out))
+    }
+
+    /// Write a new issue as the next numbered file in `issue/`; returns its name.
+    pub fn add_issue(&self, repo: &str, kind: Option<&str>, title: &str, detail: &str) -> Result<String> {
+        if title.trim().is_empty() {
+            return Err("an issue needs a title".into());
+        }
+        let names: Vec<String> = self.tree(repo, "issue").map_err(|_| format!("{repo} has no issue/"))?
+            .into_iter().map(|e| e.name).collect();
+        let name = issues::next_name(&names);
+        self.add(repo, "issue", &name, &issues::text(kind, title, detail), 256 * 1024)?;
+        Ok(name)
     }
 }
 
@@ -325,6 +382,37 @@ mod tests {
     }
 
     #[test]
+    fn directories_are_made_and_removed_inside_the_repo_only() {
+        let r = scratch("tree-ops");
+        r.create("a", "standard").unwrap();
+        r.mkdir("a", "src/deep").unwrap();
+        assert!(r.root.join("a/src/deep").is_dir());
+        assert!(r.mkdir("a", "../b").is_err());
+        assert!(r.mkdir("a", "README.md/x").is_err());
+        r.remove("a", "src").unwrap();
+        assert!(!r.root.join("a/src").exists());
+        assert!(r.remove("a", "").is_err());
+        assert!(r.remove("a", ".git").is_err());
+        assert!(r.remove("a", "../a").is_err());
+        assert!(r.root.join("a/README.md").exists());
+    }
+
+    #[test]
+    fn issues_are_numbered_files_read_back_newest_first() {
+        let r = scratch("issues");
+        r.create("a", "standard").unwrap();
+        assert_eq!(r.add_issue("a", Some("Fix"), "壊れる", "手順").unwrap(), "001.md");
+        assert_eq!(r.add_issue("a", None, "メモ", "").unwrap(), "002.md");
+        let list = r.issues("a").unwrap().unwrap();
+        assert_eq!(list.iter().map(|i| i.title.as_str()).collect::<Vec<_>>(), ["メモ", "壊れる"]);
+        assert_eq!(list[1].kind.as_deref(), Some("Fix"));
+        r.create("e", "empty").unwrap();
+        assert!(r.issues("e").unwrap().is_none());
+        assert!(r.add_issue("e", None, "x", "").is_err());
+        assert!(r.add_issue("a", None, "  ", "").is_err());
+    }
+
+    #[test]
     fn reads_are_bounded_and_binary_is_not_text() {
         let r = scratch("read");
         r.create("a", "empty").unwrap();
@@ -333,5 +421,41 @@ mod tests {
         assert!(c.truncated && c.text.as_deref() == Some("ああ") && c.size == 30);
         fs::write(r.root.join("a/bin"), [1u8, 0, 2]).unwrap();
         assert!(r.read("a", "bin", 10).unwrap().text.is_none());
+    }
+}
+
+#[cfg(test)]
+mod shared_cases {
+    //! The cases in shared/cases.json, which the app's tests read too.
+    use crate::{issues, text};
+    use serde_json::Value;
+
+    fn cases() -> Value {
+        serde_json::from_str(include_str!("../../shared/cases.json")).unwrap()
+    }
+    fn opt(v: &Value) -> Option<String> { v.as_str().map(String::from) }
+
+    #[test]
+    fn kinds_issues_and_names_agree_with_the_app() {
+        let c = cases();
+        for k in c["kind"].as_array().unwrap() {
+            let (kind, title) = text::kind_of(k[0].as_str().unwrap());
+            assert_eq!((kind, title), (opt(&k[1]), k[2].as_str().unwrap().to_string()), "{k}");
+        }
+        for k in c["issue"].as_array().unwrap() {
+            let i = issues::parse("r", "x.md", k[0].as_str().unwrap());
+            assert_eq!((i.kind, i.title, i.detail), (opt(&k[1]), k[2].as_str().unwrap().into(), k[3].as_str().unwrap().into()), "{k}");
+        }
+        for k in c["issueText"].as_array().unwrap() {
+            let t = issues::text(k[0].as_str(), k[1].as_str().unwrap(), k[2].as_str().unwrap());
+            assert_eq!(t, k[3].as_str().unwrap(), "{k}");
+        }
+        for k in c["nextIssue"].as_array().unwrap() {
+            let names: Vec<&str> = k[0].as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
+            assert_eq!(issues::next_name(&names), k[1].as_str().unwrap(), "{k}");
+        }
+        for k in c["validName"].as_array().unwrap() {
+            assert_eq!(super::valid_name(k[0].as_str().unwrap()), k[1].as_bool().unwrap(), "{k}");
+        }
     }
 }

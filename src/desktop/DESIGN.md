@@ -14,14 +14,14 @@ top, then the page each icon leads to.
   outside) → **Runtime** (the environment) → **Remote** (sync) →
   **Topic** (posts) → **Inbox** (what was sent to you). **+** (a new repo)
   comes right under them, a step apart, and is round because it starts
-  something rather than opening a place (§3, shapes).
+  something rather than opening a place (§4, shapes).
 - A name appears beside an icon on hover or keyboard focus. Choosing an
   icon replaces the whole page; nothing pushes in beside the rail. File is
   the one operation: it lays its tree over the page instead (below).
 - The rail is 78 px wide: the icons keep 18 px to its line and 12 px to the
   window's side, so they do not crowd the line.
 - Item 48×48, radius 12, icon 24 px with a 1.6 px stroke; + is a 40 px
-  round button with an `edge` outline. States as everywhere (§3).
+  round button with an `edge` outline. States as everywhere (§4).
 - The person's own icon (initials in a circle) sits at the foot of the
   rail. Touching it brings out what comes before settings: the name, see
   the profile, edit the profile, this device's storage, and 設定 (not
@@ -154,7 +154,17 @@ outlined shape, turned). Inside a repo a name opens that place in Forge
 opens and closes the folder. Open folders are remembered while the app
 runs.
 
-## 3. Language
+## 3. One OS, two ways in
+
+The GUI and the command line are two ways into the same things. `l3`'s
+nouns are the rail's: `repo`, `file`, `issue` / `git`, `todo` (Home),
+`runtime`; a path is written as File shows it (`/root/<repo>/…`). A line is
+named the same way everywhere ("Fix：件名"), issues are the same numbered
+files, and Home's state is the same files, so anything done in one shows in
+the other. The Prompt's shell works on the repo itself: what it changes is
+written back, and what is saved elsewhere comes in.
+
+## 4. Language
 
 One rule per thing, applied everywhere, with no exceptions made by eye.
 Every value in `styles.css` comes from a token below.
@@ -189,7 +199,7 @@ Every value in `styles.css` comes from a token below.
   the right pane and the prompt box, 280 ms. Reduced motion turns them off.
 - No shadows, blur, glow or gradients.
 
-## 4. Tokens
+## 5. Tokens
 
 | Role | Value | Use |
 | --- | --- | --- |

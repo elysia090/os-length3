@@ -1,4 +1,5 @@
 import {h} from '../dom.ts';
+import {getState, setState} from '../state.ts';
 import * as todo from '../todo.ts';
 
 // The TODO box on Home. Each item is written like a short note: the first
@@ -9,11 +10,10 @@ import * as todo from '../todo.ts';
 // its detail stays readable. The box keeps its own DOM, so typing never
 // re-renders the page.
 
-const KEY = 'length3.os.todo';
 const KIND_AT_START = /^\s*([A-Za-z][A-Za-z0-9-]{0,15})\s*[：:]\s*/;
 
 function load(): todo.Todo[] {
-  try { return todo.parse(localStorage.getItem(KEY)); } catch { return []; }
+  try { return todo.parse(getState('todo')); } catch { return []; }
 }
 
 const date = (ms: number) => { const d = new Date(ms); return `${d.getMonth() + 1}/${d.getDate()}`; };
@@ -57,8 +57,8 @@ export function todoBox(): HTMLElement {
 
   const save = () => {
     const kept = todo.persisted(items);
-    try { localStorage.setItem(KEY, JSON.stringify(kept)); status.textContent = ''; }
-    catch { status.textContent = 'この端末に保存できませんでした'; }
+    setState('todo', JSON.stringify(kept)).then(() => { status.textContent = ''; },
+      (e: unknown) => { status.textContent = `保存できませんでした: ${e instanceof Error ? e.message : String(e)}`; });
     const open = kept.filter((t) => !t.done).length;
     remaining.textContent = kept.length ? `残り ${open} / ${kept.length}` : '';
   };

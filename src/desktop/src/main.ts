@@ -9,6 +9,7 @@ import {Me} from './pages/me.ts';
 import {newRepo} from './pages/new-repo.ts';
 import {runtime} from './pages/runtime.ts';
 import {FileTree} from './pages/tree.ts';
+import {loadState} from './state.ts';
 import {NEW_REPO, PURPOSES, purpose, restorePurpose, stepPurpose, type PurposeId} from './purposes.ts';
 
 const PURPOSE_KEY = 'length3.os.purpose';
@@ -103,4 +104,9 @@ const me = new Me(ctx, currentProfile, {editProfile: () => startEditing(ctx)});
 $('rail-me').append(me.element);
 
 $('rail-tabs').append(...PURPOSES.map((p) => railButton(p.id)), railButton(NEW_REPO.id));
-select(restorePurpose(load(PURPOSE_KEY)));
+// Home's state is read before the first page, and again when the window
+// comes back, so what l3 changed meanwhile is what the page shows.
+void loadState().finally(() => select(restorePurpose(load(PURPOSE_KEY))));
+window.addEventListener('focus', () => {
+  void loadState().then(() => { if (current === 'home') render(); else me.paint(); });
+});

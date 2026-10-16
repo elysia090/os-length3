@@ -1,0 +1,28 @@
+{
+  "comment": "Cases both the app (TypeScript) and l3 (Rust) must agree on.",
+  "kind": [
+    ["Fix：再起動すると保存内容が消える", "Fix", "再起動すると保存内容が消える"],
+    ["RFC: Remoteの保持期間", "RFC", "Remoteの保持期間"],
+    ["  Patch ： 起動を速く", "Patch", "起動を速く"],
+    ["牛乳を買う", null, "牛乳を買う"],
+    ["12:30 に会議", null, "12:30 に会議"],
+    ["a-very-long-kind-name：x", null, "a-very-long-kind-name：x"]
+  ],
+  "issue": [
+    ["Fix：再起動すると保存内容が消える\n\n再現手順\n1. 保存\n", "Fix", "再起動すると保存内容が消える", "再現手順\n1. 保存"],
+    ["# RFC: Remoteの保持期間", "RFC", "Remoteの保持期間", ""],
+    ["﻿メモ\n本文", null, "メモ", "本文"]
+  ],
+  "issueText": [
+    ["Patch", " 起動を速く ", "\n詳細\n", "Patch：起動を速く\n\n詳細\n"],
+    [null, "メモ", "", "メモ\n"]
+  ],
+  "nextIssue": [
+    [[], "001.md"],
+    [["001.md", "007.md", "notes.md"], "008.md"],
+    [["999.md"], "1000.md"]
+  ],
+  "validName": [
+    ["my-repo_1.0", true], ["", false], [".git", false], ["a/b", false], ["..", false], ["a b", false]
+  ]
+}

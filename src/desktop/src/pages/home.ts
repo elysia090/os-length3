@@ -1,24 +1,14 @@
 import {h} from '../dom.ts';
 import {LIMITS, initials, normalize, parse, type Profile} from '../profile.ts';
+import {getState, setState} from '../state.ts';
 import {repoList} from './repo-list.ts';
 import {todoBox} from './todo-box.ts';
 import type {Context} from './context.ts';
 
-const PROFILE_KEY = 'length3.os.profile';
-
-function load(key: string): string | null {
-  try { return localStorage.getItem(key); } catch { return null; }
-}
-
-function save(key: string, value: string): boolean {
-  try { localStorage.setItem(key, value); return true; } catch { return false; }
-}
-
-let profile: Profile = parse(load(PROFILE_KEY));
 let editing = false;
 
-/** The profile as it stands, for the rail's own icon. */
-export const currentProfile = (): Profile => profile;
+/** The profile as it stands (Home's state, see state.ts), for Home and the rail's own icon. */
+export const currentProfile = (): Profile => parse(getState('profile'));
 
 /** Open Home with the profile form out. */
 export function startEditing(ctx: Context) {
@@ -29,6 +19,7 @@ export function startEditing(ctx: Context) {
 
 /** Home: a profile that reads the same for its owner and for anyone else. */
 export function home(ctx: Context): Node[] {
+  const profile = currentProfile();
   const owner = true;
   const count = h('b', {}, '…');
   const list = repoList(ctx, {newCard: true, count});
@@ -46,6 +37,7 @@ export function home(ctx: Context): Node[] {
 }
 
 function identity(repoCount: HTMLElement): HTMLElement {
+  const profile = currentProfile();
   const named = profile.name || profile.handle;
   return h('div', {class: 'identity'},
     named ? h('h1', {}, profile.name || `@${profile.handle}`) : h('h1', {class: 'unset'}, '名前が未設定です'),
@@ -62,6 +54,7 @@ function editButton(ctx: Context): HTMLElement {
 }
 
 function editForm(ctx: Context): HTMLElement {
+  const profile = currentProfile();
   const name = h('input', {id: 'profile-name', maxlength: String(LIMITS.name), autocomplete: 'name'}) as HTMLInputElement;
   const handle = h('input', {id: 'profile-handle', maxlength: String(LIMITS.handle), autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
   const bio = h('textarea', {id: 'profile-bio', maxlength: String(LIMITS.bio), rows: '3'}) as HTMLTextAreaElement;
@@ -76,12 +69,14 @@ function editForm(ctx: Context): HTMLElement {
       h('button', {class: 'button primary', type: 'submit'}, '保存'),
       h('button', {class: 'button', type: 'button', 'data-cancel': ''}, 'キャンセル')),
   );
-  form.addEventListener('submit', (event) => {
+  form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const result = normalize({name: name.value, handle: handle.value, bio: bio.value});
     if (result.error) { error.textContent = 'ハンドルは英小文字・数字・- _ の32文字以内です'; handle.focus(); return; }
-    if (!save(PROFILE_KEY, JSON.stringify(result.profile))) { error.textContent = 'この端末に保存できませんでした'; return; }
-    profile = result.profile;
+    try { await setState('profile', JSON.stringify(result.profile)); } catch (e) {
+      error.textContent = `保存できませんでした: ${e instanceof Error ? e.message : String(e)}`;
+      return;
+    }
     editing = false;
     ctx.rerender();
   });
