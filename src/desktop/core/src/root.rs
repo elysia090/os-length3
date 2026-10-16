@@ -33,11 +33,11 @@ pub struct Release {
 /// The releases l3 trusts, newest first. Nothing else is installed.
 pub const RELEASES: &[Release] = &[Release {
     name: "OS Length3 Linux",
-    version: "0.2.0",
-    sha256: "1008fe2d6d5b7d02de4c6c0756517113ba6cf20706ee92ca480044c76e7e7540",
-    bytes: 65_134_931,
-    file: "os-length3-linux-0.2.0-x86_64-1008fe2d6d5b7d02de4c6c0756517113ba6cf20706ee92ca480044c76e7e7540.tar.zst",
-    tag: "os-length3-linux-v0.2.0",
+    version: "0.3.0",
+    sha256: "48b75f1d119670fbf697ac6dd30a2787a9e2fc783af16c75c94f9a6cdf5c7c1f",
+    bytes: 65_041_390,
+    file: "os-length3-linux-0.3.0-x86_64-48b75f1d119670fbf697ac6dd30a2787a9e2fc783af16c75c94f9a6cdf5c7c1f.tar.zst",
+    tag: "os-length3-linux-v0.3.0",
 }, Release {
     name: "OS Length3 Linux",
     version: "0.1.0",
