@@ -168,10 +168,10 @@ a { color: var(--ink); }
 .legend { margin-top: var(--s3); display: flex; flex-wrap: wrap; gap: var(--s5); }
 .legend b { font-size: 20px; font-weight: 600; display: block; }
 
-/* File: strip on top, center flow and side at equal weight */
+/* File: the tree's edge, the strip on top, center flow and side at equal weight */
 .page.page-work { padding: 0; height: 100vh; overflow: hidden; }
 .page.page-work > .work { max-width: none; }
-.work { height: 100vh; display: grid; grid-template-columns: clamp(200px, 16vw, 280px) minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+.work { --tree-open: clamp(260px, 20vw, 340px); height: 100vh; display: grid; grid-template-columns: 28px minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
 .repo-strip { grid-column: 2 / -1; display: flex; gap: var(--s1); align-items: end; padding: var(--s3) var(--s5) 0; border-bottom: 1px solid var(--rule); overflow-x: auto; }
 .repo-tab {
   min-height: 40px; padding: 6px var(--s4); border: 1px solid transparent; border-bottom: 0;
@@ -202,26 +202,41 @@ a { color: var(--ink); }
 .pane h2 { font-size: var(--t-body); font-weight: 600; }
 .pane .empty { margin-top: var(--s3); padding: var(--s5); }
 
-/* File tree: "/" holds only repos, from the top; ◁/▽ on the right of a folder */
-.tree { grid-row: 1 / -1; border-right: 1px solid var(--rule); overflow: auto; min-height: 0; }
-.tree-body { padding: var(--s4) var(--s2) var(--s5); }
+/* File tree of "/": lies over the left edge and opens under the pointer,
+   so the center and the right never move. */
+.tree { grid-row: 1 / -1; position: relative; z-index: 3; border-right: 1px solid var(--rule); }
+.tree-handle { display: block; padding-top: var(--s4); text-align: center; font: 600 var(--t-meta) var(--mono); color: var(--sub); }
+.tree-panel {
+  position: absolute; inset: 0 auto 0 0; width: var(--tree-open); overflow: auto;
+  padding: var(--s4) var(--s2) var(--s5); background: var(--ground); border-right: 1px solid var(--rule);
+  box-shadow: 8px 0 24px rgb(41 43 42 / 0.12);
+  visibility: hidden; opacity: 0; transform: translateX(-8px);
+  transition: opacity 120ms, transform 120ms, visibility 0s 120ms;
+  transition-delay: 180ms;
+}
+.tree:hover .tree-panel, .tree:has(:focus-visible) .tree-panel {
+  visibility: visible; opacity: 1; transform: none;
+  transition: opacity 120ms, transform 120ms, visibility 0s;
+  transition-delay: 80ms;
+}
 .tree-root { padding: 0 var(--s2) var(--s1); font: 600 var(--t-meta) var(--mono); color: var(--sub); }
 .tree ul { list-style: none; margin: 0; padding: 0; }
-.tree-row { display: flex; align-items: center; border-radius: var(--r-control); }
+.tree-row { display: flex; align-items: center; gap: 2px; padding-left: calc(var(--depth, 0) * 16px); border-radius: var(--r-control); }
 .tree-row:hover { background: var(--raised); }
 .tree-name {
-  flex: 1; min-width: 0; min-height: 32px; text-align: left; border: 0; background: transparent; cursor: pointer;
-  padding: 0 var(--s2) 0 calc(var(--s2) + var(--depth, 0) * 14px);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  flex: 1; min-width: 0; min-height: 30px; padding: 0 var(--s1); text-align: left; border: 0; background: transparent; cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px;
 }
+.tree-name.plain { display: flex; align-items: center; cursor: default; color: var(--sub); }
 .tree-repo > .tree-row .tree-name { font-weight: 600; }
 .tree-name[aria-current='page'] { text-decoration: underline; text-underline-offset: 4px; }
-.tree-name.file { color: var(--ink); font-size: 14px; }
-.tree-toggle { flex: none; display: grid; place-items: center; width: 32px; min-height: 32px; border: 0; background: transparent; cursor: pointer; color: var(--sub); border-radius: var(--r-control); }
-.tree-toggle svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linejoin: round; transition: transform 120ms; }
-.tree-toggle[aria-expanded='false'] svg { transform: rotate(90deg); }
+.tree-meta { flex: none; padding: 0 var(--s2); font-size: 12px; color: var(--sub); }
+.tree-toggle, .tree-spacer { flex: none; width: 24px; min-height: 30px; }
+.tree-toggle { display: grid; place-items: center; border: 0; background: transparent; cursor: pointer; color: var(--sub); border-radius: var(--r-control); }
 .tree-toggle:hover { color: var(--ink); }
-.tree-empty, .tree-wait { padding: 4px var(--s2) 4px calc(var(--s2) + var(--depth, 0) * 14px); font-size: var(--t-meta); }
+.tree-toggle svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linejoin: round; transition: transform 120ms; }
+.tree-toggle[aria-expanded='false'] svg { transform: rotate(-90deg); }
+.tree-note { padding: 4px var(--s2) 4px calc(var(--depth, 0) * 16px + 28px); font-size: var(--t-meta); }
 .flow .revealed > .path { background: var(--raised); }
 
 /* Terminal */
@@ -233,3 +248,7 @@ a { color: var(--ink); }
 .term-in { flex: 1; min-height: 36px; border: 0; background: transparent; font: var(--t-meta) var(--mono); }
 .term-in:focus { outline: none; }
 .term-line:focus-within { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tree-panel, .tree:hover .tree-panel, .tree-toggle svg { transition: none; }
+}

@@ -46,12 +46,20 @@ strikes through and fades the first line only.
 
 ### File
 
-A narrow tree on the left shows "/" and, under it, the person's repos and
-nothing else: the base distribution is fetched and lives in Runtime, not in
-this tree. The tree starts at the top of the pane; nothing in File is
-centered in empty space. A folder's triangle sits on the right of its
-name, ◁ closed and ▽ open (one outlined shape, turned); the name itself
-scrolls the center to it. Open folders are remembered while the app runs.
+"/" is the root of the whole system, the same tree the Terminal's shell
+sees, and the tree shows where each part comes from: `/bin` is the fetched
+distribution (配布), `/dev` and `/proc` are made by the kernel, `/root`
+holds the person's repos, `/etc` and `/tmp` start empty. `/root` is open at
+first.
+
+The tree is an operation, not a column: it lies over the left edge of the
+page (a 28 px edge marked "/") and opens while the pointer is on it or
+keyboard focus is in it, after a short delay so passing across does not
+open it. The center and the right never move or shrink. A folder's
+triangle comes before its name, ▷ closed and ▽ open (one outlined shape,
+turned). Inside a repo a name scrolls the center to that place; elsewhere it
+opens and closes the folder. Open folders are remembered while the app
+runs.
 
 The repo strip runs across the top of the center and right; the selected
 repo is read top to bottom, directory index first, then each directory and

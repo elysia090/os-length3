@@ -1,20 +1,20 @@
-import {h} from '../dom.ts';
-import {store, type Entry} from '../repos.ts';
+import {bytes, h} from '../dom.ts';
+import {inRepo, list, ORIGIN_LABEL, type SystemEntry} from '../system.ts';
 
-// The File tree. "/" holds the person's repos and nothing else: the base
-// distribution that has to be fetched is a separate thing (Runtime), not a
-// folder here. The tree starts at the top of the pane. A folder's triangle
-// sits on the right of its name: ◁ closed, ▽ open.
+// The File tree of "/", the whole system. It lies over the left edge of the
+// page and opens while the pointer is on it (or keyboard focus is in it), so
+// the center and the right never move. A folder's triangle comes before its
+// name: ▷ closed, ▽ open.
 
-/** Open folders, kept across page switches: "repo" or "repo/path". */
-const open = new Set<string>();
+/** Open folders by absolute path, kept across page switches. */
+const open = new Set<string>(['/root']);
 
 export interface TreeEvents {
   /** A repo or a path inside one was chosen; path '' is the repo itself. */
   choose(repo: string, path: string): void;
 }
 
-/** One outlined triangle pointing down; CSS turns it to point left while closed. */
+/** One outlined triangle pointing down; CSS turns it to point right while closed. */
 function triangle(): SVGSVGElement {
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');
@@ -26,63 +26,78 @@ function triangle(): SVGSVGElement {
   return svg;
 }
 
-function toggle(label: string, expanded: boolean): HTMLButtonElement {
-  const b = h('button', {class: 'tree-toggle', type: 'button', 'aria-expanded': String(expanded),
-    'aria-label': `${label}を${expanded ? '閉じる' : '開く'}`}) as HTMLButtonElement;
-  b.append(triangle());
-  return b;
-}
+const note = (text: string, depth: number) => h('li', {class: 'tree-note muted', style: `--depth:${depth}`}, text);
 
 export function tree(current: string | null, events: TreeEvents): HTMLElement {
-  const root = h('ul', {class: 'tree-children', role: 'tree'});
-  const pane = h('nav', {class: 'tree', 'aria-label': 'ファイル'},
-    h('div', {class: 'tree-body'}, h('p', {class: 'tree-root'}, '/'), root));
+  const root = h('ul', {class: 'tree-children', role: 'tree', 'aria-label': '/'});
+  const panel = h('div', {class: 'tree-panel'}, h('p', {class: 'tree-root'}, '/'), root);
+  const pane = h('nav', {class: 'tree', 'aria-label': 'ファイル（/）'},
+    h('span', {class: 'tree-handle', 'aria-hidden': 'true'}, '/'), panel);
 
-  const folder = (repo: string, path: string, name: string, list: HTMLElement, depth: number) => {
-    const key = path ? `${repo}/${path}` : repo;
-    const expanded = open.has(key);
-    const label = h('button', {class: 'tree-name', type: 'button', style: `--depth:${depth}`}, name);
-    if (!path && repo === current) label.setAttribute('aria-current', 'page');
-    label.addEventListener('click', () => events.choose(repo, path));
-    const button = toggle(name, expanded);
+  const add = (e: SystemEntry, into: HTMLElement, depth: number) => {
+    const at = inRepo(e.path);
+    const isRepo = at !== null && at.path === '';
+    const row = h('div', {class: 'tree-row', style: `--depth:${depth}`});
+    const item = h('li', {role: 'treeitem', class: isRepo ? 'tree-repo' : e.kind === 'dir' ? 'tree-dir' : 'tree-file'}, row);
+    const meta = e.origin ? ORIGIN_LABEL[e.origin] : e.kind === 'file' && e.size ? bytes(e.size) : '';
+
+    if (e.kind !== 'dir') {
+      const text = e.kind === 'link' ? `${e.name} → ${e.target}` : e.name;
+      row.append(h('span', {class: 'tree-spacer', 'aria-hidden': 'true'}));
+      if (at) {
+        const name = h('button', {class: 'tree-name', type: 'button'}, text);
+        name.addEventListener('click', () => events.choose(at.repo, at.path));
+        row.append(name);
+      } else {
+        row.append(h('span', {class: 'tree-name plain'}, text));
+      }
+      if (meta) row.append(h('span', {class: 'tree-meta'}, meta));
+      into.append(item);
+      return;
+    }
+
+    let expanded = open.has(e.path);
+    const toggle = h('button', {class: 'tree-toggle', type: 'button'}) as HTMLButtonElement;
+    toggle.append(triangle());
+    const name = h('button', {class: 'tree-name', type: 'button'}, e.name);
+    if (isRepo && at.repo === current) name.setAttribute('aria-current', 'page');
     const children = h('ul', {class: 'tree-children', role: 'group'});
-    const row = h('li', {class: path ? 'tree-dir' : 'tree-repo', role: 'treeitem', 'aria-expanded': String(expanded)},
-      h('div', {class: 'tree-row'}, label, button), children);
+    row.append(toggle, name);
+    if (meta) row.append(h('span', {class: 'tree-meta'}, meta));
+    item.append(children);
+
     const fill = async () => {
-      children.replaceChildren(h('li', {class: 'tree-wait muted'}, '…'));
-      let entries: Entry[];
-      try { entries = await store.tree(repo, path); } catch (e) { children.replaceChildren(h('li', {class: 'muted'}, String(e))); return; }
-      children.replaceChildren(...entries.map((e) => {
-        const p = path ? `${path}/${e.name}` : e.name;
-        if (e.kind === 'dir') {
-          const sub = h('ul');
-          folder(repo, p, e.name, sub, depth + 1);
-          return sub.firstChild as HTMLElement;
-        }
-        const file = h('button', {class: 'tree-name file', type: 'button', style: `--depth:${depth + 1}`}, e.name);
-        file.addEventListener('click', () => events.choose(repo, p));
-        return h('li', {class: 'tree-file', role: 'treeitem'}, h('div', {class: 'tree-row'}, file));
-      }));
-      if (!entries.length) children.replaceChildren(h('li', {class: 'tree-empty muted', style: `--depth:${depth + 1}`}, '空'));
+      children.replaceChildren(note('…', depth + 1));
+      let entries: SystemEntry[];
+      try { entries = await list(e.path); } catch (err) {
+        children.replaceChildren(note(err instanceof Error ? err.message : String(err), depth + 1));
+        return;
+      }
+      children.replaceChildren();
+      for (const c of entries) add(c, children, depth + 1);
+      if (!entries.length) children.append(note(e.path === '/root' ? 'repoはまだありません' : '空', depth + 1));
     };
-    button.addEventListener('click', () => {
-      const now = !open.has(key);
-      if (now) open.add(key); else open.delete(key);
-      button.setAttribute('aria-expanded', String(now));
-      button.setAttribute('aria-label', `${name}を${now ? '閉じる' : '開く'}`);
-      row.setAttribute('aria-expanded', String(now));
+    const show = (now: boolean) => {
+      expanded = now;
+      if (now) open.add(e.path); else open.delete(e.path);
+      toggle.setAttribute('aria-expanded', String(now));
+      toggle.setAttribute('aria-label', `${e.name}を${now ? '閉じる' : '開く'}`);
+      item.setAttribute('aria-expanded', String(now));
       children.hidden = !now;
       if (now) void fill();
+    };
+    toggle.addEventListener('click', () => show(!expanded));
+    // Inside a repo the name also shows the place in the center; elsewhere it
+    // only opens and closes, like the triangle.
+    name.addEventListener('click', () => {
+      if (!at) { show(!expanded); return; }
+      if (!expanded) show(true);
+      events.choose(at.repo, at.path);
     });
-    children.hidden = !expanded;
-    if (expanded) void fill();
-    list.append(row);
+    show(expanded);
+    into.append(item);
   };
 
-  void store.list().then((repos) => {
-    root.replaceChildren();
-    for (const r of repos) folder(r.name, '', r.name, root, 0);
-    if (!repos.length) root.append(h('li', {class: 'muted tree-empty'}, 'repoはまだありません'));
-  });
+  void list('/').then((top) => { for (const e of top) add(e, root, 0); });
   return pane;
 }

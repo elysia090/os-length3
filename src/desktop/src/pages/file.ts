@@ -6,10 +6,11 @@ import {terminalFor} from './terminal.ts';
 import {tree} from './tree.ts';
 
 /**
- * File: the tree of "/" on the left, the repo strip on top, the repo read top
- * to bottom in the center (directories open into their files as you scroll),
- * and the reference and terminal on the right at the same weight as the
- * center. Choosing a path in the tree scrolls the center to it.
+ * File: the tree of "/" lies over the left edge and opens under the pointer;
+ * the repo strip on top, the repo read top to bottom in the center
+ * (directories open into their files as you scroll), and the reference and
+ * terminal on the right at the same weight as the center. Choosing a path
+ * inside a repo in the tree scrolls the center to it.
  */
 
 /** A path chosen in the tree for a repo that is not open yet. */
