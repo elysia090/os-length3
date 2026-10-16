@@ -241,6 +241,23 @@ a { color: var(--ink); }
 /* Git keeps one centred column of comfortable width: the form, the rows, the notes and the prompt box line up. */
 .git-flow > * { max-width: 760px; margin-inline: auto; }
 .issue-row[aria-current] { border-color: var(--ink); background: var(--raised); }
+/* Under an open issue: its cuts, the changes not cut yet, cutting, handing out. */
+.issue-item { display: grid; }
+/* An open issue is one place: its row on top, the work under a rule. */
+.issue-item.open { border: 1px solid var(--ink); border-radius: var(--r-place); margin-bottom: var(--s2); }
+.issue-item.open > .issue-row { border-color: transparent; background: transparent; }
+.issue-work { display: grid; gap: var(--s2); padding: var(--s3) var(--s4) var(--s4); border-top: 1px solid var(--rule); }
+.issue-work h3 { display: flex; gap: var(--s2); align-items: baseline; margin: var(--s2) 0 0; font-size: var(--t-meta); font-weight: 600; }
+.issue-work h3:first-child { margin-top: 0; }
+.issue-work h3 small { font-weight: 400; color: var(--sub); }
+.cut-rows, .change-folders { display: grid; gap: var(--s1); }
+.cut-row { display: grid; gap: 2px; padding: var(--s1) 0; }
+.cut-places { font: var(--t-meta) var(--mono); }
+.change-folder { display: grid; }
+.change-folder-head { display: flex; justify-content: space-between; font: var(--t-meta)/1.8 var(--mono); }
+.change-file { display: grid; grid-template-columns: 5em minmax(0, 1fr) auto; gap: var(--s2); width: 100%; padding: 2px var(--s1); border: 0; background: transparent; text-align: left; cursor: pointer; border-radius: var(--r-field); font-size: var(--t-meta); }
+.change-file:hover { background: var(--raised); }
+.change-word { color: var(--sub); }
 .issue-one { display: grid; gap: var(--s2); }
 .issue-one h3 { margin: 0; font-size: var(--t-body); font-weight: 600; }
 .issue-body { white-space: pre-wrap; }

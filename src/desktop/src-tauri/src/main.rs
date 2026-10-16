@@ -3,7 +3,7 @@
 // them is what `l3` does on the command line, through the same core.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use length3_core::{home, paths, repos, system};
+use length3_core::{git, home, paths, repos, system};
 
 /// Files the editor may save; anything read in part is never written back.
 const READ_LIMIT: u64 = 256 * 1024;
@@ -69,11 +69,44 @@ fn state_set(key: String, json: String) -> Result<(), String> {
     home::set(&key, &json)
 }
 
+/// Changes not yet definite, by folder.
+#[tauri::command]
+fn git_changes(repo: String) -> Result<git::Changes, String> {
+    let r = managed()?;
+    r.tree(&repo, "")?;
+    git::changes(&r.root().join(&repo))
+}
+
+/// Cut the changes not yet cut, under an issue (`issue` is its file name in
+/// issue/) or, without one, named by `line` ("Kind：件名").
+#[tauri::command]
+fn git_cut(repo: String, issue: Option<String>, line: String, note: String) -> Result<git::Commit, String> {
+    let r = managed()?;
+    r.tree(&repo, "")?;
+    let (name, email) = git::author();
+    let dir = r.root().join(&repo);
+    match issue {
+        Some(file) => {
+            let c = r.read(&repo, &format!("issue/{file}"), READ_LIMIT)?;
+            let i = length3_core::issues::parse(&repo, &file, &c.text.ok_or("Issue がバイナリです")?);
+            git::cut_under(&dir, &i, &note, (&name, &email))
+        }
+        None => git::commit(&dir, &line, &note, None, (&name, &email)),
+    }
+}
+
+#[tauri::command]
+fn git_log(repo: String) -> Result<Vec<git::Commit>, String> {
+    let r = managed()?;
+    r.tree(&repo, "")?;
+    git::log(&r.root().join(&repo), 50)
+}
+
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             capacity, repo_list, repo_create, repo_tree, repo_read, repo_write, repo_add,
-            repo_mkdir, repo_remove, state_get, state_set
+            repo_mkdir, repo_remove, state_get, state_set, git_changes, git_cut, git_log
         ])
         .run(tauri::generate_context!())
         .expect("Length³ OS shell failed to start");

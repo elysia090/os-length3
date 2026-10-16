@@ -8,12 +8,15 @@
 //!   l3 file write REPO/PATH  replace an existing file with standard input
 //!   l3 issue [REPO | REPO/NNN.md | new REPO "Kind：title" [-m detail]]
 //!   l3 git [REPO]            the Git page: issues, and changes handed in
+//!   l3 git changes|cuts REPO changes not yet cut, by folder; the cuts so far
+//!   l3 issue cut REPO/NNN.md cut them into history under that issue
+//!   l3 git cut REPO "Kind：title"  …or without one
 //!   l3 todo [add "Kind：title" [-m detail] | done N]
 //!   l3 runtime               this device's room
 //!
 //! Paths may be written as File shows them: /root/<repo>/… is <repo>/….
 
-use length3_core::{home, paths, repos::Repos, system, templates, text};
+use length3_core::{git, home, paths, repos::Repos, system, templates, text};
 use std::io::{Read, Write};
 use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -82,6 +85,10 @@ const HELP: &str = "l3 — Length³ OS をコマンドで。アプリと同じ r
   l3 issue REPO/NNN.md       1件を全文で
   l3 issue new REPO \"Fix：件名\" [-m 詳細]
   l3 git [REPO]              Git：Issue と、届いた変更
+  l3 git changes REPO        まだ区切っていない変更（フォルダーごと）
+  l3 issue cut REPO/NNN.md [-m メモ]   その Issue として変更を区切る
+  l3 git cut REPO \"Fix：件名\"   Issue なしで区切る
+  l3 git cuts REPO           区切った変更
   l3 todo                    Home の TODO
   l3 todo add \"Fix：件名\" [-m 詳細]
   l3 todo done N             N 番目を完了にする（もう一度で戻す）
@@ -140,6 +147,31 @@ fn run(a: Args) -> Result<(), String> {
         }
         ["issue", target] if target.trim_end_matches('/').contains('/') => issue_one(&a, target),
         ["issue", repo] => issues(&a, Some(repo), false),
+        ["git", "changes", repo] => git_status(&a, repo),
+        ["git", "cut", repo, line] => {
+            let r = Repos::open()?;
+            r.tree(repo, "")?;
+            let (name, email) = git::author();
+            cut_done(&a, git::commit(&r.root().join(repo), line, &a.detail, None, (&name, &email))?)
+        }
+        ["issue", "cut", target] => {
+            let (repo, rel) = split(target);
+            let file = rel.trim_start_matches("issue/").to_string();
+            let r = Repos::open()?;
+            let c = r.read(&repo, &format!("issue/{file}"), 256 * 1024)?;
+            let i = length3_core::issues::parse(&repo, &file, &c.text.ok_or("バイナリです")?);
+            let (name, email) = git::author();
+            cut_done(&a, git::cut_under(&r.root().join(&repo), &i, &a.detail, (&name, &email))?)
+        }
+        ["git", "cuts", repo] => {
+            let r = Repos::open()?;
+            r.tree(repo, "")?;
+            let list = git::log(&r.root().join(repo), 50)?;
+            if a.json { return json(&list); }
+            if list.is_empty() { out("区切った変更はまだありません"); }
+            for c in &list { cut_line(repo, c); }
+            Ok(())
+        }
         ["git", repo] => issues(&a, Some(repo), true),
         ["todo"] | ["todo", "ls"] => todo_list(&a),
         ["todo", "add", line] => {
@@ -259,6 +291,50 @@ fn issues(a: &Args, only: Option<&str>, page: bool) -> Result<(), String> {
     Ok(())
 }
 
+fn cut_done(a: &Args, c: git::Commit) -> Result<(), String> {
+    if a.json { return json(c); }
+    out(format!("区切りました {}  {}（{} ファイル +{} −{}）", c.id, text::named(c.kind.as_deref(), &c.title), c.files, c.added, c.removed));
+    Ok(())
+}
+
+fn cut_line(repo: &str, c: &git::Commit) {
+    out(text::named(c.kind.as_deref(), &c.title));
+    let places: Vec<String> = c.folders.iter().map(|f| if f.is_empty() { format!("{repo}/") } else { format!("{f}/") }).collect();
+    let issue = c.issue.as_deref().map(|i| format!(" · {i}")).unwrap_or_default();
+    out(format!("    {} · {} · {} · {} ファイル +{} −{}{issue}", c.id, c.author, ago(c.time), c.files, c.added, c.removed));
+    out(format!("    {}", places.join(" ")));
+}
+
+fn ago(ms: u64) -> String {
+    let s = now().saturating_sub(ms) / 1000;
+    match s {
+        0..=59 => "たった今".into(),
+        60..=3599 => format!("{} 分前", s / 60),
+        3600..=86399 => format!("{} 時間前", s / 3600),
+        _ => format!("{} 日前", s / 86400),
+    }
+}
+
+/// What is not yet definite, folder by folder, as Git shows it.
+fn git_status(a: &Args, repo: &str) -> Result<(), String> {
+    let r = Repos::open()?;
+    r.tree(repo, "")?;
+    let c = git::changes(&r.root().join(repo))?;
+    if a.json { return json(&c); }
+    if !c.git { out(format!("{repo} には .git がありません")); return Ok(()); }
+    if c.files == 0 { out("まだ区切っていない変更はありません"); return Ok(()); }
+    out(format!("まだ区切っていない変更  {} ファイル +{} −{}", c.files, c.added, c.removed));
+    for f in &c.folders {
+        out(format!("  {}/  +{} −{}", if f.folder.is_empty() { repo } else { &f.folder }, f.added, f.removed));
+        for x in &f.files {
+            let word = match x.status { "added" => "追加", "removed" => "削除", "renamed" => "名前変更", _ => "変更" };
+            out(format!("      {word}  {}{}", x.path, if x.binary { "  （バイナリ）".to_string() } else { format!("  +{} −{}", x.added, x.removed) }));
+        }
+    }
+    out("区切るには: l3 issue cut REPO/NNN.md（その Issue として）か l3 git cut REPO \"Fix：件名\"");
+    Ok(())
+}
+
 fn issue_one(a: &Args, target: &str) -> Result<(), String> {
     let (repo, rel) = split(target);
     let file = rel.trim_start_matches("issue/");
@@ -269,6 +345,11 @@ fn issue_one(a: &Args, target: &str) -> Result<(), String> {
     out(text::named(i.kind.as_deref(), &i.title));
     out(format!("{} · issue/{}", i.repo, i.file));
     if !i.detail.is_empty() { out(""); out(&i.detail); }
+    let path = format!("issue/{}", i.file);
+    let cuts: Vec<git::Commit> = git::log(&r.root().join(&repo), 200)?.into_iter().filter(|c| c.issue.as_deref() == Some(&path)).collect();
+    out("");
+    if cuts.is_empty() { out("この Issue の区切りはまだありません（l3 issue cut で区切れます）"); }
+    for c in &cuts { cut_line(&repo, c); }
     Ok(())
 }
 

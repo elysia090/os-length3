@@ -11,7 +11,7 @@ import sys
 import tarfile
 
 REPO = Path(__file__).resolve().parents[2]
-EVIDENCE = REPO / 'src/v2/vm/check/browser/evidence'
+EVIDENCE = REPO / 'artifact/native/evidence'
 OVERRIDES = {
     'boot': 'data/distribution/boot/boot', 'console': 'data/distribution/boot/console',
     'package-recipes.sh': 'data/distribution/package-recipes.sh', 'build.sh': 'data/build.sh',

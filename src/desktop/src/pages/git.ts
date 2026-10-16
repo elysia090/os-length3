@@ -2,17 +2,21 @@ import {h} from '../dom.ts';
 import {issueText, nextIssueName, parseIssue, type Issue} from '../issues.ts';
 import {onChange, store} from '../repos.ts';
 import {kindOf} from '../todo.ts';
+import {ago} from '../dom.ts';
+import * as gitops from '../git.ts';
 import {bench} from './bench.ts';
 import {pageHead} from './common.ts';
 import type {Context} from './context.ts';
 
 /**
- * Git: what happens between a repo and the outside. Issues are the unit of
- * work and talk, read straight from each repo's issue/ (nothing is kept
- * twice) and named by kind and title; who and when come second. Changes
- * handed in by others are settled by Merge or Reject, never Close; Close is
- * for Issues only. Until a Remote is joined no change can arrive, and the
- * page says so instead of showing anything made up.
+ * Git: what happens between a repo and the outside, in the issues' terms.
+ * Issues are the unit of work and talk, read straight from each repo's
+ * issue/ (nothing is kept twice) and named by kind and title. Under an issue
+ * the person cuts their work into history (区切る: a commit named after the
+ * issue), sees its cuts and the changes not yet cut, folder by folder, and
+ * hands a cut out (提出) once there is a Remote; whoever receives it settles it
+ * by Merge or Reject, never Close, which is for issues only. Nothing is shown
+ * that is not there.
  */
 
 const ALL = '';
@@ -48,19 +52,87 @@ export function git(ctx: Context): Node[] {
     }));
   };
 
+  const cutRow = (repo: string, c: gitops.Commit) => h('div', {class: 'cut-row'},
+    h('span', {class: 'issue-head'}, c.kind ? h('span', {class: 'issue-kind'}, `${c.kind}：`) : null, c.title),
+    h('span', {class: 'issue-where muted'}, `${c.id} · ${c.author} · ${ago(c.time)} · ${c.files} ファイル +${c.added} −${c.removed}`),
+    h('span', {class: 'cut-places muted'}, c.folders.map((f) => (f ? `${f}/` : `${repo}/`)).join(' ')));
+
+  /** Folder by folder, what is not cut yet; the folder first, so a reader enters from their area. */
+  const changeList = (repo: string, c: gitops.Changes) => h('div', {class: 'change-folders'}, ...c.folders.map((f) =>
+    h('div', {class: 'change-folder'},
+      h('div', {class: 'change-folder-head'}, h('b', {}, f.folder ? `${f.folder}/` : `${repo}/`), h('span', {class: 'muted'}, `+${f.added} −${f.removed}`)),
+      ...f.files.map((x) => {
+        const b = h('button', {type: 'button', class: 'change-file'},
+          h('span', {class: 'change-word'}, gitops.STATUS_WORD[x.status]), h('span', {class: 'mono'}, f.folder ? x.path.slice(f.folder.length + 1) : x.path),
+          h('span', {class: 'muted'}, x.binary ? 'バイナリ' : `+${x.added} −${x.removed}`));
+        b.addEventListener('click', () => ctx.openRepo(repo, x.path));
+        return b;
+      }))));
+
+  /** What one does under an issue: its cuts, the changes not cut yet, cutting, handing out. */
+  const issueWork = (i: Issue): HTMLElement => {
+    const box = h('div', {class: 'issue-work'}, h('p', {class: 'muted small'}, '読み込み中…'));
+    if (!gitops.hasGit) {
+      box.replaceChildren(h('p', {class: 'muted small'}, '区切り・提出はデスクトップ版で、その repo の git で行います（このブラウザには git がありません）。'));
+      return box;
+    }
+    const paintWork = async () => {
+      let changes: gitops.Changes, cuts: gitops.Commit[];
+      try { [changes, cuts] = await Promise.all([gitops.changes(i.repo), gitops.log(i.repo)]); } catch (e) {
+        box.replaceChildren(h('p', {class: 'error'}, `git を読めませんでした: ${e instanceof Error ? e.message : String(e)}`));
+        return;
+      }
+      if (!changes.git) { box.replaceChildren(h('p', {class: 'muted small'}, `${i.repo} には .git がありません。`)); return; }
+      const mine = cuts.filter((c) => c.issue === `issue/${i.file}`);
+      const note = h('input', {class: 'line-in', placeholder: 'メモ（なくてもよい）', 'aria-label': '区切りのメモ', maxlength: '400'}) as HTMLInputElement;
+      const error = h('p', {class: 'error', role: 'alert'});
+      const doCut = h('button', {class: 'button primary', type: 'button'}, 'この Issue として区切る') as HTMLButtonElement;
+      doCut.disabled = changes.files === 0;
+      doCut.addEventListener('click', async () => {
+        doCut.disabled = true;
+        try { await gitops.cut(i.repo, i.file, '', note.value); } catch (e) {
+          error.textContent = `区切れませんでした: ${e instanceof Error ? e.message : String(e)}`;
+          doCut.disabled = false;
+          return;
+        }
+        await paintWork();
+      });
+      const hand = h('button', {class: 'button', type: 'button', disabled: '', title: 'Remote がまだありません'}, '提出');
+      box.replaceChildren(
+        h('h3', {}, 'この Issue の区切り', h('small', {}, mine.length ? `${mine.length} 件` : '')),
+        mine.length ? h('div', {class: 'cut-rows'}, ...mine.map((c) => cutRow(i.repo, c)))
+          : h('p', {class: 'muted small'}, 'まだありません。変更をこの Issue として区切ると、ここに並びます。'),
+        h('h3', {}, 'まだ区切っていない変更', h('small', {}, changes.files ? `${changes.files} ファイル +${changes.added} −${changes.removed}` : '')),
+        changes.files ? changeList(i.repo, changes) : h('p', {class: 'muted small'}, `${i.repo} に、まだ区切っていない変更はありません。`),
+        ...(changes.files ? [note] : []), error,
+        h('div', {class: 'row'}, doCut, hand),
+        h('p', {class: 'muted small'}, '区切ると、件名がこの Issue の「' + (i.kind ? `${i.kind}：` : '') + i.title + '」になります。提出は Remote とつながると使えます（受け取る側が Merge か Reject で決めます）。'));
+    };
+    void paintWork();
+    return box;
+  };
+
   const row = (i: Issue) => {
     const b = h('button', {type: 'button', class: 'issue-row'},
       h('span', {class: 'issue-head'}, i.kind ? h('span', {class: 'issue-kind'}, `${i.kind}：`) : null, i.title),
       h('span', {class: 'issue-where muted'}, `${i.repo} · issue/${i.file}`),
       i.detail ? h('span', {class: 'issue-detail muted'}, i.detail.split('\n')[0]) : null);
     // Pressing a row shows it in full on the right; its file opens from there.
+    const item = h('div', {class: 'issue-item'}, b);
     b.addEventListener('click', () => {
-      for (const r of list.querySelectorAll('.issue-row[aria-current]')) r.removeAttribute('aria-current');
+      const open = b.hasAttribute('aria-current');
+      for (const r of list.querySelectorAll('.issue-row[aria-current]')) { r.removeAttribute('aria-current'); r.removeAttribute('aria-expanded'); }
+      for (const w of list.querySelectorAll('.issue-work')) w.remove();
+      for (const o of list.querySelectorAll('.issue-item.open')) o.classList.remove('open');
+      if (open) return;
+      item.classList.add('open');
       b.setAttribute('aria-current', 'true');
+      b.setAttribute('aria-expanded', 'true');
+      item.append(issueWork(i));
       work.setRepo(i.repo);
       work.reference.showIssue(i, () => ctx.openRepo(i.repo, `issue/${i.file}`));
     });
-    return b;
+    return item;
   };
 
   const paint = async () => {
@@ -138,7 +210,7 @@ export function git(ctx: Context): Node[] {
       h('h2', {id: 'issues-title'}, h('span', {}, 'Issue ', count), write), form, list),
     h('section', {class: 'section', 'aria-labelledby': 'changes-title'},
       h('h2', {id: 'changes-title'}, '提出された変更'),
-      h('div', {class: 'empty'}, 'まだ届いた変更はありません。Remote とつながると、誰がいつ push した変更かがここに並びます。')));
+      h('div', {class: 'empty'}, 'まだ届いた変更はありません。Remote とつながると、提出された変更がここに並びます。')));
   const work = bench({main, reveal: () => {}});
   // Issues written anywhere (here, in the shell, with l3 in the Prompt) show up at once.
   const stop = onChange((c) => {
