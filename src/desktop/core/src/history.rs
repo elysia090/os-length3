@@ -6,7 +6,7 @@
 //!   Commit         what is not committed becomes history on the work's line,
 //!                  named after its issue ("Fix：件名")
 //!   Push           the line's commits are handed to the Remote as its state
-//!   Submit change  what was pushed goes to main as a change; again after more
+//!   Change         what was pushed goes to main as a change; again after more
 //!                  commits, as its next version; Reset takes it back
 //!   Review         of one version of a change: approve, ask for changes, comment
 //!   Merge, Reject  the receiver's: main takes the change, or does not
@@ -372,7 +372,7 @@ pub struct Work {
     /// Commits made on it, and how many of them are not pushed yet.
     pub commits: usize,
     pub unpushed: usize,
-    /// The change it was submitted as, if it was.
+    /// The change it was handed in as, if it was.
     pub change: Option<Change>,
 }
 
@@ -459,11 +459,11 @@ pub fn changes_of_repo(repo: &str) -> Result<Vec<Change>> {
     Ok(list)
 }
 
-/// Submit change: what the work pushed goes to main (again: a new version).
+/// Change: what the work pushed goes to main (again: a new version).
 pub fn submit(repos: &Repos, repo: &str, note: &str) -> Result<Change> {
     let on = repos.line(repo);
     if on == crate::work::MAIN {
-        return Err(crate::tr!("A change is submitted from the work on an issue", "変更は Issue の作業から提出します"));
+        return Err(crate::tr!("A change comes from an issue's work (l3 start REPO/issue/NNN.md)", "Change は Issue の作業から渡します（l3 start REPO/issue/NNN.md）"));
     }
     let (kind, title, _) = words(repos, repo, None, "")?;
     let client = Client::open()?;
@@ -480,7 +480,7 @@ pub fn submit(repos: &Repos, repo: &str, note: &str) -> Result<Change> {
 fn change_call(repo: &str, id: &str, verb: &str, body: serde_json::Value) -> Result<serde_json::Value> {
     match Client::open()?.call("POST", &format!("/v1/repos/{repo}/changes/{id}/{verb}"), Some(body))? {
         Reply::Ok(v) => Ok(v),
-        Reply::Conflict(v) if v["conflicts"].is_array() => Err(crate::tr!("Both changed these files; resolve them in the work, push and submit again: {}", "両方で変わったファイルがあります。作業の側で直して Push し、もう一度提出してください: {}",
+        Reply::Conflict(v) if v["conflicts"].is_array() => Err(crate::tr!("Both changed these files; resolve them in the work, push and change again: {}", "両方で変わったファイルがあります。作業の側で直して Push し、もう一度 Change してください: {}",
             v["conflicts"].as_array().unwrap().iter().filter_map(|p| p.as_str()).collect::<Vec<_>>().join(", "))),
         Reply::Conflict(v) if v["version"].is_number() => Err(crate::tr!("The change has a newer version ({}); look at it first", "変更に新しい版があります（{}）。先にそれを見てください", v["version"])),
         Reply::Conflict(v) => Err(crate::tr!("The change is {} already", "この変更はもう {} です", v["error"].as_str().unwrap_or("?"))),
@@ -514,7 +514,7 @@ pub fn reject(repo: &str, id: &str, note: &str) -> Result<Change> {
     serde_json::from_value(change_call(repo, &c.id, "reject", serde_json::json!({"note": note}))?).map_err(|e| e.to_string())
 }
 
-/// Reset: take back the change the work submitted (the submitter's decision).
+/// Reset: take back the change the work handed in (its author's decision).
 pub fn reset(repos: &Repos, repo: &str) -> Result<Change> {
     let on = repos.line(repo);
     let c = find(repo, &on)?;

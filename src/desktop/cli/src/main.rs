@@ -6,7 +6,7 @@
 //!
 //! The canonical copy is the Remote's. Every change made here is sent at
 //! once (the draft). Work on an issue has its own copy, which the repo
-//! shows while you work on it; commit, push and Submit change hand it to
+//! shows while you work on it; commit, push and change hand it to
 //! main, where it is reviewed and merged or rejected.
 
 use length3_core::{history, home, inbox, paths, remote, repos::Repos, templates, text, tr, usage, work};
@@ -89,21 +89,21 @@ File
   l3 file [REPO[/PATH]]       a directory's entries, or a file's text
   l3 file write REPO/PATH     replace a file with standard input
 Git
-  l3 git [REPO]               issues, the work on them, and changes handed in
+  l3 git [REPO]               issues, changes to main, and main's history
   l3 issue [REPO | REPO/NNN.md]
   l3 issue new REPO \"Fix：title\" [-m detail]
-  l3 work REPO/issue/NNN.md   work on that issue (its own copy of the repo)
-  l3 work REPO main           back to main
+  l3 start REPO/issue/NNN.md  start (or continue) the issue in its own copy
+  l3 main REPO                back to main
   l3 commit REPO [-m note]    commit the work, named after its issue
   l3 commit REPO \"Fix：title\" on main, named by the line
   l3 push REPO                push the work's commits
-  l3 submit REPO [-m note]    Submit change (again after more commits)
-  l3 reset REPO               take back the change you submitted
-  l3 changes REPO             changes handed in to main, with reviews
+  l3 change REPO [-m note]    hand what was pushed to main (again: next version)
+  l3 reset REPO               take the change back
+  l3 changes REPO             the changes to main, with reviews
   l3 review REPO ID approve|changes|comment [-m note]
   l3 merge REPO ID            main takes the change
   l3 reject REPO ID [-m why]  main does not
-  l3 log REPO                 the commits of the work shown
+  l3 log REPO                 the commits of what the repo shows
 Runtime
   l3 runtime                  the root, and this device by size: what can go
   l3 free ID… | l3 free all   free (sync and free for a repo with changes)
@@ -140,21 +140,21 @@ File
   l3 file [REPO[/PATH]]       ディレクトリなら中身、ファイルなら本文
   l3 file write REPO/PATH     標準入力で既存のファイルを置き換える
 Git
-  l3 git [REPO]               Issue と、その作業、届いた変更
+  l3 git [REPO]               Issue、main への Change、main の履歴
   l3 issue [REPO | REPO/NNN.md]
   l3 issue new REPO \"Fix：件名\" [-m 詳細]
-  l3 work REPO/issue/NNN.md   その Issue の作業をする（repo の写しがその作業になる）
-  l3 work REPO main           main に戻る
+  l3 start REPO/issue/NNN.md  その Issue を始める（続ける）。repo はその写しになる
+  l3 main REPO                main に戻る
   l3 commit REPO [-m メモ]    作業を Commit（Issue の名前で）
   l3 commit REPO \"Fix：件名\"  main で Commit
   l3 push REPO                作業のコミットを Push
-  l3 submit REPO [-m メモ]    Submit change（コミットを足したらもう一度）
-  l3 reset REPO               提出した変更を取り下げる
-  l3 changes REPO             main に届いた変更とレビュー
+  l3 change REPO [-m メモ]    Push したものを main に渡す（もう一度で次の版）
+  l3 reset REPO               Change を取り下げる
+  l3 changes REPO             main への Change とレビュー
   l3 review REPO ID approve|changes|comment [-m メモ]
   l3 merge REPO ID            main に取り込む
   l3 reject REPO ID [-m 理由] 取り込まない
-  l3 log REPO                 いまの作業のコミット
+  l3 log REPO                 repo がいま見せているもののコミット
 Runtime
   l3 runtime                  root と この端末: 容量順、空けられるもの
   l3 free ID… | l3 free all   空ける（変更があれば送ってから）
@@ -223,7 +223,7 @@ fn run(a: Args) -> Result<(), String> {
             Some("todo") => Some(tr!("Home's TODO", "Home の TODO")),
             Some("runtime") | Some("free") | Some("root") => Some(tr!("this device's room and roots", "この端末の容量と root")),
             Some("inbox" | "address") => Some(tr!("the Inbox", "Inbox")),
-            Some("remote" | "login" | "logout" | "sync" | "work" | "commit" | "push" | "submit" | "reset" | "changes" | "review" | "merge" | "reject" | "log") =>
+            Some("remote" | "login" | "logout" | "sync" | "start" | "main" | "commit" | "push" | "change" | "reset" | "changes" | "review" | "merge" | "reject" | "log") =>
                 Some(tr!("the Remote and history", "Remote と履歴")),
             Some("repo") if w.len() > 1 => Some(tr!("making or bringing repos", "repo を作ること・持ってくること")),
             Some("prompt") => Some(tr!("opening a Prompt", "Prompt を開くこと")),
@@ -303,16 +303,16 @@ fn run(a: Args) -> Result<(), String> {
         }
         ["issue", target] if target.trim_end_matches('/').contains('/') => issue_one(&a, target),
         ["issue", repo] => issues(&a, Some(repo)),
-        ["work", repo, "main"] => {
+        ["main", repo] => {
             work::switch(&Repos::open()?, repo, work::MAIN)?;
             out(tr!("{} shows main now", "{} は main を見せています", repo));
             Ok(())
         }
-        ["work", target] => {
+        ["start", target] => {
             let (repo, rel) = split(target);
             let l = work::start(&Repos::open()?, &repo, &rel)?;
             if a.json { return json(l); }
-            out(tr!("Working on {} — {} shows this work's copy now (back with: l3 work {} main)", "{} の作業をしています。{} はこの作業の写しを見せています（戻るには l3 work {} main）", rel, repo, repo));
+            out(tr!("Working on {} — {} shows its copy now (back with: l3 main {})", "{} を始めました。{} はその写しを見せています（戻るには l3 main {}）", rel, repo, repo));
             Ok(())
         }
         ["commit", target] if target.contains('/') => {
@@ -326,10 +326,10 @@ fn run(a: Args) -> Result<(), String> {
             out(tr!("Pushed {}", "Push しました {}", short(&head)));
             Ok(())
         }
-        ["submit", repo] => {
+        ["change", repo] => {
             let c = history::submit(&Repos::open()?, repo, &a.detail)?;
             if a.json { return json(c); }
-            out(tr!("Submitted {} as version {} ({})", "{} を提出しました（第 {} 版 · {}）", text::named(Some(&c.kind).filter(|k| !k.is_empty()).map(|s| s.as_str()), &c.title), c.version, short(&c.id)));
+            out(tr!("Handed {} to main as version {} ({})", "{} を main に渡しました（第 {} 版 · {}）", text::named(Some(&c.kind).filter(|k| !k.is_empty()).map(|s| s.as_str()), &c.title), c.version, short(&c.id)));
             Ok(())
         }
         ["reset", repo] => {
@@ -617,7 +617,7 @@ fn git_page(a: &Args, repo: &str) -> Result<(), String> {
             Ok(wk) if wk.line != work::MAIN => {
                 out(tr!("Work: {} · {} · started {}", "作業: {} · {} · {} に開始", wk.issue.as_deref().unwrap_or(&wk.line), if wk.started_by.is_empty() { "—" } else { &wk.started_by }, ago(wk.started_at)));
                 out(tr!("  {} commits, {} not pushed{}", "  コミット {} · 未 Push {}{}", wk.commits, wk.unpushed,
-                    wk.change.as_ref().map(|c| tr!(" · submitted (version {}, {})", " · 提出済み（第 {} 版 · {}）", c.version, state_word(&c.state))).unwrap_or_default()));
+                    wk.change.as_ref().map(|c| tr!(" · change (version {}, {})", " · Change（第 {} 版 · {}）", c.version, state_word(&c.state))).unwrap_or_default()));
             }
             Ok(_) => out(tr!("Work: main", "作業: main")),
             Err(e) => out(tr!("Work: ({})", "作業: （{}）", e)),
@@ -718,7 +718,7 @@ fn issue_one(a: &Args, target: &str) -> Result<(), String> {
     out("");
     if let Some(line) = work::line_for(&path) {
         let cuts = history::log_of(&repo, &line, 200).unwrap_or_default();
-        if cuts.is_empty() { out(tr!("No work on this issue yet (l3 work {}/{} to start)", "この Issue の作業はまだありません（l3 work {}/{} で始められます）", repo, path)); }
+        if cuts.is_empty() { out(tr!("Not started yet (l3 start {}/{})", "まだ始めていません（l3 start {}/{}）", repo, path)); }
         for c in &cuts { cut_line(c); }
     }
     Ok(())

@@ -47,7 +47,6 @@ export default {
   'Used {when}': '{when}に使用',
   'Sign out on this device': 'この端末を外す',
   'Connected · {host}': 'つながっています · {host}',
-  'passkeys and providers are managed in the browser': 'パスキーと入り方はブラウザで扱います',
   'l3 (the command line)': 'l3（コマンド）',
   'the Length³ OS app': 'Length³ OS アプリ',
   'Connect a device': '端末をつなぐ',
@@ -63,4 +62,6 @@ export default {
   'Connected. Go back to the device.': 'つなぎました。端末の画面に戻ってください。',
   'Refused.': '断りました。',
   '{client} asks to join this account. Check that the device shows the same code.': '{client} がこのアカウントにつなごうとしています。端末に出ているコードと同じか確かめてください。',
+  'Sign-in': 'サインイン',
+  'Passkeys and providers are managed in the browser.': 'パスキーとプロバイダはブラウザで管理します。',
 } as Record<string, string>;

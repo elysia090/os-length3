@@ -183,6 +183,11 @@ async fn history_log(repo: String) -> Result<Vec<history::Cut>, String> {
     blocking(move || history::log(&managed()?, &repo, 50)).await
 }
 
+#[tauri::command]
+async fn history_log_of(repo: String, line: String) -> Result<Vec<history::Cut>, String> {
+    blocking(move || history::log_of(&repo, &line, 50)).await
+}
+
 // ---- work on an issue, and the changes handed to main (core/src/work.rs, history.rs) ----
 
 /// Work on `issue` (its file, issue/NNN.md): the repo then shows that work's copy.
@@ -256,7 +261,7 @@ fn main() {
             capacity, space, free, repo_list, repo_create, repo_tree, repo_read, repo_write, repo_add,
             repo_mkdir, repo_remove, state_get, state_set,
             remote_login_start, remote_login_wait, remote_account, remote_logout, remote_repos, remote_status,
-            sync_repo, repo_fetch, history_changes, history_diff, history_cut, history_log,
+            sync_repo, repo_fetch, history_changes, history_diff, history_cut, history_log, history_log_of,
             work_start, work_switch, work_state, work_lines, history_push, history_submit, history_reset,
             changes_list, change_review, change_merge, change_reject, change_diff,
             shells::prompt_open, shells::prompt_input, shells::prompt_interrupt, shells::prompt_held, shells::prompt_close,

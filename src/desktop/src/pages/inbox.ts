@@ -2,6 +2,7 @@ import {ago, h} from '../dom.ts';
 import {t} from '../i18n.ts';
 import * as inbox from '../inbox.ts';
 import {connection} from '../remote.ts';
+import {store} from '../repos.ts';
 import {pageHead} from './common.ts';
 import type {Context} from './context.ts';
 
@@ -50,13 +51,13 @@ function claimBox(me: inbox.Me, done: () => void): HTMLElement {
 
 /** Your addresses, each with the SSH switch (its own permission; off unless asked). */
 function addressRows(me: inbox.Me, again: () => void): HTMLElement {
-  return h('div', {class: 'rows'}, ...me.addresses.map((a) => {
+  return h('div', {class: 'address-lines'}, ...me.addresses.map((a) => {
     const copy = button(t('Copy'), 'small-button');
     copy.addEventListener('click', () => { void navigator.clipboard?.writeText(a.address); copy.textContent = t('Copied'); });
     const ssh = button(a.ssh ? t('SSH: on') : t('SSH: off'), 'small-button');
     ssh.title = t('Whether this address may be reached over SSH. Turning it on only records that you allow it; connecting over SSH is not built yet.');
     ssh.addEventListener('click', async () => { ssh.disabled = true; await inbox.setSsh(a.address, !a.ssh).catch(() => {}); again(); });
-    return h('div', {class: 'row-item usage-prompt'}, h('span', {class: 'row-name mono'}, a.address), copy, ssh);
+    return h('div', {class: 'row address-line'}, h('span', {class: 'muted small'}, t('Your address')), h('b', {class: 'mono'}, a.address), copy, ssh);
   }));
 }
 
@@ -81,17 +82,19 @@ export function inboxPage(ctx: Context): Node[] {
     const list = h('nav', {class: 'inbox-list', 'aria-label': t('Conversations')});
     const pane = h('section', {class: 'inbox-thread', 'aria-live': 'polite'});
     holder.replaceChildren(
-      h('section', {class: 'section'}, h('h2', {}, t('Your address')), addressRows(me, () => void paint())),
-      h('section', {class: 'section'}, h('div', {class: 'inbox-box'}, list, pane)));
+      h('div', {class: 'part-bar'}, addressRows(me, () => void paint())),
+      h('div', {class: 'inbox-box'}, list, pane));
     await paintList(list, pane);
   };
 
   const paintList = async (list: HTMLElement, pane: HTMLElement) => {
     const all = await inbox.threads().catch(() => [] as inbox.Thread[]);
-    const to = h('input', {class: 'line-in', placeholder: 'name@domain', 'aria-label': t('Write to an address'), autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
+    const to = h('input', {class: 'line-in', placeholder: t('Write to name@domain'), 'aria-label': t('Write to an address'), autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
     const start = button(t('Write'), 'small-button');
     const error = h('p', {class: 'error', role: 'alert'});
+    to.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) start.click(); });
     start.addEventListener('click', async () => {
+      if (!to.value.trim()) { to.focus(); return; }
       const found: {address?: string; reachable: boolean; why?: string} = await inbox.lookup(to.value).catch(() => ({reachable: false, why: ''}));
       if (!found.reachable) { error.textContent = t('Cannot reach {address} ({why})', {address: to.value, why: found.why ?? ''}); return; }
       void show(found.address!, list, pane);
@@ -148,33 +151,58 @@ export function inboxPage(ctx: Context): Node[] {
       no.addEventListener('click', async () => { await inbox.setContact(address, 'blocked'); open = null; void paintList(list, pane); });
       decide.push(yes, no);
     }
-    const kind = h('select', {class: 'line-in kind-in', 'aria-label': t('What it is')},
-      ...(['message', 'review', 'question'] as const).map((k) => h('option', {value: k}, KIND(k)))) as HTMLSelectElement;
-    const repo = h('input', {class: 'line-in', placeholder: t('repo (optional)'), 'aria-label': t('About which repo')}) as HTMLInputElement;
-    const text = h('textarea', {class: 'line-in bubble-in', rows: '2', placeholder: t('Write…'), 'aria-label': t('Message'), maxlength: '4000'}) as HTMLTextAreaElement;
+    // Writing: what it is and what it is about are chosen (chips), then one line of text that
+    // grows as it is written. Enter sends; Shift+Enter starts a new line.
+    let kind: inbox.Kind = 'message';
+    let about = '';
+    const choose = (label: string, items: {id: string; text: string}[], now: () => string, set: (v: string) => void) => {
+      const group = h('div', {class: 'chips', role: 'radiogroup', 'aria-label': label});
+      const mark = () => { for (const c of group.children) c.setAttribute('aria-checked', String((c as HTMLElement).dataset.id === now())); };
+      for (const it of items) {
+        const b = h('button', {type: 'button', class: 'chip', role: 'radio', 'data-id': it.id}, it.text);
+        b.addEventListener('click', () => { set(it.id); mark(); text.focus(); });
+        group.append(b);
+      }
+      mark();
+      return group;
+    };
+    const text = h('textarea', {class: 'line-in bubble-in', rows: '1', placeholder: t('Write to {address}…', {address}), 'aria-label': t('Message'), maxlength: '4000'}) as HTMLTextAreaElement;
+    const grow = () => { text.style.height = 'auto'; text.style.height = `${Math.min(text.scrollHeight + 2, 200)}px`; };
+    text.addEventListener('input', grow);
+    const kinds = choose(t('What it is'), (['message', 'review', 'question'] as const).map((k) => ({id: k, text: KIND(k)})), () => kind, (v) => { kind = v as inbox.Kind; });
+    const repos = (await store.list().catch(() => [])).map((r) => r.name);
+    const abouts = repos.length
+      ? h('div', {class: 'row write-about'}, h('span', {class: 'muted small'}, t('About')),
+        choose(t('About which repo'), [{id: '', text: t('Nothing')}, ...repos.map((r) => ({id: r, text: r}))], () => about, (v) => { about = v; }))
+      : null;
     const sendB = button(t('Send'), 'primary');
     const error = h('p', {class: 'error', role: 'alert'});
     const go = async () => {
-      if (!text.value.trim()) return;
+      if (!text.value.trim() || sendB.disabled) return;
       sendB.disabled = true;
       error.textContent = '';
       try {
-        const target = repo.value.trim() ? {repo: repo.value.trim()} : {};
-        const r = await inbox.send(address, text.value, kind.value as inbox.Kind, target);
-        const m: inbox.Message = {id: r.id, mine: true, type: kind.value as inbox.Kind, target, body: text.value.trim(), time: Date.now(), read: false};
+        const target = about ? {repo: about} : {};
+        const r = await inbox.send(address, text.value, kind, target);
+        const m: inbox.Message = {id: r.id, mine: true, type: kind, target, body: text.value.trim(), time: Date.now(), read: false};
         live?.say(m);
         add({...m, live: live?.open});
         text.value = '';
+        grow();
         if (r.request) error.textContent = t('Sent as a request: they see it once they accept you.');
       } catch (e) { error.textContent = message(e); }
       sendB.disabled = false;
     };
     sendB.addEventListener('click', () => void go());
-    text.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void go(); });
+    text.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); void go(); } });
     pane.replaceChildren(
       h('header', {class: 'inbox-top'}, h('b', {class: 'mono'}, address), lineWord, h('span', {class: 'grow'}), ...decide),
       messages,
-      h('div', {class: 'inbox-write'}, h('div', {class: 'row'}, kind, repo), h('div', {class: 'row'}, text, sendB), error));
+      h('div', {class: 'inbox-write'},
+        h('div', {class: 'row write-what'}, kinds, abouts),
+        h('div', {class: 'row write-line'}, text, sendB),
+        h('p', {class: 'muted small write-hint'}, t('Enter sends · Shift+Enter for a new line')), error));
+    text.focus();
     // Accepted both ways: a direct line between the two devices, when both are here.
     if (th.mutual) {
       live = new inbox.Live(mine, address, add, (on) => { lineWord.textContent = on ? t('Direct') : t('Through the Remote'); });

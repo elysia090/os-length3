@@ -1,6 +1,6 @@
 // History in the issues' terms (core/src/history.rs, issue #17). An issue
 // is the unit of work; its branch and worktree are the OS's to keep. The
-// operations are Commit, Push, Submit change (again: the next version;
+// operations are Commit, Push, Change (again: the next version;
 // Reset takes it back), Review (of one version), and the receiver's Merge
 // and Reject. What is not committed is the draft against the work's last
 // commit, by folder. The app asks its core; a browser does the same here.
@@ -137,9 +137,9 @@ async function webCut(repo: string, issue: string | null, line: string, note: st
 
 interface RemoteCut { id: string; parent: string | null; merged?: string | null; tree: Tree; kind: string; title: string; issue: string; note: string; time: number; added: number; removed: number }
 
-async function webLog(repo: string): Promise<Cut[]> {
+async function webLog(repo: string, line = lineOf(repo)): Promise<Cut[]> {
   if (!connection()) return [];
-  const r = await api(at(repo, '/log?limit=50'));
+  const r = await api(at(repo, '/log?limit=50', line));
   if (r.status === 404) return [];
   const cuts = await r.json() as RemoteCut[];
   const trees = new Map(cuts.map((c) => [c.id, c.tree]));
@@ -160,6 +160,8 @@ export const canCut = () => connection() !== null;
 export const changes = (repo: string) => (isNative ? invoke<Changes>('history_changes', {repo}) : webChanges(repo));
 export const diff = (repo: string) => (isNative ? invoke<FileDiff[]>('history_diff', {repo}) : webDiff(repo));
 export const log = (repo: string) => (isNative ? invoke<Cut[]>('history_log', {repo}) : webLog(repo));
+/** One line's history, whichever the repo shows: main's, or an issue's work. */
+export const logOf = (repo: string, line: string) => (isNative ? invoke<Cut[]>('history_log_of', {repo, line}) : webLog(repo, line));
 
 /** Commit under `issue` (its file name in issue/), or without one, named by `line`. */
 export const cut = (repo: string, issue: string | null, line: string, note: string): Promise<Cut> =>
@@ -177,7 +179,7 @@ export interface Change {
   submittedBy: string; updatedAt: number; reviews: Review[]; folders: string[]; files: number;
 }
 export interface Work { line: string; issue: string | null; started_by: string; started_at: number; commits: number; unpushed: number; change: Change | null }
-interface Line { line: string; issue: string; head: string | null; pushed: string | null; base: string | null; startedBy: string; startedAt: number }
+export interface Line { line: string; issue: string; head: string | null; pushed: string | null; base: string | null; startedBy: string; startedAt: number }
 
 const repoPath = (repo: string, rest: string) => `/v1/repos/${encodeURIComponent(repo)}${rest}`;
 
@@ -216,7 +218,7 @@ async function webWork(repo: string): Promise<Work> {
 }
 
 function refused(r: Response, body: Record<string, unknown>): never {
-  if (Array.isArray(body.conflicts)) throw new RemoteError(409, t('Both changed these files; fix them in the work, push and submit again: {files}', {files: (body.conflicts as string[]).join(', ')}));
+  if (Array.isArray(body.conflicts)) throw new RemoteError(409, t('Both changed these files; fix them in the work, push and make the change again: {files}', {files: (body.conflicts as string[]).join(', ')}));
   if (typeof body.version === 'number') throw new RemoteError(409, t('The change has a newer version ({n}); look at it first', {n: body.version}));
   if (body.error === 'push first') throw new RemoteError(409, t('Push first: the change is what was pushed'));
   if (typeof body.error === 'string' && r.status === 409) throw new RemoteError(409, t('Nothing committed since the work began'));
@@ -242,6 +244,9 @@ export async function startWork(repo: string, issue: string): Promise<void> {
 export const switchWork = (repo: string, line: string) => showLine(repo, line);
 /** The work the repo shows, and where it stands. */
 export const work = (repo: string): Promise<Work> => (isNative ? invoke<Work>('work_state', {repo}) : webWork(repo));
+/** Every issue's work on the Remote (main not among them). */
+export const lines = (repo: string): Promise<Line[]> =>
+  isNative ? invoke<Line[]>('work_lines', {repo}) : connection() ? json<Line[]>(repoPath(repo, '/lines')) : Promise.resolve([]);
 /** The changes handed to the repo's main, newest first. */
 export const changesOf = (repo: string): Promise<Change[]> => (isNative ? invoke<Change[]>('changes_list', {repo}) : webChangesOf(repo));
 
@@ -255,7 +260,7 @@ export async function push(repo: string): Promise<void> {
   if (!r.ok) throw new RemoteError(r.status, t('Could not push; try again'));
 }
 
-/** Submit change: what the work pushed goes to main (again: its next version). */
+/** Change: what the work pushed is handed to main (again: its next version). */
 export async function submit(repo: string, note = ''): Promise<Change> {
   if (isNative) return invoke<Change>('history_submit', {repo, note});
   const line = lineOf(repo);
@@ -267,11 +272,11 @@ export async function submit(repo: string, note = ''): Promise<Change> {
   return Object.assign(c, places(await treeAt(repo, c.base), await treeAt(repo, c.head)));
 }
 
-/** Reset: take back the change this work submitted. */
+/** Reset: take back the change this work handed in. */
 export async function reset(repo: string): Promise<Change> {
   if (isNative) return invoke<Change>('history_reset', {repo});
   const c = (await webChangesOf(repo)).find((x) => x.line === lineOf(repo));
-  if (!c) throw new RemoteError(404, t('This work has not been submitted'));
+  if (!c) throw new RemoteError(404, t('This work has no change yet'));
   return changeCall(repo, c.id, 'reset', {});
 }
 

@@ -4,7 +4,7 @@ import {t, tn} from '../i18n.ts';
 import {bring, onSync, remoteOnly, repoState, type RepoSync} from '../lifecycle.ts';
 import * as account from '../remote.ts';
 import {store} from '../repos.ts';
-import {pageHead} from './common.ts';
+import {pageHead, parts} from './common.ts';
 import type {Context} from './context.ts';
 
 // Remote: where the canonical copy is, and who this device is there.
@@ -83,10 +83,10 @@ export function signInBox(done: () => void, words?: string, back?: string): HTML
   return box;
 }
 
-function repoSection(ctx: Context): HTMLElement {
+function repoSection(ctx: Context, counted: (n: number) => void): HTMLElement {
   const rows = h('div', {class: 'rows'});
   const error = h('p', {class: 'error', role: 'alert'});
-  const section = h('section', {class: 'section', 'aria-labelledby': 'remote-repos'}, h('h2', {id: 'remote-repos'}, t('Repos')), rows, error);
+  const section = h('div', {class: 'sub-part'}, rows, error);
   const paint = async () => {
     const here = await store.list().catch(() => []);
     const items: Node[] = here.map((r) => {
@@ -103,6 +103,7 @@ function repoSection(ctx: Context): HTMLElement {
       items.push(h('div', {class: 'row-item usage-prompt'}, h('span', {class: 'row-name'}, r.name),
         h('span', {class: 'row-meta'}, t('Only on the Remote · {size}', {size: bytes(r.bytes)})), open));
     }
+    counted(items.length);
     rows.replaceChildren(...(items.length ? items : [h('div', {class: 'row-item muted'}, t('No repos yet'))]));
   };
   void paint();
@@ -126,13 +127,13 @@ function passkeyOffer(): HTMLElement {
 }
 
 function passkeySection(): HTMLElement {
-  const section = h('section', {class: 'section', 'aria-labelledby': 'remote-keys'});
+  const section = h('section', {class: 'sub-part', 'aria-labelledby': 'remote-keys'});
   const error = h('p', {class: 'error', role: 'alert'});
   const paint = async () => {
     const list = await account.passkeys().catch((e) => { error.textContent = message(e); return []; });
     const add = button(t('Add a passkey'), 'small-button');
     add.addEventListener('click', () => void pressing(add, error, async () => { await account.addPasskey(); await paint(); }));
-    section.replaceChildren(h('h2', {id: 'remote-keys'}, h('span', {}, t('Passkeys'), h('small', {}, `${list.length}`)), add),
+    section.replaceChildren(h('h3', {id: 'remote-keys'}, h('span', {}, t('Passkeys'), list.length ? h('small', {}, `${list.length}`) : null), add),
       h('div', {class: 'rows'}, ...(list.length ? list.map((k) => {
         const remove = button(t('Remove'), 'small-button');
         remove.addEventListener('click', () => void pressing(remove, error, async () => { await account.removePasskey(k.id); await paint(); }));
@@ -146,7 +147,7 @@ function passkeySection(): HTMLElement {
 
 /** The providers this account signs in with: each is also the way back in. */
 function providerSection(): HTMLElement {
-  const section = h('section', {class: 'section', 'aria-labelledby': 'remote-providers'});
+  const section = h('section', {class: 'sub-part', 'aria-labelledby': 'remote-providers'});
   const error = h('p', {class: 'error', role: 'alert'});
   const paint = async () => {
     const [mine, offered] = await Promise.all([account.linked().catch(() => []), account.about()]);
@@ -166,19 +167,20 @@ function providerSection(): HTMLElement {
       b.addEventListener('click', () => void pressing(b, error, () => account.link(p)));
       return b;
     });
-    section.replaceChildren(h('h2', {id: 'remote-providers'}, t('Sign-in providers')), h('div', {class: 'rows'}, ...rows),
+    section.replaceChildren(h('h3', {id: 'remote-providers'}, h('span', {}, t('Sign-in providers'))), h('div', {class: 'rows'}, ...rows),
       ...(more.length ? [h('div', {class: 'row work-act'}, ...more)] : []), error);
   };
   void paint();
   return section;
 }
 
-function deviceSection(): HTMLElement {
-  const section = h('section', {class: 'section', 'aria-labelledby': 'remote-devices'});
+function deviceSection(counted: (n: number) => void): HTMLElement {
+  const section = h('div', {class: 'sub-part'});
   const error = h('p', {class: 'error', role: 'alert'});
   const paint = async () => {
     const list = await account.devices().catch((e) => { error.textContent = message(e); return []; });
-    section.replaceChildren(h('h2', {id: 'remote-devices'}, h('span', {}, t('Devices'), h('small', {}, `${list.length}`))),
+    counted(list.length);
+    section.replaceChildren(
       h('div', {class: 'rows'}, ...list.map((d) => {
         const act: Node = d.current ? h('span', {class: 'row-meta'}, t('This device')) : (() => {
           const end = button(t('Remove'), 'small-button');
@@ -207,14 +209,19 @@ export function remote(ctx: Context): Node[] {
     }
     const leave = button(t('Sign out on this device'), 'small-button');
     leave.addEventListener('click', () => void account.signOut());
+    // One part at a time: the repos it keeps, how this account signs in, the devices in it.
+    const page = parts<'repos' | 'sign-in' | 'devices'>('remote', [
+      {id: 'repos', label: t('Repos')}, {id: 'sign-in', label: t('Sign-in')}, {id: 'devices', label: t('Devices')}]);
+    page.panel('repos').append(repoSection(ctx, (n) => page.count('repos', n)));
+    page.panel('sign-in').append(...(isNative
+      ? [h('p', {class: 'muted'}, t('Passkeys and providers are managed in the browser.'))]
+      : [passkeySection(), providerSection()]));
+    page.panel('devices').append(deviceSection((n) => page.count('devices', n)));
     holder.replaceChildren(
       ...(isNative ? [] : [passkeyOffer()]),
-      repoSection(ctx),
-      ...(isNative ? [] : [passkeySection(), providerSection()]),
-      deviceSection(),
-      h('section', {class: 'section'},
-        h('div', {class: 'row reclaim-act'}, h('span', {class: 'muted grow'},
-          `${t('Connected · {host}', {host: new URL(c.url || location.origin).host})}${isNative ? ` · ${t('passkeys and providers are managed in the browser')}` : ''}`), leave)));
+      h('div', {class: 'part-bar'}, page.switch,
+        h('div', {class: 'row account-line'}, h('span', {class: 'muted small'}, t('Connected · {host}', {host: new URL(c.url || location.origin).host})), leave)),
+      page.panel('repos'), page.panel('sign-in'), page.panel('devices'));
   };
   paint();
   const stop = account.onConnection(() => { if (!holder.isConnected) { stop(); return; } paint(); });

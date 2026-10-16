@@ -28,7 +28,7 @@ export const PURPOSES: readonly Purpose[] = [
   {id: 'file', label: 'File', role: 'The tree of /',
     detail: 'Opens the whole system\'s / over the current page. Choosing something inside a repo opens it there in Forge.', implemented: true},
   {id: 'git', label: 'Git', role: 'Issues and commits',
-    detail: 'Commit changes Issue by Issue and submit them. Changes that come in are settled with Merge or Reject.', implemented: true},
+    detail: 'Work Issue by Issue: commit, push, and hand it to main as a Change. Changes that come in are settled with Merge or Reject.', implemented: true},
   {id: 'runtime', label: 'Runtime', role: 'This device and its environments',
     detail: 'What this device holds, largest first. What can be freed is freed right there. The active environments too.', implemented: true},
   {id: 'remote', label: 'Remote', role: 'The canonical copy',
@@ -36,7 +36,7 @@ export const PURPOSES: readonly Purpose[] = [
   {id: 'topic', label: 'Topic', role: 'Simple posts',
     detail: 'Share short things, like what is popular lately.', implemented: false},
   {id: 'inbox', label: 'Inbox', role: 'Typed messages to you',
-    detail: 'Review requests, submitted changes, questions and more, each with what it is about and what to do.', implemented: true},
+    detail: 'Review requests, changes, questions and more, each with what it is about and what to do.', implemented: true},
 ];
 
 /** The round + under the rail's places: create a repo, not a purpose view. */
