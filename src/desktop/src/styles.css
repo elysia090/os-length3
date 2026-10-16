@@ -8,6 +8,10 @@
   --sub: #56595a;
   --edge: #6b6e6b;
   --raised: #e4e4e0;
+  /* Three marks that say one thing each: a step done, a line marked in review, a repo off. */
+  --done: #2f7d4f;
+  --marker: #f3e27a;
+  --off: #b3412f;
 
   --sans: system-ui, -apple-system, 'Segoe UI', 'Noto Sans JP', 'Hiragino Sans', sans-serif;
   --mono: ui-monospace, 'SF Mono', Consolas, 'Noto Sans Mono', monospace;
@@ -604,3 +608,48 @@ mark { background: var(--ink); color: var(--ground); }
 .sub-part h3 { display: flex; justify-content: space-between; align-items: center; margin: 0 0 var(--s3); font-size: var(--t-body); font-weight: 600; }
 .sub-part h3 small { margin-left: var(--s2); font-weight: 400; color: var(--sub); font-size: var(--t-meta); }
 .device-here { display: flex; align-items: center; gap: var(--s3); }
+
+/* The steps of an issue's work, each a box of the issue's width: its name, a
+   check once done, its body, and its one action at the bottom right. */
+.stage-box { margin-top: var(--s4); padding: var(--s5); border: 1px solid var(--rule); border-radius: var(--r-place); display: grid; gap: var(--s3); }
+.stage-box.roomy { min-height: 160px; align-content: space-between; }
+.stage-head { display: flex; align-items: center; gap: var(--s3); }
+.stage-head h3 { margin: 0; font-size: var(--t-body); font-weight: 600; }
+.stage-act { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--s2); }
+.stage-act .grow { flex: 1; }
+/* Done: a circle with a check in it. */
+.done-mark { width: 22px; height: 22px; border-radius: 50%; background: var(--done); position: relative; flex: none; }
+.done-mark::after { content: ''; position: absolute; left: 7px; top: 4px; width: 6px; height: 10px; border: solid var(--ground); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.stage-diff summary { cursor: pointer; color: var(--sub); }
+.stage-diff summary:hover { color: var(--ink); }
+.stage-diff[open] summary { margin-bottom: var(--s3); }
+/* Review: larger, its diff scrolling inside; marked lines as with a highlighter. */
+.stage-box.review { min-height: 60vh; grid-template-rows: auto minmax(0, 1fr) auto; }
+.review-diff { max-height: 56vh; overflow: auto; padding-right: var(--s2); }
+.diff-line.markable { cursor: pointer; }
+.diff-line.markable:hover { outline: 1px solid var(--edge); }
+.diff-line.marked, .diff-line.marking { background: var(--marker); color: var(--ink); }
+.diff-line.marking { border-left: 3px solid var(--ink); padding-left: 1px; }
+.said { display: grid; gap: 2px; padding: var(--s2) 0; border-top: 1px solid var(--rule); }
+.said b { font-weight: 600; }
+
+/* The Remote's repos: Home's cards, with Forge at the bottom left and the
+   power switch at the right. A switch slides: on, its knob at the left; off,
+   at the right on red, and the card quiet. */
+.repo-cards .card { cursor: default; grid-template-rows: auto auto auto 1fr auto; }
+.repo-cards .card:hover { background: transparent; }
+.card-foot { display: flex; align-items: center; gap: var(--s2); align-self: end; }
+.card-foot .grow { flex: 1; }
+.card.off { border-style: dashed; }
+.card.off .card-title, .card.off > .muted { color: var(--sub); }
+.power { position: relative; width: 52px; height: 28px; flex: none; padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: var(--raised); cursor: pointer; transition: background var(--motion), border-color var(--motion); }
+.power .knob { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: var(--ink); transition: transform var(--move); }
+.power[aria-checked='false'] { background: var(--off); border-color: var(--off); }
+.power[aria-checked='false'] .knob { transform: translateX(24px); background: var(--ground); }
+@media (prefers-reduced-motion: reduce) { .power, .power .knob { transition: none; } }
+.off-ask { display: grid; gap: var(--s2); align-content: start; height: 100%; }
+.off-ask .card-foot { margin-top: auto; }
+/* The offer: one short line and its button, no wider than they are. */
+.offer-holder { margin-top: var(--s5); }
+.offer { display: inline-flex; align-items: center; gap: var(--s3); padding: var(--s2) var(--s2) var(--s2) var(--s4); border: 1px solid var(--edge); border-radius: var(--r-round); }
+.code-in { width: 8ch; flex: none; text-transform: uppercase; }

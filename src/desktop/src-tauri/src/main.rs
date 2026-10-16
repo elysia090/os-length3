@@ -234,8 +234,8 @@ async fn changes_list(repo: String) -> Result<Vec<history::Change>, String> {
 }
 
 #[tauri::command]
-async fn change_review(repo: String, id: String, verdict: String, note: String) -> Result<history::Change, String> {
-    blocking(move || history::review(&repo, &id, &verdict, &note)).await
+async fn change_review(repo: String, id: String, verdict: String, note: String, marks: Vec<String>) -> Result<history::Change, String> {
+    blocking(move || history::review(&repo, &id, &verdict, &note, &marks)).await
 }
 
 #[tauri::command]

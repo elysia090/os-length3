@@ -103,7 +103,7 @@ fn next(s: &Stand, i: &Issue) -> Vec<String> {
     } else if let Some(w) = &s.work {
         if s.uncommitted > 0 { out.push(format!("l3 commit {} {}", i.repo, tr!("[-m note]", "[-m メモ]"))); }
         else if w.unpushed > 0 { out.push(format!("l3 push {}", i.repo)); }
-        else if w.commits > 0 && !open && change.is_none_or(|c| c.state != "merged") { out.push(format!("l3 change {}", i.repo)); }
+        else if w.commits > 0 && !open && change.is_none_or(|c| c.state != "merged") { out.push(format!("l3 push {}", i.repo)); }
     }
     // An undecided change: the receiver's Merge first, then the rest, Reset (taking it back) last.
     if open {

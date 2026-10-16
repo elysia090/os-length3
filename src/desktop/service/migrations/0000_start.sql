@@ -81,6 +81,18 @@ CREATE TABLE "message" (
 	"read_at" timestamp
 );
 --> statement-breakpoint
+CREATE TABLE "off_code" (
+	"user_id" text PRIMARY KEY NOT NULL,
+	"digest" text NOT NULL,
+	"set_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "passkey_proof" (
+	"session_id" text PRIMARY KEY NOT NULL,
+	"user_id" text NOT NULL,
+	"at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "repo" (
 	"user_id" text NOT NULL,
 	"name" text NOT NULL,
@@ -96,6 +108,7 @@ CREATE TABLE "repo" (
 	"version" integer DEFAULT 0 NOT NULL,
 	"bytes" bigint DEFAULT 0 NOT NULL,
 	"changed_by" text,
+	"off_at" timestamp,
 	"updated_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "repo_user_id_name_line_pk" PRIMARY KEY("user_id","name","line")
 );
@@ -107,6 +120,7 @@ CREATE TABLE "review" (
 	"version" integer NOT NULL,
 	"verdict" text NOT NULL,
 	"note" text DEFAULT '' NOT NULL,
+	"marks" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"by" text DEFAULT '' NOT NULL,
 	"time" timestamp DEFAULT now() NOT NULL
 );
@@ -205,6 +219,8 @@ ALTER TABLE "cut" ADD CONSTRAINT "cut_user_id_user_id_fk" FOREIGN KEY ("user_id"
 ALTER TABLE "home" ADD CONSTRAINT "home_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "message" ADD CONSTRAINT "message_to_user_user_id_fk" FOREIGN KEY ("to_user") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "message" ADD CONSTRAINT "message_from_user_user_id_fk" FOREIGN KEY ("from_user") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "off_code" ADD CONSTRAINT "off_code_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "passkey_proof" ADD CONSTRAINT "passkey_proof_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "repo" ADD CONSTRAINT "repo_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "review" ADD CONSTRAINT "review_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "review" ADD CONSTRAINT "review_change_change_id_fk" FOREIGN KEY ("change") REFERENCES "public"."change"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

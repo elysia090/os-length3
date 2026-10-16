@@ -6,7 +6,7 @@
 //!
 //! The canonical copy is the Remote's. Every change made here is sent at
 //! once (the draft). Work on an issue has its own copy, which the repo
-//! shows while you work on it; commit, push and change hand it to
+//! shows while you work on it; commit and push hand it to
 //! main, where it is reviewed and merged or rejected.
 
 mod git;
@@ -98,8 +98,7 @@ Git
   l3 main REPO                back to main
   l3 commit REPO [-m note]    commit the work, named after its issue
   l3 commit REPO \"Fix：title\" on main, named by the line
-  l3 push REPO                push the work's commits
-  l3 change REPO [-m note]    hand what was pushed to main (again: next version)
+  l3 push REPO [-m note]      push the work, handing it to main as its change (again: next version)
   l3 reset REPO               take the change back
   l3 review REPO#N approve|changes [-m note]
   l3 reply REPO#N \"text\"
@@ -149,8 +148,7 @@ Git
   l3 main REPO                main に戻る
   l3 commit REPO [-m メモ]    作業を Commit（Issue の名前で）
   l3 commit REPO \"Fix：件名\"  main で Commit
-  l3 push REPO                作業のコミットを Push
-  l3 change REPO [-m メモ]    Push したものを main に渡す（もう一度で次の版）
+  l3 push REPO [-m メモ]      作業を Push し、Change として main に渡す（もう一度で次の版）
   l3 reset REPO               Change を取り下げる
   l3 review REPO#N approve|changes [-m メモ]
   l3 reply REPO#N \"文\"
@@ -225,7 +223,7 @@ fn run(a: Args) -> Result<(), String> {
             Some("todo") => Some(tr!("Home's TODO", "Home の TODO")),
             Some("runtime") | Some("free") | Some("root") => Some(tr!("this device's room and roots", "この端末の容量と root")),
             Some("inbox" | "address") => Some(tr!("the Inbox", "Inbox")),
-            Some("remote" | "login" | "logout" | "sync" | "start" | "main" | "commit" | "push" | "change" | "reset" | "changes" | "review" | "merge" | "reject" | "log") =>
+            Some("remote" | "login" | "logout" | "sync" | "start" | "main" | "commit" | "push" | "reset" | "changes" | "review" | "merge" | "reject" | "log") =>
                 Some(tr!("the Remote and history", "Remote と履歴")),
             Some("repo") if w.len() > 1 => Some(tr!("making or bringing repos", "repo を作ること・持ってくること")),
             Some("prompt") => Some(tr!("opening a Prompt", "Prompt を開くこと")),
@@ -325,14 +323,12 @@ fn run(a: Args) -> Result<(), String> {
         ["commit", repo] => cut_done(&a, history::cut(&Repos::open()?, repo, None, "", &a.detail)?),
         ["commit", repo, line] => cut_done(&a, history::cut(&Repos::open()?, repo, None, line, &a.detail)?),
         ["push", repo] => {
-            let head = history::push(&Repos::open()?, repo)?;
+            // As the app's Push: what is pushed is handed to main as the change (its next version).
+            let r = Repos::open()?;
+            let head = history::push(&r, repo)?;
             if head.is_empty() { out(tr!("Nothing new to push", "Push するものはありません")); } else { out(tr!("Pushed {}", "Push しました {}", short(&head))); }
-            Ok(())
-        }
-        ["change", repo] => {
-            let c = history::submit(&Repos::open()?, repo, &a.detail)?;
-            if a.json { return json(c); }
-            out(tr!("Handed {} to main as version {} ({})", "{} を main に渡しました（第 {} 版 · {}）", text::named(Some(&c.kind).filter(|k| !k.is_empty()).map(|s| s.as_str()), &c.title), c.version, short(&c.id)));
+            let c = history::submit(&r, repo, &a.detail)?;
+            out(tr!("Handed {} to main as version {}", "{} を main に渡しました（第 {} 版）", text::named(Some(&c.kind).filter(|k| !k.is_empty()).map(|s| s.as_str()), &c.title), c.version));
             Ok(())
         }
         ["reset", repo] => {
@@ -342,13 +338,13 @@ fn run(a: Args) -> Result<(), String> {
         }
         ["review", target, verdict @ ("approve" | "changes")] => {
             let (repo, line) = git::line_of(&Repos::open()?, target)?;
-            let c = history::review(&repo, &line, verdict, &a.detail)?;
+            let c = history::review(&repo, &line, verdict, &a.detail, &[])?;
             out(tr!("Reviewed version {} of {}", "{1} の第 {0} 版をレビューしました", c.version, text::named(Some(c.kind.as_str()).filter(|k| !k.is_empty()), &c.title)));
             Ok(())
         }
         ["reply", target, words] => {
             let (repo, line) = git::line_of(&Repos::open()?, target)?;
-            let c = history::review(&repo, &line, "comment", words)?;
+            let c = history::review(&repo, &line, "comment", words, &[])?;
             out(tr!("Replied under {}", "{} に返信しました", text::named(Some(c.kind.as_str()).filter(|k| !k.is_empty()), &c.title)));
             Ok(())
         }

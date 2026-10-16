@@ -19,7 +19,8 @@ import {kept, onChange} from './repos.ts';
 import {dropState, onState} from './state.ts';
 
 /** Where a repo here stands. */
-export type Where = 'local' | 'sending' | 'synced' | 'offline';
+/** 'off': turned off on the Remote (kept there 30 days); nothing is sent until it is on again. */
+export type Where = 'local' | 'sending' | 'synced' | 'offline' | 'off';
 export interface RepoSync {
   where: Where;
   /** Paths not on the Remote yet. */
@@ -33,6 +34,7 @@ export interface RepoSync {
 
 const states = new Map<string, RepoSync>();
 let onlyThere: draft.RemoteRepo[] = [];
+let everyThere: draft.RemoteRepo[] = [];
 const listeners = new Set<() => void>();
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
 const retry = new Map<string, number>();
@@ -45,6 +47,8 @@ const tell = () => { clearTimeout(telling); telling = setTimeout(() => { for (co
 export const repoState = (repo: string): RepoSync | undefined => states.get(repo);
 /** Repos on the Remote that are not here (opening one brings it). */
 export const remoteOnly = (): readonly draft.RemoteRepo[] => onlyThere;
+/** Every repo the Remote holds, those turned off among them. */
+export const remoteAll = (): readonly draft.RemoteRepo[] => everyThere;
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 /** How soon a change is sent: soon enough to beat closing the tab, late enough to gather keystrokes. */
@@ -52,7 +56,7 @@ const SOON = 400;
 
 /** Send `repo` after `ms`, gathering what changes meanwhile into one diff. */
 export function schedule(repo: string, ms = SOON) {
-  if (!connection()) return;
+  if (!connection() || states.get(repo)?.where === 'off') return;
   clearTimeout(timers.get(repo));
   const s = states.get(repo);
   states.set(repo, {where: 'sending', changed: s?.changed ?? 0, both: [], unsynced: s?.unsynced ?? []});
@@ -67,6 +71,13 @@ async function run(repo: string) {
     retry.delete(repo);
     states.set(repo, {where: 'synced', changed: 0, both: r.both, unsynced: r.unsynced});
   } catch (e) {
+    // Turned off on the Remote: nothing more is sent until it is on again.
+    if ((e as {status?: number}).status === 410) {
+      const s = states.get(repo);
+      states.set(repo, {where: 'off', changed: s?.changed ?? 0, both: [], unsynced: s?.unsynced ?? []});
+      tell();
+      return;
+    }
     // Offline, or the Remote refused: kept here, tried again later, and said.
     const n = (retry.get(repo) ?? 0) + 1;
     retry.set(repo, n);
@@ -91,13 +102,23 @@ export async function look(): Promise<void> {
   for (const s of here) {
     if (timers.has(s.name)) continue;
     const before = states.get(s.name);
+    if (before?.where === 'off') continue;
     const where: Where = !c ? 'local' : s.fresh || s.changed ? (before?.where === 'offline' ? 'offline' : 'sending') : 'synced';
     states.set(s.name, {where, changed: s.changed, both: before?.both ?? [], unsynced: s.unsynced, error: before?.error});
     if (c && (s.fresh || s.changed) && before?.where !== 'offline') schedule(s.name, 0);
   }
   for (const k of [...states.keys()]) if (!here.some((s) => s.name === k)) states.delete(k);
   if (c) {
-    const there = await draft.remoteRepos().catch(() => null);
+    const all = await draft.remoteRepos().catch(() => null);
+    if (all) everyThere = all;
+    const off = new Set((all ?? []).filter((t) => t.offAt).map((t) => t.name));
+    for (const name of off) {
+      const s = states.get(name);
+      if (s) { clearTimeout(timers.get(name)); timers.delete(name); states.set(name, {...s, where: 'off'}); }
+    }
+    // On again (here or on another device): in step from where it was.
+    for (const [name, s] of states) if (s.where === 'off' && all && !off.has(name)) { states.set(name, {...s, where: 'sending'}); schedule(name, 0); }
+    const there = all?.filter((t) => !t.offAt) ?? null;
     if (there) {
       onlyThere = there.filter((t) => !here.some((h) => h.name === t.name));
       // The Remote moved past what is here: take it in now.
@@ -107,7 +128,7 @@ export async function look(): Promise<void> {
       }
     }
     for (const k of draft.HOME_KEYS) void draft.syncHome(k).catch(() => {});
-  } else onlyThere = [];
+  } else { onlyThere = []; everyThere = []; }
   tell();
 }
 

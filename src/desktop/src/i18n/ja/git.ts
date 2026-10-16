@@ -75,4 +75,9 @@ export default {
   '{n} files not committed': '未 Commit {n} ファイル',
   'Hand in what was pushed to main': 'Push したものを main に渡す',
   'Diff': 'Diff',
+  'Done': '完了',
+  'Edit in File, Forge or the Prompt; what changes shows here.': 'File・Forge・Prompt で編集すると、ここに出ます。',
+  'Approved': '承認',
+  'Asked for changes': '変更を依頼',
+  'Comment… (Enter sends)': 'コメント…（Enter で送信）',
 } as Record<string, string>;

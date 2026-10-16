@@ -190,20 +190,23 @@ all); choosing a repo also points the right pane and the Prompt at it.
   starts at the column's edge and the last ends at it.
 - **The box**: the issue's number and name ("#1 Fix：件名"), where it lives
   (`repo · issue/001.md`, which opens the file), its detail, one quiet line
-  of where it stands, and only what can be done next, one primary action:
-  Start (Continue here, if it was started), then Commit (with a note; named
-  after the issue), Push, Change (hand what was pushed to main; again, the
-  next version). Reset takes an undecided change back; Merge or Reject
-  settle it (Close is for issues only); Back to main shows main again. A
-  merged work is done: the repo shows main again on its own. Start gives the
-  issue its own copy of the repo, which File, Forge and the Prompt show; the
-  layout says this, no sentence explains it.
-- **Under the box**, plainly, as sections: **Diff** (what is not committed
-  while it is worked on here, else the change as handed in; added lines
-  raised, removed quiet and struck), **Review** (a verdict on one version:
-  Approve, Ask for changes, with a note; a review of an older version says
-  so), **Reply** (talk under the change, in order). A section with nothing
-  in it is not shown; counts are bare numbers.
+  of who started it and when, and Start (Continue here, if it was started)
+  or, while it is worked on here, Back to main. Start gives the issue its own
+  copy of the repo, which File, Forge and the Prompt show; the layout says
+  this, no sentence explains it. A merged work is done: the repo shows main
+  again on its own, and the copy goes.
+- **Under the box**, once it is worked on, its steps, each a box of the
+  issue's width with its name, a done mark (a circle with a check, `done`)
+  once the step is done, and its one action at the bottom right:
+  **Commit** (what is not committed, its diff closed inside the box until
+  opened), **Push** (a roomy box with nothing else in it; pushing hands the
+  work to main as its change, again as the next version), and **Review**, a
+  larger box whose diff scrolls inside it. A reviewer marks lines in the
+  diff as with a highlighter (`marker`), and what is written goes under the
+  diff with the marks: a comment, or a verdict (Ask for changes, Approve;
+  once approved, Merge). What was said shows in order in the same box; a
+  comment alone shows without a diff. Reset (the author's) and Reject (the
+  receiver's) sit at the bottom left.
 
 Every change is already on the Remote (the draft, §3); Commit makes it
 history there, the same from the app, a browser and `l3 commit`. Without a
@@ -211,11 +214,22 @@ Remote the issues are shown and one line says that history is kept there.
 
 ### Remote
 
-The header, a one-line offer to add a passkey while there is none, then
-the page's parts as a switch (the one place a page is switched, because its
-parts are unrelated): **Repos** (here and on the Remote only, each with
-where it stands), **Sign-in** (passkeys, then the providers; the last way
-in stays), **Devices** (each session; this one says so and signs out).
+The header, a short offer while there is no passkey (one line and its
+button, no wider than they are), then the page's parts as a switch (the one
+place a page is switched, because its parts are unrelated):
+
+- **Repos**: every repo the Remote holds, as cards the size of Home's: name,
+  size and when it last changed, where it stands; Forge at the bottom left
+  and a power switch at the bottom right. On, the switch's knob is at the
+  left; turning it off asks, in the card, for the account's name, the
+  repo's name and the five-letter code, then a passkey. Off, the knob is at
+  the right on `off` red and the card is quiet (dashed): the Remote keeps
+  the repo 30 days, answering only that it is off, and pressing the switch
+  again brings it back at once. Its copy on this device goes with it.
+- **Sign-in**: passkeys, the code to turn a repo off (five letters or
+  digits, set with a passkey; only its digest is kept), then the providers
+  (the last way in stays).
+- **Devices**: each session; this one says so and signs out.
 
 ### Inbox
 
@@ -392,8 +406,11 @@ Every value in `styles.css` comes from a token below.
 | `sub` | `#56595A` | secondary text (5.0:1) |
 | `edge` | `#6B6E6B` | outlines of fields and controls, which must be seen (3.7:1) |
 | `raised` | `#E4E4E0` | field fill, hover (the same small step above ground as before) |
+| `done` | `#2F7D4F` | the done mark: a step of an issue's work is done |
+| `marker` | `#F3E27A` | a line marked in review, as with a highlighter |
+| `off` | `#B3412F` | a repo turned off: its switch |
 
-No other colours.
+No other colours; the last three each mean their one thing only.
 
 Type: the system sans; monospace only for paths, code and the terminal.
 Sizes 28 (identity), 24 (page title), 20 (card title, figures), 15 (body),

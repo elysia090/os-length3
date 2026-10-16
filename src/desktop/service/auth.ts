@@ -18,6 +18,7 @@
 
 import {passkey} from '@better-auth/passkey';
 import {betterAuth} from 'better-auth';
+import {createAuthMiddleware} from 'better-auth/api';
 import {drizzleAdapter} from 'better-auth/adapters/drizzle';
 import {bearer, deviceAuthorization, genericOAuth} from 'better-auth/plugins';
 import * as schema from './schema.ts';
@@ -67,6 +68,15 @@ export function createAuth(c: AuthConfig) {
     account: {accountLinking: {enabled: true, trustedProviders: ['github', 'google', 'dev']}},
     session: {expiresIn: 60 * 60 * 24 * 60, updateAge: 60 * 60 * 24},
     rateLimit: {enabled: c.rateLimit ?? true, window: 60, max: 120},
+    // A sign-in with a passkey is proof the person is at the device just now: turning a repo
+    // off (and setting the code for it) asks for a session made that way minutes ago.
+    hooks: {
+      after: createAuthMiddleware(async (ctx) => {
+        if (ctx.path !== '/passkey/verify-authentication') return;
+        const made = ctx.context.newSession;
+        if (made) await c.db.insert(schema.passkeyProof).values({sessionId: made.session.id, userId: made.user.id}).onConflictDoNothing();
+      }),
+    },
     plugins: [
       passkey({
         rpID,

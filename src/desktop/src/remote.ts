@@ -139,6 +139,39 @@ export async function signIn(): Promise<void> {
   await keep(tokenOf(r));
 }
 
+// ---- turning a repo off: a passkey just now, the names, and the account's five-letter code ----
+
+/** Whether the account has set the code that turning a repo off asks for. */
+export const offCode = () => json<{set: boolean; setAt: number | null}>('/v1/off-code');
+
+/** What the Remote said no to, in words. */
+function refusedOff(e: unknown): never {
+  const why = e instanceof RemoteError ? e.message : '';
+  if (why === 'names') throw new RemoteError(403, t('The names do not match.'));
+  if (why === 'code') throw new RemoteError(403, t('That is not the code.'));
+  if (why === 'no code') throw new RemoteError(409, t('Set the five-letter code under Sign-in first.'));
+  if (why === 'passkey') throw new RemoteError(403, t('Confirm with a passkey.'));
+  throw e;
+}
+
+/** Set the code (five letters or digits); a passkey confirms it is you. */
+export async function setOffCode(code: string): Promise<void> {
+  await signIn();
+  await json('/v1/off-code', {method: 'POST', body: JSON.stringify({code})}).catch(refusedOff);
+}
+
+/** Turn `repo` off: kept 30 days on the Remote, back at once until then. */
+export async function turnOff(repo: string, name: string, typed: string, code: string): Promise<{offAt: number; until: number}> {
+  await signIn();
+  const r = await api(`/v1/repos/${encodeURIComponent(repo)}/off`, {method: 'POST', body: JSON.stringify({name, repo: typed, code})}).catch(refusedOff);
+  const body = await r.json() as {offAt?: number; until?: number; error?: string};
+  if (!r.ok) refusedOff(new RemoteError(r.status, body.error ?? ''));
+  return {offAt: body.offAt!, until: body.until!};
+}
+
+/** On again, as it was. */
+export const turnOn = (repo: string) => json(`/v1/repos/${encodeURIComponent(repo)}/on`, {method: 'POST'});
+
 export interface Passkey { id: string; name?: string | null; createdAt: string; deviceType?: string; backedUp?: boolean }
 export const passkeys = () => json<Passkey[]>('/api/auth/passkey/list-user-passkeys');
 export const removePasskey = (id: string) => json('/api/auth/passkey/delete-passkey', {method: 'POST', body: JSON.stringify({id})});

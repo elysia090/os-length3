@@ -25,7 +25,8 @@ import type {Auth} from './auth.ts';
 import {devOAuth} from './devoauth.ts';
 import {inbox} from './inbox.ts';
 import type {Bucket} from './bucket.ts';
-import {blob, change, cut, home, repo, review, type Tree} from './schema.ts';
+import {blob, change, cut, home, offCode, passkeyProof, repo, review, type Tree} from './schema.ts';
+import {user as people} from './schema.auth.ts';
 
 export interface Deps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -187,11 +188,84 @@ export function createApp(d: Deps) {
   const treeAt = async (user: string, name: string, id: string | null): Promise<Tree> => (await cutRow(user, name, id))?.tree ?? {};
   const whoIs = async (c: {req: {raw: Request}}) => (await d.auth.api.getSession({headers: c.req.raw.headers}))?.user.name ?? '';
 
-  // Repos are their main lines.
+  // ---- turning a repo off: kept 30 days, back at once until then ----
+
+  const KEPT = 30 * 24 * 3600 * 1000;
+  /** The repo as it goes for good: every line, change and its history (blobs stay; other repos may share them). */
+  const purge = async (user: string, name: string) => {
+    await d.db.delete(change).where(and(eq(change.userId, user), eq(change.repo, name)));
+    await d.db.delete(cut).where(and(eq(cut.userId, user), eq(cut.repo, name)));
+    await d.db.delete(repo).where(and(eq(repo.userId, user), eq(repo.name, name)));
+  };
+  /** Proof the person is here: this request's session was made with a passkey within five minutes. */
+  const proven = async (c: {get(k: 'sessionId'): string}) => {
+    const [p] = await d.db.select().from(passkeyProof).where(eq(passkeyProof.sessionId, c.get('sessionId')));
+    return !!p && Date.now() - p.at.getTime() < 5 * 60 * 1000;
+  };
+  const digestOf = async (user: string, code: string) => sha256(new TextEncoder().encode(`${user}:${code.toUpperCase()}`));
+  const CODE = /^[A-Za-z0-9]{5}$/;
+
+  // A repo that is off answers nothing but being off, and how to bring it back.
+  const off: MiddlewareHandler<Vars> = async (c, next) => {
+    const name = c.req.param('name');
+    if (name && !c.req.path.endsWith('/on')) {
+      const [main] = await d.db.select({offAt: repo.offAt}).from(repo).where(at(c.get('userId'), name, 'main'));
+      if (main?.offAt) return c.json({error: 'off', offAt: main.offAt.getTime(), until: main.offAt.getTime() + KEPT}, 410);
+    }
+    await next();
+  };
+  v1.use('/repos/:name', off);
+  v1.use('/repos/:name/*', off);
+
+  // Repos are their main lines; one turned off shows when it goes for good.
   v1.get('/repos', async (c) => {
-    const rows = await d.db.select({name: repo.name, head: repo.head, version: repo.version, bytes: repo.bytes, updatedAt: repo.updatedAt})
-      .from(repo).where(and(eq(repo.userId, c.get('userId')), eq(repo.line, 'main'))).orderBy(desc(repo.bytes));
-    return c.json(rows);
+    const user = c.get('userId');
+    const rows = await d.db.select({name: repo.name, head: repo.head, version: repo.version, bytes: repo.bytes, updatedAt: repo.updatedAt, offAt: repo.offAt})
+      .from(repo).where(and(eq(repo.userId, user), eq(repo.line, 'main'))).orderBy(desc(repo.bytes));
+    const out = [];
+    for (const r of rows) {
+      if (r.offAt && Date.now() - r.offAt.getTime() > KEPT) { await purge(user, r.name); continue; }
+      out.push({...r, offAt: r.offAt?.getTime() ?? null, until: r.offAt ? r.offAt.getTime() + KEPT : null});
+    }
+    return c.json(out);
+  });
+
+  // Off: asks for a passkey just now, the account's name, the repo's name and the five-letter code.
+  v1.post('/repos/:name/off', async (c) => {
+    const user = c.get('userId'), name = c.req.param('name');
+    const b = await c.req.json().catch(() => null) as {name?: unknown; repo?: unknown; code?: unknown} | null;
+    if (!await proven(c)) return c.json({error: 'passkey'}, 403);
+    const [me] = await d.db.select({name: people.name}).from(people).where(eq(people.id, user));
+    const [kept] = await d.db.select().from(offCode).where(eq(offCode.userId, user));
+    if (!kept) return c.json({error: 'no code'}, 409);
+    const same = (a: unknown, b: string) => typeof a === 'string' && a.trim().toLowerCase() === b.trim().toLowerCase();
+    if (!same(b?.name, me?.name ?? '') || b?.repo !== name) return c.json({error: 'names'}, 403);
+    if (typeof b?.code !== 'string' || !CODE.test(b.code) || await digestOf(user, b.code) !== kept.digest) return c.json({error: 'code'}, 403);
+    const done = await d.db.update(repo).set({offAt: new Date()}).where(at(user, name, 'main')).returning({name: repo.name});
+    if (!done.length) return c.json({error: 'no repo'}, 404);
+    const offAt = Date.now();
+    return c.json({name, offAt, until: offAt + KEPT});
+  });
+
+  // On: back at once, as it was.
+  v1.post('/repos/:name/on', async (c) => {
+    const done = await d.db.update(repo).set({offAt: null}).where(at(c.get('userId'), c.req.param('name'), 'main')).returning({name: repo.name});
+    return done.length ? c.json({name: c.req.param('name'), on: true}) : c.json({error: 'no repo'}, 404);
+  });
+
+  // The code: whether one is set, and setting it (a passkey just now, as for turning off).
+  v1.get('/off-code', async (c) => {
+    const [kept] = await d.db.select({setAt: offCode.setAt}).from(offCode).where(eq(offCode.userId, c.get('userId')));
+    return c.json({set: !!kept, setAt: kept?.setAt.getTime() ?? null});
+  });
+  v1.post('/off-code', async (c) => {
+    const user = c.get('userId');
+    const b = await c.req.json().catch(() => null) as {code?: unknown} | null;
+    if (typeof b?.code !== 'string' || !CODE.test(b.code)) return c.json({error: 'five letters or digits'}, 400);
+    if (!await proven(c)) return c.json({error: 'passkey'}, 403);
+    const digest = await digestOf(user, b.code);
+    await d.db.insert(offCode).values({userId: user, digest}).onConflictDoUpdate({target: offCode.userId, set: {digest, setAt: new Date()}});
+    return c.json({set: true});
   });
 
   const lineShown = (row: typeof repo.$inferSelect) => ({name: row.name, line: row.line, issue: row.issue, head: row.head, pushed: row.pushed, base: row.base,
@@ -292,14 +366,6 @@ export function createApp(d: Deps) {
     return row ? c.json(shown(row)) : c.json({error: 'no cut'}, 404);
   });
 
-  // The repo goes from the Remote with every line, change and its history; blobs stay (other repos may share them).
-  v1.delete('/repos/:name', async (c) => {
-    const user = c.get('userId'), name = c.req.param('name');
-    await d.db.delete(change).where(and(eq(change.userId, user), eq(change.repo, name)));
-    await d.db.delete(cut).where(and(eq(cut.userId, user), eq(cut.repo, name)));
-    const gone = await d.db.delete(repo).where(and(eq(repo.userId, user), eq(repo.name, name))).returning({name: repo.name});
-    return gone.length ? c.json({removed: name}) : c.json({error: 'no repo'}, 404);
-  });
 
   v1.get('/repos/:name/log', async (c) => {
     const limit = Math.min(LIMIT.log, Math.max(1, Number(c.req.query('limit') ?? 50) || 50));
@@ -370,7 +436,7 @@ export function createApp(d: Deps) {
   const changeShown = async (row: typeof change.$inferSelect) => {
     const reviews = await d.db.select().from(review).where(eq(review.change, row.id)).orderBy(desc(review.time));
     return {...row, userId: undefined, createdAt: row.createdAt.getTime(), updatedAt: row.updatedAt.getTime(),
-      reviews: reviews.map((r: typeof review.$inferSelect) => ({id: r.id, version: r.version, verdict: r.verdict, note: r.note, by: r.by, time: r.time.getTime()}))};
+      reviews: reviews.map((r: typeof review.$inferSelect) => ({id: r.id, version: r.version, verdict: r.verdict, note: r.note, marks: r.marks, by: r.by, time: r.time.getTime()}))};
   };
 
   v1.get('/repos/:name/changes', async (c) => {
@@ -410,11 +476,13 @@ export function createApp(d: Deps) {
   v1.post('/repos/:name/changes/:id/reviews', async (c) => {
     const user = c.get('userId'), row = await changeRow(user, c.req.param('name'), c.req.param('id'));
     if (!row) return c.json({error: 'no change'}, 404);
-    const b = await c.req.json().catch(() => null) as {version?: unknown; verdict?: unknown; note?: unknown} | null;
+    const b = await c.req.json().catch(() => null) as {version?: unknown; verdict?: unknown; note?: unknown; marks?: unknown} | null;
     if (b?.version !== row.version) return c.json({version: row.version}, 409);
     if (!['approve', 'changes', 'comment'].includes(String(b?.verdict))) return c.json({error: 'verdict'}, 400);
     const note = typeof b?.note === 'string' ? b.note.slice(0, LIMIT.words) : '';
-    await d.db.insert(review).values({id: crypto.randomUUID(), userId: user, change: row.id, version: row.version, verdict: String(b!.verdict), note, by: await whoIs(c)});
+    // Lines marked in the diff, as "path:index" (the index of the line in that file's diff).
+    const marks = Array.isArray(b?.marks) ? [...new Set((b!.marks as unknown[]).filter((m): m is string => typeof m === 'string' && m.length <= 600))].slice(0, 500) : [];
+    await d.db.insert(review).values({id: crypto.randomUUID(), userId: user, change: row.id, version: row.version, verdict: String(b!.verdict), note, marks, by: await whoIs(c)});
     return c.json(await changeShown(row), 201);
   });
 

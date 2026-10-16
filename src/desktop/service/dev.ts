@@ -34,7 +34,8 @@ const db = drizzle(new PGlite(join(dir, 'pg')), {schema});
 await migrate(db, {migrationsFolder: new URL('./migrations', import.meta.url).pathname});
 const secretFile = join(dir, 'secret');
 if (!existsSync(secretFile)) writeFileSync(secretFile, crypto.randomUUID() + crypto.randomUUID(), {mode: 0o600});
-const baseURL = `http://127.0.0.1:${port}`;
+// LENGTH3_DEV_BASE names it otherwise (http://localhost:PORT, where passkeys work: not on an IP address).
+const baseURL = process.env.LENGTH3_DEV_BASE ?? `http://127.0.0.1:${port}`;
 // Sign-in here is the stand-in provider (devoauth.ts): a name, and you are in.
 const auth = createAuth({db, secret: readFileSync(secretFile, 'utf8'), baseURL, appOrigin, origins: others, dev: true});
 const app = createApp({db, auth, bucket, origins: [appOrigin, ...others], providers: ['dev'], domain: 'length3.test', baseURL});

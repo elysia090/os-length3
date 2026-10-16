@@ -35,7 +35,6 @@ function button(text: string, primary = false): HTMLButtonElement {
 }
 
 const STATE = (s: git.Change['state']) => ({open: t('Undecided'), merged: t('Merged'), rejected: t('Rejected'), reset: t('Taken back')})[s];
-const VERDICT = (v: git.Review['verdict']) => ({approve: t('approved'), changes: t('asked for changes'), comment: t('replied')})[v];
 
 /** Run `f` with `b` held down, then `after`; a failure is said in `error`. */
 const doing = (b: HTMLButtonElement, error: HTMLElement, f: () => Promise<unknown>, after: () => void) => async () => {
@@ -55,14 +54,8 @@ function standing(s: RepoState | undefined, issue: Issue): string {
   const path = `issue/${issue.file}`;
   const c = changeOf(s, issue);
   const w = s?.work;
-  if (hereOf(s, issue) && w) {
-    const parts = [t('{who} · started {when}', {who: w.started_by || '—', when: ago(w.started_at)})];
-    if (s!.uncommitted) parts.push(tn('{n} file not committed', '{n} files not committed', s!.uncommitted));
-    parts.push(tn('{n} commit', '{n} commits', w.commits));
-    if (w.unpushed) parts.push(tn('{n} not pushed', '{n} not pushed', w.unpushed));
-    if (c) parts.push(t('Change · version {n} · {state}', {n: c.version, state: STATE(c.state)}));
-    return parts.join(' · ');
-  }
+  // Worked on here: who and when; the boxes under it say the rest.
+  if (hereOf(s, issue) && w) return t('{who} · started {when}', {who: w.started_by || '—', when: ago(w.started_at)});
   if (c) return t('Change · version {n} · {state}', {n: c.version, state: STATE(c.state)});
   const line = s?.lines.find((l) => l.issue === path);
   if (line) return t('{who} · started {when}', {who: line.startedBy || '—', when: ago(line.startedAt)});
@@ -79,131 +72,161 @@ export function issueHead(issue: Issue, events?: IssueEvents): HTMLElement {
     place);
 }
 
-/** The box: the issue's words, where it stands, and what can be done next. */
+/** The box: the issue's words, where it stands, and the way into its work (or back out). */
 export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEvents, after: () => void): HTMLElement {
   const at = issue.repo;
   const path = `issue/${issue.file}`;
   const error = h('p', {class: 'error', role: 'alert'});
-  const w = s?.work ?? null;
   const line = s?.lines.find((l) => l.issue === path) ?? null;
-  const change = changeOf(s, issue);
   const here = hereOf(s, issue);
-  const dirty = (s?.uncommitted ?? 0) > 0;
   const acts: Node[] = [];
-  let field: HTMLInputElement | null = null;
-  if (connection()) {
-    if (!here) {
-      const go = button(line ? t('Continue here') : t('Start'), true);
-      go.addEventListener('click', doing(go, error, async () => {
-        if (line) await git.switchWork(at, line.line); else await git.startWork(at, issue.file);
-        events.moved(at);
-      }, after));
-      acts.push(go);
-    } else if (w) {
-      // The next step of the work is the one primary action.
-      const open = w.change?.state === 'open';
-      const next = dirty ? 'commit' : w.unpushed ? 'push' : w.commits && !open && w.change?.state !== 'merged' ? 'change' : null;
-      if (next === 'commit') {
-        field = h('input', {class: 'line-in', placeholder: t('Note'), 'aria-label': t('The commit\'s note'), maxlength: '400'}) as HTMLInputElement;
-        const commit = button(t('Commit'), true);
-        commit.title = named(issue.kind, issue.title);
-        commit.addEventListener('click', doing(commit, error, () => git.cut(at, null, '', field!.value), after));
-        field.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) commit.click(); });
-        acts.push(field, commit);
-      } else if (next === 'push') {
-        const push = button(t('Push'), true);
-        push.addEventListener('click', doing(push, error, () => git.push(at), after));
-        acts.push(push);
-      } else if (next === 'change') {
-        const hand = button(t('Change'), true);
-        hand.title = w.change ? t('Hand in what was pushed as the next version') : t('Hand in what was pushed to main');
-        hand.addEventListener('click', doing(hand, error, () => git.submit(at), after));
-        acts.push(hand);
-      }
-      if (open) {
-        const reset = button(t('Reset'));
-        reset.title = t('Take back the change');
-        reset.addEventListener('click', doing(reset, error, () => git.reset(at), after));
-        acts.push(reset);
-      }
-    }
-    // The receiver's side: an undecided change is taken into main, or not.
-    if (change?.state === 'open') {
-      const quiet = acts.some((a) => (a as HTMLElement).classList?.contains('primary'));
-      const merge = button(t('Merge'), !quiet);
-      // Merged, the work is done: the repo shows main again.
-      merge.addEventListener('click', doing(merge, error, async () => { await git.merge(at, change); if (here) await git.switchWork(at, 'main'); events.moved(at); }, after));
-      const reject = button(t('Reject'));
-      reject.title = t('Do not take it into main (its issue stays open)');
-      reject.addEventListener('click', doing(reject, error, () => git.reject(at, change), after));
-      acts.push(merge, reject);
-    }
-    if (here) {
-      const leave = button(t('Back to main'));
-      leave.addEventListener('click', doing(leave, error, async () => { await git.switchWork(at, 'main'); events.moved(at); }, after));
-      acts.push(h('span', {class: 'grow'}), leave);
-    }
+  if (connection() && !here && changeOf(s, issue)?.state !== 'open') {
+    const go = button(line ? t('Continue here') : t('Start'), true);
+    go.addEventListener('click', doing(go, error, async () => {
+      if (line) await git.switchWork(at, line.line); else await git.startWork(at, issue.file);
+      events.moved(at);
+    }, after));
+    acts.push(h('span', {class: 'grow'}), go);
+  } else if (here) {
+    const leave = button(t('Back to main'));
+    leave.addEventListener('click', doing(leave, error, async () => { await git.switchWork(at, 'main'); events.moved(at); }, after));
+    acts.push(h('span', {class: 'grow'}), leave);
   }
   const say = connection() ? standing(s, issue) : t('History and work are kept on the Remote. Sign in to it to work on an issue and commit.');
   return h('div', {class: 'issue-box'},
     issueHead(issue, events),
     issue.detail ? h('p', {class: 'issue-body'}, issue.detail) : null,
     say ? h('p', {class: 'muted small'}, say) : null,
-    acts.length ? h('div', {class: `row work-act${field ? ' with-field' : ''}`}, ...acts) : null, error);
+    acts.length ? h('div', {class: 'row work-act'}, ...acts) : null, error);
 }
 
-/** Under the box, plainly: its Diff, Review and Reply, each only when it has something. */
-export function issueBelow(issue: Issue, s: RepoState | undefined, events: IssueEvents, after: () => void): Node[] {
+/** A step of the work as a box of the issue's width: its name, a check once it is done, its body, its one action at the bottom right. */
+function stage(title: string, done: boolean, body: Node[], act: Node[] = [], extra = ''): HTMLElement {
+  return h('section', {class: `stage-box ${extra}`.trim(), 'data-done': String(done)},
+    h('header', {class: 'stage-head'}, h('h3', {}, title), done ? h('span', {class: 'done-mark', role: 'img', 'aria-label': t('Done')}) : null),
+    ...body,
+    act.length ? h('div', {class: 'stage-act'}, ...act) : null);
+}
+
+/** A diff whose lines can be marked, as with a highlighter: `marked` shows, `pending` collects what is pressed now. */
+function markedDiff(files: git.FileDiff[], marked: Set<string>, pending: Set<string> | null): HTMLElement[] {
+  return files.map((f) => {
+    const lines = f.binary ? [h('p', {class: 'muted small'}, t('Binary'))] : f.lines.map((l, k) => {
+      if (l.kind === 'hunk') return k === 0 ? null : h('div', {class: 'diff-line hunk'}, l.text.replace(/^@@ [^@]* @@ ?/, '') || '…');
+      const key = `${f.path}:${k}`;
+      const row = h('div', {class: `diff-line ${l.kind}`, 'data-mark': key}, l.text || ' ');
+      if (marked.has(key)) row.classList.add('marked');
+      if (pending) {
+        row.classList.add('markable');
+        row.addEventListener('click', () => {
+          if (marked.has(key)) return;
+          if (pending.has(key)) pending.delete(key); else pending.add(key);
+          row.classList.toggle('marking', pending.has(key));
+        });
+      }
+      return row;
+    }).filter(Boolean) as HTMLElement[];
+    if (f.more) lines.push(h('p', {class: 'muted small'}, tn('{n} more line', '{n} more lines', f.more)));
+    return h('div', {class: 'hit-group'}, h('div', {class: 'hit-file'}, f.path), h('div', {class: 'diff'}, ...lines));
+  });
+}
+
+/**
+ * Under the box, once the issue is worked on: Commit (what is not committed,
+ * its diff closed inside), Push (handing it to main as its change), and the
+ * change's Review, a larger box whose diff can be marked, with what was said
+ * under it and room to say more. A change is reviewed the same way without
+ * being worked on here.
+ */
+export function issueStages(issue: Issue, s: RepoState | undefined, events: IssueEvents, after: () => void): Node[] {
   const at = issue.repo;
   const change = changeOf(s, issue);
   const here = hereOf(s, issue);
-  const section = (title: string, n: number, ...body: Node[]) =>
-    h('section', {class: 'section'}, h('h2', {}, h('span', {}, title, n ? h('small', {}, `${n}`) : null)), ...body);
-  const into = (holder: HTMLElement, files: Promise<git.FileDiff[]>, open?: (p: string) => void) =>
-    void files.then((list) => { holder.replaceChildren(...diffFiles(list, open)); if (!list.length) holder.closest('section')?.remove(); },
-      (e) => holder.replaceChildren(h('p', {class: 'error'}, message(e))));
+  const w = s?.work;
   const out: Node[] = [];
+  if (!connection()) return out;
 
-  // Diff: what is not committed yet (while worked on here), else the change as handed in.
-  if (here && (s?.uncommitted ?? 0) > 0) {
-    const holder = h('div', {}, h('p', {class: 'muted small'}, t('Reading…')));
-    out.push(section(t('Diff'), s!.uncommitted, holder));
-    into(holder, git.diff(at), (p) => events.open(at, p));
-  } else if (change) {
-    const holder = h('div', {}, h('p', {class: 'muted small'}, t('Reading…')));
-    out.push(section(t('Diff'), change.files, holder));
-    into(holder, git.changeDiff(at, change));
+  if (here && w) {
+    // Commit: the diff stays closed in the box until opened.
+    const dirty = s!.uncommitted;
+    const error = h('p', {class: 'error', role: 'alert'});
+    const body: Node[] = [];
+    if (dirty) {
+      const inside = h('div', {}, h('p', {class: 'muted small'}, t('Reading…')));
+      const fold = h('details', {class: 'stage-diff'}, h('summary', {}, tn('{n} file not committed', '{n} files not committed', dirty)), inside) as HTMLDetailsElement;
+      let read = false;
+      fold.addEventListener('toggle', () => {
+        if (!fold.open || read) return;
+        read = true;
+        void git.diff(at).then((files) => inside.replaceChildren(...diffFiles(files, (p) => events.open(at, p))), (e) => inside.replaceChildren(h('p', {class: 'error'}, message(e))));
+      });
+      body.push(fold);
+    } else {
+      body.push(h('p', {class: 'muted small'}, w.commits ? tn('{n} commit', '{n} commits', w.commits) : t('Edit in File, Forge or the Prompt; what changes shows here.')));
+    }
+    const commit = button(t('Commit'), true);
+    commit.title = named(issue.kind, issue.title);
+    commit.addEventListener('click', doing(commit, error, () => git.cut(at, null, '', ''), after));
+    out.push(stage(t('Commit'), !dirty && w.commits > 0, [...body, error], dirty ? [commit] : []));
+
+    // Push: hands what was pushed to main as the change; roomy, nothing else in it.
+    const open = w.change?.state === 'open';
+    const pushed = w.commits > 0 && !w.unpushed && (open || w.change?.state === 'merged');
+    const failed = h('p', {class: 'error', role: 'alert'});
+    const push = button(t('Push'), true);
+    push.addEventListener('click', doing(push, failed, async () => { await git.push(at); await git.submit(at); }, after));
+    out.push(stage(t('Push'), pushed, [failed], w.commits > 0 && !pushed ? [push] : [], 'roomy'));
   }
-  if (!change) return out;
 
-  // Review: a verdict on one version.
-  const reviews = change.reviews.filter((r) => r.verdict !== 'comment');
+  if (!change || change.state === 'reset') return out;
+
+  // Review: the change's diff, marked where reviewers marked it, what was said, and room to say more.
   const error = h('p', {class: 'error', role: 'alert'});
-  const rows = reviews.map((r) => h('div', {class: 'row-item'},
-    h('span', {class: 'row-name'}, `${r.by} ${VERDICT(r.verdict)}${r.note ? `: ${r.note}` : ''}`),
-    h('span', {class: 'row-meta'}, r.version === change.version ? t('version {n}', {n: r.version}) : t('version {n} (older)', {n: r.version})),
-    h('span', {class: 'row-meta'}, ago(r.time))));
-  const body: Node[] = rows.length ? [h('div', {class: 'rows'}, ...rows)] : [];
+  const current = change.reviews.filter((r) => r.version === change.version);
+  const marked = new Set(current.flatMap((r) => r.marks ?? []));
+  const pending = change.state === 'open' ? new Set<string>() : null;
+  const diff = h('div', {class: 'review-diff'}, h('p', {class: 'muted small'}, t('Reading…')));
+  void git.changeDiff(at, change).then((files) => diff.replaceChildren(...markedDiff(files, marked, pending)), (e) => diff.replaceChildren(h('p', {class: 'error'}, message(e))));
+  // What was said, in order: a verdict with its note, or a comment alone.
+  const said = change.reviews.slice().reverse().map((r) => h('div', {class: 'said'},
+    h('span', {class: 'muted small'}, `${r.by} · ${ago(r.time)}${r.version !== change.version ? ` · ${t('version {n} (older)', {n: r.version})}` : ''}`),
+    r.verdict !== 'comment' ? h('b', {}, r.verdict === 'approve' ? t('Approved') : t('Asked for changes')) : null,
+    r.note ? h('p', {class: 'bubble-text'}, r.note) : null));
+  const acts: Node[] = [];
+  const body: Node[] = [diff, ...said];
   if (change.state === 'open') {
-    const note = h('input', {class: 'line-in', placeholder: t('Note'), 'aria-label': t('The review\'s note')}) as HTMLInputElement;
-    const yes = button(t('Approve'), true), no = button(t('Ask for changes'));
-    yes.addEventListener('click', doing(yes, error, () => git.review(at, change, 'approve', note.value), after));
-    no.addEventListener('click', doing(no, error, () => git.review(at, change, 'changes', note.value), after));
-    body.push(h('div', {class: 'row work-act with-field'}, note, yes, no), error);
+    const text = h('textarea', {class: 'line-in bubble-in', rows: '2', placeholder: t('Comment… (Enter sends)'), 'aria-label': t('Comment'), maxlength: '4000'}) as HTMLTextAreaElement;
+    const send = (verdict: git.Review['verdict'], b: HTMLButtonElement) => doing(b, error, async () => {
+      if (verdict === 'comment' && !text.value.trim() && !pending!.size) return;
+      await git.review(at, change, verdict, text.value, [...pending!]);
+    }, after);
+    const comment = button(t('Comment'));
+    comment.addEventListener('click', send('comment', comment));
+    text.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); comment.click(); } });
+    body.push(text);
+    const approved = current.some((r) => r.verdict === 'approve');
+    const reset = button(t('Reset'));
+    reset.title = t('Take back the change');
+    reset.addEventListener('click', doing(reset, error, () => git.reset(at), after));
+    const reject = button(t('Reject'));
+    reject.title = t('Do not take it into main (its issue stays open)');
+    reject.addEventListener('click', doing(reject, error, () => git.reject(at, change), after));
+    const changes = button(t('Ask for changes'));
+    changes.addEventListener('click', send('changes', changes));
+    if (here) acts.push(reset);
+    acts.push(reject, h('span', {class: 'grow'}), comment, changes);
+    if (approved) {
+      // Merged, the work is done: the repo shows main again.
+      const merge = button(t('Merge'), true);
+      merge.addEventListener('click', doing(merge, error, async () => { await git.merge(at, change); if (here) await git.switchWork(at, 'main'); events.moved(at); }, after));
+      acts.push(merge);
+    } else {
+      const approve = button(t('Approve'), true);
+      approve.addEventListener('click', send('approve', approve));
+      acts.push(approve);
+    }
   }
-  if (body.length) out.push(section(t('Review'), reviews.length, ...body));
-
-  // Reply: talk under the change, in order.
-  const replies = change.reviews.filter((r) => r.verdict === 'comment').slice().reverse();
-  const text = h('textarea', {class: 'line-in bubble-in', rows: '1', placeholder: t('Reply…'), 'aria-label': t('Reply'), maxlength: '4000'}) as HTMLTextAreaElement;
-  const send = button(t('Reply'));
-  const failed = h('p', {class: 'error', role: 'alert'});
-  const go = doing(send, failed, async () => { if (text.value.trim()) await git.review(at, change, 'comment', text.value); }, after);
-  send.addEventListener('click', () => void go());
-  text.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); void go(); } });
-  out.push(section(t('Reply'), replies.length,
-    ...(replies.length ? [h('div', {class: 'reply-list'}, ...replies.map((r) => h('div', {class: 'bubble'},
-      h('span', {class: 'muted small'}, `${r.by} · ${ago(r.time)} · ${t('version {n}', {n: r.version})}`), h('p', {class: 'bubble-text'}, r.note))))] : []),
-    h('div', {class: 'row write-line'}, text, send), failed));
+  body.push(error);
+  out.push(stage(t('Review'), change.state === 'merged', body, acts, 'review'));
   return out;
 }

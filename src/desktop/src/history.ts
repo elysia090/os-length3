@@ -172,7 +172,7 @@ export const cutById = (repo: string, id: string) => json<RemoteCut>(`/v1/repos/
 
 // ---- the work on an issue, and what it hands to main ----
 
-export interface Review { version: number; verdict: 'approve' | 'changes' | 'comment'; note: string; by: string; time: number }
+export interface Review { version: number; verdict: 'approve' | 'changes' | 'comment'; note: string; marks: string[]; by: string; time: number }
 export interface Change {
   id: string; repo: string; line: string; issue: string; kind: string; title: string; version: number;
   base: string | null; head: string; state: 'open' | 'merged' | 'rejected' | 'reset'; note: string;
@@ -280,8 +280,9 @@ export async function reset(repo: string): Promise<Change> {
   return changeCall(repo, c.id, 'reset', {});
 }
 
-export const review = (repo: string, c: Change, verdict: Review['verdict'], note = ''): Promise<Change> =>
-  isNative ? invoke<Change>('change_review', {repo, id: c.id, verdict, note}) : changeCall(repo, c.id, 'reviews', {version: c.version, verdict, note});
+/** A review of the change's version: a verdict, or a comment alone; `marks` are lines marked in its diff ("path:index"). */
+export const review = (repo: string, c: Change, verdict: Review['verdict'], note = '', marks: string[] = []): Promise<Change> =>
+  isNative ? invoke<Change>('change_review', {repo, id: c.id, verdict, note, marks}) : changeCall(repo, c.id, 'reviews', {version: c.version, verdict, note, marks});
 export const merge = (repo: string, c: Change): Promise<Change> =>
   isNative ? invoke<Change>('change_merge', {repo, id: c.id}) : changeCall(repo, c.id, 'merge', {version: c.version});
 export const reject = (repo: string, c: Change, note = ''): Promise<Change> =>

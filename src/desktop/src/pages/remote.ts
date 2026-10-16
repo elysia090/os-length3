@@ -1,9 +1,11 @@
 import {ago, bytes, h} from '../dom.ts';
 import {isNative} from '../host.ts';
 import {t, tn} from '../i18n.ts';
-import {bring, onSync, remoteOnly, repoState, type RepoSync} from '../lifecycle.ts';
+import {bring, look, onSync, remoteAll, repoState, type RepoSync} from '../lifecycle.ts';
+import * as draft from '../draft.ts';
+import type {RemoteRepo} from '../draft.ts';
 import * as account from '../remote.ts';
-import {store} from '../repos.ts';
+import {kept, store} from '../repos.ts';
 import {pageHead, parts} from './common.ts';
 import type {Context} from './context.ts';
 
@@ -23,6 +25,7 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 export function syncWord(s: RepoSync | undefined): string {
   if (!s) return '';
   if (s.where === 'local') return t('Only on this device');
+  if (s.where === 'off') return t('Off on the Remote');
   if (s.where === 'sending') return t('Sending');
   if (s.where === 'offline') return s.changed ? tn('Not sent yet ({n} change)', 'Not sent yet ({n} changes)', s.changed) : t('Not sent yet');
   if (s.unsynced.length) return tn('In step · {n} thing cannot be sent', 'In step · {n} things cannot be sent', s.unsynced.length);
@@ -83,47 +86,120 @@ export function signInBox(done: () => void, words?: string, back?: string): HTML
   return box;
 }
 
-function repoSection(ctx: Context, counted: (n: number) => void): HTMLElement {
-  const rows = h('div', {class: 'rows'});
-  const error = h('p', {class: 'error', role: 'alert'});
-  const section = h('div', {class: 'sub-part'}, rows, error);
+/**
+ * The repos the Remote holds, as cards the size of Home's: name, size and
+ * when it last changed; Forge at the bottom left, and at the right a power
+ * switch. Turning a repo off asks for a passkey, the account's name, the
+ * repo's name and the five-letter code; it is then kept 30 days, its switch
+ * at the right and red, and pressing it again brings it back at once.
+ */
+function repoSection(ctx: Context, counted: (n: number) => void, toCode: () => void): HTMLElement {
+  const grid = h('div', {class: 'grid repo-cards'});
+  const section = h('div', {class: 'sub-part'}, grid);
   const paint = async () => {
     const here = await store.list().catch(() => []);
-    const items: Node[] = here.map((r) => {
-      const s = repoState(r.name);
-      const row = h('button', {type: 'button', class: 'row-item', 'data-where': s?.where ?? ''},
-        h('span', {class: 'row-name'}, r.name), h('span', {class: 'row-meta'}, syncWord(s)));
-      if (s?.error) row.title = s.error;
-      row.addEventListener('click', () => ctx.openRepo(r.name));
-      return row;
-    });
-    for (const r of remoteOnly()) {
-      const open = button(t('Open'), 'small-button');
-      open.addEventListener('click', () => void pressing(open, error, async () => { await bring(r.name); ctx.openRepo(r.name); }));
-      items.push(h('div', {class: 'row-item usage-prompt'}, h('span', {class: 'row-name'}, r.name),
-        h('span', {class: 'row-meta'}, t('Only on the Remote · {size}', {size: bytes(r.bytes)})), open));
-    }
-    counted(items.length);
-    rows.replaceChildren(...(items.length ? items : [h('div', {class: 'row-item muted'}, t('No repos yet'))]));
+    const there = remoteAll();
+    const names = [...new Set([...here.map((r) => r.name), ...there.map((r) => r.name)])].sort();
+    counted(names.length);
+    grid.replaceChildren(...(names.length ? names.map((name) => card(name, here.find((r) => r.name === name) ?? null, there.find((r) => r.name === name) ?? null))
+      : [h('div', {class: 'empty'}, t('No repos yet'))]));
   };
-  void paint();
-  const stop = onSync(() => { if (!section.isConnected) { stop(); return; } void paint(); });
+  const card = (name: string, here: {bytes: number; modified: number} | null, there: RemoteRepo | null): HTMLElement => {
+    const off = !!there?.offAt;
+    const error = h('p', {class: 'error', role: 'alert'});
+    const size = there?.bytes ?? here?.bytes ?? 0;
+    const changed = there ? Date.parse(there.updatedAt) : here?.modified ?? 0;
+    const forge = button(t('Forge'), 'small-button');
+    forge.disabled = off;
+    forge.addEventListener('click', () => void pressing(forge, error, async () => { if (!here) await bring(name); ctx.openRepo(name); }));
+    const power = h('button', {type: 'button', class: 'power', role: 'switch', 'aria-checked': String(!off),
+      'aria-label': off ? t('Turn {repo} on', {repo: name}) : t('Turn {repo} off', {repo: name})}, h('span', {class: 'knob'})) as HTMLButtonElement;
+    const where = off
+      ? t('Off · back until {date}', {date: new Date(there!.until!).toLocaleDateString()})
+      : here ? syncWord(repoState(name)) : t('On the Remote');
+    const el = h('div', {class: `card repo${off ? ' off' : ''}`, 'data-repo': name},
+      h('span', {class: 'card-title'}, name),
+      h('span', {class: 'muted'}, `${bytes(size)} · ${t('Changed {when}', {when: ago(changed)})}`),
+      h('span', {class: 'muted card-sync'}, where),
+      h('div', {class: 'card-foot'}, forge, h('span', {class: 'grow'}), power), error);
+    power.addEventListener('click', () => {
+      if (off) { void pressing(power, error, async () => { await account.turnOn(name); await look(); await paint(); }); return; }
+      if (isNative) { error.textContent = t('A repo is turned off from the browser, where its passkey is.'); return; }
+      void confirm(el, name, paint, toCode);
+    });
+    return el;
+  };
+  void look().then(paint);
+  const stop = onSync(() => { if (!section.isConnected) { stop(); return; } if (!section.querySelector('.off-ask')) void paint(); });
   return section;
 }
 
-/** No passkey yet: one line and the button, above everything else. */
-function passkeyOffer(): HTMLElement {
-  const box = h('section', {class: 'section offer', hidden: ''});
+/** In the card: the names and the code, then a passkey; the switch goes right and red. */
+async function confirm(el: HTMLElement, repo: string, done: () => Promise<void>, toCode: () => void) {
+  const error = h('p', {class: 'error', role: 'alert'});
+  const cancel = button(t('Not now'), 'small-button');
+  cancel.addEventListener('click', () => void done());
+  const code = await account.offCode().catch(() => ({set: false}));
+  if (!code.set) {
+    const go = button(t('Set the code'), 'small-button primary');
+    go.addEventListener('click', () => toCode());
+    el.replaceChildren(h('div', {class: 'off-ask'}, h('span', {class: 'card-title'}, repo),
+      h('p', {class: 'muted small'}, t('Turning a repo off asks for your five-letter code. Set it under Sign-in first.')),
+      h('div', {class: 'card-foot'}, cancel, h('span', {class: 'grow'}), go)));
+    return;
+  }
+  const field = (label: string, attrs: Record<string, string> = {}) => h('input', {class: 'line-in', 'aria-label': label, placeholder: label, autocomplete: 'off', spellcheck: 'false', ...attrs}) as HTMLInputElement;
+  const who = field(t('Your name'));
+  const which = field(t('The repo\'s name'));
+  const five = field(t('Code'), {maxlength: '5', class: 'line-in mono'});
+  const go = button(t('Turn off'), 'small-button primary');
+  go.addEventListener('click', () => void pressing(go, error, async () => {
+    await account.turnOff(repo, who.value, which.value, five.value);
+    // The copy here goes with it; it comes back from the Remote when turned on and opened.
+    if (!isNative) { await kept?.letGo([repo]); await draft.forget(repo); }
+    await look();
+    await done();
+  }));
+  el.replaceChildren(h('div', {class: 'off-ask'}, h('span', {class: 'card-title'}, repo),
+    h('p', {class: 'muted small'}, t('Kept on the Remote for 30 days; turning it on brings it back at once.')),
+    who, which, five, error,
+    h('div', {class: 'card-foot'}, cancel, h('span', {class: 'grow'}), go)));
+  who.focus();
+}
+
+/** No passkey yet: a short line and the button. */
+function passkeyOffer(added: () => void): HTMLElement {
+  const box = h('section', {class: 'offer-holder', hidden: ''});
   const error = h('p', {class: 'error', role: 'alert'});
   void account.passkeys().then((list) => {
     if (list.length) return;
-    const add = button(t('Add a passkey'), 'primary');
-    add.addEventListener('click', () => void pressing(add, error, async () => { await account.addPasskey(); box.hidden = true; }));
+    const add = button(t('Add a passkey'), 'small-button primary');
+    add.addEventListener('click', () => void pressing(add, error, async () => { await account.addPasskey(); box.hidden = true; added(); }));
     box.hidden = false;
-    box.replaceChildren(h('div', {class: 'row reclaim-act'},
-      h('span', {class: 'grow'}, t('Add a passkey for this device, so next time you sign in without GitHub or Google.')), add), error);
+    box.replaceChildren(h('div', {class: 'offer'}, h('span', {}, t('Sign in faster with a passkey')), add), error);
   }, () => {});
   return box;
+}
+
+/** The code turning a repo off asks for: five letters or digits, set with a passkey. */
+function codeSection(): HTMLElement {
+  const section = h('section', {class: 'sub-part', 'aria-labelledby': 'remote-code'});
+  const error = h('p', {class: 'error', role: 'alert'});
+  const paint = async () => {
+    const now = await account.offCode().catch(() => ({set: false, setAt: null}));
+    const five = h('input', {class: 'line-in mono code-in', maxlength: '5', placeholder: 'A1B2C', 'aria-label': t('Code'), autocomplete: 'off', spellcheck: 'false'}) as HTMLInputElement;
+    const set = button(now.set ? t('Set another') : t('Set'), 'small-button');
+    set.addEventListener('click', () => void pressing(set, error, async () => {
+      if (!/^[A-Za-z0-9]{5}$/.test(five.value)) throw new Error(t('Five letters or digits.'));
+      await account.setOffCode(five.value);
+      await paint();
+    }));
+    section.replaceChildren(h('h3', {id: 'remote-code'}, h('span', {}, t('Code to turn a repo off'))),
+      h('div', {class: 'row-item usage-prompt'},
+        h('span', {class: 'row-name'}, now.set ? t('Set {when}', {when: ago(now.setAt ?? 0)}) : t('Not set')), five, set), error);
+  };
+  void paint();
+  return section;
 }
 
 function passkeySection(): HTMLElement {
@@ -205,7 +281,7 @@ export function remote(ctx: Context): Node[] {
   let shown: string | null = null;
   const paint = () => {
     const c = account.connection();
-    const now = c ? c.token : '';
+    const now = c ? 'in' : '';
     if (now === shown) return;
     shown = now;
     if (!c) {
@@ -215,13 +291,14 @@ export function remote(ctx: Context): Node[] {
     // One part at a time: the repos it keeps, how this account signs in, the devices in it.
     const page = parts<'repos' | 'sign-in' | 'devices'>('remote', [
       {id: 'repos', label: t('Repos')}, {id: 'sign-in', label: t('Sign-in')}, {id: 'devices', label: t('Devices')}]);
-    page.panel('repos').append(repoSection(ctx, (n) => page.count('repos', n)));
+    page.panel('repos').append(repoSection(ctx, (n) => page.count('repos', n), () => page.show('sign-in')));
     page.panel('sign-in').append(...(isNative
       ? [h('p', {class: 'muted'}, t('Passkeys and providers are managed in the browser.'))]
-      : [passkeySection(), providerSection()]));
+      : [passkeySection(), codeSection(), providerSection()]));
     page.panel('devices').append(deviceSection((n) => page.count('devices', n)));
     holder.replaceChildren(
-      ...(isNative ? [] : [passkeyOffer()]),
+      // A passkey added from the offer shows under Sign-in at once.
+      ...(isNative ? [] : [passkeyOffer(() => { shown = null; paint(); })]),
       h('div', {class: 'part-bar'}, page.switch),
       page.panel('repos'), page.panel('sign-in'), page.panel('devices'));
   };

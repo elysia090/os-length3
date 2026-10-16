@@ -19,7 +19,8 @@ export type Tree = Record<string, string | null>;
 
 export interface Synced { version: number; sent: number; taken: number; both: string[]; unsynced: [string, string][] }
 export interface Status { name: string; changed: number; fresh: boolean; unsynced: [string, string][]; bytes: number; head: string | null; version: number }
-export interface RemoteRepo { name: string; head: string | null; version: number; bytes: number; updatedAt: string }
+/** A repo on the Remote; one turned off says when it went and until when it can come back. */
+export interface RemoteRepo { name: string; head: string | null; version: number; bytes: number; updatedAt: string; offAt?: number | null; until?: number | null }
 
 interface Base { version: number; tree: Tree; head: string | null; away?: string[] }
 interface SyncState { repos: Record<string, Base>; home?: Record<string, {version: number; value: string}>; lines?: Record<string, string> }

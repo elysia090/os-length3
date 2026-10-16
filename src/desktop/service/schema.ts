@@ -44,6 +44,8 @@ export const repo = pgTable('repo', {
   bytes: bigint('bytes', {mode: 'number'}).notNull().default(0),
   /** Which session last changed the draft. */
   changedBy: text('changed_by'),
+  /** Turned off (main's row says so for the whole repo): kept 30 days, then gone. */
+  offAt: timestamp('off_at'),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (t) => [primaryKey({columns: [t.userId, t.name, t.line]})]);
 
@@ -101,9 +103,25 @@ export const review = pgTable('review', {
   /** 'approve', 'changes' (asks for changes) or 'comment'. */
   verdict: text('verdict').notNull(),
   note: text('note').notNull().default(''),
+  /** Lines the reviewer marked in the version's diff: "path:index" of a line in that file's diff. */
+  marks: jsonb('marks').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
   by: text('by').notNull().default(''),
   time: timestamp('time').defaultNow().notNull(),
 }, (t) => [index('review_change_idx').on(t.change, t.time)]);
+
+/** The five letters or digits an account sets to turn a repo off (only their digest). */
+export const offCode = pgTable('off_code', {
+  userId: text('user_id').primaryKey().references(() => user.id, {onDelete: 'cascade'}),
+  digest: text('digest').notNull(),
+  setAt: timestamp('set_at').defaultNow().notNull(),
+});
+
+/** A session made by a passkey just now: what turning a repo off (or setting its code) asks for. */
+export const passkeyProof = pgTable('passkey_proof', {
+  sessionId: text('session_id').primaryKey(),
+  userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
+  at: timestamp('at').defaultNow().notNull(),
+});
 
 export const home = pgTable('home', {
   userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),

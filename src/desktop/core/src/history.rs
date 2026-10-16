@@ -450,6 +450,9 @@ pub struct Review {
     pub verdict: String,
     #[serde(default)]
     pub note: String,
+    /// Lines marked in the version's diff, "path:index".
+    #[serde(default)]
+    pub marks: Vec<String>,
     #[serde(default)]
     pub by: String,
     #[serde(default)]
@@ -503,12 +506,12 @@ fn find(repo: &str, id: &str) -> Result<Change> {
 }
 
 /// Review the change's current version.
-pub fn review(repo: &str, id: &str, verdict: &str, note: &str) -> Result<Change> {
+pub fn review(repo: &str, id: &str, verdict: &str, note: &str, marks: &[String]) -> Result<Change> {
     let c = find(repo, id)?;
     if !["approve", "changes", "comment"].contains(&verdict) {
         return Err(crate::tr!("A review is approve, changes or comment", "レビューは approve、changes、comment のどれかです"));
     }
-    serde_json::from_value(change_call(repo, &c.id, "reviews", serde_json::json!({"version": c.version, "verdict": verdict, "note": note}))?).map_err(|e| e.to_string())
+    serde_json::from_value(change_call(repo, &c.id, "reviews", serde_json::json!({"version": c.version, "verdict": verdict, "note": note, "marks": marks}))?).map_err(|e| e.to_string())
 }
 
 /// Merge: main takes the change's current version.

@@ -147,8 +147,28 @@ test('a draft changes only from the version it was read at; a cut records it', a
   assert.deepEqual((repos.json as unknown as {name: string; head: string; version: number; bytes: number}[]).map((r) => [r.name, r.head, r.version, r.bytes]), [['notes', id, 2, 13]]);
   const log = await s.call('GET', '/v1/repos/notes/log', {token: t});
   assert.deepEqual((log.json as unknown as {id: string; title: string; tree: object}[]).map((c) => [c.id, c.title]), [[id, '最初']]);
-  // A repo can go from the Remote, history and all.
-  assert.equal((await s.call('DELETE', '/v1/repos/notes', {token: t})).status, 200);
+  // Turning a repo off asks for a passkey just now, the names and the code; it then answers only that it is off.
+  const off = (body: unknown) => s.call('POST', '/v1/repos/notes/off', {token: t, body});
+  assert.equal((await off({name: 'Ren', repo: 'notes', code: 'AB12C'})).status, 403); // no passkey yet
+  const session = ((await s.call('GET', '/api/auth/get-session', {token: t})).json as unknown as {session: {id: string}; user: {id: string}});
+  await s.db.insert(schema.passkeyProof).values({sessionId: session.session.id, userId: session.user.id});
+  assert.equal((await off({name: 'Ren', repo: 'notes', code: 'AB12C'})).status, 409); // no code set
+  assert.equal((await s.call('POST', '/v1/off-code', {token: t, body: {code: 'AB-1'}})).status, 400);
+  assert.equal((await s.call('POST', '/v1/off-code', {token: t, body: {code: 'ab12c'}})).status, 200);
+  assert.deepEqual((await s.call('GET', '/v1/off-code', {token: t})).json.set, true);
+  assert.equal((await off({name: 'Ren', repo: 'notes', code: 'ZZZZZ'})).status, 403);
+  assert.equal((await off({name: 'Mio', repo: 'notes', code: 'AB12C'})).status, 403);
+  assert.equal((await off({name: 'ren', repo: 'notes', code: 'AB12C'})).status, 200);
+  assert.equal((await s.call('GET', `/v1/repos/notes/cuts/${id}`, {token: t})).status, 410);
+  assert.equal((await s.call('PATCH', '/v1/repos/notes', {token: t, body: {version: 2, changes: {}}})).status, 410);
+  const listed = (await s.call('GET', '/v1/repos', {token: t})).json as unknown as {name: string; offAt: number; until: number}[];
+  assert.equal(listed[0].name, 'notes');
+  assert.ok(listed[0].offAt && listed[0].until - listed[0].offAt === 30 * 24 * 3600 * 1000);
+  // On: back at once, history and all.
+  assert.equal((await s.call('POST', '/v1/repos/notes/on', {token: t})).status, 200);
+  assert.equal((await s.call('GET', `/v1/repos/notes/cuts/${id}`, {token: t})).status, 200);
+  // Thirty days on, it goes for good.
+  await s.db.update(schema.repo).set({offAt: new Date(Date.now() - 31 * 24 * 3600 * 1000)});
   assert.deepEqual((await s.call('GET', '/v1/repos', {token: t})).json, []);
   assert.equal((await s.call('GET', `/v1/repos/notes/cuts/${id}`, {token: t})).status, 404);
 });
@@ -218,14 +238,14 @@ test('work on an issue is its own line; submitted, reviewed by version, merged i
   assert.equal(submitted.status, 201);
   const id = submitted.json.id as string;
   assert.deepEqual([submitted.json.version, submitted.json.state, submitted.json.base, submitted.json.head], [1, 'open', first, c1]);
-  assert.equal((await s.call('POST', `/v1/repos/r/changes/${id}/reviews`, {token: t, body: {version: 1, verdict: 'approve'}})).status, 201);
+  assert.equal((await s.call('POST', `/v1/repos/r/changes/${id}/reviews`, {token: t, body: {version: 1, verdict: 'approve', marks: ['src/fix.c:2', 'src/fix.c:2', 7]}})).status, 201);
   // More work, pushed and submitted again: version 2, and the approval is of version 1.
   assert.equal((await draft('001', 2, {'src/fix.c': fix2})).status, 200);
   const c2 = await commitOn('001', 'Fix：落ちる（続き）');
   await s.call('POST', '/v1/repos/r/lines/001/push', {token: t, body: {head: c2}});
   const again = await s.call('POST', '/v1/repos/r/changes', {token: t, body: {line: '001', kind: 'Fix', title: '落ちる'}});
   assert.deepEqual([again.json.id, again.json.version], [id, 2]);
-  assert.deepEqual((again.json.reviews as {version: number; verdict: string}[]).map((r) => [r.version, r.verdict]), [[1, 'approve']]);
+  assert.deepEqual((again.json.reviews as {version: number; verdict: string; marks: string[]}[]).map((r) => [r.version, r.verdict, r.marks]), [[1, 'approve', ['src/fix.c:2']]]);
   // Merging the old version is refused; merging this one lands on main, with main's own work kept.
   assert.equal((await s.call('POST', `/v1/repos/r/changes/${id}/merge`, {token: t, body: {version: 1}})).status, 409);
   await draft('main', 1, {'notes.txt': other});
