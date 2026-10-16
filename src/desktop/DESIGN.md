@@ -18,6 +18,8 @@ top, then the page each icon leads to.
 - A name appears beside an icon on hover or keyboard focus. Choosing an
   icon replaces the whole page; nothing pushes in beside the rail. File is
   the one operation: it lays its tree over the page instead (below).
+- The rail is 84 px wide: the icons keep 24 px to its line and 12 px to the
+  window's side, so they do not crowd the line.
 - Item 48×48, radius 12, icon 24 px with a 1.6 px stroke; + is a 40 px
   round button with an `edge` outline. States as everywhere (§3).
 - The person's own icon (initials in a circle) sits at the foot of the
