@@ -35,7 +35,7 @@ separate surface and nothing here depends on it.
   one from a template (standard, C, minimal) and runs `git init` without
   the host's git configuration. Inbox and TODO belong to the app, not to
   repos: TODO is a list on Home. Home lists the repos as cards.
-- Forge: the repos out to work on as pills in a band set low at the top
+- Forge: the repos out to work on as pills in a band on the top line
   (⊕ at the left brings every other repo out at once, × takes one off;
   with none left the center shows Topic); the center (3/4)
   is the open repo's files one after another like an endless page (README

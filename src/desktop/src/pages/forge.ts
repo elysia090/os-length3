@@ -10,12 +10,14 @@ import {sessionFor, terminalFor} from './terminal.ts';
 
 /**
  * Forge, the place you work. The repos out to work on run as pills in a band
- * set low at the top; ⊕ brings more out and each pill comes off with its ×. The large center is the open repo's files one after another, an
- * endless page you scroll through and edit in place, opened at the file chosen
- * in File; there are no tabs. A prompt box sits at the bottom of the center. The narrow
- * right pane holds a reference switched freely on top and the terminal
- * below; using the prompt box sends the terminal up over the center, just
- * above the box, and the reference grows down into the room it leaves.
+ * on the top line, level with the Home icon; ⊕ brings the rest out and each
+ * pill comes off with its ×. The large center is the open repo's files one
+ * after another, an endless page you scroll through and edit in place,
+ * opened at the file chosen in File; there are no tabs. A prompt box sits at
+ * the bottom of the center. The narrow right pane holds the search box and a
+ * reference switched freely on top and the terminal below; using the prompt
+ * box sends the terminal up over the center, just above the box, and the
+ * reference grows down into the room it leaves.
  */
 
 /** Set when Forge is opened for a repo: the path to scroll to ('' for the top). */

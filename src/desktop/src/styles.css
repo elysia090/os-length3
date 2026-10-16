@@ -24,10 +24,13 @@
   /* Everything, rail included, sits a little inward from the window's edges,
      against the instinct to run to them. */
   --outer: clamp(var(--s5), 3vw, 64px);
-  --outer-y: clamp(var(--s3), 2.5vh, var(--s5));
-  --inner-h: calc(100vh - 2 * var(--outer-y));
-  /* Forge's band of repo chips sits this far down, between Home and the next rail icon. */
-  --band: 64px;
+  /* Less room above than below, so the weight of everything sits a little high. */
+  --outer-top: clamp(var(--s2), 1.5vh, var(--s4));
+  --outer-bottom: clamp(var(--s5), 5vh, 56px);
+  --inner-h: calc(100vh - var(--outer-top) - var(--outer-bottom));
+  --rail-top: var(--s3);
+  /* Forge's band sits on the line of the Home icon: its 32px row centred on Home's 48px place. */
+  --band: calc(var(--rail-top) + (var(--h-place) - var(--h-row)) / 2);
   --rail: 72px;
 }
 
@@ -35,7 +38,7 @@
 html, body { height: 100%; }
 body {
   margin: 0;
-  padding: var(--outer-y) var(--outer);
+  padding: var(--outer-top) var(--outer) var(--outer-bottom);
   display: grid;
   grid-template-columns: var(--rail) minmax(0, 1fr);
   background: var(--ground);
@@ -64,12 +67,11 @@ a { color: var(--ink); }
 .rail-item[aria-expanded='true'], .me[aria-expanded='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 
 /* ---- 1. Rail ---- */
-.rail { border-right: 1px solid var(--rule); height: var(--inner-h); position: sticky; top: var(--outer-y); z-index: 6; display: flex; flex-direction: column; }
-.rail-tabs { display: flex; flex-direction: column; align-items: center; gap: var(--s1); flex: 1; min-height: 0; padding: var(--s5) 0 var(--s3); }
-/* The rail starts a little low, so its weight sits below the middle of its top. */
+.rail { border-right: 1px solid var(--rule); height: var(--inner-h); position: sticky; top: var(--outer-top); z-index: 6; display: flex; flex-direction: column; }
+.rail-tabs { display: flex; flex-direction: column; align-items: center; gap: var(--s1); flex: 1; min-height: 0; padding: var(--rail-top) 0 var(--s3); }
 
 /* The person's own icon at the foot of the rail, and what it brings out. */
-.rail-me { display: grid; place-items: center; padding: var(--s3) 0 var(--s4); }
+.rail-me { display: grid; place-items: center; padding: var(--s3) 0 0; }
 .me-wrap { position: relative; }
 .me {
   width: var(--h-control); height: var(--h-control); border-radius: var(--r-round); border: 1px solid var(--rule);
@@ -102,9 +104,11 @@ a { color: var(--ink); }
   opacity: 0; pointer-events: none; transition: opacity var(--motion);
 }
 .rail-item:hover .rail-tag, .rail-item:focus-visible .rail-tag { opacity: 1; }
+/* While File's tree is out, the tree itself says what it is. */
+.rail-item[aria-expanded='true'] .rail-tag { opacity: 0; }
 
 /* ---- 2. Pages ---- */
-.page { min-width: 0; padding: var(--s6) clamp(var(--s5), 5vw, 72px) var(--s6); }
+.page { min-width: 0; padding: var(--rail-top) clamp(var(--s5), 5vw, 72px) var(--s6); }
 .page:focus { outline: none; }
 .page > * { max-width: 1200px; margin-left: auto; margin-right: auto; }
 .page-head { display: flex; align-items: baseline; gap: var(--s3); }
@@ -225,7 +229,7 @@ a { color: var(--ink); }
   height: var(--inner-h); display: grid;
   grid-template-columns: minmax(0, 3fr) minmax(280px, 1fr); grid-template-rows: auto minmax(0, 1fr);
 }
-/* The band sits low: its chips line up between Home and the next rail icon. */
+/* The band sits on the line of the Home icon. */
 .repo-strip { grid-column: 1; display: flex; gap: var(--s2); align-items: center; padding: var(--band) var(--s5) var(--s3); overflow-x: auto; border-right: 1px solid var(--rule); }
 /* The band: pills for the repos out, ⊕ to bring more out beside them. */
 .pills { display: flex; gap: var(--s2); align-items: center; }
@@ -299,10 +303,10 @@ a { color: var(--ink); }
    prompt is in use the terminal is away and the reference grows down. */
 .side { grid-column: 2; grid-row: 1 / -1; display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); min-height: 0; transition: grid-template-rows var(--move); }
 .work.prompting .side { grid-template-rows: minmax(0, 1fr) minmax(0, 0fr); }
-/* The search box sits in the room above the band line; the chips stay on it. */
-.pane.reference { display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: var(--s3); padding-top: var(--s3); }
+/* The search box sits on the band's line; the reference chips under it. */
+.pane.reference { display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: var(--s3); padding-top: var(--band); }
 .search-in {
-  width: 100%; min-height: var(--h-control); padding: 0 var(--s3); border: 1px solid var(--edge); border-radius: var(--r-field);
+  width: 100%; min-height: var(--h-row); padding: 0 var(--s3); border: 1px solid var(--edge); border-radius: var(--r-field);
   background: var(--raised); color: var(--ink);
 }
 .search-in:disabled { opacity: .5; }
@@ -336,8 +340,8 @@ mark { background: var(--ink); color: var(--ground); }
    under it moves. It opens under the pointer and stays a while after it
    leaves (tree.ts). */
 .tree {
-  position: fixed; top: var(--outer-y); bottom: var(--outer-y); left: calc(var(--outer) + var(--rail)); z-index: 5; width: clamp(260px, 20vw, 340px); overflow: auto;
-  padding: var(--s3) var(--s2) var(--s5); background: var(--ground); border-right: 1px solid var(--rule);
+  position: fixed; top: var(--outer-top); bottom: var(--outer-bottom); left: calc(var(--outer) + var(--rail)); z-index: 5; width: clamp(260px, 20vw, 340px); overflow: auto;
+  padding: var(--band) var(--s2) var(--s5); background: var(--ground); border-right: 1px solid var(--rule);
   visibility: hidden; opacity: 0;
   transition: opacity var(--motion), visibility 0s var(--motion);
 }

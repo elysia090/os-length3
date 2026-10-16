@@ -20,7 +20,6 @@ top, then the page each icon leads to.
   the one operation: it lays its tree over the page instead (below).
 - Item 48×48, radius 12, icon 24 px with a 1.6 px stroke; + is a 40 px
   round button with an `edge` outline. States as everywhere (§3).
-- The rail starts 24 px down, so its weight sits a little low.
 - The person's own icon (initials in a circle) sits at the foot of the
   rail. Touching it brings out what comes before settings: the name, see
   the profile, edit the profile, this device's storage, and 設定 (not
@@ -52,10 +51,9 @@ strikes through and fades the first line only.
 
 ### Forge
 
-Where you work. The repos out to work on run as pills in a band set low at
-the top: they line up between Home and the next rail icon, lower than one
-would first put them, and the reference's chips on the right sit on the
-same line. ⊕ stands at the left end. One press brings every repo not on
+Where you work. The repos out to work on run as pills in a band on the top
+line, level with the Home icon; the search box on the right sits on the
+same line, with the reference's chips under it. ⊕ stands at the left end. One press brings every repo not on
 the band out at once, on the right; this is not adding tabs one at a time.
 Each pill comes off the band with its × (the repo itself is untouched).
 With nothing left to bring out, ⊕ steps back. Opening a repo from File,
@@ -87,7 +85,7 @@ it is not called Bash); leaving the prompt
 
 The center takes three quarters of the width; the right pane takes one
 quarter (at least 280 px) so it never gets in the way. Its bottom is the
-terminal's home. Above the band line sits the search box for the open
+terminal's home. On the band's line sits the search box for the open
 repo: plain, case-insensitive, line by line; results are grouped by file,
 and a line pressed opens the center there with the line selected. Below,
 on the band line, one reference at a time, switched freely with chips: Issue (the repo's `issue/`, one file each), diff and 実行結果 (each
@@ -135,8 +133,12 @@ Every value in `styles.css` comes from a token below.
   command's name only, with no arrows.
 - **Room outside.** Everything, the rail and its icons included, sits a
   little inward from the window's edges: about 3% of the width at the
-  sides (24–64 px) and 2.5% of the height above and below (12–24 px),
-  against the instinct to run to the edges.
+  sides (24–64 px), against the instinct to run to the edges. There is
+  less room above (1.5% of the height, 8–16 px) than below (5%, 24–56 px),
+  so the weight of the whole sits a little high.
+- **One top line.** The Home icon's row is the top line every page starts
+  on: a page's header, Home's profile, Forge's band and search box, and
+  the "/" of File's tree all sit on it.
 - **Motion.** 120 ms fades, and one movement: the terminal flying between
   the right pane and the prompt box, 280 ms. Reduced motion turns them off.
 - No shadows, blur, glow or gradients.
