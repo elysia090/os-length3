@@ -12,6 +12,8 @@ interface Env {
   BETTER_AUTH_SECRET: string;
   BASE_URL: string;
   APP_ORIGIN: string;
+  /** The domain Inbox addresses are on (name@DOMAIN). */
+  DOMAIN?: string;
   /** Other pages that may call, space separated (the desktop app's webview). */
   APP_ORIGINS?: string;
   GITHUB_CLIENT_ID?: string;
@@ -29,7 +31,8 @@ export default {
     const github = pair(env.GITHUB_CLIENT_ID, env.GITHUB_CLIENT_SECRET), google = pair(env.GOOGLE_CLIENT_ID, env.GOOGLE_CLIENT_SECRET);
     const origins = (env.APP_ORIGINS ?? '').split(/\s+/).filter(Boolean);
     const auth = createAuth({db, secret: env.BETTER_AUTH_SECRET, baseURL: env.BASE_URL, appOrigin: env.APP_ORIGIN, origins, github, google});
-    const app = createApp({db, auth, bucket: r2Bucket(env.BLOBS), origins: [env.APP_ORIGIN, ...origins], providers: providers({github, google})});
+    const app = createApp({db, auth, bucket: r2Bucket(env.BLOBS), origins: [env.APP_ORIGIN, ...origins], providers: providers({github, google}),
+      domain: env.DOMAIN ?? 'length3.com', baseURL: env.BASE_URL});
     const response = await app.fetch(request);
     ctx.waitUntil(pool.end());
     return response;

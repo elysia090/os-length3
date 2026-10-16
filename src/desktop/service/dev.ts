@@ -37,7 +37,7 @@ if (!existsSync(secretFile)) writeFileSync(secretFile, crypto.randomUUID() + cry
 const baseURL = `http://127.0.0.1:${port}`;
 // Sign-in here is the stand-in provider (devoauth.ts): a name, and you are in.
 const auth = createAuth({db, secret: readFileSync(secretFile, 'utf8'), baseURL, appOrigin, origins: others, dev: true});
-const app = createApp({db, auth, bucket, origins: [appOrigin, ...others], providers: ['dev']});
+const app = createApp({db, auth, bucket, origins: [appOrigin, ...others], providers: ['dev'], domain: 'length3.test', baseURL});
 
 createServer(async (req, res) => {
   const chunks: Buffer[] = [];

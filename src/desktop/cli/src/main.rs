@@ -9,7 +9,7 @@
 //! shows while you work on it; commit, push and Submit change hand it to
 //! main, where it is reviewed and merged or rejected.
 
-use length3_core::{history, home, paths, remote, repos::Repos, templates, text, tr, usage, work};
+use length3_core::{history, home, inbox, paths, remote, repos::Repos, templates, text, tr, usage, work};
 use std::io::{Read, Write};
 use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -108,6 +108,13 @@ Runtime
   l3 runtime                  the root, and this device by size: what can go
   l3 free ID… | l3 free all   free (sync and free for a repo with changes)
   l3 root fetch | install BUNDLE
+Inbox
+  l3 inbox                    conversations: contacts, then requests
+  l3 inbox ADDRESS            one conversation (name@domain)
+  l3 inbox send ADDRESS \"text\" [-t message|review|question] [-m repo]
+  l3 inbox accept|block ADDRESS
+  l3 address                  your addresses
+  l3 address claim NAME[@DOMAIN]
 Remote
   l3 remote                   the Remote this device is on, and each repo
   l3 login [URL]              connect: approve in the browser
@@ -152,6 +159,13 @@ Runtime
   l3 runtime                  root と この端末: 容量順、空けられるもの
   l3 free ID… | l3 free all   空ける（変更があれば送ってから）
   l3 root fetch | install BUNDLE
+Inbox
+  l3 inbox                    会話（連絡先、次にリクエスト）
+  l3 inbox ADDRESS            ひとつの会話（name@domain）
+  l3 inbox send ADDRESS \"本文\" [-t message|review|question] [-m repo]
+  l3 inbox accept|block ADDRESS
+  l3 address                  あなたのアドレス
+  l3 address claim NAME[@DOMAIN]
 Remote
   l3 remote                   つながっている Remote と、repo の同期
   l3 login [URL]              ブラウザで承認してつなぐ
@@ -208,6 +222,7 @@ fn run(a: Args) -> Result<(), String> {
         let elsewhere = match w.first().copied() {
             Some("todo") => Some(tr!("Home's TODO", "Home の TODO")),
             Some("runtime") | Some("free") | Some("root") => Some(tr!("this device's room and roots", "この端末の容量と root")),
+            Some("inbox" | "address") => Some(tr!("the Inbox", "Inbox")),
             Some("remote" | "login" | "logout" | "sync" | "work" | "commit" | "push" | "submit" | "reset" | "changes" | "review" | "merge" | "reject" | "log") =>
                 Some(tr!("the Remote and history", "Remote と履歴")),
             Some("repo") if w.len() > 1 => Some(tr!("making or bringing repos", "repo を作ること・持ってくること")),
@@ -379,6 +394,51 @@ fn run(a: Args) -> Result<(), String> {
             let r = length3_core::root::install(&paths::data_dir(), std::path::Path::new(bundle))?;
             if a.json { return json(r); }
             out(tr!("Installed {} {} ({} files · {})", "{} {} を入れました（{} ファイル · {}）", r.name, r.version, r.files, bytes(r.bytes)));
+            Ok(())
+        }
+        // Inbox
+        ["inbox"] => {
+            let list = inbox::threads()?;
+            if a.json { return json(&list); }
+            if list.is_empty() { out(tr!("No messages yet (l3 inbox send ADDRESS \"text\")", "まだメッセージはありません（l3 inbox send ADDRESS \"本文\"）")); }
+            for t in &list {
+                let state = match t.state.as_str() { "request" => tr!(" · request", " · リクエスト"), "blocked" => tr!(" · blocked", " · ブロック"), _ => String::new() };
+                out(format!("{}{}{}", t.address, state, if t.unread > 0 { format!("  ({})", t.unread) } else { String::new() }));
+                out(format!("    {}{}", if t.last.mine { tr!("you: ", "あなた: ") } else { String::new() }, t.last.body));
+            }
+            Ok(())
+        }
+        ["inbox", "send", to, body] => {
+            let kind = if a.template == "standard" { "message" } else { a.template.as_str() };
+            let repo = (!a.detail.is_empty()).then_some(a.detail.as_str());
+            let request = inbox::send(to, body, kind, repo)?;
+            out(if request { tr!("Sent to {} as a request (they see it once they accept you)", "{} にリクエストとして送りました（相手が受けると読まれます）", to) } else { tr!("Sent to {}", "{} に送りました", to) });
+            Ok(())
+        }
+        ["inbox", verb @ ("accept" | "block"), who] => {
+            inbox::decide(who, if *verb == "accept" { "accepted" } else { "blocked" })?;
+            out(if *verb == "accept" { tr!("Accepted {}", "{} を受けました", who) } else { tr!("Blocked {}", "{} をブロックしました", who) });
+            Ok(())
+        }
+        ["inbox", who] => {
+            let c = inbox::thread(who)?;
+            if a.json { return json(&c); }
+            out(format!("{}{}", c.address, if c.state == "request" { tr!("  (request: l3 inbox accept {})", "  （リクエスト: l3 inbox accept {}）", c.address) } else { String::new() }));
+            for m in &c.messages {
+                let kind = if m.kind == "message" { String::new() } else { format!("[{}] ", m.kind) };
+                out(format!("  {} {}{}  · {}", if m.mine { "→" } else { "←" }, kind, m.body, ago(m.time)));
+            }
+            Ok(())
+        }
+        ["address"] => {
+            let me = inbox::me()?;
+            if a.json { return json(&me); }
+            if me.addresses.is_empty() { out(tr!("No address yet (l3 address claim NAME, which is NAME@{})", "アドレスはまだありません（l3 address claim NAME で NAME@{} に）", me.domain)); }
+            for x in &me.addresses { out(format!("{}{}", x.address, if x.ssh { tr!("  · SSH allowed", "  · SSH 許可") } else { String::new() })); }
+            Ok(())
+        }
+        ["address", "claim", name] => {
+            out(tr!("Yours: {}", "あなたのアドレス: {}", inbox::claim(name)?));
             Ok(())
         }
         // Remote

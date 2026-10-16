@@ -120,3 +120,63 @@ export const blob = pgTable('blob', {
   size: integer('size').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (t) => [primaryKey({columns: [t.userId, t.sha256]})]);
+
+// ---- Inbox (inbox.ts) ----
+
+/**
+ * An address, name@domain: how a person is found, the same shape an SSH
+ * target has. A name on the Remote's own domain is claimed here; one on
+ * another domain is that domain's to publish (its /.well-known/length3).
+ */
+export const address = pgTable('address', {
+  address: text('address').primaryKey(),
+  userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
+  name: text('name').notNull(),
+  domain: text('domain').notNull(),
+  /** Opt-in to be reached over SSH at this address; its own permission, off unless asked. */
+  ssh: integer('ssh').notNull().default(0),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => [index('address_user_idx').on(t.userId)]);
+
+/** Whom an account talks with: accepted (messages and live chat), or blocked. */
+export const contact = pgTable('contact', {
+  userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
+  peer: text('peer').notNull().references(() => user.id, {onDelete: 'cascade'}),
+  state: text('state').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => [primaryKey({columns: [t.userId, t.peer]})]);
+
+/**
+ * A typed message: what it is about (a change to review, an issue, a run)
+ * and the text. Kept until read and a while after; text only and small, so
+ * the Inbox carries words between people and nothing else.
+ */
+export const message = pgTable('message', {
+  id: text('id').primaryKey(),
+  to: text('to_user').notNull().references(() => user.id, {onDelete: 'cascade'}),
+  from: text('from_user').notNull().references(() => user.id, {onDelete: 'cascade'}),
+  fromAddress: text('from_address').notNull(),
+  toAddress: text('to_address').notNull(),
+  /** 'message', 'review', 'question' or 'run'. */
+  type: text('type').notNull().default('message'),
+  /** What it is about: {repo, issue, change, version}. */
+  target: jsonb('target').$type<Record<string, string | number>>().notNull().default(sql`'{}'::jsonb`),
+  body: text('body').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  readAt: timestamp('read_at'),
+}, (t) => [index('message_to_idx').on(t.to, t.createdAt), index('message_from_idx').on(t.from, t.createdAt)]);
+
+/**
+ * WebRTC signalling between two contacts' devices: an offer, an answer, a
+ * candidate. Small, short-lived, and between contacts only; the bytes of a
+ * live chat go device to device, never through the Remote.
+ */
+export const signal = pgTable('signal', {
+  id: text('id').primaryKey(),
+  to: text('to_user').notNull().references(() => user.id, {onDelete: 'cascade'}),
+  from: text('from_user').notNull().references(() => user.id, {onDelete: 'cascade'}),
+  session: text('session').notNull(),
+  kind: text('kind').notNull(),
+  data: text('data').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => [index('signal_to_idx').on(t.to, t.createdAt)]);

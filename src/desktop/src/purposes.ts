@@ -36,7 +36,7 @@ export const PURPOSES: readonly Purpose[] = [
   {id: 'topic', label: 'Topic', role: 'Simple posts',
     detail: 'Share short things, like what is popular lately.', implemented: false},
   {id: 'inbox', label: 'Inbox', role: 'Typed messages to you',
-    detail: 'Review requests, submitted changes, questions and more, each with what it is about and what to do.', implemented: false},
+    detail: 'Review requests, submitted changes, questions and more, each with what it is about and what to do.', implemented: true},
 ];
 
 /** The round + under the rail's places: create a repo, not a purpose view. */

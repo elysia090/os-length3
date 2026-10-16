@@ -16,6 +16,7 @@ compatibility_flags = ["nodejs_compat"]
 BASE_URL = "https://remote.length3.com"
 # Passkeys are made and used on the web app's own origin.
 APP_ORIGIN = "https://os.length3.com"
+DOMAIN = "length3.com"
 # The desktop app's webview (tauri:// on macOS and Linux, http://tauri.localhost on Windows).
 APP_ORIGINS = "tauri://localhost http://tauri.localhost"
 

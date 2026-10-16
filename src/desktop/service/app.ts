@@ -23,6 +23,7 @@ import {Hono, type MiddlewareHandler} from 'hono';
 import {cors} from 'hono/cors';
 import type {Auth} from './auth.ts';
 import {devOAuth} from './devoauth.ts';
+import {inbox} from './inbox.ts';
 import type {Bucket} from './bucket.ts';
 import {blob, change, cut, home, repo, review, type Tree} from './schema.ts';
 
@@ -37,6 +38,11 @@ export interface Deps {
   providers: string[];
   /** Bytes of blobs one account may keep. */
   quota?: number;
+  /** This Remote's own domain, for Inbox addresses (name@domain). */
+  domain?: string;
+  /** The Remote's own address (for Inbox discovery through a domain's well-known). */
+  baseURL?: string;
+  wellKnown?: (domain: string) => Promise<unknown>;
 }
 
 /** What one account may keep, unless the deployment says otherwise. */
@@ -131,7 +137,7 @@ export function createApp(d: Deps) {
 
   const signedIn: MiddlewareHandler<Vars> = async (c, next) => {
     const s = await d.auth.api.getSession({headers: c.req.raw.headers});
-    if (!s) return c.json({error: 'サインインしていません'}, 401);
+    if (!s) return c.json({error: 'not signed in'}, 401);
     c.set('userId', s.user.id);
     c.set('sessionId', s.session.id);
     await next();
@@ -445,6 +451,8 @@ export function createApp(d: Deps) {
     }
     return c.json({version: done[0].version});
   });
+
+  inbox({db: d.db, domain: d.domain ?? 'length3.com', baseURL: d.baseURL ?? '', wellKnown: d.wellKnown}, v1, app);
 
   app.route('/v1', v1);
   return app;

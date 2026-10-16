@@ -8,6 +8,7 @@ pub mod root;
 pub mod history;
 pub mod home;
 pub mod i18n;
+pub mod inbox;
 pub mod issues;
 pub mod linediff;
 #[cfg(target_os = "linux")]

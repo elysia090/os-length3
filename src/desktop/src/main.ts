@@ -8,6 +8,7 @@ import {currentProfile, home, startEditing} from './pages/home.ts';
 import {Me} from './pages/me.ts';
 import {newRepo} from './pages/new-repo.ts';
 import {remote} from './pages/remote.ts';
+import {inboxPage} from './pages/inbox.ts';
 import {runtime} from './pages/runtime.ts';
 import {FileTree} from './pages/tree.ts';
 import {begin} from './lifecycle.ts';
@@ -100,6 +101,7 @@ function render() {
     : current === 'runtime' ? runtime(ctx)
     : current === 'git' ? git(ctx)
     : current === 'remote' ? remote(ctx)
+    : current === 'inbox' ? inboxPage(ctx)
     : placeholder(current);
   page.replaceChildren(...nodes);
   me.paint();

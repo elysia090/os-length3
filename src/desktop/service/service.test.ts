@@ -11,12 +11,14 @@ import * as schema from './schema.ts';
 const BASE = 'http://remote.test';
 const APP = 'http://app.test';
 
-async function service() {
+async function service(domains: Record<string, unknown> = {}) {
   const db = drizzle(new PGlite(), {schema});
   await migrate(db, {migrationsFolder: new URL('./migrations', import.meta.url).pathname});
   const auth = createAuth({db, secret: 'test-secret-'.repeat(4), baseURL: BASE, appOrigin: APP, rateLimit: false, dev: true});
   const bucket = memoryBucket();
-  const app = createApp({db, auth, bucket, origins: [APP], providers: ['dev']});
+  const published = new Map(Object.entries(domains));
+  const app = createApp({db, auth, bucket, origins: [APP], providers: ['dev'], domain: 'length3.test', baseURL: BASE,
+    wellKnown: async (domain) => published.get(domain) ?? null});
   // The service asks its own stand-in provider for tokens over the network: here, itself.
   const real = globalThis.fetch;
   globalThis.fetch = ((url: string | URL | Request, init?: RequestInit) =>
@@ -50,7 +52,8 @@ async function service() {
     assert.ok(token);
     return token!;
   };
-  return {db, call, start, bucket};
+  const publish = (domain: string, doc: unknown) => published.set(domain, doc);
+  return {db, call, start, bucket, publish};
 }
 
 const enc = new TextEncoder();
@@ -274,4 +277,46 @@ test('a file both sides changed stops the merge; reject is the receiver\'s, rese
   assert.equal((await s.call('POST', `/v1/repos/r/changes/${y}/reset`, {token: t, body: {}})).json.state, 'reset');
   const list = (await s.call('GET', '/v1/repos/r/changes', {token: t})).json as unknown as {title: string; state: string}[];
   assert.deepEqual(list.map((l) => [l.title, l.state]).sort(), [['one', 'merged'], ['two', 'reset']]);
+});
+
+test('Inbox: an address is claimed or published by its domain; messages are small, and strangers are held to a few', async () => {
+  const s = await service({'example.org': {remote: BASE, names: {}}});
+  const ren = await s.start('Ren'), mio = await s.start('Mio');
+  const mioId = ((await s.call('GET', '/api/auth/get-session', {token: mio})).json as unknown as {user: {id: string}}).user.id;
+  // Nobody sends before having an address.
+  assert.equal((await s.call('POST', '/v1/inbox/messages', {token: ren, body: {to: 'mio@length3.test', body: 'hi'}})).status, 409);
+  assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'ren'}})).status, 201);
+  assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'ren'}})).status, 409);
+  // A name on another domain needs that domain to say so; it then says what to publish.
+  const unpublished = await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'mio', domain: 'example.org'}});
+  assert.deepEqual([unpublished.status, unpublished.json.publish], [409, {remote: BASE, names: {mio: mioId}}]);
+  s.publish('example.org', {remote: BASE, names: {mio: mioId}});
+  assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'mio', domain: 'example.org'}})).status, 201);
+  assert.deepEqual((await s.call('GET', '/v1/inbox/lookup?address=mio@example.org', {token: ren})).json, {address: 'mio@example.org', reachable: true});
+  assert.equal(((await s.call('GET', '/v1/inbox/lookup?address=x@nowhere.example', {token: ren})).json).reachable, false);
+  // Ren writes: a request to Mio, of which Mio holds only a few unanswered.
+  const sent = await s.call('POST', '/v1/inbox/messages', {token: ren, body: {to: 'mio@example.org', type: 'review', target: {repo: 'notes', change: 'abc'}, body: 'could you look?'}});
+  assert.deepEqual([sent.status, sent.json.request], [201, true]);
+  for (let i = 0; i < 2; i++) await s.call('POST', '/v1/inbox/messages', {token: ren, body: {to: 'mio@example.org', body: `again ${i}`}});
+  assert.equal((await s.call('POST', '/v1/inbox/messages', {token: ren, body: {to: 'mio@example.org', body: 'and again'}})).status, 429);
+  assert.equal((await s.call('POST', '/v1/inbox/messages', {token: ren, body: {to: 'mio@example.org', body: 'x'.repeat(4001)}})).status, 400);
+  // Live chat needs both to have accepted: not yet.
+  assert.equal((await s.call('POST', '/v1/inbox/signals', {token: ren, body: {to: 'mio@example.org', session: 's1', kind: 'offer', data: 'sdp'}})).status, 403);
+  const threads = (await s.call('GET', '/v1/inbox/threads', {token: mio})).json as unknown as {address: string; state: string; unread: number; last: {type: string}}[];
+  assert.deepEqual(threads.map((t) => [t.address, t.state, t.unread]), [['ren@length3.test', 'request', 3]]);
+  const thread = (await s.call('GET', '/v1/inbox/threads/ren@length3.test', {token: mio})).json as unknown as {messages: {type: string; target: object}[]};
+  assert.deepEqual([thread.messages[0].type, thread.messages[0].target], ['review', {repo: 'notes', change: 'abc'}]);
+  // Mio accepts: now both ways, so signalling may pass, and is taken once.
+  await s.call('POST', '/v1/inbox/contacts', {token: mio, body: {address: 'ren@length3.test', state: 'accepted'}});
+  assert.equal((await s.call('POST', '/v1/inbox/signals', {token: ren, body: {to: 'mio@example.org', session: 's1', kind: 'offer', data: 'sdp'}})).status, 201);
+  const got = (await s.call('GET', '/v1/inbox/signals', {token: mio})).json as unknown as {from: string; kind: string}[];
+  assert.deepEqual(got.map((g) => [g.from, g.kind]), [['ren@length3.test', 'offer']]);
+  assert.deepEqual((await s.call('GET', '/v1/inbox/signals', {token: mio})).json, []);
+  // Blocked: nothing more arrives.
+  await s.call('POST', '/v1/inbox/contacts', {token: mio, body: {address: 'ren@length3.test', state: 'blocked'}});
+  assert.equal((await s.call('POST', '/v1/inbox/messages', {token: ren, body: {to: 'mio@example.org', body: 'hello?'}})).status, 403);
+  // The Remote's own domain answers for one name, never with a list.
+  const wk = await s.call('GET', '/.well-known/length3?name=ren');
+  assert.deepEqual(wk.json, {remote: BASE, name: 'ren'});
+  assert.deepEqual((await s.call('GET', '/.well-known/length3')).json, {remote: BASE});
 });
