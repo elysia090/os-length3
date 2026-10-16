@@ -95,6 +95,15 @@ and a line pressed opens the center there with the line selected. Below,
 on the band line, one reference at a time, switched freely with chips: Issue (the repo's `issue/`, one file each), diff and 実行結果 (each
 says plainly that it is not connected yet). The chosen reference is remembered on this device.
 
+### Runtime
+
+This device's room, measured, then the environment actually in effect, not
+the one asked for: the base the Prompt runs (BusyBox, its version and
+command count, where the version is pinned), the tools (l3, xlat) with
+short digests, and Dotfiles as differences from the base (none yet, and it
+says so). The list comes from the manifest written with the userland, so it
+cannot claim what is not there.
+
 ### Git
 
 What happens between a repo and the outside, in the mental model of the

@@ -13,4 +13,18 @@ cp "$xlat/userland/out/busybox" "$xlat/userland/out/applets" "$out/"
 # l3 in the Prompt is the same command as on the host, built static for xlat.
 (cd "$here" && cargo build --profile prompt -p l3 --target x86_64-unknown-linux-musl)
 cp "$here/target/x86_64-unknown-linux-musl/prompt/l3" "$out/l3"
+# What the Prompt runs, for Runtime to show: names, versions and digests.
+. "$here/../../data/sources.env"
+sha() { sha256sum "$1" | cut -d' ' -f1; }
+cat > "$out/manifest.json" <<JSON
+{
+  "base": {"name": "BusyBox", "version": "$BUSYBOX_VERSION", "from": "data/sources.env", "sha256": "$(sha "$out/busybox")",
+           "applets": $(grep -c . "$out/applets")},
+  "tools": [
+    {"name": "l3", "version": "$(sed -n 's/^version = "\(.*\)"/\1/p' "$here/cli/Cargo.toml" | head -1)", "sha256": "$(sha "$out/l3")"},
+    {"name": "xlat", "version": "$(sed -n 's/^version = "\(.*\)"/\1/p' "$xlat/Cargo.toml" | head -1)", "sha256": "$(sha "$out/xlat.wasm")"}
+  ],
+  "dotfiles": []
+}
+JSON
 ls -la "$out"
