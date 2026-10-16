@@ -16,6 +16,8 @@ CREATE TABLE "cut" (
 	"title" text NOT NULL,
 	"issue" text DEFAULT '' NOT NULL,
 	"note" text DEFAULT '' NOT NULL,
+	"added" integer DEFAULT 0 NOT NULL,
+	"removed" integer DEFAULT 0 NOT NULL,
 	"time" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint

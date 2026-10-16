@@ -5,13 +5,15 @@
 pub mod boundary;
 pub mod fetch;
 pub mod root;
-pub mod git;
+pub mod history;
 pub mod home;
 pub mod issues;
+pub mod linediff;
 #[cfg(target_os = "linux")]
 pub mod launch;
 pub mod paths;
 pub mod prompt;
+pub mod remote;
 pub mod repos;
 pub mod system;
 pub mod templates;

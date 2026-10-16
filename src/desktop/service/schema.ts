@@ -44,6 +44,9 @@ export const cut = pgTable('cut', {
   title: text('title').notNull(),
   issue: text('issue').notNull().default(''),
   note: text('note').notNull().default(''),
+  /** Lines added and removed, as the device that cut counted them (for the page only). */
+  added: integer('added').notNull().default(0),
+  removed: integer('removed').notNull().default(0),
   time: timestamp('time').defaultNow().notNull(),
 }, (t) => [index('cut_repo_idx').on(t.userId, t.repo, t.time)]);
 

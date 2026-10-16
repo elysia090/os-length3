@@ -1,5 +1,5 @@
-// Prompts on the distribution's root (l3 open, core/src/launch.rs). Each
-// is an `l3 open REPO` process beside the app; what it prints comes to the
+// Prompts on the distribution's root (l3 prompt, core/src/launch.rs). Each
+// is an `l3 prompt REPO` process beside the app; what it prints comes to the
 // webview as `prompt` events, what is typed goes to its standard input.
 // Closing kills its supervisor, and with it (PDEATHSIG, then the pid
 // namespace) every process inside; it is only called stopped once the host
@@ -15,6 +15,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter, State};
 
 struct Shell {
+    repo: String,
     child: Child,
     stdin: ChildStdin,
     ns: Option<u64>,
@@ -24,6 +25,13 @@ struct Shell {
 pub struct Shells {
     next: AtomicU32,
     open: Mutex<HashMap<u32, Shell>>,
+}
+
+impl Shells {
+    /// Repos a Prompt has open now: they stay on the device while it runs.
+    pub fn open_repos(&self) -> Vec<String> {
+        self.open.lock().unwrap().values().map(|s| s.repo.clone()).collect()
+    }
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -56,7 +64,7 @@ pub fn prompt_open(app: AppHandle, shells: State<'_, Shells>, repo: String) -> R
     let (mut reader, writer) = std::io::pipe().map_err(|e| e.to_string())?;
     // One pipe for both, so what it prints keeps its order.
     let mut child = Command::new(prompt::l3_path(&exe))
-        .args(["open", &repo])
+        .args(["prompt", &repo])
         .stdin(Stdio::piped())
         .stdout(writer.try_clone().map_err(|e| e.to_string())?)
         .stderr(writer)
@@ -74,7 +82,7 @@ pub fn prompt_open(app: AppHandle, shells: State<'_, Shells>, repo: String) -> R
         }
         std::thread::sleep(Duration::from_millis(10));
     }
-    shells.open.lock().unwrap().insert(id, Shell { child, stdin, ns });
+    shells.open.lock().unwrap().insert(id, Shell { repo, child, stdin, ns });
     std::thread::spawn(move || {
         let mut buf = [0u8; 16 * 1024];
         let mut pending = Vec::new();

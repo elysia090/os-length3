@@ -1,25 +1,30 @@
-//! What this OS holds on the device, measured where the host measures it,
-//! and what can be given back.
+//! この端末: what this OS holds on the device, measured where the host
+//! measures it, as one list by size, each thing saying what can be done
+//! with it:
 //!
-//! Every figure says how it is known. `logical` is the bytes files claim;
-//! `allocated` is what the host's filesystem has set aside for them
-//! (st_blocks), which is what returning room is about: a sparse or deleted
-//! file counts only what it really holds. Host free space is what the host
-//! reports for the filesystem; after a reclaim the change in it is observed,
-//! not attributed, because other programs write too.
+//!   空ける          it is not needed here: an old root (fetched again from
+//!                   the Remote when wanted), a leftover temporary, a repo
+//!                   whose copy is exactly what the Remote has
+//!   同期して空ける   a repo with changes the Remote does not have yet: they
+//!                   are sent first, then the copy goes
+//!   (kept)          and why: the root Prompts run on, a repo holding what
+//!                   cannot be sent, Home's settings
 //!
-//! Reclaimable means disposable by proof, not by name:
-//! - a temporary file this OS itself writes while replacing a file
-//!   (`.<name>.length3-<pid>-<n>` beside it, `<key>.json.<pid>` in Home),
-//!   left behind when the writer died before renaming it in: its writer is
-//!   no longer running and it is older than a minute;
-//! - in the system directory, a root half unpacked by an install that died,
-//!   a release bundle or partial download not in use (both fetched again
-//!   from the Remote when wanted), and roots older than the one kept to go
-//!   back to.
-//! The root in use and the one before it are held, and say why. Nothing in
-//! a repo's .git, no file the person made, and nothing shared through a hard
-//! link is ever removed; a file with several links is counted once.
+//! A repo that is freed stays on the Remote and comes back when opened.
+//!
+//! Every figure says how it is known. `allocated` is what the host's
+//! filesystem has set aside (st_blocks), which is what giving room back is
+//! about: a sparse or deleted file counts only what it really holds, and a
+//! file with several hard links is counted once. Host free space is what
+//! the host reports; after freeing, the change in it is observed, not
+//! attributed, because other programs write too.
+//!
+//! A leftover is disposable by proof, not by name: a temporary file this OS
+//! itself writes while replacing a file (`.<name>.length3-<pid>-<n>`,
+//! `<key>.json.<pid>` in Home) whose writer is gone and which is older than
+//! a minute; in the system directory, a root half unpacked by an install
+//! that died, and a release bundle or partial download not in use. Nothing
+//! in a repo's .git and no file the person made is ever a leftover.
 
 use serde::Serialize;
 use std::fs;
@@ -38,21 +43,11 @@ pub enum Certainty {
 }
 
 #[derive(Serialize, Debug, Clone)]
-pub struct RepoUsage {
-    pub name: String,
-    pub files: u64,
-    pub logical: u64,
-    pub allocated: u64,
-    /// Of `allocated`, what its history (.git) holds.
-    pub history: u64,
-}
-
-#[derive(Serialize, Debug, Clone)]
-pub struct Leftover {
-    pub path: PathBuf,
-    pub allocated: u64,
+struct Leftover {
+    path: PathBuf,
+    allocated: u64,
     /// What it is, in a word or two.
-    pub what: String,
+    what: String,
 }
 
 /// Why a root is on the device.
@@ -73,37 +68,6 @@ pub struct SystemUsage {
     pub sha256: String,
     pub allocated: u64,
     pub held: Held,
-}
-
-#[derive(Serialize, Debug, Clone)]
-pub struct Usage {
-    pub host_total: u64,
-    pub host_free: u64,
-    pub host: Certainty,
-    pub repos: Vec<RepoUsage>,
-    /// The distribution's roots on the device.
-    pub system: Vec<SystemUsage>,
-    /// Home's state (profile, TODO, the band).
-    pub home: u64,
-    pub allocated: u64,
-    pub reclaimable: u64,
-    pub leftovers: Vec<Leftover>,
-}
-
-#[derive(Serialize, Debug, Clone)]
-pub struct Reclaim {
-    /// Allocated bytes of what was removed, counted before removal.
-    pub freed: u64,
-    pub freed_certainty: Certainty,
-    pub removed: usize,
-    /// What could not be removed, and why.
-    pub kept: Vec<(PathBuf, String)>,
-    pub host_free_before: u64,
-    pub host_free_after: u64,
-    pub host_change: Certainty,
-    /// How long the host took to show at least the freed room (None: not seen
-    /// within the wait).
-    pub reflected_ms: Option<u64>,
 }
 
 const AGE: Duration = Duration::from_secs(60);
@@ -143,6 +107,11 @@ fn tally_into(dir: &Path, seen: &mut std::collections::HashSet<(u64, u64)>) -> (
         }
     }
     out
+}
+
+/// Bytes the host has set aside for everything under `dir`.
+pub fn allocated(dir: &Path) -> u64 {
+    tally(dir).2 + dir.symlink_metadata().map(|m| blocks(&m)).unwrap_or(0)
 }
 
 fn age(meta: &fs::Metadata) -> Duration {
@@ -203,6 +172,11 @@ fn system_leftovers(data: &Path, out: &mut Vec<Leftover>) {
     }
 }
 
+/// Whether a name in a repo is one this OS gives a file while it writes it.
+pub fn is_temporary(name: &str) -> bool {
+    name.starts_with(".length3-") || temporary_writer(name, false).is_some()
+}
+
 /// The pid in a name this OS gives its temporary files, if it is one. A
 /// setting's temporary (`<key>.json.<pid>`) is only one in the settings
 /// directory: in a repo, a name like that is a person's own file.
@@ -254,60 +228,144 @@ fn host(dir: &Path) -> (u64, u64, Certainty) {
     }
 }
 
-/// What this OS holds under `data` (repos in `repos`), and what is reclaimable.
-pub fn usage(data: &Path, repos: &Path) -> Usage {
+/// What can be done with a thing this OS holds.
+#[derive(Serialize, Debug, Clone, Copy, PartialEq)]
+pub enum Room {
+    /// It can go now.
+    Free,
+    /// A repo with changes not on the Remote yet: sent, then it goes.
+    SyncFree,
+    /// It stays, and `why` says why.
+    Keep,
+}
+
+/// One thing this OS holds on the device.
+#[derive(Serialize, Debug, Clone)]
+pub struct Item {
+    /// "repo:<name>", "root:<sha256>", "path:<path>" or "home".
+    pub id: String,
+    pub what: String,
+    pub detail: String,
+    pub allocated: u64,
+    pub room: Room,
+    pub why: String,
+}
+
+#[derive(Serialize, Debug, Clone)]
+pub struct Space {
+    pub host_total: u64,
+    pub host_free: u64,
+    pub host: Certainty,
+    /// All this OS holds here.
+    pub allocated: u64,
+    /// What can go (空ける and 同期して空ける together).
+    pub freeable: u64,
+    /// Largest first.
+    pub items: Vec<Item>,
+}
+
+#[derive(Serialize, Debug, Clone)]
+pub struct Freed {
+    /// Allocated bytes of what went, counted just before it went.
+    pub freed: u64,
+    pub freed_certainty: Certainty,
+    /// The ids that went.
+    pub removed: Vec<String>,
+    /// What stayed, and why.
+    pub kept: Vec<(String, String)>,
+    pub host_free_before: u64,
+    pub host_free_after: u64,
+    pub host_change: Certainty,
+    /// How long the host took to show at least the freed room (None: not
+    /// seen within the wait).
+    pub reflected_ms: Option<u64>,
+}
+
+fn repo_item(repos: &crate::repos::Repos, name: &str, connected: bool, open: &[String]) -> Option<Item> {
+    let dir = repos.dir(name).ok()?;
+    let s = crate::remote::status_of(repos, name).ok()?;
+    let files = s.unsynced.len() + crate::remote::local_tree(&dir).tree.values().filter(|v| v.is_some()).count();
+    let (room, why) = if open.iter().any(|o| o == name) {
+        (Room::Keep, "Prompt で開いています".to_string())
+    } else if !connected {
+        (Room::Keep, "Remote につなぐと空けられます".into())
+    } else if let Some((path, what)) = s.unsynced.first() {
+        (Room::Keep, format!("Remote に送れないものがあります（{path}: {what}）"))
+    } else if s.changed == 0 && !s.fresh {
+        (Room::Free, "Remote と同じです。開けばまた来ます".into())
+    } else {
+        (Room::SyncFree, if s.fresh { "まだ Remote にありません。送ってから空けます".into() } else { format!("{} 件の変更を送ってから空けます", s.changed) })
+    };
+    Some(Item { id: format!("repo:{name}"), what: name.into(), detail: format!("repo · {files} ファイル"), allocated: allocated(&dir), room, why })
+}
+
+/// Everything this OS holds under `data` (repos in `repos`), largest first.
+/// `open`: repos a Prompt has open now.
+pub fn space(data: &Path, repos_dir: &Path, open: &[String]) -> Space {
     let (host_total, host_free, host) = host(data);
-    let mut list = Vec::new();
-    if let Ok(entries) = fs::read_dir(repos) {
-        for e in entries.flatten() {
-            let name = e.file_name().to_string_lossy().into_owned();
-            if !crate::repos::valid_name(&name) || !e.path().is_dir() { continue; }
-            let (files, logical, allocated) = tally(&e.path());
-            let history = tally(&e.path().join(".git")).2;
-            list.push(RepoUsage { name, files, logical, allocated, history });
+    let mut items = Vec::new();
+    let connected = crate::remote::connection().is_some();
+    if let Ok(repos) = crate::repos::Repos::new(repos_dir.to_path_buf()) {
+        for s in repos.list().unwrap_or_default() {
+            items.extend(repo_item(&repos, &s.name, connected, open));
         }
     }
-    list.sort_by(|a, b| b.allocated.cmp(&a.allocated).then(a.name.cmp(&b.name)));
-    let home = tally(&data.join("home")).2;
-    let system: Vec<SystemUsage> = system(data).into_iter().map(|(r, _)| r).collect();
+    for (row, path) in system(data) {
+        let (room, why) = match row.held {
+            Held::Current => (Room::Keep, "Prompt が動く root です".to_string()),
+            Held::Previous => (Room::Free, "ひとつ前の root。戻すときは Remote から取り直せます".into()),
+            Held::Older => (Room::Free, "古い root。Remote から取り直せます".into()),
+        };
+        let _ = path;
+        items.push(Item { id: format!("root:{}", row.sha256), what: format!("{} {}", row.name, row.version), detail: "root".into(), allocated: row.allocated, room, why });
+    }
     let mut left = Vec::new();
     leftovers(data, data, &mut left);
     system_leftovers(data, &mut left);
-    let reclaimable = left.iter().map(|l| l.allocated).sum();
-    Usage {
+    for l in left.into_iter().filter(|l| !l.what.starts_with("古い root")) {
+        let name = l.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        items.push(Item { id: format!("path:{}", l.path.display()), what: l.what, detail: name, allocated: l.allocated, room: Room::Free, why: "このOSの残り物です".into() });
+    }
+    let home = allocated(&data.join("home")) + allocated(&data.join("sync"));
+    items.push(Item { id: "home".into(), what: "Home".into(), detail: "設定・TODO・同期の記録".into(), allocated: home, room: Room::Keep, why: "この端末の設定です".into() });
+    items.sort_by(|a, b| b.allocated.cmp(&a.allocated).then(a.what.cmp(&b.what)));
+    Space {
         host_total, host_free, host,
-        allocated: list.iter().map(|r| r.allocated).sum::<u64>() + home + system.iter().map(|r| r.allocated).sum::<u64>(),
-        repos: list, system, home, reclaimable, leftovers: left,
+        allocated: items.iter().map(|i| i.allocated).sum(),
+        freeable: items.iter().filter(|i| i.room != Room::Keep).map(|i| i.allocated).sum(),
+        items,
     }
 }
 
-/// Give back what is reclaimable now, and say what the host shows for it.
-pub fn reclaim(data: &Path) -> Reclaim {
-    let mut found = Vec::new();
-    leftovers(data, data, &mut found);
-    system_leftovers(data, &mut found);
+/// Free these ids (or, with `all`, everything that can go), each looked at
+/// again just before it goes; then say what the host shows for it.
+pub fn free(data: &Path, repos_dir: &Path, ids: &[String], open: &[String]) -> Freed {
+    let now = space(data, repos_dir, open);
     let (_, before, certainty) = host(data);
-    let mut freed = 0;
-    let mut removed = 0;
-    let mut kept = Vec::new();
-    for l in found {
-        // Looked at again just before: it may have been renamed in or reused.
-        match l.path.symlink_metadata() {
-            Ok(m) if m.is_file() && links(&m) == 1 => match fs::remove_file(&l.path) {
-                Ok(()) => { freed += blocks(&m); removed += 1; }
-                Err(e) => kept.push((l.path, e.to_string())),
-            },
-            // Directories are only ever the system's own (a root, an unpacking),
-            // found again just now by system_leftovers; counted before going.
-            Ok(m) if m.is_dir() && l.path.starts_with(crate::root::system_dir(data)) => {
-                let size = tally(&l.path).2 + blocks(&m);
-                match fs::remove_dir_all(&l.path) {
-                    Ok(()) => { freed += size; removed += 1; }
-                    Err(e) => kept.push((l.path, e.to_string())),
-                }
-            }
-            Ok(_) => kept.push((l.path, "もう一時ファイルではありません".into())),
-            Err(_) => {}
+    let (mut freed, mut removed, mut kept) = (0, Vec::new(), Vec::new());
+    for id in ids {
+        let Some(item) = now.items.iter().find(|i| &i.id == id) else {
+            kept.push((id.clone(), "もうありません".into()));
+            continue;
+        };
+        if item.room == Room::Keep {
+            kept.push((id.clone(), item.why.clone()));
+            continue;
+        }
+        let gone: Result<u64, String> = if let Some(name) = id.strip_prefix("repo:") {
+            crate::repos::Repos::new(repos_dir.to_path_buf()).and_then(|r| crate::remote::free(&r, name))
+        } else if let Some(sha) = id.strip_prefix("root:") {
+            let dir = crate::root::system_dir(data).join(sha);
+            let size = allocated(&dir);
+            fs::remove_dir_all(&dir).map(|_| size).map_err(|e| e.to_string())
+        } else if let Some(path) = id.strip_prefix("path:") {
+            remove_leftover(data, Path::new(path))
+        } else {
+            Err("空けられません".into())
+        };
+        match gone {
+            Ok(n) => { freed += n; removed.push(id.clone()); }
+            Err(e) => kept.push((id.clone(), e)),
         }
     }
     let started = Instant::now();
@@ -322,10 +380,28 @@ pub fn reclaim(data: &Path) -> Reclaim {
         if started.elapsed() >= WAIT { break; }
         std::thread::sleep(Duration::from_millis(20));
     }
-    Reclaim {
+    Freed {
         freed, freed_certainty: Certainty::Verified, removed, kept,
         host_free_before: before, host_free_after: after,
         host_change: certainty, reflected_ms: if freed == 0 { Some(0) } else { reflected },
+    }
+}
+
+/// Everything that can go, as ids for `free`.
+pub fn all_freeable(s: &Space) -> Vec<String> {
+    s.items.iter().filter(|i| i.room != Room::Keep).map(|i| i.id.clone()).collect()
+}
+
+fn remove_leftover(data: &Path, path: &Path) -> Result<u64, String> {
+    match path.symlink_metadata() {
+        Ok(m) if m.is_file() && links(&m) == 1 => fs::remove_file(path).map(|_| blocks(&m)).map_err(|e| e.to_string()),
+        // Directories are only ever the system's own (an unpacking).
+        Ok(m) if m.is_dir() && path.starts_with(crate::root::system_dir(data)) => {
+            let size = allocated(path);
+            fs::remove_dir_all(path).map(|_| size).map_err(|e| e.to_string())
+        }
+        Ok(_) => Err("もう一時ファイルではありません".into()),
+        Err(_) => Ok(0),
     }
 }
 
@@ -365,15 +441,20 @@ mod tests {
         for p in [&dead, &live, &in_git, &mine, &dated, &setting] {
             fs::File::options().write(true).open(p).unwrap().set_modified(old).unwrap();
         }
-        let u = usage(&data, &data.join("repos"));
-        let mut found = u.leftovers.iter().map(|l| l.path.clone()).collect::<Vec<_>>();
+        let u = space(&data, &data.join("repos"), &[]);
+        let mut found: Vec<PathBuf> = u.items.iter().filter_map(|i| i.id.strip_prefix("path:").map(PathBuf::from)).collect();
         found.sort();
         assert_eq!(found, [setting.clone(), dead.clone()]);
-        assert!(u.reclaimable >= 50_000 / 4096 * 4096, "{}", u.reclaimable);
-        let a = &u.repos[0];
-        assert!(a.allocated >= a.history && a.logical >= 10_000 && a.files >= 3, "{a:?}");
-        let r = reclaim(&data);
-        assert_eq!((r.removed, r.freed_certainty), (2, Certainty::Verified));
+        assert!(u.freeable >= 50_000 / 4096 * 4096, "{}", u.freeable);
+        // Without a Remote, a repo stays, and says how it could go.
+        let a = u.items.iter().find(|i| i.id == "repo:a").unwrap();
+        assert!(a.allocated >= 10_000 && a.room == Room::Keep && a.why.contains("Remote"), "{a:?}");
+        // Largest first.
+        assert!(u.items.windows(2).all(|w| w[0].allocated >= w[1].allocated));
+        let ids: Vec<String> = all_freeable(&u);
+        let r = free(&data, &data.join("repos"), &[ids, vec!["repo:a".into()]].concat(), &[]);
+        assert_eq!((r.removed.len(), r.freed_certainty), (2, Certainty::Verified));
+        assert!(r.kept.iter().any(|(id, _)| id == "repo:a"));
         assert!(!dead.exists() && !setting.exists());
         assert!(live.exists() && in_git.exists() && mine.exists() && dated.exists());
         // The host's free space is shared with every other writer, so it is
@@ -390,9 +471,9 @@ mod tests {
         fs::create_dir_all(&repo).unwrap();
         let f = fs::File::create(repo.join("big")).unwrap();
         f.set_len(1 << 30).unwrap(); // 1 GiB logical, nothing written
-        let u = usage(&data, &data.join("repos"));
-        assert!(u.repos[0].logical >= 1 << 30);
-        assert!(u.repos[0].allocated < 1 << 20, "{:?}", u.repos[0]);
+        let u = space(&data, &data.join("repos"), &[]);
+        let s = u.items.iter().find(|i| i.id == "repo:s").unwrap();
+        assert!(s.allocated < 1 << 20, "{s:?}");
         let _ = fs::remove_dir_all(&data);
     }
 }
@@ -426,16 +507,17 @@ mod system_tests {
         fs::File::open(&old).unwrap().set_modified(t - Duration::from_secs(7200)).unwrap();
         fs::File::open(&before).unwrap().set_modified(t - Duration::from_secs(3600)).unwrap();
         std::os::unix::fs::symlink("c".repeat(64), crate::root::system_dir(&data).join("current")).unwrap();
-        let u = usage(&data, &data.join("repos"));
-        let held: Vec<(String, Held)> = u.system.iter().map(|s| (s.version.clone(), s.held)).collect();
+        let held: Vec<(String, Held)> = system(&data).into_iter().map(|(s, _)| (s.version, s.held)).collect();
         assert!(held.contains(&("0.1.0".into(), Held::Current)) && held.contains(&("0.0.2".into(), Held::Previous)) && held.contains(&("0.0.1".into(), Held::Older)), "{held:?}");
+        let u = space(&data, &data.join("repos"), &[]);
+        let room = |v: &str| u.items.iter().find(|i| i.what == format!("OS {v}")).unwrap();
+        // The root in use stays; the others can be fetched again, so they can go.
+        assert_eq!((room("0.1.0").room, room("0.0.2").room, room("0.0.1").room), (Room::Keep, Room::Free, Room::Free));
         // Four names, one file's worth of blocks.
-        let one = u.system.iter().find(|s| s.version == "0.1.0").unwrap().allocated;
-        assert!(one < 4 * 20_000, "{one}");
-        assert_eq!(u.leftovers.iter().map(|l| l.what.as_str()).collect::<Vec<_>>(), ["古い root（OS 0.0.1）"]);
-        let r = reclaim(&data);
-        assert_eq!(r.removed, 1);
-        assert!(!old.exists() && before.exists() && crate::root::system_dir(&data).join("c".repeat(64)).exists());
+        assert!(room("0.1.0").allocated < 4 * 20_000, "{}", room("0.1.0").allocated);
+        let r = free(&data, &data.join("repos"), &all_freeable(&u), &[]);
+        assert_eq!(r.removed.len(), 2);
+        assert!(!old.exists() && !before.exists() && crate::root::system_dir(&data).join("c".repeat(64)).exists());
         let _ = fs::remove_dir_all(&data);
     }
 }

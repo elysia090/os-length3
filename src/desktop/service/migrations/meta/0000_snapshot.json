@@ -1,5 +1,5 @@
 {
-  "id": "e3807db7-0ddc-462e-9a9e-1cb270568fac",
+  "id": "642b34b2-85ed-430e-a87f-3503225bc398",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -124,6 +124,20 @@
           "primaryKey": false,
           "notNull": true,
           "default": "''"
+        },
+        "added": {
+          "name": "added",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "removed": {
+          "name": "removed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "time": {
           "name": "time",

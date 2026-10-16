@@ -17,7 +17,6 @@ pub struct Summary {
     pub bytes: u64,
     /// Milliseconds since the epoch of the newest change seen.
     pub modified: u64,
-    pub git: bool,
 }
 
 #[derive(Serialize, Debug, PartialEq)]
@@ -152,7 +151,7 @@ impl Repos {
                 if meta.is_dir() { stack.push(e.path()); } else { files += 1; bytes += meta.len(); }
             }
         }
-        Ok(Summary { name: name.to_string(), files, bytes, modified, git: dir.join(".git").is_dir() })
+        Ok(Summary { name: name.to_string(), files, bytes, modified })
     }
 
     /// Create a repo from a template (shared/templates.json). Inbox and TODO
@@ -174,7 +173,6 @@ impl Repos {
             }
             fs::write(target, text).map_err(|e| e.to_string())?;
         }
-        init_git(&dir);
         self.summary(name)
     }
 
@@ -339,15 +337,6 @@ impl Repos {
         self.add(repo, "issue", &name, &issues::text(kind, title, detail), 256 * 1024)?;
         Ok(name)
     }
-}
-
-/// `git init` across the host boundary only as git (see boundary.rs), so a
-/// new repo never inherits host settings or templates. Missing git just
-/// leaves no `.git`.
-fn init_git(dir: &Path) {
-    let _ = crate::boundary::git(dir)
-        .args(["-c", "init.defaultBranch=main", "init", "-q"])
-        .status();
 }
 
 #[cfg(test)]

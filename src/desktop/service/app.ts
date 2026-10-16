@@ -11,8 +11,10 @@
 //   GET    /v1/repos/:name            its draft (tree, version, base) and head
 //   PATCH  /v1/repos/:name/draft      {version, set, remove}: a diff on that version
 //                                      -> {version} | 409 {version, draft} | 409 {missing}
-//   POST   /v1/repos/:name/cuts       {version, parent, kind, title, issue, note}:
+//   DELETE /v1/repos/:name            the repo and its history, from the Remote
+//   POST   /v1/repos/:name/cuts       {version, parent, kind, title, issue, note, added, removed}:
 //                                      the draft at that version becomes a cut
+//   GET    /v1/repos/:name/cuts/:id
 //   GET    /v1/repos/:name/log
 //   GET    /v1/home/:key  PUT {value, version}
 
@@ -59,6 +61,9 @@ export async function cutId(c: {repo: string; parent: string | null; tree: Tree;
   const tree = Object.keys(c.tree).sort().map((p) => [p, c.tree[p]]);
   return sha256(enc.encode(JSON.stringify([c.repo, c.parent, tree, c.kind, c.title, c.issue, c.note, c.time])));
 }
+
+/** A cut as clients read it. */
+const shown = ({userId: _, ...r}: typeof cut.$inferSelect) => ({...r, time: r.time.getTime()});
 
 type Vars = {Variables: {userId: string; sessionId: string}};
 
@@ -199,27 +204,42 @@ export function createApp(d: Deps) {
   v1.post('/repos/:name/cuts', async (c) => {
     const name = c.req.param('name');
     const user = c.get('userId');
-    const b = await c.req.json().catch(() => null) as {version?: unknown; parent?: unknown; kind?: unknown; title?: unknown; issue?: unknown; note?: unknown} | null;
+    const b = await c.req.json().catch(() => null) as {version?: unknown; parent?: unknown; kind?: unknown; title?: unknown; issue?: unknown; note?: unknown; added?: unknown; removed?: unknown} | null;
     if (!b || typeof b.version !== 'number' || !(b.parent === null || (typeof b.parent === 'string' && HEX.test(b.parent)))) return c.json({error: 'a cut'}, 400);
     const words = {kind: b.kind ?? '', title: b.title, issue: b.issue ?? '', note: b.note ?? ''};
     for (const [k, v] of Object.entries(words)) if (typeof v !== 'string' || v.length > LIMIT.words) return c.json({error: k}, 400);
     if (!(words.title as string).trim()) return c.json({error: 'title'}, 400);
+    const count = (n: unknown) => (typeof n === 'number' && Number.isInteger(n) && n >= 0 && n < 2 ** 31 ? n : 0);
     const [row] = await d.db.select().from(repo).where(and(eq(repo.userId, user), eq(repo.name, name)));
     if (!row || row.version !== b.version || (row.head ?? null) !== b.parent) return c.json({head: row?.head ?? null, version: row?.version ?? 0}, 409);
     const record = {repo: name, parent: b.parent as string | null, tree: row.draft as Tree, ...(words as {kind: string; title: string; issue: string; note: string}), time: Date.now()};
     const id = await cutId(record);
-    await d.db.insert(cut).values({id, userId: user, repo: name, parent: record.parent, tree: record.tree, kind: record.kind, title: record.title, issue: record.issue, note: record.note, time: new Date(record.time)}).onConflictDoNothing();
+    await d.db.insert(cut).values({id, userId: user, repo: name, parent: record.parent, tree: record.tree, kind: record.kind, title: record.title, issue: record.issue, note: record.note,
+      added: count(b.added), removed: count(b.removed), time: new Date(record.time)}).onConflictDoNothing();
     const moved = await d.db.update(repo).set({head: id, draftBase: id, updatedAt: new Date()})
       .where(and(eq(repo.userId, user), eq(repo.name, name), eq(repo.version, row.version), b.parent === null ? sql`${repo.head} is null` : eq(repo.head, b.parent as string)))
       .returning({head: repo.head});
     if (!moved.length) return c.json({head: row.head, version: row.version}, 409);
-    return c.json({id}, 201);
+    return c.json({id, time: record.time}, 201);
+  });
+
+  v1.get('/repos/:name/cuts/:id', async (c) => {
+    const [row] = await d.db.select().from(cut).where(and(eq(cut.userId, c.get('userId')), eq(cut.repo, c.req.param('name')), eq(cut.id, c.req.param('id'))));
+    return row ? c.json(shown(row)) : c.json({error: 'no cut'}, 404);
+  });
+
+  // The repo goes from the Remote with its history; blobs stay (other repos may share them).
+  v1.delete('/repos/:name', async (c) => {
+    const user = c.get('userId'), name = c.req.param('name');
+    await d.db.delete(cut).where(and(eq(cut.userId, user), eq(cut.repo, name)));
+    const gone = await d.db.delete(repo).where(and(eq(repo.userId, user), eq(repo.name, name))).returning({name: repo.name});
+    return gone.length ? c.json({removed: name}) : c.json({error: 'no repo'}, 404);
   });
 
   v1.get('/repos/:name/log', async (c) => {
     const limit = Math.min(LIMIT.log, Math.max(1, Number(c.req.query('limit') ?? 50) || 50));
     const rows = await d.db.select().from(cut).where(and(eq(cut.userId, c.get('userId')), eq(cut.repo, c.req.param('name')))).orderBy(desc(cut.time)).limit(limit);
-    return c.json(rows.map((r: typeof cut.$inferSelect) => ({...r, time: r.time.getTime()})));
+    return c.json(rows.map(shown));
   });
 
   v1.get('/home/:key', async (c) => {

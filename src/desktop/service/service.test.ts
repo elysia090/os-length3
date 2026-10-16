@@ -127,9 +127,11 @@ test('a draft changes only from the version it was read at; a cut records it', a
     assert.equal((await s.call('PATCH', '/v1/repos/notes/draft', {token: t, body: {version: 2, set: {[p]: null}, remove: []}})).status, 400, p);
   }
   // 区切る: the draft as it is at version 2.
-  const first = await s.call('POST', '/v1/repos/notes/cuts', {token: t, body: {version: 2, parent: null, kind: 'Fix', title: '最初', issue: 'issue/001.md', note: ''}});
+  const first = await s.call('POST', '/v1/repos/notes/cuts', {token: t, body: {version: 2, parent: null, kind: 'Fix', title: '最初', issue: 'issue/001.md', note: '', added: 2, removed: 0}});
   assert.equal(first.status, 201);
   const id = first.json.id as string;
+  const one = await s.call('GET', `/v1/repos/notes/cuts/${id}`, {token: t});
+  assert.deepEqual([one.json.tree, one.json.added, one.json.title, 'userId' in one.json], [{'README.md': readme, 'docs/plan.md': plan}, 2, '最初', false]);
   // A cut from an older version, or an older parent, is refused with what is there.
   assert.deepEqual((await s.call('POST', '/v1/repos/notes/cuts', {token: t, body: {version: 1, parent: id, title: 'x'}})).json, {head: id, version: 2});
   assert.equal((await s.call('POST', '/v1/repos/notes/cuts', {token: t, body: {version: 2, parent: null, title: 'x'}})).status, 409);
@@ -137,6 +139,10 @@ test('a draft changes only from the version it was read at; a cut records it', a
   assert.deepEqual((repos.json as unknown as {name: string; head: string; version: number; bytes: number}[]).map((r) => [r.name, r.head, r.version, r.bytes]), [['notes', id, 2, 13]]);
   const log = await s.call('GET', '/v1/repos/notes/log', {token: t});
   assert.deepEqual((log.json as unknown as {id: string; title: string; tree: object}[]).map((c) => [c.id, c.title]), [[id, '最初']]);
+  // A repo can go from the Remote, history and all.
+  assert.equal((await s.call('DELETE', '/v1/repos/notes', {token: t})).status, 200);
+  assert.deepEqual((await s.call('GET', '/v1/repos', {token: t})).json, []);
+  assert.equal((await s.call('GET', `/v1/repos/notes/cuts/${id}`, {token: t})).status, 404);
 });
 
 test('an account sees only its own: blobs, repos, settings', async () => {
