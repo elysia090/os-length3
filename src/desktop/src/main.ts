@@ -87,7 +87,7 @@ function select(id: PurposeId) {
 
 function render() {
   const page = $('page');
-  page.classList.toggle('page-work', current === 'forge');
+  page.classList.toggle('page-work', current === 'forge' || current === 'git');
   fileTree.mark(current === 'forge' ? openRepo : null);
   const nodes = current === 'home' ? home(ctx)
     : current === 'forge' ? forge(ctx)

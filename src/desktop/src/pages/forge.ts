@@ -5,8 +5,7 @@ import {store, type Entry} from '../repos.ts';
 import {pageHead} from './common.ts';
 import type {Context} from './context.ts';
 import {lineCount, readingOrder} from '../reading.ts';
-import {Reference} from './reference.ts';
-import {sessionFor, terminalFor} from './terminal.ts';
+import {bench} from './bench.ts';
 
 /**
  * Forge, the place you work. The repos out to work on run as pills in a band
@@ -40,75 +39,13 @@ export function showInForge(repo: string, path: string): boolean {
 /** Forge is next drawn for the repo just asked for, at `path` ('' for its top). */
 export function revealNext(path: string) { pending = path; }
 
-const MOVE = 280;
-
-/** Move `el` into `to`, animating from where it was (FLIP). */
-function fly(el: HTMLElement, to: HTMLElement) {
-  const from = el.getBoundingClientRect();
-  to.append(el);
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  const at = el.getBoundingClientRect();
-  if (!at.width || !from.width) return;
-  el.animate([
-    {transformOrigin: 'top left', transform: `translate(${from.left - at.left}px, ${from.top - at.top}px) scale(${from.width / at.width}, ${from.height / at.height})`},
-    {transformOrigin: 'top left', transform: 'none'},
-  ], {duration: MOVE, easing: 'cubic-bezier(.2, .9, .25, 1.06)'});
-}
-
 export function forge(ctx: Context): Node[] {
   let reader: Reader | null = null;
   let repo: string | null = null;
   const strip = h('nav', {class: 'repo-strip', 'aria-label': 'repo'});
   const flow = h('section', {class: 'flow', tabindex: '0', 'aria-label': 'repoの中身'});
 
-  // The terminal: a box that lives at the bottom of the right pane and flies
-  // up above the prompt box while the prompt is in use.
-  // Named for what one does there: type at the prompt of the repo's sh.
-  const termBox = h('section', {class: 'term-box', 'aria-label': 'Prompt'}, h('h2', {}, 'Prompt'));
-  const termHome = h('div', {class: 'term-home'}, termBox);
-  const termSlot = h('div', {class: 'term-slot'});
-  const prompt = h('textarea', {class: 'prompt-in', rows: '1', 'aria-label': 'プロンプト',
-    placeholder: 'コマンドを入力して Enter（このrepoの sh に送られます）', spellcheck: 'false', autocapitalize: 'off'}) as HTMLTextAreaElement;
-  const note = h('p', {class: 'prompt-note muted small', role: 'status'});
-  const dock = h('div', {class: 'dock'}, termSlot, h('form', {class: 'prompt'}, prompt), note);
-  const center = h('div', {class: 'center'}, flow, dock);
-
-  const reference = new Reference({reveal: (path, line) => void reader?.reveal(path, line)});
-  const side = h('aside', {class: 'side', 'aria-label': '参照とターミナル'}, reference.element, termHome);
-  const work = h('div', {class: 'work'}, strip, center, side);
-
-  let prompting = false;
-  const setPrompting = (on: boolean) => {
-    if (on === prompting) return;
-    prompting = on;
-    work.classList.toggle('prompting', on);
-    fly(termBox, on ? termSlot : termHome);
-  };
-  const fit = () => { prompt.style.height = 'auto'; prompt.style.height = `${prompt.scrollHeight}px`; };
-  prompt.addEventListener('focus', () => setPrompting(true));
-  prompt.addEventListener('input', fit);
-  prompt.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') { setPrompting(false); prompt.blur(); return; }
-    if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
-    event.preventDefault();
-    if (!repo) return;
-    if (!sessionFor(repo).send(prompt.value)) { note.textContent = 'shellはまだ起動していません'; return; }
-    note.textContent = '';
-    prompt.value = '';
-    fit();
-  });
-  // Leaving the prompt and the terminal sends the terminal home; losing the
-  // window's focus does not.
-  dock.addEventListener('focusout', (event) => {
-    const to = event.relatedTarget as Node | null;
-    if (to && !dock.contains(to)) setPrompting(false);
-  });
-  termBox.addEventListener('pointerdown', (event) => {
-    if (prompting || (event.target as HTMLElement).closest('button')) return;
-    event.preventDefault();
-    prompt.focus();
-  });
-
+  const work = bench({strip, main: flow, reveal: (path, line) => void reader?.reveal(path, line)});
 
   // The band: ⊕ at its left, then the repos out to work on, each a pill that
   // comes off with its ×. One press of ⊕ brings every repo not on the band
@@ -156,13 +93,10 @@ export function forge(ctx: Context): Node[] {
   const topic = () => {
     repo = null;
     reader = null;
-    reference.setRepo(null);
+    work.setRepo(null, '帯にrepoを出すと、そのrepoでshellが動きます。');
     flow.replaceChildren(h('div', {class: 'topic'}, pageHead('topic'),
       h('div', {class: 'empty'}, 'まだ投稿はありません。帯の ⊕ からrepoを出すと、ここはそのrepoのfileになります。')));
     flow.scrollTop = 0;
-    termBox.replaceChildren(termBox.firstChild!, h('div', {class: 'empty'}, 'repoを帯に出すと、そのrepoでshellが動きます。'));
-    prompt.disabled = true;
-    prompt.placeholder = '帯にrepoを出すと、そのrepoの sh に送れます';
     paintBand();
   };
 
@@ -174,19 +108,15 @@ export function forge(ctx: Context): Node[] {
       repo = name;
       ctx.remember(name);
       reader = new Reader(name, flow);
-      reference.setRepo(name);
+      work.setRepo(name);
       flow.replaceChildren(reader.directory(''));
       flow.scrollTop = 0;
-      termBox.replaceChildren(termBox.firstChild!, terminalFor(name));
-      prompt.disabled = false;
-      prompt.placeholder = 'コマンドを入力して Enter（このrepoの sh に送られます）';
     }
     paintBand();
     if (path) void reader!.reveal(path);
   };
-  live = {element: work, show};
+  live = {element: work.element, show};
 
-  prompt.disabled = true;
   void store.list().then((repos) => {
     all = repos.map((r) => r.name);
     band = parseBand(load(BAND_KEY), all, ctx.repo);
@@ -197,7 +127,7 @@ export function forge(ctx: Context): Node[] {
     const first = ctx.repo && band.includes(ctx.repo) ? ctx.repo : band[0];
     if (first) show(first); else topic();
   });
-  return [work];
+  return [work.element];
 }
 
 const join = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);

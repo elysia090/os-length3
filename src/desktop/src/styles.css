@@ -229,8 +229,13 @@ a { color: var(--ink); }
 .issue-kind { font-weight: 700; }
 .issue-where { font: var(--t-meta)/1.6 var(--mono); }
 .issue-detail { font-size: var(--t-meta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Writing is kept to a comfortable line length, like the New repo form, not the list's full width. */
-.issue-form { display: grid; gap: var(--s3); max-width: 640px; margin-bottom: var(--s4); padding: var(--s4); border: var(--line-work) solid var(--edge); border-radius: var(--r-place); }
+/* Git keeps one centred column of comfortable width: the form, the rows, the notes and the prompt box line up. */
+.git-flow > * { max-width: 760px; margin-inline: auto; }
+.issue-row[aria-current] { border-color: var(--ink); background: var(--raised); }
+.issue-one { display: grid; gap: var(--s2); }
+.issue-one h3 { margin: 0; font-size: var(--t-body); font-weight: 600; }
+.issue-body { white-space: pre-wrap; }
+.issue-form { display: grid; gap: var(--s3); margin-bottom: var(--s4); padding: var(--s4); border: var(--line-work) solid var(--edge); border-radius: var(--r-place); }
 .issue-form[hidden] { display: none; }
 .issue-text { min-height: 96px; padding: var(--s2) var(--s3); resize: none; font: var(--t-body)/1.6 var(--sans); }
 .empty p + p { margin-top: var(--s2); }
@@ -259,6 +264,7 @@ a { color: var(--ink); }
    of the way. The only line is the one between the center and the side. */
 .page.page-work { padding: 0; height: var(--inner-h); overflow: hidden; }
 .page.page-work > .work { max-width: none; }
+.work.no-strip { grid-template-rows: minmax(0, 1fr); }
 .work {
   height: var(--inner-h); display: grid;
   grid-template-columns: minmax(0, 3fr) minmax(280px, 1fr); grid-template-rows: auto minmax(0, 1fr);

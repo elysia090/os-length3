@@ -2,6 +2,7 @@ import {h} from '../dom.ts';
 import {issueText, nextIssueName, parseIssue, type Issue} from '../issues.ts';
 import {store} from '../repos.ts';
 import {kindOf} from '../todo.ts';
+import {bench} from './bench.ts';
 import {pageHead} from './common.ts';
 import type {Context} from './context.ts';
 
@@ -42,7 +43,7 @@ export function git(ctx: Context): Node[] {
   const paintChips = () => {
     chips.replaceChildren(...[ALL, ...repos].map((r) => {
       const b = h('button', {type: 'button', class: 'chip', role: 'radio', 'aria-checked': String(filter === r)}, r || 'すべて');
-      b.addEventListener('click', () => { filter = r; paintChips(); void paint(); });
+      b.addEventListener('click', () => { filter = r; paintChips(); if (r) work.setRepo(r); void paint(); });
       return b;
     }));
   };
@@ -52,7 +53,13 @@ export function git(ctx: Context): Node[] {
       h('span', {class: 'issue-head'}, i.kind ? h('span', {class: 'issue-kind'}, `${i.kind}：`) : null, i.title),
       h('span', {class: 'issue-where muted'}, `${i.repo} · issue/${i.file}`),
       i.detail ? h('span', {class: 'issue-detail muted'}, i.detail.split('\n')[0]) : null);
-    b.addEventListener('click', () => ctx.openRepo(i.repo, `issue/${i.file}`));
+    // Pressing a row shows it in full on the right; its file opens from there.
+    b.addEventListener('click', () => {
+      for (const r of list.querySelectorAll('.issue-row[aria-current]')) r.removeAttribute('aria-current');
+      b.setAttribute('aria-current', 'true');
+      work.setRepo(i.repo);
+      work.reference.showIssue(i, () => ctx.openRepo(i.repo, `issue/${i.file}`));
+    });
     return b;
   };
 
@@ -118,19 +125,20 @@ export function git(ctx: Context): Node[] {
     repos = r.map((x) => x.name);
     if (filter && !repos.includes(filter)) filter = ALL;
     write.disabled = !repos.length;
+    const first = filter || (ctx.repo && repos.includes(ctx.repo) ? ctx.repo : repos[0]);
+    if (first) work.setRepo(first);
     paintChips();
     void paint();
   });
 
-  return [
+  const main = h('section', {class: 'flow git-flow', tabindex: '0', 'aria-label': 'Git'},
     pageHead('git'),
     h('div', {class: 'git-filter'}, chips),
     h('section', {class: 'section', 'aria-labelledby': 'issues-title'},
       h('h2', {id: 'issues-title'}, h('span', {}, 'Issue ', count), write), form, list),
     h('section', {class: 'section', 'aria-labelledby': 'changes-title'},
       h('h2', {id: 'changes-title'}, '提出された変更'),
-      h('div', {class: 'empty'},
-        h('p', {}, 'まだ届いた変更はありません。Remote とつながると、誰がいつ push した変更かがここに並びます。'),
-        h('p', {class: 'small'}, '一件ごとに 種別：件名、変えたフォルダーと行数、check の結果が出て、Merge か Reject で決めます（Close は Issue だけ）。'))),
-  ];
+      h('div', {class: 'empty'}, 'まだ届いた変更はありません。Remote とつながると、誰がいつ push した変更かがここに並びます。')));
+  const work = bench({main, reveal: () => {}});
+  return [work.element];
 }

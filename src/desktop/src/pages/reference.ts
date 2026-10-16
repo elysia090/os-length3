@@ -57,6 +57,8 @@ export class Reference {
   private files: Promise<{path: string; text: string}[]> | null = null;
   private timer = 0;
   private run = 0;
+  /** An issue shown in full stays until the person chooses something else. */
+  private pinned = false;
 
   constructor(events: ReferenceEvents) {
     this.events = events;
@@ -93,6 +95,20 @@ export class Reference {
     this.paint();
   }
 
+  /** Show one issue in full, with the way into its file. */
+  showIssue(issue: {repo: string; file: string; kind: string | null; title: string; detail: string}, open: () => void) {
+    this.pinned = true;
+    this.query.value = '';
+    for (const chip of this.chips.values()) chip.removeAttribute('aria-current');
+    const go = h('button', {type: 'button', class: 'button'}, 'Forge で開く');
+    go.addEventListener('click', open);
+    this.body.replaceChildren(h('article', {class: 'issue-one'},
+      h('h3', {}, issue.kind ? h('span', {class: 'issue-kind'}, `${issue.kind}：`) : null, issue.title),
+      h('p', {class: 'issue-where muted'}, `${issue.repo} · issue/${issue.file}`),
+      issue.detail ? h('p', {class: 'issue-body'}, issue.detail) : h('p', {class: 'muted small'}, '詳細はまだありません。'),
+      h('div', {class: 'row'}, go)));
+  }
+
   private choose(view: View) {
     this.view = view;
     try { localStorage.setItem(KEY, view); } catch { /* convenience only */ }
@@ -109,6 +125,7 @@ export class Reference {
   private empty(text: string) { this.body.replaceChildren(h('div', {class: 'empty'}, text)); }
 
   private paint() {
+    this.pinned = false;
     this.mark();
     if (this.query.value.trim()) { void this.search(this.query.value.trim()); return; }
     if (this.view === 'issue') void this.issues();
@@ -124,7 +141,7 @@ export class Reference {
     this.files ??= readAll(repo);
     let files;
     try { files = await this.files; } catch (e) { this.empty(`検索できませんでした: ${String(e)}`); return; }
-    if (run !== this.run || repo !== this.repo) return;
+    if (run !== this.run || repo !== this.repo || this.pinned) return;
     const groups: {path: string; hits: Hit[]}[] = [];
     let total = 0;
     for (const f of files) {
@@ -158,10 +175,10 @@ export class Reference {
     try {
       names = (await store.tree(repo, 'issue')).filter((e) => e.kind === 'file').map((e) => e.name);
     } catch {
-      if (this.repo === repo && this.view === 'issue' && !this.query.value.trim()) this.empty('このrepoには issue/ がありません。');
+      if (this.repo === repo && this.view === 'issue' && !this.query.value.trim() && !this.pinned) this.empty('このrepoには issue/ がありません。');
       return;
     }
-    if (this.repo !== repo || this.view !== 'issue' || this.query.value.trim()) return;
+    if (this.repo !== repo || this.view !== 'issue' || this.query.value.trim() || this.pinned) return;
     if (!names.length) { this.empty('issue/ はまだ空です。'); return; }
     this.body.replaceChildren(h('ul', {class: 'issue-list'}, ...names.map((n) => {
       const b = h('button', {type: 'button', class: 'link'}, n);

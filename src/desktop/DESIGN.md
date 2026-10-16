@@ -98,7 +98,12 @@ says plainly that it is not connected yet). The chosen reference is remembered o
 ### Git
 
 What happens between a repo and the outside, in the mental model of the
-issues. The page header, then chips to look at one repo or all.
+issues. It uses the same workbench as Forge: the center (one centred
+column, 760 px at most, so the form, the rows and the prompt box line up)
+with the prompt box at its foot, and the narrow right pane with the search
+box, the reference and the Prompt. The page header, then chips to look at
+one repo or all; choosing a repo also points the right pane and the Prompt
+at it.
 
 - **Issue** is the unit of work and talk. The list is read straight from
   each repo's `issue/`, one file per issue, so nothing is kept twice. Each
