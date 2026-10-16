@@ -119,28 +119,30 @@ at it.
   row is a place (a rounded box): the first line names it the way TODO
   items are named, kind and title ("Fix：件名"), then quietly where it lives
   (`repo · issue/001.md`) and the first line of its detail. Pressing a row
-  makes it the current issue (ink, like any current thing): it shows in
+  makes it the current issue (an ink edge, as a large place is current): it shows in
   full on the right, with the way into its file in Forge, and the sections
   below turn to its repo. Pressing it again lets it go. 「Issue を書く」
   writes a new file in the chosen repo's `issue/`, numbered in the order
   written (001.md, 002.md, …; dates go in the text). A repo without
   `issue/` cannot take one and says so.
-- **まだ区切っていない変更**: what is not yet history, in the repo looked
+- **変更**: what is not yet cut into history, in the repo looked
   at, folder by folder (the folder first, so a reader enters from the area
   they look after), each file by a word (追加, 変更, 削除, 名前変更) and its
   lines added and removed; a file opens in Forge. It is a card of rows like
   the File tree. Under it, with an issue current, a note and the one
   primary action, 区切る: everything not yet cut becomes one cut named after
   the issue ("Fix：件名") and tied to its file (an `Issue: issue/001.md`
-  line), so the history reads as the issues.
+  line), so the history reads as the issues. The layout says this; no
+  sentence explains it.
 - **区切り**: the cuts so far, newest first, the current issue's only when
-  one is chosen: name, version, who, when, the folders and lines.
+  one is chosen, one row each: name, folders, when.
+- A section with nothing in it is not shown; counts are bare numbers.
 - **提出された変更**: cuts handed out (提出) and received, settled by Merge or
   Reject; Close is for issues only. Nothing can be handed out or arrive
   before a Remote is joined, so there is no 提出 button yet, and this says
   so in a dashed box instead of showing anything made up.
 
-In the browser there is no git; the two sections say so.
+In the browser there is no git, and the two sections are not shown.
 
 ### New repo (+)
 
@@ -198,7 +200,9 @@ Every value in `styles.css` comes from a token below.
   you type into is slightly rounded and filled `raised`.
 - **States.** Hover is a `raised` fill. The current or chosen thing is an
   `ink` fill with `ground` text: the rail item (File while its tree is
-  out), the repo chip, the open repo in the tree, the chosen template, the primary button. Focus is a 2 px
+  out), the repo chip, the open repo in the tree, the chosen template, the primary button. A large place
+  (a card, an issue row) is too big to fill with ink: it is current by an
+  `ink` edge over `raised`, as a lit repo card is. Focus is a 2 px
   `ink` ring. Nothing else marks state (no underline, no bold-only).
 - **Selection** is the current-thing state too: `ink` with `ground` text,
   for selected text and for search matches.

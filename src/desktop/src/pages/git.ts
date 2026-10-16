@@ -82,15 +82,9 @@ export function git(ctx: Context): Node[] {
     const issues = all.flatMap((x, k) => (!filter || repos[k] === filter ? x ?? [] : []));
     // The current issue may have been removed meanwhile.
     if (current && !issues.some((i) => i.repo === current!.repo && i.file === current!.file)) { current = null; look(at); }
-    count.textContent = issues.length ? `${issues.length} 件` : '';
-    if (!repos.length) { list.replaceChildren(h('div', {class: 'empty'}, 'repoがまだありません。+ から作ると、その issue/ がここに並びます。')); return; }
-    const gone = missing.filter((r) => !filter || r === filter);
-    const note = gone.length ? h('p', {class: 'muted small'}, `issue/ がないrepo: ${gone.join(', ')}`) : null;
-    if (!issues.length) {
-      list.replaceChildren(h('div', {class: 'empty'}, 'Issue はまだありません。「Issue を書く」で、repo の issue/ に1件1fileで書けます。'), ...(note ? [note] : []));
-      return;
-    }
-    list.replaceChildren(...issues.map(row), ...(note ? [note] : []));
+    count.textContent = issues.length ? `${issues.length}` : '';
+    if (!repos.length) { list.replaceChildren(h('div', {class: 'empty'}, 'repoはまだありません')); return; }
+    list.replaceChildren(...(issues.length ? issues.map(row) : [h('div', {class: 'empty'}, 'Issue はまだありません')]));
   };
 
   write.addEventListener('click', () => {
@@ -117,7 +111,7 @@ export function git(ctx: Context): Node[] {
     ...work.sections,
     h('section', {class: 'section', 'aria-labelledby': 'handed-title'},
       h('h2', {id: 'handed-title'}, '提出された変更'),
-      h('div', {class: 'empty'}, 'まだ届いた変更はありません。Remote とつながると、提出された変更がここに並びます。')));
+      h('div', {class: 'empty'}, 'Remote とつながると、ここに届きます')));
   const workbench = bench({main, reveal: () => {}});
   // Issues written anywhere (here, in the shell, with l3 in the Prompt) show
   // up at once, and any change in the repo looked at is read again.

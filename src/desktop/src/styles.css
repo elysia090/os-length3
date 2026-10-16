@@ -71,7 +71,7 @@ a { color: var(--ink); }
    current or chosen thing is an ink fill, focus is a 2px ink ring. */
 .rail-item:hover, .button:hover, .chip:hover, .pill:hover, .band-add:hover:not(:disabled), .me:hover, .me-item:hover:not(:disabled), .tree-row:hover, .todo-mark:hover,
 .card.repo:hover, .card.new:hover { background: var(--raised); }
-.rail-item[aria-selected='true'], .button.primary, .issue-row[aria-current],
+.rail-item[aria-selected='true'], .button.primary,
 .chip[aria-current], .chip[aria-checked='true'], .pill[aria-current], .tree-row:has(> [aria-current='page']),
 .rail-item[aria-expanded='true'], .me[aria-expanded='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 
@@ -240,8 +240,8 @@ a { color: var(--ink); }
 .issue-kind { font-weight: 700; }
 .issue-where { font: var(--t-meta)/1.6 var(--mono); color: var(--sub); }
 .issue-detail { font-size: var(--t-meta); color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* On the ink of the current row, quiet text keeps the ground colour. */
-.issue-row[aria-current] .issue-where, .issue-row[aria-current] .issue-detail { color: inherit; }
+/* A large place is current by its edge, not an ink fill (as a lit repo card). */
+.issue-row[aria-current] { border-color: var(--ink); background: var(--raised); }
 /* Git keeps one centred column of comfortable width: the form, the rows, the notes and the prompt box line up. */
 .git-flow > * { max-width: 760px; margin-inline: auto; }
 /* A card of rows, like the File tree and the avatar's popover: its corner
@@ -259,12 +259,8 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .row-word { flex: none; width: 4em; color: var(--sub); }
 .row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-meta { flex: none; color: var(--sub); font: var(--t-meta) var(--mono); }
-.row-cut { flex-direction: column; align-items: stretch; gap: 0; line-height: 1.6; padding-block: var(--s2); }
-.row-cut .row-name { font-size: var(--t-body); }
-.row-cut .row-meta { white-space: normal; }
 .work-act { margin-top: var(--s3); }
 .work-act .line-in { flex: 1; }
-.work-note { margin-top: var(--s2); }
 .issue-one { display: grid; gap: var(--s2); }
 .issue-one h3 { margin: 0; font-size: var(--t-body); font-weight: 600; }
 .issue-body { white-space: pre-wrap; }
