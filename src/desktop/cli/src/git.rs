@@ -69,6 +69,8 @@ fn commits(n: usize) -> String { if n == 1 { tr!("1 commit", "コミット 1") }
 
 /// Where the issue stands, quietly, in a few words.
 fn standing(s: &Stand, i: &Issue) -> String {
+    // A Prompt cannot see the Remote, so it says nothing of where the work stands.
+    if super::in_prompt() { return String::new(); }
     let path = format!("issue/{}", i.file);
     let c = change_of(s, i).map(|c| tr!("change · version {} · {}", "Change · 第 {} 版 · {}", c.version, state_word(&c.state)));
     if let (true, Some(w)) = (here(s, i), s.work.as_ref()) {
@@ -90,6 +92,8 @@ fn standing(s: &Stand, i: &Issue) -> String {
 /// What can be done next, the one to do first: as the box's buttons.
 fn next(s: &Stand, i: &Issue) -> Vec<String> {
     let me = format!("{}{}", i.repo, number(&i.file));
+    // A Prompt has no Remote: the work is done from the app's Git page.
+    if super::in_prompt() { return vec![tr!("the app's Git page", "アプリの Git")]; }
     if remote::connection().is_none() { return vec!["l3 login".into()]; }
     let mut out = Vec::new();
     let change = change_of(s, i);
@@ -116,7 +120,8 @@ fn next(s: &Stand, i: &Issue) -> Vec<String> {
 fn print_box(s: &Stand, i: &Issue, full: bool) {
     out(format!("{} {}    {} · issue/{}", number(&i.file), text::named(i.kind.as_deref(), &i.title), i.repo, i.file));
     if full && !i.detail.is_empty() { for l in i.detail.lines() { out(format!("    {l}")); } }
-    out(format!("    {}", standing(s, i)));
+    let st = standing(s, i);
+    if !st.is_empty() { out(format!("    {st}")); }
     let n = next(s, i);
     if let Some((first, rest)) = n.split_first() {
         out(tr!("    next: {}", "    次: {}", first));

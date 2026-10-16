@@ -377,6 +377,11 @@ pub struct Work {
 }
 
 pub fn work(repos: &Repos, repo: &str) -> Result<Work> {
+    // A work merged (here or on another device) is done: back to main, and its copy goes.
+    let merged: Vec<String> = changes_of_repo(repo).unwrap_or_default().into_iter().filter(|c| c.state == "merged").map(|c| c.line).collect();
+    for (line, _) in crate::work::worktrees(repo) {
+        if merged.contains(&line) { let _ = crate::work::finish(repos, repo, &line); }
+    }
     let on = repos.line(repo);
     if on == crate::work::MAIN {
         return Ok(Work { line: on, issue: None, started_by: String::new(), started_at: 0, commits: 0, unpushed: 0, change: None });

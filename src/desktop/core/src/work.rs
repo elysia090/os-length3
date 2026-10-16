@@ -127,6 +127,23 @@ fn show(repos: &Repos, repo: &str, line: &str) -> Result<()> {
     set_current(repo, MAIN)
 }
 
+/// A work whose change was merged is done: what it holds is on the Remote (its line's draft
+/// and commits), so the repo shows main again if it showed the work, and its copy here goes.
+/// Returns the bytes given back.
+pub fn finish(repos: &Repos, repo: &str, line: &str) -> Result<u64> {
+    if line == MAIN || !valid(line) { return Ok(0); }
+    let at = worktree(repo, line);
+    if !at.is_dir() { return Ok(0); }
+    if current(repo) == line {
+        if remote::connection().is_some() { remote::sync(repos, repo)?; }
+        set_current(repo, MAIN)?;
+    }
+    let size = crate::usage::allocated(&at);
+    fs::remove_dir_all(&at).map_err(|e| e.to_string())?;
+    remote::forget_line(repo, line);
+    Ok(size)
+}
+
 /// Point the repo at `line` without bringing anything (freeing walks each copy).
 pub(crate) fn show_for_free(repo: &str, line: &str) -> Result<()> {
     set_current(repo, line)

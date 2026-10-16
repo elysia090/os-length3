@@ -2,5 +2,39 @@
 # in (/root/<repo>), what you change there is written back and sent to the
 # Remote by the app, and l3 speaks the app's words (`l3 help`).
 case $- in *i*) ;; *) return 0 2>/dev/null ;; esac
-PS1='${LENGTH3_REPO:-root}${PWD#/root/${LENGTH3_REPO}} $ '
+
+# Where you are, as File shows it: the repo and the folder in it, else the path.
+__l3_where() {
+  case $PWD in
+    "/root/$LENGTH3_REPO") printf '%s' "$LENGTH3_REPO" ;;
+    "/root/$LENGTH3_REPO"/*) printf '%s' "$LENGTH3_REPO${PWD#/root/$LENGTH3_REPO}" ;;
+    *) printf '%s' "$PWD" ;;
+  esac
+}
+PS1='$(__l3_where) $ '
 alias ll='ls -l'
+
+# The repo's history is the Remote's: git has nothing to say inside it, so it says where to go.
+git() {
+  case $PWD/ in
+    "/root/$LENGTH3_REPO"/*)
+      if ! command git rev-parse --git-dir >/dev/null 2>&1; then
+        if [ "$LENGTH3_LANG" = ja ]; then
+          echo "git: $LENGTH3_REPO の履歴は Remote にあります。Commit・Push・Change はアプリの Git から（l3 git $LENGTH3_REPO で Issue を見られます）" >&2
+        else
+          echo "git: $LENGTH3_REPO's history is kept on the Remote. Commit, Push and Change it from the app's Git page (l3 git $LENGTH3_REPO lists its issues)." >&2
+        fi
+        return 1
+      fi ;;
+  esac
+  command git "$@"
+}
+
+# The editor this root has.
+if ! command -v vi >/dev/null 2>&1 && command -v nano >/dev/null 2>&1; then
+  vi() {
+    if [ "$LENGTH3_LANG" = ja ]; then echo "vi はこの root にありません。nano があります: nano $*" >&2
+    else echo "vi is not in this root; nano is: nano $*" >&2; fi
+    return 127
+  }
+fi

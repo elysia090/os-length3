@@ -357,7 +357,7 @@ fn run(a: Args) -> Result<(), String> {
             let (repo, line) = git::line_of(&r, target)?;
             let c = history::merge(&repo, &line)?;
             // Merged, the work is done: the repo shows main again.
-            if r.line(&repo) == c.line { work::switch(&r, &repo, work::MAIN)?; }
+            work::finish(&r, &repo, &c.line)?;
             out(tr!("Merged {} into main", "{} を main に Merge しました", text::named(Some(c.kind.as_str()).filter(|k| !k.is_empty()), &c.title)));
             send(&repo);
             Ok(())

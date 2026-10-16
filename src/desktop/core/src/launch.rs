@@ -95,8 +95,10 @@ fn environment(name: &str) -> Vec<CString> {
         "USER=root".into(),
         "LOGNAME=root".into(),
         "SHELL=/bin/sh".into(),
-        "TERM=dumb".into(),
+        format!("TERM={}", term()),
         "LANG=C.UTF-8".into(),
+        // The person's language (Home's), so the root's l3 and shell speak it too.
+        format!("LENGTH3_LANG={}", if crate::i18n::ja() { "ja" } else { "en" }),
         "PS1=$PWD $ ".into(),
         // The root's own l3 sees the open repo where the shell does, and
         // leaves Home, the Remote and the device to the app.
@@ -106,6 +108,15 @@ fn environment(name: &str) -> Vec<CString> {
         "ENV=/etc/length3/shrc".into(),
         format!("LENGTH3_REPO={name}"),
     ].iter().map(c).collect()
+}
+
+/// The terminal the Prompt is drawn on: a real one's name when l3 runs in one (so nano and
+/// less can draw), else dumb. Only a plain name passes; nothing else of the host's does.
+fn term() -> String {
+    use std::io::IsTerminal;
+    let t = std::env::var("TERM").unwrap_or_default();
+    let plain = !t.is_empty() && t.len() <= 64 && t.bytes().all(|b| b.is_ascii_alphanumeric() || b"-._+".contains(&b));
+    if plain && t != "dumb" && std::io::stdin().is_terminal() && std::io::stdout().is_terminal() { t } else { "dumb".into() }
 }
 
 /// Lay out the root under `top` and make it `/` (runs as pid 1, inside).
