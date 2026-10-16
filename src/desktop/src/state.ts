@@ -7,12 +7,13 @@
 import {isNative} from './host.ts';
 
 // `remote` is which Remote this device talks to and as whom; `sync` is,
-// for each repo and setting, the version on the Remote this copy came from.
-export type Key = 'profile' | 'todo' | 'band' | 'remote' | 'sync';
-export const KEYS: readonly Key[] = ['profile', 'todo', 'band', 'remote', 'sync'];
+// for each repo and setting, the version on the Remote this copy came from;
+// `lang` is the language the OS speaks here (i18n.ts), l3 included.
+export type Key = 'profile' | 'todo' | 'band' | 'remote' | 'sync' | 'lang';
+export const KEYS: readonly Key[] = ['profile', 'todo', 'band', 'remote', 'sync', 'lang'];
 /** Where a browser keeps each, and where the app kept them before. */
 const STORAGE: Record<Key, string> = {profile: 'length3.os.profile', todo: 'length3.os.todo', band: 'length3.os.band',
-  remote: 'length3.os.remote', sync: 'length3.os.sync'};
+  remote: 'length3.os.remote', sync: 'length3.os.sync', lang: 'length3.os.lang.setting'};
 
 const cache = new Map<Key, string | null>();
 

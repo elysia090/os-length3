@@ -12,7 +12,8 @@ import {runtime} from './pages/runtime.ts';
 import {FileTree} from './pages/tree.ts';
 import {begin} from './lifecycle.ts';
 import {devicePage} from './pages/device.ts';
-import {loadState} from './state.ts';
+import {getState, loadState} from './state.ts';
+import {onLang, t, useLang} from './i18n.ts';
 import {NEW_REPO, PURPOSES, purpose, restorePurpose, stepPurpose, type PurposeId} from './purposes.ts';
 
 const PURPOSE_KEY = 'length3.os.purpose';
@@ -56,8 +57,8 @@ function railButton(id: PurposeId): HTMLButtonElement {
   button.type = 'button';
   button.id = `purpose-${id}`;
   button.className = id === 'new-repo' ? 'rail-item rail-new' : 'rail-item';
-  button.setAttribute('aria-label', p.label);
-  button.append(icon(id), h('span', {class: 'rail-tag', 'aria-hidden': 'true'}, p.label));
+  button.setAttribute('aria-label', t(p.label));
+  button.append(icon(id), h('span', {class: 'rail-tag', 'aria-hidden': 'true'}, t(p.label)));
   if (id === 'file') {
     fileTree.attach(button);
   } else {
@@ -112,15 +113,27 @@ $('rail-tabs').append(...PURPOSES.map((p) => railButton(p.id)), railButton(NEW_R
 // comes back, so what l3 changed meanwhile is what the page shows.
 // Then what the Remote has is taken in; the page shows as it comes.
 // A device's code (?device&user_code=…, from l3 or the app) opens only the page that approves it.
+// Changing the language redraws the page and the rail's names in place.
+onLang(() => {
+  for (const [id, b] of tabs) {
+    const label = t(purpose(id).label);
+    b.setAttribute('aria-label', label);
+    const tag = b.querySelector('.rail-tag');
+    if (tag) tag.textContent = label;
+  }
+  for (const id of ['rail-tabs']) document.getElementById(id)?.setAttribute('aria-label', t('Purposes'));
+  render();
+});
 const asking = new URLSearchParams(location.search);
 if (asking.has('device')) {
-  void loadState().finally(() => document.body.replaceChildren(devicePage(asking.get('user_code') ?? '')));
+  void loadState().finally(() => { useLang(getState('lang')); document.body.replaceChildren(devicePage(asking.get('user_code') ?? '')); });
 } else {
   void loadState().finally(() => {
+    useLang(getState('lang'));
     select(restorePurpose(load(PURPOSE_KEY)));
     void begin().then(() => render());
   });
 }
 window.addEventListener('focus', () => {
-  void loadState().then(() => { if (current === 'home') render(); else me.paint(); });
+  void loadState().then(() => { useLang(getState('lang')); if (current === 'home') render(); else me.paint(); });
 });

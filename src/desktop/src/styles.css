@@ -486,3 +486,5 @@ mark { background: var(--ink); color: var(--ground); }
 .button.link { border-color: transparent; background: transparent; padding-inline: 0; color: var(--sub); text-decoration: underline; }
 .row-item[data-where='offline'] .row-meta { color: var(--ink); }
 .card.repo.away { border-style: dashed; }
+.me-head { padding: var(--s2) var(--s3) 0; }
+.me-item[aria-checked='true'] { font-weight: 600; }

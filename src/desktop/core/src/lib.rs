@@ -7,6 +7,7 @@ pub mod fetch;
 pub mod root;
 pub mod history;
 pub mod home;
+pub mod i18n;
 pub mod issues;
 pub mod linediff;
 #[cfg(target_os = "linux")]

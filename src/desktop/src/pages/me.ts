@@ -1,10 +1,12 @@
 import {h} from '../dom.ts';
+import {currentLang, LANGS, setLang, t} from '../i18n.ts';
+import {setState} from '../state.ts';
 import {initials, type Profile} from '../profile.ts';
 import type {Context} from './context.ts';
 
 // The person's own icon at the foot of the rail. Touching it brings out the
 // few things one does before going into settings: see or edit the profile,
-// look at this device. It goes away when the pointer leaves, on a press
+// look at this device, choose the language. It goes away when the pointer leaves, on a press
 // outside, or on Escape.
 
 const OPEN_DELAY = 80;
@@ -22,21 +24,24 @@ export class Me {
     this.ctx = ctx;
     this.profile = profile;
     this.button = h('button', {type: 'button', class: 'me', 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'aria-controls': 'me-pop'}) as HTMLButtonElement;
-    const item = (label: string, run: (() => void) | null, note?: string) => {
-      const b = h('button', {type: 'button', class: 'me-item', role: 'menuitem'}, label, note ? h('span', {class: 'muted small'}, note) : null);
+    const item = (label: string, run: (() => void) | null, note?: string, current = false) => {
+      const b = h('button', {type: 'button', class: 'me-item', role: current ? 'menuitemradio' : 'menuitem'}, label, note ? h('span', {class: 'muted small'}, note) : null);
+      if (current) b.setAttribute('aria-checked', 'true');
       if (run) b.addEventListener('click', () => { this.close(); run(); }); else b.setAttribute('disabled', '');
       return b;
     };
-    this.pop = h('div', {class: 'me-pop', id: 'me-pop', role: 'menu', 'aria-label': '自分'});
+    this.pop = h('div', {class: 'me-pop', id: 'me-pop', role: 'menu', 'aria-label': t('Me')});
     const fill = () => {
       const p = this.profile();
       this.pop.replaceChildren(
-        h('div', {class: 'me-who'}, h('b', {}, p.name || (p.handle ? `@${p.handle}` : '名前が未設定です')),
+        h('div', {class: 'me-who'}, h('b', {}, p.name || (p.handle ? `@${p.handle}` : t('No name yet'))),
           p.name && p.handle ? h('span', {class: 'muted small'}, `@${p.handle}`) : null),
-        item('プロフィールを見る', () => this.ctx.go('home')),
-        item('プロフィールを編集', () => actions.editProfile()),
-        item('この端末の容量', () => this.ctx.go('runtime')),
-        item('設定', null, 'まだありません'));
+        item(t('See profile'), () => this.ctx.go('home')),
+        item(t('Edit profile'), () => actions.editProfile()),
+        item(t('Room on this device'), () => this.ctx.go('runtime')),
+        // The language is Home's setting, so l3 speaks the same one.
+        h('div', {class: 'me-head muted small'}, t('Language')),
+        ...LANGS.map((l) => item(l.name, () => { setLang(l.id); void setState('lang', JSON.stringify(l.id)); }, undefined, l.id === currentLang())));
     };
     this.element = h('div', {class: 'me-wrap'}, this.button, this.pop);
     this.paint();
@@ -70,7 +75,7 @@ export class Me {
   paint() {
     const text = initials(this.profile());
     this.button.replaceChildren(text || '?');
-    this.button.setAttribute('aria-label', '自分');
+    this.button.setAttribute('aria-label', t('Me'));
   }
 
   private later(open: boolean, after: number) {
