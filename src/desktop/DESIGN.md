@@ -85,7 +85,9 @@ it is not called Bash); leaving the prompt
 
 The center takes three quarters of the width; the right pane takes one
 quarter (at least 280 px) so it never gets in the way. Its bottom is the
-terminal's home. On the band's line sits the search box for the open
+terminal's home, and it starts above the middle (the reference takes 2
+parts, the Prompt 3): the reference scrolls and the Prompt does not, so the
+eye should not have to drop low to find it. On the band's line sits the search box for the open
 repo: plain, case-insensitive, line by line; results are grouped by file,
 and a line pressed opens the center there with the line selected. Below,
 on the band line, one reference at a time, switched freely with chips: Issue (the repo's `issue/`, one file each), diff and 実行結果 (each

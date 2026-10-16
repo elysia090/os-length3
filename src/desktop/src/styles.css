@@ -308,8 +308,9 @@ a { color: var(--ink); }
 
 /* The side: the reference on top, the terminal's home below. While the
    prompt is in use the terminal is away and the reference grows down. */
-.side { grid-column: 2; grid-row: 1 / -1; display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); min-height: 0; transition: grid-template-rows var(--move); }
-.work.prompting .side { grid-template-rows: minmax(0, 1fr) minmax(0, 0fr); }
+/* The reference scrolls, the Prompt does not, so the Prompt starts higher (2 : 3). */
+.side { grid-column: 2; grid-row: 1 / -1; display: grid; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); min-height: 0; transition: grid-template-rows var(--move); }
+.work.prompting .side { grid-template-rows: minmax(0, 2fr) minmax(0, 0fr); }
 /* The search box sits on the band's line; the reference chips under it. */
 .pane.reference { display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: var(--s3); padding-top: var(--band); }
 .search-in {
