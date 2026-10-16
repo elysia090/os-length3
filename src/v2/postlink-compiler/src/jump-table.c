@@ -2759,6 +2759,44 @@ static int cfg_dispatch_rows(
     return *rows != 0u;
 }
 
+/* The rows a compiler-generated shared-base table has when no proof bounds
+ * its index: the longest prefix whose every row names an instruction inside
+ * the consumer's own function (target = base + sign_extend(row)). A switch
+ * table is exactly such a run of `.long label - table` rows; the run ends
+ * where a row no longer names this function's code. The caller cuts the run
+ * at the next known table and records it as an open domain. */
+enum { SHARED_BASE_RUN_LIMIT = 4096u };
+
+static pl_u32 shared_base_run(const pl_x86_frontend *frontend,
+                              const pl_elf_image *elf,
+                              const pl_elf_section *table_section,
+                              pl_u64 base,
+                              pl_u64 function_start, pl_u64 function_limit)
+{
+    pl_u32 rows = 0u;
+    for (; rows < SHARED_BASE_RUN_LIMIT; ++rows) {
+        pl_u64 field = base + (pl_u64)rows * 4u;
+        if (field < base || field < table_section->address
+                || field - table_section->address
+                   > table_section->file_bytes
+                || table_section->file_bytes
+                   - (field - table_section->address) < 4u)
+            break;
+        pl_u64 file = table_section->file_offset
+                    + field - table_section->address;
+        if (file > elf->length || elf->length - file < 4u) break;
+        pl_u64 target;
+        if (!add_signed(base,
+                (pl_u64)(pl_i64)(pl_i32)pl_read_u32(elf->bytes + file),
+                0u, &target)
+                || target < function_start || target >= function_limit)
+            break;
+        pl_x86_instruction instruction;
+        if (pl_x86_frontend_decode(frontend, target, &instruction)) break;
+    }
+    return rows;
+}
+
 static int shared_base_consumer(const pl_x86_frontend *frontend,
                                 const pl_elf_image *elf,
                                 const pl_elf_section *table_section,
@@ -2771,6 +2809,7 @@ static int shared_base_consumer(const pl_x86_frontend *frontend,
                                 const pl_x86_table *known_tables,
                                 pl_u32 known_table_count,
                                 int proof_pass,
+                                int shape_only,
                                 pl_u8 *analysis_workspace,
                                 pl_u64 analysis_workspace_bytes,
                                 pl_u64 at, pl_x86_register base,
@@ -2884,7 +2923,7 @@ static int shared_base_consumer(const pl_x86_frontend *frontend,
             || !jump.visible_operand_count
             || jump.operands[0].kind != PL_X86_OPERAND_REGISTER
             || !same_register(jump.operands[0].value.reg, delta)
-            || (!singleton && !bounded_table_rows(
+            || (!shape_only && !singleton && !bounded_table_rows(
                     frontend, elf, table_section,
                     known_tables, known_table_count,
                     function_start, function_limit,
@@ -2906,6 +2945,10 @@ static int shared_base_consumer(const pl_x86_frontend *frontend,
                     proof_pass == TABLE_PROOF_CANDIDATE,
                     &bounded_rows))))
         return 0;
+    if (shape_only && !singleton)
+        bounded_rows = shared_base_run(frontend, elf, table_section,
+                                       table_base, function_start,
+                                       function_limit);
     if (singleton) bounded_rows = 1u;
     *rows = bounded_rows;
     if (consumer) *consumer = jump.rip;
@@ -3108,6 +3151,7 @@ static int shared_base_dispatch(const pl_elf_image *elf,
                                 const pl_x86_table *known_tables,
                                 pl_u32 known_table_count,
                                 int proof_pass,
+                                int shape_only,
                                 pl_u8 *analysis_workspace,
                                 pl_u64 analysis_workspace_bytes,
                                 pl_u32 *rows, pl_u64 *consumer,
@@ -3181,7 +3225,7 @@ static int shared_base_dispatch(const pl_elf_image *elf,
                 function_index, function_index_count,
                 function_start, function_limit,
                 function_entries, function_count,
-                known_tables, known_table_count, proof_pass,
+                known_tables, known_table_count, proof_pass, shape_only,
                 analysis_workspace, analysis_workspace_bytes,
                 at, base, table_base,
                 rows, consumer, index_register, index_bits,
@@ -3237,7 +3281,7 @@ static int shared_base_dispatch(const pl_elf_image *elf,
                     function_index, function_index_count,
                     function_start, function_limit,
                     function_entries, function_count,
-                    known_tables, known_table_count, proof_pass,
+                    known_tables, known_table_count, proof_pass, shape_only,
                     analysis_workspace, analysis_workspace_bytes,
                     at, base, table_base, rows,
                     consumer, index_register, index_bits, clobber_mask))
@@ -3257,7 +3301,7 @@ static int visit_base_candidates(
     const function_extent *function_index, pl_u32 function_index_count,
     const pl_u64 *function_entries, pl_u32 function_count,
     const pl_x86_table *known_tables, pl_u32 known_table_count,
-    int proof_pass,
+    int proof_pass, int shape_only,
     pl_x86_table *values, pl_u32 capacity,
     pl_u8 *analysis_workspace, pl_u64 analysis_workspace_bytes,
     pl_u32 *count)
@@ -3313,6 +3357,7 @@ static int visit_base_candidates(
                         function_index, function_index_count,
                         function_entries, function_count,
                         known_tables, known_table_count, proof_pass,
+                        shape_only,
                         analysis_workspace, analysis_workspace_bytes,
                         &table_rows, &consumer,
                         &index_register, &index_bits, &clobber_mask))
@@ -3403,7 +3448,7 @@ int pl_x86_table_base_measure(const pl_elf_image *elf, pl_u32 *capacity)
 {
     if (!elf || !capacity) return PL_ERROR_ELF;
     return visit_base_candidates(
-        elf, 0, 0, 0u, 0, 0u, 0, 0u, 0,
+        elf, 0, 0, 0u, 0, 0u, 0, 0u, 0, 0,
         0, 0u, 0, 0u, capacity);
 }
 
@@ -3437,7 +3482,7 @@ int pl_x86_table_base_write(
     status = visit_base_candidates(
         elf, image, function_index, function_index_count,
         function_entries, function_count,
-        0, 0u, TABLE_PROOF_CANDIDATE,
+        0, 0u, TABLE_PROOF_CANDIDATE, 0,
         tables, capacity,
         analysis_workspace, analysis_workspace_bytes,
         &populated);
@@ -3455,7 +3500,7 @@ int pl_x86_table_base_write(
         status = visit_base_candidates(
             elf, image, function_index, function_index_count,
             function_entries, function_count,
-            tables, known_count, TABLE_PROOF_CANDIDATE,
+            tables, known_count, TABLE_PROOF_CANDIDATE, 0,
             scratch, scratch_capacity,
             analysis_workspace, analysis_workspace_bytes,
             &populated);
@@ -3484,7 +3529,7 @@ int pl_x86_table_base_write(
         status = visit_base_candidates(
             elf, image, function_index, function_index_count,
             function_entries, function_count,
-            scratch, known_count, TABLE_PROOF_COMPLETE,
+            scratch, known_count, TABLE_PROOF_COMPLETE, 0,
             tables, capacity,
             analysis_workspace, analysis_workspace_bytes,
             &populated);
@@ -3510,7 +3555,7 @@ int pl_x86_table_base_write(
     status = visit_base_candidates(
         elf, image, function_index, function_index_count,
         function_entries, function_count,
-        tables, *count, TABLE_PROOF_CANDIDATE,
+        tables, *count, TABLE_PROOF_CANDIDATE, 0,
         scratch, scratch_capacity,
         analysis_workspace, analysis_workspace_bytes,
         &populated);
@@ -3526,6 +3571,50 @@ int pl_x86_table_base_write(
     if (status) return status;
     for (pl_u32 index = 0u; index < *count; ++index)
         tables[index] = scratch[index];
+
+    /* Every consumer with the exact shared-base shape must be one of the
+     * encodings above, or its targets are neither retained nor rewritten and
+     * the moved dispatch reads rows that still name the old layout. One whose
+     * index no proof bounds is recorded as an open domain over its row run
+     * (see shared_base_run), cut at the next table so no row is claimed by
+     * two bases; its targets are then retained and its rows rewritten like
+     * any recovered prefix, and the relocation writer checks that every row
+     * was. A consumer with no such run is refused. */
+    pl_u32 shaped = 0u;
+    status = visit_base_candidates(
+        elf, image, function_index, function_index_count,
+        function_entries, function_count,
+        tables, *count, TABLE_PROOF_CANDIDATE, 1,
+        scratch, scratch_capacity,
+        analysis_workspace, analysis_workspace_bytes,
+        &shaped);
+    if (status) return status;
+    pl_u32 known = *count;
+    pl_u32 appended = known;
+    for (pl_u32 index = 0u; index < shaped; ++index) {
+        pl_u32 prior = lower_bound(tables, known, scratch[index].base);
+        if (prior < known && tables[prior].base == scratch[index].base)
+            continue;
+        pl_u64 limit = scratch[index].base
+                     + (pl_u64)scratch[index].rows * 4u;
+        if (prior < known && tables[prior].base < limit)
+            limit = tables[prior].base;
+        for (pl_u32 other = 0u; other < shaped; ++other)
+            if (scratch[other].base > scratch[index].base
+                    && scratch[other].base < limit)
+                limit = scratch[other].base;
+        pl_u32 rows = (pl_u32)((limit - scratch[index].base) / 4u);
+        if (!rows) return PL_ERROR_TABLE_UNPROVED;
+        if (appended >= capacity) return PL_ERROR_ELF_RANGE;
+        tables[appended] = scratch[index];
+        tables[appended].rows = rows;
+        tables[appended].domain_closed = 0u;
+        ++appended;
+    }
+    if (appended != known) {
+        status = sort_unique_tables(tables, scratch, appended, count);
+        if (status) return status;
+    }
     return 0;
 }
 

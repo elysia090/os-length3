@@ -186,6 +186,70 @@ static int input_file_at(const pl_elf_image *elf, pl_u64 address,
     return owner != 0xffffffffu;
 }
 
+/* Whether [address, address + bytes) lies in one allocated section that is
+ * not executable: where a GOT slot can be, as opposed to code the linker
+ * relaxed a GOT load into. */
+static int allocated_data_at(const pl_elf_image *elf, pl_u64 address,
+                             pl_u64 bytes)
+{
+    for (pl_u32 index = 0u; index < elf->section_count; ++index) {
+        pl_elf_section section;
+        if (pl_elf_section_read(elf, index, &section)) return 0;
+        if (!(section.flags & PL_ELF_SECTION_ALLOC)
+                || (section.flags & PL_ELF_SECTION_EXECUTE)
+                || section.type == PL_ELF_SECTION_NOBITS
+                || address < section.address)
+            continue;
+        pl_u64 relative = address - section.address;
+        if (relative <= section.memory_bytes
+                && bytes <= section.memory_bytes - relative)
+            return 1;
+    }
+    return 0;
+}
+
+/* A GOT slot that the static linker filled itself carries no relocation:
+ * only the GOTPCREL row of an instruction that loads it says the slot holds
+ * a symbol's address. When that address is code, the slot must follow the
+ * code, or every call through it lands in the old layout. The slot is
+ * found exactly from the linked field (slot = P + field - A), and it is
+ * rewritten only when its eight bytes are that symbol's address. A field the
+ * linker relaxed into a direct reference points into code, not at a slot,
+ * and is left to native selection. Returns 0, or 1 when the slot holds code
+ * that cannot be projected (publication must fail, not emit a stale call). */
+static int rebind_got_slot(const pl_u8 *input, pl_u64 input_bytes,
+                           const pl_elf_image *elf,
+                           const pl_x86_runtime_elf_layout *runtime,
+                           const pl_x86_native_layout *native,
+                           const pl_elf_relocation *relocation,
+                           const pl_elf_symbol *symbol,
+                           pl_u8 *output, pl_u64 output_bytes,
+                           pl_x86_relocation_report *report)
+{
+    pl_u64 field_file = 0u;
+    if (!input_file_at(elf, relocation->offset, 4u, &field_file)
+            || field_file > input_bytes || 4u > input_bytes - field_file)
+        return 1;
+    pl_u64 field = (pl_u64)(pl_i64)(pl_i32)pl_read_u32(input + field_file);
+    pl_u64 slot = relocation->offset + field - relocation->addend_bits;
+    if (!allocated_data_at(elf, slot, 8u)) return 0;
+    pl_u64 slot_file = 0u;
+    if (!input_file_at(elf, slot, 8u, &slot_file)
+            || slot_file > input_bytes || 8u > input_bytes - slot_file)
+        return 1;
+    if (pl_read_u64(input + slot_file) != symbol->value) return 0;
+    pl_u64 moved = 0u;
+    if (!project_code_address(native, symbol->value, &moved)) return 1;
+    pl_u64 file = 0u;
+    if (pl_x86_runtime_elf_resolve_file(
+                input, input_bytes, runtime, slot, 8u, &file)
+            || file > output_bytes || 8u > output_bytes - file)
+        return 1;
+    pl_write_u64(output + file, moved);
+    ++report->got_code_pointers;
+    return 0;
+}
+
 static int relaxed_tls_marker(const pl_elf_image *elf,
                               const pl_elf_relocation *relocation)
 {
@@ -500,6 +564,16 @@ int pl_x86_relocate_elf(
 
             int symbol_code = executable_symbol(&elf, &symbol);
             if (symbol_code < 0) return PL_ERROR_X86_RELOCATE;
+            if (code_place && symbol_code
+                    && (relocation.type == R_X86_64_GOTPCREL
+                        || relocation.type == R_X86_64_GOTPCRELX
+                        || relocation.type == R_X86_64_REX_GOTPCRELX)
+                    && rebind_got_slot(input, input_bytes, &elf, runtime,
+                                       native, &relocation, &symbol,
+                                       output, output_bytes, report)) {
+                unresolved(report, &relocation, 6u);
+                continue;
+            }
             int table_row = 0;
             pl_u64 table_base = 0u;
             pl_u64 table_target = 0u;
@@ -616,6 +690,7 @@ int pl_x86_relocate_elf(
                 }
                 ++report->runtime_fields;
                 ++report->rewritten_fields;
+                ++report->table_rows;
                 continue;
             }
 
@@ -742,6 +817,19 @@ int pl_x86_relocate_elf(
             if (!written) unresolved(report, &relocation, 4u);
             else ++report->rewritten_fields;
         }
+    }
+    /* Every row of every table names a moved target. A row the writer never
+     * reached (no relocation of its own, or a broken run) would still name
+     * the old layout, so the counts must agree exactly. */
+    pl_u64 expected_rows = 0u;
+    for (pl_u32 index = 0u; index < table_count; ++index)
+        expected_rows += tables[index].rows;
+    if (report->table_rows != expected_rows) {
+        if (!report->unresolved_records) {
+            report->first_unresolved_stage = 8u;
+            report->first_unresolved_offset = expected_rows;
+        }
+        ++report->unresolved_records;
     }
     return report->unresolved_records ? PL_ERROR_X86_RELOCATE : 0;
 }

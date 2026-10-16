@@ -5,6 +5,9 @@
 
 #include <x86/decode.h>
 
+/* A shared-base dispatch exists whose rows no proof bounded. */
+#define PL_ERROR_TABLE_UNPROVED (-71)
+
 typedef struct {
     pl_u64 base;
     pl_u64 consumer;

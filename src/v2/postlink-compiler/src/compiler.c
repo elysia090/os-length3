@@ -569,6 +569,8 @@ static int postlink_compile_impl(
         table_scratch, report->dispatch_base_candidates,
         (pl_u8 *)(void *)entry_scratch, entry_bytes,
         &entry_population);
+    if (status == PL_ERROR_TABLE_UNPROVED)
+        return POSTLINK_ERROR_UNPROVED_DISPATCH;
     if (status) return POSTLINK_ERROR_INPUT_ELF;
     report->native_entries = entry_population.entry_count;
     report->native_observable_entries =
@@ -1048,6 +1050,9 @@ const char *postlink_status_string(int status)
                "(--emit-relocs)";
     case POSTLINK_ERROR_RELOCATION_CLOSURE:
         return "linked ELF construction relocations are not closed";
+    case POSTLINK_ERROR_UNPROVED_DISPATCH:
+        return "a shared-base dispatch table has no proved row bound, so "
+               "its moved targets cannot be kept; the image is refused";
     default: return "unknown post-link compiler error";
     }
 }

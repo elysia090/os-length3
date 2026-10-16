@@ -18,6 +18,11 @@ typedef struct {
     pl_u64 dynamic_addends;
     pl_u64 dynamic_symbols;
     pl_u64 dynamic_code_pointers;
+    /* GOT slots a static link filled itself (no relocation of their own),
+     * found through the GOTPCREL rows of the code that loads them. */
+    pl_u64 got_code_pointers;
+    /* Table rows rewritten, to be checked against the rows every table has. */
+    pl_u64 table_rows;
     pl_u64 lazy_binding_code_pointers;
     pl_u64 unwind_rows;
     pl_u64 unwind_ranges;

@@ -195,7 +195,7 @@ block-catalog: $(BUILD)/block-catalog
 
 $(BUILD)/native-benchmark: check/native-benchmark.c dependencies
 	$(CC) $(CFLAGS) $(WARN) -I../support/include check/native-benchmark.c \
-		../support/build/libsupport.a -o $@
+		../support/build/libsupport.a -o $@ -lm
 
 native-benchmark: $(BUILD)/native-benchmark
 
@@ -461,7 +461,8 @@ stack-slot-table-check: $(PROGRAM) $(BUILD)/native-closure
 	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none \
 		-DBREAK_SLOT check/stack-slot-table.S -o "$$temporary/broken-slot"; \
 	$(BUILD)/native-closure "$$temporary/broken-slot" --list-tables \
-		| grep -Eq '^tables=0 targets=0$$'
+		| grep -Eq '^tables=0 targets=0$$'; \
+	$(call same_as_source,"$$temporary/broken-slot")
 
 copied-memory-table-check: $(PROGRAM) $(BUILD)/native-closure
 	@set -e; temporary=$$(mktemp -d); \
@@ -480,7 +481,18 @@ copied-memory-table-check: $(PROGRAM) $(BUILD)/native-closure
 	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none \
 		-DBREAK_COPY check/copied-memory-table.S -o "$$temporary/broken-copy"; \
 	$(BUILD)/native-closure "$$temporary/broken-copy" --list-tables \
-		| grep -Eq '^tables=0 targets=0$$'
+		| grep -Eq '^tables=0 targets=0$$'; \
+	$(call same_as_source,"$$temporary/broken-copy")
+
+# A dispatch no proof bounds is kept as an open domain over its row run; the
+# compiled program must still behave exactly like the source (each negative
+# variant below used to compile to a binary that crashed or exited wrong).
+define same_as_source
+set +e; timeout 5 $(1) >/dev/null 2>&1; source_status=$$?; set -e; \
+	$(PROGRAM) $(1) -o $(1).out >/dev/null; \
+	set +e; timeout 5 $(1).out >/dev/null 2>&1; output_status=$$?; set -e; \
+	test $$source_status -eq $$output_status
+endef
 
 .PHONY: affine-memory-table-check
 affine-memory-table-check: $(PROGRAM) $(BUILD)/native-closure
@@ -501,6 +513,7 @@ affine-memory-table-check: $(PROGRAM) $(BUILD)/native-closure
 		check/affine-memory-table.S -o "$$temporary/$$variant"; \
 	  $(BUILD)/native-closure "$$temporary/$$variant" --list-tables \
 		| grep -Eq '^tables=0 targets=0$$'; \
+	$(call same_as_source,"$$temporary/$$variant"); \
 	done
 
 check: affine-memory-table-check
@@ -523,7 +536,8 @@ backward-exit-table-check: $(PROGRAM) $(BUILD)/native-closure
 		-DBREAK_EXIT check/backward-exit-table.S \
 		-o "$$temporary/broken-exit"; \
 	$(BUILD)/native-closure "$$temporary/broken-exit" --list-tables \
-		| grep -Eq '^tables=0 targets=0$$'
+		| grep -Eq '^tables=0 targets=0$$'; \
+	$(call same_as_source,"$$temporary/broken-exit")
 
 backward-loop-table-check: $(PROGRAM) $(BUILD)/native-closure
 	@set -e; temporary=$$(mktemp -d); \
@@ -543,7 +557,8 @@ backward-loop-table-check: $(PROGRAM) $(BUILD)/native-closure
 		-DBREAK_LOOP check/backward-loop-table.S \
 		-o "$$temporary/broken-loop"; \
 	$(BUILD)/native-closure "$$temporary/broken-loop" --list-tables \
-		| grep -Eq '^tables=0 targets=0$$'
+		| grep -Eq '^tables=0 targets=0$$'; \
+	$(call same_as_source,"$$temporary/broken-loop")
 
 chained-table-cut-check: $(PROGRAM) $(BUILD)/native-closure
 	@set -e; temporary=$$(mktemp -d); \
@@ -563,7 +578,8 @@ chained-table-cut-check: $(PROGRAM) $(BUILD)/native-closure
 		-DBREAK_CUT check/chained-table-cut.S \
 		-o "$$temporary/broken-cut"; \
 	$(BUILD)/native-closure "$$temporary/broken-cut" --list-tables \
-		| grep -Eq '^tables=1 targets=6$$'
+		| grep -Eq '^tables=1 targets=6$$'; \
+	$(call same_as_source,"$$temporary/broken-cut")
 
 nested-table-guards-check: $(PROGRAM) $(BUILD)/native-closure
 	@set -e; temporary=$$(mktemp -d); \
@@ -676,6 +692,10 @@ closed-table-set-check: $(PROGRAM) $(BUILD)/native-closure
 		-DBYPASS_GUARD check/closed-table-set.S -o "$$temporary/bypass"; \
 	$(BUILD)/native-closure "$$temporary/bypass" --list-tables \
 		| grep -Eq '^tables=0 targets=0$$'
+	@# Not compared with the source: this variant indexes table A past its
+	@# own rows into table B's first row, read relative to A's base. Even the
+	@# source lands mid-code there; no relocation rewrite can keep a row that
+	@# two bases read (the known limit of open-domain tables).
 
 local-code-address-check: $(PROGRAM)
 	@set -e; temporary=$$(mktemp -d); \
@@ -903,6 +923,39 @@ table-side-exit-check: $(BUILD)/entry
 # target.  In particular, a switch arm's RIP-relative load into an argument
 # register cannot be erased as a prefix merely because every arm joins at the
 # same direct call coordinate.
+# A static link fills GOT slots itself and keeps no relocation for them; the
+# slot of a code symbol must follow the code (found through the GOTPCREL row
+# of the call). Without that the output calls the old layout and still says
+# green, so only running it shows the difference.
+.PHONY: lane-dec-branch-check
+check: lane-dec-branch-check
+lane-dec-branch-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none \
+		check/lane-dec-branch.S -o "$$temporary/input"; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output" >/dev/null; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	test $$output_status -eq 42; \
+	echo "lane DEC branch: green"
+
+.PHONY: got-slot-check
+check: got-slot-check
+got-slot-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) -O2 -mno-red-zone -Wa,-mrelax-relocations=no -static -no-pie \
+		-nostdlib -fno-stack-protector -Wl,--emit-relocs,--build-id=none \
+		check/got-slot-fixture.c -o "$$temporary/input"; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output" >/dev/null; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	test $$output_status -eq 42; \
+	echo "GOT slot rebinding: green"
+
 call-cut-check: $(PROGRAM)
 	@set -e; temporary=$$(mktemp -d); \
 	trap 'rm -rf "$$temporary"' EXIT; \
@@ -951,6 +1004,7 @@ table-call-alias-check: $(PROGRAM) $(BUILD)/native-closure
 	$(BUILD)/native-closure "$$temporary/broken" --list-tables \
 		> "$$temporary/broken-tables"; cat "$$temporary/broken-tables"; \
 	grep -Eq '^tables=1 targets=2$$' "$$temporary/broken-tables"; \
+	$(call same_as_source,"$$temporary/broken"); \
 	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none -DESCAPED_SPILL \
 		check/table-call-alias.S -o "$$temporary/escaped"; \
 	$(BUILD)/native-closure "$$temporary/escaped" --list-tables \
@@ -960,7 +1014,8 @@ table-call-alias-check: $(PROGRAM) $(BUILD)/native-closure
 		check/table-call-alias.S -o "$$temporary/interior"; \
 	$(BUILD)/native-closure "$$temporary/interior" --list-tables \
 		> "$$temporary/interior-tables"; cat "$$temporary/interior-tables"; \
-	grep -Eq '^tables=1 targets=2$$' "$$temporary/interior-tables"
+	grep -Eq '^tables=1 targets=2$$' "$$temporary/interior-tables"; \
+	$(call same_as_source,"$$temporary/interior")
 
 check: table-call-alias-check
 
@@ -1516,15 +1571,18 @@ transient-entry-generation-check: $(PROGRAM)
 
 check: transient-entry-generation-check
 
-tail-call-table-rejection-check: $(PROGRAM) $(BUILD)/entry
+tail-call-table-rejection-check: $(PROGRAM) $(BUILD)/entry $(BUILD)/native-closure
 	@set -e; temporary=$$(mktemp -d); \
 	trap 'rm -rf "$$temporary"' EXIT; \
 	for bypass in 1 2; do \
 	$(CC) $(BARE_FIXTURE_FLAGS) -DBYPASS_GUARD=$$bypass \
 		-Wl,--build-id=none check/tail-call-table.S -o "$$temporary/input"; \
 	$(BUILD)/entry "$$temporary/input" >"$$temporary/entries"; \
-	grep -xF 'recognized table projection: 0 bases, 0 rows' \
+	grep -xF 'recognized table projection: 1 bases, 2 rows' \
 		"$$temporary/entries" >/dev/null; \
+	$(BUILD)/native-closure "$$temporary/input" --list-tables \
+		| grep -Eq '^tables=0 targets=0$$'; \
+	$(call same_as_source,"$$temporary/input"); \
 	done
 
 check: closed-table-set-check interior-trampoline-check stack-code-continuation-check observed-call-site-check partial-pointer-clear-check relative-function-table-check bit-scan-passthrough-check cpuid-inputs-check partial-clear-after-flags-check atomic-inputs-check mutable-immediate-field-check unowned-relative-field-check mixed-relative-field-check prefixed-rel32-site-check exception-table-root-check bug-table-root-check tail-call-table-check tail-call-table-rejection-check indirect-flags-frontier-check entry-flags-preload-check table-base-reuse-after-target-check

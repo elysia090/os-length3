@@ -1242,9 +1242,21 @@ int pl_select_measure_direct_alu_frame(const pl_x86_frontend *frontend,
                     pl_select_push_frame_value_alias(
                         selection, PL_OPERAND_NODE, add3_pair_node,
                         (pl_u8)consumer);
-            } else if (pl_select_collect_native_affine_lea(
+            } else if (!(final_flag_node
+                        && (pl_select_publication_is_flag_result(
+                                &block->plan, block->plan.locals[local],
+                                final_flag_node)
+                            || pl_select_publication_emits_selected_flag(
+                                &block->plan, block->plan.locals[local],
+                                local, final_flag_node)))
+                    && pl_select_collect_native_affine_lea(
                     &block->plan, value,
                     block->plan.node_count + 1u, &form, &bits)) {
+                /* LEA sets no flags: a publication the frame counted as the
+                 * final flag producer (its value is the flag result, so no
+                 * other instruction is scheduled for the flags) is never
+                 * spelled with it. DEC r13w; JE became LEA; JE and branched
+                 * on stale flags. */
                 if (!pl_select_emit_affine_lea_width(
                         local, form, bits, (pl_u8 *)0, &encoded))
                     return 0;
@@ -1323,14 +1335,16 @@ int pl_select_measure_direct_alu_frame(const pl_x86_frontend *frontend,
                 publication_work = 1u;
             } else if (pl_select_in_place_lane_insert(
                     &block->plan, value, local, &lane_inner, &lane_width)) {
-                int measured = pl_select_measure_alu_tree(
-                    frontend, block, selection, local, lane_inner, lane_width,
-                    bytes, block->plan.node_count + 1u, scratch_mask,
-                    &encoded, &publication_work);
-                if (measured <= 0) {
-                    selection->blocking_work = 0x600u | local;
-                    return measured;
-                }
+                /* An in-place insert keeps the register's bits above the
+                 * lane, but the generic tree spells the inner add at the
+                 * node's own width (a 32-bit LEA or ALU op, which also zeroes
+                 * bits 32-63) and sets no flags with LEA: DEC r13w; JE became
+                 * LEA r13d; JE. Until the tree emits lane-width operations,
+                 * the exact source spelling owns these blocks. */
+                (void)lane_inner;
+                (void)lane_width;
+                selection->blocking_work = 0x520u | local;
+                return 0;
             } else if (pl_select_lane_constant_insert(
                     &block->plan, value, local, &lane_base,
                     &lane_constant, &lane_width)) {
@@ -1394,6 +1408,26 @@ int pl_select_measure_direct_alu_frame(const pl_x86_frontend *frontend,
                     return measured;
                 }
             } else {
+                /* The generic value tree spells an add as LEA, which sets no
+                 * flags. When the frame counts on this publication as the
+                 * final flag producer (none is scheduled besides it) and that
+                 * producer is an add, decline rather than let a branch read
+                 * stale flags: DEC r13w; JE became LEA; JE. Another frame or
+                 * the exact source spelling owns the block instead. */
+                pl_operand flag_left_operand, flag_right_operand;
+                pl_u32 flag_bits = 0u, flag_operation = 0u, flag_carry = 0u;
+                if (final_flag_node
+                        && pl_select_publication_is_flag_result(
+                            &block->plan, block->plan.locals[local],
+                            final_flag_node)
+                        && pl_select_alu_node_semantics(
+                            &block->plan, final_flag_node,
+                            &flag_left_operand, &flag_right_operand,
+                            &flag_bits, &flag_operation, &flag_carry)
+                        && flag_operation == 1u) {
+                    selection->blocking_work = 0x510u | local;
+                    return 0;
+                }
                 bits = pl_select_operand_expression_bits(&block->plan, value, 0u);
                 if (!bits) {
                     selection->blocking_work = 0x500u | local;
@@ -2469,7 +2503,14 @@ int pl_select_write_direct_alu_frame(const pl_x86_block *block,
                     pl_select_push_frame_value_alias(
                         (pl_x86_native_selection *)selection,
                         PL_OPERAND_NODE, add3_pair_node, (pl_u8)consumer);
-            } else if (pl_select_collect_native_affine_lea(
+            } else if (!(final_flag_node
+                        && (pl_select_publication_is_flag_result(
+                                &block->plan, block->plan.locals[local],
+                                final_flag_node)
+                            || pl_select_publication_emits_selected_flag(
+                                &block->plan, block->plan.locals[local],
+                                local, final_flag_node)))
+                    && pl_select_collect_native_affine_lea(
                     &block->plan, value,
                     block->plan.node_count + 1u, &form, &bits)) {
                 if (!pl_select_emit_affine_lea_width(
