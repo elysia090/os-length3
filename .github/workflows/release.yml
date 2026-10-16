@@ -1,0 +1,80 @@
+name: Release
+
+# A tag os-length3-linux-vX.Y.Z publishes OS Length3 Linux X.Y.Z: the root
+# (the pinned 0.1.0 root with this tree's l3, profile and shell, repackaged
+# by src/desktop/scripts/root-release.sh) and the web build (the app with
+# the Prompt's userland, src/desktop/scripts/web-release.sh), with their
+# digests. Devices then trust the root once its digest is pinned in
+# src/desktop/core/src/root.rs.
+on:
+  push:
+    tags: ['os-length3-linux-v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    env:
+      BASE_URL: https://github.com/elysia090/libqm-prototype/releases/download/os-length3-linux-v0.1.0/os-length3-linux-0.1.0-x86_64-ffb53450f0f41900f1cda2cd072b9405b43c7b44f97c400794c57019578f32a9.tar.zst
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: src/desktop/package-lock.json
+      - name: Toolchains
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools zstd zip
+          rustup target add x86_64-unknown-linux-musl wasm32-unknown-unknown
+      - name: Version from the tag
+        run: |
+          v=${GITHUB_REF_NAME#os-length3-linux-v}
+          echo "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' || { echo "not a version: $v" >&2; exit 1; }
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+      - name: Root
+        working-directory: src/desktop
+        run: |
+          curl -fsSL --retry 4 -o "$RUNNER_TEMP/base.tar.zst" "$BASE_URL"
+          sh scripts/root-release.sh "$RUNNER_TEMP/base.tar.zst" "$GITHUB_WORKSPACE/out" "$VERSION"
+      - name: Web
+        working-directory: src/desktop
+        run: |
+          sh scripts/web-release.sh
+          mv length3-web.zip "$GITHUB_WORKSPACE/out/os-length3-linux-$VERSION-web.zip"
+      - name: Digests and notes
+        working-directory: out
+        run: |
+          sha256sum os-length3-linux-$VERSION-web.zip >> SHA256SUMS
+          root=$(ls os-length3-linux-$VERSION-x86_64-*.tar.zst)
+          web=os-length3-linux-$VERSION-web.zip
+          {
+            echo "# OS Length3 Linux $VERSION"
+            echo
+            echo "The 0.1.0 root with l3, its profile and shell from \`$GITHUB_SHA\`, and the web build of the same tree."
+            echo
+            echo "| File | Bytes | SHA-256 |"
+            echo "| --- | --- | --- |"
+            for f in "$root" "$web"; do
+              echo "| \`$f\` | $(stat -c %s "$f") | \`$(sha256sum "$f" | cut -d' ' -f1)\` |"
+            done
+            echo
+            echo "Check and open the root:"
+            echo
+            echo '```sh'
+            echo "sha256sum -c SHA256SUMS"
+            echo "mkdir opened && tar --zstd -xf $root -C opened"
+            echo '```'
+            echo
+            echo "\`manifest\` names the base, the l3 inside and the script that made it. The web build opens with any static server (\`npx serve\` in the unzipped folder)."
+          } > ../notes.md
+          cat ../notes.md
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" out/* \
+            --title "OS Length3 Linux $VERSION" --notes-file notes.md --verify-tag
