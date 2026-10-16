@@ -100,17 +100,24 @@ Git
   l3 commit REPO \"Fix：title\" on main, named by the line
   l3 push REPO [-m note]      push the work, handing it to main as its change (again: next version)
   l3 reset REPO               take the change back
-  l3 review REPO#N approve|changes [-m note]
-  l3 reply REPO#N \"text\"
-  l3 merge REPO#N             main takes the change
+  l3 reply REPO#N \"text\"      a comment in its Review
+  l3 review REPO#N approve [-m note]   approve this version
+  l3 merge REPO#N             main takes the change (once approved)
   l3 reject REPO#N [-m why]   main does not
   l3 log REPO                 the commits of what the repo shows
 Runtime
   l3 runtime                  the root, and this device by size: what can go
   l3 free ID… | l3 free all   free (sync and free for a repo with changes)
   l3 root fetch | install BUNDLE
+  l3 ssh                      each address, and whether SSH may reach it
+  l3 ssh on|off ADDRESS
+  l3 dotfiles                 your dotfiles: every Prompt starts with them in /root
+  l3 dotfile NAME             one's text
+  l3 dotfile write NAME       replace (or make) it with standard input
+  l3 dotfile rm NAME
 Remote
   l3 remote                   the Remote this device is on, and each repo
+  l3 remote on REPO           bring back a repo turned off (turning off is the app's: it asks for a passkey)
   l3 login [URL]              connect: approve in the browser
   l3 logout
   l3 sync [REPO]              now (it also happens after every change)
@@ -121,6 +128,7 @@ Inbox
   l3 inbox accept|block ADDRESS
   l3 address                  your addresses
   l3 address claim NAME[@DOMAIN]
+  l3 address domain DOMAIN    the DNS record that proves DOMAIN is yours, and whether it is there
 
   --json for JSON. Paths may be written as File shows them: /root/<repo>/….
   Where: $LENGTH3_HOME (else the app's own data directory).
@@ -150,17 +158,24 @@ Git
   l3 commit REPO \"Fix：件名\"  main で Commit
   l3 push REPO [-m メモ]      作業を Push し、Change として main に渡す（もう一度で次の版）
   l3 reset REPO               Change を取り下げる
-  l3 review REPO#N approve|changes [-m メモ]
-  l3 reply REPO#N \"文\"
-  l3 merge REPO#N             main に取り込む
+  l3 reply REPO#N \"文\"        Review にコメント
+  l3 review REPO#N approve [-m メモ]   この版を承認
+  l3 merge REPO#N             main に取り込む（承認のあと）
   l3 reject REPO#N [-m 理由]  取り込まない
   l3 log REPO                 repo がいま見せているもののコミット
 Runtime
   l3 runtime                  root と この端末: 容量順、空けられるもの
   l3 free ID… | l3 free all   空ける（変更があれば送ってから）
   l3 root fetch | install BUNDLE
+  l3 ssh                      アドレスごとに、SSH でつないでよいか
+  l3 ssh on|off ADDRESS
+  l3 dotfiles                 あなたの dotfile（どの Prompt も /root にこれを置いて始まる）
+  l3 dotfile NAME             ひとつの本文
+  l3 dotfile write NAME       標準入力で置き換える（なければ作る）
+  l3 dotfile rm NAME
 Remote
   l3 remote                   つながっている Remote と、repo の同期
+  l3 remote on REPO           切った repo をすぐ戻す（切るのはアプリで。パスキーを使います）
   l3 login [URL]              ブラウザで承認してつなぐ
   l3 logout
   l3 sync [REPO]              いま送る・取り込む（ふだんは変えるたびに自動）
@@ -171,6 +186,7 @@ Inbox
   l3 inbox accept|block ADDRESS
   l3 address                  あなたのアドレス
   l3 address claim NAME[@DOMAIN]
+  l3 address domain DOMAIN    DOMAIN があなたのものだと示す DNS レコードと、置けたか
 
   --json で JSON に。パスは File と同じ /root/<repo>/… でも書けます。
   置き場所: $LENGTH3_HOME（なければアプリと同じデータの場所）
@@ -447,12 +463,64 @@ fn run(a: Args) -> Result<(), String> {
             for x in &me.addresses { out(format!("{}{}", x.address, if x.ssh { tr!("  · SSH allowed", "  · SSH 許可") } else { String::new() })); }
             Ok(())
         }
+        ["address", "domain", domain] => {
+            let r = inbox::domain_record(domain)?;
+            if a.json { return json(&r); }
+            out(tr!("Put this record in {}'s DNS (it says this account holds addresses there, and on which Remote):", "{} の DNS にこのレコードを置きます（このアカウントがそこのアドレスを持つこと、どの Remote かを示します）:", domain));
+            out(format!("  {}  {}  {}", r.name, r.kind, r.value));
+            out(if r.found { tr!("Found: l3 address claim NAME@{} takes an address on it", "見つかりました: l3 address claim NAME@{} でアドレスを取れます", domain) } else { tr!("Not found yet", "まだ見つかりません") });
+            Ok(())
+        }
         ["address", "claim", name] => {
             out(tr!("Yours: {}", "あなたのアドレス: {}", inbox::claim(name)?));
             Ok(())
         }
+        // Runtime: what the Prompt is given
+        ["ssh"] => {
+            let me = inbox::me()?;
+            if a.json { return json(&me.addresses); }
+            if me.addresses.is_empty() { out(tr!("No address yet (l3 address claim NAME)", "アドレスはまだありません（l3 address claim NAME）")); }
+            for x in &me.addresses { out(format!("{}  {}", x.address, if x.ssh { tr!("SSH allowed", "SSH 許可") } else { tr!("SSH off", "SSH オフ") })); }
+            out(tr!("  Connecting over SSH is not built yet", "  SSH の接続はまだありません"));
+            Ok(())
+        }
+        ["ssh", on @ ("on" | "off"), address] => {
+            inbox::set_ssh(address, *on == "on")?;
+            out(if *on == "on" { tr!("SSH allowed for {}", "{} に SSH を許可しました", address) } else { tr!("SSH off for {}", "{} の SSH をオフにしました", address) });
+            Ok(())
+        }
+        ["dotfiles"] => {
+            let all = length3_core::launch::dotfiles();
+            if a.json { return json(all.iter().map(|(n, t)| serde_json::json!({"name": n, "bytes": t.len()})).collect::<Vec<_>>()); }
+            if all.is_empty() { out(tr!("No dotfiles yet (l3 dotfile write .profile < file)", "dotfile はまだありません（l3 dotfile write .profile < file）")); }
+            for (n, t) in &all { out(format!("{n}  {}", bytes(t.len() as u64))); }
+            Ok(())
+        }
+        ["dotfile", name] => {
+            let all = length3_core::launch::dotfiles();
+            let (_, text) = all.iter().find(|(n, _)| n == name).ok_or_else(|| tr!("No dotfile {}", "dotfile {} はありません", name))?;
+            print!("{text}");
+            Ok(())
+        }
+        ["dotfile", verb @ ("write" | "rm"), name] => {
+            if !length3_core::launch::dotfile_name(name) { return Err(tr!("A dotfile is named with a dot first: .profile", "dotfile の名前は . で始めます: .profile")); }
+            let mut all: std::collections::BTreeMap<String, String> = length3_core::launch::dotfiles().into_iter().collect();
+            if *verb == "write" {
+                let mut text = String::new();
+                std::io::stdin().read_to_string(&mut text).map_err(|e| e.to_string())?;
+                all.insert(name.to_string(), text);
+            } else if all.remove(*name).is_none() { return Err(tr!("No dotfile {}", "dotfile {} はありません", name)); }
+            length3_core::home::set("dotfiles", &serde_json::to_string(&all).map_err(|e| e.to_string())?)?;
+            out(if *verb == "write" { tr!("Saved {} (every Prompt starts with it in /root)", "{} を保存しました（どの Prompt も /root に置いて始まります）", name) } else { tr!("Removed {}", "{} を消しました", name) });
+            Ok(())
+        }
         // Remote
         ["remote"] => remote_page(&a),
+        ["remote", "on", repo] => {
+            remote::turn_on(repo)?;
+            out(tr!("{} is on again", "{} を戻しました", repo));
+            Ok(())
+        }
         ["login"] => login(&remote::default_url()),
         ["login", url] => login(url.trim_end_matches('/')),
         ["logout"] => {
@@ -705,10 +773,20 @@ fn remote_page(a: &Args) -> Result<(), String> {
         let stuck = if s.unsynced.is_empty() { String::new() } else { tr!(" · {} cannot be sent", " · 送れないもの {} 件", s.unsynced.len()) };
         out(format!("  {}  {state}{stuck}", s.name));
     }
-    for t in there.iter().filter(|t| !here.iter().any(|h| h.name == t.name)) {
+    for t in there.iter().filter(|t| t.off_at.is_some()) {
+        out(tr!("  {}  off · kept {} more (l3 remote on {})", "  {}  オフ · あと {} 残ります（l3 remote on {}）", t.name, left(t.until.unwrap_or(0)), t.name));
+    }
+    for t in there.iter().filter(|t| t.off_at.is_none() && !here.iter().any(|h| h.name == t.name)) {
         out(tr!("  {}  only on the Remote · {}", "  {}  Remote だけ · {}", t.name, bytes(t.bytes)));
     }
     Ok(())
+}
+
+/// How long until `until` (ms since the epoch), in days, or hours on the last day.
+fn left(until: u64) -> String {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+    let h = until.saturating_sub(now) / 3_600_000;
+    if h >= 24 { tr!("{} days", "{} 日", h / 24) } else { tr!("{} hours", "{} 時間", h.max(1)) }
 }
 
 fn main() -> ExitCode {

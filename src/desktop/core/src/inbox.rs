@@ -39,11 +39,25 @@ pub fn claim(address: &str) -> Result<String> {
     let body = serde_json::json!({"name": name, "domain": domain});
     match Client::open()?.call("POST", "/v1/inbox/addresses", Some(body))? {
         Reply::Ok(v) => Ok(v["address"].as_str().unwrap_or_default().to_string()),
-        Reply::Conflict(v) if v["publish"].is_object() => Err(crate::tr!("Publish this at https://{}/.well-known/length3, then claim again:\n{}",
-            "これを https://{}/.well-known/length3 に置いてから、もう一度取ってください:\n{}", domain.unwrap_or(""), serde_json::to_string_pretty(&v["publish"]).unwrap_or_default())),
+        Reply::Conflict(v) if v["publish"].is_object() => {
+            let p = &v["publish"];
+            Err(crate::tr!("Put this record in {}'s DNS, then claim again (l3 address domain {} says when it is there):\n  {}  {}  {}",
+                "{} の DNS にこのレコードを置いてから、もう一度取ってください（置けたかは l3 address domain {}）:\n  {}  {}  {}",
+                domain.unwrap_or(""), domain.unwrap_or(""), p["name"].as_str().unwrap_or(""), p["type"].as_str().unwrap_or("TXT"), p["value"].as_str().unwrap_or("")))
+        }
         Reply::Conflict(_) => Err(crate::tr!("That address is taken", "そのアドレスは使われています")),
         Reply::NotFound => Err(crate::tr!("The Remote has no Inbox", "Remote に Inbox がありません")),
     }
+}
+
+/// What a domain's DNS must say for this account to hold addresses on it, and whether it says so now.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Record { pub name: String, #[serde(rename = "type")] pub kind: String, pub value: String, pub found: bool }
+pub fn domain_record(domain: &str) -> Result<Record> { get(&format!("/v1/inbox/domains/{}", domain.trim().to_ascii_lowercase())) }
+
+/// Whether `address` may be reached over SSH.
+pub fn set_ssh(address: &str, on: bool) -> Result<()> {
+    Client::open()?.json("POST", &format!("/v1/inbox/addresses/{address}/ssh"), Some(serde_json::json!({"on": on}))).map(|_| ())
 }
 
 /// Write to `to`; `kind` is message, review, question or run. Returns whether it went as a request.

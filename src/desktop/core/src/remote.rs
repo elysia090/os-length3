@@ -658,6 +658,16 @@ pub struct RemoteRepo {
     pub bytes: u64,
     #[serde(rename = "updatedAt")]
     pub updated_at: String,
+    /// Turned off (ms since the epoch): the Remote keeps it until `until`, answering only that it is off.
+    #[serde(rename = "offAt", default)]
+    pub off_at: Option<u64>,
+    #[serde(default)]
+    pub until: Option<u64>,
+}
+
+/// Bring back a repo that was turned off, at once. Turning one off asks for a passkey, so it is the app's.
+pub fn turn_on(repo: &str) -> Result<()> {
+    Client::open()?.json("POST", &format!("/v1/repos/{repo}/on"), Some(serde_json::json!({}))).map(|_| ())
 }
 
 pub fn remote_repos() -> Result<Vec<RemoteRepo>> {
