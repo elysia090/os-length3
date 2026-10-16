@@ -7,7 +7,8 @@
 # Adds /usr/bin/l3 (static, musl, this tree), /etc/os-release,
 # /etc/profile and /etc/length3/shrc (the Prompt's shell), and a manifest
 # naming the base, l3 and this script. Nothing of the base is changed or
-# removed. The tar is deterministic (sorted names, time 0, owner 0) and so
+# removed. The tar (pax, which the installer reads) is deterministic (sorted
+# names, time 0, owner 0, no per-run header names) and so
 # is its zstd, so the same inputs give the same bundle, byte for byte.
 set -eu
 base=$1; out=$2; version=${3:-0.2.0}
@@ -43,7 +44,8 @@ chmod 0644 "$root/etc/os-release"
 mv "$work/manifest.new" "$work/tree/manifest"
 
 name="os-length3-linux-$version-x86_64"
-tar -C "$work/tree" --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --format=gnu \
+tar -C "$work/tree" --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --format=pax \
+  --pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime \
   -cf "$work/$name.tar" manifest root
 zstd -q -19 -T1 "$work/$name.tar" -o "$work/$name.tar.zst"
 sha=$(sha256sum "$work/$name.tar.zst" | cut -d' ' -f1)
