@@ -46,10 +46,17 @@ strikes through and fades the first line only.
 
 ### File
 
-The repo strip runs across the top; the selected repo is read top to
-bottom, directory index first, then each directory and file in order. The
-right half holds the reference (top) and the terminal (bottom) at the same
-weight as the center.
+A narrow tree on the left shows "/" and, under it, the person's repos and
+nothing else: the base distribution is fetched and lives in Runtime, not in
+this tree. A folder opens with the ▷/▽ on the right of its name; the name
+itself scrolls the center to it. With every folder closed the repos sit in
+the vertical middle of the pane, with nothing below them. Open folders are
+remembered while the app runs.
+
+The repo strip runs across the top of the center and right; the selected
+repo is read top to bottom, directory index first, then each directory and
+file in order. The right half holds the reference (top) and the terminal
+(bottom) at the same weight as the center.
 
 ## 3. Tokens
 

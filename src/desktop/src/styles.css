@@ -171,8 +171,8 @@ a { color: var(--ink); }
 /* File: strip on top, center flow and side at equal weight */
 .page.page-work { padding: 0; height: 100vh; overflow: hidden; }
 .page.page-work > .work { max-width: none; }
-.work { height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
-.repo-strip { grid-column: 1 / -1; display: flex; gap: var(--s1); align-items: end; padding: var(--s3) var(--s5) 0; border-bottom: 1px solid var(--rule); overflow-x: auto; }
+.work { height: 100vh; display: grid; grid-template-columns: clamp(200px, 16vw, 280px) minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+.repo-strip { grid-column: 2 / -1; display: flex; gap: var(--s1); align-items: end; padding: var(--s3) var(--s5) 0; border-bottom: 1px solid var(--rule); overflow-x: auto; }
 .repo-tab {
   min-height: 40px; padding: 6px var(--s4); border: 1px solid transparent; border-bottom: 0;
   border-radius: 10px 10px 0 0; background: transparent; cursor: pointer; white-space: nowrap;
@@ -201,6 +201,27 @@ a { color: var(--ink); }
 .pane + .pane { border-top: 1px solid var(--rule); }
 .pane h2 { font-size: var(--t-body); font-weight: 600; }
 .pane .empty { margin-top: var(--s3); padding: var(--s5); }
+
+/* File tree: "/" holds only repos; ▽ sits on the right of a folder */
+.tree { grid-row: 1 / -1; border-right: 1px solid var(--rule); overflow: auto; min-height: 0; display: grid; }
+.tree-body { padding: var(--s4) var(--s2) var(--s5); align-self: start; }
+.tree.collapsed .tree-body { align-self: center; }
+.tree-root { padding: 0 var(--s2) var(--s1); font: 600 var(--t-meta) var(--mono); color: var(--sub); }
+.tree ul { list-style: none; margin: 0; padding: 0; }
+.tree-row { display: flex; align-items: center; border-radius: var(--r-control); }
+.tree-row:hover { background: var(--raised); }
+.tree-name {
+  flex: 1; min-width: 0; min-height: 32px; text-align: left; border: 0; background: transparent; cursor: pointer;
+  padding: 0 var(--s2) 0 calc(var(--s2) + var(--depth, 0) * 14px);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tree-repo > .tree-row .tree-name { font-weight: 600; }
+.tree-name[aria-current='page'] { text-decoration: underline; text-underline-offset: 4px; }
+.tree-name.file { color: var(--ink); font-size: 14px; }
+.tree-toggle { flex: none; width: 32px; min-height: 32px; border: 0; background: transparent; cursor: pointer; color: var(--sub); font-size: 12px; border-radius: var(--r-control); }
+.tree-toggle:hover { color: var(--ink); }
+.tree-empty, .tree-wait { padding: 4px var(--s2) 4px calc(var(--s2) + var(--depth, 0) * 14px); font-size: var(--t-meta); }
+.flow .revealed > .path { background: var(--raised); }
 
 /* Terminal */
 .pane.terminal { display: grid; grid-template-rows: auto minmax(0, 1fr); }
