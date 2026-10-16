@@ -217,7 +217,7 @@ export class Reference {
 
   /** Files of a diff (a name opens the file when it is the work's own). */
   private diffFiles(files: gitops.FileDiff[], open: boolean): HTMLElement[] {
-    return diffFiles(files, open ? (p) => this.events.reveal(p) : undefined);
+    return diffFiles(files, open ? {reveal: (p) => this.events.reveal(p)} : {});
   }
 
   /** A change handed in, to review: its name, what to do with it, then its diff (only `folder`'s when given). */

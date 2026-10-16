@@ -202,23 +202,34 @@ all); choosing a repo also points the right pane and the Prompt at it.
   copy of the repo, which File, Forge and the Prompt show; the layout says
   this, no sentence explains it. A merged work is done: the repo shows main
   again on its own, and the copy goes.
-- **Inside the box**, once it is worked on here, its steps from the top,
-  one row each, the button at the left (its done mark, a circle with a check
-  in `done`, in its place once done) and what it is about beside it:
-  **Changes** (what is not committed; its diff opens over what is under it,
-  so nothing moves), **Commit**, and **Push** (pushing hands the work to
-  main as its change, again as the next version; Reset at its right end
-  takes it back while it is undecided). A change received from someone else
-  shows Commit and Push done already.
-- **Review**, a box of its own under the issue's, as wide as it and lined up
-  with it: the change's diff, scrolling inside it, where a reviewer marks
-  lines as with a highlighter (`marker`); what was said, in order; then the
-  procedure in its order: a comment more, in a field tall from the start
-  (Ctrl+Enter or Comment sends it with the marks), and under it the verdict,
-  Reject at the left and Approve at the right (once approved, its done mark
-  in Approve's place).
+- **Each issue is a column**: its card, and once it is pushed, its Review and
+  Merge under it, so they slide with it; the neighbours show only their
+  cards' heads. The card's weight sits a little high (less room above than
+  below).
+- **Inside the card**, right under its title once it is worked on here:
+  **Commit** and **Push**, one row each, the button at the left; done, the
+  button's place shows the same word with the done mark (a circle with a
+  check, `done`), and the green says it is done. Beside Commit, what is not
+  committed (▸ 5 files); its diff opens over what is under it, so neither
+  button moves. Pushing hands the work to main as its change, again as the
+  next version; Reset at the Push row's right end takes it back while it is
+  undecided. A change received from someone else shows Commit and Push done.
+- **The card's foot**: where the issue lives (`repo · issue/001.md`, which
+  opens the file) and who started it and when, at the left; its action
+  (Start, Continue here, Back to main) at the right.
+- **A diff**, wherever it shows: each file a fold, its name (which opens it)
+  and what was added and removed (+56 −2); each line with which line it is.
+  The first three files are open, the rest wait closed, so a large change
+  reads file by file; it scrolls inside its box.
+- **Review**, shown once there is a change to review: a box of its own
+  under the card, the same `raised` with an `ink` edge: the change's diff,
+  where a reviewer marks lines as with a highlighter (`marker`); what was
+  said, in order (an approval without words is not shown there); then a
+  comment more, in a field tall from the start (Ctrl+Enter or Comment sends
+  it with the marks), and beside Comment, Approve as a ○ that turns green
+  when pressed.
 - **Merge**, under the Review and not in it: its button at the left, primary
-  once the version is approved, and who approved it.
+  once the version is approved, who approved it, and Reject at the other end.
 
 Every change is already on the Remote (the draft, §3); Commit makes it
 history there, the same from the app, a browser and `l3 commit`. Without a

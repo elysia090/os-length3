@@ -13,8 +13,8 @@ import {diffFiles} from './diff-view.ts';
 //
 //   Start (Continue here) · Changes · Commit · Push (Reset)
 //
-// and Back to main. Under the box, the Review in a box of its own (Reject,
-// Comment, Approve), and under that, Merge. A change received from someone
+// and Back to main. Under the box, the Review in a box of its own (Comment,
+// and Approve as a ○), and under that, Merge with Reject at its other end. A change received from someone
 // else shows Commit and Push done already.
 
 export interface IssueEvents {
@@ -63,14 +63,10 @@ function standing(s: RepoState | undefined, issue: Issue): string {
   return '';
 }
 
-/** The head of an issue's box: its number, title and where it lives (which opens the file). */
-export function issueHead(issue: Issue, events?: IssueEvents): HTMLElement {
-  const where = `${issue.repo} · issue/${issue.file}`;
-  const place = events ? h('button', {type: 'button', class: 'link issue-where'}, where) : h('span', {class: 'issue-where'}, where);
-  if (events) place.addEventListener('click', () => events.open(issue.repo, `issue/${issue.file}`));
+/** The head of an issue's box: its number and title. */
+export function issueHead(issue: Issue): HTMLElement {
   return h('header', {class: 'issue-big-head'},
-    h('h2', {}, h('span', {class: 'issue-no'}, issueNumber(issue.file)), ' ', issue.kind ? h('span', {class: 'issue-kind'}, `${issue.kind}：`) : null, issue.title),
-    place);
+    h('h2', {}, h('span', {class: 'issue-no'}, issueNumber(issue.file)), ' ', issue.kind ? h('span', {class: 'issue-kind'}, `${issue.kind}：`) : null, issue.title));
 }
 
 /** The box: the issue's words, where it stands, and the way into its work (or back out). */
@@ -88,34 +84,36 @@ export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEv
       if (line) await git.switchWork(at, line.line); else await git.startWork(at, issue.file);
       events.moved(at);
     }, after));
-    acts.push(h('span', {class: 'grow'}), go);
+    acts.push(go);
   } else if (here) {
     const leave = button(t('Back to main'));
     leave.addEventListener('click', doing(leave, error, async () => { await git.switchWork(at, 'main'); events.moved(at); }, after));
-    acts.push(h('span', {class: 'grow'}), leave);
+    acts.push(leave);
   }
+  // At the box's foot, opposite its action: where the issue lives (which
+  // opens the file) and, quietly, who started it and when.
+  const place = h('button', {type: 'button', class: 'link issue-where'}, `${issue.repo} · ${path}`);
+  place.addEventListener('click', () => events.open(at, path));
   const say = connection() ? standing(s, issue) : t('History and work are kept on the Remote. Sign in to it to work on an issue and commit.');
   return h('div', {class: 'issue-box'},
-    issueHead(issue, events),
+    issueHead(issue),
     issue.detail ? h('p', {class: 'issue-body'}, issue.detail) : null,
-    say ? h('p', {class: 'muted small'}, say) : null,
     ...(here && s?.work ? [steps(issue, s, events, after)] : change?.state === 'open' ? [received(change)] : []),
-    acts.length ? h('div', {class: 'row work-act'}, ...acts) : null, error);
+    h('div', {class: 'issue-foot'}, h('div', {class: 'issue-about'}, place, say ? h('span', {class: 'muted small'}, say) : null), ...acts), error);
 }
 
-/** A step's place at the left: its button, or once done the done mark and the step's word. */
+/** A step's place at the left: its button, or once done the done mark and the same word (green says it is done). */
 const slot = (act: HTMLElement, done: boolean, word: string) => h('div', {class: 'step-act'},
   done ? h('span', {class: 'step-done'}, h('span', {class: 'done-mark', 'aria-hidden': 'true'}), word) : act);
 const about = (...n: (Node | null)[]) => h('div', {class: 'step-about'}, ...n);
 const quiet = (text: string) => h('p', {class: 'muted small'}, text);
 
 /**
- * Change, Commit and Push, inside the issue's box, from the top: what is
- * changed and not committed (its diff closed until opened, scrolling in
- * place), then Commit, then Push, each its button at the left (the done
- * mark in its place once done). The diff is above both, so opening it moves
- * neither apart. Pushing hands the work to main as its change, again as the
- * next version; until it is decided, Reset takes it back.
+ * Commit and Push, inside the issue's box, each its button at the left
+ * (green, the done mark, once done). Beside Commit, what is not committed:
+ * its diff opens over what is under it, so neither button moves. Pushing
+ * hands the work to main as its change, again as the next version; until it
+ * is decided, Reset takes it back.
  */
 function steps(issue: Issue, s: RepoState, events: IssueEvents, after: () => void): HTMLElement {
   const at = issue.repo;
@@ -135,7 +133,7 @@ function steps(issue: Issue, s: RepoState, events: IssueEvents, after: () => voi
       for (const k of ['pointerdown', 'keydown'] as const) (fold.open ? document.addEventListener : document.removeEventListener).call(document, k, away);
       if (!fold.open || read) return;
       read = true;
-      void git.diff(at).then((files) => inside.replaceChildren(...diffFiles(files, (p) => events.open(at, p))), (e) => inside.replaceChildren(h('p', {class: 'error'}, message(e))));
+      void git.diff(at).then((files) => inside.replaceChildren(...diffFiles(files, {reveal: (p) => events.open(at, p)})), (e) => inside.replaceChildren(h('p', {class: 'error'}, message(e))));
     });
     what = fold;
   } else {
@@ -166,21 +164,21 @@ function steps(issue: Issue, s: RepoState, events: IssueEvents, after: () => voi
     : w.unpushed ? quiet(tn('{n} commit to push', '{n} commits to push', w.unpushed)) : null;
 
   return h('div', {class: 'steps'},
-    h('div', {class: 'step-act'}, h('span', {class: 'step-name'}, t('Changes'))), about(what),
-    slot(commit, committed, t('Committed')), about(),
-    slot(push, pushed, t('Pushed')), about(where), error);
+    slot(commit, committed, t('Commit')), h('div', {class: 'step-about step-changes'}, what),
+    slot(push, pushed, t('Push')), about(where), error);
 }
 
 /** Someone else's change, received: committed and pushed already, by whom and which version. */
 function received(change: git.Change): HTMLElement {
   return h('div', {class: 'steps'},
-    slot(h('span'), true, t('Committed')), about(quiet(change.submittedBy || '—')),
-    slot(h('span'), true, t('Pushed')), about(quiet(t('Change · version {n} · {state}', {n: change.version, state: STATE(change.state)}))));
+    slot(h('span'), true, t('Commit')), about(quiet(change.submittedBy || '—')),
+    slot(h('span'), true, t('Push')), about(quiet(t('Change · version {n} · {state}', {n: change.version, state: STATE(change.state)}))));
 }
 
 /**
  * Merge, the last step, under the Review (not in it): its button at the
- * left, primary once the version is approved, and who approved it.
+ * left, primary once the version is approved, who approved it, and Reject
+ * at the other end.
  */
 export function mergeRow(issue: Issue, s: RepoState | undefined, events: IssueEvents, after: () => void): HTMLElement | null {
   const change = connection() ? changeOf(s, issue) : null;
@@ -194,30 +192,24 @@ export function mergeRow(issue: Issue, s: RepoState | undefined, events: IssueEv
   // Merged, the work is done: the repo shows main again.
   merge.addEventListener('click', doing(merge, error, async () => { await git.merge(at, change); if (here) await git.switchWork(at, 'main'); events.moved(at); }, after));
   const by = approvals.length ? t('Approved by {who}', {who: [...new Set(approvals.map((r) => r.by))].join(', ')}) : t('Not approved yet');
-  return h('div', {class: 'steps merge-row'}, slot(merge, false, ''), about(quiet(by)), error);
+  const reject = button(t('Reject'));
+  reject.title = t('Do not take it into main (its issue stays open)');
+  reject.addEventListener('click', doing(reject, error, () => git.reject(at, change), after));
+  return h('div', {class: 'steps merge-row'}, slot(merge, false, ''), about(h('div', {class: 'step-line'}, quiet(by), reject)), error);
 }
 
 /** A diff whose lines can be marked, as with a highlighter: `marked` shows, `pending` collects what is pressed now. */
 function markedDiff(files: git.FileDiff[], marked: Set<string>, pending: Set<string> | null): HTMLElement[] {
-  return files.map((f) => {
-    const lines = f.binary ? [h('p', {class: 'muted small'}, t('Binary'))] : f.lines.map((l, k) => {
-      if (l.kind === 'hunk') return k === 0 ? null : h('div', {class: 'diff-line hunk'}, l.text.replace(/^@@ [^@]* @@ ?/, '') || '…');
-      const key = `${f.path}:${k}`;
-      const row = h('div', {class: `diff-line ${l.kind}`, 'data-mark': key}, l.text || ' ');
-      if (marked.has(key)) row.classList.add('marked');
-      if (pending) {
-        row.classList.add('markable');
-        row.addEventListener('click', () => {
-          if (marked.has(key)) return;
-          if (pending.has(key)) pending.delete(key); else pending.add(key);
-          row.classList.toggle('marking', pending.has(key));
-        });
-      }
-      return row;
-    }).filter(Boolean) as HTMLElement[];
-    if (f.more) lines.push(h('p', {class: 'muted small'}, tn('{n} more line', '{n} more lines', f.more)));
-    return h('div', {class: 'hit-group'}, h('div', {class: 'hit-file'}, f.path), h('div', {class: 'diff'}, ...lines));
-  });
+  return diffFiles(files, {line: (row, key) => {
+    if (marked.has(key)) row.classList.add('marked');
+    if (!pending) return;
+    row.classList.add('markable');
+    row.addEventListener('click', () => {
+      if (marked.has(key)) return;
+      if (pending.has(key)) pending.delete(key); else pending.add(key);
+      row.classList.toggle('marking', pending.has(key));
+    });
+  }});
 }
 
 /**
@@ -240,37 +232,35 @@ export function reviewBox(issue: Issue, s: RepoState | undefined, after: () => v
   void git.changeDiff(at, change).then((files) => diff.replaceChildren(...markedDiff(files, marked, pending)), (e) => diff.replaceChildren(h('p', {class: 'error'}, message(e))));
   // What was said, in order: a verdict with its note, or a comment alone.
   // What was said, in order, as a conversation: a verdict with its note, or a comment alone.
-  const said = h('div', {class: 'review-chat'}, ...change.reviews.slice().reverse().map((r) => h('div', {class: 'bubble'},
+  // An approval is the ○ turning green, not a box in the conversation (its note, if any, still shows).
+  const told = change.reviews.filter((r) => r.verdict !== 'approve' || r.note);
+  const said = h('div', {class: 'review-chat'}, ...told.slice().reverse().map((r) => h('div', {class: 'bubble'},
     h('span', {class: 'muted small'}, `${r.by} · ${ago(r.time)}${r.version !== change.version ? ` · ${t('version {n} (older)', {n: r.version})}` : ''}`),
-    r.verdict === 'approve' ? h('span', {class: 'step-done'}, h('span', {class: 'done-mark', 'aria-hidden': 'true'}), t('Approved'))
-      : r.verdict === 'changes' ? h('span', {class: 'step-done'}, t('Asked for changes')) : null,
+    r.verdict === 'changes' ? h('span', {class: 'step-done'}, t('Asked for changes')) : null,
     r.note ? h('p', {class: 'bubble-text'}, r.note) : null)));
-  const body: Node[] = [diff, ...(change.reviews.length ? [said] : [])];
+  const body: Node[] = [diff, ...(told.length ? [said] : [])];
   if (change.state === 'open') {
-    // Under what was said, the procedure in its order: a comment more,
-    // written in a roomy field and sent with the lines marked (Ctrl+Enter, or
-    // Comment), then the verdict under it (Reject at the left, Approve at the
-    // right). Merge follows under the box.
+    // Under what was said, a comment more, written in a roomy field and sent
+    // with the lines marked (Ctrl+Enter, or Comment); under it, Approve as a
+    // ○. Merge and Reject follow under the box.
     const text = h('textarea', {class: 'line-in review-in', rows: '7', placeholder: t('Comment…'), 'aria-label': t('Comment'), maxlength: '4000'}) as HTMLTextAreaElement;
     const send = (verdict: git.Review['verdict'], b: HTMLButtonElement) => doing(b, error, async () => {
       if (verdict === 'comment' && !text.value.trim() && !pending!.size) return;
       await git.review(at, change, verdict, text.value, [...pending!]);
     }, after);
-    const reject = button(t('Reject'));
-    reject.title = t('Do not take it into main (its issue stays open)');
-    reject.addEventListener('click', doing(reject, error, () => git.reject(at, change), after));
-    // Approved, Approve's place holds the done mark.
+    // Approve is a ○: pressed, it turns green (the done mark) and stays so.
     let approve: HTMLElement;
-    if (current.some((r) => r.verdict === 'approve')) approve = h('span', {class: 'step-done'}, h('span', {class: 'done-mark', 'aria-hidden': 'true'}), t('Approved'));
+    if (current.some((r) => r.verdict === 'approve')) approve = h('span', {class: 'step-done'}, h('span', {class: 'done-mark', 'aria-hidden': 'true'}), t('Approve'));
     else {
-      const b = button(t('Approve'), true);
-      b.addEventListener('click', send('approve', b));
+      const b = h('button', {type: 'button', class: 'approve-mark'}, h('span', {class: 'ring', 'aria-hidden': 'true'}), t('Approve')) as HTMLButtonElement;
+      // What is written and marked goes with it; only a written note shows in the conversation.
+      b.addEventListener('click', doing(b, error, () => git.review(at, change, 'approve', text.value, [...pending!]), after));
       approve = b;
     }
     const comment = button(t('Comment'));
     comment.addEventListener('click', send('comment', comment));
     text.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing) { e.preventDefault(); comment.click(); } });
-    body.push(text, h('div', {class: 'review-send'}, comment), h('div', {class: 'review-verdict'}, reject, h('span', {class: 'grow'}), approve));
+    body.push(text, h('div', {class: 'review-verdict'}, approve, h('span', {class: 'grow'}), comment));
   }
   body.push(error);
   return h('section', {class: 'review-box', 'aria-label': t('Review')},

@@ -77,6 +77,9 @@ pub struct DiffLine {
     /// "hunk" (where), "add", "del" or "same".
     pub kind: &'static str,
     pub text: String,
+    /// Which line it is: in the new text for "add" and "same", in the old for "del".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub at: Option<usize>,
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
@@ -235,10 +238,13 @@ fn diff_of(pairs: Vec<Pair>, limit: usize) -> Result<Vec<FileDiff>> {
             let ops = linediff::ops(p.before.as_deref().unwrap_or(""), p.after.as_deref().unwrap_or(""));
             // Three lines either side of a change, as git shows them.
             let keep: Vec<bool> = (0..ops.len()).map(|i| ops[i.saturating_sub(3)..(i + 4).min(ops.len())].iter().any(|(k, _)| *k != Kind::Same)).collect();
+            // Line numbers in the old and the new text, counted as the lines go by.
+            let (mut old, mut new) = (0usize, 0usize);
             for (i, (k, t)) in ops.iter().enumerate() {
+                let at = match k { Kind::Del => { old += 1; old } Kind::Add => { new += 1; new } Kind::Same => { old += 1; new += 1; new } };
                 if !keep[i] { continue; }
-                if i > 0 && !keep[i - 1] { lines.push(DiffLine { kind: "hunk", text: "…".into() }); }
-                lines.push(DiffLine { kind: match k { Kind::Add => "add", Kind::Del => "del", Kind::Same => "same" }, text: t.to_string() });
+                if i > 0 && !keep[i - 1] { lines.push(DiffLine { kind: "hunk", text: "…".into(), at: None }); }
+                lines.push(DiffLine { kind: match k { Kind::Add => "add", Kind::Del => "del", Kind::Same => "same" }, text: t.to_string(), at: Some(at) });
             }
         }
         let keep = lines.len().min(left);

@@ -17,7 +17,8 @@ export interface FileChange { path: string; status: 'added' | 'modified' | 'remo
 export interface Folder { folder: string; files: FileChange[]; added: number; removed: number }
 export interface Changes { connected: boolean; folders: Folder[]; files: number; added: number; removed: number }
 export interface Cut { id: string; issue: string | null; kind: string | null; title: string; note: string; time: number; folders: string[]; files: number; added: number; removed: number; merged: string | null }
-export interface DiffLine { kind: 'hunk' | 'add' | 'del' | 'same'; text: string }
+/** A diff line; `at` is which line it is (in the new text, or the old for a removed one). */
+export interface DiffLine { kind: 'hunk' | 'add' | 'del' | 'same'; text: string; at?: number }
 export interface FileDiff { path: string; status: FileChange['status']; binary: boolean; lines: DiffLine[]; more: number }
 
 /** How a status reads: a word, not a letter. */
@@ -86,10 +87,12 @@ async function webChanges(repo: string): Promise<Changes> {
 function hunks(ops: ReturnType<typeof lineOps>): {lines: DiffLine[]; more: number} {
   const keep = ops.map((o, i) => o.kind !== 'same' || ops.slice(Math.max(0, i - 3), i + 4).some((x) => x.kind !== 'same'));
   const lines: DiffLine[] = [];
+  let old = 0, now = 0;
   ops.forEach((o, i) => {
+    const at = o.kind === 'del' ? ++old : o.kind === 'add' ? ++now : (++old, ++now);
     if (!keep[i]) return;
     if (i > 0 && !keep[i - 1]) lines.push({kind: 'hunk', text: '…'});
-    lines.push({kind: o.kind, text: o.text});
+    lines.push({kind: o.kind, text: o.text, at});
   });
   return {lines: lines.slice(0, 400), more: Math.max(0, lines.length - 400)};
 }

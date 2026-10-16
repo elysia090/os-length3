@@ -35,9 +35,7 @@ export function git(ctx: Context): Node[] {
   const prev = h('button', {type: 'button', class: 'stage-hit prev', 'aria-label': t('Previous issue')}) as HTMLButtonElement;
   const next = h('button', {type: 'button', class: 'stage-hit next', 'aria-label': t('Next issue')}) as HTMLButtonElement;
   const stage = h('div', {class: 'issue-stage', tabindex: '0', 'aria-label': t('Issues'), 'aria-roledescription': 'carousel'}, track, prev, next);
-  // Under the stage, the current issue's Review, a box of its own lined up with the issue's, then Merge.
-  const below = h('div', {class: 'issue-below'});
-  const column = h('div', {class: 'issue-column'}, stage, below);
+  const column = h('div', {class: 'issue-column'}, stage);
   const empty = h('div', {});
   const form = issueForm({done: (repo) => { write.hidden = false; if (repo) void paint(); }});
 
@@ -83,9 +81,13 @@ export function git(ctx: Context): Node[] {
     [...track.children].forEach((slot, j) => {
       const x = shown[j];
       slot.setAttribute('aria-current', String(j === k));
-      slot.replaceChildren(j === k ? issueBox(x, states.get(x.repo), events, again) : issueHead(x));
+      // Each issue is a column: its card, and once pushed, its Review and Merge
+      // under it, so they slide with it. The neighbours show only their heads.
+      const st = states.get(x.repo);
+      slot.replaceChildren(...(j === k
+        ? [h('div', {class: 'issue-card'}, issueBox(x, st, events, again)), reviewBox(x, st, again), mergeRow(x, st, events, again)].filter((n): n is HTMLElement => !!n)
+        : [h('div', {class: 'issue-card'}, issueHead(x))]));
     });
-    below.replaceChildren(...[reviewBox(i, states.get(i.repo), again), mergeRow(i, states.get(i.repo), events, again)].filter((x): x is HTMLElement => !!x));
     prev.hidden = k === 0;
     next.hidden = k === shown.length - 1;
   };
@@ -122,7 +124,6 @@ export function git(ctx: Context): Node[] {
     if (!shown.length) {
       track.replaceChildren();
       stage.hidden = true;
-      below.replaceChildren();
       empty.replaceChildren(h('div', {class: 'empty'}, !repos.length ? t('No repos yet') : issues.length ? t('Every issue is merged.') : t('No issues yet')));
       return;
     }
@@ -161,7 +162,7 @@ export function git(ctx: Context): Node[] {
   // up at once, and any change in the repo looked at is read again; not while
   // something is being written in the box or under it, which would be lost.
   let timer = 0;
-  const typing = () => { const a = document.activeElement; return !!a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA') && (stage.contains(a) || below.contains(a)) && !!(a as HTMLInputElement).value; };
+  const typing = () => { const a = document.activeElement; return !!a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA') && stage.contains(a) && !!(a as HTMLInputElement).value; };
   const soon = () => { clearTimeout(timer); timer = window.setTimeout(() => { if (typing()) soon(); else void paint(); }, 250); };
   const stop = onChange((c) => {
     if (!workbench.element.isConnected) { stop(); return; }
