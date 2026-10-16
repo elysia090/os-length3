@@ -1,6 +1,8 @@
 // A kernel in a Worker. The page posts
 //   {type: 'start', translator, files: [{path, bytes, mode}], dirs: [path],
 //    links: [{path, target}], argv, env, cwd}
+// (`translator` and a file's optional `module`, its translation made ahead
+// of time, may be compiled WebAssembly.Modules, shared between workers.)
 // then {type: 'input', bytes} as the person types and {type: 'eof'}.
 // It receives {type: 'output', fd, bytes}, {type: 'waiting'},
 // {type: 'exit', status} or {type: 'error', message}.
@@ -63,6 +65,7 @@ self.onmessage = async ({data}) => {
         ready: () => pending.length > 0 || ended,
       },
     });
+    for (const f of data.files) if (f.module) kernel.prebuilt(vfs.lookup(f.path, '/'), f.module);
     if (data.mirror) mirror = new Mirror(vfs, data.mirror);
     kernel.start(data.argv[0], data.argv, data.env, data.cwd);
   } catch (e) {

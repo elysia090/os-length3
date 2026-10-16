@@ -22,6 +22,29 @@ async function fetchBytes(path: string): Promise<Uint8Array> {
   return new Uint8Array(await r.arrayBuffer());
 }
 
+/** A program the Prompt runs, with its translation made ahead of time if there is one. */
+interface Program { bytes: Uint8Array; module: WebAssembly.Module | null }
+interface Userland { translator: WebAssembly.Module; busybox: Program; l3: Program | null; applets: string[] }
+
+const program = async (path: string): Promise<Program> => {
+  const [bytes, module] = await Promise.all([fetchBytes(path),
+    fetchBytes(`${path}.wasm`).then((b) => WebAssembly.compile(b as BufferSource)).catch(() => null)]);
+  return {bytes, module};
+};
+
+/**
+ * The userland, fetched and compiled once for the page; every session's
+ * worker gets the same compiled modules (a Module is shared, not copied).
+ */
+let userland: Promise<Userland> | null = null;
+const loadUserland = () => (userland ??= (async () => {
+  const [translator, busybox, l3, applets] = await Promise.all([
+    fetchBytes('/userland/xlat.wasm').then((b) => WebAssembly.compile(b as BufferSource)),
+    program('/userland/busybox'), program('/userland/l3').catch(() => null),
+    fetch('/userland/applets').then((r) => r.text())]);
+  return {translator, busybox, l3, applets: applets.split('\n').filter((a) => a && a !== 'busybox')};
+})().catch((e) => { userland = null; throw e; }));
+
 /** Copy a repo's files for the guest: [{path, bytes}] under /root/<repo>. */
 async function snapshot(repo: string) {
   const files: {path: string; bytes: Uint8Array}[] = [];
@@ -110,10 +133,7 @@ export class Session {
 
   private async start() {
     try {
-      const [translator, busybox, applets, l3, copy] = await Promise.all([
-        fetchBytes('/userland/xlat.wasm'), fetchBytes('/userland/busybox'),
-        fetch('/userland/applets').then((r) => r.text()),
-        fetchBytes('/userland/l3').catch(() => null), snapshot(this.repo)]);
+      const [{translator, busybox, l3, applets}, copy] = await Promise.all([loadUserland(), snapshot(this.repo)]);
       const worker = new Worker(new URL('../../../../xlat/runtime/worker.mjs', import.meta.url), {type: 'module'});
       this.worker = worker;
       worker.onmessage = ({data}) => {
@@ -125,10 +145,10 @@ export class Session {
       const cwd = `/root/${this.repo}`;
       worker.postMessage({
         type: 'start', translator,
-        files: [{path: '/bin/busybox', bytes: busybox, mode: 0o755},
-          ...(l3 ? [{path: '/bin/l3', bytes: l3, mode: 0o755}] : []), ...copy.files],
+        files: [{path: '/bin/busybox', bytes: busybox.bytes, module: busybox.module, mode: 0o755},
+          ...(l3 ? [{path: '/bin/l3', bytes: l3.bytes, module: l3.module, mode: 0o755}] : []), ...copy.files],
         dirs: copy.dirs,
-        links: applets.split('\n').filter((a) => a && a !== 'busybox').map((a) => ({path: `/bin/${a}`, target: 'busybox'})),
+        links: applets.map((a) => ({path: `/bin/${a}`, target: 'busybox'})),
         argv: ['/bin/sh', '-i'],
         // l3 here sees repos where the shell does, under /root.
         env: ['HOME=/root', 'PATH=/bin', 'TERM=dumb', 'PS1=$PWD $ ', 'LENGTH3_REPOS=/root', 'L3_PROMPT=1'],

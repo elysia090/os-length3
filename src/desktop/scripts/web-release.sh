@@ -26,7 +26,7 @@ else
 fi
 
 (cd "$repo/xlat" && cargo build --release --target wasm32-unknown-unknown --lib)
-command -v wasm-tools >/dev/null || cargo install --locked wasm-tools
+command -v wasm-tools >/dev/null || cargo install --locked wasm-tools@1.262.0
 sh "$here/scripts/userland.sh"
 
 cd "$here"
