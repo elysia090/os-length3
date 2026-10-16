@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Length³ OS</title>
+<link rel="stylesheet" href="/src/styles.css">
+</head>
+<body>
+<div class="shell">
+  <nav class="rail" aria-label="目的">
+    <div class="rail-tabs" role="tablist" aria-orientation="vertical" aria-label="目的" id="rail-tabs"></div>
+  </nav>
+
+  <section class="target" id="target" role="tabpanel" tabindex="-1">
+    <header class="target-head">
+      <h1 id="target-title"></h1>
+      <p id="target-role"></p>
+    </header>
+    <p class="target-detail" id="target-detail"></p>
+    <p class="unbuilt" id="target-state"></p>
+  </section>
+
+  <main class="center" aria-label="作業">
+    <div class="repo-strip" role="group" aria-label="作業repo">
+      <p class="strip-empty">repoはまだありません</p>
+    </div>
+    <div class="flow" id="flow" tabindex="0" aria-label="repoの内容">
+      <div class="flow-empty">
+        <p>repoを開くと、ここでディレクトリの上から中身へ縦に降りていけます。</p>
+        <p class="unbuilt">repoの読み込みはまだ実装していません。</p>
+      </div>
+    </div>
+  </main>
+
+  <aside class="side" aria-label="参照とターミナル">
+    <section class="reference" aria-labelledby="reference-title">
+      <header class="pane-head"><h2 id="reference-title">参照</h2></header>
+      <p>プレビュー・diff・実行結果・関連Issueなど、今の作業を確かめる内容を切り替える場所。</p>
+      <p class="unbuilt">切替はまだ実装していません。</p>
+    </section>
+    <section class="terminal" aria-labelledby="terminal-title">
+      <header class="pane-head"><h2 id="terminal-title">Terminal</h2><span class="state">未接続</span></header>
+      <p>選んだrepoの環境で動くshell。</p>
+      <p class="unbuilt">Linux rootの起動はまだ実装していません。</p>
+    </section>
+  </aside>
+</div>
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>

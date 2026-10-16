@@ -1,0 +1,95 @@
+/* Length³ language: a light frame of lines and type around a dark work
+   surface. Planes and 1px rules separate regions; no shadows or blur. */
+@font-face { font-family: IntelOne; src: url('/fonts/IntelOneMono-Regular.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+@font-face { font-family: IntelOne; src: url('/fonts/IntelOneMono-Medium.woff2') format('woff2'); font-weight: 500; font-display: swap; }
+
+:root {
+  --paper: #f9f9fa;
+  --paper-2: #efeff1;
+  --ink: #15191e;
+  --ink-2: #575c63;
+  --line: #c8c9cc;
+  --action: #c2410c;
+  --code: #20272f;
+  --code-2: #1a2027;
+  --code-ink: #d9d4cb;
+  --code-ink-2: #9aa1a9;
+  --code-line: #3a434d;
+  --amber: #f0a626;
+  --mono: IntelOne, ui-monospace, Consolas, monospace;
+  --sans: 'Segoe UI', 'Noto Sans', 'Noto Sans JP', system-ui, sans-serif;
+  --rail: 64px;
+  --target: 248px;
+  --side: clamp(320px, 30vw, 520px);
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 13px/1.6 var(--sans); overflow: hidden; }
+button { font: inherit; color: inherit; }
+h1, h2, p { margin: 0; }
+[hidden] { display: none !important; }
+:focus-visible { outline: 2px solid var(--action); outline-offset: -2px; }
+
+/* Four fixed regions. Only the center scrolls as a page; the side panes keep
+   their own content and are never reflowed by a purpose switch. */
+.shell {
+  display: grid;
+  grid-template-columns: var(--rail) var(--target) minmax(0, 1fr) var(--side);
+  height: 100vh;
+}
+
+/* ---- Leftmost rail: purpose ---- */
+.rail { border-right: 1px solid var(--line); background: var(--paper); min-height: 0; }
+.rail-tabs { display: flex; flex-direction: column; height: 100%; padding: 8px 0; gap: 4px; }
+.rail-item {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  min-height: 56px; padding: 8px 4px;
+  border: 0; background: transparent; color: var(--ink-2);
+  cursor: pointer;
+}
+.rail-item:hover { color: var(--ink); background: var(--paper-2); }
+.rail-item[aria-selected='true'] { color: var(--action); background: var(--paper-2); }
+.rail-item[aria-selected='true']::before {
+  content: ''; position: absolute; left: 0; top: 8px; bottom: 8px; width: 2px; background: var(--action);
+}
+.rail-item[aria-selected='true'] .rail-label { color: var(--ink); font-weight: 500; }
+.rail-new { margin-top: auto; border-top: 1px solid var(--line); padding-top: 12px; }
+.icon { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.rail-label { font: 10px/1.2 var(--mono); letter-spacing: .02em; }
+
+/* ---- Target column ---- */
+.target { border-right: 1px solid var(--line); padding: 24px 16px; overflow-y: auto; min-height: 0; }
+.target:focus { outline: none; }
+.target-head { padding-bottom: 12px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
+.target-head h1 { font: 500 17px/1.4 var(--mono); }
+.target-head p { margin-top: 4px; color: var(--ink-2); font-size: 12px; }
+.target-detail { line-height: 1.8; }
+.unbuilt { margin-top: 16px; padding-left: 8px; border-left: 2px solid var(--line); color: var(--ink-2); font: 11px/1.8 var(--mono); }
+
+/* ---- Center: repo strip above one vertical flow ---- */
+.center { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--code); color: var(--code-ink); }
+.repo-strip {
+  display: flex; align-items: stretch; gap: 0;
+  min-height: 44px; padding: 0 16px;
+  background: var(--paper); color: var(--ink); border-bottom: 1px solid var(--line);
+}
+.strip-empty { align-self: center; color: var(--ink-2); font: 11px var(--mono); }
+.flow { flex: 1; overflow-y: auto; padding: 32px 40px; min-height: 0; }
+.flow:focus-visible { outline-color: var(--amber); }
+.flow-empty { max-width: 560px; line-height: 1.9; }
+.flow-empty .unbuilt, .side .unbuilt { color: var(--code-ink-2); border-left-color: var(--code-line); }
+
+/* ---- Right pane: switchable reference over terminal ---- */
+.side { display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); min-height: 0; background: var(--code-2); color: var(--code-ink); border-left: 1px solid var(--code-line); }
+.side > section { padding: 0 16px 16px; overflow: auto; min-height: 0; line-height: 1.8; }
+.terminal { border-top: 1px solid var(--code-line); }
+.pane-head { display: flex; align-items: center; justify-content: space-between; min-height: 44px; margin: 0 -16px 12px; padding: 0 16px; border-bottom: 1px solid var(--code-line); }
+.pane-head h2 { font: 500 12px var(--mono); letter-spacing: .04em; }
+.state { font: 11px var(--mono); color: var(--code-ink-2); }
+.state::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 8px; border: 1px solid currentColor; vertical-align: 1px; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .rail-item { transition: background-color .12s, color .12s; }
+}
