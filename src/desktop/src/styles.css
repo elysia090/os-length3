@@ -65,10 +65,10 @@ a { color: var(--ink); }
 
 /* The three states, the same everywhere: hover is a raised fill, the
    current or chosen thing is an ink fill, focus is a 2px ink ring. */
-.rail-item:hover, .button:hover, .choice:hover, .chip:hover, .pill:hover, .band-add:hover:not(:disabled), .me:hover, .me-item:hover:not(:disabled), .tree-row:hover, .todo-mark:hover,
+.rail-item:hover, .button:hover, .chip:hover, .pill:hover, .band-add:hover:not(:disabled), .me:hover, .me-item:hover:not(:disabled), .tree-row:hover, .todo-mark:hover,
 .card.repo:hover, .card.new:hover { background: var(--raised); }
-.rail-item[aria-selected='true'], .button.primary, .choice:has(input:checked),
-.chip[aria-current], .pill[aria-current], .tree-row:has(> [aria-current='page']),
+.rail-item[aria-selected='true'], .button.primary,
+.chip[aria-current], .chip[aria-checked='true'], .pill[aria-current], .tree-row:has(> [aria-current='page']),
 .rail-item[aria-expanded='true'], .me[aria-expanded='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 
 /* ---- 1. Rail ---- */
@@ -143,7 +143,7 @@ a { color: var(--ink); }
   border: 1px solid var(--edge); background: transparent; cursor: pointer;
 }
 .button:disabled { opacity: .5; cursor: default; }
-.input, .edit input, .edit textarea, .field input {
+.input, .edit input, .edit textarea {
   min-height: var(--h-control); padding: var(--s2) var(--s3); border: 1px solid var(--edge); border-radius: var(--r-field);
   background: var(--raised); color: var(--ink);
 }
@@ -212,17 +212,14 @@ a { color: var(--ink); }
 .card.new:hover { color: var(--ink); }
 .note { grid-column: 1 / -1; }
 
-/* New repo */
-.new-repo { margin-top: var(--s5); display: grid; gap: var(--s5); max-width: 560px; }
-.field { display: grid; gap: var(--s1); }
-.new-repo fieldset { border: 0; padding: 0; margin: 0; }
-.new-repo legend { margin-bottom: var(--s2); }
-.choices { display: flex; gap: var(--s2); }
-.choice { display: flex; align-items: center; gap: var(--s2); min-height: var(--h-control); padding: 0 var(--s4); border: 1px solid var(--edge); border-radius: var(--r-round); cursor: pointer; }
-.choice input { margin: 0; accent-color: var(--ground); }
-.tree-preview { list-style: none; margin: 0; padding: var(--s3) var(--s4); border: 1px solid var(--rule); border-radius: var(--r-place); font: var(--t-meta)/1.7 var(--mono); }
-.tree-preview li { padding-left: var(--s4); }
-.tree-preview li.root { padding-left: 0; font-weight: 600; }
+/* New repo: a name, a template chip, and what File will show */
+.new-repo { margin-top: var(--s5); display: grid; gap: var(--s5); max-width: 520px; }
+.field { display: grid; gap: var(--s2); }
+.field-label { font-size: var(--t-meta); color: var(--sub); }
+.tree.tree-still { position: static; visibility: visible; opacity: 1; width: auto; max-height: none; transition: none; }
+.tree-caption { padding: 0 var(--s2) var(--s1); }
+.tree-still .tree-name.plain { color: var(--ink); }
+.tree-still .tree-toggle { cursor: default; }
 
 /* Storage */
 .meter { height: var(--s4); border: 1px solid var(--edge); border-radius: var(--r-field); overflow: hidden; display: flex; }
@@ -317,11 +314,12 @@ a { color: var(--ink); }
 .work.prompting .side { grid-template-rows: minmax(0, 2fr) minmax(0, 0fr); }
 /* The search box sits on the band's line; the reference chips under it. */
 .pane.reference { display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: var(--s3); padding-top: var(--band); }
-.search-in {
+/* One line to type in, the same everywhere: the search box, a repo's name. */
+.search-in, .line-in {
   width: 100%; min-height: var(--h-row); padding: 0 var(--s3); border: 1px solid var(--edge); border-radius: var(--r-field);
   background: var(--raised); color: var(--ink);
 }
-.search-in:disabled { opacity: .5; }
+.search-in:disabled, .line-in:disabled { opacity: .5; }
 .search-count { margin-bottom: var(--s2); }
 .hit-group { display: grid; margin-bottom: var(--s3); }
 .hit-file, .hit { border: 0; padding: 0 var(--s1); background: transparent; text-align: left; cursor: pointer; border-radius: var(--r-field); }
@@ -360,8 +358,6 @@ mark { background: var(--ink); color: var(--ground); }
   transition: opacity var(--motion), visibility 0s var(--motion);
 }
 .tree.open { visibility: visible; opacity: 1; transition: opacity var(--motion), visibility 0s; }
-.tree-root { display: block; font: 600 var(--t-body)/var(--h-row) var(--mono); color: var(--sub); }
-.tree-root { padding: 0 var(--s2); }
 .tree ul { list-style: none; margin: 0; padding: 0; }
 .tree-row { display: flex; align-items: center; min-height: var(--h-row); padding-left: calc(var(--depth, 0) * var(--s4)); border-radius: var(--r-field); }
 .tree-name {

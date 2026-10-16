@@ -95,13 +95,20 @@ and a line pressed opens the center there with the line selected. Below,
 on the band line, one reference at a time, switched freely with chips: Issue (the repo's `issue/`, one file each), diff and 実行結果 (each
 says plainly that it is not connected yet). The chosen reference is remembered on this device.
 
+### New repo (+)
+
+A name on one line (the same field as the search box), the template as
+chips like the reference's (one chosen, ink), and what will be made shown
+exactly as File will show it: a card of tree rows under `root`, the new
+repo's name bold, its folders open. Then 作成, the one primary action.
+
 ### File
 
 An operation, not a page. Hovering the File icon (or pressing it) lays the
 tree of "/" over whatever page is showing as a card right beside the rail:
 its corner concentric with its rows (a row's 8 px plus the 8 px between
-them: 16 px), only as tall as what is in it, its "/"
-level with the File icon. While it is out, File is the one filled icon in
+them: 16 px), only as tall as what is in it, its first row level with the
+File icon. It has no "/" label of its own: the rows are what is in "/". While it is out, File is the one filled icon in
 the rail; the page's own icon steps back until it goes. Nothing under it
 moves. Once out it stays for 8 seconds after the pointer leaves,
 so reaching across the page and back does not lose it; a press outside or

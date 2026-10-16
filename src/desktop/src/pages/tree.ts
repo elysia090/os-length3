@@ -24,7 +24,7 @@ export interface FileTreeEvents {
 }
 
 /** One outlined triangle pointing down; CSS turns it to point right while closed. */
-function triangle(): SVGSVGElement {
+export function triangle(): SVGSVGElement {
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');
   svg.setAttribute('viewBox', '0 0 12 12');
@@ -48,8 +48,8 @@ export class FileTree {
   constructor(events: FileTreeEvents) {
     this.events = events;
     this.root = h('ul', {class: 'tree-children', role: 'tree', 'aria-label': '/'});
-    this.element = h('nav', {class: 'tree', id: 'file-tree', 'aria-label': 'File（/）'},
-      h('p', {class: 'tree-root'}, '/'), this.root);
+    // No "/" label of its own: the rows are what is in "/".
+    this.element = h('nav', {class: 'tree', id: 'file-tree', 'aria-label': 'File（/）'}, this.root);
     this.element.addEventListener('pointerenter', () => this.enter());
     this.element.addEventListener('pointerleave', () => this.leave());
     this.element.addEventListener('keydown', (event) => {
@@ -90,11 +90,11 @@ export class FileTree {
   open(focus = false) {
     clearTimeout(this.timer);
     if (!this.isOpen) {
-      // Its "/" row sits level with the File icon.
+      // Its first row sits level with the File icon.
       const at = this.trigger?.getBoundingClientRect();
       if (at) {
         const pad = parseFloat(getComputedStyle(this.element).paddingTop) || 0;
-        const row = this.element.querySelector<HTMLElement>('.tree-root')?.offsetHeight ?? 0;
+        const row = parseFloat(getComputedStyle(this.element).getPropertyValue('--h-row')) || 32;
         this.element.style.setProperty('--tree-top', `${Math.max(0, at.top + at.height / 2 - pad - row / 2)}px`);
       }
       this.build(focus);
