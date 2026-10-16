@@ -66,7 +66,7 @@ a { color: var(--ink); }
 .section > h2 {
   display: flex; justify-content: space-between; align-items: baseline;
   font-size: var(--t-body); font-weight: 600;
-  padding-bottom: var(--s2); border-bottom: 1px solid var(--rule); margin-bottom: var(--s4);
+  margin-bottom: var(--s3);
 }
 .section > h2 small { font-weight: 400; color: var(--sub); font-size: var(--t-meta); }
 .empty { margin-top: var(--s5); padding: var(--s6) var(--s5); border: 1px dashed var(--rule); border-radius: var(--r-card); color: var(--sub); }
@@ -110,27 +110,40 @@ a { color: var(--ink); }
 .handle-field input:focus-visible { outline: none; }
 .handle-field:focus-within { outline: 2px solid var(--ink); outline-offset: 2px; }
 
-/* Home: TODO */
-.todo { list-style: none; margin: 0; padding: 0; }
-.todo li { display: flex; align-items: center; gap: var(--s3); min-height: 44px; border-bottom: 1px solid var(--rule); }
-.todo label { display: flex; align-items: center; gap: var(--s3); flex: 1; cursor: pointer; }
-.todo input[type='checkbox'] { width: 18px; height: 18px; margin: 0; accent-color: var(--ink); }
-.todo .done { color: var(--sub); text-decoration: line-through; }
-.todo .tag { font-size: var(--t-meta); color: var(--sub); border: 1px solid var(--rule); border-radius: var(--r-pill); padding: 0 var(--s2); }
-.todo .remove { border: 0; background: transparent; color: var(--sub); cursor: pointer; min-width: 32px; min-height: 32px; border-radius: var(--r-control); }
-.todo .remove:hover { background: var(--raised); color: var(--ink); }
-.todo-add { display: flex; gap: var(--s2); margin-top: var(--s3); }
-.todo-add .input { flex: 1; min-width: 0; }
+/* Home: TODO — one tall box; items are a first line and detail lines */
+.todo-box {
+  border: 1px solid var(--edge); border-radius: var(--r-card); background: var(--raised);
+  min-height: max(360px, 55vh); display: grid; grid-template-rows: 1fr auto;
+}
+.todo-items { padding: var(--s3) var(--s3) var(--s2); }
+.todo-item { padding: 2px 0 var(--s2); }
+.todo-head { display: grid; grid-template-columns: 36px auto minmax(0, 1fr) auto; align-items: center; column-gap: var(--s2); min-height: 40px; padding-right: var(--s2); }
+.todo-mark { display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 50%; background: transparent; color: var(--sub); cursor: pointer; }
+.todo-mark:hover { color: var(--ink); }
+.todo-mark .icon { width: 20px; height: 20px; }
+.todo-kind { font: 600 var(--t-meta) var(--sans); padding: 1px var(--s2); border: 1px solid var(--edge); border-radius: var(--r-pill); }
+.todo-title { border: 0; background: transparent; min-height: 36px; padding: 0; font-size: var(--t-body); font-weight: 600; }
+.todo-title::placeholder { color: var(--sub); font-weight: 400; }
+.todo-detail {
+  display: block; width: calc(100% - 44px); margin-left: 44px; padding: 0; border: 0; background: transparent;
+  resize: none; overflow: hidden; color: var(--ink); font: var(--t-body)/1.6 var(--sans);
+}
+.todo-title:focus, .todo-detail:focus { outline: none; }
+.todo-meta { color: var(--sub); font-size: var(--t-meta); font-variant-numeric: tabular-nums; }
+/* Done: only the first line is struck through and faded. */
+.todo-item.done .todo-head .todo-title, .todo-item.done .todo-head .todo-kind { text-decoration: line-through; opacity: .45; }
+.todo-item.done .todo-mark { color: var(--ink); }
+.todo-hint { display: flex; flex-wrap: wrap; gap: var(--s4); padding: var(--s2) var(--s4) var(--s3); color: var(--sub); font-size: var(--t-meta); }
 
 /* Cards */
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--s4); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: var(--s5); }
 .card {
-  min-height: 120px; padding: var(--s4); border: 1px solid var(--rule); border-radius: var(--r-card);
+  min-height: 240px; padding: var(--s4); border: 1px solid var(--rule); border-radius: var(--r-card);
   display: grid; align-content: start; gap: 6px; background: transparent; text-align: left; color: var(--ink);
 }
 .card.repo { cursor: pointer; }
 .card.repo:hover, .card.new:hover { border-color: var(--ink); }
-.card-title { font-size: var(--t-card); font-weight: 600; overflow-wrap: anywhere; }
+.card-title { font-size: 20px; font-weight: 600; overflow-wrap: anywhere; }
 .card.new { border-style: dashed; place-content: center; justify-items: center; cursor: pointer; color: var(--sub); }
 .card.new:hover { color: var(--ink); }
 .note { grid-column: 1 / -1; }

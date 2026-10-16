@@ -28,7 +28,11 @@ top, then the page each icon leads to.
 - A page fills the window. Reading pages keep their content within
   1200 px; work pages (File) use the whole width, and nothing to the right
   of the center is made small by default.
-- Sections: a 15/600 heading over a 1 px `rule`, 40 px apart.
+- Sections: a 15/600 heading directly above its content, 40 px apart.
+  No rule under headings: the content's own edge (a box, cards) is the
+  only line, so lines never double up.
+- The page scrolls. Nothing is squeezed to fit one screen: the TODO box
+  is tall and repo cards are large, about three across.
 
 ### Home
 
@@ -36,7 +40,9 @@ A profile, between a Twitter and a GitHub profile, that reads the same for
 its owner and for anyone else; only the owner gets "edit". In order:
 identity (avatar, name, @handle, bio, counts) → **TODO** → repos → posts.
 TODO is the person's single list; repos do not carry their own inbox or
-TODO files.
+TODO files. An item is a first line named like an issue ("Fix：件名"),
+then detail lines; Enter on an empty line starts the next item. Done
+strikes through and fades the first line only.
 
 ### File
 
