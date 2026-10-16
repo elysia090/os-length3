@@ -655,11 +655,12 @@ mark { background: var(--ink); color: var(--ground); }
 
 /* Commit and Push inside the issue's box: the button at the left (its done
    mark in its place once done), what it is about beside it. */
-.steps { display: grid; grid-template-columns: minmax(112px, max-content) minmax(0, 1fr); align-items: center; gap: var(--s4) var(--s4); margin-top: var(--s3); padding: var(--s4) 0; border-top: 1px solid var(--rule); }
+.steps { display: grid; grid-template-columns: minmax(112px, max-content) minmax(0, 1fr); align-items: start; gap: var(--s4) var(--s4); margin-top: var(--s3); padding: var(--s4) 0; border-top: 1px solid var(--rule); }
 .step-act { display: flex; align-items: center; min-height: var(--h-control); }
 .step-act .button { min-width: 96px; justify-content: center; }
 .step-done { display: inline-flex; align-items: center; gap: var(--s2); font-weight: 600; white-space: nowrap; }
-.step-about { min-width: 0; }
+.step-about { min-width: 0; min-height: var(--h-control); padding-top: calc((var(--h-control) - 1.5em) / 2); }
+.step-about .stage-diff summary { line-height: 1.5; }
 .step-about p { margin: 0; }
 .steps > .error { grid-column: 1 / -1; }
 
