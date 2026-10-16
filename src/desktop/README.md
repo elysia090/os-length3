@@ -30,14 +30,23 @@ separate surface and nothing here depends on it.
 ## What is real in this step
 
 - The rail, the profile (edit, validate, save locally).
+- Repos the app manages under its data directory (`repos/`). □+ creates
+  one from a template (standard, C, minimal); every repo has `inbox.md`
+  and `TODO.md`, and `git init` runs without the host's git configuration.
+  Home lists them as cards.
+- File: the repo strip on top, then the repo read top to bottom —
+  directory index, then each directory and file in order, loaded as they
+  scroll near. The right half holds the reference (top) and the terminal
+  (bottom), both not connected yet. Every path from the webview is checked
+  to stay inside its repo after following symlinks.
 - Runtime shows this device's storage: what the app holds, used, free and
   total, measured by the `capacity` command (statvfs plus allocated bytes
   under the app directory). In a browser it reads the origin's storage
   estimate and says so.
 - Every other purpose shows what it will hold, as a dashed empty box.
 
-The webview has no other host access: it reads no repo, runs no shell and
-launches no root.
+The webview has no other host access: it reads nothing outside the app's
+data directory, runs no shell and launches no root.
 
 ## Develop
 

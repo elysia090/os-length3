@@ -1,10 +1,12 @@
-// The webview gets read-only facts about the host through named commands.
-// Nothing here writes, spawns or reaches outside the app's own data directory.
+// The webview reaches the host only through these named commands. Nothing
+// here writes or reads outside the app's own data directory.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde::Serialize;
 use std::path::Path;
 use tauri::Manager;
+
+mod repos;
 
 /// Volume facts for the filesystem holding the app's data, in bytes.
 /// `total`/`free` are what the outermost host reports for that filesystem;
@@ -58,9 +60,33 @@ fn capacity(app: tauri::AppHandle) -> Result<Capacity, String> {
     Ok(Capacity { total, free, app: allocated(&dir), measured: "statvfs+st_blocks" })
 }
 
+fn managed(app: &tauri::AppHandle) -> Result<repos::Repos, String> {
+    repos::Repos::new(app.path().app_data_dir().map_err(|e| e.to_string())?.join("repos"))
+}
+
+#[tauri::command]
+fn repo_list(app: tauri::AppHandle) -> Result<Vec<repos::Summary>, String> {
+    managed(&app)?.list()
+}
+
+#[tauri::command]
+fn repo_create(app: tauri::AppHandle, name: String, template: String) -> Result<repos::Summary, String> {
+    managed(&app)?.create(&name, &template)
+}
+
+#[tauri::command]
+fn repo_tree(app: tauri::AppHandle, repo: String, path: String) -> Result<Vec<repos::Entry>, String> {
+    managed(&app)?.tree(&repo, &path)
+}
+
+#[tauri::command]
+fn repo_read(app: tauri::AppHandle, repo: String, path: String) -> Result<repos::Contents, String> {
+    managed(&app)?.read(&repo, &path, 256 * 1024)
+}
+
 fn main() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![capacity])
+        .invoke_handler(tauri::generate_handler![capacity, repo_list, repo_create, repo_tree, repo_read])
         .run(tauri::generate_context!())
         .expect("Length³ OS shell failed to start");
 }

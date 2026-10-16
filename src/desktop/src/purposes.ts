@@ -22,7 +22,7 @@ export const PURPOSES: readonly Purpose[] = [
   {id: 'home', label: 'Home', role: 'プロフィール',
     detail: '自分にも他人にも同じ形で見えるページ。repoと投稿が並ぶ。', implemented: true},
   {id: 'file', label: 'File', role: 'repoの細かい中身',
-    detail: '普通のPOSIX treeをそのまま扱う。terminalと同じ実体を見る。', implemented: false},
+    detail: '普通のPOSIX treeをそのまま扱う。terminalと同じ実体を見る。', implemented: true},
   {id: 'git', label: 'Git', role: 'repoの外部状態',
     detail: '誰がいつpushしたか、提出された変更の確認・Merge・Rejectがどうなっているか。', implemented: false},
   {id: 'forge', label: 'Forge', role: '自分の作業場',
@@ -39,7 +39,7 @@ export const PURPOSES: readonly Purpose[] = [
 
 /** The square-plus at the foot of the rail: create a repo, not a purpose view. */
 export const NEW_REPO: Purpose = {id: 'new-repo', label: '新しいrepo', role: 'repoの作成',
-  detail: '標準的なrepoテンプレートを選び、独立したrepoとして作る。', implemented: false};
+  detail: '標準的なrepoテンプレートを選び、独立したrepoとして作る。', implemented: true};
 
 /** Rail order, top to bottom, as keyboard navigation walks it. */
 export const RAIL: readonly Purpose[] = [...PURPOSES, NEW_REPO];
