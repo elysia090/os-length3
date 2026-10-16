@@ -71,6 +71,12 @@ pub fn flow(i: &Instruction) -> FlowControl {
     }
 }
 
+/// Instructions after which execution may resume from the host: the code
+/// after a system call is where a forked child starts.
+pub fn resumes_after(i: &Instruction) -> bool {
+    i.mnemonic() == Mnemonic::Syscall
+}
+
 fn direct_target(i: &Instruction) -> Option<u64> {
     matches!(i.op0_kind(), OpKind::NearBranch64 | OpKind::NearBranch32 | OpKind::NearBranch16).then(|| i.near_branch_target())
 }
@@ -107,6 +113,9 @@ fn walk(elf: &Elf, start: u64, end: u64, extra: &[u64], function_starts: &BTreeS
                 break;
             };
             instructions.insert(at, i);
+            if resumes_after(&i) {
+                leaders.insert(i.next_ip());
+            }
             if i.is_ip_rel_memory_operand() {
                 references.insert(i.ip_rel_memory_address());
             }
@@ -302,6 +311,9 @@ pub fn discover(elf: &Elf) -> Program {
         for b in &function.blocks {
             if let Exit::Call { ret, .. } | Exit::IndirectCall { ret } = b.exit {
                 mark(ret, &function);
+            }
+            if b.code.last().is_some_and(resumes_after) {
+                mark(b.code.last().unwrap().next_ip(), &function);
             }
         }
         for &p in &pointers {

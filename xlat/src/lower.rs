@@ -1384,11 +1384,11 @@ impl Fx<'_> {
         let m = i.mnemonic();
         let is_x0 = i.op_count() > 0 && i.op0_kind() == OpKind::Register && xmm(i.op0_register()).is_some();
         let is_x1 = i.op_count() > 1 && i.op1_kind() == OpKind::Register && xmm(i.op1_register()).is_some();
-        if !(is_x0 || is_x1) {
-            return false;
-        }
         if let Some(done) = self.scalar(i) {
             return done;
+        }
+        if !(is_x0 || is_x1) {
+            return false;
         }
         let binary = |fx: &mut Self, op: I| -> bool {
             fx.xread(i, 0, 16) && fx.xread(i, 1, 16) && { fx.e(op); fx.set(l_v(0)); fx.xwrite(i, 0, 16, l_v(0)) }
