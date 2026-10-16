@@ -18,7 +18,9 @@
   /* Heights: a pressable thing, a row in a list, a place in the rail. */
   --h-control: 40px; --h-row: 32px; --h-place: 48px;
   --icon: 24px; --stroke: 1.6px;
-  --motion: 120ms;
+  --motion: 120ms; --move: 280ms;
+  /* Forge's band of repo chips sits this far down, between Home and the next rail icon. */
+  --band: 64px;
   --rail: 72px;
 }
 
@@ -55,9 +57,7 @@ a { color: var(--ink); }
 /* ---- 1. Rail ---- */
 .rail { border-right: 1px solid var(--rule); height: 100vh; position: sticky; top: 0; }
 .rail-tabs { display: flex; flex-direction: column; align-items: center; gap: var(--s1); height: 100%; padding: var(--s5) 0 var(--s3); }
-/* Home is who you are; the work starts a clear step below it, which also
-   sets the rail's weight a little lower. */
-.rail-home { margin-bottom: var(--s6); }
+/* The rail starts a little low, so its weight sits below the middle of its top. */
 .rail-item {
   position: relative; display: grid; place-items: center;
   width: var(--h-place); height: var(--h-place); border: 0; border-radius: var(--r-place);
@@ -187,21 +187,28 @@ a { color: var(--ink); }
 .legend { margin-top: var(--s3); display: flex; flex-wrap: wrap; gap: var(--s5); }
 .legend b { font-size: var(--t-card); font-weight: 600; display: block; }
 
-/* Forge: the center is File's contents from the first moment (3/4), with
-   nothing above it, and a narrow side (1/4) that stays out of the way. */
+/* Forge: a band of repo chips set low, the center (3/4) an endless page of
+   files with a prompt box at its foot, and a narrow side (1/4) that stays out
+   of the way. The only line is the one between the center and the side. */
 .page.page-work { padding: 0; height: 100vh; overflow: hidden; }
 .page.page-work > .work { max-width: none; }
-.work { height: 100vh; display: grid; grid-template-columns: minmax(0, 3fr) minmax(280px, 1fr); }
+.work {
+  height: 100vh; display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(280px, 1fr); grid-template-rows: auto minmax(0, 1fr);
+}
+/* The band sits low: its chips line up between Home and the next rail icon. */
+.repo-strip { grid-column: 1; display: flex; gap: var(--s2); align-items: center; padding: var(--band) var(--s5) var(--s3); overflow-x: auto; border-right: 1px solid var(--rule); }
 /* A chip picks one of several, like the template choice: round, outlined. */
 .chip {
   flex: none; min-height: var(--h-row); padding: 0 var(--s3); border: 1px solid var(--edge); border-radius: var(--r-round);
   background: transparent; cursor: pointer; white-space: nowrap; font-size: var(--t-meta);
 }
 .chips { display: flex; flex-wrap: wrap; gap: var(--s2); }
-.flow { overflow-y: auto; padding: var(--s5) var(--s5) var(--s6); border-right: 1px solid var(--rule); }
+.center { grid-column: 1; position: relative; min-height: 0; border-right: 1px solid var(--rule); }
+.flow { height: 100%; overflow-y: auto; padding: var(--s3) var(--s5) 160px; }
 .flow:focus-visible { outline-offset: -2px; }
 .path {
-  position: sticky; top: calc(-1 * var(--s5)); z-index: 1;
+  position: sticky; top: calc(-1 * var(--s3)); z-index: 1;
   display: flex; align-items: center; gap: var(--s2); justify-content: space-between;
   margin: 0 calc(-1 * var(--s5)); padding: var(--s2) var(--s5);
   background: var(--ground);
@@ -210,8 +217,28 @@ a { color: var(--ink); }
 .path span { font-weight: 400; }
 .file { margin-bottom: var(--s5); }
 .code { margin: 0; padding: var(--s3) 0; font: var(--t-meta)/1.6 var(--mono); white-space: pre; overflow-x: auto; tab-size: 4; }
-.side { display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); min-height: 0; }
-.pane.reference { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: var(--s3); }
+.flow .revealed > .path { background: var(--raised); }
+
+/* The prompt box at the foot of the center, and the slot just above it
+   that the terminal flies into while the prompt is in use. */
+.dock {
+  position: absolute; left: var(--s5); right: var(--s5); bottom: var(--s5); z-index: 2;
+  max-width: 760px; margin: 0 auto; display: grid; gap: var(--s2);
+}
+.term-slot:empty { display: none; }
+.term-slot .term-box { height: clamp(180px, 40vh, 440px); padding: var(--s4); background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-place); }
+.prompt { display: flex; border: 1px solid var(--edge); border-radius: var(--r-place); background: var(--raised); padding: var(--s3) var(--s4); }
+.prompt:focus-within { outline: 2px solid var(--ink); outline-offset: 2px; }
+.prompt-in { flex: 1; max-height: 30vh; border: 0; padding: 0; background: transparent; resize: none; font: var(--t-body)/1.6 var(--sans); }
+.prompt-in:focus { outline: none; }
+.prompt-in:disabled { cursor: default; }
+.prompt-note:empty { display: none; }
+
+/* The side: the reference on top, the terminal's home below. While the
+   prompt is in use the terminal is away and the reference grows down. */
+.side { grid-column: 2; grid-row: 1 / -1; display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); min-height: 0; transition: grid-template-rows var(--move); }
+.work.prompting .side { grid-template-rows: minmax(0, 1fr) minmax(0, 0fr); }
+.pane.reference { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: var(--s3); padding-top: var(--band); }
 .reference-body { min-height: 0; overflow: auto; }
 .reference-body .empty { margin-top: 0; padding: var(--s5) var(--s4); }
 .facts { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: var(--s1) var(--s3); margin: 0; }
@@ -221,10 +248,13 @@ a { color: var(--ink); }
 .issue-list { list-style: none; margin: 0; padding: 0; }
 .link { border: 0; padding: var(--s1) 0; background: transparent; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; text-align: left; }
 .pane { padding: var(--s5); overflow: auto; min-height: 0; }
-.pane + .pane { border-top: 1px solid var(--rule); }
 .pane h2 { font-size: var(--t-body); font-weight: 600; }
 .pane .empty { margin-top: var(--s3); padding: var(--s5); }
-.flow .revealed > .path { background: var(--raised); }
+.term-home { min-height: 0; overflow: hidden; }
+.term-home .term-box { height: 100%; padding: var(--s5); cursor: text; }
+.term-box { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
+.term-box h2 { font-size: var(--t-body); font-weight: 600; }
+.term-box .empty { margin-top: var(--s3); padding: var(--s5); }
 
 /* File: the tree of "/" laid over the page beside the rail, so nothing
    under it moves. It opens under the pointer and stays a while after it
@@ -253,15 +283,9 @@ a { color: var(--ink); }
 .tree-toggle[aria-expanded='false'] .icon { transform: rotate(-90deg); }
 .tree-note { padding: var(--s1) var(--s2) var(--s1) calc(var(--depth, 0) * var(--s4) + var(--s5) + var(--s1)); font-size: var(--t-meta); }
 
-/* Terminal */
-.pane.terminal { display: grid; grid-template-rows: auto minmax(0, 1fr); }
-.term { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; gap: var(--s2); margin-top: var(--s2); }
+/* Terminal output; input comes from the prompt box */
+.term { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; gap: var(--s2); margin-top: var(--s2); }
 .term-out { margin: 0; overflow: auto; min-height: 0; font: var(--t-meta)/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
-.term-line { display: flex; align-items: center; gap: var(--s2); min-height: var(--h-control); border: 1px solid var(--edge); border-radius: var(--r-field); padding: 0 var(--s3); background: var(--raised); }
-.term-line span { font-family: var(--mono); }
-.term-in { flex: 1; min-height: calc(var(--h-control) - 2px); border: 0; background: transparent; font: var(--t-meta) var(--mono); }
-.term-in:focus { outline: none; }
-.term-line:focus-within { outline: 2px solid var(--ink); outline-offset: 2px; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; }

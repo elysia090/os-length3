@@ -3,15 +3,16 @@ import {store, type Entry} from '../repos.ts';
 import type {Context} from './context.ts';
 import {readingOrder} from '../reading.ts';
 import {Reference} from './reference.ts';
-import {terminalFor} from './terminal.ts';
+import {sessionFor, terminalFor} from './terminal.ts';
 
 /**
- * Forge, the place you work. From the first moment the large center is the
- * contents of File: the open repo's files one after another, read like a
- * page in a browser and scrolled to the file chosen in File. Nothing sits
- * above it, and there are no tabs; repos and files are chosen from File. A
- * narrow right pane stays out of the way: a reference switched freely on
- * top, the terminal below.
+ * Forge, the place you work. The repos run as chips in a band set low at the
+ * top. The large center is the open repo's files one after another, an
+ * endless page you scroll through, opened at the file chosen in File; there
+ * are no tabs. A prompt box sits at the bottom of the center. The narrow
+ * right pane holds a reference switched freely on top and the terminal
+ * below; using the prompt box sends the terminal up over the center, just
+ * above the box, and the reference grows down into the room it leaves.
  */
 
 /** A path to scroll to once Forge is drawn. */
@@ -29,14 +30,73 @@ export function showInForge(repo: string, path: string): boolean {
 /** Scroll to `path` when Forge is next drawn. */
 export function revealNext(path: string) { pending = path || null; }
 
+const MOVE = 280;
+
+/** Move `el` into `to`, animating from where it was (FLIP). */
+function fly(el: HTMLElement, to: HTMLElement) {
+  const from = el.getBoundingClientRect();
+  to.append(el);
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const at = el.getBoundingClientRect();
+  if (!at.width || !from.width) return;
+  el.animate([
+    {transformOrigin: 'top left', transform: `translate(${from.left - at.left}px, ${from.top - at.top}px) scale(${from.width / at.width}, ${from.height / at.height})`},
+    {transformOrigin: 'top left', transform: 'none'},
+  ], {duration: MOVE, easing: 'cubic-bezier(.2, .9, .25, 1.06)'});
+}
+
 export function forge(ctx: Context): Node[] {
   let reader: Reader | null = null;
+  let repo: string | null = null;
+  const strip = h('nav', {class: 'repo-strip', 'aria-label': 'repo'});
   const flow = h('section', {class: 'flow', tabindex: '0', 'aria-label': 'repoの中身'});
-  const terminalTitle = h('h2', {id: 'terminal-title'}, 'Terminal');
-  const terminalPane = h('section', {class: 'pane terminal', 'aria-labelledby': 'terminal-title'}, terminalTitle);
+
+  // The terminal: a box that lives at the bottom of the right pane and flies
+  // up above the prompt box while the prompt is in use.
+  const termBox = h('section', {class: 'term-box', 'aria-label': 'Terminal'}, h('h2', {}, 'Terminal'));
+  const termHome = h('div', {class: 'term-home'}, termBox);
+  const termSlot = h('div', {class: 'term-slot'});
+  const prompt = h('textarea', {class: 'prompt-in', rows: '1', 'aria-label': 'プロンプト',
+    placeholder: 'コマンドを入力して Enter（このrepoの sh に送られます）', spellcheck: 'false', autocapitalize: 'off'}) as HTMLTextAreaElement;
+  const note = h('p', {class: 'prompt-note muted small', role: 'status'});
+  const dock = h('div', {class: 'dock'}, termSlot, h('form', {class: 'prompt'}, prompt), note);
+  const center = h('div', {class: 'center'}, flow, dock);
+
   const reference = new Reference({reveal: (path) => { chosen = path; soon(); void reader?.reveal(path); }});
-  const side = h('aside', {class: 'side', 'aria-label': '参照とターミナル'}, reference.element, terminalPane);
-  const work = h('div', {class: 'work'}, flow, side);
+  const side = h('aside', {class: 'side', 'aria-label': '参照とターミナル'}, reference.element, termHome);
+  const work = h('div', {class: 'work'}, strip, center, side);
+
+  let prompting = false;
+  const setPrompting = (on: boolean) => {
+    if (on === prompting) return;
+    prompting = on;
+    work.classList.toggle('prompting', on);
+    fly(termBox, on ? termSlot : termHome);
+  };
+  const fit = () => { prompt.style.height = 'auto'; prompt.style.height = `${prompt.scrollHeight}px`; };
+  prompt.addEventListener('focus', () => setPrompting(true));
+  prompt.addEventListener('input', fit);
+  prompt.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') { setPrompting(false); prompt.blur(); return; }
+    if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
+    event.preventDefault();
+    if (!repo) return;
+    if (!sessionFor(repo).send(prompt.value)) { note.textContent = 'shellはまだ起動していません'; return; }
+    note.textContent = '';
+    prompt.value = '';
+    fit();
+  });
+  // Leaving the prompt and the terminal sends the terminal home; losing the
+  // window's focus does not.
+  dock.addEventListener('focusout', (event) => {
+    const to = event.relatedTarget as Node | null;
+    if (to && !dock.contains(to)) setPrompting(false);
+  });
+  termBox.addEventListener('pointerdown', (event) => {
+    if (prompting || (event.target as HTMLElement).closest('button')) return;
+    event.preventDefault();
+    prompt.focus();
+  });
 
   // The reference follows the file at the top of the center as it scrolls,
   // or the file just chosen in File until the person scrolls themselves
@@ -62,27 +122,38 @@ export function forge(ctx: Context): Node[] {
   }
   new MutationObserver(soon).observe(flow, {subtree: true, childList: true, attributes: true, attributeFilter: ['data-lines']});
 
-  /** Show `repo` in the center and the terminal, in place. */
-  const show = (repo: string, path = '') => {
-    if (reader?.repo !== repo) {
-      ctx.remember(repo);
-      reader = new Reader(repo);
-      reference.setRepo(repo);
+  /** Show `name` in the band, the center and the terminal, in place. */
+  const show = (name: string, path = '') => {
+    if (repo !== name) {
+      repo = name;
+      ctx.remember(name);
+      for (const chip of strip.querySelectorAll<HTMLElement>('.chip')) {
+        if (chip.dataset.repo === name) chip.setAttribute('aria-current', 'page'); else chip.removeAttribute('aria-current');
+      }
+      reader = new Reader(name);
+      reference.setRepo(name);
       flow.replaceChildren(reader.directory(''));
       flow.scrollTop = 0;
-      terminalPane.replaceChildren(terminalTitle, terminalFor(repo));
+      termBox.replaceChildren(termBox.firstChild!, terminalFor(name));
+      prompt.disabled = false;
     }
-    if (path) { chosen = path; soon(); void reader.reveal(path); }
+    if (path) { chosen = path; soon(); void reader!.reveal(path); }
   };
   live = {element: work, show};
 
+  prompt.disabled = true;
   void store.list().then((repos) => {
     const current = ctx.repo && repos.some((r) => r.name === ctx.repo) ? ctx.repo : repos[0]?.name ?? null;
+    for (const r of repos) {
+      const chip = h('button', {type: 'button', class: 'chip', 'data-repo': r.name}, r.name);
+      chip.addEventListener('click', () => show(r.name));
+      strip.append(chip);
+    }
     const path = pending ?? '';
     pending = null;
     if (current) { show(current, path); return; }
     flow.append(h('div', {class: 'empty'}, 'repoがありません。左の ＋ から作れます。'));
-    terminalPane.append(h('div', {class: 'empty'}, 'repoを開くと、そのrepoでshellが動きます。'));
+    termBox.append(h('div', {class: 'empty'}, 'repoを開くと、そのrepoでshellが動きます。'));
   });
   return [work];
 }

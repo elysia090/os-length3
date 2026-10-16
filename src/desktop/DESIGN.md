@@ -20,8 +20,7 @@ top, then the page each icon leads to.
   the one operation: it lays its tree over the page instead (below).
 - Item 48×48, radius 12, icon 24 px with a 1.6 px stroke; + is a 40 px
   round button with an `edge` outline. States as everywhere (§3).
-- Home is who you are and stands a clear step (40 px) above the work
-  icons; the rail starts 24 px down, so its weight sits a little low.
+- The rail starts 24 px down, so its weight sits a little low.
 
 ## 2. Pages
 
@@ -48,18 +47,27 @@ strikes through and fades the first line only.
 
 ### Forge
 
-Where you work. From the first moment the center is the contents of File:
-the open repo's files one after another, read like one long page in a
-browser and scrolled to the file chosen in File. Nothing sits above it: no
-repo strip, no title, no tabs, no index of links, no headings for
+Where you work. The repos run as chips in a band set low at the top: the
+chips line up between Home and the next rail icon, lower than one would
+first put them, and the reference's chips on the right sit on the same
+line. Below the band the center is the open repo's files one after another,
+an endless page scrolled like a browser and opened at the file chosen in
+File. There are no tabs, no title, no index of links and no headings for
 directories. Each file is headed by its place in "/" (`/root/<repo>/` quiet,
 the rest plain). In each directory README comes first, then the other
-files, then the directories. Repos and files are chosen from File, which is
-quicker.
+files, then the directories. The only line in Forge is the one between the
+center and the right pane.
+
+A prompt box, like the one for an LLM, sits at the foot of the center. What
+is written there goes to the open repo's `sh` (Enter sends, Shift+Enter is
+a new line). While the prompt is in use the terminal flies up from the
+bottom of the right pane to just above the box (280 ms, one quick movement)
+and the reference grows down into the room it leaves; leaving the prompt
+(or Escape) sends it back the same way.
 
 The center takes three quarters of the width; the right pane takes one
 quarter (at least 280 px) so it never gets in the way. Its bottom is the
-terminal. Its top is one reference at a time, switched freely with chips:
+terminal's home. Its top is one reference at a time, switched freely with chips:
 いまのfile (name, its place in "/", size and lines of the file at the top
 of the center, or the one just chosen in File), Issue (the repo's
 `issue/`, one file each), diff and 実行結果 (each says plainly that it is
@@ -102,7 +110,8 @@ Every value in `styles.css` comes from a token below.
 - **Words over symbols.** What a thing is reads off the screen as it is
   written: a TODO kind shows as "Fix：", a link in `/bin` shows as the
   command's name only, with no arrows.
-- **Motion.** 120 ms fades only. Reduced motion turns them off.
+- **Motion.** 120 ms fades, and one movement: the terminal flying between
+  the right pane and the prompt box, 280 ms. Reduced motion turns them off.
 - No shadows, blur, glow or gradients.
 
 ## 4. Tokens

@@ -2,7 +2,8 @@ import {h} from '../dom.ts';
 import {store} from '../repos.ts';
 
 // A shell per repo, running translated BusyBox in a Worker. Sessions outlive
-// page switches: File re-attaches the same element.
+// page switches: Forge re-attaches the same element. A session only shows
+// output; what is typed comes from Forge's prompt box through send().
 
 const sessions = new Map<string, Session>();
 const LIMIT_FILES = 2000;
@@ -39,11 +40,11 @@ async function snapshot(repo: string) {
   return {files, dirs, complete};
 }
 
-class Session {
+export class Session {
   readonly element: HTMLElement;
   private output: HTMLElement;
-  private input: HTMLInputElement;
   private status: HTMLElement;
+  private live = false;
   private worker: Worker | null = null;
   private text = '';
   private repo: string;
@@ -51,20 +52,19 @@ class Session {
   constructor(repo: string) {
     this.repo = repo;
     this.output = h('pre', {class: 'term-out', 'aria-live': 'polite'});
-    this.input = h('input', {class: 'term-in', 'aria-label': 'shellへの入力', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', disabled: ''}) as HTMLInputElement;
     this.status = h('p', {class: 'muted small'}, '起動中…');
-    const form = h('form', {class: 'term-line'}, h('span', {'aria-hidden': 'true'}, '$'), this.input);
-    form.addEventListener('submit', (event) => {
-      event.preventDefault();
-      const line = this.input.value;
-      this.input.value = '';
-      this.print(line + '\n');
-      const bytes = new TextEncoder().encode(line + '\n');
-      this.worker?.postMessage({type: 'input', bytes}, [bytes.buffer]);
-    });
-    this.element = h('div', {class: 'term'}, this.status, this.output, form);
-    this.output.addEventListener('click', () => this.input.focus());
+    this.element = h('div', {class: 'term'}, this.status, this.output);
     void this.start();
+  }
+
+  /** Type `text` into the shell, one line per line. False while it is not running. */
+  send(text: string): boolean {
+    if (!this.live || !this.worker) return false;
+    const lines = text.endsWith('\n') ? text : `${text}\n`;
+    this.print(lines);
+    const bytes = new TextEncoder().encode(lines);
+    this.worker.postMessage({type: 'input', bytes}, [bytes.buffer]);
+    return true;
   }
 
   private print(s: string) {
@@ -100,7 +100,7 @@ class Session {
       this.status.textContent = copy.complete
         ? 'repoの写しで動いています。ここでの変更はrepoに保存されません。'
         : 'repoの一部（大きいファイルを除く）の写しで動いています。変更はrepoに保存されません。';
-      this.input.disabled = false;
+      this.live = true;
     } catch (e) {
       this.end(`起動できませんでした: ${String(e)}`);
     }
@@ -109,7 +109,7 @@ class Session {
   private end(message: string) {
     this.worker?.terminate();
     this.worker = null;
-    this.input.disabled = true;
+    this.live = false;
     const restart = h('button', {class: 'button', type: 'button'}, 'もう一度起動');
     restart.addEventListener('click', () => {
       sessions.delete(this.repo);
@@ -119,8 +119,10 @@ class Session {
   }
 }
 
-export function terminalFor(repo: string): HTMLElement {
+export function sessionFor(repo: string): Session {
   let s = sessions.get(repo);
   if (!s) { s = new Session(repo); sessions.set(repo, s); }
-  return s.element;
+  return s;
 }
+
+export const terminalFor = (repo: string): HTMLElement => sessionFor(repo).element;

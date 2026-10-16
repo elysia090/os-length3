@@ -34,17 +34,17 @@ separate surface and nothing here depends on it.
   one from a template (standard, C, minimal) and runs `git init` without
   the host's git configuration. Inbox and TODO belong to the app, not to
   repos: TODO is a list on Home. Home lists the repos as cards.
-- Terminal (Forge, bottom right): translated BusyBox `sh` running on the
-  xlat kernel in a Worker, on a copy of the open repo. Changes there are
-  not written back yet, and the pane says so. Prepare its files with
-  `npm run userland` (see `scripts/userland.sh`).
-- Forge: from the start the center is the open repo's files, one after
-  another like a page (README first, loaded as they scroll near), with
-  nothing above them, in three quarters of the width; and a narrow right pane:
-  a reference switched with chips on top (the current file and the repo's
-  `issue/` are real; diff and run output say they are not connected yet)
-  and the terminal below. No tabs or repo strip: repos and files are chosen
-  from File.
+- Forge: the repos as chips in a band set low at the top; the center (3/4)
+  is the open repo's files one after another like an endless page (README
+  first, loaded as they scroll near), with a prompt box at its foot that
+  types into the repo's `sh`. While the prompt is in use the terminal flies
+  up above it from the right pane, where the reference (current file, the
+  repo's `issue/`; diff and run output not connected yet) grows into the
+  room. No tabs: files are chosen from File.
+- Terminal: translated BusyBox `sh` running on the xlat kernel in a
+  Worker, on a copy of the open repo. Changes there are not written back
+  yet, and it says so. Prepare its files with `npm run userland` (see
+  `scripts/userland.sh`).
 - File: hovering or pressing its icon lays the tree of "/" over any page —
   the whole system as the shell sees it (`/bin` from the fetched
   distribution, repos under `/root`) — and it stays 8 s after the pointer
