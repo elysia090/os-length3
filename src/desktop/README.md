@@ -26,11 +26,24 @@ separate surface and nothing here depends on it.
 A purpose switch only rewrites the target column. The center scroll and the
 right pane are never rebuilt by it.
 
+## Stage
+
+The window is a lit WebGL2 stage (`src/scene`) with glass panels in front.
+Each purpose is a place on one floor; choosing it flies the camera there on
+critically damped springs. Magnitudes are volumes: a cube's edge is the cube
+root of the bytes it stands for. Dashed frames are places with nothing
+connected yet, so the shell never explains absence in sentences or fakes
+content. The stage renders only while something moves.
+
 ## What is real in this step
 
-Only the rail is wired. Every other region says plainly that it is not
-built. The webview has no host permissions (`capabilities/default.json` is
-empty), so it reads no files, runs no shell and launches no root.
+- The rail and the camera stations.
+- Home measures the filesystem holding the app's data (`capacity` command:
+  statvfs totals plus allocated bytes under the app directory). In a browser
+  the same view reads the origin's storage estimate and says so.
+
+The webview has no other host access: it reads no repo, runs no shell and
+launches no root.
 
 - Click or ↑/↓/Home/End selects a purpose (vertical tab list, roving focus).
 - The last purpose view is remembered locally. The new-repo step is not,

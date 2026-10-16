@@ -1,95 +1,151 @@
-/* Length³ language: a light frame of lines and type around a dark work
-   surface. Planes and 1px rules separate regions; no shadows or blur. */
+/* The frame is a lit stage; the interface floats in front of it as glass.
+   Lines, light and motion carry meaning. Words are labels, not explanations. */
 @font-face { font-family: IntelOne; src: url('/fonts/IntelOneMono-Regular.woff2') format('woff2'); font-weight: 400; font-display: swap; }
 @font-face { font-family: IntelOne; src: url('/fonts/IntelOneMono-Medium.woff2') format('woff2'); font-weight: 500; font-display: swap; }
 
 :root {
-  --paper: #f9f9fa;
-  --paper-2: #efeff1;
-  --ink: #15191e;
-  --ink-2: #575c63;
-  --line: #c8c9cc;
-  --action: #c2410c;
-  --code: #20272f;
-  --code-2: #1a2027;
-  --code-ink: #d9d4cb;
-  --code-ink-2: #9aa1a9;
-  --code-line: #3a434d;
+  --ink: #e9e4da;
+  --ink-2: #8f969e;
+  --ink-3: #5b636c;
   --amber: #f0a626;
+  --ember: #c2410c;
+  --glass: rgba(20, 25, 31, .52);
+  --glass-edge: rgba(233, 228, 218, .1);
+  --glass-hi: rgba(233, 228, 218, .2);
   --mono: IntelOne, ui-monospace, Consolas, monospace;
   --sans: 'Segoe UI', 'Noto Sans', 'Noto Sans JP', system-ui, sans-serif;
-  --rail: 64px;
-  --target: 248px;
-  --side: clamp(320px, 30vw, 520px);
+  --ease-out: cubic-bezier(.16, 1, .3, 1);
 }
 
 * { box-sizing: border-box; }
 html, body { height: 100%; }
-body { margin: 0; background: var(--paper); color: var(--ink); font: 13px/1.6 var(--sans); overflow: hidden; }
+body { margin: 0; background: #0e1115; color: var(--ink); font: 13px/1.5 var(--sans); overflow: hidden; }
 button { font: inherit; color: inherit; }
-h1, h2, p { margin: 0; }
+h1, p { margin: 0; }
 [hidden] { display: none !important; }
-:focus-visible { outline: 2px solid var(--action); outline-offset: -2px; }
+:focus-visible { outline: 1.5px solid var(--amber); outline-offset: 2px; }
 
-/* Four fixed regions. Only the center scrolls as a page; the side panes keep
-   their own content and are never reflowed by a purpose switch. */
-.shell {
-  display: grid;
-  grid-template-columns: var(--rail) var(--target) minmax(0, 1fr) var(--side);
-  height: 100vh;
+#stage { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+
+.glass {
+  background: var(--glass);
+  border: 1px solid var(--glass-edge);
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
 }
 
-/* ---- Leftmost rail: purpose ---- */
-.rail { border-right: 1px solid var(--line); background: var(--paper); min-height: 0; }
-.rail-tabs { display: flex; flex-direction: column; height: 100%; padding: 8px 0; gap: 4px; }
+.shell { position: fixed; inset: 0; pointer-events: none; }
+.shell > * { pointer-events: auto; }
+
+/* ---- Rail: a vertical strip of glass with a sliding bead of light ---- */
+.rail {
+  position: absolute; left: 16px; top: 16px; bottom: 16px; width: 60px;
+  border-radius: 14px; padding: 8px 6px;
+  background: var(--glass); border: 1px solid var(--glass-edge);
+  backdrop-filter: blur(18px) saturate(1.2); -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  box-shadow: inset 0 1px 0 var(--glass-hi);
+}
+.rail-tabs { position: relative; display: flex; flex-direction: column; height: 100%; gap: 2px; }
+.puck {
+  position: absolute; left: -6px; top: 0; width: 3px; height: 48px; border-radius: 2px;
+  background: var(--amber);
+  box-shadow: 0 0 12px 1px rgba(240, 166, 38, .7), 0 0 36px 6px rgba(194, 65, 12, .35);
+  will-change: transform, height;
+}
 .rail-item {
-  position: relative;
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
-  min-height: 56px; padding: 8px 4px;
-  border: 0; background: transparent; color: var(--ink-2);
-  cursor: pointer;
+  position: relative; display: grid; place-items: center;
+  height: 48px; border: 0; border-radius: 10px; background: transparent;
+  color: var(--ink-3); cursor: pointer;
+  transition: color .2s, background-color .2s, transform .35s var(--ease-out);
 }
-.rail-item:hover { color: var(--ink); background: var(--paper-2); }
-.rail-item[aria-selected='true'] { color: var(--action); background: var(--paper-2); }
-.rail-item[aria-selected='true']::before {
-  content: ''; position: absolute; left: 0; top: 8px; bottom: 8px; width: 2px; background: var(--action);
-}
-.rail-item[aria-selected='true'] .rail-label { color: var(--ink); font-weight: 500; }
-.rail-new { margin-top: auto; border-top: 1px solid var(--line); padding-top: 12px; }
+.rail-item:hover { color: var(--ink); background: rgba(233, 228, 218, .05); transform: translateX(2px); }
+.rail-item:active { transform: scale(.94); }
+.rail-item[aria-selected='true'] { color: var(--amber); }
+.rail-item[aria-selected='true'] .icon { filter: drop-shadow(0 0 6px rgba(240, 166, 38, .55)); }
+.rail-new { margin-top: auto; }
+.rail-new::before { content: ''; position: absolute; top: -6px; left: 10px; right: 10px; height: 1px; background: var(--glass-edge); }
 .icon { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-.rail-label { font: 10px/1.2 var(--mono); letter-spacing: .02em; }
 
-/* ---- Target column ---- */
-.target { border-right: 1px solid var(--line); padding: 24px 16px; overflow-y: auto; min-height: 0; }
-.target:focus { outline: none; }
-.target-head { padding-bottom: 12px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
-.target-head h1 { font: 500 17px/1.4 var(--mono); }
-.target-head p { margin-top: 4px; color: var(--ink-2); font-size: 12px; }
-.target-detail { line-height: 1.8; }
-.unbuilt { margin-top: 16px; padding-left: 8px; border-left: 2px solid var(--line); color: var(--ink-2); font: 11px/1.8 var(--mono); }
-
-/* ---- Center: repo strip above one vertical flow ---- */
-.center { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--code); color: var(--code-ink); }
-.repo-strip {
-  display: flex; align-items: stretch; gap: 0;
-  min-height: 44px; padding: 0 16px;
-  background: var(--paper); color: var(--ink); border-bottom: 1px solid var(--line);
+/* Labels slide out of the rail on hover or keyboard focus, never sit idle. */
+.rail-tag {
+  position: absolute; left: calc(100% + 14px); top: 50%;
+  padding: 4px 10px; border-radius: 6px; white-space: nowrap;
+  font: 500 11px/1.4 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink);
+  background: rgba(14, 17, 21, .86); border: 1px solid var(--glass-edge);
+  opacity: 0; transform: translate(-8px, -50%); pointer-events: none;
+  transition: opacity .15s, transform .3s var(--ease-out);
 }
-.strip-empty { align-self: center; color: var(--ink-2); font: 11px var(--mono); }
-.flow { flex: 1; overflow-y: auto; padding: 32px 40px; min-height: 0; }
-.flow:focus-visible { outline-color: var(--amber); }
-.flow-empty { max-width: 560px; line-height: 1.9; }
-.flow-empty .unbuilt, .side .unbuilt { color: var(--code-ink-2); border-left-color: var(--code-line); }
+.rail-item:hover .rail-tag, .rail-item:focus-visible .rail-tag { opacity: 1; transform: translate(0, -50%); }
 
-/* ---- Right pane: switchable reference over terminal ---- */
-.side { display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); min-height: 0; background: var(--code-2); color: var(--code-ink); border-left: 1px solid var(--code-line); }
-.side > section { padding: 0 16px 16px; overflow: auto; min-height: 0; line-height: 1.8; }
-.terminal { border-top: 1px solid var(--code-line); }
-.pane-head { display: flex; align-items: center; justify-content: space-between; min-height: 44px; margin: 0 -16px 12px; padding: 0 16px; border-bottom: 1px solid var(--code-line); }
-.pane-head h2 { font: 500 12px var(--mono); letter-spacing: .04em; }
-.state { font: 11px var(--mono); color: var(--code-ink-2); }
-.state::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 8px; border: 1px solid currentColor; vertical-align: 1px; }
+/* ---- Title card: a chapter card that cuts in on every switch ---- */
+.title-card { position: absolute; left: 104px; bottom: 40px; pointer-events: none; }
+.title-index { display: block; font: 500 11px var(--mono); letter-spacing: .3em; color: var(--amber); }
+.title-card h1 {
+  font: 500 clamp(40px, 6vw, 88px)/1 var(--mono); letter-spacing: -.04em; color: var(--ink);
+  text-shadow: 0 0 40px rgba(240, 166, 38, .18);
+}
+.title-card p { margin-top: 10px; font-size: 13px; letter-spacing: .04em; color: var(--ink-2); }
+.title-card.cut .title-index { animation: rise .7s var(--ease-out) both; }
+.title-card.cut h1 { animation: wipe .9s var(--ease-out) .05s both; }
+.title-card.cut p { animation: rise .8s var(--ease-out) .25s both; }
+@keyframes wipe {
+  from { clip-path: inset(0 100% 0 0); transform: translateX(-24px); filter: blur(6px); }
+  to { clip-path: inset(0 0 0 0); transform: none; filter: none; }
+}
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 
-@media (prefers-reduced-motion: no-preference) {
-  .rail-item { transition: background-color .12s, color .12s; }
+/* ---- Repo strip: slots along the top edge ---- */
+.repo-strip {
+  position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 8px; padding: 6px; border-radius: 12px;
+  background: var(--glass); border: 1px solid var(--glass-edge);
+  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+}
+.slot {
+  width: 44px; height: 32px; border-radius: 8px; display: grid; place-items: center;
+  background: transparent; color: var(--ink-3); cursor: pointer;
+  border: 1px dashed var(--ink-3);
+  transition: color .2s, border-color .2s, transform .3s var(--ease-out);
+}
+.slot:hover { color: var(--amber); border-color: var(--amber); transform: translateY(1px); }
+.slot svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+
+/* ---- Side: reference over terminal, as dormant slabs ---- */
+.side {
+  position: absolute; right: 16px; top: 16px; bottom: 16px; width: clamp(280px, 26vw, 440px);
+  display: grid; grid-template-rows: 1fr 1fr; gap: 12px;
+}
+.slab {
+  position: relative; border-radius: 14px; display: grid; place-items: center;
+  background: rgba(14, 17, 21, .38); border: 1px dashed rgba(143, 150, 158, .28);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+}
+.slab-glyph svg { width: 40px; height: 40px; fill: none; stroke: var(--ink-3); stroke-width: 1; stroke-linejoin: round; }
+.slab-terminal { place-items: end start; padding: 18px 20px; }
+.prompt { font: 15px var(--mono); color: var(--ink-3); display: inline-flex; align-items: center; gap: 8px; }
+.cursor { display: inline-block; width: 9px; height: 17px; background: var(--ink-3); opacity: .5; }
+
+/* ---- Numbers pinned into the world ---- */
+.anchors { position: fixed; inset: 0; pointer-events: none; }
+.anchor {
+  position: absolute; left: 0; top: 0; will-change: transform;
+  font: 500 20px/1 var(--mono); letter-spacing: -.02em; color: var(--ink); white-space: nowrap;
+  padding-left: 14px; margin-top: -10px;
+}
+.anchor small { font-size: 10px; letter-spacing: .1em; margin-left: 3px; color: var(--ink-2); }
+.anchor::before {
+  content: ''; position: absolute; left: 0; top: 50%; width: 8px; height: 1px; background: currentColor; opacity: .7;
+}
+.anchor::after {
+  content: ''; position: absolute; left: -3px; top: calc(50% - 3px); width: 5px; height: 5px; border-radius: 50%;
+  background: currentColor; box-shadow: 0 0 8px currentColor;
+}
+.anchor-used { color: #b9bec4; font-size: 16px; }
+.anchor-app { color: var(--amber); font-size: 14px; }
+/* Readouts belong to the Home and File places; elsewhere they recede. */
+.anchors .anchor { transition: opacity .4s; }
+body:not([data-purpose='home']):not([data-purpose='file']) .anchors .anchor { opacity: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
 }
