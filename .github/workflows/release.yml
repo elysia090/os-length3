@@ -13,7 +13,8 @@ on:
   push:
     tags: ['os-length3-linux-v*']
     branches: ['**']
-    paths: ['src/desktop/RELEASE']
+    # Changing how releases are made tries again too (a published version is left).
+    paths: ['src/desktop/RELEASE', '.github/workflows/release.yml']
   workflow_dispatch:
     inputs:
       version:
@@ -26,8 +27,6 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-24.04
-    env:
-      BASE_URL: https://github.com/elysia090/libqm-prototype/releases/download/os-length3-linux-v0.1.0/os-length3-linux-0.1.0-x86_64-ffb53450f0f41900f1cda2cd072b9405b43c7b44f97c400794c57019578f32a9.tar.zst
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -57,8 +56,11 @@ jobs:
       - name: Root
         if: env.SKIP != '1'
         working-directory: src/desktop
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          curl -fsSL --retry 4 -o "$RUNNER_TEMP/base.tar.zst" "$BASE_URL"
+          # The base is the 0.1.0 release's root; root-release.sh checks its digest.
+          gh release download os-length3-linux-v0.1.0 --pattern 'os-length3-linux-0.1.0-x86_64-*.tar.zst' --output "$RUNNER_TEMP/base.tar.zst"
           sh scripts/root-release.sh "$RUNNER_TEMP/base.tar.zst" "$GITHUB_WORKSPACE/out" "$VERSION"
       - name: Web
         if: env.SKIP != '1'
