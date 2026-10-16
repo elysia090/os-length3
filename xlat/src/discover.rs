@@ -107,6 +107,8 @@ fn walk(elf: &Elf, start: u64, end: u64, extra: &[u64], function_starts: &BTreeS
     while let Some(mut at) = work.pop_front() {
         loop {
             if instructions.contains_key(&at) {
+                // Joining code decoded from another path starts a block.
+                leaders.insert(at);
                 break;
             }
             let Some(i) = decode(elf, at) else {
@@ -169,35 +171,24 @@ fn walk(elf: &Elf, start: u64, end: u64, extra: &[u64], function_starts: &BTreeS
         }
     }
 
+    // Each block runs from a leader along next_ip until a terminator or the
+    // next leader. Following next_ip (not address order) keeps blocks right
+    // even when a wrong table guess decoded bytes inside an instruction.
     let mut blocks = Vec::new();
-    let addresses: Vec<u64> = instructions.keys().copied().collect();
-    let mut k = 0;
-    while k < addresses.len() {
-        let block_start = addresses[k];
+    for &block_start in leaders.iter().filter(|a| instructions.contains_key(a)) {
         let mut code = Vec::new();
+        let mut at = block_start;
         let exit = loop {
-            let i = instructions[&addresses[k]];
+            let i = instructions[&at];
             code.push(i);
-            k += 1;
             let next = i.next_ip();
-            let continues = k < addresses.len() && addresses[k] == next;
             match flow(&i) {
-                FlowControl::Call => {
-                    let ret = next;
-                    break match direct_target(&i) {
-                        Some(target) => Exit::Call { target, ret },
-                        None => Exit::IndirectCall { ret },
-                    };
-                }
+                FlowControl::Call => break match direct_target(&i) {
+                    Some(target) => Exit::Call { target, ret: next },
+                    None => Exit::IndirectCall { ret: next },
+                },
                 FlowControl::IndirectCall => break Exit::IndirectCall { ret: next },
-                FlowControl::ConditionalBranch => {
-                    let t = direct_target(&i).unwrap();
-                    break match (inside(t), inside(next)) {
-                        (true, true) => Exit::Branch { taken: t, fall: next },
-                        // A conditional tail call: model as a branch to a stub.
-                        _ => Exit::Branch { taken: t, fall: next },
-                    };
-                }
+                FlowControl::ConditionalBranch => break Exit::Branch { taken: direct_target(&i).unwrap(), fall: next },
                 FlowControl::UnconditionalBranch => {
                     let t = direct_target(&i).unwrap();
                     break if inside(t) { Exit::Jump(t) } else { Exit::TailJump(t) };
@@ -205,13 +196,14 @@ fn walk(elf: &Elf, start: u64, end: u64, extra: &[u64], function_starts: &BTreeS
                 FlowControl::IndirectBranch => break Exit::IndirectJump,
                 FlowControl::Return => break Exit::Return,
                 FlowControl::Next | FlowControl::Interrupt if i.mnemonic() != Mnemonic::Int3 => {
-                    if !continues {
+                    if !instructions.contains_key(&next) {
                         // Running into the next function is a tail call to it.
                         break if inside(next) { Exit::Trap } else { Exit::TailJump(next) };
                     }
                     if leaders.contains(&next) {
                         break Exit::Fall(next);
                     }
+                    at = next;
                 }
                 _ => break Exit::Trap,
             }

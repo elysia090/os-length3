@@ -1167,7 +1167,10 @@ impl Fx<'_> {
             }
             Syscall => {
                 self.save();
+                // The last argument is where execution resumes; a forked
+                // child starts there.
                 for r in [RAX, RDI, RSI, RDX, 10, 8, 9] { self.get(l_reg(r)); }
+                self.c64(i.next_ip() as i64);
                 self.e(W::Call(F_SYSCALL));
                 self.set(l_t(1));
                 self.load();
@@ -1873,7 +1876,7 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
 
     let mut types = TypeSection::new();
     types.ty().function([ValType::I32], [ValType::I64]);
-    types.ty().function([ValType::I64; 7], [ValType::I64]);
+    types.ty().function([ValType::I64; 8], [ValType::I64]);
     types.ty().function([ValType::I64, ValType::I32], []);
     types.ty().function([ValType::I64, ValType::I64, ValType::I64, ValType::I32], [ValType::I64, ValType::I64]);
     types.ty().function([], [ValType::I64]);

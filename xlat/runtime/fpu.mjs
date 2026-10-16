@@ -35,6 +35,15 @@ export class Fpu {
     this.sw = 0;
   }
 
+  /** An independent copy for a forked process. */
+  clone(bytes) {
+    const c = new Fpu(bytes, []);
+    c.ops = this.ops;
+    c.st = this.st.slice();
+    c.top = this.top; c.cw = this.cw; c.sw = this.sw;
+    return c;
+  }
+
   call(op, size, address, a, b) {
     return this.ops[op].call(this, size, address, a, b) ?? 0;
   }

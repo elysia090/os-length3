@@ -11,10 +11,10 @@ status=0
 for c in "$here"/c/*.c; do
   name=$(basename "$c" .c)
   musl-gcc -static -O2 -Wl,--emit-relocs "$c" -o "$out/$name"
-  "$root/target/release/xlat" "$out/$name" "$out/$name.wasm" 2>/dev/null
+  "$root/target/release/xlat" "$out/$name" "$out/$name.wasm" >/dev/null 2>&1
   set +e
   "$out/$name" a b > "$out/$name.native"; native=$?
-  node "$root/runtime/run.mjs" "$out/$name.wasm" a b > "$out/$name.xlat"; translated=$?
+  node "$root/runtime/run.mjs" "$out/$name" a b > "$out/$name.xlat"; translated=$?
   set -e
   if [ "$native" = "$translated" ] && cmp -s "$out/$name.native" "$out/$name.xlat"; then
     echo "ok   $name"
