@@ -18,6 +18,15 @@ function save(key: string, value: string): boolean {
 let profile: Profile = parse(load(PROFILE_KEY));
 let editing = false;
 
+/** A repo to bring into view in the list the next time Home is drawn. */
+let showRepo: string | null = null;
+
+/** Open Home at its repo list with `name`'s card in view. */
+export function showInList(ctx: Context, name: string) {
+  showRepo = name;
+  ctx.go('home');
+}
+
 /** The profile as it stands, for the rail's own icon. */
 export const currentProfile = (): Profile => profile;
 
@@ -36,6 +45,14 @@ export function home(ctx: Context): Node[] {
   void store.list().then((repos) => {
     count.textContent = String(repos.length);
     grid.replaceChildren(...repos.map((r) => repoCard(ctx, r.name, r.files, r.bytes, r.modified, r.git)), newRepoCard(ctx));
+    const shown = showRepo && grid.querySelector<HTMLElement>(`.card.repo[data-repo="${CSS.escape(showRepo)}"]`);
+    showRepo = null;
+    if (shown) {
+      shown.scrollIntoView({block: 'center'});
+      shown.focus({preventScroll: true});
+      shown.classList.add('revealed');
+      setTimeout(() => shown.classList.remove('revealed'), 1600);
+    }
     if (!store.persistent) grid.append(h('p', {class: 'muted note'}, 'このブラウザでは、repoはこのページを閉じると消えます。'));
   }, (e: unknown) => grid.replaceChildren(h('p', {class: 'muted'}, `repoを読めませんでした: ${String(e)}`)));
   const header = h('section', {class: 'profile'},
@@ -94,7 +111,7 @@ function editForm(ctx: Context): HTMLElement {
 }
 
 function repoCard(ctx: Context, name: string, files: number, size: number, modified: number, git: boolean): HTMLElement {
-  const card = h('button', {class: 'card repo', type: 'button'},
+  const card = h('button', {class: 'card repo', type: 'button', 'data-repo': name},
     h('span', {class: 'card-title'}, name),
     h('span', {class: 'muted'}, `${files} ファイル · ${bytes(size)}`),
     h('span', {class: 'muted'}, `${ago(modified)}に更新${git ? '' : ' · gitなし'}`));

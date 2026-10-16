@@ -40,7 +40,9 @@
 }
 
 * { box-sizing: border-box; }
-html, body { height: 100%; }
+html { height: 100%; }
+/* min-height, not height: a body only as tall as the window would end the rail's sticky run there. */
+body { min-height: 100%; box-sizing: border-box; }
 body {
   margin: 0;
   padding: var(--outer-top) var(--outer) var(--outer-bottom);
@@ -212,6 +214,16 @@ a { color: var(--ink); }
 .card.new:hover { color: var(--ink); }
 .note { grid-column: 1 / -1; }
 
+/* A short word beside the control that caused it, with one thing to do next. */
+.notice {
+  position: fixed; z-index: 7; display: flex; align-items: center; gap: var(--s2);
+  padding: var(--s1) var(--s1) var(--s1) var(--s4); background: var(--ground);
+  border: 1px solid var(--rule); border-radius: var(--r-round); font-size: var(--t-meta);
+  animation: notice-in var(--motion) ease-out;
+}
+@keyframes notice-in { from { opacity: 0; } }
+.card.repo.revealed { background: var(--raised); border-color: var(--ink); }
+
 /* New repo: a name, a template chip, and what File will show */
 .new-repo { margin-top: var(--s5); display: grid; gap: var(--s5); max-width: 520px; }
 .field { display: grid; gap: var(--s2); }
@@ -378,5 +390,5 @@ mark { background: var(--ink); color: var(--ground); }
 .term-out { margin: 0; overflow: auto; min-height: 0; font: var(--t-meta)/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { transition: none !important; }
+  *, *::before, *::after { transition: none !important; animation: none !important; }
 }

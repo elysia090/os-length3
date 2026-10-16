@@ -1,6 +1,8 @@
 import {h} from '../dom.ts';
 import {store, TEMPLATES, validName, type Template} from '../repos.ts';
 import {pageHead} from './common.ts';
+import {showInList} from './home.ts';
+import {notice} from './notice.ts';
 import type {Context} from './context.ts';
 import {triangle} from './tree.ts';
 
@@ -85,6 +87,9 @@ export function newRepo(ctx: Context): Node[] {
     try {
       await store.create(n, template);
       ctx.openRepo(n);
+      // It opens in Forge; beside + a word says so, with the way to the list.
+      notice(document.getElementById('purpose-new-repo'), `${n} を作りました`,
+        {label: '一覧で見る', run: () => showInList(ctx, n)});
     } catch (e) {
       error.textContent = `作成できませんでした: ${String(e)}`;
       submit.disabled = false;

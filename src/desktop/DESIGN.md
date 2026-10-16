@@ -102,6 +102,13 @@ chips like the reference's (one chosen, ink), and what will be made shown
 exactly as File will show it: a card of tree rows under `root`, the new
 repo's name bold, its folders open. Then 作成, the one primary action.
 
+Once made, the repo opens in Forge, on the band. Beside + a short word
+comes out, "<name> を作りました" with 一覧で見る, which opens Home's repo
+list with that card in view and lit for a moment. The word stays 8 s
+(longer while the pointer is on it) and goes on its ×, Escape, or once
+used. This is the one kind of notice in the app: beside the control that
+caused it, round, with at most one thing to do next.
+
 ### File
 
 An operation, not a page. Hovering the File icon (or pressing it) lays the
