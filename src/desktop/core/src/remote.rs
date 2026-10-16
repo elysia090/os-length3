@@ -119,8 +119,8 @@ impl Client {
     pub(crate) fn json(&self, method: &str, path: &str, body: Option<serde_json::Value>) -> Result<serde_json::Value> {
         match self.call(method, path, body)? {
             Reply::Ok(v) => Ok(v),
-            Reply::Conflict(_) => Err("Remote と食い違いました".into()),
-            Reply::NotFound => Err("Remote にありません".into()),
+            Reply::Conflict(_) => Err(crate::tr!("The Remote holds something else here", "Remote と食い違いました")),
+            Reply::NotFound => Err(crate::tr!("The Remote does not have it", "Remote にありません")),
         }
     }
 

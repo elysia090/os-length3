@@ -2,6 +2,7 @@
 //! The app (through Tauri commands) and `l3` (on the command line, on the host
 //! or inside the app's Prompt) both use this crate, so the two cannot drift.
 
+pub mod account;
 pub mod boundary;
 pub mod fetch;
 pub mod root;

@@ -11,7 +11,7 @@
 
 mod git;
 
-use length3_core::{history, home, inbox, paths, remote, repos::Repos, templates, text, tr, usage, work};
+use length3_core::{account, history, home, inbox, paths, remote, repos::Repos, templates, text, tr, usage, work};
 use std::io::{Read, Write};
 use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -81,10 +81,15 @@ Home
   l3 todo                     TODO
   l3 todo add \"Fix：title\" [-m detail]
   l3 todo done N              mark the Nth done (again to undo)
+  l3 profile                  your profile: name, handle, bio
+  l3 profile name|handle|bio \"text\"
+  l3 lang [en|ja]             the language the app and l3 speak
 Forge
   l3 repo                     repos here, and those only on the Remote
   l3 repo new NAME [-t standard|c|empty]
   l3 repo open NAME           bring one from the Remote
+  l3 band                     the repos out on Forge's band
+  l3 band add|rm REPO
   l3 prompt REPO [-- CMD…]    the Prompt: the repo inside the root (no privileges)
       --network               give it the network (off by default)
 File
@@ -118,6 +123,9 @@ Runtime
 Remote
   l3 remote                   the Remote this device is on, and each repo
   l3 remote on REPO           bring back a repo turned off (turning off is the app's: it asks for a passkey)
+  l3 remote sign-in           passkeys, the code to turn a repo off, the providers
+  l3 remote devices           each device signed in, this one first
+  l3 remote devices rm N      remove the Nth (it is approved again to come back)
   l3 login [URL]              connect: approve in the browser
   l3 logout
   l3 sync [REPO]              now (it also happens after every change)
@@ -139,10 +147,15 @@ Home
   l3 todo                     TODO
   l3 todo add \"Fix：件名\" [-m 詳細]
   l3 todo done N              N 番目を完了に（もう一度で戻す）
+  l3 profile                  プロフィール: 名前、ハンドル、自己紹介
+  l3 profile name|handle|bio \"文\"
+  l3 lang [en|ja]             アプリと l3 が話す言語
 Forge
   l3 repo                     repo（この端末にあるもの、Remote だけにあるもの）
   l3 repo new NAME [-t standard|c|empty]
   l3 repo open NAME           Remote から持ってくる
+  l3 band                     Forge の帯に出ている repo
+  l3 band add|rm REPO
   l3 prompt REPO [-- CMD…]    Prompt: root の中で repo を開く（権限なし）
       --network               ネットワークを渡す（既定ではなし）
 File
@@ -176,6 +189,9 @@ Runtime
 Remote
   l3 remote                   つながっている Remote と、repo の同期
   l3 remote on REPO           切った repo をすぐ戻す（切るのはアプリで。パスキーを使います）
+  l3 remote sign-in           パスキー、repo を切るときのコード、プロバイダ
+  l3 remote devices           入っている端末（この端末が先頭）
+  l3 remote devices rm N      N 番目を外す（戻るにはもう一度承認）
   l3 login [URL]              ブラウザで承認してつなぐ
   l3 logout
   l3 sync [REPO]              いま送る・取り込む（ふだんは変えるたびに自動）
@@ -514,8 +530,90 @@ fn run(a: Args) -> Result<(), String> {
             out(if *verb == "write" { tr!("Saved {} (every Prompt starts with it in /root)", "{} を保存しました（どの Prompt も /root に置いて始まります）", name) } else { tr!("Removed {}", "{} を消しました", name) });
             Ok(())
         }
+        // Home: the profile and the language
+        ["profile"] => {
+            let p = profile();
+            if a.json { return json(&p); }
+            if p.name.is_empty() && p.handle.is_empty() { out(tr!("No name yet (l3 profile name \"Your name\")", "名前はまだありません（l3 profile name \"名前\"）")); }
+            else { out(format!("{}{}", p.name, if p.handle.is_empty() { String::new() } else { format!("  @{}", p.handle) })); }
+            if !p.bio.is_empty() { out(format!("  {}", p.bio)); }
+            Ok(())
+        }
+        ["profile", field @ ("name" | "handle" | "bio"), value] => {
+            let mut p = profile();
+            let v = value.trim().to_string();
+            match *field {
+                "name" => { if v.chars().count() > 50 { return Err(tr!("A name is up to 50 characters", "名前は 50 文字までです")); } p.name = v; }
+                "handle" => {
+                    let h = v.trim_start_matches('@').to_ascii_lowercase();
+                    if !h.is_empty() && !(h.len() <= 32 && h.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_')) {
+                        return Err(tr!("A handle is up to 32 lowercase letters, digits, - and _", "ハンドルは英小文字・数字・- _ の 32 文字までです"));
+                    }
+                    p.handle = h;
+                }
+                _ => { if v.chars().count() > 160 { return Err(tr!("A bio is up to 160 characters", "自己紹介は 160 文字までです")); } p.bio = v; }
+            }
+            length3_core::home::set("profile", &serde_json::to_string(&p).map_err(|e| e.to_string())?)?;
+            out(tr!("Saved your profile", "プロフィールを保存しました"));
+            Ok(())
+        }
+        ["lang"] => { out(length3_core::home::get("lang")?.and_then(|t| serde_json::from_str::<String>(&t).ok()).unwrap_or_else(|| "en".into())); Ok(()) }
+        ["lang", l @ ("en" | "ja")] => {
+            length3_core::home::set("lang", &serde_json::to_string(l).map_err(|e| e.to_string())?)?;
+            out(if *l == "ja" { "日本語で話します（アプリも同じです）".to_string() } else { "Speaking English (the app does too)".to_string() });
+            Ok(())
+        }
+        // Forge: the band
+        ["band"] => {
+            let b = band(&Repos::open()?)?;
+            if a.json { return json(&b); }
+            if b.is_empty() { out(tr!("Nothing on the band (l3 band add REPO)", "帯には何もありません（l3 band add REPO）")); }
+            for n in &b { out(n); }
+            Ok(())
+        }
+        ["band", verb @ ("add" | "rm"), repo] => {
+            let r = Repos::open()?;
+            let mut b = band(&r)?;
+            if *verb == "add" {
+                if !r.list()?.iter().any(|s| s.name == *repo) { return Err(tr!("No repo {} here (l3 repo open {})", "この端末に repo {} はありません（l3 repo open {}）", repo, repo)); }
+                if !b.iter().any(|n| n == repo) { b.push(repo.to_string()); }
+            } else { b.retain(|n| n != repo); }
+            length3_core::home::set("band", &serde_json::to_string(&b).map_err(|e| e.to_string())?)?;
+            out(if *verb == "add" { tr!("{} is on the band", "{} を帯に出しました", repo) } else { tr!("{} is off the band", "{} を帯から下げました", repo) });
+            Ok(())
+        }
         // Remote
         ["remote"] => remote_page(&a),
+        ["remote", "sign-in"] => {
+            let (keys, code, providers) = (account::passkeys()?, account::off_code()?, account::providers()?);
+            if a.json { return json(serde_json::json!({"passkeys": keys, "offCode": code, "providers": providers})); }
+            out(tr!("Passkeys", "パスキー"));
+            if keys.is_empty() { out(tr!("  None. With one, you sign in from any device without a provider (added in the browser).", "  ありません。あればプロバイダなしでどの端末からも入れます（ブラウザで追加）。")); }
+            for k in &keys { out(format!("  {}  {}", k.name.as_deref().filter(|n| !n.is_empty()).unwrap_or("passkey"), k.created_at.get(..10).unwrap_or(&k.created_at))); }
+            out(tr!("Code to turn a repo off", "repo を切るときのコード"));
+            out(if code.set { tr!("  Set (another is set in the browser, with a passkey)", "  設定済み（変えるのはブラウザで、パスキーを使います）") } else { tr!("  Not set (set in the browser, with a passkey)", "  未設定（ブラウザで、パスキーを使って設定）") });
+            out(tr!("Sign-in providers", "サインインのプロバイダ"));
+            for p in &providers { out(format!("  {}  {}", p.provider, p.created_at.get(..10).unwrap_or(&p.created_at))); }
+            Ok(())
+        }
+        ["remote", "devices"] => {
+            let list = account::devices()?;
+            if a.json { return json(&list); }
+            for (k, d) in list.iter().enumerate() {
+                out(format!("{}. {}  {}{}", k + 1, account::device_word(d.user_agent.as_deref()), d.updated_at.get(..10).unwrap_or(&d.updated_at),
+                    if d.current { tr!("  · this device (l3 logout signs it out)", "  · この端末（l3 logout で外れます）") } else { String::new() }));
+            }
+            Ok(())
+        }
+        ["remote", "devices", "rm", n] => {
+            let list = account::devices()?;
+            let k: usize = n.parse().map_err(|_| tr!("Give the number l3 remote devices shows", "l3 remote devices の番号を指定してください"))?;
+            let d = list.get(k.wrapping_sub(1)).ok_or_else(|| tr!("No device {}", "{} 番の端末はありません", k))?;
+            if d.current { return Err(tr!("That is this device: l3 logout signs it out", "それはこの端末です。l3 logout で外れます")); }
+            account::end_device(&d.token)?;
+            out(tr!("Removed {}; it is approved again to come back", "{} を外しました。戻るにはもう一度承認します", account::device_word(d.user_agent.as_deref())));
+            Ok(())
+        }
         ["remote", "on", repo] => {
             remote::turn_on(repo)?;
             out(tr!("{} is on again", "{} を戻しました", repo));
@@ -780,6 +878,23 @@ fn remote_page(a: &Args) -> Result<(), String> {
         out(tr!("  {}  only on the Remote · {}", "  {}  Remote だけ · {}", t.name, bytes(t.bytes)));
     }
     Ok(())
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Default)]
+struct Profile { #[serde(default)] name: String, #[serde(default)] handle: String, #[serde(default)] bio: String }
+
+/// Home's profile, as the app keeps it.
+fn profile() -> Profile {
+    length3_core::home::get("profile").ok().flatten().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+}
+
+/// Forge's band: the repos out on it, in order, only those here.
+fn band(r: &Repos) -> Result<Vec<String>, String> {
+    let here: Vec<String> = r.list()?.into_iter().map(|s| s.name).collect();
+    let stored: Vec<String> = length3_core::home::get("band")?.and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+    let mut out: Vec<String> = Vec::new();
+    for n in stored { if here.contains(&n) && !out.contains(&n) { out.push(n); } }
+    Ok(out)
 }
 
 /// How long until `until` (ms since the epoch), in days, or hours on the last day.
