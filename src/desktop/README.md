@@ -38,7 +38,7 @@ separate surface and nothing here depends on it.
   xlat kernel in a Worker, on a copy of the open repo. Changes there are
   not written back yet, and the pane says so. Prepare its files with
   `npm run userland` (see `scripts/userland.sh`).
-- File: a narrow tree of "/" on the left — only repos; ▽ on the right opens
+- File: a narrow tree of "/" on the left — only repos; ◁/▽ on the right opens
   a folder, a name scrolls the center to it. The repo strip on top, then
   the repo read top to bottom —
   directory index, then each directory and file in order, loaded as they

@@ -48,10 +48,10 @@ strikes through and fades the first line only.
 
 A narrow tree on the left shows "/" and, under it, the person's repos and
 nothing else: the base distribution is fetched and lives in Runtime, not in
-this tree. A folder opens with the ▷/▽ on the right of its name; the name
-itself scrolls the center to it. With every folder closed the repos sit in
-the vertical middle of the pane, with nothing below them. Open folders are
-remembered while the app runs.
+this tree. The tree starts at the top of the pane; nothing in File is
+centered in empty space. A folder's triangle sits on the right of its
+name, ◁ closed and ▽ open (one outlined shape, turned); the name itself
+scrolls the center to it. Open folders are remembered while the app runs.
 
 The repo strip runs across the top of the center and right; the selected
 repo is read top to bottom, directory index first, then each directory and

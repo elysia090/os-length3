@@ -3,8 +3,8 @@ import {store, type Entry} from '../repos.ts';
 
 // The File tree. "/" holds the person's repos and nothing else: the base
 // distribution that has to be fetched is a separate thing (Runtime), not a
-// folder here. A folder opens with the ▽ on the right of its name; with
-// every folder closed the repos sit in the middle of the pane.
+// folder here. The tree starts at the top of the pane. A folder's triangle
+// sits on the right of its name: ◁ closed, ▽ open.
 
 /** Open folders, kept across page switches: "repo" or "repo/path". */
 const open = new Set<string>();
@@ -14,9 +14,22 @@ export interface TreeEvents {
   choose(repo: string, path: string): void;
 }
 
+/** One outlined triangle pointing down; CSS turns it to point left while closed. */
+function triangle(): SVGSVGElement {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 12 12');
+  svg.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS(ns, 'path');
+  path.setAttribute('d', 'M2 3.5h8L6 9.5z');
+  svg.append(path);
+  return svg;
+}
+
 function toggle(label: string, expanded: boolean): HTMLButtonElement {
   const b = h('button', {class: 'tree-toggle', type: 'button', 'aria-expanded': String(expanded),
-    'aria-label': `${label}を${expanded ? '閉じる' : '開く'}`}, expanded ? '▽' : '▷') as HTMLButtonElement;
+    'aria-label': `${label}を${expanded ? '閉じる' : '開く'}`}) as HTMLButtonElement;
+  b.append(triangle());
   return b;
 }
 
@@ -24,7 +37,6 @@ export function tree(current: string | null, events: TreeEvents): HTMLElement {
   const root = h('ul', {class: 'tree-children', role: 'tree'});
   const pane = h('nav', {class: 'tree', 'aria-label': 'ファイル'},
     h('div', {class: 'tree-body'}, h('p', {class: 'tree-root'}, '/'), root));
-  const settle = () => pane.classList.toggle('collapsed', open.size === 0);
 
   const folder = (repo: string, path: string, name: string, list: HTMLElement, depth: number) => {
     const key = path ? `${repo}/${path}` : repo;
@@ -56,13 +68,11 @@ export function tree(current: string | null, events: TreeEvents): HTMLElement {
     button.addEventListener('click', () => {
       const now = !open.has(key);
       if (now) open.add(key); else open.delete(key);
-      button.textContent = now ? '▽' : '▷';
       button.setAttribute('aria-expanded', String(now));
       button.setAttribute('aria-label', `${name}を${now ? '閉じる' : '開く'}`);
       row.setAttribute('aria-expanded', String(now));
       children.hidden = !now;
       if (now) void fill();
-      settle();
     });
     children.hidden = !expanded;
     if (expanded) void fill();
@@ -73,8 +83,6 @@ export function tree(current: string | null, events: TreeEvents): HTMLElement {
     root.replaceChildren();
     for (const r of repos) folder(r.name, '', r.name, root, 0);
     if (!repos.length) root.append(h('li', {class: 'muted tree-empty'}, 'repoはまだありません'));
-    settle();
   });
-  settle();
   return pane;
 }
