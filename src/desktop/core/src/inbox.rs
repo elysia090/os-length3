@@ -47,6 +47,16 @@ pub fn claim(address: &str) -> Result<String> {
 }
 
 /// Write to `to`; `kind` is message, review, question or run. Returns whether it went as a request.
+/// What a written message is, as in the app: its kind named first the way an issue is
+/// ("Review：…", "Question：…"), and the repo a /root/… path in it is about.
+pub fn written(text: &str) -> (&'static str, String, Option<String>) {
+    let (kind, title) = crate::text::kind_of(text);
+    let kind = match kind.as_deref().map(str::to_ascii_lowercase).as_deref() { Some("review") => "review", Some("question") => "question", _ => "message" };
+    let body = if kind == "message" { text.trim().to_string() } else { title };
+    let repo = text.split("/root/").nth(1).map(|rest| rest.chars().take_while(|c| c.is_ascii_alphanumeric() || "._-".contains(*c)).collect::<String>()).filter(|r| !r.is_empty());
+    (kind, body, repo)
+}
+
 pub fn send(to: &str, body: &str, kind: &str, repo: Option<&str>) -> Result<bool> {
     let target = repo.map_or(serde_json::json!({}), |r| serde_json::json!({"repo": r}));
     let v = Client::open()?.call("POST", "/v1/inbox/messages", Some(serde_json::json!({"to": to, "body": body, "type": kind, "target": target})))?;

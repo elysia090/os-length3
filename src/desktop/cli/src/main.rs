@@ -9,6 +9,8 @@
 //! shows while you work on it; commit, push and change hand it to
 //! main, where it is reviewed and merged or rejected.
 
+mod git;
+
 use length3_core::{history, home, inbox, paths, remote, repos::Repos, templates, text, tr, usage, work};
 use std::io::{Read, Write};
 use std::process::ExitCode;
@@ -89,37 +91,37 @@ File
   l3 file [REPO[/PATH]]       a directory's entries, or a file's text
   l3 file write REPO/PATH     replace a file with standard input
 Git
-  l3 git [REPO]               issues, changes to main, and main's history
-  l3 issue [REPO | REPO/NNN.md]
+  l3 git [REPO]               the issues not merged, each with what comes next
+  l3 issue REPO#N             one issue: its box, Diff, Review, Reply
   l3 issue new REPO \"Fix：title\" [-m detail]
-  l3 start REPO/issue/NNN.md  start (or continue) the issue in its own copy
+  l3 start REPO#N             start (or continue) issue #N in its own copy
   l3 main REPO                back to main
   l3 commit REPO [-m note]    commit the work, named after its issue
   l3 commit REPO \"Fix：title\" on main, named by the line
   l3 push REPO                push the work's commits
   l3 change REPO [-m note]    hand what was pushed to main (again: next version)
   l3 reset REPO               take the change back
-  l3 changes REPO             the changes to main, with reviews
-  l3 review REPO ID approve|changes|comment [-m note]
-  l3 merge REPO ID            main takes the change
-  l3 reject REPO ID [-m why]  main does not
+  l3 review REPO#N approve|changes [-m note]
+  l3 reply REPO#N \"text\"
+  l3 merge REPO#N             main takes the change
+  l3 reject REPO#N [-m why]   main does not
   l3 log REPO                 the commits of what the repo shows
 Runtime
   l3 runtime                  the root, and this device by size: what can go
   l3 free ID… | l3 free all   free (sync and free for a repo with changes)
   l3 root fetch | install BUNDLE
-Inbox
-  l3 inbox                    conversations: contacts, then requests
-  l3 inbox ADDRESS            one conversation (name@domain)
-  l3 inbox send ADDRESS \"text\" [-t message|review|question] [-m repo]
-  l3 inbox accept|block ADDRESS
-  l3 address                  your addresses
-  l3 address claim NAME[@DOMAIN]
 Remote
   l3 remote                   the Remote this device is on, and each repo
   l3 login [URL]              connect: approve in the browser
   l3 logout
   l3 sync [REPO]              now (it also happens after every change)
+Inbox
+  l3 inbox                    conversations: contacts, then requests
+  l3 inbox ADDRESS            one conversation (name@domain)
+  l3 inbox send ADDRESS \"text\"  Review： or Question： first to ask; a /root/… path says what about
+  l3 inbox accept|block ADDRESS
+  l3 address                  your addresses
+  l3 address claim NAME[@DOMAIN]
 
   --json for JSON. Paths may be written as File shows them: /root/<repo>/….
   Where: $LENGTH3_HOME (else the app's own data directory).
@@ -140,37 +142,37 @@ File
   l3 file [REPO[/PATH]]       ディレクトリなら中身、ファイルなら本文
   l3 file write REPO/PATH     標準入力で既存のファイルを置き換える
 Git
-  l3 git [REPO]               Issue、main への Change、main の履歴
-  l3 issue [REPO | REPO/NNN.md]
+  l3 git [REPO]               Merge されていない Issue と、それぞれ次にすること
+  l3 issue REPO#N             Issue ひとつ: 箱、Diff、Review、返信
   l3 issue new REPO \"Fix：件名\" [-m 詳細]
-  l3 start REPO/issue/NNN.md  その Issue を始める（続ける）。repo はその写しになる
+  l3 start REPO#N             Issue #N を始める（続ける）。repo はその写しになる
   l3 main REPO                main に戻る
   l3 commit REPO [-m メモ]    作業を Commit（Issue の名前で）
   l3 commit REPO \"Fix：件名\"  main で Commit
   l3 push REPO                作業のコミットを Push
   l3 change REPO [-m メモ]    Push したものを main に渡す（もう一度で次の版）
   l3 reset REPO               Change を取り下げる
-  l3 changes REPO             main への Change とレビュー
-  l3 review REPO ID approve|changes|comment [-m メモ]
-  l3 merge REPO ID            main に取り込む
-  l3 reject REPO ID [-m 理由] 取り込まない
+  l3 review REPO#N approve|changes [-m メモ]
+  l3 reply REPO#N \"文\"
+  l3 merge REPO#N             main に取り込む
+  l3 reject REPO#N [-m 理由]  取り込まない
   l3 log REPO                 repo がいま見せているもののコミット
 Runtime
   l3 runtime                  root と この端末: 容量順、空けられるもの
   l3 free ID… | l3 free all   空ける（変更があれば送ってから）
   l3 root fetch | install BUNDLE
-Inbox
-  l3 inbox                    会話（連絡先、次にリクエスト）
-  l3 inbox ADDRESS            ひとつの会話（name@domain）
-  l3 inbox send ADDRESS \"本文\" [-t message|review|question] [-m repo]
-  l3 inbox accept|block ADDRESS
-  l3 address                  あなたのアドレス
-  l3 address claim NAME[@DOMAIN]
 Remote
   l3 remote                   つながっている Remote と、repo の同期
   l3 login [URL]              ブラウザで承認してつなぐ
   l3 logout
   l3 sync [REPO]              いま送る・取り込む（ふだんは変えるたびに自動）
+Inbox
+  l3 inbox                    会話（連絡先、次にリクエスト）
+  l3 inbox ADDRESS            ひとつの会話（name@domain）
+  l3 inbox send ADDRESS \"本文\"  頭に Review： か Question： で依頼。/root/… のパスで対象
+  l3 inbox accept|block ADDRESS
+  l3 address                  あなたのアドレス
+  l3 address claim NAME[@DOMAIN]
 
   --json で JSON に。パスは File と同じ /root/<repo>/… でも書けます。
   置き場所: $LENGTH3_HOME（なければアプリと同じデータの場所）
@@ -291,9 +293,8 @@ fn run(a: Args) -> Result<(), String> {
         }
         ["file", path] => file(&a, path),
         // Git
-        ["git"] => issues(&a, None),
-        ["git", repo] => git_page(&a, repo),
-        ["issue"] => issues(&a, None),
+        ["git"] | ["issue"] => git::page(&a, None),
+        ["git", repo] => git::page(&a, Some(repo)),
         ["issue", "new", repo, line] => {
             let (kind, title) = text::kind_of(line);
             let name = Repos::open()?.add_issue(repo, kind.as_deref(), &title, &a.detail)?;
@@ -301,18 +302,20 @@ fn run(a: Args) -> Result<(), String> {
             out(tr!("Wrote {}/issue/{}", "{}/issue/{} に書きました", repo, name));
             Ok(())
         }
-        ["issue", target] if target.trim_end_matches('/').contains('/') => issue_one(&a, target),
-        ["issue", repo] => issues(&a, Some(repo)),
+        ["issue", target] if target.contains('#') || target.trim_end_matches('/').contains('/') => git::one(&a, target),
+        ["issue", repo] => git::page(&a, Some(repo)),
         ["main", repo] => {
             work::switch(&Repos::open()?, repo, work::MAIN)?;
             out(tr!("{} shows main now", "{} は main を見せています", repo));
             Ok(())
         }
         ["start", target] => {
-            let (repo, rel) = split(target);
-            let l = work::start(&Repos::open()?, &repo, &rel)?;
+            let r = Repos::open()?;
+            let (repo, file) = git::issue_ref(&r, target)?;
+            let rel = format!("issue/{file}");
+            let l = work::start(&r, &repo, &rel)?;
             if a.json { return json(l); }
-            out(tr!("Working on {} — {} shows its copy now (back with: l3 main {})", "{} を始めました。{} はその写しを見せています（戻るには l3 main {}）", rel, repo, repo));
+            out(tr!("Working on {}{} — {} shows its copy now (back with: l3 main {})", "{}{} を始めました。{} はその写しを見せています（戻るには l3 main {}）", repo, git::number(&file), repo, repo));
             Ok(())
         }
         ["commit", target] if target.contains('/') => {
@@ -323,7 +326,7 @@ fn run(a: Args) -> Result<(), String> {
         ["commit", repo, line] => cut_done(&a, history::cut(&Repos::open()?, repo, None, line, &a.detail)?),
         ["push", repo] => {
             let head = history::push(&Repos::open()?, repo)?;
-            out(tr!("Pushed {}", "Push しました {}", short(&head)));
+            if head.is_empty() { out(tr!("Nothing new to push", "Push するものはありません")); } else { out(tr!("Pushed {}", "Push しました {}", short(&head))); }
             Ok(())
         }
         ["change", repo] => {
@@ -337,28 +340,39 @@ fn run(a: Args) -> Result<(), String> {
             out(tr!("Took back {}", "取り下げました: {}", c.title));
             Ok(())
         }
-        ["changes", repo] => changes_in(&a, repo),
-        ["review", repo, id, verdict] => {
-            let c = history::review(repo, id, verdict, &a.detail)?;
-            out(tr!("Reviewed version {} of {}", "{1} の第 {0} 版をレビューしました", c.version, c.title));
+        ["review", target, verdict @ ("approve" | "changes")] => {
+            let (repo, line) = git::line_of(&Repos::open()?, target)?;
+            let c = history::review(&repo, &line, verdict, &a.detail)?;
+            out(tr!("Reviewed version {} of {}", "{1} の第 {0} 版をレビューしました", c.version, text::named(Some(c.kind.as_str()).filter(|k| !k.is_empty()), &c.title)));
             Ok(())
         }
-        ["merge", repo, id] => {
-            let c = history::merge(repo, id)?;
-            out(tr!("Merged {} into main", "{} を main に Merge しました", c.title));
-            send(repo);
+        ["reply", target, words] => {
+            let (repo, line) = git::line_of(&Repos::open()?, target)?;
+            let c = history::review(&repo, &line, "comment", words)?;
+            out(tr!("Replied under {}", "{} に返信しました", text::named(Some(c.kind.as_str()).filter(|k| !k.is_empty()), &c.title)));
             Ok(())
         }
-        ["reject", repo, id] => {
-            let c = history::reject(repo, id, &a.detail)?;
-            out(tr!("Rejected {} (its issue stays open)", "{} を Reject しました（Issue は開いたままです）", c.title));
+        ["merge", target] => {
+            let r = Repos::open()?;
+            let (repo, line) = git::line_of(&r, target)?;
+            let c = history::merge(&repo, &line)?;
+            // Merged, the work is done: the repo shows main again.
+            if r.line(&repo) == c.line { work::switch(&r, &repo, work::MAIN)?; }
+            out(tr!("Merged {} into main", "{} を main に Merge しました", text::named(Some(c.kind.as_str()).filter(|k| !k.is_empty()), &c.title)));
+            send(&repo);
+            Ok(())
+        }
+        ["reject", target] => {
+            let (repo, line) = git::line_of(&Repos::open()?, target)?;
+            let c = history::reject(&repo, &line, &a.detail)?;
+            out(tr!("Rejected {} (its issue stays open)", "{} を Reject しました（Issue は開いたままです）", text::named(Some(c.kind.as_str()).filter(|k| !k.is_empty()), &c.title)));
             Ok(())
         }
         ["log", repo] => {
             let list = history::log(&Repos::open()?, repo, 50)?;
             if a.json { return json(&list); }
             if list.is_empty() { out(tr!("No commits yet", "コミットはまだありません")); }
-            for c in &list { cut_line(c); }
+            for c in &list { cut_line(repo, c); }
             Ok(())
         }
         // Runtime
@@ -404,14 +418,14 @@ fn run(a: Args) -> Result<(), String> {
             for t in &list {
                 let state = match t.state.as_str() { "request" => tr!(" · request", " · リクエスト"), "blocked" => tr!(" · blocked", " · ブロック"), _ => String::new() };
                 out(format!("{}{}{}", t.address, state, if t.unread > 0 { format!("  ({})", t.unread) } else { String::new() }));
-                out(format!("    {}{}", if t.last.mine { tr!("you: ", "あなた: ") } else { String::new() }, t.last.body));
+                out(format!("    {}{}{}", if t.last.mine { tr!("you: ", "あなた: ") } else { String::new() }, kind_word(&t.last.kind), t.last.body));
             }
             Ok(())
         }
-        ["inbox", "send", to, body] => {
-            let kind = if a.template == "standard" { "message" } else { a.template.as_str() };
-            let repo = (!a.detail.is_empty()).then_some(a.detail.as_str());
-            let request = inbox::send(to, body, kind, repo)?;
+        ["inbox", "send", to, words] => {
+            // As in the app: named like an issue says what it is, a /root/… path what it is about.
+            let (kind, body, repo) = inbox::written(words);
+            let request = inbox::send(to, &body, kind, repo.as_deref())?;
             out(if request { tr!("Sent to {} as a request (they see it once they accept you)", "{} にリクエストとして送りました（相手が受けると読まれます）", to) } else { tr!("Sent to {}", "{} に送りました", to) });
             Ok(())
         }
@@ -425,8 +439,8 @@ fn run(a: Args) -> Result<(), String> {
             if a.json { return json(&c); }
             out(format!("{}{}", c.address, if c.state == "request" { tr!("  (request: l3 inbox accept {})", "  （リクエスト: l3 inbox accept {}）", c.address) } else { String::new() }));
             for m in &c.messages {
-                let kind = if m.kind == "message" { String::new() } else { format!("[{}] ", m.kind) };
-                out(format!("  {} {}{}  · {}", if m.mine { "→" } else { "←" }, kind, m.body, ago(m.time)));
+                let who = if m.mine { tr!("you", "あなた") } else { c.address.clone() };
+                out(format!("  {who} · {}{}  · {}", kind_word(&m.kind), m.body, ago(m.time)));
             }
             Ok(())
         }
@@ -464,6 +478,16 @@ fn run(a: Args) -> Result<(), String> {
             r.map(|_| ())
         }
         _ => Err(tr!("Not a command: l3 {}\n`l3 help` shows how to use it", "わからないコマンドです: l3 {}\n`l3 help` で使い方を見られます", w.join(" "))),
+    }
+}
+
+/// A message's kind as the app says it, before its text ("Review request · …"); a plain message says nothing.
+fn kind_word(kind: &str) -> String {
+    match kind {
+        "review" => tr!("Review request · ", "レビュー依頼 · "),
+        "question" => tr!("Question · ", "質問 · "),
+        "run" => tr!("Run failed · ", "実行の失敗 · "),
+        _ => String::new(),
     }
 }
 
@@ -581,97 +605,21 @@ fn file(a: &Args, path: &str) -> Result<(), String> {
     }
 }
 
-fn issues(a: &Args, only: Option<&str>) -> Result<(), String> {
-    let r = Repos::open()?;
-    let names: Vec<String> = match only {
-        Some(repo) => vec![repo.to_string()],
-        None => r.list()?.into_iter().map(|s| s.name).collect(),
-    };
-    let mut all = Vec::new();
-    let mut missing = Vec::new();
-    for n in &names {
-        match r.issues(n)? {
-            Some(list) => all.extend(list),
-            None => missing.push(n.clone()),
-        }
-    }
-    if a.json { return json(&all); }
-    if all.is_empty() { out(tr!("No issues yet (write one with l3 issue new REPO \"Fix：title\")", "Issue はまだありません（l3 issue new REPO \"Fix：件名\" で書けます）")); }
-    for i in &all {
-        out(text::named(i.kind.as_deref(), &i.title));
-        out(format!("    {} · issue/{}", i.repo, i.file));
-    }
-    if !missing.is_empty() { out(tr!("repos without issue/: {}", "issue/ がない repo: {}", missing.join(", "))); }
-    Ok(())
-}
-
-/// The Git page for one repo: its issues, the work it shows, what is not
-/// committed, and the changes handed to main.
-fn git_page(a: &Args, repo: &str) -> Result<(), String> {
-    issues(a, Some(repo))?;
-    if a.json || in_prompt() { return Ok(()); }
-    let r = Repos::open()?;
-    out("");
-    if remote::connection().is_some() {
-        match history::work(&r, repo) {
-            Ok(wk) if wk.line != work::MAIN => {
-                out(tr!("Work: {} · {} · started {}", "作業: {} · {} · {} に開始", wk.issue.as_deref().unwrap_or(&wk.line), if wk.started_by.is_empty() { "—" } else { &wk.started_by }, ago(wk.started_at)));
-                out(tr!("  {} commits, {} not pushed{}", "  コミット {} · 未 Push {}{}", wk.commits, wk.unpushed,
-                    wk.change.as_ref().map(|c| tr!(" · change (version {}, {})", " · Change（第 {} 版 · {}）", c.version, state_word(&c.state))).unwrap_or_default()));
-            }
-            Ok(_) => out(tr!("Work: main", "作業: main")),
-            Err(e) => out(tr!("Work: ({})", "作業: （{}）", e)),
-        }
-    }
-    changes(a, repo)?;
-    if remote::connection().is_some() {
-        out("");
-        changes_in(a, repo)?;
-    }
-    Ok(())
-}
-
-fn state_word(s: &str) -> String {
-    match s {
-        "open" => tr!("open", "未決"),
-        "merged" => tr!("merged", "Merge 済み"),
-        "rejected" => tr!("rejected", "Reject"),
-        "reset" => tr!("taken back", "取り下げ"),
-        other => other.to_string(),
-    }
-}
-
-/// Changes handed in to main, each with where it reaches and its reviews.
-fn changes_in(a: &Args, repo: &str) -> Result<(), String> {
-    let list = history::changes_of_repo(repo)?;
-    if a.json { return json(&list); }
-    out(tr!("Changes handed in", "提出された変更"));
-    if list.is_empty() { out(tr!("  none yet", "  まだありません")); }
-    for c in &list {
-        out(format!("  {}  {}", text::named(Some(c.kind.as_str()).filter(|k| !k.is_empty()), &c.title), state_word(&c.state)));
-        let places: Vec<String> = c.folders.iter().map(|f| if f.is_empty() { "/".into() } else { format!("{f}/") }).collect();
-        out(tr!("    {} · version {} · {} · {} files · {}", "    {} · 第 {} 版 · {} · {} ファイル · {}", short(&c.id), c.version, c.submitted_by, c.files, places.join(" ")));
-        for rv in c.reviews.iter().take(3) {
-            let verdict = match rv.verdict.as_str() { "approve" => tr!("approved", "承認"), "changes" => tr!("asked for changes", "変更を依頼"), _ => tr!("commented", "コメント") };
-            let stale = if rv.version != c.version { tr!(" (of version {})", "（第 {} 版へ）", rv.version) } else { String::new() };
-            out(format!("      {} {}{}{}", rv.by, verdict, stale, if rv.note.is_empty() { String::new() } else { format!(": {}", rv.note) }));
-        }
-    }
-    Ok(())
-}
-
 fn cut_done(a: &Args, c: history::Cut) -> Result<(), String> {
     if a.json { return json(c); }
-    out(tr!("Committed {}  {} ({} files +{} −{})", "Commit しました {}  {}（{} ファイル +{} −{}）", short(&c.id), history::line(&c), c.files, c.added, c.removed));
+    out(tr!("Committed {}  {} ({}{})", "Commit しました {}  {}（{}{}）", short(&c.id), history::line(&c), git::files(c.files as usize), lines(c.added, c.removed)));
     Ok(())
 }
 
-fn cut_line(c: &history::Cut) {
+/// Lines added and removed, when they were counted (a merge or a repo's first commit is not).
+fn lines(added: u64, removed: u64) -> String { if added == 0 && removed == 0 { String::new() } else { format!(" +{added} −{removed}") } }
+
+fn cut_line(repo: &str, c: &history::Cut) {
     out(history::line(c));
-    let places: Vec<String> = c.folders.iter().map(|f| if f.is_empty() { "/".into() } else { format!("{f}/") }).collect();
+    let places: Vec<String> = c.folders.iter().map(|f| if f.is_empty() { format!("{repo}/") } else { format!("{f}/") }).collect();
     let issue = c.issue.as_deref().map(|i| format!(" · {i}")).unwrap_or_default();
     let merged = if c.merged.is_some() { tr!(" · merge", " · Merge") } else { String::new() };
-    out(format!("    {} · {} · {} +{} −{}{issue}{merged}", short(&c.id), ago(c.time), tr!("{} files", "{} ファイル", c.files), c.added, c.removed));
+    out(format!("    {} · {} · {}{}{issue}{merged}", short(&c.id), ago(c.time), git::files(c.files as usize), lines(c.added, c.removed)));
     if !places.is_empty() { out(format!("    {}", places.join(" "))); }
 }
 
@@ -683,45 +631,6 @@ fn ago(ms: u64) -> String {
         3600..=86399 => tr!("{} h ago", "{} 時間前", s / 3600),
         _ => tr!("{} days ago", "{} 日前", s / 86400),
     }
-}
-
-/// What is not committed yet, folder by folder, as Git shows it.
-fn changes(a: &Args, repo: &str) -> Result<(), String> {
-    let c = history::changes(&Repos::open()?, repo)?;
-    if a.json { return json(&c); }
-    if c.files == 0 { out(tr!("Nothing uncommitted", "まだ Commit していない変更はありません")); return Ok(()); }
-    out(tr!("Not committed  {} files +{} −{}", "まだ Commit していない変更  {} ファイル +{} −{}", c.files, c.added, c.removed));
-    for f in &c.folders {
-        out(format!("  {}/  +{} −{}", if f.folder.is_empty() { repo } else { &f.folder }, f.added, f.removed));
-        for x in &f.files {
-            let word = match x.status { "added" => tr!("added", "追加"), "removed" => tr!("removed", "削除"), _ => tr!("changed", "変更") };
-            out(format!("      {word}  {}{}", x.path, if x.binary { tr!("  (binary)", "  （バイナリ）") } else { format!("  +{} −{}", x.added, x.removed) }));
-        }
-    }
-    if c.connected { out(tr!("To commit: l3 commit REPO (the work's issue names it), or l3 commit REPO \"Fix：title\" on main", "Commit するには: l3 commit REPO（作業の Issue の名前で）か、main なら l3 commit REPO \"Fix：件名\"")); }
-    else { out(tr!("Commits are kept on the Remote; connect with l3 login to commit", "コミットは Remote に残ります。l3 login でつなぐと Commit できます")); }
-    Ok(())
-}
-
-fn issue_one(a: &Args, target: &str) -> Result<(), String> {
-    let (repo, rel) = split(target);
-    let file = rel.trim_start_matches("issue/");
-    let r = Repos::open()?;
-    let c = r.read(&repo, &format!("issue/{file}"), 256 * 1024)?;
-    let i = length3_core::issues::parse(&repo, file, &c.text.ok_or_else(|| tr!("It is binary", "バイナリです"))?);
-    if a.json { return json(&i); }
-    out(text::named(i.kind.as_deref(), &i.title));
-    out(format!("{} · issue/{}", i.repo, i.file));
-    if !i.detail.is_empty() { out(""); out(&i.detail); }
-    if in_prompt() { return Ok(()); }
-    let path = format!("issue/{}", i.file);
-    out("");
-    if let Some(line) = work::line_for(&path) {
-        let cuts = history::log_of(&repo, &line, 200).unwrap_or_default();
-        if cuts.is_empty() { out(tr!("Not started yet (l3 start {}/{})", "まだ始めていません（l3 start {}/{}）", repo, path)); }
-        for c in &cuts { cut_line(c); }
-    }
-    Ok(())
 }
 
 fn todo_list(a: &Args) -> Result<(), String> {
@@ -816,3 +725,4 @@ fn main() -> ExitCode {
         }
     }
 }
+

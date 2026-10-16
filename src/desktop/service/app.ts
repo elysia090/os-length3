@@ -303,9 +303,21 @@ export function createApp(d: Deps) {
 
   v1.get('/repos/:name/log', async (c) => {
     const limit = Math.min(LIMIT.log, Math.max(1, Number(c.req.query('limit') ?? 50) || 50));
-    const rows = await d.db.select().from(cut).where(and(eq(cut.userId, c.get('userId')), eq(cut.repo, c.req.param('name')), eq(cut.line, lineOf(c))))
-      .orderBy(desc(cut.time)).limit(limit);
-    return c.json(rows.map(shown));
+    // As git log: from the line's head along first parents, so a work's history goes on into
+    // main's from where it began, and every commit's parent is there to compare with.
+    const user = c.get('userId'), name = c.req.param('name');
+    const row = await lineRow(user, name, lineOf(c));
+    if (!row?.head) return c.json([]);
+    const all = await d.db.select().from(cut).where(and(eq(cut.userId, user), eq(cut.repo, name))).orderBy(desc(cut.time)).limit(LIMIT.log * 40);
+    const byId = new Map<string, typeof cut.$inferSelect>(all.map((r: typeof cut.$inferSelect) => [r.id, r]));
+    const out: (typeof cut.$inferSelect)[] = [];
+    for (let id: string | null = row.head; id && out.length < limit;) {
+      const r: typeof cut.$inferSelect | undefined = byId.get(id) ?? await cutRow(user, name, id);
+      if (!r) break;
+      out.push(r);
+      id = r.parent;
+    }
+    return c.json(out.map(shown));
   });
 
   // ---- work on an issue: its own line, from main's last commit ----

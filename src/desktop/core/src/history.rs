@@ -396,6 +396,10 @@ pub fn push(repos: &Repos, repo: &str) -> Result<String> {
     if on == crate::work::MAIN {
         return Err(crate::tr!("main is pushed by merging changes into it; work on an issue to push", "main には変更を Merge して入れます。Issue の作業で Push してください"));
     }
+    // Nothing new is no push: an empty answer says so.
+    let w = work(repos, repo)?;
+    if w.commits == 0 { return Err(crate::tr!("Nothing committed since the work began", "作業を始めてから何も Commit していません")); }
+    if w.unpushed == 0 { return Ok(String::new()); }
     let client = Client::open()?;
     let (key, _) = remote::key(repos, repo);
     let head = remote::base(&key).and_then(|b| b.head).ok_or_else(|| crate::tr!("Nothing committed yet", "まだ何も Commit していません"))?;

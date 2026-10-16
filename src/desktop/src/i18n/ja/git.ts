@@ -30,7 +30,7 @@ export default {
   'Push': 'Push',
   'Reset': 'Reset',
   'Back to main': 'main に戻る',
-  '{who} · started {when}': '{who} · {when}に開始',
+  '{who} · started {when}': '{who} · 開始 {when}',
   'The review\'s note': 'レビューのメモ',
   'Approve': '承認',
   'Ask for changes': '変更を依頼',
