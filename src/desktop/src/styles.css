@@ -39,6 +39,7 @@ h1, h2, p { margin: 0; }
 a { color: var(--ink); }
 [hidden] { display: none !important; }
 :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+::selection { background: var(--ink); color: var(--ground); }
 .muted { color: var(--sub); }
 .small { font-size: var(--t-meta); }
 .icon {
@@ -253,11 +254,15 @@ a { color: var(--ink); }
 .file { margin-bottom: var(--s5); }
 /* A file reads like a plain text editor: line numbers in a quiet gutter,
    the text beside them, on the same lines. */
-.file-facts { font-weight: 400; white-space: nowrap; }
+.file-state { font-weight: 400; color: var(--sub); white-space: nowrap; }
 .sheet { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--s4); padding: var(--s2) 0 var(--s3); }
-.gutter, .code { margin: 0; font: var(--t-meta)/1.6 var(--mono); white-space: pre; tab-size: 4; }
+.gutter, .code { margin: 0; padding: 0; font: var(--t-meta)/1.6 var(--mono); white-space: pre; tab-size: 4; }
 .gutter { color: var(--sub); text-align: right; user-select: none; min-width: 2ch; font-variant-numeric: tabular-nums; }
 .code { overflow-x: auto; }
+/* The text itself is the field: no box, the caret is the only sign. */
+.code.edit { display: block; width: 100%; border: 0; background: transparent; color: var(--ink); resize: none; overflow-y: hidden; }
+.code.edit:focus { outline: none; }
+.file:focus-within > .path { color: var(--ink); }
 .sheet-note { padding: var(--s2) 0 var(--s3); font-size: var(--t-meta); }
 .flow .revealed > .path { background: var(--raised); }
 
@@ -280,7 +285,22 @@ a { color: var(--ink); }
    prompt is in use the terminal is away and the reference grows down. */
 .side { grid-column: 2; grid-row: 1 / -1; display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); min-height: 0; transition: grid-template-rows var(--move); }
 .work.prompting .side { grid-template-rows: minmax(0, 1fr) minmax(0, 0fr); }
-.pane.reference { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: var(--s3); padding-top: var(--band); }
+/* The search box sits in the room above the band line; the chips stay on it. */
+.pane.reference { display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: var(--s3); padding-top: var(--s3); }
+.search-in {
+  width: 100%; min-height: var(--h-control); padding: 0 var(--s3); border: 1px solid var(--edge); border-radius: var(--r-field);
+  background: var(--raised); color: var(--ink);
+}
+.search-in:disabled { opacity: .5; }
+.search-count { margin-bottom: var(--s2); }
+.hit-group { display: grid; margin-bottom: var(--s3); }
+.hit-file, .hit { border: 0; padding: 0 var(--s1); background: transparent; text-align: left; cursor: pointer; border-radius: var(--r-field); }
+.hit-file { min-height: var(--h-row); font: 600 var(--t-meta) var(--mono); }
+.hit { display: grid; grid-template-columns: 4ch minmax(0, 1fr); gap: var(--s2); font: var(--t-meta)/1.6 var(--mono); }
+.hit-file:hover, .hit:hover { background: var(--raised); }
+.hit-line { color: var(--sub); text-align: right; font-variant-numeric: tabular-nums; }
+.hit-text { white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+mark { background: var(--ink); color: var(--ground); }
 .reference-body { min-height: 0; overflow: auto; }
 .reference-body .empty { margin-top: 0; padding: var(--s5) var(--s4); }
 .facts { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: var(--s1) var(--s3); margin: 0; }

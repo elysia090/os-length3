@@ -32,6 +32,8 @@ export interface RepoStore {
   create(name: string, template: Template): Promise<RepoSummary>;
   tree(repo: string, path: string): Promise<Entry[]>;
   read(repo: string, path: string): Promise<Contents>;
+  /** Replace the text of an existing file; returns its new size in bytes. */
+  write(repo: string, path: string, text: string): Promise<number>;
 }
 
 export const TEMPLATES: readonly {id: Template; label: string; files: readonly string[]}[] = [
@@ -55,6 +57,7 @@ class NativeStore implements RepoStore {
   create(name: string, template: Template) { return this.call<RepoSummary>('repo_create', {name, template}); }
   tree(repo: string, path: string) { return this.call<Entry[]>('repo_tree', {repo, path}); }
   read(repo: string, path: string) { return this.call<Contents>('repo_read', {repo, path}); }
+  write(repo: string, path: string, text: string) { return this.call<number>('repo_write', {repo, path, text}); }
 }
 
 /** Files of a new repo, mirroring the native templates. Inbox and TODO
@@ -109,6 +112,14 @@ export class MemoryStore implements RepoStore {
     const text = this.repos.get(repo)?.files.get(path);
     if (text === undefined || text === null) throw new Error(`no file ${path}`);
     return {text, size: new TextEncoder().encode(text).length, truncated: false};
+  }
+  async write(repo: string, path: string, text: string) {
+    const r = this.repos.get(repo);
+    const old = r?.files.get(path);
+    if (!r || old === undefined || old === null) throw new Error(`no file ${path}`);
+    r.files.set(path, text);
+    r.modified = Date.now();
+    return new TextEncoder().encode(text).length;
   }
 }
 

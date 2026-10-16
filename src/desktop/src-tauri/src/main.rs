@@ -81,12 +81,20 @@ fn repo_tree(app: tauri::AppHandle, repo: String, path: String) -> Result<Vec<re
 
 #[tauri::command]
 fn repo_read(app: tauri::AppHandle, repo: String, path: String) -> Result<repos::Contents, String> {
-    managed(&app)?.read(&repo, &path, 256 * 1024)
+    managed(&app)?.read(&repo, &path, READ_LIMIT)
 }
+
+/// Files the editor may save; anything read in part is never written back.
+#[tauri::command]
+fn repo_write(app: tauri::AppHandle, repo: String, path: String, text: String) -> Result<u64, String> {
+    managed(&app)?.write(&repo, &path, &text, READ_LIMIT)
+}
+
+const READ_LIMIT: u64 = 256 * 1024;
 
 fn main() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![capacity, repo_list, repo_create, repo_tree, repo_read])
+        .invoke_handler(tauri::generate_handler![capacity, repo_list, repo_create, repo_tree, repo_read, repo_write])
         .run(tauri::generate_context!())
         .expect("Length³ OS shell failed to start");
 }

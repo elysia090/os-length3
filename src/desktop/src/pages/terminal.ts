@@ -98,8 +98,8 @@ export class Session {
         cwd,
       });
       this.status.textContent = copy.complete
-        ? 'repoの写しで動いています。ここでの変更はrepoに保存されません。'
-        : 'repoの一部（大きいファイルを除く）の写しで動いています。変更はrepoに保存されません。';
+        ? '起動した時点のrepoの写しで動いています。ここでの変更はrepoに残りません。'
+        : '起動した時点のrepoの一部（大きいファイルを除く）の写しで動いています。ここでの変更はrepoに残りません。';
       this.live = true;
     } catch (e) {
       this.end(`起動できませんでした: ${String(e)}`);

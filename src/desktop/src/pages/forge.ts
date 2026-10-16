@@ -4,15 +4,15 @@ import {mark} from '../icons.ts';
 import {store, type Entry} from '../repos.ts';
 import {pageHead} from './common.ts';
 import type {Context} from './context.ts';
-import {kindOf, lineCount, readingOrder} from '../reading.ts';
+import {lineCount, readingOrder} from '../reading.ts';
 import {Reference} from './reference.ts';
 import {sessionFor, terminalFor} from './terminal.ts';
 
 /**
  * Forge, the place you work. The repos out to work on run as pills in a band
  * set low at the top; ⊕ brings more out and each pill comes off with its ×. The large center is the open repo's files one after another, an
- * endless page you scroll through, opened at the file chosen in File; there
- * are no tabs. A prompt box sits at the bottom of the center. The narrow
+ * endless page you scroll through and edit in place, opened at the file chosen
+ * in File; there are no tabs. A prompt box sits at the bottom of the center. The narrow
  * right pane holds a reference switched freely on top and the terminal
  * below; using the prompt box sends the terminal up over the center, just
  * above the box, and the reference grows down into the room it leaves.
@@ -70,7 +70,7 @@ export function forge(ctx: Context): Node[] {
   const dock = h('div', {class: 'dock'}, termSlot, h('form', {class: 'prompt'}, prompt), note);
   const center = h('div', {class: 'center'}, flow, dock);
 
-  const reference = new Reference({reveal: (path) => void reader?.reveal(path)});
+  const reference = new Reference({reveal: (path, line) => void reader?.reveal(path, line)});
   const side = h('aside', {class: 'side', 'aria-label': '参照とターミナル'}, reference.element, termHome);
   const work = h('div', {class: 'work'}, strip, center, side);
 
@@ -170,7 +170,7 @@ export function forge(ctx: Context): Node[] {
     if (repo !== name) {
       repo = name;
       ctx.remember(name);
-      reader = new Reader(name);
+      reader = new Reader(name, flow);
       reference.setRepo(name);
       flow.replaceChildren(reader.directory(''));
       flow.scrollTop = 0;
@@ -220,11 +220,15 @@ class Reader {
   private loads = new Map<string, () => Promise<void>>();
   /** Every directory and file section by path. */
   private sections = new Map<string, HTMLElement>();
+  /** File loaders and the editors they made, by path. */
+  private fileLoads = new Map<string, () => Promise<void>>();
+  private editors = new Map<string, HTMLTextAreaElement>();
+  private flow: HTMLElement;
 
-  constructor(repo: string) { this.repo = repo; }
+  constructor(repo: string, flow: HTMLElement) { this.repo = repo; this.flow = flow; }
 
-  /** Load the directories down to `path`, then scroll it into view. */
-  async reveal(path: string) {
+  /** Load the directories down to `path`, scroll it into view, and at `line` put the caret there. */
+  async reveal(path: string, line = 0) {
     const parts = path ? path.split('/') : [];
     for (let i = 0; i < parts.length; i++) await this.loads.get(parts.slice(0, i).join('/'))?.();
     const target = path ? this.sections.get(path) : this.sections.get('');
@@ -232,6 +236,17 @@ class Reader {
     target.scrollIntoView({block: 'start'});
     target.classList.add('revealed');
     setTimeout(() => target.classList.remove('revealed'), 1200);
+    if (!line) return;
+    await this.fileLoads.get(path)?.();
+    const area = this.editors.get(path);
+    if (!area) return;
+    const lines = area.value.split('\n');
+    const at = lines.slice(0, line - 1).reduce((n, l) => n + l.length + 1, 0);
+    area.focus({preventScroll: true});
+    area.setSelectionRange(at, at + (lines[line - 1]?.length ?? 0));
+    const height = parseFloat(getComputedStyle(area).lineHeight) || 20;
+    const top = area.getBoundingClientRect().top - this.flow.getBoundingClientRect().top + this.flow.scrollTop;
+    this.flow.scrollTop = top + (line - 1) * height - this.flow.clientHeight / 3;
   }
 
   directory(path: string): HTMLElement {
@@ -250,31 +265,73 @@ class Reader {
       e.kind === 'dir' ? this.directory(join(path, e.name)) : this.file(join(path, e.name), e)));
   }
 
-  /** A file shown like a plain text editor: a header with what it is, line numbers, the text. */
+  /** A file as a plain text editor: its place in "/", line numbers, the text to edit. */
   private file(path: string, entry: Entry): HTMLElement {
-    const facts = h('span', {class: 'file-facts muted'}, kindOf(path), ' · ', bytes(entry.size));
+    // Says something only when the file is not simply saved.
+    const state = h('span', {class: 'file-state', role: 'status'});
     // The heading is the file's place in "/": the repo part quiet, the rest plain.
-    const head = h('h2', {class: 'path'}, h('span', {}, h('span', {class: 'muted'}, `/root/${this.repo}/`), path), facts);
+    const head = h('h2', {class: 'path'}, h('span', {}, h('span', {class: 'muted'}, `/root/${this.repo}/`), path), state);
     const section = h('section', {class: 'file', 'data-path': path}, head);
     this.sections.set(path, section);
     const gutter = h('pre', {class: 'gutter', 'aria-hidden': 'true'});
-    const code = h('pre', {class: 'code'}, '…');
-    const sheet = h('div', {class: 'sheet'}, gutter, code);
+    const sheet = h('div', {class: 'sheet'}, gutter, h('pre', {class: 'code'}, '…'));
     section.append(sheet);
-    if (entry.kind === 'link') { code.textContent = 'シンボリックリンク'; return section; }
-    lazy(section, async () => {
-      try {
-        const c = await store.read(this.repo, path);
-        if (c.text === null) { sheet.replaceWith(h('p', {class: 'muted sheet-note'}, `バイナリ · ${bytes(c.size)}`)); return; }
-        const n = lineCount(c.text);
-        code.textContent = c.text || ' ';
-        gutter.textContent = Array.from({length: Math.max(n, 1)}, (_, i) => String(i + 1)).join('\n');
-        facts.replaceChildren(kindOf(path), ' · ', `${n} 行`, ' · ', bytes(c.size), ' · 読むだけ');
-        if (c.truncated) section.append(h('p', {class: 'muted sheet-note'}, `先頭 ${bytes(new TextEncoder().encode(c.text).length)} だけ表示しています（全体 ${bytes(c.size)}）`));
-      } catch (e) {
-        code.textContent = String(e);
+    if (entry.kind === 'link') { sheet.replaceWith(h('p', {class: 'muted sheet-note'}, 'シンボリックリンク')); return section; }
+    const number = (text: string) => {
+      gutter.textContent = Array.from({length: Math.max(lineCount(text), 1)}, (_, i) => String(i + 1)).join('\n');
+    };
+    this.fileLoads.set(path, lazy(section, async () => {
+      let c;
+      try { c = await store.read(this.repo, path); } catch (e) { state.textContent = String(e); return; }
+      if (c.text === null) { sheet.replaceWith(h('p', {class: 'muted sheet-note'}, `バイナリ · ${bytes(c.size)}`)); return; }
+      number(c.text);
+      if (c.truncated) {
+        // Only part of it was read, so it is never written back.
+        sheet.replaceChildren(gutter, h('pre', {class: 'code'}, c.text));
+        state.textContent = `先頭 ${bytes(new TextEncoder().encode(c.text).length)} だけ（全体 ${bytes(c.size)}）· 読むだけ`;
+        return;
       }
-    });
+      const area = h('textarea', {class: 'code edit', rows: '1', wrap: 'off', spellcheck: 'false', autocapitalize: 'off',
+        'aria-label': `${path} を編集`}) as HTMLTextAreaElement;
+      area.value = c.text;
+      sheet.replaceChildren(gutter, area);
+      this.editors.set(path, area);
+      const fit = () => { area.style.height = 'auto'; area.style.height = `${area.scrollHeight}px`; };
+      requestAnimationFrame(fit);
+      let saved = c.text;
+      let timer = 0;
+      const save = async () => {
+        clearTimeout(timer);
+        if (area.value === saved) { state.textContent = ''; return; }
+        const text = area.value;
+        try {
+          await store.write(this.repo, path, text);
+          saved = text;
+          state.textContent = area.value === saved ? '' : '未保存';
+        } catch (e) {
+          state.textContent = `保存できませんでした: ${e instanceof Error ? e.message : String(e)}`;
+        }
+      };
+      area.addEventListener('input', () => {
+        fit();
+        number(area.value);
+        state.textContent = '未保存';
+        clearTimeout(timer);
+        timer = window.setTimeout(() => void save(), 700);
+      });
+      area.addEventListener('blur', () => void save());
+      area.addEventListener('keydown', (event) => {
+        if ((event.ctrlKey || event.metaKey) && event.key === 's') { event.preventDefault(); void save(); return; }
+        if (event.key === 'Tab' && !event.shiftKey && !event.ctrlKey && !event.altKey) {
+          event.preventDefault();
+          area.setRangeText('\t', area.selectionStart, area.selectionEnd, 'end');
+          area.dispatchEvent(new Event('input'));
+          return;
+        }
+        // Escape leaves the text, so the keyboard is never caught in it.
+        if (event.key === 'Escape') area.blur();
+      });
+    }));
     return section;
   }
 }

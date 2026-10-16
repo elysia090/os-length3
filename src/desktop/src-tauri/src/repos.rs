@@ -184,6 +184,33 @@ impl Repos {
     }
 }
 
+impl Repos {
+    /// Replace the text of an existing file inside `repo`. New files, directories
+    /// and anything over `limit` bytes are refused. The text goes to a temporary
+    /// file beside the target first and is renamed over it, so a failed write
+    /// never leaves half a file.
+    pub fn write(&self, repo: &str, relative: &str, text: &str, limit: u64) -> Result<u64> {
+        if text.len() as u64 > limit {
+            return Err(format!("{relative:?} is larger than {limit} bytes"));
+        }
+        let path = self.inside(repo, relative)?;
+        let meta = fs::metadata(&path).map_err(|e| e.to_string())?;
+        if !meta.is_file() {
+            return Err(format!("{relative:?} is not a file"));
+        }
+        let name = path.file_name().ok_or("no file name")?.to_string_lossy().into_owned();
+        let temp = path.with_file_name(format!(".{name}.length3-{}", std::process::id()));
+        let result = fs::write(&temp, text)
+            .and_then(|_| fs::set_permissions(&temp, meta.permissions()))
+            .and_then(|_| fs::rename(&temp, &path));
+        if let Err(e) = result {
+            let _ = fs::remove_file(&temp);
+            return Err(e.to_string());
+        }
+        Ok(text.len() as u64)
+    }
+}
+
 /// `git init` without the user's global or system configuration, so a new
 /// repo never inherits host settings. Missing git just leaves no `.git`.
 fn init_git(dir: &Path) {
@@ -243,6 +270,22 @@ mod tests {
             assert!(r.read("a", "escape/README.md", 100).is_err());
         }
         assert_eq!(r.read("a", "README.md", 100).unwrap().text.as_deref(), Some("# a\n"));
+    }
+
+    #[test]
+    fn writes_replace_existing_files_inside_the_repo_only() {
+        let r = scratch("write");
+        r.create("a", "c").unwrap();
+        r.create("b", "empty").unwrap();
+        assert_eq!(r.write("a", "src/main.c", "int main;\n", 100).unwrap(), 10);
+        assert_eq!(r.read("a", "src/main.c", 100).unwrap().text.as_deref(), Some("int main;\n"));
+        assert!(r.write("a", "new.txt", "x", 100).is_err());
+        assert!(r.write("a", "src", "x", 100).is_err());
+        assert!(r.write("a", "../b/README.md", "x", 100).is_err());
+        assert!(r.write("a", "README.md", &"x".repeat(101), 100).is_err());
+        let names: Vec<String> = r.tree("a", "src").unwrap().into_iter().map(|e| e.name).collect();
+        assert_eq!(names, ["main.c"]);
+        assert_eq!(r.read("b", "README.md", 100).unwrap().text.as_deref(), Some("# b\n"));
     }
 
     #[test]

@@ -39,10 +39,13 @@ separate surface and nothing here depends on it.
   (⊕ at the left brings every other repo out at once, × takes one off;
   with none left the center shows Topic); the center (3/4)
   is the open repo's files one after another like an endless page (README
-  first, loaded as they scroll near), each shown like a plain text editor
-  with line numbers, kind, lines and size, with a prompt box at its foot that
+  first, loaded as they scroll near), each a plain text editor with line
+  numbers that saves on its own (natively through `repo_write`, which only
+  replaces existing files inside the repo, atomically; files read only in
+  part are never written), with a prompt box at its foot that
   types into the repo's `sh`. While the prompt is in use the terminal flies
-  up above it from the right pane, where the reference (the repo's
+  up above it from the right pane, where a search box for the repo sits on
+  top and the reference (the repo's
   `issue/`; diff and run output not connected yet) grows into the
   room. No tabs: files are chosen from File.
 - Terminal: translated BusyBox `sh` running on the xlat kernel in a

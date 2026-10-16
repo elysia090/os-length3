@@ -63,10 +63,14 @@ Home or a new repo puts it on the band. With every pill off, the
 center shows Topic. The band is remembered on this device. Below the band the center is the open repo's files one after another,
 an endless page scrolled like a browser and opened at the file chosen in
 File. There are no tabs, no title, no index of links and no headings for
-directories. Each file reads like a plain text editor: a header with its
-place in "/" (`/root/<repo>/` quiet, the rest plain) and, on the right,
-what it is, its lines, its size and 読むだけ (editing is not there yet);
-then line numbers in a quiet gutter beside the text. In each directory README comes first, then the other
+directories. The center is where editing happens: each file is a plain
+text editor, a header with its place in "/" (`/root/<repo>/` quiet, the
+rest plain), then line numbers in a quiet gutter beside the text, which is
+itself the field (no box; the caret is the only sign). Typing saves on its
+own a moment later, on leaving the file, or with Ctrl+S; the header says
+something only when the file is not simply saved (未保存, or why it could
+not be saved). A file read only in part (over 256 KB) or binary is never
+written back, and says so. Tab types a tab; Escape leaves the text. In each directory README comes first, then the other
 files, then the directories. The only line in Forge is the one between the
 center and the right pane.
 
@@ -79,8 +83,10 @@ and the reference grows down into the room it leaves; leaving the prompt
 
 The center takes three quarters of the width; the right pane takes one
 quarter (at least 280 px) so it never gets in the way. Its bottom is the
-terminal's home. Its top is one reference at a time, switched freely with
-chips: Issue (the repo's `issue/`, one file each), diff and 実行結果 (each
+terminal's home. Above the band line sits the search box for the open
+repo: plain, case-insensitive, line by line; results are grouped by file,
+and a line pressed opens the center there with the line selected. Below,
+on the band line, one reference at a time, switched freely with chips: Issue (the repo's `issue/`, one file each), diff and 実行結果 (each
 says plainly that it is not connected yet). The chosen reference is remembered on this device.
 
 ### File
@@ -114,6 +120,8 @@ Every value in `styles.css` comes from a token below.
   `ink` fill with `ground` text: the rail item (File while its tree is
   out), the repo chip, the open repo in the tree, the chosen template, the primary button. Focus is a 2 px
   `ink` ring. Nothing else marks state (no underline, no bold-only).
+- **Selection** is the current-thing state too: `ink` with `ground` text,
+  for selected text and for search matches.
 - **Lines.** 1 px. `rule` between regions and around places; `edge` around
   things you press or type into. A dashed `rule` means one thing: room for
   something that is not here yet. Headings never get a rule.
