@@ -9,8 +9,8 @@ test('the rail lists the eight purposes in order, then the new repo square', () 
   assert.equal(new Set(RAIL.map((p) => p.id)).size, RAIL.length);
 });
 
-test('no purpose claims a connected surface before one exists', () => {
-  assert.ok(RAIL.every((p) => !p.implemented));
+test('only Home and Runtime claim real state so far', () => {
+  assert.deepEqual(RAIL.filter((p) => p.implemented).map((p) => p.id), ['home', 'runtime']);
 });
 
 test('arrow keys wrap and Home/End jump to the ends', () => {

@@ -1,47 +1,36 @@
-import {readCapacity, type Capacity} from './host.ts';
+import {readCapacity} from './host.ts';
 import {icon} from './icons.ts';
-import {spring, step, settled} from './motion/spring.ts';
-import {NEW_REPO, PURPOSES, RAIL, purpose, restorePurpose, stepPurpose, type PurposeId} from './purposes.ts';
-import {Stage} from './scene/stage.ts';
-import {HOST_EDGE, STATIONS, pieces, volumeEdge} from './world.ts';
+import {LIMITS, initials, normalize, parse, type Profile} from './profile.ts';
+import {NEW_REPO, PURPOSES, purpose, restorePurpose, stepPurpose, type PurposeId} from './purposes.ts';
 
-const STORAGE_KEY = 'length3.os.purpose';
+const PURPOSE_KEY = 'length3.os.purpose';
+const PROFILE_KEY = 'length3.os.profile';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const tabs = new Map<PurposeId, HTMLButtonElement>();
-const stage = new Stage($<HTMLCanvasElement>('stage'));
 let current: PurposeId = 'home';
 
-function readStored(): string | null {
-  try { return localStorage.getItem(STORAGE_KEY); } catch { return null; }
+function load(key: string): string | null {
+  try { return localStorage.getItem(key); } catch { return null; }
 }
 
-function store(id: PurposeId) {
-  try { localStorage.setItem(STORAGE_KEY, id); } catch { /* convenience only */ }
+function save(key: string, value: string): boolean {
+  try { localStorage.setItem(key, value); return true; } catch { return false; }
 }
 
-// ---- Rail: a light puck rides a spring to the chosen purpose ----
+type Child = Node | string | null | undefined | false;
 
-const puck = {y: spring(0), h: spring(56), frame: 0, last: 0};
-function movePuck() {
-  const tab = tabs.get(current)!;
-  puck.y.target = tab.offsetTop; puck.h.target = tab.offsetHeight;
-  if (!puck.frame) puck.frame = requestAnimationFrame(animatePuck);
+/** Build an element; text is always set as text, never parsed as HTML. */
+function h(tag: string, props: Record<string, string> = {}, ...children: Child[]): HTMLElement {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === 'class') el.className = v; else el.setAttribute(k, v);
+  }
+  for (const c of children) if (c) el.append(c);
+  return el;
 }
-function animatePuck(now: number) {
-  puck.frame = 0;
-  const dt = puck.last ? Math.min((now - puck.last) / 1000, 0.1) : 1 / 60;
-  puck.last = now;
-  const slow = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0.001 : 1;
-  step(puck.y, dt, 0.09 * slow); step(puck.h, dt, 0.09 * slow);
-  // Stretch along the travel while moving, like a bead of light under glass.
-  const stretch = Math.min(Math.abs(puck.y.velocity) * 0.04, 28);
-  const el = $('puck');
-  el.style.transform = `translateY(${(puck.y.value - stretch / 2).toFixed(1)}px)`;
-  el.style.height = `${(puck.h.value + stretch).toFixed(1)}px`;
-  if (!settled(puck.y, 0.05) || !settled(puck.h, 0.05)) puck.frame = requestAnimationFrame(animatePuck);
-  else puck.last = 0;
-}
+
+// ---- Rail ----
 
 function railButton(id: PurposeId): HTMLButtonElement {
   const p = purpose(id), button = document.createElement('button');
@@ -49,13 +38,9 @@ function railButton(id: PurposeId): HTMLButtonElement {
   button.id = `purpose-${id}`;
   button.className = id === 'new-repo' ? 'rail-item rail-new' : 'rail-item';
   button.setAttribute('role', 'tab');
-  button.setAttribute('aria-controls', 'target');
+  button.setAttribute('aria-controls', 'page');
   button.setAttribute('aria-label', p.label);
-  const tag = document.createElement('span');
-  tag.className = 'rail-tag';
-  tag.textContent = p.label;
-  tag.setAttribute('aria-hidden', 'true');
-  button.append(icon(id), tag);
+  button.append(icon(id), h('span', {class: 'rail-tag', 'aria-hidden': 'true'}, p.label));
   button.addEventListener('click', () => select(id));
   button.addEventListener('keydown', (event) => {
     const next = stepPurpose(id, event.key);
@@ -68,80 +53,149 @@ function railButton(id: PurposeId): HTMLButtonElement {
   return button;
 }
 
-// ---- Selection: the camera travels, the title card cuts in ----
-
 function select(id: PurposeId) {
-  const p = purpose(id);
   current = id;
   for (const [tabId, tab] of tabs) {
     const selected = tabId === id;
     tab.setAttribute('aria-selected', String(selected));
     tab.tabIndex = selected ? 0 : -1;
   }
-  const target = $('target');
-  target.setAttribute('aria-labelledby', `purpose-${id}`);
-  $('target-index').textContent = String(RAIL.findIndex((r) => r.id === id) + 1).padStart(2, '0');
-  $('target-title').textContent = p.label;
-  $('target-role').textContent = p.role;
-  target.classList.remove('cut');
-  void target.offsetWidth; // restart the cut-in animation
-  target.classList.add('cut');
-  document.body.dataset.purpose = id;
-  stage.go(STATIONS[id]);
-  movePuck();
-  if (id !== 'new-repo') store(id);
+  $('page').setAttribute('aria-labelledby', `purpose-${id}`);
+  render();
+  if (id !== 'new-repo') save(PURPOSE_KEY, id);
 }
 
-// ---- Measured volume, pinned into the world ----
+function render() {
+  const page = $('page');
+  page.replaceChildren(...(current === 'home' ? home() : current === 'runtime' ? runtime() : placeholder(current)));
+}
 
-const UNITS = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+// ---- Home: the profile ----
+
+let profile: Profile = parse(load(PROFILE_KEY));
+let editing = false;
+
+function home(): Node[] {
+  // Everyone sees this page the same way; the owner also gets "edit".
+  const owner = true;
+  const header = h('section', {class: 'profile'},
+    h('div', {class: 'avatar', 'aria-hidden': 'true'}, initials(profile)),
+    editing ? editForm() : identity(),
+    owner && !editing ? editButton() : null,
+  );
+  const repos = h('section', {class: 'section', 'aria-labelledby': 'repos-title'},
+    h('h2', {id: 'repos-title'}, 'repo'),
+    h('div', {class: 'grid'}, newRepoCard()),
+  );
+  const posts = h('section', {class: 'section', 'aria-labelledby': 'posts-title'},
+    h('h2', {id: 'posts-title'}, '投稿'),
+    h('p', {class: 'muted'}, 'まだ投稿はありません'),
+  );
+  return [header, repos, posts];
+}
+
+function identity(): HTMLElement {
+  const named = profile.name || profile.handle;
+  return h('div', {class: 'identity'},
+    named ? h('h1', {}, profile.name || `@${profile.handle}`) : h('h1', {class: 'unset'}, '名前が未設定です'),
+    profile.handle && profile.name ? h('p', {class: 'handle'}, `@${profile.handle}`) : null,
+    profile.bio ? h('p', {class: 'bio'}, profile.bio) : null,
+    h('p', {class: 'counts'}, h('span', {}, h('b', {}, '0'), ' repo'), h('span', {}, h('b', {}, '0'), ' 投稿')),
+  );
+}
+
+function editButton(): HTMLElement {
+  const b = h('button', {class: 'button', type: 'button'}, 'プロフィールを編集');
+  b.addEventListener('click', () => { editing = true; render(); ($('profile-name') as HTMLInputElement).focus(); });
+  return b;
+}
+
+function editForm(): HTMLElement {
+  const name = h('input', {id: 'profile-name', maxlength: String(LIMITS.name), autocomplete: 'name'}) as HTMLInputElement;
+  const handle = h('input', {id: 'profile-handle', maxlength: String(LIMITS.handle), autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
+  const bio = h('textarea', {id: 'profile-bio', maxlength: String(LIMITS.bio), rows: '3'}) as HTMLTextAreaElement;
+  name.value = profile.name; handle.value = profile.handle; bio.value = profile.bio;
+  const error = h('p', {class: 'error', role: 'alert'});
+  const form = h('form', {class: 'edit'},
+    h('label', {}, '名前', name),
+    h('label', {}, 'ハンドル', h('span', {class: 'handle-field'}, '@', handle)),
+    h('label', {}, '自己紹介', bio),
+    error,
+    h('div', {class: 'row'},
+      h('button', {class: 'button primary', type: 'submit'}, '保存'),
+      h('button', {class: 'button', type: 'button', 'data-cancel': ''}, 'キャンセル')),
+  );
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const result = normalize({name: name.value, handle: handle.value, bio: bio.value});
+    if (result.error) {
+      error.textContent = 'ハンドルは英小文字・数字・- _ の32文字以内です';
+      handle.focus();
+      return;
+    }
+    if (!save(PROFILE_KEY, JSON.stringify(result.profile))) {
+      error.textContent = 'この端末に保存できませんでした';
+      return;
+    }
+    profile = result.profile;
+    editing = false;
+    render();
+  });
+  form.querySelector('[data-cancel]')!.addEventListener('click', () => { editing = false; render(); });
+  return form;
+}
+
+function newRepoCard(): HTMLElement {
+  const card = h('button', {class: 'card new', type: 'button'}, icon('new-repo'), '新しいrepo');
+  card.addEventListener('click', () => select('new-repo'));
+  return card;
+}
+
+// ---- Runtime: what this device holds ----
+
+const UNITS = ['B', 'KB', 'MB', 'GB', 'TB'];
 function bytes(n: number): string {
   let i = 0;
   while (n >= 1000 && i < UNITS.length - 1) { n /= 1000; i++; }
-  return `${n >= 100 || i === 0 ? n.toFixed(0) : n.toFixed(1)}<small>${UNITS[i]}</small>`;
+  return `${n >= 100 || i === 0 ? n.toFixed(0) : n.toFixed(1)} ${UNITS[i]}`;
 }
 
-const readouts = new Map<string, HTMLElement>();
-function readout(id: 'total' | 'used' | 'app'): HTMLElement {
-  let el = readouts.get(id);
-  if (!el) {
-    el = document.createElement('div');
-    el.className = `anchor anchor-${id}`;
-    el.hidden = true;
-    $('anchors').append(el);
-    readouts.set(id, el);
-  }
-  return el;
+function runtime(): Node[] {
+  const p = purpose('runtime');
+  const storage = h('section', {class: 'section', 'aria-labelledby': 'storage-title'},
+    h('h2', {id: 'storage-title'}, 'この端末の容量'),
+    h('p', {class: 'muted'}, '計測中…'));
+  void readCapacity().then((c) => {
+    if (!c) { storage.lastChild!.textContent = '計測できませんでした'; return; }
+    const used = c.total - c.free;
+    const pct = (v: number) => `${Math.min(100, (v / c.total) * 100).toFixed(2)}%`;
+    const app = h('span', {class: 'app'}); app.style.width = pct(c.app);
+    const other = h('span'); other.style.width = pct(Math.max(0, used - c.app));
+    storage.lastChild!.replaceWith(
+      h('div', {class: 'meter', role: 'img', 'aria-label': `全体 ${bytes(c.total)} のうち ${bytes(used)} 使用`}, app, other),
+      h('div', {class: 'legend'},
+        h('span', {}, h('b', {}, bytes(c.app)), 'このアプリ'),
+        h('span', {}, h('b', {}, bytes(used)), '使用中'),
+        h('span', {}, h('b', {}, bytes(c.free)), '空き'),
+        h('span', {}, h('b', {}, bytes(c.total)), c.layer === 'browser-origin' ? 'このブラウザの割当' : '全体')),
+    );
+  });
+  return [pageHead('runtime', p.label, p.role), storage,
+    h('section', {class: 'section'}, h('h2', {}, '有効な環境'), h('div', {class: 'empty'}, p.detail))];
 }
 
-function showCapacity(capacity: Capacity | null) {
-  stage.set(pieces(capacity));
-  const total = readout('total'), used = readout('used'), app = readout('app');
-  if (!capacity) {
-    stage.pin('total', total, null); stage.pin('used', used, null); stage.pin('app', app, null);
-    return;
-  }
-  const half = HOST_EDGE / 2, usedBytes = capacity.total - capacity.free;
-  total.innerHTML = bytes(capacity.total);
-  total.dataset.layer = capacity.layer;
-  used.innerHTML = bytes(usedBytes);
-  app.innerHTML = bytes(capacity.app);
-  stage.pin('total', total, [half, HOST_EDGE, -half]);
-  const usedEdge = volumeEdge(usedBytes, capacity.total);
-  stage.pin('used', used, usedEdge ? [-usedEdge / 2, usedEdge, usedEdge / 2] : null);
-  const appEdge = volumeEdge(capacity.app, capacity.total);
-  stage.pin('app', app, appEdge ? [half + appEdge * 1.5, appEdge, half] : null);
+// ---- Not built yet ----
+
+function pageHead(id: PurposeId, label: string, role: string): HTMLElement {
+  return h('header', {class: 'page-head'}, icon(id), h('h1', {}, label), h('p', {}, role));
 }
 
-async function refresh() { showCapacity(await readCapacity()); }
+function placeholder(id: PurposeId): Node[] {
+  const p = purpose(id);
+  return [pageHead(id, p.label, p.role), h('div', {class: 'empty'}, p.detail)];
+}
 
 // ---- Start ----
 
 $('rail-tabs').append(...PURPOSES.map((p) => railButton(p.id)), railButton(NEW_REPO.id));
-$('strip-new').addEventListener('click', () => select('new-repo'));
-showCapacity(null);
-select(restorePurpose(readStored()));
-void refresh();
-addEventListener('focus', () => void refresh());
-setInterval(() => { if (document.visibilityState === 'visible') void refresh(); }, 15000);
-addEventListener('resize', movePuck);
+select(restorePurpose(load(PURPOSE_KEY)));

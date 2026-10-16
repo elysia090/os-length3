@@ -7,39 +7,10 @@
 <link rel="stylesheet" href="/src/styles.css">
 </head>
 <body>
-<canvas id="stage" aria-hidden="true"></canvas>
-<div class="anchors" id="anchors" aria-hidden="true"></div>
-
-<div class="shell">
-  <nav class="rail" aria-label="目的">
-    <div class="rail-tabs" role="tablist" aria-orientation="vertical" aria-label="目的" id="rail-tabs">
-      <span class="puck" id="puck" aria-hidden="true"></span>
-    </div>
-  </nav>
-
-  <section class="title-card" id="target" role="tabpanel" aria-live="polite">
-    <span class="title-index" id="target-index" aria-hidden="true"></span>
-    <h1 id="target-title"></h1>
-    <p id="target-role"></p>
-  </section>
-
-  <div class="repo-strip" role="group" aria-label="作業repo">
-    <button class="slot slot-new" id="strip-new" type="button" aria-label="新しいrepo">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7v10M7 12h10"/></svg>
-    </button>
-  </div>
-
-  <aside class="side" aria-label="参照とターミナル">
-    <section class="slab slab-reference" aria-label="参照（未接続）">
-      <span class="slab-glyph" aria-hidden="true">
-        <svg viewBox="0 0 24 24"><path d="M4 6h16v12H4zM4 10h16M9 10v8"/></svg>
-      </span>
-    </section>
-    <section class="slab slab-terminal" aria-label="Terminal（未接続）">
-      <span class="prompt" aria-hidden="true">›<i class="cursor"></i></span>
-    </section>
-  </aside>
-</div>
+<nav class="rail" aria-label="目的">
+  <div class="rail-tabs" role="tablist" aria-orientation="vertical" aria-label="目的" id="rail-tabs"></div>
+</nav>
+<main class="page" id="page" role="tabpanel" tabindex="-1"></main>
 <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

@@ -1,6 +1,7 @@
-// The leftmost rail chooses a purpose; the column beside it shows the targets
-// for that purpose. Purposes are not directories: the filesystem stays an
-// ordinary POSIX tree and never re-implements this classification.
+// The leftmost rail chooses a purpose and the whole main area shows it;
+// there is no intermediate pane. Purposes are not directories: the
+// filesystem stays an ordinary POSIX tree and never re-implements this
+// classification.
 
 export type PurposeId =
   | 'home' | 'file' | 'git' | 'forge' | 'runtime' | 'remote' | 'topic' | 'inbox'
@@ -11,15 +12,15 @@ export interface Purpose {
   readonly label: string;
   /** What the purpose is for, in one phrase. */
   readonly role: string;
-  /** What its target column will hold once the surface is real. */
+  /** What the page will hold once the surface is real. */
   readonly detail: string;
-  /** Whether the target column is connected to real state yet. */
+  /** Whether the page shows real state yet. */
   readonly implemented: boolean;
 }
 
 export const PURPOSES: readonly Purpose[] = [
-  {id: 'home', label: 'Home', role: 'repoごとの作業一覧',
-    detail: '開いているrepoと、その中の作業場をrepo単位でまとめて見る。', implemented: false},
+  {id: 'home', label: 'Home', role: 'プロフィール',
+    detail: '自分にも他人にも同じ形で見えるページ。repoと投稿が並ぶ。', implemented: true},
   {id: 'file', label: 'File', role: 'repoの細かい中身',
     detail: '普通のPOSIX treeをそのまま扱う。terminalと同じ実体を見る。', implemented: false},
   {id: 'git', label: 'Git', role: 'repoの外部状態',
@@ -27,7 +28,7 @@ export const PURPOSES: readonly Purpose[] = [
   {id: 'forge', label: 'Forge', role: '自分の作業場',
     detail: 'Fix / Patch / RFC などの種別＋件名から、作業場と差分に入る。', implemented: false},
   {id: 'runtime', label: 'Runtime', role: '有効化された環境',
-    detail: '実際に有効なbase・ツール版・Dotfilesの差分と、その適用元。', implemented: false},
+    detail: '実際に有効なbase・ツール版・Dotfilesの差分と、その適用元。', implemented: true},
   {id: 'remote', label: 'Remote', role: '同期',
     detail: '手元の作業を預け、別の場所でも扱う。SSHの有効化とは別の操作。', implemented: false},
   {id: 'topic', label: 'Topic', role: 'シンプルな投稿',
