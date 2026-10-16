@@ -3,9 +3,12 @@
 //! or inside the app's Prompt) both use this crate, so the two cannot drift.
 
 pub mod boundary;
+pub mod root;
 pub mod git;
 pub mod home;
 pub mod issues;
+#[cfg(target_os = "linux")]
+pub mod launch;
 pub mod paths;
 pub mod repos;
 pub mod system;

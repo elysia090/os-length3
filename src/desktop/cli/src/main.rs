@@ -27,14 +27,18 @@ struct Args {
     json: bool,
     detail: String,
     template: String,
+    network: bool,
 }
 
 fn parse(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args { words: Vec::new(), json: false, detail: String::new(), template: "standard".into() };
+    let mut a = Args { words: Vec::new(), json: false, detail: String::new(), template: "standard".into(), network: false };
     let mut it = raw.into_iter();
     while let Some(w) = it.next() {
         match w.as_str() {
+            // What follows -- is a command to run, untouched.
+            "--" => { a.words.push(w); a.words.extend(it.by_ref()); }
             "--json" => a.json = true,
+            "--network" => a.network = true,
             "-m" | "--detail" => a.detail = it.next().ok_or("-m の後に詳細を書いてください")?,
             "-t" | "--template" => a.template = it.next().ok_or("-t の後にテンプレートを書いてください")?,
             "-h" | "--help" => a.words.insert(0, "help".into()),
@@ -95,6 +99,10 @@ const HELP: &str = "l3 — Length³ OS をコマンドで。アプリと同じ r
   l3 todo done N             N 番目を完了にする（もう一度で戻す）
   l3 runtime                 この端末: ホストの空き、このOSの実割当、空けられるもの
   l3 reclaim                 この端末の容量を空ける（このOS自身の残り物だけ）
+  l3 root                    この端末にある root（ディストリ）
+  l3 root install BUNDLE     リリースの root を入れる（digest で確かめてから）
+  l3 open REPO [-- CMD…]     root の中で repo を開く（ホストのカーネルで、権限なしで）
+      --network              ネットワークを渡す（既定ではなし）
 
   --json で一覧を JSON に。パスは File と同じ /root/<repo>/… でも書けます。
   置き場所: $LENGTH3_HOME（なければアプリと同じデータの場所）";
@@ -103,6 +111,26 @@ const HELP: &str = "l3 — Length³ OS をコマンドで。アプリと同じ r
 /// written back; Home's TODO, making repos and the device belong to the app.
 fn in_prompt() -> bool {
     std::env::var_os("L3_PROMPT").is_some()
+}
+
+/// A repo inside the installed root, on this machine (core/src/launch.rs).
+#[cfg(target_os = "linux")]
+fn open(a: &Args, repo: &str, rest: &[&str]) -> Result<(), String> {
+    let (root, _) = length3_core::root::current(&paths::data_dir()).ok_or("root がありません（l3 root install BUNDLE）")?;
+    let dir = Repos::open()?.dir(repo)?;
+    let argv: Vec<String> = match rest {
+        ["--", cmd @ ..] if !cmd.is_empty() => cmd.iter().map(|s| s.to_string()).collect(),
+        [] => vec!["/bin/sh".into(), "-i".into()],
+        _ => return Err("l3 open REPO [-- CMD…]".into()),
+    };
+    let s = length3_core::launch::Sandbox { root, repo: dir, name: repo.to_string(), argv, network: a.network };
+    let code = length3_core::launch::run(&s).map_err(|e| e.to_string())?;
+    std::process::exit(code);
+}
+
+#[cfg(not(target_os = "linux"))]
+fn open(_: &Args, _: &str, _: &[&str]) -> Result<(), String> {
+    Err("l3 open はいま Linux だけです".into())
 }
 
 fn run(a: Args) -> Result<(), String> {
@@ -208,6 +236,22 @@ fn run(a: Args) -> Result<(), String> {
             for (p, why) in &r.kept { out(format!("  残したもの {}: {}", p.display(), why)); }
             Ok(())
         }
+        ["root"] => {
+            let held = length3_core::root::held(&paths::data_dir());
+            if a.json { return json(held.iter().map(|(r, c)| serde_json::json!({"root": r, "current": c})).collect::<Vec<_>>()); }
+            if held.is_empty() { out("root はまだありません（l3 root install BUNDLE）"); return Ok(()); }
+            for (r, current) in held {
+                out(format!("{} {}  {} ファイル · {}  {}{}", r.name, r.version, r.files, bytes(r.bytes), &r.sha256[..12], if current { "  使用中" } else { "" }));
+            }
+            Ok(())
+        }
+        ["root", "install", bundle] => {
+            let r = length3_core::root::install(&paths::data_dir(), std::path::Path::new(bundle))?;
+            if a.json { return json(r); }
+            out(format!("{} {} を入れました（{} ファイル · {}）", r.name, r.version, r.files, bytes(r.bytes)));
+            Ok(())
+        }
+        ["open", repo, rest @ ..] => open(&a, repo, rest),
         _ => Err(format!("わからないコマンドです: l3 {}\n`l3 help` で使い方を見られます", w.join(" "))),
     }
 }

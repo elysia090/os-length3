@@ -1,0 +1,393 @@
+//! The distribution's root, as l3 holds it on a device. The canonical copy
+//! is the release: a `.tar.zst` bundle named by its sha256, pinned here.
+//! Installing checks the bundle against the pin before reading a byte of
+//! it, unpacks it into a fresh directory (refusing any entry that would land
+//! outside, follow a link, or be a device), and moves that into place in one
+//! step. The root is then only read: a Prompt mounts it read-only.
+//!
+//!   <data>/system/<sha256>/root       the tree
+//!   <data>/system/<sha256>/manifest   the release's own record
+//!   <data>/system/current             which one Prompts use
+//!
+//! One known-good previous root is kept, so a bad update can be undone;
+//! older ones are what 空ける gives back.
+
+use sha2::{Digest, Sha256};
+use std::fs;
+use std::io::{self, Read};
+use std::os::unix::fs::{symlink, PermissionsExt};
+use std::path::{Component, Path, PathBuf};
+
+/// A release the device may install, as published.
+#[derive(Debug)]
+pub struct Release {
+    pub name: &'static str,
+    pub version: &'static str,
+    pub sha256: &'static str,
+    pub bytes: u64,
+    pub file: &'static str,
+}
+
+/// The releases l3 trusts, newest first. Nothing else is installed.
+pub const RELEASES: &[Release] = &[Release {
+    name: "OS Length3 Linux",
+    version: "0.1.0",
+    sha256: "56229f242fd8860583cb8b17b5f64f21aced1abad99770b306a0432fc260d7b4",
+    bytes: 63_651_568,
+    file: "os-length3-linux-0.1.0-x86_64-ffb53450f0f41900f1cda2cd072b9405b43c7b44f97c400794c57019578f32a9.tar.zst",
+}];
+
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone, PartialEq)]
+pub struct Installed {
+    pub name: String,
+    pub version: String,
+    pub sha256: String,
+    pub files: u64,
+    pub bytes: u64,
+}
+
+pub fn system_dir(data: &Path) -> PathBuf {
+    data.join("system")
+}
+
+fn hex(d: &[u8]) -> String {
+    d.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// The release a bundle is, by its digest; anything not pinned is refused.
+pub fn identify(bundle: &Path) -> Result<&'static Release, String> {
+    let mut f = fs::File::open(bundle).map_err(|e| format!("{}: {e}", bundle.display()))?;
+    let mut h = Sha256::new();
+    let mut buf = vec![0u8; 1 << 20];
+    let mut n = 0u64;
+    loop {
+        let k = f.read(&mut buf).map_err(|e| e.to_string())?;
+        if k == 0 {
+            break;
+        }
+        h.update(&buf[..k]);
+        n += k as u64;
+    }
+    let sha = hex(&h.finalize());
+    RELEASES.iter().find(|r| r.sha256 == sha && r.bytes == n)
+        .ok_or_else(|| format!("知らないリリースです（sha256 {}…, {n} bytes）", &sha[..12]))
+}
+
+type Decoder<R> = ruzstd::decoding::StreamingDecoder<io::BufReader<R>, ruzstd::decoding::FrameDecoder>;
+
+/// Every frame of a zstd stream, one after another.
+struct Frames<R: Read> {
+    inner: Option<Decoder<R>>,
+}
+
+fn bad(e: impl ToString) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, e.to_string())
+}
+
+impl<R: Read> Frames<R> {
+    fn new(source: R) -> io::Result<Frames<R>> {
+        Ok(Frames { inner: Some(Decoder::new(io::BufReader::new(source)).map_err(bad)?) })
+    }
+}
+
+impl<R: Read> Read for Frames<R> {
+    fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+        loop {
+            let Some(d) = self.inner.as_mut() else { return Ok(0) };
+            let n = d.read(out)?;
+            if n > 0 || out.is_empty() {
+                return Ok(n);
+            }
+            // This frame is done: the next one, if more follows.
+            let (mut source, decoder) = self.inner.take().unwrap().into_parts();
+            if io::BufRead::fill_buf(&mut source)?.is_empty() {
+                return Ok(0);
+            }
+            self.inner = Some(ruzstd::decoding::StreamingDecoder::new_with_decoder(source, decoder).map_err(bad)?);
+        }
+    }
+}
+
+/// One tar member, as far as a root needs: these four kinds and nothing else.
+enum Kind {
+    File,
+    Dir,
+    Symlink(String),
+    Hardlink(String),
+}
+
+fn octal(field: &[u8]) -> io::Result<u64> {
+    let t = field.iter().take_while(|&&b| b != 0 && b != b' ').copied().collect::<Vec<u8>>();
+    let t = std::str::from_utf8(&t).map_err(bad)?.trim_start();
+    if t.is_empty() {
+        return Ok(0);
+    }
+    u64::from_str_radix(t, 8).map_err(|_| bad("tar: a number is not octal"))
+}
+
+fn text(field: &[u8]) -> String {
+    String::from_utf8_lossy(field.split(|&b| b == 0).next().unwrap_or(&[])).into_owned()
+}
+
+/// A member path made safe: relative, normal parts only, under `root/`.
+/// The release's tree is its `root/`; its `manifest` is kept beside it.
+fn place(name: &str) -> io::Result<PathBuf> {
+    let p = Path::new(name.trim_end_matches('/'));
+    let mut out = PathBuf::new();
+    for c in p.components() {
+        match c {
+            Component::Normal(x) => out.push(x),
+            Component::CurDir => {}
+            _ => return Err(bad(format!("tar: {name} leaves the tree"))),
+        }
+    }
+    if out.as_os_str().is_empty() {
+        return Err(bad("tar: an empty name"));
+    }
+    Ok(out)
+}
+
+/// Make sure no part of `rel` under `top` is a link: a member must never
+/// be written through one (a symlink made earlier in the same archive).
+fn through_no_link(top: &Path, rel: &Path) -> io::Result<()> {
+    let mut at = top.to_path_buf();
+    let parts: Vec<_> = rel.components().collect();
+    for c in &parts[..parts.len().saturating_sub(1)] {
+        at.push(c);
+        match fs::symlink_metadata(&at) {
+            Ok(m) if m.is_dir() => {}
+            Ok(_) => return Err(bad(format!("tar: {} goes through a link", rel.display()))),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => fs::create_dir(&at)?,
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(())
+}
+
+/// Unpack a tar stream into the empty directory `top`; returns (files, bytes).
+pub fn unpack(stream: impl Read, top: &Path) -> io::Result<(u64, u64)> {
+    let mut r = io::BufReader::with_capacity(1 << 20, stream);
+    let (mut files, mut bytes) = (0u64, 0u64);
+    let mut long_name: Option<String> = None;
+    let mut long_link: Option<String> = None;
+    let mut block = [0u8; 512];
+    loop {
+        r.read_exact(&mut block)?;
+        if block.iter().all(|&b| b == 0) {
+            return Ok((files, bytes));
+        }
+        let sum = octal(&block[148..156])?;
+        let mut check: u64 = block.iter().map(|&b| b as u64).sum();
+        check = check - block[148..156].iter().map(|&b| b as u64).sum::<u64>() + 8 * 32;
+        if sum != check {
+            return Err(bad("tar: a header's checksum is wrong"));
+        }
+        let size = octal(&block[124..136])?;
+        let mode = octal(&block[100..108])? as u32 & 0o7777;
+        let kind = block[156];
+        let mut name = text(&block[0..100]);
+        if &block[257..262] == b"ustar" && block[345] != 0 {
+            name = format!("{}/{}", text(&block[345..500]), name);
+        }
+        let link = text(&block[157..257]);
+        let padded = size.div_ceil(512) * 512;
+        // A pax header sets path and linkpath for the member after it.
+        if kind == b'x' || kind == b'g' {
+            let mut body = vec![0u8; padded as usize];
+            r.read_exact(&mut body)?;
+            if kind == b'x' {
+                let mut rest = &body[..size as usize];
+                while let Some(sp) = rest.iter().position(|&b| b == b' ') {
+                    let len: usize = std::str::from_utf8(&rest[..sp]).map_err(bad)?.parse().map_err(bad)?;
+                    if len <= sp || len > rest.len() {
+                        return Err(bad("tar: a pax record is cut"));
+                    }
+                    let record = String::from_utf8_lossy(&rest[sp + 1..len - 1]).into_owned();
+                    if let Some(v) = record.strip_prefix("path=") { long_name = Some(v.into()); }
+                    if let Some(v) = record.strip_prefix("linkpath=") { long_link = Some(v.into()); }
+                    if record.starts_with("size=") { return Err(bad("tar: pax sizes are not taken")); }
+                    rest = &rest[len..];
+                }
+            }
+            continue;
+        }
+        let name = long_name.take().unwrap_or(name);
+        let link = long_link.take().unwrap_or(link);
+        let what = match kind {
+            b'0' | 0 | b'7' => Kind::File,
+            b'5' => Kind::Dir,
+            b'2' => Kind::Symlink(link),
+            b'1' => Kind::Hardlink(link),
+            other => return Err(bad(format!("tar: {name}: kind {:?} is not part of a root", other as char))),
+        };
+        let rel = place(&name)?;
+        through_no_link(top, &rel)?;
+        let path = top.join(&rel);
+        match what {
+            Kind::Dir => {
+                match fs::create_dir(&path) {
+                    Err(e) if e.kind() == io::ErrorKind::AlreadyExists && fs::symlink_metadata(&path)?.is_dir() => {}
+                    other => other?,
+                }
+                fs::set_permissions(&path, fs::Permissions::from_mode(mode | 0o700))?;
+            }
+            Kind::File => {
+                // create_new: never over something already there (a link above all).
+                let mut f = fs::OpenOptions::new().write(true).create_new(true).open(&path)?;
+                io::copy(&mut (&mut r).take(size), &mut f)?;
+                let mut pad = vec![0u8; (padded - size) as usize];
+                r.read_exact(&mut pad)?;
+                // No set-id bits come from an archive.
+                f.set_permissions(fs::Permissions::from_mode(mode & 0o777))?;
+                files += 1;
+                bytes += size;
+                continue;
+            }
+            Kind::Symlink(target) => symlink(&target, &path)?,
+            Kind::Hardlink(target) => {
+                let from = top.join(place(&target)?);
+                if !fs::symlink_metadata(&from)?.is_file() {
+                    return Err(bad(format!("tar: {name} links to something not a file")));
+                }
+                fs::hard_link(&from, &path)?;
+                files += 1;
+            }
+        }
+        // Members without content still occupy their padding.
+        if padded > 0 {
+            io::copy(&mut (&mut r).take(padded), &mut io::sink())?;
+        }
+    }
+}
+
+fn current_link(data: &Path) -> PathBuf {
+    system_dir(data).join("current")
+}
+
+/// The root Prompts use, if one is installed.
+pub fn current(data: &Path) -> Option<(PathBuf, Installed)> {
+    let dir = system_dir(data).join(fs::read_link(current_link(data)).ok()?);
+    let about: Installed = serde_json::from_str(&fs::read_to_string(dir.join("installed.json")).ok()?).ok()?;
+    Some((dir.join("root"), about))
+}
+
+/// Every root held here, the current one first.
+pub fn held(data: &Path) -> Vec<(Installed, bool)> {
+    let now = current(data).map(|(_, a)| a.sha256);
+    // Each root once: by its own directory, not through `current` or one being made.
+    let mut out: Vec<(Installed, bool)> = fs::read_dir(system_dir(data)).into_iter().flatten().flatten()
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()) && !e.file_name().to_string_lossy().starts_with('.'))
+        .filter_map(|e| fs::read_to_string(e.path().join("installed.json")).ok())
+        .filter_map(|t| serde_json::from_str::<Installed>(&t).ok())
+        .map(|a| { let c = now.as_deref() == Some(&a.sha256); (a, c) })
+        .collect();
+    out.sort_by_key(|(_, c)| !c);
+    out
+}
+
+/// Install a release bundle: checked, unpacked aside, then made current in
+/// one rename. The root before stays, as the one to go back to.
+pub fn install(data: &Path, bundle: &Path) -> Result<Installed, String> {
+    let release = identify(bundle)?;
+    let system = system_dir(data);
+    crate::boundary::private_dir(&system).map_err(|e| e.to_string())?;
+    let dir = system.join(release.sha256);
+    if !dir.join("installed.json").exists() {
+        let aside = system.join(format!(".{}.length3-{}-0", release.sha256, std::process::id()));
+        let _ = fs::remove_dir_all(&aside);
+        fs::create_dir(&aside).map_err(|e| e.to_string())?;
+        let unpacked = fs::File::open(bundle).and_then(Frames::new).and_then(|z| unpack(z, &aside));
+        let (files, bytes) = match unpacked {
+            Ok(v) => v,
+            Err(e) => { let _ = fs::remove_dir_all(&aside); return Err(format!("展開できませんでした: {e}")); }
+        };
+        if !aside.join("root/bin/sh").exists() && fs::symlink_metadata(aside.join("root/bin/sh")).is_err() {
+            let _ = fs::remove_dir_all(&aside);
+            return Err("このリリースには root/bin/sh がありません".into());
+        }
+        let about = Installed { name: release.name.into(), version: release.version.into(), sha256: release.sha256.into(), files, bytes };
+        fs::write(aside.join("installed.json"), serde_json::to_string(&about).unwrap()).map_err(|e| e.to_string())?;
+        let _ = fs::remove_dir_all(&dir);
+        fs::rename(&aside, &dir).map_err(|e| e.to_string())?;
+    }
+    // Point `current` at it by renaming a new link over the old one.
+    let link = system.join(format!(".current.length3-{}-0", std::process::id()));
+    let _ = fs::remove_file(&link);
+    symlink(release.sha256, &link).map_err(|e| e.to_string())?;
+    fs::rename(&link, current_link(data)).map_err(|e| e.to_string())?;
+    let about: Installed = serde_json::from_str(&fs::read_to_string(dir.join("installed.json")).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    Ok(about)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn header(name: &str, kind: u8, size: usize, link: &str) -> Vec<u8> {
+        let mut h = vec![0u8; 512];
+        h[..name.len()].copy_from_slice(name.as_bytes());
+        h[100..107].copy_from_slice(b"0000644");
+        h[124..135].copy_from_slice(format!("{size:011o}").as_bytes());
+        h[156] = kind;
+        h[157..157 + link.len()].copy_from_slice(link.as_bytes());
+        h[257..262].copy_from_slice(b"ustar");
+        h[148..156].copy_from_slice(b"        ");
+        let sum: u64 = h.iter().map(|&b| b as u64).sum();
+        h[148..155].copy_from_slice(format!("{sum:06o}\0").as_bytes());
+        h
+    }
+
+    fn tar(members: &[(&str, u8, &[u8], &str)]) -> Vec<u8> {
+        let mut out = Vec::new();
+        for (name, kind, body, link) in members {
+            out.extend(header(name, *kind, body.len(), link));
+            out.extend(*body);
+            out.resize(out.len().div_ceil(512) * 512, 0);
+        }
+        out.extend([0u8; 1024]);
+        out
+    }
+
+    fn fresh(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("length3-root-{tag}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn a_root_unpacks_with_its_links() {
+        let d = fresh("ok");
+        let t = tar(&[("root/", b'5', b"", ""), ("root/bin/", b'5', b"", ""), ("root/bin/busybox", b'0', b"#!elf", ""),
+            ("root/bin/sh", b'2', b"", "busybox"), ("root/bin/ash", b'1', b"", "root/bin/busybox")]);
+        assert_eq!(unpack(&t[..], &d).unwrap(), (2, 5));
+        assert_eq!(fs::read_link(d.join("root/bin/sh")).unwrap(), PathBuf::from("busybox"));
+        assert_eq!(fs::read(d.join("root/bin/ash")).unwrap(), b"#!elf");
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn nothing_lands_outside_or_through_a_link() {
+        for (members, what) in [
+            (vec![("../x", b'0', &b"x"[..], "")], "leaves"),
+            (vec![("/etc/x", b'0', &b"x"[..], "")], "leaves"),
+            (vec![("root/", b'5', &b""[..], ""), ("root/l", b'2', &b""[..], "/etc"), ("root/l/passwd", b'0', &b"x"[..], "")], "through a link"),
+            (vec![("root/dev", b'3', &b""[..], "")], "not part of a root"),
+            (vec![("root/a", b'0', &b"x"[..], ""), ("root/a", b'0', &b"y"[..], "")], "exists"),
+        ] {
+            let d = fresh("bad");
+            let e = unpack(&tar(&members)[..], &d).unwrap_err().to_string();
+            assert!(e.contains(what), "{e}");
+            assert!(!Path::new("/etc/x").exists());
+            let _ = fs::remove_dir_all(&d);
+        }
+    }
+
+    #[test]
+    fn only_a_pinned_release_is_taken() {
+        let d = fresh("pin");
+        fs::write(d.join("b.tar.zst"), b"not the release").unwrap();
+        assert!(identify(&d.join("b.tar.zst")).unwrap_err().contains("知らないリリース"));
+        let _ = fs::remove_dir_all(&d);
+    }
+}

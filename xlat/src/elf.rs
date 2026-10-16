@@ -1,6 +1,10 @@
 //! Just enough ELF64 to translate a static x86-64 executable: loadable
-//! segments, the entry point, function symbols and the relocations kept by
-//! `--emit-relocs`, which name every code address stored in data.
+//! segments, the entry point, function symbols and the relocations that name
+//! code addresses stored in data: those kept by `--emit-relocs`, or, for a
+//! static position-independent executable (static-pie, as the distribution
+//! builds them), its own R_X86_64_RELATIVE relocations. A static-pie is
+//! placed at `PIE_BASE`, where its startup code (musl's _dlstart) finds
+//! itself and applies those relocations as on Linux.
 
 use std::fmt;
 
@@ -82,12 +86,20 @@ impl Reader<'_> {
     }
 }
 
+/// Where a static-pie is loaded: where a non-PIE x86-64 program starts, so
+/// the first page stays unmapped and a null pointer still faults.
+pub const PIE_BASE: u64 = 0x40_0000;
+
 const PT_LOAD: u32 = 1;
 const PT_INTERP: u32 = 3;
 const PT_TLS: u32 = 7;
 const SHT_SYMTAB: u32 = 2;
 const SHT_RELA: u32 = 4;
 const STT_FUNC: u8 = 2;
+const STT_TLS: u8 = 6;
+const SHN_ABS: u16 = 0xfff1;
+const R_X86_64_RELATIVE: u32 = 8;
+const R_X86_64_IRELATIVE: u32 = 37;
 const SHF_ALLOC: u64 = 2;
 
 impl Elf {
@@ -102,10 +114,14 @@ impl Elf {
         if r.u16(18)? != 62 {
             return err("not an x86-64 ELF file");
         }
-        if r.u16(16)? != 2 {
-            return err("not a static executable (ET_EXEC); position-independent input is not supported yet");
-        }
-        let entry = r.u64(24)?;
+        // ET_EXEC, or ET_DYN without an interpreter (static-pie; checked below).
+        let pie = match r.u16(16)? {
+            2 => false,
+            3 => true,
+            _ => return err("not an executable"),
+        };
+        let base = if pie { PIE_BASE } else { 0 };
+        let entry = r.u64(24)?.wrapping_add(base);
         let (phoff, shoff) = (r.u64(32)?, r.u64(40)?);
         let (phentsize, phnum) = (r.u16(54)? as u64, r.u16(56)? as u64);
         let (shentsize, shnum) = (r.u16(58)? as u64, r.u16(60)? as u64);
@@ -121,17 +137,17 @@ impl Elf {
                 (r.u64(at + 8)?, r.u64(at + 16)?, r.u64(at + 32)?, r.u64(at + 40)?, r.u64(at + 48)?);
             match kind {
                 PT_INTERP => return err("dynamically linked; only static executables are translated"),
-                PT_LOAD if filesz > memsz || vaddr.checked_add(memsz).is_none_or(|end| end > 1 << 47) =>
+                PT_LOAD if filesz > memsz || vaddr.checked_add(base).and_then(|v| v.checked_add(memsz)).is_none_or(|end| end > 1 << 47) =>
                     return err("a loadable segment does not fit the address space"),
                 PT_LOAD => segments.push(Segment {
                     offset,
-                    vaddr,
+                    vaddr: vaddr + base,
                     memsz,
                     data: r.bytes(offset, filesz)?.to_vec(),
                     executable: flags & 1 != 0,
                     writable: flags & 2 != 0,
                 }),
-                PT_TLS => tls = Some(Tls { vaddr, filesz, memsz, align: align.max(1) }),
+                PT_TLS => tls = Some(Tls { vaddr: vaddr.wrapping_add(base), filesz, memsz, align: align.max(1) }),
                 _ => {}
             }
         }
@@ -156,6 +172,8 @@ impl Elf {
                     if shndx == 0 || value == 0 {
                         continue;
                     }
+                    // Absolute values and thread-local offsets are not addresses in the image.
+                    let value = if shndx == SHN_ABS || info & 0xf == STT_TLS { value } else { value.wrapping_add(base) };
                     let name = strings.get(name_at..).and_then(|s| s.split(|&b| b == 0).next()).unwrap_or(&[]);
                     symbols.push(Symbol {
                         name: String::from_utf8_lossy(name).into_owned(),
@@ -164,6 +182,20 @@ impl Elf {
                         function: info & 0xf == STT_FUNC,
                     });
                 }
+            }
+            // A static-pie's own relocations (.rela.dyn, loaded with it):
+            // each RELATIVE one stores base + addend, a pointer into the image;
+            // an IRELATIVE one names an ifunc resolver.
+            let dynamic = pie && kind == SHT_RELA && r.u64(at + 8)? & SHF_ALLOC != 0;
+            if dynamic && entsize >= 24 {
+                for e in 0..size / entsize {
+                    let rel = row(offset, e, entsize)?;
+                    let kind = (r.u64(rel + 8)? & 0xffff_ffff) as u32;
+                    if matches!(kind, R_X86_64_RELATIVE | R_X86_64_IRELATIVE) {
+                        relocation_targets.push((r.u64(rel + 16)? as i64 as u64).wrapping_add(base));
+                    }
+                }
+                continue;
             }
             // Only relocations of loaded sections describe the image; debug
             // sections relocate offsets that merely look like addresses.
@@ -181,7 +213,7 @@ impl Elf {
                     let info = r.u64(rel + 8)?;
                     let addend = r.u64(rel + 16)? as i64;
                     let (sym, kind) = (info >> 32, (info & 0xffff_ffff) as u32);
-                    let place = r.u64(rel)?;
+                    let place = r.u64(rel)?.wrapping_add(base);
                     if kind == 2 {
                         relative_slots.push(place);
                         continue;
@@ -190,7 +222,7 @@ impl Elf {
                     if !matches!(kind, 1 | 10 | 11) {
                         continue;
                     }
-                    let value = if sym == 0 { 0 } else { r.u64(sym_off + sym * sym_ent + 8)? };
+                    let value = if sym == 0 { 0 } else { r.u64(sym_off + sym * sym_ent + 8)?.wrapping_add(base) };
                     relocation_targets.push(value.wrapping_add(addend as u64));
                 }
             }
