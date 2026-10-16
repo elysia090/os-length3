@@ -1,10 +1,14 @@
+#define _XOPEN_SOURCE 700
+
 #include <postlink/compiler.h>
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 static int read_file(const char *path, pl_u8 **bytes, pl_u64 *length)
 {
@@ -29,13 +33,30 @@ static int read_file(const char *path, pl_u8 **bytes, pl_u64 *length)
     return 1;
 }
 
-static int write_file(const char *path, const pl_u8 *bytes, pl_u64 length)
+/* Write a new file beside the output: `temporary` is a mkstemp template, so
+ * the name is unpredictable and the file is created exclusively (never through
+ * a symlink or into a file someone else made), owner-only until it is complete.
+ * It takes `mode`, and reaches the disk, before it is renamed into place; on
+ * failure nothing is left behind. */
+static int write_new(char *temporary, const pl_u8 *bytes, pl_u64 length,
+                     mode_t mode)
 {
-    FILE *file = fopen(path, "wb");
-    int ok;
-    if (!file || length > (pl_u64)SIZE_MAX) return 0;
-    ok = fwrite(bytes, 1u, (size_t)length, file) == (size_t)length;
-    return fclose(file) == 0 && ok;
+    int fd;
+    pl_u64 done = 0u;
+    if (length > (pl_u64)SIZE_MAX) return 0;
+    fd = mkstemp(temporary);
+    if (fd < 0) return 0;
+    while (done < length) {
+        ssize_t wrote = write(fd, bytes + done, (size_t)(length - done));
+        if (wrote < 0 && errno == EINTR) continue;
+        if (wrote <= 0) break;
+        done += (pl_u64)wrote;
+    }
+    if (done == length && !fchmod(fd, mode) && !fsync(fd) && !close(fd))
+        return 1;
+    close(fd);
+    unlink(temporary);
+    return 0;
 }
 
 static void print_incomplete(const postlink_report *report)
@@ -324,23 +345,25 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    /* The output keeps the input's permission bits (a package's modes are
+     * the package's), never wider than the input's. */
+    struct stat source_stat;
+    mode_t mode = 0755;
+    if (stat(argv[1], &source_stat) == 0)
+        mode = source_stat.st_mode & 07777;
     size_t temporary_bytes = strlen(argv[3]) + 32u;
     char *temporary = malloc(temporary_bytes);
     if (!temporary
-            || snprintf(temporary, temporary_bytes, "%s.postlink-tmp",
+            || snprintf(temporary, temporary_bytes, "%s.postlink-XXXXXX",
                         argv[3]) < 0
-            || !write_file(temporary, output, output_bytes)) {
+            || !write_new(temporary, output, output_bytes, mode)) {
         fprintf(stderr, "postlink-compiler: cannot write %s\n", argv[3]);
-        if (temporary) remove(temporary);
         free(temporary);
         free(workspace);
         free(output);
         free(input);
         return 1;
     }
-    struct stat source_stat;
-    if (stat(argv[1], &source_stat) == 0)
-        (void)chmod(temporary, source_stat.st_mode & 07777);
     if (rename(temporary, argv[3])) {
         fprintf(stderr, "postlink-compiler: cannot publish %s\n", argv[3]);
         remove(temporary);
