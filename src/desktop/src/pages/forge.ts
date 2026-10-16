@@ -1,4 +1,5 @@
 import {addToBand, offBand, parseBand, removeFromBand} from '../band.ts';
+import {t} from '../i18n.ts';
 import {getState, setState} from '../state.ts';
 import {h} from '../dom.ts';
 import {mark} from '../icons.ts';
@@ -40,7 +41,7 @@ export function forge(ctx: Context): Node[] {
   let reader: Reader | null = null;
   let repo: string | null = null;
   const strip = h('nav', {class: 'repo-strip', 'aria-label': 'repo'});
-  const flow = h('section', {class: 'flow', tabindex: '0', 'aria-label': 'repoの中身'});
+  const flow = h('section', {class: 'flow', tabindex: '0', 'aria-label': t('The repo\'s contents')});
 
   const work = bench({strip, main: flow, reveal: (path, line) => void reader?.reveal(path, line)});
 
@@ -51,7 +52,7 @@ export function forge(ctx: Context): Node[] {
   let band: string[] = [];
   let all: string[] = [];
   const pills = h('div', {class: 'pills'});
-  const add = h('button', {type: 'button', class: 'band-add', 'aria-label': 'repoを全部帯に出す'}, mark('plus')) as HTMLButtonElement;
+  const add = h('button', {type: 'button', class: 'band-add', 'aria-label': t('Bring every repo out to the band')}, mark('plus')) as HTMLButtonElement;
   strip.append(add, pills);
   const saveBand = () => { void setState('band', JSON.stringify(band)).catch(() => { /* the band is a convenience */ }); };
   add.addEventListener('click', () => {
@@ -66,7 +67,7 @@ export function forge(ctx: Context): Node[] {
     pills.replaceChildren(...band.map((name) => {
       const open = h('button', {type: 'button', class: 'pill-name'}, name);
       open.addEventListener('click', () => show(name));
-      const close = h('button', {type: 'button', class: 'pill-close', 'aria-label': `${name}を帯から外す`}, mark('close'));
+      const close = h('button', {type: 'button', class: 'pill-close', 'aria-label': t('Take {name} off the band', {name})}, mark('close'));
       close.addEventListener('click', () => takeOff(name));
       const pill = h('span', {class: 'pill', 'data-repo': name}, open, close);
       if (name === repo) pill.setAttribute('aria-current', 'page');
@@ -74,7 +75,7 @@ export function forge(ctx: Context): Node[] {
     }));
     const rest = offBand(band, all).length;
     add.disabled = rest === 0;
-    add.title = rest ? `repoを全部帯に出す（あと ${rest}）` : 'すべてのrepoが帯に出ています';
+    add.title = rest ? t('Bring every repo out to the band ({n} more)', {n: rest}) : t('Every repo is on the band');
   };
 
   const takeOff = (name: string) => {
@@ -90,9 +91,9 @@ export function forge(ctx: Context): Node[] {
   const topic = () => {
     repo = null;
     reader = null;
-    work.setRepo(null, '帯にrepoを出すと動きます');
+    work.setRepo(null, t('Bring a repo out to the band to use it'));
     flow.replaceChildren(h('div', {class: 'topic'}, pageHead('topic'),
-      h('div', {class: 'empty'}, 'まだ投稿はありません')));
+      h('div', {class: 'empty'}, t('No posts yet'))));
     flow.scrollTop = 0;
     paintBand();
   };

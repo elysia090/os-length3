@@ -208,15 +208,34 @@ export class Reference {
     }
     if (run !== this.run || repo !== this.repo || this.view !== 'diff' || this.query.value.trim() || this.pinned) return;
     if (!files.length) { this.body.replaceChildren(h('p', {class: 'muted small'}, t('No changes'))); return; }
-    this.body.replaceChildren(...files.map((f) => {
+    this.body.replaceChildren(...this.diffFiles(files, true));
+  }
+
+  /** Files of a diff, each its name and its lines (a name opens the file when it is the work's own). */
+  private diffFiles(files: gitops.FileDiff[], open: boolean): HTMLElement[] {
+    return files.map((f) => {
       const name = h('button', {type: 'button', class: 'hit-file'}, f.path);
-      if (f.status !== 'removed') name.addEventListener('click', () => this.events.reveal(f.path));
+      if (open && f.status !== 'removed') name.addEventListener('click', () => this.events.reveal(f.path));
+      else name.setAttribute('disabled', '');
       const lines = f.binary ? [h('p', {class: 'muted small'}, t('Binary'))] : f.lines.filter((l, k) => k > 0 || l.kind !== 'hunk').map((l) =>
         // Between two parts of a file, a quiet "…" (with the function git names, if any).
         h('div', {class: `diff-line ${l.kind}`}, l.kind === 'hunk' ? l.text.replace(/^@@ [^@]* @@ ?/, '') || '…' : l.text || ' '));
       if (f.more) lines.push(h('p', {class: 'muted small'}, tn('{n} more line', '{n} more lines', f.more)));
       return h('div', {class: 'hit-group'}, name, h('div', {class: 'diff'}, ...lines));
-    }));
+    });
+  }
+
+  /** A change handed in, to review: its name, what to do with it, then its diff (only `folder`'s when given). */
+  showChange(head: Node, actions: Node[], files: Promise<gitops.FileDiff[]>, folder: string | null = null) {
+    this.pinned = true;
+    this.query.value = '';
+    for (const chip of this.chips.values()) chip.removeAttribute('aria-current');
+    const diff = h('div', {}, h('p', {class: 'muted small'}, t('Reading…')));
+    this.body.replaceChildren(h('article', {class: 'issue-one'}, head, ...actions), diff);
+    void files.then((list) => {
+      const shown = folder === null ? list : list.filter((f) => (f.path.includes('/') ? f.path.slice(0, f.path.lastIndexOf('/')) : '') === folder);
+      diff.replaceChildren(...(shown.length ? this.diffFiles(shown, false) : [h('p', {class: 'muted small'}, t('No changes'))]));
+    }, (e) => diff.replaceChildren(h('p', {class: 'error'}, e instanceof Error ? e.message : String(e))));
   }
 
   /** The repo's issue/ directory, one line per file. */

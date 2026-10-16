@@ -107,11 +107,34 @@ export interface Kept { files: [string, string | null][]; modified: number }
 export class MemoryStore implements RepoStore {
   readonly persistent: boolean = false;
   protected repos = new Map<string, {files: Map<string, string | null>; modified: number}>();
+  /**
+   * The work each repo shows: main, or an issue's line (work.rs). Each work
+   * has its own copy, kept under `repo\u0001line`; the repo's name always
+   * reaches the one it shows, as File, Forge and the Prompt expect.
+   */
+  protected lines = new Map<string, string>();
+  /** Where `repo`'s files are now. */
+  protected key(repo: string) { const l = this.lines.get(repo); return l && l !== 'main' ? `${repo}\u0001${l}` : repo; }
+  /** Show `line`'s copy as `repo` (made empty when there is none yet); returns whether it was made. */
+  showLine(repo: string, line: string): boolean {
+    if (line === 'main') { this.lines.delete(repo); return false; }
+    this.lines.set(repo, line);
+    if (this.repos.has(this.key(repo))) return false;
+    this.repos.set(this.key(repo), {files: new Map(), modified: Date.now()});
+    this.touched(repo);
+    return true;
+  }
+  lineOf(repo: string) { return this.lines.get(repo) ?? 'main'; }
+  /** Every work's copy of `repo` held here (main's included), by line. */
+  copies(repo: string): string[] {
+    return [...this.repos.keys()].filter((k) => k === repo || k.startsWith(`${repo}\u0001`)).map((k) => (k === repo ? 'main' : k.split('\u0001')[1]));
+  }
   /** Called after each change to `repo` (KeptStore keeps it). */
   protected touched(_repo: string) {}
 
   async list() {
-    return [...this.repos].map(([name, r]) => this.summary(name, r)).sort((a, b) => b.modified - a.modified);
+    return [...this.repos].filter(([name]) => !name.includes('\u0001')).map(([name]) => this.summary(name, this.repos.get(this.key(name)) ?? this.repos.get(name)!))
+      .sort((a, b) => b.modified - a.modified);
   }
   private summary(name: string, r: {files: Map<string, string | null>; modified: number}): RepoSummary {
     const texts = [...r.files.values()].filter((v): v is string => v !== null);
@@ -127,7 +150,7 @@ export class MemoryStore implements RepoStore {
     return this.summary(name, r);
   }
   async tree(repo: string, path: string) {
-    const r = this.repos.get(repo);
+    const r = this.repos.get(this.key(repo));
     if (!r) throw new Error(`no repo ${repo}`);
     const prefix = path ? path.replace(/\/$/, '') + '/' : '';
     // Like the native side: a directory that is not there is an error, not an empty list.
@@ -145,12 +168,12 @@ export class MemoryStore implements RepoStore {
     return [...seen.values()].sort((a, b) => Number(a.kind !== 'dir') - Number(b.kind !== 'dir') || a.name.localeCompare(b.name));
   }
   async read(repo: string, path: string) {
-    const text = this.repos.get(repo)?.files.get(path);
+    const text = this.repos.get(this.key(repo))?.files.get(path);
     if (text === undefined || text === null) throw new Error(`no file ${path}`);
     return {text, size: new TextEncoder().encode(text).length, truncated: false};
   }
   async write(repo: string, path: string, text: string) {
-    const r = this.repos.get(repo);
+    const r = this.repos.get(this.key(repo));
     const old = r?.files.get(path);
     if (!r || old === undefined || old === null) throw new Error(`no file ${path}`);
     r.files.set(path, text);
@@ -159,7 +182,7 @@ export class MemoryStore implements RepoStore {
     return new TextEncoder().encode(text).length;
   }
   async mkdir(repo: string, path: string) {
-    const r = this.repos.get(repo);
+    const r = this.repos.get(this.key(repo));
     if (!r) throw new Error(`no repo ${repo}`);
     const clean = path.replace(/\/+$/, '');
     if (!clean || clean.split('/').some((p) => p === '..' || !p) || touchesGit(clean)) throw new Error(`path ${path} leaves the repo`);
@@ -173,7 +196,7 @@ export class MemoryStore implements RepoStore {
     this.touched(repo);
   }
   async remove(repo: string, path: string) {
-    const r = this.repos.get(repo);
+    const r = this.repos.get(this.key(repo));
     const clean = path.replace(/\/+$/, '');
     if (!r || !clean || touchesGit(clean) || clean.split('/').includes('..')) throw new Error(`cannot remove ${path}`);
     const gone = [...r.files.keys()].filter((p) => p === clean || p.startsWith(`${clean}/`));
@@ -183,7 +206,7 @@ export class MemoryStore implements RepoStore {
     this.touched(repo);
   }
   async put(repo: string, path: string, text: string | null) {
-    const r = this.repos.get(repo);
+    const r = this.repos.get(this.key(repo));
     if (!r) throw new Error(`no repo ${repo}`);
     const parts = path.split('/');
     if (parts.some((p) => !p || p === '.' || p === '..') || touchesGit(path)) throw new Error(`path ${path} leaves the repo`);
@@ -198,7 +221,7 @@ export class MemoryStore implements RepoStore {
     this.touched(repo);
   }
   async add(repo: string, dir: string, name: string, text: string) {
-    const r = this.repos.get(repo);
+    const r = this.repos.get(this.key(repo));
     if (!r) throw new Error(`no repo ${repo}`);
     if (!name || name.startsWith('.') || name.includes('/') || isGitName(name) || touchesGit(dir)) throw new Error(`invalid file name ${name}`);
     // '' is the repo's own top.
@@ -236,11 +259,11 @@ export class KeptStore extends MemoryStore {
     super();
     this.shelf = shelf;
     this.ready = shelf.all().then((all) => {
-      for (const [name, r] of all) if (validName(name)) this.repos.set(name, {files: new Map(r.files), modified: r.modified});
+      for (const [name, r] of all) if (validName(name.split('\u0001')[0])) this.repos.set(name, {files: new Map(r.files), modified: r.modified});
     }, () => {});
   }
   protected override touched(repo: string) {
-    this.dirty.add(repo);
+    this.dirty.add(this.key(repo));
     clearTimeout(this.timer);
     this.timer = setTimeout(() => void this.flush(), 300);
   }
@@ -249,12 +272,15 @@ export class KeptStore extends MemoryStore {
    * Remote lacks). Started at once, so it runs while the page is left.
    */
   letGo(names: string[]): Promise<void> {
-    for (const n of names) { this.repos.delete(n); this.dirty.delete(n); }
-    return this.shelf.drop(names);
+    // Every work's copy of each goes with it.
+    const keys = names.flatMap((n) => this.copies(n).map((l) => (l === 'main' ? n : `${n}\u0001${l}`)));
+    for (const k of keys) { this.repos.delete(k); this.dirty.delete(k); }
+    for (const n of names) this.lines.delete(n);
+    return this.shelf.drop(keys);
   }
 
   /** Whether `repo` has changes not yet written to the shelf. */
-  waiting(repo: string) { return this.dirty.has(repo); }
+  waiting(repo: string) { return this.copies(repo).some((l) => this.dirty.has(l === 'main' ? repo : `${repo}\u0001${l}`)); }
 
   /** Write every changed repo now. */
   async flush() {
@@ -360,6 +386,15 @@ class Observed implements RepoStore {
     await this.inner.put(repo, path, text);
     this.tell({repo, path, what: text === null ? 'dir' : 'file', text: text ?? undefined, by});
   }
+  /** Show the copy of `line`'s work as `repo` (a browser's copy; the app does this natively). */
+  showLine(repo: string, line: string): boolean {
+    const inner = this.inner as Partial<MemoryStore>;
+    const made = inner.showLine ? inner.showLine.call(this.inner, repo, line) : false;
+    this.tell({repo, path: '', what: 'repo', by: 'work'});
+    return made;
+  }
+  lineOf(repo: string): string { const inner = this.inner as Partial<MemoryStore>; return inner.lineOf ? inner.lineOf.call(this.inner, repo) : 'main'; }
+  copies(repo: string): string[] { const inner = this.inner as Partial<MemoryStore>; return inner.copies ? inner.copies.call(this.inner, repo) : ['main']; }
   /** Something outside the store changed `repo` (a Prompt on the root writes it directly). */
   changedOutside(repo: string, by?: string) { this.tell({repo, path: '', what: 'repo', by}); }
 }

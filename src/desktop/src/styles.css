@@ -490,3 +490,30 @@ mark { background: var(--ink); color: var(--ground); }
 .me-item[aria-checked='true'] { font-weight: 600; }
 .sign-in-row { flex-wrap: wrap; }
 .section.offer { padding: var(--s4); border: var(--line-work) solid var(--edge); border-radius: var(--r-place); }
+/* Git: the work on an issue, and changes handed in */
+.work-card { display: grid; gap: var(--s2); padding: var(--s4); border: 1px solid var(--rule); border-radius: var(--r-place); }
+.work-card[aria-current='true'] { border: var(--line-work) solid var(--edge); }
+.work-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s3); }
+.work-card .work-act { margin-top: 0; flex-wrap: wrap; }
+.handed { display: grid; padding: var(--s2); border: 1px solid var(--rule); border-radius: var(--r-card); margin-bottom: var(--s3); }
+.handed .work-act { padding: 0 var(--s3) var(--s2); }
+.state-chip { flex: none; font-size: var(--t-meta); padding: 0 var(--s2); border: 1px solid var(--edge); border-radius: var(--r-round); }
+.handed[data-state='merged'] .state-chip, .handed[data-state='rejected'] .state-chip, .handed[data-state='reset'] .state-chip { color: var(--sub); border-color: var(--rule); }
+/* Runtime: one tall box in three columns: here, can be freed, on the Remote */
+.space-box { margin-top: var(--s5); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); min-height: 56vh;
+  border: 1px solid var(--rule); border-radius: var(--r-place); overflow: hidden; }
+.space-col { display: flex; flex-direction: column; min-width: 0; padding: var(--s4); }
+.space-col + .space-col { border-left: 1px solid var(--rule); }
+.space-col > h3 { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s3); margin: 0 0 var(--s3); font-size: var(--t-body); }
+.space-col > h3 b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.space-list { display: grid; align-content: start; gap: var(--s1); flex: 1; overflow-y: auto; }
+.space-row { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) 0; border-bottom: 1px solid var(--rule); }
+.space-what { display: grid; min-width: 0; flex: 1; }
+.space-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.space-what .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.space-size { flex: none; font: var(--t-meta) var(--mono); color: var(--sub); }
+.space-foot { display: flex; align-items: center; gap: var(--s3); padding-top: var(--s3); }
+.space-foot .grow { flex: 1; }
+.link-name { border: 0; padding: 0; background: transparent; font: inherit; font-weight: 600; color: inherit; text-align: left; cursor: pointer; }
+.link-name:hover { text-decoration: underline; }
+@media (max-width: 900px) { .space-box { grid-template-columns: 1fr; min-height: 0; } .space-col + .space-col { border-left: 0; border-top: 1px solid var(--rule); } }

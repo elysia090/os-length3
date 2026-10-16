@@ -87,11 +87,11 @@ test("the other device's changes come in; a file changed on both keeps this one 
   const both = await draft.sync('notes');
   assert.deepEqual(both.both, ['README.md']);
   assert.equal(await text('notes', 'README.md'), 'mine\n');
-  assert.equal(await text('notes', 'README (別の端末).md'), 'theirs\n');
+  assert.equal(await text('notes', 'README (other device).md'), 'theirs\n');
   // And this device's is what the Remote has now, beside file and all.
   const now = await (await fetch(`${URL_}/v1/repos/notes`, {headers: {Authorization: `Bearer ${token}`}})).json() as {draft: Record<string, string>};
   assert.equal(now.draft['README.md'], await sha256(enc.encode('mine\n')));
-  assert.ok('README (別の端末).md' in now.draft);
+  assert.ok('README (other device).md' in now.draft);
 });
 
 test('a file this browser cannot hold stays on the Remote, untouched by this copy', async () => {
@@ -112,7 +112,7 @@ test('a repo only on the Remote comes here when opened, with nothing of a templa
   assert.equal(await text('far', 'a.txt'), 'a\n');
 });
 
-test('区切る makes the draft history; what is not cut is the draft against it', async () => {
+test('a commit makes the draft history; what is not committed is the draft against it', async () => {
   const before = await history.changes('notes');
   assert.ok(before.connected && before.files > 0);
   const c = await history.cut('notes', null, 'Fix：最初の区切り', 'メモ');
@@ -123,7 +123,7 @@ test('区切る makes the draft history; what is not cut is the draft against it
   assert.deepEqual([after.files, after.added, after.removed], [1, 1, 0]);
   const d = await history.diff('notes');
   assert.ok(d[0].lines.some((l) => l.kind === 'add' && l.text === 'and a line'));
-  await assert.rejects(history.cut('notes', null, '  ', ''), /件名/);
+  await assert.rejects(history.cut('notes', null, '  ', ''), /title/);
   const log = await history.log('notes');
   assert.deepEqual(log.map((x) => x.title), ['最初の区切り']);
   assert.ok(log[0].files >= 3, `${log[0].files}`);
@@ -141,4 +141,38 @@ test("TODO from two devices is joined; the profile is the Remote's when both cha
   await draft.syncHome('todo');
   const ids = (JSON.parse(getState('todo')!) as {id: string}[]).map((t) => t.id).sort();
   assert.deepEqual(ids, ['a', 'b', 'c']);
+});
+
+test('an issue is worked on in its own copy; pushed, submitted, reviewed and merged into main', async () => {
+  await store.add('notes', 'issue', '001.md', 'Fix：落ちる\n');
+  await draft.sync('notes');
+  await history.cut('notes', null, 'Patch：issue', '');
+  await history.startWork('notes', '001.md');
+  // The repo shows the work's copy: what main has, as of its last commit.
+  assert.equal(store.lineOf('notes'), '001');
+  assert.equal(await text('notes', 'issue/001.md'), 'Fix：落ちる\n');
+  await store.add('notes', '', 'fix.txt', 'fixed\n');
+  const c = await history.cut('notes', null, '', 'first');
+  assert.deepEqual([c.kind, c.title, c.issue], ['Fix', '落ちる', 'issue/001.md']);
+  let w = await history.work('notes');
+  assert.deepEqual([w.line, w.commits, w.unpushed, w.change], ['001', 1, 1, null]);
+  await assert.rejects(history.submit('notes'), /Push first/);
+  await history.push('notes');
+  const ch = await history.submit('notes');
+  assert.deepEqual([ch.version, ch.state, ch.folders, ch.files], [1, 'open', [''], 1]);
+  w = await history.work('notes');
+  assert.deepEqual([w.unpushed, w.change?.version], [0, 1]);
+  const reviewed = await history.review('notes', ch, 'approve', 'good');
+  assert.equal(reviewed.reviews[0].verdict, 'approve');
+  const d = await history.changeDiff('notes', ch);
+  assert.deepEqual(d.map((f) => [f.path, f.status]), [['fix.txt', 'added']]);
+  // main does not have it until it is merged.
+  await history.switchWork('notes', 'main');
+  assert.ok(!(await names('notes')).includes('fix.txt'));
+  const merged = await history.merge('notes', (await history.changesOf('notes'))[0]);
+  assert.equal(merged.state, 'merged');
+  await draft.sync('notes');
+  assert.equal(await text('notes', 'fix.txt'), 'fixed\n');
+  // The work's copy is still here until it goes; back on it, it is as it was.
+  assert.deepEqual(store.copies('notes').sort(), ['001', 'main']);
 });

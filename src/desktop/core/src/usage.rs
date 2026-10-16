@@ -45,6 +45,8 @@ pub enum Certainty {
 #[derive(Serialize, Debug, Clone)]
 struct Leftover {
     path: PathBuf,
+    /// An older root (listed as a root, not as a leftover).
+    root: bool,
     allocated: u64,
     /// What it is, in a word or two.
     what: String,
@@ -146,7 +148,7 @@ pub fn system(data: &Path) -> Vec<(SystemUsage, PathBuf)> {
 fn system_leftovers(data: &Path, out: &mut Vec<Leftover>) {
     for (row, path) in system(data) {
         if row.held == Held::Older {
-            out.push(Leftover { path, allocated: row.allocated, what: format!("古い root（{} {}）", row.name, row.version) });
+            out.push(Leftover { path, allocated: row.allocated, what: crate::tr!("An old root ({} {})", "古い root（{} {}）", row.name, row.version), root: true });
         }
     }
     let dir = crate::root::system_dir(data);
@@ -157,7 +159,7 @@ fn system_leftovers(data: &Path, out: &mut Vec<Leftover>) {
         if meta.is_dir() && name.starts_with('.') {
             if let Some(pid) = temporary_writer(&name, false) {
                 if age(&meta) >= AGE && pid != std::process::id() && !running(pid) {
-                    out.push(Leftover { allocated: tally(&e.path()).2 + blocks(&meta), path: e.path(), what: "途中で止まった展開".into() });
+                    out.push(Leftover { allocated: tally(&e.path()).2 + blocks(&meta), path: e.path(), what: crate::tr!("An unpacking that stopped half way", "途中で止まった展開"), root: false });
                 }
             }
         }
@@ -168,7 +170,7 @@ fn system_leftovers(data: &Path, out: &mut Vec<Leftover>) {
         let Ok(meta) = e.path().symlink_metadata() else { continue };
         if !meta.is_file() || age(&meta) < Duration::from_secs(600) { continue; }
         let partial = e.file_name().to_string_lossy().ends_with(".part");
-        out.push(Leftover { path: e.path(), allocated: blocks(&meta), what: if partial { "途中まで取ったリリース".into() } else { "使っていないリリース".into() } });
+        out.push(Leftover { path: e.path(), allocated: blocks(&meta), what: if partial { crate::tr!("A release fetched part of the way", "途中まで取ったリリース") } else { crate::tr!("A release not in use", "使っていないリリース") }, root: false });
     }
 }
 
@@ -216,7 +218,7 @@ fn leftovers(dir: &Path, data: &Path, out: &mut Vec<Leftover>) {
         let Some(pid) = temporary_writer(&name, dir == settings.as_path()) else { continue };
         let old = meta.modified().ok().and_then(|t| SystemTime::now().duration_since(t).ok()).is_some_and(|age| age >= AGE);
         if old && pid != std::process::id() && !running(pid) {
-            out.push(Leftover { path, allocated: blocks(&meta), what: "残った一時ファイル".into() });
+            out.push(Leftover { path, allocated: blocks(&meta), what: crate::tr!("A temporary file left behind", "残った一時ファイル"), root: false });
         }
     }
 }
@@ -286,17 +288,22 @@ fn repo_item(repos: &crate::repos::Repos, name: &str, connected: bool, open: &[S
     let s = crate::remote::status_of(repos, name).ok()?;
     let files = s.unsynced.len() + crate::remote::local_tree(&dir).tree.values().filter(|v| v.is_some()).count();
     let (room, why) = if open.iter().any(|o| o == name) {
-        (Room::Keep, "Prompt で開いています".to_string())
+        (Room::Keep, crate::tr!("A Prompt has it open", "Prompt で開いています"))
     } else if !connected {
-        (Room::Keep, "Remote につなぐと空けられます".into())
+        (Room::Keep, crate::tr!("Connect to the Remote to free it", "Remote につなぐと空けられます"))
     } else if let Some((path, what)) = s.unsynced.first() {
-        (Room::Keep, format!("Remote に送れないものがあります（{path}: {what}）"))
+        (Room::Keep, crate::tr!("Something cannot be sent to the Remote ({}: {})", "Remote に送れないものがあります（{}: {}）", path, what))
     } else if s.changed == 0 && !s.fresh {
-        (Room::Free, "Remote と同じです。開けばまた来ます".into())
+        (Room::Free, crate::tr!("The Remote has the same; opening it brings it back", "Remote と同じです。開けばまた来ます"))
     } else {
-        (Room::SyncFree, if s.fresh { "まだ Remote にありません。送ってから空けます".into() } else { format!("{} 件の変更を送ってから空けます", s.changed) })
+        (Room::SyncFree, if s.fresh { crate::tr!("Not on the Remote yet; sent, then freed", "まだ Remote にありません。送ってから空けます") } else { crate::tr!("{} changes are sent, then it is freed", "{} 件の変更を送ってから空けます", s.changed) })
     };
-    Some(Item { id: format!("repo:{name}"), what: name.into(), detail: format!("repo · {files} ファイル"), allocated: allocated(&dir), room, why })
+    // Every copy of it counts: main's and each issue's being worked on.
+    let works = crate::work::worktrees(name);
+    let size = allocated(&dir) + works.iter().map(|(_, p)| allocated(p)).sum::<u64>();
+    let detail = if works.is_empty() { crate::tr!("repo · {} files", "repo · {} ファイル", files) }
+        else { crate::tr!("repo · {} files · {} works", "repo · {} ファイル · 作業 {}", files, works.len()) };
+    Some(Item { id: format!("repo:{name}"), what: name.into(), detail, allocated: size, room, why })
 }
 
 /// Everything this OS holds under `data` (repos in `repos`), largest first.
@@ -312,9 +319,9 @@ pub fn space(data: &Path, repos_dir: &Path, open: &[String]) -> Space {
     }
     for (row, path) in system(data) {
         let (room, why) = match row.held {
-            Held::Current => (Room::Keep, "Prompt が動く root です".to_string()),
-            Held::Previous => (Room::Free, "ひとつ前の root。戻すときは Remote から取り直せます".into()),
-            Held::Older => (Room::Free, "古い root。Remote から取り直せます".into()),
+            Held::Current => (Room::Keep, crate::tr!("The root Prompts run on", "Prompt が動く root です")),
+            Held::Previous => (Room::Free, crate::tr!("The root before; going back fetches it again from the Remote", "ひとつ前の root。戻すときは Remote から取り直せます")),
+            Held::Older => (Room::Free, crate::tr!("An old root; the Remote has it", "古い root。Remote から取り直せます")),
         };
         let _ = path;
         items.push(Item { id: format!("root:{}", row.sha256), what: format!("{} {}", row.name, row.version), detail: "root".into(), allocated: row.allocated, room, why });
@@ -322,12 +329,12 @@ pub fn space(data: &Path, repos_dir: &Path, open: &[String]) -> Space {
     let mut left = Vec::new();
     leftovers(data, data, &mut left);
     system_leftovers(data, &mut left);
-    for l in left.into_iter().filter(|l| !l.what.starts_with("古い root")) {
+    for l in left.into_iter().filter(|l| !l.root) {
         let name = l.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        items.push(Item { id: format!("path:{}", l.path.display()), what: l.what, detail: name, allocated: l.allocated, room: Room::Free, why: "このOSの残り物です".into() });
+        items.push(Item { id: format!("path:{}", l.path.display()), what: l.what, detail: name, allocated: l.allocated, room: Room::Free, why: crate::tr!("Left behind by this OS", "このOSの残り物です") });
     }
     let home = allocated(&data.join("home")) + allocated(&data.join("sync"));
-    items.push(Item { id: "home".into(), what: "Home".into(), detail: "設定・TODO・同期の記録".into(), allocated: home, room: Room::Keep, why: "この端末の設定です".into() });
+    items.push(Item { id: "home".into(), what: "Home".into(), detail: crate::tr!("settings, TODO, what was agreed with the Remote", "設定・TODO・同期の記録"), allocated: home, room: Room::Keep, why: crate::tr!("This device's settings", "この端末の設定です") });
     items.sort_by(|a, b| b.allocated.cmp(&a.allocated).then(a.what.cmp(&b.what)));
     Space {
         host_total, host_free, host,
@@ -345,7 +352,7 @@ pub fn free(data: &Path, repos_dir: &Path, ids: &[String], open: &[String]) -> F
     let (mut freed, mut removed, mut kept) = (0, Vec::new(), Vec::new());
     for id in ids {
         let Some(item) = now.items.iter().find(|i| &i.id == id) else {
-            kept.push((id.clone(), "もうありません".into()));
+            kept.push((id.clone(), crate::tr!("It is gone already", "もうありません")));
             continue;
         };
         if item.room == Room::Keep {
@@ -361,7 +368,7 @@ pub fn free(data: &Path, repos_dir: &Path, ids: &[String], open: &[String]) -> F
         } else if let Some(path) = id.strip_prefix("path:") {
             remove_leftover(data, Path::new(path))
         } else {
-            Err("空けられません".into())
+            Err(crate::tr!("This cannot be freed", "空けられません"))
         };
         match gone {
             Ok(n) => { freed += n; removed.push(id.clone()); }
@@ -400,7 +407,7 @@ fn remove_leftover(data: &Path, path: &Path) -> Result<u64, String> {
             let size = allocated(path);
             fs::remove_dir_all(path).map(|_| size).map_err(|e| e.to_string())
         }
-        Ok(_) => Err("もう一時ファイルではありません".into()),
+        Ok(_) => Err(crate::tr!("It is not a temporary file any more", "もう一時ファイルではありません")),
         Err(_) => Ok(0),
     }
 }

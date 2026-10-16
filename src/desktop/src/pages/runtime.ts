@@ -1,71 +1,67 @@
 import {bytes, h} from '../dom.ts';
-import {isNative, rootFetch, rootStatus, type Certainty, type Freed, type Item, type Space} from '../host.ts';
+import {isNative, rootFetch, rootStatus, type Certainty, type Freed, type Space} from '../host.ts';
+import {t, tn} from '../i18n.ts';
+import {bring, onSync, remoteOnly, repoState} from '../lifecycle.ts';
+import {connection} from '../remote.ts';
 import {free, readSpace} from '../space.ts';
 import {about} from '../userland.ts';
 import {pageHead} from './common.ts';
+import type {Context} from './context.ts';
+import {syncWord} from './remote.ts';
 import {allSessions, type Session} from './terminal.ts';
 
+// Runtime: this device, then what the OS holds on it, then what is running,
+// then the environment actually in effect (what runs, not what was asked for).
+//
+// Under the bar of the whole, one tall box in three columns, read left to
+// right as room flows:
+//
+//   On this device   everything this OS holds here, by size: each repo (all
+//                    its copies), the roots, Home; and why what stays stays
+//   Can be freed     what can go now, by size: Free, or Sync and free (its
+//                    changes are sent first); and Free all
+//   On the Remote    what can come here: repos only on the Remote, and the
+//                    release root when it is not installed; Fetch
+
 /** How a figure is known, in one word; a counted figure needs none. */
-const known = (c: Certainty) => (c === 'Verified' ? '' : c === 'Estimated' ? '推定' : '不明');
+const known = (c: Certainty) => (c === 'Verified' ? '' : c === 'Estimated' ? t('estimated') : t('unknown'));
+const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /**
  * What the Prompt actually runs. In the app with a root installed: that
  * root, on this machine's kernel. Otherwise l3, from l3.json written with
  * it: what it carries (the distribution's BusyBox, the l3 command, the
- * translator) is shown inside it, so it cannot claim what is not there;
- * and in the app, how to get the whole root.
+ * translator) is shown inside it, so it cannot claim what is not there.
  */
 function environment(): HTMLElement {
-  const body = h('div', {}, h('p', {class: 'muted'}, '読み込み中…'));
+  const body = h('div', {}, h('p', {class: 'muted'}, t('Reading…')));
   void rootStatus().then((root) => {
     if (root?.current) {
       const r = root.current;
       body.replaceChildren(h('div', {class: 'env-one'},
         h('div', {class: 'env-row env-head'}, h('b', {}, r.name), h('span', {}, r.version),
-          h('span', {class: 'muted'}, `${bytes(r.bytes)} · ${r.files} ファイル · この端末のカーネルで`),
+          h('span', {class: 'muted'}, t('{size} · {files} files · on this device\'s kernel', {size: bytes(r.bytes), files: r.files})),
           h('code', {class: 'muted', title: r.sha256}, r.sha256.slice(0, 12)))),
-        h('p', {class: 'muted small env-note'}, 'Dotfiles はまだありません'));
+        h('p', {class: 'muted small env-note'}, t('No Dotfiles yet')));
       return;
     }
-    showL3(root);
-  });
-  const showL3 = (root: Awaited<ReturnType<typeof rootStatus>>) => void about().then((a) => {
-    if (!a) { body.replaceChildren(h('div', {class: 'empty'}, 'l3 がありません（npm run userland）')); return; }
-    const part = (name: string, version: string, note: string, sha = '') =>
-      h('div', {class: 'env-row env-part'}, h('span', {}, name), h('span', {}, version), h('span', {class: 'muted'}, note),
-        h('code', {class: 'muted', title: sha}, sha.slice(0, 12)));
-    body.replaceChildren(h('div', {class: 'env-one'},
-      h('div', {class: 'env-row env-head'}, h('b', {}, a.name), h('span', {}, a.version),
-        h('span', {class: 'muted'}, `${bytes(a.bundle.size)} · ${isNative ? 'アプリと一緒' : '開くたびに取ります'}`),
-        h('code', {class: 'muted', title: a.bundle.sha256}, a.bundle.sha256.slice(0, 12))),
-      part(a.root.name, a.root.version, 'root'),
-      part(a.base.name, a.base.version, `${a.base.applets} コマンド · ${a.base.from}`, a.base.sha256),
-      part('l3', a.version, 'コマンド', a.l3.sha256),
-      part(a.translator.name, a.translator.version, '翻訳器')),
-      ...(root ? [installRoot(root.release)] : []),
-      h('p', {class: 'muted small env-note'}, 'Dotfiles はまだありません'));
-  });
-  return body;
-}
-
-/** In the app without a root: fetch the whole one, saying how far it is. */
-function installRoot(release: {name: string; version: string; bytes: number}): HTMLElement {
-  const words = h('span', {class: 'grow'}, `${release.name} ${release.version} を入れると、Prompt はこの端末のカーネルで root 全体を動かします（${bytes(release.bytes)}）`);
-  const go = h('button', {class: 'button', type: 'button'}, '入れる') as HTMLButtonElement;
-  const row = h('div', {class: 'row work-act reclaim-act'}, words, go);
-  go.addEventListener('click', () => {
-    go.disabled = true;
-    void rootFetch((got, of, retry) => {
-      words.textContent = retry ? `${retry}。続きから取ります` : `取得中 ${bytes(got)} / ${bytes(of)}`;
-    }).then((r) => {
-      words.textContent = `${r.name} ${r.version} を入れました。次に開く Prompt から使われます`;
-      go.remove();
-    }, (e) => {
-      words.textContent = `入れられませんでした（${e instanceof Error ? e.message : String(e)}）`;
-      go.disabled = false;
+    void about().then((a) => {
+      if (!a) { body.replaceChildren(h('div', {class: 'empty'}, t('There is no l3 (npm run userland)'))); return; }
+      const part = (name: string, version: string, note: string, sha = '') =>
+        h('div', {class: 'env-row env-part'}, h('span', {}, name), h('span', {}, version), h('span', {class: 'muted'}, note),
+          h('code', {class: 'muted', title: sha}, sha.slice(0, 12)));
+      body.replaceChildren(h('div', {class: 'env-one'},
+        h('div', {class: 'env-row env-head'}, h('b', {}, a.name), h('span', {}, a.version),
+          h('span', {class: 'muted'}, `${bytes(a.bundle.size)} · ${isNative ? t('comes with the app') : t('fetched at each visit')}`),
+          h('code', {class: 'muted', title: a.bundle.sha256}, a.bundle.sha256.slice(0, 12))),
+        part(a.root.name, a.root.version, 'root'),
+        part(a.base.name, a.base.version, t('{n} commands · {from}', {n: a.base.applets, from: a.base.from}), a.base.sha256),
+        part('l3', a.version, t('command'), a.l3.sha256),
+        part(a.translator.name, a.translator.version, t('translator'))),
+        h('p', {class: 'muted small env-note'}, t('No Dotfiles yet')));
     });
   });
-  return row;
+  return body;
 }
 
 /** A bar of the whole: this OS's part, everything else's, and what is free. */
@@ -79,64 +75,120 @@ function meter(total: number, free: number, mine: number, label: string) {
 const figure = (value: string, word: string, note = '') =>
   h('span', {}, h('b', {}, value), word, note ? h('small', {class: 'muted'}, ` ${note}`) : null);
 
-const ACT: Record<Item['room'], string> = {Free: '空ける', SyncFree: '同期して空ける', Keep: ''};
+function button(text: string, kind = ''): HTMLButtonElement {
+  return h('button', {class: `button small-button ${kind}`.trim(), type: 'button'}, text) as HTMLButtonElement;
+}
+
+/** One column of the box: a heading with its total, its rows, and what goes at its foot. */
+function column(id: string, title: string, total: number | null, rows: Node[], empty: string, foot: Node[] = []): HTMLElement {
+  return h('section', {class: 'space-col', 'aria-labelledby': id},
+    h('h3', {id}, h('span', {}, title), total === null ? null : h('b', {}, bytes(total))),
+    h('div', {class: 'space-list'}, ...(rows.length ? rows : [h('p', {class: 'muted small space-empty'}, empty)])),
+    ...(foot.length ? [h('div', {class: 'space-foot'}, ...foot)] : []));
+}
+
+const thing = (name: Node | string, size: number | null, note: string, act?: Node) =>
+  h('div', {class: 'space-row'},
+    h('div', {class: 'space-what'}, h('span', {class: 'space-name'}, name), h('span', {class: 'muted small'}, note)),
+    size === null ? null : h('span', {class: 'space-size'}, bytes(size)), act ?? null);
 
 /**
- * この端末 → 空けられるもの, as one list: everything this OS holds here,
- * largest first, each with what can be done with it. Whatever can go says
- * how (空ける, or 同期して空ける when its changes go to the Remote first);
- * whatever stays says why.
+ * This device: the bar and its figures, then the box of three columns. What
+ * the last 空ける did stays in view while the figures are read again.
  */
-function device(u: Space, last: Freed | null, again: (r: Freed) => void): HTMLElement {
+function device(ctx: Context, u: Space, last: Freed | null, again: (r: Freed | null) => void): HTMLElement {
   const total = u.host_total || 1;
   const error = h('p', {class: 'error', role: 'alert'});
-  const go = (ids: string[], buttons: HTMLButtonElement[]) => {
-    for (const b of buttons) b.disabled = true;
+  const buttons: HTMLButtonElement[] = [];
+  const go = (ids: string[], held: HTMLButtonElement[]) => {
+    for (const b of held) b.disabled = true;
     void free(ids).then(again, (e) => {
-      for (const b of buttons) b.disabled = false;
-      error.textContent = e instanceof Error ? e.message : String(e);
+      for (const b of held) b.disabled = false;
+      error.textContent = message(e);
     });
   };
-  const buttons: HTMLButtonElement[] = [];
-  const rows = u.items.map((i) => {
-    const act: Node = i.room === 'Keep' ? h('span', {class: 'row-meta space-why'}, i.why) : (() => {
-      const b = h('button', {class: `button small-button`, type: 'button', title: i.why}, ACT[i.room]) as HTMLButtonElement;
-      buttons.push(b);
-      b.addEventListener('click', () => go([i.id], [b]));
+
+  // On this device: everything, largest first; a repo opens in Forge.
+  const here = u.items.map((i) => {
+    const name: Node | string = i.id.startsWith('repo:') ? (() => {
+      const b = h('button', {type: 'button', class: 'link-name'}, i.what);
+      b.addEventListener('click', () => ctx.openRepo(i.what));
       return b;
-    })();
-    return h('div', {class: 'row-item usage-prompt', 'data-room': i.room, title: i.why},
-      h('span', {class: 'row-name'}, i.what, h('small', {class: 'muted'}, `  ${i.detail}`)),
-      h('span', {class: 'row-meta usage-size'}, bytes(i.allocated)), act);
+    })() : i.what;
+    const repoNote = i.id.startsWith('repo:') ? syncWord(repoState(i.what)) : '';
+    return thing(name, i.allocated, [i.detail, repoNote, i.room === 'Keep' ? i.why : ''].filter(Boolean).join(' · '));
   });
-  const all = h('button', {class: 'button', type: 'button'}, '全部空ける') as HTMLButtonElement;
-  all.addEventListener('click', () => go(u.items.filter((i) => i.room !== 'Keep').map((i) => i.id), [all, ...buttons]));
+
+  // Can be freed: Free, or Sync and free.
+  const freeable = u.items.filter((i) => i.room !== 'Keep');
+  const going = freeable.map((i) => {
+    const b = button(i.room === 'SyncFree' ? t('Sync and free') : t('Free'));
+    b.title = i.why;
+    buttons.push(b);
+    b.addEventListener('click', () => go([i.id], [b]));
+    return thing(i.what, i.allocated, i.why, b);
+  });
+  const all = h('button', {class: 'button', type: 'button'}, t('Free all')) as HTMLButtonElement;
+  all.addEventListener('click', () => go(freeable.map((i) => i.id), [all, ...buttons]));
+
+  // On the Remote: what can come here.
+  const coming: Node[] = remoteOnly().map((r) => {
+    const b = button(t('Fetch'));
+    b.addEventListener('click', async () => {
+      b.disabled = true;
+      try { await bring(r.name); again(null); } catch (e) { error.textContent = message(e); b.disabled = false; }
+    });
+    return thing(r.name, r.bytes, t('repo · comes here, then opens'), b);
+  });
+  const remoteCol = column('remote-col', t('On the Remote'), remoteOnly().reduce((n, r) => n + r.bytes, 0), coming,
+    connection() ? t('Everything on the Remote is here too.') : t('Sign in to the Remote to see what it holds.'));
+  if (isNative) {
+    void rootStatus().then((root) => {
+      if (!root || root.current) return;
+      const b = button(t('Fetch'));
+      const note = h('span', {class: 'muted small'}, t('the root Prompts run on'));
+      b.addEventListener('click', () => {
+        b.disabled = true;
+        void rootFetch((got, of, retry) => {
+          note.textContent = retry ? t('{why}; continuing where it stopped', {why: retry}) : t('Fetching {got} / {of}', {got: bytes(got), of: bytes(of)});
+        }).then(() => again(null), (e) => { note.textContent = message(e); b.disabled = false; });
+      });
+      const row = h('div', {class: 'space-row'},
+        h('div', {class: 'space-what'}, h('span', {class: 'space-name'}, `${root.release.name} ${root.release.version}`), note),
+        h('span', {class: 'space-size'}, bytes(root.release.bytes)), b);
+      remoteCol.querySelector('.space-empty')?.remove();
+      remoteCol.querySelector('.space-list')!.prepend(row);
+    });
+  }
+
   return h('section', {class: 'section', 'aria-labelledby': 'device-title'},
-    h('h2', {id: 'device-title'}, isNative ? 'この端末' : 'このブラウザ'),
-    meter(total, u.host_free, u.allocated, `全体 ${bytes(u.host_total)} のうち このOS ${bytes(u.allocated)}`),
+    h('h2', {id: 'device-title'}, isNative ? t('This device') : t('This browser')),
+    meter(total, u.host_free, u.allocated, t('{os} of {total} is this OS', {os: bytes(u.allocated), total: bytes(u.host_total)})),
     h('div', {class: 'legend'},
-      figure(bytes(u.allocated), 'このOS'),
-      figure(bytes(u.host_free), '空き', known(u.host)),
-      figure(bytes(u.host_total), isNative ? '全体' : '割当', known(u.host))),
+      figure(bytes(u.allocated), t('this OS')),
+      figure(bytes(u.host_free), t('free'), known(u.host)),
+      figure(bytes(u.host_total), isNative ? t('in all') : t('allowed'), known(u.host))),
     ...(last ? [result(last)] : []),
-    h('div', {class: 'rows usage-rows'}, ...(rows.length ? rows : [h('div', {class: 'row-item muted'}, isNative ? 'このOSはこの端末に何も置いていません' : 'このブラウザには何も置いていません。repo は Remote にあり、開けばまた来ます')])),
-    ...(u.freeable ? [h('div', {class: 'row work-act reclaim-act'},
-      h('span', {class: 'grow'}, '空けられるもの ', h('b', {}, bytes(u.freeable)), h('small', {class: 'muted'}, '  repo は Remote に残り、開けばまた来ます')), all)] : []),
+    h('div', {class: 'space-box'},
+      column('here-col', isNative ? t('On this device') : t('In this browser'), u.allocated, here, t('This OS keeps nothing here yet.')),
+      column('free-col', t('Can be freed'), u.freeable, going, t('Nothing to free. A repo goes once the Remote has all of it.'),
+        freeable.length > 1 ? [h('span', {class: 'muted small grow'}, t('Repos stay on the Remote and come back when opened.')), all] : []),
+      remoteCol),
     error);
 }
 
-/** What 空ける did: counted bytes, and the host's free space as it was seen to change. */
+/** What freeing did: counted bytes, and the host's free space as it was seen to change. */
 function result(r: Freed): HTMLElement {
   const change = r.host_free_after - r.host_free_before;
-  const seen = r.reflected_ms === null ? (isNative ? '端末にはまだ出ていません' : '')
-    : `端末の空き ${change >= 0 ? '+' : '−'}${bytes(Math.abs(change))}（${known(r.host_change) || '確定'} · ${r.reflected_ms} ms）`;
+  const seen = r.reflected_ms === null ? (isNative ? t('the device does not show it yet') : '')
+    : t('device free space {sign}{size} ({how} · {ms} ms)', {sign: change >= 0 ? '+' : '−', size: bytes(Math.abs(change)), how: known(r.host_change) || t('counted'), ms: r.reflected_ms});
   return h('div', {class: 'reclaimed', role: 'status'},
-    r.removed.length ? h('p', {}, h('b', {}, `${bytes(r.freed)} 空けました`), ` · ${r.removed.length} 件`) : null,
+    r.removed.length ? h('p', {}, h('b', {}, t('Freed {size}', {size: bytes(r.freed)})), ` · ${tn('{n} thing', '{n} things', r.removed.length)}`) : null,
     seen ? h('p', {class: 'muted small'}, seen) : null,
-    ...r.kept.map(([id, why]) => h('p', {class: 'muted small'}, `残したもの: ${id.replace(/^(repo|root|path):/, '').split('/').at(-1)} — ${why}`)));
+    ...r.kept.map(([id, why]) => h('p', {class: 'muted small'}, t('Kept {what}: {why}', {what: id.replace(/^(repo|root|path):/, '').split('/').at(-1) ?? id, why}))));
 }
 
-/** Prompts running in this window, each with what it holds and 止める. Shown only when one runs. */
+/** Prompts running in this window, each with what it holds and Stop. Shown only when one runs. */
 function prompts(): HTMLElement {
   const section = h('section', {class: 'section', 'aria-labelledby': 'prompts-title', hidden: ''});
   // Each session is watched once, for as long as the page is shown.
@@ -148,20 +200,21 @@ function prompts(): HTMLElement {
     // Running ones, and ones stopped here, with what stopping gave back.
     const shown = allSessions().filter(([, s]) => s.running || s.stopped);
     section.hidden = !shown.length;
-    section.replaceChildren(h('h2', {id: 'prompts-title'}, '動いている Prompt'),
+    section.replaceChildren(h('h2', {id: 'prompts-title'}, t('Prompts running')),
       h('div', {class: 'rows'}, ...shown.map(([repo, s]) => {
         if (!watched.has(s)) watched.set(s, s.watch(paint));
         if (!s.running && s.stopped) {
-          const t = s.stopped;
+          const st = s.stopped;
           return h('div', {class: 'row-item usage-prompt', 'data-state': 'stopped'},
             h('span', {class: 'row-name'}, repo),
-            h('span', {class: 'row-meta'}, t.left ? `${t.left} 個残っています` : `止めました · ${bytes(t.before.memory)} を返しました${t.ms !== null ? ` · ${t.ms} ms` : ''}`));
+            h('span', {class: 'row-meta'}, st.left ? tn('{n} left', '{n} left', st.left)
+              : `${t('Stopped · gave back {size}', {size: bytes(st.before.memory)})}${st.ms !== null ? ` · ${st.ms} ms` : ''}`));
         }
-        const stop = h('button', {class: 'button', type: 'button'}, '止める');
+        const stop = h('button', {class: 'button', type: 'button'}, t('Stop'));
         stop.addEventListener('click', () => s.stop());
         return h('div', {class: 'row-item usage-prompt'},
           h('span', {class: 'row-name'}, repo),
-          h('span', {class: 'row-meta'}, s.on === 'root' ? `root · ${s.processes} プロセス` : 'l3'),
+          h('span', {class: 'row-meta'}, s.on === 'root' ? `root · ${tn('{n} process', '{n} processes', s.processes)}` : 'l3'),
           h('span', {class: 'row-meta usage-size'}, s.memory ? bytes(s.memory) : ''), stop);
       })));
   };
@@ -169,15 +222,17 @@ function prompts(): HTMLElement {
   return section;
 }
 
-/** Runtime: この端末 and what can go from it, the Prompts running, and the environment in effect. */
-export function runtime(): Node[] {
-  const holder = h('div', {}, h('section', {class: 'section'}, h('p', {class: 'muted'}, '計測中…')));
-  // What 空ける last did stays in view while the figures are read again.
+/** Runtime: this device and what can go from it and come to it, the Prompts running, and the environment in effect. */
+export function runtime(ctx: Context): Node[] {
+  const holder = h('div', {}, h('section', {class: 'section'}, h('p', {class: 'muted'}, t('Measuring…'))));
   let last: Freed | null = null;
   const read = () => void readSpace(allSessions().filter(([, s]) => s.running).map(([repo]) => repo)).then((u) => {
-    holder.replaceChildren(u ? device(u, last, (r) => { last = r; read(); }) : h('section', {class: 'section'}, h('p', {class: 'muted'}, '計測できませんでした')));
+    holder.replaceChildren(u ? device(ctx, u, last, (r) => { last = r; read(); })
+      : h('section', {class: 'section'}, h('p', {class: 'muted'}, t('Could not measure'))));
   });
   read();
+  // What the Remote holds changes what can come here.
+  const stop = onSync(() => { if (!holder.isConnected) { stop(); return; } read(); });
   return [pageHead('runtime'), holder, prompts(),
-    h('section', {class: 'section', 'aria-labelledby': 'env-title'}, h('h2', {id: 'env-title'}, '有効な環境'), environment())];
+    h('section', {class: 'section', 'aria-labelledby': 'env-title'}, h('h2', {id: 'env-title'}, t('Environment in effect')), environment())];
 }

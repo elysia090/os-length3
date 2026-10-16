@@ -10,16 +10,16 @@ mod shells;
 /// Elsewhere a Prompt on the root is not there yet; the commands say so.
 #[cfg(not(target_os = "linux"))]
 mod shells {
-    const NOT_HERE: &str = "root の Prompt はいま Linux だけです";
+    fn not_here() -> String { length3_core::tr!("A Prompt on the root is Linux only for now", "root の Prompt はいま Linux だけです") }
     #[derive(Default)]
     pub struct Shells;
-    #[tauri::command] pub fn prompt_open(_repo: String) -> Result<u32, String> { Err(NOT_HERE.into()) }
-    #[tauri::command] pub fn prompt_input(_id: u32, _text: String) -> Result<(), String> { Err(NOT_HERE.into()) }
-    #[tauri::command] pub fn prompt_interrupt(_id: u32) -> Result<(), String> { Err(NOT_HERE.into()) }
+    #[tauri::command] pub fn prompt_open(_repo: String) -> Result<u32, String> { Err(not_here()) }
+    #[tauri::command] pub fn prompt_input(_id: u32, _text: String) -> Result<(), String> { Err(not_here()) }
+    #[tauri::command] pub fn prompt_interrupt(_id: u32) -> Result<(), String> { Err(not_here()) }
     #[tauri::command] pub fn prompt_held(_id: u32) -> Option<length3_core::prompt::Held> { None }
-    #[tauri::command] pub fn prompt_close(_id: u32) -> Result<length3_core::prompt::Stopped, String> { Err(NOT_HERE.into()) }
+    #[tauri::command] pub fn prompt_close(_id: u32) -> Result<length3_core::prompt::Stopped, String> { Err(not_here()) }
     #[tauri::command] pub fn root_status() -> Option<()> { None }
-    #[tauri::command] pub async fn root_fetch() -> Result<(), String> { Err(NOT_HERE.into()) }
+    #[tauri::command] pub async fn root_fetch() -> Result<(), String> { Err(not_here()) }
     impl Shells { pub fn open_repos(&self) -> Vec<String> { Vec::new() } }
 }
 
@@ -172,7 +172,7 @@ async fn history_diff(repo: String) -> Result<Vec<history::FileDiff>, String> {
     blocking(move || history::diff(&managed()?, &repo, DIFF_LIMIT)).await
 }
 
-/// 区切る, under an issue (its file name in issue/) or named by `line` ("Kind：件名").
+/// Commit, under an issue (its file name in issue/) or named by `line` ("Kind：件名").
 #[tauri::command]
 async fn history_cut(repo: String, issue: Option<String>, line: String, note: String) -> Result<history::Cut, String> {
     blocking(move || history::cut(&managed()?, &repo, issue.as_deref().map(|f| format!("issue/{}", f.trim_start_matches("issue/"))).as_deref(), &line, &note)).await
@@ -180,7 +180,72 @@ async fn history_cut(repo: String, issue: Option<String>, line: String, note: St
 
 #[tauri::command]
 async fn history_log(repo: String) -> Result<Vec<history::Cut>, String> {
-    blocking(move || history::log(&repo, 50)).await
+    blocking(move || history::log(&managed()?, &repo, 50)).await
+}
+
+// ---- work on an issue, and the changes handed to main (core/src/work.rs, history.rs) ----
+
+/// Work on `issue` (its file, issue/NNN.md): the repo then shows that work's copy.
+#[tauri::command]
+async fn work_start(repo: String, issue: String) -> Result<length3_core::work::Line, String> {
+    blocking(move || length3_core::work::start(&managed()?, &repo, &issue)).await
+}
+
+/// Show `line` ("main" or an issue's) where the repo is seen.
+#[tauri::command]
+async fn work_switch(repo: String, line: String) -> Result<(), String> {
+    blocking(move || length3_core::work::switch(&managed()?, &repo, &line)).await
+}
+
+/// The work the repo shows, and where it stands.
+#[tauri::command]
+async fn work_state(repo: String) -> Result<history::Work, String> {
+    blocking(move || history::work(&managed()?, &repo)).await
+}
+
+#[tauri::command]
+async fn work_lines(repo: String) -> Result<Vec<length3_core::work::Line>, String> {
+    blocking(move || length3_core::work::lines(&repo)).await
+}
+
+#[tauri::command]
+async fn history_push(repo: String) -> Result<String, String> {
+    blocking(move || history::push(&managed()?, &repo)).await
+}
+
+#[tauri::command]
+async fn history_submit(repo: String, note: String) -> Result<history::Change, String> {
+    blocking(move || history::submit(&managed()?, &repo, &note)).await
+}
+
+#[tauri::command]
+async fn history_reset(repo: String) -> Result<history::Change, String> {
+    blocking(move || history::reset(&managed()?, &repo)).await
+}
+
+#[tauri::command]
+async fn changes_list(repo: String) -> Result<Vec<history::Change>, String> {
+    blocking(move || history::changes_of_repo(&repo)).await
+}
+
+#[tauri::command]
+async fn change_review(repo: String, id: String, verdict: String, note: String) -> Result<history::Change, String> {
+    blocking(move || history::review(&repo, &id, &verdict, &note)).await
+}
+
+#[tauri::command]
+async fn change_merge(repo: String, id: String) -> Result<history::Change, String> {
+    blocking(move || history::merge(&repo, &id)).await
+}
+
+#[tauri::command]
+async fn change_reject(repo: String, id: String, note: String) -> Result<history::Change, String> {
+    blocking(move || history::reject(&repo, &id, &note)).await
+}
+
+#[tauri::command]
+async fn change_diff(repo: String, id: String) -> Result<Vec<history::FileDiff>, String> {
+    blocking(move || history::change_diff(&repo, &id, DIFF_LIMIT)).await
 }
 
 fn main() {
@@ -192,6 +257,8 @@ fn main() {
             repo_mkdir, repo_remove, state_get, state_set,
             remote_login_start, remote_login_wait, remote_account, remote_logout, remote_repos, remote_status,
             sync_repo, repo_fetch, history_changes, history_diff, history_cut, history_log,
+            work_start, work_switch, work_state, work_lines, history_push, history_submit, history_reset,
+            changes_list, change_review, change_merge, change_reject, change_diff,
             shells::prompt_open, shells::prompt_input, shells::prompt_interrupt, shells::prompt_held, shells::prompt_close,
             shells::root_status, shells::root_fetch
         ])

@@ -139,6 +139,8 @@ export async function begin() {
   begun = true;
   // The web keeps no copy of l3: it is fetched each visit. The app has it beside itself.
   void forgetExcept(new Set());
+  // A browser shows again the work each repo showed.
+  draft.restoreLines();
   // Every change a person (or a Prompt) makes is sent; sync's own writes are not news.
   onChange((c) => { if (c.by !== draft.BY) schedule(c.repo); else tell(); });
   onState((k) => { if ((k === 'profile' || k === 'todo') && connection()) void draft.syncHome(k).catch(() => {}); });

@@ -58,7 +58,7 @@ fn decode(pending: &mut Vec<u8>, chunk: &[u8]) -> String {
 #[tauri::command]
 pub fn prompt_open(app: AppHandle, shells: State<'_, Shells>, repo: String) -> Result<u32, String> {
     if root::current(&paths::data_dir()).is_none() {
-        return Err("root がありません".into());
+        return Err(length3_core::tr!("There is no root", "root がありません"));
     }
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let (mut reader, writer) = std::io::pipe().map_err(|e| e.to_string())?;
@@ -69,7 +69,7 @@ pub fn prompt_open(app: AppHandle, shells: State<'_, Shells>, repo: String) -> R
         .stdout(writer.try_clone().map_err(|e| e.to_string())?)
         .stderr(writer)
         .spawn()
-        .map_err(|e| format!("l3 を起動できませんでした: {e}"))?;
+        .map_err(|e| length3_core::tr!("Could not start l3: {}", "l3 を起動できませんでした: {}", e))?;
     let stdin = child.stdin.take().ok_or("stdin")?;
     let supervisor = child.id();
     let id = shells.next.fetch_add(1, Ordering::SeqCst) + 1;
@@ -109,7 +109,7 @@ pub fn prompt_open(app: AppHandle, shells: State<'_, Shells>, repo: String) -> R
 #[tauri::command]
 pub fn prompt_input(shells: State<'_, Shells>, id: u32, text: String) -> Result<(), String> {
     let mut open = shells.open.lock().unwrap();
-    let s = open.get_mut(&id).ok_or("この Prompt は終わっています")?;
+    let s = open.get_mut(&id).ok_or_else(|| length3_core::tr!("This Prompt has ended", "この Prompt は終わっています"))?;
     s.stdin.write_all(text.as_bytes()).and_then(|_| s.stdin.flush()).map_err(|e| e.to_string())
 }
 
@@ -117,7 +117,7 @@ pub fn prompt_input(shells: State<'_, Shells>, id: u32, text: String) -> Result<
 #[tauri::command]
 pub fn prompt_interrupt(shells: State<'_, Shells>, id: u32) -> Result<(), String> {
     let open = shells.open.lock().unwrap();
-    let s = open.get(&id).ok_or("この Prompt は終わっています")?;
+    let s = open.get(&id).ok_or_else(|| length3_core::tr!("This Prompt has ended", "この Prompt は終わっています"))?;
     unsafe { libc::kill(s.child.id() as libc::pid_t, libc::SIGINT) };
     Ok(())
 }
@@ -134,7 +134,7 @@ pub fn prompt_held(shells: State<'_, Shells>, id: u32) -> Option<prompt::Held> {
 pub fn prompt_close(shells: State<'_, Shells>, id: u32) -> Result<prompt::Stopped, String> {
     let (supervisor, ns) = {
         let open = shells.open.lock().unwrap();
-        let s = open.get(&id).ok_or("この Prompt は終わっています")?;
+        let s = open.get(&id).ok_or_else(|| length3_core::tr!("This Prompt has ended", "この Prompt は終わっています"))?;
         (s.child.id(), s.ns)
     };
     let before = ns.map(prompt::held).unwrap_or(prompt::Held { processes: 0, memory: 0 });
@@ -197,7 +197,7 @@ pub async fn root_fetch(app: AppHandle) -> Result<root::Installed, String> {
                 let _ = app.emit("root-fetch", Fetching { got, of, retry: None });
             }
             length3_core::fetch::Progress::Retry(n, why) => {
-                let _ = app.emit("root-fetch", Fetching { got: last, of: 0, retry: Some(format!("{why}（{n}回目）")) });
+                let _ = app.emit("root-fetch", Fetching { got: last, of: 0, retry: Some(length3_core::tr!("{} (try {})", "{}（{}回目）", why, n)) });
             }
             _ => {}
         })

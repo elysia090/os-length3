@@ -97,7 +97,7 @@ function render() {
   const nodes = current === 'home' ? home(ctx)
     : current === 'forge' ? forge(ctx)
     : current === 'new-repo' ? newRepo(ctx)
-    : current === 'runtime' ? runtime()
+    : current === 'runtime' ? runtime(ctx)
     : current === 'git' ? git(ctx)
     : current === 'remote' ? remote(ctx)
     : placeholder(current);

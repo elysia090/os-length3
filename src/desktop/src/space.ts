@@ -10,6 +10,7 @@ import {isNative, nativeFree, nativeSpace, readCapacity, type Freed, type Item, 
 import {flush, look, repoState} from './lifecycle.ts';
 import {connection} from './remote.ts';
 import {kept, store} from './repos.ts';
+import {t, tn} from './i18n.ts';
 
 /** `open`: repos a Prompt has open in this page (the app knows its own). */
 export async function readSpace(open: string[] = []): Promise<Space | null> {
@@ -18,12 +19,13 @@ export async function readSpace(open: string[] = []): Promise<Space | null> {
   const items: Item[] = [];
   for (const r of await store.list()) {
     const s = repoState(r.name);
-    const [room, why]: [Item['room'], string] = open.includes(r.name) ? ['Keep', 'Prompt で開いています']
-      : !connection() ? ['Keep', 'Remote に入ると空けられます']
-      : !kept ? ['Keep', 'このブラウザでは閉じると消えます']
-      : s?.where === 'synced' ? ['Free', 'Remote と同じです。開けばまた来ます']
-      : ['SyncFree', `${s?.changed ? `${s.changed} 件の` : ''}変更を送ってから空けます`];
-    items.push({id: `repo:${r.name}`, what: r.name, detail: `repo · ${r.files} ファイル`, allocated: r.bytes, room, why});
+    const [room, why]: [Item['room'], string] = open.includes(r.name) ? ['Keep', t('A Prompt has it open')]
+      : !connection() ? ['Keep', t('Connect to the Remote to free it')]
+      : !kept ? ['Keep', t('This browser lets it go when the page closes')]
+      : s?.where === 'synced' ? ['Free', t('The Remote has the same; opening it brings it back')]
+      : ['SyncFree', s?.changed ? t('{n} changes are sent, then it is freed', {n: s.changed}) : t('Its changes are sent, then it is freed')];
+    const works = store.copies(r.name).length - 1;
+    items.push({id: `repo:${r.name}`, what: r.name, detail: works ? t('repo · {files} · {n} works', {files: tn('{n} file', '{n} files', r.files), n: works}) : `repo · ${tn('{n} file', '{n} files', r.files)}`, allocated: r.bytes, room, why});
   }
   items.sort((a, b) => b.allocated - a.allocated || a.what.localeCompare(b.what));
   return {
@@ -49,9 +51,9 @@ export async function free(ids: string[]): Promise<Freed> {
       const size = (await store.list()).find((r) => r.name === name)?.bytes ?? 0;
       try {
         const s = await draft.sync(name);
-        if (s.both.length) throw new Error(`別の端末の変更を横に置きました。確かめてから空けてください（${s.both[0]}）`);
+        if (s.both.length) throw new Error(t('Another device\'s change was put beside yours; check it before freeing ({path})', {path: s.both[0]}));
         const left = (await draft.status()).find((x) => x.name === name);
-        if (left?.changed) throw new Error('同期のあいだに変わりました。もう一度どうぞ');
+        if (left?.changed) throw new Error(t('It changed while syncing; try again'));
         await kept!.letGo([name]);
         await draft.forget(name);
         removed.push(id);

@@ -9,7 +9,7 @@
 //! Taking in is file by file against the last version agreed with the
 //! Remote (the base): a file only changed there is written here, one only
 //! changed here is sent, and when both changed one, this device's stays and
-//! the other is written beside it as "name (別の端末).ext", so neither is
+//! the other is written beside it as "name (other device).ext", so neither is
 //! lost. Files that cannot travel (links, files over 16 MiB) and a repo's
 //! own .git are not sent, and are named; a repo holding them is never freed.
 //!
@@ -446,14 +446,14 @@ pub fn plan(base: &Tree, here: &Tree, there: &Tree) -> Plan {
     p
 }
 
-/// "dir/name (別の端末).ext" beside `path`.
+/// "dir/name (other device).ext" beside `path`.
 pub fn beside(path: &str) -> String {
     let (dir, file) = path.rsplit_once('/').map_or(("", path), |(d, f)| (d, f));
     let (stem, ext) = match file.rfind('.') {
         Some(i) if i > 0 => (&file[..i], &file[i..]),
         _ => (file, ""),
     };
-    let name = format!("{stem} (別の端末){ext}");
+    let name = format!("{stem} (other device){ext}");
     if dir.is_empty() { name } else { format!("{dir}/{name}") }
 }
 
@@ -795,10 +795,10 @@ mod tests {
 
     #[test]
     fn the_other_devices_version_goes_beside_it() {
-        assert_eq!(beside("README.md"), "README (別の端末).md");
-        assert_eq!(beside("src/main.c"), "src/main (別の端末).c");
-        assert_eq!(beside("Makefile"), "Makefile (別の端末)");
-        assert_eq!(beside(".env"), ".env (別の端末)");
+        assert_eq!(beside("README.md"), "README (other device).md");
+        assert_eq!(beside("src/main.c"), "src/main (other device).c");
+        assert_eq!(beside("Makefile"), "Makefile (other device)");
+        assert_eq!(beside(".env"), ".env (other device)");
     }
 
     #[test]

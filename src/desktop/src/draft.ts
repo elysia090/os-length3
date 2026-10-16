@@ -7,8 +7,9 @@
 // Taking in is file by file against the last version agreed with the
 // Remote: a file only changed there is written here, one only changed here
 // is sent, and when both changed one, this device's stays and the other's is
-// written beside it as "name (別の端末).ext".
+// written beside it as "name (other device).ext".
 
+import {t} from './i18n.ts';
 import {isNative} from './host.ts';
 import {api, json, RemoteError} from './remote.ts';
 import {store} from './repos.ts';
@@ -21,7 +22,7 @@ export interface Status { name: string; changed: number; fresh: boolean; unsynce
 export interface RemoteRepo { name: string; head: string | null; version: number; bytes: number; updatedAt: string }
 
 interface Base { version: number; tree: Tree; head: string | null; away?: string[] }
-interface SyncState { repos: Record<string, Base>; home?: Record<string, {version: number; value: string}> }
+interface SyncState { repos: Record<string, Base>; home?: Record<string, {version: number; value: string}>; lines?: Record<string, string> }
 
 /** Whoever writes on sync's behalf, so listeners can tell its writes from a person's. */
 export const BY = 'sync';
@@ -43,8 +44,15 @@ const syncState = (): SyncState => {
   try { const s = JSON.parse(getState('sync') ?? '') as SyncState; return {...s, repos: s.repos ?? {}}; } catch { return {repos: {}}; }
 };
 const saveState = (s: SyncState) => setState('sync', JSON.stringify(s));
-export const baseOf = (repo: string): Base | null => syncState().repos[repo] ?? null;
+/** The line a repo shows (main, or an issue's work), and the key its agreement is kept under. */
+export const lineOf = (repo: string): string => (isNative ? 'main' : store.lineOf(repo));
+export const keyOf = (repo: string, line = lineOf(repo)) => (line === 'main' ? repo : `${repo}@${line}`);
+/** The Remote's address of what the repo shows: the repo, and its line when not main. */
+export const at = (repo: string, rest = '', line = lineOf(repo)) =>
+  `/v1/repos/${encodeURIComponent(repo)}${rest}${line === 'main' ? '' : `${rest.includes('?') ? '&' : '?'}line=${encodeURIComponent(line)}`}`;
+export const baseOf = (repo: string): Base | null => syncState().repos[keyOf(repo)] ?? null;
 async function setBase(repo: string, b: Base | null) {
+  repo = keyOf(repo);
   const s = syncState();
   if (b) s.repos[repo] = b; else delete s.repos[repo];
   await saveState(s);
@@ -67,13 +75,13 @@ export function plan(base: Tree, here: Tree, there: Tree): Plan {
   return p;
 }
 
-/** "dir/name (別の端末).ext" beside `path`. */
+/** "dir/name (other device).ext" beside `path`. */
 export function beside(path: string): string {
   const at = path.lastIndexOf('/');
   const dir = at < 0 ? '' : path.slice(0, at + 1), file = path.slice(at + 1);
   const dot = file.lastIndexOf('.');
   const [stem, ext] = dot > 0 ? [file.slice(0, dot), file.slice(dot)] : [file, ''];
-  return `${dir}${stem} (別の端末)${ext}`;
+  return `${dir}${stem} (other device)${ext}`;
 }
 
 // ---- the browser's copy ----
@@ -109,9 +117,9 @@ const blobs = new Map<string, string | null>();
 export async function blobText(sha: string): Promise<string | null> {
   if (blobs.has(sha)) return blobs.get(sha)!;
   const r = await api(`/v1/blobs/${sha}`);
-  if (!r.ok) throw new RemoteError(r.status, `Remote にないファイル ${sha.slice(0, 12)}`);
+  if (!r.ok) throw new RemoteError(r.status, t('The Remote has no file {sha}', {sha: sha.slice(0, 12)}));
   const bytes = new Uint8Array(await r.arrayBuffer());
-  if (await sha256(bytes) !== sha) throw new RemoteError(0, 'Remote から届いたものが名前と合いません');
+  if (await sha256(bytes) !== sha) throw new RemoteError(0, t('What came from the Remote is not what its name says'));
   let text: string | null;
   try { text = dec.decode(bytes); } catch { text = null; }
   if (bytes.length < 1 << 20) blobs.set(sha, text);
@@ -154,7 +162,7 @@ function serial<T>(repo: string, f: () => Promise<T>): Promise<T> {
 
 async function webSync(repo: string): Promise<Synced> {
   const out: Synced = {version: 0, sent: 0, taken: 0, both: [], unsynced: []};
-  const path = `/v1/repos/${encodeURIComponent(repo)}`;
+  const path = at(repo);
   for (let round = 0; round < 12; round++) {
     const base = baseOf(repo) ?? {version: 0, tree: {}, head: null};
     const here = await localTree(repo, base.away, base.tree);
@@ -180,10 +188,10 @@ async function webSync(repo: string): Promise<Synced> {
         const bytes = here.texts.get(sha);
         if (!bytes) continue;
         const put = await api(`/v1/blobs/${sha}`, {method: 'PUT', body: bytes as BodyInit, headers: {'Content-Type': 'application/octet-stream'}});
-        if (!put.ok) throw new RemoteError(put.status, `Remote が受け取りませんでした（${put.status}）`);
+        if (!put.ok) throw new RemoteError(put.status, put.status === 507 ? t('The Remote is full for this account') : t('The Remote did not take it ({status})', {status: put.status}));
       }
     }
-    const patched = await api(`${path}/draft`, {method: 'PATCH', body: JSON.stringify({version: base.version, set: Object.fromEntries(set), remove})});
+    const patched = await api(at(repo, '/draft'), {method: 'PATCH', body: JSON.stringify({version: base.version, set: Object.fromEntries(set), remove})});
     if (patched.status !== 200) continue; // someone else moved it, or a blob went missing: once more
     const {version} = await patched.json() as {version: number};
     const tree = {...base.tree};
@@ -228,13 +236,44 @@ export async function status(): Promise<Status[]> {
 }
 
 /** The copy here has gone (freed, or left with the page): forget what was agreed for it. */
-export const forget = (repo: string) => setBase(repo, null);
+export async function forget(repo: string) {
+  const s = syncState();
+  for (const k of Object.keys(s.repos)) if (k === repo || k.startsWith(`${repo}@`)) delete s.repos[k];
+  if (s.lines) delete s.lines[repo];
+  await saveState(s);
+}
+
+/** Which work each repo showed, so a reload shows it again (a browser's copy). */
+export function restoreLines() {
+  if (isNative) return;
+  for (const [repo, line] of Object.entries(syncState().lines ?? {})) store.showLine(repo, line);
+}
+
+/** Show `line`'s work as `repo` here; its copy comes from the Remote when it is not here yet. */
+export async function showLine(repo: string, line: string): Promise<void> {
+  if (isNative) { await invoke('work_switch', {repo, line}); store.changedOutside(repo, 'work'); return; }
+  await sync(repo).catch(() => {});
+  const made = store.showLine(repo, line);
+  const s = syncState();
+  s.lines = {...s.lines};
+  if (line === 'main') delete s.lines[repo]; else s.lines[repo] = line;
+  if (made) delete s.repos[keyOf(repo, line)];
+  await saveState(s);
+  await sync(repo);
+}
 
 /** The head this copy is on, and that cut's tree (empty before the first). */
 export async function headTree(repo: string): Promise<Tree> {
   const head = baseOf(repo)?.head;
   if (!head) return {};
   const c = await json<{tree: Tree}>(`/v1/repos/${encodeURIComponent(repo)}/cuts/${head}`);
+  return c.tree;
+}
+
+/** A commit's tree, by its id (any line of the repo). */
+export async function treeAt(repo: string, id: string | null): Promise<Tree> {
+  if (!id) return {};
+  const c = await json<{tree: Tree}>(`/v1/repos/${encodeURIComponent(repo)}/cuts/${id}`);
   return c.tree;
 }
 

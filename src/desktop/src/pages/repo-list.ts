@@ -1,4 +1,5 @@
 import {ago, bytes, h} from '../dom.ts';
+import {t, tn} from '../i18n.ts';
 import {icon} from '../icons.ts';
 import {store} from '../repos.ts';
 import {bring, onSync, remoteOnly, repoState} from '../lifecycle.ts';
@@ -11,8 +12,8 @@ import type {Context} from './context.ts';
 function repoCard(ctx: Context, name: string, files: number, size: number, modified: number): HTMLElement {
   const card = h('button', {class: 'card repo', type: 'button', 'data-repo': name},
     h('span', {class: 'card-title'}, name),
-    h('span', {class: 'muted'}, `${files} ファイル · ${bytes(size)}`),
-    h('span', {class: 'muted'}, `${ago(modified)}に更新`),
+    h('span', {class: 'muted'}, `${tn('{n} file', '{n} files', files)} · ${bytes(size)}`),
+    h('span', {class: 'muted'}, t('Changed {when}', {when: ago(modified)})),
     // Where it stands against the Remote; filled in once it is known.
     h('span', {class: 'muted card-sync'}));
   card.addEventListener('click', () => ctx.openRepo(name));
@@ -23,12 +24,12 @@ function repoCard(ctx: Context, name: string, files: number, size: number, modif
 function awayCard(ctx: Context, name: string, size: number, modified: number): HTMLElement {
   const card = h('button', {class: 'card repo away', type: 'button', 'data-repo': name},
     h('span', {class: 'card-title'}, name),
-    h('span', {class: 'muted'}, `Remote にあります · ${bytes(size)}`),
-    h('span', {class: 'muted'}, `${ago(modified)}に更新`),
-    h('span', {class: 'muted card-sync'}, '開くとこの端末に来ます'));
+    h('span', {class: 'muted'}, t('On the Remote · {size}', {size: bytes(size)})),
+    h('span', {class: 'muted'}, t('Changed {when}', {when: ago(modified)})),
+    h('span', {class: 'muted card-sync'}, t('Opening brings it here')));
   card.addEventListener('click', async () => {
     card.setAttribute('aria-busy', 'true');
-    (card.querySelector('.card-sync') as HTMLElement).textContent = '持ってきています…';
+    (card.querySelector('.card-sync') as HTMLElement).textContent = t('Bringing it…');
     try { await bring(name); ctx.openRepo(name); } catch (e) {
       (card.querySelector('.card-sync') as HTMLElement).textContent = e instanceof Error ? e.message : String(e);
       card.removeAttribute('aria-busy');
@@ -38,7 +39,7 @@ function awayCard(ctx: Context, name: string, size: number, modified: number): H
 }
 
 function newRepoCard(ctx: Context): HTMLElement {
-  const card = h('button', {class: 'card new', type: 'button'}, icon('new-repo'), '新しいrepo');
+  const card = h('button', {class: 'card new', type: 'button'}, icon('new-repo'), t('New repo'));
   card.addEventListener('click', () => ctx.go('new-repo'));
   return card;
 }
@@ -50,19 +51,19 @@ export interface RepoList {
 }
 
 export function repoList(ctx: Context, options: {newCard: boolean; count?: HTMLElement}): RepoList {
-  const grid = h('div', {class: 'grid'}, h('p', {class: 'muted'}, '読み込み中…'));
+  const grid = h('div', {class: 'grid'}, h('p', {class: 'muted'}, t('Reading…')));
   const refresh = async (light?: string | null) => {
     let repos;
     try { repos = await store.list(); } catch (e) {
-      grid.replaceChildren(h('p', {class: 'muted'}, `repoを読めませんでした: ${String(e)}`));
+      grid.replaceChildren(h('p', {class: 'muted'}, t('Could not read the repos: {why}', {why: String(e)})));
       return;
     }
     if (options.count) options.count.textContent = String(repos.length);
     grid.replaceChildren(...repos.map((r) => repoCard(ctx, r.name, r.files, r.bytes, r.modified)),
       ...remoteOnly().map((r) => awayCard(ctx, r.name, r.bytes, Date.parse(r.updatedAt))),
       ...(options.newCard ? [newRepoCard(ctx)] : []));
-    if (!repos.length && !remoteOnly().length && !options.newCard) grid.replaceChildren(h('p', {class: 'muted note'}, 'repoはまだありません'));
-    if (!store.persistent) grid.append(h('p', {class: 'muted note'}, 'このブラウザでは、repoはこのページを閉じると消えます。'));
+    if (!repos.length && !remoteOnly().length && !options.newCard) grid.replaceChildren(h('p', {class: 'muted note'}, t('No repos yet')));
+    if (!store.persistent) grid.append(h('p', {class: 'muted note'}, t('In this browser, repos go when this page closes.')));
     marks();
     const shown = light ? grid.querySelector<HTMLElement>(`.card.repo[data-repo="${CSS.escape(light)}"]`) : null;
     if (shown) {
