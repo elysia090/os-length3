@@ -93,12 +93,17 @@ function addressStub(me: inbox.Me, again: () => void): HTMLElement {
     panel.replaceChildren(h('div', {class: 'row stub-own'}, name, h('span', {class: 'muted'}, '@'), domain), record);
     domain.focus();
   };
-  gear.addEventListener('click', () => {
-    panel.hidden = !panel.hidden;
-    gear.setAttribute('aria-expanded', String(!panel.hidden));
-    if (!panel.hidden) own(); else clearInterval(looking);
-  });
-  return h('div', {class: 'stub-holder'}, stub, error, panel);
+  // The panel lies over the Inbox under it; Escape or a press outside closes it.
+  const holder = h('div', {class: 'stub-holder'}, stub, error, panel);
+  const away = (e: Event) => { if (e instanceof KeyboardEvent ? e.key === 'Escape' : !holder.contains(e.target as Node)) toggle(false); };
+  const toggle = (open: boolean) => {
+    panel.hidden = !open;
+    gear.setAttribute('aria-expanded', String(open));
+    for (const k of ['pointerdown', 'keydown'] as const) (open ? document.addEventListener : document.removeEventListener).call(document, k, away);
+    if (open) own(); else clearInterval(looking);
+  };
+  gear.addEventListener('click', () => toggle(panel.hidden));
+  return holder;
 }
 
 /** What a written message is: its kind named first like an issue, and what a /root/… path in it is about. */
@@ -162,9 +167,9 @@ export function inboxPage(ctx: Context): Node[] {
     list.replaceChildren(
       h('div', {class: 'row inbox-new'}, to, start), error,
       ...contacts.map(row),
-      ...(requests.length ? [h('h3', {class: 'inbox-head'}, t('Requests')), ...requests.map(row)] : []),
-      ...(!all.length ? [h('p', {class: 'muted small'}, t('No messages yet. Write to someone by their address.'))] : []));
-    if (!open) pane.replaceChildren(h('p', {class: 'quiet'}, t('Choose a conversation, or write to an address.')));
+      ...(requests.length ? [h('h3', {class: 'inbox-head'}, t('Requests')), ...requests.map(row)] : []));
+    // One quiet line in the open pane says what to do; none yet, it says so instead.
+    if (!open) pane.replaceChildren(h('p', {class: 'quiet'}, all.length ? t('Choose a conversation, or write to an address.') : t('No messages yet. Write to someone by their address.')));
   };
 
   const show = async (address: string, list: HTMLElement, pane: HTMLElement) => {

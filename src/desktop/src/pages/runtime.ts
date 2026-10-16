@@ -219,7 +219,7 @@ function prompts(): HTMLElement {
         }
         const stop = button(t('Stop'), 'small-button');
         stop.addEventListener('click', () => s.stop());
-        return card(repo, [s.on === 'root' ? `root · ${tn('{n} process', '{n} processes', s.processes)}` : 'l3', s.memory ? bytes(s.memory) : ''], stop);
+        return card(repo, [[s.on === 'root' ? `root · ${tn('{n} process', '{n} processes', s.processes)}` : 'l3', s.memory ? bytes(s.memory) : ''].filter(Boolean).join(' · ')], stop);
       })));
   };
   paint();
@@ -240,10 +240,10 @@ function ssh(): HTMLElement {
     section.hidden = false;
     section.replaceChildren(h('h2', {id: 'ssh-title'}, 'SSH'),
       h('div', {class: 'grid small-grid'}, ...me.addresses.map((a) => {
-        const power = h('button', {type: 'button', class: 'power', role: 'switch', 'aria-checked': String(a.ssh),
+        const power = h('button', {type: 'button', class: 'power plain', role: 'switch', 'aria-checked': String(a.ssh),
           'aria-label': a.ssh ? t('Do not allow SSH to {address}', {address: a.address}) : t('Allow SSH to {address}', {address: a.address})}, h('span', {class: 'knob'})) as HTMLButtonElement;
         power.addEventListener('click', async () => { power.disabled = true; await inbox.setSsh(a.address, !a.ssh).catch(() => {}); void paint(); });
-        return card(a.address, [a.ssh ? t('Allowed') : t('Not allowed'), t('Connecting is not built yet')], power, 'mono-title');
+        return card(a.address, [t('Connecting is not built yet')], power, 'mono-title');
       })));
   };
   void paint();

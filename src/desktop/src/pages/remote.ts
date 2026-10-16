@@ -195,8 +195,8 @@ function codeSection(): HTMLElement {
       await paint();
     }));
     section.replaceChildren(h('h3', {id: 'remote-code'}, h('span', {}, t('Code to turn a repo off'))),
-      h('div', {class: 'row-item usage-prompt'},
-        h('span', {class: 'row-name'}, now.set ? t('Set {when}', {when: ago(now.setAt ?? 0)}) : t('Not set')), five, set), error);
+      h('div', {class: 'rows'}, h('div', {class: 'row-item usage-prompt'},
+        h('span', {class: 'row-name'}, now.set ? t('Set {when}', {when: ago(now.setAt ?? 0)}) : t('Not set')), five, set)), error);
   };
   void paint();
   return section;

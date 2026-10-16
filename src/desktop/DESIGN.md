@@ -202,19 +202,23 @@ all); choosing a repo also points the right pane and the Prompt at it.
   copy of the repo, which File, Forge and the Prompt show; the layout says
   this, no sentence explains it. A merged work is done: the repo shows main
   again on its own, and the copy goes.
-- **Inside the box**, once it is worked on here, its steps, one row each,
-  the button at the left (its done mark, a circle with a check in `done`,
-  in its place once done) and what it is about beside it: **Commit** (what
-  is not committed, its diff closed until opened) and **Push** (pushing
-  hands the work to main as its change, again as the next version). Under
-  them, in the same box, **Review**: the change's diff, scrolling inside
-  the box, then what was said in order, then the field to write in. One box
-  holds the whole issue, so the column reads as one conversation. A reviewer marks lines in the
-  diff as with a highlighter (`marker`), and what is written goes under the
-  diff with the marks: a comment, or a verdict (Ask for changes, Approve;
-  once approved, Merge). What was said shows in order in the same box; a
-  comment alone shows without a diff. Reset (the author's) and Reject (the
-  receiver's) sit at the bottom left.
+- **Inside the box**, once it is worked on here, its steps from the top,
+  one row each, the button at the left (its done mark, a circle with a check
+  in `done`, in its place once done) and what it is about beside it:
+  **Changes** (what is not committed; its diff opens over what is under it,
+  so nothing moves), **Commit**, and **Push** (pushing hands the work to
+  main as its change, again as the next version; Reset at its right end
+  takes it back while it is undecided). A change received from someone else
+  shows Commit and Push done already.
+- **Review**, a box of its own under the issue's, as wide as it and lined up
+  with it: the change's diff, scrolling inside it, where a reviewer marks
+  lines as with a highlighter (`marker`); what was said, in order; then the
+  procedure in its order: a comment more, in a field tall from the start
+  (Ctrl+Enter or Comment sends it with the marks), and under it the verdict,
+  Reject at the left and Approve at the right (once approved, its done mark
+  in Approve's place).
+- **Merge**, under the Review and not in it: its button at the left, primary
+  once the version is approved, and who approved it.
 
 Every change is already on the Remote (the draft, §3); Commit makes it
 history there, the same from the app, a browser and `l3 commit`. Without a
@@ -245,7 +249,8 @@ Your address as a stub: a field-sized place about as wide as an address,
 the address in it (pressing it copies it, and it says Copied for a moment
 in the same place; there is no Copy button), its gear at the right end.
 Before there is one, the stub is the name to claim, with `@domain` after
-it; Enter claims. The gear opens your own domain: name `@` domain, then the
+it; Enter claims. The gear opens, over what is under it (Escape or a press
+outside closes it), your own domain: name `@` domain, then the
 one DNS record that proves it (`_length3.<domain>` TXT
 `v=length3; remote=<host>; proof=<…>`, each part copied by pressing it).
 The proof is the Remote's keyed digest of the account and the domain, so

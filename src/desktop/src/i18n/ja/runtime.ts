@@ -61,8 +61,6 @@ export default {
   'It changed while syncing; try again': '同期のあいだに変わりました。もう一度どうぞ',
   'Do not allow SSH to {address}': '{address} への SSH を許さない',
   'Allow SSH to {address}': '{address} への SSH を許す',
-  'Allowed': '許可',
-  'Not allowed': '不許可',
   'Connecting is not built yet': '接続はまだ作っていません',
   'New dotfile': '新しい dotfile',
   'Dotfiles': 'Dotfiles',

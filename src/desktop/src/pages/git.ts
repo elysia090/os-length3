@@ -7,7 +7,7 @@ import {onChange, store} from '../repos.ts';
 import {bench} from './bench.ts';
 import {pageHead} from './common.ts';
 import type {Context} from './context.ts';
-import {issueBox, issueHead, unmerged, type RepoState} from './git-issue.ts';
+import {issueBox, issueHead, mergeRow, reviewBox, unmerged, type RepoState} from './git-issue.ts';
 import {issueForm} from './issue-form.ts';
 
 /**
@@ -35,7 +35,9 @@ export function git(ctx: Context): Node[] {
   const prev = h('button', {type: 'button', class: 'stage-hit prev', 'aria-label': t('Previous issue')}) as HTMLButtonElement;
   const next = h('button', {type: 'button', class: 'stage-hit next', 'aria-label': t('Next issue')}) as HTMLButtonElement;
   const stage = h('div', {class: 'issue-stage', tabindex: '0', 'aria-label': t('Issues'), 'aria-roledescription': 'carousel'}, track, prev, next);
-  const below = h('div', {});
+  // Under the stage, the current issue's Review, a box of its own lined up with the issue's, then Merge.
+  const below = h('div', {class: 'issue-below'});
+  const column = h('div', {class: 'issue-column'}, stage, below);
   const empty = h('div', {});
   const form = issueForm({done: (repo) => { write.hidden = false; if (repo) void paint(); }});
 
@@ -77,12 +79,13 @@ export function git(ctx: Context): Node[] {
     look(i.repo);
     track.style.setProperty('--at', `${k}`);
     // The first box starts at the column's edge and the last ends at it; between, both neighbours show.
-    stage.style.setProperty('--lead', `${k === 0 ? 0 : k === shown.length - 1 ? 2 : 1}`);
+    column.style.setProperty('--lead', `${k === 0 ? 0 : k === shown.length - 1 ? 2 : 1}`);
     [...track.children].forEach((slot, j) => {
       const x = shown[j];
       slot.setAttribute('aria-current', String(j === k));
       slot.replaceChildren(j === k ? issueBox(x, states.get(x.repo), events, again) : issueHead(x));
     });
+    below.replaceChildren(...[reviewBox(i, states.get(i.repo), again), mergeRow(i, states.get(i.repo), events, again)].filter((x): x is HTMLElement => !!x));
     prev.hidden = k === 0;
     next.hidden = k === shown.length - 1;
   };
@@ -125,7 +128,7 @@ export function git(ctx: Context): Node[] {
     }
     empty.replaceChildren();
     stage.hidden = false;
-    stage.classList.toggle('single', shown.length === 1);
+    column.classList.toggle('single', shown.length === 1);
     track.replaceChildren(...shown.map(() => h('div', {class: 'issue-slot'})));
     const was = shown.findIndex((i) => key(i) === chosen);
     go(was >= 0 ? was : 0);
@@ -152,8 +155,7 @@ export function git(ctx: Context): Node[] {
     h('div', {class: 'git-filter'}, chips),
     h('section', {class: 'section', 'aria-labelledby': 'issues-title'},
       h('h2', {id: 'issues-title'}, h('span', {}, t('Issues'), ' ', count), write),
-      form.element, empty, stage),
-    below);
+      form.element, empty, column));
   const workbench = bench({main, reveal: (path) => { if (at) ctx.openRepo(at, path); }});
   // Issues written anywhere (here, in the shell, with l3 in the Prompt) show
   // up at once, and any change in the repo looked at is read again; not while
