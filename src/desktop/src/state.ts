@@ -55,7 +55,7 @@ export function dropState(key: Key) {
 /** Store `json` for `key`; rejects with the reason when it could not be kept. */
 export async function setState(key: Key, json: string): Promise<void> {
   cache.set(key, json);
-  for (const fn of listeners) fn(key);
+  for (const fn of [...listeners]) fn(key);
   if (isNative) { await call('state_set', {key, json}); return; }
   try { localStorage.setItem(STORAGE[key], json); } catch (e) { throw new Error(String(e)); }
 }

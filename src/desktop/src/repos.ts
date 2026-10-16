@@ -331,6 +331,8 @@ class Observed implements RepoStore {
     await this.inner.remove(repo, path);
     this.tell({repo, path, what: 'removed', by});
   }
+  /** Something outside the store changed `repo` (a Prompt on the root writes it directly). */
+  changedOutside(repo: string, by?: string) { this.tell({repo, path: '', what: 'repo', by}); }
 }
 
 export const kept = isNative || typeof indexedDB === 'undefined' ? null : new KeptStore(indexedShelf());

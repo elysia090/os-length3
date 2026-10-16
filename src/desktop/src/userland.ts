@@ -54,7 +54,7 @@ export async function unpack(packed: Uint8Array): Promise<{index: Index & Record
 
 const watchers = new Set<(s: Stage) => void>();
 let last: Stage = {at: 'prepare'};
-const tell = (s: Stage) => { last = s; for (const w of watchers) w(s); };
+const tell = (s: Stage) => { last = s; for (const w of [...watchers]) w(s); };
 
 /** Hear where loading is (at once, then as it moves); returns how to stop. */
 export function watchLoad(fn: (s: Stage) => void): () => void {

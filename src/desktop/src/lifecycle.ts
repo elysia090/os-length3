@@ -28,7 +28,7 @@ let pulling: Promise<void> | null = null;
 
 /** Hear when what is pushed and what is not may have changed. */
 export function onSync(fn: () => void): () => void { listeners.add(fn); return () => listeners.delete(fn); }
-const tell = () => { for (const fn of listeners) fn(); };
+const tell = () => { for (const fn of [...listeners]) fn(); };
 
 /** See again which repos and settings hold nothing the Remote lacks. */
 export function recheck() {

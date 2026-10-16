@@ -1,5 +1,6 @@
 import {onChange, store} from '../repos.ts';
 import {bytes, h} from '../dom.ts';
+import {isNative, promptOpen, rootStatus, type Held, type Stopped} from '../host.ts';
 import {loadUserland, watchLoad, type Stage} from '../userland.ts';
 
 // A shell per repo, running translated BusyBox (and l3) in a Worker. Sessions
@@ -72,6 +73,14 @@ export class Session {
   private watchers = new Set<() => void>();
   /** Bytes the guest's running processes hold, as the worker last said. */
   memory = 0;
+  /** Processes it runs, where that is known (on the root). */
+  processes = 0;
+  /** What it runs on: the distribution's root on this machine, or l3 through xlat. */
+  on: 'root' | 'l3' | null = null;
+  /** How the last stop went, on the root: what it held, and how long until none was left. */
+  stopped: Stopped | null = null;
+  private native: Awaited<ReturnType<typeof promptOpen>> | null = null;
+  private poll = 0;
   private ttySaid = false;
 
   constructor(repo: string) {
@@ -85,11 +94,13 @@ export class Session {
 
   /** Hear when a run starts, grows or ends; returns how to stop. */
   watch(fn: () => void): () => void { this.watchers.add(fn); return () => this.watchers.delete(fn); }
-  private tell() { for (const fn of this.watchers) fn(); }
+  // Over a copy: a watcher may stop and start watching while it is told,
+  // and a Set visits what is added during its iteration.
+  private tell() { for (const fn of [...this.watchers]) fn(); }
 
   /** Type `text` into the shell, one line per line. False while it is not running. */
   send(text: string): boolean {
-    if (!this.live || !this.worker) return false;
+    if (!this.live || (!this.worker && !this.native)) return false;
     const lines = text.endsWith('\n') ? text : `${text}\n`;
     this.print(lines);
     this.runs.push({line: lines.trimEnd(), output: '', started: Date.now(), ms: null});
@@ -98,8 +109,9 @@ export class Session {
     this.heard = Date.now();
     this.follow();
     this.tell();
+    if (this.native) { void this.native.input(lines).catch(() => this.end('止まっています')); return true; }
     const bytes = new TextEncoder().encode(lines);
-    this.worker.postMessage({type: 'input', bytes}, [bytes.buffer]);
+    this.worker!.postMessage({type: 'input', bytes}, [bytes.buffer]);
     return true;
   }
 
@@ -120,7 +132,13 @@ export class Session {
     if (!run || run.ms !== null) return;
     run.output += strip(s);
     const end = PROMPT.exec(run.output);
-    if (end) { run.output = run.output.slice(0, end.index); run.ms = Date.now() - run.started; this.follow(); }
+    if (end) {
+      run.output = run.output.slice(0, end.index);
+      run.ms = Date.now() - run.started;
+      this.follow();
+      // On the root the shell wrote the repo itself: everyone reads it again.
+      if (this.native) { store.changedOutside(this.repo, this.id); void this.measure(); }
+    }
     else if (run.output.length > 100_000) run.output = run.output.slice(-80_000);
     this.tell();
   }
@@ -160,8 +178,38 @@ export class Session {
     });
   }
 
+  /** On the root, what the Prompt's processes hold, read from the host. */
+  private async measure() {
+    const h: Held | null = await this.native?.held().catch(() => null) ?? null;
+    if (!h) return;
+    this.memory = h.memory;
+    this.processes = h.processes;
+    this.tell();
+  }
+
+  /** The distribution's root, on this machine's kernel (l3 open). */
+  private async startRoot(): Promise<boolean> {
+    const root = await rootStatus();
+    if (!root?.current) return false;
+    this.native = await promptOpen(this.repo, {
+      output: (text) => { this.heard = Date.now(); this.received(text); },
+      exit: (code) => { if (this.live) this.end(`終了しました（${code}）`); },
+    });
+    this.on = 'root';
+    this.live = true;
+    this.status.textContent = '';
+    void this.measure();
+    this.poll = window.setInterval(() => void this.measure(), 3000);
+    return true;
+  }
+
   private async start() {
     try {
+      // In the app the Prompt is the distribution's root; l3 through xlat
+      // only until a root is installed, and the Runtime page says which.
+      let why = '';
+      if (isNative && await this.startRoot().catch((e) => { why = e instanceof Error ? e.message : String(e); return false; })) return;
+      this.on = 'l3';
       // While l3 comes, the status says how far it is and what it is doing.
       const unwatch = watchLoad((s) => { this.status.textContent = loadWords(s); });
       const [land, copy] = await Promise.all([loadUserland(), snapshot(this.repo)]).finally(unwatch);
@@ -200,22 +248,31 @@ export class Session {
         this.worker?.postMessage({type: 'put', path: c.path, what});
       });
       // Running is the usual state and says nothing; only what is missing is said.
-      this.status.textContent = copy.complete ? '' : '大きいファイルとバイナリは入っていません';
+      this.status.textContent = why ? `root で開けませんでした（${why}）` : copy.complete ? '' : '大きいファイルとバイナリは入っていません';
       this.live = true;
     } catch (e) {
       this.end(`起動できませんでした: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
-  /** Whether the shell is running (its worker exists). */
-  get running() { return this.live && this.worker !== null; }
+  /** Whether the shell is running (its worker or its root process exists). */
+  get running() { return this.live && (this.worker !== null || this.native !== null); }
 
   /**
    * Stop: the worker and every guest process in it end at once (terminate is
    * synchronous), so what they held is the browser engine's to free. Only
    * then does it say so.
    */
-  stop() { this.end('止めました'); }
+  stop() {
+    if (!this.native) { this.end('止めました'); return; }
+    // On the root: stopped only once the host shows none of its processes left.
+    const n = this.native;
+    void n.close().then((s) => {
+      this.stopped = s;
+      const back = s.before.memory ? `${bytes(s.before.memory)} を返しました` : '';
+      this.end(s.left ? `止めています（${s.left} 個のプロセスが残っています）` : `止めました${back ? `（${back} · ${s.ms} ms）` : ''}`);
+    }, () => this.end('止めました'));
+  }
 
   /**
    * While a line runs, say what it is doing, once it has taken a moment:
@@ -251,8 +308,9 @@ export class Session {
 
   /** Ctrl-C: what runs in front of the shell ends, and the shell goes on. */
   interrupt() {
-    if (!this.live || !this.worker) return;
-    this.worker.postMessage({type: 'interrupt'});
+    if (!this.live) return;
+    if (this.native) { void this.native.interrupt(); return; }
+    this.worker?.postMessage({type: 'interrupt'});
     this.inputWait = false;
   }
 
@@ -270,8 +328,12 @@ export class Session {
     this.unwatch = null;
     this.worker?.terminate();
     this.worker = null;
+    clearInterval(this.poll);
+    this.native?.forget();
+    this.native = null;
     this.live = false;
     this.memory = 0;
+    this.processes = 0;
     this.tell();
     const restart = h('button', {class: 'button', type: 'button'}, 'もう一度起動');
     restart.addEventListener('click', () => this.restart());

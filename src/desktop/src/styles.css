@@ -221,7 +221,7 @@ a { color: var(--ink); }
 /* Runtime: the environment in effect, one row per part */
 .env-rows { display: grid; gap: var(--s1); }
 .env-row {
-  display: grid; grid-template-columns: 8rem 6rem minmax(0, 1fr) auto; align-items: baseline; gap: var(--s3);
+  display: grid; grid-template-columns: 11rem 6rem minmax(0, 1fr) auto; align-items: baseline; gap: var(--s3);
   padding: var(--s3) var(--s4); border: 1px solid var(--rule); border-radius: var(--r-place);
 }
 .env-row code { font: var(--t-meta) var(--mono); }

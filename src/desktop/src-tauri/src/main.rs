@@ -5,6 +5,9 @@
 
 use length3_core::{git, home, paths, repos, system};
 
+#[cfg(target_os = "linux")]
+mod shells;
+
 /// Files the editor may save; anything read in part is never written back.
 const READ_LIMIT: u64 = 256 * 1024;
 /// Lines of difference shown at most, across all files.
@@ -109,9 +112,12 @@ fn git_log(repo: String) -> Result<Vec<git::Commit>, String> {
 
 fn main() {
     tauri::Builder::default()
+        .manage(shells::Shells::default())
         .invoke_handler(tauri::generate_handler![
             capacity, usage, reclaim, repo_list, repo_create, repo_tree, repo_read, repo_write, repo_add,
-            repo_mkdir, repo_remove, state_get, state_set, git_changes, git_diff, git_cut, git_log
+            repo_mkdir, repo_remove, state_get, state_set, git_changes, git_diff, git_cut, git_log,
+            shells::prompt_open, shells::prompt_input, shells::prompt_interrupt, shells::prompt_held, shells::prompt_close,
+            shells::root_status, shells::root_fetch
         ])
         .run(tauri::generate_context!())
         .expect("Length³ OS shell failed to start");

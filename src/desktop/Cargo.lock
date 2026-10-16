@@ -1683,7 +1683,9 @@ name = "length3-os"
 version = "0.1.0"
 dependencies = [
  "length3-core",
+ "libc",
  "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
 ]
