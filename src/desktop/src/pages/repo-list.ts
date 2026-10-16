@@ -1,8 +1,8 @@
 import {ago, bytes, h} from '../dom.ts';
 import {icon} from '../icons.ts';
 import {store} from '../repos.ts';
-import * as sync from '../sync.ts';
-import {STATE_WORD} from './remote.ts';
+import {bring, onSync, remoteOnly, repoState} from '../lifecycle.ts';
+import {syncWord} from './remote.ts';
 import type {Context} from './context.ts';
 
 // The repos as large cards, about three across: on Home, and under the New
@@ -16,6 +16,24 @@ function repoCard(ctx: Context, name: string, files: number, size: number, modif
     // Where it stands against the Remote; filled in once it is known.
     h('span', {class: 'muted card-sync'}));
   card.addEventListener('click', () => ctx.openRepo(name));
+  return card;
+}
+
+/** A repo on the Remote and not here: opening it brings it. */
+function awayCard(ctx: Context, name: string, size: number, modified: number): HTMLElement {
+  const card = h('button', {class: 'card repo away', type: 'button', 'data-repo': name},
+    h('span', {class: 'card-title'}, name),
+    h('span', {class: 'muted'}, `Remote にあります · ${bytes(size)}`),
+    h('span', {class: 'muted'}, `${ago(modified)}に更新`),
+    h('span', {class: 'muted card-sync'}, '開くとこの端末に来ます'));
+  card.addEventListener('click', async () => {
+    card.setAttribute('aria-busy', 'true');
+    (card.querySelector('.card-sync') as HTMLElement).textContent = '持ってきています…';
+    try { await bring(name); ctx.openRepo(name); } catch (e) {
+      (card.querySelector('.card-sync') as HTMLElement).textContent = e instanceof Error ? e.message : String(e);
+      card.removeAttribute('aria-busy');
+    }
+  });
   return card;
 }
 
@@ -41,16 +59,11 @@ export function repoList(ctx: Context, options: {newCard: boolean; count?: HTMLE
     }
     if (options.count) options.count.textContent = String(repos.length);
     grid.replaceChildren(...repos.map((r) => repoCard(ctx, r.name, r.files, r.bytes, r.modified)),
+      ...remoteOnly().map((r) => awayCard(ctx, r.name, r.bytes, Date.parse(r.updatedAt))),
       ...(options.newCard ? [newRepoCard(ctx)] : []));
-    if (!repos.length && !options.newCard) grid.replaceChildren(h('p', {class: 'muted note'}, 'repoはまだありません'));
+    if (!repos.length && !remoteOnly().length && !options.newCard) grid.replaceChildren(h('p', {class: 'muted note'}, 'repoはまだありません'));
     if (!store.persistent) grid.append(h('p', {class: 'muted note'}, 'このブラウザでは、repoはこのページを閉じると消えます。'));
-    void sync.states().then((states) => {
-      for (const card of grid.querySelectorAll<HTMLElement>('.card.repo')) {
-        const s = states.get(card.dataset.repo!);
-        const slot = card.querySelector('.card-sync');
-        if (s && slot) slot.textContent = s.state === 'unpushed' ? `${STATE_WORD.unpushed} ${s.changed}` : STATE_WORD[s.state];
-      }
-    }, () => {});
+    marks();
     const shown = light ? grid.querySelector<HTMLElement>(`.card.repo[data-repo="${CSS.escape(light)}"]`) : null;
     if (shown) {
       shown.scrollIntoView({block: 'center', behavior: 'smooth'});
@@ -58,5 +71,19 @@ export function repoList(ctx: Context, options: {newCard: boolean; count?: HTMLE
       setTimeout(() => shown.classList.remove('revealed'), 1600);
     }
   };
+  /** Where each repo stands, written on its card as it changes. */
+  const marks = () => {
+    for (const card of grid.querySelectorAll<HTMLElement>('.card.repo:not(.away)')) {
+      const slot = card.querySelector('.card-sync');
+      if (slot) slot.textContent = syncWord(repoState(card.dataset.repo!));
+    }
+  };
+  let known = '';
+  const stop = onSync(() => {
+    if (!grid.isConnected) { stop(); return; }
+    // A repo that came or went from the Remote redraws the grid; otherwise only the words move.
+    const now = remoteOnly().map((r) => r.name).join('\n');
+    if (now !== known) { known = now; void refresh(); } else marks();
+  });
   return {element: grid, refresh};
 }

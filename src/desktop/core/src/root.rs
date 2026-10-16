@@ -37,7 +37,7 @@ pub const RELEASES: &[Release] = &[Release {
     file: "os-length3-linux-0.1.0-x86_64-ffb53450f0f41900f1cda2cd072b9405b43c7b44f97c400794c57019578f32a9.tar.zst",
 }];
 
-/// The Remote serves releases by digest, to anyone (remote/remote.ts, /v1/os).
+/// The Remote serves releases by digest, to anyone (service/app.ts, /v1/os).
 pub fn release_url(remote: &str, r: &Release) -> String {
     format!("{}/v1/os/{}", remote.trim_end_matches('/'), r.sha256)
 }

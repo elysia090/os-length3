@@ -1,5 +1,5 @@
 import {ago, h} from '../dom.ts';
-import * as gitops from '../git.ts';
+import * as gitops from '../history.ts';
 import type {Issue} from '../issues.ts';
 import {named} from '../text.ts';
 
@@ -7,8 +7,8 @@ import {named} from '../text.ts';
 // the changes not cut yet, folder by folder, with 区切る under the current
 // issue; and the cuts so far (the current issue's only, when one is chosen).
 // Both are cards of rows, like the File tree. A section with nothing in it
-// is not shown. 区切る is the push (git.ts): in the app the repo's git and
-// then the Remote; in a browser, once it has a Remote, the Remote alone.
+// is not shown. Every change is on the Remote already (the draft); 区切る
+// makes it history there (history.ts), the same from the app and a browser.
 
 export interface GitWork {
   sections: HTMLElement[];
@@ -33,7 +33,6 @@ export function gitWork(events: {open(repo: string, path: string): void}): GitWo
   let issue: Issue | null = null;
   let run = 0;
   let timer = 0;
-  let lastPush = '';
 
   const changeRows = (at: string, c: gitops.Changes) => h('div', {class: 'rows'}, ...c.folders.flatMap((f) => [
     h('div', {class: 'row-item row-head'}, h('span', {class: 'mono row-name'}, f.folder ? `${f.folder}/` : `${at}/`)),
@@ -48,7 +47,7 @@ export function gitWork(events: {open(repo: string, path: string): void}): GitWo
     }),
   ]));
 
-  const cutRows = (at: string, list: gitops.Commit[]) => h('div', {class: 'rows'}, ...list.map((c) =>
+  const cutRows = (at: string, list: gitops.Cut[]) => h('div', {class: 'rows'}, ...list.map((c) =>
     h('div', {class: 'row-item', title: c.id},
       h('span', {class: 'row-name'}, c.kind ? h('span', {class: 'issue-kind'}, `${c.kind}：`) : null, c.title),
       h('span', {class: 'row-meta'}, c.folders.map((f) => (f ? `${f}/` : `${at}/`)).join(' ')),
@@ -61,14 +60,11 @@ export function gitWork(events: {open(repo: string, path: string): void}): GitWo
     const cut = h('button', {class: 'button primary', type: 'button', title: named(under.kind, under.title)}, '区切る') as HTMLButtonElement;
     const go = async () => {
       cut.disabled = true;
-      let done: gitops.Cut;
-      try { done = await gitops.cut(at, under.file, '', note.value); } catch (e) {
+      try { await gitops.cut(at, under.file, '', note.value); } catch (e) {
         error.textContent = e instanceof Error ? e.message : String(e);
         cut.disabled = false;
         return;
       }
-      // A cut here that did not reach the Remote is said once, plainly: it is still only here.
-      lastPush = done.push && 'error' in done.push ? `区切りました。Remote にはまだ届いていません（${done.push.error}）` : '';
       paint();
     };
     cut.addEventListener('click', () => void go());
@@ -79,13 +75,14 @@ export function gitWork(events: {open(repo: string, path: string): void}): GitWo
   const paint = () => {
     const at = repo;
     const mine = ++run;
-    if (!at || !gitops.canCut()) { changes.hidden = cuts.hidden = true; return; }
+    if (!at) { changes.hidden = cuts.hidden = true; return; }
     void Promise.all([gitops.changes(at), gitops.log(at)]).then(([c, log]) => {
       if (mine !== run) return;
       changes.hidden = !c.files;
       changesSmall.textContent = c.files ? `${c.files}` : '';
-      changesBody.replaceChildren(changeRows(at, c), ...(issue ? cutAction(at, issue) : []));
-      if (lastPush) { changes.hidden = false; changesBody.append(h('p', {class: 'error', role: 'alert'}, lastPush)); lastPush = ''; }
+      changesBody.replaceChildren(changeRows(at, c), ...(!c.connected
+        ? [h('p', {class: 'muted note'}, '区切りは Remote に残ります。Remote に入ると区切れます。')]
+        : issue ? cutAction(at, issue) : []));
       const shown = issue ? log.filter((x) => x.issue === `issue/${issue!.file}`) : log;
       cuts.hidden = !shown.length;
       cutsSmall.textContent = `${shown.length}`;

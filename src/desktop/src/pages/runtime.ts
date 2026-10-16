@@ -1,5 +1,6 @@
 import {bytes, h} from '../dom.ts';
-import {isNative, readCapacity, readUsage, reclaim, rootFetch, rootStatus, type Certainty, type Reclaim, type RootHeld, type Usage} from '../host.ts';
+import {isNative, rootFetch, rootStatus, type Certainty, type Freed, type Item, type Space} from '../host.ts';
+import {free, readSpace} from '../space.ts';
 import {about} from '../userland.ts';
 import {pageHead} from './common.ts';
 import {allSessions, type Session} from './terminal.ts';
@@ -67,33 +68,6 @@ function installRoot(release: {name: string; version: string; bytes: number}): H
   return row;
 }
 
-/**
- * What comes by itself, what closing ends and what goes to the Remote, for
- * each thing this OS holds, as it is on this host (lifecycle.ts). The
- * canonical copy of each is on the Remote, or for the OS its release.
- */
-function holding(): HTMLElement {
-  const close = isNative ? '窓を閉じると' : 'タブを閉じると';
-  const rows: [string, string, string, string][] = isNative ? [
-    ['OS（root）', '入れるとき Remote から', '残る', 'リリース'],
-    ['repo', '開く・戻るたびに取り込む', '残る', '区切るたびに push'],
-    ['Home', '開く・戻るたびに取り込む', '残る', '変わるたびに push'],
-    ['Prompt', 'repo を開くと起動', '終わる', '—'],
-  ] : [
-    ['OS（l3）', '開くたびに取る', '消える', 'リリース'],
-    ['repo', '開くたびに取り込む', 'push 済みなら消える', '区切るたびに push'],
-    ['Home', '開くたびに取り込む', 'push 済みなら消える', '変わるたびに push'],
-    ['Prompt', 'repo を開くと起動', '終わる', '—'],
-  ];
-  const row = (cells: string[], head = false) => h('div', {class: head ? 'hold-row row-head' : 'hold-row'}, ...cells.map((c) => h('span', {}, c)));
-  return h('section', {class: 'section', 'aria-labelledby': 'hold-title'},
-    h('h2', {id: 'hold-title'}, '持ち方'),
-    h('div', {class: 'rows'}, row(['', '取ってくる', close, 'Remote'], true), ...rows.map((r) => row(r))),
-    h('p', {class: 'muted small env-note'}, '未 push のものは、push するまで消えません。'));
-}
-
-const HELD: Record<RootHeld, string> = {Current: '使用中', Previous: '戻すために残す', Older: '空けられる'};
-
 /** A bar of the whole: this OS's part, everything else's, and what is free. */
 function meter(total: number, free: number, mine: number, label: string) {
   const pct = (v: number) => `${Math.min(100, (v / total) * 100).toFixed(2)}%`;
@@ -105,79 +79,61 @@ function meter(total: number, free: number, mine: number, label: string) {
 const figure = (value: string, word: string, note = '') =>
   h('span', {}, h('b', {}, value), word, note ? h('small', {class: 'muted'}, ` ${note}`) : null);
 
+const ACT: Record<Item['room'], string> = {Free: '空ける', SyncFree: '同期して空ける', Keep: ''};
+
 /**
- * The desktop: what this OS holds, counted from the filesystem (allocated
- * blocks, so a sparse file counts what it holds); each repo with how much of
- * it is history; and its own dead temporaries, which 空ける gives back.
+ * この端末 → 空けられるもの, as one list: everything this OS holds here,
+ * largest first, each with what can be done with it. Whatever can go says
+ * how (空ける, or 同期して空ける when its changes go to the Remote first);
+ * whatever stays says why.
  */
-function device(u: Usage, last: Reclaim | null, again: (r: Reclaim) => void): HTMLElement[] {
+function device(u: Space, last: Freed | null, again: (r: Freed) => void): HTMLElement {
   const total = u.host_total || 1;
-  const here = h('section', {class: 'section', 'aria-labelledby': 'device-title'},
-    h('h2', {id: 'device-title'}, 'この端末'),
+  const error = h('p', {class: 'error', role: 'alert'});
+  const go = (ids: string[], buttons: HTMLButtonElement[]) => {
+    for (const b of buttons) b.disabled = true;
+    void free(ids).then(again, (e) => {
+      for (const b of buttons) b.disabled = false;
+      error.textContent = e instanceof Error ? e.message : String(e);
+    });
+  };
+  const buttons: HTMLButtonElement[] = [];
+  const rows = u.items.map((i) => {
+    const act: Node = i.room === 'Keep' ? h('span', {class: 'row-meta space-why'}, i.why) : (() => {
+      const b = h('button', {class: `button small-button`, type: 'button', title: i.why}, ACT[i.room]) as HTMLButtonElement;
+      buttons.push(b);
+      b.addEventListener('click', () => go([i.id], [b]));
+      return b;
+    })();
+    return h('div', {class: 'row-item usage-prompt', 'data-room': i.room, title: i.why},
+      h('span', {class: 'row-name'}, i.what, h('small', {class: 'muted'}, `  ${i.detail}`)),
+      h('span', {class: 'row-meta usage-size'}, bytes(i.allocated)), act);
+  });
+  const all = h('button', {class: 'button', type: 'button'}, '全部空ける') as HTMLButtonElement;
+  all.addEventListener('click', () => go(u.items.filter((i) => i.room !== 'Keep').map((i) => i.id), [all, ...buttons]));
+  return h('section', {class: 'section', 'aria-labelledby': 'device-title'},
+    h('h2', {id: 'device-title'}, isNative ? 'この端末' : 'このブラウザ'),
     meter(total, u.host_free, u.allocated, `全体 ${bytes(u.host_total)} のうち このOS ${bytes(u.allocated)}`),
     h('div', {class: 'legend'},
       figure(bytes(u.allocated), 'このOS'),
       figure(bytes(u.host_free), '空き', known(u.host)),
-      figure(bytes(u.host_total), '全体', known(u.host))));
-  if (u.repos.length) {
-    here.append(h('div', {class: 'rows usage-rows'},
-      ...u.repos.map((r) => h('div', {class: 'row-item', title: `中身 ${bytes(r.logical)} · ${r.files} ファイル`},
-        h('span', {class: 'row-name'}, r.name),
-        r.history ? h('span', {class: 'row-meta'}, `履歴 ${bytes(r.history)}`) : null,
-        h('span', {class: 'row-meta usage-size'}, bytes(r.allocated)))),
-      u.home ? h('div', {class: 'row-item'}, h('span', {class: 'row-name'}, '設定'), h('span', {class: 'row-meta usage-size'}, bytes(u.home))) : null));
-  }
-  // The roots, each with why it is here: that is what decides whether it can go.
-  if (u.system.length) {
-    here.append(h('div', {class: 'rows usage-rows'},
-      ...u.system.map((r) => h('div', {class: 'row-item', title: r.sha256},
-        h('span', {class: 'row-name'}, `${r.name} ${r.version}`),
-        h('span', {class: 'row-meta'}, HELD[r.held]),
-        h('span', {class: 'row-meta usage-size'}, bytes(r.allocated))))));
-  }
-
-  const free = h('section', {class: 'section', 'aria-labelledby': 'reclaim-title'});
-  const paintFree = (done: Reclaim | null) => {
-    const body: Node[] = [];
-    if (done) body.push(result(done));
-    if (u.leftovers.length) {
-      const go = h('button', {class: 'button', type: 'button'}, '空ける') as HTMLButtonElement;
-      go.addEventListener('click', () => {
-        go.disabled = true;
-        void reclaim().then(again, (e) => {
-          go.disabled = false;
-          free.append(h('p', {class: 'error', role: 'alert'}, e instanceof Error ? e.message : String(e)));
-        });
-      });
-      // What each is, grouped: the reason it can go is the reason it is listed.
-      const groups = new Map<string, {n: number; bytes: number}>();
-      for (const l of u.leftovers) {
-        const g = groups.get(l.what) ?? {n: 0, bytes: 0};
-        g.n++; g.bytes += l.allocated;
-        groups.set(l.what, g);
-      }
-      body.push(h('div', {class: 'rows'}, ...[...groups].map(([what, g]) => h('div', {class: 'row-item'},
-        h('span', {class: 'row-name'}, g.n > 1 ? `${what} ${g.n}` : what),
-        h('span', {class: 'row-meta usage-size'}, bytes(g.bytes))))));
-      body.push(h('div', {class: 'row work-act reclaim-act'},
-        h('span', {class: 'grow'}, h('b', {}, bytes(u.reclaimable))), go));
-    }
-    free.hidden = !body.length;
-    free.replaceChildren(h('h2', {id: 'reclaim-title'}, '空けられるもの'), ...body);
-  };
-  paintFree(last);
-  return [here, free];
+      figure(bytes(u.host_total), isNative ? '全体' : '割当', known(u.host))),
+    ...(last ? [result(last)] : []),
+    h('div', {class: 'rows usage-rows'}, ...(rows.length ? rows : [h('div', {class: 'row-item muted'}, isNative ? 'このOSはこの端末に何も置いていません' : 'このブラウザには何も置いていません。repo は Remote にあり、開けばまた来ます')])),
+    ...(u.freeable ? [h('div', {class: 'row work-act reclaim-act'},
+      h('span', {class: 'grow'}, '空けられるもの ', h('b', {}, bytes(u.freeable)), h('small', {class: 'muted'}, '  repo は Remote に残り、開けばまた来ます')), all)] : []),
+    error);
 }
 
 /** What 空ける did: counted bytes, and the host's free space as it was seen to change. */
-function result(r: Reclaim): HTMLElement {
+function result(r: Freed): HTMLElement {
   const change = r.host_free_after - r.host_free_before;
-  const seen = r.reflected_ms === null ? '端末にはまだ出ていません'
+  const seen = r.reflected_ms === null ? (isNative ? '端末にはまだ出ていません' : '')
     : `端末の空き ${change >= 0 ? '+' : '−'}${bytes(Math.abs(change))}（${known(r.host_change) || '確定'} · ${r.reflected_ms} ms）`;
   return h('div', {class: 'reclaimed', role: 'status'},
-    h('p', {}, h('b', {}, `${bytes(r.freed)} 空けました`), ` · ${r.removed} 件`),
-    h('p', {class: 'muted small'}, seen),
-    ...r.kept.map(([path, why]) => h('p', {class: 'muted small'}, `残したもの: ${path.split('/').at(-1)} — ${why}`)));
+    r.removed.length ? h('p', {}, h('b', {}, `${bytes(r.freed)} 空けました`), ` · ${r.removed.length} 件`) : null,
+    seen ? h('p', {class: 'muted small'}, seen) : null,
+    ...r.kept.map(([id, why]) => h('p', {class: 'muted small'}, `残したもの: ${id.replace(/^(repo|root|path):/, '').split('/').at(-1)} — ${why}`)));
 }
 
 /** Prompts running in this window, each with what it holds and 止める. Shown only when one runs. */
@@ -213,23 +169,15 @@ function prompts(): HTMLElement {
   return section;
 }
 
-/** Runtime: what this device holds, measured, what can be given back, and the environment in effect. */
+/** Runtime: この端末 and what can go from it, the Prompts running, and the environment in effect. */
 export function runtime(): Node[] {
   const holder = h('div', {}, h('section', {class: 'section'}, h('p', {class: 'muted'}, '計測中…')));
   // What 空ける last did stays in view while the figures are read again.
-  let last: Reclaim | null = null;
-  const read = () => void readUsage().then((u) => {
-    if (u) { holder.replaceChildren(...device(u, last, (r) => { last = r; read(); })); return; }
-    // In a browser only the origin's share is known, and nothing here is the OS's to give back.
-    void readCapacity().then((c) => {
-      const s = h('section', {class: 'section', 'aria-labelledby': 'device-title'}, h('h2', {id: 'device-title'}, 'このブラウザ'));
-      if (!c) s.append(h('p', {class: 'muted'}, '計測できませんでした'));
-      else s.append(meter(c.total, c.free, c.app, `割当 ${bytes(c.total)} のうち ${bytes(c.app)}`),
-        h('div', {class: 'legend'}, figure(bytes(c.app), '保存済み'), figure(bytes(c.free), '空き', '推定'), figure(bytes(c.total), '割当', '推定')));
-      holder.replaceChildren(s);
-    });
+  let last: Freed | null = null;
+  const read = () => void readSpace(allSessions().filter(([, s]) => s.running).map(([repo]) => repo)).then((u) => {
+    holder.replaceChildren(u ? device(u, last, (r) => { last = r; read(); }) : h('section', {class: 'section'}, h('p', {class: 'muted'}, '計測できませんでした')));
   });
   read();
-  return [pageHead('runtime'), holding(), holder, prompts(),
+  return [pageHead('runtime'), holder, prompts(),
     h('section', {class: 'section', 'aria-labelledby': 'env-title'}, h('h2', {id: 'env-title'}, '有効な環境'), environment())];
 }

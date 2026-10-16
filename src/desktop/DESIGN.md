@@ -122,30 +122,35 @@ The Prompt never goes silent while something takes time:
 
 ### Runtime
 
-What this device holds and why, what can be given back, what is running,
-then the environment actually in effect (what runs, not what was asked for).
+この端末 first, then what can go from it, then what is running, then the
+environment actually in effect (what runs, not what was asked for). There
+is no table of policies: what the device holds is shown as things, and
+each thing says what can be done with it.
 
-- **持ち方**: one table of what comes by itself, what closing ends, and what
-  goes to the Remote, as it is on this host (§3).
 - **この端末**: one bar of the host's whole, with this OS's share darker
   (not an ink fill, which means current), and three figures: this OS, free,
   total. This OS is counted from allocated blocks, so a sparse file counts
   what it holds and a file with several hard links counts once; the host's
   free and total are marked 推定, because other programs change them too.
-  Under it two cards of rows: each repo with its size and how much of that
-  is history (`.git`), and the settings; then each root of the
-  distribution with why it is here: 使用中 (Prompts run on it), 戻すために残す
-  (the one before, kept so a bad update can be undone), 空けられる.
-- **空けられるもの** is shown only when there is something, each named for
-  what it is: the temporaries this OS itself left half-written (named
-  `.<file>.length3-<pid>-<n>`, or a setting's `<key>.json.<pid>`, older than
-  a minute, one link, never inside `.git`); older roots; an install that
-  died half way; a release bundle or partial download not in use (fetched
-  again from the Remote when wanted). Nothing else is ever offered. 空ける
-  removes them and stays to say what happened: the bytes removed (counted
-  before removal), and the host's free space as it was seen to change, with
-  how long it took to show. What could not be removed is named with the
-  reason.
+- Under it, **one list, largest first**, of everything this OS holds: each
+  repo, each root of the distribution, each leftover, Home. A row is the
+  thing, its size, and at its end what can be done:
+  - **空ける**: it is not needed here. A repo whose copy is what the Remote
+    has (it comes back when opened), a root that is not the one in use (the
+    Remote has the release), a temporary this OS left half-written
+    (`.<file>.length3-<pid>-<n>`, a setting's `<key>.json.<pid>`, older than
+    a minute, one link, never inside `.git`), an install that died half way,
+    a release bundle or partial download not in use.
+  - **同期して空ける**: a repo with changes the Remote does not have yet;
+    they are sent first, and the copy goes only once the Remote has every
+    file of it.
+  - Otherwise, quietly, why it stays: a Prompt has it open, it holds what
+    cannot be sent (a link, a file over 16 MB, a `.git`), there is no Remote
+    yet, it is the root Prompts run on, it is Home's settings.
+  Under the list, 空けられるもの with its total and 全部空ける. Freeing stays
+  to say what happened: the bytes removed (counted before removal), the
+  host's free space as it was seen to change and how long it took to show,
+  and anything kept with the reason.
 - **動いている Prompt** is shown while one runs: where it runs (root, with
   its process count, or l3), the memory its processes hold (Pss, from the
   host's /proc), and 止める. On the root, stopping ends everything in the
@@ -161,8 +166,8 @@ then the environment actually in effect (what runs, not what was asked for).
   far it is. Then Dotfiles as differences from the root (none yet, and it
   says so).
 
-In a browser only the origin's share is known, and it says so (このブラウザ,
-推定); nothing there is the OS's to give back.
+In a browser the same list is the browser's copy of the repos (このブラウザ,
+its share an estimate), and the same three answers apply.
 
 ### Git
 
@@ -191,8 +196,7 @@ at it.
   lines added and removed; a file opens in Forge. It is a card of rows like
   the File tree. Under it, with an issue current, a note and the one
   primary action, 区切る: everything not yet cut becomes one cut named after
-  the issue ("Fix：件名") and tied to its file (an `Issue: issue/001.md`
-  line), so the history reads as the issues. The layout says this; no
+  the issue ("Fix：件名") and tied to its file (the cut records `issue/001.md`), so the history reads as the issues. The layout says this; no
   sentence explains it.
 - **区切り**: the cuts so far, newest first, the current issue's only when
   one is chosen, one row each: name, folders, when.
@@ -202,11 +206,9 @@ at it.
   accounts is not built yet, so there is no 提出 button, and this says so
   in a dashed box instead of showing anything made up.
 
-区切る is also the push (§3): in the app it is a commit in the repo's git
-and then the same cut on the Remote; a cut that did not reach the Remote is
-said once, under the button, and the repo stays 未 push. In the browser,
-which has no git, the two sections appear once a Remote is joined: changes
-are this copy against the cut it came from, and the cuts are the Remote's.
+Every change is already on the Remote (the draft, §3); 区切る makes it
+history there, the same from the app, a browser and `l3 cut`. Without a
+Remote the changes are shown and one line says that cuts are kept there.
 
 ### New repo (+)
 
@@ -246,8 +248,9 @@ runs.
 ## 3. One OS, two ways in
 
 The GUI and the command line are two ways into the same things. `l3`'s
-nouns are the rail's: `repo`, `file`, `issue` / `git`, `todo` (Home),
-`runtime`; a path is written as File shows it (`/root/<repo>/…`). A line is
+nouns and order are the rail's: Home (`todo`), Forge (`repo`, `prompt`),
+File (`file`), Git (`issue`, `cut`, `log`), Runtime (`runtime`, `free`),
+Remote (`remote`, `login`, `sync`); a path is written as File shows it (`/root/<repo>/…`). A line is
 named the same way everywhere ("Fix：件名"), issues are the same numbered
 files, and Home's state is the same files, so anything done in one shows in
 the other. The Prompt's shell works on the repo itself: what it changes is
@@ -256,38 +259,51 @@ written back, and what is saved elsewhere comes in.
 ### The canonical copy is on the Remote
 
 As with GitHub, the copy that counts is the Remote's, and work on a device
-is not trusted until it is there; here that reaches to the whole OS. The
-Remote (`remote/`) names everything by its content: a file by its sha256,
-a cut by the sha256 of its record (the repo's whole tree, its parent, its
-words). A repo there is only a head pointing at one cut, and it moves by
-compare-and-set: a push whose parent is not the head is refused with the
-head, so nothing pushed is ever overwritten. A device checks what comes
-from the Remote against those names. Home's settings (profile, TODO) are
-kept there too, each changed only from the version it was read at; the
-band is the device's own.
+is not trusted until it is there; here that reaches to the whole OS. A
+repo on the Remote (`service/`) has two things:
 
-A device holds a checkout. For each repo it knows the cut it came from (its
-base), so a repo is always in one of four states, shown on Home's cards and
-on the Remote page: **push 済み** (nothing here the Remote lacks), **未 push**
-(with how many files: the only state that can be lost), **Remote が先**
-(another device pushed; 取り込む takes it in) and **ここだけ** (never
-pushed). Taking in is file by file against the base: a file only the
-Remote changed is taken, one only changed here is kept, and when one
-changed on both sides nothing is taken and those files are named.
+- **draft**: the working tree as it is now, path → the sha256 of the file.
+  It has a version, and a change is a diff made on a version: one that
+  names an older version is refused with the draft as it is, so nothing
+  sent is ever overwritten.
+- **head**: the last cut. 区切る makes the draft at a version a cut, named
+  by the sha256 of its record (tree, parent, words), and moves the head by
+  compare-and-set.
 
-What each host keeps, and when (lifecycle.ts, and Runtime's 持ち方):
+So a device's copy is never the only copy, and history stays deliberate.
+Every change made here (in Forge, by l3, by a Prompt) is sent as a diff
+within half a second; the Remote's changes are seen within five seconds
+and whenever the window comes back. Taking in is file by file against the
+version last agreed: a file only changed there is written here, one only
+changed here is sent, and one changed on both sides keeps this device's
+and puts the other's beside it as "name (別の端末).ext", so neither is lost.
+Files that cannot travel (a link, a file over 16 MB, a repo's own `.git`)
+are named and never sent; a repo holding them is never let go. Home's
+settings (profile, TODO) are kept there too, each changed only from the
+version it was read at (two TODO lists are joined); the band is the
+device's own.
 
-|             | comes by itself | closing ends | goes to the Remote |
-|-------------|-----------------|--------------|--------------------|
-| OS          | web: l3, fetched each visit; app: the root, fetched once when installed | web: nothing of it is kept; app: stays | — (it is the release) |
-| repo        | taken in at open (and when the app's window comes back) | web: its copy goes if pushed; app: stays | at each 区切る |
-| Home        | taken in at open | web: goes if pushed; app: stays | on each change |
-| Prompt      | when a repo opens | ends | — |
+What each host keeps, and when (lifecycle.ts):
 
-Unpushed work is never let go: in the browser it waits in this browser's
-storage (asked to be kept) until it is pushed. An account is a token made
-by the Remote and shown once; the Remote keeps only its digest. The token
-is kept on the device (in the app with its settings, 0600).
+|             | comes by itself | goes by itself |
+|-------------|-----------------|----------------|
+| OS          | web: l3, fetched each visit; app: the root, when installed | web: with the tab |
+| repo        | the Remote's changes, as they happen; one only on the Remote, when opened | each change, to the Remote at once; web: the copy, with the tab, once the Remote has all of it |
+| Home        | at start and when the window comes back | each change, at once |
+| Prompt      | when a repo opens | its processes, when closed |
+
+Room on a device is given back in Runtime (空ける, 同期して空ける): a repo
+that goes stays on the Remote and comes back when opened.
+
+**Who.** An account starts blank and is held by a passkey made at once
+(はじめる); a blank one that gets none is removed. A passkey signs in on
+any device; the recovery code (shown once, only its digest kept) opens the
+account once when every passkey is gone, and a new passkey and code follow.
+The app and l3 do not hold passkeys: they show a code, a browser where the
+person is signed in approves it on the Remote's page, and the device gets a
+session of its own. Every device is a session, listed on the Remote page and
+ended from any other. Sessions are bearer tokens, kept on the device (in the
+app with its settings, 0600).
 
 What leaves this system is kept to what is said here:
 
@@ -297,7 +313,7 @@ What leaves this system is kept to what is said here:
   carries that Content-Security-Policy, and the desktop's (Tauri's) says the
   same. The Remote answers only the app's origins.
 - **The root.** In the app a Prompt is the distribution's root, run by this
-  machine's kernel without privilege (`l3 open`, core/src/launch.rs): a user
+  machine's kernel without privilege (`l3 prompt`, core/src/launch.rs): a user
   namespace makes the user root inside it only; its own mount, pid, ipc,
   uts and network namespaces (no network unless granted); the root
   read-only, the repo the only writable place of the person's, fresh
@@ -307,12 +323,8 @@ What leaves this system is kept to what is said here:
   supervisor. The root itself is installed only from a pinned release,
   checked by digest before it is read, unpacked refusing anything that
   would land outside, go through a link or be a device.
-- **Host.** Besides l3, git is the one program the desktop runs, and it runs with an
-  empty environment (only PATH, HOME, LC_ALL and git's own switches), no
-  global or system configuration, no prompts, and every setting that could
-  make it run something else turned off (hooks, fsmonitor, pager, editor,
-  ssh, credential helpers, external diff, signing, every remote protocol).
-  A repo's own config cannot change that.
+- **Host.** The app starts no host program for a repo: history is the
+  Remote's, and a repo's own tools (git among them) run inside the root.
 - **Files.** The data directory and its settings are the user's alone (0700,
   0600). Writes go to a new temporary next to the file and are renamed over
   it; `.git` is refused in every spelling and through any symlink, from the

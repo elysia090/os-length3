@@ -71,6 +71,15 @@ test('a recovery code opens the account once, and only its digest is kept', asyn
   assert.equal((me1.json as unknown as {user: {id: string}}).user.id, (me2.json as unknown as {user: {id: string}}).user.id);
   assert.equal((await s.call('POST', '/api/auth/sign-in/recovery', {body: {code}})).status, 401);
   assert.deepEqual((await s.call('GET', '/api/auth/recovery/status', {token: t2})).json, {hasCode: false});
+  // With a way back in, the account is no longer blank: a browser holding a
+  // blank one that signs in to it loses only the blank one.
+  const blank = await s.start();
+  const again = await s.call('POST', '/api/auth/recovery/create', {token: t2, body: {}});
+  const via = await s.call('POST', '/api/auth/sign-in/recovery', {token: blank, body: {code: again.json.code}});
+  assert.equal(via.status, 200);
+  const users = await s.db.select().from(schema.user);
+  assert.equal(users.length, 1);
+  assert.equal(users[0].isAnonymous, false);
 });
 
 test('a device asks for a code, a signed-in browser approves it, the device gets its own session', async () => {

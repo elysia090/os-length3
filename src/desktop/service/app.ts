@@ -75,6 +75,8 @@ export function createApp(d: Deps) {
     allowMethods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     // The bearer plugin hands a new session's token back in this header.
     exposeHeaders: ['set-auth-token'],
+    // A passkey's challenge is a cookie between asking and answering.
+    credentials: true,
     maxAge: 600,
   }));
   app.use('*', async (c, next) => {

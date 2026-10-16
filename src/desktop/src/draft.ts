@@ -1,0 +1,295 @@
+// Each repo here kept in step with its draft on the Remote (service/app.ts),
+// a diff at a time; the same model as core/src/remote.rs, which the app
+// uses through its commands. In a browser it is done here, on the browser's
+// copy (repos.ts), which holds text: a file that is not text stays on the
+// Remote only ("away") and is never removed from it by this copy.
+//
+// Taking in is file by file against the last version agreed with the
+// Remote: a file only changed there is written here, one only changed here
+// is sent, and when both changed one, this device's stays and the other's is
+// written beside it as "name (別の端末).ext".
+
+import {isNative} from './host.ts';
+import {api, json, RemoteError} from './remote.ts';
+import {store} from './repos.ts';
+import {getState, setState} from './state.ts';
+
+export type Tree = Record<string, string | null>;
+
+export interface Synced { version: number; sent: number; taken: number; both: string[]; unsynced: [string, string][] }
+export interface Status { name: string; changed: number; fresh: boolean; unsynced: [string, string][]; bytes: number; head: string | null; version: number }
+export interface RemoteRepo { name: string; head: string | null; version: number; bytes: number; updatedAt: string }
+
+interface Base { version: number; tree: Tree; head: string | null; away?: string[] }
+interface SyncState { repos: Record<string, Base>; home?: Record<string, {version: number; value: string}> }
+
+/** Whoever writes on sync's behalf, so listeners can tell its writes from a person's. */
+export const BY = 'sync';
+const CHUNK = 2000;
+const enc = new TextEncoder();
+const dec = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true});
+
+export async function sha256(bytes: Uint8Array): Promise<string> {
+  const d = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as BufferSource));
+  return [...d].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function invoke<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
+  const {invoke} = await import('@tauri-apps/api/core');
+  return invoke<T>(command, args);
+}
+
+const syncState = (): SyncState => {
+  try { const s = JSON.parse(getState('sync') ?? '') as SyncState; return {...s, repos: s.repos ?? {}}; } catch { return {repos: {}}; }
+};
+const saveState = (s: SyncState) => setState('sync', JSON.stringify(s));
+export const baseOf = (repo: string): Base | null => syncState().repos[repo] ?? null;
+async function setBase(repo: string, b: Base | null) {
+  const s = syncState();
+  if (b) s.repos[repo] = b; else delete s.repos[repo];
+  await saveState(s);
+}
+
+// ---- merging (as remote.rs) ----
+
+export interface Plan { take: [string, string | null | undefined][]; both: [string, string][] }
+
+/** undefined: absent; null: an empty folder; a string: a file's digest. */
+export function plan(base: Tree, here: Tree, there: Tree): Plan {
+  const p: Plan = {take: [], both: []};
+  const get = (t: Tree, k: string) => (k in t ? t[k] : undefined);
+  for (const path of [...new Set([...Object.keys(base), ...Object.keys(here), ...Object.keys(there)])].sort()) {
+    const b = get(base, path), l = get(here, path), r = get(there, path);
+    if (l === r || r === b) continue;
+    if (l === b || (l === undefined && r !== undefined)) p.take.push([path, r]);
+    else if (typeof r === 'string') p.both.push([path, r]);
+  }
+  return p;
+}
+
+/** "dir/name (別の端末).ext" beside `path`. */
+export function beside(path: string): string {
+  const at = path.lastIndexOf('/');
+  const dir = at < 0 ? '' : path.slice(0, at + 1), file = path.slice(at + 1);
+  const dot = file.lastIndexOf('.');
+  const [stem, ext] = dot > 0 ? [file.slice(0, dot), file.slice(dot)] : [file, ''];
+  return `${dir}${stem} (別の端末)${ext}`;
+}
+
+// ---- the browser's copy ----
+
+interface Local { tree: Tree; texts: Map<string, Uint8Array>; bytes: number }
+
+async function localTree(repo: string, away: string[] = [], base: Tree = {}): Promise<Local> {
+  const tree: Tree = {}, texts = new Map<string, Uint8Array>();
+  let bytes = 0;
+  const walk = async (dir: string) => {
+    const entries = await store.tree(repo, dir);
+    if (dir && !entries.length) tree[dir] = null;
+    for (const e of entries) {
+      const path = dir ? `${dir}/${e.name}` : e.name;
+      if (e.kind === 'dir') { await walk(path); continue; }
+      const c = await store.read(repo, path).catch(() => null);
+      if (!c || c.text === null) continue;
+      const b = enc.encode(c.text);
+      const sha = await sha256(b);
+      tree[path] = sha;
+      texts.set(sha, b);
+      bytes += b.length;
+    }
+  };
+  await walk('');
+  // What this copy cannot hold stays as the Remote has it.
+  for (const p of away) if (!(p in tree) && base[p] !== undefined) tree[p] = base[p];
+  return {tree, texts, bytes};
+}
+
+const blobs = new Map<string, string | null>();
+/** A file's text on the Remote by its digest (null: not text), checked against its name. */
+export async function blobText(sha: string): Promise<string | null> {
+  if (blobs.has(sha)) return blobs.get(sha)!;
+  const r = await api(`/v1/blobs/${sha}`);
+  if (!r.ok) throw new RemoteError(r.status, `Remote にないファイル ${sha.slice(0, 12)}`);
+  const bytes = new Uint8Array(await r.arrayBuffer());
+  if (await sha256(bytes) !== sha) throw new RemoteError(0, 'Remote から届いたものが名前と合いません');
+  let text: string | null;
+  try { text = dec.decode(bytes); } catch { text = null; }
+  if (bytes.length < 1 << 20) blobs.set(sha, text);
+  return text;
+}
+
+/** Write the Remote's side of `p`; returns the paths now away and those set beside. */
+async function apply(repo: string, p: Plan, away: Set<string>): Promise<string[]> {
+  const aside: string[] = [];
+  const write = async (path: string, sha: string) => {
+    const text = await blobText(sha);
+    if (text === null) { await store.remove(repo, path, BY).catch(() => {}); away.add(path); return; }
+    away.delete(path);
+    await store.put(repo, path, text, BY);
+  };
+  for (const [path, what] of p.take) {
+    if (what === undefined) { away.delete(path); await store.remove(repo, path, BY).catch(() => {}); continue; }
+    if (what === null) { await store.put(repo, path, null, BY).catch(() => {}); continue; }
+    try { await write(path, what); } catch {
+      // Something here is in its way (a folder for a file, a file for a folder): beside it.
+      await write(beside(path), what).catch(() => {});
+      aside.push(path);
+    }
+  }
+  for (const [path, theirs] of p.both) {
+    await write(beside(path), theirs).catch(() => {});
+    aside.push(path);
+  }
+  return aside;
+}
+
+const running = new Map<string, Promise<unknown>>();
+/** One sync of a repo at a time. */
+function serial<T>(repo: string, f: () => Promise<T>): Promise<T> {
+  const next = (running.get(repo) ?? Promise.resolve()).catch(() => {}).then(f);
+  running.set(repo, next);
+  void next.finally(() => { if (running.get(repo) === next) running.delete(repo); }).catch(() => {});
+  return next;
+}
+
+async function webSync(repo: string): Promise<Synced> {
+  const out: Synced = {version: 0, sent: 0, taken: 0, both: [], unsynced: []};
+  const path = `/v1/repos/${encodeURIComponent(repo)}`;
+  for (let round = 0; round < 12; round++) {
+    const base = baseOf(repo) ?? {version: 0, tree: {}, head: null};
+    const here = await localTree(repo, base.away, base.tree);
+    const r = await api(path);
+    const there = r.status === 404 ? null : await r.json() as {version: number; draft: Tree; head: string | null};
+    const remoteVersion = there?.version ?? 0;
+    if (remoteVersion !== base.version) {
+      const tree = there?.draft ?? {};
+      const p = plan(base.tree, here.tree, tree);
+      const away = new Set(base.away ?? []);
+      out.both.push(...await apply(repo, p, away));
+      out.taken += p.take.length;
+      await setBase(repo, {version: remoteVersion, tree, head: there?.head ?? null, away: [...away].filter((a) => a in tree)});
+      continue;
+    }
+    const set = Object.entries(here.tree).filter(([p, v]) => !(p in base.tree) || base.tree[p] !== v).slice(0, CHUNK);
+    const remove = Object.keys(base.tree).filter((p) => !(p in here.tree)).slice(0, CHUNK);
+    if (!set.length && !remove.length) { out.version = base.version; return out; }
+    const shas = [...new Set(set.map(([, v]) => v).filter((v): v is string => typeof v === 'string'))];
+    if (shas.length) {
+      const missing = await json<string[]>('/v1/blobs/missing', {method: 'POST', body: JSON.stringify(shas)});
+      for (const sha of missing) {
+        const bytes = here.texts.get(sha);
+        if (!bytes) continue;
+        const put = await api(`/v1/blobs/${sha}`, {method: 'PUT', body: bytes as BodyInit, headers: {'Content-Type': 'application/octet-stream'}});
+        if (!put.ok) throw new RemoteError(put.status, `Remote が受け取りませんでした（${put.status}）`);
+      }
+    }
+    const patched = await api(`${path}/draft`, {method: 'PATCH', body: JSON.stringify({version: base.version, set: Object.fromEntries(set), remove})});
+    if (patched.status !== 200) continue; // someone else moved it, or a blob went missing: once more
+    const {version} = await patched.json() as {version: number};
+    const tree = {...base.tree};
+    for (const p of remove) { delete tree[p]; for (const q of Object.keys(tree)) if (q.startsWith(`${p}/`)) delete tree[q]; }
+    for (const [p, v] of set) tree[p] = v;
+    out.sent += set.length + remove.length;
+    out.version = version;
+    await setBase(repo, {...base, version, tree});
+  }
+  return out;
+}
+
+// ---- what the shell uses, on either host ----
+
+/** Send what changed here and take in what changed there, until both are the same. */
+export const sync = (repo: string): Promise<Synced> =>
+  isNative ? invoke<Synced>('sync_repo', {repo}) : serial(repo, () => webSync(repo));
+
+/** Bring a repo that is only on the Remote here (opening it does this). */
+export async function fetchRepo(repo: string): Promise<Synced> {
+  if (isNative) return invoke<Synced>('repo_fetch', {repo});
+  if (!(await store.list()).some((r) => r.name === repo)) {
+    await setBase(repo, null);
+    await store.create(repo, '', BY);
+  }
+  return sync(repo);
+}
+
+export const remoteRepos = (): Promise<RemoteRepo[]> => (isNative ? invoke<RemoteRepo[]>('remote_repos') : json<RemoteRepo[]>('/v1/repos'));
+
+/** Where each repo here stands, from what is here alone. */
+export async function status(): Promise<Status[]> {
+  if (isNative) return invoke<Status[]>('remote_status');
+  const out: Status[] = [];
+  for (const r of await store.list()) {
+    const b = baseOf(r.name);
+    const here = await localTree(r.name, b?.away, b?.tree);
+    const changed = b ? [...new Set([...Object.keys(here.tree), ...Object.keys(b.tree)])].filter((p) => here.tree[p] !== b.tree[p]).length : Object.keys(here.tree).length;
+    out.push({name: r.name, changed, fresh: !b, unsynced: [], bytes: here.bytes, head: b?.head ?? null, version: b?.version ?? 0});
+  }
+  return out;
+}
+
+/** The copy here has gone (freed, or left with the page): forget what was agreed for it. */
+export const forget = (repo: string) => setBase(repo, null);
+
+/** The head this copy is on, and that cut's tree (empty before the first). */
+export async function headTree(repo: string): Promise<Tree> {
+  const head = baseOf(repo)?.head;
+  if (!head) return {};
+  const c = await json<{tree: Tree}>(`/v1/repos/${encodeURIComponent(repo)}/cuts/${head}`);
+  return c.tree;
+}
+
+/** The draft as last agreed (the tree the Remote has for this copy). */
+export const agreedTree = (repo: string): Tree => baseOf(repo)?.tree ?? {};
+
+/** A cut was made at the agreed version: it is the head now. */
+export async function setHead(repo: string, head: string | null) {
+  const b = baseOf(repo);
+  if (b) await setBase(repo, {...b, head});
+}
+
+// ---- Home's settings that are the person's (the band is the device's) ----
+
+export const HOME_KEYS = ['profile', 'todo'] as const;
+export type HomeKey = typeof HOME_KEYS[number];
+
+/** Two TODO lists as one: every item from both, this device's where both have it. */
+function mergeTodo(here: string, there: string): string {
+  try {
+    const a = JSON.parse(here) as {id: string}[], b = JSON.parse(there) as {id: string}[];
+    const ids = new Set(a.map((x) => x.id));
+    return JSON.stringify([...b.filter((x) => !ids.has(x.id)), ...a]);
+  } catch { return here; }
+}
+
+/**
+ * Agree a setting with the Remote. Unchanged here: the Remote's is taken.
+ * Changed here: it is sent from the version it was read at; if another
+ * device changed it meanwhile, the TODO lists are joined and the profile
+ * is the Remote's.
+ */
+export async function syncHome(key: HomeKey): Promise<void> {
+  for (let round = 0; round < 3; round++) {
+    const s = syncState();
+    const b = s.home?.[key];
+    const here = getState(key);
+    const there = await json<{value: string | null; version: number}>(`/v1/home/${key}`);
+    const changedHere = here !== null && here !== b?.value;
+    if (!changedHere) {
+      if (there.value !== null && there.value !== here) await setState(key, there.value);
+      await saveState({...syncState(), home: {...syncState().home, [key]: {version: there.version, value: there.value ?? here ?? ''}}});
+      return;
+    }
+    let value = here!;
+    if (there.version !== (b?.version ?? 0) && there.value !== null) {
+      if (key !== 'todo') { await setState(key, there.value); continue; }
+      value = mergeTodo(here!, there.value);
+      if (value !== here) await setState(key, value);
+    }
+    const r = await api(`/v1/home/${key}`, {method: 'PUT', body: JSON.stringify({value, version: there.version})});
+    const done = await r.json() as {version: number; value?: string};
+    if (r.status === 200 || r.status === 201) {
+      await saveState({...syncState(), home: {...syncState().home, [key]: {version: done.version, value}}});
+      return;
+    }
+  }
+}

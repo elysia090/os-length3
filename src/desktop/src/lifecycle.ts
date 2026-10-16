@@ -1,103 +1,155 @@
-// What comes by itself, what closing ends, and what goes up and down.
-// The canonical copy is on the Remote; this device has a checkout.
+// What comes by itself, what goes by itself, and when. The canonical copy
+// is on the Remote; what is here is a copy kept in step with it.
 //
-//                 comes by itself        closing ends          Remote
-//   l3 (the OS)   web: fetched each      web: its copy goes    the release it is
-//                 visit; app: with app   app: stays with app   pinned to
-//   Prompt        when a repo opens      its processes         nothing
-//   repo          pulled at open (and    web: the copy goes    pushed at each 区切る,
-//                 on focus in the app)   if pushed; app: stays pulled at open
-//   Home          pulled at open         web: goes if pushed   pushed on change
+//                comes by itself                goes by itself
+//   l3 (the OS)  web: fetched each visit        web: with the tab
+//   Prompt       when a repo is opened          its processes, when closed
+//   repo         the Remote's changes, seen     every change, sent at once as
+//                within seconds (and on focus)  a diff; web: the copy, with the
+//                                               tab, once the Remote has it all
+//   Home         at start and on focus          every change, sent at once
 //
-// Unpushed work is never let go: it stays until it is pushed, and is shown.
+// Nothing the Remote does not have yet is let go: it stays, and is shown.
 
 import {forgetExcept} from './fetch.ts';
+import * as draft from './draft.ts';
 import {isNative} from './host.ts';
+import {connection, onConnection} from './remote.ts';
 import {kept, onChange} from './repos.ts';
 import {dropState, onState} from './state.ts';
-import * as sync from './sync.ts';
 
-/** Repos whose copy here was last seen to hold nothing the Remote lacks. */
-let pushed = new Set<string>();
-/** Repos changed since that was seen. */
-const touched = new Set<string>();
-let homeClean = new Set<(typeof sync.HOME_KEYS)[number]>();
-const listeners = new Set<() => void>();
-let timer: ReturnType<typeof setTimeout> | undefined;
-let pulling: Promise<void> | null = null;
-
-/** Hear when what is pushed and what is not may have changed. */
-export function onSync(fn: () => void): () => void { listeners.add(fn); return () => listeners.delete(fn); }
-const tell = () => { for (const fn of [...listeners]) fn(); };
-
-/** See again which repos and settings hold nothing the Remote lacks. */
-export function recheck() {
-  clearTimeout(timer);
-  timer = setTimeout(async () => {
-    const seen = new Set(touched);
-    pushed = new Set(await sync.pushedRepos().catch(() => []));
-    for (const r of seen) touched.delete(r);
-    homeClean = new Set(sync.connection() ? sync.HOME_KEYS.filter((k) => sync.homeState(k) === 'pushed') : []);
-    tell();
-  }, 300);
+/** Where a repo here stands. */
+export type Where = 'local' | 'sending' | 'synced' | 'offline';
+export interface RepoSync {
+  where: Where;
+  /** Paths not on the Remote yet. */
+  changed: number;
+  /** Changed on both sides: this device's kept, the other's beside it (said once). */
+  both: string[];
+  /** What cannot be sent (links, large files, .git), so the copy is never let go. */
+  unsynced: [string, string][];
+  error?: string;
 }
 
-/** Take in what the Remote has (repos that are not ahead, and settings). */
-export function takeIn(): Promise<void> {
-  if (!sync.connection()) return Promise.resolve();
-  return (pulling ??= (async () => {
-    try {
-      await sync.pullAll();
-      for (const k of sync.HOME_KEYS) await sync.syncHome(k).catch(() => {});
-    } catch { /* offline: what is here stays as it is */ } finally {
-      pulling = null;
-      recheck();
+const states = new Map<string, RepoSync>();
+let onlyThere: draft.RemoteRepo[] = [];
+const listeners = new Set<() => void>();
+const timers = new Map<string, ReturnType<typeof setTimeout>>();
+const retry = new Map<string, number>();
+
+/** Hear whenever where a repo stands may have changed. */
+export function onSync(fn: () => void): () => void { listeners.add(fn); return () => listeners.delete(fn); }
+let telling: ReturnType<typeof setTimeout> | undefined;
+const tell = () => { clearTimeout(telling); telling = setTimeout(() => { for (const fn of [...listeners]) fn(); }, 30); };
+
+export const repoState = (repo: string): RepoSync | undefined => states.get(repo);
+/** Repos on the Remote that are not here (opening one brings it). */
+export const remoteOnly = (): readonly draft.RemoteRepo[] => onlyThere;
+
+const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+/** How soon a change is sent: soon enough to beat closing the tab, late enough to gather keystrokes. */
+const SOON = 400;
+
+/** Send `repo` after `ms`, gathering what changes meanwhile into one diff. */
+export function schedule(repo: string, ms = SOON) {
+  if (!connection()) return;
+  clearTimeout(timers.get(repo));
+  const s = states.get(repo);
+  states.set(repo, {where: 'sending', changed: s?.changed ?? 0, both: [], unsynced: s?.unsynced ?? []});
+  tell();
+  timers.set(repo, setTimeout(() => void run(repo), ms));
+}
+
+async function run(repo: string) {
+  timers.delete(repo);
+  try {
+    const r = await draft.sync(repo);
+    retry.delete(repo);
+    states.set(repo, {where: 'synced', changed: 0, both: r.both, unsynced: r.unsynced});
+  } catch (e) {
+    // Offline, or the Remote refused: kept here, tried again later, and said.
+    const n = (retry.get(repo) ?? 0) + 1;
+    retry.set(repo, n);
+    const s = states.get(repo);
+    states.set(repo, {where: 'offline', changed: s?.changed ?? 0, both: [], unsynced: s?.unsynced ?? [], error: message(e)});
+    if (connection()) timers.set(repo, setTimeout(() => void run(repo), Math.min(60_000, 2000 * 2 ** n)));
+  }
+  tell();
+}
+
+/** Every change made now goes out at once (leaving the page, or before a step that needs it). */
+export async function flush(): Promise<void> {
+  const waiting = [...timers.keys()];
+  for (const r of waiting) clearTimeout(timers.get(r));
+  await Promise.all(waiting.map(run));
+}
+
+/** See where every repo here stands, and what the Remote has that is not here. */
+export async function look(): Promise<void> {
+  const here = await draft.status().catch(() => []);
+  const c = connection();
+  for (const s of here) {
+    if (timers.has(s.name)) continue;
+    const before = states.get(s.name);
+    const where: Where = !c ? 'local' : s.fresh || s.changed ? (before?.where === 'offline' ? 'offline' : 'sending') : 'synced';
+    states.set(s.name, {where, changed: s.changed, both: before?.both ?? [], unsynced: s.unsynced, error: before?.error});
+    if (c && (s.fresh || s.changed) && before?.where !== 'offline') schedule(s.name, 0);
+  }
+  for (const k of [...states.keys()]) if (!here.some((s) => s.name === k)) states.delete(k);
+  if (c) {
+    const there = await draft.remoteRepos().catch(() => null);
+    if (there) {
+      onlyThere = there.filter((t) => !here.some((h) => h.name === t.name));
+      // The Remote moved past what is here: take it in now.
+      for (const t of there) {
+        const h = here.find((x) => x.name === t.name);
+        if (h && !h.fresh && t.version !== h.version) schedule(t.name, 0);
+      }
     }
-  })());
+    for (const k of draft.HOME_KEYS) void draft.syncHome(k).catch(() => {});
+  } else onlyThere = [];
+  tell();
+}
+
+/** Open a repo that is only on the Remote: it comes here, then is like any other. */
+export async function bring(repo: string): Promise<void> {
+  await draft.fetchRepo(repo);
+  await look();
 }
 
 /**
- * Leaving a web page: everything here that the Remote already holds goes,
- * started at once so it runs while the page closes. Unpushed work stays.
+ * Leaving a web page: every repo the Remote holds all of goes from this
+ * browser, started at once so it runs while the page closes, and the
+ * settings the Remote has too. What is not on the Remote yet stays.
  */
 function leave() {
-  if (!kept || !sync.connection()) return;
-  const go = [...pushed].filter((r) => !touched.has(r) && !kept!.waiting(r));
+  if (!kept || !connection()) return;
+  const go = [...states].filter(([r, s]) => s.where === 'synced' && !s.unsynced.length && !timers.has(r) && !kept!.waiting(r)).map(([r]) => r);
   if (go.length) {
     void kept.letGo(go);
-    for (const r of go) void sync.forget(r);
+    for (const r of go) void draft.forget(r);
   }
-  for (const k of homeClean) dropState(k);
+  for (const k of draft.HOME_KEYS) dropState(k);
 }
 
 let begun = false;
+let polling: ReturnType<typeof setInterval> | undefined;
 export async function begin() {
   if (begun) return;
   begun = true;
   // The web keeps no copy of l3: it is fetched each visit. The app has it beside itself.
   void forgetExcept(new Set());
-  onChange((c) => { if (c.by !== 'sync') touched.add(c.repo); recheck(); });
-  onState((k) => {
-    // A push or a pull moves a base without touching a file.
-    if (k === 'sync') recheck();
-    // Newly joined: what the Remote has comes, and what is here goes up.
-    if (k === 'remote') { if (sync.connection()) void takeIn(); else recheck(); }
-    if (k === 'profile' || k === 'todo') {
-      homeClean.delete(k);
-      if (sync.connection()) void sync.syncHome(k).catch(() => {}).finally(recheck);
-    }
-  });
-  if (isNative) {
-    // In the app the checkout is the repo's own git: what is taken in is cut there too, under the Remote's words.
-    sync.afterTake(async (repo, cut) => {
-      const git = await import('./git.ts');
-      const c = await git.changes(repo).catch(() => null);
-      if (c?.files) await git.cut(repo, null, cut.kind ? `${cut.kind}：${cut.title}` : cut.title, cut.note, false).catch(() => {});
-    });
-    addEventListener('focus', () => void takeIn());
-  } else addEventListener('pagehide', leave);
-  await takeIn();
-  recheck();
+  // Every change a person (or a Prompt) makes is sent; sync's own writes are not news.
+  onChange((c) => { if (c.by !== draft.BY) schedule(c.repo); else tell(); });
+  onState((k) => { if ((k === 'profile' || k === 'todo') && connection()) void draft.syncHome(k).catch(() => {}); });
+  onConnection(() => void look());
+  // The Remote's changes are seen within five seconds while the page is in view.
+  polling = setInterval(() => { if (document.visibilityState === 'visible' && connection()) void look(); }, 5000);
+  addEventListener('focus', () => void look());
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') void flush(); });
+  if (!isNative) addEventListener('pagehide', leave);
+  await look();
 }
 
-export const isPushed = (repo: string) => pushed.has(repo) && !touched.has(repo);
+/** For tests: stop looking. */
+export function end() { clearInterval(polling); for (const t of timers.values()) clearTimeout(t); timers.clear(); }

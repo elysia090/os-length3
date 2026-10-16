@@ -4,9 +4,13 @@
 // asks for a new passkey and shows a new code. Only the code's digest is
 // stored, so the database cannot sign anyone in. A code has 120 random bits:
 // guessing is not a way in, and attempts are rate-limited besides.
+//
+// An account starts blank (Better Auth's anonymous user) and stops being
+// blank the moment it has a way back in: a passkey or a recovery code. Only
+// a blank one is ever cleaned away, when its browser signs in to another.
 
 import type {BetterAuthPlugin} from 'better-auth';
-import {APIError, createAuthEndpoint, sessionMiddleware} from 'better-auth/api';
+import {APIError, createAuthEndpoint, createAuthMiddleware, getSessionFromCtx, sessionMiddleware} from 'better-auth/api';
 import {setSessionCookie} from 'better-auth/cookies';
 import * as z from 'zod';
 
@@ -42,7 +46,7 @@ export const recovery = () => ({
     /** A new code for the signed-in account; the one before stops working. */
     createRecoveryCode: createAuthEndpoint('/recovery/create', {method: 'POST', use: [sessionMiddleware]}, async (ctx) => {
       const code = newCode();
-      await ctx.context.internalAdapter.updateUser(ctx.context.session.user.id, {recoveryDigest: await digest(code)});
+      await ctx.context.internalAdapter.updateUser(ctx.context.session.user.id, {recoveryDigest: await digest(code), isAnonymous: false});
       return ctx.json({code});
     }),
     /** Whether the signed-in account has a code to fall back on. */
@@ -65,6 +69,15 @@ export const recovery = () => ({
       await setSessionCookie(ctx, {session, user});
       return ctx.json({token: session.token, spent: true});
     }),
+  },
+  hooks: {
+    after: [{
+      matcher: (ctx: {path?: string}) => ctx.path === '/passkey/verify-registration',
+      handler: createAuthMiddleware(async (ctx) => {
+        const s = await getSessionFromCtx(ctx).catch(() => null);
+        if (s && (s.user as {isAnonymous?: boolean}).isAnonymous) await ctx.context.internalAdapter.updateUser(s.user.id, {isAnonymous: false});
+      }),
+    }],
   },
   rateLimit: [{pathMatcher: (path: string) => path === '/sign-in/recovery', window: 60, max: 5}],
 }) satisfies BetterAuthPlugin;

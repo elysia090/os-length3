@@ -17,29 +17,25 @@ export const isNative = '__TAURI_INTERNALS__' in globalThis;
 
 /** How a figure is known (core/src/usage.rs). */
 export type Certainty = 'Verified' | 'Estimated' | 'Unknown';
-export interface RepoUsage { name: string; files: number; logical: number; allocated: number; history: number }
-/** Why a root is on the device (core/src/usage.rs). */
-export type RootHeld = 'Current' | 'Previous' | 'Older';
-export interface SystemUsage { name: string; version: string; sha256: string; allocated: number; held: RootHeld }
-export interface Usage {
-  host_total: number; host_free: number; host: Certainty;
-  repos: RepoUsage[]; system: SystemUsage[]; home: number; allocated: number; reclaimable: number;
-  leftovers: {path: string; allocated: number; what: string}[];
-}
-export interface Reclaim {
-  freed: number; freed_certainty: Certainty; removed: number; kept: [string, string][];
+/** What can be done with a thing this OS holds: it can go, it can go once sent, or it stays (and why). */
+export type Room = 'Free' | 'SyncFree' | 'Keep';
+/** One thing this OS holds on the device: "repo:<name>", "root:<sha>", "path:<path>" or "home". */
+export interface Item { id: string; what: string; detail: string; allocated: number; room: Room; why: string }
+export interface Space { host_total: number; host_free: number; host: Certainty; allocated: number; freeable: number; items: Item[] }
+export interface Freed {
+  freed: number; freed_certainty: Certainty; removed: string[]; kept: [string, string][];
   host_free_before: number; host_free_after: number; host_change: Certainty; reflected_ms: number | null;
 }
 
-async function native<T>(command: string): Promise<T> {
+async function native<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
   const {invoke} = await import('@tauri-apps/api/core');
-  return invoke<T>(command);
+  return invoke<T>(command, args);
 }
 
-/** What this OS holds on the device and what is reclaimable; desktop only. */
-export const readUsage = (): Promise<Usage | null> => (isNative ? native<Usage>('usage').catch(() => null) : Promise.resolve(null));
-/** この端末の容量を空ける; desktop only. */
-export const reclaim = (): Promise<Reclaim> => native<Reclaim>('reclaim');
+/** この端末: everything this OS holds, largest first (the app; space.ts for a browser). */
+export const nativeSpace = (): Promise<Space> => native<Space>('space');
+/** 空ける these ids (同期して空ける for a repo with changes not sent yet). */
+export const nativeFree = (ids: string[]): Promise<Freed> => native<Freed>('free', {ids});
 
 export async function readCapacity(): Promise<Capacity | null> {
   try {
@@ -95,10 +91,7 @@ export async function rootFetch(progress: (got: number, of: number, retry: strin
   try { return await native<Installed>('root_fetch'); } finally { unlisten(); }
 }
 
-async function call<T>(command: string, args: Record<string, unknown>): Promise<T> {
-  const {invoke} = await import('@tauri-apps/api/core');
-  return invoke<T>(command, args);
-}
+const call = native;
 
 /** A Prompt on the root: what it prints, and how it ends. */
 export async function promptOpen(repo: string, on: {output(text: string): void; exit(code: number): void}): Promise<{

@@ -12,7 +12,6 @@ export interface RepoSummary {
   files: number;
   bytes: number;
   modified: number;
-  git: boolean;
 }
 
 export interface Entry {
@@ -43,6 +42,12 @@ export interface RepoStore {
   mkdir(repo: string, path: string): Promise<void>;
   /** Remove a file, or a directory with all it holds, inside the repo (never the repo or its .git). */
   remove(repo: string, path: string): Promise<void>;
+  /**
+   * Set a path as the Remote has it: a file's text (made or replaced, its
+   * folders made), or null for an empty folder. For taking in a draft; a
+   * browser's copy only, since the app's is taken in natively.
+   */
+  put?(repo: string, path: string, text: string | null): Promise<void>;
 }
 
 interface SharedTemplate { id: string; label: string; dirs: string[]; files: [string, string][] }
@@ -87,6 +92,8 @@ class NativeStore implements RepoStore {
  * side and l3. Inbox and TODO belong to the OS, so no template carries them.
  * Directories map to null. */
 export function templateFiles(name: string, template: Template): Map<string, string | null> {
+  // '' is no template at all: a repo whose files all come from the Remote.
+  if (template === '') return new Map();
   const t = (shared as SharedTemplate[]).find((x) => x.id === template);
   if (!t) throw new Error(`unknown template ${template}`);
   const files = new Map<string, string | null>(t.files.map(([p, text]) => [p, text.replaceAll('{name}', name)]));
@@ -108,7 +115,7 @@ export class MemoryStore implements RepoStore {
   private summary(name: string, r: {files: Map<string, string | null>; modified: number}): RepoSummary {
     const texts = [...r.files.values()].filter((v): v is string => v !== null);
     return {name, files: texts.length, bytes: texts.reduce((n, t) => n + new TextEncoder().encode(t).length, 0),
-      modified: r.modified, git: false};
+      modified: r.modified};
   }
   async create(name: string, template: Template) {
     if (!validName(name)) throw new Error(`invalid repo name ${name}`);
@@ -171,6 +178,21 @@ export class MemoryStore implements RepoStore {
     const gone = [...r.files.keys()].filter((p) => p === clean || p.startsWith(`${clean}/`));
     if (!gone.length) throw new Error(`no ${path}`);
     for (const p of gone) r.files.delete(p);
+    r.modified = Date.now();
+    this.touched(repo);
+  }
+  async put(repo: string, path: string, text: string | null) {
+    const r = this.repos.get(repo);
+    if (!r) throw new Error(`no repo ${repo}`);
+    const parts = path.split('/');
+    if (parts.some((p) => !p || p === '.' || p === '..') || touchesGit(path)) throw new Error(`path ${path} leaves the repo`);
+    // A file where a folder of the path would be, or a folder in the file's place, is refused.
+    for (let i = 1; i < parts.length; i++) if (typeof r.files.get(parts.slice(0, i).join('/')) === 'string') throw new Error(`${path}: 途中がファイルです`);
+    if (text !== null && [...r.files.keys()].some((p) => p.startsWith(`${path}/`))) throw new Error(`${path}: フォルダーがあります`);
+    // Parent folders are implied by their files; an empty folder is kept as null.
+    for (let i = 1; i < parts.length; i++) { const at = parts.slice(0, i).join('/'); if (r.files.get(at) === null) r.files.delete(at); }
+    if (text === null && r.files.get(path) !== undefined) return;
+    r.files.set(path, text);
     r.modified = Date.now();
     this.touched(repo);
   }
@@ -258,6 +280,7 @@ export class KeptStore extends MemoryStore {
   override async add(repo: string, dir: string, name: string, text: string) { await this.ready; return super.add(repo, dir, name, text); }
   override async mkdir(repo: string, path: string) { await this.ready; return super.mkdir(repo, path); }
   override async remove(repo: string, path: string) { await this.ready; return super.remove(repo, path); }
+  override async put(repo: string, path: string, text: string | null) { await this.ready; return super.put(repo, path, text); }
 }
 
 /** IndexedDB, as a Shelf. */
@@ -330,6 +353,11 @@ class Observed implements RepoStore {
   async remove(repo: string, path: string, by?: string) {
     await this.inner.remove(repo, path);
     this.tell({repo, path, what: 'removed', by});
+  }
+  async put(repo: string, path: string, text: string | null, by?: string) {
+    if (!this.inner.put) throw new Error('this store takes in natively');
+    await this.inner.put(repo, path, text);
+    this.tell({repo, path, what: text === null ? 'dir' : 'file', text: text ?? undefined, by});
   }
   /** Something outside the store changed `repo` (a Prompt on the root writes it directly). */
   changedOutside(repo: string, by?: string) { this.tell({repo, path: '', what: 'repo', by}); }

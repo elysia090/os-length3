@@ -11,6 +11,7 @@ import {remote} from './pages/remote.ts';
 import {runtime} from './pages/runtime.ts';
 import {FileTree} from './pages/tree.ts';
 import {begin} from './lifecycle.ts';
+import {devicePage} from './pages/device.ts';
 import {loadState} from './state.ts';
 import {NEW_REPO, PURPOSES, purpose, restorePurpose, stepPurpose, type PurposeId} from './purposes.ts';
 
@@ -110,10 +111,16 @@ $('rail-tabs').append(...PURPOSES.map((p) => railButton(p.id)), railButton(NEW_R
 // Home's state is read before the first page, and again when the window
 // comes back, so what l3 changed meanwhile is what the page shows.
 // Then what the Remote has is taken in; the page shows as it comes.
-void loadState().finally(() => {
-  select(restorePurpose(load(PURPOSE_KEY)));
-  void begin().then(() => render());
-});
+// A device's code (?device&user_code=…, from l3 or the app) opens only the page that approves it.
+const asking = new URLSearchParams(location.search);
+if (asking.has('device')) {
+  void loadState().finally(() => document.body.replaceChildren(devicePage(asking.get('user_code') ?? '')));
+} else {
+  void loadState().finally(() => {
+    select(restorePurpose(load(PURPOSE_KEY)));
+    void begin().then(() => render());
+  });
+}
 window.addEventListener('focus', () => {
   void loadState().then(() => { if (current === 'home') render(); else me.paint(); });
 });

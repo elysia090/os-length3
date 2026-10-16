@@ -11,13 +11,16 @@ import {defineConfig, type Plugin} from 'vite';
  * Inline style attributes stay allowed: rows are indented through them, and
  * they cannot run code.
  */
-// The Remote (remote/) is the one other origin it may reach: where the
-// canonical copy lives. VITE_LENGTH3_REMOTE points a build at another one
-// (a local remote/serve.ts while developing).
-const REMOTE = new URL(process.env.VITE_LENGTH3_REMOTE ?? 'https://remote.length3.com').origin;
+// The Remote (service/) is the one other origin it may reach: where the
+// canonical copy lives. VITE_LENGTH3_REMOTE points a build at another one;
+// '' is this page's own origin, which in development LENGTH3_DEV_REMOTE
+// (a `node service/dev.ts`) answers through the dev server.
+const REMOTE_URL = process.env.VITE_LENGTH3_REMOTE ?? 'https://remote.length3.com';
+const REMOTE = REMOTE_URL ? new URL(REMOTE_URL).origin : '';
+const DEV_REMOTE = process.env.LENGTH3_DEV_REMOTE;
 const WEB_POLICY = [
   "default-src 'self'", "script-src 'self' 'wasm-unsafe-eval'", "worker-src 'self'",
-  "style-src 'self' 'unsafe-inline'", "img-src 'self' data:", `connect-src 'self' ${REMOTE}`,
+  "style-src 'self' 'unsafe-inline'", "img-src 'self' data:", `connect-src 'self'${REMOTE ? ` ${REMOTE}` : ''}`,
   "object-src 'none'", "base-uri 'none'", "form-action 'none'",
 ].join('; ');
 
@@ -32,7 +35,8 @@ const webPolicy = (): Plugin => ({
 
 export default defineConfig({
   clearScreen: false,
-  server: {port: 1420, strictPort: true, fs: {allow: ['../..']}},
+  server: {port: 1420, strictPort: true, fs: {allow: ['../..']},
+    proxy: DEV_REMOTE ? {'/api': DEV_REMOTE, '/v1': DEV_REMOTE} : undefined},
   worker: {format: 'es'},
   build: {target: 'es2022', outDir: 'dist', emptyOutDir: true},
   plugins: [webPolicy()],

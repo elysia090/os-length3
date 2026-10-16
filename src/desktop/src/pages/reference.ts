@@ -1,5 +1,5 @@
 import {h} from '../dom.ts';
-import * as gitops from '../git.ts';
+import * as gitops from '../history.ts';
 import {onChange, store} from '../repos.ts';
 import {findInText, nameMatches, type Hit} from '../search.ts';
 import {sessionIfAny, type Run} from './terminal.ts';
@@ -199,7 +199,6 @@ export class Reference {
   private async diff() {
     const repo = this.repo;
     if (!repo) { this.empty('repoを開くと出ます'); return; }
-    if (!gitops.canCut()) { this.empty('Remote につなぐと、区切っていない変更が出ます'); return; }
     const run = ++this.run;
     let files: gitops.FileDiff[];
     try { files = await gitops.diff(repo); } catch (e) {

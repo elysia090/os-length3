@@ -31,8 +31,8 @@ frontend and no UI framework; the same frontend is the web build.
 - The rail, with the person's own icon at its foot (profile, edit, this
   device), and the profile (edit, validate, save locally).
 - Repos the app manages under its data directory (`repos/`). + creates
-  one from a template (standard, C, minimal) and runs `git init` without
-  the host's git configuration. Inbox and TODO belong to the app, not to
+  one from a template (standard, C, minimal); history is the Remote's, so
+  no `.git` is made. Inbox and TODO belong to the app, not to
   repos: TODO is a list on Home. Home lists the repos as cards.
 - Forge: the repos out to work on as pills in a band on the top line
   (⊕ at the left brings every other repo out at once, × takes one off;
@@ -48,7 +48,7 @@ frontend and no UI framework; the same frontend is the web build.
   `issue/`; diff and run output not connected yet) grows into the
   room. No tabs: files are chosen from File.
 - Prompt: in the app with a root installed, the distribution's root itself
-  (`l3 open`): its sh, gcc, make, git on this kernel, writing the repo
+  (`l3 prompt`): its sh, gcc, make, git on this kernel, writing the repo
   directly. Otherwise (and in a browser) translated BusyBox `sh` and `l3`
   running on the xlat kernel in a Worker, on the open repo. What the shell changes under `/root/<repo>` is
   written back through the store (text files up to the read limit), and
@@ -70,25 +70,31 @@ an issue or a TODO. Templates and the naming rules live once in `shared/`,
 read by the core, the app and both test suites.
 
 ```
-l3                          what is here
-l3 repo [new NAME -t c]     repos (Home, +)
-l3 file [REPO[/PATH]]       File: a directory's entries or a file's text
-l3 file write REPO/PATH     replace a file with standard input (Forge's save)
-l3 issue [REPO|new …]       Git's issues: numbered files in issue/
-l3 git [REPO]               the Git page: issues and changes handed in
-l3 todo [add …|done N]      Home's TODO
-l3 runtime                  this device's room, and what can be given back
-l3 reclaim                  give back what is this OS's own and not needed
-l3 root                     the distribution's roots on this device
-l3 root fetch               fetch the release root from the Remote and install it
-l3 root install BUNDLE      install a release bundle (checked by its digest)
-l3 open REPO [-- CMD]       the repo inside the root, on this kernel, unprivileged
+Home      l3                          this device and the Remote, repos, TODO
+          l3 todo [add …|done N]
+Forge     l3 repo [new NAME -t c]     repos here, and those only on the Remote
+          l3 repo open NAME           bring one from the Remote
+          l3 prompt REPO [-- CMD]     the Prompt: the repo inside the root
+File      l3 file [REPO[/PATH]]       a directory's entries or a file's text
+          l3 file write REPO/PATH     replace a file with standard input
+Git       l3 git [REPO]               issues, and what is not cut yet
+          l3 issue [REPO|REPO/NNN.md|new …]
+          l3 cut REPO/issue/NNN.md    区切る under that issue
+          l3 cut REPO "Fix：件名"      …or without one
+          l3 log REPO                 the cuts
+Runtime   l3 runtime                  the root, and この端末 by size: what can go
+          l3 free ID…|all             空ける (同期して空ける for a repo with changes)
+          l3 root [fetch|install B]
+Remote    l3 remote                   where each repo stands
+          l3 login [URL] | logout     a code approved in the browser by passkey
+          l3 sync [REPO]              now (it also happens after every change)
 ```
 
 On the host it uses the app's data directory (`$LENGTH3_HOME` overrides):
 `cargo install --path cli`. The same binary, built static for xlat, is
-`/bin/l3` in the Prompt, where only the open repo is present and Home's
-TODO, making repos and the device are left to the app.
+`/usr/bin/l3` in the root and `/bin/l3` in a browser's Prompt, where only
+the open repo is present and Home, the Remote and the device are left to
+the app.
 - File: hovering or pressing its icon lays the tree of "/" over any page —
   the whole system as the shell sees it (`/bin` from the fetched
   distribution, repos under `/root`) — and it stays 8 s after the pointer
@@ -99,29 +105,43 @@ TODO, making repos and the device are left to the app.
   "Fix：件名"), filtered by repo chips; a row opens the file in Forge, and
   「Issue を書く」 adds the next numbered file (natively through `repo_add`,
   which only makes new files in existing directories), as `l3 issue new`
-  does. 区切る cuts the changes under the current issue and pushes the cut
-  to the Remote.
-- Remote: the canonical copy (`remote/`): make an account (a token shown
-  once) or join with one; each repo and Home setting with where it stands
-  (push 済み, 未 push, Remote が先, ここだけ). Opening takes in what the
-  Remote has; in a browser, closing the tab lets go of every copy that is
-  pushed, and keeps what is not. Run one here with `node remote/serve.ts
-  DIR 8790 http://localhost:1420` and build or serve the app with
-  `VITE_LENGTH3_REMOTE=http://127.0.0.1:8790`; on Cloudflare it is
-  `remote/worker.ts` over R2 (`remote/wrangler.toml`, not deployed).
-- Runtime shows what this OS holds on the device, counted from allocated
-  blocks (each repo, how much of it is history), the host's free and total
-  marked as estimates, and its own leftover temporaries, which 空ける
-  (`reclaim`, or `l3 reclaim`) removes, reporting the bytes and how the
-  host's free space was seen to change. Prompts running show their memory
-  and can be stopped. In a browser it reads the origin's storage estimate
-  and says so.
+  does. Below: what is not cut yet (the draft against the last cut, by
+  folder) and 区切る under the current issue, then the cuts.
+- Remote: the canonical copy (`service/`). A browser makes an account with
+  a passkey (はじめる), signs in with one (パスキーで入る), or uses the
+  recovery code once when every passkey is gone; the app and l3 show a
+  code that a browser approves (`?device&user_code=`). Signed in: each repo
+  with where it stands (同期済み, 送っています, まだ送れていません), repos
+  only on the Remote with 開く, then passkeys, the recovery code and the
+  devices (sessions), each of which can be ended. Every change is sent as a
+  diff within half a second; the Remote's changes are seen within five
+  seconds and on focus; a file changed on both sides keeps this device's
+  and puts the other beside it as "name (別の端末).ext". In a browser,
+  closing the tab lets go of every copy the Remote holds all of.
+- Runtime: この端末, then everything this OS holds on it in one list,
+  largest first — repos, roots, leftovers, Home — each with what can be
+  done: 空ける, 同期して空ける (sent first, then let go; it comes back when
+  opened), or why it stays (a Prompt has it open, a link that cannot be
+  sent, the root in use). Sizes are allocated blocks; the host's free and
+  total are marked as estimates, and after freeing the change the host
+  shows is reported as observed. Prompts running show their memory and can
+  be stopped; then the environment in effect.
 - Every other purpose shows what it will hold, as a dashed empty box.
 
 The webview has no other host access: it reads nothing outside the app's
-data directory, runs no shell and launches no root. The one program the
-desktop runs is git, with an empty environment and every setting that could
-make it run another program turned off (`core/src/boundary.rs`).
+data directory, runs no shell and launches no root. The app starts no host
+program for a repo; its own tools run inside the root (`core/src/launch.rs`).
+
+The Remote (`service/`): Hono with Better Auth (anonymous accounts held by
+passkeys, a recovery code, device authorization, bearer sessions) on
+Drizzle; Neon in production, PGlite in tests and here:
+
+```
+node service/dev.ts DIR 8787 http://localhost:1420     # the Remote, here
+LENGTH3_DEV_REMOTE=http://127.0.0.1:8787 VITE_LENGTH3_REMOTE= npx vite
+LENGTH3_REMOTE=http://127.0.0.1:8787 l3 login
+npx wrangler deploy -c service/wrangler.toml            # on Cloudflare (not done)
+```
 
 ## Develop
 

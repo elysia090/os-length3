@@ -298,10 +298,11 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .usage-prompt { align-items: center; }
 .usage-prompt .button { min-height: var(--h-row); padding-block: 0; }
 .reclaimed { display: grid; gap: var(--s1); margin-bottom: var(--s3); }
-.work-act .grow { flex: 1; }
+.work-act .grow, .reclaim-act .grow { flex: 1; }
+.usage-rows + .work-act, .legend + .reclaimed { margin-top: var(--s4); }
 .reclaim-act { align-items: center; }
-.hold-row { display: grid; grid-template-columns: 7rem repeat(3, minmax(0, 1fr)); gap: var(--s3); padding: var(--s1) var(--s3); font-size: var(--t-meta); line-height: calc(var(--h-row) - 2 * var(--s1)); }
-.hold-row > span:first-child { font-weight: 600; }
+.space-why { max-width: 22em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--sans); }
+.row-item[data-room='Keep'] .row-name { color: var(--sub); }
 .remote-join { display: grid; gap: var(--s3); max-width: 560px; }
 .remote-join .line-in { flex: 1; }
 
@@ -479,3 +480,9 @@ mark { background: var(--ink); color: var(--ground); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }
+/* Remote: a device's code, read aloud from one screen to another */
+.device-code { font-size: var(--t-card); font-weight: 600; letter-spacing: .12em; }
+.device-page { max-width: 560px; margin: 12vh auto 0; padding: 0 var(--s5); display: grid; gap: var(--s5); }
+.button.link { border-color: transparent; background: transparent; padding-inline: 0; color: var(--sub); text-decoration: underline; }
+.row-item[data-where='offline'] .row-meta { color: var(--ink); }
+.card.repo.away { border-style: dashed; }
