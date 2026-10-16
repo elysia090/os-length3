@@ -61,7 +61,8 @@ export function forge(ctx: Context): Node[] {
 
   // The terminal: a box that lives at the bottom of the right pane and flies
   // up above the prompt box while the prompt is in use.
-  const termBox = h('section', {class: 'term-box', 'aria-label': 'Terminal'}, h('h2', {}, 'Terminal'));
+  // Named for what one does there: type at the prompt of the repo's sh.
+  const termBox = h('section', {class: 'term-box', 'aria-label': 'Prompt'}, h('h2', {}, 'Prompt'));
   const termHome = h('div', {class: 'term-home'}, termBox);
   const termSlot = h('div', {class: 'term-slot'});
   const prompt = h('textarea', {class: 'prompt-in', rows: '1', 'aria-label': 'プロンプト',
@@ -200,15 +201,19 @@ export function forge(ctx: Context): Node[] {
 const join = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
 
 
-/** Run `load` once, when `el` comes near the visible part of the flow or when asked. */
-function lazy(el: HTMLElement, load: () => Promise<void>): () => Promise<void> {
+/**
+ * Run `load` once, when `el` comes near the visible part of `root` or when
+ * asked. The scrolling flow must be the root: it clips what is outside it,
+ * so measuring against the window would never see the margin ahead.
+ */
+function lazy(el: HTMLElement, root: HTMLElement, load: () => Promise<void>): () => Promise<void> {
   let started: Promise<void> | null = null;
   const run = () => (started ??= load());
   const observer = new IntersectionObserver((seen) => {
     if (!seen.some((s) => s.isIntersecting)) return;
     observer.disconnect();
     void run();
-  }, {rootMargin: '1200px 0px'});
+  }, {root, rootMargin: '1200px 0px'});
   observer.observe(el);
   return () => { observer.disconnect(); return run(); };
 }
@@ -252,7 +257,7 @@ class Reader {
   directory(path: string): HTMLElement {
     const section = h('section', {class: 'dir', 'data-path': path || '/'}, path ? null : h('p', {class: 'muted'}, '…'));
     this.sections.set(path, section);
-    this.loads.set(path, lazy(section, () => this.fill(path, section)));
+    this.loads.set(path, lazy(section, this.flow, () => this.fill(path, section)));
     return section;
   }
 
@@ -280,7 +285,7 @@ class Reader {
     const number = (text: string) => {
       gutter.textContent = Array.from({length: Math.max(lineCount(text), 1)}, (_, i) => String(i + 1)).join('\n');
     };
-    this.fileLoads.set(path, lazy(section, async () => {
+    this.fileLoads.set(path, lazy(section, this.flow, async () => {
       let c;
       try { c = await store.read(this.repo, path); } catch (e) { state.textContent = String(e); return; }
       if (c.text === null) { sheet.replaceWith(h('p', {class: 'muted sheet-note'}, `バイナリ · ${bytes(c.size)}`)); return; }
@@ -297,6 +302,13 @@ class Reader {
       sheet.replaceChildren(gutter, area);
       this.editors.set(path, area);
       const fit = () => { area.style.height = 'auto'; area.style.height = `${area.scrollHeight}px`; };
+      // The whole box is the place to write: a press below the text puts the caret at its end.
+      sheet.addEventListener('pointerdown', (event) => {
+        if (event.target === area) return;
+        event.preventDefault();
+        area.focus();
+        area.setSelectionRange(area.value.length, area.value.length);
+      });
       requestAnimationFrame(fit);
       let saved = c.text;
       let timer = 0;

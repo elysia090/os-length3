@@ -19,6 +19,8 @@
   --h-control: 40px; --h-row: 32px; --h-place: 48px;
   --icon: 24px; --stroke: 1.6px;
   --motion: 120ms; --move: 280ms;
+  /* Lines are 1px; the file being worked on is drawn a little heavier. */
+  --line-work: 1.5px;
   /* Forge's band of repo chips sits this far down, between Home and the next rail icon. */
   --band: 64px;
   --rail: 72px;
@@ -246,16 +248,22 @@ a { color: var(--ink); }
 .path {
   position: sticky; top: calc(-1 * var(--s3)); z-index: 1;
   display: flex; align-items: center; gap: var(--s2); justify-content: space-between;
-  margin: 0 calc(-1 * var(--s5)); padding: var(--s2) var(--s5);
-  background: var(--ground);
+  margin: 0; padding: var(--s3) var(--s4) var(--s2);
+  background: var(--ground); border-radius: var(--r-place) var(--r-place) 0 0;
   font: 600 var(--t-meta) var(--mono);
 }
 .path span { font-weight: 400; }
-.file { margin-bottom: var(--s5); }
+/* Each file is a box drawn a little heavier than other lines, since it is
+   the thing being worked on, and roomy: the page scrolls, so a short file
+   still gets space to write in. */
+.file {
+  display: flex; flex-direction: column; min-height: clamp(280px, 55vh, 640px); margin-bottom: var(--s6);
+  border: var(--line-work) solid var(--edge); border-radius: var(--r-place);
+}
 /* A file reads like a plain text editor: line numbers in a quiet gutter,
    the text beside them, on the same lines. */
 .file-state { font-weight: 400; color: var(--sub); white-space: nowrap; }
-.sheet { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--s4); padding: var(--s2) 0 var(--s3); }
+.sheet { flex: 1; display: grid; grid-template-columns: auto minmax(0, 1fr); align-content: start; column-gap: var(--s4); padding: var(--s2) var(--s4) var(--s4); cursor: text; }
 .gutter, .code { margin: 0; padding: 0; font: var(--t-meta)/1.6 var(--mono); white-space: pre; tab-size: 4; }
 .gutter { color: var(--sub); text-align: right; user-select: none; min-width: 2ch; font-variant-numeric: tabular-nums; }
 .code { overflow-x: auto; }
@@ -263,7 +271,7 @@ a { color: var(--ink); }
 .code.edit { display: block; width: 100%; border: 0; background: transparent; color: var(--ink); resize: none; overflow-y: hidden; }
 .code.edit:focus { outline: none; }
 .file:focus-within > .path { color: var(--ink); }
-.sheet-note { padding: var(--s2) 0 var(--s3); font-size: var(--t-meta); }
+.sheet-note { padding: var(--s2) var(--s4) var(--s4); font-size: var(--t-meta); }
 .flow .revealed > .path { background: var(--raised); }
 
 /* The prompt box at the foot of the center, and the slot just above it

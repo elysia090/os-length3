@@ -113,7 +113,7 @@ export class Reference {
     if (this.query.value.trim()) { void this.search(this.query.value.trim()); return; }
     if (this.view === 'issue') void this.issues();
     else if (this.view === 'diff') this.empty('diff はまだありません。保存した変更をrepoの前の状態と比べられるようになると、ここに出ます。');
-    else this.empty('実行結果はまだ接続していません。今はTerminalに直接出ます。');
+    else this.empty('実行結果はまだ接続していません。今はPromptに直接出ます。');
   }
 
   private async search(query: string) {
@@ -162,7 +162,7 @@ export class Reference {
       return;
     }
     if (this.repo !== repo || this.view !== 'issue' || this.query.value.trim()) return;
-    if (!names.length) { this.empty('issue/ はまだ空です。ここに1件1fileで書きます。'); return; }
+    if (!names.length) { this.empty('issue/ はまだ空です。'); return; }
     this.body.replaceChildren(h('ul', {class: 'issue-list'}, ...names.map((n) => {
       const b = h('button', {type: 'button', class: 'link'}, n);
       b.addEventListener('click', () => this.events.reveal(`issue/${n}`));

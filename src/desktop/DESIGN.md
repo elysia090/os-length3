@@ -64,7 +64,9 @@ center shows Topic. The band is remembered on this device. Below the band the ce
 an endless page scrolled like a browser and opened at the file chosen in
 File. There are no tabs, no title, no index of links and no headings for
 directories. The center is where editing happens: each file is a plain
-text editor, a header with its place in "/" (`/root/<repo>/` quiet, the
+text editor in its own roomy box (at least about half the window high, so
+short files are not packed together; the page scrolls), a little heavier
+line than the rest; a header with its place in "/" (`/root/<repo>/` quiet, the
 rest plain), then line numbers in a quiet gutter beside the text, which is
 itself the field (no box; the caret is the only sign). Typing saves on its
 own a moment later, on leaving the file, or with Ctrl+S; the header says
@@ -78,7 +80,9 @@ A prompt box, like the one for an LLM, sits at the foot of the center. What
 is written there goes to the open repo's `sh` (Enter sends, Shift+Enter is
 a new line). While the prompt is in use the terminal flies up from the
 bottom of the right pane to just above the box (280 ms, one quick movement)
-and the reference grows down into the room it leaves; leaving the prompt
+and the reference grows down into the room it leaves. The terminal's box
+is labelled Prompt, after what one does there (the shell is BusyBox sh, so
+it is not called Bash); leaving the prompt
 (or Escape) sends it back the same way.
 
 The center takes three quarters of the width; the right pane takes one
@@ -122,7 +126,8 @@ Every value in `styles.css` comes from a token below.
   `ink` ring. Nothing else marks state (no underline, no bold-only).
 - **Selection** is the current-thing state too: `ink` with `ground` text,
   for selected text and for search matches.
-- **Lines.** 1 px. `rule` between regions and around places; `edge` around
+- **Lines.** 1 px, except the box of a file being edited in Forge, which is
+  a little heavier (1.5 px `edge`) because it is the work itself. `rule` between regions and around places; `edge` around
   things you press or type into. A dashed `rule` means one thing: room for
   something that is not here yet. Headings never get a rule.
 - **Words over symbols.** What a thing is reads off the screen as it is
