@@ -1,6 +1,9 @@
 name: Release
 
-# A tag os-length3-linux-vX.Y.Z publishes OS Length3 Linux X.Y.Z: the root
+# A version publishes OS Length3 Linux X.Y.Z: asked for by a pushed tag
+# os-length3-linux-vX.Y.Z, by a push that writes X.Y.Z into
+# src/desktop/RELEASE (the tag is then made at that commit), or by hand. It
+# publishes the root
 # (the pinned 0.1.0 root with this tree's l3, profile and shell, repackaged
 # by src/desktop/scripts/root-release.sh) and the web build (the app with
 # the Prompt's userland, src/desktop/scripts/web-release.sh), with their
@@ -9,6 +12,13 @@ name: Release
 on:
   push:
     tags: ['os-length3-linux-v*']
+    branches: ['**']
+    paths: ['src/desktop/RELEASE']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version, X.Y.Z; the tag os-length3-linux-vX.Y.Z is made at this run''s commit'
+        required: true
 
 permissions:
   contents: write
@@ -30,22 +40,34 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y musl-tools zstd zip
           rustup target add x86_64-unknown-linux-musl wasm32-unknown-unknown
-      - name: Version from the tag
+      - name: Version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          v=${GITHUB_REF_NAME#os-length3-linux-v}
+          case "$GITHUB_REF" in
+            refs/tags/*) v=${GITHUB_REF_NAME#os-length3-linux-v} ;;
+            *) v=${INPUT_VERSION:-$(tr -d ' \n' < src/desktop/RELEASE)} ;;
+          esac
           echo "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' || { echo "not a version: $v" >&2; exit 1; }
           echo "VERSION=$v" >> "$GITHUB_ENV"
+          echo "TAG=os-length3-linux-v$v" >> "$GITHUB_ENV"
+          # A version already published is left as it is.
+          if gh release view "os-length3-linux-v$v" >/dev/null 2>&1; then echo "SKIP=1" >> "$GITHUB_ENV"; echo "os-length3-linux-v$v is published already"; fi
       - name: Root
+        if: env.SKIP != '1'
         working-directory: src/desktop
         run: |
           curl -fsSL --retry 4 -o "$RUNNER_TEMP/base.tar.zst" "$BASE_URL"
           sh scripts/root-release.sh "$RUNNER_TEMP/base.tar.zst" "$GITHUB_WORKSPACE/out" "$VERSION"
       - name: Web
+        if: env.SKIP != '1'
         working-directory: src/desktop
         run: |
           sh scripts/web-release.sh
           mv length3-web.zip "$GITHUB_WORKSPACE/out/os-length3-linux-$VERSION-web.zip"
       - name: Digests and notes
+        if: env.SKIP != '1'
         working-directory: out
         run: |
           sha256sum os-length3-linux-$VERSION-web.zip >> SHA256SUMS
@@ -73,8 +95,10 @@ jobs:
           } > ../notes.md
           cat ../notes.md
       - name: Publish
+        if: env.SKIP != '1'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" out/* \
-            --title "OS Length3 Linux $VERSION" --notes-file notes.md --verify-tag
+          # A pushed tag is used as it is; from a run by hand, the tag is made at this commit.
+          gh release create "$TAG" out/* --target "$GITHUB_SHA" \
+            --title "OS Length3 Linux $VERSION" --notes-file notes.md
