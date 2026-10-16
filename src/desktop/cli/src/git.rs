@@ -105,10 +105,13 @@ fn next(s: &Stand, i: &Issue) -> Vec<String> {
         else if w.unpushed > 0 { out.push(format!("l3 push {}", i.repo)); }
         else if w.commits > 0 && !open && change.is_none_or(|c| c.state != "merged") { out.push(format!("l3 push {}", i.repo)); }
     }
-    // An undecided change: the receiver's Merge first, then the rest, Reset (taking it back) last.
-    if open {
-        out.push(format!("l3 merge {me}"));
-        out.push(format!("l3 review {me} approve|changes {}", tr!("[-m note]", "[-m メモ]")));
+    // An undecided change, in the app's order: its Review (approve, or a comment more), then
+    // Merge once this version is approved; Reject and Reset (taking it back) last.
+    if let Some(c) = change.filter(|_| open) {
+        let review = format!("l3 review {me} approve|changes {}", tr!("[-m note]", "[-m メモ]"));
+        let merge = format!("l3 merge {me}");
+        if c.reviews.iter().any(|r| r.version == c.version && r.verdict == "approve") { out.push(merge); out.push(review); }
+        else { out.push(review); out.push(merge); }
         out.push(format!("l3 reply {me} \"…\""));
         out.push(format!("l3 reject {me}"));
         if here(s, i) { out.push(format!("l3 reset {}", i.repo)); }
