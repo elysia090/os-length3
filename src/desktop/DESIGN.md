@@ -95,6 +95,25 @@ and a line pressed opens the center there with the line selected. Below,
 on the band line, one reference at a time, switched freely with chips: Issue (the repo's `issue/`, one file each), diff and 実行結果 (each
 says plainly that it is not connected yet). The chosen reference is remembered on this device.
 
+### Git
+
+What happens between a repo and the outside, in the mental model of the
+issues. The page header, then chips to look at one repo or all.
+
+- **Issue** is the unit of work and talk. The list is read straight from
+  each repo's `issue/`, one file per issue, so nothing is kept twice. Each
+  row is a place (a rounded box): the first line names it the way TODO
+  items are named, kind and title ("Fix：件名"), then quietly where it lives
+  (`repo · issue/001.md`) and the first line of its detail. A row opens that
+  file in Forge. 「Issue を書く」 writes a new file in the chosen repo's
+  `issue/`, numbered in the order written (001.md, 002.md, …; dates go in
+  the text). A repo without `issue/` cannot take one and says so.
+- **提出された変更** lists changes others pushed: kind and title, who and
+  when, the folders changed with lines added and removed, the check on that
+  exact version, settled by Merge or Reject. Close is for issues only. No
+  change can arrive before a Remote is joined, so for now it says so in a
+  dashed box instead of showing anything made up.
+
 ### New repo (+)
 
 A name on one line (the same field as the search box), the template as

@@ -34,6 +34,8 @@ export interface RepoStore {
   read(repo: string, path: string): Promise<Contents>;
   /** Replace the text of an existing file; returns its new size in bytes. */
   write(repo: string, path: string, text: string): Promise<number>;
+  /** Make a new file `name` in the existing directory `dir`; never replaces one. */
+  add(repo: string, dir: string, name: string, text: string): Promise<number>;
 }
 
 export const TEMPLATES: readonly {id: Template; label: string; files: readonly string[]}[] = [
@@ -58,6 +60,7 @@ class NativeStore implements RepoStore {
   tree(repo: string, path: string) { return this.call<Entry[]>('repo_tree', {repo, path}); }
   read(repo: string, path: string) { return this.call<Contents>('repo_read', {repo, path}); }
   write(repo: string, path: string, text: string) { return this.call<number>('repo_write', {repo, path, text}); }
+  add(repo: string, dir: string, name: string, text: string) { return this.call<number>('repo_add', {repo, dir, name, text}); }
 }
 
 /** Files of a new repo, mirroring the native templates. Inbox and TODO
@@ -98,6 +101,10 @@ export class MemoryStore implements RepoStore {
     const r = this.repos.get(repo);
     if (!r) throw new Error(`no repo ${repo}`);
     const prefix = path ? path.replace(/\/$/, '') + '/' : '';
+    // Like the native side: a directory that is not there is an error, not an empty list.
+    if (path && r.files.get(path.replace(/\/$/, '')) !== null && ![...r.files.keys()].some((p) => p.startsWith(prefix))) {
+      throw new Error(`no directory ${path}`);
+    }
     const seen = new Map<string, Entry>();
     for (const [p, v] of r.files) {
       if (!p.startsWith(prefix)) continue;
@@ -117,6 +124,18 @@ export class MemoryStore implements RepoStore {
     const r = this.repos.get(repo);
     const old = r?.files.get(path);
     if (!r || old === undefined || old === null) throw new Error(`no file ${path}`);
+    r.files.set(path, text);
+    r.modified = Date.now();
+    return new TextEncoder().encode(text).length;
+  }
+  async add(repo: string, dir: string, name: string, text: string) {
+    const r = this.repos.get(repo);
+    if (!r) throw new Error(`no repo ${repo}`);
+    if (!name || name.startsWith('.') || name.includes('/')) throw new Error(`invalid file name ${name}`);
+    const hasDir = r.files.get(dir) === null || [...r.files.keys()].some((p) => p.startsWith(`${dir}/`));
+    if (!hasDir) throw new Error(`no directory ${dir}`);
+    const path = `${dir}/${name}`;
+    if (r.files.has(path)) throw new Error(`${path} already exists`);
     r.files.set(path, text);
     r.modified = Date.now();
     return new TextEncoder().encode(text).length;

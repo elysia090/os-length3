@@ -216,6 +216,24 @@ a { color: var(--ink); }
 
 .card.repo.revealed { background: var(--raised); border-color: var(--ink); }
 
+/* Git: issues read from each repo's issue/, rows named by kind and title */
+.git-filter { margin-top: var(--s5); }
+.section > h2 > span small { margin-left: var(--s2); }
+.issue-rows { display: grid; gap: var(--s1); }
+.issue-row {
+  display: grid; gap: 2px; padding: var(--s3) var(--s4); text-align: left; cursor: pointer;
+  border: 1px solid var(--rule); border-radius: var(--r-place); background: transparent;
+}
+.issue-row:hover { background: var(--raised); }
+.issue-head { font-weight: 600; }
+.issue-kind { font-weight: 700; }
+.issue-where { font: var(--t-meta)/1.6 var(--mono); }
+.issue-detail { font-size: var(--t-meta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.issue-form { display: grid; gap: var(--s3); margin-bottom: var(--s4); padding: var(--s4); border: var(--line-work) solid var(--edge); border-radius: var(--r-place); }
+.issue-form[hidden] { display: none; }
+.issue-text { min-height: 96px; padding: var(--s2) var(--s3); resize: none; font: var(--t-body)/1.6 var(--sans); }
+.empty p + p { margin-top: var(--s2); }
+
 /* New repo: a name, a template chip, and what File will show */
 .new-repo { margin-top: var(--s5); display: grid; gap: var(--s5); max-width: 520px; }
 .field { display: grid; gap: var(--s2); }

@@ -3,6 +3,7 @@ import {icon} from './icons.ts';
 import {placeholder} from './pages/common.ts';
 import type {Context} from './pages/context.ts';
 import {forge, revealNext, showInForge} from './pages/forge.ts';
+import {git} from './pages/git.ts';
 import {currentProfile, home, startEditing} from './pages/home.ts';
 import {Me} from './pages/me.ts';
 import {newRepo} from './pages/new-repo.ts';
@@ -92,6 +93,7 @@ function render() {
     : current === 'forge' ? forge(ctx)
     : current === 'new-repo' ? newRepo(ctx)
     : current === 'runtime' ? runtime()
+    : current === 'git' ? git(ctx)
     : placeholder(current);
   page.replaceChildren(...nodes);
   me.paint();

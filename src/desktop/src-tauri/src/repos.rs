@@ -211,6 +211,28 @@ impl Repos {
     }
 }
 
+impl Repos {
+    /// Make a new file `name` in the existing directory `dir` of `repo`. An
+    /// existing file is never replaced, and the name is one plain path part.
+    pub fn add(&self, repo: &str, dir: &str, name: &str, text: &str, limit: u64) -> Result<u64> {
+        if name.is_empty() || name.starts_with('.') || name.contains('/') || name.contains('\\') {
+            return Err(format!("invalid file name {name:?}"));
+        }
+        if text.len() as u64 > limit {
+            return Err(format!("{name:?} is larger than {limit} bytes"));
+        }
+        let parent = self.inside(repo, dir)?;
+        if !fs::metadata(&parent).map_err(|e| e.to_string())?.is_dir() {
+            return Err(format!("{dir:?} is not a directory"));
+        }
+        use std::io::Write;
+        let mut file = fs::OpenOptions::new().write(true).create_new(true).open(parent.join(name))
+            .map_err(|e| e.to_string())?;
+        file.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
+        Ok(text.len() as u64)
+    }
+}
+
 /// `git init` without the user's global or system configuration, so a new
 /// repo never inherits host settings. Missing git just leaves no `.git`.
 fn init_git(dir: &Path) {
@@ -286,6 +308,20 @@ mod tests {
         let names: Vec<String> = r.tree("a", "src").unwrap().into_iter().map(|e| e.name).collect();
         assert_eq!(names, ["main.c"]);
         assert_eq!(r.read("b", "README.md", 100).unwrap().text.as_deref(), Some("# b\n"));
+    }
+
+    #[test]
+    fn new_files_go_into_existing_directories_and_never_replace() {
+        let r = scratch("add");
+        r.create("a", "standard").unwrap();
+        assert_eq!(r.add("a", "issue", "001.md", "Fix：x\n", 100).unwrap(), 8);
+        assert_eq!(r.read("a", "issue/001.md", 100).unwrap().text.as_deref(), Some("Fix：x\n"));
+        assert!(r.add("a", "issue", "001.md", "again", 100).is_err());
+        assert!(r.add("a", "missing", "x.md", "x", 100).is_err());
+        assert!(r.add("a", "issue", "../x.md", "x", 100).is_err());
+        assert!(r.add("a", "issue", ".hidden", "x", 100).is_err());
+        assert!(r.add("a", "../b", "x.md", "x", 100).is_err());
+        assert!(r.add("a", "README.md", "x.md", "x", 100).is_err());
     }
 
     #[test]

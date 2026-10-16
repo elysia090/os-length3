@@ -58,6 +58,11 @@ separate surface and nothing here depends on it.
   leaves. ▷/▽ before a folder opens it; a name inside a repo opens that
   place in Forge. Every path from the webview is checked
   to stay inside its repo after following symlinks.
+- Git: the repos' issues, read from each `issue/` (one file each, first line
+  "Fix：件名"), filtered by repo chips; a row opens the file in Forge, and
+  「Issue を書く」 adds the next numbered file (natively through `repo_add`,
+  which only makes new files in existing directories). Changes pushed by
+  others need a Remote, and the page says so.
 - Runtime shows this device's storage: what the app holds, used, free and
   total, measured by the `capacity` command (statvfs plus allocated bytes
   under the app directory). In a browser it reads the origin's storage

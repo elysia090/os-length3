@@ -90,11 +90,17 @@ fn repo_write(app: tauri::AppHandle, repo: String, path: String, text: String) -
     managed(&app)?.write(&repo, &path, &text, READ_LIMIT)
 }
 
+/// A new file in an existing directory of the repo; never replaces one.
+#[tauri::command]
+fn repo_add(app: tauri::AppHandle, repo: String, dir: String, name: String, text: String) -> Result<u64, String> {
+    managed(&app)?.add(&repo, &dir, &name, &text, READ_LIMIT)
+}
+
 const READ_LIMIT: u64 = 256 * 1024;
 
 fn main() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![capacity, repo_list, repo_create, repo_tree, repo_read, repo_write])
+        .invoke_handler(tauri::generate_handler![capacity, repo_list, repo_create, repo_tree, repo_read, repo_write, repo_add])
         .run(tauri::generate_context!())
         .expect("Length³ OS shell failed to start");
 }

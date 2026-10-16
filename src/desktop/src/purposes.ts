@@ -27,7 +27,7 @@ export const PURPOSES: readonly Purpose[] = [
   {id: 'file', label: 'File', role: '/ のtree',
     detail: 'システム全体の / を、今のページに重ねて開く。repoの中を選ぶとForgeでそこを開く。', implemented: true},
   {id: 'git', label: 'Git', role: 'repoの外部状態',
-    detail: '誰がいつpushしたか、提出された変更の確認・Merge・Rejectがどうなっているか。', implemented: false},
+    detail: '誰がいつpushしたか、提出された変更の確認・Merge・Rejectがどうなっているか。', implemented: true},
   {id: 'runtime', label: 'Runtime', role: '有効化された環境',
     detail: '実際に有効なbase・ツール版・Dotfilesの差分と、その適用元。', implemented: true},
   {id: 'remote', label: 'Remote', role: '同期',
