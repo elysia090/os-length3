@@ -38,7 +38,7 @@ export class Reference {
     this.events = events;
     const bar = h('div', {class: 'chips', role: 'group', 'aria-label': '参照'});
     for (const v of VIEWS) {
-      const chip = h('button', {type: 'button', class: 'chip small-chip'}, v.label);
+      const chip = h('button', {type: 'button', class: 'chip'}, v.label);
       chip.addEventListener('click', () => this.choose(v.id));
       this.chips.set(v.id, chip);
       bar.append(chip);

@@ -1,15 +1,17 @@
 import {bytes, h} from '../dom.ts';
 import {store, type Entry} from '../repos.ts';
 import type {Context} from './context.ts';
+import {readingOrder} from '../reading.ts';
 import {Reference} from './reference.ts';
 import {terminalFor} from './terminal.ts';
 
 /**
- * Forge, the place you work: the repos as a strip of chips across the top,
- * the open repo read like a page in a browser in the large center (scrolled
- * to the file chosen in File), and a narrow right pane that stays out of the
- * way: a reference switched freely on top, the terminal below. There are no
- * tabs here; files are chosen from File.
+ * Forge, the place you work. From the first moment the large center is the
+ * contents of File: the open repo's files one after another, read like a
+ * page in a browser and scrolled to the file chosen in File. Nothing sits
+ * above it, and there are no tabs; repos and files are chosen from File. A
+ * narrow right pane stays out of the way: a reference switched freely on
+ * top, the terminal below.
  */
 
 /** A path to scroll to once Forge is drawn. */
@@ -29,13 +31,12 @@ export function revealNext(path: string) { pending = path || null; }
 
 export function forge(ctx: Context): Node[] {
   let reader: Reader | null = null;
-  const strip = h('nav', {class: 'repo-strip', 'aria-label': 'repo'});
   const flow = h('section', {class: 'flow', tabindex: '0', 'aria-label': 'repoの中身'});
   const terminalTitle = h('h2', {id: 'terminal-title'}, 'Terminal');
   const terminalPane = h('section', {class: 'pane terminal', 'aria-labelledby': 'terminal-title'}, terminalTitle);
   const reference = new Reference({reveal: (path) => { chosen = path; soon(); void reader?.reveal(path); }});
   const side = h('aside', {class: 'side', 'aria-label': '参照とターミナル'}, reference.element, terminalPane);
-  const work = h('div', {class: 'work'}, strip, flow, side);
+  const work = h('div', {class: 'work'}, flow, side);
 
   // The reference follows the file at the top of the center as it scrolls,
   // or the file just chosen in File until the person scrolls themselves
@@ -61,16 +62,13 @@ export function forge(ctx: Context): Node[] {
   }
   new MutationObserver(soon).observe(flow, {subtree: true, childList: true, attributes: true, attributeFilter: ['data-lines']});
 
-  /** Show `repo` in the strip, the center and the terminal, in place. */
+  /** Show `repo` in the center and the terminal, in place. */
   const show = (repo: string, path = '') => {
     if (reader?.repo !== repo) {
       ctx.remember(repo);
-      for (const chip of strip.querySelectorAll<HTMLElement>('.chip')) {
-        if (chip.dataset.repo === repo) chip.setAttribute('aria-current', 'page'); else chip.removeAttribute('aria-current');
-      }
       reader = new Reader(repo);
       reference.setRepo(repo);
-      flow.replaceChildren(h('h1', {class: 'flow-title'}, repo), reader.directory('', 0));
+      flow.replaceChildren(reader.directory(''));
       flow.scrollTop = 0;
       terminalPane.replaceChildren(terminalTitle, terminalFor(repo));
     }
@@ -80,11 +78,6 @@ export function forge(ctx: Context): Node[] {
 
   void store.list().then((repos) => {
     const current = ctx.repo && repos.some((r) => r.name === ctx.repo) ? ctx.repo : repos[0]?.name ?? null;
-    for (const r of repos) {
-      const chip = h('button', {type: 'button', class: 'chip', 'data-repo': r.name}, r.name);
-      chip.addEventListener('click', () => show(r.name));
-      strip.append(chip);
-    }
     const path = pending ?? '';
     pending = null;
     if (current) { show(current, path); return; }
@@ -95,6 +88,7 @@ export function forge(ctx: Context): Node[] {
 }
 
 const join = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
+
 
 /** Run `load` once, when `el` comes near the visible part of the flow or when asked. */
 function lazy(el: HTMLElement, load: () => Promise<void>): () => Promise<void> {
@@ -109,7 +103,7 @@ function lazy(el: HTMLElement, load: () => Promise<void>): () => Promise<void> {
   return () => { observer.disconnect(); return run(); };
 }
 
-/** One repo read top to bottom. */
+/** One repo read top to bottom: only files, directories are just where they come from. */
 class Reader {
   readonly repo: string;
   /** Directory loaders by path ('' is the repo root). */
@@ -130,28 +124,27 @@ class Reader {
     setTimeout(() => target.classList.remove('revealed'), 1200);
   }
 
-  directory(path: string, depth: number): HTMLElement {
-    const section = h('section', {class: 'dir', 'data-path': path || '/'});
+  directory(path: string): HTMLElement {
+    const section = h('section', {class: 'dir', 'data-path': path || '/'}, path ? null : h('p', {class: 'muted'}, '…'));
     this.sections.set(path, section);
-    if (path) section.append(h('h2', {class: 'path', style: `--depth:${depth}`}, `${path}/`));
-    const body = h('div', {class: 'dir-body'}, h('p', {class: 'muted'}, '…'));
-    section.append(body);
-    this.loads.set(path, lazy(section, () => this.fill(path, depth, body)));
+    this.loads.set(path, lazy(section, () => this.fill(path, section)));
     return section;
   }
 
-  private async fill(path: string, depth: number, body: HTMLElement) {
+  private async fill(path: string, section: HTMLElement) {
     let entries: Entry[];
-    try { entries = await store.tree(this.repo, path); } catch (e) { body.replaceChildren(h('p', {class: 'muted'}, String(e))); return; }
-    if (!entries.length) { body.replaceChildren(h('p', {class: 'muted'}, '空のディレクトリ')); return; }
-    // Each entry in order, like one long page; there is no index to click.
-    body.replaceChildren(...entries.map((e) =>
-      e.kind === 'dir' ? this.directory(join(path, e.name), depth + 1) : this.file(join(path, e.name), e)));
+    try { entries = await store.tree(this.repo, path); } catch (e) { section.replaceChildren(h('p', {class: 'muted'}, String(e))); return; }
+    // An empty directory shows nothing; only an empty repo says so.
+    if (!entries.length) { section.replaceChildren(path ? '' : h('div', {class: 'empty'}, 'このrepoにはまだfileがありません。')); return; }
+    section.replaceChildren(...readingOrder(entries).map((e) =>
+      e.kind === 'dir' ? this.directory(join(path, e.name)) : this.file(join(path, e.name), e)));
   }
 
   private file(path: string, entry: Entry): HTMLElement {
+    // The heading is the file's place in "/": the repo part quiet, the rest plain.
     const section = h('section', {class: 'file', 'data-path': path, 'data-size': String(entry.size)},
-      h('h2', {class: 'path'}, path, h('span', {class: 'muted'}, bytes(entry.size))));
+      h('h2', {class: 'path'}, h('span', {}, h('span', {class: 'muted'}, `/root/${this.repo}/`), path),
+        h('span', {class: 'muted'}, bytes(entry.size))));
     this.sections.set(path, section);
     const body = h('pre', {class: 'code'}, '…');
     section.append(body);

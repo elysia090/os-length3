@@ -49,7 +49,7 @@ function railButton(id: PurposeId): HTMLButtonElement {
   const p = purpose(id), button = document.createElement('button');
   button.type = 'button';
   button.id = `purpose-${id}`;
-  button.className = id === 'new-repo' ? 'rail-item rail-new' : 'rail-item';
+  button.className = id === 'new-repo' ? 'rail-item rail-new' : id === 'home' ? 'rail-item rail-home' : 'rail-item';
   button.setAttribute('aria-label', p.label);
   button.append(icon(id), h('span', {class: 'rail-tag', 'aria-hidden': 'true'}, p.label));
   if (id === 'file') {

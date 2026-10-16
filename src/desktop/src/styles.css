@@ -54,7 +54,10 @@ a { color: var(--ink); }
 
 /* ---- 1. Rail ---- */
 .rail { border-right: 1px solid var(--rule); height: 100vh; position: sticky; top: 0; }
-.rail-tabs { display: flex; flex-direction: column; align-items: center; gap: var(--s1); height: 100%; padding: var(--s3) 0; }
+.rail-tabs { display: flex; flex-direction: column; align-items: center; gap: var(--s1); height: 100%; padding: var(--s5) 0 var(--s3); }
+/* Home is who you are; the work starts a clear step below it, which also
+   sets the rail's weight a little lower. */
+.rail-home { margin-bottom: var(--s6); }
 .rail-item {
   position: relative; display: grid; place-items: center;
   width: var(--h-place); height: var(--h-place); border: 0; border-radius: var(--r-place);
@@ -184,31 +187,28 @@ a { color: var(--ink); }
 .legend { margin-top: var(--s3); display: flex; flex-wrap: wrap; gap: var(--s5); }
 .legend b { font-size: var(--t-card); font-weight: 600; display: block; }
 
-/* Forge: the repo chips on top, the center read like a page (3/4), and a
-   narrow side (1/4) that stays out of the way. */
+/* Forge: the center is File's contents from the first moment (3/4), with
+   nothing above it, and a narrow side (1/4) that stays out of the way. */
 .page.page-work { padding: 0; height: 100vh; overflow: hidden; }
 .page.page-work > .work { max-width: none; }
-.work { height: 100vh; display: grid; grid-template-columns: minmax(0, 3fr) minmax(280px, 1fr); grid-template-rows: auto minmax(0, 1fr); }
-.repo-strip { grid-column: 1 / -1; display: flex; gap: var(--s2); align-items: center; padding: var(--s3) var(--s5); border-bottom: 1px solid var(--rule); overflow-x: auto; }
+.work { height: 100vh; display: grid; grid-template-columns: minmax(0, 3fr) minmax(280px, 1fr); }
 /* A chip picks one of several, like the template choice: round, outlined. */
 .chip {
-  flex: none; min-height: var(--h-row); padding: 0 var(--s4); border: 1px solid var(--edge); border-radius: var(--r-round);
-  background: transparent; cursor: pointer; white-space: nowrap;
+  flex: none; min-height: var(--h-row); padding: 0 var(--s3); border: 1px solid var(--edge); border-radius: var(--r-round);
+  background: transparent; cursor: pointer; white-space: nowrap; font-size: var(--t-meta);
 }
 .chips { display: flex; flex-wrap: wrap; gap: var(--s2); }
-.chip.small-chip { padding: 0 var(--s3); font-size: var(--t-meta); }
 .flow { overflow-y: auto; padding: var(--s5) var(--s5) var(--s6); border-right: 1px solid var(--rule); }
 .flow:focus-visible { outline-offset: -2px; }
-.flow-title { font-size: var(--t-title); font-weight: 700; margin-bottom: var(--s3); }
 .path {
   position: sticky; top: calc(-1 * var(--s5)); z-index: 1;
   display: flex; align-items: center; gap: var(--s2); justify-content: space-between;
-  margin: var(--s5) calc(-1 * var(--s5)) 0; padding: var(--s2) var(--s5);
+  margin: 0 calc(-1 * var(--s5)); padding: var(--s2) var(--s5);
   background: var(--ground);
   font: 600 var(--t-meta) var(--mono);
 }
 .path span { font-weight: 400; }
-.dir > .path { justify-content: start; }
+.file { margin-bottom: var(--s5); }
 .code { margin: 0; padding: var(--s3) 0; font: var(--t-meta)/1.6 var(--mono); white-space: pre; overflow-x: auto; tab-size: 4; }
 .side { display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); min-height: 0; }
 .pane.reference { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: var(--s3); }

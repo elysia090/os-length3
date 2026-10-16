@@ -20,6 +20,8 @@ top, then the page each icon leads to.
   the one operation: it lays its tree over the page instead (below).
 - Item 48×48, radius 12, icon 24 px with a 1.6 px stroke; + is a 40 px
   round button with an `edge` outline. States as everywhere (§3).
+- Home is who you are and stands a clear step (40 px) above the work
+  icons; the rail starts 24 px down, so its weight sits a little low.
 
 ## 2. Pages
 
@@ -46,11 +48,14 @@ strikes through and fades the first line only.
 
 ### Forge
 
-Where you work. The repos run across the top as chips, like the topic
-chips over a video list; the chosen one is filled. The large center reads
-the repo like one long page in a browser, every directory and file in
-order, and scrolls to the file chosen in File. There are no tabs and no
-index of links here: files are chosen from File, which is quicker.
+Where you work. From the first moment the center is the contents of File:
+the open repo's files one after another, read like one long page in a
+browser and scrolled to the file chosen in File. Nothing sits above it: no
+repo strip, no title, no tabs, no index of links, no headings for
+directories. Each file is headed by its place in "/" (`/root/<repo>/` quiet,
+the rest plain). In each directory README comes first, then the other
+files, then the directories. Repos and files are chosen from File, which is
+quicker.
 
 The center takes three quarters of the width; the right pane takes one
 quarter (at least 280 px) so it never gets in the way. Its bottom is the
