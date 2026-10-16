@@ -229,7 +229,8 @@ a { color: var(--ink); }
 .issue-kind { font-weight: 700; }
 .issue-where { font: var(--t-meta)/1.6 var(--mono); }
 .issue-detail { font-size: var(--t-meta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.issue-form { display: grid; gap: var(--s3); margin-bottom: var(--s4); padding: var(--s4); border: var(--line-work) solid var(--edge); border-radius: var(--r-place); }
+/* Writing is kept to a comfortable line length, like the New repo form, not the list's full width. */
+.issue-form { display: grid; gap: var(--s3); max-width: 640px; margin-bottom: var(--s4); padding: var(--s4); border: var(--line-work) solid var(--edge); border-radius: var(--r-place); }
 .issue-form[hidden] { display: none; }
 .issue-text { min-height: 96px; padding: var(--s2) var(--s3); resize: none; font: var(--t-body)/1.6 var(--sans); }
 .empty p + p { margin-top: var(--s2); }
