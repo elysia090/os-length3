@@ -13,52 +13,52 @@ import {tree} from './tree.ts';
  * inside a repo in the tree scrolls the center to it.
  */
 
-/** A path chosen in the tree for a repo that is not open yet. */
-let pendingReveal: string | null = null;
-
 export function file(ctx: Context): Node[] {
   let reader: Reader | null = null;
   const left = tree(ctx.repo, {
     choose(repo, path) {
-      if (reader && reader.repo === repo) { void reader.reveal(path); return; }
-      pendingReveal = path;
-      ctx.openRepo(repo);
+      if (reader?.repo !== repo) show(repo);
+      void reader?.reveal(path);
     },
   });
   const strip = h('nav', {class: 'repo-strip', 'aria-label': 'repo'});
   const flow = h('section', {class: 'flow', tabindex: '0', 'aria-label': 'repoの中身'});
+  const terminalTitle = h('h2', {id: 'terminal-title'}, 'Terminal');
+  const terminalPane = h('section', {class: 'pane terminal', 'aria-labelledby': 'terminal-title'}, terminalTitle);
   const side = h('aside', {class: 'side', 'aria-label': '参照とターミナル'},
     h('section', {class: 'pane', 'aria-labelledby': 'reference-title'},
       h('h2', {id: 'reference-title'}, '参照'),
       h('div', {class: 'empty'}, 'プレビュー・diff・実行結果・関連Issueを、今の作業に合わせて切り替えて見る場所です。まだ接続していません。')),
-    h('section', {class: 'pane terminal', 'aria-labelledby': 'terminal-title'},
-      h('h2', {id: 'terminal-title'}, 'Terminal')));
-  const terminalPane = side.lastElementChild as HTMLElement;
+    terminalPane);
+
+  /** Show `repo` in the strip, the center and the terminal, in place: the tree stays as it is. */
+  const show = (repo: string) => {
+    ctx.remember(repo);
+    left.current(repo);
+    for (const tab of strip.querySelectorAll<HTMLElement>('.repo-tab[data-repo]')) {
+      if (tab.dataset.repo === repo) tab.setAttribute('aria-current', 'page'); else tab.removeAttribute('aria-current');
+    }
+    reader = new Reader(repo);
+    flow.replaceChildren(h('h1', {class: 'flow-title'}, repo), reader.directory('', 0));
+    flow.scrollTop = 0;
+    terminalPane.replaceChildren(terminalTitle, terminalFor(repo));
+  };
 
   void store.list().then((repos) => {
     const current = ctx.repo && repos.some((r) => r.name === ctx.repo) ? ctx.repo : repos[0]?.name ?? null;
     for (const r of repos) {
-      const tab = h('button', {type: 'button', class: 'repo-tab'}, r.name);
-      if (r.name === current) tab.setAttribute('aria-current', 'page');
-      tab.addEventListener('click', () => ctx.openRepo(r.name));
+      const tab = h('button', {type: 'button', class: 'repo-tab', 'data-repo': r.name}, r.name);
+      tab.addEventListener('click', () => show(r.name));
       strip.append(tab);
     }
     const add = h('button', {type: 'button', class: 'repo-tab add', 'aria-label': '新しいrepo'}, icon('new-repo'));
     add.addEventListener('click', () => ctx.go('new-repo'));
     strip.append(add);
-    if (!current) {
-      flow.append(h('div', {class: 'empty'}, 'repoがありません。上の ＋ から作れます。'));
-      terminalPane.append(h('div', {class: 'empty'}, 'repoを開くと、そのrepoでshellが動きます。'));
-      return;
-    }
-    terminalPane.append(terminalFor(current));
-    reader = new Reader(current);
-    flow.append(h('h1', {class: 'flow-title'}, current), reader.directory('', 0));
-    const path = pendingReveal;
-    pendingReveal = null;
-    if (path) void reader.reveal(path);
+    if (current) { show(current); return; }
+    flow.append(h('div', {class: 'empty'}, 'repoがありません。上の ＋ から作れます。'));
+    terminalPane.append(h('div', {class: 'empty'}, 'repoを開くと、そのrepoでshellが動きます。'));
   });
-  return [h('div', {class: 'work'}, left, strip, flow, side)];
+  return [h('div', {class: 'work'}, left.element, strip, flow, side)];
 }
 
 const join = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);

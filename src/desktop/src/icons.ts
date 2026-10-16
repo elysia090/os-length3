@@ -11,7 +11,7 @@ const PATHS: Record<PurposeId, string> = {
   remote: 'M7 18h10a4 4 0 0 0 .5-7.97A6 6 0 0 0 6 11.5 3.25 3.25 0 0 0 7 18z',
   topic: 'M5 9h14M5 15h14M10 4 8 20M16 4l-2 16',
   inbox: 'M4 13 7 5h10l3 8v6H4zM4 13h5l1 2h4l1-2h5',
-  'new-repo': 'M4 4h16v16H4zM12 8v8M8 12h8',
+  'new-repo': 'M12 5v14M5 12h14',
 };
 
 export function icon(id: PurposeId): SVGSVGElement {

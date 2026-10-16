@@ -5,6 +5,8 @@ export interface Context {
   go(id: PurposeId): void;
   /** Open a repo in File. */
   openRepo(name: string): void;
+  /** Record the repo File shows, without leaving or redrawing the page. */
+  remember(name: string): void;
   /** The repo File shows, if any. */
   readonly repo: string | null;
   rerender(): void;

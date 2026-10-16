@@ -12,14 +12,13 @@ top, then the page each icon leads to.
   **Home** (who you are, what you are doing) → **File** (what a repo
   contains) → **Git** (what happened outside) → **Forge** (your own work in
   progress) → **Runtime** (the environment) → **Remote** (sync) →
-  **Topic** (posts) → **Inbox** (what was sent to you). **□+** (a new repo)
-  sits apart at the bottom because it starts something rather than opening
-  a place.
+  **Topic** (posts) → **Inbox** (what was sent to you). **+** (a new repo)
+  comes right under them, a step apart, and is round because it starts
+  something rather than opening a place (§3, shapes).
 - A name appears beside an icon on hover or keyboard focus. Nothing else
   opens next to the rail: choosing an icon replaces the whole page.
-- Item 48×48, radius 12, icon 24 px with a 1.6 px stroke.
-  Rest: ink icon. Hover: `raised` fill. Selected: `ink` fill, `ground`
-  icon. Focus: 2 px `ink` ring.
+- Item 48×48, radius 12, icon 24 px with a 1.6 px stroke; + is a 40 px
+  round button with an `edge` outline. States as everywhere (§3).
 
 ## 2. Pages
 
@@ -53,9 +52,12 @@ holds the person's repos, `/etc` and `/tmp` start empty. `/root` is open at
 first.
 
 The tree is an operation, not a column: it lies over the left edge of the
-page (a 28 px edge marked "/") and opens while the pointer is on it or
-keyboard focus is in it, after a short delay so passing across does not
-open it. The center and the right never move or shrink. A folder's
+page (a 40 px edge marked "/") and opens when the pointer rests on it or
+keyboard focus is in it. Once out it stays for 8 seconds after the pointer
+leaves, so reaching across the page and back does not lose it; a press
+outside or Escape closes it at once. The center and the right never move
+or shrink; switching repo from the tree changes them in place and leaves
+the tree open. A folder's
 triangle comes before its name, ▷ closed and ▽ open (one outlined shape,
 turned). Inside a repo a name scrolls the center to that place; elsewhere it
 opens and closes the folder. Open folders are remembered while the app
@@ -66,23 +68,44 @@ repo is read top to bottom, directory index first, then each directory and
 file in order. The right half holds the reference (top) and the terminal
 (bottom) at the same weight as the center.
 
-## 3. Tokens
+## 3. Language
+
+One rule per thing, applied everywhere, with no exceptions made by eye.
+Every value in `styles.css` comes from a token below.
+
+- **Shapes.** A place you go to (rail item, card, repo tab, tree row) is a
+  rounded square. An action you press (button, choice, +) is round. A field
+  you type into is slightly rounded and filled `raised`.
+- **States.** Hover is a `raised` fill. The current or chosen thing is an
+  `ink` fill with `ground` text: the rail item, the repo tab, the open repo
+  in the tree, the chosen template, the primary button. Focus is a 2 px
+  `ink` ring. Nothing else marks state (no underline, no bold-only).
+- **Lines.** 1 px. `rule` between regions and around places; `edge` around
+  things you press or type into. A dashed `rule` means one thing: room for
+  something that is not here yet. Headings never get a rule.
+- **Words over symbols.** What a thing is reads off the screen as it is
+  written: a TODO kind shows as "Fix：", a link in `/bin` shows as the
+  command's name only, with no arrows.
+- **Motion.** 120 ms fades only. Reduced motion turns them off.
+- No shadows, blur, glow or gradients.
+
+## 4. Tokens
 
 | Role | Value | Use |
 | --- | --- | --- |
 | `ground` | `#D2D2CD` | every surface |
-| `ink` | `#292B2A` | text, icons, selection, primary action (9.4:1 on ground) |
-| `rule` | `#929590` | dividers, card outlines; decorative only (2.0:1) |
+| `ink` | `#292B2A` | text, icons, the current thing, primary action (9.4:1 on ground) |
+| `rule` | `#929590` | dividers, outlines of places; decorative only (2.0:1) |
 | `sub` | `#56595A` | secondary text (4.7:1) |
-| `edge` | `#6B6E6B` | borders of inputs and controls, which must be seen (3.4:1) |
-| `raised` | `#DCDCD8` | input fill, hover, the current tab |
+| `edge` | `#6B6E6B` | outlines of fields and controls, which must be seen (3.4:1) |
+| `raised` | `#DCDCD8` | field fill, hover |
 
-No other colours. No shadows, blur, glow or gradients. State is carried by
-shape and words as well as colour: a dashed outline means "not connected
-yet" or "create"; a strike-through means done.
+No other colours.
 
 Type: the system sans; monospace only for paths, code and the terminal.
-Sizes 28 (identity), 24 (page title), 17 (card title), 15 (body), 13 (meta).
+Sizes 28 (identity), 24 (page title), 20 (card title, figures), 15 (body),
+13 (meta).
 
-Space: 4, 8, 12, 16, 24, 40. Radius: 8 controls, 12 cards and rail items,
-20 pill buttons. Lines are 1 px.
+Space: 4, 8, 12, 16, 24, 40. Radius: 8 fields, 12 places, round actions.
+Heights: 40 controls, 32 list rows, 48 rail places. Icons 24 with a 1.6
+stroke (the tree's triangle is the one 12 px icon).

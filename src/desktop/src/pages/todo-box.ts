@@ -73,7 +73,8 @@ export function todoBox(): HTMLElement {
 
   const paint = (t: todo.Todo) => {
     const r = rows.get(t.id)!;
-    r.kind.textContent = t.kind ?? '';
+    // Shown as it is written, "Fix：", so the format reads off the screen.
+    r.kind.textContent = t.kind ? `${t.kind}：` : '';
     r.kind.hidden = !t.kind;
     r.item.classList.toggle('done', t.done);
     r.button.replaceChildren(mark(t.done));

@@ -26,7 +26,8 @@ function save(key: string, value: string) {
 let openRepo = load(REPO_KEY);
 const ctx: Context = {
   go: (id) => select(id),
-  openRepo(name) { openRepo = name; save(REPO_KEY, name); select('file'); },
+  openRepo(name) { ctx.remember(name); select('file'); },
+  remember(name) { openRepo = name; save(REPO_KEY, name); },
   get repo() { return openRepo; },
   rerender: () => render(),
 };

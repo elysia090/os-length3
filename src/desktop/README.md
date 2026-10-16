@@ -30,7 +30,7 @@ separate surface and nothing here depends on it.
 ## What is real in this step
 
 - The rail, the profile (edit, validate, save locally).
-- Repos the app manages under its data directory (`repos/`). □+ creates
+- Repos the app manages under its data directory (`repos/`). + creates
   one from a template (standard, C, minimal) and runs `git init` without
   the host's git configuration. Inbox and TODO belong to the app, not to
   repos: TODO is a list on Home. Home lists the repos as cards.
@@ -40,7 +40,8 @@ separate surface and nothing here depends on it.
   `npm run userland` (see `scripts/userland.sh`).
 - File: the tree of "/" — the whole system as the shell sees it (`/bin` from
   the fetched distribution, repos under `/root`) — lies over the left edge
-  and opens under the pointer, so the center and right never move. ▷/▽
+  and opens under the pointer (staying 8 s after it leaves), so the center
+  and right never move. ▷/▽
   before a folder opens it; a name inside a repo scrolls the center to it.
   The repo strip on top, then the repo read top to bottom —
   directory index, then each directory and file in order, loaded as they
