@@ -425,12 +425,21 @@ export class Process {
   syscall(nr, a, b, c, d, e, f, next) {
     this.resumeAt = next;
     const handler = CALLS[Number(nr)];
-    if (TRACE_SYSCALLS) console.error(`[${this.pid}] syscall ${nr}${handler ? '' : ' (none)'} ${[a, b, c].map((x) => '0x' + BigInt.asUintN(64, x).toString(16)).join(' ')}`);
+    if (TRACE_SYSCALLS) {
+      // A path in the first argument (or the second, for the *at calls) is shown as text.
+      const at = PATH_ARG[Number(nr)];
+      let path = '';
+      try { if (at !== undefined) path = ` "${this.cstring(Number(BigInt.asUintN(64, [a, b][at])))}"`; } catch { /* not a string */ }
+      console.error(`[${this.pid}] syscall ${nr}${handler ? '' : ' (none)'} ${[a, b, c].map((x) => '0x' + BigInt.asUintN(64, x).toString(16)).join(' ')}${path}`);
+    }
     if (!handler) return BigInt(-E.NOSYS);
     try {
       const r = handler.call(this, a, b, c, d, e, f);
-      return typeof r === 'bigint' ? r : BigInt(r);
+      const v = typeof r === 'bigint' ? r : BigInt(r);
+      if (TRACE_SYSCALLS) console.error(`[${this.pid}]   = ${BigInt.asIntN(64, v)}`);
+      return v;
     } catch (error) {
+      if (TRACE_SYSCALLS) console.error(`[${this.pid}]   ${error instanceof FsError ? `= -${error.errno}` : `(${error?.constructor?.name})`}`);
       if (error instanceof FsError) return BigInt(-error.errno);
       // Restart at the syscall instruction itself (2 bytes before `next`);
       // its registers are still in the globals saved before this call.
@@ -442,6 +451,8 @@ export class Process {
 
 /** XLAT_SYSCALLS=1 lists every system call on stderr (node only). */
 const TRACE_SYSCALLS = typeof process !== 'undefined' && !!process.env?.XLAT_SYSCALLS;
+/** Which argument of a call names a path (0: the first, 1: the second, after a directory). */
+const PATH_ARG = {2: 0, 4: 0, 6: 0, 21: 0, 59: 0, 80: 0, 83: 0, 84: 0, 87: 0, 89: 0, 257: 1, 262: 1, 263: 1, 269: 1, 439: 1};
 
 function div128(hi, lo, d, signed) {
   let n = (BigInt.asUintN(64, hi) << 64n) | BigInt.asUintN(64, lo);
