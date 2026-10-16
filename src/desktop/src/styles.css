@@ -15,6 +15,8 @@
   --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 40px;
   /* Places are rounded squares, actions are round, fields are slightly rounded. */
   --r-field: 8px; --r-place: 12px; --r-round: 999px;
+  /* A card of rows: a row's corner plus the room between them. */
+  --r-card: calc(var(--r-field) + var(--s2));
   /* Heights: a pressable thing, a row in a list, a place in the rail. */
   --h-control: 40px; --h-row: 32px; --h-place: 48px;
   --icon: 24px; --stroke: 1.6px;
@@ -69,7 +71,7 @@ a { color: var(--ink); }
    current or chosen thing is an ink fill, focus is a 2px ink ring. */
 .rail-item:hover, .button:hover, .chip:hover, .pill:hover, .band-add:hover:not(:disabled), .me:hover, .me-item:hover:not(:disabled), .tree-row:hover, .todo-mark:hover,
 .card.repo:hover, .card.new:hover { background: var(--raised); }
-.rail-item[aria-selected='true'], .button.primary,
+.rail-item[aria-selected='true'], .button.primary, .issue-row[aria-current],
 .chip[aria-current], .chip[aria-checked='true'], .pill[aria-current], .tree-row:has(> [aria-current='page']),
 .rail-item[aria-expanded='true'], .me[aria-expanded='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 
@@ -88,7 +90,7 @@ a { color: var(--ink); }
 }
 .me-pop {
   position: absolute; left: calc(100% + var(--s3)); bottom: 0; z-index: 6; min-width: 220px;
-  display: grid; padding: var(--s2); background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-place);
+  display: grid; padding: var(--s2); background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-card);
   visibility: hidden; opacity: 0; transition: opacity var(--motion), visibility 0s var(--motion);
 }
 .me-wrap.open .me-pop { visibility: visible; opacity: 1; transition: opacity var(--motion), visibility 0s; }
@@ -233,31 +235,36 @@ a { color: var(--ink); }
   display: grid; gap: 2px; padding: var(--s3) var(--s4); text-align: left; cursor: pointer;
   border: 1px solid var(--rule); border-radius: var(--r-place); background: transparent;
 }
-.issue-row:hover { background: var(--raised); }
+.issue-row:hover:not([aria-current]) { background: var(--raised); }
 .issue-head { font-weight: 600; }
 .issue-kind { font-weight: 700; }
-.issue-where { font: var(--t-meta)/1.6 var(--mono); }
-.issue-detail { font-size: var(--t-meta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.issue-where { font: var(--t-meta)/1.6 var(--mono); color: var(--sub); }
+.issue-detail { font-size: var(--t-meta); color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* On the ink of the current row, quiet text keeps the ground colour. */
+.issue-row[aria-current] .issue-where, .issue-row[aria-current] .issue-detail { color: inherit; }
 /* Git keeps one centred column of comfortable width: the form, the rows, the notes and the prompt box line up. */
 .git-flow > * { max-width: 760px; margin-inline: auto; }
-.issue-row[aria-current] { border-color: var(--ink); background: var(--raised); }
-/* Under an open issue: its cuts, the changes not cut yet, cutting, handing out. */
-.issue-item { display: grid; }
-/* An open issue is one place: its row on top, the work under a rule. */
-.issue-item.open { border: 1px solid var(--ink); border-radius: var(--r-place); margin-bottom: var(--s2); }
-.issue-item.open > .issue-row { border-color: transparent; background: transparent; }
-.issue-work { display: grid; gap: var(--s2); padding: var(--s3) var(--s4) var(--s4); border-top: 1px solid var(--rule); }
-.issue-work h3 { display: flex; gap: var(--s2); align-items: baseline; margin: var(--s2) 0 0; font-size: var(--t-meta); font-weight: 600; }
-.issue-work h3:first-child { margin-top: 0; }
-.issue-work h3 small { font-weight: 400; color: var(--sub); }
-.cut-rows, .change-folders { display: grid; gap: var(--s1); }
-.cut-row { display: grid; gap: 2px; padding: var(--s1) 0; }
-.cut-places { font: var(--t-meta) var(--mono); }
-.change-folder { display: grid; }
-.change-folder-head { display: flex; justify-content: space-between; font: var(--t-meta)/1.8 var(--mono); }
-.change-file { display: grid; grid-template-columns: 5em minmax(0, 1fr) auto; gap: var(--s2); width: 100%; padding: 2px var(--s1); border: 0; background: transparent; text-align: left; cursor: pointer; border-radius: var(--r-field); font-size: var(--t-meta); }
-.change-file:hover { background: var(--raised); }
-.change-word { color: var(--sub); }
+/* A card of rows, like the File tree and the avatar's popover: its corner
+   concentric with its rows. A row is a place (hover raised); a head row is
+   only words. */
+.rows { display: grid; padding: var(--s2); border: 1px solid var(--rule); border-radius: var(--r-card); }
+.row-item {
+  display: flex; align-items: baseline; gap: var(--s3); min-height: var(--h-row); padding: var(--s1) var(--s3) var(--s1) calc(var(--s3) + var(--depth, 0) * var(--s4));
+  border: 0; border-radius: var(--r-field); background: transparent; color: var(--ink); text-align: left; font-size: var(--t-meta); line-height: calc(var(--h-row) - 2 * var(--s1));
+}
+button.row-item { cursor: pointer; width: 100%; }
+button.row-item:hover:not(:disabled) { background: var(--raised); }
+button.row-item:disabled { cursor: default; color: var(--sub); }
+.row-head { font-weight: 600; }
+.row-word { flex: none; width: 4em; color: var(--sub); }
+.row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-meta { flex: none; color: var(--sub); font: var(--t-meta) var(--mono); }
+.row-cut { flex-direction: column; align-items: stretch; gap: 0; line-height: 1.6; padding-block: var(--s2); }
+.row-cut .row-name { font-size: var(--t-body); }
+.row-cut .row-meta { white-space: normal; }
+.work-act { margin-top: var(--s3); }
+.work-act .line-in { flex: 1; }
+.work-note { margin-top: var(--s2); }
 .issue-one { display: grid; gap: var(--s2); }
 .issue-one h3 { margin: 0; font-size: var(--t-body); font-weight: 600; }
 .issue-body { white-space: pre-wrap; }
@@ -411,7 +418,7 @@ mark { background: var(--ink); color: var(--ground); }
   position: fixed; top: var(--tree-top, var(--outer-top)); left: calc(var(--outer) + var(--rail) + var(--s2)); z-index: 5;
   width: clamp(260px, 20vw, 340px); max-height: calc(100vh - var(--tree-top, var(--outer-top)) - var(--outer-bottom)); overflow: auto;
   /* Concentric with its rows: the card's corner is the row's corner plus the padding between them. */
-  padding: var(--s2); background: var(--ground); border: 1px solid var(--rule); border-radius: calc(var(--r-field) + var(--s2));
+  padding: var(--s2); background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-card);
   visibility: hidden; opacity: 0;
   transition: opacity var(--motion), visibility 0s var(--motion);
 }

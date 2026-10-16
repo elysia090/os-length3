@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {add, edit, insertAfter, kindOf, parse, persisted, remove, toggle} from './todo.ts';
+import {kindOf} from './text.ts';
+import {add, edit, insertAfter, parse, persisted, remove, toggle} from './todo.ts';
 
 test('a kind is the word before a full- or half-width colon', () => {
   assert.deepEqual(kindOf('Fix：再起動すると保存内容が消える'), {kind: 'Fix', title: '再起動すると保存内容が消える'});

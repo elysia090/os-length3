@@ -17,7 +17,7 @@ const KINDS: Record<string, string> = {
 };
 
 /** What a file is, from its name. */
-export function kindOf(path: string): string {
+export function fileKind(path: string): string {
   const name = path.slice(path.lastIndexOf('/') + 1);
   if (/^(GNU)?makefile$/i.test(name)) return 'Makefile';
   const dot = name.lastIndexOf('.');

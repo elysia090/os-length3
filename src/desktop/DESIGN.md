@@ -118,15 +118,29 @@ at it.
   each repo's `issue/`, one file per issue, so nothing is kept twice. Each
   row is a place (a rounded box): the first line names it the way TODO
   items are named, kind and title ("Fix：件名"), then quietly where it lives
-  (`repo · issue/001.md`) and the first line of its detail. A row opens that
-  file in Forge. 「Issue を書く」 writes a new file in the chosen repo's
-  `issue/`, numbered in the order written (001.md, 002.md, …; dates go in
-  the text). A repo without `issue/` cannot take one and says so.
-- **提出された変更** lists changes others pushed: kind and title, who and
-  when, the folders changed with lines added and removed, the check on that
-  exact version, settled by Merge or Reject. Close is for issues only. No
-  change can arrive before a Remote is joined, so for now it says so in a
-  dashed box instead of showing anything made up.
+  (`repo · issue/001.md`) and the first line of its detail. Pressing a row
+  makes it the current issue (ink, like any current thing): it shows in
+  full on the right, with the way into its file in Forge, and the sections
+  below turn to its repo. Pressing it again lets it go. 「Issue を書く」
+  writes a new file in the chosen repo's `issue/`, numbered in the order
+  written (001.md, 002.md, …; dates go in the text). A repo without
+  `issue/` cannot take one and says so.
+- **まだ区切っていない変更**: what is not yet history, in the repo looked
+  at, folder by folder (the folder first, so a reader enters from the area
+  they look after), each file by a word (追加, 変更, 削除, 名前変更) and its
+  lines added and removed; a file opens in Forge. It is a card of rows like
+  the File tree. Under it, with an issue current, a note and the one
+  primary action, 区切る: everything not yet cut becomes one cut named after
+  the issue ("Fix：件名") and tied to its file (an `Issue: issue/001.md`
+  line), so the history reads as the issues.
+- **区切り**: the cuts so far, newest first, the current issue's only when
+  one is chosen: name, version, who, when, the folders and lines.
+- **提出された変更**: cuts handed out (提出) and received, settled by Merge or
+  Reject; Close is for issues only. Nothing can be handed out or arrive
+  before a Remote is joined, so there is no 提出 button yet, and this says
+  so in a dashed box instead of showing anything made up.
+
+In the browser there is no git; the two sections say so.
 
 ### New repo (+)
 

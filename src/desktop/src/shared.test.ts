@@ -3,7 +3,7 @@ import {test} from 'node:test';
 import cases from '../shared/cases.json' with {type: 'json'};
 import {issueText, nextIssueName, parseIssue} from './issues.ts';
 import {validName} from './repos.ts';
-import {kindOf} from './todo.ts';
+import {kindOf} from './text.ts';
 
 // The same cases the core crate's tests read: the app and l3 must agree.
 

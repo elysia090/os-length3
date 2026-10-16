@@ -1,7 +1,9 @@
 // TODO lives on Home: one list for the person, not one file per repo.
 // An item's first line is named the way issues are named in this OS, a kind
 // and a title ("Fix：再起動すると保存内容が消える"); the lines after it are the
-// detail. Until accounts exist the list is kept on this device.
+// detail. The list is kept in Home's state (state.ts), the same file l3 todo reads.
+
+import {kindOf} from './text.ts';
 
 export interface Todo {
   id: string;
@@ -19,14 +21,6 @@ export interface Todo {
 export const TEXT_LIMIT = 200;
 export const DETAIL_LIMIT = 4000;
 
-/** Kinds offered as examples; any short word before the colon is a kind. */
-export const KINDS = ['Fix', 'Patch', 'RFC'] as const;
-
-/** Split "Kind：title" (full- or half-width colon). */
-export function kindOf(text: string): {kind: string | null; title: string} {
-  const m = /^\s*([A-Za-z][A-Za-z0-9-]{0,15})\s*[：:]\s*(.*)$/s.exec(text);
-  return m ? {kind: m[1], title: m[2]} : {kind: null, title: text.trim()};
-}
 
 let counter = 0;
 const newId = (now: number) => `${now.toString(36)}-${(counter++).toString(36)}`;
