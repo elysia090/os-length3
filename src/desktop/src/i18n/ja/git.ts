@@ -80,4 +80,8 @@ export default {
   'Approved': '承認',
   'Asked for changes': '変更を依頼',
   'Comment… (Enter sends)': 'コメント…（Enter で送信）',
+  '{n} commit to push': 'Push するコミット {n}',
+  '{n} commits to push': 'Push するコミット {n}',
+  'Committed': 'Commit 済み',
+  'Pushed': 'Push 済み',
 } as Record<string, string>;

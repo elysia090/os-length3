@@ -97,7 +97,59 @@ export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEv
     issueHead(issue, events),
     issue.detail ? h('p', {class: 'issue-body'}, issue.detail) : null,
     say ? h('p', {class: 'muted small'}, say) : null,
+    ...(here && s?.work ? [steps(issue, s, events, after)] : []),
     acts.length ? h('div', {class: 'row work-act'}, ...acts) : null, error);
+}
+
+/**
+ * Commit and Push, inside the issue's box: each its button at the left (a
+ * done mark in its place once done) and, beside it, what it is about: what
+ * is not committed (its diff closed until opened), what is to be pushed.
+ * Pushing hands the work to main as its change, again as the next version.
+ */
+function steps(issue: Issue, s: RepoState, events: IssueEvents, after: () => void): HTMLElement {
+  const at = issue.repo;
+  const w = s.work!;
+  const error = h('p', {class: 'error', role: 'alert'});
+  // Done, the button's place holds the done mark and the step's word.
+  const slot = (act: HTMLElement, done: boolean, word: string) => h('div', {class: 'step-act'},
+    done ? h('span', {class: 'step-done'}, h('span', {class: 'done-mark', 'aria-hidden': 'true'}), word) : act);
+
+  // Commit
+  const dirty = s.uncommitted;
+  const commit = button(t('Commit'), dirty > 0);
+  commit.disabled = !dirty;
+  commit.title = named(issue.kind, issue.title);
+  commit.addEventListener('click', doing(commit, error, () => git.cut(at, null, '', ''), after));
+  let about: Node;
+  if (dirty) {
+    const inside = h('div', {}, h('p', {class: 'muted small'}, t('Reading…')));
+    const fold = h('details', {class: 'stage-diff'}, h('summary', {}, tn('{n} file not committed', '{n} files not committed', dirty)), inside) as HTMLDetailsElement;
+    let read = false;
+    fold.addEventListener('toggle', () => {
+      if (!fold.open || read) return;
+      read = true;
+      void git.diff(at).then((files) => inside.replaceChildren(...diffFiles(files, (p) => events.open(at, p))), (e) => inside.replaceChildren(h('p', {class: 'error'}, message(e))));
+    });
+    about = fold;
+  } else {
+    about = h('p', {class: 'muted small'}, w.commits ? tn('{n} commit', '{n} commits', w.commits) : t('Edit in File, Forge or the Prompt; what changes shows here.'));
+  }
+  const committed = !dirty && w.commits > 0;
+
+  // Push
+  const open = w.change?.state === 'open';
+  const pushed = w.commits > 0 && !w.unpushed && (open || w.change?.state === 'merged');
+  const push = button(t('Push'), !dirty && !pushed && w.commits > 0);
+  push.disabled = !w.commits || pushed;
+  push.addEventListener('click', doing(push, error, async () => { await git.push(at); await git.submit(at); }, after));
+  const where = pushed
+    ? h('p', {class: 'muted small'}, t('Change · version {n} · {state}', {n: w.change!.version, state: STATE(w.change!.state)}))
+    : h('p', {class: 'muted small'}, w.unpushed ? tn('{n} commit to push', '{n} commits to push', w.unpushed) : '');
+
+  return h('div', {class: 'steps'},
+    slot(commit, committed, t('Committed')), h('div', {class: 'step-about'}, about),
+    slot(push, pushed, t('Pushed')), h('div', {class: 'step-about'}, where), error);
 }
 
 /** A step of the work as a box of the issue's width: its name, a check once it is done, its body, its one action at the bottom right. */
@@ -132,51 +184,16 @@ function markedDiff(files: git.FileDiff[], marked: Set<string>, pending: Set<str
 }
 
 /**
- * Under the box, once the issue is worked on: Commit (what is not committed,
- * its diff closed inside), Push (handing it to main as its change), and the
- * change's Review, a larger box whose diff can be marked, with what was said
- * under it and room to say more. A change is reviewed the same way without
- * being worked on here.
+ * Under the box, once there is a change: its Review, a larger box whose diff
+ * can be marked, with what was said under it and room to say more. A change
+ * is reviewed the same way without being worked on here.
  */
 export function issueStages(issue: Issue, s: RepoState | undefined, events: IssueEvents, after: () => void): Node[] {
   const at = issue.repo;
   const change = changeOf(s, issue);
   const here = hereOf(s, issue);
-  const w = s?.work;
   const out: Node[] = [];
   if (!connection()) return out;
-
-  if (here && w) {
-    // Commit: the diff stays closed in the box until opened.
-    const dirty = s!.uncommitted;
-    const error = h('p', {class: 'error', role: 'alert'});
-    const body: Node[] = [];
-    if (dirty) {
-      const inside = h('div', {}, h('p', {class: 'muted small'}, t('Reading…')));
-      const fold = h('details', {class: 'stage-diff'}, h('summary', {}, tn('{n} file not committed', '{n} files not committed', dirty)), inside) as HTMLDetailsElement;
-      let read = false;
-      fold.addEventListener('toggle', () => {
-        if (!fold.open || read) return;
-        read = true;
-        void git.diff(at).then((files) => inside.replaceChildren(...diffFiles(files, (p) => events.open(at, p))), (e) => inside.replaceChildren(h('p', {class: 'error'}, message(e))));
-      });
-      body.push(fold);
-    } else {
-      body.push(h('p', {class: 'muted small'}, w.commits ? tn('{n} commit', '{n} commits', w.commits) : t('Edit in File, Forge or the Prompt; what changes shows here.')));
-    }
-    const commit = button(t('Commit'), true);
-    commit.title = named(issue.kind, issue.title);
-    commit.addEventListener('click', doing(commit, error, () => git.cut(at, null, '', ''), after));
-    out.push(stage(t('Commit'), !dirty && w.commits > 0, [...body, error], dirty ? [commit] : []));
-
-    // Push: hands what was pushed to main as the change; roomy, nothing else in it.
-    const open = w.change?.state === 'open';
-    const pushed = w.commits > 0 && !w.unpushed && (open || w.change?.state === 'merged');
-    const failed = h('p', {class: 'error', role: 'alert'});
-    const push = button(t('Push'), true);
-    push.addEventListener('click', doing(push, failed, async () => { await git.push(at); await git.submit(at); }, after));
-    out.push(stage(t('Push'), pushed, [failed], w.commits > 0 && !pushed ? [push] : [], 'roomy'));
-  }
 
   if (!change || change.state === 'reset') return out;
 

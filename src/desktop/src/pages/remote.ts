@@ -187,7 +187,7 @@ function codeSection(): HTMLElement {
   const error = h('p', {class: 'error', role: 'alert'});
   const paint = async () => {
     const now = await account.offCode().catch(() => ({set: false, setAt: null}));
-    const five = h('input', {class: 'line-in mono code-in', maxlength: '5', placeholder: 'A1B2C', 'aria-label': t('Code'), autocomplete: 'off', spellcheck: 'false'}) as HTMLInputElement;
+    const five = h('input', {class: 'line-in mono code-in', maxlength: '5', placeholder: t('New code'), 'aria-label': t('Code'), autocomplete: 'off', spellcheck: 'false'}) as HTMLInputElement;
     const set = button(now.set ? t('Set another') : t('Set'), 'small-button');
     set.addEventListener('click', () => void pressing(set, error, async () => {
       if (!/^[A-Za-z0-9]{5}$/.test(five.value)) throw new Error(t('Five letters or digits.'));

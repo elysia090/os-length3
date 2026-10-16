@@ -124,7 +124,7 @@ export function inboxPage(ctx: Context): Node[] {
       ...contacts.map(row),
       ...(requests.length ? [h('h3', {class: 'inbox-head'}, t('Requests')), ...requests.map(row)] : []),
       ...(!all.length ? [h('p', {class: 'muted small'}, t('No messages yet. Write to someone by their address.'))] : []));
-    if (!open) pane.replaceChildren(h('div', {class: 'empty'}, t('Choose a conversation, or write to an address.')));
+    if (!open) pane.replaceChildren(h('p', {class: 'quiet'}, t('Choose a conversation, or write to an address.')));
   };
 
   const show = async (address: string, list: HTMLElement, pane: HTMLElement) => {

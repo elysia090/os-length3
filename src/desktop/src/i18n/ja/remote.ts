@@ -89,4 +89,5 @@ export default {
   'Set the five-letter code under Sign-in first.': '先にサインインのところで 5 文字のコードを決めてください。',
   'Confirm with a passkey.': 'パスキーで確かめてください。',
   'The repo\'s name': 'repo の名前',
+  'New code': '新しいコード',
 } as Record<string, string>;

@@ -612,7 +612,6 @@ mark { background: var(--ink); color: var(--ground); }
 /* The steps of an issue's work, each a box of the issue's width: its name, a
    check once done, its body, and its one action at the bottom right. */
 .stage-box { margin-top: var(--s4); padding: var(--s5); border: 1px solid var(--rule); border-radius: var(--r-place); display: grid; gap: var(--s3); }
-.stage-box.roomy { min-height: 160px; align-content: space-between; }
 .stage-head { display: flex; align-items: center; gap: var(--s3); }
 .stage-head h3 { margin: 0; font-size: var(--t-body); font-weight: 600; }
 .stage-act { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--s2); }
@@ -624,7 +623,6 @@ mark { background: var(--ink); color: var(--ground); }
 .stage-diff summary:hover { color: var(--ink); }
 .stage-diff[open] summary { margin-bottom: var(--s3); }
 /* Review: larger, its diff scrolling inside; marked lines as with a highlighter. */
-.stage-box.review { min-height: 60vh; grid-template-rows: auto minmax(0, 1fr) auto; }
 .review-diff { max-height: 56vh; overflow: auto; padding-right: var(--s2); }
 .diff-line.markable { cursor: pointer; }
 .diff-line.markable:hover { outline: 1px solid var(--edge); }
@@ -652,4 +650,18 @@ mark { background: var(--ink); color: var(--ground); }
 /* The offer: one short line and its button, no wider than they are. */
 .offer-holder { margin-top: var(--s5); }
 .offer { display: inline-flex; align-items: center; gap: var(--s3); padding: var(--s2) var(--s2) var(--s2) var(--s4); border: 1px solid var(--edge); border-radius: var(--r-round); }
-.code-in { width: 8ch; flex: none; text-transform: uppercase; }
+.code-in { width: 9em; flex: none; text-transform: uppercase; }
+.code-in::placeholder { text-transform: none; }
+
+/* Commit and Push inside the issue's box: the button at the left (its done
+   mark in its place once done), what it is about beside it. */
+.steps { display: grid; grid-template-columns: minmax(112px, max-content) minmax(0, 1fr); align-items: center; gap: var(--s4) var(--s4); margin-top: var(--s3); padding: var(--s4) 0; border-top: 1px solid var(--rule); }
+.step-act { display: flex; align-items: center; min-height: var(--h-control); }
+.step-act .button { min-width: 96px; justify-content: center; }
+.step-done { display: inline-flex; align-items: center; gap: var(--s2); font-weight: 600; white-space: nowrap; }
+.step-about { min-width: 0; }
+.step-about p { margin: 0; }
+.steps > .error { grid-column: 1 / -1; }
+
+/* An Inbox pane with nothing chosen: a quiet line in its middle, not a box in the box. */
+.inbox-thread > .quiet { margin: auto; color: var(--sub); }
