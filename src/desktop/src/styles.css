@@ -34,7 +34,9 @@
   --band: calc(var(--top-line) + (var(--h-place) - var(--h-row)) / 2);
   /* The rail starts one place below the top line, so Home is not first off the mark. */
   --rail-top: calc(var(--top-line) + var(--h-place) + var(--s1));
-  --rail: 84px;
+  /* Rail: 12px from the window's side to the icons, 18px from the icons to its line. */
+  --rail-line-gap: 18px;
+  --rail: calc(var(--s3) + var(--h-place) + var(--rail-line-gap));
 }
 
 * { box-sizing: border-box; }
@@ -72,7 +74,7 @@ a { color: var(--ink); }
 /* ---- 1. Rail ---- */
 /* The icons keep a little more room on the side of the line than on the
    window's side, so they do not crowd it. */
-.rail { border-right: 1px solid var(--rule); padding-right: var(--s3); height: var(--inner-h); position: sticky; top: var(--outer-top); z-index: 6; display: flex; flex-direction: column; }
+.rail { border-right: 1px solid var(--rule); padding-right: calc(var(--rail-line-gap) - var(--s3)); height: var(--inner-h); position: sticky; top: var(--outer-top); z-index: 6; display: flex; flex-direction: column; }
 .rail-tabs { display: flex; flex-direction: column; align-items: center; gap: var(--s1); flex: 1; min-height: 0; padding: var(--rail-top) 0 var(--s3); }
 
 /* The person's own icon at the foot of the rail, and what it brings out. */
