@@ -1,13 +1,14 @@
 import {h} from '../dom.ts';
 import {store, TEMPLATES, validName, type Template} from '../repos.ts';
 import {pageHead} from './common.ts';
-import {showInList} from './home.ts';
-import {notice} from './notice.ts';
+import {repoList} from './repo-list.ts';
 import type {Context} from './context.ts';
 import {triangle} from './tree.ts';
 
 /**
- * +: name a repo, pick a template, see exactly what it will contain. It speaks
+ * +: name a repo, pick a template, see exactly what it will contain, make it,
+ * and see it join the list of repos right below; from there open it in
+ * Forge or make another. It speaks
  * the same language as the rest: the template is a chip like Forge's, and
  * what will be made is shown as it will look in File, under /root.
  */
@@ -48,8 +49,8 @@ export function newRepo(ctx: Context): Node[] {
     placeholder: 'my-repo', 'aria-describedby': 'repo-name-rule'}) as HTMLInputElement;
   let template: Template = 'standard';
   const preview = h('ul', {class: 'tree-children'});
-  const card = h('div', {class: 'tree tree-still', 'aria-label': '作成されるもの'},
-    h('p', {class: 'muted small tree-caption'}, 'File ではこう見えます'), preview);
+  const caption = h('p', {class: 'muted small tree-caption'}, 'File ではこう見えます');
+  const card = h('div', {class: 'tree tree-still', 'aria-label': '作成されるもの'}, caption, preview);
   const showFiles = () => {
     const t = TEMPLATES.find((x) => x.id === template)!;
     const repo = name.value.trim() || 'my-repo';
@@ -72,12 +73,27 @@ export function newRepo(ctx: Context): Node[] {
   });
   const error = h('p', {class: 'error', role: 'alert'});
   const submit = h('button', {class: 'button primary', type: 'submit'}, '作成') as HTMLButtonElement;
+  const actions = h('div', {class: 'row'}, submit);
+
+  /** Made: the page stays, and says where to go from here. */
+  const made = (n: string) => {
+    name.disabled = true;
+    for (const c of chips) c.setAttribute('disabled', '');
+    caption.textContent = `File の /root/${n} に出来ました`;
+    const open = h('button', {class: 'button primary', type: 'button'}, 'Forge で開く');
+    open.addEventListener('click', () => ctx.openRepo(n));
+    const again = h('button', {class: 'button', type: 'button'}, '続けて作る');
+    again.addEventListener('click', () => ctx.rerender());
+    actions.replaceChildren(h('p', {class: 'made', role: 'status'}, `${n} を作りました`), open, again);
+    open.focus({preventScroll: true});
+    void list.refresh(n);
+  };
   const form = h('form', {class: 'new-repo'},
     h('label', {class: 'field'}, h('span', {class: 'field-label'}, '名前'), name,
       h('span', {id: 'repo-name-rule', class: 'muted small'}, '英数字と . _ - 、64文字まで')),
     h('div', {class: 'field'}, h('span', {class: 'field-label', id: 'template-label'}, 'テンプレート'),
       h('div', {class: 'chips', role: 'radiogroup', 'aria-labelledby': 'template-label'}, ...chips)),
-    card, error, h('div', {class: 'row'}, submit));
+    card, error, actions);
   name.addEventListener('input', showFiles);
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -86,16 +102,17 @@ export function newRepo(ctx: Context): Node[] {
     submit.disabled = true;
     try {
       await store.create(n, template);
-      ctx.openRepo(n);
-      // It opens in Forge; beside + a word says so, with the way to the list.
-      notice(document.getElementById('purpose-new-repo'), `${n} を作りました`,
-        {label: '一覧で見る', run: () => showInList(ctx, n)});
+      made(n);
     } catch (e) {
       error.textContent = `作成できませんでした: ${String(e)}`;
       submit.disabled = false;
     }
   });
+  // The repos already there, right under the form; a new one joins them.
+  const list = repoList(ctx, {newCard: false});
+  void list.refresh();
   showFiles();
   queueMicrotask(() => name.focus());
-  return [pageHead('new-repo'), h('div', {}, form)];
+  return [pageHead('new-repo'), h('div', {}, form),
+    h('section', {class: 'section', 'aria-labelledby': 'new-repo-list'}, h('h2', {id: 'new-repo-list'}, 'repo'), list.element)];
 }

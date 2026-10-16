@@ -214,14 +214,6 @@ a { color: var(--ink); }
 .card.new:hover { color: var(--ink); }
 .note { grid-column: 1 / -1; }
 
-/* A short word beside the control that caused it, with one thing to do next. */
-.notice {
-  position: fixed; z-index: 7; display: flex; align-items: center; gap: var(--s2);
-  padding: var(--s1) var(--s1) var(--s1) var(--s4); background: var(--ground);
-  border: 1px solid var(--rule); border-radius: var(--r-round); font-size: var(--t-meta);
-  animation: notice-in var(--motion) ease-out;
-}
-@keyframes notice-in { from { opacity: 0; } }
 .card.repo.revealed { background: var(--raised); border-color: var(--ink); }
 
 /* New repo: a name, a template chip, and what File will show */
@@ -232,6 +224,9 @@ a { color: var(--ink); }
 .tree-caption { padding: 0 var(--s2) var(--s1); }
 .tree-still .tree-name.plain { color: var(--ink); }
 .tree-still .tree-toggle { cursor: default; }
+.new-repo .row { align-items: center; flex-wrap: wrap; }
+.made { margin-right: var(--s2); font-weight: 600; }
+.chip:disabled, .line-in:disabled { opacity: .5; cursor: default; }
 
 /* Storage */
 .meter { height: var(--s4); border: 1px solid var(--edge); border-radius: var(--r-field); overflow: hidden; display: flex; }
