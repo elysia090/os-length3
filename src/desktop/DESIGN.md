@@ -97,7 +97,9 @@ An operation, not a page. Hovering the File icon (or pressing it) lays the
 tree of "/" over whatever page is showing as a card right beside the rail:
 its corner concentric with its rows (a row's 8 px plus the 8 px between
 them: 16 px), only as tall as what is in it, its "/"
-level with the File icon. Nothing under it moves. Once out it stays for 8 seconds after the pointer leaves,
+level with the File icon. While it is out, File is the one filled icon in
+the rail; the page's own icon steps back until it goes. Nothing under it
+moves. Once out it stays for 8 seconds after the pointer leaves,
 so reaching across the page and back does not lose it; a press outside or
 Escape closes it at once. Each time it comes out it is read afresh.
 

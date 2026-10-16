@@ -107,6 +107,10 @@ a { color: var(--ink); }
   opacity: 0; pointer-events: none; transition: opacity var(--motion);
 }
 .rail-item:hover .rail-tag, .rail-item:focus-visible .rail-tag { opacity: 1; }
+/* While File's tree is out, File is the one filled icon; the page's own
+   icon steps back until the tree goes. */
+.rail-tabs:has(.rail-item[aria-expanded='true']) .rail-item[aria-selected='true'] { background: transparent; color: var(--ink); }
+.rail-tabs:has(.rail-item[aria-expanded='true']) .rail-item[aria-selected='true']:hover { background: var(--raised); }
 /* While File's tree is out, the tree itself says what it is. */
 .rail-item[aria-expanded='true'] .rail-tag { opacity: 0; }
 
