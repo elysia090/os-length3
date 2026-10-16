@@ -28,9 +28,12 @@
   --outer-top: clamp(var(--s2), 1.5vh, var(--s4));
   --outer-bottom: clamp(var(--s5), 5vh, 56px);
   --inner-h: calc(100vh - var(--outer-top) - var(--outer-bottom));
-  --rail-top: var(--s3);
-  /* Forge's band sits on the line of the Home icon: its 32px row centred on Home's 48px place. */
-  --band: calc(var(--rail-top) + (var(--h-place) - var(--h-row)) / 2);
+  /* The top line pages start on. */
+  --top-line: var(--s3);
+  /* Forge's band: a 32px row centred where a 48px place on the top line would be. */
+  --band: calc(var(--top-line) + (var(--h-place) - var(--h-row)) / 2);
+  /* The rail starts one place below the top line, so Home is not first off the mark. */
+  --rail-top: calc(var(--top-line) + var(--h-place) + var(--s1));
   --rail: 72px;
 }
 
@@ -96,7 +99,7 @@ a { color: var(--ink); }
 }
 /* + starts something rather than opening a place, so it has the action
    shape: round, outlined like every button, right under the places. */
-.rail-new { margin-top: var(--s4); width: var(--h-control); height: var(--h-control); border-radius: var(--r-round); border: 1px solid var(--edge); }
+.rail-new { margin-top: var(--s6); width: var(--h-control); height: var(--h-control); border-radius: var(--r-round); border: 1px solid var(--edge); }
 .rail-tag {
   position: absolute; left: calc(100% + var(--s3)); top: 50%; transform: translateY(-50%); z-index: 4;
   padding: 0 var(--s2); border-radius: var(--r-field); white-space: nowrap;
@@ -108,7 +111,7 @@ a { color: var(--ink); }
 .rail-item[aria-expanded='true'] .rail-tag { opacity: 0; }
 
 /* ---- 2. Pages ---- */
-.page { min-width: 0; padding: var(--rail-top) clamp(var(--s5), 5vw, 72px) var(--s6); }
+.page { min-width: 0; padding: var(--top-line) clamp(var(--s5), 5vw, 72px) var(--s6); }
 .page:focus { outline: none; }
 .page > * { max-width: 1200px; margin-left: auto; margin-right: auto; }
 .page-head { display: flex; align-items: baseline; gap: var(--s3); }
@@ -229,7 +232,7 @@ a { color: var(--ink); }
   height: var(--inner-h); display: grid;
   grid-template-columns: minmax(0, 3fr) minmax(280px, 1fr); grid-template-rows: auto minmax(0, 1fr);
 }
-/* The band sits on the line of the Home icon. */
+/* The band sits on the top line. */
 .repo-strip { grid-column: 1; display: flex; gap: var(--s2); align-items: center; padding: var(--band) var(--s5) var(--s3); overflow-x: auto; border-right: 1px solid var(--rule); }
 /* The band: pills for the repos out, ⊕ to bring more out beside them. */
 .pills { display: flex; gap: var(--s2); align-items: center; }
@@ -336,12 +339,14 @@ mark { background: var(--ink); color: var(--ground); }
 .term-box h2 { font-size: var(--t-body); font-weight: 600; }
 .term-box .empty { margin-top: var(--s3); padding: var(--s5); }
 
-/* File: the tree of "/" laid over the page beside the rail, so nothing
-   under it moves. It opens under the pointer and stays a while after it
+/* File: the tree of "/" as a card beside the rail, as tall as what is in it,
+   its "/" level with the File icon; nothing under it moves. It opens under the pointer and stays a while after it
    leaves (tree.ts). */
 .tree {
-  position: fixed; top: var(--outer-top); bottom: var(--outer-bottom); left: calc(var(--outer) + var(--rail)); z-index: 5; width: clamp(260px, 20vw, 340px); overflow: auto;
-  padding: var(--band) var(--s2) var(--s5); background: var(--ground); border-right: 1px solid var(--rule);
+  position: fixed; top: var(--tree-top, var(--outer-top)); left: calc(var(--outer) + var(--rail) + var(--s2)); z-index: 5;
+  width: clamp(260px, 20vw, 340px); max-height: calc(100vh - var(--tree-top, var(--outer-top)) - var(--outer-bottom)); overflow: auto;
+  /* Concentric with its rows: the card's corner is the row's corner plus the padding between them. */
+  padding: var(--s2); background: var(--ground); border: 1px solid var(--rule); border-radius: calc(var(--r-field) + var(--s2));
   visibility: hidden; opacity: 0;
   transition: opacity var(--motion), visibility 0s var(--motion);
 }

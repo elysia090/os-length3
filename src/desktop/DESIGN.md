@@ -52,7 +52,7 @@ strikes through and fades the first line only.
 ### Forge
 
 Where you work. The repos out to work on run as pills in a band on the top
-line, level with the Home icon; the search box on the right sits on the
+line; the search box on the right sits on the
 same line, with the reference's chips under it. ⊕ stands at the left end. One press brings every repo not on
 the band out at once, on the right; this is not adding tabs one at a time.
 Each pill comes off the band with its × (the repo itself is untouched).
@@ -94,8 +94,10 @@ says plainly that it is not connected yet). The chosen reference is remembered o
 ### File
 
 An operation, not a page. Hovering the File icon (or pressing it) lays the
-tree of "/" over whatever page is showing, right beside the rail; nothing
-under it moves. Once out it stays for 8 seconds after the pointer leaves,
+tree of "/" over whatever page is showing as a card right beside the rail:
+its corner concentric with its rows (a row's 8 px plus the 8 px between
+them: 16 px), only as tall as what is in it, its "/"
+level with the File icon. Nothing under it moves. Once out it stays for 8 seconds after the pointer leaves,
 so reaching across the page and back does not lose it; a press outside or
 Escape closes it at once. Each time it comes out it is read afresh.
 
@@ -136,9 +138,10 @@ Every value in `styles.css` comes from a token below.
   sides (24–64 px), against the instinct to run to the edges. There is
   less room above (1.5% of the height, 8–16 px) than below (5%, 24–56 px),
   so the weight of the whole sits a little high.
-- **One top line.** The Home icon's row is the top line every page starts
-  on: a page's header, Home's profile, Forge's band and search box, and
-  the "/" of File's tree all sit on it.
+- **One top line.** Every page starts on the same top line: a page's
+  header, Home's profile, Forge's band and search box. The rail starts one
+  place below it, so Home is not first off the mark, and + stands a clear
+  step (40 px) under the places, a little below the middle.
 - **Motion.** 120 ms fades, and one movement: the terminal flying between
   the right pane and the prompt box, 280 ms. Reduced motion turns them off.
 - No shadows, blur, glow or gradients.

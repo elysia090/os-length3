@@ -10,7 +10,7 @@ import {sessionFor, terminalFor} from './terminal.ts';
 
 /**
  * Forge, the place you work. The repos out to work on run as pills in a band
- * on the top line, level with the Home icon; ⊕ brings the rest out and each
+ * on the top line; ⊕ brings the rest out and each
  * pill comes off with its ×. The large center is the open repo's files one
  * after another, an endless page you scroll through and edit in place,
  * opened at the file chosen in File; there are no tabs. A prompt box sits at

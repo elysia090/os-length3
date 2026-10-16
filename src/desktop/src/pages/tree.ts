@@ -1,8 +1,9 @@
 import {bytes, h} from '../dom.ts';
 import {inRepo, list, ORIGIN_LABEL, type SystemEntry} from '../system.ts';
 
-// File is an operation, not a page: the tree of "/", the whole system, laid
-// over whatever page is showing, right beside the rail. It opens when the
+// File is an operation, not a page: the tree of "/", the whole system, as a
+// card laid over whatever page is showing, right beside the rail and only as
+// tall as what is in it. It opens when the
 // pointer rests on the File icon or on the tree, or when File is pressed;
 // once out it stays for LINGER after the pointer leaves, so reaching across
 // the page and back does not lose it. A press outside or Escape closes it at
@@ -88,7 +89,16 @@ export class FileTree {
 
   open(focus = false) {
     clearTimeout(this.timer);
-    if (!this.isOpen) this.build(focus);
+    if (!this.isOpen) {
+      // Its "/" row sits level with the File icon.
+      const at = this.trigger?.getBoundingClientRect();
+      if (at) {
+        const pad = parseFloat(getComputedStyle(this.element).paddingTop) || 0;
+        const row = this.element.querySelector<HTMLElement>('.tree-root')?.offsetHeight ?? 0;
+        this.element.style.setProperty('--tree-top', `${Math.max(0, at.top + at.height / 2 - pad - row / 2)}px`);
+      }
+      this.build(focus);
+    }
     this.element.classList.add('open');
     this.trigger?.setAttribute('aria-expanded', 'true');
   }
