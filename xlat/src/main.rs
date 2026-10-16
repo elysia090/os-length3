@@ -4,8 +4,10 @@ use std::process::ExitCode;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
-    let [_, input, output] = args.as_slice() else {
-        eprintln!("usage: xlat INPUT.elf OUTPUT.wasm");
+    let trace = args.iter().any(|a| a == "--trace");
+    let paths: Vec<&String> = args.iter().skip(1).filter(|a| !a.starts_with("--")).collect();
+    let [input, output] = paths.as_slice() else {
+        eprintln!("usage: xlat [--trace] INPUT.elf OUTPUT.wasm");
         return ExitCode::from(2);
     };
     let bytes = match std::fs::read(input) {
@@ -18,7 +20,7 @@ fn main() -> ExitCode {
     };
     let started = std::time::Instant::now();
     let program = xlat::discover::discover(&elf);
-    let translation = xlat::lower::translate(&elf, &program);
+    let translation = xlat::lower::translate(&elf, &program, xlat::lower::Options { trace });
     if let Err(e) = std::fs::write(output, &translation.wasm) {
         eprintln!("xlat: {output}: {e}");
         return ExitCode::FAILURE;

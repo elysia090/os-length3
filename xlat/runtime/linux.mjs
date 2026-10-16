@@ -3,6 +3,8 @@
 // SysV stack, and its system calls land here. Runs the same in a browser
 // Worker and in Node.
 
+import {Fpu} from './fpu.mjs';
+
 const PAGE = 4096;
 const WASM_PAGE = 65536;
 const STACK_BYTES = 8 << 20;
@@ -56,6 +58,15 @@ export class Linux {
     this.cwd = cwd;
     this.fds = new Map([[0, {kind: 'stdin'}], [1, {kind: 'stdout'}], [2, {kind: 'stderr'}]]);
     this.syscalls = 0;
+    this.trail = new Array(256).fill(0n);
+    this.trailAt = 0;
+  }
+
+  /** The most recent block entries, oldest first (with --trace). */
+  recent(n = 32) {
+    const out = [];
+    for (let k = n; k > 0; k--) out.push(this.trail[(this.trailAt - k) & 255]);
+    return out.filter((a) => a).map((a) => '0x' + a.toString(16));
   }
 
   async load(module) {
@@ -67,12 +78,16 @@ export class Linux {
     this.mapEnd = this.mapBase;
     this.free = [];
     this.memory = new WebAssembly.Memory({initial: this.mapBase / WASM_PAGE, maximum: 65536});
+    const [ops] = WebAssembly.Module.customSections(module, 'xlat.fpu');
+    this.fpu = new Fpu(() => this.bytes, new TextDecoder().decode(ops).split(','));
     this.instance = await WebAssembly.instantiate(module, {env: {
       memory: this.memory,
       syscall: (...args) => this.syscall(...args),
       trap: (address, code) => { throw new GuestTrap(address, code); },
       div128: (hi, lo, d, signed) => this.div128(hi, lo, d, signed),
       clock: () => BigInt(Math.round(performance.now() * 1e6)),
+      fpu: (op, size, address, a, b) => this.fpu.call(op, size, address, a, b),
+      trace: (address) => { this.trail[this.trailAt++ & 255] = address; },
     }});
     return this;
   }

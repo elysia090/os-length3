@@ -5,6 +5,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+
+static double now(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec + t.tv_nsec * 1e-9; }
+static double mark;
+#define TIMED(name, fmt, expr) do { mark = now(); printf("%-8s " fmt "\n", name, expr); fprintf(stderr, "%-8s %.3f\n", name, now() - mark); } while (0)
 
 static uint64_t sieve(int n) {
     char *composite = calloc(n + 1, 1);
@@ -112,14 +117,14 @@ static uint64_t heap(int n) {
 
 int main(int argc, char **argv) {
     int scale = argc > 1 ? atoi(argv[1]) : 1;
-    printf("sieve    %llu\n", (unsigned long long)sieve(2000000 * scale));
-    printf("mix      %llu\n", (unsigned long long)mix(20000000 * scale));
-    printf("sort     %llu\n", (unsigned long long)sorting(400000 * scale));
-    printf("fib      %ld\n", fib(30 + (scale > 1)));
-    printf("switch   %lld\n", (long long)interpret(20000000 * scale));
-    printf("wide     %llu\n", (unsigned long long)wide(5000000 * scale));
-    printf("strings  %llu\n", (unsigned long long)strings(300000 * scale));
-    printf("heap     %llu\n", (unsigned long long)heap(1000000 * scale));
+    TIMED("sieve", "%llu", (unsigned long long)sieve(2000000 * scale));
+    TIMED("mix", "%llu", (unsigned long long)mix(20000000 * scale));
+    TIMED("sort", "%llu", (unsigned long long)sorting(400000 * scale));
+    TIMED("fib", "%ld", fib(30 + (scale > 1)));
+    TIMED("switch", "%lld", (long long)interpret(20000000 * scale));
+    TIMED("wide", "%llu", (unsigned long long)wide(5000000 * scale));
+    TIMED("strings", "%llu", (unsigned long long)strings(300000 * scale));
+    TIMED("heap", "%llu", (unsigned long long)heap(1000000 * scale));
     int r = setjmp(escape);
     if (!r) deep(1000);
     printf("longjmp  %d\n", r);

@@ -17,7 +17,13 @@ const linux = await new Linux({
   stdout: (b) => process.stdout.write(b),
   stderr: (b) => process.stderr.write(b),
 }).load(module);
-const code = linux.run();
+let code;
+try {
+  code = linux.run();
+} catch (error) {
+  if (process.env.XLAT_TRACE) process.stderr.write('recent blocks: ' + linux.recent().join(' ') + '\n');
+  throw error;
+}
 if (process.env.XLAT_TIMING) {
   process.stderr.write(JSON.stringify({compileMs: compiled - started, runMs: performance.now() - compiled, syscalls: linux.syscalls}) + '\n');
 }

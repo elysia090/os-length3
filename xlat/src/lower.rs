@@ -30,17 +30,21 @@ const T_CLOCK: u32 = 4;
 const T_PAIR: u32 = 5; // (i64, i64) -> i64
 const T_RESOLVE: u32 = 6;
 const T_RUN: u32 = 7;
+const T_FPU: u32 = 8; // (op, size, address, st a, st b) -> i32
+const T_TRACE: u32 = 9; // (i64) -> ()
 
 const F_SYSCALL: u32 = 0;
 const F_TRAP: u32 = 1;
 const F_DIV128: u32 = 2;
 const F_CLOCK: u32 = 3;
-const F_MULHU: u32 = 4;
-const F_MULHS: u32 = 5;
-const F_RESOLVE: u32 = 6;
-const F_DISPATCH: u32 = 7;
-const F_RUN: u32 = 8;
-const FIRST_GUEST: u32 = 9;
+const F_FPU: u32 = 4;
+const F_TRACE: u32 = 5;
+const F_MULHU: u32 = 6;
+const F_MULHS: u32 = 7;
+const F_RESOLVE: u32 = 8;
+const F_DISPATCH: u32 = 9;
+const F_RUN: u32 = 10;
+const FIRST_GUEST: u32 = 11;
 
 const G_FS: u32 = 16;
 const fn g_xmm(n: u32) -> u32 { 17 + n }
@@ -61,6 +65,7 @@ const fn l_t(k: u32) -> u32 { 26 + k }
 const fn l_u(k: u32) -> u32 { 32 + k }
 const fn l_x(n: u32) -> u32 { 34 + n }
 const fn l_v(k: u32) -> u32 { 50 + k }
+const fn l_d(k: u32) -> u32 { 52 + k }
 
 const RSP: u32 = 4;
 const RAX: u32 = 0;
@@ -1144,7 +1149,7 @@ impl Fx<'_> {
             Bt | Bts | Btr | Btc => self.bit_test(i),
             Bsf | Bsr | Tzcnt | Lzcnt | Popcnt => self.count_bits(i, need),
             Movsb | Movsw | Movsd | Movsq | Stosb | Stosw | Stosd | Stosq
-                if !(m == Movsd && i.op0_kind() == OpKind::Register) => self.string(i),
+                if i.op0_kind() == OpKind::MemoryESRDI => self.string(i),
             Seto | Setno | Setb | Setae | Sete | Setne | Setbe | Seta | Sets | Setns | Setp | Setnp | Setl | Setge
             | Setle | Setg => {
                 self.condition(i.condition_code()); self.e(W::I64ExtendI32U); self.set(l_t(1));
@@ -1178,7 +1183,7 @@ impl Fx<'_> {
                 self.get(l_t(1)); self.c64(32); self.e(W::I64ShrU); self.set(l_reg(RDX));
                 true
             }
-            _ => self.vector(i),
+            _ => match self.x87(i) { Some(done) => done, None => self.vector(i) },
         };
         if !ok {
             self.unsupported(i);
@@ -1230,6 +1235,150 @@ impl Fx<'_> {
         }
     }
 
+    /// Scalar SSE: lane 0 of the destination is replaced, the rest is kept.
+    fn scalar(&mut self, i: &Instruction) -> Option<bool> {
+        use Mnemonic::*;
+        let m = i.mnemonic();
+        let double = matches!(m, Addsd | Subsd | Mulsd | Divsd | Sqrtsd | Minsd | Maxsd | Movsd | Ucomisd | Comisd
+            | Cvtsd2ss | Cvttsd2si | Cvtsd2si | Cvtsi2sd | Cmpsd);
+        let bytes = if double { 8 } else { 4 };
+        let (extract, replace) = if double { (W::F64x2ExtractLane(0), W::F64x2ReplaceLane(0)) } else { (W::F32x4ExtractLane(0), W::F32x4ReplaceLane(0)) };
+        let arith = match m {
+            Addsd => Some(W::F64Add), Subsd => Some(W::F64Sub), Mulsd => Some(W::F64Mul), Divsd => Some(W::F64Div),
+            Addss => Some(W::F32Add), Subss => Some(W::F32Sub), Mulss => Some(W::F32Mul), Divss => Some(W::F32Div),
+            _ => None,
+        };
+        let done = |fx: &mut Self| { fx.set(l_v(0)); fx.xwrite(i, 0, 16, l_v(0)) };
+        Some(match m {
+            _ if arith.is_some() => {
+                self.xread(i, 0, 16) && { self.set(l_v(1)); self.get(l_v(1)); self.get(l_v(1)); self.e(extract.clone());
+                    self.xread(i, 1, bytes) } && { self.e(extract); self.e(arith.unwrap()); self.e(replace); done(self) }
+            }
+            Sqrtsd | Sqrtss => {
+                self.xread(i, 0, 16) && { self.xread(i, 1, bytes) } && {
+                    self.e(extract); self.e(if double { W::F64Sqrt } else { W::F32Sqrt }); self.e(replace); done(self)
+                }
+            }
+            Minsd | Maxsd | Minss | Maxss => {
+                // x86: if either is NaN or both zero, the second operand wins.
+                let lt = matches!(m, Minsd | Minss);
+                self.xread(i, 0, 16) && { self.set(l_v(1)); self.xread(i, 1, bytes) } && {
+                    self.set(l_v(0));
+                    self.get(l_v(1));
+                    self.get(l_v(1)); self.e(extract.clone());
+                    self.get(l_v(0)); self.e(extract.clone());
+                    self.get(l_v(1)); self.e(extract.clone());
+                    self.get(l_v(0)); self.e(extract.clone());
+                    self.e(match (double, lt) { (true, true) => W::F64Lt, (true, false) => W::F64Gt, (false, true) => W::F32Lt, _ => W::F32Gt });
+                    self.e(W::Select);
+                    self.e(replace); done(self)
+                }
+            }
+            Movsd | Movss => {
+                if i.op1_kind() == OpKind::Memory {
+                    self.xread(i, 1, bytes) && done(self)
+                } else if i.op0_kind() == OpKind::Memory {
+                    self.xread(i, 1, 16) && { self.set(l_v(0)); self.xwrite(i, 0, bytes, l_v(0)) }
+                } else {
+                    self.xread(i, 0, 16) && { self.xread(i, 1, 16) } && { self.e(extract); self.e(replace); done(self) }
+                }
+            }
+            Cvtsi2sd | Cvtsi2ss => {
+                let size = Self::size(i, 1);
+                self.xread(i, 0, 16) && self.read(i, 1, size) && {
+                    if size == 4 { self.e(W::I32WrapI64); self.e(if double { W::F64ConvertI32S } else { W::F32ConvertI32S }); }
+                    else { self.e(if double { W::F64ConvertI64S } else { W::F32ConvertI64S }); }
+                    self.e(replace); done(self)
+                }
+            }
+            Cvtss2sd | Cvtsd2ss => {
+                self.xread(i, 0, 16) && { self.xread(i, 1, if m == Cvtss2sd { 4 } else { 8 }) } && {
+                    if m == Cvtss2sd { self.e(W::F32x4ExtractLane(0)); self.e(W::F64PromoteF32); self.e(W::F64x2ReplaceLane(0)); }
+                    else { self.e(W::F64x2ExtractLane(0)); self.e(W::F32DemoteF64); self.e(W::F32x4ReplaceLane(0)); }
+                    done(self)
+                }
+            }
+            Cvttsd2si | Cvtsd2si | Cvttss2si | Cvtss2si => {
+                // Out of range and NaN give the "integer indefinite" value.
+                let size = Self::size(i, 0);
+                let round = matches!(m, Cvtsd2si | Cvtss2si);
+                self.xread(i, 1, bytes) && {
+                    self.e(extract);
+                    if !double { self.e(W::F64PromoteF32); }
+                    if round { self.e(W::F64Nearest); }
+                    self.e(W::LocalSet(l_d(0)));
+                    let limit = if size == 8 { 9.223372036854775808e18 } else { 2147483648.0 };
+                    self.e(W::LocalGet(l_d(0)));
+                    self.e(if size == 8 { W::I64TruncSatF64S } else { W::I32TruncSatF64S });
+                    if size != 8 { self.e(W::I64ExtendI32U); }
+                    self.c64(if size == 8 { i64::MIN } else { 0x8000_0000 });
+                    // in range: -limit <= v < limit (false for NaN)
+                    self.get(l_d(0)); self.e(W::F64Const(limit.into())); self.e(W::F64Lt);
+                    self.get(l_d(0)); self.e(W::F64Const((-limit).into())); self.e(W::F64Ge);
+                    self.e(W::I32And);
+                    self.e(W::Select);
+                    self.write_reg(i.op0_register())
+                }
+            }
+            Cmpsd | Cmpss if i.op_count() == 3 => {
+                // Predicate mask in lane 0: all ones when true.
+                self.xread(i, 0, 16) && { self.set(l_v(1)); self.get(l_v(1)); self.e(extract.clone());
+                    if !double { self.e(W::F64PromoteF32); } self.set(l_d(0)); self.xread(i, 1, bytes) } && {
+                    self.e(extract); if !double { self.e(W::F64PromoteF32); } self.set(l_d(1));
+                    self.predicate(i.immediate8());
+                    self.get(l_v(1));
+                    if double {
+                        self.c64(-1); self.c64(0); self.get(l_u(0)); self.e(W::Select);
+                        self.e(W::I64x2ReplaceLane(0));
+                    } else {
+                        self.c32(-1); self.c32(0); self.get(l_u(0)); self.e(W::Select);
+                        self.e(W::I32x4ReplaceLane(0));
+                    }
+                    done(self)
+                }
+            }
+            Ucomisd | Comisd | Ucomiss | Comiss => {
+                self.xread(i, 0, 16) && { self.e(extract.clone()); if !double { self.e(W::F64PromoteF32); } self.e(W::LocalSet(l_d(0)));
+                    self.xread(i, 1, bytes) } && {
+                    self.e(extract); if !double { self.e(W::F64PromoteF32); } self.e(W::LocalSet(l_d(1)));
+                    self.compare_flags();
+                    self.c32(0); self.set(L_OF); self.c32(0); self.set(L_SF);
+                    self.flags = Flags::Held;
+                    true
+                }
+            }
+            _ => return None,
+        })
+    }
+
+    /// SSE compare predicate (cmpsd imm8 & 7) of l_d(0) against l_d(1) into l_u(0).
+    fn predicate(&mut self, imm: u8) {
+        let unordered = |fx: &mut Self| {
+            fx.get(l_d(0)); fx.get(l_d(0)); fx.e(W::F64Ne); fx.get(l_d(1)); fx.get(l_d(1)); fx.e(W::F64Ne); fx.e(W::I32Or);
+        };
+        let pair = |fx: &mut Self, op: I| { fx.get(l_d(0)); fx.get(l_d(1)); fx.e(op); };
+        match imm & 7 {
+            0 => pair(self, W::F64Eq),
+            1 => pair(self, W::F64Lt),
+            2 => pair(self, W::F64Le),
+            3 => unordered(self),
+            4 => pair(self, W::F64Ne),
+            5 => { pair(self, W::F64Lt); self.e(W::I32Eqz); }
+            6 => { pair(self, W::F64Le); self.e(W::I32Eqz); }
+            _ => { unordered(self); self.e(W::I32Eqz); }
+        }
+        self.set(l_u(0));
+    }
+
+    /// ucomisd/fucomi flags from l_d(0) against l_d(1):
+    /// unordered sets ZF, PF and CF; less sets CF; equal sets ZF.
+    fn compare_flags(&mut self) {
+        self.get(l_d(0)); self.get(l_d(0)); self.e(W::F64Ne); self.get(l_d(1)); self.get(l_d(1)); self.e(W::F64Ne); self.e(W::I32Or);
+        self.set(L_PF);
+        self.get(l_d(0)); self.get(l_d(1)); self.e(W::F64Eq); self.get(L_PF); self.e(W::I32Or); self.set(L_ZF);
+        self.get(l_d(0)); self.get(l_d(1)); self.e(W::F64Lt); self.get(L_PF); self.e(W::I32Or); self.set(L_CF);
+    }
+
     fn vector(&mut self, i: &Instruction) -> bool {
         use Mnemonic::*;
         let m = i.mnemonic();
@@ -1238,7 +1387,9 @@ impl Fx<'_> {
         if !(is_x0 || is_x1) {
             return false;
         }
-        self.uses_xmm = true;
+        if let Some(done) = self.scalar(i) {
+            return done;
+        }
         let binary = |fx: &mut Self, op: I| -> bool {
             fx.xread(i, 0, 16) && fx.xread(i, 1, 16) && { fx.e(op); fx.set(l_v(0)); fx.xwrite(i, 0, 16, l_v(0)) }
         };
@@ -1296,6 +1447,12 @@ impl Fx<'_> {
             Pcmpeqd => binary(self, W::I32x4Eq), Pcmpeqq => binary(self, W::I64x2Eq),
             Pcmpgtb => binary(self, W::I8x16GtS), Pcmpgtw => binary(self, W::I16x8GtS),
             Pcmpgtd => binary(self, W::I32x4GtS), Pcmpgtq => binary(self, W::I64x2GtS),
+            Addpd => binary(self, W::F64x2Add), Subpd => binary(self, W::F64x2Sub),
+            Mulpd => binary(self, W::F64x2Mul), Divpd => binary(self, W::F64x2Div),
+            Addps => binary(self, W::F32x4Add), Subps => binary(self, W::F32x4Sub),
+            Mulps => binary(self, W::F32x4Mul), Divps => binary(self, W::F32x4Div),
+            Unpcklpd => binary(self, W::I8x16Shuffle([0, 1, 2, 3, 4, 5, 6, 7, 16, 17, 18, 19, 20, 21, 22, 23])),
+            Unpckhpd => binary(self, W::I8x16Shuffle([8, 9, 10, 11, 12, 13, 14, 15, 24, 25, 26, 27, 28, 29, 30, 31])),
             Pminub => binary(self, W::I8x16MinU), Pmaxub => binary(self, W::I8x16MaxU),
             Pminsw => binary(self, W::I16x8MinS), Pmaxsw => binary(self, W::I16x8MaxS),
             Pminud => binary(self, W::I32x4MinU), Pmaxud => binary(self, W::I32x4MaxU),
@@ -1365,6 +1522,78 @@ impl Fx<'_> {
     }
 }
 
+// ---- x87: an exact 80-bit coprocessor in the host ----
+
+/// x87 operations the host implements, in the order of the `fpu` op index.
+/// The list is embedded in the module so host and translator cannot drift.
+const X87_OPS: &[&str] = &[
+    "fld", "fild", "fst", "fstp", "fist", "fistp", "fisttp",
+    "fld1", "fldz", "fldpi", "fldl2e", "fldln2", "fldlg2", "fldl2t",
+    "fadd", "faddp", "fmul", "fmulp", "fsub", "fsubp", "fsubr", "fsubrp", "fdiv", "fdivp", "fdivr", "fdivrp",
+    "fiadd", "fimul", "fisub", "fisubr", "fidiv", "fidivr",
+    "fchs", "fabs", "fsqrt", "frndint", "fxch",
+    "fucomi", "fcomi", "fucomip", "fcomip",
+    "fucom", "fcom", "fucomp", "fcomp", "fucompp", "fcompp", "ftst",
+    "fnstsw", "fnstcw", "fldcw", "fninit", "fnclex", "fwait", "fnop", "ffree", "ffreep", "fincstp", "fdecstp",
+    "fprem", "fprem1", "fscale", "f2xm1", "fyl2x", "fyl2xp1", "fpatan", "fsin", "fcos", "fptan", "fxam", "fxtract",
+];
+
+fn st(r: Register) -> Option<u32> {
+    let n = r as u32;
+    (Register::ST0 as u32..=Register::ST7 as u32).contains(&n).then(|| n - Register::ST0 as u32)
+}
+
+impl Fx<'_> {
+    /// One x87 instruction: fpu(op, memory size, address, st a, st b) -> i32.
+    /// The result carries flags for fcomi (CF|ZF<<1|PF<<2) or a 16-bit
+    /// value for fnstsw/fnstcw; memory operands are read and written by the
+    /// host directly.
+    fn x87(&mut self, i: &Instruction) -> Option<bool> {
+        let name = format!("{:?}", i.mnemonic()).to_ascii_lowercase();
+        let name = if name == "wait" { "fwait".to_string() } else { name };
+        let op = X87_OPS.iter().position(|&n| n == name)?;
+        let mut size = 0;
+        let (mut a, mut b) = (0i32, 1i32);
+        let mut memory = false;
+        let mut regs = Vec::new();
+        for n in 0..i.op_count() {
+            match i.op_kind(n) {
+                OpKind::Memory => { memory = true; size = i.memory_size().size() as i32; }
+                OpKind::Register => match st(i.op_register(n)) {
+                    Some(k) => regs.push(k as i32),
+                    None if matches!(i.op_register(n), Register::AX) => {}
+                    None => return Some(false),
+                },
+                _ => return Some(false),
+            }
+        }
+        if let Some(&r) = regs.first() { a = r; }
+        if let Some(&r) = regs.get(1) { b = r; }
+        // Integer forms tell the host the memory holds an integer.
+        let integer = name.starts_with("fi") && name != "fincstp";
+        self.c32(op as i32);
+        self.c32(if integer { -size } else { size });
+        if memory { self.address(i); } else { self.c32(0); }
+        self.c32(a); self.c32(b);
+        self.e(W::Call(F_FPU));
+        match name.as_str() {
+            "fucomi" | "fcomi" | "fucomip" | "fcomip" => {
+                self.set(l_u(0));
+                for (bit, l) in [(0, L_CF), (1, L_ZF), (2, L_PF)] {
+                    self.get(l_u(0)); if bit > 0 { self.c32(bit); self.e(W::I32ShrU); } self.c32(1); self.e(W::I32And); self.set(l);
+                }
+                self.c32(0); self.set(L_OF); self.c32(0); self.set(L_SF);
+                self.flags = Flags::Held;
+            }
+            "fnstsw" if !memory => {
+                self.e(W::I64ExtendI32U); self.write_reg(Register::AX);
+            }
+            _ => self.e(W::Drop),
+        }
+        Some(true)
+    }
+}
+
 // ---- Flag liveness ----
 
 fn flags_read(i: &Instruction) -> u32 { i.rflags_read() & ALL_FLAGS }
@@ -1414,11 +1643,16 @@ fn live_flags(f: &Function) -> Vec<u32> {
 
 // ---- Functions ----
 
-fn lower_function(program: &Program, index: u32, report: &mut Report) -> WasmFunction {
+fn lower_function(program: &Program, index: u32, options: Options, report: &mut Report) -> WasmFunction {
     let function = &program.functions[index as usize];
     let live = live_flags(function);
     let n = function.blocks.len() as u32;
-    let mut fx = Fx { code: Vec::new(), flags: Flags::Held, depth: 0, program, function, report, uses_xmm: false, backward: false };
+    // Decide before lowering whether xmm state travels with this function,
+    // so saves and reloads around every call agree with the prologue.
+    let uses_xmm = function.blocks.iter().flat_map(|b| &b.code).any(|i| {
+        (0..i.op_count()).any(|n| i.op_kind(n) == OpKind::Register && xmm(i.op_register(n)).is_some())
+    });
+    let mut fx = Fx { code: Vec::new(), flags: Flags::Held, depth: 0, program, function, report, uses_xmm, backward: false };
 
     // Body first so we know whether xmm state must be loaded and saved.
     let mut body: Vec<I> = Vec::new();
@@ -1431,6 +1665,10 @@ fn lower_function(program: &Program, index: u32, report: &mut Report) -> WasmFun
         fx.flags = Flags::Held;
         fx.backward = false;
         fx.report.blocks += 1;
+        if options.trace {
+            fx.c64(block.start as i64);
+            fx.e(W::Call(F_TRACE));
+        }
         let next = function.blocks.get(k + 1).map(|b| b.start);
         let (succ, unknown) = successors(function, block);
         let live_out = if unknown { ALL_FLAGS } else { succ.iter().fold(0, |acc, &s| acc | live[s]) };
@@ -1524,7 +1762,7 @@ fn lower_function(program: &Program, index: u32, report: &mut Report) -> WasmFun
 
     let mut f = WasmFunction::new([
         (16, ValType::I64), (1, ValType::I32), (5, ValType::I32), (3, ValType::I64), (6, ValType::I64),
-        (2, ValType::I32), (16, ValType::V128), (2, ValType::V128),
+        (2, ValType::I32), (16, ValType::V128), (2, ValType::V128), (2, ValType::F64),
     ]);
     fx.get(L_ENTRY); fx.set(L_BLK);
     fx.load();
@@ -1610,6 +1848,13 @@ fn helpers(code: &mut CodeSection, entries: u32) {
         W::Loop(BlockType::Empty), W::LocalGet(0), W::Call(F_DISPATCH), W::LocalSet(0), W::Br(0), W::End, W::End,
     ] { f.instruction(&i); }
     code.function(&f);
+
+}
+
+#[derive(Clone, Copy, Default)]
+pub struct Options {
+    /// Report every block entry to the host's `trace` import.
+    pub trace: bool,
 }
 
 pub struct Translation {
@@ -1622,7 +1867,7 @@ pub fn image_end(elf: &Elf) -> u64 {
     elf.segments.iter().map(|s| s.vaddr + s.memsz).max().unwrap_or(0).next_multiple_of(4096)
 }
 
-pub fn translate(elf: &Elf, program: &Program) -> Translation {
+pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation {
     let mut report = Report { functions: program.functions.len(), entries: program.entries.len(), ..Default::default() };
     let mut module = Module::new();
 
@@ -1635,6 +1880,8 @@ pub fn translate(elf: &Elf, program: &Program) -> Translation {
     types.ty().function([ValType::I64, ValType::I64], [ValType::I64]);
     types.ty().function([ValType::I64], [ValType::I64]);
     types.ty().function([ValType::I64], []);
+    types.ty().function([ValType::I32; 5], [ValType::I32]);
+    types.ty().function([ValType::I64], []);
     module.section(&types);
 
     let mut imports = ImportSection::new();
@@ -1646,6 +1893,8 @@ pub fn translate(elf: &Elf, program: &Program) -> Translation {
     imports.import("env", "trap", EntityType::Function(T_TRAP));
     imports.import("env", "div128", EntityType::Function(T_DIV));
     imports.import("env", "clock", EntityType::Function(T_CLOCK));
+    imports.import("env", "fpu", EntityType::Function(T_FPU));
+    imports.import("env", "trace", EntityType::Function(T_TRACE));
     module.section(&imports);
 
     let mut functions = FunctionSection::new();
@@ -1686,7 +1935,7 @@ pub fn translate(elf: &Elf, program: &Program) -> Translation {
     let mut code = CodeSection::new();
     helpers(&mut code, entries as u32);
     for f in 0..program.functions.len() as u32 {
-        code.function(&lower_function(program, f, &mut report));
+        code.function(&lower_function(program, f, options, &mut report));
     }
     module.section(&code);
 
@@ -1705,7 +1954,7 @@ pub fn translate(elf: &Elf, program: &Program) -> Translation {
     module.section(&data);
 
     let mut names = wasm_encoder::NameMap::new();
-    for (k, n) in ["syscall", "trap", "div128", "clock", "mulhu", "mulhs", "resolve", "dispatch", "run"].iter().enumerate() {
+    for (k, n) in ["syscall", "trap", "div128", "clock", "fpu", "trace", "mulhu", "mulhs", "resolve", "dispatch", "run"].iter().enumerate() {
         names.append(k as u32, n);
     }
     for (k, f) in program.functions.iter().enumerate() {
@@ -1722,6 +1971,7 @@ pub fn translate(elf: &Elf, program: &Program) -> Translation {
         elf.entry, image_end(elf), elf.phdr_address().unwrap_or(0), elf.phnum, tls
     );
     module.section(&CustomSection { name: Cow::Borrowed("xlat.facts"), data: Cow::Owned(facts.into_bytes()) });
+    module.section(&CustomSection { name: Cow::Borrowed("xlat.fpu"), data: Cow::Owned(X87_OPS.join(",").into_bytes()) });
 
     Translation { wasm: module.finish(), report }
 }
