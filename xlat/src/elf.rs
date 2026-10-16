@@ -66,7 +66,9 @@ struct Reader<'a>(&'a [u8]);
 impl Reader<'_> {
     fn bytes(&self, at: u64, n: u64) -> Result<&[u8], Error> {
         let start = usize::try_from(at).map_err(|_| Error("offset".into()))?;
-        let end = start.checked_add(n as usize).ok_or_else(|| Error("offset overflow".into()))?;
+        // try_from, not `as`: on wasm32 a 64-bit size must not wrap to a small one.
+        let n = usize::try_from(n).map_err(|_| Error("size".into()))?;
+        let end = start.checked_add(n).ok_or_else(|| Error("offset overflow".into()))?;
         self.0.get(start..end).ok_or_else(|| Error(format!("truncated at {at:#x}+{n:#x}")))
     }
     fn u16(&self, at: u64) -> Result<u16, Error> {
@@ -110,14 +112,17 @@ impl Elf {
 
         let mut segments = Vec::new();
         let mut tls = None;
+        let row = |base: u64, i: u64, size: u64| i.checked_mul(size).and_then(|o| base.checked_add(o)).ok_or_else(|| Error("header table overflow".into()));
         for i in 0..phnum {
-            let at = phoff + i * phentsize;
+            let at = row(phoff, i, phentsize)?;
             let kind = r.u32(at)?;
             let flags = r.u32(at + 4)?;
             let (offset, vaddr, filesz, memsz, align) =
                 (r.u64(at + 8)?, r.u64(at + 16)?, r.u64(at + 32)?, r.u64(at + 40)?, r.u64(at + 48)?);
             match kind {
                 PT_INTERP => return err("dynamically linked; only static executables are translated"),
+                PT_LOAD if filesz > memsz || vaddr.checked_add(memsz).is_none_or(|end| end > 1 << 47) =>
+                    return err("a loadable segment does not fit the address space"),
                 PT_LOAD => segments.push(Segment {
                     offset,
                     vaddr,
@@ -135,15 +140,15 @@ impl Elf {
         let mut relocation_targets = Vec::new();
         let mut relative_slots = Vec::new();
         for i in 0..shnum {
-            let at = shoff + i * shentsize;
+            let at = row(shoff, i, shentsize)?;
             let kind = r.u32(at + 4)?;
             let (offset, size, link, entsize) = (r.u64(at + 24)?, r.u64(at + 32)?, r.u32(at + 40)?, r.u64(at + 56)?);
             if kind == SHT_SYMTAB && entsize >= 24 {
-                let strtab = shoff + link as u64 * shentsize;
+                let strtab = row(shoff, link as u64, shentsize)?;
                 let (str_off, str_size) = (r.u64(strtab + 24)?, r.u64(strtab + 32)?);
                 let strings = r.bytes(str_off, str_size)?;
                 for s in 0..size / entsize {
-                    let e = offset + s * entsize;
+                    let e = row(offset, s, entsize)?;
                     let name_at = r.u32(e)? as usize;
                     let info = r.bytes(e + 4, 1)?[0];
                     let shndx = r.u16(e + 6)?;
@@ -164,15 +169,15 @@ impl Elf {
             // sections relocate offsets that merely look like addresses.
             let loaded = kind == SHT_RELA && {
                 let applies_to = r.u32(at + 44)? as u64;
-                applies_to < shnum && r.u64(shoff + applies_to * shentsize + 8)? & SHF_ALLOC != 0
+                applies_to < shnum && r.u64(row(shoff, applies_to, shentsize)? + 8)? & SHF_ALLOC != 0
             };
             if kind == SHT_RELA && entsize >= 24 && loaded {
                 // With --emit-relocs the symbol index refers to the static
                 // symtab; S + A is the stored address for absolute kinds.
-                let symtab = shoff + link as u64 * shentsize;
+                let symtab = row(shoff, link as u64, shentsize)?;
                 let (sym_off, sym_ent) = (r.u64(symtab + 24)?, r.u64(symtab + 56)?.max(24));
                 for e in 0..size / entsize {
-                    let rel = offset + e * entsize;
+                    let rel = row(offset, e, entsize)?;
                     let info = r.u64(rel + 8)?;
                     let addend = r.u64(rel + 16)? as i64;
                     let (sym, kind) = (info >> 32, (info & 0xffff_ffff) as u32);
