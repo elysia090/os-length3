@@ -1520,6 +1520,39 @@ impl Fx<'_> {
                     self.write(i, 0, width, l_t(0))
                 }
             }
+            // The low half from the destination, the high half from the source.
+            Shufps | Shufpd => {
+                let imm = i.immediate8();
+                let mut lanes = [0u8; 16];
+                if m == Shufps {
+                    for k in 0..4u8 {
+                        let s = (imm >> (k * 2)) & 3;
+                        let from = if k < 2 { 0 } else { 16 };
+                        for b in 0..4u8 { lanes[(k * 4 + b) as usize] = from + s * 4 + b; }
+                    }
+                } else {
+                    for b in 0..8u8 {
+                        lanes[b as usize] = (imm & 1) * 8 + b;
+                        lanes[8 + b as usize] = 16 + ((imm >> 1) & 1) * 8 + b;
+                    }
+                }
+                binary(self, W::I8x16Shuffle(lanes))
+            }
+            // Shuffle the four words of one half; the other half is copied.
+            Pshuflw | Pshufhw => {
+                let imm = i.immediate8();
+                let base = if m == Pshuflw { 0u8 } else { 4 };
+                self.xread(i, 1, 16) && {
+                    self.set(l_v(1));
+                    let mut lanes: [u8; 16] = core::array::from_fn(|b| b as u8);
+                    for k in 0..4u8 {
+                        let s = (imm >> (k * 2)) & 3;
+                        for b in 0..2u8 { lanes[((base + k) * 2 + b) as usize] = (base + s) * 2 + b; }
+                    }
+                    self.get(l_v(1)); self.get(l_v(1)); self.e(W::I8x16Shuffle(lanes)); self.set(l_v(0));
+                    self.xwrite(i, 0, 16, l_v(0))
+                }
+            }
             Pslldq | Psrldq => {
                 let n = i.immediate8().min(16);
                 self.xread(i, 0, 16) && {

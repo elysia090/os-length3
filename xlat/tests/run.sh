@@ -22,4 +22,26 @@ for c in "$here"/c/*.c; do
     echo "FAIL $name (exit $native vs $translated)"; status=1
   fi
 done
+# Rust's std (what l3 is made of), when the musl target is installed.
+if rustup target list --installed 2>/dev/null | grep -q x86_64-unknown-linux-musl; then
+  for r in "$here"/rust/*.rs; do
+    name=rust-$(basename "$r" .rs)
+    rustc -O --edition 2021 --target x86_64-unknown-linux-musl -C target-feature=+crt-static \
+      -C relocation-model=static -C link-arg=-no-pie -C link-arg=-Wl,--emit-relocs "$r" -o "$out/$name"
+    set +e
+    "$out/$name" a b > "$out/$name.native"; native=$?
+    node "$root/runtime/run.mjs" "$out/$name" a b > "$out/$name.xlat"; translated=$?
+    set -e
+    if [ "$native" = "$translated" ] && cmp -s "$out/$name.native" "$out/$name.xlat"; then
+      echo "ok   $name"
+    else
+      echo "FAIL $name (exit $native vs $translated)"; status=1
+    fi
+  done
+else
+  echo "skip rust (no x86_64-unknown-linux-musl target)"
+fi
+for t in "$here"/*.test.mjs; do
+  if node --test "$t" >/dev/null 2>&1; then echo "ok   $(basename "$t")"; else echo "FAIL $(basename "$t")"; status=1; fi
+done
 exit $status

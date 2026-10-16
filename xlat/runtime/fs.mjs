@@ -28,6 +28,8 @@ export class File extends Node {
     this._data = data;
     this.size = data.length;
     this.load = load; // () => Uint8Array, called once on first access
+    // Counts every change to the contents; times can repeat within a millisecond.
+    this.version = 0;
   }
   get data() {
     if (this.load) {
@@ -50,6 +52,7 @@ export class File extends Node {
     data.set(bytes, at);
     this.size = Math.max(this.size, need);
     this.mtime = Date.now();
+    this.version++;
   }
   truncate(length) {
     const data = this.data;
@@ -62,6 +65,7 @@ export class File extends Node {
     }
     this.size = length;
     this.mtime = Date.now();
+    this.version++;
   }
   /** The exact contents as an independent array. */
   bytes() { return this.data.slice(0, this.size); }
