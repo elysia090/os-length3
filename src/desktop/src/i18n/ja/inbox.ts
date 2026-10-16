@@ -46,7 +46,5 @@ export default {
   'Direct': '直接',
   'Write to name@domain': 'name@domain に書く',
   'Write to {address}…': '{address} に書く…',
-  'About': '対象',
-  'Nothing': 'なし',
-  'Enter sends · Shift+Enter for a new line': 'Enter で送信 · Shift+Enter で改行',
+  'Review： or Question： first to ask · a /root/… path says what it is about · Enter sends · Shift+Enter for a new line': '頭に Review： か Question： で依頼 · /root/… のパスで対象 · Enter で送信 · Shift+Enter で改行',
 } as Record<string, string>;

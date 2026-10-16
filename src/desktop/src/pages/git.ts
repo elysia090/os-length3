@@ -1,153 +1,140 @@
 import {h} from '../dom.ts';
 import * as gitops from '../history.ts';
-import {t} from '../i18n.ts';
+import {t, tn} from '../i18n.ts';
 import {readIssues, type Issue} from '../issues.ts';
 import {connection} from '../remote.ts';
 import {onChange, store} from '../repos.ts';
 import {bench} from './bench.ts';
-import {pageHead, parts} from './common.ts';
+import {pageHead} from './common.ts';
 import type {Context} from './context.ts';
-import {changeItem, cutRows, issueBadge, issueView, type IssueView} from './git-issue.ts';
+import {issueBelow, issueBox, issueHead, unmerged, type RepoState} from './git-issue.ts';
 import {issueForm} from './issue-form.ts';
 
 /**
  * Git: what happens between a repo and the outside, in the issues' terms.
- * The page is in three parts, one shown at a time:
+ * Under the repo chips, the issues not merged yet as large boxes side by
+ * side: one in full, its neighbours' edges showing at both sides. An edge is
+ * the way to the box beside (hover lifts it; ← → do the same), and the track
+ * slides there. The box holds the issue's number, words and next action
+ * (git-issue.ts); under it, plainly, its Diff, Review and Reply.
  *
- *   Issues    the unit of work and talk, read straight from each repo's
- *             issue/ (nothing is kept twice). Choosing one opens it large in
- *             place of the list: its text, its operations (Start, Commit,
- *             Push, Change, Reset), what is not committed, its commits and
- *             its change (git-issue.ts).
- *   Changes   what was handed to main, to review and settle by Merge or
- *             Reject (never Close, which is for issues only).
- *   History   main's commits.
- *
- * The repo chips beside the switch narrow all three.
+ * Issues are read straight from each repo's issue/ (nothing is kept twice).
  */
 
 const ALL = '';
 let filter = ALL;
-type Part = 'issues' | 'changes' | 'history';
+/** The issue shown, kept while the app runs: repo and file. */
+let chosen: string | null = null;
 
 export function git(ctx: Context): Node[] {
   const chips = h('div', {class: 'chips', role: 'radiogroup', 'aria-label': 'repo'});
   const write = h('button', {class: 'button', type: 'button'}, t('Write an issue')) as HTMLButtonElement;
-  const list = h('div', {class: 'issue-rows'}, h('p', {class: 'muted'}, t('Reading…')));
-  const page = parts<Part>('git', [
-    {id: 'issues', label: t('Issues')}, {id: 'changes', label: t('Changes')}, {id: 'history', label: t('History')}]);
+  const count = h('small', {});
+  const track = h('div', {class: 'issue-track'});
+  // The edges over the neighbours: clear, lifted on hover like any place.
+  const prev = h('button', {type: 'button', class: 'stage-hit prev', 'aria-label': t('Previous issue')}) as HTMLButtonElement;
+  const next = h('button', {type: 'button', class: 'stage-hit next', 'aria-label': t('Next issue')}) as HTMLButtonElement;
+  const stage = h('div', {class: 'issue-stage', tabindex: '0', 'aria-label': t('Issues'), 'aria-roledescription': 'carousel'}, track, prev, next);
+  const below = h('div', {});
+  const empty = h('div', {});
+  const form = issueForm({done: (repo) => { write.hidden = false; if (repo) void paint(); }});
+
   let repos: string[] = [];
   let missing: string[] = [];
   let at: string | null = null;
-  let open: {issue: Issue; view: IssueView} | null = null;
+  let shown: Issue[] = [];
+  let states = new Map<string, RepoState>();
+  let k = 0;
 
+  const key = (i: Issue) => `${i.repo}/${i.file}`;
   const events = {
     open: (repo: string, path: string) => ctx.openRepo(repo, path),
-    review: (head: Node, actions: Node[], files: Promise<gitops.FileDiff[]>, folder?: string | null) => workbench.reference.showChange(head, actions, files, folder ?? null),
     // The repo shows another copy: what File, Forge and the issues read is that copy now.
-    moved: (repo: string) => { if (repo === at) { void paint(); open?.view.refresh(); void paintChanges(); } },
-    close: () => { open = null; void paint(); },
+    moved: (repo: string) => { if (repo === at) void paint(); },
   };
-  const form = issueForm({done: (repo) => { write.hidden = false; if (repo) void paint(); }});
-  const listing = h('div', {class: 'issue-list-part'},
-    h('div', {class: 'part-head'}, h('span', {class: 'grow'}), write), form.element, list);
-  page.panel('issues').append(listing);
+  const again = () => void paint();
 
   /** Point the reference and the Prompt at `repo`. */
   const look = (repo: string | null) => {
     at = repo;
     if (repo) workbench.setRepo(repo);
   };
-  const shown = () => (filter ? [filter] : repos);
 
   const paintChips = () => {
     chips.replaceChildren(...[ALL, ...repos].map((r) => {
       const b = h('button', {type: 'button', class: 'chip', role: 'radio', 'aria-checked': String(filter === r)}, r || t('All'));
-      b.addEventListener('click', () => {
-        filter = r;
-        if (r && open && open.issue.repo !== r) open = null;
-        paintChips();
-        if (r) look(r);
-        void paint(); void paintChanges(); void paintHistory();
-      });
+      b.addEventListener('click', () => { filter = r; paintChips(); if (r) look(r); void paint(); });
       return b;
     }));
   };
 
-  const row = (i: Issue, badge: string) => {
-    const b = h('button', {type: 'button', class: 'issue-row'},
-      h('span', {class: 'issue-head'}, i.kind ? h('span', {class: 'issue-kind'}, `${i.kind}：`) : null, i.title,
-        badge ? h('span', {class: 'state-chip'}, badge) : null),
-      h('span', {class: 'issue-where'}, `${i.repo} · issue/${i.file}`),
-      i.detail ? h('span', {class: 'issue-detail'}, i.detail.split('\n')[0]) : null);
-    // Pressing a row opens the issue large in place of the list.
-    b.addEventListener('click', () => { look(i.repo); show(i); });
-    return b;
+  /** Slide to the `n`th box: it gets the whole box, the others only their heads. */
+  const go = (n: number) => {
+    if (!shown.length) return;
+    k = Math.max(0, Math.min(shown.length - 1, n));
+    const i = shown[k];
+    chosen = key(i);
+    look(i.repo);
+    track.style.setProperty('--at', `${k}`);
+    // The first box starts at the column's edge and the last ends at it; between, both neighbours show.
+    stage.style.setProperty('--lead', `${k === 0 ? 0 : k === shown.length - 1 ? 2 : 1}`);
+    [...track.children].forEach((slot, j) => {
+      const x = shown[j];
+      slot.setAttribute('aria-current', String(j === k));
+      slot.replaceChildren(j === k ? issueBox(x, states.get(x.repo), events, again) : issueHead(x));
+    });
+    prev.hidden = k === 0;
+    next.hidden = k === shown.length - 1;
+    below.replaceChildren(...issueBelow(i, states.get(i.repo), events, again));
   };
-
-  const show = (i: Issue) => {
-    open = {issue: i, view: issueView(i, events)};
-    listing.hidden = true;
-    page.panel('issues').replaceChildren(listing, open.view.element);
-    page.show('issues');
-  };
+  prev.addEventListener('click', () => go(k - 1));
+  next.addEventListener('click', () => go(k + 1));
+  stage.addEventListener('keydown', (e) => {
+    if ((e.target as HTMLElement).closest('input, textarea')) return;
+    if (e.key === 'ArrowLeft') { e.preventDefault(); go(k - 1); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); go(k + 1); }
+  });
 
   const paint = async () => {
     const all = await Promise.all(repos.map((r) => readIssues(store, r)));
-    missing = repos.filter((_, k) => all[k] === null);
-    const issues = all.flatMap((x, k) => (!filter || repos[k] === filter ? x ?? [] : []));
-    page.count('issues', issues.length);
-    // The open issue stays open while it is there; if it went, the list comes back.
-    if (open) {
-      const again = issues.find((i) => i.repo === open!.issue.repo && i.file === open!.issue.file);
-      if (again) { if (again.title !== open.issue.title || again.kind !== open.issue.kind || again.detail !== open.issue.detail) show(again); return; }
-      // A copy being fetched has no issues yet: keep the issue until the repo reads again.
-      if (all.some((x, k) => repos[k] === open!.issue.repo && x && x.length)) open = null; else return;
-    }
-    listing.hidden = false;
-    page.panel('issues').replaceChildren(listing);
-    if (!repos.length) { list.replaceChildren(h('div', {class: 'empty'}, t('No repos yet'))); return; }
-    if (!issues.length) { list.replaceChildren(h('div', {class: 'empty'}, t('No issues yet'))); return; }
-    // Where each issue stands: worked on here, started, or handed in.
-    const state = new Map<string, {w: gitops.Work | null; lines: gitops.Line[]; changes: gitops.Change[]}>();
+    missing = repos.filter((_, j) => all[j] === null);
+    const issues = all.flatMap((x, j) => (!filter || repos[j] === filter ? x ?? [] : []));
+    // Where each repo stands: the work it shows, the issues started, the changes to main.
+    const fresh = new Map<string, RepoState>();
     if (connection()) await Promise.all([...new Set(issues.map((i) => i.repo))].map(async (r) => {
-      const [w, lines, changes] = await Promise.all([gitops.work(r).catch(() => null), gitops.lines(r).catch(() => []), gitops.changesOf(r).catch(() => [])]);
-      state.set(r, {w, lines, changes});
+      let [work, lines, changes] = await Promise.all([gitops.work(r).catch(() => null), gitops.lines(r).catch(() => []), gitops.changesOf(r).catch(() => [])]);
+      // A work whose change was merged (here or on another device) is done: the repo shows main again.
+      if (work && work.line !== 'main' && changes.some((c) => c.line === work!.line && c.state === 'merged')) {
+        await gitops.switchWork(r, 'main').catch(() => {});
+        work = await gitops.work(r).catch(() => null);
+      }
+      const uncommitted = work && work.line !== 'main' ? (await gitops.changes(r).catch(() => null))?.files ?? 0 : 0;
+      fresh.set(r, {work, lines, changes, uncommitted});
     }));
-    list.replaceChildren(...issues.map((i) => {
-      const s = state.get(i.repo);
-      return row(i, s ? issueBadge(`issue/${i.file}`, s.w, s.lines, s.changes) : '');
-    }));
+    states = fresh;
+    // Oldest first, so #1 is on the left; merged ones are done.
+    shown = issues.filter((i) => unmerged(states.get(i.repo), i)).sort((a, b) => (a.repo === b.repo ? (a.file < b.file ? -1 : 1) : a.repo < b.repo ? -1 : 1));
+    const done = issues.length - shown.length;
+    count.textContent = shown.length ? `${shown.length}` : '';
+    count.title = done ? tn('{n} merged', '{n} merged', done) : '';
+    if (!shown.length) {
+      track.replaceChildren();
+      stage.hidden = true;
+      below.replaceChildren();
+      empty.replaceChildren(h('div', {class: 'empty'}, !repos.length ? t('No repos yet') : issues.length ? t('Every issue is merged.') : t('No issues yet')));
+      return;
+    }
+    empty.replaceChildren();
+    stage.hidden = false;
+    stage.classList.toggle('single', shown.length === 1);
+    track.replaceChildren(...shown.map(() => h('div', {class: 'issue-slot'})));
+    const was = shown.findIndex((i) => key(i) === chosen);
+    go(was >= 0 ? was : 0);
   };
-
-  const paintChanges = async () => {
-    const panel = page.panel('changes');
-    if (!connection()) { panel.replaceChildren(h('div', {class: 'empty'}, t('Changes are kept on the Remote. Sign in to it to see them.'))); page.count('changes', ''); return; }
-    const all = (await Promise.all(shown().map(async (r) => (await gitops.changesOf(r).catch(() => [])).map((c) => ({r, c}))))).flat()
-      .sort((a, b) => b.c.updatedAt - a.c.updatedAt);
-    const undecided = all.filter((x) => x.c.state === 'open').length;
-    page.count('changes', undecided || '');
-    panel.replaceChildren(...(all.length
-      ? all.map(({r, c}) => changeItem(r, c, events, () => { void paintChanges(); open?.view.refresh(); }, !filter && repos.length > 1))
-      : [h('div', {class: 'empty'}, t('No changes yet. Open an issue, Start, commit, push, and Change.'))]));
-  };
-
-  const paintHistory = async () => {
-    const panel = page.panel('history');
-    if (!connection()) { panel.replaceChildren(h('div', {class: 'empty'}, t('History is kept on the Remote. Sign in to it to see it.'))); return; }
-    const all = (await Promise.all(shown().map(async (r) => (await gitops.logOf(r, 'main').catch(() => [])).map((c) => ({r, c}))))).flat()
-      .sort((a, b) => b.c.time - a.c.time);
-    page.count('history', '');
-    panel.replaceChildren(...(all.length
-      ? [h('div', {class: 'rows'}, ...all.map(({r, c}) => cutRows(r, [c], !filter && repos.length > 1).firstChild!))]
-      : [h('div', {class: 'empty'}, t('No commits on main yet'))]));
-  };
-
-  page.onShow((k) => { if (k === 'changes') void paintChanges(); if (k === 'history') void paintHistory(); });
 
   write.addEventListener('click', () => {
     const takers = repos.filter((r) => !missing.includes(r));
-    if (!takers.length) { list.prepend(h('p', {class: 'error'}, t('No repo has an issue/ folder'))); return; }
+    if (!takers.length) { empty.replaceChildren(h('p', {class: 'error'}, t('No repo has an issue/ folder'))); return; }
     write.hidden = true;
     form.open(repos, takers, filter || at || takers[0]);
   });
@@ -158,26 +145,28 @@ export function git(ctx: Context): Node[] {
     write.disabled = !repos.length;
     look(filter || (ctx.repo && repos.includes(ctx.repo) ? ctx.repo : repos[0] ?? null));
     paintChips();
-    void paint(); void paintChanges(); void paintHistory();
+    void paint();
   });
 
   const main = h('section', {class: 'flow git-flow', tabindex: '0', 'aria-label': 'Git'},
     pageHead('git'),
-    h('div', {class: 'part-bar'}, page.switch, chips),
-    page.panel('issues'), page.panel('changes'), page.panel('history'));
+    h('div', {class: 'git-filter'}, chips),
+    h('section', {class: 'section', 'aria-labelledby': 'issues-title'},
+      h('h2', {id: 'issues-title'}, h('span', {}, t('Issues'), ' ', count), write),
+      form.element, empty, stage),
+    below);
   const workbench = bench({main, reveal: (path) => { if (at) ctx.openRepo(at, path); }});
   // Issues written anywhere (here, in the shell, with l3 in the Prompt) show
-  // up at once, and any change in the repo looked at is read again.
+  // up at once, and any change in the repo looked at is read again; not while
+  // something is being written in the box or under it, which would be lost.
+  let timer = 0;
+  const typing = () => { const a = document.activeElement; return !!a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA') && (stage.contains(a) || below.contains(a)) && !!(a as HTMLInputElement).value; };
+  const soon = () => { clearTimeout(timer); timer = window.setTimeout(() => { if (typing()) soon(); else void paint(); }, 250); };
   const stop = onChange((c) => {
     if (!workbench.element.isConnected) { stop(); return; }
-    if (c.what === 'repo' || c.path === 'issue' || c.path.startsWith('issue/')) void paint();
-    if (c.what === 'repo' || c.repo === at) open?.view.refresh();
+    if (c.what === 'repo' || c.path === 'issue' || c.path.startsWith('issue/') || c.repo === at) soon();
   });
-  const back = () => {
-    if (!workbench.element.isConnected) { removeEventListener('focus', back); return; }
-    open?.view.refresh();
-    if (page.current() === 'changes') void paintChanges();
-  };
+  const back = () => { if (!workbench.element.isConnected) { removeEventListener('focus', back); return; } soon(); };
   addEventListener('focus', back);
   return [workbench.element];
 }

@@ -298,7 +298,7 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .usage-prompt { align-items: center; }
 .usage-prompt .button { min-height: var(--h-row); padding-block: 0; }
 .reclaimed { display: grid; gap: var(--s1); margin-bottom: var(--s3); }
-.work-act .grow, .reclaim-act .grow, .part-head .grow, .issue-big .grow { flex: 1; }
+.work-act .grow, .reclaim-act .grow { flex: 1; }
 .usage-rows + .work-act, .legend + .reclaimed { margin-top: var(--s4); }
 .reclaim-act { align-items: center; }
 .space-why { max-width: 22em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--sans); }
@@ -554,6 +554,38 @@ mark { background: var(--ink); color: var(--ground); }
 .publish pre { padding: var(--s3); border: 1px solid var(--rule); border-radius: var(--r-card); }
 @media (max-width: 900px) { .inbox-box { grid-template-columns: 1fr; } .inbox-list { border-right: 0; border-bottom: 1px solid var(--rule); } }
 
+/* An issue opened large: its words first, then what can be done, then its parts. */
+.issue-big-head { display: grid; gap: var(--s1); }
+.issue-big-head h2 { margin: 0; font-size: var(--t-card); font-weight: 600; }
+.issue-no { color: var(--sub); }
+.issue-box { display: grid; gap: var(--s3); }
+.issue-box > .issue-body { margin: 0; max-width: 72ch; }
+.issue-box > .work-act { margin-top: var(--s2); flex-wrap: wrap; }
+.work-act.with-field > .line-in { flex: 1; min-width: 12em; }
+.issue-big-head .issue-where { font-family: var(--mono); font-size: var(--t-meta); }
+
+/* Issues as large boxes side by side: one in full, its neighbours' edges
+   showing at both sides; the track slides to the one chosen. An edge is a
+   clear button over the neighbour, which lifts (raised) while it is hovered,
+   as a place does. The current box is a large place: an ink edge over raised. */
+.issue-stage { --peek: 48px; --gap: var(--s3); --lead: 0; position: relative; overflow: hidden; }
+.issue-stage.single { --peek: 0px; }
+.issue-stage:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: var(--r-place); }
+.issue-track { --at: 0; display: flex; gap: var(--gap); transform: translateX(calc(var(--lead) * var(--peek) - var(--at) * (100% - 2 * var(--peek) + var(--gap)))); transition: transform var(--move); }
+@media (prefers-reduced-motion: reduce) { .issue-track, .issue-slot { transition: none; } }
+.issue-slot { flex: 0 0 calc(100% - 2 * var(--peek)); min-width: 0; padding: var(--s5); border: 1px solid var(--rule); border-radius: var(--r-place); transition: background var(--motion); }
+.issue-slot[aria-current='false'] { color: var(--sub); }
+.issue-slot[aria-current='true'] { border-color: var(--ink); background: var(--raised); }
+.issue-stage:has(.stage-hit.next:hover) .issue-slot[aria-current='true'] + .issue-slot,
+.issue-stage:has(.stage-hit.prev:hover) .issue-slot:has(+ .issue-slot[aria-current='true']) { background: var(--raised); }
+.stage-hit { position: absolute; top: 0; bottom: 0; z-index: 1; width: var(--peek); padding: 0; border: 0; border-radius: var(--r-place); background: transparent; cursor: pointer; }
+.stage-hit.prev { left: 0; width: calc(var(--lead) * var(--peek)); }
+.stage-hit.next { right: 0; width: calc((2 - var(--lead)) * var(--peek)); }
+.stage-hit:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+.reply-list { display: grid; gap: var(--s3); margin-bottom: var(--s3); }
+.space-open { width: 100%; border: 0; border-bottom: 1px solid var(--rule); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; border-radius: 0; }
+.space-open:hover { background: var(--raised); }
+.space-col > h3 small { margin-left: var(--s2); font-weight: 400; color: var(--sub); font-size: var(--t-meta); }
 /* A page in parts (common.ts parts()): the headings are the switch, the
    chosen one an ink fill like anything chosen; only its part is shown. */
 .part-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s3); margin-top: var(--s5); }
@@ -567,19 +599,8 @@ mark { background: var(--ink); color: var(--ground); }
 .part[aria-selected='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 .part[aria-selected='true'] small { color: inherit; opacity: .8; }
 .part-panel { margin-top: var(--s5); }
-.part-panel > .empty, .part-panel .issue-list-part > .empty { margin-top: 0; }
-.part-head { display: flex; align-items: center; gap: var(--s3); margin-bottom: var(--s3); }
-.issue-head .state-chip { margin-left: var(--s2); font-weight: 400; color: var(--sub); }
 
-/* An issue opened large: its words first, then what can be done, then its parts. */
-.issue-big { display: grid; gap: var(--s4); }
-.back-link { color: var(--sub); }
-.issue-big-head { display: grid; gap: var(--s1); }
-.issue-big-head h2 { margin: 0; font-size: var(--t-card); font-weight: 700; }
-.issue-big-head .issue-where { font-family: var(--mono); font-size: var(--t-meta); }
-.issue-big > .issue-body { margin: 0; max-width: 72ch; }
-.issue-state { display: grid; gap: var(--s4); }
 .sub-part + .sub-part { margin-top: var(--s5); }
 .sub-part h3 { display: flex; justify-content: space-between; align-items: center; margin: 0 0 var(--s3); font-size: var(--t-body); font-weight: 600; }
 .sub-part h3 small { margin-left: var(--s2); font-weight: 400; color: var(--sub); font-size: var(--t-meta); }
-.account-line { align-items: center; gap: var(--s3); margin-top: 0; }
+.device-here { display: flex; align-items: center; gap: var(--s3); }

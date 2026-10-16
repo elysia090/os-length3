@@ -172,43 +172,59 @@ its share an estimate), and the same three answers apply.
 ### Git
 
 What happens between a repo and the outside, in the mental model of the
-issues. It uses the same workbench as Forge: the center (one centred
-column, 760 px at most, so the form, the rows and the prompt box line up)
-with the prompt box at its foot, and the narrow right pane with the search
-box, the reference and the Prompt. The page header, then chips to look at
-one repo or all; choosing a repo also points the right pane and the Prompt
-at it.
+issues: an issue hides its branch and worktree, and the operations are
+Commit, Push, Change (with Reset), Review, Merge. It uses the same workbench
+as Forge: the center (one centred column, 760 px at most) with the prompt
+box at its foot, and the narrow right pane with the search box, the
+reference and the Prompt. The page header, then the repo chips (one repo or
+all); choosing a repo also points the right pane and the Prompt at it.
 
-- **Issue** is the unit of work and talk. The list is read straight from
-  each repo's `issue/`, one file per issue, so nothing is kept twice. Each
-  row is a place (a rounded box): the first line names it the way TODO
-  items are named, kind and title ("Fix：件名"), then quietly where it lives
-  (`repo · issue/001.md`) and the first line of its detail. Pressing a row
-  makes it the current issue (an ink edge, as a large place is current): it shows in
-  full on the right, with the way into its file in Forge, and the sections
-  below turn to its repo. Pressing it again lets it go. 「Issue を書く」
-  writes a new file in the chosen repo's `issue/`, numbered in the order
-  written (001.md, 002.md, …; dates go in the text). A repo without
-  `issue/` cannot take one and says so.
-- **変更**: what is not yet cut into history, in the repo looked
-  at, folder by folder (the folder first, so a reader enters from the area
-  they look after), each file by a word (追加, 変更, 削除, 名前変更) and its
-  lines added and removed; a file opens in Forge. It is a card of rows like
-  the File tree. Under it, with an issue current, a note and the one
-  primary action, 区切る: everything not yet cut becomes one cut named after
-  the issue ("Fix：件名") and tied to its file (the cut records `issue/001.md`), so the history reads as the issues. The layout says this; no
-  sentence explains it.
-- **区切り**: the cuts so far, newest first, the current issue's only when
-  one is chosen, one row each: name, folders, when.
-- A section with nothing in it is not shown; counts are bare numbers.
-- **提出された変更**: cuts handed to someone else (提出) and received,
-  settled by Merge or Reject; Close is for issues only. Handing out between
-  accounts is not built yet, so there is no 提出 button, and this says so
-  in a dashed box instead of showing anything made up.
+- **Issues**: every issue not merged yet, read straight from each repo's
+  `issue/`, one numbered file each (001.md, 002.md, …, in the order
+  written), so nothing is kept twice. Under the heading (its count, and
+  「Issue を書く」) the issues are large boxes side by side, oldest first:
+  one in full, its neighbours' edges showing at the sides. The current box
+  is a large place, an `ink` edge over `raised`. An edge is a clear button
+  over the neighbour, which lifts (`raised`) while hovered; pressing it, or
+  ← →, slides the track there (280 ms, the one movement). The first box
+  starts at the column's edge and the last ends at it.
+- **The box**: the issue's number and name ("#1 Fix：件名"), where it lives
+  (`repo · issue/001.md`, which opens the file), its detail, one quiet line
+  of where it stands, and only what can be done next, one primary action:
+  Start (Continue here, if it was started), then Commit (with a note; named
+  after the issue), Push, Change (hand what was pushed to main; again, the
+  next version). Reset takes an undecided change back; Merge or Reject
+  settle it (Close is for issues only); Back to main shows main again. A
+  merged work is done: the repo shows main again on its own. Start gives the
+  issue its own copy of the repo, which File, Forge and the Prompt show; the
+  layout says this, no sentence explains it.
+- **Under the box**, plainly, as sections: **Diff** (what is not committed
+  while it is worked on here, else the change as handed in; added lines
+  raised, removed quiet and struck), **Review** (a verdict on one version:
+  Approve, Ask for changes, with a note; a review of an older version says
+  so), **Reply** (talk under the change, in order). A section with nothing
+  in it is not shown; counts are bare numbers.
 
-Every change is already on the Remote (the draft, §3); 区切る makes it
-history there, the same from the app, a browser and `l3 cut`. Without a
-Remote the changes are shown and one line says that cuts are kept there.
+Every change is already on the Remote (the draft, §3); Commit makes it
+history there, the same from the app, a browser and `l3 commit`. Without a
+Remote the issues are shown and one line says that history is kept there.
+
+### Remote
+
+The header, a one-line offer to add a passkey while there is none, then
+the page's parts as a switch (the one place a page is switched, because its
+parts are unrelated): **Repos** (here and on the Remote only, each with
+where it stands), **Sign-in** (passkeys, then the providers; the last way
+in stays), **Devices** (each session; this one says so and signs out).
+
+### Inbox
+
+Your address on one line (Copy, SSH), then one tall box: conversations on
+the left (requests apart, with Accept and Block), the chosen one on the
+right. Writing is one line that grows as it is written: a message is named
+the way an issue is ("Review：…", "Question：…"), and a `/root/…` path in it
+says what it is about, so there is nothing else to choose. Enter sends,
+Shift+Enter is a new line.
 
 ### New repo (+)
 
@@ -249,7 +265,7 @@ runs.
 
 The GUI and the command line are two ways into the same things. `l3`'s
 nouns and order are the rail's: Home (`todo`), Forge (`repo`, `prompt`),
-File (`file`), Git (`issue`, `cut`, `log`), Runtime (`runtime`, `free`),
+File (`file`), Git (`issue`, `start`, `commit`, `push`, `change`, `reset`, `review`, `merge`, `log`), Runtime (`runtime`, `free`),
 Remote (`remote`, `login`, `sync`); a path is written as File shows it (`/root/<repo>/…`). A line is
 named the same way everywhere ("Fix：件名"), issues are the same numbered
 files, and Home's state is the same files, so anything done in one shows in
@@ -266,7 +282,7 @@ repo on the Remote (`service/`) has two things:
   It has a version, and a change is a diff made on a version: one that
   names an older version is refused with the draft as it is, so nothing
   sent is ever overwritten.
-- **head**: the last cut. 区切る makes the draft at a version a cut, named
+- **head**: the last commit. Commit makes the draft at a version a commit, named
   by the sha256 of its record (tree, parent, words), and moves the head by
   compare-and-set.
 
@@ -295,15 +311,14 @@ What each host keeps, and when (lifecycle.ts):
 Room on a device is given back in Runtime (空ける, 同期して空ける): a repo
 that goes stays on the Remote and comes back when opened.
 
-**Who.** An account starts blank and is held by a passkey made at once
-(はじめる); a blank one that gets none is removed. A passkey signs in on
-any device; the recovery code (shown once, only its digest kept) opens the
-account once when every passkey is gone, and a new passkey and code follow.
-The app and l3 do not hold passkeys: they show a code, a browser where the
-person is signed in approves it on the Remote's page, and the device gets a
-session of its own. Every device is a session, listed on the Remote page and
-ended from any other. Sessions are bearer tokens, kept on the device (in the
-app with its settings, 0600).
+**Who.** One signs in the usual way, with GitHub or Google, and then adds
+a passkey for the device, so the next sign-in needs no provider; a lost
+passkey is replaced by signing in with the provider again. The app and l3
+do not hold passkeys: they show a code, a browser where the person is
+signed in approves it on the Remote's page, and the device gets a session
+of its own. Every device is a session, listed on the Remote page and ended
+from any other. Sessions are bearer tokens, kept on the device (in the app
+with its settings, 0600).
 
 What leaves this system is kept to what is said here:
 

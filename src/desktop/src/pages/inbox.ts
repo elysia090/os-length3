@@ -2,7 +2,7 @@ import {ago, h} from '../dom.ts';
 import {t} from '../i18n.ts';
 import * as inbox from '../inbox.ts';
 import {connection} from '../remote.ts';
-import {store} from '../repos.ts';
+import {kindOf} from '../text.ts';
 import {pageHead} from './common.ts';
 import type {Context} from './context.ts';
 
@@ -59,6 +59,16 @@ function addressRows(me: inbox.Me, again: () => void): HTMLElement {
     ssh.addEventListener('click', async () => { ssh.disabled = true; await inbox.setSsh(a.address, !a.ssh).catch(() => {}); again(); });
     return h('div', {class: 'row address-line'}, h('span', {class: 'muted small'}, t('Your address')), h('b', {class: 'mono'}, a.address), copy, ssh);
   }));
+}
+
+/** What a written message is: its kind named first like an issue, and what a /root/… path in it is about. */
+export function written(text: string): {kind: inbox.Kind; body: string; target: inbox.Target} {
+  const {kind, title} = kindOf(text);
+  const k = (kind ?? '').toLowerCase();
+  const type: inbox.Kind = k === 'review' ? 'review' : k === 'question' ? 'question' : 'message';
+  const body = type === 'message' ? text.trim() : title;
+  const at = /\/root\/([A-Za-z0-9][A-Za-z0-9._-]*)(?:\/issue\/([A-Za-z0-9._-]+\.md))?/.exec(text);
+  return {kind: type, body, target: at ? {repo: at[1], ...(at[2] ? {issue: at[2]} : {})} : {}};
 }
 
 export function inboxPage(ctx: Context): Node[] {
@@ -151,30 +161,12 @@ export function inboxPage(ctx: Context): Node[] {
       no.addEventListener('click', async () => { await inbox.setContact(address, 'blocked'); open = null; void paintList(list, pane); });
       decide.push(yes, no);
     }
-    // Writing: what it is and what it is about are chosen (chips), then one line of text that
-    // grows as it is written. Enter sends; Shift+Enter starts a new line.
-    let kind: inbox.Kind = 'message';
-    let about = '';
-    const choose = (label: string, items: {id: string; text: string}[], now: () => string, set: (v: string) => void) => {
-      const group = h('div', {class: 'chips', role: 'radiogroup', 'aria-label': label});
-      const mark = () => { for (const c of group.children) c.setAttribute('aria-checked', String((c as HTMLElement).dataset.id === now())); };
-      for (const it of items) {
-        const b = h('button', {type: 'button', class: 'chip', role: 'radio', 'data-id': it.id}, it.text);
-        b.addEventListener('click', () => { set(it.id); mark(); text.focus(); });
-        group.append(b);
-      }
-      mark();
-      return group;
-    };
+    // Writing is one line that grows as it is written. What it is reads off the text the way
+    // an issue is named ("Review：…", "Question：…"), and a /root/… path in it says what it
+    // is about; nothing else to choose. Enter sends; Shift+Enter starts a new line.
     const text = h('textarea', {class: 'line-in bubble-in', rows: '1', placeholder: t('Write to {address}…', {address}), 'aria-label': t('Message'), maxlength: '4000'}) as HTMLTextAreaElement;
     const grow = () => { text.style.height = 'auto'; text.style.height = `${Math.min(text.scrollHeight + 2, 200)}px`; };
     text.addEventListener('input', grow);
-    const kinds = choose(t('What it is'), (['message', 'review', 'question'] as const).map((k) => ({id: k, text: KIND(k)})), () => kind, (v) => { kind = v as inbox.Kind; });
-    const repos = (await store.list().catch(() => [])).map((r) => r.name);
-    const abouts = repos.length
-      ? h('div', {class: 'row write-about'}, h('span', {class: 'muted small'}, t('About')),
-        choose(t('About which repo'), [{id: '', text: t('Nothing')}, ...repos.map((r) => ({id: r, text: r}))], () => about, (v) => { about = v; }))
-      : null;
     const sendB = button(t('Send'), 'primary');
     const error = h('p', {class: 'error', role: 'alert'});
     const go = async () => {
@@ -182,9 +174,9 @@ export function inboxPage(ctx: Context): Node[] {
       sendB.disabled = true;
       error.textContent = '';
       try {
-        const target = about ? {repo: about} : {};
-        const r = await inbox.send(address, text.value, kind, target);
-        const m: inbox.Message = {id: r.id, mine: true, type: kind, target, body: text.value.trim(), time: Date.now(), read: false};
+        const {kind, body, target} = written(text.value);
+        const r = await inbox.send(address, body, kind, target);
+        const m: inbox.Message = {id: r.id, mine: true, type: kind, target, body: body.trim(), time: Date.now(), read: false};
         live?.say(m);
         add({...m, live: live?.open});
         text.value = '';
@@ -199,9 +191,8 @@ export function inboxPage(ctx: Context): Node[] {
       h('header', {class: 'inbox-top'}, h('b', {class: 'mono'}, address), lineWord, h('span', {class: 'grow'}), ...decide),
       messages,
       h('div', {class: 'inbox-write'},
-        h('div', {class: 'row write-what'}, kinds, abouts),
         h('div', {class: 'row write-line'}, text, sendB),
-        h('p', {class: 'muted small write-hint'}, t('Enter sends · Shift+Enter for a new line')), error));
+        h('p', {class: 'muted small write-hint'}, t('Review： or Question： first to ask · a /root/… path says what it is about · Enter sends · Shift+Enter for a new line')), error));
     text.focus();
     // Accepted both ways: a direct line between the two devices, when both are here.
     if (th.mutual) {

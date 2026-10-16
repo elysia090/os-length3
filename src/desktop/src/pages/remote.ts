@@ -182,7 +182,12 @@ function deviceSection(counted: (n: number) => void): HTMLElement {
     counted(list.length);
     section.replaceChildren(
       h('div', {class: 'rows'}, ...list.map((d) => {
-        const act: Node = d.current ? h('span', {class: 'row-meta'}, t('This device')) : (() => {
+        const act: Node = d.current ? (() => {
+          const leave = button(t('Sign out'), 'small-button');
+          leave.title = t('Sign out on this device');
+          leave.addEventListener('click', () => void account.signOut());
+          return h('span', {class: 'device-here'}, h('span', {class: 'row-meta'}, t('This device')), leave);
+        })() : (() => {
           const end = button(t('Remove'), 'small-button');
           end.addEventListener('click', () => void pressing(end, error, async () => { await account.endDevice(d.token); await paint(); }));
           return end;
@@ -207,8 +212,6 @@ export function remote(ctx: Context): Node[] {
       holder.replaceChildren(h('section', {class: 'section'}, signInBox(() => paint())));
       return;
     }
-    const leave = button(t('Sign out on this device'), 'small-button');
-    leave.addEventListener('click', () => void account.signOut());
     // One part at a time: the repos it keeps, how this account signs in, the devices in it.
     const page = parts<'repos' | 'sign-in' | 'devices'>('remote', [
       {id: 'repos', label: t('Repos')}, {id: 'sign-in', label: t('Sign-in')}, {id: 'devices', label: t('Devices')}]);
@@ -219,8 +222,7 @@ export function remote(ctx: Context): Node[] {
     page.panel('devices').append(deviceSection((n) => page.count('devices', n)));
     holder.replaceChildren(
       ...(isNative ? [] : [passkeyOffer()]),
-      h('div', {class: 'part-bar'}, page.switch,
-        h('div', {class: 'row account-line'}, h('span', {class: 'muted small'}, t('Connected · {host}', {host: new URL(c.url || location.origin).host})), leave)),
+      h('div', {class: 'part-bar'}, page.switch),
       page.panel('repos'), page.panel('sign-in'), page.panel('devices'));
   };
   paint();

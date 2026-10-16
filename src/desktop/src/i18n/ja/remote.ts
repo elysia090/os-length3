@@ -64,4 +64,5 @@ export default {
   '{client} asks to join this account. Check that the device shows the same code.': '{client} がこのアカウントにつなごうとしています。端末に出ているコードと同じか確かめてください。',
   'Sign-in': 'サインイン',
   'Passkeys and providers are managed in the browser.': 'パスキーとプロバイダはブラウザで管理します。',
+  'Sign out': 'サインアウト',
 } as Record<string, string>;
