@@ -11,7 +11,6 @@ use crate::Result;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::process::Command;
 
 /// Git's empty tree, to diff against before the first commit.
 const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
@@ -62,11 +61,9 @@ pub struct Commit {
     pub removed: u64,
 }
 
-/// git without the host's global or system configuration, never prompting.
+/// git across the host boundary only as git (see boundary.rs).
 fn git(dir: &Path, args: &[&str]) -> Result<String> {
-    let out = Command::new("git").args(args).current_dir(dir)
-        .env("GIT_CONFIG_GLOBAL", "/dev/null").env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_TERMINAL_PROMPT", "0").env("LC_ALL", "C")
+    let out = crate::boundary::git(dir).args(args)
         .output().map_err(|e| format!("git を起動できませんでした: {e}"))?;
     if !out.status.success() {
         return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());

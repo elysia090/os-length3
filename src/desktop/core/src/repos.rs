@@ -5,7 +5,6 @@ use serde::Serialize;
 use std::fs;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
 use std::time::UNIX_EPOCH;
 
 pub use crate::Result;
@@ -74,7 +73,13 @@ impl Repos {
     pub fn root(&self) -> &Path { &self.root }
 
     pub fn new(root: PathBuf) -> Result<Repos> {
-        fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+        // Inside the Prompt the repos are the guest's /root; on the host
+        // they are the person's alone.
+        if std::env::var_os("L3_PROMPT").is_none() {
+            crate::boundary::private_dir(&root).map_err(|e| e.to_string())?;
+        } else {
+            fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+        }
         Ok(Repos { root })
     }
 
@@ -224,7 +229,11 @@ impl Repos {
             return Err(format!("{relative:?} is not a file"));
         }
         let name = path.file_name().ok_or("no file name")?.to_string_lossy().into_owned();
-        let temp = path.with_file_name(format!(".{name}.length3-{}", std::process::id()));
+        // `.<name>.length3-<pid>-<n>`: usage.rs recognises it as this OS's own
+        // temporary, reclaimable once its writer is gone.
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let temp = path.with_file_name(format!(".{name}.length3-{}-{n}", std::process::id()));
         // Made afresh (never through a link or into a file already there).
         let made = fs::OpenOptions::new().write(true).create_new(true).open(&temp);
         let result = made.and_then(|mut f| {
@@ -332,15 +341,12 @@ impl Repos {
     }
 }
 
-/// `git init` without the user's global or system configuration, so a new
-/// repo never inherits host settings. Missing git just leaves no `.git`.
+/// `git init` across the host boundary only as git (see boundary.rs), so a
+/// new repo never inherits host settings or templates. Missing git just
+/// leaves no `.git`.
 fn init_git(dir: &Path) {
-    let _ = Command::new("git")
+    let _ = crate::boundary::git(dir)
         .args(["-c", "init.defaultBranch=main", "init", "-q"])
-        .current_dir(dir)
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_TEMPLATE_DIR", "")
         .status();
 }
 

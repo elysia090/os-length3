@@ -283,10 +283,19 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 
 /* Storage */
 .meter { height: var(--s4); border: 1px solid var(--edge); border-radius: var(--r-field); overflow: hidden; display: flex; }
-.meter span { display: block; height: 100%; background: var(--sub); }
-.meter span.app { background: var(--ink); }
+.meter span { display: block; height: 100%; background: var(--rule); }
+/* This OS's part is the darker share of the bar; not an ink fill, which means current. */
+.meter span.app { background: var(--edge); }
 .legend { margin-top: var(--s3); display: flex; flex-wrap: wrap; gap: var(--s5); }
 .legend b { font-size: var(--t-card); font-weight: 600; display: block; }
+/* Runtime: each repo's share, what can be given back, Prompts running */
+.usage-rows { margin-top: var(--s4); }
+.usage-size { min-width: 5em; text-align: right; }
+.usage-prompt { align-items: center; }
+.usage-prompt .button { min-height: var(--h-row); padding-block: 0; }
+.reclaimed { display: grid; gap: var(--s1); margin-bottom: var(--s3); }
+.work-act .grow { flex: 1; }
+.reclaim-act { align-items: center; }
 
 /* Forge: a band of repo chips set low, the center (3/4) an endless page of
    files with a prompt box at its foot, and a narrow side (1/4) that stays out

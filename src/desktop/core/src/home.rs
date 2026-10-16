@@ -36,9 +36,23 @@ pub fn set(key: &str, json: &str) -> Result<()> {
         return Err(format!("{key} is larger than 1 MiB"));
     }
     let path = file(key)?;
-    fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
+    // Home's state (profile, TODO) is the person's alone: the directory is
+    // private and the file is made afresh, owner-only, before it is renamed in.
+    crate::boundary::private_dir(path.parent().unwrap()).map_err(|e| e.to_string())?;
     let temp = path.with_extension(format!("json.{}", std::process::id()));
-    fs::write(&temp, json).and_then(|_| fs::rename(&temp, &path)).map_err(|e| {
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let _ = fs::remove_file(&temp);
+    options.open(&temp).and_then(|mut f| {
+        use std::io::Write;
+        f.write_all(json.as_bytes())?;
+        f.sync_all()
+    }).and_then(|_| fs::rename(&temp, &path)).map_err(|e| {
         let _ = fs::remove_file(&temp);
         e.to_string()
     })

@@ -70,7 +70,8 @@ l3 file write REPO/PATH     replace a file with standard input (Forge's save)
 l3 issue [REPO|new …]       Git's issues: numbered files in issue/
 l3 git [REPO]               the Git page: issues and changes handed in
 l3 todo [add …|done N]      Home's TODO
-l3 runtime                  this device's room
+l3 runtime                  this device's room, and what can be given back
+l3 reclaim                  give back this OS's own leftover temporaries
 ```
 
 On the host it uses the app's data directory (`$LENGTH3_HOME` overrides):
@@ -89,14 +90,19 @@ TODO, making repos and the device are left to the app.
   which only makes new files in existing directories), as `l3 issue new`
   does. Changes pushed by
   others need a Remote, and the page says so.
-- Runtime shows this device's storage: what the app holds, used, free and
-  total, measured by the `capacity` command (statvfs plus allocated bytes
-  under the app directory). In a browser it reads the origin's storage
-  estimate and says so.
+- Runtime shows what this OS holds on the device, counted from allocated
+  blocks (each repo, how much of it is history), the host's free and total
+  marked as estimates, and its own leftover temporaries, which 空ける
+  (`reclaim`, or `l3 reclaim`) removes, reporting the bytes and how the
+  host's free space was seen to change. Prompts running show their memory
+  and can be stopped. In a browser it reads the origin's storage estimate
+  and says so.
 - Every other purpose shows what it will hold, as a dashed empty box.
 
 The webview has no other host access: it reads nothing outside the app's
-data directory, runs no shell and launches no root.
+data directory, runs no shell and launches no root. The one program the
+desktop runs is git, with an empty environment and every setting that could
+make it run another program turned off (`core/src/boundary.rs`).
 
 ## Develop
 

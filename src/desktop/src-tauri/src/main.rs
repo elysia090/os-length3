@@ -19,6 +19,18 @@ fn capacity() -> Result<system::Capacity, String> {
     system::capacity(&paths::data_dir())
 }
 
+/// What this OS holds, measured as the host measures it, and what is reclaimable.
+#[tauri::command]
+fn usage() -> length3_core::usage::Usage {
+    length3_core::usage::usage(&paths::data_dir(), &paths::repos_dir())
+}
+
+/// この端末の容量を空ける: give back what is reclaimable, and what the host shows.
+#[tauri::command]
+fn reclaim() -> length3_core::usage::Reclaim {
+    length3_core::usage::reclaim(&paths::data_dir())
+}
+
 #[tauri::command]
 fn repo_list() -> Result<Vec<repos::Summary>, String> {
     managed()?.list()
@@ -98,7 +110,7 @@ fn git_log(repo: String) -> Result<Vec<git::Commit>, String> {
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
-            capacity, repo_list, repo_create, repo_tree, repo_read, repo_write, repo_add,
+            capacity, usage, reclaim, repo_list, repo_create, repo_tree, repo_read, repo_write, repo_add,
             repo_mkdir, repo_remove, state_get, state_set, git_changes, git_diff, git_cut, git_log
         ])
         .run(tauri::generate_context!())

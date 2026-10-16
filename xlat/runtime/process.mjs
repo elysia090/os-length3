@@ -86,6 +86,11 @@ export class Kernel {
    */
   prebuilt(node, module) { this.images.set(node, {version: node.version, image: new Image(module)}); }
 
+  /** Bytes of guest memory the running processes hold (their wasm memories). */
+  memoryBytes() {
+    return this.chain.reduce((n, p) => n + (p.memory?.buffer.byteLength ?? 0), 0);
+  }
+
   /** Create the first process, attached to the console. */
   start(path, argv, env, cwd = '/') {
     const p = new Process(this, null);

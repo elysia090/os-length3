@@ -4,8 +4,9 @@
 // (`translator` and a file's optional `module`, its translation made ahead
 // of time, may be compiled WebAssembly.Modules, shared between workers.)
 // then {type: 'input', bytes} as the person types and {type: 'eof'}.
-// It receives {type: 'output', fd, bytes}, {type: 'waiting'},
-// {type: 'exit', status} or {type: 'error', message}.
+// It receives {type: 'output', fd, bytes}, {type: 'waiting', memory},
+// {type: 'exit', status} or {type: 'error', message}; `memory` is the bytes
+// the guest's running processes hold.
 //
 // Nothing blocks: a read with no input yet stops the kernel (the syscall
 // restarts later), and each input message runs it again.
@@ -37,7 +38,8 @@ function pump() {
     const r = kernel.pump();
     const c = mirror?.changes();
     if (c) self.postMessage({type: 'changes', ...c}, c.files.map((f) => f.bytes.buffer));
-    self.postMessage(r.waiting ? {type: 'waiting'} : {type: 'exit', status: r.status});
+    const memory = kernel.memoryBytes();
+    self.postMessage(r.waiting ? {type: 'waiting', memory} : {type: 'exit', status: r.status, memory: 0});
   } catch (e) {
     self.postMessage({type: 'error', message: e instanceof Error ? `${e.name}: ${e.message}\n${e.stack}` : String(e)});
   }

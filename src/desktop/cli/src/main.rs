@@ -12,11 +12,12 @@
 //!   l3 issue cut REPO/NNN.md cut them into history under that issue
 //!   l3 git cut REPO "Kind：title"  …or without one
 //!   l3 todo [add "Kind：title" [-m detail] | done N]
-//!   l3 runtime               this device's room
+//!   l3 runtime               this device's room, and what can be given back
+//!   l3 reclaim               give back this OS's own leftover temporaries
 //!
 //! Paths may be written as File shows them: /root/<repo>/… is <repo>/….
 
-use length3_core::{git, home, paths, repos::Repos, system, templates, text};
+use length3_core::{git, home, paths, repos::Repos, templates, text};
 use std::io::{Read, Write};
 use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -92,7 +93,8 @@ const HELP: &str = "l3 — Length³ OS をコマンドで。アプリと同じ r
   l3 todo                    Home の TODO
   l3 todo add \"Fix：件名\" [-m 詳細]
   l3 todo done N             N 番目を完了にする（もう一度で戻す）
-  l3 runtime                 この端末の容量
+  l3 runtime                 この端末: ホストの空き、このOSの実割当、空けられるもの
+  l3 reclaim                 この端末の容量を空ける（このOS自身の残り物だけ）
 
   --json で一覧を JSON に。パスは File と同じ /root/<repo>/… でも書けます。
   置き場所: $LENGTH3_HOME（なければアプリと同じデータの場所）";
@@ -108,7 +110,7 @@ fn run(a: Args) -> Result<(), String> {
     if in_prompt() {
         match w.first().copied() {
             Some("todo") => return Err("Home の TODO はこの Prompt からは見えません。アプリの Home か、端末の l3 で扱えます".into()),
-            Some("runtime") => return Err("この Prompt からは端末の容量は見えません。アプリの Runtime か、端末の l3 で見られます".into()),
+            Some("runtime") | Some("reclaim") => return Err("この Prompt からは端末の容量は見えません。アプリの Runtime か、端末の l3 で見られます".into()),
             Some("repo") if w.get(1) == Some(&"new") => return Err("repo は Rail の + か、端末の l3 で作ります".into()),
             _ => {}
         }
@@ -181,12 +183,29 @@ fn run(a: Args) -> Result<(), String> {
             Ok(())
         }
         ["runtime"] => {
-            let c = system::capacity(&paths::data_dir())?;
-            if a.json { return json(c); }
-            out(format!("この端末の容量  {}", paths::data_dir().display()));
-            out(format!("  このOS   {}", bytes(c.app)));
-            out(format!("  空き     {}", bytes(c.free)));
-            out(format!("  全体     {}", bytes(c.total)));
+            let u = length3_core::usage::usage(&paths::data_dir(), &paths::repos_dir());
+            if a.json { return json(u); }
+            out(format!("この端末  {}", paths::data_dir().display()));
+            out(format!("  空き {} / 全体 {}（ホストの値）", bytes(u.host_free), bytes(u.host_total)));
+            out(format!("  このOS {}（実割当）", bytes(u.allocated)));
+            for r in &u.repos {
+                out(format!("    {}  {}（うち履歴 {}） · 見かけ {} · {} ファイル", r.name, bytes(r.allocated), bytes(r.history), bytes(r.logical), r.files));
+            }
+            out(format!("    Home  {}", bytes(u.home)));
+            out(format!("  空けられるもの {}（{} 件）", bytes(u.reclaimable), u.leftovers.len()));
+            Ok(())
+        }
+        ["reclaim"] => {
+            let r = length3_core::usage::reclaim(&paths::data_dir());
+            if a.json { return json(r); }
+            if r.removed == 0 { out("空けられるものはありませんでした"); return Ok(()); }
+            out(format!("{} を空けました（{} 件、ファイルの実割当で確認）", bytes(r.freed), r.removed));
+            let change = r.host_free_after as i64 - r.host_free_before as i64;
+            match r.reflected_ms {
+                Some(ms) => out(format!("  ホストの空き {:+} B（{} ms で反映。他のプログラムの書込も含む観測値）", change, ms)),
+                None => out(format!("  ホストの空き {:+} B（2 秒以内には反映が見えませんでした）", change)),
+            }
+            for (p, why) in &r.kept { out(format!("  残したもの {}: {}", p.display(), why)); }
             Ok(())
         }
         _ => Err(format!("わからないコマンドです: l3 {}\n`l3 help` で使い方を見られます", w.join(" "))),

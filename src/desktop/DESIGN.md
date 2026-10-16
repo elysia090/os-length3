@@ -103,12 +103,35 @@ files and binaries not copied in, what could not be written back). The chosen re
 
 ### Runtime
 
-This device's room, measured, then the environment actually in effect, not
-the one asked for: the base the Prompt runs (BusyBox, its version and
-command count, where the version is pinned), the tools (l3, xlat) with
-short digests, and Dotfiles as differences from the base (none yet, and it
-says so). The list comes from the manifest written with the userland, so it
-cannot claim what is not there.
+What this device holds, what can be given back, what is running, then the
+environment actually in effect.
+
+- **この端末**: one bar of the host's whole, with this OS's share darker
+  (not an ink fill, which means current), and three figures: this OS, free,
+  total. This OS is counted from allocated blocks, so a sparse file counts
+  what it holds and a copy of nothing counts nothing; the host's free and
+  total are marked 推定, because other programs change them too. Under it a
+  card of rows: each repo with its size and how much of that is history
+  (`.git`), and the settings.
+- **空けられるもの** is shown only when there is something: the temporaries
+  this OS itself left half-written (named `.<file>.length3-<pid>-<n>`, or a
+  setting's `<key>.json.<pid>`), older than a minute, with one link, never
+  inside `.git`. Nothing else is ever offered. 空ける removes them and stays
+  to say what happened: the bytes removed (counted before removal), and the
+  host's free space as it was seen to change, with how long it took to show
+  (or that it has not shown yet). What could not be removed is named with
+  the reason.
+- **動いている Prompt** is shown only while one runs: each with the memory its
+  guest processes hold and 止める, which ends the worker and everything in
+  it at once.
+- **有効な環境**: the base the Prompt runs (BusyBox, its version and command
+  count, where the version is pinned), the tools (l3, xlat) with short
+  digests, and Dotfiles as differences from the base (none yet, and it says
+  so). The list comes from the manifest written with the userland, so it
+  cannot claim what is not there.
+
+In a browser only the origin's share is known, and it says so (このブラウザ,
+推定); nothing there is the OS's to give back.
 
 ### Git
 
@@ -194,6 +217,23 @@ named the same way everywhere ("Fix：件名"), issues are the same numbered
 files, and Home's state is the same files, so anything done in one shows in
 the other. The Prompt's shell works on the repo itself: what it changes is
 written back, and what is saved elsewhere comes in.
+
+What leaves this system is kept to what is said here:
+
+- **Network.** The Prompt's guests have no sockets: every socket call answers
+  "not implemented", so a program in it can reach nothing. The web build
+  carries a Content-Security-Policy that allows only its own origin (and
+  workers and wasm from it); the desktop leaves that to Tauri.
+- **Host.** git is the one program the desktop runs, and it runs with an
+  empty environment (only PATH, HOME, LC_ALL and git's own switches), no
+  global or system configuration, no prompts, and every setting that could
+  make it run something else turned off (hooks, fsmonitor, pager, editor,
+  ssh, credential helpers, external diff, signing, every remote protocol).
+  A repo's own config cannot change that.
+- **Files.** The data directory and its settings are the user's alone (0700,
+  0600). Writes go to a new temporary next to the file and are renamed over
+  it; `.git` is refused in every spelling and through any symlink, from the
+  webview, from `l3` and from the Prompt's write-back.
 
 ## 4. Language
 

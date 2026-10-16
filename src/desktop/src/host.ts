@@ -15,6 +15,29 @@ export interface Capacity {
 
 export const isNative = '__TAURI_INTERNALS__' in globalThis;
 
+/** How a figure is known (core/src/usage.rs). */
+export type Certainty = 'Verified' | 'Estimated' | 'Unknown';
+export interface RepoUsage { name: string; files: number; logical: number; allocated: number; history: number }
+export interface Usage {
+  host_total: number; host_free: number; host: Certainty;
+  repos: RepoUsage[]; home: number; allocated: number; reclaimable: number;
+  leftovers: {path: string; allocated: number}[];
+}
+export interface Reclaim {
+  freed: number; freed_certainty: Certainty; removed: number; kept: [string, string][];
+  host_free_before: number; host_free_after: number; host_change: Certainty; reflected_ms: number | null;
+}
+
+async function native<T>(command: string): Promise<T> {
+  const {invoke} = await import('@tauri-apps/api/core');
+  return invoke<T>(command);
+}
+
+/** What this OS holds on the device and what is reclaimable; desktop only. */
+export const readUsage = (): Promise<Usage | null> => (isNative ? native<Usage>('usage').catch(() => null) : Promise.resolve(null));
+/** この端末の容量を空ける; desktop only. */
+export const reclaim = (): Promise<Reclaim> => native<Reclaim>('reclaim');
+
 export async function readCapacity(): Promise<Capacity | null> {
   try {
     if (isNative) {

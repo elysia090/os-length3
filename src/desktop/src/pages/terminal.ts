@@ -86,6 +86,8 @@ export class Session {
   /** What was run here, newest last. */
   readonly runs: Run[] = [];
   private watchers = new Set<() => void>();
+  /** Bytes the guest's running processes hold, as the worker last said. */
+  memory = 0;
   private ttySaid = false;
 
   constructor(repo: string) {
@@ -136,7 +138,7 @@ export class Session {
   }
 
   private readonly id = `shell:${Math.random().toString(36).slice(2)}`;
-  private stop: (() => void) | null = null;
+  private unwatch: (() => void) | null = null;
   private queue: Promise<void> = Promise.resolve();
   /** What the shell may still write back, in files and bytes: the snapshot's limits. */
   private budget = {files: LIMIT_FILES, bytes: LIMIT_BYTES};
@@ -172,6 +174,7 @@ export class Session {
       worker.onmessage = ({data}) => {
         if (data.type === 'output') this.received(new TextDecoder().decode(data.bytes));
         else if (data.type === 'changes') this.writeBack(data);
+        else if (data.type === 'waiting') { this.memory = data.memory ?? 0; this.tell(); }
         else if (data.type === 'exit') this.end(`終了しました（${data.status >> 8}）`);
         else if (data.type === 'error') this.end(`停止しました: ${data.message.split('\n')[0]}`);
       };
@@ -189,7 +192,7 @@ export class Session {
         mirror: cwd,
       });
       // What is saved elsewhere comes into the shell's copy.
-      this.stop = onChange((c) => {
+      this.unwatch = onChange((c) => {
         if (c.repo !== this.repo || c.by === this.id || c.what === 'repo') return;
         const what = c.what === 'file' ? new TextEncoder().encode(c.text ?? '') : c.what === 'dir' ? 'dir' : null;
         this.worker?.postMessage({type: 'put', path: c.path, what});
@@ -202,12 +205,24 @@ export class Session {
     }
   }
 
+  /** Whether the shell is running (its worker exists). */
+  get running() { return this.live && this.worker !== null; }
+
+  /**
+   * Stop: the worker and every guest process in it end at once (terminate is
+   * synchronous), so what they held is the browser engine's to free. Only
+   * then does it say so.
+   */
+  stop() { this.end('止めました'); }
+
   private end(message: string) {
-    this.stop?.();
-    this.stop = null;
+    this.unwatch?.();
+    this.unwatch = null;
     this.worker?.terminate();
     this.worker = null;
     this.live = false;
+    this.memory = 0;
+    this.tell();
     const restart = h('button', {class: 'button', type: 'button'}, 'もう一度起動');
     restart.addEventListener('click', () => {
       sessions.delete(this.repo);
@@ -216,6 +231,9 @@ export class Session {
     this.status.replaceChildren(message, ' ', restart);
   }
 }
+
+/** Every session started in this window, running or stopped. */
+export const allSessions = (): [string, Session][] => [...sessions];
 
 /** The repo's session if one is running, without starting one. */
 export const sessionIfAny = (repo: string): Session | undefined => sessions.get(repo);
