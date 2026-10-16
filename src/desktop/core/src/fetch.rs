@@ -88,22 +88,22 @@ pub fn fetch(url: &str, sha256: &str, size: u64, dest: &Path, mut progress: impl
             };
             file.sync_all().map_err(|e| e.to_string())?;
             if let Some(e) = broken {
-                why = format!("回線が切れました（{e}）");
+                why = crate::tr!("The connection broke ({})", "回線が切れました（{}）", e);
                 continue;
             }
             if got < size {
-                why = "回線が切れました".into();
+                why = crate::tr!("The connection broke", "回線が切れました");
                 continue;
             }
         }
         if digest_of(&part).map_err(|e| e.to_string())? != sha256 {
             let _ = fs::remove_file(&part);
-            why = "中身が合いません".into();
+            why = crate::tr!("The contents do not match", "中身が合いません");
             continue;
         }
         fs::rename(&part, dest).map_err(|e| e.to_string())?;
         return Ok(());
     }
     // What came stays in the .part file for the next try.
-    Err(if why.is_empty() { "読み込めませんでした".into() } else { why })
+    Err(if why.is_empty() { crate::tr!("Could not load", "読み込めませんでした") } else { why })
 }

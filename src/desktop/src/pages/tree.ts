@@ -1,4 +1,5 @@
 import {bytes, h} from '../dom.ts';
+import {t} from '../i18n.ts';
 import {inRepo, list, ORIGIN_LABEL, type SystemEntry} from '../system.ts';
 
 // File is an operation, not a page: the tree of "/", the whole system, as a
@@ -135,7 +136,7 @@ export class FileTree {
     const isRepo = at !== null && at.path === '';
     const row = h('div', {class: 'tree-row', style: `--depth:${depth}`});
     const item = h('li', {role: 'treeitem', class: isRepo ? 'tree-repo' : e.kind === 'dir' ? 'tree-dir' : 'tree-file'}, row);
-    const meta = e.origin ? ORIGIN_LABEL[e.origin] : e.kind === 'file' && e.size ? bytes(e.size) : '';
+    const meta = e.origin ? t(ORIGIN_LABEL[e.origin]) : e.kind === 'file' && e.size ? bytes(e.size) : '';
 
     if (e.kind !== 'dir') {
       // A link is shown by its name only: /bin/ls is a command, whatever it points to.
@@ -174,13 +175,13 @@ export class FileTree {
       }
       children.replaceChildren();
       for (const c of entries) this.add(c, children, depth + 1);
-      if (!entries.length) children.append(note(e.path === '/root' ? 'repoはまだありません' : '空', depth + 1));
+      if (!entries.length) children.append(note(e.path === '/root' ? t('No repos yet') : t('empty'), depth + 1));
     };
     const show = (now: boolean) => {
       expanded = now;
       if (now) expandedPaths.add(e.path); else expandedPaths.delete(e.path);
       toggle.setAttribute('aria-expanded', String(now));
-      toggle.setAttribute('aria-label', `${e.name}を${now ? '閉じる' : '開く'}`);
+      toggle.setAttribute('aria-label', now ? t('Close {name}', {name: e.name}) : t('Open {name}', {name: e.name}));
       item.setAttribute('aria-expanded', String(now));
       children.hidden = !now;
       if (now) void fill();

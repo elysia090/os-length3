@@ -204,7 +204,7 @@ fn init(s: &Sandbox) -> ! {
 /// with one thread (l3 itself), since it forks and changes namespaces.
 pub fn run(s: &Sandbox) -> io::Result<i32> {
     if !s.root.join("bin").exists() {
-        return Err(io::Error::new(io::ErrorKind::NotFound, "root がありません（l3 root install）"));
+        return Err(io::Error::new(io::ErrorKind::NotFound, crate::tr!("There is no root (l3 root install)", "root がありません（l3 root install）")));
     }
     let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
     let mut flags = libc::CLONE_NEWUSER | libc::CLONE_NEWNS | libc::CLONE_NEWPID | libc::CLONE_NEWIPC | libc::CLONE_NEWUTS;
@@ -223,7 +223,7 @@ pub fn run(s: &Sandbox) -> io::Result<i32> {
         // Pid 1 inside: dies with its supervisor, and everything in it with it.
         unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL, 0, 0, 0) };
         if let Err(e) = build(s) {
-            eprintln!("l3: Prompt を用意できませんでした: {e}");
+            eprintln!("{}", crate::tr!("l3: Could not prepare the Prompt: {}", "l3: Prompt を用意できませんでした: {}", e));
             unsafe { libc::_exit(126) };
         }
         init(s);

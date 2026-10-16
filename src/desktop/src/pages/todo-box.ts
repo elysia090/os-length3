@@ -1,4 +1,5 @@
 import {h} from '../dom.ts';
+import {t} from '../i18n.ts';
 import {getState, setState} from '../state.ts';
 import * as todo from '../todo.ts';
 
@@ -58,9 +59,9 @@ export function todoBox(): HTMLElement {
   const save = () => {
     const kept = todo.persisted(items);
     setState('todo', JSON.stringify(kept)).then(() => { status.textContent = ''; },
-      (e: unknown) => { status.textContent = `保存できませんでした: ${e instanceof Error ? e.message : String(e)}`; });
-    const open = kept.filter((t) => !t.done).length;
-    remaining.textContent = kept.length ? `残り ${open} / ${kept.length}` : '';
+      (e: unknown) => { status.textContent = t('Could not save: {message}', {message: e instanceof Error ? e.message : String(e)}); });
+    const open = kept.filter((td) => !td.done).length;
+    remaining.textContent = kept.length ? t('{open} of {all} left', {open, all: kept.length}) : '';
   };
 
   const caret = (field: HTMLInputElement | HTMLTextAreaElement, at: 'start' | 'end') => {
@@ -68,19 +69,19 @@ export function todoBox(): HTMLElement {
     const p = at === 'start' ? 0 : field.value.length;
     field.setSelectionRange(p, p);
   };
-  const neighbour = (id: string, step: number) => items[items.findIndex((t) => t.id === id) + step]?.id;
+  const neighbour = (id: string, step: number) => items[items.findIndex((td) => td.id === id) + step]?.id;
   const showDetail = (r: Row, show: boolean) => { r.detail.hidden = !show; if (show) fit(r.detail); };
 
-  const paint = (t: todo.Todo) => {
-    const r = rows.get(t.id)!;
+  const paint = (td: todo.Todo) => {
+    const r = rows.get(td.id)!;
     // Shown as it is written, "Fix：", so the format reads off the screen.
-    r.kind.textContent = t.kind ? `${t.kind}：` : '';
-    r.kind.hidden = !t.kind;
-    r.item.classList.toggle('done', t.done);
-    r.button.replaceChildren(mark(t.done));
-    r.button.setAttribute('aria-pressed', String(t.done));
-    r.button.setAttribute('aria-label', t.done ? '未完了に戻す' : '完了にする');
-    r.meta.textContent = todo.filled(t) ? date(t.created) : '';
+    r.kind.textContent = td.kind ? `${td.kind}：` : '';
+    r.kind.hidden = !td.kind;
+    r.item.classList.toggle('done', td.done);
+    r.button.replaceChildren(mark(td.done));
+    r.button.setAttribute('aria-pressed', String(td.done));
+    r.button.setAttribute('aria-label', td.done ? t('Mark as not done') : t('Mark as done'));
+    r.meta.textContent = todo.filled(td) ? date(td.created) : '';
   };
 
   /** Start a new item after `id` and put the caret on its first line. */
@@ -91,24 +92,24 @@ export function todoBox(): HTMLElement {
     caret(rows.get(r.id)!.title, 'end');
   };
 
-  const build = (t: todo.Todo): HTMLElement => {
+  const build = (td: todo.Todo): HTMLElement => {
     const button = h('button', {class: 'todo-mark', type: 'button'}) as HTMLButtonElement;
     const kind = h('span', {class: 'todo-kind'});
-    const title = h('input', {class: 'todo-title', maxlength: String(todo.TEXT_LIMIT), 'aria-label': 'やること',
+    const title = h('input', {class: 'todo-title', maxlength: String(todo.TEXT_LIMIT), 'aria-label': t('What to do'),
       autocomplete: 'off', spellcheck: 'false'}) as HTMLInputElement;
-    const detail = h('textarea', {class: 'todo-detail', rows: '1', maxlength: String(todo.DETAIL_LIMIT), 'aria-label': '詳細',
+    const detail = h('textarea', {class: 'todo-detail', rows: '1', maxlength: String(todo.DETAIL_LIMIT), 'aria-label': t('Detail'),
       spellcheck: 'false'}) as HTMLTextAreaElement;
     const meta = h('span', {class: 'todo-meta'});
-    title.value = t.title;
-    detail.value = t.detail;
+    title.value = td.title;
+    detail.value = td.detail;
     const head = h('div', {class: 'todo-head'}, button, kind, title, meta);
     const item = h('div', {class: 'todo-item', role: 'listitem'}, head, detail);
     const row: Row = {item, title, detail, kind, button, meta};
-    rows.set(t.id, row);
+    rows.set(td.id, row);
 
-    const current = () => items.find((x) => x.id === t.id)!;
+    const current = () => items.find((x) => x.id === td.id)!;
     const set = (change: {kind?: string | null; title?: string; detail?: string}) => {
-      items = todo.edit(items, t.id, change);
+      items = todo.edit(items, td.id, change);
       save();
       paint(current());
       ensureBlankEnd();
@@ -117,7 +118,7 @@ export function todoBox(): HTMLElement {
     // the chip ("Fix：…") stays text.
     let previous = title.value;
 
-    button.addEventListener('click', () => { items = todo.toggle(items, t.id); save(); paint(current()); });
+    button.addEventListener('click', () => { items = todo.toggle(items, td.id); save(); paint(current()); });
 
     title.addEventListener('input', () => {
       const m = !current().kind && !KIND_AT_START.test(previous) && KIND_AT_START.exec(title.value);
@@ -148,9 +149,9 @@ export function todoBox(): HTMLElement {
           title.setSelectionRange(it.kind.length + 1, it.kind.length + 1);
         } else if (!title.value && !it.detail && items.length > 1) {
           e.preventDefault();
-          const before = neighbour(t.id, -1);
-          const after = neighbour(t.id, 1);
-          items = todo.remove(items, t.id);
+          const before = neighbour(td.id, -1);
+          const after = neighbour(td.id, 1);
+          items = todo.remove(items, td.id);
           save();
           render();
           const r = rows.get(before ?? after ?? '');
@@ -159,9 +160,9 @@ export function todoBox(): HTMLElement {
       } else if (e.key === 'ArrowDown') {
         e.preventDefault();
         if (!detail.hidden) caret(detail, 'start');
-        else { const n = rows.get(neighbour(t.id, 1) ?? ''); if (n) caret(n.title, 'end'); }
+        else { const n = rows.get(neighbour(td.id, 1) ?? ''); if (n) caret(n.title, 'end'); }
       } else if (e.key === 'ArrowUp') {
-        const p = rows.get(neighbour(t.id, -1) ?? '');
+        const p = rows.get(neighbour(td.id, -1) ?? '');
         if (p) { e.preventDefault(); caret(p.detail.hidden ? p.title : p.detail, 'end'); }
       }
     });
@@ -176,7 +177,7 @@ export function todoBox(): HTMLElement {
         detail.value = detail.value.replace(/\n+$/, '');
         set({detail: detail.value});
         showDetail(row, detail.value !== '');
-        next(t.id);
+        next(td.id);
       } else if (e.key === 'Backspace' && detail.selectionStart === 0 && detail.selectionEnd === 0 && !detail.value) {
         e.preventDefault();
         showDetail(row, false);
@@ -185,14 +186,14 @@ export function todoBox(): HTMLElement {
         e.preventDefault();
         caret(title, 'end');
       } else if (e.key === 'ArrowDown' && atEnd) {
-        const n = rows.get(neighbour(t.id, 1) ?? '');
+        const n = rows.get(neighbour(td.id, 1) ?? '');
         if (n) { e.preventDefault(); caret(n.title, 'end'); }
       }
     });
     detail.addEventListener('blur', () => showDetail(row, detail.value !== ''));
 
-    showDetail(row, t.detail !== '');
-    paint(t);
+    showDetail(row, td.detail !== '');
+    paint(td);
     return item;
   };
 
@@ -208,7 +209,7 @@ export function todoBox(): HTMLElement {
   const placeholder = () => {
     for (const r of rows.values()) r.title.placeholder = '';
     const last = items.at(-1);
-    if (last) rows.get(last.id)!.title.placeholder = items.length === 1 ? 'Fix：保存内容が消える' : '次のTODO';
+    if (last) rows.get(last.id)!.title.placeholder = items.length === 1 ? t('Fix: Saved work is gone') : t('Next TODO');
   };
 
   // Heights can only be measured once the fields are in the page.
@@ -226,8 +227,8 @@ export function todoBox(): HTMLElement {
   render();
   save();
   const hint = h('p', {class: 'todo-hint'},
-    h('span', {}, '1行目に 種別：件名'), h('span', {}, 'Enter で詳細'), h('span', {}, '空の行で Enter すると次のTODO'),
-    h('span', {}, '○ か Ctrl+Enter で完了'));
+    h('span', {}, t('First line as Kind: title')), h('span', {}, t('Enter for the detail')), h('span', {}, t('Enter on an empty line for the next TODO')),
+    h('span', {}, t('○ or Ctrl+Enter when done')));
   return h('section', {class: 'section', 'aria-labelledby': 'todo-title'},
     h('h2', {id: 'todo-title'}, 'TODO', remaining),
     h('div', {class: 'todo-box'}, list, hint), status);

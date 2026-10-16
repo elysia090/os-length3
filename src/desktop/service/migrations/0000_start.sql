@@ -6,11 +6,32 @@ CREATE TABLE "blob" (
 	CONSTRAINT "blob_user_id_sha256_pk" PRIMARY KEY("user_id","sha256")
 );
 --> statement-breakpoint
+CREATE TABLE "change" (
+	"id" text PRIMARY KEY NOT NULL,
+	"user_id" text NOT NULL,
+	"repo" text NOT NULL,
+	"line" text NOT NULL,
+	"issue" text DEFAULT '' NOT NULL,
+	"kind" text DEFAULT '' NOT NULL,
+	"title" text NOT NULL,
+	"version" integer DEFAULT 1 NOT NULL,
+	"base" text,
+	"head" text NOT NULL,
+	"state" text DEFAULT 'open' NOT NULL,
+	"note" text DEFAULT '' NOT NULL,
+	"submitted_by" text DEFAULT '' NOT NULL,
+	"merged_cut" text,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "cut" (
 	"id" text PRIMARY KEY NOT NULL,
 	"user_id" text NOT NULL,
 	"repo" text NOT NULL,
+	"line" text DEFAULT 'main' NOT NULL,
 	"parent" text,
+	"merged" text,
 	"tree" jsonb NOT NULL,
 	"kind" text DEFAULT '' NOT NULL,
 	"title" text NOT NULL,
@@ -33,14 +54,31 @@ CREATE TABLE "home" (
 CREATE TABLE "repo" (
 	"user_id" text NOT NULL,
 	"name" text NOT NULL,
+	"line" text DEFAULT 'main' NOT NULL,
+	"issue" text DEFAULT '' NOT NULL,
+	"base" text,
 	"head" text,
+	"pushed" text,
+	"started_by" text DEFAULT '' NOT NULL,
+	"started_at" timestamp DEFAULT now() NOT NULL,
 	"draft" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"draft_base" text,
 	"version" integer DEFAULT 0 NOT NULL,
 	"bytes" bigint DEFAULT 0 NOT NULL,
 	"changed_by" text,
 	"updated_at" timestamp DEFAULT now() NOT NULL,
-	CONSTRAINT "repo_user_id_name_pk" PRIMARY KEY("user_id","name")
+	CONSTRAINT "repo_user_id_name_line_pk" PRIMARY KEY("user_id","name","line")
+);
+--> statement-breakpoint
+CREATE TABLE "review" (
+	"id" text PRIMARY KEY NOT NULL,
+	"user_id" text NOT NULL,
+	"change" text NOT NULL,
+	"version" integer NOT NULL,
+	"verdict" text NOT NULL,
+	"note" text DEFAULT '' NOT NULL,
+	"by" text DEFAULT '' NOT NULL,
+	"time" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "account" (
@@ -119,13 +157,18 @@ CREATE TABLE "verification" (
 );
 --> statement-breakpoint
 ALTER TABLE "blob" ADD CONSTRAINT "blob_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "change" ADD CONSTRAINT "change_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "cut" ADD CONSTRAINT "cut_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "home" ADD CONSTRAINT "home_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "repo" ADD CONSTRAINT "repo_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "review" ADD CONSTRAINT "review_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "review" ADD CONSTRAINT "review_change_change_id_fk" FOREIGN KEY ("change") REFERENCES "public"."change"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "account" ADD CONSTRAINT "account_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "passkey" ADD CONSTRAINT "passkey_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "session" ADD CONSTRAINT "session_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "cut_repo_idx" ON "cut" USING btree ("user_id","repo","time");--> statement-breakpoint
+CREATE UNIQUE INDEX "change_line_idx" ON "change" USING btree ("user_id","repo","line");--> statement-breakpoint
+CREATE INDEX "cut_repo_idx" ON "cut" USING btree ("user_id","repo","line","time");--> statement-breakpoint
+CREATE INDEX "review_change_idx" ON "review" USING btree ("change","time");--> statement-breakpoint
 CREATE INDEX "account_userId_idx" ON "account" USING btree ("user_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "deviceCode_deviceCode_uidx" ON "device_code" USING btree ("device_code");--> statement-breakpoint
 CREATE UNIQUE INDEX "deviceCode_userCode_uidx" ON "device_code" USING btree ("user_code");--> statement-breakpoint

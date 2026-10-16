@@ -1,7 +1,7 @@
 [
   {
     "id": "standard",
-    "label": "標準",
+    "label": "Standard",
     "dirs": ["docs", "issue"],
     "files": [["README.md", "# {name}\n"]]
   },
@@ -17,7 +17,7 @@
   },
   {
     "id": "empty",
-    "label": "最小",
+    "label": "Minimal",
     "dirs": [],
     "files": [["README.md", "# {name}\n"]]
   }

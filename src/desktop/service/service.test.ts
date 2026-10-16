@@ -176,3 +176,102 @@ test('only the app\'s pages may call, and they can read a new session\'s token',
   const other = await s.call('OPTIONS', '/v1/repos', {headers: {Origin: 'http://evil.test', 'Access-Control-Request-Method': 'GET'}});
   assert.notEqual(other.headers.get('Access-Control-Allow-Origin'), 'http://evil.test');
 });
+
+test('work on an issue is its own line; submitted, reviewed by version, merged into main', async () => {
+  const s = await service();
+  const t = await s.start();
+  const put = async (text: string) => {
+    const bytes = enc.encode(text);
+    const sha = await sha256(bytes);
+    await s.call('PUT', `/v1/blobs/${sha}`, {token: t, bytes});
+    return sha;
+  };
+  const [readme, issue, fix, fix2, other] = await Promise.all(['# r\n', 'Fix：落ちる\n', 'fixed\n', 'fixed again\n', 'main moved\n'].map(put));
+  const draft = (line: string, version: number, set: Record<string, string | null>) =>
+    s.call('PATCH', `/v1/repos/r/draft?line=${line}`, {token: t, body: {version, set, remove: []}});
+  const commitOn = async (line: string, title: string) => {
+    const now = (await s.call('GET', `/v1/repos/r?line=${line}`, {token: t})).json as unknown as {version: number; head: string | null};
+    const r = await s.call('POST', `/v1/repos/r/cuts?line=${line}`, {token: t, body: {version: now.version, parent: now.head, title}});
+    assert.equal(r.status, 201, JSON.stringify(r.json));
+    return r.json.id as string;
+  };
+  await draft('main', 0, {'README.md': readme, 'issue/001.md': issue});
+  const first = await commitOn('main', 'start');
+  // Writing to a line nobody started is refused: work begins from its issue.
+  assert.equal((await draft('001', 0, {'a.txt': fix})).status, 404);
+  const started = await s.call('POST', '/v1/repos/r/lines', {token: t, body: {issue: 'issue/001.md'}});
+  assert.equal(started.status, 201);
+  assert.deepEqual([started.json.line, started.json.base, started.json.issue], ['001', first, 'issue/001.md']);
+  assert.equal(started.json.startedBy, 'Ren');
+  assert.deepEqual(started.json.draft, {'README.md': readme, 'issue/001.md': issue});
+  // Committing on the line leaves main alone.
+  assert.equal((await draft('001', 1, {'src/fix.c': fix})).status, 200);
+  const c1 = await commitOn('001', 'Fix：落ちる');
+  assert.equal(((await s.call('GET', '/v1/repos/r', {token: t})).json as unknown as {head: string}).head, first);
+  // Submit change needs the commits pushed.
+  assert.equal((await s.call('POST', '/v1/repos/r/changes', {token: t, body: {line: '001', kind: 'Fix', title: '落ちる'}})).status, 409);
+  assert.equal((await s.call('POST', '/v1/repos/r/lines/001/push', {token: t, body: {head: c1}})).status, 200);
+  const submitted = await s.call('POST', '/v1/repos/r/changes', {token: t, body: {line: '001', kind: 'Fix', title: '落ちる'}});
+  assert.equal(submitted.status, 201);
+  const id = submitted.json.id as string;
+  assert.deepEqual([submitted.json.version, submitted.json.state, submitted.json.base, submitted.json.head], [1, 'open', first, c1]);
+  assert.equal((await s.call('POST', `/v1/repos/r/changes/${id}/reviews`, {token: t, body: {version: 1, verdict: 'approve'}})).status, 201);
+  // More work, pushed and submitted again: version 2, and the approval is of version 1.
+  assert.equal((await draft('001', 2, {'src/fix.c': fix2})).status, 200);
+  const c2 = await commitOn('001', 'Fix：落ちる（続き）');
+  await s.call('POST', '/v1/repos/r/lines/001/push', {token: t, body: {head: c2}});
+  const again = await s.call('POST', '/v1/repos/r/changes', {token: t, body: {line: '001', kind: 'Fix', title: '落ちる'}});
+  assert.deepEqual([again.json.id, again.json.version], [id, 2]);
+  assert.deepEqual((again.json.reviews as {version: number; verdict: string}[]).map((r) => [r.version, r.verdict]), [[1, 'approve']]);
+  // Merging the old version is refused; merging this one lands on main, with main's own work kept.
+  assert.equal((await s.call('POST', `/v1/repos/r/changes/${id}/merge`, {token: t, body: {version: 1}})).status, 409);
+  await draft('main', 1, {'notes.txt': other});
+  const merged = await s.call('POST', `/v1/repos/r/changes/${id}/merge`, {token: t, body: {version: 2}});
+  assert.equal(merged.status, 200, JSON.stringify(merged.json));
+  assert.equal(merged.json.state, 'merged');
+  const main = (await s.call('GET', '/v1/repos/r', {token: t})).json as unknown as {head: string; draft: Record<string, string>};
+  assert.equal(main.head, merged.json.merged);
+  assert.equal(main.draft['src/fix.c'], fix2);
+  assert.equal(main.draft['notes.txt'], other);
+  const log = (await s.call('GET', '/v1/repos/r/log', {token: t})).json as unknown as {id: string; merged: string | null}[];
+  assert.deepEqual(log.map((c) => c.merged), [c2, null]);
+});
+
+test('a file both sides changed stops the merge; reject is the receiver\'s, reset the submitter\'s', async () => {
+  const s = await service();
+  const t = await s.start();
+  const sha = async (text: string) => {
+    const bytes = enc.encode(text);
+    const d = await sha256(bytes);
+    await s.call('PUT', `/v1/blobs/${d}`, {token: t, bytes});
+    return d;
+  };
+  const [a, b, c, issue] = await Promise.all(['a\n', 'b\n', 'c\n', 'Fix：x\n'].map(sha));
+  const head = async (line: string) => (await s.call('GET', `/v1/repos/r?line=${line}`, {token: t})).json as unknown as {version: number; head: string | null};
+  const commitOn = async (line: string) => {
+    const h = await head(line);
+    return (await s.call('POST', `/v1/repos/r/cuts?line=${line}`, {token: t, body: {version: h.version, parent: h.head, title: 'x'}})).json.id as string;
+  };
+  await s.call('PATCH', '/v1/repos/r/draft', {token: t, body: {version: 0, set: {'f.txt': a, 'issue/001.md': issue, 'issue/002.md': issue}, remove: []}});
+  await commitOn('main');
+  for (const n of ['001', '002']) await s.call('POST', '/v1/repos/r/lines', {token: t, body: {issue: `issue/${n}.md`}});
+  await s.call('PATCH', '/v1/repos/r/draft?line=001', {token: t, body: {version: 1, set: {'f.txt': b}, remove: []}});
+  const one = await commitOn('001');
+  await s.call('POST', '/v1/repos/r/lines/001/push', {token: t, body: {head: one}});
+  await s.call('PATCH', '/v1/repos/r/draft?line=002', {token: t, body: {version: 1, set: {'f.txt': c}, remove: []}});
+  const two = await commitOn('002');
+  await s.call('POST', '/v1/repos/r/lines/002/push', {token: t, body: {head: two}});
+  const x = (await s.call('POST', '/v1/repos/r/changes', {token: t, body: {line: '001', title: 'one'}})).json.id as string;
+  const y = (await s.call('POST', '/v1/repos/r/changes', {token: t, body: {line: '002', title: 'two'}})).json.id as string;
+  assert.equal((await s.call('POST', `/v1/repos/r/changes/${x}/merge`, {token: t, body: {version: 1}})).status, 200);
+  const clash = await s.call('POST', `/v1/repos/r/changes/${y}/merge`, {token: t, body: {version: 1}});
+  assert.deepEqual([clash.status, clash.json.conflicts], [409, ['f.txt']]);
+  assert.equal((await s.call('POST', `/v1/repos/r/changes/${y}/reject`, {token: t, body: {note: 'clashes'}})).json.state, 'rejected');
+  // A rejected change is not reset; an open one is, and can be submitted again.
+  assert.equal((await s.call('POST', `/v1/repos/r/changes/${y}/reset`, {token: t, body: {}})).status, 409);
+  const back = await s.call('POST', '/v1/repos/r/changes', {token: t, body: {line: '002', title: 'two'}});
+  assert.deepEqual([back.json.state, back.json.version], ['open', 2]);
+  assert.equal((await s.call('POST', `/v1/repos/r/changes/${y}/reset`, {token: t, body: {}})).json.state, 'reset');
+  const list = (await s.call('GET', '/v1/repos/r/changes', {token: t})).json as unknown as {title: string; state: string}[];
+  assert.deepEqual(list.map((l) => [l.title, l.state]).sort(), [['one', 'merged'], ['two', 'reset']]);
+});

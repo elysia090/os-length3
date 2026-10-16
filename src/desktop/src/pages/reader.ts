@@ -1,4 +1,5 @@
 import {bytes, h} from '../dom.ts';
+import {t} from '../i18n.ts';
 import {lineCount, readingOrder} from '../reading.ts';
 import {store, type Change, type Entry} from '../repos.ts';
 
@@ -88,7 +89,7 @@ export class Reader {
     let entries: Entry[];
     try { entries = await store.tree(this.repo, path); } catch (e) { section.replaceChildren(h('p', {class: 'muted'}, String(e))); return; }
     // An empty directory shows nothing; only an empty repo says so.
-    if (!entries.length) { section.replaceChildren(path ? '' : h('div', {class: 'empty'}, 'fileはまだありません')); return; }
+    if (!entries.length) { section.replaceChildren(path ? '' : h('div', {class: 'empty'}, t('No files yet'))); return; }
     section.replaceChildren(...readingOrder(entries).map((e) =>
       e.kind === 'dir' ? this.directory(join(path, e.name)) : this.file(join(path, e.name), e)));
   }
@@ -104,23 +105,23 @@ export class Reader {
     const gutter = h('pre', {class: 'gutter', 'aria-hidden': 'true'});
     const sheet = h('div', {class: 'sheet'}, gutter, h('pre', {class: 'code'}, '…'));
     section.append(sheet);
-    if (entry.kind === 'link') { sheet.replaceWith(h('p', {class: 'muted sheet-note'}, 'シンボリックリンク')); return section; }
+    if (entry.kind === 'link') { sheet.replaceWith(h('p', {class: 'muted sheet-note'}, t('Symbolic link'))); return section; }
     const number = (text: string) => {
       gutter.textContent = Array.from({length: Math.max(lineCount(text), 1)}, (_, i) => String(i + 1)).join('\n');
     };
     this.fileLoads.set(path, lazy(section, this.flow, async () => {
       let c;
       try { c = await store.read(this.repo, path); } catch (e) { state.textContent = String(e); return; }
-      if (c.text === null) { sheet.replaceWith(h('p', {class: 'muted sheet-note'}, `バイナリ · ${bytes(c.size)}`)); return; }
+      if (c.text === null) { sheet.replaceWith(h('p', {class: 'muted sheet-note'}, t('Binary · {size}', {size: bytes(c.size)}))); return; }
       number(c.text);
       if (c.truncated) {
         // Only part of it was read, so it is never written back.
         sheet.replaceChildren(gutter, h('pre', {class: 'code'}, c.text));
-        state.textContent = `先頭 ${bytes(new TextEncoder().encode(c.text).length)} だけ（全体 ${bytes(c.size)}）· 読むだけ`;
+        state.textContent = t('Only the first {part} (of {size}) · read only', {part: bytes(new TextEncoder().encode(c.text).length), size: bytes(c.size)});
         return;
       }
       const area = h('textarea', {class: 'code edit', rows: '1', wrap: 'off', spellcheck: 'false', autocapitalize: 'off',
-        'aria-label': `${path} を編集`}) as HTMLTextAreaElement;
+        'aria-label': t('Edit {path}', {path})}) as HTMLTextAreaElement;
       area.value = c.text;
       sheet.replaceChildren(gutter, area);
       this.editors.set(path, area);
@@ -138,7 +139,7 @@ export class Reader {
       // A text saved elsewhere (the shell, l3, Git) comes in unless this one has unsaved edits.
       this.takers.set(path, (text) => {
         if (text === area.value) { saved = text; return true; }
-        if (area.value !== saved) { state.textContent = '外で変更されました。保存するとこちらで上書きします'; return false; }
+        if (area.value !== saved) { state.textContent = t('Changed elsewhere. Saving here will overwrite it'); return false; }
         saved = text;
         area.value = text;
         fit();
@@ -152,15 +153,15 @@ export class Reader {
         try {
           await store.write(this.repo, path, text);
           saved = text;
-          state.textContent = area.value === saved ? '' : '未保存';
+          state.textContent = area.value === saved ? '' : t('Unsaved');
         } catch (e) {
-          state.textContent = `保存できませんでした: ${e instanceof Error ? e.message : String(e)}`;
+          state.textContent = t('Could not save: {message}', {message: e instanceof Error ? e.message : String(e)});
         }
       };
       area.addEventListener('input', () => {
         fit();
         number(area.value);
-        state.textContent = '未保存';
+        state.textContent = t('Unsaved');
         clearTimeout(timer);
         timer = window.setTimeout(() => void save(), 700);
       });

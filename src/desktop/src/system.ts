@@ -3,6 +3,7 @@
 // distribution, /dev and /proc are made by the kernel when a shell starts,
 // /root holds the person's repos, and /etc and /tmp start empty.
 
+import {t} from './i18n.ts';
 import {store} from './repos.ts';
 
 export type Origin = 'distribution' | 'kernel' | 'repos' | 'empty';
@@ -18,11 +19,12 @@ export interface SystemEntry {
   origin?: Origin;
 }
 
+/** In English; shown through t(). */
 export const ORIGIN_LABEL: Record<Origin, string> = {
-  distribution: '配布',
-  kernel: 'カーネル',
+  distribution: 'distribution',
+  kernel: 'kernel',
   repos: 'repo',
-  empty: '空',
+  empty: 'empty',
 };
 
 const TOP: readonly {name: string; origin: Origin}[] = [
@@ -50,7 +52,7 @@ let distribution: Promise<SystemEntry[]> | null = null;
 async function bin(): Promise<SystemEntry[]> {
   const [applets, head] = await Promise.all([
     fetch(`${DISTRIBUTION}/applets`).then((r) => {
-      if (!r.ok) throw new Error('配布物を取得していません');
+      if (!r.ok) throw new Error(t('The distribution has not been fetched'));
       return r.text();
     }),
     fetch(`${DISTRIBUTION}/busybox`, {method: 'HEAD'}),

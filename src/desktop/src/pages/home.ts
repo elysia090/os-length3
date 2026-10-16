@@ -1,4 +1,5 @@
 import {h} from '../dom.ts';
+import {t} from '../i18n.ts';
 import {LIMITS, initials, normalize, parse, type Profile} from '../profile.ts';
 import {getState, setState} from '../state.ts';
 import {repoList} from './repo-list.ts';
@@ -33,22 +34,22 @@ export function home(ctx: Context): Node[] {
   return [header, todoBox(),
     h('section', {class: 'section', 'aria-labelledby': 'repos-title'}, h('h2', {id: 'repos-title'}, 'repo'), grid),
     h('section', {class: 'section', 'aria-labelledby': 'posts-title'},
-      h('h2', {id: 'posts-title'}, '投稿'), h('p', {class: 'muted'}, 'まだ投稿はありません'))];
+      h('h2', {id: 'posts-title'}, t('Posts')), h('p', {class: 'muted'}, t('No posts yet')))];
 }
 
 function identity(repoCount: HTMLElement): HTMLElement {
   const profile = currentProfile();
   const named = profile.name || profile.handle;
   return h('div', {class: 'identity'},
-    named ? h('h1', {}, profile.name || `@${profile.handle}`) : h('h1', {class: 'unset'}, '名前が未設定です'),
+    named ? h('h1', {}, profile.name || `@${profile.handle}`) : h('h1', {class: 'unset'}, t('No name yet')),
     profile.handle && profile.name ? h('p', {class: 'handle'}, `@${profile.handle}`) : null,
     profile.bio ? h('p', {class: 'bio'}, profile.bio) : null,
-    h('p', {class: 'counts'}, h('span', {}, repoCount, ' repo'), h('span', {}, h('b', {}, '0'), ' 投稿')),
+    h('p', {class: 'counts'}, h('span', {}, repoCount, ' repo'), h('span', {}, h('b', {}, '0'), ` ${t('posts')}`)),
   );
 }
 
 function editButton(ctx: Context): HTMLElement {
-  const b = h('button', {class: 'button', type: 'button'}, 'プロフィールを編集');
+  const b = h('button', {class: 'button', type: 'button'}, t('Edit profile'));
   b.addEventListener('click', () => { editing = true; ctx.rerender(); document.getElementById('profile-name')?.focus(); });
   return b;
 }
@@ -61,20 +62,20 @@ function editForm(ctx: Context): HTMLElement {
   name.value = profile.name; handle.value = profile.handle; bio.value = profile.bio;
   const error = h('p', {class: 'error', role: 'alert'});
   const form = h('form', {class: 'edit'},
-    h('label', {}, '名前', name),
-    h('label', {}, 'ハンドル', h('span', {class: 'handle-field'}, '@', handle)),
-    h('label', {}, '自己紹介', bio),
+    h('label', {}, t('Name'), name),
+    h('label', {}, t('Handle'), h('span', {class: 'handle-field'}, '@', handle)),
+    h('label', {}, t('Bio'), bio),
     error,
     h('div', {class: 'row'},
-      h('button', {class: 'button primary', type: 'submit'}, '保存'),
-      h('button', {class: 'button', type: 'button', 'data-cancel': ''}, 'キャンセル')),
+      h('button', {class: 'button primary', type: 'submit'}, t('Save')),
+      h('button', {class: 'button', type: 'button', 'data-cancel': ''}, t('Cancel'))),
   );
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const result = normalize({name: name.value, handle: handle.value, bio: bio.value});
-    if (result.error) { error.textContent = 'ハンドルは英小文字・数字・- _ の32文字以内です'; handle.focus(); return; }
+    if (result.error) { error.textContent = t('A handle is up to 32 lowercase letters, digits, - and _'); handle.focus(); return; }
     try { await setState('profile', JSON.stringify(result.profile)); } catch (e) {
-      error.textContent = `保存できませんでした: ${e instanceof Error ? e.message : String(e)}`;
+      error.textContent = t('Could not save: {message}', {message: e instanceof Error ? e.message : String(e)});
       return;
     }
     editing = false;

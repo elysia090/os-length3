@@ -1,4 +1,5 @@
 import {h} from '../dom.ts';
+import {t} from '../i18n.ts';
 import {store, TEMPLATES, validName, type Template} from '../repos.ts';
 import {pageHead} from './common.ts';
 import {repoList} from './repo-list.ts';
@@ -49,62 +50,62 @@ export function newRepo(ctx: Context): Node[] {
     placeholder: 'my-repo', 'aria-describedby': 'repo-name-rule'}) as HTMLInputElement;
   let template: Template = 'standard';
   const preview = h('ul', {class: 'tree-children'});
-  const caption = h('p', {class: 'muted small tree-caption'}, 'File ではこう見えます');
-  const card = h('div', {class: 'tree tree-still', 'aria-label': '作成されるもの'}, caption, preview);
+  const caption = h('p', {class: 'muted small tree-caption'}, t('How it will look in File'));
+  const card = h('div', {class: 'tree tree-still', 'aria-label': t('What will be made')}, caption, preview);
   const showFiles = () => {
-    const t = TEMPLATES.find((x) => x.id === template)!;
+    const tpl = TEMPLATES.find((x) => x.id === template)!;
     const repo = name.value.trim() || 'my-repo';
     const items: HTMLElement[] = [row('root', 0, true, {meta: 'repo'}), row(repo, 1, true, {repo: true})];
     const walk = (nodes: Item[], depth: number) => {
       for (const n of nodes) { items.push(row(n.name, depth, n.dir)); walk(n.children, depth + 1); }
     };
-    walk(nest(t.files), 2);
+    walk(nest(tpl.files), 2);
     preview.replaceChildren(...items);
   };
   // Templates are chips, one chosen: the same shape and states as everywhere.
-  const chips = TEMPLATES.map((t) => {
-    const b = h('button', {type: 'button', class: 'chip', role: 'radio', 'aria-checked': String(t.id === template)}, t.label);
+  const chips = TEMPLATES.map((tpl) => {
+    const b = h('button', {type: 'button', class: 'chip', role: 'radio', 'aria-checked': String(tpl.id === template)}, t(tpl.label));
     b.addEventListener('click', () => {
-      template = t.id;
+      template = tpl.id;
       for (const c of chips) c.setAttribute('aria-checked', String(c === b));
       showFiles();
     });
     return b;
   });
   const error = h('p', {class: 'error', role: 'alert'});
-  const submit = h('button', {class: 'button primary', type: 'submit'}, '作成') as HTMLButtonElement;
+  const submit = h('button', {class: 'button primary', type: 'submit'}, t('Create')) as HTMLButtonElement;
   const actions = h('div', {class: 'row'}, submit);
 
   /** Made: the page stays, and says where to go from here. */
   const made = (n: string) => {
     name.disabled = true;
     for (const c of chips) c.setAttribute('disabled', '');
-    caption.textContent = `File の /root/${n} に出来ました`;
-    const open = h('button', {class: 'button primary', type: 'button'}, 'Forge で開く');
+    caption.textContent = t('Made at /root/{name} in File', {name: n});
+    const open = h('button', {class: 'button primary', type: 'button'}, t('Open in Forge'));
     open.addEventListener('click', () => ctx.openRepo(n));
-    const again = h('button', {class: 'button', type: 'button'}, '続けて作る');
+    const again = h('button', {class: 'button', type: 'button'}, t('Make another'));
     again.addEventListener('click', () => ctx.rerender());
-    actions.replaceChildren(h('p', {class: 'made', role: 'status'}, `${n} を作りました`), open, again);
+    actions.replaceChildren(h('p', {class: 'made', role: 'status'}, t('Made {name}', {name: n})), open, again);
     open.focus({preventScroll: true});
     void list.refresh(n);
   };
   const form = h('form', {class: 'new-repo'},
-    h('label', {class: 'field'}, h('span', {class: 'field-label'}, '名前'), name,
-      h('span', {id: 'repo-name-rule', class: 'muted small'}, '英数字と . _ - 、64文字まで')),
-    h('div', {class: 'field'}, h('span', {class: 'field-label', id: 'template-label'}, 'テンプレート'),
+    h('label', {class: 'field'}, h('span', {class: 'field-label'}, t('Name')), name,
+      h('span', {id: 'repo-name-rule', class: 'muted small'}, t('Letters, digits and . _ -, up to 64 characters'))),
+    h('div', {class: 'field'}, h('span', {class: 'field-label', id: 'template-label'}, t('Template')),
       h('div', {class: 'chips', role: 'radiogroup', 'aria-labelledby': 'template-label'}, ...chips)),
     card, error, actions);
   name.addEventListener('input', showFiles);
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const n = name.value.trim();
-    if (!validName(n)) { error.textContent = '名前は英数字と . _ - で、先頭は . 以外にしてください'; name.focus(); return; }
+    if (!validName(n)) { error.textContent = t('Use letters, digits and . _ -, and do not start with .'); name.focus(); return; }
     submit.disabled = true;
     try {
       await store.create(n, template);
       made(n);
     } catch (e) {
-      error.textContent = `作成できませんでした: ${String(e)}`;
+      error.textContent = t('Could not create: {message}', {message: String(e)});
       submit.disabled = false;
     }
   });

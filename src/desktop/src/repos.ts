@@ -5,6 +5,7 @@
 // the same without keeping, for tests.
 
 import {askToKeep, isNative} from './host.ts';
+import {t} from './i18n.ts';
 import shared from '../shared/templates.json' with {type: 'json'};
 
 export interface RepoSummary {
@@ -187,8 +188,8 @@ export class MemoryStore implements RepoStore {
     const parts = path.split('/');
     if (parts.some((p) => !p || p === '.' || p === '..') || touchesGit(path)) throw new Error(`path ${path} leaves the repo`);
     // A file where a folder of the path would be, or a folder in the file's place, is refused.
-    for (let i = 1; i < parts.length; i++) if (typeof r.files.get(parts.slice(0, i).join('/')) === 'string') throw new Error(`${path}: 途中がファイルです`);
-    if (text !== null && [...r.files.keys()].some((p) => p.startsWith(`${path}/`))) throw new Error(`${path}: フォルダーがあります`);
+    for (let i = 1; i < parts.length; i++) if (typeof r.files.get(parts.slice(0, i).join('/')) === 'string') throw new Error(t('{path}: a file is in the way', {path}));
+    if (text !== null && [...r.files.keys()].some((p) => p.startsWith(`${path}/`))) throw new Error(t('{path}: a folder is there', {path}));
     // Parent folders are implied by their files; an empty folder is kept as null.
     for (let i = 1; i < parts.length; i++) { const at = parts.slice(0, i).join('/'); if (r.files.get(at) === null) r.files.delete(at); }
     if (text === null && r.files.get(path) !== undefined) return;

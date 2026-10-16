@@ -3,15 +3,18 @@
 // are the work. File contents are not here: they are blobs named by their
 // sha256 in the object store (R2), and a tree maps paths to those names.
 //
-// A repo has two things on the Remote:
-//   draft  the working tree as it is now, kept up to date from every device
+// A repo is lines of work, `main` and one per issue being worked on (the
+// branch and worktree a person never has to name). Each line has:
+//   draft  its working tree as it is now, kept up to date from every device
 //          as files are saved (a diff at a time); its version moves by one
 //          with each change, and a change names the version it was made on
-//   head   the last cut (区切り): history, made only by 区切る
-// so a device's copy is never the only copy, and history stays deliberate.
+//   head   its last commit: history, made only by committing
+//   pushed the commit it has been pushed to, where others can see it
+// A line other than main is handed to main as a change (Submit change),
+// which the receiver reviews and merges or rejects.
 
 import {sql} from 'drizzle-orm';
-import {bigint, index, integer, jsonb, pgTable, primaryKey, text, timestamp} from 'drizzle-orm/pg-core';
+import {bigint, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex} from 'drizzle-orm/pg-core';
 import {user} from './schema.auth.ts';
 
 export * from './schema.auth.ts';
@@ -22,7 +25,17 @@ export type Tree = Record<string, string | null>;
 export const repo = pgTable('repo', {
   userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
   name: text('name').notNull(),
+  /** 'main', or the line of work for an issue (its file's stem, e.g. '001'). */
+  line: text('line').notNull().default('main'),
+  /** The issue this line is the work for ('issue/001.md'); '' for main. */
+  issue: text('issue').notNull().default(''),
+  /** The commit of main this line started from. */
+  base: text('base'),
   head: text('head'),
+  pushed: text('pushed'),
+  /** Who started it, as their name was then. */
+  startedBy: text('started_by').notNull().default(''),
+  startedAt: timestamp('started_at').defaultNow().notNull(),
   draft: jsonb('draft').$type<Tree>().notNull().default(sql`'{}'::jsonb`),
   /** The cut the draft was taken from or last cut at. */
   draftBase: text('draft_base'),
@@ -32,13 +45,16 @@ export const repo = pgTable('repo', {
   /** Which session last changed the draft. */
   changedBy: text('changed_by'),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-}, (t) => [primaryKey({columns: [t.userId, t.name]})]);
+}, (t) => [primaryKey({columns: [t.userId, t.name, t.line]})]);
 
 export const cut = pgTable('cut', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
   repo: text('repo').notNull(),
+  line: text('line').notNull().default('main'),
   parent: text('parent'),
+  /** For a merge: the commit of the line that was merged. */
+  merged: text('merged'),
   tree: jsonb('tree').$type<Tree>().notNull(),
   kind: text('kind').notNull().default(''),
   title: text('title').notNull(),
@@ -48,7 +64,46 @@ export const cut = pgTable('cut', {
   added: integer('added').notNull().default(0),
   removed: integer('removed').notNull().default(0),
   time: timestamp('time').defaultNow().notNull(),
-}, (t) => [index('cut_repo_idx').on(t.userId, t.repo, t.time)]);
+}, (t) => [index('cut_repo_idx').on(t.userId, t.repo, t.line, t.time)]);
+
+/**
+ * A line handed to main: Submit change. Submitting again after more commits
+ * makes a new version of the same change; a review is of one version. The
+ * receiver merges or rejects it; the one who submitted it may reset it
+ * (take it back). Open until one of those.
+ */
+export const change = pgTable('change', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
+  repo: text('repo').notNull(),
+  line: text('line').notNull(),
+  issue: text('issue').notNull().default(''),
+  kind: text('kind').notNull().default(''),
+  title: text('title').notNull(),
+  version: integer('version').notNull().default(1),
+  /** main's commit the change is measured against, and the line's commit it hands in. */
+  base: text('base'),
+  head: text('head').notNull(),
+  /** 'open', 'merged', 'rejected' or 'reset'. */
+  state: text('state').notNull().default('open'),
+  note: text('note').notNull().default(''),
+  submittedBy: text('submitted_by').notNull().default(''),
+  mergedCut: text('merged_cut'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (t) => [uniqueIndex('change_line_idx').on(t.userId, t.repo, t.line)]);
+
+export const review = pgTable('review', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
+  change: text('change').notNull().references(() => change.id, {onDelete: 'cascade'}),
+  version: integer('version').notNull(),
+  /** 'approve', 'changes' (asks for changes) or 'comment'. */
+  verdict: text('verdict').notNull(),
+  note: text('note').notNull().default(''),
+  by: text('by').notNull().default(''),
+  time: timestamp('time').defaultNow().notNull(),
+}, (t) => [index('review_change_idx').on(t.change, t.time)]);
 
 export const home = pgTable('home', {
   userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),

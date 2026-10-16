@@ -1,5 +1,7 @@
 // Element construction. Text is always set as text, never parsed as HTML.
 
+import {t} from './i18n.ts';
+
 export type Child = Node | string | null | undefined | false;
 
 export function h(tag: string, props: Record<string, string> = {}, ...children: Child[]): HTMLElement {
@@ -19,13 +21,13 @@ export function bytes(n: number): string {
   return `${n >= 100 || i === 0 ? n.toFixed(0) : n.toFixed(1)} ${UNITS[i]}`;
 }
 
-/** "3分前", "昨日" style, falling back to a date. */
+/** "3 min ago", "yesterday" style, falling back to a date. */
 export function ago(ms: number, now = Date.now()): string {
   const s = Math.max(0, Math.round((now - ms) / 1000));
-  if (s < 60) return 'たった今';
-  if (s < 3600) return `${Math.floor(s / 60)}分前`;
-  if (s < 86400) return `${Math.floor(s / 3600)}時間前`;
-  if (s < 172800) return '昨日';
+  if (s < 60) return t('just now');
+  if (s < 3600) return t('{n} min ago', {n: Math.floor(s / 60)});
+  if (s < 86400) return t('{n} h ago', {n: Math.floor(s / 3600)});
+  if (s < 172800) return t('yesterday');
   const d = new Date(ms);
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
 }

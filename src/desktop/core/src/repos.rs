@@ -92,7 +92,7 @@ impl Repos {
     /// The repo's own directory, once its name is checked and it exists.
     pub fn dir(&self, repo: &str) -> Result<PathBuf> {
         if !self.repo(repo)?.is_dir() {
-            return Err(format!("repo {repo} はありません"));
+            return Err(crate::tr!("There is no repo {}", "repo {} はありません", repo));
         }
         self.inside(repo, "")
     }

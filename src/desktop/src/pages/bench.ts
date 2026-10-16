@@ -1,4 +1,5 @@
 import {h} from '../dom.ts';
+import {t} from '../i18n.ts';
 import {Reference} from './reference.ts';
 import {sessionFor, terminalFor} from './terminal.ts';
 
@@ -38,12 +39,12 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   const termBox = h('section', {class: 'term-box', 'aria-label': 'Prompt'}, termTitle);
   const termHome = h('div', {class: 'term-home'}, termBox);
   const termSlot = h('div', {class: 'term-slot'});
-  const prompt = h('textarea', {class: 'prompt-in', rows: '1', 'aria-label': 'プロンプト', spellcheck: 'false', autocapitalize: 'off'}) as HTMLTextAreaElement;
+  const prompt = h('textarea', {class: 'prompt-in', rows: '1', 'aria-label': t('Prompt box'), spellcheck: 'false', autocapitalize: 'off'}) as HTMLTextAreaElement;
   const note = h('p', {class: 'prompt-note muted small', role: 'status'});
   const dock = h('div', {class: 'dock'}, termSlot, h('form', {class: 'prompt'}, prompt), note);
   const center = h('div', {class: 'center'}, parts.main, dock);
   const reference = new Reference({reveal: parts.reveal});
-  const side = h('aside', {class: 'side', 'aria-label': '参照とPrompt'}, reference.element, termHome);
+  const side = h('aside', {class: 'side', 'aria-label': t('Reference and Prompt')}, reference.element, termHome);
   const work = h('div', {class: parts.strip ? 'work' : 'work no-strip'}, ...(parts.strip ? [parts.strip] : []), center, side);
 
   let prompting = false;
@@ -67,7 +68,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
     event.preventDefault();
     if (!repo) return;
-    if (!sessionFor(repo).send(prompt.value)) { note.textContent = '起動中です'; return; }
+    if (!sessionFor(repo).send(prompt.value)) { note.textContent = t('Still starting'); return; }
     note.textContent = '';
     prompt.value = '';
     fit();
@@ -83,13 +84,13 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     prompt.focus();
   });
 
-  const setRepo = (name: string | null, none = 'repoを開くと動きます') => {
+  const setRepo = (name: string | null, none = t('Runs once a repo is open')) => {
     if (name === repo && name) return;
     repo = name;
     reference.setRepo(name);
     termBox.replaceChildren(termTitle, name ? terminalFor(name) : h('div', {class: 'empty'}, none));
     prompt.disabled = !name;
-    prompt.placeholder = name ? `${name} で実行` : '';
+    prompt.placeholder = name ? t('Run in {name}', {name}) : '';
   };
   setRepo(null);
   return {element: work, reference, setRepo};

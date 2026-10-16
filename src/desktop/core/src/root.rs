@@ -110,7 +110,7 @@ pub fn identify(bundle: &Path) -> Result<&'static Release, String> {
     }
     let sha = hex(&h.finalize());
     RELEASES.iter().find(|r| r.sha256 == sha && r.bytes == n)
-        .ok_or_else(|| format!("知らないリリースです（sha256 {}…, {n} bytes）", &sha[..12]))
+        .ok_or_else(|| crate::tr!("Not a known release (sha256 {}…, {} bytes)", "知らないリリースです（sha256 {}…, {} bytes）", &sha[..12], n))
 }
 
 type Decoder<R> = ruzstd::decoding::StreamingDecoder<io::BufReader<R>, ruzstd::decoding::FrameDecoder>;
@@ -339,11 +339,11 @@ pub fn install(data: &Path, bundle: &Path) -> Result<Installed, String> {
         let unpacked = fs::File::open(bundle).and_then(Frames::new).and_then(|z| unpack(z, &aside));
         let (files, bytes) = match unpacked {
             Ok(v) => v,
-            Err(e) => { let _ = fs::remove_dir_all(&aside); return Err(format!("展開できませんでした: {e}")); }
+            Err(e) => { let _ = fs::remove_dir_all(&aside); return Err(crate::tr!("Could not unpack: {}", "展開できませんでした: {}", e)); }
         };
         if !aside.join("root/bin/sh").exists() && fs::symlink_metadata(aside.join("root/bin/sh")).is_err() {
             let _ = fs::remove_dir_all(&aside);
-            return Err("このリリースには root/bin/sh がありません".into());
+            return Err(crate::tr!("This release has no root/bin/sh", "このリリースには root/bin/sh がありません"));
         }
         let about = Installed { name: release.name.into(), version: release.version.into(), sha256: release.sha256.into(), files, bytes };
         fs::write(aside.join("installed.json"), serde_json::to_string(&about).unwrap()).map_err(|e| e.to_string())?;
@@ -427,7 +427,8 @@ mod tests {
     fn only_a_pinned_release_is_taken() {
         let d = fresh("pin");
         fs::write(d.join("b.tar.zst"), b"not the release").unwrap();
-        assert!(identify(&d.join("b.tar.zst")).unwrap_err().contains("知らないリリース"));
+        let e = identify(&d.join("b.tar.zst")).unwrap_err();
+        assert!(e.contains("Not a known release") || e.contains("知らないリリース"), "{e}");
         let _ = fs::remove_dir_all(&d);
     }
 }

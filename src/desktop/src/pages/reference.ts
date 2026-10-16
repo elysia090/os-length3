@@ -1,5 +1,6 @@
 import {h} from '../dom.ts';
 import * as gitops from '../history.ts';
+import {t, tn} from '../i18n.ts';
 import {onChange, store} from '../repos.ts';
 import {findInText, nameMatches, type Hit} from '../search.ts';
 import {sessionIfAny, type Run} from './terminal.ts';
@@ -13,11 +14,11 @@ type View = 'issue' | 'diff' | 'run';
 const VIEWS: readonly {id: View; label: string}[] = [
   {id: 'issue', label: 'Issue'},
   {id: 'diff', label: 'diff'},
-  {id: 'run', label: '実行結果'},
+  {id: 'run', label: 'Output'},
 ];
 const KEY = 'length3.os.reference';
 const FILE_LIMIT = 2000;
-/** Lines of a run's output shown before "ほか n 行". */
+/** Lines of a run's output shown before "n more lines". */
 const RUN_LINES = 40;
 const HIT_LIMIT = 200;
 
@@ -67,8 +68,8 @@ export class Reference {
 
   constructor(events: ReferenceEvents) {
     this.events = events;
-    this.query = h('input', {type: 'search', class: 'search-in', placeholder: 'このrepoを検索',
-      'aria-label': 'このrepoを検索', autocomplete: 'off', spellcheck: 'false'}) as HTMLInputElement;
+    this.query = h('input', {type: 'search', class: 'search-in', placeholder: t('Search this repo'),
+      'aria-label': t('Search this repo'), autocomplete: 'off', spellcheck: 'false'}) as HTMLInputElement;
     // Edits may have changed the text since the last search.
     this.query.addEventListener('focus', () => { this.files = null; });
     this.query.addEventListener('input', () => {
@@ -78,9 +79,9 @@ export class Reference {
     this.query.addEventListener('keydown', (event) => {
       if (event.key === 'Escape' && this.query.value) { event.preventDefault(); this.query.value = ''; this.paint(); }
     });
-    const bar = h('div', {class: 'chips', role: 'group', 'aria-label': '参照'});
+    const bar = h('div', {class: 'chips', role: 'group', 'aria-label': t('Reference')});
     for (const v of VIEWS) {
-      const chip = h('button', {type: 'button', class: 'chip'}, v.label);
+      const chip = h('button', {type: 'button', class: 'chip'}, t(v.label));
       chip.addEventListener('click', () => { this.query.value = ''; this.choose(v.id); });
       this.chips.set(v.id, chip);
       bar.append(chip);
@@ -88,7 +89,7 @@ export class Reference {
     this.body = h('div', {class: 'reference-body'});
     const form = h('form', {class: 'search', role: 'search'}, this.query);
     form.addEventListener('submit', (event) => event.preventDefault());
-    this.element = h('section', {class: 'pane reference', 'aria-label': '参照'}, form, bar, this.body);
+    this.element = h('section', {class: 'pane reference', 'aria-label': t('Reference')}, form, bar, this.body);
     this.choose(this.view);
     // The diff follows what is saved, here or in the Prompt.
     const stop = onChange((c) => {
@@ -112,7 +113,7 @@ export class Reference {
     this.pinned = true;
     this.query.value = '';
     for (const chip of this.chips.values()) chip.removeAttribute('aria-current');
-    const go = h('button', {type: 'button', class: 'button'}, 'Forge で開く');
+    const go = h('button', {type: 'button', class: 'button'}, t('Open in Forge'));
     go.addEventListener('click', open);
     this.body.replaceChildren(h('article', {class: 'issue-one'},
       h('h3', {}, issue.kind ? h('span', {class: 'issue-kind'}, `${issue.kind}：`) : null, issue.title),
@@ -149,12 +150,12 @@ export class Reference {
 
   private async search(query: string) {
     const repo = this.repo;
-    if (!repo) { this.empty('repoを開くと検索できます'); return; }
+    if (!repo) { this.empty(t('Open a repo to search it')); return; }
     const run = ++this.run;
-    this.body.replaceChildren(h('p', {class: 'muted small'}, '検索中…'));
+    this.body.replaceChildren(h('p', {class: 'muted small'}, t('Searching…')));
     this.files ??= readAll(repo);
     let files;
-    try { files = await this.files; } catch (e) { this.empty(`検索できませんでした: ${String(e)}`); return; }
+    try { files = await this.files; } catch (e) { this.empty(t('Could not search: {message}', {message: String(e)})); return; }
     if (run !== this.run || repo !== this.repo || this.pinned) return;
     const groups: {path: string; hits: Hit[]}[] = [];
     let total = 0;
@@ -165,9 +166,9 @@ export class Reference {
       groups.push({path: f.path, hits});
       total += hits.length;
     }
-    if (!groups.length) { this.empty(`「${query}」は見つかりませんでした。`); return; }
+    if (!groups.length) { this.empty(t('Nothing found for “{query}”.', {query})); return; }
     this.body.replaceChildren(
-      h('p', {class: 'muted small search-count'}, `${groups.length} file · ${total} 行${total >= HIT_LIMIT ? '（先頭だけ）' : ''}`),
+      h('p', {class: 'muted small search-count'}, `${tn('{n} file', '{n} files', groups.length)} · ${total >= HIT_LIMIT ? t('{n} lines (only the first)', {n: total}) : tn('{n} line', '{n} lines', total)}`),
       ...groups.map((g) => {
         const name = h('button', {type: 'button', class: 'hit-file'}, g.path);
         name.addEventListener('click', () => this.events.reveal(g.path));
@@ -188,7 +189,7 @@ export class Reference {
     const draw = () => {
       if (this.pinned || this.view !== 'run' || this.query.value.trim() || this.repo !== repo) return;
       const list = session?.runs ?? [];
-      if (!list.length) { this.body.replaceChildren(h('p', {class: 'muted small'}, 'まだ実行していません')); return; }
+      if (!list.length) { this.body.replaceChildren(h('p', {class: 'muted small'}, t('Nothing run yet'))); return; }
       this.body.replaceChildren(...list.slice().reverse().map((r) => runView(r)));
     };
     draw();
@@ -198,7 +199,7 @@ export class Reference {
   /** The changes not yet cut, file by file, line by line. */
   private async diff() {
     const repo = this.repo;
-    if (!repo) { this.empty('repoを開くと出ます'); return; }
+    if (!repo) { this.empty(t('Open a repo to see it here')); return; }
     const run = ++this.run;
     let files: gitops.FileDiff[];
     try { files = await gitops.diff(repo); } catch (e) {
@@ -206,14 +207,14 @@ export class Reference {
       return;
     }
     if (run !== this.run || repo !== this.repo || this.view !== 'diff' || this.query.value.trim() || this.pinned) return;
-    if (!files.length) { this.body.replaceChildren(h('p', {class: 'muted small'}, '変更はありません')); return; }
+    if (!files.length) { this.body.replaceChildren(h('p', {class: 'muted small'}, t('No changes'))); return; }
     this.body.replaceChildren(...files.map((f) => {
       const name = h('button', {type: 'button', class: 'hit-file'}, f.path);
       if (f.status !== 'removed') name.addEventListener('click', () => this.events.reveal(f.path));
-      const lines = f.binary ? [h('p', {class: 'muted small'}, 'バイナリ')] : f.lines.filter((l, k) => k > 0 || l.kind !== 'hunk').map((l) =>
+      const lines = f.binary ? [h('p', {class: 'muted small'}, t('Binary'))] : f.lines.filter((l, k) => k > 0 || l.kind !== 'hunk').map((l) =>
         // Between two parts of a file, a quiet "…" (with the function git names, if any).
         h('div', {class: `diff-line ${l.kind}`}, l.kind === 'hunk' ? l.text.replace(/^@@ [^@]* @@ ?/, '') || '…' : l.text || ' '));
-      if (f.more) lines.push(h('p', {class: 'muted small'}, `ほか ${f.more} 行`));
+      if (f.more) lines.push(h('p', {class: 'muted small'}, tn('{n} more line', '{n} more lines', f.more)));
       return h('div', {class: 'hit-group'}, name, h('div', {class: 'diff'}, ...lines));
     }));
   }
@@ -221,16 +222,16 @@ export class Reference {
   /** The repo's issue/ directory, one line per file. */
   private async issues() {
     const repo = this.repo;
-    if (!repo) { this.empty('repoを開くと出ます'); return; }
+    if (!repo) { this.empty(t('Open a repo to see it here')); return; }
     let names: string[];
     try {
       names = (await store.tree(repo, 'issue')).filter((e) => e.kind === 'file').map((e) => e.name);
     } catch {
-      if (this.repo === repo && this.view === 'issue' && !this.query.value.trim() && !this.pinned) this.empty('issue/ がありません');
+      if (this.repo === repo && this.view === 'issue' && !this.query.value.trim() && !this.pinned) this.empty(t('No issue/ here'));
       return;
     }
     if (this.repo !== repo || this.view !== 'issue' || this.query.value.trim() || this.pinned) return;
-    if (!names.length) { this.empty('Issue はまだありません'); return; }
+    if (!names.length) { this.empty(t('No Issues yet')); return; }
     this.body.replaceChildren(h('ul', {class: 'issue-list'}, ...names.map((n) => {
       const b = h('button', {type: 'button', class: 'link'}, n);
       b.addEventListener('click', () => this.events.reveal(`issue/${n}`));
@@ -244,7 +245,7 @@ function runView(r: Run): HTMLElement {
   const lines = r.output.replace(/\n$/, '').split('\n');
   const shown = r.output ? lines.slice(0, RUN_LINES) : [];
   return h('div', {class: 'hit-group run'},
-    h('div', {class: 'run-head'}, h('span', {class: 'run-line'}, r.line), h('span', {class: 'row-meta'}, r.ms === null ? '実行中' : `${r.ms} ms`)),
+    h('div', {class: 'run-head'}, h('span', {class: 'run-line'}, r.line), h('span', {class: 'row-meta'}, r.ms === null ? t('Running') : `${r.ms} ms`)),
     ...(shown.length ? [h('pre', {class: 'run-out'}, shown.join('\n'))] : []),
-    ...(lines.length > RUN_LINES ? [h('p', {class: 'muted small'}, `ほか ${lines.length - RUN_LINES} 行`)] : []));
+    ...(lines.length > RUN_LINES ? [h('p', {class: 'muted small'}, tn('{n} more line', '{n} more lines', lines.length - RUN_LINES))] : []));
 }

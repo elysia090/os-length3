@@ -1,6 +1,7 @@
 import {onChange, store} from '../repos.ts';
 import {bytes, h} from '../dom.ts';
 import {isNative, promptOpen, rootStatus, type Held, type Stopped} from '../host.ts';
+import {t, tn} from '../i18n.ts';
 import {loadUserland, watchLoad, type Stage} from '../userland.ts';
 
 // A shell per repo, running translated BusyBox (and l3) in a Worker. Sessions
@@ -30,10 +31,10 @@ export interface Run { line: string; output: string; started: number; ms: number
 function loadWords(s: Stage): string {
   const of = (got: number, all: number) => (all ? `${bytes(got)} / ${bytes(all)}` : '');
   switch (s.at) {
-    case 'fetch': return `l3 を読み込み中 ${of(s.got, s.of)}${s.quiet ? ` · 応答待ち ${s.quiet}秒` : ''}`;
-    case 'retry': return `${s.why}。続きから読み込みます（${s.attempt}回目）${s.got ? ` ${of(s.got, s.of)}` : ''}`;
-    case 'prepare': return '準備中…';
-    case 'ready': return '起動中…';
+    case 'fetch': return `${t('Loading l3 {size}', {size: of(s.got, s.of)})}${s.quiet ? ` · ${t('waiting for a reply {n}s', {n: s.quiet})}` : ''}`;
+    case 'retry': return `${t('{why}. Continuing where it stopped (attempt {n})', {why: s.why, n: s.attempt})}${s.got ? ` ${of(s.got, s.of)}` : ''}`;
+    case 'prepare': return t('Preparing…');
+    case 'ready': return t('Starting…');
     case 'failed': return '';
   }
 }
@@ -86,7 +87,7 @@ export class Session {
   constructor(repo: string) {
     this.repo = repo;
     this.output = h('pre', {class: 'term-out', 'aria-live': 'polite'});
-    this.status = h('p', {class: 'muted small'}, '起動中…');
+    this.status = h('p', {class: 'muted small'}, t('Starting…'));
     this.activity = h('div', {class: 'term-activity small', 'aria-live': 'polite'});
     this.element = h('div', {class: 'term'}, this.status, this.output, this.activity);
     void this.start();
@@ -109,7 +110,7 @@ export class Session {
     this.heard = Date.now();
     this.follow();
     this.tell();
-    if (this.native) { void this.native.input(lines).catch(() => this.end('止まっています')); return true; }
+    if (this.native) { void this.native.input(lines).catch(() => this.end(t('Not running'))); return true; }
     const bytes = new TextEncoder().encode(lines);
     this.worker!.postMessage({type: 'input', bytes}, [bytes.buffer]);
     return true;
@@ -174,7 +175,7 @@ export class Session {
         await ok.catch(() => skipped.push(f.path));
       }
       for (const r of c.removed) await store.remove(this.repo, r, this.id).catch(() => skipped.push(r));
-      if (skipped.length) this.status.textContent = `repoに戻らなかったもの: ${skipped.slice(0, 5).join(', ')}${skipped.length > 5 ? ' …' : ''}`;
+      if (skipped.length) this.status.textContent = t('Not written back to the repo: {list}', {list: `${skipped.slice(0, 5).join(', ')}${skipped.length > 5 ? ' …' : ''}`});
     });
   }
 
@@ -193,7 +194,7 @@ export class Session {
     if (!root?.current) return false;
     this.native = await promptOpen(this.repo, {
       output: (text) => { this.heard = Date.now(); this.received(text); },
-      exit: (code) => { if (this.live) this.end(`終了しました（${code}）`); },
+      exit: (code) => { if (this.live) this.end(t('Exited ({code})', {code})); },
     });
     this.on = 'root';
     this.live = true;
@@ -226,8 +227,8 @@ export class Session {
           this.follow();
           this.tell();
         }
-        else if (data.type === 'exit') this.end(`終了しました（${data.status >> 8}）`);
-        else if (data.type === 'error') this.end(`停止しました: ${data.message.split('\n')[0]}`);
+        else if (data.type === 'exit') this.end(t('Exited ({code})', {code: data.status >> 8}));
+        else if (data.type === 'error') this.end(t('Halted: {message}', {message: data.message.split('\n')[0]}));
       };
       const cwd = `/root/${this.repo}`;
       worker.postMessage({
@@ -248,10 +249,10 @@ export class Session {
         this.worker?.postMessage({type: 'put', path: c.path, what});
       });
       // Running is the usual state and says nothing; only what is missing is said.
-      this.status.textContent = why ? `root で開けませんでした（${why}）` : copy.complete ? '' : '大きいファイルとバイナリは入っていません';
+      this.status.textContent = why ? t('Could not open on the root ({why})', {why}) : copy.complete ? '' : t('Large files and binaries are not included');
       this.live = true;
     } catch (e) {
-      this.end(`起動できませんでした: ${e instanceof Error ? e.message : String(e)}`);
+      this.end(t('Could not start: {message}', {message: e instanceof Error ? e.message : String(e)}));
     }
   }
 
@@ -264,20 +265,21 @@ export class Session {
    * then does it say so.
    */
   stop() {
-    if (!this.native) { this.end('止めました'); return; }
+    if (!this.native) { this.end(t('Stopped')); return; }
     // On the root: stopped only once the host shows none of its processes left.
     const n = this.native;
     void n.close().then((s) => {
       this.stopped = s;
-      const back = s.before.memory ? `${bytes(s.before.memory)} を返しました` : '';
-      this.end(s.left ? `止めています（${s.left} 個のプロセスが残っています）` : `止めました${back ? `（${back} · ${s.ms} ms）` : ''}`);
-    }, () => this.end('止めました'));
+      const back = s.before.memory ? t('{size} given back', {size: bytes(s.before.memory)}) : '';
+      this.end(s.left ? tn('Stopping ({n} process left)', 'Stopping ({n} processes left)', s.left)
+        : back ? t('Stopped ({back} · {ms} ms)', {back, ms: String(s.ms)}) : t('Stopped'));
+    }, () => this.end(t('Stopped')));
   }
 
   /**
    * While a line runs, say what it is doing, once it has taken a moment:
-   * reading input (中断 reaches it: the kernel is paused), running and
-   * still talking (中断 lands when it next stops), or running without a
+   * reading input (Interrupt reaches it: the kernel is paused), running and
+   * still talking (Interrupt lands when it next stops), or running without a
    * word for a while, when a busy worker cannot hear anything and only
    * starting again is sure (what it changed since the last line is not
    * written back).
@@ -290,13 +292,13 @@ export class Session {
       if (run.ms !== null || !this.live) { clearInterval(this.ticker); this.activity.replaceChildren(); return; }
       const s = Math.floor((Date.now() - run.started) / 1000);
       const quiet = Math.floor((Date.now() - this.heard) / 1000);
-      const cut = h('button', {class: 'button small-button', type: 'button'}, '中断');
+      const cut = h('button', {class: 'button small-button', type: 'button'}, t('Interrupt'));
       cut.addEventListener('click', () => this.interrupt());
-      if (this.inputWait) { this.activity.replaceChildren(h('span', {class: 'muted'}, '入力待ち'), cut); return; }
+      if (this.inputWait) { this.activity.replaceChildren(h('span', {class: 'muted'}, t('Waiting for input')), cut); return; }
       if (s < 2) { this.activity.replaceChildren(); return; }
-      const parts: Node[] = [h('span', {class: 'muted'}, `実行中 ${s}秒${quiet >= 5 ? ' · 出力なし' : ''}`), cut];
+      const parts: Node[] = [h('span', {class: 'muted'}, `${t('Running {n}s', {n: s})}${quiet >= 5 ? ` · ${t('no output')}` : ''}`), cut];
       if (quiet >= 10) {
-        const again = h('button', {class: 'button small-button', type: 'button'}, '止めてやり直す');
+        const again = h('button', {class: 'button small-button', type: 'button'}, t('Stop and start again'));
         again.addEventListener('click', () => this.restart());
         parts.push(again);
       }
@@ -335,7 +337,7 @@ export class Session {
     this.memory = 0;
     this.processes = 0;
     this.tell();
-    const restart = h('button', {class: 'button', type: 'button'}, 'もう一度起動');
+    const restart = h('button', {class: 'button', type: 'button'}, t('Start again'));
     restart.addEventListener('click', () => this.restart());
     this.status.replaceChildren(message, ' ', restart);
   }

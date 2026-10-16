@@ -8,6 +8,7 @@ export type PurposeId =
   | 'home' | 'file' | 'git' | 'forge' | 'runtime' | 'remote' | 'topic' | 'inbox'
   | 'new-repo';
 
+/** Label, role and detail are English; they are shown through t(). */
 export interface Purpose {
   readonly id: PurposeId;
   readonly label: string;
@@ -20,27 +21,27 @@ export interface Purpose {
 }
 
 export const PURPOSES: readonly Purpose[] = [
-  {id: 'home', label: 'Home', role: 'プロフィール',
-    detail: '自分にも他人にも同じ形で見えるページ。repoと投稿が並ぶ。', implemented: true},
-  {id: 'forge', label: 'Forge', role: '自分の作業場',
-    detail: '帯に出したrepoのfileを、一続きのページで編集する。右に参照とPrompt。', implemented: true},
-  {id: 'file', label: 'File', role: '/ のtree',
-    detail: 'システム全体の / を、今のページに重ねて開く。repoの中を選ぶとForgeでそこを開く。', implemented: true},
-  {id: 'git', label: 'Git', role: 'Issue と区切り',
-    detail: 'Issue ごとに変更を区切り、提出する。届いた変更は Merge か Reject で決める。', implemented: true},
-  {id: 'runtime', label: 'Runtime', role: 'この端末と環境',
-    detail: 'この端末が持っているものを容量順に。空けられるものはその場で空ける。有効な環境も。', implemented: true},
-  {id: 'remote', label: 'Remote', role: '正本',
-    detail: '正本を置く場所。変えたものはすぐ送られ、区切ると履歴になる。端末とパスキーもここで。', implemented: true},
-  {id: 'topic', label: 'Topic', role: 'シンプルな投稿',
-    detail: '最近の流行りなどを短く共有する。', implemented: false},
-  {id: 'inbox', label: 'Inbox', role: '自分に届く型付きメッセージ',
-    detail: 'レビュー依頼・変更提出・質問などを、対象と対応操作つきで受け取る。', implemented: false},
+  {id: 'home', label: 'Home', role: 'Profile',
+    detail: 'A page that reads the same to you and to anyone else, with your repos and posts.', implemented: true},
+  {id: 'forge', label: 'Forge', role: 'Your workshop',
+    detail: 'Edit the files of the repos in the band as one continuous page, with Reference and Prompt on the right.', implemented: true},
+  {id: 'file', label: 'File', role: 'The tree of /',
+    detail: 'Opens the whole system\'s / over the current page. Choosing something inside a repo opens it there in Forge.', implemented: true},
+  {id: 'git', label: 'Git', role: 'Issues and commits',
+    detail: 'Commit changes Issue by Issue and submit them. Changes that come in are settled with Merge or Reject.', implemented: true},
+  {id: 'runtime', label: 'Runtime', role: 'This device and its environments',
+    detail: 'What this device holds, largest first. What can be freed is freed right there. The active environments too.', implemented: true},
+  {id: 'remote', label: 'Remote', role: 'The canonical copy',
+    detail: 'Where the canonical copy lives. What you change is sent at once, and committing makes it history. Devices and passkeys are here too.', implemented: true},
+  {id: 'topic', label: 'Topic', role: 'Simple posts',
+    detail: 'Share short things, like what is popular lately.', implemented: false},
+  {id: 'inbox', label: 'Inbox', role: 'Typed messages to you',
+    detail: 'Review requests, submitted changes, questions and more, each with what it is about and what to do.', implemented: false},
 ];
 
 /** The round + under the rail's places: create a repo, not a purpose view. */
-export const NEW_REPO: Purpose = {id: 'new-repo', label: '新しいrepo', role: 'repoの作成',
-  detail: '標準的なrepoテンプレートを選び、独立したrepoとして作る。', implemented: true};
+export const NEW_REPO: Purpose = {id: 'new-repo', label: 'New repo', role: 'Make a repo',
+  detail: 'Choose a standard repo template and make it as an independent repo.', implemented: true};
 
 /** Rail order, top to bottom, as keyboard navigation walks it. */
 export const RAIL: readonly Purpose[] = [...PURPOSES, NEW_REPO];

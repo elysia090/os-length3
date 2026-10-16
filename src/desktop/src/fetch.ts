@@ -5,6 +5,8 @@
 // reached (a Range request, guarded so two versions are never spliced), and
 // accepts the result only when it is exactly the file the manifest names.
 
+import {t} from './i18n.ts';
+
 export interface Expect { size?: number; sha256?: string }
 
 export interface Progress {
@@ -79,7 +81,7 @@ export async function download(url: string, expect: Expect = {}, progress?: Prog
       const r = await get(url, {headers, signal: abort.signal, cache: 'no-store'});
       if (r.status === 206) {
         const start = Number(/bytes (\d+)-/.exec(r.headers.get('Content-Range') ?? '')?.[1]);
-        if (start !== state.got) { reset(); why = '続きを受け取れませんでした'; await r.body?.cancel(); continue; }
+        if (start !== state.got) { reset(); why = t('Could not receive the rest'); await r.body?.cancel(); continue; }
       } else if (r.ok) {
         if (state.got) reset();
       } else if (transient(r.status)) {
@@ -104,13 +106,13 @@ export async function download(url: string, expect: Expect = {}, progress?: Prog
       }
       clearTimeout(timer);
       const bytes = join(state.parts, state.got);
-      if (expect.size !== undefined && bytes.length !== expect.size) { reset(); why = '大きさが合いません'; continue; }
-      if (expect.sha256 && await digest(bytes) !== expect.sha256) { reset(); why = '中身が合いません'; continue; }
+      if (expect.size !== undefined && bytes.length !== expect.size) { reset(); why = t('The size does not match'); continue; }
+      if (expect.sha256 && await digest(bytes) !== expect.sha256) { reset(); why = t('The contents do not match'); continue; }
       partials.delete(url);
       return bytes;
     } catch (e) {
       if (e instanceof Fatal) { partials.delete(url); throw e; }
-      why = abort.signal.aborted ? '回線が止まりました' : '回線が切れました';
+      why = abort.signal.aborted ? t('The connection stalled') : t('The connection broke');
     } finally {
       // Every way out of a try (done, continue, broken) stops its clocks.
       clearTimeout(timer);
@@ -118,7 +120,7 @@ export async function download(url: string, expect: Expect = {}, progress?: Prog
     }
   }
   // What came is kept: the next try in this page continues from it.
-  throw new Error(why || '読み込めませんでした');
+  throw new Error(why || t('Could not load'));
 }
 
 /** Where an earlier build kept copies of l3; nothing is kept there now. */
