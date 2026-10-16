@@ -43,6 +43,24 @@ pub fn valid_name(name: &str) -> bool {
         && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
 }
 
+/// Whether a path part names a repo's `.git` however it is spelt: git, and
+/// the file systems under it, treat `.GIT` (case-insensitive volumes),
+/// `.git.` or `.git ` (trailing dots and spaces dropped), `git~1` (the short
+/// name) and `.git` with invisible code points (ignored by HFS+) as `.git`
+/// itself. Nothing reached through the store may land in it: its config and
+/// hooks run commands on the host the next time git runs.
+pub fn is_git_name(part: &str) -> bool {
+    let visible: String = part.chars()
+        .filter(|c| !matches!(*c as u32, 0x200C..=0x200F | 0x202A..=0x202E | 0x206A..=0x206F | 0xFEFF))
+        .collect::<String>().to_ascii_lowercase();
+    let name = visible.trim_end_matches(['.', ' ']);
+    name == ".git" || name == "git~1"
+}
+
+fn touches_git(path: &Path) -> bool {
+    path.components().any(|c| matches!(c, Component::Normal(p) if is_git_name(&p.to_string_lossy())))
+}
+
 pub struct Repos {
     root: PathBuf,
 }
@@ -75,8 +93,9 @@ impl Repos {
         self.inside(repo, "")
     }
 
-    /// A path inside `repo`; `..`, absolute paths and symlinks that lead out
-    /// of the repo are refused.
+    /// A path inside `repo`; `..`, absolute paths, symlinks that lead out of
+    /// the repo, and anything in its `.git` (by name or through a symlink)
+    /// are refused.
     fn inside(&self, repo: &str, relative: &str) -> Result<PathBuf> {
         let base = self.repo(repo)?;
         let mut path = base.clone();
@@ -89,8 +108,11 @@ impl Repos {
         }
         let real = path.canonicalize().map_err(|e| e.to_string())?;
         let real_base = base.canonicalize().map_err(|e| e.to_string())?;
-        if !real.starts_with(&real_base) {
+        let Ok(within) = real.strip_prefix(&real_base) else {
             return Err(format!("path {relative:?} leads outside the repo"));
+        };
+        if touches_git(Path::new(relative)) || touches_git(within) {
+            return Err(format!("path {relative:?} is in the repo's .git"));
         }
         Ok(real)
     }
@@ -118,7 +140,7 @@ impl Repos {
             for e in fs::read_dir(&d).map_err(|e| e.to_string())?.flatten() {
                 budget -= 1;
                 if budget == 0 { break; }
-                if e.file_name() == ".git" { continue; }
+                if is_git_name(&e.file_name().to_string_lossy()) { continue; }
                 let Ok(meta) = e.metadata() else { continue };
                 let time = meta.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map_or(0, |d| d.as_millis() as u64);
                 modified = modified.max(time);
@@ -154,7 +176,7 @@ impl Repos {
     pub fn tree(&self, repo: &str, relative: &str) -> Result<Vec<Entry>> {
         let dir = self.inside(repo, relative)?;
         let mut out: Vec<Entry> = fs::read_dir(&dir).map_err(|e| e.to_string())?.flatten()
-            .filter(|e| e.file_name() != ".git")
+            .filter(|e| !is_git_name(&e.file_name().to_string_lossy()))
             .filter_map(|e| {
                 let meta = e.path().symlink_metadata().ok()?;
                 let kind = if meta.file_type().is_symlink() { "link" } else if meta.is_dir() { "dir" } else { "file" };
@@ -203,11 +225,17 @@ impl Repos {
         }
         let name = path.file_name().ok_or("no file name")?.to_string_lossy().into_owned();
         let temp = path.with_file_name(format!(".{name}.length3-{}", std::process::id()));
-        let result = fs::write(&temp, text)
+        // Made afresh (never through a link or into a file already there).
+        let made = fs::OpenOptions::new().write(true).create_new(true).open(&temp);
+        let result = made.and_then(|mut f| {
+            use std::io::Write;
+            f.write_all(text.as_bytes())?;
+            f.sync_all()
+        })
             .and_then(|_| fs::set_permissions(&temp, meta.permissions()))
             .and_then(|_| fs::rename(&temp, &path));
         if let Err(e) = result {
-            let _ = fs::remove_file(&temp);
+            if e.kind() != std::io::ErrorKind::AlreadyExists { let _ = fs::remove_file(&temp); }
             return Err(e.to_string());
         }
         Ok(text.len() as u64)
@@ -218,7 +246,7 @@ impl Repos {
     /// Make a new file `name` in the existing directory `dir` of `repo`. An
     /// existing file is never replaced, and the name is one plain path part.
     pub fn add(&self, repo: &str, dir: &str, name: &str, text: &str, limit: u64) -> Result<u64> {
-        if name.is_empty() || name.starts_with('.') || name.contains('/') || name.contains('\\') {
+        if name.is_empty() || name.starts_with('.') || name.contains('/') || name.contains('\\') || is_git_name(name) {
             return Err(format!("invalid file name {name:?}"));
         }
         if text.len() as u64 > limit {
@@ -244,7 +272,7 @@ impl Repos {
         let mut path = base.clone();
         for c in Path::new(relative).components() {
             match c {
-                Component::Normal(part) if part != ".git" => path.push(part),
+                Component::Normal(part) if !is_git_name(&part.to_string_lossy()) => path.push(part),
                 Component::CurDir => {}
                 _ => return Err(format!("path {relative:?} leaves the repo")),
             }
@@ -260,10 +288,16 @@ impl Repos {
     /// Remove a file, or a directory with everything in it, inside `repo`.
     /// The repo itself and its .git are never removed this way.
     pub fn remove(&self, repo: &str, relative: &str) -> Result<()> {
-        if Path::new(relative).components().any(|c| c.as_os_str() == ".git") {
-            return Err("the repo's .git is not removed this way".into());
-        }
         let base = self.inside(repo, "")?;
+        let rel = Path::new(relative);
+        // A link is removed itself, never what it names; its folder must be
+        // inside the repo like anything else.
+        if let (Some(parent), Some(name)) = (rel.parent(), rel.file_name()) {
+            let named = self.inside(repo, &parent.to_string_lossy())?.join(name);
+            if !touches_git(rel) && fs::symlink_metadata(&named).is_ok_and(|m| m.file_type().is_symlink()) {
+                return fs::remove_file(&named).map_err(|e| e.to_string());
+            }
+        }
         let path = self.inside(repo, relative)?;
         if path == base {
             return Err("the repo itself is not removed this way".into());
@@ -406,6 +440,44 @@ mod tests {
     }
 
     #[test]
+    fn nothing_reaches_the_repos_git() {
+        // What the Prompt writes back goes through here: a guest must not be
+        // able to plant git config or hooks, which run on the host.
+        let r = scratch("dotgit");
+        r.create("a", "standard").unwrap();
+        let git = r.root.join("a/.git");
+        fs::create_dir_all(git.join("hooks")).unwrap();
+        fs::write(git.join("config"), "[core]\n").unwrap();
+        for name in [".git", ".GIT", ".Git.", ".git ", "git~1", "GIT~1", ".g\u{200c}it"] {
+            assert!(is_git_name(name), "{name}");
+        }
+        for name in ["git", ".github", ".gitignore", "x.git"] {
+            assert!(!is_git_name(name), "{name}");
+        }
+        assert!(r.write("a", ".git/config", "[core]\n\tfsmonitor = evil\n", 1024).is_err());
+        assert!(r.add("a", ".git/hooks", "pre-commit", "#!/bin/sh\n", 1024).is_err());
+        assert!(r.add("a", ".git", "config2", "x", 1024).is_err());
+        assert!(r.mkdir("a", ".git/hooks/x").is_err());
+        assert!(r.mkdir("a", ".GIT/x").is_err());
+        assert!(r.read("a", ".git/config", 1024).is_err());
+        assert!(r.tree("a", ".git").is_err());
+        assert!(r.remove("a", ".git/config").is_err());
+        assert!(r.add("a", "", "git~1", "x", 1024).is_err());
+        // Through a link the repo itself carries.
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(".git", r.root.join("a/g")).unwrap();
+            assert!(r.write("a", "g/config", "x", 1024).is_err());
+            assert!(r.add("a", "g/hooks", "pre-commit", "x", 1024).is_err());
+            r.remove("a", "g").unwrap();
+            assert!(git.join("config").exists(), "removing the link leaves .git");
+        }
+        assert_eq!(fs::read_to_string(git.join("config")).unwrap(), "[core]\n");
+        assert!(!git.join("hooks/pre-commit").exists());
+        assert!(r.tree("a", "").unwrap().iter().all(|e| e.name != ".git"));
+    }
+
+    #[test]
     fn issues_are_numbered_files_read_back_newest_first() {
         let r = scratch("issues");
         r.create("a", "standard").unwrap();
@@ -464,6 +536,9 @@ mod shared_cases {
         }
         for k in c["validName"].as_array().unwrap() {
             assert_eq!(super::valid_name(k[0].as_str().unwrap()), k[1].as_bool().unwrap(), "{k}");
+        }
+        for k in c["gitName"].as_array().unwrap() {
+            assert_eq!(super::is_git_name(k[0].as_str().unwrap()), k[1].as_bool().unwrap(), "{k}");
         }
     }
 }

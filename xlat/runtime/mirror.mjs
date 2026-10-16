@@ -9,11 +9,21 @@
 
 import {Dir, File} from './fs.mjs';
 
+/**
+ * A repo's .git however it is spelt (the app's core refuses the same names):
+ * case, trailing dots and spaces, the short name git~1 and invisible code
+ * points do not make it something else. It is never mirrored either way.
+ */
+export function isGitName(name) {
+  const n = name.replace(/[\u200c-\u200f\u202a-\u202e\u206a-\u206f\ufeff]/g, '').toLowerCase().replace(/[. ]+$/, '');
+  return n === '.git' || n === 'git~1';
+}
+
 /** Every directory and file under `dir`, by relative path. */
 function walk(dir, prefix, out) {
   for (const [name, node] of dir.entries) {
     const rel = prefix ? `${prefix}/${name}` : name;
-    if (name === '.git') continue;
+    if (isGitName(name)) continue;
     if (node instanceof Dir) { out.set(rel, {node, dir: true}); walk(node, rel, out); }
     else if (node instanceof File) out.set(rel, {node, dir: false, version: node.version, size: node.size});
   }
@@ -56,6 +66,8 @@ export class Mirror {
 
   /** Put an outside change in: bytes for a file, null to remove, 'dir' for a directory. */
   put(rel, what) {
+    const parts = rel.split('/');
+    if (!rel || parts.some((p) => !p || p === '.' || p === '..' || isGitName(p))) return;
     const path = `${this.root}/${rel}`;
     if (what === 'dir') this.vfs.mkdirp(path);
     else if (what === null) {
@@ -65,7 +77,6 @@ export class Mirror {
     // What was put in is now how things are; it is not a guest change.
     const now = this.now();
     // The directories a put made on the way count as put too.
-    const parts = rel.split('/');
     for (let i = 1; i < parts.length; i++) {
       const up = parts.slice(0, i).join('/');
       if (now.has(up)) this.seen.set(up, now.get(up));

@@ -82,6 +82,8 @@ export class Session {
   private readonly id = `shell:${Math.random().toString(36).slice(2)}`;
   private stop: (() => void) | null = null;
   private queue: Promise<void> = Promise.resolve();
+  /** What the shell may still write back, in files and bytes: the snapshot's limits. */
+  private budget = {files: LIMIT_FILES, bytes: LIMIT_BYTES};
 
   /** Write the shell's changes back to the repo, in order, one batch after another. */
   private writeBack(c: {dirs: string[]; files: {path: string; bytes: Uint8Array; existed: boolean}[]; removed: string[]}) {
@@ -91,7 +93,9 @@ export class Session {
       for (const f of c.files) {
         let text: string;
         try { text = new TextDecoder('utf-8', {fatal: true}).decode(f.bytes); } catch { skipped.push(f.path); continue; }
-        if (f.bytes.length > 256 * 1024) { skipped.push(f.path); continue; }
+        if (f.bytes.length > 256 * 1024 || this.budget.files <= 0 || this.budget.bytes < f.bytes.length) { skipped.push(f.path); continue; }
+        this.budget.files--;
+        this.budget.bytes -= f.bytes.length;
         const at = f.path.lastIndexOf('/');
         const ok = f.existed
           ? store.write(this.repo, f.path, text, this.id)

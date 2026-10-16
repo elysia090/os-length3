@@ -50,6 +50,17 @@ export const TEMPLATES: readonly {id: Template; label: string; files: readonly s
   (shared as SharedTemplate[]).map((t) => ({id: t.id, label: t.label, files: [...t.files.map(([p]) => p), ...t.dirs.map((d) => `${d}/`)]}));
 
 /** Same rule as the native side: a plain directory name. */
+/**
+ * Whether a path part names a repo's .git however it is spelt (core's
+ * is_git_name): case, trailing dots and spaces, the short name git~1 and
+ * invisible code points do not make it something else.
+ */
+export function isGitName(part: string): boolean {
+  const name = part.replace(/[\u200c-\u200f\u202a-\u202e\u206a-\u206f\ufeff]/g, '').toLowerCase().replace(/[. ]+$/, '');
+  return name === '.git' || name === 'git~1';
+}
+const touchesGit = (path: string) => path.split('/').some(isGitName);
+
 export function validName(name: string): boolean {
   return /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}$/.test(name);
 }
@@ -135,7 +146,7 @@ export class MemoryStore implements RepoStore {
     const r = this.repos.get(repo);
     if (!r) throw new Error(`no repo ${repo}`);
     const clean = path.replace(/\/+$/, '');
-    if (!clean || clean.split('/').some((p) => p === '..' || p === '.git' || !p)) throw new Error(`path ${path} leaves the repo`);
+    if (!clean || clean.split('/').some((p) => p === '..' || !p) || touchesGit(clean)) throw new Error(`path ${path} leaves the repo`);
     const parts = clean.split('/');
     for (let i = 1; i <= parts.length; i++) {
       const at = parts.slice(0, i).join('/');
@@ -147,7 +158,7 @@ export class MemoryStore implements RepoStore {
   async remove(repo: string, path: string) {
     const r = this.repos.get(repo);
     const clean = path.replace(/\/+$/, '');
-    if (!r || !clean || clean.split('/').includes('.git') || clean.split('/').includes('..')) throw new Error(`cannot remove ${path}`);
+    if (!r || !clean || touchesGit(clean) || clean.split('/').includes('..')) throw new Error(`cannot remove ${path}`);
     const gone = [...r.files.keys()].filter((p) => p === clean || p.startsWith(`${clean}/`));
     if (!gone.length) throw new Error(`no ${path}`);
     for (const p of gone) r.files.delete(p);
@@ -156,7 +167,7 @@ export class MemoryStore implements RepoStore {
   async add(repo: string, dir: string, name: string, text: string) {
     const r = this.repos.get(repo);
     if (!r) throw new Error(`no repo ${repo}`);
-    if (!name || name.startsWith('.') || name.includes('/')) throw new Error(`invalid file name ${name}`);
+    if (!name || name.startsWith('.') || name.includes('/') || isGitName(name) || touchesGit(dir)) throw new Error(`invalid file name ${name}`);
     // '' is the repo's own top.
     const hasDir = dir === '' || r.files.get(dir) === null || [...r.files.keys()].some((p) => p.startsWith(`${dir}/`));
     if (!hasDir) throw new Error(`no directory ${dir}`);
