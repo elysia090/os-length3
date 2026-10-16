@@ -122,35 +122,44 @@ The Prompt never goes silent while something takes time:
 
 ### Runtime
 
-What this device holds, what can be given back, what is running, then the
-environment actually in effect.
+What this device holds and why, what can be given back, what is running,
+then the environment actually in effect (what runs, not what was asked for).
 
+- **持ち方**: one table of what comes by itself, what closing ends, and what
+  goes to the Remote, as it is on this host (§3).
 - **この端末**: one bar of the host's whole, with this OS's share darker
   (not an ink fill, which means current), and three figures: this OS, free,
   total. This OS is counted from allocated blocks, so a sparse file counts
-  what it holds and a copy of nothing counts nothing; the host's free and
-  total are marked 推定, because other programs change them too. Under it a
-  card of rows: each repo with its size and how much of that is history
-  (`.git`), and the settings.
-- **空けられるもの** is shown only when there is something: the temporaries
-  this OS itself left half-written (named `.<file>.length3-<pid>-<n>`, or a
-  setting's `<key>.json.<pid>`), older than a minute, with one link, never
-  inside `.git`. Nothing else is ever offered. 空ける removes them and stays
-  to say what happened: the bytes removed (counted before removal), and the
-  host's free space as it was seen to change, with how long it took to show
-  (or that it has not shown yet). What could not be removed is named with
-  the reason.
-- **動いている Prompt** is shown only while one runs: each with the memory its
-  guest processes hold and 止める, which ends the worker and everything in
-  it at once.
-- **有効な環境**: l3, the one thing the Prompt depends on, as one place: its
-  version, size, digest and whether this device has it. Inside it, a step
-  in, what it carries: the distribution's root (OS Length3 Linux and its
-  version), its BusyBox (version, command count, where the version is
-  pinned), the l3 command and the xlat translator, with short digests.
-  Then Dotfiles as differences from the root (none yet, and it says so).
-  It is read from l3.json, written with the bundle, so it cannot claim
-  what is not there.
+  what it holds and a file with several hard links counts once; the host's
+  free and total are marked 推定, because other programs change them too.
+  Under it two cards of rows: each repo with its size and how much of that
+  is history (`.git`), and the settings; then each root of the
+  distribution with why it is here: 使用中 (Prompts run on it), 戻すために残す
+  (the one before, kept so a bad update can be undone), 空けられる.
+- **空けられるもの** is shown only when there is something, each named for
+  what it is: the temporaries this OS itself left half-written (named
+  `.<file>.length3-<pid>-<n>`, or a setting's `<key>.json.<pid>`, older than
+  a minute, one link, never inside `.git`); older roots; an install that
+  died half way; a release bundle or partial download not in use (fetched
+  again from the Remote when wanted). Nothing else is ever offered. 空ける
+  removes them and stays to say what happened: the bytes removed (counted
+  before removal), and the host's free space as it was seen to change, with
+  how long it took to show. What could not be removed is named with the
+  reason.
+- **動いている Prompt** is shown while one runs: where it runs (root, with
+  its process count, or l3), the memory its processes hold (Pss, from the
+  host's /proc), and 止める. On the root, stopping ends everything in the
+  Prompt's pid namespace and is called done only once the host shows none
+  left; the row then says what was given back and how long it took
+  (止めました · 2.5 MB を返しました · 11 ms), or how many are still there.
+- **有効な環境**: in the app with a root installed, that root (name,
+  version, size, files, digest), run by this machine's kernel. Otherwise
+  l3, the one thing the browser's Prompt depends on, as one place: its
+  version, size, digest; inside it, a step in, what it carries (the
+  distribution's BusyBox, the l3 command, the xlat translator). In the app
+  that row ends with 入れる: fetching the root from the Remote, saying how
+  far it is. Then Dotfiles as differences from the root (none yet, and it
+  says so).
 
 In a browser only the origin's share is known, and it says so (このブラウザ,
 推定); nothing there is the OS's to give back.
@@ -270,7 +279,7 @@ What each host keeps, and when (lifecycle.ts, and Runtime's 持ち方):
 
 |             | comes by itself | closing ends | goes to the Remote |
 |-------------|-----------------|--------------|--------------------|
-| OS (l3)     | web: fetched each visit; app: with the app | web: nothing of it is kept; app: stays | — (it is the release) |
+| OS          | web: l3, fetched each visit; app: the root, fetched once when installed | web: nothing of it is kept; app: stays | — (it is the release) |
 | repo        | taken in at open (and when the app's window comes back) | web: its copy goes if pushed; app: stays | at each 区切る |
 | Home        | taken in at open | web: goes if pushed; app: stays | on each change |
 | Prompt      | when a repo opens | ends | — |
@@ -287,7 +296,18 @@ What leaves this system is kept to what is said here:
   may reach its own origin and the Remote, nothing else: the web build
   carries that Content-Security-Policy, and the desktop's (Tauri's) says the
   same. The Remote answers only the app's origins.
-- **Host.** git is the one program the desktop runs, and it runs with an
+- **The root.** In the app a Prompt is the distribution's root, run by this
+  machine's kernel without privilege (`l3 open`, core/src/launch.rs): a user
+  namespace makes the user root inside it only; its own mount, pid, ipc,
+  uts and network namespaces (no network unless granted); the root
+  read-only, the repo the only writable place of the person's, fresh
+  `/tmp`, `/run` and a minimal `/dev`; an environment set, not inherited (no
+  host home, keys, agent or variables). Pid 1 is a small init that reaps
+  everything and ends what is left with the shell, and it dies with its
+  supervisor. The root itself is installed only from a pinned release,
+  checked by digest before it is read, unpacked refusing anything that
+  would land outside, go through a link or be a device.
+- **Host.** Besides l3, git is the one program the desktop runs, and it runs with an
   empty environment (only PATH, HOME, LC_ALL and git's own switches), no
   global or system configuration, no prompts, and every setting that could
   make it run something else turned off (hooks, fsmonitor, pager, editor,

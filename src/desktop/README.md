@@ -47,8 +47,10 @@ frontend and no UI framework; the same frontend is the web build.
   top and the reference (the repo's
   `issue/`; diff and run output not connected yet) grows into the
   room. No tabs: files are chosen from File.
-- Prompt: translated BusyBox `sh` and `l3` running on the xlat kernel in a
-  Worker, on the open repo. What the shell changes under `/root/<repo>` is
+- Prompt: in the app with a root installed, the distribution's root itself
+  (`l3 open`): its sh, gcc, make, git on this kernel, writing the repo
+  directly. Otherwise (and in a browser) translated BusyBox `sh` and `l3`
+  running on the xlat kernel in a Worker, on the open repo. What the shell changes under `/root/<repo>` is
   written back through the store (text files up to the read limit), and
   what is saved anywhere else is put into the shell's copy, so the shell,
   File, Forge and Git see one repo. Its one dependency is l3: one file
@@ -76,7 +78,11 @@ l3 issue [REPO|new …]       Git's issues: numbered files in issue/
 l3 git [REPO]               the Git page: issues and changes handed in
 l3 todo [add …|done N]      Home's TODO
 l3 runtime                  this device's room, and what can be given back
-l3 reclaim                  give back this OS's own leftover temporaries
+l3 reclaim                  give back what is this OS's own and not needed
+l3 root                     the distribution's roots on this device
+l3 root fetch               fetch the release root from the Remote and install it
+l3 root install BUNDLE      install a release bundle (checked by its digest)
+l3 open REPO [-- CMD]       the repo inside the root, on this kernel, unprivileged
 ```
 
 On the host it uses the app's data directory (`$LENGTH3_HOME` overrides):

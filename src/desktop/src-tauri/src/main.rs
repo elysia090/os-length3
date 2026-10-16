@@ -7,6 +7,20 @@ use length3_core::{git, home, paths, repos, system};
 
 #[cfg(target_os = "linux")]
 mod shells;
+/// Elsewhere a Prompt on the root is not there yet; the commands say so.
+#[cfg(not(target_os = "linux"))]
+mod shells {
+    const NOT_HERE: &str = "root の Prompt はいま Linux だけです";
+    #[derive(Default)]
+    pub struct Shells;
+    #[tauri::command] pub fn prompt_open(_repo: String) -> Result<u32, String> { Err(NOT_HERE.into()) }
+    #[tauri::command] pub fn prompt_input(_id: u32, _text: String) -> Result<(), String> { Err(NOT_HERE.into()) }
+    #[tauri::command] pub fn prompt_interrupt(_id: u32) -> Result<(), String> { Err(NOT_HERE.into()) }
+    #[tauri::command] pub fn prompt_held(_id: u32) -> Option<length3_core::prompt::Held> { None }
+    #[tauri::command] pub fn prompt_close(_id: u32) -> Result<length3_core::prompt::Stopped, String> { Err(NOT_HERE.into()) }
+    #[tauri::command] pub fn root_status() -> Option<()> { None }
+    #[tauri::command] pub async fn root_fetch() -> Result<(), String> { Err(NOT_HERE.into()) }
+}
 
 /// Files the editor may save; anything read in part is never written back.
 const READ_LIMIT: u64 = 256 * 1024;

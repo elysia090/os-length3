@@ -13,7 +13,9 @@
 //!   l3 git cut REPO "Kind：title"  …or without one
 //!   l3 todo [add "Kind：title" [-m detail] | done N]
 //!   l3 runtime               this device's room, and what can be given back
-//!   l3 reclaim               give back this OS's own leftover temporaries
+//!   l3 reclaim               give back what is this OS's own and not needed
+//!   l3 root [fetch | install BUNDLE]   the distribution's root on this device
+//!   l3 open REPO [-- CMD…]   the repo inside the root (Linux; unprivileged)
 //!
 //! Paths may be written as File shows them: /root/<repo>/… is <repo>/….
 

@@ -11,7 +11,6 @@ pub mod issues;
 #[cfg(target_os = "linux")]
 pub mod launch;
 pub mod paths;
-#[cfg(target_os = "linux")]
 pub mod prompt;
 pub mod repos;
 pub mod system;
