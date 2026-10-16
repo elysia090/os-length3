@@ -156,12 +156,12 @@ Every value in `styles.css` comes from a token below.
 
 | Role | Value | Use |
 | --- | --- | --- |
-| `ground` | `#D2D2CD` | every surface |
-| `ink` | `#292B2A` | text, icons, the current thing, primary action (9.4:1 on ground) |
-| `rule` | `#929590` | dividers, outlines of places; decorative only (2.0:1) |
-| `sub` | `#56595A` | secondary text (4.7:1) |
-| `edge` | `#6B6E6B` | outlines of fields and controls, which must be seen (3.4:1) |
-| `raised` | `#DCDCD8` | field fill, hover |
+| `ground` | `#DADAD5` | every surface: a touch lighter than the first `#D2D2CD`, still grey, so long hours stay easy |
+| `ink` | `#292B2A` | text, icons, the current thing, primary action (10.2:1 on ground) |
+| `rule` | `#989B96` | dividers, outlines of places; decorative only (2.0:1, kept as before) |
+| `sub` | `#56595A` | secondary text (5.0:1) |
+| `edge` | `#6B6E6B` | outlines of fields and controls, which must be seen (3.7:1) |
+| `raised` | `#E4E4E0` | field fill, hover (the same small step above ground as before) |
 
 No other colours.
 

@@ -2,12 +2,12 @@
    token; nothing is set by eye in one place only. Six colours, 1px lines,
    no shadows, blur, glow or gradients. */
 :root {
-  --ground: #d2d2cd;
+  --ground: #dadad5;
   --ink: #292b2a;
-  --rule: #929590;
+  --rule: #989b96;
   --sub: #56595a;
   --edge: #6b6e6b;
-  --raised: #dcdcd8;
+  --raised: #e4e4e0;
 
   --sans: system-ui, -apple-system, 'Segoe UI', 'Noto Sans JP', 'Hiragino Sans', sans-serif;
   --mono: ui-monospace, 'SF Mono', Consolas, 'Noto Sans Mono', monospace;
