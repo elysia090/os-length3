@@ -1,0 +1,45 @@
+name: Desktop, l3 and xlat
+
+# The product: the app (src/desktop), the l3 command and its core, and the
+# x86-64 → wasm translator the Prompt runs on.
+on:
+  push:
+    paths: ['src/desktop/**', 'xlat/**', '.github/workflows/desktop.yml']
+  pull_request:
+    paths: ['src/desktop/**', 'xlat/**', '.github/workflows/desktop.yml']
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: src/desktop/package-lock.json
+      - name: Toolchains
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          rustup target add x86_64-unknown-linux-musl wasm32-unknown-unknown
+      - name: App (types, tests, web build)
+        working-directory: src/desktop
+        run: |
+          npm ci
+          npm run check
+          npm run build
+      - name: Core and l3
+        working-directory: src/desktop
+        run: |
+          cargo test -p length3-core -p l3
+          cargo build --profile prompt -p l3 --target x86_64-unknown-linux-musl
+      - name: xlat against native (C and Rust std), and its unit tests
+        working-directory: xlat
+        run: sh tests/run.sh
+      - name: l3 translated, as the Prompt runs it
+        working-directory: src/desktop
+        run: |
+          out=$(LENGTH3_REPOS=/root node ../../xlat/runtime/run.mjs target/x86_64-unknown-linux-musl/prompt/l3 help)
+          echo "$out" | head -3
+          echo "$out" | grep -q 'l3 issue new'
