@@ -26,6 +26,8 @@ pub struct Release {
     pub sha256: &'static str,
     pub bytes: u64,
     pub file: &'static str,
+    /// The GitHub release it was published under (its tag).
+    pub tag: &'static str,
 }
 
 /// The releases l3 trusts, newest first. Nothing else is installed.
@@ -35,7 +37,13 @@ pub const RELEASES: &[Release] = &[Release {
     sha256: "56229f242fd8860583cb8b17b5f64f21aced1abad99770b306a0432fc260d7b4",
     bytes: 63_651_568,
     file: "os-length3-linux-0.1.0-x86_64-ffb53450f0f41900f1cda2cd072b9405b43c7b44f97c400794c57019578f32a9.tar.zst",
+    tag: "os-length3-linux-v0.1.0",
 }];
+
+/// Where the publisher's release channel keeps it, should the Remote not have it.
+pub fn github_url(r: &Release) -> String {
+    format!("https://github.com/elysia090/libqm-prototype/releases/download/{}/{}", r.tag, r.file)
+}
 
 /// The Remote serves releases by digest, to anyone (service/app.ts, /v1/os).
 pub fn release_url(remote: &str, r: &Release) -> String {
@@ -50,7 +58,13 @@ pub fn fetch_and_install(data: &Path, remote: &str, progress: impl FnMut(crate::
     crate::boundary::private_dir(&system_dir(data)).map_err(|e| e.to_string())?;
     fs::create_dir_all(&bundles).map_err(|e| e.to_string())?;
     let bundle = bundles.join(format!("{}.tar.zst", r.sha256));
-    crate::fetch::fetch(&release_url(remote, r), r.sha256, r.bytes, &bundle, progress)?;
+    // The Remote first; the release channel when it does not have it. Either
+    // way the bytes are only kept if they are the pinned digest.
+    let mut progress = progress;
+    if let Err(first) = crate::fetch::fetch(&release_url(remote, r), r.sha256, r.bytes, &bundle, &mut progress) {
+        crate::fetch::fetch(&github_url(r), r.sha256, r.bytes, &bundle, &mut progress)
+            .map_err(|e| format!("{first} / {e}"))?;
+    }
     let installed = install(data, &bundle)?;
     let _ = fs::remove_file(&bundle);
     Ok(installed)

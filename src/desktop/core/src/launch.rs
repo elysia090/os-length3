@@ -67,9 +67,11 @@ fn locked_flags(path: &Path) -> libc::c_ulong {
     if unsafe { libc::statvfs(c(path).as_ptr(), &mut s) } != 0 {
         return 0;
     }
+    // Linux's ST_RELATIME; the libc crate leaves it out on musl.
+    const ST_RELATIME: libc::c_ulong = 0x1000;
     let mut out = 0;
     for (st, ms) in [(libc::ST_NOSUID, libc::MS_NOSUID), (libc::ST_NODEV, libc::MS_NODEV), (libc::ST_NOEXEC, libc::MS_NOEXEC),
-        (libc::ST_NOATIME, libc::MS_NOATIME), (libc::ST_NODIRATIME, libc::MS_NODIRATIME), (libc::ST_RELATIME, libc::MS_RELATIME)] {
+        (libc::ST_NOATIME, libc::MS_NOATIME), (libc::ST_NODIRATIME, libc::MS_NODIRATIME), (ST_RELATIME, libc::MS_RELATIME)] {
         if s.f_flag & st != 0 {
             out |= ms;
         }
@@ -96,6 +98,12 @@ fn environment(name: &str) -> Vec<CString> {
         "TERM=dumb".into(),
         "LANG=C.UTF-8".into(),
         "PS1=$PWD $ ".into(),
+        // The root's own l3 sees the open repo where the shell does, and
+        // leaves Home, the Remote and the device to the app.
+        "LENGTH3_REPOS=/root".into(),
+        "L3_PROMPT=1".into(),
+        // An interactive sh reads this (the root's /etc/length3/shrc, if it has one).
+        "ENV=/etc/length3/shrc".into(),
         format!("LENGTH3_REPO={name}"),
     ].iter().map(c).collect()
 }

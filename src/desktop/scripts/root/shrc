@@ -1,0 +1,6 @@
+# The Prompt's shell, as the app shows it: the open repo is the place you are
+# in (/root/<repo>), what you change there is written back and sent to the
+# Remote by the app, and l3 speaks the app's words (`l3 help`).
+case $- in *i*) ;; *) return 0 2>/dev/null ;; esac
+PS1='${LENGTH3_REPO:-root} ${PWD#/root/${LENGTH3_REPO}} $ '
+alias ll='ls -l'
