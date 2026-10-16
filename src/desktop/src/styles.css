@@ -602,7 +602,7 @@ mark { background: var(--ink); color: var(--ground); }
 .issue-slot { flex: 0 0 calc(100% - 2 * var(--peek)); min-width: 0; align-self: start; }
 /* Less room above than below, so the card's weight sits a little high. */
 .issue-card { padding: calc(var(--s4) + var(--s1)) var(--s5) var(--s6); border: 1px solid var(--rule); border-radius: var(--r-place); transition: background var(--motion); }
-.issue-slot[aria-current='false'] .issue-card { color: var(--sub); }
+.issue-slot[aria-current='false'] .issue-card { color: var(--sub); min-height: var(--card-h, auto); }
 .issue-slot[aria-current='true'] .issue-card { border-color: var(--ink); background: var(--raised); }
 .issue-stage:has(.stage-hit.next:hover) .issue-slot[aria-current='true'] + .issue-slot .issue-card,
 .issue-stage:has(.stage-hit.prev:hover) .issue-slot:has(+ .issue-slot[aria-current='true']) .issue-card { background: var(--raised); }

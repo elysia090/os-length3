@@ -69,6 +69,7 @@ export function git(ctx: Context): Node[] {
   };
 
   /** Slide to the `n`th box: it gets the whole box, the others only their heads. */
+  const sized = new ResizeObserver(([e]) => track.style.setProperty('--card-h', `${(e.target as HTMLElement).offsetHeight}px`));
   const go = (n: number) => {
     if (!shown.length) return;
     k = Math.max(0, Math.min(shown.length - 1, n));
@@ -88,6 +89,10 @@ export function git(ctx: Context): Node[] {
         ? [h('div', {class: 'issue-card'}, issueBox(x, st, events, again)), reviewBox(x, st, again), mergeRow(x, st, events, again)].filter((n): n is HTMLElement => !!n)
         : [h('div', {class: 'issue-card'}, issueHead(x))]));
     });
+    // The neighbours' cards are as tall as the current one, so the row reads as one line of boxes.
+    const card = track.children[k]?.querySelector<HTMLElement>('.issue-card');
+    sized.disconnect();
+    if (card) sized.observe(card);
     prev.hidden = k === 0;
     next.hidden = k === shown.length - 1;
   };
