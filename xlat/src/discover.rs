@@ -242,6 +242,50 @@ fn relative_table_targets(elf: &Elf, references: &BTreeSet<u64>) -> Vec<u64> {
     out
 }
 
+/// Functions reached from `seeds`, for a program already running: code at
+/// `known` addresses is translated already, so a walk stops there and a
+/// call to it goes through the dispatcher. Nothing of the file is read but
+/// the code execution reaches from the seeds.
+pub fn discover_from(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>) -> Program {
+    let mut starts: BTreeSet<u64> = seeds.iter().copied().filter(|a| elf.is_code(*a) && !known.contains(a)).collect();
+    let sizes = BTreeMap::new();
+    let mut references = BTreeSet::new();
+    let mut done: BTreeMap<u64, Vec<Block>> = BTreeMap::new();
+    loop {
+        let all: BTreeSet<u64> = starts.union(known).copied().collect();
+        let range = ranges(&all, &sizes);
+        let mut found = Vec::new();
+        for &start in &starts {
+            if done.contains_key(&start) { continue; }
+            let (blocks, calls) = walk(elf, start, range[&start], &[], &all, &mut references);
+            found.extend(calls.into_iter().filter(|t| elf.is_code(*t) && !all.contains(t)));
+            done.insert(start, blocks);
+        }
+        if found.is_empty() { break; }
+        starts.extend(found);
+        done.clear();
+    }
+    let mut functions = Vec::new();
+    let mut entries = BTreeMap::new();
+    for (index, (start, blocks)) in done.into_iter().enumerate() {
+        let function = Function { start, name: format!("fn_{start:x}"), blocks };
+        let f = index as u32;
+        let mut mark = |address: u64| {
+            if let Some(b) = function.block_index(address) { entries.entry(address).or_insert((f, b as u32)); }
+        };
+        mark(start);
+        for b in &function.blocks {
+            if let Exit::Call { ret, .. } | Exit::IndirectCall { ret } = b.exit { mark(ret); }
+            if b.code.last().is_some_and(resumes_after) {
+                mark(b.code.last().unwrap().ip());
+                mark(b.code.last().unwrap().next_ip());
+            }
+        }
+        functions.push(function);
+    }
+    Program { entry: elf.entry, functions, entries }
+}
+
 pub fn discover(elf: &Elf) -> Program {
     let mut starts: BTreeSet<u64> = BTreeSet::from([elf.entry]);
     let mut sizes = BTreeMap::new();

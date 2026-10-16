@@ -32,6 +32,21 @@ function translate(bytes) {
   return readFileSync(wasm);
 }
 
+/** Code reached later, from `seeds` past the `known` starts, filling table slots from `base`. */
+translate.more = function more(bytes, seeds, known, base) {
+  const key = createHash('sha256').update(translatorId).update(bytes).update(`${seeds}|${known}|${base}`).digest('hex');
+  const wasm = join(cacheDir, key + '.more.wasm');
+  if (!existsSync(wasm)) {
+    mkdirSync(cacheDir, {recursive: true});
+    const elf = join(cacheDir, createHash('sha256').update(bytes).digest('hex') + '.elf');
+    if (!existsSync(elf)) writeFileSync(elf, bytes);
+    writeFileSync(`${wasm}.seeds`, seeds.join('\n'));
+    writeFileSync(`${wasm}.known`, known.join('\n'));
+    execFileSync(translator, [`--more=${wasm}.seeds`, `--known=${wasm}.known`, `--base=${base}`, elf, wasm], {stdio: ['ignore', 'ignore', 'ignore']});
+  }
+  return readFileSync(wasm);
+};
+
 /** Mirror a host tree into the VFS; file contents load on first read. */
 function mount(vfs, host, at) {
   const dir = vfs.mkdirp(at);

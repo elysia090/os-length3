@@ -1,4 +1,7 @@
 //! `xlat INPUT.elf OUTPUT.wasm` — translate a static x86-64 Linux program.
+//! `xlat --more=SEEDS --known=KNOWN --base=N INPUT.elf OUTPUT.wasm` — code
+//! reached later from the addresses in SEEDS (one per line), past what
+//! KNOWN lists as translated, as a module filling table slots from N.
 
 use std::process::ExitCode;
 
@@ -19,8 +22,19 @@ fn main() -> ExitCode {
         Err(e) => { eprintln!("xlat: {input}: {e}"); return ExitCode::FAILURE; }
     };
     let started = std::time::Instant::now();
-    let program = xlat::discover::discover(&elf);
-    let translation = xlat::lower::translate(&elf, &program, xlat::lower::Options { trace });
+    let flag = |name: &str| args.iter().find_map(|a| a.strip_prefix(&format!("--{name}=")).map(str::to_string));
+    let list = |path: Option<String>| -> Vec<u64> {
+        path.and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_default().lines().filter_map(|l| l.trim().parse().ok()).collect()
+    };
+    let translation = if let Some(seeds) = flag("more") {
+        let known: std::collections::BTreeSet<u64> = list(flag("known")).into_iter().collect();
+        let base: u32 = flag("base").and_then(|b| b.parse().ok()).unwrap_or(0);
+        let program = xlat::discover::discover_from(&elf, &list(Some(seeds)), &known);
+        xlat::lower::translate_more(&program, base, xlat::lower::Options { trace })
+    } else {
+        let program = xlat::discover::discover(&elf);
+        xlat::lower::translate(&elf, &program, xlat::lower::Options { trace })
+    };
     if let Err(e) = std::fs::write(output, &translation.wasm) {
         eprintln!("xlat: {output}: {e}");
         return ExitCode::FAILURE;

@@ -39,12 +39,21 @@ const F_DIV128: u32 = 2;
 const F_CLOCK: u32 = 3;
 const F_FPU: u32 = 4;
 const F_TRACE: u32 = 5;
-const F_MULHU: u32 = 6;
-const F_MULHS: u32 = 7;
-const F_RESOLVE: u32 = 8;
-const F_DISPATCH: u32 = 9;
-const F_RUN: u32 = 10;
-const FIRST_GUEST: u32 = 11;
+/// The host's answer for code not translated yet: the entry (function << 32 | block), or -1.
+const F_MISS: u32 = 6;
+const F_MULHU: u32 = 7;
+const F_MULHS: u32 = 8;
+const F_RESOLVE: u32 = 9;
+const F_DISPATCH: u32 = 10;
+#[allow(dead_code)] // run is exported with the shared helpers, as SHARED[4]
+const F_RUN: u32 = 11;
+const FIRST_GUEST: u32 = 12;
+/// Imported functions, in index order: the host's, then (in a module made later) the first module's.
+const HOST_IMPORTS: [&str; 7] = ["syscall", "trap", "div128", "clock", "fpu", "trace", "miss"];
+const SHARED: [&str; 5] = ["mulhu", "mulhs", "resolve", "dispatch", "run"];
+/// Globals every module of a program shares: r0..r15, fs, x0..x15.
+const GLOBALS: u32 = 33;
+fn global_name(n: u32) -> String { if n < 16 { format!("r{n}") } else if n == G_FS { "fs".into() } else { format!("x{}", n - 17) } }
 
 const G_FS: u32 = 16;
 const fn g_xmm(n: u32) -> u32 { 17 + n }
@@ -1901,6 +1910,9 @@ fn helpers(code: &mut CodeSection, entries: u32, table: u64) {
     let mut f = WasmFunction::new([(1, ValType::I64)]);
     for i in [
         W::LocalGet(0), W::Call(F_RESOLVE), W::LocalTee(1), W::I64Const(0), W::I64LtS,
+        // Not in this module's table: the host translates it now, or says it cannot.
+        W::If(BlockType::Empty), W::LocalGet(0), W::Call(F_MISS), W::LocalSet(1), W::End,
+        W::LocalGet(1), W::I64Const(0), W::I64LtS,
         W::If(BlockType::Empty), W::LocalGet(0), W::I32Const(TRAP_UNMAPPED_TARGET), W::Call(F_TRAP), W::Unreachable, W::End,
         W::LocalGet(1), W::I32WrapI64,
         W::LocalGet(1), W::I64Const(32), W::I64ShrU, W::I32WrapI64,
@@ -1939,10 +1951,8 @@ pub fn image_end(elf: &Elf) -> u64 {
     elf.segments.iter().map(|s| s.vaddr + s.memsz).max().unwrap_or(0).next_multiple_of(4096)
 }
 
-pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation {
-    let mut report = Report { functions: program.functions.len(), entries: program.entries.len(), ..Default::default() };
-    let mut module = Module::new();
-
+/// The function types every module of a program declares, in this order.
+fn types() -> TypeSection {
     let mut types = TypeSection::new();
     types.ty().function([ValType::I32], [ValType::I64]);
     types.ty().function([ValType::I64; 8], [ValType::I64]);
@@ -1954,7 +1964,64 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
     types.ty().function([ValType::I64], []);
     types.ty().function([ValType::I32; 5], [ValType::I32]);
     types.ty().function([ValType::I64], []);
-    module.section(&types);
+    types
+}
+
+/// Code reached later, for a program already running: its functions as one
+/// more module, which takes everything else from the first module (memory,
+/// helpers, registers and the table, whose slots from `base` it fills) and
+/// carries no data, so instantiating it changes nothing in memory. Its
+/// entries, `base`-relative function slots, are in the `xlat.entries`
+/// custom section as (address, function << 32 | block) pairs.
+pub fn translate_more(program: &Program, base: u32, options: Options) -> Translation {
+    let mut report = Report { functions: program.functions.len(), entries: program.entries.len(), ..Default::default() };
+    let mut module = Module::new();
+    module.section(&types());
+    let mut imports = ImportSection::new();
+    imports.import("env", "memory", EntityType::Memory(MemoryType { minimum: 1, maximum: Some(65536), memory64: false, shared: false, page_size_log2: None }));
+    let host_types = [T_SYSCALL, T_TRAP, T_DIV, T_CLOCK, T_FPU, T_TRACE, T_RESOLVE];
+    for (name, ty) in HOST_IMPORTS.iter().zip(host_types) { imports.import("env", name, EntityType::Function(ty)); }
+    for (name, ty) in SHARED.iter().zip([T_PAIR, T_PAIR, T_RESOLVE, T_RESOLVE, T_RUN]) { imports.import("main", name, EntityType::Function(ty)); }
+    for n in 0..GLOBALS {
+        let val_type = if n < 17 { ValType::I64 } else { ValType::V128 };
+        imports.import("main", &global_name(n), EntityType::Global(GlobalType { val_type, mutable: true, shared: false }));
+    }
+    imports.import("main", "table", EntityType::Table(TableType { element_type: RefType::FUNCREF, minimum: (base as u64) + program.functions.len() as u64, maximum: None, table64: false, shared: false }));
+    module.section(&imports);
+
+    let mut functions = FunctionSection::new();
+    for _ in &program.functions { functions.function(T_FN); }
+    module.section(&functions);
+
+    let mut elements = ElementSection::new();
+    let indices: Vec<u32> = (0..program.functions.len() as u32).map(|f| FIRST_GUEST + f).collect();
+    elements.active(Some(0), &ConstExpr::i32_const(base as i32), Elements::Functions(Cow::Owned(indices)));
+    module.section(&elements);
+
+    let mut code = CodeSection::new();
+    for f in 0..program.functions.len() as u32 {
+        code.function(&lower_function(program, f, options, &mut report));
+    }
+    module.section(&code);
+
+    let mut table = Vec::with_capacity(program.entries.len() * 16);
+    for (&address, &(f, b)) in &program.entries {
+        table.extend_from_slice(&address.to_le_bytes());
+        table.extend_from_slice(&((((f + base) as u64) << 32) | b as u64).to_le_bytes());
+    }
+    module.section(&CustomSection { name: Cow::Borrowed("xlat.entries"), data: Cow::Owned(table) });
+    // Where each function starts, so code translated later stops there instead of repeating it.
+    let starts: Vec<u8> = program.functions.iter().flat_map(|f| f.start.to_le_bytes()).collect();
+    module.section(&CustomSection { name: Cow::Borrowed("xlat.starts"), data: Cow::Owned(starts) });
+
+    Translation { wasm: module.finish(), report }
+}
+
+pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation {
+    let mut report = Report { functions: program.functions.len(), entries: program.entries.len(), ..Default::default() };
+    let mut module = Module::new();
+
+    module.section(&types());
 
     let mut imports = ImportSection::new();
     // The entry table lives in guest memory just past the image (one memory
@@ -1972,6 +2039,7 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
     imports.import("env", "clock", EntityType::Function(T_CLOCK));
     imports.import("env", "fpu", EntityType::Function(T_FPU));
     imports.import("env", "trace", EntityType::Function(T_TRACE));
+    imports.import("env", "miss", EntityType::Function(T_RESOLVE));
     module.section(&imports);
 
     let mut functions = FunctionSection::new();
@@ -1981,7 +2049,8 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
 
     let mut tables = TableSection::new();
     let count = program.functions.len() as u64;
-    tables.table(TableType { element_type: RefType::FUNCREF, minimum: count, maximum: Some(count), table64: false, shared: false });
+    // It grows as code reached later is translated into modules of its own.
+    tables.table(TableType { element_type: RefType::FUNCREF, minimum: count, maximum: None, table64: false, shared: false });
     module.section(&tables);
 
     let entries = program.entries.len() as u64;
@@ -1996,9 +2065,10 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
     module.section(&globals);
 
     let mut exports = ExportSection::new();
-    exports.export("run", ExportKind::Func, F_RUN);
-    for n in 0..16u32 { exports.export(&format!("r{n}"), ExportKind::Global, n); }
-    exports.export("fs", ExportKind::Global, G_FS);
+    // What a module made later for this program imports: the helpers, every register, the table.
+    for (k, name) in SHARED.iter().enumerate() { exports.export(name, ExportKind::Func, F_MULHU + k as u32); }
+    for n in 0..GLOBALS { exports.export(&global_name(n), ExportKind::Global, n); }
+    exports.export("table", ExportKind::Table, 0);
     module.section(&exports);
 
     let mut elements = ElementSection::new();
@@ -2028,7 +2098,7 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
     module.section(&data);
 
     let mut names = wasm_encoder::NameMap::new();
-    for (k, n) in ["syscall", "trap", "div128", "clock", "fpu", "trace", "mulhu", "mulhs", "resolve", "dispatch", "run"].iter().enumerate() {
+    for (k, n) in HOST_IMPORTS.iter().chain(SHARED.iter()).enumerate() {
         names.append(k as u32, n);
     }
     for (k, f) in program.functions.iter().enumerate() {
@@ -2046,6 +2116,10 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
     );
     module.section(&CustomSection { name: Cow::Borrowed("xlat.facts"), data: Cow::Owned(facts.into_bytes()) });
     module.section(&CustomSection { name: Cow::Borrowed("xlat.fpu"), data: Cow::Owned(X87_OPS.join(",").into_bytes()) });
+    // Where each function starts, so code translated later stops there instead of repeating it.
+    let starts: Vec<u8> = program.functions.iter().flat_map(|f| f.start.to_le_bytes()).collect();
+    module.section(&CustomSection { name: Cow::Borrowed("xlat.starts"), data: Cow::Owned(starts) });
+
 
     Translation { wasm: module.finish(), report }
 }

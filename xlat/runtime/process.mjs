@@ -43,13 +43,43 @@ export class Exec {}
 /** Thrown by a system call that must wait; the call is restarted later. */
 export class Wait {}
 
-/** A loaded program: compiled module plus its loader facts. */
+const u64s = (module, name) => {
+  const [s] = WebAssembly.Module.customSections(module, name);
+  return s ? new BigUint64Array(s.slice(0)) : new BigUint64Array(0);
+};
+
+/**
+ * A loaded program: its first module, its loader facts, and the code reached
+ * later. A jump to code the first translation did not find asks the host
+ * (the module's `miss`), which translates from there into one more module
+ * that shares everything with the first; every process of the program then
+ * uses it, and nothing is translated twice.
+ */
 export class Image {
-  constructor(module) {
+  constructor(module, source = null) {
     this.module = module;
+    this.source = source; // () => the ELF's bytes, for code reached later
     const section = (name) => dec.decode(WebAssembly.Module.customSections(module, name)[0]);
     this.facts = JSON.parse(section('xlat.facts'));
     this.fpuOps = section('xlat.fpu').split(',');
+    this.known = new Set(u64s(module, 'xlat.starts'));
+    this.slots = this.known.size; // the first module's table
+    this.extras = []; // {module, base, count}
+    this.entries = new Map(); // address -> function slot << 32 | block, for code reached later
+  }
+
+  /** Translate the code at `address` into one more module; false if there is none to be had. */
+  more(translateMore, address) {
+    if (!translateMore || !this.source) return false;
+    const module = new WebAssembly.Module(translateMore(this.source(), [address], [...this.known], this.slots));
+    const starts = u64s(module, 'xlat.starts');
+    if (!starts.length) return false;
+    const entries = u64s(module, 'xlat.entries');
+    for (let k = 0; k < entries.length; k += 2) this.entries.set(entries[k], entries[k + 1]);
+    for (const a of starts) this.known.add(a);
+    this.extras.push({module, base: this.slots, count: starts.length});
+    this.slots += starts.length;
+    return this.entries.has(address);
   }
 }
 
@@ -61,6 +91,8 @@ export class Kernel {
   constructor({vfs = new Vfs(), translate, console}) {
     this.vfs = vfs;
     this.translate = translate;
+    // Code reached later, when the translator can do it: translate.more(elf, seeds, known, base).
+    this.translateMore = translate?.more ?? null;
     this.console = console;
     this.nextPid = 1;
     this.images = new WeakMap(); // File node -> {version, image}
@@ -74,7 +106,7 @@ export class Kernel {
     if (cached && cached.version === node.version) return cached.image;
     const bytes = node.bytes();
     if (bytes[0] !== 0x7f || bytes[1] !== 0x45 || bytes[2] !== 0x4c || bytes[3] !== 0x46) throw new FsError(E.NOEXEC);
-    const image = new Image(new WebAssembly.Module(this.translate(bytes)));
+    const image = new Image(new WebAssembly.Module(this.translate(bytes)), () => node.bytes());
     this.images.set(node, {version: node.version, image});
     return image;
   }
@@ -84,7 +116,7 @@ export class Kernel {
    * from exactly these bytes). It holds only while the file is unchanged; a
    * write makes it translate again.
    */
-  prebuilt(node, module) { this.images.set(node, {version: node.version, image: new Image(module)}); }
+  prebuilt(node, module) { this.images.set(node, {version: node.version, image: new Image(module, () => node.bytes())}); }
 
   /** Bytes of guest memory the running processes hold (their wasm memories). */
   memoryBytes() {
@@ -212,7 +244,35 @@ export class Process {
       clock: () => BigInt(Math.round(performance.now() * 1e6)),
       fpu: (op, size, address, a, b) => this.fpu.call(op, size, address, a, b),
       trace: (address) => { if (this.trail) this.trail[this.trailAt++ & 255] = address; },
+      miss: (address) => this.miss(address),
     }};
+  }
+
+  /** The program's modules in this process: the first, then each made later, in order. */
+  instantiate() {
+    this.instance = new WebAssembly.Instance(this.image.module, this.imports());
+    this.attached = 0;
+    this.attach();
+  }
+
+  /** Instantiate the modules made since this process last looked (by it or another). */
+  attach() {
+    const {table} = this.instance.exports;
+    const env = this.imports().env;
+    for (; this.attached < this.image.extras.length; this.attached++) {
+      const x = this.image.extras[this.attached];
+      if (table.length < x.base + x.count) table.grow(x.base + x.count - table.length);
+      new WebAssembly.Instance(x.module, {env, main: this.instance.exports});
+    }
+  }
+
+  /** dispatch found no translated code at `address`: find or make it, else -1. */
+  miss(address) {
+    let at = this.image.entries.get(address);
+    if (at === undefined && this.image.more(this.kernel.translateMore, address)) at = this.image.entries.get(address);
+    if (at === undefined) return -1n;
+    this.attach();
+    return at;
   }
 
   /** Replace the image. Throws FsError; on success the old image is gone. */
@@ -237,7 +297,7 @@ export class Process {
     this.fixed = []; // MAP_FIXED mappings below mapBase
     this.memory = new WebAssembly.Memory({initial: this.mapBase / WASM_PAGE, maximum: 65536});
     this.fpu = new Fpu(() => this.bytes, image.fpuOps);
-    this.instance = new WebAssembly.Instance(image.module, this.imports());
+    this.instantiate();
     this.argv = argv;
     this.fds.exec();
     for (const [sig, h] of this.signals) if (h.handler > 1n) this.signals.delete(sig);
@@ -326,7 +386,7 @@ export class Process {
     child.fpu = this.fpu.clone(() => child.bytes);
     // Instantiating writes the image's first data; the parent's memory goes
     // over it afterwards, so the child sees what the parent changed.
-    child.instance = new WebAssembly.Instance(this.image.module, child.imports());
+    child.instantiate();
     this.copyLive(child);
     const from = this.instance.exports, to = child.instance.exports;
     for (let n = 0; n < 16; n++) to[`r${n}`].value = from[`r${n}`].value;
