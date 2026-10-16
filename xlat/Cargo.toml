@@ -1,0 +1,16 @@
+[package]
+name = "xlat"
+version = "0.1.0"
+edition = "2021"
+description = "Ahead-of-time translation of static x86-64 Linux ELF programs to WebAssembly"
+publish = false
+
+[dependencies]
+iced-x86 = { version = "1.21", default-features = false, features = ["std", "decoder", "instr_info", "gas"] }
+wasm-encoder = "0.262"
+
+[dev-dependencies]
+wasmparser = "0.262"
+
+[profile.release]
+debug = 1
