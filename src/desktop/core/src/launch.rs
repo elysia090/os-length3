@@ -164,6 +164,15 @@ fn init(s: &Sandbox) -> ! {
             // Its own process group: what it runs is in it, and Ctrl-C goes to it.
             libc::setpgid(0, 0);
             libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0);
+            // The shell starts with every signal as a program expects it. An
+            // ignored signal survives exec, and Rust ignores SIGPIPE: left so,
+            // a writer to a closed pipe gets EPIPE instead of ending quietly.
+            for sig in 1..32 {
+                if sig != libc::SIGKILL && sig != libc::SIGSTOP { libc::signal(sig, libc::SIG_DFL); }
+            }
+            let mut none: libc::sigset_t = std::mem::zeroed();
+            libc::sigemptyset(&mut none);
+            libc::sigprocmask(libc::SIG_SETMASK, &none, std::ptr::null_mut());
             libc::execve(ptrs[0], ptrs.as_ptr(), envp.as_ptr());
             libc::_exit(127);
         }
