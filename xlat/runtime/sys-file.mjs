@@ -3,6 +3,7 @@
 
 import {Description, Pipe} from './fd.mjs';
 import {Dir, Device, E, File, FsError, Link, S_IFIFO} from './fs.mjs';
+import {Wait} from './process.mjs';
 
 const AT_FDCWD = -100;
 const O = {WRONLY: 1, RDWR: 2, CREAT: 0x40, EXCL: 0x80, TRUNC: 0x200, APPEND: 0x400, NONBLOCK: 0x800,
@@ -85,7 +86,9 @@ function readInto(p, d, address, length, offset = null) {
   if (length === 0) return 0;
   switch (d.kind) {
     case 'console': {
+      // null: nothing typed yet, so wait and restart this read later.
       const data = p.kernel.console.read(length);
+      if (data === null) throw new Wait();
       p.bytes.set(data, address);
       return data.length;
     }
@@ -195,7 +198,8 @@ function readlink(p, dirfd, address, buf, size) {
 function getdents(p, fd, buf, count) {
   const d = descriptor(p, fd);
   if (d.kind !== 'dir') fail(E.NOTDIR);
-  const names = ['.', '..', ...d.node.entries.keys()];
+  // Linux leaves the order unspecified; name order keeps listings readable.
+  const names = ['.', '..', ...[...d.node.entries.keys()].sort()];
   let at = N(buf);
   const end = at + N(count);
   while (d.offset < names.length) {

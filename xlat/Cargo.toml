@@ -14,3 +14,6 @@ wasmparser = "0.262"
 
 [profile.release]
 debug = 1
+
+[lib]
+crate-type = ["rlib", "cdylib"]

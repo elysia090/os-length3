@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 use wasm_encoder::{
     BlockType, CodeSection, ConstExpr, CustomSection, DataSection, ElementSection, Elements, EntityType, ExportKind,
     ExportSection, Function as WasmFunction, FunctionSection, GlobalSection, GlobalType, ImportSection,
-    Instruction as W, MemArg, MemorySection, MemoryType, Module, RefType, TableSection, TableType, TypeSection, ValType,
+    Instruction as W, MemArg, MemoryType, Module, RefType, TableSection, TableType, TypeSection, ValType,
 };
 
 type I = W<'static>;
@@ -1781,7 +1781,8 @@ fn lower_function(program: &Program, index: u32, options: Options, report: &mut 
 }
 
 /// Helpers: 64x64 high products, entry resolution and the dispatcher.
-fn helpers(code: &mut CodeSection, entries: u32) {
+/// `table` is where the sorted entry table sits in guest memory.
+fn helpers(code: &mut CodeSection, entries: u32, table: u64) {
     // mulhu(a, b): schoolbook on 32-bit halves.
     let mut f = WasmFunction::new([(6, ValType::I64)]);
     let (a, b, al, ah, bl, bh, mid, t) = (0, 1, 2, 3, 4, 5, 6, 7);
@@ -1812,7 +1813,7 @@ fn helpers(code: &mut CodeSection, entries: u32) {
     code.function(&f);
 
     // resolve(addr): binary search the sorted 16-byte entries in memory 1.
-    let m1 = |offset| MemArg { offset, align: 3, memory_index: 1 };
+    let m1 = |offset| MemArg { offset: table + offset, align: 3, memory_index: 0 };
     let mut f = WasmFunction::new([(3, ValType::I32), (1, ValType::I64)]);
     let (addr, lo, hi, mid, key) = (0, 1, 2, 3, 4);
     for i in [
@@ -1888,7 +1889,12 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
     module.section(&types);
 
     let mut imports = ImportSection::new();
-    let pages = image_end(elf).div_ceil(65536);
+    // The entry table lives in guest memory just past the image (one memory
+    // keeps every engine able to load the module); the loader treats it as
+    // part of the image.
+    let table_base = image_end(elf);
+    let end = table_base + (program.entries.len() as u64 * 16).next_multiple_of(4096);
+    let pages = end.div_ceil(65536);
     imports.import("env", "memory", EntityType::Memory(MemoryType {
         minimum: pages, maximum: Some(65536), memory64: false, shared: false, page_size_log2: None,
     }));
@@ -1911,9 +1917,6 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
     module.section(&tables);
 
     let entries = program.entries.len() as u64;
-    let mut memories = MemorySection::new();
-    memories.memory(MemoryType { minimum: (entries * 16).div_ceil(65536).max(1), maximum: None, memory64: false, shared: false, page_size_log2: None });
-    module.section(&memories);
 
     let mut globals = GlobalSection::new();
     for _ in 0..17 {
@@ -1936,7 +1939,7 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
     module.section(&elements);
 
     let mut code = CodeSection::new();
-    helpers(&mut code, entries as u32);
+    helpers(&mut code, entries as u32, table_base);
     for f in 0..program.functions.len() as u32 {
         code.function(&lower_function(program, f, options, &mut report));
     }
@@ -1953,7 +1956,7 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
         table.extend_from_slice(&address.to_le_bytes());
         table.extend_from_slice(&(((f as u64) << 32) | b as u64).to_le_bytes());
     }
-    data.active(1, &ConstExpr::i32_const(0), table);
+    data.active(0, &ConstExpr::i32_const(table_base as i32), table);
     module.section(&data);
 
     let mut names = wasm_encoder::NameMap::new();
@@ -1971,7 +1974,7 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
     let tls = elf.tls.as_ref().map(|t| format!(",\"tls\":{{\"vaddr\":{},\"filesz\":{},\"memsz\":{},\"align\":{}}}", t.vaddr, t.filesz, t.memsz, t.align)).unwrap_or_default();
     let facts = format!(
         "{{\"entry\":{},\"imageEnd\":{},\"phdr\":{},\"phnum\":{},\"phent\":56{}}}",
-        elf.entry, image_end(elf), elf.phdr_address().unwrap_or(0), elf.phnum, tls
+        elf.entry, end, elf.phdr_address().unwrap_or(0), elf.phnum, tls
     );
     module.section(&CustomSection { name: Cow::Borrowed("xlat.facts"), data: Cow::Owned(facts.into_bytes()) });
     module.section(&CustomSection { name: Cow::Borrowed("xlat.fpu"), data: Cow::Owned(X87_OPS.join(",").into_bytes()) });

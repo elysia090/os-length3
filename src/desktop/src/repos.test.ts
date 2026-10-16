@@ -7,10 +7,10 @@ test('repo names match the native rule', () => {
   for (const bad of ['', '.git', 'a/b', 'a b', 'x'.repeat(65)]) assert.ok(!validName(bad), bad);
 });
 
-test('every template keeps inbox.md and TODO.md', () => {
+test('templates hold the repo\'s own files, never inbox or TODO', () => {
   for (const t of TEMPLATES) {
     const files = templateFiles('r', t.id);
-    assert.ok(files.has('inbox.md') && files.has('TODO.md'), t.id);
+    assert.ok(files.has('README.md') && !files.has('inbox.md') && !files.has('TODO.md'), t.id);
     // The list shown to the user names exactly what is created.
     const shown = t.files.map((f) => f.replace(/\/$/, '')).sort();
     assert.deepEqual([...files.keys()].sort(), shown, t.id);

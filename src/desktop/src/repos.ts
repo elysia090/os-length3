@@ -35,9 +35,9 @@ export interface RepoStore {
 }
 
 export const TEMPLATES: readonly {id: Template; label: string; files: readonly string[]}[] = [
-  {id: 'standard', label: '標準', files: ['README.md', 'docs/', 'issue/', 'inbox.md', 'TODO.md']},
-  {id: 'c', label: 'C', files: ['README.md', 'docs/', 'issue/', 'src/main.c', 'Makefile', 'inbox.md', 'TODO.md']},
-  {id: 'empty', label: '最小', files: ['inbox.md', 'TODO.md']},
+  {id: 'standard', label: '標準', files: ['README.md', 'docs/', 'issue/']},
+  {id: 'c', label: 'C', files: ['README.md', 'docs/', 'issue/', 'src/main.c', 'Makefile']},
+  {id: 'empty', label: '最小', files: ['README.md']},
 ];
 
 /** Same rule as the native side: a plain directory name. */
@@ -57,11 +57,11 @@ class NativeStore implements RepoStore {
   read(repo: string, path: string) { return this.call<Contents>('repo_read', {repo, path}); }
 }
 
-/** Files of a new repo, mirroring the native templates. */
+/** Files of a new repo, mirroring the native templates. Inbox and TODO
+ * belong to the app, so no template carries them. */
 export function templateFiles(name: string, template: Template): Map<string, string | null> {
-  const files = new Map<string, string | null>([['inbox.md', '# inbox\n'], ['TODO.md', '# TODO\n']]);
+  const files = new Map<string, string | null>([['README.md', `# ${name}\n`]]);
   if (template !== 'empty') {
-    files.set('README.md', `# ${name}\n`);
     files.set('docs', null);
     files.set('issue', null);
   }

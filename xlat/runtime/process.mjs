@@ -2,11 +2,16 @@
 // starts at its ELF entry with a SysV stack and its system calls land in
 // the tables of sys-file.mjs and sys-proc.mjs.
 //
-// Processes run to completion one at a time. fork() copies the parent's
-// memory and runs the child at once, inside the parent's fork call; when
-// the parent continues, the child has finished and its output is waiting in
-// any pipe. Everything stays synchronous: no threads and no suspended wasm
-// frames.
+// System calls are restartable: a call that has to wait (input that has
+// not arrived, a child that has not finished) throws Wait, which unwinds the
+// wasm stack; the process later resumes by executing the same syscall
+// instruction again. No wasm frame is ever suspended, so neither threads
+// nor shared memory are needed.
+//
+// fork() makes the child the running process; the parent waits in its fork
+// call and, once the child has exited, the restarted fork returns the
+// child's pid. A pipeline therefore runs left to right, each child to
+// completion, and readers find their writers' whole output.
 
 import {Fpu} from './fpu.mjs';
 import {Description, FdTable} from './fd.mjs';
@@ -35,6 +40,8 @@ export class GuestTrap extends Error {
 export class Exit { constructor(status) { this.status = status; } }
 /** Thrown through wasm frames after execve replaced the image. */
 export class Exec {}
+/** Thrown by a system call that must wait; the call is restarted later. */
+export class Wait {}
 
 /** A loaded program: compiled module plus its loader facts. */
 export class Image {
@@ -57,6 +64,8 @@ export class Kernel {
     this.console = console;
     this.nextPid = 1;
     this.images = new WeakMap(); // File node -> {size, mtime, image}
+    this.chain = []; // running process last; each one's parent before it
+    this.status = null;
   }
 
   /** The image for an executable file, translating it once per version. */
@@ -70,13 +79,39 @@ export class Kernel {
     return image;
   }
 
-  /** Start the first process and run it to completion; returns its status. */
-  spawn(path, argv, env, cwd = '/') {
+  /** Create the first process, attached to the console. */
+  start(path, argv, env, cwd = '/') {
     const p = new Process(this, null);
     p.cwd = cwd;
-    ['stdin', 'stdout', 'stderr'].forEach((path, fd) => p.fds.install(new Description('console', {path}), {fd}));
+    ['stdin', 'stdout', 'stderr'].forEach((name, fd) => p.fds.install(new Description('console', {path: name}), {fd}));
     p.execve(path, argv, env);
-    return p.run();
+    this.chain = [p];
+  }
+
+  /**
+   * Run until every process has exited or the running one waits for input.
+   * Returns {waiting: true} or {status} of the first process.
+   */
+  pump() {
+    while (this.chain.length) {
+      const p = this.chain.at(-1);
+      const status = p.run();
+      if (status === null) {
+        if (this.chain.at(-1) === p) return {waiting: true};
+        continue; // it forked: the child runs now
+      }
+      this.chain.pop();
+      if (!this.chain.length) { this.status = status; return {status}; }
+    }
+    return {status: this.status};
+  }
+
+  /** Start and run to the end; for hosts whose input is all known up front. */
+  spawn(path, argv, env, cwd = '/') {
+    this.start(path, argv, env, cwd);
+    const r = this.pump();
+    if (r.waiting) throw new Error('process waits for input that will never come');
+    return r.status;
   }
 }
 
@@ -200,7 +235,7 @@ export class Process {
     return top;
   }
 
-  /** Run until the process exits; returns its wait status. */
+  /** Run until the process exits (its wait status) or waits (null). */
   run() {
     for (;;) {
       try {
@@ -208,6 +243,7 @@ export class Process {
       } catch (e) {
         if (e instanceof Exec) continue;
         if (e instanceof Exit) return this.finish(e.status);
+        if (e instanceof Wait) return null;
         throw e;
       }
     }
@@ -221,8 +257,20 @@ export class Process {
 
   // ---- fork ----
 
-  /** Copy this process and run the copy to completion from `resume`. */
+  /**
+   * fork, first call: copy this process, make the copy the running one
+   * (starting at `resume`) and wait. Restarted after the child exited:
+   * return its pid.
+   */
   fork(resume, stack = 0n) {
+    const pending = this.pendingFork;
+    if (pending) {
+      if (pending.exitStatus === undefined) throw new Wait();
+      this.pendingFork = null;
+      this.children.delete(pending.pid);
+      this.zombies.set(pending.pid, pending.exitStatus);
+      return pending.pid;
+    }
     const child = new Process(this.kernel, this);
     child.image = this.image;
     for (const k of ['stackLow', 'stackTop', 'mapBase', 'mapEnd', 'argv']) child[k] = this[k];
@@ -238,10 +286,9 @@ export class Process {
     if (stack) to.r4.value = stack;
     child.resumeAt = resume;
     this.children.add(child.pid);
-    const status = child.run();
-    this.children.delete(child.pid);
-    this.zombies.set(child.pid, status);
-    return child.pid;
+    this.pendingFork = child;
+    this.kernel.chain.push(child);
+    throw new Wait();
   }
 
   // ---- system calls ----
@@ -255,6 +302,9 @@ export class Process {
       return typeof r === 'bigint' ? r : BigInt(r);
     } catch (error) {
       if (error instanceof FsError) return BigInt(-error.errno);
+      // Restart at the syscall instruction itself (2 bytes before `next`);
+      // its registers are still in the globals saved before this call.
+      if (error instanceof Wait) this.resumeAt = next - 2n;
       throw error;
     }
   }

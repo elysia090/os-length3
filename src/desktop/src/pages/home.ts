@@ -2,19 +2,22 @@ import {ago, bytes, h} from '../dom.ts';
 import {icon} from '../icons.ts';
 import {LIMITS, initials, normalize, parse, type Profile} from '../profile.ts';
 import {store} from '../repos.ts';
+import * as todo from '../todo.ts';
 import type {Context} from './context.ts';
 
 const PROFILE_KEY = 'length3.os.profile';
+const TODO_KEY = 'length3.os.todo';
 
-function load(): string | null {
-  try { return localStorage.getItem(PROFILE_KEY); } catch { return null; }
+function load(key: string): string | null {
+  try { return localStorage.getItem(key); } catch { return null; }
 }
 
-function save(value: string): boolean {
-  try { localStorage.setItem(PROFILE_KEY, value); return true; } catch { return false; }
+function save(key: string, value: string): boolean {
+  try { localStorage.setItem(key, value); return true; } catch { return false; }
 }
 
-let profile: Profile = parse(load());
+let profile: Profile = parse(load(PROFILE_KEY));
+let todos: todo.Todo[] = todo.parse(load(TODO_KEY));
 let editing = false;
 
 /** Home: a profile that reads the same for its owner and for anyone else. */
@@ -32,7 +35,7 @@ export function home(ctx: Context): Node[] {
     editing ? editForm(ctx) : identity(count),
     owner && !editing ? editButton(ctx) : null,
   );
-  return [header,
+  return [header, todoSection(ctx),
     h('section', {class: 'section', 'aria-labelledby': 'repos-title'}, h('h2', {id: 'repos-title'}, 'repo'), grid),
     h('section', {class: 'section', 'aria-labelledby': 'posts-title'},
       h('h2', {id: 'posts-title'}, '投稿'), h('p', {class: 'muted'}, 'まだ投稿はありません'))];
@@ -73,7 +76,7 @@ function editForm(ctx: Context): HTMLElement {
     event.preventDefault();
     const result = normalize({name: name.value, handle: handle.value, bio: bio.value});
     if (result.error) { error.textContent = 'ハンドルは英小文字・数字・- _ の32文字以内です'; handle.focus(); return; }
-    if (!save(JSON.stringify(result.profile))) { error.textContent = 'この端末に保存できませんでした'; return; }
+    if (!save(PROFILE_KEY, JSON.stringify(result.profile))) { error.textContent = 'この端末に保存できませんでした'; return; }
     profile = result.profile;
     editing = false;
     ctx.rerender();
@@ -95,4 +98,35 @@ function newRepoCard(ctx: Context): HTMLElement {
   const card = h('button', {class: 'card new', type: 'button'}, icon('new-repo'), '新しいrepo');
   card.addEventListener('click', () => ctx.go('new-repo'));
   return card;
+}
+
+/** The person's single TODO list. Saving failure is said, not hidden. */
+function todoSection(ctx: Context): HTMLElement {
+  const open = todos.filter((t) => !t.done).length;
+  const status = h('p', {class: 'error', role: 'alert'});
+  const commit = (next: todo.Todo[]) => {
+    if (!save(TODO_KEY, JSON.stringify(next))) { status.textContent = 'この端末に保存できませんでした'; return; }
+    todos = next;
+    ctx.rerender();
+  };
+  const list = h('ul', {class: 'todo'}, ...todo.ordered(todos).map((t) => {
+    const box = h('input', {type: 'checkbox'}) as HTMLInputElement;
+    box.checked = t.done;
+    box.addEventListener('change', () => commit(todo.toggle(todos, t.id)));
+    const remove = h('button', {class: 'remove', type: 'button', 'aria-label': `「${t.text}」を削除`}, '×');
+    remove.addEventListener('click', () => commit(todo.remove(todos, t.id)));
+    return h('li', {}, h('label', {}, box, h('span', {class: t.done ? 'done' : ''}, t.text)),
+      t.repo ? h('span', {class: 'tag'}, t.repo) : null, remove);
+  }));
+  const input = h('input', {class: 'input', maxlength: String(todo.TEXT_LIMIT), 'aria-label': 'やることを追加', placeholder: 'やることを追加'}) as HTMLInputElement;
+  const form = h('form', {class: 'todo-add'}, input, h('button', {class: 'button', type: 'submit'}, '追加'));
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    if (!input.value.trim()) return;
+    commit(todo.add(todos, input.value));
+    requestAnimationFrame(() => (document.querySelector('.todo-add input') as HTMLInputElement | null)?.focus());
+  });
+  return h('section', {class: 'section', 'aria-labelledby': 'todo-title'},
+    h('h2', {id: 'todo-title'}, 'TODO', h('small', {}, todos.length ? `残り ${open}` : '')),
+    todos.length ? list : null, form, status);
 }

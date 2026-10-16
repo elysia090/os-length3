@@ -16,8 +16,12 @@ const here = dirname(fileURLToPath(import.meta.url));
 const translator = join(here, '..', 'target', 'release', 'xlat');
 const cacheDir = join(here, '..', 'target', 'xlat-cache');
 
+// Cached translations are keyed by the translator too, so rebuilding it
+// never reuses modules made by an older one.
+const translatorId = createHash('sha256').update(readFileSync(translator)).digest('hex');
+
 function translate(bytes) {
-  const key = createHash('sha256').update(bytes).digest('hex');
+  const key = createHash('sha256').update(translatorId).update(bytes).digest('hex');
   const wasm = join(cacheDir, key + '.wasm');
   if (!existsSync(wasm)) {
     mkdirSync(cacheDir, {recursive: true});

@@ -112,19 +112,17 @@ impl Repos {
         Ok(Summary { name: name.to_string(), files, bytes, modified, git: dir.join(".git").is_dir() })
     }
 
-    /// Create a repo from a template. Every repo has `inbox.md` and `TODO.md`.
+    /// Create a repo from a template. Inbox and TODO are the app's, not the
+    /// repo's, so templates hold only the repo's own files.
     pub fn create(&self, name: &str, template: &str) -> Result<Summary> {
         let dir = self.repo(name)?;
         if dir.exists() {
             return Err(format!("repo {name} already exists"));
         }
-        let mut files: Vec<(&str, String)> = vec![
-            ("inbox.md", "# inbox\n".into()),
-            ("TODO.md", "# TODO\n".into()),
-        ];
+        let mut files: Vec<(&str, String)> = Vec::new();
         let mut dirs: Vec<&str> = Vec::new();
         match template {
-            "empty" => {}
+            "empty" => files.push(("README.md", format!("# {name}\n"))),
             "standard" | "c" => {
                 files.push(("README.md", format!("# {name}\n")));
                 dirs.extend(["docs", "issue"]);
@@ -217,12 +215,13 @@ mod tests {
     }
 
     #[test]
-    fn templates_always_have_inbox_and_todo() {
+    fn templates_hold_only_repo_files() {
         let r = scratch("tpl");
         for t in ["empty", "standard", "c"] {
             r.create(t, t).unwrap();
             let names: Vec<String> = r.tree(t, "").unwrap().into_iter().map(|e| e.name).collect();
-            assert!(names.contains(&"inbox.md".into()) && names.contains(&"TODO.md".into()), "{t}: {names:?}");
+            assert!(names.contains(&"README.md".into()), "{t}: {names:?}");
+            assert!(!names.iter().any(|n| n == "inbox.md" || n == "TODO.md"), "{t}: {names:?}");
         }
         let c: Vec<String> = r.tree("c", "").unwrap().into_iter().map(|e| e.name).collect();
         assert_eq!(c[..3], ["docs", "issue", "src"]);

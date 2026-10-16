@@ -71,8 +71,9 @@ pub fn flow(i: &Instruction) -> FlowControl {
     }
 }
 
-/// Instructions after which execution may resume from the host: the code
-/// after a system call is where a forked child starts.
+/// System calls are where the host may stop and resume a process: a call
+/// that must wait is re-executed from the syscall itself, and a forked
+/// child starts right after it. Both addresses are dispatch entries.
 pub fn resumes_after(i: &Instruction) -> bool {
     i.mnemonic() == Mnemonic::Syscall
 }
@@ -116,6 +117,7 @@ fn walk(elf: &Elf, start: u64, end: u64, extra: &[u64], function_starts: &BTreeS
             };
             instructions.insert(at, i);
             if resumes_after(&i) {
+                leaders.insert(at);
                 leaders.insert(i.next_ip());
             }
             if i.is_ip_rel_memory_operand() {
@@ -305,6 +307,7 @@ pub fn discover(elf: &Elf) -> Program {
                 mark(ret, &function);
             }
             if b.code.last().is_some_and(resumes_after) {
+                mark(b.code.last().unwrap().ip(), &function);
                 mark(b.code.last().unwrap().next_ip(), &function);
             }
         }

@@ -10,9 +10,17 @@ interrupts, a runtime x86→wasm JIT). xlat removes the machine instead:
   relocations kept by `--emit-relocs` (including position-relative jump
   tables); anything reached another way goes through an address dispatcher.
 - `runtime/` (JS) is the user-mode kernel: processes, a POSIX tree, file
-  descriptors and pipes, fork/exec/wait, and an exact 80-bit x87.
-  Processes run to completion one at a time: fork copies memory and runs
-  the child inside the parent's fork call.
+  descriptors and pipes, fork/exec/wait, and an exact 80-bit x87. System
+  calls are restartable: one that must wait (input not typed yet, a child
+  still running) unwinds and later re-executes the same `syscall`
+  instruction, so nothing blocks and no shared memory is needed. fork
+  makes the child the running process; the parent's fork returns once it
+  has exited.
+- The translator also builds as wasm (`--target wasm32-unknown-unknown
+  --lib`, wrapped by `runtime/translator.mjs`) and gives byte-identical
+  output, so a browser translates the programs it runs.
+- `userland/build-busybox.sh` builds BusyBox from the distribution's
+  pinned source and config in the form xlat takes.
 
 ```
 cargo build --release

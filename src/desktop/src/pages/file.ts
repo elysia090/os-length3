@@ -2,6 +2,7 @@ import {bytes, h} from '../dom.ts';
 import {icon} from '../icons.ts';
 import {store, type Entry} from '../repos.ts';
 import type {Context} from './context.ts';
+import {terminalFor} from './terminal.ts';
 
 /**
  * File: the repo strip on top, the repo read top to bottom in the center
@@ -15,9 +16,9 @@ export function file(ctx: Context): Node[] {
     h('section', {class: 'pane', 'aria-labelledby': 'reference-title'},
       h('h2', {id: 'reference-title'}, '参照'),
       h('div', {class: 'empty'}, 'プレビュー・diff・実行結果・関連Issueを、今の作業に合わせて切り替えて見る場所です。まだ接続していません。')),
-    h('section', {class: 'pane', 'aria-labelledby': 'terminal-title'},
-      h('h2', {id: 'terminal-title'}, 'Terminal'),
-      h('div', {class: 'empty'}, 'このrepoの環境で動くshellです。まだ接続していません。')));
+    h('section', {class: 'pane terminal', 'aria-labelledby': 'terminal-title'},
+      h('h2', {id: 'terminal-title'}, 'Terminal')));
+  const terminalPane = side.lastElementChild as HTMLElement;
 
   void store.list().then((repos) => {
     const current = ctx.repo && repos.some((r) => r.name === ctx.repo) ? ctx.repo : repos[0]?.name ?? null;
@@ -32,8 +33,10 @@ export function file(ctx: Context): Node[] {
     strip.append(add);
     if (!current) {
       flow.append(h('div', {class: 'empty'}, 'repoがありません。上の ＋ から作れます。'));
+      terminalPane.append(h('div', {class: 'empty'}, 'repoを開くと、そのrepoでshellが動きます。'));
       return;
     }
+    terminalPane.append(terminalFor(current));
     flow.append(h('h1', {class: 'flow-title'}, current));
     flow.append(directory(current, '', 0));
   });

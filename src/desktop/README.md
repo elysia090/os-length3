@@ -24,16 +24,20 @@ separate surface and nothing here depends on it.
 - **Home** is a profile, somewhere between a Twitter and a GitHub profile.
   It looks the same to its owner and to anyone else; the owner also gets
   "edit". Until accounts exist the profile is stored on this device.
-- Colours: ground `#D2D2CD`, text `#292B2A`, rules `#929590`. Flat: no
-  glow, shadows or depth effects.
+- The design language (rail order, page structure, colour roles, type,
+  spacing) is in `DESIGN.md`.
 
 ## What is real in this step
 
 - The rail, the profile (edit, validate, save locally).
 - Repos the app manages under its data directory (`repos/`). □+ creates
-  one from a template (standard, C, minimal); every repo has `inbox.md`
-  and `TODO.md`, and `git init` runs without the host's git configuration.
-  Home lists them as cards.
+  one from a template (standard, C, minimal) and runs `git init` without
+  the host's git configuration. Inbox and TODO belong to the app, not to
+  repos: TODO is a list on Home. Home lists the repos as cards.
+- Terminal (File, bottom right): translated BusyBox `sh` running on the
+  xlat kernel in a Worker, on a copy of the open repo. Changes there are
+  not written back yet, and the pane says so. Prepare its files with
+  `npm run userland` (see `scripts/userland.sh`).
 - File: the repo strip on top, then the repo read top to bottom —
   directory index, then each directory and file in order, loaded as they
   scroll near. The right half holds the reference (top) and the terminal
