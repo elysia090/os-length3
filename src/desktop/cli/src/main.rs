@@ -97,7 +97,7 @@ File
   l3 file write REPO/PATH     replace a file with standard input
 Git
   l3 git [REPO]               the issues not merged, each with what comes next
-  l3 issue REPO#N             one issue: its box, Diff, Review, Reply
+  l3 issue REPO#N             one issue: its card, its Review, Merge
   l3 issue new REPO \"Fix：title\" [-m detail]
   l3 start REPO#N             start (or continue) issue #N in its own copy
   l3 main REPO                back to main
@@ -109,6 +109,7 @@ Git
   l3 review REPO#N approve [-m note]   approve this version
   l3 merge REPO#N             main takes the change (once approved)
   l3 reject REPO#N [-m why]   main does not
+  l3 diff REPO | REPO#N       the lines: what is not committed, or the issue's change
   l3 log REPO                 the commits of what the repo shows
 Runtime
   l3 runtime                  the root, and this device by size: what can go
@@ -163,7 +164,7 @@ File
   l3 file write REPO/PATH     標準入力で既存のファイルを置き換える
 Git
   l3 git [REPO]               Merge されていない Issue と、それぞれ次にすること
-  l3 issue REPO#N             Issue ひとつ: 箱、Diff、Review、返信
+  l3 issue REPO#N             Issue ひとつ: カード、Review、Merge
   l3 issue new REPO \"Fix：件名\" [-m 詳細]
   l3 start REPO#N             Issue #N を始める（続ける）。repo はその写しになる
   l3 main REPO                main に戻る
@@ -175,6 +176,7 @@ Git
   l3 review REPO#N approve [-m メモ]   この版を承認
   l3 merge REPO#N             main に取り込む（承認のあと）
   l3 reject REPO#N [-m 理由]  取り込まない
+  l3 diff REPO | REPO#N       行で: Commit していないもの、または Issue の Change
   l3 log REPO                 repo がいま見せているもののコミット
 Runtime
   l3 runtime                  root と この端末: 容量順、空けられるもの
@@ -396,6 +398,7 @@ fn run(a: Args) -> Result<(), String> {
             out(tr!("Rejected {} (its issue stays open)", "{} を Reject しました（Issue は開いたままです）", text::named(Some(c.kind.as_str()).filter(|k| !k.is_empty()), &c.title)));
             Ok(())
         }
+        ["diff", target] => git::diff(target),
         ["log", repo] => {
             let list = history::log(&Repos::open()?, repo, 50)?;
             if a.json { return json(&list); }

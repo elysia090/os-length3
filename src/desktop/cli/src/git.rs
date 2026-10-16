@@ -67,22 +67,16 @@ pub fn state_word(s: &str) -> String {
 pub fn files(n: usize) -> String { if n == 1 { tr!("1 file", "1 ファイル") } else { tr!("{} files", "{} ファイル", n) } }
 fn commits(n: usize) -> String { if n == 1 { tr!("1 commit", "コミット 1") } else { tr!("{} commits", "コミット {}", n) } }
 
-/// Where the issue stands, quietly, in a few words.
+/// Who started it and when, quietly, as the card's foot says; a decided change says how it ended.
 fn standing(s: &Stand, i: &Issue) -> String {
     // A Prompt cannot see the Remote, so it says nothing of where the work stands.
     if super::in_prompt() { return String::new(); }
     let path = format!("issue/{}", i.file);
-    let c = change_of(s, i).map(|c| tr!("change · version {} · {}", "Change · 第 {} 版 · {}", c.version, state_word(&c.state)));
     if let (true, Some(w)) = (here(s, i), s.work.as_ref()) {
-        let mut parts = vec![tr!("{} · started {}", "{} · 開始 {}", if w.started_by.is_empty() { "—" } else { &w.started_by }, ago(w.started_at))];
-        if s.uncommitted > 0 { parts.push(tr!("{} not committed", "未 Commit {}", files(s.uncommitted))); }
-        parts.push(commits(w.commits));
-        if w.unpushed > 0 { parts.push(tr!("{} not pushed", "未 Push {}", w.unpushed)); }
-        parts.extend(c);
-        parts.push(tr!("shown here", "ここで作業中"));
-        return parts.join(" · ");
+        return tr!("{} · started {}", "{} · 開始 {}", if w.started_by.is_empty() { "—" } else { &w.started_by }, ago(w.started_at));
     }
-    if let Some(c) = c { return c; }
+    if let Some(c) = change_of(s, i).filter(|c| c.state != "open") { return tr!("change · version {} · {}", "Change · 第 {} 版 · {}", c.version, state_word(&c.state)); }
+    if change_of(s, i).is_some() { return String::new(); }
     match s.lines.iter().find(|l| l.issue == path) {
         Some(l) => tr!("{} · started {}", "{} · 開始 {}", if l.started_by.is_empty() { "—" } else { &l.started_by }, ago(l.started_at)),
         None => tr!("not started", "未着手"),
@@ -108,7 +102,7 @@ fn next(s: &Stand, i: &Issue) -> Vec<String> {
     // An undecided change, in the app's order: its Review (approve, or a comment more), then
     // Merge once this version is approved; Reject and Reset (taking it back) last.
     if let Some(c) = change.filter(|_| open) {
-        let review = format!("l3 review {me} approve|changes {}", tr!("[-m note]", "[-m メモ]"));
+        let review = format!("l3 review {me} approve {}", tr!("[-m note]", "[-m メモ]"));
         let merge = format!("l3 merge {me}");
         if c.reviews.iter().any(|r| r.version == c.version && r.verdict == "approve") { out.push(merge); out.push(review); }
         else { out.push(review); out.push(merge); }
@@ -120,11 +114,30 @@ fn next(s: &Stand, i: &Issue) -> Vec<String> {
     out
 }
 
+/// The box as the app's card shows it: the title; once worked on here (or
+/// received), Commit and Push with a check once done and what each is about;
+/// at the foot, where it lives and who started it; then what comes next.
 fn print_box(s: &Stand, i: &Issue, full: bool) {
-    out(format!("{} {}    {} · issue/{}", number(&i.file), text::named(i.kind.as_deref(), &i.title), i.repo, i.file));
+    out(format!("{} {}", number(&i.file), text::named(i.kind.as_deref(), &i.title)));
     if full && !i.detail.is_empty() { for l in i.detail.lines() { out(format!("    {l}")); } }
+    let done = |yes: bool| if yes { "✓" } else { " " };
+    let change = change_of(s, i);
+    let version = |c: &history::Change| tr!("change · version {} · {}", "Change · 第 {} 版 · {}", c.version, state_word(&c.state));
+    if !super::in_prompt() {
+        if let (true, Some(w)) = (here(s, i), s.work.as_ref()) {
+            let committed = s.uncommitted == 0 && w.commits > 0;
+            let pushed = w.commits > 0 && w.unpushed == 0 && change.is_some_and(|c| c.state == "open" || c.state == "merged");
+            let what = if s.uncommitted > 0 { tr!("{} not committed", "未 Commit {}", files(s.uncommitted)) } else { String::new() };
+            out(format!("    {} Commit  {what}", done(committed)).trim_end());
+            let push = if pushed { change.map(version).unwrap_or_default() } else if w.unpushed > 0 { tr!("{} to push", "Push 待ち {}", commits(w.unpushed)) } else { String::new() };
+            out(format!("    {} Push    {push}", done(pushed)).trim_end());
+        } else if let Some(c) = change.filter(|c| c.state == "open") {
+            out(format!("    ✓ Commit  {}", if c.submitted_by.is_empty() { "—" } else { &c.submitted_by }));
+            out(format!("    ✓ Push    {}", version(c)));
+        }
+    }
     let st = standing(s, i);
-    if !st.is_empty() { out(format!("    {st}")); }
+    out(format!("    {} · issue/{}{}", i.repo, i.file, if st.is_empty() { String::new() } else { format!(" · {st}") }));
     let n = next(s, i);
     if let Some((first, rest)) = n.split_first() {
         out(tr!("    next: {}", "    次: {}", first));
@@ -175,40 +188,70 @@ pub fn one(a: &Args, target: &str) -> Result<(), String> {
     }
     let s = stand(&r, &repo);
     print_box(&s, &i, true);
-    // Diff: what is not committed while it is worked on here, else the change as handed in.
+    // What is not committed, while it is worked on here (beside Commit in the app).
     if here(&s, &i) && s.uncommitted > 0 {
         out("");
-        out(tr!("Diff  {}", "Diff  {}", files(s.uncommitted)));
+        out(tr!("Not committed  {}  (l3 diff {} shows the lines)", "未 Commit  {}  （行は l3 diff {}）", files(s.uncommitted), repo));
         let ch = history::changes(&r, &repo)?;
         for f in &ch.folders {
             for x in &f.files { out(format!("    {}  {}", word(x.status), x.path) + &counts(x.binary, x.added as usize, x.removed as usize)); }
         }
-    } else if let Some(c) = change_of(&s, &i) {
+    }
+    // The Review, once there is a change: its diff, what was said, the approvals; then Merge.
+    if let Some(c) = change_of(&s, &i).filter(|c| c.state != "reset") {
+        let me = format!("{}{}", i.repo, number(&i.file));
         out("");
-        out(tr!("Diff  {}", "Diff  {}", files(c.files)));
+        out(tr!("Review  {}  (l3 diff {} shows the lines)", "Review  {}  （行は l3 diff {}）", files(c.files), me));
         for f in history::change_diff(&repo, &c.id, 100_000).unwrap_or_default() {
             let add = f.lines.iter().filter(|l| l.kind == "add").count();
             let del = f.lines.iter().filter(|l| l.kind == "del").count();
             out(format!("    {}  {}", word(f.status), f.path) + &counts(f.binary, add, del));
         }
+        // What was said, in order; an approval without words is the check below, not a line here.
+        for rv in c.reviews.iter().rev().filter(|r| !(r.verdict == "approve" && r.note.is_empty())) {
+            let of = if rv.version != c.version { tr!(" (version {}, older)", "（第 {} 版、古い版）", rv.version) } else { String::new() };
+            let asked = if rv.verdict == "changes" { tr!(" asked for changes", " 変更を依頼") } else { String::new() };
+            out(format!("    {} · {}{asked}{of}: {}", rv.by, ago(rv.time), rv.note));
+        }
+        let approvals: Vec<&str> = c.reviews.iter().filter(|r| r.version == c.version && r.verdict == "approve").map(|r| r.by.as_str()).collect();
+        if c.state == "open" {
+            out(if approvals.is_empty() { tr!("    ○ Approve  (l3 review {} approve)", "    ○ 承認  （l3 review {} approve）", me) } else { tr!("    ✓ Approved", "    ✓ 承認済み") });
+            out("");
+            out(if approvals.is_empty() { tr!("Merge  not approved yet · Reject: l3 reject {}", "Merge  まだ承認されていません · Reject: l3 reject {}", me) }
+                else { tr!("Merge  approved by {} (l3 merge {}) · Reject: l3 reject {}", "Merge  {} が承認（l3 merge {}） · Reject: l3 reject {}", approvals.join(", "), me, me) });
+        }
     }
-    if let Some(c) = change_of(&s, &i) {
-        let reviews: Vec<_> = c.reviews.iter().filter(|r| r.verdict != "comment").collect();
-        if !reviews.is_empty() {
-            out("");
-            out(tr!("Review", "Review"));
-            for rv in reviews {
-                let verdict = if rv.verdict == "approve" { tr!("approved", "が承認") } else { tr!("asked for changes", "が変更を依頼") };
-                let of = if rv.version != c.version { tr!(" (version {}, older)", "（第 {} 版、古い版）", rv.version) } else { String::new() };
-                out(format!("    {} {}{}{}", rv.by, verdict, of, if rv.note.is_empty() { String::new() } else { format!(": {}", rv.note) }));
-            }
+    Ok(())
+}
+
+/// `l3 diff REPO` (what is not committed) or `l3 diff REPO#N` (its change as handed in): each
+/// file with what was added and removed, and its lines, each with which line it is, as the app shows them.
+pub fn diff(target: &str) -> Result<(), String> {
+    let r = Repos::open()?;
+    let files = if target.contains('#') {
+        let (repo, file) = issue_ref(&r, target)?;
+        let s = stand(&r, &repo);
+        let path = format!("issue/{file}");
+        let i = s.changes.iter().find(|c| c.issue == path);
+        match i {
+            Some(c) => history::change_diff(&repo, &c.id, 100_000)?,
+            None => return Err(tr!("{} has no change yet (l3 push {} hands it in)", "{} にはまだ Change がありません（l3 push {} で渡します）", target, repo)),
         }
-        let replies: Vec<_> = c.reviews.iter().filter(|r| r.verdict == "comment").collect();
-        if !replies.is_empty() {
-            out("");
-            out(tr!("Reply", "返信"));
-            for rv in replies.iter().rev() { out(format!("    {} · {}: {}", rv.by, ago(rv.time), rv.note)); }
+    } else {
+        history::diff(&r, target.trim_start_matches("/root/"), 100_000)?
+    };
+    if files.is_empty() { out(tr!("No changes", "変更はありません")); }
+    for f in &files {
+        let add = f.lines.iter().filter(|l| l.kind == "add").count();
+        let del = f.lines.iter().filter(|l| l.kind == "del").count();
+        out(format!("{}  {}", f.path, counts(f.binary, add, del).trim_start()));
+        for l in f.lines.iter().enumerate().filter(|(k, l)| !(*k == 0 && l.kind == "hunk")).map(|(_, l)| l) {
+            let mark = match l.kind { "add" => '+', "del" => '-', "hunk" => '…', _ => ' ' };
+            let at = l.at.map(|n| n.to_string()).unwrap_or_default();
+            out(if l.kind == "hunk" { format!("  {:>5}  …", "") } else { format!("  {at:>5} {mark} {}", l.text) });
         }
+        if f.more > 0 { out(tr!("  {} more lines", "  ほか {} 行", f.more)); }
+        out("");
     }
     Ok(())
 }
