@@ -21,6 +21,8 @@
   --motion: 120ms; --move: 280ms;
   /* Lines are 1px; the file being worked on is drawn a little heavier. */
   --line-work: 1.5px;
+  /* Forge's extra room on its outer sides, so the work sits a little inward. */
+  --outer: clamp(var(--s5), 3vw, 64px);
   /* Forge's band of repo chips sits this far down, between Home and the next rail icon. */
   --band: 64px;
   --rail: 72px;
@@ -215,8 +217,10 @@ a { color: var(--ink); }
    of the way. The only line is the one between the center and the side. */
 .page.page-work { padding: 0; height: 100vh; overflow: hidden; }
 .page.page-work > .work { max-width: none; }
+/* Pulled a little toward the middle: generous room on the outer sides,
+   against the instinct to run to the window's edges. */
 .work {
-  height: 100vh; display: grid;
+  height: 100vh; display: grid; padding-inline: var(--outer);
   grid-template-columns: minmax(0, 3fr) minmax(280px, 1fr); grid-template-rows: auto minmax(0, 1fr);
 }
 /* The band sits low: its chips line up between Home and the next rail icon. */

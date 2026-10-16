@@ -85,6 +85,10 @@ is labelled Prompt, after what one does there (the shell is BusyBox sh, so
 it is not called Bash); leaving the prompt
 (or Escape) sends it back the same way.
 
+The whole of Forge sits a little inward: its outer sides get extra room
+(about 3% of the width, 24–64 px) on top of the usual padding, against the
+instinct to run to the window's edges.
+
 The center takes three quarters of the width; the right pane takes one
 quarter (at least 280 px) so it never gets in the way. Its bottom is the
 terminal's home. Above the band line sits the search box for the open
