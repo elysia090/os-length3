@@ -195,6 +195,85 @@ pub fn log(dir: &Path, n: usize) -> Result<Vec<Commit>> {
     Ok(out)
 }
 
+/// One line of a file's difference: "hunk" (where), "add", "del" or "same".
+#[derive(Serialize, Debug, Clone, PartialEq)]
+pub struct DiffLine {
+    pub kind: &'static str,
+    pub text: String,
+}
+
+#[derive(Serialize, Debug, Clone, PartialEq)]
+pub struct FileDiff {
+    pub path: String,
+    pub status: &'static str,
+    pub binary: bool,
+    pub lines: Vec<DiffLine>,
+    /// Lines left out past the limit.
+    pub more: usize,
+}
+
+/// The changes not yet cut, line by line, against the last cut (or nothing
+/// yet), at most `limit` lines in all. A file git does not track yet is
+/// shown from the file itself; reading never touches the index.
+pub fn diff(dir: &Path, limit: usize) -> Result<Vec<FileDiff>> {
+    let c = changes(dir)?;
+    let head = has_head(dir);
+    let mut left = limit;
+    let mut out = Vec::new();
+    for f in c.folders.into_iter().flat_map(|f| f.files) {
+        let mut lines = Vec::new();
+        if f.binary {
+            // Shown by name only.
+        } else if f.status == "added" && !tracked(dir, &f.path) {
+            let text = std::fs::read(dir.join(&f.path)).map(|b| String::from_utf8_lossy(&b).into_owned()).unwrap_or_default();
+            lines.push(DiffLine { kind: "hunk", text: format!("@@ -0,0 +1,{} @@", f.added) });
+            lines.extend(text.lines().map(|l| DiffLine { kind: "add", text: l.to_string() }));
+        } else {
+            let base = if head { "HEAD" } else { EMPTY_TREE };
+            let spec = format!(":(literal){}", f.path);
+            let text = git(dir, &["-c", "core.quotepath=off", "diff", "--no-color", "--no-ext-diff", "--no-renames", "-U3", base, "--", &spec])?;
+            let mut body = false;
+            for l in text.lines() {
+                if l.starts_with("@@") { body = true; lines.push(DiffLine { kind: "hunk", text: l.to_string() }); continue; }
+                if !body { continue; }
+                let (kind, rest) = match l.as_bytes().first() {
+                    Some(b'+') => ("add", &l[1..]),
+                    Some(b'-') => ("del", &l[1..]),
+                    Some(b' ') => ("same", &l[1..]),
+                    _ => continue, // "\ No newline at end of file"
+                };
+                lines.push(DiffLine { kind, text: rest.to_string() });
+            }
+        }
+        let keep = lines.len().min(left);
+        let more = lines.len() - keep;
+        lines.truncate(keep);
+        left -= keep;
+        out.push(FileDiff { path: f.path, status: f.status, binary: f.binary, lines, more });
+    }
+    Ok(out)
+}
+
+fn tracked(dir: &Path, path: &str) -> bool {
+    let spec = format!(":(literal){path}");
+    git(dir, &["ls-files", "--error-unmatch", "--", &spec]).is_ok()
+}
+
+/// Cut in `repo`: under the issue `issue` (its file name in issue/), named
+/// after it, or without one, named by `line`. The author is the Home profile.
+pub fn cut_in(r: &crate::repos::Repos, repo: &str, issue: Option<&str>, line: &str, note: &str) -> Result<Commit> {
+    let dir = r.dir(repo)?;
+    let (name, email) = author();
+    match issue {
+        Some(file) => {
+            let file = file.trim_start_matches("issue/");
+            let text = r.read(repo, &format!("issue/{file}"), 256 * 1024)?.text.ok_or("Issue がバイナリです")?;
+            cut_under(&dir, &crate::issues::parse(repo, file, &text), note, (&name, &email))
+        }
+        None => commit(&dir, line, note, None, (&name, &email)),
+    }
+}
+
 /// Who makes changes definite: the Home profile's name and handle.
 pub fn author() -> (String, String) {
     let p: serde_json::Value = crate::home::get("profile").ok().flatten()
@@ -236,5 +315,14 @@ mod tests {
         assert_eq!((log[0].issue.as_deref(), log[1].issue.as_deref()), (Some("issue/001.md"), None));
         assert_eq!(log[0].folders, ["src"]);
         assert_eq!(log[0].author, "Ren");
+        std::fs::write(dir.join("src/main.c"), "int main(void) { return 2; }\n").unwrap();
+        std::fs::write(dir.join("new.txt"), "a\nb\n").unwrap();
+        let d = diff(&dir, 100).unwrap();
+        let main = d.iter().find(|f| f.path == "src/main.c").unwrap();
+        assert!(main.lines.iter().any(|l| l.kind == "del" && l.text.contains("return 1")), "{main:?}");
+        assert!(main.lines.iter().any(|l| l.kind == "add" && l.text.contains("return 2")));
+        let new = d.iter().find(|f| f.path == "new.txt").unwrap();
+        assert_eq!(new.lines.iter().filter(|l| l.kind == "add").count(), 2);
+        assert_eq!(diff(&dir, 1).unwrap().iter().map(|f| f.lines.len()).sum::<usize>(), 1);
     }
 }

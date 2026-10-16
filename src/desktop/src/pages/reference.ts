@@ -1,5 +1,6 @@
 import {h} from '../dom.ts';
-import {store} from '../repos.ts';
+import * as gitops from '../git.ts';
+import {onChange, store} from '../repos.ts';
 import {findInText, nameMatches, type Hit} from '../search.ts';
 
 // The top of Forge's right pane: a search box over the band line, then one
@@ -85,6 +86,13 @@ export class Reference {
     form.addEventListener('submit', (event) => event.preventDefault());
     this.element = h('section', {class: 'pane reference', 'aria-label': '参照'}, form, bar, this.body);
     this.choose(this.view);
+    // The diff follows what is saved, here or in the Prompt.
+    const stop = onChange((c) => {
+      if (!this.element.isConnected) { stop(); return; }
+      if (c.repo !== this.repo || this.view !== 'diff' || this.pinned || this.query.value.trim()) return;
+      clearTimeout(this.timer);
+      this.timer = window.setTimeout(() => this.paint(), 250);
+    });
   }
 
   /** The repo Forge shows. */
@@ -129,7 +137,7 @@ export class Reference {
     this.mark();
     if (this.query.value.trim()) { void this.search(this.query.value.trim()); return; }
     if (this.view === 'issue') void this.issues();
-    else if (this.view === 'diff') this.empty('diff はまだありません。保存した変更をrepoの前の状態と比べられるようになると、ここに出ます。');
+    else if (this.view === 'diff') void this.diff();
     else this.empty('実行結果はまだ接続していません。今はPromptに直接出ます。');
   }
 
@@ -165,6 +173,30 @@ export class Reference {
           return b;
         }));
       }));
+  }
+
+  /** The changes not yet cut, file by file, line by line. */
+  private async diff() {
+    const repo = this.repo;
+    if (!repo) { this.empty('repoを開くと、その変更が出ます。'); return; }
+    if (!gitops.hasGit) { this.empty('diff はデスクトップ版で出ます。'); return; }
+    const run = ++this.run;
+    let files: gitops.FileDiff[];
+    try { files = await gitops.diff(repo); } catch (e) {
+      if (run === this.run) this.body.replaceChildren(h('p', {class: 'error'}, e instanceof Error ? e.message : String(e)));
+      return;
+    }
+    if (run !== this.run || repo !== this.repo || this.view !== 'diff' || this.query.value.trim() || this.pinned) return;
+    if (!files.length) { this.body.replaceChildren(h('p', {class: 'muted small'}, '変更はありません')); return; }
+    this.body.replaceChildren(...files.map((f) => {
+      const name = h('button', {type: 'button', class: 'hit-file'}, f.path);
+      if (f.status !== 'removed') name.addEventListener('click', () => this.events.reveal(f.path));
+      const lines = f.binary ? [h('p', {class: 'muted small'}, 'バイナリ')] : f.lines.filter((l, k) => k > 0 || l.kind !== 'hunk').map((l) =>
+        // Between two parts of a file, a quiet "…" (with the function git names, if any).
+        h('div', {class: `diff-line ${l.kind}`}, l.kind === 'hunk' ? l.text.replace(/^@@ [^@]* @@ ?/, '') || '…' : l.text || ' '));
+      if (f.more) lines.push(h('p', {class: 'muted small'}, `ほか ${f.more} 行`));
+      return h('div', {class: 'hit-group'}, name, h('div', {class: 'diff'}, ...lines));
+    }));
   }
 
   /** The repo's issue/ directory, one line per file. */

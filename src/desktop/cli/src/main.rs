@@ -148,25 +148,13 @@ fn run(a: Args) -> Result<(), String> {
         ["issue", target] if target.trim_end_matches('/').contains('/') => issue_one(&a, target),
         ["issue", repo] => issues(&a, Some(repo), false),
         ["git", "changes", repo] => git_status(&a, repo),
-        ["git", "cut", repo, line] => {
-            let r = Repos::open()?;
-            r.tree(repo, "")?;
-            let (name, email) = git::author();
-            cut_done(&a, git::commit(&r.root().join(repo), line, &a.detail, None, (&name, &email))?)
-        }
+        ["git", "cut", repo, line] => cut_done(&a, git::cut_in(&Repos::open()?, repo, None, line, &a.detail)?),
         ["issue", "cut", target] => {
             let (repo, rel) = split(target);
-            let file = rel.trim_start_matches("issue/").to_string();
-            let r = Repos::open()?;
-            let c = r.read(&repo, &format!("issue/{file}"), 256 * 1024)?;
-            let i = length3_core::issues::parse(&repo, &file, &c.text.ok_or("バイナリです")?);
-            let (name, email) = git::author();
-            cut_done(&a, git::cut_under(&r.root().join(&repo), &i, &a.detail, (&name, &email))?)
+            cut_done(&a, git::cut_in(&Repos::open()?, &repo, Some(&rel), "", &a.detail)?)
         }
         ["git", "cuts", repo] => {
-            let r = Repos::open()?;
-            r.tree(repo, "")?;
-            let list = git::log(&r.root().join(repo), 50)?;
+            let list = git::log(&Repos::open()?.dir(repo)?, 50)?;
             if a.json { return json(&list); }
             if list.is_empty() { out("区切った変更はまだありません"); }
             for c in &list { cut_line(repo, c); }
@@ -317,9 +305,7 @@ fn ago(ms: u64) -> String {
 
 /// What is not yet definite, folder by folder, as Git shows it.
 fn git_status(a: &Args, repo: &str) -> Result<(), String> {
-    let r = Repos::open()?;
-    r.tree(repo, "")?;
-    let c = git::changes(&r.root().join(repo))?;
+    let c = git::changes(&Repos::open()?.dir(repo)?)?;
     if a.json { return json(&c); }
     if !c.git { out(format!("{repo} には .git がありません")); return Ok(()); }
     if c.files == 0 { out("まだ区切っていない変更はありません"); return Ok(()); }
@@ -346,7 +332,7 @@ fn issue_one(a: &Args, target: &str) -> Result<(), String> {
     out(format!("{} · issue/{}", i.repo, i.file));
     if !i.detail.is_empty() { out(""); out(&i.detail); }
     let path = format!("issue/{}", i.file);
-    let cuts: Vec<git::Commit> = git::log(&r.root().join(&repo), 200)?.into_iter().filter(|c| c.issue.as_deref() == Some(&path)).collect();
+    let cuts: Vec<git::Commit> = git::log(&r.dir(&repo)?, 200)?.into_iter().filter(|c| c.issue.as_deref() == Some(&path)).collect();
     out("");
     if cuts.is_empty() { out("この Issue の区切りはまだありません（l3 issue cut で区切れます）"); }
     for c in &cuts { cut_line(&repo, c); }

@@ -92,8 +92,10 @@ parts, the Prompt 3): the reference scrolls and the Prompt does not, so the
 eye should not have to drop low to find it. On the band's line sits the search box for the open
 repo: plain, case-insensitive, line by line; results are grouped by file,
 and a line pressed opens the center there with the line selected. Below,
-on the band line, one reference at a time, switched freely with chips: Issue (the repo's `issue/`, one file each), diff and 実行結果 (each
-says plainly that it is not connected yet). The chosen reference is remembered on this device.
+on the band line, one reference at a time, switched freely with chips: Issue (the repo's `issue/`, one file each), diff (the changes not yet
+cut, file by file: added lines raised, removed lines quiet and struck,
+following every save; desktop only, as git is) and 実行結果 (it says plainly
+that it is not connected yet). The chosen reference is remembered on this device.
 
 ### Runtime
 

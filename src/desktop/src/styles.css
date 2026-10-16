@@ -387,6 +387,14 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .hit-file { min-height: var(--h-row); font: 600 var(--t-meta) var(--mono); }
 .hit { display: grid; grid-template-columns: 4ch minmax(0, 1fr); gap: var(--s2); font: var(--t-meta)/1.6 var(--mono); }
 .hit-file:hover, .hit:hover { background: var(--raised); }
+/* diff: added lines raised, removed lines quiet and struck, no colours of their own. */
+.diff { display: grid; font: var(--t-meta)/1.6 var(--mono); }
+.diff-line { padding: 0 var(--s1); white-space: pre-wrap; overflow-wrap: anywhere; }
+.diff-line.add { background: var(--raised); }
+.diff-line.del { color: var(--sub); text-decoration: line-through; }
+.diff-line.same { color: var(--sub); }
+.diff-line.hunk { color: var(--sub); margin-top: var(--s2); }
+.diff-line.hunk:first-child { margin-top: 0; }
 .hit-line { color: var(--sub); text-align: right; font-variant-numeric: tabular-nums; }
 .hit-text { white-space: pre; overflow: hidden; text-overflow: ellipsis; }
 mark { background: var(--ink); color: var(--ground); }

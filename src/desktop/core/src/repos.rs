@@ -67,6 +67,14 @@ impl Repos {
         Ok(self.root.join(name))
     }
 
+    /// The repo's own directory, once its name is checked and it exists.
+    pub fn dir(&self, repo: &str) -> Result<PathBuf> {
+        if !self.repo(repo)?.is_dir() {
+            return Err(format!("repo {repo} はありません"));
+        }
+        self.inside(repo, "")
+    }
+
     /// A path inside `repo`; `..`, absolute paths and symlinks that lead out
     /// of the repo are refused.
     fn inside(&self, repo: &str, relative: &str) -> Result<PathBuf> {

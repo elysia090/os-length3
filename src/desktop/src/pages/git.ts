@@ -112,7 +112,7 @@ export function git(ctx: Context): Node[] {
     h('section', {class: 'section', 'aria-labelledby': 'handed-title'},
       h('h2', {id: 'handed-title'}, '提出された変更'),
       h('div', {class: 'empty'}, 'Remote とつながると、ここに届きます')));
-  const workbench = bench({main, reveal: () => {}});
+  const workbench = bench({main, reveal: (path) => { if (at) ctx.openRepo(at, path); }});
   // Issues written anywhere (here, in the shell, with l3 in the Prompt) show
   // up at once, and any change in the repo looked at is read again.
   const stop = onChange((c) => {
