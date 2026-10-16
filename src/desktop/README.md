@@ -40,8 +40,10 @@ separate surface and nothing here depends on it.
   `npm run userland` (see `scripts/userland.sh`).
 - Forge: the repos as chips across the top, the open repo read top to
   bottom like a page (each directory and file in order, loaded as they
-  scroll near), and the reference (top, not connected yet) and terminal
-  (bottom) on the right. No tabs: files are chosen from File.
+  scroll near) in three quarters of the width, and a narrow right pane:
+  a reference switched with chips on top (the current file and the repo's
+  `issue/` are real; diff and run output say they are not connected yet)
+  and the terminal below. No tabs: files are chosen from File.
 - File: hovering or pressing its icon lays the tree of "/" over any page —
   the whole system as the shell sees it (`/bin` from the fetched
   distribution, repos under `/root`) — and it stays 8 s after the pointer

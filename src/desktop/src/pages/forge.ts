@@ -1,13 +1,15 @@
 import {bytes, h} from '../dom.ts';
 import {store, type Entry} from '../repos.ts';
 import type {Context} from './context.ts';
+import {Reference} from './reference.ts';
 import {terminalFor} from './terminal.ts';
 
 /**
  * Forge, the place you work: the repos as a strip of chips across the top,
  * the open repo read like a page in a browser in the large center (scrolled
- * to the file chosen in File), and the reference and terminal on the right
- * at the same weight. There are no tabs here; files are chosen from File.
+ * to the file chosen in File), and a narrow right pane that stays out of the
+ * way: a reference switched freely on top, the terminal below. There are no
+ * tabs here; files are chosen from File.
  */
 
 /** A path to scroll to once Forge is drawn. */
@@ -31,12 +33,33 @@ export function forge(ctx: Context): Node[] {
   const flow = h('section', {class: 'flow', tabindex: '0', 'aria-label': 'repoの中身'});
   const terminalTitle = h('h2', {id: 'terminal-title'}, 'Terminal');
   const terminalPane = h('section', {class: 'pane terminal', 'aria-labelledby': 'terminal-title'}, terminalTitle);
-  const side = h('aside', {class: 'side', 'aria-label': '参照とターミナル'},
-    h('section', {class: 'pane', 'aria-labelledby': 'reference-title'},
-      h('h2', {id: 'reference-title'}, '参照'),
-      h('div', {class: 'empty'}, 'プレビュー・diff・実行結果・関連Issueを、今の作業に合わせて切り替えて見る場所です。まだ接続していません。')),
-    terminalPane);
+  const reference = new Reference({reveal: (path) => { chosen = path; soon(); void reader?.reveal(path); }});
+  const side = h('aside', {class: 'side', 'aria-label': '参照とターミナル'}, reference.element, terminalPane);
   const work = h('div', {class: 'work'}, strip, flow, side);
+
+  // The reference follows the file at the top of the center as it scrolls,
+  // or the file just chosen in File until the person scrolls themselves
+  // (a short file near the end may never reach the top).
+  let frame = 0;
+  let chosen: string | null = null;
+  const follow = () => {
+    frame = 0;
+    const top = flow.getBoundingClientRect().top + 48;
+    let at: HTMLElement | null = chosen ? flow.querySelector<HTMLElement>(`section.file[data-path="${CSS.escape(chosen)}"]`) : null;
+    if (!at) for (const f of flow.querySelectorAll<HTMLElement>('section.file')) {
+      const r = f.getBoundingClientRect();
+      if (r.top <= top + 1 && r.bottom > top) { at = f; break; }
+      if (r.top > top) { at ??= f; break; }
+    }
+    reference.setFile(at ? {path: at.dataset.path!, size: Number(at.dataset.size),
+      lines: at.dataset.lines ? Number(at.dataset.lines) : null} : null);
+  };
+  const soon = () => { frame ||= requestAnimationFrame(follow); };
+  flow.addEventListener('scroll', soon, {passive: true});
+  for (const type of ['wheel', 'keydown', 'touchmove']) {
+    flow.addEventListener(type, () => { chosen = null; }, {passive: true});
+  }
+  new MutationObserver(soon).observe(flow, {subtree: true, childList: true, attributes: true, attributeFilter: ['data-lines']});
 
   /** Show `repo` in the strip, the center and the terminal, in place. */
   const show = (repo: string, path = '') => {
@@ -46,11 +69,12 @@ export function forge(ctx: Context): Node[] {
         if (chip.dataset.repo === repo) chip.setAttribute('aria-current', 'page'); else chip.removeAttribute('aria-current');
       }
       reader = new Reader(repo);
+      reference.setRepo(repo);
       flow.replaceChildren(h('h1', {class: 'flow-title'}, repo), reader.directory('', 0));
       flow.scrollTop = 0;
       terminalPane.replaceChildren(terminalTitle, terminalFor(repo));
     }
-    if (path) void reader.reveal(path);
+    if (path) { chosen = path; soon(); void reader.reveal(path); }
   };
   live = {element: work, show};
 
@@ -126,7 +150,7 @@ class Reader {
   }
 
   private file(path: string, entry: Entry): HTMLElement {
-    const section = h('section', {class: 'file', 'data-path': path},
+    const section = h('section', {class: 'file', 'data-path': path, 'data-size': String(entry.size)},
       h('h2', {class: 'path'}, path, h('span', {class: 'muted'}, bytes(entry.size))));
     this.sections.set(path, section);
     const body = h('pre', {class: 'code'}, '…');
@@ -137,6 +161,7 @@ class Reader {
         const c = await store.read(this.repo, path);
         if (c.text === null) { body.replaceWith(h('p', {class: 'muted'}, `バイナリ · ${bytes(c.size)}`)); return; }
         body.textContent = c.text || '（空）';
+        section.dataset.lines = String(c.text ? c.text.split('\n').length - (c.text.endsWith('\n') ? 1 : 0) : 0);
         if (c.truncated) section.append(h('p', {class: 'muted'}, `先頭 ${bytes(new TextEncoder().encode(c.text).length)} だけ表示しています（全体 ${bytes(c.size)}）`));
       } catch (e) {
         body.textContent = String(e);

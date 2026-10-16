@@ -49,7 +49,7 @@ a { color: var(--ink); }
 .rail-item:hover, .button:hover, .choice:hover, .chip:hover, .tree-row:hover, .todo-mark:hover,
 .card.repo:hover, .card.new:hover { background: var(--raised); }
 .rail-item[aria-selected='true'], .button.primary, .choice:has(input:checked),
-.chip[aria-current='page'], .tree-row:has(> [aria-current='page']),
+.chip[aria-current], .tree-row:has(> [aria-current='page']),
 .rail-item[aria-expanded='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 
 /* ---- 1. Rail ---- */
@@ -184,17 +184,19 @@ a { color: var(--ink); }
 .legend { margin-top: var(--s3); display: flex; flex-wrap: wrap; gap: var(--s5); }
 .legend b { font-size: var(--t-card); font-weight: 600; display: block; }
 
-/* Forge: the repo chips on top, the center read like a page, and the side
-   at equal weight. */
+/* Forge: the repo chips on top, the center read like a page (3/4), and a
+   narrow side (1/4) that stays out of the way. */
 .page.page-work { padding: 0; height: 100vh; overflow: hidden; }
 .page.page-work > .work { max-width: none; }
-.work { height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+.work { height: 100vh; display: grid; grid-template-columns: minmax(0, 3fr) minmax(280px, 1fr); grid-template-rows: auto minmax(0, 1fr); }
 .repo-strip { grid-column: 1 / -1; display: flex; gap: var(--s2); align-items: center; padding: var(--s3) var(--s5); border-bottom: 1px solid var(--rule); overflow-x: auto; }
 /* A chip picks one of several, like the template choice: round, outlined. */
 .chip {
   flex: none; min-height: var(--h-row); padding: 0 var(--s4); border: 1px solid var(--edge); border-radius: var(--r-round);
   background: transparent; cursor: pointer; white-space: nowrap;
 }
+.chips { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.chip.small-chip { padding: 0 var(--s3); font-size: var(--t-meta); }
 .flow { overflow-y: auto; padding: var(--s5) var(--s5) var(--s6); border-right: 1px solid var(--rule); }
 .flow:focus-visible { outline-offset: -2px; }
 .flow-title { font-size: var(--t-title); font-weight: 700; margin-bottom: var(--s3); }
@@ -209,6 +211,15 @@ a { color: var(--ink); }
 .dir > .path { justify-content: start; }
 .code { margin: 0; padding: var(--s3) 0; font: var(--t-meta)/1.6 var(--mono); white-space: pre; overflow-x: auto; tab-size: 4; }
 .side { display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); min-height: 0; }
+.pane.reference { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: var(--s3); }
+.reference-body { min-height: 0; overflow: auto; }
+.reference-body .empty { margin-top: 0; padding: var(--s5) var(--s4); }
+.facts { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: var(--s1) var(--s3); margin: 0; }
+.facts dt { color: var(--sub); font-size: var(--t-meta); }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+.mono { font-family: var(--mono); font-size: var(--t-meta); }
+.issue-list { list-style: none; margin: 0; padding: 0; }
+.link { border: 0; padding: var(--s1) 0; background: transparent; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; text-align: left; }
 .pane { padding: var(--s5); overflow: auto; min-height: 0; }
 .pane + .pane { border-top: 1px solid var(--rule); }
 .pane h2 { font-size: var(--t-body); font-weight: 600; }

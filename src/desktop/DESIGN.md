@@ -50,9 +50,15 @@ Where you work. The repos run across the top as chips, like the topic
 chips over a video list; the chosen one is filled. The large center reads
 the repo like one long page in a browser, every directory and file in
 order, and scrolls to the file chosen in File. There are no tabs and no
-index of links here: files are chosen from File, which is quicker. The
-right half holds the reference (top) and the terminal (bottom) at the same
-weight as the center.
+index of links here: files are chosen from File, which is quicker.
+
+The center takes three quarters of the width; the right pane takes one
+quarter (at least 280 px) so it never gets in the way. Its bottom is the
+terminal. Its top is one reference at a time, switched freely with chips:
+いまのfile (name, its place in "/", size and lines of the file at the top
+of the center, or the one just chosen in File), Issue (the repo's
+`issue/`, one file each), diff and 実行結果 (each says plainly that it is
+not connected yet). The chosen reference is remembered on this device.
 
 ### File
 
