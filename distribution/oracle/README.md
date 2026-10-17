@@ -129,10 +129,11 @@ advertised instruction or exactly masked native CPU execution.
 
 ## Daemon, package and ptrace checks in an isolated guest
 
-These run from the repository root inside an isolated Linux guest: they read
-`distribution/sources.env` and the archives under `distribution/upstream/`.
-The runner that started them in a fresh reference image,
-`check-linux-selfhost.mjs`, was removed with the browser VM.
+These run from the repository root inside an isolated Linux guest; they use
+repository-relative paths, and the first two read `distribution/sources.env`
+and archives under `distribution/upstream/`. The runner that started them in a
+fresh reference image, `check-linux-selfhost.mjs`, was removed with the
+browser VM.
 
 `check-dhcp-publication.sh` rebuilds the pinned
 official dhcpcd and tests original/current-postlink ELFs through actual
@@ -291,5 +292,5 @@ overlays remain permitted only when those flags are overwritten before use.
 The C-Wasm browser VM, its cold Wasm compiler and their checks were removed
 in 9792f53; the observers, fixtures and comparators here that only drove them
 followed. Their receipts stay in
-[`releases/native/evidence/`](../../releases/native/evidence/) (2026-10-02 to
-2026-10-10).
+[`releases/native/evidence/`](../../releases/native/evidence/) (the pages dated
+2026-10-03 to 2026-10-11).
