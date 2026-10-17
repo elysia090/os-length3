@@ -84,7 +84,8 @@ export interface Held { processes: number; memory: number }
 /** How a Prompt stopped: what it held, what was left, how long until none. */
 export interface Stopped { before: Held; left: number; ms: number | null }
 
-export const rootStatus = (): Promise<RootStatus | null> => (isNative ? native<RootStatus>('root_status').catch(() => null) : Promise.resolve(null));
+/** The roots this machine holds (the app only; a browser has none). */
+export const rootStatus = (): Promise<RootStatus | null> => (isNative ? native<RootStatus>('root_status') : Promise.resolve(null));
 
 /** Fetch and install the release root, hearing how far it is. */
 export async function rootFetch(progress: (got: number, of: number, retry: string | null) => void): Promise<Installed> {

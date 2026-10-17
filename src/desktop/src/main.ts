@@ -163,7 +163,7 @@ if (asking.has('device')) {
     // Back from a provider: take up the session it made, then go on as usual.
     if (asking.has('signed-in')) {
       const {claim} = await import('./remote.ts');
-      await claim().catch(() => false);
+      await claim();
       const u = new URL(location.href);
       u.searchParams.delete('signed-in');
       history.replaceState(null, '', u);

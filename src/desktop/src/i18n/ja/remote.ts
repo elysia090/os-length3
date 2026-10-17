@@ -7,6 +7,7 @@ export default {
   'The Remote cannot be reached. What changes here is sent once it can.': 'Remote に届きません。ここでの変更は、届くようになりしだい送られます',
   'The Remote no longer knows this device. Sign in again.': 'Remote がこの端末を覚えていません。もう一度サインインしてください',
   'Could not sign in': 'サインインできませんでした',
+  'The provider did not sign you in. Try again.': 'プロバイダーでサインインできませんでした。もう一度どうぞ',
   'The passkey was not made.': 'パスキーの作成をやめました',
   'Could not make a passkey ({why}).': 'パスキーを作れませんでした（{why}）',
   'Signing in was stopped.': 'サインインをやめました',

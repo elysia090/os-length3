@@ -118,21 +118,25 @@ export function git(ctx: Context): Node[] {
     // Where each repo stands: the work it shows, the issues started, the changes to main.
     const fresh = new Map<string, RepoState>();
     if (connection()) await Promise.all([...new Set(issues.map((i) => i.repo))].map(async (r) => {
-      let {work, lines, changes} = await gitops.standing(r);
-      // A work whose change was merged (here or on another device) is done: the repo shows main again.
-      if (work && work.line !== 'main' && changes.some((c) => c.line === work!.line && c.state === 'merged')) {
-        await gitops.switchWork(r, 'main').catch(() => {});
-        work = await gitops.work(r).catch(() => null);
+      try {
+        let {work, lines, changes} = await gitops.standing(r);
+        // A work whose change was merged (here or on another device) is done: the repo shows main again.
+        if (work.line !== 'main' && changes.some((c) => c.line === work.line && c.state === 'merged')) {
+          await gitops.switchWork(r, 'main');
+          work = await gitops.work(r);
+        }
+        const uncommitted = work.line !== 'main' ? (await gitops.changes(r)).files : 0;
+        fresh.set(r, {work, lines, changes, uncommitted});
+      } catch (e) {
+        fresh.set(r, {work: null, lines: [], changes: [], uncommitted: 0, error: e instanceof Error ? e.message : String(e)});
       }
-      const uncommitted = work && work.line !== 'main' ? (await gitops.changes(r).catch(() => null))?.files ?? 0 : 0;
-      fresh.set(r, {work, lines, changes, uncommitted});
     }));
     states = fresh;
     // An issue without a number (written by hand, or two devices' met under one) takes the next free one;
     // the store's change draws the page again. Not on main's behalf while a work is shown: that copy is the work's.
     const renumbered = await Promise.all([...new Set(issues.filter((i) => i.n === null).map((i) => i.repo))].map((r) => {
       const st = states.get(r);
-      if (!st || (st.work && st.work.line !== 'main')) return false;
+      if (!st || st.error || (st.work && st.work.line !== 'main')) return false;
       const inUse = new Set([...st.lines.map((l) => l.issue), ...st.changes.map((c) => c.issue)]);
       return number(store, r, issues.filter((i) => i.repo === r), inUse);
     }));

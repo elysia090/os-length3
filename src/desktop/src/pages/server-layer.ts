@@ -180,6 +180,7 @@ export class ServerLayer {
     const at = remembered();
     const writers: (() => boolean)[] = [];
     this.writing = () => writers.some((f) => f());
+    // Who one is, to mark oneself among the people; not known (away), no one is marked, and nothing else changes.
     const myself = signedIn ? import('../inbox.ts').then((inbox) => inbox.me()).catch(() => null) : Promise.resolve(null);
     const isMe = async (address: string) => !!(await myself)?.addresses.some((a) => a.address === address);
     const current = () => list.find((s) => s.id === serverId) ?? null;
@@ -262,6 +263,7 @@ export class ServerLayer {
       const again = window.setInterval(async () => {
         if (!holder.isConnected) { clearInterval(again); return; }
         if (keeper && !keeper.idle()) return;
+        // Looked at again every 15 s: one not answered is the next one's to bring.
         const now = await servers.todos(b.id, b.member).catch(() => null);
         if (!now || (keeper && !keeper.idle()) || JSON.stringify(now) === seen) return;
         seen = JSON.stringify(now);
@@ -348,7 +350,7 @@ export class ServerLayer {
         b.title = t('Held until {date}', {date: day(g.until)});
         b.addEventListener('click', async () => { b.disabled = true; try { await servers.bringBack(g.id); list = await servers.servers(); show(g.id); } catch (e) { b.textContent = message(e); } });
         return b;
-      }))).catch(() => {});
+      })), (e) => back.replaceChildren(h('p', {class: 'error small'}, message(e))));
       track.replaceChildren(h('div', {class: 'slide', 'aria-current': 'true'}, h('div', {class: 'board-card board-new'},
         h('div', {class: 'board-head'}, h('span', {class: 'muted'}, '+'), h('h2', {}, t('Make a server'))),
         h('div', {class: 'board-body'},
@@ -551,9 +553,10 @@ export class ServerLayer {
         // Its people: anyone in it adds someone they know; only its owner takes someone out.
         const add = h('button', {type: 'button', class: 'card small-card new'}, t('Add someone you know')) as HTMLButtonElement;
         add.addEventListener('click', async () => {
-          const known = await import('../inbox.ts').then((inbox) => inbox.threads()).then((all) => all.filter((x) => x.state === 'contact' && !people.some((p) => p.address === x.address))).catch(() => []);
+          let known: {address: string}[] = [], why = '';
+          try { known = (await import('../inbox.ts').then((inbox) => inbox.threads())).filter((x) => x.state === 'contact' && !people.some((p) => p.address === x.address)); } catch (e) { why = message(e); }
           const pick = h('div', {class: 'card small-card'}, h('span', {class: 'card-title'}, t('Add someone you know')),
-            ...(known.length ? known.map((x) => {
+            ...(why ? [h('p', {class: 'error small'}, why)] : known.length ? known.map((x) => {
               const b = button(named(x.address), 'small-button');
               b.addEventListener('click', async () => { b.disabled = true; try { await servers.addPerson(s.id, x.address); again(); } catch (e) { b.textContent = message(e); } });
               return b;

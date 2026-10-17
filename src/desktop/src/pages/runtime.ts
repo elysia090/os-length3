@@ -45,7 +45,8 @@ function environment(): HTMLElement {
       h('b', {}, name), h('span', {}, version), typeof note === 'string' ? h('span', {class: current ? 'muted' : ''}, note) : note,
       sha ? h('code', {class: 'muted', title: sha}, sha.slice(0, 12)) : end ?? h('span', {}));
   const paint = async () => {
-    const root = isNative ? await rootStatus().catch(() => null) : null;
+    let root: Awaited<ReturnType<typeof rootStatus>> = null;
+    try { root = await rootStatus(); } catch (e) { body.replaceChildren(h('p', {class: 'error'}, message(e))); return; }
     if (isNative && root) {
       const now = root.current?.distro ?? (root.current ? 'l3' : null);
       // Pressed: fetched if it is not here, then the one in effect.
@@ -73,7 +74,8 @@ function environment(): HTMLElement {
         row(t('Custom'), '', t('Your own root (.tar)'), false, h('span', {class: 'small'}, t('Not yet'))));
       return;
     }
-    const [a, web] = await Promise.all([about(), isNative ? null : loadWebRoot()]);
+    let a: Awaited<ReturnType<typeof about>>, web: Awaited<ReturnType<typeof loadWebRoot>>;
+    try { [a, web] = await Promise.all([about(), isNative ? null : loadWebRoot()]); } catch (e) { body.replaceChildren(h('p', {class: 'error'}, message(e))); return; }
     if (!a) { body.replaceChildren(h('div', {class: 'empty'}, t('There is no l3 (npm run userland)'))); return; }
     // In a browser with the whole root: every program of it, through xlat; else l3 and its BusyBox.
     const note = web
@@ -182,7 +184,7 @@ function device(ctx: Context, u: Space, last: Freed | null, again: (r: Freed | n
         h('span', {class: 'space-size'}, bytes(root.release.bytes)), b);
       remoteCol.querySelector('.space-empty')?.remove();
       remoteCol.querySelector('.space-list')!.prepend(row);
-    });
+    }, (e) => { error.textContent = message(e); });
   }
 
   return h('section', {class: 'section', 'aria-labelledby': 'device-title'},
@@ -265,6 +267,7 @@ function ssh(): HTMLElement {
   const section = h('section', {class: 'section', 'aria-labelledby': 'ssh-title', hidden: ''});
   const paint = async () => {
     if (!connection()) return;
+    // SSH is a setting of an address on the Remote: away, the section waits (the rail says why).
     const me = await inbox.me().catch(() => null);
     if (!me?.addresses.length) return;
     section.hidden = false;
@@ -272,8 +275,12 @@ function ssh(): HTMLElement {
       h('div', {class: 'grid small-grid'}, ...me.addresses.map((a) => {
         const power = h('button', {type: 'button', class: 'power plain', role: 'switch', 'aria-checked': String(a.ssh),
           'aria-label': a.ssh ? t('Do not allow SSH to {address}', {address: a.address}) : t('Allow SSH to {address}', {address: a.address})}, h('span', {class: 'knob'})) as HTMLButtonElement;
-        power.addEventListener('click', async () => { power.disabled = true; await inbox.setSsh(a.address, !a.ssh).catch(() => {}); void paint(); });
-        return card(a.address, [t('Connecting is not built yet')], power, 'mono-title');
+        const said = h('p', {class: 'error small', role: 'alert'});
+        power.addEventListener('click', async () => {
+          power.disabled = true;
+          try { await inbox.setSsh(a.address, !a.ssh); void paint(); } catch (e) { said.textContent = message(e); power.disabled = false; }
+        });
+        return card(a.address, [t('Connecting is not built yet'), said], power, 'mono-title');
       })));
   };
   void paint();
@@ -341,10 +348,9 @@ function dotfilesSection(): HTMLElement {
 export function runtime(ctx: Context): Node[] {
   const holder = h('div', {}, h('section', {class: 'section'}, h('p', {class: 'muted'}, t('Measuring…'))));
   let last: Freed | null = null;
-  const read = () => void readSpace(allSessions().filter(([, s]) => s.running).map(([repo]) => repo)).then((u) => {
-    holder.replaceChildren(u ? device(ctx, u, last, (r) => { last = r; read(); })
-      : h('section', {class: 'section'}, h('p', {class: 'muted'}, t('Could not measure'))));
-  });
+  const read = () => void readSpace(allSessions().filter(([, s]) => s.running).map(([repo]) => repo)).then(
+    (u) => holder.replaceChildren(device(ctx, u, last, (r) => { last = r; read(); })),
+    (e) => holder.replaceChildren(h('section', {class: 'section'}, h('p', {class: 'error'}, t('Could not measure ({why})', {why: message(e)})))));
   read();
   // What the Remote holds changes what can come here.
   const stop = onSync(() => { if (!holder.isConnected) { stop(); return; } read(); });

@@ -144,6 +144,7 @@ export class Live {
   }
 
   private async poll() {
+    // Polled every moment: one that is not answered is asked again at the next.
     const got = await json<Signal[]>('/v1/inbox/signals').catch(() => [] as Signal[]);
     for (const s of got.filter((x) => x.from === this.peer)) {
       if (s.kind === 'bye') { this.channel?.close(); this.state(false); continue; }
@@ -153,6 +154,7 @@ export class Live {
         await pc.setLocalDescription(await pc.createAnswer());
         await signal(this.peer, s.session, 'answer', JSON.stringify(pc.localDescription));
       } else if (s.session === this.session && this.pc) {
+        // A late answer or a candidate the connection has moved past is refused by it, and the line goes on as it was.
         if (s.kind === 'answer') await this.pc.setRemoteDescription(JSON.parse(s.data)).catch(() => {});
         else await this.pc.addIceCandidate(JSON.parse(s.data)).catch(() => {});
       }

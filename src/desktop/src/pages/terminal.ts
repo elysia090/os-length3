@@ -190,6 +190,7 @@ export class Session {
 
   /** On the root, what the Prompt's processes hold, read from the host. */
   private async measure() {
+    // Measured every 3 s: one not answered keeps the last figures until the next.
     const h: Held | null = await this.native?.held().catch(() => null) ?? null;
     if (!h) return;
     this.memory = h.memory;
@@ -223,7 +224,10 @@ export class Session {
       this.on = 'l3';
       // While l3 comes, the status says how far it is and what it is doing.
       const unwatch = watchLoad((s) => { this.status.textContent = loadWords(s); });
-      const [land, copy, root] = await Promise.all([loadUserland(), snapshot(this.repo), loadWebRoot()]).finally(unwatch);
+      // The whole root not reached: the Prompt runs l3 and its BusyBox alone, and says why.
+      let rootWhy = '';
+      const [land, copy, root] = await Promise.all([loadUserland(), snapshot(this.repo),
+        loadWebRoot().catch((e: unknown) => { rootWhy = e instanceof Error ? e.message : String(e); return null; })]).finally(unwatch);
       const worker = new Worker(new URL('../../../../xlat/runtime/worker.mjs', import.meta.url), {type: 'module'});
       this.worker = worker;
       worker.onmessage = ({data}) => {
@@ -270,7 +274,9 @@ export class Session {
         this.worker?.postMessage({type: 'put', path: c.path, what});
       });
       // Running is the usual state and says nothing; only what is missing is said.
-      this.status.textContent = why ? t('Could not open on the root ({why})', {why}) : copy.complete ? '' : t('Large files and binaries are not included');
+      this.status.textContent = why ? t('Could not open on the root ({why})', {why})
+        : rootWhy ? t('Without the whole root ({why}): l3 and BusyBox only', {why: rootWhy})
+        : copy.complete ? '' : t('Large files and binaries are not included');
       this.live = true;
       this.tell();
     } catch (e) {

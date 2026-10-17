@@ -63,8 +63,13 @@ export function watchLoad(fn: (s: Stage) => void): () => void {
   return () => watchers.delete(fn);
 }
 
-export const about = (): Promise<About | null> =>
-  fetch('/userland/l3.json', {cache: 'no-store'}).then((r) => (r.ok ? r.json() as Promise<About> : null)).catch(() => null);
+/** What l3 this build carries; null when it carries none (a build made without `npm run userland`). Not reached: the reason. */
+export const about = async (): Promise<About | null> => {
+  const r = await fetch('/userland/l3.json', {cache: 'no-store'});
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Fatal(`l3.json: ${r.status}`);
+  return await r.json() as About;
+};
 
 /**
  * The whole root for the browser's Prompt, when this build carries one
@@ -77,11 +82,14 @@ export interface WebRoot { index: {version: string; packs: {name: string}[]; fil
 let rooting: Promise<WebRoot | null> | null = null;
 export const loadWebRoot = (): Promise<WebRoot | null> => (rooting ??= fetch('/root/root.json', {cache: 'no-cache'})
   .then(async (r) => {
-    if (!r.ok || !r.headers.get('content-type')?.includes('json')) return null;
+    // This build carries no root (a server without it answers 404, or with the page itself).
+    if (r.status === 404 || !r.headers.get('content-type')?.includes('json')) return null;
+    if (!r.ok) throw new Fatal(`root.json: ${r.status}`);
     const index = await r.json() as WebRoot['index'];
     return {index, url: new URL('/root/', location.href).href};
   })
-  .catch(() => null));
+  // Not reached is not "none": the reason goes to whoever asked, and the next ask tries again.
+  .catch((e: unknown) => { rooting = null; throw e; }));
 
 let loading: Promise<Userland> | null = null;
 export const loadUserland = (): Promise<Userland> => (loading ??= (async () => {
@@ -99,6 +107,7 @@ export const loadUserland = (): Promise<Userland> => (loading ??= (async () => {
   const slice = (p: {at: number; size: number}) => bytes.slice(p.at, p.at + p.size);
   const [translator, ...modules] = await Promise.all([
     WebAssembly.compile(slice(index.translator) as BufferSource),
+    // A ready translation this engine will not compile is made again by the translator when its program runs.
     ...index.files.map((f) => (f.translation ? WebAssembly.compile(slice(f.translation) as BufferSource).catch(() => null) : null)),
   ]);
   const files = index.files.map((f, k) => ({path: f.path, bytes: slice(f), module: modules[k], mode: f.mode}));

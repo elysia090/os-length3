@@ -92,6 +92,8 @@ export function signInBox(done: () => void, back?: string): HTMLElement {
   });
   ways();
   const stop = account.onReach(() => { if (!box.isConnected) { stop(); return; } if (!account.remoteAway()) ways(); });
+  // Back from a provider without a session: why, once.
+  error.textContent = account.takeSignInTrouble();
   const passkey = button(t('Sign in with a passkey'));
   passkey.addEventListener('click', () => void pressing(passkey, error, async () => { await account.signIn(); done(); }));
   box.append(providers, h('div', {class: 'row sign-in-row'}, passkey), error);
@@ -111,9 +113,11 @@ function repoSection(ctx: Context, counted: (n: number) => void, toCode: () => v
   const grid = h('div', {class: 'grid repo-cards'});
   const section = h('div', {class: 'sub-part'}, grid);
   let seen: servers.RepoSeen[] = [];
-  const paint = async () => {
-    const here = await store.list().catch(() => []);
+  const paint = () => draw().catch((e) => grid.replaceChildren(h('p', {class: 'error'}, message(e))));
+  const draw = async () => {
+    const here = await store.list();
     const there = remoteAll();
+    // Who sees each is the Remote's to say: away, no Share is offered (the rail and the line above say why).
     seen = account.connection() ? await servers.seenAll().catch(() => []) : [];
     const names = [...new Set([...here.map((r) => r.name), ...there.map((r) => r.name)])].sort();
     counted(names.length);
@@ -187,8 +191,11 @@ function sharing(now: servers.RepoSeen, error: HTMLElement): HTMLElement {
     const out = list.hidden;
     open.setAttribute('aria-expanded', String(out));
     list.hidden = !out;
-    if (!out || list.childElementCount) return;
-    const mine = await servers.servers().catch(() => [] as servers.Server[]);
+    if (!out || (list.childElementCount && !('failed' in list.dataset))) return;
+    let mine: servers.Server[];
+    // Not read (away): said in the list, and read again the next time it opens.
+    try { mine = await servers.servers(); } catch (e) { list.replaceChildren(h('span', {class: 'error small'}, message(e))); list.dataset.failed = ''; return; }
+    delete list.dataset.failed;
     list.replaceChildren(...(mine.length ? mine.map((s) => {
       const c = h('button', {type: 'button', class: 'chip', 'aria-pressed': String(shared.has(s.id))}, s.name) as HTMLButtonElement;
       c.addEventListener('click', () => void pressing(c, error, async () => { await toggle(s.id); c.setAttribute('aria-pressed', String(shared.has(s.id))); }));
@@ -289,7 +296,8 @@ function providerSection(): HTMLElement {
   const section = h('section', {class: 'sub-part', 'aria-labelledby': 'remote-providers'});
   const error = h('p', {class: 'error', role: 'alert'});
   const paint = async () => {
-    const [mine, offered] = await Promise.all([account.linked().catch(() => []), account.about()]);
+    let mine: Awaited<ReturnType<typeof account.linked>>, offered: Awaited<ReturnType<typeof account.about>>;
+    try { [mine, offered] = await Promise.all([account.linked(), account.about()]); } catch (e) { error.textContent = message(e); return; }
     const have = new Set(mine.map((a) => a.providerId));
     const rows = mine.map((a) => {
       // The last provider is the way back in: it stays, with nothing to press.

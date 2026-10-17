@@ -13,8 +13,8 @@ import {kept, store} from './repos.ts';
 import {t, tn} from './i18n.ts';
 
 /** `open`: repos a Prompt has open in this page (the app knows its own). */
-export async function readSpace(open: string[] = []): Promise<Space | null> {
-  if (isNative) return nativeSpace().catch(() => null);
+export async function readSpace(open: string[] = []): Promise<Space> {
+  if (isNative) return nativeSpace();
   const c = await readCapacity();
   const items: Item[] = [];
   for (const r of await store.list()) {

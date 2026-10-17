@@ -5,6 +5,7 @@
 // the window comes back, so a change made with l3 shows up.
 
 import {isNative} from './host.ts';
+import {t} from './i18n.ts';
 
 // `remote` is which Remote this device talks to and as whom; `sync` is,
 // for each repo and setting, the version on the Remote this copy came from;
@@ -22,25 +23,45 @@ async function call<T>(command: string, args: Record<string, unknown>): Promise<
   return invoke<T>(command, args);
 }
 
+/** What the browser keeps for `key`; storage it refuses (a private window) keeps nothing. */
 function local(key: Key): string | null {
   try { return localStorage.getItem(STORAGE[key]); } catch { return null; }
 }
+
+// A file that could not be read is not one that is absent: it is not
+// written over (by a person, the Remote or the move below) until a later
+// read succeeds, so nothing in it is lost to a passing failure.
+const unread = new Map<Key, string>();
+/** Each setting that could not be read here, and why. */
+export const unreadable = (): ReadonlyMap<Key, string> => unread;
+/** A setting as a person knows it. */
+export const settingName = (key: Key): string => ({profile: t('Profile'), todo: 'TODO', band: t('The band'), remote: t('Sign-in'),
+  sync: t('Where each repo stands'), lang: t('Language'), dotfiles: t('Dotfiles')})[key];
 
 /** Read every key into memory. Natively, a value only the webview had is moved to its file once. */
 export async function loadState(): Promise<void> {
   for (const key of KEYS) {
     if (!isNative) { cache.set(key, local(key)); continue; }
-    let value = await call<string | null>('state_get', {key}).catch(() => null);
+    let value: string | null;
+    try { value = await call<string | null>('state_get', {key}); } catch (e) {
+      unread.set(key, e instanceof Error ? e.message : String(e));
+      continue;
+    }
+    unread.delete(key);
     const old = local(key);
     if (value === null && old !== null) {
-      await call('state_set', {key, json: old}).then(() => { value = old; }, () => {});
+      await call('state_set', {key, json: old});
+      value = old;
+      try { localStorage.removeItem(STORAGE[key]); } catch { /* moved; the leftover is never read again natively */ }
     }
     cache.set(key, value);
   }
 }
 
 export function getState(key: Key): string | null {
-  return cache.has(key) ? cache.get(key)! : local(key);
+  if (cache.has(key)) return cache.get(key)!;
+  // The app's settings are its files: the webview's old copy is never read in their place.
+  return isNative ? null : local(key);
 }
 
 const listeners = new Set<(key: Key) => void>();
@@ -55,6 +76,8 @@ export function dropState(key: Key) {
 
 /** Store `json` for `key`; rejects with the reason when it could not be kept. */
 export async function setState(key: Key, json: string): Promise<void> {
+  const why = unread.get(key);
+  if (why !== undefined) throw new Error(t('{what} could not be read, so it is not written over ({why})', {what: settingName(key), why}));
   cache.set(key, json);
   for (const fn of [...listeners]) fn(key);
   if (isNative) { await call('state_set', {key, json}); return; }

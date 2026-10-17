@@ -41,12 +41,12 @@ export function devicePage(given: string): HTMLElement {
     const no = h('button', {class: 'button', type: 'button'}, t('Refuse')) as HTMLButtonElement;
     yes.addEventListener('click', async () => {
       yes.disabled = no.disabled = true;
-      try { await remote.approveDevice(code); finish(t('Connected. Go back to the device.')); } catch (e) { error.textContent = String(e); yes.disabled = no.disabled = false; }
+      try { await remote.approveDevice(code); finish(t('Connected. Go back to the device.')); } catch (e) { error.textContent = e instanceof Error ? e.message : String(e); yes.disabled = no.disabled = false; }
     });
     no.addEventListener('click', async () => {
       yes.disabled = no.disabled = true;
-      await remote.denyDevice(code).catch(() => {});
-      finish(t('Refused.'));
+      // Refused only once the Remote says so; until then the device could still be let in.
+      try { await remote.denyDevice(code); finish(t('Refused.')); } catch (e) { error.textContent = e instanceof Error ? e.message : String(e); yes.disabled = no.disabled = false; }
     });
     body.replaceChildren(
       h('p', {}, t('{client} asks to join this account. Check that the device shows the same code.', {client: client(who.clientId)})),

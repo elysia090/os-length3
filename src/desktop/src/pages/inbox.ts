@@ -181,14 +181,15 @@ export function inboxPage(ctx: Context): Node[] {
   };
 
   const paintList = async (list: HTMLElement, pane: HTMLElement) => {
-    const all = await inbox.threads().catch(() => [] as inbox.Thread[]);
+    let all: inbox.Thread[] = [], unread = '';
+    try { all = await inbox.threads(); } catch (e) { unread = message(e); }
     const to = h('input', {class: 'line-in', placeholder: t('Write to a name or a code'), 'aria-label': t('Write to an address'), autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
     const start = button(t('Write'), 'small-button');
     const error = h('p', {class: 'error', role: 'alert'});
     to.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) start.click(); });
     start.addEventListener('click', async () => {
       if (!to.value.trim()) { to.focus(); return; }
-      const found: {address?: string; reachable: boolean; why?: string} = await inbox.lookup(to.value).catch(() => ({reachable: false, why: ''}));
+      const found: {address?: string; reachable: boolean; why?: string} = await inbox.lookup(to.value).catch((e) => ({reachable: false, why: message(e)}));
       if (!found.reachable) { error.textContent = t('Cannot reach {address} ({why})', {address: to.value, why: found.why ?? ''}); return; }
       void show(found.address!, list, pane);
     });
@@ -204,10 +205,12 @@ export function inboxPage(ctx: Context): Node[] {
     const contacts = all.filter((x) => x.state === 'contact'), requests = all.filter((x) => x.state === 'request');
     list.replaceChildren(
       h('div', {class: 'row inbox-new'}, to, start), error,
+      // Not read: said where the conversations would be, not shown as none.
+      ...(unread ? [h('p', {class: 'error'}, unread)] : []),
       ...contacts.map(row),
       ...(requests.length ? [h('h3', {class: 'inbox-head'}, t('Requests')), ...requests.map(row)] : []));
     // One quiet line in the open pane says what to do; none yet, it says so instead.
-    if (!open) pane.replaceChildren(h('p', {class: 'quiet'}, all.length ? t('Choose a conversation, or write to a name or a code.') : t('No messages yet. Write to someone by their name or code.')));
+    if (!open && !unread) pane.replaceChildren(h('p', {class: 'quiet'}, all.length ? t('Choose a conversation, or write to a name or a code.') : t('No messages yet. Write to someone by their name or code.')));
   };
 
   const show = async (address: string, list: HTMLElement, pane: HTMLElement) => {
@@ -216,6 +219,7 @@ export function inboxPage(ctx: Context): Node[] {
     live = null;
     const th = await inbox.thread(address).catch((e) => { pane.replaceChildren(h('p', {class: 'error'}, message(e))); return null; });
     if (!th) return;
+    // Read is said again the next time the conversation opens; nothing waits on it.
     void inbox.markRead(address).catch(() => {});
     const lineWord = h('span', {class: 'muted small'}, t('Through the Remote'));
     const messages = h('div', {class: 'inbox-messages'});

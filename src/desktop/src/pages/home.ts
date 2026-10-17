@@ -2,7 +2,7 @@ import {h} from '../dom.ts';
 import {t, tn} from '../i18n.ts';
 import {LIMITS, initials, normalize, parse, type Profile} from '../profile.ts';
 import {connection} from '../remote.ts';
-import {getState, setState} from '../state.ts';
+import {getState, setState, settingName, unreadable} from '../state.ts';
 import * as servers from '../servers.ts';
 import {repoList} from './repo-list.ts';
 import {todoBox} from './todo-box.ts';
@@ -33,7 +33,9 @@ export function home(ctx: Context): Node[] {
     editing ? editForm(ctx) : identity(count),
     owner && !editing ? editButton(ctx) : null,
   );
-  return [header, todoBox(),
+  // A setting that could not be read is said here, where the person looks first; it is not written over meanwhile.
+  const unread = [...unreadable()].map(([k, why]) => h('p', {class: 'error', role: 'alert'}, t('{what} could not be read ({why})', {what: settingName(k), why})));
+  return [header, ...unread, todoBox(),
     h('section', {class: 'section', 'aria-labelledby': 'repos-title'}, h('h2', {id: 'repos-title'}, t('Repos')), grid),
     h('section', {class: 'section', 'aria-labelledby': 'servers-title'},
       h('h2', {id: 'servers-title'}, t('Servers')), ownServers(ctx))];
@@ -52,7 +54,7 @@ function ownServers(ctx: Context): HTMLElement {
       b.addEventListener('click', () => { try { localStorage.setItem('length3.server.at', JSON.stringify({server: s.id})); } catch { /* a convenience */ } ctx.go('server'); });
       return b;
     }));
-  }).catch(() => {});
+  }, (e) => box.replaceChildren(h('p', {class: 'error'}, e instanceof Error ? e.message : String(e))));
   return box;
 }
 

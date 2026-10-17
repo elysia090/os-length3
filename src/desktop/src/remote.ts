@@ -117,12 +117,20 @@ export function signedInURL(): string {
 
 /** Back from a provider: the Remote set its session cookie; keep the session's token here. */
 export async function claim(): Promise<boolean> {
-  const r = await api('/api/auth/get-session', {}, null).catch(() => null);
-  const s = r ? await r.json().catch(() => null) as {session?: {token: string}} | null : null;
-  if (!s?.session?.token) return false;
-  await keep(s.session.token);
-  return true;
+  try {
+    const s = await (await api('/api/auth/get-session', {}, null)).json() as {session?: {token: string}} | null;
+    if (!s?.session?.token) { signInTrouble = t('The provider did not sign you in. Try again.'); return false; }
+    await keep(s.session.token);
+    return true;
+  } catch (e) {
+    signInTrouble = e instanceof Error ? e.message : String(e);
+    return false;
+  }
 }
+
+/** Why the last sign-in through a provider did not take (said once, on the sign-in card). */
+let signInTrouble = '';
+export const takeSignInTrouble = (): string => { const s = signInTrouble; signInTrouble = ''; return s; };
 
 /** Another provider for the same account (a second way back in). */
 export async function link(provider: Provider): Promise<void> {
@@ -251,6 +259,7 @@ export async function appSignIn(): Promise<{code: string; url: string; wait: Pro
 /** Leave the Remote on this device: its session ends; the repos here stay. */
 export async function signOut(): Promise<void> {
   if (isNative) { await invoke('remote_logout'); await loadState(); told(); return; }
+  // Signed out here whatever the Remote answers: away, the session there ends by itself when it runs out.
   await api('/api/auth/sign-out', {method: 'POST', body: '{}'}).catch(() => {});
   await forget();
 }
@@ -261,6 +270,7 @@ async function forget() {
 }
 
 async function ended() {
+  // The Remote already let this session go: signing out there can only fail, and here it is done either way.
   if (isNative) { await invoke('remote_logout').catch(() => {}); await loadState(); told(); return; }
   await forget();
 }

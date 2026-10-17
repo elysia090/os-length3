@@ -45,6 +45,7 @@ async function readAll(repo: string): Promise<{path: string; text: string}[]> {
       const path = dir ? `${dir}/${e.name}` : e.name;
       if (e.kind === 'dir') { await walk(path); continue; }
       if (e.kind !== 'file') continue;
+      // Gone since the listing (a Prompt, another device): nothing of it to search.
       const c = await store.read(repo, path).catch(() => null);
       if (c?.text != null) out.push({path, text: c.text});
     }

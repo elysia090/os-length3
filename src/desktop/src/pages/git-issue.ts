@@ -25,7 +25,9 @@ export interface IssueEvents {
 }
 
 /** Where a repo stands, read once for every issue of it. */
-export interface RepoState { work: git.Work | null; lines: git.Line[]; changes: git.Change[]; uncommitted: number }
+export interface RepoState { work: git.Work | null; lines: git.Line[]; changes: git.Change[]; uncommitted: number;
+  /** Where it stands could not be read (the Remote away, or refusing): said on its issues, and nothing offered meanwhile. */
+  error?: string }
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -78,7 +80,9 @@ export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEv
   const here = hereOf(s, issue);
   const change = connection() ? changeOf(s, issue) : null;
   const acts: Node[] = [];
-  if (connection() && !here && change?.state !== 'open') {
+  // Nothing is offered until where it stands is known.
+  const known = connection() && !s?.error;
+  if (known && !here && change?.state !== 'open') {
     const go = button(line ? t('Continue here') : t('Start'), true);
     go.addEventListener('click', doing(go, error, async () => {
       if (line) await git.switchWork(at, line.line); else await git.startWork(at, issue.file);
@@ -91,14 +95,14 @@ export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEv
     acts.push(leave);
   }
   // At the box's foot, opposite its action: its repo and, quietly, who started it and when.
-  const say = connection() ? standing(s, issue) : t('History and work are kept on the Remote. Sign in to it to work on an issue and commit.');
+  const say = !connection() ? t('History and work are kept on the Remote. Sign in to it to work on an issue and commit.') : s?.error ?? standing(s, issue);
   // Its words are changed where they are read: pressed, the head and the detail become the fields they were written in.
   const words = h('button', {type: 'button', class: 'issue-words', title: t('Change its words')},
     issueHead(issue), issue.detail ? h('p', {class: 'issue-body'}, issue.detail) : null);
   const box = h('div', {class: 'issue-box'},
     words,
     ...(here && s?.work ? [steps(issue, s, events, after)] : change?.state === 'open' ? [received(change)] : []),
-    h('div', {class: 'issue-foot'}, h('div', {class: 'issue-about'}, h('span', {class: 'issue-where'}, issue.repo), say ? h('span', {class: 'muted small'}, say) : null), ...acts), error);
+    h('div', {class: 'issue-foot'}, h('div', {class: 'issue-about'}, h('span', {class: 'issue-where'}, issue.repo), say ? h('span', {class: s?.error ? 'error small' : 'muted small'}, say) : null), ...acts), error);
   words.addEventListener('click', () => words.replaceWith(issueEditor(issue, (saved) => { if (saved) after(); else box.replaceWith(issueBox(issue, s, events, after)); })));
   return box;
 }

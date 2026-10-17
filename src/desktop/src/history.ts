@@ -42,6 +42,7 @@ async function hereTree(repo: string): Promise<Record<string, string>> {
     for (const e of await store.tree(repo, dir)) {
       const path = dir ? `${dir}/${e.name}` : e.name;
       if (e.kind === 'dir') await walk(path);
+      // Gone between the listing and the reading: it is not part of what is here.
       else { const c = await store.read(repo, path).catch(() => null); if (c?.text != null) out[path] = c.text; }
     }
   };
@@ -108,6 +109,7 @@ async function webDiff(repo: string): Promise<FileDiff[]> {
 async function wordsFor(repo: string, issue: string | null, line: string): Promise<{kind: string; title: string}> {
   // Work on an issue commits under it.
   issue ??= lineOf(repo) === 'main' ? null : `${lineOf(repo)}.md`;
+  // The issue's file gone (removed in the work): the line given names the cut instead.
   const c = issue ? await store.read(repo, `issue/${issue}`).catch(() => null) : null;
   const {kind, title} = kindOf(c?.text?.split('\n')[0] ?? line);
   return {kind: kind ?? '', title};
@@ -271,12 +273,9 @@ export const lines = (repo: string): Promise<Line[]> =>
 export const changesOf = (repo: string): Promise<Change[]> => (isNative ? invoke<Change[]>('changes_list', {repo}) : webChangesOf(repo));
 
 /** Where a repo stands in one go: the work it shows, every issue's work, the changes (each read once). */
-export async function standing(repo: string): Promise<{work: Work | null; lines: Line[]; changes: Change[]}> {
+export async function standing(repo: string): Promise<{work: Work; lines: Line[]; changes: Change[]}> {
   const changes = changesOf(repo);
-  const [shown, lineList, list] = await Promise.all([
-    (isNative ? work(repo) : webWork(repo, changes)).catch(() => null),
-    lines(repo).catch(() => [] as Line[]),
-    changes.catch(() => [] as Change[])]);
+  const [shown, lineList, list] = await Promise.all([isNative ? work(repo) : webWork(repo, changes), lines(repo), changes]);
   return {work: shown, lines: lineList, changes: list};
 }
 
