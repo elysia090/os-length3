@@ -14,6 +14,8 @@
 //   a message read, 90 days after it was sent (one unread waits for its reader)
 //   a signal two minutes old, a passkey sign-in five minutes old, a guest whose code and lease ran out,
 //   what was asked of the Remote a day ago (throttle)
+//   a session, a device's code or a sign-in's verification that ran out (Better Auth's own: it lets
+//                                     one go only when it is asked for again)
 //   a blob no draft or commit of its account names (a day after it came, so a diff can name it first),
 //                                     looked for only in accounts whose room says something changed
 
@@ -68,6 +70,8 @@ export async function sweep(db: Db, bucket: Bucket): Promise<Record<string, numb
   await run('guest', db, sql`delete from board_guest where (token_until is null or token_until < now())
     and (code is null or code_at is null or code_at < ${ago(10 * 60_000)})`);
   await run('throttle', db, sql`delete from throttle where at < ${ago(DAY)}`);
+  // Better Auth's moments are kept without a zone, as UTC.
+  for (const t of ['session', 'device_code', 'verification']) await run(t, db, sql`delete from ${sql.identifier(t)} where expires_at < now() at time zone 'utc'`);
 
   // Blobs no tree of their account names any more: their rows, then their bytes. Only accounts whose
   // room says something their blobs are named by changed; each under its lock, as an upload is, so

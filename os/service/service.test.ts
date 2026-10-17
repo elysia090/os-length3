@@ -1136,6 +1136,24 @@ test('Live chat: a device takes only what came from the one it talks with, in it
   assert.deepEqual(await take('from=mio&session=a'), []);
 });
 
+test('The sweep lets go of sessions, devices\' codes and verifications that ran out, and of none that still holds', async () => {
+  const s = await service();
+  const t = await s.start('Ren');
+  const me = await idOf(s, t);
+  assert.equal((await s.call('POST', '/api/auth/device/code', {body: {client_id: 'l3'}})).status, 200);
+  // Written as Better Auth writes them (UTC, without a zone): one run out a minute ago of each.
+  const ago = new Date(Date.now() - 60_000);
+  await s.db.insert(schema.session).values({id: 'gone-session', token: 'gone-token', userId: me, expiresAt: ago, updatedAt: ago});
+  await s.db.insert(schema.deviceCode).values({id: 'gone-code', deviceCode: 'gone-device', userCode: 'GONE0000', expiresAt: ago, status: 'pending'});
+  await s.db.insert(schema.verification).values({id: 'gone-verification', identifier: 'x', value: 'y', expiresAt: ago});
+  await s.db.insert(schema.verification).values({id: 'kept-verification', identifier: 'x', value: 'y', expiresAt: new Date(Date.now() + 60_000)});
+  const gone = await sweep(s.db, s.bucket);
+  assert.deepEqual([gone.session, gone.device_code, gone.verification], [1, 1, 1]);
+  assert.deepEqual([await count(s, sql`select count(*)::int as n from session`), await count(s, sql`select count(*)::int as n from device_code`),
+    await count(s, sql`select count(*)::int as n from verification where id = 'kept-verification'`)], [1, 1, 1]);
+  assert.equal((await s.call('GET', '/v1/repos', {token: t})).status, 200);
+});
+
 test('The sweep: what was held long enough goes in one place, blobs no tree names among it, and nothing else', async () => {
   const s = await service();
   const ren = await s.start('Ren'), mio = await s.start('Mio');
