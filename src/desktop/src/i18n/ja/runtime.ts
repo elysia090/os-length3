@@ -40,6 +40,8 @@ export default {
   'Prompts running': '動いている Prompt',
   'Stopped · gave back {size}': '止めました · {size} を返しました',
   'Stop': '止める',
+  'Free {size}': '{size} 空ける',
+  'Gave back {size}': '{size} を返しました',
   'Measuring…': '計測中…',
   'Could not measure': '計測できませんでした',
   'Environment in effect': '有効な環境',

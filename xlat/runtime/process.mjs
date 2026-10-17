@@ -15,7 +15,7 @@
 
 import {Fpu} from './fpu.mjs';
 import {Description, FdTable} from './fd.mjs';
-import {E, FsError, Vfs} from './fs.mjs';
+import {E, FsError, Vfs, loadedFiles} from './fs.mjs';
 import {FILE_CALLS} from './sys-file.mjs';
 import {PROC_CALLS} from './sys-proc.mjs';
 
@@ -68,9 +68,10 @@ const u64s = (module, name) => {
  * uses it, and nothing is translated twice.
  */
 export class Image {
-  constructor(module, source = null) {
+  constructor(module, source = null, size = 0) {
     this.module = module;
     this.source = source; // () => the ELF's bytes, for code reached later
+    this.size = size; // bytes of wasm made for it (what its translations hold, before the engine compiles them)
     const section = (name) => dec.decode(WebAssembly.Module.customSections(module, name)[0]);
     this.facts = JSON.parse(section('xlat.facts'));
     this.fpuOps = section('xlat.fpu').split(',');
@@ -94,6 +95,7 @@ export class Image {
     for (let k = 0; k < entries.length; k += 2) this.entries.set(entries[k], entries[k + 1]);
     for (const a of starts) this.known.add(a);
     this.extras.push({module, base: this.slots, count: starts.length});
+    this.size += wasm.length;
     this.slots += starts.length;
     return this.entries.has(address);
   }
@@ -111,7 +113,10 @@ export class Kernel {
     this.translateMore = translate?.more ?? null;
     this.console = console;
     this.nextPid = 1;
-    this.images = new WeakMap(); // File node -> {version, image}
+    this.images = new Map(); // File node -> {version, image, used, kept}
+    this.uses = 0; // counts loads, so the least recently used image is known
+    // What may be kept for programs run again (translations, the translator, root files read) once nothing runs them.
+    this.budget = 256 << 20;
     this.chain = []; // running process last; each one's parent before it
     this.status = null;
   }
@@ -119,16 +124,17 @@ export class Kernel {
   /** The image for an executable file, translating it once per version. */
   image(node) {
     const cached = this.images.get(node);
-    if (cached && cached.version === node.version) return cached.image;
-    const bytes = node.bytes();
+    if (cached && cached.version === node.version) { cached.used = ++this.uses; return cached.image; }
+    // A view of the file, not a copy: a later write to it changes a copy (File.share).
+    const bytes = node.share();
     if (bytes[0] !== 0x7f || bytes[1] !== 0x45 || bytes[2] !== 0x4c || bytes[3] !== 0x46) throw new FsError(E.NOEXEC);
     let t = performance.now();
     const wasm = this.translate(bytes);
     PROFILE.translate += performance.now() - t; t = performance.now();
     // Code reached later is read from the very bytes this was translated from (and the translator keeps them parsed by identity).
-    const image = new Image(new WebAssembly.Module(wasm), () => bytes);
+    const image = new Image(new WebAssembly.Module(wasm), () => bytes, wasm.length);
     PROFILE.compile += performance.now() - t; PROFILE.images++;
-    this.images.set(node, {version: node.version, image});
+    this.images.set(node, {version: node.version, image, used: ++this.uses, kept: false});
     return image;
   }
 
@@ -137,11 +143,69 @@ export class Kernel {
    * from exactly these bytes). It holds only while the file is unchanged; a
    * write makes it translate again.
    */
-  prebuilt(node, module) { this.images.set(node, {version: node.version, image: new Image(module, () => node.bytes())}); }
+  prebuilt(node, module) {
+    let view = null;
+    // Kept: nothing here could make it again.
+    this.images.set(node, {version: node.version, image: new Image(module, () => (view ??= node.share())), used: ++this.uses, kept: true});
+  }
 
   /** Bytes of guest memory the running processes hold (their wasm memories). */
   memoryBytes() {
     return this.chain.reduce((n, p) => n + (p.memory?.buffer.byteLength ?? 0), 0);
+  }
+
+  /**
+   * What this kernel holds, by kind, and how much of it can go without
+   * stopping anything: `guest` (the running processes' memories, exact),
+   * `translations` (the wasm made for each program; the engine's compiled
+   * code is more, and not visible), `translator` (its memory, exact) and
+   * `files` (bytes of root files read, exact). `spare` is what can go:
+   * translations no running process uses, the translator's memory (a
+   * running program parses its ELF again on its next miss), and files no
+   * kept translation reads from.
+   */
+  held() {
+    const using = new Set(this.chain.map((p) => p.image));
+    let translations = 0, spareTranslations = 0;
+    const keep = new Set();
+    for (const [node, e] of this.images) {
+      translations += e.image.size;
+      if (e.kept || using.has(e.image)) keep.add(node);
+      else spareTranslations += e.image.size;
+    }
+    let files = 0, spareFiles = 0;
+    for (const f of loadedFiles()) {
+      files += f._data.length;
+      if (!keep.has(f)) spareFiles += f._data.length;
+    }
+    const guest = this.memoryBytes(), translator = this.translate?.held?.() ?? 0, spareTranslator = this.translate?.spare?.() ?? translator;
+    return {guest, translations, translator, files, spare: spareTranslations + spareTranslator + spareFiles, total: guest + translations + translator + files, spareTranslator};
+  }
+
+  /**
+   * Give back what nothing running needs, least recently used first, until
+   * what can go is at most `budget` bytes (0: all of it). Returns what was
+   * held before and after.
+   */
+  free(budget = 0) {
+    const before = this.held();
+    if (before.spare <= budget) return {before, after: before};
+    const using = new Set(this.chain.map((p) => p.image));
+    let over = before.spare - budget;
+    const spare = [...this.images].filter(([, e]) => !e.kept && !using.has(e.image)).sort((a, b) => a[1].used - b[1].used);
+    for (const [node, e] of spare) {
+      if (over <= 0) break;
+      this.images.delete(node);
+      this.translate?.close?.(e.image.source());
+      over -= e.image.size;
+    }
+    if (over > 0 && before.spareTranslator > 0 && this.translate?.renew?.()) over -= before.spareTranslator;
+    // A translation that went leaves its program's file spare too: with no budget, every such file goes.
+    if (over > 0 || budget === 0) {
+      const keep = new Set([...this.images].filter(([, e]) => e.kept || using.has(e.image)).map(([node]) => node));
+      for (const f of [...loadedFiles()]) if ((over > 0 || budget === 0) && !keep.has(f)) over -= f.release();
+    }
+    return {before, after: this.held()};
   }
 
   /** Create the first process, attached to the console. */
@@ -167,6 +231,8 @@ export class Kernel {
       }
       this.chain.pop();
       if (!this.chain.length) { this.status = status; return {status}; }
+      // A program ended: what nothing running needs goes back past the budget.
+      this.free(this.budget);
     }
     return {status: this.status};
   }

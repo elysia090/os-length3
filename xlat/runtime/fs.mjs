@@ -7,6 +7,11 @@ export const S_IFMT = 0o170000, S_IFDIR = 0o040000, S_IFREG = 0o100000, S_IFLNK 
 
 let inodes = 1;
 
+/** Files whose bytes came from their loader and can go back to it (unchanged since). */
+const LOADED = new Set();
+/** Each such file still holding its bytes. */
+export const loadedFiles = () => LOADED;
+
 export class Node {
   constructor(mode) {
     this.mode = mode;
@@ -28,6 +33,8 @@ export class File extends Node {
     this._data = data;
     this.size = data.length;
     this.load = load; // () => Uint8Array, called once on first access
+    this.reload = load; // the same, kept: unchanged bytes can be let go and read again
+    this.shared = false; // a view of the bytes was handed out (share): change a copy
     // Counts every change to the contents; times can repeat within a millisecond.
     this.version = 0;
   }
@@ -36,12 +43,36 @@ export class File extends Node {
       this._data = this.load();
       this.size = this._data.length;
       this.load = null;
+      if (this.reload) LOADED.add(this);
     }
     return this._data;
   }
   /** Bytes [start, end) — a view, not a copy. */
   read(start, end) { return this.data.subarray(start, Math.min(end, this.size)); }
+  /** The exact contents as a view, not a copy: a later write changes a copy, never what was handed out. */
+  share() {
+    const data = this.data;
+    this.shared = true;
+    return data.subarray(0, this.size);
+  }
+  /** About to change the bytes: from here on they are this file's own. */
+  own() {
+    if (this.shared) { this._data = this.data.slice(0, this.size); this.shared = false; }
+    LOADED.delete(this);
+    this.reload = null;
+  }
+  /** Let go of bytes its loader can give again (unchanged since); returns how many. */
+  release() {
+    if (this.load || !this.reload || this.version !== 0) return 0;
+    const n = this._data.length;
+    this._data = new Uint8Array(0);
+    this.shared = false;
+    this.load = this.reload;
+    LOADED.delete(this);
+    return n;
+  }
   write(at, bytes) {
+    this.own();
     const need = at + bytes.length;
     let data = this.data;
     if (need > data.length) {
@@ -55,6 +86,7 @@ export class File extends Node {
     this.version++;
   }
   truncate(length) {
+    this.own();
     const data = this.data;
     if (length > data.length) {
       const grown = new Uint8Array(length);

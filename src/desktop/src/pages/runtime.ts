@@ -219,7 +219,12 @@ function prompts(): HTMLElement {
         }
         const stop = button(t('Stop'), 'small-button');
         stop.addEventListener('click', () => s.stop());
-        return card(repo, [[s.on === 'root' ? `root · ${tn('{n} process', '{n} processes', s.processes)}` : 'l3', s.memory ? bytes(s.memory) : ''].filter(Boolean).join(' · ')], stop);
+        // In a browser, what it keeps for programs it ran can go without stopping it.
+        const free = s.spare ? button(t('Free {size}', {size: bytes(s.spare)}), 'small-button') : null;
+        free?.addEventListener('click', () => s.free());
+        const lines = [[s.on === 'root' ? `root · ${tn('{n} process', '{n} processes', s.processes)}` : 'l3', s.memory ? bytes(s.memory) : ''].filter(Boolean).join(' · ')];
+        if (s.freed !== null) lines.push(t('Gave back {size}', {size: bytes(s.freed)}));
+        return card(repo, lines, free ? h('span', {class: 'row'}, free, stop) : stop);
       })));
   };
   paint();

@@ -6,9 +6,13 @@
 // then {type: 'input', bytes} as the person types and {type: 'eof'}, and
 // {type: 'interrupt'} for Ctrl-C: what was typed and not read yet is
 // dropped, and what runs in front of the shell ends (Kernel.interrupt).
-// It receives {type: 'output', fd, bytes}, {type: 'waiting', memory},
-// {type: 'exit', status} or {type: 'error', message}; `memory` is the bytes
-// the guest's running processes hold.
+// It receives {type: 'output', fd, bytes}, {type: 'waiting', memory, held},
+// {type: 'exit', status} or {type: 'error', message}; `memory` is all the
+// kernel holds, and `held` the same by kind (Kernel.held: guest,
+// translations, translator, files, and what of it can go now, spare).
+// {type: 'free'} gives back all that can go without stopping anything and
+// answers {type: 'freed', before, after}; a program that ends gives back
+// what is past the kernel's budget on its own.
 //
 // Nothing blocks: a read with no input yet stops the kernel (the syscall
 // restarts later), and each input message runs it again.
@@ -17,9 +21,9 @@
 // sent after each run as {type: 'changes', dirs, files, removed} (see
 // mirror.mjs), and {type: 'put', path, what} puts an outside change in.
 //
-// With `root: {index, url}` in 'start', the whole root (a pack and its
+// With `root: {index, url}` in 'start', the whole root (packs and their
 // index, pack.mjs) fills in around the files given: each file of it is
-// fetched from `url` when a program first reads it.
+// fetched from the packs under `url` when a program first reads it.
 
 import {Vfs} from './fs.mjs';
 import {Mirror} from './mirror.mjs';
@@ -45,8 +49,8 @@ function pump() {
     const r = kernel.pump();
     const c = mirror?.changes();
     if (c) self.postMessage({type: 'changes', ...c}, c.files.map((f) => f.bytes.buffer));
-    const memory = kernel.memoryBytes();
-    self.postMessage(r.waiting ? {type: 'waiting', memory} : {type: 'exit', status: r.status, memory: 0});
+    const held = kernel.held();
+    self.postMessage(r.waiting ? {type: 'waiting', memory: held.total, held} : {type: 'exit', status: r.status, memory: 0});
   } catch (e) {
     self.postMessage({type: 'error', message: e instanceof Error ? `${e.name}: ${e.message}\n${e.stack}` : String(e)});
   }
@@ -57,6 +61,7 @@ self.onmessage = async ({data}) => {
   if (data.type === 'eof') { ended = true; if (kernel) pump(); return; }
   if (data.type === 'interrupt') { pending.length = 0; if (kernel?.interrupt()) pump(); return; }
   if (data.type === 'put') { mirror?.put(data.path, data.what); return; }
+  if (data.type === 'free') { if (kernel) self.postMessage({type: 'freed', ...kernel.free(0)}); return; }
   if (data.type !== 'start') return;
   try {
     const translate = await loadTranslator(data.translator);

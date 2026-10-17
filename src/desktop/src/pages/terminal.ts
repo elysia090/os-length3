@@ -73,8 +73,12 @@ export class Session {
   /** What was run here, newest last. */
   readonly runs: Run[] = [];
   private watchers = new Set<() => void>();
-  /** Bytes the guest's running processes hold, as the worker last said. */
+  /** Bytes it holds, as the worker or the host last said (in a browser: guest memory, translations, the translator and root files read). */
   memory = 0;
+  /** Of `memory`, in a browser, what can go without stopping anything (Kernel.held's spare). */
+  spare = 0;
+  /** What the last Free gave back, in a browser. */
+  freed: number | null = null;
   /** Processes it runs, where that is known (on the root). */
   processes = 0;
   /** What it runs on: the distribution's root on this machine, or l3 through xlat. */
@@ -221,8 +225,15 @@ export class Session {
         this.heard = Date.now();
         if (data.type === 'output') this.received(new TextDecoder().decode(data.bytes));
         else if (data.type === 'changes') this.writeBack(data);
+        else if (data.type === 'freed') {
+          this.memory = data.after.total;
+          this.spare = data.after.spare;
+          this.freed = data.before.total - data.after.total;
+          this.tell();
+        }
         else if (data.type === 'waiting') {
           this.memory = data.memory ?? 0;
+          this.spare = data.held?.spare ?? 0;
           // Paused with a run still open: what runs is reading what is typed.
           this.inputWait = this.runs.at(-1)?.ms === null;
           this.follow();
@@ -260,6 +271,13 @@ export class Session {
       this.end(t('Could not start: {message}', {message: e instanceof Error ? e.message : String(e)}));
     }
   }
+
+  /**
+   * In a browser, give back what the Prompt keeps for programs it ran
+   * (their translations, the translator's memory, root files read) without
+   * stopping it; programs run again are translated and read again.
+   */
+  free() { this.worker?.postMessage({type: 'free'}); }
 
   /** Whether the shell is running (its worker or its root process exists). */
   get running() { return this.live && (this.worker !== null || this.native !== null); }

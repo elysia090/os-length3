@@ -7,6 +7,25 @@
 //! itself and applies those relocations as on Linux.
 
 use std::fmt;
+use std::sync::Arc;
+
+/// Bytes of the file, without a copy: segments are views into the one file
+/// the parse was given, so a large program is held once, not twice.
+#[derive(Clone)]
+pub struct Bytes {
+    file: Arc<Vec<u8>>,
+    start: usize,
+    len: usize,
+}
+
+impl std::ops::Deref for Bytes {
+    type Target = [u8];
+    fn deref(&self) -> &[u8] { &self.file[self.start..self.start + self.len] }
+}
+
+impl fmt::Debug for Bytes {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "Bytes({} at {:#x})", self.len, self.start) }
+}
 
 #[derive(Debug)]
 pub struct Error(pub String);
@@ -28,7 +47,7 @@ pub struct Segment {
     pub offset: u64,
     pub vaddr: u64,
     pub memsz: u64,
-    pub data: Vec<u8>,
+    pub data: Bytes,
     pub executable: bool,
     pub writable: bool,
 }
@@ -104,6 +123,13 @@ const SHF_ALLOC: u64 = 2;
 
 impl Elf {
     pub fn parse(file: &[u8]) -> Result<Elf, Error> {
+        Elf::parse_owned(file.to_vec())
+    }
+
+    /// Parse a file this ELF then owns: its segments are views into it.
+    pub fn parse_owned(file: Vec<u8>) -> Result<Elf, Error> {
+        let whole = Arc::new(file);
+        let file: &[u8] = &whole;
         let r = Reader(file);
         if r.bytes(0, 4)? != b"\x7fELF" {
             return err("not an ELF file");
@@ -143,7 +169,7 @@ impl Elf {
                     offset,
                     vaddr: vaddr + base,
                     memsz,
-                    data: r.bytes(offset, filesz)?.to_vec(),
+                    data: { r.bytes(offset, filesz)?; Bytes { file: whole.clone(), start: offset as usize, len: filesz as usize } },
                     executable: flags & 1 != 0,
                     writable: flags & 2 != 0,
                 }),

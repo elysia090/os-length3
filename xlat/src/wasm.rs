@@ -2,7 +2,10 @@
 //! programs it runs. The host copies an ELF into memory from
 //! `xlat_alloc`, calls `xlat_translate`, then reads the module (or the
 //! error text) from `xlat_output_ptr`/`xlat_output_len`. Code a program
-//! reaches later comes from `xlat_open` once, then `xlat_translate_more`.
+//! reaches later comes from `xlat_open` once, then `xlat_translate_more`,
+//! until `xlat_close`. The ELF given to either is the translator's from
+//! then on (it is parsed where it lies, not copied): the host does not free
+//! it.
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;
@@ -35,15 +38,14 @@ pub unsafe extern "C" fn xlat_free(ptr: *mut u8, len: usize) {
     drop(Vec::from_raw_parts(ptr, 0, len));
 }
 
-/// Translate the ELF at `ptr`. Returns 0 with the wasm module as output,
-/// or 1 with an error message as output.
+/// Translate the ELF at `ptr` (taken: the host does not free it). Returns
+/// 0 with the wasm module as output, or 1 with an error message as output.
 ///
 /// # Safety
-/// `ptr` must point to `len` initialized bytes.
+/// `ptr` and `len` must come from one `xlat_alloc` call, all written.
 #[no_mangle]
-pub unsafe extern "C" fn xlat_translate(ptr: *const u8, len: usize) -> i32 {
-    let bytes = std::slice::from_raw_parts(ptr, len);
-    let (status, out) = match crate::elf::Elf::parse(bytes) {
+pub unsafe extern "C" fn xlat_translate(ptr: *mut u8, len: usize) -> i32 {
+    let (status, out) = match crate::elf::Elf::parse_owned(Vec::from_raw_parts(ptr, len, len)) {
         Ok(elf) => {
             let program = crate::discover::discover(&elf);
             (0, crate::lower::translate(&elf, &program, crate::lower::Options::default()).wasm)
@@ -57,17 +59,17 @@ pub unsafe extern "C" fn xlat_translate(ptr: *const u8, len: usize) -> i32 {
 /// Keep the ELF at `ptr` for `xlat_translate_more`, with the function
 /// starts already translated (`known`, u64s): a program reaches its code a
 /// function at a time, and each time the same file is read, so it is parsed
-/// once, and what each module adds is remembered here. The bytes may be
-/// freed after. Returns its handle, or 0 with an error as output. A few stay
-/// open (a compiler's driver, cc1 and the assembler take turns); opening
-/// more lets the oldest go.
+/// once, and what each module adds is remembered here. Returns its handle,
+/// or 0 with an error as output. A few stay open (a compiler's driver, cc1
+/// and the assembler take turns); opening more lets the oldest go.
 ///
 /// # Safety
-/// `ptr` must point to `len` initialized bytes, `known` to `n_known` u64s.
+/// `ptr` and `len` must come from one `xlat_alloc` call, all written (it is
+/// taken), and `known` must point to `n_known` u64s.
 #[no_mangle]
-pub unsafe extern "C" fn xlat_open(ptr: *const u8, len: usize, known: *const u8, n_known: usize) -> u32 {
+pub unsafe extern "C" fn xlat_open(ptr: *mut u8, len: usize, known: *const u8, n_known: usize) -> u32 {
     const KEPT: usize = 6;
-    match crate::elf::Elf::parse(std::slice::from_raw_parts(ptr, len)) {
+    match crate::elf::Elf::parse_owned(Vec::from_raw_parts(ptr, len, len)) {
         Ok(elf) => {
             let handle = NEXT.with(|n| { let h = n.get(); n.set(h + 1); h });
             let known = words(known, n_known).into_iter().collect();
@@ -102,6 +104,12 @@ pub unsafe extern "C" fn xlat_translate_more(handle: u32, seeds: *const u8, n_se
     });
     OUTPUT.with(|o| *o.borrow_mut() = out);
     status
+}
+
+/// Let go of the ELF opened as `handle`, and of what was remembered with it.
+#[no_mangle]
+pub extern "C" fn xlat_close(handle: u32) {
+    OPEN.with(|o| o.borrow_mut().retain(|(h, _, _)| *h != handle));
 }
 
 #[no_mangle]
