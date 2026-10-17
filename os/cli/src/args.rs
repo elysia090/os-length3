@@ -66,6 +66,11 @@ fn flag(name: &str) -> Option<(Given, bool)> {
     })
 }
 
+/// Whether `word` is a flag that takes the word after it (-m, --template…), as parsing reads it.
+pub fn takes_value(word: &str) -> bool {
+    flag(word).is_some_and(|(_, value)| value)
+}
+
 fn same_flag(a: Flag, b: Flag) -> bool {
     matches!((a, b), (Flag::Note(_), Flag::Note(_))) || a == b
 }

@@ -55,7 +55,7 @@ pub fn candidates(ctx: &Ctx, words: &[String]) -> Vec<String> {
     // The word after a flag that takes one.
     match done.last().map(String::as_str) {
         Some("-t" | "--template") => return keep(templates::all().into_iter().map(|t| t.id).collect(), cur),
-        Some("-m" | "--note" | "--detail" | "-o" | "--out") => return Vec::new(),
+        Some(w) if crate::args::takes_value(w) => return Vec::new(),
         _ => {}
     }
     if cur.starts_with('-') {
@@ -68,7 +68,7 @@ pub fn candidates(ctx: &Ctx, words: &[String]) -> Vec<String> {
     let mut skip = false;
     for w in rest {
         if skip { skip = false; continue; }
-        if matches!(w.as_str(), "-m" | "--note" | "--detail" | "-t" | "--template" | "-o" | "--out") { skip = true; continue; }
+        if crate::args::takes_value(w) { skip = true; continue; }
         if !w.starts_with('-') { pos.push(w); }
     }
     if c.name == "help" {
@@ -167,6 +167,9 @@ mod tests {
         assert_eq!(candidates(&c, &w("completion ")), ["bash", "zsh", "fish"]);
         assert!(candidates(&c, &w("help ")).contains(&"all".to_string()));
         assert_eq!(candidates(&c, &w("remote devices ")), ["rm"]);
+        // Every spelling parsing takes a value after is one here too (bug: --message was read as a word).
+        assert!(candidates(&c, &w("review x#1 --message ")).is_empty());
+        assert_eq!(candidates(&c, &w("review x#1 --message note ")), ["approve", "changes"]);
     }
 
     #[test]
