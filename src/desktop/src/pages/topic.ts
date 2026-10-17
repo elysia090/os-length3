@@ -7,7 +7,8 @@ import * as topic from '../topic.ts';
 // the foot, beside the field one posts from (the purple lane of the field
 // at the foot of the center). Anyone reads it; signed in, one also posts,
 // and keeps what is worth more readers (a post widens ring by ring as those
-// who see it keep it; its author sees how far it has gone).
+// who see it keep it; only its author sees how far it has gone, and no one
+// sees a count).
 //
 // It goes on by itself: scrolled near its top, the next older page is read
 // in above without moving what is on screen; what came meanwhile is put at
@@ -87,10 +88,10 @@ export function timeline(scroller: HTMLElement): HTMLElement {
       runs ? h('span', {class: 'tl-face tl-at'}, time) : h('span', {class: 'tl-face', 'aria-hidden': 'true'}, face(p)), main, acts);
 
     if (p.mine) {
-      // Its author sees how far it has gone, and how many kept it.
-      below.append(t('Reaches {who}', {who: t(topic.RINGS[Math.min(p.ring ?? 0, topic.RINGS.length - 1)])}), p.keeps ? ` · ${t('kept by {n}', {n: p.keeps})}` : '');
+      // Its author sees how far it has gone.
+      below.append(t('Reaches {who}', {who: t(topic.RINGS[Math.min(p.ring ?? 0, topic.RINGS.length - 1)])}));
       // Taking one's own post down asks once more, briefly.
-      const down = h('button', {type: 'button', class: 'tl-act'}, t('Take down')) as HTMLButtonElement;
+      const down = h('button', {type: 'button', class: 'button small-button tl-act'}, t('Take down')) as HTMLButtonElement;
       let armed = 0;
       down.addEventListener('click', async () => {
         if (!armed) { down.textContent = t('Take it down?'); armed = window.setTimeout(() => { armed = 0; down.textContent = t('Take down'); }, 3000); return; }
@@ -104,27 +105,18 @@ export function timeline(scroller: HTMLElement): HTMLElement {
       });
       acts.append(down);
     } else if (signedIn) {
-      // Keeping is what lets it reach more readers: a mark under it once kept, and on hover above it.
-      const chip = h('button', {type: 'button', class: 'tl-keep'}) as HTMLButtonElement;
-      const act = h('button', {type: 'button', class: 'tl-act'}) as HTMLButtonElement;
-      const paint = () => {
-        chip.hidden = !p.keeps;
-        chip.textContent = `${t('Kept')} ${p.keeps}`;
-        chip.setAttribute('aria-pressed', String(Boolean(p.kept)));
-        act.textContent = p.kept ? t('Kept') : t('Keep');
-        act.setAttribute('aria-pressed', String(Boolean(p.kept)));
-      };
-      const toggle = async () => {
+      // Keeping is what lets it reach more readers. No count is shown: a post
+      // is read for what it says, and only its author sees how far it went.
+      const keep = h('button', {type: 'button', class: 'button small-button tl-act'}, t('Keep')) as HTMLButtonElement;
+      const paint = () => keep.setAttribute('aria-pressed', String(Boolean(p.kept)));
+      keep.addEventListener('click', async () => {
         const on = !p.kept;
-        p.kept = on; p.keeps += on ? 1 : -1; paint();
-        try { await topic.keep(p.id, on); } catch { p.kept = !on; p.keeps += on ? -1 : 1; paint(); }
-      };
-      chip.addEventListener('click', () => void toggle());
-      act.addEventListener('click', () => void toggle());
+        p.kept = on; paint();
+        try { await topic.keep(p.id, on); } catch { p.kept = !on; paint(); }
+      });
       paint();
-      below.append(chip);
-      acts.append(act);
-    } else if (p.keeps) below.append(t('kept by {n}', {n: p.keeps}));
+      acts.append(keep);
+    }
     return art;
   };
 

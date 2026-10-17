@@ -1,6 +1,6 @@
 import {h} from '../dom.ts';
 import {t} from '../i18n.ts';
-import {icon, mark} from '../icons.ts';
+import {icon} from '../icons.ts';
 import type {PurposeId} from '../purposes.ts';
 import {connection, RemoteError} from '../remote.ts';
 import {LIMIT} from '../topic.ts';
@@ -14,15 +14,16 @@ import {postNow, timeline} from './topic.ts';
 // field at its foot, and a narrow right pane (1/4) with the search box and
 // a reference switched freely on top and the Prompt (the repo's sh) below.
 //
-// The field at the foot is two lanes side by side, and which one is out
+// The field at the foot is two boxes side by side, as the issues are (#1,
+// #2): one in full, the other's edge showing beside it, and the edge is the
+// way to it (a press, or Alt+←/→, slides the track there). Which box is out
 // says where Enter goes: Post (purple, #) sends to Topic, Shell (yellow,
-// >_) runs in the repo's sh; Shift+Enter is a new line in either. The other
-// lane waits at the side, a strip with its mark, and a press on it (or
-// Alt+←/→) slides it out. What is above the field follows the lane: in
-// Post, Topic is laid over the center (unless the center is Topic
-// already); in Shell, using the field sends the Prompt flying up over the
-// center, just above it, and the reference grows down into the room it
-// leaves. Above the field's right end, ⏻ turns the repo's Prompt on and off.
+// >_) runs in the repo's sh; Shift+Enter is a new line in either. What is
+// above the field follows the box: in Post, Topic is laid over the center
+// (unless the center is Topic already); in Shell, using the field sends the
+// Prompt flying up over the center, just above it, and the reference grows
+// down into the room it leaves. Above the field's right end, the same
+// switch as a repo's turns the repo's Prompt on and off.
 
 const MOVE = 280;
 
@@ -68,7 +69,7 @@ export interface BenchParts {
   go(id: PurposeId): void;
   /** Whether the center is Topic already, so Post lays nothing over it. */
   topicIsMain?(): boolean;
-  /** Start a repo's Prompt only when asked (⏻ or a line to run), not on sight. */
+  /** Start a repo's Prompt only when asked (its switch, or a line to run), not on sight. */
   lazy?: boolean;
 }
 
@@ -91,19 +92,26 @@ export function bench(parts: BenchParts): Bench {
   const signIn = h('button', {type: 'button', class: 'button small-button say-sign-in'}, t('Sign in')) as HTMLButtonElement;
   signIn.addEventListener('click', () => parts.go('remote'));
   const laneOf = (which: Lane, input: HTMLTextAreaElement, extra: Node[] = []) => {
-    const out = h('button', {type: 'button', class: 'say-mark', 'aria-label': which === 'post' ? t('Post to Topic') : t('Shell')}, icon(which === 'post' ? 'topic' : 'forge')) as HTMLButtonElement;
-    const box = h('form', {class: `say-lane say-${which}`, 'data-lane': which}, out, input, ...extra);
-    // The lane waiting at the side comes out at a press anywhere on it.
-    box.addEventListener('pointerdown', (event) => { if (current !== which) { event.preventDefault(); setLane(which, true); } });
-    out.addEventListener('click', () => (current === which ? input.focus() : setLane(which, true)));
+    const box = h('form', {class: `say-lane say-${which}`, 'data-lane': which},
+      h('span', {class: 'say-mark', 'aria-hidden': 'true'}, icon(which === 'post' ? 'topic' : 'forge')), input, ...extra);
     box.addEventListener('submit', (event) => event.preventDefault());
     return box;
   };
   const postLane = laneOf('post', post, [signIn]);
   const shellLane = laneOf('shell', prompt);
+  // As the issues are: one box in full, the other's edge showing beside it; the edge is the way to it.
+  const edge = (which: Lane) => {
+    const b = h('button', {type: 'button', class: `stage-hit ${which === 'post' ? 'prev' : 'next'}`,
+      'aria-label': which === 'post' ? t('Post to Topic') : t('Shell')}, icon(which === 'post' ? 'topic' : 'forge')) as HTMLButtonElement;
+    b.addEventListener('click', () => setLane(which, true));
+    return b;
+  };
+  const toPost = edge('post'), toShell = edge('shell');
+  const lanes = h('div', {class: 'say-stage'}, h('div', {class: 'say-track'}, postLane, shellLane), toPost, toShell);
   const hint = h('p', {class: 'say-hint small', 'aria-live': 'polite'});
-  const power = h('button', {type: 'button', class: 'say-power'}, mark('power')) as HTMLButtonElement;
-  const say = h('div', {class: 'say', 'data-lane': current}, h('div', {class: 'say-head'}, hint, power), h('div', {class: 'say-lanes'}, postLane, shellLane));
+  // The repo's Prompt, on or off: the same switch as a repo's or SSH's.
+  const power = h('button', {type: 'button', class: 'power plain', role: 'switch', 'aria-checked': 'false'}, h('span', {class: 'knob'})) as HTMLButtonElement;
+  const say = h('div', {class: 'say', 'data-lane': current}, h('div', {class: 'say-head'}, hint, power), lanes);
   const note = h('p', {class: 'prompt-note muted small', role: 'status'});
   const dock = h('div', {class: 'dock'}, termSlot, say, note);
 
@@ -122,30 +130,33 @@ export function bench(parts: BenchParts): Bench {
       box.setAttribute('aria-current', String(out));
       input.tabIndex = out ? 0 : -1;
     }
+    toPost.hidden = current === 'post';
+    toShell.hidden = current === 'shell';
     post.disabled = !signedIn();
     signIn.hidden = signedIn();
     post.placeholder = signedIn() ? t('Something short to share') : t('Sign in to post.');
     prompt.disabled = !repo;
     prompt.placeholder = repo ? t('Run in {name}', {name: repo}) : t('Runs once a repo is open');
-    // What Enter does, said where it is pressed.
+    // What Enter does, said where it is pressed; what is left of a post only once it runs short.
+    const left = LIMIT - post.value.length;
     hint.textContent = current === 'post'
-      ? (signedIn() ? `${t('Enter posts to Topic')} · ${t('Shift+Enter: new line')} · ${LIMIT - post.value.length}` : t('Anyone reads Topic; posting needs sign-in'))
-      : (repo ? `${t('Enter runs in {name}', {name: repo})} · ${t('Shift+Enter: new line')}` : t('Runs once a repo is open'));
+      ? (signedIn() ? [t('Enter: post'), t('Shift+Enter: new line'), ...(left < 100 ? [String(left)] : [])].join(' · ') : '')
+      : (repo ? `${t('Enter: run in {name}', {name: repo})} · ${t('Shift+Enter: new line')}` : '');
     paintPower();
   };
 
-  // ---- ⏻: the repo's Prompt, on or off ----
+  // ---- the switch: the repo's Prompt, on or off ----
   let unwatch: (() => void) | null = null;
   const follow = () => {
     unwatch?.();
     unwatch = repo ? sessionIfAny(repo)?.watch(paintPower) ?? null : null;
   };
   function paintPower() {
-    // Starting counts as on: ⏻ then stops it.
+    // Starting counts as on: the switch then stops it.
     const s = repo ? sessionIfAny(repo) : undefined;
     const on = Boolean(s && !s.ended);
     power.disabled = !repo;
-    power.setAttribute('aria-pressed', String(on));
+    power.setAttribute('aria-checked', String(on));
     const label = !repo ? t('No Prompt: no repo is open') : on ? t('Turn the Prompt off') : t('Turn the Prompt on');
     power.setAttribute('aria-label', label);
     power.title = label;
@@ -264,7 +275,7 @@ export function bench(parts: BenchParts): Bench {
     reference.setRepo(name);
     const running = name ? sessionIfAny(name) : undefined;
     termBox.replaceChildren(termTitle, !name ? h('div', {class: 'empty'}, none)
-      : parts.lazy && !running ? h('div', {class: 'empty'}, t('The Prompt is off: ⏻ turns it on'))
+      : parts.lazy && !running ? h('div', {class: 'empty'}, t('The Prompt is off: its switch above the field turns it on'))
       : terminalFor(name));
     follow();
     paint();

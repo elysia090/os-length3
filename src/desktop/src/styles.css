@@ -1,6 +1,7 @@
 /* Tokens and components from DESIGN.md §3. Every value below comes from a
    token; nothing is set by eye in one place only. Six colours and five
-   marks, 1px lines, no shadows, blur, glow or gradients. */
+   marks, 1px lines, no shadows, blur or glow; a gradient only where the
+   field's boxes are lit from above and where the page fades under it. */
 :root {
   --ground: #dadad5;
   --ink: #292b2a;
@@ -12,9 +13,9 @@
   --done: #2f7d4f;
   --marker: #f3e27a;
   --off: #b3412f;
-  /* The two lanes of the field at the foot, which say where Enter goes: purple to Topic, yellow to the shell. */
-  --post: #644a9e;
-  --shell: #d9a621;
+  /* The two boxes of the field at the foot, which say where Enter goes: violet to Topic, gold to the shell. */
+  --post: #6a4cb2;
+  --shell: #d99a1e;
 
   --sans: system-ui, -apple-system, 'Segoe UI', 'Noto Sans JP', 'Hiragino Sans', sans-serif;
   --mono: ui-monospace, 'SF Mono', Consolas, 'Noto Sans Mono', monospace;
@@ -398,40 +399,46 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
   position: absolute; left: var(--s5); right: var(--s5); bottom: var(--s5); z-index: 2;
   max-width: 760px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s2);
 }
-/* Under the field, the ground to the center's foot: what scrolls under the field does not show below it. */
-.dock::after { content: ''; position: absolute; top: 100%; left: -50vw; right: -50vw; height: var(--s5); background: var(--ground); }
+/* Under the field, the ground to the center's foot, and behind it what scrolls fades out above it: nothing shows through the field or its line. */
+.dock::after { content: ''; position: absolute; z-index: -1; top: 100%; left: -50vw; right: -50vw; height: var(--s5); background: var(--ground); }
+.dock::before { content: ''; position: absolute; z-index: -1; top: calc(-1 * var(--s5)); bottom: 0; left: -50vw; right: -50vw; background: linear-gradient(180deg, transparent, var(--ground) var(--s5)); pointer-events: none; }
+.work.prompting .dock::before { top: 0; background: var(--ground); }
 .term-slot:empty { display: none; }
 .term-slot .term-box { height: clamp(180px, 40vh, 440px); padding: var(--s4); background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-place); }
-/* Two lanes side by side: the one out takes the width, the other waits as a strip with its mark. */
-.say { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s1); }
+/* The field: two boxes side by side, as the issues are (#1, #2): one in
+   full, the other's edge showing beside it; the edge is a clear button over
+   it, which lifts it while hovered, and the track slides there. */
+.say { --peek: 32px; --gap: var(--s2); --lead: 0; --at: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s1); }
+.say[data-lane='shell'] { --lead: 2; --at: 1; }
 .say-head { display: flex; align-items: center; gap: var(--s3); min-height: 28px; padding-left: var(--s2); }
 .say-hint { flex: 1; min-width: 0; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* ⏻ above the field's right end: the repo's Prompt, yellow while it is on. */
-.say-power {
-  flex: none; display: grid; place-items: center; width: 28px; height: 28px; padding: 0;
-  border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: pointer;
-}
-.say-power .mark { width: var(--s4); height: var(--s4); }
-.say-power:hover:not(:disabled) { background: var(--raised); color: var(--ink); }
-.say-power[aria-pressed='true'] { background: var(--shell); border-color: var(--shell); color: var(--ink); }
-.say-power:disabled { opacity: .5; cursor: default; }
-.say-lanes { display: flex; gap: var(--s2); }
+.say-stage { position: relative; overflow-x: clip; }
+.say-track { display: flex; gap: var(--gap); transform: translateX(calc(var(--lead) * var(--peek) - var(--at) * (100% - 2 * var(--peek) + var(--gap)))); transition: transform var(--move); }
 .say-lane {
-  display: flex; align-items: flex-start; gap: var(--s3); min-width: 0; overflow: hidden;
-  flex: 0 0 var(--h-place); padding: var(--s3); border: var(--line-work) solid; border-radius: var(--r-place);
-  cursor: pointer; transition: flex-grow var(--move), flex-basis var(--move);
+  --hue: var(--post);
+  flex: 0 0 calc(100% - 2 * var(--peek)); min-width: 0; display: flex; align-items: flex-start; gap: var(--s3);
+  padding: var(--s3) var(--s4); border: var(--line-work) solid transparent; border-radius: var(--r-place);
+  /* Lit from above: the colour strongest at the top edge, fading down into the field, its edge the same way. */
+  background:
+    linear-gradient(180deg, color-mix(in oklch, var(--hue) 30%, var(--raised)), color-mix(in oklch, var(--hue) 8%, var(--raised)) 60%, var(--raised)) padding-box,
+    linear-gradient(180deg, var(--hue), color-mix(in oklch, var(--hue) 35%, var(--ground))) border-box;
+  transition: opacity var(--motion);
 }
-.say-lane[aria-current='true'] { flex: 1 1 0; padding: var(--s3) var(--s4); cursor: auto; }
-.say-lane:not([aria-current='true']) { justify-content: center; }
-.say-lane:not([aria-current='true']) > :not(.say-mark) { display: none; }
-.say-post { border-color: var(--post); background: color-mix(in srgb, var(--post) 9%, var(--raised)); }
-.say-shell { border-color: var(--shell); background: color-mix(in srgb, var(--shell) 14%, var(--raised)); }
-.say-post:focus-within { outline: 2px solid var(--post); outline-offset: 2px; }
-.say-shell:focus-within { outline: 2px solid var(--ink); outline-offset: 2px; }
-.say-mark { flex: none; display: grid; place-items: center; width: var(--icon); height: var(--icon); padding: 0; border: 0; background: transparent; color: var(--ink); cursor: pointer; }
+.say-shell { --hue: var(--shell); }
+/* The box beside is quieter, as an issue's neighbour is, and shows only its edge; its mark is on the edge. */
+.say-lane[aria-current='false'] { opacity: .55; }
+.say-lane[aria-current='false'] > * { visibility: hidden; }
+.say-stage:has(.stage-hit.prev:hover) .say-post, .say-stage:has(.stage-hit.next:hover) .say-shell { opacity: .9; }
+/* The ring sits inside, as on the issues' edges: the stage clips at its sides. */
+.say-post:focus-within { outline: 2px solid var(--post); outline-offset: -4px; }
+.say-shell:focus-within { outline: 2px solid var(--shell); outline-offset: -4px; }
+.say .stage-hit { display: grid; place-items: center; }
+.say .stage-hit.prev { color: var(--post); }
+.say .stage-hit.next { color: color-mix(in oklch, var(--shell) 60%, var(--ink)); }
+.say-mark { flex: none; display: grid; place-items: center; width: var(--icon); height: var(--icon); }
 .say-post .say-mark { color: var(--post); }
 .say-in { flex: 1; min-width: 0; max-height: 30vh; border: 0; padding: 0; background: transparent; resize: none; font: var(--t-body)/1.6 var(--sans); }
-/* The shell lane reads as the terminal it types into. */
+/* The shell box reads as the terminal it types into. */
 .say-shell .say-in { font: var(--t-body)/1.6 var(--mono); }
 .say-in:focus { outline: none; }
 .say-in:disabled { cursor: default; }
@@ -447,7 +454,7 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .topic-layer .flow, .cover { overscroll-behavior: contain; }
 .topic-layer.open { animation: layer-in var(--move) cubic-bezier(.2, .9, .25, 1); }
 @keyframes layer-in { from { opacity: 0; transform: translateX(calc(-1 * var(--s4))); } }
-@media (prefers-reduced-motion: reduce) { .topic-layer.open { animation: none; } .say-lane { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .topic-layer.open { animation: none; } .say-track { transition: none; } }
 /* Narrow: the center and its field keep the width; the side steps aside (the Prompt still flies up above the field). */
 @media (max-width: 760px) {
   .work { grid-template-columns: minmax(0, 1fr); }
@@ -862,11 +869,10 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
    A run of one person's posts shows their face and name once; a line marks
    where a day starts; what can be done to a post comes out on hover. */
 .topic { max-width: 760px; margin: 0 auto; }
-.topic > .page-head { position: sticky; top: calc(-1 * var(--s3)); z-index: 2; padding: var(--s3) 0 var(--s2); background: var(--ground); border-bottom: 1px solid var(--rule); }
+.topic > .page-head { position: sticky; top: calc(-1 * var(--s3)); z-index: 2; padding: var(--s3) 0 var(--s2); background: var(--ground); }
 .tl-start { padding: var(--s5) 0 var(--s2); text-align: center; min-height: 1lh; }
 .tl-pages { overflow-anchor: none; }
-.tl-day { display: flex; align-items: center; gap: var(--s3); margin: var(--s4) 0 var(--s2); color: var(--sub); font: 600 var(--t-meta) var(--sans); }
-.tl-day::before, .tl-day::after { content: ''; flex: 1; border-top: 1px solid var(--rule); }
+.tl-day { margin: var(--s5) 0 var(--s1); text-align: center; color: var(--sub); font: 600 var(--t-meta) var(--sans); }
 .tl-post { position: relative; display: grid; grid-template-columns: 36px minmax(0, 1fr); column-gap: var(--s3); margin: var(--s2) calc(-1 * var(--s2)) 0; padding: var(--s1) var(--s2); border-radius: var(--r-field); }
 .tl-post.tl-runs { margin-top: 0; }
 .tl-post:hover, .tl-post:focus-within { background: var(--raised); }
@@ -878,15 +884,10 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .tl-body { white-space: pre-wrap; overflow-wrap: anywhere; }
 .tl-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin-top: var(--s1); }
 .tl-foot:empty { display: none; }
-.tl-acts { position: absolute; top: calc(-1 * var(--s3)); right: var(--s2); z-index: 1; display: none; padding: 2px; border: 1px solid var(--rule); border-radius: var(--r-card); background: var(--ground); }
+.tl-acts { position: absolute; top: calc(-1 * var(--s3)); right: var(--s2); z-index: 1; display: none; gap: var(--s1); }
 .tl-post:hover .tl-acts:not(:empty), .tl-post:focus-within .tl-acts:not(:empty) { display: flex; }
-.tl-act { min-height: 24px; padding: 0 var(--s2); border: 0; border-radius: var(--r-field); background: transparent; font-size: var(--t-meta); cursor: pointer; }
-.tl-act:hover { background: var(--raised); }
-.tl-act[aria-pressed='true'] { color: var(--post); font-weight: 600; }
-/* Kept, under a post: a small round mark, purple where it is this reader's. */
-.tl-keep { display: inline-flex; align-items: center; min-height: 24px; padding: 0 var(--s2); border: 1px solid var(--rule); border-radius: var(--r-round); background: transparent; color: var(--sub); font-size: var(--t-meta); cursor: pointer; }
-.tl-keep:hover { background: var(--raised); }
-.tl-keep[aria-pressed='true'] { border-color: var(--post); color: var(--post); background: color-mix(in srgb, var(--post) 9%, var(--ground)); }
+.tl-act { background: var(--ground); }
+.tl-act[aria-pressed='true'] { border-color: var(--post); color: var(--post); font-weight: 600; }
 .tl-foot-mark { height: 1px; }
 /* The mark for what came floats just above the field (its holder has no height), so showing it moves nothing. */
 .tl-new-at { position: sticky; bottom: 168px; z-index: 3; height: 0; display: flex; justify-content: center; align-items: flex-end; }

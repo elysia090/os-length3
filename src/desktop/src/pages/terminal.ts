@@ -285,7 +285,7 @@ export class Session {
    */
   free() { this.worker?.postMessage({type: 'free'}); }
 
-  /** Whether it has ended (stopped, exited, or never started): only then does ⏻ start it again. */
+  /** Whether it has ended (stopped, exited, or never started): only then does its switch start it again. */
   ended = false;
 
   /** Whether the shell is running (its worker or its root process exists). */

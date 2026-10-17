@@ -42,12 +42,13 @@ frontend and no UI framework; the same frontend is the web build.
   first, loaded as they scroll near), each a plain text editor with line
   numbers that saves on its own (natively through `repo_write`, which only
   replaces existing files inside the repo, atomically; files read only in
-  part are never written), with a field at its foot in two lanes: Shell
-  (yellow, `>_`: Enter runs in the repo's `sh`) and Post (purple, `#`: Enter
-  posts to Topic, which is then laid over the center); the other lane waits
-  as a strip at the side (a press or Alt+←/→ slides it out), Shift+Enter is
-  a new line in both, and ⏻ above the field's right end turns the repo's
-  Prompt on and off. While the shell lane is in use the terminal flies
+  part are never written), with a field at its foot as two boxes side by
+  side like the issues (one in full, the other's edge showing; a press or
+  Alt+←/→ slides there): Shell (gold, `>_`: Enter runs in the repo's `sh`)
+  and Post (violet, `#`: Enter posts to Topic, which is then laid over the
+  center), each lit from above; Shift+Enter is a new line in both, and the
+  same switch as a repo's, above the field's right end, turns the repo's
+  Prompt on and off. While the Shell box is in use the terminal flies
   up above it from the right pane, where a search box for the repo sits on
   top and the reference (the repo's
   `issue/`; diff and run output not connected yet) grows into the
@@ -149,8 +150,8 @@ the app.
   be stopped; then the environment in effect.
 - Topic (first in the rail, laid over any page like File): short posts on
   the Remote (`service/topic.ts`), read as a conversation (oldest above,
-  newest at the foot by the purple lane one posts from, runs of one
-  address shown once, a line where a day starts, Keep and Take down on
+  newest at the foot by the violet box one posts from, runs of one
+  address shown once, the day named where it starts, no counts, Keep and Take down on
   hover), a page at a time as a range of ids. Anyone reads what
   has gone everywhere; posting needs an account and an Inbox address. A
   post starts with its author's contacts and a few readers and widens ring
