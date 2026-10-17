@@ -219,15 +219,16 @@ export class Kernel {
   }
 
   /**
-   * Run until every process has exited or the running one waits for input.
-   * Returns {waiting: true} or {status} of the first process.
+   * Run until every process has exited or the running one waits (for input,
+   * or until a time: `until`, in performance.now() ms, when it sleeps).
+   * Returns {waiting: true, until?} or {status} of the first process.
    */
   pump() {
     while (this.chain.length) {
       const p = this.chain.at(-1);
       const status = p.run();
       if (status === null) {
-        if (this.chain.at(-1) === p) return {waiting: true};
+        if (this.chain.at(-1) === p) return p.sleepUntil === undefined ? {waiting: true} : {waiting: true, until: Number(p.sleepUntil) / 1e6};
         continue; // it forked: the child runs now
       }
       this.chain.pop();
@@ -252,10 +253,14 @@ export class Kernel {
     return true;
   }
 
-  /** Start and run to the end; for hosts whose input is all known up front. */
+  /** Start and run to the end; for hosts whose input is all known up front (a sleep is waited out here). */
   spawn(path, argv, env, cwd = '/') {
     this.start(path, argv, env, cwd);
-    const r = this.pump();
+    let r = this.pump();
+    while (r.waiting && r.until !== undefined) {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Math.max(0, r.until - performance.now()));
+      r = this.pump();
+    }
     if (r.waiting) throw new Error('process waits for input that will never come');
     return r.status;
   }

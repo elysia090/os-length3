@@ -44,6 +44,7 @@ function read(n) {
   return head.subarray(0, n);
 }
 
+let waking;
 function pump() {
   try {
     const r = kernel.pump();
@@ -51,6 +52,9 @@ function pump() {
     if (c) self.postMessage({type: 'changes', ...c}, c.files.map((f) => f.bytes.buffer));
     const held = kernel.held();
     self.postMessage(r.waiting ? {type: 'waiting', memory: held.total, held} : {type: 'exit', status: r.status, memory: 0});
+    // A process that sleeps goes on when its time comes, input or not.
+    clearTimeout(waking);
+    if (r.waiting && r.until !== undefined) waking = setTimeout(pump, Math.max(0, r.until - performance.now()));
   } catch (e) {
     self.postMessage({type: 'error', message: e instanceof Error ? `${e.name}: ${e.message}\n${e.stack}` : String(e)});
   }

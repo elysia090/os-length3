@@ -2,7 +2,7 @@
 // with `this` bound to the calling Process.
 
 import {E, FsError} from './fs.mjs';
-import {Exec, Exit} from './process.mjs';
+import {Exec, Exit, Wait} from './process.mjs';
 
 const N = (x) => Number(BigInt.asIntN(64, x));
 const fail = (errno) => { throw new FsError(errno); };
@@ -21,6 +21,20 @@ function writeTime(p, address, ns) {
 
 const wall = () => BigInt(Date.now()) * 1000000n;
 const monotonic = () => BigInt(Math.round(performance.now() * 1e6));
+/** A timespec in guest memory, in nanoseconds. */
+const readTime = (p, at) => p.view.getBigInt64(at, true) * 1000000000n + p.view.getBigInt64(at + 8, true);
+
+/**
+ * Sleep until `deadline` (monotonic ns) for real: the first call sets it, and
+ * the call is left (Wait) and made again until the time has come, so the host
+ * waits on a timer instead of running anything (a loop around sleep(1) runs
+ * once a second, not as fast as it can).
+ */
+function sleepUntil(p, deadline) {
+  p.sleepUntil ??= deadline;
+  if (monotonic() >= p.sleepUntil) { p.sleepUntil = undefined; return 0; }
+  throw new Wait();
+}
 
 function wait(p, pid, statusAddress, options) {
   const want = N(pid);
@@ -80,7 +94,7 @@ export const PROC_CALLS = {
   },
   26() { return 0; }, 27() { return 0; }, 28() { return 0; },
   34() { fail(E.INTR); },
-  35() { return 0; }, // nanosleep: nothing else can run meanwhile
+  35(req) { return sleepUntil(this, monotonic() + readTime(this, N(req))); }, // nanosleep
   37() { return 0; },
   39() { return this.pid; },
   56(flags, stack) {
@@ -148,7 +162,12 @@ export const PROC_CALLS = {
   218() { return this.pid; },
   228(clock, ts) { writeTime(this, N(ts), N(clock) === 0 ? wall() : monotonic()); return 0; },
   229(clock, ts) { if (N(ts)) writeTime(this, N(ts), 1n); return 0; },
-  230() { return 0; },
+  230(clock, flags, req) { // clock_nanosleep: by an interval, or until a time on that clock (TIMER_ABSTIME)
+    const t = readTime(this, N(req));
+    if (!(N(flags) & 1)) return sleepUntil(this, monotonic() + t);
+    const now = N(clock) === 0 ? wall() : monotonic();
+    return sleepUntil(this, monotonic() + (t > now ? t - now : 0n));
+  },
   231(code) { throw new Exit(exitStatus(N(code))); },
   234(tgid, tid, sig) { return PROC_CALLS[62].call(this, tid, sig); },
   273() { return 0; },
@@ -161,6 +180,11 @@ export const PROC_CALLS = {
     crypto.getRandomValues(this.bytes.subarray(N(buf), N(buf) + n));
     return n;
   },
+  // The network boundary: a Prompt in a browser has no network and no sockets of
+  // any family (internet, netlink, local), so a program is told the family is not
+  // there, as a host without it says, not that the call does not exist.
+  41() { fail(E.AFNOSUPPORT); }, // socket
+  53() { fail(E.AFNOSUPPORT); }, // socketpair
   334() { fail(E.NOSYS); }, // rseq
   435() { fail(E.NOSYS); }, // clone3: libc falls back to clone
   436() { return 0; },
