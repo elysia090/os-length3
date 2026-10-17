@@ -456,11 +456,11 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
   .work { grid-template-columns: minmax(0, 1fr); position: relative; --search-w: clamp(160px, 40%, 300px); }
   .work > .side { display: block; position: absolute; top: 0; right: var(--s2); width: var(--search-w); z-index: 2; }
   .work > .side > .term-home, .work > .side .reference > .chips, .work > .side .reference > .reference-body { display: none; }
-  .work > .side .pane.reference { display: grid; grid-template-rows: auto; gap: var(--s2); padding: var(--band) 0 0; overflow: visible; }
-  /* The results are wider than the box, opening to its left over the center. */
+  .work > .side .pane.reference { position: relative; display: block; padding: var(--band) 0 0; overflow: visible; }
+  /* The results are wider than the box, opening under it to its left, over the center. */
   .work > .side:focus-within .reference > .reference-body {
-    display: block; justify-self: end; width: min(360px, calc(100vw - var(--rail) - 2 * var(--s4))); max-height: 60vh;
-    padding: var(--s3); background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-card);
+    display: block; position: absolute; top: calc(100% + var(--s2)); right: 0; width: min(360px, calc(100vw - var(--rail) - 2 * var(--s4)));
+    max-height: 60vh; overflow: auto; padding: var(--s3); background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-card);
   }
   .repo-strip { padding-right: calc(var(--search-w) + var(--s4)); }
   .center, .repo-strip { border-right: 0; }
@@ -483,6 +483,8 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
   background: var(--raised); color: var(--ink);
 }
 .search-in:disabled, .line-in:disabled { opacity: .5; }
+/* The search box's own clear mark, in the page's ink, not the browser's blue. */
+.search-in::-webkit-search-cancel-button { filter: grayscale(1) brightness(.4); cursor: pointer; }
 .search-count { margin-bottom: var(--s2); }
 .hit-group { display: grid; margin-bottom: var(--s3); }
 .hit-file, .hit { border: 0; padding: 0 var(--s1); background: transparent; text-align: left; cursor: pointer; border-radius: var(--r-field); }

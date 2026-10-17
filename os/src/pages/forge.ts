@@ -79,13 +79,17 @@ function make(ctx: Context) {
   add.addEventListener('click', async () => {
     const rest = offBand(band, every());
     if (!rest.length) return;
+    // Held down while repos come from the Remote, ⊕ loses the keyboard; it is given back below.
+    const pressed = document.activeElement === add;
     add.disabled = true;
     try {
       for (const name of rest.filter((n) => !all.includes(n))) { await bring(name); all = [...all, name]; }
-    } catch (e) { add.disabled = false; add.title = e instanceof Error ? e.message : String(e); return; }
+    } catch (e) { add.disabled = false; add.title = e instanceof Error ? e.message : String(e); if (pressed) add.focus(); return; }
     for (const name of rest) band = addToBand(band, name);
     saveBand();
     if (repo) paintBand(); else show(rest[0]);
+    // Nothing left to bring out, ⊕ steps back; the keyboard that pressed it goes to the first repo it brought.
+    if (pressed) (add.disabled ? pills.querySelector<HTMLElement>(`.pill[data-repo="${CSS.escape(rest[0])}"] .pill-name`) : add)?.focus();
   });
 
   const paintBand = () => {

@@ -12,7 +12,10 @@ import {inRepo, list, ORIGIN_LABEL, type SystemEntry} from '../system.ts';
 // once, whatever has the keyboard. Nothing under it moves. A folder's
 // triangle comes before its name: ▷ closed, ▽ open. A file chosen is the one
 // to work on: the tree goes and the caret is in it. The file Forge is
-// reading keeps a quiet mark, apart from what the pointer is over.
+// reading keeps a quiet mark, apart from what the pointer is over. From the
+// keyboard it is a tree: ↑ ↓ go along the names, → opens a folder or goes
+// into it, ← closes it or goes up to its folder, Enter chooses; where the
+// pointer is changes none of it.
 
 const OPEN_DELAY = 80;
 const LINGER = 8000;
@@ -74,6 +77,7 @@ export class FileTree {
       const to = event.relatedTarget as Node | null;
       if (to && !this.element.contains(to) && to !== this.trigger) this.close();
     });
+    this.element.addEventListener('keydown', (event) => this.step(event));
     document.addEventListener('pointerdown', (event) => {
       const at = event.target as Node;
       if (!this.element.contains(at) && !this.trigger?.contains(at)) this.close();
@@ -136,6 +140,28 @@ export class FileTree {
     }
   }
 
+  /** The keyboard along the tree: only the names it shows, in order. */
+  private step(event: KeyboardEvent) {
+    if (!['ArrowDown', 'ArrowUp', 'ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return;
+    const names = [...this.root.querySelectorAll<HTMLElement>('.tree-name')].filter((b) => b.getClientRects().length > 0);
+    const at = names.indexOf(document.activeElement as HTMLElement);
+    if (at < 0) return;
+    event.preventDefault();
+    const name = names[at];
+    const item = name.closest('li');
+    const toggle = item?.querySelector<HTMLButtonElement>(':scope > .tree-row > .tree-toggle');
+    const open = toggle?.getAttribute('aria-expanded') === 'true';
+    if (event.key === 'ArrowDown') names[at + 1]?.focus();
+    else if (event.key === 'ArrowUp') names[at - 1]?.focus();
+    else if (event.key === 'Home') names[0]?.focus();
+    else if (event.key === 'End') names[names.length - 1]?.focus();
+    else if (event.key === 'ArrowRight') {
+      if (toggle && !open) toggle.click();
+      else if (open) item?.querySelector<HTMLElement>(':scope > .tree-children .tree-name')?.focus();
+    } else if (toggle && open) toggle.click();
+    else item?.parentElement?.closest('li')?.querySelector<HTMLElement>(':scope > .tree-row > .tree-name')?.focus();
+  }
+
   private later(open: boolean, after: number) {
     clearTimeout(this.timer);
     this.timer = window.setTimeout(() => (open ? this.open() : this.close()), after);
@@ -186,7 +212,8 @@ export class FileTree {
     }
 
     let expanded = expandedPaths.has(e.path);
-    const toggle = h('button', {class: 'tree-toggle', type: 'button'}) as HTMLButtonElement;
+    // The pointer's way to open a folder; from the keyboard → and ← do it on the name.
+    const toggle = h('button', {class: 'tree-toggle', type: 'button', tabindex: '-1'}) as HTMLButtonElement;
     toggle.append(triangle());
     const name = h('button', {class: 'tree-name', type: 'button'}, e.name);
     if (isRepo) {

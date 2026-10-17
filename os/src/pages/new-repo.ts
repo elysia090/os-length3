@@ -109,6 +109,7 @@ export function newRepo(ctx: Context): Node[] {
     } catch (e) {
       error.textContent = t('Could not create: {message}', {message: String(e)});
       submit.disabled = false;
+      submit.focus();
     }
   });
   // The repos already there, right under the form; a new one joins them.
