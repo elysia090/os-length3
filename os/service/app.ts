@@ -118,16 +118,16 @@ export async function sha256(bytes: Uint8Array): Promise<string> {
 
 export const validName = (n: string) => /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}$/.test(n);
 /** A line of work: 'main', or an issue file's stem. */
-const validLine = (n: string) => /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(n);
+export const validLine = (n: string) => /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(n);
 /** The issue a line is the work for: its file ('issue/001.md'); '' for main. */
-const issueOf = (line: string) => (line === 'main' ? '' : `issue/${line}.md`);
+export const issueOf = (line: string) => (line === 'main' ? '' : `issue/${line}.md`);
 
 /**
  * Three trees as one, path by path: what changed on one side only is taken,
  * the same change on both is taken once, and a path both changed differently
  * is a conflict (and is left as `ours`).
  */
-function merge3(base: Tree, ours: Tree, theirs: Tree): {tree: Tree; conflicts: string[]} {
+export function merge3(base: Tree, ours: Tree, theirs: Tree): {tree: Tree; conflicts: string[]} {
   const tree: Tree = {}, conflicts: string[] = [];
   const get = (t: Tree, p: string) => (p in t ? t[p] : undefined);
   for (const p of new Set([...Object.keys(base), ...Object.keys(ours), ...Object.keys(theirs)])) {
@@ -139,7 +139,7 @@ function merge3(base: Tree, ours: Tree, theirs: Tree): {tree: Tree; conflicts: s
 }
 
 /** A repo path as the app allows one: no .., no empty part, never .git however spelt. */
-function validPath(p: string): boolean {
+export function validPath(p: string): boolean {
   if (!p || p.length > 1024 || p.startsWith('/')) return false;
   return p.split('/').every((part) => {
     if (!part || part === '.' || part === '..') return false;
@@ -149,7 +149,7 @@ function validPath(p: string): boolean {
 }
 
 /** A draft with a diff laid on it: `remove` takes a path and everything under it, then `set` is written. */
-function applyDiff(draft: Tree, set: Tree, remove: string[]): Tree {
+export function applyDiff(draft: Tree, set: Tree, remove: string[]): Tree {
   const gone = new Set(remove);
   // A path goes when it, or a folder it is in, was removed: its own ancestors are looked up, not every path removed.
   const removed = (p: string) => {

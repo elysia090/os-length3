@@ -63,13 +63,13 @@ async function txtOverHttps(name: string): Promise<string[]> {
 }
 
 /** The fields of a length3 record ("v=length3; remote=…; proof=…"), or null for another record. */
-function readRecord(text: string): {remote: string; proof: string} | null {
+export function readRecord(text: string): {remote: string; proof: string} | null {
   const f = Object.fromEntries(text.split(';').map((p) => p.trim().split('=').map((x) => x.trim())).filter((kv) => kv.length === 2)) as Record<string, string>;
   return f.v === 'length3' && f.remote ? {remote: f.remote.toLowerCase(), proof: f.proof ?? ''} : null;
 }
 
 /** An address as typed: lower case, and the domain checked. */
-function parseAddress(a: string): {name: string; domain: string} | null {
+export function parseAddress(a: string): {name: string; domain: string} | null {
   const m = /^([^@\s]+)@([^@\s]+)$/.exec(a.trim().toLowerCase());
   if (!m || !NAME.test(m[1]) || !DOMAIN.test(m[2])) return null;
   return {name: m[1], domain: m[2]};
