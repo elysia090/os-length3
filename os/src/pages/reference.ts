@@ -29,6 +29,14 @@ const HIT_LIMIT = 200;
 
 /** What was searched in each repo. */
 const queries = new Map<string, string>();
+/**
+ * Lines of each repo's diff marked as with a highlighter, to come back to
+ * while reading: kept by what the line is (its file, kind, text and which
+ * time that text comes in the file), so a
+ * mark stays on its line as the diff is drawn again, and goes when the line
+ * does. Kept here, like the search, for as long as the app is open.
+ */
+const marks = new Map<string, Set<string>>();
 
 function load(): View {
   try {
@@ -232,7 +240,29 @@ export class Reference {
 
   /** Files of a diff (a name opens the file when it is the work's own). */
   private diffFiles(files: gitops.FileDiff[], open: boolean): HTMLElement[] {
-    return diffFiles(files, open ? {reveal: (p, line) => this.events.reveal(p, line)} : {});
+    if (!open || !this.repo) return diffFiles(files);
+    const repo = this.repo;
+    const marked = marks.get(repo) ?? new Set<string>();
+    marks.set(repo, marked);
+    // The same text twice in a file is two lines: each is told apart by which time it comes.
+    const times = new Map<string, number>();
+    return diffFiles(files, {
+      reveal: (p, line) => this.events.reveal(p, line),
+      // Pressing a line marks it, again unmarks it; its number still opens the center there.
+      line: (row, key, l) => {
+        const line = `${key.slice(0, key.lastIndexOf(':'))}\n${l.kind}\n${l.text}`;
+        const n = (times.get(line) ?? 0) + 1;
+        times.set(line, n);
+        const what = `${line}\n${n}`;
+        row.classList.add('markable');
+        row.classList.toggle('marked', marked.has(what));
+        row.addEventListener('click', (event) => {
+          if ((event.target as HTMLElement).closest('.diff-no')) return;
+          if (marked.has(what)) marked.delete(what); else marked.add(what);
+          row.classList.toggle('marked', marked.has(what));
+        });
+      },
+    });
   }
 
   /** A change handed in, to review: its name, what to do with it, then its diff (only `folder`'s when given). */

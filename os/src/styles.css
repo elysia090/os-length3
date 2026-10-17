@@ -8,7 +8,7 @@
   --sub: #56595a;
   --edge: #6b6e6b;
   --raised: #e4e4e0;
-  /* Three marks that say one thing each: a step done, a line marked in review, a repo off. */
+  /* Three marks that say one thing each: a step done, a line marked in a diff, a repo off. */
   --done: #2f7d4f;
   --marker: #f3e27a;
   --off: #b3412f;
@@ -93,8 +93,11 @@ a { color: var(--ink); }
 .rail { border-right: 1px solid var(--rule); padding-right: calc(var(--rail-line-gap) - var(--s3)); height: var(--inner-h); position: sticky; top: var(--outer-top); z-index: 6; display: flex; flex-direction: column; }
 .rail-tabs { display: flex; flex-direction: column; align-items: center; gap: var(--s1); flex: 1; min-height: 0; padding: var(--rail-top) 0 var(--s3); }
 
-/* The person's own icon at the foot of the rail, and what it brings out. */
-.rail-me { display: grid; place-items: center; padding: var(--s3) 0 0; }
+/* The person's own icon at the foot of the rail, and what it brings out. It
+   sits a little above the prompt box's line (the box floats s5 over the
+   foot, about a place tall), so the two read as one row with the person
+   just over it, not as the rail's last item dropped to the floor. */
+.rail-me { display: grid; place-items: center; padding: var(--s3) 0 calc(var(--s5) + (var(--h-place) - 44px) / 2 + var(--s2)); }
 .me-wrap { position: relative; }
 .me {
   display: grid; place-items: center; width: 44px; height: 44px; border-radius: var(--r-round); border: 1px solid var(--rule);
@@ -547,7 +550,7 @@ button.diff-no:hover { color: var(--ink); text-decoration: underline; }
 .diff-name { font-weight: 600; overflow-wrap: anywhere; }
 .diff-name.link:hover { text-decoration: underline; }
 .diff-count { color: var(--sub); white-space: nowrap; }
-.diff-line.add { background: var(--raised); }
+/* What was added is in ink, what stays quiet, what went struck through. No fill: a filled line is one marked, with the marker. */
 .diff-line.del { color: var(--sub); }
 .diff-line.del .diff-text { text-decoration: line-through; }
 .diff-line.same { color: var(--sub); }
@@ -792,7 +795,6 @@ mark { background: var(--ink); color: var(--ground); }
 /* The Review: a box of its own under the issue's card, in the same column. */
 .review-box { display: grid; gap: var(--s3); margin-top: var(--s4); padding: calc(var(--s4) + var(--s1)) var(--s5) var(--s6); border: 1px solid var(--ink); border-radius: var(--r-place); background: var(--raised); }
 /* On raised, an added line is drawn on ground, so it still stands out. */
-.review-box .diff-line.add:not(.marked, .marking) { background: var(--ground); }
 .review-chat { display: grid; gap: var(--s3); justify-items: start; padding: var(--s2) 0; }
 .review-chat .bubble { max-width: min(560px, 85%); background: var(--ground); }
 .review-chat .state-chip { justify-self: start; }
@@ -929,7 +931,6 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .step-line { display: flex; align-items: center; gap: var(--s3); margin-top: calc((1.5em - var(--h-control)) / 2); }
 .step-line > p { flex: 1; min-width: 0; }
 /* Inside a box on `raised`, an added line is drawn on `ground` with a rule at its left, so it still stands out. */
-.step-diff .diff-line.add { background: var(--ground); }
 .review-chat .step-done { font-size: var(--t-meta); }
 .review-chat .done-mark { transform: scale(.75); margin: -3px; }
 /* The review's procedure under what was said: a comment more in a field tall from the start, then the verdict. */
@@ -1011,8 +1012,8 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .board-head > .button { flex: none; }
 /* A board's TODO, pinned: Home's box, tall as Home's is, whatever its
    items, since it scrolls in itself; the talk has the rest. Its hints show
-   while one writes in it. */
-.board-todo { flex: none; display: grid; gap: var(--s2); padding: 0 var(--s5) var(--s3); border-bottom: 1px solid var(--rule); }
+   while one writes in it. No rule under it: the box's own edge ends it, and the talk begins below. */
+.board-todo { flex: none; display: grid; gap: var(--s2); padding: 0 var(--s5) var(--s3); }
 .board-todo-head { display: flex; align-items: baseline; gap: var(--s2); font-size: var(--t-meta); font-weight: 600; color: var(--sub); }
 .board-todo-head .muted { font-weight: 400; }
 .board-todo .todo-box { min-height: 0; height: clamp(220px, 40vh, 440px); overflow-y: auto; }

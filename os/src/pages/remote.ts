@@ -157,9 +157,10 @@ function repoSection(ctx: Context, counted: (n: number) => void, toCode: () => v
       h('span', {class: 'card-title'}, name),
       h('span', {class: 'muted'}, `${bytes(size)} · ${t('Changed {when}', {when: ago(changed)})}`),
       h('span', {class: 'muted card-sync'}, where),
-      // On the Remote's page the Remote's deeds are at the right: Share, then the switch. Forge leaves for
-      // another page, at the left; the switch turned off makes it 空ける in the same place, 廃棄 beside it.
-      h('div', {class: 'card-foot'}, forge, discard, h('span', {class: 'grow'}), share, power), error);
+      // What one does with the repo goes at the left: Forge (which leaves for another page) and Share beside
+      // it, its servers coming out to its right. The switch keeps the right end; turned off, it makes Forge
+      // 空ける in the same place, 廃棄 beside it.
+      h('div', {class: 'card-foot'}, forge, discard, share, h('span', {class: 'grow'}), power), error);
     power.addEventListener('click', () => {
       if (off) { void pressing(power, error, async () => { await account.turnOn(name); await look(); await paint(); }); return; }
       if (isNative) { error.textContent = t('A repo is turned off from the browser, where its passkey is.'); return; }
@@ -220,7 +221,8 @@ function sharing(now: servers.RepoSeen, error: HTMLElement): HTMLElement {
     }) : [h('span', {class: 'muted small'}, t('In no server yet'))]));
   });
   // The servers come out to its left, into the space, so Share and the switch stay under the pointer.
-  return h('span', {class: 'share'}, list, open);
+  // The servers come out to its right, into the free space before the switch, so Share stays under the pointer.
+  return h('span', {class: 'share'}, open, list);
 }
 
 /** What is asked for in the card before a repo is turned off or discarded: the deed's word, what will happen, and the deed. */

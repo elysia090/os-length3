@@ -116,7 +116,7 @@ Every page:
 | `edge` | `#6B6E6B` | outlines of fields and controls, which must be seen (3.7:1) |
 | `raised` | `#E4E4E0` | field fill, hover (the same small step above ground as before) |
 | `done` | `#2F7D4F` | done and on: a step of an issue's work done, a switch on (its knob), a box ticked (its circle) |
-| `marker` | `#F3E27A` | a line marked in review, as with a highlighter |
+| `marker` | `#F3E27A` | a line marked in a diff (a review, Forge's diff), as with a highlighter |
 | `off` | `#B3412F` | a repo turned off: its switch |
 
 No other colours; the last three each mean their one thing only.
@@ -201,7 +201,7 @@ what is its own.
   the bottom left, on Remote's off card and a Prompt's card; what turns a
   thing off at the right: the switch, Stop). What comes out of a button
   comes out into the free space, so nothing moves under the pointer
-  (Share's servers to its left). The band's + comes first, at its left
+  (Share's servers to its right, toward the switch). The band's + comes first, at its left
   end, before what it brings out: the chips come and go to its right, so
   they never move it, and the band reads + → what is out; what else the
   band holds (a search box, a gear) keeps its right end. A layer keeps its
@@ -648,7 +648,9 @@ What leaves this system is kept to what is said here:
   window's side, so they do not crowd the line.
 - Item 48×48, radius 12, icon 24 px with a 1.6 px stroke; + is a 40 px
   round button with an `edge` outline. States as everywhere (§1).
-- The person's own icon sits at the foot of the rail, a 44 px circle a
+- The person's own icon sits at the foot of the rail, a little above the
+  line of the prompt box at the center's foot (its middle 8 px over the
+  box's), a 44 px circle a
   little larger than the items: their initials, or a head and shoulders
   (30 px, filling most of it) before there is a name. Touching it brings
   out what is the person's own, in groups under a small heading and with
@@ -740,10 +742,13 @@ the right; its results open under it over the center. On the band's line sits th
 repo: plain, case-insensitive, line by line; results are grouped by file,
 and a line pressed opens the center there with the line selected. Below,
 on the band line, one reference at a time, switched freely with chips: Issue (the repo's issues, one line each as #3 Fix：件名, pressed to read one in full), diff (the changes not yet
-cut, file by file: added lines raised, removed lines quiet and struck,
-following every save; a file's name opens it in the center, a line's
-number opens it at that line, selected, to write in, and a removed line's
-the line that took its place) and 実行結果 (each line sent
+cut, file by file: added lines in ink with no fill, the lines kept quiet,
+removed lines quiet and struck, following every save; a file's name opens
+it in the center, a line's number opens it at that line, selected, to
+write in, and a removed line's the line that took its place; pressing a
+line elsewhere marks it with the `marker`, as a review does, to come back
+to, and again unmarks it, the mark staying on its line while the app is
+open) and 実行結果 (each line sent
 from the prompt box, newest first: the line, how long it took or that it
 is still running, and what came out until the prompt returned; the Prompt
 itself scrolls on, this keeps the record). The Prompt's own status line is
@@ -943,8 +948,8 @@ Signed in: the header, then the page's parts as a switch (the one
 place a page is switched, because its parts are unrelated):
 
 - **Repos**: every repo the Remote holds, as cards the size of Home's: name,
-  size and when it last changed, where it stands. On: Share at the bottom
-  left, Forge and the power switch at the bottom right; the switch's knob
+  size and when it last changed, where it stands. On: Forge at the bottom
+  left with Share beside it, the power switch at the bottom right; the switch's knob
   is green at the right, and turning it off asks, in the card, for the
   account's name, the repo's name and the five-letter code, then a passkey.
   Off, the knob is at the left on `off` red and the card is quiet (dashed):
