@@ -52,7 +52,7 @@ test('no Japanese is written outside the catalog', () => {
 // every error and every reason it answers with is a literal English sentence with its Japanese, but the
 // few only a client ever reads (a malformed request, a session it does not know, a page not the app's).
 const MACHINE = new Set(['not signed in', 'not from the app', 'a list of digests', 'a diff', 'a cut', 'verdict', 'a value and its version',
-  'a signal', 'too many', 'an item', 'done', 'a place', 'private, servers or everyone']);
+  'a signal', 'too many', 'an item', 'done', 'a place', 'a post', 'private, servers or everyone']);
 
 test('every error the Remote can answer with has its Japanese', () => {
   const dir = new URL('../service/', import.meta.url).pathname;

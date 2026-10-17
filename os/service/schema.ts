@@ -424,6 +424,18 @@ export const talk = pgTable('board_post', {
   check('board_post_whose', sql`num_nonnulls(${t.userId}, ${t.guestId}) <= 1`)]);
 
 /**
+ * How far one of a board's people has read its talk: the newest post they
+ * have had on screen. A post by someone else past it is new to them, and the
+ * rail says something came (GET /v1/news). No row: nothing read yet.
+ */
+export const boardSeen = pgTable('board_seen', {
+  boardId: text('board_id').notNull().references(() => board.id, {onDelete: 'cascade'}),
+  userId: owner(),
+  post: text('post').notNull(),
+}, (t) => [primaryKey({columns: [t.boardId, t.userId]}), index('board_seen_user_idx').on(t.userId),
+  check('board_seen_post', matches('post', re.post))]);
+
+/**
  * An outsider writing in one board: the email they showed is theirs (by a
  * short code sent to it, which holds ten minutes from codeAt), and a token
  * for writing there, a lease until tokenUntil. Codes and tokens are kept

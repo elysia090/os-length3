@@ -15,6 +15,13 @@
       "when": 1792242149645,
       "tag": "0001_counted_and_kept",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792257800216,
+      "tag": "0002_read_so_far",
+      "breakpoints": true
     }
   ]
 }

@@ -28,7 +28,7 @@ import {and, eq, gt, isNull, or, sql} from 'drizzle-orm';
 import type {Hono} from 'hono';
 import {HTTPException} from 'hono/http-exception';
 import {byCode, claim, codeOf, HOLD, kept, live, release} from './names.ts';
-import {body, ms, refuse, rows, type Db, type Vars} from './request.ts';
+import {ago, body, ms, refuse, rows, type Db, type Vars} from './request.ts';
 import {address, contact, message, signal} from './schema.ts';
 
 export const INBOX = {
@@ -245,6 +245,19 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     return {mine: of(me), theirs: of(them)};
   };
 
+  /**
+   * `me` has just accepted `peer`: each server `peer` asked them into (a message about it, target.server)
+   * within the last 30 days takes them in, now that the two have accepted each other, so long as `peer`
+   * is still in it. As Server's own adding (servers.ts): only someone in it, and only someone both sides accepted.
+   */
+  const cameIn = (me: string, peer: string) => db.execute(sql`insert into server_member (server_id, user_id)
+    select distinct sm.server_id, ${me}::text from message m
+    join server_member sm on sm.server_id = m.target->>'server' and sm.user_id = m.from_user
+    join server s on s.id = sm.server_id and s.gone_at is null
+    where m.to_user = ${me} and m.from_user = ${peer} and m.created_at > ${ago(HOLD)}
+      and exists (select 1 from contact k where k.user_id = ${peer} and k.peer = ${me} and k.state = 'accepted')
+    on conflict do nothing`);
+
   v1.post('/inbox/messages', async (c) => {
     const me = c.get('userId');
     const b = await body<{to?: unknown; from?: unknown; type?: unknown; target?: unknown; body?: unknown}>(c);
@@ -252,7 +265,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     if (!text || text.length > INBOX.body) return c.json({error: 'A message is at most 4000 characters'}, 400);
     const type = TYPES.includes(b?.type as typeof TYPES[number]) ? b!.type as string : 'message';
     const target = Object.fromEntries(Object.entries(typeof b?.target === 'object' && b.target ? b.target : {})
-      .filter(([k, v]) => ['repo', 'issue', 'change', 'version'].includes(k) && (typeof v === 'string' ? v.length <= 200 : typeof v === 'number')));
+      .filter(([k, v]) => ['repo', 'issue', 'change', 'version', 'server'].includes(k) && (typeof v === 'string' ? v.length <= 200 : typeof v === 'number')));
     const own = await mine(me);
     const from = own.find((a) => a.address === b?.from) ?? own[0];
     if (!from) return c.json({error: 'Claim a name first'}, 409);
@@ -275,7 +288,10 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       if (n.waiting >= INBOX.requestsInAll) return c.json({error: 'They have too many requests waiting'}, 429);
     }
     // Writing to someone is accepting them.
-    if (rel.mine !== 'accepted') await db.insert(contact).values({userId: me, peer: to.userId, state: 'accepted'}).onConflictDoUpdate({target: [contact.userId, contact.peer], set: {state: 'accepted'}});
+    if (rel.mine !== 'accepted') {
+      await db.insert(contact).values({userId: me, peer: to.userId, state: 'accepted'}).onConflictDoUpdate({target: [contact.userId, contact.peer], set: {state: 'accepted'}});
+      await cameIn(me, to.userId);
+    }
     const id = crypto.randomUUID();
     await db.insert(message).values({id, to: to.userId, from: me, fromAddress: from.address, toAddress: to.address, type, target, body: text});
     return c.json({id, request: rel.theirs !== 'accepted'}, 201);
@@ -334,6 +350,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const state = b?.state === 'blocked' ? 'blocked' : b?.state === 'none' ? null : 'accepted';
     if (!state) await db.delete(contact).where(and(eq(contact.userId, me), eq(contact.peer, to.userId)));
     else await db.insert(contact).values({userId: me, peer: to.userId, state}).onConflictDoUpdate({target: [contact.userId, contact.peer], set: {state}});
+    if (state === 'accepted') await cameIn(me, to.userId);
     return c.json({address: to.address, state: state ?? 'none'});
   });
 

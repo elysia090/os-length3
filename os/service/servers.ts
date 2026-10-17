@@ -34,6 +34,7 @@
 //   GET    /v1/boards/ID/posts               ?before= | ?after= | ?from=&to=
 //   POST   /v1/boards/ID/posts               {body}
 //   DELETE /v1/boards/ID/posts/PID           its writer's, or the server owner's
+//   POST   /v1/boards/ID/seen                {post}: read so far (news.ts tells what came past it)
 //   GET    /v1/boards/ID/archive             ?from=&to=&todo=0|1&talk=0|1: markdown
 // and, for anyone, on open boards (and guests on boards that take them):
 //   GET    /v1/open                          the open boards
@@ -46,7 +47,7 @@ import {and, asc, desc, eq, gt, gte, inArray, isNull, lt, lte, sql} from 'drizzl
 import type {Context, Hono} from 'hono';
 import {claim, codeOf, HOLD, liveAddress, serverAddress, shownAs, takeDown} from './names.ts';
 import {ago, body, lock, qualified, refuse, rows, type Db, type Vars} from './request.ts';
-import {address, board, guest, member, principalCode, REACH, repoPublic, server, talk, throttle, todoItem} from './schema.ts';
+import {address, board, boardSeen, guest, member, principalCode, REACH, repoPublic, server, talk, throttle, todoItem} from './schema.ts';
 
 export const SERVER = {name: 64, body: 2000, perHour: 60, page: 30, maxPage: 100, boards: 100,
   /** Servers a person owns or has held for them, at most; servers they make in a day. */
@@ -440,6 +441,18 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const whose = at.owner ? undefined : eq(talk.userId, me);
     const taken = await db.delete(talk).where(and(eq(talk.id, c.req.param('pid')), eq(talk.boardId, at.b.id), whose)).returning({id: talk.id});
     return taken.length ? c.body(null, 204) : c.json({error: 'No such post of yours'}, 404);
+  });
+
+  // Read so far, by one of its people: the newest post they have had on screen. It only goes forward,
+  // so a device that read less, later, takes nothing back.
+  v1.post('/boards/:id/seen', async (c) => {
+    const me = c.get('userId');
+    const at = await mine(c.req.param('id'), me) ?? notMine();
+    const post = (await body<{post?: unknown}>(c))?.post;
+    if (typeof post !== 'string' || !ID.test(post)) return c.json({error: 'a post'}, 400);
+    await db.insert(boardSeen).values({boardId: at.b.id, userId: me, post})
+      .onConflictDoUpdate({target: [boardSeen.boardId, boardSeen.userId], set: {post: sql`greatest(${qualified(boardSeen.post)}, excluded.post)`}});
+    return c.body(null, 204);
   });
 
   // ---- taken home: the TODO and the discussion as text ----

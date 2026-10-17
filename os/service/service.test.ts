@@ -1228,3 +1228,80 @@ test('For research: nobody signs up, the link enters the one account, and nothin
   for (let i = 0; i < 20; i++) await enter('nope');
   assert.equal((await enter(key)).status, 429);
 });
+
+test('News: what came in that one has not seen, one\'s own only; a board read so far only goes forward', async () => {
+  const s = await service();
+  const ren = await s.start('Ren'), mio = await s.start('Mio'), kai = await s.start('Kai');
+  await named(s, [ren, 'ren'], [mio, 'mio'], [kai, 'kai']);
+  const news = async (t: string) => (await s.call('GET', '/v1/news', {token: t})).json as unknown as {inbox: number; boards: {id: string; server: string; post: string}[]};
+  assert.equal((await s.call('GET', '/v1/news')).status, 401);
+  assert.deepEqual(await news(ren), {inbox: 0, boards: []});
+  // A message not read yet is counted, request or not; opening the conversation reads it.
+  await s.call('POST', '/v1/inbox/messages', {token: mio, body: {to: 'ren', body: 'hello'}});
+  await s.call('POST', '/v1/inbox/messages', {token: kai, body: {to: 'ren', body: 'hi'}});
+  assert.equal((await news(ren)).inbox, 2);
+  // Someone blocked is not news.
+  await accept(s, ren, 'kai', 'blocked');
+  assert.equal((await news(ren)).inbox, 1);
+  await s.call('POST', '/v1/inbox/threads/mio/read', {token: ren});
+  assert.equal((await news(ren)).inbox, 0);
+  assert.equal((await news(mio)).inbox, 0);
+
+  // A board: a post by another is new to its people, never one's own, and never to someone not in it.
+  await accept(s, ren, 'mio');
+  const made = await s.call('POST', '/v1/servers', {token: ren, body: {name: 'Trip', board: 'plan'}});
+  const sid = made.json.id as string, bid = (made.json.boards as {id: string}[])[0].id;
+  assert.equal((await s.call('POST', `/v1/servers/${sid}/people`, {token: ren, body: {address: 'mio@length3.test'}})).status, 201);
+  const mine = await s.call('POST', `/v1/boards/${bid}/posts`, {token: ren, body: {body: 'mine'}});
+  assert.deepEqual((await news(ren)).boards, []);
+  assert.deepEqual((await news(mio)).boards, [{id: bid, server: sid, post: mine.json.id}]);
+  assert.deepEqual((await news(kai)).boards, []);
+  // Read so far: by its people only, a post's id, and forward only.
+  const seen = (t: string, post: unknown) => s.call('POST', `/v1/boards/${bid}/seen`, {token: t, body: {post}});
+  assert.equal((await seen(kai, mine.json.id)).status, 404);
+  assert.equal((await seen(mio, 'not a post')).status, 400);
+  assert.equal((await seen(mio, mine.json.id)).status, 204);
+  assert.deepEqual((await news(mio)).boards, []);
+  const next = await s.call('POST', `/v1/boards/${bid}/posts`, {token: ren, body: {body: 'and then'}});
+  assert.deepEqual((await news(mio)).boards, [{id: bid, server: sid, post: next.json.id}]);
+  assert.equal((await seen(mio, next.json.id)).status, 204);
+  // Another device that read less, later, takes nothing back.
+  assert.equal((await seen(mio, mine.json.id)).status, 204);
+  assert.deepEqual((await news(mio)).boards, []);
+  // A board removed is not news.
+  await s.call('POST', `/v1/boards/${bid}/posts`, {token: ren, body: {body: 'once more'}});
+  assert.equal((await news(mio)).boards.length, 1);
+  await s.call('DELETE', `/v1/boards/${bid}`, {token: ren});
+  assert.deepEqual((await news(mio)).boards, []);
+});
+
+test('Asked into a server from the Inbox: in once they accept the one who asked, while that one is still in it', async () => {
+  const s = await service();
+  const ren = await s.start('Ren'), mio = await s.start('Mio'), kai = await s.start('Kai'), ana = await s.start('Ana');
+  await named(s, [ren, 'ren'], [mio, 'mio'], [kai, 'kai'], [ana, 'ana']);
+  const sid = (await s.call('POST', '/v1/servers', {token: ren, body: {name: 'Trip'}})).json.id as string;
+  const people = async () => ((await s.call('GET', `/v1/servers/${sid}/people`, {token: ren})).json as unknown as {address: string}[]).map((p) => p.address);
+  const ask = (from: string, to: string) => s.call('POST', '/v1/inbox/messages', {token: from, body: {to, body: 'Come into Trip', target: {server: sid}}});
+  // Ren asks Mio: a request; Mio is not in it until Mio accepts Ren.
+  assert.equal((await ask(ren, 'mio')).json.request, true);
+  assert.deepEqual(await people(), ['ren@length3.test']);
+  await accept(s, mio, 'ren');
+  assert.deepEqual(await people(), ['ren@length3.test', 'mio@length3.test']);
+  // Kai, not in it, cannot ask anyone into it: Ana accepting Kai puts Ana in nothing.
+  await ask(kai, 'ana');
+  await accept(s, ana, 'kai');
+  assert.deepEqual(await people(), ['ren@length3.test', 'mio@length3.test']);
+  // Mio asks Kai, then leaves before Kai answers: Kai answering by writing back (which accepts) comes into nothing.
+  await ask(mio, 'kai');
+  assert.equal((await s.call('DELETE', `/v1/servers/${sid}/people/mio@length3.test`, {token: mio})).status, 204);
+  await s.call('POST', '/v1/inbox/messages', {token: kai, body: {to: 'mio', body: 'sure'}});
+  assert.deepEqual(await people(), ['ren@length3.test']);
+  // Blocking the one who asked puts no one in.
+  await ask(ren, 'ana');
+  await accept(s, ana, 'ren', 'blocked');
+  assert.deepEqual(await people(), ['ren@length3.test']);
+  // Writing back to the one who asked is accepting them, and comes in the same way.
+  await ask(ren, 'kai');
+  await s.call('POST', '/v1/inbox/messages', {token: kai, body: {to: 'ren', body: 'ok'}});
+  assert.deepEqual(await people(), ['ren@length3.test', 'kai@length3.test']);
+});
