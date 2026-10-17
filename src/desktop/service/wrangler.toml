@@ -20,6 +20,10 @@ DOMAIN = "length3.com"
 # The desktop app's webview (tauri:// on macOS and Linux, http://tauri.localhost on Windows).
 APP_ORIGINS = "tauri://localhost http://tauri.localhost"
 
+# What was held long enough goes, once a day (sweep.ts; worker.ts scheduled()).
+[triggers]
+crons = ["41 4 * * *"]
+
 [[r2_buckets]]
 binding = "BLOBS"
 bucket_name = "length3-blobs"

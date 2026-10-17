@@ -419,12 +419,16 @@ nobody else can take it and be taken for its owner:
 | a name on a domain (`ren@ren.dev`) | its account, or the server | its domain's DNS | let go: 30 days held as above |
 | a code (`204816`) | its principal | its Remote | never given again |
 | a repo | a principal | its Remote, and the digests | turned off: 30 days, then gone |
-| a server | its people (its owner removes it) | its Remote | removed, or its last person leaves: 30 days, then gone |
+| a server | its people (its owner removes it) | its Remote | removed, or its last person leaves: 30 days, then gone (a day when its maker leaves it with nobody else in it) |
 | a repo shown in a server | its owner, lent to the server | its Remote | taken off, or its owner leaves the server: at once |
 | a repo's public name (`face:name`) | its owner, under a face | the face (the server, or the owner's address) | taken down, or the face goes: 30 days no one else's repo answers to it |
 | a board, its talk and TODO | its server | its Remote | removed by its owner: 30 days, back at once until then, then gone; or with its server |
 | a copy on a device | the device | the digests | taken back whenever room is wanted (owned.rs) |
 | a session, a code, a guest | the person, the address it was sent to | sign-in, mail | a lease: days for a session, minutes for a code, 30 days for a guest |
+
+What goes, goes in one place, once a day (`service/sweep.ts`): nothing a
+person asks for purges anything on the way, and a file no tree names any
+more goes with the rest.
 
 Names are the same problem as a language's memory and types, and are kept
 by the same rules:

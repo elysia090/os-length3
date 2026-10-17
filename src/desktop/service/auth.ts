@@ -73,12 +73,15 @@ export function createAuth(c: AuthConfig) {
     session: {expiresIn: 60 * 60 * 24 * 60, updateAge: 60 * 60 * 24},
     rateLimit: {enabled: c.rateLimit ?? true, window: 60, max: 120},
     // A sign-in with a passkey is proof the person is at the device just now: turning a repo
-    // off (and setting the code for it) asks for a session made that way minutes ago.
+    // off (and setting the code for it) asks for a session made that way minutes ago. Only the
+    // latest is kept: one sign-in proves one session.
     hooks: {
       after: createAuthMiddleware(async (ctx) => {
         if (ctx.path !== '/passkey/verify-authentication') return;
         const made = ctx.context.newSession;
-        if (made) await c.db.insert(schema.passkeyProof).values({sessionId: made.session.id, userId: made.user.id}).onConflictDoNothing();
+        if (!made) return;
+        const proof = {proofSession: made.session.id, proofAt: new Date()};
+        await c.db.insert(schema.guard).values({userId: made.user.id, ...proof}).onConflictDoUpdate({target: schema.guard.userId, set: proof});
       }),
     },
     plugins: [

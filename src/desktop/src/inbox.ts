@@ -52,9 +52,7 @@ export async function claim(name: string, domain?: string): Promise<string> {
   if (r.ok) return body.address!;
   if (body.publish) throw new Published(body.publish);
   const until = (body as {until?: number}).until;
-  throw new RemoteError(r.status, body.error === 'taken' ? t('That address is taken')
-    : body.error === 'held' && until ? t('That address was let go; it is held for its owner until {date}', {date: day(until)})
-    : body.error === 'name' ? t('A name is 2–31 letters, digits, dots, dashes or underscores') : String(body.error));
+  throw new RemoteError(r.status, until ? t('That address was let go; it is held for its owner until {date}', {date: day(until)}) : t(String(body.error ?? r.status)));
 }
 
 /** Hold a name on this Remote for another term from now (and take it back, if its term ran out a little while ago). */
@@ -76,12 +74,7 @@ export async function send(to: string, body: string, type: Kind = 'message', tar
   const r = await api('/v1/inbox/messages', {method: 'POST', body: JSON.stringify({to, body, type, target})});
   const out = await r.json() as {id?: string; request?: boolean; error?: string};
   if (r.ok) return {id: out.id!, request: Boolean(out.request)};
-  const why: Record<string, string> = {
-    'claim an address first': t('Claim an address first'), 'not accepted': t('They do not accept messages from you'),
-    'wait for them to answer': t('Wait for them to answer before writing more'), 'their requests are full': t('They have too many requests waiting'),
-    'too many messages this hour': t('Too many messages this hour'), 'no such address': t('No one has that address'),
-  };
-  throw new RemoteError(r.status, why[out.error ?? ''] ?? String(out.error ?? r.status));
+  throw new RemoteError(r.status, t(String(out.error ?? r.status)));
 }
 
 // ---- live: a data channel between two devices, signalled through the Remote ----
@@ -143,10 +136,11 @@ export class Live {
     await signal(this.peer, this.session, 'offer', JSON.stringify(pc.localDescription));
   }
 
+  /** What came from this peer: its offers, and the rest of this line's session; another chat's or device's stays for it. */
   private async poll() {
     // Polled every moment: one that is not answered is asked again at the next.
-    const got = await json<Signal[]>('/v1/inbox/signals').catch(() => [] as Signal[]);
-    for (const s of got.filter((x) => x.from === this.peer)) {
+    const got = await json<Signal[]>(`/v1/inbox/signals?from=${enc(this.peer)}${this.session ? `&session=${enc(this.session)}` : ''}`).catch(() => [] as Signal[]);
+    for (const s of got) {
       if (s.kind === 'bye') { this.channel?.close(); this.state(false); continue; }
       if (s.kind === 'offer') {
         const pc = this.connection(s.session);

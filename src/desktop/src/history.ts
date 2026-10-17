@@ -240,9 +240,8 @@ async function webWork(repo: string, known?: Promise<Change[]>): Promise<Work> {
 function refused(r: Response, body: Record<string, unknown>): never {
   if (Array.isArray(body.conflicts)) throw new RemoteError(409, t('Both changed these files; fix them in the work, push and make the change again: {files}', {files: (body.conflicts as string[]).join(', ')}));
   if (typeof body.version === 'number') throw new RemoteError(409, t('The change has a newer version ({n}); look at it first', {n: body.version}));
-  if (body.error === 'push first') throw new RemoteError(409, t('Push first: the change is what was pushed'));
-  if (typeof body.error === 'string' && r.status === 409) throw new RemoteError(409, t('Nothing committed since the work began'));
-  throw new RemoteError(r.status, String(body.error ?? r.status));
+  // Anything else, the Remote's own sentence (push first, nothing committed yet, not open any more).
+  throw new RemoteError(r.status, t(String(body.error ?? r.status)));
 }
 
 async function changeCall(repo: string, id: string, verb: string, body: Record<string, unknown>): Promise<Change> {
@@ -258,7 +257,7 @@ export async function startWork(repo: string, issue: string): Promise<void> {
   await sync(repo);
   if (isNative) { await invoke('work_start', {repo, issue: `issue/${issue}`}); store.changedOutside(repo, 'work'); return; }
   const r = await api(repoPath(repo, '/lines'), {method: 'POST', body: JSON.stringify({issue: `issue/${issue}`})});
-  if (!r.ok) throw new RemoteError(r.status, t('Could not start the work ({why})', {why: String(((await r.json()) as {error?: string}).error ?? r.status)}));
+  if (!r.ok) throw new RemoteError(r.status, t('Could not start the work ({why})', {why: t(String(((await r.json()) as {error?: string}).error ?? r.status))}));
   await showLine(repo, issue.replace(/\.md$/, ''));
 }
 

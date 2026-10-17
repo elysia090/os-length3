@@ -511,8 +511,8 @@ pub fn submit(repos: &Repos, repo: &str, note: &str) -> Result<Change> {
         "line": on, "kind": kind.unwrap_or_default(), "title": title.trim(), "note": note.trim()})))?;
     match v {
         Reply::Ok(v) => serde_json::from_value(v).map_err(|e| e.to_string()),
-        Reply::Conflict(v) if v["error"] == "push first" => Err(crate::tr!("Push first: the change is what was pushed", "先に Push してください。変更は Push したものです")),
-        Reply::Conflict(v) if v["error"] == "already merged" => Err(crate::tr!("Its change is merged already", "この作業の Change はもう Merge 済みです")),
+        Reply::Conflict(v) if v["error"] == "Push first: the change is what was pushed" => Err(crate::tr!("Push first: the change is what was pushed", "先に Push してください。変更は Push したものです")),
+        Reply::Conflict(v) if v["error"] == "This change is merged already" => Err(crate::tr!("Its change is merged already", "この作業の Change はもう Merge 済みです")),
         Reply::Conflict(_) => Err(crate::tr!("Nothing committed since the work began", "作業を始めてから何も Commit していません")),
         Reply::NotFound => Err(crate::tr!("The Remote has no such work", "Remote にその作業がありません")),
     }
@@ -568,7 +568,7 @@ fn change_call(repo: &str, id: &str, verb: &str, body: serde_json::Value) -> Res
         Reply::Conflict(v) if v["conflicts"].is_array() => Err(crate::tr!("Both changed these files; resolve them in the work, push and change again: {}", "両方で変わったファイルがあります。作業の側で直して Push し、もう一度 Change してください：{}",
             v["conflicts"].as_array().unwrap().iter().filter_map(|p| p.as_str()).collect::<Vec<_>>().join(", "))),
         Reply::Conflict(v) if v["version"].is_number() => Err(crate::tr!("The change has a newer version ({}); look at it first", "変更に新しい版があります（{}）。先にそれを見てください", v["version"])),
-        Reply::Conflict(v) => Err(crate::tr!("The change is {} already", "この Change はもう{}です", state_word(v["error"].as_str().unwrap_or("?")))),
+        Reply::Conflict(v) => Err(crate::tr!("The change is {} already", "この Change はもう{}です", state_word(v["state"].as_str().unwrap_or("?")))),
         Reply::NotFound => Err(crate::tr!("No such change", "その Change はありません")),
     }
 }

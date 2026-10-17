@@ -42,6 +42,7 @@ async function invoke<T>(command: string, args: Record<string, unknown> = {}): P
 }
 
 const syncState = (): SyncState => {
+  // None kept yet (or not readable): nothing is agreed, and every repo is taken in afresh.
   try { const s = JSON.parse(getState('sync') ?? '') as SyncState; return {...s, repos: s.repos ?? {}}; } catch { return {repos: {}}; }
 };
 const saveState = (s: SyncState) => setState('sync', JSON.stringify(s));
@@ -122,6 +123,7 @@ async function localTree(repo: string, away: string[] = [], base: Tree = {}): Pr
         if (!derived(e.name, names, new Set(inside.map((x) => x.name)))) await walk(path, inside);
         continue;
       }
+      // Gone between listing it and reading it: not part of this tree.
       const c = await store.read(repo, path).catch(() => null);
       if (!c || c.text === null) continue;
       const b = enc.encode(c.text);
@@ -146,7 +148,7 @@ export async function blobText(sha: string): Promise<string | null> {
   const bytes = new Uint8Array(await r.arrayBuffer());
   if (await sha256(bytes) !== sha) throw new RemoteError(0, t('What came from the Remote is not what its name says'));
   let text: string | null;
-  try { text = dec.decode(bytes); } catch { text = null; }
+  try { text = dec.decode(bytes); } catch { text = null; } // not UTF-8: not text, and it stays on the Remote
   if (bytes.length < 1 << 20) blobs.set(sha, text);
   return text;
 }
@@ -154,23 +156,34 @@ export async function blobText(sha: string): Promise<string | null> {
 /** Write the Remote's side of `p`; returns the paths now away and those set beside. */
 async function apply(repo: string, p: Plan, away: Set<string>): Promise<string[]> {
   const aside: string[] = [];
+  // Already gone (taken with its folder before it, or never here): nothing to take. Still here: said.
+  const gone = (path: string) => store.remove(repo, path, BY).catch(async (e: unknown) => {
+    if (await store.read(repo, path).then(() => true, () => false)) throw e;
+  });
   const write = async (path: string, sha: string) => {
     const text = await blobText(sha);
-    if (text === null) { await store.remove(repo, path, BY).catch(() => {}); away.add(path); return; }
+    if (text === null) { await gone(path); away.add(path); return; }
     away.delete(path);
     await store.put(repo, path, text, BY);
   };
   for (const [path, what] of p.take) {
-    if (what === undefined) { away.delete(path); await store.remove(repo, path, BY).catch(() => {}); continue; }
-    if (what === null) { await store.put(repo, path, null, BY).catch(() => {}); continue; }
-    try { await write(path, what); } catch {
-      // Something here is in its way (a folder for a file, a file for a folder): beside it.
-      await write(beside(path), what).catch(() => {});
+    if (what === undefined) { away.delete(path); await gone(path); continue; }
+    if (what === null) {
+      // An empty folder that a file here is in the way of: the file stays, and that is said.
+      if (!await store.put(repo, path, null, BY).then(() => true, () => false)) aside.push(path);
+      continue;
+    }
+    try { await write(path, what); } catch (e) {
+      // Not to be had now (offline): the sync stops and is tried again; nothing is agreed meanwhile.
+      if (e instanceof RemoteError) throw e;
+      // Something here is in its way (a folder for a file, a file for a folder): beside it. If that
+      // fails too, the sync fails and says so, rather than agree a tree this copy does not have.
+      await write(beside(path), what);
       aside.push(path);
     }
   }
   for (const [path, theirs] of p.both) {
-    await write(beside(path), theirs).catch(() => {});
+    await write(beside(path), theirs);
     aside.push(path);
   }
   return aside;
@@ -179,9 +192,11 @@ async function apply(repo: string, p: Plan, away: Set<string>): Promise<string[]
 const running = new Map<string, Promise<unknown>>();
 /** One sync of a repo at a time. */
 function serial<T>(repo: string, f: () => Promise<T>): Promise<T> {
-  const next = (running.get(repo) ?? Promise.resolve()).catch(() => {}).then(f);
+  // The one before failing is its own caller's to hear; this one runs all the same.
+  const next = (running.get(repo) ?? Promise.resolve()).catch(() => undefined).then(f);
   running.set(repo, next);
-  void next.finally(() => { if (running.get(repo) === next) running.delete(repo); }).catch(() => {});
+  // The caller hears this one's failure from `next`; the bookkeeping beside it must not raise it twice.
+  void next.finally(() => { if (running.get(repo) === next) running.delete(repo); }).catch(() => undefined);
   return next;
 }
 
@@ -247,6 +262,10 @@ export async function fetchRepo(repo: string): Promise<Synced> {
 
 export const remoteRepos = (): Promise<RemoteRepo[]> => (isNative ? invoke<RemoteRepo[]>('remote_repos') : json<RemoteRepo[]>('/v1/repos'));
 
+/** What moved on the Remote, in one small read: a stamp of its repos (the list changes when it does) and each setting's version. */
+export interface Moved { repos: string; home: Record<string, number> }
+export const moved = () => json<Moved>('/v1/moved');
+
 /** Where each repo here stands, from what is here alone. */
 export async function status(): Promise<Status[]> {
   if (isNative) return invoke<Status[]>('remote_status');
@@ -277,7 +296,8 @@ export function restoreLines() {
 /** Show `line`'s work as `repo` here; its copy comes from the Remote when it is not here yet. */
 export async function showLine(repo: string, line: string): Promise<void> {
   if (isNative) { await invoke('work_switch', {repo, line}); store.changedOutside(repo, 'work'); return; }
-  await sync(repo).catch(() => {});
+  // Offline, the copy shown so far stays here with what it has not sent (sent when it is shown again).
+  await sync(repo).catch((e: unknown) => { if (!(e instanceof RemoteError)) throw e; });
   const made = store.showLine(repo, line);
   const s = syncState();
   s.lines = {...s.lines};
@@ -322,7 +342,13 @@ function mergeTodo(here: string, there: string): string {
     const a = JSON.parse(here) as {id: string}[], b = JSON.parse(there) as {id: string}[];
     const ids = new Set(a.map((x) => x.id));
     return JSON.stringify([...b.filter((x) => !ids.has(x.id)), ...a]);
-  } catch { return here; }
+  } catch { return here; } // one side is not a list: this device's stands
+}
+
+/** Whether a setting needs agreeing: its version on the Remote moved, or its value here is not the one agreed. */
+export function homeMoved(key: HomeKey, version: number): boolean {
+  const b = syncState().home?.[key];
+  return version !== (b?.version ?? 0) || (getState(key) ?? '') !== (b?.value ?? '');
 }
 
 /**

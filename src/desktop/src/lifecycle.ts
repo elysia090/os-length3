@@ -14,7 +14,7 @@
 import {forgetExcept} from './fetch.ts';
 import * as draft from './draft.ts';
 import {isNative} from './host.ts';
-import {connection, onConnection} from './remote.ts';
+import {connection, onConnection, RemoteError} from './remote.ts';
 import {kept, onChange} from './repos.ts';
 import {dropState, onState} from './state.ts';
 
@@ -35,6 +35,8 @@ export interface RepoSync {
 const states = new Map<string, RepoSync>();
 let onlyThere: draft.RemoteRepo[] = [];
 let everyThere: draft.RemoteRepo[] = [];
+/** The Remote's repos stamp when everyThere was read (null: not read yet, for this connection). */
+let reposSeen: string | null = null;
 const listeners = new Set<() => void>();
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
 const retry = new Map<string, number>();
@@ -51,6 +53,12 @@ export const remoteOnly = (): readonly draft.RemoteRepo[] => onlyThere;
 export const remoteAll = (): readonly draft.RemoteRepo[] => everyThere;
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+/**
+ * The Remote could not be asked just now (offline, or it refused): null, so
+ * what was read last stands and the next look asks again. Anything else is a
+ * fault here, and is thrown. (The app's core answers with a string.)
+ */
+const away = (e: unknown): null => { if (e instanceof RemoteError || typeof e === 'string') return null; throw e; };
 /** How soon a change is sent: soon enough to beat closing the tab, late enough to gather keystrokes. */
 const SOON = 400;
 
@@ -95,9 +103,15 @@ export async function flush(): Promise<void> {
   await Promise.all(waiting.map(run));
 }
 
-/** See where every repo here stands, and what the Remote has that is not here. */
+/**
+ * See where every repo here stands, and what the Remote has that is not here.
+ * The Remote is asked what moved (one small read); its repos and each setting
+ * are read again only when they did.
+ */
 export async function look(): Promise<void> {
-  const here = await draft.status().catch(() => []);
+  // What is here could not be read: nothing is decided from nothing (no state is dropped), and it is said.
+  const here = await draft.status().catch((e: unknown) => { console.error('look: the repos here could not be read', e); return null; });
+  if (!here) return;
   const c = connection();
   for (const s of here) {
     if (timers.has(s.name)) continue;
@@ -109,8 +123,12 @@ export async function look(): Promise<void> {
   }
   for (const k of [...states.keys()]) if (!here.some((s) => s.name === k)) states.delete(k);
   if (c) {
-    const all = await draft.remoteRepos().catch(() => null);
-    if (all) everyThere = all;
+    const now = await draft.moved().catch(away);
+    if (now && now.repos !== reposSeen) {
+      const list = await draft.remoteRepos().catch(away);
+      if (list) { everyThere = list; reposSeen = now.repos; }
+    }
+    const all = reposSeen === null ? null : everyThere;
     const off = new Set((all ?? []).filter((t) => t.offAt).map((t) => t.name));
     for (const name of off) {
       const s = states.get(name);
@@ -127,8 +145,9 @@ export async function look(): Promise<void> {
         if (h && !h.fresh && t.version !== h.version) schedule(t.name, 0);
       }
     }
-    for (const k of draft.HOME_KEYS) void draft.syncHome(k).catch(() => {});
-  } else { onlyThere = []; everyThere = []; }
+    // A setting not agreed now still differs at the next look, which agrees it then.
+    if (now) for (const k of draft.HOME_KEYS) if (draft.homeMoved(k, now.home[k] ?? 0)) void draft.syncHome(k).catch(away);
+  } else { onlyThere = []; everyThere = []; reposSeen = null; }
   tell();
 }
 
@@ -165,8 +184,9 @@ export async function begin() {
   draft.restoreLines();
   // Every change a person (or a Prompt) makes is sent; sync's own writes are not news.
   onChange((c) => { if (c.by !== draft.BY) schedule(c.repo); else tell(); });
-  onState((k) => { if ((k === 'profile' || k === 'todo' || k === 'dotfiles') && connection()) void draft.syncHome(k).catch(() => {}); });
-  onConnection(() => void look());
+  onState((k) => { if ((k === 'profile' || k === 'todo' || k === 'dotfiles') && connection()) void draft.syncHome(k).catch(away); });
+  // Another account, or none: nothing read for the last one holds.
+  onConnection(() => { reposSeen = null; void look(); });
   // The Remote's changes are seen within five seconds while the page is in view.
   polling = setInterval(() => { if (document.visibilityState === 'visible' && connection()) void look(); }, 5000);
   addEventListener('focus', () => void look());

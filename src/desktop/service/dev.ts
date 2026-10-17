@@ -3,7 +3,7 @@
 // end-to-end checks; the same app as on Workers.
 //
 //   node service/dev.ts DIR [PORT] [APP_ORIGIN] [OTHER_ORIGIN…]
-import {appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync} from 'node:fs';
+import {appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
 import {createServer} from 'node:http';
 import {join} from 'node:path';
 import {PGlite} from '@electric-sql/pglite';
@@ -13,6 +13,7 @@ import {createApp} from './app.ts';
 import {createAuth} from './auth.ts';
 import type {Bucket} from './bucket.ts';
 import * as schema from './schema.ts';
+import {sweep} from './sweep.ts';
 
 const [dir, port = '8790', appOrigin = 'http://localhost:4173', ...others] = process.argv.slice(2);
 if (!dir) { console.error('usage: dev.ts DIR [PORT] [APP_ORIGIN] [OTHER_ORIGIN…]'); process.exit(2); }
@@ -22,16 +23,20 @@ const file = (key: string) => join(dir, 'blobs', encodeURIComponent(key));
 const bucket: Bucket = {
   async get(k) { return existsSync(file(k)) ? new Uint8Array(readFileSync(file(k))) : null; },
   async put(k, b) { writeFileSync(`${file(k)}.tmp`, b); renameSync(`${file(k)}.tmp`, file(k)); },
-  async has(k) { return existsSync(file(k)); },
   async range(k, start, end) {
     if (!existsSync(file(k))) return null;
     const all = readFileSync(file(k));
     return {bytes: new Uint8Array(all.subarray(start, end === null ? undefined : end + 1)), size: all.length};
   },
+  async delete(keys) { for (const k of keys) rmSync(file(k), {force: true}); },
 };
 
 const db = drizzle(new PGlite(join(dir, 'pg')), {schema});
 await migrate(db, {migrationsFolder: new URL('./migrations', import.meta.url).pathname});
+// What was held long enough goes: now, and each day while it runs (on Workers, a Cron Trigger).
+const swept = () => sweep(db, bucket).then((gone) => console.log(`sweep ${JSON.stringify(gone)}`), (e: unknown) => console.error('sweep', e));
+await swept();
+setInterval(() => void swept(), 86_400_000).unref();
 const secretFile = join(dir, 'secret');
 if (!existsSync(secretFile)) writeFileSync(secretFile, crypto.randomUUID() + crypto.randomUUID(), {mode: 0o600});
 // LENGTH3_DEV_BASE names it otherwise (http://localhost:PORT, where passkeys work: not on an IP address).
