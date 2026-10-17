@@ -3,14 +3,9 @@
 # contents and release bundles (R2), and the app's own files (static assets,
 # built with VITE_LENGTH3_REMOTE="" so it talks to the origin it came from).
 #
-# Once, from a machine that reaches Neon and Cloudflare (`npx wrangler login`):
-#   npx wrangler r2 bucket create length3-blobs -c service/wrangler.toml
-#   OWNER_URL=… node service/deploy.ts database     migrations; the Worker's role; DATABASE_URL
-#   node service/deploy.ts secret                   BETTER_AUTH_SECRET
-#   OWNER_URL=… node service/deploy.ts link         ENTER_KEY, and the link to hand on
-# Each release:
-#   sh scripts/web-release.sh                       dist/ (VITE_LENGTH3_REMOTE="" is set there)
-#   npx wrangler deploy -c service/wrangler.toml
+# Shipped by service/deploy.ts (what .github/workflows/deploy.yml runs on a
+# push to main): the migrations, the bucket, the secrets the Worker lacks
+# (DATABASE_URL, BETTER_AUTH_SECRET, ENTER_KEY), then `wrangler deploy`.
 name = "os-length3"
 main = "worker.ts"
 compatibility_date = "2026-08-01"
