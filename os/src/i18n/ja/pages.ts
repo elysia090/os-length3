@@ -30,6 +30,9 @@ export default {
   'Use letters, digits and . _ -, and do not start with .': '名前は英数字と . _ - で、先頭は . 以外にしてください',
   'Could not create: {message}': '作成できませんでした：{message}',
   'There is a repo named {name} already': '{name}という repo はもうあります',
+  'Summary': '概要',
+  'What this repo is for': 'この repo で何をするか',
+  '{what} could not be written ({why})': '{what}に書けませんでした（{why}）',
 
   // File (the tree of "/")
   'No repos yet': 'repo はまだありません',

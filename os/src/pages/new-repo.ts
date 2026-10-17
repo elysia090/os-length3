@@ -7,11 +7,13 @@ import type {Context} from './context.ts';
 import {triangle} from './tree.ts';
 
 /**
- * +: name a repo, pick a template, see exactly what it will contain, make it,
- * and see it join the list of repos right below; from there open it in
- * Forge or make another. It speaks
- * the same language as the rest: the template is a chip like Forge's, and
- * what will be made is shown as it will look in File, under /root.
+ * +: the repo's name on the first line; under it, in a large box, what it
+ * is for, and beside that the template and exactly what it will contain. Make it, and see it join the list of repos right below; from
+ * there open it in Forge or make another. It speaks the same language as the
+ * rest: the template is a chip like Forge's, what it is for is written in a
+ * box as Home's TODO is, and what will be made is shown as it will look in
+ * File, under /root. What it is for is the repo's own: it goes into its
+ * README.md, under the title.
  */
 
 interface Item { name: string; dir: boolean; children: Item[] }
@@ -72,6 +74,13 @@ export function newRepo(ctx: Context): Node[] {
     });
     return b;
   });
+  // What it is for, in a raised box as Home's TODO is, as tall as the template and its files beside it: the words written straight in it, the box the field.
+  const summary = h('textarea', {id: 'repo-summary', class: 'todo-detail', maxlength: '2000',
+    placeholder: t('What this repo is for'), 'aria-labelledby': 'repo-summary-label'}) as HTMLTextAreaElement;
+  const summaryBox = h('div', {class: 'summary-box'}, summary);
+  // The whole box is the field, as the TODO's is.
+  summaryBox.addEventListener('pointerdown', (event) => { if (event.target === summaryBox) { event.preventDefault(); summary.focus(); } });
+  // Said where it is to be put right: under the name.
   const error = h('p', {class: 'error', role: 'alert'});
   const submit = h('button', {class: 'button primary', type: 'submit'}, t('Create')) as HTMLButtonElement;
   const actions = answers(null, submit);
@@ -79,6 +88,7 @@ export function newRepo(ctx: Context): Node[] {
   /** Made: the page stays, and says where to go from here. */
   const made = (n: string) => {
     name.disabled = true;
+    summary.disabled = true;
     for (const c of chips) c.setAttribute('disabled', '');
     caption.textContent = t('Made at /root/{name} in File', {name: n});
     const open = h('button', {class: 'button primary', type: 'button'}, t('Open in Forge'));
@@ -89,13 +99,15 @@ export function newRepo(ctx: Context): Node[] {
     open.focus({preventScroll: true});
     void list.refresh(n);
   };
+  // The name alone on the first line; under it, what it is for, and beside that the template with what it will make.
   const form = h('form', {class: 'new-repo'},
-    h('label', {class: 'field'}, h('span', {class: 'field-label'}, t('Name')), name,
-      h('span', {id: 'repo-name-rule', class: 'muted small'}, t('Letters, digits and . _ -, up to 64 characters'))),
-    h('div', {class: 'field'}, h('span', {class: 'field-label', id: 'template-label'}, t('Template')),
-      h('div', {class: 'chips', role: 'radiogroup', 'aria-labelledby': 'template-label'}, ...chips)),
-    card, error, actions);
-  name.addEventListener('input', showFiles);
+    h('div', {class: 'field name-field'}, h('label', {class: 'field-label', for: 'repo-name'}, t('Name')), name,
+      h('span', {id: 'repo-name-rule', class: 'muted small'}, t('Letters, digits and . _ -, up to 64 characters')), error),
+    h('div', {class: 'field summary-field'}, h('span', {class: 'field-label', id: 'repo-summary-label'}, t('Summary')), summaryBox),
+    h('div', {class: 'field template-field'}, h('span', {class: 'field-label', id: 'template-label'}, t('Template')),
+      h('div', {class: 'chips', role: 'radiogroup', 'aria-labelledby': 'template-label'}, ...chips), card),
+    actions);
+  name.addEventListener('input', () => { error.textContent = ''; showFiles(); });
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const n = name.value.trim();
@@ -105,12 +117,20 @@ export function newRepo(ctx: Context): Node[] {
     submit.disabled = true;
     try {
       await store.create(n, template);
-      made(n);
     } catch (e) {
       error.textContent = t('Could not create: {message}', {message: String(e)});
       submit.disabled = false;
       submit.focus();
+      return;
     }
+    const about = summary.value.trim();
+    let unwritten = '';
+    // Every template begins its README.md with the title; what it is for goes under it.
+    if (about && TEMPLATES.find((x) => x.id === template)!.files.includes('README.md')) {
+      try { await store.write(n, 'README.md', `# ${n}\n\n${about}\n`); } catch (e) { unwritten = String(e); }
+    }
+    made(n);
+    if (unwritten) error.textContent = t('{what} could not be written ({why})', {what: `${n}/README.md`, why: unwritten});
   });
   // The repos already there, right under the form; a new one joins them.
   const list = repoList(ctx, {newCard: false});

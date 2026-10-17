@@ -651,15 +651,17 @@ What leaves this system is kept to what is said here:
 - The person's own icon sits at the foot of the rail, a 44 px circle a
   little larger than the items: their initials, or a head and shoulders
   (30 px, filling most of it) before there is a name. Touching it brings
-  out the way into every setting, in groups under a small heading and with
-  no rules between them: Profile (View, Edit), Account (Sign in; once
-  signed in, Sign-in, Devices, Sign out), This device (Room, Environment),
+  out what is the person's own, in groups under a small heading and with
+  no rules between them: Profile (Edit profile; the profile itself is read
+  on Home), Account (Sign in; once signed in, Sign-in, Devices, Sign out),
   Language (the one in use, with a mark below it; pressed, it opens into
   the list in its place, and choosing one closes it). Each entry is a word
-  or two, the group saying what it is about. There is
-  no settings page: a setting is kept with what it is about, so each entry
-  ends with the icon of the page it opens (its name in the tooltip), and
-  opens that part of it. It goes on leaving, a press outside or Escape.
+  or two, the group saying what it is about. The places of the OS are the
+  rail's, sorted there by purpose, so the menu does not gather them again
+  (no View for Home, no Room or Environment for Runtime) and carries no
+  page icons: an icon there would only repeat the rail's, and two entries
+  under one icon could not say how they differ. An entry opens the part it
+  is about. It goes on leaving, a press outside or Escape.
 
 ## 8. Pages
 
@@ -689,9 +691,12 @@ center says how to bring one out. The band is remembered on this device. Below t
 an endless page scrolled like a browser and opened at the file chosen in
 File. There are no tabs, no title, no index of links and no headings for
 directories. The center is where editing happens: each file is a plain
-text editor in its own tall box (at least 1.4 times the half window it
-once had, about three quarters of the window, a short file too, so it is
-read by scrolling down, never packed to fit a screen), a little heavier
+text editor in its own tall box (a short file too reaches down to the
+foot of the rail's last place, Inbox, so the first box and the rail end on
+one line, and it is read by scrolling down, never packed to fit a screen;
+never so tall that, read from its top, its foot meets the prompt box,
+which floats a clear 40 px above it rather than seeming fixed to the
+file), a little heavier
 line than the rest; a header with its place in "/" (`/root/<repo>/` quiet, the
 rest plain), then line numbers in a quiet gutter beside the text, which is
 itself the field (no box; the caret is the only sign). Typing saves on its
@@ -1077,18 +1082,24 @@ by their range of ids when they come back near.
 
 ### New repo (+)
 
-A name on one line (the same field as the search box), the template as
-chips like the reference's (one chosen, ink), and what will be made shown
-exactly as File will show it: a card of tree rows under `root`, the new
-repo's name bold, its folders open. Then 作成, the one primary action.
+A name alone on the first line (the same field as the search box). Under
+it, two columns: on the left, filling it, what the repo is for (概要), a
+raised box written straight into as a TODO's detail is, reaching down as
+far as the column beside it, whose words go into the repo's README.md under
+its title; on the right, level with it, the template as chips like the
+reference's (one chosen, ink), and under the chips what will be made,
+shown exactly as File will show it: a card of tree rows under `root`, the
+new repo's name bold, its folders open. Then 作成, the one primary action,
+under both. Narrow, they stack: name, what it is for, template, the files.
 
 Under the form is the list of repos, the same cards as on Home. Once made,
 the page stays where it is: the new repo's card joins the list and lights
 for a moment, the preview card says it is in File under `/root/<name>`, and
 where 作成 was there is "<name> を作りました" with the ways on: Forge で開く
 (primary; it goes on the band) and 続けて作る (a fresh form). A name not
-allowed, or one already taken, is said under the form, and the keyboard
-goes back to the name as it was written.
+allowed, or one already taken, is said right under the name, where it is
+to be put right, and the keyboard goes back to the name as it was
+written; typing in it again clears what was said.
 
 ### File
 

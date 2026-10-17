@@ -68,8 +68,8 @@ export function repoList(ctx: Context, options: {newCard: boolean; counted?: (n:
     if (!store.persistent) grid.append(h('p', {class: 'muted note'}, t('In this browser, repos go when this page closes.')));
     marks();
     const shown = light ? grid.querySelector<HTMLElement>(`.card.repo[data-repo="${CSS.escape(light)}"]`) : null;
+    // The page stays where it is: the new card only lights where it joins the list.
     if (shown) {
-      shown.scrollIntoView({block: 'center', behavior: 'smooth'});
       shown.classList.add('revealed');
       setTimeout(() => shown.classList.remove('revealed'), 1600);
     }

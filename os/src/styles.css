@@ -327,14 +327,37 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .fetch-list { display: grid; gap: var(--s2); }
 .fetch-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s5); color: var(--ink); }
 
-/* New repo: a name, a template chip, and what File will show */
-.new-repo { margin-top: var(--s5); display: grid; gap: var(--s5); max-width: 520px; }
+/* New repo: the name alone on the first line; under it, what the repo is
+   for, and beside that the template and what File will show. The box for
+   what it is for reaches down as far as the column beside it. */
+.new-repo {
+  margin-top: var(--s5); display: grid; gap: var(--s5); max-width: 960px;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 360px); align-items: start;
+}
+.new-repo > .name-field { grid-area: 1 / 1; }
+.new-repo > .summary-field { grid-area: 2 / 1; align-self: stretch; grid-template-rows: auto 1fr; }
+.new-repo > .template-field { grid-area: 2 / 2; }
+.new-repo > .answers { grid-column: 1 / -1; }
+.template-field > .tree-still { margin-top: var(--s2); }
 .field { display: grid; gap: var(--s2); }
 .field-label { font-size: var(--t-meta); color: var(--sub); }
 .tree.tree-still { position: static; z-index: auto; visibility: visible; opacity: 1; width: auto; max-height: none; transition: none; }
 .tree-caption { padding: 0 var(--s2) var(--s1); }
 .tree-still .tree-name.plain { color: var(--ink); }
 .tree-still .tree-toggle { cursor: default; }
+@media (max-width: 760px) {
+  .new-repo { grid-template-columns: minmax(0, 1fr); }
+  .new-repo > .name-field, .new-repo > .summary-field, .new-repo > .template-field { grid-area: auto; }
+}
+/* What it is for: a raised box as Home's TODO is, the words written straight in it as a TODO's detail is. */
+.summary-box {
+  display: flex; min-height: 240px; border: 1px solid var(--edge); border-radius: var(--r-place);
+  background: var(--raised); padding: var(--s4); cursor: text;
+}
+.summary-box:focus-within { outline: 2px solid var(--ink); outline-offset: 2px; }
+.summary-box > .todo-detail { flex: 1; width: 100%; margin: 0; overflow-y: auto; }
+.summary-box > .todo-detail::placeholder { color: var(--sub); }
+.summary-box > .todo-detail:disabled { opacity: .5; }
 .new-repo .row { align-items: center; flex-wrap: wrap; }
 .made { margin-right: var(--s2); font-weight: 600; }
 .chip:disabled, .line-in:disabled { opacity: .5; cursor: default; }
@@ -405,11 +428,18 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 }
 .path span { font-weight: 400; }
 /* Each file is a box drawn a little heavier than other lines, since it is
-   the thing being worked on, and tall: a short file too gets 1.4 times the
-   half window it had, so the center is read by scrolling down, never packed
-   to fit a screen. */
+   the thing being worked on, and tall: a short file too reaches down to the
+   foot of the rail's last place (Inbox, the eighth: the rail's first place,
+   eight places and the seven gaps between them, less the band and the
+   flow's top), so the center's first box and the rail end on one line, and
+   the center is read by scrolling down, never packed to fit a screen. Never
+   so tall that, read from its top, its foot meets the prompt box: a clear
+   gap (s6) stays between them, so the box floats over the page rather than
+   hanging off a file. */
 .file {
-  display: flex; flex-direction: column; min-height: clamp(392px, 77vh, 896px); margin-bottom: var(--s6);
+  display: flex; flex-direction: column; margin-bottom: var(--s6);
+  min-height: min(calc(var(--rail-top) + 8 * var(--h-place) + 7 * var(--s1) - var(--band) - var(--h-row) - 2 * var(--s3)),
+    calc(var(--inner-h) - var(--band) - var(--h-row) - 2 * var(--s3) - var(--s5) - var(--h-place) - var(--s6)));
   border: var(--line-work) solid var(--edge); border-radius: var(--r-place);
 }
 /* A file reads like a plain text editor: line numbers in a quiet gutter,

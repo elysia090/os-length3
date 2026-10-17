@@ -1,22 +1,21 @@
 import {h} from '../dom.ts';
 import {currentLang, LANGS, setLang, t} from '../i18n.ts';
-import {icon, mark} from '../icons.ts';
+import {mark} from '../icons.ts';
 import {connection, signOut} from '../remote.ts';
 import {setState} from '../state.ts';
 import {initials, type Profile} from '../profile.ts';
-import {purpose} from '../purposes.ts';
-import {choosePart, reveal} from './common.ts';
+import {choosePart} from './common.ts';
 import type {Context} from './context.ts';
 
 /** The pages a setting opens. */
-type Page = 'home' | 'remote' | 'runtime';
+type Page = 'home' | 'remote';
 
 // The person's own icon at the foot of the rail: their initials, or a head
-// and shoulders before there is a name. Touching it brings out the way into
-// every setting, in groups (the profile, the account, this device, the
-// language), each saying the page where it lives, since a setting is kept
-// with what it is about rather than on a page of its own. Signing out is
-// here too, at the foot of the rail. The language shows the one in use;
+// and shoulders before there is a name. Touching it brings out what is the
+// person's own, in groups (the profile, the account, the language), and
+// nothing else: the places of the OS are the rail's, so the menu does not
+// name them again. Signing out is here too, at the foot of the rail. The
+// language shows the one in use;
 // pressed, it opens into the list. It goes away
 // when the pointer leaves, on a press outside, or on Escape.
 
@@ -37,23 +36,19 @@ export class Me {
     this.ctx = ctx;
     this.profile = profile;
     this.button = h('button', {type: 'button', class: 'me', 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'aria-controls': 'me-pop'}) as HTMLButtonElement;
-    // `page`: where it opens, shown by that page's own icon (named in its title). `checked`: one of a choice (the language), on or off.
-    const item = (label: string, run: (() => void) | null, page?: Page, checked?: boolean) => {
-      const at = page ? icon(page) : null;
-      at?.classList.add('pop-mark');
-      const b = h('button', {type: 'button', class: 'pop-item', role: checked === undefined ? 'menuitem' : 'menuitemradio'}, label, at);
-      if (page) b.title = t(purpose(page).label);
+    // `checked`: one of a choice (the language), on or off.
+    const item = (label: string, run: (() => void) | null, checked?: boolean) => {
+      const b = h('button', {type: 'button', class: 'pop-item', role: checked === undefined ? 'menuitem' : 'menuitemradio'}, label);
       if (checked !== undefined) b.setAttribute('aria-checked', String(checked));
       if (run) b.addEventListener('click', () => { this.close(); run(); }); else b.setAttribute('disabled', '');
       return b;
     };
     const group = (title: string, ...items: HTMLElement[]) =>
       h('div', {class: 'pop-group', role: 'group', 'aria-label': title}, h('div', {class: 'pop-head muted small'}, title), ...items);
-    // A part of a page, or a section of one, brought into view.
-    const to = (page: Page, part?: string, section?: string) => () => {
+    // A part of a page brought into view.
+    const to = (page: Page, part?: string) => () => {
       if (part) choosePart(page, part);
       this.ctx.go(page);
-      if (section) reveal(section);
     };
     this.pop = h('div', {class: 'me-pop pop', id: 'me-pop', role: 'menu', 'aria-label': t('Me')});
     const fill = () => {
@@ -63,19 +58,15 @@ export class Me {
         h('div', {class: 'me-who'}, this.face(), h('div', {class: 'me-name'},
           h('b', {}, p.name || (p.handle ? `@${p.handle}` : t('No name yet'))),
           p.name && p.handle ? h('span', {class: 'muted small'}, `@${p.handle}`) : null)),
-        // Each a word or two: the group says what it is about.
+        // Each a word or two: the group says what it is about. The profile is read on Home, from the rail.
         group(t('Profile'),
-          item(t('View'), to('home'), 'home'),
-          item(t('Edit'), () => actions.editProfile(), 'home')),
+          item(t('Edit profile'), () => actions.editProfile())),
         group(t('Account'), ...(signedIn
-          ? [item(t('Sign-in'), to('remote', 'sign-in'), 'remote'), item(t('Devices'), to('remote', 'devices'), 'remote'), item(t('Sign out'), () => void signOut())]
-          : [item(t('Sign in'), to('remote'), 'remote')])),
-        group(t('This device'),
-          item(t('Room'), to('runtime'), 'runtime'),
-          item(t('Environment'), to('runtime', undefined, 'env-title'), 'runtime')),
+          ? [item(t('Sign-in'), to('remote', 'sign-in')), item(t('Devices'), to('remote', 'devices')), item(t('Sign out'), () => void signOut())]
+          : [item(t('Sign in'), to('remote'))])),
         // The language is Home's setting, so l3 speaks the same one.
         group(t('Language'), ...(this.choosing
-          ? LANGS.map((l) => item(l.name, () => { this.choosing = false; setLang(l.id); void setState('lang', JSON.stringify(l.id)); }, undefined, l.id === currentLang()))
+          ? LANGS.map((l) => item(l.name, () => { this.choosing = false; setLang(l.id); void setState('lang', JSON.stringify(l.id)); }, l.id === currentLang()))
           : [now()])));
     };
     /** The language in use; pressed, the list in its place, the menu staying out. */
