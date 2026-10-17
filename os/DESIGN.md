@@ -531,9 +531,12 @@ names and `/etc/os-release` are its own.
 ## 6. One OS, two ways in
 
 The GUI and the command line are two ways into the same things. `l3`'s
-nouns and order are the rail's: Home (`todo`), Forge (`repo`, `prompt`),
-File (`file`), Git (`issue`, `start`, `commit`, `push`, `change`, `reset`, `review`, `merge`, `log`), Runtime (`runtime`, `free`),
-Remote (`remote`, `login`, `sync`); a path is written as File shows it (`/root/<repo>/…`). A line is
+nouns and order are the rail's: Home (`todo`, `profile`, `lang`), Forge
+(`repo`, `band`, `prompt`), File (`file`), Git (`git`, `issue`, `start`,
+`main`, `commit`, `push`, `reset`, `diff`, `log`, `review`, `reply`,
+`merge`, `reject`), Runtime (`runtime`, `free`, `root`, `ssh`, `dotfile`),
+Remote (`remote`, `login`, `logout`), Server (`server`), Inbox (`inbox`,
+`address`); `l3 help` lists them in this order. A path is written as File shows it (`/root/<repo>/…`). A line is
 named the same way everywhere ("Fix：件名"), an issue is called by its
 number in both (#3), and Home's state is the same files, so anything done in one shows in
 the other. The Prompt's shell works on the repo itself: what it changes is
