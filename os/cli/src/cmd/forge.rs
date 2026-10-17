@@ -102,7 +102,11 @@ pub fn prompt(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let s = launch::Sandbox { root, repo: dir, name: repo.clone(), argv, network: call.flags.network || length3_core::home::network(&repo), dotfiles: launch::dotfiles(), data: Some(paths::data_dir()) };
     // What .packages and .setup ask for, first (once, while they and the root stay as they are).
     launch::set_up(&s, about.distro.is_some()).map_err(|e| Error::Io(e.to_string()))?;
-    let code = launch::run(&s).map_err(|e| Error::Io(e.to_string()))?;
+    // Recorded while it runs, so `l3 prompt ls` (and Runtime) see it and `l3 prompt stop` can end it.
+    let recorded = length3_core::prompt::record(&paths::data_dir(), &repo, s.network).map_err(|e| Error::Io(e.to_string()))?;
+    let code = launch::run(&s).map_err(|e| Error::Io(e.to_string()));
+    drop(recorded);
+    let code = code?;
     if ctx.connected() { crate::sync::send(&repo); }
     std::process::exit(code);
 }
@@ -110,4 +114,50 @@ pub fn prompt(ctx: &Ctx, call: &Call) -> Result<Reply> {
 #[cfg(not(target_os = "linux"))]
 pub fn prompt(_: &Ctx, _: &Call) -> Result<Reply> {
     Err(Error::Refused(tr!("l3 prompt is Linux only for now", "l3 prompt はいま Linux だけです")))
+}
+
+/// `l3 prompt ls`: each Prompt running on this device, the app's among them.
+pub fn prompt_list(_: &Ctx, _: &Call) -> Result<Reply> {
+    use length3_core::{paths, prompt};
+    let all = prompt::running(&paths::data_dir());
+    let mut t = Vec::new();
+    let mut rows = Vec::new();
+    for r in &all {
+        let held = prompt::held_by(r);
+        let mut line = format!("{}\t{}", r.repo, match held {
+            Some(h) => tr!("{} processes · {}", "プロセス {} · {}", h.processes, bytes(h.memory)),
+            None => tr!("starting", "起動中"),
+        });
+        if r.network { line += &tr!(" · with the network", " · ネットワークあり"); }
+        t.push(line);
+        rows.push(json!({"repo": r.repo, "pid": r.pid, "network": r.network, "started": r.started, "held": held}));
+    }
+    if t.is_empty() { t.push(tr!("No Prompt is running (l3 prompt REPO opens one)", "動いている Prompt はありません（l3 prompt REPO で開けます）")); }
+    Ok(Reply::data(t.join("\n"), json!(rows)))
+}
+
+/// `l3 prompt stop [REPO]`: each Prompt of the repo stops, as Stop in Runtime does.
+pub fn prompt_stop(ctx: &Ctx, call: &Call) -> Result<Reply> {
+    let repo = target::repo(ctx, call, 0)?;
+    let stopped = stop_prompts(&repo);
+    if stopped.is_empty() { return Err(Error::NotFound(tr!("No Prompt of {} is running", "{} の Prompt は動いていません", repo))); }
+    Ok(Reply::done(said_stopped(&repo, &stopped), json!({"repo": repo, "stopped": stopped})))
+}
+
+/// Stop every Prompt of `repo` running here; what each held and how it ended.
+pub fn stop_prompts(repo: &str) -> Vec<length3_core::prompt::Stopped> {
+    use length3_core::{paths, prompt};
+    let data = paths::data_dir();
+    prompt::running(&data).iter().filter(|r| r.repo == repo).map(|r| prompt::stop(&data, r)).collect()
+}
+
+/// What stopping gave back, as Runtime says it.
+pub fn said_stopped(repo: &str, stopped: &[length3_core::prompt::Stopped]) -> String {
+    let memory: u64 = stopped.iter().map(|s| s.before.memory).sum();
+    let left: u32 = stopped.iter().map(|s| s.left).sum();
+    if left > 0 { return tr!("Stopped {}'s Prompt, but {} processes are still there", "{} の Prompt を止めましたが、まだプロセスが {} 残っています", repo, left); }
+    match stopped.iter().filter_map(|s| s.ms).max() {
+        Some(ms) => tr!("Stopped {}'s Prompt · gave back {} ({} ms)", "{} の Prompt を止めました · {} を返しました（{} ms）", repo, bytes(memory), ms),
+        None => tr!("Stopped {}'s Prompt", "{} の Prompt を止めました", repo),
+    }
 }

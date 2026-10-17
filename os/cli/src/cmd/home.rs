@@ -23,17 +23,39 @@ pub fn todo_add(_: &Ctx, call: &Call) -> Result<Reply> {
     let mut list = home::todos()?;
     let item = home::todo_from(call.word(0).unwrap_or_default(), call.note(), now_ms())
         .ok_or_else(|| Error::Usage(tr!("The TODO's first line is empty", "TODO の1行目が空です")))?;
-    // The app reads no more than this of an item, so more would be lost there without a word.
-    for ((field, limit), text) in home::TODO_LIMITS.iter().zip([&item.title, &item.detail]) {
-        if text.encode_utf16().count() > *limit {
-            return Err(Error::Refused(if *field == "title" { tr!("A TODO's first line is up to {} characters", "TODO の1行目は{}文字までです", limit) } else { tr!("A TODO's detail is up to {} characters", "TODO の詳細は{}文字までです", limit) }));
-        }
-    }
+    fits(&item)?;
     let name = text::named(item.kind.as_deref(), &item.title);
     list.push(item.clone());
     home::save_todos(&list)?;
     let open = list.iter().filter(|t| !t.done).count();
     Ok(Reply::done(tr!("Added to TODO: {} ({} open)", "TODO に足しました：{}（残り{}件）", name, open), json!({"added": item, "number": list.len(), "open": open})))
+}
+
+/// The app reads no more than this of an item, so more would be lost there without a word.
+fn fits(item: &home::Todo) -> Result<()> {
+    for ((field, limit), text) in home::TODO_LIMITS.iter().zip([&item.title, &item.detail]) {
+        if text.encode_utf16().count() > *limit {
+            return Err(Error::Refused(if *field == "title" { tr!("A TODO's first line is up to {} characters", "TODO の1行目は{}文字までです", limit) } else { tr!("A TODO's detail is up to {} characters", "TODO の詳細は{}文字までです", limit) }));
+        }
+    }
+    Ok(())
+}
+
+/// `l3 todo edit N "…" [-m detail]`: the Nth item's first line written again, as the app edits it in
+/// place: the same item (its id, whether done, when made). Its detail is what follows the first line
+/// and -m's when either is given; otherwise it stays.
+pub fn todo_edit(_: &Ctx, call: &Call) -> Result<Reply> {
+    let mut list = home::todos()?;
+    let at = nth(&list, call.word(0).unwrap_or_default())?;
+    let item = home::todo_edited(&list[at], call.word(1).unwrap_or_default(), call.flags.note.as_deref())
+        .ok_or_else(|| Error::Usage(tr!("The TODO's first line is empty (l3 todo rm {} removes it)", "TODO の1行目が空です（消すなら l3 todo rm {}）", at + 1)))?;
+    fits(&item)?;
+    let changed = item != list[at];
+    list[at] = item.clone();
+    if changed { home::save_todos(&list)?; }
+    let name = text::named(item.kind.as_deref(), &item.title);
+    let text = if changed { tr!("Changed TODO {}: {}", "TODO {} を変えました：{}", at + 1, name) } else { tr!("TODO {} was so already: {}", "TODO {} はもうそのとおりです：{}", at + 1, name) };
+    Ok(Reply::done(text, json!({"number": at + 1, "todo": item, "changed": changed})))
 }
 
 /// Where in `list` the Nth item is, as `l3 todo` numbers them; the number said as it was written.

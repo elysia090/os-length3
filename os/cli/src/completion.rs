@@ -40,6 +40,7 @@ fn spellings(f: Flag) -> &'static [&'static str] {
         Flag::Todo => &["--todo"],
         Flag::Empty => &["--empty"],
         Flag::Out => &["-o"],
+        Flag::Force => &["--force"],
     }
 }
 

@@ -64,6 +64,8 @@ pub enum Flag {
     Empty,
     /// -o FILE
     Out,
+    /// --force: write over what is there
+    Force,
 }
 
 /// What a form needs: a Remote to talk to, and whether it may run inside the app's Prompt.
@@ -99,6 +101,9 @@ pub struct Command {
     pub about: Words,
     pub forms: &'static [Form],
     pub hidden: bool,
+    /// Home's settings it reads or writes that are kept on the Remote
+    /// (home::SYNCED): taken in before it runs (sync.rs), sent after.
+    pub home: &'static [&'static str],
 }
 
 const LOCAL: Needs = Needs { remote: false, in_prompt: true };
@@ -112,7 +117,11 @@ const fn hidden(verb: Option<&'static str>, args: &'static [Arg], needs: Needs, 
     Form { verb, args, flags: &[], about: ["", ""], needs, sync, run, hidden: true }
 }
 const fn c(name: &'static str, aliases: &'static [&'static str], group: Group, about: Words, forms: &'static [Form]) -> Command {
-    Command { name, aliases, group, about, forms, hidden: false }
+    Command { name, aliases, group, about, forms, hidden: false, home: &[] }
+}
+/// A command that reads or writes `home`, Home's settings on the Remote.
+const fn on_home(home: &'static [&'static str], c: Command) -> Command {
+    Command { home, ..c }
 }
 
 const REPO: Arg = Arg::Repo { optional: false };
@@ -124,17 +133,18 @@ const SAID: Arg = Arg::Text("\"text\"");
 use self::Sync::{None as Keep, Send, TakeIn};
 
 pub static COMMANDS: &[Command] = &[
-    c("todo", &[], Group::Home, ["Home's TODO", "Home の TODO"], &[
+    on_home(&["todo"], c("todo", &[], Group::Home, ["Home's TODO", "Home の TODO"], &[
         f(None, &[], &[], ["the list", "一覧"], DEVICE, Send, home::todo_list),
         hidden(Some("ls"), &[], DEVICE, Send, home::todo_list),
         f(Some("add"), &[TITLE], &[Flag::Note("detail")], ["add one", "足す"], DEVICE, Send, home::todo_add),
+        f(Some("edit"), &[Arg::Number("N"), TITLE], &[Flag::Note("detail")], ["rewrite the Nth (its detail stays unless given)", "N 番目を書き直す（詳細は書かなければそのまま）"], DEVICE, Send, home::todo_edit),
         f(Some("done"), &[Arg::Number("N")], &[], ["mark the Nth done (again to undo)", "N 番目を完了に（もう一度で戻す）"], DEVICE, Send, home::todo_done),
         f(Some("rm"), &[Arg::Number("N")], &[], ["remove the Nth", "N 番目を消す"], DEVICE, Send, home::todo_rm),
-    ]),
-    c("profile", &[], Group::Home, ["your name, handle and bio", "名前、ハンドル、自己紹介"], &[
+    ])),
+    on_home(&["profile"], c("profile", &[], Group::Home, ["your name, handle and bio", "名前、ハンドル、自己紹介"], &[
         f(None, &[], &[], ["as others see it", "人から見えるとおりに"], DEVICE, Send, home::profile_show),
         f(None, &[Arg::Choice(&["name", "handle", "bio"]), SAID], &[], ["change one", "ひとつ変える"], DEVICE, Send, home::profile_set),
-    ]),
+    ])),
     c("lang", &[], Group::Home, ["the language l3 and the app speak", "l3 とアプリが話す言語"], &[
         f(None, &[], &[], ["the one spoken now", "いま話している言語"], DEVICE, Send, home::lang_show),
         f(None, &[Arg::Choice(&["en", "ja"])], &[], ["choose", "選ぶ"], DEVICE, Send, home::lang_set),
@@ -149,9 +159,11 @@ pub static COMMANDS: &[Command] = &[
         f(None, &[], &[], ["the list", "一覧"], DEVICE, Send, forge::band_list),
         f(None, &[Arg::Choice(&["add", "rm"]), REPO], &[], ["put one out, or take it in", "出す、しまう"], DEVICE, Send, forge::band_set),
     ]),
-    c("prompt", &[], Group::Forge, ["a shell in the repo, inside the root", "root の中で repo のシェル"], &[
+    on_home(&["dotfiles"], c("prompt", &[], Group::Forge, ["a shell in the repo, inside the root", "root の中で repo のシェル"], &[
         f(None, &[REPO_HERE, Arg::Argv], &[Flag::Network], ["the repo inside the root, without privileges; --network gives it the network", "root の中で repo を開く（権限なし）。--network でネットワークを渡す"], DEVICE, TakeIn, forge::prompt),
-    ]),
+        f(Some("ls"), &[], &[], ["the Prompts running on this device (the app's too)", "この端末で動いている Prompt（アプリのものも）"], DEVICE, Keep, forge::prompt_list),
+        f(Some("stop"), &[REPO_HERE], &[], ["stop the repo's Prompts: every process in them ends", "repo の Prompt を止める（中のプロセスはすべて終わる）"], DEVICE, Send, forge::prompt_stop),
+    ])),
     c("file", &[], Group::File, ["a folder's entries, a file's text", "フォルダーの中身、ファイルの本文"], &[
         f(Some("write"), &[PATH], &[Flag::Empty], ["replace or make a file with standard input", "標準入力でファイルを置き換える・作る"], LOCAL, Send, file::write),
         f(Some("mkdir"), &[PATH], &[], ["make a folder", "フォルダーを作る"], LOCAL, Send, file::mkdir),
@@ -219,12 +231,16 @@ pub static COMMANDS: &[Command] = &[
         f(None, &[], &[], ["each name", "名前ごとに"], REMOTE, Send, runtime::ssh_list),
         f(None, &[Arg::Choice(&["on", "off"]), Arg::Address], &[], ["allow it, or not", "許す、許さない"], REMOTE, Send, runtime::ssh_set),
     ]),
-    c("dotfile", &["dotfiles"], Group::Runtime, ["what every Prompt starts with in /root", "どの Prompt も /root に置いて始まるもの"], &[
+    c("network", &[], Group::Runtime, ["whether a repo's Prompts may reach the network (on this device)", "repo の Prompt がネットワークに届いてよいか（この端末で）"], &[
+        f(None, &[], &[], ["the repos given it", "渡している repo"], DEVICE, Send, runtime::network_list),
+        f(None, &[Arg::Choice(&["on", "off"]), REPO], &[], ["give it (from the next Prompt), or take it (its Prompts stop)", "渡す（次の Prompt から）、取り上げる（その Prompt は止まる）"], DEVICE, Send, runtime::network_set),
+    ]),
+    on_home(&["dotfiles"], c("dotfile", &["dotfiles"], Group::Runtime, ["what every Prompt starts with in /root", "どの Prompt も /root に置いて始まるもの"], &[
         f(Some("write"), &[Arg::Dotfile], &[Flag::Empty], ["replace (or make) it with standard input", "標準入力で置き換える（なければ作る）"], DEVICE, Send, runtime::dotfile_write),
         f(Some("rm"), &[Arg::Dotfile], &[], ["remove it", "消す"], DEVICE, Send, runtime::dotfile_rm),
         f(None, &[], &[], ["the list", "一覧"], DEVICE, Send, runtime::dotfile_list),
         f(None, &[Arg::Dotfile], &[], ["one's text", "ひとつの本文"], DEVICE, Send, runtime::dotfile_show),
-    ]),
+    ])),
     c("remote", &[], Group::Remote, ["the Remote, and where each repo stands", "Remote と、各 repo の状態"], &[
         f(None, &[], &[], ["each repo, and where it stands", "各 repo とその状態"], DEVICE, Keep, remote::page),
         f(Some("on"), &[Arg::Text("REPO")], &[], ["bring back a repo turned off", "オフにした repo を戻す"], REMOTE, Keep, remote::on),
@@ -241,7 +257,7 @@ pub static COMMANDS: &[Command] = &[
     ]),
     c("server", &[], Group::Server, ["people you know: boards, each a talk and a TODO kept together", "知り合いの集まり：板ごとに話とみんなの TODO"], &[
         f(None, &[], &[], ["each server you are in, and its boards", "入っているサーバーと、その板"], REMOTE, Send, people::servers),
-        f(Some("get"), &[Arg::Text("SERVER[#BOARD]")], &[Flag::Todo, Flag::Out], ["boards as text (--todo: the TODO only; -o: into a file, or a folder)", "板をテキストで（--todo で TODO だけ、-o でファイルかフォルダーへ）"], REMOTE, Send, people::server_get),
+        f(Some("get"), &[Arg::Text("SERVER[#BOARD]")], &[Flag::Todo, Flag::Out, Flag::Force], ["boards as text (--todo: the TODO only; -o: into a file, or a folder; --force: over what is there)", "板をテキストで（--todo で TODO だけ、-o でファイルかフォルダーへ、--force で上書き）"], REMOTE, Send, people::server_get),
         f(Some("post"), &[Arg::Text("SERVER#BOARD"), SAID], &[], ["write in a board", "板に書く"], REMOTE, Send, people::server_post),
     ]),
     c("inbox", &[], Group::Inbox, ["conversations: contacts, then requests", "会話（連絡先、次にリクエスト）"], &[
@@ -267,15 +283,15 @@ pub static COMMANDS: &[Command] = &[
     c("completion", &[], Group::Other, ["shell completion", "シェルの補完"], &[
         f(None, &[Arg::Choice(&["bash", "zsh", "fish"])], &[], ["eval \"$(l3 completion bash)\"", "eval \"$(l3 completion bash)\""], LOCAL, Keep, crate::completion::script),
     ]),
-    Command { name: "complete", aliases: &[], group: Group::Other, about: ["", ""], hidden: true, forms: &[
+    Command { name: "complete", aliases: &[], group: Group::Other, about: ["", ""], hidden: true, home: &[], forms: &[
         hidden(None, &[Arg::Argv], LOCAL, Keep, crate::completion::complete),
     ] },
-    Command { name: "sync", aliases: &[], group: Group::Other, about: ["", ""], hidden: true, forms: &[
+    Command { name: "sync", aliases: &[], group: Group::Other, about: ["", ""], hidden: true, home: &[], forms: &[
         hidden(None, &[], LOCAL, Keep, remote::no_sync),
         hidden(None, &[Arg::Many("…")], LOCAL, Keep, remote::no_sync),
     ] },
     // `l3` alone: this device at a glance.
-    Command { name: "", aliases: &[], group: Group::Other, about: ["", ""], hidden: true, forms: &[
+    Command { name: "", aliases: &[], group: Group::Other, about: ["", ""], hidden: true, home: &["todo"], forms: &[
         hidden(None, &[], LOCAL, TakeIn, crate::cmd::overview),
     ] },
 ];
@@ -288,6 +304,21 @@ pub fn find(name: &str) -> Option<&'static Command> {
 /// The commands help and completion show.
 pub fn shown() -> impl Iterator<Item = &'static Command> {
     COMMANDS.iter().filter(|c| !c.hidden)
+}
+
+/// What a word of a form stands for, in the language spoken: the words a
+/// person writes are named in their language; REPO, N and the like are names
+/// of slots, the same in both (as the help's own text writes them).
+pub fn placeholder(w: &str) -> &str {
+    if !length3_core::i18n::ja() { return w; }
+    match w {
+        "\"Fix：title\"" => "\"Fix：件名\"",
+        "\"text\"" => "\"本文\"",
+        "note" => "メモ",
+        "detail" => "詳細",
+        "why" => "理由",
+        _ => w,
+    }
 }
 
 /// A form as it is written: `l3 issue new [REPO] "Fix：title" [-m detail]`.
@@ -303,7 +334,7 @@ pub fn usage(c: &Command, f: &Form) -> String {
             Arg::Path { optional: true } => "[REPO[/PATH]]".to_string(),
             Arg::Path { optional: false } => "REPO/PATH".to_string(),
             Arg::Issue => "ISSUE".to_string(),
-            Arg::Text(n) | Arg::Number(n) => n.to_string(),
+            Arg::Text(n) | Arg::Number(n) => placeholder(n).to_string(),
             Arg::Choice(w) => w.join("|"),
             Arg::Address => "NAME".to_string(),
             Arg::Dotfile => "NAME".to_string(),
@@ -314,12 +345,13 @@ pub fn usage(c: &Command, f: &Form) -> String {
     for fl in f.flags {
         s += " ";
         s += &match fl {
-            Flag::Note(w) => format!("[-m {w}]"),
+            Flag::Note(w) => format!("[-m {}]", placeholder(w)),
             Flag::Template => format!("[-t {}]", length3_core::templates::all().iter().map(|t| t.id.as_str()).collect::<Vec<_>>().join("|")),
             Flag::Network => "[--network]".to_string(),
             Flag::Todo => "[--todo]".to_string(),
             Flag::Empty => "[--empty]".to_string(),
             Flag::Out => "[-o FILE]".to_string(),
+            Flag::Force => "[--force]".to_string(),
         };
     }
     s
@@ -336,7 +368,16 @@ mod tests {
             assert!(c.forms.iter().any(|f| !f.hidden), "{}", c.name);
         }
         let all: Vec<String> = shown().flat_map(|c| c.forms.iter().filter(|f| !f.hidden).map(move |f| usage(c, f))).collect();
-        assert!(all.iter().any(|u| u.starts_with("l3 issue new [REPO] \"Fix：title\" [-m detail]")), "{all:?}");
+        let new = if length3_core::i18n::ja() { "l3 issue new [REPO] \"Fix：件名\" [-m 詳細]" } else { "l3 issue new [REPO] \"Fix：title\" [-m detail]" };
+        assert!(all.iter().any(|u| u.starts_with(new)), "{all:?}");
+        assert!(all.contains(&format!("l3 todo edit N {} [-m {}]", placeholder("\"Fix：title\""), placeholder("detail"))), "{all:?}");
+        assert!(all.contains(&"l3 prompt ls".to_string()) && all.contains(&"l3 prompt stop [REPO]".to_string()));
+        assert!(all.contains(&"l3 network on|off REPO".to_string()));
+        // In Japanese, what a person writes is named in Japanese (bug: "Fix：title" and "-m note" stayed English).
+        if length3_core::i18n::ja() {
+            for english in ["title", "\"text\"", "-m note", "-m detail", "-m why"] { assert!(!all.iter().any(|u| u.contains(english)), "{english}: {all:?}"); }
+        }
+        assert!(all.contains(&"l3 server get SERVER[#BOARD] [--todo] [-o FILE] [--force]".to_string()));
         assert!(all.contains(&"l3 prompt [REPO] [-- CMD…] [--network]".to_string()));
         assert!(all.contains(&"l3 root use l3|ubuntu|debian".to_string()));
     }
@@ -351,8 +392,18 @@ mod tests {
     }
 
     #[test]
+    fn what_reads_homes_settings_takes_them_in_from_the_remote() {
+        // Each names only settings the Remote keeps (the band, the language and the network grant are the device's).
+        for c in COMMANDS { for k in c.home { assert!(length3_core::home::SYNCED.contains(k), "{}: {k}", c.name); } }
+        for (name, key) in [("todo", "todo"), ("profile", "profile"), ("dotfile", "dotfiles"), ("prompt", "dotfiles"), ("", "todo")] {
+            assert!(find(name).unwrap().home.contains(&key), "{name}");
+        }
+        for name in ["lang", "band", "network"] { assert!(find(name).unwrap().home.is_empty(), "{name}"); }
+    }
+
+    #[test]
     fn what_reaches_the_remote_or_the_device_is_kept_out_of_the_prompt() {
-        for name in ["review", "reply", "ssh", "band", "profile", "lang", "dotfile", "todo", "remote", "login", "logout", "start", "commit", "push", "merge", "reject", "log", "diff", "server", "inbox", "address", "runtime", "free", "root", "prompt"] {
+        for name in ["review", "reply", "ssh", "network", "band", "profile", "lang", "dotfile", "todo", "remote", "login", "logout", "start", "commit", "push", "merge", "reject", "log", "diff", "server", "inbox", "address", "runtime", "free", "root", "prompt"] {
             let c = find(name).unwrap();
             assert!(c.forms.iter().all(|f| !f.needs.in_prompt), "{name}");
         }

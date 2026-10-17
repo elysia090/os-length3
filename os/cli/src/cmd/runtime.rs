@@ -9,8 +9,13 @@ use crate::target;
 use length3_core::{fetch::Progress, home, inbox, paths, remote, root, tr, usage};
 use serde_json::json;
 
+/// The repos a Prompt has open here (the app's or l3's): they stay while it runs, as in Runtime.
+fn in_prompts() -> Vec<String> {
+    length3_core::prompt::running(&paths::data_dir()).into_iter().map(|r| r.repo).collect()
+}
+
 pub fn page(_: &Ctx, _: &Call) -> Result<Reply> {
-    let s = usage::space(&paths::data_dir(), &paths::repos_dir(), &[]);
+    let s = usage::space(&paths::data_dir(), &paths::repos_dir(), &in_prompts());
     let current = root::current(&paths::data_dir()).map(|(_, r)| r);
     let mut t = vec![match &current {
         Some(r) => tr!("root  {} {} (where Prompts run)", "root  {} {}（Prompt が動く環境）", r.name, r.version),
@@ -31,8 +36,13 @@ pub fn page(_: &Ctx, _: &Call) -> Result<Reply> {
 /// `l3 free ID… | all`: each named thing looked at again and freed, or why it stays.
 pub fn free(_: &Ctx, call: &Call) -> Result<Reply> {
     let data = paths::data_dir();
-    let space = usage::space(&data, &paths::repos_dir(), &[]);
     let words = call.words(0);
+    // A word that is nothing names nothing (bug: it was looked for as a repo with no name, and said as such).
+    if words.iter().any(|w| w.trim().is_empty()) {
+        return Err(Error::Usage(tr!("Name what to free: l3 free ID… (l3 runtime lists them), or l3 free all", "空けるものを書いてください：l3 free ID…（l3 runtime で一覧）、または l3 free all")));
+    }
+    let open = in_prompts();
+    let space = usage::space(&data, &paths::repos_dir(), &open);
     let ids: Vec<String> = if words == ["all"] {
         usage::all_freeable(&space)
     } else {
@@ -42,7 +52,7 @@ pub fn free(_: &Ctx, call: &Call) -> Result<Reply> {
         return Err(Error::NotFound(tr!("Nothing here is called {} (l3 runtime lists what there is)", "{} というものはここにありません（l3 runtime で一覧）", unknown.strip_prefix("repo:").unwrap_or(unknown))));
     }
     if ids.is_empty() { return Ok(Reply::done(tr!("Nothing can be freed", "空けられるものはありません"), json!({"freed": 0, "removed": [], "kept": []}))); }
-    let r = usage::free(&data, &paths::repos_dir(), &ids, &[]);
+    let r = usage::free(&data, &paths::repos_dir(), &ids, &open);
     let kept: Vec<_> = r.kept.iter().map(|(id, why)| json!({"id": id, "why": why})).collect();
     let data = json!({"freed": r.freed, "removed": r.removed, "kept": kept, "hostFreeBefore": r.host_free_before, "hostFreeAfter": r.host_free_after, "reflectedMs": r.reflected_ms});
     let reasons: Vec<String> = r.kept.iter().map(|(id, why)| tr!("  kept {}: {}", "  残したもの {}：{}", id.strip_prefix("repo:").unwrap_or(id), why)).collect();
@@ -155,6 +165,33 @@ pub fn ssh_set(_: &Ctx, call: &Call) -> Result<Reply> {
     Ok(Reply::done(if on { tr!("SSH allowed for {}", "{} に SSH を許可しました", shown) } else { tr!("SSH off for {}", "{} の SSH をオフにしました", shown) }, json!({"address": address, "ssh": on, "changed": true})))
 }
 
+/// `l3 network`: the repos whose Prompts may reach the network on this device (Runtime's switch; never sent).
+pub fn network_list(_: &Ctx, _: &Call) -> Result<Reply> {
+    let all = home::networked();
+    let text = if all.is_empty() { tr!("No repo's Prompts reach the network (l3 network on REPO)", "ネットワークに届く repo の Prompt はありません（l3 network on REPO）") }
+        else { all.join("\n") };
+    Ok(Reply::data(text, json!(all)))
+}
+
+/// `l3 network on|off REPO`, as Runtime's switch: a Prompt's namespace cannot be given the network once
+/// made, so it has it from its next start; taken, the repo's Prompts stop at once.
+pub fn network_set(ctx: &Ctx, call: &Call) -> Result<Reply> {
+    let on = call.word(0) == Some("on");
+    let repo = target::repo(ctx, call, 1)?;
+    let changed = home::set_network(&repo, on)?;
+    let running = length3_core::prompt::running(&paths::data_dir()).iter().filter(|r| r.repo == repo).count();
+    let stopped = if !on && running > 0 { super::forge::stop_prompts(&repo) } else { Vec::new() };
+    let mut text = match (on, changed) {
+        (true, true) => tr!("{}'s Prompts reach the network from the next one", "{} の Prompt は次からネットワークに届きます", repo),
+        (true, false) => tr!("{}'s Prompts had the network already", "{} の Prompt はもうネットワークに届きます", repo),
+        (false, true) => tr!("{}'s Prompts no longer reach the network", "{} の Prompt はもうネットワークに届きません", repo),
+        (false, false) => tr!("{}'s Prompts had no network; nothing changed", "{} の Prompt はネットワークを持っていませんでした。何も変えていません", repo),
+    };
+    if on && running > 0 { text += &tr!("\n  the one running has none until it starts again (l3 prompt stop {})", "\n  動いているものは、開き直すまでネットワークなしです（l3 prompt stop {}）", repo); }
+    if !stopped.is_empty() { text += &format!("\n  {}", super::forge::said_stopped(&repo, &stopped)); }
+    Ok(Reply::done(text, json!({"repo": repo, "network": on, "changed": changed, "stopped": stopped, "granted": home::networked()})))
+}
+
 pub fn dotfile_list(_: &Ctx, _: &Call) -> Result<Reply> {
     let all = home::dotfiles();
     let data = json!(all.iter().map(|(n, t)| json!({"name": n, "bytes": t.len()})).collect::<Vec<_>>());
@@ -176,6 +213,21 @@ pub fn dotfile_write(_: &Ctx, call: &Call) -> Result<Reply> {
     let said = if was { tr!("Saved {} ({}; every Prompt starts with it in /root)", "{} を保存しました（{}。どの Prompt も /root に置いて始まります）", name, bytes(text.len() as u64)) }
         else { tr!("Made {} ({}; every Prompt starts with it in /root)", "{} を作りました（{}。どの Prompt も /root に置いて始まります）", name, bytes(text.len() as u64)) };
     Ok(Reply::done(said, json!({"name": name, "bytes": text.len(), "made": !was})))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_word_that_is_nothing_frees_nothing_and_says_how_it_is_written() {
+        let c = Ctx::test(None, vec![]);
+        for argv in [vec!["free", ""], vec!["free", "hello", " "]] {
+            let argv: Vec<String> = argv.into_iter().map(String::from).collect();
+            let call = crate::args::parse(&argv, &c).unwrap();
+            assert!(matches!(free(&c, &call), Err(Error::Usage(_))), "{argv:?}");
+        }
+    }
 }
 
 pub fn dotfile_rm(_: &Ctx, call: &Call) -> Result<Reply> {

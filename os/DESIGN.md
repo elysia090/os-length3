@@ -401,6 +401,7 @@ On the host, the data directory is laid out by owner too:
 | `work/<repo>/<line>` | an issue's copy | until its change is merged |
 | `sync/` | what sync last agreed and read (bases, digests) | the repo's here |
 | `home/` | Home's settings: profile, TODO, band, language | this device's |
+| `prompts/<pid>.json` | each Prompt running, while it runs | its process's |
 | `system/<digest>` | each root held, `current` the one in use | while a repo's Prompt runs on it |
 | `envs/<repo>`, `caches/<repo>` | the repo's environment and caches | as in the table above |
 
@@ -534,7 +535,7 @@ The GUI and the command line are two ways into the same things. `l3`'s
 nouns and order are the rail's: Home (`todo`, `profile`, `lang`), Forge
 (`repo`, `band`, `prompt`), File (`file`), Git (`git`, `issue`, `start`,
 `main`, `commit`, `push`, `reset`, `diff`, `log`, `review`, `reply`,
-`merge`, `reject`), Runtime (`runtime`, `free`, `root`, `ssh`, `dotfile`),
+`merge`, `reject`), Runtime (`runtime`, `free`, `root`, `ssh`, `network`, `dotfile`),
 Remote (`remote`, `login`, `logout`), Server (`server`), Inbox (`inbox`,
 `address`); `l3 help` lists them in this order. A path is written as File shows it (`/root/<repo>/…`). A line is
 named the same way everywhere ("Fix：件名"), an issue is called by its
@@ -568,9 +569,12 @@ Linux).md"), so neither is lost and the name says whose it is on every
 device.
 Files that cannot travel (a link, a file over 16 MB, a repo's own `.git`)
 are named and never sent; a repo holding them is never let go. Home's
-settings (profile, TODO) are kept there too, each changed only from the
-version it was read at (two TODO lists are joined); the band is the
-device's own.
+settings (profile, TODO, dotfiles) are kept there too, by the app and l3
+alike (src/draft.ts, core/src/home.rs: one protocol, one record of what was
+agreed), each changed only from the version it was read at: unchanged
+here, the Remote's is taken; changed on both sides, two TODO lists are
+joined item by item, and any other setting is the Remote's. The band, the
+language and the network grant are the device's own.
 
 What each host keeps, and when (lifecycle.ts):
 
@@ -578,7 +582,7 @@ What each host keeps, and when (lifecycle.ts):
 |-------------|-----------------|----------------|
 | OS          | web: l3, fetched each visit; app: the root, when installed | web: with the tab |
 | repo        | the Remote's changes, as they happen; one only on the Remote, when opened | each change, to the Remote at once; web: the copy, with the tab, once the Remote has all of it |
-| Home        | at start and when the window comes back | each change, at once |
+| Home        | at start and when the window comes back; l3: before a command that reads it | each change, at once; l3: after the command |
 | Prompt      | when a repo opens | its processes, when closed |
 
 Room on a device is given back in Runtime (空ける): a repo that goes stays
@@ -846,8 +850,14 @@ each thing says what can be done with it.
   given a network once made, so turning it on asks in the card, then stops
   the Prompt, which has the network from its next start; turning it off
   stops it at once. The grant is this device's (never sent), and `l3
-  prompt` reads the same one (`--network` gives it to one Prompt). In a
-  browser there is no switch: a Prompt's programs have no sockets at all.
+  prompt` reads the same one (`--network` gives it to one Prompt); `l3
+  network on|off REPO` is the switch, taking it stopping the repo's Prompts
+  as here. Every Prompt on the root is an `l3 prompt` process that records
+  itself while it runs (core/src/prompt.rs), so `l3 prompt ls` lists the
+  app's and a terminal's alike, `l3 prompt stop REPO` stops them as 止める
+  does, and neither 空ける here nor `l3 free` lets a repo go while one has
+  it open. In a browser there is no switch: a Prompt's programs have no
+  sockets at all.
 - **有効な環境**: the environments a Prompt can run on, a row each: l3,
   Ubuntu, Debian, Custom (a root of one's own, known by its digest). The
   one in effect is the place (an `ink` edge over `raised`): l3, with its

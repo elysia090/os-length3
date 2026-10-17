@@ -20,6 +20,8 @@ pub fn read(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let r = ctx.repos()?;
     let at = shown(&repo, &rel);
     if !ctx.exists(&repo, &rel) { return Err(Error::NotFound(tr!("There is no {}", "{} はありません", at))); }
+    // A link to nothing is there, but what it names is not (4, as for anything not there; bug: 1).
+    if r.dangling(&repo, &rel) { return Err(Error::NotFound(tr!("{} is a link to something that is not there", "{} はリンクですが、指す先がありません", at))); }
     if let Ok(entries) = r.tree(&repo, &rel) {
         // Folders first, like File.
         let t: Vec<String> = entries.iter().map(|e| match e.kind { "dir" => format!("{}/", e.name), "link" => format!("{}@", e.name), _ => format!("{}\t{}", e.name, bytes(e.size)) }).collect();

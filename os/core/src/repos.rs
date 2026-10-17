@@ -162,6 +162,13 @@ impl Repos {
         Ok(real)
     }
 
+    /// Whether `relative` in `repo` is a link to nothing: the link is there, what it names is not.
+    pub fn dangling(&self, repo: &str, relative: &str) -> bool {
+        let Ok(base) = self.place(repo) else { return false };
+        let at = base.join(relative);
+        at.symlink_metadata().is_ok_and(|m| m.file_type().is_symlink()) && at.metadata().is_err()
+    }
+
     pub fn list(&self) -> Result<Vec<Summary>> {
         let mut out = Vec::new();
         for entry in fs::read_dir(&self.root).map_err(|e| io_error(self.root.display(), &e))?.flatten() {
@@ -499,6 +506,20 @@ mod tests {
             assert!(r.read("a", "escape/README.md", 100).is_err());
         }
         assert_eq!(r.read("a", "README.md", 100).unwrap().text.as_deref(), Some("# a\n"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_to_nothing_is_known_from_a_file_that_is_not_there() {
+        let r = scratch("dangling");
+        r.create("a", "standard").unwrap();
+        std::os::unix::fs::symlink("nowhere", r.root.join("a/dangling")).unwrap();
+        std::os::unix::fs::symlink("README.md", r.root.join("a/readme")).unwrap();
+        assert!(r.dangling("a", "dangling"));
+        // What reading it says is "there is no" (l3 says it with 4, as for anything not there).
+        assert!(r.read("a", "dangling", 100).is_err());
+        for not in ["readme", "README.md", "missing", "missing/deeper"] { assert!(!r.dangling("a", not), "{not}"); }
+        assert!(!r.dangling("nope", "dangling"));
     }
 
     #[test]

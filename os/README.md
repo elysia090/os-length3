@@ -84,7 +84,7 @@ Forge     repo · band · prompt
 File      file (write · mkdir · rm)
 Git       git · issue · start · main · commit · push · reset · diff · log
           review · reply · merge · reject
-Runtime   runtime · free · root · ssh · dotfile
+Runtime   runtime · free · root · ssh · network · dotfile
 Remote    remote · login · logout
 Server    server
 Inbox     inbox · address
@@ -130,7 +130,12 @@ There is no sync command. Connected, l3 keeps each repo in step with the
 Remote by itself: a command that reads a repo takes in the Remote's changes
 to it first, and after every command each repo whose files differ from what
 was last agreed is sent (which differ is seen from the digests kept, so a
-repo in step costs no request). What a person does to the Remote is only
+repo in step costs no request). Home's settings kept on the Remote
+(profile, TODO, dotfiles) go the same way, by the app's protocol and rules
+(`core/src/home.rs`, as `src/draft.ts`): a command that reads one (`l3
+todo`, `l3 profile`, `l3 dotfile`, `l3 prompt`) takes it in first, and one
+that differs from what was last agreed is sent after any command; two TODO
+lists changed on two devices are joined item by item. What a person does to the Remote is only
 taking a repo off it; Git's words (commit, push, review, merge) are about
 history, never about getting files there. Signing out (`l3 logout`, or the
 app's) sends every copy first; one that cannot be sent keeps the device
@@ -175,7 +180,9 @@ the app.
   sent, the root in use). Sizes are allocated blocks; the host's free and
   total are marked as estimates, and after freeing the change the host
   shows is reported as observed. Prompts running show their memory and can
-  be stopped; then the environment in effect.
+  be stopped, with a switch for the repo's network (`l3 prompt ls`, `l3
+  prompt stop REPO`, `l3 network on|off REPO`; every Prompt, the app's or a
+  terminal's, records itself while it runs); then the environment in effect.
 - Server (under Remote in the rail, laid over any page like File): the one
   purpose whose subject is people, not a repo (`service/servers.ts`). A
   server is people who know each other (added from someone's Inbox

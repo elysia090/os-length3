@@ -10,6 +10,7 @@ import {enterEmail, type Enter} from './enter.ts';
 import {memoryBucket} from './bucket.ts';
 import * as schema from './schema.ts';
 import {sweep} from './sweep.ts';
+import homeSync from '../shared/home-sync.json' with {type: 'json'};
 
 const BASE = 'http://remote.test';
 const APP = 'http://app.test';
@@ -285,6 +286,15 @@ test('an account sees only its own: blobs, repos, settings', async () => {
   // A setting changes only from the version it was read at.
   assert.equal((await s.call('PUT', '/v1/home/todo', {token: a, body: {value: '["x"]', version: 1}})).json.version, 2);
   assert.deepEqual((await s.call('PUT', '/v1/home/todo', {token: a, body: {value: '["y"]', version: 1}})).json, {value: '["x"]', version: 2});
+});
+
+test('Home\'s settings answer as shared/home-sync.json records them, which the app and l3 are written against', async () => {
+  const s = await service();
+  const t = await s.start();
+  for (const [i, x] of homeSync.exchanges.entries()) {
+    const r = await s.call(x.method, x.path, {token: t, body: 'body' in x ? x.body : undefined});
+    assert.deepEqual([r.status, r.json], [x.status, x.response], `exchange ${i + 1}: ${x.method} ${x.path}`);
+  }
 });
 
 test('only the app\'s pages may call, and they can read a new session\'s token', async () => {

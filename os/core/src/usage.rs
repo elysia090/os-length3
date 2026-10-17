@@ -714,7 +714,8 @@ mod owned_tests {
         let e = find("env:here").expect("the environment is listed");
         assert!(e.room == Room::Free && e.allocated >= 30_000, "{e:?}");
         let c = find("cache:gone").expect("the orphaned caches are listed");
-        assert!(c.room == Room::Free && c.why.contains("not on this device"), "{c:?}");
+        // In the language spoken (it failed in Japanese).
+        assert!(c.room == Room::Free && c.why == crate::tr!("Its repo is not on this device", "その repo はこの端末にありません"), "{c:?}");
         assert!(!s.items.iter().any(|i| i.id.starts_with("path:")), "nothing in an environment is a leftover");
         // Open in a Prompt, it stays.
         assert_eq!(item(&data, &repos, "env:here", &["here".into()]).unwrap().room, Room::Keep);

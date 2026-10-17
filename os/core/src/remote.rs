@@ -920,6 +920,39 @@ pub fn remote_repos() -> Result<Vec<RemoteRepo>> {
     serde_json::from_value(Client::open()?.json("GET", "/v1/repos", None)?).map_err(|e| e.to_string())
 }
 
+// ---- Home's settings (home.rs says how they are agreed) ----
+
+impl crate::home::HomeThere for Client {
+    fn get(&self, key: &str) -> Result<(Option<String>, i64)> {
+        crate::home::got(&self.json("GET", &format!("/v1/home/{key}"), None)?)
+    }
+
+    fn put(&self, key: &str, value: &str, version: i64) -> Result<Option<i64>> {
+        match self.call("PUT", &format!("/v1/home/{key}"), Some(crate::home::put_body(value, version)))? {
+            Reply::Ok(v) => crate::home::put_version(&v).map(Some),
+            Reply::Conflict(_) => Ok(None),
+            Reply::NotFound => Err(failed(Failure::Status(404), crate::tr!("The Remote does not keep {}", "Remote は {} を持ちません", key))),
+        }
+    }
+}
+
+/// Agree one of Home's settings (home::SYNCED) with the Remote: what changed
+/// here is sent, what changed there is taken in, one device at a time.
+pub fn sync_home(key: &str) -> Result<crate::home::HomeSynced> {
+    if !crate::home::SYNCED.contains(&key) {
+        return Err(crate::tr!("{} is this device's own; it is not kept on the Remote", "{} はこの端末のもので、Remote には置きません", key));
+    }
+    let client = Client::open()?;
+    // Not a repo's name (no repo is called with a ~), so its own lock.
+    let _held = lock("~home")?;
+    crate::home::agree_with(&mut crate::home::Files, &client, key)
+}
+
+/// Whether a setting here waits to be sent (it differs from what was last agreed); no request is made.
+pub fn home_waiting(key: &str) -> bool {
+    crate::home::SYNCED.contains(&key) && crate::home::waiting(&crate::home::Files, key)
+}
+
 /// Every repo here brought into step; repos only on the Remote stay there
 /// until they are opened. Each repo's outcome is its own.
 pub fn sync_all(repos: &Repos) -> Result<Vec<(String, Result<Synced>)>> {

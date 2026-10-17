@@ -30,7 +30,12 @@ pub struct Shells {
 impl Shells {
     /// Repos a Prompt has open now: they stay on the device while it runs.
     pub fn open_repos(&self) -> Vec<String> {
-        self.open.lock().unwrap().values().map(|s| s.repo.clone()).collect()
+        let mut all: Vec<String> = self.open.lock().unwrap().values().map(|s| s.repo.clone()).collect();
+        // And each l3 runs (in a terminal too): every Prompt records itself while it runs (core/src/prompt.rs).
+        all.extend(prompt::running(&paths::data_dir()).into_iter().map(|r| r.repo));
+        all.sort();
+        all.dedup();
+        all
     }
 }
 

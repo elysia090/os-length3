@@ -36,6 +36,15 @@ fn file_name(server: &str, board: &str, todo: bool) -> String {
         .chars().map(|c| if c.is_alphanumeric() || matches!(c, '.' | '-' | '_') { c } else { '-' }).collect()
 }
 
+/// What is there already stays unless --force says to write over it, as l3 writes over nothing
+/// unasked (bug: `-o` replaced a file without a word). Nothing is written when any of them is there.
+fn not_over<'a>(files: impl Iterator<Item = &'a std::path::Path>, force: bool) -> Result<()> {
+    if force { return Ok(()); }
+    let there: Vec<String> = files.filter(|at| at.symlink_metadata().is_ok()).map(|at| at.display().to_string()).collect();
+    if there.is_empty() { return Ok(()); }
+    Err(Error::Refused(tr!("{} is there already; nothing was written (--force writes over it)", "{} はもうあります。何も書いていません（上書きするなら --force）", there.join(", "))))
+}
+
 /// `l3 server get SERVER[#BOARD]`: the boards as text on standard output;
 /// with -o, into that file (or, a folder, a file each).
 pub fn server_get(_: &Ctx, call: &Call) -> Result<Reply> {
@@ -52,17 +61,17 @@ pub fn server_get(_: &Ctx, call: &Call) -> Result<Reply> {
         return Ok(Reply::Raw { text, json: data });
     };
     let to = std::path::Path::new(to);
-    let mut wrote = Vec::new();
-    if to.is_dir() {
-        for (b, t) in &texts {
-            let at = to.join(file_name(&server.name, b, todo));
-            std::fs::write(&at, t).map_err(|e| Error::Io(tr!("{}: {}", "{}：{}", at.display(), e)))?;
-            wrote.push(at.display().to_string());
-        }
+    // Each file it would write, and what goes in it.
+    let files: Vec<(std::path::PathBuf, String)> = if to.is_dir() {
+        texts.iter().map(|(b, t)| (to.join(file_name(&server.name, b, todo)), t.clone())).collect()
     } else {
-        let all: Vec<&str> = texts.iter().map(|(_, t)| t.as_str()).collect();
-        std::fs::write(to, all.join("\n\n")).map_err(|e| Error::Io(tr!("{}: {}", "{}：{}", to.display(), e)))?;
-        wrote.push(to.display().to_string());
+        vec![(to.to_path_buf(), texts.iter().map(|(_, t)| t.as_str()).collect::<Vec<_>>().join("\n\n"))]
+    };
+    not_over(files.iter().map(|(at, _)| at.as_path()), call.flags.force)?;
+    let mut wrote = Vec::new();
+    for (at, t) in &files {
+        std::fs::write(at, t).map_err(|e| Error::Io(tr!("{}: {}", "{}：{}", at.display(), e)))?;
+        wrote.push(at.display().to_string());
     }
     Ok(Reply::done(tr!("Wrote {}", "{} に書きました", wrote.join(", ")), json!({"wrote": wrote, "boards": data})))
 }
@@ -198,4 +207,23 @@ pub fn address_domain(_: &Ctx, call: &Call) -> Result<Reply> {
         if r.found { tr!("Found: l3 address claim NAME@{} takes a name on it", "見つかりました：l3 address claim NAME@{} で名前を取れます", domain) } else { tr!("Not found yet", "まだ見つかりません") },
     ];
     Ok(Reply::data(t.join("\n"), json!(r)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_board_taken_home_writes_over_nothing_unless_forced() {
+        let d = std::env::temp_dir().join(format!("l3-server-get-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let (kept, new) = (d.join("trip-plan.md"), d.join("trip-talk.md"));
+        std::fs::write(&kept, "mine").unwrap();
+        let err = not_over([kept.as_path(), new.as_path()].into_iter(), false).unwrap_err();
+        assert!(matches!(&err, Error::Refused(m) if m.contains("trip-plan.md") && !m.contains("trip-talk.md")), "{err:?}");
+        assert!(not_over([new.as_path()].into_iter(), false).is_ok());
+        assert!(not_over([kept.as_path()].into_iter(), true).is_ok());
+        assert_eq!(std::fs::read_to_string(&kept).unwrap(), "mine");
+        let _ = std::fs::remove_dir_all(&d);
+    }
 }

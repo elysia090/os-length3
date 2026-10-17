@@ -108,13 +108,13 @@ fn next(ctx: &Ctx, s: &Stand, i: &Issue) -> Vec<String> {
     if !s.here(i) {
         out.push(format!("l3 start {m}"));
     } else if let Some(w) = &s.work {
-        if s.uncommitted > 0 { out.push(format!("l3 commit {} [-m note]", i.repo)); }
+        if s.uncommitted > 0 { out.push(format!("l3 commit {} [-m {}]", i.repo, crate::spec::placeholder("note"))); }
         else if w.unpushed > 0 || (w.commits > 0 && !open) { out.push(format!("l3 push {}", i.repo)); }
     }
     // An undecided change, in the app's order: its Review (approve, or a comment more), then
     // Merge once this version is approved; Reject and Reset (taking it back) last.
     if let Some(c) = change.filter(|_| open) {
-        let review = format!("l3 review {m} approve [-m note]");
+        let review = format!("l3 review {m} approve [-m {}]", crate::spec::placeholder("note"));
         let merge = format!("l3 merge {m}");
         if approvers(c).is_empty() { out.push(review); out.push(merge); } else { out.push(merge); out.push(review); }
         out.push(format!("l3 reply {m} \"…\""));
@@ -262,14 +262,18 @@ pub fn issue_show(ctx: &Ctx, call: &Call) -> Result<Reply> {
     Ok(Reply::data(t.join("\n"), json!({"issue": issue_json(ctx, &s, &i), "uncommitted": uncommitted, "change": change})))
 }
 
+/// Words given for a line (an issue's, a commit's): the first line names it,
+/// the lines after it are its detail, before -m's (as an issue's file is read back).
+fn split_line<'a>(given: &'a str, note: &str) -> (&'a str, String) {
+    let (first, more) = given.split_once('\n').unwrap_or((given, ""));
+    (first, [more.trim(), note.trim()].into_iter().filter(|d| !d.is_empty()).collect::<Vec<_>>().join("\n"))
+}
+
 pub fn issue_new(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let repo = target::repo(ctx, call, 0)?;
-    // Its first line names it; lines after it are its detail, before -m's (as the file is read back).
-    let words = call.word(1).unwrap_or_default();
-    let (first, more) = words.split_once('\n').unwrap_or((words, ""));
+    let (first, detail) = split_line(call.word(1).unwrap_or_default(), call.note());
     let (kind, title) = text::kind_of(first);
     if title.trim().is_empty() { return Err(Error::Usage(tr!("An issue needs a title: l3 issue new [REPO] \"Fix：title\"", "Issue には件名がいります：l3 issue new [REPO] \"Fix：件名\""))); }
-    let detail = [more.trim(), call.note().trim()].into_iter().filter(|d| !d.is_empty()).collect::<Vec<_>>().join("\n");
     let file = ctx.repos()?.add_issue(&repo, kind.as_deref(), &title, &detail)?;
     Ok(Reply::done(tr!("Wrote {}{} {}", "{}{} {} を書きました", repo, number(&file), text::named(kind.as_deref(), title.trim())),
         json!({"repo": repo, "file": file, "number": number(&file), "kind": kind, "title": title.trim()})))
@@ -308,7 +312,11 @@ pub fn commit(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let folded = on != work::MAIN && !title.is_empty();
     let (line, note) = if folded {
         (String::new(), if call.note().is_empty() { title.clone() } else { format!("{title}\n\n{}", call.note()) })
-    } else { (title.clone(), call.note().to_string()) };
+    } else {
+        // Named by its first line, as an issue is (bug: all of it went to the Remote as the title, which keeps one as given).
+        let (first, note) = split_line(&title, call.note());
+        (first.trim().to_string(), note)
+    };
     if on == work::MAIN && text::kind_of(&line).1.trim().is_empty() {
         return Err(Error::Usage(tr!("On main a commit is named by its line: l3 commit [REPO] \"Fix：title\" (on an issue, after it: l3 start REPO#N)", "main では行の名前で Commit します：l3 commit [REPO] \"Fix：件名\"（Issue の作業ならその名前で：l3 start REPO#N）")));
     }
@@ -427,4 +435,17 @@ fn word(status: &str) -> String {
 
 fn counts(binary: bool, added: usize, removed: usize) -> String {
     if binary { tr!("  (binary)", "  （バイナリ）") } else { format!("  +{added} −{removed}") }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_line_is_named_by_its_first_line_and_the_rest_is_its_note() {
+        // `l3 commit "Fix：a\nwhy"`: the Remote takes a title as it is given, so the newline must not reach it.
+        assert_eq!(split_line("Fix：a\nwhy\nmore\n", "-m's"), ("Fix：a", "why\nmore\n-m's".to_string()));
+        assert_eq!(split_line("Fix：a", ""), ("Fix：a", String::new()));
+        assert_eq!(split_line("Fix：a\n\n", " note "), ("Fix：a", "note".to_string()));
+    }
 }

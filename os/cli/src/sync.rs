@@ -3,7 +3,9 @@
 //! that reads a repo takes in the Remote's changes to it first; after a
 //! command, each repo whose files differ from what was last agreed is sent.
 //! Which differ is seen here, from the digests kept, so a repo in step costs
-//! no request. Offline, changes wait here and l3 says so once.
+//! no request. Home's settings kept on the Remote go the same way (the
+//! command says which it reads: spec::Command::home), agreed as the app
+//! agrees them (core/src/home.rs). Offline, changes wait here and l3 says so once.
 
 use crate::args::Call;
 use crate::cmd::Ctx;
@@ -11,11 +13,14 @@ use crate::out::note;
 use crate::spec::{Arg, Sync};
 use crate::target;
 use length3_core::remote::{self, Failure};
-use length3_core::{repos::Repos, tr};
+use length3_core::{home, repos::Repos, tr};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 pub fn before(ctx: &Ctx, call: &Call) {
-    if !ctx.connected() || call.form.sync != Sync::TakeIn { return; }
+    if !ctx.connected() { return; }
+    // Home's settings the command reads are taken in first (what waits here is sent), as the app does when it comes back.
+    for key in call.command.home { if !home(key) { break; } }
+    if call.form.sync != Sync::TakeIn { return; }
     match named(ctx, call) {
         Some(repo) => { send(&repo); }
         None => send_changed(),
@@ -29,7 +34,25 @@ static OUT_OF_REACH: AtomicBool = AtomicBool::new(false);
 /// or the Remote was just found out of reach.
 pub fn after(ctx: &Ctx, call: &Call, offline: bool) {
     if offline || OUT_OF_REACH.load(Ordering::Relaxed) || !ctx.connected() || call.form.sync == Sync::None { return; }
+    // Each of Home's settings that differs from what was last agreed (seen here, without a request).
+    for key in home::SYNCED { if remote::home_waiting(key) && !home(key) { return; } }
     send_changed();
+}
+
+/// Agree one of Home's settings with the Remote. Whether the Remote could be reached.
+fn home(key: &str) -> bool {
+    if OUT_OF_REACH.load(Ordering::Relaxed) { return false; }
+    match remote::sync_home(key) {
+        Ok(_) => true,
+        Err(e) => {
+            let what = match key { "todo" => "TODO".to_string(), "profile" => tr!("profile", "プロフィール"), _ => tr!("dotfiles", "dotfile"), };
+            // What changes here meanwhile is kept, and sent once a later command reaches the Remote.
+            note(&tr!("Home's {} is not in step with the Remote yet: {}; a later command tries again", "Home の {} はまだ Remote とそろっていません：{}。後のコマンドでもう一度試します", what, e));
+            let reached = !matches!(remote::last_failure(), Some((Failure::Unreachable | Failure::Unknown, _)));
+            if !reached { OUT_OF_REACH.store(true, Ordering::Relaxed); }
+            reached
+        }
+    }
 }
 
 /// The repo a call names, when it is here.

@@ -24,6 +24,7 @@ pub struct Flags {
     pub todo: bool,
     pub empty: bool,
     pub out: Option<String>,
+    pub force: bool,
 }
 
 pub struct Call {
@@ -62,6 +63,7 @@ fn flag(name: &str) -> Option<(Given, bool)> {
         "--network" => (Given::Takes(Flag::Network), false),
         "--todo" => (Given::Takes(Flag::Todo), false),
         "--empty" => (Given::Takes(Flag::Empty), false),
+        "--force" => (Given::Takes(Flag::Force), false),
         _ => return None,
     })
 }
@@ -109,6 +111,7 @@ pub fn parse(argv: &[String], ctx: &Ctx) -> Result<Call, Error> {
                     Flag::Network => flags.network = true,
                     Flag::Todo => flags.todo = true,
                     Flag::Empty => flags.empty = true,
+                    Flag::Force => flags.force = true,
                 }
                 given.push((f, name.to_string()));
             }
@@ -292,7 +295,7 @@ mod tests {
         let out = ctx(None, &["hello"]);
         let inside = ctx(Some("hello"), &["hello"]);
         let c = p("commit nope", &out).unwrap();
-        assert_eq!((form(&c), c.slots.clone()), ("l3 commit [REPO] [-m note]".into(), vec![Slot::One("nope".into())]));
+        assert_eq!((form(&c), c.slots.clone()), (format!("l3 commit [REPO] [-m {}]", spec::placeholder("note")), vec![Slot::One("nope".into())]));
         let c = p("commit nope", &inside).unwrap();
         assert_eq!(c.slots, vec![Slot::Empty, Slot::One("nope".into())]);
         let c = p("commit hello", &inside).unwrap();
