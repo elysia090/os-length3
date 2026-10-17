@@ -1,4 +1,5 @@
 import {h} from './dom.ts';
+import {isNative} from './host.ts';
 import {icon} from './icons.ts';
 import {placeholder} from './pages/common.ts';
 import type {Context} from './pages/context.ts';
@@ -101,7 +102,11 @@ function select(id: PurposeId) {
 }
 
 /** The page's name where the host lists it (a tab, history, the window list): the place, then the OS. */
-const named = () => { document.title = `${t(purpose(current).label)} · Length³ OS`; };
+const named = () => {
+  document.title = `${t(purpose(current).label)} · Length³ OS`;
+  // The app's window is named the same in the host's window list; not renamed, it keeps the OS's name.
+  if (isNative) void import('@tauri-apps/api/window').then(({getCurrentWindow}) => getCurrentWindow().setTitle(document.title)).catch(() => {});
+};
 
 function render() {
   const page = $('page');
