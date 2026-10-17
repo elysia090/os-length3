@@ -22,11 +22,15 @@ top, then the page each icon leads to.
   window's side, so they do not crowd the line.
 - Item 48×48, radius 12, icon 24 px with a 1.6 px stroke; + is a 40 px
   round button with an `edge` outline. States as everywhere (§4).
-- The person's own icon (initials in a circle) sits at the foot of the
-  rail. Touching it brings out what comes before settings: the name, see
-  the profile, edit the profile, this device's storage, and 設定 (not
-  there yet, and it says so). It goes on leaving, a press outside or
-  Escape.
+- The person's own icon sits at the foot of the rail, a 44 px circle a
+  little larger than the items: their initials, or a head and shoulders
+  before there is a name. Touching it brings out the way into every
+  setting, in groups under a small heading: Profile (see, edit), Account
+  (sign in; once signed in, sign-in and passkeys, devices), This device
+  (room on it, environment and dotfiles), Language. There is no settings
+  page: a setting is kept with what it is about, so each entry names the
+  page it opens, in the rail's own word, and opens that part of it. It
+  goes on leaving, a press outside or Escape.
 
 ## 2. Pages
 

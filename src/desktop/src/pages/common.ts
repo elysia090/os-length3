@@ -32,6 +32,28 @@ export interface Parts<K extends string> {
   onShow(f: (k: K) => void): void;
 }
 
+/**
+ * Bring the element `id` to the top of the view, and keep it there while what
+ * is above it fills in (a page draws at once and its numbers come later),
+ * until the person scrolls themselves or the page has settled.
+ */
+export function reveal(id: string) {
+  const at = document.getElementById(id);
+  if (!at) return;
+  const put = () => at.scrollIntoView({block: 'start'});
+  const grown = new ResizeObserver(put);
+  const stop = () => { grown.disconnect(); for (const e of ['wheel', 'touchstart', 'keydown', 'pointerdown']) removeEventListener(e, stop, true); };
+  for (const e of ['wheel', 'touchstart', 'keydown', 'pointerdown']) addEventListener(e, stop, true);
+  for (const part of at.closest('main')?.children ?? []) grown.observe(part);
+  put();
+  setTimeout(stop, 2000);
+}
+
+/** Show `part` of `page` the next time that page is drawn (as if it had been chosen there last). */
+export function choosePart(page: string, part: string) {
+  try { localStorage.setItem(`length3.part.${page}`, part); } catch { /* convenience only */ }
+}
+
 export function parts<K extends string>(page: string, list: readonly {id: K; label: string}[]): Parts<K> {
   const key = `length3.part.${page}`;
   const tabs = new Map<K, {tab: HTMLButtonElement; small: HTMLElement; panel: HTMLElement}>();

@@ -1,13 +1,19 @@
 import {h} from '../dom.ts';
 import {currentLang, LANGS, setLang, t} from '../i18n.ts';
+import {mark} from '../icons.ts';
+import {connection} from '../remote.ts';
 import {setState} from '../state.ts';
 import {initials, type Profile} from '../profile.ts';
+import {purpose} from '../purposes.ts';
+import {choosePart, reveal} from './common.ts';
 import type {Context} from './context.ts';
 
-// The person's own icon at the foot of the rail. Touching it brings out the
-// few things one does before going into settings: see or edit the profile,
-// look at this device, choose the language. It goes away when the pointer leaves, on a press
-// outside, or on Escape.
+// The person's own icon at the foot of the rail: their initials, or a head
+// and shoulders before there is a name. Touching it brings out the way into
+// every setting, in groups (the profile, the account, this device, the
+// language), each saying the page where it lives, since a setting is kept
+// with what it is about rather than on a page of its own. It goes away
+// when the pointer leaves, on a press outside, or on Escape.
 
 const OPEN_DELAY = 80;
 const CLOSE_DELAY = 400;
@@ -24,24 +30,43 @@ export class Me {
     this.ctx = ctx;
     this.profile = profile;
     this.button = h('button', {type: 'button', class: 'me', 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'aria-controls': 'me-pop'}) as HTMLButtonElement;
-    const item = (label: string, run: (() => void) | null, note?: string, current = false) => {
-      const b = h('button', {type: 'button', class: 'me-item', role: current ? 'menuitemradio' : 'menuitem'}, label, note ? h('span', {class: 'muted small'}, note) : null);
-      if (current) b.setAttribute('aria-checked', 'true');
+    // `checked`: one of a choice (the language), on or off.
+    const item = (label: string, run: (() => void) | null, where?: string, checked?: boolean) => {
+      const b = h('button', {type: 'button', class: 'me-item', role: checked === undefined ? 'menuitem' : 'menuitemradio'}, label, where ? h('span', {class: 'muted small'}, where) : null);
+      if (checked !== undefined) b.setAttribute('aria-checked', String(checked));
       if (run) b.addEventListener('click', () => { this.close(); run(); }); else b.setAttribute('disabled', '');
       return b;
     };
+    const group = (title: string, ...items: HTMLElement[]) =>
+      h('div', {class: 'me-group', role: 'group', 'aria-label': title}, h('div', {class: 'me-head muted small'}, title), ...items);
+    // A part of a page, or a section of one, brought into view.
+    const to = (page: 'home' | 'remote' | 'runtime', part?: string, section?: string) => () => {
+      if (part) choosePart(page, part);
+      this.ctx.go(page);
+      if (section) reveal(section);
+    };
+    // The page a setting lives on, named as the rail names it.
+    const where = (page: 'home' | 'remote' | 'runtime') => t(purpose(page).label);
     this.pop = h('div', {class: 'me-pop', id: 'me-pop', role: 'menu', 'aria-label': t('Me')});
     const fill = () => {
       const p = this.profile();
+      const signedIn = connection() !== null;
       this.pop.replaceChildren(
-        h('div', {class: 'me-who'}, h('b', {}, p.name || (p.handle ? `@${p.handle}` : t('No name yet'))),
-          p.name && p.handle ? h('span', {class: 'muted small'}, `@${p.handle}`) : null),
-        item(t('See profile'), () => this.ctx.go('home')),
-        item(t('Edit profile'), () => actions.editProfile()),
-        item(t('Room on this device'), () => this.ctx.go('runtime')),
+        h('div', {class: 'me-who'}, this.face(), h('div', {class: 'me-name'},
+          h('b', {}, p.name || (p.handle ? `@${p.handle}` : t('No name yet'))),
+          p.name && p.handle ? h('span', {class: 'muted small'}, `@${p.handle}`) : null)),
+        group(t('Profile'),
+          item(t('See profile'), to('home'), where('home')),
+          item(t('Edit profile'), () => actions.editProfile(), where('home'))),
+        group(t('Account'), ...(signedIn
+          ? [item(t('Sign-in and passkeys'), to('remote', 'sign-in'), where('remote')), item(t('Devices'), to('remote', 'devices'), where('remote'))]
+          : [item(t('Sign in'), to('remote'), where('remote'))])),
+        group(t('This device'),
+          item(t('Room on this device'), to('runtime'), where('runtime')),
+          item(t('Environment and dotfiles'), to('runtime', undefined, 'env-title'), where('runtime'))),
         // The language is Home's setting, so l3 speaks the same one.
-        h('div', {class: 'me-head muted small'}, t('Language')),
-        ...LANGS.map((l) => item(l.name, () => { setLang(l.id); void setState('lang', JSON.stringify(l.id)); }, undefined, l.id === currentLang())));
+        group(t('Language'),
+          ...LANGS.map((l) => item(l.name, () => { setLang(l.id); void setState('lang', JSON.stringify(l.id)); }, undefined, l.id === currentLang()))));
     };
     this.element = h('div', {class: 'me-wrap'}, this.button, this.pop);
     this.paint();
@@ -71,10 +96,15 @@ export class Me {
 
   get isOpen() { return this.element.classList.contains('open'); }
 
-  /** Redraw the icon from the profile (initials, or a plain head when none). */
-  paint() {
+  /** The person's initials, or a head and shoulders before there is a name. */
+  private face(): Node {
     const text = initials(this.profile());
-    this.button.replaceChildren(text || '?');
+    return text ? h('span', {class: 'me-initials'}, text) : mark('person');
+  }
+
+  /** Redraw the icon from the profile. */
+  paint() {
+    this.button.replaceChildren(this.face());
     this.button.setAttribute('aria-label', t('Me'));
   }
 

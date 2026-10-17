@@ -90,16 +90,22 @@ a { color: var(--ink); }
 .rail-me { display: grid; place-items: center; padding: var(--s3) 0 0; }
 .me-wrap { position: relative; }
 .me {
-  width: var(--h-control); height: var(--h-control); border-radius: var(--r-round); border: 1px solid var(--rule);
+  display: grid; place-items: center; width: 44px; height: 44px; border-radius: var(--r-round); border: 1px solid var(--rule);
   background: transparent; cursor: pointer; font: 600 var(--t-meta) var(--sans);
 }
+.me .icon { width: 22px; height: 22px; }
 .me-pop {
-  position: absolute; left: calc(100% + var(--s3)); bottom: 0; z-index: 6; min-width: 220px;
+  position: absolute; left: calc(100% + var(--s3)); bottom: 0; z-index: 6; min-width: 280px;
   display: grid; padding: var(--s2); background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-card);
   visibility: hidden; opacity: 0; transition: opacity var(--motion), visibility 0s var(--motion);
 }
 .me-wrap.open .me-pop { visibility: visible; opacity: 1; transition: opacity var(--motion), visibility 0s; }
-.me-who { display: grid; padding: var(--s2) var(--s3) var(--s3); }
+.me-who { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) var(--s3) var(--s3); }
+/* The face again, the size of the button, beside the name. */
+.me-who > :first-child { display: grid; place-items: center; flex: none; width: 36px; height: 36px; border: 1px solid var(--rule); border-radius: var(--r-round); font: 600 var(--t-meta) var(--sans); }
+.me-who > svg.icon { padding: 7px; box-sizing: border-box; }
+.me-name { display: grid; min-width: 0; }
+.me-group { display: grid; padding-top: var(--s1); border-top: 1px solid var(--rule); margin-top: var(--s1); }
 .me-item {
   display: flex; justify-content: space-between; align-items: center; gap: var(--s3);
   min-height: var(--h-row); padding: 0 var(--s3); border: 0; border-radius: var(--r-field); background: transparent; cursor: pointer; text-align: left;
@@ -234,6 +240,10 @@ a { color: var(--ink); }
 .env-choice.later { border-style: dashed; color: var(--sub); }
 .env-choice code { font: var(--t-meta) var(--mono); }
 @media (max-width: 640px) {
+  /* A narrow Home: a smaller face, and Edit profile under the name rather than over it. */
+  .profile { grid-template-columns: auto minmax(0, 1fr); gap: var(--s4); }
+  .profile > .button { grid-column: 2; justify-self: start; }
+  .avatar { width: 72px; height: 72px; font-size: var(--t-title); }
   .env-choice { grid-template-columns: auto 1fr auto; }
   .env-choice > :nth-child(3) { grid-column: 1 / -1; grid-row: 2; }
 }
