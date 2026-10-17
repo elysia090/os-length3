@@ -75,8 +75,10 @@ The initial **OS Length3 Linux 0.1.0** stable native bundle is distributed as a
 See [release scope and verification](releases/native/RELEASE-0.1.0.md) and
 [bootstrap trust / object delivery](compiler/docs/DELIVERY.md).
 The previous RC and its receipts remain historical. The earlier browser VM
-(the Web Release ZIP, os.length3.com and the qm.length3.com UI) has been
-removed from this repository; its release asset stays on the release page.
+(its Web Release ZIP, what os.length3.com served then, and the qm.length3.com
+UI) has been removed from this repository; its release asset stays on the
+release page. os.length3.com is now the app in `os/` and its Remote
+([os/README.md](os/README.md), Deploy).
 
 The native products build and check as ordinary C:
 
