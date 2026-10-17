@@ -10,8 +10,10 @@ import {answers} from './common.ts';
 
 // The top of Forge's right pane: a search box over the band line, then one
 // reference at a time, switched freely with chips. While something is
-// typed in the search box, its results take the reference's place. Each
-// view says plainly when it has nothing to show yet.
+// typed in the search box, its results take the reference's place. A view
+// with nothing to show says so in one quiet line, no box: the right pane only
+// refers to the center, and the center is where things are made. What is
+// searched belongs to its repo: each keeps its own while the app runs.
 
 type View = 'issue' | 'diff' | 'run';
 const VIEWS: readonly {id: View; label: string}[] = [
@@ -24,6 +26,9 @@ const FILE_LIMIT = 2000;
 /** Lines of a run's output shown before "n more lines". */
 const RUN_LINES = 40;
 const HIT_LIMIT = 200;
+
+/** What was searched in each repo. */
+const queries = new Map<string, string>();
 
 function load(): View {
   try {
@@ -77,16 +82,17 @@ export class Reference {
     // Edits may have changed the text since the last search.
     this.query.addEventListener('focus', () => { this.files = null; });
     this.query.addEventListener('input', () => {
+      this.keep();
       clearTimeout(this.timer);
       this.timer = window.setTimeout(() => this.paint(), 150);
     });
     this.query.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape' && this.query.value) { event.preventDefault(); this.query.value = ''; this.paint(); }
+      if (event.key === 'Escape' && this.query.value) { event.preventDefault(); this.query.value = ''; this.keep(); this.paint(); }
     });
     const bar = h('div', {class: 'chips', role: 'group', 'aria-label': t('Reference')});
     for (const v of VIEWS) {
       const chip = h('button', {type: 'button', class: 'chip'}, t(v.label));
-      chip.addEventListener('click', () => { this.query.value = ''; this.choose(v.id); });
+      chip.addEventListener('click', () => { this.query.value = ''; this.keep(); this.choose(v.id); });
       this.chips.set(v.id, chip);
       bar.append(chip);
     }
@@ -105,12 +111,18 @@ export class Reference {
     });
   }
 
-  /** The repo Forge shows. */
+  /** The repo Forge shows; what was searched in it comes back with it. */
   setRepo(repo: string | null) {
     this.repo = repo;
     this.files = null;
     this.query.disabled = !repo;
+    this.query.value = repo ? queries.get(repo) ?? '' : '';
     this.paint();
+  }
+
+  private keep() {
+    if (!this.repo) return;
+    if (this.query.value) queries.set(this.repo, this.query.value); else queries.delete(this.repo);
   }
 
   /** One issue in full, from the list; its words open in the center to be changed. */
@@ -140,7 +152,7 @@ export class Reference {
     }
   }
 
-  private empty(text: string) { this.body.replaceChildren(h('div', {class: 'empty'}, text)); }
+  private empty(text: string) { this.body.replaceChildren(h('p', {class: 'muted small'}, text)); }
 
   private paint() {
     this.pinned = false;
@@ -220,7 +232,7 @@ export class Reference {
 
   /** Files of a diff (a name opens the file when it is the work's own). */
   private diffFiles(files: gitops.FileDiff[], open: boolean): HTMLElement[] {
-    return diffFiles(files, open ? {reveal: (p) => this.events.reveal(p)} : {});
+    return diffFiles(files, open ? {reveal: (p, line) => this.events.reveal(p, line)} : {});
   }
 
   /** A change handed in, to review: its name, what to do with it, then its diff (only `folder`'s when given). */

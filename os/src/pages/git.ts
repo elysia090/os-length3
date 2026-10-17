@@ -20,12 +20,20 @@ import {issueForm} from './issue-form.ts';
  * (git-issue.ts); under it, plainly, its Diff, Review and Reply.
  *
  * Issues are read straight from each repo's issue/ (nothing is kept twice).
+ *
+ * The repo the bench shows is the one worked on, on every page: a chip, an
+ * issue gone to with an edge or an arrow, or one just written, makes its repo
+ * the one Forge opens. Coming to Git changes nothing by itself: it opens at
+ * the issue last looked at in the repo worked on. The keyboard stays on the
+ * same part of the box as one goes along the row.
  */
 
 const ALL = '';
 let filter = ALL;
 /** The issue shown, kept while the app runs: repo and file. */
 let chosen: string | null = null;
+/** The issue last looked at in each repo. */
+const chosenIn = new Map<string, string>();
 
 export function git(ctx: Context): Node[] {
   const chips = h('div', {class: 'chips', role: 'radiogroup', 'aria-label': 'repo'});
@@ -38,7 +46,17 @@ export function git(ctx: Context): Node[] {
   const stage = h('div', {class: 'issue-stage', tabindex: '0', 'aria-label': t('Issues'), 'aria-roledescription': 'carousel'}, track, prev, next);
   const column = h('div', {class: 'issue-column'}, stage);
   const empty = h('div', {});
-  const form = issueForm({done: (repo) => { write.hidden = false; if (repo) void paint(); }});
+  // Written: its repo is the one looked at and worked on, and the new issue is the one shown, with the keyboard on it.
+  const form = issueForm({done: (made) => {
+    write.hidden = false;
+    if (!made) { write.focus({preventScroll: true}); return; }
+    if (filter && filter !== made.repo) { filter = made.repo; paintChips(); }
+    chosen = `${made.repo}/${made.file}`;
+    chosenIn.set(made.repo, chosen);
+    look(made.repo, true);
+    land = true;
+    void paint();
+  }});
 
   let repos: string[] = [];
   let at: string | null = null;
@@ -50,32 +68,40 @@ export function git(ctx: Context): Node[] {
   const events = {
     open: (repo: string, path: string) => ctx.openRepo(repo, path),
     // The repo shows another copy: what File, Forge and the issues read is that copy now.
-    moved: (repo: string) => { if (repo === at) void paint(); },
+    // Started, continued or back on main: that repo is the one worked on.
+    moved: (repo: string) => { ctx.remember(repo); if (repo === at) void paint(); },
   };
   const again = () => void paint();
 
-  /** Point the reference and the Prompt at `repo`. */
-  const look = (repo: string | null) => {
+  /** Point the reference and the Prompt at `repo`; `chosen` when the person chose it, which makes it the repo worked on. */
+  const look = (repo: string | null, chosen = false) => {
     at = repo;
-    if (repo) workbench.setRepo(repo);
+    if (!repo) return;
+    workbench.setRepo(repo);
+    if (chosen) ctx.remember(repo);
   };
+  /** Put the keyboard on the new issue's words once it is drawn. */
+  let land = false;
 
   const paintChips = () => {
     chips.replaceChildren(...[ALL, ...repos].map((r) => {
       const b = h('button', {type: 'button', class: 'chip', role: 'radio', 'aria-checked': String(filter === r)}, r || t('All'));
-      b.addEventListener('click', () => { filter = r; paintChips(); if (r) look(r); void paint(); });
+      b.addEventListener('click', () => { filter = r; paintChips(); if (r) look(r, true); void paint(); });
       return b;
     }));
   };
 
   /** Slide to the `n`th box: it gets the whole box, the others only their heads. */
   const sized = new ResizeObserver(([e]) => track.style.setProperty('--card-h', `${(e.target as HTMLElement).offsetHeight}px`));
-  const go = (n: number) => {
+  /** The part of the box that has the keyboard (its words, a button), so the box gone to or drawn again gives it back. */
+  const part = () => (document.activeElement instanceof HTMLElement && track.contains(document.activeElement) ? document.activeElement.className.split(' ')[0] || null : null);
+  const go = (n: number, moved = false, had = part()) => {
     if (!shown.length) return;
     k = Math.max(0, Math.min(shown.length - 1, n));
     const i = shown[k];
     chosen = key(i);
-    look(i.repo);
+    chosenIn.set(i.repo, chosen);
+    look(i.repo, moved);
     track.style.setProperty('--at', `${k}`);
     // The first box starts at the column's edge and the last ends at it; between, both neighbours show.
     column.style.setProperty('--lead', `${k === 0 ? 0 : k === shown.length - 1 ? 2 : 1}`);
@@ -93,15 +119,21 @@ export function git(ctx: Context): Node[] {
     const card = track.children[k]?.querySelector<HTMLElement>('.issue-card');
     sized.disconnect();
     if (card) sized.observe(card);
+    const edge = document.activeElement === prev || document.activeElement === next;
     prev.hidden = k === 0;
     next.hidden = k === shown.length - 1;
+    const slot = track.children[k] as HTMLElement | undefined;
+    if (land) { land = false; slot?.querySelector<HTMLElement>('.issue-words')?.focus({preventScroll: true}); return; }
+    if (had) (slot?.querySelector<HTMLElement>(`.${had}`) ?? stage).focus({preventScroll: true});
+    // An edge pressed that is gone now (the first or last box reached): the keyboard stays on the row.
+    else if (edge && (document.activeElement as HTMLElement | null)?.hidden) stage.focus({preventScroll: true});
   };
-  prev.addEventListener('click', () => go(k - 1));
-  next.addEventListener('click', () => go(k + 1));
+  prev.addEventListener('click', () => go(k - 1, true));
+  next.addEventListener('click', () => go(k + 1, true));
   stage.addEventListener('keydown', (e) => {
     if ((e.target as HTMLElement).closest('input, textarea')) return;
-    if (e.key === 'ArrowLeft') { e.preventDefault(); go(k - 1); }
-    if (e.key === 'ArrowRight') { e.preventDefault(); go(k + 1); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); go(k - 1, true); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); go(k + 1, true); }
   });
 
   // One drawing at a time; asked again meanwhile, it draws once more after, from what is then true.
@@ -156,9 +188,13 @@ export function git(ctx: Context): Node[] {
     empty.replaceChildren();
     stage.hidden = false;
     column.classList.toggle('single', shown.length === 1);
+    const had = part();
     track.replaceChildren(...shown.map(() => h('div', {class: 'issue-slot'})));
-    const was = shown.findIndex((i) => key(i) === chosen);
-    go(was >= 0 ? was : 0);
+    // The issue last looked at, in the repo worked on when that has one here.
+    const mine = ctx.repo && shown.some((i) => i.repo === ctx.repo) && !chosen?.startsWith(`${ctx.repo}/`) ? chosenIn.get(ctx.repo) : chosen;
+    let was = shown.findIndex((i) => key(i) === mine);
+    if (was < 0 && ctx.repo) was = shown.findIndex((i) => i.repo === ctx.repo);
+    go(was >= 0 ? was : 0, false, had);
   };
 
   write.addEventListener('click', () => {
@@ -172,6 +208,8 @@ export function git(ctx: Context): Node[] {
     write.disabled = !repos.length;
     look(filter || (ctx.repo && repos.includes(ctx.repo) ? ctx.repo : repos[0] ?? null));
     paintChips();
+    // An issue half written when the page was left is still being written.
+    if (form.resume(repos)) write.hidden = true;
     void paint();
   });
   /** No repo here and some on the Remote: each fetched with a press, as Runtime's are, and its issues are here. */

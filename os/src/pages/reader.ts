@@ -56,8 +56,12 @@ export class Reader {
     return !this.sections.has(c.path);
   }
 
-  /** Load the directories down to `path`, scroll it into view, and at `line` put the caret there. */
-  async reveal(path: string, line = 0) {
+  /**
+   * Load the directories down to `path` and scroll it into view; at `line`,
+   * that line is selected with the caret in it; with `write`, the caret is put
+   * at the file's start (a file chosen to work on, from File).
+   */
+  async reveal(path: string, line = 0, write = false) {
     const parts = path ? path.split('/') : [];
     for (let i = 0; i < parts.length; i++) await this.loads.get(parts.slice(0, i).join('/'))?.();
     const target = path ? this.sections.get(path) : this.sections.get('');
@@ -65,10 +69,11 @@ export class Reader {
     target.scrollIntoView({block: 'start'});
     target.classList.add('revealed');
     setTimeout(() => target.classList.remove('revealed'), 1200);
-    if (!line) return;
+    if (!line && !write) return;
     await this.fileLoads.get(path)?.();
     const area = this.editors.get(path);
     if (!area) return;
+    if (!line) { area.focus({preventScroll: true}); area.setSelectionRange(0, 0); return; }
     const lines = area.value.split('\n');
     const at = lines.slice(0, line - 1).reduce((n, l) => n + l.length + 1, 0);
     area.focus({preventScroll: true});
@@ -76,6 +81,15 @@ export class Reader {
     const height = parseFloat(getComputedStyle(area).lineHeight) || 20;
     const top = area.getBoundingClientRect().top - this.flow.getBoundingClientRect().top + this.flow.scrollTop;
     this.flow.scrollTop = top + (line - 1) * height - this.flow.clientHeight / 3;
+  }
+
+  /** The file being read: the first whose box reaches below the top of the center. */
+  reading(): string | null {
+    const top = this.flow.getBoundingClientRect().top + 8;
+    for (const section of this.flow.querySelectorAll<HTMLElement>('section.file')) {
+      if (section.getBoundingClientRect().bottom > top) return section.dataset.path ?? null;
+    }
+    return null;
   }
 
   directory(path: string): HTMLElement {

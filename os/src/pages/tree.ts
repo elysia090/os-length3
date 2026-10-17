@@ -9,8 +9,10 @@ import {inRepo, list, ORIGIN_LABEL, type SystemEntry} from '../system.ts';
 // pointer rests on the File icon or on the tree, or when File is pressed;
 // once out it stays for LINGER after the pointer leaves, so reaching across
 // the page and back does not lose it. A press outside or Escape closes it at
-// once. Nothing under it moves. A folder's triangle comes before its name:
-// ▷ closed, ▽ open.
+// once, whatever has the keyboard. Nothing under it moves. A folder's
+// triangle comes before its name: ▷ closed, ▽ open. A file chosen is the one
+// to work on: the tree goes and the caret is in it. The file Forge is
+// reading keeps a quiet mark, apart from what the pointer is over.
 
 const OPEN_DELAY = 80;
 const LINGER = 8000;
@@ -19,10 +21,12 @@ const LINGER = 8000;
 const expandedPaths = new Set<string>(['/root']);
 
 export interface FileTreeEvents {
-  /** A repo or a path inside one was chosen; path '' is the repo itself. */
-  choose(repo: string, path: string): void;
+  /** A repo or a path inside one was chosen; path '' is the repo itself. `file` when it is a file. */
+  choose(repo: string, path: string, file: boolean): void;
   /** The repo Forge shows, marked in the tree. */
   current(): string | null;
+  /** The file Forge is reading in that repo, marked too. */
+  currentFile(): string | null;
 }
 
 /** One outlined triangle pointing down; CSS turns it to point right while closed. */
@@ -54,11 +58,18 @@ export class FileTree {
     this.element = h('nav', {class: 'tree', id: 'file-tree', 'aria-label': 'File（/）'}, this.root);
     this.element.addEventListener('pointerenter', () => this.enter());
     this.element.addEventListener('pointerleave', () => this.leave());
-    this.element.addEventListener('keydown', (event) => {
-      if (event.key !== 'Escape') return;
+    // Escape closes it from anywhere while it is out, before what has the keyboard
+    // hears it (so the text being written keeps its caret); the keyboard goes back
+    // to File only when it was in the tree or on File.
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || event.isComposing || !this.isOpen) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const at = document.activeElement;
+      const back = !!at && (this.element.contains(at) || at === this.trigger);
       this.close();
-      this.trigger?.focus();
-    });
+      if (back) this.trigger?.focus();
+    }, true);
     this.element.addEventListener('focusout', (event) => {
       const to = event.relatedTarget as Node | null;
       if (to && !this.element.contains(to) && to !== this.trigger) this.close();
@@ -118,6 +129,13 @@ export class FileTree {
     }
   }
 
+  /** Mark the file Forge is reading in `repo`. */
+  markFile(repo: string | null, path: string | null) {
+    for (const b of this.root.querySelectorAll<HTMLElement>('.tree-name[data-file]')) {
+      if (b.dataset.in === repo && b.dataset.file === path) b.setAttribute('aria-current', 'location'); else b.removeAttribute('aria-current');
+    }
+  }
+
   private later(open: boolean, after: number) {
     clearTimeout(this.timer);
     this.timer = window.setTimeout(() => (open ? this.open() : this.close()), after);
@@ -138,7 +156,7 @@ export class FileTree {
     const name = h('button', {class: 'tree-name', type: 'button'}, repo);
     name.addEventListener('click', async () => {
       meta.textContent = t('Bringing it…');
-      try { await bring(repo); this.events.choose(repo, ''); } catch (err) { meta.textContent = err instanceof Error ? err.message : String(err); }
+      try { await bring(repo); this.events.choose(repo, '', false); } catch (err) { meta.textContent = err instanceof Error ? err.message : String(err); }
     });
     return h('li', {role: 'treeitem', class: 'tree-repo tree-away'},
       h('div', {class: 'tree-row', style: `--depth:${depth}`}, h('span', {class: 'tree-spacer', 'aria-hidden': 'true'}), name, meta));
@@ -155,8 +173,9 @@ export class FileTree {
       // A link is shown by its name only: /bin/ls is a command, whatever it points to.
       row.append(h('span', {class: 'tree-spacer', 'aria-hidden': 'true'}));
       if (at) {
-        const name = h('button', {class: 'tree-name', type: 'button'}, e.name);
-        name.addEventListener('click', () => this.events.choose(at.repo, at.path));
+        const name = h('button', {class: 'tree-name', type: 'button', 'data-in': at.repo, 'data-file': at.path}, e.name);
+        if (at.repo === this.events.current() && at.path === this.events.currentFile()) name.setAttribute('aria-current', 'location');
+        name.addEventListener('click', () => this.events.choose(at.repo, at.path, true));
         row.append(name);
       } else {
         row.append(h('span', {class: 'tree-name plain'}, e.name));
@@ -207,7 +226,7 @@ export class FileTree {
     name.addEventListener('click', () => {
       if (!at) { show(!expanded); return; }
       if (!expanded) show(true);
-      this.events.choose(at.repo, at.path);
+      this.events.choose(at.repo, at.path, false);
     });
     show(expanded);
     into.append(item);

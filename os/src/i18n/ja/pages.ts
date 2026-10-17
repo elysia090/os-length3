@@ -29,6 +29,7 @@ export default {
   'Template': 'テンプレート',
   'Use letters, digits and . _ -, and do not start with .': '名前は英数字と . _ - で、先頭は . 以外にしてください',
   'Could not create: {message}': '作成できませんでした：{message}',
+  'There is a repo named {name} already': '{name}という repo はもうあります',
 
   // File (the tree of "/")
   'No repos yet': 'repo はまだありません',
@@ -54,6 +55,7 @@ export default {
   'Output': '実行結果',
   'Reference': '参照',
   'Search this repo': 'この repo を検索',
+  'Line {n} of {path}': '{path}の{n}行目',
   'Open a repo to search it': 'repo を開くと検索できます',
   'Open a repo to run in it': 'repo を開くと実行できます',
   'Searching…': '検索中…',

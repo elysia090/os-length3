@@ -11,8 +11,18 @@ import {sessionFor, sessionIfAny, terminalFor} from './terminal.ts';
 // room it leaves. Enter is a new line and Ctrl+Enter sends, as in every box
 // one writes in. A Prompt that ended says so in its place, with Start again;
 // sending to it starts it again too.
+//
+// What is written in the box belongs to the repo it was written for: each
+// repo keeps its own while the app runs, so going to another page and back
+// keeps it, and switching repos swaps it for that repo's (or an empty box).
+// Until something is run in the repo's Prompt it holds only its prompt line,
+// so the reference takes the side's room; from the first run on, the Prompt
+// has its 3 parts.
 
 const MOVE = 280;
+
+/** What was written in the prompt box for each repo and not sent. */
+const drafts = new Map<string, string>();
 
 /** Move `el` into `to`, animating from where it was (FLIP). */
 function fly(el: HTMLElement, to: HTMLElement) {
@@ -32,6 +42,8 @@ export interface Bench {
   reference: Reference;
   /** The repo the prompt and the reference work on; null for none (the Prompt's place is then left empty). */
   setRepo(name: string | null): void;
+  /** Back on screen after another page: the Prompt is home again unless its box still has the keyboard. */
+  settle(): void;
 }
 
 export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(path: string, line?: number): void}): Bench {
@@ -58,7 +70,10 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   };
   const fit = () => { prompt.style.height = 'auto'; prompt.style.height = `${prompt.scrollHeight}px`; };
   prompt.addEventListener('focus', () => setPrompting(true));
-  prompt.addEventListener('input', fit);
+  prompt.addEventListener('input', () => {
+    fit();
+    if (repo) { if (prompt.value) drafts.set(repo, prompt.value); else drafts.delete(repo); }
+  });
   prompt.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') { setPrompting(false); prompt.blur(); return; }
     // Ctrl-C with nothing selected (so not a copy) interrupts what runs, as in a terminal.
@@ -77,6 +92,8 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     if (!sessionFor(repo).send(prompt.value)) { note.textContent = t('Still starting'); return; }
     note.textContent = '';
     prompt.value = '';
+    drafts.delete(repo);
+    room();
     fit();
   });
   // Leaving the prompt and the Prompt sends it home; losing the window's focus does not.
@@ -97,7 +114,21 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     termBox.replaceChildren(termTitle, ...(name ? [terminalFor(name)] : []));
     prompt.disabled = !name;
     prompt.placeholder = name ? t('Run in {name}', {name}) : t('Open a repo to run in it');
+    prompt.value = name ? drafts.get(name) ?? '' : '';
+    note.textContent = '';
+    room();
+    requestAnimationFrame(fit);
   };
+  /** Whether the repo's Prompt has run anything yet, which is what gives it room. */
+  const room = () => work.classList.toggle('unrun', !!repo && !sessionIfAny(repo)?.runs.length);
   setRepo(null);
-  return {element: work, reference, setRepo};
+  // A page taken off the screen loses its focus without a focusout, so the Prompt may still be up.
+  const settle = () => {
+    room();
+    if (!prompting || dock.contains(document.activeElement)) return;
+    prompting = false;
+    work.classList.remove('prompting');
+    termHome.append(termBox);
+  };
+  return {element: work, reference, setRepo, settle};
 }

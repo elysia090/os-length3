@@ -5,7 +5,7 @@ import {issueName, issuePath, type Issue} from '../issues.ts';
 import {connection} from '../remote.ts';
 import {named} from '../text.ts';
 import {diffFiles} from './diff-view.ts';
-import {issueEditor} from './issue-form.ts';
+import {beingChanged, issueEditor} from './issue-form.ts';
 
 // An issue on the Git page, as one large box (issue #17). Its branch and
 // worktree are never named: Start gives the issue its own copy of the repo,
@@ -103,7 +103,10 @@ export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEv
     words,
     ...(here && s?.work ? [steps(issue, s, events, after)] : change?.state === 'open' ? [received(change)] : []),
     h('div', {class: 'issue-foot'}, leave, h('div', {class: 'issue-about'}, h('span', {class: 'issue-where'}, issue.repo), say ? h('span', {class: s?.error ? 'error small' : 'muted small'}, say) : null), ...acts), error);
-  words.addEventListener('click', () => words.replaceWith(issueEditor(issue, (saved) => { if (saved) after(); else box.replaceWith(issueBox(issue, s, events, after)); })));
+  const editor = () => issueEditor(issue, (saved) => { if (saved) after(); else box.replaceWith(issueBox(issue, s, events, after)); });
+  words.addEventListener('click', () => words.replaceWith(editor()));
+  // Its words half changed when the box was left: the box opens as the fields, as they were.
+  if (beingChanged(issue)) words.replaceWith(editor());
   return box;
 }
 

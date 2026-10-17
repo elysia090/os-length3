@@ -30,8 +30,12 @@ Every value in `styles.css` comes from a token (§2).
   `ink` fill with `ground` text: the rail item (File while its tree is
   out), the repo chip, the open repo in the tree, the chosen template, the primary button. A large place
   (a card, an issue row) is too big to fill with ink: it is current by an
-  `ink` edge over `raised`, as a lit repo card is. Focus is a 2 px
-  `ink` ring. Nothing else marks state (no underline, no bold-only).
+  `ink` edge over `raised`, as a lit repo card is. Where one is inside
+  the current thing (the file Forge is reading, under the open repo in
+  File) is quieter than the thing it is in: a short straight `ink` line at
+  its row's left and its name 600, kept while the pointer is elsewhere and
+  apart from hover. Focus is a 2 px `ink` ring. Nothing else marks state
+  (no underline, no bold-only).
 - **Selection** is the current-thing state too: `ink` with `ground` text,
   for selected text and for search matches.
 - **Lines.** 1 px, except the box of a file being edited in Forge, which is
@@ -68,6 +72,19 @@ Every value in `styles.css` comes from a token (§2).
   against the Japanese in the catalog and `t()` sets it apart only when it
   is Latin (旅行の人たちへ, trip の人たちへ). `i18n.test.ts` holds all four;
   l3 and core write their Japanese the same way.
+- **What one was doing stays where it belongs.** Going to another page
+  and back, or to another repo and back, is going back to it: the same
+  repo, where it was read, what was searched, what was half written. What
+  is written belongs to what it was written for (the prompt box to its
+  repo, an issue's words to the issue) and is swapped with it, never
+  carried to another; it goes only when it is sent, saved, or put back
+  with Not now. The repo worked on is one on every page: chosen anywhere
+  (a pill, File, a Git chip, an issue gone to or started, one just
+  written), it is the one the next page opens; only looking at a page
+  chooses nothing. A thing made or chosen is landed on: a new issue is the
+  one shown, with the keyboard on it; a file chosen in File has the caret.
+  Going along a row keeps the keyboard on the same part of the box, and an
+  error that the name causes sends the keyboard back to the name.
 - **What exists is the same everywhere.** A repo only on the Remote is a
   repo on every page: counted on Home, a card on Home and Remote that
   reads the same lines in the same order (size · when it changed, then
@@ -205,8 +222,11 @@ what is its own.
 - **The right pane.** Beside the center, past its one `rule`: on top what
   the center refers to (Forge's reference, Server's people and repos),
   headings 15/600 in `ink` as Prompt's, a list under each; with nothing to
-  show, nothing (no line saying what will appear once a repo is open). It
-  only shows; what changes it lives with the thing it changes.
+  show, nothing (no line saying what will appear once a repo is open), or
+  with a repo, one quiet line of what is not there (no box: a box is
+  for the center, where things are made). It only shows; what changes it
+  lives with the thing it changes, and what leads from it into the center
+  (a file's name, a line's number) opens the center there.
 - **Boxes side by side.** One thing at a time in full, its neighbours'
   edges showing with their mark only (# a board, + a new one), never a
   name cut short; ← → or an edge is the way to them. The current one has
@@ -223,7 +243,8 @@ what is its own.
 - **Overlays.** File and Server are operations, not pages: laid over the
   page that is showing, brought out by resting on the icon (it stays a
   while after the pointer leaves) or by a press (it stays), put away by
-  Escape, a press outside, or a second press.
+  Escape (whatever has the keyboard; the topmost one only), a press
+  outside, or a second press.
 - **The Remote away.** When this device's Remote does not answer, it is
   said in one place: a small `off` dot on Remote's icon in the rail, whose
   name then reads Remote に届きません, and one line under Remote's parts
@@ -250,7 +271,7 @@ fix is always a piece from §3, not a new rule.
 | A name cut short at an edge (a neighbour's title) | Show the mark only, or nothing |
 | + after what it adds to | + first, as the band has it |
 | A small grey heading on one page, a 15/600 one on another | 15/600 `ink`, everywhere |
-| An empty state as a plain line of text | The dashed box with a quiet line, where the thing would be |
+| An empty state as a plain line of text in the center | The dashed box with a quiet line, where the thing would be; the right pane, which only refers, has one quiet line or nothing |
 | A dashed box as wide as the page around one line | As wide as its words |
 | Every pane saying what will appear once something is done (repoを開くと出ます, 帯にrepoを出すと動きます) | Said once, where it is done (the center); the other panes are empty |
 | A paragraph explaining the screen | The word on the thing; what will happen, in the ask |
@@ -277,6 +298,13 @@ fix is always a piece from §3, not a new rule.
 | Two words for one thing (repo on one page, リポジトリ on the next; 1 server under サーバー) | One word, from §1, on every page |
 | Japanese and Latin run together on one page and spaced on the next (新しいrepo, Remote にある) | A space between them, always; a number and its counter together (30日, not 30 日) |
 | A name glued to a space before a particle (旅行 に共有) | Written against the particle; `t()` puts the space in only for a Latin name |
+| What was being written carried to another repo (a prompt draft under another repo's name), or dropped by going to another page | Kept with what it was written for and swapped with it; gone only when sent, saved or put back |
+| A page that forgets, when one comes back, where it was read and what was searched | It comes back where it was, each repo at its own place |
+| The repo worked on put back by another page (a Git chip, then Forge on the old one) | One repo worked on, chosen anywhere, opened next on every page |
+| The keyboard dropped after a step (an arrow along the row, an issue just made) | It stays on the same part of the box, or lands on what was made |
+| A box half a window tall for a file of one line | As tall as its text, with room for three lines more |
+| A choice that leaves its overlay to be closed by hand (a file chosen in File) | Choosing the thing to work on puts the overlay away and the caret in it |
+| The only way to something folded away with its pane (search, narrow) | The way stays where it was; only what it shows folds |
 | A day in another country's order (10/17/2031 まで in Japanese) | `day()`: the language's own (2031年10月17日まで) |
 | The same card saying its lines in another order (Remote にあります · 8 B, then when) | One order on every card: size · when it changed, then where it is |
 | A count that leaves out what the page shows (0 repo over a card for notes) | The count is of what is shown |
@@ -658,9 +686,10 @@ center says how to bring one out. The band is remembered on this device. Below t
 an endless page scrolled like a browser and opened at the file chosen in
 File. There are no tabs, no title, no index of links and no headings for
 directories. The center is where editing happens: each file is a plain
-text editor in its own roomy box (at least about half the window high, so
-short files are not packed together; the page scrolls), a little heavier
-line than the rest; a header with its place in "/" (`/root/<repo>/` quiet, the
+text editor in its own box, as tall as its text and room for three lines
+more to go on writing in (a press there puts the caret at the end), so a
+short file does not make one scroll past empty space to the next; a little
+heavier line than the rest; a header with its place in "/" (`/root/<repo>/` quiet, the
 rest plain), then line numbers in a quiet gutter beside the text, which is
 itself the field (no box; the caret is the only sign). Typing saves on its
 own a moment later, on leaving the file, or with Ctrl+S; the header says
@@ -679,18 +708,29 @@ is labelled Prompt, after what one does there (the shell is BusyBox sh, so
 it is not called Bash); leaving the prompt
 (or Escape) sends it back the same way. The Prompt has no switch: writing
 to it starts it, and one that ended says so in its place, with Start
-again; stopping one is Runtime's.
+again; stopping one is Runtime's. What is written in the box and not sent
+is the repo's: another repo shows its own, and coming back finds it.
+
+Forge is kept as it was while another page is shown, and each repo on the
+band keeps its place: where it was read, what was searched in it. A pill
+taken off lets its place go.
 
 The center takes three quarters of the width; the right pane takes one
 quarter (at least 280 px) so it never gets in the way. Its bottom is the
-terminal's home, and it starts above the middle (the reference takes 2
-parts, the Prompt 3): the reference scrolls and the Prompt does not, so the
-eye should not have to drop low to find it. On the band's line sits the search box for the open
+terminal's home, and once the repo's Prompt has run something it starts
+above the middle (the reference takes 2 parts, the Prompt 3): the reference
+scrolls and the Prompt does not, so the eye should not have to drop low to
+find it. Until then the Prompt is only its prompt line, and the reference
+takes the room, so a diff reads in it. Narrower than 760 px the right pane
+folds away and the search box stays where it was, on the band's line at
+the right; its results open under it over the center. On the band's line sits the search box for the open
 repo: plain, case-insensitive, line by line; results are grouped by file,
 and a line pressed opens the center there with the line selected. Below,
 on the band line, one reference at a time, switched freely with chips: Issue (the repo's issues, one line each as #3 Fix：件名, pressed to read one in full), diff (the changes not yet
 cut, file by file: added lines raised, removed lines quiet and struck,
-following every save; desktop only, as git is) and 実行結果 (each line sent
+following every save; a file's name opens it in the center, a line's
+number opens it at that line, selected, to write in, and a removed line's
+the line that took its place) and 実行結果 (each line sent
 from the prompt box, newest first: the line, how long it took or that it
 is still running, and what came out until the prompt returned; the Prompt
 itself scrolls on, this keeps the record). The Prompt's own status line is
@@ -811,7 +851,13 @@ Commit, Push, Change (with Reset), Review, Merge. It uses the same workbench
 as Forge: the center (one centred column, 760 px at most) with the prompt
 box at its foot, and the narrow right pane with the search box, the
 reference and the Prompt. The page header, then the repo chips (one repo or
-all); choosing a repo also points the right pane and the Prompt at it.
+all); choosing a repo also points the right pane and the Prompt at it, and
+makes it the repo worked on (§1): Forge opens there next. So does going to
+an issue (an edge, ← →) and starting or continuing one; coming to Git
+opens at the issue last looked at in the repo worked on. An issue written
+is the one shown, its repo's chip chosen if another was, with the keyboard
+on its words; one half written (new, or its words half changed) is still
+half written after reading its neighbours or another page.
 
 - **Issues**: every issue not merged yet. An issue is its number and its
   words ("#3 Fix：件名", then the detail); that is all a person meets. Any
@@ -1032,7 +1078,9 @@ Under the form is the list of repos, the same cards as on Home. Once made,
 the page stays where it is: the new repo's card joins the list and lights
 for a moment, the preview card says it is in File under `/root/<name>`, and
 where 作成 was there is "<name> を作りました" with the ways on: Forge で開く
-(primary; it goes on the band) and 続けて作る (a fresh form).
+(primary; it goes on the band) and 続けて作る (a fresh form). A name not
+allowed, or one already taken, is said under the form, and the keyboard
+goes back to the name as it was written.
 
 ### File
 
@@ -1052,6 +1100,10 @@ distribution (配布), `/dev` and `/proc` are made by the kernel, `/root`
 holds the person's repos, `/etc` and `/tmp` start empty. `/root` is open at
 first. A folder's triangle comes before its name, ▷ closed and ▽ open (one
 outlined shape, turned). Inside a repo a name opens that place in Forge
-(in place when Forge is showing, and the tree stays out); elsewhere it
-opens and closes the folder. Open folders are remembered while the app
-runs.
+(in place when Forge is showing; a folder keeps the tree out, to go on
+down); a file is the one to work on, so choosing it puts the tree away and
+the caret at the file's start. Elsewhere a name opens and closes the
+folder. The file Forge is reading is marked as where one is (§1). Escape
+puts the tree away whatever has the keyboard: what was being written keeps
+its caret, and only from inside the tree does the keyboard go back to File.
+Open folders are remembered while the app runs.

@@ -6,8 +6,13 @@ import {t, tn} from '../i18n.ts';
 const OPEN = 3;
 
 export interface DiffOptions {
-  /** Pressing a file's name opens it (not for a removed file). */
-  reveal?: (path: string) => void;
+  /**
+   * Pressing a file's name opens it (not for a removed file); pressing a
+   * line's number opens it at that line, selected, to write in. A removed
+   * line is no line of the file now: its number opens the line that took its
+   * place. Only for the copy here, whose lines are the center's.
+   */
+  reveal?: (path: string, line?: number) => void;
   /** Called for each line drawn, with its key (`path:index`), to mark it or make it markable. */
   line?: (row: HTMLElement, key: string, l: DiffLine) => void;
 }
@@ -29,10 +34,23 @@ export function diffFiles(files: FileDiff[], o: DiffOptions = {}): HTMLElement[]
     }
     const head = h('summary', {class: 'diff-head'}, name,
       f.binary ? h('span', {class: 'muted small'}, t('Binary')) : h('span', {class: 'diff-count'}, add ? `+${add}` : '', del ? ` −${del}` : ''));
+    // Where each line is in the file as it is now: its own number, or for a removed line the next line kept (else the last).
+    const now = (k: number): number | undefined => {
+      const l = f.lines[k];
+      if (l.kind !== 'del') return l.at;
+      const after = f.lines.slice(k + 1).find((x) => x.kind === 'add' || x.kind === 'same');
+      if (after) return after.at;
+      const before = f.lines.slice(0, k).reverse().find((x) => x.kind === 'add' || x.kind === 'same');
+      return before?.at ? before.at + 1 : 1;
+    };
     const body = f.binary ? [] : f.lines.map((l, k) => {
       // Between two parts of a file, a quiet "…".
       if (l.kind === 'hunk') return k === 0 ? null : h('div', {class: 'diff-line hunk'}, h('span', {class: 'diff-no'}), h('span', {}, '…'));
-      const row = h('div', {class: `diff-line ${l.kind}`}, h('span', {class: 'diff-no'}, l.at ? `${l.at}` : ''), h('span', {class: 'diff-text'}, l.text || ' '));
+      const at = o.reveal && f.status !== 'removed' ? now(k) : undefined;
+      const no = at ? h('button', {type: 'button', class: 'diff-no go', tabindex: '-1', 'aria-label': t('Line {n} of {path}', {n: at, path: f.path})}, l.at ? `${l.at}` : '')
+        : h('span', {class: 'diff-no'}, l.at ? `${l.at}` : '');
+      if (at) { const go = o.reveal!; no.addEventListener('click', () => go(f.path, at)); }
+      const row = h('div', {class: `diff-line ${l.kind}`}, no, h('span', {class: 'diff-text'}, l.text || ' '));
       o.line?.(row, `${f.path}:${k}`, l);
       return row;
     }).filter(Boolean) as HTMLElement[];

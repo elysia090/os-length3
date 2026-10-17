@@ -406,16 +406,17 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 }
 .path span { font-weight: 400; }
 /* Each file is a box drawn a little heavier than other lines, since it is
-   the thing being worked on, and roomy: the page scrolls, so a short file
-   still gets space to write in. */
+   the thing being worked on, as tall as its text and room for three lines
+   more under it to go on writing in (a press there puts the caret at the
+   end): a short file does not make one scroll past empty space to the next. */
 .file {
-  display: flex; flex-direction: column; min-height: clamp(280px, 55vh, 640px); margin-bottom: var(--s6);
+  display: flex; flex-direction: column; margin-bottom: var(--s6);
   border: var(--line-work) solid var(--edge); border-radius: var(--r-place);
 }
 /* A file reads like a plain text editor: line numbers in a quiet gutter,
    the text beside them, on the same lines. */
 .file-state { font-weight: 400; color: var(--sub); white-space: nowrap; }
-.sheet { flex: 1; display: grid; grid-template-columns: auto minmax(0, 1fr); align-content: start; column-gap: var(--s4); padding: var(--s2) var(--s4) var(--s4); cursor: text; }
+.sheet { flex: 1; display: grid; grid-template-columns: auto minmax(0, 1fr); align-content: start; column-gap: var(--s4); padding: var(--s2) var(--s4) calc(var(--s4) + 3 * 1.6 * var(--t-meta)); cursor: text; }
 .gutter, .code { margin: 0; padding: 0; font: var(--t-meta)/1.6 var(--mono); white-space: pre; tab-size: 4; }
 .gutter { color: var(--sub); text-align: right; user-select: none; min-width: 2ch; font-variant-numeric: tabular-nums; }
 .code { overflow-x: auto; }
@@ -448,9 +449,20 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 @keyframes layer-in { from { opacity: 0; transform: translateX(calc(-1 * var(--s4))); } }
 @media (prefers-reduced-motion: reduce) { .server-layer { animation: none; } }
 /* Narrow: the center and its box keep the width; the side steps aside (the Prompt still flies up above the box). */
+/* Narrow, the right pane folds away but the search box stays where it was,
+   on the band's line at the right: pressed, its results open under it over
+   the center, and what was searched is kept as it is when wide. */
 @media (max-width: 760px) {
-  .work { grid-template-columns: minmax(0, 1fr); }
-  .work > .side { display: none; }
+  .work { grid-template-columns: minmax(0, 1fr); position: relative; --search-w: clamp(160px, 40%, 300px); }
+  .work > .side { display: block; position: absolute; top: 0; right: var(--s2); width: var(--search-w); z-index: 2; }
+  .work > .side > .term-home, .work > .side .reference > .chips, .work > .side .reference > .reference-body { display: none; }
+  .work > .side .pane.reference { display: grid; grid-template-rows: auto; gap: var(--s2); padding: var(--band) 0 0; overflow: visible; }
+  /* The results are wider than the box, opening to its left over the center. */
+  .work > .side:focus-within .reference > .reference-body {
+    display: block; justify-self: end; width: min(360px, calc(100vw - var(--rail) - 2 * var(--s4))); max-height: 60vh;
+    padding: var(--s3); background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-card);
+  }
+  .repo-strip { padding-right: calc(var(--search-w) + var(--s4)); }
   .center, .repo-strip { border-right: 0; }
   .dock { left: var(--s2); right: var(--s2); bottom: var(--s3); }
   .flow { padding-left: var(--s2); padding-right: var(--s2); }
@@ -460,6 +472,7 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
    prompt is in use the terminal is away and the reference grows down. */
 /* The reference scrolls, the Prompt does not, so the Prompt starts higher (2 : 3). */
 .side { grid-column: 2; grid-row: 1 / -1; display: grid; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); min-height: 0; transition: grid-template-rows var(--move); }
+.work.unrun .side { grid-template-rows: minmax(0, 1fr) auto; }
 .work.prompting .side, .work.reviewing .side { grid-template-rows: minmax(0, 2fr) minmax(0, 0fr); }
 .issue-one .row { flex-wrap: wrap; }
 /* The search box sits on the band's line; the reference chips under it. */
@@ -488,6 +501,9 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .diff-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 /* Which line it is, quiet at the left of each line. */
 .diff-no { color: var(--sub); text-align: right; font-variant-numeric: tabular-nums; user-select: none; }
+/* A line's number in the copy here opens the center at it. */
+button.diff-no { padding: 0; border: 0; background: transparent; font: inherit; cursor: pointer; }
+button.diff-no:hover { color: var(--ink); text-decoration: underline; }
 /* A file of a diff: a fold, its name and what was added and removed. */
 .diff-file { margin-bottom: var(--s3); }
 .diff-head { display: flex; align-items: baseline; gap: var(--s3); min-height: var(--h-row); padding: var(--s1) var(--s1); border-radius: var(--r-field); cursor: pointer; font: var(--t-meta) var(--mono); }
@@ -542,6 +558,10 @@ mark { background: var(--ink); color: var(--ground); }
 }
 .tree-name.plain { display: flex; align-items: center; cursor: default; color: var(--sub); }
 .tree-repo > .tree-row .tree-name { font-weight: 600; }
+/* The file Forge is reading: a short straight line at its row's left, kept apart from the pointer's raised row. */
+.tree-row { position: relative; }
+.tree-row:has(> [aria-current='location'])::before { content: ''; position: absolute; left: 0; top: 25%; bottom: 25%; width: var(--line-work); background: var(--ink); }
+.tree-name[aria-current='location'] { font-weight: 600; }
 .tree-meta { flex: none; padding: 0 var(--s2); font-size: var(--t-meta); opacity: .8; }
 /* Only on the Remote: quiet, as a card of one is dashed. */
 .tree-away > .tree-row .tree-name { color: var(--sub); }

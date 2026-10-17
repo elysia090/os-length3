@@ -100,6 +100,8 @@ export function newRepo(ctx: Context): Node[] {
     event.preventDefault();
     const n = name.value.trim();
     if (!validName(n)) { error.textContent = t('Use letters, digits and . _ -, and do not start with .'); name.focus(); return; }
+    // A name taken is the name's to change, as a name not allowed is: the keyboard goes back to it, as written.
+    if ((await store.list()).some((r) => r.name === n)) { error.textContent = t('There is a repo named {name} already', {name: n}); name.focus(); return; }
     submit.disabled = true;
     try {
       await store.create(n, template);

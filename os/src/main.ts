@@ -37,24 +37,29 @@ function save(key: string, value: string) {
 }
 
 let openRepo = load(REPO_KEY);
+/** The file Forge's center is reading. */
+let readingPath: string | null = null;
 const ctx: Context = {
   // Server, like File, is laid over the page rather than being one.
   go: (id) => (id === 'server' ? serverLayer.open(true) : select(id)),
-  openRepo(name, path = '') {
-    if (current === 'forge' && showInForge(name, path)) return;
+  openRepo(name, path = '', write = false) {
+    if (current === 'forge' && showInForge(name, path, write)) return;
     ctx.remember(name);
-    revealNext(path);
+    revealNext(path, write);
     select('forge');
   },
   remember(name) { openRepo = name; save(REPO_KEY, name); fileTree.mark(name); },
+  reading(path) { readingPath = path; if (current === 'forge') fileTree.markFile(openRepo, path); },
   get repo() { return openRepo; },
   rerender: () => render(),
 };
 
-// File lays the tree of "/" over the page; it never replaces the page.
+// File lays the tree of "/" over the page; it never replaces the page. A
+// file chosen there is the one to work on: the tree goes and the caret is in it.
 const fileTree = new FileTree({
-  choose: (repo, path) => ctx.openRepo(repo, path),
+  choose: (repo, path, file) => { if (file) fileTree.close(); ctx.openRepo(repo, path, file); },
   current: () => (current === 'forge' ? openRepo : null),
+  currentFile: () => (current === 'forge' ? readingPath : null),
 });
 document.body.append(fileTree.element);
 // Server is laid over the page the same way: people one knows, their boards, each board's talk and TODO.
@@ -112,6 +117,7 @@ function render() {
   const page = $('page');
   page.classList.toggle('page-work', current === 'forge' || current === 'git');
   fileTree.mark(current === 'forge' ? openRepo : null);
+  fileTree.markFile(current === 'forge' ? openRepo : null, current === 'forge' ? readingPath : null);
   const nodes = current === 'home' ? home(ctx)
     : current === 'forge' ? forge(ctx)
     : current === 'new-repo' ? newRepo(ctx)
