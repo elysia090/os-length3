@@ -578,17 +578,15 @@ fn find(repo: &str, id: &str) -> Result<Change> {
         .ok_or_else(|| crate::tr!("No change has been handed in for {} yet", "{} の Change はまだ渡されていません", id))
 }
 
-/// Review the change's current version. Approving is someone else's: the
-/// one who handed a version in does not approve it.
+/// Review the change's current version.
 pub fn review(repo: &str, id: &str, verdict: &str, note: &str, marks: &[String]) -> Result<Change> {
     let c = find(repo, id)?;
     if !["approve", "changes", "comment"].contains(&verdict) {
         return Err(crate::tr!("A review is approve, changes or comment", "レビューは approve、changes、comment のどれかです"));
     }
-    if verdict == "approve" && !c.submitted_by.is_empty() && remote::account().ok().flatten().is_some_and(|a| a.name == c.submitted_by) {
-        return Err(crate::tr!("You handed in version {} yourself: someone else approves it (a comment or Merge is still yours)",
-            "第{}版はあなたが渡したものです。承認するのは別の人です（コメントや Merge はできます）", c.version));
-    }
+    // Approving a version one handed in oneself is allowed, as in the app and on the Remote:
+    // every repo is one account's today, so its Review is the owner's own check before Merge.
+    // A repo with more than one member is when this tightens (another member approves).
     serde_json::from_value(change_call(repo, &c.id, "reviews", serde_json::json!({"version": c.version, "verdict": verdict, "note": note, "marks": marks}))?).map_err(|e| e.to_string())
 }
 
