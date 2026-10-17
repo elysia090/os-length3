@@ -7,6 +7,7 @@ export default {
   'Not found': '見つかりません',
   'No such release': 'そのリリースはありません',
   'A file is at most 16 MB': 'ファイルは16 MB までです',
+  'What was sent is too large': '送られたものが大きすぎます',
   'The bytes are not what their name says': '中身が名前と合いません',
   'The Remote has no such file': 'Remote にそのファイルはありません',
   'This repo is turned off': 'この repo はオフになっています',

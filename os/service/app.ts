@@ -39,6 +39,7 @@
 
 import {and, desc, eq, inArray, isNull, ne, sql} from 'drizzle-orm';
 import {Hono, type Context, type MiddlewareHandler} from 'hono';
+import {bodyLimit} from 'hono/body-limit';
 import {cors} from 'hono/cors';
 import type {Auth} from './auth.ts';
 import type {Bucket} from './bucket.ts';
@@ -89,8 +90,17 @@ export const LIMIT = {blob: 16 << 20, files: 20_000, diff: 5_000, words: 2_000, 
   /** Repos an account has, lines of work a repo has (besides main). */
   repos: 200, lines: 100,
   /** Reviews a change keeps; lines one review marks, and how much they say in all. */
-  reviews: 50, marks: 200, markChars: 32 * 1024};
+  reviews: 50, marks: 200, markChars: 32 * 1024,
+  /** A request's body: a draft's diff or a setting at most as large as a file may be, anything else a little. */
+  body: 16 << 20, request: 1 << 20};
 const enc = new TextEncoder();
+
+/** How large a body `method` `path` may send: a file, a draft's diff and a setting are large, nothing else is. */
+export function roomFor(method: string, path: string): number {
+  if (method === 'PUT' && /^\/v1\/blobs\/[^/]+$/.test(path)) return LIMIT.blob;
+  if ((method === 'PATCH' && /^\/v1\/repos\/[^/]+\/draft$/.test(path)) || (method === 'PUT' && /^\/v1\/home\/[^/]+$/.test(path))) return LIMIT.body;
+  return LIMIT.request;
+}
 
 export async function sha256(bytes: Uint8Array): Promise<string> {
   const d = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as BufferSource));
@@ -188,6 +198,9 @@ export function createApp(d: Deps) {
     c.header('Cache-Control', 'no-store');
     c.header('X-Content-Type-Options', 'nosniff');
   });
+  // A body is read whole before it is looked at, by anyone's request (signing in, a guest's code, a link's key):
+  // none is read past what its route can take, counted as it comes, whatever it says its length is.
+  app.use('*', (c, next) => bodyLimit({maxSize: roomFor(c.req.method, c.req.path), onError: (c) => c.json({error: 'What was sent is too large'}, 413)})(c, next));
 
   // For research no passkey is added: a passkey would let a link's holder back in after its key changed.
   if (d.enter) app.all('/api/auth/passkey/*', (c) => c.json({error: 'This Remote is entered by its link'}, 403));

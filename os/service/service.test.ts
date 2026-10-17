@@ -786,6 +786,29 @@ test('Requests: a write on the cookie alone is taken only from the app\'s pages,
   assert.equal((await s.app.request(`${BASE}/v1/repos`, {headers: {Authorization: `Bearer ${t}`}})).status, 200);
 });
 
+test('Requests: a body is read no further than its route takes, however it is sent, before anyone is asked who they are', async () => {
+  const key = 'k'.repeat(40);
+  const s = await service({}, {enter: {as: 'banana000000', key}});
+  const streamed = (bytes: Uint8Array) => new ReadableStream<Uint8Array>({start(c) { c.enqueue(bytes); c.close(); }});
+  const send = (method: string, path: string, bytes: Uint8Array, headers: Record<string, string> = {}) =>
+    s.app.request(`${BASE}${path}`, {method, headers: {Origin: APP, 'Content-Type': 'application/json', ...headers}, body: streamed(bytes), duplex: 'half'} as RequestInit);
+  // Anyone's: a key of megabytes is refused unread, said to be that long or sent without saying, and no try is counted for it.
+  const big = enc.encode(JSON.stringify({key: 'k'.repeat(2 << 20)}));
+  assert.equal((await send('POST', '/v1/enter', big, {'Content-Length': String(big.length)})).status, 413);
+  assert.equal((await send('POST', '/v1/enter', big)).status, 413);
+  assert.equal(await count(s, sql`select count(*)::int as n from throttle`), 0);
+  const t = (await s.call('POST', '/v1/enter', {body: {key}})).json.token as string;
+  // A file is as large as a file may be, and no larger; a draft's diff larger than any other body is still read.
+  const auth = {Authorization: `Bearer ${t}`};
+  assert.equal((await send('PUT', `/v1/blobs/${'0'.repeat(64)}`, new Uint8Array((16 << 20) + 1), {...auth, 'Content-Type': 'application/octet-stream'})).status, 413);
+  const one = await upload(s, t, enc.encode('x'));
+  const set = Object.fromEntries(Array.from({length: 1500}, (_, i) => [`${'d'.repeat(900)}/${i}.txt`, one.sha]));
+  const diff = enc.encode(JSON.stringify({version: 0, set, remove: []}));
+  assert.ok(diff.length > 1 << 20);
+  assert.equal((await send('PATCH', '/v1/repos/r/draft', diff, auth)).status, 200);
+  assert.equal((await send('POST', '/v1/inbox/messages', diff, auth)).status, 413);
+});
+
 test('A repo named on answers only that it is off; a range that ends before it starts is refused; what moved is one small read', async () => {
   const s = await service();
   const t = await s.start('Ren');
