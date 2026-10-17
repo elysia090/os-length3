@@ -669,6 +669,7 @@ mark { background: var(--ink); color: var(--ground); }
   background: transparent; color: var(--sub); font: inherit; font-size: var(--t-body); font-weight: 600; cursor: pointer;
 }
 .part small { margin-left: var(--s2); font-weight: 400; font-size: var(--t-meta); }
+.part small:empty { display: none; }
 .part:hover { background: var(--raised); color: var(--ink); }
 .part[aria-selected='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 .part[aria-selected='true'] small { color: inherit; opacity: .8; }
@@ -919,7 +920,7 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .side-part h3 { margin: 0; font-size: var(--t-meta); font-weight: 600; color: var(--sub); }
 .people, .side-repos { display: grid; gap: var(--s1); margin: 0; padding: 0; list-style: none; }
 .people li { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
-.people .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.people li > :not(.face) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .face { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--rule); border-radius: var(--r-round); font: 600 11px var(--sans); }
 .side-repo { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s2); width: 100%; padding: var(--s1) var(--s2); margin: 0 calc(-1 * var(--s2)); border: 0; border-radius: var(--r-field); background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
 .side-repo:hover { background: var(--raised); }
@@ -930,20 +931,21 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .server-sheet { display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; }
 .server-sheet[hidden] { display: none; }
 .sheet-card { min-height: 0; }
-.sheet-body { flex: 1; min-height: 0; overflow-y: auto; display: grid; align-content: start; gap: var(--s5); padding: var(--s2) var(--s5) var(--s5); max-width: 680px; }
+.sheet-body { flex: 1; min-height: 0; overflow-y: auto; padding: var(--s2) var(--s5) var(--s5); }
+.sheet-body > .parts { margin-top: var(--s1); }
+.sheet-body .part-panel { margin-top: var(--s4); }
 .sheet-sub { padding: 0 var(--s5) var(--s2); }
-.sheet-part { display: grid; gap: var(--s2); }
-.sheet-part h3 { margin: 0; font-size: var(--t-meta); font-weight: 600; color: var(--sub); }
-.sheet-part > .line-in { justify-self: start; min-width: 16em; }
-.sheet-item { display: grid; gap: var(--s1); padding: var(--s2) 0; border-top: 1px solid var(--rule); }
-.sheet-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); min-width: 0; }
-.sheet-row .grow { flex: 1; min-width: 0; }
-.sheet-row .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sheet-switch { display: grid; gap: var(--s1); }
-.sheet-ask { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3); border: 1px solid var(--edge); border-radius: var(--r-field); font-size: var(--t-meta); }
-.sheet-ask .grow { flex: 1; min-width: 12em; }
-.sheet-ask[hidden] { display: none; }
-.button.armed { color: var(--off); }
+/* A setting in a small card: its word, and the switch at the right. */
+.card-row { display: flex; align-items: center; gap: var(--s3); min-height: var(--h-control); }
+.card-row .grow { flex: 1; min-width: 0; }
+.small-card > .small-button { justify-self: start; }
+.small-card.new { grid-template-rows: none; align-content: center; justify-items: center; }
+/* Narrow: the parts slide rather than stack, and the server's name and code are left to its own part. */
+@media (max-width: 760px) {
+  .sheet-body > .parts { flex-wrap: nowrap; overflow-x: auto; }
+  .sheet-body > .parts .part { flex: none; }
+  .sheet-card > .board-head > .small { display: none; }
+}
 .seen-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(10em, 1fr) minmax(0, 3fr); border-top: 1px solid var(--rule); }
 .seen-files { margin: 0; padding: var(--s2); list-style: none; overflow-y: auto; border-right: 1px solid var(--rule); }
 .seen-file { display: block; width: 100%; padding: var(--s1) var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: var(--sub); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }

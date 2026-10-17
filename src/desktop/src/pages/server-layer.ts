@@ -4,6 +4,7 @@ import {t} from '../i18n.ts';
 import {shown as named, shownAs} from '../inbox.ts';
 import {connection, RemoteError} from '../remote.ts';
 import * as servers from '../servers.ts';
+import {parts} from './common.ts';
 import type {Context} from './context.ts';
 import {postNow, timeline} from './talk.ts';
 import {todoList} from './todo-box.ts';
@@ -48,48 +49,29 @@ function remember(at: {server?: string; board?: string}) {
   try { localStorage.setItem(AT, JSON.stringify(at)); } catch { /* a convenience */ }
 }
 
-/** A button that asks first: pressed once it says `ask`, pressed again within a few seconds it does `act`. */
-function twice(label: string, ask: string, act: () => Promise<void>, kind = 'link') {
-  const b = button(label, kind);
-  let armed = 0;
-  b.addEventListener('click', async () => {
-    if (!armed) {
-      b.textContent = ask;
-      b.classList.add('armed');
-      armed = window.setTimeout(() => { armed = 0; b.textContent = label; b.classList.remove('armed'); }, 3000);
-      return;
-    }
-    clearTimeout(armed);
-    armed = 0;
-    b.disabled = true;
-    try { await act(); } catch (e) { b.textContent = message(e); b.disabled = false; }
+/**
+ * Asked in the card, as Remote asks before a repo is turned off: the card
+ * gives way to what will happen and the two answers, Not now at the left and
+ * the deed at the right, and comes back as it was if the answer is no.
+ */
+function askIn(card: HTMLElement, title: string, what: string, verb: string, act: () => Promise<void>) {
+  const was = [...card.childNodes];
+  const error = h('p', {class: 'error small', role: 'alert'});
+  const no = button(t('Not now'), 'small-button'), yes = button(verb, 'small-button primary');
+  no.addEventListener('click', () => card.replaceChildren(...was));
+  yes.addEventListener('click', async () => {
+    yes.disabled = true;
+    try { await act(); } catch (e) { error.textContent = message(e); yes.disabled = false; }
   });
-  return b;
+  card.replaceChildren(h('div', {class: 'off-ask'}, h('span', {class: 'card-title'}, title), h('p', {class: 'muted small'}, what), error,
+    h('div', {class: 'card-foot'}, no, h('span', {class: 'grow'}), yes)));
+  yes.focus();
 }
 
-/**
- * A switch for something that reaches past the server's people: turning it
- * on says what it will do and waits for a yes; turning it off is at once.
- */
-function reach(label: string, ask: string, yes: string, on: boolean, change: (v: boolean) => Promise<unknown>) {
-  const sw = h('button', {type: 'button', class: 'power plain', role: 'switch', 'aria-checked': String(on), 'aria-label': label}, h('span', {class: 'knob'})) as HTMLButtonElement;
-  const said = h('div', {class: 'sheet-ask', hidden: ''});
-  const row = h('div', {class: 'sheet-switch'}, h('div', {class: 'sheet-row'}, h('span', {class: 'grow'}, label), sw), said);
-  const set = async (v: boolean) => {
-    sw.disabled = true;
-    try { await change(v); sw.setAttribute('aria-checked', String(v)); said.hidden = true; } catch (e) { said.hidden = false; said.replaceChildren(h('span', {class: 'error'}, message(e))); } finally { sw.disabled = false; }
-  };
-  sw.addEventListener('click', () => {
-    const v = sw.getAttribute('aria-checked') !== 'true';
-    if (!v) { void set(false); return; }
-    const go = button(yes, 'small-button primary'), not = button(t('Not now'), 'small-button');
-    go.addEventListener('click', () => void set(true));
-    not.addEventListener('click', () => { said.hidden = true; });
-    said.replaceChildren(h('span', {class: 'grow'}, ask), not, go);
-    said.hidden = false;
-  });
-  return row;
-}
+/** A small card, as Runtime's and Remote's: its title, a line or two, then what can be done at its foot. */
+const smallCard = (title: string, ...rest: (Node | null)[]) => h('div', {class: 'card small-card'}, h('span', {class: 'card-title'}, title), ...rest);
+const line = (text: string) => (text ? h('span', {class: 'muted small'}, text) : null);
+const foot = (...xs: (Node | null)[]) => h('div', {class: 'card-foot'}, h('span', {class: 'grow'}), ...xs);
 
 /** A board as the layer holds it: whose it is to write in. */
 interface Shown { id: string; name: string; member: boolean; guests: boolean; server: string }
@@ -439,7 +421,7 @@ export class ServerLayer {
     // ---- the right: who is in it, then the repos they show in it ----
     const part = (title: string, ...body: (Node | null)[]) => h('section', {class: 'side-part'}, h('h3', {}, title), ...body);
     const faceOf = (address: string) => h('span', {class: 'face', 'aria-hidden': 'true'}, initials(address));
-    const repoName = (r: servers.ShownRepo) => [h('span', {class: 'mono'}, r.name), h('span', {class: 'muted small mono'}, named(r.owner))];
+    const repoName = (r: servers.ShownRepo) => [h('span', {}, r.name), h('span', {class: 'muted small'}, named(r.owner))];
     let sideToken = 0;
     const paintSide = () => {
       const mine = ++sideToken;
@@ -450,7 +432,7 @@ export class ServerLayer {
       void Promise.all([servers.people(id), servers.shownIn(id)]).then(([people, repos]) => {
         if (mine !== sideToken) return;
         side.replaceChildren(
-          part(t('People'), h('ul', {class: 'people'}, ...people.map((p) => h('li', {}, faceOf(p.address), h('span', {class: 'mono small'}, named(p.address)),
+          part(t('People'), h('ul', {class: 'people'}, ...people.map((p) => h('li', {}, faceOf(p.address), h('span', {}, named(p.address)),
             p.owner ? h('span', {class: 'muted small'}, t('owner')) : null)))),
           part(t('Repos'), repos.length
             ? h('ul', {class: 'side-repos'}, ...repos.map((r) => {
@@ -475,7 +457,7 @@ export class ServerLayer {
       const files = h('ul', {class: 'seen-files', 'aria-label': t('Files')});
       const text = h('pre', {class: 'seen-text', tabindex: '0'});
       sheet.replaceChildren(h('div', {class: 'board-card sheet-card'},
-        h('header', {class: 'board-head'}, h('h2', {class: 'mono'}, r.name), h('span', {class: 'muted small mono'}, named(r.owner)), h('span', {class: 'grow'}), forge, back),
+        h('header', {class: 'board-head'}, h('h2', {}, r.name), h('span', {class: 'muted small'}, named(r.owner)), h('span', {class: 'grow'}), forge, back),
         h('div', {class: 'sheet-sub'}, sub, r.as ? h('p', {class: 'muted small'}, t('Everyone sees it as {name}', {name: shownAs(r.as)})) : null),
         h('div', {class: 'seen-body'}, files, text)));
       try {
@@ -504,64 +486,107 @@ export class ServerLayer {
     };
 
     // ---- behind the gear: what changes the server for everyone ----
+    // In parts, as Remote's page is (its people, the repos shown, its boards,
+    // the server itself): a small card for each thing, what can be done with
+    // it at its foot, and what reaches past its people asked in the card.
+    type Part = 'people' | 'repos' | 'boards' | 'server';
     const settings = async () => {
       const s = current();
       if (!s) return;
       place('settings');
       const done = button(t('Done'), 'small-button');
       done.addEventListener('click', () => place('boards'));
-      const body = h('div', {class: 'sheet-body'}, h('p', {class: 'muted small'}, '…'));
+      const tabs = parts<Part>('server-gear', [{id: 'people', label: t('People')}, {id: 'repos', label: t('Repos')}, {id: 'boards', label: t('Boards')}, {id: 'server', label: t('This server')}]);
+      const ids: Part[] = ['people', 'repos', 'boards', 'server'];
       sheet.replaceChildren(h('div', {class: 'board-card sheet-card'},
-        h('header', {class: 'board-head'}, h('h2', {}, s.name), h('span', {class: 'muted small mono'}, named(s.address)), h('span', {class: 'muted small mono', title: t('Its code')}, s.code), h('span', {class: 'grow'}), done), body));
+        h('header', {class: 'board-head'}, h('h2', {}, s.name), h('span', {class: 'muted small'}, `${named(s.address)} · ${s.code}`), h('span', {class: 'grow'}), done),
+        h('div', {class: 'sheet-body'}, tabs.switch, ...ids.map((k) => tabs.panel(k)))));
       const again = () => { if (showing === 'settings') void settings(); paintSide(); };
+      // Narrow, the parts slide: the one chosen is kept in view.
+      const inView = () => tabs.switch.querySelector('[aria-selected="true"]')?.scrollIntoView({block: 'nearest', inline: 'nearest'});
+      tabs.onShow(inView);
+      requestAnimationFrame(inView);
+      const grid = (k: Part, ...cards: (Node | null)[]) => tabs.panel(k).replaceChildren(h('div', {class: 'grid small-grid'}, ...cards));
+      /** A setting in a card: its word and a switch. Widening asks in the card first; narrowing is at once. */
+      const setting = (card: HTMLElement, label: string, on: boolean, ask: {what: string; verb: string}, change: (v: boolean) => Promise<unknown>) => {
+        const sw = h('button', {type: 'button', class: 'power plain', role: 'switch', 'aria-checked': String(on), 'aria-label': label}, h('span', {class: 'knob'})) as HTMLButtonElement;
+        sw.addEventListener('click', async () => {
+          if (!on) { askIn(card, card.querySelector('.card-title')?.textContent ?? '', ask.what, ask.verb, async () => { await change(true); again(); }); return; }
+          sw.disabled = true;
+          try { await change(false); again(); } catch { sw.disabled = false; }
+        });
+        return h('div', {class: 'card-row'}, h('span', {class: 'grow'}, label), sw);
+      };
       try {
         const [people, repos, mineAll] = await Promise.all([servers.people(s.id), servers.shownIn(s.id), servers.seenAll()]);
         if (showing !== 'settings' || current() !== s) return;
-        const section = (title: string, ...rows: (Node | null)[]) => h('section', {class: 'sheet-part'}, h('h3', {}, title), ...rows);
+        tabs.count('people', people.length);
+        tabs.count('repos', repos.length);
+        tabs.count('boards', s.boards.length);
+        const mine = (await Promise.all(people.map(async (p) => ((await isMe(p.address)) ? p.address : null)))).find(Boolean) ?? null;
 
-        // Who is in it: anyone in it adds someone they know; only its owner removes someone else.
-        const add = h('select', {class: 'line-in', 'aria-label': t('Add someone you know'), hidden: ''}) as HTMLSelectElement;
-        void import('../inbox.ts').then((inbox) => inbox.threads()).then((all) => {
-          const known = all.filter((x) => x.state === 'contact' && !people.some((p) => p.address === x.address));
-          if (!known.length) return;
-          add.replaceChildren(h('option', {value: ''}, t('Add someone you know…')), ...known.map((x) => h('option', {value: x.address}, named(x.address))));
-          add.hidden = false;
-        }).catch(() => {});
-        add.addEventListener('change', async () => {
-          if (!add.value) return;
-          try { await servers.addPerson(s.id, add.value); again(); } catch (e) { add.after(h('p', {class: 'error small'}, message(e))); }
+        // Its people: anyone in it adds someone they know; only its owner takes someone out.
+        const add = h('button', {type: 'button', class: 'card small-card new'}, t('Add someone you know')) as HTMLButtonElement;
+        add.addEventListener('click', async () => {
+          const known = await import('../inbox.ts').then((inbox) => inbox.threads()).then((all) => all.filter((x) => x.state === 'contact' && !people.some((p) => p.address === x.address))).catch(() => []);
+          const pick = h('div', {class: 'card small-card'}, h('span', {class: 'card-title'}, t('Add someone you know')),
+            ...(known.length ? known.map((x) => {
+              const b = button(named(x.address), 'small-button');
+              b.addEventListener('click', async () => { b.disabled = true; try { await servers.addPerson(s.id, x.address); again(); } catch (e) { b.textContent = message(e); } });
+              return b;
+            }) : [line(t('Everyone you know is in it. Others come from your Inbox contacts.'))]));
+          add.replaceWith(pick);
         });
-        const personRows = await Promise.all(people.map(async (p) => {
-          const me = await isMe(p.address);
-          const remove = s.owner && !me ? twice(t('Remove'), t('Remove {who}?', {who: named(p.address)}), async () => { await servers.removePerson(s.id, p.address); again(); }) : null;
-          return h('div', {class: 'sheet-row'}, faceOf(p.address), h('span', {class: 'mono small grow'}, named(p.address)), p.owner ? h('span', {class: 'muted small'}, t('owner')) : null, remove);
-        }));
+        grid('people', ...people.map((p) => {
+          const c = smallCard(named(p.address), line(p.owner ? t('owner') : p.address === mine ? t('you') : ''));
+          if (s.owner && p.address !== mine) {
+            const out = button(t('Remove'), 'small-button');
+            out.addEventListener('click', () => askIn(c, named(p.address), t('{who} leaves {server}, and what they show in it comes off its list.', {who: named(p.address), server: s.name}),
+              t('Remove'), async () => { await servers.removePerson(s.id, p.address); again(); }));
+            c.append(foot(out));
+          }
+          return c;
+        }), add);
 
-        // The repos shown in it: one's own shown or taken off; seen by everyone as the server, never as oneself.
+        // The repos shown: one's own shown or taken off, and seen by everyone as the server's, never as oneself.
         const shares = (name: string) => mineAll.find((x) => x.name === name)?.servers.map((x) => x.id) ?? [];
-        const repoRows = repos.map((r) => {
-          const offList = r.mine || s.owner ? button(t('Take off'), 'small-button') : null;
-          offList?.addEventListener('click', async () => { offList.disabled = true; try { await servers.takeOff(s.id, r.owner, r.name); again(); } catch (e) { offList.textContent = message(e); } });
+        const offer = mineAll.filter((x) => !repos.some((r) => r.mine && r.name === x.name));
+        const show = h('button', {type: 'button', class: 'card small-card new'}, t('Show one of yours')) as HTMLButtonElement;
+        show.addEventListener('click', () => {
+          const pick = h('div', {class: 'card small-card'}, h('span', {class: 'card-title'}, t('Show one of yours')),
+            ...(offer.length ? offer.map((x) => {
+              const b = button(x.name, 'small-button');
+              b.addEventListener('click', async () => { b.disabled = true; try { await servers.showIn(s.id, x.name); again(); } catch (e) { b.textContent = message(e); } });
+              return b;
+            }) : [line(t('Every repo of yours on the Remote is shown here.'))]));
+          show.replaceWith(pick);
+        });
+        grid('repos', ...repos.map((r) => {
           const asHere = shownAs(`${s.address}:${r.name}`);
-          const pub = r.mine && s.address
-            ? reach(t('Anyone can see it, as {name}', {name: asHere}), t('Anyone will see {repo} as it was last pushed, as {name}, without your name.', {repo: r.name, name: asHere}), t('Show it to everyone'),
-              r.asServer === s.id, (v) => (v ? servers.setSeen(r.name, 'everyone', {as: s.id}) : servers.setSeen(r.name, 'servers', {servers: shares(r.name)})).then(() => again()))
-            : r.as ? h('p', {class: 'muted small'}, t('Everyone sees it as {name}', {name: shownAs(r.as)})) : null;
-          return h('div', {class: 'sheet-item'}, h('div', {class: 'sheet-row'}, ...repoName(r), h('span', {class: 'grow'}), offList), pub);
-        });
-        const offer = h('select', {class: 'line-in', 'aria-label': t('Show one of yours'), hidden: ''}) as HTMLSelectElement;
-        const notYet = mineAll.filter((x) => !repos.some((r) => r.mine && r.name === x.name));
-        if (notYet.length) {
-          offer.replaceChildren(h('option', {value: ''}, t('Show one of yours…')), ...notYet.map((x) => h('option', {value: x.name}, x.name)));
-          offer.hidden = false;
-        }
-        offer.addEventListener('change', async () => {
-          if (!offer.value) return;
-          try { await servers.showIn(s.id, offer.value); again(); } catch (e) { offer.after(h('p', {class: 'error small'}, message(e))); }
-        });
+          const c = smallCard(r.name, line(named(r.owner)), r.as ? line(t('Everyone sees it as {name}', {name: shownAs(r.as)})) : null);
+          if (r.mine && s.address) {
+            c.append(setting(c, t('Seen by everyone'), r.asServer === s.id,
+              {what: t('Anyone will see {repo} as it was last pushed, as {name}, without your name.', {repo: r.name, name: asHere}), verb: t('Show it to everyone')},
+              (v) => (v ? servers.setSeen(r.name, 'everyone', {as: s.id}) : servers.setSeen(r.name, 'servers', {servers: shares(r.name)}))));
+          }
+          if (r.mine || s.owner) {
+            const off = button(t('Take off'), 'small-button');
+            off.addEventListener('click', async () => { off.disabled = true; try { await servers.takeOff(s.id, r.owner, r.name); again(); } catch (e) { off.textContent = message(e); } });
+            c.append(foot(off));
+          }
+          return c;
+        }), show);
 
-        // How far each board is open: its owner says, after a yes; anyone in it takes one home.
-        const boardRows = s.boards.map((b) => {
+        // Its boards: how far each is open, its owner's to say; taking one home, anyone's.
+        grid('boards', ...s.boards.map((b) => {
+          const how = b.open ? [t('Anyone can read it'), ...(b.guests ? [t('Guests can write')] : [])].join(' · ') : t('Its people only');
+          const c = smallCard(`# ${b.name}`, s.owner ? null : line(how));
+          if (s.owner) {
+            const set = (change: {open?: boolean; guests?: boolean}) => servers.setBoard(b.id, change).then((n) => { b.open = n.open; b.guests = n.guests; });
+            c.append(
+              setting(c, t('Anyone can read it'), b.open, {what: t('Anyone, signed in or not, will read #{board}: its TODO and its talk.', {board: b.name}), verb: t('Open it')}, (v) => set({open: v})),
+              setting(c, t('Guests can write'), b.guests, {what: t('Someone not in {server} will write in #{board} once a code sent to their email is checked.', {server: s.name, board: b.name}), verb: t('Take guests')}, (v) => set({guests: v})));
+          }
           const take = button(t('Take home'), 'small-button');
           take.title = t('Everything stays on the Remote. Take a copy as text when you want one here.');
           take.addEventListener('click', async () => {
@@ -573,37 +598,35 @@ export class ServerLayer {
               setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
             } catch (e) { take.textContent = message(e); } finally { take.disabled = false; }
           });
-          const head = h('div', {class: 'sheet-row'}, h('span', {class: 'muted', 'aria-hidden': 'true'}, '#'), h('span', {class: 'grow'}, b.name), take);
-          if (!s.owner) {
-            const how = b.open ? [t('Anyone can read it'), ...(b.guests ? [t('Outsiders can write, after an email check')] : [])].join(' · ') : t('Its people only');
-            return h('div', {class: 'sheet-item'}, head, h('p', {class: 'muted small'}, how));
-          }
-          const set = (change: {open?: boolean; guests?: boolean}) => servers.setBoard(b.id, change).then((n) => { b.open = n.open; b.guests = n.guests; });
-          return h('div', {class: 'sheet-item'}, head,
-            reach(t('Anyone can read it'), t('Anyone, signed in or not, will read #{board}: its TODO and its talk.', {board: b.name}), t('Open it'), b.open, (v) => set({open: v})),
-            reach(t('Outsiders can write, after an email check'), t('Someone not in {server} will write in #{board} once a code sent to their email is checked.', {server: s.name, board: b.name}), t('Take guests'), b.guests, (v) => set({guests: v})));
-        });
+          c.append(foot(take));
+          return c;
+        }));
 
-        // Leaving: one's own place; removing: its owner's, held a while to bring back.
-        const myAddress = (await Promise.all(people.map(async (p) => ((await isMe(p.address)) ? p.address : null)))).find(Boolean) ?? null;
-        const leave = myAddress ? twice(t('Leave this server'), t('Leave it?'), async () => { await servers.removePerson(s.id, myAddress); gone(s.id); }) : null;
-        // Its name's term: renewed by its owner near its end (or after, while it is held for the server).
-        const YEAR = 365 * 86_400_000;
-        const renew = s.owner && s.until && s.until - Date.now() < YEAR ? button(t('Renew'), 'small-button primary') : null;
-        renew?.addEventListener('click', async () => {
-          renew.disabled = true;
-          try { const r = await servers.renewServer(s.id); s.until = r.until; again(); } catch (e) { renew.textContent = message(e); renew.disabled = false; }
-        });
-        const term = s.until ? h('div', {class: 'sheet-row'}, h('span', {class: 'mono small'}, named(s.address)),
-          h('span', {class: `small grow${s.until <= Date.now() ? ' error' : ' muted'}`}, s.until <= Date.now() ? t('Its term ended; held for it until {date}', {date: new Date(s.until + 30 * 86_400_000).toLocaleDateString()}) : t('Until {date}', {date: new Date(s.until).toLocaleDateString()})), renew) : null;
-        const remove = s.owner ? twice(t('Remove this server'), t('Remove {server}? It is held 30 days for you to bring back.', {server: s.name}), async () => { await servers.removeServer(s.id); gone(s.id); }) : null;
-
-        body.replaceChildren(
-          section(t('People'), ...personRows, add),
-          section(t('Repos'), h('p', {class: 'muted small'}, t('Yours stay yours: shown here they are only seen, as they were last pushed.')), ...repoRows, offer),
-          section(t('Boards'), h('p', {class: 'muted small'}, t('Its people always. Beyond them, only as far as its owner opens it.')), ...boardRows),
-          section(t('This server'), term, h('div', {class: 'row'}, leave, remove)));
-      } catch (e) { body.replaceChildren(h('p', {class: 'error'}, message(e))); }
+        // The server itself: its name's term (renewed by its owner near its end), leaving it, and, its owner, removing it.
+        const YEAR = 365 * 86_400_000, day = (ms: number) => new Date(ms).toLocaleDateString();
+        const name = smallCard(named(s.address), line(`${t('Its code')} ${s.code}`),
+          s.until ? line(s.until <= Date.now() ? t('Its term ended; held for it until {date}', {date: day(s.until + 30 * 86_400_000)}) : t('Until {date}', {date: day(s.until)})) : null);
+        if (s.owner && s.until && s.until - Date.now() < YEAR) {
+          const renew = button(t('Renew'), 'small-button primary');
+          renew.addEventListener('click', async () => { renew.disabled = true; try { const r = await servers.renewServer(s.id); s.until = r.until; again(); } catch (e) { renew.textContent = message(e); } });
+          name.append(foot(renew));
+        }
+        const leaving = mine ? smallCard(t('Leave this server'), line(s.owner ? t('It goes to whoever came next.') : '')) : null;
+        if (leaving && mine) {
+          const go = button(t('Leave'), 'small-button');
+          go.addEventListener('click', () => askIn(leaving, t('Leave this server'), t('You leave {server}, and what you show in it comes off its list.', {server: s.name}), t('Leave'),
+            async () => { await servers.removePerson(s.id, mine); gone(s.id); }));
+          leaving.append(foot(go));
+        }
+        const removing = s.owner ? smallCard(t('Remove this server'), line(t('Held 30 days for you to bring back.'))) : null;
+        if (removing) {
+          const go = button(t('Delete'), 'small-button');
+          go.addEventListener('click', () => askIn(removing, t('Remove this server'), t('{server} answers no one from now: its boards, its talk and its TODOs go with it. It is held 30 days for you to bring back.', {server: s.name}), t('Delete'),
+            async () => { await servers.removeServer(s.id); gone(s.id); }));
+          removing.append(foot(go));
+        }
+        grid('server', name, leaving, removing);
+      } catch (e) { tabs.panel(tabs.current()).replaceChildren(h('p', {class: 'error'}, message(e))); }
     };
 
     // ---- first: what there is ----

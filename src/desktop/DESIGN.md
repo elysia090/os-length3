@@ -571,14 +571,21 @@ it was last pushed: its files on the left, the one chosen on the right
 (its README first), Forge beside it when it is one's own.
 
 What changes the server for everyone is a step away, behind the gear, in
-the boards' place: its people (anyone in it adds someone they know; only
-its owner removes someone), the repos shown (one's own shown or taken off;
-its owner may take any off), its boards (how far each is open, its owner's
-to say; taking one home, anyone's), and leaving it or, its owner, removing
-it. What reaches past its people asks first, in its own place, saying what
-will happen (Anyone, signed in or not, will read #general), and waits for a
-yes; closing it again is at once. Removing and leaving ask by the button
-itself saying the question for a moment. No Prompt is in Server: Server is
+the boards' place, built as Remote's page is: its parts as the switch
+(People, Repos, Boards, This server, each with its count), and in each a
+small card per thing, the size of Runtime's, what can be done with it at
+its foot: a person (only its owner takes someone out; anyone in it adds
+someone they know, from the dashed card), a repo shown (one's own taken
+off, or seen by everyone as the server's by its switch; its owner may take
+any off; the dashed card shows another of one's own), a board (its two
+switches, its owner's: anyone reads it, guests write; Take home, anyone's),
+and the server itself (its name, code and term with Renew near its end;
+Leave; its owner's Delete). Whatever reaches past its people, or cannot be
+taken back at once, asks in its card, as Remote asks before a repo is
+turned off: the card says what will happen (Anyone, signed in or not, will
+read #general: its TODO and its talk), Not now at the left, the deed at the
+right. Narrowing again is at once. Names are written in the sans, as any
+word is. No Prompt is in Server: Server is
 for people, the Prompt for a repo. Signed out, it shows the open boards
 (and no right, since whose they are is not told), and where a board takes
 guests the box asks for an email, then the code sent to it.
