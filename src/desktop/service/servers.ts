@@ -24,7 +24,8 @@
 //   POST   /v1/servers/ID/boards             {name}
 //   GET    /v1/boards/ID                     the board and its people
 //   PATCH  /v1/boards/ID                     {name?, open?, guests?}: open and guests its server's owner's
-//   DELETE /v1/boards/ID
+//   DELETE /v1/boards/ID                     its server's owner's: held 30 days
+//   POST   /v1/boards/ID/back                within them, back at once
 //   GET    /v1/boards/ID/todos               its TODO, in order
 //   PUT    /v1/boards/ID/todos/TID           {kind?, title?, detail?, done?, place?, created?}: what changed of an item, or a new one
 //   DELETE /v1/boards/ID/todos/TID
@@ -103,8 +104,10 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     (await db.select({serverId: member.serverId, userId: member.userId, address: member.address, owner: member.owner, addedAt: member.addedAt}).from(member)
       .innerJoin(server, eq(server.id, member.serverId))
       .where(and(eq(member.serverId, serverId), eq(member.userId, me), isNull(server.goneAt))))[0] as typeof member.$inferSelect | undefined;
-  const boardOf = async (id: string) => (KEY.test(id)
-    ? (await db.select({b: board}).from(board).innerJoin(server, eq(server.id, board.serverId)).where(and(eq(board.id, id), isNull(server.goneAt))))[0]?.b as Board | undefined
+  // A board removed (held a while) answers nothing, as a server removed does.
+  const boardOf = async (id: string, held = false) => (KEY.test(id)
+    ? (await db.select({b: board}).from(board).innerJoin(server, eq(server.id, board.serverId))
+      .where(and(eq(board.id, id), isNull(server.goneAt), held ? undefined : isNull(board.goneAt))))[0]?.b as Board | undefined
     : undefined);
   /** The board, if `me` is one of its server's people; else null. */
   const mine = async (id: string, me: string) => {
@@ -144,10 +147,14 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       .where(and(eq(member.userId, me), isNull(server.goneAt))).orderBy(member.addedAt) as {id: string; name: string; address: string; owner: number; until: Date | null}[];
     if (!rows.length) return c.json([]);
     const codes = await Promise.all(rows.map((r) => codeOf(db, {serverId: r.id})));
-    const boards = await db.select({id: board.id, serverId: board.serverId, name: board.name, open: board.open, guests: board.guests}).from(board)
-      .where(inArray(board.serverId, rows.map((r) => r.id))).orderBy(board.createdAt) as {id: string; serverId: string; name: string; open: number; guests: number}[];
+    // Boards removed and held long enough: gone for good, their talk and TODO with them.
+    await db.delete(board).where(lt(board.goneAt, new Date(Date.now() - HOLD)));
+    const boards = await db.select({id: board.id, serverId: board.serverId, name: board.name, open: board.open, guests: board.guests, goneAt: board.goneAt}).from(board)
+      .where(inArray(board.serverId, rows.map((r) => r.id))).orderBy(board.createdAt) as {id: string; serverId: string; name: string; open: number; guests: number; goneAt: Date | null}[];
     return c.json(rows.map((r, i) => ({id: r.id, name: r.name, address: r.address, owner: !!r.owner, code: codes[i], until: r.until?.getTime() ?? null,
-      boards: boards.filter((b) => b.serverId === r.id).map((b) => ({id: b.id, name: b.name, open: !!b.open, guests: !!b.guests}))})));
+      // A board removed is listed with when it goes for good (`gone`), so its owner may bring it back.
+      boards: boards.filter((b) => b.serverId === r.id).map((b) => ({id: b.id, name: b.name, open: !!b.open, guests: !!b.guests,
+        ...(b.goneAt ? {gone: b.goneAt.getTime() + HOLD} : {})}))})));
   });
 
   // A server is a principal, as a person is: its name, name@domain, is claimed in the same namespace,
@@ -298,8 +305,20 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const at = await mine(c.req.param('id'), c.get('userId'));
     if (!at) return c.json({error: 'no such board of yours'}, 404);
     if (!at.m.owner) return c.json({error: 'only its server\'s owner removes a board'}, 403);
-    await db.delete(board).where(eq(board.id, at.b.id));
-    return c.body(null, 204);
+    // Held 30 days: its talk and TODO with it, back at once until then.
+    const goneAt = new Date();
+    await db.update(board).set({goneAt}).where(eq(board.id, at.b.id));
+    return c.json({until: goneAt.getTime() + HOLD});
+  });
+
+  v1.post('/boards/:id/back', async (c) => {
+    const b = await boardOf(c.req.param('id'), true);
+    const m = b && await membership(b.serverId, c.get('userId'));
+    if (!b?.goneAt || !m) return c.json({error: 'no such board of yours'}, 404);
+    if (!m.owner) return c.json({error: 'only its server\'s owner brings a board back'}, 403);
+    if (Date.now() - b.goneAt.getTime() > HOLD) return c.json({error: 'held no longer'}, 410);
+    await db.update(board).set({goneAt: null}).where(eq(board.id, b.id));
+    return c.json(await boardJson({...b, goneAt: null}));
   });
 
   // ---- its TODO: Home's list, kept together ----
@@ -438,7 +457,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   const anyone = {'Access-Control-Allow-Origin': '*'};
   app.get('/v1/open', async (c) => {
     const rows = await db.select({id: board.id, name: board.name, guests: board.guests, server: server.name}).from(board)
-      .innerJoin(server, eq(server.id, board.serverId)).where(and(eq(board.open, 1), isNull(server.goneAt))).orderBy(desc(board.createdAt)).limit(100) as {id: string; name: string; guests: number; server: string}[];
+      .innerJoin(server, eq(server.id, board.serverId)).where(and(eq(board.open, 1), isNull(board.goneAt), isNull(server.goneAt))).orderBy(desc(board.createdAt)).limit(100) as {id: string; name: string; guests: number; server: string}[];
     return c.json(rows.map((r) => ({id: r.id, name: r.name, server: r.server, guests: !!r.guests})), 200, anyone);
   });
   app.get('/v1/open/:id', async (c) => {

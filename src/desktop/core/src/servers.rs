@@ -8,14 +8,17 @@ use crate::remote::Client;
 use serde::{Deserialize, Serialize};
 type Result<T> = std::result::Result<T, String>;
 
+/// A board; `gone`: removed by its server's owner, held until then (ms), answering nothing meanwhile.
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Board { pub id: String, pub name: String, pub open: bool, pub guests: bool }
+pub struct Board { pub id: String, pub name: String, pub open: bool, pub guests: bool, #[serde(default, skip_serializing_if = "Option::is_none")] pub gone: Option<u64> }
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Server { pub id: String, pub name: String, #[serde(default)] pub address: String, pub owner: bool, pub boards: Vec<Board> }
 
-/// The servers this account is in, each with its boards.
+/// The servers this account is in, each with its boards (those removed and held left out).
 pub fn list() -> Result<Vec<Server>> {
-    serde_json::from_value(Client::open()?.json("GET", "/v1/servers", None)?).map_err(|e| e.to_string())
+    let mut all: Vec<Server> = serde_json::from_value(Client::open()?.json("GET", "/v1/servers", None)?).map_err(|e| e.to_string())?;
+    for s in &mut all { s.boards.retain(|b| b.gone.is_none()); }
+    Ok(all)
 }
 
 /// A server, or one of its boards, as names are written (names.rs): `trip`, `trip@length3.com`,

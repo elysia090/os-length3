@@ -78,7 +78,7 @@ Every page:
 | `sub` | `#56595A` | secondary text (5.0:1) |
 | `edge` | `#6B6E6B` | outlines of fields and controls, which must be seen (3.7:1) |
 | `raised` | `#E4E4E0` | field fill, hover (the same small step above ground as before) |
-| `done` | `#2F7D4F` | the done mark: a step of an issue's work is done |
+| `done` | `#2F7D4F` | done and on: a step of an issue's work done, a switch on (its knob), a box ticked (its circle) |
 | `marker` | `#F3E27A` | a line marked in review, as with a highlighter |
 | `off` | `#B3412F` | a repo turned off: its switch |
 
@@ -134,8 +134,10 @@ what is its own.
   buttons were; the card comes back if the answer is no. Narrowing again (closing,
   turning a share off) is at once.
 - **The switch.** A setting that is on or off: a round track with a knob,
-  on at the left in `ink`, off at the right. Off as the usual state is
-  quiet (`plain`); off as a repo turned off is `off` red. Its label is a
+  on at the left, the green circle (`done`), off at the right. It moves the
+  moment it is pressed: turning on then asks in the card (no puts it
+  back), turning off is at once; hovered, its edge is `ink`. Off as the
+  usual state is quiet (`plain`); off as a repo turned off is `off` red. Its label is a
   word or two beside it; what turning it on will do is said in the ask.
   Things that reach past their owner have the same pair wherever they are:
   to the server's people, and to everyone (a repo shown in a server; a
@@ -196,7 +198,9 @@ fix is always a piece from §3, not a new rule.
 | A paragraph explaining the screen | The word on the thing; what will happen, in the ask |
 | A sentence broken where the card ends (名前 / は出ません) | Short lines, each broken where the sentence breaks |
 | Answers right under the question, high in a card that shrank to ask (やめる, 見せる) | The card keeps its size; the answers sit at its foot, where its own buttons were |
-| The browser's own colour (a blue checkbox) | `ink`, as anything ticked or chosen |
+| The browser's own colour (a blue checkbox), or a tick in `ink` | The green circle, as a switch on: one green for on, everywhere |
+| A switch that waits for the answer before it moves | It moves on the press; what it turns on is asked after, and no puts it back |
+| A removal that cannot be taken back where one could be held (a board's) | Held 30 days: the card goes quiet, its button red, and pressed again it is back at once |
 | Words of two sizes centred in one row (sora and オーナー a pixel or two apart) | They share a baseline; a face or an icon beside them is centred |
 | A hidden label beside a line taller than the line (a run's posts spaced 32, 37, 37) | Nothing beside a line is taller than it: one rhythm down a run |
 | A button not centred on its row's title (Done below 旅行's middle) | The title and its line share a baseline; the row centres the button on them |
@@ -367,7 +371,7 @@ nobody else can take it and be taken for its owner:
 | a server | its people (its owner removes it) | its Remote | removed, or its last person leaves: 30 days, then gone |
 | a repo shown in a server | its owner, lent to the server | its Remote | taken off, or its owner leaves the server: at once |
 | a repo's public name (`face:name`) | its owner, under a face | the face (the server, or the owner's address) | taken down, or the face goes: 30 days no one else's repo answers to it |
-| a board, its talk and TODO | its server | its Remote | with its server, or removed |
+| a board, its talk and TODO | its server | its Remote | removed by its owner: 30 days, back at once until then, then gone; or with its server |
 | a copy on a device | the device | the digests | taken back whenever room is wanted (owned.rs) |
 | a session, a code, a guest | the person, the address it was sent to | sign-in, mail | a lease: days for a session, minutes for a code, 30 days for a guest |
 
@@ -850,8 +854,9 @@ Server is an overlay (§3), on the bench's shape. Its pieces, from §3:
   removes someone), Repos (each of one's own with **the pair of
   switches**, to its people and to everyone, seen by everyone as the
   server's; others' shown here, whose, its owner may take them off),
-  Boards (to everyone and guests, its owner's; Remove, its owner's; Take
-  home, anyone's), This server (its name, code and term, Renew near its
+  Boards (to everyone and guests, its owner's; Take home, anyone's;
+  Remove, its owner's: the board is held 30 days, off the boards, its card
+  quiet with its 外す red, and pressed again it is back at once), This server (its name, code and term, Renew near its
   end; Leave; its owner's Delete). Whatever reaches past its people or
   cannot be taken back at once is **asked in the card**.
 

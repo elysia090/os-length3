@@ -390,6 +390,18 @@ test('Servers: people who know each other, boards with talk and a TODO kept toge
   assert.equal((await item(ren, 'a1', {kind: 'not a kind!'})).status, 400);
   assert.equal((await item(ren, 'a1', {title: 'x'.repeat(201)})).status, 400);
   assert.equal((await s.call('DELETE', `/v1/boards/${bid}/todos/m1`, {token: mio})).status, 204);
+  // A second board, removed by the server's owner: held 30 days, answering nothing, back at once with its TODO.
+  const other = (await s.call('POST', `/v1/servers/${sid}/boards`, {token: mio, body: {name: 'food'}})).json.id as string;
+  await s.call('PUT', `/v1/boards/${other}/todos/f1`, {token: mio, body: {title: 'ramen', place: 1, created: 1}});
+  assert.equal((await s.call('DELETE', `/v1/boards/${other}`, {token: mio})).status, 403);
+  const removed = await s.call('DELETE', `/v1/boards/${other}`, {token: ren});
+  assert.ok((removed.json.until as number) > Date.now() + 29 * 86_400_000);
+  assert.equal((await s.call('GET', `/v1/boards/${other}/todos`, {token: mio})).status, 404);
+  const listed = ((await s.call('GET', '/v1/servers', {token: mio})).json as unknown as {boards: {name: string; gone?: number}[]}[])[0].boards;
+  assert.deepEqual(listed.map((b) => [b.name, !!b.gone]), [['plan', false], ['food', true]]);
+  assert.equal((await s.call('POST', `/v1/boards/${other}/back`, {token: mio})).status, 403);
+  assert.equal((await s.call('POST', `/v1/boards/${other}/back`, {token: ren})).status, 200);
+  assert.equal(((await s.call('GET', `/v1/boards/${other}/todos`, {token: mio})).json as unknown as {title: string}[])[0].title, 'ramen');
 
   // The talk around it, newest first a page at a time.
   for (const [t, b] of [[ren, 'Kyoto first?'], [mio, 'yes'], [ren, 'booked']] as const) assert.equal((await s.call('POST', `/v1/boards/${bid}/posts`, {token: t, body: {body: b}})).status, 201);

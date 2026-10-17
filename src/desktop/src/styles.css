@@ -60,8 +60,13 @@ body {
   font: var(--t-body)/1.6 var(--sans);
 }
 button, input, textarea { font: inherit; color: inherit; }
-/* A box to tick is ink when ticked, not the browser's own colour. */
-input[type='checkbox'], input[type='radio'] { accent-color: var(--ink); }
+/* A box to tick is a circle, the green one when ticked, as a switch on is: never the browser's blue. */
+input[type='checkbox'] { appearance: none; display: inline-grid; place-content: center; flex: none; width: 20px; height: 20px; margin: 0; border: 1.5px solid var(--edge); border-radius: 50%; background: transparent; cursor: pointer; transition: background var(--motion), border-color var(--motion); }
+input[type='checkbox']::after { content: ''; width: 9px; height: 5px; margin-top: -2px; border: 2px solid var(--ground); border-top: 0; border-right: 0; transform: rotate(-45deg); opacity: 0; }
+input[type='checkbox']:hover { border-color: var(--ink); }
+input[type='checkbox']:checked { background: var(--done); border-color: var(--done); }
+input[type='checkbox']:checked::after { opacity: 1; }
+input[type='checkbox']:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 h1, h2, p { margin: 0; }
 a { color: var(--ink); }
 [hidden] { display: none !important; }
@@ -718,9 +723,17 @@ mark { background: var(--ink); color: var(--ground); }
 .card-foot { display: flex; align-items: center; gap: var(--s2); align-self: end; }
 .card-foot .grow { flex: 1; }
 .card.off { border-style: dashed; }
+/* What was turned off, pressed again to bring it back: red, as a repo turned off is. */
+.button.off { background: var(--off); border-color: var(--off); color: var(--ground); }
+.button.off:hover:not(:disabled) { background: var(--off); filter: none; opacity: .9; }
 .card.off .card-title, .card.off > .muted { color: var(--sub); }
 .power { position: relative; width: 52px; height: 28px; flex: none; padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: var(--raised); cursor: pointer; transition: background var(--motion), border-color var(--motion); }
-.power .knob { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: var(--ink); transition: transform var(--move); }
+.power .knob { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: var(--ink); transition: transform var(--move), background var(--move); }
+/* On is the green circle; the switch answers the pointer before it is pressed. */
+.power[aria-checked='true'] .knob { background: var(--done); }
+.power:hover:not(:disabled) { border-color: var(--ink); }
+.power:active:not(:disabled) .knob { width: 24px; }
+.power[aria-checked='false']:active:not(:disabled) .knob { transform: translateX(20px); }
 .power[aria-checked='false'] { background: var(--off); border-color: var(--off); }
 .power[aria-checked='false'] .knob { transform: translateX(24px); background: var(--ground); }
 /* A switch whose off is the usual state (SSH): off is quiet, not the red of a repo turned off. */
@@ -764,7 +777,10 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 /* Small cards: Prompts running, SSH, Dotfiles. The same places as Home's
    cards, smaller, so a few things do not stretch across the page. */
 .small-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: var(--s4); }
-.small-card { min-height: 128px; grid-template-rows: auto auto auto 1fr; }
+.small-card { min-height: 128px; display: flex; flex-direction: column; }
+/* What can be done sits at the card's foot, however many lines are above it, so cards side by side keep their buttons on one line. */
+.small-card > .card-foot { margin-top: auto; align-self: stretch; }
+.small-card > .off-ask { flex: 1; }
 .small-card .card-title { font-size: var(--t-body); }
 .small-card.mono-title .card-title { font-family: var(--mono); font-weight: 600; }
 .small-card.quiet { border-style: dashed; color: var(--sub); }
@@ -961,8 +977,8 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 /* A setting in a small card: its word, and the switch at the right. */
 .card-row { display: flex; align-items: center; gap: var(--s3); min-height: var(--h-control); }
 .card-row .grow { flex: 1; min-width: 0; }
-.small-card > .small-button { justify-self: start; }
-.small-card.new { grid-template-rows: none; align-content: center; justify-items: center; }
+.small-card > .small-button { align-self: flex-start; }
+.small-card.new { justify-content: center; align-items: center; }
 .grid > .empty { grid-column: 1 / -1; margin-top: 0; }
 /* Narrow: the parts slide rather than stack, and the server's name and code are left to its own part. */
 @media (max-width: 760px) {

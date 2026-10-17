@@ -78,6 +78,13 @@
       "when": 1792225325276,
       "tag": "0010_a_board_keeps_a_todo",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792228711038,
+      "tag": "0011_a_board_removed_is_held",
+      "breakpoints": true
     }
   ]
 }

@@ -12,7 +12,8 @@ import {api, connection, json, RemoteError} from './remote.ts';
 import type {Todo} from './todo.ts';
 import {t} from './i18n.ts';
 
-export interface BoardRef { id: string; name: string; open: boolean; guests: boolean }
+/** `gone`: removed, and held until then (ms); its server's owner may bring it back meanwhile. */
+export interface BoardRef { id: string; name: string; open: boolean; guests: boolean; gone?: number }
 /** A server: what it is called, and its name as a principal (name@domain, in the namespace people's addresses are in). */
 export interface Server { id: string; name: string; address: string; owner: boolean; boards: BoardRef[]; code: string; until: number | null }
 export interface Person { address: string; owner: boolean }
@@ -58,8 +59,9 @@ export const removePerson = (id: string, address: string) => call<void>(`/v1/ser
 
 // ---- boards ----
 export const makeBoard = (server: string, name: string) => call<BoardRef>(`/v1/servers/${server}/boards`, send('POST', {name}));
-/** Its server's owner's: it goes with its talk and TODO, for good. */
-export const removeBoard = (id: string) => call<void>(`/v1/boards/${id}`, send('DELETE'));
+/** Its server's owner's: it goes with its talk and TODO, held 30 days (until) to bring back. */
+export const removeBoard = (id: string) => call<{until: number}>(`/v1/boards/${id}`, send('DELETE'));
+export const bringBackBoard = (id: string) => call<Board>(`/v1/boards/${id}/back`, send('POST'));
 /** Open boards, for anyone. */
 export const openBoards = () => json<OpenBoard[]>('/v1/open');
 /** A board: as one of its people, or as anyone if it is open. */

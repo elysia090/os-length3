@@ -34,6 +34,8 @@ import {todoList} from './todo-box.ts';
 // goes back to the boards first). While something is being written it stays.
 
 const OPEN_DELAY = 300;
+/** A switch's knob moves this long before what it turns on is asked. */
+const MOVE = 240;
 const LINGER = 8000;
 const AT = 'length3.server.at';
 /** Past this, a file shown is cut short. */
@@ -54,13 +56,13 @@ function remember(at: {server?: string; board?: string}) {
  * gives way to what will happen and the two answers, Not now at the left and
  * the deed at the right, and comes back as it was if the answer is no.
  */
-function askIn(card: HTMLElement, title: string, what: string | string[], verb: string, act: () => Promise<void>) {
+function askIn(card: HTMLElement, title: string, what: string | string[], verb: string, act: () => Promise<void>, no_?: () => void) {
   const was = [...card.childNodes];
   // The card keeps its size while it asks, so the answers come where its own deeds were.
   card.style.minHeight = `${card.offsetHeight}px`;
   const error = h('p', {class: 'error small', role: 'alert'});
   const no = button(t('Not now'), 'small-button'), yes = button(verb, 'small-button primary');
-  no.addEventListener('click', () => { card.style.minHeight = ''; card.replaceChildren(...was); });
+  no.addEventListener('click', () => { card.style.minHeight = ''; card.replaceChildren(...was); no_?.(); });
   yes.addEventListener('click', async () => {
     yes.disabled = true;
     try { await act(); } catch (e) { error.textContent = message(e); yes.disabled = false; }
@@ -364,7 +366,7 @@ export class ServerLayer {
       serverId = id;
       place('boards');
       paintTop();
-      shown = s.boards.map((b) => ({id: b.id, name: b.name, member: true, guests: b.guests, server: s.name}));
+      shown = s.boards.filter((b) => !b.gone).map((b) => ({id: b.id, name: b.name, member: true, guests: b.guests, server: s.name}));
       track.replaceChildren(...[...shown, null].map(() => h('div', {class: 'slide'})));
       const want = board ?? (at.server === id ? at.board : undefined);
       const i = shown.findIndex((b) => b.id === want);
@@ -518,10 +520,16 @@ export class ServerLayer {
       /** A setting in a card: its word and a switch. Widening asks in the card first; narrowing is at once. */
       const setting = (card: HTMLElement, label: string, on: boolean, ask: {what: string | string[]; verb: string}, change: (v: boolean) => Promise<unknown>) => {
         const sw = h('button', {type: 'button', class: 'power plain', role: 'switch', 'aria-checked': String(on), 'aria-label': label}, h('span', {class: 'knob'})) as HTMLButtonElement;
+        // It moves on the press, green when on; widening then asks in the card (no puts it back), narrowing is at once.
+        const to = (v: boolean) => sw.setAttribute('aria-checked', String(v));
         sw.addEventListener('click', async () => {
-          if (!on) { askIn(card, card.querySelector('.card-title')?.textContent ?? '', ask.what, ask.verb, async () => { await change(true); again(); }); return; }
+          to(!on);
+          if (!on) {
+            window.setTimeout(() => askIn(card, card.querySelector('.card-title')?.textContent ?? '', ask.what, ask.verb, async () => { await change(true); again(); }, () => to(false)), MOVE);
+            return;
+          }
           sw.disabled = true;
-          try { await change(false); again(); } catch { sw.disabled = false; }
+          try { await change(false); again(); } catch { to(true); sw.disabled = false; }
         });
         return h('div', {class: 'card-row'}, h('span', {class: 'grow'}, label), sw);
       };
@@ -530,7 +538,7 @@ export class ServerLayer {
         if (showing !== 'settings' || current() !== s) return;
         tabs.count('people', people.length);
         tabs.count('repos', repos.length);
-        tabs.count('boards', s.boards.length);
+        tabs.count('boards', s.boards.filter((b) => !b.gone).length);
         const mine = (await Promise.all(people.map(async (p) => ((await isMe(p.address)) ? p.address : null)))).find(Boolean) ?? null;
 
         // Its people: anyone in it adds someone they know; only its owner takes someone out.
@@ -582,7 +590,18 @@ export class ServerLayer {
         grid('repos', ...own, ...others, own.length || others.length ? null : h('div', {class: 'empty'}, t('No repo on the Remote yet.')));
 
         // Its boards: how far each is open and removing one, its owner's to say; taking one home, anyone's.
+        const day = (ms: number) => new Date(ms).toLocaleDateString();
         grid('boards', ...s.boards.map((b) => {
+          // Removed: quiet, held until then, its 外す red; pressed again, it is back at once.
+          if (b.gone) {
+            const back = s.owner ? h('button', {type: 'button', class: 'button small-button off', 'aria-pressed': 'true', title: t('Bring it back')}, t('Remove')) as HTMLButtonElement : null;
+            back?.addEventListener('click', async () => {
+              back.disabled = true;
+              try { await servers.bringBackBoard(b.id); delete b.gone; boardsChanged = true; again(); } catch (e) { back.textContent = message(e); back.disabled = false; }
+            });
+            return h('div', {class: 'card small-card off'}, h('span', {class: 'card-title'}, `# ${b.name}`), line(t('Removed · back until {date}', {date: day(b.gone)})),
+              back ? h('div', {class: 'card-foot'}, back, h('span', {class: 'grow'})) : null);
+          }
           const how = b.open ? (b.guests ? `${t('Seen by everyone')} · ${t('Guests can write')}` : t('Seen by everyone')) : t('Its people only');
           const c = smallCard(`# ${b.name}`, s.owner ? null : line(how));
           if (s.owner) {
@@ -603,9 +622,9 @@ export class ServerLayer {
             } catch (e) { take.textContent = message(e); } finally { take.disabled = false; }
           });
           const out = s.owner ? button(t('Remove'), 'small-button') : null;
-          out?.addEventListener('click', () => askIn(c, `# ${b.name}`, [t('#{board} goes with its talk and TODO.', {board: b.name}), t('It cannot be undone.')], t('Remove'), async () => {
-            await servers.removeBoard(b.id);
-            s.boards = s.boards.filter((x) => x.id !== b.id);
+          out?.addEventListener('click', () => askIn(c, `# ${b.name}`, [t('#{board} goes with its talk and TODO.', {board: b.name}), t('You can bring it back within 30 days.')], t('Remove'), async () => {
+            const r = await servers.removeBoard(b.id);
+            b.gone = r.until;
             boardsChanged = true;
             again();
           }));
@@ -614,7 +633,7 @@ export class ServerLayer {
         }));
 
         // The server itself: its name's term (renewed by its owner near its end), leaving it, and, its owner, removing it.
-        const YEAR = 365 * 86_400_000, day = (ms: number) => new Date(ms).toLocaleDateString();
+        const YEAR = 365 * 86_400_000;
         const name = smallCard(named(s.address), line(`${t('Its code')} ${s.code}`),
           s.until ? line(s.until <= Date.now() ? t('Its term ended; held for it until {date}', {date: day(s.until + 30 * 86_400_000)}) : t('Until {date}', {date: day(s.until)})) : null);
         if (s.owner && s.until && s.until - Date.now() < YEAR) {

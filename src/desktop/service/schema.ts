@@ -261,7 +261,9 @@ export const member = pgTable('server_member', {
 /**
  * A board: one thing its server's people talk about, with a TODO they keep
  * together (todoItem), and how far it is open: `open` (anyone reads it),
- * `guests` (an outsider with a checked email may write in it).
+ * `guests` (an outsider with a checked email may write in it). Removed by
+ * its server's owner, it is held (goneAt) 30 days, answering nothing, and
+ * may be brought back at once until then.
  */
 export const board = pgTable('server_board', {
   id: text('id').primaryKey(),
@@ -269,6 +271,7 @@ export const board = pgTable('server_board', {
   name: text('name').notNull(),
   open: integer('open').notNull().default(0),
   guests: integer('guests').notNull().default(0),
+  goneAt: timestamp('gone_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (t) => [index('server_board_server_idx').on(t.serverId)]);
 
