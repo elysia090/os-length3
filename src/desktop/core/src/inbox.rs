@@ -48,6 +48,7 @@ pub fn threads() -> Result<Vec<Thread>> { get("/v1/inbox/threads") }
 
 pub fn thread(address: &str) -> Result<Conversation> {
     let c: Conversation = get(&format!("/v1/inbox/threads/{address}"))?;
+    // Read is said again the next time it is opened; the conversation is shown either way.
     let _ = Client::open()?.call("POST", &format!("/v1/inbox/threads/{address}/read"), Some(serde_json::json!({})));
     Ok(c)
 }

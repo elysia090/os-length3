@@ -121,6 +121,7 @@ async fn remote_login_start(app: tauri::AppHandle) -> Result<remote::DeviceCode,
         return Err(length3_core::tr!("The Remote named a page that is not its own", "Remote が自分のものでないページを示しました"));
     }
     use tauri_plugin_opener::OpenerExt;
+    // Not opened (no browser to hand it to): the page shows the code and its address to open by hand.
     let _ = app.opener().open_url(&code.verification_uri_complete, None::<&str>);
     Ok(code)
 }

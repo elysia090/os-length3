@@ -91,6 +91,7 @@ pub fn prompt_open(app: AppHandle, shells: State<'_, Shells>, repo: String) -> R
                 Ok(0) | Err(_) => break,
                 Ok(n) => {
                     let text = decode(&mut pending, &buf[..n]);
+                    // An emit fails only when no window is left to hear it.
                     if !text.is_empty() {
                         let _ = app.emit("prompt", Event { id, kind: "output", text, code: 0 });
                     }

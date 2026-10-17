@@ -111,6 +111,7 @@ pub fn start(repos: &Repos, repo: &str, issue: &str) -> Result<Line> {
 /// Show `line` (or main) where the repo is seen, bringing its copy here if it is not.
 pub fn switch(repos: &Repos, repo: &str, line: &str) -> Result<()> {
     if !valid(line) { return Err(crate::tr!("{} is not a line of work", "{} は作業の名前になりません", line)); }
+    // Away, switching is this device's alone: what the shown copy has not sent stays in it and goes later.
     if remote::connection().is_some() { let _ = remote::sync(repos, repo); }
     show(repos, repo, line)
 }
@@ -123,7 +124,7 @@ fn show(repos: &Repos, repo: &str, line: &str) -> Result<()> {
         fs::create_dir_all(&at).map_err(|e| e.to_string())?;
         set_current(repo, line)?;
         if fresh {
-            remote::forget_line(repo, line);
+            remote::forget_line(repo, line)?;
             if let Err(e) = remote::sync(repos, repo) {
                 let _ = set_current(repo, MAIN);
                 let _ = fs::remove_dir_all(&at);
@@ -148,7 +149,7 @@ pub fn finish(repos: &Repos, repo: &str, line: &str) -> Result<u64> {
     }
     let size = crate::usage::allocated(&at);
     fs::remove_dir_all(&at).map_err(|e| e.to_string())?;
-    remote::forget_line(repo, line);
+    remote::forget_line(repo, line)?;
     Ok(size)
 }
 

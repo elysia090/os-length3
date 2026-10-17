@@ -53,8 +53,17 @@ pub fn save_connection(c: &Connection) -> Result<()> {
 /// Forget the Remote here: its session and every base (the repos stay).
 pub fn forget_connection() -> Result<()> {
     crate::home::set("remote", "null")?;
-    let _ = fs::remove_dir_all(sync_dir());
-    Ok(())
+    // A base left behind would be taken for what the next Remote agreed (another account's, perhaps),
+    // and a file it does not hold would be removed here as if removed there: it must go.
+    gone(fs::remove_dir_all(sync_dir()))
+}
+
+/// A removal whose target is already gone has done its work.
+fn gone(r: std::io::Result<()>) -> Result<()> {
+    match r {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
+        _ => Ok(()),
+    }
 }
 
 /// The Remote to sign in to: $LENGTH3_REMOTE, else the one this OS ships with.
@@ -337,10 +346,10 @@ pub fn logout(repos: &Repos) -> Result<()> {
         lines.push(crate::work::MAIN.into());
         for line in lines {
             let r = lock(&key_of(&s.name, &line)).and_then(|_held| {
-                let _ = crate::work::show_for_free(&s.name, &line);
+                // Not shown, it would not be the copy sent; and the repo is shown again as it was, whatever sending did.
+                crate::work::show_for_free(&s.name, &line)?;
                 let r = sync_with(&c, repos, &s.name);
-                let _ = crate::work::show_for_free(&s.name, &shown);
-                r
+                crate::work::show_for_free(&s.name, &shown).and(r)
             });
             if let Err(e) = r {
                 let what = if line == crate::work::MAIN { s.name.clone() } else { format!("{}@{line}", s.name) };
@@ -349,6 +358,7 @@ pub fn logout(repos: &Repos) -> Result<()> {
             }
         }
     }
+    // Everything is sent: signed out here whatever the Remote answers (its session ends there by itself).
     let _ = c.call("POST", "/api/auth/sign-out", Some(serde_json::json!({})));
     forget_connection()
 }
@@ -532,8 +542,8 @@ fn at(repo: &str, line: &str, rest: &str) -> String {
 }
 
 /// An issue's work was brought here afresh: nothing is agreed for it yet.
-pub fn forget_line(repo: &str, line: &str) {
-    forget_base(&key_of(repo, line));
+pub fn forget_line(repo: &str, line: &str) -> Result<()> {
+    forget_base(&key_of(repo, line))
 }
 
 fn base_file(repo: &str) -> PathBuf {
@@ -568,8 +578,9 @@ pub(crate) fn set_head_from(key: &str, v: &serde_json::Value) -> Result<()> {
     set_base(repo, &Base { head: v["head"].as_str().map(String::from), ..b })
 }
 
-fn forget_base(repo: &str) {
-    let _ = fs::remove_file(base_file(repo));
+/// Nothing is agreed for `repo` any more; one left behind would be taken for what the Remote has.
+fn forget_base(repo: &str) -> Result<()> {
+    gone(fs::remove_file(base_file(repo)))
 }
 
 /// One sync of a repo at a time, across the app and l3 alike.
@@ -899,7 +910,7 @@ pub fn fetch(repos: &Repos, repo: &str) -> Result<Synced> {
         return Err(failed(Failure::Status(404), crate::tr!("The Remote has no repo {}", "Remote に repo {} はありません", repo)));
     }
     // It comes as main; the work on its issues comes when chosen.
-    forget_base(repo);
+    forget_base(repo)?;
     let _ = fs::remove_file(crate::paths::data_dir().join("sync").join(format!("{repo}.line")));
     fs::create_dir_all(repos.root().join(repo)).map_err(|e| e.to_string())?;
     sync_with(&client, repos, repo)
@@ -958,9 +969,9 @@ pub fn free(repos: &Repos, repo: &str) -> Result<u64> {
         let key = key_of(repo, line);
         let _held = lock(&key)?;
         let dir = if line == crate::work::MAIN { repos.root().join(repo) } else { crate::work::worktree(repo, line) };
-        let _ = crate::work::show_for_free(repo, line);
+        crate::work::show_for_free(repo, line)?;
         let s = sync_with(&client, repos, repo);
-        let _ = crate::work::show_for_free(repo, &shown);
+        crate::work::show_for_free(repo, &shown)?;
         let s = s?;
         if let Some((path, why)) = s.unsynced.first() {
             return Err(crate::tr!("Something cannot be sent to the Remote ({}: {})", "Remote に送れないものがあります（{}: {}）", path, why));
@@ -984,9 +995,9 @@ pub fn free(repos: &Repos, repo: &str) -> Result<u64> {
     for (key, dir) in gone {
         bytes += crate::usage::allocated(&dir);
         fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
-        forget_base(&key);
+        forget_base(&key)?;
     }
-    let _ = crate::work::show_for_free(repo, crate::work::MAIN);
+    crate::work::show_for_free(repo, crate::work::MAIN)?;
     Ok(bytes)
 }
 
@@ -1012,7 +1023,7 @@ fn free_off(repos: &Repos, repo: &str, copies: &[String]) -> Result<u64> {
     for (key, dir) in gone {
         bytes += crate::usage::allocated(&dir);
         fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
-        forget_base(&key);
+        forget_base(&key)?;
     }
     Ok(bytes)
 }

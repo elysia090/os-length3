@@ -116,6 +116,7 @@ fn head_tree(client: &Client, repo: &str, key: &str, head: Option<&str>) -> Resu
         return Ok(kept.tree);
     }
     let tree = tree_at(client, repo, id)?;
+    // Kept to spare the next read; not kept, the next read asks again.
     if let Ok(b) = serde_json::to_vec(&Head { id: Some(id.into()), tree: tree.clone() }) {
         let _ = fs::write(head_file(key), b);
     }
@@ -303,6 +304,7 @@ pub fn cut(repos: &Repos, repo: &str, issue: Option<&str>, line: &str, note: &st
         match client.call("POST", &remote::at_path(repo, &on, "/cuts"), Some(body))? {
             Reply::Ok(v) => {
                 let id = v["id"].as_str().unwrap_or_default().to_string();
+                // Not kept here: the next sync takes the Remote's head again, which is this commit.
                 let _ = remote::set_head(&key, &id);
                 return Ok(Cut {
                     id, issue: (!issue.is_empty()).then_some(issue), kind, title: title.trim().into(), note: note.trim().into(),
@@ -311,6 +313,7 @@ pub fn cut(repos: &Repos, repo: &str, issue: Option<&str>, line: &str, note: &st
                 });
             }
             // Another device moved the draft or committed first: in step again, and once more.
+            // The Remote's head is taken in to try again from; not kept, the next sync takes it.
             Reply::Conflict(v) => { let _ = remote::set_head_from(&key, &v); }
             Reply::NotFound => return Err(crate::tr!("The Remote does not have this repo", "Remote にこの repo がありません")),
         }
@@ -386,6 +389,7 @@ pub fn work(repos: &Repos, repo: &str) -> Result<Work> {
     // A work merged (here or on another device) is done: back to main, and its copy goes.
     let merged: Vec<String> = changes_of_repo(repo).unwrap_or_default().into_iter().filter(|c| c.state == "merged").map(|c| c.line).collect();
     for (line, _) in crate::work::worktrees(repo) {
+        // A merged work's copy that cannot go now is tried again the next time the issues are read.
         if merged.contains(&line) { let _ = crate::work::finish(repos, repo, &line); }
     }
     let on = repos.line(repo);
@@ -494,6 +498,7 @@ fn remember_merged(repo: &str, issues: impl Iterator<Item = String>) {
     for i in issues.filter(|i| !i.is_empty()) { if !all.contains(&i) { all.push(i); } }
     if all.len() == before { return; }
     all.sort();
+    // What this device saw merged, to hide it while away; not kept, it is seen again once the Remote answers.
     if crate::boundary::private_dir(&crate::paths::data_dir().join("sync")).is_ok() {
         if let Ok(b) = serde_json::to_vec(&all) { let _ = fs::write(merged_file(repo), b); }
     }
