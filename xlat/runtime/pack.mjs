@@ -3,13 +3,15 @@
 // kernel reads inside a system call, where nothing can wait, so the bytes
 // are fetched synchronously: `range(pack, at, len)` returns them from the
 // pack of that name (in a Worker, a synchronous Range request; in node, a
-// read of the pack file).
+// read of the pack file). A file is stored as zstd frames (`decode(bytes,
+// size)` gives it back: in a Worker the translator's decoder, in node its
+// own) or as it is (`raw`), whichever is smaller.
 
 import {Dir, File, Link} from './fs.mjs';
-import {inflateRaw} from './inflate.mjs';
 
 /** Put the pack's tree under `at` ('/' for the whole root); what is already there stays. */
-export function mountPack(vfs, index, range, at = '/') {
+export function mountPack(vfs, index, range, decode, at = '/') {
+  if (index.codec !== 'zstd') throw new Error(`root: packs in ${index.codec ?? 'an older form'} are not read here`);
   const base = at === '/' ? '' : at.replace(/\/$/, '');
   for (const d of index.dirs) {
     const dir = vfs.mkdirp(base + d.path);
@@ -29,7 +31,7 @@ export function mountPack(vfs, index, range, at = '/') {
     const pack = index.packs[f.pack].name;
     const file = new File(new Uint8Array(0), f.mode, () => {
       const stored = range(pack, f.at, f.len);
-      return f.raw ? stored.slice() : inflateRaw(stored, f.size);
+      return f.raw ? stored.slice() : decode(stored, f.size);
     });
     file.size = f.size;
     dir.entries.set(name, file);

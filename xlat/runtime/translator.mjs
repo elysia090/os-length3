@@ -8,6 +8,9 @@
 export async function loadTranslator(source) {
   const module = source instanceof WebAssembly.Module ? source : await WebAssembly.compile(source);
   let x = (await WebAssembly.instantiate(module, {})).exports;
+  // XLAT_BUDGET=N (node): how much code reached later one module may hold, for measuring (0: all it reaches).
+  const budget = globalThis.process?.env?.XLAT_BUDGET;
+  if (budget) x.xlat_budget(Number(budget));
   // What a fresh instance holds: that much never goes back.
   let base = x.memory.buffer.byteLength;
   const put = (bytes) => { const p = x.xlat_alloc(bytes.length); new Uint8Array(x.memory.buffer, p, bytes.length).set(bytes); return p; };
@@ -26,6 +29,7 @@ export async function loadTranslator(source) {
   let handles = new WeakMap();
   const open = new Set();
   const opened = (elf, known) => {
+    known = [...known];
     const k = put(words(known));
     const handle = x.xlat_open(put(elf), elf.length, k, known.length);
     x.xlat_free(k, known.length * 8);
@@ -34,7 +38,7 @@ export async function loadTranslator(source) {
     open.add(handle);
     return handle;
   };
-  /** Code reached later: from `seeds`, past the `known` addresses, filling table slots from `base`. */
+  /** Code reached later: from `seeds`, past the `known` addresses (any iterable, read only when the ELF is opened), filling table slots from `base`. */
   translate.more = function more(elf, seeds, known, base) {
     const s = put(words(seeds));
     const go = (handle) => x.xlat_translate_more(handle, s, seeds.length, base);
@@ -56,6 +60,13 @@ export async function loadTranslator(source) {
     handles.delete(elf);
     open.delete(handle);
   };
+  /** A root file from a pack: its zstd frames decoded, `size` bytes (xlat_unzstd). */
+  translate.unzstd = (bytes, size) => {
+    const p = put(bytes);
+    const status = x.xlat_unzstd(p, bytes.length, size);
+    x.xlat_free(p, bytes.length);
+    return output(status);
+  };
   /** Bytes the translator's memory holds now. */
   translate.held = () => x.memory.buffer.byteLength;
   /** Of those, what a fresh instance would give back. */
@@ -67,6 +78,7 @@ export async function loadTranslator(source) {
    */
   translate.renew = () => {
     x = new WebAssembly.Instance(module, {}).exports;
+    if (budget) x.xlat_budget(Number(budget));
     base = x.memory.buffer.byteLength;
     handles = new WeakMap();
     open.clear();

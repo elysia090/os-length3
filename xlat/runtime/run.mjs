@@ -11,6 +11,7 @@ import {createHash} from 'node:crypto';
 import {closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, readlinkSync, statSync, writeFileSync} from 'node:fs';
 import {basename, dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {zstdDecompressSync} from 'node:zlib';
 import {Dir, File, Link, Vfs} from './fs.mjs';
 import {mountPack} from './pack.mjs';
 import {Kernel, PROFILE} from './process.mjs';
@@ -61,7 +62,8 @@ function translate(bytes) {
 // What the translator keeps, and giving it back (Kernel.free), when it runs here.
 if (inProcess) Object.assign(translate, {held: inProcess.held, spare: inProcess.spare, close: inProcess.close, renew: inProcess.renew});
 
-translate.more = inProcess ? inProcess.more : function more(bytes, seeds, known, base) {
+translate.more = inProcess ? inProcess.more : function more(bytes, seeds, starts, base) {
+  const known = [...starts];
   const key = createHash('sha256').update(translatorId).update(traced.join()).update(digest(bytes)).update(`${seeds}|${known}|${base}`).digest('hex');
   const wasm = join(cacheDir, key + '.more.wasm');
   if (!existsSync(wasm)) {
@@ -109,7 +111,8 @@ if (pack) {
   const index = JSON.parse(readFileSync(join(pack, 'root.json'), 'utf8'));
   const fds = new Map();
   const fd = (name) => { if (!fds.has(name)) fds.set(name, openSync(join(pack, 'packs', name), 'r')); return fds.get(name); };
-  mountPack(vfs, index, (name, at, len) => { const b = new Uint8Array(len); readSync(fd(name), b, 0, len, at); PROFILE.fetches++; PROFILE.fetched += len; return b; });
+  mountPack(vfs, index, (name, at, len) => { const b = new Uint8Array(len); readSync(fd(name), b, 0, len, at); PROFILE.fetches++; PROFILE.fetched += len; return b; },
+    (bytes) => new Uint8Array(zstdDecompressSync(bytes)));
   process.on('exit', () => { for (const f of fds.values()) closeSync(f); });
 }
 let path = program;

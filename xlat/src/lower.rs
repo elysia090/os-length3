@@ -2157,10 +2157,11 @@ fn types() -> TypeSection {
 
 /// Code reached later, for a program already running: its functions as one
 /// more module, which takes everything else from the first module (memory,
-/// helpers, registers and the table, whose slots from `base` it fills) and
-/// carries no data, so instantiating it changes nothing in memory. Its
-/// entries, `base`-relative function slots, are in the `xlat.entries`
-/// custom section as (address, function << 32 | block) pairs.
+/// helpers and registers) and carries no data, so instantiating it changes
+/// nothing in memory. It exports its functions as `table`, for the host to
+/// put in the first module's table from `base`. Its entries, slots counted
+/// from `base`, are in the `xlat.entries` custom section as (address,
+/// function << 32 | block) pairs.
 pub fn translate_more(program: &Program, base: u32, options: Options) -> Translation {
     let mut report = Report { functions: program.functions.len(), entries: program.entries.len(), ..Default::default() };
     let mut module = Module::new();
@@ -2173,16 +2174,28 @@ pub fn translate_more(program: &Program, base: u32, options: Options) -> Transla
     for n in 0..GLOBALS {
         imports.import("main", &global_name(n), EntityType::Global(GlobalType { val_type: global_type(n), mutable: true, shared: false }));
     }
-    imports.import("main", "table", EntityType::Table(TableType { element_type: RefType::FUNCREF, minimum: (base as u64) + program.functions.len() as u64, maximum: None, table64: false, shared: false }));
     module.section(&imports);
 
     let mut functions = FunctionSection::new();
     for _ in &program.functions { functions.function(T_FN); }
     module.section(&functions);
 
+    // Its functions go in a table of its own, which the host copies into the
+    // first module's from `base`. It does not import that table: an engine
+    // keeps each instance that imports a table up to date on every change to
+    // it, so with every module importing it, each one made every later one
+    // slower to make and the table slower to grow.
+    let mut tables = TableSection::new();
+    let count = program.functions.len() as u64;
+    tables.table(TableType { element_type: RefType::FUNCREF, minimum: count, maximum: Some(count), table64: false, shared: false });
+    module.section(&tables);
+    let mut exports = ExportSection::new();
+    exports.export("table", ExportKind::Table, 0);
+    module.section(&exports);
+
     let mut elements = ElementSection::new();
     let indices: Vec<u32> = (0..program.functions.len() as u32).map(|f| FIRST_GUEST + f).collect();
-    elements.active(Some(0), &ConstExpr::i32_const(base as i32), Elements::Functions(Cow::Owned(indices)));
+    elements.active(Some(0), &ConstExpr::i32_const(0), Elements::Functions(Cow::Owned(indices)));
     module.section(&elements);
 
     let mut code = CodeSection::new();

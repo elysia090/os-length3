@@ -29,7 +29,7 @@ fn main() -> ExitCode {
     let translation = if let Some(seeds) = flag("more") {
         let known: std::collections::BTreeSet<u64> = list(flag("known")).into_iter().collect();
         let base: u32 = flag("base").and_then(|b| b.parse().ok()).unwrap_or(0);
-        let program = xlat::discover::discover_from(&elf, &list(Some(seeds)), &known);
+        let program = xlat::discover::discover_within(&elf, &list(Some(seeds)), &known, xlat::discover::BUDGET);
         xlat::lower::translate_more(&program, base, xlat::lower::Options { trace })
     } else {
         let program = xlat::discover::discover(&elf);

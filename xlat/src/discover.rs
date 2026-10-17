@@ -277,6 +277,25 @@ fn relative_table_targets(elf: &Elf, references: &BTreeSet<u64>) -> Vec<u64> {
 /// call to it goes through the dispatcher. Nothing of the file is read but
 /// the code execution reaches from the seeds.
 pub fn discover_from(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>) -> Program {
+    discover_within(elf, seeds, known, usize::MAX)
+}
+
+/// How many instructions code reached later is walked to, past its seeds'
+/// own functions, before what they call is left to be reached. A running
+/// program's first jump somewhere asks for code; following everything it
+/// could call from there translated six times what ran (cc1 compiling a
+/// line: 29,355 functions, 5,225 of them entered). At this size, against
+/// following everything (whole root, the browser's translator): gcc
+/// building hello 10.1 -> 6.8 s, git init/add/commit/log 2.5 -> 1.8 s,
+/// make the same; each module is cheap enough that more of them cost less
+/// than the code they would not hold.
+pub const BUDGET: usize = 1000;
+
+/// discover_from, following the code the seeds call only while what was
+/// walked holds fewer than `budget` instructions: past that, a call or jump
+/// to code not walked goes through the dispatcher, and that code is
+/// translated when it is first reached, if it ever is.
+pub fn discover_within(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>, budget: usize) -> Program {
     // Starts are looked up in `known` where they are, not copied: it holds every function a large program has reached.
     let mut starts: BTreeSet<u64> = seeds.iter().copied().filter(|a| elf.is_code(*a) && !known.contains(a)).collect();
     let mut references = BTreeSet::new();
@@ -292,7 +311,8 @@ pub fn discover_from(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>) -> Program
             found.extend(calls.into_iter().filter(|t| elf.is_code(*t) && !known.contains(t) && !starts.contains(t)));
             done.insert(start, blocks);
         }
-        if found.is_empty() { break; }
+        let walked: usize = done.values().flatten().map(|b| b.code.len()).sum();
+        if found.is_empty() || walked >= budget { break; }
         // A new start splits the walk whose range held it, when that walk is one of these.
         for &t in &found {
             if let Some(b) = before(&starts, t) {

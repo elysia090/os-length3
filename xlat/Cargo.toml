@@ -8,6 +8,8 @@ publish = false
 [dependencies]
 iced-x86 = { version = "1.21", default-features = false, features = ["std", "decoder", "instr_info", "gas"] }
 wasm-encoder = "0.262"
+# Decodes the browser root's packs (zstd), where a system call must have the bytes at once.
+ruzstd = { version = "0.9", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 wasmparser = "0.262"

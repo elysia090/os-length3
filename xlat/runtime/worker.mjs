@@ -70,7 +70,7 @@ self.onmessage = async ({data}) => {
     for (const f of data.files) vfs.writeFile(f.path, f.bytes, f.mode ?? 0o644);
     for (const l of data.links ?? []) vfs.symlink(l.target, l.path);
     // The root after the files given, so what was given (l3, its BusyBox) is what runs.
-    if (data.root) mountPack(vfs, data.root.index, syncRange(data.root.url));
+    if (data.root) mountPack(vfs, data.root.index, syncRange(data.root.url), translate.unzstd);
     vfs.mkdirp(data.cwd);
     kernel = new Kernel({
       vfs,

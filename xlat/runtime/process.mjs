@@ -85,7 +85,8 @@ export class Image {
   more(translateMore, address) {
     if (!translateMore || !this.source) return false;
     let t = performance.now();
-    const wasm = translateMore(this.source(), [address], [...this.known], this.slots);
+    // The starts known go as they are: the translator reads them only when it opens the ELF (it keeps them after).
+    const wasm = translateMore(this.source(), [address], this.known, this.slots);
     PROFILE.translate += performance.now() - t; t = performance.now();
     const module = new WebAssembly.Module(wasm);
     PROFILE.compile += performance.now() - t; PROFILE.modules++; PROFILE.bytes += wasm.length;
@@ -348,8 +349,10 @@ export class Process {
     const env = this.imports().env;
     for (; this.attached < this.image.extras.length; this.attached++) {
       const x = this.image.extras[this.attached];
-      if (table.length < x.base + x.count) table.grow(x.base + x.count - table.length);
-      new WebAssembly.Instance(x.module, {env, main: this.instance.exports});
+      // Doubling, so a program reaching its code a function at a time grows the table a few times, not once a module.
+      if (table.length < x.base + x.count) table.grow(Math.max(x.base + x.count - table.length, table.length));
+      const own = new WebAssembly.Instance(x.module, {env, main: this.instance.exports}).exports.table;
+      for (let k = 0; k < x.count; k++) table.set(x.base + k, own.get(k));
     }
   }
 

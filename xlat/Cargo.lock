@@ -83,6 +83,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruzstd"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69e4ce4a039f42bf25920b95667e4d789e98749ab11bbb8d2c2936f788421bb5"
+
+[[package]]
 name = "semver"
 version = "1.0.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -162,6 +168,7 @@ name = "xlat"
 version = "0.1.0"
 dependencies = [
  "iced-x86",
+ "ruzstd",
  "wasm-encoder",
  "wasmparser",
 ]

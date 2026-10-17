@@ -16,6 +16,8 @@ thread_local! {
     /// the function starts translated so far; the oldest go first.
     static OPEN: RefCell<Vec<(u32, crate::elf::Elf, BTreeSet<u64>)>> = const { RefCell::new(Vec::new()) };
     static NEXT: Cell<u32> = const { Cell::new(1) };
+    /// How many instructions one module of code reached later may hold, past its seeds' own (xlat_budget).
+    static BUDGET: Cell<usize> = const { Cell::new(crate::discover::BUDGET) };
 }
 
 /// u64s as little-endian bytes from xlat_alloc, which promises no alignment.
@@ -96,7 +98,7 @@ pub unsafe extern "C" fn xlat_translate_more(handle: u32, seeds: *const u8, n_se
     let seeds = words(seeds, n_seeds);
     let (status, out) = OPEN.with(|o| match o.borrow_mut().iter_mut().find(|(h, _, _)| *h == handle) {
         Some((_, elf, known)) => {
-            let program = crate::discover::discover_from(elf, &seeds, known);
+            let program = crate::discover::discover_within(elf, &seeds, known, BUDGET.with(|b| b.get()));
             known.extend(program.functions.iter().map(|f| f.start));
             (0, crate::lower::translate_more(&program, base, crate::lower::Options::default()).wasm)
         }
@@ -104,6 +106,36 @@ pub unsafe extern "C" fn xlat_translate_more(handle: u32, seeds: *const u8, n_se
     });
     OUTPUT.with(|o| *o.borrow_mut() = out);
     status
+}
+
+/// Decode the zstd frames at `ptr` (left to the host to free), `size`
+/// bytes once decoded: a root file from a pack, which a system call needs at
+/// once and the host's own decoders give only later. Returns 0 with the
+/// bytes as output, or 1 with an error message.
+///
+/// # Safety
+/// `ptr` must point to `len` initialized bytes.
+#[no_mangle]
+pub unsafe extern "C" fn xlat_unzstd(ptr: *const u8, len: usize, size: usize) -> i32 {
+    use std::io::Read;
+    let mut src = std::slice::from_raw_parts(ptr, len);
+    let mut out = Vec::with_capacity(size);
+    let done = ruzstd::decoding::StreamingDecoder::new(&mut src).map_err(|e| e.to_string())
+        .and_then(|mut d| d.read_to_end(&mut out).map_err(|e| e.to_string()));
+    let (status, out) = match done {
+        Ok(_) if out.len() == size => (0, out),
+        Ok(_) => (1, format!("decoded {} bytes, not {size}", out.len()).into_bytes()),
+        Err(e) => (1, e.into_bytes()),
+    };
+    OUTPUT.with(|o| *o.borrow_mut() = out);
+    status
+}
+
+/// Set how much code reached later one module may hold (discover_within;
+/// 0: all it reaches); for measuring against discover::BUDGET.
+#[no_mangle]
+pub extern "C" fn xlat_budget(instructions: u32) {
+    BUDGET.with(|b| b.set(if instructions == 0 { usize::MAX } else { instructions as usize }));
 }
 
 /// Let go of the ELF opened as `handle`, and of what was remembered with it.
