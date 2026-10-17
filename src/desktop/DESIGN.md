@@ -185,8 +185,11 @@ what is its own.
   thing off at the right: the switch, Stop). What comes out of a button
   comes out into the free space, so nothing moves under the pointer
   (Share's servers to its left). Nothing is pressed at the top left: there
-  are only places (the band's chips, a page's parts, a filter), and the
-  band's + comes after them. A list's row keeps its deeds at its right end.
+  are only places (the band's chips, a page's parts, a filter). The band's +
+  is at its right end, where chips coming and going never move it, and a
+  layer keeps its columns whatever is chosen, so nothing anchored to their
+  edges moves when something is pressed (Server's side stays, empty, while
+  a server is made; its gear keeps its place, unpressable). A list's row keeps its deeds at its right end.
 - **Popovers.** As the person's menu: one box on the ground, a head over
   each group, a row per item, no divider (`.pop`). A row that is pressed to
   write or to ask becomes the field or the ask in its own place.
@@ -645,8 +648,9 @@ strikes through and fades the first line only.
 
 Where you work. The repos out to work on run as pills in a band on the top
 line; the search box on the right sits on the
-same line, with the reference's chips under it. ⊕ stands at the left end. One press brings every repo not on
-the band out at once, on the right; this is not adding tabs one at a time.
+same line, with the reference's chips under it. ⊕ stands at the band's right end, and the pills scroll
+beside it. One press brings every repo not on the band out at once; this is not adding tabs one at a
+time, and ⊕ stays where it was pressed however many come out.
 Each pill comes off the band with its × (the repo itself is untouched).
 With nothing left to bring out, ⊕ steps back. Opening a repo from File,
 Home or a new repo puts it on the band. With every pill off, the
@@ -968,8 +972,9 @@ talk, or both), in the app or with `l3 server get`.
 
 Server is an overlay (§3), on the bench's shape. Its pieces, from §3:
 
-- **The band**: + to make a server, then the servers one is in; the gear
-  at the right end of the top line.
+- **The band**: the servers one is in; at the right end of the top line +
+  to make a server, then the gear (kept in its place, unpressable, while
+  none is chosen).
 - **Boxes side by side**: its boards, the last box making a new one. A
   board holds **the TODO box** at its top and its talk under it, with
   nothing switched to see one or the other. Outside the server an open

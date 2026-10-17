@@ -124,8 +124,12 @@ export class ServerLayer {
   private build(): HTMLElement {
     const signedIn = connection() !== null;
     const chips = h('div', {class: 'chips server-chips', role: 'radiogroup', 'aria-label': 'Server'});
-    const gear = h('button', {type: 'button', class: 'server-gear', 'aria-label': t('Its people, boards and repos'), title: t('Its people, boards and repos'), 'aria-expanded': 'false', hidden: ''}, mark('gear')) as HTMLButtonElement;
-    const top = h('div', {class: 'server-top'}, chips, gear);
+    const gear = h('button', {type: 'button', class: 'server-gear unseen', 'aria-label': t('Its people, boards and repos'), title: t('Its people, boards and repos'), 'aria-expanded': 'false', disabled: ''}, mark('gear')) as HTMLButtonElement;
+    // + makes a server, the gear changes the one chosen: both at the band's right end, where the chips coming and
+    // going never move them; with none chosen the gear keeps its place, unpressable, so + does not move either.
+    const plus = h('button', {type: 'button', class: 'band-add', 'aria-label': t('Make a server'), title: t('Make a server'), hidden: ''}, mark('plus')) as HTMLButtonElement;
+    plus.addEventListener('click', () => { serverId = null; paintTop(); makeServer(); });
+    const top = h('div', {class: 'server-top'}, chips, plus, gear);
     const track = h('div', {class: 'slide-track'});
     const prev = h('button', {type: 'button', class: 'stage-hit prev', 'aria-label': t('Previous board')}) as HTMLButtonElement;
     const next = h('button', {type: 'button', class: 'stage-hit next', 'aria-label': t('Next board')}) as HTMLButtonElement;
@@ -263,17 +267,16 @@ export class ServerLayer {
 
     // ---- the servers, on the top line ----
     const paintTop = () => {
-      gear.hidden = !serverId;
+      gear.disabled = !serverId;
+      gear.classList.toggle('unseen', !serverId);
+      plus.hidden = !signedIn;
       if (!signedIn) { chips.replaceChildren(h('span', {class: 'muted'}, t('Open boards'))); return; }
       const each = list.map((s) => {
         const b = h('button', {type: 'button', class: 'chip', role: 'radio', 'aria-checked': String(s.id === serverId), title: `${named(s.address)} · ${s.code}`}, s.name);
         b.addEventListener('click', () => show(s.id));
         return b;
       });
-      // As Forge's band: what is out, then + after it, as a browser's new tab.
-      const plus = h('button', {type: 'button', class: 'band-add', 'aria-label': t('Make a server'), title: t('Make a server')}, mark('plus')) as HTMLButtonElement;
-      plus.addEventListener('click', () => { serverId = null; paintTop(); makeServer(); });
-      chips.replaceChildren(...each, plus);
+      chips.replaceChildren(...each);
     };
 
     /** No server chosen (or none yet): the one box makes a server, with a name on this Remote as a person has (first come, for five years at a time). */
@@ -368,8 +371,8 @@ export class ServerLayer {
     let sideToken = 0;
     const paintSide = () => {
       const mine = ++sideToken;
-      // Outside a server (an open board, or none chosen), whose it is is not told.
-      work.classList.toggle('no-side', !serverId);
+      // Outside a server (an open board, or none chosen), whose it is is not told: the side stays, empty, so the
+      // center keeps its width and nothing on the band moves when a server is chosen or made.
       if (!serverId) { side.replaceChildren(); return; }
       const id = serverId;
       void Promise.all([servers.people(id), servers.shownIn(id)]).then(([people, repos]) => {

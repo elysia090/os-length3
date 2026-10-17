@@ -374,6 +374,9 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .repo-strip { grid-column: 1; display: flex; gap: var(--s2); align-items: center; padding: var(--band) var(--s5) var(--s3); overflow-x: auto; border-right: 1px solid var(--rule); }
 /* The band: pills for the repos out, ⊕ to bring more out beside them. */
 .pills { display: flex; gap: var(--s2); align-items: center; }
+/* The pills take the band's width and scroll there; ⊕ keeps the band's right end, wherever they reach. */
+.repo-strip > .pills { flex: 1; min-width: 0; overflow-x: auto; }
+.repo-strip > .band-add { margin-left: auto; }
 .pills:empty { display: none; }
 .pill {
   flex: none; display: flex; align-items: center; min-height: var(--h-row); padding-left: var(--s3);
@@ -927,14 +930,11 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .server-center { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); padding: var(--band) var(--s5) 120px; }
 .server-top { display: flex; align-items: center; gap: var(--s2); margin-bottom: var(--s3); }
 .server-chips { flex: 1; min-width: 0; }
+/* A gear with nothing chosen keeps its place, so nothing beside it moves. */
+.server-gear.unseen { visibility: hidden; }
 .server-gear { display: grid; place-items: center; flex: none; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid transparent; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: pointer; }
 .server-gear:hover, .server-gear[aria-expanded='true'] { border-color: var(--edge); color: var(--ink); }
 .server-gear svg { width: 18px; height: 18px; }
-.server-gear[hidden] { display: none; }
-.work.no-side { grid-template-columns: minmax(0, 1fr); }
-.work.no-side > .side { display: none; }
-/* No pane beside it: no line where one would start. */
-.work.no-side > .center { border-right: 0; }
 .slides { --peek: 48px; --gap: var(--s3); --lead: 0; min-height: 0; }
 .slides.single { --peek: 0px; }
 .slide-stage { position: relative; height: 100%; overflow-x: clip; }

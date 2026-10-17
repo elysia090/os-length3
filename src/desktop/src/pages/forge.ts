@@ -45,15 +45,15 @@ export function forge(ctx: Context): Node[] {
 
   const work = bench({strip, main: flow, reveal: (path, line) => void reader?.reveal(path, line)});
 
-  // The band: ⊕ at its left, then the repos out to work on, each a pill that
-  // comes off with its ×. One press of ⊕ brings every repo not on the band
-  // out at once, on the right; this is not adding tabs one by one. With no
-  // pill left the center says how to bring one out.
+  // The band: the repos out to work on, each a pill that comes off with its
+  // ×, and ⊕ at its right end. One press of ⊕ brings every repo not on the
+  // band out at once; this is not adding tabs one by one, so ⊕ stays where
+  // it was pressed however many come out (the pills scroll beside it). With
+  // no pill left the center says how to bring one out.
   let band: string[] = [];
   let all: string[] = [];
   const pills = h('div', {class: 'pills'});
   const add = h('button', {type: 'button', class: 'band-add', 'aria-label': t('Bring every repo out to the band')}, mark('plus')) as HTMLButtonElement;
-  // ⊕ after what is out, as a browser's new tab comes after its tabs (never a button at the top left).
   strip.append(pills, add);
   const saveBand = () => { void setState('band', JSON.stringify(band)).catch(() => { /* the band is a convenience */ }); };
   /** Every repo: here, and only on the Remote (fetched when it comes out, as opening one from Home does). */
