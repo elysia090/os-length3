@@ -75,7 +75,7 @@ pub fn before(ctx: &Ctx, call: &Call) -> Result<()> {
         return Err(Error::Refused(tr!("l3 {} cannot be used in this Prompt: {}. Use the app, or l3 on the device", "l3 {} はこの Prompt では使えません（{}）。アプリか、端末の l3 でどうぞ", call.command.name, why)));
     }
     if needs.remote && core_remote::connection().is_none() {
-        return Err(Error::Offline(tr!("l3 {} needs the Remote, and this device is not on one (l3 login)", "l3 {} には Remote がいります。この端末はつながっていません（l3 login）", call.command.name)));
+        return Err(Error::Offline(tr!("l3 {} needs the Remote, and this device is not signed in to one (l3 login)", "l3 {} には Remote がいります。この端末はサインインしていません（l3 login）", call.command.name)));
     }
     crate::sync::before(ctx, call);
     Ok(())
@@ -107,7 +107,7 @@ pub fn overview(ctx: &Ctx, _: &Call) -> Result<Reply> {
         t.push(format!("Length³ OS  {}", paths::data_dir().display()));
         t.push(match &c {
             Some(c) => tr!("  Remote {} (sent as you change)", "  Remote {}（変えるたびに送ります）", host(&c.url)),
-            None => tr!("  Remote not connected (l3 login)", "  Remote まだつないでいません（l3 login）"),
+            None => tr!("  Remote not signed in (l3 login)", "  Remote まだサインインしていません（l3 login）"),
         });
     }
     t.push(format!("  repo   {}", list.len()));

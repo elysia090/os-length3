@@ -305,7 +305,7 @@ export class ServerLayer {
           if (e instanceof RemoteError && e.status === 409 && /address/i.test(e.message)) {
             const inbox = button(t('Go to Inbox'), 'small-button');
             inbox.addEventListener('click', () => { this.close(); this.ctx.go('inbox'); });
-            error.replaceChildren(t('A server needs your address. Claim one in Inbox.'), ' ', inbox);
+            error.replaceChildren(t('A server needs your name. Claim one in Inbox.'), ' ', inbox);
           } else error.textContent = message(e);
         }
       };

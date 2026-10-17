@@ -52,7 +52,7 @@ export async function claim(name: string, domain?: string): Promise<string> {
   if (r.ok) return body.address!;
   if (body.publish) throw new Published(body.publish);
   const until = (body as {until?: number}).until;
-  throw new RemoteError(r.status, until ? t('That address was let go; it is held for its owner until {date}', {date: day(until)}) : t(String(body.error ?? r.status)));
+  throw new RemoteError(r.status, until ? t('That name was let go; it is held for its owner until {date}', {date: day(until)}) : t(String(body.error ?? r.status)));
 }
 
 /** Hold a name on this Remote for another term from now (and take it back, if its term ran out a little while ago). */

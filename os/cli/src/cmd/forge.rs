@@ -33,7 +33,7 @@ pub fn repo_list(ctx: &Ctx, _: &Call) -> Result<Reply> {
             "changed": st.as_ref().map_or(0, |s| s.changed), "unsendable": st.as_ref().map(|s| s.unsynced.iter().map(|(p, _)| p.clone()).collect::<Vec<_>>()).unwrap_or_default()}));
     }
     for o in &only_there {
-        t.push(tr!("{}\tonly on the Remote · {} (l3 repo open {})", "{}\tRemote だけ · {}（l3 repo open {} で開けます）", o.name, bytes(o.bytes), o.name));
+        t.push(tr!("{}\tonly on the Remote · {} (l3 repo open {})", "{}\tRemote にだけあります · {}（l3 repo open {} で開けます）", o.name, bytes(o.bytes), o.name));
     }
     if t.is_empty() { t.push(tr!("No repos yet (l3 repo new NAME makes one)", "repo はまだありません（l3 repo new NAME で作れます）")); }
     Ok(Reply::data(t.join("\n"), json!({"here": rows, "remote": only_there})))
@@ -81,7 +81,7 @@ pub fn band_set(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let text = match (on, changed) {
         (true, true) => tr!("{} is on the band", "{} を帯に出しました", repo),
         (true, false) => tr!("{} was on the band already", "{} はもう帯に出ています", repo),
-        (false, true) => tr!("{} is off the band", "{} を帯から下げました", repo),
+        (false, true) => tr!("{} is off the band", "{} を帯から外しました", repo),
         (false, false) => tr!("{} was not on the band; nothing changed", "{} は帯に出ていませんでした。何も変えていません", repo),
     };
     Ok(Reply::done(text, json!({"repo": repo, "on": on, "changed": changed, "band": home::band(&here_names(ctx)?)?})))

@@ -206,7 +206,7 @@ export function inboxPage(ctx: Context): Node[] {
   const paintList = async (list: HTMLElement, pane: HTMLElement) => {
     let all: inbox.Thread[] = [], unread = '';
     try { all = await inbox.threads(); } catch (e) { unread = message(e); }
-    const to = h('input', {class: 'line-in', placeholder: t('Write to a name or a code'), 'aria-label': t('Write to an address'), autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
+    const to = h('input', {class: 'line-in', placeholder: t('Write to a name or a code'), 'aria-label': t('Write to a name or a code'), autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
     const start = button(t('Write'), 'small-button');
     const error = h('p', {class: 'error', role: 'alert'});
     to.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) start.click(); });

@@ -1,14 +1,13 @@
 // Japanese for the Inbox: addresses, conversations, typed messages.
 export default {
-  'That address is taken': 'そのアドレスは使われています',
   'A name is 2–31 letters, digits, dots, dashes or underscores': '名前は英小文字・数字・. - _ の2〜31文字です',
   'The domain does not name this account yet': 'そのドメインはまだこのアカウントを名乗っていません',
-  'Claim an address first': '先にアドレスを取ってください',
+  'Claim a name first': '先に名前を取ってください',
   'They do not accept messages from you': '相手はあなたからのメッセージを受けていません',
   'Wait for them to answer before writing more': '相手の返事を待ってから書いてください',
   'They have too many requests waiting': '相手のもとにリクエストがたまっています',
   'Too many messages this hour': 'この1時間に送れる数を超えました',
-  'No one has that address': 'そのアドレスの人はいません',
+  'No one has that name': 'その名前の人はいません',
   'Message': 'メッセージ',
   'Review request': 'レビュー依頼',
   'Question': '質問',
@@ -23,7 +22,6 @@ export default {
   'Not found yet': 'まだ見つかりません',
   'Found': '見つかりました',
   'Conversations': '会話',
-  'Write to an address': 'アドレスに書く',
   'Write': '書く',
   'Cannot reach {address} ({why})': '{address}に届きません（{why}）',
   'You: ': 'あなた：',
@@ -31,7 +29,7 @@ export default {
   'No messages yet. Write to someone by their name or code.': 'メッセージはまだありません。名前かコードで誰かに書けます。',
   'Choose a conversation, or write to a name or a code.': '会話を選ぶか、名前かコードに書いてください。',
   'Through the Remote': 'Remote 経由',
-  'change {id}': '変更 {id}',
+  'change {id}': 'Change {id}',
   'direct': '直接',
   'Accept': '受ける',
   'Block': 'ブロック',
@@ -44,7 +42,7 @@ export default {
   'Write to {address}…': '{address}に書く…',
   'Review： or Question： first to ask · a /root/… path says what it is about · Ctrl+Enter sends': '頭に Review： か Question： で依頼 · /root/… のパスで対象 · Ctrl+Enter で送信',
   // Names: letting one go, a domain that lapsed.
-  'That address was let go; it is held for its owner until {date}': 'そのアドレスは手放されています。{date}まで元の持ち主のために取り置かれています',
+  'That name was let go; it is held for its owner until {date}': 'その名前は手放されています。{date}まで元の持ち主のために取り置かれています',
   // Names: on this Remote, first come, for five years at a time; a code to be found by; a domain's beside.
   'Your names': 'あなたの名前',
   'Your code {code}': 'あなたのコード {code}',

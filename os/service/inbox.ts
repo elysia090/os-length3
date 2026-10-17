@@ -139,23 +139,23 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       if (!who) return {why: 'No one has that code'};
       if (!('userId' in who)) return {why: 'That is a server, not a person'};
       const [first] = await db.select({a: address.address}).from(address).where(and(eq(address.userId, who.userId), live)).orderBy(address.createdAt).limit(1);
-      return first ? {userId: who.userId, address: first.a} : {why: 'No one has that address'};
+      return first ? {userId: who.userId, address: first.a} : {why: 'No one has that name'};
     }
     const p = parseAddress(q.includes('@') ? q : `${q}@${d.domain}`);
-    if (!p) return {why: 'That is not an address'};
+    if (!p) return {why: 'That is not a name'};
     const [row] = await db.select().from(address).where(and(eq(address.address, `${p.name}@${p.domain}`), isNull(address.releasedAt))) as Address[];
-    if (row?.until && row.until.getTime() <= Date.now()) return {why: 'No one has that address'};
+    if (row?.until && row.until.getTime() <= Date.now()) return {why: 'No one has that name'};
     if (row?.userId) {
       if (!await stillNamed(row)) return {why: 'Its domain no longer names this Remote'};
       return {userId: row.userId, address: row.address};
     }
     if (row) return {why: 'That is a server, not a person'};
-    if (p.domain === d.domain) return {why: 'No one has that address'};
+    if (p.domain === d.domain) return {why: 'No one has that name'};
     // Another domain: its DNS says which Remote holds its addresses.
     const records = await published(p.domain);
     if (!records.length) return {why: 'The domain publishes no Length³ address'};
     if (!records.some((r) => r.remote === host)) return {why: 'It is on another Remote, which this one does not reach yet'};
-    return {why: 'No one has that address'};
+    return {why: 'No one has that name'};
   };
 
   // The Remote's own domain answers for one name at a time: no list of everyone to read.
@@ -194,7 +194,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     // So many names an account keeps, those let go and still held for it among them; taking one of its own back is no new one.
     const [{n, own}] = await db.select({n: sql<number>`count(*)::int`, own: sql<number>`count(*) filter (where ${address.address} = ${`${name}@${domain}`})::int`})
       .from(address).where(and(eq(address.userId, me), kept));
-    if (!own && n >= INBOX.addresses) return c.json({error: 'Too many addresses'}, 409);
+    if (!own && n >= INBOX.addresses) return c.json({error: 'Too many names'}, 409);
     if (domain !== d.domain) {
       // The domain's owner says, in its DNS, that this Remote holds it for this account.
       const proof = await proofOf(me, domain);
@@ -205,23 +205,23 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     // One namespace with servers' names; on this Remote, first come, for a term; a name let go is held for its old owner a while.
     const got = await claim(db, name, domain, {userId: me}, domain === d.domain);
     if (got.ok) return c.json({address: `${name}@${domain}`, until: got.until}, 201);
-    return c.json(got.until ? {error: 'That name was let go, and is held for its owner a while', until: got.until} : {error: 'That address is taken'}, 409);
+    return c.json(got.until ? {error: 'That name was let go, and is held for its owner a while', until: got.until} : {error: 'That name is taken'}, 409);
   });
 
   // Renew a name on this Remote: held for another term from now (and taken back, if its term ran out a little while ago).
   v1.post('/inbox/addresses/:address/renew', async (c) => {
     const a = c.req.param('address').toLowerCase();
     const [row] = await db.select().from(address).where(and(eq(address.address, a), eq(address.userId, c.get('userId')), isNull(address.releasedAt))) as Address[];
-    if (!row || row.domain !== d.domain) return c.json({error: 'That address is not yours'}, 404);
+    if (!row || row.domain !== d.domain) return c.json({error: 'That name is not yours'}, 404);
     const got = await claim(db, row.name, row.domain, {userId: c.get('userId')}, true);
-    return got.ok ? c.json({address: a, until: got.until}) : c.json({error: 'That address is taken'}, 409);
+    return got.ok ? c.json({address: a, until: got.until}) : c.json({error: 'That name is taken'}, 409);
   });
 
   // Let an address go: it stops answering at once, and is held for this account a while (it may take it back).
   v1.delete('/inbox/addresses/:address', async (c) => {
     const a = c.req.param('address').toLowerCase();
     const [row] = await db.select({a: address.address}).from(address).where(and(eq(address.address, a), eq(address.userId, c.get('userId')), isNull(address.releasedAt)));
-    if (!row) return c.json({error: 'That address is not yours'}, 404);
+    if (!row) return c.json({error: 'That name is not yours'}, 404);
     await db.transaction((tx: Db) => release(tx, a));
     return c.json({address: a, until: Date.now() + HOLD});
   });
@@ -230,7 +230,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const b = await body<{on?: unknown}>(c);
     const done = await db.update(address).set({ssh: b?.on === true})
       .where(and(eq(address.address, c.req.param('address')), eq(address.userId, c.get('userId')))).returning({a: address.address});
-    return done.length ? c.json({address: done[0].a, ssh: b?.on === true}) : c.json({error: 'That address is not yours'}, 404);
+    return done.length ? c.json({address: done[0].a, ssh: b?.on === true}) : c.json({error: 'That name is not yours'}, 404);
   });
 
   v1.get('/inbox/lookup', async (c) => {
@@ -255,7 +255,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       .filter(([k, v]) => ['repo', 'issue', 'change', 'version'].includes(k) && (typeof v === 'string' ? v.length <= 200 : typeof v === 'number')));
     const own = await mine(me);
     const from = own.find((a) => a.address === b?.from) ?? own[0];
-    if (!from) return c.json({error: 'Claim an address first'}, 409);
+    if (!from) return c.json({error: 'Claim a name first'}, 409);
     const to = await resolve(typeof b?.to === 'string' ? b.to : '');
     if (!('userId' in to)) return c.json({error: to.why}, 404);
     if (to.userId === me) return c.json({error: 'That is you'}, 400);

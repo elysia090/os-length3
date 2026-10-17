@@ -47,7 +47,7 @@ pub fn send(repo: &str) -> bool {
     if OUT_OF_REACH.load(Ordering::Relaxed) { return false; }
     match Repos::open().and_then(|r| remote::sync(&r, repo)) {
         Ok(s) => {
-            for p in &s.both { note(&tr!("{} changed on another device too; theirs is beside it as \"{}\"", "{} は別の端末でも変わっていました。そちらを「{}」に置きました", p, remote::beside(p))); }
+            for p in &s.both { note(&tr!("{} changed on another device too: the Remote's keeps the name, and this device's is beside it, marked ({})", "{} は別の端末でも変わっていました。その名前は Remote の版にし、この端末の版は（{}）を付けて横に置きました", p, remote::device_tag())); }
             true
         }
         Err(e) => {

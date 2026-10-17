@@ -8,9 +8,9 @@
 //!
 //! Taking in is file by file against the last version agreed with the
 //! Remote (the base): a file only changed there is written here, one only
-//! changed here is sent, and when both changed one, this device's stays and
-//! the other is written beside it as "name (other device).ext", so neither is
-//! lost. Files that cannot travel (links, files over 16 MiB) and a repo's
+//! changed here is sent, and when both changed one, the Remote's (it got
+//! there first) keeps the name and this device's is written beside it as
+//! "name (<this device>).ext", so neither is lost and the name says whose. Files that cannot travel (links, files over 16 MiB) and a repo's
 //! own .git are not sent, and are named; a repo holding them is never freed.
 //!
 //! A repo on the Remote need not be here: 空ける removes the copy once the
@@ -120,7 +120,7 @@ pub fn last_failure() -> Option<(Failure, String)> {
 }
 
 fn unknown() -> String {
-    failed(Failure::Unknown, crate::tr!("The Remote does not know this device any more (l3 login connects it again)", "Remote がこの端末を知りません（l3 login でつなぎ直せます）"))
+    failed(Failure::Unknown, crate::tr!("The Remote no longer knows this device. Sign in again (l3 login)", "Remote がこの端末を覚えていません。もう一度サインインしてください（l3 login）"))
 }
 
 fn unreachable(e: ureq::Error) -> String {
@@ -159,7 +159,7 @@ fn refused(code: u16, r: ureq::Response) -> String {
 
 impl Client {
     pub(crate) fn open() -> Result<Client> {
-        let c = connection().ok_or_else(|| failed(Failure::NotConnected, crate::tr!("This device is not on a Remote (l3 login)", "Remote につながっていません（l3 login）")))?;
+        let c = connection().ok_or_else(|| failed(Failure::NotConnected, crate::tr!("This device is not signed in to a Remote (l3 login)", "この端末は Remote にサインインしていません（l3 login）")))?;
         Ok(Client { agent: agent(&c.url), url: c.url, token: c.token })
     }
 
@@ -285,7 +285,7 @@ pub fn device_poll(url: &str, client: &str, code: &DeviceCode) -> Result<Option<
                 Some("expired_token") => Err(expired()),
                 other => {
                     let said = other.or(v["error_description"].as_str()).or(v["message"].as_str()).map_or_else(|| code.to_string(), String::from);
-                    Err(failed(Failure::Status(code), crate::tr!("Could not connect ({})", "つなげませんでした（{}）", said)))
+                    Err(failed(Failure::Status(code), crate::tr!("Could not sign in ({})", "サインインできませんでした（{}）", said)))
                 }
             }
         }

@@ -11,7 +11,7 @@ import * as servers from '../servers.ts';
 import {answers, askFoot, pageHead, parts} from './common.ts';
 import type {Context} from './context.ts';
 
-// Remote: where the canonical copy is, and who this device is there.
+// Remote: where one's repos are kept, and who this device is there.
 //
 // Not signed in: one sentence on what it means, and the ways in. A browser
 // signs in with GitHub, Google or Apple, or with a passkey it already has; the app
@@ -65,7 +65,7 @@ export function signInBox(done: () => void, back?: string): HTMLElement {
   const error = h('p', {class: 'error', role: 'alert'});
   const box = h('div', {class: 'remote-join'});
   if (isNative) {
-    const go = button(t('Connect in the browser'), 'primary');
+    const go = button(t('Sign in in the browser'), 'primary');
     const waiting = h('div', {class: 'remote-join', hidden: ''});
     go.addEventListener('click', () => void pressing(go, error, async () => {
       const s = await account.appSignIn();

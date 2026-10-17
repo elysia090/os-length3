@@ -715,7 +715,7 @@ test('Names: an account keeps five, those it let go among them; a few servers a 
   // Let go, a name is still held for Ren, and still counts: no sixth by letting go of one.
   await s.call('DELETE', '/v1/inbox/addresses/r5@length3.test', {token: ren});
   const sixth = await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'r6'}});
-  assert.deepEqual([sixth.status, sixth.json.error], [409, 'Too many addresses']);
+  assert.deepEqual([sixth.status, sixth.json.error], [409, 'Too many names']);
   assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'r5'}})).status, 201);
   // Ten servers a day.
   await named(s, [mio, 'mio']);

@@ -315,7 +315,7 @@ fn repo_item(repos: &crate::repos::Repos, name: &str, connected: bool, open: &[S
     let (room, why) = if open.iter().any(|o| o == name) {
         (Room::Keep, crate::tr!("A Prompt has it open", "Prompt で開いています"))
     } else if !connected {
-        (Room::Keep, crate::tr!("Connect to the Remote to free it", "Remote につなぐと空けられます"))
+        (Room::Keep, crate::tr!("Sign in to the Remote to free it", "Remote にサインインすると空けられます"))
     } else if let Some((path, what)) = s.unsynced.first() {
         (Room::Keep, crate::tr!("Something cannot be sent to the Remote ({}: {})", "Remote に送れないものがあります（{}: {}）", path, what))
     } else if s.changed == 0 && !s.fresh {
@@ -468,7 +468,7 @@ pub fn space(data: &Path, repos_dir: &Path, open: &[String]) -> Space {
         items.push(leftover_item(l));
     }
     let home = allocated(&data.join("home")) + allocated(&data.join("sync"));
-    items.push(Item { id: "home".into(), what: "Home".into(), detail: crate::tr!("settings, TODO, what was agreed with the Remote", "設定・TODO・同期の記録"), allocated: home, room: Room::Keep, why: crate::tr!("This device's settings", "この端末の設定です") });
+    items.push(Item { id: "home".into(), what: "Home".into(), detail: crate::tr!("settings, TODO, where each repo stands", "設定・TODO・各 repo の状態"), allocated: home, room: Room::Keep, why: crate::tr!("This device's settings", "この端末の設定です") });
     items.sort_by(|a, b| b.allocated.cmp(&a.allocated).then(a.what.cmp(&b.what)));
     Space {
         host_total, host_free, host,

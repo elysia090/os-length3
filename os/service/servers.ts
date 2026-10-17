@@ -179,13 +179,13 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     if (!fine(n) || !fine(first)) return c.json({error: 'A name of at most 64 characters'}, 400);
     const wanted = name(b?.address).toLowerCase() || n.toLowerCase();
     const [handle, domain = d.domain] = wanted.split('@');
-    if (!NAME.test(handle)) return c.json({error: 'Its address: letters, digits, - . _'}, 400);
+    if (!NAME.test(handle)) return c.json({error: 'Its name: letters, digits, - . _'}, 400);
     const made = await db.transaction(async (tx: Db) => {
       await lock(tx, me);
-      if (!await liveAddress(tx, me)) refuse(409, {error: 'Claim an address first'});
+      if (!await liveAddress(tx, me)) refuse(409, {error: 'Claim a name first'});
       if (domain !== d.domain) {
         const [on] = await tx.select({a: address.address}).from(address).where(and(eq(address.userId, me), eq(address.domain, domain), isNull(address.releasedAt), isNull(address.lapsedAt)));
-        if (!on) refuse(400, {error: 'Only on a domain you hold an address on'});
+        if (!on) refuse(400, {error: 'Only on a domain you hold a name on'});
       }
       // Only what one owns counts, and what is held for one: being added to servers never stops anyone making one.
       const [count] = await rows<{kept: number; today: number}>(tx, sql`select
@@ -225,7 +225,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       await lock(tx, me);
       const [s] = await tx.select({name: server.name}).from(server).where(and(eq(server.id, id), eq(server.goneBy, me), sql`${server.goneAt} > ${ago(HOLD)}`));
       if (!s) refuse(404, {error: 'Nothing of yours to bring back'});
-      if (!await liveAddress(tx, me)) refuse(409, {error: 'Claim an address first'});
+      if (!await liveAddress(tx, me)) refuse(409, {error: 'Claim a name first'});
       const [a] = await tx.select({address: address.address, name: address.name, domain: address.domain}).from(address).where(eq(address.serverId, id));
       if (a) await claim(tx, a.name, a.domain, {serverId: id}, a.domain === d.domain);
       await tx.update(server).set({goneAt: null, goneBy: null}).where(eq(server.id, id));
@@ -271,7 +271,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const [who] = await rows<{user: string | null; both: number}>(db, sql`select a.user_id as user,
       (select count(*)::int from contact k where k.state = 'accepted' and ((k.user_id = ${me} and k.peer = a.user_id) or (k.user_id = a.user_id and k.peer = ${me}))) as both
       from address a where a.address = ${a} and a.released_at is null and a.lapsed_at is null and (a.until is null or a.until > now())`);
-    if (!who?.user) return c.json({error: 'No one has that address'}, 404);
+    if (!who?.user) return c.json({error: 'No one has that name'}, 404);
     if (who.both < 2) return c.json({error: 'Only your contacts can be added'}, 403);
     await db.insert(member).values({serverId: id, userId: who.user}).onConflictDoNothing();
     return c.json(await people(db, id), 201);
@@ -381,7 +381,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       : await db.select().from(todoItem).where(where) as Item[];
     if (changed.length) return c.json(todoJson(changed[0]));
     if (typeof r?.title !== 'string' || typeof r.place !== 'number') return c.json({error: 'That item was taken off'}, 404);
-    if (!at.address) return c.json({error: 'Claim an address first'}, 409);
+    if (!at.address) return c.json({error: 'Claim a name first'}, 409);
     const [{n}] = await db.select({n: sql<number>`count(*)::int`}).from(todoItem).where(eq(todoItem.boardId, at.b.id));
     if (n >= SERVER.todo.items) return c.json({error: 'Too many items'}, 429);
     const created = typeof r.created === 'number' && Number.isInteger(r.created) ? r.created : Date.now();
@@ -430,7 +430,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
 
   v1.post('/boards/:id/posts', async (c) => {
     const at = await mine(c.req.param('id'), c.get('userId')) ?? notMine();
-    if (!at.address) return c.json({error: 'Claim an address first'}, 409);
+    if (!at.address) return c.json({error: 'Claim a name first'}, 409);
     return write(c, at.b, {userId: c.get('userId'), by: at.address});
   });
 

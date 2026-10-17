@@ -20,7 +20,7 @@ export async function readSpace(open: string[] = []): Promise<Space> {
   for (const r of await store.list()) {
     const s = repoState(r.name);
     const [room, why]: [Item['room'], string] = open.includes(r.name) ? ['Keep', t('A Prompt has it open')]
-      : !connection() ? ['Keep', t('Connect to the Remote to free it')]
+      : !connection() ? ['Keep', t('Sign in to the Remote to free it')]
       : !kept ? ['Keep', t('This browser lets it go when the page closes')]
       : s?.where === 'synced' ? ['Free', t('The Remote has the same; opening it brings it back')]
       : ['SyncFree', s?.changed ? t('{n} changes are sent, then it is freed', {n: s.changed}) : t('Its changes are sent, then it is freed')];
@@ -71,7 +71,7 @@ export async function free(ids: string[]): Promise<Freed> {
         const s = await draft.sync(name);
         if (s.both.length) throw new Error(t('Both changed {path}: this device\'s is kept beside it; check it before freeing', {path: s.both[0]}));
         const left = (await draft.status()).find((x) => x.name === name);
-        if (left?.changed) throw new Error(t('It changed while syncing; try again'));
+        if (left?.changed) throw new Error(t('It changed while it was being sent; try again'));
         await kept!.letGo([name]);
         await draft.forget(name);
         removed.push(id);

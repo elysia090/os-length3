@@ -65,7 +65,7 @@ pub fn claim(address: &str) -> Result<String> {
                 "{} の DNS にこのレコードを置いてから、もう一度取ってください（置けたかは l3 address domain {}）:\n  {}  {}  {}",
                 domain.unwrap_or(""), domain.unwrap_or(""), p["name"].as_str().unwrap_or(""), p["type"].as_str().unwrap_or("TXT"), p["value"].as_str().unwrap_or("")))
         }
-        Reply::Conflict(_) => Err(crate::tr!("That address is taken", "そのアドレスは使われています")),
+        Reply::Conflict(_) => Err(crate::tr!("That name is taken", "その名前は使われています")),
         Reply::NotFound => Err(crate::tr!("The Remote has no Inbox", "Remote に Inbox がありません")),
     }
 }
@@ -108,8 +108,8 @@ pub fn send(to: &str, body: &str, kind: &str, repo: Option<&str>) -> Result<bool
     let v = Client::open()?.call("POST", "/v1/inbox/messages", Some(serde_json::json!({"to": to, "body": body, "type": kind, "target": target})))?;
     match v {
         Reply::Ok(v) => Ok(v["request"].as_bool().unwrap_or(false)),
-        Reply::Conflict(_) => Err(crate::tr!("Claim an address first (l3 address claim NAME)", "先にアドレスを持ってください（l3 address claim NAME）")),
-        Reply::NotFound => Err(crate::tr!("No one has that address", "そのアドレスの人はいません")),
+        Reply::Conflict(_) => Err(crate::tr!("Claim a name first (l3 address claim NAME)", "先に名前を取ってください（l3 address claim NAME）")),
+        Reply::NotFound => Err(crate::tr!("No one has that name", "その名前の人はいません")),
     }
 }
 

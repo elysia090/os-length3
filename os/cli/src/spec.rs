@@ -215,8 +215,8 @@ pub static COMMANDS: &[Command] = &[
         f(Some("use"), &[Arg::Choice(&["l3", "ubuntu", "debian"])], &[], ["the one Prompts run on (fetched if not held); .packages and .setup set it up", "Prompt が動くもの（なければ取る）。.packages と .setup で用意"], DEVICE, Send, runtime::root_use),
         f(Some("install"), &[Arg::Text("BUNDLE")], &[], ["from a file", "ファイルから"], DEVICE, Send, runtime::root_install),
     ]),
-    c("ssh", &[], Group::Runtime, ["whether SSH may reach each address", "アドレスごとに SSH でつないでよいか"], &[
-        f(None, &[], &[], ["each address", "アドレスごとに"], REMOTE, Send, runtime::ssh_list),
+    c("ssh", &[], Group::Runtime, ["whether SSH may reach each name", "名前ごとに SSH でつないでよいか"], &[
+        f(None, &[], &[], ["each name", "名前ごとに"], REMOTE, Send, runtime::ssh_list),
         f(None, &[Arg::Choice(&["on", "off"]), Arg::Address], &[], ["allow it, or not", "許す、許さない"], REMOTE, Send, runtime::ssh_set),
     ]),
     c("dotfile", &["dotfiles"], Group::Runtime, ["what every Prompt starts with in /root", "どの Prompt も /root に置いて始まるもの"], &[
@@ -226,17 +226,17 @@ pub static COMMANDS: &[Command] = &[
         f(None, &[Arg::Dotfile], &[], ["one's text", "ひとつの本文"], DEVICE, Send, runtime::dotfile_show),
     ]),
     c("remote", &[], Group::Remote, ["the Remote, and where each repo stands", "Remote と、各 repo の状態"], &[
-        f(None, &[], &[], ["each repo brought into step", "各 repo を Remote とそろえて"], DEVICE, Keep, remote::page),
-        f(Some("on"), &[Arg::Text("REPO")], &[], ["bring back a repo turned off", "切った repo を戻す"], REMOTE, Keep, remote::on),
-        f(Some("sign-in"), &[], &[], ["passkeys, the code to turn a repo off, the providers", "パスキー、repo を切るコード、プロバイダー"], REMOTE, Keep, remote::sign_in),
+        f(None, &[], &[], ["each repo, and where it stands", "各 repo とその状態"], DEVICE, Keep, remote::page),
+        f(Some("on"), &[Arg::Text("REPO")], &[], ["bring back a repo turned off", "オフにした repo を戻す"], REMOTE, Keep, remote::on),
+        f(Some("sign-in"), &[], &[], ["passkeys, the code to turn a repo off, the providers", "パスキー、repo をオフにするコード、サインイン方法"], REMOTE, Keep, remote::sign_in),
         f(Some("devices"), &[], &[], ["each device signed in", "サインインしている端末"], REMOTE, Keep, remote::devices),
-        f(Some("devices"), &[Arg::Choice(&["rm"]), Arg::Number("N")], &[], ["sign one out", "ひとつ外す"], REMOTE, Keep, remote::devices_rm),
+        f(Some("devices"), &[Arg::Choice(&["rm"]), Arg::Number("N")], &[], ["sign one out", "ひとつサインアウトさせる"], REMOTE, Keep, remote::devices_rm),
     ]),
-    c("login", &[], Group::Remote, ["connect this device (approve in the browser)", "この端末をつなぐ（ブラウザで承認）"], &[
+    c("login", &[], Group::Remote, ["sign this device in (approved in the browser)", "この端末でサインインする（ブラウザで承認）"], &[
         f(None, &[], &[], ["to the Remote this OS ships with ($LENGTH3_REMOTE)", "この OS の Remote へ（$LENGTH3_REMOTE）"], DEVICE, Keep, remote::login),
         f(None, &[Arg::Text("URL")], &[], ["to another Remote", "別の Remote へ"], DEVICE, Keep, remote::login),
     ]),
-    c("logout", &[], Group::Remote, ["disconnect this device", "この端末を外す"], &[
+    c("logout", &[], Group::Remote, ["sign this device out", "この端末をサインアウトする"], &[
         f(None, &[], &[], ["every repo is sent first; the repos stay here", "先に各 repo を送る。repo はこの端末に残る"], DEVICE, Keep, remote::logout),
     ]),
     c("server", &[], Group::Server, ["people you know: boards, each a talk and a TODO kept together", "知り合いの集まり：板ごとに話とみんなの TODO"], &[
@@ -305,7 +305,7 @@ pub fn usage(c: &Command, f: &Form) -> String {
             Arg::Issue => "ISSUE".to_string(),
             Arg::Text(n) | Arg::Number(n) => n.to_string(),
             Arg::Choice(w) => w.join("|"),
-            Arg::Address => "ADDRESS".to_string(),
+            Arg::Address => "NAME".to_string(),
             Arg::Dotfile => "NAME".to_string(),
             Arg::Many(n) => format!("{n}…"),
             Arg::Argv => "[-- CMD…]".to_string(),

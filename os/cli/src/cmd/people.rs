@@ -70,7 +70,7 @@ pub fn server_get(_: &Ctx, call: &Call) -> Result<Reply> {
 pub fn server_post(_: &Ctx, call: &Call) -> Result<Reply> {
     let target = call.word(0).unwrap_or_default();
     let words = call.word(1).unwrap_or_default();
-    if words.trim().is_empty() { return Err(Error::Usage(tr!("A post needs words", "書き込みには本文がいります"))); }
+    if words.trim().is_empty() { return Err(Error::Usage(tr!("A post needs words", "投稿には本文がいります"))); }
     let (server, boards) = find(target)?;
     let [b] = boards.as_slice() else {
         return Err(Error::Usage(tr!("Name the board: l3 server post {}#BOARD \"text\"", "板を書いてください：l3 server post {}#BOARD \"本文\"", target)));
@@ -84,7 +84,7 @@ fn kind_word(kind: &str) -> String {
     match kind {
         "review" => tr!("Review request · ", "レビュー依頼 · "),
         "question" => tr!("Question · ", "質問 · "),
-        "run" => tr!("Run failed · ", "実行の失敗 · "),
+        "run" => tr!("Run failed · ", "実行失敗 · "),
         _ => String::new(),
     }
 }
@@ -98,7 +98,7 @@ pub fn inbox_list(_: &Ctx, _: &Call) -> Result<Reply> {
     let list = inbox::threads()?;
     let me = inbox::me()?;
     let mut t = Vec::new();
-    if list.is_empty() { t.push(tr!("No messages yet (l3 inbox send ADDRESS \"text\")", "まだメッセージはありません（l3 inbox send ADDRESS \"本文\"）")); }
+    if list.is_empty() { t.push(tr!("No messages yet (l3 inbox send NAME \"text\")", "まだメッセージはありません（l3 inbox send NAME \"本文\"）")); }
     let mut rows = Vec::new();
     for th in &list {
         let yours = mine(&me, &th.address);
@@ -164,7 +164,7 @@ pub fn addresses(_: &Ctx, _: &Call) -> Result<Reply> {
 
 pub fn address_claim(_: &Ctx, call: &Call) -> Result<Reply> {
     let a = inbox::claim(call.word(0).unwrap_or_default())?;
-    Ok(Reply::done(tr!("Yours: {}", "あなたのアドレス：{}", a), json!({"address": a})))
+    Ok(Reply::done(tr!("Yours: {}", "あなたの名前：{}", a), json!({"address": a})))
 }
 
 /// One of your addresses, by its name here (`ren`) or in full.
@@ -172,7 +172,7 @@ fn yours(word: &str) -> Result<(inbox::Me, String)> {
     let address = target::address(word)?;
     let me = inbox::me()?;
     if !mine(&me, &address) {
-        return Err(Error::NotFound(tr!("{} is not one of your addresses (l3 address lists them)", "{} はあなたのアドレスではありません（l3 address で一覧）", me.shown(&address))));
+        return Err(Error::NotFound(tr!("{} is not one of your names (l3 address lists them)", "{} はあなたの名前ではありません（l3 address で一覧）", me.shown(&address))));
     }
     Ok((me, address))
 }
@@ -193,9 +193,9 @@ pub fn address_domain(_: &Ctx, call: &Call) -> Result<Reply> {
     let domain = call.word(0).unwrap_or_default();
     let r = inbox::domain_record(domain)?;
     let t = [
-        tr!("Put this record in {}'s DNS (it says this account holds addresses there, and on which Remote):", "{} の DNS にこのレコードを置きます（このアカウントがそこのアドレスを持つこと、どの Remote かを示します）：", domain),
+        tr!("Put this record in {}'s DNS (it says this account holds names there, and on which Remote):", "{} の DNS にこのレコードを置きます（このアカウントがそこの名前を持つこと、どの Remote かを示します）：", domain),
         format!("  {}  {}  {}", r.name, r.kind, r.value),
-        if r.found { tr!("Found: l3 address claim NAME@{} takes an address on it", "見つかりました：l3 address claim NAME@{} でアドレスを取れます", domain) } else { tr!("Not found yet", "まだ見つかりません") },
+        if r.found { tr!("Found: l3 address claim NAME@{} takes a name on it", "見つかりました：l3 address claim NAME@{} で名前を取れます", domain) } else { tr!("Not found yet", "まだ見つかりません") },
     ];
     Ok(Reply::data(t.join("\n"), json!(r)))
 }

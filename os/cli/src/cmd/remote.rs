@@ -12,13 +12,13 @@ fn synced(name: &str, r: &std::result::Result<remote::Synced, String>) -> (Vec<S
     match r {
         Ok(s) => {
             let what = match (s.sent, s.taken) {
-                (0, 0) => tr!("in step", "同じです"),
+                (0, 0) => tr!("in step", "Remote と同じ"),
                 (n, 0) => tr!("sent {}", "{}件送りました", n),
                 (0, n) => tr!("took in {}", "{}件取り込みました", n),
                 (a, b) => tr!("sent {}, took in {}", "{}件送り、{}件取り込みました", a, b),
             };
             let mut t = vec![format!("  {name}  {what}")];
-            for p in &s.both { t.push(tr!("    changed on both: {} (the other device's is \"{}\")", "    両方で変わっていました：{}（別の端末のものは「{}」に）", p, remote::beside(p))); }
+            for p in &s.both { t.push(tr!("    changed on both: {} (the Remote's keeps the name; this device's is beside it, marked ({}))", "    両方で変わっていました：{}（その名前は Remote の版。この端末の版は（{}）を付けて横に）", p, remote::device_tag())); }
             for (p, why) in &s.unsynced { t.push(tr!("    cannot be sent: {} ({})", "    送れないもの：{}（{}）", p, why)); }
             (t, json!({"name": name, "sent": s.sent, "taken": s.taken, "both": s.both, "unsendable": s.unsynced.iter().map(|(p, _)| p).collect::<Vec<_>>()}))
         }
@@ -29,8 +29,8 @@ fn synced(name: &str, r: &std::result::Result<remote::Synced, String>) -> (Vec<S
 /// `l3 remote`: the Remote this device is on, and each repo brought into step with it.
 pub fn page(ctx: &Ctx, _: &Call) -> Result<Reply> {
     let Some(c) = remote::connection() else {
-        let t = [tr!("Remote  not connected", "Remote  まだつないでいません"),
-            tr!("  l3 login, approved in the browser, connects this device; then the Remote keeps your repos, and each change goes there by itself.", "  l3 login をブラウザで承認するとこの端末がつながり、Remote があなたの repo を持ちます。変更はひとりでに Remote へ届きます。")];
+        let t = [tr!("Remote  not signed in", "Remote  まだサインインしていません"),
+            tr!("  l3 login, approved in the browser, signs this device in; then the Remote keeps your repos, and each change goes there by itself.", "  l3 login をブラウザで承認するとこの端末でサインインでき、Remote があなたの repo を持ちます。変更はひとりでに Remote へ届きます。")];
         return Ok(Reply::data(t.join("\n"), json!({"url": null})));
     };
     let r = ctx.repos()?;
@@ -48,12 +48,12 @@ pub fn page(ctx: &Ctx, _: &Call) -> Result<Reply> {
             Some(Err(e)) => ("notSent", tr!("not sent: {}", "送れていません：{}", e)),
             _ if s.fresh => ("notSent", tr!("not sent yet", "まだ送っていません")),
             _ if s.changed > 0 => ("changed", tr!("{} not sent", "{}件未送信", s.changed)),
-            _ => ("inStep", tr!("in step", "同じ")),
+            _ => ("inStep", tr!("in step", "Remote と同じ")),
         };
         let stuck = if s.unsynced.is_empty() { String::new() } else { tr!(" · {} cannot be sent", " · 送れないもの{}件", s.unsynced.len()) };
         t.push(format!("  {}  {said}{stuck}", s.name));
         if let Some(Ok(sy)) = outcome {
-            for p in &sy.both { t.push(tr!("    changed on both: {} (the other device's is \"{}\")", "    両方で変わっていました：{}（別の端末のものは「{}」に）", p, remote::beside(p))); }
+            for p in &sy.both { t.push(tr!("    changed on both: {} (the Remote's keeps the name; this device's is beside it, marked ({}))", "    両方で変わっていました：{}（その名前は Remote の版。この端末の版は（{}）を付けて横に）", p, remote::device_tag())); }
         }
         rows.push(json!({"name": s.name, "state": state, "changed": s.changed, "version": s.version, "head": s.head,
             "unsendable": s.unsynced.iter().map(|(p, _)| p).collect::<Vec<_>>(), "error": outcome.and_then(|o| o.as_ref().err())}));
@@ -62,7 +62,7 @@ pub fn page(ctx: &Ctx, _: &Call) -> Result<Reply> {
         t.push(tr!("  {}  off · kept {} more (l3 remote on {})", "  {}  オフ · あと{}残ります（l3 remote on {}）", o.name, out::left(o.until.unwrap_or(0)), o.name));
     }
     for o in there.iter().filter(|o| o.off_at.is_none() && !here.iter().any(|h| h.name == o.name)) {
-        t.push(tr!("  {}  only on the Remote · {} (l3 repo open {})", "  {}  Remote だけ · {}（l3 repo open {}）", o.name, bytes(o.bytes), o.name));
+        t.push(tr!("  {}  only on the Remote · {} (l3 repo open {})", "  {}  Remote にだけあります · {}（l3 repo open {}）", o.name, bytes(o.bytes), o.name));
     }
     Ok(Reply::data(t.join("\n"), json!({"url": c.url, "account": account.ok().flatten(), "here": rows, "remote": there})))
 }
@@ -81,9 +81,9 @@ pub fn sign_in(_: &Ctx, _: &Call) -> Result<Reply> {
     let mut t = vec![tr!("Passkeys", "パスキー")];
     if keys.is_empty() { t.push(tr!("  None. With one, you sign in from any device without a provider (added in the browser).", "  ありません。あればプロバイダーなしでどの端末からも入れます（ブラウザで追加）。")); }
     for k in &keys { t.push(format!("  {}  {}", k.name.as_deref().filter(|n| !n.is_empty()).unwrap_or("passkey"), k.created_at.get(..10).unwrap_or(&k.created_at))); }
-    t.push(tr!("Code to turn a repo off", "repo を切るときのコード"));
+    t.push(tr!("Code to turn a repo off", "repo をオフにするコード"));
     t.push(if code.set { tr!("  Set (another is set in the browser, with a passkey)", "  設定済み（変えるのはブラウザで、パスキーを使います）") } else { tr!("  Not set (set in the browser, with a passkey)", "  未設定（ブラウザで、パスキーを使って設定）") });
-    t.push(tr!("Sign-in providers", "サインインのプロバイダー"));
+    t.push(tr!("Sign-in providers", "サインイン方法"));
     for p in &providers { t.push(format!("  {}  {}", p.provider, p.created_at.get(..10).unwrap_or(&p.created_at))); }
     Ok(Reply::data(t.join("\n"), json!({"passkeys": keys, "offCode": code, "providers": providers})))
 }
@@ -91,7 +91,7 @@ pub fn sign_in(_: &Ctx, _: &Call) -> Result<Reply> {
 pub fn devices(_: &Ctx, _: &Call) -> Result<Reply> {
     let list = account::devices()?;
     let t: Vec<String> = list.iter().enumerate().map(|(k, d)| format!("{}. {}  {}{}", k + 1, account::device_word(d.user_agent.as_deref()), d.updated_at.get(..10).unwrap_or(&d.updated_at),
-        if d.current { tr!("  · this device (l3 logout signs it out)", "  · この端末（l3 logout で外れます）") } else { String::new() })).collect();
+        if d.current { tr!("  · this device (l3 logout signs it out)", "  · この端末（l3 logout でサインアウト）") } else { String::new() })).collect();
     // Each device's token stays here: it is the session itself (account::Device never writes it out).
     Ok(Reply::data(t.join("\n"), json!(list)))
 }
@@ -102,10 +102,10 @@ pub fn devices_rm(_: &Ctx, call: &Call) -> Result<Reply> {
     let given = call.word(1).unwrap_or_default();
     let k: usize = given.parse().unwrap_or(0);
     let d = list.get(k.wrapping_sub(1)).ok_or_else(|| Error::NotFound(tr!("There is no device {} (l3 remote devices numbers them, 1 to {})", "{} 番の端末はありません（l3 remote devices の番号、1〜{}）", given, list.len())))?;
-    if d.current { return Err(Error::Refused(tr!("That is this device: l3 logout signs it out", "それはこの端末です。l3 logout で外れます"))); }
+    if d.current { return Err(Error::Refused(tr!("That is this device: l3 logout signs it out", "それはこの端末です。l3 logout でサインアウトします"))); }
     account::end_device(&d.token)?;
     let word = account::device_word(d.user_agent.as_deref());
-    Ok(Reply::done(tr!("Signed out {}; it is approved again to come back", "{} を外しました。戻るにはもう一度承認します", word), json!({"removed": k, "device": word})))
+    Ok(Reply::done(tr!("Signed out {}; it is approved again to come back", "{} をサインアウトさせました。戻るにはもう一度承認します", word), json!({"removed": k, "device": word})))
 }
 
 /// `l3 login [URL]`: a code to approve in a browser, then every repo here brought into step.
@@ -124,7 +124,7 @@ pub fn login(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let done = remote::device_finish(&url, "l3", &code);
     eprintln!();
     done?;
-    let mut t = vec![tr!("Connected · {}", "つながりました · {}", host(&url))];
+    let mut t = vec![tr!("Signed in · {}", "サインインしました · {}", host(&url))];
     let mut rows = Vec::new();
     for (name, r) in &remote::sync_all(&ctx.repos()?)? {
         let (lines, row) = synced(name, r);
@@ -136,10 +136,10 @@ pub fn login(ctx: &Ctx, call: &Call) -> Result<Reply> {
 
 pub fn logout(ctx: &Ctx, _: &Call) -> Result<Reply> {
     if remote::connection().is_none() {
-        return Ok(Reply::done(tr!("This device is not on a Remote; nothing to do", "この端末は Remote につながっていません。することはありません"), json!({"connected": false, "changed": false})));
+        return Ok(Reply::done(tr!("This device is not signed in; nothing to do", "この端末はサインインしていません。することはありません"), json!({"connected": false, "changed": false})));
     }
     remote::logout(&ctx.repos()?)?;
-    Ok(Reply::done(tr!("Every repo was sent; this device is off the Remote (its repos stay here)", "各 repo を送り、この端末を Remote から外しました（repo はこの端末に残ります）"), json!({"connected": false, "changed": true})))
+    Ok(Reply::done(tr!("Every repo was sent, and this device is signed out (its repos stay here)", "各 repo を送り、この端末をサインアウトしました（repo はこの端末に残ります）"), json!({"connected": false, "changed": true})))
 }
 
 /// Kept in step by itself (sync.rs): there is nothing to ask for.

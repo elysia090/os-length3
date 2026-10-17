@@ -289,7 +289,7 @@ export class Reference {
     if (!repo) { this.body.replaceChildren(); return; }
     const list = await readIssues(store, repo);
     if (this.repo !== repo || this.view !== 'issue' || this.query.value.trim() || this.pinned) return;
-    if (!list.length) { this.empty(t('No Issues yet')); return; }
+    if (!list.length) { this.empty(t('No issues yet')); return; }
     this.body.replaceChildren(h('ul', {class: 'issue-list'}, ...list.map((i) => {
       const b = h('button', {type: 'button', class: 'link'}, issueName(i) ? h('span', {class: 'issue-no'}, `${issueName(i)} `) : null, i.kind ? `${i.kind}：` : '', i.title);
       b.addEventListener('click', () => this.showIssue(i));

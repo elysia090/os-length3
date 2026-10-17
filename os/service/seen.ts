@@ -128,7 +128,7 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
           // Its face is that server's: it is shown there too.
           ids = [...new Set([...(ids ?? now.servers.map((x) => x.id)), s.id])];
         }
-        if (!face) refuse(409, {error: 'Claim an address first'});
+        if (!face) refuse(409, {error: 'Claim a name first'});
         const got = await claim(tx, me, r, face, serverId);
         if (!got.ok) refuse(409, got.until ? {error: 'That name was let go, and is held for its owner a while', as: `${face}:${name}`, until: got.until}
           : {error: 'That name is taken', as: `${face}:${name}`});

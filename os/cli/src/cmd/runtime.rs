@@ -135,7 +135,7 @@ pub fn root_install(_: &Ctx, call: &Call) -> Result<Reply> {
 pub fn ssh_list(_: &Ctx, _: &Call) -> Result<Reply> {
     let me = inbox::me()?;
     let mut t: Vec<String> = me.addresses.iter().map(|x| format!("{}  {}", me.shown(&x.address), if x.ssh { tr!("SSH allowed", "SSH 許可") } else { tr!("SSH off", "SSH オフ") })).collect();
-    if t.is_empty() { t.push(tr!("No address yet (l3 address claim NAME)", "アドレスはまだありません（l3 address claim NAME）")); }
+    if t.is_empty() { t.push(tr!("No name yet (l3 address claim NAME)", "名前はまだありません（l3 address claim NAME）")); }
     t.push(tr!("  Connecting over SSH is not built yet", "  SSH の接続はまだありません"));
     Ok(Reply::data(t.join("\n"), json!(me.addresses.iter().map(|a| json!({"address": a.address, "ssh": a.ssh})).collect::<Vec<_>>())))
 }
@@ -145,7 +145,7 @@ pub fn ssh_set(_: &Ctx, call: &Call) -> Result<Reply> {
     let address = target::address(call.word(1).unwrap_or_default())?;
     let me = inbox::me()?;
     let Some(a) = me.addresses.iter().find(|a| a.address == address) else {
-        return Err(Error::NotFound(tr!("{} is not one of your addresses (l3 address lists them)", "{} はあなたのアドレスではありません（l3 address で一覧）", me.shown(&address))));
+        return Err(Error::NotFound(tr!("{} is not one of your names (l3 address lists them)", "{} はあなたの名前ではありません（l3 address で一覧）", me.shown(&address))));
     };
     let shown = me.shown(&address).to_string();
     if a.ssh == on {

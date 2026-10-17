@@ -1,4 +1,4 @@
-// Japanese for the Remote: signing in, passkeys, providers, devices, sync words.
+// Japanese for the Remote: signing in, passkeys, providers, devices, where each repo stands.
 export default {
   'The Remote cannot be reached': 'Remote に届きません',
   'The Remote keeps it until {date}; the copy here goes': 'Remote は{date}まで持っています。ここの写しを消します',
@@ -19,10 +19,10 @@ export default {
   'Not sent yet ({n} change)': 'まだ送れていません（{n}件）',
   'Not sent yet ({n} changes)': 'まだ送れていません（{n}件）',
   'Not sent yet': 'まだ送れていません',
-  'In step · {n} thing cannot be sent': '同期済み · 送れないもの {n}',
-  'In step · {n} things cannot be sent': '同期済み · 送れないもの {n}',
-  'In step': '同期済み',
-  'Connect in the browser': 'ブラウザでつなぐ',
+  'In step · {n} thing cannot be sent': 'Remote と同じ · 送れないもの {n}件',
+  'In step · {n} things cannot be sent': 'Remote と同じ · 送れないもの {n}件',
+  'In step': 'Remote と同じ',
+  'Sign in in the browser': 'ブラウザでサインイン',
   'In the browser that opened, check that it shows this code, then approve.': '開いたブラウザで、このコードと同じか確かめて承認してください。',
   'Continue with {name}': '{name}で続ける',
   'This Remote offers no way to sign in yet.': 'この Remote にはまだサインインの方法がありません。',

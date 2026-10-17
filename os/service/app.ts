@@ -561,7 +561,7 @@ export function createApp(d: Deps) {
     const b = await body<{issue?: unknown}>(c);
     const issue = typeof b?.issue === 'string' ? b.issue : '';
     const stem = /^issue\/([A-Za-z0-9][A-Za-z0-9._-]{0,60})\.md$/.exec(issue)?.[1];
-    if (!stem || !validLine(stem)) return c.json({error: 'Work begins from an issue file, issue/NNN.md'}, 400);
+    if (!stem || !validLine(stem)) return c.json({error: 'Work begins from an issue'}, 400);
     const {row, made} = await db.transaction(async (tx: Db) => {
       await lock(tx, user);
       const main = await lineAt(tx, user, name, 'main', true);
