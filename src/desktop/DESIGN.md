@@ -124,9 +124,10 @@ what is its own.
   A step within a page that stands in the page's place (Server's gear, a
   repo shown in Server) has the same head: its title, a line in `sub`, and
   its way back (Done) at the right.
-- **The band.** What is out to work on, on the top line: + first (round,
-  an `edge` outline, `sub`), then each thing as a round chip, the current
-  one an `ink` fill. Forge's repos, Server's servers.
+- **The band.** What is out to work on, on the top line: each thing as a
+  round chip, the current one an `ink` fill, then + after them (round, an
+  `edge` outline, `sub`), as a browser's new tab comes after its tabs.
+  Forge's repos, Server's servers.
 - **Parts.** A page whose parts are unrelated shows them as a switch of
   round headings, each with a bare count, the chosen one `ink`; only its
   part is shown, so a page never becomes one long scroll. On a narrow
@@ -165,6 +166,30 @@ what is its own.
   board, always its people's, has the second and guests). Nothing that
   starts by being used has a switch to start it (a Prompt starts when one
   writes to it, and says so in its place when it has ended).
+- **Where a deed sits.** By what the box is for and what follows a press,
+  never by the word alone. The box's own deed is at the right: at the top
+  right what the box is for (Write an issue, Edit profile, Add a passkey),
+  at the bottom right its answer (Create, Save, Push, Merge, Use). What goes
+  against what the box is for, or leaves it for another page, is at the
+  bottom left (Not now, Back to main, Reject, Forge on Remote's card, a
+  person taken out of a server); a card that is for leaving or removing
+  (Leave this server) has that deed at its right. A deed that asks first
+  goes on where it was pressed, so the next step is under the pointer and
+  Not now on the other side: Remote's switch at the right asks at the
+  right; 廃棄 at the left asks at the left (Set the code, then 廃棄, there;
+  Not now at the right); Let it go likewise. An answer under the pointer
+  holds still a moment, so a double click does not answer it (common.ts
+  `askFoot`, `SETTLE`). A place a switch changes keeps its place (Forge
+  becomes 空ける); the same deed is in the same place everywhere (空ける at
+  the bottom left, on Remote's off card and a Prompt's card; what turns a
+  thing off at the right: the switch, Stop). What comes out of a button
+  comes out into the free space, so nothing moves under the pointer
+  (Share's servers to its left). Nothing is pressed at the top left: there
+  are only places (the band's chips, a page's parts, a filter), and the
+  band's + comes after them. A list's row keeps its deeds at its right end.
+- **Popovers.** As the person's menu: one box on the ground, a head over
+  each group, a row per item, no divider (`.pop`). A row that is pressed to
+  write or to ask becomes the field or the ask in its own place.
 - **Buttons.** Round, 15/400 on an `edge` outline; the primary one an
   `ink` fill. Small buttons (32 high) in cards and rows. Never a bare
   underlined word.
@@ -810,15 +835,17 @@ all); choosing a repo also points the right pane and the Prompt at it.
   cards' heads. The card's weight sits a little high (less room above than
   below).
 - **Inside the card**, right under its title once it is worked on here:
-  **Commit** and **Push**, one row each, the button at the left; done, the
-  button's place shows the same word with the done mark (a circle with a
-  check, `done`), and the green says it is done. Beside Commit, what is not
-  committed (▸ 5 files); its diff opens over what is under it, so neither
-  button moves. Pushing hands the work to main as its change, again as the
-  next version; Reset at the Push row's right end takes it back while it is
-  undecided. A change received from someone else shows Commit and Push done.
-- **The card's foot**: its repo and who started it and when, at the left;
-  its action (Start, Continue here, Back to main) at the right. No file name
+  **Commit** and **Push**, one row each: where it stands at the left, the
+  button at the right; done, the button's place shows the same word with
+  the done mark (a circle with a check, `done`), and the green says it is
+  done. In Commit's row, what is not committed (▸ 5 files); its diff opens
+  over what is under it, so neither button moves. Pushing hands the work to
+  main as its change, again as the next version; Reset, at the Push row's
+  left end, takes it back while it is undecided. A change received from
+  someone else shows Commit and Push done.
+- **The card's foot**: Back to main at its left (it leaves the work), then
+  its repo and who started it and when; Start or Continue here at the
+  right. No file name
   is shown anywhere an issue is.
 - **A diff**, wherever it shows: each file a fold, its name (which opens it)
   and what was added and removed (+56 −2); each line with which line it is.
@@ -831,8 +858,9 @@ all); choosing a repo also points the right pane and the Prompt at it.
   comment more, in a field tall from the start (Ctrl+Enter or Comment sends
   it with the marks), and beside Comment, Approve as a ○ that turns green
   when pressed.
-- **Merge**, under the Review and not in it: its button at the left, primary
-  once the version is approved, who approved it, and Reject at the other end.
+- **Merge**, under the Review and not in it: Reject at the left, who
+  approved it, and Merge at the right, primary once the version is
+  approved.
 
 Every change is already on the Remote (the draft, §6); Commit makes it
 history there, the same from the app, a browser and `l3 commit`. Without a
@@ -852,17 +880,21 @@ Signed in: the header, then the page's parts as a switch (the one
 place a page is switched, because its parts are unrelated):
 
 - **Repos**: every repo the Remote holds, as cards the size of Home's: name,
-  size and when it last changed, where it stands; Forge at the bottom left
-  and a power switch at the bottom right. On, the switch's knob is green at
-  the right; turning it off asks, in the card, for the account's name, the
-  repo's name and the five-letter code, then a passkey. Off, the knob is at
-  the left on `off` red and the card is quiet (dashed): the Remote keeps
-  the repo 30 days, answering only that it is off, and pressing the switch
-  again brings it back at once. The copy on this device stays until it is
-  freed: off, what was Forge at the bottom left is 空ける, and it frees the
-  copy here (refused while the copy holds changes the Remote lacks, since
-  nothing is sent to a repo that is off).
-  Beside Forge, Share: pressed, the servers one is in come out beside it,
+  size and when it last changed, where it stands. On: Share at the bottom
+  left, Forge and the power switch at the bottom right; the switch's knob
+  is green at the right, and turning it off asks, in the card, for the
+  account's name, the repo's name and the five-letter code, then a passkey.
+  Off, the knob is at the left on `off` red and the card is quiet (dashed):
+  the Remote keeps the repo 30 days, answering only that it is off, and
+  pressing the switch again brings it back at once. Off, at the bottom left:
+  空ける, which frees the copy on this device (it stays until then; refused
+  while it holds changes the Remote lacks, since nothing is sent to a repo
+  that is off), and 廃棄, quiet until the pointer is on it and then filled
+  `ink`, which asks as turning off does and then takes the repo from the
+  Remote at once, with its history, for good (the copy here first, refused
+  the same way). The Remote remembers a repo discarded, so a device that
+  still holds a copy does not quietly bring it back.
+  Share, pressed: the servers one is in come out beside it,
   each pressed in where the repo is shown, and pressing one shows it there
   or takes it off at once. Going public is the server's, in its gear (seen
   as the server's, so nothing ties it to you).
@@ -883,8 +915,10 @@ the address in it (pressing it copies it, and it says Copied for a moment
 in the same place; there is no Copy button), its gear at the right end.
 Before there is one, the stub is the name to claim, with `@domain` after
 it; Enter claims. The gear opens, over what is under it (Escape or a press
-outside closes it), your own domain: name `@` domain, then the
-one DNS record that proves it (`_length3.<domain>` TXT
+outside closes it), a popover: your names with their terms (Renew near the
+end), Add a domain, and Let a name go last. Add a domain becomes, in its
+row, one field where the name is written whole, `name@domain` with the @
+too (no second box to go to), then the one DNS record that proves it (`_length3.<domain>` TXT
 `v=length3; remote=<host>; proof=<…>`, each part copied by pressing it).
 The proof is the Remote's keyed digest of the account and the domain, so
 only the domain's holder can publish it and no other account can reuse it;

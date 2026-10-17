@@ -1,7 +1,7 @@
 import {h} from '../dom.ts';
 import {t} from '../i18n.ts';
 import {store, TEMPLATES, validName, type Template} from '../repos.ts';
-import {pageHead} from './common.ts';
+import {answers, pageHead} from './common.ts';
 import {repoList} from './repo-list.ts';
 import type {Context} from './context.ts';
 import {triangle} from './tree.ts';
@@ -74,7 +74,7 @@ export function newRepo(ctx: Context): Node[] {
   });
   const error = h('p', {class: 'error', role: 'alert'});
   const submit = h('button', {class: 'button primary', type: 'submit'}, t('Create')) as HTMLButtonElement;
-  const actions = h('div', {class: 'row'}, submit);
+  const actions = answers(null, submit);
 
   /** Made: the page stays, and says where to go from here. */
   const made = (n: string) => {
@@ -85,7 +85,7 @@ export function newRepo(ctx: Context): Node[] {
     open.addEventListener('click', () => ctx.openRepo(n));
     const again = h('button', {class: 'button', type: 'button'}, t('Make another'));
     again.addEventListener('click', () => ctx.rerender());
-    actions.replaceChildren(h('p', {class: 'made', role: 'status'}, t('Made {name}', {name: n})), open, again);
+    actions.replaceChildren(h('p', {class: 'made', role: 'status'}, t('Made {name}', {name: n})), h('span', {class: 'grow'}), again, open);
     open.focus({preventScroll: true});
     void list.refresh(n);
   };

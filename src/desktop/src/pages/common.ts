@@ -8,6 +8,32 @@ export function pageHead(id: PurposeId): HTMLElement {
   return h('div', {class: 'page-head'}, icon(id), h('h1', {}, t(p.label)), h('p', {}, t(p.role)));
 }
 
+/**
+ * The answers under something being written or asked: what declines or
+ * goes back at the left, what goes on at the right (the primary one last),
+ * as every box ends. `no` may be absent; then the right stands alone.
+ */
+export function answers(no: Node | null, ...yes: (Node | null)[]): HTMLElement {
+  return h('div', {class: 'answers'}, no, h('span', {class: 'grow'}), ...yes);
+}
+
+/**
+ * The foot of an ask made in `box` after `from` was pressed: the deed goes on
+ * on the side it was pressed (the next step under the pointer), Not now on
+ * the other. Measured before the box gives way to the ask.
+ */
+export function askFoot(from: Element, box: Element): (no: Node, yes: Node) => HTMLElement {
+  const a = from.getBoundingClientRect(), b = box.getBoundingClientRect();
+  const left = a.width > 0 && a.left + a.width / 2 < b.left + b.width / 2;
+  return (no, yes) => h('div', {class: 'card-foot'}, ...(left ? [yes, h('span', {class: 'grow'}), no] : [no, h('span', {class: 'grow'}), yes]));
+}
+
+/**
+ * A deed that asks first comes back under the pointer, so the second click
+ * of a double click would land on it: it holds still this long after showing.
+ */
+export const SETTLE = 500;
+
 /** A page whose surface is not built yet: what it will hold, plainly. */
 export function placeholder(id: PurposeId): Node[] {
   return [pageHead(id), h('div', {class: 'empty'}, t(purpose(id).detail))];

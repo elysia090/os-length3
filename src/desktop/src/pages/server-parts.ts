@@ -1,5 +1,6 @@
 import {h} from '../dom.ts';
 import {t} from '../i18n.ts';
+import {askFoot, SETTLE} from './common.ts';
 
 // The pieces Server's parts share (server-layer, -gear, -dock, -repo).
 
@@ -15,23 +16,27 @@ export interface Shown { id: string; name: string; member: boolean; guests: bool
 
 /**
  * Asked in the card, as Remote asks before a repo is turned off: the card
- * gives way to what will happen and the two answers, Not now at the left and
- * the deed at the right, and comes back as it was if the answer is no.
+ * gives way to what will happen and the two answers, the deed on the side
+ * `from` was pressed and Not now on the other, and comes back as it was if
+ * the answer is no.
  */
-export function askIn(card: HTMLElement, title: string | Node, what: string | string[], verb: string, act: () => Promise<void>, no_?: () => void) {
+export function askIn(card: HTMLElement, from: Element, title: string | Node, what: string | string[], verb: string, act: () => Promise<void>, no_?: () => void) {
+  const answers = askFoot(from, card);
   const was = [...card.childNodes];
   // The card keeps its size while it asks, so the answers come where its own deeds were.
   card.style.minHeight = `${card.offsetHeight}px`;
   const error = h('p', {class: 'error small', role: 'alert'});
   const no = button(t('Not now'), 'small-button'), yes = button(verb, 'small-button primary');
   no.addEventListener('click', () => { card.style.minHeight = ''; card.replaceChildren(...was); no_?.(); });
+  const shown = performance.now();
   yes.addEventListener('click', async () => {
+    if (performance.now() - shown < SETTLE) return;
     yes.disabled = true;
     try { await act(); } catch (e) { error.textContent = message(e); yes.disabled = false; }
   });
   // What will happen, a short line each: a line breaks where the sentence does, not where the card ends.
   card.replaceChildren(h('div', {class: 'off-ask'}, h('span', {class: 'card-title'}, title), ...[what].flat().map((l) => h('p', {class: 'muted small'}, l)), error,
-    h('div', {class: 'card-foot'}, no, h('span', {class: 'grow'}), yes)));
+    answers(no, yes)));
   yes.focus();
 }
 
@@ -40,4 +45,7 @@ export const smallCard = (title: string | Node, ...rest: (Node | null)[]) => h('
 /** A board's name as its own head writes it: the # quiet before it. */
 export const boardName = (name: string) => h('span', {}, h('span', {class: 'muted', 'aria-hidden': 'true'}, '# '), name);
 export const line = (text: string) => (text ? h('span', {class: 'muted small'}, text) : null);
+/** A card's foot with the deed the card is for: at the right. */
 export const foot = (...xs: (Node | null)[]) => h('div', {class: 'card-foot'}, h('span', {class: 'grow'}), ...xs);
+/** A card's foot with what goes against what the card is for (a person taken out of it): at the left. */
+export const footLeft = (...xs: (Node | null)[]) => h('div', {class: 'card-foot'}, ...xs, h('span', {class: 'grow'}));

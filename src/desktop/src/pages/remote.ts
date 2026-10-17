@@ -7,7 +7,7 @@ import * as account from '../remote.ts';
 import {store} from '../repos.ts';
 import {freeOff} from '../space.ts';
 import * as servers from '../servers.ts';
-import {pageHead, parts} from './common.ts';
+import {answers, askFoot, pageHead, parts} from './common.ts';
 import type {Context} from './context.ts';
 
 // Remote: where the canonical copy is, and who this device is there.
@@ -147,15 +147,29 @@ function repoSection(ctx: Context, counted: (n: number) => void, toCode: () => v
       : here ? syncWord(repoState(name)) : t('Only on the Remote');
     const who = seen.find((x) => x.name === name);
     const share = who && !off ? sharing(who, error) : null;
+    // Off, beside 空ける: 廃棄, which takes it from the Remote now, for good, asked for as turning it off was.
+    const discard = off ? h('button', {type: 'button', class: 'button small-button discard'}, t('Discard')) as HTMLButtonElement : null;
+    if (discard) discard.disabled = gone;
     const el = h('div', {class: `card repo${off ? ' off' : ''}`, 'data-repo': name},
       h('span', {class: 'card-title'}, name),
       h('span', {class: 'muted'}, `${bytes(size)} · ${t('Changed {when}', {when: ago(changed)})}`),
       h('span', {class: 'muted card-sync'}, where),
-      h('div', {class: 'card-foot'}, forge, share, h('span', {class: 'grow'}), power), error);
+      // On the Remote's page the Remote's deeds are at the right: Share, then the switch. Forge leaves for
+      // another page, at the left; the switch turned off makes it 空ける in the same place, 廃棄 beside it.
+      h('div', {class: 'card-foot'}, forge, discard, h('span', {class: 'grow'}), share, power), error);
     power.addEventListener('click', () => {
       if (off) { void pressing(power, error, async () => { await account.turnOn(name); await look(); await paint(); }); return; }
       if (isNative) { error.textContent = t('A repo is turned off from the browser, where its passkey is.'); return; }
-      void confirm(el, name, paint, toCode);
+      void confirm(el, power, name, turningOff(name), paint, toCode);
+    });
+    discard?.addEventListener('click', () => {
+      if (isNative) { error.textContent = t('A repo is discarded from the browser, where its passkey is.'); return; }
+      void confirm(el, discard, name, {
+        verb: t('Discard'),
+        what: [t('It goes from the Remote now, with its history, and cannot be brought back.'), ...(here ? [t('The copy here goes with it.')] : [])],
+        // The copy here first: one holding what the Remote lacks is kept, and nothing is discarded.
+        act: async (who, typed, code) => { if (here) await freeOff(name); await account.discard(name, who, typed, code); },
+      }, paint, toCode);
     });
     return el;
   };
@@ -202,38 +216,53 @@ function sharing(now: servers.RepoSeen, error: HTMLElement): HTMLElement {
       return c;
     }) : [h('span', {class: 'muted small'}, t('In no server yet'))]));
   });
-  return h('span', {class: 'share'}, open, list);
+  // The servers come out to its left, into the space, so Share and the switch stay under the pointer.
+  return h('span', {class: 'share'}, list, open);
 }
 
-/** In the card: the names and the code, then a passkey; the switch goes right and red. */
-async function confirm(el: HTMLElement, repo: string, done: () => Promise<void>, toCode: () => void) {
+/** What is asked for in the card before a repo is turned off or discarded: the deed's word, what will happen, and the deed. */
+interface Ask { verb: string; what: string[]; act(name: string, typed: string, code: string): Promise<unknown> }
+const turningOff = (repo: string): Ask => ({
+  verb: t('Turn off'),
+  what: [t('Kept on the Remote for 30 days; turning it on brings it back at once.')],
+  // The copy here stays until it is freed from the card (where Forge was).
+  act: (who, typed, code) => account.turnOff(repo, who, typed, code),
+});
+
+/**
+ * In the card: the names and the code, then a passkey; then the deed, on the
+ * side it was pressed (`from`: the switch at the right, 廃棄 at the left), so
+ * each step on to it comes under the pointer, and Not now on the other.
+ */
+async function confirm(el: HTMLElement, from: Element, repo: string, ask: Ask, done: () => Promise<void>, toCode: () => void) {
+  const answers = askFoot(from, el);
   const error = h('p', {class: 'error', role: 'alert'});
   const cancel = button(t('Not now'), 'small-button');
   cancel.addEventListener('click', () => void done());
+  const foot = (go: HTMLElement) => answers(cancel, go);
   const code = await account.offCode().catch(() => ({set: false}));
   if (!code.set) {
     const go = button(t('Set the code'), 'small-button primary');
     go.addEventListener('click', () => toCode());
     el.replaceChildren(h('div', {class: 'off-ask'}, h('span', {class: 'card-title'}, repo),
-      h('p', {class: 'muted small'}, t('Turning a repo off asks for your five-letter code. Set it under Sign-in first.')),
-      h('div', {class: 'card-foot'}, cancel, h('span', {class: 'grow'}), go)));
+      h('p', {class: 'muted small'}, t('Turning a repo off or discarding it asks for your five-letter code. Set it under Sign-in first.')),
+      foot(go)));
     return;
   }
   const field = (label: string, attrs: Record<string, string> = {}) => h('input', {class: 'line-in', 'aria-label': label, placeholder: label, autocomplete: 'off', spellcheck: 'false', ...attrs}) as HTMLInputElement;
   const who = field(t('Your name'));
   const which = field(t('The repo\'s name'));
   const five = field(t('Code'), {maxlength: '5', class: 'line-in mono'});
-  const go = button(t('Turn off'), 'small-button primary');
+  // 廃棄 is asked for as it was pressed, ink when the pointer is on it.
+  const go = button(ask.verb, from.classList.contains('discard') ? 'small-button discard' : 'small-button primary');
   go.addEventListener('click', () => void pressing(go, error, async () => {
-    await account.turnOff(repo, who.value, which.value, five.value);
-    // The copy here stays until it is freed from the card (where Forge was).
+    await ask.act(who.value, which.value, five.value);
     await look();
     await done();
   }));
   el.replaceChildren(h('div', {class: 'off-ask'}, h('span', {class: 'card-title'}, repo),
-    h('p', {class: 'muted small'}, t('Kept on the Remote for 30 days; turning it on brings it back at once.')),
-    who, which, five, error,
-    h('div', {class: 'card-foot'}, cancel, h('span', {class: 'grow'}), go)));
+    ...ask.what.map((line) => h('p', {class: 'muted small'}, line)),
+    who, which, five, error, foot(go)));
   who.focus();
 }
 
@@ -246,7 +275,8 @@ function passkeyOffer(added: () => void): HTMLElement {
     const add = button(t('Add a passkey'), 'small-button primary');
     add.addEventListener('click', () => void pressing(add, error, async () => { await account.addPasskey(); box.hidden = true; added(); }));
     box.hidden = false;
-    box.replaceChildren(add, error);
+    // An offer goes on: at the right, as every deed that goes on is.
+    box.replaceChildren(answers(null, add), error);
   }, () => {});
   return box;
 }

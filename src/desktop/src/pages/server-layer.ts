@@ -11,6 +11,7 @@ import {dockFor} from './server-dock.ts';
 import {gear as gearSheet} from './server-gear.ts';
 import {seeRepo as repoSheet} from './server-repo.ts';
 import {button, initials, message, type Shown} from './server-parts.ts';
+import {answers} from './common.ts';
 
 // Server is an operation, as File is: laid over whatever page is showing,
 // never a page of its own. It is the one thing whose subject is people, not
@@ -269,10 +270,10 @@ export class ServerLayer {
         b.addEventListener('click', () => show(s.id));
         return b;
       });
-      // As Forge's band: + first, then what is out.
+      // As Forge's band: what is out, then + after it, as a browser's new tab.
       const plus = h('button', {type: 'button', class: 'band-add', 'aria-label': t('Make a server'), title: t('Make a server')}, mark('plus')) as HTMLButtonElement;
       plus.addEventListener('click', () => { serverId = null; paintTop(); makeServer(); });
-      chips.replaceChildren(plus, ...each);
+      chips.replaceChildren(...each, plus);
     };
 
     /** No server chosen (or none yet): the one box makes a server, with a name on this Remote as a person has (first come, for five years at a time). */
@@ -323,7 +324,7 @@ export class ServerLayer {
           h('label', {class: 'field'}, h('span', {class: 'field-label'}, t('Name')), name),
           h('label', {class: 'field'}, h('span', {class: 'field-label'}, t('Name on this Remote')), handle,
             h('span', {class: 'muted small'}, t('First come, as a person\'s: nobody else\'s while the server has it, renewed by its owner every five years.'))),
-          h('div', {class: 'row'}, make), error, back))));
+          answers(null, make), error, back))));
       slides.classList.add('single');
       track.style.setProperty('--at', '0');
       prev.hidden = next.hidden = true;

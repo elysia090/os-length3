@@ -81,7 +81,7 @@ a { color: var(--ink); }
 
 /* The three states, the same everywhere: hover is a raised fill, the
    current or chosen thing is an ink fill, focus is a 2px ink ring. */
-.rail-item:hover, .button:hover, .chip:hover, .pill:hover, .band-add:hover:not(:disabled), .me:hover, .me-item:hover:not(:disabled), .tree-row:hover, .todo-mark:hover,
+.rail-item:hover, .button:hover, .chip:hover, .pill:hover, .band-add:hover:not(:disabled), .me:hover, .pop-item:hover:not(:disabled), .tree-row:hover, .todo-mark:hover,
 .card.repo:hover, .card.new:hover { background: var(--raised); }
 .rail-item[aria-current='page'], .button.primary,
 .chip[aria-current], .chip[aria-checked='true'], .chip[aria-pressed='true'], .pill[aria-current], .tree-row:has(> [aria-current='page']),
@@ -102,9 +102,10 @@ a { color: var(--ink); }
 }
 /* The person fills most of the circle; initials stay type-sized. */
 .me .icon { width: 30px; height: 30px; }
+/* A popover (the person's menu, Inbox's names): one box, a head over each group, a row per item. */
+.pop { display: grid; padding: var(--s2); background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-card); }
 .me-pop {
   position: absolute; left: calc(100% + var(--s3)); bottom: 0; z-index: 6; min-width: 280px;
-  display: grid; padding: var(--s2); background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-card);
   visibility: hidden; opacity: 0; transition: opacity var(--motion), visibility 0s var(--motion);
 }
 .me-wrap.open .me-pop { visibility: visible; opacity: 1; transition: opacity var(--motion), visibility 0s; }
@@ -113,13 +114,13 @@ a { color: var(--ink); }
 .me-who > :first-child { display: grid; place-items: center; flex: none; width: 36px; height: 36px; border: 1px solid var(--rule); border-radius: var(--r-round); font: 600 var(--t-meta) var(--sans); }
 .me-who > svg.icon { padding: 4px; box-sizing: border-box; }
 .me-name { display: grid; min-width: 0; }
-.me-group { display: grid; margin-top: var(--s2); }
-.me-where { width: 18px; height: 18px; flex: none; color: var(--sub); }
-.me-item {
+.pop-group { display: grid; margin-top: var(--s2); }
+.pop-mark { width: 18px; height: 18px; flex: none; color: var(--sub); }
+.pop-item {
   display: flex; justify-content: space-between; align-items: center; gap: var(--s3);
   min-height: var(--h-row); padding: 0 var(--s3); border: 0; border-radius: var(--r-field); background: transparent; cursor: pointer; text-align: left;
 }
-.me-item:disabled { cursor: default; color: var(--sub); }
+.pop-item:disabled { cursor: default; color: var(--sub); }
 .rail-item {
   position: relative; display: grid; place-items: center;
   width: var(--h-place); height: var(--h-place); border: 0; border-radius: var(--r-place);
@@ -186,6 +187,9 @@ a { color: var(--ink); }
 .error { font-size: var(--t-meta); }
 .error:empty { display: none; }
 .row { display: flex; gap: var(--s2); }
+/* Declining at the left, going on at the right (common.ts answers). */
+.answers { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); }
+.answers > .grow { flex: 1; }
 
 /* Home: profile */
 .profile { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--s5); align-items: start; }
@@ -583,8 +587,8 @@ mark { background: var(--ink); color: var(--ground); }
 .button.link { border-color: transparent; background: transparent; padding-inline: 0; color: var(--sub); text-decoration: underline; }
 .row-item[data-where='offline'] .row-meta { color: var(--ink); }
 .card.repo.away { border-style: dashed; }
-.me-head { padding: var(--s2) var(--s3) 0; }
-.me-item[aria-checked='true'] { font-weight: 600; }
+.pop-head { padding: var(--s2) var(--s3) 0; }
+.pop-item[aria-checked='true'] { font-weight: 600; }
 .sign-in-row { flex-wrap: wrap; }
 .section.offer { margin-top: var(--s5); padding: var(--s4); border: var(--line-work) solid var(--edge); border-radius: var(--r-place); }
 /* Git: the work on an issue, and changes handed in */
@@ -662,6 +666,7 @@ mark { background: var(--ink); color: var(--ground); }
 .issue-box > .work-act { margin-top: var(--s2); flex-wrap: wrap; }
 /* The box's foot: where it lives and who started it at the left, its action at the right. */
 .issue-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); margin-top: var(--s2); }
+.issue-foot > .issue-about { flex: 1; min-width: 0; }
 .issue-about { display: grid; gap: var(--s1); justify-items: start; min-width: 0; }
 .issue-about .issue-where { font-family: var(--mono); font-size: var(--t-meta); }
 .work-act.with-field > .line-in { flex: 1; min-width: 12em; }
@@ -761,6 +766,8 @@ mark { background: var(--ink); color: var(--ground); }
 .power:hover:not(:disabled) { border-color: var(--ink); }
 /* Waiting (the Remote not answering): there, but not to be pressed now. */
 .power:disabled { opacity: .45; cursor: default; }
+/* 廃棄: quiet beside 空ける until the pointer is on it, then filled as the deed it is. */
+.button.discard:hover:not(:disabled), .button.discard:focus-visible { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 /* A switch with its word, inside a card's lines (a Prompt's network). */
 .net-row { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); }
 .power:active:not(:disabled) .knob { width: 24px; }
@@ -792,8 +799,8 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 
 /* Commit and Push inside the issue's box: the button at the left (its done
    mark in its place once done), what it is about beside it. */
-.steps { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: start; gap: var(--s3) var(--s3); margin-top: 0; padding: 0 0 var(--s4); }
-.step-act { display: flex; align-items: center; min-height: var(--h-control); }
+.steps { display: grid; grid-template-columns: minmax(0, 1fr) max-content; align-items: start; gap: var(--s3) var(--s3); margin-top: 0; padding: 0 0 var(--s4); }
+.step-act { display: flex; align-items: center; justify-content: flex-end; min-height: var(--h-control); }
 .step-act .button { min-width: 96px; justify-content: center; }
 .step-done { display: inline-flex; align-items: center; gap: var(--s2); font-weight: 600; white-space: nowrap; }
 .step-about { min-width: 0; min-height: var(--h-control); padding-top: calc((var(--h-control) - 1.5em) / 2); }
@@ -842,12 +849,10 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .stub-gear { display: grid; place-items: center; flex: none; width: var(--h-control); height: calc(var(--h-control) - 2px); padding: 0; border: 0; border-left: 1px solid var(--rule); border-radius: 0 var(--r-field) var(--r-field) 0; background: transparent; color: var(--sub); cursor: pointer; }
 .stub-gear:hover, .stub-gear[aria-expanded='true'] { background: var(--ground); color: var(--ink); }
 .stub-gear svg { width: 20px; height: 20px; }
-.stub-panel { position: absolute; top: calc(100% + var(--s1)); left: 0; z-index: 4; background: var(--ground); display: grid; gap: var(--s3); width: min(100%, 400px); padding: var(--s4); border: 1px solid var(--edge); border-radius: var(--r-place); }
-.stub-own { align-items: center; gap: var(--s2); margin-top: 0; }
-.stub-own .line-in { min-width: 0; }
-.stub-own .line-in { min-height: var(--h-control); }
-.stub-own .line-in:first-child { width: 9em; flex: none; }
-.stub-own .line-in:last-child { flex: 1; }
+.stub-panel { position: absolute; top: calc(100% + var(--s1)); left: 0; z-index: 4; width: min(100%, 400px); }
+/* A row of the panel as the menu's rows are: its padding, the field or the ask in a row's place. */
+.stub-own, .stub-ask { display: grid; gap: var(--s2); padding: var(--s2) var(--s3); }
+.stub-ask p { margin: 0; }
 .stub-record { display: grid; gap: var(--s1); }
 .stub-record p { margin: 0 0 var(--s1); }
 .record-row { display: grid; grid-template-columns: 4em minmax(0, 1fr); align-items: center; gap: var(--s2); }
@@ -971,8 +976,7 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .board-body .line-in { flex: 1; }
 .server-back { display: flex; flex-wrap: wrap; gap: var(--s2); }
 .server-back:empty { display: none; }
-.stub-yours { display: grid; gap: var(--s1); margin-top: var(--s3); }
-.your-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+.your-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); min-height: var(--h-row); padding: 0 var(--s3); }
 .your-row > .mono { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .server-say { flex-wrap: wrap; align-items: center; gap: var(--s2); }
 .server-say .line-in { flex: 1; min-width: 10em; }

@@ -40,22 +40,22 @@ export class Me {
     // `page`: where it opens, shown by that page's own icon (named in its title). `checked`: one of a choice (the language), on or off.
     const item = (label: string, run: (() => void) | null, page?: Page, checked?: boolean) => {
       const at = page ? icon(page) : null;
-      at?.classList.add('me-where');
-      const b = h('button', {type: 'button', class: 'me-item', role: checked === undefined ? 'menuitem' : 'menuitemradio'}, label, at);
+      at?.classList.add('pop-mark');
+      const b = h('button', {type: 'button', class: 'pop-item', role: checked === undefined ? 'menuitem' : 'menuitemradio'}, label, at);
       if (page) b.title = t(purpose(page).label);
       if (checked !== undefined) b.setAttribute('aria-checked', String(checked));
       if (run) b.addEventListener('click', () => { this.close(); run(); }); else b.setAttribute('disabled', '');
       return b;
     };
     const group = (title: string, ...items: HTMLElement[]) =>
-      h('div', {class: 'me-group', role: 'group', 'aria-label': title}, h('div', {class: 'me-head muted small'}, title), ...items);
+      h('div', {class: 'pop-group', role: 'group', 'aria-label': title}, h('div', {class: 'pop-head muted small'}, title), ...items);
     // A part of a page, or a section of one, brought into view.
     const to = (page: Page, part?: string, section?: string) => () => {
       if (part) choosePart(page, part);
       this.ctx.go(page);
       if (section) reveal(section);
     };
-    this.pop = h('div', {class: 'me-pop', id: 'me-pop', role: 'menu', 'aria-label': t('Me')});
+    this.pop = h('div', {class: 'me-pop pop', id: 'me-pop', role: 'menu', 'aria-label': t('Me')});
     const fill = () => {
       const p = this.profile();
       const signedIn = connection() !== null;
@@ -80,13 +80,13 @@ export class Me {
     };
     /** The language in use; pressed, the list in its place, the menu staying out. */
     const now = () => {
-      const b = h('button', {type: 'button', class: 'me-item', role: 'menuitem', 'aria-haspopup': 'true', 'aria-expanded': 'false'},
+      const b = h('button', {type: 'button', class: 'pop-item', role: 'menuitem', 'aria-haspopup': 'true', 'aria-expanded': 'false'},
         LANGS.find((l) => l.id === currentLang())?.name ?? '', mark('down'));
-      b.querySelector('svg')?.classList.add('me-where');
+      b.querySelector('svg')?.classList.add('pop-mark');
       b.addEventListener('click', () => {
         this.choosing = true;
         fill();
-        this.pop.querySelector<HTMLElement>('.me-item[aria-checked="true"]')?.focus();
+        this.pop.querySelector<HTMLElement>('.pop-item[aria-checked="true"]')?.focus();
       });
       return b;
     };
@@ -102,7 +102,7 @@ export class Me {
     this.element.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') { this.close(); this.button.focus(); return; }
       if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
-      const items = [...this.pop.querySelectorAll<HTMLElement>('.me-item:not([disabled])')];
+      const items = [...this.pop.querySelectorAll<HTMLElement>('.pop-item:not([disabled])')];
       if (!items.length) return;
       event.preventDefault();
       const at = items.indexOf(document.activeElement as HTMLElement);
@@ -139,7 +139,7 @@ export class Me {
     clearTimeout(this.timer);
     this.element.classList.add('open');
     this.button.setAttribute('aria-expanded', 'true');
-    if (focus) this.pop.querySelector<HTMLElement>('.me-item')?.focus();
+    if (focus) this.pop.querySelector<HTMLElement>('.pop-item')?.focus();
   }
 
   close() {

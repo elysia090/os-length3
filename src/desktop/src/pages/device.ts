@@ -2,6 +2,7 @@ import {h} from '../dom.ts';
 import {t} from '../i18n.ts';
 import * as remote from '../remote.ts';
 import {signInBox} from './remote.ts';
+import {answers} from './common.ts';
 
 // The page a device's code opens (?device&user_code=…): l3 or the app asks
 // to join this account. The person signs in here if not already (and comes
@@ -51,7 +52,7 @@ export function devicePage(given: string): HTMLElement {
     body.replaceChildren(
       h('p', {}, t('{client} asks to join this account. Check that the device shows the same code.', {client: client(who.clientId)})),
       h('p', {class: 'device-code mono'}, code),
-      h('div', {class: 'row'}, yes, no), error);
+      answers(no, yes), error);
   };
   void ask();
   return page;

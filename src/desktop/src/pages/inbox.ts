@@ -4,7 +4,7 @@ import * as inbox from '../inbox.ts';
 import {connection} from '../remote.ts';
 import {kindOf} from '../text.ts';
 import {mark} from '../icons.ts';
-import {pageHead} from './common.ts';
+import {pageHead, SETTLE} from './common.ts';
 import {signInBox, signInPlace} from './remote.ts';
 import type {Context} from './context.ts';
 
@@ -52,7 +52,7 @@ function addressStub(me: inbox.Me, again: () => void): HTMLElement {
   const error = h('p', {class: 'error', role: 'alert'});
   const gear = h('button', {type: 'button', class: 'stub-gear', 'aria-label': t('Your names'), 'aria-expanded': 'false'}, mark('gear')) as HTMLButtonElement;
   const note = h('p', {class: 'muted small'});
-  const panel = h('div', {class: 'stub-panel', hidden: ''});
+  const panel = h('div', {class: 'stub-panel pop', hidden: ''});
   let stub: HTMLElement;
   if (me.addresses.length) {
     const a = inbox.shown(me.addresses[0].address);
@@ -71,49 +71,77 @@ function addressStub(me: inbox.Me, again: () => void): HTMLElement {
     stub = h('div', {class: 'stub'}, name, gear);
     note.textContent = t('A name on this Remote: first come, yours for five years at a time, renewed by you.');
   }
-  // Your own domain: its record, looked for while the panel is open.
+  // The gear's panel, as the person's menu: your names with their terms, then Add a domain, then letting one go.
   let looking = 0;
-  const own = () => {
-    const name = h('input', {class: 'line-in mono', placeholder: t('name'), 'aria-label': t('Name'), autocapitalize: 'off', spellcheck: 'false', maxlength: '31'}) as HTMLInputElement;
-    const domain = h('input', {class: 'line-in mono', placeholder: 'example.org', 'aria-label': t('Domain'), autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
+  const item = (label: string, at: Node | null = null) => h('button', {type: 'button', class: 'pop-item'}, label, at) as HTMLButtonElement;
+  /** Your own domain, written whole in one field (name@domain, the @ too); its record looked for while the panel is open. */
+  const own = (): HTMLElement => {
+    const field = h('input', {class: 'line-in mono', placeholder: t('name@example.org'), 'aria-label': t('Name on your domain'),
+      autocapitalize: 'off', spellcheck: 'false', maxlength: '285'}) as HTMLInputElement;
     const record = h('div', {class: 'stub-record'});
+    const parts = () => {
+      const v = field.value.trim(), at = v.lastIndexOf('@');
+      return at < 0 ? {name: '', domain: v} : {name: v.slice(0, at), domain: v.slice(at + 1)};
+    };
     const look = async () => {
       if (!panel.isConnected || panel.hidden) { clearInterval(looking); return; }
-      if (!domain.value.trim()) { record.replaceChildren(); return; }
-      const r = await inbox.domainRecord(domain.value).catch((e) => { record.replaceChildren(h('p', {class: 'error'}, message(e))); return null; });
+      const {name, domain} = parts();
+      if (!domain) { record.replaceChildren(); return; }
+      const r = await inbox.domainRecord(domain).catch((e) => { record.replaceChildren(h('p', {class: 'error'}, message(e))); return null; });
       if (!r) return;
-      const field = (label: string, value: string) => {
+      const row = (label: string, value: string) => {
         const v = h('button', {type: 'button', class: 'record-value mono'}, value);
         copying(v, value);
         return h('div', {class: 'record-row'}, h('span', {class: 'muted small'}, label), v);
       };
       record.replaceChildren(
         h('p', {class: 'muted small'}, t('Put this record in the domain\'s DNS')),
-        field(t('Name'), r.name), field(t('Type'), r.type), field(t('Value'), r.value),
-        h('p', {class: `small record-found${r.found ? ' found' : ''}`}, !r.found ? t('Not found yet') : name.value.trim() ? t('Found. Claiming {address}…', {address: `${name.value.trim()}@${domain.value.trim()}`}) : t('Found')));
-      if (r.found && name.value.trim()) {
+        row(t('Name'), r.name), row(t('Type'), r.type), row(t('Value'), r.value),
+        h('p', {class: `small record-found${r.found ? ' found' : ''}`}, !r.found ? t('Not found yet') : name ? t('Found. Claiming {address}…', {address: `${name}@${domain}`}) : t('Found')));
+      if (r.found && name) {
         clearInterval(looking);
-        try { await inbox.claim(name.value, domain.value); again(); } catch (e) { record.append(h('p', {class: 'error'}, message(e))); }
+        try { await inbox.claim(name, domain); again(); } catch (e) { record.append(h('p', {class: 'error'}, message(e))); }
       }
     };
-    domain.addEventListener('change', () => void look());
-    domain.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) void look(); });
+    field.addEventListener('change', () => void look());
+    field.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) void look(); });
     clearInterval(looking);
     looking = window.setInterval(() => void look(), 8000);
-    panel.replaceChildren(yours(),
-      h('p', {class: 'muted small'}, t('A name of your choosing on a domain you own, shown beside your name here:')),
-      h('div', {class: 'row stub-own'}, name, h('span', {class: 'muted'}, '@'), domain), record);
-    domain.focus();
+    queueMicrotask(() => field.focus());
+    return h('div', {class: 'stub-own'}, field, record);
   };
-  /**
-   * Your names: each one's state (a name here, its term: Renew near its end;
-   * a domain's, whether its DNS still names this Remote), and letting it go
-   * (held for you a while; claiming it again takes it back).
-   */
-  const yours = () => {
-    if (!me.addresses.length) return h('div', {});
+  /** Add a domain: pressed, the row is the field, where it was. */
+  const adding = (): HTMLElement => {
+    const b = item(t('Add a domain'), mark('plus'));
+    b.querySelector('svg')?.classList.add('pop-mark');
+    b.addEventListener('click', () => b.replaceWith(own()));
+    return b;
+  };
+  /** Letting a name go: pressed, it asks in its row, Let it go where the press was (at the left), Not now at the right. */
+  const letting = (a: inbox.Me['addresses'][number]): HTMLElement => {
+    const b = item(t('Let {name} go', {name: inbox.shown(a.address)}));
+    b.addEventListener('click', () => {
+      const no = h('button', {type: 'button', class: 'button small-button'}, t('Not now'));
+      const yes = h('button', {type: 'button', class: 'button small-button primary'}, t('Let it go')) as HTMLButtonElement;
+      const ask = h('div', {class: 'stub-ask'},
+        h('p', {class: 'muted small'}, t('{name} is held for you 30 days; claiming it again takes it back.', {name: inbox.shown(a.address)})),
+        h('div', {class: 'card-foot'}, yes, h('span', {class: 'grow'}), no));
+      no.addEventListener('click', () => ask.replaceWith(letting(a)));
+      const shown = performance.now();
+      yes.addEventListener('click', async () => {
+        if (performance.now() - shown < SETTLE) return;
+        yes.disabled = true;
+        try { await inbox.release(a.address); again(); } catch (e) { yes.disabled = false; yes.textContent = message(e); }
+      });
+      b.replaceWith(ask);
+      yes.focus();
+    });
+    return b;
+  };
+  /** Your names, each with its state: its term (Renew near its end), or that its domain no longer names this Remote. */
+  const yours = (): HTMLElement => {
     const YEAR = 365 * 86_400_000;
-    return h('div', {class: 'stub-yours'}, h('p', {class: 'muted small'}, t('Your names')), ...me.addresses.map((a) => {
+    return h('div', {class: 'pop-group', role: 'group', 'aria-label': t('Your names')}, h('div', {class: 'pop-head muted small'}, t('Your names')), ...me.addresses.map((a) => {
       const state = a.lapsed ? h('span', {class: 'small error'}, t('its domain no longer names this Remote'))
         : a.ended ? h('span', {class: 'small error'}, t('Its term ended; held for you until {date}', {date: day(a.until! + 30 * 86_400_000)}))
         : a.until ? h('span', {class: 'muted small'}, t('Until {date}', {date: day(a.until)})) : null;
@@ -122,16 +150,11 @@ function addressStub(me: inbox.Me, again: () => void): HTMLElement {
         renew.disabled = true;
         try { await inbox.renew(a.address); again(); } catch (e) { renew.disabled = false; renew.textContent = message(e); }
       });
-      const go = h('button', {type: 'button', class: 'button small-button'}, t('Let it go')) as HTMLButtonElement;
-      let armed = 0;
-      go.addEventListener('click', async () => {
-        if (!armed) { go.textContent = t('Let it go? It is held for you 30 days'); armed = window.setTimeout(() => { armed = 0; go.textContent = t('Let it go'); }, 4000); return; }
-        go.disabled = true;
-        try { await inbox.release(a.address); again(); } catch (e) { go.disabled = false; go.textContent = message(e); }
-      });
-      return h('div', {class: 'your-row'}, h('span', {class: 'mono small'}, inbox.shown(a.address)), state, renew, go);
+      return h('div', {class: 'your-row'}, h('span', {class: 'mono'}, inbox.shown(a.address)), state, renew);
     }));
   };
+  // With no name yet there is nothing else in it: the field at once.
+  const fill = () => panel.replaceChildren(...(me.addresses.length ? [yours(), adding(), ...me.addresses.map(letting)] : [own()]));
   // The panel lies over the Inbox under it; Escape or a press outside closes it.
   const holder = h('div', {class: 'stub-holder'}, stub, note, error, panel);
   const away = (e: Event) => { if (e instanceof KeyboardEvent ? e.key === 'Escape' : !holder.contains(e.target as Node)) toggle(false); };
@@ -139,7 +162,7 @@ function addressStub(me: inbox.Me, again: () => void): HTMLElement {
     panel.hidden = !open;
     gear.setAttribute('aria-expanded', String(open));
     for (const k of ['pointerdown', 'keydown'] as const) (open ? document.addEventListener : document.removeEventListener).call(document, k, away);
-    if (open) own(); else clearInterval(looking);
+    if (open) fill(); else clearInterval(looking);
   };
   gear.addEventListener('click', () => toggle(panel.hidden));
   return holder;

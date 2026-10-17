@@ -3,7 +3,7 @@ import {t} from '../i18n.ts';
 import {shown as named, shownAs} from '../inbox.ts';
 import * as servers from '../servers.ts';
 import {parts} from './common.ts';
-import {askIn, boardName, button, foot, line, message, MOVE, smallCard} from './server-parts.ts';
+import {askIn, boardName, button, foot, footLeft, line, message, MOVE, smallCard} from './server-parts.ts';
 
 // Behind the gear: what changes the server for everyone. In parts, as
 // Remote's page is (its people, the repos shown, its boards, the server
@@ -51,7 +51,7 @@ export async function gear(s: servers.Server, w: GearWays): Promise<void> {
     sw.addEventListener('click', async () => {
       to(!on);
       if (!on) {
-        window.setTimeout(() => askIn(card, card.querySelector('.card-title')?.textContent ?? '', ask.what, ask.verb, async () => { await change(true); w.again(); }, () => to(false)), MOVE);
+        window.setTimeout(() => askIn(card, sw, card.querySelector('.card-title')?.textContent ?? '', ask.what, ask.verb, async () => { await change(true); w.again(); }, () => to(false)), MOVE);
         return;
       }
       sw.disabled = true;
@@ -85,9 +85,9 @@ export async function gear(s: servers.Server, w: GearWays): Promise<void> {
       const c = smallCard(named(p.address), line(p.owner ? t('owner') : p.address === mine ? t('you') : ''));
       if (s.owner && p.address !== mine) {
         const out = button(t('Remove'), 'small-button');
-        out.addEventListener('click', () => askIn(c, named(p.address), t('{who} leaves {server}.', {who: named(p.address), server: s.name}),
+        out.addEventListener('click', () => askIn(c, out, named(p.address), t('{who} leaves {server}.', {who: named(p.address), server: s.name}),
           t('Remove'), async () => { await servers.removePerson(s.id, p.address); w.again(); }));
-        c.append(foot(out));
+        c.append(footLeft(out));
       }
       return c;
     }), add);
@@ -111,7 +111,7 @@ export async function gear(s: servers.Server, w: GearWays): Promise<void> {
       if (s.owner) {
         const off = button(t('Remove'), 'small-button');
         off.addEventListener('click', async () => { off.disabled = true; try { await servers.takeOff(s.id, r.owner, r.name); w.again(); } catch (e) { off.textContent = message(e); } });
-        c.append(foot(off));
+        c.append(footLeft(off));
       }
       return c;
     });
@@ -149,7 +149,7 @@ export async function gear(s: servers.Server, w: GearWays): Promise<void> {
         } catch (e) { take.textContent = message(e); } finally { take.disabled = false; }
       });
       const out = s.owner ? button(t('Remove'), 'small-button') : null;
-      out?.addEventListener('click', () => askIn(c, boardName(b.name), [t('#{board} goes with its talk and TODO.', {board: b.name}), t('You can bring it back within 30 days.')], t('Remove'), async () => {
+      out?.addEventListener('click', () => askIn(c, out, boardName(b.name), [t('#{board} goes with its talk and TODO.', {board: b.name}), t('You can bring it back within 30 days.')], t('Remove'), async () => {
         const r = await servers.removeBoard(b.id);
         b.gone = r.until;
         w.boardsChanged();
@@ -171,14 +171,14 @@ export async function gear(s: servers.Server, w: GearWays): Promise<void> {
     const leaving = mine ? smallCard(t('Leave this server'), line(s.owner ? t('It goes to whoever came next.') : '')) : null;
     if (leaving && mine) {
       const go = button(t('Leave'), 'small-button');
-      go.addEventListener('click', () => askIn(leaving, t('Leave this server'), t('You leave {server}.', {server: s.name}), t('Leave'),
+      go.addEventListener('click', () => askIn(leaving, go, t('Leave this server'), t('You leave {server}.', {server: s.name}), t('Leave'),
         async () => { await servers.removePerson(s.id, mine); w.gone(s.id); }));
       leaving.append(foot(go));
     }
     const removing = s.owner ? smallCard(t('Remove this server'), line(t('You can bring it back within 30 days.'))) : null;
     if (removing) {
       const go = button(t('Delete'), 'small-button');
-      go.addEventListener('click', () => askIn(removing, t('Remove this server'), [t('{server} goes, with its boards.', {server: s.name}), t('You can bring it back within 30 days.')], t('Delete'),
+      go.addEventListener('click', () => askIn(removing, go, t('Remove this server'), [t('{server} goes, with its boards.', {server: s.name}), t('You can bring it back within 30 days.')], t('Delete'),
         async () => { await servers.removeServer(s.id); w.gone(s.id); }));
       removing.append(foot(go));
     }

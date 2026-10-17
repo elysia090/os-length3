@@ -7,6 +7,7 @@ import * as servers from '../servers.ts';
 import {repoList} from './repo-list.ts';
 import {todoBox} from './todo-box.ts';
 import type {Context} from './context.ts';
+import {answers} from './common.ts';
 
 let editing = false;
 
@@ -94,9 +95,8 @@ function editForm(ctx: Context): HTMLElement {
     h('label', {}, t('Handle'), h('span', {class: 'handle-field'}, '@', handle)),
     h('label', {}, t('Bio'), bio),
     error,
-    h('div', {class: 'row'},
-      h('button', {class: 'button primary', type: 'submit'}, t('Save')),
-      h('button', {class: 'button', type: 'button', 'data-cancel': ''}, t('Cancel'))),
+    answers(h('button', {class: 'button', type: 'button', 'data-cancel': ''}, t('Cancel')),
+      h('button', {class: 'button primary', type: 'submit'}, t('Save'))),
   );
   form.addEventListener('submit', async (event) => {
     event.preventDefault();

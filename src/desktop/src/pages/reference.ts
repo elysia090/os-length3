@@ -6,6 +6,7 @@ import {t, tn} from '../i18n.ts';
 import {onChange, store} from '../repos.ts';
 import {findInText, nameMatches, type Hit} from '../search.ts';
 import {sessionIfAny, type Run} from './terminal.ts';
+import {answers} from './common.ts';
 
 // The top of Forge's right pane: a search box over the band line, then one
 // reference at a time, switched freely with chips. While something is
@@ -123,7 +124,7 @@ export class Reference {
     this.body.replaceChildren(h('article', {class: 'issue-one'},
       h('h3', {}, issueName(issue) ? h('span', {class: 'issue-no'}, `${issueName(issue)} `) : null, issue.kind ? h('span', {class: 'issue-kind'}, `${issue.kind}：`) : null, issue.title),
       issue.detail ? h('p', {class: 'issue-body'}, issue.detail) : null,
-      h('div', {class: 'row'}, back, go)));
+      answers(back, go)));
   }
 
   private choose(view: View) {

@@ -53,7 +53,8 @@ export function forge(ctx: Context): Node[] {
   let all: string[] = [];
   const pills = h('div', {class: 'pills'});
   const add = h('button', {type: 'button', class: 'band-add', 'aria-label': t('Bring every repo out to the band')}, mark('plus')) as HTMLButtonElement;
-  strip.append(add, pills);
+  // ⊕ after what is out, as a browser's new tab comes after its tabs (never a button at the top left).
+  strip.append(pills, add);
   const saveBand = () => { void setState('band', JSON.stringify(band)).catch(() => { /* the band is a convenience */ }); };
   /** Every repo: here, and only on the Remote (fetched when it comes out, as opening one from Home does). */
   const every = () => [...all, ...remoteOnly().map((r) => r.name).filter((n) => !all.includes(n))];

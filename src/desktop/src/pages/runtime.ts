@@ -288,7 +288,9 @@ function prompts(): HTMLElement {
         // Only the root's Prompt can have a network: in a browser its programs have no sockets at all.
         let el: HTMLElement | null = null;
         if (s.on === 'root') lines.push(networkSwitch(repo, s, () => el!));
-        el = card(repo, lines, free ? h('span', {class: 'row'}, free, stop) : stop);
+        // 空ける sits at the left as it does on every card (Remote's off one too); Stop at the right.
+        el = card(repo, lines, null);
+        el.append(h('div', {class: 'card-foot'}, free, h('span', {class: 'grow'}), stop));
         return el;
       })));
   };

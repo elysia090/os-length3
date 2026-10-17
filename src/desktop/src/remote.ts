@@ -192,6 +192,13 @@ export async function turnOff(repo: string, name: string, typed: string, code: s
 /** On again, as it was. */
 export const turnOn = (repo: string) => json(`/v1/repos/${encodeURIComponent(repo)}/on`, {method: 'POST'});
 
+/** Discard a repo turned off: gone from the Remote now, with its history, for good. Asked for as turning it off is. */
+export async function discard(repo: string, name: string, typed: string, code: string): Promise<void> {
+  await signIn();
+  const r = await api(`/v1/repos/${encodeURIComponent(repo)}/discard`, {method: 'POST', body: JSON.stringify({name, repo: typed, code})});
+  if (!r.ok) throw new RemoteError(r.status, t(((await r.json()) as {error?: string}).error ?? `Remote: ${r.status}`));
+}
+
 export interface Passkey { id: string; name?: string | null; createdAt: string; deviceType?: string; backedUp?: boolean }
 export const passkeys = () => json<Passkey[]>('/api/auth/passkey/list-user-passkeys');
 export const removePasskey = (id: string) => json('/api/auth/passkey/delete-passkey', {method: 'POST', body: JSON.stringify({id})});

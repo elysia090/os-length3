@@ -3,6 +3,7 @@ import {t} from '../i18n.ts';
 import {saveIssue, writeIssue, type Issue} from '../issues.ts';
 import {store} from '../repos.ts';
 import {kindOf, named} from '../text.ts';
+import {answers} from './common.ts';
 
 // Writing an issue: which repo it goes in (chips), its first line named like
 // a TODO item ("Fix：件名"), then the detail. It takes the repo's next
@@ -57,7 +58,7 @@ export function issueForm(events: {done(repo: string | null): void}): IssueForm 
       if (!title.trim()) { error.textContent = t('Write a title on the first line'); f.first.focus(); return; }
       if (await writing(make, error, () => writeIssue(store, target, kind, title, detail))) close(target);
     });
-    element.replaceChildren(pick, f.first, f.body, error, h('div', {class: 'row'}, make, cancel));
+    element.replaceChildren(pick, f.first, f.body, error, answers(cancel, make));
     element.hidden = false;
     f.first.focus();
   };
@@ -76,7 +77,7 @@ export function issueEditor(issue: Issue, done: (saved: boolean) => void): HTMLE
     if (!title.trim()) { error.textContent = t('Write a title on the first line'); f.first.focus(); return; }
     if (await writing(save, error, () => saveIssue(store, issue, kind, title, detail))) done(true);
   });
-  const el = h('div', {class: 'issue-form issue-edit'}, f.first, f.body, error, h('div', {class: 'row'}, save, cancel));
+  const el = h('div', {class: 'issue-form issue-edit'}, f.first, f.body, error, answers(cancel, save));
   queueMicrotask(() => f.first.focus());
   return el;
 }

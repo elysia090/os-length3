@@ -14,8 +14,8 @@ import {issueEditor} from './issue-form.ts';
 //
 //   Start (Continue here) · Changes · Commit · Push (Reset)
 //
-// and Back to main. Under the box, the Review in a box of its own (Comment,
-// and Approve as a ○), and under that, Merge with Reject at its other end. A change received from someone
+// and Back to main (at the foot's left, as what leaves always is). Under the box, the Review in a box of its own (Comment,
+// and Approve as a ○), and under that, Merge with Reject at its left. A change received from someone
 // else shows Commit and Push done already.
 
 export interface IssueEvents {
@@ -80,6 +80,7 @@ export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEv
   const here = hereOf(s, issue);
   const change = connection() ? changeOf(s, issue) : null;
   const acts: Node[] = [];
+  let leave: HTMLButtonElement | null = null;
   // Nothing is offered until where it stands is known.
   const known = connection() && !s?.error;
   if (known && !here && change?.state !== 'open') {
@@ -90,9 +91,8 @@ export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEv
     }, after));
     acts.push(go);
   } else if (here) {
-    const leave = button(t('Back to main'));
+    leave = button(t('Back to main'));
     leave.addEventListener('click', doing(leave, error, async () => { await git.switchWork(at, 'main'); events.moved(at); }, after));
-    acts.push(leave);
   }
   // At the box's foot, opposite its action: its repo and, quietly, who started it and when.
   const say = !connection() ? t('History and work are kept on the Remote. Sign in to it to work on an issue and commit.') : s?.error ?? standing(s, issue);
@@ -102,20 +102,21 @@ export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEv
   const box = h('div', {class: 'issue-box'},
     words,
     ...(here && s?.work ? [steps(issue, s, events, after)] : change?.state === 'open' ? [received(change)] : []),
-    h('div', {class: 'issue-foot'}, h('div', {class: 'issue-about'}, h('span', {class: 'issue-where'}, issue.repo), say ? h('span', {class: s?.error ? 'error small' : 'muted small'}, say) : null), ...acts), error);
+    h('div', {class: 'issue-foot'}, leave, h('div', {class: 'issue-about'}, h('span', {class: 'issue-where'}, issue.repo), say ? h('span', {class: s?.error ? 'error small' : 'muted small'}, say) : null), ...acts), error);
   words.addEventListener('click', () => words.replaceWith(issueEditor(issue, (saved) => { if (saved) after(); else box.replaceWith(issueBox(issue, s, events, after)); })));
   return box;
 }
 
-/** A step's place at the left: its button, or once done the done mark and the same word (green says it is done). */
+/** A step's place at the right: its button, or once done the done mark and the same word (green says it is done). */
 const slot = (act: HTMLElement, done: boolean, word: string) => h('div', {class: 'step-act'},
   done ? h('span', {class: 'step-done'}, h('span', {class: 'done-mark', 'aria-hidden': 'true'}), word) : act);
 const about = (...n: (Node | null)[]) => h('div', {class: 'step-about'}, ...n);
 const quiet = (text: string) => h('p', {class: 'muted small'}, text);
 
 /**
- * Commit and Push, inside the issue's box, each its button at the left
- * (green, the done mark, once done). Beside Commit, what is not committed:
+ * Commit and Push, inside the issue's box, each a row: what it stands at at
+ * the left, its button at the right (green, the done mark, once done), and
+ * what takes it back (Reset) at the row's left end. Beside Commit, what is not committed:
  * its diff opens over what is under it, so neither button moves. Pushing
  * hands the work to main as its change, again as the next version; until it
  * is decided, Reset takes it back.
@@ -165,25 +166,25 @@ function steps(issue: Issue, s: RepoState, events: IssueEvents, after: () => voi
     reset.addEventListener('click', doing(reset, error, () => git.reset(at), after));
   }
   const where = pushed
-    ? h('div', {class: 'step-line'}, quiet(t('Change · version {n} · {state}', {n: w.change!.version, state: STATE(w.change!.state)})), reset)
+    ? h('div', {class: 'step-line'}, reset, quiet(t('Change · version {n} · {state}', {n: w.change!.version, state: STATE(w.change!.state)})))
     : w.unpushed ? quiet(tn('{n} commit to push', '{n} commits to push', w.unpushed)) : null;
 
   return h('div', {class: 'steps'},
-    slot(commit, committed, t('Commit')), h('div', {class: 'step-about step-changes'}, what),
-    slot(push, pushed, t('Push')), about(where), error);
+    h('div', {class: 'step-about step-changes'}, what), slot(commit, committed, t('Commit')),
+    about(where), slot(push, pushed, t('Push')), error);
 }
 
 /** Someone else's change, received: committed and pushed already, by whom and which version. */
 function received(change: git.Change): HTMLElement {
   return h('div', {class: 'steps'},
-    slot(h('span'), true, t('Commit')), about(quiet(change.submittedBy || '—')),
-    slot(h('span'), true, t('Push')), about(quiet(t('Change · version {n} · {state}', {n: change.version, state: STATE(change.state)}))));
+    about(quiet(change.submittedBy || '—')), slot(h('span'), true, t('Commit')),
+    about(quiet(t('Change · version {n} · {state}', {n: change.version, state: STATE(change.state)}))), slot(h('span'), true, t('Push')));
 }
 
 /**
- * Merge, the last step, under the Review (not in it): its button at the
- * left, primary once the version is approved, who approved it, and Reject
- * at the other end.
+ * Merge, the last step, under the Review (not in it): Reject at the left,
+ * who approved it, and its button at the right, primary once the version is
+ * approved.
  */
 export function mergeRow(issue: Issue, s: RepoState | undefined, events: IssueEvents, after: () => void): HTMLElement | null {
   const change = connection() ? changeOf(s, issue) : null;
@@ -200,7 +201,7 @@ export function mergeRow(issue: Issue, s: RepoState | undefined, events: IssueEv
   const reject = button(t('Reject'));
   reject.title = t('Do not take it into main (its issue stays open)');
   reject.addEventListener('click', doing(reject, error, () => git.reject(at, change), after));
-  return h('div', {class: 'steps merge-row'}, slot(merge, false, ''), about(h('div', {class: 'step-line'}, quiet(by), reject)), error);
+  return h('div', {class: 'steps merge-row'}, about(h('div', {class: 'step-line'}, reject, quiet(by))), slot(merge, false, ''), error);
 }
 
 /** A diff whose lines can be marked, as with a highlighter: `marked` shows, `pending` collects what is pressed now. */
