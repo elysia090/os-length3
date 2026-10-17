@@ -138,6 +138,22 @@ async function webCut(repo: string, issue: string | null, line: string, note: st
   throw new RemoteError(409, t('The Remote kept moving; could not commit'))
 }
 
+// A cut is named by the sha256 of what it holds, so its tree never changes:
+// each is read once a page (the newest few kept), however often Git draws.
+const trees = new Map<string, Promise<Tree>>();
+function cutTree(repo: string, id: string | null): Promise<Tree> {
+  if (!id) return Promise.resolve({});
+  const k = `${repo}\0${id}`;
+  let p = trees.get(k);
+  if (!p) {
+    p = treeAt(repo, id);
+    p.catch(() => trees.delete(k));
+    trees.set(k, p);
+    if (trees.size > 64) trees.delete(trees.keys().next().value!);
+  }
+  return p;
+}
+
 interface RemoteCut { id: string; parent: string | null; merged?: string | null; tree: Tree; kind: string; title: string; issue: string; note: string; time: number; added: number; removed: number }
 
 async function webLog(repo: string, line = lineOf(repo)): Promise<Cut[]> {
@@ -203,20 +219,19 @@ async function webChangesOf(repo: string): Promise<Change[]> {
   const r = await api(repoPath(repo, '/changes'));
   if (r.status === 404) return [];
   const list = await r.json() as Change[];
-  for (const c of list) Object.assign(c, places(await treeAt(repo, c.base), await treeAt(repo, c.head)));
+  await Promise.all(list.map(async (c) => Object.assign(c, places(...await Promise.all([cutTree(repo, c.base), cutTree(repo, c.head)])))));
   return list;
 }
 
-async function webWork(repo: string): Promise<Work> {
+async function webWork(repo: string, known?: Promise<Change[]>): Promise<Work> {
   const line = lineOf(repo);
   if (line === 'main') return {line, issue: null, started_by: '', started_at: 0, commits: 0, unpushed: 0, change: null};
-  const l = await json<Line>(repoPath(repo, `?line=${encodeURIComponent(line)}`));
-  const log = await webLog(repo);
+  const [l, log] = await Promise.all([json<Line>(repoPath(repo, `?line=${encodeURIComponent(line)}`)), webLog(repo)]);
   const mine: Cut[] = [];
   for (const c of log) { if (c.id === l.base) break; mine.push(c); }
   let unpushed = 0;
   for (const c of mine) { if (c.id === l.pushed) break; unpushed++; }
-  const change = (await webChangesOf(repo)).find((c) => c.line === line) ?? null;
+  const change = (await (known ?? webChangesOf(repo))).find((c) => c.line === line) ?? null;
   return {line, issue: l.issue, started_by: l.startedBy, started_at: l.startedAt, commits: mine.length, unpushed, change};
 }
 
@@ -237,6 +252,8 @@ async function changeCall(repo: string, id: string, verb: string, body: Record<s
 
 /** Work on `issue` (its file name in issue/): the repo then shows that work's copy. */
 export async function startWork(repo: string, issue: string): Promise<void> {
+  // The work starts from the Remote's main: what was just written here (the issue itself, often) goes there first.
+  await sync(repo);
   if (isNative) { await invoke('work_start', {repo, issue: `issue/${issue}`}); store.changedOutside(repo, 'work'); return; }
   const r = await api(repoPath(repo, '/lines'), {method: 'POST', body: JSON.stringify({issue: `issue/${issue}`})});
   if (!r.ok) throw new RemoteError(r.status, t('Could not start the work ({why})', {why: String(((await r.json()) as {error?: string}).error ?? r.status)}));
@@ -252,6 +269,16 @@ export const lines = (repo: string): Promise<Line[]> =>
   isNative ? invoke<Line[]>('work_lines', {repo}) : connection() ? json<Line[]>(repoPath(repo, '/lines')) : Promise.resolve([]);
 /** The changes handed to the repo's main, newest first. */
 export const changesOf = (repo: string): Promise<Change[]> => (isNative ? invoke<Change[]>('changes_list', {repo}) : webChangesOf(repo));
+
+/** Where a repo stands in one go: the work it shows, every issue's work, the changes (each read once). */
+export async function standing(repo: string): Promise<{work: Work | null; lines: Line[]; changes: Change[]}> {
+  const changes = changesOf(repo);
+  const [shown, lineList, list] = await Promise.all([
+    (isNative ? work(repo) : webWork(repo, changes)).catch(() => null),
+    lines(repo).catch(() => [] as Line[]),
+    changes.catch(() => [] as Change[])]);
+  return {work: shown, lines: lineList, changes: list};
+}
 
 /** Push: the work's commits become its state on the Remote. */
 export async function push(repo: string): Promise<void> {
@@ -272,7 +299,7 @@ export async function submit(repo: string, note = ''): Promise<Change> {
   const out = await r.json() as Record<string, unknown>;
   if (!r.ok) refused(r, out);
   const c = out as unknown as Change;
-  return Object.assign(c, places(await treeAt(repo, c.base), await treeAt(repo, c.head)));
+  return Object.assign(c, places(...await Promise.all([cutTree(repo, c.base), cutTree(repo, c.head)])));
 }
 
 /** Reset: take back the change this work handed in. */
@@ -294,7 +321,7 @@ export const reject = (repo: string, c: Change, note = ''): Promise<Change> =>
 /** A change's diff against where it began. */
 export async function changeDiff(repo: string, c: Change): Promise<FileDiff[]> {
   if (isNative) return invoke<FileDiff[]>('change_diff', {repo, id: c.id});
-  const then = await treeAt(repo, c.base), now = await treeAt(repo, c.head);
+  const [then, now] = await Promise.all([cutTree(repo, c.base), cutTree(repo, c.head)]);
   const out: FileDiff[] = [];
   for (const path of [...new Set([...Object.keys(then), ...Object.keys(now)])].sort()) {
     const a = then[path], b = now[path];

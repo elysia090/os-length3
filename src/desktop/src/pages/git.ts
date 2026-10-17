@@ -105,14 +105,22 @@ export function git(ctx: Context): Node[] {
     if (e.key === 'ArrowRight') { e.preventDefault(); go(k + 1); }
   });
 
-  const paint = async () => {
+  // One drawing at a time; asked again meanwhile, it draws once more after, from what is then true.
+  let drawing: Promise<void> | null = null;
+  let more = false;
+  const paint = (): Promise<void> => {
+    if (drawing) { more = true; return drawing; }
+    drawing = draw().finally(() => { drawing = null; if (more) { more = false; void paint(); } });
+    return drawing;
+  };
+  const draw = async () => {
     const all = await Promise.all(repos.map((r) => readIssues(store, r)));
     missing = repos.filter((_, j) => all[j] === null);
     const issues = all.flatMap((x, j) => (!filter || repos[j] === filter ? x ?? [] : []));
     // Where each repo stands: the work it shows, the issues started, the changes to main.
     const fresh = new Map<string, RepoState>();
     if (connection()) await Promise.all([...new Set(issues.map((i) => i.repo))].map(async (r) => {
-      let [work, lines, changes] = await Promise.all([gitops.work(r).catch(() => null), gitops.lines(r).catch(() => []), gitops.changesOf(r).catch(() => [])]);
+      let {work, lines, changes} = await gitops.standing(r);
       // A work whose change was merged (here or on another device) is done: the repo shows main again.
       if (work && work.line !== 'main' && changes.some((c) => c.line === work!.line && c.state === 'merged')) {
         await gitops.switchWork(r, 'main').catch(() => {});
