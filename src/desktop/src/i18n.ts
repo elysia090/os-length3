@@ -39,6 +39,8 @@ export const KANA_KANJI = /[぀-ヺー-ヿ㐀-鿿]/;
 const LATIN = /[A-Za-z]/;
 const apart = (a: string | undefined, b: string | undefined) =>
   !!a && !!b && ((LATIN.test(a) && KANA_KANJI.test(b)) || (KANA_KANJI.test(a) && LATIN.test(b)));
+/** A name with Latin in it is a Latin word to its last digit (`perf42 で`); a bare number keeps its counter (`3件`). */
+const edge = (v: string, c: string | undefined) => (c && /\d/.test(c) && LATIN.test(v) ? 'a' : c);
 
 /** Placeholders filled in; a name is set apart from the Japanese beside it only when it is Latin (`notes を`, `旅行の`). */
 function fill(text: string, vars?: Record<string, string | number>): string {
@@ -46,8 +48,8 @@ function fill(text: string, vars?: Record<string, string | number>): string {
   return text.replace(/\{(\w+)\}/g, (m, k: string, at: number) => {
     if (!(k in vars)) return m;
     const v = String(vars[k]);
-    const before = apart(text[at - 1], v[0]) ? ' ' : '';
-    const after = apart(v.at(-1), text[at + m.length]) ? ' ' : '';
+    const before = apart(text[at - 1], edge(v, v[0])) ? ' ' : '';
+    const after = apart(edge(v, v.at(-1)), text[at + m.length]) ? ' ' : '';
     return before + v + after;
   });
 }

@@ -77,6 +77,8 @@ test('a name is a space apart from Japanese only when it is Latin', () => {
   setLang('ja');
   assert.equal(t('To the people of {server}', {server: '旅行'}), '旅行の人たちへ');
   assert.equal(t('To the people of {server}', {server: 'trip'}), 'trip の人たちへ');
+  assert.equal(t('To the people of {server}', {server: 'trip42'}), 'trip42 の人たちへ');
+  assert.equal(t('To the people of {server}', {server: '42'}), '42の人たちへ');
   assert.equal(t('{n} new posts', {n: 3}), '新しい投稿 3件');
   setLang('en');
   assert.equal(t('To the people of {server}', {server: 'trip'}), 'To the people of trip');
