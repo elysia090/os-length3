@@ -1,6 +1,7 @@
 import {ago, h} from '../dom.ts';
 import {mark} from '../icons.ts';
 import {t} from '../i18n.ts';
+import {shown as named, shownAs} from '../inbox.ts';
 import {connection, RemoteError} from '../remote.ts';
 import * as servers from '../servers.ts';
 import type {Context} from './context.ts';
@@ -321,7 +322,7 @@ export class ServerLayer {
       gear.hidden = !serverId;
       if (!signedIn) { chips.replaceChildren(h('span', {class: 'muted'}, t('Open boards'))); return; }
       const each = list.map((s) => {
-        const b = h('button', {type: 'button', class: 'chip', role: 'radio', 'aria-checked': String(s.id === serverId), title: s.address}, s.name);
+        const b = h('button', {type: 'button', class: 'chip', role: 'radio', 'aria-checked': String(s.id === serverId), title: `${named(s.address)} · ${s.code}`}, s.name);
         b.addEventListener('click', () => show(s.id));
         return b;
       });
@@ -330,14 +331,12 @@ export class ServerLayer {
       chips.replaceChildren(...each, plus);
     };
 
-    /** No server chosen (or none yet): the one box makes a server, named name@domain as a person is. */
+    /** No server chosen (or none yet): the one box makes a server, with a name on this Remote as a person has (first come, for five years at a time). */
     const makeServer = () => {
       shown = [];
       place('boards');
       const name = h('input', {class: 'line-in', maxlength: '64', placeholder: t('Its name'), 'aria-label': t('Make a server')}) as HTMLInputElement;
       const handle = h('input', {class: 'line-in mono', maxlength: '31', placeholder: 'trip', 'aria-label': t('Its address'), autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
-      const domain = h('span', {class: 'muted mono'}, '@…');
-      void myself.then((m) => { if (m) domain.textContent = `@${m.domain}`; });
       // Its address follows its name until it is written itself.
       let own = false;
       const slug = (v: string) => v.toLowerCase().normalize('NFKD').replace(/[^a-z0-9._-]+/g, '-').replace(/^[-._]+|[-._]+$/g, '').slice(0, 31);
@@ -376,7 +375,7 @@ export class ServerLayer {
         h('header', {class: 'board-head'}, h('span', {class: 'muted'}, '+'), h('h2', {}, t('Make a server'))),
         h('div', {class: 'board-body'},
           h('p', {}, t('A server is people you know: you add them from your Inbox contacts. Its boards each hold a plan you write together and the talk around it.')),
-          name, h('div', {class: 'row server-address'}, handle, domain), h('p', {class: 'muted small'}, t('Its address is a name like a person\'s: nobody else can have it while the server does.')),
+          name, h('div', {class: 'row server-address'}, handle), h('p', {class: 'muted small'}, t('Its name on this Remote, as a person has one: first come, nobody else\'s while it is the server\'s, for five years at a time, renewed by its owner.')),
           h('div', {class: 'row'}, make), error, back))));
       slides.classList.add('single');
       track.style.setProperty('--at', '0');
@@ -459,7 +458,7 @@ export class ServerLayer {
     // ---- the right: who is in it, then the repos they show in it ----
     const part = (title: string, ...body: (Node | null)[]) => h('section', {class: 'side-part'}, h('h3', {}, title), ...body);
     const faceOf = (address: string) => h('span', {class: 'face', 'aria-hidden': 'true'}, initials(address));
-    const repoName = (r: servers.ShownRepo) => [h('span', {class: 'mono'}, r.name), h('span', {class: 'muted small mono'}, r.owner)];
+    const repoName = (r: servers.ShownRepo) => [h('span', {class: 'mono'}, r.name), h('span', {class: 'muted small mono'}, named(r.owner))];
     let sideToken = 0;
     const paintSide = () => {
       const mine = ++sideToken;
@@ -470,11 +469,11 @@ export class ServerLayer {
       void Promise.all([servers.people(id), servers.shownIn(id)]).then(([people, repos]) => {
         if (mine !== sideToken) return;
         side.replaceChildren(
-          part(t('People'), h('ul', {class: 'people'}, ...people.map((p) => h('li', {}, faceOf(p.address), h('span', {class: 'mono small'}, p.address),
+          part(t('People'), h('ul', {class: 'people'}, ...people.map((p) => h('li', {}, faceOf(p.address), h('span', {class: 'mono small'}, named(p.address)),
             p.owner ? h('span', {class: 'muted small'}, t('owner')) : null)))),
           part(t('Repos'), repos.length
             ? h('ul', {class: 'side-repos'}, ...repos.map((r) => {
-              const b = h('button', {type: 'button', class: 'side-repo', title: r.as ? t('Everyone sees it as {name}', {name: r.as}) : `${r.owner}:${r.name}`},
+              const b = h('button', {type: 'button', class: 'side-repo', title: r.as ? t('Everyone sees it as {name}', {name: shownAs(r.as)}) : `${named(r.owner)}:${r.name}`},
                 ...repoName(r), r.as ? h('span', {class: 'seen-mark muted small'}, t('everyone')) : null);
               b.addEventListener('click', () => void seeRepo(r));
               return h('li', {}, b);
@@ -495,8 +494,8 @@ export class ServerLayer {
       const files = h('ul', {class: 'seen-files', 'aria-label': t('Files')});
       const text = h('pre', {class: 'seen-text', tabindex: '0'});
       sheet.replaceChildren(h('div', {class: 'board-card sheet-card'},
-        h('header', {class: 'board-head'}, h('h2', {class: 'mono'}, r.name), h('span', {class: 'muted small mono'}, r.owner), h('span', {class: 'grow'}), forge, back),
-        h('div', {class: 'sheet-sub'}, sub, r.as ? h('p', {class: 'muted small'}, t('Everyone sees it as {name}', {name: r.as})) : null),
+        h('header', {class: 'board-head'}, h('h2', {class: 'mono'}, r.name), h('span', {class: 'muted small mono'}, named(r.owner)), h('span', {class: 'grow'}), forge, back),
+        h('div', {class: 'sheet-sub'}, sub, r.as ? h('p', {class: 'muted small'}, t('Everyone sees it as {name}', {name: shownAs(r.as)})) : null),
         h('div', {class: 'seen-body'}, files, text)));
       try {
         const got = await servers.seeRepo(as);
@@ -532,7 +531,7 @@ export class ServerLayer {
       done.addEventListener('click', () => place('boards'));
       const body = h('div', {class: 'sheet-body'}, h('p', {class: 'muted small'}, '…'));
       sheet.replaceChildren(h('div', {class: 'board-card sheet-card'},
-        h('header', {class: 'board-head'}, h('h2', {}, s.name), h('span', {class: 'muted small mono'}, s.address), h('span', {class: 'grow'}), done), body));
+        h('header', {class: 'board-head'}, h('h2', {}, s.name), h('span', {class: 'muted small mono'}, named(s.address)), h('span', {class: 'muted small mono', title: t('Its code')}, s.code), h('span', {class: 'grow'}), done), body));
       const again = () => { if (showing === 'settings') void settings(); paintSide(); };
       try {
         const [people, repos, mineAll] = await Promise.all([servers.people(s.id), servers.shownIn(s.id), servers.seenAll()]);
@@ -544,7 +543,7 @@ export class ServerLayer {
         void import('../inbox.ts').then((inbox) => inbox.threads()).then((all) => {
           const known = all.filter((x) => x.state === 'contact' && !people.some((p) => p.address === x.address));
           if (!known.length) return;
-          add.replaceChildren(h('option', {value: ''}, t('Add someone you know…')), ...known.map((x) => h('option', {value: x.address}, x.address)));
+          add.replaceChildren(h('option', {value: ''}, t('Add someone you know…')), ...known.map((x) => h('option', {value: x.address}, named(x.address))));
           add.hidden = false;
         }).catch(() => {});
         add.addEventListener('change', async () => {
@@ -553,8 +552,8 @@ export class ServerLayer {
         });
         const personRows = await Promise.all(people.map(async (p) => {
           const me = await isMe(p.address);
-          const remove = s.owner && !me ? twice(t('Remove'), t('Remove {who}?', {who: p.address}), async () => { await servers.removePerson(s.id, p.address); again(); }) : null;
-          return h('div', {class: 'sheet-row'}, faceOf(p.address), h('span', {class: 'mono small grow'}, p.address), p.owner ? h('span', {class: 'muted small'}, t('owner')) : null, remove);
+          const remove = s.owner && !me ? twice(t('Remove'), t('Remove {who}?', {who: named(p.address)}), async () => { await servers.removePerson(s.id, p.address); again(); }) : null;
+          return h('div', {class: 'sheet-row'}, faceOf(p.address), h('span', {class: 'mono small grow'}, named(p.address)), p.owner ? h('span', {class: 'muted small'}, t('owner')) : null, remove);
         }));
 
         // The repos shown in it: one's own shown or taken off; seen by everyone as the server, never as oneself.
@@ -562,11 +561,11 @@ export class ServerLayer {
         const repoRows = repos.map((r) => {
           const offList = r.mine || s.owner ? button(t('Take off'), 'small-button') : null;
           offList?.addEventListener('click', async () => { offList.disabled = true; try { await servers.takeOff(s.id, r.owner, r.name); again(); } catch (e) { offList.textContent = message(e); } });
-          const asHere = `${s.address}:${r.name}`;
+          const asHere = shownAs(`${s.address}:${r.name}`);
           const pub = r.mine && s.address
             ? reach(t('Anyone can see it, as {name}', {name: asHere}), t('Anyone will see {repo} as it was last pushed, as {name}, without your name.', {repo: r.name, name: asHere}), t('Show it to everyone'),
               r.asServer === s.id, (v) => (v ? servers.setSeen(r.name, 'everyone', {as: s.id}) : servers.setSeen(r.name, 'servers', {servers: shares(r.name)})).then(() => again()))
-            : r.as ? h('p', {class: 'muted small'}, t('Everyone sees it as {name}', {name: r.as})) : null;
+            : r.as ? h('p', {class: 'muted small'}, t('Everyone sees it as {name}', {name: shownAs(r.as)})) : null;
           return h('div', {class: 'sheet-item'}, h('div', {class: 'sheet-row'}, ...repoName(r), h('span', {class: 'grow'}), offList), pub);
         });
         const offer = h('select', {class: 'line-in', 'aria-label': t('Show one of yours'), hidden: ''}) as HTMLSelectElement;
@@ -607,13 +606,22 @@ export class ServerLayer {
         // Leaving: one's own place; removing: its owner's, held a while to bring back.
         const myAddress = (await Promise.all(people.map(async (p) => ((await isMe(p.address)) ? p.address : null)))).find(Boolean) ?? null;
         const leave = myAddress ? twice(t('Leave this server'), t('Leave it?'), async () => { await servers.removePerson(s.id, myAddress); gone(s.id); }) : null;
+        // Its name's term: renewed by its owner near its end (or after, while it is held for the server).
+        const YEAR = 365 * 86_400_000;
+        const renew = s.owner && s.until && s.until - Date.now() < YEAR ? button(t('Renew'), 'small-button primary') : null;
+        renew?.addEventListener('click', async () => {
+          renew.disabled = true;
+          try { const r = await servers.renewServer(s.id); s.until = r.until; again(); } catch (e) { renew.textContent = message(e); renew.disabled = false; }
+        });
+        const term = s.until ? h('div', {class: 'sheet-row'}, h('span', {class: 'mono small'}, named(s.address)),
+          h('span', {class: `small grow${s.until <= Date.now() ? ' error' : ' muted'}`}, s.until <= Date.now() ? t('Its term ended; held for it until {date}', {date: new Date(s.until + 30 * 86_400_000).toLocaleDateString()}) : t('Until {date}', {date: new Date(s.until).toLocaleDateString()})), renew) : null;
         const remove = s.owner ? twice(t('Remove this server'), t('Remove {server}? It is held 30 days for you to bring back.', {server: s.name}), async () => { await servers.removeServer(s.id); gone(s.id); }) : null;
 
         body.replaceChildren(
           section(t('People'), ...personRows, add),
           section(t('Repos'), h('p', {class: 'muted small'}, t('Yours stay yours: shown here they are only seen, as they were last pushed.')), ...repoRows, offer),
           section(t('Boards'), h('p', {class: 'muted small'}, t('Its people always. Beyond them, only as far as its owner opens it.')), ...boardRows),
-          section(t('This server'), h('div', {class: 'row'}, leave, remove)));
+          section(t('This server'), term, h('div', {class: 'row'}, leave, remove)));
       } catch (e) { body.replaceChildren(h('p', {class: 'error'}, message(e))); }
     };
 

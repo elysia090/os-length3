@@ -128,7 +128,7 @@ export function createApp(d: Deps) {
 
   app.on(['GET', 'POST'], '/api/auth/*', (c) => d.auth.handler(c.req.raw));
 
-  app.get('/v1/about', (c) => c.json({passkey: true, providers: d.providers}));
+  app.get('/v1/about', (c) => c.json({passkey: true, providers: d.providers, domain: d.domain ?? 'length3.com'}));
   if (d.providers.includes('dev')) app.route('/dev-oauth', devOAuth());
 
   // The OS is public: its canonical copy is the release, named by its digest.
@@ -556,7 +556,7 @@ export function createApp(d: Deps) {
 
   inbox({db: d.db, domain: d.domain ?? 'length3.com', baseURL: d.baseURL ?? '', secret: d.secret ?? '', txt: d.txt, recheck: d.recheck}, v1, app);
   servers({db: d.db, domain: d.domain ?? 'length3.com', mail: d.mail, secret: d.secret}, v1, app);
-  seen({db: d.db, bucket: d.bucket, viewer: async (req) => (await d.auth.api.getSession({headers: req.headers}))?.user.id ?? null}, v1, app);
+  seen({db: d.db, bucket: d.bucket, domain: d.domain ?? 'length3.com', viewer: async (req) => (await d.auth.api.getSession({headers: req.headers}))?.user.id ?? null}, v1, app);
 
   app.route('/v1', v1);
   return app;

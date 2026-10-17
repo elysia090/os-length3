@@ -13,7 +13,7 @@ import {t} from './i18n.ts';
 
 export interface BoardRef { id: string; name: string; open: boolean; guests: boolean }
 /** A server: what it is called, and its name as a principal (name@domain, in the namespace people's addresses are in). */
-export interface Server { id: string; name: string; address: string; owner: boolean; boards: BoardRef[] }
+export interface Server { id: string; name: string; address: string; owner: boolean; boards: BoardRef[]; code: string; until: number | null }
 export interface Person { address: string; owner: boolean }
 export interface Board { id: string; server: {id: string; name: string; address: string}; name: string; plan: string; version: number; open: boolean; guests: boolean; people?: Person[] }
 /** A post as the Remote gives it: `by` is all a reader is shown of who wrote it. */
@@ -46,6 +46,8 @@ export const makeServer = (name: string, address: string) => call<Server>('/v1/s
 /** Servers this person removed or left last, still held for them, and until when. */
 export const goneServers = () => call<{id: string; name: string; address: string; until: number}[]>('/v1/servers?gone=1');
 export const bringBack = (id: string) => call<{id: string; name: string; address: string}>(`/v1/servers/${id}/back`, send('POST'));
+/** Its name held for another term, by its owner. */
+export const renewServer = (id: string) => call<{address: string; until: number}>(`/v1/servers/${id}/renew`, send('POST'));
 /** Its owner's: held a while, to bring back. */
 export const removeServer = (id: string) => call<{until: number}>(`/v1/servers/${id}`, send('DELETE'));
 export const renameServer = (id: string, name: string) => call<{name: string}>(`/v1/servers/${id}`, send('PATCH', {name}));

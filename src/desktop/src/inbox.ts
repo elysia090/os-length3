@@ -14,12 +14,29 @@ export type Kind = 'message' | 'review' | 'question' | 'run';
 export interface Target { repo?: string; issue?: string; change?: string; version?: number }
 export interface Thread { address: string; name: string; state: 'contact' | 'request' | 'blocked'; unread: number; last: {type: Kind; body: string; mine: boolean; time: number} }
 export interface Message { id: string; mine: boolean; type: Kind; target: Target; body: string; time: number; read: boolean; live?: boolean }
-/** `lapsed`: on a domain whose DNS no longer names this Remote; it answers no one until it does again. */
-export interface Me { domain: string; account: string; addresses: {address: string; ssh: boolean; lapsed?: boolean}[] }
+/**
+ * `code`: six digits to be found by. An address on this Remote (`domain`) is
+ * a name held `until`, renewed by its owner (`ended`: its term ran out; it is
+ * held for them a while). `lapsed`: on a domain whose DNS no longer names
+ * this Remote; it answers no one until it does again.
+ */
+export interface Me { domain: string; account: string; code: string; addresses: {address: string; ssh: boolean; until?: number; ended?: boolean; lapsed?: boolean}[] }
 
 const enc = (a: string) => encodeURIComponent(a);
 
-export const me = () => json<Me>('/v1/inbox/me');
+export const me = () => json<Me>('/v1/inbox/me').then((m) => { home = m.domain; return m; });
+
+/** This Remote's own domain, once known: a name on it is shown alone. */
+let home = '';
+/** Learn it before anything is shown, signed in or not. */
+export async function learnHome() {
+  if (home) return;
+  try { home = ((await (await api('/v1/about', {}, null)).json()) as {domain?: string}).domain ?? ''; } catch { /* shown in full meanwhile */ }
+}
+/** An address as it is shown: a name on this Remote alone (`ren`), any other in full (`ren@ren.dev`). */
+export const shown = (address: string) => (home && address.endsWith(`@${home}`) ? address.slice(0, -home.length - 1) : address);
+/** A repo's public name the same way: `trip:hello`, `ren@ren.dev:hello`. */
+export const shownAs = (as: string) => { const i = as.lastIndexOf(':'); return i < 0 ? as : `${shown(as.slice(0, i))}${as.slice(i)}`; };
 export const threads = () => json<Thread[]>('/v1/inbox/threads');
 export const thread = (address: string) => json<{address: string; state: Thread['state']; mutual: boolean; messages: Message[]}>(`/v1/inbox/threads/${enc(address)}`);
 export const markRead = (address: string) => json(`/v1/inbox/threads/${enc(address)}/read`, {method: 'POST', body: '{}'});
@@ -38,6 +55,9 @@ export async function claim(name: string, domain?: string): Promise<string> {
     : body.error === 'held' && until ? t('That address was let go; it is held for its owner until {date}', {date: new Date(until).toLocaleDateString()})
     : body.error === 'name' ? t('A name is 2–31 letters, digits, dots, dashes or underscores') : String(body.error));
 }
+
+/** Hold a name on this Remote for another term from now (and take it back, if its term ran out a little while ago). */
+export const renew = (address: string) => json<{address: string; until: number}>(`/v1/inbox/addresses/${enc(address)}/renew`, {method: 'POST', body: '{}'});
 
 /** Let an address go: it answers no one from now, and is held for you a while (claim it again to take it back). */
 export const release = (address: string) => json<{address: string; until: number}>(`/v1/inbox/addresses/${enc(address)}`, {method: 'DELETE'});

@@ -11,8 +11,10 @@ import type {Context} from './context.ts';
 // screen: each message says what it is (a message, a review request, a
 // question, a failed run) and what it is about, with the way there.
 //
-//   your address   name@domain as a stub (pressing it copies it), its gear for
-//                  your own domain (proved by a DNS record); SSH is Runtime's
+//   your name      as a stub: your name on this Remote and your code (each
+//                  copied by a press); its gear for your names' terms and a
+//                  name on your own domain beside it (proved by a DNS
+//                  record); SSH is Runtime's
 //   left           conversations: contacts, then requests (accept or block)
 //   right          the conversation, the line's state (direct, or through
 //                  the Remote), and the box to write in
@@ -36,22 +38,28 @@ function copying(el: HTMLElement, text: string) {
 }
 
 /**
- * Your address as a stub: the address (pressing it copies it), or, before
- * there is one, the name to claim on this Remote's domain (Enter claims).
- * At its right end the gear opens your own domain: the TXT record to put in
- * its DNS, looked for every few seconds while open, and the address claimed
- * as soon as the record is there.
+ * Your name as a stub: your name on this Remote, shown alone (it is a name,
+ * not a domain anyone holds), and your code, six digits to be found by; a
+ * press copies either. Before there is a name, the name to claim (Enter
+ * claims): first come, yours for five years at a time. At its right end the
+ * gear opens your names, each with its term and Renew near its end, and a
+ * name of your choosing on a domain you own, shown beside it: the TXT
+ * record to put in its DNS, looked for every few seconds while open, and the
+ * name claimed as soon as the record is there.
  */
 function addressStub(me: inbox.Me, again: () => void): HTMLElement {
   const error = h('p', {class: 'error', role: 'alert'});
-  const gear = h('button', {type: 'button', class: 'stub-gear', 'aria-label': t('Your own domain'), 'aria-expanded': 'false'}, mark('gear')) as HTMLButtonElement;
+  const gear = h('button', {type: 'button', class: 'stub-gear', 'aria-label': t('Your names'), 'aria-expanded': 'false'}, mark('gear')) as HTMLButtonElement;
+  const note = h('p', {class: 'muted small'});
   const panel = h('div', {class: 'stub-panel', hidden: ''});
   let stub: HTMLElement;
   if (me.addresses.length) {
-    const a = me.addresses[0].address;
+    const a = inbox.shown(me.addresses[0].address);
     const text = h('button', {type: 'button', class: 'stub-text mono'}, a);
     copying(text, a);
-    stub = h('div', {class: 'stub'}, text, gear);
+    const code = h('button', {type: 'button', class: 'stub-code mono', 'aria-label': t('Your code {code}', {code: me.code})}, me.code);
+    copying(code, me.code);
+    stub = h('div', {class: 'stub'}, text, code, gear);
   } else {
     const name = h('input', {class: 'stub-in mono', placeholder: t('name'), 'aria-label': t('Name'), autocapitalize: 'off', spellcheck: 'false', maxlength: '31'}) as HTMLInputElement;
     name.addEventListener('keydown', async (e) => {
@@ -59,7 +67,8 @@ function addressStub(me: inbox.Me, again: () => void): HTMLElement {
       error.textContent = '';
       try { await inbox.claim(name.value); again(); } catch (err) { error.textContent = message(err); }
     });
-    stub = h('div', {class: 'stub'}, name, h('span', {class: 'stub-domain mono'}, `@${me.domain}`), gear);
+    stub = h('div', {class: 'stub'}, name, gear);
+    note.textContent = t('A name on this Remote: first come, yours for five years at a time, renewed by you.');
   }
   // Your own domain: its record, looked for while the panel is open.
   let looking = 0;
@@ -90,13 +99,29 @@ function addressStub(me: inbox.Me, again: () => void): HTMLElement {
     domain.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) void look(); });
     clearInterval(looking);
     looking = window.setInterval(() => void look(), 8000);
-    panel.replaceChildren(h('div', {class: 'row stub-own'}, name, h('span', {class: 'muted'}, '@'), domain), record, yours());
+    panel.replaceChildren(yours(),
+      h('p', {class: 'muted small'}, t('A name of your choosing on a domain you own, shown beside your name here:')),
+      h('div', {class: 'row stub-own'}, name, h('span', {class: 'muted'}, '@'), domain), record);
     domain.focus();
   };
-  /** Your addresses: each one's state, and letting it go (held for you a while; claiming it again takes it back). */
+  /**
+   * Your names: each one's state (a name here, its term: Renew near its end;
+   * a domain's, whether its DNS still names this Remote), and letting it go
+   * (held for you a while; claiming it again takes it back).
+   */
   const yours = () => {
     if (!me.addresses.length) return h('div', {});
-    return h('div', {class: 'stub-yours'}, h('p', {class: 'muted small'}, t('Your addresses')), ...me.addresses.map((a) => {
+    const YEAR = 365 * 86_400_000;
+    return h('div', {class: 'stub-yours'}, h('p', {class: 'muted small'}, t('Your names')), ...me.addresses.map((a) => {
+      const day = (ms: number) => new Date(ms).toLocaleDateString();
+      const state = a.lapsed ? h('span', {class: 'small error'}, t('its domain no longer names this Remote'))
+        : a.ended ? h('span', {class: 'small error'}, t('Its term ended; held for you until {date}', {date: day(a.until! + 30 * 86_400_000)}))
+        : a.until ? h('span', {class: 'muted small'}, t('Until {date}', {date: day(a.until)})) : null;
+      const renew = a.until && (a.ended || a.until - Date.now() < YEAR) ? h('button', {type: 'button', class: 'button small-button primary'}, t('Renew')) as HTMLButtonElement : null;
+      renew?.addEventListener('click', async () => {
+        renew.disabled = true;
+        try { await inbox.renew(a.address); again(); } catch (e) { renew.disabled = false; renew.textContent = message(e); }
+      });
       const go = h('button', {type: 'button', class: 'button small-button'}, t('Let it go')) as HTMLButtonElement;
       let armed = 0;
       go.addEventListener('click', async () => {
@@ -104,12 +129,11 @@ function addressStub(me: inbox.Me, again: () => void): HTMLElement {
         go.disabled = true;
         try { await inbox.release(a.address); again(); } catch (e) { go.disabled = false; go.textContent = message(e); }
       });
-      return h('div', {class: 'your-row'}, h('span', {class: 'mono small'}, a.address),
-        a.lapsed ? h('span', {class: 'small error'}, t('its domain no longer names this Remote')) : null, go);
+      return h('div', {class: 'your-row'}, h('span', {class: 'mono small'}, inbox.shown(a.address)), state, renew, go);
     }));
   };
   // The panel lies over the Inbox under it; Escape or a press outside closes it.
-  const holder = h('div', {class: 'stub-holder'}, stub, error, panel);
+  const holder = h('div', {class: 'stub-holder'}, stub, note, error, panel);
   const away = (e: Event) => { if (e instanceof KeyboardEvent ? e.key === 'Escape' : !holder.contains(e.target as Node)) toggle(false); };
   const toggle = (open: boolean) => {
     panel.hidden = !open;
@@ -159,7 +183,7 @@ export function inboxPage(ctx: Context): Node[] {
 
   const paintList = async (list: HTMLElement, pane: HTMLElement) => {
     const all = await inbox.threads().catch(() => [] as inbox.Thread[]);
-    const to = h('input', {class: 'line-in', placeholder: t('Write to name@domain'), 'aria-label': t('Write to an address'), autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
+    const to = h('input', {class: 'line-in', placeholder: t('Write to a name or a code'), 'aria-label': t('Write to an address'), autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
     const start = button(t('Write'), 'small-button');
     const error = h('p', {class: 'error', role: 'alert'});
     to.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) start.click(); });
@@ -170,9 +194,9 @@ export function inboxPage(ctx: Context): Node[] {
       void show(found.address!, list, pane);
     });
     const row = (th: inbox.Thread) => {
-      const b = h('button', {type: 'button', class: 'inbox-row', 'data-state': th.state},
-        h('span', {class: 'inbox-who'}, h('b', {}, th.name || th.address), th.unread ? h('span', {class: 'unread'}, `${th.unread}`) : null),
-        h('span', {class: 'muted small mono'}, th.address),
+      const b = h('button', {type: 'button', class: 'inbox-row', 'data-state': th.state, 'data-address': th.address},
+        h('span', {class: 'inbox-who'}, h('b', {}, th.name || inbox.shown(th.address)), th.unread ? h('span', {class: 'unread'}, `${th.unread}`) : null),
+        h('span', {class: 'muted small mono'}, inbox.shown(th.address)),
         h('span', {class: 'muted small inbox-last'}, `${th.last.mine ? t('You: ') : ''}${th.last.type === 'message' ? '' : `${KIND(th.last.type)} · `}${th.last.body}`));
       if (th.address === open) b.setAttribute('aria-current', 'true');
       b.addEventListener('click', () => void show(th.address, list, pane));
@@ -184,7 +208,7 @@ export function inboxPage(ctx: Context): Node[] {
       ...contacts.map(row),
       ...(requests.length ? [h('h3', {class: 'inbox-head'}, t('Requests')), ...requests.map(row)] : []));
     // One quiet line in the open pane says what to do; none yet, it says so instead.
-    if (!open) pane.replaceChildren(h('p', {class: 'quiet'}, all.length ? t('Choose a conversation, or write to an address.') : t('No messages yet. Write to someone by their address.')));
+    if (!open) pane.replaceChildren(h('p', {class: 'quiet'}, all.length ? t('Choose a conversation, or write to a name or a code.') : t('No messages yet. Write to someone by their name or code.')));
   };
 
   const show = async (address: string, list: HTMLElement, pane: HTMLElement) => {
@@ -224,7 +248,7 @@ export function inboxPage(ctx: Context): Node[] {
     // Writing is one line that grows as it is written. What it is reads off the text the way
     // an issue is named ("Review：…", "Question：…"), and a /root/… path in it says what it
     // is about; nothing else to choose. Enter sends; Shift+Enter starts a new line.
-    const text = h('textarea', {class: 'line-in bubble-in', rows: '1', placeholder: t('Write to {address}…', {address}), 'aria-label': t('Message'), maxlength: '4000'}) as HTMLTextAreaElement;
+    const text = h('textarea', {class: 'line-in bubble-in', rows: '1', placeholder: t('Write to {address}…', {address: inbox.shown(address)}), 'aria-label': t('Message'), maxlength: '4000'}) as HTMLTextAreaElement;
     const grow = () => { text.style.height = 'auto'; text.style.height = `${Math.min(text.scrollHeight + 2, 200)}px`; };
     text.addEventListener('input', grow);
     const sendB = button(t('Send'), 'primary');
@@ -248,7 +272,7 @@ export function inboxPage(ctx: Context): Node[] {
     sendB.addEventListener('click', () => void go());
     text.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); void go(); } });
     pane.replaceChildren(
-      h('header', {class: 'inbox-top'}, h('b', {class: 'mono'}, address), lineWord, h('span', {class: 'grow'}), ...decide),
+      h('header', {class: 'inbox-top'}, h('b', {class: 'mono'}, inbox.shown(address)), lineWord, h('span', {class: 'grow'}), ...decide),
       messages,
       h('div', {class: 'inbox-write'},
         h('div', {class: 'row write-line'}, text, sendB),
@@ -259,7 +283,7 @@ export function inboxPage(ctx: Context): Node[] {
       live = new inbox.Live(mine, address, add, (on) => { lineWord.textContent = on ? t('Direct') : t('Through the Remote'); });
       live.start();
     }
-    for (const b of list.querySelectorAll('.inbox-row')) b.toggleAttribute('aria-current', b.querySelector('.mono')?.textContent === address);
+    for (const b of list.querySelectorAll<HTMLElement>('.inbox-row')) b.toggleAttribute('aria-current', b.dataset.address === address);
   };
 
   void paint();

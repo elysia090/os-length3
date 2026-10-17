@@ -142,10 +142,11 @@ pub const COMMANDS: &[Command] = &[
         ("l3 inbox send ADDRESS \"text\"", ["Review： or Question： first to ask; a /root/… path says what about", "頭に Review： か Question： で依頼。/root/… で対象"]),
         ("l3 inbox accept|block ADDRESS", ["", ""]),
     ], &["send", "accept", "block"], false),
-    c("address", "Inbox", ["your addresses", "あなたのアドレス"], &[
-        ("l3 address", ["each", "一覧"]),
-        ("l3 address claim NAME[@DOMAIN]", ["", ""]),
-        ("l3 address release NAME@DOMAIN", ["let it go: held for you 30 days, claim it again to take it back", "手放す（30日はあなたのために取り置き、取り直せば戻る）"]),
+    c("address", "Inbox", ["your names, and your code", "あなたの名前とコード"], &[
+        ("l3 address", ["each, with its term, and your code", "それぞれと期限、あなたのコード"]),
+        ("l3 address claim NAME[@DOMAIN]", ["a name here: first come, for five years; on your domain, beside it", "ここでの名前（早い者勝ち、5 年）。自分のドメインなら並べて"]),
+        ("l3 address renew NAME", ["five more years from now", "今から 5 年延ばす"]),
+        ("l3 address release NAME", ["let it go: held for you 30 days, claim it again to take it back", "手放す（30日はあなたのために取り置き、取り直せば戻る）"]),
         ("l3 address domain DOMAIN", ["the DNS record that proves it is yours", "あなたのものだと示す DNS レコード"]),
     ], &["claim", "domain", "release"], false),
 ];

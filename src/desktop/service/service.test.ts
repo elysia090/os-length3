@@ -81,7 +81,7 @@ test('an account is a provider identity: the same person signs in to the same ac
   assert.equal((await s.call('GET', '/v1/repos', {token: raw})).status, 200);
   // No way in without a provider: there are no blank accounts.
   assert.notEqual((await s.call('POST', '/api/auth/sign-in/anonymous', {body: {}})).status, 200);
-  assert.deepEqual((await s.call('GET', '/v1/about')).json, {passkey: true, providers: ['dev']});
+  assert.deepEqual((await s.call('GET', '/v1/about')).json, {passkey: true, providers: ['dev'], domain: 'length3.test'});
 });
 
 test('a device asks for a code, a signed-in browser approves it, the device gets its own session', async () => {
@@ -553,4 +553,48 @@ test('Names: people and servers share one namespace; a name let go is held for i
   const gone = (await s.call('GET', '/v1/inbox/lookup?address=ren@ren.dev', {token: mio})).json as unknown as {reachable: boolean; why: string};
   assert.deepEqual([gone.reachable, gone.why], [false, 'its domain no longer names this Remote']);
   assert.ok(((await s.call('GET', '/v1/inbox/me', {token: ren})).json.addresses as {address: string; lapsed?: boolean}[]).find((a) => a.address === 'ren@ren.dev')?.lapsed);
+});
+
+test('Names on the Remote: first come, for five years at a time, renewed by their owner; a code finds whoever has it', async () => {
+  const s = await service();
+  const {eq} = await import('drizzle-orm');
+  const ren = await s.start('Ren'), mio = await s.start('Mio');
+  const claimed = await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'ren'}});
+  await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'mio'}});
+  // Five years from now; a domain of one's own has no term.
+  const years = ((claimed.json.until as number) - Date.now()) / (365.25 * 86_400_000);
+  assert.ok(years > 4.99 && years < 5.01, String(years));
+  type Me = {code: string; addresses: {address: string; until?: number; ended?: boolean}[]};
+  const me = (await s.call('GET', '/v1/inbox/me', {token: ren})).json as unknown as Me;
+  assert.match(me.code, /^\d{6}$/);
+  // Found by its name alone, or by its code; a code is only ever one principal's.
+  const look = async (q: string) => (await s.call('GET', `/v1/inbox/lookup?address=${q}`, {token: mio})).json as unknown as {reachable: boolean; address?: string};
+  assert.deepEqual(await look('ren'), {address: 'ren@length3.test', reachable: true});
+  assert.deepEqual(await look(me.code), {address: 'ren@length3.test', reachable: true});
+  assert.equal((await s.call('GET', '/v1/inbox/me', {token: ren})).json.code, me.code);
+  assert.notEqual(((await s.call('GET', '/v1/inbox/me', {token: mio})).json as unknown as Me).code, me.code);
+  // A message reaches a code as it does a name.
+  assert.equal((await s.call('POST', '/v1/inbox/messages', {token: mio, body: {to: me.code, body: 'hi'}})).status, 201);
+  // Past its term it answers no one, and is held for Ren a while: nobody else may claim it, Ren renews it back.
+  await s.db.update(schema.address).set({until: new Date(Date.now() - 1000)}).where(eq(schema.address.address, 'ren@length3.test'));
+  assert.equal((await look('ren')).reachable, false);
+  assert.ok(((await s.call('GET', '/v1/inbox/me', {token: ren})).json as unknown as Me).addresses[0].ended);
+  const held = await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'ren'}});
+  assert.deepEqual([held.status, held.json.error], [409, 'held']);
+  assert.equal((await s.call('POST', '/v1/inbox/addresses/mio@length3.test/renew', {token: ren})).status, 404);
+  const renewed = await s.call('POST', '/v1/inbox/addresses/ren@length3.test/renew', {token: ren});
+  assert.equal(renewed.status, 200);
+  assert.ok((renewed.json.until as number) > Date.now() + 4.9 * 365 * 86_400_000);
+  assert.equal((await look('ren')).reachable, true);
+  // Not renewed, and held long enough: anyone's.
+  await s.db.update(schema.address).set({until: new Date(Date.now() - 31 * 86_400_000)}).where(eq(schema.address.address, 'ren@length3.test'));
+  assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'ren'}})).status, 201);
+  // A server's name the same: for a term, renewed by its owner; it has a code too.
+  const made = await s.call('POST', '/v1/servers', {token: mio, body: {name: 'Trip', address: 'trip'}});
+  assert.match(made.json.code as string, /^\d{6}$/);
+  assert.ok((made.json.until as number) > Date.now());
+  const sid = made.json.id as string;
+  assert.equal((await s.call('POST', `/v1/servers/${sid}/renew`, {token: ren})).status, 404);
+  assert.equal((await s.call('POST', `/v1/servers/${sid}/renew`, {token: mio})).status, 200);
+  assert.equal(((await s.call('GET', '/v1/servers', {token: mio})).json as unknown as {code: string}[])[0].code, made.json.code);
 });

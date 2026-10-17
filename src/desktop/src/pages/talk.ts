@@ -1,5 +1,6 @@
 import {h} from '../dom.ts';
 import {t} from '../i18n.ts';
+import {shown} from '../inbox.ts';
 import * as servers from '../servers.ts';
 
 // A board's talk: read as a conversation is, oldest above and newest at the
@@ -72,9 +73,9 @@ export function timeline(scroller: HTMLElement, board: string, member: boolean):
   // ---- a post: a face and a name where a run starts, then the text ----
   const card = (p: servers.Post, s: Shown, runs: boolean) => {
     const when = new Date(p.at);
-    const [name, domain] = p.by.split('@');
-    // A guest is shown by the name of their email, and as a guest.
-    const where = p.guest ? t('guest') : `@${domain}`;
+    // A name on this Remote is shown alone; one on a domain with it. A guest by the name of their email, and as a guest.
+    const [name, domain] = shown(p.by).split('@');
+    const where = p.guest ? t('guest') : domain ? `@${domain}` : '';
     const time = h('time', {class: 'muted small', datetime: when.toISOString(), title: when.toLocaleString()}, clock(p.at));
     const below = h('div', {class: 'tl-foot muted small'});
     const acts = h('div', {class: 'tl-acts'});

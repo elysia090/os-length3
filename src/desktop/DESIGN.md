@@ -97,25 +97,34 @@ trusted for one thing only:
 2. **A passkey** is then the person's own key: from there on they sign in
    without the provider, and a turn-off or a new device asks for it. A
    device holds a lease on the person, never the person.
-3. **The Remote** keeps what is theirs and gives them their first name on
-   its own domain (`ren@length3.com`), first come, as a mail provider gives
-   an address. Most people stop here, and need nothing more.
-4. **A server** is a group of people on a Remote, with a name of its own in
-   the same namespace (`trip@length3.com`).
-5. **A domain** is the last step, for a person or for a server: names of
-   their own (`ren@ren.dev`), right because the domain's DNS names this
-   Remote and this account (a TXT record, checked again whenever it
-   matters). Then the Remote is only a place: things are kept there, as mail
-   is kept where a domain's MX says, and moving to another Remote moves
-   where they are kept, not what they are called.
+3. **The Remote** keeps what is theirs and gives them a name, `ren`: first
+   come, theirs for five years at a time, renewed by them (a Renew near the
+   end of the term; not renewed, it is held for them 30 days, then anyone's).
+   It is a name on this Remote, not a domain anyone holds: it is kept as
+   `ren@length3.com` only because that is where it is kept, and is shown
+   alone. With it comes a **code**, six digits (`204816`), to be found by
+   when a name is hard to say or spell: given once, never given again, so a
+   code that reached someone goes on meaning them or no one. Most people stop
+   here, and need nothing more.
+4. **A server** is a group of people on a Remote, with a name and a code of
+   its own in the same namespace (`trip`), on the same terms, renewed by its
+   owner.
+5. **A domain** is the last step, for a person or for a server: a name of
+   one's choosing on it (`ren@ren.dev`), shown beside the name on the Remote,
+   right because the domain's DNS names this Remote and this account (a TXT
+   record, checked again whenever it matters). It has no term of its own:
+   it answers while the record is there. Then the Remote is only a place:
+   things are kept there, as mail is kept where a domain's MX says, and
+   moving to another Remote moves where they are kept, not what they are
+   called.
 
 What is kept is checked by its name too: blobs and releases are named by
 their sha256, so what comes from any Remote can be checked against it.
 
-There is one kind of owner, a **principal**, named `name@domain`: a person
-(an account) or a server (a group of people). Both are claimed in the same
-namespace, so `ren@length3.com` and `trip@length3.com` cannot be the same
-name. A person may have several addresses: aliases of one principal, one
+There is one kind of owner, a **principal**: a person (an account) or a
+server (a group of people), named on its Remote (`ren`, `trip`) or on a
+domain (`ren@ren.dev`), and found by its code as well. Both are claimed in
+the same namespace, so `ren` and `trip` cannot be the same name. A person may have several addresses: aliases of one principal, one
 of them shown. Everything else belongs to exactly one principal: a repo to
 a person (a server's own repos come next; there is no fork), a board with
 its plan and talk to its server.
@@ -149,7 +158,9 @@ nobody else can take it and be taken for its owner:
 | What | Owned by | Trusted for it | Let go |
 |---|---|---|---|
 | a domain | the person, or the server, it was proven for | its DNS (checked again on use) | its names stop answering when its record is gone; 30 days later they are let go |
-| a principal (an address, a server's name) | its account, or the server's people | its domain | 30 days no one else can claim it; its account may take it back |
+| a name on the Remote (`ren`, `trip`) | its account, or the server's owner | its Remote, for five years at a time | not renewed, or let go: 30 days no one else can claim it; its owner may take it back |
+| a name on a domain (`ren@ren.dev`) | its account, or the server | its domain's DNS | let go: 30 days held as above |
+| a code (`204816`) | its principal | its Remote | never given again |
 | a repo | a principal | its Remote, and the digests | turned off: 30 days, then gone |
 | a server | its people (its owner removes it) | its Remote | removed, or its last person leaves: 30 days, then gone |
 | a repo shown in a server | its owner, lent to the server | its Remote | taken off, or its owner leaves the server: at once |
@@ -180,10 +191,11 @@ by the same rules:
   oneself, one's domain, the server one is in. What could mean two things is
   an error, never a guess.
 
-**Without a domain of one's own** (step 3 and no further), a person's names
-are the Remote's domain's, and trusted to the Remote that owns it. Proving
-a domain later adds `ren@ren.dev` beside it; the old name stays theirs, an
-alias, until they let it go.
+**Without a domain of one's own** (step 3 and no further), a person has a
+name and a code on the Remote, trusted to it, and that is all they need: it
+is how they are written (`ren:hello`), found (`ren`, `204816`) and shown.
+Proving a domain later adds a name of their choosing beside it
+(`ren@ren.dev`); the name on the Remote stays theirs while they renew it.
 
 ### Another OS in a Prompt
 

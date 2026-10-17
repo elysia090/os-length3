@@ -44,7 +44,7 @@
 import {and, asc, desc, eq, gt, gte, inArray, isNull, lt, lte, sql} from 'drizzle-orm';
 import type {Context, Hono} from 'hono';
 import {hunks, lines, merge, text, valid} from '../src/plan.ts';
-import {claim, HOLD, live, release} from './names.ts';
+import {claim, codeOf, HOLD, live, release} from './names.ts';
 import {takeDown} from './seen.ts';
 import {address, board, contact, guest, member, planVersion, repoPublic, repoShare, server, talk} from './schema.ts';
 
@@ -138,12 +138,14 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
         .where(and(eq(server.goneBy, me), gte(server.goneAt, new Date(Date.now() - HOLD)))) as {id: string; name: string; address: string; at: Date}[];
       return c.json(held.map((x) => ({id: x.id, name: x.name, address: x.address, until: x.at.getTime() + HOLD})));
     }
-    const rows = await db.select({id: server.id, name: server.name, address: server.address, owner: member.owner}).from(member)
-      .innerJoin(server, eq(server.id, member.serverId)).where(and(eq(member.userId, me), isNull(server.goneAt))).orderBy(member.addedAt) as {id: string; name: string; address: string; owner: number}[];
+    const rows = await db.select({id: server.id, name: server.name, address: server.address, owner: member.owner, until: address.until}).from(member)
+      .innerJoin(server, eq(server.id, member.serverId)).leftJoin(address, eq(address.address, server.address))
+      .where(and(eq(member.userId, me), isNull(server.goneAt))).orderBy(member.addedAt) as {id: string; name: string; address: string; owner: number; until: Date | null}[];
     if (!rows.length) return c.json([]);
+    const codes = await Promise.all(rows.map((r) => codeOf(db, {serverId: r.id})));
     const boards = await db.select({id: board.id, serverId: board.serverId, name: board.name, open: board.open, guests: board.guests}).from(board)
       .where(inArray(board.serverId, rows.map((r) => r.id))).orderBy(board.createdAt) as {id: string; serverId: string; name: string; open: number; guests: number}[];
-    return c.json(rows.map((r) => ({id: r.id, name: r.name, address: r.address, owner: !!r.owner,
+    return c.json(rows.map((r, i) => ({id: r.id, name: r.name, address: r.address, owner: !!r.owner, code: codes[i], until: r.until?.getTime() ?? null,
       boards: boards.filter((b) => b.serverId === r.id).map((b) => ({id: b.id, name: b.name, open: !!b.open, guests: !!b.guests}))})));
   });
 
@@ -167,14 +169,27 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     if (Number(count) >= SERVER.servers) return c.json({error: 'too many servers'}, 429);
     const id = key(), bid = key();
     await db.insert(server).values({id, name: n, address: `${handle}@${domain}`});
-    const got = await claim(db, handle, domain, {serverId: id});
+    const got = await claim(db, handle, domain, {serverId: id}, domain === d.domain);
     if (!got.ok) {
       await db.delete(server).where(eq(server.id, id));
       return c.json(got.until ? {error: 'held', until: got.until} : {error: 'taken'}, 409);
     }
     await db.insert(member).values({serverId: id, userId: me, address: at, owner: 1});
     await db.insert(board).values({id: bid, serverId: id, name: first});
-    return c.json({id, name: n, address: `${handle}@${domain}`, owner: true, boards: [{id: bid, name: first, open: false, guests: false}]}, 201);
+    return c.json({id, name: n, address: `${handle}@${domain}`, owner: true, code: await codeOf(db, {serverId: id}), until: got.until,
+      boards: [{id: bid, name: first, open: false, guests: false}]}, 201);
+  });
+
+  // Its name renewed for another term, by its owner (and taken back, if its term ran out a little while ago).
+  v1.post('/servers/:id/renew', async (c) => {
+    const m = await membership(c.req.param('id'), c.get('userId'));
+    if (!m) return c.json({error: 'no such server of yours'}, 404);
+    if (!m.owner) return c.json({error: 'only its owner renews its name'}, 403);
+    const [s] = await db.select({address: server.address}).from(server).where(eq(server.id, m.serverId)) as {address: string}[];
+    const [h, dom] = (s?.address ?? '').split('@');
+    if (!h || dom !== d.domain) return c.json({error: 'no name of this Remote to renew'}, 409);
+    const got = await claim(db, h, dom, {serverId: m.serverId}, true);
+    return got.ok ? c.json({address: s.address, until: got.until}) : c.json({error: 'taken'}, 409);
   });
 
   // Back within the hold, by whoever removed it or left it last: its name too, held for it.
@@ -184,7 +199,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     if (!s) return c.json({error: 'nothing of yours to bring back'}, 404);
     const at = await myAddress(me);
     if (!at) return c.json({error: 'claim an address first'}, 409);
-    if (s.address) { const [h, dom] = s.address.split('@'); await claim(db, h, dom, {serverId: id}); }
+    if (s.address) { const [h, dom] = s.address.split('@'); await claim(db, h, dom, {serverId: id}, dom === d.domain); }
     await db.update(server).set({goneAt: null, goneBy: null}).where(eq(server.id, id));
     await db.insert(member).values({serverId: id, userId: me, address: at, owner: 1}).onConflictDoUpdate({target: [member.serverId, member.userId], set: {owner: 1}});
     return c.json({id, name: s.name, address: s.address});

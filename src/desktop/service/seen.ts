@@ -22,7 +22,7 @@
 import {and, eq, inArray, isNull, not, type SQL} from 'drizzle-orm';
 import type {Hono} from 'hono';
 import type {Bucket} from './bucket.ts';
-import {HOLD, live} from './names.ts';
+import {byCode, HOLD, live} from './names.ts';
 import {address, cut, member, repo, repoPublic, repoShare, server} from './schema.ts';
 
 export type Seen = 'private' | 'servers' | 'everyone';
@@ -37,6 +37,8 @@ export interface SeenDeps {
   bucket: Bucket;
   /** Who is asking, if they are signed in. */
   viewer: (req: Request) => Promise<string | null>;
+  /** This Remote's own domain: a name written alone is on it. */
+  domain: string;
 }
 
 const HEX = /^[0-9a-f]{64}$/;
@@ -192,14 +194,17 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
    * theirs), told without its owner; else, `face` being its owner, their repo
    * if `viewer` is them or in a server it is shown in.
    */
-  const find = async (face: string, name: string, viewer: string | null): Promise<{row: Row; as: string; owner?: string} | null> => {
-    face = face.toLowerCase();
+  const find = async (written: string, name: string, viewer: string | null): Promise<{row: Row; as: string; owner?: string} | null> => {
+    const face = await faceOf(written);
+    if (!face) return null;
     const [p] = await db.select().from(repoPublic).where(and(eq(repoPublic.face, face), eq(repoPublic.name, name), isNull(repoPublic.releasedAt))) as Public[];
     if (p) {
-      const answers = p.serverId
-        ? (await db.select({u: member.userId}).from(member).innerJoin(server, eq(server.id, member.serverId))
-          .where(and(eq(member.serverId, p.serverId), eq(member.userId, p.userId), isNull(server.goneAt)))).length > 0
-        : (await db.select({a: address.address}).from(address).where(and(eq(address.address, face), eq(address.userId, p.userId), live))).length > 0;
+      // A face answers while its name does (let go, lapsed or past its term, it does not), and, a server's, while its owner is in it.
+      const named = (await db.select({a: address.address}).from(address)
+        .where(and(eq(address.address, face), p.serverId ? eq(address.serverId, p.serverId) : eq(address.userId, p.userId), live))).length > 0;
+      const answers = named && (!p.serverId
+        || (await db.select({u: member.userId}).from(member).innerJoin(server, eq(server.id, member.serverId))
+          .where(and(eq(member.serverId, p.serverId), eq(member.userId, p.userId), isNull(server.goneAt)))).length > 0);
       const row = answers ? await mainRow(p.userId, p.repo) : undefined;
       if (row && !row.offAt) return {row, as: `${face}:${name}`};
     }
@@ -216,6 +221,16 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       if (!via) return null;
     }
     return {row, as: `${face}:${name}`, owner: face};
+  };
+  /** A face as written: name@domain, a name alone (on this Remote), or a code (its owner's first name). */
+  const faceOf = async (written: string): Promise<string | null> => {
+    const q = written.toLowerCase();
+    if (q.includes('@')) return q;
+    const who = await byCode(db, q);
+    if (!who) return /^\d{6}$/.test(q) ? null : `${q}@${d.domain}`;
+    const [r] = await db.select({a: address.address}).from(address)
+      .where(and('userId' in who ? eq(address.userId, who.userId) : eq(address.serverId, who.serverId), live)).orderBy(address.createdAt) as {a: string}[];
+    return r?.a ?? null;
   };
   const pushed = async (row: Row) => (row.pushed
     ? (await db.select({tree: cut.tree, title: cut.title, time: cut.time}).from(cut)

@@ -6,6 +6,7 @@ import * as draft from '../draft.ts';
 import type {RemoteRepo} from '../draft.ts';
 import * as account from '../remote.ts';
 import {kept, store} from '../repos.ts';
+import {shown} from '../inbox.ts';
 import * as servers from '../servers.ts';
 import {pageHead, parts} from './common.ts';
 import type {Context} from './context.ts';
@@ -187,15 +188,15 @@ async function whoSees(el: HTMLElement, now: servers.RepoSeen, done: () => Promi
         const box = h('input', {type: 'checkbox'}) as HTMLInputElement;
         box.checked = chosen.has(s.id);
         box.addEventListener('change', () => { if (box.checked) chosen.add(s.id); else chosen.delete(s.id); });
-        return h('label', {class: 'check-row'}, box, h('span', {}, s.name), h('span', {class: 'muted small mono'}, s.address));
+        return h('label', {class: 'check-row'}, box, h('span', {}, s.name), h('span', {class: 'muted small mono'}, shown(s.address)));
       }) : [h('p', {class: 'muted small'}, t('You are in no server yet.'))]),
       h('p', {class: 'muted small'}, t('Their people see it as it was last pushed, and whose it is. Nobody writes in it but you.')));
       return;
     }
     const pick = h('select', {class: 'line-in', 'aria-label': t('Seen as')}) as HTMLSelectElement;
     const mineName = me?.addresses[0]?.address;
-    pick.replaceChildren(...mine.filter((s) => s.address).map((s) => h('option', {value: s.id}, `${s.address}:${now.name}`)),
-      ...(mineName ? [h('option', {value: 'me'}, `${mineName}:${now.name}`)] : []));
+    pick.replaceChildren(...mine.filter((s) => s.address).map((s) => h('option', {value: s.id}, `${shown(s.address)}:${now.name}`)),
+      ...(mineName ? [h('option', {value: 'me'}, `${shown(mineName)}:${now.name}`)] : []));
     pick.value = as;
     if (pick.selectedIndex < 0) pick.selectedIndex = 0;
     as = pick.value;

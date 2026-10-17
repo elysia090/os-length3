@@ -100,11 +100,14 @@ may be left out and `#N` is that repo's issue N: `l3 commit`, `l3 start #3`,
 l3's version and the root's.
 
 Names are written owner first, as DESIGN.md §0 "Names" sets out (one
-namespace of principals, `name@domain`, people and servers alike): `hello`,
-`hello/src/a.c`, `hello#3`, `ren@length3.com:hello` (one's own repo written
-in full), `trip#general` (a server's board; `#general` when one is in one
-server). `l3 address release NAME@DOMAIN` lets an address go: it answers no
-one from then, and is held for its owner 30 days.
+namespace of principals, people and servers alike): `hello`,
+`hello/src/a.c`, `hello#3`, `ren:hello` (a repo of `ren`'s), `trip#general`
+(a server's board; `#general` when one is in one server). A name on the
+Remote (`ren`, `trip`) is first come and held five years at a time:
+`l3 address` shows each name's term and your code (six digits anyone can
+find you by, or write to), `l3 address renew NAME` holds it five more years,
+and `l3 address release NAME` lets it go (held for you 30 days). A name of
+your choosing on a domain you own (`ren@ren.dev`) is shown beside it.
 
 There is no sync command. Connected, l3 keeps each repo in step with the
 Remote by itself: a command that reads a repo takes in the Remote's changes

@@ -508,8 +508,22 @@ fn run(a: Args) -> Result<(), String> {
         ["address"] => {
             let me = inbox::me()?;
             if a.json { return json(&me); }
-            if me.addresses.is_empty() { out(tr!("No address yet (l3 address claim NAME, which is NAME@{})", "アドレスはまだありません（l3 address claim NAME で NAME@{} に）", me.domain)); }
-            for x in &me.addresses { out(format!("{}{}", x.address, if x.ssh { tr!("  · SSH allowed", "  · SSH 許可") } else { String::new() })); }
+            if me.addresses.is_empty() { out(tr!("No name yet (l3 address claim NAME: first come, yours for five years at a time)", "名前はまだありません（l3 address claim NAME: 早い者勝ち、5 年ごとの更新であなたのもの）")); }
+            let at = |ms: u64| UNIX_EPOCH.checked_add(std::time::Duration::from_millis(ms)).map(day).unwrap_or_default();
+            for x in &me.addresses {
+                let state = if x.lapsed { tr!("  · its domain no longer names this Remote", "  · ドメインがこの Remote を指していません") }
+                    else if x.ended { tr!("  · its term ended: l3 address renew {}", "  · 期限切れ: l3 address renew {}", me.shown(&x.address)) }
+                    else if let Some(u) = x.until { tr!("  · until {}", "  · {} まで", at(u)) } else { String::new() };
+                out(format!("{}{state}{}", me.shown(&x.address), if x.ssh { tr!("  · SSH allowed", "  · SSH 許可") } else { String::new() }));
+            }
+            if !me.code.is_empty() { out(tr!("Your code: {} (anyone can find you by it)", "あなたのコード: {}（これで見つけてもらえます）", me.code)); }
+            Ok(())
+        }
+        ["address", "renew", name] => {
+            let me = inbox::me()?;
+            let until = inbox::renew(&me.full(name))?;
+            out(tr!("{} is yours until {}", "{} は {} まであなたのものです", me.shown(&me.full(name)),
+                UNIX_EPOCH.checked_add(std::time::Duration::from_millis(until)).map(day).unwrap_or_default()));
             Ok(())
         }
         ["address", "domain", domain] => {
@@ -521,6 +535,7 @@ fn run(a: Args) -> Result<(), String> {
             Ok(())
         }
         ["address", "release", a] => {
+            let a = &inbox::me().map(|me| me.full(a)).unwrap_or_else(|_| a.to_string());
             let until = inbox::release(a)?;
             out(tr!("Let go of {} (held for you until {}; claim it again to take it back)", "{} を手放しました（{} まであなたのために取り置き。取り直せば戻ります）",
                 a, std::time::UNIX_EPOCH.checked_add(std::time::Duration::from_millis(until)).map(day).unwrap_or_default()));

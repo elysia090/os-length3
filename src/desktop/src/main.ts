@@ -13,6 +13,7 @@ import {ServerLayer} from './pages/server-layer.ts';
 import {runtime} from './pages/runtime.ts';
 import {FileTree} from './pages/tree.ts';
 import {begin} from './lifecycle.ts';
+import {learnHome} from './inbox.ts';
 import {devicePage} from './pages/device.ts';
 import {getState, loadState} from './state.ts';
 import {onLang, t, useLang} from './i18n.ts';
@@ -148,6 +149,8 @@ if (asking.has('device')) {
       history.replaceState(null, '', u);
       save(PURPOSE_KEY, 'remote');
     }
+    // Which domain is this Remote's, so a name on it is shown alone (`ren`), not as a domain's.
+    void learnHome();
     select(restorePurpose(load(PURPOSE_KEY)));
     void begin().then(() => render());
   });

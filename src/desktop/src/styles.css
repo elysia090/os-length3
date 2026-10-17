@@ -770,6 +770,9 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .stub { display: flex; align-items: center; width: min(100%, 400px); min-height: var(--h-control); border: 1px solid var(--edge); border-radius: var(--r-field); background: var(--raised); }
 .stub-text, .stub-in { flex: 1; min-width: 0; height: calc(var(--h-control) - 2px); padding: 0 var(--s3); border: 0; border-radius: var(--r-field) 0 0 var(--r-field); background: transparent; color: var(--ink); font: 600 var(--t-body)/1 var(--mono); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stub-text { cursor: copy; }
+/* The code beside the name: six digits to be found by, copied by a press. */
+.stub-code { flex: none; height: calc(var(--h-control) - 2px); padding: 0 var(--s3); border: 0; border-left: 1px solid var(--rule); background: transparent; color: var(--sub); font: var(--t-meta)/1 var(--mono); letter-spacing: .08em; cursor: copy; }
+.stub-code:hover { background: var(--ground); color: var(--ink); }
 .stub-text:hover { background: var(--ground); }
 .stub-in:focus { outline: none; }
 .stub:has(.stub-in:focus-visible) { outline: 2px solid var(--ink); outline-offset: 2px; }

@@ -26,7 +26,7 @@
 
 import {and, desc, eq, gt, inArray, isNull, lt, or, sql} from 'drizzle-orm';
 import type {Hono} from 'hono';
-import {claim, HOLD, live, release} from './names.ts';
+import {byCode, claim, codeOf, HOLD, live, release, termsFor} from './names.ts';
 import {address, contact, message, signal, user} from './schema.ts';
 
 export const INBOX = {
@@ -111,11 +111,23 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     return ok;
   };
 
-  /** Whom an address reaches on this Remote, if anyone: a person's live address. */
+  /**
+   * Whom `a` reaches on this Remote, if anyone: a person's live address. A
+   * name alone is a name on this Remote (`ren`), six digits a code.
+   */
   const resolve = async (a: string): Promise<{userId: string; address: string} | {why: string}> => {
-    const p = parseAddress(a);
+    const q = a.trim().toLowerCase();
+    if (/^\d{6}$/.test(q)) {
+      const who = await byCode(d.db, q);
+      if (!who) return {why: 'no such code'};
+      if (!('userId' in who)) return {why: 'a server, not a person'};
+      const [first] = (await mine(who.userId)).filter((r) => !r.lapsedAt && !(r.until && r.until.getTime() <= Date.now()));
+      return first ? {userId: who.userId, address: first.address} : {why: 'no such address'};
+    }
+    const p = parseAddress(q.includes('@') ? q : `${q}@${d.domain}`);
     if (!p) return {why: 'not an address'};
     const [row] = await d.db.select().from(address).where(and(eq(address.address, `${p.name}@${p.domain}`), isNull(address.releasedAt))) as (typeof address.$inferSelect)[];
+    if (row?.until && row.until.getTime() <= Date.now()) return {why: 'no such address'};
     if (row?.userId) {
       if (!await stillNamed(row)) return {why: 'its domain no longer names this Remote'};
       return {userId: row.userId, address: row.address};
@@ -149,9 +161,14 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       found: records.some((r) => r.remote === host && r.proof === proof)});
   });
 
+  // Names made before names had a term get theirs, once, the first time anyone asks.
+  let termed: Promise<void> | null = null;
   v1.get('/inbox/me', async (c) => {
+    await (termed ??= termsFor(d.db, d.domain));
     const list = await mine(c.get('userId'));
-    return c.json({domain: d.domain, account: c.get('userId'), addresses: list.map((a) => ({address: a.address, ssh: Boolean(a.ssh), ...(a.lapsedAt ? {lapsed: true} : {})}))});
+    const code = await codeOf(d.db, {userId: c.get('userId')});
+    return c.json({domain: d.domain, account: c.get('userId'), code, addresses: list.map((a) => ({address: a.address, ssh: Boolean(a.ssh),
+      ...(a.until ? {until: a.until.getTime(), ...(a.until.getTime() <= Date.now() ? {ended: true} : {})} : {}), ...(a.lapsedAt ? {lapsed: true} : {})}))});
   });
 
   // Claim an address. On this Remote's domain the name is free or not; on another,
@@ -170,10 +187,19 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
         return c.json({error: 'not published', publish: {name: recordName(domain), type: 'TXT', value: `v=length3; remote=${host}; proof=${proof}`}}, 409);
       }
     }
-    // One namespace with servers' names; a name let go is held for its old owner a while.
-    const got = await claim(d.db, name, domain, {userId: c.get('userId')});
-    if (got.ok) return c.json({address: `${name}@${domain}`}, 201);
+    // One namespace with servers' names; on this Remote, first come, for a term; a name let go is held for its old owner a while.
+    const got = await claim(d.db, name, domain, {userId: c.get('userId')}, domain === d.domain);
+    if (got.ok) return c.json({address: `${name}@${domain}`, until: got.until}, 201);
     return c.json(got.until ? {error: 'held', until: got.until} : {error: 'taken'}, 409);
+  });
+
+  // Renew a name on this Remote: held for another term from now (and taken back, if its term ran out a little while ago).
+  v1.post('/inbox/addresses/:address/renew', async (c) => {
+    const a = c.req.param('address').toLowerCase();
+    const [row] = await d.db.select().from(address).where(and(eq(address.address, a), eq(address.userId, c.get('userId')), isNull(address.releasedAt))) as (typeof address.$inferSelect)[];
+    if (!row || row.domain !== d.domain) return c.json({error: 'not yours'}, 404);
+    const got = await claim(d.db, row.name, row.domain, {userId: c.get('userId')}, true);
+    return got.ok ? c.json({address: a, until: got.until}) : c.json({error: 'taken'}, 409);
   });
 
   // Let an address go: it stops answering at once, and is held for this account a while (it may take it back).

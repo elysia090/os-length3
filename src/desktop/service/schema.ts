@@ -142,13 +142,17 @@ export const blob = pgTable('blob', {
 // ---- Inbox (inbox.ts) ----
 
 /**
- * A principal's name, name@domain: a person's address (how they are found,
- * the same shape an SSH target has), or a server's name. Both are claimed
- * here, in one namespace (names.ts). A name on the Remote's own domain is
- * claimed here; one on another domain is that domain's to publish (its DNS).
- * A name let go is held (releasedAt) for a while before anyone else may
- * claim it; a name whose domain stopped naming this Remote is lapsed
- * (lapsedAt) and answers to no one until it does again.
+ * A principal's name: a person's (how they are found, the same shape an SSH
+ * target has) or a server's, claimed here in one namespace (names.ts).
+ *
+ * A name on this Remote is just a name (`ren`; stored as name@domain under
+ * the Remote's own domain, which is where it is kept, not something its
+ * owner holds): first come, and held for five years at a time (until),
+ * renewed by its owner. A domain is only a place to put a name of one's
+ * choosing beside it (`ren@ren.dev`): that domain's to publish (its DNS),
+ * lapsed (lapsedAt) while its record is gone, with no term of its own.
+ * A name let go (releasedAt), or not renewed, is held a while before anyone
+ * else may claim it.
  */
 export const address = pgTable('address', {
   address: text('address').primaryKey(),
@@ -158,10 +162,24 @@ export const address = pgTable('address', {
   domain: text('domain').notNull(),
   /** Opt-in to be reached over SSH at this address; its own permission, off unless asked. */
   ssh: integer('ssh').notNull().default(0),
+  /** A name on this Remote answers until then, unless renewed; null on a domain of one's own. */
+  until: timestamp('until'),
   releasedAt: timestamp('released_at'),
   lapsedAt: timestamp('lapsed_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (t) => [index('address_user_idx').on(t.userId), index('address_server_idx').on(t.serverId)]);
+
+/**
+ * A principal's code: six digits to be found by, said or typed more easily
+ * than a name is spelled. Given once and never given again, so a code that
+ * reached someone goes on meaning them, or no one.
+ */
+export const principalCode = pgTable('principal_code', {
+  code: text('code').primaryKey(),
+  userId: text('user_id'),
+  serverId: text('server_id'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => [uniqueIndex('principal_code_user_idx').on(t.userId), uniqueIndex('principal_code_server_idx').on(t.serverId)]);
 
 /** Whom an account talks with: accepted (messages and live chat), or blocked. */
 export const contact = pgTable('contact', {

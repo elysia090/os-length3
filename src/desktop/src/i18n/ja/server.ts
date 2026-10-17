@@ -106,7 +106,9 @@ export default {
   'Bring a repo out to the band with ⊕, or open one from File.': '⊕ で repo を帯に出すか、File から開いてください。',
   // A server's name, in the namespace people's addresses are in.
   'Its address': 'アドレス',
-  'Its address is a name like a person\'s: nobody else can have it while the server does.': 'アドレスは人のアドレスと同じ名前です。サーバーが持っている間はほかの誰も取れません。',
+  'Its name on this Remote, as a person has one: first come, nobody else\'s while it is the server\'s, for five years at a time, renewed by its owner.': '人と同じく、この Remote での名前です。早い者勝ちで、サーバーが持つ間はほかの誰のものにもならず、5 年ごとにオーナーが更新します。',
+  'Its code': 'コード',
+  'Its term ended; held for it until {date}': '期限が切れました。{date} まではこのサーバーのために取り置かれます',
   'Bring back {name}': '{name} を戻す',
   'Held until {date}': '{date} まで取り置き',
   'That name is taken': 'その名前は使われています',
