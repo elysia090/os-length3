@@ -304,7 +304,7 @@ fix is always a piece from §3, not a new rule.
 | A page that forgets, when one comes back, where it was read and what was searched | It comes back where it was, each repo at its own place |
 | The repo worked on put back by another page (a Git chip, then Forge on the old one) | One repo worked on, chosen anywhere, opened next on every page |
 | The keyboard dropped after a step (an arrow along the row, an issue just made) | It stays on the same part of the box, or lands on what was made |
-| A file's box shrunk to its text, short files stacked to fit one screen | Each file a tall box of its own (about the window's height), read by scrolling down |
+| A file's box shrunk to its text, short files stacked to fit one screen | Each file a tall box of its own (about three quarters of the window), read by scrolling down |
 | The empty box at the foot standing over what one reads | It steps back while one reads, and comes back to the keyboard, a press on the Prompt or the pointer at the foot |
 | A choice that leaves its overlay to be closed by hand (a file chosen in File) | Choosing the thing to work on puts the overlay away and the caret in it |
 | The only way to something folded away with its pane (search, narrow) | The way stays where it was; only what it shows folds |
@@ -689,10 +689,10 @@ center says how to bring one out. The band is remembered on this device. Below t
 an endless page scrolled like a browser and opened at the file chosen in
 File. There are no tabs, no title, no index of links and no headings for
 directories. The center is where editing happens: each file is a plain
-text editor in its own tall box (at least about the window's height: 1.7
-times the half window it once had, a short file too, so one file at a time
-has the center and it is read by scrolling down, never packed to fit a
-screen), a little heavier line than the rest; a header with its place in "/" (`/root/<repo>/` quiet, the
+text editor in its own tall box (at least 1.4 times the half window it
+once had, about three quarters of the window, a short file too, so it is
+read by scrolling down, never packed to fit a screen), a little heavier
+line than the rest; a header with its place in "/" (`/root/<repo>/` quiet, the
 rest plain), then line numbers in a quiet gutter beside the text, which is
 itself the field (no box; the caret is the only sign). Typing saves on its
 own a moment later, on leaving the file, or with Ctrl+S; the header says

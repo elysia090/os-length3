@@ -405,11 +405,11 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 }
 .path span { font-weight: 400; }
 /* Each file is a box drawn a little heavier than other lines, since it is
-   the thing being worked on, and tall: one file at a time gets the height of
-   the window, a short one too (1.7 times the half window it had), so the
-   center is read by scrolling down, never packed to fit a screen. */
+   the thing being worked on, and tall: a short file too gets 1.4 times the
+   half window it had, so the center is read by scrolling down, never packed
+   to fit a screen. */
 .file {
-  display: flex; flex-direction: column; min-height: clamp(476px, 93.5vh, 1088px); margin-bottom: var(--s6);
+  display: flex; flex-direction: column; min-height: clamp(392px, 77vh, 896px); margin-bottom: var(--s6);
   border: var(--line-work) solid var(--edge); border-radius: var(--r-place);
 }
 /* A file reads like a plain text editor: line numbers in a quiet gutter,
