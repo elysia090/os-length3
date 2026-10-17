@@ -6,9 +6,10 @@ name: Release
 # publishes the root
 # (the pinned 0.1.0 root, laid out for Prompts (what only booting needed
 # dropped, merged /usr) with this tree's l3, profile and shell, repackaged
-# by os/scripts/root-release.sh) and the web build (the app with
-# the Prompt's userland, os/scripts/web-release.sh), with their
-# digests. Devices then trust the root once its digest is pinned in
+# by os/scripts/root-release.sh), the web build (the app with
+# the Prompt's userland, os/scripts/web-release.sh) and the desktop app (the
+# same UI, its Prompt running that root on the machine: a .deb and an
+# AppImage), with their digests. Devices then trust the root once its digest is pinned in
 # os/core/src/root.rs.
 on:
   push:
@@ -63,6 +64,11 @@ jobs:
           # The base is the 0.1.0 release's root; root-release.sh checks its digest.
           gh release download os-length3-linux-v0.1.0 --pattern 'os-length3-linux-0.1.0-x86_64-*.tar.zst' --output "$RUNNER_TEMP/base.tar.zst"
           sh scripts/root-release.sh "$RUNNER_TEMP/base.tar.zst" "$GITHUB_WORKSPACE/out" "$VERSION"
+      - name: Pin this release's root
+        if: env.SKIP != '1'
+        working-directory: os
+        # What is built from here on (the Prompt's l3, the desktop app) trusts the root this release ships.
+        run: node scripts/pin-root.mjs "$GITHUB_WORKSPACE"/out/os-length3-linux-$VERSION-x86_64-*.tar.zst
       - name: The root for the browser
         if: env.SKIP != '1'
         working-directory: os
@@ -77,21 +83,37 @@ jobs:
         run: |
           sh scripts/web-release.sh
           mv length3-web.zip "$GITHUB_WORKSPACE/out/os-length3-linux-$VERSION-web.zip"
+      - name: Desktop app
+        if: env.SKIP != '1'
+        working-directory: os
+        # The AppImage is bundled by linuxdeploy, itself an AppImage: the runner has no FUSE to mount it, so it unpacks itself.
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: |
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf
+          # The app runs its Prompt on the machine, from the root it installs: the browser's userland and root stay out of it.
+          mkdir -p "$RUNNER_TEMP/web-only"
+          mv public/root public/userland "$RUNNER_TEMP/web-only/"
+          npx tauri build --config "{\"version\":\"$VERSION\"}"
+          cp target/release/bundle/deb/*.deb "$GITHUB_WORKSPACE/out/os-length3-linux-$VERSION-desktop-amd64.deb"
+          cp target/release/bundle/appimage/*.AppImage "$GITHUB_WORKSPACE/out/os-length3-linux-$VERSION-desktop-x86_64.AppImage"
       - name: Digests and notes
         if: env.SKIP != '1'
         working-directory: out
         run: |
-          sha256sum os-length3-linux-$VERSION-web.zip >> SHA256SUMS
+          sha256sum os-length3-linux-$VERSION-web.zip os-length3-linux-$VERSION-desktop-* >> SHA256SUMS
           root=$(ls os-length3-linux-$VERSION-x86_64-*.tar.zst)
           web=os-length3-linux-$VERSION-web.zip
+          deb=os-length3-linux-$VERSION-desktop-amd64.deb
+          appimage=os-length3-linux-$VERSION-desktop-x86_64.AppImage
           {
             echo "# OS Length3 Linux $VERSION"
             echo
-            echo "The 0.1.0 root laid out for Prompts (nothing only a booted machine needs, merged /usr), with l3, its profile and shell from \`$GITHUB_SHA\`, and the web build of the same tree, whose Prompt runs that whole root (each file fetched when a program first reads it)."
+            echo "The 0.1.0 root laid out for Prompts (nothing only a booted machine needs, merged /usr), with l3, its profile and shell from \`$GITHUB_SHA\`; the web build of the same tree, whose Prompt runs that whole root (each file fetched when a program first reads it); and the desktop app (Length³ OS for x86-64 Linux, a .deb and an AppImage): the same UI, its Prompt running that root on the machine, which it installs and trusts by the digest pinned in this release."
             echo
             echo "| File | Bytes | SHA-256 |"
             echo "| --- | --- | --- |"
-            for f in "$root" "$web"; do
+            for f in "$root" "$web" "$deb" "$appimage"; do
               echo "| \`$f\` | $(stat -c %s "$f") | \`$(sha256sum "$f" | cut -d' ' -f1)\` |"
             done
             echo
@@ -102,7 +124,7 @@ jobs:
             echo "mkdir opened && tar --zstd -xf $root -C opened"
             echo '```'
             echo
-            echo "\`manifest\` names the base, the l3 inside and the script that made it. The web build opens with any static server (\`npx serve\` in the unzipped folder)."
+            echo "\`manifest\` names the base, the l3 inside and the script that made it. The web build opens with any static server (\`npx serve\` in the unzipped folder). The desktop app: \`sudo apt install ./$deb\`, or \`chmod +x $appimage\` and run it."
           } > ../notes.md
           cat ../notes.md
       - name: Publish
