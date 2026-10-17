@@ -15,7 +15,7 @@ import {FileTree} from './pages/tree.ts';
 import {begin} from './lifecycle.ts';
 import {learnHome} from './inbox.ts';
 import {devicePage} from './pages/device.ts';
-import {onConnection, onReach, remoteAway} from './remote.ts';
+import {about, connection, onConnection, onReach, remoteAway} from './remote.ts';
 import {getState, loadState} from './state.ts';
 import {onLang, t, useLang} from './i18n.ts';
 import {NEW_REPO, PURPOSES, purpose, restorePurpose, stepPurpose, type PurposeId} from './purposes.ts';
@@ -130,7 +130,13 @@ const reach = () => {
   const tag = b.querySelector('.rail-tag');
   if (tag) tag.textContent = label;
 };
-onReach(reach);
+let askAgain = 0;
+onReach(() => {
+  reach();
+  // Signed in, sync's own looking finds the Remote again; signed out, nothing asks, so this does.
+  clearInterval(askAgain);
+  if (remoteAway() && !connection()) askAgain = window.setInterval(() => void about(), 15000);
+});
 // Signed in or out, here or from another device: the page is drawn again for who is here now (Remote's draws itself).
 onConnection(() => { if (current === 'remote') me.paint(); else render(); });
 // Home's state is read before the first page, and again when the window

@@ -10,8 +10,8 @@ export default {
   'Language': '言語',
   'Account': 'アカウント',
   'Environment': '環境',
-  'just now': 'たった今',
+  'just now': '1分以内',
   '{n} min ago': '{n}分前',
   '{n} h ago': '{n}時間前',
-  'yesterday': '昨日',
+  'yesterday': '1日前',
 } as Record<string, string>;

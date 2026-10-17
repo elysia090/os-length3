@@ -195,7 +195,7 @@ function device(ctx: Context, u: Space, last: Freed | null, again: (r: Freed | n
     ...(last ? [result(last)] : []),
     // What is here, what is on the Remote, then what can be freed.
     h('div', {class: 'space-box'},
-      column('here-col', isNative ? t('On this device') : t('In this browser'), u.allocated, here, t('This OS keeps nothing here yet')),
+      column('here-col', isNative ? t('On this device') : t('In this browser'), u.allocated, here, t('No repos yet')),
       remoteCol,
       column('free-col', t('Can be freed'), u.freeable, going, t('Nothing to free. A repo goes once the Remote has all of it.'),
         freeable.length > 1 ? [h('span', {class: 'muted small grow'}, t('Repos stay on the Remote and come back when opened.')), all] : [])),

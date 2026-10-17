@@ -1,5 +1,5 @@
 import {h} from '../dom.ts';
-import {t} from '../i18n.ts';
+import {t, tn} from '../i18n.ts';
 import {LIMITS, initials, normalize, parse, type Profile} from '../profile.ts';
 import {connection} from '../remote.ts';
 import {getState, setState} from '../state.ts';
@@ -24,8 +24,8 @@ export function startEditing(ctx: Context) {
 export function home(ctx: Context): Node[] {
   const profile = currentProfile();
   const owner = true;
-  const count = h('b', {}, '…');
-  const list = repoList(ctx, {newCard: true, count});
+  const count = h('span', {});
+  const list = repoList(ctx, {newCard: true, counted: (n) => counting(count, n, 'repo', 'repos')});
   void list.refresh();
   const grid = list.element;
   const header = h('section', {class: 'profile'},
@@ -45,7 +45,7 @@ function ownServers(ctx: Context): HTMLElement {
   if (!connection()) return box;
   void servers.servers().then((list) => {
     const n = document.getElementById('server-count');
-    if (n) n.textContent = String(list.length);
+    if (n) counting(n, list.length, 'server', 'servers');
     if (!list.length) return;
     box.replaceChildren(...list.map((s) => {
       const b = h('button', {type: 'button', class: 'chip'}, s.name);
@@ -56,6 +56,13 @@ function ownServers(ctx: Context): HTMLElement {
   return box;
 }
 
+const servers0 = () => { const el = h('span', {id: 'server-count'}); counting(el, 0, 'server', 'servers'); return el; };
+
+/** A count and its word: one repo, 2 repos (Japanese tells them apart by the number alone). */
+function counting(el: HTMLElement, n: number, one: string, many: string) {
+  el.replaceChildren(h('b', {}, String(n)), ' ', tn(one, many, n));
+}
+
 function identity(repoCount: HTMLElement): HTMLElement {
   const profile = currentProfile();
   const named = profile.name || profile.handle;
@@ -63,7 +70,7 @@ function identity(repoCount: HTMLElement): HTMLElement {
     named ? h('h1', {}, profile.name || `@${profile.handle}`) : h('h1', {class: 'unset'}, t('No name yet')),
     profile.handle && profile.name ? h('p', {class: 'handle'}, `@${profile.handle}`) : null,
     profile.bio ? h('p', {class: 'bio'}, profile.bio) : null,
-    h('p', {class: 'counts'}, h('span', {}, repoCount, ' ', t('repo')), h('span', {}, h('b', {id: 'server-count'}, '0'), ' ', t('server'))),
+    h('p', {class: 'counts'}, repoCount, servers0()),
   );
 }
 

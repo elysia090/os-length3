@@ -241,7 +241,7 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
     if (o.readOnly) return;
     for (const r of rows.values()) r.title.placeholder = '';
     const last = items.at(-1);
-    if (last) rows.get(last.id)!.title.placeholder = items.length === 1 ? o.first ?? t('Fix: Saved work is gone') : t('Next TODO');
+    if (last) rows.get(last.id)!.title.placeholder = items.length === 1 ? o.first ?? t('Fix: The title wraps on a phone') : t('Next TODO');
   };
 
   // Heights can only be measured once the fields are in the page.

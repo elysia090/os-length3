@@ -30,7 +30,6 @@ export default {
   'allowed': '割当',
   'On this device': 'この端末にあるもの',
   'In this browser': 'このブラウザにあるもの',
-  'This OS keeps nothing here yet': 'この OS はまだ何も置いていません',
   'Can be freed': '空けられるもの',
   'Nothing to free. A repo goes once the Remote has all of it.': '空けられるものはありません。repo は Remote がすべて持てば空けられます。',
   'Repos stay on the Remote and come back when opened.': 'repo は Remote に残り、開けばまた来ます。',

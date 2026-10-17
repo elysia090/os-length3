@@ -81,14 +81,17 @@ export function signInBox(done: () => void, back?: string): HTMLElement {
     return box;
   }
   const providers = h('div', {class: 'row sign-in-row'});
-  void account.about().then(({providers: list}) => {
+  const ways = () => void account.about().then(({providers: list}) => {
     providers.replaceChildren(...list.map((p, i) => {
       const b = button(t('Continue with {name}', {name: account.PROVIDER_NAME[p]}), i === 0 ? 'primary' : '');
       b.addEventListener('click', () => void pressing(b, error, () => account.signInWith(p, back)));
       return b;
     }));
-    if (!list.length) providers.replaceChildren(h('span', {class: 'muted'}, t('This Remote offers no way to sign in yet.')));
+    // No ways because it did not answer is not the same as none offered; the ways come once it answers.
+    if (!list.length) providers.replaceChildren(h('span', {class: 'muted'}, account.remoteAway() ? t('The Remote cannot be reached') : t('This Remote offers no way to sign in yet.')));
   });
+  ways();
+  const stop = account.onReach(() => { if (!box.isConnected) { stop(); return; } if (!account.remoteAway()) ways(); });
   const passkey = button(t('Sign in with a passkey'));
   passkey.addEventListener('click', () => void pressing(passkey, error, async () => { await account.signIn(); done(); }));
   box.append(providers, h('div', {class: 'row sign-in-row'}, passkey), error);

@@ -52,7 +52,7 @@ export interface RepoList {
   refresh(light?: string | null): Promise<void>;
 }
 
-export function repoList(ctx: Context, options: {newCard: boolean; count?: HTMLElement}): RepoList {
+export function repoList(ctx: Context, options: {newCard: boolean; counted?: (n: number) => void}): RepoList {
   const grid = h('div', {class: 'grid'}, h('p', {class: 'muted'}, t('Reading…')));
   const refresh = async (light?: string | null) => {
     let repos;
@@ -60,7 +60,7 @@ export function repoList(ctx: Context, options: {newCard: boolean; count?: HTMLE
       grid.replaceChildren(h('p', {class: 'muted'}, t('Could not read the repos: {why}', {why: String(e)})));
       return;
     }
-    if (options.count) options.count.textContent = String(repos.length + remoteOnly().length);
+    options.counted?.(repos.length + remoteOnly().length);
     grid.replaceChildren(...repos.map((r) => repoCard(ctx, r.name, r.bytes, r.modified)),
       ...remoteOnly().map((r) => awayCard(ctx, r.name, r.bytes, Date.parse(r.updatedAt))),
       ...(options.newCard ? [newRepoCard(ctx)] : []));

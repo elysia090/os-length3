@@ -324,7 +324,7 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .new-repo { margin-top: var(--s5); display: grid; gap: var(--s5); max-width: 520px; }
 .field { display: grid; gap: var(--s2); }
 .field-label { font-size: var(--t-meta); color: var(--sub); }
-.tree.tree-still { position: static; visibility: visible; opacity: 1; width: auto; max-height: none; transition: none; }
+.tree.tree-still { position: static; z-index: auto; visibility: visible; opacity: 1; width: auto; max-height: none; transition: none; }
 .tree-caption { padding: 0 var(--s2) var(--s1); }
 .tree-still .tree-name.plain { color: var(--ink); }
 .tree-still .tree-toggle { cursor: default; }

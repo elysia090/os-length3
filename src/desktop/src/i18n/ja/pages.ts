@@ -12,7 +12,7 @@ export default {
   'Mark as done': '完了にする',
   'Not done': '未完了',
   'What to do': 'やること',
-  'Fix: Saved work is gone': 'Fix：保存内容が消える',
+  'Fix: The title wraps on a phone': 'Fix：スマホでタイトルが折り返す',
   'Next TODO': '次の TODO',
   'First line as Kind: title': '1行目に 種別：件名',
   'Enter for the detail': 'Enter で詳細',
@@ -68,7 +68,6 @@ export default {
 
   // Writing an issue
   'Repo to write in': '書く repo',
-  'Fix: Saved work is gone after a restart': 'Fix：再起動すると保存内容が消える',
   'Detail (optional)': '詳細（なくてもよい）',
   'Not now': 'やめる',
   'Write a title on the first line': '1行目に件名を書いてください',

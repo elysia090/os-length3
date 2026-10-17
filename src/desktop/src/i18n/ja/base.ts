@@ -25,7 +25,9 @@ export default {
   'distribution': '配布',
   'kernel': 'カーネル',
   'repo': 'repo',
+  'repos': 'repo',
   'server': 'サーバー',
+  'servers': 'サーバー',
   'empty': '空',
   'The distribution has not been fetched': '配布物を取得していません',
 

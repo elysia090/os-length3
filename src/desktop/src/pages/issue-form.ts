@@ -28,7 +28,7 @@ export function issueForm(events: {done(repo: string | null): void}): IssueForm 
       b.addEventListener('click', () => { target = r; for (const c of pick.children) c.setAttribute('aria-checked', String(c === b)); });
       return b;
     }));
-    const first = h('input', {class: 'line-in', placeholder: t('Fix: Saved work is gone after a restart'), 'aria-label': t('First line as Kind: title'),
+    const first = h('input', {class: 'line-in', placeholder: t('Fix: The title wraps on a phone'), 'aria-label': t('First line as Kind: title'),
       maxlength: '200', spellcheck: 'false'}) as HTMLInputElement;
     const detail = h('textarea', {class: 'line-in issue-text', rows: '4', 'aria-label': t('Detail'), placeholder: t('Detail (optional)')}) as HTMLTextAreaElement;
     first.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); detail.focus(); } });
