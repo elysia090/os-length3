@@ -144,7 +144,18 @@ struct Fx<'p> {
     syncs: Vec<(usize, bool)>,
     /// The registers it touches: bit n for r_n, bit 16 + n for xmm_n.
     used: u32,
+    /// What each part did with the registers, in order: [0] the prologue,
+    /// [k + 1] block k. Which registers each sync moves is found from these
+    /// once the whole function is made (sync_masks).
+    ev: Vec<Vec<Ev>>,
+    /// Nesting of wasm blocks inside the current block's code: a write
+    /// inside one may not happen.
+    nest: u32,
     flags: Flags,
+    /// The deferred state is a compare whose result was never computed: it is
+    /// L_FA - L_FB, made where a flag asks for it (most conditions read only
+    /// the operands).
+    fr_pending: bool,
     /// Nesting of wasm blocks between the current code and the dispatch loop.
     depth: u32,
     program: &'p Program,
@@ -158,6 +169,22 @@ struct Fx<'p> {
 
 #[derive(Clone, Copy)]
 enum Part { Full, Low32, Low16, Low8, High8 }
+
+/// A register (bit as in Fx::used) read or written, a sync (its index; true
+/// where it is not inside a conditional), or where the code may go on to
+/// this function's own blocks (a goto, or an indirect jump found within):
+/// what is dirty and live there is what those blocks see, whatever the rest
+/// of the block does after (a branch's other side may leave the function,
+/// with a save on the way).
+#[derive(Clone, Copy)]
+enum Ev { Read(u8), Write(u8, bool), Sync(usize, bool), Edge }
+
+/// The bit of a register's local.
+fn reg_bit(l: u32) -> Option<u8> {
+    if (l_reg(0)..l_reg(16)).contains(&l) { Some((l - l_reg(0)) as u8) }
+    else if (l_x(0)..l_x(16)).contains(&l) { Some((16 + l - l_x(0)) as u8) }
+    else { None }
+}
 
 fn gpr(r: Register) -> Option<(u32, Part)> {
     let high = matches!(r, Register::AH | Register::CH | Register::DH | Register::BH);
@@ -180,10 +207,27 @@ fn xmm(r: Register) -> Option<u32> {
 }
 
 impl<'p> Fx<'p> {
-    fn e(&mut self, i: I) { self.f.instruction(&i); }
+    fn e(&mut self, i: I) {
+        match i { W::If(_) | W::Block(_) | W::Loop(_) => self.nest += 1, W::End => self.nest = self.nest.saturating_sub(1), _ => {} }
+        self.f.instruction(&i);
+    }
+    fn note(&mut self, e: Ev) { if let Some(v) = self.ev.last_mut() { v.push(e); } }
     // The most frequent, straight to their bytes.
-    fn get(&mut self, l: u32) { self.touch(l); self.f.instructions().local_get(l); }
-    fn set(&mut self, l: u32) { self.touch(l); self.f.instructions().local_set(l); }
+    fn get(&mut self, l: u32) {
+        self.touch(l);
+        if let Some(b) = reg_bit(l) { self.note(Ev::Read(b)); }
+        self.f.instructions().local_get(l);
+    }
+    fn set(&mut self, l: u32) {
+        self.touch(l);
+        if let Some(b) = reg_bit(l) { let top = self.nest == 0; self.note(Ev::Write(b, top)); }
+        self.f.instructions().local_set(l);
+    }
+    fn tee(&mut self, l: u32) {
+        self.touch(l);
+        if let Some(b) = reg_bit(l) { let top = self.nest == 0; self.note(Ev::Write(b, top)); }
+        self.f.instructions().local_tee(l);
+    }
     /// Note a register's local in use (every access to one goes through get and set).
     fn touch(&mut self, l: u32) {
         if (l_reg(0)..l_reg(16)).contains(&l) { self.used |= 1 << (l - l_reg(0)); }
@@ -205,7 +249,13 @@ impl<'p> Fx<'p> {
     /// Registers to their globals, for code outside this function (or the
     /// host) to read: those this function touches, the others being in their
     /// globals all along. Put in by lower_function.
-    fn save(&mut self) { self.syncs.push((self.f.byte_len(), true)); }
+    fn save(&mut self) { self.sync(true); }
+
+    fn sync(&mut self, save: bool) {
+        self.syncs.push((self.f.byte_len(), save));
+        let (at, top) = (self.syncs.len() - 1, self.nest == 0);
+        self.note(Ev::Sync(at, top));
+    }
 
     /// Hand the flags in `mask` to code outside this function, in G_FLAGS,
     /// each computed from the state as it is (nothing is held for it).
@@ -233,11 +283,11 @@ impl<'p> Fx<'p> {
             self.c32(1); self.e(W::I32And);
             self.set(l);
         }
-        self.flags = Flags::Held;
+        self.set_flags(Flags::Held);
     }
 
     /// Registers from their globals, after code outside this function ran.
-    fn load(&mut self) { self.syncs.push((self.f.byte_len(), false)); }
+    fn load(&mut self) { self.sync(false); }
 
     /// Push a register's value, zero-extended from its width.
     fn read_reg(&mut self, r: Register) -> bool {
@@ -277,16 +327,37 @@ impl<'p> Fx<'p> {
 
     /// Push the effective address as i64 (no segment base unless `segment`).
     fn effective(&mut self, i: &Instruction, segment: bool) {
+        self.effective_from(i, segment, false);
+    }
+
+    /// The effective address, less what is returned: with `split`, a small
+    /// positive displacement is left for the load or store to add itself (its
+    /// offset), so it costs no instruction. The rest of the sum wraps at 4 GiB
+    /// before the offset is added, so it must not be negative: it is only if
+    /// the address is below the displacement, and under 64 KiB nothing is
+    /// ever mapped (Linux's mmap_min_addr), so such an access faults either way.
+    /// A large displacement (an absolute address, with a negative index
+    /// counting up to it) stays in the sum.
+    fn effective_from(&mut self, i: &Instruction, segment: bool, split: bool) -> u64 {
         let base = i.memory_base();
+        let disp = i.memory_displacement64() as i64;
+        let mut offset = 0;
         if base == Register::RIP || base == Register::EIP {
-            self.c64(i.memory_displacement64() as i64);
+            self.c64(disp);
         } else {
-            self.c64(i.memory_displacement64() as i64);
+            let index = i.memory_index();
+            let registers = base != Register::None || index != Register::None;
+            // A 32-bit address (addr32) wraps at 4 GiB as x86 has it, so its displacement stays in the sum.
+            let wide = [base, index].iter().all(|r| *r == Register::None || r.size() == 8);
+            if split && registers && wide && (1..1 << 16).contains(&disp) { offset = disp as u64; }
+            // A displacement of nothing is not added.
+            let mut first = true;
+            if !registers || disp - offset as i64 != 0 { self.c64(disp - offset as i64); first = false; }
             if base != Register::None {
                 self.read_reg(base);
-                self.e(W::I64Add);
+                if !first { self.e(W::I64Add); }
+                first = false;
             }
-            let index = i.memory_index();
             if index != Register::None {
                 self.read_reg(index);
                 let scale = i.memory_index_scale();
@@ -294,13 +365,14 @@ impl<'p> Fx<'p> {
                     self.c64(scale.trailing_zeros() as i64);
                     self.e(W::I64Shl);
                 }
-                self.e(W::I64Add);
+                if !first { self.e(W::I64Add); }
             }
         }
         if segment && i.memory_segment() == Register::FS {
             self.e(W::GlobalGet(G_FS));
             self.e(W::I64Add);
         }
+        offset
     }
 
     fn address(&mut self, i: &Instruction) {
@@ -308,21 +380,33 @@ impl<'p> Fx<'p> {
         self.e(W::I32WrapI64);
     }
 
-    fn load_sized(&mut self, size: u8) {
+    /// The address for a load or store of operand memory, and the offset that load or store adds.
+    fn place(&mut self, i: &Instruction) -> u64 {
+        let offset = self.effective_from(i, true, true);
+        self.e(W::I32WrapI64);
+        offset
+    }
+
+    fn load_sized(&mut self, size: u8) { self.load_at(size, 0) }
+    fn store_sized(&mut self, size: u8) { self.store_at(size, 0) }
+
+    fn load_at(&mut self, size: u8, offset: u64) {
+        let m = MemArg { offset, align: 0, memory_index: 0 };
         self.e(match size {
-            1 => W::I64Load8U(mem(0)),
-            2 => W::I64Load16U(mem(0)),
-            4 => W::I64Load32U(mem(0)),
-            _ => W::I64Load(mem(0)),
+            1 => W::I64Load8U(m),
+            2 => W::I64Load16U(m),
+            4 => W::I64Load32U(m),
+            _ => W::I64Load(m),
         });
     }
 
-    fn store_sized(&mut self, size: u8) {
+    fn store_at(&mut self, size: u8, offset: u64) {
+        let m = MemArg { offset, align: 0, memory_index: 0 };
         self.e(match size {
-            1 => W::I64Store8(mem(0)),
-            2 => W::I64Store16(mem(0)),
-            4 => W::I64Store32(mem(0)),
-            _ => W::I64Store(mem(0)),
+            1 => W::I64Store8(m),
+            2 => W::I64Store16(m),
+            4 => W::I64Store32(m),
+            _ => W::I64Store(m),
         });
     }
 
@@ -342,7 +426,7 @@ impl<'p> Fx<'p> {
     fn read(&mut self, i: &Instruction, n: u32, size: u8) -> bool {
         match i.op_kind(n) {
             OpKind::Register => self.read_reg(i.op_register(n)),
-            OpKind::Memory => { self.address(i); self.load_sized(size); true }
+            OpKind::Memory => { let at = self.place(i); self.load_at(size, at); true }
             OpKind::Immediate8 | OpKind::Immediate16 | OpKind::Immediate32 | OpKind::Immediate64
             | OpKind::Immediate8to16 | OpKind::Immediate8to32 | OpKind::Immediate8to64 | OpKind::Immediate32to64
             | OpKind::Immediate8_2nd => {
@@ -357,7 +441,7 @@ impl<'p> Fx<'p> {
     fn write(&mut self, i: &Instruction, n: u32, size: u8, from: u32) -> bool {
         match i.op_kind(n) {
             OpKind::Register => { self.get(from); self.write_reg(i.op_register(n)) }
-            OpKind::Memory => { self.address(i); self.get(from); self.store_sized(size); true }
+            OpKind::Memory => { let at = self.place(i); self.get(from); self.store_at(size, at); true }
             _ => false,
         }
     }
@@ -379,8 +463,45 @@ impl<'p> Fx<'p> {
     }
 
     fn push_value(&mut self, from: u32) {
-        self.get(l_reg(RSP)); self.c64(8); self.e(W::I64Sub); self.set(l_reg(RSP));
-        self.get(l_reg(RSP)); self.e(W::I32WrapI64); self.get(from); self.e(W::I64Store(mem(3)));
+        self.push_with(|fx| { fx.get(from); true });
+    }
+
+    /// Push what `value` puts on the stack, made after rsp moved (so it must not read rsp).
+    fn push_with(&mut self, value: impl FnOnce(&mut Self) -> bool) -> bool {
+        self.get(l_reg(RSP)); self.c64(8); self.e(W::I64Sub); self.tee(l_reg(RSP));
+        self.e(W::I32WrapI64);
+        if !value(self) { return false; }
+        self.e(W::I64Store(mem(3)));
+        true
+    }
+
+    /// Write a value known now to a register: a full or 32-bit one takes it as it is.
+    fn write_reg_known(&mut self, r: Register, value: i64) -> bool {
+        match gpr(r) {
+            Some((n, Part::Full)) => { self.c64(value); self.set(l_reg(n)); true }
+            Some((n, Part::Low32)) => { self.c64(value & 0xffff_ffff); self.set(l_reg(n)); true }
+            Some(_) => { self.c64(value); self.write_reg(r) }
+            None => false,
+        }
+    }
+
+    /// Put what `value` pushes into operand 0 (a register, or memory whose address is taken first).
+    fn assign(&mut self, i: &Instruction, size: u8, value: impl FnOnce(&mut Self) -> bool) -> bool {
+        match i.op0_kind() {
+            OpKind::Register => value(self) && self.write_reg(i.op0_register()),
+            OpKind::Memory => { let at = self.place(i); value(self) && { self.store_at(size, at); true } }
+            _ => false,
+        }
+    }
+
+    /// Whether the instruction's operand `n` reads rsp (as the register or in its address).
+    fn uses_rsp(i: &Instruction, n: u32) -> bool {
+        let rsp = |r: Register| r.full_register() == Register::RSP;
+        match i.op_kind(n) {
+            OpKind::Register => rsp(i.op_register(n)),
+            OpKind::Memory => rsp(i.memory_base()) || rsp(i.memory_index()),
+            _ => false,
+        }
     }
 
     fn pop_value(&mut self, into: u32) {
@@ -390,8 +511,23 @@ impl<'p> Fx<'p> {
 
     // ---- Flags ----
 
+    /// Every change of the flag state goes through here, so a pending result never outlives its compare.
+    fn set_flags(&mut self, state: Flags) {
+        self.flags = state;
+        self.fr_pending = false;
+    }
+
+    /// Push the deferred result (L_FR), making it from the operands if a compare left it unmade.
+    fn fr(&mut self) {
+        if let (true, Flags::Sub(size)) = (self.fr_pending, self.flags) {
+            self.get(L_FA); self.get(L_FB); self.e(W::I64Sub); self.mask_to(size);
+        } else {
+            self.get(L_FR);
+        }
+    }
+
     fn sign_bit(&mut self, local: u32, size: u8) {
-        self.get(local);
+        if local == L_FR { self.fr(); } else { self.get(local); }
         self.c64(size as i64 * 8 - 1);
         self.e(W::I64ShrU);
         self.c64(1);
@@ -414,15 +550,15 @@ impl<'p> Fx<'p> {
             Flags::Dec(s) => (4, s),
         };
         match f {
-            Flag::Z => { self.get(L_FR); self.e(W::I64Eqz); }
+            Flag::Z => { self.fr(); self.e(W::I64Eqz); }
             Flag::S => self.sign_bit(L_FR, size),
             Flag::P => {
-                self.get(L_FR); self.c64(0xff); self.e(W::I64And); self.e(W::I64Popcnt);
+                self.fr(); self.c64(0xff); self.e(W::I64And); self.e(W::I64Popcnt);
                 self.c64(1); self.e(W::I64And); self.e(W::I64Eqz);
             }
             Flag::C => match kind {
                 0 => { self.get(L_FA); self.get(L_FB); self.e(W::I64LtU); }
-                1 => { self.get(L_FR); self.get(L_FA); self.e(W::I64LtU); }
+                1 => { self.fr(); self.get(L_FA); self.e(W::I64LtU); }
                 2 => self.c32(0),
                 _ => self.get(L_CF),
             },
@@ -430,7 +566,7 @@ impl<'p> Fx<'p> {
                 0 | 4 => {
                     // (a ^ b) & (a ^ r), sign bit
                     self.get(L_FA); self.get(L_FB); self.e(W::I64Xor);
-                    self.get(L_FA); self.get(L_FR); self.e(W::I64Xor);
+                    self.get(L_FA); self.fr(); self.e(W::I64Xor);
                     self.e(W::I64And); self.set(l_t(4));
                     self.sign_bit(l_t(4), size);
                 }
@@ -454,7 +590,7 @@ impl<'p> Fx<'p> {
             self.flag(f);
             self.set(l);
         }
-        self.flags = Flags::Held;
+        self.set_flags(Flags::Held);
     }
 
     /// Push the truth of condition `cc` as i32.
@@ -479,12 +615,12 @@ impl<'p> Fx<'p> {
         }
         if let Flags::Logic(size) = self.flags {
             match cc {
-                C::e => { self.get(L_FR); self.e(W::I64Eqz); return; }
-                C::ne => { self.get(L_FR); self.c64(0); self.e(W::I64Ne); return; }
+                C::e => { self.fr(); self.e(W::I64Eqz); return; }
+                C::ne => { self.fr(); self.c64(0); self.e(W::I64Ne); return; }
                 C::s | C::l => { self.sign_bit(L_FR, size); return; }
                 C::ns | C::ge => { self.sign_bit(L_FR, size); self.e(W::I32Eqz); return; }
                 C::le | C::g => {
-                    self.get(L_FR); if size < 8 { self.sign_extend(size); } self.c64(0);
+                    self.fr(); if size < 8 { self.sign_extend(size); } self.c64(0);
                     self.e(if cc == C::le { W::I64LeS } else { W::I64GtS });
                     return;
                 }
@@ -518,7 +654,7 @@ impl<'p> Fx<'p> {
 
     /// Record a deferred producer: a, b already in L_FA/L_FB, result in L_FR.
     fn defer(&mut self, state: Flags) {
-        self.flags = state;
+        self.set_flags(state);
     }
 
     // ---- Control helpers ----
@@ -527,10 +663,12 @@ impl<'p> Fx<'p> {
     /// jump through the dispatch loop, else leave the function.
     fn goto(&mut self, address: u64, next: Option<u64>) {
         if Some(address) == next {
+            self.note(Ev::Edge);
             return;
         }
         match self.function.block_index(address) {
             Some(b) => {
+                self.note(Ev::Edge);
                 self.c32(b as i32);
                 self.set(L_BLK);
                 self.e(W::Br(self.depth));
@@ -563,7 +701,7 @@ impl<'p> Fx<'p> {
         self.get(l_t(0)); self.e(W::Return);
         self.e(W::End);
         self.load();
-        self.flags = Flags::Held;
+        self.set_flags(Flags::Held);
         self.goto(ret, next);
     }
 }
@@ -571,12 +709,12 @@ impl<'p> Fx<'p> {
 // ---- Instruction semantics ----
 
 impl Fx<'_> {
-    fn binary(&mut self, i: &Instruction, op: Mnemonic) -> bool {
+    /// add, sub, cmp, and, test, or, xor. What is kept for the flags is only
+    /// what a later instruction reads (`need`): nothing when none does; the
+    /// result alone for a logic op, whose flags all come from it; the two
+    /// operands for a compare, whose result most conditions never ask for.
+    fn binary(&mut self, i: &Instruction, op: Mnemonic, need: bool) -> bool {
         let size = Self::size(i, 0);
-        if !self.read(i, 0, size) { return false; }
-        self.set(L_FA);
-        if !self.read(i, 1, size) { return false; }
-        self.set(L_FB);
         let (wasm, state, write) = match op {
             Mnemonic::Add => (W::I64Add, Flags::Add(size), true),
             Mnemonic::Sub => (W::I64Sub, Flags::Sub(size), true),
@@ -587,9 +725,35 @@ impl Fx<'_> {
             Mnemonic::Xor => (W::I64Xor, Flags::Logic(size), true),
             _ => return false,
         };
-        self.get(L_FA); self.get(L_FB); self.e(wasm); self.mask_to(size); self.set(L_FR);
-        self.defer(state);
-        !write || self.write(i, 0, size, L_FR)
+        let memory = i.op0_kind() == OpKind::Memory;
+        if !need && !write {
+            // Nothing reads what it sets; only a read that may fault is kept.
+            if memory { let at = self.place(i); self.load_at(size, at); self.e(W::Drop); }
+            return true;
+        }
+        // The destination's address once, kept for the store.
+        let mut at = 0;
+        if memory && write { at = self.place(i); self.e(W::LocalTee(l_u(0))); self.e(W::LocalGet(l_u(0))); self.load_at(size, at); } else if !self.read(i, 0, size) { return false; }
+        let logic = matches!(state, Flags::Logic(_));
+        if need && !logic {
+            self.set(L_FA);
+            if !self.read(i, 1, size) { return false; }
+            self.set(L_FB);
+            self.set_flags(state);
+            if !write { self.fr_pending = true; return true; }
+            self.get(L_FA); self.get(L_FB);
+        } else if !self.read(i, 1, size) { return false; }
+        self.e(wasm);
+        if need {
+            // The flags read the result at its width; a store or register write masks it anyway.
+            self.mask_to(size);
+            if write { self.e(W::LocalTee(L_FR)); } else { self.set(L_FR); }
+            self.set_flags(state);
+            if !write { return true; }
+        } else {
+            self.set_flags(Flags::Held);
+        }
+        if memory { self.store_at(size, at); true } else { self.write_reg(i.op0_register()) }
     }
 
     fn carry(&mut self, i: &Instruction, subtract: bool) -> bool {
@@ -615,13 +779,13 @@ impl Fx<'_> {
         self.get(l_t(1)); self.e(W::I32WrapI64);
         self.e(W::Select);
         self.set(l_u(0));
-        self.flags = if subtract { Flags::Sub(size) } else { Flags::Add(size) };
+        self.set_flags(if subtract { Flags::Sub(size) } else { Flags::Add(size) });
         for (f, l) in [(Flag::Z, L_ZF), (Flag::S, L_SF), (Flag::O, L_OF), (Flag::P, L_PF)] {
             self.flag(f);
             self.set(l);
         }
         self.get(l_u(0)); self.set(L_CF);
-        self.flags = Flags::Held;
+        self.set_flags(Flags::Held);
         self.write(i, 0, size, L_FR)
     }
 
@@ -849,7 +1013,7 @@ impl Fx<'_> {
             self.c32(0); self.set(L_PF);
             self.get(l_u(0)); self.set(L_CF);
             self.get(l_u(0)); self.set(L_OF);
-            self.flags = Flags::Held;
+            self.set_flags(Flags::Held);
         }
         true
     }
@@ -1084,35 +1248,33 @@ impl Fx<'_> {
             Cld => { self.backward = false; true }
             Std => { self.backward = true; true }
             Shld | Shrd => self.double_shift(i, need),
+            // A register write masks to its width and a store keeps only its bytes, so values go straight in.
             Mov => {
                 let size = Self::size(i, 0);
-                if xmm(i.op0_register()).is_some() || xmm(i.op1_register()).is_some() { false } else {
-                    self.read(i, 1, size) && { self.set(l_t(1)); self.write(i, 0, size, l_t(1)) }
+                if xmm(i.op0_register()).is_some() || xmm(i.op1_register()).is_some() { false }
+                else if i.op0_kind() == OpKind::Register && matches!(i.op1_kind(), OpKind::Immediate8 | OpKind::Immediate16 | OpKind::Immediate32
+                    | OpKind::Immediate64 | OpKind::Immediate8to32 | OpKind::Immediate8to64 | OpKind::Immediate32to64) {
+                    self.write_reg_known(i.op0_register(), i.immediate(1) as i64)
+                } else {
+                    self.assign(i, size, |fx| fx.read(i, 1, size))
                 }
             }
             Movzx => {
-                let (src, dst) = (Self::size(i, 1), Self::size(i, 0));
-                self.read(i, 1, src) && { self.set(l_t(1)); self.write(i, 0, dst, l_t(1)) }
+                let src = Self::size(i, 1);
+                self.read(i, 1, src) && self.write_reg(i.op0_register())
             }
             Movsx | Movsxd => {
-                let (src, dst) = (Self::size(i, 1), Self::size(i, 0));
-                self.read(i, 1, src) && {
-                    self.sign_extend(src); self.mask_to(dst); self.set(l_t(1)); self.write(i, 0, dst, l_t(1))
-                }
+                let src = Self::size(i, 1);
+                self.read(i, 1, src) && { self.sign_extend(src); self.write_reg(i.op0_register()) }
             }
-            Lea => {
-                let size = Self::size(i, 0);
-                self.effective(i, false); self.mask_to(size); self.set(l_t(1));
-                self.write(i, 0, size, l_t(1))
-            }
+            Lea => { self.effective(i, false); self.write_reg(i.op0_register()) }
             Add | Sub | Cmp | And | Test | Or | Xor => {
                 // xor r, r is the idiom for zero: skip the read.
                 if m == Xor && i.op0_kind() == OpKind::Register && i.op1_kind() == OpKind::Register
                     && i.op0_register() == i.op1_register() && !need {
-                    self.c64(0); self.set(l_t(1));
-                    self.write(i, 0, Self::size(i, 0), l_t(1))
+                    self.write_reg_known(i.op0_register(), 0)
                 } else {
-                    self.binary(i, m)
+                    self.binary(i, m, need)
                 }
             }
             Adc => self.carry(i, false),
@@ -1130,16 +1292,16 @@ impl Fx<'_> {
             Push => {
                 let size = Self::size(i, 0).max(if i.op0_kind() == OpKind::Register { 8 } else { 1 });
                 let size = if i.op0_kind() == OpKind::Memory { size } else { 8 };
-                self.read(i, 0, size) && {
-                    if i.op0_kind() != OpKind::Register && i.op0_kind() != OpKind::Memory { self.sign_extend(size); }
-                    self.set(l_t(1)); self.push_value(l_t(1)); true
-                }
+                let immediate = i.op0_kind() != OpKind::Register && i.op0_kind() != OpKind::Memory;
+                let value = |fx: &mut Self| fx.read(i, 0, size) && { if immediate { fx.sign_extend(size); } true };
+                // The operand is read as it was before rsp moves: made first if it reads rsp.
+                if Self::uses_rsp(i, 0) { value(self) && { self.set(l_t(1)); self.push_value(l_t(1)); true } } else { self.push_with(value) }
             }
-            Pop => {
+            Pop => match gpr(i.op0_register()) {
+                Some((n, Part::Full)) if i.op0_kind() == OpKind::Register && n != RSP => { self.pop_value(l_reg(n)); true }
                 // The destination address uses rsp after the increment.
-                self.pop_value(l_t(1));
-                self.write(i, 0, 8, l_t(1))
-            }
+                _ => { self.pop_value(l_t(1)); self.write(i, 0, 8, l_t(1)) }
+            },
             Leave => {
                 self.get(l_reg(RBP)); self.set(l_reg(RSP));
                 self.pop_value(l_reg(RBP));
@@ -1392,7 +1554,7 @@ impl Fx<'_> {
                     self.e(extract); if !double { self.e(W::F64PromoteF32); } self.e(W::LocalSet(l_d(1)));
                     self.compare_flags();
                     self.c32(0); self.set(L_OF); self.c32(0); self.set(L_SF);
-                    self.flags = Flags::Held;
+                    self.set_flags(Flags::Held);
                     true
                 }
             }
@@ -1750,7 +1912,7 @@ impl Fx<'_> {
                     self.get(l_u(0)); if bit > 0 { self.c32(bit); self.e(W::I32ShrU); } self.c32(1); self.e(W::I32And); self.set(l);
                 }
                 self.c32(0); self.set(L_OF); self.c32(0); self.set(L_SF);
-                self.flags = Flags::Held;
+                self.set_flags(Flags::Held);
             }
             "fnstsw" if !memory => {
                 self.e(W::I64ExtendI32U); self.write_reg(Register::AX);
@@ -1776,10 +1938,13 @@ fn handed(handed: &BTreeMap<u64, u32>, address: u64) -> u32 {
 
 /// The blocks of `f` that `b` goes on to by a fall or a jump, and the flags
 /// code it goes on to outside them reads first.
-fn successors(f: &Function, b: &Block, outside: &BTreeMap<u64, u32>) -> (Vec<usize>, u32) {
-    let mut out = Vec::new();
+/// A block's successors in its function (two at most) and the flags handed to those outside.
+type Successors = ([Option<usize>; 2], u32);
+
+fn successors(f: &Function, b: &Block, outside: &BTreeMap<u64, u32>) -> Successors {
+    let mut out = [None; 2];
     let mut ext = 0;
-    let mut add = |a: u64| match f.block_index(a) { Some(k) => out.push(k), None => ext |= handed(outside, a) };
+    let mut add = |a: u64| match f.block_index(a) { Some(k) => { let at = out[0].is_some() as usize; out[at] = Some(k); } None => ext |= handed(outside, a) };
     match b.exit {
         Exit::Fall(a) | Exit::Jump(a) | Exit::TailJump(a) => add(a),
         Exit::Branch { taken, fall } => { add(taken); add(fall); }
@@ -1802,7 +1967,8 @@ fn entry_flags(program: &Program) -> BTreeMap<u64, u32> {
         let mut again = Vec::new();
         for &fi in &todo {
             let f = &program.functions[fi];
-            let (live, _) = live_flags(program, fi as u32, &map);
+            let succs: Vec<Successors> = f.blocks.iter().map(|b| successors(f, b, &map)).collect();
+            let (live, _) = live_flags(program, fi as u32, &succs);
             // Only a function that goes on to code outside it can change again.
             let mut leaves = false;
             for (k, b) in f.blocks.iter().enumerate() {
@@ -1828,7 +1994,7 @@ fn entry_flags(program: &Program) -> BTreeMap<u64, u32> {
 /// Flags live on entry to each block, as an RflagsBits mask, and those the
 /// function's entries read: an indirect jump lands on one of them (a case of
 /// a jump table), so it keeps those.
-fn live_flags(program: &Program, index: u32, outside: &BTreeMap<u64, u32>) -> (Vec<u32>, u32) {
+fn live_flags(program: &Program, index: u32, succs: &[Successors]) -> (Vec<u32>, u32) {
     let f = &program.functions[index as usize];
     let n = f.blocks.len();
     let entry: Vec<bool> = f.blocks.iter().enumerate().map(|(k, b)| program.entries.get(&b.start) == Some(&(index, k as u32))).collect();
@@ -1845,9 +2011,9 @@ fn live_flags(program: &Program, index: u32, outside: &BTreeMap<u64, u32>) -> (V
     loop {
         let mut changed = false;
         for k in (0..n).rev() {
-            let (succ, ext) = successors(f, &f.blocks[k], outside);
+            let (succ, ext) = succs[k];
             let ext = if f.blocks[k].exit == Exit::IndirectJump { cases } else { ext };
-            let out = succ.iter().fold(ext, |acc, &s| acc | live_in[s]);
+            let out = succ.iter().flatten().fold(ext, |acc, &s| acc | live_in[s]);
             let new = summary[k].0 | (out & !summary[k].1);
             if new != live_in[k] {
                 live_in[k] = new;
@@ -1863,11 +2029,13 @@ fn live_flags(program: &Program, index: u32, outside: &BTreeMap<u64, u32>) -> (V
 
 // ---- Functions ----
 
-fn lower_function(program: &Program, index: u32, handed: &BTreeMap<u64, u32>, options: Options, report: &mut Report) -> WasmFunction {
+fn lower_function(program: &Program, index: u32, base: u32, handed: &BTreeMap<u64, u32>, options: Options, report: &mut Report) -> WasmFunction {
     let function = &program.functions[index as usize];
-    let (live, cases) = live_flags(program, index, handed);
+    // Each block's successors, once: the analyses below go over them again and again.
+    let succs: Vec<Successors> = function.blocks.iter().map(|b| successors(function, b, handed)).collect();
+    let (live, cases) = live_flags(program, index, &succs);
     let n = function.blocks.len() as u32;
-    let mut fx = Fx { f: WasmFunction::new([]), syncs: Vec::new(), used: 0, flags: Flags::Held, depth: 0, program, function, report, handed, backward: false };
+    let mut fx = Fx { f: WasmFunction::new([]), syncs: Vec::new(), used: 0, ev: vec![Vec::new()], nest: 0, flags: Flags::Held, fr_pending: false, depth: 0, program, function, report, handed, backward: false };
 
     // Everything the prologue depends on is known, so the function is made in order.
     fx.get(L_ENTRY); fx.set(L_BLK);
@@ -1883,8 +2051,10 @@ fn lower_function(program: &Program, index: u32, handed: &BTreeMap<u64, u32>, op
         // Close block k's label so its code starts here; code k sits inside
         // the labels of blocks k+1..n-1 and then the loop.
         fx.e(W::End);
+        fx.ev.push(Vec::with_capacity(block.code.len() * 6));
+        fx.nest = 0;
         fx.depth = n - 1 - k as u32;
-        fx.flags = Flags::Held;
+        fx.set_flags(Flags::Held);
         fx.backward = false;
         fx.report.blocks += 1;
         if options.trace {
@@ -1892,9 +2062,9 @@ fn lower_function(program: &Program, index: u32, handed: &BTreeMap<u64, u32>, op
             fx.e(W::Call(F_TRACE));
         }
         let next = function.blocks.get(k + 1).map(|b| b.start);
-        let (succ, ext) = successors(function, block, handed);
+        let (succ, ext) = succs[k];
         // An indirect jump may land on an entry of this function, whose flags stay in the locals.
-        let held = succ.iter().fold(0, |acc, &s| acc | live[s]) | if block.exit == Exit::IndirectJump { cases } else { 0 };
+        let held = succ.iter().flatten().fold(0, |acc, &s| acc | live[s]) | if block.exit == Exit::IndirectJump { cases } else { 0 };
         let live_out = held | ext;
         // Flags needed after each instruction, from the end backward.
         let mut needed = vec![0u32; block.code.len()];
@@ -1936,7 +2106,9 @@ fn lower_function(program: &Program, index: u32, handed: &BTreeMap<u64, u32>, op
                 fx.read(&term, 0, 8);
                 fx.set(l_t(0));
                 fx.get(l_t(0)); fx.e(W::Call(F_RESOLVE)); fx.set(l_t(1));
-                fx.get(l_t(1)); fx.c64(32); fx.e(W::I64ShrU); fx.c64(index as i64); fx.e(W::I64Eq);
+                // Found as this function's own (by the table's numbering, which a module made later starts at its base).
+                fx.get(l_t(1)); fx.c64(32); fx.e(W::I64ShrU); fx.c64((base + index) as i64); fx.e(W::I64Eq);
+                fx.note(Ev::Edge);
                 fx.e(W::If(BlockType::Empty));
                 fx.get(l_t(1)); fx.e(W::I32WrapI64); fx.set(L_BLK);
                 fx.e(W::Br(fx.depth + 1));
@@ -1947,7 +2119,7 @@ fn lower_function(program: &Program, index: u32, handed: &BTreeMap<u64, u32>, op
                 fx.get(l_t(0)); fx.e(W::ReturnCall(F_DISPATCH));
             }
             Exit::Call { target, ret } => {
-                fx.c64(ret as i64); fx.set(l_t(1)); fx.push_value(l_t(1));
+                fx.push_with(|fx| { fx.c64(ret as i64); true });
                 fx.save();
                 match program.entries.get(&target) {
                     Some(&(f, b)) => { fx.c32(b as i32); fx.e(W::Call(FIRST_GUEST + f)); }
@@ -1960,7 +2132,7 @@ fn lower_function(program: &Program, index: u32, handed: &BTreeMap<u64, u32>, op
                 // The target is read before the return address is pushed.
                 fx.read(&term, 0, 8);
                 fx.set(l_t(2));
-                fx.c64(ret as i64); fx.set(l_t(1)); fx.push_value(l_t(1));
+                fx.push_with(|fx| { fx.c64(ret as i64); true });
                 fx.save();
                 fx.get(l_t(2)); fx.e(W::Call(F_DISPATCH));
                 fx.set(l_t(0));
@@ -1988,30 +2160,107 @@ fn lower_function(program: &Program, index: u32, handed: &BTreeMap<u64, u32>, op
     fx.e(W::End);
 
     // The locals, then the code with each sync put in: only the registers it
-    // touches. One that it does not stays in its global, where code it calls
-    // and the host find it; loading and saving it all the same was a fifth
-    // of every function's instructions.
+    // must move (sync_masks). One it never touches stays in its global, where
+    // code it calls and the host find it.
+    let masks = sync_masks(program, index, &fx.ev, &fx.syncs);
     let (used, syncs, code) = (fx.used, fx.syncs, fx.f.into_raw_body());
     let mut f = WasmFunction::new([
         (16, ValType::I64), (1, ValType::I32), (5, ValType::I32), (3, ValType::I64), (6, ValType::I64),
         (2, ValType::I32), (16, ValType::V128), (2, ValType::V128), (2, ValType::F64),
     ]);
-    let sync = |f: &mut WasmFunction, save: bool| {
+    let sync = |f: &mut WasmFunction, save: bool, mask: u32| {
         let mut sink = f.instructions();
-        for n in (0..32).filter(|n| used & (1 << n) != 0) {
+        for n in (0..32).filter(|n| used & mask & (1 << n) != 0) {
             let (local, global) = if n < 16 { (l_reg(n), n) } else { (l_x(n - 16), g_xmm(n - 16)) };
             if save { sink.local_get(local).global_set(global); } else { sink.global_get(global).local_set(local); }
         }
     };
     // The code made without locals starts with their count, 0.
     let mut at = 1;
-    for (offset, save) in syncs {
+    for ((offset, save), mask) in syncs.into_iter().zip(masks) {
         f.raw(code[at..offset].iter().copied());
-        sync(&mut f, save);
+        sync(&mut f, save, mask);
         at = offset;
     }
     f.raw(code[at..].iter().copied());
     f
+}
+
+/// Which registers each sync must move. Between syncs a register lives in
+/// its local; its global is what code outside (callees, the host) reads and
+/// writes. A save stores only the registers written since they were last
+/// stored or loaded on some path here (the others' globals hold their values
+/// already), and a load takes in only those read before they are written
+/// again (the others' locals are never read stale). The saves' own stores
+/// count as reads, so a register a save may store is one a load took in;
+/// and only a write that surely happens (not inside a conditional) ends a
+/// register's life. Around every call this was most of a function's code.
+fn sync_masks(program: &Program, index: u32, ev: &[Vec<Ev>], syncs: &[(usize, bool)]) -> Vec<u32> {
+    let function = &program.functions[index as usize];
+    let n = function.blocks.len();
+    let at = |a: u64| function.block_index(a);
+    // Where the prologue's dispatch, and an indirect jump within, may go.
+    let entries: Vec<usize> = (0..n).filter(|&k| k == 0 || program.entries.get(&function.blocks[k].start) == Some(&(index, k as u32))).collect();
+    let succ: Vec<Vec<usize>> = function.blocks.iter().map(|b| match b.exit {
+        Exit::Fall(a) | Exit::Jump(a) | Exit::Call { ret: a, .. } | Exit::IndirectCall { ret: a } => at(a).into_iter().collect(),
+        Exit::Branch { taken, fall } => at(taken).into_iter().chain(at(fall)).collect(),
+        Exit::IndirectJump => entries.clone(),
+        Exit::TailJump(_) | Exit::Return | Exit::Trap => Vec::new(),
+    }).collect();
+    let mut mask = vec![0u32; syncs.len()];
+    let edged: Vec<bool> = (0..n).map(|k| ev[k + 1].iter().any(|e| matches!(e, Ev::Edge))).collect();
+
+    // Forward: written since the last sync on some path.
+    let mut dirty = vec![0u32; n];
+    loop {
+        let mut changed = false;
+        for k in 0..n {
+            let mut d = dirty[k];
+            let mut out = 0;
+            for e in &ev[k + 1] {
+                match *e {
+                    Ev::Write(r, _) => d |= 1 << r,
+                    Ev::Sync(m, top) if syncs[m].1 => { mask[m] |= d; if top { d = 0; } }
+                    Ev::Edge => out |= d,
+                    _ => {}
+                }
+            }
+            // Successors no goto was noted for (none should be) see the block's end.
+            if !edged[k] { out |= d; }
+            for &s in &succ[k] {
+                if dirty[s] | out != dirty[s] { dirty[s] |= out; changed = true; }
+            }
+        }
+        if !changed { break; }
+    }
+
+    // Backward: read before surely written again.
+    let mut live = vec![0u32; n];
+    loop {
+        let mut changed = false;
+        for k in (0..n).rev() {
+            let after = succ[k].iter().fold(0, |acc, &s| acc | live[s]);
+            let mut l = if edged[k] { 0 } else { after };
+            for e in ev[k + 1].iter().rev() {
+                match *e {
+                    Ev::Read(r) => l |= 1 << r,
+                    Ev::Write(r, true) => l &= !(1 << r),
+                    Ev::Write(_, false) => {}
+                    Ev::Sync(m, _) if syncs[m].1 => l |= mask[m],
+                    Ev::Sync(m, top) => { mask[m] |= l; if top { l = 0; } }
+                    Ev::Edge => l |= after,
+                }
+            }
+            if live[k] | l != live[k] { live[k] |= l; changed = true; }
+        }
+        if !changed { break; }
+    }
+    // The prologue takes in what any block it may start at reads.
+    let start = entries.iter().fold(0, |acc, &k| acc | live[k]);
+    for e in &ev[0] {
+        if let Ev::Sync(m, _) = *e { if !syncs[m].1 { mask[m] |= start; } }
+    }
+    mask
 }
 
 /// Slots in the dispatcher's cache of where addresses were found (16 bytes
@@ -2113,13 +2362,14 @@ fn helpers(code: &mut CodeSection, entries: u32, table: u64, cache: u64) {
 
 }
 
-/// Every function of `program`, in order. Each is lowered on its own, so
-/// natively they share the cores; wasm has one thread and lowers in turn.
-fn lower_all(program: &Program, options: Options, report: &mut Report) -> Vec<WasmFunction> {
+/// Every function of `program`, in order, as the table holds them from
+/// `base`. Each is lowered on its own, so natively they share the cores;
+/// wasm has one thread and lowers in turn.
+fn lower_all(program: &Program, base: u32, options: Options, report: &mut Report) -> Vec<WasmFunction> {
     let handed = entry_flags(program);
     let n = program.functions.len();
     let one = |range: std::ops::Range<usize>, report: &mut Report| -> Vec<WasmFunction> {
-        range.map(|f| lower_function(program, f as u32, &handed, options, report)).collect()
+        range.map(|f| lower_function(program, f as u32, base, &handed, options, report)).collect()
     };
     let threads = if cfg!(target_family = "wasm") { 1 } else { std::thread::available_parallelism().map_or(1, |t| t.get()) };
     // A few functions are not worth a thread.
@@ -2225,7 +2475,7 @@ pub fn translate_more(program: &Program, base: u32, options: Options) -> Transla
     module.section(&elements);
 
     let mut code = CodeSection::new();
-    for f in lower_all(program, options, &mut report) { code.function(&f); }
+    for f in lower_all(program, base, options, &mut report) { code.function(&f); }
     module.section(&code);
 
     // Its functions by the guest's names, as in the first module: every module numbers its own from the
@@ -2314,7 +2564,7 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
 
     let mut code = CodeSection::new();
     helpers(&mut code, entries as u32, table_base, cache);
-    for f in lower_all(program, options, &mut report) { code.function(&f); }
+    for f in lower_all(program, 0, options, &mut report) { code.function(&f); }
     module.section(&code);
 
     let mut data = DataSection::new();
