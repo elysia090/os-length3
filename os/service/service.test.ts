@@ -1147,6 +1147,24 @@ test('On Workers the app is made once, and each request uses the database it ope
   assert.equal(await repos(), 200);
 });
 
+test('On Workers a sweep that fails fails its run, and says so', async () => {
+  const worker = (await import('./worker.ts')).default;
+  // A database nobody answers for: the sweep's first step fails.
+  const env = {DATABASE_URL: 'postgresql://nobody:nothing@127.0.0.1/none?sslmode=require', BETTER_AUTH_SECRET: crypto.randomUUID() + crypto.randomUUID(),
+    BASE_URL: BASE, APP_ORIGIN: APP, BLOBS: {get: async () => null, put: async () => undefined, delete: async () => undefined}};
+  const later: Promise<unknown>[] = [], said: unknown[][] = [];
+  const error = console.error;
+  console.error = (...a: unknown[]) => { said.push(a); };
+  try {
+    await assert.rejects(worker.scheduled({}, env, {waitUntil: (p) => { later.push(p); }}));
+  } finally {
+    console.error = error;
+  }
+  assert.equal(said[0]?.[0], 'sweep failed');
+  // The connection is let go however the sweep went.
+  assert.deepEqual((await Promise.allSettled(later)).map((r) => r.status), ['fulfilled']);
+});
+
 test('The room is counted as things come and go, and agrees with counting it all again; its stamp moves with the repo list', async () => {
   const s = await service();
   const t = await s.start('Ren');

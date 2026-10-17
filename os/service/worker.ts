@@ -92,10 +92,18 @@ export default {
       ctx.waitUntil(pool.end());
     }
   },
-  // Once a day (wrangler.toml's trigger): what was held long enough goes.
+  // Once a day (wrangler.toml's trigger): what was held long enough goes. Awaited, not handed to
+  // waitUntil: a sweep that fails is said in the log and fails its run, as Cron Events shows it.
   async scheduled(_event: unknown, env: Env, ctx: Ctx) {
     const m = made ??= make(env);
     const {pool, db} = open(env);
-    ctx.waitUntil(sweep(db, m.bucket).then((gone) => console.log('sweep', JSON.stringify(gone))).finally(() => pool.end()));
+    try {
+      console.log('sweep', JSON.stringify(await sweep(db, m.bucket)));
+    } catch (e) {
+      console.error('sweep failed', e);
+      throw e;
+    } finally {
+      ctx.waitUntil(pool.end());
+    }
   },
 };
