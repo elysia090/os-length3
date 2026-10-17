@@ -94,6 +94,14 @@ pub fn line(s: &str) {
     write(&format!("{s}\n"));
 }
 
+/// Words someone else wrote (a message, a guest's post), safe to print: a
+/// terminal takes ESC and the other control characters as commands (to move
+/// the cursor over what was said, retitle the window, set the clipboard), so
+/// each shows as U+FFFD. Lines and tabs stay.
+pub fn plain(s: &str) -> String {
+    s.chars().map(|c| if c.is_control() && c != '\n' && c != '\t' { '\u{FFFD}' } else { c }).collect()
+}
+
 /// A note beside the answer, on standard error ("l3: …"); never fails.
 pub fn note(s: &str) {
     let _ = writeln!(std::io::stderr().lock(), "l3: {s}");
@@ -240,5 +248,11 @@ mod tests {
         assert_eq!(short("0123456789abcdef"), "0123456789ab");
         assert_eq!(added_removed(0, 0), "");
         assert_eq!(added_removed(3, 1), " +3 −1");
+    }
+
+    #[test]
+    fn what_others_wrote_cannot_command_the_terminal() {
+        assert_eq!(plain("hi\x1b]52;c;eA==\x07\x1b[2K\r\u{9b}31m"), "hi\u{FFFD}]52;c;eA==\u{FFFD}\u{FFFD}[2K\u{FFFD}\u{FFFD}31m");
+        assert_eq!(plain("two\nlines\tand 日本語"), "two\nlines\tand 日本語");
     }
 }

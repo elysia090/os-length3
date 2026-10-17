@@ -3,7 +3,7 @@
 
 use super::Ctx;
 use crate::args::Call;
-use crate::out::{ago, day, Error, Reply, Result};
+use crate::out::{ago, day, plain, Error, Reply, Result};
 use crate::target;
 use length3_core::{inbox, servers, tr};
 use serde_json::json;
@@ -46,7 +46,8 @@ pub fn server_get(_: &Ctx, call: &Call) -> Result<Reply> {
     let data = json!(texts.iter().map(|(b, t)| json!({"server": server.name, "board": b, "text": t})).collect::<Vec<_>>());
     let Some(to) = &call.flags.out else {
         let all: Vec<&str> = texts.iter().map(|(_, t)| t.as_str()).collect();
-        let mut text = all.join("\n\n");
+        // Guests write in open boards: what anyone wrote is shown, never taken by the terminal as a command.
+        let mut text = plain(&all.join("\n\n"));
         if !text.ends_with('\n') { text.push('\n'); }
         return Ok(Reply::Raw { text, json: data });
     };
@@ -108,7 +109,7 @@ pub fn inbox_list(_: &Ctx, _: &Call) -> Result<Reply> {
             _ => String::new(),
         };
         t.push(format!("{}{}{}", me.shown(&th.address), state, if th.unread > 0 { format!("  ({})", th.unread) } else { String::new() }));
-        t.push(format!("    {}{}{}", if th.last.mine { tr!("you: ", "あなた：") } else { String::new() }, kind_word(&th.last.kind), th.last.body));
+        t.push(format!("    {}{}{}", if th.last.mine { tr!("you: ", "あなた：") } else { String::new() }, kind_word(&th.last.kind), plain(&th.last.body)));
         rows.push(json!({"address": th.address, "name": th.name, "state": if yours { "yourself" } else { th.state.as_str() }, "unread": th.unread, "last": th.last}));
     }
     Ok(Reply::data(t.join("\n"), json!(rows)))
@@ -123,7 +124,7 @@ pub fn inbox_thread(_: &Ctx, call: &Call) -> Result<Reply> {
     if c.messages.is_empty() { t.push(tr!("  Nothing written yet", "  まだ何も書かれていません")); }
     for m in &c.messages {
         let who = if m.mine { tr!("you", "あなた") } else { me.shown(&c.address).to_string() };
-        t.push(format!("  {who} · {}{}  · {}", kind_word(&m.kind), m.body, ago(m.time)));
+        t.push(format!("  {who} · {}{}  · {}", kind_word(&m.kind), plain(&m.body), ago(m.time)));
     }
     let state = if yours { "yourself".to_string() } else { c.state.clone() };
     Ok(Reply::data(t.join("\n"), json!({"address": c.address, "state": state, "mutual": c.mutual, "messages": c.messages})))
