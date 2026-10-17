@@ -153,10 +153,6 @@ onReach(() => {
 });
 // Signed in or out, here or from another device: the page is drawn again for who is here now (Remote's draws itself).
 onConnection(() => { if (current === 'remote') me.paint(); else render(); });
-// Home's state is read before the first page, and again when the window
-// comes back, so what l3 changed meanwhile is what the page shows.
-// Then what the Remote has is taken in; the page shows as it comes.
-// A device's code (?device&user_code=…, from l3 or the app) opens only the page that approves it.
 // Changing the language redraws the page and the rail's names in place.
 onLang(() => {
   for (const [id, b] of tabs) {
@@ -170,6 +166,10 @@ onLang(() => {
   reach();
   render();
 });
+// Home's state is read before the first page, and again when the window
+// comes back, so what l3 changed meanwhile is what the page shows.
+// Then what the Remote has is taken in; the page shows as it comes.
+// A device's code (?device&user_code=…, from l3 or the app) opens only the page that approves it.
 const asking = new URLSearchParams(location.search);
 // A link for research (…/#enter=KEY): the key is taken out of the address before anything else runs,
 // so it is not left in the history, a bookmark or a screenshot, and is sent once (remote.ts enterWith).

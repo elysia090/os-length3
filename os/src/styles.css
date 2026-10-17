@@ -598,10 +598,10 @@ mark { background: var(--ink); color: var(--ground); }
 
 /* Terminal output; input comes from the prompt box */
 .term { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; gap: var(--s2); margin-top: var(--s2); }
-/* What the running line is doing, under its output; empty while it is quick. */
 /* Each part keeps its row when another is empty and hidden. */
 .term > p { grid-row: 1; }
 .term-out { grid-row: 2; }
+/* What the running line is doing, under its output; empty while it is quick. */
 .term-activity { grid-row: 3; display: flex; align-items: center; gap: var(--s2); min-height: 0; }
 .term-activity:empty { display: none; }
 .small-button { min-height: var(--h-row); padding: 0 var(--s3); font-size: var(--t-meta); }
