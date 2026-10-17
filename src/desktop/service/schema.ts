@@ -3,9 +3,21 @@
 // are the work. File contents are not here: they are blobs named by their
 // sha256 in the object store (R2), and a tree maps paths to those names.
 //
-// Nothing here is kept that can be read from something else: a line's issue
-// is its name, a server's name is the address it holds, how a person is
-// shown is their first address. Every moment is a timestamptz.
+// How it is kept:
+//   - Everything hangs from its owner by a foreign key: an account, a repo, a
+//     server or a board that goes takes all that is under it in the same
+//     statement, so nothing is left behind and nothing is deleted by hand.
+//   - The database refuses what the service never writes: every name, digest,
+//     state and length is checked here as well as in the request, so a bug or
+//     a forged request that gets past one is stopped by the other.
+//   - Inside, a repo is a number; outside, it is its name. Lines, commits,
+//     changes and shares point at the number with the owner beside it, and a
+//     composite key keeps the two together.
+//   - What is counted is kept counted (room, by triggers in the second
+//     migration), never counted again on each request.
+//   - Nothing is kept that can be read from something else: a line's issue is
+//     its name, a server's name is the address it holds, how a person is shown
+//     is their first address. Every moment is a timestamptz.
 //
 // A repo is lines of work, `main` and one per issue being worked on (the
 // branch and worktree a person never has to name). Each line has:
@@ -20,7 +32,9 @@
 // What goes, goes in one place (sweep.ts), once it has been held long enough.
 
 import {sql} from 'drizzle-orm';
-import {bigint, doublePrecision, index, integer, jsonb, pgTable, primaryKey, smallint, text, timestamp, uniqueIndex} from 'drizzle-orm/pg-core';
+import {
+  bigint, boolean, check, doublePrecision, foreignKey, index, integer, jsonb, pgTable, primaryKey, smallint, text, timestamp, unique, uniqueIndex, uuid,
+} from 'drizzle-orm/pg-core';
 import {user} from './schema.auth.ts';
 
 export * from './schema.auth.ts';
@@ -30,84 +44,37 @@ export type Tree = Record<string, string | null>;
 
 /** A moment, with its zone, so nothing depends on the session's time zone. */
 const moment = (name: string) => timestamp(name, {withTimezone: true});
+/** What a tree or a list takes, as its JSON is long: counted into the account's room. */
+const bytesOf = (column: string) => integer('bytes').generatedAlwaysAs(sql.raw(`octet_length(${column}::text)`)).notNull();
+const owner = () => text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'});
 
-export const repo = pgTable('repo', {
-  userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
-  name: text('name').notNull(),
-  /** 'main', or the line of work for an issue: its file's stem ('001' for issue/001.md). */
-  line: text('line').notNull().default('main'),
-  /** The commit of main this line started from. */
-  base: text('base'),
-  head: text('head'),
-  pushed: text('pushed'),
-  /** Who started it, as their name was then. */
-  startedBy: text('started_by').notNull().default(''),
-  startedAt: moment('started_at').defaultNow().notNull(),
-  draft: jsonb('draft').$type<Tree>().notNull().default(sql`'{}'::jsonb`),
-  version: integer('version').notNull().default(0),
-  /** Turned off (main's row says so for the whole repo): kept 30 days, then gone. */
-  offAt: moment('off_at'),
-  updatedAt: moment('updated_at').defaultNow().notNull(),
-}, (t) => [primaryKey({columns: [t.userId, t.name, t.line]})]);
+/** The shapes the service writes, as Postgres checks them. */
+const re = {
+  sha: `'^[0-9a-f]{64}$'`,
+  repo: `'^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}$'`,
+  line: `'^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'`,
+  key: `'^[0-9a-z]{12}$'`,
+  post: `'^[0-9a-z]{17}$'`,
+  name: `'^[a-z0-9][a-z0-9._-]{1,30}$'`,
+};
+const matches = (column: string, pattern: string) => sql.raw(`${column} ~ ${pattern}`);
+const within = (column: string, n: number) => sql.raw(`char_length(${column}) <= ${n}`);
+
+// ---- the account itself ----
 
 /**
- * A repo that went for good (discarded, or let go 30 days after it was
- * turned off): its name, and when. Remembered 90 days, so a device still
- * holding a copy is told the repo went instead of bringing it back by
- * sending it as new; a repo made anew under the name clears it.
+ * What an account keeps, counted as it changes (the second migration's
+ * triggers): the bytes its blobs, trees and reviews take; a stamp that moves
+ * whenever its list of repos would read differently (GET /v1/moved); and
+ * whether something its blobs were named by changed since the sweep last
+ * looked. One row an account, made with it.
  */
-export const repoGone = pgTable('repo_gone', {
-  userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
-  name: text('name').notNull(),
-  at: moment('at').defaultNow().notNull(),
-}, (t) => [primaryKey({columns: [t.userId, t.name]}), index('repo_gone_at_idx').on(t.at)]);
-
-export const cut = pgTable('cut', {
-  id: text('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
-  repo: text('repo').notNull(),
-  parent: text('parent'),
-  /** For a merge: the commit of the line that was merged. */
-  merged: text('merged'),
-  tree: jsonb('tree').$type<Tree>().notNull(),
-  kind: text('kind').notNull().default(''),
-  title: text('title').notNull(),
-  issue: text('issue').notNull().default(''),
-  note: text('note').notNull().default(''),
-  /** Lines added and removed, as the device that cut counted them (for the page only). */
-  added: integer('added').notNull().default(0),
-  removed: integer('removed').notNull().default(0),
-  time: moment('time').defaultNow().notNull(),
-}, (t) => [index('cut_repo_idx').on(t.userId, t.repo)]);
-
-/** A review of one version of a change, newest first in its change. */
-export interface Review { version: number; verdict: 'approve' | 'changes' | 'comment'; note: string; marks: string[]; by: string; time: number }
-
-/**
- * A line handed to main: Submit change. Submitting again after more commits
- * makes a new version of the same change; a review is of one version. The
- * receiver merges or rejects it; the one who submitted it may reset it
- * (take it back). Open until one of those. Its issue is its line's.
- */
-export const change = pgTable('change', {
-  id: text('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
-  repo: text('repo').notNull(),
-  line: text('line').notNull(),
-  kind: text('kind').notNull().default(''),
-  title: text('title').notNull(),
-  version: integer('version').notNull().default(1),
-  /** main's commit the change is measured against, and the line's commit it hands in. */
-  base: text('base'),
-  head: text('head').notNull(),
-  /** 'open', 'merged', 'rejected' or 'reset'. */
-  state: text('state').notNull().default('open'),
-  note: text('note').notNull().default(''),
-  submittedBy: text('submitted_by').notNull().default(''),
-  /** Its reviews, newest first: approve, ask for changes, or comment, with the lines marked in its diff. */
-  reviews: jsonb('reviews').$type<Review[]>().notNull().default(sql`'[]'::jsonb`),
-  updatedAt: moment('updated_at').defaultNow().notNull(),
-}, (t) => [uniqueIndex('change_line_idx').on(t.userId, t.repo, t.line)]);
+export const room = pgTable('room', {
+  userId: text('user_id').primaryKey().references(() => user.id, {onDelete: 'cascade'}),
+  used: bigint('used', {mode: 'number'}).notNull().default(0),
+  stamp: bigint('stamp', {mode: 'number'}).notNull().default(0),
+  unswept: boolean('unswept').notNull().default(false),
+}, (t) => [check('room_used', sql`${t.used} >= 0`), index('room_unswept_idx').on(t.userId).where(sql`${t.unswept}`)]);
 
 /**
  * What turning a repo off asks of an account: the digest of the five letters
@@ -120,23 +87,151 @@ export const guard = pgTable('guard', {
   offSetAt: moment('off_set_at'),
   proofSession: text('proof_session'),
   proofAt: moment('proof_at'),
-});
+}, () => [check('guard_digest', sql.raw(`off_digest is null or off_digest ~ ${re.sha}`))]);
 
+/** Home's settings: a few keys, each a value and its version. */
 export const home = pgTable('home', {
-  userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
+  userId: owner(),
   key: text('key').notNull(),
   value: text('value').notNull(),
   version: integer('version').notNull().default(1),
-}, (t) => [primaryKey({columns: [t.userId, t.key]})]);
+}, (t) => [primaryKey({columns: [t.userId, t.key]}),
+  check('home_key', matches('key', `'^[a-z]{1,32}$'`)), check('home_value', within('value', 1 << 20)), check('home_version', sql`${t.version} > 0`)]);
 
-/** Which blobs an account has stored, and their size (what its Remote holds); one no tree names any more goes. */
+/** Which blobs an account has stored, and their size; one no tree names any more goes (sweep.ts). */
 export const blob = pgTable('blob', {
-  userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
+  userId: owner(),
   sha256: text('sha256').notNull(),
-  size: integer('size').notNull(),
+  bytes: integer('bytes').notNull(),
   /** A blob is sent before the diff that names it: a new one is not taken for unnamed. */
   createdAt: moment('created_at').defaultNow().notNull(),
-}, (t) => [primaryKey({columns: [t.userId, t.sha256]})]);
+}, (t) => [primaryKey({columns: [t.userId, t.sha256]}), index('blob_created_idx').on(t.userId, t.createdAt),
+  check('blob_sha', matches('sha256', re.sha)), check('blob_bytes', sql`${t.bytes} between 0 and ${sql.raw(String(16 << 20))}`)]);
+
+// ---- repos: lines of work, commits, changes ----
+
+export const repo = pgTable('repo', {
+  id: bigint('id', {mode: 'number'}).primaryKey().generatedAlwaysAsIdentity(),
+  userId: owner(),
+  name: text('name').notNull(),
+  /** Turned off: kept 30 days, then gone (sweep.ts), or discarded at once. */
+  offAt: moment('off_at'),
+  createdAt: moment('created_at').defaultNow().notNull(),
+}, (t) => [unique('repo_user_name').on(t.userId, t.name), unique('repo_owner').on(t.id, t.userId),
+  check('repo_name', sql.raw(`name ~ ${re.repo} and name <> 'gone'`)), index('repo_off_idx').on(t.offAt).where(sql`${t.offAt} is not null`)]);
+
+/**
+ * A repo that went for good (discarded, or let go 30 days after it was
+ * turned off): its name, and when. Remembered 90 days, so a device still
+ * holding a copy is told the repo went instead of bringing it back by
+ * sending it as new; a repo made anew under the name clears it.
+ */
+export const repoGone = pgTable('repo_gone', {
+  userId: owner(),
+  name: text('name').notNull(),
+  at: moment('at').defaultNow().notNull(),
+}, (t) => [primaryKey({columns: [t.userId, t.name]}), index('repo_gone_at_idx').on(t.at)]);
+
+/** A commit: a tree and its words, named by the digest of what it records (app.ts cutId), within its repo. */
+export const cut = pgTable('cut', {
+  repoId: bigint('repo_id', {mode: 'number'}).notNull(),
+  id: text('id').notNull(),
+  userId: text('user_id').notNull(),
+  parent: text('parent'),
+  /** For a merge: the commit of the line that was merged. */
+  merged: text('merged'),
+  tree: jsonb('tree').$type<Tree>().notNull(),
+  bytes: bytesOf('tree'),
+  kind: text('kind').notNull().default(''),
+  title: text('title').notNull(),
+  issue: text('issue').notNull().default(''),
+  note: text('note').notNull().default(''),
+  /** Lines added and removed, as the device that cut counted them (for the page only). */
+  added: integer('added').notNull().default(0),
+  removed: integer('removed').notNull().default(0),
+  time: moment('time').defaultNow().notNull(),
+}, (t) => [primaryKey({columns: [t.repoId, t.id]}),
+  foreignKey({name: 'cut_repo', columns: [t.repoId, t.userId], foreignColumns: [repo.id, repo.userId]}).onDelete('cascade'),
+  foreignKey({name: 'cut_parent', columns: [t.repoId, t.parent], foreignColumns: [t.repoId, t.id]}),
+  foreignKey({name: 'cut_merged', columns: [t.repoId, t.merged], foreignColumns: [t.repoId, t.id]}),
+  check('cut_id', matches('id', re.sha)), check('cut_tree', sql`jsonb_typeof(${t.tree}) = 'object'`),
+  check('cut_words', sql.raw('char_length(kind) <= 2000 and char_length(title) between 1 and 2000 and char_length(issue) <= 2000 and char_length(note) <= 2000')),
+  check('cut_counts', sql`${t.added} >= 0 and ${t.removed} >= 0`)]);
+
+/** A line of work: main, or an issue's (its file's stem: '001' for issue/001.md). */
+export const line = pgTable('line', {
+  repoId: bigint('repo_id', {mode: 'number'}).notNull(),
+  name: text('name').notNull(),
+  userId: text('user_id').notNull(),
+  /** The commit of main this line started from. */
+  base: text('base'),
+  head: text('head'),
+  pushed: text('pushed'),
+  draft: jsonb('draft').$type<Tree>().notNull().default(sql`'{}'::jsonb`),
+  bytes: bytesOf('draft'),
+  /** What its draft's files take, each blob once (kept by a trigger as the draft changes). */
+  fileBytes: bigint('file_bytes', {mode: 'number'}).notNull().default(0),
+  version: integer('version').notNull().default(0),
+  /** Who started it, as their name was then. */
+  startedBy: text('started_by').notNull().default(''),
+  startedAt: moment('started_at').defaultNow().notNull(),
+  updatedAt: moment('updated_at').defaultNow().notNull(),
+}, (t) => [primaryKey({columns: [t.repoId, t.name]}), index('line_user_idx').on(t.userId),
+  foreignKey({name: 'line_repo', columns: [t.repoId, t.userId], foreignColumns: [repo.id, repo.userId]}).onDelete('cascade'),
+  foreignKey({name: 'line_base', columns: [t.repoId, t.base], foreignColumns: [cut.repoId, cut.id]}),
+  foreignKey({name: 'line_head', columns: [t.repoId, t.head], foreignColumns: [cut.repoId, cut.id]}),
+  foreignKey({name: 'line_pushed', columns: [t.repoId, t.pushed], foreignColumns: [cut.repoId, cut.id]}),
+  check('line_name', matches('name', re.line)), check('line_draft', sql`jsonb_typeof(${t.draft}) = 'object'`),
+  check('line_version', sql`${t.version} >= 0`), check('line_started_by', within('started_by', 200))]);
+
+/**
+ * A line handed to main: Submit change. Submitting again after more commits
+ * makes a new version of the same change; a review is of one version. The
+ * receiver merges or rejects it; the one who submitted it may reset it
+ * (take it back). Open until one of those. Its issue is its line's; it stays
+ * when its line goes, as main's history names it.
+ */
+export const change = pgTable('change', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  repoId: bigint('repo_id', {mode: 'number'}).notNull(),
+  userId: text('user_id').notNull(),
+  line: text('line').notNull(),
+  kind: text('kind').notNull().default(''),
+  title: text('title').notNull(),
+  version: integer('version').notNull().default(1),
+  /** main's commit the change is measured against, and the line's commit it hands in. */
+  base: text('base'),
+  head: text('head').notNull(),
+  state: text('state').notNull().default('open'),
+  note: text('note').notNull().default(''),
+  submittedBy: text('submitted_by').notNull().default(''),
+  updatedAt: moment('updated_at').defaultNow().notNull(),
+}, (t) => [uniqueIndex('change_line_idx').on(t.repoId, t.line),
+  foreignKey({name: 'change_repo', columns: [t.repoId, t.userId], foreignColumns: [repo.id, repo.userId]}).onDelete('cascade'),
+  foreignKey({name: 'change_base', columns: [t.repoId, t.base], foreignColumns: [cut.repoId, cut.id]}),
+  foreignKey({name: 'change_head', columns: [t.repoId, t.head], foreignColumns: [cut.repoId, cut.id]}),
+  check('change_state', sql`${t.state} in ('open', 'merged', 'rejected', 'reset')`), check('change_line', matches('line', re.line)),
+  check('change_words', sql.raw('char_length(kind) <= 2000 and char_length(title) between 1 and 2000 and char_length(note) <= 2000 and char_length(submitted_by) <= 200')),
+  check('change_version', sql`${t.version} > 0`)]);
+
+/** A review of one version of a change: approve, ask for changes, or comment, with the lines marked in its diff ("path:index"). */
+export const review = pgTable('review', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  changeId: uuid('change_id').notNull().references(() => change.id, {onDelete: 'cascade'}),
+  userId: owner(),
+  version: integer('version').notNull(),
+  verdict: text('verdict').notNull(),
+  note: text('note').notNull().default(''),
+  marks: jsonb('marks').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  bytes: integer('bytes').generatedAlwaysAs(sql`octet_length(note) + octet_length(marks::text)`).notNull(),
+  by: text('by').notNull(),
+  time: moment('time').defaultNow().notNull(),
+}, (t) => [index('review_change_idx').on(t.changeId, t.time),
+  check('review_verdict', sql`${t.verdict} in ('approve', 'changes', 'comment')`), check('review_note', within('note', 2000)),
+  check('review_marks', sql`jsonb_typeof(${t.marks}) = 'array' and jsonb_array_length(${t.marks}) <= 200 and octet_length(${t.marks}::text) <= 40000`)]);
+
+/** A review as clients read it, newest first in its change. */
+export interface Review { version: number; verdict: 'approve' | 'changes' | 'comment'; note: string; marks: string[]; by: string; time: number }
 
 // ---- Inbox (inbox.ts) ----
 
@@ -160,31 +255,36 @@ export const address = pgTable('address', {
   name: text('name').notNull(),
   domain: text('domain').notNull(),
   /** Opt-in to be reached over SSH at this address; its own permission, off unless asked. */
-  ssh: integer('ssh').notNull().default(0),
+  ssh: boolean('ssh').notNull().default(false),
   /** A name on this Remote answers until then, unless renewed; null on a domain of one's own. */
   until: moment('until'),
   releasedAt: moment('released_at'),
   lapsedAt: moment('lapsed_at'),
   createdAt: moment('created_at').defaultNow().notNull(),
-}, (t) => [index('address_user_idx').on(t.userId), uniqueIndex('address_server_idx').on(t.serverId)]);
+}, (t) => [index('address_user_idx').on(t.userId, t.createdAt), uniqueIndex('address_server_idx').on(t.serverId),
+  check('address_whose', sql`num_nonnulls(${t.userId}, ${t.serverId}) = 1`),
+  check('address_parts', sql.raw(`address = name || '@' || domain and name ~ ${re.name} and char_length(domain) between 3 and 253`))]);
 
 /**
  * A principal's code: six digits to be found by, said or typed more easily
  * than a name is spelled. Given once and never given again, so a code that
- * reached someone goes on meaning them, or no one.
+ * reached someone goes on meaning them, or no one (its owner gone, the code
+ * stays, naming nobody).
  */
 export const principalCode = pgTable('principal_code', {
   code: text('code').primaryKey(),
-  userId: text('user_id'),
-  serverId: text('server_id'),
-}, (t) => [uniqueIndex('principal_code_user_idx').on(t.userId), uniqueIndex('principal_code_server_idx').on(t.serverId)]);
+  userId: text('user_id').references(() => user.id, {onDelete: 'set null'}),
+  serverId: text('server_id').references(() => server.id, {onDelete: 'set null'}),
+}, (t) => [uniqueIndex('principal_code_user_idx').on(t.userId), uniqueIndex('principal_code_server_idx').on(t.serverId),
+  check('principal_code_digits', matches('code', `'^[1-9][0-9]{5}$'`)), check('principal_code_whose', sql`num_nonnulls(${t.userId}, ${t.serverId}) <= 1`)]);
 
 /** Whom an account talks with: accepted (messages and live chat), or blocked. Each side says its own. */
 export const contact = pgTable('contact', {
-  userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
+  userId: owner(),
   peer: text('peer').notNull().references(() => user.id, {onDelete: 'cascade'}),
   state: text('state').notNull(),
-}, (t) => [primaryKey({columns: [t.userId, t.peer]}), index('contact_peer_idx').on(t.peer)]);
+}, (t) => [primaryKey({columns: [t.userId, t.peer]}), index('contact_peer_idx').on(t.peer),
+  check('contact_state', sql`${t.state} in ('accepted', 'blocked')`), check('contact_other', sql`${t.userId} <> ${t.peer}`)]);
 
 /**
  * A typed message: what it is about (a change to review, an issue, a run)
@@ -192,12 +292,11 @@ export const contact = pgTable('contact', {
  * small, so the Inbox carries words between people and nothing else.
  */
 export const message = pgTable('message', {
-  id: text('id').primaryKey(),
+  id: uuid('id').primaryKey().defaultRandom(),
   to: text('to_user').notNull().references(() => user.id, {onDelete: 'cascade'}),
   from: text('from_user').notNull().references(() => user.id, {onDelete: 'cascade'}),
   fromAddress: text('from_address').notNull(),
   toAddress: text('to_address').notNull(),
-  /** 'message', 'review', 'question' or 'run'. */
   type: text('type').notNull().default('message'),
   /** What it is about: {repo, issue, change, version}. */
   target: jsonb('target').$type<Record<string, string | number>>().notNull().default(sql`'{}'::jsonb`),
@@ -205,7 +304,10 @@ export const message = pgTable('message', {
   createdAt: moment('created_at').defaultNow().notNull(),
   readAt: moment('read_at'),
 }, (t) => [index('message_to_idx').on(t.to, t.createdAt), index('message_from_idx').on(t.from, t.createdAt),
-  index('message_read_idx').on(t.createdAt).where(sql`${t.readAt} is not null`)]);
+  index('message_read_idx').on(t.createdAt).where(sql`${t.readAt} is not null`),
+  check('message_type', sql`${t.type} in ('message', 'review', 'question', 'run')`),
+  check('message_body', sql`char_length(${t.body}) between 1 and 4000`),
+  check('message_target', sql`jsonb_typeof(${t.target}) = 'object' and octet_length(${t.target}::text) <= 1024`)]);
 
 /**
  * WebRTC signalling between two contacts' devices: an offer, an answer, a
@@ -213,14 +315,16 @@ export const message = pgTable('message', {
  * live chat go device to device, never through the Remote.
  */
 export const signal = pgTable('signal', {
-  id: text('id').primaryKey(),
+  id: uuid('id').primaryKey().defaultRandom(),
   to: text('to_user').notNull().references(() => user.id, {onDelete: 'cascade'}),
   from: text('from_user').notNull().references(() => user.id, {onDelete: 'cascade'}),
   session: text('session').notNull(),
   kind: text('kind').notNull(),
   data: text('data').notNull(),
   createdAt: moment('created_at').defaultNow().notNull(),
-}, (t) => [index('signal_to_idx').on(t.to, t.from, t.createdAt), index('signal_from_idx').on(t.from, t.createdAt), index('signal_time_idx').on(t.createdAt)]);
+}, (t) => [index('signal_to_idx').on(t.to, t.from, t.createdAt), index('signal_from_idx').on(t.from, t.createdAt), index('signal_time_idx').on(t.createdAt),
+  check('signal_kind', sql`${t.kind} in ('offer', 'answer', 'candidate', 'bye')`),
+  check('signal_size', sql.raw('char_length(session) <= 64 and char_length(data) <= 16384'))]);
 
 // ---- Servers (servers.ts) ----
 //
@@ -243,17 +347,19 @@ export const server = pgTable('server', {
   name: text('name').notNull(),
   madeBy: text('made_by').references(() => user.id, {onDelete: 'set null'}),
   goneAt: moment('gone_at'),
-  goneBy: text('gone_by'),
+  goneBy: text('gone_by').references(() => user.id, {onDelete: 'set null'}),
   createdAt: moment('created_at').defaultNow().notNull(),
-}, (t) => [index('server_made_idx').on(t.madeBy, t.createdAt), index('server_gone_idx').on(t.goneBy, t.goneAt).where(sql`${t.goneAt} is not null`)]);
+}, (t) => [index('server_made_idx').on(t.madeBy, t.createdAt), index('server_gone_idx').on(t.goneBy, t.goneAt).where(sql`${t.goneAt} is not null`),
+  check('server_id', matches('id', re.key)), check('server_name', sql`char_length(${t.name}) between 1 and 64`)]);
 
-/** Who is in a server; the first is its owner. Each is shown by their own first address. */
+/** Who is in a server; one is its owner. Each is shown by their own first address. */
 export const member = pgTable('server_member', {
   serverId: text('server_id').notNull().references(() => server.id, {onDelete: 'cascade'}),
-  userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
-  owner: integer('owner').notNull().default(0),
+  userId: owner(),
+  owner: boolean('owner').notNull().default(false),
   addedAt: moment('added_at').defaultNow().notNull(),
-}, (t) => [primaryKey({columns: [t.serverId, t.userId]}), index('server_member_user_idx').on(t.userId)]);
+}, (t) => [primaryKey({columns: [t.serverId, t.userId]}), index('server_member_user_idx').on(t.userId),
+  uniqueIndex('server_member_owner_idx').on(t.serverId).where(sql`${t.owner}`)]);
 
 /** How far a board reaches past its people: theirs alone, read by anyone, or written in by guests too. */
 export const REACH = {people: 0, open: 1, guests: 2} as const;
@@ -264,14 +370,17 @@ export const REACH = {people: 0, open: 1, guests: 2} as const;
  * server's owner, it is held (goneAt) 30 days, answering nothing, and may be
  * brought back at once until then.
  */
-export const board = pgTable('server_board', {
+export const board = pgTable('board', {
   id: text('id').primaryKey(),
   serverId: text('server_id').notNull().references(() => server.id, {onDelete: 'cascade'}),
   name: text('name').notNull(),
   reach: smallint('reach').notNull().default(REACH.people),
   goneAt: moment('gone_at'),
   createdAt: moment('created_at').defaultNow().notNull(),
-}, (t) => [index('server_board_server_idx').on(t.serverId), index('server_board_gone_idx').on(t.goneAt).where(sql`${t.goneAt} is not null`)]);
+}, (t) => [index('board_server_idx').on(t.serverId, t.createdAt), index('board_gone_idx').on(t.goneAt).where(sql`${t.goneAt} is not null`),
+  index('board_open_idx').on(t.createdAt).where(sql`${t.reach} >= ${sql.raw(String(REACH.open))} and ${t.goneAt} is null`),
+  check('board_id', matches('id', re.key)), check('board_name', sql`char_length(${t.name}) between 1 and 64`),
+  check('board_reach', sql`${t.reach} between 0 and 2`)]);
 
 /**
  * An item of a board's TODO, the same as one of Home's (src/todo.ts): a
@@ -280,30 +389,39 @@ export const board = pgTable('server_board', {
  * never meet; the same field, the last write stays. `place` orders the list
  * (a new item takes a place between its neighbours').
  */
-export const todoItem = pgTable('server_todo', {
+export const todoItem = pgTable('board_todo', {
   boardId: text('board_id').notNull().references(() => board.id, {onDelete: 'cascade'}),
   id: text('id').notNull(),
   kind: text('kind'),
   title: text('title').notNull().default(''),
   detail: text('detail').notNull().default(''),
-  done: integer('done').notNull().default(0),
+  done: boolean('done').notNull().default(false),
   place: doublePrecision('place').notNull().default(0),
   /** Who wrote it first, as they were shown then. */
   by: text('by').notNull(),
   created: bigint('created', {mode: 'number'}).notNull(),
-}, (t) => [primaryKey({columns: [t.boardId, t.id]})]);
+}, (t) => [primaryKey({columns: [t.boardId, t.id]}),
+  check('board_todo_id', matches('id', `'^[0-9a-z-]{1,40}$'`)), check('board_todo_kind', sql.raw(`kind is null or kind ~ '^[A-Za-z][A-Za-z0-9-]{0,15}$'`)),
+  check('board_todo_words', sql.raw('char_length(title) <= 200 and char_length(detail) <= 4000')),
+  check('board_todo_place', sql`${t.place} > '-Infinity'::float8 and ${t.place} < 'Infinity'::float8`)]);
 
-/** A post in a board's discussion: its id sorts as its time; `by` is all a reader is shown of who wrote it. */
-export const talk = pgTable('server_post', {
+/**
+ * A post in a board's discussion: its id sorts as its time; `by` is all a
+ * reader is shown of who wrote it. A guest's has no account (userId null);
+ * guestId says which guest, while they are kept, so their hour can be counted.
+ */
+export const talk = pgTable('board_post', {
   id: text('id').primaryKey(),
   boardId: text('board_id').notNull().references(() => board.id, {onDelete: 'cascade'}),
   userId: text('user_id').references(() => user.id, {onDelete: 'cascade'}),
-  guestId: text('guest_id'),
+  guestId: text('guest_id').references(() => guest.id, {onDelete: 'set null'}),
   by: text('by').notNull(),
   body: text('body').notNull(),
-}, (t) => [index('server_post_board_idx').on(t.boardId, t.id),
-  index('server_post_user_idx').on(t.userId, t.id).where(sql`${t.userId} is not null`),
-  index('server_post_guest_idx').on(t.guestId, t.id).where(sql`${t.guestId} is not null`)]);
+}, (t) => [index('board_post_board_idx').on(t.boardId, t.id),
+  index('board_post_user_idx').on(t.userId, t.id).where(sql`${t.userId} is not null`),
+  index('board_post_guest_idx').on(t.guestId, t.id).where(sql`${t.guestId} is not null`),
+  check('board_post_id', matches('id', re.post)), check('board_post_body', sql`char_length(${t.body}) between 1 and 2000`),
+  check('board_post_whose', sql`num_nonnulls(${t.userId}, ${t.guestId}) <= 1`)]);
 
 /**
  * An outsider writing in one board: the email they showed is theirs (by a
@@ -311,16 +429,19 @@ export const talk = pgTable('server_post', {
  * for writing there, a lease until tokenUntil. Codes and tokens are kept
  * only as digests.
  */
-export const guest = pgTable('server_guest', {
+export const guest = pgTable('board_guest', {
   id: text('id').primaryKey(),
   boardId: text('board_id').notNull().references(() => board.id, {onDelete: 'cascade'}),
   email: text('email').notNull(),
   code: text('code'),
   codeAt: moment('code_at'),
-  tries: integer('tries').notNull().default(0),
+  tries: smallint('tries').notNull().default(0),
   token: text('token'),
   tokenUntil: moment('token_until'),
-}, (t) => [uniqueIndex('server_guest_board_email_idx').on(t.boardId, t.email), index('server_guest_token_idx').on(t.token)]);
+}, (t) => [uniqueIndex('board_guest_email_idx').on(t.boardId, t.email), uniqueIndex('board_guest_token_idx').on(t.token),
+  check('board_guest_id', matches('id', re.key)), check('board_guest_email', sql`char_length(${t.email}) <= 260`),
+  check('board_guest_digests', sql.raw(`(code is null or code ~ ${re.sha}) and (token is null or token ~ ${re.sha})`)),
+  check('board_guest_tries', sql`${t.tries} >= 0`)]);
 
 /**
  * What was asked of the Remote by someone it does not know, and when: a
@@ -330,7 +451,9 @@ export const guest = pgTable('server_guest', {
 export const throttle = pgTable('throttle', {
   key: text('key').notNull(),
   at: moment('at').defaultNow().notNull(),
-}, (t) => [index('throttle_key_idx').on(t.key, t.at)]);
+}, (t) => [index('throttle_key_idx').on(t.key, t.at), check('throttle_key', within('key', 300))]);
+
+// ---- who sees a repo (seen.ts) ----
 
 /**
  * Who sees a repo is one of three, read from rows so they can never disagree:
@@ -340,30 +463,35 @@ export const throttle = pgTable('throttle', {
  * (trip@length3.com:hello), when it went public from one, so it is not tied
  * to its owner, or its owner's own, when they made it public themselves.
  *
- * A share lasts as long as its owner's place in the server: leaving takes
- * their repos off its list, and ends what went public under its name.
+ * A share lasts as long as its owner's place in the server: it hangs from
+ * that place, so leaving takes their repos off its list.
  */
 export const repoShare = pgTable('repo_share', {
-  userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
-  repo: text('repo').notNull(),
-  serverId: text('server_id').notNull().references(() => server.id, {onDelete: 'cascade'}),
+  repoId: bigint('repo_id', {mode: 'number'}).notNull(),
+  serverId: text('server_id').notNull(),
+  userId: text('user_id').notNull(),
   sharedAt: moment('shared_at').defaultNow().notNull(),
-}, (t) => [primaryKey({columns: [t.userId, t.repo, t.serverId]}), index('repo_share_server_idx').on(t.serverId)]);
+}, (t) => [primaryKey({columns: [t.repoId, t.serverId]}), index('repo_share_server_idx').on(t.serverId, t.sharedAt),
+  foreignKey({name: 'repo_share_repo', columns: [t.repoId, t.userId], foreignColumns: [repo.id, repo.userId]}).onDelete('cascade'),
+  foreignKey({name: 'repo_share_member', columns: [t.serverId, t.userId], foreignColumns: [member.serverId, member.userId]}).onDelete('cascade')]);
 
 /**
  * A repo seen by everyone, as `face:name`. A face's names are one namespace
  * (two people's `hello` cannot both be trip:hello), and one taken down is
  * held a while for whoever had it, as an address is (names.ts), so nobody
  * else's repo answers to it meanwhile; but a face its owner no longer holds
- * holds nothing for them.
+ * holds nothing for them. A repo is public as one name at most.
  */
 export const repoPublic = pgTable('repo_public', {
   /** The principal it is seen as: a server it went public from, or its owner's address. */
   face: text('face').notNull(),
   name: text('name').notNull(),
-  userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
-  repo: text('repo').notNull(),
+  repoId: bigint('repo_id', {mode: 'number'}).notNull(),
+  userId: text('user_id').notNull(),
   /** The server whose face it is; null when it is its owner's own. */
   serverId: text('server_id').references(() => server.id, {onDelete: 'cascade'}),
   releasedAt: moment('released_at'),
-}, (t) => [primaryKey({columns: [t.face, t.name]}), index('repo_public_owner_idx').on(t.userId, t.repo), index('repo_public_server_idx').on(t.serverId)]);
+}, (t) => [primaryKey({columns: [t.face, t.name]}), index('repo_public_repo_idx').on(t.repoId), index('repo_public_server_idx').on(t.serverId),
+  uniqueIndex('repo_public_one_idx').on(t.repoId).where(sql`${t.releasedAt} is null`),
+  foreignKey({name: 'repo_public_repo', columns: [t.repoId, t.userId], foreignColumns: [repo.id, repo.userId]}).onDelete('cascade'),
+  check('repo_public_name', matches('name', re.repo))]);

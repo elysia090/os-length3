@@ -33,6 +33,9 @@
 // room, how many repos or lines or settings) holds the account's lock in a
 // transaction, so the check and the write are one step. What goes, goes as
 // sweep.ts lets it go: discarding a repo is its purge, run at once.
+//
+// A repo is found by its owner and name (repoAt, lineAt); everything after
+// that is by its number, which the rows under it carry.
 
 import {and, desc, eq, inArray, isNull, ne, sql} from 'drizzle-orm';
 import {Hono, type Context, type MiddlewareHandler} from 'hono';
@@ -41,8 +44,8 @@ import type {Auth} from './auth.ts';
 import type {Bucket} from './bucket.ts';
 import {devOAuth} from './devoauth.ts';
 import {inbox} from './inbox.ts';
-import {body, days, lock, ms, qualified, refuse, rows, type Db, type Vars} from './request.ts';
-import {blob, change, cut, guard, home, repo, repoGone, type Review, type Tree} from './schema.ts';
+import {ago, body, lock, ms, qualified, refuse, rows, type Db, type Vars} from './request.ts';
+import {blob, change, cut, guard, home, line, repo, repoGone, review, room, type Review, type Tree} from './schema.ts';
 import {seen} from './seen.ts';
 import {servers} from './servers.ts';
 import {KEPT, purge, REMEMBERED} from './sweep.ts';
@@ -142,21 +145,27 @@ export async function cutId(c: {repo: string; parent: string | null; tree: Tree;
   return sha256(enc.encode(JSON.stringify([c.repo, c.parent, tree, c.kind, c.title, c.issue, c.note, c.time])));
 }
 
-/** A cut as clients read it. */
+/** A commit as clients read it. */
 const cutCols = {id: cut.id, parent: cut.parent, merged: cut.merged, tree: cut.tree, kind: cut.kind, title: cut.title, issue: cut.issue,
   note: cut.note, added: cut.added, removed: cut.removed, time: cut.time};
-const lineCols = {name: repo.name, line: repo.line, base: repo.base, head: repo.head, pushed: repo.pushed, version: repo.version,
-  startedBy: repo.startedBy, startedAt: repo.startedAt, updatedAt: repo.updatedAt};
-const changeCols = {id: change.id, repo: change.repo, line: change.line, kind: change.kind, title: change.title, version: change.version,
-  base: change.base, head: change.head, state: change.state, note: change.note, submittedBy: change.submittedBy, reviews: change.reviews, updatedAt: change.updatedAt};
-type Line = {name: string; line: string; base: string | null; head: string | null; pushed: string | null; version: number;
-  startedBy: string; startedAt: Date; updatedAt: Date; draft?: Tree; off: Date | null};
-type Change = {id: string; repo: string; line: string; kind: string; title: string; version: number; base: string | null; head: string;
-  state: string; note: string; submittedBy: string; reviews: Review[]; updatedAt: Date; off?: Date | null};
+/** A line as clients read it: `name` is its repo's, `line` its own; `id` (its repo's number) and `off` are the service's. */
+const lineCols = {id: repo.id, off: repo.offAt, name: repo.name, line: line.name, base: line.base, head: line.head, pushed: line.pushed,
+  version: line.version, startedBy: line.startedBy, startedAt: line.startedAt, updatedAt: line.updatedAt};
+/** A change as clients read it, its reviews newest first. */
+const changeCols = {id: change.id, line: change.line, kind: change.kind, title: change.title, version: change.version, base: change.base,
+  head: change.head, state: change.state, note: change.note, submittedBy: change.submittedBy, updatedAt: change.updatedAt,
+  reviews: sql<Review[]>`coalesce((select jsonb_agg(jsonb_build_object('version', r.version, 'verdict', r.verdict, 'note', r.note, 'marks', r.marks,
+    'by', r.by, 'time', ${ms(sql`r.time`)}) order by r.time desc, r.id) from review r where r.change_id = ${qualified(change.id)}), '[]'::jsonb)`.as('reviews')};
+type Line = {id: number; off: Date | null; name: string; line: string; base: string | null; head: string | null; pushed: string | null; version: number;
+  startedBy: string; startedAt: Date; updatedAt: Date; draft?: Tree};
+type Change = {id: string; line: string; kind: string; title: string; version: number; base: string | null; head: string;
+  state: string; note: string; submittedBy: string; reviews: Review[]; updatedAt: Date};
 
-const lineShown = ({off: _, draft, ...r}: Line) => ({...r, issue: issueOf(r.line), ...(draft ? {draft} : {}), startedAt: r.startedAt.getTime()});
-const changeShown = ({off: _, ...r}: Change) => ({...r, issue: issueOf(r.line), updatedAt: r.updatedAt.getTime()});
+const lineShown = ({id: _, off: __, draft, ...r}: Line) => ({...r, issue: issueOf(r.line), ...(draft ? {draft} : {}), startedAt: r.startedAt.getTime()});
+const changeShown = (repoName: string, {repoId: _, off: __, ...r}: Change & {repoId?: number; off?: Date | null}) =>
+  ({...r, repo: repoName, issue: issueOf(r.line), updatedAt: r.updatedAt.getTime()});
 const count = (n: unknown) => (typeof n === 'number' && Number.isInteger(n) && n >= 0 && n < 2 ** 31 ? n : 0);
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 export function createApp(d: Deps) {
   const app = new Hono<Vars>();
@@ -215,32 +224,26 @@ export function createApp(d: Deps) {
   v1.use('*', signedIn);
   const key = (user: string, sha: string) => `u/${user}/${sha}`;
 
-  /** What an account keeps: its blobs, and the trees its drafts, commits and reviews hold, as Postgres stores them. */
-  const usedBy = async (q: Db, user: string) => Number((await rows<{used: string}>(q, sql`select
-    (select coalesce(sum(size), 0) from blob where user_id = ${user})
-    + (select coalesce(sum(pg_column_size(draft)), 0) from repo where user_id = ${user})
-    + (select coalesce(sum(pg_column_size(tree)), 0) from cut where user_id = ${user})
-    + (select coalesce(sum(pg_column_size(reviews)), 0) from change where user_id = ${user}) as used`))[0].used);
-  /** Refused (507) unless `more` bytes fit in what the account may keep; the caller holds the account's lock. */
+  /**
+   * Refused (507) unless `more` bytes fit in what the account may keep: its blobs, and the trees its
+   * drafts and commits hold and its reviews, as counted in its room. The caller holds the account's lock.
+   */
   const fits = async (q: Db, user: string, more: number) => {
     if (more <= 0) return;
-    const used = await usedBy(q, user), quota = d.quota ?? QUOTA;
+    const [r] = await q.select({used: room.used}).from(room).where(eq(room.userId, user)) as {used: number}[];
+    const used = r?.used ?? 0, quota = d.quota ?? QUOTA;
     if (used + more > quota) refuse(507, {error: 'The Remote is full for this account', used, quota});
   };
 
   // ---- what moved: the one request a page asks every few seconds ----
 
-  // A stamp of what GET /v1/repos and /v1/repos/gone would say (each main line's version, head,
-  // when it changed and whether it is off; each name gone, and when), and each setting's version:
-  // one read of small columns, nothing else.
+  // The room's stamp, which moves whenever GET /v1/repos or /v1/repos/gone would read differently
+  // (0001's triggers), and each setting's version: one row and a few small ones.
   v1.get('/moved', async (c) => {
-    const user = c.get('userId');
-    const [m] = await rows<{repos: string; home: Record<string, number>}>(db, sql`select
-      md5(coalesce((select string_agg(concat_ws(' ', r.name, r.version, coalesce(r.head, '-'), coalesce(${ms(sql`r.off_at`)}, 0), ${ms(sql`r.updated_at`)}), ',' order by r.name)
-        from repo r where r.user_id = ${user} and r.line = 'main'), '')
-        || ';' || coalesce((select string_agg(concat_ws(' ', g.name, ${ms(sql`g.at`)}), ',' order by g.name) from repo_gone g where g.user_id = ${user}), '')) as repos,
-      (select coalesce(jsonb_object_agg(h.key, h.version), '{}'::jsonb) from home h where h.user_id = ${user}) as home`);
-    return c.json(m);
+    const [m] = await rows<{repos: string; home: Record<string, number>}>(db, sql`select r.stamp::text as repos,
+      (select coalesce(jsonb_object_agg(h.key, h.version), '{}'::jsonb) from home h where h.user_id = r.user_id) as home
+      from room r where r.user_id = ${c.get('userId')}`);
+    return c.json(m ?? {repos: '0', home: {}});
   });
 
   // ---- blobs ----
@@ -269,7 +272,7 @@ export function createApp(d: Deps) {
       if ((await tx.select({sha: blob.sha256}).from(blob).where(and(eq(blob.userId, user), eq(blob.sha256, sha)))).length) return;
       await fits(tx, user, bytes.length);
       await d.bucket.put(key(user, sha), bytes);
-      await tx.insert(blob).values({userId: user, sha256: sha, size: bytes.length});
+      await tx.insert(blob).values({userId: user, sha256: sha, bytes: bytes.length});
     });
     return c.json({sha256: sha}, 201);
   });
@@ -286,33 +289,35 @@ export function createApp(d: Deps) {
 
   /** The line a request is about: ?line=, 'main' when not given. */
   const lineOf = (c: {req: {query(k: string): string | undefined}}) => c.req.query('line') ?? 'main';
-  const at = (user: string, name: string, line: string) => and(eq(repo.userId, user), eq(repo.name, name), eq(repo.line, line));
-  /** Whether `name`'s repo is off: its main line says so for every line. */
-  const offOf = (user: string, name: string) => sql<Date | null>`(select m.off_at from repo m where m.user_id = ${user} and m.name = ${name} and m.line = 'main')`.mapWith(repo.offAt);
-  /** A line (with its draft only when asked for), and whether its repo is off: one read. */
-  const lineAt = async (q: Db, user: string, name: string, line: string, draft = false): Promise<Line | undefined> =>
-    (await q.select({...lineCols, ...(draft ? {draft: repo.draft} : {}), off: offOf(user, name)}).from(repo).where(at(user, name, line)))[0];
+  /** `user`'s repo `name`: its number, and whether it is off. */
+  const repoAt = async (q: Db, user: string, name: string) =>
+    (await q.select({id: repo.id, off: repo.offAt}).from(repo).where(and(eq(repo.userId, user), eq(repo.name, name))))[0] as {id: number; off: Date | null} | undefined;
+  /** A line (with its draft only when asked for), its repo's number, and whether its repo is off: one read. */
+  const lineAt = async (q: Db, user: string, name: string, l: string, draft = false): Promise<Line | undefined> =>
+    (await q.select({...lineCols, ...(draft ? {draft: line.draft} : {})}).from(line).innerJoin(repo, eq(repo.id, line.repoId))
+      .where(and(eq(repo.userId, user), eq(repo.name, name), eq(line.name, l))))[0];
+  /** The row of line `l` of repo `id`. */
+  const lineRow = (id: number, l: string) => and(eq(line.repoId, id), eq(line.name, l));
   /** A repo that is off answers nothing but being off, and until when it can come back. */
   const on = (off: Date | null | undefined) => { if (off) refuse(410, {error: 'This repo is turned off', offAt: off.getTime(), until: off.getTime() + KEPT}); };
   /** The names that went for good and are still remembered, each with when (sweep.ts purge). */
-  const remembered = (user: string) => and(eq(repoGone.userId, user), sql`${repoGone.at} > now() - ${days(REMEMBERED)}`);
+  const remembered = (user: string) => and(eq(repoGone.userId, user), sql`${repoGone.at} > ${ago(REMEMBERED)}`);
   /** When `name` went for good, if it did lately. */
   const goneAt = async (q: Db, user: string, name: string) =>
     ((await q.select({at: repoGone.at}).from(repoGone).where(and(remembered(user), eq(repoGone.name, name))))[0] as {at: Date} | undefined)?.at.getTime();
-  const treesOf = async (q: Db, user: string, name: string, ids: (string | null)[]) => {
+  /** The trees of the commits `ids` of repo `id`; one not there is empty. */
+  const treesOf = async (q: Db, id: number, ids: (string | null)[]) => {
     const wanted = [...new Set(ids.filter((x): x is string => !!x))];
-    const found = wanted.length ? await q.select({id: cut.id, tree: cut.tree}).from(cut).where(and(eq(cut.userId, user), eq(cut.repo, name), inArray(cut.id, wanted))) : [];
+    const found = wanted.length ? await q.select({id: cut.id, tree: cut.tree}).from(cut).where(and(eq(cut.repoId, id), inArray(cut.id, wanted))) : [];
     const by = new Map<string, Tree>(found.map((r: {id: string; tree: Tree}) => [r.id, r.tree]));
-    return (id: string | null): Tree => (id && by.get(id)) || {};
+    return (c: string | null): Tree => (c && by.get(c)) || {};
   };
 
   // Repos are their main lines; one turned off says when it goes for good.
   v1.get('/repos', async (c) => {
-    const list = await db.select({name: repo.name, head: repo.head, version: repo.version, updatedAt: repo.updatedAt, offAt: repo.offAt,
-      // What its draft's files take, each blob once.
-      bytes: sql<number>`(select coalesce(sum(b.size), 0)::float8 from blob b where b.user_id = ${qualified(repo.userId)}
-        and b.sha256 in (select e.value from jsonb_each_text(${qualified(repo.draft)}) e))`.as('bytes')})
-      .from(repo).where(and(eq(repo.userId, c.get('userId')), eq(repo.line, 'main'))).orderBy(desc(sql`bytes`), repo.name) as {offAt: Date | null}[];
+    const list = await db.select({name: repo.name, head: line.head, version: line.version, updatedAt: line.updatedAt, offAt: repo.offAt, bytes: line.fileBytes})
+      .from(repo).innerJoin(line, and(eq(line.repoId, repo.id), eq(line.name, 'main'))).where(eq(repo.userId, c.get('userId')))
+      .orderBy(desc(line.fileBytes), repo.name) as {offAt: Date | null}[];
     return c.json(list.map((r) => ({...r, offAt: r.offAt?.getTime() ?? null, until: r.offAt ? r.offAt.getTime() + KEPT : null})));
   });
 
@@ -340,8 +345,8 @@ export function createApp(d: Deps) {
   // exactly when its copy was never in step with the Remote, so a copy that was cannot bring back
   // what was discarded by sending itself again.
   v1.patch('/repos/:name/draft', async (c) => {
-    const user = c.get('userId'), name = c.req.param('name'), line = lineOf(c), anew = c.req.query('anew') === '1';
-    if (!validName(name) || !validLine(line)) return c.json({error: 'Not found'}, 404);
+    const user = c.get('userId'), name = c.req.param('name'), l = lineOf(c), anew = c.req.query('anew') === '1';
+    if (!validName(name) || !validLine(l)) return c.json({error: 'Not found'}, 404);
     const b = await body<{version?: unknown; set?: unknown; remove?: unknown}>(c);
     if (!b || typeof b.version !== 'number' || typeof b.set !== 'object' || b.set === null || Array.isArray(b.set) || !Array.isArray(b.remove)) return c.json({error: 'a diff'}, 400);
     const set = b.set as Record<string, unknown>, remove = b.remove as unknown[];
@@ -351,13 +356,13 @@ export function createApp(d: Deps) {
     const shas = [...new Set(Object.values(set).filter((v): v is string => typeof v === 'string'))];
     const version = await db.transaction(async (tx: Db) => {
       await lock(tx, user);
-      const row = await lineAt(tx, user, name, line, true);
+      const row = await lineAt(tx, user, name, l, true);
       on(row?.off);
       if (!row) {
         const gone = await goneAt(tx, user, name);
-        if (gone && !(anew && line === 'main')) refuse(410, {error: 'This repo was discarded on the Remote.', gone});
+        if (gone && !(anew && l === 'main')) refuse(410, {error: 'This repo was discarded on the Remote.', gone});
         // A line other than main is made by starting work on its issue, not by writing to it.
-        if (line !== 'main') refuse(404, {error: 'That work is not on the Remote'});
+        if (l !== 'main') refuse(404, {error: 'That work is not on the Remote'});
         if (name === 'gone') refuse(400, {error: 'A repo cannot be called gone'});
       }
       if (shas.length) {
@@ -372,14 +377,15 @@ export function createApp(d: Deps) {
       const size = JSON.stringify(tree).length;
       if (Object.keys(tree).length > LIMIT.files || size > LIMIT.tree) refuse(413, {error: 'Too many files for one repo'});
       if (!row) {
-        const [{n}] = await tx.select({n: sql<number>`count(*)::int`}).from(repo).where(and(eq(repo.userId, user), eq(repo.line, 'main')));
+        const [{n}] = await tx.select({n: sql<number>`count(*)::int`}).from(repo).where(eq(repo.userId, user));
         if (n >= LIMIT.repos) refuse(429, {error: 'Too many repos'});
       }
       await fits(tx, user, size - JSON.stringify(was).length);
-      if (row) await tx.update(repo).set({draft: tree, version: current + 1, updatedAt: sql`now()`}).where(and(at(user, name, line), eq(repo.version, current)));
+      if (row) await tx.update(line).set({draft: tree, version: current + 1, updatedAt: sql`now()`}).where(and(lineRow(row.id, l), eq(line.version, current)));
       else {
         await tx.delete(repoGone).where(and(eq(repoGone.userId, user), eq(repoGone.name, name)));
-        await tx.insert(repo).values({userId: user, name, line, draft: tree, version: 1, startedBy: c.get('name')});
+        const [made] = await tx.insert(repo).values({userId: user, name}).returning({id: repo.id}) as {id: number}[];
+        await tx.insert(line).values({repoId: made.id, userId: user, name: 'main', draft: tree, version: 1, startedBy: c.get('name')});
       }
       return current + 1;
     });
@@ -388,24 +394,25 @@ export function createApp(d: Deps) {
 
   /**
    * Record a commit on a line read at `row` (its head is the parent) and move the head to it; with
-   * `draft`, the draft is laid down too. The caller holds the account's lock in a transaction.
+   * `draft`, the draft is laid down too. The commit is there before the line names it. The caller
+   * holds the account's lock in a transaction: refused, neither stays.
    */
-  const commit = async (tx: Db, user: string, name: string, line: string, row: {version: number; head: string | null},
+  const commit = async (tx: Db, user: string, row: Line,
     w: {merged: string | null; tree: Tree; kind: string; title: string; issue: string; note: string; added: number; removed: number}, draft?: Tree) => {
     await fits(tx, user, JSON.stringify(w.tree).length);
     const time = Date.now();
-    const id = await cutId({repo: `${name}${line === 'main' ? '' : `@${line}`}`, parent: row.head, tree: w.tree, kind: w.kind, title: w.title, issue: w.issue, note: w.note, time});
-    const moved = await tx.update(repo).set({head: id, updatedAt: sql`now()`, ...(draft ? {draft, version: row.version + 1} : {})})
-      .where(and(at(user, name, line), eq(repo.version, row.version), row.head === null ? isNull(repo.head) : eq(repo.head, row.head))).returning({head: repo.head});
-    if (!moved.length) refuse(409, {head: row.head, version: row.version});
-    await tx.insert(cut).values({id, userId: user, repo: name, parent: row.head, merged: w.merged, tree: w.tree, kind: w.kind, title: w.title,
+    const id = await cutId({repo: `${row.name}${row.line === 'main' ? '' : `@${row.line}`}`, parent: row.head, tree: w.tree, kind: w.kind, title: w.title, issue: w.issue, note: w.note, time});
+    await tx.insert(cut).values({repoId: row.id, id, userId: user, parent: row.head, merged: w.merged, tree: w.tree, kind: w.kind, title: w.title,
       issue: w.issue, note: w.note, added: w.added, removed: w.removed, time: new Date(time)}).onConflictDoNothing();
+    const moved = await tx.update(line).set({head: id, updatedAt: sql`now()`, ...(draft ? {draft, version: row.version + 1} : {})})
+      .where(and(lineRow(row.id, row.line), eq(line.version, row.version), row.head === null ? isNull(line.head) : eq(line.head, row.head))).returning({head: line.head});
+    if (!moved.length) refuse(409, {head: row.head, version: row.version});
     return {id, time};
   };
 
   // Commit: a line's draft at `version` becomes the next commit after `parent`.
   v1.post('/repos/:name/cuts', async (c) => {
-    const user = c.get('userId'), name = c.req.param('name'), line = lineOf(c);
+    const user = c.get('userId'), name = c.req.param('name'), l = lineOf(c);
     const b = await body<{version?: unknown; parent?: unknown; kind?: unknown; title?: unknown; issue?: unknown; note?: unknown; added?: unknown; removed?: unknown}>(c);
     if (!b || typeof b.version !== 'number' || !(b.parent === null || (typeof b.parent === 'string' && HEX.test(b.parent)))) return c.json({error: 'a cut'}, 400);
     const words = {kind: b.kind ?? '', title: b.title, issue: b.issue ?? '', note: b.note ?? ''};
@@ -413,18 +420,20 @@ export function createApp(d: Deps) {
     if (!(words.title as string).trim()) return c.json({error: 'A commit needs a title'}, 400);
     const made = await db.transaction(async (tx: Db) => {
       await lock(tx, user);
-      const row = await lineAt(tx, user, name, line, true);
+      const row = await lineAt(tx, user, name, l, true);
       on(row?.off);
       if (!row || row.version !== b.version || row.head !== b.parent) refuse(409, {head: row?.head ?? null, version: row?.version ?? 0});
-      return commit(tx, user, name, line, row, {merged: null, tree: row.draft!, ...(words as {kind: string; title: string; issue: string; note: string}),
+      return commit(tx, user, row, {merged: null, tree: row.draft!, ...(words as {kind: string; title: string; issue: string; note: string}),
         added: count(b.added), removed: count(b.removed)});
     });
     return c.json(made, 201);
   });
 
   v1.get('/repos/:name/cuts/:id', async (c) => {
-    const user = c.get('userId'), name = c.req.param('name');
-    const [row] = await db.select({...cutCols, off: offOf(user, name)}).from(cut).where(and(eq(cut.userId, user), eq(cut.repo, name), eq(cut.id, c.req.param('id'))));
+    const id = c.req.param('id');
+    if (!HEX.test(id)) return c.json({error: 'No such commit'}, 404);
+    const [row] = await db.select({...cutCols, off: repo.offAt}).from(cut).innerJoin(repo, eq(repo.id, cut.repoId))
+      .where(and(eq(repo.userId, c.get('userId')), eq(repo.name, c.req.param('name')), eq(cut.id, id)));
     if (!row) return c.json({error: 'No such commit'}, 404);
     on(row.off);
     const {off: _, ...shown} = row;
@@ -432,21 +441,21 @@ export function createApp(d: Deps) {
   });
 
   // As git log: from the line's head along first parents, so a work's history goes on into main's
-  // from where it began, and every commit's parent is there to compare with. One walk in the database.
+  // from where it began, and every commit's parent is there to compare with. One walk in the database,
+  // each step one lookup of the repo's commits by their key.
   v1.get('/repos/:name/log', async (c) => {
     const limit = Math.min(LIMIT.log, Math.max(1, Number(c.req.query('limit') ?? 50) || 50));
-    const user = c.get('userId'), name = c.req.param('name');
-    const row = await lineAt(db, user, name, lineOf(c));
+    const row = await lineAt(db, c.get('userId'), c.req.param('name'), lineOf(c));
     on(row?.off);
     if (!row?.head) return c.json([]);
     return c.json(await rows(db, sql`with recursive walk(id, n) as (
         select ${row.head}::text, 1
         union all
-        select c.parent, w.n + 1 from walk w join cut c on c.id = w.id and c.user_id = ${user} and c.repo = ${name}
+        select c.parent, w.n + 1 from walk w join cut c on c.repo_id = ${row.id} and c.id = w.id
         where c.parent is not null and w.n < ${limit}
       )
       select c.id, c.parent, c.merged, c.tree, c.kind, c.title, c.issue, c.note, c.added, c.removed, ${ms(sql`c.time`)} as time
-      from walk w join cut c on c.id = w.id and c.user_id = ${user} and c.repo = ${name} order by w.n`));
+      from walk w join cut c on c.repo_id = ${row.id} and c.id = w.id order by w.n`));
   });
 
   // ---- turning a repo off: kept 30 days, back at once until then, or discarded now ----
@@ -470,13 +479,14 @@ export function createApp(d: Deps) {
     if (!same(b?.name, c.get('name')) || b?.repo !== name) refuse(403, {error: 'The names do not match.'});
     if (typeof b?.code !== 'string' || !CODE.test(b.code) || await digestOf(user, b.code) !== g.offDigest) refuse(403, {error: 'That is not the code.'});
   };
+  const named = (user: string, name: string) => and(eq(repo.userId, user), eq(repo.name, name));
 
   // Off: asks for a passkey just now, the account's name, the repo's name and the five-letter code.
   v1.post('/repos/:name/off', async (c) => {
     const user = c.get('userId'), name = c.req.param('name');
     await confirmed(c, name);
     // Off once: asking again does not restart its 30 days.
-    const [done] = await db.update(repo).set({offAt: sql`coalesce(${repo.offAt}, now())`}).where(at(user, name, 'main')).returning({offAt: repo.offAt});
+    const [done] = await db.update(repo).set({offAt: sql`coalesce(${repo.offAt}, now())`}).where(named(user, name)).returning({offAt: repo.offAt});
     if (!done) return c.json({error: 'That repo is not on the Remote'}, 404);
     return c.json({name, offAt: done.offAt.getTime(), until: done.offAt.getTime() + KEPT});
   });
@@ -488,10 +498,9 @@ export function createApp(d: Deps) {
     await confirmed(c, name);
     await db.transaction(async (tx: Db) => {
       await lock(tx, user);
-      if ((await purge(tx, sql`m.user_id = ${user} and m.name = ${name}`)).repo) return;
+      if ((await purge(tx, sql`r.user_id = ${user} and r.name = ${name}`)).repo) return;
       // Nothing went: it is on (perhaps turned on just now), or not there at all.
-      const [main] = await tx.select({name: repo.name}).from(repo).where(at(user, name, 'main'));
-      if (main) refuse(409, {error: 'Turn it off first.'});
+      if (await repoAt(tx, user, name)) refuse(409, {error: 'Turn it off first.'});
       refuse(404, {error: 'That repo is not on the Remote'});
     });
     return c.json({name, discarded: true});
@@ -499,7 +508,7 @@ export function createApp(d: Deps) {
 
   // On: back at once, as it was.
   v1.post('/repos/:name/on', async (c) => {
-    const done = await db.update(repo).set({offAt: null}).where(at(c.get('userId'), c.req.param('name'), 'main')).returning({name: repo.name});
+    const done = await db.update(repo).set({offAt: null}).where(named(c.get('userId'), c.req.param('name'))).returning({id: repo.id});
     return done.length ? c.json({name: c.req.param('name'), on: true}) : c.json({error: 'That repo is not on the Remote'}, 404);
   });
 
@@ -522,9 +531,10 @@ export function createApp(d: Deps) {
   // ---- work on an issue: its own line, from main's last commit ----
 
   v1.get('/repos/:name/lines', async (c) => {
-    const list = await db.select({...lineCols, off: repo.offAt}).from(repo).where(and(eq(repo.userId, c.get('userId')), eq(repo.name, c.req.param('name')))) as Line[];
-    on(list.find((r) => r.line === 'main')?.off);
-    return c.json(list.filter((r) => r.line !== 'main').map((r) => lineShown({...r, off: null})));
+    const list = await db.select(lineCols).from(line).innerJoin(repo, eq(repo.id, line.repoId))
+      .where(and(named(c.get('userId'), c.req.param('name')), ne(line.name, 'main'))).orderBy(line.startedAt) as Line[];
+    on(list[0]?.off);
+    return c.json(list.map(lineShown));
   });
 
   v1.post('/repos/:name/lines', async (c) => {
@@ -540,18 +550,18 @@ export function createApp(d: Deps) {
       on(main.off);
       const existing = await lineAt(tx, user, name, stem);
       if (existing) return {row: existing, made: false};
-      const [{n}] = await tx.select({n: sql<number>`count(*)::int`}).from(repo).where(and(eq(repo.userId, user), eq(repo.name, name), ne(repo.line, 'main')));
+      const [{n}] = await tx.select({n: sql<number>`count(*)::int`}).from(line).where(and(eq(line.repoId, main.id), ne(line.name, 'main')));
       if (n >= LIMIT.lines) refuse(429, {error: 'This repo has too much work open'});
       // Work starts from what main last committed, not from main's uncommitted draft. A repo
       // nobody has committed yet gets its first commit (what it was made with) here, so the
       // work shows only what it changes.
-      const head = main.head ?? (await commit(tx, user, name, 'main', main, {merged: null, tree: main.draft!, kind: '', title: 'Start', issue: '', note: '', added: 0, removed: 0})).id;
+      const head = main.head ?? (await commit(tx, user, main, {merged: null, tree: main.draft!, kind: '', title: 'Start', issue: '', note: '', added: 0, removed: 0})).id;
       // The issue itself comes along when main has it written but not committed: the work is about it.
-      const from = {...(head === main.head ? (await treesOf(tx, user, name, [head]))(head) : main.draft!)};
+      const from = {...(head === main.head ? (await treesOf(tx, main.id, [head]))(head) : main.draft!)};
       const written = main.draft![issue];
       if (written && !from[issue]) from[issue] = written;
       await fits(tx, user, JSON.stringify(from).length);
-      await tx.insert(repo).values({userId: user, name, line: stem, base: head, head, pushed: head, draft: from, version: 1, startedBy: c.get('name')});
+      await tx.insert(line).values({repoId: main.id, userId: user, name: stem, base: head, head, pushed: head, draft: from, version: 1, startedBy: c.get('name')});
       return {row: (await lineAt(tx, user, name, stem))!, made: true};
     });
     return c.json(lineShown(row), made ? 201 : 200);
@@ -559,31 +569,34 @@ export function createApp(d: Deps) {
 
   // Push: the line's commits become visible as the line's state (what a change hands in).
   v1.post('/repos/:name/lines/:line/push', async (c) => {
-    const user = c.get('userId'), name = c.req.param('name'), line = c.req.param('line');
+    const user = c.get('userId'), name = c.req.param('name'), l = c.req.param('line');
     const b = await body<{head?: unknown}>(c);
-    const row = await lineAt(db, user, name, line);
+    const row = await lineAt(db, user, name, l);
     if (!row) return c.json({error: 'That work is not on the Remote'}, 404);
     on(row.off);
     if (b?.head !== row.head) return c.json({head: row.head}, 409);
-    const done = await db.update(repo).set({pushed: row.head, updatedAt: sql`now()`})
-      .where(and(at(user, name, line), row.head === null ? isNull(repo.head) : eq(repo.head, row.head))).returning({pushed: repo.pushed});
-    return done.length ? c.json({pushed: row.head}) : c.json({head: (await lineAt(db, user, name, line))?.head ?? null}, 409);
+    const done = await db.update(line).set({pushed: row.head, updatedAt: sql`now()`})
+      .where(and(lineRow(row.id, l), row.head === null ? isNull(line.head) : eq(line.head, row.head))).returning({pushed: line.pushed});
+    return done.length ? c.json({pushed: row.head}) : c.json({head: (await lineAt(db, user, name, l))?.head ?? null}, 409);
   });
 
   // ---- changes: a line handed to main ----
 
-  const changeAt = async (q: Db, user: string, name: string, id: string) =>
-    (await q.select({...changeCols, off: offOf(user, name)}).from(change).where(and(eq(change.userId, user), eq(change.repo, name), eq(change.id, id))))[0] as Change | undefined;
+  /** A change of `user`'s repo `name`, its repo's number, and whether the repo is off. */
+  const changeAt = async (q: Db, user: string, name: string, id: string) => (UUID.test(id)
+    ? (await q.select({...changeCols, repoId: repo.id, off: repo.offAt}).from(change).innerJoin(repo, eq(repo.id, change.repoId))
+      .where(and(named(user, name), eq(change.id, id))))[0] as (Change & {repoId: number; off: Date | null}) | undefined
+    : undefined);
   const changed = async (q: Db, id: string, set: Record<string, unknown>, also?: ReturnType<typeof eq>) =>
     (await q.update(change).set(set).where(and(eq(change.id, id), also)).returning(changeCols))[0] as Change | undefined;
 
   v1.get('/repos/:name/changes', async (c) => {
-    const user = c.get('userId'), name = c.req.param('name');
-    const list = await db.select({off: repo.offAt, change: changeCols}).from(repo)
-      .leftJoin(change, and(eq(change.userId, repo.userId), eq(change.repo, repo.name)))
-      .where(at(user, name, 'main')).orderBy(desc(change.updatedAt)) as {off: Date | null; change: Change | null}[];
-    on(list[0]?.off);
-    return c.json(list.filter((r) => r.change).map((r) => changeShown(r.change!)));
+    const name = c.req.param('name');
+    const r = await repoAt(db, c.get('userId'), name);
+    if (!r) return c.json([]);
+    on(r.off);
+    const list = await db.select(changeCols).from(change).where(eq(change.repoId, r.id)).orderBy(desc(change.updatedAt)) as Change[];
+    return c.json(list.map((x) => changeShown(name, x)));
   });
 
   // Submit change: what the line has pushed, measured against main's last commit. Again after
@@ -591,24 +604,24 @@ export function createApp(d: Deps) {
   v1.post('/repos/:name/changes', async (c) => {
     const user = c.get('userId'), name = c.req.param('name');
     const b = await body<{line?: unknown; kind?: unknown; title?: unknown; note?: unknown}>(c);
-    const line = typeof b?.line === 'string' && b.line !== 'main' ? b.line : '';
+    const l = typeof b?.line === 'string' && b.line !== 'main' ? b.line : '';
     const words = {kind: typeof b?.kind === 'string' ? b.kind : '', title: typeof b?.title === 'string' ? b.title.trim() : '', note: typeof b?.note === 'string' ? b.note : ''};
     const [out, status] = await db.transaction(async (tx: Db) => {
       await lock(tx, user);
-      const row = line ? await lineAt(tx, user, name, line) : undefined;
+      const row = l ? await lineAt(tx, user, name, l) : undefined;
       if (!row) refuse(404, {error: 'That work is not on the Remote'});
       on(row.off);
       if (!row.pushed || row.pushed !== row.head) refuse(409, {error: 'Push first: the change is what was pushed', head: row.head, pushed: row.pushed});
       if (row.pushed === row.base) refuse(409, {error: 'Nothing committed since the work began'});
-      if (!words.title || words.title.length > LIMIT.words || words.note.length > LIMIT.words) refuse(400, {error: 'A change needs a title of at most 2000 characters'});
+      if (!words.title || words.title.length > LIMIT.words || words.note.length > LIMIT.words || words.kind.length > LIMIT.words) refuse(400, {error: 'A change needs a title of at most 2000 characters'});
       const [was] = await tx.select({id: change.id, state: change.state, head: change.head, version: change.version}).from(change)
-        .where(and(eq(change.userId, user), eq(change.repo, name), eq(change.line, line)));
+        .where(and(eq(change.repoId, row.id), eq(change.line, l)));
       if (was?.state === 'merged') refuse(409, {error: 'This change is merged already'});
       const now = {...words, head: row.pushed, base: row.base, state: 'open', submittedBy: c.get('name'), updatedAt: new Date()};
       if (was) return [await changed(tx, was.id, {...now, version: was.head === row.pushed && was.state === 'open' ? was.version : was.version + 1}), 200] as const;
-      return [(await tx.insert(change).values({id: crypto.randomUUID(), userId: user, repo: name, line, ...now}).returning(changeCols))[0], 201] as const;
+      return [(await tx.insert(change).values({repoId: row.id, userId: user, line: l, ...now}).returning(changeCols))[0], 201] as const;
     });
-    return c.json(changeShown(out), status);
+    return c.json(changeShown(name, out as Change), status);
   });
 
   // Review: of one version; a newer push makes it a review of an older version, and says so.
@@ -631,12 +644,12 @@ export function createApp(d: Deps) {
         marks.push(m);
         chars += m.length;
       }
-      const review: Review = {version: row.version, verdict: b!.verdict as Review['verdict'], note: typeof b?.note === 'string' ? b.note.slice(0, LIMIT.words) : '',
-        marks, by: c.get('name'), time: Date.now()};
-      await fits(tx, user, JSON.stringify(review).length);
-      return changed(tx, row.id, {reviews: sql`${JSON.stringify([review])}::jsonb || ${change.reviews}`});
+      const note = typeof b?.note === 'string' ? b.note.slice(0, LIMIT.words) : '';
+      await fits(tx, user, note.length + JSON.stringify(marks).length);
+      await tx.insert(review).values({changeId: row.id, userId: user, version: row.version, verdict: b!.verdict as Review['verdict'], note, marks, by: c.get('name')});
+      return (await changeAt(tx, user, name, row.id))!;
     });
-    return c.json(changeShown(out!), 201);
+    return c.json(changeShown(name, out), 201);
   });
 
   // Merge: main takes the change, file by file against where the change began; a file both changed is a conflict.
@@ -652,15 +665,15 @@ export function createApp(d: Deps) {
       if (b?.version !== row.version) refuse(409, {version: row.version});
       const main = await lineAt(tx, user, name, 'main', true);
       if (!main) refuse(404, {error: 'That repo is not on the Remote'});
-      const tree = await treesOf(tx, user, name, [row.base, main.head, row.head]);
+      const tree = await treesOf(tx, main.id, [row.base, main.head, row.head]);
       const merged = merge3(tree(row.base), tree(main.head), tree(row.head));
       if (merged.conflicts.length) refuse(409, {conflicts: merged.conflicts});
       // main's uncommitted draft keeps its own changes; what the merge brings is laid over it.
       const draft = merge3(tree(main.head), main.draft!, merged.tree);
       if (draft.conflicts.length) refuse(409, {conflicts: draft.conflicts, draft: true});
-      const made = await commit(tx, user, name, 'main', main, {merged: row.head, tree: merged.tree, kind: row.kind, title: row.title,
+      const made = await commit(tx, user, main, {merged: row.head, tree: merged.tree, kind: row.kind, title: row.title,
         issue: issueOf(row.line), note: row.note, added: 0, removed: 0}, draft.tree);
-      return {merged: made.id, ...changeShown((await changed(tx, row.id, {state: 'merged', updatedAt: new Date()}))!)};
+      return {merged: made.id, ...changeShown(name, (await changed(tx, row.id, {state: 'merged', updatedAt: new Date()}))!)};
     });
     return c.json(out);
   });
@@ -675,7 +688,7 @@ export function createApp(d: Deps) {
       const b = await body<{note?: unknown}>(c);
       const note = typeof b?.note === 'string' && b.note ? {note: b.note.slice(0, LIMIT.words)} : {};
       const done = row.state === 'open' && await changed(db, row.id, {state, ...note, updatedAt: new Date()}, eq(change.state, 'open'));
-      return done ? c.json(changeShown(done)) : c.json({error: 'The change is not open any more', state: (await changeAt(db, user, name, row.id))?.state ?? row.state}, 409);
+      return done ? c.json(changeShown(name, done)) : c.json({error: 'The change is not open any more', state: (await changeAt(db, user, name, row.id))?.state ?? row.state}, 409);
     });
   }
 

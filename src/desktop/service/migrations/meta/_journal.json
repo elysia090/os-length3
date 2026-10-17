@@ -5,106 +5,15 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1792164777758,
-      "tag": "0000_start",
+      "when": 1792242148515,
+      "tag": "0000_the_remote",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "7",
-      "when": 1792211257250,
-      "tag": "0001_topic",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1792214634769,
-      "tag": "0002_topic_rings",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1792214635714,
-      "tag": "0003_post_time_is_its_id",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1792219969925,
-      "tag": "0004_topic_goes_from_rings",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1792220192755,
-      "tag": "0005_servers_and_boards",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1792221714898,
-      "tag": "0006_one_namespace_and_leases",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1792223271808,
-      "tag": "0007_who_sees_a_repo",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "7",
-      "when": 1792224520544,
-      "tag": "0008_names_are_leased_and_coded",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "7",
-      "when": 1792225313189,
-      "tag": "0009_boards_hold_no_plan",
-      "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "7",
-      "when": 1792225325276,
-      "tag": "0010_a_board_keeps_a_todo",
-      "breakpoints": true
-    },
-    {
-      "idx": 11,
-      "version": "7",
-      "when": 1792228711038,
-      "tag": "0011_a_board_removed_is_held",
-      "breakpoints": true
-    },
-    {
-      "idx": 12,
-      "version": "7",
-      "when": 1792234621340,
-      "tag": "0012_what_is_kept_moves_in",
-      "breakpoints": true
-    },
-    {
-      "idx": 13,
-      "version": "7",
-      "when": 1792234744500,
-      "tag": "0013_what_is_derived_goes",
-      "breakpoints": true
-    },
-    {
-      "idx": 14,
-      "version": "7",
-      "when": 1792240040727,
-      "tag": "0014_a_repo_gone_is_remembered",
+      "when": 1792242149645,
+      "tag": "0001_counted_and_kept",
       "breakpoints": true
     }
   ]

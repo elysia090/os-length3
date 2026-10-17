@@ -509,10 +509,10 @@ test('Who sees a repo: its owner, the servers it is shown in, or everyone, under
   assert.deepEqual(listed.map((r) => [r.owner, r.name, r.mine]), [['ren@length3.test', 'hello', false]]);
   const shown = await see('ren@length3.test:hello', mio);
   assert.deepEqual([shown.status, shown.json.owner, shown.json.title, shown.json.tree], [200, 'ren@length3.test', 'start', {'README.md': readme}]);
-  assert.equal((await s.call('GET', `/v1/seen/ren@length3.test/hello/blobs/${readme}`, {token: mio})).text, '# hello\n');
-  // Only what is in the tree it was pushed to: not the commit after it, nor any other blob of Ren's.
-  assert.equal((await s.call('GET', `/v1/seen/ren@length3.test/hello/blobs/${later}`, {token: mio})).status, 404);
-  assert.equal((await s.call('GET', `/v1/seen/ren@length3.test/hello/blobs/${secret}`, {token: mio})).status, 404);
+  const file = (path: string) => s.call('GET', `/v1/seen/ren@length3.test/hello/file?path=${encodeURIComponent(path)}`, {token: mio});
+  // Only what is in the tree it was pushed to, by its path: not the commit after it, nor any other blob of Ren's.
+  assert.equal((await file('README.md')).text, '# hello\n');
+  assert.deepEqual(await Promise.all([later, secret, '../README.md', ''].map(async (p) => (await file(p)).status)), [404, 404, 404, 404]);
   assert.equal((await see('ren@length3.test:hello', kai)).status, 404);
   // Taken off the list by Ren or the server's owner; Mio may not.
   assert.equal((await s.call('DELETE', `/v1/servers/${sid}/repos/ren@length3.test/hello`, {token: mio})).status, 403);
@@ -522,7 +522,7 @@ test('Who sees a repo: its owner, the servers it is shown in, or everyone, under
   const out = await see('trip@length3.test:hello');
   assert.equal(out.status, 200);
   assert.ok(!JSON.stringify(out.json).includes('ren'), JSON.stringify(out.json));
-  assert.equal((await s.call('GET', `/v1/seen/trip@length3.test/hello/blobs/${readme}`)).text, '# hello\n');
+  assert.equal((await s.call('GET', `/v1/seen/trip@length3.test/hello/file?path=README.md`)).text, '# hello\n');
   // Ren's own name does not open it to everyone: that would tie the two together.
   assert.deepEqual([(await see('ren@length3.test:hello')).status, (await see('ren@length3.test:hello', kai)).status], [404, 404]);
   // A face's names are one namespace: Mio's hello cannot also be trip:hello.
@@ -663,11 +663,11 @@ test('Consent: nobody is put in a server by someone they have not accepted, or h
   assert.deepEqual((await s.call('GET', '/v1/servers', {token: kai})).json, []);
   // Put in fifty servers by others, Kai still makes one of their own: only what one owns, or has held, counts.
   const k = await idOf(s, kai);
-  await s.db.execute(sql`insert into server (id, name) select 'x' || g, 'S' from generate_series(1, 50) g`);
-  await s.db.execute(sql`insert into server_member (server_id, user_id) select 'x' || g, ${k} from generate_series(1, 50) g`);
+  await s.db.execute(sql`insert into server (id, name) select lpad(g::text, 12, 'x'), 'S' from generate_series(1, 50) g`);
+  await s.db.execute(sql`insert into server_member (server_id, user_id) select lpad(g::text, 12, 'x'), ${k} from generate_series(1, 50) g`);
   assert.equal((await s.call('POST', '/v1/servers', {token: kai, body: {name: 'Mine', address: 'kaimine'}})).status, 201);
   // Owning fifty (and one) is the end of it.
-  await s.db.execute(sql`update server_member set owner = 1 where user_id = ${k}`);
+  await s.db.execute(sql`update server_member set owner = true where user_id = ${k}`);
   const full = await s.call('POST', '/v1/servers', {token: kai, body: {name: 'More', address: 'kaimore'}});
   assert.deepEqual([full.status, full.json.error], [429, 'Too many servers']);
 });
@@ -745,16 +745,19 @@ test('Storage: settings, repos, lines and reviews are capped, trees count toward
   // Two hundred repos, a hundred pieces of work on one, fifty reviews of a change.
   await s.db.execute(sql`insert into repo (user_id, name) select ${me}, 'r' || g from generate_series(1, 199) g`);
   assert.deepEqual((await s.call('PATCH', '/v1/repos/more/draft', {token: t, body: {version: 0, set: {}, remove: []}})).json.error, 'Too many repos');
-  await s.db.execute(sql`insert into repo (user_id, name, line) select ${me}, 'small', 'l' || g from generate_series(1, 100) g`);
+  const small = sql`(select id from repo where user_id = ${me} and name = 'small')`;
+  await s.db.execute(sql`insert into line (repo_id, user_id, name) select ${small}, ${me}, 'l' || g from generate_series(1, 100) g`);
   assert.deepEqual((await s.call('POST', '/v1/repos/small/lines', {token: t, body: {issue: 'issue/new.md'}})).json.error, 'This repo has too much work open');
-  await s.db.execute(sql`insert into change (id, user_id, repo, line, title, head) values ('c1', ${me}, 'small', 'l1', 'x', 'h'), ('c2', ${me}, 'small', 'l2', 'x', 'h')`);
+  const [c1, c2] = ['00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002'], h = 'a'.repeat(64);
+  await s.db.execute(sql`insert into cut (repo_id, id, user_id, tree, title) values (${small}, ${h}, ${me}, '{}', 'x')`);
+  await s.db.execute(sql`insert into change (id, repo_id, user_id, line, title, head) values (${c1}, ${small}, ${me}, 'l1', 'x', ${h}), (${c2}, ${small}, ${me}, 'l2', 'x', ${h})`);
   const review = (id: string, marks: string[]) => s.call('POST', `/v1/repos/small/changes/${id}/reviews`, {token: t, body: {version: 1, verdict: 'comment', marks}});
   // A review marks as many lines as fit: two hundred, saying 32 KiB in all.
-  const marked = await review('c1', Array.from({length: 1000}, (_, i) => `${'p'.repeat(190)}:${i}`));
+  const marked = await review(c1, Array.from({length: 1000}, (_, i) => `${'p'.repeat(190)}:${i}`));
   const marks = (marked.json.reviews as {marks: string[]}[])[0].marks;
   assert.ok(marked.status === 201 && marks.length > 0 && marks.length <= 200 && marks.join('').length <= 32 * 1024, String(marks.length));
-  await s.db.execute(sql`update change set reviews = (select jsonb_agg(jsonb_build_object('version', 1, 'verdict', 'comment', 'note', '', 'marks', '[]'::jsonb, 'by', '', 'time', 0)) from generate_series(1, 50)) where id = 'c2'`);
-  assert.deepEqual((await review('c2', [])).json.error, 'Too many reviews on this change');
+  await s.db.execute(sql`insert into review (change_id, user_id, version, verdict, by) select ${c2}, ${me}, 1, 'comment', '' from generate_series(1, 50)`);
+  assert.deepEqual((await review(c2, [])).json.error, 'Too many reviews on this change');
   // A tree of long paths to one small file counts as what it takes: refused when it would not fit.
   const set = Object.fromEntries(Array.from({length: 700}, (_, i) => [`${'d'.repeat(150)}/${i}.txt`, one.sha]));
   const big = await s.call('PATCH', '/v1/repos/small/draft', {token: t, body: {version: 1, set, remove: []}});
@@ -762,7 +765,7 @@ test('Storage: settings, repos, lines and reviews are capped, trees count toward
   // Eight uploads at once into the room that is left: those that fit, and no more.
   const sent = await Promise.all(Array.from({length: 8}, (_, i) => upload(s, t, new Uint8Array(30_000).fill(i + 1))));
   const took = sent.filter((r) => r.status === 201).length;
-  const blobs = await count(s, sql`select coalesce(sum(size), 0)::int as n from blob`);
+  const blobs = await count(s, sql`select coalesce(sum(bytes), 0)::int as n from blob`);
   assert.ok(took >= 1 && took < 8 && sent.every((r) => r.status === 201 || r.status === 507) && blobs <= quota, `${took} ${blobs}`);
 });
 
@@ -832,9 +835,11 @@ test('Discard: an off repo goes for good now, asked as off is; its name is remem
   assert.equal((await s.call('POST', `/v1/servers/${sid}/repos`, {token: t, body: {repo: 'r'}})).status, 201);
   assert.equal((await s.call('PUT', '/v1/repos/r/seen', {token: t, body: {seen: 'everyone', as: 'me'}})).status, 200);
   await s.call('PATCH', '/v1/repos/keep/draft', {token: t, body: {version: 0, set: {'README.md': readme}, remove: []}});
-  const of = async (table: string) => count(s, sql`select count(*)::int as n from ${sql.identifier(table)} where user_id = ${me} and ${sql.identifier(table === 'repo' || table === 'repo_gone' ? 'name' : 'repo')} = 'r'`);
-  const tables = ['repo', 'cut', 'change', 'repo_share', 'repo_public'];
-  assert.deepEqual(await Promise.all(tables.map(of)), [2, 2, 1, 1, 1]);
+  const of = async (table: string) => count(s, table === 'repo' || table === 'repo_gone'
+    ? sql`select count(*)::int as n from ${sql.identifier(table)} where user_id = ${me} and name = 'r'`
+    : sql`select count(*)::int as n from ${sql.identifier(table)} x join repo r on r.id = x.repo_id where r.user_id = ${me} and r.name = 'r'`);
+  const tables = ['repo', 'line', 'cut', 'change', 'repo_share', 'repo_public'];
+  assert.deepEqual(await Promise.all(tables.map(of)), [1, 2, 2, 1, 1, 1]);
 
   // Asked as off is: a passkey just now, the names and the code; and only of a repo that is off.
   const discard = (body: unknown = {name: 'Ren', repo: 'r', code: 'AB12C'}, name = 'r') => s.call('POST', `/v1/repos/${name}/discard`, {token: t, body});
@@ -848,7 +853,7 @@ test('Discard: an off repo goes for good now, asked as off is; its name is remem
   assert.equal((await discard({name: 'Mio', repo: 'r', code: 'AB12C'})).status, 403);
   const onStill = await discard();
   assert.deepEqual([onStill.status, onStill.json.error], [409, 'Turn it off first.']);
-  assert.deepEqual(await Promise.all(tables.map(of)), [2, 2, 1, 1, 1]);
+  assert.deepEqual(await Promise.all(tables.map(of)), [1, 2, 2, 1, 1, 1]);
   assert.equal((await discard({name: 'Ren', repo: 'nope', code: 'AB12C'}, 'nope')).status, 404);
 
   // Off, then discarded: all of it goes in one step, and its name is remembered as gone.
@@ -857,7 +862,7 @@ test('Discard: an off repo goes for good now, asked as off is; its name is remem
   const before = await moved();
   const done = await discard();
   assert.deepEqual([done.status, done.json], [200, {name: 'r', discarded: true}]);
-  assert.deepEqual(await Promise.all(tables.map(of)), [0, 0, 0, 0, 0]);
+  assert.deepEqual(await Promise.all(tables.map(of)), [0, 0, 0, 0, 0, 0]);
   assert.equal(await of('repo_gone'), 1);
   const gone = (await s.call('GET', '/v1/repos/gone', {token: t})).json as unknown as {name: string; at: number}[];
   assert.ok(gone.length === 1 && gone[0].name === 'r' && Math.abs(gone[0].at - Date.now()) < 60_000, JSON.stringify(gone));
@@ -894,7 +899,7 @@ test('The sweep remembers a repo it let go as gone, for 90 days', async () => {
   assert.equal((await draft()).status, 200);
   await s.db.update(schema.repo).set({offAt: new Date(Date.now() - 31 * 86_400_000)});
   const went = await sweep(s.db, s.bucket);
-  assert.deepEqual([went.repo, went.gone], [1, 1]);
+  assert.equal(went.repo, 1);
   const gone = (await s.call('GET', '/v1/repos/gone', {token: t})).json as unknown as {name: string; at: number}[];
   assert.deepEqual(gone.map((g) => g.name), ['old']);
   assert.equal((await draft()).status, 410);
@@ -985,15 +990,15 @@ test('The sweep: what was held long enough goes in one place, blobs no tree name
   assert.ok(!s.bucket.keys().includes(`u/${me}/${dropped.sha}`) && s.bucket.keys().includes(`u/${me}/${kept.sha}`));
   assert.deepEqual(((await s.db.execute(sql`select body from message`)).rows as {body: string}[]).map((m) => m.body), ['old and unread']);
   // Held thirty days and more: a server (its name with it) and a board; a signal and a proof minutes old; what was asked a day ago.
-  await s.db.execute(sql`insert into server (id, name, gone_at) values ('old', 'Old', now() - interval '31 days'), ('new', 'New', now() - interval '29 days')`);
-  await s.db.execute(sql`insert into address (address, server_id, name, domain, until, released_at) values ('old@length3.test', 'old', 'old', 'length3.test', now() + interval '1 year', now() - interval '1 day')`);
-  await s.db.execute(sql`insert into server_board (id, server_id, name, gone_at) values ('b-old', 'new', 'x', now() - interval '31 days'), ('b-new', 'new', 'y', null)`);
-  await s.db.execute(sql`insert into signal (id, to_user, from_user, session, kind, data, created_at) values ('s1', ${me}, ${her}, 's', 'offer', '', now() - interval '3 minutes')`);
+  await s.db.execute(sql`insert into server (id, name, gone_at) values ('oldoldoldold', 'Old', now() - interval '31 days'), ('newnewnewnew', 'New', now() - interval '29 days')`);
+  await s.db.execute(sql`insert into address (address, server_id, name, domain, until, released_at) values ('old@length3.test', 'oldoldoldold', 'old', 'length3.test', now() + interval '1 year', now() - interval '1 day')`);
+  await s.db.execute(sql`insert into board (id, server_id, name, gone_at) values ('boldboldbold', 'newnewnewnew', 'x', now() - interval '31 days'), ('bnewbnewbnew', 'newnewnewnew', 'y', null)`);
+  await s.db.execute(sql`insert into signal (to_user, from_user, session, kind, data, created_at) values (${me}, ${her}, 's', 'offer', '', now() - interval '3 minutes')`);
   await s.db.execute(sql`insert into guard (user_id, proof_session, proof_at) values (${her}, 'x', now() - interval '6 minutes')`);
   await s.db.execute(sql`insert into throttle (key, at) values ('k', now() - interval '2 days')`);
   const later = await sweep(s.db, s.bucket);
   assert.deepEqual([later.server, later.board, later.signal, later.guard, later.throttle], [1, 1, 1, 1, 1]);
-  assert.deepEqual([await count(s, sql`select count(*)::int as n from server`), await count(s, sql`select count(*)::int as n from server_board`),
+  assert.deepEqual([await count(s, sql`select count(*)::int as n from server`), await count(s, sql`select count(*)::int as n from board`),
     await count(s, sql`select count(*)::int as n from address`)], [1, 1, 2]);
   // Nothing else went: the repo, its draft and its history are as they were.
   assert.deepEqual(((await s.call('GET', '/v1/repos/r', {token: ren})).json as unknown as {draft: object}).draft, {'k.txt': kept.sha});
@@ -1024,4 +1029,45 @@ test('On Workers the app is made once, and each request uses the database it ope
   assert.equal(await repos(), 401);
   on = one;
   assert.equal(await repos(), 200);
+});
+
+test('The room is counted as things come and go, and agrees with counting it all again; its stamp moves with the repo list', async () => {
+  const s = await service();
+  const t = await s.start('Ren');
+  const me = await idOf(s, t);
+  const room = async () => (await s.db.execute(sql`select used, stamp from room where user_id = ${me}`)).rows[0] as {used: number; stamp: number};
+  const recount = () => count(s, sql`select ((select coalesce(sum(bytes), 0) from blob where user_id = ${me}) + (select coalesce(sum(bytes), 0) from line where user_id = ${me})
+    + (select coalesce(sum(bytes), 0) from cut where user_id = ${me}) + (select coalesce(sum(bytes), 0) from review where user_id = ${me}))::int as n`);
+  const moved = async () => (await s.call('GET', '/v1/moved', {token: t})).json.repos as string;
+  const a = (await upload(s, t, enc.encode('a'.repeat(500)))).sha, b = (await upload(s, t, enc.encode('b'))).sha, issue = (await upload(s, t, enc.encode('Fix：x\n'))).sha;
+  const stamps = [await moved()];
+  await s.call('PATCH', '/v1/repos/r/draft', {token: t, body: {version: 0, set: {'a.txt': a, 'issue/001.md': issue}, remove: []}});
+  stamps.push(await moved());
+  await s.call('POST', '/v1/repos/r/cuts', {token: t, body: {version: 1, parent: null, title: 'one'}});
+  stamps.push(await moved());
+  await s.call('PATCH', '/v1/repos/r/draft', {token: t, body: {version: 1, set: {'b.txt': b}, remove: ['a.txt']}});
+  await s.call('POST', '/v1/repos/r/lines', {token: t, body: {issue: 'issue/001.md'}});
+  assert.equal(new Set(stamps).size, stamps.length, stamps.join(' '));
+  assert.equal((await room()).used, await recount());
+  // What its draft's files take is read when the draft is written: b alone now, each blob once.
+  const listed = (await s.call('GET', '/v1/repos', {token: t})).json as unknown as {name: string; bytes: number}[];
+  assert.deepEqual(listed.map((r) => [r.name, r.bytes]), [['r', 1 + enc.encode('Fix：x\n').length]]);
+  // A repo discarded takes all that hangs from it, and its room says so.
+  await s.db.update(schema.repo).set({offAt: new Date(Date.now() - 31 * 86_400_000)});
+  const before = await moved();
+  await sweep(s.db, s.bucket);
+  assert.notEqual(await moved(), before);
+  const blobs = await count(s, sql`select coalesce(sum(bytes), 0)::int as n from blob where user_id = ${me}`);
+  assert.deepEqual([(await room()).used, await recount()], [blobs, blobs]);
+});
+
+test('The service\'s role reads and writes rows, and nothing else', async () => {
+  const s = await service();
+  const as = async (q: ReturnType<typeof sql>) => {
+    try { await s.db.transaction(async (tx) => { await tx.execute(sql`set local role remote_app`); await tx.execute(q); }); return 'done'; } catch { return 'refused'; }
+  };
+  assert.deepEqual(await Promise.all([
+    as(sql`select count(*) from repo`), as(sql`insert into throttle (key) values ('k')`),
+    as(sql`create table mine (x int)`), as(sql`drop table throttle`), as(sql`alter table repo drop constraint repo_name`), as(sql`truncate throttle`),
+  ]), ['done', 'done', 'refused', 'refused', 'refused', 'refused']);
 });

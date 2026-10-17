@@ -1,7 +1,7 @@
 // Who sees a repo (schema.ts, repoShare and repoPublic): only its owner, the
 // servers it is shown in, or everyone. Anyone but its owner only sees it,
 // never writes in it, and what they see is what it was last pushed to (the
-// commit others may see), its files read one at a time.
+// commit others may see), its files read one at a time by their paths.
 //
 // In a server, its people see whose a repo is: ren@length3.com:hello. Seen
 // by everyone, it answers only to the name it was made public as, its face:
@@ -17,14 +17,14 @@
 //   DELETE /v1/servers/ID/repos/OWNER/NAME   take it off its list (its owner, or the server's)
 // and, for whoever may see it (anyone, signed in or not, when everyone may):
 //   GET    /v1/seen/FACE/NAME                what it was last pushed to: its tree
-//   GET    /v1/seen/FACE/NAME/blobs/SHA      a file in that tree
+//   GET    /v1/seen/FACE/NAME/file?path=P    a file in that tree, by its path
 
 import {and, eq, inArray, isNull, not, sql} from 'drizzle-orm';
 import type {Context, Hono} from 'hono';
 import type {Bucket} from './bucket.ts';
 import {byCode, HOLD, live, liveAddress, serverAddress, shownAs, takeDown} from './names.ts';
 import {body, qualified, refuse, rows, type Db, type Vars} from './request.ts';
-import {address, cut, member, repo, repoPublic, repoShare, server} from './schema.ts';
+import {address, cut, line, member, repo, repoPublic, repoShare, server} from './schema.ts';
 
 export type Seen = 'private' | 'servers' | 'everyone';
 
@@ -39,28 +39,27 @@ export interface SeenDeps {
   domain: string;
 }
 
-const HEX = /^[0-9a-f]{64}$/;
+/** A repo that is on: its number and name. */
+type On = {id: number; name: string};
 
 export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   const db = d.db;
-  const main = (user: string, name: string) => and(eq(repo.userId, user), eq(repo.name, name), eq(repo.line, 'main'));
   /** `user`'s repo `name`, if it is there and on. */
   const isOn = async (q: Db, user: string, name: string) =>
-    (await q.select({name: repo.name}).from(repo).where(and(main(user, name), isNull(repo.offAt))))[0] as {name: string} | undefined;
+    (await q.select({id: repo.id, name: repo.name}).from(repo).where(and(eq(repo.userId, user), eq(repo.name, name), isNull(repo.offAt))))[0] as On | undefined;
   /** Those of `ids` that are live servers `me` is in, with their names as principals. */
   const inServers = async (q: Db, me: string, ids: string[]) => (ids.length
     ? await q.select({id: server.id, address: serverAddress(qualified(server.id))}).from(member).innerJoin(server, eq(server.id, member.serverId))
       .where(and(eq(member.userId, me), inArray(member.serverId, ids), isNull(server.goneAt))) as {id: string; address: string}[]
     : []);
-  const ofRepo = (user: string, name: string) => and(eq(repoPublic.userId, user), eq(repoPublic.repo, name));
 
   /** Who sees each of `user`'s repos `names`. */
   const states = async (q: Db, user: string, names: string[]) => {
-    const shares = await q.select({repo: repoShare.repo, id: server.id, name: server.name, address: serverAddress(qualified(server.id))}).from(repoShare)
-      .innerJoin(server, eq(server.id, repoShare.serverId)).where(and(eq(repoShare.userId, user), isNull(server.goneAt)))
-      .orderBy(repoShare.sharedAt) as {repo: string; id: string; name: string; address: string}[];
-    const faces = await q.select({face: repoPublic.face, name: repoPublic.name, repo: repoPublic.repo, serverId: repoPublic.serverId}).from(repoPublic)
-      .where(and(eq(repoPublic.userId, user), isNull(repoPublic.releasedAt))) as Public[];
+    const shares = await q.select({repo: repo.name, id: server.id, name: server.name, address: serverAddress(qualified(server.id))}).from(repoShare)
+      .innerJoin(repo, eq(repo.id, repoShare.repoId)).innerJoin(server, eq(server.id, repoShare.serverId))
+      .where(and(eq(repoShare.userId, user), isNull(server.goneAt))).orderBy(repoShare.sharedAt) as {repo: string; id: string; name: string; address: string}[];
+    const faces = await q.select({face: repoPublic.face, name: repoPublic.name, repo: repo.name, serverId: repoPublic.serverId}).from(repoPublic)
+      .innerJoin(repo, eq(repo.id, repoPublic.repoId)).where(and(eq(repoPublic.userId, user), isNull(repoPublic.releasedAt))) as Public[];
     return names.map((name) => {
       const servers = shares.filter((s) => s.repo === name).map(({id, name, address}) => ({id, name, address}));
       const f = faces.find((x) => x.repo === name);
@@ -70,13 +69,13 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   };
 
   /**
-   * Make `user`'s repo `name` public as `face:name`: free, theirs already (or
+   * Make `user`'s repo `r` public as `face:name`: free, theirs already (or
    * held for them), or not (another's, or held for another until `until`).
    * A server's face holds its names for whoever had them; a person's own
    * face holds nothing for someone who no longer has that address.
    */
-  const claim = async (tx: Db, user: string, name: string, face: string, serverId: string | null): Promise<{ok: true} | {ok: false; until?: number}> => {
-    const at = and(eq(repoPublic.face, face), eq(repoPublic.name, name));
+  const claim = async (tx: Db, user: string, r: On, face: string, serverId: string | null): Promise<{ok: true} | {ok: false; until?: number}> => {
+    const at = and(eq(repoPublic.face, face), eq(repoPublic.name, r.name));
     const [row] = await tx.select({userId: repoPublic.userId, releasedAt: repoPublic.releasedAt, held: sql<boolean>`(${qualified(repoPublic.serverId)} is not null
       or exists (select 1 from address a where a.address = ${qualified(repoPublic.face)} and a.user_id = ${qualified(repoPublic.userId)}))`}).from(repoPublic).where(at) as
       {userId: string; releasedAt: Date | null; held: boolean}[];
@@ -85,18 +84,17 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       const until = row.releasedAt.getTime() + HOLD;
       if (until > Date.now()) return {ok: false, until};
     }
-    // A repo is public as one name: any other it had is taken down.
-    await takeDown(tx, and(ofRepo(user, name), not(at!)));
-    const values = {userId: user, repo: name, serverId, releasedAt: null};
+    // A repo is public as one name: any other it had is taken down first.
+    await takeDown(tx, and(eq(repoPublic.repoId, r.id), not(at!)));
+    const values = {repoId: r.id, userId: user, serverId, releasedAt: null};
     if (row) await tx.update(repoPublic).set(values).where(at);
-    else await tx.insert(repoPublic).values({face, name, ...values});
+    else await tx.insert(repoPublic).values({face, name: r.name, ...values});
     return {ok: true};
   };
 
   v1.get('/seen', async (c) => {
     const me = c.get('userId');
-    const list = await db.select({name: repo.name}).from(repo)
-      .where(and(eq(repo.userId, me), eq(repo.line, 'main'), isNull(repo.offAt))).orderBy(repo.name) as {name: string}[];
+    const list = await db.select({name: repo.name}).from(repo).where(and(eq(repo.userId, me), isNull(repo.offAt))).orderBy(repo.name) as {name: string}[];
     return c.json(await states(db, me, list.map((r) => r.name)));
   });
 
@@ -111,7 +109,8 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     let ids = Array.isArray(b?.servers) ? [...new Set((b.servers as unknown[]).filter((x): x is string => typeof x === 'string'))] : null;
     if (to === 'servers' && !ids?.length) return c.json({error: 'Choose a server'}, 400);
     return c.json(await db.transaction(async (tx: Db) => {
-      if (!await isOn(tx, me, name)) refuse(404, {error: 'That repo is not on the Remote'});
+      const r = await isOn(tx, me, name);
+      if (!r) refuse(404, {error: 'That repo is not on the Remote'});
       if (ids && (await inServers(tx, me, ids)).length !== ids.length) refuse(403, {error: 'Only servers you are in'});
       if (to === 'everyone') {
         const now = (await states(tx, me, [name]))[0];
@@ -127,27 +126,27 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
           ids = [...new Set([...(ids ?? now.servers.map((x) => x.id)), s.id])];
         }
         if (!face) refuse(409, {error: 'Claim an address first'});
-        const got = await claim(tx, me, name, face, serverId);
+        const got = await claim(tx, me, r, face, serverId);
         if (!got.ok) refuse(409, got.until ? {error: 'That name was let go, and is held for its owner a while', as: `${face}:${name}`, until: got.until}
           : {error: 'That name is taken', as: `${face}:${name}`});
-      } else await takeDown(tx, ofRepo(me, name));
+      } else await takeDown(tx, eq(repoPublic.repoId, r.id));
       if (to === 'private' || ids) {
-        await tx.delete(repoShare).where(and(eq(repoShare.userId, me), eq(repoShare.repo, name)));
-        if (to !== 'private' && ids?.length) await tx.insert(repoShare).values(ids.map((serverId) => ({userId: me, repo: name, serverId})));
+        await tx.delete(repoShare).where(eq(repoShare.repoId, r.id));
+        if (to !== 'private' && ids?.length) await tx.insert(repoShare).values(ids.map((serverId) => ({repoId: r.id, serverId, userId: me})));
       }
       return (await states(tx, me, [name]))[0];
     }));
   });
 
   // ---- in a server, beside its people ----
-  /** The repos shown in a server, whose, and as what everyone sees them, if they do: one read. */
+  /** The repos shown in a server, whose, when last pushed, and as what everyone sees them, if they do: one read. */
   const shownIn = async (serverId: string, me: string) => {
-    const list = await db.select({userId: repoShare.userId, name: repoShare.repo, owner: shownAs(qualified(repoShare.userId)), at: cut.time,
+    const list = await db.select({userId: repoShare.userId, name: repo.name, owner: shownAs(qualified(repoShare.userId)), at: cut.time,
       face: repoPublic.face, faceName: repoPublic.name, asServer: repoPublic.serverId}).from(repoShare)
-      .innerJoin(member, and(eq(member.serverId, repoShare.serverId), eq(member.userId, repoShare.userId)))
-      .innerJoin(repo, and(eq(repo.userId, repoShare.userId), eq(repo.name, repoShare.repo), eq(repo.line, 'main'), isNull(repo.offAt)))
-      .leftJoin(cut, and(eq(cut.userId, repo.userId), eq(cut.repo, repo.name), eq(cut.id, repo.pushed)))
-      .leftJoin(repoPublic, and(eq(repoPublic.userId, repoShare.userId), eq(repoPublic.repo, repoShare.repo), isNull(repoPublic.releasedAt)))
+      .innerJoin(repo, and(eq(repo.id, repoShare.repoId), isNull(repo.offAt)))
+      .innerJoin(line, and(eq(line.repoId, repo.id), eq(line.name, 'main')))
+      .leftJoin(cut, and(eq(cut.repoId, repo.id), eq(cut.id, line.pushed)))
+      .leftJoin(repoPublic, and(eq(repoPublic.repoId, repo.id), isNull(repoPublic.releasedAt)))
       .where(eq(repoShare.serverId, serverId)).orderBy(repoShare.sharedAt) as
       {userId: string; name: string; owner: string | null; at: Date | null; face: string | null; faceName: string | null; asServer: string | null}[];
     return list.map((r) => ({owner: r.owner ?? '', name: r.name, at: r.at?.getTime() ?? null, mine: r.userId === me,
@@ -164,25 +163,30 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const me = c.get('userId'), id = c.req.param('id');
     if (!(await inServers(db, me, [id])).length) return c.json({error: 'No such server of yours'}, 404);
     const name = (await body<{repo?: unknown}>(c))?.repo;
-    const row = typeof name === 'string' ? await isOn(db, me, name) : undefined;
-    if (!row) return c.json({error: 'That repo is not on the Remote'}, 404);
-    await db.insert(repoShare).values({userId: me, repo: row.name, serverId: id}).onConflictDoNothing();
+    const r = typeof name === 'string' ? await isOn(db, me, name) : undefined;
+    if (!r) return c.json({error: 'That repo is not on the Remote'}, 404);
+    await db.insert(repoShare).values({repoId: r.id, serverId: id, userId: me}).onConflictDoNothing();
     return c.json(await shownIn(id, me), 201);
   });
 
   // Off a server's list: and if it was public as that server, that ends too.
   v1.delete('/servers/:id/repos/:owner/:name', async (c) => {
-    const me = c.get('userId'), id = c.req.param('id'), name = c.req.param('name');
-    const [r] = await rows<{owner: number; them: string | null}>(db, sql`select m.owner,
-      (select t.user_id from server_member t where t.server_id = ${id} and t.user_id = (select a.user_id from address a where a.address = ${c.req.param('owner').toLowerCase()})) as them
-      from server_member m join server s on s.id = m.server_id and s.gone_at is null where m.server_id = ${id} and m.user_id = ${me}`);
+    const me = c.get('userId'), id = c.req.param('id');
+    const [r] = await rows<{owner: boolean; repo: number | null; them: string | null}>(db, sql`select m.owner, t.user_id as them, r.id as repo
+      from server_member m join server s on s.id = m.server_id and s.gone_at is null
+      left join server_member t on t.server_id = m.server_id and t.user_id = (select a.user_id from address a where a.address = ${c.req.param('owner').toLowerCase()})
+      left join repo r on r.user_id = t.user_id and r.name = ${c.req.param('name')}
+      where m.server_id = ${id} and m.user_id = ${me}`);
     if (!r) return c.json({error: 'No such server of yours'}, 404);
     if (!r.them) return c.json({error: 'They are not in this server'}, 404);
     if (r.them !== me && !r.owner) return c.json({error: 'Only its owner, or the server\'s, takes it off'}, 403);
-    await db.transaction(async (tx: Db) => {
-      await tx.delete(repoShare).where(and(eq(repoShare.userId, r.them!), eq(repoShare.repo, name), eq(repoShare.serverId, id)));
-      await takeDown(tx, and(ofRepo(r.them!, name), eq(repoPublic.serverId, id)));
-    });
+    if (r.repo !== null) {
+      const repoId = r.repo;
+      await db.transaction(async (tx: Db) => {
+        await tx.delete(repoShare).where(and(eq(repoShare.repoId, repoId), eq(repoShare.serverId, id)));
+        await takeDown(tx, and(eq(repoPublic.repoId, repoId), eq(repoPublic.serverId, id)));
+      });
+    }
     return c.body(null, 204);
   });
 
@@ -197,8 +201,9 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       .where(and('userId' in who ? eq(address.userId, who.userId) : eq(address.serverId, who.serverId), live)).orderBy(address.createdAt).limit(1) as {a: string}[];
     return r?.a ?? null;
   };
-  type Found = {row: {userId: string; name: string; pushed: string | null}; as: string; owner?: string};
-  const seenCols = {userId: repo.userId, name: repo.name, pushed: repo.pushed};
+  /** A repo found to be seen: whose, its number, and the commit it was last pushed to. */
+  type Found = {row: {userId: string; repoId: number; pushed: string | null}; as: string; owner?: string};
+  const seenCols = {userId: repo.userId, repoId: repo.id, pushed: line.pushed};
   /**
    * What `face:name` shows whoever asks: a public face that still answers
    * (its name still its owner's, and a server's with its owner still in it),
@@ -212,7 +217,8 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const [p] = await db.select(seenCols).from(repoPublic)
       .innerJoin(address, and(eq(address.address, repoPublic.face), live,
         sql`(case when ${qualified(repoPublic.serverId)} is null then ${qualified(address.userId)} = ${qualified(repoPublic.userId)} else ${qualified(address.serverId)} = ${qualified(repoPublic.serverId)} end)`))
-      .innerJoin(repo, and(eq(repo.userId, repoPublic.userId), eq(repo.name, repoPublic.repo), eq(repo.line, 'main'), isNull(repo.offAt)))
+      .innerJoin(repo, and(eq(repo.id, repoPublic.repoId), isNull(repo.offAt)))
+      .innerJoin(line, and(eq(line.repoId, repo.id), eq(line.name, 'main')))
       .where(and(eq(repoPublic.face, face), eq(repoPublic.name, name), isNull(repoPublic.releasedAt),
         sql`(${qualified(repoPublic.serverId)} is null or exists (select 1 from server_member m join server s on s.id = m.server_id and s.gone_at is null
           where m.server_id = ${qualified(repoPublic.serverId)} and m.user_id = ${qualified(repoPublic.userId)}))`));
@@ -220,13 +226,14 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const viewer = await d.viewer(c.req.raw);
     if (!viewer) return null;
     const [o] = await db.select(seenCols).from(address)
-      .innerJoin(repo, and(eq(repo.userId, address.userId), eq(repo.name, name), eq(repo.line, 'main'), isNull(repo.offAt)))
+      .innerJoin(repo, and(eq(repo.userId, address.userId), eq(repo.name, name), isNull(repo.offAt)))
+      .innerJoin(line, and(eq(line.repoId, repo.id), eq(line.name, 'main')))
       .where(and(eq(address.address, face), live, sql`(${qualified(address.userId)} = ${viewer} or exists (select 1 from repo_share sh
         join server s on s.id = sh.server_id and s.gone_at is null join server_member m on m.server_id = sh.server_id and m.user_id = ${viewer}
-        where sh.user_id = ${qualified(address.userId)} and sh.repo = ${name}))`));
+        where sh.repo_id = ${qualified(repo.id)}))`));
     return o ? {row: o, as: `${face}:${name}`, owner: face} : null;
   };
-  const pushedAt = (row: Found['row']) => and(eq(cut.userId, row.userId), eq(cut.repo, row.name), eq(cut.id, row.pushed ?? ''));
+  const pushedAt = (row: Found['row']) => and(eq(cut.repoId, row.repoId), eq(cut.id, row.pushed ?? ''));
 
   app.get('/v1/seen/:face/:name', async (c) => {
     const at = await find(c, c.req.param('face'), c.req.param('name'));
@@ -235,14 +242,14 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     return c.json({as: at.as, ...(at.owner ? {owner: at.owner} : {}), title: p?.title ?? null, at: p?.time.getTime() ?? null, tree: p?.tree ?? {}});
   });
 
-  // Only what is in the tree it was pushed to: nothing else of its owner's (asked of the database, not by reading the tree here).
-  app.get('/v1/seen/:face/:name/blobs/:sha', async (c) => {
-    const sha = c.req.param('sha');
-    const at = HEX.test(sha) ? await find(c, c.req.param('face'), c.req.param('name')) : null;
-    const [inTree] = at ? await db.select({id: cut.id}).from(cut)
-      .where(and(pushedAt(at.row), sql`exists (select 1 from jsonb_each_text(${qualified(cut.tree)}) e where e.value = ${sha})`)) : [];
-    if (!at || !inTree) return c.json({error: 'No such file to see'}, 404);
-    const bytes = await d.bucket.get(`u/${at.row.userId}/${sha}`);
-    return bytes ? new Response(bytes as BodyInit, {headers: {'Content-Type': 'application/octet-stream', ETag: `"${sha}"`}}) : c.json({error: 'The Remote has no such file'}, 404);
+  // A file by its path in the tree it was pushed to: one lookup of that path, so nothing else of
+  // its owner's can be asked for, and reading a large repo file by file costs each file once.
+  app.get('/v1/seen/:face/:name/file', async (c) => {
+    const path = c.req.query('path') ?? '';
+    const at = path && path.length <= 1024 ? await find(c, c.req.param('face'), c.req.param('name')) : null;
+    const [f] = at ? await db.select({sha: sql<string | null>`${cut.tree} ->> ${path}`}).from(cut).where(pushedAt(at.row)) as {sha: string | null}[] : [];
+    if (!at || !f?.sha) return c.json({error: 'No such file to see'}, 404);
+    const bytes = await d.bucket.get(`u/${at.row.userId}/${f.sha}`);
+    return bytes ? new Response(bytes as BodyInit, {headers: {'Content-Type': 'application/octet-stream', ETag: `"${f.sha}"`}}) : c.json({error: 'The Remote has no such file'}, 404);
   });
 }

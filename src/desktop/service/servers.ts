@@ -44,9 +44,9 @@
 
 import {and, asc, desc, eq, gt, gte, inArray, isNull, lt, lte, sql} from 'drizzle-orm';
 import type {Context, Hono} from 'hono';
-import {claim, codeOf, HOLD, held, liveAddress, serverAddress, shownAs, takeDown} from './names.ts';
-import {body, lock, qualified, refuse, rows, type Db, type Vars} from './request.ts';
-import {address, board, guest, member, principalCode, REACH, repoPublic, repoShare, server, talk, throttle, todoItem} from './schema.ts';
+import {claim, codeOf, HOLD, liveAddress, serverAddress, shownAs, takeDown} from './names.ts';
+import {ago, body, lock, qualified, refuse, rows, type Db, type Vars} from './request.ts';
+import {address, board, guest, member, principalCode, REACH, repoPublic, server, talk, throttle, todoItem} from './schema.ts';
 
 export const SERVER = {name: 64, body: 2000, perHour: 60, page: 30, maxPage: 100, boards: 100,
   /** Servers a person owns or has held for them, at most; servers they make in a day. */
@@ -95,15 +95,15 @@ export interface ServerDeps {
 
 type Board = {id: string; serverId: string; name: string; reach: number; goneAt: Date | null};
 /** A board as one asks for it: its server, and the asker's place in it (owner: null when not in it) and how they are shown. */
-type At = {b: Board; server: {id: string; name: string; address: string}; owner: number | null; address: string | null};
+type At = {b: Board; server: {id: string; name: string; address: string}; owner: boolean | null; address: string | null};
 type Post = typeof talk.$inferSelect;
 type Item = typeof todoItem.$inferSelect;
 const shape = (me: string | null, owner: boolean) => (p: Post) => ({
-  id: p.id, by: p.by, body: p.body, at: timeOf(p.id), ...(p.guestId ? {guest: true} : {}),
+  id: p.id, by: p.by, body: p.body, at: timeOf(p.id), ...(p.userId === null ? {guest: true} : {}),
   ...(me && (p.userId === me || owner) ? {mine: p.userId === me, mayTakeDown: true} : {}),
 });
 const boardJson = (at: At) => ({id: at.b.id, server: at.server, name: at.b.name, open: at.b.reach >= REACH.open, guests: at.b.reach === REACH.guests});
-const todoJson = (r: Item) => ({id: r.id, kind: r.kind, title: r.title, detail: r.detail, done: !!r.done, place: r.place, created: r.created, by: r.by});
+const todoJson = (r: Item) => ({id: r.id, kind: r.kind, title: r.title, detail: r.detail, done: r.done, place: r.place, created: r.created, by: r.by});
 const anyone = {'Access-Control-Allow-Origin': '*'};
 
 export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
@@ -115,7 +115,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   /** `me`'s place in a server that is not gone (removed or left, it answers nothing while it is held). */
   const membership = async (q: Db, serverId: string, me: string) =>
     (await q.select({owner: member.owner}).from(member).innerJoin(server, and(eq(server.id, member.serverId), isNull(server.goneAt)))
-      .where(and(eq(member.serverId, serverId), eq(member.userId, me))))[0] as {owner: number} | undefined;
+      .where(and(eq(member.serverId, serverId), eq(member.userId, me))))[0] as {owner: boolean} | undefined;
   /** A board of a server that is not gone, its server's name, and `me`'s place in it: one read. A board removed answers only `held`. */
   const boardAt = async (id: string, me: string | null, removed = false): Promise<At | null> => {
     if (!KEY.test(id)) return null;
@@ -132,7 +132,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   const notMine = () => refuse(404, {error: 'No such board of yours'});
   const people = async (q: Db, serverId: string) =>
     (await q.select({address: shownAs(qualified(member.userId)), owner: member.owner}).from(member).where(eq(member.serverId, serverId)).orderBy(member.addedAt))
-      .map((r: {address: string | null; owner: number}) => ({address: r.address ?? '', owner: !!r.owner}));
+      .map((r: {address: string | null; owner: boolean}) => ({address: r.address ?? '', owner: r.owner}));
 
   /**
    * Gone: held for whoever removed it or left it last, and its name held for it. Its maker
@@ -142,7 +142,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   const gone = async (tx: Db, id: string, by: string) => {
     const [s] = await tx.select({madeBy: server.madeBy, others: sql<number>`(select count(*)::int from server_member m where m.server_id = ${qualified(server.id)} and m.user_id <> ${by})`})
       .from(server).where(eq(server.id, id));
-    const at = s.madeBy === by && s.others === 0 ? sql`now() - ${sql.raw(`interval '${(HOLD - SERVER.alone) / 1000} seconds'`)}` : sql`now()`;
+    const at = s.madeBy === by && s.others === 0 ? ago(HOLD - SERVER.alone) : sql`now()`;
     await tx.update(server).set({goneAt: at, goneBy: by}).where(eq(server.id, id));
     await tx.update(address).set({releasedAt: at}).where(and(eq(address.serverId, id), isNull(address.releasedAt)));
   };
@@ -152,18 +152,18 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const me = c.get('userId');
     if (c.req.query('gone') === '1') {
       const list = await db.select({id: server.id, name: server.name, address: serverAddress(qualified(server.id)), at: server.goneAt}).from(server)
-        .where(and(eq(server.goneBy, me), sql`${server.goneAt} > now() - ${held}`)) as {id: string; name: string; address: string; at: Date}[];
+        .where(and(eq(server.goneBy, me), sql`${server.goneAt} > ${ago(HOLD)}`)) as {id: string; name: string; address: string; at: Date}[];
       return c.json(list.map((x) => ({id: x.id, name: x.name, address: x.address, until: x.at.getTime() + HOLD})));
     }
     const list = await db.select({id: server.id, name: server.name, address: sql<string>`coalesce(${address.address}, '')`, owner: member.owner, until: address.until, code: principalCode.code})
       .from(member).innerJoin(server, and(eq(server.id, member.serverId), isNull(server.goneAt)))
       .leftJoin(address, eq(address.serverId, server.id)).leftJoin(principalCode, eq(principalCode.serverId, server.id))
-      .where(eq(member.userId, me)).orderBy(member.addedAt) as {id: string; name: string; address: string; owner: number; until: Date | null; code: string | null}[];
+      .where(eq(member.userId, me)).orderBy(member.addedAt) as {id: string; name: string; address: string; owner: boolean; until: Date | null; code: string | null}[];
     if (!list.length) return c.json([]);
     // A board removed is listed with when it goes for good (`gone`), so its owner may bring it back.
     const boards = await db.select({id: board.id, serverId: board.serverId, name: board.name, reach: board.reach, goneAt: board.goneAt}).from(board)
-      .where(and(inArray(board.serverId, list.map((r) => r.id)), sql`(${board.goneAt} is null or ${board.goneAt} > now() - ${held})`)).orderBy(board.createdAt) as Board[];
-    return c.json(list.map((r) => ({id: r.id, name: r.name, address: r.address, owner: !!r.owner, code: r.code ?? '', until: r.until?.getTime() ?? null,
+      .where(and(inArray(board.serverId, list.map((r) => r.id)), sql`(${board.goneAt} is null or ${board.goneAt} > ${ago(HOLD)})`)).orderBy(board.createdAt) as Board[];
+    return c.json(list.map((r) => ({id: r.id, name: r.name, address: r.address, owner: r.owner, code: r.code ?? '', until: r.until?.getTime() ?? null,
       boards: boards.filter((b) => b.serverId === r.id).map((b) => ({id: b.id, name: b.name, open: b.reach >= REACH.open, guests: b.reach === REACH.guests,
         ...(b.goneAt ? {gone: b.goneAt.getTime() + HOLD} : {})}))})));
   });
@@ -187,16 +187,16 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       }
       // Only what one owns counts, and what is held for one: being added to servers never stops anyone making one.
       const [count] = await rows<{kept: number; today: number}>(tx, sql`select
-        (select count(*)::int from server_member m join server s on s.id = m.server_id and s.gone_at is null where m.user_id = ${me} and m.owner = 1)
-          + (select count(*)::int from server s where s.gone_by = ${me} and s.gone_at > now() - ${held}) as kept,
-        (select count(*)::int from server s where s.made_by = ${me} and s.created_at > now() - interval '1 day') as today`);
+        (select count(*)::int from server_member m join server s on s.id = m.server_id and s.gone_at is null where m.user_id = ${me} and m.owner)
+          + (select count(*)::int from server s where s.gone_by = ${me} and s.gone_at > ${ago(HOLD)}) as kept,
+        (select count(*)::int from server s where s.made_by = ${me} and s.created_at > ${ago(86_400_000)}) as today`);
       if (count.kept >= SERVER.servers) refuse(429, {error: 'Too many servers'});
       if (count.today >= SERVER.perDay) refuse(429, {error: 'Too many servers made today'});
       const id = key(), bid = key();
       await tx.insert(server).values({id, name: n, madeBy: me});
       const got = await claim(tx, handle, domain, {serverId: id}, domain === d.domain);
       if (!got.ok) refuse(409, got.until ? {error: 'That name was let go, and is held for its owner a while', until: got.until} : {error: 'That name is taken'});
-      await tx.insert(member).values({serverId: id, userId: me, owner: 1});
+      await tx.insert(member).values({serverId: id, userId: me, owner: true});
       await tx.insert(board).values({id: bid, serverId: id, name: first});
       return {id, name: n, address: `${handle}@${domain}`, owner: true, code: await codeOf(tx, {serverId: id}), until: got.until,
         boards: [{id: bid, name: first, open: false, guests: false}]};
@@ -221,13 +221,13 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const me = c.get('userId'), id = c.req.param('id');
     const out = await db.transaction(async (tx: Db) => {
       await lock(tx, me);
-      const [s] = await tx.select({name: server.name}).from(server).where(and(eq(server.id, id), eq(server.goneBy, me), sql`${server.goneAt} > now() - ${held}`));
+      const [s] = await tx.select({name: server.name}).from(server).where(and(eq(server.id, id), eq(server.goneBy, me), sql`${server.goneAt} > ${ago(HOLD)}`));
       if (!s) refuse(404, {error: 'Nothing of yours to bring back'});
       if (!await liveAddress(tx, me)) refuse(409, {error: 'Claim an address first'});
       const [a] = await tx.select({address: address.address, name: address.name, domain: address.domain}).from(address).where(eq(address.serverId, id));
       if (a) await claim(tx, a.name, a.domain, {serverId: id}, a.domain === d.domain);
       await tx.update(server).set({goneAt: null, goneBy: null}).where(eq(server.id, id));
-      await tx.insert(member).values({serverId: id, userId: me, owner: 1}).onConflictDoUpdate({target: [member.serverId, member.userId], set: {owner: 1}});
+      await tx.insert(member).values({serverId: id, userId: me, owner: true}).onConflictDoUpdate({target: [member.serverId, member.userId], set: {owner: true}});
       return {id, name: s.name, address: a?.address ?? ''};
     });
     return c.json(out);
@@ -282,17 +282,16 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       if (!m) refuse(404, {error: 'No such server of yours'});
       // Whoever has (or had) that address.
       const [them] = await tx.select({userId: member.userId, owner: member.owner}).from(member)
-        .where(and(eq(member.serverId, id), sql`${qualified(member.userId)} = (select a.user_id from address a where a.address = ${a})`)) as {userId: string; owner: number}[];
+        .where(and(eq(member.serverId, id), sql`${qualified(member.userId)} = (select a.user_id from address a where a.address = ${a})`)) as {userId: string; owner: boolean}[];
       if (!them) refuse(404, {error: 'They are not in this server'});
       if (them.userId !== me && !m.owner) refuse(403, {error: 'Only its owner removes someone else'});
       await tx.delete(member).where(and(eq(member.serverId, id), eq(member.userId, them.userId)));
-      // What they showed in it goes with them, and what went public as it ends: a share lasts as long as its owner's place.
-      await tx.delete(repoShare).where(and(eq(repoShare.serverId, id), eq(repoShare.userId, them.userId)));
+      // What they showed in it goes with them (a share hangs from their place), and what went public as it ends.
       await takeDown(tx, and(eq(repoPublic.serverId, id), eq(repoPublic.userId, them.userId)));
       const [next] = await tx.select({userId: member.userId}).from(member).where(eq(member.serverId, id)).orderBy(member.addedAt).limit(1);
       // The last to leave: the server is held for them a while, then gone. An owner leaving hands it to whoever came first.
       if (!next) await gone(tx, id, me);
-      else if (them.owner) await tx.update(member).set({owner: 1}).where(and(eq(member.serverId, id), eq(member.userId, next.userId)));
+      else if (them.owner) await tx.update(member).set({owner: true}).where(and(eq(member.serverId, id), eq(member.userId, next.userId)));
     });
     return c.body(null, 204);
   });
@@ -371,7 +370,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     if (r?.kind !== undefined) { if (r.kind !== null && (typeof r.kind !== 'string' || !KIND.test(r.kind))) return c.json({error: 'A kind is one word of at most 16 letters'}, 400); set.kind = r.kind; }
     if (r?.title !== undefined) { if (typeof r.title !== 'string' || r.title.length > SERVER.todo.title) return c.json({error: 'A title is at most 200 characters'}, 400); set.title = r.title; }
     if (r?.detail !== undefined) { if (typeof r.detail !== 'string' || r.detail.length > SERVER.todo.detail) return c.json({error: 'A detail is at most 4000 characters'}, 400); set.detail = r.detail; }
-    if (r?.done !== undefined) { if (typeof r.done !== 'boolean') return c.json({error: 'done'}, 400); set.done = r.done ? 1 : 0; }
+    if (r?.done !== undefined) { if (typeof r.done !== 'boolean') return c.json({error: 'done'}, 400); set.done = r.done; }
     if (r?.place !== undefined) { if (typeof r.place !== 'number' || !Number.isFinite(r.place)) return c.json({error: 'a place'}, 400); set.place = r.place; }
     const where = and(eq(todoItem.boardId, at.b.id), eq(todoItem.id, tid));
     const changed = Object.keys(set).length
@@ -384,7 +383,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     if (n >= SERVER.todo.items) return c.json({error: 'Too many items'}, 429);
     const created = typeof r.created === 'number' && Number.isInteger(r.created) ? r.created : Date.now();
     // Two making the same new item at once: the second's fields are laid over the first's.
-    const [made] = await db.insert(todoItem).values({boardId: at.b.id, id: tid, title: '', detail: '', done: 0, place: 0, ...set, by: at.address, created})
+    const [made] = await db.insert(todoItem).values({boardId: at.b.id, id: tid, title: '', detail: '', done: false, place: 0, ...set, by: at.address, created})
       .onConflictDoUpdate({target: [todoItem.boardId, todoItem.id], set}).returning() as Item[];
     return c.json(todoJson(made), 201);
   });
@@ -463,7 +462,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
         if (t.slice(0, 10) !== day) { day = t.slice(0, 10); out.push(`### ${day}`, ''); }
         // A name on this Remote alone, as the app shows it.
         const by = p.by.endsWith(`@${d.domain}`) ? p.by.slice(0, -d.domain.length - 1) : p.by;
-        out.push(`- ${t.slice(11, 16)} ${by}${p.guestId ? ' (guest)' : ''}: ${p.body.replace(/\n/g, '\n  ')}`);
+        out.push(`- ${t.slice(11, 16)} ${by}${p.userId === null ? ' (guest)' : ''}: ${p.body.replace(/\n/g, '\n  ')}`);
       }
       out.push('');
     }
@@ -509,11 +508,11 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       await lock(tx, sender);
       await lock(tx, to);
       const [n] = await rows<{again: number; sender: number; to: number; waiting: number}>(tx, sql`select
-        (select count(*)::int from server_guest where board_id = ${at.b.id} and email = ${email} and code_at > now() - ${sql.raw(`interval '${SERVER.code.again / 1000} seconds'`)}) as again,
-        (select count(*)::int from throttle where key = ${sender} and at > now() - interval '1 hour') as sender,
-        (select count(*)::int from throttle where key = ${to} and at > now() - interval '1 hour') as to,
-        (select count(*)::int from server_guest where board_id = ${at.b.id} and email <> ${email} and code is not null
-          and code_at > now() - ${sql.raw(`interval '${SERVER.code.minutes} minutes'`)}) as waiting`);
+        (select count(*)::int from board_guest where board_id = ${at.b.id} and email = ${email} and code_at > ${ago(SERVER.code.again)}) as again,
+        (select count(*)::int from throttle where key = ${sender} and at > ${ago(3600_000)}) as sender,
+        (select count(*)::int from throttle where key = ${to} and at > ${ago(3600_000)}) as to,
+        (select count(*)::int from board_guest where board_id = ${at.b.id} and email <> ${email} and code is not null
+          and code_at > ${ago(SERVER.code.minutes * 60_000)}) as waiting`);
       if (n.again) refuse(429, {error: 'A code was just sent'});
       if (n.sender >= SERVER.code.perSender || n.to >= SERVER.code.perEmail) refuse(429, {error: 'Too many codes asked for; try again in an hour'});
       if (n.waiting >= SERVER.code.waiting) refuse(429, {error: 'Too many people are waiting for a code here; try again soon'});
@@ -533,7 +532,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     // tries spend it, however many come at once.
     const [g] = await db.update(guest).set({tries: sql`${guest.tries} + 1`})
       .where(and(eq(guest.boardId, at.b.id), eq(guest.email, email), sql`${guest.code} is not null`, lt(guest.tries, SERVER.code.tries),
-        sql`${guest.codeAt} > now() - ${sql.raw(`interval '${SERVER.code.minutes} minutes'`)}`))
+        sql`${guest.codeAt} > ${ago(SERVER.code.minutes * 60_000)}`))
       .returning({id: guest.id, code: guest.code}) as {id: string; code: string}[];
     if (!g || g.code !== await seal(code)) return c.json({error: 'Not that code'}, 403);
     const token = hex(crypto.getRandomValues(new Uint8Array(32)));

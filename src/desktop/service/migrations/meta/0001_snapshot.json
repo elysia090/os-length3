@@ -1,6 +1,6 @@
 {
-  "id": "ad9cb09b-c6e6-4206-8c86-b20e4c0c6e1b",
-  "prevId": "67c1a2d0-ac9a-482f-b942-671b4ae0bf8f",
+  "id": "d090801d-97dc-4cbb-8480-5e847376d6a5",
+  "prevId": "512d536e-f4ad-4694-aadd-acfe17799963",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -18,7 +18,13 @@
           "name": "user_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
+        },
+        "server_id": {
+          "name": "server_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "name": {
           "name": "name",
@@ -34,14 +40,32 @@
         },
         "ssh": {
           "name": "ssh",
-          "type": "integer",
+          "type": "boolean",
           "primaryKey": false,
           "notNull": true,
-          "default": 0
+          "default": false
+        },
+        "until": {
+          "name": "until",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "released_at": {
+          "name": "released_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lapsed_at": {
+          "name": "lapsed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
-          "type": "timestamp",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
@@ -56,33 +80,76 @@
               "isExpression": false,
               "asc": true,
               "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
+        },
+        "address_server_idx": {
+          "name": "address_server_idx",
+          "columns": [
+            {
+              "expression": "server_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "address_user_id_user_id_fk": {
           "name": "address_user_id_user_id_fk",
           "tableFrom": "address",
-          "tableTo": "user",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "address_server_id_server_id_fk": {
+          "name": "address_server_id_server_id_fk",
+          "tableFrom": "address",
+          "columnsFrom": [
+            "server_id"
+          ],
+          "tableTo": "server",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "address_whose": {
+          "name": "address_whose",
+          "value": "num_nonnulls(\"address\".\"user_id\", \"address\".\"server_id\") = 1"
+        },
+        "address_parts": {
+          "name": "address_parts",
+          "value": "address = name || '@' || domain and name ~ '^[a-z0-9][a-z0-9._-]{1,30}$' and char_length(domain) between 3 and 253"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.blob": {
@@ -101,34 +168,56 @@
           "primaryKey": false,
           "notNull": true
         },
-        "size": {
-          "name": "size",
+        "bytes": {
+          "name": "bytes",
           "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
         "created_at": {
           "name": "created_at",
-          "type": "timestamp",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "blob_created_idx": {
+          "name": "blob_created_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
       "foreignKeys": {
         "blob_user_id_user_id_fk": {
           "name": "blob_user_id_user_id_fk",
           "tableFrom": "blob",
-          "tableTo": "user",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {
@@ -142,11 +231,20 @@
       },
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "blob_sha": {
+          "name": "blob_sha",
+          "value": "sha256 ~ '^[0-9a-f]{64}$'"
+        },
+        "blob_bytes": {
+          "name": "blob_bytes",
+          "value": "\"blob\".\"bytes\" between 0 and 16777216"
+        }
+      },
       "isRLSEnabled": false
     },
-    "public.change": {
-      "name": "change",
+    "public.board": {
+      "name": "board",
       "schema": "",
       "columns": {
         "id": {
@@ -155,14 +253,147 @@
           "primaryKey": true,
           "notNull": true
         },
-        "user_id": {
-          "name": "user_id",
+        "server_id": {
+          "name": "server_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "repo": {
-          "name": "repo",
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reach": {
+          "name": "reach",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "gone_at": {
+          "name": "gone_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "board_server_idx": {
+          "name": "board_server_idx",
+          "columns": [
+            {
+              "expression": "server_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "board_gone_idx": {
+          "name": "board_gone_idx",
+          "columns": [
+            {
+              "expression": "gone_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "where": "\"board\".\"gone_at\" is not null",
+          "concurrently": false
+        },
+        "board_open_idx": {
+          "name": "board_open_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "where": "\"board\".\"reach\" >= 1 and \"board\".\"gone_at\" is null",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "board_server_id_server_id_fk": {
+          "name": "board_server_id_server_id_fk",
+          "tableFrom": "board",
+          "columnsFrom": [
+            "server_id"
+          ],
+          "tableTo": "server",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "board_id": {
+          "name": "board_id",
+          "value": "id ~ '^[0-9a-z]{12}$'"
+        },
+        "board_name": {
+          "name": "board_name",
+          "value": "char_length(\"board\".\"name\") between 1 and 64"
+        },
+        "board_reach": {
+          "name": "board_reach",
+          "value": "\"board\".\"reach\" between 0 and 2"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.change": {
+      "name": "change",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "repo_id": {
+          "name": "repo_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
@@ -172,13 +403,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "issue": {
-          "name": "issue",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
         },
         "kind": {
           "name": "kind",
@@ -233,22 +457,9 @@
           "notNull": true,
           "default": "''"
         },
-        "merged_cut": {
-          "name": "merged_cut",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
         "updated_at": {
           "name": "updated_at",
-          "type": "timestamp",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
@@ -259,13 +470,7 @@
           "name": "change_line_idx",
           "columns": [
             {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "repo",
+              "expression": "repo_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -278,30 +483,79 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
-        "change_user_id_user_id_fk": {
-          "name": "change_user_id_user_id_fk",
+        "change_repo": {
+          "name": "change_repo",
           "tableFrom": "change",
-          "tableTo": "user",
           "columnsFrom": [
+            "repo_id",
             "user_id"
           ],
+          "tableTo": "repo",
           "columnsTo": [
+            "id",
+            "user_id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "change_base": {
+          "name": "change_base",
+          "tableFrom": "change",
+          "columnsFrom": [
+            "repo_id",
+            "base"
+          ],
+          "tableTo": "cut",
+          "columnsTo": [
+            "repo_id",
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "change_head": {
+          "name": "change_head",
+          "tableFrom": "change",
+          "columnsFrom": [
+            "repo_id",
+            "head"
+          ],
+          "tableTo": "cut",
+          "columnsTo": [
+            "repo_id",
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "change_state": {
+          "name": "change_state",
+          "value": "\"change\".\"state\" in ('open', 'merged', 'rejected', 'reset')"
+        },
+        "change_line": {
+          "name": "change_line",
+          "value": "line ~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'"
+        },
+        "change_words": {
+          "name": "change_words",
+          "value": "char_length(kind) <= 2000 and char_length(title) between 1 and 2000 and char_length(note) <= 2000 and char_length(submitted_by) <= 200"
+        },
+        "change_version": {
+          "name": "change_version",
+          "value": "\"change\".\"version\" > 0"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.contact": {
@@ -325,42 +579,51 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "contact_peer_idx": {
+          "name": "contact_peer_idx",
+          "columns": [
+            {
+              "expression": "peer",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
       "foreignKeys": {
         "contact_user_id_user_id_fk": {
           "name": "contact_user_id_user_id_fk",
           "tableFrom": "contact",
-          "tableTo": "user",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "contact_peer_user_id_fk": {
           "name": "contact_peer_user_id_fk",
           "tableFrom": "contact",
-          "tableTo": "user",
           "columnsFrom": [
             "peer"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {
@@ -374,17 +637,32 @@
       },
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "contact_state": {
+          "name": "contact_state",
+          "value": "\"contact\".\"state\" in ('accepted', 'blocked')"
+        },
+        "contact_other": {
+          "name": "contact_other",
+          "value": "\"contact\".\"user_id\" <> \"contact\".\"peer\""
+        }
+      },
       "isRLSEnabled": false
     },
     "public.cut": {
       "name": "cut",
       "schema": "",
       "columns": {
+        "repo_id": {
+          "name": "repo_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
         "id": {
           "name": "id",
           "type": "text",
-          "primaryKey": true,
+          "primaryKey": false,
           "notNull": true
         },
         "user_id": {
@@ -392,19 +670,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "repo": {
-          "name": "repo",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "line": {
-          "name": "line",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'main'"
         },
         "parent": {
           "name": "parent",
@@ -423,6 +688,16 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true
+        },
+        "bytes": {
+          "name": "bytes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "generated": {
+            "type": "stored",
+            "as": "octet_length(tree::text)"
+          }
         },
         "kind": {
           "name": "kind",
@@ -467,66 +742,281 @@
         },
         "time": {
           "name": "time",
-          "type": "timestamp",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
         }
       },
-      "indexes": {
-        "cut_repo_idx": {
-          "name": "cut_repo_idx",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "repo",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "line",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "time",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
+      "indexes": {},
+      "foreignKeys": {
+        "cut_repo": {
+          "name": "cut_repo",
+          "tableFrom": "cut",
+          "columnsFrom": [
+            "repo_id",
+            "user_id"
           ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
+          "tableTo": "repo",
+          "columnsTo": [
+            "id",
+            "user_id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "cut_parent": {
+          "name": "cut_parent",
+          "tableFrom": "cut",
+          "columnsFrom": [
+            "repo_id",
+            "parent"
+          ],
+          "tableTo": "cut",
+          "columnsTo": [
+            "repo_id",
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "cut_merged": {
+          "name": "cut_merged",
+          "tableFrom": "cut",
+          "columnsFrom": [
+            "repo_id",
+            "merged"
+          ],
+          "tableTo": "cut",
+          "columnsTo": [
+            "repo_id",
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
+      "compositePrimaryKeys": {
+        "cut_repo_id_id_pk": {
+          "name": "cut_repo_id_id_pk",
+          "columns": [
+            "repo_id",
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "cut_id": {
+          "name": "cut_id",
+          "value": "id ~ '^[0-9a-f]{64}$'"
+        },
+        "cut_tree": {
+          "name": "cut_tree",
+          "value": "jsonb_typeof(\"cut\".\"tree\") = 'object'"
+        },
+        "cut_words": {
+          "name": "cut_words",
+          "value": "char_length(kind) <= 2000 and char_length(title) between 1 and 2000 and char_length(issue) <= 2000 and char_length(note) <= 2000"
+        },
+        "cut_counts": {
+          "name": "cut_counts",
+          "value": "\"cut\".\"added\" >= 0 and \"cut\".\"removed\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.guard": {
+      "name": "guard",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "off_digest": {
+          "name": "off_digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "off_set_at": {
+          "name": "off_set_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "proof_session": {
+          "name": "proof_session",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "proof_at": {
+          "name": "proof_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
       "foreignKeys": {
-        "cut_user_id_user_id_fk": {
-          "name": "cut_user_id_user_id_fk",
-          "tableFrom": "cut",
-          "tableTo": "user",
+        "guard_user_id_user_id_fk": {
+          "name": "guard_user_id_user_id_fk",
+          "tableFrom": "guard",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "guard_digest": {
+          "name": "guard_digest",
+          "value": "off_digest is null or off_digest ~ '^[0-9a-f]{64}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.board_guest": {
+      "name": "board_guest",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "board_id": {
+          "name": "board_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "code_at": {
+          "name": "code_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tries": {
+          "name": "tries",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "token": {
+          "name": "token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "token_until": {
+          "name": "token_until",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "board_guest_email_idx": {
+          "name": "board_guest_email_idx",
+          "columns": [
+            {
+              "expression": "board_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "email",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "board_guest_token_idx": {
+          "name": "board_guest_token_idx",
+          "columns": [
+            {
+              "expression": "token",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "board_guest_board_id_board_id_fk": {
+          "name": "board_guest_board_id_board_id_fk",
+          "tableFrom": "board_guest",
+          "columnsFrom": [
+            "board_id"
+          ],
+          "tableTo": "board",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "board_guest_id": {
+          "name": "board_guest_id",
+          "value": "id ~ '^[0-9a-z]{12}$'"
+        },
+        "board_guest_email": {
+          "name": "board_guest_email",
+          "value": "char_length(\"board_guest\".\"email\") <= 260"
+        },
+        "board_guest_digests": {
+          "name": "board_guest_digests",
+          "value": "(code is null or code ~ '^[0-9a-f]{64}$') and (token is null or token ~ '^[0-9a-f]{64}$')"
+        },
+        "board_guest_tries": {
+          "name": "board_guest_tries",
+          "value": "\"board_guest\".\"tries\" >= 0"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.home": {
@@ -557,13 +1047,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": 1
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
         }
       },
       "indexes": {},
@@ -571,15 +1054,15 @@
         "home_user_id_user_id_fk": {
           "name": "home_user_id_user_id_fk",
           "tableFrom": "home",
-          "tableTo": "user",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {
@@ -588,6 +1071,328 @@
           "columns": [
             "user_id",
             "key"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "home_key": {
+          "name": "home_key",
+          "value": "key ~ '^[a-z]{1,32}$'"
+        },
+        "home_value": {
+          "name": "home_value",
+          "value": "char_length(value) <= 1048576"
+        },
+        "home_version": {
+          "name": "home_version",
+          "value": "\"home\".\"version\" > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.line": {
+      "name": "line",
+      "schema": "",
+      "columns": {
+        "repo_id": {
+          "name": "repo_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "base": {
+          "name": "base",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "head": {
+          "name": "head",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pushed": {
+          "name": "pushed",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "draft": {
+          "name": "draft",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "bytes": {
+          "name": "bytes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "generated": {
+            "type": "stored",
+            "as": "octet_length(draft::text)"
+          }
+        },
+        "file_bytes": {
+          "name": "file_bytes",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "started_by": {
+          "name": "started_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "line_user_idx": {
+          "name": "line_user_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "line_repo": {
+          "name": "line_repo",
+          "tableFrom": "line",
+          "columnsFrom": [
+            "repo_id",
+            "user_id"
+          ],
+          "tableTo": "repo",
+          "columnsTo": [
+            "id",
+            "user_id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "line_base": {
+          "name": "line_base",
+          "tableFrom": "line",
+          "columnsFrom": [
+            "repo_id",
+            "base"
+          ],
+          "tableTo": "cut",
+          "columnsTo": [
+            "repo_id",
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "line_head": {
+          "name": "line_head",
+          "tableFrom": "line",
+          "columnsFrom": [
+            "repo_id",
+            "head"
+          ],
+          "tableTo": "cut",
+          "columnsTo": [
+            "repo_id",
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "line_pushed": {
+          "name": "line_pushed",
+          "tableFrom": "line",
+          "columnsFrom": [
+            "repo_id",
+            "pushed"
+          ],
+          "tableTo": "cut",
+          "columnsTo": [
+            "repo_id",
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "line_repo_id_name_pk": {
+          "name": "line_repo_id_name_pk",
+          "columns": [
+            "repo_id",
+            "name"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "line_name": {
+          "name": "line_name",
+          "value": "name ~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'"
+        },
+        "line_draft": {
+          "name": "line_draft",
+          "value": "jsonb_typeof(\"line\".\"draft\") = 'object'"
+        },
+        "line_version": {
+          "name": "line_version",
+          "value": "\"line\".\"version\" >= 0"
+        },
+        "line_started_by": {
+          "name": "line_started_by",
+          "value": "char_length(started_by) <= 200"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.server_member": {
+      "name": "server_member",
+      "schema": "",
+      "columns": {
+        "server_id": {
+          "name": "server_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "owner": {
+          "name": "owner",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "added_at": {
+          "name": "added_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "server_member_user_idx": {
+          "name": "server_member_user_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "server_member_owner_idx": {
+          "name": "server_member_owner_idx",
+          "columns": [
+            {
+              "expression": "server_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "with": {},
+          "method": "btree",
+          "where": "\"server_member\".\"owner\"",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "server_member_server_id_server_id_fk": {
+          "name": "server_member_server_id_server_id_fk",
+          "tableFrom": "server_member",
+          "columnsFrom": [
+            "server_id"
+          ],
+          "tableTo": "server",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "server_member_user_id_user_id_fk": {
+          "name": "server_member_user_id_user_id_fk",
+          "tableFrom": "server_member",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "tableTo": "user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {
+        "server_member_server_id_user_id_pk": {
+          "name": "server_member_server_id_user_id_pk",
+          "columns": [
+            "server_id",
+            "user_id"
           ]
         }
       },
@@ -602,9 +1407,10 @@
       "columns": {
         "id": {
           "name": "id",
-          "type": "text",
+          "type": "uuid",
           "primaryKey": true,
-          "notNull": true
+          "notNull": true,
+          "default": "gen_random_uuid()"
         },
         "to_user": {
           "name": "to_user",
@@ -652,14 +1458,14 @@
         },
         "created_at": {
           "name": "created_at",
-          "type": "timestamp",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
         },
         "read_at": {
           "name": "read_at",
-          "type": "timestamp",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         }
@@ -682,9 +1488,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "message_from_idx": {
           "name": "message_from_idx",
@@ -703,219 +1509,282 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "message_to_user_user_id_fk": {
-          "name": "message_to_user_user_id_fk",
-          "tableFrom": "message",
-          "tableTo": "user",
-          "columnsFrom": [
-            "to_user"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "concurrently": false
         },
-        "message_from_user_user_id_fk": {
-          "name": "message_from_user_user_id_fk",
-          "tableFrom": "message",
-          "tableTo": "user",
-          "columnsFrom": [
-            "from_user"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.off_code": {
-      "name": "off_code",
-      "schema": "",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "digest": {
-          "name": "digest",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "set_at": {
-          "name": "set_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "off_code_user_id_user_id_fk": {
-          "name": "off_code_user_id_user_id_fk",
-          "tableFrom": "off_code",
-          "tableTo": "user",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.passkey_proof": {
-      "name": "passkey_proof",
-      "schema": "",
-      "columns": {
-        "session_id": {
-          "name": "session_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "at": {
-          "name": "at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "passkey_proof_user_id_user_id_fk": {
-          "name": "passkey_proof_user_id_user_id_fk",
-          "tableFrom": "passkey_proof",
-          "tableTo": "user",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.post": {
-      "name": "post",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "address": {
-          "name": "address",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "body": {
-          "name": "body",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "post_user_idx": {
-          "name": "post_user_idx",
+        "message_read_idx": {
+          "name": "message_read_idx",
           "columns": [
             {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
+              "expression": "created_at",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"message\".\"read_at\" is not null",
+          "concurrently": false
         }
       },
       "foreignKeys": {
-        "post_user_id_user_id_fk": {
-          "name": "post_user_id_user_id_fk",
-          "tableFrom": "post",
-          "tableTo": "user",
+        "message_to_user_user_id_fk": {
+          "name": "message_to_user_user_id_fk",
+          "tableFrom": "message",
           "columnsFrom": [
-            "user_id"
+            "to_user"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "message_from_user_user_id_fk": {
+          "name": "message_from_user_user_id_fk",
+          "tableFrom": "message",
+          "columnsFrom": [
+            "from_user"
+          ],
+          "tableTo": "user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "message_type": {
+          "name": "message_type",
+          "value": "\"message\".\"type\" in ('message', 'review', 'question', 'run')"
+        },
+        "message_body": {
+          "name": "message_body",
+          "value": "char_length(\"message\".\"body\") between 1 and 4000"
+        },
+        "message_target": {
+          "name": "message_target",
+          "value": "jsonb_typeof(\"message\".\"target\") = 'object' and octet_length(\"message\".\"target\"::text) <= 1024"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.principal_code": {
+      "name": "principal_code",
+      "schema": "",
+      "columns": {
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "server_id": {
+          "name": "server_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "principal_code_user_idx": {
+          "name": "principal_code_user_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "principal_code_server_idx": {
+          "name": "principal_code_server_idx",
+          "columns": [
+            {
+              "expression": "server_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "principal_code_user_id_user_id_fk": {
+          "name": "principal_code_user_id_user_id_fk",
+          "tableFrom": "principal_code",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "tableTo": "user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        },
+        "principal_code_server_id_server_id_fk": {
+          "name": "principal_code_server_id_server_id_fk",
+          "tableFrom": "principal_code",
+          "columnsFrom": [
+            "server_id"
+          ],
+          "tableTo": "server",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "principal_code_digits": {
+          "name": "principal_code_digits",
+          "value": "code ~ '^[1-9][0-9]{5}$'"
+        },
+        "principal_code_whose": {
+          "name": "principal_code_whose",
+          "value": "num_nonnulls(\"principal_code\".\"user_id\", \"principal_code\".\"server_id\") <= 1"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.repo": {
       "name": "repo",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "name": "repo_id_seq",
+            "increment": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "startWith": "1",
+            "cache": "1",
+            "cycle": false,
+            "schema": "public",
+            "type": "always"
+          }
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "off_at": {
+          "name": "off_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "repo_off_idx": {
+          "name": "repo_off_idx",
+          "columns": [
+            {
+              "expression": "off_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "where": "\"repo\".\"off_at\" is not null",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "repo_user_id_user_id_fk": {
+          "name": "repo_user_id_user_id_fk",
+          "tableFrom": "repo",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "tableTo": "user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "repo_user_name": {
+          "name": "repo_user_name",
+          "columns": [
+            "user_id",
+            "name"
+          ],
+          "nullsNotDistinct": false
+        },
+        "repo_owner": {
+          "name": "repo_owner",
+          "columns": [
+            "id",
+            "user_id"
+          ],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "repo_name": {
+          "name": "repo_name",
+          "value": "name ~ '^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}$' and name <> 'gone'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.repo_gone": {
+      "name": "repo_gone",
       "schema": "",
       "columns": {
         "user_id": {
@@ -930,122 +1799,289 @@
           "primaryKey": false,
           "notNull": true
         },
-        "line": {
-          "name": "line",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'main'"
-        },
-        "issue": {
-          "name": "issue",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
-        "base": {
-          "name": "base",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "head": {
-          "name": "head",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "pushed": {
-          "name": "pushed",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "started_by": {
-          "name": "started_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
-        "started_at": {
-          "name": "started_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "draft": {
-          "name": "draft",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
-        },
-        "draft_base": {
-          "name": "draft_base",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "version": {
-          "name": "version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "bytes": {
-          "name": "bytes",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "changed_by": {
-          "name": "changed_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "off_at": {
-          "name": "off_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "repo_gone_at_idx": {
+          "name": "repo_gone_at_idx",
+          "columns": [
+            {
+              "expression": "at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
       "foreignKeys": {
-        "repo_user_id_user_id_fk": {
-          "name": "repo_user_id_user_id_fk",
-          "tableFrom": "repo",
-          "tableTo": "user",
+        "repo_gone_user_id_user_id_fk": {
+          "name": "repo_gone_user_id_user_id_fk",
+          "tableFrom": "repo_gone",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {
-        "repo_user_id_name_line_pk": {
-          "name": "repo_user_id_name_line_pk",
+        "repo_gone_user_id_name_pk": {
+          "name": "repo_gone_user_id_name_pk",
           "columns": [
             "user_id",
-            "name",
-            "line"
+            "name"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.repo_public": {
+      "name": "repo_public",
+      "schema": "",
+      "columns": {
+        "face": {
+          "name": "face",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "repo_id": {
+          "name": "repo_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "server_id": {
+          "name": "server_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "released_at": {
+          "name": "released_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "repo_public_repo_idx": {
+          "name": "repo_public_repo_idx",
+          "columns": [
+            {
+              "expression": "repo_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "repo_public_server_idx": {
+          "name": "repo_public_server_idx",
+          "columns": [
+            {
+              "expression": "server_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "repo_public_one_idx": {
+          "name": "repo_public_one_idx",
+          "columns": [
+            {
+              "expression": "repo_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "with": {},
+          "method": "btree",
+          "where": "\"repo_public\".\"released_at\" is null",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "repo_public_server_id_server_id_fk": {
+          "name": "repo_public_server_id_server_id_fk",
+          "tableFrom": "repo_public",
+          "columnsFrom": [
+            "server_id"
+          ],
+          "tableTo": "server",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "repo_public_repo": {
+          "name": "repo_public_repo",
+          "tableFrom": "repo_public",
+          "columnsFrom": [
+            "repo_id",
+            "user_id"
+          ],
+          "tableTo": "repo",
+          "columnsTo": [
+            "id",
+            "user_id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {
+        "repo_public_face_name_pk": {
+          "name": "repo_public_face_name_pk",
+          "columns": [
+            "face",
+            "name"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "repo_public_name": {
+          "name": "repo_public_name",
+          "value": "name ~ '^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.repo_share": {
+      "name": "repo_share",
+      "schema": "",
+      "columns": {
+        "repo_id": {
+          "name": "repo_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "server_id": {
+          "name": "server_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "shared_at": {
+          "name": "shared_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "repo_share_server_idx": {
+          "name": "repo_share_server_idx",
+          "columns": [
+            {
+              "expression": "server_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "shared_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "repo_share_repo": {
+          "name": "repo_share_repo",
+          "tableFrom": "repo_share",
+          "columnsFrom": [
+            "repo_id",
+            "user_id"
+          ],
+          "tableTo": "repo",
+          "columnsTo": [
+            "id",
+            "user_id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "repo_share_member": {
+          "name": "repo_share_member",
+          "tableFrom": "repo_share",
+          "columnsFrom": [
+            "server_id",
+            "user_id"
+          ],
+          "tableTo": "server_member",
+          "columnsTo": [
+            "server_id",
+            "user_id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {
+        "repo_share_repo_id_server_id_pk": {
+          "name": "repo_share_repo_id_server_id_pk",
+          "columns": [
+            "repo_id",
+            "server_id"
           ]
         }
       },
@@ -1060,18 +2096,19 @@
       "columns": {
         "id": {
           "name": "id",
-          "type": "text",
+          "type": "uuid",
           "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "change_id": {
+          "name": "change_id",
+          "type": "uuid",
+          "primaryKey": false,
           "notNull": true
         },
         "user_id": {
           "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "change": {
-          "name": "change",
           "type": "text",
           "primaryKey": false,
           "notNull": true
@@ -1102,16 +2139,25 @@
           "notNull": true,
           "default": "'[]'::jsonb"
         },
+        "bytes": {
+          "name": "bytes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "generated": {
+            "type": "stored",
+            "as": "octet_length(note) + octet_length(marks::text)"
+          }
+        },
         "by": {
           "name": "by",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "default": "''"
+          "notNull": true
         },
         "time": {
           "name": "time",
-          "type": "timestamp",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
@@ -1122,7 +2168,7 @@
           "name": "review_change_idx",
           "columns": [
             {
-              "expression": "change",
+              "expression": "change_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -1135,43 +2181,262 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
+        "review_change_id_change_id_fk": {
+          "name": "review_change_id_change_id_fk",
+          "tableFrom": "review",
+          "columnsFrom": [
+            "change_id"
+          ],
+          "tableTo": "change",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
         "review_user_id_user_id_fk": {
           "name": "review_user_id_user_id_fk",
           "tableFrom": "review",
-          "tableTo": "user",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "review_change_change_id_fk": {
-          "name": "review_change_change_id_fk",
-          "tableFrom": "review",
-          "tableTo": "change",
-          "columnsFrom": [
-            "change"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "review_verdict": {
+          "name": "review_verdict",
+          "value": "\"review\".\"verdict\" in ('approve', 'changes', 'comment')"
+        },
+        "review_note": {
+          "name": "review_note",
+          "value": "char_length(note) <= 2000"
+        },
+        "review_marks": {
+          "name": "review_marks",
+          "value": "jsonb_typeof(\"review\".\"marks\") = 'array' and jsonb_array_length(\"review\".\"marks\") <= 200 and octet_length(\"review\".\"marks\"::text) <= 40000"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.room": {
+      "name": "room",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "used": {
+          "name": "used",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "stamp": {
+          "name": "stamp",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "unswept": {
+          "name": "unswept",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        }
+      },
+      "indexes": {
+        "room_unswept_idx": {
+          "name": "room_unswept_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "where": "\"room\".\"unswept\"",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "room_user_id_user_id_fk": {
+          "name": "room_user_id_user_id_fk",
+          "tableFrom": "room",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "tableTo": "user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "room_used": {
+          "name": "room_used",
+          "value": "\"room\".\"used\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.server": {
+      "name": "server",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "made_by": {
+          "name": "made_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gone_at": {
+          "name": "gone_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gone_by": {
+          "name": "gone_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "server_made_idx": {
+          "name": "server_made_idx",
+          "columns": [
+            {
+              "expression": "made_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "server_gone_idx": {
+          "name": "server_gone_idx",
+          "columns": [
+            {
+              "expression": "gone_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "gone_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "where": "\"server\".\"gone_at\" is not null",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "server_made_by_user_id_fk": {
+          "name": "server_made_by_user_id_fk",
+          "tableFrom": "server",
+          "columnsFrom": [
+            "made_by"
+          ],
+          "tableTo": "user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        },
+        "server_gone_by_user_id_fk": {
+          "name": "server_gone_by_user_id_fk",
+          "tableFrom": "server",
+          "columnsFrom": [
+            "gone_by"
+          ],
+          "tableTo": "user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "server_id": {
+          "name": "server_id",
+          "value": "id ~ '^[0-9a-z]{12}$'"
+        },
+        "server_name": {
+          "name": "server_name",
+          "value": "char_length(\"server\".\"name\") between 1 and 64"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.signal": {
@@ -1180,9 +2445,10 @@
       "columns": {
         "id": {
           "name": "id",
-          "type": "text",
+          "type": "uuid",
           "primaryKey": true,
-          "notNull": true
+          "notNull": true,
+          "default": "gen_random_uuid()"
         },
         "to_user": {
           "name": "to_user",
@@ -1216,7 +2482,7 @@
         },
         "created_at": {
           "name": "created_at",
-          "type": "timestamp",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
@@ -1233,6 +2499,12 @@
               "nulls": "last"
             },
             {
+              "expression": "from_user",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
               "expression": "created_at",
               "isExpression": false,
               "asc": true,
@@ -1240,43 +2512,419 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
+        },
+        "signal_from_idx": {
+          "name": "signal_from_idx",
+          "columns": [
+            {
+              "expression": "from_user",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "signal_time_idx": {
+          "name": "signal_time_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "signal_to_user_user_id_fk": {
           "name": "signal_to_user_user_id_fk",
           "tableFrom": "signal",
-          "tableTo": "user",
           "columnsFrom": [
             "to_user"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "signal_from_user_user_id_fk": {
           "name": "signal_from_user_user_id_fk",
           "tableFrom": "signal",
-          "tableTo": "user",
           "columnsFrom": [
             "from_user"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "signal_kind": {
+          "name": "signal_kind",
+          "value": "\"signal\".\"kind\" in ('offer', 'answer', 'candidate', 'bye')"
+        },
+        "signal_size": {
+          "name": "signal_size",
+          "value": "char_length(session) <= 64 and char_length(data) <= 16384"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.board_post": {
+      "name": "board_post",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "board_id": {
+          "name": "board_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "guest_id": {
+          "name": "guest_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "by": {
+          "name": "by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "board_post_board_idx": {
+          "name": "board_post_board_idx",
+          "columns": [
+            {
+              "expression": "board_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "board_post_user_idx": {
+          "name": "board_post_user_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "where": "\"board_post\".\"user_id\" is not null",
+          "concurrently": false
+        },
+        "board_post_guest_idx": {
+          "name": "board_post_guest_idx",
+          "columns": [
+            {
+              "expression": "guest_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "where": "\"board_post\".\"guest_id\" is not null",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "board_post_board_id_board_id_fk": {
+          "name": "board_post_board_id_board_id_fk",
+          "tableFrom": "board_post",
+          "columnsFrom": [
+            "board_id"
+          ],
+          "tableTo": "board",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "board_post_user_id_user_id_fk": {
+          "name": "board_post_user_id_user_id_fk",
+          "tableFrom": "board_post",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "tableTo": "user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "board_post_guest_id_board_guest_id_fk": {
+          "name": "board_post_guest_id_board_guest_id_fk",
+          "tableFrom": "board_post",
+          "columnsFrom": [
+            "guest_id"
+          ],
+          "tableTo": "board_guest",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "board_post_id": {
+          "name": "board_post_id",
+          "value": "id ~ '^[0-9a-z]{17}$'"
+        },
+        "board_post_body": {
+          "name": "board_post_body",
+          "value": "char_length(\"board_post\".\"body\") between 1 and 2000"
+        },
+        "board_post_whose": {
+          "name": "board_post_whose",
+          "value": "num_nonnulls(\"board_post\".\"user_id\", \"board_post\".\"guest_id\") <= 1"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.throttle": {
+      "name": "throttle",
+      "schema": "",
+      "columns": {
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "throttle_key_idx": {
+          "name": "throttle_key_idx",
+          "columns": [
+            {
+              "expression": "key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "throttle_key": {
+          "name": "throttle_key",
+          "value": "char_length(key) <= 300"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.board_todo": {
+      "name": "board_todo",
+      "schema": "",
+      "columns": {
+        "board_id": {
+          "name": "board_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "detail": {
+          "name": "detail",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "done": {
+          "name": "done",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "place": {
+          "name": "place",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "by": {
+          "name": "by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created": {
+          "name": "created",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "board_todo_board_id_board_id_fk": {
+          "name": "board_todo_board_id_board_id_fk",
+          "tableFrom": "board_todo",
+          "columnsFrom": [
+            "board_id"
+          ],
+          "tableTo": "board",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {
+        "board_todo_board_id_id_pk": {
+          "name": "board_todo_board_id_id_pk",
+          "columns": [
+            "board_id",
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "board_todo_id": {
+          "name": "board_todo_id",
+          "value": "id ~ '^[0-9a-z-]{1,40}$'"
+        },
+        "board_todo_kind": {
+          "name": "board_todo_kind",
+          "value": "kind is null or kind ~ '^[A-Za-z][A-Za-z0-9-]{0,15}$'"
+        },
+        "board_todo_words": {
+          "name": "board_todo_words",
+          "value": "char_length(title) <= 200 and char_length(detail) <= 4000"
+        },
+        "board_todo_place": {
+          "name": "board_todo_place",
+          "value": "\"board_todo\".\"place\" > '-Infinity'::float8 and \"board_todo\".\"place\" < 'Infinity'::float8"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.account": {
@@ -1375,24 +3023,24 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "account_user_id_user_id_fk": {
           "name": "account_user_id_user_id_fk",
           "tableFrom": "account",
-          "tableTo": "user",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -1478,9 +3126,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "deviceCode_userCode_uidx": {
           "name": "deviceCode_userCode_uidx",
@@ -1493,9 +3141,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -1588,9 +3236,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "passkey_credentialID_idx": {
           "name": "passkey_credentialID_idx",
@@ -1603,24 +3251,24 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "passkey_user_id_user_id_fk": {
           "name": "passkey_user_id_user_id_fk",
           "tableFrom": "passkey",
-          "tableTo": "user",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -1695,34 +3343,34 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "session_user_id_user_id_fk": {
           "name": "session_user_id_user_id_fk",
           "tableFrom": "session",
-          "tableTo": "user",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "session_token_unique": {
           "name": "session_token_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "token"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -1785,10 +3433,10 @@
       "uniqueConstraints": {
         "user_email_unique": {
           "name": "user_email_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "email"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -1850,9 +3498,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -1865,10 +3513,10 @@
   },
   "enums": {},
   "schemas": {},
+  "views": {},
   "sequences": {},
   "roles": {},
   "policies": {},
-  "views": {},
   "_meta": {
     "columns": {},
     "schemas": {},

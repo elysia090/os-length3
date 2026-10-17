@@ -178,7 +178,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   v1.get('/inbox/me', async (c) => {
     const list = await mine(c.get('userId'));
     const code = await codeOf(db, {userId: c.get('userId')});
-    return c.json({domain: d.domain, account: c.get('userId'), code, addresses: list.map((a) => ({address: a.address, ssh: Boolean(a.ssh),
+    return c.json({domain: d.domain, account: c.get('userId'), code, addresses: list.map((a) => ({address: a.address, ssh: a.ssh,
       ...(a.until ? {until: a.until.getTime(), ...(a.until.getTime() <= Date.now() ? {ended: true} : {})} : {}), ...(a.lapsedAt ? {lapsed: true} : {})}))});
   });
 
@@ -228,7 +228,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
 
   v1.post('/inbox/addresses/:address/ssh', async (c) => {
     const b = await body<{on?: unknown}>(c);
-    const done = await db.update(address).set({ssh: b?.on === true ? 1 : 0})
+    const done = await db.update(address).set({ssh: b?.on === true})
       .where(and(eq(address.address, c.req.param('address')), eq(address.userId, c.get('userId')))).returning({a: address.address});
     return done.length ? c.json({address: done[0].a, ssh: b?.on === true}) : c.json({error: 'That address is not yours'}, 404);
   });

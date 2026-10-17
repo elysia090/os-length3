@@ -28,24 +28,24 @@ export async function seeRepo(sheet: HTMLElement, r: servers.ShownRepo, ways: {b
   try {
     const got = await servers.seeRepo(as);
     sub.textContent = got.at ? t('Pushed {when}: {title}', {when: ago(got.at), title: got.title ?? ''}) : t('Nothing pushed yet');
-    const paths = Object.entries(got.tree).filter((e): e is [string, string] => e[1] !== null).sort(([a], [b]) => a.localeCompare(b));
-    const open = async (path: string, sha: string, row: HTMLElement) => {
+    const paths = Object.entries(got.tree).filter(([, sha]) => sha !== null).map(([p]) => p).sort((a, b) => a.localeCompare(b));
+    const open = async (path: string, row: HTMLElement) => {
       files.querySelectorAll('[aria-current]').forEach((x) => x.removeAttribute('aria-current'));
       row.setAttribute('aria-current', 'true');
       text.textContent = '…';
       try {
-        const body = await servers.seeFile(as, sha);
+        const body = await servers.seeFile(as, path);
         text.textContent = body.includes('\0') ? t('Not text') : body.length > SHOW_BYTES ? `${body.slice(0, SHOW_BYTES)}\n…` : body;
       } catch (e) { text.textContent = message(e); }
       text.setAttribute('aria-label', path);
     };
-    files.replaceChildren(...paths.map(([path, sha]) => {
+    files.replaceChildren(...paths.map((path) => {
       const b = h('button', {type: 'button', class: 'seen-file mono small'}, path);
-      b.addEventListener('click', () => void open(path, sha, b));
+      b.addEventListener('click', () => void open(path, b));
       return h('li', {}, b);
     }));
-    const first = paths.findIndex(([p]) => /^readme(\.|$)/i.test(p));
+    const first = paths.findIndex((p) => /^readme(\.|$)/i.test(p));
     const pick = first >= 0 ? first : 0;
-    if (paths[pick]) void open(paths[pick][0], paths[pick][1], files.querySelectorAll('button')[pick] as HTMLElement);
+    if (paths[pick]) void open(paths[pick], files.querySelectorAll('button')[pick] as HTMLElement);
   } catch (e) { sub.textContent = message(e); }
 }

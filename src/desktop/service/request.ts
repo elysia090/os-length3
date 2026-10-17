@@ -41,8 +41,8 @@ export const lock = (tx: Db, key: string) => tx.execute(sql`select pg_advisory_x
 /** A moment as milliseconds since the epoch, as clients read them. */
 export const ms = (moment: SQL) => sql<number>`(extract(epoch from ${moment}) * 1000)::float8`;
 
-/** A span of milliseconds as Postgres counts it, in days (KEPT, HOLD, REMEMBERED). */
-export const days = (span: number) => sql.raw(`interval '${span / 86_400_000} days'`);
+/** That many milliseconds before now, as Postgres reads it (`at > ${ago(KEPT)}`): a parameter, never text in the query. */
+export const ago = (span: number) => sql`(now() - make_interval(secs => ${span / 1000}))`;
 
 /**
  * A column named with its table, always. Inside a subquery an outer column

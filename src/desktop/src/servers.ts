@@ -149,9 +149,9 @@ export const takeOff = (server: string, owner: string, repo: string) => call<voi
 const seenPath = (as: string) => { const [face, name] = as.split(':'); return `/v1/seen/${encodeURIComponent(face)}/${encodeURIComponent(name)}`; };
 /** `face:name`: what it was last pushed to. */
 export const seeRepo = (as: string) => call<SeenRepo>(seenPath(as));
-/** A file of it, as text. */
-export async function seeFile(as: string, sha: string): Promise<string> {
-  const r = await api(`${seenPath(as)}/blobs/${sha}`);
+/** A file of it, by its path, as text. */
+export async function seeFile(as: string, path: string): Promise<string> {
+  const r = await api(`${seenPath(as)}/file?path=${encodeURIComponent(path)}`);
   if (!r.ok) throw await failed(r);
   return new TextDecoder().decode(await r.arrayBuffer());
 }

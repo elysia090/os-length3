@@ -15,12 +15,10 @@
 // a code: six digits to be found by, given once and never given again.
 
 import {and, eq, isNull, sql, type SQL} from 'drizzle-orm';
-import type {Db} from './request.ts';
+import {ago, type Db} from './request.ts';
 import {address, principalCode, repoPublic} from './schema.ts';
 
 export const HOLD = 30 * 86_400_000;
-/** HOLD as Postgres reads it. */
-export const held = sql.raw(`interval '${HOLD / 86_400_000} days'`);
 /** How long a name on this Remote is held before it is renewed. */
 export const TERM_YEARS = 5;
 export const term = (from = Date.now()) => { const d = new Date(from); d.setUTCFullYear(d.getUTCFullYear() + TERM_YEARS); return d; };
@@ -30,7 +28,7 @@ export const live = and(isNull(address.releasedAt), isNull(address.lapsedAt), sq
 /** When a name stopped answering for its owner (let go, or past its term); null while it is theirs. */
 export const freed = sql`coalesce(${address.releasedAt}, case when ${address.until} <= now() then ${address.until} end)`;
 /** Still someone's: answering, or held for its owner. */
-export const kept = sql`(${freed} is null or ${freed} > now() - ${held})`;
+export const kept = sql`(${freed} is null or ${freed} > ${ago(HOLD)})`;
 
 /**
  * How a person is shown: their first address that answers, else their first
@@ -64,7 +62,7 @@ export async function claim(db: Db, name: string, domain: string, owner: Owner, 
       target: address.address,
       // Its owner's: renewed, or taken back. Held long enough: anyone's, from now.
       set: {userId: sql`excluded.user_id`, serverId: sql`excluded.server_id`, until, releasedAt: null, lapsedAt: null,
-        ssh: sql`case when ${theirs} then ${address.ssh} else 0 end`, createdAt: sql`case when ${theirs} then ${address.createdAt} else now() end`},
+        ssh: sql`${theirs} and ${address.ssh}`, createdAt: sql`case when ${theirs} then ${address.createdAt} else now() end`},
       setWhere: sql`${theirs} or not ${kept}`,
     }).returning({a: address.address});
   if (done.length) return {ok: true, until: until?.getTime() ?? null};

@@ -1,1 +1,0 @@
-ALTER TABLE "server_board" ADD COLUMN "gone_at" timestamp;
