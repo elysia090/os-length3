@@ -82,6 +82,14 @@ fn direct_target(i: &Instruction) -> Option<u64> {
     matches!(i.op0_kind(), OpKind::NearBranch64 | OpKind::NearBranch32 | OpKind::NearBranch16).then(|| i.near_branch_target())
 }
 
+/// New function starts split only the functions whose ranges held them:
+/// walk those again, and keep every other walk.
+fn split(done: &mut BTreeMap<u64, Vec<Block>>, starts: &BTreeSet<u64>, found: &BTreeSet<u64>) {
+    for &t in found {
+        if let Some(&before) = starts.range(..t).next_back() { done.remove(&before); }
+    }
+}
+
 /// The half-open range a function may own: its symbol size, or up to the
 /// next function start when the size is unknown.
 fn ranges(starts: &BTreeSet<u64>, sizes: &BTreeMap<u64, u64>) -> BTreeMap<u64, u64> {
@@ -98,8 +106,8 @@ fn ranges(starts: &BTreeSet<u64>, sizes: &BTreeMap<u64, u64>) -> BTreeMap<u64, u
     out
 }
 
-fn walk(elf: &Elf, start: u64, end: u64, extra: &[u64], function_starts: &BTreeSet<u64>, references: &mut BTreeSet<u64>) -> (Vec<Block>, Vec<u64>) {
-    let inside = |a: u64| a >= start && a < end && (a == start || !function_starts.contains(&a));
+fn walk(elf: &Elf, start: u64, end: u64, extra: &[u64], is_start: &dyn Fn(u64) -> bool, references: &mut BTreeSet<u64>) -> (Vec<Block>, Vec<u64>) {
+    let inside = |a: u64| a >= start && a < end && (a == start || !is_start(a));
     let mut leaders = BTreeSet::from([start]);
     leaders.extend(extra.iter().copied().filter(|&a| inside(a)));
     let mut instructions: BTreeMap<u64, Instruction> = BTreeMap::new();
@@ -247,23 +255,29 @@ fn relative_table_targets(elf: &Elf, references: &BTreeSet<u64>) -> Vec<u64> {
 /// call to it goes through the dispatcher. Nothing of the file is read but
 /// the code execution reaches from the seeds.
 pub fn discover_from(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>) -> Program {
+    // Starts are looked up in `known` where they are, not copied: it holds every function a large program has reached.
     let mut starts: BTreeSet<u64> = seeds.iter().copied().filter(|a| elf.is_code(*a) && !known.contains(a)).collect();
-    let sizes = BTreeMap::new();
     let mut references = BTreeSet::new();
     let mut done: BTreeMap<u64, Vec<Block>> = BTreeMap::new();
+    let after = |set: &BTreeSet<u64>, a: u64| set.range(a + 1..).next().copied().unwrap_or(u64::MAX);
+    let before = |set: &BTreeSet<u64>, a: u64| set.range(..a).next_back().copied();
     loop {
-        let all: BTreeSet<u64> = starts.union(known).copied().collect();
-        let range = ranges(&all, &sizes);
-        let mut found = Vec::new();
+        let mut found = BTreeSet::new();
         for &start in &starts {
             if done.contains_key(&start) { continue; }
-            let (blocks, calls) = walk(elf, start, range[&start], &[], &all, &mut references);
-            found.extend(calls.into_iter().filter(|t| elf.is_code(*t) && !all.contains(t)));
+            let end = after(known, start).min(after(&starts, start));
+            let (blocks, calls) = walk(elf, start, end, &[], &|a| known.contains(&a) || starts.contains(&a), &mut references);
+            found.extend(calls.into_iter().filter(|t| elf.is_code(*t) && !known.contains(t) && !starts.contains(t)));
             done.insert(start, blocks);
         }
         if found.is_empty() { break; }
+        // A new start splits the walk whose range held it, when that walk is one of these.
+        for &t in &found {
+            if let Some(b) = before(&starts, t) {
+                if before(known, t).is_none_or(|k| k < b) { done.remove(&b); }
+            }
+        }
         starts.extend(found);
-        done.clear();
     }
     let mut functions = Vec::new();
     let mut entries = BTreeMap::new();
@@ -315,7 +329,7 @@ pub fn discover(elf: &Elf) -> Program {
             }
             let end = range[&start];
             let extra: Vec<u64> = pointers.iter().copied().filter(|&a| a > start && a < end).collect();
-            let (blocks, calls) = walk(elf, start, end, &extra, &starts, &mut references);
+            let (blocks, calls) = walk(elf, start, end, &extra, &|a| starts.contains(&a), &mut references);
             found.extend(calls.into_iter().filter(|t| elf.is_code(*t) && !starts.contains(t)));
             done.insert(start, blocks);
         }
@@ -324,11 +338,14 @@ pub fn discover(elf: &Elf) -> Program {
         if found.is_empty() && tables.is_empty() {
             break;
         }
+        // A table's targets are leaders of the functions that hold them.
+        let held: BTreeSet<u64> = tables.iter().filter_map(|t| starts.range(..=*t).next_back().copied()).collect();
+        for h in held { done.remove(&h); }
         pointers.extend(tables);
         pointers.sort_unstable();
+        let found: BTreeSet<u64> = found.into_iter().collect();
+        split(&mut done, &starts, &found);
         starts.extend(found);
-        // A new start splits whichever function's range covered it.
-        done.clear();
     }
 
     let mut functions = Vec::new();

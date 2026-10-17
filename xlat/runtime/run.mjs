@@ -8,43 +8,62 @@
 // stdin/stdout/stderr attach to this process.
 import {execFileSync, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, readlinkSync, writeFileSync} from 'node:fs';
+import {closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, readlinkSync, statSync, writeFileSync} from 'node:fs';
 import {basename, dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {Dir, File, Link, Vfs} from './fs.mjs';
 import {mountPack} from './pack.mjs';
-import {Kernel} from './process.mjs';
+import {Kernel, PROFILE} from './process.mjs';
+import {loadTranslator} from './translator.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const translator = join(here, '..', 'target', 'release', 'xlat');
+const wasmTranslator = join(here, '..', 'target', 'wasm32-unknown-unknown', 'release', 'xlat.wasm');
 const cacheDir = join(here, '..', 'target', 'xlat-cache');
-
-// Cached translations are keyed by the translator too, so rebuilding it
-// never reuses modules made by an older one.
-const translatorId = createHash('sha256').update(readFileSync(translator)).digest('hex');
 
 // XLAT_BLOCKS=1: translate with --trace, so every block entered is reported (process.mjs prints it).
 const traced = process.env.XLAT_BLOCKS ? ['--trace'] : [];
 
+// The translator built as wasm, run in this process as the browser runs
+// it, when it is built from the same source as the native one (or newer):
+// code reached later is then translated here, from the ELF it holds parsed,
+// with no process or file per function. Modules from two builds never mix.
+const mtime = (f) => (existsSync(f) ? statSync(f).mtimeMs : -1);
+const inProcess = !traced.length && mtime(wasmTranslator) >= mtime(translator) ? await loadTranslator(readFileSync(wasmTranslator)) : null;
+
+// Cached translations are keyed by the translator too, so rebuilding it
+// never reuses modules made by an older one.
+const translatorId = createHash('sha256').update(readFileSync(inProcess ? wasmTranslator : translator)).digest('hex');
+
+// Each program's digest, taken once however often its code is asked for.
+const digests = new WeakMap();
+const digest = (bytes) => {
+  if (!digests.has(bytes)) digests.set(bytes, createHash('sha256').update(bytes).digest('hex'));
+  return digests.get(bytes);
+};
+
 function translate(bytes) {
-  const key = createHash('sha256').update(translatorId).update(traced.join()).update(bytes).digest('hex');
+  const key = createHash('sha256').update(translatorId).update(traced.join()).update(digest(bytes)).digest('hex');
   const wasm = join(cacheDir, key + '.wasm');
   if (!existsSync(wasm)) {
     mkdirSync(cacheDir, {recursive: true});
-    const elf = join(cacheDir, key + '.elf');
-    writeFileSync(elf, bytes);
-    execFileSync(translator, [...traced, elf, wasm], {stdio: ['ignore', 'ignore', 'ignore']});
+    if (inProcess) writeFileSync(wasm, inProcess(bytes));
+    else {
+      const elf = join(cacheDir, key + '.elf');
+      writeFileSync(elf, bytes);
+      execFileSync(translator, [...traced, elf, wasm], {stdio: ['ignore', 'ignore', 'ignore']});
+    }
   }
   return readFileSync(wasm);
 }
 
 /** Code reached later, from `seeds` past the `known` starts, filling table slots from `base`. */
-translate.more = function more(bytes, seeds, known, base) {
-  const key = createHash('sha256').update(translatorId).update(traced.join()).update(bytes).update(`${seeds}|${known}|${base}`).digest('hex');
+translate.more = inProcess ? inProcess.more : function more(bytes, seeds, known, base) {
+  const key = createHash('sha256').update(translatorId).update(traced.join()).update(digest(bytes)).update(`${seeds}|${known}|${base}`).digest('hex');
   const wasm = join(cacheDir, key + '.more.wasm');
   if (!existsSync(wasm)) {
     mkdirSync(cacheDir, {recursive: true});
-    const elf = join(cacheDir, createHash('sha256').update(bytes).digest('hex') + '.elf');
+    const elf = join(cacheDir, digest(bytes) + '.elf');
     if (!existsSync(elf)) writeFileSync(elf, bytes);
     writeFileSync(`${wasm}.seeds`, seeds.join('\n'));
     writeFileSync(`${wasm}.known`, known.join('\n'));
@@ -109,5 +128,5 @@ const kernel = new Kernel({
 });
 const started = performance.now();
 const status = kernel.spawn(path, [path, ...rest], ['HOME=/root', 'PATH=/bin:/usr/bin', 'LANG=C.UTF-8', 'TERM=dumb'], cwd);
-if (process.env.XLAT_TIMING) process.stderr.write(JSON.stringify({ms: performance.now() - started}) + '\n');
+if (process.env.XLAT_TIMING) process.stderr.write(JSON.stringify({ms: Math.round(performance.now() - started), ...PROFILE, translate: Math.round(PROFILE.translate), compile: Math.round(PROFILE.compile)}) + '\n');
 process.exitCode = status & 0x7f ? 128 + (status & 0x7f) : status >> 8;

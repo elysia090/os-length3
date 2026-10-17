@@ -83,7 +83,11 @@ export class Image {
   /** Translate the code at `address` into one more module; false if there is none to be had. */
   more(translateMore, address) {
     if (!translateMore || !this.source) return false;
-    const module = new WebAssembly.Module(translateMore(this.source(), [address], [...this.known], this.slots));
+    let t = performance.now();
+    const wasm = translateMore(this.source(), [address], [...this.known], this.slots);
+    PROFILE.translate += performance.now() - t; t = performance.now();
+    const module = new WebAssembly.Module(wasm);
+    PROFILE.compile += performance.now() - t; PROFILE.modules++; PROFILE.bytes += wasm.length;
     const starts = u64s(module, 'xlat.starts');
     if (!starts.length) return false;
     const entries = u64s(module, 'xlat.entries');
@@ -118,7 +122,12 @@ export class Kernel {
     if (cached && cached.version === node.version) return cached.image;
     const bytes = node.bytes();
     if (bytes[0] !== 0x7f || bytes[1] !== 0x45 || bytes[2] !== 0x4c || bytes[3] !== 0x46) throw new FsError(E.NOEXEC);
-    const image = new Image(new WebAssembly.Module(this.translate(bytes)), () => node.bytes());
+    let t = performance.now();
+    const wasm = this.translate(bytes);
+    PROFILE.translate += performance.now() - t; t = performance.now();
+    // Code reached later is read from the very bytes this was translated from (and the translator keeps them parsed by identity).
+    const image = new Image(new WebAssembly.Module(wasm), () => bytes);
+    PROFILE.compile += performance.now() - t; PROFILE.images++;
     this.images.set(node, {version: node.version, image});
     return image;
   }
@@ -450,6 +459,8 @@ export class Process {
   }
 }
 
+/** Where the time went (run.mjs prints it with XLAT_TIMING=1): translating, compiling wasm, and how much. */
+export const PROFILE = {images: 0, modules: 0, bytes: 0, translate: 0, compile: 0};
 /** XLAT_SYSCALLS=1 lists every system call on stderr (node only). */
 const TRACE_SYSCALLS = typeof process !== 'undefined' && !!process.env?.XLAT_SYSCALLS;
 /** XLAT_BLOCKS=1 lists every block entered (node only; run.mjs then translates with --trace). */
