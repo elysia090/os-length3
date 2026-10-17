@@ -75,8 +75,15 @@ pub struct Todo {
 
 pub fn todos() -> Result<Vec<Todo>> {
     let Some(text) = get("todo")? else { return Ok(Vec::new()) };
-    // Items the app cannot read are left out, as the app does.
-    let raw: Vec<serde_json::Value> = serde_json::from_str(&text).unwrap_or_default();
+    parse_todos(&text)
+}
+
+/// A stored list. Items the app cannot read are left out, as the app does;
+/// a list that cannot be read at all is refused, not taken for an empty one,
+/// which the next change would be written over.
+pub fn parse_todos(text: &str) -> Result<Vec<Todo>> {
+    let raw: Vec<serde_json::Value> = serde_json::from_str(text)
+        .map_err(|e| crate::tr!("Home's TODO could not be read ({}), so nothing is written over it", "Home の TODO を読めませんでした（{}）。上書きはしません", e))?;
     Ok(raw.into_iter().filter_map(|v| serde_json::from_value(v).ok()).collect())
 }
 
@@ -96,7 +103,8 @@ pub fn todo_from(line: &str, detail: &str, now: u64) -> Option<Todo> {
         return None;
     }
     let detail = [more.trim(), detail.trim_end()].into_iter().filter(|d| !d.is_empty()).collect::<Vec<_>>().join("\n");
-    let id = format!("{}-l3", radix36(now));
+    // The moment, and a part of its own: two made in one millisecond (a script, two devices) are two items.
+    let id = format!("{}-l3{}", radix36(now), radix36(unique() % 36u64.pow(6)));
     Some(Todo { id, kind, title: title.trim().into(), detail, done: false, repo: None, created: now })
 }
 
@@ -415,6 +423,14 @@ impl HomeHere for Files {
     }
 }
 
+/// A number no other call is likely to have: std's random per-process keys, moved on at each call, over the time.
+fn unique() -> u64 {
+    use std::hash::{BuildHasher, Hasher};
+    let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+    h.write_u128(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos()));
+    h.finish()
+}
+
 fn radix36(mut n: u64) -> String {
     let digits = b"0123456789abcdefghijklmnopqrstuvwxyz";
     let mut out = Vec::new();
@@ -430,6 +446,39 @@ fn radix36(mut n: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn item(id: &str, title: &str) -> String {
+        format!(r#"{{"id":"{id}","kind":null,"title":"{title}","detail":"","done":false,"repo":null,"created":1}}"#)
+    }
+
+    #[test]
+    fn a_list_is_read_without_the_items_the_app_cannot_read() {
+        let text = format!("[{},{{\"id\":1}},null,{}]", item("a", "one"), item("b", "two"));
+        assert_eq!(parse_todos(&text).unwrap().iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), ["a", "b"]);
+        // An item the app wrote before it had details, or in its own field order, is read all the same.
+        let t = parse_todos(r#"[{"created":2,"repo":null,"done":true,"title":"x","kind":"Fix","id":"c"}]"#).unwrap();
+        assert_eq!((t[0].kind.as_deref(), t[0].detail.as_str(), t[0].done), (Some("Fix"), "", true));
+    }
+
+    #[test]
+    fn a_list_that_cannot_be_read_is_refused_not_taken_for_empty() {
+        // Taken for empty, the next `l3 todo add` would write the one new item over every item there.
+        for text in ["", "not json", "{\"a\":1}", "[1,", "\"[]\""] {
+            assert!(parse_todos(text).is_err(), "{text:?}");
+        }
+        // A character the app cut in half (a lone surrogate, as an older app could write) is one serde
+        // cannot read: refused too, not wiped.
+        let half = format!("[{}]", item("a", r"x\ud83d"));
+        assert!(parse_todos(&half).is_err());
+        assert_eq!(parse_todos("[]").unwrap(), Vec::<Todo>::new());
+    }
+
+    #[test]
+    fn two_items_made_in_the_same_millisecond_have_ids_of_their_own() {
+        let (a, b) = (todo_from("a", "", 7).unwrap(), todo_from("b", "", 7).unwrap());
+        assert_ne!(a.id, b.id);
+        assert!(a.id.starts_with(&radix36(7)), "{}", a.id);
+    }
 
     #[test]
     fn an_item_is_its_first_line_then_detail() {
