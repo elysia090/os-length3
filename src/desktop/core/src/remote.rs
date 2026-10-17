@@ -111,8 +111,10 @@ impl Client {
             Err(ureq::Error::Status(409, r)) => Ok(Reply::Conflict(r.into_json().unwrap_or_default())),
             Err(ureq::Error::Status(404, _)) => Ok(Reply::NotFound),
             Err(ureq::Error::Status(401, _)) => Err(UNKNOWN.into()),
+            // Turned off: the Remote keeps it for a while, answering only that.
+            Err(ureq::Error::Status(410, _)) => Err(crate::tr!("turned off on the Remote", "Remote でオフになっています")),
             Err(ureq::Error::Status(code, _)) => Err(format!("Remote: {code}")),
-            Err(e) => Err(format!("Remote に届きません: {e}")),
+            Err(e) => Err(crate::tr!("The Remote cannot be reached: {}", "Remote に届きません: {}", e)),
         }
     }
 
@@ -166,7 +168,7 @@ pub struct DeviceCode {
 /// Ask for a code to approve in a browser; `client` is "l3" or "length3-app".
 pub fn device_start(url: &str, client: &str) -> Result<DeviceCode> {
     agent(url).post(&format!("{url}/api/auth/device/code")).send_json(serde_json::json!({"client_id": client}))
-        .map_err(|e| format!("Remote に届きません: {e}"))?
+        .map_err(|e| crate::tr!("The Remote cannot be reached: {}", "Remote に届きません: {}", e))?
         .into_json().map_err(|e| e.to_string())
 }
 
@@ -189,7 +191,7 @@ pub fn device_poll(url: &str, client: &str, code: &DeviceCode) -> Result<Option<
                 other => Err(format!("つなげませんでした（{}）", other.unwrap_or("?"))),
             }
         }
-        Err(e) => Err(format!("Remote に届きません: {e}")),
+        Err(e) => Err(crate::tr!("The Remote cannot be reached: {}", "Remote に届きません: {}", e)),
     }
 }
 
@@ -788,7 +790,7 @@ pub fn status(repos: &Repos) -> Result<Vec<Status>> {
     repos.list()?.into_iter().map(|s| status_of(repos, &s.name)).collect()
 }
 
-/// 同期して空ける: once the Remote holds exactly what is here, and nothing here
+/// 空ける for a repo: once the Remote holds exactly what is here, and nothing here
 /// cannot go there, the copy here goes; it comes back when the repo is opened.
 /// Every copy of the repo goes: main's and each issue's being worked on.
 /// Returns the bytes they took.
@@ -814,9 +816,9 @@ pub fn free(repos: &Repos, repo: &str) -> Result<u64> {
             return Err(crate::tr!("Another device's change was put beside yours; check it before freeing ({})", "別の端末の変更を横に置きました。確かめてから空けてください（{}）", p));
         }
         let here = local_tree(&dir);
-        let b = base(&key).ok_or_else(|| crate::tr!("Not synced yet", "まだ同期していません"))?;
+        let b = base(&key).ok_or_else(|| crate::tr!("Not on the Remote yet", "まだ Remote にありません"))?;
         if here.tree != b.tree {
-            return Err(crate::tr!("It changed while syncing; try again", "同期のあいだに変わりました。もう一度どうぞ"));
+            return Err(crate::tr!("It changed while it was being sent; try again", "送っているあいだに変わりました。もう一度どうぞ"));
         }
         // Asked once more: the Remote's draft must be this very tree.
         let there = client.json("GET", &at(repo, line, ""), None)?;

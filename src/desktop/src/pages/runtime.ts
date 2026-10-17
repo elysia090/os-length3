@@ -20,8 +20,8 @@ import {allSessions, type Session} from './terminal.ts';
 //
 //   On this device   everything this OS holds here, by size: each repo (all
 //                    its copies), the roots, Home; and why what stays stays
-//   Can be freed     what can go now, by size: Free, or Sync and free (its
-//                    changes are sent first); and Free all
+//   Can be freed     what can go now, by size: Free (a repo's changes not
+//                    on the Remote yet are sent first); and Free all
 //   On the Remote    what can come here: repos only on the Remote, and the
 //                    release root when it is not installed; Fetch
 
@@ -123,10 +123,10 @@ function device(ctx: Context, u: Space, last: Freed | null, again: (r: Freed | n
     return thing(name, i.allocated, [i.detail, repoNote, i.room === 'Keep' ? i.why : ''].filter(Boolean).join(' · '));
   });
 
-  // Can be freed: Free, or Sync and free.
+  // Can be freed: Free; a repo's changes go to the Remote first, as they would anyway.
   const freeable = u.items.filter((i) => i.room !== 'Keep');
   const going = freeable.map((i) => {
-    const b = button(i.room === 'SyncFree' ? t('Sync and free') : t('Free'));
+    const b = button(t('Free'));
     b.title = i.why;
     buttons.push(b);
     b.addEventListener('click', () => go([i.id], [b]));

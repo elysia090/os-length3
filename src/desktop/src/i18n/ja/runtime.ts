@@ -13,7 +13,6 @@ export default {
   'Custom': 'カスタム',
   'A root of your own (.tar), known by its digest': '自分の root（.tar）。ダイジェストで確かめます',
   'Not yet': 'まだです',
-  'Sync and free': '同期して空ける',
   'Free': '空ける',
   'Free all': '全部空ける',
   'Fetch': '取ってくる',

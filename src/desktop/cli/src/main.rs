@@ -113,7 +113,7 @@ Git
   l3 log REPO                 the commits of what the repo shows
 Runtime
   l3 runtime                  the root, and this device by size: what can go
-  l3 free ID… | l3 free all   free (sync and free for a repo with changes)
+  l3 free ID… | l3 free all   free (a repo's changes go to the Remote first)
   l3 root fetch | install BUNDLE
   l3 ssh                      each address, and whether SSH may reach it
   l3 ssh on|off ADDRESS
@@ -122,14 +122,13 @@ Runtime
   l3 dotfile write NAME       replace (or make) it with standard input
   l3 dotfile rm NAME
 Remote
-  l3 remote                   the Remote this device is on, and each repo
+  l3 remote                   the Remote this device is on, and where each repo stands
   l3 remote on REPO           bring back a repo turned off (turning off is the app's: it asks for a passkey)
   l3 remote sign-in           passkeys, the code to turn a repo off, the providers
   l3 remote devices           each device signed in, this one first
   l3 remote devices rm N      remove the Nth (it is approved again to come back)
   l3 login [URL]              connect: approve in the browser
   l3 logout
-  l3 sync [REPO]              now (it also happens after every change)
 Inbox
   l3 inbox                    conversations: contacts, then requests
   l3 inbox ADDRESS            one conversation (name@domain)
@@ -189,14 +188,13 @@ Runtime
   l3 dotfile write NAME       標準入力で置き換える（なければ作る）
   l3 dotfile rm NAME
 Remote
-  l3 remote                   つながっている Remote と、repo の同期
+  l3 remote                   つながっている Remote と、各 repo の状態
   l3 remote on REPO           切った repo をすぐ戻す（切るのはアプリで。パスキーを使います）
-  l3 remote sign-in           パスキー、repo を切るときのコード、プロバイダ
-  l3 remote devices           入っている端末（この端末が先頭）
+  l3 remote sign-in           パスキー、repo を切るときのコード、プロバイダー
+  l3 remote devices           サインインしている端末（この端末が先頭）
   l3 remote devices rm N      N 番目を外す（戻るにはもう一度承認）
   l3 login [URL]              ブラウザで承認してつなぐ
   l3 logout
-  l3 sync [REPO]              いま送る・取り込む（ふだんは変えるたびに自動）
 Inbox
   l3 inbox                    会話（連絡先、次にリクエスト）
   l3 inbox ADDRESS            ひとつの会話（name@domain）
@@ -218,15 +216,42 @@ fn in_prompt() -> bool {
     std::env::var_os("L3_PROMPT").is_some()
 }
 
-/// After a change: send it, if this device is on a Remote. Offline, it waits
-/// for the next sync and says so.
+/// After a change: send it, if this device is on a Remote (taking in what
+/// the Remote has that is newer). Offline, it waits here and says so.
 fn send(repo: &str) {
     if in_prompt() || remote::connection().is_none() { return; }
     match Repos::open().and_then(|r| remote::sync(&r, repo)) {
         Ok(s) => {
             for p in &s.both { eprintln!("{}", tr!("l3: {} changed on another device too; theirs is beside it as \"{}\"", "l3: {} は別の端末でも変わっていました。そちらを「{}」に置きました", p, remote::beside(p))); }
         }
-        Err(e) => eprintln!("{}", tr!("l3: not sent yet ({}); the next sync sends it", "l3: まだ送れていません（{}）。次の同期で送ります", e)),
+        Err(e) => eprintln!("{}", tr!("l3: {}: not sent yet ({}); it goes after the next command", "l3: {}: まだ送れていません（{}）。次のコマンドのあとに送ります", repo, e)),
+    }
+}
+
+/// There is no command to sync: the Remote and this device keep in step by
+/// themselves. A command that reads a repo takes in the Remote's changes to
+/// it first; after every command, each repo whose files differ from what was
+/// last agreed is sent. Which differ is seen here, from the digests kept,
+/// so a repo in step costs no request.
+fn take_in(words: &[String]) {
+    if in_prompt() || remote::connection().is_none() { return; }
+    let w: Vec<&str> = words.iter().map(String::as_str).collect();
+    let named = match w.as_slice() {
+        ["prompt", repo, ..] | ["file", repo] | ["diff", repo] | ["log", repo] | ["issue", repo] => *repo,
+        _ => return,
+    };
+    let (repo, _) = split(named.split('#').next().unwrap_or(named));
+    let Ok(r) = Repos::open() else { return };
+    if r.dir(&repo).is_ok() { send(&repo); }
+}
+
+fn send_changed(words: &[String]) {
+    if in_prompt() || remote::connection().is_none() { return; }
+    // These bring every repo into step themselves, or leave the Remote.
+    if matches!(words.first().map(String::as_str), Some("help" | "login" | "logout" | "remote")) { return; }
+    let Ok(r) = Repos::open() else { return };
+    for s in r.list().unwrap_or_default() {
+        if matches!(remote::status_of(&r, &s.name), Ok(st) if st.fresh || st.changed > 0) { send(&s.name); }
     }
 }
 
@@ -257,7 +282,7 @@ fn run(a: Args) -> Result<(), String> {
             Some("todo") => Some(tr!("Home's TODO", "Home の TODO")),
             Some("runtime") | Some("free") | Some("root") => Some(tr!("this device's room and roots", "この端末の容量と root")),
             Some("inbox" | "address") => Some(tr!("the Inbox", "Inbox")),
-            Some("remote" | "login" | "logout" | "sync" | "start" | "main" | "commit" | "push" | "reset" | "changes" | "review" | "merge" | "reject" | "log") =>
+            Some("remote" | "login" | "logout" | "start" | "main" | "commit" | "push" | "reset" | "changes" | "review" | "merge" | "reject" | "log") =>
                 Some(tr!("the Remote and history", "Remote と履歴")),
             Some("repo") if w.len() > 1 => Some(tr!("making or bringing repos", "repo を作ること・持ってくること")),
             Some("prompt") => Some(tr!("opening a Prompt", "Prompt を開くこと")),
@@ -629,19 +654,9 @@ fn run(a: Args) -> Result<(), String> {
             out(tr!("This device is off the Remote (its repos stay here)", "この端末を Remote から外しました（repo はこの端末に残ります）"));
             Ok(())
         }
-        ["sync"] => {
-            let all = remote::sync_all(&Repos::open()?)?;
-            if a.json { return json(all.iter().map(|(n, r)| serde_json::json!({"repo": n, "ok": r.as_ref().ok(), "error": r.as_ref().err()})).collect::<Vec<_>>()); }
-            for (name, r) in &all { synced_line(name, r); }
-            if all.is_empty() { out(tr!("No repos on this device (bring one from the Remote with l3 repo open NAME)", "この端末に repo はありません（Remote の repo は l3 repo open NAME）")); }
-            Ok(())
-        }
-        ["sync", repo] => {
-            let r = remote::sync(&Repos::open()?, repo);
-            if a.json { return json(&r); }
-            synced_line(repo, &r);
-            r.map(|_| ())
-        }
+        // Kept in step by itself (take_in, send_changed): there is nothing to ask for.
+        ["sync", ..] => Err(tr!("There is no l3 sync: every change goes to the Remote by itself, and the Remote's come in when a repo is read. l3 remote shows where each repo stands",
+            "l3 sync はありません。変更はひとりでに Remote へ送られ、Remote の変更は repo を読むときに取り込まれます。l3 remote で各 repo の状態を見られます")),
         _ => Err(tr!("Not a command: l3 {}\n`l3 help` shows how to use it", "わからないコマンドです: l3 {}\n`l3 help` で使い方を見られます", w.join(" "))),
     }
 }
@@ -823,7 +838,7 @@ fn runtime(a: &Args) -> Result<(), String> {
     out("");
     out(tr!("This device  {} free of {} (the host's figures) · this OS {}", "この端末  空き {} / {}（ホストの値） · このOS {}", bytes(s.host_free), bytes(s.host_total), bytes(s.allocated)));
     for i in &s.items {
-        let act = match i.room { usage::Room::Free => tr!("free", "空ける"), usage::Room::SyncFree => tr!("sync and free", "同期して空ける"), usage::Room::Keep => tr!("stays", "残す") };
+        let act = match i.room { usage::Room::Free | usage::Room::SyncFree => tr!("free", "空ける"), usage::Room::Keep => tr!("stays", "残す") };
         out(format!("  {:>9}  {}  {}  {}", bytes(i.allocated), act, i.what, i.detail));
         out(format!("             {}{}", i.why, if i.room == usage::Room::Keep { String::new() } else { format!("  (l3 free {})", i.id.strip_prefix("repo:").unwrap_or(&i.id)) }));
     }
@@ -860,19 +875,31 @@ fn free(a: &Args, ids: &[&str]) -> Result<(), String> {
 fn remote_page(a: &Args) -> Result<(), String> {
     let Some(c) = remote::connection() else {
         out(tr!("Remote  not connected", "Remote  まだつないでいません"));
-        out(tr!("  The canonical copy is kept on the Remote. l3 login connects this device once you approve in the browser.", "  正本は Remote に置かれます。l3 login でブラウザで承認すると、この端末がつながります。"));
+        out(tr!("  Your repos are kept on the Remote. l3 login connects this device once you approve in the browser; from then on each change goes there by itself.", "  repo は Remote に置かれます。l3 login でブラウザで承認するとこの端末がつながり、それからは変更がひとりでに Remote へ届きます。"));
         return Ok(());
     };
     let account = remote::account();
-    let here = remote::status(&Repos::open()?)?;
+    let r = Repos::open()?;
+    // Looking at the Remote finds every repo here in step with it.
+    let synced = remote::sync_all(&r).unwrap_or_default();
+    let here = remote::status(&r)?;
     let there = remote::remote_repos().unwrap_or_default();
     if a.json { return json(serde_json::json!({"url": c.url, "account": account.as_ref().ok(), "here": here, "remote": there})); }
     out(format!("Remote  {}{}", c.url.split("://").nth(1).unwrap_or(&c.url), account.as_ref().ok().and_then(|a| a.as_ref()).map(|a| format!(" · {}", a.name)).unwrap_or_default()));
     if let Err(e) = &account { out(format!("  {e}")); }
     for s in &here {
-        let state = if s.fresh { tr!("not sent yet", "まだ送っていません") } else if s.changed > 0 { tr!("{} not sent", "{} 件未送信", s.changed) } else { tr!("in step", "同じ") };
+        let outcome = synced.iter().find(|(n, _)| *n == s.name).map(|(_, r)| r);
+        let state = match outcome {
+            Some(Err(e)) => tr!("not sent: {}", "送れていません: {}", e),
+            _ if s.fresh => tr!("not sent yet", "まだ送っていません"),
+            _ if s.changed > 0 => tr!("{} not sent", "{} 件未送信", s.changed),
+            _ => tr!("in step", "同じ"),
+        };
         let stuck = if s.unsynced.is_empty() { String::new() } else { tr!(" · {} cannot be sent", " · 送れないもの {} 件", s.unsynced.len()) };
         out(format!("  {}  {state}{stuck}", s.name));
+        if let Some(Ok(sy)) = outcome {
+            for p in &sy.both { out(tr!("    changed on both: {} (the other device's is \"{}\")", "    両方で変わっていました: {}（別の端末のものは「{}」に）", p, remote::beside(p))); }
+        }
     }
     for t in there.iter().filter(|t| t.off_at.is_some()) {
         out(tr!("  {}  off · kept {} more (l3 remote on {})", "  {}  オフ · あと {} 残ります（l3 remote on {}）", t.name, left(t.until.unwrap_or(0)), t.name));
@@ -909,7 +936,14 @@ fn left(until: u64) -> String {
 
 fn main() -> ExitCode {
     let raw: Vec<String> = std::env::args().skip(1).collect();
-    match parse(raw).and_then(run) {
+    let done = parse(raw).and_then(|a| {
+        let words = a.words.clone();
+        take_in(&words);
+        let r = run(a);
+        send_changed(&words);
+        r
+    });
+    match done {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("l3: {e}");

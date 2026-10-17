@@ -83,12 +83,19 @@ Git       l3 git [REPO]               issues, and what is not cut yet
           l3 cut REPO "Fix：件名"      …or without one
           l3 log REPO                 the cuts
 Runtime   l3 runtime                  the root, and この端末 by size: what can go
-          l3 free ID…|all             空ける (同期して空ける for a repo with changes)
+          l3 free ID…|all             空ける (a repo's changes go to the Remote first)
           l3 root [fetch|install B]
 Remote    l3 remote                   where each repo stands
           l3 login [URL] | logout     a code approved in the browser by passkey
-          l3 sync [REPO]              now (it also happens after every change)
 ```
+
+There is no sync command. Connected, l3 keeps each repo in step with the
+Remote by itself: a command that reads a repo takes in the Remote's changes
+to it first, and after every command each repo whose files differ from what
+was last agreed is sent (which differ is seen from the digests kept, so a
+repo in step costs no request). What a person does to the Remote is only
+taking a repo off it; Git's words (commit, push, review, merge) are about
+history, never about getting files there.
 
 On the host it uses the app's data directory (`$LENGTH3_HOME` overrides):
 `cargo install --path cli`. The same binary, built static for xlat, is
@@ -121,8 +128,8 @@ the app.
   closing the tab lets go of every copy the Remote holds all of.
 - Runtime: この端末, then everything this OS holds on it in one list,
   largest first — repos, roots, leftovers, Home — each with what can be
-  done: 空ける, 同期して空ける (sent first, then let go; it comes back when
-  opened), or why it stays (a Prompt has it open, a link that cannot be
+  done: 空ける (a repo's changes not on the Remote yet are sent first; it
+  comes back when opened), or why it stays (a Prompt has it open, a link that cannot be
   sent, the root in use). Sizes are allocated blocks; the host's free and
   total are marked as estimates, and after freeing the change the host
   shows is reported as observed. Prompts running show their memory and can

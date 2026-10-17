@@ -43,7 +43,7 @@ fn space(shells: tauri::State<'_, shells::Shells>) -> usage::Space {
     usage::space(&paths::data_dir(), &paths::repos_dir(), &shells.open_repos())
 }
 
-/// 空ける (and 同期して空ける): these go, each looked at again first.
+/// 空ける: these go, each looked at again first (a repo's changes are sent before it goes).
 #[tauri::command]
 async fn free(app: tauri::AppHandle, ids: Vec<String>) -> Result<usage::Freed, String> {
     let open = tauri::Manager::state::<shells::Shells>(&app).open_repos();

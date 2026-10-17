@@ -5,7 +5,7 @@
 //!   空ける          it is not needed here: an old root (fetched again from
 //!                   the Remote when wanted), a leftover temporary, a repo
 //!                   whose copy is exactly what the Remote has
-//!   同期して空ける   a repo with changes the Remote does not have yet: they
+//!   空ける (sent)    a repo with changes the Remote does not have yet: they
 //!                   are sent first, then the copy goes
 //!   (kept)          and why: the root Prompts run on, a repo holding what
 //!                   cannot be sent, Home's settings
@@ -271,7 +271,7 @@ pub struct Space {
     pub host: Certainty,
     /// All this OS holds here.
     pub allocated: u64,
-    /// What can go (空ける and 同期して空ける together).
+    /// What can go (空ける, sending first where a repo needs it).
     pub freeable: u64,
     /// Largest first.
     pub items: Vec<Item>,

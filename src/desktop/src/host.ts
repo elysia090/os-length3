@@ -34,7 +34,7 @@ async function native<T>(command: string, args: Record<string, unknown> = {}): P
 
 /** この端末: everything this OS holds, largest first (the app; space.ts for a browser). */
 export const nativeSpace = (): Promise<Space> => native<Space>('space');
-/** 空ける these ids (同期して空ける for a repo with changes not sent yet). */
+/** 空ける these ids (a repo with changes not sent yet sends them first). */
 export const nativeFree = (ids: string[]): Promise<Freed> => native<Freed>('free', {ids});
 
 export async function readCapacity(): Promise<Capacity | null> {

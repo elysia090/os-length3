@@ -147,9 +147,10 @@ each thing says what can be done with it.
     (`.<file>.length3-<pid>-<n>`, a setting's `<key>.json.<pid>`, older than
     a minute, one link, never inside `.git`), an install that died half way,
     a release bundle or partial download not in use.
-  - **同期して空ける**: a repo with changes the Remote does not have yet;
-    they are sent first, and the copy goes only once the Remote has every
-    file of it.
+  - **空ける** on a repo with changes the Remote does not have yet: the
+    same word, since they would go there anyway; they are sent first, and
+    the copy goes only once the Remote has every file of it (its row says
+    so).
   - Otherwise, quietly, why it stays: a Prompt has it open, it holds what
     cannot be sent (a link, a file over 16 MB, a `.git`), there is no Remote
     yet, it is the root Prompts run on, it is Home's settings.
@@ -372,8 +373,16 @@ What each host keeps, and when (lifecycle.ts):
 | Home        | at start and when the window comes back | each change, at once |
 | Prompt      | when a repo opens | its processes, when closed |
 
-Room on a device is given back in Runtime (空ける, 同期して空ける): a repo
-that goes stays on the Remote and comes back when opened.
+Room on a device is given back in Runtime (空ける): a repo that goes stays
+on the Remote and comes back when opened.
+
+**No sync verb.** Keeping in step is not something a person does: every
+change goes to the Remote as a diff by itself, and the Remote's come in by
+themselves (the app within seconds, l3 when a command reads the repo).
+What a person does to the Remote is only taking a repo off it (with a
+passkey, kept 30 days). Git's verbs (commit, push, review, merge) are
+about history; none of them is how files get to the Remote, so the two
+never mix in the words or the buttons.
 
 **Who.** One signs in the usual way, with GitHub or Google, and then adds
 a passkey for the device, so the next sign-in needs no provider; a lost
