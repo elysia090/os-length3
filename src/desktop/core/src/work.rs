@@ -98,7 +98,10 @@ pub fn start(repos: &Repos, repo: &str, issue: &str) -> Result<Line> {
     if crate::history::changes_of_repo(repo)?.iter().any(|c| c.issue == path && c.state == "merged") {
         return Err(crate::tr!("{}{} is merged already: its work is in main", "{}{} はもう Merge 済みです。その作業は main にあります", repo, crate::issues::number(&path)));
     }
-    let _ = remote::sync(repos, repo);
+    // What is here goes first, the issue just written above all: the Remote makes the work
+    // from its main (bringing the issue along from main's draft), so a work started before
+    // the issue reached it would have no issue. One that cannot be sent stops the start.
+    remote::sync(repos, repo).map_err(|e| crate::tr!("{} could not be sent first, so its work was not started: {}", "{} を先に送れなかったので、作業は始めていません：{}", repo, e))?;
     let made: Line = serde_json::from_value(client.json("POST", &format!("/v1/repos/{repo}/lines"), Some(serde_json::json!({"issue": issue})))?)
         .map_err(|e| e.to_string())?;
     show(repos, repo, &stem)?;

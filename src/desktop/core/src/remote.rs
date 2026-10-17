@@ -142,9 +142,10 @@ fn unreachable(e: ureq::Error) -> String {
 /// What the Remote said when it refused: its `error`, in its words.
 fn refused(code: u16, r: ureq::Response) -> String {
     let v: serde_json::Value = r.into_json().unwrap_or_default();
-    let said = v["error"].as_str().unwrap_or_default().to_string();
+    let said = v["error"].as_str().or(v["message"].as_str()).unwrap_or_default().to_string();
     let message = match (code, said.as_str()) {
         (401, _) => return unknown(),
+        (429, _) => crate::tr!("The Remote is asked too often just now; try again in a minute", "いま Remote への問い合わせが多すぎます。少し待ってからどうぞ"),
         // Turned off: the Remote keeps it for a while, answering only that.
         (410, _) => crate::tr!("It is turned off on the Remote (l3 remote on brings it back)", "Remote でオフになっています（l3 remote on で戻せます）"),
         (507, _) => crate::tr!("The Remote is full: {} of {} used", "Remote がいっぱいです：{} のうち {} を使用", v["used"], v["quota"]),
@@ -273,13 +274,18 @@ pub fn device_poll(url: &str, client: &str, code: &DeviceCode) -> Result<Option<
             let v: serde_json::Value = r.into_json().map_err(|e| e.to_string())?;
             Ok(v.get("access_token").and_then(|t| t.as_str()).map(String::from))
         }
-        Err(ureq::Error::Status(_, r)) => {
+        // Asked too often: wait, as for slow_down.
+        Err(ureq::Error::Status(429, _)) => Ok(None),
+        Err(ureq::Error::Status(code, r)) => {
             let v: serde_json::Value = r.into_json().unwrap_or_default();
             match v.get("error").and_then(|e| e.as_str()) {
                 Some("authorization_pending") | Some("slow_down") => Ok(None),
                 Some("access_denied") => Err(crate::tr!("It was declined in the browser", "ブラウザで断られました")),
                 Some("expired_token") => Err(expired()),
-                other => Err(crate::tr!("Could not connect ({})", "つなげませんでした（{}）", other.unwrap_or("?"))),
+                other => {
+                    let said = other.or(v["error_description"].as_str()).or(v["message"].as_str()).map_or_else(|| code.to_string(), String::from);
+                    Err(failed(Failure::Status(code), crate::tr!("Could not connect ({})", "つなげませんでした（{}）", said)))
+                }
             }
         }
         Err(e) => Err(unreachable(e)),
