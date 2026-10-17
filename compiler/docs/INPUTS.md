@@ -64,48 +64,8 @@ as an unimplemented debug/alignment transition, unavailable test prerequisites,
 skipped tests and exhausted diagnostic quotas are not successful ordinary
 inputs. Keep them visible without disguising them as architectural faults.
 
-## Independent instruction population
-
-`distribution/oracle/x86-profile-inputs.mjs` declares the input language independently
-of the product decoder. `prepare-profile-inputs.mjs` uses GNU as, objcopy and
-nm to obtain exact one-instruction byte intervals. It creates a fresh directory
-and retains assembly, object, text bytes and records. `profile-input-fixture.mjs`
-regenerates the entire declared population and verifies exact assembly and
-instruction-byte hashes before the product is consulted. Deleting a difficult
-row, changing its fault expectation or truncating the population is a refusal.
-An object section's trailing alignment padding is hashed separately from the
-actual instruction population.
-
-```text
-node distribution/oracle/prepare-profile-inputs.mjs AS OBJCOPY NM temp/NEW-DIRECTORY
-node distribution/oracle/check-profile-fixture.mjs
-node distribution/oracle/check-profile-inputs.mjs COMPILER.WASM temp/NEW-DIRECTORY/inputs.json
-node distribution/oracle/check-byte-alu-inputs.mjs COMPILER.WASM temp/NEW-DIRECTORY/inputs.json
-```
-
-The full default population covers all 16×16 register pairs where declared
-legal, all MMX pairs, every base coordinate, index/scale coordinates, 32/64-bit
-addressing and signed displacement edges. Immediate families include all
-256 controls on an explicit alias form. Address, immediate, destination and
-payload dimensions are **not** a full Cartesian product. The optional
-`--boundary` population is explicitly smaller, never substituted for the full
-gate. Neither population is the complete 15-byte x86 encoding language.
-
-The admission report keeps every declared row, validates the emitted ordinary
-Wasm and its exact source extent, and counts unchanged grammar refusals,
-false fault substitution, invalid modules and other failures separately.
-Ordinary instructions and deliberate architectural-fault witnesses have
-separate denominators. GNU as establishes encoding, not execution semantics.
-
-`check-byte-alu-inputs.mjs` exhausts all 256×256 operand pairs and both incoming
-CF values for nine AL/CL binary operations. It compares actual emitted Wasm
-with independently stated arithmetic/flag equations and poisoned full-state
-preservation, including RF clearing. Breakpoints and TF are disabled; logical
-AF uses the documented zero representative. This is complete for that finite
-operand domain, not for arbitrary 64-bit values, MMU/debug contexts or Linux.
-
-Physical CPU observations, native post-linked ELF parity, exact C VM/MMU
-comparisons and ASan/UBSan remain separate gates. Their receipts retain source,
+Physical CPU observations, native post-linked ELF parity and ASan/UBSan
+remain separate gates. Their receipts retain source,
 compiler, input and release identities so that results from different builds
 cannot be combined into a fictitious release-wide pass.
 

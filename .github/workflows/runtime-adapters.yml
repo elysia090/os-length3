@@ -8,7 +8,6 @@ on:
       - 'compiler/Makefile'
       - 'distribution/packaging/prepare-qualified-native-release.py'
       - 'distribution/oracle/check-native-producer-dhcp.sh'
-      - 'distribution/oracle/seed-image.mjs'
       - 'distribution/oracle/network-host-linux.go'
       - 'distribution/oracle/inspect-dhcp-printf-table.mjs'
       - 'distribution/oracle/check-readiness-mounts.mjs'
@@ -23,7 +22,6 @@ on:
       - 'distribution/packaging/optimize-payload.sh'
       - 'distribution/packaging/check-postlink-toolchain.sh'
       - 'distribution/build.sh'
-      - 'releases/native/evidence/2026-10-12-dhcp-syslog-root-cause.json'
       - 'compiler/artifact/**'
       - 'compiler/support/**'
   pull_request:
@@ -32,7 +30,6 @@ on:
       - 'compiler/Makefile'
       - 'distribution/packaging/prepare-qualified-native-release.py'
       - 'distribution/oracle/check-native-producer-dhcp.sh'
-      - 'distribution/oracle/seed-image.mjs'
       - 'distribution/oracle/network-host-linux.go'
       - 'distribution/oracle/inspect-dhcp-printf-table.mjs'
       - 'distribution/oracle/check-readiness-mounts.mjs'
@@ -47,7 +44,6 @@ on:
       - 'distribution/packaging/optimize-payload.sh'
       - 'distribution/packaging/check-postlink-toolchain.sh'
       - 'distribution/build.sh'
-      - 'releases/native/evidence/2026-10-12-dhcp-syslog-root-cause.json'
       - 'compiler/artifact/**'
       - 'compiler/support/**'
 
@@ -65,7 +61,6 @@ jobs:
       - name: Check release scripts, boot and readiness
         run: |
           python3 -m py_compile distribution/packaging/prepare-qualified-native-release.py
-          node --check distribution/oracle/seed-image.mjs
           bash -n distribution/oracle/check-native-producer-dhcp.sh
           node --check distribution/oracle/inspect-dhcp-printf-table.mjs
           bash -n distribution/packaging/boot/ready

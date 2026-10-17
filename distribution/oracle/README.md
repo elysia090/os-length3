@@ -1,439 +1,10 @@
 # x86 semantic oracles
 
-### Ordinary input acceptance
+The development-only references that check the post-link compiler and the
+native distribution, with their own source lock (`sources.env`). None of them
+is a product payload, a runtime fallback or a release input.
 
-The [input contract](../../compiler/docs/INPUTS.md) separates advertised ISA
-coverage, execution equivalence, final-ELF closure and actual Linux acceptance.
-`prepare-profile-inputs.mjs AS OBJCOPY NM NEW-TEMP-DIRECTORY` prepares the full
-independent GNU-assembler population; `--boundary` is an explicitly smaller
-diagnostic. `check-profile-inputs.mjs COMPILER.WASM INPUTS.json` validates its
-entire declared population before checking construction, valid Wasm, exact
-source extents and architectural fault expectations. Unsupported forms remain
-in the denominator and make the gate red. `check-profile-fixture.mjs` checks
-that missing/renamed/changed inputs cannot become a smaller green population.
-`check-byte-alu-inputs.mjs COMPILER.WASM INPUTS.json` exhausts nine 8-bit AL/CL
-operations and both CF inputs against independent arithmetic/flag equations;
-not a universal 64-bit, MMU or Linux proof.
-
-`mmx-binary-observe NEW-DIRECTORY --standard` records the added standard-profile
-integer SIMD families on the physical CPU. Compare them with
-`check-x87-state.mjs VM.WASM COMPILER.WASM DIRECTORY --packed-standard` through
-the real C VM/MMU. `--absolute` / `--mmx-absolute` does the same for MMX absolute
-widths. `check-linux-selfhost.mjs ... --observations` additionally
-exports independent Linux paired-exchange CPU/fault/RAM and native C emission
-records into its fresh `observations/paired` directory. Run
-`check-paired-exchange.mjs VM.WASM COMPILER.WASM DIRECTORY` on those exact bytes.
-These test-only observations are never product payload or runtime fallbacks.
-
-### Independent source rebuild and browser reservation checks
-
-`check-linux-selfhost.mjs QEMU QEMU-IMG SOURCE-TAR NEW-TEMP-DIRECTORY`
-uses the pinned, signed Linux reference image and read-only source/APK inputs,
-with loopback seed transport only and no SSH credential. It runs product C
-checks and VM/compiler sanitizers. `--publication --candidate-root` separately
-rebuilds the locked GNU tar/BusyBox sources; `--init-profile --kernel` also
-uses the fixed init and official kernel recipes. Host readback verifies the
-candidate bytes/digests. Candidates are diagnostic, not signed-package release
-updates or browser acceptance; installed package signatures are not rewritten.
-
-`--guest-check=distribution/oracle/check-dhcp-publication.sh` rebuilds the pinned
-official dhcpcd and tests original/current-postlink ELFs through actual
-privilege-separated DHCP packet dispatch. Its TEST hook must report the
-isolated oracle's fresh OFFER, interface, address and subnet, not merely exit
-zero. A saved bootstrap lease is moved into the disposable test workspace
-before each role: official TEST mode exits on OFFER during discovery, whereas
-an old ACK can select the distinct reboot path. ACK/address/route/DNS
-installation must be checked separately with the normal daemon.
-In a normally booted browser guest, run `browser-dhcp-check.sh ELF SHA256`
-against an independently pinned candidate in the test workspace. Retain the
-complete guest output and the production NIC's received-frame counter. Test
-mode does not apply routes/DNS, prove HTTPS or publish an updated package.
-`browser-dhcp-normal.sh ELF SHA256` separately requires normal oneshot exit0,
-the saved ACK's exact fields, the actual Linux address/default route and the
-official resolver hook's DNS entry. The TEST gate preserves an old lease out
-of its coordinate while testing discovery and restores it without overwriting
-a concurrently created lease. Never run these gates against a live daemon.
-
-`--guest-check=distribution/oracle/check-runtime-publication.sh` runs an actual signed
-APK publication fixture with the pinned bootstrap apk, including six negative
-representations of the package-owned `/var/run -> ../run` compatibility link.
-The base-services producer owns that link before packaging, not in a boot or
-post-install mutation. The synthetic command payloads test publication policy,
-not the production commands or a republished distribution.
-Include `--upstream=OPENSSL` when preparing its source archive: the independent
-CPU image has the library/development files but not the OpenSSL CLI. The gate
-builds the pinned official CLI for its disposable test-only signing key; it
-does not replace signatures with a helper or weaken the installed trust root.
-
-`--guest-check=distribution/oracle/check-trace-userland.sh` builds the test-only ptrace
-observer and checks child exits0/7, a real SIGSEGV139 and invalid arguments2.
-It exports an independently identified ELF for browser fault observation.
-`trace-userland.c --fault-only PROGRAM ...` omits the verbose syscall/single-
-step stream without changing child fault forwarding or the bounded stop limit.
-
-`check-entry-regions.mjs COMPILER.WASM` invokes the actual emitted public cut
-ABI and compares exact interval legality, both orders, alignment, adjacency,
-overlap and u32-wrap edges. Invalid calls must return before any import or
-memory mutation. Representative module sizes are reported independently.
-
-The banked C VM reserves335872 bytes before its arena. For shared-memory
-browser fixtures build the independent compiler with an explicit disjoint
-reservation: `wasm-tools.ps1 -Compiler -StaticMin 524288 -Output NEW-FILE`.
-Standalone compiler builds retain their131072 default; this is memory layout,
-not a VM import or backend dependency. `prepare-browser-startup.mjs` requires
-a fresh output for root/init/kernel overrides, and an explicit trusted kernel
-digest. Neither the old native publication nor a retained fixture is replaced.
-
-MMX64 and XMM128 now share33 packed binary operators. The existing FPU capture
-adds actual full saved tags and RAX; `mmx-binary-observe.c DIRECTORY [--wide|
---transfer|--tag-first]` records the independent populations. Execute via
-`check-x87-state.mjs` modes `--mmx`, `--packed`, `--mmx-transfer`. Guard and
-FS-before-alignment C models are separate from physical observations. See
-[packed lane and transfer closure](../../releases/native/evidence/2026-10-08-packed-mmx.md).
-
-Return widths reuse the existing system observer with a low INT landing pad:
-`prepare-return-widths.sh NEW-DIRECTORY` generates16/32/64-bit IRET and far RET
-with0/7 release. Both `check-iret-system.mjs` and `check-outer-iret.mjs` accept
-`--return=BYTES,FAR,DISCARD`; old IRETQ and frame-priority controls remain default.
-Only the former launches an independent test VM; neither is a product guest
-interpreter. See [return closure and exact reference scope](../../releases/native/evidence/2026-10-08-return-widths.md).
-
-FIST/FISTP/FISTTP and FLD32/64 also consume the common physical SSA and C
-memory/push/store owners. Observer/checker modes `--store` and `--load` provide
-24,576/6,144 complete physical FPU/RFLAGS rows. `check-x87-store.c` and
-`check-x87-load.c` add official numeric references. The independent native
-`x87-store-fault-observe` captures real protected-page ordering; use checker
-`--store-fault` for the same C-MMU comparison. `check-x87-fault.mjs --store`
-or `--load` adds #NM/#MF-before-access and cross-page/refusal models. See
-[transfer publication and reference scopes](../../releases/native/evidence/2026-10-08-x87-transfers.md).
-
-The SAME arithmetic observer closes integer/register division, binary32/64
-memory add/sub/div, and all three multiply locations through shared SSA.
-`check-x87-state.mjs VM.WASM COMPILER.WASM RECORDS MODE` compares 300,672
-physical FPU/RFLAGS rows for these added families, not Linux acceptance.
-Modes: `--divide`, `--register-divide`, `--memory`, `--multiply`,
-`--memory-multiply`, `--register-multiply`; the observer uses those same modes.
-Official SoftFloat is an independent reference, never product runtime.
-Register `--finite` checks all six operations. Common U128/U64 SSA replaces
-the old bit loop. `benchmark-divide.mjs BASELINE-COMPILER CURRENT-COMPILER`
-compares actual execution with equal state writes, compilation excluded. See
-[shared closure, derivation and measurements](../../releases/native/evidence/2026-10-08-division.md).
-
-`prepare-shift-cuts.sh NEW-DIRECTORY carry-rotate` covers RCL/RCR width/count/
-composition. Existing memory-shift now has 476 forms through C reserve/commit.
-`prepare-translate-cuts.sh` adds XLAT address/segment/prefix records; run
-`check-wasm-provider.mjs VM.WASM RECORDS --dispatch --compiler=COMPILER.WASM
---prefix=xlat-` for actual C-MMU execution/faults. `check-flags-low.mjs` uses
-shared complete-register records for LAHF/SAHF/CMC and carry/direction controls.
-`inspect-wasm-closure.c` prints every PF_X product-grammar failure; it never
-changes acceptance or executes guest instructions.
-
-`prepare-debug.sh NEW-DIRECTORY --traps` reuses the existing Multiboot/debug
-oracle for explicit F1 traps; `--trap-faults` adds invalid IDT/GDT delivery.
-Run with an explicitly identified accelerator. `check-debug-trap.mjs VM.WASM
-COMPILER.WASM WHPX-TRACE [--faults]` compares actual C frame/debug effects,
-including retained effects after a secondary fault. TCG differs here; do NOT
-use its observer-induced nested #DB as the original trap. The separate
-physical-Windows `debug-trap-observe.c` checks page-end RIP/RFLAGS at CPL3.
-See [scope, rejected oracle conflation and reproduction](../../releases/native/evidence/2026-10-08-debug-trap.md).
-
-The existing `x87-arithmetic-observe` also accepts `DIRECTORY --register`:
-72 raw register add/sub encodings, both operand directions/pop/alias, plus
-precision/rounding/exception-mask matrices. `check-x87-state.mjs --register`
-uses the SAME C-MMU/table gate; the original DC ED red is now green at all
-42,624 physical full-state rows. `check-x87-register.c --ssa` checks the common
-numeric/outcome plan against these records; `--finite` adds 240,000 canonical
-finite samples. Build this checker with the shared arithmetic/compact/sweep/
-arena sources, as shown in the
-[current closure and reproduction](../../releases/native/evidence/2026-10-08-x87-register.md).
-`check-x87-register.c` checks only the canonical masked numeric subset against
-official SoftFloat, never supplying a product implementation. See
-[original red population and exception publication](../../releases/native/evidence/2026-10-08-x87-register-red.md).
-
-`check-string-io.mjs VM.WASM COMPILER.WASM RECORDS` executes compiled INS/OUTS
-against independent reference-system CPU/RAM records. The primary WHPX route
-produced a guest bad-pagetable oops for permitted INS into absent memory;
-those incomplete records are NOT used as expected ISA results. A separate
-TCG overlay of the original official Alpine image supplies the full gate;
-WHPX denied-only cases corroborate permission/zero-count priority. Neither
-reference backend is a product path. `check-string-io-boundary.mjs` adds C UART
-read-once, console-byte latch and bounded-REP continuation models. See
-[exact scope, reproducibility and limits](../../releases/native/evidence/2026-10-08-string-io.md).
-
-`check-enter.mjs VM.WASM COMPILER.WASM NATIVE-RECORDS` compares common compiled
-ENTER with independent reference-x86 CPU/partial-RAM observations. Its synthetic
-deferred-page cases resume through the C-owned two-word checkpoint, including
-aliasing and a retained read awaiting store. They are not production storage
-authentication or Worker-recovery claims. `check-cold-code.mjs` generalizes
-the former x87 byte-identity helper to every 1..15-byte source instruction.
-See [ENTER, minimal residual and actual coverage](../../releases/native/evidence/2026-10-08-enter.md).
-
-`prepare-float.ps1 -Verify` authenticates pinned official SoftFloat/TestFloat
-3e archives, retains unmodified upstream sources/licenses under `distribution/upstream`
-and builds their independent references under Windows `temp/float-oracle`.
-`float-source.json` records provenance and limitations: these libraries are
-never product runtime/fallbacks. `check-x87-integer.c` compares common integer
-SSA with that reference; its caller must use the same FAST_INT64/LITTLEENDIAN
-interface layout as the library. `check-x87-state.mjs` independently compares
-FILD C-Wasm/C-MMU execution with physical Windows FPU/RFLAGS observations;
-`check-x87-fault.mjs` covers separate fault-priority models. See
-[derivation, measured coverage and reproduction](../../releases/native/evidence/2026-10-08-x87-integer.md).
-
-Its `--arithmetic` mode is the strict full-state gate for
-FIADD/FISUB/FISUBR hardware records. Both modes use ONE C-MMU/table driver;
-unknown arithmetic still refuses compilation, never executes a SoftFloat or
-JS fallback. `check-x87-arithmetic.c` independently checks the canonical,
-masked result subset against SoftFloat and retains separate counts for
-unmasked result publication outside that reference's domain. Its `--ssa`
-mode independently tests common numeric/outcome SSA against all hardware rows.
-`check-x87-finite.c` adds 240,000 canonical finite/precision/rounding samples
-against the pinned reference. Fault-model `--arithmetic` mode uses the SAME
-driver as FILD. See [closed numeric/state path and limits](../../releases/native/evidence/2026-10-08-x87-arithmetic.md).
-
-`--status` covers FCOM/FUCOM, memory/integer comparisons, two-pop and FTST.
-`check-x87-ieee.c` tests exact raw IEEE32/64 -> extended fields against official
-SoftFloat, retaining source denormal and signaling classes explicitly.
-`check-x87-status.c` compares the SAME relation SSA with independent hardware
-records; the state driver checks complete C-MMU/table execution. See
-[derivation, full-state gates and actual-browser scope](../../releases/native/evidence/2026-10-08-x87-status.md).
-Browser image staging now preflights every candidate through the shared C
-admission/execution check before copying any assets; an older authenticated
-directory lacking source-admission metadata is refused, not silently staged.
-
-`check-absent-io.mjs VM.WASM COMPILER.WASM` checks the fixed platform's eight
-absent ISA-DMA page ports and three absent legacy UART ranges through actual
-cold C emission and C table/MMU execution. It neither creates phantom devices
-nor accepts arbitrary unknown I/O. The old DMA-only check was expanded and
-renamed, not kept as a second implementation. See
-[DMA contract](../../releases/native/evidence/2026-10-05-absent-dma.md) and
-[serial absence](../../releases/native/evidence/2026-10-05-absent-serial.md).
-
-`check-source-cohort.mjs VM.WASM COMPILER.WASM` proves source-owned warm
-quanta through actual C-MMU/table execution and measures a paired fixed
-65,536-retirement boundary workload. It tests partial prefixes, fault/remap/
-write/shadow/context and later-cut console/growth continuation, not Linux
-speedup. See [derivation and limits](../../releases/native/evidence/2026-10-05-source-cohort.md).
-
-## C-Wasm browser boundary — 2026-10-02
-
-`powershell -File distribution/oracle/wasm-tools.ps1` pins official wasi-sdk-34's
-Windows archive by SHA-256 and extracts only Clang, wasm-ld and builtin headers
-under repository `temp/`. It builds the freestanding C VM provider with one
-import, `machine.memory`: no WASI guest libc, JS guest-memory callback, decoder
-or distribution dependency. The pin is a build-tool version, not a claim that
-its LLVM release-candidate compiler is a stable release.
-
-```sh
-make -C compiler all
-bash distribution/oracle/check-wasm-cuts.sh temp/fresh-register-records
-node distribution/oracle/check-wasm-cuts.mjs temp/fresh-register-records
-bash distribution/oracle/check-wasm-memory.sh temp/fresh-memory-records
-bash distribution/oracle/check-wasm-stack.sh temp/fresh-stack-records
-node distribution/oracle/check-wasm-provider.mjs temp/wasm-tools-34/vm.wasm temp/fresh-memory-records
-node distribution/oracle/check-wasm-provider.mjs temp/wasm-tools-34/vm.wasm temp/fresh-stack-records
-```
-
-Only source compilation/native observations run in the build guest; actual
-Wasm comparisons run in Node or the browser. Output directories must be fresh.
-No oracle is an alternate guest execution route. `prepare-browser-provider.mjs
-VM.WASM NATIVE-MEMORY-RECORDS COLD-COMPILER.WASM` stages a small ignored diagnostic for
-`vm/check/browser/provider.html`; the user-supplied 512-case real-browser receipt
-is retained in that directory's `evidence/`. Diagnostic digests detect stale
-fixtures; they are not a production release-root signature.
-
-The compressed-kernel CPU check is independently reproducible:
-
-```sh
-make -C compiler/x86 build/kernel-profile-check
-sh distribution/oracle/check-kernel-profile.sh ACTUAL-KBUILD compiler/x86/build/kernel-profile-check
-```
-
-It reads that build's generated `asm/cpufeaturemasks.h`, not an architecture-name
-guess. The exact shipped 7.2.7 configuration exposed missing PAE/PGE in v1;
-the v2 CPU contract passes. The required hardware masks do not certify every
-advertised instruction or exactly masked native CPU execution.
-
-After authenticated extraction of the **published** native bundle, reproduce
-its bounded cold boot-state/page projection without reading the whole kernel:
-
-```sh
-make -C src/v2/vm build/boot-check
-mkdir temp/fresh-boot-records
-src/v2/vm/build/boot-check ROOT/boot/kernel ROOT/boot/initramfs temp/fresh-boot-records/shipped
-node distribution/oracle/check-wasm-boot.mjs temp/wasm-tools-34/vm.wasm temp/fresh-boot-records/shipped
-```
-
-If the build guest and Node are separate, transfer only the small generated
-records. The comparison covers C-generated boot parameters, GDT, initial
-identity tables/state and a C-MMU fetch of the actual 64-bit entry, not kernel
-instruction execution, CPU exception delivery, root-device publication or
-Linux boot. Dirty/COW state is outside this initial-content projection and
-must never be reconstructed as initial zero RAM after execution.
-
-## Independent native oracles
-
-### Coordinate binding and exact sharing — 2026-10-05
-
-`check-cut-coordinate-sharing.mjs COMPILER.WASM` is an independent cold-C
-emission test, not an ISA oracle or production route. It
-checks complete coordinate-normalized state covariance and unchanged wrong-RIP
-refusal, then requires a single exact topology per shape across twelve virtual
-coordinates. The original compiler failed all ten families; ABI 2 now passes
-their exact-template condition. `--observe` separates fresh/warmed Module
-and Instance construction under
-unchanged bounded-owner quotas. It never edits Wasm bytes or removes entry
-checks. The original [red and factorization](../../releases/native/evidence/2026-10-05-coordinate-sharing.md)
-remain historical evidence. `check-entry-binding.mjs VM.WASM COMPILER.WASM`
-separately exercises shared templates through the actual C-MMU/typed table,
-including literal preservation, relative/absolute targets, #DE/fetch faults,
-REP descriptor mutation/growth and old-ABI type refusal. Its explicit models
-do not replace independent native instruction observations or Linux boot.
-Use fresh native-emitted fixtures with the current compiler: stored ABI-1
-modules are not adapted into ABI-2 validation. See
-[ABI-2 evidence](../../releases/native/evidence/2026-10-05-entry-binding.md).
-
-The current table type is ABI 3, adding a latched signed operand binding without
-growing the row/report. `check-cut-operand-sharing.mjs COMPILER.WASM BZIMAGE`
-checks the matched release hot load/store bodies (use `--observe` only for a
-frozen historical red). `check-operand-binding.mjs VM.WASM COMPILER.WASM
-[FRESH-NATIVE-RECORDS]` checks C source/MMU/frontiers and exact native emissions.
-Both probes accept `--memory` to include general GPR/RSP/index/disp8 binding.
-The sharing grid explicitly separates matched release bytes from synthetic
-coordinates; it does not turn local body counts into Linux speedup claims.
-`prepare-operand-cuts.sh NEW-OUTPUT COMPILER-BUILD` requires an explicit fresh
-native build. Neither probe establishes Linux boot or browser acceptance.
-See [scope and receipts](../../releases/native/evidence/2026-10-05-operand-binding.md).
-
-`prepare-entry-cuts.sh NEW-OUTPUT COMPILER-BUILD` regenerates native PUSH/POP,
-ordinary CALL/JMP, table, FXSAVE and vector/scalar/segment fixtures using an
-explicit current compiler build. `check-descriptor-transfer.mjs` includes
-cross-page latched resumption, rejected generations/quanta, mutable-row
-retargeting and unlatched fences. It fails with the frozen pre-fix VM and
-passes without replay after the table-continuation gate correction. These
-fixtures are tests, not release objects; known system-oracle discrepancies
-and strict independent CALL provenance reds are not waived by ordinary tests.
-
-### Serialized memory-order cuts — 2026-10-05
-
-`check-fxrstor.mjs VM.WASM COMPILER.WASM NATIVE-FIXTURES` compares the common
-compiled FPU restore against nine native forms, C-MMU/dispatcher and explicit
-fault/wait/control models. `wasm-compiler/check/fxrstor.c DIRECTORY --observe`
-records native results independently before compiler support; normal mode also
-requires exact emission. `fxrstor-observe.c` separately checks protected-page /
-invalid-MXCSR fault priority in the reference x86 VM. `vm/check/read-extent.c`
-checks generic zero-copy physical projection. None is a product interpreter.
-See [derivation and bounds](../../releases/native/evidence/2026-10-05-fxrstor.md).
-
-`src/v2/wasm-compiler/check/memory-order.c` records GPR/flags/FPU preservation
-on native x86 before and after lowering, with `--observe` available before
-compiler support. `check-memory-order.mjs VM.WASM COMPILER.WASM EMITTED-DIR
-OBSERVED-DIR` requires byte-identical independent observations, exact cold-C
-emission, real C-MMU/dispatcher execution, shared-Memory refusal and crossing
-fetch/growth checks. Concurrent memory ordering is not inferred from a native
-value-state fixture. See [the empty-frontier derivation](../../releases/native/evidence/2026-10-05-memory-order.md).
-
-### Accelerator provenance and near CALL faults — 2026-10-04
-
-Native user-mode fixtures run inside the independent build VM. They do not
-imply a particular accelerator: on this Windows run the active process and
-`temp/bootstrap/execution.json` both specify **WHPX**, with a start time of
-2026-10-02 20:56:13 local. Earlier evidence prose/JSON calling that build VM
-"TCG" is an attribution error, not a changed byte receipt. Explicit system
-observers that launch `-accel tcg` remain TCG observations. Neither backend
-is a product dependency, a universal hardware oracle or an equivalence proof
-by itself. The [CALL evidence](../../releases/native/evidence/2026-10-04-call-fault.md)
-records that distinction and retains the strict product red.
-
-The standalone `call-fault-observe.c/.S` has no product/compiler dependency.
-It separately counts stack payload and all-GPR/RSP/RIP/#GP frame outcomes:
-
-```sh
-bash distribution/oracle/prepare-call-fault.sh NEW-DIRECTORY
-NEW-DIRECTORY/root/init 4096 > NEW-DIRECTORY/native.log
-node distribution/oracle/observe-call-fault.mjs NEW-DIRECTORY/native.log
-node distribution/oracle/observe-call-fault.mjs QEMU SHIPPED-KERNEL NEW-DIRECTORY/observer.cpio.gz NEW-TCG-LOG
-```
-
-The last invocation uses an isolated, networkless TCG diagnostic `/init`,
-not the release root, a browser fallback or Linux product acceptance. A receipt
-has `status: observed`, never `pass`: original-frame and advanced-frame outcomes
-are not interchangeable expected states. Permission transitions occur before
-each test, and all tested stack bytes are writable at the actual CALL. Fresh
-outputs are required. The source and exact minimized full-fixture input are
-retained, not hidden by retrying a red until green.
-
-For an independent Windows-native observation, outside that build VM:
-
-```sh
-gcc -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror distribution/oracle/call-fault-windows.c distribution/oracle/call-fault-windows.S -o NEW-DIRECTORY/call-fault-windows.exe
-NEW-DIRECTORY/call-fault-windows.exe 4096 > NEW-DIRECTORY/windows.log
-node distribution/oracle/observe-call-fault-windows.mjs NEW-DIRECTORY/windows.log
-```
-
-This uses Win32 vectored exception contexts, not a claimed architectural
-exception vector or bare-metal CPU oracle. CPUID provenance is retained.
-Recovery does not retry the faulting CALL. The parser requires all 216 groups
-and their complete totals; mixed payloads remain observations, never an
-equivalence pass. See [Windows evidence](../../releases/native/evidence/2026-10-05-call-fault-windows.md).
-
-### Cold output witness without per-cut capacity poisoning
-
-The startup diagnostic's `CompilerOutput` initializes its 64 KiB output and
-80-byte report once. After success it poisons only the preceding declared
-module prefix plus the fixed report. A refusal still compares **all** 64 KiB
-and the report; an illegal write outside a successful declared prefix now
-survives and is detected on refusal instead of being erased by full poisoning.
-This is diagnostic host work, not a guest opcode, compiler shortcut or relaxed
-ISA expectation. The C compiler, emitted bytes and execution quotas are unchanged.
-
-```text
-node distribution/oracle/check-compiler-output.mjs COMPILER.WASM
-node distribution/oracle/check-wasm-startup.mjs VM.WASM COMPILER.WASM BOOT-FIXTURE-DIRECTORY
-```
-
-The component requires exact full-capacity/report parity on 513 real C emissions
-and three refusals, including genuine one-page tail refusal -> two-page supply.
-It separately exposes undeclared tail publication, partial refusal output,
-invalid length, host-trap reuse, shared memory and invalid reservations.
-The [fixed-work receipt](../../releases/native/evidence/2026-10-04-compiler-output.md)
-counts initialization and steady-state stores separately. Reduced poison traffic
-does not mean reduced artifact size, engine RSS, x86 work/span or cold-shell time.
-
-### Address-only page invalidation
-
-The common cold compiler lowers the already-typed INVLPG descriptor. The
-current C MMU has no retained TLB or paging-structure cache, so invalidation
-has no cache state to mutate; privilege, precise cut and retirement remain.
-This relies on fresh translation at **every** payload access and compiled
-entry fetch, including global/large pages. Introducing a retained translation
-cache requires changing that compiler/MMU contract together. Source/module
-caches are not translation caches. There is no kernel-coordinate opcode skip.
-
-In the reference build guest (oracle/build only):
-
-```sh
-make -C src/v2/wasm-compiler build/invalidate-check
-mkdir NEW-DIRECTORY
-src/v2/wasm-compiler/build/invalidate-check NEW-DIRECTORY
-bash distribution/oracle/prepare-invalidate.sh NEW-DIRECTORY
-```
-
-The last command observes all 84 exact source forms at real native CPL3 and
-requires a precise #GP(0). The assembled system fixture observes the same
-forms at QEMU TCG CPL0, including absent/noncanonical addresses, segment
-prefixes and preserved flags. It is an independent system oracle, never a
-product execution backend. After copying the fixtures to Windows:
-
-```text
-node distribution/oracle/check-invalidate-system.mjs QEMU SYSTEM.ELF FIXTURE-DIRECTORY NEW-LOG
-node distribution/oracle/check-invalidate.mjs VM.WASM FIXTURE-DIRECTORY
-```
-
-The second command exercises the emitted cuts and actual C-Wasm MMU/dispatcher:
-privilege/RF/AC/address/reservation cases, guest PTE remaps, A/D effects and
-precise NX/non-present entry fetches despite a retained module. It is not a
-native hardware TLB oracle, Linux boot or full exception-entry proof. General
-large-page/global remaps and permission changes are also in `vm/check/mmu.c`.
+## Upstream oracles and the native boot witness
 
 The product does not contain QEMU, KVM, Remill or Intel XED. These pinned
 upstreams are development inputs used to prove the standalone C post-link
@@ -476,36 +47,13 @@ Cold readiness is measured at the actual service transition's
 `interactive-ready` marker, before paced UART command transmission.
 The full mode remains a publication gate, not an isolated-shell release claim.
 
-The C boot loader can now attach that same immutable source image before
-projecting any pages/state: `vm_boot_image(address,bytes)`. It reserves the
-rounded physical extent outside ordinary RAM and returns bounded image-kind
-5 source coordinates through the existing page ticket. Admitted pages are
-private writable RAM, not a second VFS or silently discarded phram writes;
-Linux owns the read-only mount/OverlayFS. Test with:
+`pack-source.mjs GNU-TAR NEW-OUTPUT [--upstream=ROLE ...]` writes the
+repository's `compiler/`, `distribution/` and `research/corpus/` inventory,
+plus each named pinned upstream archive, as a portable USTAR archive below
+repository `temp/`. `check-native-boot.mjs --source=SOURCE-TAR` hands such an
+archive to the booted root, which builds `compiler/` from it.
 
-```text
-node distribution/oracle/check-boot-image.mjs VM.WASM SHIPPED-BZIMAGE SHIPPED-INITRAMFS SYSTEM-SQUASHFS
-node distribution/oracle/check-wasm-startup.mjs VM.WASM COMPILER.WASM PREFIX-DIRECTORY --segments=INDEPENDENT-SEGMENTS --image=SYSTEM-SQUASHFS
-```
-
-`--extended --progress` adds a bounded longer independent Node diagnostic and
-compact JSON progress on stderr; final JSON stays on stdout. This is not a
-retained-browser observation. Duplicate/unknown/empty flags fail before I/O.
-Always propagate the Node exit status when capturing its output through a
-shell pipeline; a successful final pipe command does not certify the probe.
-
-`prepare-browser-startup.mjs VM.WASM COMPILER.WASM PREFIX-DIRECTORY SEGMENTS
-SYSTEM-SQUASHFS NEW-OUTPUT-DIRECTORY` stages the image with a bounded 64-KiB
-hash buffer. Image staging refuses an existing destination and requires the
-explicit new directory. A diagnostic folder named `generated-startup-NAME`
-can later be selected with `startup.html?fixture=generated-startup-NAME`;
-only those same-origin diagnostic names are accepted. Do not restage/reload a
-retained running Worker. The local hash manifest is not production signed
-admission, and page/extent checks never certify a Linux root mount or shell.
-Current [evidence and remaining SIMD gate](../../releases/native/evidence/2026-10-04-boot-image.md)
-distinguish independent Node receipts from browser acceptance.
-
-Use a full candidate installed root to build that test image; the image is
+Use a full candidate installed root to build the `SYSTEM-SQUASHFS` image; it is
 oracle scratch, not a second published distribution or another execution route.
 If the linked baseline is red too, first fix that baseline before attributing
 the failure to post-link compilation.
@@ -565,6 +113,68 @@ passed static proof still exposed a misplaced runtime write; external QEMU
 watchpoints identified that first write, rather than guessing from the later
 fault or using the kernel's unchanged source-coordinate symbol map.
 
+## Kernel checks
+
+The compressed-kernel CPU check is independently reproducible:
+
+```sh
+make -C compiler/x86 build/kernel-profile-check
+sh distribution/oracle/check-kernel-profile.sh ACTUAL-KBUILD compiler/x86/build/kernel-profile-check
+```
+
+It reads that build's generated `asm/cpufeaturemasks.h`, not an architecture-name
+guess. The exact shipped 7.2.7 configuration exposed missing PAE/PGE in v1;
+the v2 CPU contract passes. The required hardware masks do not certify every
+advertised instruction or exactly masked native CPU execution.
+
+## Daemon, package and ptrace checks in an isolated guest
+
+These run from the repository root inside an isolated Linux guest: they read
+`distribution/sources.env` and the archives under `distribution/upstream/`.
+The runner that started them in a fresh reference image,
+`check-linux-selfhost.mjs`, was removed with the browser VM.
+
+`check-dhcp-publication.sh` rebuilds the pinned
+official dhcpcd and tests original/current-postlink ELFs through actual
+privilege-separated DHCP packet dispatch. Its TEST hook must report the
+isolated oracle's fresh OFFER, interface, address and subnet, not merely exit
+zero. A saved bootstrap lease is moved into the disposable test workspace
+before each role: official TEST mode exits on OFFER during discovery, whereas
+an old ACK can select the distinct reboot path. ACK/address/route/DNS
+installation must be checked separately with the normal daemon.
+
+`check-runtime-publication.sh` runs an actual signed
+APK publication fixture with the pinned bootstrap apk, including six negative
+representations of the package-owned `/var/run -> ../run` compatibility link.
+The base-services producer owns that link before packaging, not in a boot or
+post-install mutation. The synthetic command payloads test publication policy,
+not the production commands or a republished distribution.
+Include `--upstream=OPENSSL` when preparing its source archive: the independent
+CPU image has the library/development files but not the OpenSSL CLI. The gate
+builds the pinned official CLI for its disposable test-only signing key; it
+does not replace signatures with a helper or weaken the installed trust root.
+
+`check-trace-userland.sh` builds the test-only ptrace
+observer and checks child exits0/7, a real SIGSEGV139 and invalid arguments2.
+It exports an independently identified ELF.
+`trace-userland.c --fault-only PROGRAM ...` omits the verbose syscall/single-
+step stream without changing child fault forwarding or the bounded stop limit.
+
+## x87 numeric references
+
+`prepare-float.ps1 -Verify` authenticates pinned official SoftFloat/TestFloat
+3e archives, retains unmodified upstream sources/licenses under `distribution/upstream`
+and builds their independent references under Windows `temp/float-oracle`.
+`float-source.json` records provenance and limitations: these libraries are
+never product runtime/fallbacks. `check-x87-integer.c` compares common integer
+SSA with that reference; its caller must use the same FAST_INT64/LITTLEENDIAN
+interface layout as the library. See
+[derivation, measured coverage and reproduction](../../releases/native/evidence/2026-10-08-x87-integer.md).
+`check-x87-finite.c` adds 240,000 canonical finite/precision/rounding samples
+against the pinned reference. `check-x87-ieee.c` tests exact raw IEEE32/64 ->
+extended fields against official SoftFloat, retaining source denormal and
+signaling classes explicitly.
+
 ## Roles
 
 No one implementation is allowed to certify itself.
@@ -578,8 +188,8 @@ No one implementation is allowed to certify itself.
 | KVM on a pinned host CPU, when available | hardware differential samples for user and guest-ring tests | reproducibility across CPU models or the only exception oracle |
 
 QEMU is GPL-2.0. Its source may be executed as an external test oracle, but no
-QEMU object or copied implementation is linked into `libpostlink.a` or
-`vm.wasm`. Remill is the reusable structural semantics source: its LLVM output
+QEMU object or copied implementation is linked into `libpostlink.a`.
+Remill is the reusable structural semantics source: its LLVM output
 may be normalized by a build-side importer into the post-link compiler's
 stable semantic grammar. The checked-in result must retain its Apache-2.0
 notices. SoftFloat is a BSD-licensed external test oracle; product code does
@@ -676,523 +286,10 @@ inside and outside the low/high bytes. They also reject byte-width OR substituti
 that preserve the value but change the full-width SF/ZF/PF. Smaller byte
 overlays remain permitted only when those flags are overwritten before use.
 
-## Route into the standalone compiler
-
-### C-Wasm dispatch/startup checkpoint
-
-The VM builder now exports its C function table and bounded `vm_run`, using
-`machine/entry.h`'s uniform `(i32 state, i32 port) -> i64` compiled type. Private
-C callback slots are excluded from the admitted guest directory. Raw boot/code
-pages and optimized ELF segments feed the same cold C cut planner/emitter;
-the former requires external source authentication/generation admission and
-does not invent an ELF proof. No decoder is linked into execution.
-
-```sh
-make -C src/v2/wasm-compiler build/code-cut-check
-# The page is from boot-check's exact shipped bzImage record, not Kbuild vmlinux.
-src/v2/wasm-compiler/build/code-cut-check SHIPPED.kernel-page 0x1000200 NEW-CODE-PREFIX
-node distribution/oracle/check-wasm-boot.mjs VM.WASM SHIPPED NEW-CODE-PREFIX
-node distribution/oracle/check-wasm-dispatch.mjs VM.WASM PURE-NATIVE-RECORDS
-node distribution/oracle/prepare-browser-provider.mjs VM.WASM NEW-MEMORY-RECORDS COLD-COMPILER.WASM
-node distribution/oracle/check-provider-worker.mjs
-```
-
-The current startup check retires fourteen shipped source instructions in C
-dispatch, then stops at the memory-ADD compile gate `0x1000232`. Cold-loader
-records include `.segments` as well as `.state`; the frozen register cut alone
-cannot represent hidden segment caches or MOV SS inhibition. Run
-`check-wasm-segments.mjs VM.WASM NEW-CODE-PREFIX` for the generated selector
-matrix against the actual C boundary. It is NOT a hardware fault-entry oracle
-or Linux/browser boot. See ../../releases/native/evidence/2026-10-02-segments.md.
-The last command adapts only diagnostic fixture delivery/self under Node;
-it is NOT an actual browser Worker/consent observation. `provider.html` v3
-constructs the cut using the cold C-Wasm compiler before C table dispatch;
-the native prebuilt cut is only a byte-comparison oracle, never a fallback.
-Preserve the user's earlier v1 browser receipt as-is.
-All guest RAM mutations, including page-table A/D, revoke code admission:
-physical code/table aliasing is legal. Disjoint write-set optimization, complete
-source/CPU/load/generation attestation and exception/device boot remain open.
-
-### Authenticated bundle and cold compiler construction
-
-The latest [common indirect-JMP checkpoint](../../releases/native/evidence/2026-10-03-indirect-jmp.md)
-uses actual native x86 receipts and the C VM/MMU, not a JS memory callback:
-
-```sh
-make -C src/v2/wasm-compiler build/branch-check
-mkdir NEW-BRANCH-DIRECTORY
-src/v2/wasm-compiler/build/branch-check NEW-BRANCH-DIRECTORY
-node distribution/oracle/check-branch.mjs VM.WASM COMPILER.WASM NEW-BRANCH-DIRECTORY
-```
-
-It checks all GPR targets and ordinary memory-address forms, precise target
-faults, load-before-target fault ordering, and the pure-prefix boundary before
-an unemitted indirect successor. Startup now reaches the relocated trampoline
-and stops at REP STOSQ (391 retired instructions); this is not Linux boot.
-
-Use `compile-native-bundle.sh BUNDLE.tar.zst TRUSTED-SHA256 NEW-DIRECTORY`
-instead of selecting a kernel address/page by hand. It consumes the published
-native bundle, extracts only the required manifest/boot/bin members, lets the
-C loader derive the actual startup entry, and invokes the standalone C CLI.
-The exact published archive generates 11 kernel modules/14 instructions and
-two BusyBox modules/five instructions. Exit 3, `closed:false` and the retained
-whole-image -104 diagnostic explicitly mean partial construction, not boot.
-See BROWSER.md (removed with the old web product).
-
-Build the same C decoder/planner/emitter as freestanding Wasm:
-
-```powershell
-./distribution/oracle/wasm-tools.ps1 -Compiler -Output temp/cold/wasm-compiler.wasm
-```
-
-```sh
-node distribution/oracle/check-cold-compiler.mjs COMPILER.WASM BUNDLE-OUTPUT SHIPPED-BUSYBOX.elf \
-  PURE-NATIVE-RECORDS MEMORY-NATIVE-RECORDS STACK-NATIVE-RECORDS
-```
-
-The 400,394-byte build imports only ordinary `machine.memory`; no WASI,
-allocator, JS decoder or runtime source fallback is linked. This cold compiler
-has its own C static/stack memory; do not overlap it with the independently
-linked VM. The check matches 130 modules byte-for-byte against native C
-construction, and rejects offset/alias/capacity/options/reopen errors without
-mutating caller-owned reservations. Rejection checks cover source/output/report
-reservations, not the compiler's mutable private C stack scratch.
-All-product native check and compiler ASan/UBSan pass; the exact bundle's
-fourteen-instruction C-Wasm dispatcher check is also green. None establishes
-the still-missing whole-image/system/exception/device closure or browser boot.
-
-The intended construction is:
-
-```text
-Remill semantic bitcode --build-side importer--> canonical semantic recipes
-                                                       |
-linked x86 --C decode + recipe specialization--> physical SSA --> optimized x86 ELF
-                                                       |
-QEMU TCG + XED + optional KVM ---------------- differential proof
-```
-
-Only canonical recipes and the C specializer are product inputs. Complex
-system effects whose state is intentionally outside the pure recipe remain
-typed machine operations in the secondary VM projection; QEMU checks those
-operations against the same cut. Device I/O, clock, entropy and physical-page
-delivery are the only host events. `WRMSR`, `LGDT`, control-register moves,
-`IRET`, `SYSCALL` and page faults are machine semantics, not host barriers.
-
-The [current browser arithmetic/CPU-control checkpoint](../../releases/native/evidence/2026-10-03-misc-arithmetic.md)
-keeps independent reference scopes explicit. `prepare-msr.sh DIR misc` plus
-`check-msr-misc-system.mjs` compares nine legal QEMU MISC_ENABLE rows. TCG's
-unchanged CPUID after those writes does not prove the architectural Limit/XD
-side effects; those have separate literal-contract tests. `extend-check` and
-`divide-check` capture actual native register/flags/#DE observations before
-testing cold lowering; `check-extend.mjs` and `check-divide.mjs` separately run
-direct cuts and C table dispatch. `prepare-memory-bit-cuts.sh` plus
-`check-wasm-provider.mjs` covers immediate memory BT/BTS/BTR/BTC CPU/RAM and
-protection-fault results, not exception entry. None is a Linux/PID 1 boot gate.
-
-The [memory-unary/source-tail checkpoint](../../releases/native/evidence/2026-10-03-memory-unary-source-tail.md)
-adds `prepare-memory-unary-cuts.sh NEW-DIRECTORY` (22 ordinary post-linked
-INC/DEC/NEG/NOT forms). `check-wasm-provider.mjs VM.WASM NEW-DIRECTORY` compares
-CPU/RAM, actual native faults and separately RF success/failure semantics.
-The checkpoint then compiled/installed ten real
-single/two-page cuts through C source ownership and C dispatch, checking
-demand-only FETCH, non-contiguous physical pages, exact writes, pinned A-bit
-aliases, NX/nonpresent/residency, remap and lifecycle rejection. It is a
-boundary regression, not boot or a cryptographic compilation attestation.
-Regenerate fixtures for current compiler/ABI bytes; a stale fixture rejection
-must not be relabeled as a pass.
-
-The [scalar memory exchange checkpoint](../../releases/native/evidence/2026-10-03-memory-exchange.md)
-adds `prepare-memory-exchange-cuts.sh NEW-DIRECTORY` (32 ordinary post-linked
-CMPXCHG forms, LOCK/no-LOCK). At that checkpoint `check-source-admission.mjs VM.WASM
-COMPILER.WASM` performed 14 real cold emissions, including four both-arm/LOCK
-source-alias writes through C dispatch, and rejects shared-memory linking.
-LOCK coverage assumes one serialized owner of ordinary memory, not SMP.
-
-The [memory condition checkpoint](../../releases/native/evidence/2026-10-03-memory-condition.md)
-adds `prepare-memory-condition-cuts.sh NEW-DIRECTORY` (25 ordinary post-linked
-SETcc forms). At that checkpoint the source-admission driver performed 16 actual cold
-emissions, including both SETcc truth values and equal-byte source invalidation.
-The prior ten/fourteen-operation receipts remain historical observations.
-
-The [signed memory bit-string checkpoint](../../releases/native/evidence/2026-10-03-memory-index.md)
-adds `prepare-memory-index-cuts.sh NEW-DIRECTORY` (38 ordinary post-linked
-BT/BTS/BTR/BTC forms). It covers signed register indexes, negative/word/page
-crossings, all widths/address sizes and shared bit/SIB indexes through the
-same C MMU. The current source-admission driver performs 20 real cold emissions,
-including signed BT/BTS source owners reached from an unmapped original base
-and equal-byte modification fences. Native fault and sanitizer scopes remain
-explicit in the evidence; component green is not Linux boot.
-
-The register summary oracle uses
-`prepare-summary-cuts.sh NEW-DIRECTORY`, then `check-wasm-cuts.mjs NEW-DIRECTORY`
-and `check-wasm-dispatch.mjs VM.WASM NEW-DIRECTORY`. The 75 fixtures cover
-BSF/BSR, their fixed-profile F3 legacy forms and POPCNT, all three widths,
-self/extended aliases and ZF consumers before later kills. The fixed CPU has
-no BMI1/LZCNT; native post-link analysis retains its separate superset-CPU
-contract through the same decoder implementation. All Wasm compilation passes
-use the profile-bound view, not a post-decode opcode rename.
-
-The test-only observer retains the immutable certified source for definedness
-and the delivered source page. For prefixed legacy forms it executes a leading
-NOP plus the unprefixed scan in its private native mapping, preserving next
-coordinates. A TCG CPU may execute TZCNT despite clear BMI1 CPUID, and physical
-host supersets can also do so: those results cannot attest the legacy encoding.
-`nativeLegacyPrefixTwin` marks this distinct oracle scope. Zero-source scan
-destinations and undefined flags are not asserted as defined hardware values;
-the drivers separately test the chosen whole-parent destination representative.
-No such rewrite, CPU feature change or interpreter exists in product execution.
-
-The [common rotate checkpoint](../../releases/native/evidence/2026-10-03-rotate.md)
-uses `prepare-shift-cuts.sh NEW-DIRECTORY rotate`, followed by direct and C-table
-`check-wasm-cuts.mjs` / `check-wasm-dispatch.mjs` comparison. 110 ordinary
-post-linked forms cover all widths/count masks, narrow/high/extended aliases,
-whole turns, preserved zero-count flags and interior consumers. The default
-script still prepares the 156 SHL/SHR/SAR regressions. The observer distinguishes
-masked flag count from modulo-width value rotation and excludes only undefined
-multi-bit OF per input. Memory and through-carry forms remain explicit refusals.
-
-The [visible-selector checkpoint](../../releases/native/evidence/2026-10-03-selector.md)
-uses `prepare-selector-cuts.sh NEW-DIRECTORY`, then direct/C-dispatch register
-and C-MMU memory comparisons on its two subdirectories. Test-only selector
-capture binds native observations to the oracle's actual process state; product
-code never reads those host values. Separate model checks vary guest selectors.
-All six selector reads preserve flags; register destinations obey width/parent
-rules and every memory-prefix form stores exactly two bytes. Protected splits
-must not publish CPU or partial payload. TF remains refused; RF is accepted
-and clears only after successful retirement, never during a pending fault.
-
-### Physical ROM versus guest paging rights
-
-`make -C src/v2/vm check` includes 12,000 arbitrary-payload ROM cases; the
-direct-entry boot template covers every page in C0000..100000. Actual C-Wasm
-checks use the same boot fixtures as the browser:
-
-```sh
-node distribution/oracle/check-rom.mjs VM.WASM BOOT-FIXTURE-DIRECTORY
-node distribution/oracle/check-physical-source.mjs VM.WASM BOOT-FIXTURE-DIRECTORY
-```
-
-The second command still refuses A0000/BF000/out-of-RAM, never inventing a
-page or guest fault. Firmware fill is an explicit platform policy, not inferred
-from E820. For an independent actual ROM-bus oracle, in a new scratch directory:
-
-```sh
-as --32 distribution/oracle/rom-system.S -o SCRATCH/system.o
-ld -m elf_i386 -T distribution/oracle/exception-entry.ld SCRATCH/system.o -o SCRATCH/system.elf
-node distribution/oracle/check-rom-system.mjs QEMU SCRATCH/system.elf SCRATCH/new-system.log
-src/v2/vm/build/rom-check SCRATCH/new-system.log
-```
-
-The pinned official QEMU from the existing oracle recipe is used only for
-reference. The last command compares its 17 observed arbitrary ROM words
-against C-MMU writes and reservations. Repeat with the ASan/UBSan C binary.
-These are bus transfer checks, not full instruction flags/exception proof or
-Linux boot. [Derivation and limitations](../../releases/native/evidence/2026-10-03-rom.md)
-record the actual browser's next memory POP refusal.
-
-### Ordered POP stack read and memory destination
-
-In a fresh scratch directory, with the built native C compiler:
-
-```sh
-make -C src/v2/wasm-compiler build/pop-memory-check
-mkdir SCRATCH
-src/v2/wasm-compiler/build/pop-memory-check SCRATCH
-node distribution/oracle/check-pop-memory.mjs VM.WASM COMPILER.WASM SCRATCH
-node distribution/oracle/check-source-admission.mjs VM.WASM COMPILER.WASM
-```
-
-`pop-memory-check SCRATCH --observe` obtains native-only receipts before lowering exists.
-The new test is also part of normal `make check`. Native and actual C-MMU
-checks compare the post-increment destination, separate 64-bit stack address,
-fault priority, complete CPU/payload, retries and RF. The high test stack is
-in a mapping disjoint from ASan's shadow; sanitizer coverage is explicitly
-scoped in [the evidence](../../releases/native/evidence/2026-10-03-pop-memory.md).
-Regenerate CALL receipts with the current `call-check NEW-DIRECTORY` before
-running `check-call.mjs`: old emitted modules predate successful RF clearing.
-The fresh driver compares both fault-time preservation and successful clearing,
-never unconditionally refuses RF. None of these component passes is Linux boot.
-
-This division avoids rebuilding QEMU while preserving the final route:
-
-```text
-linked x86 -> C postlink compiler -> ordinary optimized x86 ELF
-                                          |
-                                          +-> native execution
-                                          |
-                                          +-> Wasm projection -> vm.wasm
-```
-
-### C-owned RTC and sampled-clock continuation
-
-```sh
-make -C src/v2/vm check
-node distribution/oracle/check-rtc-qtest.mjs QEMU-SYSTEM-X86_64 src/v2/vm/build/rtc-check
-node distribution/oracle/check-rtc-provider.mjs VM.WASM COMPILER.WASM
-```
-
-The independent Qtest comparison pauses the oracle CPU and freezes its VM
-clock: it checks indexed registers, NVRAM, BCD/binary and 12/24-hour fields,
-SET, century alias and read-only/read-clear registers, not dynamic IRQ timing.
-`rtc-check` separately compares a Gregorian era with libc and the bounded
-next-alarm expression with a brute-force specification. Neither libc nor
-QEMU is linked into the product. `qtest-device.mjs` is a test-only socket owner.
-
-The compiled-provider test includes full CPU/segment observations, privilege
-faults, sampled-clock ownership, duplicate/stale/cancelled replies and fresh
-machine re-seeding. An already-started sampled instruction finishes before
-the newly pending interrupt boundary. Complete frame/inhibition/priority
-tests use the separate interrupt provider below.
-Supervisor-only `vm_rtc_start` binds one explicit UTC epoch
-to the current memory record/generation before RTC I/O or time advance. Guest code imports
-only `machine.io`; C owns CMOS state and IRQ8, not a JavaScript port model.
-The default browser diagnostic records its host UTC snapshot and advances
-devices by active C execution time, excluding delivery/compilation pauses.
-This is not authenticated UTC, wall-clock fidelity, a calibrated CPU, hardware
-silicon equivalence, CPU IRQ delivery or a completed Linux boot.
-
-### C IF/shadow and independent PIC interrupt entry
-
-`interrupt-check` is the native IF/IOPL/shadow specification matrix, not a
-privileged hardware oracle. `prepare-interrupt.sh OUTPUT` builds an independent
-Multiboot PIT/PIC/IDT fixture. Its debugcon output has 192 records, including
-consecutive STI/MOV-SS inhibition positions, gate types and stack alignment.
-QEMU is only the test oracle, never the product guest execution provider.
-Run `check-interrupt-provider.mjs VM.WASM COMPILER.WASM ROWS.txt` to compare
-generated C-Wasm transfers and C PIC/IDT/IRET entry. Installed QEMU 11.1.0
-sets saved RF for ordinary vector-32 IRQs; that one discrepancy is explicitly
-excluded against Intel's boundary rule, with RF=0/1 separately modeled.
-See [the exact scope and browser receipt](../../releases/native/evidence/2026-10-04-interrupt.md).
-No IRQ frame test, including this one, establishes Linux/PID 1 acceptance.
-
-### Shared memory shift/rotate SSA
-
-```sh
-make -C src/v2/wasm-compiler memory-shift-check
-mkdir NEW-DIRECTORY
-src/v2/wasm-compiler/build/memory-shift-check NEW-DIRECTORY
-node distribution/oracle/check-memory-shift.mjs VM.WASM COMPILER.WASM NEW-DIRECTORY
-```
-
-Before lowering, `memory-shift-check NEW-DIRECTORY --observe` executes only
-independent native x86 observations. SHL/SHR/SAR/ROL/ROR share register SSA
-with memory reserve/commit: no operation callback crosses the C MMU boundary.
-All four operand widths, CL/one/immediate counts, count masks, old-register
-address aliases, 32/64-bit addresses, SS, RIP-relative writes, protection and
-split faults are compared. A masked-zero count is not permission to skip
-the memory transaction. Defined flags match the oracle; undefined AF/CF/OF
-have the compiler's explicit zero representative. Separate serialized models
-cover physical-row waits/retries, RF, stale/private ports and executable
-writes. This is not a signed production page-supply or Linux boot test.
-RCL/RCR, LOCK and FS/GS remain explicit compiler refusals with no output
-publication. Pure predecessors end before the memory boundary.
-
-### Shared double-shift SSA
-
-```sh
-make -C src/v2/wasm-compiler double-shift-check
-mkdir NEW-DIRECTORY
-src/v2/wasm-compiler/build/double-shift-check NEW-DIRECTORY
-node distribution/oracle/check-double-shift.mjs VM.WASM COMPILER.WASM NEW-DIRECTORY
-# Independent observations without invoking the lowering:
-src/v2/wasm-compiler/build/double-shift-check OTHER-NEW-DIRECTORY --observe
-node distribution/oracle/check-double-shift.mjs VM.WASM COMPILER.WASM NEW-DIRECTORY OTHER-NEW-DIRECTORY
-```
-
-SHLD/SHRD admit 16/32/64-bit register and memory destinations, GPR source and
-CL/immediate count. The three old inputs are captured before a publication;
-memory alone introduces C reserve/commit. All CL values, width/count edges,
-source/destination/count aliases, flag predecessors and consumers, old RSP,
-address-size truncation, scaled addressing, RIP writes and precise memory
-faults are observed independently. Count zero still checks write permission.
-For a 16-bit masked count greater than 16, only the low destination and
-arithmetic flags are undefined; high parents, every other register, fault
-ordering and memory footprint remain observed. The compiler's separate zero
-representative is enforced, not attributed to hardware. A zero count preserves
-predecessor flags. LOCK/FS/GS are refused before output publication.
-The C-Wasm comparison checks direct execution, C table dispatch, RF,
-serialized physical-row waits/retries and executable-write revocation. It is
-not an exception-entry, SMP, signed page-supply or Linux boot proof.
-
-### Bounded C source demand lifetime
-
-`make -C src/v2/vm check` covers the serialized C source owner as well as
-its MMU/write boundary. The fixed 64-rank demand list refreshes only after
-complete executable admission: a failed tail does not refresh a crossing
-row. Source writes still revoke exact extents and cancel pending whole-page
-pins. Free ranks precede an oldest-demand replacement. The independent test
-uses scan/timestamps; production uses only byte-sized rank links, not epochs
-or a growing history. Run `check-source-admission.mjs VM.WASM COMPILER.WASM`
-for actual C-Wasm compilation/table execution: 512 cold NOPs and 512 hot
-CLC executions compare complete CPU state at unchanged slot quota, alongside
-the existing source-write/alias/fault/grow/rebind matrix. These tests do not
-measure browser speedup, signed supply or Linux boot.
-
-### Common MXCSR transfers
-
-```sh
-make -C src/v2/wasm-compiler mxcsr-check
-mkdir NEW-DIRECTORY
-src/v2/wasm-compiler/build/mxcsr-check NEW-DIRECTORY
-node distribution/oracle/check-mxcsr.mjs VM.WASM COMPILER.WASM NEW-DIRECTORY
-# Run before implementation to separate observations from the compiler:
-src/v2/wasm-compiler/build/mxcsr-check OTHER-NEW-DIRECTORY --observe
-node distribution/oracle/check-mxcsr.mjs VM.WASM COMPILER.WASM NEW-DIRECTORY OTHER-NEW-DIRECTORY
-```
-
-LDMXCSR/STMXCSR share one exact four-byte C MMU transfer boundary and common
-generated code. Native records observe MXCSR, GPRs, flags, whole neighboring
-payload and actual operand/invalid-value fault frames. They cover every
-reserved bit and both sides of crossing-page permission checks. Cold-C
-emission is compared byte-for-byte before actual C table execution. CR0/CR4
-priority, residency waits, RF and poisoned unrelated-state preservation are
-explicit models, not physical-CPU or complete SIMD arithmetic observations.
-Existing AC/TF and FS/GS admission refusals remain explicit, with no silent
-successful retirement. See [MXCSR evidence](../../releases/native/evidence/2026-10-04-mxcsr.md).
-
-### Bounded host construction and numeric trace
-
-`node distribution/oracle/check-compiled-modules.mjs` checks exact-byte engine reuse,
-unchanged quotas/import lifetime, inline tiny construction and cancellation
-before any engine construction. Only the <=64 KiB emitted-body owner is
-synchronous inside the execution Worker; large initial loaders remain async.
-`check-mxcsr.mjs` also uses this owner for the unchanged native/fault matrix.
-
-Run `node distribution/oracle/check-engine-construction.mjs COMPILER.wasm`, or open
-`src/v2/vm/check/browser/engine-construction.html` with the existing authenticated
-diagnostic compiler manifest. This compares 768 actual cold-C emissions with
-rotating fresh-first method order and 2,304 whole-CPU preservation models.
-All positions are reported; this is not an ISA oracle, timing CI gate, or
-Linux/shell speedup claim. `node distribution/oracle/check-cut-trace.mjs` compares the
-fixed 1,088-byte numeric observer with an independent eager-object reference.
-Its 32-bit retirement count preserves a 65,536-instruction warm quantum;
-invalid counts refuse before history mutation. `check-cut-progress.mjs`
-checks bounded committed-prefix accounting against architectural retirement.
-`check-source-cohort.mjs VM.WASM COMPILER.WASM` additionally checks that
-accounting through actual C-selected cuts, later faults, console waits and
-all 64 demand bits. `check-wasm-startup.mjs` accepts `--warm-cuts=1..64`;
-only independently verified decompression and the Linux-entry witness enable
-warm execution. Preproof cuts remain single and all cache quotas stay fixed.
-No formatted history is materialized per cut. See
-[measurements and scope](../../releases/native/evidence/2026-10-04-engine-construction.md).
-
-### Direct-branch residual binding
-
-`check-branch-sharing.mjs COMPILER.WASM` turns an embedded rel8/rel32 target
-into an exact body-sharing red; `--observe` reports the old result without
-pretending the CPU behavior is wrong. Its signed/all-condition/LEA/CMP grid is
-explicitly synthetic, not a kernel hot-frequency profile. Run
-`prepare-branch-cuts.sh NEW-DIRECTORY FRESH-COMPILER-BUILD` for actual native
-postlinked ELF observations; then `check-wasm-cuts.mjs NEW-DIRECTORY COMPILER.WASM`
-checks 102 cold-C body/attestation identities and 52,224 native comparisons.
-`check-wasm-dispatch.mjs VM.WASM NEW-DIRECTORY` checks the same cases through
-the real C dispatcher. Fresh records must contain `operandBinding`; no old
-zero-binding adapter is provided. The row/report/entry ABI and cache quotas
-are unchanged. See [derivation and scope](../../releases/native/evidence/2026-10-05-branch-binding.md).
-
-### Outer IRET system observations
-
-Build `iret-entry.S` with `as --32` and `ld -m elf_i386 -T exception-entry.ld`.
-`check-iret-system.mjs QEMU.EXE ORACLE.ELF NEW-ROWS.log [tcg|whpx]` records 320
-real long-mode GDT/TSS/IDT transitions. Existing receipts are never replaced.
-`check-outer-iret.mjs VM.WASM COMPILER.WASM [HARDWARE-ROWS.log] [TCG-ROWS.log]`
-compares the common C return boundary and cold-compiled C table dispatch.
-TCG is not interchangeable with the hardware-assisted oracle: Accessed writes,
-nonpresent SS and noncanonical-RIP fault state differ and remain reported.
-Only hardware-assisted rows belong in the first optional argument. Neither
-test supplies a product VM fallback or proves Linux boot. See
-[frontier, measured disagreement and scope](../../releases/native/evidence/2026-10-05-outer-iret.md).
-For competing frame faults, assemble with `--defsym FRAME_FAULT_PROFILE=1`
-and add `--frame-priority` after the accelerator argument. This records 352
-rows with CR2, including exact two-byte selector extents; the same C checker
-accepts that complete profile and checks every row through compiled dispatch.
-See [frame provenance](../../releases/native/evidence/2026-10-05-iret-frame.md).
-
-### Virtual body capacity and construction continuation
-
-`check-quotient-cap.mjs COMPILER.WASM` is independently red against
-`3d9c7ba`: an exact 7,646-byte projection is refused at cap 8,000. The current
-compiler accepts its exact final cap, preserves short-cap failure outputs,
-never writes a raw body tail, and accepts 130 FXSAVE exports as 9,971 bytes.
-`make -C src/v2/wasm-compiler quotient-cap-check` adds late-window, maximum/odd
-rank and wrapped real-decoder traversal checks. It rejects replaying a growing
-body for every window: 4,224 -> 1,664 calls for 128 instructions.
-`bench-quotient-cap.mjs OLD-COMPILER.WASM COMPILER.WASM` compares unchanged
-bytes and alternating paired generation time, not Linux/native/browser speed.
-See [derivation, scope and regression](../../releases/native/evidence/2026-10-07-virtual-body.md).
-
-### Complete bounded final-ELF dispatch
-
-`check-image-dispatch.mjs VM.WASM COLD.WASM FROZEN.WASM VERIFIED-IMAGE.elf IMAGE.wasm`
-checks native/cold full-image identity, every final PF_X coordinate through
-actual C MMU/table execution, immutable load bias and out-of-domain refusal.
-The test environment is explicitly one source page; it is not a Linux or
-signed-root acceptance shortcut. `make -C src/v2/wasm-compiler image-path-check`
-constructs and verifies both actual ET_EXEC and ET_DYN inputs. The ordinary
-compiler now emits a complete bounded image; larger domains still refuse
-without publishing a prefix. `projection-check` requires VM_WASM,
-COLD_COMPILER_WASM and REFERENCE_COMPILER_WASM in addition to INPUT, and calls
-the executable comparator rather than an always-red placeholder.
-See [contract and scope](../../releases/native/evidence/2026-10-07-image-dispatch.md).
-
-### Whole-image directory producer and authenticated range delivery
-
-`wasm-compiler --directory VERIFIED.elf NEW-DIRECTORY` preflights the entire
-final code domain, then emits bounded ordinary modules and the existing
-Artifact index. No coordinate prefix is published on a grammar/fetch miss.
-`check-image-directory.mjs VM.WASM COLD.WASM VERIFIED.elf NEW-DIRECTORY`
-matches native/cold iteration and actual C authenticated range/object lookup.
-Delivery readiness is not image execution admission. `index-stream-check`
-checks exact batch spelling with only a bounded frontier; `image-stream-check`
-uses a real linked/postlinked/verified >256-coordinate image. `LENGTH3_STREAM_INPUT`
-enables that same source under the scoped compiler sanitizers.
-`check-selector-snapshot.mjs VM.WASM COLD.WASM` checks the recovered selector
-descriptor/UMIP/memory path against explicitly labeled ISA models, not host
-Linux UMIP emulation or a native ring0 proof. See
-[measurements and remaining actual Linux blockers](../../releases/native/evidence/2026-10-07-image-directory.md).
-
-### Live compiler replacement and SSE selection
-
-`prepare-browser-compiler.mjs COMPILER.WASM generated-startup-NAME` creates a
-fresh construction-only diagnostic fixture with an exact SHA-256/extent. The
-existing console's Load compiler action admits it without restoring guest
-CPU/RAM/devices or relaxing a memory/ABI gate. It is not a Linux release.
-The native observation producers have `--minmax` / `--predicate`
-(`float-arithmetic-observe`), `--half` / `--shuffle-double`
-(`scalar-vector-transfer-observe`; also `--align` for PALIGNR) and `--mask`
-(`vector-extract-observe`).
-Pass the same mode to `check-x87-state.mjs VM.WASM COMPILER.WASM DIRECTORY MODE`.
-They compare actual native full-state receipts with emitted ordinary Wasm
-using the C VM/MMU. Numeric-only comparisons, constructed descriptor refusals
-and actual browser behavior remain separately reported.
-
-Actual startup Workers provide fresh WebCrypto CSPRNG boot entropy through
-the privileged C loader's standard Linux SETUP_RNG_SEED node. No seed is kept
-in a fixture or replay log. `check-boot-entropy.mjs VM.WASM` checks exact
-one-use/pinning/extent/close refusal gates with explicitly deterministic test
-input. The unchanged unseeded Node regression is not an entropy-quality or
-normal Linux readiness test. See [contract/evidence](../../releases/native/evidence/2026-10-10-boot-entropy.md).
-
-`check-memory-prefix.mjs VM.WASM SPLIT.WASM FUSED.WASM` compares exact compiled
-CPU/RAM/fault and real resource-wait/retry outcomes. The split module is an
-oracle input only, never a product fallback. `benchmark-memory-prefix.mjs`
-uses those same arguments for emitted C-VM execution, not compilation timing.
-Mandatory diagnostic decompression witnesses use one-source frontiers until
-their independent byte comparison; no kernel-coordinate compiler exception
-is introduced. Partial retirement can exhaust a cohort before its final
-memory operation: supply then fresh admission, never zero-budget replay.
-
-### Compiled body lifetime and build identity
-
-`check-code-owners.mjs` requires an exact source-retained body to survive64
-unrelated cold bodies, then checks entry/byte quota pressure, every dependent
-alias, foreign-handle refusal and release. It complements
-`check-compiled-modules.mjs` and `check-prepared-code.mjs`; it is not Linux
-execution or a renderer RSS bound.
-
-`check-vm-wasm-rebuild.mjs MAKE_EXECUTABLE WASM_CLANG` runs real0/1/0 profile
-builds at one output path and verifies imports, diagnostic exports and exact
-production bytes. Two unchanged-command builds must leave output mtime
-unchanged. Use the actual Make executable rather than a Windows cmd wrapper;
-its normal build-tool PATH must be present. Generated output stays in Windows
-`temp/`, outside the distribution.
+## History
+
+The C-Wasm browser VM, its cold Wasm compiler and their checks were removed
+in 9792f53; the observers, fixtures and comparators here that only drove them
+followed. Their receipts stay in
+[`releases/native/evidence/`](../../releases/native/evidence/) (2026-10-02 to
+2026-10-10).
