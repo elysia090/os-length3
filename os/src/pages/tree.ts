@@ -1,7 +1,10 @@
 import {bytes, h} from '../dom.ts';
 import {t} from '../i18n.ts';
+import {mark} from '../icons.ts';
 import {bring, remoteOnly} from '../lifecycle.ts';
+import {plainPart, renamed, store} from '../repos.ts';
 import {inRepo, list, ORIGIN_LABEL, type SystemEntry} from '../system.ts';
+import {askFoot, SETTLE} from './common.ts';
 
 // File is an operation, not a page: the tree of "/", the whole system, as a
 // card laid over whatever page is showing, right beside the rail and only as
@@ -16,6 +19,14 @@ import {inRepo, list, ORIGIN_LABEL, type SystemEntry} from '../system.ts';
 // keyboard it is a tree: ↑ ↓ go along the names, → opens a folder or goes
 // into it, ← closes it or goes up to its folder, Enter chooses; where the
 // pointer is changes none of it.
+//
+// Inside a repo each row has what can be done to it at its right end (shown
+// on the row under the pointer or the keyboard; also a right press, or the
+// menu key): a menu laid beside the tree, as the person's menu is. A folder
+// (the repo's own row too) takes a new file or folder; a file or folder
+// takes a new name or is deleted. A row pressed becomes the field or the ask
+// in its place; a new file is the one to work on, so the tree goes and the
+// caret is in it.
 
 const OPEN_DELAY = 80;
 const LINGER = 8000;
@@ -46,6 +57,8 @@ export function triangle(): SVGSVGElement {
 }
 
 const note = (text: string, depth: number) => h('li', {class: 'tree-note muted', style: `--depth:${depth}`}, text);
+const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+const joined = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
 
 export class FileTree {
   readonly element: HTMLElement;
@@ -53,6 +66,10 @@ export class FileTree {
   private events: FileTreeEvents;
   private trigger: HTMLElement | null = null;
   private timer = 0;
+  /** The menu of one row, while it is out, and the row's name to go back to. */
+  private pop: {element: HTMLElement; name: HTMLElement; more: HTMLElement} | null = null;
+  /** Each folder's way to be read again, open, by its row. */
+  private folders = new WeakMap<HTMLElement, () => Promise<void>>();
 
   constructor(events: FileTreeEvents) {
     this.events = events;
@@ -68,6 +85,8 @@ export class FileTree {
       if (event.key !== 'Escape' || event.isComposing || !this.isOpen) return;
       event.preventDefault();
       event.stopPropagation();
+      // The topmost first: a row's menu goes, and the keyboard back to its row.
+      if (this.pop) { const back = this.pop.name; this.unpop(); back.focus(); return; }
       const at = document.activeElement;
       const back = !!at && (this.element.contains(at) || at === this.trigger);
       this.close();
@@ -81,6 +100,7 @@ export class FileTree {
     document.addEventListener('pointerdown', (event) => {
       const at = event.target as Node;
       if (!this.element.contains(at) && !this.trigger?.contains(at)) this.close();
+      else if (this.pop && !this.pop.element.contains(at) && !this.pop.more.contains(at)) this.unpop();
     });
   }
 
@@ -122,6 +142,7 @@ export class FileTree {
 
   close() {
     clearTimeout(this.timer);
+    this.unpop();
     this.element.classList.remove('open');
     this.trigger?.setAttribute('aria-expanded', 'false');
   }
@@ -180,12 +201,19 @@ export class FileTree {
   private away(repo: string, depth: number): HTMLElement {
     const meta = h('span', {class: 'tree-meta'}, 'Remote');
     const name = h('button', {class: 'tree-name', type: 'button'}, repo);
+    const item = h('li', {role: 'treeitem', class: 'tree-repo tree-away'},
+      h('div', {class: 'tree-row', style: `--depth:${depth}`}, h('span', {class: 'tree-spacer', 'aria-hidden': 'true'}), name, meta));
     name.addEventListener('click', async () => {
       meta.textContent = t('Bringing it…');
-      try { await bring(repo); this.events.choose(repo, '', false); } catch (err) { meta.textContent = err instanceof Error ? err.message : String(err); }
+      try {
+        await bring(repo);
+        // Here now: its row is a repo's, with what it holds.
+        expandedPaths.add(`/root/${repo}`);
+        await this.again(item.parentElement?.closest('li') ?? null);
+        this.events.choose(repo, '', false);
+      } catch (err) { meta.textContent = err instanceof Error ? err.message : String(err); }
     });
-    return h('li', {role: 'treeitem', class: 'tree-repo tree-away'},
-      h('div', {class: 'tree-row', style: `--depth:${depth}`}, h('span', {class: 'tree-spacer', 'aria-hidden': 'true'}), name, meta));
+    return item;
   }
 
   private add(e: SystemEntry, into: HTMLElement, depth: number) {
@@ -199,14 +227,16 @@ export class FileTree {
       // A link is shown by its name only: /bin/ls is a command, whatever it points to.
       row.append(h('span', {class: 'tree-spacer', 'aria-hidden': 'true'}));
       if (at) {
-        const name = h('button', {class: 'tree-name', type: 'button', 'data-in': at.repo, 'data-file': at.path}, e.name);
+        const name = h('button', {class: 'tree-name', type: 'button', 'data-in': at.repo, 'data-file': at.path, 'data-path': e.path}, e.name);
         if (at.repo === this.events.current() && at.path === this.events.currentFile()) name.setAttribute('aria-current', 'location');
         name.addEventListener('click', () => this.events.choose(at.repo, at.path, true));
         row.append(name);
+        if (meta) row.append(h('span', {class: 'tree-meta'}, meta));
+        this.deeds(row, name, e, at, false);
       } else {
         row.append(h('span', {class: 'tree-name plain'}, e.name));
+        if (meta) row.append(h('span', {class: 'tree-meta'}, meta));
       }
-      if (meta) row.append(h('span', {class: 'tree-meta'}, meta));
       into.append(item);
       return;
     }
@@ -215,7 +245,7 @@ export class FileTree {
     // The pointer's way to open a folder; from the keyboard → and ← do it on the name.
     const toggle = h('button', {class: 'tree-toggle', type: 'button', tabindex: '-1'}) as HTMLButtonElement;
     toggle.append(triangle());
-    const name = h('button', {class: 'tree-name', type: 'button'}, e.name);
+    const name = h('button', {class: 'tree-name', type: 'button', 'data-path': e.path}, e.name);
     if (isRepo) {
       name.dataset.repo = at.repo;
       if (at.repo === this.events.current()) name.setAttribute('aria-current', 'page');
@@ -223,6 +253,7 @@ export class FileTree {
     const children = h('ul', {class: 'tree-children', role: 'group'});
     row.append(toggle, name);
     if (meta) row.append(h('span', {class: 'tree-meta'}, meta));
+    if (at) this.deeds(row, name, e, at, true);
     item.append(children);
 
     const fill = async () => {
@@ -245,17 +276,177 @@ export class FileTree {
       toggle.setAttribute('aria-label', now ? t('Close {name}', {name: e.name}) : t('Open {name}', {name: e.name}));
       item.setAttribute('aria-expanded', String(now));
       children.hidden = !now;
-      if (now) void fill();
+      return now ? fill() : Promise.resolve();
     };
-    toggle.addEventListener('click', () => show(!expanded));
+    this.folders.set(item, () => show(true));
+    toggle.addEventListener('click', () => void show(!expanded));
     // Inside a repo the name also opens that place in Forge; elsewhere it
     // only opens and closes, like the triangle.
     name.addEventListener('click', () => {
-      if (!at) { show(!expanded); return; }
-      if (!expanded) show(true);
+      if (!at) { void show(!expanded); return; }
+      if (!expanded) void show(true);
       this.events.choose(at.repo, at.path, false);
     });
-    show(expanded);
+    void show(expanded);
     into.append(item);
   }
+
+  /**
+   * What can be done to a row inside a repo, at its right end: pressed (or a
+   * right press on the row, or the menu key on its name), its menu.
+   */
+  private deeds(row: HTMLElement, name: HTMLElement, e: SystemEntry, at: {repo: string; path: string}, dir: boolean) {
+    const more = h('button', {type: 'button', class: 'tree-more', tabindex: '-1', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
+      'aria-label': t('What to do with {name}', {name: e.name})}, mark('down'));
+    row.append(more);
+    const open = (focus: boolean) => { if (this.pop?.more === more) this.unpop(); else this.menu(row, name, more, e, at, dir, focus); };
+    more.addEventListener('click', (event) => open(event.detail === 0));
+    row.addEventListener('contextmenu', (event) => { event.preventDefault(); if (this.pop?.more !== more) open(false); });
+    name.addEventListener('keydown', (event) => {
+      if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) { event.preventDefault(); open(true); }
+    });
+  }
+
+  /** Put the row's menu away, if one is out. */
+  private unpop() {
+    if (!this.pop) return;
+    this.pop.more.setAttribute('aria-expanded', 'false');
+    this.pop.element.remove();
+    this.pop = null;
+  }
+
+  /** The folder row `item` read again and open. */
+  private async again(item: HTMLElement | null) {
+    if (item) await this.folders.get(item)?.();
+  }
+
+  /** The name of the row at `path` (absolute), once its folder has been read again. */
+  private nameAt(path: string): HTMLElement | null {
+    return this.root.querySelector<HTMLElement>(`.tree-name[data-path="${CSS.escape(path)}"]`);
+  }
+
+  /**
+   * One row's menu, beside the tree at the row's height, as the person's menu
+   * is: its name over what can be done. A row pressed becomes the field or
+   * the ask in its own place.
+   */
+  private menu(row: HTMLElement, name: HTMLElement, more: HTMLElement, e: SystemEntry, at: {repo: string; path: string}, dir: boolean, focus: boolean) {
+    this.unpop();
+    const item = row.closest('li') as HTMLElement;
+    const parent = item.parentElement?.closest('li') as HTMLElement | null;
+    const folder = at.path.includes('/') ? at.path.slice(0, at.path.lastIndexOf('/')) : '';
+    const pop = h('div', {class: 'pop tree-pop', role: 'menu', 'aria-label': e.name});
+    const entry = (label: string, then: (b: HTMLButtonElement) => void) => {
+      const b = h('button', {type: 'button', class: 'pop-item', role: 'menuitem'}, label) as HTMLButtonElement;
+      b.addEventListener('click', () => then(b));
+      return b;
+    };
+    /** A name written in the row's place: Enter makes it; a name it cannot be keeps the keyboard in it. */
+    const field = (b: HTMLElement, label: string, value: string, go: (name: string) => Promise<void>) => {
+      const input = h('input', {class: 'line-in mono', placeholder: label, 'aria-label': label, autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
+      input.value = value;
+      const error = h('p', {class: 'error small', role: 'alert'});
+      input.addEventListener('keydown', async (event) => {
+        if (event.key !== 'Enter' || event.isComposing) return;
+        event.preventDefault();
+        const v = input.value.trim();
+        if (!v) return;
+        error.textContent = '';
+        if (!plainPart(v)) { error.textContent = t('A name has no “/” and does not start with “.”'); input.focus(); return; }
+        input.disabled = true;
+        try { await go(v); } catch (err) { input.disabled = false; error.textContent = message(err); input.focus(); }
+      });
+      b.replaceWith(h('div', {class: 'pop-field'}, input, error));
+      input.focus();
+      // A new name is written over the old one's stem, its ending kept.
+      const dot = value.lastIndexOf('.');
+      input.setSelectionRange(0, dot > 0 && !dir ? dot : value.length);
+    };
+    /** Whether `child` is in the folder `inside` already (asked of the store, not of what the tree last showed). */
+    const there = async (inside: string, child: string) => (await store.tree(at.repo, inside)).some((x) => x.name === child);
+    const taken = (child: string) => new Error(t('{name} is there already', {name: child}));
+    const rows: HTMLElement[] = [];
+    if (dir) {
+      rows.push(entry(t('New file'), (b) => field(b, t('File name'), '', async (n) => {
+        if (await there(at.path, n)) throw taken(n);
+        await store.add(at.repo, at.path, n, '');
+        // The new file is the one to work on: the tree goes and the caret is in it. Out again, it shows the file.
+        expandedPaths.add(e.path);
+        this.unpop();
+        this.events.choose(at.repo, joined(at.path, n), true);
+      })));
+      rows.push(entry(t('New folder'), (b) => field(b, t('Folder name'), '', async (n) => {
+        if (await there(at.path, n)) throw taken(n);
+        await store.mkdir(at.repo, joined(at.path, n));
+        this.unpop();
+        await this.again(item);
+        this.nameAt(`${e.path}/${n}`)?.focus();
+      })));
+    }
+    if (at.path !== '') {
+      rows.push(entry(t('Rename'), (b) => field(b, t('New name'), e.name, async (n) => {
+        if (n !== e.name) {
+          if (await there(folder, n)) throw taken(n);
+          await store.rename(at.repo, at.path, n);
+          // An open folder stays open under its new name.
+          for (const p of [...expandedPaths]) {
+            if (p === e.path || p.startsWith(`${e.path}/`)) { expandedPaths.delete(p); expandedPaths.add(renamed(e.path, n) + p.slice(e.path.length)); }
+          }
+        }
+        this.unpop();
+        await this.again(parent);
+        this.nameAt(renamed(e.path, n))?.focus();
+      })));
+      rows.push(entry(t('Delete'), (b) => {
+        // Asked in its place: the deed on the side it was pressed, Not now on the other.
+        const foot = askFoot(b, pop);
+        const no = h('button', {type: 'button', class: 'button small-button'}, t('Not now')) as HTMLButtonElement;
+        const yes = h('button', {type: 'button', class: 'button small-button primary'}, t('Delete')) as HTMLButtonElement;
+        const error = h('p', {class: 'error small', role: 'alert'});
+        const ask = h('div', {class: 'pop-ask'},
+          h('p', {class: 'muted small'}, dir ? t('{name} goes, with what is in it', {name: e.name}) : t('{name} goes', {name: e.name})),
+          error, foot(no, yes));
+        no.addEventListener('click', () => { ask.replaceWith(b); b.focus(); });
+        const shown = performance.now();
+        yes.addEventListener('click', async () => {
+          if (performance.now() - shown < SETTLE) return;
+          yes.disabled = true;
+          try {
+            await store.remove(at.repo, at.path);
+            for (const p of [...expandedPaths]) if (p === e.path || p.startsWith(`${e.path}/`)) expandedPaths.delete(p);
+            this.unpop();
+            await this.again(parent);
+            parent?.querySelector<HTMLElement>(':scope > .tree-row > .tree-name')?.focus();
+          } catch (err) { yes.disabled = false; error.textContent = message(err); }
+        });
+        b.replaceWith(ask);
+        yes.focus();
+      }));
+    }
+    pop.append(h('div', {class: 'pop-head muted small'}, e.name), ...rows);
+    // ↑ ↓ go along its rows.
+    pop.addEventListener('keydown', (event) => {
+      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+      const items = [...pop.querySelectorAll<HTMLElement>('.pop-item')];
+      const i = items.indexOf(document.activeElement as HTMLElement);
+      if (i < 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      items[(i + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus();
+    });
+    // Beside the tree, level with the row: out into the free space, so nothing moves under the pointer.
+    const box = this.element.getBoundingClientRect(), r = row.getBoundingClientRect();
+    pop.style.left = `${box.right + 8}px`;
+    pop.style.top = `${r.top - 8}px`;
+    this.element.append(pop);
+    // A window too narrow for it beside the tree (a phone): just under the row, over the rows below.
+    const wide = pop.getBoundingClientRect().right - (innerWidth - 16);
+    if (wide > 0) { pop.style.left = `${Math.max(16, box.right + 8 - wide)}px`; pop.style.top = `${r.bottom + 4}px`; }
+    const low = pop.getBoundingClientRect().bottom - (innerHeight - 16);
+    if (low > 0) pop.style.top = `${Math.max(16, r.top - 8 - low)}px`;
+    more.setAttribute('aria-expanded', 'true');
+    this.pop = {element: pop, name, more};
+    if (focus) pop.querySelector<HTMLElement>('.pop-item')?.focus();
+  }
 }
+

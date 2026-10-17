@@ -44,6 +44,11 @@ export interface RepoStore {
   /** Remove a file, or a directory with all it holds, inside the repo (never the repo or its .git). */
   remove(repo: string, path: string): Promise<void>;
   /**
+   * Give a file or folder a new name in the folder it is in (`name` one plain
+   * part, as a new file's); never replaces what is there.
+   */
+  rename(repo: string, path: string, name: string): Promise<void>;
+  /**
    * Set a path as the Remote has it: a file's text (made or replaced, its
    * folders made), or null for an empty folder. For taking in a draft; a
    * browser's copy only, since the app's is taken in natively.
@@ -68,6 +73,13 @@ export function isGitName(part: string): boolean {
 }
 const touchesGit = (path: string) => path.split('/').some(isGitName);
 
+/** Whether `name` can name a new file or folder, or a renamed one, as core's add does: one plain part, not hidden, not .git. */
+export function plainPart(name: string): boolean {
+  return !!name && !name.startsWith('.') && !name.includes('/') && !name.includes('\\') && !isGitName(name);
+}
+/** `path` with its last part named `name`. */
+export const renamed = (path: string, name: string) => (path.includes('/') ? `${path.slice(0, path.lastIndexOf('/'))}/${name}` : name);
+
 /** Same rule as the native side: a plain directory name. */
 export function validName(name: string): boolean {
   return /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}$/.test(name);
@@ -83,6 +95,7 @@ class NativeStore implements RepoStore {
   add(repo: string, dir: string, name: string, text: string) { return native<number>('repo_add', {repo, dir, name, text}); }
   mkdir(repo: string, path: string) { return native<void>('repo_mkdir', {repo, path}); }
   remove(repo: string, path: string) { return native<void>('repo_remove', {repo, path}); }
+  rename(repo: string, path: string, name: string) { return native<void>('repo_rename', {repo, path, name}); }
 }
 
 /** Files of a new repo, from the same shared/templates.json as the native
@@ -201,6 +214,23 @@ export class MemoryStore implements RepoStore {
     r.modified = Date.now();
     this.touched(repo);
   }
+  async rename(repo: string, path: string, name: string) {
+    const r = this.repos.get(this.key(repo));
+    const clean = path.replace(/\/+$/, '');
+    if (!r || !clean || touchesGit(clean) || clean.split('/').some((p) => !p || p === '.' || p === '..')) throw new Error(`cannot rename ${path}`);
+    if (!plainPart(name)) throw new Error(`invalid file name ${name}`);
+    const to = renamed(clean, name);
+    const moving = [...r.files.keys()].filter((p) => p === clean || p.startsWith(`${clean}/`));
+    if (!moving.length) throw new Error(`no ${path}`);
+    if (to === clean) return;
+    if ([...r.files.keys()].some((p) => p === to || p.startsWith(`${to}/`))) throw new Error(`${to} already exists`);
+    // Each path keeps its place in the map's order, under its new name.
+    const files = new Map<string, string | null>();
+    for (const [p, v] of r.files) files.set(p === clean ? to : p.startsWith(`${clean}/`) ? to + p.slice(clean.length) : p, v);
+    r.files = files;
+    r.modified = Date.now();
+    this.touched(repo);
+  }
   async put(repo: string, path: string, text: string | null) {
     const r = this.repos.get(this.key(repo));
     if (!r) throw new Error(`no repo ${repo}`);
@@ -303,6 +333,7 @@ export class KeptStore extends MemoryStore {
   override async add(repo: string, dir: string, name: string, text: string) { await this.ready; return super.add(repo, dir, name, text); }
   override async mkdir(repo: string, path: string) { await this.ready; return super.mkdir(repo, path); }
   override async remove(repo: string, path: string) { await this.ready; return super.remove(repo, path); }
+  override async rename(repo: string, path: string, name: string) { await this.ready; return super.rename(repo, path, name); }
   override async put(repo: string, path: string, text: string | null) { await this.ready; return super.put(repo, path, text); }
 }
 
@@ -330,7 +361,7 @@ function indexedShelf(name = 'length3-repos'): Shelf {
   };
 }
 
-/** A change made through the store: a file's new text, a new directory, or a removal. */
+/** A change made through the store: a file's new text, a new directory, or a removal (a rename is told as the old path removed, then what is at the new one). */
 export interface Change {
   repo: string;
   path: string;
@@ -376,6 +407,31 @@ class Observed implements RepoStore {
   async remove(repo: string, path: string, by?: string) {
     await this.inner.remove(repo, path);
     this.tell({repo, path, what: 'removed', by});
+  }
+  /**
+   * A rename is the old path gone and the new one made: those who keep a copy
+   * (the shell's) take it as any removal and new files, and the Remote gets it
+   * as any other change.
+   */
+  async rename(repo: string, path: string, name: string, by?: string) {
+    await this.inner.rename(repo, path, name);
+    const to = renamed(path.replace(/\/+$/, ''), name);
+    if (to === path) return;
+    this.tell({repo, path, what: 'removed', by});
+    await this.made(repo, to, by);
+  }
+  /** Tell what is at `path` as made: a file with its text, or a folder and everything in it. */
+  private async made(repo: string, path: string, by?: string) {
+    const inside = await this.inner.tree(repo, path).catch(() => null);
+    if (inside) {
+      this.tell({repo, path, what: 'dir', by});
+      for (const e of inside) await this.made(repo, `${path}/${e.name}`, by);
+      return;
+    }
+    const c = await this.inner.read(repo, path).catch(() => null);
+    // Not text, or only part of it: nothing to hand on but that the repo changed.
+    if (!c || c.text === null || c.truncated) { this.tell({repo, path: '', what: 'repo', by}); return; }
+    this.tell({repo, path, what: 'file', text: c.text, by});
   }
   async put(repo: string, path: string, text: string | null, by?: string) {
     if (!this.inner.put) throw new Error('this store takes in natively');

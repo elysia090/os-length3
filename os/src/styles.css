@@ -450,6 +450,12 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .file:focus-within > .path { color: var(--ink); }
 .sheet-note { padding: var(--s2) var(--s4) var(--s4); font-size: var(--t-meta); }
 .flow .revealed > .path { background: var(--raised); }
+/* Saved elsewhere while this one had unsaved edits: asked in the box, under
+   its head and over the text, which stays to be read and written on. */
+.file-ask { display: grid; gap: var(--s2); padding: var(--s2) var(--s4) var(--s3); }
+.file-ask p { margin: 0; }
+.file-ask-diff { max-height: 40vh; overflow-y: auto; }
+.file-ask-diff .diff-file { margin-bottom: 0; }
 
 /* The prompt box at the foot of the center, and the slot just above it
    that the terminal flies into while the prompt is in use. */
@@ -604,6 +610,17 @@ mark { background: var(--ink); color: var(--ground); }
 .tree-toggle .icon { width: var(--s3); height: var(--s3); transition: transform var(--motion); }
 .tree-toggle[aria-expanded='false'] .icon { transform: rotate(-90deg); }
 .tree-note { padding: var(--s1) var(--s2) var(--s1) calc(var(--depth, 0) * var(--s4) + var(--s5) + var(--s1)); font-size: var(--t-meta); }
+/* What can be done to a row inside a repo, at its right end: round, as a
+   thing pressed is, shown on the row under the pointer or the keyboard, and
+   kept while its menu is out. It keeps its room either way, so nothing moves,
+   and is there to be heard while unseen. */
+.tree-more { flex: none; display: grid; place-items: center; width: var(--s5); height: var(--s5); margin-right: var(--s1); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; color: inherit; cursor: pointer; opacity: 0; }
+.tree-more .mark { width: var(--s4); height: var(--s4); }
+.tree-row:hover > .tree-more, .tree-row:focus-within > .tree-more, .tree-more[aria-expanded='true'] { opacity: 1; }
+.tree-more[aria-expanded='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+.tree-row:has(> [aria-current='page']) > .tree-more { border-color: currentColor; }
+/* Its menu, beside the tree at the row's height: out in the free space. */
+.tree-pop { position: fixed; z-index: 6; width: 260px; }
 
 /* Terminal output; input comes from the prompt box */
 .term { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; gap: var(--s2); margin-top: var(--s2); }
@@ -906,8 +923,8 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .stub-gear svg { width: 20px; height: 20px; }
 .stub-panel { position: absolute; top: calc(100% + var(--s1)); left: 0; z-index: 4; width: min(100%, 400px); }
 /* A row of the panel as the menu's rows are: its padding, the field or the ask in a row's place. */
-.stub-own, .stub-ask, .row-ask { display: grid; gap: var(--s2); padding: var(--s2) var(--s3); }
-.stub-ask p, .row-ask p { margin: 0; }
+.stub-own, .stub-ask, .row-ask, .pop-field, .pop-ask { display: grid; gap: var(--s2); padding: var(--s2) var(--s3); }
+.stub-ask p, .row-ask p, .pop-ask p, .pop-field p { margin: 0; }
 /* A row asking keeps its own line on top, as a card asking keeps its title. */
 .row-ask > .row-item { padding: 0; }
 .stub-record { display: grid; gap: var(--s1); }

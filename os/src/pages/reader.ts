@@ -1,12 +1,17 @@
+import {differs, Held} from '../conflict.ts';
 import {bytes, h} from '../dom.ts';
 import {t} from '../i18n.ts';
 import {lineCount, readingOrder} from '../reading.ts';
 import {store, type Change, type Entry} from '../repos.ts';
+import {answers} from './common.ts';
+import {diffFiles} from './diff-view.ts';
 
 // The center of Forge: one repo read top to bottom as an endless page. Each
 // file is a plain text editor in its own box, loaded as it comes near; in
 // each directory README comes first, then the files, then the directories.
-// Typing saves on its own, on leaving the file, or with Ctrl+S.
+// Typing saves on its own, on leaving the file, or with Ctrl+S. A text saved
+// elsewhere while this one has unsaved edits is asked in the file's box:
+// take the other, or save yours over it, with what differs to be seen.
 
 const join = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
 
@@ -67,6 +72,16 @@ export class Reader {
     const target = path ? this.sections.get(path) : this.sections.get('');
     if (!target) return;
     target.scrollIntoView({block: 'start'});
+    // What comes after it may not be read yet, so the page cannot scroll that far (a file just
+    // made, before the folders below it): as it grows, it is put there again, until the person moves.
+    const root = this.flow.firstElementChild;
+    if (root && !line) {
+      const grown = new ResizeObserver(() => target.scrollIntoView({block: 'start'}));
+      const stop = () => { grown.disconnect(); for (const e of ['wheel', 'touchstart', 'keydown', 'pointerdown']) removeEventListener(e, stop, true); };
+      for (const e of ['wheel', 'touchstart', 'keydown', 'pointerdown']) addEventListener(e, stop, true);
+      grown.observe(root);
+      setTimeout(stop, 1500);
+    }
     target.classList.add('revealed');
     setTimeout(() => target.classList.remove('revealed'), 1200);
     if (!line && !write) return;
@@ -153,33 +168,84 @@ export class Reader {
         area.setSelectionRange(area.value.length, area.value.length);
       });
       requestAnimationFrame(fit);
-      let saved = c.text;
+      const held = new Held(c.text);
       let timer = 0;
-      // A text saved elsewhere (the shell, l3, Git) comes in unless this one has unsaved edits.
+      const show = (text: string) => { area.value = text; fit(); number(text); };
+      // Saved elsewhere while this one has unsaved edits: asked in the box, over the text, which
+      // stays to be read and written on. Nothing is saved on its own until it is answered. What
+      // differs opens under the answers, so nothing moves under the pointer that asked for it.
+      const ask = h('div', {class: 'file-ask', role: 'group', 'aria-label': t('Changed elsewhere')});
+      const see = h('button', {type: 'button', class: 'button small-button', 'aria-expanded': 'false'}, t('See what differs')) as HTMLButtonElement;
+      const take = h('button', {type: 'button', class: 'button small-button'}, t('Use the other')) as HTMLButtonElement;
+      const keep = h('button', {type: 'button', class: 'button small-button primary'}, t('Save yours over it')) as HTMLButtonElement;
+      const difference = h('div', {class: 'file-ask-diff', hidden: ''});
+      const paintDiff = () => {
+        if (difference.hidden || held.theirs === null) return;
+        const d = differs(held.theirs, area.value);
+        difference.replaceChildren(...diffFiles([{path: t('Yours against the other'), status: 'modified', binary: false, lines: d.lines, more: d.more}]));
+      };
+      const settle = () => { ask.remove(); difference.hidden = true; see.setAttribute('aria-expanded', 'false'); };
+      const asking = () => {
+        clearTimeout(timer);
+        state.textContent = t('Changed elsewhere');
+        if (!ask.isConnected) {
+          ask.replaceChildren(
+            h('p', {class: 'muted small'}, t('It was saved elsewhere while you wrote here.')),
+            h('p', {class: 'muted small'}, t('Yours is kept here until you choose.')),
+            answers(take, see, keep), difference);
+          head.after(ask);
+        }
+        paintDiff();
+      };
+      see.addEventListener('click', () => {
+        difference.hidden = !difference.hidden;
+        see.setAttribute('aria-expanded', String(!difference.hidden));
+        paintDiff();
+      });
+      take.addEventListener('click', () => {
+        show(held.useTheirs());
+        settle();
+        state.textContent = '';
+        area.focus();
+      });
+      keep.addEventListener('click', async () => {
+        const text = held.keepMine(area.value);
+        settle();
+        await write(text);
+        area.focus();
+      });
+      // A text saved elsewhere (another device, the shell, l3, Git) comes in unless this one has unsaved edits.
       this.takers.set(path, (text) => {
-        if (text === area.value) { saved = text; return true; }
-        if (area.value !== saved) { state.textContent = t('Changed elsewhere. Saving here will overwrite it'); return false; }
-        saved = text;
-        area.value = text;
-        fit();
-        number(text);
+        const came = held.came(text, area.value);
+        if (came === 'ask') { asking(); return false; }
+        if (came === 'take') show(text);
+        settle();
+        if (came === 'same' || state.textContent === t('Changed elsewhere')) state.textContent = '';
         return true;
       });
-      const save = async () => {
-        clearTimeout(timer);
-        if (area.value === saved) { state.textContent = ''; return; }
-        const text = area.value;
+      const write = async (text: string) => {
         try {
           await store.write(this.repo, path, text);
-          saved = text;
-          state.textContent = area.value === saved ? '' : t('Unsaved');
+          held.wrote(text);
+          state.textContent = area.value === held.saved ? '' : t('Unsaved');
         } catch (e) {
           state.textContent = t('Could not save: {message}', {message: e instanceof Error ? e.message : String(e)});
         }
       };
+      const save = async () => {
+        clearTimeout(timer);
+        if (!held.canSave) return;
+        if (area.value === held.saved) { state.textContent = ''; return; }
+        await write(area.value);
+      };
       area.addEventListener('input', () => {
         fit();
         number(area.value);
+        if (held.asking) {
+          // Written on until it is theirs: nothing is left to ask.
+          if (held.typed(area.value)) { settle(); state.textContent = ''; } else paintDiff();
+          return;
+        }
         state.textContent = t('Unsaved');
         clearTimeout(timer);
         timer = window.setTimeout(() => void save(), 700);

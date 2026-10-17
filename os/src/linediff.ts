@@ -50,3 +50,20 @@ export function counts(ops: Op[]): {added: number; removed: number} {
   for (const o of ops) { if (o.kind === 'add') added++; else if (o.kind === 'del') removed++; }
   return {added, removed};
 }
+
+/** A diff line; `at` is which line it is (in the new text, or the old for a removed one). */
+export interface DiffLine { kind: 'hunk' | 'add' | 'del' | 'same'; text: string; at?: number }
+
+/** Three lines either side of each change, as git shows them. */
+export function hunks(ops: Op[]): {lines: DiffLine[]; more: number} {
+  const keep = ops.map((o, i) => o.kind !== 'same' || ops.slice(Math.max(0, i - 3), i + 4).some((x) => x.kind !== 'same'));
+  const lines: DiffLine[] = [];
+  let old = 0, now = 0;
+  ops.forEach((o, i) => {
+    const at = o.kind === 'del' ? ++old : o.kind === 'add' ? ++now : (++old, ++now);
+    if (!keep[i]) return;
+    if (i > 0 && !keep[i - 1]) lines.push({kind: 'hunk', text: '…'});
+    lines.push({kind: o.kind, text: o.text, at});
+  });
+  return {lines: lines.slice(0, 400), more: Math.max(0, lines.length - 400)};
+}

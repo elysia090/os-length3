@@ -728,7 +728,17 @@ rest plain), then line numbers in a quiet gutter beside the text, which is
 itself the field (no box; the caret is the only sign). Typing saves on its
 own a moment later, on leaving the file, or with Ctrl+S; the header says
 something only when the file is not simply saved (未保存, or why it could
-not be saved). A file read only in part (over 256 KB) or binary is never
+not be saved). A text saved elsewhere (another device, the Prompt, Git)
+comes into an open file at once, unless something written here is not saved
+yet: then it is asked in the file's box, under its head and over the text,
+which stays to be read and written on. The header says 外で変更されました;
+the ask says ここで書いている間に、外で保存されました。 / 選ぶまで、こちらはここに残ります。
+and at its foot, あちらを使う at the left (it goes against what was written
+here), 違いを見る and こちらで上書きする at the right. 違いを見る opens, under
+the answers so nothing moves under the pointer, the diff of what saving here
+would do to the other text (theirs struck, yours added, as Forge's diff
+reads). Nothing is saved on its own until it is answered; writing on until
+the two are the same ends it. A file read only in part (over 256 KB) or binary is never
 written back, and says so. Tab types a tab; Escape leaves the text. In each directory README comes first, then the other
 files, then the directories. The only line in Forge is the one between the
 center and the right pane.
@@ -1220,3 +1230,25 @@ folder. The file Forge is reading is marked as where one is (§1). Escape
 puts the tree away whatever has the keyboard: what was being written keeps
 its caret, and only from inside the tree does the keyboard go back to File.
 Open folders are remembered while the app runs.
+
+Inside a repo a row is also where a file or folder is made, renamed and
+deleted. At its right end, shown on the row under the pointer or the
+keyboard, a small round button (the down mark, more to choose from) brings
+out the row's menu; a right press on the row, or the menu key (Shift+F10)
+on its name, does the same. The menu is the person's menu (`.pop`): beside
+the tree at the row's height, out in the free space so nothing moves, its
+head the row's name, a row per deed. A folder, the repo's own row too, has
+New file and New folder; a file or folder has Rename and Delete (a repo is
+not renamed or deleted here). A deed pressed becomes the field or the ask in
+its own place: a name written and Enter makes it (a name is one plain part,
+with no "/" and not starting with "."; one already there is said under the
+field and the keyboard stays in it); Delete asks there, `{name}を消します`
+or `{name}を中身ごと消します`, Not now and 消す at its foot as every ask is
+(`askFoot`, held still a moment, `SETTLE`). A new file is the one to work on:
+the tree goes and Forge opens on it with the caret in it. A new folder, a
+renamed row or what holds a deleted one is read again, open, with the
+keyboard on it. Escape puts the menu away first, back to its row; a second
+Escape puts the tree away. A rename reaches everything that keeps a copy as
+the old path gone and the new one made (the Prompt's copy, Forge, and the
+Remote, which other devices then take in), on either host (the app renames
+on disk, `repo_rename`).

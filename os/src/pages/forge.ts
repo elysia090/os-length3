@@ -156,6 +156,10 @@ function make(ctx: Context) {
       flow.scrollTop = v.top;
     }
     paintBand();
+    // A file just made (from File) is read in now, so the caret lands in it, not in the page about to be read again.
+    if (path && again) { clearTimeout(again); readAgain(false); }
+    // Nor does a page just read again put it back where it was, over the place asked for.
+    if (path) cancelAnimationFrame(putBack);
     if (path) void view()?.reader.reveal(path, 0, write).then(() => track());
     else track();
   };
@@ -182,21 +186,24 @@ function make(ctx: Context) {
   // The repo changed through the store (the shell, l3's twin in the Prompt,
   // Git…): open files take the new text, new or removed entries redraw the
   // page where it was; a repo out of sight is read again when it is shown.
-  let again = 0;
+  let again = 0, putBack = 0;
+  /** The open repo's page read again where it was read; `keep` false when it is about to be scrolled elsewhere. */
+  const readAgain = (keep = true) => {
+    again = 0;
+    if (!repo) return;
+    const top = views.get(repo)?.top ?? 0;
+    const reader = new Reader(repo, flow);
+    const fresh = {reader, root: reader.directory(''), top, stale: false};
+    views.set(repo, fresh);
+    flow.replaceChildren(fresh.root);
+    if (keep) putBack = requestAnimationFrame(() => { flow.scrollTop = top; });
+  };
   onChange((c) => {
     const v = views.get(c.repo);
     if (!v || !v.reader.take(c)) return;
     if (c.repo !== repo) { v.stale = true; return; }
     clearTimeout(again);
-    again = window.setTimeout(() => {
-      if (!repo) return;
-      const top = views.get(repo)?.top ?? 0;
-      const reader = new Reader(repo, flow);
-      const fresh = {reader, root: reader.directory(''), top, stale: false};
-      views.set(repo, fresh);
-      flow.replaceChildren(fresh.root);
-      requestAnimationFrame(() => { flow.scrollTop = top; });
-    }, 150);
+    again = window.setTimeout(() => readAgain(), 150);
   });
 
   // What the Remote holds is learnt a moment after: ⊕ counts it once it is. The pills stay as they

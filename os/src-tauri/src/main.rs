@@ -97,6 +97,12 @@ fn repo_remove(repo: String, path: String) -> Result<(), String> {
     managed()?.remove(&repo, &path)
 }
 
+/// A file or folder of the repo given a new name in its folder; never over another.
+#[tauri::command]
+fn repo_rename(repo: String, path: String, name: String) -> Result<(), String> {
+    managed()?.rename(&repo, &path, &name)
+}
+
 /// Home's state (profile, TODO, band) as JSON text; l3 reads the same files.
 #[tauri::command]
 fn state_get(key: String) -> Result<Option<String>, String> {
@@ -257,7 +263,7 @@ fn main() {
         .manage(shells::Shells::default())
         .invoke_handler(tauri::generate_handler![
             capacity, space, free, repo_list, repo_create, repo_tree, repo_read, repo_write, repo_add,
-            repo_mkdir, repo_remove, state_get, state_set,
+            repo_mkdir, repo_remove, repo_rename, state_get, state_set,
             remote_login_start, remote_login_wait, remote_logout, remote_repos, remote_status,
             sync_repo, repo_fetch, history_changes, history_diff, history_cut, history_log,
             work_start, work_switch, work_state, work_lines, history_push, history_submit, history_reset,

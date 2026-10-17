@@ -7,7 +7,7 @@
 
 import {at, baseOf, blobText, headTree, lineOf, setHead, showLine, sync, treeAt, type Tree} from './draft.ts';
 import {isNative, native} from './host.ts';
-import {counts, lineOps} from './linediff.ts';
+import {counts, hunks, lineOps, type DiffLine} from './linediff.ts';
 import {api, connection, json, RemoteError} from './remote.ts';
 import {store} from './repos.ts';
 import {kindOf} from './text.ts';
@@ -17,8 +17,7 @@ export interface FileChange { path: string; status: 'added' | 'modified' | 'remo
 export interface Folder { folder: string; files: FileChange[]; added: number; removed: number }
 export interface Changes { connected: boolean; folders: Folder[]; files: number; added: number; removed: number }
 export interface Cut { id: string; issue: string | null; kind: string | null; title: string; note: string; time: number; folders: string[]; files: number; added: number; removed: number; merged: string | null }
-/** A diff line; `at` is which line it is (in the new text, or the old for a removed one). */
-export interface DiffLine { kind: 'hunk' | 'add' | 'del' | 'same'; text: string; at?: number }
+export type {DiffLine} from './linediff.ts';
 export interface FileDiff { path: string; status: FileChange['status']; binary: boolean; lines: DiffLine[]; more: number }
 
 const folderOf = (p: string) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '');
@@ -74,20 +73,6 @@ async function webChanges(repo: string): Promise<Changes> {
   const files = (await pairs(repo)).map((p): FileChange => ({path: p.path, status: p.status, binary: p.binary,
     ...(p.binary ? {added: 0, removed: 0} : counts(lineOps(p.before ?? '', p.after ?? '')))}));
   return group(files, connection() !== null);
-}
-
-/** Three lines either side of each change, as git shows them. */
-function hunks(ops: ReturnType<typeof lineOps>): {lines: DiffLine[]; more: number} {
-  const keep = ops.map((o, i) => o.kind !== 'same' || ops.slice(Math.max(0, i - 3), i + 4).some((x) => x.kind !== 'same'));
-  const lines: DiffLine[] = [];
-  let old = 0, now = 0;
-  ops.forEach((o, i) => {
-    const at = o.kind === 'del' ? ++old : o.kind === 'add' ? ++now : (++old, ++now);
-    if (!keep[i]) return;
-    if (i > 0 && !keep[i - 1]) lines.push({kind: 'hunk', text: '…'});
-    lines.push({kind: o.kind, text: o.text, at});
-  });
-  return {lines: lines.slice(0, 400), more: Math.max(0, lines.length - 400)};
 }
 
 async function webDiff(repo: string): Promise<FileDiff[]> {

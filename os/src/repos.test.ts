@@ -1,10 +1,17 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {MemoryStore, TEMPLATES, templateFiles, validName} from './repos.ts';
+import {MemoryStore, plainPart, renamed, TEMPLATES, templateFiles, validName} from './repos.ts';
 
 test('repo names match the native rule', () => {
   assert.ok(validName('my-repo_1.0'));
   for (const bad of ['', '.git', 'a/b', 'a b', 'x'.repeat(65)]) assert.ok(!validName(bad), bad);
+});
+
+test('a new or renamed file or folder is one plain part, as core\'s add takes it', () => {
+  for (const ok of ['a.md', 'Makefile', 'my notes.txt', 'ノート.md']) assert.ok(plainPart(ok), ok);
+  for (const bad of ['', '.env', '..', 'a/b', 'a\\b', '.git', 'GIT~1', '.git. ']) assert.ok(!plainPart(bad), bad);
+  assert.equal(renamed('src/main.c', 'hello.c'), 'src/hello.c');
+  assert.equal(renamed('README.md', 'READ.md'), 'READ.md');
 });
 
 test('templates hold the repo\'s own files, never inbox or TODO', () => {
@@ -43,6 +50,27 @@ test('the memory store adds, makes directories and removes like the native side'
   assert.equal((await s.read('a', 'note.txt')).text, 'hello\n');
 });
 
+test('the memory store renames a file or a folder in its place, never over another, as the native side', async () => {
+  const s = new MemoryStore();
+  await s.create('a', 'c');
+  await s.rename('a', 'src/main.c', 'hello.c');
+  assert.deepEqual((await s.tree('a', 'src')).map((e) => e.name), ['hello.c']);
+  assert.match((await s.read('a', 'src/hello.c')).text!, /puts/);
+  await assert.rejects(s.read('a', 'src/main.c'));
+  await s.mkdir('a', 'src/empty');
+  await s.rename('a', 'src', 'lib');
+  assert.deepEqual((await s.tree('a', 'lib')).map((e) => [e.name, e.kind]), [['empty', 'dir'], ['hello.c', 'file']]);
+  await assert.rejects(s.tree('a', 'src'));
+  // Never over what is there, never out of its folder, never .git or a hidden name.
+  await assert.rejects(s.rename('a', 'lib/hello.c', 'empty'));
+  await assert.rejects(s.rename('a', 'lib', 'docs'));
+  for (const bad of ['', 'x/y', '.hidden', '.git', 'GIT~1']) await assert.rejects(s.rename('a', 'lib/hello.c', bad), bad);
+  await assert.rejects(s.rename('a', '', 'b'));
+  await assert.rejects(s.rename('a', 'missing', 'b'));
+  await s.rename('a', 'lib/hello.c', 'hello.c');
+  assert.match((await s.read('a', 'lib/hello.c')).text!, /puts/);
+});
+
 test('repos kept in the browser come back in a new page, as they were left', async () => {
   const {KeptStore} = await import('./repos.ts');
   const shelf = new Map<string, import('./repos.ts').Kept>();
@@ -63,10 +91,12 @@ test('repos kept in the browser come back in a new page, as they were left', asy
   assert.equal((await b.read('notes', 'todo.md')).text, 'two');
   assert.deepEqual((await b.tree('notes', 'src')).map((e) => [e.name, e.kind]), [['deep', 'dir']]);
   await b.remove('notes', 'todo.md');
+  await b.rename('notes', 'src', 'lib');
   await b.flush();
   const c = new KeptStore(fake);
   // Asked at once, before it has read the shelf: it waits, then answers.
   assert.equal((await c.tree('notes', '')).some((e) => e.name === 'todo.md'), false);
+  assert.deepEqual((await c.tree('notes', 'lib')).map((e) => [e.name, e.kind]), [['deep', 'dir']]);
   assert.equal((await new KeptStore(fake).read('notes', 'README.md')).text?.startsWith('# notes'), true);
   // Let go: gone here and from the shelf.
   await c.letGo(['notes']);

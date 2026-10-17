@@ -115,6 +115,24 @@ test('a file this browser cannot hold stays on the Remote, untouched by this cop
   assert.equal(now.draft['logo.png'], await sha256(png));
 });
 
+test('a file or folder renamed here reaches the Remote as any change: gone at its old name, there at its new', async () => {
+  const {onChange} = await import('./repos.ts');
+  const told: string[] = [];
+  const stop = onChange((c) => told.push(`${c.what} ${c.path}${c.text !== undefined ? ` ${JSON.stringify(c.text)}` : ''}`));
+  await store.rename('notes', 'docs/plan.md', 'later.md');
+  await store.rename('notes', 'docs', 'notes');
+  stop();
+  // Told as the old gone and the new made, so a copy kept elsewhere (the shell's) follows it.
+  assert.deepEqual(told.slice(0, 2), ['removed docs/plan.md', 'file docs/later.md "plan\\n"']);
+  assert.deepEqual(told.slice(2, 4), ['removed docs', 'dir notes']);
+  assert.ok(told.includes('file notes/later.md "plan\\n"'));
+  const sent = await draft.sync('notes');
+  assert.ok(sent.sent >= 2);
+  const now = await (await fetch(`${URL_}/v1/repos/notes`, {headers: {Authorization: `Bearer ${token}`}})).json() as {draft: Record<string, string>};
+  assert.equal(now.draft['notes/later.md'], await sha256(enc.encode('plan\n')));
+  assert.ok(!Object.keys(now.draft).some((p) => p.startsWith('docs/')));
+});
+
 test('a repo only on the Remote comes here when opened, with nothing of a template', async () => {
   await elsewhere('far', {'a.txt': 'a\n'});
   await draft.fetchRepo('far');
