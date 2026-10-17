@@ -1,93 +1,14 @@
 import assert from 'node:assert/strict';
-import {afterEach, test} from 'node:test';
-import {PGlite} from '@electric-sql/pglite';
+import {test} from 'node:test';
 import {sql} from 'drizzle-orm';
-import {drizzle} from 'drizzle-orm/pglite';
-import {migrate} from 'drizzle-orm/pglite/migrator';
 import {createApp, sha256} from './app.ts';
 import {createAuth} from './auth.ts';
-import {enterEmail, type Enter} from './enter.ts';
 import {memoryBucket} from './bucket.ts';
 import * as schema from './schema.ts';
 import {sweep} from './sweep.ts';
+import {accept, APP, BASE, count, enc, freshDb as fresh, idOf, named, SECRET, service, upload, type Service} from './testing.ts';
 import homeSync from '../shared/home-sync.json' with {type: 'json'};
 
-const BASE = 'http://remote.test';
-const APP = 'http://app.test';
-
-// Each test's database is a copy of one made and migrated once: making one
-// anew (initdb) is most of a test's time, a copy a fraction of it. Each is
-// closed when its test ends, so the file's tests do not hold them all at once.
-let migrated: Promise<File | Blob> | undefined;
-const open: PGlite[] = [];
-const fresh = async () => {
-  migrated ??= (async () => {
-    const pg = new PGlite();
-    await migrate(drizzle(pg, {schema}), {migrationsFolder: new URL('./migrations', import.meta.url).pathname});
-    const dump = await pg.dumpDataDir('none');
-    await pg.close();
-    return dump;
-  })();
-  const pg = new PGlite({loadDataDir: await migrated});
-  open.push(pg);
-  return drizzle(pg, {schema});
-};
-afterEach(() => Promise.all(open.splice(0).map((pg) => pg.close())).then(() => {}));
-
-async function service(records: Record<string, string[]> = {}, o: {quota?: number; enter?: Enter} = {}) {
-  const db = await fresh();
-  const auth = createAuth({db, secret: 'test-secret-'.repeat(4), baseURL: BASE, appOrigin: APP, rateLimit: false, dev: true, only: o.enter && enterEmail(o.enter.as)});
-  const bucket = memoryBucket();
-  // DNS as a map of name → TXT records.
-  const dns = new Map(Object.entries(records));
-  const mails: {to: string; subject: string; text: string}[] = [];
-  const app = createApp({db, auth, bucket, origins: [APP], appOrigin: APP, providers: ['dev'], domain: 'length3.test', baseURL: BASE,
-    secret: 'test-secret-'.repeat(4), txt: async (name) => dns.get(name) ?? [], recheck: 0, mail: async (to, subject, text) => { mails.push({to, subject, text}); }, quota: o.quota,
-    enter: o.enter});
-  // The service asks its own stand-in provider for tokens over the network: here, itself.
-  const real = globalThis.fetch;
-  globalThis.fetch = ((url: string | URL | Request, init?: RequestInit) =>
-    (String(url instanceof Request ? url.url : url).startsWith(BASE) ? app.request(url as string, init) : real(url, init))) as typeof fetch;
-  const call = async (method: string, path: string, opts: {token?: string; body?: unknown; bytes?: Uint8Array; headers?: Record<string, string>} = {}) => {
-    const r = await app.request(BASE + path, {
-      method,
-      headers: {Origin: APP, ...(opts.token ? {Authorization: `Bearer ${opts.token}`} : {}), ...(opts.body !== undefined ? {'Content-Type': 'application/json'} : {}), ...opts.headers},
-      body: (opts.bytes as BodyInit | undefined) ?? (opts.body === undefined ? undefined : JSON.stringify(opts.body)),
-    });
-    const text = await r.text();
-    let json: unknown = null;
-    try { json = JSON.parse(text); } catch { /* not json */ }
-    return {status: r.status, json: json as Record<string, unknown> & unknown[], headers: r.headers, text};
-  };
-  /** Each session's cookie, as the browser that signed in holds it. */
-  const sessions = new Map<string, string>();
-  /** Signing in as a browser does: the provider's page, then back through the callback. */
-  const start = async (name = 'Ren') => {
-    const asked = await app.request(`${BASE}/api/auth/sign-in/social`, {method: 'POST', headers: {Origin: APP, 'Content-Type': 'application/json'},
-      body: JSON.stringify({provider: 'dev', callbackURL: `${APP}/?signed-in`})});
-    assert.equal(asked.status, 200, await asked.clone().text());
-    const cookies = asked.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
-    const go = new URL(((await asked.json()) as {url: string}).url);
-    const approve = new URL(`${BASE}/dev-oauth/approve`);
-    for (const k of ['redirect_uri', 'state']) approve.searchParams.set(k, go.searchParams.get(k) ?? '');
-    approve.searchParams.set('name', name);
-    const back = (await app.request(approve.toString())).headers.get('Location')!;
-    const done = await app.request(back, {headers: {Cookie: cookies}});
-    assert.equal(done.status, 302, await done.clone().text());
-    assert.equal(done.headers.get('Location'), `${APP}/?signed-in`);
-    const token = done.headers.get('set-auth-token');
-    assert.ok(token);
-    sessions.set(token!, done.headers.getSetCookie().map((c) => c.split(';')[0]).join('; '));
-    return token!;
-  };
-  const publish = (name: string, value: string) => dns.set(name, [...(dns.get(name) ?? []), value]);
-  const unpublish = (name: string) => dns.delete(name);
-  return {db, app, call, start, bucket, publish, unpublish, mails, sessions};
-}
-
-const enc = new TextEncoder();
-
-type Service = Awaited<ReturnType<typeof service>>;
 /** Who a session is, as the Remote says (the name the app's off ask shows comes from here). */
 const whoIs = async (s: Service, token: string) =>
   (await s.call('GET', '/api/auth/get-session', {token})).json as unknown as {user: {id: string; name: string}; session: {id: string; token: string}};
@@ -869,14 +790,6 @@ test('Names on the Remote: first come, for five years at a time, renewed by thei
 
 // ---- What the review of this service found, each kept fixed by a test ----
 
-const idOf = async (s: Service, t: string) => ((await s.call('GET', '/api/auth/get-session', {token: t})).json as unknown as {user: {id: string}}).user.id;
-const upload = async (s: Service, t: string, bytes: Uint8Array) => {
-  const sha = await sha256(bytes);
-  return {sha, status: (await s.call('PUT', `/v1/blobs/${sha}`, {token: t, bytes})).status};
-};
-const named = async (s: Service, ...people: [string, string][]) => { for (const [t, n] of people) await s.call('POST', '/v1/inbox/addresses', {token: t, body: {name: n}}); };
-const accept = (s: Service, t: string, address: string, state = 'accepted') => s.call('POST', '/v1/inbox/contacts', {token: t, body: {address, state}});
-const count = async (s: Service, query: ReturnType<typeof sql>) => ((await s.db.execute(query)).rows as {n: number}[])[0].n;
 
 test('Guessing: codes that find people are looked up so many an hour, and the code to turn a repo off is tried so many times', async () => {
   const s = await service();
@@ -1314,7 +1227,7 @@ test('On Workers the app is made once, and each request uses the database it ope
   const {scoped} = await import('./worker.ts');
   const [one, two] = [await fresh(), await fresh()];
   const {db, at} = scoped(one);
-  const auth = createAuth({db, secret: 'test-secret-'.repeat(4), baseURL: BASE, appOrigin: APP, rateLimit: false, dev: true});
+  const auth = createAuth({db, secret: SECRET, baseURL: BASE, appOrigin: APP, rateLimit: false, dev: true});
   const app = createApp({db, auth, bucket: memoryBucket(), origins: [APP], providers: ['dev'], domain: 'length3.test', baseURL: BASE});
   let on = one;
   const ask = (url: string, init: RequestInit = {}) => at(on, () => app.request(url, {...init, headers: {Origin: APP, ...(init.headers as Record<string, string>)}}));
