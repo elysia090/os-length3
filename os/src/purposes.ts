@@ -24,7 +24,7 @@ export interface Purpose {
 
 export const PURPOSES: readonly Purpose[] = [
   {id: 'home', label: 'Home', role: 'Profile',
-    detail: 'A page that reads the same to you and to anyone else, with your repos and posts.', implemented: true},
+    detail: 'A page that reads the same to you and to anyone else, with your repos and servers.', implemented: true},
   {id: 'forge', label: 'Forge', role: 'Your workshop',
     detail: 'Edit the files of the repos in the band as one continuous page, with Reference and Prompt on the right.', implemented: true},
   {id: 'file', label: 'File', role: 'The tree of /',
@@ -33,12 +33,12 @@ export const PURPOSES: readonly Purpose[] = [
     detail: 'Work Issue by Issue: commit, push, and hand it to main as a Change. Changes that come in are settled with Merge or Reject.', implemented: true},
   {id: 'runtime', label: 'Runtime', role: 'This device and its environments',
     detail: 'What this device holds, largest first. What can be freed is freed right there. The active environments too.', implemented: true},
-  {id: 'remote', label: 'Remote', role: 'The canonical copy',
-    detail: 'Where the canonical copy lives. What you change is sent at once, and committing makes it history. Devices and passkeys are here too.', implemented: true},
+  {id: 'remote', label: 'Remote', role: 'Where your repos are kept',
+    detail: 'Where your repos are kept. What you change is sent at once, and committing makes it history. Devices and passkeys are here too.', implemented: true},
   // Under the cloud: the people one knows, on the Remote, with what they show of their repos.
   {id: 'server', label: 'Server', role: 'People you know',
     detail: 'A group of people you know. Each board is a conversation and a TODO kept together.', implemented: true},
-  {id: 'inbox', label: 'Inbox', role: 'Typed messages to you',
+  {id: 'inbox', label: 'Inbox', role: 'Messages to you',
     detail: 'Review requests, changes, questions and more, each with what it is about and what to do.', implemented: true},
 ];
 

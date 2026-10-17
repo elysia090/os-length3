@@ -4,7 +4,7 @@
 export default {
   // purposes.ts: the rail's places (labels other than New repo stay as names)
   'Profile': 'プロフィール',
-  'A page that reads the same to you and to anyone else, with your repos and posts.': '自分にも他人にも同じ形で見えるページ。repo と投稿が並ぶ。',
+  'A page that reads the same to you and to anyone else, with your repos and servers.': '自分にも他人にも同じ形で見えるページ。repo とサーバーが並ぶ。',
   'Your workshop': '自分の作業場',
   'Edit the files of the repos in the band as one continuous page, with Reference and Prompt on the right.': '帯に出した repo の file を、一続きのページで編集する。右に参照と Prompt。',
   'The tree of /': '/ の tree',
@@ -13,9 +13,9 @@ export default {
   'Work Issue by Issue: commit, push, and hand it to main as a Change. Changes that come in are settled with Merge or Reject.': 'Issue ごとに Commit・Push し、Change として main に渡す。届いた Change は Merge か Reject で決める。',
   'This device and its environments': 'この端末と環境',
   'What this device holds, largest first. What can be freed is freed right there. The active environments too.': 'この端末が持っているものを容量順に。空けられるものはその場で空ける。有効な環境も。',
-  'The canonical copy': '正本',
-  'Where the canonical copy lives. What you change is sent at once, and committing makes it history. Devices and passkeys are here too.': '正本を置く場所。変えたものはすぐ送られ、Commit すると履歴になる。端末とパスキーもここで。',
-  'Typed messages to you': '自分に届く型付きメッセージ',
+  'Where your repos are kept': 'repo を置く場所',
+  'Where your repos are kept. What you change is sent at once, and committing makes it history. Devices and passkeys are here too.': 'repo を置く場所。変えたものはすぐ送られ、Commit すると履歴になる。端末とパスキーもここで。',
+  'Messages to you': '自分に届くメッセージ',
   'Review requests, changes, questions and more, each with what it is about and what to do.': 'レビュー依頼・Change・質問などを、対象と対応操作つきで受け取る。',
   'New repo': '新しい repo',
   'Make a repo': 'repo の作成',

@@ -440,7 +440,7 @@ their sha256, so what comes from any Remote can be checked against it.
 There is one kind of owner, a **principal**: a person (an account) or a
 server (a group of people), named on its Remote (`ren`, `trip`) or on a
 domain (`ren@ren.dev`), and found by its code as well. Both are claimed in
-the same namespace, so `ren` and `trip` cannot be the same name. A person may have several addresses: aliases of one principal, one
+the same namespace, so `ren` and `trip` cannot be the same name. A person may have several names: aliases of one principal, one
 of them shown. Everything else belongs to exactly one principal: a repo to
 a person (a server's own repos come next; there is no fork), a board with
 its talk and TODO to its server.
@@ -638,7 +638,7 @@ What leaves this system is kept to what is said here:
 - Icons only, top to bottom, the order of one's own work: **Home** (who
   you are, what you are doing) → **Forge** (where you work; a terminal
   icon) → **File** (the tree of "/") → **Git** (what happened outside) →
-  **Runtime** (the environment) → **Remote** (the canonical copy) →
+  **Runtime** (the environment) → **Remote** (where your repos are kept) →
   **Server** (the people you know, on the Remote: the one purpose whose
   subject is people, not a repo; under the cloud, as it lives there) →
   **Inbox** (what was sent to you). **+** (a new repo)
@@ -676,7 +676,8 @@ Each page below says only what is its own; the rest is Part I.
 
 A profile, between a Twitter and a GitHub profile, that reads the same for
 its owner and for anyone else; only the owner gets "edit". In order:
-identity (avatar, name, @handle, bio, counts) → **TODO** → repos → posts.
+identity (avatar, name, @handle, bio, counts of repos and servers) →
+**TODO** → repos → servers (each one is in, a chip that opens Server on it).
 TODO is the person's single list; repos do not carry their own inbox or
 TODO files. An item is a first line named like an issue ("Fix：件名"),
 then detail lines; Enter on an empty line starts the next item. Done
@@ -867,7 +868,7 @@ each thing says what can be done with it.
   run before a Prompt, with the network, over the repo's environment, so
   what they install is the repo's and stays; and again only when the root
   or either file changes.
-- **SSH**, once there is an Inbox address: a small card per address with
+- **SSH**, once there is a name (Inbox): a small card per name with
   the power switch at its bottom right, whether it may be reached over SSH.
 - **Dotfiles**: a small card each (its name, its size), and a dashed one to
   make another. A card opens its text under the cards, `/root/` and its name
@@ -998,11 +999,11 @@ below what the page is about rather than over it.
 
 ### Inbox
 
-Your address as a stub: a field-sized place about as wide as an address,
-the address in it (pressing it copies it, and it says Copied for a moment
-in the same place; there is no Copy button), its gear at the right end.
-Before there is one, the stub is the name to claim, with `@domain` after
-it; Enter claims. The gear opens, over what is under it (Escape or a press
+Your name as a stub: a field-sized place about as wide as a name, the name
+in it, shown alone (§5), and your code beside it (pressing either copies
+it, and it says Copied for a moment in the same place; there is no Copy
+button), its gear at the right end. Before there is one, the stub is the
+name to claim; Enter claims. The gear opens, over what is under it (Escape or a press
 outside closes it), a popover: your names with their terms (Renew near the
 end), Add a domain, and Let a name go last. Add a domain becomes, in its
 row, one field where the name is written whole, `name@domain` with the @

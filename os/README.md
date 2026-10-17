@@ -11,7 +11,7 @@ frontend and no UI framework; the same frontend is the web build.
 │ >_ │   the chosen purpose, full width             │
 │ ⑂  │                                              │
 │ ▤  │   Home: a profile page — avatar, name,       │
-│ …  │   @handle, bio, repo cards, posts            │
+│ …  │   @handle, bio, TODO, repo cards, servers    │
 │ ⊕  │                                              │
 └────┴──────────────────────────────────────────────┘
 ```
@@ -23,14 +23,16 @@ frontend and no UI framework; the same frontend is the web build.
   the people you know and their boards).
 - **Home** is a profile, somewhere between a Twitter and a GitHub profile.
   It looks the same to its owner and to anyone else; the owner also gets
-  "edit". Until accounts exist the profile is stored on this device.
+  "edit". The profile is one of Home's settings: a file in the data
+  directory (in a browser, its storage), kept on the Remote too once signed
+  in, as the TODO is.
 - The design language (rail order, page structure, colour roles, type,
   spacing) is in `DESIGN.md`.
 
 ## What is real in this step
 
-- The rail, with the person's own icon at its foot (profile, edit, this
-  device), and the profile (edit, validate, save locally).
+- The rail, with the person's own icon at its foot (Profile, Account,
+  Language), and the profile (edit, validate, save).
 - Repos the app manages under its data directory (`repos/`). + creates
   one from a template (standard, C, minimal); history is the Remote's, so
   no `.git` is made. Inbox and TODO belong to the app, not to
@@ -45,9 +47,8 @@ frontend and no UI framework; the same frontend is the web build.
   part are never written), with a prompt box at its foot that
   types into the repo's `sh`. While the prompt is in use the terminal flies
   up above it from the right pane, where a search box for the repo sits on
-  top and the reference (the repo's
-  `issue/`; diff and run output not connected yet) grows into the
-  room. No tabs: files are chosen from File.
+  top and the reference (the repo's issues, its diff, and what was run)
+  grows into the room. No tabs: files are chosen from File.
 - Prompt: in the app with a root installed, the distribution's root itself
   (`l3 prompt`): its sh, gcc, make, git on this kernel, writing the repo
   directly. Every place it writes has an owner and a lifetime (DESIGN.md
@@ -93,7 +94,7 @@ One table (`cli/src/spec.rs`) says every form: its words and what each
 slot is (a repo, a path, an issue, text…), its flags, what it needs (the
 Remote; whether it may run inside the app's Prompt) and how it keeps in step
 with the Remote. Parsing, the help, the completion, what a Prompt may run and
-the syncing around each command are all read from it. `l3 help` lists the
+what is sent and taken in around each command are all read from it. `l3 help` lists the
 commands by the rail, `l3 help COMMAND` (or `l3 COMMAND --help`) gives one
 command's forms, `l3 help all` every form, a mistyped word gets the nearest
 one ("Did you mean: l3 commit"), and `l3 completion bash|zsh|fish` completes
@@ -147,24 +148,26 @@ the app.
   leaves. ▷/▽ before a folder opens it; a name inside a repo opens that
   place in Forge. Every path from the webview is checked
   to stay inside its repo after following symlinks.
-- Git: the repos' issues, read from each `issue/` (one file each, first line
-  "Fix：件名"), filtered by repo chips; a row opens the file in Forge, and
-  「Issue を書く」 adds the next numbered file (natively through `repo_add`,
-  which only makes new files in existing directories), as `l3 issue new`
-  does. Below: what is not cut yet (the draft against the last cut, by
-  folder) and 区切る under the current issue, then the cuts.
+- Git: the repos' issues ("#3 Fix：件名", then the detail), filtered by repo
+  chips, as boxes side by side; 「Issue を書く」 writes the next one, as
+  `l3 issue new` does (kept as one file in the repo's `issue/`, made natively
+  through `repo_add`, which only makes new files in existing directories).
+  An issue is worked on with Start, then Commit and Push, which hand it to
+  main as its change, then Review and Merge (or Reject) under it.
 - Remote: the canonical copy (`service/`). A browser signs in with a
   provider (GitHub で続ける) and then adds a passkey, so the next time needs
   none (パスキーでサインイン); with every passkey lost, the provider again.
   The app and l3 show a code that a browser approves
   (`?device&user_code=`). Signed in: each repo with where it stands
-  (同期済み, 送っています, まだ送れていません), repos only on the Remote with
-  開く, then passkeys, providers and the devices (sessions), each of which
-  can be ended. Every change is sent as a
-  diff within half a second; the Remote's changes are seen within five
-  seconds and on focus; a file changed on both sides keeps this device's
-  and puts the other beside it as "name (別の端末).ext". In a browser,
-  closing the tab lets go of every copy the Remote holds all of.
+  (Remote と同じ, 送っています, まだ送れていません; Remote にだけあります for
+  one not here, which Forge brings here and opens), then passkeys, the code
+  to turn a repo off and the providers, then the devices (sessions), as a
+  history (`l3 remote devices rm N` signs another out). Every change is sent
+  as a diff within half a second; the Remote's changes are seen within five
+  seconds and on focus; a file changed on both sides keeps, at its name, the
+  version that reached the Remote first, and puts this device's beside it as
+  "name (<this device>).ext". In a browser, closing the tab lets go of every
+  copy the Remote holds all of.
 - Runtime: この端末, then everything this OS holds on it in one list,
   largest first — repos, roots, leftovers, Home — each with what can be
   done: 空ける (a repo's changes not on the Remote yet are sent first; it
@@ -191,7 +194,6 @@ the app.
   name it went public as: the server's (`trip@length3.com:hello`) when it
   went public from one, so nothing it answers names you; your own when you
   choose. Others only see it, as it was last pushed.
-- Every other purpose shows what it will hold, as a dashed empty box.
 
 The webview has no other host access: it reads nothing outside the app's
 data directory, runs no shell and launches no root. The app starts no host
