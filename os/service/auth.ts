@@ -81,6 +81,10 @@ export function createAuth(c: AuthConfig) {
     ...(c.only ? {user: {validateUserInfo: ({user}: {user: {email?: string | null}}) =>
       (user.email === c.only ? undefined : {error: 'closed', errorDescription: 'This Remote takes no new accounts'})}} : {}),
     rateLimit: {enabled: c.rateLimit ?? true, window: 60, max: 120},
+    // Who is asking is the address Cloudflare saw, as everywhere on the Remote (enter.ts, servers.ts): Better
+    // Auth reads only X-Forwarded-For unless told, which a Worker's request need not carry, and without an
+    // address it counts everyone in one bucket a path (three sign-ins in ten seconds, for all).
+    advanced: {ipAddress: {ipAddressHeaders: ['cf-connecting-ip']}},
     // A sign-in with a passkey is proof the person is at the device just now: turning a repo
     // off (and setting the code for it) asks for a session made that way minutes ago. Only the
     // latest is kept: one sign-in proves one session.

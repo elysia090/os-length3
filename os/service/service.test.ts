@@ -297,6 +297,19 @@ test('Home\'s settings answer as shared/home-sync.json records them, which the a
   }
 });
 
+test('Sign-in is held off address by address, the address Cloudflare saw', async () => {
+  const db = await fresh();
+  const auth = createAuth({db, secret: 'test-secret-'.repeat(4), baseURL: BASE, appOrigin: APP, dev: true});
+  const app = createApp({db, auth, bucket: memoryBucket(), origins: [APP], providers: ['dev'], domain: 'length3.test', baseURL: BASE});
+  const signIn = async (ip: string) => (await app.request(`${BASE}/api/auth/sign-in/social`, {method: 'POST',
+    headers: {Origin: APP, 'Content-Type': 'application/json', 'CF-Connecting-IP': ip}, body: JSON.stringify({provider: 'dev', callbackURL: `${APP}/`})})).status;
+  // Three sign-ins in ten seconds from one address, then it waits; another address does not.
+  const one = [];
+  for (let i = 0; i < 4; i++) one.push(await signIn('203.0.113.1'));
+  assert.deepEqual(one, [200, 200, 200, 429]);
+  assert.equal(await signIn('203.0.113.2'), 200);
+});
+
 test('only the app\'s pages may call, and they can read a new session\'s token', async () => {
   const s = await service();
   const ok = await s.call('OPTIONS', '/v1/repos', {headers: {'Access-Control-Request-Method': 'GET'}});
