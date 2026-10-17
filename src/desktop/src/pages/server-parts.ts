@@ -1,0 +1,43 @@
+import {h} from '../dom.ts';
+import {t} from '../i18n.ts';
+
+// The pieces Server's parts share (server-layer, -gear, -dock, -repo).
+
+/** A switch's knob moves this long before what it turns on is asked. */
+export const MOVE = 240;
+
+export const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+export const initials = (address: string) => [...address.split('@')[0]].slice(0, 2).join('').toUpperCase();
+export const button = (text: string, kind = '') => h('button', {type: 'button', class: `button ${kind}`.trim()}, text) as HTMLButtonElement;
+
+/** A board as the layer holds it: whose it is to write in. */
+export interface Shown { id: string; name: string; member: boolean; guests: boolean; server: string }
+
+/**
+ * Asked in the card, as Remote asks before a repo is turned off: the card
+ * gives way to what will happen and the two answers, Not now at the left and
+ * the deed at the right, and comes back as it was if the answer is no.
+ */
+export function askIn(card: HTMLElement, title: string | Node, what: string | string[], verb: string, act: () => Promise<void>, no_?: () => void) {
+  const was = [...card.childNodes];
+  // The card keeps its size while it asks, so the answers come where its own deeds were.
+  card.style.minHeight = `${card.offsetHeight}px`;
+  const error = h('p', {class: 'error small', role: 'alert'});
+  const no = button(t('Not now'), 'small-button'), yes = button(verb, 'small-button primary');
+  no.addEventListener('click', () => { card.style.minHeight = ''; card.replaceChildren(...was); no_?.(); });
+  yes.addEventListener('click', async () => {
+    yes.disabled = true;
+    try { await act(); } catch (e) { error.textContent = message(e); yes.disabled = false; }
+  });
+  // What will happen, a short line each: a line breaks where the sentence does, not where the card ends.
+  card.replaceChildren(h('div', {class: 'off-ask'}, h('span', {class: 'card-title'}, title), ...[what].flat().map((l) => h('p', {class: 'muted small'}, l)), error,
+    h('div', {class: 'card-foot'}, no, h('span', {class: 'grow'}), yes)));
+  yes.focus();
+}
+
+/** A small card, as Runtime's and Remote's: its title, a line or two, then what can be done at its foot. */
+export const smallCard = (title: string | Node, ...rest: (Node | null)[]) => h('div', {class: 'card small-card'}, h('span', {class: 'card-title'}, title), ...rest);
+/** A board's name as its own head writes it: the # quiet before it. */
+export const boardName = (name: string) => h('span', {}, h('span', {class: 'muted', 'aria-hidden': 'true'}, '# '), name);
+export const line = (text: string) => (text ? h('span', {class: 'muted small'}, text) : null);
+export const foot = (...xs: (Node | null)[]) => h('div', {class: 'card-foot'}, h('span', {class: 'grow'}), ...xs);
