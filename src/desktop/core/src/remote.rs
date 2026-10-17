@@ -945,6 +945,13 @@ pub fn free(repos: &Repos, repo: &str) -> Result<u64> {
     let shown = repos.line(repo);
     let mut copies: Vec<String> = crate::work::worktrees(repo).into_iter().map(|(l, _)| l).collect();
     copies.push(crate::work::MAIN.into());
+    // Turned off on the Remote: nothing can be sent to it, so a copy goes
+    // only when it holds nothing the Remote lacks (the Remote keeps it 30 days).
+    let off = serde_json::from_value::<Vec<RemoteRepo>>(client.json("GET", "/v1/repos", None)?).map_err(|e| e.to_string())?
+        .into_iter().any(|r| r.name == repo && r.off_at.is_some());
+    if off {
+        return free_off(repos, repo, &copies);
+    }
     // Each copy is brought into step and checked, all before any goes.
     let mut gone = Vec::new();
     for line in &copies {
@@ -980,6 +987,33 @@ pub fn free(repos: &Repos, repo: &str) -> Result<u64> {
         forget_base(&key);
     }
     let _ = crate::work::show_for_free(repo, crate::work::MAIN);
+    Ok(bytes)
+}
+
+/// Free the copies of a repo that is off: each must be as it was agreed, since none can be sent now.
+fn free_off(repos: &Repos, repo: &str, copies: &[String]) -> Result<u64> {
+    let mut gone = Vec::new();
+    for line in copies {
+        let key = key_of(repo, line);
+        let dir = if line == crate::work::MAIN { repos.root().join(repo) } else { crate::work::worktree(repo, line) };
+        let agreed = base(&key).map(|b| b.tree).unwrap_or_default();
+        let here = local_tree(&dir).tree;
+        let changed = here.keys().chain(agreed.keys()).collect::<std::collections::BTreeSet<_>>().into_iter().filter(|p| here.get(*p) != agreed.get(*p)).count();
+        if changed > 0 {
+            return Err(if changed == 1 {
+                crate::tr!("1 change here is not on the Remote; turn it on to send it first", "ここの変更 1件が Remote にありません。オンにして先に送ってください")
+            } else {
+                crate::tr!("{} changes here are not on the Remote; turn it on to send them first", "ここの変更 {}件が Remote にありません。オンにして先に送ってください", changed)
+            });
+        }
+        gone.push((key, dir));
+    }
+    let mut bytes = 0;
+    for (key, dir) in gone {
+        bytes += crate::usage::allocated(&dir);
+        fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
+        forget_base(&key);
+    }
     Ok(bytes)
 }
 
