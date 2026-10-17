@@ -55,6 +55,21 @@ pub fn named_by(file: &str, which: &str) -> bool {
     if digits(stem) && digits(want) { stem.trim_start_matches('0') == want.trim_start_matches('0') } else { stem == want }
 }
 
+/// The issues of `list` that `words` names by its title, as a person says
+/// it (case aside, the kind's colon either width): those whose title or
+/// first line is exactly the words, else those holding every word of them.
+/// More than one is a choice for the person, never a guess.
+pub fn by_title<'a>(list: &'a [Issue], words: &str) -> Vec<&'a Issue> {
+    let fold = |s: &str| s.to_lowercase().replace('：', ":");
+    let want = fold(words.trim());
+    let terms: Vec<&str> = want.split(|c: char| c.is_whitespace() || c == ':').filter(|t| !t.is_empty()).collect();
+    if terms.is_empty() { return Vec::new(); }
+    let first = |i: &Issue| fold(&named(i.kind.as_deref(), &i.title));
+    let exact: Vec<&Issue> = list.iter().filter(|i| fold(&i.title) == want || first(i) == want).collect();
+    if !exact.is_empty() { return exact; }
+    list.iter().filter(|i| { let f = first(i); terms.iter().all(|t| f.contains(t)) }).collect()
+}
+
 /// Newest written first: the numbers say the order.
 pub fn sort(list: &mut [Issue]) {
     list.sort_by(|a, b| b.file.cmp(&a.file));
@@ -73,5 +88,19 @@ mod tests {
         assert_eq!(number("3"), "#3");
         assert!(named_by("003.md", "3") && named_by("003.md", "003.md") && named_by("003.md", "03"));
         assert!(named_by("notes.md", "notes") && !named_by("003.md", "4") && !named_by("notes.md", "3"));
+    }
+
+    #[test]
+    fn an_issue_is_found_by_the_words_of_its_title() {
+        let list = vec![parse("r", "001.md", "Fix：restart loses the draft\n"), parse("r", "002.md", "Docs：readme\n"), parse("r", "003.md", "Fix：readme typo\n")];
+        let files = |w: &str| by_title(&list, w).iter().map(|i| i.file.as_str()).collect::<Vec<_>>();
+        assert_eq!(files("restart"), ["001.md"]);
+        assert_eq!(files("Restart LOSES"), ["001.md"]);
+        assert_eq!(files("docs: readme"), ["002.md"]);
+        assert_eq!(files("Docs：readme"), ["002.md"]);
+        // "readme" alone is two issues' word, but one's whole title: that one.
+        assert_eq!(files("readme"), ["002.md"]);
+        assert_eq!(files("fix"), ["001.md", "003.md"]);
+        assert!(files("nothing like it").is_empty() && files("  ").is_empty());
     }
 }

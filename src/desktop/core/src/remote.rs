@@ -802,6 +802,14 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
             set_base(&key, &Base { version: remote_version, tree, head: v["head"].as_str().map(String::from) })?;
             continue;
         }
+        // The Remote can commit without touching the draft (a work's first start commits main
+        // as it stands): its head is then newer than the one kept, though the version is not.
+        let mut base = base;
+        let head = there.as_ref().map(|v| v["head"].as_str().map(String::from));
+        if let Some(head) = head.filter(|h| *h != base.head) {
+            base.head = head;
+            set_base(&key, &base)?;
+        }
         let mut set: Vec<(&String, &Option<String>)> = here.tree.iter().filter(|(p, v)| base.tree.get(*p) != Some(*v)).collect();
         let mut remove: Vec<&String> = base.tree.keys().filter(|p| !here.tree.contains_key(*p)).collect();
         if set.is_empty() && remove.is_empty() {

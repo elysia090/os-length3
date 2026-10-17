@@ -503,7 +503,7 @@ fn remember_merged(repo: &str, issues: impl Iterator<Item = String>) {
 pub fn submit(repos: &Repos, repo: &str, note: &str) -> Result<Change> {
     let on = repos.line(repo);
     if on == crate::work::MAIN {
-        return Err(crate::tr!("A change comes from an issue's work (l3 start REPO/issue/NNN.md)", "Change は Issue の作業から渡します（l3 start REPO/issue/NNN.md）"));
+        return Err(crate::tr!("A change comes from an issue's work (l3 start REPO#N)", "Change は Issue の作業から渡します（l3 start REPO#N）"));
     }
     let (kind, title, _) = words(repos, repo, None, "")?;
     let client = Client::open()?;

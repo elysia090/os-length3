@@ -31,7 +31,7 @@ fn too_large(at: &str, limit: u64) -> String {
 }
 
 fn no_issues(repo: &str) -> String {
-    tr!("{} has no issue/ folder", "{} に issue/ フォルダーがありません", repo)
+    tr!("{} keeps no issues (it has no issue folder)", "{} には Issue がありません（issue フォルダーがありません）", repo)
 }
 
 #[derive(Serialize, Debug)]
@@ -525,7 +525,7 @@ mod tests {
         assert!(r.issue_file("a", "2").unwrap_err().contains("#2"));
         assert!(r.issue_file("nope", "1").is_err());
         r.create("e", "empty").unwrap();
-        assert!(r.issue_file("e", "1").unwrap_err().contains("issue/"));
+        assert!(r.issue_file("e", "1").unwrap_err().contains("issue"));
     }
 
     #[test]

@@ -91,7 +91,7 @@ pub fn line(repo: &str, line: &str) -> Result<Option<Line>> {
 /// main's last commit if it is not there yet, its copy is brought here, and
 /// the repo shows it. What was shown before is sent first.
 pub fn start(repos: &Repos, repo: &str, issue: &str) -> Result<Line> {
-    let stem = line_for(issue).ok_or_else(|| crate::tr!("{} is not an issue file (issue/NNN.md)", "{} は Issue のファイル（issue/NNN.md）ではありません", issue))?;
+    let stem = line_for(issue).ok_or_else(|| crate::tr!("{} is not an issue", "{} は Issue ではありません", issue))?;
     let client = Client::open()?;
     // A merged issue is done: its work is main's now.
     let path = format!("issue/{}", issue.trim_start_matches('/').trim_start_matches("issue/"));
