@@ -34,6 +34,8 @@ pub struct OffCode {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Device {
+    /// The session's secret: kept to end it, never written out (it signs in as the person).
+    #[serde(skip_serializing)]
     pub token: String,
     #[serde(rename = "userAgent", default)]
     pub user_agent: Option<String>,
@@ -69,6 +71,17 @@ pub fn devices() -> Result<Vec<Device>> {
 /// End another device's session; it will have to be approved again.
 pub fn end_device(token: &str) -> Result<()> {
     Client::open()?.json("POST", "/api/auth/revoke-session", Some(serde_json::json!({"token": token}))).map(|_| ())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_devices_token_is_never_written_out() {
+        let d: super::Device = serde_json::from_str(r#"{"token":"secret","userAgent":"l3","updatedAt":"2026-10-17"}"#).unwrap();
+        assert_eq!(d.token, "secret");
+        let out = serde_json::to_string(&d).unwrap();
+        assert!(!out.contains("secret") && !out.contains("token"), "{out}");
+    }
 }
 
 /// What a session is, from its user agent, in the app's words.

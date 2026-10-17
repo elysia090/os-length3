@@ -92,6 +92,108 @@ pub fn todo_from(line: &str, detail: &str, now: u64) -> Option<Todo> {
     Some(Todo { id, kind, title: title.trim().into(), detail: detail.trim_end().into(), done: false, repo: None, created: now })
 }
 
+/// Home's profile, as the app keeps it (src/profile.ts).
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
+pub struct Profile {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub handle: String,
+    #[serde(default)]
+    pub bio: String,
+}
+
+/// How long each field of a profile may be, in characters.
+pub const PROFILE_LIMITS: [(&str, usize); 3] = [("name", 50), ("handle", 32), ("bio", 160)];
+
+/// A handle: lowercase letters, digits, - and _ (src/profile.ts).
+pub fn valid_handle(h: &str) -> bool {
+    !h.is_empty() && h.len() <= 32 && h.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_')
+}
+
+pub fn profile() -> Profile {
+    get("profile").ok().flatten().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+}
+
+/// Change one field of the profile ("name", "handle" or "bio"), checked as the app checks it.
+pub fn set_profile(field: &str, value: &str) -> Result<Profile> {
+    let mut p = profile();
+    let v = value.trim().to_string();
+    let limit = PROFILE_LIMITS.iter().find(|(f, _)| *f == field).map(|(_, n)| *n)
+        .ok_or_else(|| crate::tr!("A profile has a name, a handle and a bio", "プロフィールは name、handle、bio です"))?;
+    match field {
+        "handle" => {
+            let h = v.trim_start_matches('@').to_ascii_lowercase();
+            if !h.is_empty() && !valid_handle(&h) {
+                return Err(crate::tr!("A handle is up to 32 lowercase letters, digits, - and _", "ハンドルは英小文字・数字・- _ の32文字までです"));
+            }
+            p.handle = h;
+        }
+        _ if v.chars().count() > limit => {
+            return Err(if field == "name" { crate::tr!("A name is up to {} characters", "名前は{}文字までです", limit) } else { crate::tr!("A bio is up to {} characters", "自己紹介は{}文字までです", limit) });
+        }
+        "name" => p.name = v,
+        _ => p.bio = v,
+    }
+    set("profile", &serde_json::to_string(&p).map_err(|e| e.to_string())?)?;
+    Ok(p)
+}
+
+/// Forge's band: the repos out on it, in order, only those in `here` (src/band.ts).
+/// Never chosen yet, it holds the first repo.
+pub fn band(here: &[String]) -> Result<Vec<String>> {
+    let Some(text) = get("band")? else { return Ok(here.first().cloned().into_iter().collect()) };
+    let stored: Vec<serde_json::Value> = serde_json::from_str(&text).unwrap_or_default();
+    let mut out: Vec<String> = Vec::new();
+    for n in stored.iter().filter_map(|v| v.as_str()) {
+        if here.iter().any(|h| h == n) && !out.iter().any(|o| o == n) { out.push(n.to_string()); }
+    }
+    Ok(out)
+}
+
+/// Put `repo` out on the band (`on`), or take it in. Whether the band changed.
+pub fn set_band(here: &[String], repo: &str, on: bool) -> Result<bool> {
+    let mut b = band(here)?;
+    let was = b.iter().any(|n| n == repo);
+    if was == on { return Ok(false); }
+    if on { b.push(repo.to_string()); } else { b.retain(|n| n != repo); }
+    set("band", &serde_json::to_string(&b).map_err(|e| e.to_string())?)?;
+    Ok(true)
+}
+
+/// A dotfile's name as it may be written into /root: a dot, then letters, digits and . _ - (src/dotfiles.ts).
+pub fn dotfile_name(name: &str) -> bool {
+    name.len() > 1 && name.len() <= 64 && name.starts_with('.') && name != ".." && !name.contains("..")
+        && name.bytes().skip(1).all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+}
+
+/// The names the app offers for a new dotfile.
+pub const COMMON_DOTFILES: [&str; 8] = [".profile", ".shrc", ".gitconfig", ".nanorc", ".inputrc", ".editorconfig", ".packages", ".setup"];
+
+/// The dotfiles Home keeps (`dotfiles`: a JSON object of name → text), those with a name that may be written.
+pub fn dotfiles() -> Vec<(String, String)> {
+    let Ok(Some(text)) = get("dotfiles") else { return Vec::new() };
+    let Ok(map) = serde_json::from_str::<std::collections::BTreeMap<String, String>>(&text) else { return Vec::new() };
+    map.into_iter().filter(|(n, _)| dotfile_name(n)).collect()
+}
+
+/// Replace (or make) a dotfile, or remove it (`None`). Whether it was there before.
+pub fn set_dotfile(name: &str, text: Option<&str>) -> Result<bool> {
+    if !dotfile_name(name) {
+        return Err(crate::tr!("A dotfile is named with a dot first: .profile", "dotfile の名前は . で始めます：.profile"));
+    }
+    let mut all: std::collections::BTreeMap<String, String> = get("dotfiles")?.and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+    let was = match text {
+        Some(t) => all.insert(name.to_string(), t.to_string()).is_some(),
+        None => all.remove(name).is_some(),
+    };
+    if text.is_none() && !was {
+        return Err(crate::tr!("There is no dotfile {}", "dotfile {} はありません", name));
+    }
+    set("dotfiles", &serde_json::to_string(&all).map_err(|e| e.to_string())?)?;
+    Ok(was)
+}
+
 fn radix36(mut n: u64) -> String {
     let digits = b"0123456789abcdefghijklmnopqrstuvwxyz";
     let mut out = Vec::new();

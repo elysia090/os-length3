@@ -40,18 +40,8 @@ pub struct Sandbox {
     pub data: Option<PathBuf>,
 }
 
-/// A dotfile's name as it may be written into /root: a dot, then letters, digits and . _ -.
-pub fn dotfile_name(name: &str) -> bool {
-    name.len() > 1 && name.len() <= 64 && name.starts_with('.') && name != ".." && !name.contains("..")
-        && name.bytes().skip(1).all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
-}
-
-/// The dotfiles Home keeps (`dotfiles`: a JSON object of name → text), those with a name that may be written.
-pub fn dotfiles() -> Vec<(String, String)> {
-    let Ok(Some(text)) = crate::home::get("dotfiles") else { return Vec::new() };
-    let Ok(map) = serde_json::from_str::<std::collections::BTreeMap<String, String>>(&text) else { return Vec::new() };
-    map.into_iter().filter(|(n, _)| dotfile_name(n)).collect()
-}
+/// Home keeps the dotfiles (home.rs); a Prompt writes them into /root.
+pub use crate::home::{dotfile_name, dotfiles};
 
 fn check(r: libc::c_int, what: &str) -> io::Result<()> {
     if r < 0 {

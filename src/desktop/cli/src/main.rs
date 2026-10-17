@@ -709,7 +709,7 @@ fn run(a: Args) -> Result<(), String> {
         ["login"] => login(&remote::default_url()),
         ["login", url] => login(url.trim_end_matches('/')),
         ["logout"] => {
-            remote::logout()?;
+            remote::logout(&Repos::open()?)?;
             out(tr!("This device is off the Remote (its repos stay here)", "この端末を Remote から外しました（repo はこの端末に残ります）"));
             Ok(())
         }

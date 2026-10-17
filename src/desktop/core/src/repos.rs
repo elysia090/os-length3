@@ -8,7 +8,31 @@ use std::path::{Component, Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 pub use crate::Result;
-use crate::{issues, templates};
+use crate::{issues, templates, tr};
+
+/// An error of the file system about `at` (a repo, or repo/path), in the OS's words.
+pub fn io_error(at: impl std::fmt::Display, e: &std::io::Error) -> String {
+    match e.kind() {
+        std::io::ErrorKind::NotFound => tr!("There is no {}", "{} はありません", at),
+        std::io::ErrorKind::PermissionDenied => tr!("{}: not allowed", "{}：許可されていません", at),
+        std::io::ErrorKind::AlreadyExists => tr!("{} is there already", "{} はもうあります", at),
+        _ => tr!("{}: {}", "{}：{}", at, e),
+    }
+}
+
+/// `repo/rel` as it is named to a person ("hello", "hello/src/a.c").
+pub fn shown(repo: &str, rel: &str) -> String {
+    let rel = rel.trim_matches('/');
+    if rel.is_empty() || rel == "." { repo.to_string() } else { format!("{repo}/{rel}") }
+}
+
+fn too_large(at: &str, limit: u64) -> String {
+    tr!("{} is larger than {} KB", "{} は {} KB を超えています", at, limit / 1024)
+}
+
+fn no_issues(repo: &str) -> String {
+    tr!("{} has no issue/ folder", "{} に issue/ フォルダーがありません", repo)
+}
 
 #[derive(Serialize, Debug)]
 pub struct Summary {
@@ -80,9 +104,9 @@ impl Repos {
         // Inside the Prompt the repos are the guest's /root; on the host
         // they are the person's alone.
         if std::env::var_os("L3_PROMPT").is_none() {
-            crate::boundary::private_dir(&root).map_err(|e| e.to_string())?;
+            crate::boundary::private_dir(&root).map_err(|e| io_error(root.display(), &e))?;
         } else {
-            fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+            fs::create_dir_all(&root).map_err(|e| io_error(root.display(), &e))?;
         }
         Ok(Repos { root, lines: false })
     }
@@ -105,7 +129,7 @@ impl Repos {
 
     fn repo(&self, name: &str) -> Result<PathBuf> {
         if !valid_name(name) {
-            return Err(format!("invalid repo name {name:?}"));
+            return Err(tr!("{:?} is not a repo name (letters, digits, . _ -)", "{:?} は repo の名前になりません（英数字と . _ -）", name));
         }
         Ok(self.root.join(name))
     }
@@ -128,23 +152,23 @@ impl Repos {
             match c {
                 Component::Normal(part) => path.push(part),
                 Component::CurDir => {}
-                _ => return Err(format!("path {relative:?} leaves the repo")),
+                _ => return Err(tr!("{} leaves the repo", "{} は repo の外です", shown(repo, relative))),
             }
         }
-        let real = path.canonicalize().map_err(|e| e.to_string())?;
-        let real_base = base.canonicalize().map_err(|e| e.to_string())?;
+        let real = path.canonicalize().map_err(|e| io_error(shown(repo, relative), &e))?;
+        let real_base = base.canonicalize().map_err(|e| io_error(repo, &e))?;
         let Ok(within) = real.strip_prefix(&real_base) else {
-            return Err(format!("path {relative:?} leads outside the repo"));
+            return Err(tr!("{} leads outside the repo", "{} は repo の外につながっています", shown(repo, relative)));
         };
         if touches_git(Path::new(relative)) || touches_git(within) {
-            return Err(format!("path {relative:?} is in the repo's .git"));
+            return Err(tr!("{} is in the repo's .git", "{} は repo の .git の中です", shown(repo, relative)));
         }
         Ok(real)
     }
 
     pub fn list(&self) -> Result<Vec<Summary>> {
         let mut out = Vec::new();
-        for entry in fs::read_dir(&self.root).map_err(|e| e.to_string())?.flatten() {
+        for entry in fs::read_dir(&self.root).map_err(|e| io_error(self.root.display(), &e))?.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
             if !valid_name(&name) || !entry.path().is_dir() {
                 continue;
@@ -162,7 +186,7 @@ impl Repos {
         let mut stack = vec![dir.clone()];
         let mut budget = 20_000;
         while let Some(d) = stack.pop() {
-            for e in fs::read_dir(&d).map_err(|e| e.to_string())?.flatten() {
+            for e in fs::read_dir(&d).map_err(|e| io_error(d.display(), &e))?.flatten() {
                 budget -= 1;
                 if budget == 0 { break; }
                 if is_git_name(&e.file_name().to_string_lossy()) { continue; }
@@ -180,26 +204,30 @@ impl Repos {
     pub fn create(&self, name: &str, template: &str) -> Result<Summary> {
         let dir = self.repo(name)?;
         if dir.exists() {
-            return Err(format!("repo {name} already exists"));
+            return Err(tr!("There is a repo {} already", "repo {} はもうあります", name));
         }
-        let t = templates::find(template).ok_or_else(|| format!("unknown template {template:?}"))?;
-        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let t = templates::find(template).ok_or_else(|| {
+            let ids: Vec<String> = templates::all().into_iter().map(|t| t.id).collect();
+            tr!("No template {} ({})", "テンプレート {} はありません（{}）", template, ids.join(", "))
+        })?;
+        fs::create_dir_all(&dir).map_err(|e| io_error(name, &e))?;
         for d in &t.dirs {
-            fs::create_dir_all(dir.join(d)).map_err(|e| e.to_string())?;
+            fs::create_dir_all(dir.join(d)).map_err(|e| io_error(shown(name, d), &e))?;
         }
         for (path, text) in t.files_for(name) {
             let target = dir.join(&path);
             if let Some(parent) = target.parent() {
-                fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+                fs::create_dir_all(parent).map_err(|e| io_error(shown(name, &path), &e))?;
             }
-            fs::write(target, text).map_err(|e| e.to_string())?;
+            fs::write(target, text).map_err(|e| io_error(shown(name, &path), &e))?;
         }
         self.summary(name)
     }
 
     pub fn tree(&self, repo: &str, relative: &str) -> Result<Vec<Entry>> {
         let dir = self.inside(repo, relative)?;
-        let mut out: Vec<Entry> = fs::read_dir(&dir).map_err(|e| e.to_string())?.flatten()
+        if !dir.is_dir() { return Err(tr!("{} is a file, not a folder", "{} はフォルダーではなくファイルです", shown(repo, relative))); }
+        let mut out: Vec<Entry> = fs::read_dir(&dir).map_err(|e| io_error(shown(repo, relative), &e))?.flatten()
             .filter(|e| !is_git_name(&e.file_name().to_string_lossy()))
             .filter_map(|e| {
                 let meta = e.path().symlink_metadata().ok()?;
@@ -214,9 +242,12 @@ impl Repos {
 
     pub fn read(&self, repo: &str, relative: &str, limit: u64) -> Result<Contents> {
         let path = self.inside(repo, relative)?;
-        let size = fs::metadata(&path).map_err(|e| e.to_string())?.len();
+        let at = shown(repo, relative);
+        let meta = fs::metadata(&path).map_err(|e| io_error(&at, &e))?;
+        if meta.is_dir() { return Err(tr!("{} is a folder, not a file", "{} はファイルではなくフォルダーです", at)); }
+        let size = meta.len();
         let mut bytes = Vec::new();
-        fs::File::open(&path).map_err(|e| e.to_string())?.take(limit).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+        fs::File::open(&path).map_err(|e| io_error(&at, &e))?.take(limit).read_to_end(&mut bytes).map_err(|e| io_error(&at, &e))?;
         let truncated = size > bytes.len() as u64;
         let text = if bytes.contains(&0) { None } else {
             // A cut may split a character; drop the incomplete tail.
@@ -240,14 +271,14 @@ impl Repos {
     /// never leaves half a file.
     pub fn write(&self, repo: &str, relative: &str, text: &str, limit: u64) -> Result<u64> {
         if text.len() as u64 > limit {
-            return Err(format!("{relative:?} is larger than {limit} bytes"));
+            return Err(too_large(&shown(repo, relative), limit));
         }
         let path = self.inside(repo, relative)?;
-        let meta = fs::metadata(&path).map_err(|e| e.to_string())?;
+        let meta = fs::metadata(&path).map_err(|e| io_error(shown(repo, relative), &e))?;
         if !meta.is_file() {
-            return Err(format!("{relative:?} is not a file"));
+            return Err(tr!("{} is not a file", "{} はファイルではありません", shown(repo, relative)));
         }
-        let name = path.file_name().ok_or("no file name")?.to_string_lossy().into_owned();
+        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         // `.<name>.length3-<pid>-<n>`: usage.rs recognises it as this OS's own
         // temporary, reclaimable once its writer is gone.
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -264,30 +295,72 @@ impl Repos {
             .and_then(|_| fs::rename(&temp, &path));
         if let Err(e) = result {
             if e.kind() != std::io::ErrorKind::AlreadyExists { let _ = fs::remove_file(&temp); }
-            return Err(e.to_string());
+            return Err(io_error(shown(repo, relative), &e));
         }
         Ok(text.len() as u64)
+    }
+
+    /// Write `relative` in `repo` whole: replace the file there, or, with
+    /// `create`, make it new (and the folders on its way). The bytes written,
+    /// and whether the file is new.
+    pub fn put(&self, repo: &str, relative: &str, text: &str, limit: u64, create: bool) -> Result<(u64, bool)> {
+        let rel = relative.trim_matches('/');
+        let at = shown(repo, rel);
+        if rel.is_empty() {
+            return Err(tr!("Name a file in {}: {}/PATH", "{} の中のファイルを書いてください：{}/PATH", repo, repo));
+        }
+        if fs::symlink_metadata(self.place(repo)?.join(rel)).is_ok() {
+            return self.write(repo, rel, text, limit).map(|n| (n, false));
+        }
+        if !create {
+            return Err(tr!("There is no {}", "{} はありません", at));
+        }
+        let (dir, name) = rel.rsplit_once('/').unwrap_or(("", rel));
+        if name == "." || name == ".." || is_git_name(name) {
+            return Err(tr!("{:?} cannot name a new file", "{:?} は新しいファイルの名前になりません", name));
+        }
+        if text.len() as u64 > limit {
+            return Err(too_large(&at, limit));
+        }
+        if !dir.is_empty() { self.mkdir(repo, dir)?; }
+        let parent = self.inside(repo, dir)?;
+        use std::io::Write;
+        let mut file = fs::OpenOptions::new().write(true).create_new(true).open(parent.join(name)).map_err(|e| io_error(&at, &e))?;
+        file.write_all(text.as_bytes()).map_err(|e| io_error(&at, &e))?;
+        Ok((text.len() as u64, true))
     }
 }
 
 impl Repos {
+    /// The file in `repo`'s issue/ that `which` names: its number ("3",
+    /// "003") or its file ("003.md", "issue/003.md").
+    pub fn issue_file(&self, repo: &str, which: &str) -> Result<String> {
+        self.dir(repo)?;
+        let names: Vec<String> = self.tree(repo, "issue").map_err(|_| no_issues(repo))?
+            .into_iter().filter(|e| e.kind == "file").map(|e| e.name).collect();
+        let which = which.trim_start_matches('#').trim_start_matches("issue/");
+        names.into_iter().find(|n| issues::named_by(n, which))
+            .ok_or_else(|| tr!("{} has no issue {}", "{} に Issue {} はありません", repo, issues::number(which)))
+    }
+
     /// Make a new file `name` in the existing directory `dir` of `repo`. An
     /// existing file is never replaced, and the name is one plain path part.
     pub fn add(&self, repo: &str, dir: &str, name: &str, text: &str, limit: u64) -> Result<u64> {
         if name.is_empty() || name.starts_with('.') || name.contains('/') || name.contains('\\') || is_git_name(name) {
-            return Err(format!("invalid file name {name:?}"));
+            return Err(tr!("{:?} cannot name a new file", "{:?} は新しいファイルの名前になりません", name));
         }
+        let at = shown(repo, &format!("{dir}/{name}"));
         if text.len() as u64 > limit {
-            return Err(format!("{name:?} is larger than {limit} bytes"));
+            return Err(too_large(&at, limit));
         }
         let parent = self.inside(repo, dir)?;
-        if !fs::metadata(&parent).map_err(|e| e.to_string())?.is_dir() {
-            return Err(format!("{dir:?} is not a directory"));
+        if !fs::metadata(&parent).map_err(|e| io_error(shown(repo, dir), &e))?.is_dir() {
+            return Err(tr!("{} is not a folder", "{} はフォルダーではありません", shown(repo, dir)));
         }
         use std::io::Write;
         let mut file = fs::OpenOptions::new().write(true).create_new(true).open(parent.join(name))
-            .map_err(|e| e.to_string())?;
-        file.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
+            .map_err(|e| io_error(&at, &e))?;
+        file.write_all(text.as_bytes()).map_err(|e| io_error(&at, &e))?;
         Ok(text.len() as u64)
     }
 }
@@ -302,12 +375,12 @@ impl Repos {
             match c {
                 Component::Normal(part) if !is_git_name(&part.to_string_lossy()) => path.push(part),
                 Component::CurDir => {}
-                _ => return Err(format!("path {relative:?} leaves the repo")),
+                _ => return Err(tr!("{} leaves the repo", "{} は repo の外です", shown(repo, relative))),
             }
             match fs::symlink_metadata(&path) {
                 Ok(m) if m.is_dir() => {}
-                Ok(_) => return Err(format!("{relative:?} is in the way of a file")),
-                Err(_) => fs::create_dir(&path).map_err(|e| e.to_string())?,
+                Ok(_) => return Err(tr!("A file is in the way of {}", "{} の途中にファイルがあります", shown(repo, relative))),
+                Err(_) => fs::create_dir(&path).map_err(|e| io_error(shown(repo, relative), &e))?,
             }
         }
         Ok(())
@@ -323,15 +396,15 @@ impl Repos {
         if let (Some(parent), Some(name)) = (rel.parent(), rel.file_name()) {
             let named = self.inside(repo, &parent.to_string_lossy())?.join(name);
             if !touches_git(rel) && fs::symlink_metadata(&named).is_ok_and(|m| m.file_type().is_symlink()) {
-                return fs::remove_file(&named).map_err(|e| e.to_string());
+                return fs::remove_file(&named).map_err(|e| io_error(shown(repo, relative), &e));
             }
         }
         let path = self.inside(repo, relative)?;
         if path == base {
-            return Err("the repo itself is not removed this way".into());
+            return Err(tr!("The repo itself is not removed this way", "repo そのものはこの方法では消せません"));
         }
-        let meta = fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
-        if meta.is_dir() { fs::remove_dir_all(&path) } else { fs::remove_file(&path) }.map_err(|e| e.to_string())
+        let meta = fs::symlink_metadata(&path).map_err(|e| io_error(shown(repo, relative), &e))?;
+        if meta.is_dir() { fs::remove_dir_all(&path) } else { fs::remove_file(&path) }.map_err(|e| io_error(shown(repo, relative), &e))
     }
 
     /// The repo's issues, newest written first; None when it has no issue/.
@@ -350,9 +423,9 @@ impl Repos {
     /// Write a new issue as the next numbered file in `issue/`; returns its name.
     pub fn add_issue(&self, repo: &str, kind: Option<&str>, title: &str, detail: &str) -> Result<String> {
         if title.trim().is_empty() {
-            return Err("an issue needs a title".into());
+            return Err(tr!("An issue needs a title", "Issue には件名がいります"));
         }
-        let names: Vec<String> = self.tree(repo, "issue").map_err(|_| format!("{repo} has no issue/"))?
+        let names: Vec<String> = self.tree(repo, "issue").map_err(|_| no_issues(repo))?
             .into_iter().map(|e| e.name).collect();
         let name = issues::next_name(&names);
         self.add(repo, "issue", &name, &issues::text(kind, title, detail), 256 * 1024)?;
@@ -423,6 +496,36 @@ mod tests {
         let names: Vec<String> = r.tree("a", "src").unwrap().into_iter().map(|e| e.name).collect();
         assert_eq!(names, ["main.c"]);
         assert_eq!(r.read("b", "README.md", 100).unwrap().text.as_deref(), Some("# b\n"));
+    }
+
+    #[test]
+    fn put_replaces_or_makes_a_file_and_names_the_path_when_it_cannot() {
+        let r = scratch("put");
+        r.create("a", "standard").unwrap();
+        assert_eq!(r.put("a", "README.md", "x\n", 100, false).unwrap(), (2, false));
+        assert!(r.put("a", "new/deep.txt", "y", 100, false).unwrap_err().contains("a/new/deep.txt"));
+        assert_eq!(r.put("a", "new/deep.txt", "y", 100, true).unwrap(), (1, true));
+        assert_eq!(r.put("a", ".gitignore", "target\n", 100, true).unwrap(), (7, true));
+        assert_eq!(r.read("a", "new/deep.txt", 100).unwrap().text.as_deref(), Some("y"));
+        assert!(r.put("a", ".git/config", "x", 100, true).is_err());
+        assert!(r.put("a", "../b/x", "x", 100, true).is_err());
+        assert!(r.put("a", "", "x", 100, true).is_err());
+        assert!(r.read("a", "nope.txt", 10).unwrap_err().contains("a/nope.txt"));
+        assert!(r.tree("a", "README.md").unwrap_err().contains("a/README.md"));
+    }
+
+    #[test]
+    fn an_issue_is_found_by_its_number_or_file() {
+        let r = scratch("issue-file");
+        r.create("a", "standard").unwrap();
+        r.add_issue("a", None, "one", "").unwrap();
+        assert_eq!(r.issue_file("a", "1").unwrap(), "001.md");
+        assert_eq!(r.issue_file("a", "#001").unwrap(), "001.md");
+        assert_eq!(r.issue_file("a", "issue/001.md").unwrap(), "001.md");
+        assert!(r.issue_file("a", "2").unwrap_err().contains("#2"));
+        assert!(r.issue_file("nope", "1").is_err());
+        r.create("e", "empty").unwrap();
+        assert!(r.issue_file("e", "1").unwrap_err().contains("issue/"));
     }
 
     #[test]

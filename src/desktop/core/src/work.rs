@@ -93,6 +93,11 @@ pub fn line(repo: &str, line: &str) -> Result<Option<Line>> {
 pub fn start(repos: &Repos, repo: &str, issue: &str) -> Result<Line> {
     let stem = line_for(issue).ok_or_else(|| crate::tr!("{} is not an issue file (issue/NNN.md)", "{} は Issue のファイル（issue/NNN.md）ではありません", issue))?;
     let client = Client::open()?;
+    // A merged issue is done: its work is main's now.
+    let path = format!("issue/{}", issue.trim_start_matches('/').trim_start_matches("issue/"));
+    if crate::history::changes_of_repo(repo)?.iter().any(|c| c.issue == path && c.state == "merged") {
+        return Err(crate::tr!("{}{} is merged already: its work is in main", "{}{} はもう Merge 済みです。その作業は main にあります", repo, crate::issues::number(&path)));
+    }
     let _ = remote::sync(repos, repo);
     let made: Line = serde_json::from_value(client.json("POST", &format!("/v1/repos/{repo}/lines"), Some(serde_json::json!({"issue": issue})))?)
         .map_err(|e| e.to_string())?;
@@ -142,6 +147,42 @@ pub fn finish(repos: &Repos, repo: &str, line: &str) -> Result<u64> {
     fs::remove_dir_all(&at).map_err(|e| e.to_string())?;
     remote::forget_line(repo, line);
     Ok(size)
+}
+
+/// Where a directory is, as this OS sees it: in which repo, on which line
+/// of work, and the folder inside it ("" at its top).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Here {
+    pub repo: String,
+    pub line: String,
+    pub folder: String,
+}
+
+/// Where `cwd` is: in a repo's copy (`<repos>/<repo>/…`), or an issue's copy
+/// of one (`<data>/work/<repo>/<line>/…`); else, in a Prompt, its repo
+/// (`$LENGTH3_REPO`).
+pub fn here(cwd: &std::path::Path) -> Option<Here> {
+    let parts = |rel: &std::path::Path| -> Vec<String> { rel.iter().map(|p| p.to_string_lossy().into_owned()).collect() };
+    let repos = crate::paths::repos_dir();
+    let repos = repos.canonicalize().unwrap_or(repos);
+    let cwd = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
+    if let Ok(rel) = cwd.strip_prefix(&repos) {
+        if let [repo, rest @ ..] = parts(rel).as_slice() {
+            if crate::repos::valid_name(repo) {
+                return Some(Here { repo: repo.clone(), line: current(repo), folder: rest.join("/") });
+            }
+        }
+    }
+    let work = crate::paths::data_dir().join("work");
+    let work = work.canonicalize().unwrap_or(work);
+    if let Ok(rel) = cwd.strip_prefix(&work) {
+        if let [repo, line, rest @ ..] = parts(rel).as_slice() {
+            if crate::repos::valid_name(repo) && valid(line) {
+                return Some(Here { repo: repo.clone(), line: line.clone(), folder: rest.join("/") });
+            }
+        }
+    }
+    std::env::var("LENGTH3_REPO").ok().filter(|r| crate::repos::valid_name(r)).map(|repo| Here { repo, line: MAIN.into(), folder: String::new() })
 }
 
 /// Point the repo at `line` without bringing anything (freeing walks each copy).
