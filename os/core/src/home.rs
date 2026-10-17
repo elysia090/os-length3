@@ -34,7 +34,8 @@ pub fn get(key: &str) -> Result<Option<String>> {
 pub fn set(key: &str, json: &str) -> Result<()> {
     serde_json::from_str::<serde_json::Value>(json).map_err(|e| format!("{key}: {e}"))?;
     if json.len() > 1 << 20 {
-        return Err(format!("{key} is larger than 1 MiB"));
+        // Kept as one value (every dotfile together, every TODO), so what was being added is what makes it too large.
+        return Err(crate::tr!("Home's {} would be larger than 1 MiB in all, so nothing was saved; make room in it first", "Home の {} が合わせて 1 MiB を超えるので、保存していません。先に空きを作ってください", key));
     }
     let path = file(key)?;
     // Home's state (profile, TODO) is the person's alone: the directory is

@@ -370,7 +370,8 @@ impl Repos {
         let mut path = base.clone();
         for c in Path::new(relative).components() {
             match c {
-                Component::Normal(part) if !is_git_name(&part.to_string_lossy()) => path.push(part),
+                Component::Normal(part) if is_git_name(&part.to_string_lossy()) => return Err(tr!("{} is in the repo's .git", "{} は repo の .git の中です", shown(repo, relative))),
+                Component::Normal(part) => path.push(part),
                 Component::CurDir => {}
                 _ => return Err(tr!("{} leaves the repo", "{} は repo の外です", shown(repo, relative))),
             }
@@ -610,7 +611,8 @@ mod tests {
         assert!(r.write("a", ".git/config", "[core]\n\tfsmonitor = evil\n", 1024).is_err());
         assert!(r.add("a", ".git/hooks", "pre-commit", "#!/bin/sh\n", 1024).is_err());
         assert!(r.add("a", ".git", "config2", "x", 1024).is_err());
-        assert!(r.mkdir("a", ".git/hooks/x").is_err());
+        // Said as what it is (bug: "leaves the repo").
+        assert!(r.mkdir("a", ".git/hooks/x").is_err_and(|e| e.contains(".git") && !e.contains("leaves")));
         assert!(r.mkdir("a", ".GIT/x").is_err());
         assert!(r.read("a", ".git/config", 1024).is_err());
         assert!(r.tree("a", ".git").is_err());
