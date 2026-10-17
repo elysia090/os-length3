@@ -58,10 +58,13 @@ fn global_name(n: u32) -> String { if n < 16 { format!("r{n}") } else if n == G_
 fn global_type(n: u32) -> ValType { if n < 17 || n == G_FLAGS { ValType::I64 } else { ValType::V128 } }
 
 const G_FS: u32 = 16;
-/// CF, ZF, SF, OF and PF as bits 0..4, for code that goes on to another function's head.
+/// CF, ZF, SF, OF and PF as bits 0..4: what an entry that reads flags first is handed.
 const G_FLAGS: u32 = 33;
-/// The flags' locals in the order of their bits in G_FLAGS.
-const FLAG_LOCALS: [u32; 5] = [L_CF, L_ZF, L_SF, L_OF, L_PF];
+/// Each flag with its RflagsBits mask, its local and its bit in G_FLAGS.
+const FLAG_BITS: [(Flag, u32, u32); 5] = [
+    (Flag::C, RflagsBits::CF, L_CF), (Flag::Z, RflagsBits::ZF, L_ZF), (Flag::S, RflagsBits::SF, L_SF),
+    (Flag::O, RflagsBits::OF, L_OF), (Flag::P, RflagsBits::PF, L_PF),
+];
 const fn g_xmm(n: u32) -> u32 { 17 + n }
 
 // ---- Function locals ----
@@ -139,6 +142,8 @@ struct Fx<'p> {
     program: &'p Program,
     function: &'p Function,
     report: &'p mut Report,
+    /// Flags each entry reads before writing them (entry_flags).
+    handed: &'p BTreeMap<u64, u32>,
     uses_xmm: bool,
     /// Direction flag, tracked statically within a block (std ... cld).
     backward: bool,
@@ -197,25 +202,31 @@ impl<'p> Fx<'p> {
         }
     }
 
-    /// Hand the flags on in G_FLAGS, for code outside this function that may read them.
-    fn save_flags(&mut self) {
-        self.hold_flags();
-        for (k, l) in FLAG_LOCALS.iter().enumerate() {
-            self.get(*l);
-            if k > 0 { self.c32(k as i32); self.e(W::I32Shl); self.e(W::I32Or); }
+    /// Hand the flags in `mask` to code outside this function, in G_FLAGS,
+    /// each computed from the state as it is (nothing is held for it).
+    fn save_flags(&mut self, mask: u32) {
+        let mut first = true;
+        for (k, &(f, bit, _)) in FLAG_BITS.iter().enumerate() {
+            if mask & bit == 0 { continue; }
+            self.flag(f);
+            if k > 0 { self.c32(k as i32); self.e(W::I32Shl); }
+            if !first { self.e(W::I32Or); }
+            first = false;
         }
+        if first { return; }
         self.e(W::I64ExtendI32U);
         self.e(W::GlobalSet(G_FLAGS));
     }
 
-    /// Take the flags a function that came before left in G_FLAGS.
-    fn load_flags(&mut self) {
-        for (k, l) in FLAG_LOCALS.iter().enumerate() {
+    /// Take the flags in `mask` that the code before left in G_FLAGS.
+    fn load_flags(&mut self, mask: u32) {
+        for (k, &(_, bit, l)) in FLAG_BITS.iter().enumerate() {
+            if mask & bit == 0 { continue; }
             self.e(W::GlobalGet(G_FLAGS));
             self.e(W::I32WrapI64);
             if k > 0 { self.c32(k as i32); self.e(W::I32ShrU); }
             self.c32(1); self.e(W::I32And);
-            self.set(*l);
+            self.set(l);
         }
         self.flags = Flags::Held;
     }
@@ -536,8 +547,7 @@ impl<'p> Fx<'p> {
     /// Transfer to code outside this function without growing the stack.
     fn tail(&mut self, address: u64) {
         self.save();
-        // What it goes on to may read the flags left here (post-linked code shares one function's tail with another's head).
-        self.save_flags();
+        self.save_flags(handed(self.handed, address));
         match self.program.entries.get(&address) {
             Some(&(f, b)) => {
                 self.c32(b as i32);
@@ -1217,7 +1227,7 @@ impl Fx<'_> {
                 self.load();
                 self.get(l_t(1)); self.set(l_reg(RAX));
                 self.c64(i.next_ip() as i64); self.set(l_reg(RCX));
-                self.flags = Flags::Held;
+                // The flags come back as they were, held or not.
                 true
             }
             Cpuid => { self.cpuid(); true }
@@ -1758,30 +1768,76 @@ impl Fx<'_> {
 
 // ---- Flag liveness ----
 
-fn flags_read(i: &Instruction) -> u32 { i.rflags_read() & ALL_FLAGS }
-fn flags_written(i: &Instruction) -> u32 { i.rflags_modified() & ALL_FLAGS }
+// A system call keeps the flags here (r11 is not given them), so it neither reads nor writes them.
+fn flags_read(i: &Instruction) -> u32 { if i.mnemonic() == Mnemonic::Syscall { 0 } else { i.rflags_read() & ALL_FLAGS } }
+fn flags_written(i: &Instruction) -> u32 { if i.mnemonic() == Mnemonic::Syscall { 0 } else { i.rflags_modified() & ALL_FLAGS } }
 
-/// The blocks of `f` that `b` goes on to, and whether it can also go on to
-/// code outside them. Code outside (another function's entry reached by a
-/// fall, a jump or a tail jump, as post-linked code shares one function's
-/// tail with another's head, or an indirect jump) may read the flags `b`
-/// leaves, so they are kept for it.
-fn successors(f: &Function, b: &Block) -> (Vec<usize>, bool) {
-    let mut out = Vec::new();
-    let mut unknown = false;
-    let mut add = |a: u64| match f.block_index(a) { Some(k) => out.push(k), None => unknown = true };
-    match b.exit {
-        Exit::Fall(a) | Exit::Jump(a) => add(a),
-        Exit::Branch { taken, fall } => { add(taken); add(fall); }
-        Exit::IndirectJump | Exit::TailJump(_) => unknown = true,
-        _ => {}
-    }
-    (out, unknown)
+/// The flags code going on to `address`, outside the function, must hand
+/// over: those its entry reads first, or all of them where it is not known
+/// (code found later).
+fn handed(handed: &BTreeMap<u64, u32>, address: u64) -> u32 {
+    handed.get(&address).copied().unwrap_or(ALL_FLAGS)
 }
 
-/// Flags live on entry to each block, as an RflagsBits mask.
-fn live_flags(f: &Function) -> Vec<u32> {
+/// The blocks of `f` that `b` goes on to by a fall or a jump, and the flags
+/// code it goes on to outside them reads first.
+fn successors(f: &Function, b: &Block, outside: &BTreeMap<u64, u32>) -> (Vec<usize>, u32) {
+    let mut out = Vec::new();
+    let mut ext = 0;
+    let mut add = |a: u64| match f.block_index(a) { Some(k) => out.push(k), None => ext |= handed(outside, a) };
+    match b.exit {
+        Exit::Fall(a) | Exit::Jump(a) | Exit::TailJump(a) => add(a),
+        Exit::Branch { taken, fall } => { add(taken); add(fall); }
+        _ => {}
+    }
+    (out, ext)
+}
+
+/// The flags each entry of the program reads before it writes them. The
+/// post-link compiler gives states whose futures are equal one body, across
+/// functions too, so a compare can end one function and the jump that reads
+/// it begin another; such an entry is handed what it reads in G_FLAGS.
+/// Every other entry reads none and costs nothing. The least fixed point:
+/// each entry starts reading nothing and grows to what its code reads.
+fn entry_flags(program: &Program) -> BTreeMap<u64, u32> {
+    let mut map: BTreeMap<u64, u32> = program.entries.keys().map(|&a| (a, 0)).collect();
+    let mut todo: Vec<usize> = (0..program.functions.len()).collect();
+    while !todo.is_empty() {
+        let mut changed = false;
+        let mut again = Vec::new();
+        for &fi in &todo {
+            let f = &program.functions[fi];
+            let (live, _) = live_flags(program, fi as u32, &map);
+            // Only a function that goes on to code outside it can change again.
+            let mut leaves = false;
+            for (k, b) in f.blocks.iter().enumerate() {
+                let outside = |a: u64| f.block_index(a).is_none();
+                leaves |= match b.exit {
+                    Exit::Fall(a) | Exit::Jump(a) | Exit::TailJump(a) => outside(a),
+                    Exit::Branch { taken, fall } => outside(taken) || outside(fall),
+                    _ => false,
+                };
+                if program.entries.get(&b.start) == Some(&(fi as u32, k as u32)) && map[&b.start] != live[k] {
+                    map.insert(b.start, live[k]);
+                    changed = true;
+                }
+            }
+            if leaves { again.push(fi); }
+        }
+        if !changed { break; }
+        todo = again;
+    }
+    map
+}
+
+/// Flags live on entry to each block, as an RflagsBits mask, and those the
+/// function's entries read: an indirect jump lands on one of them (a case of
+/// a jump table), so it keeps those.
+fn live_flags(program: &Program, index: u32, outside: &BTreeMap<u64, u32>) -> (Vec<u32>, u32) {
+    let f = &program.functions[index as usize];
     let n = f.blocks.len();
+    let entry: Vec<bool> = f.blocks.iter().enumerate().map(|(k, b)| program.entries.get(&b.start) == Some(&(index, k as u32))).collect();
+    let mut cases = 0;
     let summary: Vec<(u32, u32)> = f.blocks.iter().map(|b| {
         let (mut used, mut defined) = (0, 0);
         for i in &b.code {
@@ -1794,32 +1850,34 @@ fn live_flags(f: &Function) -> Vec<u32> {
     loop {
         let mut changed = false;
         for k in (0..n).rev() {
-            let (succ, unknown) = successors(f, &f.blocks[k]);
-            let out = if unknown { ALL_FLAGS } else { succ.iter().fold(0, |acc, &s| acc | live_in[s]) };
+            let (succ, ext) = successors(f, &f.blocks[k], outside);
+            let ext = if f.blocks[k].exit == Exit::IndirectJump { cases } else { ext };
+            let out = succ.iter().fold(ext, |acc, &s| acc | live_in[s]);
             let new = summary[k].0 | (out & !summary[k].1);
             if new != live_in[k] {
                 live_in[k] = new;
+                if entry[k] { cases |= new; }
                 changed = true;
             }
         }
         if !changed {
-            return live_in;
+            return (live_in, cases);
         }
     }
 }
 
 // ---- Functions ----
 
-fn lower_function(program: &Program, index: u32, options: Options, report: &mut Report) -> WasmFunction {
+fn lower_function(program: &Program, index: u32, handed: &BTreeMap<u64, u32>, options: Options, report: &mut Report) -> WasmFunction {
     let function = &program.functions[index as usize];
-    let live = live_flags(function);
+    let (live, cases) = live_flags(program, index, handed);
     let n = function.blocks.len() as u32;
     // Decide before lowering whether xmm state travels with this function,
     // so saves and reloads around every call agree with the prologue.
     let uses_xmm = function.blocks.iter().flat_map(|b| &b.code).any(|i| {
         (0..i.op_count()).any(|n| i.op_kind(n) == OpKind::Register && xmm(i.op_register(n)).is_some())
     });
-    let mut fx = Fx { code: Vec::new(), flags: Flags::Held, depth: 0, program, function, report, uses_xmm, backward: false };
+    let mut fx = Fx { code: Vec::new(), flags: Flags::Held, depth: 0, program, function, report, handed, uses_xmm, backward: false };
 
     // Body first so we know whether xmm state must be loaded and saved.
     let mut body: Vec<I> = Vec::new();
@@ -1837,8 +1895,10 @@ fn lower_function(program: &Program, index: u32, options: Options, report: &mut 
             fx.e(W::Call(F_TRACE));
         }
         let next = function.blocks.get(k + 1).map(|b| b.start);
-        let (succ, unknown) = successors(function, block);
-        let live_out = if unknown { ALL_FLAGS } else { succ.iter().fold(0, |acc, &s| acc | live[s]) };
+        let (succ, ext) = successors(function, block, handed);
+        // An indirect jump may land on an entry of this function, whose flags stay in the locals.
+        let held = succ.iter().fold(0, |acc, &s| acc | live[s]) | if block.exit == Exit::IndirectJump { cases } else { 0 };
+        let live_out = held | ext;
         // Flags needed after each instruction, from the end backward.
         let mut needed = vec![0u32; block.code.len()];
         let mut l = live_out;
@@ -1858,7 +1918,8 @@ fn lower_function(program: &Program, index: u32, options: Options, report: &mut 
             fx.instruction(i, needed[j] != 0);
         }
         let term = block.code[last];
-        if live_out != 0 && !matches!(block.exit, Exit::Branch { .. }) {
+        // Flags for code outside are handed from the state as it is.
+        if held != 0 && !matches!(block.exit, Exit::Branch { .. }) {
             fx.hold_flags();
         }
         match block.exit {
@@ -1866,7 +1927,7 @@ fn lower_function(program: &Program, index: u32, options: Options, report: &mut 
             Exit::TailJump(a) => fx.tail(a),
             Exit::Branch { taken, fall } => {
                 fx.condition(term.condition_code());
-                if live_out != 0 { fx.set(l_u(1)); fx.hold_flags(); fx.get(l_u(1)); }
+                if held != 0 { fx.set(l_u(1)); fx.hold_flags(); fx.get(l_u(1)); }
                 fx.e(W::If(BlockType::Empty));
                 fx.depth += 1;
                 fx.goto(taken, None);
@@ -1884,6 +1945,8 @@ fn lower_function(program: &Program, index: u32, options: Options, report: &mut 
                 fx.e(W::Br(fx.depth + 1));
                 fx.e(W::End);
                 fx.save();
+                // Elsewhere, it is handed what this function's own cases read.
+                fx.save_flags(cases);
                 fx.get(l_t(0)); fx.e(W::ReturnCall(F_DISPATCH));
             }
             Exit::Call { target, ret } => {
@@ -1933,7 +1996,8 @@ fn lower_function(program: &Program, index: u32, options: Options, report: &mut 
     ]);
     fx.get(L_ENTRY); fx.set(L_BLK);
     fx.load();
-    fx.load_flags();
+    // What the entries handed flags read (almost always none).
+    fx.load_flags(cases);
     fx.e(W::Loop(BlockType::Empty));
     for _ in 0..n { fx.e(W::Block(BlockType::Empty)); }
     fx.get(L_BLK);
@@ -2091,8 +2155,9 @@ pub fn translate_more(program: &Program, base: u32, options: Options) -> Transla
     module.section(&elements);
 
     let mut code = CodeSection::new();
+    let handed = entry_flags(program);
     for f in 0..program.functions.len() as u32 {
-        code.function(&lower_function(program, f, options, &mut report));
+        code.function(&lower_function(program, f, &handed, options, &mut report));
     }
     module.section(&code);
 
@@ -2171,8 +2236,9 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
 
     let mut code = CodeSection::new();
     helpers(&mut code, entries as u32, table_base);
+    let handed = entry_flags(program);
     for f in 0..program.functions.len() as u32 {
-        code.function(&lower_function(program, f, options, &mut report));
+        code.function(&lower_function(program, f, &handed, options, &mut report));
     }
     module.section(&code);
 
