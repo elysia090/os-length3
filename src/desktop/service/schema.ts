@@ -50,6 +50,18 @@ export const repo = pgTable('repo', {
   updatedAt: moment('updated_at').defaultNow().notNull(),
 }, (t) => [primaryKey({columns: [t.userId, t.name, t.line]})]);
 
+/**
+ * A repo that went for good (discarded, or let go 30 days after it was
+ * turned off): its name, and when. Remembered 90 days, so a device still
+ * holding a copy is told the repo went instead of bringing it back by
+ * sending it as new; a repo made anew under the name clears it.
+ */
+export const repoGone = pgTable('repo_gone', {
+  userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
+  name: text('name').notNull(),
+  at: moment('at').defaultNow().notNull(),
+}, (t) => [primaryKey({columns: [t.userId, t.name]}), index('repo_gone_at_idx').on(t.at)]);
+
 export const cut = pgTable('cut', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),

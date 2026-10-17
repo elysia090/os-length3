@@ -814,6 +814,98 @@ test('A repo named on answers only that it is off; a range that ends before it s
   assert.deepEqual([head.status, head.headers.get('Content-Length')], [200, '100']);
 });
 
+test('Discard: an off repo goes for good now, asked as off is; its name is remembered, so a copy that was in step cannot bring it back, and one made anew can', async () => {
+  const s = await service();
+  const t = await s.start('Ren');
+  const me = await idOf(s, t);
+  await named(s, [t, 'ren']);
+  const readme = (await upload(s, t, enc.encode('# r\n'))).sha, issue = (await upload(s, t, enc.encode('Fix：x\n'))).sha, fix = (await upload(s, t, enc.encode('fixed\n'))).sha;
+  // A repo with all a repo has: commits, a line of work with its change, a share in a server and a public name.
+  await s.call('PATCH', '/v1/repos/r/draft', {token: t, body: {version: 0, set: {'README.md': readme, 'issue/001.md': issue}, remove: []}});
+  await s.call('POST', '/v1/repos/r/cuts', {token: t, body: {version: 1, parent: null, title: 'start'}});
+  await s.call('POST', '/v1/repos/r/lines', {token: t, body: {issue: 'issue/001.md'}});
+  await s.call('PATCH', '/v1/repos/r/draft?line=001', {token: t, body: {version: 1, set: {'fix.c': fix}, remove: []}});
+  const work = (await s.call('POST', '/v1/repos/r/cuts?line=001', {token: t, body: {version: 2, parent: (await s.call('GET', '/v1/repos/r?line=001', {token: t})).json.head, title: 'fix'}})).json.id as string;
+  await s.call('POST', '/v1/repos/r/lines/001/push', {token: t, body: {head: work}});
+  assert.equal((await s.call('POST', '/v1/repos/r/changes', {token: t, body: {line: '001', title: 'fix'}})).status, 201);
+  const sid = (await s.call('POST', '/v1/servers', {token: t, body: {name: 'Trip'}})).json.id as string;
+  assert.equal((await s.call('POST', `/v1/servers/${sid}/repos`, {token: t, body: {repo: 'r'}})).status, 201);
+  assert.equal((await s.call('PUT', '/v1/repos/r/seen', {token: t, body: {seen: 'everyone', as: 'me'}})).status, 200);
+  await s.call('PATCH', '/v1/repos/keep/draft', {token: t, body: {version: 0, set: {'README.md': readme}, remove: []}});
+  const of = async (table: string) => count(s, sql`select count(*)::int as n from ${sql.identifier(table)} where user_id = ${me} and ${sql.identifier(table === 'repo' || table === 'repo_gone' ? 'name' : 'repo')} = 'r'`);
+  const tables = ['repo', 'cut', 'change', 'repo_share', 'repo_public'];
+  assert.deepEqual(await Promise.all(tables.map(of)), [2, 2, 1, 1, 1]);
+
+  // Asked as off is: a passkey just now, the names and the code; and only of a repo that is off.
+  const discard = (body: unknown = {name: 'Ren', repo: 'r', code: 'AB12C'}, name = 'r') => s.call('POST', `/v1/repos/${name}/discard`, {token: t, body});
+  assert.deepEqual([(await discard()).status, (await discard()).json.error], [403, 'Confirm with a passkey.']);
+  const session = ((await s.call('GET', '/api/auth/get-session', {token: t})).json as unknown as {session: {id: string}}).session.id;
+  await s.db.insert(schema.guard).values({userId: me, proofSession: session, proofAt: new Date()});
+  assert.equal((await discard()).status, 409); // no code set
+  await s.call('POST', '/v1/off-code', {token: t, body: {code: 'AB12C'}});
+  assert.deepEqual([(await discard({name: 'Ren', repo: 'r', code: 'ZZZZZ'})).status, (await discard({name: 'Ren', repo: 'r', code: 'ZZZZZ'})).json.error], [403, 'That is not the code.']);
+  assert.equal((await discard({name: 'Ren', repo: 'keep', code: 'AB12C'})).status, 403);
+  assert.equal((await discard({name: 'Mio', repo: 'r', code: 'AB12C'})).status, 403);
+  const onStill = await discard();
+  assert.deepEqual([onStill.status, onStill.json.error], [409, 'Turn it off first.']);
+  assert.deepEqual(await Promise.all(tables.map(of)), [2, 2, 1, 1, 1]);
+  assert.equal((await discard({name: 'Ren', repo: 'nope', code: 'AB12C'}, 'nope')).status, 404);
+
+  // Off, then discarded: all of it goes in one step, and its name is remembered as gone.
+  assert.equal((await s.call('POST', '/v1/repos/r/off', {token: t, body: {name: 'Ren', repo: 'r', code: 'AB12C'}})).status, 200);
+  const moved = async () => (await s.call('GET', '/v1/moved', {token: t})).json.repos as string;
+  const before = await moved();
+  const done = await discard();
+  assert.deepEqual([done.status, done.json], [200, {name: 'r', discarded: true}]);
+  assert.deepEqual(await Promise.all(tables.map(of)), [0, 0, 0, 0, 0]);
+  assert.equal(await of('repo_gone'), 1);
+  const gone = (await s.call('GET', '/v1/repos/gone', {token: t})).json as unknown as {name: string; at: number}[];
+  assert.ok(gone.length === 1 && gone[0].name === 'r' && Math.abs(gone[0].at - Date.now()) < 60_000, JSON.stringify(gone));
+  assert.notEqual(await moved(), before);
+  assert.deepEqual(((await s.call('GET', '/v1/repos', {token: t})).json as unknown as {name: string}[]).map((r) => r.name), ['keep']);
+  assert.equal((await s.call('GET', '/v1/seen/ren@length3.test/r')).status, 404);
+  // Asked again: it is not there to discard.
+  assert.equal((await discard()).status, 404);
+
+  // A copy that was in step with it is told it went, whatever it sends, on any line.
+  const read = await s.call('GET', '/v1/repos/r', {token: t});
+  assert.deepEqual([read.status, read.json.gone], [404, gone[0].at]);
+  const resent = await s.call('PATCH', '/v1/repos/r/draft', {token: t, body: {version: 0, set: {'README.md': readme}, remove: []}});
+  assert.deepEqual([resent.status, resent.json], [410, {error: 'This repo was discarded on the Remote.', gone: gone[0].at}]);
+  assert.equal((await s.call('PATCH', '/v1/repos/r/draft', {token: t, body: {version: 2, set: {}, remove: []}})).status, 410);
+  assert.equal((await s.call('PATCH', '/v1/repos/r/draft?line=001&anew=1', {token: t, body: {version: 1, set: {}, remove: []}})).status, 410);
+  assert.deepEqual(((await s.call('GET', '/v1/repos', {token: t})).json as unknown as unknown[]).length, 1);
+  // One that never was is made anew under the name, and the name is no longer gone.
+  const stamp = await moved();
+  const anew = await s.call('PATCH', '/v1/repos/r/draft?anew=1', {token: t, body: {version: 0, set: {'README.md': readme}, remove: []}});
+  assert.deepEqual([anew.status, anew.json], [200, {version: 1}]);
+  assert.deepEqual([(await s.call('GET', '/v1/repos/gone', {token: t})).json, await of('repo_gone')], [[], 0]);
+  assert.notEqual(await moved(), stamp);
+  assert.deepEqual(((await s.call('GET', '/v1/repos/r', {token: t})).json as unknown as {draft: object}).draft, {'README.md': readme});
+  // `gone` is the Remote's own word: no repo is made under it.
+  const word = await s.call('PATCH', '/v1/repos/gone/draft', {token: t, body: {version: 0, set: {}, remove: []}});
+  assert.deepEqual([word.status, word.json.error], [400, 'A repo cannot be called gone']);
+});
+
+test('The sweep remembers a repo it let go as gone, for 90 days', async () => {
+  const s = await service();
+  const t = await s.start('Ren');
+  const draft = (query = '') => s.call('PATCH', `/v1/repos/old/draft${query}`, {token: t, body: {version: 0, set: {'a.txt': null}, remove: []}});
+  assert.equal((await draft()).status, 200);
+  await s.db.update(schema.repo).set({offAt: new Date(Date.now() - 31 * 86_400_000)});
+  const went = await sweep(s.db, s.bucket);
+  assert.deepEqual([went.repo, went.gone], [1, 1]);
+  const gone = (await s.call('GET', '/v1/repos/gone', {token: t})).json as unknown as {name: string; at: number}[];
+  assert.deepEqual(gone.map((g) => g.name), ['old']);
+  assert.equal((await draft()).status, 410);
+  // Ninety days on, it is forgotten: read as not gone at once, swept the next day.
+  await s.db.execute(sql`update repo_gone set at = now() - interval '91 days'`);
+  assert.deepEqual((await s.call('GET', '/v1/repos/gone', {token: t})).json, []);
+  assert.equal((await sweep(s.db, s.bucket)).remembered, 1);
+  assert.equal(await count(s, sql`select count(*)::int as n from repo_gone`), 0);
+  assert.equal((await draft()).status, 200);
+});
+
 test('A board item taken off is not brought back by a late change; closing a board ends its guests', async () => {
   const s = await service();
   const ren = await s.start('Ren');

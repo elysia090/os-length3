@@ -27,6 +27,10 @@ export default {
   'Too many reviews on this change': 'この変更のレビューが多すぎます',
   'The change is not open any more': 'その変更はもう開いていません',
   'Too many settings': '設定が多すぎます',
+  // A repo turned off, then discarded: gone for good.
+  'Turn it off first.': '先にオフにしてください。',
+  'This repo was discarded on the Remote.': 'この repo は Remote で廃棄されました。',
+  'A repo cannot be called gone': 'repo に gone という名前は付けられません',
   // Inbox: addresses, messages, live chat.
   'That is not a domain': 'それはドメインではありません',
   'Too many addresses': 'アドレスが多すぎます',

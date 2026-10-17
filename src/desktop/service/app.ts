@@ -10,14 +10,18 @@
 //   PUT    /v1/blobs/:sha             bytes, refused unless they are that digest and fit in its room
 //   GET    /v1/blobs/:sha
 //   GET    /v1/repos                  each repo: head, draft version, bytes, when
+//   GET    /v1/repos/gone             each repo that went for good, lately: [{name, at}]
 //   GET    /v1/repos/:name            a line's draft (tree, version, base) and head (?line=, main by default)
+//                                      -> 404 {gone} when it went for good
 //   PATCH  /v1/repos/:name/draft      {version, set, remove}: a diff on that version
 //                                      -> {version} | 409 {version} | 409 {missing}
+//                                      | 410 {gone} for a name that went, unless ?anew=1 makes it again
 //   POST   /v1/repos/:name/cuts       {version, parent, kind, title, issue, note, added, removed}:
 //                                      the draft at that version becomes a cut
 //   GET    /v1/repos/:name/cuts/:id
 //   GET    /v1/repos/:name/log        from the line's head along first parents
 //   POST   /v1/repos/:name/off | on   off: a passkey just now, the names and the code; on: back at once
+//   POST   /v1/repos/:name/discard    an off repo goes for good, now (asked as off is)
 //   GET    /v1/off-code  POST {code}
 //   GET    /v1/repos/:name/lines      the work on its issues; POST {issue} starts one
 //   POST   /v1/repos/:name/lines/:line/push {head}
@@ -27,20 +31,21 @@
 //
 // Every write that is checked against what the account already has (its
 // room, how many repos or lines or settings) holds the account's lock in a
-// transaction, so the check and the write are one step. Nothing is purged
-// here: what goes, goes in sweep.ts.
+// transaction, so the check and the write are one step. What goes, goes as
+// sweep.ts lets it go: discarding a repo is its purge, run at once.
 
 import {and, desc, eq, inArray, isNull, ne, sql} from 'drizzle-orm';
-import {Hono, type MiddlewareHandler} from 'hono';
+import {Hono, type Context, type MiddlewareHandler} from 'hono';
 import {cors} from 'hono/cors';
 import type {Auth} from './auth.ts';
 import type {Bucket} from './bucket.ts';
 import {devOAuth} from './devoauth.ts';
 import {inbox} from './inbox.ts';
-import {body, lock, ms, qualified, refuse, rows, type Db, type Vars} from './request.ts';
-import {blob, change, cut, guard, home, repo, type Review, type Tree} from './schema.ts';
+import {body, days, lock, ms, qualified, refuse, rows, type Db, type Vars} from './request.ts';
+import {blob, change, cut, guard, home, repo, repoGone, type Review, type Tree} from './schema.ts';
 import {seen} from './seen.ts';
 import {servers} from './servers.ts';
+import {KEPT, purge, REMEMBERED} from './sweep.ts';
 
 export interface Deps {
   db: Db;
@@ -68,8 +73,6 @@ export interface Deps {
 
 /** What one account may keep, unless the deployment says otherwise. */
 export const QUOTA = 2 * 1024 ** 3;
-/** How long a repo turned off is kept. */
-export const KEPT = 30 * 24 * 3600 * 1000;
 
 const HEX = /^[0-9a-f]{64}$/;
 export const LIMIT = {blob: 16 << 20, files: 20_000, diff: 5_000, words: 2_000, log: 200,
@@ -227,13 +230,15 @@ export function createApp(d: Deps) {
 
   // ---- what moved: the one request a page asks every few seconds ----
 
-  // A stamp of what GET /v1/repos would say (each main line's version, head, when it changed and
-  // whether it is off), and each setting's version: one read of small columns, nothing else.
+  // A stamp of what GET /v1/repos and /v1/repos/gone would say (each main line's version, head,
+  // when it changed and whether it is off; each name gone, and when), and each setting's version:
+  // one read of small columns, nothing else.
   v1.get('/moved', async (c) => {
     const user = c.get('userId');
     const [m] = await rows<{repos: string; home: Record<string, number>}>(db, sql`select
-      (select md5(coalesce(string_agg(concat_ws(' ', r.name, r.version, coalesce(r.head, '-'), coalesce(${ms(sql`r.off_at`)}, 0), ${ms(sql`r.updated_at`)}), ',' order by r.name), ''))
-        from repo r where r.user_id = ${user} and r.line = 'main') as repos,
+      md5(coalesce((select string_agg(concat_ws(' ', r.name, r.version, coalesce(r.head, '-'), coalesce(${ms(sql`r.off_at`)}, 0), ${ms(sql`r.updated_at`)}), ',' order by r.name)
+        from repo r where r.user_id = ${user} and r.line = 'main'), '')
+        || ';' || coalesce((select string_agg(concat_ws(' ', g.name, ${ms(sql`g.at`)}), ',' order by g.name) from repo_gone g where g.user_id = ${user}), '')) as repos,
       (select coalesce(jsonb_object_agg(h.key, h.version), '{}'::jsonb) from home h where h.user_id = ${user}) as home`);
     return c.json(m);
   });
@@ -289,6 +294,11 @@ export function createApp(d: Deps) {
     (await q.select({...lineCols, ...(draft ? {draft: repo.draft} : {}), off: offOf(user, name)}).from(repo).where(at(user, name, line)))[0];
   /** A repo that is off answers nothing but being off, and until when it can come back. */
   const on = (off: Date | null | undefined) => { if (off) refuse(410, {error: 'This repo is turned off', offAt: off.getTime(), until: off.getTime() + KEPT}); };
+  /** The names that went for good and are still remembered, each with when (sweep.ts purge). */
+  const remembered = (user: string) => and(eq(repoGone.userId, user), sql`${repoGone.at} > now() - ${days(REMEMBERED)}`);
+  /** When `name` went for good, if it did lately. */
+  const goneAt = async (q: Db, user: string, name: string) =>
+    ((await q.select({at: repoGone.at}).from(repoGone).where(and(remembered(user), eq(repoGone.name, name))))[0] as {at: Date} | undefined)?.at.getTime();
   const treesOf = async (q: Db, user: string, name: string, ids: (string | null)[]) => {
     const wanted = [...new Set(ids.filter((x): x is string => !!x))];
     const found = wanted.length ? await q.select({id: cut.id, tree: cut.tree}).from(cut).where(and(eq(cut.userId, user), eq(cut.repo, name), inArray(cut.id, wanted))) : [];
@@ -306,16 +316,31 @@ export function createApp(d: Deps) {
     return c.json(list.map((r) => ({...r, offAt: r.offAt?.getTime() ?? null, until: r.offAt ? r.offAt.getTime() + KEPT : null})));
   });
 
+  // The repos that went for good lately, newest first: a device holding a copy of one is told so.
+  // Its own word, so no repo may be named it (PATCH draft).
+  v1.get('/repos/gone', async (c) => {
+    const list = await db.select({name: repoGone.name, at: repoGone.at}).from(repoGone).where(remembered(c.get('userId')))
+      .orderBy(desc(repoGone.at), repoGone.name) as {name: string; at: Date}[];
+    return c.json(list.map((r) => ({name: r.name, at: r.at.getTime()})));
+  });
+
   v1.get('/repos/:name', async (c) => {
-    const row = await lineAt(db, c.get('userId'), c.req.param('name'), lineOf(c), true);
-    if (!row) return c.json({error: 'That repo is not on the Remote'}, 404);
+    const user = c.get('userId'), name = c.req.param('name');
+    const row = await lineAt(db, user, name, lineOf(c), true);
+    if (!row) {
+      const gone = await goneAt(db, user, name);
+      return c.json({error: 'That repo is not on the Remote', ...(gone ? {gone} : {})}, 404);
+    }
     on(row.off);
     return c.json(lineShown(row));
   });
 
-  // A diff on a line's draft at `version`: the one mutable step besides a commit.
+  // A diff on a line's draft at `version`: the one mutable step besides a commit. The first makes
+  // the repo; under a name that went for good, only when asked as new (?anew=1): a client asks so
+  // exactly when its copy was never in step with the Remote, so a copy that was cannot bring back
+  // what was discarded by sending itself again.
   v1.patch('/repos/:name/draft', async (c) => {
-    const user = c.get('userId'), name = c.req.param('name'), line = lineOf(c);
+    const user = c.get('userId'), name = c.req.param('name'), line = lineOf(c), anew = c.req.query('anew') === '1';
     if (!validName(name) || !validLine(line)) return c.json({error: 'Not found'}, 404);
     const b = await body<{version?: unknown; set?: unknown; remove?: unknown}>(c);
     if (!b || typeof b.version !== 'number' || typeof b.set !== 'object' || b.set === null || Array.isArray(b.set) || !Array.isArray(b.remove)) return c.json({error: 'a diff'}, 400);
@@ -328,8 +353,13 @@ export function createApp(d: Deps) {
       await lock(tx, user);
       const row = await lineAt(tx, user, name, line, true);
       on(row?.off);
-      // A line other than main is made by starting work on its issue, not by writing to it.
-      if (!row && line !== 'main') refuse(404, {error: 'That work is not on the Remote'});
+      if (!row) {
+        const gone = await goneAt(tx, user, name);
+        if (gone && !(anew && line === 'main')) refuse(410, {error: 'This repo was discarded on the Remote.', gone});
+        // A line other than main is made by starting work on its issue, not by writing to it.
+        if (line !== 'main') refuse(404, {error: 'That work is not on the Remote'});
+        if (name === 'gone') refuse(400, {error: 'A repo cannot be called gone'});
+      }
       if (shas.length) {
         const have = new Set((await tx.select({sha: blob.sha256}).from(blob).where(and(eq(blob.userId, user), inArray(blob.sha256, shas)))).map((r: {sha: string}) => r.sha));
         const missing = shas.filter((s) => !have.has(s));
@@ -347,7 +377,10 @@ export function createApp(d: Deps) {
       }
       await fits(tx, user, size - JSON.stringify(was).length);
       if (row) await tx.update(repo).set({draft: tree, version: current + 1, updatedAt: sql`now()`}).where(and(at(user, name, line), eq(repo.version, current)));
-      else await tx.insert(repo).values({userId: user, name, line, draft: tree, version: 1, startedBy: c.get('name')});
+      else {
+        await tx.delete(repoGone).where(and(eq(repoGone.userId, user), eq(repoGone.name, name)));
+        await tx.insert(repo).values({userId: user, name, line, draft: tree, version: 1, startedBy: c.get('name')});
+      }
       return current + 1;
     });
     return c.json({version});
@@ -416,28 +449,52 @@ export function createApp(d: Deps) {
       from walk w join cut c on c.id = w.id and c.user_id = ${user} and c.repo = ${name} order by w.n`));
   });
 
-  // ---- turning a repo off: kept 30 days, back at once until then ----
+  // ---- turning a repo off: kept 30 days, back at once until then, or discarded now ----
 
   const digestOf = async (user: string, code: string) => sha256(enc.encode(`${user}:${code.toUpperCase()}`));
   const CODE = /^[A-Za-z0-9]{5}$/;
   /** Proof the person is here: this request's session is the account's latest passkey sign-in, within five minutes. */
   const proven = (g: typeof guard.$inferSelect | undefined, sessionId: string) =>
     !!g?.proofAt && g.proofSession === sessionId && Date.now() - g.proofAt.getTime() < 5 * 60 * 1000;
+  /**
+   * What turning a repo off asks, and discarding it: a passkey just now, the account's name, the
+   * repo's name and the five-letter code, sent as {name, repo, code}. Refused (403, 409) unless all are so.
+   */
+  const confirmed = async (c: Context<Vars>, name: string) => {
+    const user = c.get('userId');
+    const b = await body<{name?: unknown; repo?: unknown; code?: unknown}>(c);
+    const [g] = await db.select().from(guard).where(eq(guard.userId, user)) as (typeof guard.$inferSelect)[];
+    if (!proven(g, c.get('sessionId'))) refuse(403, {error: 'Confirm with a passkey.'});
+    if (!g.offDigest) refuse(409, {error: 'Set the five-letter code under Sign-in first.'});
+    const same = (a: unknown, b: string) => typeof a === 'string' && a.trim().toLowerCase() === b.trim().toLowerCase();
+    if (!same(b?.name, c.get('name')) || b?.repo !== name) refuse(403, {error: 'The names do not match.'});
+    if (typeof b?.code !== 'string' || !CODE.test(b.code) || await digestOf(user, b.code) !== g.offDigest) refuse(403, {error: 'That is not the code.'});
+  };
 
   // Off: asks for a passkey just now, the account's name, the repo's name and the five-letter code.
   v1.post('/repos/:name/off', async (c) => {
     const user = c.get('userId'), name = c.req.param('name');
-    const b = await body<{name?: unknown; repo?: unknown; code?: unknown}>(c);
-    const [g] = await db.select().from(guard).where(eq(guard.userId, user)) as (typeof guard.$inferSelect)[];
-    if (!proven(g, c.get('sessionId'))) return c.json({error: 'Confirm with a passkey.'}, 403);
-    if (!g.offDigest) return c.json({error: 'Set the five-letter code under Sign-in first.'}, 409);
-    const same = (a: unknown, b: string) => typeof a === 'string' && a.trim().toLowerCase() === b.trim().toLowerCase();
-    if (!same(b?.name, c.get('name')) || b?.repo !== name) return c.json({error: 'The names do not match.'}, 403);
-    if (typeof b?.code !== 'string' || !CODE.test(b.code) || await digestOf(user, b.code) !== g.offDigest) return c.json({error: 'That is not the code.'}, 403);
+    await confirmed(c, name);
     // Off once: asking again does not restart its 30 days.
     const [done] = await db.update(repo).set({offAt: sql`coalesce(${repo.offAt}, now())`}).where(at(user, name, 'main')).returning({offAt: repo.offAt});
     if (!done) return c.json({error: 'That repo is not on the Remote'}, 404);
     return c.json({name, offAt: done.offAt.getTime(), until: done.offAt.getTime() + KEPT});
+  });
+
+  // Discard: a repo turned off goes for good now, as the sweep lets one go after its 30 days
+  // (sweep.ts purge), asked for as turning it off is. Its name is remembered as gone.
+  v1.post('/repos/:name/discard', async (c) => {
+    const user = c.get('userId'), name = c.req.param('name');
+    await confirmed(c, name);
+    await db.transaction(async (tx: Db) => {
+      await lock(tx, user);
+      if ((await purge(tx, sql`m.user_id = ${user} and m.name = ${name}`)).repo) return;
+      // Nothing went: it is on (perhaps turned on just now), or not there at all.
+      const [main] = await tx.select({name: repo.name}).from(repo).where(at(user, name, 'main'));
+      if (main) refuse(409, {error: 'Turn it off first.'});
+      refuse(404, {error: 'That repo is not on the Remote'});
+    });
+    return c.json({name, discarded: true});
   });
 
   // On: back at once, as it was.

@@ -41,6 +41,9 @@ export const lock = (tx: Db, key: string) => tx.execute(sql`select pg_advisory_x
 /** A moment as milliseconds since the epoch, as clients read them. */
 export const ms = (moment: SQL) => sql<number>`(extract(epoch from ${moment}) * 1000)::float8`;
 
+/** A span of milliseconds as Postgres counts it, in days (KEPT, HOLD, REMEMBERED). */
+export const days = (span: number) => sql.raw(`interval '${span / 86_400_000} days'`);
+
 /**
  * A column named with its table, always. Inside a subquery an outer column
  * must say whose it is: Drizzle may write a one-table select's column bare,
