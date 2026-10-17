@@ -26,7 +26,8 @@ export interface Issue {
 /** The number a file in issue/ is named by ("007.md" is 7), or null. */
 export const numberOf = (file: string): number | null => {
   const m = /^0*(\d+)\.md$/.exec(file);
-  return m ? Number(m[1]) : null;
+  // A number too large to count on exactly is no number: the next one after it could not be named.
+  return m && Number.isSafeInteger(Number(m[1])) ? Number(m[1]) : null;
 };
 
 /** How an issue is called: #7, or until it has a number, its words alone. */
@@ -49,7 +50,8 @@ function closedAt(lines: readonly string[]): number {
 }
 
 export function parseIssue(repo: string, file: string, text: string): Issue {
-  const lines = text.replace(/^﻿/, '').split('\n');
+  // A file written with CRLF line ends reads as one written with LF: no line keeps its CR.
+  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/);
   const at = closedAt(lines);
   const closed = at < 0 ? null : CLOSED.exec(lines[at].trim())![1].trim();
   const [first = '', ...rest] = at < 0 ? lines : lines.slice(0, at);

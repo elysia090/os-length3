@@ -782,4 +782,56 @@ mod shared_cases {
             assert_eq!(super::is_git_name(k[0].as_str().unwrap()), k[1].as_bool().unwrap(), "{k}");
         }
     }
+
+    /// The cases of `key` whose answer is not the one wanted, each with what came instead: empty when all agree.
+    fn disagreeing(key: &str, want: impl Fn(&Value) -> Value, got: impl Fn(&Value) -> Value) -> Vec<String> {
+        cases()[key].as_array().unwrap().iter()
+            .filter_map(|c| { let (w, g) = (want(c), got(c)); (w != g).then(|| format!("{c}: wanted {w}, got {g}")) })
+            .collect()
+    }
+    fn s(v: &Value) -> &str { v.as_str().unwrap() }
+
+    #[test]
+    fn an_issue_file_is_numbered_by_its_name_as_the_app_numbers_it() {
+        assert_eq!(disagreeing("issueNumber", |c| c[1].clone(), |c| serde_json::json!(issues::number_of(s(&c[0])))), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_sync_plans_the_same_takes_and_conflicts_as_the_app() {
+        use crate::remote::{plan, Tree};
+        let tree = |v: &Value| -> Tree { v.as_object().unwrap().iter().map(|(k, v)| (k.clone(), v.as_str().map(String::from))).collect() };
+        // [path] is a removal (None), [path, null] a folder (Some(None)), [path, digest] a file.
+        let take = |v: &Value| v.as_array().unwrap().iter().map(|t| {
+            let t = t.as_array().unwrap();
+            (s(&t[0]).to_string(), t.get(1).map(|d| d.as_str().map(String::from)))
+        }).collect::<Vec<_>>();
+        let wrong: Vec<String> = cases()["plan"].as_array().unwrap().iter().filter_map(|c| {
+            let p = plan(&tree(&c["base"]), &tree(&c["here"]), &tree(&c["there"]));
+            let both: Vec<(String, Option<String>)> = c["both"].as_array().unwrap().iter().map(|b| (s(&b[0]).into(), b[1].as_str().map(String::from))).collect();
+            (p.take != take(&c["take"]) || p.both != both).then(|| format!("{}: {:?}", s(&c["why"]), p))
+        }).collect();
+        assert_eq!(wrong, Vec::<String>::new());
+    }
+
+    #[test]
+    fn the_copy_kept_beside_a_file_is_named_as_the_app_names_it() {
+        let got = |c: &Value| serde_json::json!(crate::remote::beside_as(s(&c[0]), s(&c[1]), c[2].as_u64().unwrap() as u32));
+        assert_eq!(disagreeing("beside", |c| c[3].clone(), got), Vec::<String>::new());
+    }
+
+    #[test]
+    fn lines_changed_are_counted_and_laid_out_as_the_app_does() {
+        use crate::linediff::{counts, ops, Kind};
+        assert_eq!(disagreeing("lineDiff", |c| serde_json::json!([c[2], c[3]]), |c| serde_json::json!(counts(&ops(s(&c[0]), s(&c[1]))))), Vec::<String>::new());
+        let laid = |c: &Value| {
+            if c[4].is_null() { return Value::Null; }
+            serde_json::json!(ops(s(&c[0]), s(&c[1])).iter().map(|(k, l)| format!("{}{l}", match k { Kind::Same => '=', Kind::Add => '+', Kind::Del => '-' })).collect::<Vec<_>>())
+        };
+        assert_eq!(disagreeing("lineDiff", |c| c[4].clone(), laid), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_dotfile_may_be_written_into_root_under_the_names_the_app_allows() {
+        assert_eq!(disagreeing("dotfileName", |c| c[1].clone(), |c| serde_json::json!(crate::home::dotfile_name(s(&c[0])))), Vec::<String>::new());
+    }
 }

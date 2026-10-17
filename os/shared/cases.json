@@ -30,6 +30,71 @@
       "a-very-long-kind-name：x",
       null,
       "a-very-long-kind-name：x"
+    ],
+    [
+      "Abcdefghijklmnop：sixteen letters is a kind",
+      "Abcdefghijklmnop",
+      "sixteen letters is a kind"
+    ],
+    [
+      "Abcdefghijklmnopq：seventeen is not",
+      null,
+      "Abcdefghijklmnopq：seventeen is not"
+    ],
+    [
+      "Fix-1：x",
+      "Fix-1",
+      "x"
+    ],
+    [
+      "1Fix：x",
+      null,
+      "1Fix：x"
+    ],
+    [
+      "Fix\t:\tx",
+      "Fix",
+      "x"
+    ],
+    [
+      "Fix　：x",
+      "Fix",
+      "x"
+    ],
+    [
+      "ｆｉｘ：全角は種類ではない",
+      null,
+      "ｆｉｘ：全角は種類ではない"
+    ],
+    [
+      "Fix：",
+      "Fix",
+      ""
+    ],
+    [
+      "",
+      null,
+      ""
+    ],
+    [
+      "   ",
+      null,
+      ""
+    ],
+    [
+      "a:b:c",
+      "a",
+      "b:c"
+    ],
+    [
+      "https://example.com を読む",
+      null,
+      "https://example.com を読む"
+    ],
+    [
+      "See: https://example.com",
+      "See",
+      "https://example.com"
     ]
   ],
   "issue": [
@@ -50,6 +115,36 @@
       null,
       "メモ",
       "本文"
+    ],
+    [
+      "Fix：x\r\n\r\na\r\nb\r\n",
+      "Fix",
+      "x",
+      "a\nb"
+    ],
+    [
+      "﻿Patch：y\r\n",
+      "Patch",
+      "y",
+      ""
+    ],
+    [
+      "## Fix：x",
+      "Fix",
+      "x",
+      ""
+    ],
+    [
+      "\n本文だけ",
+      null,
+      "x",
+      "本文だけ"
+    ],
+    [
+      "https://example.com が落ちる\n",
+      null,
+      "https://example.com が落ちる",
+      ""
     ]
   ],
   "issueText": [
@@ -207,6 +302,546 @@
       "Fix：x\n\nClosed：2031-10-16 mio\n",
       "2031-10-17 sora",
       "Fix：x\n\nClosed：2031-10-17 sora\n"
+    ]
+  ],
+  "issueNumber": [
+    [
+      "007.md",
+      7
+    ],
+    [
+      "000.md",
+      0
+    ],
+    [
+      "1000.md",
+      1000
+    ],
+    [
+      "notes.md",
+      null
+    ],
+    [
+      "002 (other device).md",
+      null
+    ],
+    [
+      "3",
+      null
+    ],
+    [
+      ".md",
+      null
+    ],
+    [
+      "+1.md",
+      null
+    ],
+    [
+      "1.MD",
+      null
+    ],
+    [
+      "٣.md",
+      null
+    ],
+    [
+      "1 .md",
+      null
+    ],
+    [
+      "9999999999999999999999999.md",
+      null
+    ]
+  ],
+  "plan": [
+    {
+      "why": "only changed there: taken",
+      "base": {
+        "a": "1"
+      },
+      "here": {
+        "a": "1"
+      },
+      "there": {
+        "a": "2"
+      },
+      "take": [
+        [
+          "a",
+          "2"
+        ]
+      ],
+      "both": []
+    },
+    {
+      "why": "only changed here: nothing to take (it is sent)",
+      "base": {
+        "a": "1"
+      },
+      "here": {
+        "a": "2"
+      },
+      "there": {
+        "a": "1"
+      },
+      "take": [],
+      "both": []
+    },
+    {
+      "why": "the same change on both: nothing",
+      "base": {
+        "a": "1"
+      },
+      "here": {
+        "a": "2"
+      },
+      "there": {
+        "a": "2"
+      },
+      "take": [],
+      "both": []
+    },
+    {
+      "why": "changed on both differently: both",
+      "base": {
+        "a": "1"
+      },
+      "here": {
+        "a": "2"
+      },
+      "there": {
+        "a": "3"
+      },
+      "take": [],
+      "both": [
+        [
+          "a",
+          "3"
+        ]
+      ]
+    },
+    {
+      "why": "removed here, unchanged there: stays removed (the removal is sent)",
+      "base": {
+        "a": "1"
+      },
+      "here": {},
+      "there": {
+        "a": "1"
+      },
+      "take": [],
+      "both": []
+    },
+    {
+      "why": "removed here, changed there: the change comes back",
+      "base": {
+        "a": "1"
+      },
+      "here": {},
+      "there": {
+        "a": "2"
+      },
+      "take": [
+        [
+          "a",
+          "2"
+        ]
+      ],
+      "both": []
+    },
+    {
+      "why": "removed there, unchanged here: removed here",
+      "base": {
+        "a": "1"
+      },
+      "here": {
+        "a": "1"
+      },
+      "there": {},
+      "take": [
+        [
+          "a"
+        ]
+      ],
+      "both": []
+    },
+    {
+      "why": "removed there, changed here: this device's stays and is sent",
+      "base": {
+        "a": "1"
+      },
+      "here": {
+        "a": "2"
+      },
+      "there": {},
+      "take": [],
+      "both": []
+    },
+    {
+      "why": "removed on both: nothing",
+      "base": {
+        "a": "1"
+      },
+      "here": {},
+      "there": {},
+      "take": [],
+      "both": []
+    },
+    {
+      "why": "new on both, the same: nothing",
+      "base": {},
+      "here": {
+        "a": "1"
+      },
+      "there": {
+        "a": "1"
+      },
+      "take": [],
+      "both": []
+    },
+    {
+      "why": "new on both, differently: both",
+      "base": {},
+      "here": {
+        "a": "1"
+      },
+      "there": {
+        "a": "2"
+      },
+      "take": [],
+      "both": [
+        [
+          "a",
+          "2"
+        ]
+      ]
+    },
+    {
+      "why": "new there only: taken",
+      "base": {},
+      "here": {},
+      "there": {
+        "ノート/メモ.md": "1"
+      },
+      "take": [
+        [
+          "ノート/メモ.md",
+          "1"
+        ]
+      ],
+      "both": []
+    },
+    {
+      "why": "an empty folder there in place of an unchanged file: taken as a folder",
+      "base": {
+        "a": "1"
+      },
+      "here": {
+        "a": "1"
+      },
+      "there": {
+        "a": null
+      },
+      "take": [
+        [
+          "a",
+          null
+        ]
+      ],
+      "both": []
+    },
+    {
+      "why": "a folder made here, a file there at its name: both, the Remote's goes beside",
+      "base": {},
+      "here": {
+        "a": null
+      },
+      "there": {
+        "a": "1"
+      },
+      "take": [],
+      "both": [
+        [
+          "a",
+          "1"
+        ]
+      ]
+    },
+    {
+      "why": "a file here, a folder there at its name: this device's stays",
+      "base": {},
+      "here": {
+        "a": "1"
+      },
+      "there": {
+        "a": null
+      },
+      "take": [],
+      "both": []
+    },
+    {
+      "why": "many paths at once, in path order",
+      "base": {
+        "b": "1",
+        "c": "1",
+        "d": "1"
+      },
+      "here": {
+        "a": "1",
+        "b": "1",
+        "c": "2",
+        "d": "1"
+      },
+      "there": {
+        "b": "2",
+        "c": "3",
+        "e": "1"
+      },
+      "take": [
+        [
+          "b",
+          "2"
+        ],
+        [
+          "d"
+        ],
+        [
+          "e",
+          "1"
+        ]
+      ],
+      "both": [
+        [
+          "c",
+          "3"
+        ]
+      ]
+    }
+  ],
+  "beside": [
+    [
+      "README.md",
+      "other device",
+      1,
+      "README (other device).md"
+    ],
+    [
+      "src/main.c",
+      "other device",
+      1,
+      "src/main (other device).c"
+    ],
+    [
+      "Makefile",
+      "ren-laptop",
+      2,
+      "Makefile (ren-laptop 2)"
+    ],
+    [
+      ".env",
+      "x",
+      1,
+      ".env (x)"
+    ],
+    [
+      "a.tar.gz",
+      "x",
+      1,
+      "a.tar (x).gz"
+    ],
+    [
+      "dir.d/file",
+      "x",
+      1,
+      "dir.d/file (x)"
+    ],
+    [
+      "ノート/メモ.md",
+      "Chrome Linux",
+      3,
+      "ノート/メモ (Chrome Linux 3).md"
+    ],
+    [
+      "a.",
+      "x",
+      1,
+      "a (x)."
+    ]
+  ],
+  "lineDiff": [
+    [
+      "",
+      "",
+      0,
+      0,
+      []
+    ],
+    [
+      "a\n",
+      "a\n",
+      0,
+      0,
+      [
+        "=a"
+      ]
+    ],
+    [
+      "a",
+      "a\n",
+      0,
+      0,
+      [
+        "=a"
+      ]
+    ],
+    [
+      "a\nb\nc\n",
+      "a\nB\nc\n",
+      1,
+      1,
+      [
+        "=a",
+        "-b",
+        "+B",
+        "=c"
+      ]
+    ],
+    [
+      "a\nb\n",
+      "a\nx\nb\n",
+      1,
+      0,
+      [
+        "=a",
+        "+x",
+        "=b"
+      ]
+    ],
+    [
+      "a\nb\n",
+      "b\na\n",
+      1,
+      1,
+      null
+    ],
+    [
+      "a\nb\nc\n",
+      "c\nb\na\n",
+      2,
+      2,
+      null
+    ],
+    [
+      "x\n\n\ny\n",
+      "x\n\ny\n",
+      0,
+      1,
+      [
+        "=x",
+        "=",
+        "-",
+        "=y"
+      ]
+    ],
+    [
+      "a\r\nb\r\n",
+      "a\nb\n",
+      2,
+      2,
+      null
+    ],
+    [
+      "日本\n語\n",
+      "日本\nご\n",
+      1,
+      1,
+      [
+        "=日本",
+        "-語",
+        "+ご"
+      ]
+    ],
+    [
+      "",
+      "x\ny",
+      2,
+      0,
+      [
+        "+x",
+        "+y"
+      ]
+    ],
+    [
+      "x\n",
+      "",
+      0,
+      1,
+      [
+        "-x"
+      ]
+    ]
+  ],
+  "dotfileName": [
+    [
+      ".profile",
+      true
+    ],
+    [
+      ".x",
+      true
+    ],
+    [
+      ".a.b",
+      true
+    ],
+    [
+      ".git-credentials",
+      true
+    ],
+    [
+      ".aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      true
+    ],
+    [
+      ".",
+      false
+    ],
+    [
+      "..",
+      false
+    ],
+    [
+      "...",
+      false
+    ],
+    [
+      ".a..b",
+      false
+    ],
+    [
+      "profile",
+      false
+    ],
+    [
+      ".pro file",
+      false
+    ],
+    [
+      ".プロ",
+      false
+    ],
+    [
+      ".a/b",
+      false
+    ],
+    [
+      ".aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      false
+    ],
+    [
+      "",
+      false
     ]
   ]
 }

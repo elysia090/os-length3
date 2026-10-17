@@ -46,7 +46,8 @@ fn closed_at(lines: &[&str]) -> Option<usize> {
 
 pub fn parse(repo: &str, file: &str, text: &str) -> Issue {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
-    let all: Vec<&str> = text.split('\n').collect();
+    // A file written with CRLF line ends reads as one written with LF: no line keeps its CR.
+    let all: Vec<&str> = text.split('\n').map(|l| l.strip_suffix('\r').unwrap_or(l)).collect();
     let at = closed_at(&all);
     let closed = at.and_then(|j| closed_line(all[j])).map(String::from);
     let lines = &all[..at.unwrap_or(all.len())];
