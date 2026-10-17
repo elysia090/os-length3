@@ -474,14 +474,36 @@ pub fn changes_of_repo(repo: &str) -> Result<Vec<Change>> {
         let now = tree_at(&client, repo, &c.head)?;
         (c.folders, c.files) = places(&then, &now);
     }
+    remember_merged(repo, list.iter().filter(|c| c.state == "merged").map(|c| c.issue.clone()));
     Ok(list)
+}
+
+/// The issues of `repo` seen merged ("issue/001.md"), kept here so a page
+/// read offline still knows them: a merge is never undone.
+fn merged_file(repo: &str) -> std::path::PathBuf {
+    crate::paths::data_dir().join("sync").join(format!("{repo}.merged.json"))
+}
+
+pub fn merged_seen(repo: &str) -> Vec<String> {
+    fs::read(merged_file(repo)).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+}
+
+fn remember_merged(repo: &str, issues: impl Iterator<Item = String>) {
+    let mut all = merged_seen(repo);
+    let before = all.len();
+    for i in issues.filter(|i| !i.is_empty()) { if !all.contains(&i) { all.push(i); } }
+    if all.len() == before { return; }
+    all.sort();
+    if crate::boundary::private_dir(&crate::paths::data_dir().join("sync")).is_ok() {
+        if let Ok(b) = serde_json::to_vec(&all) { let _ = fs::write(merged_file(repo), b); }
+    }
 }
 
 /// Change: what the work pushed goes to main (again: a new version).
 pub fn submit(repos: &Repos, repo: &str, note: &str) -> Result<Change> {
     let on = repos.line(repo);
     if on == crate::work::MAIN {
-        return Err(crate::tr!("A change comes from an issue's work (l3 start REPO/issue/NNN.md)", "Change は Issue の作業から渡します（l3 start REPO/issue/NNN.md）"));
+        return Err(crate::tr!("A change comes from an issue's work (l3 start REPO#N)", "Change は Issue の作業から渡します（l3 start REPO#N）"));
     }
     let (kind, title, _) = words(repos, repo, None, "")?;
     let client = Client::open()?;
@@ -490,8 +512,53 @@ pub fn submit(repos: &Repos, repo: &str, note: &str) -> Result<Change> {
     match v {
         Reply::Ok(v) => serde_json::from_value(v).map_err(|e| e.to_string()),
         Reply::Conflict(v) if v["error"] == "push first" => Err(crate::tr!("Push first: the change is what was pushed", "先に Push してください。変更は Push したものです")),
+        Reply::Conflict(v) if v["error"] == "already merged" => Err(crate::tr!("Its change is merged already", "この作業の Change はもう Merge 済みです")),
         Reply::Conflict(_) => Err(crate::tr!("Nothing committed since the work began", "作業を始めてから何も Commit していません")),
         Reply::NotFound => Err(crate::tr!("The Remote has no such work", "Remote にその作業がありません")),
+    }
+}
+
+/// What handing the work in did: the commit pushed (none when nothing was
+/// new), the change as main now has it, and as it was before (if it was).
+#[derive(Serialize, Debug, Clone)]
+pub struct HandIn {
+    pub pushed: Option<String>,
+    pub change: Change,
+    pub before: Option<Change>,
+}
+
+impl HandIn {
+    /// Nothing new was handed in: main already had this very version.
+    pub fn same(&self) -> bool {
+        self.pushed.is_none() && self.before.as_ref().is_some_and(|b| b.state == "open" && b.version == self.change.version)
+    }
+}
+
+/// Push, then Change, as the app's Push button does: what is pushed goes to main as its next version.
+pub fn hand_in(repos: &Repos, repo: &str, note: &str) -> Result<HandIn> {
+    let on = repos.line(repo);
+    let before = if on == crate::work::MAIN { None } else { changes_of_repo(repo)?.into_iter().find(|c| c.line == on) };
+    let head = push(repos, repo)?;
+    let change = submit(repos, repo, note)?;
+    Ok(HandIn { pushed: (!head.is_empty()).then_some(head), change, before })
+}
+
+/// Merge, and the work is done: the repo shows main again, and the work's copy here goes.
+pub fn merge_and_finish(repos: &Repos, repo: &str, line: &str) -> Result<Change> {
+    let c = merge(repo, line)?;
+    crate::work::finish(repos, repo, &c.line)?;
+    remember_merged(repo, std::iter::once(c.issue.clone()));
+    Ok(c)
+}
+
+/// A change's state in the OS's words.
+pub fn state_word(state: &str) -> String {
+    match state {
+        "open" => crate::tr!("undecided", "未決"),
+        "merged" => crate::tr!("merged", "Merge 済み"),
+        "rejected" => crate::tr!("rejected", "Reject 済み"),
+        "reset" => crate::tr!("taken back", "取り下げ済み"),
+        other => other.to_string(),
     }
 }
 
@@ -501,14 +568,14 @@ fn change_call(repo: &str, id: &str, verb: &str, body: serde_json::Value) -> Res
         Reply::Conflict(v) if v["conflicts"].is_array() => Err(crate::tr!("Both changed these files; resolve them in the work, push and change again: {}", "両方で変わったファイルがあります。作業の側で直して Push し、もう一度 Change してください：{}",
             v["conflicts"].as_array().unwrap().iter().filter_map(|p| p.as_str()).collect::<Vec<_>>().join(", "))),
         Reply::Conflict(v) if v["version"].is_number() => Err(crate::tr!("The change has a newer version ({}); look at it first", "変更に新しい版があります（{}）。先にそれを見てください", v["version"])),
-        Reply::Conflict(v) => Err(crate::tr!("The change is {} already", "この変更はもう {} です", v["error"].as_str().unwrap_or("?"))),
-        Reply::NotFound => Err(crate::tr!("No such change", "その変更はありません")),
+        Reply::Conflict(v) => Err(crate::tr!("The change is {} already", "この Change はもう{}です", state_word(v["error"].as_str().unwrap_or("?")))),
+        Reply::NotFound => Err(crate::tr!("No such change", "その Change はありません")),
     }
 }
 
 fn find(repo: &str, id: &str) -> Result<Change> {
     changes_of_repo(repo)?.into_iter().find(|c| c.id == id || c.id.starts_with(id) || c.line == id)
-        .ok_or_else(|| crate::tr!("No such change: {}", "その変更はありません：{}", id))
+        .ok_or_else(|| crate::tr!("No change has been handed in for {} yet", "{} の Change はまだ渡されていません", id))
 }
 
 /// Review the change's current version.
@@ -517,6 +584,9 @@ pub fn review(repo: &str, id: &str, verdict: &str, note: &str, marks: &[String])
     if !["approve", "changes", "comment"].contains(&verdict) {
         return Err(crate::tr!("A review is approve, changes or comment", "レビューは approve、changes、comment のどれかです"));
     }
+    // Approving a version one handed in oneself is allowed, as in the app and on the Remote:
+    // every repo is one account's today, so its Review is the owner's own check before Merge.
+    // A repo with more than one member is when this tightens (another member approves).
     serde_json::from_value(change_call(repo, &c.id, "reviews", serde_json::json!({"version": c.version, "verdict": verdict, "note": note, "marks": marks}))?).map_err(|e| e.to_string())
 }
 
@@ -535,6 +605,9 @@ pub fn reject(repo: &str, id: &str, note: &str) -> Result<Change> {
 /// Reset: take back the change the work handed in (its author's decision).
 pub fn reset(repos: &Repos, repo: &str) -> Result<Change> {
     let on = repos.line(repo);
+    if on == crate::work::MAIN {
+        return Err(crate::tr!("{} shows main: reset takes back the change of the issue being worked on (l3 start REPO#N first)", "{} は main を見せています。reset は作業中の Issue の Change を取り下げます（先に l3 start REPO#N）", repo));
+    }
     let c = find(repo, &on)?;
     serde_json::from_value(change_call(repo, &c.id, "reset", serde_json::json!({}))?).map_err(|e| e.to_string())
 }

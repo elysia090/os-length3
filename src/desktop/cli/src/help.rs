@@ -1,166 +1,17 @@
-//! l3's commands as one table: the help (`l3 help`, `l3 help COMMAND`,
-//! `l3 COMMAND --help`), the suggestion for a mistyped word, and the shell
-//! completion all read it, so they cannot drift from each other. Its order
-//! is the app's rail: Server first (the one whose subject is people), then
-//! what is done with repos.
+//! l3's help, made from the table (spec.rs): `l3 help` (each command by
+//! the rail), `l3 help COMMAND` (its forms), `l3 help all` (every form, each
+//! group aligned on its own). `l3 COMMAND --help` is `l3 help COMMAND`.
 
+use crate::args::{not_a_command, Call};
+use crate::cmd::Ctx;
+use crate::out::{Error, Reply, Result};
+use crate::spec::{self, Command, Group, Words};
 use length3_core::i18n::ja;
+use serde_json::json;
 use std::io::IsTerminal;
-
-/// A word in English and in Japanese.
-type Words = [&'static str; 2];
-
-pub struct Command {
-    pub name: &'static str,
-    group: &'static str,
-    about: Words,
-    /// Each form: how it is written, and what it does.
-    forms: &'static [(&'static str, Words)],
-    /// The words that may come next (for completion).
-    pub next: &'static [&'static str],
-    /// Takes a repo (or REPO#N) next, which may be left out in a repo.
-    pub repo: bool,
-}
-
-const fn c(name: &'static str, group: &'static str, about: Words, forms: &'static [(&'static str, Words)], next: &'static [&'static str], repo: bool) -> Command {
-    Command { name, group, about, forms, next, repo }
-}
-
-pub const COMMANDS: &[Command] = &[
-    c("todo", "Home", ["Home's TODO", "Home の TODO"], &[
-        ("l3 todo", ["the list", "一覧"]),
-        ("l3 todo add \"Fix：title\" [-m detail]", ["add one", "足す"]),
-        ("l3 todo done N", ["mark the Nth done (again to undo)", "N 番目を完了に（もう一度で戻す）"]),
-    ], &["add", "done"], false),
-    c("profile", "Home", ["your name, handle and bio", "名前、ハンドル、自己紹介"], &[
-        ("l3 profile", ["as others see it", "人から見えるとおりに"]),
-        ("l3 profile name|handle|bio \"text\"", ["change one", "ひとつ変える"]),
-    ], &["name", "handle", "bio"], false),
-    c("lang", "Home", ["the language l3 and the app speak", "l3 とアプリが話す言語"], &[
-        ("l3 lang [en|ja]", ["show it, or choose", "見る、または選ぶ"]),
-    ], &["en", "ja"], false),
-    c("repo", "Forge", ["repos here and on the Remote", "この端末と Remote の repo"], &[
-        ("l3 repo", ["each, and where it stands", "それぞれと、その状態"]),
-        ("l3 repo new NAME [-t standard|c|empty]", ["make one", "作る"]),
-        ("l3 repo open NAME", ["bring one from the Remote", "Remote から持ってくる"]),
-    ], &["new", "open"], false),
-    c("band", "Forge", ["the repos out on Forge's band", "Forge の帯に出ている repo"], &[
-        ("l3 band", ["the list", "一覧"]),
-        ("l3 band add|rm REPO", ["put one out, or take it in", "出す、しまう"]),
-    ], &["add", "rm"], false),
-    c("prompt", "Forge", ["a shell in the repo, inside the root", "root の中で repo のシェル"], &[
-        ("l3 prompt [REPO] [-- CMD…]", ["the repo inside the root (no privileges)", "root の中で repo を開く（権限なし）"]),
-        ("    --network", ["give it the network (off by default)", "ネットワークを渡す（既定ではなし）"]),
-    ], &[], true),
-    c("file", "File", ["a directory's entries, or a file's text", "ディレクトリの中身、ファイルの本文"], &[
-        ("l3 file [REPO[/PATH]]", ["read (in a repo, PATH is from where you are)", "読む（repo の中では今いる所から）"]),
-        ("l3 file write REPO/PATH", ["replace a file with standard input", "標準入力でファイルを置き換える"]),
-    ], &["write"], true),
-    c("git", "Git", ["the issues not merged, and what comes next", "Merge されていない Issue と、次にすること"], &[
-        ("l3 git [REPO]", ["each issue, with what comes next", "Issue ごとに、次にすること"]),
-    ], &[], true),
-    c("issue", "Git", ["one issue, or a new one", "Issue ひとつ、または新しく"], &[
-        ("l3 issue REPO#N", ["its card, its Review, Merge", "カード、Review、Merge"]),
-        ("l3 issue new [REPO] \"Fix：title\" [-m detail]", ["write a new one", "新しく書く"]),
-    ], &["new"], true),
-    c("start", "Git", ["work on an issue, in its own copy", "Issue の作業を、その写しで"], &[
-        ("l3 start REPO#N", ["start (or continue): the repo shows its copy", "始める（続ける）。repo はその写しになる"]),
-    ], &[], true),
-    c("main", "Git", ["back to main", "main に戻る"], &[
-        ("l3 main [REPO]", ["the repo shows main again", "repo は main に戻る"]),
-    ], &[], true),
-    c("commit", "Git", ["commit the work", "作業を Commit"], &[
-        ("l3 commit [REPO] [-m note]", ["named after its issue", "Issue の名前で"]),
-        ("l3 commit [REPO] \"Fix：title\"", ["on main, named by the line", "main で、行の名前で"]),
-    ], &[], true),
-    c("push", "Git", ["hand the work to main as its change", "作業を Change として main に渡す"], &[
-        ("l3 push [REPO] [-m note]", ["again: its next version", "もう一度で次の版"]),
-    ], &[], true),
-    c("reset", "Git", ["take the change back", "Change を取り下げる"], &[
-        ("l3 reset [REPO]", ["", ""]),
-    ], &[], true),
-    c("diff", "Git", ["the lines changed", "変えた行"], &[
-        ("l3 diff [REPO]", ["what is not committed", "Commit していないもの"]),
-        ("l3 diff REPO#N", ["the issue's change", "Issue の Change"]),
-    ], &[], true),
-    c("log", "Git", ["the commits", "コミット"], &[
-        ("l3 log [REPO]", ["of what the repo shows", "repo がいま見せているものの"]),
-    ], &[], true),
-    c("review", "Git", ["approve a version, or ask for changes", "版を承認する、直しを頼む"], &[
-        ("l3 review REPO#N approve|changes [-m note]", ["", ""]),
-    ], &[], true),
-    c("reply", "Git", ["a comment in its Review", "Review にコメント"], &[
-        ("l3 reply REPO#N \"text\"", ["", ""]),
-    ], &[], true),
-    c("merge", "Git", ["main takes the change", "main に取り込む"], &[
-        ("l3 merge REPO#N", ["once approved", "承認のあと"]),
-    ], &[], true),
-    c("reject", "Git", ["main does not take it", "取り込まない"], &[
-        ("l3 reject REPO#N [-m why]", ["its issue stays open", "Issue は開いたまま"]),
-    ], &[], true),
-    c("runtime", "Runtime", ["the root, and this device by size", "root と、この端末の容量"], &[
-        ("l3 runtime", ["what is here, and what can go", "あるものと、空けられるもの"]),
-    ], &[], false),
-    c("free", "Runtime", ["give room back", "容量を空ける"], &[
-        ("l3 free ID… | all", ["a repo's changes go to the Remote first", "repo の変更は先に Remote へ"]),
-    ], &["all"], false),
-    c("root", "Runtime", ["the root Prompts run on", "Prompt が動く root"], &[
-        ("l3 root", ["each held, and which is in use", "持っているものと、使っているもの"]),
-        ("l3 root fetch", ["the newest release", "最新のリリースを取る"]),
-        ("l3 root use l3|ubuntu|debian", ["the one Prompts run on (fetched if not held); .packages and .setup set it up", "Prompt が動くもの（なければ取る）。.packages と .setup で用意"]),
-        ("l3 root install BUNDLE", ["from a file", "ファイルから"]),
-    ], &["fetch", "use", "install"], false),
-    c("ssh", "Runtime", ["whether SSH may reach each address", "アドレスごとに SSH でつないでよいか"], &[
-        ("l3 ssh", ["each address", "アドレスごとに"]),
-        ("l3 ssh on|off ADDRESS", ["", ""]),
-    ], &["on", "off"], false),
-    c("dotfiles", "Runtime", ["what every Prompt starts with in /root", "どの Prompt も /root に置いて始まるもの"], &[
-        ("l3 dotfiles", ["the list", "一覧"]),
-        ("l3 dotfile NAME", ["one's text", "ひとつの本文"]),
-        ("l3 dotfile write NAME", ["replace (or make) it with standard input", "標準入力で置き換える（なければ作る）"]),
-        ("l3 dotfile rm NAME", ["", ""]),
-    ], &[], false),
-    c("remote", "Remote", ["the Remote, and where each repo stands", "Remote と、各 repo の状態"], &[
-        ("l3 remote", ["", ""]),
-        ("l3 remote on REPO", ["bring back a repo turned off", "切った repo を戻す"]),
-        ("l3 remote sign-in", ["passkeys, the code to turn a repo off, the providers", "パスキー、repo を切るコード、プロバイダー"]),
-        ("l3 remote devices [rm N]", ["each device signed in; remove one", "サインインしている端末。外す"]),
-    ], &["on", "sign-in", "devices"], false),
-    c("login", "Remote", ["connect this device (approve in the browser)", "この端末をつなぐ（ブラウザで承認）"], &[
-        ("l3 login [URL]", ["", ""]),
-    ], &[], false),
-    c("logout", "Remote", ["disconnect this device", "この端末を外す"], &[
-        ("l3 logout", ["", ""]),
-    ], &[], false),
-    c("server", "Server", ["people you know: boards, each a talk and a TODO kept together", "知り合いの集まり：板ごとに話とみんなの TODO"], &[
-        ("l3 server", ["each server you are in, and its boards", "入っているサーバーと、その板"]),
-        ("l3 server get SERVER[#BOARD] [--todo]", ["take boards home as text, here (the TODO only with --todo)", "板をテキストでここに置く（--todo で TODO だけ）"]),
-        ("l3 server post SERVER#BOARD \"text\"", ["write in a board", "板に書く"]),
-    ], &["get", "post"], false),
-    c("inbox", "Inbox", ["conversations: contacts, then requests", "会話（連絡先、次にリクエスト）"], &[
-        ("l3 inbox", ["each conversation", "会話ごとに"]),
-        ("l3 inbox ADDRESS", ["one (name@domain)", "ひとつ（name@domain）"]),
-        ("l3 inbox send ADDRESS \"text\"", ["Review： or Question： first to ask; a /root/… path says what about", "頭に Review： か Question： で依頼。/root/… で対象"]),
-        ("l3 inbox accept|block ADDRESS", ["", ""]),
-    ], &["send", "accept", "block"], false),
-    c("address", "Inbox", ["your names, and your code", "あなたの名前とコード"], &[
-        ("l3 address", ["each, with its term, and your code", "それぞれと期限、あなたのコード"]),
-        ("l3 address claim NAME[@DOMAIN]", ["a name here: first come, for five years; on your domain, beside it", "ここでの名前（早い者勝ち、5年）。自分のドメインなら並べて"]),
-        ("l3 address renew NAME", ["five more years from now", "今から5年延ばす"]),
-        ("l3 address release NAME", ["let it go: held for you 30 days, claim it again to take it back", "手放す（30日はあなたのために取り置き、取り直せば戻る）"]),
-        ("l3 address domain DOMAIN", ["the DNS record that proves it is yours", "あなたのものだと示す DNS レコード"]),
-    ], &["claim", "domain", "release"], false),
-];
-
-/// Words l3 knows that are not on the rail.
-const OTHER: &[&str] = &["help", "completion", "version", "dotfile"];
 
 fn say(w: Words) -> &'static str {
     if ja() { w[1] } else { w[0] }
-}
-
-pub fn find(name: &str) -> Option<&'static Command> {
-    COMMANDS.iter().find(|c| c.name == name || (name == "dotfile" && c.name == "dotfiles"))
 }
 
 /// Bold, where the output is a terminal that wants it.
@@ -168,10 +19,29 @@ fn bold(s: &str) -> String {
     if std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none() { format!("\x1b[1m{s}\x1b[0m") } else { s.to_string() }
 }
 
-fn groups() -> Vec<&'static str> {
-    let mut g: Vec<&str> = Vec::new();
-    for c in COMMANDS { if !g.contains(&c.group) { g.push(c.group); } }
-    g
+/// How many columns `s` takes in a terminal (CJK and full-width forms take two).
+pub fn width(s: &str) -> usize {
+    s.chars().map(|c| if matches!(c as u32, 0x1100..=0x115F | 0x2E80..=0xA4CF | 0xAC00..=0xD7A3 | 0xF900..=0xFAFF | 0xFE30..=0xFE4F | 0xFF00..=0xFF60 | 0xFFE0..=0xFFE6) { 2 } else { 1 }).sum()
+}
+
+fn pad(s: &str, cols: usize) -> String {
+    format!("{s}{}", " ".repeat(cols.saturating_sub(width(s))))
+}
+
+pub fn run(_: &Ctx, call: &Call) -> Result<Reply> {
+    match call.word(0) {
+        None => Ok(Reply::data(overview(), data(spec::shown().collect()))),
+        Some("all") => Ok(Reply::data(all(), data(spec::shown().collect()))),
+        Some(name) => match spec::find(name).filter(|c| !c.hidden) {
+            Some(c) => Ok(Reply::data(command(c), data(vec![c]))),
+            None => Err(Error::Usage(not_a_command(name))),
+        },
+    }
+}
+
+fn data(cs: Vec<&Command>) -> serde_json::Value {
+    json!(cs.iter().map(|c| json!({"name": c.name, "aliases": c.aliases, "group": c.group.name(), "about": say(c.about),
+        "forms": c.forms.iter().filter(|f| !f.hidden).map(|f| json!({"usage": spec::usage(c, f), "about": say(f.about)})).collect::<Vec<_>>()})).collect::<Vec<_>>())
 }
 
 /// `l3 help`: each command in a line, by the rail.
@@ -180,124 +50,71 @@ pub fn overview() -> String {
     s += if ja() { "l3 — Length³ OS をコマンドで。アプリと同じ言葉と順番です。\n\n" } else { "l3 — Length³ OS on the command line, in the app's words and order.\n\n" };
     s += &format!("{}  l3 <command> [args] [--json]   {}\n", bold(if ja() { "使い方" } else { "Usage" }),
         if ja() { "（l3 だけで、この端末のいま）" } else { "(l3 alone: this device at a glance)" });
-    for g in groups() {
-        s += &format!("\n{}\n", bold(g));
-        for c in COMMANDS.iter().filter(|c| c.group == g) { s += &format!("  {:<10} {}\n", c.name, say(c.about)); }
+    for g in Group::ALL {
+        let cs: Vec<&Command> = spec::shown().filter(|c| c.group == g).collect();
+        if cs.is_empty() { continue; }
+        s += &format!("\n{}\n", bold(g.name()));
+        for c in cs { s += &format!("  {} {}\n", pad(c.name, 10), say(c.about)); }
     }
     s += &format!("\n{}\n", bold(if ja() { "フラグ" } else { "Flags" }));
-    for (f, w) in [("--json", ["JSON instead of text", "文の代わりに JSON"]), ("-h, --help", ["a command's forms (l3 help COMMAND)", "コマンドの書き方（l3 help COMMAND）"]), ("-V, --version", ["l3's version, and the root's", "l3 と root の版"])] {
-        s += &format!("  {f:<14} {}\n", say(w));
+    for (f, w) in [
+        ("--json", ["data instead of text (every command)", "文の代わりにデータ（どのコマンドも）"]),
+        ("--", ["the end of flags: what follows is words, even with a - first", "フラグの終わり。後ろは - で始まっても言葉"]),
+        ("-h, --help", ["a command's forms (l3 help COMMAND)", "コマンドの書き方（l3 help COMMAND）"]),
+        ("-V, --version", ["l3's version, and the root's", "l3 と root の版"]),
+    ] {
+        s += &format!("  {} {}\n", pad(f, 14), say(w));
     }
-    s += "\n";
+    s += &format!("\n{}\n", bold(if ja() { "終了コード" } else { "Exit codes" }));
+    s += if ja() { "  0 できた · 1 できなかった · 2 書き方の誤り · 3 Remote に届かない · 4 見つからない\n\n" } else { "  0 done · 1 not done · 2 not how it is written · 3 the Remote out of reach · 4 not found\n\n" };
     s += if ja() {
-        "repo の中（とその Prompt）では REPO を省けます。#N はその repo の Issue N です。\n`l3 help all` ですべての書き方、`l3 completion bash|zsh|fish` で補完。\n\n名前は持ち主が先：hello, hello/src/a.c, hello#3, ren@length3.com:hello（あなたの repo を全部書いた形）, trip#general（サーバーの板）。"
+        "repo の中（とその Prompt）では REPO を省けます。ISSUE は repo の中なら #N、外なら REPO#N、または件名の言葉（「再起動」など）です。\n`l3 help all` ですべての書き方、`l3 completion bash|zsh|fish` で補完。\n\n名前は持ち主が先：hello, hello/src/a.c, hello#3, ren@length3.com:hello（あなたの repo を全部書いた形）, trip#general（サーバーの板）。"
     } else {
-        "In a repo (or its Prompt) REPO may be left out, and #N is that repo's issue N.\n`l3 help all` lists every form; `l3 completion bash|zsh|fish` completes them.\n\nNames, owner first: hello, hello/src/a.c, hello#3, ren@length3.com:hello (yours, written in full), trip#general (a server's board)."
+        "In a repo (or its Prompt) REPO may be left out. An ISSUE is #N in its repo, REPO#N elsewhere, or words of its title (\"restart\").\n`l3 help all` lists every form; `l3 completion bash|zsh|fish` completes them.\n\nNames, owner first: hello, hello/src/a.c, hello#3, ren@length3.com:hello (yours, written in full), trip#general (a server's board)."
     };
     s
 }
 
-/// How many columns `s` takes in a terminal (CJK and full-width forms take two).
-fn width(s: &str) -> usize {
-    s.chars().map(|c| if matches!(c as u32, 0x1100..=0x115F | 0x2E80..=0xA4CF | 0xAC00..=0xD7A3 | 0xF900..=0xFAFF | 0xFE30..=0xFE4F | 0xFF00..=0xFF60 | 0xFFE0..=0xFFE6) { 2 } else { 1 }).sum()
-}
-
-fn forms(c: &Command) -> String {
+/// Each form of `cs` in a line, its words after it, aligned at `cols`.
+fn forms(cs: &[&Command], cols: usize) -> String {
     let mut s = String::new();
-    let cols = c.forms.iter().map(|(f, _)| width(f)).max().unwrap_or(0).min(44);
-    for (f, w) in c.forms {
-        let what = say(*w);
-        if what.is_empty() { s += &format!("  {f}\n"); } else { s += &format!("  {f}{}  {what}\n", " ".repeat(cols.saturating_sub(width(f)))); }
+    for c in cs {
+        for f in c.forms.iter().filter(|f| !f.hidden) {
+            let u = spec::usage(c, f);
+            let what = say(f.about);
+            s += &if what.is_empty() { format!("  {u}\n") } else if width(&u) > cols { format!("  {u}\n  {}  {what}\n", " ".repeat(cols)) } else { format!("  {}  {what}\n", pad(&u, cols)) };
+        }
     }
     s
 }
 
+fn widest(cs: &[&Command]) -> usize {
+    cs.iter().flat_map(|c| c.forms.iter().filter(|f| !f.hidden).map(move |f| width(&spec::usage(c, f)))).max().unwrap_or(0).min(56)
+}
+
 /// `l3 help COMMAND`: what it does, and each way to write it.
 pub fn command(c: &Command) -> String {
-    format!("{} — {}\n\n{}", bold(&format!("l3 {}", c.name)), say(c.about), forms(c).trim_end())
+    let mut s = format!("{} — {}\n\n{}", bold(&format!("l3 {}", c.name)), say(c.about), forms(&[c], widest(&[c])).trim_end());
+    if !c.aliases.is_empty() { s += &format!("\n\n{}{}", if ja() { "別名：" } else { "Also: " }, c.aliases.iter().map(|a| format!("l3 {a}")).collect::<Vec<_>>().join(", ")); }
+    if c.forms.iter().any(|f| f.args.contains(&spec::Arg::Issue)) {
+        s += &format!("\n\n{}", if ja() { "ISSUE：repo の中なら #N、外なら REPO#N、または件名の言葉（「再起動」など。ひとつに決まらなければ番号で）" } else { "ISSUE: #N in its repo, REPO#N elsewhere, or words of its title (\"restart\"; by its number when the words fit more than one)" });
+    }
+    if c.name == "repo" {
+        let t: Vec<String> = length3_core::templates::all().into_iter().map(|t| format!("{} ({})", t.id, t.label)).collect();
+        s += &format!("\n\n{}{}", if ja() { "テンプレート：" } else { "Templates: " }, t.join(", "));
+    }
+    s
 }
 
-/// `l3 help all`: every form, by the rail.
+/// `l3 help all`: every form, by the rail, each group aligned on its own.
 pub fn all() -> String {
     let mut s = String::new();
-    for g in groups() {
-        s += &format!("{}\n", bold(g));
-        for c in COMMANDS.iter().filter(|c| c.group == g) { s += &forms(c); }
+    for g in Group::ALL {
+        let cs: Vec<&Command> = spec::shown().filter(|c| c.group == g).collect();
+        if cs.is_empty() { continue; }
+        s += &format!("{}\n{}\n", bold(g.name()), forms(&cs, widest(&cs)));
     }
     s.trim_end().to_string()
-}
-
-/// How far apart two words are: edits, a swap of two letters side by side
-/// counting as one (optimal string alignment).
-fn distance(a: &str, b: &str) -> usize {
-    let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
-    let mut d = vec![vec![0usize; b.len() + 1]; a.len() + 1];
-    for (i, row) in d.iter_mut().enumerate() { row[0] = i; }
-    for j in 0..=b.len() { d[0][j] = j; }
-    for i in 1..=a.len() {
-        for j in 1..=b.len() {
-            let cost = usize::from(a[i - 1] != b[j - 1]);
-            d[i][j] = (d[i - 1][j] + 1).min(d[i][j - 1] + 1).min(d[i - 1][j - 1] + cost);
-            if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] { d[i][j] = d[i][j].min(d[i - 2][j - 2] + 1); }
-        }
-    }
-    d[a.len()][b.len()]
-}
-
-/// The known word nearest `word`, if it is near enough to be what was meant.
-pub fn nearest<'a>(word: &str, among: impl IntoIterator<Item = &'a str>) -> Option<&'a str> {
-    among.into_iter().map(|w| (distance(word, w), w)).filter(|(d, w)| *d <= (w.len() / 3).max(1)).min_by_key(|(d, _)| *d).map(|(_, w)| w)
-}
-
-/// What to say when the words are not a command.
-pub fn not_a_command(words: &[&str]) -> String {
-    let all = || COMMANDS.iter().map(|c| c.name).chain(OTHER.iter().copied());
-    let first = words.first().copied().unwrap_or("");
-    if let Some(c) = find(first) {
-        // A command, but not one of its forms: a mistyped next word, or the wrong count.
-        let hint = words.get(1).and_then(|w| nearest(w, c.next.iter().copied())).filter(|w| Some(w) != words.get(1))
-            .map(|w| if ja() { format!("もしかして：l3 {} {w}\n", c.name) } else { format!("Did you mean: l3 {} {w}\n", c.name) }).unwrap_or_default();
-        return if ja() { format!("l3 {} の書き方ではありません\n{hint}\n{}", words.join(" "), forms(c).trim_end()) } else { format!("Not how l3 {} is written\n{hint}\n{}", words.join(" "), forms(c).trim_end()) };
-    }
-    match nearest(first, all()) {
-        Some(w) => if ja() { format!("わからないコマンドです：l3 {first}\nもしかして：l3 {w}") } else { format!("Not a command: l3 {first}\nDid you mean: l3 {w}") },
-        None => if ja() { format!("わからないコマンドです：l3 {first}\n`l3 help` でコマンドの一覧を見られます") } else { format!("Not a command: l3 {first}\n`l3 help` lists the commands") },
-    }
-}
-
-/// A completion script for `shell`, made from the table: commands, then
-/// what may follow each, and repo names (`l3 complete repos`) where a repo goes.
-pub fn completion(shell: &str) -> Result<String, String> {
-    let names: Vec<&str> = COMMANDS.iter().map(|c| c.name).chain(OTHER.iter().copied()).collect();
-    let repos: Vec<&str> = COMMANDS.iter().filter(|c| c.repo).map(|c| c.name).collect();
-    match shell {
-        "bash" | "zsh" => {
-            let mut cases = String::new();
-            for c in COMMANDS.iter().filter(|c| !c.next.is_empty()) { cases += &format!("    {}) w=\"{}\" ;;\n", c.name, c.next.join(" ")); }
-            cases += "    help) w=\"all $(printf '%s ' $cmds)\" ;;\n    completion) w=\"bash zsh fish\" ;;\n";
-            let head = if shell == "zsh" { "autoload -U +X bashcompinit && bashcompinit\n" } else { "" };
-            Ok(format!("# l3 completion ({shell}): eval \"$(l3 completion {shell})\"\n{head}_l3() {{
-  local cur=${{COMP_WORDS[COMP_CWORD]}} cmd=${{COMP_WORDS[1]}} w=\"\"
-  local cmds=\"{}\"
-  if [ \"$COMP_CWORD\" -eq 1 ]; then COMPREPLY=($(compgen -W \"$cmds\" -- \"$cur\")); return; fi
-  case $cmd in
-{cases}  esac
-  case \" {} \" in *\" $cmd \"*) w=\"$w $(l3 complete repos 2>/dev/null)\" ;; esac
-  COMPREPLY=($(compgen -W \"$w\" -- \"$cur\"))
-}}
-complete -F _l3 l3\n", names.join(" "), repos.join(" ")))
-        }
-        "fish" => {
-            let mut s = String::from("# l3 completion (fish): l3 completion fish | source\ncomplete -c l3 -f\n");
-            for c in COMMANDS { s += &format!("complete -c l3 -n __fish_use_subcommand -a {} -d '{}'\n", c.name, say(c.about).replace('\'', "\\'")); }
-            for w in OTHER { s += &format!("complete -c l3 -n __fish_use_subcommand -a {w}\n"); }
-            for c in COMMANDS.iter().filter(|c| !c.next.is_empty()) { s += &format!("complete -c l3 -n '__fish_seen_subcommand_from {}' -a '{}'\n", c.name, c.next.join(" ")); }
-            s += &format!("complete -c l3 -n '__fish_seen_subcommand_from {}' -a '(l3 complete repos 2>/dev/null)'\n", repos.join(" "));
-            s += "complete -c l3 -n '__fish_seen_subcommand_from completion' -a 'bash zsh fish'\n";
-            Ok(s)
-        }
-        _ => Err(if ja() { "l3 completion bash|zsh|fish".into() } else { "l3 completion bash|zsh|fish".into() }),
-    }
 }
 
 #[cfg(test)]
@@ -305,22 +122,32 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_mistyped_word_finds_what_was_meant() {
-        let all = || COMMANDS.iter().map(|c| c.name);
-        assert_eq!(nearest("comit", all()), Some("commit"));
-        assert_eq!(nearest("rpeo", all()), Some("repo"));
-        assert_eq!(nearest("xyzzy", all()), None);
-        assert_eq!(nearest("nwe", ["new", "open"]), Some("new"));
-        assert_eq!(distance("rpeo", "repo"), 1);
+    fn help_all_holds_every_form_and_aligns_each_group() {
+        let a = all();
+        assert!(a.contains("l3 issue new"), "{a}");
+        assert!(a.contains("l3 help [COMMAND|all]") || a.contains("l3 help COMMAND|all"), "{a}");
+        // Within a group, the words after each form start in one column.
+        for g in Group::ALL {
+            let cs: Vec<&Command> = spec::shown().filter(|c| c.group == g).collect();
+            let text = forms(&cs, widest(&cs));
+            let mut at = std::collections::HashSet::new();
+            for c in &cs {
+                for f in c.forms.iter().filter(|f| !f.hidden && !say(f.about).is_empty()) {
+                    let u = format!("  {}", spec::usage(c, f));
+                    let Some(line) = text.lines().find(|l| l.starts_with(&u) && l.ends_with(say(f.about))) else { continue };
+                    at.insert(width(&line[..line.len() - say(f.about).len()]));
+                }
+            }
+            assert!(at.len() <= 1, "{}: {at:?}\n{text}", g.name());
+        }
         assert_eq!(width("Fix：t"), 6);
     }
 
     #[test]
-    fn every_command_says_what_it_does_and_how() {
-        for c in COMMANDS {
-            assert!(!c.about[0].is_empty() && !c.about[1].is_empty(), "{}", c.name);
-            assert!(c.forms.iter().all(|(f, _)| f.starts_with("l3 ") || f.starts_with("    -")), "{}", c.name);
+    fn help_knows_its_own_words() {
+        for c in ["help", "version", "completion", "dotfile"] {
+            assert!(spec::find(c).is_some_and(|c| !c.hidden), "{c}");
         }
-        for shell in ["bash", "zsh", "fish"] { assert!(completion(shell).unwrap().contains("commit")); }
+        assert!(command(spec::find("repo").unwrap()).contains("standard"));
     }
 }

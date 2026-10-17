@@ -88,11 +88,77 @@ pub(crate) enum Reply {
     NotFound,
 }
 
-const UNKNOWN: &str = "Remote がこの端末を知りません（l3 login でつなぎ直せます）";
+/// Why the last request to the Remote failed, for a caller that says it in
+/// its own way (l3's exit codes). Errors stay text; this is what kind of text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Failure {
+    /// This device is on no Remote.
+    NotConnected,
+    /// The Remote does not know this device's session any more (401).
+    Unknown,
+    /// No answer: the network, or the Remote is down.
+    Unreachable,
+    /// It answered with this status (404 included).
+    Status(u16),
+}
+
+fn failures() -> &'static Mutex<Option<(Failure, String)>> {
+    static F: OnceLock<Mutex<Option<(Failure, String)>>> = OnceLock::new();
+    F.get_or_init(|| Mutex::new(None))
+}
+
+/// Keep `message` as the last failure of kind `f`, and give it back.
+fn failed(f: Failure, message: String) -> String {
+    if let Ok(mut last) = failures().lock() { *last = Some((f, message.clone())); }
+    message
+}
+
+/// The last failure talking to the Remote in this process, and what it said.
+pub fn last_failure() -> Option<(Failure, String)> {
+    failures().lock().ok().and_then(|f| f.clone())
+}
+
+fn unknown() -> String {
+    failed(Failure::Unknown, crate::tr!("The Remote does not know this device any more (l3 login connects it again)", "Remote がこの端末を知りません（l3 login でつなぎ直せます）"))
+}
+
+fn unreachable(e: ureq::Error) -> String {
+    let (url, why) = match &e {
+        ureq::Error::Transport(t) => (t.url().map(|u| u.host_str().unwrap_or_default().to_string() + &u.port().map(|p| format!(":{p}")).unwrap_or_default()).unwrap_or_default(), match t.kind() {
+            ureq::ErrorKind::Dns => crate::tr!("its name is not found", "名前が見つかりません"),
+            ureq::ErrorKind::ConnectionFailed => crate::tr!("no connection", "接続できません"),
+            ureq::ErrorKind::TooManyRedirects => crate::tr!("too many redirects", "リダイレクトが多すぎます"),
+            ureq::ErrorKind::Io => crate::tr!("the connection broke or timed out", "接続が切れたか、時間切れです"),
+            ureq::ErrorKind::ProxyConnect | ureq::ErrorKind::ProxyUnauthorized | ureq::ErrorKind::InvalidProxyUrl => crate::tr!("the proxy refused", "プロキシが通しません"),
+            ureq::ErrorKind::InvalidUrl | ureq::ErrorKind::UnknownScheme => crate::tr!("not an address", "アドレスではありません"),
+            k => k.to_string(),
+        }),
+        other => (String::new(), other.to_string()),
+    };
+    let at = if url.is_empty() { String::new() } else { format!(" {url}") };
+    failed(Failure::Unreachable, crate::tr!("The Remote{} cannot be reached ({})", "Remote{} に届きません（{}）", at, why))
+}
+
+/// What the Remote said when it refused: its `error`, in its words.
+fn refused(code: u16, r: ureq::Response) -> String {
+    let v: serde_json::Value = r.into_json().unwrap_or_default();
+    let said = v["error"].as_str().or(v["message"].as_str()).unwrap_or_default().to_string();
+    let message = match (code, said.as_str()) {
+        (401, _) => return unknown(),
+        (429, _) => crate::tr!("The Remote is asked too often just now; try again in a minute", "いま Remote への問い合わせが多すぎます。少し待ってからどうぞ"),
+        // Turned off: the Remote keeps it for a while, answering only that.
+        (410, _) => crate::tr!("It is turned off on the Remote (l3 remote on brings it back)", "Remote でオフになっています（l3 remote on で戻せます）"),
+        (507, _) => crate::tr!("The Remote is full: {} of {} used", "Remote がいっぱいです：{} のうち {} を使用", v["used"], v["quota"]),
+        (413, _) => crate::tr!("Too large for the Remote ({})", "Remote には大きすぎます（{}）", said),
+        (_, "") => crate::tr!("The Remote refused it ({})", "Remote が受け付けませんでした（{}）", code),
+        _ => crate::tr!("The Remote refused it ({}): {}", "Remote が受け付けませんでした（{}）：{}", code, said),
+    };
+    failed(Failure::Status(code), message)
+}
 
 impl Client {
     pub(crate) fn open() -> Result<Client> {
-        let c = connection().ok_or("Remote につながっていません（l3 login）")?;
+        let c = connection().ok_or_else(|| failed(Failure::NotConnected, crate::tr!("This device is not on a Remote (l3 login)", "Remote につながっていません（l3 login）")))?;
         Ok(Client { agent: agent(&c.url), url: c.url, token: c.token })
     }
 
@@ -110,19 +176,19 @@ impl Client {
             Ok(r) => Ok(Reply::Ok(r.into_json().unwrap_or(serde_json::Value::Null))),
             Err(ureq::Error::Status(409, r)) => Ok(Reply::Conflict(r.into_json().unwrap_or_default())),
             Err(ureq::Error::Status(404, _)) => Ok(Reply::NotFound),
-            Err(ureq::Error::Status(401, _)) => Err(UNKNOWN.into()),
-            // Turned off: the Remote keeps it for a while, answering only that.
-            Err(ureq::Error::Status(410, _)) => Err(crate::tr!("turned off on the Remote", "Remote でオフになっています")),
-            Err(ureq::Error::Status(code, _)) => Err(format!("Remote: {code}")),
-            Err(e) => Err(crate::tr!("The Remote cannot be reached: {}", "Remote に届きません：{}", e)),
+            Err(ureq::Error::Status(code, r)) => Err(refused(code, r)),
+            Err(e) => Err(unreachable(e)),
         }
     }
 
     pub(crate) fn json(&self, method: &str, path: &str, body: Option<serde_json::Value>) -> Result<serde_json::Value> {
         match self.call(method, path, body)? {
             Reply::Ok(v) => Ok(v),
-            Reply::Conflict(_) => Err(crate::tr!("The Remote holds something else here", "Remote と食い違いました")),
-            Reply::NotFound => Err(crate::tr!("The Remote does not have it", "Remote にありません")),
+            Reply::Conflict(v) => Err(failed(Failure::Status(409), match v["error"].as_str() {
+                Some(e) => crate::tr!("The Remote holds something else here: {}", "Remote と食い違いました：{}", e),
+                None => crate::tr!("The Remote holds something else here", "Remote と食い違いました"),
+            })),
+            Reply::NotFound => Err(failed(Failure::Status(404), crate::tr!("The Remote does not have it", "Remote にありません"))),
         }
     }
 
@@ -130,31 +196,35 @@ impl Client {
     pub(crate) fn text(&self, path: &str) -> Result<String> {
         match self.agent.get(&format!("{}{path}", self.url)).set("Authorization", &self.auth()).call() {
             Ok(r) => r.into_string().map_err(|e| e.to_string()),
-            Err(ureq::Error::Status(404, _)) => Err(crate::tr!("The Remote does not have it", "Remote にありません")),
-            Err(ureq::Error::Status(401, _)) => Err(UNKNOWN.into()),
-            Err(ureq::Error::Status(code, _)) => Err(format!("Remote: {code}")),
-            Err(e) => Err(crate::tr!("The Remote cannot be reached: {}", "Remote に届きません：{}", e)),
+            Err(ureq::Error::Status(404, _)) => Err(failed(Failure::Status(404), crate::tr!("The Remote does not have it", "Remote にありません"))),
+            Err(ureq::Error::Status(code, r)) => Err(refused(code, r)),
+            Err(e) => Err(unreachable(e)),
         }
     }
 
     fn put_blob(&self, sha: &str, bytes: &[u8]) -> Result<()> {
-        self.agent.put(&format!("{}/v1/blobs/{sha}", self.url))
+        match self.agent.put(&format!("{}/v1/blobs/{sha}", self.url))
             .set("Authorization", &self.auth())
             .set("Content-Type", "application/octet-stream")
             .send_bytes(bytes)
-            .map(|_| ())
-            .map_err(|e| format!("Remote が受け取りませんでした：{e}"))
+        {
+            Ok(_) => Ok(()),
+            Err(ureq::Error::Status(code, r)) => Err(refused(code, r)),
+            Err(e) => Err(unreachable(e)),
+        }
     }
 
     pub(crate) fn blob(&self, sha: &str) -> Result<Vec<u8>> {
-        let r = self.agent.get(&format!("{}/v1/blobs/{sha}", self.url))
-            .set("Authorization", &self.auth()).call()
-            .map_err(|e| format!("Remote から読めません：{e}"))?;
+        let r = match self.agent.get(&format!("{}/v1/blobs/{sha}", self.url)).set("Authorization", &self.auth()).call() {
+            Ok(r) => r,
+            Err(ureq::Error::Status(code, r)) => return Err(refused(code, r)),
+            Err(e) => return Err(unreachable(e)),
+        };
         let mut bytes = Vec::new();
         r.into_reader().take(BLOB_LIMIT + 1).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
         // Trusted only as far as it is what its name says.
         if sha256(&bytes) != sha {
-            return Err("Remote から届いたものが名前と合いません".into());
+            return Err(crate::tr!("What the Remote sent is not what its name says ({})", "Remote から届いたものが名前と合いません（{}）", &sha[..12.min(sha.len())]));
         }
         Ok(bytes)
     }
@@ -178,9 +248,20 @@ pub struct DeviceCode {
 
 /// Ask for a code to approve in a browser; `client` is "l3" or "length3-app".
 pub fn device_start(url: &str, client: &str) -> Result<DeviceCode> {
-    agent(url).post(&format!("{url}/api/auth/device/code")).send_json(serde_json::json!({"client_id": client}))
-        .map_err(|e| crate::tr!("The Remote cannot be reached: {}", "Remote に届きません：{}", e))?
-        .into_json().map_err(|e| e.to_string())
+    match agent(url).post(&format!("{url}/api/auth/device/code")).send_json(serde_json::json!({"client_id": client})) {
+        Ok(r) => r.into_json().map_err(|_| crate::tr!("{} did not answer as a Remote does", "{} は Remote の答え方をしませんでした", url)),
+        Err(ureq::Error::Status(code, r)) => Err(refused(code, r)),
+        Err(e) => Err(unreachable(e)),
+    }
+}
+
+/// Whether `url` can name a Remote: http(s)://host[:port][/path], nothing else.
+pub fn valid_url(url: &str) -> bool {
+    let Some((scheme, rest)) = url.split_once("://") else { return false };
+    let host = rest.split('/').next().unwrap_or_default();
+    matches!(scheme, "http" | "https") && !host.is_empty()
+        && host.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | ':' | '[' | ']'))
+        && !rest.contains(char::is_whitespace)
 }
 
 /// Poll once: Some(token) when approved, None while waiting.
@@ -193,17 +274,26 @@ pub fn device_poll(url: &str, client: &str, code: &DeviceCode) -> Result<Option<
             let v: serde_json::Value = r.into_json().map_err(|e| e.to_string())?;
             Ok(v.get("access_token").and_then(|t| t.as_str()).map(String::from))
         }
-        Err(ureq::Error::Status(_, r)) => {
+        // Asked too often: wait, as for slow_down.
+        Err(ureq::Error::Status(429, _)) => Ok(None),
+        Err(ureq::Error::Status(code, r)) => {
             let v: serde_json::Value = r.into_json().unwrap_or_default();
             match v.get("error").and_then(|e| e.as_str()) {
                 Some("authorization_pending") | Some("slow_down") => Ok(None),
-                Some("access_denied") => Err("ブラウザで断られました".into()),
-                Some("expired_token") => Err("コードの期限が切れました".into()),
-                other => Err(format!("つなげませんでした（{}）", other.unwrap_or("?"))),
+                Some("access_denied") => Err(crate::tr!("It was declined in the browser", "ブラウザで断られました")),
+                Some("expired_token") => Err(expired()),
+                other => {
+                    let said = other.or(v["error_description"].as_str()).or(v["message"].as_str()).map_or_else(|| code.to_string(), String::from);
+                    Err(failed(Failure::Status(code), crate::tr!("Could not connect ({})", "つなげませんでした（{}）", said)))
+                }
             }
         }
-        Err(e) => Err(crate::tr!("The Remote cannot be reached: {}", "Remote に届きません：{}", e)),
+        Err(e) => Err(unreachable(e)),
     }
+}
+
+fn expired() -> String {
+    crate::tr!("The code expired before it was approved", "承認される前にコードの期限が切れました")
 }
 
 /// Wait for a code to be approved, then keep the session here.
@@ -216,7 +306,7 @@ pub fn device_finish(url: &str, client: &str, code: &DeviceCode) -> Result<()> {
             return save_connection(&Connection { url: url.trim_end_matches('/').into(), token });
         }
         if std::time::Instant::now() > deadline {
-            return Err("コードの期限が切れました".into());
+            return Err(expired());
         }
     }
 }
@@ -233,7 +323,7 @@ pub fn account() -> Result<Option<Account>> {
     let Some(c) = connection() else { return Ok(None) };
     let v = Client::open()?.json("GET", "/api/auth/get-session", None)?;
     if v.is_null() {
-        return Err(UNKNOWN.into());
+        return Err(unknown());
     }
     Ok(Some(Account {
         url: c.url,
@@ -242,11 +332,32 @@ pub fn account() -> Result<Option<Account>> {
     }))
 }
 
-/// End this device's session on the Remote, then forget it here.
-pub fn logout() -> Result<()> {
-    if let Ok(c) = Client::open() {
-        let _ = c.call("POST", "/api/auth/sign-out", Some(serde_json::json!({})));
+/// End this device's session on the Remote, then forget it here. Every repo
+/// is sent first: forgetting what was agreed with a change still unsent
+/// (a file removed here, say) would undo it at the next sign-in, when the
+/// Remote's copy comes back as new. So a repo that cannot be sent stops it.
+pub fn logout(repos: &Repos) -> Result<()> {
+    let Ok(c) = Client::open() else { return forget_connection() };
+    for s in repos.list()? {
+        // Main's copy and each issue's, each in step before any record of them goes.
+        let shown = repos.line(&s.name);
+        let mut lines: Vec<String> = crate::work::worktrees(&s.name).into_iter().map(|(l, _)| l).collect();
+        lines.push(crate::work::MAIN.into());
+        for line in lines {
+            let r = lock(&key_of(&s.name, &line)).and_then(|_held| {
+                let _ = crate::work::show_for_free(&s.name, &line);
+                let r = sync_with(&c, repos, &s.name);
+                let _ = crate::work::show_for_free(&s.name, &shown);
+                r
+            });
+            if let Err(e) = r {
+                let what = if line == crate::work::MAIN { s.name.clone() } else { format!("{}@{line}", s.name) };
+                return Err(crate::tr!("{} could not be sent first ({}); this device stays on the Remote so nothing is lost. Once it is sent, sign out again",
+                    "{} を先に送れませんでした（{}）。何も失わないよう、この端末は Remote につないだままです。送れたら、もう一度外してください", what, e));
+            }
+        }
     }
+    let _ = c.call("POST", "/api/auth/sign-out", Some(serde_json::json!({})));
     forget_connection()
 }
 
@@ -531,30 +642,45 @@ pub fn beside(path: &str) -> String {
 fn place(dir: &Path, rel: &str) -> Result<PathBuf> {
     let parts: Vec<&str> = rel.split('/').collect();
     if parts.iter().any(|p| p.is_empty() || *p == "." || *p == ".." || is_git_name(p)) {
-        return Err(format!("{rel}: ここには書けません"));
+        return Err(crate::tr!("{}: cannot be written here", "{}：ここには書けません", rel));
     }
     let mut at = dir.to_path_buf();
     for p in &parts[..parts.len() - 1] {
         at.push(p);
         match fs::symlink_metadata(&at) {
             Ok(m) if m.is_dir() => {}
-            Ok(_) => return Err(format!("{rel}: 途中がフォルダーではありません")),
-            Err(_) => fs::create_dir(&at).map_err(|e| e.to_string())?,
+            Ok(_) => return Err(crate::tr!("{}: a part of the way is not a folder", "{}：途中がフォルダーではありません", rel)),
+            Err(_) => fs::create_dir(&at).map_err(|e| crate::tr!("{}: {}", "{}：{}", at.display(), e))?,
         }
     }
     Ok(at.join(parts[parts.len() - 1]))
 }
 
+/// Write `bytes` to `path` whole: into a new file beside it, then renamed
+/// over it. The new file is made afresh (O_EXCL), never opened through what
+/// is already there: a program in a Prompt can plant a link at any name in
+/// the repo, and writing through it would reach any file the person can
+/// write. Its name is this OS's temporary (usage.rs), so the walk skips it
+/// and a leftover is reclaimed.
 fn write_file(path: &Path, bytes: &[u8]) -> Result<()> {
     if fs::symlink_metadata(path).is_ok_and(|m| !m.is_file()) {
-        return Err(format!("{}: ファイルではないものがあります", path.display()));
+        return Err(crate::tr!("{}: something that is not a file is there", "{}：ファイルではないものがあります", path.display()));
     }
-    let tmp = path.with_file_name(format!(".length3-{}-{}", std::process::id(), path.file_name().unwrap().to_string_lossy()));
-    let mut f = fs::OpenOptions::new().write(true).create(true).truncate(true).open(&tmp).map_err(|e| e.to_string())?;
-    f.write_all(bytes).and_then(|_| f.sync_all()).map_err(|e| e.to_string())?;
-    fs::rename(&tmp, path).map_err(|e| {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+    let (tmp, mut f) = (0..64).find_map(|_| {
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let tmp = path.with_file_name(format!(".{name}.length3-{}-{n}", std::process::id()));
+        match fs::OpenOptions::new().write(true).create_new(true).open(&tmp) {
+            Ok(f) => Some(Ok((tmp, f))),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => None,
+            Err(e) => Some(Err(crate::tr!("{}: {}", "{}：{}", tmp.display(), e))),
+        }
+    }).unwrap_or_else(|| Err(crate::tr!("{}: no free name beside it to write through", "{}：書くための名前が横に空いていません", path.display())))?;
+    let done = f.write_all(bytes).and_then(|_| f.sync_all()).and_then(|_| fs::rename(&tmp, path));
+    done.map_err(|e| {
         let _ = fs::remove_file(&tmp);
-        e.to_string()
+        crate::tr!("{}: {}", "{}：{}", path.display(), e)
     })
 }
 
@@ -573,8 +699,9 @@ fn still(at: &Path, expect: Option<&Option<String>>) -> bool {
 /// beside; a path that changed here while this ran is left for the next round.
 fn apply(client: &Client, dir: &Path, here: &Tree, p: &Plan) -> Result<Vec<String>> {
     let mut aside = Vec::new();
+    let unwritable = |path: &str| crate::tr!("{}: could not be written", "{}：書けませんでした", path);
     let put_beside = |path: &str, bytes: &[u8]| -> Result<()> {
-        let at = place(dir, &beside(path)).map_err(|_| format!("{path}: 書けませんでした"))?;
+        let at = place(dir, &beside(path)).map_err(|_| unwritable(path))?;
         write_file(&at, bytes)
     };
     for (path, what) in &p.take {
@@ -585,7 +712,7 @@ fn apply(client: &Client, dir: &Path, here: &Tree, p: &Plan) -> Result<Vec<Strin
                 let bytes = client.blob(sha)?;
                 let top = path.split('/').next().unwrap_or(path);
                 let moved = format!("{}{}", beside(top), &path[top.len()..]);
-                write_file(&place(dir, &moved).map_err(|_| format!("{path}: 書けませんでした"))?, &bytes)?;
+                write_file(&place(dir, &moved).map_err(|_| unwritable(path))?, &bytes)?;
                 aside.push(path.clone());
             }
             continue;
@@ -674,6 +801,14 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
             out.taken += p.take.len();
             set_base(&key, &Base { version: remote_version, tree, head: v["head"].as_str().map(String::from) })?;
             continue;
+        }
+        // The Remote can commit without touching the draft (a work's first start commits main
+        // as it stands): its head is then newer than the one kept, though the version is not.
+        let mut base = base;
+        let head = there.as_ref().map(|v| v["head"].as_str().map(String::from));
+        if let Some(head) = head.filter(|h| *h != base.head) {
+            base.head = head;
+            set_base(&key, &base)?;
         }
         let mut set: Vec<(&String, &Option<String>)> = here.tree.iter().filter(|(p, v)| base.tree.get(*p) != Some(*v)).collect();
         let mut remove: Vec<&String> = base.tree.keys().filter(|p| !here.tree.contains_key(*p)).collect();
@@ -769,7 +904,7 @@ pub fn fetch(repos: &Repos, repo: &str) -> Result<Synced> {
     let client = Client::open()?;
     let _held = lock(repo)?;
     if let Reply::NotFound = client.call("GET", &format!("/v1/repos/{repo}"), None)? {
-        return Err(crate::tr!("The Remote has no repo {}", "Remote に {} はありません", repo));
+        return Err(failed(Failure::Status(404), crate::tr!("The Remote has no repo {}", "Remote に repo {} はありません", repo)));
     }
     // It comes as main; the work on its issues comes when chosen.
     forget_base(repo);
@@ -881,6 +1016,33 @@ mod tests {
         assert_eq!(beside("src/main.c"), "src/main (other device).c");
         assert_eq!(beside("Makefile"), "Makefile (other device)");
         assert_eq!(beside(".env"), ".env (other device)");
+    }
+
+    #[test]
+    fn a_link_planted_where_a_file_is_written_is_not_written_through() {
+        let d = std::env::temp_dir().join(format!("length3-plant-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(d.join("repo")).unwrap();
+        let outside = d.join("outside.txt");
+        fs::write(&outside, "the person's own file").unwrap();
+        let pid = std::process::id();
+        // Where the writer used to put its temporary, and where it puts it now.
+        std::os::unix::fs::symlink(&outside, d.join(format!("repo/.length3-{pid}-a.txt"))).unwrap();
+        for n in 0..8 { std::os::unix::fs::symlink(&outside, d.join(format!("repo/.a.txt.length3-{pid}-{n}"))).unwrap(); }
+        write_file(&d.join("repo/a.txt"), b"from the Remote").unwrap();
+        assert_eq!(fs::read_to_string(&outside).unwrap(), "the person's own file");
+        assert_eq!(fs::read_to_string(d.join("repo/a.txt")).unwrap(), "from the Remote");
+        // A link at the file's own name is refused, not followed.
+        std::os::unix::fs::symlink(&outside, d.join("repo/b.txt")).unwrap();
+        assert!(write_file(&d.join("repo/b.txt"), b"x").is_err());
+        assert_eq!(fs::read_to_string(&outside).unwrap(), "the person's own file");
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_remote_is_named_by_an_http_url() {
+        for ok in ["http://127.0.0.1:8787", "https://remote.length3.com", "https://r.example/x"] { assert!(valid_url(ok), "{ok}"); }
+        for bad in ["nonsense", "ftp://x", "https://", "http:// x", "remote.length3.com"] { assert!(!valid_url(bad), "{bad}"); }
     }
 
     #[test]

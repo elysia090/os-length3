@@ -139,7 +139,8 @@ async fn remote_account() -> Result<Option<remote::Account>, String> {
 
 #[tauri::command]
 async fn remote_logout() -> Result<(), String> {
-    blocking(remote::logout).await
+    // Every repo is sent first; one that cannot be keeps the device signed in.
+    blocking(|| remote::logout(&managed()?)).await
 }
 
 /// Repos the Remote holds (those not here can be opened).
