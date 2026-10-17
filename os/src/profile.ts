@@ -1,6 +1,8 @@
 // The profile Home shows. Everyone sees the same page; only its owner gets
 // the edit control. Until accounts exist it lives on this device.
 
+import {clipChars} from './text.ts';
+
 export interface Profile {
   name: string;
   handle: string;
@@ -9,6 +11,7 @@ export interface Profile {
 
 export const EMPTY: Profile = {name: '', handle: '', bio: ''};
 
+/** In characters, as l3 counts them (core/src/home.rs PROFILE_LIMITS). */
 export const LIMITS = {name: 50, handle: 32, bio: 160};
 
 /** Handles are lowercase letters, digits, `-` and `_`. */
@@ -31,9 +34,9 @@ function first(s: string): string {
 /** Clean user input; returns the error field when something is invalid. */
 export function normalize(input: Profile): {profile: Profile; error: keyof Profile | null} {
   const profile = {
-    name: input.name.trim().slice(0, LIMITS.name),
+    name: clipChars(input.name.trim(), LIMITS.name),
     handle: input.handle.trim().replace(/^@/, '').toLowerCase(),
-    bio: input.bio.trim().slice(0, LIMITS.bio),
+    bio: clipChars(input.bio.trim(), LIMITS.bio),
   };
   if (profile.handle && !validHandle(profile.handle)) return {profile, error: 'handle'};
   return {profile, error: null};

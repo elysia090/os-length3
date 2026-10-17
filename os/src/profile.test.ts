@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {EMPTY, initials, normalize, parse, validHandle} from './profile.ts';
+import {EMPTY, initials, LIMITS, normalize, parse, validHandle} from './profile.ts';
+
+test('a profile l3 kept is read whole: its limits count characters, as l3 counts them', () => {
+  // 50 characters beyond the BMP are 100 UTF-16 units; l3 takes them as 50 (core/src/home.rs PROFILE_LIMITS).
+  const name = '😀'.repeat(LIMITS.name), bio = '𝄞'.repeat(LIMITS.bio);
+  assert.deepEqual(parse(JSON.stringify({name, handle: 'ren', bio})), {name, handle: 'ren', bio});
+  // Past the limit it is cut between characters, never inside one.
+  assert.equal(normalize({name: `${name}😀`, handle: '', bio: ''}).profile.name, name);
+});
 
 test('initials come from the name, then the handle', () => {
   assert.equal(initials({name: 'Ren Tamura', handle: 'ren', bio: ''}), 'RT');
