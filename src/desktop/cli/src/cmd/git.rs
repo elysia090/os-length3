@@ -36,7 +36,26 @@ fn stand(ctx: &Ctx, r: &length3_core::repos::Repos, repo: &str) -> Stand {
 }
 
 fn path_of(i: &Issue) -> String { format!("issue/{}", i.file) }
-fn me(i: &Issue) -> String { format!("{}{}", i.repo, number(&i.file)) }
+fn first_line(i: &Issue) -> String { text::named(i.kind.as_deref(), &i.title) }
+/// How a command names it: w1#3, or (no number yet) its first line.
+fn me(i: &Issue) -> String { target::called(&i.repo, &i.file, &first_line(i)) }
+/// "#3 Fix：title"; one without a number yet, its words alone.
+fn heading(i: &Issue) -> String { i.n.map_or_else(|| first_line(i), |n| format!("#{n} {}", first_line(i))) }
+/// A line of work as a person calls it: the number of its issue (#3), else its own name.
+pub fn line_called(line: &str) -> String {
+    let n = number(&format!("{line}.md"));
+    if n.is_empty() { format!("\"{line}\"") } else { n }
+}
+
+/// Give the repo's issues without a number one (issues::numbering), as the
+/// app does when it draws Git: only with the Remote known just now, and only
+/// while the repo shows main (a work's copy is the work's); one a work or a
+/// change refers to keeps its name. What was renamed, (old, new).
+fn number_loose(ctx: &Ctx, r: &length3_core::repos::Repos, repo: &str, s: &Stand) -> Vec<(String, String)> {
+    if ctx.prompt || !ctx.connected() || !s.known || r.line(repo) != work::MAIN { return Vec::new(); }
+    let in_use: Vec<String> = s.lines.iter().map(|l| l.issue.clone()).chain(s.changes.iter().map(|c| c.issue.clone())).collect();
+    r.number_issues(repo, &in_use).unwrap_or_default()
+}
 
 impl Stand {
     fn change(&self, i: &Issue) -> Option<&Change> { self.changes.iter().find(|c| c.issue == path_of(i)) }
@@ -123,7 +142,7 @@ fn version(c: &Change) -> String {
 /// handed in), Commit and Push with a check once done and what each is about;
 /// at the foot, where it lives and who started it; then what comes next.
 fn card(ctx: &Ctx, s: &Stand, i: &Issue, full: bool) -> Vec<String> {
-    let mut t = vec![format!("{} {}", number(&i.file), text::named(i.kind.as_deref(), &i.title))];
+    let mut t = vec![heading(i)];
     if full && !i.detail.is_empty() { for l in i.detail.lines() { t.push(format!("    {l}")); } }
     let done = |yes: bool| if yes { "✓" } else { " " };
     let change = s.change(i);
@@ -153,7 +172,7 @@ fn card(ctx: &Ctx, s: &Stand, i: &Issue, full: bool) -> Vec<String> {
 fn issue_json(ctx: &Ctx, s: &Stand, i: &Issue) -> Value {
     let c = s.change(i);
     let w = s.work.as_ref().filter(|_| s.here(i));
-    json!({"repo": i.repo, "number": number(&i.file), "file": i.file, "kind": i.kind, "title": i.title, "detail": i.detail,
+    json!({"repo": i.repo, "n": i.n, "file": i.file, "kind": i.kind, "title": i.title, "detail": i.detail,
         "state": s.state(i), "version": c.map(|c| c.version), "approvedBy": c.map(approvers).unwrap_or_default(),
         "startedBy": w.map(|w| w.started_by.clone()).or_else(|| s.lines.iter().find(|l| l.issue == path_of(i)).map(|l| l.started_by.clone())),
         "commits": w.map(|w| w.commits), "unpushed": w.map(|w| w.unpushed), "uncommitted": w.map(|_| s.uncommitted),
@@ -165,12 +184,13 @@ pub fn page(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let r = ctx.repos()?;
     // The repo named, or the one you are in; else every repo here.
     let names: Vec<String> = if call.word(0).is_some() || ctx.here.is_some() { vec![target::repo(ctx, call, 0)?] } else { r.list()?.into_iter().map(|s| s.name).collect() };
-    let (mut boxes, mut data, mut merged, mut missing) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    let (mut boxes, mut data, mut merged) = (Vec::new(), Vec::new(), Vec::new());
     let mut offline = false;
     for n in &names {
-        let Some(mut list) = r.issues(n)? else { missing.push(n.clone()); continue };
-        list.sort_by(|a, b| a.file.cmp(&b.file));
         let s = stand(ctx, &r, n);
+        let mut list = r.issues(n)?;
+        if list.iter().any(|i| i.n.is_none()) && !number_loose(ctx, &r, n, &s).is_empty() { list = r.issues(n)?; }
+        length3_core::issues::sort_oldest_first(&mut list);
         offline |= ctx.connected() && !s.known;
         let done = list.iter().filter(|i| s.merged(i)).count();
         if done > 0 { merged.push((n.clone(), done)); }
@@ -180,11 +200,10 @@ pub fn page(ctx: &Ctx, call: &Call) -> Result<Reply> {
         }
     }
     let mut t = boxes.join("\n\n");
-    if boxes.is_empty() { t = if merged.is_empty() { tr!("No issues yet (l3 issue new REPO \"Fix：title\")", "Issue はまだありません（l3 issue new REPO \"Fix：件名\" で書けます）") } else { tr!("Every issue is merged", "すべての Issue が Merge 済みです") }; }
+    if boxes.is_empty() { t = if merged.is_empty() { tr!("No issues yet (l3 issue new [REPO] \"Fix：title\")", "Issue はまだありません（l3 issue new [REPO] \"Fix：件名\" で書けます）") } else { tr!("Every issue is merged", "すべての Issue が Merge 済みです") }; }
     for (n, k) in &merged { t += &format!("\n\n{}", tr!("{0} merged in {1} (l3 log {1})", "{1} で Merge 済み：{0}（l3 log {1}）", issues(*k), n)); }
-    if !missing.is_empty() { t += &format!("\n\n{}", tr!("repos that keep no issues: {}", "Issue を持たない repo：{}", missing.join(", "))); }
     if offline { t += &format!("\n\n{}", tr!("The Remote could not be reached: where each issue stands is not known (merges seen before are)", "Remote に届きませんでした。各 Issue の状態は不明です（前に見た Merge はわかります）")); }
-    Ok(Reply::data(t, json!({"issues": data, "merged": merged.iter().map(|(r, n)| json!({"repo": r, "count": n})).collect::<Vec<_>>(), "withoutIssues": missing, "known": !offline})))
+    Ok(Reply::data(t, json!({"issues": data, "merged": merged.iter().map(|(r, n)| json!({"repo": r, "count": n})).collect::<Vec<_>>(), "known": !offline})))
 }
 
 fn read_issue(ctx: &Ctx, at: &IssueRef) -> Result<Issue> {
@@ -198,7 +217,7 @@ pub fn issue_show(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let r = ctx.repos()?;
     let i = read_issue(ctx, &at)?;
     if ctx.prompt {
-        let mut t = format!("{} {}    {}", number(&i.file), text::named(i.kind.as_deref(), &i.title), i.repo);
+        let mut t = format!("{}    {}", heading(&i), i.repo);
         if !i.detail.is_empty() { t += &format!("\n\n{}", i.detail); }
         return Ok(Reply::data(t, json!({"issue": i})));
     }
@@ -253,9 +272,15 @@ pub fn issue_new(ctx: &Ctx, call: &Call) -> Result<Reply> {
 }
 
 pub fn start(ctx: &Ctx, call: &Call) -> Result<Reply> {
-    let at = target::issue(ctx, call, 0)?;
-    let l = work::start(&ctx.repos()?, &at.repo, &at.path())?;
-    Ok(Reply::done(tr!("Working on {} — {} shows its copy now (back with: l3 main {})", "{} を始めました。{} はその写しを見せています（戻るには l3 main {}）", at.shown(), at.repo, at.repo), json!({"repo": at.repo, "number": number(&at.file), "title": at.title, "file": at.file, "line": l})))
+    let mut at = target::issue(ctx, call, 0)?;
+    let r = ctx.repos()?;
+    // One without a number takes its number first, so its work is named by it (as Git would have done).
+    if length3_core::issues::number_of(&at.file).is_none() {
+        let s = stand(ctx, &r, &at.repo);
+        if let Some((_, new)) = number_loose(ctx, &r, &at.repo, &s).into_iter().find(|(old, _)| *old == at.file) { at.file = new; }
+    }
+    let l = work::start(&r, &at.repo, &at.path())?;
+    Ok(Reply::done(tr!("Working on {} — {} shows its copy now (back with: l3 main {})", "{} を始めました。{} はその写しを見せています（戻るには l3 main {}）", at.shown(), at.repo, at.repo), json!({"repo": at.repo, "n": length3_core::issues::number_of(&at.file), "title": at.title, "file": at.file, "line": l})))
 }
 
 pub fn main(ctx: &Ctx, call: &Call) -> Result<Reply> {
@@ -264,7 +289,9 @@ pub fn main(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let was = r.line(&repo);
     if was == work::MAIN { return Ok(Reply::done(tr!("{} shows main already", "{} はもう main を見せています", repo), json!({"repo": repo, "line": work::MAIN, "changed": false}))); }
     work::switch(&r, &repo, work::MAIN)?;
-    Ok(Reply::done(tr!("{0} shows main now (the work on {1} waits: l3 start {0}{1})", "{0} は main を見せています（{1} の作業はそのまま：l3 start {0}{1}）", repo, number(&was)),
+    let called = line_called(&was);
+    let again = if called.starts_with('#') { format!("l3 start {repo}{called}") } else { format!("l3 start {called}") };
+    Ok(Reply::done(tr!("{} shows main now (the work on {} waits: {})", "{} は main を見せています（{} の作業はそのまま：{}）", repo, called, again),
         json!({"repo": repo, "line": work::MAIN, "was": was, "changed": true})))
 }
 
@@ -347,7 +374,7 @@ pub fn log(ctx: &Ctx, call: &Call) -> Result<Reply> {
     if list.is_empty() { t.push(tr!("No commits yet", "コミットはまだありません")); }
     for c in &list {
         t.push(history::line(c));
-        let issue = c.issue.as_deref().map(|i| format!(" · {}", number(i))).unwrap_or_default();
+        let issue = c.issue.as_deref().map(number).filter(|n| !n.is_empty()).map(|n| format!(" · {n}")).unwrap_or_default();
         let merged = if c.merged.is_some() { tr!(" · merge", " · Merge") } else { String::new() };
         t.push(format!("    {} · {} · {}{}{issue}{merged}", out::short(&c.id), ago(c.time), files(c.files), out::added_removed(c.added, c.removed)));
         let places: Vec<String> = c.folders.iter().map(|f| if f.is_empty() { format!("{repo}/") } else { format!("{f}/") }).collect();

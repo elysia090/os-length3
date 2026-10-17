@@ -30,10 +30,6 @@ fn too_large(at: &str, limit: u64) -> String {
     tr!("{} is larger than {} KB", "{} は {} KB を超えています", at, limit / 1024)
 }
 
-fn no_issues(repo: &str) -> String {
-    tr!("{} keeps no issues (it has no issue folder)", "{} には Issue がありません（issue フォルダーがありません）", repo)
-}
-
 #[derive(Serialize, Debug)]
 pub struct Summary {
     pub name: String,
@@ -336,11 +332,12 @@ impl Repos {
     /// "003") or its file ("003.md", "issue/003.md").
     pub fn issue_file(&self, repo: &str, which: &str) -> Result<String> {
         self.dir(repo)?;
-        let names: Vec<String> = self.tree(repo, "issue").map_err(|_| no_issues(repo))?
-            .into_iter().filter(|e| e.kind == "file").map(|e| e.name).collect();
+        let names: Vec<String> = self.tree(repo, "issue").map(|l| l.into_iter().filter(|e| e.kind == "file").map(|e| e.name).collect()).unwrap_or_default();
         let which = which.trim_start_matches('#').trim_start_matches("issue/");
+        let digits = !which.is_empty() && which.trim_end_matches(".md").bytes().all(|b| b.is_ascii_digit());
+        let called = if digits { format!("#{}", which.trim_end_matches(".md").trim_start_matches('0').max("0")) } else { which.to_string() };
         names.into_iter().find(|n| issues::named_by(n, which))
-            .ok_or_else(|| tr!("{} has no issue {}", "{} に Issue {} はありません", repo, issues::number(which)))
+            .ok_or_else(|| tr!("{} has no issue {}", "{} に Issue {} はありません", repo, called))
     }
 
     /// Make a new file `name` in the existing directory `dir` of `repo`. An
@@ -407,29 +404,50 @@ impl Repos {
         if meta.is_dir() { fs::remove_dir_all(&path) } else { fs::remove_file(&path) }.map_err(|e| io_error(shown(repo, relative), &e))
     }
 
-    /// The repo's issues, newest written first; None when it has no issue/.
-    pub fn issues(&self, repo: &str) -> Result<Option<Vec<issues::Issue>>> {
-        let Ok(entries) = self.tree(repo, "issue") else { return Ok(None) };
+    /// The repo's issues by number, the newest first (one still without a
+    /// number is newer); none when it has no issue/ yet.
+    pub fn issues(&self, repo: &str) -> Result<Vec<issues::Issue>> {
+        self.dir(repo)?;
+        let Ok(entries) = self.tree(repo, "issue") else { return Ok(Vec::new()) };
         let mut out = Vec::new();
         for e in entries.into_iter().filter(|e| e.kind == "file") {
+            // Gone between the listing and the reading, or not text: it is no issue.
             if let Ok(Contents { text: Some(text), .. }) = self.read(repo, &format!("issue/{}", e.name), 256 * 1024) {
                 out.push(issues::parse(repo, &e.name, &text));
             }
         }
         issues::sort(&mut out);
-        Ok(Some(out))
+        Ok(out)
     }
 
-    /// Write a new issue as the next numbered file in `issue/`; returns its name.
+    /// Write a new issue: it takes the next number (issue/ is made for the first). Its file.
     pub fn add_issue(&self, repo: &str, kind: Option<&str>, title: &str, detail: &str) -> Result<String> {
         if title.trim().is_empty() {
             return Err(tr!("An issue needs a title", "Issue には件名がいります"));
         }
-        let names: Vec<String> = self.tree(repo, "issue").map_err(|_| no_issues(repo))?
-            .into_iter().map(|e| e.name).collect();
+        self.dir(repo)?;
+        let names: Vec<String> = match self.tree(repo, "issue") {
+            Ok(list) => list.into_iter().map(|e| e.name).collect(),
+            Err(_) => { self.mkdir(repo, "issue")?; Vec::new() }
+        };
         let name = issues::next_name(&names);
         self.add(repo, "issue", &name, &issues::text(kind, title, detail), 256 * 1024)?;
         Ok(name)
+    }
+
+    /// Give each issue without a number the next free one (issues::numbering),
+    /// by renaming its file; one a work or change refers to (`in_use`,
+    /// "issue/<file>") keeps its name. What was renamed, (old, new).
+    pub fn number_issues(&self, repo: &str, in_use: &[String]) -> Result<Vec<(String, String)>> {
+        let plan = issues::numbering(&self.issues(repo)?, in_use);
+        let mut done = Vec::new();
+        for (old, new) in plan {
+            let Ok(Contents { text: Some(text), .. }) = self.read(repo, &format!("issue/{old}"), 256 * 1024) else { continue };
+            self.add(repo, "issue", &new, &text, 256 * 1024)?;
+            self.remove(repo, &format!("issue/{old}"))?;
+            done.push((old, new));
+        }
+        Ok(done)
     }
 }
 
@@ -515,6 +533,22 @@ mod tests {
     }
 
     #[test]
+    fn issues_without_a_number_are_given_one_by_renaming_their_files() {
+        let r = scratch("number");
+        r.create("a", "standard").unwrap();
+        r.add_issue("a", Some("Fix"), "one", "").unwrap();
+        r.add("a", "issue", "notes.md", "Docs：notes\n", 100).unwrap();
+        r.add("a", "issue", "002 (other device).md", "Fix：theirs\n", 100).unwrap();
+        r.add("a", "issue", "worked.md", "Fix：held by a work\n", 100).unwrap();
+        let done = r.number_issues("a", &["issue/worked.md".to_string()]).unwrap();
+        assert_eq!(done, [("002 (other device).md".to_string(), "002.md".to_string()), ("notes.md".into(), "003.md".into())]);
+        let list = r.issues("a").unwrap();
+        assert_eq!(list.iter().map(|i| (i.n, i.title.as_str())).collect::<Vec<_>>(), [(None, "held by a work"), (Some(3), "notes"), (Some(2), "theirs"), (Some(1), "one")]);
+        assert!(r.number_issues("a", &["issue/worked.md".to_string()]).unwrap().is_empty());
+        assert_eq!(r.add_issue("a", None, "next", "").unwrap(), "004.md");
+    }
+
+    #[test]
     fn an_issue_is_found_by_its_number_or_file() {
         let r = scratch("issue-file");
         r.create("a", "standard").unwrap();
@@ -525,7 +559,7 @@ mod tests {
         assert!(r.issue_file("a", "2").unwrap_err().contains("#2"));
         assert!(r.issue_file("nope", "1").is_err());
         r.create("e", "empty").unwrap();
-        assert!(r.issue_file("e", "1").unwrap_err().contains("issue"));
+        assert!(r.issue_file("e", "1").unwrap_err().contains("#1"));
     }
 
     #[test]
@@ -602,12 +636,14 @@ mod tests {
         r.create("a", "standard").unwrap();
         assert_eq!(r.add_issue("a", Some("Fix"), "壊れる", "手順").unwrap(), "001.md");
         assert_eq!(r.add_issue("a", None, "メモ", "").unwrap(), "002.md");
-        let list = r.issues("a").unwrap().unwrap();
+        let list = r.issues("a").unwrap();
         assert_eq!(list.iter().map(|i| i.title.as_str()).collect::<Vec<_>>(), ["メモ", "壊れる"]);
         assert_eq!(list[1].kind.as_deref(), Some("Fix"));
+        // Any repo takes an issue: issue/ is made for the first.
         r.create("e", "empty").unwrap();
-        assert!(r.issues("e").unwrap().is_none());
-        assert!(r.add_issue("e", None, "x", "").is_err());
+        assert!(r.issues("e").unwrap().is_empty());
+        assert_eq!(r.add_issue("e", None, "x", "").unwrap(), "001.md");
+        assert_eq!(r.issues("e").unwrap()[0].n, Some(1));
         assert!(r.add_issue("a", None, "  ", "").is_err());
     }
 
