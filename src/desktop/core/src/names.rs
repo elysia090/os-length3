@@ -1,4 +1,4 @@
-//! Names as l3 and the app write them (DESIGN.md §0, "Names"): owner first,
+//! Names as l3 and the app write them (DESIGN.md §5, "Names"): owner first,
 //! as scp is. A name's kind is read from its shape, and what is left out is
 //! filled from context; what could mean two things is an error, not a guess.
 //!

@@ -8,8 +8,9 @@ import {sessionFor, sessionIfAny, terminalFor} from './terminal.ts';
 // with the search box and a reference switched freely on top and the Prompt
 // (the repo's sh) below. Using the prompt box sends the Prompt flying up
 // over the center, just above the box, and the reference grows down into the
-// room it leaves. The Prompt's own head holds its switch, the same as a
-// repo's on the Remote page: on and off.
+// room it leaves. Enter is a new line and Ctrl+Enter sends, as in every box
+// one writes in. A Prompt that ended says so in its place, with Start again;
+// sending to it starts it again too.
 
 const MOVE = 280;
 
@@ -36,8 +37,7 @@ export interface Bench {
 export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(path: string, line?: number): void}): Bench {
   let repo: string | null = null;
   // Named for what one does there: type at the prompt of the repo's sh.
-  const power = h('button', {type: 'button', class: 'power plain', role: 'switch', 'aria-checked': 'false'}, h('span', {class: 'knob'})) as HTMLButtonElement;
-  const termTitle = h('div', {class: 'term-head'}, h('h2', {}, 'Prompt'), power);
+  const termTitle = h('div', {class: 'term-head'}, h('h2', {}, 'Prompt'));
   const termBox = h('section', {class: 'term-box', 'aria-label': 'Prompt'}, termTitle);
   const termHome = h('div', {class: 'term-home'}, termBox);
   const termSlot = h('div', {class: 'term-slot'});
@@ -67,9 +67,13 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
       sessionFor(repo).interrupt();
       return;
     }
-    if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
+    // Enter is a new line; Ctrl+Enter (⌘+Enter) sends.
+    if (event.key !== 'Enter' || !(event.ctrlKey || event.metaKey) || event.isComposing) return;
     event.preventDefault();
     if (!repo) return;
+    const s = sessionIfAny(repo);
+    // Ended: started again, and what was written waits in the box to be sent once it is up.
+    if (s?.ended) { s.restart(); note.textContent = t('Still starting'); return; }
     if (!sessionFor(repo).send(prompt.value)) { note.textContent = t('Still starting'); return; }
     note.textContent = '';
     prompt.value = '';
@@ -86,40 +90,11 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     prompt.focus();
   });
 
-  // The switch: on while the repo's shell runs (or starts); off stops it, on starts a new one here.
-  let unwatch: (() => void) | null = null;
-  const paintPower = () => {
-    const s = repo ? sessionIfAny(repo) : undefined;
-    const on = Boolean(s && !s.ended);
-    power.hidden = !repo;
-    power.setAttribute('aria-checked', String(on));
-    const label = on ? t('Turn the Prompt off') : t('Turn the Prompt on');
-    power.setAttribute('aria-label', label);
-    power.title = label;
-  };
-  const follow = () => {
-    unwatch?.();
-    unwatch = repo ? sessionIfAny(repo)?.watch(paintPower) ?? null : null;
-    paintPower();
-  };
-  power.addEventListener('click', () => {
-    if (!repo) return;
-    const s = sessionIfAny(repo);
-    if (s && !s.ended) s.stop();
-    else {
-      if (s) s.restart();
-      const el = terminalFor(repo);
-      if (!termBox.contains(el)) termBox.replaceChildren(termTitle, el);
-    }
-    follow();
-  });
-
   const setRepo = (name: string | null, none = t('Runs once a repo is open')) => {
     if (name === repo && name) return;
     repo = name;
     reference.setRepo(name);
     termBox.replaceChildren(termTitle, name ? terminalFor(name) : h('div', {class: 'empty'}, none));
-    follow();
     prompt.disabled = !name;
     prompt.placeholder = name ? t('Run in {name}', {name}) : '';
   };

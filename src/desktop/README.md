@@ -51,7 +51,7 @@ frontend and no UI framework; the same frontend is the web build.
 - Prompt: in the app with a root installed, the distribution's root itself
   (`l3 prompt`): its sh, gcc, make, git on this kernel, writing the repo
   directly. Every place it writes has an owner and a lifetime (DESIGN.md
-  §0): over the read-only root lies the repo's environment (an overlay;
+  §5): over the read-only root lies the repo's environment (an overlay;
   `apk add` there is the repo's, in `envs/<repo>`), `/var/cache`,
   `/var/tmp`, `/var/log` and `~/.cache` are the repo's caches
   (`caches/<repo>`), `/tmp` and `/run` end with the Prompt. Runtime lists
@@ -99,7 +99,7 @@ may be left out and `#N` is that repo's issue N: `l3 commit`, `l3 start #3`,
 `l3 merge #3`, and `l3 file src` reads from where you are. `l3 -V` gives
 l3's version and the root's.
 
-Names are written owner first, as DESIGN.md §0 "Names" sets out (one
+Names are written owner first, as DESIGN.md §5 "Names" sets out (one
 namespace of principals, people and servers alike): `hello`,
 `hello/src/a.c`, `hello#3`, `ren:hello` (a repo of `ren`'s), `trip#general`
 (a server's board; `#general` when one is in one server). A name on the

@@ -247,7 +247,7 @@ export function inboxPage(ctx: Context): Node[] {
     }
     // Writing is one line that grows as it is written. What it is reads off the text the way
     // an issue is named ("Review：…", "Question：…"), and a /root/… path in it says what it
-    // is about; nothing else to choose. Enter sends; Shift+Enter starts a new line.
+    // is about; nothing else to choose. Enter is a new line; Ctrl+Enter sends.
     const text = h('textarea', {class: 'line-in bubble-in', rows: '1', placeholder: t('Write to {address}…', {address: inbox.shown(address)}), 'aria-label': t('Message'), maxlength: '4000'}) as HTMLTextAreaElement;
     const grow = () => { text.style.height = 'auto'; text.style.height = `${Math.min(text.scrollHeight + 2, 200)}px`; };
     text.addEventListener('input', grow);
@@ -270,13 +270,13 @@ export function inboxPage(ctx: Context): Node[] {
       sendB.disabled = false;
     };
     sendB.addEventListener('click', () => void go());
-    text.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); void go(); } });
+    text.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing) { e.preventDefault(); void go(); } });
     pane.replaceChildren(
       h('header', {class: 'inbox-top'}, h('b', {class: 'mono'}, inbox.shown(address)), lineWord, h('span', {class: 'grow'}), ...decide),
       messages,
       h('div', {class: 'inbox-write'},
         h('div', {class: 'row write-line'}, text, sendB),
-        h('p', {class: 'muted small write-hint'}, t('Review： or Question： first to ask · a /root/… path says what it is about · Enter sends · Shift+Enter for a new line')), error));
+        h('p', {class: 'muted small write-hint'}, t('Review： or Question： first to ask · a /root/… path says what it is about · Ctrl+Enter sends')), error));
     text.focus();
     // Accepted both ways: a direct line between the two devices, when both are here.
     if (th.mutual) {

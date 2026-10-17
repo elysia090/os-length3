@@ -95,7 +95,7 @@ fn here() -> Option<(String, String)> {
     std::env::var("LENGTH3_REPO").ok().filter(|r| !r.is_empty()).map(|r| (r, String::new()))
 }
 
-/// A repo written in full, `owner:repo…` (DESIGN.md §0, "Names"): one's own is
+/// A repo written in full, `owner:repo…` (DESIGN.md §5, "Names"): one's own is
 /// read as `repo…`; another's is not here (a server's own repos come next).
 fn owned(mut w: Vec<String>) -> Result<Vec<String>, String> {
     let takes = w.first().and_then(|f| help::find(f)).is_some_and(|c| c.repo);

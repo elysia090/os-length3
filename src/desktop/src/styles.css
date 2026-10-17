@@ -202,6 +202,8 @@ a { color: var(--ink); }
 .todo-head > .todo-mark { grid-column: 1; }
 .todo-head > .todo-kind { grid-column: 2; }
 .todo-head > .todo-title { grid-column: 3; }
+/* Without a kind, the title starts where the kind would: no gap for an empty column. */
+.todo-head > .todo-kind[hidden] + .todo-title { grid-column: 2 / 4; }
 .todo-head > .todo-meta { grid-column: 4; }
 .todo-mark { display: grid; place-items: center; width: var(--h-control); height: var(--h-control); border: 0; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: pointer; }
 /* Inside the raised box, hover is a step back to the ground. */
@@ -724,6 +726,8 @@ mark { background: var(--ink); color: var(--ground); }
 @media (prefers-reduced-motion: reduce) { .power, .power .knob { transition: none; } }
 .off-ask { display: grid; gap: var(--s2); align-content: start; height: 100%; }
 .off-ask .card-foot { margin-top: auto; }
+/* Asked in a small card: the answers at its foot, as the card's own deeds were. */
+.small-card:has(> .off-ask) { grid-template-rows: 1fr; }
 /* Who sees a repo, in its card: only you, servers, everyone. */
 .seen-choice { display: grid; gap: var(--s2); }
 .check-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); min-width: 0; }
@@ -841,7 +845,8 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .tl-post:hover, .tl-post:focus-within { background: var(--raised); }
 .tl-face { display: grid; place-items: center; width: 36px; height: 36px; margin-top: var(--s1); border: 1px solid var(--rule); border-radius: var(--r-round); font: 600 var(--t-meta) var(--sans); }
 /* In a run, the face's place holds the time, shown on hover. */
-.tl-face.tl-at { height: auto; margin-top: 0; border: 0; border-radius: 0; place-items: start end; font: 400 11px/2.2 var(--sans); visibility: hidden; }
+/* A post in a run: its time, on hover, no taller than the line beside it, so a run's lines keep one rhythm. */
+.tl-face.tl-at { height: 1lh; margin-top: 0; border: 0; border-radius: 0; place-items: center end; font-size: 11px; line-height: inherit; overflow: hidden; visibility: hidden; }
 .tl-post:hover .tl-at, .tl-post:focus-within .tl-at { visibility: visible; }
 .tl-who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s2); }
 .tl-body { white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -865,7 +870,6 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .server-center { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); padding: var(--band) var(--s5) 120px; }
 .server-top { display: flex; align-items: center; gap: var(--s2); margin-bottom: var(--s3); }
 .server-chips { flex: 1; min-width: 0; }
-.server-top .band-add { font-size: var(--t-body); }
 .server-gear { display: grid; place-items: center; flex: none; width: var(--h-control); height: var(--h-control); padding: 0; border: 1px solid transparent; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: pointer; }
 .server-gear:hover, .server-gear[aria-expanded='true'] { border-color: var(--edge); color: var(--ink); }
 .server-gear svg { width: 20px; height: 20px; }
@@ -881,6 +885,8 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .slide { flex: 0 0 calc(100% - 2 * var(--peek)); min-width: 0; height: 100%; }
 .board-card { display: flex; flex-direction: column; height: 100%; border: 1px solid var(--rule); border-radius: var(--r-place); }
 .slide[aria-current='false'] .board-card { color: var(--sub); }
+/* A neighbour shows its edge and its mark (# a board, + a new one), not a name cut short. */
+.slide[aria-current='false'] .board-head h2 { visibility: hidden; }
 .slide[aria-current='true'] .board-card { border-color: var(--ink); }
 .slide-stage:has(.stage-hit.next:hover) .slide[aria-current='true'] + .slide .board-card,
 .slide-stage:has(.stage-hit.prev:hover) .slide:has(+ .slide[aria-current='true']) .board-card { background: var(--raised); }
@@ -917,9 +923,12 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 /* The right: who is in it, then their repos. Read only: what changes them is behind the gear. */
 .server-side { display: grid; grid-template-rows: none; align-content: start; gap: var(--s5); overflow-y: auto; padding: var(--band) 0 var(--s5) var(--s5); }
 .side-part { display: grid; gap: var(--s2); }
-.side-part h3 { margin: 0; font-size: var(--t-meta); font-weight: 600; color: var(--sub); }
+.side-part h3 { margin: 0; font-size: var(--t-body); font-weight: 600; }
+.server-side .empty { margin-top: 0; padding: var(--s5) var(--s4); }
 .people, .side-repos { display: grid; gap: var(--s1); margin: 0; padding: 0; list-style: none; }
-.people li { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
+/* Words of two sizes in a row share a baseline; the face sits centred by them. */
+.people li { display: flex; align-items: baseline; gap: var(--s2); min-width: 0; }
+.people li > .face { align-self: center; }
 .people li > :not(.face) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .face { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--rule); border-radius: var(--r-round); font: 600 11px var(--sans); }
 .side-repo { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s2); width: 100%; padding: var(--s1) var(--s2); margin: 0 calc(-1 * var(--s2)); border: 0; border-radius: var(--r-field); background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
@@ -928,25 +937,34 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .side-repo > .small:not(.seen-mark) { grid-column: 1; }
 .side-repo .seen-mark { grid-column: 2; grid-row: 1; }
 /* In the boards' place: behind the gear, or a repo shown. */
-.server-sheet { display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; }
+/* Behind the gear, and a repo shown: a head as a page's, then what it holds
+   on the ground itself (cards, or one box in two panes), never a box around
+   boxes. */
+.server-sheet { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); align-content: start; min-height: 0; }
 .server-sheet[hidden] { display: none; }
-.sheet-card { min-height: 0; }
-.sheet-body { flex: 1; min-height: 0; overflow-y: auto; padding: var(--s2) var(--s5) var(--s5); }
-.sheet-body > .parts { margin-top: var(--s1); }
+.sheet-head { display: flex; align-items: center; gap: var(--s3); min-width: 0; }
+.sheet-title { display: flex; align-items: baseline; gap: var(--s1) var(--s3); min-width: 0; }
+.sheet-title h2 { min-width: 0; font-size: var(--t-title); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sheet-title p { flex-shrink: 4; min-width: 0; color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sheet-head .grow { flex: 1; }
+.sheet-head > .button { flex: none; }
+.sheet-body { min-height: 0; overflow-y: auto; }
+.sheet-body > .parts { margin-top: var(--s4); }
 .sheet-body .part-panel { margin-top: var(--s4); }
-.sheet-sub { padding: 0 var(--s5) var(--s2); }
+.sheet-sub { margin-top: var(--s1); }
 /* A setting in a small card: its word, and the switch at the right. */
 .card-row { display: flex; align-items: center; gap: var(--s3); min-height: var(--h-control); }
 .card-row .grow { flex: 1; min-width: 0; }
 .small-card > .small-button { justify-self: start; }
 .small-card.new { grid-template-rows: none; align-content: center; justify-items: center; }
+.grid > .empty { grid-column: 1 / -1; margin-top: 0; }
 /* Narrow: the parts slide rather than stack, and the server's name and code are left to its own part. */
 @media (max-width: 760px) {
   .sheet-body > .parts { flex-wrap: nowrap; overflow-x: auto; }
   .sheet-body > .parts .part { flex: none; }
-  .sheet-card > .board-head > .small { display: none; }
+  .sheet-title > p { display: none; }
 }
-.seen-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(10em, 1fr) minmax(0, 3fr); border-top: 1px solid var(--rule); }
+.seen-body { min-height: 0; margin-top: var(--s4); display: grid; grid-template-columns: minmax(10em, 1fr) minmax(0, 3fr); border: 1px solid var(--rule); border-radius: var(--r-place); overflow: hidden; }
 .seen-files { margin: 0; padding: var(--s2); list-style: none; overflow-y: auto; border-right: 1px solid var(--rule); }
 .seen-file { display: block; width: 100%; padding: var(--s1) var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: var(--sub); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .seen-file:hover, .seen-file[aria-current='true'] { background: var(--raised); color: var(--ink); }

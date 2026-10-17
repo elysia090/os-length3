@@ -58,6 +58,8 @@ export const removePerson = (id: string, address: string) => call<void>(`/v1/ser
 
 // ---- boards ----
 export const makeBoard = (server: string, name: string) => call<BoardRef>(`/v1/servers/${server}/boards`, send('POST', {name}));
+/** Its server's owner's: it goes with its talk and TODO, for good. */
+export const removeBoard = (id: string) => call<void>(`/v1/boards/${id}`, send('DELETE'));
 /** Open boards, for anyone. */
 export const openBoards = () => json<OpenBoard[]>('/v1/open');
 /** A board: as one of its people, or as anyone if it is open. */

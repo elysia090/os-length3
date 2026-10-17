@@ -116,6 +116,4 @@ export default {
   'Could not read the repos: {why}': 'repoを読めませんでした: {why}',
   'In this browser, repos go when this page closes.': 'このブラウザでは、repoはこのページを閉じると消えます。',
   // The Prompt's switch, on its own head.
-  'Turn the Prompt off': 'Prompt を切る',
-  'Turn the Prompt on': 'Prompt を入れる',
 } as Record<string, string>;

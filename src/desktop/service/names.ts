@@ -1,4 +1,4 @@
-// Names (DESIGN.md §0, "Names"): one namespace of principals, people (an
+// Names (DESIGN.md §5, "Names"): one namespace of principals, people (an
 // account's addresses) and servers alike, so the two can never be taken for
 // each other.
 //
