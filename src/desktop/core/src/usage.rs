@@ -140,7 +140,10 @@ pub fn system(data: &Path) -> Vec<(SystemUsage, PathBuf)> {
         if name.len() != 64 || !name.bytes().all(|b| b.is_ascii_hexdigit()) || !e.path().is_dir() { continue; }
         let Ok(about) = fs::read_to_string(e.path().join("installed.json")) else { continue };
         let Ok(mut about) = serde_json::from_str::<crate::root::Installed>(&about) else { continue };
-        // Counted when it was installed; one installed before that is counted now, once, and the count kept.
+        // When it was last in use is its directory's time: read before anything is written in it.
+        let meta = e.path().symlink_metadata().ok();
+        // Counted when it was installed; one installed before that is counted now, once, and the count kept,
+        // its directory's time put back, so counting does not make it the newest.
         let allocated = match about.allocated {
             Some(n) => n,
             None => {
@@ -148,12 +151,13 @@ pub fn system(data: &Path) -> Vec<(SystemUsage, PathBuf)> {
                 about.allocated = Some(n);
                 let aside = e.path().join(format!(".installed.json.length3-{}-0", std::process::id()));
                 if fs::write(&aside, serde_json::to_string(&about).unwrap_or_default()).is_ok() { let _ = fs::rename(&aside, e.path().join("installed.json")); }
+                if let Some(t) = meta.as_ref().and_then(|m| m.modified().ok()) { let _ = fs::File::open(e.path()).and_then(|f| f.set_modified(t)); }
                 n
             }
         };
         let row = SystemUsage { name: about.name, version: about.version, sha256: about.sha256, allocated, held: Held::Older };
         if current.as_deref() == Some(&name) { out.push((SystemUsage { held: Held::Current, ..row }, e.path())); }
-        else { others.push((e.path().symlink_metadata().ok().map(|m| age(&m)).unwrap_or_default(), row, e.path())); }
+        else { others.push((meta.as_ref().map(age).unwrap_or_default(), row, e.path())); }
     }
     others.sort_by_key(|(a, _, _)| *a);
     for (i, (_, row, path)) in others.into_iter().enumerate() {
