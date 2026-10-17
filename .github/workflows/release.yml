@@ -77,6 +77,14 @@ jobs:
           mkdir -p "$RUNNER_TEMP/opened"
           tar --zstd -xf "$GITHUB_WORKSPACE"/out/os-length3-linux-$VERSION-x86_64-*.tar.zst -C "$RUNNER_TEMP/opened"
           node scripts/webroot.mjs "$RUNNER_TEMP/opened/root" public/root
+      # web-release.sh builds wasm-tools from source when it is not there (about 4 minutes): the
+      # same version's build is kept between runs. The version is web-release.sh's.
+      - name: wasm-tools
+        if: env.SKIP != '1'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/wasm-tools
+          key: wasm-tools-1.262.0-${{ runner.os }}
       - name: Web
         if: env.SKIP != '1'
         working-directory: os
@@ -94,7 +102,8 @@ jobs:
           # The app runs its Prompt on the machine, from the root it installs: the browser's userland and root stay out of it.
           mkdir -p "$RUNNER_TEMP/web-only"
           mv public/root public/userland "$RUNNER_TEMP/web-only/"
-          npx tauri build --config "{\"version\":\"$VERSION\"}"
+          # The web step checked the types: the app's bundle is made again for the app, not checked again.
+          npx tauri build --config "{\"version\":\"$VERSION\",\"build\":{\"beforeBuildCommand\":\"npx vite build\"}}"
           cp target/release/bundle/deb/*.deb "$GITHUB_WORKSPACE/out/os-length3-linux-$VERSION-desktop-amd64.deb"
           cp target/release/bundle/appimage/*.AppImage "$GITHUB_WORKSPACE/out/os-length3-linux-$VERSION-desktop-x86_64.AppImage"
       - name: Digests and notes

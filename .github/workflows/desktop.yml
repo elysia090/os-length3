@@ -28,7 +28,7 @@ jobs:
         run: |
           npm ci
           npm run check
-          npm run build
+          npx vite build
       - name: Core and l3
         working-directory: os
         run: |
