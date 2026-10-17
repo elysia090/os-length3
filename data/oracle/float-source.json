@@ -1,8 +1,0 @@
-{
-  "role":"build-side independent floating-point oracles, not product runtime/fallback",
-  "softfloat":{"version":"3e","url":"https://www.jhauser.us/arithmetic/SoftFloat-3e.zip","archive":"data/upstream/softfloat/3e/SoftFloat-3e.zip","sha256":"21130ce885d35c1fe73fc1e1bf2244178167e05c6747cad5f450cc991714c746"},
-  "testfloat":{"version":"3e","url":"https://www.jhauser.us/arithmetic/TestFloat-3e.zip","archive":"data/upstream/testfloat/3e/TestFloat-3e.zip","sha256":"6d4bdf0096b48a653aa59fc203a9e5fe18b5a58d7a1b715107c7146776a0aad6"},
-  "pinScope":"local SHA-256 of official HTTPS downloads; not an author-signed checksum",
-  "specialization":"8086-SSE / Win64-MinGW-w64 / FAST_INT64 / LITTLEENDIAN",
-  "limitations":"SoftFloat ext80 noncanonical inputs are not guaranteed; x87 stack/tag, DE, precise faults and event/state publication require separate native/C models."
-}

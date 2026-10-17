@@ -5,8 +5,8 @@ import {Vfs} from '../runtime/fs.mjs';
 import {Kernel} from '../runtime/process.mjs';
 import {loadTranslator} from '../runtime/translator.mjs';
 
-// BusyBox as the Prompt has it (src/desktop/scripts/userland.sh stages it).
-const stage = new URL('../../src/desktop/target/userland/', import.meta.url);
+// BusyBox as the Prompt has it (os/scripts/userland.sh stages it).
+const stage = new URL('../../os/target/userland/', import.meta.url);
 const have = ['busybox', 'busybox.wasm', 'xlat.wasm'].every((f) => existsSync(new URL(f, stage)));
 
 test('Ctrl-C ends what waits in front of the shell, and the shell goes on', {skip: !have}, async () => {

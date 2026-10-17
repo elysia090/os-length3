@@ -1,4 +1,4 @@
-// A root from packs (src/desktop/scripts/webroot.mjs): its directories and
+// A root from packs (os/scripts/webroot.mjs): its directories and
 // links at once, each file's bytes only when a program first reads it. The
 // kernel reads inside a system call, where nothing can wait, so the bytes
 // are fetched synchronously: `range(pack, at, len)` returns them from the

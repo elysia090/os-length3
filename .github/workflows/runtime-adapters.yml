@@ -5,51 +5,51 @@ on:
     branches: [main, codex/native-release-wasm-1002]
     paths:
       - '.github/workflows/runtime-adapters.yml'
-      - 'src/v2/Makefile'
-      - 'data/distribution/prepare-qualified-native-release.py'
-      - 'data/oracle/check-native-producer-dhcp.sh'
-      - 'data/oracle/seed-image.mjs'
-      - 'data/oracle/network-host-linux.go'
-      - 'data/oracle/inspect-dhcp-printf-table.mjs'
-      - 'data/oracle/check-readiness-mounts.mjs'
-      - 'data/distribution/boot/ready'
-      - 'data/distribution/boot/boot'
-      - 'data/distribution/*package-payload.sh'
-      - 'data/distribution/package-recipes.sh'
-      - 'data/distribution/*normalize-initramfs.py'
-      - 'data/distribution/*package-set*.sh'
-      - 'data/distribution/*native-bundle*'
-      - 'data/distribution/*producer*'
-      - 'data/distribution/optimize-payload.sh'
-      - 'data/distribution/check-postlink-toolchain.sh'
-      - 'data/build.sh'
-      - 'artifact/native/evidence/2026-10-12-dhcp-syslog-root-cause.json'
-      - 'src/v2/artifact/**'
-      - 'src/v2/support/**'
+      - 'compiler/Makefile'
+      - 'distribution/packaging/prepare-qualified-native-release.py'
+      - 'distribution/oracle/check-native-producer-dhcp.sh'
+      - 'distribution/oracle/seed-image.mjs'
+      - 'distribution/oracle/network-host-linux.go'
+      - 'distribution/oracle/inspect-dhcp-printf-table.mjs'
+      - 'distribution/oracle/check-readiness-mounts.mjs'
+      - 'distribution/packaging/boot/ready'
+      - 'distribution/packaging/boot/boot'
+      - 'distribution/packaging/*package-payload.sh'
+      - 'distribution/packaging/package-recipes.sh'
+      - 'distribution/packaging/*normalize-initramfs.py'
+      - 'distribution/packaging/*package-set*.sh'
+      - 'distribution/packaging/*native-bundle*'
+      - 'distribution/packaging/*producer*'
+      - 'distribution/packaging/optimize-payload.sh'
+      - 'distribution/packaging/check-postlink-toolchain.sh'
+      - 'distribution/build.sh'
+      - 'releases/native/evidence/2026-10-12-dhcp-syslog-root-cause.json'
+      - 'compiler/artifact/**'
+      - 'compiler/support/**'
   pull_request:
     paths:
       - '.github/workflows/runtime-adapters.yml'
-      - 'src/v2/Makefile'
-      - 'data/distribution/prepare-qualified-native-release.py'
-      - 'data/oracle/check-native-producer-dhcp.sh'
-      - 'data/oracle/seed-image.mjs'
-      - 'data/oracle/network-host-linux.go'
-      - 'data/oracle/inspect-dhcp-printf-table.mjs'
-      - 'data/oracle/check-readiness-mounts.mjs'
-      - 'data/distribution/boot/ready'
-      - 'data/distribution/boot/boot'
-      - 'data/distribution/*package-payload.sh'
-      - 'data/distribution/package-recipes.sh'
-      - 'data/distribution/*normalize-initramfs.py'
-      - 'data/distribution/*package-set*.sh'
-      - 'data/distribution/*native-bundle*'
-      - 'data/distribution/*producer*'
-      - 'data/distribution/optimize-payload.sh'
-      - 'data/distribution/check-postlink-toolchain.sh'
-      - 'data/build.sh'
-      - 'artifact/native/evidence/2026-10-12-dhcp-syslog-root-cause.json'
-      - 'src/v2/artifact/**'
-      - 'src/v2/support/**'
+      - 'compiler/Makefile'
+      - 'distribution/packaging/prepare-qualified-native-release.py'
+      - 'distribution/oracle/check-native-producer-dhcp.sh'
+      - 'distribution/oracle/seed-image.mjs'
+      - 'distribution/oracle/network-host-linux.go'
+      - 'distribution/oracle/inspect-dhcp-printf-table.mjs'
+      - 'distribution/oracle/check-readiness-mounts.mjs'
+      - 'distribution/packaging/boot/ready'
+      - 'distribution/packaging/boot/boot'
+      - 'distribution/packaging/*package-payload.sh'
+      - 'distribution/packaging/package-recipes.sh'
+      - 'distribution/packaging/*normalize-initramfs.py'
+      - 'distribution/packaging/*package-set*.sh'
+      - 'distribution/packaging/*native-bundle*'
+      - 'distribution/packaging/*producer*'
+      - 'distribution/packaging/optimize-payload.sh'
+      - 'distribution/packaging/check-postlink-toolchain.sh'
+      - 'distribution/build.sh'
+      - 'releases/native/evidence/2026-10-12-dhcp-syslog-root-cause.json'
+      - 'compiler/artifact/**'
+      - 'compiler/support/**'
 
 permissions:
   contents: read
@@ -64,27 +64,27 @@ jobs:
           node-version: '24'
       - name: Check release scripts, boot and readiness
         run: |
-          python3 -m py_compile data/distribution/prepare-qualified-native-release.py
-          node --check data/oracle/seed-image.mjs
-          bash -n data/oracle/check-native-producer-dhcp.sh
-          node --check data/oracle/inspect-dhcp-printf-table.mjs
-          bash -n data/distribution/boot/ready
-          bash -n data/distribution/boot/boot
-          bash -n data/distribution/boot/console
-          bash -n data/initramfs/init
-          bash -n data/oracle/standard-provider-check.sh
-          bash -n data/oracle/standard-distribution-check.sh
-          node data/oracle/check-readiness-mounts.mjs
+          python3 -m py_compile distribution/packaging/prepare-qualified-native-release.py
+          node --check distribution/oracle/seed-image.mjs
+          bash -n distribution/oracle/check-native-producer-dhcp.sh
+          node --check distribution/oracle/inspect-dhcp-printf-table.mjs
+          bash -n distribution/packaging/boot/ready
+          bash -n distribution/packaging/boot/boot
+          bash -n distribution/packaging/boot/console
+          bash -n distribution/initramfs/init
+          bash -n distribution/oracle/standard-provider-check.sh
+          bash -n distribution/oracle/standard-distribution-check.sh
+          node distribution/oracle/check-readiness-mounts.mjs
       - name: Check package-set input cuts and reuse
         run: |
-          make -C src/v2/artifact -j2 all namespace-check namespace-xattrs-check
-          sudo bash data/distribution/check-package-set-content.sh
-          bash data/distribution/check-package-payload.sh
-          bash data/distribution/check-service-sources-fixture.sh
-          python3 data/distribution/check-normalize-initramfs.py
+          make -C compiler/artifact -j2 all namespace-check namespace-xattrs-check
+          sudo bash distribution/packaging/check-package-set-content.sh
+          bash distribution/packaging/check-package-payload.sh
+          bash distribution/packaging/check-service-sources-fixture.sh
+          python3 distribution/packaging/check-normalize-initramfs.py
       - name: Check native acceptance artifact and policy binding
         run: |
-          sudo python3 data/distribution/check-native-bundle-acceptance.py --require-capture
-          sudo python3 data/distribution/check-producer-execution.py --require-native
-          python3 data/distribution/check-producer-binding.py
-          bash -n data/distribution/build-producer-cut.sh data/distribution/producer-run.sh data/distribution/optimize-payload.sh data/distribution/check-postlink-toolchain.sh data/build.sh
+          sudo python3 distribution/packaging/check-native-bundle-acceptance.py --require-capture
+          sudo python3 distribution/packaging/check-producer-execution.py --require-native
+          python3 distribution/packaging/check-producer-binding.py
+          bash -n distribution/packaging/build-producer-cut.sh distribution/packaging/producer-run.sh distribution/packaging/optimize-payload.sh distribution/packaging/check-postlink-toolchain.sh distribution/build.sh

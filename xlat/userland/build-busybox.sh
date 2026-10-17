@@ -9,7 +9,7 @@ set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../.." && pwd)
 tarball=$1
-. "$repo/data/sources.env"
+. "$repo/distribution/sources.env"
 echo "$BUSYBOX_SHA256  $tarball" | sha256sum -c - >/dev/null
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
@@ -19,7 +19,7 @@ src="$work/busybox-$BUSYBOX_VERSION"
 mkdir -p "$work/uapi"
 for d in linux asm-generic mtd; do ln -s "/usr/include/$d" "$work/uapi/$d"; done
 ln -s "/usr/include/$(gcc -dumpmachine)/asm" "$work/uapi/asm"
-cp "$repo/data/config/busybox-$BUSYBOX_VERSION.config" "$src/.config"
+cp "$repo/distribution/config/busybox-$BUSYBOX_VERSION.config" "$src/.config"
 make -C "$src" oldconfig CC=musl-gcc HOSTCC=gcc </dev/null >/dev/null
 make -C "$src" -j"$(nproc)" busybox CC=musl-gcc HOSTCC=gcc \
   EXTRA_CFLAGS="-I$work/uapi" LDFLAGS="-static -Wl,--emit-relocs" >/dev/null
