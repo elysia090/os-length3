@@ -6,7 +6,7 @@ import {connection} from '../remote.ts';
 import * as dotfiles from '../dotfiles.ts';
 import * as inbox from '../inbox.ts';
 import {free, readSpace} from '../space.ts';
-import {about} from '../userland.ts';
+import {about, loadWebRoot} from '../userland.ts';
 import {pageHead} from './common.ts';
 import type {Context} from './context.ts';
 import {syncWord} from './remote.ts';
@@ -30,37 +30,41 @@ const known = (c: Certainty) => (c === 'Verified' ? '' : c === 'Estimated' ? t('
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /**
- * What the Prompt actually runs. In the app with a root installed: that
- * root, on this machine's kernel. Otherwise l3, from l3.json written with
- * it: what it carries (the distribution's BusyBox, the l3 command, the
- * translator) is shown inside it, so it cannot claim what is not there.
+ * The environments a Prompt can run on, one row each. l3 (this OS's own
+ * root) is the one in effect: the place, an ink edge over raised. Ubuntu,
+ * Debian and a root of one's own are not here yet; they say so, quiet and
+ * dashed, with where each could run: their programs are linked when they
+ * run, which xlat does not do, so not in a browser.
  */
 function environment(): HTMLElement {
-  const body = h('div', {}, h('p', {class: 'muted'}, t('Reading…')));
-  void rootStatus().then((root) => {
+  const body = h('div', {class: 'env-choices'}, h('p', {class: 'muted'}, t('Reading…')));
+  const row = (name: string, version: string, note: string, current: boolean, sha = '') =>
+    h('div', {class: current ? 'env-choice' : 'env-choice later', 'aria-current': current ? 'true' : 'false'},
+      h('b', {}, name), h('span', {}, version), h('span', {class: current ? 'muted' : ''}, note),
+      sha ? h('code', {class: 'muted', title: sha}, sha.slice(0, 12)) : h('span', {class: 'small'}, current ? '' : t('Not yet')));
+  const later = () => {
+    const where = isNative ? t('Its own programs, on this device\'s kernel') : t('In the app only: its programs are linked as they run, which a browser does not do');
+    return [
+      row('Ubuntu', '24.04 LTS', where, false),
+      row('Debian', '13', where, false),
+      row(t('Custom'), '', t('A root of your own (.tar), known by its digest'), false),
+    ];
+  };
+  void (async () => {
+    const root = isNative ? await rootStatus().catch(() => null) : null;
     if (root?.current) {
       const r = root.current;
-      body.replaceChildren(h('div', {class: 'env-one'},
-        h('div', {class: 'env-row env-head'}, h('b', {}, r.name), h('span', {}, r.version),
-          h('span', {class: 'muted'}, t('{size} · {files} files · on this device\'s kernel', {size: bytes(r.bytes), files: r.files})),
-          h('code', {class: 'muted', title: r.sha256}, r.sha256.slice(0, 12)))));
+      body.replaceChildren(row('l3', r.version, t('{name} · {size} · on this device\'s kernel', {name: r.name, size: bytes(r.bytes)}), true, r.sha256), ...later());
       return;
     }
-    void about().then((a) => {
-      if (!a) { body.replaceChildren(h('div', {class: 'empty'}, t('There is no l3 (npm run userland)'))); return; }
-      const part = (name: string, version: string, note: string, sha = '') =>
-        h('div', {class: 'env-row env-part'}, h('span', {}, name), h('span', {}, version), h('span', {class: 'muted'}, note),
-          h('code', {class: 'muted', title: sha}, sha.slice(0, 12)));
-      body.replaceChildren(h('div', {class: 'env-one'},
-        h('div', {class: 'env-row env-head'}, h('b', {}, a.name), h('span', {}, a.version),
-          h('span', {class: 'muted'}, `${bytes(a.bundle.size)} · ${isNative ? t('comes with the app') : t('fetched at each visit')}`),
-          h('code', {class: 'muted', title: a.bundle.sha256}, a.bundle.sha256.slice(0, 12))),
-        part(a.root.name, a.root.version, 'root'),
-        part(a.base.name, a.base.version, t('{n} commands · {from}', {n: a.base.applets, from: a.base.from}), a.base.sha256),
-        part('l3', a.version, t('command'), a.l3.sha256),
-        part(a.translator.name, a.translator.version, t('translator'))));
-    });
-  });
+    const [a, web] = await Promise.all([about(), isNative ? null : loadWebRoot()]);
+    if (!a) { body.replaceChildren(h('div', {class: 'empty'}, t('There is no l3 (npm run userland)'))); return; }
+    // In a browser with the whole root: every program of it, through xlat; else l3 and its BusyBox.
+    const note = web
+      ? t('{name} · the whole root, each file fetched when a program first reads it · through xlat in this browser', {name: a.root.name})
+      : t('{name} · l3 and {base} {version} · {size}, {how}', {name: a.root.name, base: a.base.name, version: a.base.version, size: bytes(a.bundle.size), how: isNative ? t('comes with the app') : t('fetched at each visit')});
+    body.replaceChildren(row('l3', web?.index.version || a.root.version, note, true, a.bundle.sha256), ...later());
+  })();
   return body;
 }
 

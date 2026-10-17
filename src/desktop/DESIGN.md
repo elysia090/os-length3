@@ -158,13 +158,14 @@ each thing says what can be done with it.
   Prompt's pid namespace and is called done only once the host shows none
   left; the row then says what was given back and how long it took
   (止めました · 2.5 MB を返しました · 11 ms), or how many are still there.
-- **有効な環境**: in the app with a root installed, that root (name,
-  version, size, files, digest), run by this machine's kernel. Otherwise
-  l3, the one thing the browser's Prompt depends on, as one place: its
-  version, size, digest; inside it, a step in, what it carries (the
-  distribution's BusyBox, the l3 command, the xlat translator). In the app
-  that row ends with 入れる: fetching the root from the Remote, saying how
-  far it is.
+- **有効な環境**: the environments a Prompt can run on, a row each: l3,
+  Ubuntu, Debian, Custom (a root of one's own, known by its digest). The
+  one in effect is the place (an `ink` edge over `raised`): l3, with its
+  version, what it is here (in the app, the root installed, on this
+  device's kernel; in a browser, the whole root through xlat, or l3 and
+  its BusyBox) and its digest. The others are not here yet and say so,
+  quiet and dashed, with where each could run: their programs are linked
+  as they run, which a browser does not do, so in the app only.
 - **SSH**, once there is an Inbox address: a small card per address with
   the power switch at its bottom right, whether it may be reached over SSH.
 - **Dotfiles**: a small card each (its name, its size), and a dashed one to

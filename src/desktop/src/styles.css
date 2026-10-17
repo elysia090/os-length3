@@ -223,19 +223,20 @@ a { color: var(--ink); }
 
 .card.repo.revealed { background: var(--raised); border-color: var(--ink); }
 
-/* Runtime: the environment in effect, one row per part */
-.env-rows { display: grid; gap: var(--s1); max-width: 760px; }
-.env-one { max-width: 760px; }
-.env-row {
-  display: grid; grid-template-columns: 11rem 6rem minmax(0, 1fr) auto; align-items: baseline; gap: var(--s3);
+/* Runtime: the environments a Prompt can run on, a row each; the one in
+   effect is the place (ink over raised), those not here yet quiet and dashed. */
+.env-choices { display: grid; gap: var(--s2); max-width: 760px; }
+.env-choice {
+  display: grid; grid-template-columns: 6rem 6rem minmax(0, 1fr) auto; align-items: baseline; gap: var(--s3);
   padding: var(--s3) var(--s4); border: 1px solid var(--rule); border-radius: var(--r-place);
 }
-.env-row code { font: var(--t-meta) var(--mono); }
-/* l3 is one place; what it carries are its rows, a step in. */
-.env-one { display: grid; gap: var(--s1); padding: var(--s2); border: 1px solid var(--rule); border-radius: var(--r-card); }
-.env-one .env-row { border: 0; padding: var(--s1) var(--s3); }
-.env-one .env-part { padding-left: calc(var(--s3) + var(--s4)); font-size: var(--t-meta); }
-.env-note { margin-top: var(--s3); }
+.env-choice[aria-current='true'] { border-color: var(--ink); background: var(--raised); }
+.env-choice.later { border-style: dashed; color: var(--sub); }
+.env-choice code { font: var(--t-meta) var(--mono); }
+@media (max-width: 640px) {
+  .env-choice { grid-template-columns: auto 1fr auto; }
+  .env-choice > :nth-child(3) { grid-column: 1 / -1; grid-row: 2; }
+}
 
 /* Git: issues read from each repo's issue/, rows named by kind and title */
 .git-filter { margin-top: var(--s5); }
