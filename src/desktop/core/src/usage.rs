@@ -411,6 +411,8 @@ fn leftover_at(data: &Path, path: &Path) -> Option<Leftover> {
     }
     // Under the data directory, never inside a repo's .git or the system directory.
     let rel = path.strip_prefix(data).ok()?;
+    // Plain names only: an id from the page with `..` in it must not lead out of the data directory.
+    if rel.components().any(|c| !matches!(c, std::path::Component::Normal(_))) { return None; }
     if rel.components().any(|c| crate::repos::is_git_name(&c.as_os_str().to_string_lossy())) || path.starts_with(&system) { return None; }
     let meta = path.symlink_metadata().ok()?;
     if !meta.is_file() || links(&meta) != 1 { return None; }
@@ -722,5 +724,24 @@ mod owned_tests {
         assert!(!env.exists() && !gone.exists() && !repos.join("here/node_modules").exists() && !repos.join("here/out").exists());
         assert!(repos.join("here/package.json").is_file() && repos.join("here/vendor/node_modules/keep.js").is_file(), "the repo's own files stay");
         let _ = fs::remove_dir_all(&data);
+    }
+}
+
+#[cfg(test)]
+mod id_tests {
+    use super::*;
+
+    #[test]
+    fn an_id_from_the_page_cannot_lead_out_of_the_data_directory() {
+        let top = std::env::temp_dir().join(format!("length3-ids-{}", std::process::id()));
+        let data = top.join("data");
+        std::fs::create_dir_all(&data).unwrap();
+        // Named like a temporary file left by a process long gone, but outside.
+        let outside = top.join(".x.length3-4194300-0");
+        std::fs::write(&outside, b"keep").unwrap();
+        std::fs::File::options().write(true).open(&outside).unwrap().set_modified(SystemTime::now() - Duration::from_secs(3 * 86_400)).unwrap();
+        let id = format!("path:{}/../.x.length3-4194300-0", data.display());
+        assert!(item(&data, &data.join("repos"), &id, &[]).is_none());
+        let _ = std::fs::remove_dir_all(&top);
     }
 }

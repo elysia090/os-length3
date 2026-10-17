@@ -111,10 +111,15 @@ fn state_set(key: String, json: String) -> Result<(), String> {
 // ---- the Remote (core/src/remote.rs, history.rs) ----
 
 /// Sign in: a code to approve in the browser, which is opened on its page.
+/// The Remote is this device's own, never one the page names, and only a
+/// page of that Remote is opened.
 #[tauri::command]
-async fn remote_login_start(app: tauri::AppHandle, url: Option<String>) -> Result<remote::DeviceCode, String> {
-    let url = url.unwrap_or_else(remote::default_url);
-    let code = blocking(move || remote::device_start(&url, "length3-app")).await?;
+async fn remote_login_start(app: tauri::AppHandle) -> Result<remote::DeviceCode, String> {
+    let url = remote::default_url();
+    let code = blocking({ let url = url.clone(); move || remote::device_start(&url, "length3-app") }).await?;
+    if !code.verification_uri_complete.starts_with(&format!("{}/", url.trim_end_matches('/'))) {
+        return Err(length3_core::tr!("The Remote named a page that is not its own", "Remote が自分のものでないページを示しました"));
+    }
     use tauri_plugin_opener::OpenerExt;
     let _ = app.opener().open_url(&code.verification_uri_complete, None::<&str>);
     Ok(code)
@@ -122,8 +127,8 @@ async fn remote_login_start(app: tauri::AppHandle, url: Option<String>) -> Resul
 
 /// Wait until the code is approved (or refused, or expires).
 #[tauri::command]
-async fn remote_login_wait(url: Option<String>, code: remote::DeviceCode) -> Result<(), String> {
-    let url = url.unwrap_or_else(remote::default_url);
+async fn remote_login_wait(code: remote::DeviceCode) -> Result<(), String> {
+    let url = remote::default_url();
     blocking(move || remote::device_finish(&url, "length3-app", &code)).await
 }
 

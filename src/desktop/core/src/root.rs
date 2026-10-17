@@ -347,7 +347,8 @@ pub fn unpack(stream: impl Read, top: &Path) -> io::Result<(u64, u64)> {
                 let mut rest = &body[..size as usize];
                 while let Some(sp) = rest.iter().position(|&b| b == b' ') {
                     let len: usize = std::str::from_utf8(&rest[..sp]).map_err(bad)?.parse().map_err(bad)?;
-                    if len <= sp || len > rest.len() {
+                    // "LEN key=value\n": at least the space, one byte and the newline after the length.
+                    if len < sp + 2 || len > rest.len() {
                         return Err(bad("tar: a pax record is cut"));
                     }
                     let record = String::from_utf8_lossy(&rest[sp + 1..len - 1]).into_owned();
@@ -395,7 +396,11 @@ pub fn unpack(stream: impl Read, top: &Path) -> io::Result<(u64, u64)> {
             }
             Kind::Symlink(target) => symlink(&target, &path)?,
             Kind::Hardlink(target) => {
-                let from = top.join(place(&target)?);
+                // Its target is a file already in the tree, reached through no link (a link
+                // made earlier in the archive could otherwise lead it to a file outside).
+                let rel_target = place(&target)?;
+                through_no_link(top, &rel_target)?;
+                let from = top.join(&rel_target);
                 if !fs::symlink_metadata(&from)?.is_file() {
                     return Err(bad(format!("tar: {name} links to something not a file")));
                 }
@@ -525,6 +530,7 @@ mod tests {
             (vec![("root/", b'5', &b""[..], ""), ("root/l", b'2', &b""[..], "/etc"), ("root/l/passwd", b'0', &b"x"[..], "")], "through a link"),
             (vec![("root/dev", b'3', &b""[..], "")], "not part of a root"),
             (vec![("root/a", b'0', &b"x"[..], ""), ("root/a", b'0', &b"y"[..], "")], "exists"),
+            (vec![("root/", b'5', &b""[..], ""), ("root/l", b'2', &b""[..], "/etc"), ("root/h", b'1', &b""[..], "root/l/passwd")], "through a link"),
         ] {
             let d = fresh("bad");
             let e = unpack(&tar(&members)[..], &d).unwrap_err().to_string();
@@ -557,6 +563,17 @@ mod tests {
         assert!(current(&data).is_none());
         assert_eq!(use_held(&data, ubuntu.sha256).unwrap().version, ubuntu.version);
         assert!(use_held(&data, &"0".repeat(64)).is_none());
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_cut_pax_record_is_refused_not_a_crash() {
+        let d = fresh("pax");
+        let mut t = header("pax", b'x', 3, "");
+        t.extend(b"2 x");
+        t.resize(1024, 0);
+        t.extend([0u8; 1024]);
+        assert!(unpack(&t[..], &d).unwrap_err().to_string().contains("pax"));
         let _ = fs::remove_dir_all(&d);
     }
 
