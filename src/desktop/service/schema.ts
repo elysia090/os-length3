@@ -14,7 +14,7 @@
 // which the receiver reviews and merges or rejects.
 
 import {sql} from 'drizzle-orm';
-import {bigint, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex} from 'drizzle-orm/pg-core';
+import {bigint, index, integer, jsonb, pgTable, primaryKey, smallint, text, timestamp, uniqueIndex} from 'drizzle-orm/pg-core';
 import {user} from './schema.auth.ts';
 
 export * from './schema.auth.ts';
@@ -202,14 +202,28 @@ export const signal = pgTable('signal', {
 // ---- Topic (topic.ts) ----
 
 /**
- * A post: short text, made from one of its author's addresses, kept until
- * its author takes it down. Its id sorts as its time, so the timeline is
- * read a page at a time as a range of ids.
+ * A post, as little as it can be: its id (which sorts as its time and says
+ * when it was made), whose it is, the address it was made from (all a
+ * reader is shown of its author), the text, and how far it has spread:
+ * its ring, and what the people of that ring did with it (seen, kept). A
+ * random salt picks, with each reader's seed, who is in a ring.
  */
 export const post = pgTable('post', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
   address: text('address').notNull(),
   body: text('body').notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
+  ring: smallint('ring').notNull().default(0),
+  salt: integer('salt').notNull().default(0),
+  /** In the current ring: how many it was shown to, and how many kept it. */
+  seen: integer('seen').notNull().default(0),
+  kept: integer('kept').notNull().default(0),
+  /** Kept in all. */
+  keeps: integer('keeps').notNull().default(0),
 }, (t) => [index('post_user_idx').on(t.userId, t.id)]);
+
+/** Who kept which post: once each. */
+export const keep = pgTable('post_keep', {
+  postId: text('post_id').notNull().references(() => post.id, {onDelete: 'cascade'}),
+  userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
+}, (t) => [primaryKey({columns: [t.postId, t.userId]})]);

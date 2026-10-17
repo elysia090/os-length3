@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {farFrom, onTop, pageOf, type Post} from './topic.ts';
 
-const post = (id: string): Post => ({id, address: 'ren@length3.test', name: 'Ren', body: id, at: 0, mine: false});
+const post = (id: string): Post => ({id, by: 'ren@length3.test', body: id, at: 0, keeps: 0});
 
 test('a page is the range of ids it was read as, newest first', () => {
   assert.equal(pageOf([]), null);

@@ -21,6 +21,9 @@ export interface Purpose {
 }
 
 export const PURPOSES: readonly Purpose[] = [
+  // Topic first: what anyone may read, before what is one's own.
+  {id: 'topic', label: 'Topic', role: 'Simple posts',
+    detail: 'Short posts, free to read. A new one reaches its author\'s contacts and a few readers first, and more as they keep it.', implemented: true},
   {id: 'home', label: 'Home', role: 'Profile',
     detail: 'A page that reads the same to you and to anyone else, with your repos and posts.', implemented: true},
   {id: 'forge', label: 'Forge', role: 'Your workshop',
@@ -33,8 +36,6 @@ export const PURPOSES: readonly Purpose[] = [
     detail: 'What this device holds, largest first. What can be freed is freed right there. The active environments too.', implemented: true},
   {id: 'remote', label: 'Remote', role: 'The canonical copy',
     detail: 'Where the canonical copy lives. What you change is sent at once, and committing makes it history. Devices and passkeys are here too.', implemented: true},
-  {id: 'topic', label: 'Topic', role: 'Simple posts',
-    detail: 'Short posts from everyone on the Remote, newest first, as far back as you scroll.', implemented: true},
   {id: 'inbox', label: 'Inbox', role: 'Typed messages to you',
     detail: 'Review requests, changes, questions and more, each with what it is about and what to do.', implemented: true},
 ];

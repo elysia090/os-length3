@@ -8,11 +8,12 @@ top, then the page each icon leads to.
 
 ## 1. The rail
 
-- Icons only, top to bottom in the order of the work:
-  **Home** (who you are, what you are doing) → **Forge** (where you work;
-  a terminal icon) → **File** (the tree of "/") → **Git** (what happened
-  outside) → **Runtime** (the environment) → **Remote** (the canonical copy) →
-  **Topic** (posts) → **Inbox** (what was sent to you). **+** (a new repo)
+- Icons only, top to bottom: **Topic** (posts, which anyone may read)
+  first, then the order of one's own work: **Home** (who you are, what you
+  are doing) → **Forge** (where you work; a terminal icon) → **File** (the
+  tree of "/") → **Git** (what happened outside) → **Runtime** (the
+  environment) → **Remote** (the canonical copy) → **Inbox** (what was sent
+  to you). **+** (a new repo)
   comes right under them, a step apart, and is round because it starts
   something rather than opening a place (§4, shapes).
 - A name appears beside an icon on hover or keyboard focus. Choosing an
@@ -24,13 +25,14 @@ top, then the page each icon leads to.
   round button with an `edge` outline. States as everywhere (§4).
 - The person's own icon sits at the foot of the rail, a 44 px circle a
   little larger than the items: their initials, or a head and shoulders
-  before there is a name. Touching it brings out the way into every
-  setting, in groups under a small heading: Profile (see, edit), Account
-  (sign in; once signed in, sign-in and passkeys, devices), This device
-  (room on it, environment and dotfiles), Language. There is no settings
-  page: a setting is kept with what it is about, so each entry names the
-  page it opens, in the rail's own word, and opens that part of it. It
-  goes on leaving, a press outside or Escape.
+  (30 px, filling most of it) before there is a name. Touching it brings
+  out the way into every setting, in groups under a small heading and with
+  no rules between them: Profile (View, Edit), Account (Sign in; once
+  signed in, Sign-in, Devices), This device (Room, Environment), Language.
+  Each entry is a word or two, the group saying what it is about. There is
+  no settings page: a setting is kept with what it is about, so each entry
+  ends with the icon of the page it opens (its name in the tooltip), and
+  opens that part of it. It goes on leaving, a press outside or Escape.
 
 ## 2. Pages
 
@@ -295,12 +297,28 @@ Shift+Enter is a new line.
 
 One reading column, 640 px: a place to write at the top (an edge over
 raised, as a field is; what is left of 500 characters beside Post;
-Ctrl+Enter posts), then everyone's posts on this Remote, newest first, one
-under another with a rule between: the face (initials in a circle), the
-name, the address and when, then the text as written. One's own post has
-取り下げる at the end of its line, which asks once more in its own place
-for a moment. Posting needs an address (the Inbox's); without one, the
-place says so and leads there.
+Ctrl+Enter posts), then posts, newest first, one under another with a rule
+between: the face (the address's first letters in a circle), the address
+(its name bold) and when, then the text as written, then one quiet line:
+とっておく with how many kept it, or, on one's own post, how far it reaches.
+One's own post has 取り下げる at the end of its first line, which asks once
+more in its own place for a moment.
+
+Reading needs nothing: signed out, the place to write is one line, "Sign in
+to post", with Sign in. Posting needs an account and an address (the
+Inbox's); without one, the place says so and leads there. A post keeps no
+profile, only the address it was made from; its time is its id.
+
+A post spreads as a locked account's would, then wider ring by ring: first
+its author's accepted contacts and a few readers (1/64 of those signed in),
+then one in sixteen, one in four, everyone signed in, and at last everyone,
+signed in or not (only then can a signed-out reader see it). It goes one
+ring wider when those who were shown it in its ring have kept it often
+enough (8 seen, a tenth kept), within three days. Who is in a ring is a
+post's random salt against a reader's seed, checked in the query that reads
+the page: each post tested on its own sample, each ring holding the one
+before, and nothing computed per post but its own counters. A small Remote's
+rings are never fewer than 24 readers, so there they are everyone.
 
 The timeline has no end to reach and nothing to press. Near its end the
 next older posts are read; at the very end it says it is every post. What

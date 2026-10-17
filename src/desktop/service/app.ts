@@ -48,6 +48,8 @@ export interface Deps {
   secret?: string;
   /** TXT records of a name (DNS over HTTPS by default; a stand-in in tests). */
   txt?: (name: string) => Promise<string[]>;
+  /** The fewest readers a Topic ring holds (where there are as many). */
+  topicFloor?: number;
 }
 
 /** What one account may keep, unless the deployment says otherwise. */
@@ -547,7 +549,7 @@ export function createApp(d: Deps) {
   });
 
   inbox({db: d.db, domain: d.domain ?? 'length3.com', baseURL: d.baseURL ?? '', secret: d.secret ?? '', txt: d.txt}, v1, app);
-  topic({db: d.db}, v1);
+  topic({db: d.db, floor: d.topicFloor}, v1, app);
 
   app.route('/v1', v1);
   return app;

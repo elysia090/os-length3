@@ -134,14 +134,18 @@ the app.
   total are marked as estimates, and after freeing the change the host
   shows is reported as observed. Prompts running show their memory and can
   be stopped; then the environment in effect.
-- Topic: everyone's short posts on the Remote (`service/topic.ts`), newest
-  first, read a page at a time as a range of ids. Near the end the next
-  page is read; what came meanwhile goes on top without moving the reader,
-  with a mark to go up to it; pages far out of view fold to empty boxes of
-  their height and, further still, let go of their posts, read again by
-  their range when they come back. Posting needs an Inbox address; a post
-  is text, 500 characters at most, 30 an hour, taken down only by its
-  author.
+- Topic (first in the rail): short posts on the Remote (`service/topic.ts`),
+  newest first, read a page at a time as a range of ids. Anyone reads what
+  has gone everywhere; posting needs an account and an Inbox address. A
+  post starts with its author's contacts and a few readers and widens ring
+  by ring (1/64, 1/16, 1/4, everyone signed in, everyone) as the readers of
+  each ring keep it; who is in a ring is a per-post salt against a
+  per-reader seed in the page's own query, so nothing runs per post. Near
+  the end the next page is read; what came meanwhile goes on top without
+  moving the reader; pages far out of view fold to empty boxes of their
+  height and, further still, let go of their posts, read again by their
+  range when they come back. A post is text, 500 characters at most, 30 an
+  hour, taken down only by its author, and keeps no profile.
 - Every other purpose shows what it will hold, as a dashed empty box.
 
 The webview has no other host access: it reads nothing outside the app's

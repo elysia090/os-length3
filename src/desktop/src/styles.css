@@ -93,7 +93,8 @@ a { color: var(--ink); }
   display: grid; place-items: center; width: 44px; height: 44px; border-radius: var(--r-round); border: 1px solid var(--rule);
   background: transparent; cursor: pointer; font: 600 var(--t-meta) var(--sans);
 }
-.me .icon { width: 22px; height: 22px; }
+/* The person fills most of the circle; initials stay type-sized. */
+.me .icon { width: 30px; height: 30px; }
 .me-pop {
   position: absolute; left: calc(100% + var(--s3)); bottom: 0; z-index: 6; min-width: 280px;
   display: grid; padding: var(--s2); background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-card);
@@ -103,9 +104,10 @@ a { color: var(--ink); }
 .me-who { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) var(--s3) var(--s3); }
 /* The face again, the size of the button, beside the name. */
 .me-who > :first-child { display: grid; place-items: center; flex: none; width: 36px; height: 36px; border: 1px solid var(--rule); border-radius: var(--r-round); font: 600 var(--t-meta) var(--sans); }
-.me-who > svg.icon { padding: 7px; box-sizing: border-box; }
+.me-who > svg.icon { padding: 4px; box-sizing: border-box; }
 .me-name { display: grid; min-width: 0; }
-.me-group { display: grid; padding-top: var(--s1); border-top: 1px solid var(--rule); margin-top: var(--s1); }
+.me-group { display: grid; margin-top: var(--s2); }
+.me-where { width: 18px; height: 18px; flex: none; color: var(--sub); }
 .me-item {
   display: flex; justify-content: space-between; align-items: center; gap: var(--s3);
   min-height: var(--h-row); padding: 0 var(--s3); border: 0; border-radius: var(--r-field); background: transparent; cursor: pointer; text-align: left;
@@ -820,6 +822,12 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .tl-who .tl-down { margin-left: auto; min-height: 0; font-size: var(--t-meta); }
 .tl-body { margin-top: var(--s1); white-space: pre-wrap; overflow-wrap: anywhere; }
 .tl-end { padding: var(--s5) 0; text-align: center; min-height: 1lh; }
+.tl-foot { display: flex; gap: var(--s3); margin-top: var(--s2); min-height: 0; }
+.tl-foot:empty { display: none; }
+.tl-keep { min-height: 0; padding: 0; font-size: var(--t-meta); }
+.tl-keep[aria-pressed='true'] { color: var(--ink); font-weight: 600; text-decoration: none; }
+/* Signed out, the place to write is one line that leads to signing in. */
+.tl-signed-out { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); }
 .home-posts { display: grid; gap: var(--s3); max-width: 640px; }
 .home-post { padding-bottom: var(--s3); border-bottom: 1px solid var(--rule); }
 .home-posts > .button.link { justify-self: start; }

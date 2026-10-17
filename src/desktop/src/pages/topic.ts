@@ -6,6 +6,9 @@ import {pageHead} from './common.ts';
 import type {Context} from './context.ts';
 
 // Topic: one timeline, newest at the top, as far back as there are posts.
+// Anyone reads it; signed in, one also posts, and keeps what is worth more
+// readers (a post widens ring by ring as those who see it keep it; its
+// author sees how far it has gone).
 //
 // It goes on by itself: near its end the next older page is read, and what
 // came meanwhile is put on top (the reader kept where they are if they are
@@ -28,11 +31,8 @@ function button(text: string, kind = ''): HTMLButtonElement {
   return h('button', {type: 'button', class: `button ${kind}`.trim()}, text) as HTMLButtonElement;
 }
 
-/** The letters of a face: the first of up to two words, or of the address. */
-function face(p: topic.Post): string {
-  const words = (p.name || p.address.split('@')[0]).trim().split(/\s+/).filter(Boolean);
-  return words.slice(0, 2).map((w) => [...w][0]).join('').toUpperCase();
-}
+/** The letters of a face: the first two of the address's name. */
+const face = (p: topic.Post) => [...p.by.split('@')[0]].slice(0, 2).join('').toUpperCase();
 
 export function topicPage(ctx: Context): Node[] {
   return [pageHead('topic'), timeline(ctx, null)];
@@ -43,12 +43,7 @@ interface Shown { page: topic.Page; el: HTMLElement; drawn: boolean; near: boole
 /** The timeline, scrolled by `scroller` (null: the window). */
 export function timeline(ctx: Context, scroller: HTMLElement | null): HTMLElement {
   const root = h('div', {class: 'timeline'});
-  if (!connection()) {
-    const go = button(t('Go to Remote'), 'primary');
-    go.addEventListener('click', () => ctx.go('remote'));
-    root.append(h('p', {class: 'muted'}, t('Topic is on the Remote. Sign in to it to read and post.')), h('div', {class: 'row'}, go));
-    return root;
-  }
+  const signedIn = connection() !== null;
 
   const pages: Shown[] = [];
   const list = h('div', {class: 'tl-pages', 'aria-label': t('Posts')});
@@ -73,12 +68,29 @@ export function timeline(ctx: Context, scroller: HTMLElement | null): HTMLElemen
   // ---- a post ----
   const card = (p: topic.Post, s: Shown) => {
     const when = new Date(p.at);
+    const [name, domain] = p.by.split('@');
+    const foot = h('div', {class: 'tl-foot muted small'});
     const art = h('article', {class: 'tl-post'},
       h('span', {class: 'tl-face', 'aria-hidden': 'true'}, face(p)),
       h('div', {class: 'tl-main'},
-        h('div', {class: 'tl-who'}, h('b', {}, p.name || p.address.split('@')[0]), h('span', {class: 'muted small'}, p.address),
+        h('div', {class: 'tl-who'}, h('b', {}, name), h('span', {class: 'muted small'}, `@${domain}`),
           h('time', {class: 'muted small', datetime: when.toISOString(), title: when.toLocaleString()}, ago(p.at))),
-        h('p', {class: 'tl-body'}, p.body)));
+        h('p', {class: 'tl-body'}, p.body), foot));
+    if (p.mine) {
+      // Its author sees how far it has gone, and how many kept it.
+      foot.append(t('Reaches {who}', {who: t(topic.RINGS[Math.min(p.ring ?? 0, topic.RINGS.length - 1)])}), p.keeps ? ` · ${t('kept by {n}', {n: p.keeps})}` : '');
+    } else if (signedIn) {
+      // Keeping is what lets it reach more readers.
+      const k = h('button', {type: 'button', class: 'button link tl-keep', 'aria-pressed': String(Boolean(p.kept))}) as HTMLButtonElement;
+      const paint = () => { k.textContent = `${p.kept ? t('Kept') : t('Keep')}${p.keeps ? ` ${p.keeps}` : ''}`; k.setAttribute('aria-pressed', String(Boolean(p.kept))); };
+      k.addEventListener('click', async () => {
+        const on = !p.kept;
+        p.kept = on; p.keeps += on ? 1 : -1; paint();
+        try { await topic.keep(p.id, on); } catch { p.kept = !on; p.keeps += on ? -1 : 1; paint(); }
+      });
+      paint();
+      foot.append(k);
+    } else if (p.keeps) foot.append(t('kept by {n}', {n: p.keeps}));
     if (p.mine) {
       // Taking one's own post down asks once more, briefly.
       const down = h('button', {type: 'button', class: 'button link tl-down'}, t('Take down')) as HTMLButtonElement;
@@ -219,7 +231,11 @@ export function timeline(ctx: Context, scroller: HTMLElement | null): HTMLElemen
   text.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); void send(); } });
   go.addEventListener('click', () => void send());
   count();
-  const write = h('div', {class: 'tl-write'}, text, h('div', {class: 'row tl-write-row'}, left, go), error);
+  // Reading needs nothing; writing needs an account.
+  const signIn = button(t('Sign in'), 'small-button');
+  signIn.addEventListener('click', () => ctx.go('remote'));
+  const write = signedIn ? h('div', {class: 'tl-write'}, text, h('div', {class: 'row tl-write-row'}, left, go), error)
+    : h('div', {class: 'tl-write tl-signed-out'}, h('span', {class: 'muted'}, t('Sign in to post.')), signIn);
 
   // Back at the top: what came is seen.
   const top = new IntersectionObserver((e) => { if (e.some((x) => x.isIntersecting) && unseen) { unseen = 0; tell(); } }, {root: scroller});

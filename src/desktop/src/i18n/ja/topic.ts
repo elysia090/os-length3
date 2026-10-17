@@ -1,7 +1,16 @@
 // Japanese for Topic: the timeline, writing a post, taking one down.
 export default {
-  'Short posts from everyone on the Remote, newest first, as far back as you scroll.': 'Remote にいるみんなの短い投稿。新しいものから、さかのぼれるだけ。',
-  'Topic is on the Remote. Sign in to it to read and post.': 'Topic は Remote にあります。サインインすると、読んだり投稿したりできます。',
+  'Short posts, free to read. A new one reaches its author\'s contacts and a few readers first, and more as they keep it.': '誰でも読める短い投稿。新しい投稿はまず連絡先と少しの人に届き、とっておかれるほど広がります。',
+  'Sign in to post.': '投稿するにはサインインします。',
+  'Reaches {who}': '届く先: {who}',
+  'kept by {n}': '{n} 人がとっておいた',
+  'Keep': 'とっておく',
+  'Kept': 'とっておいた',
+  'your contacts and a few': 'あなたの連絡先と少しの人',
+  'one reader in sixteen': '16 人に 1 人',
+  'one in four': '4 人に 1 人',
+  'everyone signed in': 'サインインしている全員',
+  'everyone': '全員',
   'Something short to share': '短く共有したいこと',
   'New post': '新しい投稿',
   'Post': '投稿する',

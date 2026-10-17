@@ -4,20 +4,20 @@ import {DEFAULT_PURPOSE, NEW_REPO, PURPOSES, RAIL, purpose, restorePurpose, step
 
 test('the rail lists the eight purposes in order, then the new repo square', () => {
   assert.deepEqual(PURPOSES.map((p) => p.label),
-    ['Home', 'Forge', 'File', 'Git', 'Runtime', 'Remote', 'Topic', 'Inbox']);
+    ['Topic', 'Home', 'Forge', 'File', 'Git', 'Runtime', 'Remote', 'Inbox']);
   assert.equal(RAIL.at(-1), NEW_REPO);
   assert.equal(new Set(RAIL.map((p) => p.id)).size, RAIL.length);
 });
 
 test('only the built pages claim real state', () => {
-  assert.deepEqual(RAIL.filter((p) => p.implemented).map((p) => p.id), ['home', 'forge', 'file', 'git', 'runtime', 'remote', 'topic', 'inbox', 'new-repo']);
+  assert.deepEqual(RAIL.filter((p) => p.implemented).map((p) => p.id), ['topic', 'home', 'forge', 'file', 'git', 'runtime', 'remote', 'inbox', 'new-repo']);
 });
 
 test('arrow keys wrap and Home/End jump to the ends', () => {
   assert.equal(stepPurpose('home', 'ArrowDown'), 'forge');
-  assert.equal(stepPurpose('home', 'ArrowUp'), 'new-repo');
-  assert.equal(stepPurpose('new-repo', 'ArrowDown'), 'home');
-  assert.equal(stepPurpose('git', 'Home'), 'home');
+  assert.equal(stepPurpose('topic', 'ArrowUp'), 'new-repo');
+  assert.equal(stepPurpose('new-repo', 'ArrowDown'), 'topic');
+  assert.equal(stepPurpose('git', 'Home'), 'topic');
   assert.equal(stepPurpose('git', 'End'), 'new-repo');
   assert.equal(stepPurpose('git', 'Enter'), null);
   assert.equal(stepPurpose('git', 'ArrowRight'), null);

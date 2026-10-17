@@ -15,6 +15,20 @@
       "when": 1792211257250,
       "tag": "0001_topic",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792214634769,
+      "tag": "0002_topic_rings",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792214635714,
+      "tag": "0003_post_time_is_its_id",
+      "breakpoints": true
     }
   ]
 }

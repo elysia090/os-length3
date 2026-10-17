@@ -1,27 +1,31 @@
-// Topic: short posts on the Remote (service/topic.ts), one timeline for
-// everyone there, newest first, read a page at a time by id.
+// Topic: short posts on the Remote (service/topic.ts), newest first, read a
+// page at a time by id. Anyone reads what has gone everywhere; signed in, a
+// reader also sees what is still spreading to the rings they are in, and
+// keeping a post is what widens it.
 //
 // The timeline is pages, each the range of ids it was read as (its newest
 // and oldest). A page's posts can be let go of and read again by that range
 // (the same posts, less any taken down), so what a reader holds stays about
 // what is near the screen however far they scroll.
 
-import {api, json, RemoteError} from './remote.ts';
+import {api, connection, json, RemoteError} from './remote.ts';
 import {t} from './i18n.ts';
 
-export interface Post { id: string; address: string; name: string; body: string; at: number; mine: boolean }
+/** A post as the Remote gives it: no profile, only the address it was made from. `kept`: by this reader; `mine`, `ring`: for its author. */
+export interface Post { id: string; by: string; body: string; at: number; keeps: number; kept?: boolean; mine?: boolean; ring?: number }
 interface Read { posts: Post[]; more: boolean; total?: number }
 
 /** The most a post says, as the Remote holds it to. */
 export const LIMIT = 500;
 
+/** Signed in, this reader's timeline; otherwise what everyone may read. */
+const at = (query: string) => (connection() ? `/v1/topic?${query}` : `/v1/topic/everyone?${query}`);
 /** The newest, or those older than `before`. */
-export const older = (before: string | null, limit = 30) =>
-  json<Read>(`/v1/topic?limit=${limit}${before ? `&before=${before}` : ''}`);
+export const older = (before: string | null, limit = 30) => json<Read>(at(`limit=${limit}${before ? `&before=${before}` : ''}`));
 /** Those newer than `after`, oldest first (keep asking while `more`). */
-export const newer = (after: string, limit = 30) => json<Read>(`/v1/topic?limit=${limit}&after=${after}`);
-/** A page again, by its range. */
-export const range = (oldest: string, newest: string) => json<Read>(`/v1/topic?limit=100&from=${oldest}&to=${newest}`);
+export const newer = (after: string, limit = 30) => json<Read>(at(`limit=${limit}&after=${after}`));
+/** A page again, by its range: quiet, as it was counted seen the first time. */
+export const range = (oldest: string, newest: string) => json<Read>(at(`limit=100&quiet=1&from=${oldest}&to=${newest}`));
 /** One's own, newest first, and how many. */
 export const mine = (limit = 5) => json<Read>(`/v1/topic?by=me&limit=${limit}`);
 
@@ -32,6 +36,12 @@ export async function post(body: string): Promise<Post> {
   const why: Record<string, string> = {'claim an address first': t('Claim an address first'), 'too many posts this hour': t('Too many posts this hour')};
   throw new RemoteError(r.status, why[out.error ?? ''] ?? String(out.error ?? r.status));
 }
+
+/** Keep a post (or not): what widens it to more readers. */
+export const keep = (id: string, on: boolean) => json<{kept: boolean}>(`/v1/topic/${id}/keep`, {method: on ? 'POST' : 'DELETE'});
+
+/** How far a post has gone, ring by ring (service/topic.ts RINGS, then everyone). */
+export const RINGS = ['your contacts and a few', 'one reader in sixteen', 'one in four', 'everyone signed in', 'everyone'] as const;
 
 export const takeDown = (id: string) => api(`/v1/topic/${id}`, {method: 'DELETE'}).then((r) => {
   if (!r.ok && r.status !== 404) throw new RemoteError(r.status, String(r.status));
