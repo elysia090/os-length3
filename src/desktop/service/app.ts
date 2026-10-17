@@ -24,6 +24,7 @@ import {cors} from 'hono/cors';
 import type {Auth} from './auth.ts';
 import {devOAuth} from './devoauth.ts';
 import {inbox} from './inbox.ts';
+import {topic} from './topic.ts';
 import type {Bucket} from './bucket.ts';
 import {blob, change, cut, home, offCode, passkeyProof, repo, review, type Tree} from './schema.ts';
 import {user as people} from './schema.auth.ts';
@@ -546,6 +547,7 @@ export function createApp(d: Deps) {
   });
 
   inbox({db: d.db, domain: d.domain ?? 'length3.com', baseURL: d.baseURL ?? '', secret: d.secret ?? '', txt: d.txt}, v1, app);
+  topic({db: d.db}, v1);
 
   app.route('/v1', v1);
   return app;

@@ -16,7 +16,6 @@ export default {
   'The canonical copy': '正本',
   'Where the canonical copy lives. What you change is sent at once, and committing makes it history. Devices and passkeys are here too.': '正本を置く場所。変えたものはすぐ送られ、Commit すると履歴になる。端末とパスキーもここで。',
   'Simple posts': 'シンプルな投稿',
-  'Share short things, like what is popular lately.': '最近の流行りなどを短く共有する。',
   'Typed messages to you': '自分に届く型付きメッセージ',
   'Review requests, changes, questions and more, each with what it is about and what to do.': 'レビュー依頼・Change・質問などを、対象と対応操作つきで受け取る。',
   'New repo': '新しいrepo',

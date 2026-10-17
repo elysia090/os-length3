@@ -5,7 +5,7 @@
 //   shell    the rail and the person's menu      base     shared words and models
 //   pages    Home, Forge, File, New repo, Prompt  remote   Remote, sign-in, devices
 //   git      Git: issues, work, changes           inbox    Inbox
-//   runtime  Runtime
+//   runtime  Runtime                             topic    Topic
 
 import base from './base.ts';
 import git from './git.ts';
@@ -14,7 +14,8 @@ import pages from './pages.ts';
 import remote from './remote.ts';
 import runtime from './runtime.ts';
 import shell from './shell.ts';
+import topic from './topic.ts';
 
-const parts: Record<string, string>[] = [shell, base, pages, remote, git, inbox, runtime];
+const parts: Record<string, string>[] = [shell, base, pages, remote, git, inbox, runtime, topic];
 const ja: Record<string, string> = Object.assign({}, ...parts);
 export default ja;

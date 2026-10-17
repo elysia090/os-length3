@@ -291,6 +291,28 @@ the way an issue is ("Review：…", "Question：…"), and a `/root/…` path i
 says what it is about, so there is nothing else to choose. Enter sends,
 Shift+Enter is a new line.
 
+### Topic
+
+One reading column, 640 px: a place to write at the top (an edge over
+raised, as a field is; what is left of 500 characters beside Post;
+Ctrl+Enter posts), then everyone's posts on this Remote, newest first, one
+under another with a rule between: the face (initials in a circle), the
+name, the address and when, then the text as written. One's own post has
+取り下げる at the end of its line, which asks once more in its own place
+for a moment. Posting needs an address (the Inbox's); without one, the
+place says so and leads there.
+
+The timeline has no end to reach and nothing to press. Near its end the
+next older posts are read; at the very end it says it is every post. What
+comes meanwhile is put on top: seen as it comes when the top is in view,
+and otherwise put above without moving what is being read, with a small
+ink pill (↑ 3 new posts) floating at the top of the column, which goes up
+to them. And it lets go by itself: posts far out of view are folded into an
+empty box of the height they had, so nothing on screen moves, and further
+still they let go of their text too, read again by their range of ids when
+they come back near. Scrolling for an hour holds about what a few screens
+do. With nothing on the band, Forge's center is this timeline.
+
 ### New repo (+)
 
 A name on one line (the same field as the search box), the template as

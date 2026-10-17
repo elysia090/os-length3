@@ -799,3 +799,27 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .review-in { min-height: 12em; resize: vertical; padding: var(--s3); font: var(--t-body)/1.6 var(--sans); }
 /* Merge under the Review: a step row of its own, no rule above it. */
 .merge-row { border-top: 0; padding: var(--s4) 0 0; margin-top: 0; }
+
+/* Topic: one reading column; posts one under another, a rule between them.
+   The page folds what is far out of view to boxes of the same height, so the
+   browser's own scroll anchoring is off: the page holds the reader still itself. */
+.timeline { max-width: 640px; margin-top: var(--s5); }
+.page > .timeline { margin-left: 0; }
+.tl-write { display: grid; gap: var(--s2); padding: var(--s3); border: 1px solid var(--edge); border-radius: var(--r-place); background: var(--raised); }
+.tl-text { width: 100%; box-sizing: border-box; resize: none; field-sizing: content; min-height: 3lh; max-height: 12lh; border: 0; background: transparent; padding: var(--s1); font: inherit; color: inherit; }
+.tl-text:focus-visible { outline: none; }
+.tl-write:focus-within { outline: 2px solid var(--ink); outline-offset: 2px; }
+.tl-write-row { justify-content: flex-end; align-items: center; gap: var(--s3); }
+.tl-new-at { position: sticky; top: var(--s3); z-index: 3; height: 0; display: flex; justify-content: center; }
+.tl-new { flex: none; margin-top: var(--s3); min-height: var(--h-row); padding: 0 var(--s4); border: 0; border-radius: var(--r-round); background: var(--ink); color: var(--ground); font: 600 var(--t-meta) var(--sans); cursor: pointer; }
+.tl-new[hidden] { display: none; }
+.tl-pages { overflow-anchor: none; margin-top: var(--s4); }
+.tl-post { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: var(--s3); padding: var(--s4) 0; border-bottom: 1px solid var(--rule); }
+.tl-face { display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid var(--rule); border-radius: var(--r-round); font: 600 var(--t-meta) var(--sans); }
+.tl-who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s2); }
+.tl-who .tl-down { margin-left: auto; min-height: 0; font-size: var(--t-meta); }
+.tl-body { margin-top: var(--s1); white-space: pre-wrap; overflow-wrap: anywhere; }
+.tl-end { padding: var(--s5) 0; text-align: center; min-height: 1lh; }
+.home-posts { display: grid; gap: var(--s3); max-width: 640px; }
+.home-post { padding-bottom: var(--s3); border-bottom: 1px solid var(--rule); }
+.home-posts > .button.link { justify-self: start; }

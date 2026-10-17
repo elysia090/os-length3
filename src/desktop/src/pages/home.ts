@@ -1,7 +1,9 @@
-import {h} from '../dom.ts';
+import {ago, h} from '../dom.ts';
 import {t} from '../i18n.ts';
 import {LIMITS, initials, normalize, parse, type Profile} from '../profile.ts';
+import {connection} from '../remote.ts';
 import {getState, setState} from '../state.ts';
+import * as topic from '../topic.ts';
 import {repoList} from './repo-list.ts';
 import {todoBox} from './todo-box.ts';
 import type {Context} from './context.ts';
@@ -34,7 +36,23 @@ export function home(ctx: Context): Node[] {
   return [header, todoBox(),
     h('section', {class: 'section', 'aria-labelledby': 'repos-title'}, h('h2', {id: 'repos-title'}, 'repo'), grid),
     h('section', {class: 'section', 'aria-labelledby': 'posts-title'},
-      h('h2', {id: 'posts-title'}, t('Posts')), h('p', {class: 'muted'}, t('No posts yet')))];
+      h('h2', {id: 'posts-title'}, t('Posts')), ownPosts(ctx))];
+}
+
+/** The person's latest posts (Topic holds them all), and how many there are in the counts. */
+function ownPosts(ctx: Context): HTMLElement {
+  const box = h('div', {class: 'home-posts'}, h('p', {class: 'muted'}, t('No posts yet')));
+  if (!connection()) return box;
+  void topic.mine().then((r) => {
+    const n = document.getElementById('post-count');
+    if (n) n.textContent = String(r.total ?? r.posts.length);
+    if (!r.posts.length) return;
+    const all = h('button', {type: 'button', class: 'button link'}, t('See all in Topic'));
+    all.addEventListener('click', () => ctx.go('topic'));
+    box.replaceChildren(...r.posts.map((p) => h('article', {class: 'home-post'},
+      h('p', {class: 'tl-body'}, p.body), h('time', {class: 'muted small', datetime: new Date(p.at).toISOString()}, ago(p.at)))), all);
+  }).catch(() => {});
+  return box;
 }
 
 function identity(repoCount: HTMLElement): HTMLElement {
@@ -44,7 +62,7 @@ function identity(repoCount: HTMLElement): HTMLElement {
     named ? h('h1', {}, profile.name || `@${profile.handle}`) : h('h1', {class: 'unset'}, t('No name yet')),
     profile.handle && profile.name ? h('p', {class: 'handle'}, `@${profile.handle}`) : null,
     profile.bio ? h('p', {class: 'bio'}, profile.bio) : null,
-    h('p', {class: 'counts'}, h('span', {}, repoCount, ' repo'), h('span', {}, h('b', {}, '0'), ` ${t('posts')}`)),
+    h('p', {class: 'counts'}, h('span', {}, repoCount, ' repo'), h('span', {}, h('b', {id: 'post-count'}, '0'), ` ${t('posts')}`)),
   );
 }
 

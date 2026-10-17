@@ -350,3 +350,44 @@ test('Inbox: an address is claimed or published by its domain; messages are smal
   assert.deepEqual(wk.json, {remote: BASE, name: 'ren'});
   assert.deepEqual((await s.call('GET', '/.well-known/length3')).json, {remote: BASE});
 });
+
+test('Topic: posts need an address, are short, read a page at a time by id, and only their author takes one down', async () => {
+  const s = await service();
+  const ren = await s.start('Ren'), mio = await s.start('Mio');
+  assert.equal((await s.call('POST', '/v1/topic', {token: ren, body: {body: 'hello'}})).status, 409);
+  await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'ren'}});
+  await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'mio'}});
+  assert.equal((await s.call('POST', '/v1/topic', {token: ren, body: {body: 'x'.repeat(501)}})).status, 400);
+  const made: string[] = [];
+  for (let i = 0; i < 7; i++) {
+    const r = await s.call('POST', '/v1/topic', {token: i % 2 ? mio : ren, body: {body: `post ${i}`}});
+    assert.equal(r.status, 201);
+    made.push(String(r.json.id));
+    await new Promise((go) => setTimeout(go, 2));
+  }
+  type Page = {posts: {id: string; body: string; address: string; name: string; mine: boolean}[]; more: boolean; total?: number};
+  const page = async (q: string, token = ren) => (await s.call('GET', `/v1/topic${q}`, {token})).json as unknown as Page;
+  // Newest first, three at a time, each page past the last one's oldest.
+  const first = await page('?limit=3');
+  assert.deepEqual(first.posts.map((p) => p.body), ['post 6', 'post 5', 'post 4']);
+  assert.deepEqual([first.more, first.posts[1].address, first.posts[1].name, first.posts[0].mine, first.posts[1].mine], [true, 'mio@length3.test', 'Mio', true, false]);
+  const second = await page(`?limit=3&before=${first.posts[2].id}`);
+  assert.deepEqual(second.posts.map((p) => p.body), ['post 3', 'post 2', 'post 1']);
+  const last = await page(`?limit=3&before=${second.posts[2].id}`);
+  assert.deepEqual([last.posts.map((p) => p.body), last.more], [['post 0'], false]);
+  // What came after a point, oldest first, so a reader fills in without a gap.
+  const newer = await page(`?limit=2&after=${made[2]}`);
+  assert.deepEqual([newer.posts.map((p) => p.body), newer.more], [['post 3', 'post 4'], true]);
+  // A page again, by its first and last: the same posts.
+  assert.deepEqual((await page(`?from=${second.posts[2].id}&to=${second.posts[0].id}`)).posts.map((p) => p.body), ['post 3', 'post 2', 'post 1']);
+  // One's own, and how many.
+  const mine = await page('?by=me', mio);
+  assert.deepEqual([mine.posts.map((p) => p.body), mine.total], [['post 5', 'post 3', 'post 1'], 3]);
+  // Only the author takes a post down; read again, the page is the same less that one.
+  assert.equal((await s.call('DELETE', `/v1/topic/${made[5]}`, {token: ren})).status, 404);
+  assert.equal((await s.call('DELETE', `/v1/topic/${made[5]}`, {token: mio})).status, 204);
+  assert.deepEqual((await page('?limit=3')).posts.map((p) => p.body), ['post 6', 'post 4', 'post 3']);
+  // So many an hour.
+  for (let i = 0; i < 26; i++) await s.call('POST', '/v1/topic', {token: ren, body: {body: `more ${i}`}});
+  assert.equal((await s.call('POST', '/v1/topic', {token: ren, body: {body: 'one too many'}})).status, 429);
+});

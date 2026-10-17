@@ -34,7 +34,7 @@ export const PURPOSES: readonly Purpose[] = [
   {id: 'remote', label: 'Remote', role: 'The canonical copy',
     detail: 'Where the canonical copy lives. What you change is sent at once, and committing makes it history. Devices and passkeys are here too.', implemented: true},
   {id: 'topic', label: 'Topic', role: 'Simple posts',
-    detail: 'Share short things, like what is popular lately.', implemented: false},
+    detail: 'Short posts from everyone on the Remote, newest first, as far back as you scroll.', implemented: true},
   {id: 'inbox', label: 'Inbox', role: 'Typed messages to you',
     detail: 'Review requests, changes, questions and more, each with what it is about and what to do.', implemented: true},
 ];

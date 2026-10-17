@@ -198,3 +198,18 @@ export const signal = pgTable('signal', {
   data: text('data').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (t) => [index('signal_to_idx').on(t.to, t.createdAt)]);
+
+// ---- Topic (topic.ts) ----
+
+/**
+ * A post: short text, made from one of its author's addresses, kept until
+ * its author takes it down. Its id sorts as its time, so the timeline is
+ * read a page at a time as a range of ids.
+ */
+export const post = pgTable('post', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
+  address: text('address').notNull(),
+  body: text('body').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => [index('post_user_idx').on(t.userId, t.id)]);

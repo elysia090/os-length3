@@ -5,6 +5,7 @@ import {h} from '../dom.ts';
 import {mark} from '../icons.ts';
 import {onChange, store} from '../repos.ts';
 import {pageHead} from './common.ts';
+import {timeline} from './topic.ts';
 import type {Context} from './context.ts';
 import {bench} from './bench.ts';
 import {Reader} from './reader.ts';
@@ -92,8 +93,7 @@ export function forge(ctx: Context): Node[] {
     repo = null;
     reader = null;
     work.setRepo(null, t('Bring a repo out to the band to use it'));
-    flow.replaceChildren(h('div', {class: 'topic'}, pageHead('topic'),
-      h('div', {class: 'empty'}, t('No posts yet'))));
+    flow.replaceChildren(h('div', {class: 'topic'}, pageHead('topic'), timeline(ctx, flow)));
     flow.scrollTop = 0;
     paintBand();
   };
