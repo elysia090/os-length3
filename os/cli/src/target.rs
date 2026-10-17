@@ -74,6 +74,8 @@ pub fn path_of(ctx: &Ctx, word: Option<&str>) -> Result<(String, String)> {
     };
     if repo.is_empty() { return Err(Error::Usage(tr!("{} names no repo", "{} は repo を指していません", w))); }
     if !ctx.has_repo(&repo) { return Err(missing(ctx, &repo)); }
+    // `..` is read from where you are only; in REPO/PATH it leaves the repo, as the core says, before anything outside is looked at.
+    if rel.split('/').any(|p| p == "..") { return Err(Error::Refused(tr!("{} leaves the repo", "{} は repo の外です", w))); }
     Ok((repo, rel))
 }
 
@@ -245,6 +247,10 @@ mod tests {
         // A colon in a path is a path's (bug: it was read as owner:repo).
         assert_eq!(path_of(&out, Some("hello/README.md:3")).unwrap(), ("hello".into(), "README.md:3".into()));
         assert!(matches!(path_of(&out, Some("nope/x")), Err(Error::NotFound(_))));
+        // `..` in REPO/PATH leaves the repo (bug: kept, so what is outside was looked at, and said not to be there).
+        for w in ["hello/../other/x", "/root/hello/../../etc", "hello/src/../../x"] {
+            assert!(matches!(path_of(&out, Some(w)), Err(Error::Refused(_))), "{w}");
+        }
         assert!(matches!(path_of(&out, None), Err(Error::Usage(_))));
         let inside = Ctx::test(Some("hello"), vec!["hello", "other"]);
         assert_eq!(path_of(&inside, Some("src/a.c")).unwrap(), ("hello".into(), "src/a.c".into()));

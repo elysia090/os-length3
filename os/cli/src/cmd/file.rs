@@ -64,16 +64,16 @@ pub fn rm(ctx: &Ctx, call: &Call) -> Result<Reply> {
     if rel.is_empty() { return Err(Error::Refused(tr!("The repo itself is not removed this way", "repo そのものはこの方法では消せません"))); }
     if !ctx.exists(&repo, &rel) { return Err(Error::NotFound(tr!("There is no {}", "{} はありません", at))); }
     let r = ctx.repos()?;
-    // A folder says how much went with it.
-    let inside = r.place(&repo).map(|d| d.join(&rel)).ok().filter(|p| p.is_dir() && !p.is_symlink()).map(|p| count(&p));
+    // A folder says how much went with it, counted through the core so nothing outside the repo is walked.
+    // A link is removed itself, never what it names.
+    let link = r.place(&repo).is_ok_and(|d| d.join(&rel).is_symlink());
+    let inside = if link { None } else { r.tree(&repo, &rel).ok().map(|_| count(&r, &repo, &rel)) };
     r.remove(&repo, &rel)?;
     let said = match inside { Some(n) => tr!("Removed the folder {} ({})", "フォルダー {} を消しました（{}）", at, files(n)), None => tr!("Removed {}", "{} を消しました", at) };
     Ok(Reply::done(said, json!({"repo": repo, "path": rel, "files": inside})))
 }
 
-fn count(dir: &std::path::Path) -> usize {
-    std::fs::read_dir(dir).into_iter().flatten().flatten().map(|e| {
-        let p = e.path();
-        if p.is_dir() && !p.is_symlink() { count(&p) } else { 1 }
-    }).sum()
+/// The files in the folder `rel` of `repo` and in each folder under it (a link counts as one).
+fn count(r: &length3_core::repos::Repos, repo: &str, rel: &str) -> usize {
+    r.tree(repo, rel).unwrap_or_default().iter().map(|e| if e.kind == "dir" { count(r, repo, &format!("{rel}/{}", e.name)) } else { 1 }).sum()
 }
