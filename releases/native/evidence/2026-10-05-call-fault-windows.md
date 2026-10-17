@@ -28,8 +28,8 @@ Windows NT 10.0.26200.0, UCRT GCC 16.2.0, `-O2 -Wall -Wextra -Wpedantic -Werror`
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | 884,736 | 884,310 | 426 | 884,736 | 0 | 884,736 | 8 |
 
-[Raw observations](2026-10-05-call-fault-windows.log) and
-[validated receipt](2026-10-05-call-fault-windows.json) retain every group and
+Raw observations and
+validated receipt retain every group and
 CPUID. Leaf 0x40000000 reports Microsoft Hyper-V; this is a native process
 outside the WHPX build guest, **not** a bare-metal or universal hardware proof.
 Different OS/virtualization exception layers are not assumed equivalent.

@@ -31,13 +31,13 @@ owned by subsequent fault entry, not by a successful source retirement.
 Hardware-assisted oracle: 214 returns, 16 #NP, 16 #SS, 96 #GP, 10 #PF.
 TCG: 208 returns, 32 #NP, 96 #GP, 16 #PF. **480 differing fields** remain
 classified and recorded; TCG is not used to waive the hardware red.
-[Hardware rows](2026-10-05-iret-frame-hardware.txt): SHA-256
+Hardware rows: SHA-256
 e4c4dfa1025f3695e1389d3c25c564adcf01a3c9a66494aa30dcb4081d31fd36.
-[TCG rows](2026-10-05-iret-frame-tcg.txt): SHA-256
+TCG rows: SHA-256
 4096b8ade01558e88400f7b09e98106a66ad13eee9969cd2cc026286353d15fa.
 Fixture ELF: 81278c09b4b24206ceac5fb13f63f5375552fa3dd39c704278fb8810372344d8.
 
-[Green receipt](2026-10-05-iret-frame-green.json): 120 complete CPU/cache
+Green receipt: 120 complete CPU/cache
 models, 12 fault models, 2 waits/1 stale refusal, 352 hardware comparisons,
 **484 generated-Wasm/C-dispatch cases** including every hardware row. Native
 `make check` and GCC ASan/UBSan pass, including 32 new frame-boundary models.
@@ -56,5 +56,5 @@ still require separate obligations. The frozen full startup job was PID 19152,
 VM 68,291 bytes (`a59f66e`), compiler 450,892 bytes, unchanged warmCuts=64 /
 engine 1024 entries / 262144 witness bytes. It is not restarted or replaced
 by this separately compiled candidate. It has now completed, passing IRET and
-reaching [a user fetch #PF delivery refusal](2026-10-05-node-startup-user-page-fault-red.json).
+reaching a user fetch #PF delivery refusal.
 PID 1/shell/browser remain unachieved.

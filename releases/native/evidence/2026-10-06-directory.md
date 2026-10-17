@@ -58,7 +58,7 @@ resource metadata, stale/corrupt/truncated replies, cancellation, same-scope
 reopen and ticket exhaustion. Every path touches exactly three bounded nodes.
 This is a finite index/lifecycle model, not the Linux program population.
 
-[Provider receipt](2026-10-06-directory-provider-green.json): six lookups in
+Provider receipt: six lookups in
 that fixture use 18 node reads + six object reads, 49,350 bytes total and 73
 fault/control assertions. C verifies a real C-emitted 241-byte ordinary Wasm
 module; the pinned exact bytes enter the ordinary engine, then C source/MMU/
@@ -70,9 +70,9 @@ Full native Artifact and VM checks pass. `directory-sanitizer-check` compiles
 the precise directory/index/resource/object/SHA reader and its native model
 with ASan/UBSan; all 3000 paths/control cases pass. New compiler warnings were
 fixed, not suppressed. This is not a Wasm-engine sanitizer claim.
-The [source cohort](2026-10-06-directory-cohort-green.json) and
-[interrupt/HLT model + independent x86 receipt](2026-10-06-directory-interrupt-green.json)
-remain green. The [short same-bundle prefix](2026-10-06-directory-prefix.json)
+The source cohort and
+interrupt/HLT model + independent x86 receipt
+remain green. The short same-bundle prefix
 preserves the independent 86-instruction CPU checkpoint and reaches 1,617,931
 retirements, then the unchanged diagnostic bound. It does not use the new
 directory for Linux module delivery and is not Linux/browser acceptance.

@@ -62,7 +62,7 @@ therefore still runs. Linux's first entry is likewise not previously owned.
 The default regression's warmCuts=1 remains unchanged. There are no inserted
 opcodes, manually selected branches, injected output bytes or CPU restoration.
 
-The [independent Node receipt](2026-10-10-early-warm-node.json) compares all
+The independent Node receipt compares all
 14622864 output bytes/3571 page digests and reaches Linux entry129057478 retired.
 Its300000029-instruction quota is not a shell/root acceptance claim. Actual
 browser reaches151694747 retired in58408ms; the preceding single-cut startup

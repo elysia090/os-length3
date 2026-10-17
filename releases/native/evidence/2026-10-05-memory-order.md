@@ -84,8 +84,8 @@ exercise the later LFENCE and is not a performance benchmark.
 Each emitted fence cut is 205 bytes. Its only import is ordinary
 `machine.memory`, with no guest access or ordering function. This is a value
 payload elimination under a proved execution contract, not a global optimality
-or startup-speed claim. See [comparison receipt](2026-10-05-memory-order-comparisons.json)
-and [original red](2026-10-05-memory-order-red.log).
+or startup-speed claim. See comparison receipt
+and original red.
 
 Reproduce with fresh directories:
 

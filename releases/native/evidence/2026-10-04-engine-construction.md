@@ -6,7 +6,7 @@ The retained MXCSR browser Worker is still running. At 147,060,462 retired
 source instructions / 76,741,824 admissions it has 5,717 console bytes and
 RIP 0xffffffff810a8207. This is early Linux initialization, not PID 1,
 a release-root mount, shell, usable networking, or acceptance of LDMXCSR.
-The exact [running observation](2026-10-04-engine-linux-running.json) records:
+The exact running observation records:
 
 | Phase | Cumulative milliseconds |
 | --- | ---: |
@@ -75,8 +75,8 @@ All positions and rounds are retained in the receipts, not only the winner.
 The owner decrease is approximately 54.2% overall and 47.8% fresh-first in
 these observations. Background Linux work and engine caches affect timing;
 this is neither a deterministic timing gate nor a full Linux cold-boot speedup.
-See [before](2026-10-04-engine-construction-before.json) and
-[after](2026-10-04-engine-construction-after.json).
+See before and
+after.
 
 The actual MXCSR native-fault comparison now obtains its executable through
 this owner: 16 exact native/cold emissions, 4,096 stable pre-lowering records,
@@ -126,7 +126,7 @@ The comparison page is `src/v2/vm/check/browser/engine-construction.html`.
 The retained old startup tab stays running. A second independently bounded
 startup Worker loads the verified owner/word trace and exactly the same
 kernel/segments/compiler/provider fixtures. Its first saved
-[running observation](2026-10-04-inline-startup-running.json) is at
+running observation is at
 135,060,457 retirements / 67,974,085 admissions, RIP 0xffffffff81414d13,
 3,839 resident pages / 16,252,928 C-memory bytes and no console bytes.
 The new `elapsedCheck` field confirms the updated diagnostic was loaded.

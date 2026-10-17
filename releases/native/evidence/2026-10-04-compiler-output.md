@@ -53,7 +53,7 @@ report clears         41,040 bytes
 516 actual C attempts, including 3 full refusal comparisons
 ```
 
-The independent bounded [startup receipt](2026-10-04-compiler-output-default.json)
+The independent bounded startup receipt
 executes the same shipped kernel through C compiler -> C VM for 1,000,000
 admissions / 1,616,430 retirements, ending at RIP 0x1e21a1a. Compared to the
 preceding unchanged-C word-trace checkpoint, 32 architectural/source/trace/

@@ -92,7 +92,7 @@ The native bundle is unchanged: 63,219,311 bytes, SHA-256
 
 ## Actual browser
 
-[Visible bounded receipt](2026-10-03-memory-index-browser.json): the ordinary
+Visible bounded receipt: the ordinary
 Worker passes the preceding BTS and retires 129,394,681 source instructions /
 64,574,988 admissions, with 64 live slots and no manual branch-entry list.
 All 14,622,864 decompressed bytes / 3,571 pages still match the independent

@@ -41,7 +41,7 @@ The separate local successor is `7ae8a85018b49656c8212e4984baf9500656ee3a2ef642a
 
 These results close the named source repair, default-provider and common **offline** acceptance gaps for 7ae; e67 remains the historical failed candidate. They do not promote e67's network/daemon-fault cases to 7ae. Web network reconnect/concurrent traffic on 7ae, authenticated SSH and clock synchronization are not repeated by this offline workload. Cold prompt is 160,397.6 ms and still fails 3 seconds. The independent semantic-witness checker, canonical word/75 MB measurement, suspend/resume, native product lifecycle and paired performance gates remain open. No successor is labeled formally qualified.
 
-The authoritative requirements are [DISTRIBUTION.md](../../../../docs/DISTRIBUTION.md#publication-gates) and [the product contract](../../../../README.md). These are implementation/acceptance tasks, not permission requests.
+The authoritative requirements are [DISTRIBUTION.md](../../../compiler/docs/DISTRIBUTION.md#publication-gates) and [the product contract](../../../compiler/README.md). These are implementation/acceptance tasks, not permission requests.
 
 | Priority | Requirement | State | Remaining concrete work |
 | --- | --- | --- | --- |

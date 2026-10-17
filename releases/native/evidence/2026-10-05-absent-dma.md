@@ -1,6 +1,6 @@
 # Explicit legacy-DMA absence — 2026-10-05
 
-The [completed same-bundle run](2026-10-05-node-startup-binding-io-red.json)
+The completed same-bundle run
 stops at `0xffffffff81405c2b`, `e4 87` (`IN AL, 87h`), result 6 and zero
 retirement. Decoding/emission already work; C has no bus target definition.
 Retained fault/request fields do not establish a new #GP/clock event here.
@@ -47,7 +47,7 @@ its first valid byte read. After the change:
 * Native C: 12,288 absent-device transfers plus the unchanged 7,680 permission
   cases, TSS crossing-page residency/#PF, TF, generation, pending clock/console
   and unknown-neighbor checks pass.
-* [C-Wasm check](2026-10-05-absent-dma.json): 225 emissions, 6,145 complete-CPU
+* C-Wasm check: 225 emissions, 6,145 complete-CPU
   comparisons, 1,665 retirements, 1,152 permission faults, 3,328 width refusals.
   Source #PF/stale generation/wrong binding/pending clock each pass 192 cases;
   unknown neighbors pass 16. Immediate/DX, IN/OUT, address prefixes, all widths,
@@ -74,8 +74,8 @@ Native bundle/UI/retained browser Workers/staged binaries are unchanged.
 
 The unchanged bundle/segments/root-image run started from `ff8a329` has completed
 at a secondary UART port, after passing DMA absence. See the
-[completed observation](2026-10-05-node-startup-dma-serial-red.json).
-Its earlier [bounded observation](2026-10-05-node-startup-dma-running.json)
+completed observation.
+Its earlier bounded observation
 was not a final gate, boot percentage, PID 1 or speedup comparison. The
 diagnostic lazy-message change is loaded in this run, unlike `bea73ae`.
 Sequence-test additions affect no loaded execution binary or checker.

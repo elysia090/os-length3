@@ -50,7 +50,7 @@ contract is still required before a production Linux root can be accepted.
 
 ## Actual execution and refusals
 
-[Receipt](2026-10-07-image-admission-green.json). The genuine normally linked,
+Receipt. The genuine normally linked,
 postlinked and independently verified 384-coordinate ELF still has one
 10,224-byte canonical owner. Its 2 modules now total 40,598 bytes. Index/root
 included, the directory is 51,246 bytes, **771 more** than the prior delivery

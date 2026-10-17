@@ -74,7 +74,7 @@ fsync/durable recovery guarantee. I/O failure may leave unreferenced staging.
 
 ## Exact scope and measured blocker
 
-[Receipt](2026-10-07-image-directory-green.json). Actual ordinary linking ->
+Receipt. Actual ordinary linking ->
 postlink -> verify produces a 10,224-byte ELF with 384 final executable byte
 coordinates. Its initial full backend inventory was 383/384: `0f0000` SLDT
 memory was genuinely unlowered. It is not omitted from the new root.

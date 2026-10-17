@@ -90,7 +90,7 @@ Native bundle: unchanged 63,219,311 bytes, SHA-256
 
 ## Actual browser and next gate
 
-[The actual bounded receipt](2026-10-03-pop-memory-browser.json) reaches
+The actual bounded receipt reaches
 130,560,767 retired / 65,228,273 admissions. POP retires at the original
 coordinate and continues to `0xffffffff81033a5b`. Complete independent
 decompression stays 14,622,864 bytes / 3,571 pages, digest

@@ -1,6 +1,6 @@
 # Exact secondary-UART absence — 2026-10-05
 
-The completed unchanged-bundle [run](2026-10-05-node-startup-dma-serial-red.json)
+The completed unchanged-bundle run
 passes port 87h and reaches `IN AL, DX` (`ec`) at `ffffffff81263891h`,
 DX=2F9h. Result 6, completed=retired=0: cold decoding/emission succeeds,
 but the fixed C bus has no response for the second legacy UART. Retained
@@ -42,7 +42,7 @@ the same cold-generated check fails with actual 6 / expected 1. Afterwards:
 * Full native C VM suite: 49,152 absent-device matrix transfers, 8,192
   uninterrupted write/read sequences, the Linux IER probe, retained COM1
   scratch/IRQ state, existing 7,680 permission cases and edge/fault checks pass.
-* [C-Wasm](2026-10-05-absent-io.json): 574 emissions, 15,362 full-CPU comparisons,
+* C-Wasm: 574 emissions, 15,362 full-CPU comparisons,
   4,162 matrix retirements, 2,880 permission faults, 8,320 width refusals,
   480 each source-fetch/stale-generation/wrong-binding/pending-clock refusals,
   28 unknown-neighbor refusals and 8,192 two-instruction sequences pass.

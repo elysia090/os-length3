@@ -1,7 +1,7 @@
 # C-owned interrupt boundary — 2026-10-04
 
 The same published native bundle now passes the previous STI compiler refusal.
-The [actual browser receipt](2026-10-04-interrupt-browser.json) reaches UART
+The actual browser receipt reaches UART
 `OUT DX,AL` at `0xffffffff812638a6`, port `0x3f9`, with 137,325,900 retired
 source instructions and 69,466,407 admissions. No CPU instruction is skipped.
 PID 1, shell, Linux tooling, workspace/network acceptance and cold shell

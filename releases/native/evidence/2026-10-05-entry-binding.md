@@ -39,14 +39,14 @@ owner's witness alive indirectly. Quotas remain 1,024 entries / 262,144 bytes.
 
 ## Evidence, with separate scopes
 
-* [Coordinate covariance/template receipt](2026-10-05-coordinate-sharing-green.json):
+* Coordinate covariance/template receipt:
   ten operation shapes, twelve coordinates each, 960 complete normalized-state
   comparisons, 120 unchanged wrong-RIP refusals and memory growth. Each family
   has one exact body instead of twelve. At 4,096 requests to the same bounded
   owner, constructions become 10 instead of 4,096; witnesses occupy 2,431 bytes
   instead of the red's 252,056 bytes. This is a fixture stream, not the kernel's
   entire topology population or measured Linux speedup.
-* [Actual C-MMU/typed binding receipt](2026-10-05-entry-binding.json): eight shared
+* Actual C-MMU/typed binding receipt: eight shared
   templates at five coordinates (including the high half), 40 full-state/RAM
   comparisons, 40 wrong-binding refusals, five precise #DE coordinates,
   40 source-fetch faults, ten latched REP resumes including descriptor mutation
@@ -73,14 +73,14 @@ owner's witness alive indirectly. Quotas remain 1,024 entries / 262,144 bytes.
   software interrupt, vector transfer and memory-order lowering. These are
   scoped checks, not exhaustive sanitizer coverage of the distribution.
 
-The [matched one-million-admission prefix](2026-10-05-node-startup-binding-matched.json)
+The matched one-million-admission prefix
 uses the old prefix's identical segment/input setup, without the optional root
 image. Forty-two non-size/non-owner/non-clock/non-timing top-level observations
 agree, including complete recorded trace, final CPU, 1,616,430 retirements and
 unchanged source-cache observations. Constructions fall 1,211 -> 905; evictions
 460 -> 143 under unchanged quotas. This establishes reduced construction work,
 not a total runtime speedup: elapsed time is approximately unchanged.
-The separate [root-image prefix](2026-10-05-node-startup-binding-prefix.json)
+The separate root-image prefix
 passes, but its different command input is not used for that parity claim.
 
 Final compiler: 446,940 bytes, SHA-256
@@ -92,7 +92,7 @@ per-coordinate engine population, not the size of either compiler executable.
 
 ## Previous completed full-bundle measurement
 
-The [fence startup receipt](2026-10-05-node-startup-fence-quota.json) completed
+The fence startup receipt completed
 before ABI 2. It actually passes LFENCE and initializes PF_INET/TCP/UDP and
 PF_UNIX/PF_LOCAL. It stops at the unchanged 150,000,000-admission diagnostic
 limit, at 247,565,228 retirements / RIP `0xffffffff81086f0e`, not an unsupported
@@ -107,7 +107,7 @@ zero copied source payload. Allocated linear Memory is 21,037,056 bytes, not
 process RSS. Source reconstruction remains a candidate after template sharing;
 raising quotas is not the demonstrated normalization.
 
-The [completed ABI-2 full run](2026-10-05-node-startup-binding-io-red.json),
+The completed ABI-2 full run,
 launched from checkpoint `bea73ae`, keeps the same published bundle, independent
 segments, root image and full diagnostic quotas. It reaches 167,850,980
 retirements / 91,763,661 admissions and RTC fallback device registration after
@@ -162,7 +162,7 @@ failure arm. No guest execution, clock sampling or invariant check changes.
 The utility test checks primitive/identity/NaN/type distinctions, zero string
 conversions on success, exact failure messages and propagated conversion errors.
 
-The [before/after sample](2026-10-05-startup-diagnostics.json) preserves 48
+The before/after sample preserves 48
 non-clock/non-timing top-level observations, including 1,616,430 retirements,
 the exact state/trace, byte/population counters and 905 constructions. Its
 diagnostic elapsed time is 2,364.47 -> 1,874.80 ms. This is one prefix sample

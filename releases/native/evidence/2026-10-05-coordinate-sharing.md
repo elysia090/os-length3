@@ -30,7 +30,7 @@ particular, a relocated LEA's absolute result is intentionally different. The
 two machine states are not declared observationally interchangeable. The
 existing native/precise-frontier tests remain the semantic oracles.
 
-See [the actual red receipt](2026-10-05-coordinate-sharing-red.json).
+See the actual red receipt.
 The raw observation SHA-256 is
 `7591a030dc4f7ec4e597f524573001af003b0c9b70b2095c4e2f31929377050b`.
 

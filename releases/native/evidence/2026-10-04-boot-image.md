@@ -3,7 +3,7 @@
 ## Independent startup, not browser acceptance
 
 The extended **Node** diagnostic started before this loader change ends normally
-with [this unmodified receipt](2026-10-04-node-startup-vector-red.json). Its
+with this unmodified receipt. Its
 `status: pass` certifies bounded observations, **not** Linux boot. It stops at
 the explicit common compiler grammar refusal -102:
 
@@ -72,7 +72,7 @@ persistence, eviction/recovery and Linux mounting the image remain open.
 
 `check-boot-image.mjs` makes the old VM red because the required image export
 is absent. An unattached image coordinate also refuses without modifying
-source/output. The corrected [real C-Wasm receipt](2026-10-04-node-boot-image.json)
+source/output. The corrected real C-Wasm receipt
 uses the 89,878,528-byte same-bundle SquashFS, SHA-256
 `6c7f0ea12300984eb1f9e9d4e33eef2be8db642e22afa9f776342a17a888bda9`.
 66 source projections leave payload untouched. 278,528 bounded source bytes

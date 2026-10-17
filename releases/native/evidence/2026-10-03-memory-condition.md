@@ -63,7 +63,7 @@ VM remains 31,653 bytes, SHA-256
 
 ## Actual browser
 
-[Visible bounded receipt](2026-10-03-memory-condition-browser.json): the
+Visible bounded receipt: the
 ordinary-memory Worker passes SETcc and executes 129,387,892 source instructions /
 64,571,332 admissions, with 64 live slots and no manually listed branch entries.
 All 14,622,864 decompressed bytes / 3,571 pages remain equal to independently

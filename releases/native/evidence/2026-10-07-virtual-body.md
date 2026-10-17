@@ -66,7 +66,7 @@ transient flag/cursor/rank storage; no whole-program memory-minimum is claimed.
 
 ## Actual receipt and limitations
 
-[Receipt](2026-10-07-virtual-body-green.json). Native compiler and VM checks,
+Receipt. Native compiler and VM checks,
 scoped ASan/UBSan, exact/short-cap refusals, late unlowered source, unchanged
 report/output/tail checks, late-window differences and 1/2/3/127/129/255/256
 rank boundaries pass. Distinct wide literals and 17 repeated classes stay

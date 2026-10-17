@@ -99,7 +99,7 @@ a projection of visible `#result`, not a boot snapshot or guest memory input.
 
 ## Final actual-browser checkpoint
 
-The [bounded visible receipt](2026-10-03-misc-arithmetic-browser.json) comes
+The bounded visible receipt comes
 from an ordinary-memory, secure-context Worker at
 `startup.html?budget=extended`, after regenerating its VM/compiler inputs.
 `status=pass` means the bounded diagnostic observations pass;

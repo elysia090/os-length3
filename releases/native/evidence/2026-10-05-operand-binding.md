@@ -16,7 +16,7 @@ extent supply 833 ms. Total 2,936,145 ms. Engine witnesses remain bounded to
 754 entries / 262,015 bytes; source metadata is 6,880 bytes with no payload
 copy. Allocated linear Memory is 22,085,632 bytes, not RSS. Different clock
 calibration and retired work prevent an elapsed-time speedup comparison.
-See the [complete receipt](2026-10-05-node-startup-warm-quota.json).
+See the complete receipt.
 
 The immutable release bzImage decompresses to the same optimized ELF SHA-256
 `6cf2f7d852ac0ca21cd1332425af772065e9e9795e4de813f877c95e2798fbe9`.
@@ -30,7 +30,7 @@ alternatives cannot modify their bytes; execution still requires C admission.
 The existing C compiler emits twelve distinct exact bodies for those twelve
 instructions. Their witnesses occupy 4,122 bytes. The old entry-coordinate
 binding alone does not remove this displacement term. The
-[red](2026-10-05-operand-sharing-red.json) is reproduced with frozen ABI-2
+red is reproduced with frozen ABI-2
 VM/compiler binaries. No body is byte-patched or executed in that diagnostic.
 
 ## Derivation and enforced scope
@@ -88,7 +88,7 @@ The same release coordinates now have two exact bodies, 348/337 bytes:
 The unchanged bounded owner receives 4,096 requests and constructs 12 -> 2
 instances, with zero eviction in both controlled samples. Timings are recorded
 but not promoted to Linux/browser speedup. See
-[green and constructor scope](2026-10-05-operand-sharing-green.json).
+green and constructor scope.
 
 The final ABI-3 binaries are:
 
@@ -105,7 +105,7 @@ unchanged. Retained browser Workers/staged Wasm assets are not replaced.
 
 Validation:
 
-* [565 actual cold emissions](2026-10-05-operand-binding.json), 150 complete
+* 565 actual cold emissions, 150 complete
   CPU/physical-memory observations across five families / three coordinates /
   ten signed displacements, including zero, extrema, EIP truncation and
   overlapping source/data; 150 fetch faults, 115 data #PF frontiers, 150 wrong
@@ -123,11 +123,11 @@ Validation:
   65,536 C source-binding values retain exact copied/borrowed values and revoke
   after writes; 100,000 C dispatch values forward without reinterpretation.
   The continuation retains its original nonzero operand after row mutation.
-* [Existing coordinate/divide/fetch/continuation models](2026-10-05-operand-entry.json),
+* Existing coordinate/divide/fetch/continuation models,
   both old table-type refusals, source admission (536 emissions / 512 cold and
-  512 hot CPU comparisons), [warm/disjoint/PTE cohort models](2026-10-05-operand-cohort.json),
+  512 hot CPU comparisons), warm/disjoint/PTE cohort models,
   IRQ/shadow priority and absent UART/DMA regressions pass.
-* The [same-bundle short prefix](2026-10-05-operand-startup-prefix.json) has the
+* The same-bundle short prefix has the
   unchanged 1,617,931 retirements / 1,000,000 host admissions and architectural
   stop. There are 876 engine constructions / 115 evictions, compared with
   the previous disjoint candidate's 905 / 143. This prefix is BEFORE Linux
@@ -152,7 +152,7 @@ The corrected VM is 67,133 bytes, SHA-256
 The compiler is unchanged at 447,154 bytes. Source rows/report/metadata remain
 24 / 80 / 6,880 bytes; the native release and human UI are unchanged.
 
-[Red/green receipt and complete regression results](2026-10-05-table-continuation.json):
+Red/green receipt and complete regression results:
 96 native/cold byte-identical table bodies, 16,128 explicit context/fault models,
 108 independent native payload/fault comparisons, 216 waits/retries, 108 pinned
 abort checks and 36 unlatched fences pass. The retry test makes the completed

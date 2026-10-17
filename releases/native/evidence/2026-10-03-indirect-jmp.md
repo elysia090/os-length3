@@ -5,7 +5,7 @@ published native bundle. It now reaches **391 retired source instructions**,
 with the exact transfer `0x10002a1 -> 0x1e20d00` checked against the shipped
 relocation trampoline. Its next compile gate is **REP STOSQ at `0x1e20d17`**
 (`-102`). Linux/PID 1/shell and the three-second cold shell target remain red.
-The [raw UI receipt](2026-10-03-startup-indirect-jmp.json) is a startup diagnostic,
+The raw UI receipt is a startup diagnostic,
 not a boot certificate. Screenshot: `temp/browser-indirect-jmp-1003.jpg`.
 
 ## Shared lowering and the red that single-instruction tests missed

@@ -66,14 +66,14 @@ Hidden-cache fields not exposed by the fixture are explicit models, not
 hardware measurements. No physical bare-metal or full-mode claim is made.
 
 Native fixture ELF: 1e6fc27199dc57633b004fdeb0594734678c07b82f36004b339e16a719810780.
-Hardware rows: [receipt](2026-10-05-iret-hardware.txt), SHA-256
+Hardware rows: receipt, SHA-256
 aefcbbca8691432e494c1e5f6ff05643672528659a44ea16152cda3d201e07ed.
-TCG rows: [receipt](2026-10-05-iret-tcg.txt), SHA-256
+TCG rows: receipt, SHA-256
 d7ec9b515f391057505de075d3ea1ca90ad76a7640329fdbbff82d5042a9114f.
 
 ## Candidate checks and costs
 
-[Green receipt](2026-10-05-outer-iret-green.json): 120 complete 1,256-byte
+Green receipt: 120 complete 1,256-byte
 CPU/136-byte hidden-state return models, 12 fault models, 2 residency retries,
 1 stale refusal; 132 corresponding cold-C/generated-Wasm/C-dispatch cases;
 320 independent hardware-assisted comparisons. C `make check` is green;

@@ -57,7 +57,7 @@ cache quota, generation increment/history or new execution export/entry ABI.
   tail, self-overwriting stores, precise #DE, context/debug/generation/
   narrow-shadow refusal, console wait at a later cut, descriptor poisoning,
   exact duplicate acceptance and Memory growth/resume. See
-  [25 complete-state cases](2026-10-05-source-cohort.json).
+  25 complete-state cases.
 * The existing source regression still passes 536 real cold emissions,
   512 cold + 512 hot full-CPU comparisons, source aliases, both CMPXCHG arms,
   LOCK, crossing tails, private table slots and write/refusal frontiers.
@@ -82,7 +82,7 @@ cache quota, generation increment/history or new execution export/entry ABI.
   independent 86-instruction CPU/hidden-cache witness, relocation/REP/BSS
   and shipped memset comparisons, then reaches its 1,000,000-admission quota
   at 1,617,931 retirements. Its existing one-cut supervisor is unchanged.
-  See [bounded prefix](2026-10-05-source-cohort-startup-prefix.json).
+  See bounded prefix.
   Different virtual-clock measurements are not a matched Linux speed ratio.
 
 Five paired Windows Node samples, same three actual compiled cuts, fixed

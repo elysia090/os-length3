@@ -91,7 +91,7 @@ guest-memory restart input.
 
 ## Actual browser checkpoint
 
-[Visible receipt](2026-10-03-memory-unary-source-tail-browser.json): secure
+Visible receipt: secure
 ordinary-memory Worker, not cross-origin isolated. `status=pass` means the
 bounded diagnostic witnesses pass; `linuxBoot=not-achieved` is the product
 result. The same 63,219,311-byte native archive hashes to

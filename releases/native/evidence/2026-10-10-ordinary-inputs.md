@@ -10,7 +10,7 @@ records. It is independent of the product decoder and includes integer/MMX/
 SSE/SSE2/SSE3/SSSE3/SSE4 forms, legal register pairs, aliases, address-size/SIB/
 displacement edges, immediate controls, machine transfers and deliberate
 absent-feature faults. It does not exhaust all15-byte encodings, architectural
-states or programs. The [acceptance contract](../../../docs/INPUTS.md) fixes
+states or programs. The [acceptance contract](../../../compiler/docs/INPUTS.md) fixes
 those distinct obligations instead of treating construction as execution proof.
 
 ## Same population before and after

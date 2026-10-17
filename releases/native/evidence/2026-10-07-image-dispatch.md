@@ -55,7 +55,7 @@ obligation rather than an invented architectural fault. The accepted fixtures
 below have no such coordinate gap. ET_DYN uses a genuine cross-section static
 construction relocation; its standard loader metadata/proof is not fabricated.
 
-[Receipt](2026-10-07-image-dispatch-green.json):
+Receipt:
 
 - ET_EXEC: 6 coordinates, 5 unique bodies + one dispatcher, 2,024 bytes.
 - ET_DYN: 11 coordinates, 7 unique bodies + one dispatcher, 2,777 bytes.

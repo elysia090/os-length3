@@ -70,7 +70,7 @@ make -C src/v2 -j2 check
 
 ## Actual browser
 
-[Visible bounded receipt](2026-10-03-memory-exchange-browser.json): the ordinary
+Visible bounded receipt: the ordinary
 memory Worker executes 129,078,646 source instructions / 64,428,968 admissions,
 64 live slots and no manually supplied branch entries. All 14,622,864 output
 bytes / 3,571 pages still match independent gzip-validated page hashes before

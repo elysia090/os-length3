@@ -12,9 +12,9 @@ and supply 1,188 ms; total independent diagnostic 1,394,547 ms. Linear Memory
 is 22,609,920 bytes, not RSS. This job contains memory sharing and FXRSTOR,
 NOT the branch change below. Counts/clock calibration differ from the earlier
 FXRSTOR gate, so these are not an elapsed-time speedup ratio.
-See [exact completed receipt](2026-10-05-node-startup-outer-iret-red.json).
+See exact completed receipt.
 
-The branch-sharing [red](2026-10-05-branch-sharing-red.json) has correct emitted
+The branch-sharing red has correct emitted
 CPU behavior but embeds each direct destination displacement in a different
 body. It uses a deliberately synthetic grid, not a Linux hot-frequency census.
 An accepted pure cut contains at most one branch, at its end; preceding
@@ -53,7 +53,7 @@ retains entry/binding by value. Same-body reuse never grants source admission.
 
 ## Counted result and acceptance scope
 
-The [green](2026-10-05-branch-sharing-green.json) repeats exactly 585 emissions
+The green repeats exactly 585 emissions
 over 21 shapes, three coordinates and signed rel8/rel32 boundary values.
 It includes all sixteen conditions, a literal LEA prefix, a CMP prefix, every
 CF/PF/ZF/SF/OF combination, RF and retirement wrap. Distinct byte-exact bodies

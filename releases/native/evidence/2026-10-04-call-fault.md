@@ -51,8 +51,8 @@ payload. An untouched payload is counted, not silently accepted as equivalent.
 WHPX has eight mixed groups. The earlier smaller matrix had 368,640 retained
 stores and no untouched word; it was not proof that the intermittent red had
 gone away. The strengthened matrix includes the exact later full-fixture
-register input. The [WHPX raw log](2026-10-04-call-fault-whpx.log) and
-[TCG raw log](2026-10-04-call-fault-tcg.log) retain every group and CPUID.
+register input. The WHPX raw log and
+TCG raw log retain every group and CPUID.
 CPUID's APIC-id field can differ when the process migrates across reference
 vCPUs. No exact CPU-feature/profile equivalence is inferred from these runs.
 
