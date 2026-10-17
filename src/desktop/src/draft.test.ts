@@ -19,9 +19,12 @@ const db = drizzle(new PGlite(), {schema});
 await migrate(db, {migrationsFolder: new URL('../service/migrations', import.meta.url).pathname});
 const auth = createAuth({db, secret: 'test-secret-'.repeat(4), baseURL: URL_, appOrigin: APP, rateLimit: false, dev: true});
 const app = createApp({db, auth, bucket: memoryBucket(), origins: [APP], providers: ['dev']});
+/** What this browser asked the Remote, by path. */
+const asked: string[] = [];
 Object.assign(globalThis, {fetch: (url: string, init?: RequestInit) => {
   const headers = new Headers(init?.headers);
   headers.set('Origin', APP);
+  asked.push(new URL(url).pathname);
   return app.request(url, {...init, headers});
 }});
 
@@ -188,3 +191,30 @@ test('a directory is derived by proof: a cache tag, or a tool\'s directory besid
   assert.equal(derived('out', none, new Set(['CACHEDIR.TAG'])), true);
   assert.equal(derived('src', new Set(['package.json']), none), false);
 });
+
+test('a page asks the Remote only what moved, and reads again only that', async () => {
+  const lifecycle = await import('./lifecycle.ts');
+  const settle = () => new Promise((r) => setTimeout(r, 300));
+  await lifecycle.look();
+  await settle();
+  // Nothing moved: each look is one small request.
+  asked.length = 0;
+  await lifecycle.look();
+  await settle();
+  assert.deepEqual(asked, ['/v1/moved']);
+  // Another device changes a repo and the TODO: the list and the TODO are read again, the other settings are not.
+  await elsewhere('notes', {'later.txt': 'from the other device\n'});
+  const auth = {Authorization: `Bearer ${token}`, 'Content-Type': 'application/json'};
+  const todo = await (await fetch(`${URL_}/v1/home/todo`, {headers: auth})).json() as {value: string; version: number};
+  await fetch(`${URL_}/v1/home/todo`, {method: 'PUT', headers: auth, body: JSON.stringify({value: todo.value.replace(']', ',{"id":"z","title":"elsewhere"}]'), version: todo.version})});
+  asked.length = 0;
+  await lifecycle.look();
+  await settle();
+  assert.equal(asked[0], '/v1/moved');
+  assert.ok(asked.includes('/v1/repos') && asked.includes('/v1/home/todo'), asked.join(' '));
+  assert.ok(!asked.includes('/v1/home/profile') && !asked.includes('/v1/home/dotfiles'), asked.join(' '));
+  assert.ok((JSON.parse(getState('todo')!) as {id: string}[]).some((x) => x.id === 'z'));
+  assert.equal(await text('notes', 'later.txt'), 'from the other device\n');
+  lifecycle.end();
+});
+

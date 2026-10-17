@@ -85,6 +85,20 @@
       "when": 1792228711038,
       "tag": "0011_a_board_removed_is_held",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1792234621340,
+      "tag": "0012_what_is_kept_moves_in",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792234744500,
+      "tag": "0013_what_is_derived_goes",
+      "breakpoints": true
     }
   ]
 }

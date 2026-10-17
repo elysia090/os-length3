@@ -3,6 +3,10 @@
 // are the work. File contents are not here: they are blobs named by their
 // sha256 in the object store (R2), and a tree maps paths to those names.
 //
+// Nothing here is kept that can be read from something else: a line's issue
+// is its name, a server's name is the address it holds, how a person is
+// shown is their first address. Every moment is a timestamptz.
+//
 // A repo is lines of work, `main` and one per issue being worked on (the
 // branch and worktree a person never has to name). Each line has:
 //   draft  its working tree as it is now, kept up to date from every device
@@ -12,9 +16,11 @@
 //   pushed the commit it has been pushed to, where others can see it
 // A line other than main is handed to main as a change (Submit change),
 // which the receiver reviews and merges or rejects.
+//
+// What goes, goes in one place (sweep.ts), once it has been held long enough.
 
 import {sql} from 'drizzle-orm';
-import {bigint, doublePrecision, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex} from 'drizzle-orm/pg-core';
+import {bigint, doublePrecision, index, integer, jsonb, pgTable, primaryKey, smallint, text, timestamp, uniqueIndex} from 'drizzle-orm/pg-core';
 import {user} from './schema.auth.ts';
 
 export * from './schema.auth.ts';
@@ -22,38 +28,32 @@ export * from './schema.auth.ts';
 /** path -> blob sha256, or null for an empty folder. */
 export type Tree = Record<string, string | null>;
 
+/** A moment, with its zone, so nothing depends on the session's time zone. */
+const moment = (name: string) => timestamp(name, {withTimezone: true});
+
 export const repo = pgTable('repo', {
   userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
   name: text('name').notNull(),
-  /** 'main', or the line of work for an issue (its file's stem, e.g. '001'). */
+  /** 'main', or the line of work for an issue: its file's stem ('001' for issue/001.md). */
   line: text('line').notNull().default('main'),
-  /** The issue this line is the work for ('issue/001.md'); '' for main. */
-  issue: text('issue').notNull().default(''),
   /** The commit of main this line started from. */
   base: text('base'),
   head: text('head'),
   pushed: text('pushed'),
   /** Who started it, as their name was then. */
   startedBy: text('started_by').notNull().default(''),
-  startedAt: timestamp('started_at').defaultNow().notNull(),
+  startedAt: moment('started_at').defaultNow().notNull(),
   draft: jsonb('draft').$type<Tree>().notNull().default(sql`'{}'::jsonb`),
-  /** The cut the draft was taken from or last cut at. */
-  draftBase: text('draft_base'),
   version: integer('version').notNull().default(0),
-  /** Bytes the draft's files take (each blob once). */
-  bytes: bigint('bytes', {mode: 'number'}).notNull().default(0),
-  /** Which session last changed the draft. */
-  changedBy: text('changed_by'),
   /** Turned off (main's row says so for the whole repo): kept 30 days, then gone. */
-  offAt: timestamp('off_at'),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  offAt: moment('off_at'),
+  updatedAt: moment('updated_at').defaultNow().notNull(),
 }, (t) => [primaryKey({columns: [t.userId, t.name, t.line]})]);
 
 export const cut = pgTable('cut', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
   repo: text('repo').notNull(),
-  line: text('line').notNull().default('main'),
   parent: text('parent'),
   /** For a merge: the commit of the line that was merged. */
   merged: text('merged'),
@@ -65,21 +65,23 @@ export const cut = pgTable('cut', {
   /** Lines added and removed, as the device that cut counted them (for the page only). */
   added: integer('added').notNull().default(0),
   removed: integer('removed').notNull().default(0),
-  time: timestamp('time').defaultNow().notNull(),
-}, (t) => [index('cut_repo_idx').on(t.userId, t.repo, t.line, t.time)]);
+  time: moment('time').defaultNow().notNull(),
+}, (t) => [index('cut_repo_idx').on(t.userId, t.repo)]);
+
+/** A review of one version of a change, newest first in its change. */
+export interface Review { version: number; verdict: 'approve' | 'changes' | 'comment'; note: string; marks: string[]; by: string; time: number }
 
 /**
  * A line handed to main: Submit change. Submitting again after more commits
  * makes a new version of the same change; a review is of one version. The
  * receiver merges or rejects it; the one who submitted it may reset it
- * (take it back). Open until one of those.
+ * (take it back). Open until one of those. Its issue is its line's.
  */
 export const change = pgTable('change', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
   repo: text('repo').notNull(),
   line: text('line').notNull(),
-  issue: text('issue').notNull().default(''),
   kind: text('kind').notNull().default(''),
   title: text('title').notNull(),
   version: integer('version').notNull().default(1),
@@ -90,37 +92,22 @@ export const change = pgTable('change', {
   state: text('state').notNull().default('open'),
   note: text('note').notNull().default(''),
   submittedBy: text('submitted_by').notNull().default(''),
-  mergedCut: text('merged_cut'),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  /** Its reviews, newest first: approve, ask for changes, or comment, with the lines marked in its diff. */
+  reviews: jsonb('reviews').$type<Review[]>().notNull().default(sql`'[]'::jsonb`),
+  updatedAt: moment('updated_at').defaultNow().notNull(),
 }, (t) => [uniqueIndex('change_line_idx').on(t.userId, t.repo, t.line)]);
 
-export const review = pgTable('review', {
-  id: text('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
-  change: text('change').notNull().references(() => change.id, {onDelete: 'cascade'}),
-  version: integer('version').notNull(),
-  /** 'approve', 'changes' (asks for changes) or 'comment'. */
-  verdict: text('verdict').notNull(),
-  note: text('note').notNull().default(''),
-  /** Lines the reviewer marked in the version's diff: "path:index" of a line in that file's diff. */
-  marks: jsonb('marks').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
-  by: text('by').notNull().default(''),
-  time: timestamp('time').defaultNow().notNull(),
-}, (t) => [index('review_change_idx').on(t.change, t.time)]);
-
-/** The five letters or digits an account sets to turn a repo off (only their digest). */
-export const offCode = pgTable('off_code', {
+/**
+ * What turning a repo off asks of an account: the digest of the five letters
+ * or digits it set, and its latest passkey sign-in (a session made by a
+ * passkey just now is proof the person is at the device).
+ */
+export const guard = pgTable('guard', {
   userId: text('user_id').primaryKey().references(() => user.id, {onDelete: 'cascade'}),
-  digest: text('digest').notNull(),
-  setAt: timestamp('set_at').defaultNow().notNull(),
-});
-
-/** A session made by a passkey just now: what turning a repo off (or setting its code) asks for. */
-export const passkeyProof = pgTable('passkey_proof', {
-  sessionId: text('session_id').primaryKey(),
-  userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
-  at: timestamp('at').defaultNow().notNull(),
+  offDigest: text('off_digest'),
+  offSetAt: moment('off_set_at'),
+  proofSession: text('proof_session'),
+  proofAt: moment('proof_at'),
 });
 
 export const home = pgTable('home', {
@@ -128,15 +115,15 @@ export const home = pgTable('home', {
   key: text('key').notNull(),
   value: text('value').notNull(),
   version: integer('version').notNull().default(1),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (t) => [primaryKey({columns: [t.userId, t.key]})]);
 
-/** Which blobs an account has stored, and their size (what its Remote holds). */
+/** Which blobs an account has stored, and their size (what its Remote holds); one no tree names any more goes. */
 export const blob = pgTable('blob', {
   userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
   sha256: text('sha256').notNull(),
   size: integer('size').notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
+  /** A blob is sent before the diff that names it: a new one is not taken for unnamed. */
+  createdAt: moment('created_at').defaultNow().notNull(),
 }, (t) => [primaryKey({columns: [t.userId, t.sha256]})]);
 
 // ---- Inbox (inbox.ts) ----
@@ -152,22 +139,22 @@ export const blob = pgTable('blob', {
  * choosing beside it (`ren@ren.dev`): that domain's to publish (its DNS),
  * lapsed (lapsedAt) while its record is gone, with no term of its own.
  * A name let go (releasedAt), or not renewed, is held a while before anyone
- * else may claim it.
+ * else may claim it. A server's name is the one row naming it.
  */
 export const address = pgTable('address', {
   address: text('address').primaryKey(),
   userId: text('user_id').references(() => user.id, {onDelete: 'cascade'}),
-  serverId: text('server_id'),
+  serverId: text('server_id').references(() => server.id, {onDelete: 'cascade'}),
   name: text('name').notNull(),
   domain: text('domain').notNull(),
   /** Opt-in to be reached over SSH at this address; its own permission, off unless asked. */
   ssh: integer('ssh').notNull().default(0),
   /** A name on this Remote answers until then, unless renewed; null on a domain of one's own. */
-  until: timestamp('until'),
-  releasedAt: timestamp('released_at'),
-  lapsedAt: timestamp('lapsed_at'),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-}, (t) => [index('address_user_idx').on(t.userId), index('address_server_idx').on(t.serverId)]);
+  until: moment('until'),
+  releasedAt: moment('released_at'),
+  lapsedAt: moment('lapsed_at'),
+  createdAt: moment('created_at').defaultNow().notNull(),
+}, (t) => [index('address_user_idx').on(t.userId), uniqueIndex('address_server_idx').on(t.serverId)]);
 
 /**
  * A principal's code: six digits to be found by, said or typed more easily
@@ -178,21 +165,19 @@ export const principalCode = pgTable('principal_code', {
   code: text('code').primaryKey(),
   userId: text('user_id'),
   serverId: text('server_id'),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (t) => [uniqueIndex('principal_code_user_idx').on(t.userId), uniqueIndex('principal_code_server_idx').on(t.serverId)]);
 
-/** Whom an account talks with: accepted (messages and live chat), or blocked. */
+/** Whom an account talks with: accepted (messages and live chat), or blocked. Each side says its own. */
 export const contact = pgTable('contact', {
   userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
   peer: text('peer').notNull().references(() => user.id, {onDelete: 'cascade'}),
   state: text('state').notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-}, (t) => [primaryKey({columns: [t.userId, t.peer]})]);
+}, (t) => [primaryKey({columns: [t.userId, t.peer]}), index('contact_peer_idx').on(t.peer)]);
 
 /**
  * A typed message: what it is about (a change to review, an issue, a run)
- * and the text. Kept until read and a while after; text only and small, so
- * the Inbox carries words between people and nothing else.
+ * and the text. Kept until read and 90 days after it was sent; text only and
+ * small, so the Inbox carries words between people and nothing else.
  */
 export const message = pgTable('message', {
   id: text('id').primaryKey(),
@@ -205,9 +190,10 @@ export const message = pgTable('message', {
   /** What it is about: {repo, issue, change, version}. */
   target: jsonb('target').$type<Record<string, string | number>>().notNull().default(sql`'{}'::jsonb`),
   body: text('body').notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  readAt: timestamp('read_at'),
-}, (t) => [index('message_to_idx').on(t.to, t.createdAt), index('message_from_idx').on(t.from, t.createdAt)]);
+  createdAt: moment('created_at').defaultNow().notNull(),
+  readAt: moment('read_at'),
+}, (t) => [index('message_to_idx').on(t.to, t.createdAt), index('message_from_idx').on(t.from, t.createdAt),
+  index('message_read_idx').on(t.createdAt).where(sql`${t.readAt} is not null`)]);
 
 /**
  * WebRTC signalling between two contacts' devices: an offer, an answer, a
@@ -221,8 +207,8 @@ export const signal = pgTable('signal', {
   session: text('session').notNull(),
   kind: text('kind').notNull(),
   data: text('data').notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-}, (t) => [index('signal_to_idx').on(t.to, t.createdAt)]);
+  createdAt: moment('created_at').defaultNow().notNull(),
+}, (t) => [index('signal_to_idx').on(t.to, t.from, t.createdAt), index('signal_from_idx').on(t.from, t.createdAt), index('signal_time_idx').on(t.createdAt)]);
 
 // ---- Servers (servers.ts) ----
 //
@@ -234,46 +220,46 @@ export const signal = pgTable('signal', {
 // has shown an email address is theirs (a guest).
 
 /**
- * A server: what it is called (any words), the principal name it is known
- * by (an address, name@domain, claimed as a person's is), and its people.
- * Removed, or left by its last person, it is held (goneAt) for a while, and
- * whoever removed or left it last (goneBy) may bring it back.
+ * A server: what it is called (any words), and its people; the principal
+ * name it is known by is the address that names it. Removed, or left by its
+ * last person, it is held (goneAt) for a while, and whoever removed or left
+ * it last (goneBy) may bring it back; its maker leaving it with nobody else
+ * in it, only a day.
  */
 export const server = pgTable('server', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
-  /** Its principal name; '' only for a server made before servers had one. */
-  address: text('address').notNull().default(''),
-  goneAt: timestamp('gone_at'),
+  madeBy: text('made_by').references(() => user.id, {onDelete: 'set null'}),
+  goneAt: moment('gone_at'),
   goneBy: text('gone_by'),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-});
+  createdAt: moment('created_at').defaultNow().notNull(),
+}, (t) => [index('server_made_idx').on(t.madeBy, t.createdAt), index('server_gone_idx').on(t.goneBy, t.goneAt).where(sql`${t.goneAt} is not null`)]);
 
-/** Who is in a server, by the address they are shown as; the first is its owner. */
+/** Who is in a server; the first is its owner. Each is shown by their own first address. */
 export const member = pgTable('server_member', {
   serverId: text('server_id').notNull().references(() => server.id, {onDelete: 'cascade'}),
   userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
-  address: text('address').notNull(),
   owner: integer('owner').notNull().default(0),
-  addedAt: timestamp('added_at').defaultNow().notNull(),
+  addedAt: moment('added_at').defaultNow().notNull(),
 }, (t) => [primaryKey({columns: [t.serverId, t.userId]}), index('server_member_user_idx').on(t.userId)]);
+
+/** How far a board reaches past its people: theirs alone, read by anyone, or written in by guests too. */
+export const REACH = {people: 0, open: 1, guests: 2} as const;
 
 /**
  * A board: one thing its server's people talk about, with a TODO they keep
- * together (todoItem), and how far it is open: `open` (anyone reads it),
- * `guests` (an outsider with a checked email may write in it). Removed by
- * its server's owner, it is held (goneAt) 30 days, answering nothing, and
- * may be brought back at once until then.
+ * together (todoItem), and how far it reaches (REACH). Removed by its
+ * server's owner, it is held (goneAt) 30 days, answering nothing, and may be
+ * brought back at once until then.
  */
 export const board = pgTable('server_board', {
   id: text('id').primaryKey(),
   serverId: text('server_id').notNull().references(() => server.id, {onDelete: 'cascade'}),
   name: text('name').notNull(),
-  open: integer('open').notNull().default(0),
-  guests: integer('guests').notNull().default(0),
-  goneAt: timestamp('gone_at'),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-}, (t) => [index('server_board_server_idx').on(t.serverId)]);
+  reach: smallint('reach').notNull().default(REACH.people),
+  goneAt: moment('gone_at'),
+  createdAt: moment('created_at').defaultNow().notNull(),
+}, (t) => [index('server_board_server_idx').on(t.serverId), index('server_board_gone_idx').on(t.goneAt).where(sql`${t.goneAt} is not null`)]);
 
 /**
  * An item of a board's TODO, the same as one of Home's (src/todo.ts): a
@@ -290,10 +276,9 @@ export const todoItem = pgTable('server_todo', {
   detail: text('detail').notNull().default(''),
   done: integer('done').notNull().default(0),
   place: doublePrecision('place').notNull().default(0),
-  /** Who wrote it first, as they are shown in the server. */
+  /** Who wrote it first, as they were shown then. */
   by: text('by').notNull(),
   created: bigint('created', {mode: 'number'}).notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (t) => [primaryKey({columns: [t.boardId, t.id]})]);
 
 /** A post in a board's discussion: its id sorts as its time; `by` is all a reader is shown of who wrote it. */
@@ -304,25 +289,36 @@ export const talk = pgTable('server_post', {
   guestId: text('guest_id'),
   by: text('by').notNull(),
   body: text('body').notNull(),
-}, (t) => [index('server_post_board_idx').on(t.boardId, t.id)]);
+}, (t) => [index('server_post_board_idx').on(t.boardId, t.id),
+  index('server_post_user_idx').on(t.userId, t.id).where(sql`${t.userId} is not null`),
+  index('server_post_guest_idx').on(t.guestId, t.id).where(sql`${t.guestId} is not null`)]);
 
 /**
  * An outsider writing in one board: the email they showed is theirs (by a
- * short code sent to it), and a token for writing there. Codes and tokens
- * are kept only as digests.
+ * short code sent to it, which holds ten minutes from codeAt), and a token
+ * for writing there, a lease until tokenUntil. Codes and tokens are kept
+ * only as digests.
  */
 export const guest = pgTable('server_guest', {
   id: text('id').primaryKey(),
   boardId: text('board_id').notNull().references(() => board.id, {onDelete: 'cascade'}),
   email: text('email').notNull(),
   code: text('code'),
-  codeUntil: timestamp('code_until'),
+  codeAt: moment('code_at'),
   tries: integer('tries').notNull().default(0),
   token: text('token'),
-  /** A guest's token is a lease: it writes until then. */
-  tokenUntil: timestamp('token_until'),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
+  tokenUntil: moment('token_until'),
 }, (t) => [uniqueIndex('server_guest_board_email_idx').on(t.boardId, t.email), index('server_guest_token_idx').on(t.token)]);
+
+/**
+ * What was asked of the Remote by someone it does not know, and when: a
+ * guest's code mailed, by the address it went from and the one it went to.
+ * Counted to say how often; a day old, gone.
+ */
+export const throttle = pgTable('throttle', {
+  key: text('key').notNull(),
+  at: moment('at').defaultNow().notNull(),
+}, (t) => [index('throttle_key_idx').on(t.key, t.at)]);
 
 /**
  * Who sees a repo is one of three, read from rows so they can never disagree:
@@ -339,14 +335,15 @@ export const repoShare = pgTable('repo_share', {
   userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
   repo: text('repo').notNull(),
   serverId: text('server_id').notNull().references(() => server.id, {onDelete: 'cascade'}),
-  sharedAt: timestamp('shared_at').defaultNow().notNull(),
+  sharedAt: moment('shared_at').defaultNow().notNull(),
 }, (t) => [primaryKey({columns: [t.userId, t.repo, t.serverId]}), index('repo_share_server_idx').on(t.serverId)]);
 
 /**
  * A repo seen by everyone, as `face:name`. A face's names are one namespace
  * (two people's `hello` cannot both be trip:hello), and one taken down is
  * held a while for whoever had it, as an address is (names.ts), so nobody
- * else's repo answers to it meanwhile.
+ * else's repo answers to it meanwhile; but a face its owner no longer holds
+ * holds nothing for them.
  */
 export const repoPublic = pgTable('repo_public', {
   /** The principal it is seen as: a server it went public from, or its owner's address. */
@@ -356,6 +353,5 @@ export const repoPublic = pgTable('repo_public', {
   repo: text('repo').notNull(),
   /** The server whose face it is; null when it is its owner's own. */
   serverId: text('server_id').references(() => server.id, {onDelete: 'cascade'}),
-  publishedAt: timestamp('published_at').defaultNow().notNull(),
-  releasedAt: timestamp('released_at'),
-}, (t) => [primaryKey({columns: [t.face, t.name]}), index('repo_public_owner_idx').on(t.userId, t.repo)]);
+  releasedAt: moment('released_at'),
+}, (t) => [primaryKey({columns: [t.face, t.name]}), index('repo_public_owner_idx').on(t.userId, t.repo), index('repo_public_server_idx').on(t.serverId)]);

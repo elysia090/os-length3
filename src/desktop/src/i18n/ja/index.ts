@@ -6,6 +6,7 @@
 //   pages    Home, Forge, File, New repo, Prompt  remote   Remote, sign-in, devices
 //   git      Git: issues, work, changes           inbox    Inbox
 //   runtime  Runtime                             server   Server
+//   service  what the Remote says when it refuses (service/*.ts)
 
 import base from './base.ts';
 import git from './git.ts';
@@ -15,7 +16,8 @@ import remote from './remote.ts';
 import runtime from './runtime.ts';
 import shell from './shell.ts';
 import server from './server.ts';
+import service from './service.ts';
 
-const parts: Record<string, string>[] = [shell, base, pages, remote, git, inbox, runtime, server];
+const parts: Record<string, string>[] = [shell, base, pages, remote, git, inbox, runtime, server, service];
 const ja: Record<string, string> = Object.assign({}, ...parts);
 export default ja;

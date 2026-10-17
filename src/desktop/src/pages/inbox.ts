@@ -189,7 +189,7 @@ export function inboxPage(ctx: Context): Node[] {
     start.addEventListener('click', async () => {
       if (!to.value.trim()) { to.focus(); return; }
       const found: {address?: string; reachable: boolean; why?: string} = await inbox.lookup(to.value).catch(() => ({reachable: false, why: ''}));
-      if (!found.reachable) { error.textContent = t('Cannot reach {address} ({why})', {address: to.value, why: found.why ?? ''}); return; }
+      if (!found.reachable) { error.textContent = t('Cannot reach {address} ({why})', {address: to.value, why: t(found.why ?? '')}); return; }
       void show(found.address!, list, pane);
     });
     const row = (th: inbox.Thread) => {

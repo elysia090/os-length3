@@ -44,7 +44,8 @@ export async function api(path: string, init: RequestInit = {}, c: Connection | 
   if (r.status === 401 && c) throw new RemoteError(401, t('The Remote no longer knows this device. Sign in again.'));
   if (r.status >= 400 && r.status !== 404 && r.status !== 409) {
     const body = await r.json().catch(() => ({})) as {message?: string; error?: string};
-    throw new RemoteError(r.status, body.message ?? body.error ?? `Remote: ${r.status}`);
+    // The Remote says why in a short English sentence; it is shown in the person's language.
+    throw new RemoteError(r.status, t(body.message ?? body.error ?? `Remote: ${r.status}`));
   }
   return r;
 }
@@ -144,28 +145,18 @@ export async function signIn(): Promise<void> {
 /** Whether the account has set the code that turning a repo off asks for. */
 export const offCode = () => json<{set: boolean; setAt: number | null}>('/v1/off-code');
 
-/** What the Remote said no to, in words. */
-function refusedOff(e: unknown): never {
-  const why = e instanceof RemoteError ? e.message : '';
-  if (why === 'names') throw new RemoteError(403, t('The names do not match.'));
-  if (why === 'code') throw new RemoteError(403, t('That is not the code.'));
-  if (why === 'no code') throw new RemoteError(409, t('Set the five-letter code under Sign-in first.'));
-  if (why === 'passkey') throw new RemoteError(403, t('Confirm with a passkey.'));
-  throw e;
-}
-
 /** Set the code (five letters or digits); a passkey confirms it is you. */
 export async function setOffCode(code: string): Promise<void> {
   await signIn();
-  await json('/v1/off-code', {method: 'POST', body: JSON.stringify({code})}).catch(refusedOff);
+  await json('/v1/off-code', {method: 'POST', body: JSON.stringify({code})});
 }
 
 /** Turn `repo` off: kept 30 days on the Remote, back at once until then. */
 export async function turnOff(repo: string, name: string, typed: string, code: string): Promise<{offAt: number; until: number}> {
   await signIn();
-  const r = await api(`/v1/repos/${encodeURIComponent(repo)}/off`, {method: 'POST', body: JSON.stringify({name, repo: typed, code})}).catch(refusedOff);
+  const r = await api(`/v1/repos/${encodeURIComponent(repo)}/off`, {method: 'POST', body: JSON.stringify({name, repo: typed, code})});
   const body = await r.json() as {offAt?: number; until?: number; error?: string};
-  if (!r.ok) refusedOff(new RemoteError(r.status, body.error ?? ''));
+  if (!r.ok) throw new RemoteError(r.status, t(body.error ?? `Remote: ${r.status}`));
   return {offAt: body.offAt!, until: body.until!};
 }
 

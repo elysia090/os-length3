@@ -48,6 +48,29 @@ test('no Japanese is written outside the catalog', () => {
   assert.deepEqual(offenders, []);
 });
 
+// What the Remote says when it refuses reaches a person as it comes (remote.ts passes it through t()):
+// every error and every reason it answers with is a literal English sentence with its Japanese, but the
+// few only a client ever reads (a malformed request, a session it does not know, a page not the app's).
+const MACHINE = new Set(['not signed in', 'not from the app', 'a list of digests', 'a diff', 'a cut', 'verdict', 'a value and its version',
+  'a signal', 'too many', 'an item', 'done', 'a place', 'private, servers or everyone']);
+
+test('every error the Remote can answer with has its Japanese', () => {
+  const dir = new URL('../service/', import.meta.url).pathname;
+  const said: string[] = [], unread: string[] = [];
+  for (const name of readdirSync(dir)) {
+    if (!name.endsWith('.ts') || name.endsWith('.test.ts')) continue;
+    const src = readFileSync(join(dir, name), 'utf8');
+    for (const m of src.matchAll(/\b(?:error|why): (?:'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"|([^,}\s]+))/g)) {
+      // Not a literal: a reason handed on (`to.why`) or the type of one; anything else could say anything.
+      if (m[3] !== undefined) { if (!/^(\w+\.why|string)$/.test(m[3])) unread.push(`${name}: ${m[3]}`); continue; }
+      said.push((m[1] ?? m[2]).replace(/\\'/g, "'"));
+    }
+  }
+  assert.ok(said.length > 50, String(said.length));
+  assert.deepEqual(unread, []);
+  assert.deepEqual(missing([...new Set(said)].filter((s) => !MACHINE.has(s))), []);
+});
+
 // How Japanese is written beside Latin words and numbers (DESIGN.md §1).
 const catalog = () => readdirSync(new URL('./i18n/ja/', import.meta.url).pathname).filter((f) => f !== 'index.ts')
   .flatMap((f) => [...readFileSync(new URL(`./i18n/ja/${f}`, import.meta.url), 'utf8')

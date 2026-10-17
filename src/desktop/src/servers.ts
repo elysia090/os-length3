@@ -26,14 +26,10 @@ interface Read { posts: Post[]; more: boolean }
 /** The most a post says, as the Remote holds it to. */
 export const LIMIT = 2000;
 
+/** What the Remote said no to: its sentence, in the person's language. */
 const failed = async (r: Response) => {
   const body = await r.json().catch(() => ({})) as {error?: string};
-  const why: Record<string, string> = {'claim an address first': t('Claim an address first'), 'too many posts this hour': t('Too many posts this hour'),
-    'only your contacts can be added': t('Only your contacts can be added'), 'a code was just sent': t('A code was just sent'), 'not that code': t('Not that code'),
-    'this Remote sends no mail': t('This Remote sends no mail'), 'taken': t('That name is taken'), 'held': t('That name was let go, and is held for its owner a while'),
-    'an address for it: letters, digits, - . _': t('Its address: letters, digits, - . _'), 'a domain you hold an address on': t('Only on a domain you hold an address on'),
-    'only servers you are in': t('Only servers you are in'), 'which servers': t('Choose a server'), 'no repo': t('That repo is not on the Remote')};
-  return new RemoteError(r.status, why[body.error ?? ''] ?? String(body.error ?? r.status));
+  return new RemoteError(r.status, t(String(body.error ?? r.status)));
 };
 const call = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
   const r = await api(path, init);
@@ -97,8 +93,9 @@ export function todoKeeper(board: string, from: readonly BoardTodo[]) {
       const change: Partial<BoardTodo> = was ? {} : {place: placeAt(list, i), created: x.created};
       for (const k of ['kind', 'title', 'detail', 'done'] as const) if (!was || x[k] !== was[k]) (change as Record<string, unknown>)[k] = x[k];
       if (!Object.keys(change).length) continue;
-      const got = await putTodo(board, x.id, change);
-      had.set(x.id, got);
+      // Taken off by someone else meanwhile: it stays off (the next look shows it gone), not brought back.
+      const got = await putTodo(board, x.id, change).catch((e: unknown) => { if (was && e instanceof RemoteError && e.status === 404) return null; throw e; });
+      if (got) had.set(x.id, got); else had.delete(x.id);
     }
     for (const id of [...had.keys()]) if (!list.some((x) => x.id === id)) { await dropTodo(board, id); had.delete(id); }
   };

@@ -1,26 +1,28 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {PGlite} from '@electric-sql/pglite';
+import {sql} from 'drizzle-orm';
 import {drizzle} from 'drizzle-orm/pglite';
 import {migrate} from 'drizzle-orm/pglite/migrator';
 import {createApp, sha256} from './app.ts';
 import {createAuth} from './auth.ts';
 import {memoryBucket} from './bucket.ts';
 import * as schema from './schema.ts';
+import {sweep} from './sweep.ts';
 
 const BASE = 'http://remote.test';
 const APP = 'http://app.test';
 
-async function service(records: Record<string, string[]> = {}) {
+async function service(records: Record<string, string[]> = {}, o: {quota?: number} = {}) {
   const db = drizzle(new PGlite(), {schema});
   await migrate(db, {migrationsFolder: new URL('./migrations', import.meta.url).pathname});
   const auth = createAuth({db, secret: 'test-secret-'.repeat(4), baseURL: BASE, appOrigin: APP, rateLimit: false, dev: true});
   const bucket = memoryBucket();
   // DNS as a map of name → TXT records.
   const dns = new Map(Object.entries(records));
-  const mails: {to: string; text: string}[] = [];
+  const mails: {to: string; subject: string; text: string}[] = [];
   const app = createApp({db, auth, bucket, origins: [APP], providers: ['dev'], domain: 'length3.test', baseURL: BASE,
-    secret: 'test-secret-'.repeat(4), txt: async (name) => dns.get(name) ?? [], recheck: 0, mail: async (to, _subject, text) => { mails.push({to, text}); }});
+    secret: 'test-secret-'.repeat(4), txt: async (name) => dns.get(name) ?? [], recheck: 0, mail: async (to, subject, text) => { mails.push({to, subject, text}); }, quota: o.quota});
   // The service asks its own stand-in provider for tokens over the network: here, itself.
   const real = globalThis.fetch;
   globalThis.fetch = ((url: string | URL | Request, init?: RequestInit) =>
@@ -36,6 +38,8 @@ async function service(records: Record<string, string[]> = {}) {
     try { json = JSON.parse(text); } catch { /* not json */ }
     return {status: r.status, json: json as Record<string, unknown> & unknown[], headers: r.headers, text};
   };
+  /** Each session's cookie, as the browser that signed in holds it. */
+  const sessions = new Map<string, string>();
   /** Signing in as a browser does: the provider's page, then back through the callback. */
   const start = async (name = 'Ren') => {
     const asked = await app.request(`${BASE}/api/auth/sign-in/social`, {method: 'POST', headers: {Origin: APP, 'Content-Type': 'application/json'},
@@ -52,11 +56,12 @@ async function service(records: Record<string, string[]> = {}) {
     assert.equal(done.headers.get('Location'), `${APP}/?signed-in`);
     const token = done.headers.get('set-auth-token');
     assert.ok(token);
+    sessions.set(token!, done.headers.getSetCookie().map((c) => c.split(';')[0]).join('; '));
     return token!;
   };
   const publish = (name: string, value: string) => dns.set(name, [...(dns.get(name) ?? []), value]);
   const unpublish = (name: string) => dns.delete(name);
-  return {db, call, start, bucket, publish, unpublish, mails};
+  return {db, app, call, start, bucket, publish, unpublish, mails, sessions};
 }
 
 const enc = new TextEncoder();
@@ -126,13 +131,13 @@ test('a draft changes only from the version it was read at; a cut records it', a
   const ghost = await sha256(enc.encode('not uploaded'));
   assert.deepEqual((await s.call('PATCH', '/v1/repos/notes/draft', {token: t, body: {version: 0, set: {'a.md': ghost}, remove: []}})).json, {missing: [ghost]});
   const v1 = await s.call('PATCH', '/v1/repos/notes/draft', {token: t, body: {version: 0, set: {'README.md': readme, docs: null}, remove: []}});
-  assert.deepEqual(v1.json, {version: 1, bytes: 8});
+  assert.deepEqual(v1.json, {version: 1});
   // Two devices on version 1: one lands, the other gets the draft to merge.
   const plan = await put('plan\n');
   assert.equal((await s.call('PATCH', '/v1/repos/notes/draft', {token: t, body: {version: 1, set: {'docs/plan.md': plan}, remove: ['docs']}})).json.version, 2);
   const stale = await s.call('PATCH', '/v1/repos/notes/draft', {token: t, body: {version: 1, set: {'x.md': plan}, remove: []}});
   assert.equal(stale.status, 409);
-  assert.deepEqual(stale.json, {version: 2, draft: {'README.md': readme, 'docs/plan.md': plan}});
+  assert.deepEqual(stale.json, {version: 2});
   // Paths that leave the repo or touch .git never get in.
   for (const p of ['../x', '.git/config', 'a//b', 'src/.GIT./hooks']) {
     assert.equal((await s.call('PATCH', '/v1/repos/notes/draft', {token: t, body: {version: 2, set: {[p]: null}, remove: []}})).status, 400, p);
@@ -154,7 +159,7 @@ test('a draft changes only from the version it was read at; a cut records it', a
   const off = (body: unknown) => s.call('POST', '/v1/repos/notes/off', {token: t, body});
   assert.equal((await off({name: 'Ren', repo: 'notes', code: 'AB12C'})).status, 403); // no passkey yet
   const session = ((await s.call('GET', '/api/auth/get-session', {token: t})).json as unknown as {session: {id: string}; user: {id: string}});
-  await s.db.insert(schema.passkeyProof).values({sessionId: session.session.id, userId: session.user.id});
+  await s.db.insert(schema.guard).values({userId: session.user.id, proofSession: session.session.id, proofAt: new Date()});
   assert.equal((await off({name: 'Ren', repo: 'notes', code: 'AB12C'})).status, 409); // no code set
   assert.equal((await s.call('POST', '/v1/off-code', {token: t, body: {code: 'AB-1'}})).status, 400);
   assert.equal((await s.call('POST', '/v1/off-code', {token: t, body: {code: 'ab12c'}})).status, 200);
@@ -163,7 +168,7 @@ test('a draft changes only from the version it was read at; a cut records it', a
   assert.equal((await off({name: 'Mio', repo: 'notes', code: 'AB12C'})).status, 403);
   assert.equal((await off({name: 'ren', repo: 'notes', code: 'AB12C'})).status, 200);
   assert.equal((await s.call('GET', `/v1/repos/notes/cuts/${id}`, {token: t})).status, 410);
-  assert.equal((await s.call('PATCH', '/v1/repos/notes', {token: t, body: {version: 2, changes: {}}})).status, 410);
+  assert.equal((await s.call('PATCH', '/v1/repos/notes/draft', {token: t, body: {version: 2, set: {}, remove: []}})).status, 410);
   const listed = (await s.call('GET', '/v1/repos', {token: t})).json as unknown as {name: string; offAt: number; until: number}[];
   assert.equal(listed[0].name, 'notes');
   assert.ok(listed[0].offAt && listed[0].until - listed[0].offAt === 30 * 24 * 3600 * 1000);
@@ -172,6 +177,7 @@ test('a draft changes only from the version it was read at; a cut records it', a
   assert.equal((await s.call('GET', `/v1/repos/notes/cuts/${id}`, {token: t})).status, 200);
   // Thirty days on, it goes for good.
   await s.db.update(schema.repo).set({offAt: new Date(Date.now() - 31 * 24 * 3600 * 1000)});
+  await sweep(s.db, s.bucket);
   assert.deepEqual((await s.call('GET', '/v1/repos', {token: t})).json, []);
   assert.equal((await s.call('GET', `/v1/repos/notes/cuts/${id}`, {token: t})).status, 404);
 });
@@ -186,6 +192,9 @@ test('an account sees only its own: blobs, repos, settings', async () => {
   assert.deepEqual((await s.call('POST', '/v1/blobs/missing', {token: b, body: [sha]})).json, [sha]);
   await s.call('PATCH', '/v1/repos/r/draft', {token: a, body: {version: 0, set: {'a.txt': sha}, remove: []}});
   assert.deepEqual((await s.call('GET', '/v1/repos', {token: b})).json, []);
+  // The same file kept by another account is not counted as this one's, nor told to it.
+  await s.call('PUT', `/v1/blobs/${sha}`, {token: b, bytes});
+  assert.equal(((await s.call('GET', '/v1/repos', {token: a})).json as unknown as {bytes: number}[])[0].bytes, 4);
   assert.equal((await s.call('PUT', '/v1/home/todo', {token: a, body: {value: '[]', version: 0}})).json.version, 1);
   assert.deepEqual((await s.call('GET', '/v1/home/todo', {token: b})).json, {value: null, version: 0});
   // A setting changes only from the version it was read at.
@@ -229,7 +238,9 @@ test('work on an issue is its own line; submitted, reviewed by version, merged i
   assert.equal(started.status, 201);
   assert.deepEqual([started.json.line, started.json.base, started.json.issue], ['001', first, 'issue/001.md']);
   assert.equal(started.json.startedBy, 'Ren');
-  assert.deepEqual(started.json.draft, {'README.md': readme, 'issue/001.md': issue});
+  // Its draft is read where a device reads it: the line itself (the list of lines carries none).
+  assert.ok(!('draft' in started.json));
+  assert.deepEqual((await s.call('GET', '/v1/repos/r?line=001', {token: t})).json.draft, {'README.md': readme, 'issue/001.md': issue});
   // Committing on the line leaves main alone.
   assert.equal((await draft('001', 1, {'src/fix.c': fix})).status, 200);
   const c1 = await commitOn('001', 'Fix：落ちる');
@@ -341,9 +352,9 @@ test('Inbox: an address is claimed or published by its domain; messages are smal
   // Mio accepts: now both ways, so signalling may pass, and is taken once.
   await s.call('POST', '/v1/inbox/contacts', {token: mio, body: {address: 'ren@length3.test', state: 'accepted'}});
   assert.equal((await s.call('POST', '/v1/inbox/signals', {token: ren, body: {to: 'mio@example.org', session: 's1', kind: 'offer', data: 'sdp'}})).status, 201);
-  const got = (await s.call('GET', '/v1/inbox/signals', {token: mio})).json as unknown as {from: string; kind: string}[];
+  const got = (await s.call('GET', '/v1/inbox/signals?from=ren@length3.test', {token: mio})).json as unknown as {from: string; kind: string}[];
   assert.deepEqual(got.map((g) => [g.from, g.kind]), [['ren@length3.test', 'offer']]);
-  assert.deepEqual((await s.call('GET', '/v1/inbox/signals', {token: mio})).json, []);
+  assert.deepEqual((await s.call('GET', '/v1/inbox/signals?from=ren@length3.test', {token: mio})).json, []);
   // Blocked: nothing more arrives.
   await s.call('POST', '/v1/inbox/contacts', {token: mio, body: {address: 'ren@length3.test', state: 'blocked'}});
   assert.equal((await s.call('POST', '/v1/inbox/messages', {token: ren, body: {to: 'mio@example.org', body: 'hello?'}})).status, 403);
@@ -364,9 +375,11 @@ test('Servers: people who know each other, boards with talk and a TODO kept toge
   const sid = made.json.id as string, bid = (made.json.boards as {id: string}[])[0].id;
   // Others are not in it, and do not see it.
   assert.equal((await s.call('GET', `/v1/boards/${bid}`, {token: mio})).status, 404);
-  // Only a contact can be added: someone one knows.
+  // Only a contact can be added: someone one knows, who knows one back.
   assert.equal((await s.call('POST', `/v1/servers/${sid}/people`, {token: ren, body: {address: 'mio@length3.test'}})).status, 403);
   await s.call('POST', '/v1/inbox/contacts', {token: ren, body: {address: 'mio@length3.test', state: 'accepted'}});
+  assert.equal((await s.call('POST', `/v1/servers/${sid}/people`, {token: ren, body: {address: 'mio@length3.test'}})).status, 403);
+  await s.call('POST', '/v1/inbox/contacts', {token: mio, body: {address: 'ren@length3.test', state: 'accepted'}});
   const added = await s.call('POST', `/v1/servers/${sid}/people`, {token: ren, body: {address: 'mio@length3.test'}});
   assert.deepEqual((added.json as unknown as {address: string}[]).map((p) => p.address), ['ren@length3.test', 'mio@length3.test']);
   assert.deepEqual(((await s.call('GET', '/v1/servers', {token: mio})).json as unknown as {name: string}[]).map((x) => x.name), ['Trip']);
@@ -438,13 +451,13 @@ test('Servers: people who know each other, boards with talk and a TODO kept toge
   assert.equal((await s.call('POST', `/v1/open/${bid}/guest/check`, {body: {email: 'aki@example.org', code: code === '000000' ? '000001' : '000000'}})).status, 403);
   const ok = await s.call('POST', `/v1/open/${bid}/guest/check`, {body: {email: 'aki@example.org', code}});
   assert.equal(ok.status, 200);
-  assert.equal((await s.call('POST', `/v1/open/${bid}/posts`, {body: {body: 'can I come?'}})).status, 401);
+  assert.equal((await s.call('POST', `/v1/open/${bid}/posts`, {body: {body: 'can I come?'}})).status, 403);
   const g = await s.call('POST', `/v1/open/${bid}/posts`, {body: {body: 'can I come?'}, headers: {'X-Guest': ok.json.token as string}});
   assert.deepEqual([g.status, g.json.by, g.json.guest], [201, 'aki', true]);
   // A guest writes for a while: the token is a lease.
   const {eq} = await import('drizzle-orm');
   await s.db.update(schema.guest).set({tokenUntil: new Date(Date.now() - 1000)}).where(eq(schema.guest.email, 'aki@example.org'));
-  assert.equal((await s.call('POST', `/v1/open/${bid}/posts`, {body: {body: 'still?'}, headers: {'X-Guest': ok.json.token as string}})).status, 401);
+  assert.equal((await s.call('POST', `/v1/open/${bid}/posts`, {body: {body: 'still?'}, headers: {'X-Guest': ok.json.token as string}})).status, 403);
   // Leaving: the owner leaves, and the server is the one who came next's.
   assert.equal((await s.call('DELETE', `/v1/servers/${sid}/people/ren@length3.test`, {token: ren})).status, 204);
   // Removed, it is held: it answers nothing, its name is held for it, and its owner may bring it back.
@@ -486,6 +499,7 @@ test('Who sees a repo: its owner, the servers it is shown in, or everyone, under
   assert.deepEqual([(await state()).seen, (await see('ren@length3.test:hello', ren)).status, (await see('ren@length3.test:hello', mio)).status], ['private', 200, 404]);
   // Shown in a server: its people see it, and whose it is; nobody else does.
   await s.call('POST', '/v1/inbox/contacts', {token: ren, body: {address: 'mio@length3.test', state: 'accepted'}});
+  await s.call('POST', '/v1/inbox/contacts', {token: mio, body: {address: 'ren@length3.test', state: 'accepted'}});
   const sid = (await s.call('POST', '/v1/servers', {token: ren, body: {name: 'Trip', address: 'trip'}})).json.id as string;
   await s.call('POST', `/v1/servers/${sid}/people`, {token: ren, body: {address: 'mio@length3.test'}});
   assert.equal((await s.call('POST', `/v1/servers/${sid}/repos`, {token: mio, body: {repo: 'hello'}})).status, 404);
@@ -516,12 +530,12 @@ test('Who sees a repo: its owner, the servers it is shown in, or everyone, under
   await commit(mio, {'README.md': mine}, 'mio');
   await s.call('POST', `/v1/servers/${sid}/repos`, {token: mio, body: {repo: 'hello'}});
   const clash = await s.call('PUT', '/v1/repos/hello/seen', {token: mio, body: {seen: 'everyone', as: sid}});
-  assert.deepEqual([clash.status, clash.json.error], [409, 'taken']);
+  assert.deepEqual([clash.status, clash.json.error], [409, 'That name is taken']);
   // Taken down, it is held for Ren a while: nobody else's repo answers to it meanwhile.
   assert.equal((await seen({seen: 'servers', servers: [sid]})).json.seen, 'servers');
   assert.equal((await see('trip@length3.test:hello')).status, 404);
   const held = await s.call('PUT', '/v1/repos/hello/seen', {token: mio, body: {seen: 'everyone', as: sid}});
-  assert.deepEqual([held.status, held.json.error], [409, 'held']);
+  assert.deepEqual([held.status, held.json.error], [409, 'That name was let go, and is held for its owner a while']);
   assert.equal((await seen({seen: 'everyone', as: sid})).status, 200);
   // Made public by Ren as Ren: then Ren's name is its face, by choice.
   assert.equal((await seen({seen: 'everyone', as: 'me'})).json.as, 'ren@length3.test:hello');
@@ -556,7 +570,7 @@ test('Names: people and servers share one namespace; a name let go is held for i
   assert.equal((await s.call('DELETE', '/v1/inbox/addresses/ren@length3.test', {token: ren})).status, 200);
   assert.equal(((await s.call('GET', '/v1/inbox/lookup?address=ren@length3.test', {token: mio})).json as unknown as {reachable: boolean}).reachable, false);
   const held = await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'ren'}});
-  assert.deepEqual([held.status, held.json.error], [409, 'held']);
+  assert.deepEqual([held.status, held.json.error], [409, 'That name was let go, and is held for its owner a while']);
   assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'ren'}})).status, 201);
   // Held long enough, it is anyone's.
   const {eq} = await import('drizzle-orm');
@@ -570,7 +584,7 @@ test('Names: people and servers share one namespace; a name let go is held for i
   assert.equal(((await s.call('GET', '/v1/inbox/lookup?address=ren@ren.dev', {token: mio})).json as unknown as {reachable: boolean}).reachable, true);
   s.unpublish(rec.name);
   const gone = (await s.call('GET', '/v1/inbox/lookup?address=ren@ren.dev', {token: mio})).json as unknown as {reachable: boolean; why: string};
-  assert.deepEqual([gone.reachable, gone.why], [false, 'its domain no longer names this Remote']);
+  assert.deepEqual([gone.reachable, gone.why], [false, 'Its domain no longer names this Remote']);
   assert.ok(((await s.call('GET', '/v1/inbox/me', {token: ren})).json.addresses as {address: string; lapsed?: boolean}[]).find((a) => a.address === 'ren@ren.dev')?.lapsed);
 });
 
@@ -599,7 +613,7 @@ test('Names on the Remote: first come, for five years at a time, renewed by thei
   assert.equal((await look('ren')).reachable, false);
   assert.ok(((await s.call('GET', '/v1/inbox/me', {token: ren})).json as unknown as Me).addresses[0].ended);
   const held = await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'ren'}});
-  assert.deepEqual([held.status, held.json.error], [409, 'held']);
+  assert.deepEqual([held.status, held.json.error], [409, 'That name was let go, and is held for its owner a while']);
   assert.equal((await s.call('POST', '/v1/inbox/addresses/mio@length3.test/renew', {token: ren})).status, 404);
   const renewed = await s.call('POST', '/v1/inbox/addresses/ren@length3.test/renew', {token: ren});
   assert.equal(renewed.status, 200);
@@ -616,4 +630,306 @@ test('Names on the Remote: first come, for five years at a time, renewed by thei
   assert.equal((await s.call('POST', `/v1/servers/${sid}/renew`, {token: ren})).status, 404);
   assert.equal((await s.call('POST', `/v1/servers/${sid}/renew`, {token: mio})).status, 200);
   assert.equal(((await s.call('GET', '/v1/servers', {token: mio})).json as unknown as {code: string}[])[0].code, made.json.code);
+});
+
+// ---- What the review of this service found, each kept fixed by a test ----
+
+type Service = Awaited<ReturnType<typeof service>>;
+const idOf = async (s: Service, t: string) => ((await s.call('GET', '/api/auth/get-session', {token: t})).json as unknown as {user: {id: string}}).user.id;
+const upload = async (s: Service, t: string, bytes: Uint8Array) => {
+  const sha = await sha256(bytes);
+  return {sha, status: (await s.call('PUT', `/v1/blobs/${sha}`, {token: t, bytes})).status};
+};
+const named = async (s: Service, ...people: [string, string][]) => { for (const [t, n] of people) await s.call('POST', '/v1/inbox/addresses', {token: t, body: {name: n}}); };
+const accept = (s: Service, t: string, address: string, state = 'accepted') => s.call('POST', '/v1/inbox/contacts', {token: t, body: {address, state}});
+const count = async (s: Service, query: ReturnType<typeof sql>) => ((await s.db.execute(query)).rows as {n: number}[])[0].n;
+
+test('Consent: nobody is put in a server by someone they have not accepted, or have blocked; being put in servers never stops anyone making one', async () => {
+  const s = await service();
+  const ren = await s.start('Ren'), mio = await s.start('Mio'), kai = await s.start('Kai');
+  await named(s, [ren, 'ren'], [mio, 'mio'], [kai, 'kai']);
+  const sid = (await s.call('POST', '/v1/servers', {token: ren, body: {name: 'Trip'}})).json.id as string;
+  const add = (who: string) => s.call('POST', `/v1/servers/${sid}/people`, {token: ren, body: {address: `${who}@length3.test`}});
+  // Kai blocked Ren; Ren accepting Kai on Ren's own side does not put Kai in.
+  await accept(s, kai, 'ren', 'blocked');
+  await accept(s, ren, 'kai');
+  const refused = await add('kai');
+  assert.deepEqual([refused.status, refused.json.error], [403, 'Only your contacts can be added']);
+  // Nor someone who has not accepted Ren; when both sides have, they are in.
+  await accept(s, ren, 'mio');
+  assert.equal((await add('mio')).status, 403);
+  await accept(s, mio, 'ren');
+  assert.equal((await add('mio')).status, 201);
+  assert.deepEqual((await s.call('GET', '/v1/servers', {token: kai})).json, []);
+  // Put in fifty servers by others, Kai still makes one of their own: only what one owns, or has held, counts.
+  const k = await idOf(s, kai);
+  await s.db.execute(sql`insert into server (id, name) select 'x' || g, 'S' from generate_series(1, 50) g`);
+  await s.db.execute(sql`insert into server_member (server_id, user_id) select 'x' || g, ${k} from generate_series(1, 50) g`);
+  assert.equal((await s.call('POST', '/v1/servers', {token: kai, body: {name: 'Mine', address: 'kaimine'}})).status, 201);
+  // Owning fifty (and one) is the end of it.
+  await s.db.execute(sql`update server_member set owner = 1 where user_id = ${k}`);
+  const full = await s.call('POST', '/v1/servers', {token: kai, body: {name: 'More', address: 'kaimore'}});
+  assert.deepEqual([full.status, full.json.error], [429, 'Too many servers']);
+});
+
+test('Guests: codes go to an address a few an hour whatever the board, and from one sender so many; a board has a few waiting; the mail says only the code; tries at once are each counted', async () => {
+  const s = await service();
+  const ren = await s.start('Ren');
+  await named(s, [ren, 'ren']);
+  const made = await s.call('POST', '/v1/servers', {token: ren, body: {name: 'Prizes', board: 'CLAIM YOUR PRIZE at evil.example'}});
+  const boards = [(made.json.boards as {id: string}[])[0].id];
+  for (let i = 1; i < 4; i++) boards.push((await s.call('POST', `/v1/servers/${made.json.id}/boards`, {token: ren, body: {name: `Win big ${i}`}})).json.id as string);
+  // Taking guests opens a board: guests write only where anyone reads.
+  for (const b of boards) assert.equal((await s.call('PATCH', `/v1/boards/${b}`, {token: ren, body: {guests: true}})).json.open, true);
+  const ask = (b: string, email: string, from: string) => s.call('POST', `/v1/open/${b}/guest`, {body: {email}, headers: {'CF-Connecting-IP': from}});
+  // One address: three codes an hour, whichever boards ask, from wherever.
+  for (let i = 0; i < 3; i++) assert.equal((await ask(boards[i], 'victim@example.org', `10.0.0.${i}`)).status, 202);
+  const fourth = await ask(boards[3], 'victim@example.org', '10.0.0.9');
+  assert.deepEqual([fourth.status, fourth.json.error], [429, 'Too many codes asked for; try again in an hour']);
+  // Nothing anyone chose reaches the address: no board's name, in the subject or the text.
+  assert.ok(s.mails.length === 3 && s.mails.every((m) => !/prize|win|evil/i.test(m.subject + m.text) && /^Your code is \d{6}\. It holds for 10 minutes\.$/.test(m.text)));
+  // One sender: ten an hour.
+  for (let i = 0; i < 10; i++) assert.equal((await ask(boards[1], `a${i}@example.org`, '10.9.9.9')).status, 202);
+  assert.equal((await ask(boards[1], 'a10@example.org', '10.9.9.9')).status, 429);
+  // One board: twenty waiting for a code at once (the victim's is one of them on this board).
+  for (let i = 0; i < 19; i++) assert.equal((await ask(boards[2], `w${i}@example.org`, `10.1.0.${i}`)).status, 202);
+  const crowd = await ask(boards[2], 'w19@example.org', '10.1.0.99');
+  assert.deepEqual([crowd.status, crowd.json.error], [429, 'Too many people are waiting for a code here; try again soon']);
+  // Ten wrong tries at once are ten tries: the code is spent after five, and the right one then does nothing.
+  assert.equal((await ask(boards[3], 'tries@example.org', '10.2.0.1')).status, 202);
+  const code = /is (\d{6})/.exec(s.mails.at(-1)!.text)![1];
+  const check = (c: string) => s.call('POST', `/v1/open/${boards[3]}/guest/check`, {body: {email: 'tries@example.org', code: c}});
+  const wrong = await Promise.all(Array.from({length: 10}, () => check(code === '000000' ? '000001' : '000000')));
+  assert.ok(wrong.every((r) => r.status === 403));
+  assert.equal((await check(code)).status, 403);
+  // A guest without a token is refused as a guest (403), not as a session the Remote does not know (401).
+  assert.equal((await s.call('POST', `/v1/open/${boards[0]}/posts`, {body: {body: 'hi'}})).status, 403);
+});
+
+test('Names: an account keeps five, those it let go among them; a few servers a day; a server its maker leaves with nobody else in it is held a day', async () => {
+  const s = await service();
+  const ren = await s.start('Ren'), mio = await s.start('Mio');
+  for (const n of ['r1', 'r2', 'r3', 'r4', 'r5']) assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: n}})).status, 201);
+  // Let go, a name is still held for Ren, and still counts: no sixth by letting go of one.
+  await s.call('DELETE', '/v1/inbox/addresses/r5@length3.test', {token: ren});
+  const sixth = await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'r6'}});
+  assert.deepEqual([sixth.status, sixth.json.error], [409, 'Too many addresses']);
+  assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'r5'}})).status, 201);
+  // Ten servers a day.
+  await named(s, [mio, 'mio']);
+  const ids: string[] = [];
+  for (let i = 0; i < 10; i++) ids.push((await s.call('POST', '/v1/servers', {token: mio, body: {name: `S${i}`, address: `mios${i}`}})).json.id as string);
+  const eleventh = await s.call('POST', '/v1/servers', {token: mio, body: {name: 'S10', address: 'mios10'}});
+  assert.deepEqual([eleventh.status, eleventh.json.error], [429, 'Too many servers made today']);
+  // Made and left with nobody else in it: held a day, not thirty.
+  assert.equal((await s.call('DELETE', `/v1/servers/${ids[0]}/people/mio@length3.test`, {token: mio})).status, 204);
+  const held = ((await s.call('GET', '/v1/servers?gone=1', {token: mio})).json as unknown as {id: string; until: number}[]).find((x) => x.id === ids[0])!;
+  assert.ok(Math.abs(held.until - Date.now() - 86_400_000) < 60_000, String(held.until - Date.now()));
+  assert.equal((await s.call('POST', '/v1/servers', {token: ren, body: {name: 'Taken', address: 'mios0'}})).status, 409);
+  // A day on, its name is anyone's.
+  await s.db.execute(sql`update address set released_at = released_at - interval '1 day 1 minute' where server_id = ${ids[0]}`);
+  assert.equal((await s.call('POST', '/v1/servers', {token: ren, body: {name: 'Mine now', address: 'mios0'}})).status, 201);
+});
+
+test('Storage: settings, repos, lines and reviews are capped, trees count toward the room, and uploads at once cannot pass it together', async () => {
+  const quota = 100_000;
+  const s = await service({}, {quota});
+  const t = await s.start('Ren');
+  const me = await idOf(s, t);
+  // Eight settings at most.
+  for (const k of ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']) assert.equal((await s.call('PUT', `/v1/home/${k}`, {token: t, body: {value: 'x', version: 0}})).status, 200);
+  assert.deepEqual((await s.call('PUT', '/v1/home/i', {token: t, body: {value: 'x', version: 0}})).json.error, 'Too many settings');
+  assert.equal((await s.call('PUT', '/v1/home/a', {token: t, body: {value: 'y', version: 1}})).status, 200);
+  const one = await upload(s, t, enc.encode('x'));
+  assert.equal((await s.call('PATCH', '/v1/repos/small/draft', {token: t, body: {version: 0, set: {'a.txt': one.sha}, remove: []}})).status, 200);
+  // Two hundred repos, a hundred pieces of work on one, fifty reviews of a change.
+  await s.db.execute(sql`insert into repo (user_id, name) select ${me}, 'r' || g from generate_series(1, 199) g`);
+  assert.deepEqual((await s.call('PATCH', '/v1/repos/more/draft', {token: t, body: {version: 0, set: {}, remove: []}})).json.error, 'Too many repos');
+  await s.db.execute(sql`insert into repo (user_id, name, line) select ${me}, 'small', 'l' || g from generate_series(1, 100) g`);
+  assert.deepEqual((await s.call('POST', '/v1/repos/small/lines', {token: t, body: {issue: 'issue/new.md'}})).json.error, 'This repo has too much work open');
+  await s.db.execute(sql`insert into change (id, user_id, repo, line, title, head) values ('c1', ${me}, 'small', 'l1', 'x', 'h'), ('c2', ${me}, 'small', 'l2', 'x', 'h')`);
+  const review = (id: string, marks: string[]) => s.call('POST', `/v1/repos/small/changes/${id}/reviews`, {token: t, body: {version: 1, verdict: 'comment', marks}});
+  // A review marks as many lines as fit: two hundred, saying 32 KiB in all.
+  const marked = await review('c1', Array.from({length: 1000}, (_, i) => `${'p'.repeat(190)}:${i}`));
+  const marks = (marked.json.reviews as {marks: string[]}[])[0].marks;
+  assert.ok(marked.status === 201 && marks.length > 0 && marks.length <= 200 && marks.join('').length <= 32 * 1024, String(marks.length));
+  await s.db.execute(sql`update change set reviews = (select jsonb_agg(jsonb_build_object('version', 1, 'verdict', 'comment', 'note', '', 'marks', '[]'::jsonb, 'by', '', 'time', 0)) from generate_series(1, 50)) where id = 'c2'`);
+  assert.deepEqual((await review('c2', [])).json.error, 'Too many reviews on this change');
+  // A tree of long paths to one small file counts as what it takes: refused when it would not fit.
+  const set = Object.fromEntries(Array.from({length: 700}, (_, i) => [`${'d'.repeat(150)}/${i}.txt`, one.sha]));
+  const big = await s.call('PATCH', '/v1/repos/small/draft', {token: t, body: {version: 1, set, remove: []}});
+  assert.deepEqual([big.status, big.json.error], [507, 'The Remote is full for this account']);
+  // Eight uploads at once into the room that is left: those that fit, and no more.
+  const sent = await Promise.all(Array.from({length: 8}, (_, i) => upload(s, t, new Uint8Array(30_000).fill(i + 1))));
+  const took = sent.filter((r) => r.status === 201).length;
+  const blobs = await count(s, sql`select coalesce(sum(size), 0)::int as n from blob`);
+  assert.ok(took >= 1 && took < 8 && sent.every((r) => r.status === 201 || r.status === 507) && blobs <= quota, `${took} ${blobs}`);
+});
+
+test('Requests: a write on the cookie alone is taken only from the app\'s pages, and a body is JSON only when sent as JSON', async () => {
+  const s = await service();
+  const t = await s.start('Ren');
+  const post = (headers: Record<string, string>) => s.app.request(`${BASE}/v1/inbox/addresses`, {method: 'POST', headers, body: JSON.stringify({name: 'ren'})});
+  const cookie = s.sessions.get(t)!;
+  // A page elsewhere posts a form-like body with the browser's cookie: refused.
+  assert.equal((await post({Cookie: cookie, Origin: 'http://evil.test', 'Content-Type': 'text/plain'})).status, 403);
+  assert.equal((await post({Cookie: cookie, 'Content-Type': 'application/json'})).status, 403);
+  // From the app's own page, text is still not JSON; JSON is.
+  assert.equal((await post({Cookie: cookie, Origin: APP, 'Content-Type': 'text/plain'})).status, 400);
+  assert.equal((await post({Cookie: cookie, Origin: APP, 'Content-Type': 'application/json'})).status, 201);
+  // The bearer token is never sent by a page elsewhere: it is enough by itself.
+  assert.equal((await s.app.request(`${BASE}/v1/repos`, {headers: {Authorization: `Bearer ${t}`}})).status, 200);
+});
+
+test('A repo named on answers only that it is off; a range that ends before it starts is refused; what moved is one small read', async () => {
+  const s = await service();
+  const t = await s.start('Ren');
+  const moved = async () => (await s.call('GET', '/v1/moved', {token: t})).json as unknown as {repos: string; home: Record<string, number>};
+  const first = await moved();
+  assert.deepEqual([first.home, (await moved()).repos], [{}, first.repos]);
+  for (const n of ['on', 'other']) await s.call('PATCH', `/v1/repos/${n}/draft`, {token: t, body: {version: 0, set: {'a.txt': null}, remove: []}});
+  const two = await moved();
+  assert.notEqual(two.repos, first.repos);
+  await s.call('PUT', '/v1/home/todo', {token: t, body: {value: '[]', version: 0}});
+  assert.deepEqual([(await moved()).repos, (await moved()).home], [two.repos, {todo: 1}]);
+  // Off: every path of the repo says so, whatever its name; on again, it answers.
+  await s.db.update(schema.repo).set({offAt: new Date()});
+  assert.notEqual((await moved()).repos, two.repos);
+  for (const n of ['on', 'other']) assert.equal((await s.call('GET', `/v1/repos/${n}`, {token: t})).status, 410, n);
+  assert.equal((await s.call('GET', '/v1/repos/on/log', {token: t})).status, 410);
+  assert.equal((await s.call('POST', '/v1/repos/on/on', {token: t})).status, 200);
+  assert.equal((await s.call('GET', '/v1/repos/on', {token: t})).status, 200);
+  // A refused commit leaves no commit behind.
+  const before = await count(s, sql`select count(*)::int as n from cut`);
+  assert.equal((await s.call('POST', '/v1/repos/on/cuts', {token: t, body: {version: 1, parent: 'f'.repeat(64), title: 'x'}})).status, 409);
+  assert.equal(await count(s, sql`select count(*)::int as n from cut`), before);
+  // A release bundle: a range that ends before it starts asks for nothing there is.
+  const sha = 'a'.repeat(64);
+  await s.bucket.put(`os/${sha}`, new Uint8Array(100).map((_, i) => i));
+  const backwards = await s.call('GET', `/v1/os/${sha}`, {headers: {Range: 'bytes=50-10'}});
+  assert.deepEqual([backwards.status, backwards.headers.get('Content-Range')], [416, 'bytes */100']);
+  const part = await s.app.request(`${BASE}/v1/os/${sha}`, {headers: {Range: 'bytes=10-19'}});
+  assert.deepEqual([part.status, part.headers.get('Content-Range'), [...new Uint8Array(await part.arrayBuffer())]], [206, 'bytes 10-19/100', [10, 11, 12, 13, 14, 15, 16, 17, 18, 19]]);
+  const head = await s.app.request(`${BASE}/v1/os/${sha}`, {method: 'HEAD'});
+  assert.deepEqual([head.status, head.headers.get('Content-Length')], [200, '100']);
+});
+
+test('A board item taken off is not brought back by a late change; closing a board ends its guests', async () => {
+  const s = await service();
+  const ren = await s.start('Ren');
+  await named(s, [ren, 'ren']);
+  const bid = ((await s.call('POST', '/v1/servers', {token: ren, body: {name: 'Trip'}})).json.boards as {id: string}[])[0].id;
+  const item = (body: unknown) => s.call('PUT', `/v1/boards/${bid}/todos/a1`, {token: ren, body});
+  assert.equal((await item({title: 'Ship it', place: 5, created: 1})).status, 201);
+  assert.equal((await s.call('DELETE', `/v1/boards/${bid}/todos/a1`, {token: ren})).status, 204);
+  const late = await item({done: true});
+  assert.deepEqual([late.status, late.json.error], [404, 'That item was taken off']);
+  assert.deepEqual((await s.call('GET', `/v1/boards/${bid}/todos`, {token: ren})).json, []);
+  // A whole item (a title and a place) is a new one.
+  assert.equal((await item({title: 'Ship it again', place: 1})).status, 201);
+  const set = (body: unknown) => s.call('PATCH', `/v1/boards/${bid}`, {token: ren, body}).then((r) => [r.json.open, r.json.guests]);
+  assert.deepEqual(await set({guests: true}), [true, true]);
+  assert.deepEqual(await set({open: false}), [false, false]);
+  assert.equal((await s.call('POST', `/v1/open/${bid}/guest`, {body: {email: 'a@example.org'}})).status, 404);
+});
+
+test('Letting an address go takes down what went public under it; a face its owner no longer has holds nothing for them', async () => {
+  const s = await service();
+  const ren = await s.start('Ren'), mio = await s.start('Mio');
+  await named(s, [ren, 'ren']);
+  await s.call('PATCH', '/v1/repos/hello/draft', {token: ren, body: {version: 0, set: {a: null}, remove: []}});
+  assert.equal((await s.call('PUT', '/v1/repos/hello/seen', {token: ren, body: {seen: 'everyone', as: 'me'}})).json.as, 'ren@length3.test:hello');
+  await s.call('DELETE', '/v1/inbox/addresses/ren@length3.test', {token: ren});
+  assert.equal(((await s.call('GET', '/v1/seen', {token: ren})).json as unknown as {seen: string}[])[0].seen, 'private');
+  // Held long enough, the name is Mio's, and so is ren:hello when she makes hers public.
+  await s.db.execute(sql`update address set released_at = now() - interval '31 days' where address = 'ren@length3.test'`);
+  assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'ren'}})).status, 201);
+  await s.call('PATCH', '/v1/repos/hello/draft', {token: mio, body: {version: 0, set: {b: null}, remove: []}});
+  const mine = await s.call('PUT', '/v1/repos/hello/seen', {token: mio, body: {seen: 'everyone', as: 'me'}});
+  assert.deepEqual([mine.status, mine.json.as], [200, 'ren@length3.test:hello']);
+});
+
+test('Live chat: a device takes only what came from the one it talks with, in its own session', async () => {
+  const s = await service();
+  const ren = await s.start('Ren'), mio = await s.start('Mio'), kai = await s.start('Kai');
+  await named(s, [ren, 'ren'], [mio, 'mio'], [kai, 'kai']);
+  for (const [a, b] of [[ren, 'mio'], [mio, 'ren'], [ren, 'kai'], [kai, 'ren']] as const) await accept(s, a, b);
+  const send = (t: string, session: string, kind: string) => s.call('POST', '/v1/inbox/signals', {token: t, body: {to: 'ren', session, kind, data: kind}});
+  const take = (query: string) => s.call('GET', `/v1/inbox/signals?${query}`, {token: ren}).then((r) => (r.json as unknown as {from: string; session: string; kind: string}[]).map((x) => `${x.from} ${x.session} ${x.kind}`));
+  await send(mio, 'm1', 'offer');
+  await send(kai, 'k1', 'offer');
+  // Two chats open: each takes its own peer's offer, and leaves the other's.
+  assert.deepEqual(await take('from=mio'), ['mio@length3.test m1 offer']);
+  assert.deepEqual(await take('from=kai'), ['kai@length3.test k1 offer']);
+  // Two devices talking with Mio, in two sessions: each takes its own.
+  await send(mio, 'a', 'answer');
+  await send(mio, 'b', 'candidate');
+  assert.deepEqual(await take('from=mio&session=a'), ['mio@length3.test a answer']);
+  assert.deepEqual(await take('from=mio&session=b'), ['mio@length3.test b candidate']);
+  assert.deepEqual(await take('from=mio&session=a'), []);
+});
+
+test('The sweep: what was held long enough goes in one place, blobs no tree names among it, and nothing else', async () => {
+  const s = await service();
+  const ren = await s.start('Ren'), mio = await s.start('Mio');
+  const me = await idOf(s, ren), her = await idOf(s, mio);
+  await named(s, [ren, 'ren'], [mio, 'mio']);
+  const kept = await upload(s, ren, enc.encode('kept')), dropped = await upload(s, ren, enc.encode('dropped')), committed = await upload(s, ren, enc.encode('committed'));
+  const draft = (version: number, set: Record<string, string | null>, remove: string[] = []) => s.call('PATCH', '/v1/repos/r/draft', {token: ren, body: {version, set, remove}});
+  await draft(0, {'c.txt': committed.sha});
+  assert.equal((await s.call('POST', '/v1/repos/r/cuts', {token: ren, body: {version: 1, parent: null, title: 'with c'}})).status, 201);
+  await draft(1, {'d.txt': dropped.sha});
+  await draft(2, {'k.txt': kept.sha}, ['c.txt', 'd.txt']);
+  // A blob is not taken for unnamed the day it came: a diff names it after it is sent.
+  assert.equal((await sweep(s.db, s.bucket)).blob, undefined);
+  await s.db.execute(sql`update blob set created_at = now() - interval '2 days'`);
+  await s.call('POST', '/v1/inbox/messages', {token: ren, body: {to: 'mio', body: 'old and read'}});
+  await s.call('POST', '/v1/inbox/messages', {token: ren, body: {to: 'mio', body: 'old and unread'}});
+  await s.db.execute(sql`update message set created_at = now() - interval '91 days', read_at = case when body = 'old and read' then now() end`);
+  const gone = await sweep(s.db, s.bucket);
+  assert.equal(gone.blob, 1);
+  const has = async (sha: string) => (await s.db.execute(sql`select 1 from blob where user_id = ${me} and sha256 = ${sha}`)).rows.length > 0;
+  assert.deepEqual([await has(kept.sha), await has(committed.sha), await has(dropped.sha)], [true, true, false]);
+  assert.ok(!s.bucket.keys().includes(`u/${me}/${dropped.sha}`) && s.bucket.keys().includes(`u/${me}/${kept.sha}`));
+  assert.deepEqual(((await s.db.execute(sql`select body from message`)).rows as {body: string}[]).map((m) => m.body), ['old and unread']);
+  // Held thirty days and more: a server (its name with it) and a board; a signal and a proof minutes old; what was asked a day ago.
+  await s.db.execute(sql`insert into server (id, name, gone_at) values ('old', 'Old', now() - interval '31 days'), ('new', 'New', now() - interval '29 days')`);
+  await s.db.execute(sql`insert into address (address, server_id, name, domain, until, released_at) values ('old@length3.test', 'old', 'old', 'length3.test', now() + interval '1 year', now() - interval '1 day')`);
+  await s.db.execute(sql`insert into server_board (id, server_id, name, gone_at) values ('b-old', 'new', 'x', now() - interval '31 days'), ('b-new', 'new', 'y', null)`);
+  await s.db.execute(sql`insert into signal (id, to_user, from_user, session, kind, data, created_at) values ('s1', ${me}, ${her}, 's', 'offer', '', now() - interval '3 minutes')`);
+  await s.db.execute(sql`insert into guard (user_id, proof_session, proof_at) values (${her}, 'x', now() - interval '6 minutes')`);
+  await s.db.execute(sql`insert into throttle (key, at) values ('k', now() - interval '2 days')`);
+  const later = await sweep(s.db, s.bucket);
+  assert.deepEqual([later.server, later.board, later.signal, later.guard, later.throttle], [1, 1, 1, 1, 1]);
+  assert.deepEqual([await count(s, sql`select count(*)::int as n from server`), await count(s, sql`select count(*)::int as n from server_board`),
+    await count(s, sql`select count(*)::int as n from address`)], [1, 1, 2]);
+  // Nothing else went: the repo, its draft and its history are as they were.
+  assert.deepEqual(((await s.call('GET', '/v1/repos/r', {token: ren})).json as unknown as {draft: object}).draft, {'k.txt': kept.sha});
+  assert.equal(((await s.call('GET', '/v1/repos/r/log', {token: ren})).json as unknown[]).length, 1);
+});
+
+test('On Workers the app is made once, and each request uses the database it opened', async () => {
+  const {scoped} = await import('./worker.ts');
+  const open = async () => { const db = drizzle(new PGlite(), {schema}); await migrate(db, {migrationsFolder: new URL('./migrations', import.meta.url).pathname}); return db; };
+  const [one, two] = [await open(), await open()];
+  const {db, at} = scoped(one);
+  const auth = createAuth({db, secret: 'test-secret-'.repeat(4), baseURL: BASE, appOrigin: APP, rateLimit: false, dev: true});
+  const app = createApp({db, auth, bucket: memoryBucket(), origins: [APP], providers: ['dev'], domain: 'length3.test', baseURL: BASE});
+  let on = one;
+  const ask = (url: string, init: RequestInit = {}) => at(on, () => app.request(url, {...init, headers: {Origin: APP, ...(init.headers as Record<string, string>)}}));
+  globalThis.fetch = ((url: string | URL | Request, init?: RequestInit) => app.request(url as string, init)) as typeof fetch;
+  const asked = await ask(`${BASE}/api/auth/sign-in/social`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({provider: 'dev', callbackURL: `${APP}/`})});
+  const cookies = asked.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
+  const go = new URL(((await asked.json()) as {url: string}).url);
+  const approve = new URL(`${BASE}/dev-oauth/approve`);
+  for (const k of ['redirect_uri', 'state']) approve.searchParams.set(k, go.searchParams.get(k) ?? '');
+  const back = (await ask(approve.toString())).headers.get('Location')!;
+  const token = (await ask(back, {headers: {Cookie: cookies}})).headers.get('set-auth-token')!;
+  const repos = async () => (await ask(`${BASE}/v1/repos`, {headers: {Authorization: `Bearer ${token}`}})).status;
+  // The session is in the database its sign-in's requests opened, and only there.
+  assert.equal(await repos(), 200);
+  on = two;
+  assert.equal(await repos(), 401);
+  on = one;
+  assert.equal(await repos(), 200);
 });
