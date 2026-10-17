@@ -100,7 +100,11 @@ one ("Did you mean: l3 commit"), and `l3 completion bash|zsh|fish` completes
 commands, verbs, flags and what fits each slot (repo names, paths, issues,
 dotfiles). In a repo (its copy, an issue's copy, or its Prompt) the repo may
 be left out and `#N` is that repo's issue N: `l3 commit`, `l3 start #3`,
-`l3 merge #3`, and `l3 file src` reads from where you are. `--` ends the
+`l3 merge #3`, and `l3 file src` reads from where you are. An issue is named
+by its number (`#3`, `hello#3`) or by words of its title (`l3 start
+restart`); words that fit more than one are refused with the choices. What
+l3 says names issues the same way (`#3 Fix：title`), never by the file that
+holds them. `--` ends the
 flags for every command (`l3 todo add -- "-1 day"`). Every command takes
 `--json` (data, camelCase keys; an error is `{"error":{"kind","message"}}`),
 and exits 0 when done, 1 when not, 2 when not how it is written, 3 when the

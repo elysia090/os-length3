@@ -195,7 +195,8 @@ fn suits(a: Arg, w: &str, strict: bool, ctx: &Ctx) -> bool {
     match a {
         Arg::Repo { optional } => repo_shaped(w) && (!strict || !optional || ctx.here.is_none() || owner_shaped(w) || ctx.has_repo(w)),
         Arg::Path { .. } | Arg::Text(_) => true,
-        Arg::Issue => w.contains('#') || w.contains("issue/"),
+        // By its number, or by its title; strictly, a repo here is the repo, not a title.
+        Arg::Issue => !w.trim().is_empty() && (crate::target::numbered(w) || !strict || !(length3_core::repos::valid_name(w) && ctx.has_repo(w))),
         Arg::Number(_) => !w.is_empty() && w.bytes().all(|b| b.is_ascii_digit()),
         Arg::Choice(c) => c.contains(&w),
         Arg::Address => !w.is_empty() && w.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '@' | '+')),
@@ -298,7 +299,10 @@ mod tests {
         // In a repo, a word that is no repo here still reaches the slot when nothing else fits (and is then not found).
         let c = p("log nope", &inside).unwrap();
         assert_eq!(c.slots, vec![Slot::One("nope".into())]);
-        assert_eq!(form(&p("diff hello#1", &out).unwrap()), "l3 diff REPO#N");
+        assert_eq!(form(&p("diff hello#1", &out).unwrap()), "l3 diff ISSUE");
+        assert_eq!(form(&p("diff \"restart loses\"", &out).unwrap()), "l3 diff ISSUE");
+        assert_eq!(form(&p("issue hello", &out).unwrap()), "l3 issue [REPO]");
+        assert_eq!(p("start readme", &out).unwrap().word(0), Some("readme"));
         assert_eq!(form(&p("diff hello", &out).unwrap()), "l3 diff [REPO]");
     }
 

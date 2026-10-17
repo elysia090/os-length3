@@ -141,7 +141,7 @@ fn card(ctx: &Ctx, s: &Stand, i: &Issue, full: bool) -> Vec<String> {
         }
     }
     let st = standing(ctx, s, i);
-    t.push(format!("    {} · issue/{}{}", i.repo, i.file, if st.is_empty() { String::new() } else { format!(" · {st}") }));
+    t.push(format!("    {}{}", i.repo, if st.is_empty() { String::new() } else { format!(" · {st}") }));
     let n = next(ctx, s, i);
     if let Some((first, rest)) = n.split_first() {
         t.push(tr!("    next: {}", "    次：{}", first));
@@ -182,7 +182,7 @@ pub fn page(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let mut t = boxes.join("\n\n");
     if boxes.is_empty() { t = if merged.is_empty() { tr!("No issues yet (l3 issue new REPO \"Fix：title\")", "Issue はまだありません（l3 issue new REPO \"Fix：件名\" で書けます）") } else { tr!("Every issue is merged", "すべての Issue が Merge 済みです") }; }
     for (n, k) in &merged { t += &format!("\n\n{}", tr!("{0} merged in {1} (l3 log {1})", "{1} で Merge 済み：{0}（l3 log {1}）", issues(*k), n)); }
-    if !missing.is_empty() { t += &format!("\n\n{}", tr!("repos without issue/: {}", "issue/ がない repo：{}", missing.join(", "))); }
+    if !missing.is_empty() { t += &format!("\n\n{}", tr!("repos that keep no issues: {}", "Issue を持たない repo：{}", missing.join(", "))); }
     if offline { t += &format!("\n\n{}", tr!("The Remote could not be reached: where each issue stands is not known (merges seen before are)", "Remote に届きませんでした。各 Issue の状態は不明です（前に見た Merge はわかります）")); }
     Ok(Reply::data(t, json!({"issues": data, "merged": merged.iter().map(|(r, n)| json!({"repo": r, "count": n})).collect::<Vec<_>>(), "withoutIssues": missing, "known": !offline})))
 }
@@ -198,7 +198,7 @@ pub fn issue_show(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let r = ctx.repos()?;
     let i = read_issue(ctx, &at)?;
     if ctx.prompt {
-        let mut t = format!("{} {}    {} · issue/{}", number(&i.file), text::named(i.kind.as_deref(), &i.title), i.repo, i.file);
+        let mut t = format!("{} {}    {}", number(&i.file), text::named(i.kind.as_deref(), &i.title), i.repo);
         if !i.detail.is_empty() { t += &format!("\n\n{}", i.detail); }
         return Ok(Reply::data(t, json!({"issue": i})));
     }
@@ -248,14 +248,14 @@ pub fn issue_new(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let (kind, title) = text::kind_of(call.word(1).unwrap_or_default());
     if title.trim().is_empty() { return Err(Error::Usage(tr!("An issue needs a title: l3 issue new [REPO] \"Fix：title\"", "Issue には件名がいります：l3 issue new [REPO] \"Fix：件名\""))); }
     let file = ctx.repos()?.add_issue(&repo, kind.as_deref(), &title, call.note())?;
-    Ok(Reply::done(tr!("Wrote {}/issue/{} ({}{})", "{}/issue/{} に書きました（{}{}）", repo, file, repo, number(&file)),
+    Ok(Reply::done(tr!("Wrote {}{} {}", "{}{} {} を書きました", repo, number(&file), text::named(kind.as_deref(), title.trim())),
         json!({"repo": repo, "file": file, "number": number(&file), "kind": kind, "title": title.trim()})))
 }
 
 pub fn start(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let at = target::issue(ctx, call, 0)?;
     let l = work::start(&ctx.repos()?, &at.repo, &at.path())?;
-    Ok(Reply::done(tr!("Working on {} — {} shows its copy now (back with: l3 main {})", "{} を始めました。{} はその写しを見せています（戻るには l3 main {}）", at.name(), at.repo, at.repo), json!({"issue": at.path(), "line": l})))
+    Ok(Reply::done(tr!("Working on {} — {} shows its copy now (back with: l3 main {})", "{} を始めました。{} はその写しを見せています（戻るには l3 main {}）", at.shown(), at.repo, at.repo), json!({"repo": at.repo, "number": number(&at.file), "title": at.title, "file": at.file, "line": l})))
 }
 
 pub fn main(ctx: &Ctx, call: &Call) -> Result<Reply> {
@@ -264,7 +264,7 @@ pub fn main(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let was = r.line(&repo);
     if was == work::MAIN { return Ok(Reply::done(tr!("{} shows main already", "{} はもう main を見せています", repo), json!({"repo": repo, "line": work::MAIN, "changed": false}))); }
     work::switch(&r, &repo, work::MAIN)?;
-    Ok(Reply::done(tr!("{} shows main now (the work on issue/{}.md waits: l3 start {}{})", "{} は main を見せています（issue/{}.md の作業はそのまま：l3 start {}{}）", repo, was, repo, number(&was)),
+    Ok(Reply::done(tr!("{0} shows main now (the work on {1} waits: l3 start {0}{1})", "{0} は main を見せています（{1} の作業はそのまま：l3 start {0}{1}）", repo, number(&was)),
         json!({"repo": repo, "line": work::MAIN, "was": was, "changed": true})))
 }
 
@@ -347,7 +347,7 @@ pub fn log(ctx: &Ctx, call: &Call) -> Result<Reply> {
     if list.is_empty() { t.push(tr!("No commits yet", "コミットはまだありません")); }
     for c in &list {
         t.push(history::line(c));
-        let issue = c.issue.as_deref().map(|i| format!(" · {i}")).unwrap_or_default();
+        let issue = c.issue.as_deref().map(|i| format!(" · {}", number(i))).unwrap_or_default();
         let merged = if c.merged.is_some() { tr!(" · merge", " · Merge") } else { String::new() };
         t.push(format!("    {} · {} · {}{}{issue}{merged}", out::short(&c.id), ago(c.time), files(c.files), out::added_removed(c.added, c.removed)));
         let places: Vec<String> = c.folders.iter().map(|f| if f.is_empty() { format!("{repo}/") } else { format!("{f}/") }).collect();

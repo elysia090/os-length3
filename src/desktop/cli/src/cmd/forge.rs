@@ -27,7 +27,7 @@ pub fn repo_list(ctx: &Ctx, _: &Call) -> Result<Reply> {
             Some(st) if st.changed > 0 => ("changed", tr!(" · {} not sent", " · {}件未送信", st.changed)),
             Some(_) => ("inStep", tr!(" · in step", " · Remote と同じ")),
         };
-        let working = if line != work::MAIN { tr!(" · working on issue/{}.md", " · issue/{}.md の作業中", line) } else { String::new() };
+        let working = if line != work::MAIN { tr!(" · working on {}", " · {} の作業中", length3_core::issues::number(&line)) } else { String::new() };
         t.push(format!("{}\t{} · {}{working}{said}", s.name, files(s.files as usize), bytes(s.bytes)));
         rows.push(json!({"name": s.name, "files": s.files, "bytes": s.bytes, "modified": s.modified, "line": line, "state": state,
             "changed": st.as_ref().map_or(0, |s| s.changed), "unsendable": st.as_ref().map(|s| s.unsynced.iter().map(|(p, _)| p.clone()).collect::<Vec<_>>()).unwrap_or_default()}));

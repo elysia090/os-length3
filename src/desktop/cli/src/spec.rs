@@ -32,7 +32,7 @@ pub enum Arg {
     Repo { optional: bool },
     /// REPO/PATH, or a path from where you are in a repo; optional: where you are.
     Path { optional: bool },
-    /// An issue: REPO#N, #N in a repo, REPO/issue/NNN.md.
+    /// An issue: #N in its repo, REPO#N, or words of its title.
     Issue,
     /// Words, taken as they are (never as a name).
     Text(&'static str),
@@ -166,7 +166,7 @@ pub static COMMANDS: &[Command] = &[
         hidden(None, &[REPO_HERE], LOCAL, TakeIn, git::page),
     ]),
     c("start", &[], Group::Git, ["work on an issue, in its own copy", "Issue の作業を、その写しで"], &[
-        f(None, &[Arg::Issue], &[], ["start (or continue): the repo shows its copy", "始める（続ける）。repo はその写しになる"], REMOTE, Send, git::start),
+        f(None, &[Arg::Issue], &[], ["start (or continue): the repo shows its copy", "始める（続ける）。repo はその写しになる"], REMOTE, TakeIn, git::start),
     ]),
     c("main", &[], Group::Git, ["back to main", "main に戻る"], &[
         f(None, &[REPO_HERE], &[], ["the repo shows main again", "repo は main に戻る"], DEVICE, Send, git::main),
@@ -300,7 +300,7 @@ pub fn usage(c: &Command, f: &Form) -> String {
             Arg::Repo { optional: false } => "REPO".to_string(),
             Arg::Path { optional: true } => "[REPO[/PATH]]".to_string(),
             Arg::Path { optional: false } => "REPO/PATH".to_string(),
-            Arg::Issue => "REPO#N".to_string(),
+            Arg::Issue => "ISSUE".to_string(),
             Arg::Text(n) | Arg::Number(n) => n.to_string(),
             Arg::Choice(w) => w.join("|"),
             Arg::Address => "ADDRESS".to_string(),

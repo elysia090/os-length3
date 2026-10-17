@@ -68,9 +68,9 @@ pub fn overview() -> String {
     s += &format!("\n{}\n", bold(if ja() { "終了コード" } else { "Exit codes" }));
     s += if ja() { "  0 できた · 1 できなかった · 2 書き方の誤り · 3 Remote に届かない · 4 見つからない\n\n" } else { "  0 done · 1 not done · 2 not how it is written · 3 the Remote out of reach · 4 not found\n\n" };
     s += if ja() {
-        "repo の中（とその Prompt）では REPO を省けます。#N はその repo の Issue N です。\n`l3 help all` ですべての書き方、`l3 completion bash|zsh|fish` で補完。\n\n名前は持ち主が先：hello, hello/src/a.c, hello#3, ren@length3.com:hello（あなたの repo を全部書いた形）, trip#general（サーバーの板）。"
+        "repo の中（とその Prompt）では REPO を省けます。ISSUE は repo の中なら #N、外なら REPO#N、または件名の言葉（「再起動」など）です。\n`l3 help all` ですべての書き方、`l3 completion bash|zsh|fish` で補完。\n\n名前は持ち主が先：hello, hello/src/a.c, hello#3, ren@length3.com:hello（あなたの repo を全部書いた形）, trip#general（サーバーの板）。"
     } else {
-        "In a repo (or its Prompt) REPO may be left out, and #N is that repo's issue N.\n`l3 help all` lists every form; `l3 completion bash|zsh|fish` completes them.\n\nNames, owner first: hello, hello/src/a.c, hello#3, ren@length3.com:hello (yours, written in full), trip#general (a server's board)."
+        "In a repo (or its Prompt) REPO may be left out. An ISSUE is #N in its repo, REPO#N elsewhere, or words of its title (\"restart\").\n`l3 help all` lists every form; `l3 completion bash|zsh|fish` completes them.\n\nNames, owner first: hello, hello/src/a.c, hello#3, ren@length3.com:hello (yours, written in full), trip#general (a server's board)."
     };
     s
 }
@@ -96,6 +96,9 @@ fn widest(cs: &[&Command]) -> usize {
 pub fn command(c: &Command) -> String {
     let mut s = format!("{} — {}\n\n{}", bold(&format!("l3 {}", c.name)), say(c.about), forms(&[c], widest(&[c])).trim_end());
     if !c.aliases.is_empty() { s += &format!("\n\n{}{}", if ja() { "別名：" } else { "Also: " }, c.aliases.iter().map(|a| format!("l3 {a}")).collect::<Vec<_>>().join(", ")); }
+    if c.forms.iter().any(|f| f.args.contains(&spec::Arg::Issue)) {
+        s += &format!("\n\n{}", if ja() { "ISSUE：repo の中なら #N、外なら REPO#N、または件名の言葉（「再起動」など。ひとつに決まらなければ番号で）" } else { "ISSUE: #N in its repo, REPO#N elsewhere, or words of its title (\"restart\"; by its number when the words fit more than one)" });
+    }
     if c.name == "repo" {
         let t: Vec<String> = length3_core::templates::all().into_iter().map(|t| format!("{} ({})", t.id, t.label)).collect();
         s += &format!("\n\n{}{}", if ja() { "テンプレート：" } else { "Templates: " }, t.join(", "));
