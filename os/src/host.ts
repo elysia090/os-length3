@@ -27,7 +27,8 @@ export interface Freed {
   host_free_before: number; host_free_after: number; host_change: Certainty; reflected_ms: number | null;
 }
 
-async function native<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
+/** A command of the app's native side (the one way every module asks it). */
+export async function native<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
   const {invoke} = await import('@tauri-apps/api/core');
   return invoke<T>(command, args);
 }
@@ -40,8 +41,7 @@ export const nativeFree = (ids: string[]): Promise<Freed> => native<Freed>('free
 export async function readCapacity(): Promise<Capacity | null> {
   try {
     if (isNative) {
-      const {invoke} = await import('@tauri-apps/api/core');
-      const c = await invoke<{total: number; free: number; app: number}>('capacity');
+      const c = await native<{total: number; free: number; app: number}>('capacity');
       return {total: c.total, free: c.free, app: c.app, layer: 'host-filesystem'};
     }
     const e = await navigator.storage?.estimate?.();

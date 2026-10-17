@@ -4,7 +4,7 @@
 // storage. Reads are served from memory, filled at start and again whenever
 // the window comes back, so a change made with l3 shows up.
 
-import {isNative} from './host.ts';
+import {isNative, native} from './host.ts';
 import {t} from './i18n.ts';
 
 // `remote` is which Remote this device talks to and as whom; `sync` is,
@@ -18,11 +18,6 @@ const STORAGE: Record<Key, string> = {profile: 'length3.os.profile', todo: 'leng
   remote: 'length3.os.remote', sync: 'length3.os.sync', lang: 'length3.os.lang.setting', dotfiles: 'length3.os.dotfiles', network: 'length3.os.network'};
 
 const cache = new Map<Key, string | null>();
-
-async function call<T>(command: string, args: Record<string, unknown>): Promise<T> {
-  const {invoke} = await import('@tauri-apps/api/core');
-  return invoke<T>(command, args);
-}
 
 /** What the browser keeps for `key`; storage it refuses (a private window) keeps nothing. */
 function local(key: Key): string | null {
@@ -44,14 +39,14 @@ export async function loadState(): Promise<void> {
   for (const key of KEYS) {
     if (!isNative) { cache.set(key, local(key)); continue; }
     let value: string | null;
-    try { value = await call<string | null>('state_get', {key}); } catch (e) {
+    try { value = await native<string | null>('state_get', {key}); } catch (e) {
       unread.set(key, e instanceof Error ? e.message : String(e));
       continue;
     }
     unread.delete(key);
     const old = local(key);
     if (value === null && old !== null) {
-      await call('state_set', {key, json: old});
+      await native('state_set', {key, json: old});
       value = old;
       try { localStorage.removeItem(STORAGE[key]); } catch { /* moved; the leftover is never read again natively */ }
     }
@@ -81,6 +76,6 @@ export async function setState(key: Key, json: string): Promise<void> {
   if (why !== undefined) throw new Error(t('{what} could not be read, so it is not written over ({why})', {what: settingName(key), why}));
   cache.set(key, json);
   for (const fn of [...listeners]) fn(key);
-  if (isNative) { await call('state_set', {key, json}); return; }
+  if (isNative) { await native('state_set', {key, json}); return; }
   try { localStorage.setItem(STORAGE[key], json); } catch (e) { throw new Error(String(e)); }
 }

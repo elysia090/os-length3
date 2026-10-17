@@ -12,7 +12,7 @@
 // on every device.
 
 import {t} from './i18n.ts';
-import {isNative} from './host.ts';
+import {isNative, native} from './host.ts';
 import {api, deviceWord, json, RemoteError} from './remote.ts';
 import {store} from './repos.ts';
 import {getState, setState} from './state.ts';
@@ -36,11 +36,6 @@ const dec = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true});
 export async function sha256(bytes: Uint8Array): Promise<string> {
   const d = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as BufferSource));
   return [...d].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-async function invoke<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
-  const {invoke} = await import('@tauri-apps/api/core');
-  return invoke<T>(command, args);
 }
 
 const syncState = (): SyncState => {
@@ -273,11 +268,11 @@ async function webSync(repo: string): Promise<Synced> {
 
 /** Send what changed here and take in what changed there, until both are the same. */
 export const sync = (repo: string): Promise<Synced> =>
-  isNative ? invoke<Synced>('sync_repo', {repo}) : serial(repo, () => webSync(repo));
+  isNative ? native<Synced>('sync_repo', {repo}) : serial(repo, () => webSync(repo));
 
 /** Bring a repo that is only on the Remote here (opening it does this). */
 export async function fetchRepo(repo: string): Promise<Synced> {
-  if (isNative) return invoke<Synced>('repo_fetch', {repo});
+  if (isNative) return native<Synced>('repo_fetch', {repo});
   if (!(await store.list()).some((r) => r.name === repo)) {
     await setBase(repo, null);
     await store.create(repo, '', BY);
@@ -285,7 +280,7 @@ export async function fetchRepo(repo: string): Promise<Synced> {
   return sync(repo);
 }
 
-export const remoteRepos = (): Promise<RemoteRepo[]> => (isNative ? invoke<RemoteRepo[]>('remote_repos') : json<RemoteRepo[]>('/v1/repos'));
+export const remoteRepos = (): Promise<RemoteRepo[]> => (isNative ? native<RemoteRepo[]>('remote_repos') : json<RemoteRepo[]>('/v1/repos'));
 
 /** What moved on the Remote, in one small read: a stamp of its repos (the list changes when it does) and each setting's version. */
 export interface Moved { repos: string; home: Record<string, number> }
@@ -293,7 +288,7 @@ export const moved = () => json<Moved>('/v1/moved');
 
 /** Where each repo here stands, from what is here alone. */
 export async function status(): Promise<Status[]> {
-  if (isNative) return invoke<Status[]>('remote_status');
+  if (isNative) return native<Status[]>('remote_status');
   const out: Status[] = [];
   for (const r of await store.list()) {
     const b = baseOf(r.name);
@@ -321,7 +316,7 @@ export function restoreLines() {
 
 /** Show `line`'s work as `repo` here; its copy comes from the Remote when it is not here yet. */
 export async function showLine(repo: string, line: string): Promise<void> {
-  if (isNative) { await invoke('work_switch', {repo, line}); store.changedOutside(repo, 'work'); return; }
+  if (isNative) { await native('work_switch', {repo, line}); store.changedOutside(repo, 'work'); return; }
   // Offline, the copy shown so far stays here with what it has not sent (sent when it is shown again).
   await sync(repo).catch((e: unknown) => { if (!(e instanceof RemoteError)) throw e; });
   const made = store.showLine(repo, line);

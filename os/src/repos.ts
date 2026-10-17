@@ -4,7 +4,7 @@
 // runs; the work stays until the site's data is cleared. MemoryStore is
 // the same without keeping, for tests.
 
-import {askToKeep, isNative} from './host.ts';
+import {askToKeep, isNative, native} from './host.ts';
 import {t} from './i18n.ts';
 import shared from '../shared/templates.json' with {type: 'json'};
 
@@ -75,18 +75,14 @@ export function validName(name: string): boolean {
 
 class NativeStore implements RepoStore {
   readonly persistent = true;
-  private async call<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
-    const {invoke} = await import('@tauri-apps/api/core');
-    return invoke<T>(command, args);
-  }
-  list() { return this.call<RepoSummary[]>('repo_list'); }
-  create(name: string, template: Template) { return this.call<RepoSummary>('repo_create', {name, template}); }
-  tree(repo: string, path: string) { return this.call<Entry[]>('repo_tree', {repo, path}); }
-  read(repo: string, path: string) { return this.call<Contents>('repo_read', {repo, path}); }
-  write(repo: string, path: string, text: string) { return this.call<number>('repo_write', {repo, path, text}); }
-  add(repo: string, dir: string, name: string, text: string) { return this.call<number>('repo_add', {repo, dir, name, text}); }
-  mkdir(repo: string, path: string) { return this.call<void>('repo_mkdir', {repo, path}); }
-  remove(repo: string, path: string) { return this.call<void>('repo_remove', {repo, path}); }
+  list() { return native<RepoSummary[]>('repo_list'); }
+  create(name: string, template: Template) { return native<RepoSummary>('repo_create', {name, template}); }
+  tree(repo: string, path: string) { return native<Entry[]>('repo_tree', {repo, path}); }
+  read(repo: string, path: string) { return native<Contents>('repo_read', {repo, path}); }
+  write(repo: string, path: string, text: string) { return native<number>('repo_write', {repo, path, text}); }
+  add(repo: string, dir: string, name: string, text: string) { return native<number>('repo_add', {repo, dir, name, text}); }
+  mkdir(repo: string, path: string) { return native<void>('repo_mkdir', {repo, path}); }
+  remove(repo: string, path: string) { return native<void>('repo_remove', {repo, path}); }
 }
 
 /** Files of a new repo, from the same shared/templates.json as the native

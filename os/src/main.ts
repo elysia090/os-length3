@@ -16,7 +16,7 @@ import {FileTree} from './pages/tree.ts';
 import {begin} from './lifecycle.ts';
 import {learnHome} from './inbox.ts';
 import {devicePage} from './pages/device.ts';
-import {about, connection, onConnection, onReach, remoteAway} from './remote.ts';
+import {about, claim, connection, enterWith, onConnection, onReach, remoteAway} from './remote.ts';
 import {getState, loadState} from './state.ts';
 import {onLang, t, useLang} from './i18n.ts';
 import {NEW_REPO, PURPOSES, purpose, restorePurpose, stepPurpose, type PurposeId} from './purposes.ts';
@@ -180,10 +180,9 @@ if (asking.has('device')) {
 } else {
   void loadState().finally(async () => {
     useLang(getState('lang'));
-    if (entering) await (await import('./remote.ts')).enterWith(decodeURIComponent(entering));
+    if (entering) await enterWith(decodeURIComponent(entering));
     // Back from a provider: take up the session it made, then go on as usual.
     if (asking.has('signed-in')) {
-      const {claim} = await import('./remote.ts');
       await claim();
       const u = new URL(location.href);
       u.searchParams.delete('signed-in');
