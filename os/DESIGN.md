@@ -770,8 +770,11 @@ The Prompt never goes silent while something takes time:
   the release's (the app has it beside itself).
 - **Running.** A line done within two seconds says nothing. Past that, under
   the output: `実行中 N秒` with 中断 (Ctrl-C in the prompt box, when nothing
-  is selected, does the same); `入力待ち` with 中断 when what runs reads
-  input (whatever is typed in the box goes to it); `出力なし` after five
+  is selected, does the same); `入力待ち` with 中断 only when what runs reads
+  input (whatever is typed in the box goes to it); a sleep (`sleep 4`) is
+  not waiting for anyone: it reads `実行中 N秒` with 中断, which reaches it,
+  and its quiet is not counted (the worker says which it waits for: input,
+  or a time); `出力なし` after five
   quiet seconds; and after ten, 止めてやり直す, because a worker busy in a
   loop cannot hear 中断, and only a new shell is sure. 中断 ends what runs
   in front of the shell as SIGINT would, and the shell goes on (`$?` is

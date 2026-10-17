@@ -6,8 +6,10 @@
 // then {type: 'input', bytes} as the person types and {type: 'eof'}, and
 // {type: 'interrupt'} for Ctrl-C: what was typed and not read yet is
 // dropped, and what runs in front of the shell ends (Kernel.interrupt).
-// It receives {type: 'output', fd, bytes}, {type: 'waiting', memory, held},
-// {type: 'exit', status} or {type: 'error', message}; `memory` is all the
+// It receives {type: 'output', fd, bytes}, {type: 'waiting', for, ms,
+// memory, held}, {type: 'exit', status} or {type: 'error', message}. A
+// kernel waits `for` 'input' (what runs reads what is typed) or 'time' (it
+// sleeps, and goes on by itself in `ms` milliseconds; waiting.mjs). `memory` is all the
 // kernel holds, and `held` the same by kind (Kernel.held: guest,
 // translations, translator, files, and what of it can go now, spare).
 // {type: 'free'} gives back all that can go without stopping anything and
@@ -30,6 +32,7 @@ import {Mirror} from './mirror.mjs';
 import {mountPack, syncRange} from './pack.mjs';
 import {Kernel} from './process.mjs';
 import {loadTranslator} from './translator.mjs';
+import {said} from './waiting.mjs';
 
 let kernel = null;
 let mirror = null;
@@ -50,11 +53,11 @@ function pump() {
     const r = kernel.pump();
     const c = mirror?.changes();
     if (c) self.postMessage({type: 'changes', ...c}, c.files.map((f) => f.bytes.buffer));
-    const held = kernel.held();
-    self.postMessage(r.waiting ? {type: 'waiting', memory: held.total, held} : {type: 'exit', status: r.status, memory: 0});
+    const m = said(r, kernel.held(), performance.now());
+    self.postMessage(m);
     // A process that sleeps goes on when its time comes, input or not.
     clearTimeout(waking);
-    if (r.waiting && r.until !== undefined) waking = setTimeout(pump, Math.max(0, r.until - performance.now()));
+    if (m.for === 'time') waking = setTimeout(pump, m.ms);
   } catch (e) {
     self.postMessage({type: 'error', message: e instanceof Error ? `${e.name}: ${e.message}\n${e.stack}` : String(e)});
   }

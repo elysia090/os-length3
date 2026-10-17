@@ -116,6 +116,7 @@ export class Session {
     this.runs.push({line: lines.trimEnd(), output: '', started: Date.now(), ms: null});
     if (this.runs.length > RUNS) this.runs.shift();
     this.inputWait = false;
+    this.sleepsUntil = 0;
     this.heard = Date.now();
     this.follow();
     this.tell();
@@ -159,6 +160,8 @@ export class Session {
   private heard = 0;
   /** Paused with a run open: what runs reads what is typed. */
   private inputWait = false;
+  /** Asleep with a run open, until this time (Date.now()): it goes on by itself, and hears Interrupt meanwhile. */
+  private sleepsUntil = 0;
   private ticker = 0;
   private unwatch: (() => void) | null = null;
   private queue: Promise<void> = Promise.resolve();
@@ -243,8 +246,10 @@ export class Session {
         else if (data.type === 'waiting') {
           this.memory = data.memory ?? 0;
           this.spare = data.held?.spare ?? 0;
-          // Paused with a run still open: what runs is reading what is typed.
-          this.inputWait = this.runs.at(-1)?.ms === null;
+          // Paused with a run still open: what runs reads what is typed, or sleeps for a while.
+          const open = this.runs.at(-1)?.ms === null;
+          this.inputWait = open && data.for !== 'time';
+          this.sleepsUntil = open && data.for === 'time' ? Date.now() + data.ms : 0;
           this.follow();
           this.tell();
         }
@@ -317,10 +322,11 @@ export class Session {
   /**
    * While a line runs, say what it is doing, once it has taken a moment:
    * reading input (Interrupt reaches it: the kernel is paused), running and
-   * still talking (Interrupt lands when it next stops), or running without a
-   * word for a while, when a busy worker cannot hear anything and only
-   * starting again is sure (what it changed since the last line is not
-   * written back).
+   * still talking (Interrupt lands when it next stops), sleeping (running,
+   * quiet, and Interrupt reaches it: the kernel is paused until its time),
+   * or running without a word for a while, when a busy worker cannot hear
+   * anything and only starting again is sure (what it changed since the
+   * last line is not written back).
    */
   private follow() {
     clearInterval(this.ticker);
@@ -329,7 +335,8 @@ export class Session {
     const paint = () => {
       if (run.ms !== null || !this.live) { clearInterval(this.ticker); this.activity.replaceChildren(); return; }
       const s = Math.floor((Date.now() - run.started) / 1000);
-      const quiet = Math.floor((Date.now() - this.heard) / 1000);
+      // A sleep is quiet but heard: quiet is counted from when it is over.
+      const now = Date.now(), quiet = Math.floor((now - Math.max(this.heard, Math.min(this.sleepsUntil, now))) / 1000);
       const cut = h('button', {class: 'button small-button', type: 'button'}, t('Interrupt'));
       cut.addEventListener('click', () => this.interrupt());
       if (this.inputWait) { this.activity.replaceChildren(h('span', {class: 'muted'}, t('Waiting for input')), cut); return; }
@@ -352,6 +359,7 @@ export class Session {
     if (this.native) { void this.native.interrupt(); return; }
     this.worker?.postMessage({type: 'interrupt'});
     this.inputWait = false;
+    this.sleepsUntil = 0;
   }
 
   /** A new shell for this repo in this place. */
