@@ -32,7 +32,8 @@ sh "$here/scripts/userland.sh"
 cd "$here"
 npm ci
 npm run check
-npm run build
+# The web app talks to the origin it is served from (one Worker: service/wrangler.toml).
+VITE_LENGTH3_REMOTE="${VITE_LENGTH3_REMOTE-}" npm run build
 rm -f length3-web.zip
 (cd dist && zip -qr ../length3-web.zip .)
 sha256sum length3-web.zip | tee length3-web.zip.sha256

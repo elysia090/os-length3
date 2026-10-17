@@ -197,15 +197,34 @@ The webview has no other host access: it reads nothing outside the app's
 data directory, runs no shell and launches no root. The app starts no host
 program for a repo; its own tools run inside the root (`core/src/launch.rs`).
 
-The Remote (`service/`): Hono with Better Auth (anonymous accounts held by
-passkeys, a recovery code, device authorization, bearer sessions) on
-Drizzle; Neon in production, PGlite in tests and here:
+The Remote (`service/`): Hono with Better Auth (provider sign-in, then
+passkeys; device authorization; bearer sessions) on Drizzle; Neon in
+production, PGlite in tests and here. Its schema is two migrations: the one
+Drizzle generates from `service/schema.ts`, and `0001` for what Drizzle cannot
+say (the counted room, the service's role). The service connects as
+`remote_worker`, a member of `remote_app`, which reads and writes rows and
+nothing else.
 
 ```
 node service/dev.ts DIR 8787 http://localhost:1420     # the Remote, here
 LENGTH3_DEV_REMOTE=http://127.0.0.1:8787 VITE_LENGTH3_REMOTE= npx vite
 LENGTH3_REMOTE=http://127.0.0.1:8787 l3 login
-npx wrangler deploy -c service/wrangler.toml            # on Cloudflare (not done)
+```
+
+On Cloudflare it is one Worker on one origin, the app's files and the Remote
+together (`service/wrangler.toml`). For research it has one account,
+`ENTER_AS`: nobody signs up, nothing is shown to everyone, and whoever is
+given the link `https://os.length3.com/#enter=KEY` comes in as it (a day at a
+time; a new key ends every old link and session at once). Once, from a
+machine that reaches Neon and Cloudflare:
+
+```
+npx wrangler login
+npx wrangler r2 bucket create length3-blobs -c service/wrangler.toml
+OWNER_URL='postgresql://neondb_owner:…' node service/deploy.ts database   # migrations, remote_worker, DATABASE_URL
+node service/deploy.ts secret                                            # BETTER_AUTH_SECRET
+OWNER_URL='postgresql://neondb_owner:…' node service/deploy.ts link       # ENTER_KEY; prints the link
+sh scripts/web-release.sh && npx wrangler deploy -c service/wrangler.toml
 ```
 
 ## Develop

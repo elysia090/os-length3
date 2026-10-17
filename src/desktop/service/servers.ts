@@ -91,6 +91,8 @@ export interface ServerDeps {
   mail?: (to: string, subject: string, text: string) => Promise<void>;
   /** Mixed into the digests of codes and tokens. */
   secret?: string;
+  /** No board is opened past its people (a Remote for research: enter.ts). */
+  closed?: boolean;
 }
 
 type Board = {id: string; serverId: string; name: string; reach: number; goneAt: Date | null};
@@ -323,6 +325,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     if (typeof b?.open === 'boolean' || typeof b?.guests === 'boolean') {
       // How far a board is open reaches past its people: its server's owner says.
       if (!at.owner) return c.json({error: 'Only its server\'s owner opens a board'}, 403);
+      if (d.closed && (b.open === true || b.guests === true)) return c.json({error: 'Nothing is shown to everyone from this Remote'}, 403);
       let reach = at.b.reach;
       if (typeof b.open === 'boolean') reach = b.open ? Math.max(reach, REACH.open) : REACH.people;
       if (typeof b.guests === 'boolean') reach = b.guests ? REACH.guests : Math.min(reach, REACH.open);

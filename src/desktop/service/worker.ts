@@ -12,6 +12,7 @@ import {Pool} from '@neondatabase/serverless';
 import {drizzle} from 'drizzle-orm/neon-serverless';
 import {createApp} from './app.ts';
 import {createAuth, providers} from './auth.ts';
+import {enterEmail} from './enter.ts';
 import {r2Bucket, type R2Bucket} from './bucket.ts';
 import * as schema from './schema.ts';
 import {sweep} from './sweep.ts';
@@ -31,6 +32,12 @@ interface Env {
   GOOGLE_CLIENT_SECRET?: string;
   APPLE_CLIENT_ID?: string;
   APPLE_CLIENT_SECRET?: string;
+  /** For research (enter.ts): the one account's name; with it, nobody signs up and the link is the way in. */
+  ENTER_AS?: string;
+  /** The key its link carries (a secret, long and random). */
+  ENTER_KEY?: string;
+  /** What one account may keep, in MB (2048 unless said). */
+  QUOTA_MB?: string;
   BLOBS: R2Bucket;
 }
 interface Ctx { waitUntil(p: Promise<unknown>): void }
@@ -64,10 +71,14 @@ function make(env: Env) {
   const github = pair(env.GITHUB_CLIENT_ID, env.GITHUB_CLIENT_SECRET), google = pair(env.GOOGLE_CLIENT_ID, env.GOOGLE_CLIENT_SECRET),
     apple = pair(env.APPLE_CLIENT_ID, env.APPLE_CLIENT_SECRET);
   const origins = (env.APP_ORIGINS ?? '').split(/\s+/).filter(Boolean);
-  const auth = createAuth({db, secret: env.BETTER_AUTH_SECRET, baseURL: env.BASE_URL, appOrigin: env.APP_ORIGIN, origins, github, google, apple});
+  // For research: the one account, entered by its link; no key, no way in at all.
+  const enter = env.ENTER_AS ? {as: env.ENTER_AS, key: env.ENTER_KEY && env.ENTER_KEY.length >= 32 ? env.ENTER_KEY : ''} : undefined;
+  const auth = createAuth({db, secret: env.BETTER_AUTH_SECRET, baseURL: env.BASE_URL, appOrigin: env.APP_ORIGIN, origins, github, google, apple,
+    only: enter && enterEmail(enter.as)});
   const bucket = r2Bucket(env.BLOBS);
   const app = createApp({db, auth, bucket, origins: [env.APP_ORIGIN, ...origins], providers: providers({github, google, apple}),
-    domain: env.DOMAIN ?? 'length3.com', baseURL: env.BASE_URL, secret: env.BETTER_AUTH_SECRET});
+    domain: env.DOMAIN ?? 'length3.com', baseURL: env.BASE_URL, secret: env.BETTER_AUTH_SECRET, enter,
+    quota: env.QUOTA_MB ? Number(env.QUOTA_MB) * 1024 ** 2 : undefined});
   return {app, at, bucket};
 }
 

@@ -47,6 +47,12 @@ export interface AuthConfig {
   dev?: boolean;
   /** Off only in tests, where every request comes from the same address. */
   rateLimit?: boolean;
+  /**
+   * A Remote for research (enter.ts): no identity is admitted but the one
+   * account's, under this address, and a session lasts a day from when it
+   * was made, never drawn out by use.
+   */
+  only?: string;
 }
 
 /** Which providers a Remote offers, in the order its sign-in shows them. */
@@ -70,7 +76,10 @@ export function createAuth(c: AuthConfig) {
     },
     // One person, one account: a second provider with the same verified address joins it.
     account: {accountLinking: {enabled: true, trustedProviders: ['github', 'google', 'apple', 'dev']}},
-    session: {expiresIn: 60 * 60 * 24 * 60, updateAge: 60 * 60 * 24},
+    session: c.only ? {expiresIn: 60 * 60 * 24, disableSessionRefresh: true} : {expiresIn: 60 * 60 * 24 * 60, updateAge: 60 * 60 * 24},
+    // For research, no provider admits anyone: the one account is entered by its link alone.
+    ...(c.only ? {user: {validateUserInfo: ({user}: {user: {email?: string | null}}) =>
+      (user.email === c.only ? undefined : {error: 'closed', errorDescription: 'This Remote takes no new accounts'})}} : {}),
     rateLimit: {enabled: c.rateLimit ?? true, window: 60, max: 120},
     // A sign-in with a passkey is proof the person is at the device just now: turning a repo
     // off (and setting the code for it) asks for a session made that way minutes ago. Only the

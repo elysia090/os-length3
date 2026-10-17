@@ -43,6 +43,7 @@ import {cors} from 'hono/cors';
 import type {Auth} from './auth.ts';
 import type {Bucket} from './bucket.ts';
 import {devOAuth} from './devoauth.ts';
+import {enter, type Enter} from './enter.ts';
 import {inbox} from './inbox.ts';
 import {ago, body, lock, ms, qualified, refuse, rows, type Db, type Vars} from './request.ts';
 import {blob, change, cut, guard, home, line, repo, repoGone, review, room, type Review, type Tree} from './schema.ts';
@@ -72,6 +73,8 @@ export interface Deps {
   recheck?: number;
   /** Sends mail (a server board's guest's code); without it, guests cannot be checked. */
   mail?: (to: string, subject: string, text: string) => Promise<void>;
+  /** A Remote for research: one account, entered by its link (enter.ts); nobody signs up, nothing is shown to everyone. */
+  enter?: Enter;
 }
 
 /** What one account may keep, unless the deployment says otherwise. */
@@ -186,9 +189,12 @@ export function createApp(d: Deps) {
     c.header('X-Content-Type-Options', 'nosniff');
   });
 
+  // For research no passkey is added: a passkey would let a link's holder back in after its key changed.
+  if (d.enter) app.all('/api/auth/passkey/*', (c) => c.json({error: 'This Remote is entered by its link'}, 403));
   app.on(['GET', 'POST'], '/api/auth/*', (c) => d.auth.handler(c.req.raw));
 
-  app.get('/v1/about', (c) => c.json({passkey: true, providers: d.providers, domain: d.domain ?? 'length3.com'}));
+  app.get('/v1/about', (c) => c.json({passkey: !d.enter, providers: d.enter ? [] : d.providers, domain: d.domain ?? 'length3.com', ...(d.enter ? {enter: true} : {})}));
+  if (d.enter) enter({db, auth: d.auth, enter: d.enter}, app);
   if (d.providers.includes('dev')) app.route('/dev-oauth', devOAuth());
 
   // The OS is public: its canonical copy is the release, named by its digest.
@@ -722,8 +728,8 @@ export function createApp(d: Deps) {
 
   const domain = d.domain ?? 'length3.com';
   inbox({db, domain, baseURL: d.baseURL ?? '', secret: d.secret ?? '', txt: d.txt, recheck: d.recheck}, v1, app);
-  servers({db, domain, mail: d.mail, secret: d.secret}, v1, app);
-  seen({db, bucket: d.bucket, domain, viewer: async (req) => (await d.auth.api.getSession({headers: req.headers}))?.user.id ?? null}, v1, app);
+  servers({db, domain, mail: d.mail, secret: d.secret, closed: !!d.enter}, v1, app);
+  seen({db, bucket: d.bucket, domain, closed: !!d.enter, viewer: async (req) => (await d.auth.api.getSession({headers: req.headers}))?.user.id ?? null}, v1, app);
 
   app.route('/v1', v1);
   return app;

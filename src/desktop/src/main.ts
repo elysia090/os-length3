@@ -165,11 +165,16 @@ onLang(() => {
   render();
 });
 const asking = new URLSearchParams(location.search);
+// A link for research (…/#enter=KEY): the key is taken out of the address before anything else runs,
+// so it is not left in the history, a bookmark or a screenshot, and is sent once (remote.ts enterWith).
+const entering = /(?:^#|&)enter=([^&]+)/.exec(location.hash)?.[1];
+if (entering) history.replaceState(null, '', location.pathname + location.search);
 if (asking.has('device')) {
   void loadState().finally(() => { useLang(getState('lang')); document.body.replaceChildren(devicePage(asking.get('user_code') ?? '')); });
 } else {
   void loadState().finally(async () => {
     useLang(getState('lang'));
+    if (entering) await (await import('./remote.ts')).enterWith(decodeURIComponent(entering));
     // Back from a provider: take up the session it made, then go on as usual.
     if (asking.has('signed-in')) {
       const {claim} = await import('./remote.ts');

@@ -11,6 +11,7 @@ import {drizzle} from 'drizzle-orm/pglite';
 import {migrate} from 'drizzle-orm/pglite/migrator';
 import {createApp} from './app.ts';
 import {createAuth} from './auth.ts';
+import {enterEmail} from './enter.ts';
 import type {Bucket} from './bucket.ts';
 import * as schema from './schema.ts';
 import {sweep} from './sweep.ts';
@@ -43,14 +44,17 @@ if (!existsSync(secretFile)) writeFileSync(secretFile, crypto.randomUUID() + cry
 const baseURL = process.env.LENGTH3_DEV_BASE ?? `http://127.0.0.1:${port}`;
 // Sign-in here is the stand-in provider (devoauth.ts): a name, and you are in.
 const secret = readFileSync(secretFile, 'utf8');
-const auth = createAuth({db, secret, baseURL, appOrigin, origins: others, dev: true});
+// LENGTH3_ENTER_AS and LENGTH3_ENTER_KEY make it a Remote for research, as on Workers (enter.ts): no
+// provider then, the link …/#enter=KEY the only way in.
+const enter = process.env.LENGTH3_ENTER_AS ? {as: process.env.LENGTH3_ENTER_AS, key: process.env.LENGTH3_ENTER_KEY ?? ''} : undefined;
+const auth = createAuth({db, secret, baseURL, appOrigin, origins: others, dev: !enter, only: enter && enterEmail(enter.as)});
 // Mail is not sent from here: it is written to the console and to mail.log (a Topic guest's code is read there).
 const mail = async (to: string, subject: string, text: string) => {
   const line = `mail to ${to}: ${subject}\n  ${text}\n`;
   console.log(line.trimEnd());
   appendFileSync(join(dir, 'mail.log'), line);
 };
-const app = createApp({db, auth, bucket, origins: [appOrigin, ...others], providers: ['dev'], domain: 'length3.test', baseURL, secret, mail});
+const app = createApp({db, auth, bucket, origins: [appOrigin, ...others], providers: enter ? [] : ['dev'], domain: 'length3.test', baseURL, secret, mail, enter});
 
 createServer(async (req, res) => {
   const chunks: Buffer[] = [];

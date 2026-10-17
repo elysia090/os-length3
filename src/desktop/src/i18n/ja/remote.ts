@@ -73,6 +73,8 @@ export default {
   'Set the code': 'コードを決める',
   'Turning a repo off or discarding it asks for your five-letter code. Set it under Sign-in first.': 'repo をオフにしたり廃棄したりするには5文字のコードが要ります。先にサインインのところで決めてください。',
   'Discard': '廃棄',
+  'This Remote is entered by the link you were given.': 'この Remote には、渡されたリンクから入ります。',
+  'You came in by the link you were given; each time lasts a day.': '渡されたリンクから入っています。一度入ると1日もちます。',
   'A repo is discarded from the browser, where its passkey is.': 'repo の廃棄はパスキーのあるブラウザから行います。',
   'It goes from the Remote now, with its history, and cannot be brought back.': 'いま Remote から履歴ごと消え、戻せません。',
   'The copy here goes with it.': 'ここの写しも消えます。',

@@ -6,6 +6,7 @@ import {drizzle} from 'drizzle-orm/pglite';
 import {migrate} from 'drizzle-orm/pglite/migrator';
 import {createApp, sha256} from './app.ts';
 import {createAuth} from './auth.ts';
+import {enterEmail, type Enter} from './enter.ts';
 import {memoryBucket} from './bucket.ts';
 import * as schema from './schema.ts';
 import {sweep} from './sweep.ts';
@@ -13,16 +14,17 @@ import {sweep} from './sweep.ts';
 const BASE = 'http://remote.test';
 const APP = 'http://app.test';
 
-async function service(records: Record<string, string[]> = {}, o: {quota?: number} = {}) {
+async function service(records: Record<string, string[]> = {}, o: {quota?: number; enter?: Enter} = {}) {
   const db = drizzle(new PGlite(), {schema});
   await migrate(db, {migrationsFolder: new URL('./migrations', import.meta.url).pathname});
-  const auth = createAuth({db, secret: 'test-secret-'.repeat(4), baseURL: BASE, appOrigin: APP, rateLimit: false, dev: true});
+  const auth = createAuth({db, secret: 'test-secret-'.repeat(4), baseURL: BASE, appOrigin: APP, rateLimit: false, dev: true, only: o.enter && enterEmail(o.enter.as)});
   const bucket = memoryBucket();
   // DNS as a map of name → TXT records.
   const dns = new Map(Object.entries(records));
   const mails: {to: string; subject: string; text: string}[] = [];
   const app = createApp({db, auth, bucket, origins: [APP], providers: ['dev'], domain: 'length3.test', baseURL: BASE,
-    secret: 'test-secret-'.repeat(4), txt: async (name) => dns.get(name) ?? [], recheck: 0, mail: async (to, subject, text) => { mails.push({to, subject, text}); }, quota: o.quota});
+    secret: 'test-secret-'.repeat(4), txt: async (name) => dns.get(name) ?? [], recheck: 0, mail: async (to, subject, text) => { mails.push({to, subject, text}); }, quota: o.quota,
+    enter: o.enter});
   // The service asks its own stand-in provider for tokens over the network: here, itself.
   const real = globalThis.fetch;
   globalThis.fetch = ((url: string | URL | Request, init?: RequestInit) =>
@@ -1070,4 +1072,45 @@ test('The service\'s role reads and writes rows, and nothing else', async () => 
     as(sql`select count(*) from repo`), as(sql`insert into throttle (key) values ('k')`),
     as(sql`create table mine (x int)`), as(sql`drop table throttle`), as(sql`alter table repo drop constraint repo_name`), as(sql`truncate throttle`),
   ]), ['done', 'done', 'refused', 'refused', 'refused', 'refused']);
+});
+
+test('For research: nobody signs up, the link enters the one account, and nothing is shown to everyone', async () => {
+  const key = 'k'.repeat(40);
+  const s = await service({}, {enter: {as: 'banana000000', key}});
+  assert.deepEqual((await s.call('GET', '/v1/about')).json, {passkey: false, providers: [], domain: 'length3.test', enter: true});
+  // A provider admits nobody, not even one this Remote could offer.
+  const asked = await s.app.request(`${BASE}/api/auth/sign-in/social`, {method: 'POST', headers: {Origin: APP, 'Content-Type': 'application/json'},
+    body: JSON.stringify({provider: 'dev', callbackURL: `${APP}/`})});
+  const go = new URL(((await asked.json()) as {url: string}).url);
+  const approve = new URL(`${BASE}/dev-oauth/approve`);
+  for (const k of ['redirect_uri', 'state']) approve.searchParams.set(k, go.searchParams.get(k) ?? '');
+  const back = (await s.app.request(approve.toString())).headers.get('Location')!;
+  const done = await s.app.request(back, {headers: {Cookie: asked.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ')}});
+  assert.ok(!done.headers.get('set-auth-token') && !(done.headers.get('Location') ?? '').includes('signed-in'), done.headers.get('Location') ?? '');
+  assert.equal(await count(s, sql`select count(*)::int as n from "user"`), 0);
+  // The link: a wrong key opens nothing; the key enters the one account, the same one each time.
+  const enter = (k: unknown) => s.call('POST', '/v1/enter', {body: {key: k}});
+  assert.deepEqual(await Promise.all(['', 'k'.repeat(39), 'k'.repeat(41), 42].map(async (k) => (await enter(k)).status)), [403, 403, 403, 403]);
+  const a = await enter(key), b = await enter(key);
+  assert.deepEqual([a.status, a.json.name, b.status], [200, 'banana000000', 200]);
+  // The latest entry is the one that proves the person is here.
+  const t = b.json.token as string;
+  const who = async (token: string) => ((await s.call('GET', '/api/auth/get-session', {token})).json as unknown as {user: {id: string}} | null)?.user.id;
+  assert.ok((await who(t)) && (await who(t)) === (await who(a.json.token as string)));
+  assert.equal(await count(s, sql`select count(*)::int as n from "user"`), 1);
+  // A session made by the link ends a day after it was made, and using it does not draw it out.
+  await s.call('GET', '/v1/repos', {token: t});
+  assert.ok(await count(s, sql`select count(*)::int as n from session where extract(epoch from expires_at - created_at) between 86000 and 86500`) >= 2);
+  // It works as any account does, and entering just now is proof enough to set the code a repo is turned off with.
+  assert.equal((await s.call('PATCH', '/v1/repos/r/draft', {token: t, body: {version: 0, set: {}, remove: []}})).status, 200);
+  assert.equal((await s.call('POST', '/v1/off-code', {token: t, body: {code: 'AB12C'}})).status, 200);
+  // No passkey is added (one would let a link's holder back in after the key changed), and nothing goes to everyone.
+  assert.equal((await s.call('POST', '/api/auth/passkey/generate-register-options', {token: t, body: {}})).status, 403);
+  await s.call('POST', '/v1/inbox/addresses', {token: t, body: {name: 'banana'}});
+  assert.equal((await s.call('PUT', '/v1/repos/r/seen', {token: t, body: {seen: 'everyone', as: 'me'}})).status, 403);
+  const sid = (await s.call('POST', '/v1/servers', {token: t, body: {name: 'Lab', address: 'lab'}})).json as unknown as {boards: {id: string}[]};
+  assert.equal((await s.call('PATCH', `/v1/boards/${sid.boards[0].id}`, {token: t, body: {open: true}})).status, 403);
+  // Guessing is held off: an address that keeps trying is told to wait, even with the key.
+  for (let i = 0; i < 20; i++) await enter('nope');
+  assert.equal((await enter(key)).status, 429);
 });

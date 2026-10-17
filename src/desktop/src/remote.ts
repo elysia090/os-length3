@@ -97,9 +97,23 @@ function tokenOf(r: Response): string {
 export type Provider = 'github' | 'google' | 'apple' | 'dev';
 export const PROVIDER_NAME: Record<Provider, string> = {github: 'GitHub', google: 'Google', apple: 'Apple', dev: 'Development'};
 
-/** What this Remote offers to sign in with. */
-export async function about(): Promise<{providers: Provider[]}> {
-  try { return await (await api('/v1/about', {}, null)).json() as {providers: Provider[]}; } catch { return {providers: []}; }
+/** What this Remote offers to sign in with; `enter`, that it is entered by the link one was given and nothing else (a Remote for research). */
+export interface Ways { providers: Provider[]; passkey?: boolean; enter?: boolean }
+export async function about(): Promise<Ways> {
+  try { return await (await api('/v1/about', {}, null)).json() as Ways; } catch { return {providers: []}; }
+}
+
+/** In by a link (…/#enter=KEY): the one account of a Remote for research. Why not, said once on the sign-in card. */
+export async function enterWith(key: string): Promise<boolean> {
+  try {
+    const {token} = await (await api('/v1/enter', {method: 'POST', body: JSON.stringify({key})}, null)).json() as {token?: unknown};
+    if (typeof token !== 'string') { signInTrouble = t('This link does not open this Remote'); return false; }
+    await keep(token);
+    return true;
+  } catch (e) {
+    signInTrouble = e instanceof Error ? e.message : String(e);
+    return false;
+  }
 }
 
 /** Sign in with a provider: the page goes there and comes back to `back` (then claim()). */

@@ -27,6 +27,14 @@ export default {
   'Too many reviews on this change': 'この変更のレビューが多すぎます',
   'The change is not open any more': 'その変更はもう開いていません',
   'Too many settings': '設定が多すぎます',
+  // A Remote for research: entered by its link alone.
+  'This link does not open this Remote': 'このリンクではこの Remote に入れません',
+  'Too many tries; try again in an hour': '試しすぎです。1時間後にもう一度どうぞ',
+  // What a provider is told when it would admit someone there (auth.ts only).
+  'closed': 'この Remote は新しいアカウントを受け付けません',
+  'This Remote takes no new accounts': 'この Remote は新しいアカウントを受け付けません',
+  'This Remote is entered by its link': 'この Remote にはリンクから入ります',
+  'Nothing is shown to everyone from this Remote': 'この Remote からは誰にでも見せることはできません',
   // A repo turned off, then discarded: gone for good.
   'Turn it off first.': '先にオフにしてください。',
   'This repo was discarded on the Remote.': 'この repo は Remote で廃棄されました。',

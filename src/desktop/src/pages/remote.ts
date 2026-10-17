@@ -81,20 +81,23 @@ export function signInBox(done: () => void, back?: string): HTMLElement {
     return box;
   }
   const providers = h('div', {class: 'row sign-in-row'});
-  const ways = () => void account.about().then(({providers: list}) => {
+  const passkey = button(t('Sign in with a passkey'));
+  const ways = () => void account.about().then(({providers: list, enter}) => {
+    // Entered by a link alone: no provider, no passkey, and the card says where the way in is.
+    passkey.hidden = !!enter;
     providers.replaceChildren(...list.map((p, i) => {
       const b = button(t('Continue with {name}', {name: account.PROVIDER_NAME[p]}), i === 0 ? 'primary' : '');
       b.addEventListener('click', () => void pressing(b, error, () => account.signInWith(p, back)));
       return b;
     }));
     // No ways because it did not answer is not the same as none offered; the ways come once it answers.
-    if (!list.length) providers.replaceChildren(h('span', {class: 'muted'}, account.remoteAway() ? t('The Remote cannot be reached') : t('This Remote offers no way to sign in yet.')));
+    if (!list.length) providers.replaceChildren(h('span', {class: 'muted'}, account.remoteAway() ? t('The Remote cannot be reached')
+      : enter ? t('This Remote is entered by the link you were given.') : t('This Remote offers no way to sign in yet.')));
   });
   ways();
   const stop = account.onReach(() => { if (!box.isConnected) { stop(); return; } if (!account.remoteAway()) ways(); });
   // Back from a provider without a session: why, once.
   error.textContent = account.takeSignInTrouble();
-  const passkey = button(t('Sign in with a passkey'));
   passkey.addEventListener('click', () => void pressing(passkey, error, async () => { await account.signIn(); done(); }));
   box.append(providers, h('div', {class: 'row sign-in-row'}, passkey), error);
   return box;
@@ -390,9 +393,11 @@ export function remote(ctx: Context): Node[] {
     const page = parts<'repos' | 'sign-in' | 'devices'>('remote', [
       {id: 'repos', label: t('Repos')}, {id: 'sign-in', label: t('Sign-in')}, {id: 'devices', label: t('Devices')}]);
     page.panel('repos').append(repoSection(ctx, (n) => page.count('repos', n), () => page.show('sign-in')));
-    page.panel('sign-in').append(...(isNative
-      ? [h('p', {class: 'muted'}, t('Passkeys and providers are managed in the browser.'))]
-      : [passkeySection(), codeSection(), providerSection()]));
+    // A Remote entered by its link has no passkeys or providers to manage: only the code a repo is turned off with.
+    if (isNative) page.panel('sign-in').append(h('p', {class: 'muted'}, t('Passkeys and providers are managed in the browser.')));
+    else void account.about().then(({enter}) => page.panel('sign-in').replaceChildren(...(enter
+      ? [h('p', {class: 'muted'}, t('You came in by the link you were given; each time lasts a day.')), codeSection()]
+      : [passkeySection(), codeSection(), providerSection()])));
     page.panel('devices').append(deviceSection((n) => page.count('devices', n)));
     holder.replaceChildren(
       h('div', {class: 'part-bar'}, page.switch),

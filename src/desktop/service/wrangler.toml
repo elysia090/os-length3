@@ -1,24 +1,39 @@
-# The Remote: accounts (Better Auth, passkeys), the canonical copy of repos
-# and settings (Postgres on Neon), and file contents and release bundles (R2).
+# The Remote and the web app, as one Worker on one origin: accounts (Better
+# Auth), the canonical copy of repos and settings (Postgres on Neon), file
+# contents and release bundles (R2), and the app's own files (static assets,
+# built with VITE_LENGTH3_REMOTE="" so it talks to the origin it came from).
 #
-#   npx wrangler r2 bucket create length3-blobs
-#   DATABASE_URL=… npx drizzle-kit migrate --config service/drizzle.config.ts
-#   npx wrangler secret put DATABASE_URL -c service/wrangler.toml
-#   npx wrangler secret put BETTER_AUTH_SECRET -c service/wrangler.toml
-#   (optional) GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET; GOOGLE_…; APPLE_CLIENT_ID, APPLE_CLIENT_SECRET
+# Once, from a machine that reaches Neon and Cloudflare (`npx wrangler login`):
+#   npx wrangler r2 bucket create length3-blobs -c service/wrangler.toml
+#   OWNER_URL=… node service/deploy.ts database     migrations; the Worker's role; DATABASE_URL
+#   node service/deploy.ts secret                   BETTER_AUTH_SECRET
+#   OWNER_URL=… node service/deploy.ts link         ENTER_KEY, and the link to hand on
+# Each release:
+#   sh scripts/web-release.sh                       dist/ (VITE_LENGTH3_REMOTE="" is set there)
 #   npx wrangler deploy -c service/wrangler.toml
-name = "length3-remote"
+name = "os-length3"
 main = "worker.ts"
 compatibility_date = "2026-08-01"
 compatibility_flags = ["nodejs_compat"]
 
+[assets]
+directory = "../dist"
+# A page of the app that is not a file is the app; the Remote's own paths always reach the Worker.
+not_found_handling = "single-page-application"
+run_worker_first = ["/v1/*", "/api/*", "/.well-known/*"]
+
 [vars]
-BASE_URL = "https://remote.length3.com"
-# Passkeys are made and used on the web app's own origin.
+# The URL handed on: the app and the Remote are both here.
+BASE_URL = "https://os.length3.com"
 APP_ORIGIN = "https://os.length3.com"
 DOMAIN = "length3.com"
 # The desktop app's webview (tauri:// on macOS and Linux, http://tauri.localhost on Windows).
 APP_ORIGINS = "tauri://localhost http://tauri.localhost"
+# For research (enter.ts): the one account. Nobody signs up; the link …/#enter=ENTER_KEY is the way
+# in, and nothing is shown to everyone. Without it, the providers whose secrets are set are offered.
+ENTER_AS = "banana000000"
+# What the one account may keep (blobs and trees), in MB.
+QUOTA_MB = "1024"
 
 # What was held long enough goes, once a day (sweep.ts; worker.ts scheduled()).
 [triggers]
@@ -27,6 +42,11 @@ crons = ["41 4 * * *"]
 [[r2_buckets]]
 binding = "BLOBS"
 bucket_name = "length3-blobs"
+
+# The app's origin, and the name the desktop app and l3 reach the Remote by.
+[[routes]]
+pattern = "os.length3.com"
+custom_domain = true
 
 [[routes]]
 pattern = "remote.length3.com"

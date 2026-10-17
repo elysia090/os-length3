@@ -37,6 +37,8 @@ export interface SeenDeps {
   viewer: (req: Request) => Promise<string | null>;
   /** This Remote's own domain: a name written alone is on it. */
   domain: string;
+  /** Nothing is shown to everyone (a Remote for research: enter.ts). */
+  closed?: boolean;
 }
 
 /** A repo that is on: its number and name. */
@@ -108,6 +110,7 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     if (to !== 'private' && to !== 'servers' && to !== 'everyone') return c.json({error: 'private, servers or everyone'}, 400);
     let ids = Array.isArray(b?.servers) ? [...new Set((b.servers as unknown[]).filter((x): x is string => typeof x === 'string'))] : null;
     if (to === 'servers' && !ids?.length) return c.json({error: 'Choose a server'}, 400);
+    if (to === 'everyone' && d.closed) return c.json({error: 'Nothing is shown to everyone from this Remote'}, 403);
     return c.json(await db.transaction(async (tx: Db) => {
       const r = await isOn(tx, me, name);
       if (!r) refuse(404, {error: 'That repo is not on the Remote'});
