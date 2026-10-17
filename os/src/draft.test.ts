@@ -151,6 +151,19 @@ test("TODO from two devices is joined; the profile is the Remote's when both cha
   await draft.syncHome('todo');
   const ids = (JSON.parse(getState('todo')!) as {id: string}[]).map((t) => t.id).sort();
   assert.deepEqual(ids, ['a', 'b', 'c']);
+
+  await setState('profile', JSON.stringify({name: 'Ren'}));
+  await draft.syncHome('profile');
+  const p = await (await fetch(`${URL_}/v1/home/profile`, {headers: {Authorization: `Bearer ${token}`}})).json() as {version: number};
+  await fetch(`${URL_}/v1/home/profile`, {method: 'PUT', headers: {Authorization: `Bearer ${token}`, 'Content-Type': 'application/json'},
+    body: JSON.stringify({value: JSON.stringify({name: 'Ren T.'}), version: p.version})});
+  await setState('profile', JSON.stringify({name: 'れん'}));
+  asked.length = 0;
+  await draft.syncHome('profile');
+  assert.equal(getState('profile'), JSON.stringify({name: 'Ren T.'}));
+  // Agreed then and there (bug: taken but never agreed, so each look took it again, three reads at a time).
+  assert.deepEqual(asked, ['/v1/home/profile']);
+  assert.equal(draft.homeMoved('profile', p.version + 1), false);
 });
 
 test('an issue is worked on in its own copy; pushed, submitted, reviewed and merged into main', async () => {

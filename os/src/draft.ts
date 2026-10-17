@@ -373,7 +373,8 @@ export function homeMoved(key: HomeKey, version: number): boolean {
  * Agree a setting with the Remote. Unchanged here: the Remote's is taken.
  * Changed here: it is sent from the version it was read at; if another
  * device changed it meanwhile, the TODO lists are joined and the profile
- * is the Remote's.
+ * is the Remote's. l3 agrees them the same way, in the same record
+ * (core/src/home.rs), so the app and l3 on one device are one device.
  */
 export async function syncHome(key: HomeKey): Promise<void> {
   for (let round = 0; round < 3; round++) {
@@ -389,7 +390,12 @@ export async function syncHome(key: HomeKey): Promise<void> {
     }
     let value = here!;
     if (there.version !== (b?.version ?? 0) && there.value !== null) {
-      if (key !== 'todo') { await setState(key, there.value); continue; }
+      if (key !== 'todo') {
+        // The Remote's stands, and is what is agreed now (bug: taken but never agreed, so it was taken again at every look).
+        await setState(key, there.value);
+        await saveState({...syncState(), home: {...syncState().home, [key]: {version: there.version, value: there.value}}});
+        return;
+      }
       value = mergeTodo(here!, there.value);
       if (value !== here) await setState(key, value);
     }
