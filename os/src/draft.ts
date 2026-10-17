@@ -94,7 +94,7 @@ export const deviceTag = (ua = globalThis.navigator?.userAgent): string =>
 
 // ---- the browser's copy ----
 
-interface Local { tree: Tree; texts: Map<string, Uint8Array>; bytes: number }
+interface Local { tree: Tree; texts: Map<string, string>; bytes: number }
 
 /**
  * Whether a directory is derived: made from the repo's own files by a tool
@@ -116,8 +116,16 @@ export function derived(name: string, siblings: ReadonlySet<string>, inside: Rea
   }
 }
 
+/**
+ * Each copy's digests as its files were last read, by their text: a file is
+ * digested again only when its text is another (as core's digest() is by a
+ * file's size, time and inode), not at every look.
+ */
+const digests = new Map<string, Map<string, {text: string; sha: string; size: number}>>();
+
 async function localTree(repo: string, away: string[] = [], base: Tree = {}): Promise<Local> {
-  const tree: Tree = {}, texts = new Map<string, Uint8Array>();
+  const tree: Tree = {}, texts = new Map<string, string>();
+  const key = keyOf(repo), was = digests.get(key), now: NonNullable<typeof was> = new Map();
   let bytes = 0;
   const walk = async (dir: string, entries: Awaited<ReturnType<typeof store.tree>>) => {
     if (dir && !entries.length) tree[dir] = null;
@@ -132,14 +140,17 @@ async function localTree(repo: string, away: string[] = [], base: Tree = {}): Pr
       // Gone between listing it and reading it: not part of this tree.
       const c = await store.read(repo, path).catch(() => null);
       if (!c || c.text === null) continue;
-      const b = enc.encode(c.text);
-      const sha = await sha256(b);
-      tree[path] = sha;
-      texts.set(sha, b);
-      bytes += b.length;
+      let d = was?.get(path);
+      if (d?.text !== c.text) { const b = enc.encode(c.text); d = {text: c.text, sha: await sha256(b), size: b.length}; }
+      now.set(path, d);
+      tree[path] = d.sha;
+      texts.set(d.sha, c.text);
+      bytes += d.size;
     }
   };
   await walk('', await store.tree(repo, ''));
+  // Only what is here now is remembered: a file gone takes its digest with it.
+  digests.set(key, now);
   // What this copy cannot hold stays as the Remote has it.
   for (const p of away) if (!(p in tree) && base[p] !== undefined) tree[p] = base[p];
   return {tree, texts, bytes};
@@ -239,9 +250,9 @@ async function webSync(repo: string): Promise<Synced> {
     if (shas.length) {
       const missing = await json<string[]>('/v1/blobs/missing', {method: 'POST', body: JSON.stringify(shas)});
       for (const sha of missing) {
-        const bytes = here.texts.get(sha);
-        if (!bytes) continue;
-        const put = await api(`/v1/blobs/${sha}`, {method: 'PUT', body: bytes as BodyInit, headers: {'Content-Type': 'application/octet-stream'}});
+        const text = here.texts.get(sha);
+        if (text === undefined) continue;
+        const put = await api(`/v1/blobs/${sha}`, {method: 'PUT', body: enc.encode(text) as BodyInit, headers: {'Content-Type': 'application/octet-stream'}});
         if (!put.ok) throw new RemoteError(put.status, put.status === 507 ? t('The Remote is full for this account') : t('The Remote did not take it ({status})', {status: put.status}));
       }
     }
@@ -297,6 +308,7 @@ export async function status(): Promise<Status[]> {
 export async function forget(repo: string, keepLine = false) {
   const s = syncState();
   for (const k of Object.keys(s.repos)) if (k === repo || k.startsWith(`${repo}@`)) delete s.repos[k];
+  for (const k of [...digests.keys()]) if (k === repo || k.startsWith(`${repo}@`)) digests.delete(k);
   if (s.lines && !keepLine) delete s.lines[repo];
   await saveState(s);
 }
