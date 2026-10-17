@@ -2087,6 +2087,37 @@ fn helpers(code: &mut CodeSection, entries: u32, table: u64) {
 
 }
 
+/// Every function of `program`, in order. Each is lowered on its own, so
+/// natively they share the cores; wasm has one thread and lowers in turn.
+fn lower_all(program: &Program, options: Options, report: &mut Report) -> Vec<WasmFunction> {
+    let handed = entry_flags(program);
+    let n = program.functions.len();
+    let one = |range: std::ops::Range<usize>, report: &mut Report| -> Vec<WasmFunction> {
+        range.map(|f| lower_function(program, f as u32, &handed, options, report)).collect()
+    };
+    let threads = if cfg!(target_family = "wasm") { 1 } else { std::thread::available_parallelism().map_or(1, |t| t.get()) };
+    // A few functions are not worth a thread.
+    if threads == 1 || n < 64 {
+        return one(0..n, report);
+    }
+    let size = n.div_ceil(threads);
+    let parts: Vec<(Vec<WasmFunction>, Report)> = std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..n).step_by(size).map(|at| {
+            let one = &one;
+            scope.spawn(move || { let mut r = Report::default(); (one(at..(at + size).min(n), &mut r), r) })
+        }).collect();
+        workers.into_iter().map(|w| w.join().expect("a lowering thread panicked")).collect()
+    });
+    let mut out = Vec::with_capacity(n);
+    for (functions, r) in parts {
+        out.extend(functions);
+        report.blocks += r.blocks;
+        report.instructions += r.instructions;
+        for (m, k) in r.unsupported { *report.unsupported.entry(m).or_default() += k; }
+    }
+    out
+}
+
 #[derive(Clone, Copy, Default)]
 pub struct Options {
     /// Report every block entry to the host's `trace` import.
@@ -2155,10 +2186,7 @@ pub fn translate_more(program: &Program, base: u32, options: Options) -> Transla
     module.section(&elements);
 
     let mut code = CodeSection::new();
-    let handed = entry_flags(program);
-    for f in 0..program.functions.len() as u32 {
-        code.function(&lower_function(program, f, &handed, options, &mut report));
-    }
+    for f in lower_all(program, options, &mut report) { code.function(&f); }
     module.section(&code);
 
     let mut table = Vec::with_capacity(program.entries.len() * 16);
@@ -2236,10 +2264,7 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
 
     let mut code = CodeSection::new();
     helpers(&mut code, entries as u32, table_base);
-    let handed = entry_flags(program);
-    for f in 0..program.functions.len() as u32 {
-        code.function(&lower_function(program, f, &handed, options, &mut report));
-    }
+    for f in lower_all(program, options, &mut report) { code.function(&f); }
     module.section(&code);
 
     let mut data = DataSection::new();

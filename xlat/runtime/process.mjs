@@ -459,8 +459,8 @@ export class Process {
   }
 }
 
-/** Where the time went (run.mjs prints it with XLAT_TIMING=1): translating, compiling wasm, and how much. */
-export const PROFILE = {images: 0, modules: 0, bytes: 0, translate: 0, compile: 0};
+/** Where the time went (run.mjs prints it with XLAT_TIMING=1): translating, compiling wasm, how much, and what a pack root fetched. */
+export const PROFILE = {images: 0, modules: 0, bytes: 0, translate: 0, compile: 0, fetches: 0, fetched: 0};
 /** XLAT_SYSCALLS=1 lists every system call on stderr (node only). */
 const TRACE_SYSCALLS = typeof process !== 'undefined' && !!process.env?.XLAT_SYSCALLS;
 /** XLAT_BLOCKS=1 lists every block entered (node only; run.mjs then translates with --trace). */

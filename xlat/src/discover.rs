@@ -82,6 +82,28 @@ fn direct_target(i: &Instruction) -> Option<u64> {
     matches!(i.op0_kind(), OpKind::NearBranch64 | OpKind::NearBranch32 | OpKind::NearBranch16).then(|| i.near_branch_target())
 }
 
+/// Walk each (start, end, extra) on its own: natively they share the cores,
+/// in wasm (one thread) they go in turn. Returns each start's blocks and the
+/// code it goes on to, in the order given.
+fn walk_all(elf: &Elf, jobs: &[(u64, u64, &[u64])], is_start: &(dyn Fn(u64) -> bool + Sync), references: &mut BTreeSet<u64>) -> Vec<(u64, Vec<Block>, Vec<u64>)> {
+    let go = |part: &[(u64, u64, &[u64])], references: &mut BTreeSet<u64>| -> Vec<(u64, Vec<Block>, Vec<u64>)> {
+        part.iter().map(|&(start, end, extra)| { let (b, c) = walk(elf, start, end, extra, is_start, references); (start, b, c) }).collect()
+    };
+    let threads = if cfg!(target_family = "wasm") { 1 } else { std::thread::available_parallelism().map_or(1, |t| t.get()) };
+    // A few walks are not worth a thread.
+    if threads == 1 || jobs.len() < 64 {
+        return go(jobs, references);
+    }
+    let size = jobs.len().div_ceil(threads);
+    let parts: Vec<_> = std::thread::scope(|scope| {
+        let workers: Vec<_> = jobs.chunks(size).map(|part| { let go = &go; scope.spawn(move || { let mut r = BTreeSet::new(); let out = go(part, &mut r); (out, r) }) }).collect();
+        workers.into_iter().map(|w| w.join().expect("a walking thread panicked")).collect()
+    });
+    let mut out = Vec::with_capacity(jobs.len());
+    for (walked, r) in parts { out.extend(walked); references.extend(r); }
+    out
+}
+
 /// New function starts split only the functions whose ranges held them:
 /// walk those again, and keep every other walk.
 fn split(done: &mut BTreeMap<u64, Vec<Block>>, starts: &BTreeSet<u64>, found: &BTreeSet<u64>) {
@@ -106,7 +128,7 @@ fn ranges(starts: &BTreeSet<u64>, sizes: &BTreeMap<u64, u64>) -> BTreeMap<u64, u
     out
 }
 
-fn walk(elf: &Elf, start: u64, end: u64, extra: &[u64], is_start: &dyn Fn(u64) -> bool, references: &mut BTreeSet<u64>) -> (Vec<Block>, Vec<u64>) {
+fn walk(elf: &Elf, start: u64, end: u64, extra: &[u64], is_start: &(dyn Fn(u64) -> bool + Sync), references: &mut BTreeSet<u64>) -> (Vec<Block>, Vec<u64>) {
     let inside = |a: u64| a >= start && a < end && (a == start || !is_start(a));
     let mut leaders = BTreeSet::from([start]);
     leaders.extend(extra.iter().copied().filter(|&a| inside(a)));
@@ -323,13 +345,12 @@ pub fn discover(elf: &Elf) -> Program {
     loop {
         let range = ranges(&starts, &sizes);
         let mut found = Vec::new();
-        for &start in &starts {
-            if done.contains_key(&start) {
-                continue;
-            }
+        // The pointers (sorted) inside each function's range.
+        let jobs: Vec<(u64, u64, &[u64])> = starts.iter().filter(|s| !done.contains_key(s)).map(|&start| {
             let end = range[&start];
-            let extra: Vec<u64> = pointers.iter().copied().filter(|&a| a > start && a < end).collect();
-            let (blocks, calls) = walk(elf, start, end, &extra, &|a| starts.contains(&a), &mut references);
+            (start, end, &pointers[pointers.partition_point(|&a| a <= start)..pointers.partition_point(|&a| a < end)])
+        }).collect();
+        for (start, blocks, calls) in walk_all(elf, &jobs, &|a| starts.contains(&a), &mut references) {
             found.extend(calls.into_iter().filter(|t| elf.is_code(*t) && !starts.contains(t)));
             done.insert(start, blocks);
         }
@@ -372,8 +393,12 @@ pub fn discover(elf: &Elf) -> Program {
                 mark(b.code.last().unwrap().next_ip(), &function);
             }
         }
-        for &p in &pointers {
-            mark(p, &function);
+        // Only the pointers (sorted) between its first and last block can land in it.
+        if let (Some(first), Some(last)) = (function.blocks.first(), function.blocks.last()) {
+            let span = &pointers[pointers.partition_point(|&a| a < first.start)..pointers.partition_point(|&a| a <= last.start)];
+            for &p in span {
+                mark(p, &function);
+            }
         }
         functions.push(function);
     }

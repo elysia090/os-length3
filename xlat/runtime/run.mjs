@@ -105,7 +105,7 @@ if (root) mount(vfs, root, '/');
 if (pack) {
   const index = JSON.parse(readFileSync(join(pack, 'root.json'), 'utf8'));
   const fd = openSync(join(pack, index.pack), 'r');
-  mountPack(vfs, index, (at, len) => { const b = new Uint8Array(len); readSync(fd, b, 0, len, at); return b; });
+  mountPack(vfs, index, (at, len) => { const b = new Uint8Array(len); readSync(fd, b, 0, len, at); PROFILE.fetches++; PROFILE.fetched += len; return b; });
   process.on('exit', () => closeSync(fd));
 }
 let path = program;
