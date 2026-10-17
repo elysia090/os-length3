@@ -107,13 +107,14 @@ the app.
   which only makes new files in existing directories), as `l3 issue new`
   does. Below: what is not cut yet (the draft against the last cut, by
   folder) and 区切る under the current issue, then the cuts.
-- Remote: the canonical copy (`service/`). A browser makes an account with
-  a passkey (はじめる), signs in with one (パスキーで入る), or uses the
-  recovery code once when every passkey is gone; the app and l3 show a
-  code that a browser approves (`?device&user_code=`). Signed in: each repo
-  with where it stands (同期済み, 送っています, まだ送れていません), repos
-  only on the Remote with 開く, then passkeys, the recovery code and the
-  devices (sessions), each of which can be ended. Every change is sent as a
+- Remote: the canonical copy (`service/`). A browser signs in with a
+  provider (GitHub で続ける) and then adds a passkey, so the next time needs
+  none (パスキーでサインイン); with every passkey lost, the provider again.
+  The app and l3 show a code that a browser approves
+  (`?device&user_code=`). Signed in: each repo with where it stands
+  (同期済み, 送っています, まだ送れていません), repos only on the Remote with
+  開く, then passkeys, providers and the devices (sessions), each of which
+  can be ended. Every change is sent as a
   diff within half a second; the Remote's changes are seen within five
   seconds and on focus; a file changed on both sides keeps this device's
   and puts the other beside it as "name (別の端末).ext". In a browser,

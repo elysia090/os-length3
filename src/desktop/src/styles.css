@@ -240,9 +240,9 @@ a { color: var(--ink); }
 .env-choice.later { border-style: dashed; color: var(--sub); }
 .env-choice code { font: var(--t-meta) var(--mono); }
 @media (max-width: 640px) {
-  /* A narrow Home: a smaller face, and Edit profile under the name rather than over it. */
+  /* A narrow Home: a smaller face, and Edit profile on a row of its own rather than over the name. */
   .profile { grid-template-columns: auto minmax(0, 1fr); gap: var(--s4); }
-  .profile > .button { grid-column: 2; justify-self: start; }
+  .profile > .button { grid-column: 1 / -1; justify-self: start; white-space: nowrap; }
   .avatar { width: 72px; height: 72px; font-size: var(--t-title); }
   .env-choice { grid-template-columns: auto 1fr auto; }
   .env-choice > :nth-child(3) { grid-column: 1 / -1; grid-row: 2; }
@@ -527,7 +527,13 @@ mark { background: var(--ink); color: var(--ground); }
 .sign-in-card .sign-in-row { display: grid; gap: var(--s2); }
 .sign-in-card .sign-in-row .button { width: 100%; }
 .device-page { grid-column: 1 / -1; width: 100%; min-height: 100dvh; padding: 0 var(--s4) 5vh; }
-@media (max-width: 560px) { .sign-in-card { padding: var(--s4); gap: var(--s3); } }
+@media (max-width: 560px) {
+  /* A phone: the window's own gutter is the page's right edge, so the two do not stack up. */
+  .page { padding-left: var(--s4); padding-right: 0; }
+  .sign-in-card { padding: var(--s4); gap: var(--s3); }
+}
+/* A way in that takes two lines takes them evenly, not one word left over. */
+.sign-in-card .button { text-wrap: balance; }
 .button.link { border-color: transparent; background: transparent; padding-inline: 0; color: var(--sub); text-decoration: underline; }
 .row-item[data-where='offline'] .row-meta { color: var(--ink); }
 .card.repo.away { border-style: dashed; }

@@ -61,8 +61,8 @@ export function signInPlace(title: string, ...body: Node[]): HTMLElement {
 export function signInBox(done: () => void, words?: string, back?: string): HTMLElement {
   const error = h('p', {class: 'error', role: 'alert'});
   const box = h('div', {class: 'remote-join'}, h('p', {class: 'muted'}, words ?? (isNative
-    ? t('The canonical copy is kept on the Remote. Once this device is connected, what you change is sent at once, and your other devices can open it.')
-    : t('The canonical copy is kept on the Remote. Once you are signed in, what you change is sent at once; closing this tab lets go of this browser\'s copy.'))));
+    ? t('Your repos are kept on the Remote. Once this device is connected, each change goes there by itself, and your other devices have it too.')
+    : t('Your repos are kept on the Remote. Once you are signed in, each change goes there by itself; close this tab and this browser keeps nothing.'))));
   if (isNative) {
     const go = button(t('Connect in the browser'), 'primary');
     const waiting = h('div', {class: 'remote-join', hidden: ''});
@@ -92,7 +92,7 @@ export function signInBox(done: () => void, words?: string, back?: string): HTML
   const passkey = button(t('Sign in with a passkey'));
   passkey.addEventListener('click', () => void pressing(passkey, error, async () => { await account.signIn(); done(); }));
   box.append(providers, h('div', {class: 'row sign-in-row'}, passkey),
-    h('p', {class: 'muted small'}, t('Lost every passkey? Sign in with GitHub or Google again and add a new one.')), error);
+    h('p', {class: 'muted small'}, t('Lost your passkeys? Continue with one of the above, then add a new one.')), error);
   return box;
 }
 

@@ -25,7 +25,7 @@ export default {
   'Not found yet': 'まだ見つかりません',
   'Found': '見つかりました',
   'Go to Remote': 'Remote へ',
-  'The Inbox is on the Remote. Sign in to it to have an address and messages.': 'Inbox は Remote にあります。入ると、アドレスとメッセージが持てます。',
+  'The Inbox is on the Remote. Sign in to it to have an address and messages.': 'Inbox は Remote にあります。サインインすると、アドレスとメッセージが持てます。',
   'Conversations': '会話',
   'Write to an address': 'アドレスに書く',
   'Write': '書く',

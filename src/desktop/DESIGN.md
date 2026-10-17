@@ -44,6 +44,8 @@ top, then the page each icon leads to.
   only line, so lines never double up.
 - The page scrolls. Nothing is squeezed to fit one screen: the TODO box
   is tall and repo cards are large, about three across.
+- On a phone (560 px and less) the page keeps 16 px from the rail's line,
+  and the window's own gutter is its right edge, so the two never stack.
 
 ### Home
 

@@ -1,7 +1,7 @@
 // Who this device is on the Remote (service/), and how it talks to it.
 //
 //   web    sign in with GitHub or Google; then a passkey for this device,
-//          so the next sign-in needs no provider. Lost every passkey: sign in
+//          so the next sign-in needs no provider. Lost every passkey: continue
 //          with the provider again.
 //   app    the browser does the signing in: the app shows a code, the browser
 //          approves it on the Remote's page, and the app gets a session of

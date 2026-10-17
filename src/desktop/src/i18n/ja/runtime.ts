@@ -20,7 +20,7 @@ export default {
   'repo · comes here, then opens': 'repo · この端末に来て、開けます',
   'On the Remote': 'Remote にあるもの',
   'Everything on the Remote is here too.': 'Remote にあるものは、すべてここにもあります。',
-  'Sign in to the Remote to see what it holds.': 'Remote に入ると、そこにあるものが見えます。',
+  'Sign in to the Remote to see what it holds.': 'Remote にサインインすると、そこにあるものが見えます。',
   'the root Prompts run on': 'Prompt が動く root',
   '{why}; continuing where it stopped': '{why}。続きから取ります',
   'Fetching {got} / {of}': '取得中 {got} / {of}',
