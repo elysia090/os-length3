@@ -80,7 +80,7 @@ export class Me {
     };
     /** The language in use; pressed, the list in its place, the menu staying out. */
     const now = () => {
-      const b = h('button', {type: 'button', class: 'me-item', 'aria-expanded': 'false'},
+      const b = h('button', {type: 'button', class: 'me-item', role: 'menuitem', 'aria-haspopup': 'true', 'aria-expanded': 'false'},
         LANGS.find((l) => l.id === currentLang())?.name ?? '', mark('down'));
       b.querySelector('svg')?.classList.add('me-where');
       b.addEventListener('click', () => {
