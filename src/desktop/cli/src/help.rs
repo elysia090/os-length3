@@ -27,11 +27,6 @@ const fn c(name: &'static str, group: &'static str, about: Words, forms: &'stati
 }
 
 pub const COMMANDS: &[Command] = &[
-    c("server", "Server", ["people you know: boards, each a talk and a TODO kept together", "知り合いの集まり：板ごとに話とみんなの TODO"], &[
-        ("l3 server", ["each server you are in, and its boards", "入っているサーバーと、その板"]),
-        ("l3 server get SERVER[#BOARD] [--todo]", ["take boards home as text, here (the TODO only with --todo)", "板をテキストでここに置く（--todo で TODO だけ）"]),
-        ("l3 server post SERVER#BOARD \"text\"", ["write in a board", "板に書く"]),
-    ], &["get", "post"], false),
     c("todo", "Home", ["Home's TODO", "Home の TODO"], &[
         ("l3 todo", ["the list", "一覧"]),
         ("l3 todo add \"Fix：title\" [-m detail]", ["add one", "足す"]),
@@ -136,6 +131,11 @@ pub const COMMANDS: &[Command] = &[
     c("logout", "Remote", ["disconnect this device", "この端末を外す"], &[
         ("l3 logout", ["", ""]),
     ], &[], false),
+    c("server", "Server", ["people you know: boards, each a talk and a TODO kept together", "知り合いの集まり：板ごとに話とみんなの TODO"], &[
+        ("l3 server", ["each server you are in, and its boards", "入っているサーバーと、その板"]),
+        ("l3 server get SERVER[#BOARD] [--todo]", ["take boards home as text, here (the TODO only with --todo)", "板をテキストでここに置く（--todo で TODO だけ）"]),
+        ("l3 server post SERVER#BOARD \"text\"", ["write in a board", "板に書く"]),
+    ], &["get", "post"], false),
     c("inbox", "Inbox", ["conversations: contacts, then requests", "会話（連絡先、次にリクエスト）"], &[
         ("l3 inbox", ["each conversation", "会話ごとに"]),
         ("l3 inbox ADDRESS", ["one (name@domain)", "ひとつ（name@domain）"]),

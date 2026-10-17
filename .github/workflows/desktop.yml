@@ -40,6 +40,6 @@ jobs:
       - name: l3 translated, as the Prompt runs it
         working-directory: src/desktop
         run: |
-          out=$(LENGTH3_REPOS=/root node ../../xlat/runtime/run.mjs target/x86_64-unknown-linux-musl/prompt/l3 help)
+          out=$(LENGTH3_REPOS=/root node ../../xlat/runtime/run.mjs target/x86_64-unknown-linux-musl/prompt/l3 help all)
           echo "$out" | head -3
           echo "$out" | grep -q 'l3 issue new'
