@@ -20,6 +20,8 @@ interface Env {
   GITHUB_CLIENT_SECRET?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
+  APPLE_CLIENT_ID?: string;
+  APPLE_CLIENT_SECRET?: string;
   BLOBS: R2Bucket;
 }
 
@@ -28,10 +30,11 @@ export default {
     const pool = new Pool({connectionString: env.DATABASE_URL});
     const db = drizzle(pool, {schema});
     const pair = (id?: string, secret?: string) => (id && secret ? {clientId: id, clientSecret: secret} : undefined);
-    const github = pair(env.GITHUB_CLIENT_ID, env.GITHUB_CLIENT_SECRET), google = pair(env.GOOGLE_CLIENT_ID, env.GOOGLE_CLIENT_SECRET);
+    const github = pair(env.GITHUB_CLIENT_ID, env.GITHUB_CLIENT_SECRET), google = pair(env.GOOGLE_CLIENT_ID, env.GOOGLE_CLIENT_SECRET),
+      apple = pair(env.APPLE_CLIENT_ID, env.APPLE_CLIENT_SECRET);
     const origins = (env.APP_ORIGINS ?? '').split(/\s+/).filter(Boolean);
-    const auth = createAuth({db, secret: env.BETTER_AUTH_SECRET, baseURL: env.BASE_URL, appOrigin: env.APP_ORIGIN, origins, github, google});
-    const app = createApp({db, auth, bucket: r2Bucket(env.BLOBS), origins: [env.APP_ORIGIN, ...origins], providers: providers({github, google}),
+    const auth = createAuth({db, secret: env.BETTER_AUTH_SECRET, baseURL: env.BASE_URL, appOrigin: env.APP_ORIGIN, origins, github, google, apple});
+    const app = createApp({db, auth, bucket: r2Bucket(env.BLOBS), origins: [env.APP_ORIGIN, ...origins], providers: providers({github, google, apple}),
       domain: env.DOMAIN ?? 'length3.com', baseURL: env.BASE_URL, secret: env.BETTER_AUTH_SECRET});
     const response = await app.fetch(request);
     ctx.waitUntil(pool.end());

@@ -142,19 +142,26 @@ export const blob = pgTable('blob', {
 // ---- Inbox (inbox.ts) ----
 
 /**
- * An address, name@domain: how a person is found, the same shape an SSH
- * target has. A name on the Remote's own domain is claimed here; one on
- * another domain is that domain's to publish (its /.well-known/length3).
+ * A principal's name, name@domain: a person's address (how they are found,
+ * the same shape an SSH target has), or a server's name. Both are claimed
+ * here, in one namespace (names.ts). A name on the Remote's own domain is
+ * claimed here; one on another domain is that domain's to publish (its DNS).
+ * A name let go is held (releasedAt) for a while before anyone else may
+ * claim it; a name whose domain stopped naming this Remote is lapsed
+ * (lapsedAt) and answers to no one until it does again.
  */
 export const address = pgTable('address', {
   address: text('address').primaryKey(),
-  userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
+  userId: text('user_id').references(() => user.id, {onDelete: 'cascade'}),
+  serverId: text('server_id'),
   name: text('name').notNull(),
   domain: text('domain').notNull(),
   /** Opt-in to be reached over SSH at this address; its own permission, off unless asked. */
   ssh: integer('ssh').notNull().default(0),
+  releasedAt: timestamp('released_at'),
+  lapsedAt: timestamp('lapsed_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
-}, (t) => [index('address_user_idx').on(t.userId)]);
+}, (t) => [index('address_user_idx').on(t.userId), index('address_server_idx').on(t.serverId)]);
 
 /** Whom an account talks with: accepted (messages and live chat), or blocked. */
 export const contact = pgTable('contact', {
@@ -208,10 +215,19 @@ export const signal = pgTable('signal', {
 // alone unless it is opened: to be read by anyone, and to be written in by an
 // outsider who has shown an email address is theirs (a guest).
 
-/** A server: a name and its people. */
+/**
+ * A server: what it is called (any words), the principal name it is known
+ * by (an address, name@domain, claimed as a person's is), and its people.
+ * Removed, or left by its last person, it is held (goneAt) for a while, and
+ * whoever removed or left it last (goneBy) may bring it back.
+ */
 export const server = pgTable('server', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
+  /** Its principal name; '' only for a server made before servers had one. */
+  address: text('address').notNull().default(''),
+  goneAt: timestamp('gone_at'),
+  goneBy: text('gone_by'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
@@ -272,5 +288,7 @@ export const guest = pgTable('server_guest', {
   codeUntil: timestamp('code_until'),
   tries: integer('tries').notNull().default(0),
   token: text('token'),
+  /** A guest's token is a lease: it writes until then. */
+  tokenUntil: timestamp('token_until'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (t) => [uniqueIndex('server_guest_board_email_idx').on(t.boardId, t.email), index('server_guest_token_idx').on(t.token)]);

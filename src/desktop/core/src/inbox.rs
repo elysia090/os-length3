@@ -55,6 +55,12 @@ pub fn claim(address: &str) -> Result<String> {
 pub struct Record { pub name: String, #[serde(rename = "type")] pub kind: String, pub value: String, pub found: bool }
 pub fn domain_record(domain: &str) -> Result<Record> { get(&format!("/v1/inbox/domains/{}", domain.trim().to_ascii_lowercase())) }
 
+/// Let `address` go: it answers no one from now, and is held for this account a while (claiming it again takes it back).
+pub fn release(address: &str) -> Result<u64> {
+    let v = Client::open()?.json("DELETE", &format!("/v1/inbox/addresses/{}", address.to_ascii_lowercase()), None)?;
+    Ok(v["until"].as_u64().unwrap_or(0))
+}
+
 /// Whether `address` may be reached over SSH.
 pub fn set_ssh(address: &str, on: bool) -> Result<()> {
     Client::open()?.json("POST", &format!("/v1/inbox/addresses/{address}/ssh"), Some(serde_json::json!({"on": on}))).map(|_| ())

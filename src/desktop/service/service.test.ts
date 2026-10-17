@@ -20,7 +20,7 @@ async function service(records: Record<string, string[]> = {}) {
   const dns = new Map(Object.entries(records));
   const mails: {to: string; text: string}[] = [];
   const app = createApp({db, auth, bucket, origins: [APP], providers: ['dev'], domain: 'length3.test', baseURL: BASE,
-    secret: 'test-secret-'.repeat(4), txt: async (name) => dns.get(name) ?? [], mail: async (to, _subject, text) => { mails.push({to, text}); }});
+    secret: 'test-secret-'.repeat(4), txt: async (name) => dns.get(name) ?? [], recheck: 0, mail: async (to, _subject, text) => { mails.push({to, text}); }});
   // The service asks its own stand-in provider for tokens over the network: here, itself.
   const real = globalThis.fetch;
   globalThis.fetch = ((url: string | URL | Request, init?: RequestInit) =>
@@ -55,7 +55,8 @@ async function service(records: Record<string, string[]> = {}) {
     return token!;
   };
   const publish = (name: string, value: string) => dns.set(name, [...(dns.get(name) ?? []), value]);
-  return {db, call, start, bucket, publish, mails};
+  const unpublish = (name: string) => dns.delete(name);
+  return {db, call, start, bucket, publish, unpublish, mails};
 }
 
 const enc = new TextEncoder();
@@ -419,8 +420,53 @@ test('Servers: people who know each other, boards with a plan written together a
   assert.equal((await s.call('POST', `/v1/open/${bid}/posts`, {body: {body: 'can I come?'}})).status, 401);
   const g = await s.call('POST', `/v1/open/${bid}/posts`, {body: {body: 'can I come?'}, headers: {'X-Guest': ok.json.token as string}});
   assert.deepEqual([g.status, g.json.by, g.json.guest], [201, 'aki', true]);
+  // A guest writes for a while: the token is a lease.
+  const {eq} = await import('drizzle-orm');
+  await s.db.update(schema.guest).set({tokenUntil: new Date(Date.now() - 1000)}).where(eq(schema.guest.email, 'aki@example.org'));
+  assert.equal((await s.call('POST', `/v1/open/${bid}/posts`, {body: {body: 'still?'}, headers: {'X-Guest': ok.json.token as string}})).status, 401);
   // Leaving: the owner leaves, and the server is the one who came next's.
   assert.equal((await s.call('DELETE', `/v1/servers/${sid}/people/ren@length3.test`, {token: ren})).status, 204);
-  assert.equal((await s.call('DELETE', `/v1/servers/${sid}`, {token: mio})).status, 204);
+  // Removed, it is held: it answers nothing, its name is held for it, and its owner may bring it back.
+  assert.equal((await s.call('DELETE', `/v1/servers/${sid}`, {token: mio})).status, 200);
   assert.equal((await s.call('GET', `/v1/boards/${bid}`, {token: mio})).status, 404);
+  assert.equal((await s.call('GET', `/v1/open/${bid}/posts`)).status, 404);
+  assert.equal((await s.call('POST', '/v1/servers', {token: kai, body: {name: 'Trip'}})).status, 409);
+  assert.deepEqual(((await s.call('GET', '/v1/servers?gone=1', {token: mio})).json as unknown as {address: string}[]).map((x) => x.address), ['trip@length3.test']);
+  assert.equal((await s.call('POST', `/v1/servers/${sid}/back`, {token: kai})).status, 404);
+  assert.equal((await s.call('POST', `/v1/servers/${sid}/back`, {token: mio})).status, 200);
+  assert.equal((await s.call('GET', `/v1/boards/${bid}`, {token: mio})).status, 200);
+});
+
+test('Names: people and servers share one namespace; a name let go is held for its owner; a domain that stops naming the Remote stops answering', async () => {
+  const s = await service();
+  const ren = await s.start('Ren'), mio = await s.start('Mio');
+  await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'ren'}});
+  await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'mio'}});
+  // A server's name and a person's are in one namespace.
+  const made = await s.call('POST', '/v1/servers', {token: ren, body: {name: 'Book club', address: 'books'}});
+  assert.equal(made.json.address, 'books@length3.test');
+  assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'books'}})).status, 409);
+  assert.equal((await s.call('POST', '/v1/servers', {token: mio, body: {name: 'Ren', address: 'ren'}})).status, 409);
+  assert.equal(((await s.call('GET', '/v1/inbox/lookup?address=books@length3.test', {token: mio})).json as unknown as {reachable: boolean}).reachable, false);
+  // Let go: it answers no more, nobody else may take it while it is held, and its owner may take it back.
+  assert.equal((await s.call('DELETE', '/v1/inbox/addresses/ren@length3.test', {token: mio})).status, 404);
+  assert.equal((await s.call('DELETE', '/v1/inbox/addresses/ren@length3.test', {token: ren})).status, 200);
+  assert.equal(((await s.call('GET', '/v1/inbox/lookup?address=ren@length3.test', {token: mio})).json as unknown as {reachable: boolean}).reachable, false);
+  const held = await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'ren'}});
+  assert.deepEqual([held.status, held.json.error], [409, 'held']);
+  assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'ren'}})).status, 201);
+  // Held long enough, it is anyone's.
+  const {eq} = await import('drizzle-orm');
+  await s.call('DELETE', '/v1/inbox/addresses/ren@length3.test', {token: ren});
+  await s.db.update(schema.address).set({releasedAt: new Date(Date.now() - 31 * 86_400_000)}).where(eq(schema.address.address, 'ren@length3.test'));
+  assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'ren'}})).status, 201);
+  // A name on one's own domain answers while its DNS names this Remote for its owner.
+  const rec = (await s.call('GET', '/v1/inbox/domains/ren.dev', {token: ren})).json as unknown as {name: string; value: string};
+  s.publish(rec.name, rec.value);
+  assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: ren, body: {name: 'ren', domain: 'ren.dev'}})).status, 201);
+  assert.equal(((await s.call('GET', '/v1/inbox/lookup?address=ren@ren.dev', {token: mio})).json as unknown as {reachable: boolean}).reachable, true);
+  s.unpublish(rec.name);
+  const gone = (await s.call('GET', '/v1/inbox/lookup?address=ren@ren.dev', {token: mio})).json as unknown as {reachable: boolean; why: string};
+  assert.deepEqual([gone.reachable, gone.why], [false, 'its domain no longer names this Remote']);
+  assert.ok(((await s.call('GET', '/v1/inbox/me', {token: ren})).json.addresses as {address: string; lapsed?: boolean}[]).find((a) => a.address === 'ren@ren.dev')?.lapsed);
 });

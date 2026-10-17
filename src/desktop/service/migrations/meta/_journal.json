@@ -43,6 +43,13 @@
       "when": 1792220192755,
       "tag": "0005_servers_and_boards",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792221714898,
+      "tag": "0006_one_namespace_and_leases",
+      "breakpoints": true
     }
   ]
 }

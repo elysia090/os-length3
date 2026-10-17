@@ -99,6 +99,13 @@ may be left out and `#N` is that repo's issue N: `l3 commit`, `l3 start #3`,
 `l3 merge #3`, and `l3 file src` reads from where you are. `l3 -V` gives
 l3's version and the root's.
 
+Names are written owner first, as DESIGN.md §0 "Names" sets out (one
+namespace of principals, `name@domain`, people and servers alike): `hello`,
+`hello/src/a.c`, `hello#3`, `ren@length3.com:hello` (one's own repo written
+in full), `trip#general` (a server's board; `#general` when one is in one
+server). `l3 address release NAME@DOMAIN` lets an address go: it answers no
+one from then, and is held for its owner 30 days.
+
 There is no sync command. Connected, l3 keeps each repo in step with the
 Remote by itself: a command that reads a repo takes in the Remote's changes
 to it first, and after every command each repo whose files differ from what

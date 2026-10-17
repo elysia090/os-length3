@@ -1,6 +1,6 @@
 // Who this device is on the Remote (service/), and how it talks to it.
 //
-//   web    sign in with GitHub or Google; then a passkey for this device,
+//   web    sign in with GitHub, Google or Apple; then a passkey for this device,
 //          so the next sign-in needs no provider. Lost every passkey: continue
 //          with the provider again.
 //   app    the browser does the signing in: the app shows a code, the browser
@@ -72,8 +72,8 @@ function tokenOf(r: Response): string {
 
 // ---- signing in (web) ----
 
-export type Provider = 'github' | 'google' | 'dev';
-export const PROVIDER_NAME: Record<Provider, string> = {github: 'GitHub', google: 'Google', dev: 'Development'};
+export type Provider = 'github' | 'google' | 'apple' | 'dev';
+export const PROVIDER_NAME: Record<Provider, string> = {github: 'GitHub', google: 'Google', apple: 'Apple', dev: 'Development'};
 
 /** What this Remote offers to sign in with. */
 export async function about(): Promise<{providers: Provider[]}> {

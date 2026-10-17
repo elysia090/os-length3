@@ -29,8 +29,8 @@ const fn c(name: &'static str, group: &'static str, about: Words, forms: &'stati
 pub const COMMANDS: &[Command] = &[
     c("server", "Server", ["people you know: boards, each a plan and its talk", "知り合いの集まり: 板ごとに計画と話"], &[
         ("l3 server", ["each server you are in, and its boards", "入っているサーバーと、その板"]),
-        ("l3 server get SERVER[/BOARD] [--plan]", ["take boards home as text, here (the plan only with --plan)", "板をテキストでここに置く（--plan で計画だけ）"]),
-        ("l3 server post SERVER/BOARD \"text\"", ["write in a board", "板に書く"]),
+        ("l3 server get SERVER[#BOARD] [--plan]", ["take boards home as text, here (the plan only with --plan)", "板をテキストでここに置く（--plan で計画だけ）"]),
+        ("l3 server post SERVER#BOARD \"text\"", ["write in a board", "板に書く"]),
     ], &["get", "post"], false),
     c("todo", "Home", ["Home's TODO", "Home の TODO"], &[
         ("l3 todo", ["the list", "一覧"]),
@@ -145,8 +145,9 @@ pub const COMMANDS: &[Command] = &[
     c("address", "Inbox", ["your addresses", "あなたのアドレス"], &[
         ("l3 address", ["each", "一覧"]),
         ("l3 address claim NAME[@DOMAIN]", ["", ""]),
+        ("l3 address release NAME@DOMAIN", ["let it go: held for you 30 days, claim it again to take it back", "手放す（30日はあなたのために取り置き、取り直せば戻る）"]),
         ("l3 address domain DOMAIN", ["the DNS record that proves it is yours", "あなたのものだと示す DNS レコード"]),
-    ], &["claim", "domain"], false),
+    ], &["claim", "domain", "release"], false),
 ];
 
 /// Words l3 knows that are not on the rail.
@@ -187,9 +188,9 @@ pub fn overview() -> String {
     }
     s += "\n";
     s += if ja() {
-        "repo の中（とその Prompt）では REPO を省けます。#N はその repo の Issue N です。\n`l3 help all` ですべての書き方、`l3 completion bash|zsh|fish` で補完。"
+        "repo の中（とその Prompt）では REPO を省けます。#N はその repo の Issue N です。\n`l3 help all` ですべての書き方、`l3 completion bash|zsh|fish` で補完。\n\n名前は持ち主が先: hello, hello/src/a.c, hello#3, ren@length3.com:hello（あなたの repo を全部書いた形）, trip#general（サーバーの板）。"
     } else {
-        "In a repo (or its Prompt) REPO may be left out, and #N is that repo's issue N.\n`l3 help all` lists every form; `l3 completion bash|zsh|fish` completes them."
+        "In a repo (or its Prompt) REPO may be left out, and #N is that repo's issue N.\n`l3 help all` lists every form; `l3 completion bash|zsh|fish` completes them.\n\nNames, owner first: hello, hello/src/a.c, hello#3, ren@length3.com:hello (yours, written in full), trip#general (a server's board)."
     };
     s
 }

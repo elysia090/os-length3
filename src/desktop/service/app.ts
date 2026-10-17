@@ -48,6 +48,8 @@ export interface Deps {
   secret?: string;
   /** TXT records of a name (DNS over HTTPS by default; a stand-in in tests). */
   txt?: (name: string) => Promise<string[]>;
+  /** How long a domain's DNS is taken as still saying what it said (inbox.ts). */
+  recheck?: number;
   /** Sends mail (a server board's guest's code); without it, guests cannot be checked. */
   mail?: (to: string, subject: string, text: string) => Promise<void>;
 }
@@ -548,8 +550,8 @@ export function createApp(d: Deps) {
     return c.json({version: done[0].version});
   });
 
-  inbox({db: d.db, domain: d.domain ?? 'length3.com', baseURL: d.baseURL ?? '', secret: d.secret ?? '', txt: d.txt}, v1, app);
-  servers({db: d.db, mail: d.mail, secret: d.secret}, v1, app);
+  inbox({db: d.db, domain: d.domain ?? 'length3.com', baseURL: d.baseURL ?? '', secret: d.secret ?? '', txt: d.txt, recheck: d.recheck}, v1, app);
+  servers({db: d.db, domain: d.domain ?? 'length3.com', mail: d.mail, secret: d.secret}, v1, app);
 
   app.route('/v1', v1);
   return app;

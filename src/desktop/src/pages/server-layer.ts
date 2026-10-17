@@ -214,7 +214,7 @@ export class ServerLayer {
     const paintTop = () => {
       if (!signedIn) { top.replaceChildren(h('span', {class: 'muted'}, t('Open boards'))); return; }
       const chips = list.map((s) => {
-        const b = h('button', {type: 'button', class: 'chip', role: 'radio', 'aria-checked': String(s.id === serverId)}, s.name);
+        const b = h('button', {type: 'button', class: 'chip', role: 'radio', 'aria-checked': String(s.id === serverId), title: s.address}, s.name);
         b.addEventListener('click', () => show(s.id));
         return b;
       });
@@ -223,23 +223,31 @@ export class ServerLayer {
       top.replaceChildren(...chips, plus);
     };
 
-    /** No server chosen (or none yet): the one box makes a server. */
+    /** No server chosen (or none yet): the one box makes a server, named name@domain as a person is. */
     const makeServer = () => {
       shown = [];
       const name = h('input', {class: 'line-in', maxlength: '64', placeholder: t('Its name'), 'aria-label': t('Make a server')}) as HTMLInputElement;
+      const handle = h('input', {class: 'line-in mono', maxlength: '31', placeholder: 'trip', 'aria-label': t('Its address'), autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
+      const domain = h('span', {class: 'muted mono'}, '@…');
+      void import('../inbox.ts').then((inbox) => inbox.me()).then((m) => { domain.textContent = `@${m.domain}`; }).catch(() => {});
+      // Its address follows its name until it is written itself.
+      let own = false;
+      const slug = (v: string) => v.toLowerCase().normalize('NFKD').replace(/[^a-z0-9._-]+/g, '-').replace(/^[-._]+|[-._]+$/g, '').slice(0, 31);
+      name.addEventListener('input', () => { if (!own) handle.value = slug(name.value); });
+      handle.addEventListener('input', () => { own = handle.value !== ''; });
       const make = button(t('Make'), 'primary');
       const error = h('p', {class: 'error', role: 'alert'});
-      writers.push(() => document.activeElement === name || !!name.value.trim());
+      writers.push(() => document.activeElement === name || document.activeElement === handle || !!name.value.trim());
       const done = async () => {
         if (!name.value.trim()) return;
         make.disabled = true;
         try {
-          const s = await servers.makeServer(name.value);
+          const s = await servers.makeServer(name.value, handle.value);
           list.push(s);
           show(s.id);
         } catch (e) {
           make.disabled = false;
-          if (e instanceof RemoteError && e.status === 409) {
+          if (e instanceof RemoteError && e.status === 409 && /address/i.test(e.message)) {
             const inbox = button(t('Go to Inbox'), 'small-button');
             inbox.addEventListener('click', () => { this.close(); this.ctx.go('inbox'); });
             error.replaceChildren(t('A server needs your address. Claim one in Inbox.'), ' ', inbox);
@@ -247,12 +255,21 @@ export class ServerLayer {
         }
       };
       make.addEventListener('click', () => void done());
-      name.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); void done(); } });
+      for (const f of [name, handle]) f.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); void done(); } });
+      // What one removed or left last, still held: brought back with its name and boards.
+      const back = h('div', {class: 'server-back'});
+      void servers.goneServers().then((held) => back.replaceChildren(...held.map((g) => {
+        const b = button(t('Bring back {name}', {name: g.name}), 'small-button');
+        b.title = t('Held until {date}', {date: new Date(g.until).toLocaleDateString()});
+        b.addEventListener('click', async () => { b.disabled = true; try { await servers.bringBack(g.id); list = await servers.servers(); show(g.id); } catch (e) { b.textContent = message(e); } });
+        return b;
+      }))).catch(() => {});
       track.replaceChildren(h('div', {class: 'slide', 'aria-current': 'true'}, h('div', {class: 'board-card board-new'},
         h('header', {class: 'board-head'}, h('span', {class: 'muted'}, '+'), h('h2', {}, t('Make a server'))),
         h('div', {class: 'board-body'},
           h('p', {}, t('A server is people you know: you add them from your Inbox contacts. Its boards each hold a plan you write together and the talk around it.')),
-          h('div', {class: 'row'}, name, make), error))));
+          name, h('div', {class: 'row server-address'}, handle, domain), h('p', {class: 'muted small'}, t('Its address is a name like a person\'s: nobody else can have it while the server does.')),
+          h('div', {class: 'row'}, make), error, back))));
       slides.classList.add('single');
       track.style.setProperty('--at', '0');
       prev.hidden = next.hidden = true;

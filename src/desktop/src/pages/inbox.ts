@@ -90,8 +90,23 @@ function addressStub(me: inbox.Me, again: () => void): HTMLElement {
     domain.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) void look(); });
     clearInterval(looking);
     looking = window.setInterval(() => void look(), 8000);
-    panel.replaceChildren(h('div', {class: 'row stub-own'}, name, h('span', {class: 'muted'}, '@'), domain), record);
+    panel.replaceChildren(h('div', {class: 'row stub-own'}, name, h('span', {class: 'muted'}, '@'), domain), record, yours());
     domain.focus();
+  };
+  /** Your addresses: each one's state, and letting it go (held for you a while; claiming it again takes it back). */
+  const yours = () => {
+    if (!me.addresses.length) return h('div', {});
+    return h('div', {class: 'stub-yours'}, h('p', {class: 'muted small'}, t('Your addresses')), ...me.addresses.map((a) => {
+      const go = h('button', {type: 'button', class: 'button small-button'}, t('Let it go')) as HTMLButtonElement;
+      let armed = 0;
+      go.addEventListener('click', async () => {
+        if (!armed) { go.textContent = t('Let it go? It is held for you 30 days'); armed = window.setTimeout(() => { armed = 0; go.textContent = t('Let it go'); }, 4000); return; }
+        go.disabled = true;
+        try { await inbox.release(a.address); again(); } catch (e) { go.disabled = false; go.textContent = message(e); }
+      });
+      return h('div', {class: 'your-row'}, h('span', {class: 'mono small'}, a.address),
+        a.lapsed ? h('span', {class: 'small error'}, t('its domain no longer names this Remote')) : null, go);
+    }));
   };
   // The panel lies over the Inbox under it; Escape or a press outside closes it.
   const holder = h('div', {class: 'stub-holder'}, stub, error, panel);

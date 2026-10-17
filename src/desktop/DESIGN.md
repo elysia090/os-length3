@@ -88,6 +88,91 @@ On the host, the data directory is laid out by owner too:
 | `system/<digest>` | each root held, `current` the one in use | while a repo's Prompt runs on it |
 | `envs/<repo>`, `caches/<repo>` | the repo's environment and caches | as in the table above |
 
+### Names: who owns what, and what is trusted for it
+
+Trust is built up in steps, each resting on the one before, and each
+trusted for one thing only:
+
+1. **GitHub, Google or Apple** say who a person is, the first time.
+2. **A passkey** is then the person's own key: from there on they sign in
+   without the provider, and a turn-off or a new device asks for it. A
+   device holds a lease on the person, never the person.
+3. **The Remote** keeps what is theirs and gives them their first name on
+   its own domain (`ren@length3.com`), first come, as a mail provider gives
+   an address. Most people stop here, and need nothing more.
+4. **A server** is a group of people on a Remote, with a name of its own in
+   the same namespace (`trip@length3.com`).
+5. **A domain** is the last step, for a person or for a server: names of
+   their own (`ren@ren.dev`), right because the domain's DNS names this
+   Remote and this account (a TXT record, checked again whenever it
+   matters). Then the Remote is only a place: things are kept there, as mail
+   is kept where a domain's MX says, and moving to another Remote moves
+   where they are kept, not what they are called.
+
+What is kept is checked by its name too: blobs and releases are named by
+their sha256, so what comes from any Remote can be checked against it.
+
+There is one kind of owner, a **principal**, named `name@domain`: a person
+(an account) or a server (a group of people). Both are claimed in the same
+namespace, so `ren@length3.com` and `trip@length3.com` cannot be the same
+name. A person may have several addresses: aliases of one principal, one
+of them shown. Everything else belongs to exactly one principal: a repo to
+a person or to a server (which is all that separates a server's repo from
+one's own; there is no fork), a board with its plan and talk to its server.
+
+Written the same in l3 and in the app, owner first, as scp is:
+
+| | |
+|---|---|
+| `ren@length3.com:hello` | a person's repo (`trip@length3.com:hello`, a server's) |
+| `…:hello/src/main.c` | a file in it |
+| `…:hello#3` | its issue 3 |
+| `trip@length3.com#general` | a server's board |
+
+What is plain is left out: one's own domain (`trip:hello#3`), oneself
+(`hello#3`, `hello/src`), the server one is in (`#general`).
+
+Everything lives as long as its owner holds it. Let go, it is held a while
+(a lease) and then goes, and a name let go is held as long again, so that
+nobody else can take it and be taken for its owner:
+
+| What | Owned by | Trusted for it | Let go |
+|---|---|---|---|
+| a domain | the person, or the server, it was proven for | its DNS (checked again on use) | its names stop answering when its record is gone; 30 days later they are let go |
+| a principal (an address, a server's name) | its account, or the server's people | its domain | 30 days no one else can claim it; its account may take it back |
+| a repo | a principal | its Remote, and the digests | turned off: 30 days, then gone |
+| a server | its people (its owner removes it) | its Remote | removed, or its last person leaves: 30 days, then gone |
+| a board, its plan and talk | its server | its Remote | with its server, or removed |
+| a copy on a device | the device | the digests | taken back whenever room is wanted (owned.rs) |
+| a session, a code, a guest | the person, the address it was sent to | sign-in, mail | a lease: days for a session, minutes for a code, 30 days for a guest |
+
+Names are the same problem as a language's memory and types, and are kept
+by the same rules:
+
+- **Ownership and borrowing.** Everything has one owner; everyone else
+  borrows: a server's people, a guest, a device. A borrow never outlives
+  what it borrows: a board not its server, a guest's token not its board, a
+  device's copy not its repo.
+- **Protection.** What may be read and written is a mapping: a board is its
+  people's; opened, it is mapped read-only for anyone; a guest holds a
+  capability to write in that one board and nothing else. A name whose
+  domain lapsed is unmapped, and faults until it is mapped again.
+- **No use after free.** A name let go is held before anyone else may have
+  it, as an allocator holds freed memory back, so nobody is taken for its
+  old owner. What is kept refers to a principal by its id, never by its
+  name: the name is how a person writes it, and a link written long ago
+  still means whom it meant.
+- **Inference.** A name's kind is read from its shape and from where it is
+  written (`name@domain` a principal, `x:hello` a repo, `#3` after a repo an
+  issue, `#general` a board), and what is left out is filled from context:
+  oneself, one's domain, the server one is in. What could mean two things is
+  an error, never a guess.
+
+**Without a domain of one's own** (step 3 and no further), a person's names
+are the Remote's domain's, and trusted to the Remote that owns it. Proving
+a domain later adds `ren@ren.dev` beside it; the old name stays theirs, an
+alias, until they let it go.
+
 ### Another OS in a Prompt
 
 l3 is to a Prompt what a machine monitor is to its guest: it lays out the

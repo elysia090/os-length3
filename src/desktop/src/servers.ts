@@ -12,9 +12,10 @@ import {hunks, lines} from './plan.ts';
 import {t} from './i18n.ts';
 
 export interface BoardRef { id: string; name: string; open: boolean; guests: boolean }
-export interface Server { id: string; name: string; owner: boolean; boards: BoardRef[] }
+/** A server: what it is called, and its name as a principal (name@domain, in the namespace people's addresses are in). */
+export interface Server { id: string; name: string; address: string; owner: boolean; boards: BoardRef[] }
 export interface Person { address: string; owner: boolean }
-export interface Board { id: string; server: {id: string; name: string}; name: string; plan: string; version: number; open: boolean; guests: boolean; people?: Person[] }
+export interface Board { id: string; server: {id: string; name: string; address: string}; name: string; plan: string; version: number; open: boolean; guests: boolean; people?: Person[] }
 /** A post as the Remote gives it: `by` is all a reader is shown of who wrote it. */
 export interface Post { id: string; by: string; body: string; at: number; guest?: boolean; mine?: boolean; mayTakeDown?: boolean }
 export interface OpenBoard { id: string; name: string; server: string; guests: boolean }
@@ -27,7 +28,8 @@ const failed = async (r: Response) => {
   const body = await r.json().catch(() => ({})) as {error?: string};
   const why: Record<string, string> = {'claim an address first': t('Claim an address first'), 'too many posts this hour': t('Too many posts this hour'),
     'only your contacts can be added': t('Only your contacts can be added'), 'a code was just sent': t('A code was just sent'), 'not that code': t('Not that code'),
-    'this Remote sends no mail': t('This Remote sends no mail')};
+    'this Remote sends no mail': t('This Remote sends no mail'), 'taken': t('That name is taken'), 'held': t('That name was let go, and is held for its owner a while'),
+    'an address for it: letters, digits, - . _': t('Its address: letters, digits, - . _'), 'a domain you hold an address on': t('Only on a domain you hold an address on')};
   return new RemoteError(r.status, why[body.error ?? ''] ?? String(body.error ?? r.status));
 };
 const call = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
@@ -39,7 +41,10 @@ const send = (method: string, body?: unknown): RequestInit => ({method, ...(body
 
 // ---- servers and their people ----
 export const servers = () => (connection() ? call<Server[]>('/v1/servers') : Promise.resolve([]));
-export const makeServer = (name: string) => call<Server>('/v1/servers', send('POST', {name}));
+export const makeServer = (name: string, address: string) => call<Server>('/v1/servers', send('POST', {name, address}));
+/** Servers this person removed or left last, still held for them, and until when. */
+export const goneServers = () => call<{id: string; name: string; address: string; until: number}[]>('/v1/servers?gone=1');
+export const bringBack = (id: string) => call<{id: string; name: string; address: string}>(`/v1/servers/${id}/back`, send('POST'));
 export const renameServer = (id: string, name: string) => call<{name: string}>(`/v1/servers/${id}`, send('PATCH', {name}));
 export const people = (id: string) => call<Person[]>(`/v1/servers/${id}/people`);
 export const addPerson = (id: string, address: string) => call<Person[]>(`/v1/servers/${id}/people`, send('POST', {address}));

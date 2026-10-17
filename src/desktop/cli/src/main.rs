@@ -95,6 +95,38 @@ fn here() -> Option<(String, String)> {
     std::env::var("LENGTH3_REPO").ok().filter(|r| !r.is_empty()).map(|r| (r, String::new()))
 }
 
+/// A repo written in full, `owner:repo…` (DESIGN.md §0, "Names"): one's own is
+/// read as `repo…`; another's is not here (a server's own repos come next).
+fn owned(mut w: Vec<String>) -> Result<Vec<String>, String> {
+    let takes = w.first().and_then(|f| help::find(f)).is_some_and(|c| c.repo);
+    let end = w.iter().position(|x| x == "--").unwrap_or(w.len());
+    if !takes || end < 2 { return Ok(w); }
+    for x in &mut w[1..end] {
+        if !x.contains(':') || x.contains(char::is_whitespace) || x.contains("://") { continue; }
+        let length3_core::names::Name::Repo { owner: Some(p), repo, path, issue } = length3_core::names::read(x, false)? else { continue };
+        let me = inbox::me()?;
+        if !me.addresses.iter().any(|a| p.is(&a.address, &me.domain)) {
+            return Err(tr!("{} is not yours: a repo here is its person's (a server's own repos come next)", "{} はあなたのものではありません: ここの repo はその人のものです（サーバーの repo はこの先）", x));
+        }
+        *x = format!("{repo}{}{}", if path.is_empty() { String::new() } else { format!("/{path}") }, issue.map(|n| format!("#{n}")).unwrap_or_default());
+    }
+    Ok(w)
+}
+
+/// A day, as l3 says it (UTC, YYYY-MM-DD).
+fn day(t: std::time::SystemTime) -> String {
+    let d = t.duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs() / 86_400) as i64;
+    // Civil from days (Howard Hinnant's algorithm).
+    let z = d + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let (dd, m) = (doy - (153 * mp + 2) / 5 + 1, if mp < 10 { mp + 3 } else { mp - 9 });
+    format!("{}-{m:02}-{dd:02}", yoe + era * 400 + i64::from(m <= 2))
+}
+
 /// `at` (a path written from `rel` in a repo), as a path from the repo's top.
 fn from_here(rel: &str, at: &str) -> String {
     let mut out: Vec<&str> = if at.starts_with('/') { Vec::new() } else { rel.split('/').filter(|p| !p.is_empty()).collect() };
@@ -268,7 +300,7 @@ fn run(a: Args) -> Result<(), String> {
         }
         ["server", "post", target, words] => {
             let (server, boards) = servers::find(target)?;
-            let [b] = boards.as_slice() else { return Err(tr!("Name the board: l3 server post {}/BOARD \"text\"", "板を書いてください: l3 server post {}/BOARD \"文\"", server.name)) };
+            let [b] = boards.as_slice() else { return Err(tr!("Name the board: l3 server post {}#BOARD \"text\"", "板を書いてください: l3 server post {}#BOARD \"文\"", target)) };
             servers::post(&b.id, words)?;
             out(tr!("Wrote in {}/{}", "{}/{} に書きました", server.name, b.name));
             Ok(())
@@ -486,6 +518,12 @@ fn run(a: Args) -> Result<(), String> {
             out(tr!("Put this record in {}'s DNS (it says this account holds addresses there, and on which Remote):", "{} の DNS にこのレコードを置きます（このアカウントがそこのアドレスを持つこと、どの Remote かを示します）:", domain));
             out(format!("  {}  {}  {}", r.name, r.kind, r.value));
             out(if r.found { tr!("Found: l3 address claim NAME@{} takes an address on it", "見つかりました: l3 address claim NAME@{} でアドレスを取れます", domain) } else { tr!("Not found yet", "まだ見つかりません") });
+            Ok(())
+        }
+        ["address", "release", a] => {
+            let until = inbox::release(a)?;
+            out(tr!("Let go of {} (held for you until {}; claim it again to take it back)", "{} を手放しました（{} まであなたのために取り置き。取り直せば戻ります）",
+                a, std::time::UNIX_EPOCH.checked_add(std::time::Duration::from_millis(until)).map(day).unwrap_or_default()));
             Ok(())
         }
         ["address", "claim", name] => {
@@ -910,6 +948,7 @@ fn left(until: u64) -> String {
 fn main() -> ExitCode {
     let raw: Vec<String> = std::env::args().skip(1).collect();
     let done = parse(raw).and_then(|mut a| {
+        a.words = owned(std::mem::take(&mut a.words))?;
         a.words = fill(std::mem::take(&mut a.words));
         let words = a.words.clone();
         take_in(&words);

@@ -14,7 +14,8 @@ export type Kind = 'message' | 'review' | 'question' | 'run';
 export interface Target { repo?: string; issue?: string; change?: string; version?: number }
 export interface Thread { address: string; name: string; state: 'contact' | 'request' | 'blocked'; unread: number; last: {type: Kind; body: string; mine: boolean; time: number} }
 export interface Message { id: string; mine: boolean; type: Kind; target: Target; body: string; time: number; read: boolean; live?: boolean }
-export interface Me { domain: string; account: string; addresses: {address: string; ssh: boolean}[] }
+/** `lapsed`: on a domain whose DNS no longer names this Remote; it answers no one until it does again. */
+export interface Me { domain: string; account: string; addresses: {address: string; ssh: boolean; lapsed?: boolean}[] }
 
 const enc = (a: string) => encodeURIComponent(a);
 
@@ -32,8 +33,14 @@ export async function claim(name: string, domain?: string): Promise<string> {
   const body = await r.json() as {address?: string; error?: string; publish?: unknown};
   if (r.ok) return body.address!;
   if (body.publish) throw new Published(body.publish);
-  throw new RemoteError(r.status, body.error === 'taken' ? t('That address is taken') : body.error === 'name' ? t('A name is 2–31 letters, digits, dots, dashes or underscores') : String(body.error));
+  const until = (body as {until?: number}).until;
+  throw new RemoteError(r.status, body.error === 'taken' ? t('That address is taken')
+    : body.error === 'held' && until ? t('That address was let go; it is held for its owner until {date}', {date: new Date(until).toLocaleDateString()})
+    : body.error === 'name' ? t('A name is 2–31 letters, digits, dots, dashes or underscores') : String(body.error));
 }
+
+/** Let an address go: it answers no one from now, and is held for you a while (claim it again to take it back). */
+export const release = (address: string) => json<{address: string; until: number}>(`/v1/inbox/addresses/${enc(address)}`, {method: 'DELETE'});
 
 /** What a domain's DNS must say for this account to hold addresses on it here, and whether it says so now. */
 export const domainRecord = (domain: string) => json<{name: string; type: string; value: string; found: boolean}>(`/v1/inbox/domains/${enc(domain.trim().toLowerCase())}`);

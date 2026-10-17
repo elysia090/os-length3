@@ -1,6 +1,6 @@
 // Who someone is, on the Remote: Better Auth, the ordinary way.
 //
-//   sign in   with GitHub or Google (OAuth): the account is that identity
+//   sign in   with GitHub, Google or Apple (OAuth): the account is that identity
 //   then      a passkey, added from the first session, so later sign-ins
 //             need no provider (discoverable: nothing to type)
 //   recover   sign in with the provider again, and add a passkey there
@@ -41,6 +41,8 @@ export interface AuthConfig {
   origins?: string[];
   github?: Provider;
   google?: Provider;
+  /** Sign in with Apple: its service id, and the client secret (a JWT signed with the team's key). */
+  apple?: Provider;
   /** A stand-in provider on this service itself (devoauth.ts): development and tests only. */
   dev?: boolean;
   /** Off only in tests, where every request comes from the same address. */
@@ -48,8 +50,8 @@ export interface AuthConfig {
 }
 
 /** Which providers a Remote offers, in the order its sign-in shows them. */
-export const providers = (c: Pick<AuthConfig, 'github' | 'google' | 'dev'>) =>
-  [c.github && 'github', c.google && 'google', c.dev && 'dev'].filter(Boolean) as ('github' | 'google' | 'dev')[];
+export const providers = (c: Pick<AuthConfig, 'github' | 'google' | 'apple' | 'dev'>) =>
+  [c.github && 'github', c.google && 'google', c.apple && 'apple', c.dev && 'dev'].filter(Boolean) as ('github' | 'google' | 'apple' | 'dev')[];
 
 export function createAuth(c: AuthConfig) {
   const rpID = new URL(c.appOrigin).hostname;
@@ -58,14 +60,16 @@ export function createAuth(c: AuthConfig) {
     baseURL: c.baseURL,
     secret: c.secret,
     database: drizzleAdapter(c.db, {provider: 'pg', schema}),
-    trustedOrigins: [c.appOrigin, ...(c.origins ?? [])],
+    // Apple answers by posting the sign-in back from its own page.
+    trustedOrigins: [c.appOrigin, ...(c.origins ?? []), ...(c.apple ? ['https://appleid.apple.com'] : [])],
     emailAndPassword: {enabled: false},
     socialProviders: {
       ...(c.github ? {github: {clientId: c.github.clientId, clientSecret: c.github.clientSecret}} : {}),
       ...(c.google ? {google: {clientId: c.google.clientId, clientSecret: c.google.clientSecret, prompt: 'select_account' as const}} : {}),
+      ...(c.apple ? {apple: {clientId: c.apple.clientId, clientSecret: c.apple.clientSecret}} : {}),
     },
     // One person, one account: a second provider with the same verified address joins it.
-    account: {accountLinking: {enabled: true, trustedProviders: ['github', 'google', 'dev']}},
+    account: {accountLinking: {enabled: true, trustedProviders: ['github', 'google', 'apple', 'dev']}},
     session: {expiresIn: 60 * 60 * 24 * 60, updateAge: 60 * 60 * 24},
     rateLimit: {enabled: c.rateLimit ?? true, window: 60, max: 120},
     // A sign-in with a passkey is proof the person is at the device just now: turning a repo

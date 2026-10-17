@@ -12,6 +12,7 @@ pub mod i18n;
 pub mod inbox;
 pub mod issues;
 pub mod linediff;
+pub mod names;
 #[cfg(target_os = "linux")]
 pub mod launch;
 pub mod owned;

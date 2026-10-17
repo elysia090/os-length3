@@ -47,4 +47,10 @@ export default {
   'Write to name@domain': 'name@domain に書く',
   'Write to {address}…': '{address} に書く…',
   'Review： or Question： first to ask · a /root/… path says what it is about · Enter sends · Shift+Enter for a new line': '頭に Review： か Question： で依頼 · /root/… のパスで対象 · Enter で送信 · Shift+Enter で改行',
+  // Names: letting one go, a domain that lapsed.
+  'That address was let go; it is held for its owner until {date}': 'そのアドレスは手放されています。{date} まで元の持ち主のために取り置かれています',
+  'Your addresses': 'あなたのアドレス',
+  'Let it go': '手放す',
+  'Let it go? It is held for you 30 days': '手放しますか？30日間はあなたのために取り置かれます',
+  'its domain no longer names this Remote': 'そのドメインはもうこの Remote を指していません',
 } as Record<string, string>;

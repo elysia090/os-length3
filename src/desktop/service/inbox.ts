@@ -26,6 +26,7 @@
 
 import {and, desc, eq, gt, inArray, isNull, lt, or, sql} from 'drizzle-orm';
 import type {Hono} from 'hono';
+import {claim, HOLD, live, release} from './names.ts';
 import {address, contact, message, signal, user} from './schema.ts';
 
 export const INBOX = {
@@ -47,6 +48,8 @@ export interface InboxDeps {
   secret: string;
   /** A name's TXT records (DNS over HTTPS, or a stand-in in tests). */
   txt?: (name: string) => Promise<string[]>;
+  /** How long what a domain's DNS said is taken as still so (an hour; tests read it every time). */
+  recheck?: number;
 }
 
 /** A name's TXT records through DNS over HTTPS (Cloudflare's resolver), each record's strings joined. */
@@ -89,12 +92,35 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   /** What the domain's DNS says of Length³: its records, read now. */
   const published = async (domain: string) => (await txt(recordName(domain)).catch(() => [] as string[])).map(readRecord).filter(Boolean) as {remote: string; proof: string}[];
 
-  /** Whom an address reaches on this Remote, if anyone. */
+  /**
+   * Whether a name on another domain still answers: its domain's DNS still
+   * names this Remote for its owner. Read again at most hourly an owner and domain.
+   */
+  const seen = new Map<string, {at: number; ok: boolean}>();
+  const stillNamed = async (row: typeof address.$inferSelect) => {
+    if (row.domain === d.domain || !row.userId) return true;
+    const key = `${row.domain}\n${row.userId}`, was = seen.get(key);
+    if (was && Date.now() - was.at < (d.recheck ?? 3600_000)) return was.ok;
+    const proof = await proofOf(row.userId, row.domain);
+    const ok = (await published(row.domain)).some((r) => r.remote === host && r.proof === proof);
+    seen.set(key, {at: Date.now(), ok});
+    // Lapsed: it answers to no one until the record is back; lapsed long enough, it is let go.
+    if (!ok && !row.lapsedAt) await d.db.update(address).set({lapsedAt: new Date()}).where(eq(address.address, row.address));
+    if (!ok && row.lapsedAt && Date.now() - row.lapsedAt.getTime() > HOLD) await release(d.db, row.address);
+    if (ok && row.lapsedAt) await d.db.update(address).set({lapsedAt: null}).where(eq(address.address, row.address));
+    return ok;
+  };
+
+  /** Whom an address reaches on this Remote, if anyone: a person's live address. */
   const resolve = async (a: string): Promise<{userId: string; address: string} | {why: string}> => {
     const p = parseAddress(a);
     if (!p) return {why: 'not an address'};
-    const [row] = await d.db.select().from(address).where(eq(address.address, `${p.name}@${p.domain}`));
-    if (row) return {userId: row.userId, address: row.address};
+    const [row] = await d.db.select().from(address).where(and(eq(address.address, `${p.name}@${p.domain}`), isNull(address.releasedAt))) as (typeof address.$inferSelect)[];
+    if (row?.userId) {
+      if (!await stillNamed(row)) return {why: 'its domain no longer names this Remote'};
+      return {userId: row.userId, address: row.address};
+    }
+    if (row) return {why: 'a server, not a person'};
     if (p.domain === d.domain) return {why: 'no such address'};
     // Another domain: its DNS says which Remote holds its addresses.
     const records = await published(p.domain);
@@ -106,11 +132,12 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   // The Remote's own domain answers for one name at a time: no list of everyone to read.
   app.get('/.well-known/length3', async (c) => {
     const name = (c.req.query('name') ?? '').toLowerCase();
-    const [row] = NAME.test(name) ? await d.db.select({a: address.address}).from(address).where(eq(address.address, `${name}@${d.domain}`)) : [];
+    const [row] = NAME.test(name) ? await d.db.select({a: address.address}).from(address).where(and(eq(address.address, `${name}@${d.domain}`), live)) : [];
     return c.json({remote: d.baseURL, ...(row ? {name} : {})}, 200, {'Access-Control-Allow-Origin': '*'});
   });
 
-  const mine = async (userId: string) => (await d.db.select().from(address).where(eq(address.userId, userId)).orderBy(address.createdAt)) as (typeof address.$inferSelect)[];
+  /** An account's addresses: not let go (a lapsed one is still theirs, and says so). */
+  const mine = async (userId: string) => (await d.db.select().from(address).where(and(eq(address.userId, userId), isNull(address.releasedAt))).orderBy(address.createdAt)) as (typeof address.$inferSelect)[];
 
   // What to put in a domain's DNS so this account may use it here.
   v1.get('/inbox/domains/:domain', async (c) => {
@@ -124,7 +151,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
 
   v1.get('/inbox/me', async (c) => {
     const list = await mine(c.get('userId'));
-    return c.json({domain: d.domain, account: c.get('userId'), addresses: list.map((a) => ({address: a.address, ssh: Boolean(a.ssh)}))});
+    return c.json({domain: d.domain, account: c.get('userId'), addresses: list.map((a) => ({address: a.address, ssh: Boolean(a.ssh), ...(a.lapsedAt ? {lapsed: true} : {})}))});
   });
 
   // Claim an address. On this Remote's domain the name is free or not; on another,
@@ -143,8 +170,19 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
         return c.json({error: 'not published', publish: {name: recordName(domain), type: 'TXT', value: `v=length3; remote=${host}; proof=${proof}`}}, 409);
       }
     }
-    const done = await d.db.insert(address).values({address: `${name}@${domain}`, userId: c.get('userId'), name, domain}).onConflictDoNothing().returning({a: address.address});
-    return done.length ? c.json({address: `${name}@${domain}`}, 201) : c.json({error: 'taken'}, 409);
+    // One namespace with servers' names; a name let go is held for its old owner a while.
+    const got = await claim(d.db, name, domain, {userId: c.get('userId')});
+    if (got.ok) return c.json({address: `${name}@${domain}`}, 201);
+    return c.json(got.until ? {error: 'held', until: got.until} : {error: 'taken'}, 409);
+  });
+
+  // Let an address go: it stops answering at once, and is held for this account a while (it may take it back).
+  v1.delete('/inbox/addresses/:address', async (c) => {
+    const a = c.req.param('address').toLowerCase();
+    const [row] = await d.db.select().from(address).where(and(eq(address.address, a), eq(address.userId, c.get('userId')), isNull(address.releasedAt)));
+    if (!row) return c.json({error: 'not yours'}, 404);
+    await release(d.db, a);
+    return c.json({address: a, until: Date.now() + HOLD});
   });
 
   v1.post('/inbox/addresses/:address/ssh', async (c) => {
@@ -203,9 +241,9 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   /** The other person's addresses (the first is how they are shown). */
   const addressesOf = async (ids: string[]) => {
     if (!ids.length) return new Map<string, string>();
-    const rows = await d.db.select().from(address).where(inArray(address.userId, ids)).orderBy(address.createdAt);
+    const rows = await d.db.select().from(address).where(and(inArray(address.userId, ids), isNull(address.releasedAt))).orderBy(address.createdAt);
     const out = new Map<string, string>();
-    for (const r of rows as (typeof address.$inferSelect)[]) if (!out.has(r.userId)) out.set(r.userId, r.address);
+    for (const r of rows as (typeof address.$inferSelect)[]) if (r.userId && !out.has(r.userId)) out.set(r.userId, r.address);
     return out;
   };
 

@@ -12,7 +12,7 @@ import type {Context} from './context.ts';
 // Remote: where the canonical copy is, and who this device is there.
 //
 // Not signed in: one sentence on what it means, and the ways in. A browser
-// signs in with GitHub or Google, or with a passkey it already has; the app
+// signs in with GitHub, Google or Apple, or with a passkey it already has; the app
 // and l3 show a code that a browser approves.
 //
 // Signed in: the repos, here and on the Remote only, each with where it

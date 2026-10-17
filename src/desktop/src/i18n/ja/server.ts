@@ -77,4 +77,13 @@ export default {
   'This Remote sends no mail': 'この Remote はメールを送りません',
   'Go to Inbox': 'Inbox へ',
   'Bring a repo out to the band with ⊕, or open one from File.': '⊕ で repo を帯に出すか、File から開いてください。',
+  // A server's name, in the namespace people's addresses are in.
+  'Its address': 'アドレス',
+  'Its address is a name like a person\'s: nobody else can have it while the server does.': 'アドレスは人のアドレスと同じ名前です。サーバーが持っている間はほかの誰も取れません。',
+  'Bring back {name}': '{name} を戻す',
+  'Held until {date}': '{date} まで取り置き',
+  'That name is taken': 'その名前は使われています',
+  'That name was let go, and is held for its owner a while': 'その名前は手放されたばかりで、しばらく元の持ち主のために取り置かれています',
+  'Its address: letters, digits, - . _': 'アドレスは英数字と - . _ で',
+  'Only on a domain you hold an address on': 'あなたがアドレスを持つドメインでだけ作れます',
 } as Record<string, string>;
