@@ -237,7 +237,15 @@ Remote the issues are shown and one line says that history is kept there.
 
 ### Remote
 
-The header, a short offer while there is no passkey (one line and its
+Signed out, the page is the header and one place in the middle of what is
+left, the first thing a person meets: an `ink` edge over `raised` as the
+current issue card is, its weight a little high, at most 440 px wide. In
+it: Sign in, one line on what the Remote is, the ways in one under another
+as wide as the place (the first provider filled), and the line for a lost
+passkey. A device's code opens the same place on a page of its own, for
+each step: the code, signing in, letting the device in.
+
+Signed in: the header, a short offer while there is no passkey (one line and its
 button, no wider than they are), then the page's parts as a switch (the one
 place a page is switched, because its parts are unrelated):
 

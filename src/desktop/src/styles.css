@@ -131,7 +131,7 @@ a { color: var(--ink); }
 .page { min-width: 0; padding: var(--top-line) clamp(var(--s5), 5vw, 72px) var(--s6); }
 .page:focus { outline: none; }
 .page > * { max-width: 1200px; margin-left: auto; margin-right: auto; }
-.page-head { display: flex; align-items: baseline; gap: var(--s3); }
+.page-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s1) var(--s3); }
 .page-head .icon { align-self: center; }
 .page-head h1 { font-size: var(--t-title); font-weight: 700; }
 .page-head p { color: var(--sub); }
@@ -503,8 +503,20 @@ mark { background: var(--ink); color: var(--ground); }
 }
 /* Remote: a device's code, read aloud from one screen to another */
 .device-code { font-size: var(--t-card); font-weight: 600; letter-spacing: .12em; }
-.device-page { grid-column: 1 / -1; align-self: start; width: 100%; max-width: 560px; box-sizing: border-box; margin: 12vh auto 0; padding: 0 var(--s5); display: grid; align-content: start; gap: var(--s5); }
-.device-page h1 { margin: 0; }
+/* Signing in (the Remote page signed out, a device's code): one place in the
+   middle, an ink edge over raised, its weight a little high as the issue
+   card's; the ways in one under another, as wide as the place. */
+.sign-in-place { display: grid; justify-items: center; align-content: center; min-height: calc(100dvh - 2 * var(--top-line) - var(--s6) * 3); padding-bottom: 5vh; box-sizing: border-box; }
+.sign-in-card {
+  width: min(440px, 100%); box-sizing: border-box; display: grid; gap: var(--s4);
+  padding: calc(var(--s4) + var(--s1)) var(--s5) var(--s5); border: 1px solid var(--ink); border-radius: var(--r-place); background: var(--raised);
+}
+.sign-in-card h1, .sign-in-card h2 { margin: 0; font-size: var(--t-card); font-weight: 700; }
+.sign-in-card .remote-join { max-width: none; }
+.sign-in-card .sign-in-row { display: grid; gap: var(--s2); }
+.sign-in-card .sign-in-row .button { width: 100%; }
+.device-page { grid-column: 1 / -1; width: 100%; min-height: 100dvh; padding: 0 var(--s4) 5vh; }
+@media (max-width: 560px) { .sign-in-card { padding: var(--s4); gap: var(--s3); } }
 .button.link { border-color: transparent; background: transparent; padding-inline: 0; color: var(--sub); text-decoration: underline; }
 .row-item[data-where='offline'] .row-meta { color: var(--ink); }
 .card.repo.away { border-style: dashed; }

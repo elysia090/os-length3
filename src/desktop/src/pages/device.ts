@@ -13,7 +13,9 @@ const client = (id: string) => (id === 'l3' ? t('l3 (the command line)') : id ==
 export function devicePage(given: string): HTMLElement {
   let code = given.trim().toUpperCase();
   const body = h('div', {class: 'remote-join'});
-  const page = h('main', {class: 'device-page'}, h('h1', {}, t('Connect a device')), body);
+  // The same place as signing in on the Remote page, for every step: the code, signing in, letting it in.
+  const page = h('main', {class: 'device-page sign-in-place'},
+    h('section', {class: 'sign-in-card', 'aria-labelledby': 'device-title'}, h('h1', {id: 'device-title'}, t('Connect a device')), body));
   const error = h('p', {class: 'error', role: 'alert'});
   const finish = (text: string) => body.replaceChildren(h('p', {}, text), h('p', {class: 'muted'}, t('You can close this tab.')));
   const ask = async () => {
@@ -27,7 +29,7 @@ export function devicePage(given: string): HTMLElement {
       return;
     }
     if (!remote.connection() && !(await remote.claim())) {
-      body.replaceChildren(h('p', {}, t('Sign in to the account the device will join.')), signInBox(() => void ask(), t('The device joins your account on the Remote.'), remote.signedInURL()));
+      body.replaceChildren(signInBox(() => void ask(), t('Sign in to the account the device will join.'), remote.signedInURL()));
       return;
     }
     let who: {clientId: string; status: string};

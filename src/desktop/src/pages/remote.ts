@@ -48,6 +48,16 @@ async function pressing(b: HTMLButtonElement, error: HTMLElement, f: () => Promi
  * approved in the browser. `done` runs once this device is in; a provider
  * leaves the page and comes back to `back`.
  */
+/**
+ * Signing in, the first thing a person meets: one place in the middle of the
+ * page, as the current issue card is (an ink edge over raised, its weight a
+ * little high), the ways in one under another.
+ */
+export function signInPlace(title: string, ...body: Node[]): HTMLElement {
+  return h('div', {class: 'sign-in-place'},
+    h('section', {class: 'sign-in-card', 'aria-labelledby': 'sign-in-title'}, h('h2', {id: 'sign-in-title'}, title), ...body));
+}
+
 export function signInBox(done: () => void, words?: string, back?: string): HTMLElement {
   const error = h('p', {class: 'error', role: 'alert'});
   const box = h('div', {class: 'remote-join'}, h('p', {class: 'muted'}, words ?? (isNative
@@ -67,7 +77,7 @@ export function signInBox(done: () => void, words?: string, back?: string): HTML
       await s.wait.finally(() => { go.hidden = false; waiting.hidden = true; });
       done();
     }));
-    box.append(h('div', {class: 'row'}, go), waiting, error);
+    box.append(h('div', {class: 'row sign-in-row'}, go), waiting, error);
     return box;
   }
   const providers = h('div', {class: 'row sign-in-row'});
@@ -81,7 +91,7 @@ export function signInBox(done: () => void, words?: string, back?: string): HTML
   });
   const passkey = button(t('Sign in with a passkey'));
   passkey.addEventListener('click', () => void pressing(passkey, error, async () => { await account.signIn(); done(); }));
-  box.append(providers, h('div', {class: 'row'}, passkey),
+  box.append(providers, h('div', {class: 'row sign-in-row'}, passkey),
     h('p', {class: 'muted small'}, t('Lost every passkey? Sign in with GitHub or Google again and add a new one.')), error);
   return box;
 }
@@ -285,7 +295,7 @@ export function remote(ctx: Context): Node[] {
     if (now === shown) return;
     shown = now;
     if (!c) {
-      holder.replaceChildren(h('section', {class: 'section'}, signInBox(() => paint())));
+      holder.replaceChildren(signInPlace(t('Sign in'), signInBox(() => paint())));
       return;
     }
     // One part at a time: the repos it keeps, how this account signs in, the devices in it.
