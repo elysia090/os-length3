@@ -154,14 +154,5 @@ The complete frontend regression currently covers:
 - default syscall purity rejection;
 - strict-seccomp kill after explicit impure opt-in.
 
-Run:
-
-```
-python3 /mnt/data/qm_e2e/test_x86_complete.py
-```
-
-Expected final line:
-
-```
-complete x86-64 frontend regression OK
-```
+That regression ran outside this repository, from `/mnt/data/qm_e2e`; its
+harness and inputs were never committed.
