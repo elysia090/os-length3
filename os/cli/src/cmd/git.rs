@@ -264,9 +264,13 @@ pub fn issue_show(ctx: &Ctx, call: &Call) -> Result<Reply> {
 
 pub fn issue_new(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let repo = target::repo(ctx, call, 0)?;
-    let (kind, title) = text::kind_of(call.word(1).unwrap_or_default());
+    // Its first line names it; lines after it are its detail, before -m's (as the file is read back).
+    let words = call.word(1).unwrap_or_default();
+    let (first, more) = words.split_once('\n').unwrap_or((words, ""));
+    let (kind, title) = text::kind_of(first);
     if title.trim().is_empty() { return Err(Error::Usage(tr!("An issue needs a title: l3 issue new [REPO] \"Fix：title\"", "Issue には件名がいります：l3 issue new [REPO] \"Fix：件名\""))); }
-    let file = ctx.repos()?.add_issue(&repo, kind.as_deref(), &title, call.note())?;
+    let detail = [more.trim(), call.note().trim()].into_iter().filter(|d| !d.is_empty()).collect::<Vec<_>>().join("\n");
+    let file = ctx.repos()?.add_issue(&repo, kind.as_deref(), &title, &detail)?;
     Ok(Reply::done(tr!("Wrote {}{} {}", "{}{} {} を書きました", repo, number(&file), text::named(kind.as_deref(), title.trim())),
         json!({"repo": repo, "file": file, "number": number(&file), "kind": kind, "title": title.trim()})))
 }
