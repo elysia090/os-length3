@@ -134,7 +134,7 @@ export class Reader {
         state.textContent = t('Only the first {part} (of {size}) · read only', {part: bytes(new TextEncoder().encode(c.text).length), size: bytes(c.size)});
         return;
       }
-      const area = h('textarea', {class: 'code edit', rows: '1', wrap: 'off', spellcheck: 'false', autocapitalize: 'off',
+      const area = h('textarea', {class: 'code code-edit', rows: '1', wrap: 'off', spellcheck: 'false', autocapitalize: 'off',
         'aria-label': t('Edit {path}', {path})}) as HTMLTextAreaElement;
       area.value = c.text;
       sheet.replaceChildren(gutter, area);

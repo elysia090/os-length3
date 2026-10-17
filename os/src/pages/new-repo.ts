@@ -1,5 +1,6 @@
 import {h} from '../dom.ts';
 import {t} from '../i18n.ts';
+import {remoteOnly} from '../lifecycle.ts';
 import {store, TEMPLATES, validName, type Template} from '../repos.ts';
 import {answers, pageHead} from './common.ts';
 import {repoList} from './repo-list.ts';
@@ -114,7 +115,8 @@ export function newRepo(ctx: Context): Node[] {
     const n = name.value.trim();
     if (!validName(n)) { error.textContent = t('Use letters, digits and . _ -, and do not start with .'); name.focus(); return; }
     // A name taken is the name's to change, as a name not allowed is: the keyboard goes back to it, as written.
-    if ((await store.list()).some((r) => r.name === n)) { error.textContent = t('There is a repo named {name} already', {name: n}); name.focus(); return; }
+    // One the Remote keeps and this device does not hold yet is taken too: it is the same repo, not another of that name.
+    if ((await store.list()).some((r) => r.name === n) || remoteOnly().some((r) => r.name === n)) { error.textContent = t('There is a repo named {name} already', {name: n}); name.focus(); return; }
     submit.disabled = true;
     try {
       await store.create(n, template);

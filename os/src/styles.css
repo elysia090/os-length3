@@ -450,8 +450,8 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .gutter { color: var(--sub); text-align: right; user-select: none; min-width: 2ch; font-variant-numeric: tabular-nums; }
 .code { overflow-x: auto; }
 /* The text itself is the field: no box, the caret is the only sign. */
-.code.edit { display: block; width: 100%; border: 0; background: transparent; color: var(--ink); resize: none; overflow-y: hidden; }
-.code.edit:focus { outline: none; }
+.code.code-edit { display: block; width: 100%; border: 0; background: transparent; color: var(--ink); resize: none; overflow-y: hidden; }
+.code.code-edit:focus { outline: none; }
 .file:focus-within > .path { color: var(--ink); }
 .sheet-note { padding: var(--s2) var(--s4) var(--s4); font-size: var(--t-meta); }
 .flow .revealed > .path { background: var(--raised); }
@@ -535,7 +535,7 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .diff-line { display: grid; grid-template-columns: 4ch minmax(0, 1fr); gap: var(--s2); padding: 0 var(--s1); }
 .diff-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 /* Which line it is, quiet at the left of each line. */
-.diff-no { color: var(--sub); text-align: right; font-variant-numeric: tabular-nums; user-select: none; }
+.diff-no { align-self: start; color: var(--sub); text-align: right; font-variant-numeric: tabular-nums; user-select: none; }
 /* A line's number in the copy here opens the center at it. */
 button.diff-no { padding: 0; border: 0; background: transparent; font: inherit; cursor: pointer; }
 button.diff-no:hover { color: var(--ink); text-decoration: underline; }
