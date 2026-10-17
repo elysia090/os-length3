@@ -103,16 +103,6 @@ trusted pin. A durable cloud synchronizer must journal this intent and
 coordinate its local pin before it becomes a recovery authority. That
 synchronizer is not connected to the product UI in this release.
 
-The optional `HttpCiphertextStore` (removed with the old web product) implements
-bounded opaque transfers, immutable readback, strong conditional writes and
-explicit uncertain-outcome reconciliation. The normal product still uses its
-strict origin-local `IndexedBlockStore`. There is no implicit cloud upload,
-automatic refresh, bucket listing, garbage collection or delete API.
-`distribution/oracle/check-object-store-transport.mjs` exercises a real loopback HTTP
-tier and the real encrypted `PersistentBlock`, including corruption, racing
-head publication and a lost successful acknowledgement. Deployed provider
-credentials, CORS and cloud durability are not qualified by that fixture.
-
 For S3, the grant must sign the actual conditional headers and expose a strong
 ETag. Browser CORS must allow required methods/headers and expose ETag;
 deployment policy is explicit. Use a scoped prefix and short expiry, with

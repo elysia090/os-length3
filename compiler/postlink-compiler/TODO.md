@@ -288,15 +288,7 @@ separate; scoped/positive gates do not assert that it is solved.
    authenticated C image/page/module lookup to actual Linux domains, removing
    repeated cold construction through exact source identity/lifetime.
 
-4. Retire remaining old web/runtime/storage consumers.
-   Historical vm.js, Worker/Storage and catalog readers are not migrated merely
-   by deleting old C sources. Reconnect to modern C Artifact/Storage/machine
-   interfaces, then remove obsolete producers and consumers together. Preserve
-   integrity/failure/recovery gates. No STEP/interpreter resurrection.
-   Freeze candidate bytes/digests/commit and unchanged quotas; profile the same
-   actual bundle, including construction/repeated admission and actual run.
-
-5. Publish and verify the full browser development environment.
+4. Publish and verify the full browser development environment.
    Real kernel/PID1/root block device/offline shell -> C/link/run, make -j4,
    Git/packages; bounded authenticated page/module residency, COW/root publish,
    exact close/reopen/suspend including all live execution residuals.
@@ -375,8 +367,7 @@ separate; scoped/positive gates do not assert that it is solved.
 
 ## Responsibility contracts
 
-[ARCHITECTURE.md](../docs/ARCHITECTURE.md), [CONTRACT.md](CONTRACT.md),
-[BENCHMARK.md](BENCHMARK.md), [ARTIFACT.md](../docs/ARTIFACT.md),
-[STORAGE.md](../docs/STORAGE.md) and BROWSER.md (removed with the old web product).
+[CONTRACT.md](CONTRACT.md), [BENCHMARK.md](BENCHMARK.md),
+[ARTIFACT.md](../docs/ARTIFACT.md) and [STORAGE.md](../docs/STORAGE.md).
 Fixed recipe/workloads/upstream identities remain unchanged. Product
 Makefiles and shared x86 sources.mk are the sole native/cold build definitions.

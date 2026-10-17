@@ -1,4 +1,4 @@
-# v2 products
+# compiler
 
 The repository goal is one bootable Linux distribution obtained by post-link
 compilation: the kernel and every linked x86-64 ELF in the fixed profile are

@@ -20,8 +20,7 @@ authenticated extents through fetch/browser persistence, holds dirty COW pages
 outside disposable Workers, and drops Worker-owned Wasm memory on eviction.
 The tier mechanism changes; admission through the canonical root does not.
 
-Browser resource/consent and workspace behavior are specified in
-BROWSER.md (removed with the old web product). OPFS, IndexedDB, Cache and Web Locks are adapters,
+OPFS, IndexedDB, Cache and Web Locks are adapters,
 not guest VFS or a distributed root authority. A successful cache write or
 `persist()` grant does not prove remote durability. Connection operation ACKs
 must pass generation/revision fencing and then storage authentication; only
@@ -61,9 +60,7 @@ non-extractable HKDF `CryptoKey` and clears the input buffer. The user-approved
 origin/profile retains that CryptoKey, volume context, exact committed head
 and Supervisor generation in an IndexedDB authority store. Head and recovery
 pin advance in the same strict transaction; Web Locks and generation fencing
-prevent concurrent/stale Supervisors. The implemented browser-restart recovery
-and explicit retention of existing page-local workspaces are described in
-workspace-authority.md (removed with the old web product). Ciphertext objects
+prevent concurrent/stale Supervisors. Ciphertext objects
 remain separate from this trusted authority. Worker close/reopen cold-boots
 Linux; it does not restore guest processes.
 
@@ -670,11 +667,6 @@ Implemented C structure:
 | property | implementation |
 | --- | --- |
 | immutable object digest/extent and canonical rank tree | `artifact/src/object.c`, `artifact/src/index.c` |
-| sparse physical-bundle reader | `storage/src/identity.c` |
-| fixed and tree delivery readers/writers | `storage/src/delivery.c` |
-| bounded Deflate reader/writer | `storage/src/compression.c` |
-| injective 64-bit-group/32-bit-slot nonce spelling | `storage/src/crypto.c` |
-| erasure shape validation | `storage/src/erasure.c` |
 
 The production Worker currently uses browser `PersistentBlock` with WebCrypto
 HKDF/AES-GCM and encrypted IndexedDB objects/head. Worker replacement and
@@ -687,9 +679,6 @@ storage success must not be counted as those proofs.
 
 Remaining normative gaps:
 
-* `storage/delivery.c` still accepts the legacy 48-byte
-  `(digest, offset, extent)` row index as well as its fixed-width tree; neither
-  is the canonical-rank interval projection derived above;
 * some opened page-rank and ciphertext directories are dense in logical extent;
 * canonical predictor/residual encoding from ARTIFACT.md is not yet the single
   wire representation;

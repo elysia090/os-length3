@@ -13,11 +13,9 @@ source -> ordinary compiler/linker -> linked x86-64 ELF
                                       |
                                       v
                          optimized x86-64 ELF
-                            /                 \
-                    native execution      wasm-compiler
-                                                |
-                                                v
-                                             vm.wasm
+                                      |
+                                      v
+                              native execution
 ```
 
 This compiler is applied to the whole distribution, not only to a single
@@ -221,8 +219,7 @@ description of them:
 3. emit total indirect page dispatch and bind every emitted body to its source
    proof;
 4. run native differential parity and the fixed paired performance gate over
-   the complete distribution root;
-5. let `wasm-compiler` decode only this accepted optimized x86 ELF.
+   the complete distribution root.
 
 Unchanged source x86 currently remains only as an explicitly selected native
 region; it is never interpreted and has no runtime descriptor. The release

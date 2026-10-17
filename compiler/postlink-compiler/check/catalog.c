@@ -137,9 +137,9 @@ static int catalog_semantic(const pl_x86_instruction *instruction,
     }
     /* A valid architectural trap is already a complete terminal transfer.
      * It deliberately has no SSA plan: the emitted fault function preserves
-     * either the instruction RIP or the trap fallthrough, and vm.wasm enters
-     * the IDT.  Counting it as an anonymous barrier made millions of shared
-     * INT3 padding coordinates obscure the real closure frontier. */
+     * either the instruction RIP or the trap fallthrough.  Counting it as an
+     * anonymous barrier made millions of shared INT3 padding coordinates
+     * obscure the real closure frontier. */
     if (instruction->flow == PL_X86_FLOW_FAULT) {
         ++catalog->lowered[operation];
         return 0;

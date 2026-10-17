@@ -2026,7 +2026,6 @@ native execution gates after such a lifetime change.
 | optimized ELF proof reader and verifier | `optimized-x86/src`, `optimized-x86/cli` |
 | canonical object, global block-future, resource and rank-index primitives | `artifact/src`, `support/src/future.c` |
 | complete release-word publisher and size report | `build/artifact-executable-stage`, `distribution/packaging/optimize-payload.sh` (full fixed-root result still required) |
-| secondary Wasm projection | `wasm-compiler/src` (library boundary only; product CLI/runtime connection remains required) |
 | browser execution of accepted projections | **required after the optimized-x86 and Artifact gates** |
 | artifact publication tests | `artifact/check`, `check/complete-release.c`, `distribution/packaging/check-optimize-payload.sh` |
 | storage and delivery projection | [STORAGE.md](STORAGE.md) |

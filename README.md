@@ -37,8 +37,7 @@ linked x86-64 ELF  →  post-link compiler  →  optimized ELF + proof
 The grammar QM normalizes into is GF(2)-linear maps, convolutions, lane-local
 steps, gathers, whole-word reductions and a bounded case analysis — so the
 bit-manipulation exercises from CS:APP, MIT 6.172 and Princeton's *Algorithms*
-are in the categorized `research/corpus/` alongside the lane kernels, and what QM
-makes of each of them is in [`compiler/README.md`](compiler/README.md).
+are in the categorized `research/corpus/` alongside the lane kernels.
 
 ## Layout
 

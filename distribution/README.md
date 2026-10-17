@@ -1,7 +1,8 @@
 # Reproducible x86 Linux input
 
-`releases/linux-x86-64` is generated only from the upstream inputs locked in
-`sources.env`. NixOS, WSL kernels and their temporary build trees are not used.
+The native release bundle (see [Native Release assets](#native-release-assets))
+is generated only from the upstream inputs locked in `sources.env`. NixOS, WSL
+kernels and their temporary build trees are not used.
 
 The current source roles are:
 
@@ -249,9 +250,7 @@ physical address. Upstream Linux owns that mount and its VFS semantics.
 Compiler code, headers, static libraries and trust anchors remain cold until
 Linux opens them. The primary 75 MB (75,000,000-byte) gate applies to the canonical program
 word emitted from the kernel/boot/root semantics; Storage reports compressed
-transfer bytes later and separately. The current
-`artifact/compiler` remains the smaller WebAssembly-only frontend and is not
-replaced by guest-native GCC.
+transfer bytes later and separately.
 
 `packaging/build-system-tools.sh` assembles that verified linked-toolchain
 package set only as a disposable dependency sysroot, builds every remaining standard-profile provider

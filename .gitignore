@@ -2,7 +2,6 @@ __pycache__/
 *.py[cod]
 dist/
 node_modules/
-compiler/data/out/
 /distribution/out/
 /distribution/upstream/
 /distribution/toolchain/build/

@@ -164,8 +164,7 @@ queue policy.
 
 ## Workspace connections and ingress
 
-The product model is the workspace connection defined in
-BROWSER.md (removed with the old web product), not a list of emulated PC hardware. A network grant
+The product model is the workspace connection, not a list of emulated PC hardware. A network grant
 binds workspace, authority scope, resource/lane, machine generation, grant revision,
 gateway policy, direction, routes, expiry and byte/queue budgets. The C resource
 gate fences operation completions; the gateway independently enforces origin,
