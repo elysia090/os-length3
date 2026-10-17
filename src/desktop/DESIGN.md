@@ -66,6 +66,27 @@ help: there is no disk image whose freed blocks the host cannot see, and no
 balloon or trim for a guest to forget. Runtime lists each owner's part by
 size, with what can be done and why.
 
+The root itself is laid out the same way, by what each place is: `/usr`
+is what the root is (programs, libraries, data; `/bin`, `/sbin` and `/lib`
+are links into it, the merged layout of Fedora, Debian and Arch), `/etc` its
+settings, `/var` what packages and the repo keep, `/root` home, and `/dev`,
+`/proc`, `/sys`, `/tmp`, `/run` are made for each Prompt. Nothing of a
+machine that boots is in it (no kernel, `/init`, service manager, DHCP or
+clock daemon): a Prompt is started by the app, on the app's kernel. Its
+records are `/usr/share/length3`, and its package database names exactly
+the files there are.
+
+On the host, the data directory is laid out by owner too:
+
+| | What | Lifetime |
+|---|---|---|
+| `repos/<repo>` | each repo's copy | canonical on the Remote |
+| `work/<repo>/<line>` | an issue's copy | until its change is merged |
+| `sync/` | what sync last agreed and read (bases, digests) | the repo's here |
+| `home/` | Home's settings: profile, TODO, band, language | this device's |
+| `system/<digest>` | each root held, `current` the one in use | while a repo's Prompt runs on it |
+| `envs/<repo>`, `caches/<repo>` | the repo's environment and caches | as in the table above |
+
 ### Another OS in a Prompt
 
 l3 is to a Prompt what a machine monitor is to its guest: it lays out the

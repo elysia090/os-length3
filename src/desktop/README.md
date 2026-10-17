@@ -77,24 +77,25 @@ an issue or a TODO. Templates and the naming rules live once in `shared/`,
 read by the core, the app and both test suites.
 
 ```
-Home      l3                          this device and the Remote, repos, TODO
-          l3 todo [add …|done N]
-Forge     l3 repo [new NAME -t c]     repos here, and those only on the Remote
-          l3 repo open NAME           bring one from the Remote
-          l3 prompt REPO [-- CMD]     the Prompt: the repo inside the root
-File      l3 file [REPO[/PATH]]       a directory's entries or a file's text
-          l3 file write REPO/PATH     replace a file with standard input
-Git       l3 git [REPO]               issues, and what is not cut yet
-          l3 issue [REPO|REPO/NNN.md|new …]
-          l3 cut REPO/issue/NNN.md    区切る under that issue
-          l3 cut REPO "Fix：件名"      …or without one
-          l3 log REPO                 the cuts
-Runtime   l3 runtime                  the root, and この端末 by size: what can go
-          l3 free ID…|all             空ける (a repo's changes go to the Remote first)
-          l3 root [fetch|install B]
-Remote    l3 remote                   where each repo stands
-          l3 login [URL] | logout     a code approved in the browser by passkey
+Home      todo · profile · lang
+Forge     repo · band · prompt
+File      file
+Git       git · issue · start · main · commit · push · reset · diff · log
+          review · reply · merge · reject
+Runtime   runtime · free · root · ssh · dotfiles
+Remote    remote · login · logout
+Inbox     inbox · address
 ```
+
+One table (`cli/src/help.rs`) says what each command does and how it is
+written; `l3 help` lists them by the rail, `l3 help COMMAND` (or
+`l3 COMMAND --help`) gives one command's forms, `l3 help all` every form, a
+mistyped word gets the nearest one ("Did you mean: l3 commit"), and
+`l3 completion bash|zsh|fish` completes commands, what follows them and the
+repo names. In a repo (its copy, an issue's copy, or its Prompt) the repo
+may be left out and `#N` is that repo's issue N: `l3 commit`, `l3 start #3`,
+`l3 merge #3`, and `l3 file src` reads from where you are. `l3 -V` gives
+l3's version and the root's.
 
 There is no sync command. Connected, l3 keeps each repo in step with the
 Remote by itself: a command that reads a repo takes in the Remote's changes

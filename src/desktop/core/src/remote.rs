@@ -299,11 +299,15 @@ pub fn local_tree(dir: &Path) -> Local {
 /// Where the digests of a repo copy are kept between runs, as git keeps its
 /// index: by each file's size, time and inode, so l3 (a new process each
 /// time) reads again only what changed instead of every byte of every repo.
+/// They are what sync last read, so they are kept with sync's other records.
 /// Only copies this OS holds are kept for.
 fn stamps_file(dir: &Path) -> Option<PathBuf> {
     let (data, repos) = (crate::paths::data_dir(), crate::paths::repos_dir());
-    (dir.starts_with(&data) || dir.starts_with(&repos))
-        .then(|| data.join("cache/digests").join(&sha256(dir.to_string_lossy().as_bytes())[..16]))
+    if !(dir.starts_with(&data) || dir.starts_with(&repos)) { return None; }
+    // Where they were kept before (cache/digests): nothing reads it now.
+    let old = data.join("cache");
+    if old.join("digests").is_dir() { let _ = fs::remove_dir_all(old.join("digests")); let _ = fs::remove_dir(&old); }
+    Some(sync_dir().join("digests").join(&sha256(dir.to_string_lossy().as_bytes())[..16]))
 }
 
 /// Take in kept digests. A file changed within the same moment the stamps

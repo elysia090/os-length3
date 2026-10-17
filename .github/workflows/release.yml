@@ -4,7 +4,8 @@ name: Release
 # os-length3-linux-vX.Y.Z, by a push that writes X.Y.Z into
 # src/desktop/RELEASE (the tag is then made at that commit), or by hand. It
 # publishes the root
-# (the pinned 0.1.0 root with this tree's l3, profile and shell, repackaged
+# (the pinned 0.1.0 root, laid out for Prompts (what only booting needed
+# dropped, merged /usr) with this tree's l3, profile and shell, repackaged
 # by src/desktop/scripts/root-release.sh) and the web build (the app with
 # the Prompt's userland, src/desktop/scripts/web-release.sh), with their
 # digests. Devices then trust the root once its digest is pinned in
@@ -86,7 +87,7 @@ jobs:
           {
             echo "# OS Length3 Linux $VERSION"
             echo
-            echo "The 0.1.0 root with l3, its profile and shell from \`$GITHUB_SHA\`, and the web build of the same tree, whose Prompt runs that whole root (each file fetched when a program first reads it)."
+            echo "The 0.1.0 root laid out for Prompts (nothing only a booted machine needs, merged /usr), with l3, its profile and shell from \`$GITHUB_SHA\`, and the web build of the same tree, whose Prompt runs that whole root (each file fetched when a program first reads it)."
             echo
             echo "| File | Bytes | SHA-256 |"
             echo "| --- | --- | --- |"
