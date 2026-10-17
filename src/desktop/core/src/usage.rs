@@ -131,8 +131,19 @@ pub fn system(data: &Path) -> Vec<(SystemUsage, PathBuf)> {
         let name = e.file_name().to_string_lossy().into_owned();
         if name.len() != 64 || !name.bytes().all(|b| b.is_ascii_hexdigit()) || !e.path().is_dir() { continue; }
         let Ok(about) = fs::read_to_string(e.path().join("installed.json")) else { continue };
-        let Ok(about) = serde_json::from_str::<crate::root::Installed>(&about) else { continue };
-        let row = SystemUsage { name: about.name, version: about.version, sha256: about.sha256, allocated: tally(&e.path()).2, held: Held::Older };
+        let Ok(mut about) = serde_json::from_str::<crate::root::Installed>(&about) else { continue };
+        // Counted when it was installed; one installed before that is counted now, once, and the count kept.
+        let allocated = match about.allocated {
+            Some(n) => n,
+            None => {
+                let n = tally(&e.path()).2;
+                about.allocated = Some(n);
+                let aside = e.path().join(format!(".installed.json.length3-{}-0", std::process::id()));
+                if fs::write(&aside, serde_json::to_string(&about).unwrap_or_default()).is_ok() { let _ = fs::rename(&aside, e.path().join("installed.json")); }
+                n
+            }
+        };
+        let row = SystemUsage { name: about.name, version: about.version, sha256: about.sha256, allocated, held: Held::Older };
         if current.as_deref() == Some(&name) { out.push((SystemUsage { held: Held::Current, ..row }, e.path())); }
         else { others.push((e.path().symlink_metadata().ok().map(|m| age(&m)).unwrap_or_default(), row, e.path())); }
     }
@@ -309,6 +320,56 @@ fn repo_item(repos: &crate::repos::Repos, name: &str, connected: bool, open: &[S
     Some(Item { id: format!("repo:{name}"), what: name.into(), detail, allocated: size, room, why })
 }
 
+fn root_item(row: SystemUsage) -> Item {
+    let (room, why) = match row.held {
+        Held::Current => (Room::Keep, crate::tr!("The root Prompts run on", "Prompt が動く root です")),
+        Held::Previous => (Room::Free, crate::tr!("The root before; going back fetches it again from the Remote", "ひとつ前の root。戻すときは Remote から取り直せます")),
+        Held::Older => (Room::Free, crate::tr!("An old root; the Remote has it", "古い root。Remote から取り直せます")),
+    };
+    Item { id: format!("root:{}", row.sha256), what: format!("{} {}", row.name, row.version), detail: "root".into(), allocated: row.allocated, room, why }
+}
+
+fn leftover_item(l: Leftover) -> Item {
+    let name = l.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    Item { id: format!("path:{}", l.path.display()), what: l.what, detail: name, allocated: l.allocated, room: Room::Free, why: crate::tr!("Left behind by this OS", "このOSの残り物です") }
+}
+
+/// Whether `path` is a leftover now, by the same rules as the scans, looked
+/// at alone (freeing one thing does not walk everything again).
+fn leftover_at(data: &Path, path: &Path) -> Option<Leftover> {
+    let system = crate::root::system_dir(data);
+    let dir = path.parent()?;
+    if dir == system || dir == system.join(".bundles") {
+        let mut found = Vec::new();
+        system_leftovers(data, &mut found);
+        return found.into_iter().find(|l| l.path == path && !l.root);
+    }
+    // Under the data directory, never inside a repo's .git or the system directory.
+    let rel = path.strip_prefix(data).ok()?;
+    if rel.components().any(|c| crate::repos::is_git_name(&c.as_os_str().to_string_lossy())) || path.starts_with(&system) { return None; }
+    let meta = path.symlink_metadata().ok()?;
+    if !meta.is_file() || links(&meta) != 1 { return None; }
+    let pid = temporary_writer(&path.file_name()?.to_string_lossy(), dir == data.join("home"))?;
+    (age(&meta) >= AGE && pid != std::process::id() && !running(pid))
+        .then(|| Leftover { path: path.to_path_buf(), allocated: blocks(&meta), what: crate::tr!("A temporary file left behind", "残った一時ファイル"), root: false })
+}
+
+/// One thing by its id, looked at now and alone.
+fn item(data: &Path, repos_dir: &Path, id: &str, open: &[String]) -> Option<Item> {
+    if let Some(name) = id.strip_prefix("repo:") {
+        let repos = crate::repos::Repos::new(repos_dir.to_path_buf()).ok()?;
+        repo_item(&repos, name, crate::remote::connection().is_some(), open)
+    } else if let Some(sha) = id.strip_prefix("root:") {
+        system(data).into_iter().find(|(r, _)| r.sha256 == sha).map(|(r, _)| root_item(r))
+    } else if let Some(path) = id.strip_prefix("path:") {
+        leftover_at(data, Path::new(path)).map(leftover_item)
+    } else if id == "home" {
+        Some(Item { id: "home".into(), what: "Home".into(), detail: String::new(), allocated: 0, room: Room::Keep, why: crate::tr!("This device's settings", "この端末の設定です") })
+    } else {
+        None
+    }
+}
+
 /// Everything this OS holds under `data` (repos in `repos`), largest first.
 /// `open`: repos a Prompt has open now.
 pub fn space(data: &Path, repos_dir: &Path, open: &[String]) -> Space {
@@ -320,21 +381,14 @@ pub fn space(data: &Path, repos_dir: &Path, open: &[String]) -> Space {
             items.extend(repo_item(&repos, &s.name, connected, open));
         }
     }
-    for (row, path) in system(data) {
-        let (room, why) = match row.held {
-            Held::Current => (Room::Keep, crate::tr!("The root Prompts run on", "Prompt が動く root です")),
-            Held::Previous => (Room::Free, crate::tr!("The root before; going back fetches it again from the Remote", "ひとつ前の root。戻すときは Remote から取り直せます")),
-            Held::Older => (Room::Free, crate::tr!("An old root; the Remote has it", "古い root。Remote から取り直せます")),
-        };
-        let _ = path;
-        items.push(Item { id: format!("root:{}", row.sha256), what: format!("{} {}", row.name, row.version), detail: "root".into(), allocated: row.allocated, room, why });
+    for (row, _) in system(data) {
+        items.push(root_item(row));
     }
     let mut left = Vec::new();
     leftovers(data, data, &mut left);
     system_leftovers(data, &mut left);
     for l in left.into_iter().filter(|l| !l.root) {
-        let name = l.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        items.push(Item { id: format!("path:{}", l.path.display()), what: l.what, detail: name, allocated: l.allocated, room: Room::Free, why: crate::tr!("Left behind by this OS", "このOSの残り物です") });
+        items.push(leftover_item(l));
     }
     let home = allocated(&data.join("home")) + allocated(&data.join("sync"));
     items.push(Item { id: "home".into(), what: "Home".into(), detail: crate::tr!("settings, TODO, what was agreed with the Remote", "設定・TODO・同期の記録"), allocated: home, room: Room::Keep, why: crate::tr!("This device's settings", "この端末の設定です") });
@@ -347,14 +401,13 @@ pub fn space(data: &Path, repos_dir: &Path, open: &[String]) -> Space {
     }
 }
 
-/// Free these ids (or, with `all`, everything that can go), each looked at
-/// again just before it goes; then say what the host shows for it.
+/// Free these ids, each looked at again (alone: nothing else is walked)
+/// just before it goes; then say what the host shows for it.
 pub fn free(data: &Path, repos_dir: &Path, ids: &[String], open: &[String]) -> Freed {
-    let now = space(data, repos_dir, open);
     let (_, before, certainty) = host(data);
     let (mut freed, mut removed, mut kept) = (0, Vec::new(), Vec::new());
     for id in ids {
-        let Some(item) = now.items.iter().find(|i| &i.id == id) else {
+        let Some(item) = item(data, repos_dir, id, open) else {
             kept.push((id.clone(), crate::tr!("It is gone already", "もうありません")));
             continue;
         };
@@ -498,7 +551,7 @@ mod system_tests {
         fs::write(d.join("root/bin/busybox"), vec![b'x'; 20_000]).unwrap();
         // Applets are hard links: the bytes are there once.
         for a in ["sh", "ls", "cat"] { fs::hard_link(d.join("root/bin/busybox"), d.join(format!("root/bin/{a}"))).unwrap(); }
-        let about = crate::root::Installed { name: "OS".into(), version: version.into(), sha256: sha.to_string().repeat(64), files: 4, bytes: 20_000 };
+        let about = crate::root::Installed { name: "OS".into(), version: version.into(), sha256: sha.to_string().repeat(64), files: 4, bytes: 20_000, allocated: None };
         fs::write(d.join("installed.json"), serde_json::to_string(&about).unwrap()).unwrap();
         d
     }

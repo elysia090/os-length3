@@ -247,6 +247,8 @@ pub struct Local {
     /// Paths that are not sent, and why.
     pub unsynced: Vec<(String, String)>,
     pub bytes: u64,
+    /// Every file digested, for the stamps kept (stamps_save).
+    read: Vec<PathBuf>,
 }
 
 /// What a file's digest was when it was last read, by what it looked like then.
@@ -284,9 +286,57 @@ fn digest(path: &Path, meta: &fs::Metadata) -> Option<String> {
 
 /// The repo directory as the Remote would hold it (its .git aside).
 pub fn local_tree(dir: &Path) -> Local {
+    let kept = stamps_file(dir);
+    if let Some(f) = &kept { stamps_load(f); }
     let mut out = Local::default();
     walk(dir, "", &mut out);
+    if let Some(f) = &kept { stamps_save(f, &out.read); }
     out
+}
+
+/// Where the digests of a repo copy are kept between runs, as git keeps its
+/// index: by each file's size, time and inode, so l3 (a new process each
+/// time) reads again only what changed instead of every byte of every repo.
+/// Only copies this OS holds are kept for.
+fn stamps_file(dir: &Path) -> Option<PathBuf> {
+    let (data, repos) = (crate::paths::data_dir(), crate::paths::repos_dir());
+    (dir.starts_with(&data) || dir.starts_with(&repos))
+        .then(|| data.join("cache/digests").join(&sha256(dir.to_string_lossy().as_bytes())[..16]))
+}
+
+/// Take in kept digests. A file changed within the same moment the stamps
+/// were written may look unchanged (a coarse clock), so, as git does with a
+/// racily clean index, those are read again.
+fn stamps_load(file: &Path) {
+    let Ok(text) = fs::read_to_string(file) else { return };
+    let mut lines = text.lines();
+    let Some(written) = lines.next().and_then(|l| l.parse::<i128>().ok()) else { return };
+    let Ok(mut map) = seen().lock() else { return };
+    for line in lines {
+        let mut w = line.splitn(5, ' ');
+        let (Some(len), Some(t), Some(ino), Some(sha), Some(path)) = (w.next(), w.next(), w.next(), w.next(), w.next()) else { continue };
+        let (Ok(len), Ok(t), Ok(ino)) = (len.parse::<u64>(), t.parse::<i128>(), ino.parse::<u64>()) else { continue };
+        if t >= written - 2_000_000_000 { continue; }
+        map.entry(PathBuf::from(path)).or_insert(((len, t, ino), sha.to_string()));
+    }
+}
+
+/// Keep the digests of the files just read: exactly these, so what is gone is forgotten.
+fn stamps_save(file: &Path, read: &[PathBuf]) {
+    let Ok(map) = seen().lock() else { return };
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos() as i128);
+    let mut text = format!("{now}\n");
+    for p in read {
+        let Some(((len, t, ino), sha)) = map.get(p) else { continue };
+        let path = p.to_string_lossy();
+        if path.contains('\n') { continue; }
+        text.push_str(&format!("{len} {t} {ino} {sha} {path}\n"));
+    }
+    drop(map);
+    let Some(dir) = file.parent() else { return };
+    if fs::create_dir_all(dir).is_err() { return; }
+    let aside = dir.join(format!(".{}.length3-{}-0", file.file_name().unwrap_or_default().to_string_lossy(), std::process::id()));
+    if fs::write(&aside, text).is_ok() { let _ = fs::rename(&aside, file); }
 }
 
 fn walk(dir: &Path, prefix: &str, out: &mut Local) {
@@ -316,6 +366,7 @@ fn walk(dir: &Path, prefix: &str, out: &mut Local) {
             }
             let Some(sha) = digest(&e.path(), &meta) else { out.unsynced.push((rel, "読めないファイル".into())); continue };
             out.bytes += meta.len();
+            out.read.push(e.path());
             out.files.insert(sha.clone(), e.path());
             out.tree.insert(rel, Some(sha));
         } else {

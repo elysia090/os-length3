@@ -84,6 +84,11 @@ pub struct Installed {
     pub sha256: String,
     pub files: u64,
     pub bytes: u64,
+    /// What the host set aside for it (st_blocks), counted once when it was
+    /// put in place: a root does not change, so it is never walked again to
+    /// say its size.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allocated: Option<u64>,
 }
 
 pub fn system_dir(data: &Path) -> PathBuf {
@@ -345,7 +350,7 @@ pub fn install(data: &Path, bundle: &Path) -> Result<Installed, String> {
             let _ = fs::remove_dir_all(&aside);
             return Err(crate::tr!("This release has no root/bin/sh", "このリリースには root/bin/sh がありません"));
         }
-        let about = Installed { name: release.name.into(), version: release.version.into(), sha256: release.sha256.into(), files, bytes };
+        let about = Installed { name: release.name.into(), version: release.version.into(), sha256: release.sha256.into(), files, bytes, allocated: Some(crate::usage::allocated(&aside)) };
         fs::write(aside.join("installed.json"), serde_json::to_string(&about).unwrap()).map_err(|e| e.to_string())?;
         let _ = fs::remove_dir_all(&dir);
         fs::rename(&aside, &dir).map_err(|e| e.to_string())?;
