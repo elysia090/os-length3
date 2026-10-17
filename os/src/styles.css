@@ -376,7 +376,6 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .pills { display: flex; gap: var(--s2); align-items: center; }
 /* The pills take the band's width and scroll there; ⊕ keeps the band's right end, wherever they reach. */
 .repo-strip > .pills { flex: 1; min-width: 0; overflow-x: auto; }
-.repo-strip > .band-add { margin-left: auto; }
 .pills:empty { display: none; }
 .pill {
   flex: none; display: flex; align-items: center; min-height: var(--h-row); padding-left: var(--s3);
@@ -406,17 +405,17 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 }
 .path span { font-weight: 400; }
 /* Each file is a box drawn a little heavier than other lines, since it is
-   the thing being worked on, as tall as its text and room for three lines
-   more under it to go on writing in (a press there puts the caret at the
-   end): a short file does not make one scroll past empty space to the next. */
+   the thing being worked on, and tall: one file at a time gets the height of
+   the window, a short one too (1.7 times the half window it had), so the
+   center is read by scrolling down, never packed to fit a screen. */
 .file {
-  display: flex; flex-direction: column; margin-bottom: var(--s6);
+  display: flex; flex-direction: column; min-height: clamp(476px, 93.5vh, 1088px); margin-bottom: var(--s6);
   border: var(--line-work) solid var(--edge); border-radius: var(--r-place);
 }
 /* A file reads like a plain text editor: line numbers in a quiet gutter,
    the text beside them, on the same lines. */
 .file-state { font-weight: 400; color: var(--sub); white-space: nowrap; }
-.sheet { flex: 1; display: grid; grid-template-columns: auto minmax(0, 1fr); align-content: start; column-gap: var(--s4); padding: var(--s2) var(--s4) calc(var(--s4) + 3 * 1.6 * var(--t-meta)); cursor: text; }
+.sheet { flex: 1; display: grid; grid-template-columns: auto minmax(0, 1fr); align-content: start; column-gap: var(--s4); padding: var(--s2) var(--s4) var(--s4); cursor: text; }
 .gutter, .code { margin: 0; padding: 0; font: var(--t-meta)/1.6 var(--mono); white-space: pre; tab-size: 4; }
 .gutter { color: var(--sub); text-align: right; user-select: none; min-width: 2ch; font-variant-numeric: tabular-nums; }
 .code { overflow-x: auto; }
@@ -436,6 +435,10 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 /* Under the prompt box, the ground to the center's foot: what scrolls under the box does not show below it.
    It lies behind the box (still over what scrolls), so the box's focus ring is whole. */
 .dock::after { content: ''; position: absolute; z-index: -1; top: 100%; left: -50vw; right: -50vw; height: var(--s5); background: var(--ground); }
+/* While one reads, the empty box steps back and lets what is under it be pressed (bench.ts). */
+.dock { transition: opacity var(--motion); }
+.dock.resting { opacity: 0; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .dock { transition: none; } }
 .term-slot:empty { display: none; }
 .term-slot .term-box { height: clamp(180px, 40vh, 440px); padding: var(--s4); background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-place); }
 .prompt { display: flex; border: 1px solid var(--edge); border-radius: var(--r-place); background: var(--raised); padding: var(--s3) var(--s4); }

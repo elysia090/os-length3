@@ -125,11 +125,11 @@ export class ServerLayer {
     const signedIn = connection() !== null;
     const chips = h('div', {class: 'chips server-chips', role: 'radiogroup', 'aria-label': 'Server'});
     const gear = h('button', {type: 'button', class: 'server-gear unseen', 'aria-label': t('Its people, boards and repos'), title: t('Its people, boards and repos'), 'aria-expanded': 'false', disabled: ''}, mark('gear')) as HTMLButtonElement;
-    // + makes a server, the gear changes the one chosen: both at the band's right end, where the chips coming and
-    // going never move them; with none chosen the gear keeps its place, unpressable, so + does not move either.
+    // + makes a server: first, at the band's left end, before the servers, which come and go to its right and so
+    // never move it. The gear changes the one chosen, at the right end; with none chosen it keeps its place, unpressable.
     const plus = h('button', {type: 'button', class: 'band-add', 'aria-label': t('Make a server'), title: t('Make a server'), hidden: ''}, mark('plus')) as HTMLButtonElement;
     plus.addEventListener('click', () => { serverId = null; paintTop(); makeServer(); });
-    const top = h('div', {class: 'server-top'}, chips, plus, gear);
+    const top = h('div', {class: 'server-top'}, plus, chips, gear);
     const track = h('div', {class: 'slide-track'});
     const prev = h('button', {type: 'button', class: 'stage-hit prev', 'aria-label': t('Previous board')}) as HTMLButtonElement;
     const next = h('button', {type: 'button', class: 'stage-hit next', 'aria-label': t('Next board')}) as HTMLButtonElement;

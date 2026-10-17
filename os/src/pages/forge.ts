@@ -63,16 +63,16 @@ function make(ctx: Context) {
 
   const work = bench({strip, main: flow, reveal: (path, line) => void view()?.reader.reveal(path, line).then(() => track())});
 
-  // The band: the repos out to work on, each a pill that comes off with its
-  // ×, and ⊕ at its right end. One press of ⊕ brings every repo not on the
-  // band out at once; this is not adding tabs one by one, so ⊕ stays where
-  // it was pressed however many come out (the pills scroll beside it). With
-  // no pill left the center says how to bring one out.
+  // The band: ⊕ first, then the repos out to work on, each a pill that comes
+  // off with its ×. One press of ⊕ brings every repo not on the band out at
+  // once; this is not adding tabs one by one, and what comes and goes is to
+  // its right, so ⊕ stays where it was pressed however many come out (the
+  // pills scroll after it). With no pill left the center says how to bring one out.
   let band: string[] = [];
   let all: string[] = [];
   const pills = h('div', {class: 'pills'});
   const add = h('button', {type: 'button', class: 'band-add', 'aria-label': t('Bring every repo out to the band')}, mark('plus')) as HTMLButtonElement;
-  strip.append(pills, add);
+  strip.append(add, pills);
   const saveBand = () => { void setState('band', JSON.stringify(band)).catch(() => { /* the band is a convenience */ }); };
   /** Every repo: here, and only on the Remote (fetched when it comes out, as opening one from Home does). */
   const every = () => [...all, ...remoteOnly().map((r) => r.name).filter((n) => !all.includes(n))];

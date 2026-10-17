@@ -17,7 +17,11 @@ import {sessionFor, sessionIfAny, terminalFor} from './terminal.ts';
 // keeps it, and switching repos swaps it for that repo's (or an empty box).
 // Until something is run in the repo's Prompt it holds only its prompt line,
 // so the reference takes the side's room; from the first run on, the Prompt
-// has its 3 parts.
+// has its 3 parts. While one reads (the center turned by the wheel, a touch
+// or the keys) and the box is empty and not written in, the box steps back
+// and lets what is under it be pressed; the keyboard reaching it, a press on
+// the Prompt, or the pointer coming down to the center's foot brings it back
+// where it was. Something written in it keeps it out.
 
 const MOVE = 280;
 
@@ -61,6 +65,19 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   const side = h('aside', {class: 'side', 'aria-label': t('Reference and Prompt')}, reference.element, termHome);
   const work = h('div', {class: parts.strip ? 'work' : 'work no-strip'}, ...(parts.strip ? [parts.strip] : []), center, side);
 
+  /** The box stepped back while one reads. */
+  const rest = (on: boolean) => {
+    if (on && (prompting || prompt.value || note.textContent || document.activeElement === prompt)) return;
+    dock.classList.toggle('resting', on);
+  };
+  const reading = () => rest(true);
+  parts.main.addEventListener('wheel', reading, {passive: true});
+  parts.main.addEventListener('touchmove', reading, {passive: true});
+  parts.main.addEventListener('keydown', (event) => { if (['PageDown', 'PageUp', ' ', 'Home', 'End', 'ArrowDown', 'ArrowUp'].includes(event.key) && !(event.target as HTMLElement).closest('textarea, input')) reading(); });
+  center.addEventListener('pointermove', (event) => {
+    if (dock.classList.contains('resting') && event.clientY >= dock.getBoundingClientRect().top - 24) rest(false);
+  });
+  prompt.addEventListener('focus', () => rest(false));
   let prompting = false;
   const setPrompting = (on: boolean) => {
     if (on === prompting) return;

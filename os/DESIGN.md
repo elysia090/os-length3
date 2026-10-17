@@ -201,10 +201,11 @@ what is its own.
   the bottom left, on Remote's off card and a Prompt's card; what turns a
   thing off at the right: the switch, Stop). What comes out of a button
   comes out into the free space, so nothing moves under the pointer
-  (Share's servers to its left). Nothing is pressed at the top left: there
-  are only places (the band's chips, a page's parts, a filter). The band's +
-  is at its right end, where chips coming and going never move it, and a
-  layer keeps its columns whatever is chosen, so nothing anchored to their
+  (Share's servers to its left). The band's + comes first, at its left
+  end, before what it brings out: the chips come and go to its right, so
+  they never move it, and the band reads + → what is out; what else the
+  band holds (a search box, a gear) keeps its right end. A layer keeps its
+  columns whatever is chosen, so nothing anchored to their
   edges moves when something is pressed (Server's side stays, empty, while
   a server is made; its gear keeps its place, unpressable). A list's row keeps its deeds at its right end.
 - **Popovers.** As the person's menu: one box on the ground, a head over
@@ -218,7 +219,8 @@ what is its own.
 - **The box at the foot.** One field near the bottom of a work page,
   saying where what is written goes (notes で実行, 旅行 の人たちへ): Enter
   is a new line, Ctrl+Enter (⌘+Enter) sends, as in every box one writes in
-  (Inbox too). Forge and Git run in it; Server posts.
+  (Inbox too). Forge and Git run in it; Server posts. Empty and not in use,
+  it steps back while the page is read (Forge, §8).
 - **The right pane.** Beside the center, past its one `rule`: on top what
   the center refers to (Forge's reference, Server's people and repos),
   headings 15/600 in `ink` as Prompt's, a list under each; with nothing to
@@ -302,7 +304,8 @@ fix is always a piece from §3, not a new rule.
 | A page that forgets, when one comes back, where it was read and what was searched | It comes back where it was, each repo at its own place |
 | The repo worked on put back by another page (a Git chip, then Forge on the old one) | One repo worked on, chosen anywhere, opened next on every page |
 | The keyboard dropped after a step (an arrow along the row, an issue just made) | It stays on the same part of the box, or lands on what was made |
-| A box half a window tall for a file of one line | As tall as its text, with room for three lines more |
+| A file's box shrunk to its text, short files stacked to fit one screen | Each file a tall box of its own (about the window's height), read by scrolling down |
+| The empty box at the foot standing over what one reads | It steps back while one reads, and comes back to the keyboard, a press on the Prompt or the pointer at the foot |
 | A choice that leaves its overlay to be closed by hand (a file chosen in File) | Choosing the thing to work on puts the overlay away and the caret in it |
 | The only way to something folded away with its pane (search, narrow) | The way stays where it was; only what it shows folds |
 | A day in another country's order (10/17/2031 まで in Japanese) | `day()`: the language's own (2031年10月17日まで) |
@@ -676,8 +679,8 @@ strikes through and fades the first line only.
 
 Where you work. The repos out to work on run as pills in a band on the top
 line; the search box on the right sits on the
-same line, with the reference's chips under it. ⊕ stands at the band's right end, and the pills scroll
-beside it. One press brings every repo not on the band out at once; this is not adding tabs one at a
+same line, with the reference's chips under it. ⊕ stands first, at the band's left end, and the pills
+follow it and scroll. One press brings every repo not on the band out at once; this is not adding tabs one at a
 time, and ⊕ stays where it was pressed however many come out.
 Each pill comes off the band with its × (the repo itself is untouched).
 With nothing left to bring out, ⊕ steps back. Opening a repo from File,
@@ -686,10 +689,10 @@ center says how to bring one out. The band is remembered on this device. Below t
 an endless page scrolled like a browser and opened at the file chosen in
 File. There are no tabs, no title, no index of links and no headings for
 directories. The center is where editing happens: each file is a plain
-text editor in its own box, as tall as its text and room for three lines
-more to go on writing in (a press there puts the caret at the end), so a
-short file does not make one scroll past empty space to the next; a little
-heavier line than the rest; a header with its place in "/" (`/root/<repo>/` quiet, the
+text editor in its own tall box (at least about the window's height: 1.7
+times the half window it once had, a short file too, so one file at a time
+has the center and it is read by scrolling down, never packed to fit a
+screen), a little heavier line than the rest; a header with its place in "/" (`/root/<repo>/` quiet, the
 rest plain), then line numbers in a quiet gutter beside the text, which is
 itself the field (no box; the caret is the only sign). Typing saves on its
 own a moment later, on leaving the file, or with Ctrl+S; the header says
@@ -710,6 +713,11 @@ it is not called Bash); leaving the prompt
 to it starts it, and one that ended says so in its place, with Start
 again; stopping one is Runtime's. What is written in the box and not sent
 is the repo's: another repo shows its own, and coming back finds it.
+While one reads (the center turned by the wheel, a touch or the keys) and
+the box is empty and not being written in, it steps back (a 120 ms fade)
+and lets the text under it be pressed; the keyboard reaching it, a press on
+the Prompt, or the pointer coming down to the center's foot brings it back
+where it was. Something written in it, or a word under it, keeps it out.
 
 Forge is kept as it was while another page is shown, and each repo on the
 band keeps its place: where it was read, what was searched in it. A pill
@@ -1018,9 +1026,9 @@ talk, or both), in the app or with `l3 server get`.
 
 Server is an overlay (§3), on the bench's shape. Its pieces, from §3:
 
-- **The band**: the servers one is in; at the right end of the top line +
-  to make a server, then the gear (kept in its place, unpressable, while
-  none is chosen).
+- **The band**: + first at the top line's left end, to make a server, then
+  the servers one is in; the gear at the right end (kept in its place,
+  unpressable, while none is chosen).
 - **Boxes side by side**: its boards, the last box making a new one. A
   board holds **the TODO box** at its top and its talk under it, with
   nothing switched to see one or the other. Outside the server an open
