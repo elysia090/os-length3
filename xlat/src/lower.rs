@@ -135,8 +135,15 @@ pub struct Report {
 }
 
 struct Fx<'p> {
-    /// The function being made: each instruction is encoded as it is emitted.
+    /// The function's code, without its locals: each instruction is encoded
+    /// as it is emitted; lower_function puts the locals and the syncs in.
     f: WasmFunction,
+    /// Where the code syncs registers with their globals (save: true,
+    /// load: false), as byte offsets into `f`. What is synced is known only
+    /// once the whole function is made: the registers it touches.
+    syncs: Vec<(usize, bool)>,
+    /// The registers it touches: bit n for r_n, bit 16 + n for xmm_n.
+    used: u32,
     flags: Flags,
     /// Nesting of wasm blocks between the current code and the dispatch loop.
     depth: u32,
@@ -145,7 +152,6 @@ struct Fx<'p> {
     report: &'p mut Report,
     /// Flags each entry reads before writing them (entry_flags).
     handed: &'p BTreeMap<u64, u32>,
-    uses_xmm: bool,
     /// Direction flag, tracked statically within a block (std ... cld).
     backward: bool,
 }
@@ -176,12 +182,15 @@ fn xmm(r: Register) -> Option<u32> {
 impl<'p> Fx<'p> {
     fn e(&mut self, i: I) { self.f.instruction(&i); }
     // The most frequent, straight to their bytes.
-    fn get(&mut self, l: u32) { self.f.instructions().local_get(l); }
-    fn set(&mut self, l: u32) { self.f.instructions().local_set(l); }
+    fn get(&mut self, l: u32) { self.touch(l); self.f.instructions().local_get(l); }
+    fn set(&mut self, l: u32) { self.touch(l); self.f.instructions().local_set(l); }
+    /// Note a register's local in use (every access to one goes through get and set).
+    fn touch(&mut self, l: u32) {
+        if (l_reg(0)..l_reg(16)).contains(&l) { self.used |= 1 << (l - l_reg(0)); }
+        else if (l_x(0)..l_x(16)).contains(&l) { self.used |= 1 << (16 + l - l_x(0)); }
+    }
     fn c64(&mut self, v: i64) { self.f.instructions().i64_const(v); }
     fn c32(&mut self, v: i32) { self.f.instructions().i32_const(v); }
-    fn gget(&mut self, g: u32) { self.f.instructions().global_get(g); }
-    fn gset(&mut self, g: u32) { self.f.instructions().global_set(g); }
 
     fn unsupported(&mut self, i: &Instruction) {
         *self.report.unsupported.entry(format!("{:?}", i.mnemonic())).or_default() += 1;
@@ -193,18 +202,10 @@ impl<'p> Fx<'p> {
 
     // ---- Register file ----
 
-    fn save(&mut self) {
-        for n in 0..16 {
-            self.get(l_reg(n));
-            self.gset(n);
-        }
-        if self.uses_xmm {
-            for n in 0..16 {
-                self.get(l_x(n));
-                self.gset(g_xmm(n));
-            }
-        }
-    }
+    /// Registers to their globals, for code outside this function (or the
+    /// host) to read: those this function touches, the others being in their
+    /// globals all along. Put in by lower_function.
+    fn save(&mut self) { self.syncs.push((self.f.byte_len(), true)); }
 
     /// Hand the flags in `mask` to code outside this function, in G_FLAGS,
     /// each computed from the state as it is (nothing is held for it).
@@ -235,18 +236,8 @@ impl<'p> Fx<'p> {
         self.flags = Flags::Held;
     }
 
-    fn load(&mut self) {
-        for n in 0..16 {
-            self.gget(n);
-            self.set(l_reg(n));
-        }
-        if self.uses_xmm {
-            for n in 0..16 {
-                self.gget(g_xmm(n));
-                self.set(l_x(n));
-            }
-        }
-    }
+    /// Registers from their globals, after code outside this function ran.
+    fn load(&mut self) { self.syncs.push((self.f.byte_len(), false)); }
 
     /// Push a register's value, zero-extended from its width.
     fn read_reg(&mut self, r: Register) -> bool {
@@ -1876,16 +1867,7 @@ fn lower_function(program: &Program, index: u32, handed: &BTreeMap<u64, u32>, op
     let function = &program.functions[index as usize];
     let (live, cases) = live_flags(program, index, handed);
     let n = function.blocks.len() as u32;
-    // Decide before lowering whether xmm state travels with this function,
-    // so saves and reloads around every call agree with the prologue.
-    let uses_xmm = function.blocks.iter().flat_map(|b| &b.code).any(|i| {
-        (0..i.op_count()).any(|n| i.op_kind(n) == OpKind::Register && xmm(i.op_register(n)).is_some())
-    });
-    let f = WasmFunction::new([
-        (16, ValType::I64), (1, ValType::I32), (5, ValType::I32), (3, ValType::I64), (6, ValType::I64),
-        (2, ValType::I32), (16, ValType::V128), (2, ValType::V128), (2, ValType::F64),
-    ]);
-    let mut fx = Fx { f, flags: Flags::Held, depth: 0, program, function, report, handed, uses_xmm, backward: false };
+    let mut fx = Fx { f: WasmFunction::new([]), syncs: Vec::new(), used: 0, flags: Flags::Held, depth: 0, program, function, report, handed, backward: false };
 
     // Everything the prologue depends on is known, so the function is made in order.
     fx.get(L_ENTRY); fx.set(L_BLK);
@@ -2004,7 +1986,32 @@ fn lower_function(program: &Program, index: u32, handed: &BTreeMap<u64, u32>, op
     fx.e(W::End);
     fx.e(W::Unreachable);
     fx.e(W::End);
-    fx.f
+
+    // The locals, then the code with each sync put in: only the registers it
+    // touches. One that it does not stays in its global, where code it calls
+    // and the host find it; loading and saving it all the same was a fifth
+    // of every function's instructions.
+    let (used, syncs, code) = (fx.used, fx.syncs, fx.f.into_raw_body());
+    let mut f = WasmFunction::new([
+        (16, ValType::I64), (1, ValType::I32), (5, ValType::I32), (3, ValType::I64), (6, ValType::I64),
+        (2, ValType::I32), (16, ValType::V128), (2, ValType::V128), (2, ValType::F64),
+    ]);
+    let sync = |f: &mut WasmFunction, save: bool| {
+        let mut sink = f.instructions();
+        for n in (0..32).filter(|n| used & (1 << n) != 0) {
+            let (local, global) = if n < 16 { (l_reg(n), n) } else { (l_x(n - 16), g_xmm(n - 16)) };
+            if save { sink.local_get(local).global_set(global); } else { sink.global_get(global).local_set(local); }
+        }
+    };
+    // The code made without locals starts with their count, 0.
+    let mut at = 1;
+    for (offset, save) in syncs {
+        f.raw(code[at..offset].iter().copied());
+        sync(&mut f, save);
+        at = offset;
+    }
+    f.raw(code[at..].iter().copied());
+    f
 }
 
 /// Slots in the dispatcher's cache of where addresses were found (16 bytes
@@ -2220,6 +2227,15 @@ pub fn translate_more(program: &Program, base: u32, options: Options) -> Transla
     let mut code = CodeSection::new();
     for f in lower_all(program, options, &mut report) { code.function(&f); }
     module.section(&code);
+
+    // Its functions by the guest's names, as in the first module: every module numbers its own from the
+    // same index, so without them a profile or a trace cannot tell one module's function from another's.
+    let mut names = wasm_encoder::NameMap::new();
+    for (k, n) in HOST_IMPORTS.iter().chain(SHARED.iter()).enumerate() { names.append(k as u32, n); }
+    for (k, f) in program.functions.iter().enumerate() { names.append(FIRST_GUEST + k as u32, &format!("{}@{:x}", f.name, f.start)); }
+    let mut name_section = wasm_encoder::NameSection::new();
+    name_section.functions(&names);
+    module.section(&name_section);
 
     let mut table = Vec::with_capacity(program.entries.len() * 16);
     for (&address, &(f, b)) in &program.entries {
