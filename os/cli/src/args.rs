@@ -151,7 +151,8 @@ pub fn parse(argv: &[String], ctx: &Ctx) -> Result<Call, Error> {
             return Ok(Call { command, form: f, slots, flags });
         }
     }
-    Err(flag_error.unwrap_or_else(|| usage(not_a_form(command, rest))))
+    let written: Vec<String> = match &after { Some(a) => rest.iter().cloned().chain(std::iter::once("--".to_string())).chain(a.iter().cloned()).collect(), None => rest.to_vec() };
+    Err(flag_error.unwrap_or_else(|| usage(not_a_form(command, &written))))
 }
 
 fn simple(name: &str, slots: Vec<Slot>, flags: Flags) -> Call {
@@ -237,17 +238,19 @@ pub fn not_a_command(word: &str) -> String {
     }
 }
 
-/// A command's forms, as help shows them.
+/// A command's forms, as help shows them; `l3` alone, which shows none, points to the commands.
 pub fn forms_of(c: &Command) -> String {
     let rows: Vec<String> = c.forms.iter().filter(|f| !f.hidden).map(|f| format!("  {}", spec::usage(c, f))).collect();
+    if rows.is_empty() { return tr!("`l3 help` lists the commands", "`l3 help` でコマンドの一覧を見られます"); }
     rows.join("\n")
 }
 
+/// `rest`: the words after the command as written, `--` and what follows it included.
 fn not_a_form(c: &Command, rest: &[String]) -> String {
     let verbs = c.forms.iter().flat_map(|f| f.verb.into_iter().chain(match (f.verb, f.args.first()) { (None, Some(Arg::Choice(w))) => w.to_vec(), _ => Vec::new() }));
     let hint = rest.first().and_then(|w| nearest(w, verbs)).map(|v| tr!("Did you mean: l3 {} {}\n", "もしかして：l3 {} {}\n", c.name, v)).unwrap_or_default();
-    let written = std::iter::once(c.name.to_string()).chain(rest.iter().cloned()).collect::<Vec<_>>().join(" ");
-    if ja() { format!("l3 {written} の書き方ではありません\n{hint}\n{}", forms_of(c)) } else { format!("Not how l3 {written} is written\n{hint}\n{}", forms_of(c)) }
+    let written = std::iter::once("l3").chain((!c.name.is_empty()).then_some(c.name)).map(String::from).chain(rest.iter().cloned()).collect::<Vec<_>>().join(" ");
+    if ja() { format!("{written} の書き方ではありません\n{hint}\n{}", forms_of(c)) } else { format!("Not how {written} is written\n{hint}\n{}", forms_of(c)) }
 }
 
 #[cfg(test)]
@@ -333,6 +336,15 @@ mod tests {
         assert!(p("todo add x --note=why", &c).is_ok_and(|c| c.note() == "why"));
         assert!(p("repo --json", &c).is_ok_and(|c| c.flags.json));
         assert!(matches!(p("lang --json=1", &c), Err(Error::Usage(_))));
+        // `l3` alone has no forms to show: its mistakes point to the commands (bug: "a flag of l3 " and nothing after).
+        for line in ["--network", "--frob", "-m x", "-- todo"] {
+            let Err(Error::Usage(m)) = p(line, &c) else { panic!("{line}") };
+            assert!(m.ends_with("`l3 help`") || m.contains("`l3 help` "), "{line}: {m:?}");
+            assert!(!m.contains("l3  ") && !m.contains("l3 \n"), "{line}: {m:?}");
+        }
+        // What came after `--` is said as it was written.
+        let Err(Error::Usage(m)) = p("todo done -- -1", &c) else { panic!() };
+        assert!(m.lines().next().is_some_and(|l| l.contains("l3 todo done -- -1 ")), "{m}");
     }
 
     #[test]

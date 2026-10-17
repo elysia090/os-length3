@@ -291,7 +291,8 @@ pub fn shown() -> impl Iterator<Item = &'static Command> {
 
 /// A form as it is written: `l3 issue new [REPO] "Fix：title" [-m detail]`.
 pub fn usage(c: &Command, f: &Form) -> String {
-    let mut s = format!("l3 {}", c.name);
+    // `l3` alone has no name to follow it.
+    let mut s = if c.name.is_empty() { "l3".to_string() } else { format!("l3 {}", c.name) };
     if let Some(v) = f.verb { s += &format!(" {v}"); }
     for a in f.args {
         s += " ";
