@@ -72,15 +72,25 @@ pub fn roots(_: &Ctx, _: &Call) -> Result<Reply> {
 }
 
 /// How far a fetch is, on standard error: every 4 MB and at the end, and each retry.
+/// On a terminal the count is redrawn in its line; elsewhere (a log) each is a line of its own.
 fn progress() -> impl FnMut(Progress) {
-    let mut last = 0u64;
+    use std::io::IsTerminal;
+    let tty = std::io::stderr().is_terminal();
+    let (mut last, mut drawn) = (0u64, false);
     move |p| match p {
         Progress::Bytes(got, all) if got.saturating_sub(last) >= 4 << 20 || got == all => {
             last = got;
-            eprint!("\r{}", tr!("Fetching {} / {}", "取得中 {} / {}", bytes(got), bytes(all)));
+            let said = tr!("Fetching {} / {}", "取得中 {} / {}", bytes(got), bytes(all));
+            if !tty { eprintln!("{said}"); return; }
+            eprint!("\r{said}");
+            drawn = got != all;
             if got == all { eprintln!(); }
         }
-        Progress::Retry(n, why) => eprintln!("\n{}", tr!("{}. Continuing where it stopped (try {})", "{}。続きから取ります（{}回目）", why, n)),
+        Progress::Retry(n, why) => {
+            // A count being redrawn ends its line first.
+            if std::mem::take(&mut drawn) { eprintln!(); }
+            eprintln!("{}", tr!("{}. Continuing where it stopped (try {})", "{}。続きから取ります（{}回目）", why, n));
+        }
         _ => {}
     }
 }
