@@ -1,7 +1,7 @@
 import {h} from '../dom.ts';
 import {t} from '../i18n.ts';
 import {icon} from '../icons.ts';
-import {purpose, type PurposeId} from '../purposes.ts';
+import {purpose, RAIL, type PurposeId} from '../purposes.ts';
 
 export function pageHead(id: PurposeId): HTMLElement {
   const p = purpose(id);
@@ -80,11 +80,13 @@ export function choosePart(page: string, part: string) {
   try { localStorage.setItem(`length3.part.${page}`, part); } catch { /* convenience only */ }
 }
 
-export function parts<K extends string>(page: string, list: readonly {id: K; label: string}[]): Parts<K> {
+export function parts<K extends string>(page: string, list: readonly {id: K; label: string}[],
+  label = RAIL.some((p) => p.id === page) ? t(purpose(page as PurposeId).label) : ''): Parts<K> {
   const key = `length3.part.${page}`;
   const tabs = new Map<K, {tab: HTMLButtonElement; small: HTMLElement; panel: HTMLElement}>();
   const heard: ((k: K) => void)[] = [];
-  const bar = h('div', {class: 'parts', role: 'tablist', 'aria-label': page});
+  // Heard by the name it is given (the page's, in the language spoken), never by the key it is kept under.
+  const bar = h('div', {class: 'parts', role: 'tablist', ...(label ? {'aria-label': label} : {})});
   for (const p of list) {
     const small = h('small', {});
     const tab = h('button', {type: 'button', class: 'part', role: 'tab', id: `part-${page}-${p.id}`, 'aria-controls': `panel-${page}-${p.id}`, 'aria-selected': 'false', tabindex: '-1'},
@@ -111,6 +113,8 @@ export function parts<K extends string>(page: string, list: readonly {id: K; lab
       x.tab.setAttribute('aria-selected', String(on));
       x.tab.tabIndex = on ? 0 : -1;
       x.panel.hidden = !on;
+      // On a narrow window the switch slides sideways: the chosen one is kept in view.
+      if (on && bar.isConnected && bar.scrollWidth > bar.clientWidth) x.tab.scrollIntoView({block: 'nearest', inline: 'nearest'});
     }
     try { localStorage.setItem(key, k); } catch { /* convenience only */ }
     for (const f of heard) f(k);

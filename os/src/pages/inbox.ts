@@ -159,7 +159,13 @@ function addressStub(me: inbox.Me, again: () => void): HTMLElement {
   const fill = () => panel.replaceChildren(...(me.addresses.length ? [yours(), adding(), ...me.addresses.map(letting)] : [own()]));
   // The panel lies over the Inbox under it; Escape or a press outside closes it.
   const holder = h('div', {class: 'stub-holder'}, stub, note, error, panel);
-  const away = (e: Event) => { if (e instanceof KeyboardEvent ? e.key === 'Escape' : !holder.contains(e.target as Node)) toggle(false); };
+  // Put away by Escape from inside it, the keyboard goes back to the gear rather than to the page.
+  const away = (e: Event) => {
+    if (!(e instanceof KeyboardEvent ? e.key === 'Escape' : !holder.contains(e.target as Node))) return;
+    const inside = panel.contains(document.activeElement);
+    toggle(false);
+    if (e instanceof KeyboardEvent && inside) gear.focus();
+  };
   const toggle = (open: boolean) => {
     panel.hidden = !open;
     gear.setAttribute('aria-expanded', String(open));
@@ -371,7 +377,8 @@ export function inboxPage(ctx: Context): Node[] {
   poll = window.setInterval(() => {
     if (!holder.isConnected) { clearInterval(poll); live?.stop(); return; }
     const rows = holder.querySelector<HTMLElement>('.inbox-rows'), pane = holder.querySelector<HTMLElement>('.inbox-thread');
-    if (rows && pane && document.visibilityState === 'visible') void paintList(rows, pane);
+    // Not while a row has the keyboard: drawn again, it would be lost.
+    if (rows && pane && document.visibilityState === 'visible' && !rows.contains(document.activeElement)) void paintList(rows, pane);
   }, 10_000);
   return [pageHead('inbox'), holder];
 }

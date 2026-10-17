@@ -117,7 +117,7 @@ Every page:
 | `raised` | `#E4E4E0` | field fill, hover (the same small step above ground as before) |
 | `done` | `#2F7D4F` | done and on: a step of an issue's work done, a switch on (its knob), a box ticked (its circle) |
 | `marker` | `#F3E27A` | a line marked in a diff (a review, Forge's diff), as with a highlighter: over its words only (not its indent or number, which turns ink), each wrapped line its own stroke with softened ends; the pointer on a line shows the stroke paler |
-| `off` | `#B3412F` | a repo turned off: its switch |
+| `off` | `#A63C2C` | a repo turned off: its switch; a removal held, its button red (`ground` words on it 4.5:1) |
 
 No other colours; the last three each mean their one thing only.
 

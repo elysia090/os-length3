@@ -40,7 +40,8 @@ export class Me {
     const item = (label: string, run: (() => void) | null, checked?: boolean) => {
       const b = h('button', {type: 'button', class: 'pop-item', role: checked === undefined ? 'menuitem' : 'menuitemradio'}, label);
       if (checked !== undefined) b.setAttribute('aria-checked', String(checked));
-      if (run) b.addEventListener('click', () => { this.close(); run(); }); else b.setAttribute('disabled', '');
+      // The menu goes, and the keyboard back to the face it came from, unless what was chosen takes it on (a field to write in).
+      if (run) b.addEventListener('click', () => { this.close(); this.button.focus(); run(); }); else b.setAttribute('disabled', '');
       return b;
     };
     const group = (title: string, ...items: HTMLElement[]) =>
@@ -101,6 +102,11 @@ export class Me {
     });
     document.addEventListener('pointerdown', (event) => {
       if (!this.element.contains(event.target as Node)) this.close();
+    });
+    // Tab out of it puts it away, as a press outside does (a row redrawn in place has no next focus, and keeps it out).
+    this.element.addEventListener('focusout', (event) => {
+      const to = event.relatedTarget as Node | null;
+      if (to && !this.element.contains(to)) this.close();
     });
     this.fill = fill;
   }

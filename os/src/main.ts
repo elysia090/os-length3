@@ -85,9 +85,11 @@ function railButton(id: PurposeId): HTMLButtonElement {
     const next = stepPurpose(id, event.key);
     if (next === null) return;
     event.preventDefault();
-    // Arrows move along the rail; passing File or Server only focuses it.
+    // Arrows move along the rail; passing File or Server only focuses it. The keyboard stays on the
+    // rail, after whatever the page just drawn asks for (New repo's name), until Enter or Tab goes in.
     if (next !== 'file' && next !== 'server') select(next);
     tabs.get(next)?.focus();
+    queueMicrotask(() => tabs.get(next)?.focus());
   });
   tabs.set(id, button);
   return button;
@@ -135,6 +137,8 @@ const me = new Me(ctx, currentProfile, {editProfile: () => startEditing(ctx)});
 $('rail-me').append(me.element);
 
 $('rail-tabs').append(...PURPOSES.map((p) => railButton(p.id)), railButton(NEW_REPO.id));
+// The rail's name, in the language the OS starts in (index.html has the English).
+document.querySelector('.rail')?.setAttribute('aria-label', t('Purposes'));
 // The Remote not answering is said in one place, on the Remote's own: a red dot, and its name says why.
 // Something come in and not seen yet is said the same way on Inbox and Server: a dot in the colour
 // of the place (ink, or ground on ink when it is current), gone once it is seen.

@@ -1,5 +1,5 @@
 import {addToBand, offBand, parseBand, removeFromBand} from '../band.ts';
-import {t} from '../i18n.ts';
+import {currentLang, t} from '../i18n.ts';
 import {getState, setState} from '../state.ts';
 import {h} from '../dom.ts';
 import {mark} from '../icons.ts';
@@ -46,9 +46,12 @@ export function revealNext(path: string, write = false) { pending = {path, write
 /** One repo's page in the center: what reads it, where it was scrolled to, and whether it must be read again. */
 interface View { reader: Reader; root: HTMLElement; top: number; stale: boolean }
 
-let made: {element: HTMLElement; enter(): void} | null = null;
+let made: {element: HTMLElement; enter(): void; drop(): void} | null = null;
+/** The language Forge was made in: another chosen since, it is made again, so none of its words stay in the last one. */
+let madeIn: string | null = null;
 
 export function forge(ctx: Context): Node[] {
+  if (madeIn !== currentLang()) { made?.drop(); made = null; madeIn = currentLang(); }
   made ??= make(ctx);
   made.enter();
   return [made.element];
@@ -99,7 +102,8 @@ function make(ctx: Context) {
       const close = h('button', {type: 'button', class: 'pill-close', 'aria-label': t('Take {name} off the band', {name})}, mark('close'));
       close.addEventListener('click', () => takeOff(name));
       const pill = h('span', {class: 'pill', 'data-repo': name}, open, close);
-      if (name === repo) pill.setAttribute('aria-current', 'page');
+      // The pill shows it (ink); its button says it, which is what is heard.
+      if (name === repo) { pill.setAttribute('aria-current', 'page'); open.setAttribute('aria-current', 'page'); }
       return pill;
     }));
     paintAdd();
@@ -198,7 +202,7 @@ function make(ctx: Context) {
     flow.replaceChildren(fresh.root);
     if (keep) putBack = requestAnimationFrame(() => { flow.scrollTop = top; });
   };
-  onChange((c) => {
+  const offChange = onChange((c) => {
     const v = views.get(c.repo);
     if (!v || !v.reader.take(c)) return;
     if (c.repo !== repo) { v.stale = true; return; }
@@ -208,7 +212,7 @@ function make(ctx: Context) {
 
   // What the Remote holds is learnt a moment after: ⊕ counts it once it is. The pills stay as they
   // are (and the one with the keyboard keeps it): what the Remote holds does not change the band.
-  onSync(() => paintAdd());
+  const offSync = onSync(() => paintAdd());
 
   /** The repo worked on as Forge last knew it: chosen anew elsewhere (Git, Home, File), Forge follows. */
   let known = ctx.repo;
@@ -241,5 +245,5 @@ function make(ctx: Context) {
   };
   // Forge's head is its band; its name is still the page's heading, for those who hear the page.
   work.element.prepend(h('h1', {class: 'sr-only'}, t('Forge')));
-  return {element: work.element, enter};
+  return {element: work.element, enter, drop: () => { offChange(); offSync(); }};
 }

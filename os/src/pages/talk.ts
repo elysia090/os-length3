@@ -59,7 +59,7 @@ export function timeline(scroller: HTMLElement, board: string, member: boolean, 
 
   // Newest page first; on screen the other way round, newest at the foot.
   const pages: Shown[] = [];
-  const list = h('div', {class: 'tl-pages', 'aria-label': t('Posts')});
+  const list = h('div', {class: 'tl-pages', role: 'region', 'aria-label': t('Posts')});
   const start = h('div', {class: 'tl-start muted small', 'aria-live': 'polite'});
   const foot = h('div', {class: 'tl-foot-mark'});
   const fresh = h('button', {type: 'button', class: 'tl-new', hidden: ''}) as HTMLButtonElement;

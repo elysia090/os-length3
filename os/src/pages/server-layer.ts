@@ -113,6 +113,8 @@ export class ServerLayer {
   open(stay: boolean) {
     clearTimeout(this.timer);
     if (stay) this.pinned = true;
+    // Brought out to stay, it covers the page: the keyboard goes from the rail into it, not to the page behind it.
+    if (stay) document.getElementById('page')?.setAttribute('inert', '');
     if (this.isOpen) return;
     this.element.replaceChildren(this.build());
     document.body.append(this.element);
@@ -122,6 +124,7 @@ export class ServerLayer {
   close() {
     clearTimeout(this.timer);
     this.pinned = false;
+    document.getElementById('page')?.removeAttribute('inert');
     this.writing = () => false;
     this.holding = () => false;
     this.back = () => false;
