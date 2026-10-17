@@ -6,12 +6,14 @@
 //
 // Taking in is file by file against the last version agreed with the
 // Remote: a file only changed there is written here, one only changed here
-// is sent, and when both changed one, this device's stays and the other's is
-// written beside it as "name (other device).ext".
+// is sent, and when both changed one, the version the Remote has (it got
+// there first) keeps the name and this device's is kept beside it, named
+// after this device ("name (Chrome Linux).ext"), so the name says whose it is
+// on every device.
 
 import {t} from './i18n.ts';
 import {isNative} from './host.ts';
-import {api, json, RemoteError} from './remote.ts';
+import {api, deviceWord, json, RemoteError} from './remote.ts';
 import {store} from './repos.ts';
 import {getState, setState} from './state.ts';
 
@@ -77,14 +79,18 @@ export function plan(base: Tree, here: Tree, there: Tree): Plan {
   return p;
 }
 
-/** "dir/name (other device).ext" beside `path`. */
-export function beside(path: string): string {
+/** "dir/name (who).ext" beside `path`; the n'th such is "(who n)". */
+export function beside(path: string, who = 'other device', n = 1): string {
   const at = path.lastIndexOf('/');
   const dir = at < 0 ? '' : path.slice(0, at + 1), file = path.slice(at + 1);
   const dot = file.lastIndexOf('.');
   const [stem, ext] = dot > 0 ? [file.slice(0, dot), file.slice(dot)] : [file, ''];
-  return `${dir}${stem} (other device)${ext}`;
+  return `${dir}${stem} (${who}${n > 1 ? ` ${n}` : ''})${ext}`;
 }
+
+/** This device as a file's name can carry it: what the Remote page calls it, its words alone. */
+export const deviceTag = (ua = globalThis.navigator?.userAgent): string =>
+  deviceWord(ua).normalize('NFKC').replace(/[^\p{L}\p{N} ._-]+/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 40) || 'this device';
 
 // ---- the browser's copy ----
 
@@ -183,7 +189,15 @@ async function apply(repo: string, p: Plan, away: Set<string>): Promise<string[]
     }
   }
   for (const [path, theirs] of p.both) {
-    await write(beside(path), theirs);
+    // The Remote's keeps the name (it got there first); this device's is kept beside it first, under
+    // this device's name, so neither is lost if writing the other fails.
+    const mine = (await store.read(repo, path)).text;
+    if (mine !== null) {
+      let n = 1;
+      while (await store.read(repo, beside(path, deviceTag(), n)).then(() => true, () => false)) n++;
+      await store.put(repo, beside(path, deviceTag(), n), mine, BY);
+      await write(path, theirs);
+    } else await write(beside(path), theirs);
     aside.push(path);
   }
   return aside;

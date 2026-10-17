@@ -499,8 +499,11 @@ Every change made here (in Forge, by l3, by a Prompt) is sent as a diff
 within half a second; the Remote's changes are seen within five seconds
 and whenever the window comes back. Taking in is file by file against the
 version last agreed: a file only changed there is written here, one only
-changed here is sent, and one changed on both sides keeps this device's
-and puts the other's beside it as "name (別の端末).ext", so neither is lost.
+changed here is sent, and one changed on both sides keeps, at its name,
+the version that reached the Remote first, and puts this device's beside it
+named after this device ("README (ren-laptop).md", "README (Chrome
+Linux).md"), so neither is lost and the name says whose it is on every
+device.
 Files that cannot travel (a link, a file over 16 MB, a repo's own `.git`)
 are named and never sent; a repo holding them is never let go. Home's
 settings (profile, TODO) are kept there too, each changed only from the

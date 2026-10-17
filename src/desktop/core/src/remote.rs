@@ -607,7 +607,7 @@ fn lock(repo: &str) -> Result<Lock> {
 pub struct Plan {
     /// Paths to make what the Remote has (None: remove; Some(None): a folder).
     pub take: Vec<(String, Option<Option<String>>)>,
-    /// Changed on both sides differently: this device's stays, theirs goes beside it.
+    /// Changed on both sides differently: theirs (the Remote's) takes the name, this device's goes beside it.
     pub both: Vec<(String, Option<String>)>,
 }
 
@@ -630,15 +630,34 @@ pub fn plan(base: &Tree, here: &Tree, there: &Tree) -> Plan {
     p
 }
 
-/// "dir/name (other device).ext" beside `path`.
+/// "dir/name (other device).ext" beside `path`: the Remote's, where something here is in its way.
 pub fn beside(path: &str) -> String {
+    beside_as(path, "other device", 1)
+}
+
+/// "dir/name (who).ext" beside `path`; the n'th such is "(who n)".
+pub fn beside_as(path: &str, who: &str, n: u32) -> String {
     let (dir, file) = path.rsplit_once('/').map_or(("", path), |(d, f)| (d, f));
     let (stem, ext) = match file.rfind('.') {
         Some(i) if i > 0 => (&file[..i], &file[i..]),
         _ => (file, ""),
     };
-    let name = format!("{stem} (other device){ext}");
+    let name = if n > 1 { format!("{stem} ({who} {n}){ext}") } else { format!("{stem} ({who}){ext}") };
     if dir.is_empty() { name } else { format!("{dir}/{name}") }
+}
+
+/// This machine as a file's name can carry it: its host name, its letters, digits and . _ - alone.
+pub fn device_tag() -> String {
+    let mut buf = [0u8; 256];
+    let got = unsafe { libc::gethostname(buf.as_mut_ptr() as *mut libc::c_char, buf.len()) } == 0;
+    let raw = if got { String::from_utf8_lossy(&buf[..buf.iter().position(|&b| b == 0).unwrap_or(buf.len())]).into_owned() } else { String::new() };
+    tag_of(&raw)
+}
+
+fn tag_of(raw: &str) -> String {
+    let words: String = raw.chars().map(|c| if c.is_alphanumeric() || "._-".contains(c) { c } else { ' ' }).collect();
+    let tag = words.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(40).collect::<String>();
+    if tag.is_empty() { "this device".into() } else { tag }
 }
 
 /// A path inside `dir`, its folders made, refusing any part that is .git or a link.
@@ -744,10 +763,27 @@ fn apply(client: &Client, dir: &Path, here: &Tree, p: &Plan) -> Result<Vec<Strin
         }
     }
     for (path, theirs) in &p.both {
-        if let Some(sha) = theirs {
-            put_beside(path, &client.blob(sha)?)?;
-            aside.push(path.clone());
+        let Some(sha) = theirs else { continue };
+        let bytes = client.blob(sha)?;
+        // The Remote's keeps the name (it got there first); this device's is kept beside it first, under
+        // this device's name, so neither is lost if writing the other fails, and the name says whose it is everywhere.
+        let at = place(dir, path).map_err(|_| unwritable(path))?;
+        match fs::read(&at) {
+            Ok(mine) => {
+                let who = device_tag();
+                let mut n = 1;
+                let mut keep = place(dir, &beside_as(path, &who, n)).map_err(|_| unwritable(path))?;
+                while fs::symlink_metadata(&keep).is_ok() {
+                    n += 1;
+                    keep = place(dir, &beside_as(path, &who, n)).map_err(|_| unwritable(path))?;
+                }
+                write_file(&keep, &mine)?;
+                write_file(&at, &bytes)?;
+            }
+            // Not a file here any more: the Remote's goes beside what is in its way.
+            Err(_) => put_beside(path, &bytes)?,
         }
+        aside.push(path.clone());
     }
     Ok(aside)
 }
@@ -766,7 +802,7 @@ pub struct Synced {
     /// Paths sent, and paths written here from the Remote.
     pub sent: usize,
     pub taken: usize,
-    /// Changed on both sides: this device's kept, the other's beside it.
+    /// Changed on both sides: the Remote's kept at its name, this device's beside it.
     pub both: Vec<String>,
     pub unsynced: Vec<(String, String)>,
 }
@@ -977,7 +1013,7 @@ pub fn free(repos: &Repos, repo: &str) -> Result<u64> {
             return Err(crate::tr!("Something cannot be sent to the Remote ({}: {})", "Remote に送れないものがあります（{}: {}）", path, why));
         }
         if let Some(p) = s.both.first() {
-            return Err(crate::tr!("Another device's change was put beside yours; check it before freeing ({})", "別の端末の変更を横に置きました。確かめてから空けてください（{}）", p));
+            return Err(crate::tr!("Both changed {}: this device's is kept beside it; check it before freeing", "{} は両方で変わりました。この端末の版を横に置いたので、確かめてから空けてください", p));
         }
         let here = local_tree(&dir);
         let b = base(&key).ok_or_else(|| crate::tr!("Not on the Remote yet", "まだ Remote にありません"))?;
@@ -1053,6 +1089,10 @@ mod tests {
         assert_eq!(beside("src/main.c"), "src/main (other device).c");
         assert_eq!(beside("Makefile"), "Makefile (other device)");
         assert_eq!(beside(".env"), ".env (other device)");
+        assert_eq!(beside_as("docs/plan.md", "ren-laptop", 1), "docs/plan (ren-laptop).md");
+        assert_eq!(beside_as("Makefile", "ren-laptop", 2), "Makefile (ren-laptop 2)");
+        assert_eq!(tag_of("ren's laptop/../x"), "ren s laptop .. x");
+        assert_eq!(tag_of(""), "this device");
     }
 
     #[test]

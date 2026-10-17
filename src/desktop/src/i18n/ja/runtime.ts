@@ -66,7 +66,7 @@ export default {
   'repo · {files} · {works}': 'repo · {files} · {works}',
   '{n} work': '作業 {n}',
   '{n} works': '作業 {n}',
-  'Another device\'s change was put beside yours; check it before freeing ({path})': '別の端末の変更を横に置きました。確かめてから空けてください（{path}）',
+  'Both changed {path}: this device\'s is kept beside it; check it before freeing': '{path}は両方で変わりました。この端末の版を横に置いたので、確かめてから空けてください',
   'It changed while syncing; try again': '同期のあいだに変わりました。もう一度どうぞ',
   'Do not allow SSH to {address}': '{address}への SSH を許さない',
   'Allow SSH to {address}': '{address}への SSH を許す',

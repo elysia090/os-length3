@@ -69,7 +69,7 @@ export async function free(ids: string[]): Promise<Freed> {
       const size = (await store.list()).find((r) => r.name === name)?.bytes ?? 0;
       try {
         const s = await draft.sync(name);
-        if (s.both.length) throw new Error(t('Another device\'s change was put beside yours; check it before freeing ({path})', {path: s.both[0]}));
+        if (s.both.length) throw new Error(t('Both changed {path}: this device\'s is kept beside it; check it before freeing', {path: s.both[0]}));
         const left = (await draft.status()).find((x) => x.name === name);
         if (left?.changed) throw new Error(t('It changed while syncing; try again'));
         await kept!.letGo([name]);

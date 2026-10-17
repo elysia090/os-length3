@@ -25,7 +25,7 @@ export interface RepoSync {
   where: Where;
   /** Paths not on the Remote yet. */
   changed: number;
-  /** Changed on both sides: this device's kept, the other's beside it (said once). */
+  /** Changed on both sides: the Remote's kept at its name, this device's beside it (said once). */
   both: string[];
   /** What cannot be sent (links, large files, .git), so the copy is never let go. */
   unsynced: [string, string][];

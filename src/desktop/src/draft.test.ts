@@ -80,7 +80,7 @@ test('a repo made here is on the Remote after one sync; the next sync sends only
   assert.deepEqual((await draft.status()).map((s) => [s.name, s.changed]), [['notes', 0]]);
 });
 
-test("the other device's changes come in; a file changed on both keeps this one and puts that one beside it", async () => {
+test("the other device's changes come in; a file changed on both keeps the Remote's and puts this one's beside it, by this device's name", async () => {
   await elsewhere('notes', {'docs/plan.md': 'plan\n'});
   const took = await draft.sync('notes');
   assert.equal(took.taken, 1);
@@ -89,12 +89,19 @@ test("the other device's changes come in; a file changed on both keeps this one 
   await store.write('notes', 'README.md', 'mine\n');
   const both = await draft.sync('notes');
   assert.deepEqual(both.both, ['README.md']);
-  assert.equal(await text('notes', 'README.md'), 'mine\n');
-  assert.equal(await text('notes', 'README (other device).md'), 'theirs\n');
-  // And this device's is what the Remote has now, beside file and all.
+  const mine = `README (${draft.deviceTag()}).md`;
+  assert.equal(await text('notes', 'README.md'), 'theirs\n');
+  assert.equal(await text('notes', mine), 'mine\n');
+  // And the Remote has both now, under the same names as here: the name says whose it is everywhere.
   const now = await (await fetch(`${URL_}/v1/repos/notes`, {headers: {Authorization: `Bearer ${token}`}})).json() as {draft: Record<string, string>};
-  assert.equal(now.draft['README.md'], await sha256(enc.encode('mine\n')));
-  assert.ok('README (other device).md' in now.draft);
+  assert.equal(now.draft['README.md'], await sha256(enc.encode('theirs\n')));
+  assert.equal(now.draft[mine], await sha256(enc.encode('mine\n')));
+});
+
+test('this device is named in a file name by its words alone', () => {
+  assert.equal(draft.deviceTag('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/130.0 Safari/537.36'), 'Chrome Linux');
+  assert.equal(draft.beside('docs/plan.md', 'Chrome Linux'), 'docs/plan (Chrome Linux).md');
+  assert.equal(draft.beside('Makefile', 'Chrome Linux', 2), 'Makefile (Chrome Linux 2)');
 });
 
 test('a file this browser cannot hold stays on the Remote, untouched by this copy', async () => {
