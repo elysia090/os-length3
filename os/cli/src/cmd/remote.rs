@@ -98,8 +98,10 @@ pub fn devices(_: &Ctx, _: &Call) -> Result<Reply> {
 
 pub fn devices_rm(_: &Ctx, call: &Call) -> Result<Reply> {
     let list = account::devices()?;
-    let k: usize = call.word(1).unwrap_or_default().parse().unwrap_or(0);
-    let d = list.get(k.wrapping_sub(1)).ok_or_else(|| Error::NotFound(tr!("There is no device {} (l3 remote devices numbers them, 1 to {})", "{} 番の端末はありません（l3 remote devices の番号、1〜{}）", k, list.len())))?;
+    // Said as written: a number too large to read is no device either (it was said as 0).
+    let given = call.word(1).unwrap_or_default();
+    let k: usize = given.parse().unwrap_or(0);
+    let d = list.get(k.wrapping_sub(1)).ok_or_else(|| Error::NotFound(tr!("There is no device {} (l3 remote devices numbers them, 1 to {})", "{} 番の端末はありません（l3 remote devices の番号、1〜{}）", given, list.len())))?;
     if d.current { return Err(Error::Refused(tr!("That is this device: l3 logout signs it out", "それはこの端末です。l3 logout で外れます"))); }
     account::end_device(&d.token)?;
     let word = account::device_word(d.user_agent.as_deref());

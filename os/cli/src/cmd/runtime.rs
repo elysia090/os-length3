@@ -116,6 +116,7 @@ pub fn root_use(_: &Ctx, call: &Call) -> Result<Reply> {
 
 pub fn root_install(_: &Ctx, call: &Call) -> Result<Reply> {
     let bundle = std::path::Path::new(call.word(0).unwrap_or_default());
+    if bundle.is_dir() { return Err(Error::Usage(tr!("{} is a folder; a root is installed from its bundle, a file", "{} はフォルダーです。root はそのバンドル（ファイル）から入れます", bundle.display()))); }
     if !bundle.is_file() { return Err(Error::NotFound(tr!("There is no file {}", "ファイル {} はありません", bundle.display()))); }
     let r = root::install(&paths::data_dir(), bundle)?;
     Ok(Reply::done(installed(&r), json!(r)))
