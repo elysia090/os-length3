@@ -51,7 +51,6 @@ export default {
   'Repos': 'リポジトリ',
   'everyone': '全体',
   'Everyone sees it as {name}': '全体に {name} として見えています',
-  'None shown yet. Show one of yours behind the gear.': 'まだありません。歯車から自分のリポジトリを見せられます。',
   // A repo shown: seen as it was last pushed.
   'Back to the boards': '板に戻る',
   'Files': 'ファイル',

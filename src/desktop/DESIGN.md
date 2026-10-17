@@ -122,7 +122,9 @@ what is its own.
   way to make it: a card with a dashed `rule` edge and a quiet word in its
   middle (New repo, Add someone you know). Pressed, it becomes the card it
   makes. A dashed box with a quiet line is also the empty state: nothing
-  here yet, said in the place where it would be.
+  here yet, said once, in the place where it would be (the center), as
+  wide as its words. A pane beside it with nothing to show says nothing:
+  it is empty until there is something in it.
 - **Asking in the card.** One way to ask before doing what cannot be
   undone at once or reaches past who sees it now: the card gives way to
   what will happen, in short lines broken where the sentence breaks
@@ -151,9 +153,9 @@ what is its own.
   (Inbox too). Forge and Git run in it; Server posts.
 - **The right pane.** Beside the center, past its one `rule`: on top what
   the center refers to (Forge's reference, Server's people and repos),
-  headings 15/600 in `ink` as Prompt's, a list under each, and the dashed
-  box when there is nothing yet. It only shows; what changes it lives with
-  the thing it changes.
+  headings 15/600 in `ink` as Prompt's, a list under each; with nothing to
+  show, nothing (no line saying what will appear once a repo is open). It
+  only shows; what changes it lives with the thing it changes.
 - **Boxes side by side.** One thing at a time in full, its neighbours'
   edges showing with their mark only (# a board, + a new one), never a
   name cut short; ← → or an edge is the way to them. The current one has
@@ -189,6 +191,8 @@ fix is always a piece from §3, not a new rule.
 | + after what it adds to | + first, as the band has it |
 | A small grey heading on one page, a 15/600 one on another | 15/600 `ink`, everywhere |
 | An empty state as a plain line of text | The dashed box with a quiet line, where the thing would be |
+| A dashed box as wide as the page around one line | As wide as its words |
+| Every pane saying what will appear once something is done (repoを開くと出ます, 帯にrepoを出すと動きます) | Said once, where it is done (the center); the other panes are empty |
 | A paragraph explaining the screen | The word on the thing; what will happen, in the ask |
 | A sentence broken where the card ends (名前 / は出ません) | Short lines, each broken where the sentence breaks |
 | Answers right under the question, high in a card that shrank to ask (やめる, 見せる) | The card keeps its size; the answers sit at its foot, where its own buttons were |

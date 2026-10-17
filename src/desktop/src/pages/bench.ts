@@ -30,8 +30,8 @@ function fly(el: HTMLElement, to: HTMLElement) {
 export interface Bench {
   element: HTMLElement;
   reference: Reference;
-  /** The repo the prompt and the reference work on; null for none, with what to say instead. */
-  setRepo(name: string | null, none?: string): void;
+  /** The repo the prompt and the reference work on; null for none (the Prompt's place is then left empty). */
+  setRepo(name: string | null): void;
 }
 
 export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(path: string, line?: number): void}): Bench {
@@ -90,11 +90,11 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     prompt.focus();
   });
 
-  const setRepo = (name: string | null, none = t('Runs once a repo is open')) => {
+  const setRepo = (name: string | null) => {
     if (name === repo && name) return;
     repo = name;
     reference.setRepo(name);
-    termBox.replaceChildren(termTitle, name ? terminalFor(name) : h('div', {class: 'empty'}, none));
+    termBox.replaceChildren(termTitle, ...(name ? [terminalFor(name)] : []));
     prompt.disabled = !name;
     prompt.placeholder = name ? t('Run in {name}', {name}) : '';
   };

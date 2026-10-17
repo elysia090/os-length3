@@ -153,7 +153,8 @@ a { color: var(--ink); }
 }
 .section > h2 small { font-weight: 400; color: var(--sub); font-size: var(--t-meta); }
 /* Dashed means one thing: room for something that is not here yet. */
-.empty { margin-top: var(--s5); padding: var(--s6) var(--s5); border: 1px dashed var(--rule); border-radius: var(--r-place); color: var(--sub); }
+/* Room for what is not here yet: a dashed box as wide as its words, never the width of the page around one line. */
+.empty { width: fit-content; max-width: 100%; margin-top: var(--s5); padding: var(--s6) var(--s5); border: 1px dashed var(--rule); border-radius: var(--r-place); color: var(--sub); }
 .section > .empty { margin-top: 0; }
 
 /* Controls */

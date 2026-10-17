@@ -90,7 +90,7 @@ export function forge(ctx: Context): Node[] {
   const none = () => {
     repo = null;
     reader = null;
-    work.setRepo(null, t('Bring a repo out to the band to use it'));
+    work.setRepo(null);
     flow.replaceChildren(h('div', {class: 'empty forge-none'}, t('Bring a repo out to the band with ⊕, or open one from File.')));
     flow.scrollTop = 0;
     paintBand();

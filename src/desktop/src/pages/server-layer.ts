@@ -443,14 +443,13 @@ export class ServerLayer {
         side.replaceChildren(
           part(t('People'), h('ul', {class: 'people'}, ...people.map((p) => h('li', {}, faceOf(p.address), h('span', {}, named(p.address)),
             p.owner ? h('span', {class: 'muted small'}, t('owner')) : null)))),
-          part(t('Repos'), repos.length
-            ? h('ul', {class: 'side-repos'}, ...repos.map((r) => {
+          // The repos shown, when there are any: nothing is said of none here.
+          repos.length ? part(t('Repos'), h('ul', {class: 'side-repos'}, ...repos.map((r) => {
               const b = h('button', {type: 'button', class: 'side-repo', title: r.as ? t('Everyone sees it as {name}', {name: shownAs(r.as)}) : `${named(r.owner)}:${r.name}`},
                 ...repoName(r), r.as ? h('span', {class: 'seen-mark muted small'}, t('everyone')) : null);
               b.addEventListener('click', () => void seeRepo(r));
               return h('li', {}, b);
-            }))
-            : h('div', {class: 'empty'}, t('None shown yet. Show one of yours behind the gear.'))));
+            }))) : '');
       }).catch((e) => { if (mine === sideToken) side.replaceChildren(h('p', {class: 'error'}, message(e))); });
     };
 

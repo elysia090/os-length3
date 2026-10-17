@@ -203,7 +203,8 @@ export class Reference {
   /** The changes not yet cut, file by file, line by line. */
   private async diff() {
     const repo = this.repo;
-    if (!repo) { this.empty(t('Open a repo to see it here')); return; }
+    // No repo: nothing to refer to, and nothing said about it here.
+    if (!repo) { this.body.replaceChildren(); return; }
     const run = ++this.run;
     let files: gitops.FileDiff[];
     try { files = await gitops.diff(repo); } catch (e) {
@@ -238,7 +239,8 @@ export class Reference {
   /** The repo's issue/ directory, one line per file. */
   private async issues() {
     const repo = this.repo;
-    if (!repo) { this.empty(t('Open a repo to see it here')); return; }
+    // No repo: nothing to refer to, and nothing said about it here.
+    if (!repo) { this.body.replaceChildren(); return; }
     let names: string[];
     try {
       names = (await store.tree(repo, 'issue')).filter((e) => e.kind === 'file').map((e) => e.name);
