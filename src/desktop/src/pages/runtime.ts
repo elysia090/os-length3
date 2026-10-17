@@ -1,5 +1,5 @@
 import {bytes, h} from '../dom.ts';
-import {isNative, rootFetch, rootStatus, type Certainty, type Freed, type Space} from '../host.ts';
+import {isNative, rootFetch, rootStatus, rootUse, type Certainty, type Freed, type Space} from '../host.ts';
 import {t, tn} from '../i18n.ts';
 import {bring, onSync, remoteOnly, repoState} from '../lifecycle.ts';
 import {connection} from '../remote.ts';
@@ -30,32 +30,47 @@ const known = (c: Certainty) => (c === 'Verified' ? '' : c === 'Estimated' ? t('
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /**
- * The environments a Prompt can run on, one row each. l3 (this OS's own
- * root) is the one in effect: the place, an ink edge over raised. Ubuntu,
- * Debian and a root of one's own are not here yet; they say so, quiet and
- * dashed, with where each could run: their programs are linked when they
- * run, which xlat does not do, so not in a browser.
+ * The environments a Prompt can run on, one row each: l3 (this OS's own
+ * root), Ubuntu and Debian (their makers' roots, pinned by digest), and a
+ * root of one's own. The one in effect is the place, an ink edge over
+ * raised. In the app every other one can be used with a press: fetched if
+ * it is not here, then the one Prompts run on, set up from .packages and
+ * .setup at the next Prompt. In a browser only l3 runs (through xlat, which
+ * does not link programs as they run); the others say where they do.
  */
 function environment(): HTMLElement {
   const body = h('div', {class: 'env-choices'}, h('p', {class: 'muted'}, t('Reading…')));
-  const row = (name: string, version: string, note: string, current: boolean, sha = '') =>
+  const row = (name: string, version: string, note: string | Node, current: boolean, end: Node | null, sha = '') =>
     h('div', {class: current ? 'env-choice' : 'env-choice later', 'aria-current': current ? 'true' : 'false'},
-      h('b', {}, name), h('span', {}, version), h('span', {class: current ? 'muted' : ''}, note),
-      sha ? h('code', {class: 'muted', title: sha}, sha.slice(0, 12)) : h('span', {class: 'small'}, current ? '' : t('Not yet')));
-  const later = () => {
-    // A word or two each: where it could run, what it is.
-    const where = isNative ? t('On this device') : t('In the app only');
-    return [
-      row('Ubuntu', '24.04 LTS', where, false),
-      row('Debian', '13', where, false),
-      row(t('Custom'), '', t('Your own root (.tar)'), false),
-    ];
-  };
-  void (async () => {
+      h('b', {}, name), h('span', {}, version), typeof note === 'string' ? h('span', {class: current ? 'muted' : ''}, note) : note,
+      sha ? h('code', {class: 'muted', title: sha}, sha.slice(0, 12)) : end ?? h('span', {}));
+  const paint = async () => {
     const root = isNative ? await rootStatus().catch(() => null) : null;
-    if (root?.current) {
-      const r = root.current;
-      body.replaceChildren(row('l3', r.version, t('{name} · {size}', {name: r.name, size: bytes(r.bytes)}), true, r.sha256), ...later());
+    if (isNative && root) {
+      const now = root.current?.distro ?? (root.current ? 'l3' : null);
+      // Pressed: fetched if it is not here, then the one in effect.
+      const use = (id: string, note: HTMLElement) => {
+        const b = button(t('Use'), 'small-button');
+        b.addEventListener('click', () => {
+          b.disabled = true;
+          void rootUse(id, (got, of, retry) => {
+            note.textContent = retry ?? t('Fetching {got} / {of}', {got: bytes(got), of: bytes(of)});
+          }).then(() => paint(), (e) => { note.textContent = message(e); b.disabled = false; });
+        });
+        return b;
+      };
+      const line = (id: string, name: string, version: string, what: string, sha?: string) => {
+        const note = h('span', {}, what);
+        return row(name, version, note, now === id, now === id ? null : use(id, note), now === id ? sha : '');
+      };
+      const l3 = root.current && now === 'l3' ? root.current : null;
+      body.replaceChildren(
+        line('l3', 'l3', l3?.version ?? root.release.version, l3 ? t('{name} · {size}', {name: l3.name, size: bytes(l3.bytes)}) : root.release.name, l3?.sha256),
+        ...root.distros.map((d) => {
+          const held = root.current?.distro === d.id ? root.current : null;
+          return line(d.id, d.name, d.version, held ? t('{name} · {size}', {name: d.name, size: bytes(held.bytes)}) : t('apt; .packages and .setup set it up'), held?.sha256);
+        }),
+        row(t('Custom'), '', t('Your own root (.tar)'), false, h('span', {class: 'small'}, t('Not yet'))));
       return;
     }
     const [a, web] = await Promise.all([about(), isNative ? null : loadWebRoot()]);
@@ -64,8 +79,12 @@ function environment(): HTMLElement {
     const note = web
       ? t('{name} · through xlat', {name: a.root.name})
       : t('{name} · {base} {version} · {size}', {name: a.root.name, base: a.base.name, version: a.base.version, size: bytes(a.bundle.size)});
-    body.replaceChildren(row('l3', web?.index.version || a.root.version, note, true, a.bundle.sha256), ...later());
-  })();
+    body.replaceChildren(row('l3', web?.index.version || a.root.version, note, true, null, a.bundle.sha256),
+      row('Ubuntu', '24.04.5 LTS', t('In the app only'), false, null),
+      row('Debian', '13', t('In the app only'), false, null),
+      row(t('Custom'), '', t('Your own root (.tar)'), false, h('span', {class: 'small'}, t('Not yet'))));
+  };
+  void paint();
   return body;
 }
 

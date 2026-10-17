@@ -719,9 +719,21 @@ each thing says what can be done with it.
   one in effect is the place (an `ink` edge over `raised`): l3, with its
   version, what it is here (in the app, the root installed, on this
   device's kernel; in a browser, the whole root through xlat, or l3 and
-  its BusyBox) and its digest. The others are not here yet and say so,
-  quiet and dashed, with where each could run: their programs are linked
-  as they run, which a browser does not do, so in the app only.
+  its BusyBox) and its digest. In the app each other one has Use at its
+  right: fetched if it is not here (Ubuntu's base and Debian's official
+  root, from their makers or the Remote, taken only at the digest pinned
+  in core/src/root.rs), then the one Prompts run on, each with its own
+  environment per repo. In a browser they say In the app only: their
+  programs are linked as they run, which xlat does not do. Custom is not
+  yet.
+- **Packages and runtimes are dotfiles**, so nothing is kept twice: the
+  OS has no package list or runtime manager of its own. `.packages` names
+  what to install with the root's own package manager (apt on Ubuntu and
+  Debian; l3's root has no archive yet), `.setup` is run with sh after it
+  (the place for a runtime's own installer: rustup, nvm, uv, mise…). Both
+  run before a Prompt, with the network, over the repo's environment, so
+  what they install is the repo's and stays; and again only when the root
+  or either file changes.
 - **SSH**, once there is an Inbox address: a small card per address with
   the power switch at its bottom right, whether it may be reached over SSH.
 - **Dotfiles**: a small card each (its name, its size), and a dashed one to

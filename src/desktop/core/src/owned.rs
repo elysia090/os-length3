@@ -29,6 +29,13 @@ pub fn env_dir(data: &Path, repo: &str) -> PathBuf {
     data.join("envs").join(repo)
 }
 
+/// The repo's environment over one root (named by its digest): what was
+/// installed over one root never lies over another.
+pub fn env_over(data: &Path, repo: &str, root: &Path) -> PathBuf {
+    let key: String = root.parent().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().chars().take(16).collect()).unwrap_or_else(|| "root".into());
+    env_dir(data, repo).join(key)
+}
+
 /// The repo's caches, one directory each.
 pub fn cache_dir(data: &Path, repo: &str) -> PathBuf {
     data.join("caches").join(repo)

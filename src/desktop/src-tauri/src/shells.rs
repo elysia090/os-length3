@@ -69,7 +69,7 @@ pub fn prompt_open(app: AppHandle, shells: State<'_, Shells>, repo: String) -> R
         .stdout(writer.try_clone().map_err(|e| e.to_string())?)
         .stderr(writer)
         .spawn()
-        .map_err(|e| length3_core::tr!("Could not start l3: {}", "l3 を起動できませんでした: {}", e))?;
+        .map_err(|e| length3_core::tr!("Could not start l3: {}", "l3 を起動できませんでした：{}", e))?;
     let stdin = child.stdin.take().ok_or("stdin")?;
     let supervisor = child.id();
     let id = shells.next.fetch_add(1, Ordering::SeqCst) + 1;
@@ -150,6 +150,17 @@ pub struct RootStatus {
     current: Option<root::Installed>,
     held: Vec<(root::Installed, bool)>,
     release: Release,
+    /// The other distributions' roots that can be used (held or fetched).
+    distros: Vec<Distro>,
+}
+
+#[derive(serde::Serialize)]
+pub struct Distro {
+    id: &'static str,
+    name: &'static str,
+    version: &'static str,
+    bytes: u64,
+    sha256: &'static str,
 }
 
 #[derive(serde::Serialize)]
@@ -167,6 +178,7 @@ pub fn root_status() -> RootStatus {
         current: root::current(&data).map(|(_, a)| a),
         held: root::held(&data),
         release: Release { name: r.name, version: r.version, bytes: r.bytes },
+        distros: root::DISTROS.iter().map(|d| Distro { id: d.id, name: d.name, version: d.version, bytes: d.bytes, sha256: d.sha256 }).collect(),
     }
 }
 
@@ -189,9 +201,17 @@ fn remote_url() -> String {
 /// Fetch the release root from the Remote and install it, saying how far it is.
 #[tauri::command]
 pub async fn root_fetch(app: AppHandle) -> Result<root::Installed, String> {
+    root_use(app, "l3".into()).await
+}
+
+/// Make `id` (l3, ubuntu, debian) the root Prompts run on, fetching it first
+/// if it is not held, saying how far it is (`root-fetch`).
+#[tauri::command]
+pub async fn root_use(app: AppHandle, id: String) -> Result<root::Installed, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        let data = paths::data_dir();
         let mut last = 0u64;
-        root::fetch_and_install(&paths::data_dir(), &remote_url(), |p| match p {
+        let progress = |p: length3_core::fetch::Progress| match p {
             length3_core::fetch::Progress::Bytes(got, of) if got - last >= 1 << 20 || got == of => {
                 last = got;
                 let _ = app.emit("root-fetch", Fetching { got, of, retry: None });
@@ -200,6 +220,14 @@ pub async fn root_fetch(app: AppHandle) -> Result<root::Installed, String> {
                 let _ = app.emit("root-fetch", Fetching { got: last, of: 0, retry: Some(length3_core::tr!("{} (try {})", "{}（{}回目）", why, n)) });
             }
             _ => {}
-        })
+        };
+        if id == "l3" {
+            return match root::use_held(&data, root::RELEASES[0].sha256) {
+                Some(r) => Ok(r),
+                None => root::fetch_and_install(&data, &remote_url(), progress),
+            };
+        }
+        let d = root::distro(&id).ok_or_else(|| format!("no root {id}"))?;
+        root::fetch_distro(&data, &remote_url(), d, progress)
     }).await.map_err(|e| e.to_string())?
 }

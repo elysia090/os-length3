@@ -3,6 +3,8 @@ export default {
   'estimated': '推定',
   'unknown': '不明',
   'In the app only': 'アプリでだけ',
+  'Use': '使う',
+  'apt; .packages and .setup set it up': 'apt。.packages と .setup で用意',
   'Your own root (.tar)': '自分の root（.tar）',
   '{name} · {size}': '{name} · {size}',
   '{name} · through xlat': '{name} · xlat を通して',

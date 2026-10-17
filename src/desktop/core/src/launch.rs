@@ -23,6 +23,7 @@ use std::ffi::CString;
 use std::io;
 use std::path::{Path, PathBuf};
 
+#[derive(Clone)]
 pub struct Sandbox {
     /// The installed root (`root::current`).
     pub root: PathBuf,
@@ -174,6 +175,8 @@ fn build(s: &Sandbox) -> io::Result<()> {
     for (dir, size) in [("tmp", "1g"), ("run", "64m")] {
         mount(Some(Path::new("tmpfs")), &top.join(dir), Some("tmpfs"), libc::MS_NOSUID | libc::MS_NODEV, Some(&format!("mode=1777,size={size}")))?;
     }
+    // With the network, the host's resolver too, where the root looks for it.
+    if s.network { resolver(top)?; }
     let dev = top.join("dev");
     mount(Some(Path::new("tmpfs")), &dev, Some("tmpfs"), libc::MS_NOSUID | libc::MS_NOEXEC, Some("mode=0755,size=64k"))?;
     for node in ["null", "zero", "full", "random", "urandom", "tty"] {
@@ -201,14 +204,55 @@ fn build(s: &Sandbox) -> io::Result<()> {
     Ok(())
 }
 
+/// The host's /etc/resolv.conf, given to the root: over its own file, or
+/// where its link points into /run (Ubuntu's), which is the Prompt's.
+fn resolver(top: &Path) -> io::Result<()> {
+    let Ok(text) = std::fs::read_to_string("/etc/resolv.conf") else { return Ok(()) };
+    let at = top.join("etc/resolv.conf");
+    match std::fs::symlink_metadata(&at) {
+        Ok(m) if m.file_type().is_symlink() => {
+            let to = std::fs::read_link(&at)?;
+            let inside = clean(&if to.is_absolute() { to } else { Path::new("/etc").join(to) });
+            if let Ok(rest) = inside.strip_prefix("/run") {
+                let file = top.join("run").join(rest);
+                if let Some(dir) = file.parent() { std::fs::create_dir_all(dir)?; }
+                std::fs::write(file, text)?;
+            }
+        }
+        Ok(m) if m.is_file() => {
+            let file = top.join("run/length3-resolv.conf");
+            std::fs::write(&file, text)?;
+            bind(&file, &at, true)?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// A path inside with `.` and `..` worked out (never above /).
+fn clean(p: &Path) -> PathBuf {
+    let mut out = PathBuf::from("/");
+    for c in p.components() {
+        match c {
+            std::path::Component::Normal(x) => out.push(x),
+            std::path::Component::ParentDir => { out.pop(); }
+            _ => {}
+        }
+    }
+    out
+}
+
 /// The root with the repo's environment over it, mounted at `<env>/merged`:
 /// the root is the overlay's read-only lower layer, so writing to /usr
 /// writes to `<env>/upper` on the host, and the root stays as installed.
+/// Each root has its own environment (owned::env_over).
 fn environment_over(root: &Path, data: &Path, repo: &str) -> io::Result<PathBuf> {
-    let env = crate::owned::env_dir(data, repo);
+    let env = crate::owned::env_over(data, repo, root);
     let (upper, work, merged) = (env.join("upper"), env.join("work"), env.join("merged"));
     for d in [&upper, &work, &merged] { std::fs::create_dir_all(d)?; }
-    let options = format!("lowerdir={},upperdir={},workdir={}", root.display(), upper.display(), work.display());
+    // userxattr: in a user namespace the overlay keeps its marks in user.* xattrs; without it it cannot mark
+    // a new directory as its own and refuses to rename any (dpkg renames each it unpacks).
+    let options = format!("lowerdir={},upperdir={},workdir={},userxattr", root.display(), upper.display(), work.display());
     mount(Some(Path::new("overlay")), &merged, Some("overlay"), libc::MS_NOSUID | libc::MS_NODEV, Some(&options))?;
     Ok(merged)
 }
@@ -308,6 +352,76 @@ pub fn run(s: &Sandbox) -> io::Result<i32> {
     Ok(if libc::WIFEXITED(status) { libc::WEXITSTATUS(status) } else { 128 + libc::WTERMSIG(status) })
 }
 
+/// Run `s` in a child, so this process keeps its own namespaces and can run
+/// another after it; the exit code of the child's shell.
+pub fn run_apart(s: &Sandbox) -> io::Result<i32> {
+    let pid = unsafe { libc::fork() };
+    if pid < 0 { return Err(io::Error::last_os_error()); }
+    if pid == 0 {
+        let code = run(s).unwrap_or_else(|e| { eprintln!("l3: {e}"); 126 });
+        unsafe { libc::_exit(code) };
+    }
+    // Ctrl-C is the child's to pass on; this one waits it out.
+    let before = unsafe { libc::signal(libc::SIGINT, libc::SIG_IGN) };
+    let mut status = 0;
+    let waited = loop {
+        let r = unsafe { libc::waitpid(pid, &mut status, 0) };
+        if r == pid { break Ok(()); }
+        if io::Error::last_os_error().raw_os_error() != Some(libc::EINTR) { break Err(io::Error::last_os_error()); }
+    };
+    unsafe { libc::signal(libc::SIGINT, before) };
+    waited?;
+    Ok(if libc::WIFEXITED(status) { libc::WEXITSTATUS(status) } else { 128 + libc::WTERMSIG(status) })
+}
+
+/// A package's name as `.packages` may give it: what apt takes, and nothing a shell reads otherwise.
+fn package_name(p: &str) -> bool {
+    !p.is_empty() && p.len() <= 128 && !p.starts_with('-') && p.bytes().all(|b| b.is_ascii_alphanumeric() || b"+-.:=~_/".contains(&b))
+}
+
+/// What the person's dotfiles ask of a root: `.packages` (names, any number
+/// a line, `#` to the end of a line left out), installed with the root's own
+/// package manager, then `.setup` run with sh. Language runtimes and tools
+/// come the way each says to install it, from there: the OS keeps no list of
+/// its own. It runs in a Prompt of its own, with the network (fetching is
+/// what it is for), over the repo's environment, so what it installs is the
+/// repo's and stays; and again only when the root or either file changes.
+/// `apt`: the root has apt (Ubuntu, Debian); l3's own has no archive yet.
+pub fn set_up(s: &Sandbox, apt: bool) -> io::Result<()> {
+    use sha2::{Digest, Sha256};
+    let Some(data) = &s.data else { return Ok(()) };
+    let get = |n: &str| s.dotfiles.iter().find(|(k, _)| k == n).map_or("", |(_, v)| v.as_str());
+    let packages: Vec<&str> = get(".packages").lines().map(|l| l.split('#').next().unwrap_or("")).flat_map(str::split_whitespace).collect();
+    let setup = get(".setup");
+    if packages.is_empty() && setup.trim().is_empty() { return Ok(()); }
+    if let Some(p) = packages.iter().find(|p| !package_name(p)) {
+        eprintln!("{}", crate::tr!("l3: .packages: not a package name: {}", "l3: .packages：パッケージ名ではありません：{}", p));
+        return Ok(());
+    }
+    let mut h = Sha256::new();
+    h.update(format!("{}\n{}\n{}", s.root.display(), packages.join(" "), setup));
+    let key: String = h.finalize().iter().map(|b| format!("{b:02x}")).collect();
+    let stamp = crate::owned::env_over(data, &s.name, &s.root).join("set-up");
+    if std::fs::read_to_string(&stamp).ok().as_deref() == Some(key.as_str()) { return Ok(()); }
+    let mut script = String::from("set -e\n");
+    if !packages.is_empty() {
+        if apt {
+            script += &format!("export DEBIAN_FRONTEND=noninteractive\napt-get update -q\napt-get install -y -q --no-install-recommends {}\n", packages.join(" "));
+        } else {
+            eprintln!("{}", crate::tr!("l3: this root has no package archive yet: .packages is for Ubuntu and Debian", "l3: この root にはまだパッケージの置き場がありません。.packages は Ubuntu と Debian で使えます"));
+        }
+    }
+    if !setup.trim().is_empty() { script += "sh /root/.setup\n"; }
+    let done = || -> io::Result<()> { if let Some(d) = stamp.parent() { std::fs::create_dir_all(d)?; } std::fs::write(&stamp, &key) };
+    if script == "set -e\n" { return done(); }
+    eprintln!("{}", crate::tr!("l3: setting up from .packages and .setup…", "l3: .packages と .setup から用意しています…"));
+    let code = run_apart(&Sandbox { argv: vec!["/bin/sh".into(), "-c".into(), script], network: true, ..s.clone() })?;
+    if code == 0 { done() } else {
+        eprintln!("{}", crate::tr!("l3: setting up stopped (exit {}); the Prompt starts with what is there", "l3: 用意が途中で止まりました（終了 {}）。今あるもので Prompt を始めます", code));
+        Ok(())
+    }
+}
+
 static SUPERVISED: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
 static SHELL: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
 
@@ -325,5 +439,22 @@ extern "C" fn interrupt(_: libc::c_int) {
     let shell = SHELL.load(std::sync::atomic::Ordering::SeqCst);
     if shell > 0 {
         unsafe { libc::kill(-shell, libc::SIGINT) };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_package_name_is_what_apt_takes_and_nothing_a_shell_reads() {
+        for ok in ["jq", "build-essential", "python3.12", "libc6:amd64", "nodejs=20.1-1", "g++", "ca-certificates"] { assert!(package_name(ok), "{ok}"); }
+        for bad in ["", "-y", "a;rm", "$(x)", "a b", "`x`", "a|b", "a&b", "a>b"] { assert!(!package_name(bad), "{bad}"); }
+    }
+
+    #[test]
+    fn a_link_into_run_is_followed_inside_the_root() {
+        assert_eq!(clean(Path::new("/etc/../run/systemd/resolve/stub-resolv.conf")), PathBuf::from("/run/systemd/resolve/stub-resolv.conf"));
+        assert_eq!(clean(Path::new("/../../x")), PathBuf::from("/x"));
     }
 }

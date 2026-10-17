@@ -20,6 +20,7 @@ mod shells {
     #[tauri::command] pub fn prompt_close(_id: u32) -> Result<length3_core::prompt::Stopped, String> { Err(not_here()) }
     #[tauri::command] pub fn root_status() -> Option<()> { None }
     #[tauri::command] pub async fn root_fetch() -> Result<(), String> { Err(not_here()) }
+    #[tauri::command] pub async fn root_use(_id: String) -> Result<(), String> { Err(not_here()) }
     impl Shells { pub fn open_repos(&self) -> Vec<String> { Vec::new() } }
 }
 
@@ -265,7 +266,7 @@ fn main() {
             work_start, work_switch, work_state, work_lines, history_push, history_submit, history_reset,
             changes_list, change_review, change_merge, change_reject, change_diff,
             shells::prompt_open, shells::prompt_input, shells::prompt_interrupt, shells::prompt_held, shells::prompt_close,
-            shells::root_status, shells::root_fetch
+            shells::root_status, shells::root_fetch, shells::root_use
         ])
         .run(tauri::generate_context!())
         .expect("Length³ OS shell failed to start");

@@ -107,8 +107,9 @@ pub const COMMANDS: &[Command] = &[
     c("root", "Runtime", ["the root Prompts run on", "Prompt が動く root"], &[
         ("l3 root", ["each held, and which is in use", "持っているものと、使っているもの"]),
         ("l3 root fetch", ["the newest release", "最新のリリースを取る"]),
+        ("l3 root use l3|ubuntu|debian", ["the one Prompts run on (fetched if not held); .packages and .setup set it up", "Prompt が動くもの（なければ取る）。.packages と .setup で用意"]),
         ("l3 root install BUNDLE", ["from a file", "ファイルから"]),
-    ], &["fetch", "install"], false),
+    ], &["fetch", "use", "install"], false),
     c("ssh", "Runtime", ["whether SSH may reach each address", "アドレスごとに SSH でつないでよいか"], &[
         ("l3 ssh", ["each address", "アドレスごとに"]),
         ("l3 ssh on|off ADDRESS", ["", ""]),

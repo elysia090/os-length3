@@ -632,7 +632,7 @@ mod system_tests {
         fs::write(d.join("root/bin/busybox"), vec![b'x'; 20_000]).unwrap();
         // Applets are hard links: the bytes are there once.
         for a in ["sh", "ls", "cat"] { fs::hard_link(d.join("root/bin/busybox"), d.join(format!("root/bin/{a}"))).unwrap(); }
-        let about = crate::root::Installed { name: "OS".into(), version: version.into(), sha256: sha.to_string().repeat(64), files: 4, bytes: 20_000, allocated: None };
+        let about = crate::root::Installed { name: "OS".into(), version: version.into(), sha256: sha.to_string().repeat(64), files: 4, bytes: 20_000, allocated: None, distro: None };
         fs::write(d.join("installed.json"), serde_json::to_string(&about).unwrap()).unwrap();
         d
     }

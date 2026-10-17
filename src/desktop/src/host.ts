@@ -71,11 +71,13 @@ export async function askToKeep(): Promise<boolean | null> {
 
 // ---- the distribution's root on this machine (app only; core/src/root.rs, launch.rs) ----
 
-export interface Installed { name: string; version: string; sha256: string; files: number; bytes: number }
+export interface Installed { name: string; version: string; sha256: string; files: number; bytes: number; distro?: string }
 export interface RootStatus {
   current: Installed | null;
   held: [Installed, boolean][];
   release: {name: string; version: string; bytes: number};
+  /** Other distributions' roots that can be used. */
+  distros: {id: string; name: string; version: string; bytes: number; sha256: string}[];
 }
 /** What a Prompt's processes hold: how many, and their memory (Pss). */
 export interface Held { processes: number; memory: number }
@@ -89,6 +91,13 @@ export async function rootFetch(progress: (got: number, of: number, retry: strin
   const {listen} = await import('@tauri-apps/api/event');
   const unlisten = await listen<{got: number; of: number; retry: string | null}>('root-fetch', (e) => progress(e.payload.got, e.payload.of, e.payload.retry));
   try { return await native<Installed>('root_fetch'); } finally { unlisten(); }
+}
+
+/** Make `id` (l3, ubuntu, debian) the root Prompts run on, fetched first if it is not here. */
+export async function rootUse(id: string, progress: (got: number, of: number, retry: string | null) => void): Promise<Installed> {
+  const {listen} = await import('@tauri-apps/api/event');
+  const unlisten = await listen<{got: number; of: number; retry: string | null}>('root-fetch', (e) => progress(e.payload.got, e.payload.of, e.payload.retry));
+  try { return await native<Installed>('root_use', {id}); } finally { unlisten(); }
 }
 
 const call = native;

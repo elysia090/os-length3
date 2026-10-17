@@ -11,6 +11,10 @@
 //!
 //! One known-good previous root is kept, so a bad update can be undone;
 //! older ones are what 空ける gives back.
+//!
+//! Other distributions' roots (Ubuntu, Debian) are held the same way: their
+//! makers' own root archive, taken only at the digest pinned here, unpacked
+//! by the same rules. A Prompt runs whichever root is current.
 
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -47,14 +51,110 @@ pub const RELEASES: &[Release] = &[Release {
     tag: "os-length3-linux-v0.1.0",
 }];
 
+/// Another distribution's root, as its makers publish it (a .tar.gz of the
+/// tree). Its programs are linked as they run, so it runs in the app only.
+#[derive(Debug)]
+pub struct Distro {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub version: &'static str,
+    pub url: &'static str,
+    pub sha256: &'static str,
+    pub bytes: u64,
+}
+
+/// The other roots l3 trusts: Ubuntu's base and Debian's official image root.
+pub const DISTROS: &[Distro] = &[Distro {
+    id: "ubuntu",
+    name: "Ubuntu",
+    version: "24.04.5 LTS",
+    url: "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.5-base-amd64.tar.gz",
+    sha256: "e77b6f10c2590cef872b33ee9f635a0e3fd1f57fb074c0e52b5c7f56147a0c86",
+    bytes: 30_028_293,
+}, Distro {
+    id: "debian",
+    name: "Debian",
+    version: "13",
+    url: "https://raw.githubusercontent.com/debuerreotype/docker-debian-artifacts/dist-amd64/trixie/oci/blobs/rootfs.tar.gz",
+    sha256: "4846f29007305297af653c57bf9b60ba8f676a38695c68d98460063442581671",
+    bytes: 49_393_200,
+}];
+
+pub fn distro(id: &str) -> Option<&'static Distro> {
+    DISTROS.iter().find(|d| d.id == id)
+}
+
 /// Where the publisher's release channel keeps it, should the Remote not have it.
 pub fn github_url(r: &Release) -> String {
     format!("https://github.com/elysia090/libqm-prototype/releases/download/{}/{}", r.tag, r.file)
 }
 
-/// The Remote serves releases by digest, to anyone (service/app.ts, /v1/os).
+/// The Remote serves roots by digest, to anyone (service/app.ts, /v1/os).
 pub fn release_url(remote: &str, r: &Release) -> String {
-    format!("{}/v1/os/{}", remote.trim_end_matches('/'), r.sha256)
+    by_digest(remote, r.sha256)
+}
+
+fn by_digest(remote: &str, sha256: &str) -> String {
+    format!("{}/v1/os/{}", remote.trim_end_matches('/'), sha256)
+}
+
+/// Fetch another distribution's root (the Remote by digest first, then its
+/// makers), install it, and make it the one Prompts use.
+pub fn fetch_distro(data: &Path, remote: &str, d: &Distro, progress: impl FnMut(crate::fetch::Progress)) -> Result<Installed, String> {
+    if let Some(had) = use_held(data, d.sha256) { return Ok(had); }
+    let bundles = system_dir(data).join(".bundles");
+    crate::boundary::private_dir(&system_dir(data)).map_err(|e| e.to_string())?;
+    fs::create_dir_all(&bundles).map_err(|e| e.to_string())?;
+    let archive = bundles.join(format!("{}.tar.gz", d.sha256));
+    let mut progress = progress;
+    if let Err(first) = crate::fetch::fetch(&by_digest(remote, d.sha256), d.sha256, d.bytes, &archive, &mut progress) {
+        crate::fetch::fetch(d.url, d.sha256, d.bytes, &archive, &mut progress).map_err(|e| format!("{first} / {e}"))?;
+    }
+    let installed = install_distro(data, d, &archive);
+    let _ = fs::remove_file(&archive);
+    installed
+}
+
+/// Install a distribution's root from its archive (already checked against its pin) and make it current.
+pub fn install_distro(data: &Path, d: &Distro, archive: &Path) -> Result<Installed, String> {
+    put_in_place(data, d.sha256, d.name, d.version, Some(d.id), |aside| {
+        let tree = aside.join("root");
+        fs::create_dir(&tree)?;
+        let counted = unpack(flate2::read::MultiGzDecoder::new(io::BufReader::new(fs::File::open(archive)?)), &tree)?;
+        ready_for_a_prompt(&tree)?;
+        Ok(counted)
+    })
+}
+
+/// What a distribution's root needs to work in a Prompt: there is one user
+/// in a Prompt's namespace, so apt does not drop to another for downloads,
+/// and dpkg need not wait on syncs the overlay makes cheap anyway.
+fn ready_for_a_prompt(tree: &Path) -> io::Result<()> {
+    let apt = tree.join("etc/apt/apt.conf.d");
+    if apt.is_dir() {
+        fs::write(apt.join("00length3"), "// A Prompt has one user: apt fetches as it, not as _apt,\n// and its log is not handed to a group (adm) the Prompt does not have.\nAPT::Sandbox::User \"root\";\nDir::Log::Terminal \"\";\n")?;
+    }
+    let dpkg = tree.join("etc/dpkg/dpkg.cfg.d");
+    if dpkg.is_dir() {
+        fs::write(dpkg.join("length3"), "force-unsafe-io\n")?;
+    }
+    Ok(())
+}
+
+/// Make a root held here the one Prompts use; None if it is not held.
+pub fn use_held(data: &Path, sha256: &str) -> Option<Installed> {
+    let dir = system_dir(data).join(sha256);
+    let about: Installed = serde_json::from_str(&fs::read_to_string(dir.join("installed.json")).ok()?).ok()?;
+    point_current(data, sha256).ok()?;
+    Some(about)
+}
+
+fn point_current(data: &Path, sha256: &str) -> Result<(), String> {
+    // A new link renamed over the old one: never a moment without one.
+    let link = system_dir(data).join(format!(".current.length3-{}-0", std::process::id()));
+    let _ = fs::remove_file(&link);
+    symlink(sha256, &link).map_err(|e| e.to_string())?;
+    fs::rename(&link, current_link(data)).map_err(|e| e.to_string())
 }
 
 /// Fetch the newest pinned release from the Remote and install it; the
@@ -89,6 +189,9 @@ pub struct Installed {
     /// say its size.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allocated: Option<u64>,
+    /// Another distribution's root (its id: ubuntu, debian); none for l3's own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub distro: Option<String>,
 }
 
 pub fn system_dir(data: &Path) -> PathBuf {
@@ -265,6 +368,8 @@ pub fn unpack(stream: impl Read, top: &Path) -> io::Result<(u64, u64)> {
             b'1' => Kind::Hardlink(link),
             other => return Err(bad(format!("tar: {name}: kind {:?} is not part of a root", other as char))),
         };
+        // The archive's own top (`./`, as Debian's has) is `top` itself.
+        if matches!(what, Kind::Dir) && Path::new(&name).components().all(|c| c == Component::CurDir) { continue; }
         let rel = place(&name)?;
         through_no_link(top, &rel)?;
         let path = top.join(&rel);
@@ -334,15 +439,20 @@ pub fn held(data: &Path) -> Vec<(Installed, bool)> {
 /// one rename. The root before stays, as the one to go back to.
 pub fn install(data: &Path, bundle: &Path) -> Result<Installed, String> {
     let release = identify(bundle)?;
+    put_in_place(data, release.sha256, release.name, release.version, None, |aside| fs::File::open(bundle).and_then(Frames::new).and_then(|z| unpack(z, aside)))
+}
+
+/// Unpack a root (by `fill`, into a directory aside), check it, then move it
+/// into place in one rename and make it current. Held already: only made current.
+fn put_in_place(data: &Path, sha256: &str, name: &str, version: &str, distro: Option<&str>, fill: impl FnOnce(&Path) -> io::Result<(u64, u64)>) -> Result<Installed, String> {
     let system = system_dir(data);
     crate::boundary::private_dir(&system).map_err(|e| e.to_string())?;
-    let dir = system.join(release.sha256);
+    let dir = system.join(sha256);
     if !dir.join("installed.json").exists() {
-        let aside = system.join(format!(".{}.length3-{}-0", release.sha256, std::process::id()));
+        let aside = system.join(format!(".{sha256}.length3-{}-0", std::process::id()));
         let _ = fs::remove_dir_all(&aside);
         fs::create_dir(&aside).map_err(|e| e.to_string())?;
-        let unpacked = fs::File::open(bundle).and_then(Frames::new).and_then(|z| unpack(z, &aside));
-        let (files, bytes) = match unpacked {
+        let (files, bytes) = match fill(&aside) {
             Ok(v) => v,
             Err(e) => { let _ = fs::remove_dir_all(&aside); return Err(crate::tr!("Could not unpack: {}", "展開できませんでした：{}", e)); }
         };
@@ -350,18 +460,14 @@ pub fn install(data: &Path, bundle: &Path) -> Result<Installed, String> {
             let _ = fs::remove_dir_all(&aside);
             return Err(crate::tr!("This release has no root/bin/sh", "このリリースには root/bin/sh がありません"));
         }
-        let about = Installed { name: release.name.into(), version: release.version.into(), sha256: release.sha256.into(), files, bytes, allocated: Some(crate::usage::allocated(&aside)) };
+        let about = Installed { name: name.into(), version: version.into(), sha256: sha256.into(), files, bytes,
+            allocated: Some(crate::usage::allocated(&aside)), distro: distro.map(String::from) };
         fs::write(aside.join("installed.json"), serde_json::to_string(&about).unwrap()).map_err(|e| e.to_string())?;
         let _ = fs::remove_dir_all(&dir);
         fs::rename(&aside, &dir).map_err(|e| e.to_string())?;
     }
-    // Point `current` at it by renaming a new link over the old one.
-    let link = system.join(format!(".current.length3-{}-0", std::process::id()));
-    let _ = fs::remove_file(&link);
-    symlink(release.sha256, &link).map_err(|e| e.to_string())?;
-    fs::rename(&link, current_link(data)).map_err(|e| e.to_string())?;
-    let about: Installed = serde_json::from_str(&fs::read_to_string(dir.join("installed.json")).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
-    Ok(about)
+    point_current(data, sha256)?;
+    serde_json::from_str(&fs::read_to_string(dir.join("installed.json")).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -426,6 +532,32 @@ mod tests {
             assert!(!Path::new("/etc/x").exists());
             let _ = fs::remove_dir_all(&d);
         }
+    }
+
+    #[test]
+    fn a_distribution_root_goes_in_from_its_tar_gz_and_back_out_by_its_digest() {
+        use std::io::Write;
+        let d = fresh("distro");
+        let t = tar(&[("etc/", b'5', b"", ""), ("etc/apt/", b'5', b"", ""), ("etc/apt/apt.conf.d/", b'5', b"", ""),
+            ("./", b'5', b"", ""), ("usr/", b'5', b"", ""), ("usr/bin/", b'5', b"", ""), ("usr/bin/dash", b'0', b"#!elf", ""), ("bin", b'2', b"", "usr/bin"), ("usr/bin/sh", b'2', b"", "dash")]);
+        let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        gz.write_all(&t).unwrap();
+        fs::write(d.join("a.tar.gz"), gz.finish().unwrap()).unwrap();
+        let ubuntu = distro("ubuntu").unwrap();
+        let data = d.join("data");
+        let r = install_distro(&data, ubuntu, &d.join("a.tar.gz")).unwrap();
+        assert_eq!((r.distro.as_deref(), r.files), (Some("ubuntu"), 1));
+        let (tree, about) = current(&data).unwrap();
+        assert_eq!(about.sha256, ubuntu.sha256);
+        // Ready for a Prompt's one user, and reached through its own /bin link.
+        assert!(fs::read_to_string(tree.join("etc/apt/apt.conf.d/00length3")).unwrap().contains("APT::Sandbox::User \"root\""));
+        assert!(tree.join("bin/sh").exists());
+        // Another made current, then this one again without fetching: it is held.
+        fs::remove_file(system_dir(&data).join("current")).unwrap();
+        assert!(current(&data).is_none());
+        assert_eq!(use_held(&data, ubuntu.sha256).unwrap().version, ubuntu.version);
+        assert!(use_held(&data, &"0".repeat(64)).is_none());
+        let _ = fs::remove_dir_all(&d);
     }
 
     #[test]

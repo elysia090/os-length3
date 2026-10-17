@@ -210,14 +210,19 @@ fn send_changed(words: &[String]) {
 
 #[cfg(target_os = "linux")]
 fn prompt(a: &Args, repo: &str, rest: &[&str]) -> Result<(), String> {
-    let (root, _) = length3_core::root::current(&paths::data_dir()).ok_or_else(|| tr!("No root yet (l3 root fetch)", "root がありません（l3 root fetch）"))?;
+    let (root, about) = length3_core::root::current(&paths::data_dir()).ok_or_else(|| tr!("No root yet (l3 root fetch)", "root がありません（l3 root fetch）"))?;
     let dir = Repos::open()?.dir(repo)?;
+    // Another distribution's own shell where there is a terminal to draw it on; sh otherwise.
+    use std::io::IsTerminal;
+    let bash = about.distro.is_some() && root.join("bin/bash").exists() && std::io::stdin().is_terminal();
     let argv: Vec<String> = match rest {
         ["--", cmd @ ..] if !cmd.is_empty() => cmd.iter().map(|s| s.to_string()).collect(),
-        [] => vec!["/bin/sh".into(), "-i".into()],
+        [] => vec![if bash { "/bin/bash" } else { "/bin/sh" }.into(), "-i".into()],
         _ => return Err("l3 prompt [REPO] [-- CMD…]".into()),
     };
     let s = length3_core::launch::Sandbox { root, repo: dir, name: repo.to_string(), argv, network: a.network, dotfiles: length3_core::launch::dotfiles(), data: Some(paths::data_dir()) };
+    // What .packages and .setup ask for, first (once, while they and the root stay as they are).
+    length3_core::launch::set_up(&s, about.distro.is_some()).map_err(|e| e.to_string())?;
     let code = length3_core::launch::run(&s).map_err(|e| e.to_string())?;
     send(repo);
     std::process::exit(code);
@@ -463,6 +468,34 @@ fn run(a: Args) -> Result<(), String> {
             eprintln!();
             if a.json { return json(r); }
             out(tr!("Installed {} {} ({} files · {})", "{} {} を入れました（{}ファイル · {}）", r.name, r.version, r.files, bytes(r.bytes)));
+            Ok(())
+        }
+        ["root", "use", which] => {
+            // l3's own (fetched if not held), or another distribution's root.
+            let data = paths::data_dir();
+            let url = remote::connection().map_or_else(remote::default_url, |c| c.url);
+            let mut last = 0u64;
+            let progress = |p: length3_core::fetch::Progress| match p {
+                length3_core::fetch::Progress::Bytes(got, all) if got - last >= 4 << 20 || got == all => {
+                    last = got;
+                    eprint!("\r{}", tr!("Fetching {} / {}", "取得中 {} / {}", bytes(got), bytes(all)));
+                }
+                length3_core::fetch::Progress::Retry(n, why) => eprintln!("\n{}", tr!("{}. Continuing where it stopped (try {})", "{}。続きから取ります（{}回目）", why, n)),
+                _ => {}
+            };
+            let r = match *which {
+                "l3" => match length3_core::root::use_held(&data, length3_core::root::RELEASES[0].sha256) {
+                    Some(r) => r,
+                    None => length3_core::root::fetch_and_install(&data, &url, progress)?,
+                },
+                id => {
+                    let d = length3_core::root::distro(id).ok_or_else(|| tr!("No such root: {} (l3, ubuntu or debian)", "そういう root はありません：{}（l3、ubuntu、debian）", id))?;
+                    length3_core::root::fetch_distro(&data, &url, d, progress)?
+                }
+            };
+            eprint!("\r");
+            if a.json { return json(r); }
+            out(tr!("Prompts run on {} {}", "Prompt は {} {} で動きます", r.name, r.version));
             Ok(())
         }
         ["root", "install", bundle] => {
