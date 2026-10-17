@@ -1,7 +1,7 @@
 import {h} from '../dom.ts';
 import * as gitops from '../history.ts';
 import {t, tn} from '../i18n.ts';
-import {readIssues, type Issue} from '../issues.ts';
+import {number, readIssues, type Issue} from '../issues.ts';
 import {bring, remoteOnly} from '../lifecycle.ts';
 import {connection} from '../remote.ts';
 import {onChange, store} from '../repos.ts';
@@ -41,7 +41,6 @@ export function git(ctx: Context): Node[] {
   const form = issueForm({done: (repo) => { write.hidden = false; if (repo) void paint(); }});
 
   let repos: string[] = [];
-  let missing: string[] = [];
   let at: string | null = null;
   let shown: Issue[] = [];
   let states = new Map<string, RepoState>();
@@ -115,8 +114,7 @@ export function git(ctx: Context): Node[] {
   };
   const draw = async () => {
     const all = await Promise.all(repos.map((r) => readIssues(store, r)));
-    missing = repos.filter((_, j) => all[j] === null);
-    const issues = all.flatMap((x, j) => (!filter || repos[j] === filter ? x ?? [] : []));
+    const issues = all.flatMap((x, j) => (!filter || repos[j] === filter ? x : []));
     // Where each repo stands: the work it shows, the issues started, the changes to main.
     const fresh = new Map<string, RepoState>();
     if (connection()) await Promise.all([...new Set(issues.map((i) => i.repo))].map(async (r) => {
@@ -130,6 +128,15 @@ export function git(ctx: Context): Node[] {
       fresh.set(r, {work, lines, changes, uncommitted});
     }));
     states = fresh;
+    // An issue without a number (written by hand, or two devices' met under one) takes the next free one;
+    // the store's change draws the page again. Not on main's behalf while a work is shown: that copy is the work's.
+    const renumbered = await Promise.all([...new Set(issues.filter((i) => i.n === null).map((i) => i.repo))].map((r) => {
+      const st = states.get(r);
+      if (!st || (st.work && st.work.line !== 'main')) return false;
+      const inUse = new Set([...st.lines.map((l) => l.issue), ...st.changes.map((c) => c.issue)]);
+      return number(store, r, issues.filter((i) => i.repo === r), inUse);
+    }));
+    if (renumbered.some(Boolean)) return;
     // Oldest first, so #1 is on the left; merged ones are done.
     shown = issues.filter((i) => unmerged(states.get(i.repo), i)).sort((a, b) => (a.repo === b.repo ? (a.file < b.file ? -1 : 1) : a.repo < b.repo ? -1 : 1));
     const done = issues.length - shown.length;
@@ -151,10 +158,8 @@ export function git(ctx: Context): Node[] {
   };
 
   write.addEventListener('click', () => {
-    const takers = repos.filter((r) => !missing.includes(r));
-    if (!takers.length) { empty.replaceChildren(h('p', {class: 'error'}, t('No repo has an issue/ folder'))); return; }
     write.hidden = true;
-    form.open(repos, takers, filter || at || takers[0]);
+    form.open(repos, filter || at || repos[0]);
   });
 
   const load = () => void store.list().then((r) => {

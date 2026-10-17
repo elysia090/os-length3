@@ -1,6 +1,7 @@
 import {h} from '../dom.ts';
 import {diffFiles} from './diff-view.ts';
 import * as gitops from '../history.ts';
+import {issueName, issuePath, readIssues, type Issue} from '../issues.ts';
 import {t, tn} from '../i18n.ts';
 import {onChange, store} from '../repos.ts';
 import {findInText, nameMatches, type Hit} from '../search.ts';
@@ -110,19 +111,18 @@ export class Reference {
     this.paint();
   }
 
-  /** Show one issue in full, with the way into its file. */
-  showIssue(issue: {repo: string; file: string; kind: string | null; title: string; detail: string}, open: () => void) {
+  /** One issue in full, from the list; its words open in the center to be changed. */
+  private showIssue(issue: Issue) {
+    const go = h('button', {type: 'button', class: 'button small-button'}, t('Change its words'));
+    go.addEventListener('click', () => this.events.reveal(issuePath(issue)));
+    const back = h('button', {type: 'button', class: 'button small-button'}, t('Every issue'));
+    back.addEventListener('click', () => { this.pinned = false; void this.issues(); });
+    // It stays while the repo changes, until the person goes back or chooses something else.
     this.pinned = true;
-    this.element.closest('.work')?.classList.remove('reviewing');
-    this.query.value = '';
-    for (const chip of this.chips.values()) chip.removeAttribute('aria-current');
-    const go = h('button', {type: 'button', class: 'button'}, t('Open in Forge'));
-    go.addEventListener('click', open);
     this.body.replaceChildren(h('article', {class: 'issue-one'},
-      h('h3', {}, issue.kind ? h('span', {class: 'issue-kind'}, `${issue.kind}：`) : null, issue.title),
-      h('p', {class: 'issue-where muted'}, `${issue.repo} · issue/${issue.file}`),
+      h('h3', {}, issueName(issue) ? h('span', {class: 'issue-no'}, `${issueName(issue)} `) : null, issue.kind ? h('span', {class: 'issue-kind'}, `${issue.kind}：`) : null, issue.title),
       issue.detail ? h('p', {class: 'issue-body'}, issue.detail) : null,
-      h('div', {class: 'row'}, go)));
+      h('div', {class: 'row'}, back, go)));
   }
 
   private choose(view: View) {
@@ -236,23 +236,17 @@ export class Reference {
     }, (e) => diff.replaceChildren(h('p', {class: 'error'}, e instanceof Error ? e.message : String(e))));
   }
 
-  /** The repo's issue/ directory, one line per file. */
+  /** The repo's issues, one line each (#3 Fix：its title); pressed, one is shown in full. */
   private async issues() {
     const repo = this.repo;
     // No repo: nothing to refer to, and nothing said about it here.
     if (!repo) { this.body.replaceChildren(); return; }
-    let names: string[];
-    try {
-      names = (await store.tree(repo, 'issue')).filter((e) => e.kind === 'file').map((e) => e.name);
-    } catch {
-      if (this.repo === repo && this.view === 'issue' && !this.query.value.trim() && !this.pinned) this.empty(t('No issue/ here'));
-      return;
-    }
+    const list = await readIssues(store, repo);
     if (this.repo !== repo || this.view !== 'issue' || this.query.value.trim() || this.pinned) return;
-    if (!names.length) { this.empty(t('No Issues yet')); return; }
-    this.body.replaceChildren(h('ul', {class: 'issue-list'}, ...names.map((n) => {
-      const b = h('button', {type: 'button', class: 'link'}, n);
-      b.addEventListener('click', () => this.events.reveal(`issue/${n}`));
+    if (!list.length) { this.empty(t('No Issues yet')); return; }
+    this.body.replaceChildren(h('ul', {class: 'issue-list'}, ...list.map((i) => {
+      const b = h('button', {type: 'button', class: 'link'}, issueName(i) ? h('span', {class: 'issue-no'}, `${issueName(i)} `) : null, i.kind ? `${i.kind}：` : '', i.title);
+      b.addEventListener('click', () => this.showIssue(i));
       return h('li', {}, b);
     })));
   }

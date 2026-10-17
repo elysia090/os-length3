@@ -1,10 +1,11 @@
 import {ago, h} from '../dom.ts';
 import * as git from '../history.ts';
 import {t, tn} from '../i18n.ts';
-import type {Issue} from '../issues.ts';
+import {issueName, issuePath, type Issue} from '../issues.ts';
 import {connection} from '../remote.ts';
 import {named} from '../text.ts';
 import {diffFiles} from './diff-view.ts';
+import {issueEditor} from './issue-form.ts';
 
 // An issue on the Git page, as one large box (issue #17). Its branch and
 // worktree are never named: Start gives the issue its own copy of the repo,
@@ -27,8 +28,6 @@ export interface IssueEvents {
 export interface RepoState { work: git.Work | null; lines: git.Line[]; changes: git.Change[]; uncommitted: number }
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
-/** issue/001.md is #1; a name that is not a number is itself. */
-export const issueNumber = (file: string) => { const n = /^0*(\d+)\.md$/.exec(file); return n ? `#${n[1]}` : file.replace(/\.md$/, ''); };
 
 function button(text: string, primary = false): HTMLButtonElement {
   return h('button', {class: primary ? 'button primary' : 'button', type: 'button'}, text) as HTMLButtonElement;
@@ -44,14 +43,14 @@ const doing = (b: HTMLButtonElement, error: HTMLElement, f: () => Promise<unknow
 };
 
 /** The issue's change (the latest record of it). */
-export const changeOf = (s: RepoState | undefined, issue: Issue) => s?.changes.find((x) => x.issue === `issue/${issue.file}`) ?? null;
+export const changeOf = (s: RepoState | undefined, issue: Issue) => s?.changes.find((x) => x.issue === issuePath(issue)) ?? null;
 /** Still to do: not merged into main. */
 export const unmerged = (s: RepoState | undefined, issue: Issue) => changeOf(s, issue)?.state !== 'merged';
-const hereOf = (s: RepoState | undefined, issue: Issue) => !!s?.work && s.work.line !== 'main' && s.work.issue === `issue/${issue.file}`;
+const hereOf = (s: RepoState | undefined, issue: Issue) => !!s?.work && s.work.line !== 'main' && s.work.issue === issuePath(issue);
 
 /** Where the issue stands, quietly, in a few words. */
 function standing(s: RepoState | undefined, issue: Issue): string {
-  const path = `issue/${issue.file}`;
+  const path = issuePath(issue);
   const c = changeOf(s, issue);
   const w = s?.work;
   // Worked on here: who and when; the boxes under it say the rest.
@@ -65,14 +64,15 @@ function standing(s: RepoState | undefined, issue: Issue): string {
 
 /** The head of an issue's box: its number and title. */
 export function issueHead(issue: Issue): HTMLElement {
-  return h('header', {class: 'issue-big-head'},
-    h('h2', {}, h('span', {class: 'issue-no'}, issueNumber(issue.file)), ' ', issue.kind ? h('span', {class: 'issue-kind'}, `${issue.kind}：`) : null, issue.title));
+  const no = issueName(issue);
+  return h('div', {class: 'issue-big-head'},
+    h('h2', {}, no ? h('span', {class: 'issue-no'}, no) : null, no ? ' ' : null, issue.kind ? h('span', {class: 'issue-kind'}, `${issue.kind}：`) : null, issue.title));
 }
 
 /** The box: the issue's words, where it stands, and the way into its work (or back out). */
 export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEvents, after: () => void): HTMLElement {
   const at = issue.repo;
-  const path = `issue/${issue.file}`;
+  const path = issuePath(issue);
   const error = h('p', {class: 'error', role: 'alert'});
   const line = s?.lines.find((l) => l.issue === path) ?? null;
   const here = hereOf(s, issue);
@@ -90,16 +90,17 @@ export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEv
     leave.addEventListener('click', doing(leave, error, async () => { await git.switchWork(at, 'main'); events.moved(at); }, after));
     acts.push(leave);
   }
-  // At the box's foot, opposite its action: where the issue lives (which
-  // opens the file) and, quietly, who started it and when.
-  const place = h('button', {type: 'button', class: 'link issue-where'}, `${issue.repo} · ${path}`);
-  place.addEventListener('click', () => events.open(at, path));
+  // At the box's foot, opposite its action: its repo and, quietly, who started it and when.
   const say = connection() ? standing(s, issue) : t('History and work are kept on the Remote. Sign in to it to work on an issue and commit.');
-  return h('div', {class: 'issue-box'},
-    issueHead(issue),
-    issue.detail ? h('p', {class: 'issue-body'}, issue.detail) : null,
+  // Its words are changed where they are read: pressed, the head and the detail become the fields they were written in.
+  const words = h('button', {type: 'button', class: 'issue-words', title: t('Change its words')},
+    issueHead(issue), issue.detail ? h('p', {class: 'issue-body'}, issue.detail) : null);
+  const box = h('div', {class: 'issue-box'},
+    words,
     ...(here && s?.work ? [steps(issue, s, events, after)] : change?.state === 'open' ? [received(change)] : []),
-    h('div', {class: 'issue-foot'}, h('div', {class: 'issue-about'}, place, say ? h('span', {class: 'muted small'}, say) : null), ...acts), error);
+    h('div', {class: 'issue-foot'}, h('div', {class: 'issue-about'}, h('span', {class: 'issue-where'}, issue.repo), say ? h('span', {class: 'muted small'}, say) : null), ...acts), error);
+  words.addEventListener('click', () => words.replaceWith(issueEditor(issue, (saved) => { if (saved) after(); else box.replaceWith(issueBox(issue, s, events, after)); })));
+  return box;
 }
 
 /** A step's place at the left: its button, or once done the done mark and the same word (green says it is done). */

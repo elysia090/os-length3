@@ -654,7 +654,11 @@ mark { background: var(--ink); color: var(--ground); }
 .issue-big-head h2 { margin: 0; font-size: var(--t-card); font-weight: 600; }
 .issue-no { color: var(--sub); }
 .issue-box { display: grid; gap: var(--s3); }
-.issue-box > .issue-body { margin: 0; max-width: 72ch; }
+.issue-box > .issue-body, .issue-words > .issue-body { margin: 0; max-width: 72ch; }
+/* An issue's words are where they are changed: pressed, they become their fields. */
+.issue-words { display: grid; gap: var(--s3); width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: text; border-radius: var(--r-field); }
+.issue-words:focus-visible { outline: 2px solid var(--ink); outline-offset: var(--s1); }
+.issue-form.issue-edit { margin: 0; padding: 0; border: 0; }
 .issue-box > .work-act { margin-top: var(--s2); flex-wrap: wrap; }
 /* The box's foot: where it lives and who started it at the left, its action at the right. */
 .issue-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); margin-top: var(--s2); }

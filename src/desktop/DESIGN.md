@@ -471,8 +471,8 @@ The GUI and the command line are two ways into the same things. `l3`'s
 nouns and order are the rail's: Home (`todo`), Forge (`repo`, `prompt`),
 File (`file`), Git (`issue`, `start`, `commit`, `push`, `change`, `reset`, `review`, `merge`, `log`), Runtime (`runtime`, `free`),
 Remote (`remote`, `login`, `sync`); a path is written as File shows it (`/root/<repo>/…`). A line is
-named the same way everywhere ("Fix：件名"), issues are the same numbered
-files, and Home's state is the same files, so anything done in one shows in
+named the same way everywhere ("Fix：件名"), an issue is called by its
+number in both (#3), and Home's state is the same files, so anything done in one shows in
 the other. The Prompt's shell works on the repo itself: what it changes is
 written back, and what is saved elsewhere comes in.
 
@@ -647,7 +647,7 @@ parts, the Prompt 3): the reference scrolls and the Prompt does not, so the
 eye should not have to drop low to find it. On the band's line sits the search box for the open
 repo: plain, case-insensitive, line by line; results are grouped by file,
 and a line pressed opens the center there with the line selected. Below,
-on the band line, one reference at a time, switched freely with chips: Issue (the repo's `issue/`, one file each), diff (the changes not yet
+on the band line, one reference at a time, switched freely with chips: Issue (the repo's issues, one line each as #3 Fix：件名, pressed to read one in full), diff (the changes not yet
 cut, file by file: added lines raised, removed lines quiet and struck,
 following every save; desktop only, as git is) and 実行結果 (each line sent
 from the prompt box, newest first: the line, how long it took or that it
@@ -765,18 +765,23 @@ box at its foot, and the narrow right pane with the search box, the
 reference and the Prompt. The page header, then the repo chips (one repo or
 all); choosing a repo also points the right pane and the Prompt at it.
 
-- **Issues**: every issue not merged yet, read straight from each repo's
-  `issue/`, one numbered file each (001.md, 002.md, …, in the order
-  written), so nothing is kept twice. Under the heading (its count, and
+- **Issues**: every issue not merged yet. An issue is its number and its
+  words ("#3 Fix：件名", then the detail); that is all a person meets. Any
+  repo takes one, and it takes the repo's next number. How it is kept is the
+  OS's business: one plain file in the repo's `issue/`, named by its number,
+  so l3 and a Prompt see the same thing and nothing is kept twice; a file
+  there with no number (written by hand, or two devices' issues that met
+  under one number) is given the next free one. Under the heading (its count, and
   「Issue を書く」) the issues are large boxes side by side, oldest first:
   one in full, its neighbours' edges showing at the sides. The current box
   is a large place, an `ink` edge over `raised`. An edge is a clear button
   over the neighbour, which lifts (`raised`) while hovered; pressing it, or
   ← →, slides the track there (280 ms, the one movement). The first box
   starts at the column's edge and the last ends at it.
-- **The box**: the issue's number and name ("#1 Fix：件名"), where it lives
-  (`repo · issue/001.md`, which opens the file), its detail, one quiet line
-  of who started it and when, and Start (Continue here, if it was started)
+- **The box**: the issue's number and name ("#1 Fix：件名") and its detail,
+  changed where they are read (pressed, they become the fields they were
+  written in, Save and Not now under them), one quiet line of its repo and
+  who started it and when, and Start (Continue here, if it was started)
   or, while it is worked on here, Back to main. Start gives the issue its own
   copy of the repo, which File, Forge and the Prompt show; the layout says
   this, no sentence explains it. A merged work is done: the repo shows main
@@ -793,9 +798,9 @@ all); choosing a repo also points the right pane and the Prompt at it.
   button moves. Pushing hands the work to main as its change, again as the
   next version; Reset at the Push row's right end takes it back while it is
   undecided. A change received from someone else shows Commit and Push done.
-- **The card's foot**: where the issue lives (`repo · issue/001.md`, which
-  opens the file) and who started it and when, at the left; its action
-  (Start, Continue here, Back to main) at the right.
+- **The card's foot**: its repo and who started it and when, at the left;
+  its action (Start, Continue here, Back to main) at the right. No file name
+  is shown anywhere an issue is.
 - **A diff**, wherever it shows: each file a fold, its name (which opens it)
   and what was added and removed (+56 −2); each line with which line it is.
   The first three files are open, the rest wait closed, so a large change

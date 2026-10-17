@@ -62,7 +62,6 @@ export default {
   '{n} lines (only the first)': '{n}行（先頭だけ）',
   'Nothing run yet': 'まだ実行していません',
   'No changes': '変更はありません',
-  'No issue/ here': 'issue/ がありません',
   'No Issues yet': 'Issue はまだありません',
   'Running': '実行中',
 

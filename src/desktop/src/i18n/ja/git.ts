@@ -49,7 +49,6 @@ export default {
   'Reading…': '読み込み中…',
   'All': 'すべて',
   'No issues yet': 'Issue はまだありません',
-  'No repo has an issue/ folder': 'issue/ のある repo がありません',
   'Issues': 'Issue',
   'Both changed these files; fix them in the work, push and make the change again: {files}': '両方で変わったファイルがあります。作業の側で直して Push し、もう一度 Change してください：{files}',
   'This work has no change yet': 'この作業にはまだ Change がありません',
@@ -85,4 +84,6 @@ export default {
   'Nothing committed yet': 'Commit はまだありません',
   'Approved by {who}': '{who}が承認',
   'Not approved yet': 'まだ承認されていません',
+  'Change its words': '文面を直す',
+  'Every issue': 'Issue 一覧',
 } as Record<string, string>;
