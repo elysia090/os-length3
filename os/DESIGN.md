@@ -1087,7 +1087,8 @@ it, two columns: on the left, filling it, what the repo is for (概要), a
 raised box written straight into as a TODO's detail is, reaching down as
 far as the column beside it, whose words go into the repo's README.md under
 its title; on the right, level with it, the template as chips like the
-reference's (one chosen, ink), and under the chips what will be made,
+reference's (one chosen, ink) with no label over them, standing where the
+summary's label stands, and under the chips what will be made,
 shown exactly as File will show it: a card of tree rows under `root`, the
 new repo's name bold, its folders open. Then 作成, the one primary action,
 under both. Narrow, they stack: name, what it is for, template, the files.

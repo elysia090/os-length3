@@ -104,8 +104,9 @@ export function newRepo(ctx: Context): Node[] {
     h('div', {class: 'field name-field'}, h('label', {class: 'field-label', for: 'repo-name'}, t('Name')), name,
       h('span', {id: 'repo-name-rule', class: 'muted small'}, t('Letters, digits and . _ -, up to 64 characters')), error),
     h('div', {class: 'field summary-field'}, h('span', {class: 'field-label', id: 'repo-summary-label'}, t('Summary')), summaryBox),
-    h('div', {class: 'field template-field'}, h('span', {class: 'field-label', id: 'template-label'}, t('Template')),
-      h('div', {class: 'chips', role: 'radiogroup', 'aria-labelledby': 'template-label'}, ...chips), card),
+    // The chips say what they are by themselves: no label over them, so they stand level with the summary's.
+    h('div', {class: 'field template-field'},
+      h('div', {class: 'chips', role: 'radiogroup', 'aria-label': t('Template')}, ...chips), card),
     actions);
   name.addEventListener('input', () => { error.textContent = ''; showFiles(); });
   form.addEventListener('submit', async (event) => {
