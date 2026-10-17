@@ -68,18 +68,47 @@ export async function gear(s: servers.Server, w: GearWays): Promise<void> {
     tabs.count('boards', s.boards.filter((b) => !b.gone).length);
     const mine = (await Promise.all(people.map(async (p) => ((await w.isMe(p.address)) ? p.address : null)))).find(Boolean) ?? null;
 
-    // Its people: anyone in it adds someone they know; only its owner takes someone out.
+    // Its people: anyone in it adds someone they know; only its owner takes someone out. Pressed, the
+    // dashed card is the card that adds: one's contacts not in it yet, each a press away, and a name or
+    // a code for anyone else, asked in the Inbox and in once they accept.
     const add = h('button', {type: 'button', class: 'card small-card new'}, t('Add someone you know')) as HTMLButtonElement;
     add.addEventListener('click', async () => {
+      const inbox = await import('../inbox.ts');
       let known: {address: string}[] = [], why = '';
-      try { known = (await import('../inbox.ts').then((inbox) => inbox.threads())).filter((x) => x.state === 'contact' && !people.some((p) => p.address === x.address)); } catch (e) { why = message(e); }
-      const pick = h('div', {class: 'card small-card'}, h('span', {class: 'card-title'}, t('Add someone you know')),
-        ...(why ? [h('p', {class: 'error small'}, why)] : known.length ? known.map((x) => {
+      try { known = (await inbox.threads()).filter((x) => x.state === 'contact' && !people.some((p) => p.address === x.address)); } catch (e) { why = message(e); }
+      const typed = h('input', {class: 'line-in', placeholder: t('A name or a code'), 'aria-label': t('Name or code of someone to add'),
+        autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
+      const go = button(t('Add'), 'small-button primary');
+      const said = h('p', {class: 'muted small', role: 'status'});
+      const ways: servers.AddWays = {
+        lookup: (x) => inbox.lookup(x),
+        add: (id, address) => servers.addPerson(id, address),
+        ask: (address, body, server) => inbox.send(address, body, 'message', {server}),
+      };
+      const adding = async () => {
+        if (!typed.value.trim() || go.disabled) { typed.focus(); return; }
+        go.disabled = true;
+        said.className = 'muted small';
+        try {
+          const r = await servers.addByName(s, typed.value, people.map((p) => p.address), ways);
+          if (r.is === 'in') { w.again(); return; }
+          said.textContent = r.is === 'already' ? t('{who} is in it already', {who: named(r.address)})
+            : t('Asked {who} in the Inbox. They come in once they accept you.', {who: named(r.address)});
+          typed.value = '';
+        } catch (e) { said.className = 'error small'; said.textContent = message(e); typed.focus(); }
+        go.disabled = false;
+      };
+      go.addEventListener('click', () => void adding());
+      typed.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); void adding(); } });
+      const pick = h('div', {class: 'card small-card add-card'}, h('span', {class: 'card-title'}, t('Add someone you know')),
+        ...(why ? [h('p', {class: 'error small'}, why)] : known.map((x) => {
           const b = button(named(x.address), 'small-button');
           b.addEventListener('click', async () => { b.disabled = true; try { await servers.addPerson(s.id, x.address); w.again(); } catch (e) { b.textContent = message(e); } });
           return b;
-        }) : [line(t('Everyone you know is in it. Others come from your Inbox contacts.'))]));
+        })),
+        h('div', {class: 'row add-by-name'}, typed, go), said);
       add.replaceWith(pick);
+      typed.focus();
     });
     grid('people', ...people.map((p) => {
       const c = smallCard(named(p.address), line(p.owner ? t('owner') : p.address === mine ? t('you') : ''));

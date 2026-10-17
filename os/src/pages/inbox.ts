@@ -2,6 +2,8 @@ import {ago, day, h} from '../dom.ts';
 import {t} from '../i18n.ts';
 import * as inbox from '../inbox.ts';
 import {connection} from '../remote.ts';
+import {look} from '../news.ts';
+import {Drafts} from '../drafts.ts';
 import {kindOf} from '../text.ts';
 import {mark} from '../icons.ts';
 import {pageHead, SETTLE} from './common.ts';
@@ -178,12 +180,23 @@ export function written(text: string): {kind: inbox.Kind; body: string; target: 
   return {kind: type, body, target: at ? {repo: at[1], ...(at[2] ? {issue: at[2]} : {})} : {}};
 }
 
+/**
+ * What is half written stays with what it was written for: each conversation's message by its
+ * address, and the name or code being written to, kept while the app runs (as Forge keeps a
+ * prompt by its repo), swapped with the conversation and gone only when it is sent.
+ */
+const drafts = new Drafts();
+/** The name or code being written to, under its own key. */
+const TO = '\0to';
+
 export function inboxPage(ctx: Context): Node[] {
   const holder = h('div', {});
   let open: string | null = null;
   let live: inbox.Live | null = null;
   let mine = '';
   let poll = 0;
+  /** The open conversation: the time of the newest it has, and how to take in what came since. */
+  let shownThread: {address: string; on: inbox.Conversation; more(): Promise<void>} | null = null;
 
   const paint = async () => {
     if (!connection()) {
@@ -195,61 +208,78 @@ export function inboxPage(ctx: Context): Node[] {
     try { me = await inbox.me(); } catch (e) { holder.replaceChildren(h('p', {class: 'error'}, message(e))); return; }
     if (!me.addresses.length) { holder.replaceChildren(addressStub(me, () => void paint())); return; }
     mine = me.addresses[0].address;
-    const list = h('nav', {class: 'inbox-list', 'aria-label': t('Conversations')});
-    const pane = h('section', {class: 'inbox-thread', 'aria-live': 'polite'});
-    holder.replaceChildren(
-      addressStub(me, () => void paint()),
-      h('div', {class: 'inbox-box'}, list, pane));
-    await paintList(list, pane);
-  };
-
-  const paintList = async (list: HTMLElement, pane: HTMLElement) => {
-    let all: inbox.Thread[] = [], unread = '';
-    try { all = await inbox.threads(); } catch (e) { unread = message(e); }
+    // The field to write to someone new is made once: what comes every little while changes only the rows under it.
     const to = h('input', {class: 'line-in', placeholder: t('Write to a name or a code'), 'aria-label': t('Write to a name or a code'), autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
+    to.value = drafts.get(TO);
+    to.addEventListener('input', () => drafts.set(TO, to.value));
     const start = button(t('Write'), 'small-button');
     const error = h('p', {class: 'error', role: 'alert'});
+    const rows = h('div', {class: 'inbox-rows'});
+    const list = h('nav', {class: 'inbox-list', 'aria-label': t('Conversations')}, h('div', {class: 'row inbox-new'}, to, start), error, rows);
+    const pane = h('section', {class: 'inbox-thread', 'aria-live': 'polite'});
     to.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) start.click(); });
     start.addEventListener('click', async () => {
       if (!to.value.trim()) { to.focus(); return; }
+      error.textContent = '';
       const found: {address?: string; reachable: boolean; why?: string} = await inbox.lookup(to.value).catch((e) => ({reachable: false, why: message(e)}));
       if (!found.reachable) { error.textContent = t('Cannot reach {address} ({why})', {address: to.value, why: t(found.why ?? '')}); return; }
-      void show(found.address!, list, pane);
+      // Gone to: the field has done its work.
+      to.value = '';
+      drafts.sent(TO);
+      void show(found.address!, rows, pane);
     });
+    holder.replaceChildren(
+      addressStub(me, () => void paint()),
+      h('div', {class: 'inbox-box'}, list, pane));
+    await paintList(rows, pane);
+  };
+
+  const paintList = async (rows: HTMLElement, pane: HTMLElement) => {
+    let all: inbox.Thread[] = [], unread = '';
+    try { all = await inbox.threads(); } catch (e) { unread = message(e); }
     const row = (th: inbox.Thread) => {
+      // The open one is being read: what came to it is not counted as waiting.
+      const waiting = th.address === open ? 0 : th.unread;
       const b = h('button', {type: 'button', class: 'inbox-row', 'data-state': th.state, 'data-address': th.address},
-        h('span', {class: 'inbox-who'}, h('b', {}, th.name || inbox.shown(th.address)), th.unread ? h('span', {class: 'unread'}, `${th.unread}`) : null),
+        h('span', {class: 'inbox-who'}, h('b', {}, th.name || inbox.shown(th.address)), waiting ? h('span', {class: 'unread'}, `${waiting}`) : null),
         h('span', {class: 'muted small mono'}, inbox.shown(th.address)),
         h('span', {class: 'muted small inbox-last'}, `${th.last.mine ? t('You: ') : ''}${th.last.type === 'message' ? '' : `${KIND(th.last.type)} · `}${th.last.body}`));
       if (th.address === open) b.setAttribute('aria-current', 'true');
-      b.addEventListener('click', () => void show(th.address, list, pane));
+      b.addEventListener('click', () => void show(th.address, rows, pane));
       return b;
     };
     const contacts = all.filter((x) => x.state === 'contact'), requests = all.filter((x) => x.state === 'request');
-    list.replaceChildren(
-      h('div', {class: 'row inbox-new'}, to, start), error,
+    // The keyboard on a row stays on that row as the rows are drawn again.
+    const had = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>('.inbox-row')?.dataset.address;
+    rows.replaceChildren(
       // Not read: said where the conversations would be, not shown as none.
       ...(unread ? [h('p', {class: 'error'}, unread)] : []),
       ...contacts.map(row),
       ...(requests.length ? [h('h3', {class: 'inbox-head'}, t('Requests')), ...requests.map(row)] : []));
+    if (had) rows.querySelector<HTMLElement>(`.inbox-row[data-address="${CSS.escape(had)}"]`)?.focus();
     // One quiet line in the open pane says what to do; none yet, it says so instead.
     if (!open && !unread) pane.replaceChildren(h('p', {class: 'quiet'}, all.length ? t('Choose a conversation, or write to a name or a code.') : t('No messages yet. Write to someone by their name or code.')));
+    // What came to the open conversation since it was drawn is put at its foot.
+    const open_ = shownThread;
+    const now = open_ && all.find((x) => x.address === open_.address);
+    if (open_ && now && open_.on.behind(now)) await open_.more();
   };
 
-  const show = async (address: string, list: HTMLElement, pane: HTMLElement) => {
+  const show = async (address: string, rows: HTMLElement, pane: HTMLElement) => {
     open = address;
     live?.stop();
     live = null;
+    shownThread = null;
     const th = await inbox.thread(address).catch((e) => { pane.replaceChildren(h('p', {class: 'error'}, message(e))); return null; });
-    if (!th) return;
-    // Read is said again the next time the conversation opens; nothing waits on it.
-    void inbox.markRead(address).catch(() => {});
+    if (!th || open !== address) return;
+    // Read is said again the next time the conversation opens; nothing waits on it. The rail's mark follows.
+    const read = () => void inbox.markRead(address).then(() => look(), () => {});
+    read();
     const lineWord = h('span', {class: 'muted small'}, t('Through the Remote'));
     const messages = h('div', {class: 'inbox-messages'});
-    const seen = new Set<string>();
-    const add = (m: inbox.Message) => {
-      if (seen.has(m.id)) return;
-      seen.add(m.id);
+    const on = new inbox.Conversation();
+    /** A message as a bubble at the foot. */
+    const bubble = (m: inbox.Message) => {
       const about = [m.target.repo, m.target.issue, m.target.change ? t('change {id}', {id: String(m.target.change).slice(0, 8)}) : ''].filter(Boolean).join(' · ');
       const go = m.target.repo ? (() => {
         const b = h('button', {type: 'button', class: 'link'}, about);
@@ -262,21 +292,42 @@ export function inboxPage(ctx: Context): Node[] {
         h('span', {class: 'muted small'}, `${ago(m.time)}${m.live ? ` · ${t('direct')}` : ''}`)));
       messages.scrollTop = messages.scrollHeight;
     };
-    th.messages.forEach(add);
+    // What the Remote gives is taken in once (its newest noted by its clock); what is added here,
+    // sent or come over the direct line, is drawn once too, and not again when the Remote gives it.
+    on.took(th.messages).forEach(bubble);
+    const add = (m: inbox.Message) => { if (on.have(m)) bubble(m); };
+    // Accepted both ways: a direct line between the two devices, when both are here.
+    const startLive = () => {
+      live = new inbox.Live(mine, address, add, (direct) => { lineWord.textContent = direct ? t('Direct') : t('Through the Remote'); });
+      live.start();
+    };
+    // Taken in every little while through the Remote: what is not here yet goes at the foot, and is read.
+    const more = async () => {
+      const now = await inbox.thread(address).catch(() => null);
+      if (!now || open !== address || !pane.contains(messages)) return;
+      const came = on.took(now.messages);
+      came.forEach(bubble);
+      if (came.some((m) => !m.mine)) read();
+      // Accepted both ways meanwhile: the direct line can open now.
+      if (now.mutual && !live) startLive();
+    };
+    shownThread = {address, on, more};
     // Accept or block someone who wrote first.
     const decide: Node[] = [];
     if (th.state === 'request') {
       const yes = button(t('Accept'), 'small-button primary'), no = button(t('Block'), 'small-button');
-      yes.addEventListener('click', async () => { await inbox.setContact(address, 'accepted'); void show(address, list, pane); void paintList(list, pane); });
-      no.addEventListener('click', async () => { await inbox.setContact(address, 'blocked'); open = null; void paintList(list, pane); });
+      yes.addEventListener('click', async () => { await inbox.setContact(address, 'accepted'); void show(address, rows, pane); void paintList(rows, pane); });
+      no.addEventListener('click', async () => { await inbox.setContact(address, 'blocked'); open = null; shownThread = null; void paintList(rows, pane); });
       decide.push(yes, no);
     }
     // Writing is one line that grows as it is written. What it is reads off the text the way
     // an issue is named ("Review：…", "Question：…"), and a /root/… path in it says what it
-    // is about; nothing else to choose. Enter is a new line; Ctrl+Enter sends.
+    // is about; nothing else to choose. Enter is a new line; Ctrl+Enter sends. What is half
+    // written stays with this conversation, here when it is opened again.
     const text = h('textarea', {class: 'line-in bubble-in', rows: '1', placeholder: t('Write to {address}…', {address: inbox.shown(address)}), 'aria-label': t('Message'), maxlength: '4000'}) as HTMLTextAreaElement;
+    text.value = drafts.get(address);
     const grow = () => { text.style.height = 'auto'; text.style.height = `${Math.min(text.scrollHeight + 2, 200)}px`; };
-    text.addEventListener('input', grow);
+    text.addEventListener('input', () => { drafts.set(address, text.value); grow(); });
     const sendB = button(t('Send'), 'primary');
     const error = h('p', {class: 'error', role: 'alert'});
     const go = async () => {
@@ -290,6 +341,7 @@ export function inboxPage(ctx: Context): Node[] {
         live?.say(m);
         add({...m, live: live?.open});
         text.value = '';
+        drafts.sent(address);
         grow();
         if (r.request) error.textContent = t('Sent as a request: they see it once they accept you.');
       } catch (e) { error.textContent = message(e); }
@@ -303,21 +355,23 @@ export function inboxPage(ctx: Context): Node[] {
       h('div', {class: 'inbox-write'},
         h('div', {class: 'row write-line'}, text, sendB),
         h('p', {class: 'muted small write-hint'}, t('Review： or Question： first to ask · a /root/… path says what it is about · Ctrl+Enter sends')), error));
+    if (text.value) grow();
     text.focus();
-    // Accepted both ways: a direct line between the two devices, when both are here.
-    if (th.mutual) {
-      live = new inbox.Live(mine, address, add, (on) => { lineWord.textContent = on ? t('Direct') : t('Through the Remote'); });
-      live.start();
+    text.setSelectionRange(text.value.length, text.value.length);
+    if (th.mutual) startLive();
+    for (const b of rows.querySelectorAll<HTMLElement>('.inbox-row')) {
+      b.toggleAttribute('aria-current', b.dataset.address === address);
+      // Opened, its count is read.
+      if (b.dataset.address === address) b.querySelector('.unread')?.remove();
     }
-    for (const b of list.querySelectorAll<HTMLElement>('.inbox-row')) b.toggleAttribute('aria-current', b.dataset.address === address);
   };
 
   void paint();
-  // New messages through the Remote are looked for while the page is shown.
+  // New messages through the Remote are looked for while the page is shown: the rows, and the open conversation.
   poll = window.setInterval(() => {
     if (!holder.isConnected) { clearInterval(poll); live?.stop(); return; }
-    const list = holder.querySelector<HTMLElement>('.inbox-list'), pane = holder.querySelector<HTMLElement>('.inbox-thread');
-    if (list && pane && document.visibilityState === 'visible') void paintList(list, pane);
+    const rows = holder.querySelector<HTMLElement>('.inbox-rows'), pane = holder.querySelector<HTMLElement>('.inbox-thread');
+    if (rows && pane && document.visibilityState === 'visible') void paintList(rows, pane);
   }, 10_000);
   return [pageHead('inbox'), holder];
 }

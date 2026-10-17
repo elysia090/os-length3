@@ -52,6 +52,34 @@ export const people = (id: string) => call<Person[]>(`/v1/servers/${id}/people`)
 export const addPerson = (id: string, address: string) => call<Person[]>(`/v1/servers/${id}/people`, send('POST', {address}));
 export const removePerson = (id: string, address: string) => call<void>(`/v1/servers/${id}/people/${encodeURIComponent(address)}`, send('DELETE'));
 
+/** How adding someone by a name or a code reaches the Remote (the Inbox's lookup and send, Server's adding); a test gives its own. */
+export interface AddWays {
+  lookup(typed: string): Promise<{address?: string; reachable: boolean; why?: string}>;
+  add(server: string, address: string): Promise<unknown>;
+  ask(address: string, body: string, server: string): Promise<{request: boolean}>;
+}
+/** How adding someone came out: in now, already in, or asked in the Inbox and in once they accept. */
+export type Added = {address: string; is: 'in' | 'already' | 'asked'};
+
+/**
+ * Someone added to a server by their name or code, though they are not one's contact yet. In
+ * at once when the two have accepted each other. Otherwise they are asked in the Inbox, by a
+ * message about the server, a request until they accept; they are in once they accept (the
+ * Remote does it, service/inbox.ts), or at once if they had accepted one already.
+ */
+export async function addByName(s: Pick<Server, 'id' | 'name'>, typed: string, people: readonly string[], ways: AddWays): Promise<Added> {
+  const found = await ways.lookup(typed.trim());
+  if (!found.reachable || !found.address) throw new RemoteError(404, t(found.why ?? 'No one has that address'));
+  const address = found.address;
+  if (people.includes(address)) return {address, is: 'already'};
+  const tryAdd = () => ways.add(s.id, address).then(() => true, (e: unknown) => { if (e instanceof RemoteError && e.status === 403) return false; throw e; });
+  if (await tryAdd()) return {address, is: 'in'};
+  const r = await ways.ask(address, t('I would like to add you to {server}. Accept me in your Inbox and you are in it.', {server: s.name}), s.id);
+  // They had accepted one: writing to them accepted them back, so the two know each other now.
+  if (!r.request && await tryAdd()) return {address, is: 'in'};
+  return {address, is: 'asked'};
+}
+
 // ---- boards ----
 export const makeBoard = (server: string, name: string) => call<BoardRef>(`/v1/servers/${server}/boards`, send('POST', {name}));
 /** Its server's owner's: it goes with its talk and TODO, held 30 days (until) to bring back. */

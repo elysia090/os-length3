@@ -3,6 +3,14 @@ import {t} from '../i18n.ts';
 import * as servers from '../servers.ts';
 import {postNow} from './talk.ts';
 import {button, message, type Shown} from './server-parts.ts';
+import {Drafts} from '../drafts.ts';
+
+/**
+ * A post half written stays with its board (DESIGN §1): going to another board, or putting the
+ * layer away, keeps it, and it is there when the board is on screen again; gone once sent. A
+ * guest's is kept apart from one of its people's.
+ */
+const drafts = new Drafts();
 
 /** What the box at the foot needs of the layer it is in. */
 export interface DockWays {
@@ -11,6 +19,8 @@ export interface DockWays {
   pinned(): boolean;
   /** Something being written here keeps the layer out. */
   writing(busy: () => boolean): void;
+  /** Words in the box: a press outside does not put the layer away. */
+  holding(words: () => boolean): void;
   /** Away to the Remote page, to sign in. */
   signIn(): void;
 }
@@ -28,10 +38,14 @@ export function dockFor(b: Shown | null, ways: DockWays): Node[] {
   if (b.member || guest) {
     const field = h('textarea', {class: 'prompt-in', rows: '1', maxlength: String(servers.LIMIT), 'aria-label': t('Write in {board}', {board: b.name}),
       placeholder: b.member ? t('To the people of {server}', {server: b.server}) : t('As {name}, a guest', {name: guest!.as})}) as HTMLTextAreaElement;
+    const key = `${b.member ? 'member' : 'guest'}:${b.id}`;
+    field.value = drafts.get(key);
     ways.writing(() => document.activeElement === field || !!field.value.trim());
+    ways.holding(() => drafts.holds(key));
     const fit = () => { field.style.height = 'auto'; field.style.height = `${field.scrollHeight}px`; };
     let sending = false;
-    field.addEventListener('input', fit);
+    field.addEventListener('input', () => { drafts.set(key, field.value); fit(); });
+    if (field.value) queueMicrotask(fit);
     field.addEventListener('keydown', async (event) => {
       // As every box one writes in: Enter is a new line, Ctrl+Enter (⌘+Enter) sends.
       if (event.key !== 'Enter' || !(event.ctrlKey || event.metaKey) || event.isComposing) return;
@@ -39,9 +53,9 @@ export function dockFor(b: Shown | null, ways: DockWays): Node[] {
       if (sending || !field.value.trim()) return;
       sending = true;
       note.replaceChildren();
-      try { await postNow(b.id, field.value, guest?.token); field.value = ''; fit(); } catch (e) { note.textContent = message(e); } finally { sending = false; }
+      try { await postNow(b.id, field.value, guest?.token); field.value = ''; drafts.sent(key); fit(); } catch (e) { note.textContent = message(e); } finally { sending = false; }
     });
-    if (ways.pinned() && b.member) queueMicrotask(() => field.focus());
+    if (ways.pinned() && b.member) queueMicrotask(() => { field.focus(); field.setSelectionRange(field.value.length, field.value.length); });
     return [h('form', {class: 'prompt'}, field), note];
   }
   if (b.guests) return [guestIn(b, ways), note];

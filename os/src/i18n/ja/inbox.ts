@@ -55,4 +55,5 @@ export default {
   'Let {name} go': '{name}を手放す',
   '{name} is held for you 30 days; claiming it again takes it back.': '{name}は30日間あなたのために取り置かれます。もう一度取れば戻ります。',
   'its domain no longer names this Remote': 'そのドメインはもうこの Remote を指していません',
+  'Inbox has messages not read': 'Inbox に未読のメッセージがあります',
 } as Record<string, string>;

@@ -12,7 +12,8 @@ import {t} from './i18n.ts';
 import {day} from './dom.ts';
 
 export type Kind = 'message' | 'review' | 'question' | 'run';
-export interface Target { repo?: string; issue?: string; change?: string; version?: number }
+/** What a message is about; `server`: asking its reader into that server (service/inbox.ts). */
+export interface Target { repo?: string; issue?: string; change?: string; version?: number; server?: string }
 export interface Thread { address: string; name: string; state: 'contact' | 'request' | 'blocked'; unread: number; last: {type: Kind; body: string; mine: boolean; time: number} }
 export interface Message { id: string; mine: boolean; type: Kind; target: Target; body: string; time: number; read: boolean; live?: boolean }
 /**
@@ -75,6 +76,30 @@ export async function send(to: string, body: string, type: Kind = 'message', tar
   const out = await r.json() as {id?: string; request?: boolean; error?: string};
   if (r.ok) return {id: out.id!, request: Boolean(out.request)};
   throw new RemoteError(r.status, t(String(out.error ?? r.status)));
+}
+
+/**
+ * What an open conversation has on screen, so what comes later is put at its
+ * foot once and only once: messages as the Remote gave them (whose times are
+ * the Remote's own clock), and those added here (sent from here, or come over
+ * the direct line), which are not taken in again when the Remote gives them.
+ */
+export class Conversation {
+  private ids = new Set<string>();
+  private newest = 0;
+  /** Added here: true if it was not here yet. */
+  have(m: Message): boolean {
+    if (this.ids.has(m.id)) return false;
+    this.ids.add(m.id);
+    return true;
+  }
+  /** The conversation as the Remote has it: those not here yet, in its order. */
+  took(list: readonly Message[]): Message[] {
+    for (const m of list) this.newest = Math.max(this.newest, m.time);
+    return list.filter((m) => this.have(m));
+  }
+  /** Whether its row in the list says something came after the newest the Remote gave here. */
+  behind(row: Thread): boolean { return row.last.time > this.newest; }
 }
 
 // ---- live: a data channel between two devices, signalled through the Remote ----

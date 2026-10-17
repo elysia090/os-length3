@@ -246,7 +246,8 @@ what is its own.
   page that is showing, brought out by resting on the icon (it stays a
   while after the pointer leaves) or by a press (it stays), put away by
   Escape (whatever has the keyboard; the topmost one only), a press
-  outside, or a second press.
+  outside, or a second press. A press outside leaves out one whose box
+  holds words (Server's, §8), so what is written is not put away under it.
 - **The Remote away.** When this device's Remote does not answer, it is
   said in one place: a small `off` dot on Remote's icon in the rail, whose
   name then reads Remote に届きません, and one line under Remote's parts
@@ -256,6 +257,17 @@ what is its own.
   the Remote no longer knows this device (its session was ended from
   another, or ran out), the device is signed out at once, every page drawn
   again as signed out, and nothing here is lost.
+- **Something came in.** What came and has not been seen yet is said the
+  way the Remote away is: a small dot, the same size and place, but in the
+  colour of what it is on (`ink`, or `ground` on what is current), never a
+  colour of its own and never a count. On the rail: Inbox while a message
+  is not read (it goes when the conversation is opened), Server while a
+  board has a post by someone else past what one has had on screen; the
+  place's name then says so (Inbox に未読のメッセージがあります). In Server
+  the same dot follows its server's chip and its board's # (a neighbour's
+  too, at the edge that shows), and goes once that board's talk is read to
+  its foot. The Remote keeps how far each person has read each board, so it
+  is the same on every device (`/v1/news`, `/v1/boards/ID/seen`).
 
 ## 4. What breaks the language
 
@@ -317,6 +329,8 @@ fix is always a piece from §3, not a new rule.
 | A field with only a placeholder for its name, beside a form with labels | A label over the field, what it means under it, as New repo's |
 | Signed out, a sentence and a button on one page and a card on another | The sign-in card, in the middle, on every page that needs it |
 | The Remote away as an error on two pages and as nothing (stale cards with live switches) on the rest; a dead session kept, each page failing on it | The rail's dot and Remote's one line; a dead session signs the device out |
+| Something new said by a count, a badge or a colour of its own, or not said at all until the page is opened | The dot of the place's own colour, on the rail and on the chip and board it is on, gone once seen |
+| A box drawn again every little while, taking what was being written and the keyboard with it (Inbox's field to write to someone, every 10 s) | Only what came is drawn: the rows under the field, the messages at the conversation's foot |
 | Items in one row of a band a few pixels off another's (a 40 px gear in a 32 px band) | Everything on the band is 32 px |
 | A divider left where a pane would start when there is none | No pane, no line |
 | Something painted over a focus ring (the ground under the box over its foot) | The ring is whole: what lies under the box lies behind it |
@@ -653,6 +667,8 @@ What leaves this system is kept to what is said here:
   Server are the operations: each is laid over the page instead (below).
 - The rail is 78 px wide: the icons keep 18 px to its line and 12 px to the
   window's side, so they do not crowd the line.
+- Inbox and Server carry the dot of §3's Something came in; Remote the
+  dot of the Remote away. Nothing else on the rail is marked.
 - Item 48×48, radius 12, icon 24 px with a 1.6 px stroke; + is a 40 px
   round button with an `edge` outline. States as everywhere (§1).
 - The person's own icon sits at the foot of the rail, a little above the
@@ -1052,6 +1068,14 @@ the way an issue is ("Review：…", "Question：…"), and a `/root/…` path i
 says what it is about, so there is nothing else to choose. Enter is a new
 line, Ctrl+Enter sends.
 
+What comes is looked for every little while (10 s) while the page is shown:
+the conversations' rows are drawn again under the field to write to someone
+new, which is never drawn again (what is half written in it, and the
+keyboard, stay), and what came to the open conversation is put at its foot,
+through the Remote, whether or not a direct line is open. What is half
+written to someone stays with that conversation (§1): opening another and
+coming back, or another page and back, it is there; it goes when it is sent.
+
 ### Server
 
 Every other purpose is about a repo: one edits it, walks it, decides on it,
@@ -1063,7 +1087,12 @@ who may show it in a server: there it is only seen, as it was last pushed
 (§5, Names). A server's own repos are what comes next.
 
 A server is a name and its people. Someone already in it adds people from
-their own Inbox contacts, so a server is people who know each other; anyone
+their own Inbox contacts, so a server is people who know each other; or by
+a name or a code, in the card that adds: someone one knows both ways is in
+at once, anyone else is asked in the Inbox (a message about the server, a
+request until they accept) and is in the moment they accept the one who
+asked, so long as that one is still in it (within 30 days); the card says
+they were asked. Anyone
 may leave, the owner may remove someone, and the last to leave takes it
 with them. Its boards are what its people talk about, each one thing (a
 trip, a release, a reading group), and each holds two things:
@@ -1097,6 +1126,10 @@ Server is an overlay (§3), on the bench's shape. Its pieces, from §3:
   nothing switched to see one or the other. Outside the server an open
   board's TODO is shown, not written, and not at all while empty.
 - **The box at the foot** writes in the board on screen (旅行 の人たちへ).
+  What is half written in it is that board's (§1): going to another board,
+  or putting Server away, keeps it, and it is there when the board is on
+  screen again; gone once sent. While it holds words, a press outside does
+  not put Server away (Escape and a second press on its icon still do).
 - **The right pane**: who is in it (face, name, owner), then the repos
   they show in it (name and whose). A repo pressed takes the boards' place
   with the page head (its name, whose, Forge when one's own, Back) and one
@@ -1104,8 +1137,9 @@ Server is an overlay (§3), on the bench's shape. Its pieces, from §3:
   was last pushed.
 - **Behind the gear**, in the boards' place: the page head (the server's
   name, its name on the Remote and code, Done), then **parts** of **small
-  cards**: People (a dashed card to add someone one knows; its owner
-  removes someone), Repos (each of one's own with **the pair of
+  cards**: People (a dashed card to add someone one knows, pressed the card
+  that adds: one's contacts not in it, each a button, then a field for a
+  name or a code and 入れる; its owner removes someone), Repos (each of one's own with **the pair of
   switches**, to its people and to everyone, seen by everyone as the
   server's; others' shown here, whose, its owner may take them off),
   Boards (to everyone and guests, its owner's; Take home, anyone's;
@@ -1133,7 +1167,8 @@ scrolled near its top, the next older posts are read in above without
 moving what is on screen, and at the very top it says it is every post.
 What comes meanwhile is put at the foot: followed when the foot is in view
 (and always after one's own post), otherwise with a small ink pill (↓ 3 new
-posts), which goes down to them. And it lets go by itself: posts far out of
+posts), which goes down to them. The foot in view is what reading the board
+is: the dots of §3's Something came in go then. And it lets go by itself: posts far out of
 view are folded into an empty box of the height they had, so nothing on
 screen moves, and further still they let go of their text too, read again
 by their range of ids when they come back near.

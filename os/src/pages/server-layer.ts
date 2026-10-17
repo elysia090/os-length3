@@ -5,13 +5,14 @@ import {shown as named, shownAs} from '../inbox.ts';
 import {connection, onConnection, RemoteError} from '../remote.ts';
 import * as servers from '../servers.ts';
 import type {Context} from './context.ts';
-import {timeline} from './talk.ts';
+import {cameTo, timeline} from './talk.ts';
 import {todoList} from './todo-box.ts';
 import {dockFor} from './server-dock.ts';
 import {gear as gearSheet} from './server-gear.ts';
 import {seeRepo as repoSheet} from './server-repo.ts';
 import {button, initials, message, type Shown} from './server-parts.ts';
 import {answers} from './common.ts';
+import {boardNew, onNews, sawBoard, serverNew} from '../news.ts';
 
 // Server is an operation, as File is: laid over whatever page is showing,
 // never a page of its own. It is the one thing whose subject is people, not
@@ -35,7 +36,12 @@ import {answers} from './common.ts';
 // Resting the pointer on its icon brings it out, and it stays for LINGER
 // after the pointer leaves; a press brings it out to stay. A press outside
 // it, Escape, or a second press puts it away (Escape from behind the gear
-// goes back to the boards first). While something is being written it stays.
+// goes back to the boards first). While something is being written it stays,
+// and a press outside does not put it away while the box at the foot holds
+// words (they are kept with their board either way).
+//
+// What came in and was not seen yet is marked as the rail marks it: a dot on
+// a server's chip and on a board's #, gone once its talk's foot is in view.
 
 const OPEN_DELAY = 300;
 const LINGER = 8000;
@@ -56,6 +62,8 @@ export class ServerLayer {
   private pinned = false;
   /** Something being written here (a post, a TODO, a name): it stays out while there is. */
   private writing = (): boolean => false;
+  /** Words in the box at the foot: a press outside leaves the layer out. */
+  private holding = (): boolean => false;
   /** Escape from behind the gear, or from a repo shown: back to the boards (true), or nothing to go back from. */
   private back = (): boolean => false;
 
@@ -66,7 +74,7 @@ export class ServerLayer {
     this.element.addEventListener('pointerleave', () => this.leave());
     document.addEventListener('pointerdown', (event) => {
       const at = event.target as Node;
-      if (!this.isOpen || this.trigger?.contains(at) || this.element.contains(at)) return;
+      if (!this.isOpen || this.trigger?.contains(at) || this.element.contains(at) || this.holding()) return;
       this.close();
     });
     // Signed in or out (or the session ended elsewhere): what is out is built again for who is here now.
@@ -115,6 +123,7 @@ export class ServerLayer {
     clearTimeout(this.timer);
     this.pinned = false;
     this.writing = () => false;
+    this.holding = () => false;
     this.back = () => false;
     this.element.replaceChildren();
     this.element.remove();
@@ -201,12 +210,14 @@ export class ServerLayer {
 
     /** A board's box: in full where it is on screen (its TODO pinned at the top, its talk under it), only its name beside it. */
     const card = (b: Shown, now: boolean) => {
-      const head = h('div', {class: 'board-head'}, h('span', {class: 'muted', 'aria-hidden': 'true'}, '#'), h('h2', {}, b.name),
-        signedIn ? null : h('span', {class: 'muted small'}, b.server));
+      const head = h('div', {class: 'board-head', 'data-board': b.id}, h('span', {class: 'muted board-mark', 'aria-hidden': 'true'}, '#'), h('h2', {}, b.name),
+        signedIn ? null : h('span', {class: 'muted small'}, b.server), h('span', {class: 'sr-only'}));
+      markBoard(head);
       if (!now) return h('div', {class: 'board-card'}, head);
       const todo = h('section', {class: 'board-todo', 'aria-label': 'TODO'});
       const talk = h('section', {class: 'board-talk', tabindex: '0', 'aria-label': b.name});
-      talk.append(timeline(talk, b.id, b.member));
+      // Its foot in view, what came is seen: the marks go, here and on the rail.
+      talk.append(timeline(talk, b.id, b.member, b.member ? (post) => sawBoard(b.id, post) : undefined));
       void boardTodo(b, todo);
       return h('div', {class: 'board-card'}, head, todo, talk);
     };
@@ -265,6 +276,29 @@ export class ServerLayer {
           h('div', {class: 'row'}, name, make), error));
     };
 
+    // ---- what came in, not seen yet: a dot on its server's chip and its board's # ----
+    const markBoard = (head: HTMLElement) => {
+      const id = head.dataset.board ?? '', on = signedIn && boardNew(id);
+      head.classList.toggle('news', on);
+      const said = head.querySelector('.sr-only');
+      if (said) said.textContent = on ? t('New posts') : '';
+    };
+    const markChip = (chip: HTMLElement) => {
+      const on = serverNew(chip.dataset.server ?? '');
+      chip.classList.toggle('news', on);
+      const name = list.find((s) => s.id === chip.dataset.server)?.name ?? '';
+      chip.setAttribute('aria-label', on ? t('{server}, new posts', {server: name}) : name);
+    };
+    const unhear = onNews(() => {
+      // Put away (or built again), this one hears no more.
+      if (!this.element.contains(work)) { unhear(); return; }
+      for (const c of chips.querySelectorAll<HTMLElement>('.chip')) markChip(c);
+      for (const head of track.querySelectorAll<HTMLElement>('.board-head[data-board]')) markBoard(head);
+      // The board on screen: what came is read in now, and is seen if its foot is in view.
+      const on = shown[k];
+      if (showing === 'boards' && on?.member && boardNew(on.id)) cameTo(on.id);
+    });
+
     // ---- the servers, on the top line ----
     const paintTop = () => {
       gear.disabled = !serverId;
@@ -272,7 +306,8 @@ export class ServerLayer {
       plus.hidden = !signedIn;
       if (!signedIn) { chips.replaceChildren(h('span', {class: 'muted'}, t('Open boards'))); return; }
       const each = list.map((s) => {
-        const b = h('button', {type: 'button', class: 'chip', role: 'radio', 'aria-checked': String(s.id === serverId), title: `${named(s.address)} · ${s.code}`}, s.name);
+        const b = h('button', {type: 'button', class: 'chip', role: 'radio', 'aria-checked': String(s.id === serverId), title: `${named(s.address)} · ${s.code}`, 'data-server': s.id}, s.name);
+        markChip(b);
         b.addEventListener('click', () => show(s.id));
         return b;
       });
@@ -357,12 +392,17 @@ export class ServerLayer {
     };
 
     // ---- the box at the foot: writing in the board on screen ----
-    const paintDock = (b: Shown | null) => dock.replaceChildren(...dockFor(b, {
-      signedIn,
-      pinned: () => this.pinned,
-      writing: (busy) => writers.push(busy),
-      signIn: () => { this.close(); this.ctx.go('remote'); },
-    }));
+    const paintDock = (b: Shown | null) => {
+      // What the box held for another board is that board's: this one says for itself.
+      this.holding = () => false;
+      dock.replaceChildren(...dockFor(b, {
+        signedIn,
+        pinned: () => this.pinned,
+        writing: (busy) => writers.push(busy),
+        holding: (words) => { this.holding = words; },
+        signIn: () => { this.close(); this.ctx.go('remote'); },
+      }));
+    };
 
     // ---- the right: who is in it, then the repos they show in it ----
     const part = (title: string, ...body: (Node | null)[]) => h('section', {class: 'side-part'}, h('h3', {}, title), ...body);

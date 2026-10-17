@@ -15,6 +15,7 @@ import {runtime} from './pages/runtime.ts';
 import {FileTree} from './pages/tree.ts';
 import {begin} from './lifecycle.ts';
 import {learnHome} from './inbox.ts';
+import {begin as lookForNews, look, marks, news, onNews} from './news.ts';
 import {devicePage} from './pages/device.ts';
 import {about, claim, connection, enterWith, onConnection, onReach, remoteAway} from './remote.ts';
 import {getState, loadState} from './state.ts';
@@ -135,15 +136,26 @@ $('rail-me').append(me.element);
 
 $('rail-tabs').append(...PURPOSES.map((p) => railButton(p.id)), railButton(NEW_REPO.id));
 // The Remote not answering is said in one place, on the Remote's own: a red dot, and its name says why.
-const reach = () => {
-  const b = tabs.get('remote');
+// Something come in and not seen yet is said the same way on Inbox and Server: a dot in the colour
+// of the place (ink, or ground on ink when it is current), gone once it is seen.
+const railName = (id: PurposeId): string => {
+  if (id === 'remote' && remoteAway()) return t('The Remote cannot be reached');
+  if (id === 'inbox' && marks(news()).inbox) return t('Inbox has messages not read');
+  if (id === 'server' && marks(news()).server) return t('Server has new posts');
+  return t(purpose(id).label);
+};
+const mark = (id: PurposeId) => {
+  const b = tabs.get(id);
   if (!b) return;
-  const label = remoteAway() ? t('The Remote cannot be reached') : t(purpose('remote').label);
-  b.classList.toggle('away', remoteAway());
+  b.classList.toggle('away', id === 'remote' && remoteAway());
+  b.classList.toggle('news', (id === 'inbox' && marks(news()).inbox) || (id === 'server' && marks(news()).server));
+  const label = railName(id);
   b.setAttribute('aria-label', label);
   const tag = b.querySelector('.rail-tag');
   if (tag) tag.textContent = label;
 };
+const reach = () => mark('remote');
+onNews(() => { mark('inbox'); mark('server'); });
 let askAgain = 0;
 onReach(() => {
   reach();
@@ -152,18 +164,12 @@ onReach(() => {
   if (remoteAway() && !connection()) askAgain = window.setInterval(() => void about(), 15000);
 });
 // Signed in or out, here or from another device: the page is drawn again for who is here now (Remote's draws itself).
-onConnection(() => { if (current === 'remote') me.paint(); else render(); });
+onConnection(() => { void look(); if (current === 'remote') me.paint(); else render(); });
 // Changing the language redraws the page and the rail's names in place.
 onLang(() => {
-  for (const [id, b] of tabs) {
-    const label = t(purpose(id).label);
-    b.setAttribute('aria-label', label);
-    const tag = b.querySelector('.rail-tag');
-    if (tag) tag.textContent = label;
-  }
+  for (const id of tabs.keys()) mark(id);
   document.querySelector('.rail')?.setAttribute('aria-label', t('Purposes'));
   named();
-  reach();
   render();
 });
 // Home's state is read before the first page, and again when the window
@@ -193,6 +199,8 @@ if (asking.has('device')) {
     void learnHome();
     select(restorePurpose(load(PURPOSE_KEY)));
     void begin().then(() => render());
+    // What came in meanwhile, for the rail's marks: now, and every little while.
+    lookForNews();
   });
 }
 window.addEventListener('focus', () => {

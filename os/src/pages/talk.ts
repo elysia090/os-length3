@@ -43,10 +43,18 @@ export async function postNow(board: string, body: string, guest?: string): Prom
   await Promise.all([...onScreen].filter((x) => x.board === board).map((x) => x.read(true)));
 }
 
+/** Something came to a board, as the rail heard it: every talk of it on screen reads it in now, not at its next look. */
+export function cameTo(board: string) {
+  for (const x of onScreen) if (x.board === board) void x.read(false);
+}
+
 interface Shown { page: servers.Page; el: HTMLElement; drawn: boolean; near: boolean; reading: boolean }
 
-/** A board's talk, in `scroller` (the box that scrolls it); `member`: read as one of its people. */
-export function timeline(scroller: HTMLElement, board: string, member: boolean): HTMLElement {
+/**
+ * A board's talk, in `scroller` (the box that scrolls it); `member`: read as one of its people.
+ * `saw` hears the newest post read: its foot in view (with the window), so what came is seen.
+ */
+export function timeline(scroller: HTMLElement, board: string, member: boolean, saw?: (post: string) => void): HTMLElement {
   const root = h('div', {class: 'timeline'});
 
   // Newest page first; on screen the other way round, newest at the foot.
@@ -55,7 +63,9 @@ export function timeline(scroller: HTMLElement, board: string, member: boolean):
   const start = h('div', {class: 'tl-start muted small', 'aria-live': 'polite'});
   const foot = h('div', {class: 'tl-foot-mark'});
   const fresh = h('button', {type: 'button', class: 'tl-new', hidden: ''}) as HTMLButtonElement;
-  let done = false, reading = false, looking = false, unseen = 0;
+  let done = false, reading = false, looking = false, unseen = 0, footIn = false;
+  /** The foot in view: the newest post held is read. */
+  const read = () => { if (footIn && pages.length && document.visibilityState === 'visible') saw?.(pages[0].page.newest); };
 
   // ---- where the reader is ----
   const view = () => scroller.getBoundingClientRect();
@@ -173,7 +183,7 @@ export function timeline(scroller: HTMLElement, board: string, member: boolean):
       const r = await servers.older(board, member, pages.at(-1)?.page.oldest ?? null);
       const page = servers.pageOf(r.posts);
       const first = !pages.length;
-      if (page) { if (first) { add(page, 'older'); toFoot(); } else steady(() => add(page, 'older')); }
+      if (page) { if (first) { add(page, 'older'); toFoot(); read(); } else steady(() => add(page, 'older')); }
       done = !r.more;
       start.textContent = done ? (pages.length ? t('That is every post') : t('No posts yet')) : '';
     } catch (e) { start.textContent = message(e); reading = false; return; } finally { list.setAttribute('aria-busy', 'false'); }
@@ -204,7 +214,7 @@ export function timeline(scroller: HTMLElement, board: string, member: boolean):
       const following = mine || atFoot();
       // Oldest page first, each at the foot.
       for (const p of servers.onTop(got).reverse()) add(p, 'newer');
-      if (following) toFoot(mine); else { unseen += got.length; tell(); }
+      if (following) { toFoot(mine); read(); } else { unseen += got.length; tell(); }
     } catch { /* tried again on the next look */ } finally { looking = false; }
   };
   fresh.addEventListener('click', () => { unseen = 0; tell(); toFoot(true); });
@@ -212,10 +222,14 @@ export function timeline(scroller: HTMLElement, board: string, member: boolean):
   onScreen.add(here);
 
   // Back at the foot: what came is seen.
-  const seen = new IntersectionObserver((e) => { if (e.some((x) => x.isIntersecting) && unseen) { unseen = 0; tell(); } }, {root: scroller});
+  const seen = new IntersectionObserver((e) => {
+    footIn = e.some((x) => x.isIntersecting);
+    if (footIn && unseen) { unseen = 0; tell(); }
+    read();
+  }, {root: scroller});
 
   // While it is on screen, what came is looked for now and then; once it is gone, all of this stops.
-  const look = () => { if (document.visibilityState === 'visible') void came(); };
+  const look = () => { if (document.visibilityState === 'visible') { void came(); read(); } };
   const poll = window.setInterval(() => {
     if (!root.isConnected) {
       clearInterval(poll); watch.disconnect(); more.disconnect(); seen.disconnect(); onScreen.delete(here); removeEventListener('focus', look);
