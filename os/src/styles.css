@@ -480,6 +480,8 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .prompt-in:focus { outline: none; }
 .prompt-in:disabled { cursor: default; }
 .prompt-note:empty { display: none; }
+/* What Tab could complete to, said under the box: paths, so monospace. */
+.prompt-note.paths { font-family: var(--mono); white-space: pre-wrap; }
 /* Server over any page: its own place in the bench's shape, to the window's foot so nothing of the page shows below it. */
 .server-layer { position: fixed; top: 0; bottom: 0; left: calc(var(--outer) + var(--rail)); right: 0; z-index: 4; padding: var(--outer-top) var(--outer) var(--outer-bottom) 0; background: var(--ground); animation: layer-in var(--move) cubic-bezier(.2, .9, .25, 1); }
 @keyframes layer-in { from { opacity: 0; transform: translateX(calc(-1 * var(--s4))); } }
@@ -533,6 +535,8 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 /* 実行結果: the line as typed, then what came out, quiet. */
 .run-head { display: flex; justify-content: space-between; gap: var(--s2); min-height: var(--h-row); align-items: center; }
 .run-line { font: 600 var(--t-meta) var(--mono); overflow-wrap: anywhere; }
+/* Pressed, the line is back in the prompt box: its hover fill reaches out past the text, which stays over the output. */
+button.run-line { margin-inline-start: calc(-1 * var(--s1)); min-width: 0; }
 .run-out { margin: 0; color: var(--sub); font: var(--t-meta)/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .diff { display: grid; font: var(--t-meta)/1.6 var(--mono); }
 .diff-line { display: grid; grid-template-columns: 4ch minmax(0, 1fr); gap: var(--s2); padding: 0 var(--s1); }

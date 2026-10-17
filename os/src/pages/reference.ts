@@ -48,6 +48,8 @@ function load(): View {
 export interface ReferenceEvents {
   /** Scroll the center to a path in the open repo, at `line` if given. */
   reveal(path: string, line?: number): void;
+  /** Put a line run before back in the prompt box, to change or send again. */
+  recall?(line: string): void;
 }
 
 /** The repo's text files, read once per search session. */
@@ -216,7 +218,7 @@ export class Reference {
       if (this.pinned || this.view !== 'run' || this.query.value.trim() || this.repo !== repo) return;
       const list = session?.runs ?? [];
       if (!list.length) { this.body.replaceChildren(h('p', {class: 'muted small'}, t('Nothing run yet'))); return; }
-      this.body.replaceChildren(...list.slice().reverse().map((r) => runView(r)));
+      this.body.replaceChildren(...list.slice().reverse().map((r) => runView(r, this.events.recall)));
     };
     draw();
     if (session) this.unwatch = session.watch(draw);
@@ -296,12 +298,17 @@ export class Reference {
   }
 }
 
-/** One run: the line, how long it took (or that it is running), then its output. */
-function runView(r: Run): HTMLElement {
+/** One run: the line (pressed, it is back in the prompt box), how long it took (or that it is running), then its output. */
+function runView(r: Run, recall?: (line: string) => void): HTMLElement {
   const lines = r.output.replace(/\n$/, '').split('\n');
   const shown = r.output ? lines.slice(0, RUN_LINES) : [];
+  let line: HTMLElement = h('span', {class: 'run-line'}, r.line);
+  if (recall) {
+    line = h('button', {type: 'button', class: 'hit-file run-line', title: t('Put back in the prompt box')}, r.line);
+    line.addEventListener('click', () => recall(r.line));
+  }
   return h('div', {class: 'hit-group run'},
-    h('div', {class: 'run-head'}, h('span', {class: 'run-line'}, r.line), h('span', {class: 'row-meta'}, r.ms === null ? t('Running') : `${r.ms} ms`)),
+    h('div', {class: 'run-head'}, line, h('span', {class: 'row-meta'}, r.ms === null ? t('Running') : `${r.ms} ms`)),
     ...(shown.length ? [h('pre', {class: 'run-out'}, shown.join('\n'))] : []),
     ...(lines.length > RUN_LINES ? [h('p', {class: 'muted small'}, tn('{n} more line', '{n} more lines', lines.length - RUN_LINES))] : []));
 }

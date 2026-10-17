@@ -1,5 +1,7 @@
 import {h} from '../dom.ts';
 import {t} from '../i18n.ts';
+import {complete, pathWord, Recall} from '../recall.ts';
+import {onChange, store, type Entry} from '../repos.ts';
 import {Reference} from './reference.ts';
 import {sessionFor, sessionIfAny, terminalFor} from './terminal.ts';
 
@@ -22,8 +24,16 @@ import {sessionFor, sessionIfAny, terminalFor} from './terminal.ts';
 // and lets what is under it be pressed; the keyboard reaching it, a press on
 // the Prompt, or the pointer coming down to the center's foot brings it back
 // where it was. Something written in it keeps it out.
+//
+// ↑ on the box's first line and ↓ on its last walk the repo's earlier
+// lines (the Prompt's runs), and a run pressed in Output is put back in the
+// box to be changed or sent again. Tab completes the path before the caret
+// from the repo's tree, and says the choices under the box when there are
+// several; with no path to complete, Tab moves on as everywhere.
 
 const MOVE = 280;
+/** Choices said under the box after Tab, at most. */
+const CHOICES = 24;
 
 /** What was written in the prompt box for each repo and not sent. */
 const drafts = new Map<string, string>();
@@ -61,7 +71,11 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   const note = h('p', {class: 'prompt-note muted small', role: 'status'});
   const dock = h('div', {class: 'dock'}, termSlot, h('form', {class: 'prompt'}, prompt), note);
   const center = h('div', {class: 'center'}, parts.main, dock);
-  const reference = new Reference({reveal: parts.reveal});
+  const reference = new Reference({reveal: parts.reveal, recall: (line) => {
+    if (!repo || prompt.disabled) return;
+    put(line);
+    prompt.focus();
+  }});
   const side = h('aside', {class: 'side', 'aria-label': t('Reference and Prompt')}, reference.element, termHome);
   const work = h('div', {class: parts.strip ? 'work' : 'work no-strip'}, ...(parts.strip ? [parts.strip] : []), center, side);
 
@@ -87,12 +101,88 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   };
   const fit = () => { prompt.style.height = 'auto'; prompt.style.height = `${prompt.scrollHeight}px`; };
   prompt.addEventListener('focus', () => setPrompting(true));
+  const keep = () => { if (repo) { if (prompt.value) drafts.set(repo, prompt.value); else drafts.delete(repo); } };
+  /** What Tab last said under the box, which goes as soon as anything else is done there. */
+  let choices = false;
+  const unsay = () => { if (choices) { choices = false; note.textContent = ''; note.classList.remove('paths'); } };
+  /** `text` in the box as if written there, the caret at its end. */
+  const put = (text: string) => {
+    prompt.value = text;
+    prompt.setSelectionRange(text.length, text.length);
+    keep();
+    unsay();
+    fit();
+  };
   prompt.addEventListener('input', () => {
     fit();
-    if (repo) { if (prompt.value) drafts.set(repo, prompt.value); else drafts.delete(repo); }
+    keep();
+    walk.reset();
+    unsay();
+    look();
   });
+  /** The repo's earlier lines, oldest first. */
+  const walk = new Recall();
+  const lines = () => (repo ? sessionIfAny(repo)?.runs.map((r) => r.line) ?? [] : []);
+  // The repo's directories as Tab reads them: read ahead as a path is
+  // written (so Tab can answer at once), and again once anything changes.
+  const listed = new Map<string, Entry[] | Promise<Entry[]>>();
+  onChange((c) => { if (c.repo === repo) listed.clear(); });
+  const list = (dir: string): Entry[] | Promise<Entry[]> => {
+    const r = repo!, key = `${r}\n${dir}`;
+    let got = listed.get(key);
+    if (!got) {
+      got = store.tree(r, dir).catch(() => [] as Entry[]);
+      listed.set(key, got);
+      void got.then((e) => { if (listed.get(key) instanceof Promise) listed.set(key, e); });
+    }
+    return got;
+  };
+  const look = () => {
+    const w = repo && prompt.selectionStart === prompt.selectionEnd ? pathWord(prompt.value, prompt.selectionStart, repo) : null;
+    if (w) void list(w.dir);
+  };
+  /** Complete the path before the caret; false when there is none to complete. */
+  const tab = (): boolean => {
+    if (!repo || prompt.selectionStart !== prompt.selectionEnd) return false;
+    const at = prompt.selectionStart, w = pathWord(prompt.value, at, repo);
+    if (!w) return false;
+    const fill = (entries: Entry[]) => {
+      const c = complete(w.name, entries);
+      if (!c) return false;
+      if (c.insert) {
+        prompt.setRangeText(c.insert, at, at, 'end');
+        keep();
+        walk.reset();
+        fit();
+        look();
+      }
+      if (c.choices.length) {
+        choices = true;
+        note.classList.add('paths');
+        note.textContent = c.choices.slice(0, CHOICES).join('  ') + (c.choices.length > CHOICES ? '  …' : '');
+      }
+      else unsay();
+      return true;
+    };
+    const got = list(w.dir);
+    if (!(got instanceof Promise)) return fill(got);
+    // Not read yet (rare: it is read while the path is written): completed once it is.
+    void got.then((entries) => { if (prompt.value.length >= at && prompt.selectionStart === at) fill(entries); });
+    return true;
+  };
   prompt.addEventListener('keydown', (event) => {
+    if (event.key !== 'Tab') unsay();
     if (event.key === 'Escape') { setPrompting(false); prompt.blur(); return; }
+    const plain = !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey && !event.isComposing;
+    if (event.key === 'Tab' && plain) { if (tab()) event.preventDefault(); return; }
+    // ↑ on the first line and ↓ on the last walk earlier lines; elsewhere they move the caret.
+    if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && plain && prompt.selectionStart === prompt.selectionEnd) {
+      const line = walk.arrow(event.key, prompt.value, prompt.selectionStart, lines());
+      if (line === null) return;
+      event.preventDefault();
+      put(line);
+      return;
+    }
     // Ctrl-C with nothing selected (so not a copy) interrupts what runs, as in a terminal.
     if (event.key === 'c' && event.ctrlKey && !event.altKey && !event.metaKey && prompt.selectionStart === prompt.selectionEnd && repo) {
       event.preventDefault();
@@ -107,9 +197,11 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     // Ended: started again, and what was written waits in the box to be sent once it is up.
     if (s?.ended) { s.restart(); note.textContent = t('Still starting'); return; }
     if (!sessionFor(repo).send(prompt.value)) { note.textContent = t('Still starting'); return; }
+    unsay();
     note.textContent = '';
     prompt.value = '';
     drafts.delete(repo);
+    walk.reset();
     room();
     fit();
   });
@@ -132,7 +224,9 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     prompt.disabled = !name;
     prompt.placeholder = name ? t('Run in {name}', {name}) : t('Open a repo to run in it');
     prompt.value = name ? drafts.get(name) ?? '' : '';
+    unsay();
     note.textContent = '';
+    walk.reset();
     room();
     requestAnimationFrame(fit);
   };

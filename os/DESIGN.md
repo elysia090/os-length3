@@ -723,6 +723,15 @@ it is not called Bash); leaving the prompt
 to it starts it, and one that ended says so in its place, with Start
 again; stopping one is Runtime's. What is written in the box and not sent
 is the repo's: another repo shows its own, and coming back finds it.
+The box knows the repo's earlier lines, as a terminal does: ↑ with the
+caret on its first line goes back one line run in the repo's Prompt, ↓ on
+its last line forward again, down to what was being written (so a line of
+several lines is still edited with the arrows); writing in the box ends
+the walk. Tab completes the path before the caret from the repo's files
+(`src/ma` to `src/main.rs `, a directory with its `/`); several matches
+are written to what they share and listed in one quiet line under the box
+(monospace, as paths are), gone at the next key. With no path to complete
+Tab moves on, as everywhere.
 While one reads (the center turned by the wheel, a touch or the keys) and
 the box is empty and not being written in, it steps back (a 120 ms fade)
 and lets the text under it be pressed; the keyboard reaching it, a press on
@@ -754,7 +763,9 @@ to, and again unmarks it, the mark staying on its line while the app is
 open) and 実行結果 (each line sent
 from the prompt box, newest first: the line, how long it took or that it
 is still running, and what came out until the prompt returned; the Prompt
-itself scrolls on, this keeps the record). The Prompt's own status line is
+itself scrolls on, this keeps the record). A line pressed there is back in
+the prompt box, the caret at its end, to be changed or sent again; it is
+not run. The Prompt's own status line is
 empty while it simply runs; it speaks only when something is missing (large
 files and binaries not copied in, what could not be written back). The chosen reference is remembered on this device.
 

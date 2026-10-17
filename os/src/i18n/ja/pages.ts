@@ -69,6 +69,7 @@ export default {
   'No changes': '変更はありません',
   'No Issues yet': 'Issue はまだありません',
   'Running': '実行中',
+  'Put back in the prompt box': 'プロンプトに戻す',
 
   // Writing an issue
   'Repo to write in': '書く repo',
