@@ -112,22 +112,32 @@ impl IssueRef {
     pub fn line(&self) -> String { self.file.trim_end_matches(".md").to_string() }
     /// Where the core keeps it ("issue/001.md").
     pub fn path(&self) -> String { format!("issue/{}", self.file) }
-    /// How a person calls it: hello#1.
-    pub fn name(&self) -> String { format!("{}{}", self.repo, length3_core::issues::number(&self.file)) }
+    /// How a person calls it: hello#1; one still without a number, by its words.
+    pub fn name(&self) -> String { called(&self.repo, &self.file, &self.title) }
     /// hello#1 Fix：title
-    pub fn shown(&self) -> String { format!("{} {}", self.name(), self.title) }
+    pub fn shown(&self) -> String {
+        if issues::number_of(&self.file).is_some() { format!("{} {}", self.name(), self.title) } else { format!("{} {}", self.repo, self.title) }
+    }
 }
 
-/// Whether a word names an issue by its number (#3, hello#3), or by the
+/// How an issue is called where a command names it: hello#1; one without a
+/// number yet, by its first line in quotes (as l3 finds it by its words).
+pub fn called(repo: &str, file: &str, first_line: &str) -> String {
+    match issues::number_of(file) { Some(n) => format!("{repo}#{n}"), None => format!("\"{first_line}\"") }
+}
+
+/// Whether a word names an issue by its number (3, #3, hello#3), or by the
 /// file that holds it (still read, never asked for).
 pub fn numbered(w: &str) -> bool {
-    w.contains('#') || w.contains("issue/")
+    w.contains('#') || w.contains("issue/") || (!w.is_empty() && w.bytes().all(|b| b.is_ascii_digit()))
 }
 
-/// The repo an issue's number names, and which issue in it ("3").
+/// The repo an issue's number names, and which issue in it ("3"). A bare
+/// number is of the repo you are in (outside one, see `issue`).
 pub fn issue_parts(ctx: &Ctx, word: &str) -> Result<(String, String)> {
     let w = word.trim_start_matches("/root/");
-    let (repo, which) = if let Some(n) = w.strip_prefix('#') {
+    let bare = !w.is_empty() && w.bytes().all(|b| b.is_ascii_digit());
+    let (repo, which) = if let Some(n) = w.strip_prefix('#').or(if bare { Some(w) } else { None }) {
         let h = ctx.here.as_ref().ok_or_else(|| Error::Usage(tr!("#{} names an issue of the repo you are in; elsewhere write REPO#{}", "#{} は今いる repo の Issue です。外では REPO#{} と書きます", n, n)))?;
         (h.repo.clone(), n.to_string())
     } else if let Some((r, n)) = w.split_once('#') {
@@ -151,7 +161,10 @@ pub fn issue_parts(ctx: &Ctx, word: &str) -> Result<(String, String)> {
 pub fn issue(ctx: &Ctx, call: &Call, i: usize) -> Result<IssueRef> {
     let w = call.word(i).unwrap_or_default();
     let r = ctx.repos()?;
-    let (repo, file) = if numbered(w) {
+    let bare = !w.is_empty() && w.bytes().all(|b| b.is_ascii_digit());
+    let (repo, file) = if bare && ctx.here.is_none() {
+        by_number(&r, w)?
+    } else if numbered(w) {
         let (repo, which) = issue_parts(ctx, w)?;
         let repo = repo_named(ctx, Some(&repo))?;
         let file = r.issue_file(&repo, &which).map_err(Error::NotFound)?;
@@ -164,12 +177,26 @@ pub fn issue(ctx: &Ctx, call: &Call, i: usize) -> Result<IssueRef> {
     Ok(IssueRef { repo, file, title })
 }
 
+/// A bare number outside a repo: the one repo here that has an issue of that number.
+fn by_number(r: &repos::Repos, n: &str) -> Result<(String, String)> {
+    let mut found = Vec::new();
+    for s in r.list()? {
+        if let Ok(file) = r.issue_file(&s.name, n) { found.push((s.name, file)); }
+    }
+    match found.len() {
+        1 => Ok(found.remove(0)),
+        0 => Err(Error::NotFound(tr!("No repo here has an issue #{}", "#{} の Issue がある repo はありません", n.trim_start_matches('0')))),
+        _ => Err(Error::Usage(tr!("#{} is in more than one repo: {}", "#{} は複数の repo にあります：{}", n.trim_start_matches('0'),
+            found.iter().map(|(repo, _)| format!("{repo}#{}", n.trim_start_matches('0'))).collect::<Vec<_>>().join(", ")))),
+    }
+}
+
 /// The one issue whose title the words name; several are a choice to make, not a guess.
 fn by_title(ctx: &Ctx, r: &repos::Repos, words: &str) -> Result<(String, String)> {
     let names: Vec<String> = match &ctx.here { Some(h) => vec![h.repo.clone()], None => r.list()?.into_iter().map(|s| s.name).collect() };
     let mut all = Vec::new();
-    for n in &names { all.extend(r.issues(n)?.unwrap_or_default()); }
-    all.sort_by(|a, b| (&a.repo, &a.file).cmp(&(&b.repo, &b.file)));
+    for n in &names { all.extend(r.issues(n)?); }
+    all.sort_by(|a, b| a.repo.cmp(&b.repo).then(a.n.unwrap_or(u64::MAX).cmp(&b.n.unwrap_or(u64::MAX))).then(a.file.cmp(&b.file)));
     match issues::by_title(&all, words).as_slice() {
         [one] => Ok((one.repo.clone(), one.file.clone())),
         [] => Err(Error::NotFound(match &ctx.here {
@@ -177,7 +204,10 @@ fn by_title(ctx: &Ctx, r: &repos::Repos, words: &str) -> Result<(String, String)
             None => tr!("No issue here is called \"{}\" (l3 git lists them)", "「{}」という Issue はここにありません（l3 git で一覧）", words),
         })),
         many => {
-            let rows: Vec<String> = many.iter().map(|i| format!("  {}{} {}", i.repo, issues::number(&i.file), text::named(i.kind.as_deref(), &i.title))).collect();
+            let rows: Vec<String> = many.iter().map(|i| {
+                let at = i.n.map_or_else(|| i.repo.clone(), |n| format!("{}#{n}", i.repo));
+                format!("  {at} {}", text::named(i.kind.as_deref(), &i.title))
+            }).collect();
             Err(Error::Usage(tr!("\"{}\" could be any of these; name one by its number:\n{}", "「{}」はどれのことか決まりません。番号で書いてください：\n{}", words, rows.join("\n"))))
         }
     }
@@ -232,6 +262,9 @@ mod tests {
         assert_eq!(repo_named(&inside, None).unwrap(), "hello");
         let i = IssueRef { repo: "hello".into(), file: "003.md".into(), title: "Fix：x".into() };
         assert_eq!((i.name(), i.shown(), i.line()), ("hello#3".into(), "hello#3 Fix：x".into(), "003".into()));
-        assert!(numbered("#3") && numbered("hello#3") && !numbered("restart loses"));
+        assert!(numbered("#3") && numbered("hello#3") && numbered("3") && !numbered("restart loses") && !numbered("3rd"));
+        assert_eq!(issue_parts(&inside, "3").unwrap(), ("hello".into(), "3".into()));
+        let loose = IssueRef { repo: "hello".into(), file: "notes.md".into(), title: "Docs：notes".into() };
+        assert_eq!((loose.name(), loose.shown()), ("\"Docs：notes\"".into(), "hello Docs：notes".into()));
     }
 }

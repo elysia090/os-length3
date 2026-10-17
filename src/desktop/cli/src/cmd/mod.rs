@@ -96,7 +96,7 @@ pub fn overview(ctx: &Ctx, _: &Call) -> Result<Reply> {
     let list = r.list()?;
     let todos = if ctx.prompt { Vec::new() } else { core_home::todos()? };
     let open = todos.iter().filter(|t| !t.done).count();
-    let issues: usize = list.iter().map(|s| r.issues(&s.name).ok().flatten().map_or(0, |v| v.len())).sum();
+    let issues: usize = list.iter().map(|s| r.issues(&s.name).map_or(0, |v| v.len())).sum();
     let c = if ctx.prompt { None } else { core_remote::connection() };
     let data = json!({"repos": list.len(), "issues": issues, "todo": {"open": open, "all": todos.len()},
         "home": paths::data_dir(), "remote": c.as_ref().map(|c| &c.url), "prompt": ctx.prompt});
