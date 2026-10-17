@@ -45,6 +45,11 @@ pub fn repo_new(ctx: &Ctx, call: &Call) -> Result<Reply> {
         return Err(Error::Usage(tr!("{:?} is not a repo name (letters, digits, . _ -)", "{:?} は repo の名前になりません（英数字と . _ -）", name)));
     }
     let template = call.flags.template.as_deref().unwrap_or("standard");
+    // One of the words -t shows, like any choice: another is not how it is written (2).
+    if length3_core::templates::find(template).is_none() {
+        let ids: Vec<String> = length3_core::templates::all().into_iter().map(|t| t.id).collect();
+        return Err(Error::Usage(tr!("No template {} ({})", "テンプレート {} はありません（{}）", template, ids.join(", "))));
+    }
     let s = ctx.repos()?.create(name, template)?;
     Ok(Reply::done(tr!("Made {} ({} · {})", "{} を作りました（{} · {}）", s.name, template, files(s.files as usize)), json!({"repo": s, "template": template})))
 }
