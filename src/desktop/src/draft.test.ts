@@ -176,3 +176,15 @@ test('an issue is worked on in its own copy; pushed, submitted, reviewed and mer
   // The work's copy is still here until it goes; back on it, it is as it was.
   assert.deepEqual(store.copies('notes').sort(), ['001', 'main']);
 });
+
+test('a directory is derived by proof: a cache tag, or a tool\'s directory beside what it is made from', async () => {
+  const {derived} = await import('./draft.ts');
+  const none = new Set<string>();
+  assert.equal(derived('node_modules', new Set(['package.json']), none), true);
+  assert.equal(derived('node_modules', none, none), false);
+  assert.equal(derived('target', new Set(['Cargo.toml']), none), true);
+  assert.equal(derived('target', new Set(['Makefile']), none), false);
+  assert.equal(derived('.venv', none, new Set(['pyvenv.cfg'])), true);
+  assert.equal(derived('out', none, new Set(['CACHEDIR.TAG'])), true);
+  assert.equal(derived('src', new Set(['package.json']), none), false);
+});

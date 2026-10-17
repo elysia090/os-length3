@@ -10,6 +10,14 @@
 //!   (kept)          and why: the root Prompts run on, a repo holding what
 //!                   cannot be sent, Home's settings
 //!
+//! What a repo's Prompts wrote outside it is listed too, by owner and
+//! lifetime (owned.rs): its environment (what its package manager put over
+//! the root; freeing it brings the plain root back) and its caches (made
+//! again when needed); and inside it, what is derived from its files
+//! (node_modules, target, a venv: made again by the tool that made them).
+//! None of these is ever the only copy of anything the person made, so all
+//! may go; the first two go once their repo is not on this device.
+//!
 //! A repo that is freed stays on the Remote and comes back when opened.
 //!
 //! Every figure says how it is known. `allocated` is what the host's
@@ -224,6 +232,8 @@ fn leftovers(dir: &Path, data: &Path, out: &mut Vec<Leftover>) {
         let path = e.path();
         let Ok(meta) = path.symlink_metadata() else { continue };
         if meta.is_dir() && path == crate::root::system_dir(data) { continue; }
+        // A repo's environment and caches are listed as theirs, not walked for leftovers.
+        if meta.is_dir() && dir == data && (name == "envs" || name == "caches") { continue; }
         if meta.is_dir() { leftovers(&path, data, out); continue; }
         if !meta.is_file() || links(&meta) != 1 { continue; }
         let Some(pid) = temporary_writer(&name, dir == settings.as_path()) else { continue };
@@ -309,15 +319,66 @@ fn repo_item(repos: &crate::repos::Repos, name: &str, connected: bool, open: &[S
     } else {
         (Room::SyncFree, if s.fresh { crate::tr!("Not on the Remote yet; sent, then freed", "まだ Remote にありません。送ってから空けます") } else { crate::tr!("{} changes are sent, then it is freed", "{} 件の変更を送ってから空けます", s.changed) })
     };
-    // Every copy of it counts: main's and each issue's being worked on.
+    // Every copy of it counts: main's and each issue's being worked on; what is derived in it is its own item.
     let works = crate::work::worktrees(name);
-    let size = allocated(&dir) + works.iter().map(|(_, p)| allocated(p)).sum::<u64>();
+    let derived: u64 = crate::owned::derived_in(&dir).iter().map(|p| allocated(p)).sum();
+    let size = allocated(&dir).saturating_sub(derived) + works.iter().map(|(_, p)| allocated(p)).sum::<u64>();
     let detail = match works.len() {
         0 => crate::tr!("repo · {} files", "repo · {} ファイル", files),
         1 => crate::tr!("repo · {} files · 1 work", "repo · {} ファイル · 作業 1", files),
         n => crate::tr!("repo · {} files · {} works", "repo · {} ファイル · 作業 {}", files, n),
     };
     Some(Item { id: format!("repo:{name}"), what: name.into(), detail, allocated: size, room, why })
+}
+
+/// A repo's environment ("env") or caches ("cache"), if it has them here.
+fn owned_item(data: &Path, repos_dir: &Path, kind: &str, repo: &str, open: &[String]) -> Option<Item> {
+    if !crate::repos::valid_name(repo) { return None; }
+    let dir = if kind == "env" { crate::owned::env_dir(data, repo) } else { crate::owned::cache_dir(data, repo) };
+    if !dir.is_dir() { return None; }
+    let (room, why) = if open.iter().any(|o| o == repo) {
+        (Room::Keep, crate::tr!("A Prompt has it open", "Prompt で開いています"))
+    } else if !repos_dir.join(repo).is_dir() {
+        (Room::Free, crate::tr!("Its repo is not on this device", "その repo はこの端末にありません"))
+    } else if kind == "env" {
+        (Room::Free, crate::tr!("What its Prompts installed over the root; freed, the plain root is back", "Prompt が root の上に入れたもの。空けると元の root に戻ります"))
+    } else {
+        (Room::Free, crate::tr!("Made again when needed", "必要になればまた作られます"))
+    };
+    let detail = if kind == "env" { crate::tr!("environment", "環境") } else { crate::tr!("caches", "キャッシュ") };
+    Some(Item { id: format!("{kind}:{repo}"), what: repo.into(), detail, allocated: allocated(&dir), room, why })
+}
+
+/// What is derived from a repo's own files, if it has any.
+fn derived_item(repos_dir: &Path, repo: &str, open: &[String]) -> Option<Item> {
+    if !crate::repos::valid_name(repo) { return None; }
+    let found = crate::owned::derived_in(&repos_dir.join(repo));
+    if found.is_empty() { return None; }
+    let mut names: Vec<String> = found.iter().filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned())).collect();
+    names.sort();
+    names.dedup();
+    let (room, why) = if open.iter().any(|o| o == repo) {
+        (Room::Keep, crate::tr!("A Prompt has it open", "Prompt で開いています"))
+    } else {
+        (Room::Free, crate::tr!("Made again from its files by the tool that made it", "元のファイルから、作ったツールがまた作ります"))
+    };
+    Some(Item { id: format!("derived:{repo}"), what: repo.into(), detail: crate::tr!("derived · {}", "派生物 · {}", names.join(", ")),
+        allocated: found.iter().map(|p| allocated(p)).sum(), room, why })
+}
+
+/// Remove a repo's environment or caches: the overlay leaves a scratch directory no one may read, so
+/// every directory is made the owner's own first.
+fn remove_owned(dir: &Path) -> Result<u64, String> {
+    fn open_up(dir: &Path) {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(dir, fs::Permissions::from_mode(0o700));
+        for e in fs::read_dir(dir).into_iter().flatten().flatten() {
+            if e.file_type().is_ok_and(|t| t.is_dir()) { open_up(&e.path()); }
+        }
+    }
+    let size = allocated(dir);
+    open_up(dir);
+    fs::remove_dir_all(dir).map(|_| size).map_err(|e| e.to_string())
 }
 
 fn root_item(row: SystemUsage) -> Item {
@@ -363,6 +424,12 @@ fn item(data: &Path, repos_dir: &Path, id: &str, open: &[String]) -> Option<Item
         system(data).into_iter().find(|(r, _)| r.sha256 == sha).map(|(r, _)| root_item(r))
     } else if let Some(path) = id.strip_prefix("path:") {
         leftover_at(data, Path::new(path)).map(leftover_item)
+    } else if let Some(repo) = id.strip_prefix("env:") {
+        owned_item(data, repos_dir, "env", repo, open)
+    } else if let Some(repo) = id.strip_prefix("cache:") {
+        owned_item(data, repos_dir, "cache", repo, open)
+    } else if let Some(repo) = id.strip_prefix("derived:") {
+        derived_item(repos_dir, repo, open)
     } else if id == "home" {
         Some(Item { id: "home".into(), what: "Home".into(), detail: String::new(), allocated: 0, room: Room::Keep, why: crate::tr!("This device's settings", "この端末の設定です") })
     } else {
@@ -379,10 +446,14 @@ pub fn space(data: &Path, repos_dir: &Path, open: &[String]) -> Space {
     if let Ok(repos) = crate::repos::Repos::new(repos_dir.to_path_buf()) {
         for s in repos.list().unwrap_or_default() {
             items.extend(repo_item(&repos, &s.name, connected, open));
+            items.extend(derived_item(repos_dir, &s.name, open));
         }
     }
     for (row, _) in system(data) {
         items.push(root_item(row));
+    }
+    for (kind, repo, _) in crate::owned::held(data) {
+        items.extend(owned_item(data, repos_dir, kind, &repo, open));
     }
     let mut left = Vec::new();
     leftovers(data, data, &mut left);
@@ -421,6 +492,12 @@ pub fn free(data: &Path, repos_dir: &Path, ids: &[String], open: &[String]) -> F
             let dir = crate::root::system_dir(data).join(sha);
             let size = allocated(&dir);
             fs::remove_dir_all(&dir).map(|_| size).map_err(|e| e.to_string())
+        } else if let Some(repo) = id.strip_prefix("env:") {
+            remove_owned(&crate::owned::env_dir(data, repo))
+        } else if let Some(repo) = id.strip_prefix("cache:") {
+            remove_owned(&crate::owned::cache_dir(data, repo))
+        } else if let Some(repo) = id.strip_prefix("derived:") {
+            crate::owned::derived_in(&repos_dir.join(repo)).iter().try_fold(0, |n, p| remove_owned(p).map(|k| n + k))
         } else if let Some(path) = id.strip_prefix("path:") {
             remove_leftover(data, Path::new(path))
         } else {
@@ -581,6 +658,65 @@ mod system_tests {
         let r = free(&data, &data.join("repos"), &all_freeable(&u), &[]);
         assert_eq!(r.removed.len(), 2);
         assert!(!old.exists() && !before.exists() && crate::root::system_dir(&data).join("c".repeat(64)).exists());
+        let _ = fs::remove_dir_all(&data);
+    }
+}
+
+#[cfg(test)]
+mod owned_tests {
+    use super::*;
+
+    #[test]
+    fn a_repos_environment_and_caches_are_listed_as_its_and_go_with_it() {
+        use std::os::unix::fs::PermissionsExt;
+        let data = std::env::temp_dir().join(format!("length3-owned-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&data);
+        let repos = data.join("repos");
+        fs::create_dir_all(repos.join("here")).unwrap();
+        // What its package manager put over the root, and the overlay's scratch, which no one may read.
+        let env = crate::owned::env_dir(&data, "here");
+        fs::create_dir_all(env.join("upper/usr/bin")).unwrap();
+        fs::write(env.join("upper/usr/bin/tool"), vec![b'x'; 30_000]).unwrap();
+        // A temporary-looking name inside an environment is the environment's, not a leftover.
+        fs::write(env.join("upper/usr/bin/.tool.length3-4000000-0"), "x").unwrap();
+        fs::create_dir_all(env.join("work/work")).unwrap();
+        fs::set_permissions(env.join("work/work"), fs::Permissions::from_mode(0o000)).unwrap();
+        // Caches of a repo that is no longer on this device: nothing owns them here.
+        let gone = crate::owned::cache_dir(&data, "gone");
+        fs::create_dir_all(gone.join("var-cache")).unwrap();
+        fs::write(gone.join("var-cache/blob"), vec![b'y'; 20_000]).unwrap();
+
+        // Derived from its own files: node_modules beside package.json, a directory that says it is a cache.
+        fs::write(repos.join("here/package.json"), "{}").unwrap();
+        fs::create_dir_all(repos.join("here/node_modules/x")).unwrap();
+        fs::write(repos.join("here/node_modules/x/index.js"), vec![b'z'; 40_000]).unwrap();
+        fs::create_dir_all(repos.join("here/out")).unwrap();
+        fs::write(repos.join("here/out/CACHEDIR.TAG"), "Signature: 8a477f597d28d172789f06886806bc55").unwrap();
+        // Not proven: a node_modules with no package.json beside it is the person's.
+        fs::create_dir_all(repos.join("here/vendor/node_modules")).unwrap();
+        fs::write(repos.join("here/vendor/node_modules/keep.js"), "mine").unwrap();
+        let tree = crate::remote::local_tree(&repos.join("here"));
+        assert_eq!(tree.tree.keys().cloned().collect::<Vec<_>>(), ["package.json", "vendor/node_modules/keep.js"]);
+        assert!(crate::owned::within_derived(&repos.join("here"), "node_modules/x/index.js"));
+        assert!(!crate::owned::within_derived(&repos.join("here"), "vendor/node_modules/keep.js"));
+
+        let s = space(&data, &repos, &[]);
+        let find = |id: &str| s.items.iter().find(|i| i.id == id).cloned();
+        let d = find("derived:here").expect("what is derived is listed");
+        assert!(d.room == Room::Free && d.allocated >= 40_000 && d.detail.contains("node_modules") && d.detail.contains("out"), "{d:?}");
+        assert!(find("repo:here").is_some_and(|r| r.allocated < 40_000), "the repo's size leaves it out");
+        let e = find("env:here").expect("the environment is listed");
+        assert!(e.room == Room::Free && e.allocated >= 30_000, "{e:?}");
+        let c = find("cache:gone").expect("the orphaned caches are listed");
+        assert!(c.room == Room::Free && c.why.contains("not on this device"), "{c:?}");
+        assert!(!s.items.iter().any(|i| i.id.starts_with("path:")), "nothing in an environment is a leftover");
+        // Open in a Prompt, it stays.
+        assert_eq!(item(&data, &repos, "env:here", &["here".into()]).unwrap().room, Room::Keep);
+
+        let f = free(&data, &repos, &["env:here".into(), "cache:gone".into(), "derived:here".into()], &[]);
+        assert_eq!(f.removed.len(), 3, "{:?}", f.kept);
+        assert!(!env.exists() && !gone.exists() && !repos.join("here/node_modules").exists() && !repos.join("here/out").exists());
+        assert!(repos.join("here/package.json").is_file() && repos.join("here/vendor/node_modules/keep.js").is_file(), "the repo's own files stay");
         let _ = fs::remove_dir_all(&data);
     }
 }

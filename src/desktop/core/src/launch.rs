@@ -2,7 +2,12 @@
 //! kernel, with nothing of the host's but what is handed in. No privilege
 //! is needed: a user namespace makes the caller root inside it only.
 //!
-//!   /               the installed root, read-only
+//!   /               the installed root, with the repo's environment over
+//!                   it (owned.rs): what a package manager installs is the
+//!                   repo's, written to the host beside the root, which
+//!                   itself is never written
+//!   /var/cache, /var/tmp, /var/log, /root/.cache
+//!                   the repo's caches, on the host, freed whenever wanted
 //!   /root/<repo>    the repo itself (a bind of its directory), writable
 //!   /tmp, /run      empty, gone when the Prompt ends
 //!   /dev            null, zero, full, random, urandom, tty only
@@ -29,6 +34,9 @@ pub struct Sandbox {
     pub network: bool,
     /// The person's dotfiles (Home's), written into /root before the shell starts.
     pub dotfiles: Vec<(String, String)>,
+    /// The data directory, where the repo's environment and caches are kept
+    /// (owned.rs); without one the root is read-only and nothing outlives the Prompt.
+    pub data: Option<PathBuf>,
 }
 
 /// A dotfile's name as it may be written into /root: a dot, then letters, digits and . _ -.
@@ -136,10 +144,12 @@ fn term() -> String {
 
 /// Lay out the root under `top` and make it `/` (runs as pid 1, inside).
 fn build(s: &Sandbox) -> io::Result<()> {
-    let top = &s.root;
     // Nothing done here is seen outside, and nothing outside comes in later.
     mount(None, Path::new("/"), None, libc::MS_REC | libc::MS_PRIVATE, None)?;
-    mount(Some(top), top, None, libc::MS_BIND | libc::MS_REC, None)?;
+    // The repo's environment over the root, where the kernel lets a user make an overlay; else the root alone.
+    let layered = s.data.as_ref().and_then(|data| environment_over(&s.root, data, &s.name).ok());
+    let top = layered.as_ref().unwrap_or(&s.root);
+    if layered.is_none() { mount(Some(top), top, None, libc::MS_BIND | libc::MS_REC, None)?; }
     // Writable places first, while their mount points can still be made.
     let home = top.join("root");
     mount(Some(Path::new("tmpfs")), &home, Some("tmpfs"), libc::MS_NOSUID | libc::MS_NODEV, Some("mode=0700,size=16m"))?;
@@ -149,6 +159,17 @@ fn build(s: &Sandbox) -> io::Result<()> {
     // The person's dotfiles, fresh in every Prompt (the repo stays the only place written back).
     for (name, text) in &s.dotfiles {
         if dotfile_name(name) && name != &format!(".{}", s.name) { std::fs::write(home.join(name), text)?; }
+    }
+    // The repo's caches: on the host, so what is left in them can be taken back from outside.
+    if let Some(data) = &s.data {
+        for (inside, name) in crate::owned::CACHES {
+            let host = crate::owned::cache_dir(data, &s.name).join(name);
+            std::fs::create_dir_all(&host)?;
+            let at = top.join(inside);
+            // Without the environment over it, the root on the host is not written to: only places it has.
+            let there = if layered.is_some() || inside.starts_with("root/") { std::fs::create_dir_all(&at).is_ok() } else { at.is_dir() };
+            if there { bind(&host, &at, false)?; }
+        }
     }
     for (dir, size) in [("tmp", "1g"), ("run", "64m")] {
         mount(Some(Path::new("tmpfs")), &top.join(dir), Some("tmpfs"), libc::MS_NOSUID | libc::MS_NODEV, Some(&format!("mode=1777,size={size}")))?;
@@ -167,8 +188,9 @@ fn build(s: &Sandbox) -> io::Result<()> {
         std::os::unix::fs::symlink(to, dev.join(link))?;
     }
     mount(Some(Path::new("proc")), &top.join("proc"), Some("proc"), libc::MS_NOSUID | libc::MS_NODEV | libc::MS_NOEXEC, None)?;
-    // Then the root itself becomes read-only; what was mounted on it stays as it is.
-    mount(None, top, None, libc::MS_BIND | libc::MS_REMOUNT | libc::MS_RDONLY | locked_flags(top), None)?;
+    // Then the root itself becomes read-only (unless the repo's environment is over it, which takes
+    // what is written); what was mounted on it stays as it is.
+    if layered.is_none() { mount(None, top, None, libc::MS_BIND | libc::MS_REMOUNT | libc::MS_RDONLY | locked_flags(top), None)?; }
     // Become that root, and let go of the host's tree entirely.
     check(unsafe { libc::chdir(c(top).as_ptr()) }, "chdir")?;
     check(unsafe { libc::syscall(libc::SYS_pivot_root, c(".").as_ptr(), c(".").as_ptr()) as libc::c_int }, "pivot_root")?;
@@ -177,6 +199,18 @@ fn build(s: &Sandbox) -> io::Result<()> {
     let name = b"length3";
     unsafe { libc::sethostname(name.as_ptr() as *const libc::c_char, name.len()) };
     Ok(())
+}
+
+/// The root with the repo's environment over it, mounted at `<env>/merged`:
+/// the root is the overlay's read-only lower layer, so writing to /usr
+/// writes to `<env>/upper` on the host, and the root stays as installed.
+fn environment_over(root: &Path, data: &Path, repo: &str) -> io::Result<PathBuf> {
+    let env = crate::owned::env_dir(data, repo);
+    let (upper, work, merged) = (env.join("upper"), env.join("work"), env.join("merged"));
+    for d in [&upper, &work, &merged] { std::fs::create_dir_all(d)?; }
+    let options = format!("lowerdir={},upperdir={},workdir={}", root.display(), upper.display(), work.display());
+    mount(Some(Path::new("overlay")), &merged, Some("overlay"), libc::MS_NOSUID | libc::MS_NODEV, Some(&options))?;
+    Ok(merged)
 }
 
 /// Pid 1: start the shell, reap whatever ends, and when the shell ends,

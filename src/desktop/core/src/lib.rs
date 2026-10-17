@@ -14,6 +14,7 @@ pub mod issues;
 pub mod linediff;
 #[cfg(target_os = "linux")]
 pub mod launch;
+pub mod owned;
 pub mod paths;
 pub mod prompt;
 pub mod remote;

@@ -49,7 +49,14 @@ frontend and no UI framework; the same frontend is the web build.
   room. No tabs: files are chosen from File.
 - Prompt: in the app with a root installed, the distribution's root itself
   (`l3 prompt`): its sh, gcc, make, git on this kernel, writing the repo
-  directly. Otherwise (and in a browser) translated BusyBox `sh` and `l3`
+  directly. Every place it writes has an owner and a lifetime (DESIGN.md
+  §0): over the read-only root lies the repo's environment (an overlay;
+  `apk add` there is the repo's, in `envs/<repo>`), `/var/cache`,
+  `/var/tmp`, `/var/log` and `~/.cache` are the repo's caches
+  (`caches/<repo>`), `/tmp` and `/run` end with the Prompt. Runtime lists
+  each part, and what is derived in the repo (node_modules beside
+  package.json, target beside Cargo.toml, a venv, anything with a
+  CACHEDIR.TAG), which is never sent to the Remote. Otherwise (and in a browser) translated BusyBox `sh` and `l3`
   running on the xlat kernel in a Worker, on the open repo. What the shell changes under `/root/<repo>` is
   written back through the store (text files up to the read limit), and
   what is saved anywhere else is put into the shell's copy, so the shell,

@@ -89,15 +89,39 @@ export function beside(path: string): string {
 
 interface Local { tree: Tree; texts: Map<string, Uint8Array>; bytes: number }
 
+/**
+ * Whether a directory is derived: made from the repo's own files by a tool
+ * that makes it again from them (core/src/owned.rs `derived`, the same
+ * rule). Its lifetime is its sources', so it is not the repo's to send.
+ * Known by proof: it says it is a cache (CACHEDIR.TAG), or it is a tool's
+ * usual directory beside the file it is made from.
+ */
+export function derived(name: string, siblings: ReadonlySet<string>, inside: ReadonlySet<string>): boolean {
+  if (inside.has('CACHEDIR.TAG')) return true;
+  switch (name) {
+    case 'node_modules': case '.next': case '.nuxt': case '.svelte-kit': case '.parcel-cache': case '.turbo': return siblings.has('package.json');
+    case 'target': return siblings.has('Cargo.toml');
+    case '.venv': case 'venv': return inside.has('pyvenv.cfg');
+    case '__pycache__': case '.pytest_cache': case '.mypy_cache': case '.ruff_cache': case '.tox': return true;
+    case '.gradle': return ['build.gradle', 'build.gradle.kts', 'settings.gradle', 'settings.gradle.kts'].some((f) => siblings.has(f));
+    case '.zig-cache': case 'zig-cache': case 'zig-out': return siblings.has('build.zig');
+    default: return false;
+  }
+}
+
 async function localTree(repo: string, away: string[] = [], base: Tree = {}): Promise<Local> {
   const tree: Tree = {}, texts = new Map<string, Uint8Array>();
   let bytes = 0;
-  const walk = async (dir: string) => {
-    const entries = await store.tree(repo, dir);
+  const walk = async (dir: string, entries: Awaited<ReturnType<typeof store.tree>>) => {
     if (dir && !entries.length) tree[dir] = null;
+    const names = new Set(entries.map((e) => e.name));
     for (const e of entries) {
       const path = dir ? `${dir}/${e.name}` : e.name;
-      if (e.kind === 'dir') { await walk(path); continue; }
+      if (e.kind === 'dir') {
+        const inside = await store.tree(repo, path);
+        if (!derived(e.name, names, new Set(inside.map((x) => x.name)))) await walk(path, inside);
+        continue;
+      }
       const c = await store.read(repo, path).catch(() => null);
       if (!c || c.text === null) continue;
       const b = enc.encode(c.text);
@@ -107,7 +131,7 @@ async function localTree(repo: string, away: string[] = [], base: Tree = {}): Pr
       bytes += b.length;
     }
   };
-  await walk('');
+  await walk('', await store.tree(repo, ''));
   // What this copy cannot hold stays as the Remote has it.
   for (const p of away) if (!(p in tree) && base[p] !== undefined) tree[p] = base[p];
   return {tree, texts, bytes};

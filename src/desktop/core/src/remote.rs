@@ -353,26 +353,28 @@ fn walk(dir: &Path, prefix: &str, out: &mut Local) {
         empty = false;
         let rel = if prefix.is_empty() { name.clone() } else { format!("{prefix}/{name}") };
         if is_git_name(&name) {
-            out.unsynced.push((rel, "git の履歴".into()));
+            out.unsynced.push((rel, crate::tr!("git history", "git の履歴")));
             continue;
         }
         let Ok(meta) = e.path().symlink_metadata() else { continue };
         if meta.file_type().is_symlink() {
-            out.unsynced.push((rel, "リンク".into()));
+            out.unsynced.push((rel, crate::tr!("a link", "リンク")));
         } else if meta.is_dir() {
+            // Made from the repo's own files (owned.rs): not the repo's to send, nor what keeps it here.
+            if crate::owned::derived(dir, &name, &e.path()) { continue; }
             walk(&e.path(), &rel, out);
         } else if meta.is_file() {
             if meta.len() > BLOB_LIMIT {
-                out.unsynced.push((rel, "16 MB を超えるファイル".into()));
+                out.unsynced.push((rel, crate::tr!("a file over 16 MB", "16 MB を超えるファイル")));
                 continue;
             }
-            let Some(sha) = digest(&e.path(), &meta) else { out.unsynced.push((rel, "読めないファイル".into())); continue };
+            let Some(sha) = digest(&e.path(), &meta) else { out.unsynced.push((rel, crate::tr!("a file that cannot be read", "読めないファイル"))); continue };
             out.bytes += meta.len();
             out.read.push(e.path());
             out.files.insert(sha.clone(), e.path());
             out.tree.insert(rel, Some(sha));
         } else {
-            out.unsynced.push((rel, "特殊なファイル".into()));
+            out.unsynced.push((rel, crate::tr!("a special file", "特殊なファイル")));
         }
     }
     if empty && !prefix.is_empty() {
@@ -561,6 +563,8 @@ fn apply(client: &Client, dir: &Path, here: &Tree, p: &Plan) -> Result<Vec<Strin
         write_file(&at, bytes)
     };
     for (path, what) in &p.take {
+        // What a derived directory holds here is made here; the Remote's word on it is not taken.
+        if crate::owned::within_derived(dir, path) { continue; }
         let Ok(at) = place(dir, path) else {
             if let Some(Some(sha)) = what {
                 let bytes = client.blob(sha)?;
