@@ -95,9 +95,13 @@ function select(id: PurposeId) {
     tab.tabIndex = selected ? 0 : -1;
   }
   $('page').setAttribute('aria-labelledby', `purpose-${id}`);
+  named();
   render();
   if (id !== 'new-repo') save(PURPOSE_KEY, id);
 }
+
+/** The page's name where the host lists it (a tab, history, the window list): the place, then the OS. */
+const named = () => { document.title = `${t(purpose(current).label)} · Length³ OS`; };
 
 function render() {
   const page = $('page');
@@ -151,6 +155,7 @@ onLang(() => {
     if (tag) tag.textContent = label;
   }
   document.querySelector('.rail')?.setAttribute('aria-label', t('Purposes'));
+  named();
   reach();
   render();
 });
