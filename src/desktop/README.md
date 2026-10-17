@@ -78,25 +78,33 @@ an issue or a TODO. Templates and the naming rules live once in `shared/`,
 read by the core, the app and both test suites.
 
 ```
-Server    server
 Home      todo · profile · lang
 Forge     repo · band · prompt
-File      file
+File      file (write · mkdir · rm)
 Git       git · issue · start · main · commit · push · reset · diff · log
           review · reply · merge · reject
-Runtime   runtime · free · root · ssh · dotfiles
+Runtime   runtime · free · root · ssh · dotfile
 Remote    remote · login · logout
+Server    server
 Inbox     inbox · address
 ```
 
-One table (`cli/src/help.rs`) says what each command does and how it is
-written; `l3 help` lists them by the rail, `l3 help COMMAND` (or
-`l3 COMMAND --help`) gives one command's forms, `l3 help all` every form, a
-mistyped word gets the nearest one ("Did you mean: l3 commit"), and
-`l3 completion bash|zsh|fish` completes commands, what follows them and the
-repo names. In a repo (its copy, an issue's copy, or its Prompt) the repo
-may be left out and `#N` is that repo's issue N: `l3 commit`, `l3 start #3`,
-`l3 merge #3`, and `l3 file src` reads from where you are. `l3 -V` gives
+One table (`cli/src/spec.rs`) says every form: its words and what each
+slot is (a repo, a path, an issue, text…), its flags, what it needs (the
+Remote; whether it may run inside the app's Prompt) and how it keeps in step
+with the Remote. Parsing, the help, the completion, what a Prompt may run and
+the syncing around each command are all read from it. `l3 help` lists the
+commands by the rail, `l3 help COMMAND` (or `l3 COMMAND --help`) gives one
+command's forms, `l3 help all` every form, a mistyped word gets the nearest
+one ("Did you mean: l3 commit"), and `l3 completion bash|zsh|fish` completes
+commands, verbs, flags and what fits each slot (repo names, paths, issues,
+dotfiles). In a repo (its copy, an issue's copy, or its Prompt) the repo may
+be left out and `#N` is that repo's issue N: `l3 commit`, `l3 start #3`,
+`l3 merge #3`, and `l3 file src` reads from where you are. `--` ends the
+flags for every command (`l3 todo add -- "-1 day"`). Every command takes
+`--json` (data, camelCase keys; an error is `{"error":{"kind","message"}}`),
+and exits 0 when done, 1 when not, 2 when not how it is written, 3 when the
+Remote is out of reach, 4 when what was named is not there. `l3 -V` gives
 l3's version and the root's.
 
 Names are written owner first, as DESIGN.md §5 "Names" sets out (one
@@ -115,7 +123,10 @@ to it first, and after every command each repo whose files differ from what
 was last agreed is sent (which differ is seen from the digests kept, so a
 repo in step costs no request). What a person does to the Remote is only
 taking a repo off it; Git's words (commit, push, review, merge) are about
-history, never about getting files there.
+history, never about getting files there. Signing out (`l3 logout`, or the
+app's) sends every copy first; one that cannot be sent keeps the device
+signed in, since forgetting what was agreed would undo an unsent change (a
+file removed here) at the next sign-in.
 
 On the host it uses the app's data directory (`$LENGTH3_HOME` overrides):
 `cargo install --path cli`. The same binary, built static for xlat, is
