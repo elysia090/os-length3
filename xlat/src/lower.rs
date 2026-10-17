@@ -2007,9 +2007,15 @@ fn lower_function(program: &Program, index: u32, handed: &BTreeMap<u64, u32>, op
     fx.f
 }
 
+/// Slots in the dispatcher's cache of where addresses were found (16 bytes
+/// each, past the entry table). One gcc building hello dispatched 1.8
+/// million times to code made later, each a call out to the host before.
+const DISPATCH_CACHE: u64 = 1 << 14;
+
 /// Helpers: 64x64 high products, entry resolution and the dispatcher.
-/// `table` is where the sorted entry table sits in guest memory.
-fn helpers(code: &mut CodeSection, entries: u32, table: u64) {
+/// `table` is where the sorted entry table sits in guest memory, `cache`
+/// where the dispatcher keeps what it found (DISPATCH_CACHE slots).
+fn helpers(code: &mut CodeSection, entries: u32, table: u64, cache: u64) {
     // mulhu(a, b): schoolbook on 32-bit halves.
     let mut f = WasmFunction::new([(6, ValType::I64)]);
     let (a, b, al, ah, bl, bh, mid, t) = (0, 1, 2, 3, 4, 5, 6, 7);
@@ -2061,14 +2067,29 @@ fn helpers(code: &mut CodeSection, entries: u32, table: u64) {
     ] { f.instruction(&i); }
     code.function(&f);
 
-    // dispatch(addr): enter the function holding addr at that block.
-    let mut f = WasmFunction::new([(1, ValType::I64)]);
+    // dispatch(addr): enter the function holding addr at that block. Where
+    // an address was found is kept in a direct-mapped cache past the entry
+    // table (address, then function << 32 | block): a call between modules
+    // made later, or a return out of every translated frame, then costs a
+    // load and a compare, not a search and a call out to the host. An empty
+    // slot holds address 0, which is never taken as found.
+    let mc = |offset| MemArg { offset: cache + offset, align: 3, memory_index: 0 };
+    let mut f = WasmFunction::new([(1, ValType::I64), (1, ValType::I32)]);
+    let (v, at) = (1, 2);
     for i in [
-        W::LocalGet(0), W::Call(F_RESOLVE), W::LocalTee(1), W::I64Const(0), W::I64LtS,
+        W::LocalGet(0), W::I64Const(0x9e37_79b9_7f4a_7c15u64 as i64), W::I64Mul, W::I64Const(64 - DISPATCH_CACHE.trailing_zeros() as i64), W::I64ShrU,
+        W::I32WrapI64, W::I32Const(4), W::I32Shl, W::LocalSet(at),
+        W::LocalGet(at), W::I64Load(mc(0)), W::LocalGet(0), W::I64Eq, W::LocalGet(0), W::I64Const(0), W::I64Ne, W::I32And,
+        W::If(BlockType::Empty), W::LocalGet(at), W::I64Load(mc(8)), W::LocalSet(v),
+        W::Else,
+        W::LocalGet(0), W::Call(F_RESOLVE), W::LocalTee(v), W::I64Const(0), W::I64LtS,
         // Not in this module's table: the host translates it now, or says it cannot.
-        W::If(BlockType::Empty), W::LocalGet(0), W::Call(F_MISS), W::LocalSet(1), W::End,
-        W::LocalGet(1), W::I64Const(0), W::I64LtS,
+        W::If(BlockType::Empty), W::LocalGet(0), W::Call(F_MISS), W::LocalSet(v), W::End,
+        W::LocalGet(v), W::I64Const(0), W::I64LtS,
         W::If(BlockType::Empty), W::LocalGet(0), W::I32Const(TRAP_UNMAPPED_TARGET), W::Call(F_TRAP), W::Unreachable, W::End,
+        W::LocalGet(at), W::LocalGet(0), W::I64Store(mc(0)),
+        W::LocalGet(at), W::LocalGet(v), W::I64Store(mc(8)),
+        W::End,
         W::LocalGet(1), W::I32WrapI64,
         W::LocalGet(1), W::I64Const(32), W::I64ShrU, W::I32WrapI64,
         W::ReturnCallIndirect { type_index: T_FN, table_index: 0 },
@@ -2224,7 +2245,9 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
     // keeps every engine able to load the module); the loader treats it as
     // part of the image.
     let table_base = image_end(elf);
-    let end = table_base + (program.entries.len() as u64 * 16).next_multiple_of(4096);
+    // The dispatch cache follows the table, also part of the image (a forked child keeps it: its slots are the same).
+    let cache = table_base + (program.entries.len() as u64 * 16).next_multiple_of(4096);
+    let end = cache + DISPATCH_CACHE * 16;
     let pages = end.div_ceil(65536);
     imports.import("env", "memory", EntityType::Memory(MemoryType {
         minimum: pages, maximum: Some(65536), memory64: false, shared: false, page_size_log2: None,
@@ -2274,7 +2297,7 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
     module.section(&elements);
 
     let mut code = CodeSection::new();
-    helpers(&mut code, entries as u32, table_base);
+    helpers(&mut code, entries as u32, table_base, cache);
     for f in lower_all(program, options, &mut report) { code.function(&f); }
     module.section(&code);
 
