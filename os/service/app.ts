@@ -3,7 +3,7 @@
 // bundles, open boards and public repos needs a session: a bearer token, or
 // the session cookie on a request from one of the app's own pages.
 //
-//   GET    /v1/about                  what this Remote offers: its sign-in providers
+//   GET    /v1/about                  what this Remote offers: its sign-in providers, and its app's origin
 //   GET    /v1/os/:sha                a release bundle, to anyone, by digest (Range)
 //   GET    /v1/moved                  what moved, cheaply: {repos: stamp, home: {key: version}}
 //   POST   /v1/blobs/missing [sha]    which of these the account does not have yet
@@ -59,6 +59,11 @@ export interface Deps {
   bucket: Bucket;
   /** Pages that may call: the web app, the desktop app's webview. */
   origins: string[];
+  /**
+   * The web app's origin, where a device's code is approved (auth.ts verificationUri): said in
+   * /v1/about, so a device that reaches the Remote by another name opens that page and no other.
+   */
+  appOrigin?: string;
   /** The providers offered for sign-in (auth.ts providers()). */
   providers: string[];
   /** Bytes one account may keep: its blobs and the trees its repos hold. */
@@ -207,7 +212,8 @@ export function createApp(d: Deps) {
   if (d.enter) app.all('/api/auth/passkey/*', (c) => c.json({error: 'This Remote is entered by its link'}, 403));
   app.on(['GET', 'POST'], '/api/auth/*', (c) => d.auth.handler(c.req.raw));
 
-  app.get('/v1/about', (c) => c.json({passkey: !d.enter, providers: d.enter ? [] : d.providers, domain: d.domain ?? 'length3.com', ...(d.enter ? {enter: true} : {})}));
+  app.get('/v1/about', (c) => c.json({passkey: !d.enter, providers: d.enter ? [] : d.providers, domain: d.domain ?? 'length3.com',
+    ...(d.appOrigin ? {app: d.appOrigin} : {}), ...(d.enter ? {enter: true} : {})}));
   if (d.enter) enter({db, auth: d.auth, enter: d.enter}, app);
   if (d.providers.includes('dev')) app.route('/dev-oauth', devOAuth());
 

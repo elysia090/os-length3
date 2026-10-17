@@ -41,7 +41,7 @@ async function service(records: Record<string, string[]> = {}, o: {quota?: numbe
   // DNS as a map of name → TXT records.
   const dns = new Map(Object.entries(records));
   const mails: {to: string; subject: string; text: string}[] = [];
-  const app = createApp({db, auth, bucket, origins: [APP], providers: ['dev'], domain: 'length3.test', baseURL: BASE,
+  const app = createApp({db, auth, bucket, origins: [APP], appOrigin: APP, providers: ['dev'], domain: 'length3.test', baseURL: BASE,
     secret: 'test-secret-'.repeat(4), txt: async (name) => dns.get(name) ?? [], recheck: 0, mail: async (to, subject, text) => { mails.push({to, subject, text}); }, quota: o.quota,
     enter: o.enter});
   // The service asks its own stand-in provider for tokens over the network: here, itself.
@@ -121,7 +121,7 @@ test('an account is a provider identity: the same person signs in to the same ac
   assert.equal((await s.call('GET', '/v1/repos', {token: raw})).status, 200);
   // No way in without a provider: there are no blank accounts.
   assert.notEqual((await s.call('POST', '/api/auth/sign-in/anonymous', {body: {}})).status, 200);
-  assert.deepEqual((await s.call('GET', '/v1/about')).json, {passkey: true, providers: ['dev'], domain: 'length3.test'});
+  assert.deepEqual((await s.call('GET', '/v1/about')).json, {passkey: true, providers: ['dev'], domain: 'length3.test', app: APP});
 });
 
 test('a device asks for a code, a signed-in browser approves it, the device gets its own session', async () => {
@@ -131,6 +131,8 @@ test('a device asks for a code, a signed-in browser approves it, the device gets
   assert.equal(asked.status, 200, JSON.stringify(asked.json));
   const {device_code, user_code, verification_uri_complete} = asked.json as unknown as {device_code: string; user_code: string; verification_uri_complete: string};
   assert.ok(verification_uri_complete.startsWith(`${APP}/?device`));
+  // On the origin the Remote says its app is on, by whatever name a device reaches it (core/src/remote.rs device_page_ok).
+  assert.ok(verification_uri_complete.startsWith(`${(await s.call('GET', '/v1/about')).json.app}/?device`));
   const poll = () => s.call('POST', '/api/auth/device/token', {body: {grant_type: 'urn:ietf:params:oauth:grant-type:device_code', device_code, client_id: 'l3'}});
   assert.equal((await poll()).json.error, 'authorization_pending');
   // Unknown clients cannot ask.
@@ -1222,7 +1224,7 @@ test('The service\'s role reads and writes rows, and nothing else', async () => 
 test('For research: nobody signs up, the link enters the one account, and nothing is shown to everyone', async () => {
   const key = 'k'.repeat(40);
   const s = await service({}, {enter: {as: 'banana000000', key}});
-  assert.deepEqual((await s.call('GET', '/v1/about')).json, {passkey: false, providers: [], domain: 'length3.test', enter: true});
+  assert.deepEqual((await s.call('GET', '/v1/about')).json, {passkey: false, providers: [], domain: 'length3.test', app: APP, enter: true});
   // A provider admits nobody, not even one this Remote could offer.
   const asked = await s.app.request(`${BASE}/api/auth/sign-in/social`, {method: 'POST', headers: {Origin: APP, 'Content-Type': 'application/json'},
     body: JSON.stringify({provider: 'dev', callbackURL: `${APP}/`})});

@@ -54,7 +54,7 @@ const mail = async (to: string, subject: string, text: string) => {
   console.log(line.trimEnd());
   appendFileSync(join(dir, 'mail.log'), line);
 };
-const app = createApp({db, auth, bucket, origins: [appOrigin, ...others], providers: enter ? [] : ['dev'], domain: 'length3.test', baseURL, secret, mail, enter});
+const app = createApp({db, auth, bucket, origins: [appOrigin, ...others], appOrigin, providers: enter ? [] : ['dev'], domain: 'length3.test', baseURL, secret, mail, enter});
 
 createServer(async (req, res) => {
   const chunks: Buffer[] = [];

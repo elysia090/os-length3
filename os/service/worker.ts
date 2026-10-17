@@ -76,7 +76,7 @@ function make(env: Env) {
   const auth = createAuth({db, secret: env.BETTER_AUTH_SECRET, baseURL: env.BASE_URL, appOrigin: env.APP_ORIGIN, origins, github, google, apple,
     only: enter && enterEmail(enter.as)});
   const bucket = r2Bucket(env.BLOBS);
-  const app = createApp({db, auth, bucket, origins: [env.APP_ORIGIN, ...origins], providers: providers({github, google, apple}),
+  const app = createApp({db, auth, bucket, origins: [env.APP_ORIGIN, ...origins], appOrigin: env.APP_ORIGIN, providers: providers({github, google, apple}),
     domain: env.DOMAIN ?? 'length3.com', baseURL: env.BASE_URL, secret: env.BETTER_AUTH_SECRET, enter,
     quota: env.QUOTA_MB ? Number(env.QUOTA_MB) * 1024 ** 2 : undefined});
   return {app, at, bucket};

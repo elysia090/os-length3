@@ -118,12 +118,13 @@ fn state_set(key: String, json: String) -> Result<(), String> {
 
 /// Sign in: a code to approve in the browser, which is opened on its page.
 /// The Remote is this device's own, never one the page names, and only a
-/// page of that Remote is opened.
+/// page that Remote stands behind is opened: its own, or its app's, on the
+/// origin it says in /v1/about (remote::device_page_ok).
 #[tauri::command]
 async fn remote_login_start(app: tauri::AppHandle) -> Result<remote::DeviceCode, String> {
     let url = remote::default_url();
-    let code = blocking({ let url = url.clone(); move || remote::device_start(&url, "length3-app") }).await?;
-    if !code.verification_uri_complete.starts_with(&format!("{}/", url.trim_end_matches('/'))) {
+    let (code, origin) = blocking({ let url = url.clone(); move || Ok((remote::device_start(&url, "length3-app")?, remote::app_origin(&url))) }).await?;
+    if !remote::device_page_ok(&url, origin.as_deref(), &code.verification_uri_complete) {
         return Err(length3_core::tr!("The Remote named a page that is not its own", "Remote が自分のものでないページを示しました"));
     }
     use tauri_plugin_opener::OpenerExt;
