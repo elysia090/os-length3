@@ -1,7 +1,8 @@
 // Ships the Remote and the web app, one Worker on Cloudflare over Neon. It is
-// what .github/workflows/deploy.yml runs on each push to main; by hand it runs
-// from any machine that reaches both (Node 22; `npx wrangler login` once, or
-// CLOUDFLARE_API_TOKEN), after `sh scripts/web-release.sh`:
+// the deploy command of Cloudflare's Workers Builds, which runs it on each
+// push to main once `npm run build:cloudflare` has built the app, with its
+// own token for Cloudflare; by hand it runs from any machine that reaches
+// both (Node 22; `npx wrangler login` once), after a build:
 //
 //   node service/deploy.ts
 //       the migrations, as the database's owner, on the project's default
@@ -20,22 +21,23 @@
 //       a new ENTER_KEY: the old link stops opening the Remote, and every
 //       session the one account has ends now. The new link is handed on.
 //
-// The owner is reached by OWNER_URL, or else by asking Neon with the key its
-// GitHub integration keeps in the repository (NEON_API_KEY, NEON_PROJECT_ID).
-// A link is handed on once: in the run's summary on GitHub (seen by whoever
-// can read the repository), or printed here. No other secret is shown, and
-// none is written to a file: each goes to wrangler on its standard input.
+// The owner is reached by OWNER_URL, or else by asking Neon with an API key
+// for the project (NEON_API_KEY, NEON_PROJECT_ID: the build's secret and
+// variable). A link is handed on once: printed in the log of the build or run
+// that made it (seen by whoever can see the Worker's builds). No other secret
+// is shown, and none is written to a file: each goes to wrangler on its
+// standard input.
 
 import {spawn} from 'node:child_process';
 import {randomBytes} from 'node:crypto';
-import {appendFileSync, readFileSync} from 'node:fs';
+import {readFileSync} from 'node:fs';
 import {Pool} from '@neondatabase/serverless';
 import {sql} from 'drizzle-orm';
 import {drizzle} from 'drizzle-orm/neon-serverless';
 import {migrate} from 'drizzle-orm/neon-serverless/migrator';
 import {enterEmail} from './enter.ts';
 
-const config = new URL('./wrangler.toml', import.meta.url).pathname;
+const config = new URL('../wrangler.toml', import.meta.url).pathname;
 const toml = readFileSync(config, 'utf8');
 const vars = (k: string) => new RegExp(`^${k}\\s*=\\s*"([^"]*)"`, 'm').exec(toml)?.[1];
 
@@ -94,14 +96,9 @@ async function worker(db: Awaited<ReturnType<typeof owner>>['db'], url: URL): Pr
   return `postgresql://remote_worker:${password}@${host}${url.pathname}?sslmode=require`;
 }
 
-/** Hands a new link on, once: into the run's summary on GitHub, else here. */
+/** Hands a new link on, once. */
 function handOn(key: string, news: string) {
-  const link = `${vars('APP_ORIGIN')}/#enter=${key}`;
-  const summary = process.env.GITHUB_STEP_SUMMARY;
-  if (summary) {
-    appendFileSync(summary, `### The way in\n\n${news} Hand it only to whoever should come in:\n\n${link}\n`);
-    console.log(`${news} It is in this run's summary, not in this log.`);
-  } else console.log(`${news} Hand it only to whoever should come in:\n\n  ${link}\n`);
+  console.log(`${news} Hand it only to whoever should come in:\n\n  ${vars('APP_ORIGIN')}/#enter=${key}\n`);
 }
 
 /** Waits until the Remote answers from its database: a key that is no key is refused only after the try is counted there. */

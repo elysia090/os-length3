@@ -3,16 +3,19 @@
 # contents and release bundles (R2), and the app's own files (static assets,
 # built with VITE_LENGTH3_REMOTE="" so it talks to the origin it came from).
 #
-# Shipped by service/deploy.ts (what .github/workflows/deploy.yml runs on a
-# push to main): the migrations, the bucket, the secrets the Worker lacks
-# (DATABASE_URL, BETTER_AUTH_SECRET, ENTER_KEY), then `wrangler deploy`.
+# Built and shipped by Cloudflare's Workers Builds on each push to main
+# (root directory os/; README.md, Deploy): the build takes the Prompt from
+# the release RELEASE names and builds the app (npm run build:cloudflare),
+# and service/deploy.ts runs the migrations, makes the bucket, and deploys
+# the Worker with the secrets it lacks (DATABASE_URL, BETTER_AUTH_SECRET,
+# ENTER_KEY).
 name = "os-length3"
-main = "worker.ts"
+main = "service/worker.ts"
 compatibility_date = "2026-08-01"
 compatibility_flags = ["nodejs_compat"]
 
 [assets]
-directory = "../dist"
+directory = "dist"
 # A page of the app that is not a file is the app; the Remote's own paths always reach the Worker.
 not_found_handling = "single-page-application"
 run_worker_first = ["/v1/*", "/api/*", "/.well-known/*"]

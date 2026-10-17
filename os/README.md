@@ -212,25 +212,32 @@ LENGTH3_REMOTE=http://127.0.0.1:8787 l3 login
 ```
 
 On Cloudflare it is one Worker on one origin, the app's files and the Remote
-together (`service/wrangler.toml`). For research it has one account,
+together (`wrangler.toml`). For research it has one account,
 `ENTER_AS`: nobody signs up, nothing is shown to everyone, and whoever is
 given the link `https://os.length3.com/#enter=KEY` comes in as it (a day at a
 time; a new key ends every old link and session at once).
 
-It ships from main: each push there that changes the product runs
-`.github/workflows/deploy.yml`, which builds it as a release does and runs
-`service/deploy.ts` — the migrations on Neon's production branch (no branch is
-made for a deploy), the bucket, and the Worker with what it lacks of its
-secrets. Neon is reached by the key its GitHub integration keeps in the
-repository; Cloudflare by `CLOUDFLARE_API_TOKEN`, kept there too. The first
-run makes the link and puts it in that run's summary; Run workflow with *A new
-link* makes another, and the old one opens nothing. By hand, from a machine
-that reaches both:
+It ships from main with Cloudflare's Workers Builds: the Worker is connected
+to this repository, and its Settings → Build say, once:
+
+| | |
+|---|---|
+| Root directory | `os` |
+| Build command | `npm run build:cloudflare`: the Prompt from the release `RELEASE` names (`scripts/prompt-files.mjs`, checked against its SHA256SUMS), then the app |
+| Deploy command | `node service/deploy.ts`: the migrations on Neon's production branch (no branch is made for a deploy), the bucket, then the Worker with the secrets it lacks; the first build prints the link in its log |
+| Variables and secrets | `NEON_PROJECT_ID`; secrets `NEON_API_KEY` (a Neon API key for the project) and `GITHUB_TOKEN` (read-only, for this private repository's releases) |
+| Branch control | main; no preview builds |
+
+The Prompt the web serves is a released one: a newer one ships by releasing
+it (a new version in `RELEASE`, `.github/workflows/release.yml`). A new link
+is a new `ENTER_KEY`: set in the Worker's Variables and Secrets, the old
+link opens nothing at once. By hand, from a machine that reaches Neon and
+Cloudflare (`npx wrangler login`):
 
 ```
-sh scripts/web-release.sh
+npm run build:cloudflare
 OWNER_URL='postgresql://neondb_owner:…' node service/deploy.ts        # migrations, bucket, secrets, the Worker
-OWNER_URL='postgresql://neondb_owner:…' node service/deploy.ts link   # a new link
+OWNER_URL='postgresql://neondb_owner:…' node service/deploy.ts link   # a new link, and every session of the account ends
 ```
 
 ## Develop

@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "build:cloudflare": "node scripts/prompt-files.mjs && VITE_LENGTH3_REMOTE= npm run build",
     "check": "tsc --noEmit && node --test \"src/**/*.test.ts\" \"service/*.test.ts\"",
     "tauri": "tauri",
     "userland": "sh scripts/userland.sh",

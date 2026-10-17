@@ -4,4 +4,4 @@
 /dist/
 /length3-web.zip
 /length3-web.zip.sha256
-/service/.wrangler/
+/.wrangler/

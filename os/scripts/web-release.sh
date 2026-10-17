@@ -32,7 +32,7 @@ sh "$here/scripts/userland.sh"
 cd "$here"
 npm ci
 npm run check
-# The web app talks to the origin it is served from (one Worker: service/wrangler.toml).
+# The web app talks to the origin it is served from (one Worker: wrangler.toml).
 VITE_LENGTH3_REMOTE="${VITE_LENGTH3_REMOTE-}" npm run build
 rm -f length3-web.zip
 (cd dist && zip -qr ../length3-web.zip .)
