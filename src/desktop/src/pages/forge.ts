@@ -3,6 +3,7 @@ import {t} from '../i18n.ts';
 import {getState, setState} from '../state.ts';
 import {h} from '../dom.ts';
 import {mark} from '../icons.ts';
+import {bring, onSync, remoteOnly} from '../lifecycle.ts';
 import {onChange, store} from '../repos.ts';
 import type {Context} from './context.ts';
 import {bench} from './bench.ts';
@@ -54,9 +55,15 @@ export function forge(ctx: Context): Node[] {
   const add = h('button', {type: 'button', class: 'band-add', 'aria-label': t('Bring every repo out to the band')}, mark('plus')) as HTMLButtonElement;
   strip.append(add, pills);
   const saveBand = () => { void setState('band', JSON.stringify(band)).catch(() => { /* the band is a convenience */ }); };
-  add.addEventListener('click', () => {
-    const rest = offBand(band, all);
+  /** Every repo: here, and only on the Remote (fetched when it comes out, as opening one from Home does). */
+  const every = () => [...all, ...remoteOnly().map((r) => r.name).filter((n) => !all.includes(n))];
+  add.addEventListener('click', async () => {
+    const rest = offBand(band, every());
     if (!rest.length) return;
+    add.disabled = true;
+    try {
+      for (const name of rest.filter((n) => !all.includes(n))) { await bring(name); all = [...all, name]; }
+    } catch (e) { add.disabled = false; add.title = e instanceof Error ? e.message : String(e); return; }
     for (const name of rest) band = addToBand(band, name);
     saveBand();
     if (repo) paintBand(); else show(rest[0]);
@@ -72,7 +79,7 @@ export function forge(ctx: Context): Node[] {
       if (name === repo) pill.setAttribute('aria-current', 'page');
       return pill;
     }));
-    const rest = offBand(band, all).length;
+    const rest = offBand(band, every()).length;
     add.disabled = rest === 0;
     add.title = rest ? t('Bring every repo out to the band ({n} more)', {n: rest}) : t('Every repo is on the band');
   };
@@ -91,7 +98,7 @@ export function forge(ctx: Context): Node[] {
     repo = null;
     reader = null;
     work.setRepo(null);
-    flow.replaceChildren(h('div', {class: 'empty forge-none'}, t('Bring a repo out to the band with ⊕, or open one from File.')));
+    flow.replaceChildren(h('div', {class: 'empty forge-none'}, t('Bring a repo out to the band with ⊕, or open one from File')));
     flow.scrollTop = 0;
     paintBand();
   };
@@ -130,6 +137,8 @@ export function forge(ctx: Context): Node[] {
     }, 150);
   });
 
+  // What the Remote holds is learnt a moment after: ⊕ counts it once it is.
+  const stopSync = onSync(() => { if (!work.element.isConnected) { stopSync(); return; } paintBand(); });
   void store.list().then((repos) => {
     all = repos.map((r) => r.name);
     band = parseBand(getState('band'), all, ctx.repo);

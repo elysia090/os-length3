@@ -25,7 +25,7 @@ pub fn issue_ref(r: &Repos, target: &str) -> Result<(String, String), String> {
     }
     let (repo, rel) = super::split(t);
     let file = rel.trim_start_matches("issue/").to_string();
-    if file.is_empty() { return Err(tr!("Name an issue: {}#1 or {}/issue/001.md", "Issue を指定してください: {}#1 か {}/issue/001.md", repo, repo)); }
+    if file.is_empty() { return Err(tr!("Name an issue: {}#1 or {}/issue/001.md", "Issue を指定してください：{}#1 か {}/issue/001.md", repo, repo)); }
     Ok((repo, file))
 }
 
@@ -64,7 +64,7 @@ pub fn state_word(s: &str) -> String {
         other => other.to_string(),
     }
 }
-pub fn files(n: usize) -> String { if n == 1 { tr!("1 file", "1 ファイル") } else { tr!("{} files", "{} ファイル", n) } }
+pub fn files(n: usize) -> String { if n == 1 { tr!("1 file", "1ファイル") } else { tr!("{} files", "{}ファイル", n) } }
 fn commits(n: usize) -> String { if n == 1 { tr!("1 commit", "コミット 1") } else { tr!("{} commits", "コミット {}", n) } }
 
 /// Who started it and when, quietly, as the card's foot says; a decided change says how it ended.
@@ -75,7 +75,7 @@ fn standing(s: &Stand, i: &Issue) -> String {
     if let (true, Some(w)) = (here(s, i), s.work.as_ref()) {
         return tr!("{} · started {}", "{} · 開始 {}", if w.started_by.is_empty() { "—" } else { &w.started_by }, ago(w.started_at));
     }
-    if let Some(c) = change_of(s, i).filter(|c| c.state != "open") { return tr!("change · version {} · {}", "Change · 第 {} 版 · {}", c.version, state_word(&c.state)); }
+    if let Some(c) = change_of(s, i).filter(|c| c.state != "open") { return tr!("change · version {} · {}", "Change · 第{}版 · {}", c.version, state_word(&c.state)); }
     if change_of(s, i).is_some() { return String::new(); }
     match s.lines.iter().find(|l| l.issue == path) {
         Some(l) => tr!("{} · started {}", "{} · 開始 {}", if l.started_by.is_empty() { "—" } else { &l.started_by }, ago(l.started_at)),
@@ -122,7 +122,7 @@ fn print_box(s: &Stand, i: &Issue, full: bool) {
     if full && !i.detail.is_empty() { for l in i.detail.lines() { out(format!("    {l}")); } }
     let done = |yes: bool| if yes { "✓" } else { " " };
     let change = change_of(s, i);
-    let version = |c: &history::Change| tr!("change · version {} · {}", "Change · 第 {} 版 · {}", c.version, state_word(&c.state));
+    let version = |c: &history::Change| tr!("change · version {} · {}", "Change · 第{}版 · {}", c.version, state_word(&c.state));
     if !super::in_prompt() {
         if let (true, Some(w)) = (here(s, i), s.work.as_ref()) {
             let committed = s.uncommitted == 0 && w.commits > 0;
@@ -140,8 +140,8 @@ fn print_box(s: &Stand, i: &Issue, full: bool) {
     out(format!("    {} · issue/{}{}", i.repo, i.file, if st.is_empty() { String::new() } else { format!(" · {st}") }));
     let n = next(s, i);
     if let Some((first, rest)) = n.split_first() {
-        out(tr!("    next: {}", "    次: {}", first));
-        if full && !rest.is_empty() { out(tr!("    also: {}", "    ほか: {}", rest.join(" · "))); }
+        out(tr!("    next: {}", "    次：{}", first));
+        if full && !rest.is_empty() { out(tr!("    also: {}", "    ほか：{}", rest.join(" · "))); }
     }
 }
 
@@ -209,7 +209,7 @@ pub fn one(a: &Args, target: &str) -> Result<(), String> {
         }
         // What was said, in order; an approval without words is the check below, not a line here.
         for rv in c.reviews.iter().rev().filter(|r| !(r.verdict == "approve" && r.note.is_empty())) {
-            let of = if rv.version != c.version { tr!(" (version {}, older)", "（第 {} 版、古い版）", rv.version) } else { String::new() };
+            let of = if rv.version != c.version { tr!(" (version {}, older)", "（第{}版、古い版）", rv.version) } else { String::new() };
             let asked = if rv.verdict == "changes" { tr!(" asked for changes", " 変更を依頼") } else { String::new() };
             out(format!("    {} · {}{asked}{of}: {}", rv.by, ago(rv.time), rv.note));
         }
@@ -250,7 +250,7 @@ pub fn diff(target: &str) -> Result<(), String> {
             let at = l.at.map(|n| n.to_string()).unwrap_or_default();
             out(if l.kind == "hunk" { format!("  {:>5}  …", "") } else { format!("  {at:>5} {mark} {}", l.text) });
         }
-        if f.more > 0 { out(tr!("  {} more lines", "  ほか {} 行", f.more)); }
+        if f.more > 0 { out(tr!("  {} more lines", "  ほか {}行", f.more)); }
         out("");
     }
     Ok(())

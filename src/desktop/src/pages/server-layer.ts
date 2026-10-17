@@ -1,4 +1,4 @@
-import {ago, h} from '../dom.ts';
+import {ago, day, h} from '../dom.ts';
 import {mark} from '../icons.ts';
 import {t} from '../i18n.ts';
 import {shown as named, shownAs} from '../inbox.ts';
@@ -56,7 +56,7 @@ function remember(at: {server?: string; board?: string}) {
  * gives way to what will happen and the two answers, Not now at the left and
  * the deed at the right, and comes back as it was if the answer is no.
  */
-function askIn(card: HTMLElement, title: string, what: string | string[], verb: string, act: () => Promise<void>, no_?: () => void) {
+function askIn(card: HTMLElement, title: string | Node, what: string | string[], verb: string, act: () => Promise<void>, no_?: () => void) {
   const was = [...card.childNodes];
   // The card keeps its size while it asks, so the answers come where its own deeds were.
   card.style.minHeight = `${card.offsetHeight}px`;
@@ -74,7 +74,9 @@ function askIn(card: HTMLElement, title: string, what: string | string[], verb: 
 }
 
 /** A small card, as Runtime's and Remote's: its title, a line or two, then what can be done at its foot. */
-const smallCard = (title: string, ...rest: (Node | null)[]) => h('div', {class: 'card small-card'}, h('span', {class: 'card-title'}, title), ...rest);
+const smallCard = (title: string | Node, ...rest: (Node | null)[]) => h('div', {class: 'card small-card'}, h('span', {class: 'card-title'}, title), ...rest);
+/** A board's name as its own head writes it: the # quiet before it. */
+const boardName = (name: string) => h('span', {}, h('span', {class: 'muted', 'aria-hidden': 'true'}, '# '), name);
 const line = (text: string) => (text ? h('span', {class: 'muted small'}, text) : null);
 const foot = (...xs: (Node | null)[]) => h('div', {class: 'card-foot'}, h('span', {class: 'grow'}), ...xs);
 
@@ -309,8 +311,8 @@ export class ServerLayer {
     const makeServer = () => {
       shown = [];
       place('boards');
-      const name = h('input', {class: 'line-in', maxlength: '64', placeholder: t('Its name'), 'aria-label': t('Make a server')}) as HTMLInputElement;
-      const handle = h('input', {class: 'line-in mono', maxlength: '31', placeholder: 'trip', 'aria-label': t('Its address'), autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
+      const name = h('input', {class: 'line-in', maxlength: '64', placeholder: t('Trip')}) as HTMLInputElement;
+      const handle = h('input', {class: 'line-in mono', maxlength: '31', placeholder: 'trip', autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
       // Its address follows its name until it is written itself.
       let own = false;
       const slug = (v: string) => v.toLowerCase().normalize('NFKD').replace(/[^a-z0-9._-]+/g, '-').replace(/^[-._]+|[-._]+$/g, '').slice(0, 31);
@@ -341,7 +343,7 @@ export class ServerLayer {
       const back = h('div', {class: 'server-back'});
       void servers.goneServers().then((held) => back.replaceChildren(...held.map((g) => {
         const b = button(t('Bring back {name}', {name: g.name}), 'small-button');
-        b.title = t('Held until {date}', {date: new Date(g.until).toLocaleDateString()});
+        b.title = t('Held until {date}', {date: day(g.until)});
         b.addEventListener('click', async () => { b.disabled = true; try { await servers.bringBack(g.id); list = await servers.servers(); show(g.id); } catch (e) { b.textContent = message(e); } });
         return b;
       }))).catch(() => {});
@@ -349,7 +351,10 @@ export class ServerLayer {
         h('header', {class: 'board-head'}, h('span', {class: 'muted'}, '+'), h('h2', {}, t('Make a server'))),
         h('div', {class: 'board-body'},
           h('p', {}, t('A server is people you know: you add them from your Inbox contacts. Its boards are each a conversation and a TODO you keep together.')),
-          name, h('div', {class: 'row server-address'}, handle), h('p', {class: 'muted small'}, t('Its name on this Remote, as a person has one: first come, nobody else\'s while it is the server\'s, for five years at a time, renewed by its owner.')),
+          // Fields as New repo's: a label over each, what it means under it.
+          h('label', {class: 'field'}, h('span', {class: 'field-label'}, t('Name')), name),
+          h('label', {class: 'field'}, h('span', {class: 'field-label'}, t('Name on this Remote')), handle,
+            h('span', {class: 'muted small'}, t('First come, as a person\'s: nobody else\'s while the server has it, renewed by its owner every five years.'))),
           h('div', {class: 'row'}, make), error, back))));
       slides.classList.add('single');
       track.style.setProperty('--at', '0');
@@ -587,10 +592,9 @@ export class ServerLayer {
           }
           return c;
         });
-        grid('repos', ...own, ...others, own.length || others.length ? null : h('div', {class: 'empty'}, t('No repo on the Remote yet.')));
+        grid('repos', ...own, ...others, own.length || others.length ? null : h('div', {class: 'empty'}, t('No repo on the Remote yet')));
 
         // Its boards: how far each is open and removing one, its owner's to say; taking one home, anyone's.
-        const day = (ms: number) => new Date(ms).toLocaleDateString();
         grid('boards', ...s.boards.map((b) => {
           // Removed: quiet, held until then, its 外す red; pressed again, it is back at once.
           if (b.gone) {
@@ -599,11 +603,11 @@ export class ServerLayer {
               back.disabled = true;
               try { await servers.bringBackBoard(b.id); delete b.gone; boardsChanged = true; again(); } catch (e) { back.textContent = message(e); back.disabled = false; }
             });
-            return h('div', {class: 'card small-card off'}, h('span', {class: 'card-title'}, `# ${b.name}`), line(t('Removed · back until {date}', {date: day(b.gone)})),
+            return h('div', {class: 'card small-card off'}, h('span', {class: 'card-title'}, boardName(b.name)), line(t('Removed · back until {date}', {date: day(b.gone)})),
               back ? h('div', {class: 'card-foot'}, back, h('span', {class: 'grow'})) : null);
           }
           const how = b.open ? (b.guests ? `${t('Seen by everyone')} · ${t('Guests can write')}` : t('Seen by everyone')) : t('Its people only');
-          const c = smallCard(`# ${b.name}`, s.owner ? null : line(how));
+          const c = smallCard(boardName(b.name), s.owner ? null : line(how));
           if (s.owner) {
             const set = (change: {open?: boolean; guests?: boolean}) => servers.setBoard(b.id, change).then((n) => { b.open = n.open; b.guests = n.guests; });
             c.append(
@@ -622,7 +626,7 @@ export class ServerLayer {
             } catch (e) { take.textContent = message(e); } finally { take.disabled = false; }
           });
           const out = s.owner ? button(t('Remove'), 'small-button') : null;
-          out?.addEventListener('click', () => askIn(c, `# ${b.name}`, [t('#{board} goes with its talk and TODO.', {board: b.name}), t('You can bring it back within 30 days.')], t('Remove'), async () => {
+          out?.addEventListener('click', () => askIn(c, boardName(b.name), [t('#{board} goes with its talk and TODO.', {board: b.name}), t('You can bring it back within 30 days.')], t('Remove'), async () => {
             const r = await servers.removeBoard(b.id);
             b.gone = r.until;
             boardsChanged = true;
@@ -648,7 +652,7 @@ export class ServerLayer {
             async () => { await servers.removePerson(s.id, mine); gone(s.id); }));
           leaving.append(foot(go));
         }
-        const removing = s.owner ? smallCard(t('Remove this server'), line(t('Held 30 days for you to bring back.'))) : null;
+        const removing = s.owner ? smallCard(t('Remove this server'), line(t('You can bring it back within 30 days.'))) : null;
         if (removing) {
           const go = button(t('Delete'), 'small-button');
           go.addEventListener('click', () => askIn(removing, t('Remove this server'), [t('{server} goes, with its boards.', {server: s.name}), t('You can bring it back within 30 days.')], t('Delete'),

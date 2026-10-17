@@ -1,5 +1,5 @@
 import {ago, bytes, h} from '../dom.ts';
-import {t, tn} from '../i18n.ts';
+import {t} from '../i18n.ts';
 import {icon} from '../icons.ts';
 import {store} from '../repos.ts';
 import {bring, onSync, remoteOnly, repoState} from '../lifecycle.ts';
@@ -9,11 +9,14 @@ import type {Context} from './context.ts';
 // The repos as large cards, about three across: on Home, and under the New
 // repo form so a repo just made is seen joining the others.
 
-function repoCard(ctx: Context, name: string, files: number, size: number, modified: number): HTMLElement {
+// A card says what Remote's says, in its order: size and when it changed,
+// then where it stands.
+const sizeAndWhen = (size: number, modified: number) => `${bytes(size)} · ${t('Changed {when}', {when: ago(modified)})}`;
+
+function repoCard(ctx: Context, name: string, size: number, modified: number): HTMLElement {
   const card = h('button', {class: 'card repo', type: 'button', 'data-repo': name},
     h('span', {class: 'card-title'}, name),
-    h('span', {class: 'muted'}, `${tn('{n} file', '{n} files', files)} · ${bytes(size)}`),
-    h('span', {class: 'muted'}, t('Changed {when}', {when: ago(modified)})),
+    h('span', {class: 'muted'}, sizeAndWhen(size, modified)),
     // Where it stands against the Remote; filled in once it is known.
     h('span', {class: 'muted card-sync'}));
   card.addEventListener('click', () => ctx.openRepo(name));
@@ -24,9 +27,8 @@ function repoCard(ctx: Context, name: string, files: number, size: number, modif
 function awayCard(ctx: Context, name: string, size: number, modified: number): HTMLElement {
   const card = h('button', {class: 'card repo away', type: 'button', 'data-repo': name},
     h('span', {class: 'card-title'}, name),
-    h('span', {class: 'muted'}, t('On the Remote · {size}', {size: bytes(size)})),
-    h('span', {class: 'muted'}, t('Changed {when}', {when: ago(modified)})),
-    h('span', {class: 'muted card-sync'}, t('Opening brings it here')));
+    h('span', {class: 'muted'}, sizeAndWhen(size, modified)),
+    h('span', {class: 'muted card-sync'}, t('Only on the Remote')));
   card.addEventListener('click', async () => {
     card.setAttribute('aria-busy', 'true');
     (card.querySelector('.card-sync') as HTMLElement).textContent = t('Bringing it…');
@@ -58,8 +60,8 @@ export function repoList(ctx: Context, options: {newCard: boolean; count?: HTMLE
       grid.replaceChildren(h('p', {class: 'muted'}, t('Could not read the repos: {why}', {why: String(e)})));
       return;
     }
-    if (options.count) options.count.textContent = String(repos.length);
-    grid.replaceChildren(...repos.map((r) => repoCard(ctx, r.name, r.files, r.bytes, r.modified)),
+    if (options.count) options.count.textContent = String(repos.length + remoteOnly().length);
+    grid.replaceChildren(...repos.map((r) => repoCard(ctx, r.name, r.bytes, r.modified)),
       ...remoteOnly().map((r) => awayCard(ctx, r.name, r.bytes, Date.parse(r.updatedAt))),
       ...(options.newCard ? [newRepoCard(ctx)] : []));
     if (!repos.length && !remoteOnly().length && !options.newCard) grid.replaceChildren(h('p', {class: 'muted note'}, t('No repos yet')));

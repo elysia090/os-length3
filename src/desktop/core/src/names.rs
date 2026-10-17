@@ -18,7 +18,7 @@ impl Principal {
         let (name, domain) = s.split_once('@').map_or((s, None), |(n, d)| (n, Some(d.to_ascii_lowercase())));
         let ok = |p: &str| !p.is_empty() && p.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'));
         if !ok(name) || domain.as_deref().is_some_and(|d| !ok(d) || !d.contains('.')) {
-            return Err(crate::tr!("Not a name: {}", "名前ではありません: {}", s));
+            return Err(crate::tr!("Not a name: {}", "名前ではありません：{}", s));
         }
         Ok(Principal { name: name.to_ascii_lowercase(), domain })
     }
@@ -63,7 +63,7 @@ pub fn read(s: &str, principal: bool) -> Result<Name, String> {
 /// `repo[/path][#n]`, one's own.
 fn repo(s: &str) -> Result<Name, String> {
     let (s, issue) = match s.split_once('#') {
-        Some((r, n)) => (r, Some(n.parse::<u32>().map_err(|_| crate::tr!("Not an issue number: #{}", "Issue の番号ではありません: #{}", n))?)),
+        Some((r, n)) => (r, Some(n.parse::<u32>().map_err(|_| crate::tr!("Not an issue number: #{}", "Issue の番号ではありません：#{}", n))?)),
         None => (s, None),
     };
     let s = s.trim_matches('/');

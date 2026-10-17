@@ -9,6 +9,7 @@
 
 import {api, json, RemoteError} from './remote.ts';
 import {t} from './i18n.ts';
+import {day} from './dom.ts';
 
 export type Kind = 'message' | 'review' | 'question' | 'run';
 export interface Target { repo?: string; issue?: string; change?: string; version?: number }
@@ -52,7 +53,7 @@ export async function claim(name: string, domain?: string): Promise<string> {
   if (body.publish) throw new Published(body.publish);
   const until = (body as {until?: number}).until;
   throw new RemoteError(r.status, body.error === 'taken' ? t('That address is taken')
-    : body.error === 'held' && until ? t('That address was let go; it is held for its owner until {date}', {date: new Date(until).toLocaleDateString()})
+    : body.error === 'held' && until ? t('That address was let go; it is held for its owner until {date}', {date: day(until)})
     : body.error === 'name' ? t('A name is 2–31 letters, digits, dots, dashes or underscores') : String(body.error));
 }
 

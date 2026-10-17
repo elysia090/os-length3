@@ -287,7 +287,7 @@ pub fn run(s: &Sandbox) -> io::Result<i32> {
         // Pid 1 inside: dies with its supervisor, and everything in it with it.
         unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL, 0, 0, 0) };
         if let Err(e) = build(s) {
-            eprintln!("{}", crate::tr!("l3: Could not prepare the Prompt: {}", "l3: Prompt を用意できませんでした: {}", e));
+            eprintln!("{}", crate::tr!("l3: Could not prepare the Prompt: {}", "l3: Prompt を用意できませんでした：{}", e));
             unsafe { libc::_exit(126) };
         }
         init(s);

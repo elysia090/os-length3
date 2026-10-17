@@ -220,6 +220,8 @@ a { color: var(--ink); }
 .todo-kind { font-weight: 700; }
 .todo-title { border: 0; background: transparent; min-height: var(--h-control); padding: 0; font-size: var(--t-body); font-weight: 600; }
 .todo-title::placeholder { color: var(--sub); font-weight: 400; }
+/* Read, the title is text: centred on the mark's line as the field is. */
+span.todo-title { min-height: 0; }
 .todo-detail {
   display: block; width: calc(100% - var(--h-control) - var(--s2)); margin-left: calc(var(--h-control) + var(--s2));
   padding: 0; border: 0; background: transparent;
@@ -306,6 +308,9 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .issue-form[hidden] { display: none; }
 .issue-text { min-height: 96px; padding: var(--s2) var(--s3); resize: none; font: var(--t-body)/1.6 var(--sans); }
 .empty p + p { margin-top: var(--s2); }
+/* What is only on the Remote, each with a press to fetch it, as Runtime's column. */
+.fetch-list { display: grid; gap: var(--s2); }
+.fetch-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s5); color: var(--ink); }
 
 /* New repo: a name, a template chip, and what File will show */
 .new-repo { margin-top: var(--s5); display: grid; gap: var(--s5); max-width: 520px; }
@@ -409,8 +414,9 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
   position: absolute; left: var(--s5); right: var(--s5); bottom: var(--s5); z-index: 2;
   max-width: 760px; margin: 0 auto; display: grid; gap: var(--s2);
 }
-/* Under the prompt box, the ground to the center's foot: what scrolls under the box does not show below it. */
-.dock::after { content: ''; position: absolute; top: 100%; left: -50vw; right: -50vw; height: var(--s5); background: var(--ground); }
+/* Under the prompt box, the ground to the center's foot: what scrolls under the box does not show below it.
+   It lies behind the box (still over what scrolls), so the box's focus ring is whole. */
+.dock::after { content: ''; position: absolute; z-index: -1; top: 100%; left: -50vw; right: -50vw; height: var(--s5); background: var(--ground); }
 .term-slot:empty { display: none; }
 .term-slot .term-box { height: clamp(180px, 40vh, 440px); padding: var(--s4); background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-place); }
 .prompt { display: flex; border: 1px solid var(--edge); border-radius: var(--r-place); background: var(--raised); padding: var(--s3) var(--s4); }
@@ -519,6 +525,8 @@ mark { background: var(--ink); color: var(--ground); }
 .tree-name.plain { display: flex; align-items: center; cursor: default; color: var(--sub); }
 .tree-repo > .tree-row .tree-name { font-weight: 600; }
 .tree-meta { flex: none; padding: 0 var(--s2); font-size: var(--t-meta); opacity: .8; }
+/* Only on the Remote: quiet, as a card of one is dashed. */
+.tree-away > .tree-row .tree-name { color: var(--sub); }
 .tree-toggle, .tree-spacer { flex: none; width: var(--s5); height: var(--h-row); }
 .tree-toggle { display: grid; place-items: center; border: 0; background: transparent; color: inherit; cursor: pointer; }
 .tree-toggle .icon { width: var(--s3); height: var(--s3); transition: transform var(--motion); }
@@ -892,12 +900,14 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .server-center { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); padding: var(--band) var(--s5) 120px; }
 .server-top { display: flex; align-items: center; gap: var(--s2); margin-bottom: var(--s3); }
 .server-chips { flex: 1; min-width: 0; }
-.server-gear { display: grid; place-items: center; flex: none; width: var(--h-control); height: var(--h-control); padding: 0; border: 1px solid transparent; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: pointer; }
+.server-gear { display: grid; place-items: center; flex: none; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid transparent; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: pointer; }
 .server-gear:hover, .server-gear[aria-expanded='true'] { border-color: var(--edge); color: var(--ink); }
-.server-gear svg { width: 20px; height: 20px; }
+.server-gear svg { width: 18px; height: 18px; }
 .server-gear[hidden] { display: none; }
 .work.no-side { grid-template-columns: minmax(0, 1fr); }
 .work.no-side > .side { display: none; }
+/* No pane beside it: no line where one would start. */
+.work.no-side > .center { border-right: 0; }
 .slides { --peek: 48px; --gap: var(--s3); --lead: 0; min-height: 0; }
 .slides.single { --peek: 0px; }
 .slide-stage { position: relative; height: 100%; overflow-x: clip; }
@@ -934,7 +944,6 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .board-body { display: grid; gap: var(--s3); align-content: start; padding: var(--s2) var(--s5) var(--s5); max-width: 560px; }
 .board-body .row { gap: var(--s2); }
 .board-body .line-in { flex: 1; }
-.server-address { align-items: center; gap: var(--s1); }
 .server-back { display: flex; flex-wrap: wrap; gap: var(--s2); }
 .server-back:empty { display: none; }
 .stub-yours { display: grid; gap: var(--s1); margin-top: var(--s3); }

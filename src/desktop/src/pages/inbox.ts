@@ -1,10 +1,11 @@
-import {ago, h} from '../dom.ts';
+import {ago, day, h} from '../dom.ts';
 import {t} from '../i18n.ts';
 import * as inbox from '../inbox.ts';
 import {connection} from '../remote.ts';
 import {kindOf} from '../text.ts';
 import {mark} from '../icons.ts';
 import {pageHead} from './common.ts';
+import {signInBox, signInPlace} from './remote.ts';
 import type {Context} from './context.ts';
 
 // Inbox: what comes to you, typed, from people found by address. Not a mail
@@ -113,7 +114,6 @@ function addressStub(me: inbox.Me, again: () => void): HTMLElement {
     if (!me.addresses.length) return h('div', {});
     const YEAR = 365 * 86_400_000;
     return h('div', {class: 'stub-yours'}, h('p', {class: 'muted small'}, t('Your names')), ...me.addresses.map((a) => {
-      const day = (ms: number) => new Date(ms).toLocaleDateString();
       const state = a.lapsed ? h('span', {class: 'small error'}, t('its domain no longer names this Remote'))
         : a.ended ? h('span', {class: 'small error'}, t('Its term ended; held for you until {date}', {date: day(a.until! + 30 * 86_400_000)}))
         : a.until ? h('span', {class: 'muted small'}, t('Until {date}', {date: day(a.until)})) : null;
@@ -164,9 +164,8 @@ export function inboxPage(ctx: Context): Node[] {
 
   const paint = async () => {
     if (!connection()) {
-      const go = button(t('Go to Remote'), 'primary');
-      go.addEventListener('click', () => ctx.go('remote'));
-      holder.replaceChildren(h('section', {class: 'section'}, h('p', {class: 'muted'}, t('The Inbox is on the Remote. Sign in to it to have an address and messages.')), h('div', {class: 'row'}, go)));
+      // Signed out, the same card as Remote's, in the same place.
+      holder.replaceChildren(signInPlace(t('Sign in'), signInBox(() => void paint(), t('The Inbox is on the Remote. Sign in to it to have an address and messages.'))));
       return;
     }
     let me: inbox.Me;

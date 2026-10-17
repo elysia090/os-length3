@@ -1,5 +1,5 @@
 import {h} from '../dom.ts';
-import {t} from '../i18n.ts';
+import {currentLang, t} from '../i18n.ts';
 import {shown} from '../inbox.ts';
 import * as servers from '../servers.ts';
 
@@ -26,12 +26,12 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /** The letters of a face: the first two of the address's name. */
 const face = (p: servers.Post) => [...p.by.split('@')[0]].slice(0, 2).join('').toUpperCase();
-const clock = (ms: number) => new Date(ms).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', hour12: false});
+const clock = (ms: number) => new Date(ms).toLocaleTimeString(currentLang(), {hour: '2-digit', minute: '2-digit', hour12: false});
 function dayName(ms: number): string {
   const now = Date.now();
   if (servers.dayOf(ms) === servers.dayOf(now)) return t('Today');
   if (servers.dayOf(ms) === servers.dayOf(now - 86_400_000)) return t('Yesterday');
-  return new Date(ms).toLocaleDateString([], {weekday: 'short', month: 'short', day: 'numeric'});
+  return new Date(ms).toLocaleDateString(currentLang(), {weekday: 'short', month: 'short', day: 'numeric'});
 }
 
 /** The talks on screen, by board, each with how to read what came now (`mine`: the reader just wrote, so go to it). */
@@ -76,7 +76,7 @@ export function timeline(scroller: HTMLElement, board: string, member: boolean):
     // A name on this Remote is shown alone; one on a domain with it. A guest by the name of their email, and as a guest.
     const [name, domain] = shown(p.by).split('@');
     const where = p.guest ? t('guest') : domain ? `@${domain}` : '';
-    const time = h('time', {class: 'muted small', datetime: when.toISOString(), title: when.toLocaleString()}, clock(p.at));
+    const time = h('time', {class: 'muted small', datetime: when.toISOString(), title: when.toLocaleString(currentLang())}, clock(p.at));
     const below = h('div', {class: 'tl-foot muted small'});
     const acts = h('div', {class: 'tl-acts'});
     const main = h('div', {class: 'tl-main'},
@@ -175,7 +175,7 @@ export function timeline(scroller: HTMLElement, board: string, member: boolean):
       const first = !pages.length;
       if (page) { if (first) { add(page, 'older'); toFoot(); } else steady(() => add(page, 'older')); }
       done = !r.more;
-      start.textContent = done ? (pages.length ? t('That is every post.') : t('No posts yet')) : '';
+      start.textContent = done ? (pages.length ? t('That is every post') : t('No posts yet')) : '';
     } catch (e) { start.textContent = message(e); reading = false; return; } finally { list.setAttribute('aria-busy', 'false'); }
     reading = false;
     // A short page leaves the start in view: read on.

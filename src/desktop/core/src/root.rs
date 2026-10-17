@@ -344,7 +344,7 @@ pub fn install(data: &Path, bundle: &Path) -> Result<Installed, String> {
         let unpacked = fs::File::open(bundle).and_then(Frames::new).and_then(|z| unpack(z, &aside));
         let (files, bytes) = match unpacked {
             Ok(v) => v,
-            Err(e) => { let _ = fs::remove_dir_all(&aside); return Err(crate::tr!("Could not unpack: {}", "展開できませんでした: {}", e)); }
+            Err(e) => { let _ = fs::remove_dir_all(&aside); return Err(crate::tr!("Could not unpack: {}", "展開できませんでした：{}", e)); }
         };
         if !aside.join("root/bin/sh").exists() && fs::symlink_metadata(aside.join("root/bin/sh")).is_err() {
             let _ = fs::remove_dir_all(&aside);

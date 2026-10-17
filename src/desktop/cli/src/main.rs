@@ -106,7 +106,7 @@ fn owned(mut w: Vec<String>) -> Result<Vec<String>, String> {
         let length3_core::names::Name::Repo { owner: Some(p), repo, path, issue } = length3_core::names::read(x, false)? else { continue };
         let me = inbox::me()?;
         if !me.addresses.iter().any(|a| p.is(&a.address, &me.domain)) {
-            return Err(tr!("{} is not yours: a repo here is its person's (a server's own repos come next)", "{} はあなたのものではありません: ここの repo はその人のものです（サーバーの repo はこの先）", x));
+            return Err(tr!("{} is not yours: a repo here is its person's (a server's own repos come next)", "{} はあなたのものではありません：ここの repo はその人のものです（サーバーの repo はこの先）", x));
         }
         *x = format!("{repo}{}{}", if path.is_empty() { String::new() } else { format!("/{path}") }, issue.map(|n| format!("#{n}")).unwrap_or_default());
     }
@@ -255,7 +255,7 @@ fn run(a: Args) -> Result<(), String> {
                 out(help::command(c));
                 if c.name == "repo" {
                     let t: Vec<String> = templates::all().into_iter().map(|t| format!("{} ({})", t.id, t.label)).collect();
-                    out(tr!("  templates: {}", "  テンプレート: {}", t.join(" ")));
+                    out(tr!("  templates: {}", "  テンプレート：{}", t.join(" ")));
                 }
                 Ok(())
             }
@@ -300,7 +300,7 @@ fn run(a: Args) -> Result<(), String> {
         }
         ["server", "post", target, words] => {
             let (server, boards) = servers::find(target)?;
-            let [b] = boards.as_slice() else { return Err(tr!("Name the board: l3 server post {}#BOARD \"text\"", "板を書いてください: l3 server post {}#BOARD \"文\"", target)) };
+            let [b] = boards.as_slice() else { return Err(tr!("Name the board: l3 server post {}#BOARD \"text\"", "板を書いてください：l3 server post {}#BOARD \"文\"", target)) };
             servers::post(&b.id, words)?;
             out(tr!("Wrote in {}/{}", "{}/{} に書きました", server.name, b.name));
             Ok(())
@@ -312,7 +312,7 @@ fn run(a: Args) -> Result<(), String> {
             let item = home::todo_from(line, &a.detail, now()).ok_or_else(|| tr!("The TODO's first line is empty", "TODO の1行目が空です"))?;
             list.push(item);
             home::save_todos(&list)?;
-            out(tr!("Added to TODO ({} in all)", "TODO に足しました（{} 件）", list.len()));
+            out(tr!("Added to TODO ({} in all)", "TODO に足しました（{}件）", list.len()));
             Ok(())
         }
         ["todo", "done", n] => {
@@ -321,7 +321,7 @@ fn run(a: Args) -> Result<(), String> {
             let item = list.get_mut(k.wrapping_sub(1)).ok_or_else(|| tr!("There is no TODO number {}", "{} 番目の TODO はありません", k))?;
             item.done = !item.done;
             let name = text::named(item.kind.as_deref(), &item.title);
-            let line = if item.done { tr!("Done: {}", "完了にしました: {}", name) } else { tr!("Not done again: {}", "未完了に戻しました: {}", name) };
+            let line = if item.done { tr!("Done: {}", "完了にしました：{}", name) } else { tr!("Not done again: {}", "未完了に戻しました：{}", name) };
             home::save_todos(&list)?;
             out(line);
             Ok(())
@@ -332,13 +332,13 @@ fn run(a: Args) -> Result<(), String> {
             let s = Repos::open()?.create(name, &a.template)?;
             send(name);
             if a.json { return json(s); }
-            out(tr!("Made {} ({} · {} files)", "{} を作りました（{} · {} ファイル）", s.name, a.template, s.files));
+            out(tr!("Made {} ({} · {} files)", "{} を作りました（{} · {}ファイル）", s.name, a.template, s.files));
             Ok(())
         }
         ["repo", "open", name] => {
             let s = remote::fetch(&Repos::open()?, name)?;
             if a.json { return json(s); }
-            out(tr!("{} is here now ({} taken in)", "{} をこの端末に開きました（{} 件を取り込み）", name, s.taken));
+            out(tr!("{} is here now ({} taken in)", "{} をこの端末に開きました（{}件を取り込み）", name, s.taken));
             Ok(())
         }
         ["prompt", repo, rest @ ..] => prompt(&a, repo, rest),
@@ -392,18 +392,18 @@ fn run(a: Args) -> Result<(), String> {
             let head = history::push(&r, repo)?;
             if head.is_empty() { out(tr!("Nothing new to push", "Push するものはありません")); } else { out(tr!("Pushed {}", "Push しました {}", short(&head))); }
             let c = history::submit(&r, repo, &a.detail)?;
-            out(tr!("Handed {} to main as version {}", "{} を main に渡しました（第 {} 版）", text::named(Some(&c.kind).filter(|k| !k.is_empty()).map(|s| s.as_str()), &c.title), c.version));
+            out(tr!("Handed {} to main as version {}", "{} を main に渡しました（第{}版）", text::named(Some(&c.kind).filter(|k| !k.is_empty()).map(|s| s.as_str()), &c.title), c.version));
             Ok(())
         }
         ["reset", repo] => {
             let c = history::reset(&Repos::open()?, repo)?;
-            out(tr!("Took back {}", "取り下げました: {}", c.title));
+            out(tr!("Took back {}", "取り下げました：{}", c.title));
             Ok(())
         }
         ["review", target, verdict @ ("approve" | "changes")] => {
             let (repo, line) = git::line_of(&Repos::open()?, target)?;
             let c = history::review(&repo, &line, verdict, &a.detail, &[])?;
-            out(tr!("Reviewed version {} of {}", "{1} の第 {0} 版をレビューしました", c.version, text::named(Some(c.kind.as_str()).filter(|k| !k.is_empty()), &c.title)));
+            out(tr!("Reviewed version {} of {}", "{1} の第{0}版をレビューしました", c.version, text::named(Some(c.kind.as_str()).filter(|k| !k.is_empty()), &c.title)));
             Ok(())
         }
         ["reply", target, words] => {
@@ -444,7 +444,7 @@ fn run(a: Args) -> Result<(), String> {
             if a.json { return json(held.iter().map(|(r, c)| serde_json::json!({"root": r, "current": c})).collect::<Vec<_>>()); }
             if held.is_empty() { out(tr!("No root yet (l3 root fetch)", "root はまだありません（l3 root fetch）")); return Ok(()); }
             for (r, current) in held {
-                out(format!("{} {}  {} · {}  {}{}", r.name, r.version, tr!("{} files", "{} ファイル", r.files), bytes(r.bytes), &r.sha256[..12],
+                out(format!("{} {}  {} · {}  {}{}", r.name, r.version, tr!("{} files", "{}ファイル", r.files), bytes(r.bytes), &r.sha256[..12],
                     if current { tr!("  in use", "  使用中") } else { String::new() }));
             }
             Ok(())
@@ -462,13 +462,13 @@ fn run(a: Args) -> Result<(), String> {
             })?;
             eprintln!();
             if a.json { return json(r); }
-            out(tr!("Installed {} {} ({} files · {})", "{} {} を入れました（{} ファイル · {}）", r.name, r.version, r.files, bytes(r.bytes)));
+            out(tr!("Installed {} {} ({} files · {})", "{} {} を入れました（{}ファイル · {}）", r.name, r.version, r.files, bytes(r.bytes)));
             Ok(())
         }
         ["root", "install", bundle] => {
             let r = length3_core::root::install(&paths::data_dir(), std::path::Path::new(bundle))?;
             if a.json { return json(r); }
-            out(tr!("Installed {} {} ({} files · {})", "{} {} を入れました（{} ファイル · {}）", r.name, r.version, r.files, bytes(r.bytes)));
+            out(tr!("Installed {} {} ({} files · {})", "{} {} を入れました（{}ファイル · {}）", r.name, r.version, r.files, bytes(r.bytes)));
             Ok(())
         }
         // Inbox
@@ -479,7 +479,7 @@ fn run(a: Args) -> Result<(), String> {
             for t in &list {
                 let state = match t.state.as_str() { "request" => tr!(" · request", " · リクエスト"), "blocked" => tr!(" · blocked", " · ブロック"), _ => String::new() };
                 out(format!("{}{}{}", t.address, state, if t.unread > 0 { format!("  ({})", t.unread) } else { String::new() }));
-                out(format!("    {}{}{}", if t.last.mine { tr!("you: ", "あなた: ") } else { String::new() }, kind_word(&t.last.kind), t.last.body));
+                out(format!("    {}{}{}", if t.last.mine { tr!("you: ", "あなた：") } else { String::new() }, kind_word(&t.last.kind), t.last.body));
             }
             Ok(())
         }
@@ -498,7 +498,7 @@ fn run(a: Args) -> Result<(), String> {
         ["inbox", who] => {
             let c = inbox::thread(who)?;
             if a.json { return json(&c); }
-            out(format!("{}{}", c.address, if c.state == "request" { tr!("  (request: l3 inbox accept {})", "  （リクエスト: l3 inbox accept {}）", c.address) } else { String::new() }));
+            out(format!("{}{}", c.address, if c.state == "request" { tr!("  (request: l3 inbox accept {})", "  （リクエスト：l3 inbox accept {}）", c.address) } else { String::new() }));
             for m in &c.messages {
                 let who = if m.mine { tr!("you", "あなた") } else { c.address.clone() };
                 out(format!("  {who} · {}{}  · {}", kind_word(&m.kind), m.body, ago(m.time)));
@@ -508,15 +508,15 @@ fn run(a: Args) -> Result<(), String> {
         ["address"] => {
             let me = inbox::me()?;
             if a.json { return json(&me); }
-            if me.addresses.is_empty() { out(tr!("No name yet (l3 address claim NAME: first come, yours for five years at a time)", "名前はまだありません（l3 address claim NAME: 早い者勝ち、5 年ごとの更新であなたのもの）")); }
+            if me.addresses.is_empty() { out(tr!("No name yet (l3 address claim NAME: first come, yours for five years at a time)", "名前はまだありません（l3 address claim NAME: 早い者勝ち、5年ごとの更新であなたのもの）")); }
             let at = |ms: u64| UNIX_EPOCH.checked_add(std::time::Duration::from_millis(ms)).map(day).unwrap_or_default();
             for x in &me.addresses {
                 let state = if x.lapsed { tr!("  · its domain no longer names this Remote", "  · ドメインがこの Remote を指していません") }
-                    else if x.ended { tr!("  · its term ended: l3 address renew {}", "  · 期限切れ: l3 address renew {}", me.shown(&x.address)) }
+                    else if x.ended { tr!("  · its term ended: l3 address renew {}", "  · 期限切れ：l3 address renew {}", me.shown(&x.address)) }
                     else if let Some(u) = x.until { tr!("  · until {}", "  · {} まで", at(u)) } else { String::new() };
                 out(format!("{}{state}{}", me.shown(&x.address), if x.ssh { tr!("  · SSH allowed", "  · SSH 許可") } else { String::new() }));
             }
-            if !me.code.is_empty() { out(tr!("Your code: {} (anyone can find you by it)", "あなたのコード: {}（これで見つけてもらえます）", me.code)); }
+            if !me.code.is_empty() { out(tr!("Your code: {} (anyone can find you by it)", "あなたのコード：{}（これで見つけてもらえます）", me.code)); }
             Ok(())
         }
         ["address", "renew", name] => {
@@ -531,7 +531,7 @@ fn run(a: Args) -> Result<(), String> {
             if a.json { return json(&r); }
             out(tr!("Put this record in {}'s DNS (it says this account holds addresses there, and on which Remote):", "{} の DNS にこのレコードを置きます（このアカウントがそこのアドレスを持つこと、どの Remote かを示します）:", domain));
             out(format!("  {}  {}  {}", r.name, r.kind, r.value));
-            out(if r.found { tr!("Found: l3 address claim NAME@{} takes an address on it", "見つかりました: l3 address claim NAME@{} でアドレスを取れます", domain) } else { tr!("Not found yet", "まだ見つかりません") });
+            out(if r.found { tr!("Found: l3 address claim NAME@{} takes an address on it", "見つかりました：l3 address claim NAME@{} でアドレスを取れます", domain) } else { tr!("Not found yet", "まだ見つかりません") });
             Ok(())
         }
         ["address", "release", a] => {
@@ -542,7 +542,7 @@ fn run(a: Args) -> Result<(), String> {
             Ok(())
         }
         ["address", "claim", name] => {
-            out(tr!("Yours: {}", "あなたのアドレス: {}", inbox::claim(name)?));
+            out(tr!("Yours: {}", "あなたのアドレス：{}", inbox::claim(name)?));
             Ok(())
         }
         // Runtime: what the Prompt is given
@@ -573,7 +573,7 @@ fn run(a: Args) -> Result<(), String> {
             Ok(())
         }
         ["dotfile", verb @ ("write" | "rm"), name] => {
-            if !length3_core::launch::dotfile_name(name) { return Err(tr!("A dotfile is named with a dot first: .profile", "dotfile の名前は . で始めます: .profile")); }
+            if !length3_core::launch::dotfile_name(name) { return Err(tr!("A dotfile is named with a dot first: .profile", "dotfile の名前は . で始めます：.profile")); }
             let mut all: std::collections::BTreeMap<String, String> = length3_core::launch::dotfiles().into_iter().collect();
             if *verb == "write" {
                 let mut text = String::new();
@@ -597,15 +597,15 @@ fn run(a: Args) -> Result<(), String> {
             let mut p = profile();
             let v = value.trim().to_string();
             match *field {
-                "name" => { if v.chars().count() > 50 { return Err(tr!("A name is up to 50 characters", "名前は 50 文字までです")); } p.name = v; }
+                "name" => { if v.chars().count() > 50 { return Err(tr!("A name is up to 50 characters", "名前は50文字までです")); } p.name = v; }
                 "handle" => {
                     let h = v.trim_start_matches('@').to_ascii_lowercase();
                     if !h.is_empty() && !(h.len() <= 32 && h.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_')) {
-                        return Err(tr!("A handle is up to 32 lowercase letters, digits, - and _", "ハンドルは英小文字・数字・- _ の 32 文字までです"));
+                        return Err(tr!("A handle is up to 32 lowercase letters, digits, - and _", "ハンドルは英小文字・数字・- _ の32文字までです"));
                     }
                     p.handle = h;
                 }
-                _ => { if v.chars().count() > 160 { return Err(tr!("A bio is up to 160 characters", "自己紹介は 160 文字までです")); } p.bio = v; }
+                _ => { if v.chars().count() > 160 { return Err(tr!("A bio is up to 160 characters", "自己紹介は160文字までです")); } p.bio = v; }
             }
             length3_core::home::set("profile", &serde_json::to_string(&p).map_err(|e| e.to_string())?)?;
             out(tr!("Saved your profile", "プロフィールを保存しました"));
@@ -704,21 +704,21 @@ fn synced_line(name: &str, r: &Result<remote::Synced, String>) {
         Ok(s) => {
             let what = match (s.sent, s.taken) {
                 (0, 0) => tr!("the same", "同じです"),
-                (n, 0) => tr!("sent {}", "{} 件送りました", n),
-                (0, n) => tr!("took in {}", "{} 件取り込みました", n),
-                (a, b) => tr!("sent {}, took in {}", "{} 件送り、{} 件取り込みました", a, b),
+                (n, 0) => tr!("sent {}", "{}件送りました", n),
+                (0, n) => tr!("took in {}", "{}件取り込みました", n),
+                (a, b) => tr!("sent {}, took in {}", "{}件送り、{}件取り込みました", a, b),
             };
             out(format!("{name}  {what}"));
-            for p in &s.both { out(tr!("    changed on both: {} (the other device's is \"{}\")", "    両方で変わっていました: {}（別の端末のものは「{}」に）", p, remote::beside(p))); }
-            for (p, why) in &s.unsynced { out(tr!("    cannot be sent: {} ({})", "    送れないもの: {}（{}）", p, why)); }
+            for p in &s.both { out(tr!("    changed on both: {} (the other device's is \"{}\")", "    両方で変わっていました：{}（別の端末のものは「{}」に）", p, remote::beside(p))); }
+            for (p, why) in &s.unsynced { out(tr!("    cannot be sent: {} ({})", "    送れないもの：{}（{}）", p, why)); }
         }
-        Err(e) => out(tr!("{}  not sent: {}", "{}  送れていません: {}", name, e)),
+        Err(e) => out(tr!("{}  not sent: {}", "{}  送れていません：{}", name, e)),
     }
 }
 
 fn login(url: &str) -> Result<(), String> {
     let code = remote::device_start(url, "l3")?;
-    out(tr!("Open this page in a browser and approve:", "ブラウザでこのページを開き、承認してください:"));
+    out(tr!("Open this page in a browser and approve:", "ブラウザでこのページを開き、承認してください："));
     out(format!("  {}", code.verification_uri_complete));
     out(tr!("  code {}", "  コード {}", code.user_code));
     eprint!("{}", tr!("Waiting for approval…", "承認を待っています…"));
@@ -772,12 +772,12 @@ fn repo_list(a: &Args) -> Result<(), String> {
             state.push_str(&match remote::status_of(&r, &s.name) {
                 Ok(st) if remote::connection().is_none() => if st.unsynced.is_empty() { String::new() } else { tr!(" · some things cannot be sent", " · 送れないものあり") },
                 Ok(st) if st.fresh => tr!(" · not sent yet", " · まだ送っていません"),
-                Ok(st) if st.changed > 0 => tr!(" · {} not sent", " · {} 件未送信", st.changed),
+                Ok(st) if st.changed > 0 => tr!(" · {} not sent", " · {}件未送信", st.changed),
                 Ok(_) => tr!(" · in step", " · Remote と同じ"),
                 Err(_) => String::new(),
             });
         }
-        out(format!("{}\t{} · {}{state}", s.name, tr!("{} files", "{} ファイル", s.files), bytes(s.bytes)));
+        out(format!("{}\t{} · {}{state}", s.name, tr!("{} files", "{}ファイル", s.files), bytes(s.bytes)));
     }
     for t in only_there {
         out(tr!("{}\tonly on the Remote · {} (l3 repo open {})", "{}\tRemote だけ · {}（l3 repo open {} で開けます）", t.name, bytes(t.bytes), t.name));
@@ -833,9 +833,9 @@ fn ago(ms: u64) -> String {
     let s = now().saturating_sub(ms) / 1000;
     match s {
         0..=59 => tr!("just now", "たった今"),
-        60..=3599 => tr!("{} min ago", "{} 分前", s / 60),
-        3600..=86399 => tr!("{} h ago", "{} 時間前", s / 3600),
-        _ => tr!("{} days ago", "{} 日前", s / 86400),
+        60..=3599 => tr!("{} min ago", "{}分前", s / 60),
+        3600..=86399 => tr!("{} h ago", "{}時間前", s / 3600),
+        _ => tr!("{} days ago", "{}日前", s / 86400),
     }
 }
 
@@ -862,7 +862,7 @@ fn runtime(a: &Args) -> Result<(), String> {
         None => out(tr!("root  none yet (l3 root fetch)", "root  まだありません（l3 root fetch）")),
     }
     out("");
-    out(tr!("This device  {} free of {} (the host's figures) · this OS {}", "この端末  空き {} / {}（ホストの値） · このOS {}", bytes(s.host_free), bytes(s.host_total), bytes(s.allocated)));
+    out(tr!("This device  {} free of {} (the host's figures) · this OS {}", "この端末  空き {} / {}（ホストの値） · この OS {}", bytes(s.host_free), bytes(s.host_total), bytes(s.allocated)));
     for i in &s.items {
         let act = match i.room { usage::Room::Free | usage::Room::SyncFree => tr!("free", "空ける"), usage::Room::Keep => tr!("stays", "残す") };
         out(format!("  {:>9}  {}  {}  {}", bytes(i.allocated), act, i.what, i.detail));
@@ -883,11 +883,11 @@ fn free(a: &Args, ids: &[&str]) -> Result<(), String> {
     let r = usage::free(&data, &paths::repos_dir(), &ids, &[]);
     if a.json { return json(r); }
     if !r.removed.is_empty() {
-        out(tr!("Freed {} ({} things, counted from the files' blocks)", "{} を空けました（{} 件、ファイルの実割当で確認）", bytes(r.freed), r.removed.len()));
+        out(tr!("Freed {} ({} things, counted from the files' blocks)", "{} を空けました（{}件、ファイルの実割当で確認）", bytes(r.freed), r.removed.len()));
         let change = r.host_free_after as i64 - r.host_free_before as i64;
         match r.reflected_ms {
             Some(ms) => out(tr!("  host free space {:+} B (seen in {} ms; observed, other programs write too)", "  ホストの空き {:+} B（{} ms で反映。他のプログラムの書込も含む観測値）", change, ms)),
-            None => out(tr!("  host free space {:+} B (not seen to change within 2 s)", "  ホストの空き {:+} B（2 秒以内には反映が見えませんでした）", change)),
+            None => out(tr!("  host free space {:+} B (not seen to change within 2 s)", "  ホストの空き {:+} B（2秒以内には反映が見えませんでした）", change)),
         }
         for id in r.removed.iter().filter(|i| i.starts_with("repo:")) {
             out(tr!("  {} stays on the Remote; l3 repo open {} brings it back", "  {} は Remote にあります。l3 repo open {} で戻ります", &id[5..], &id[5..]));
@@ -916,15 +916,15 @@ fn remote_page(a: &Args) -> Result<(), String> {
     for s in &here {
         let outcome = synced.iter().find(|(n, _)| *n == s.name).map(|(_, r)| r);
         let state = match outcome {
-            Some(Err(e)) => tr!("not sent: {}", "送れていません: {}", e),
+            Some(Err(e)) => tr!("not sent: {}", "送れていません：{}", e),
             _ if s.fresh => tr!("not sent yet", "まだ送っていません"),
-            _ if s.changed > 0 => tr!("{} not sent", "{} 件未送信", s.changed),
+            _ if s.changed > 0 => tr!("{} not sent", "{}件未送信", s.changed),
             _ => tr!("in step", "同じ"),
         };
-        let stuck = if s.unsynced.is_empty() { String::new() } else { tr!(" · {} cannot be sent", " · 送れないもの {} 件", s.unsynced.len()) };
+        let stuck = if s.unsynced.is_empty() { String::new() } else { tr!(" · {} cannot be sent", " · 送れないもの {}件", s.unsynced.len()) };
         out(format!("  {}  {state}{stuck}", s.name));
         if let Some(Ok(sy)) = outcome {
-            for p in &sy.both { out(tr!("    changed on both: {} (the other device's is \"{}\")", "    両方で変わっていました: {}（別の端末のものは「{}」に）", p, remote::beside(p))); }
+            for p in &sy.both { out(tr!("    changed on both: {} (the other device's is \"{}\")", "    両方で変わっていました：{}（別の端末のものは「{}」に）", p, remote::beside(p))); }
         }
     }
     for t in there.iter().filter(|t| t.off_at.is_some()) {
@@ -957,7 +957,7 @@ fn band(r: &Repos) -> Result<Vec<String>, String> {
 fn left(until: u64) -> String {
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
     let h = until.saturating_sub(now) / 3_600_000;
-    if h >= 24 { tr!("{} days", "{} 日", h / 24) } else { tr!("{} hours", "{} 時間", h.max(1)) }
+    if h >= 24 { tr!("{} days", "{}日", h / 24) } else { tr!("{} hours", "{}時間", h.max(1)) }
 }
 
 fn main() -> ExitCode {

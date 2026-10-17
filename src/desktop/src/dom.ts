@@ -1,6 +1,6 @@
 // Element construction. Text is always set as text, never parsed as HTML.
 
-import {t} from './i18n.ts';
+import {currentLang, t} from './i18n.ts';
 
 export type Child = Node | string | null | undefined | false;
 
@@ -28,6 +28,10 @@ export function ago(ms: number, now = Date.now()): string {
   if (s < 3600) return t('{n} min ago', {n: Math.floor(s / 60)});
   if (s < 86400) return t('{n} h ago', {n: Math.floor(s / 3600)});
   if (s < 172800) return t('yesterday');
-  const d = new Date(ms);
-  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+  return day(ms);
+}
+
+/** A day, written as the language the OS speaks writes one: Oct 17, 2031 / 2031年10月17日. */
+export function day(ms: number): string {
+  return new Date(ms).toLocaleDateString(currentLang(), {year: 'numeric', month: 'short', day: 'numeric'});
 }

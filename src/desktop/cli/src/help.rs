@@ -27,7 +27,7 @@ const fn c(name: &'static str, group: &'static str, about: Words, forms: &'stati
 }
 
 pub const COMMANDS: &[Command] = &[
-    c("server", "Server", ["people you know: boards, each a talk and a TODO kept together", "知り合いの集まり: 板ごとに話とみんなの TODO"], &[
+    c("server", "Server", ["people you know: boards, each a talk and a TODO kept together", "知り合いの集まり：板ごとに話とみんなの TODO"], &[
         ("l3 server", ["each server you are in, and its boards", "入っているサーバーと、その板"]),
         ("l3 server get SERVER[#BOARD] [--todo]", ["take boards home as text, here (the TODO only with --todo)", "板をテキストでここに置く（--todo で TODO だけ）"]),
         ("l3 server post SERVER#BOARD \"text\"", ["write in a board", "板に書く"]),
@@ -144,8 +144,8 @@ pub const COMMANDS: &[Command] = &[
     ], &["send", "accept", "block"], false),
     c("address", "Inbox", ["your names, and your code", "あなたの名前とコード"], &[
         ("l3 address", ["each, with its term, and your code", "それぞれと期限、あなたのコード"]),
-        ("l3 address claim NAME[@DOMAIN]", ["a name here: first come, for five years; on your domain, beside it", "ここでの名前（早い者勝ち、5 年）。自分のドメインなら並べて"]),
-        ("l3 address renew NAME", ["five more years from now", "今から 5 年延ばす"]),
+        ("l3 address claim NAME[@DOMAIN]", ["a name here: first come, for five years; on your domain, beside it", "ここでの名前（早い者勝ち、5年）。自分のドメインなら並べて"]),
+        ("l3 address renew NAME", ["five more years from now", "今から5年延ばす"]),
         ("l3 address release NAME", ["let it go: held for you 30 days, claim it again to take it back", "手放す（30日はあなたのために取り置き、取り直せば戻る）"]),
         ("l3 address domain DOMAIN", ["the DNS record that proves it is yours", "あなたのものだと示す DNS レコード"]),
     ], &["claim", "domain", "release"], false),
@@ -189,7 +189,7 @@ pub fn overview() -> String {
     }
     s += "\n";
     s += if ja() {
-        "repo の中（とその Prompt）では REPO を省けます。#N はその repo の Issue N です。\n`l3 help all` ですべての書き方、`l3 completion bash|zsh|fish` で補完。\n\n名前は持ち主が先: hello, hello/src/a.c, hello#3, ren@length3.com:hello（あなたの repo を全部書いた形）, trip#general（サーバーの板）。"
+        "repo の中（とその Prompt）では REPO を省けます。#N はその repo の Issue N です。\n`l3 help all` ですべての書き方、`l3 completion bash|zsh|fish` で補完。\n\n名前は持ち主が先：hello, hello/src/a.c, hello#3, ren@length3.com:hello（あなたの repo を全部書いた形）, trip#general（サーバーの板）。"
     } else {
         "In a repo (or its Prompt) REPO may be left out, and #N is that repo's issue N.\n`l3 help all` lists every form; `l3 completion bash|zsh|fish` completes them.\n\nNames, owner first: hello, hello/src/a.c, hello#3, ren@length3.com:hello (yours, written in full), trip#general (a server's board)."
     };
@@ -255,12 +255,12 @@ pub fn not_a_command(words: &[&str]) -> String {
     if let Some(c) = find(first) {
         // A command, but not one of its forms: a mistyped next word, or the wrong count.
         let hint = words.get(1).and_then(|w| nearest(w, c.next.iter().copied())).filter(|w| Some(w) != words.get(1))
-            .map(|w| if ja() { format!("もしかして: l3 {} {w}\n", c.name) } else { format!("Did you mean: l3 {} {w}\n", c.name) }).unwrap_or_default();
+            .map(|w| if ja() { format!("もしかして：l3 {} {w}\n", c.name) } else { format!("Did you mean: l3 {} {w}\n", c.name) }).unwrap_or_default();
         return if ja() { format!("l3 {} の書き方ではありません\n{hint}\n{}", words.join(" "), forms(c).trim_end()) } else { format!("Not how l3 {} is written\n{hint}\n{}", words.join(" "), forms(c).trim_end()) };
     }
     match nearest(first, all()) {
-        Some(w) => if ja() { format!("わからないコマンドです: l3 {first}\nもしかして: l3 {w}") } else { format!("Not a command: l3 {first}\nDid you mean: l3 {w}") },
-        None => if ja() { format!("わからないコマンドです: l3 {first}\n`l3 help` でコマンドの一覧を見られます") } else { format!("Not a command: l3 {first}\n`l3 help` lists the commands") },
+        Some(w) => if ja() { format!("わからないコマンドです：l3 {first}\nもしかして：l3 {w}") } else { format!("Not a command: l3 {first}\nDid you mean: l3 {w}") },
+        None => if ja() { format!("わからないコマンドです：l3 {first}\n`l3 help` でコマンドの一覧を見られます") } else { format!("Not a command: l3 {first}\n`l3 help` lists the commands") },
     }
 }
 

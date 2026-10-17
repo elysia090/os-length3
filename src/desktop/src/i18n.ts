@@ -34,8 +34,22 @@ export function setLang(next: Lang) {
   for (const fn of [...listeners]) fn();
 }
 
+/** Kana and kanji (not their punctuation): what a Latin word is set a space apart from (DESIGN.md §1). */
+export const KANA_KANJI = /[぀-ヺー-ヿ㐀-鿿]/;
+const LATIN = /[A-Za-z]/;
+const apart = (a: string | undefined, b: string | undefined) =>
+  !!a && !!b && ((LATIN.test(a) && KANA_KANJI.test(b)) || (KANA_KANJI.test(a) && LATIN.test(b)));
+
+/** Placeholders filled in; a name is set apart from the Japanese beside it only when it is Latin (`notes を`, `旅行の`). */
 function fill(text: string, vars?: Record<string, string | number>): string {
-  return vars ? text.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k]) : m)) : text;
+  if (!vars) return text;
+  return text.replace(/\{(\w+)\}/g, (m, k: string, at: number) => {
+    if (!(k in vars)) return m;
+    const v = String(vars[k]);
+    const before = apart(text[at - 1], v[0]) ? ' ' : '';
+    const after = apart(v.at(-1), text[at + m.length]) ? ' ' : '';
+    return before + v + after;
+  });
 }
 
 /** The text in the current language. */

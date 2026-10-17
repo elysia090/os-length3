@@ -2,6 +2,7 @@ import {h} from '../dom.ts';
 import * as gitops from '../history.ts';
 import {t, tn} from '../i18n.ts';
 import {readIssues, type Issue} from '../issues.ts';
+import {bring, remoteOnly} from '../lifecycle.ts';
 import {connection} from '../remote.ts';
 import {onChange, store} from '../repos.ts';
 import {bench} from './bench.ts';
@@ -129,7 +130,8 @@ export function git(ctx: Context): Node[] {
     if (!shown.length) {
       track.replaceChildren();
       stage.hidden = true;
-      empty.replaceChildren(h('div', {class: 'empty'}, !repos.length ? t('No repos yet') : issues.length ? t('Every issue is merged.') : t('No issues yet')));
+      empty.replaceChildren(!repos.length && remoteOnly().length ? onlyThere()
+        : h('div', {class: 'empty'}, !repos.length ? t('No repos yet') : issues.length ? t('Every issue is merged') : t('No issues yet')));
       return;
     }
     empty.replaceChildren();
@@ -147,7 +149,7 @@ export function git(ctx: Context): Node[] {
     form.open(repos, takers, filter || at || takers[0]);
   });
 
-  void store.list().then((r) => {
+  const load = () => void store.list().then((r) => {
     repos = r.map((x) => x.name);
     if (filter && !repos.includes(filter)) filter = ALL;
     write.disabled = !repos.length;
@@ -155,6 +157,17 @@ export function git(ctx: Context): Node[] {
     paintChips();
     void paint();
   });
+  /** No repo here and some on the Remote: each fetched with a press, as Runtime's are, and its issues are here. */
+  const onlyThere = () => h('div', {class: 'empty fetch-list'}, h('p', {}, t('Only on the Remote')), ...remoteOnly().map((r) => {
+    const b = h('button', {type: 'button', class: 'button small-button'}, t('Fetch')) as HTMLButtonElement;
+    b.addEventListener('click', async () => {
+      b.disabled = true;
+      b.textContent = t('Bringing it…');
+      try { await bring(r.name); load(); } catch (e) { b.disabled = false; b.textContent = e instanceof Error ? e.message : String(e); }
+    });
+    return h('div', {class: 'fetch-row'}, h('span', {}, r.name), b);
+  }));
+  load();
 
   const main = h('section', {class: 'flow git-flow', tabindex: '0', 'aria-label': 'Git'},
     pageHead('git'),

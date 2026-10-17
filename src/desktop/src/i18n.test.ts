@@ -47,3 +47,37 @@ test('no Japanese is written outside the catalog', () => {
   walk(new URL('.', import.meta.url).pathname);
   assert.deepEqual(offenders, []);
 });
+
+// How Japanese is written beside Latin words and numbers (DESIGN.md §1).
+const catalog = () => readdirSync(new URL('./i18n/ja/', import.meta.url).pathname).filter((f) => f !== 'index.ts')
+  .flatMap((f) => [...readFileSync(new URL(`./i18n/ja/${f}`, import.meta.url), 'utf8')
+    .matchAll(/^\s*(?:'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"): '((?:[^'\\]|\\.)*)'/gm)]
+    .map((m) => ({file: f, en: m[1] ?? m[2], ja: m[3]})));
+const KANA_KANJI = '\\u3040-\\u30fa\\u30fc-\\u30ff\\u3400-\\u9fff';
+const NAMES = 'name|server|board|repo|who|address|path|client|issue|date|list|query';
+
+test('Japanese is written one way beside Latin words, numbers and names', () => {
+  const rules: [string, RegExp][] = [
+    ['a Latin word is a space apart', new RegExp(`[A-Za-z][${KANA_KANJI}]|[${KANA_KANJI}][A-Za-z]`)],
+    ['a number and its counter are one', /(?<![A-Za-z\d])(\d+|\{(n|m|open|all)\}) (日|年|月|週|時間|分|秒|件|個|行|文字|回|人|台|版|ファイル|プロセス)/],
+    ['a name is set apart by t(), not by hand', new RegExp(`\\{(${NAMES})\\} [${KANA_KANJI}]|[${KANA_KANJI}] \\{(${NAMES})\\}`)],
+    ['a colon after Japanese is full width', new RegExp(`[${KANA_KANJI}]:`)],
+  ];
+  const broken = catalog().flatMap((e) => rules.filter(([, r]) => r.test(e.ja.replace(/\{\w+\}/g, (p) => p))).map(([why]) => `${why}: ${e.ja}`));
+  assert.deepEqual(broken, []);
+});
+
+test('each English text has one Japanese', () => {
+  const seen = new Map<string, string>();
+  const twice = catalog().filter((e) => { const had = seen.get(e.en); seen.set(e.en, e.ja); return had !== undefined; }).map((e) => `${e.file}: ${e.en}`);
+  assert.deepEqual(twice, []);
+});
+
+test('a name is a space apart from Japanese only when it is Latin', () => {
+  setLang('ja');
+  assert.equal(t('In {server}', {server: '旅行'}), '旅行に共有');
+  assert.equal(t('In {server}', {server: 'trip'}), 'trip に共有');
+  assert.equal(t('{n} new posts', {n: 3}), '新しい投稿 3件');
+  setLang('en');
+  assert.equal(t('In {server}', {server: 'trip'}), 'In trip');
+});

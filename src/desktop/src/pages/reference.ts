@@ -170,7 +170,7 @@ export class Reference {
       groups.push({path: f.path, hits});
       total += hits.length;
     }
-    if (!groups.length) { this.empty(t('Nothing found for “{query}”.', {query})); return; }
+    if (!groups.length) { this.empty(t('Nothing found for “{query}”', {query})); return; }
     this.body.replaceChildren(
       h('p', {class: 'muted small search-count'}, `${tn('{n} file', '{n} files', groups.length)} · ${total >= HIT_LIMIT ? t('{n} lines (only the first)', {n: total}) : tn('{n} line', '{n} lines', total)}`),
       ...groups.map((g) => {

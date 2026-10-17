@@ -114,7 +114,7 @@ impl Client {
             // Turned off: the Remote keeps it for a while, answering only that.
             Err(ureq::Error::Status(410, _)) => Err(crate::tr!("turned off on the Remote", "Remote でオフになっています")),
             Err(ureq::Error::Status(code, _)) => Err(format!("Remote: {code}")),
-            Err(e) => Err(crate::tr!("The Remote cannot be reached: {}", "Remote に届きません: {}", e)),
+            Err(e) => Err(crate::tr!("The Remote cannot be reached: {}", "Remote に届きません：{}", e)),
         }
     }
 
@@ -133,7 +133,7 @@ impl Client {
             Err(ureq::Error::Status(404, _)) => Err(crate::tr!("The Remote does not have it", "Remote にありません")),
             Err(ureq::Error::Status(401, _)) => Err(UNKNOWN.into()),
             Err(ureq::Error::Status(code, _)) => Err(format!("Remote: {code}")),
-            Err(e) => Err(crate::tr!("The Remote cannot be reached: {}", "Remote に届きません: {}", e)),
+            Err(e) => Err(crate::tr!("The Remote cannot be reached: {}", "Remote に届きません：{}", e)),
         }
     }
 
@@ -143,13 +143,13 @@ impl Client {
             .set("Content-Type", "application/octet-stream")
             .send_bytes(bytes)
             .map(|_| ())
-            .map_err(|e| format!("Remote が受け取りませんでした: {e}"))
+            .map_err(|e| format!("Remote が受け取りませんでした：{e}"))
     }
 
     pub(crate) fn blob(&self, sha: &str) -> Result<Vec<u8>> {
         let r = self.agent.get(&format!("{}/v1/blobs/{sha}", self.url))
             .set("Authorization", &self.auth()).call()
-            .map_err(|e| format!("Remote から読めません: {e}"))?;
+            .map_err(|e| format!("Remote から読めません：{e}"))?;
         let mut bytes = Vec::new();
         r.into_reader().take(BLOB_LIMIT + 1).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
         // Trusted only as far as it is what its name says.
@@ -179,7 +179,7 @@ pub struct DeviceCode {
 /// Ask for a code to approve in a browser; `client` is "l3" or "length3-app".
 pub fn device_start(url: &str, client: &str) -> Result<DeviceCode> {
     agent(url).post(&format!("{url}/api/auth/device/code")).send_json(serde_json::json!({"client_id": client}))
-        .map_err(|e| crate::tr!("The Remote cannot be reached: {}", "Remote に届きません: {}", e))?
+        .map_err(|e| crate::tr!("The Remote cannot be reached: {}", "Remote に届きません：{}", e))?
         .into_json().map_err(|e| e.to_string())
 }
 
@@ -202,7 +202,7 @@ pub fn device_poll(url: &str, client: &str, code: &DeviceCode) -> Result<Option<
                 other => Err(format!("つなげませんでした（{}）", other.unwrap_or("?"))),
             }
         }
-        Err(e) => Err(crate::tr!("The Remote cannot be reached: {}", "Remote に届きません: {}", e)),
+        Err(e) => Err(crate::tr!("The Remote cannot be reached: {}", "Remote に届きません：{}", e)),
     }
 }
 

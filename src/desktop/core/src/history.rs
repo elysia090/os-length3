@@ -281,7 +281,7 @@ fn words(repos: &Repos, repo: &str, issue: Option<&str>, line: &str) -> Result<(
 pub fn cut(repos: &Repos, repo: &str, issue: Option<&str>, line: &str, note: &str) -> Result<Cut> {
     let (kind, title, issue) = words(repos, repo, issue, line)?;
     if title.trim().is_empty() {
-        return Err(crate::tr!("A commit needs a title (for example Fix：title)", "Commit するには件名がいります（例: Fix：件名）"));
+        return Err(crate::tr!("A commit needs a title (for example Fix：title)", "Commit するには件名がいります（たとえば Fix：件名）"));
     }
     let client = Client::open().map_err(|_| crate::tr!("Commits are kept on the Remote. Connect first (l3 login)", "コミットは Remote に残ります。先につないでください（l3 login）"))?;
     let (key, on) = remote::key(repos, repo);
@@ -498,7 +498,7 @@ pub fn submit(repos: &Repos, repo: &str, note: &str) -> Result<Change> {
 fn change_call(repo: &str, id: &str, verb: &str, body: serde_json::Value) -> Result<serde_json::Value> {
     match Client::open()?.call("POST", &format!("/v1/repos/{repo}/changes/{id}/{verb}"), Some(body))? {
         Reply::Ok(v) => Ok(v),
-        Reply::Conflict(v) if v["conflicts"].is_array() => Err(crate::tr!("Both changed these files; resolve them in the work, push and change again: {}", "両方で変わったファイルがあります。作業の側で直して Push し、もう一度 Change してください: {}",
+        Reply::Conflict(v) if v["conflicts"].is_array() => Err(crate::tr!("Both changed these files; resolve them in the work, push and change again: {}", "両方で変わったファイルがあります。作業の側で直して Push し、もう一度 Change してください：{}",
             v["conflicts"].as_array().unwrap().iter().filter_map(|p| p.as_str()).collect::<Vec<_>>().join(", "))),
         Reply::Conflict(v) if v["version"].is_number() => Err(crate::tr!("The change has a newer version ({}); look at it first", "変更に新しい版があります（{}）。先にそれを見てください", v["version"])),
         Reply::Conflict(v) => Err(crate::tr!("The change is {} already", "この変更はもう {} です", v["error"].as_str().unwrap_or("?"))),
@@ -508,7 +508,7 @@ fn change_call(repo: &str, id: &str, verb: &str, body: serde_json::Value) -> Res
 
 fn find(repo: &str, id: &str) -> Result<Change> {
     changes_of_repo(repo)?.into_iter().find(|c| c.id == id || c.id.starts_with(id) || c.line == id)
-        .ok_or_else(|| crate::tr!("No such change: {}", "その変更はありません: {}", id))
+        .ok_or_else(|| crate::tr!("No such change: {}", "その変更はありません：{}", id))
 }
 
 /// Review the change's current version.

@@ -34,9 +34,9 @@ export function home(ctx: Context): Node[] {
     owner && !editing ? editButton(ctx) : null,
   );
   return [header, todoBox(),
-    h('section', {class: 'section', 'aria-labelledby': 'repos-title'}, h('h2', {id: 'repos-title'}, 'repo'), grid),
+    h('section', {class: 'section', 'aria-labelledby': 'repos-title'}, h('h2', {id: 'repos-title'}, t('Repos')), grid),
     h('section', {class: 'section', 'aria-labelledby': 'servers-title'},
-      h('h2', {id: 'servers-title'}, 'Server'), ownServers(ctx))];
+      h('h2', {id: 'servers-title'}, t('Servers')), ownServers(ctx))];
 }
 
 /** The servers the person is in (Server holds them), and how many in the counts. */
@@ -63,7 +63,7 @@ function identity(repoCount: HTMLElement): HTMLElement {
     named ? h('h1', {}, profile.name || `@${profile.handle}`) : h('h1', {class: 'unset'}, t('No name yet')),
     profile.handle && profile.name ? h('p', {class: 'handle'}, `@${profile.handle}`) : null,
     profile.bio ? h('p', {class: 'bio'}, profile.bio) : null,
-    h('p', {class: 'counts'}, h('span', {}, repoCount, ' repo'), h('span', {}, h('b', {id: 'server-count'}, '0'), ' server')),
+    h('p', {class: 'counts'}, h('span', {}, repoCount, ' ', t('repo')), h('span', {}, h('b', {id: 'server-count'}, '0'), ' ', t('server'))),
   );
 }
 

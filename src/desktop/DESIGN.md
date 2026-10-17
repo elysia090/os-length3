@@ -53,6 +53,26 @@ Every value in `styles.css` comes from a token (§2).
 - **Motion.** 120 ms fades, and one movement: the terminal flying between
   the right pane and the prompt box, 280 ms. Reduced motion turns them off.
 - No shadows, blur, glow or gradients.
+- **Words, one way.** One word for one thing on every page: repo (never
+  リポジトリ), サーバー, 板. A button is a verb in its plain form (作る,
+  保存する, 外す), never a noun (作成); a time on a line is a noun (3分前に
+  更新, に接続, に使用). A line that is one statement in an empty box or a
+  card's note has no full stop; two or more sentences each end with one.
+  "Not yet" is written one way: X はまだありません. A day is written as the
+  language writes one (Oct 17, 2031 / 2031年10月17日), never another
+  country's (10/17/2031).
+- **Japanese beside Latin and numbers.** A Latin word is a half-width
+  space apart from Japanese (新しい repo, この OS, 次の TODO). A number and
+  its counter are one (30日, 5年, 3件, 第2版). A colon after Japanese is
+  full width (：). A name filled in (`{server}`, `{repo}`) is written
+  against the Japanese in the catalog and `t()` sets it apart only when it
+  is Latin (旅行の人たちへ, trip の人たちへ). `i18n.test.ts` holds all four;
+  l3 and core write their Japanese the same way.
+- **What exists is the same everywhere.** A repo only on the Remote is a
+  repo on every page: counted on Home, a card on Home and Remote that
+  reads the same lines in the same order (size · when it changed, then
+  where it is), a quiet row in File, brought out by Forge's ⊕, offered to
+  fetch in Git. Opening it anywhere fetches it.
 
 Every page:
 
@@ -211,6 +231,21 @@ fix is always a piece from §3, not a new rule.
 | A colour, gradient, shadow or glow for emphasis | None: `ink`, `raised`, the edge, and size do it |
 | A new piece made up for one page | The piece from §3; if none fits, add one to §3 first |
 | Made-up names with random letters in examples and screenshots (sora4fdw) | Plain names (sora, trip, notes): names are first come and codes are unique, so nothing needs masking |
+| Two words for one thing (repo on one page, リポジトリ on the next; 1 server under サーバー) | One word, from §1, on every page |
+| Japanese and Latin run together on one page and spaced on the next (新しいrepo, Remote にある) | A space between them, always; a number and its counter together (30日, not 30 日) |
+| A name glued to a space before a particle (旅行 に共有) | Written against the particle; `t()` puts the space in only for a Latin name |
+| A day in another country's order (10/17/2031 まで in Japanese) | `day()`: the language's own (2031年10月17日まで) |
+| The same card saying its lines in another order (Remote にあります · 8 B, then when) | One order on every card: size · when it changed, then where it is |
+| A count that leaves out what the page shows (0 repo over a card for notes) | The count is of what is shown |
+| A repo on the Remote that a page says is not there (File: repo はまだありません; ⊕ greyed) | It is listed, quiet, and fetched when opened |
+| A noun on a button beside verbs (作成, 編集 beside 見る) | A verb (作る, 編集する) |
+| A full stop on one lone line and none on the next (投稿はここまでです。 / repo はまだありません) | None on one statement; one on each when there are two |
+| A field with only a placeholder for its name, beside a form with labels | A label over the field, what it means under it, as New repo's |
+| Signed out, a sentence and a button on one page and a card on another | The sign-in card, in the middle, on every page that needs it |
+| Items in one row of a band a few pixels off another's (a 40 px gear in a 32 px band) | Everything on the band is 32 px |
+| A divider left where a pane would start when there is none | No pane, no line |
+| Something painted over a focus ring (the ground under the box over its foot) | The ring is whole: what lies under the box lies behind it |
+| Text, not a field, sitting at the top of a row its mark is centred in (a read-only TODO) | Centred on the mark's line, as the field is |
 
 # Part II. What the OS is under the pages
 

@@ -1,5 +1,6 @@
 import {bytes, h} from '../dom.ts';
 import {t} from '../i18n.ts';
+import {bring, remoteOnly} from '../lifecycle.ts';
 import {inRepo, list, ORIGIN_LABEL, type SystemEntry} from '../system.ts';
 
 // File is an operation, not a page: the tree of "/", the whole system, as a
@@ -131,6 +132,18 @@ export class FileTree {
     });
   }
 
+  /** A repo only on the Remote: its name, and where it is. */
+  private away(repo: string, depth: number): HTMLElement {
+    const meta = h('span', {class: 'tree-meta'}, 'Remote');
+    const name = h('button', {class: 'tree-name', type: 'button'}, repo);
+    name.addEventListener('click', async () => {
+      meta.textContent = t('Bringing it…');
+      try { await bring(repo); this.events.choose(repo, ''); } catch (err) { meta.textContent = err instanceof Error ? err.message : String(err); }
+    });
+    return h('li', {role: 'treeitem', class: 'tree-repo tree-away'},
+      h('div', {class: 'tree-row', style: `--depth:${depth}`}, h('span', {class: 'tree-spacer', 'aria-hidden': 'true'}), name, meta));
+  }
+
   private add(e: SystemEntry, into: HTMLElement, depth: number) {
     const at = inRepo(e.path);
     const isRepo = at !== null && at.path === '';
@@ -175,7 +188,9 @@ export class FileTree {
       }
       children.replaceChildren();
       for (const c of entries) this.add(c, children, depth + 1);
-      if (!entries.length) children.append(note(e.path === '/root' ? t('No repos yet') : t('empty'), depth + 1));
+      // A repo only on the Remote is a line too: choosing it fetches it, as opening it from Home does.
+      if (e.path === '/root') for (const r of remoteOnly()) if (!entries.some((c) => c.name === r.name)) children.append(this.away(r.name, depth + 1));
+      if (!children.childElementCount) children.append(note(e.path === '/root' ? t('No repos yet') : t('empty'), depth + 1));
     };
     const show = (now: boolean) => {
       expanded = now;

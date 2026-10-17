@@ -1,4 +1,4 @@
-import {ago, bytes, h} from '../dom.ts';
+import {ago, bytes, day, h} from '../dom.ts';
 import {isNative} from '../host.ts';
 import {t, tn} from '../i18n.ts';
 import {bring, look, onSync, remoteAll, repoState, type RepoSync} from '../lifecycle.ts';
@@ -131,8 +131,8 @@ function repoSection(ctx: Context, counted: (n: number) => void, toCode: () => v
     const power = h('button', {type: 'button', class: 'power', role: 'switch', 'aria-checked': String(!off),
       'aria-label': off ? t('Turn {repo} on', {repo: name}) : t('Turn {repo} off', {repo: name})}, h('span', {class: 'knob'})) as HTMLButtonElement;
     const where = off
-      ? t('Off · back until {date}', {date: new Date(there!.until!).toLocaleDateString()})
-      : here ? syncWord(repoState(name)) : t('On the Remote');
+      ? t('Off · back until {date}', {date: day(there!.until!)})
+      : here ? syncWord(repoState(name)) : t('Only on the Remote');
     const who = seen.find((x) => x.name === name);
     const sees = who && !off ? button(seenWord(who), 'small-button seen-button') : null;
     const el = h('div', {class: `card repo${off ? ' off' : ''}`, 'data-repo': name},

@@ -115,5 +115,5 @@ export function newRepo(ctx: Context): Node[] {
   showFiles();
   queueMicrotask(() => name.focus());
   return [pageHead('new-repo'), h('div', {}, form),
-    h('section', {class: 'section', 'aria-labelledby': 'new-repo-list'}, h('h2', {id: 'new-repo-list'}, 'repo'), list.element)];
+    h('section', {class: 'section', 'aria-labelledby': 'new-repo-list'}, h('h2', {id: 'new-repo-list'}, t('Repos')), list.element)];
 }
