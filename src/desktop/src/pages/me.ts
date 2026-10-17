@@ -1,7 +1,7 @@
 import {h} from '../dom.ts';
 import {currentLang, LANGS, setLang, t} from '../i18n.ts';
 import {icon, mark} from '../icons.ts';
-import {connection} from '../remote.ts';
+import {connection, signOut} from '../remote.ts';
 import {setState} from '../state.ts';
 import {initials, type Profile} from '../profile.ts';
 import {purpose} from '../purposes.ts';
@@ -15,7 +15,9 @@ type Page = 'home' | 'remote' | 'runtime';
 // and shoulders before there is a name. Touching it brings out the way into
 // every setting, in groups (the profile, the account, this device, the
 // language), each saying the page where it lives, since a setting is kept
-// with what it is about rather than on a page of its own. It goes away
+// with what it is about rather than on a page of its own. Signing out is
+// here too, at the foot of the rail. The language shows the one in use;
+// pressed, it opens into the list. It goes away
 // when the pointer leaves, on a press outside, or on Escape.
 
 const OPEN_DELAY = 80;
@@ -28,6 +30,8 @@ export class Me {
   private timer = 0;
   private ctx: Context;
   private profile: () => Profile;
+  /** The language list is open, in place of the language in use. */
+  private choosing = false;
 
   constructor(ctx: Context, profile: () => Profile, actions: {editProfile(): void}) {
     this.ctx = ctx;
@@ -64,14 +68,27 @@ export class Me {
           item(t('View'), to('home'), 'home'),
           item(t('Edit'), () => actions.editProfile(), 'home')),
         group(t('Account'), ...(signedIn
-          ? [item(t('Sign-in'), to('remote', 'sign-in'), 'remote'), item(t('Devices'), to('remote', 'devices'), 'remote')]
+          ? [item(t('Sign-in'), to('remote', 'sign-in'), 'remote'), item(t('Devices'), to('remote', 'devices'), 'remote'), item(t('Sign out'), () => void signOut())]
           : [item(t('Sign in'), to('remote'), 'remote')])),
         group(t('This device'),
           item(t('Room'), to('runtime'), 'runtime'),
           item(t('Environment'), to('runtime', undefined, 'env-title'), 'runtime')),
         // The language is Home's setting, so l3 speaks the same one.
-        group(t('Language'),
-          ...LANGS.map((l) => item(l.name, () => { setLang(l.id); void setState('lang', JSON.stringify(l.id)); }, undefined, l.id === currentLang()))));
+        group(t('Language'), ...(this.choosing
+          ? LANGS.map((l) => item(l.name, () => { this.choosing = false; setLang(l.id); void setState('lang', JSON.stringify(l.id)); }, undefined, l.id === currentLang()))
+          : [now()])));
+    };
+    /** The language in use; pressed, the list in its place, the menu staying out. */
+    const now = () => {
+      const b = h('button', {type: 'button', class: 'me-item', 'aria-expanded': 'false'},
+        LANGS.find((l) => l.id === currentLang())?.name ?? '', mark('down'));
+      b.querySelector('svg')?.classList.add('me-where');
+      b.addEventListener('click', () => {
+        this.choosing = true;
+        fill();
+        this.pop.querySelector<HTMLElement>('.me-item[aria-checked="true"]')?.focus();
+      });
+      return b;
     };
     this.element = h('div', {class: 'me-wrap'}, this.button, this.pop);
     this.paint();
@@ -127,6 +144,7 @@ export class Me {
 
   close() {
     clearTimeout(this.timer);
+    this.choosing = false;
     this.element.classList.remove('open');
     this.button.setAttribute('aria-expanded', 'false');
   }

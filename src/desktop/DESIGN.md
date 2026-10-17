@@ -154,7 +154,8 @@ what is its own.
   buttons were; the card comes back if the answer is no. Narrowing again (closing,
   turning a share off) is at once.
 - **The switch.** A setting that is on or off: a round track with a knob,
-  on at the left, the green circle (`done`), off at the right. It moves the
+  on at the right, the green circle (`done`), off at the left, as every
+  switch people know. It moves the
   moment it is pressed: turning on then asks in the card (no puts it
   back), turning off is at once; hovered, its edge is `ink`. Off as the
   usual state is quiet (`plain`); off as a repo turned off is `off` red. Its label is a
@@ -190,7 +191,7 @@ what is its own.
 - **The TODO box.** Home's TODO and each Server board's, the same box:
   items written as "Kind：title", Enter for the detail, ○ when done, the
   date at the right whether a line has a kind or not. On Home it is tall;
-  in a board, as tall as its items up to about a third of the board.
+  in a board, tall as it is on Home whatever its items (it scrolls in itself).
 - **Overlays.** File and Server are operations, not pages: laid over the
   page that is showing, brought out by resting on the icon (it stays a
   while after the pointer leaves) or by a press (it stays), put away by
@@ -216,10 +217,13 @@ fix is always a piece from §3, not a new rule.
 | A dashed box as wide as the page around one line | As wide as its words |
 | Every pane saying what will appear once something is done (repoを開くと出ます, 帯にrepoを出すと動きます) | Said once, where it is done (the center); the other panes are empty |
 | A paragraph explaining the screen | The word on the thing; what will happen, in the ask |
+| A sentence beside a way in (what the Remote is, a lost passkey, "sign in faster") | The buttons alone: Continue with…, Sign in with a passkey, Add a passkey |
+| A button in a history that cannot act, or ends something from a list of the past (外す on a device or the last provider) | A history is only read; sign out from the person's menu |
 | A sentence broken where the card ends (名前 / は出ません) | Short lines, each broken where the sentence breaks |
 | Answers right under the question, high in a card that shrank to ask (やめる, 見せる) | The card keeps its size; the answers sit at its foot, where its own buttons were |
 | The browser's own colour (a blue checkbox), or a tick in `ink` | The green circle, as a switch on: one green for on, everywhere |
 | A switch that waits for the answer before it moves | It moves on the press; what it turns on is asked after, and no puts it back |
+| A switch on with its knob at the left | On is at the right, green, as every switch people know |
 | A removal that cannot be taken back where one could be held (a board's) | Held 30 days: the card goes quiet, its button red, and pressed again it is back at once |
 | Words of two sizes centred in one row (sora and オーナー a pixel or two apart) | They share a baseline; a face or an icon beside them is centred |
 | A hidden label beside a line taller than the line (a run's posts spaced 32, 37, 37) | Nothing beside a line is taller than it: one rhythm down a run |
@@ -566,8 +570,10 @@ What leaves this system is kept to what is said here:
   (30 px, filling most of it) before there is a name. Touching it brings
   out the way into every setting, in groups under a small heading and with
   no rules between them: Profile (View, Edit), Account (Sign in; once
-  signed in, Sign-in, Devices), This device (Room, Environment), Language.
-  Each entry is a word or two, the group saying what it is about. There is
+  signed in, Sign-in, Devices, Sign out), This device (Room, Environment),
+  Language (the one in use, with a mark below it; pressed, it opens into
+  the list in its place, and choosing one closes it). Each entry is a word
+  or two, the group saying what it is about. There is
   no settings page: a setting is kept with what it is about, so each entry
   ends with the icon of the page it opens (its name in the tooltip), and
   opens that part of it. It goes on leaving, a press outside or Escape.
@@ -669,7 +675,9 @@ each thing says what can be done with it.
   total. This OS is counted from allocated blocks, so a sparse file counts
   what it holds and a file with several hard links counts once; the host's
   free and total are marked 推定, because other programs change them too.
-- Under it, **one list, largest first**, of everything this OS holds: each
+- Under it, one tall box in three columns: what is **in this browser**
+  (on this device) at the left, what is **on the Remote** (fetched with a
+  press) in the middle, and what **can be freed** at the right. In each, **one list, largest first**, of everything this OS holds: each
   repo, each root of the distribution, each leftover, Home. A row is the
   thing, its size, and at its end what can be done:
   - **空ける**: it is not needed here. A repo whose copy is what the Remote
@@ -787,21 +795,20 @@ Remote the issues are shown and one line says that history is kept there.
 Signed out, the page is the header and one place in the middle of what is
 left, the first thing a person meets: an `ink` edge over `raised` as the
 current issue card is, its weight a little high, at most 440 px wide. In
-it: Sign in, one line on what the Remote is, the ways in one under another
-as wide as the place (the first provider filled), and the line for a lost
-passkey. A device's code opens the same place on a page of its own, for
+it: Sign in, then the ways in one under another as wide as the place (the
+first provider filled), and no words around them: the buttons say it. The
+Inbox, signed out, shows the same place. A device's code opens the same place on a page of its own, for
 each step: the code, signing in, letting the device in.
 
-Signed in: the header, a short offer while there is no passkey (one line and its
-button, no wider than they are), then the page's parts as a switch (the one
+Signed in: the header, then the page's parts as a switch (the one
 place a page is switched, because its parts are unrelated):
 
 - **Repos**: every repo the Remote holds, as cards the size of Home's: name,
   size and when it last changed, where it stands; Forge at the bottom left
-  and a power switch at the bottom right. On, the switch's knob is at the
-  left; turning it off asks, in the card, for the account's name, the
+  and a power switch at the bottom right. On, the switch's knob is green at
+  the right; turning it off asks, in the card, for the account's name, the
   repo's name and the five-letter code, then a passkey. Off, the knob is at
-  the right on `off` red and the card is quiet (dashed): the Remote keeps
+  the left on `off` red and the card is quiet (dashed): the Remote keeps
   the repo 30 days, answering only that it is off, and pressing the switch
   again brings it back at once. Its copy on this device goes with it.
   Beside Forge, who sees it, in a word (Only you, In Trip, Everyone);
@@ -810,8 +817,13 @@ place a page is switched, because its parts are unrelated):
   your own address), each said in a line before it is saved.
 - **Sign-in**: passkeys, the code to turn a repo off (five letters or
   digits, set with a passkey; only its digest is kept), then the providers
-  (the last way in stays).
-- **Devices**: each session; this one says so and signs out.
+  (the last way in stays, with nothing to press beside it).
+- **Devices**: a history: each session and when it was last used, this
+  one marked, nothing to press. Signing out is in the person's menu at the
+  foot of the rail (`l3 remote devices rm N` ends another device's).
+
+Under the parts, while there is no passkey, Add a passkey: the button alone,
+below what the page is about rather than over it.
 
 ### Inbox
 

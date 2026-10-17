@@ -23,7 +23,6 @@ export default {
   'Found. Claiming {address}…': '見つかりました。{address}を取ります…',
   'Not found yet': 'まだ見つかりません',
   'Found': '見つかりました',
-  'The Inbox is on the Remote. Sign in to it to have an address and messages.': 'Inbox は Remote にあります。サインインすると、アドレスとメッセージが持てます。',
   'Conversations': '会話',
   'Write to an address': 'アドレスに書く',
   'Write': '書く',

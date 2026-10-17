@@ -43,26 +43,27 @@ function environment(): HTMLElement {
       h('b', {}, name), h('span', {}, version), h('span', {class: current ? 'muted' : ''}, note),
       sha ? h('code', {class: 'muted', title: sha}, sha.slice(0, 12)) : h('span', {class: 'small'}, current ? '' : t('Not yet')));
   const later = () => {
-    const where = isNative ? t('Its own programs, on this device\'s kernel') : t('In the app only: its programs are linked as they run, which a browser does not do');
+    // A word or two each: where it could run, what it is.
+    const where = isNative ? t('On this device') : t('In the app only');
     return [
       row('Ubuntu', '24.04 LTS', where, false),
       row('Debian', '13', where, false),
-      row(t('Custom'), '', t('A root of your own (.tar), known by its digest'), false),
+      row(t('Custom'), '', t('Your own root (.tar)'), false),
     ];
   };
   void (async () => {
     const root = isNative ? await rootStatus().catch(() => null) : null;
     if (root?.current) {
       const r = root.current;
-      body.replaceChildren(row('l3', r.version, t('{name} · {size} · on this device\'s kernel', {name: r.name, size: bytes(r.bytes)}), true, r.sha256), ...later());
+      body.replaceChildren(row('l3', r.version, t('{name} · {size}', {name: r.name, size: bytes(r.bytes)}), true, r.sha256), ...later());
       return;
     }
     const [a, web] = await Promise.all([about(), isNative ? null : loadWebRoot()]);
     if (!a) { body.replaceChildren(h('div', {class: 'empty'}, t('There is no l3 (npm run userland)'))); return; }
     // In a browser with the whole root: every program of it, through xlat; else l3 and its BusyBox.
     const note = web
-      ? t('{name} · the whole root, each file fetched when a program first reads it · through xlat in this browser', {name: a.root.name})
-      : t('{name} · l3 and {base} {version} · {size}, {how}', {name: a.root.name, base: a.base.name, version: a.base.version, size: bytes(a.bundle.size), how: isNative ? t('comes with the app') : t('fetched at each visit')});
+      ? t('{name} · through xlat', {name: a.root.name})
+      : t('{name} · {base} {version} · {size}', {name: a.root.name, base: a.base.name, version: a.base.version, size: bytes(a.bundle.size)});
     body.replaceChildren(row('l3', web?.index.version || a.root.version, note, true, a.bundle.sha256), ...later());
   })();
   return body;
@@ -173,11 +174,12 @@ function device(ctx: Context, u: Space, last: Freed | null, again: (r: Freed | n
       figure(bytes(u.host_free), t('free'), known(u.host)),
       figure(bytes(u.host_total), isNative ? t('in all') : t('allowed'), known(u.host))),
     ...(last ? [result(last)] : []),
+    // What is here, what is on the Remote, then what can be freed.
     h('div', {class: 'space-box'},
       column('here-col', isNative ? t('On this device') : t('In this browser'), u.allocated, here, t('This OS keeps nothing here yet')),
+      remoteCol,
       column('free-col', t('Can be freed'), u.freeable, going, t('Nothing to free. A repo goes once the Remote has all of it.'),
-        freeable.length > 1 ? [h('span', {class: 'muted small grow'}, t('Repos stay on the Remote and come back when opened.')), all] : []),
-      remoteCol),
+        freeable.length > 1 ? [h('span', {class: 'muted small grow'}, t('Repos stay on the Remote and come back when opened.')), all] : [])),
     error);
 }
 

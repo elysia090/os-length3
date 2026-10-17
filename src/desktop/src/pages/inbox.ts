@@ -165,7 +165,7 @@ export function inboxPage(ctx: Context): Node[] {
   const paint = async () => {
     if (!connection()) {
       // Signed out, the same card as Remote's, in the same place.
-      holder.replaceChildren(signInPlace(t('Sign in'), signInBox(() => void paint(), t('The Inbox is on the Remote. Sign in to it to have an address and messages.'))));
+      holder.replaceChildren(signInPlace(t('Sign in'), signInBox(() => void paint())));
       return;
     }
     let me: inbox.Me;

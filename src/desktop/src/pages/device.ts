@@ -29,7 +29,7 @@ export function devicePage(given: string): HTMLElement {
       return;
     }
     if (!remote.connection() && !(await remote.claim())) {
-      body.replaceChildren(signInBox(() => void ask(), t('Sign in to the account the device will join.'), remote.signedInURL()));
+      body.replaceChildren(signInBox(() => void ask(), remote.signedInURL()));
       return;
     }
     let who: {clientId: string; status: string};

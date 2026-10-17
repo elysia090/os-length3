@@ -31,6 +31,8 @@ export function icon(id: PurposeId): SVGSVGElement {
 const MARKS = {
   plus: 'M12 5v14M5 12h14',
   close: 'M7 7l10 10M17 7L7 17',
+  // More to choose from, below.
+  down: 'M7 10l5 5 5-5',
   // Someone not named yet: a head and shoulders.
   person: 'M12 12a3.75 3.75 0 1 0 0-7.5 3.75 3.75 0 0 0 0 7.5zM5 19.5a7 7 0 0 1 14 0',
   // A cog: eight teeth round a ring, the hole in its middle.

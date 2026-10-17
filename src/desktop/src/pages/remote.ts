@@ -60,11 +60,10 @@ export function signInPlace(title: string, ...body: Node[]): HTMLElement {
     h('section', {class: 'sign-in-card', 'aria-labelledby': 'sign-in-title'}, h('h2', {id: 'sign-in-title'}, title), ...body));
 }
 
-export function signInBox(done: () => void, words?: string, back?: string): HTMLElement {
+/** The ways in, under the card's title and nothing else: the buttons say it. */
+export function signInBox(done: () => void, back?: string): HTMLElement {
   const error = h('p', {class: 'error', role: 'alert'});
-  const box = h('div', {class: 'remote-join'}, h('p', {class: 'muted'}, words ?? (isNative
-    ? t('Connect this device, and the Remote keeps your repos: each change goes there by itself, and your other devices have it too.')
-    : t('Sign in, and the Remote keeps your repos: each change goes there by itself, so this browser keeps nothing once the tab is closed.'))));
+  const box = h('div', {class: 'remote-join'});
   if (isNative) {
     const go = button(t('Connect in the browser'), 'primary');
     const waiting = h('div', {class: 'remote-join', hidden: ''});
@@ -93,8 +92,7 @@ export function signInBox(done: () => void, words?: string, back?: string): HTML
   });
   const passkey = button(t('Sign in with a passkey'));
   passkey.addEventListener('click', () => void pressing(passkey, error, async () => { await account.signIn(); done(); }));
-  box.append(providers, h('div', {class: 'row sign-in-row'}, passkey),
-    h('p', {class: 'muted small'}, t('Lost your passkeys? Continue with one of the above, then add a new one.')), error);
+  box.append(providers, h('div', {class: 'row sign-in-row'}, passkey), error);
   return box;
 }
 
@@ -255,7 +253,7 @@ async function confirm(el: HTMLElement, repo: string, done: () => Promise<void>,
   who.focus();
 }
 
-/** No passkey yet: a short line and the button. */
+/** No passkey yet: the button, which says it. */
 function passkeyOffer(added: () => void): HTMLElement {
   const box = h('section', {class: 'offer-holder', hidden: ''});
   const error = h('p', {class: 'error', role: 'alert'});
@@ -264,7 +262,7 @@ function passkeyOffer(added: () => void): HTMLElement {
     const add = button(t('Add a passkey'), 'small-button primary');
     add.addEventListener('click', () => void pressing(add, error, async () => { await account.addPasskey(); box.hidden = true; added(); }));
     box.hidden = false;
-    box.replaceChildren(h('div', {class: 'offer'}, h('span', {}, t('Sign in faster with a passkey')), add), error);
+    box.replaceChildren(add, error);
   }, () => {});
   return box;
 }
@@ -303,7 +301,7 @@ function passkeySection(): HTMLElement {
         remove.addEventListener('click', () => void pressing(remove, error, async () => { await account.removePasskey(k.id); await paint(); }));
         return h('div', {class: 'row-item usage-prompt'}, h('span', {class: 'row-name'}, k.name || t('Passkey')),
           h('span', {class: 'row-meta'}, `${t('Made {when}', {when: ago(Date.parse(k.createdAt))})}${k.backedUp ? ` · ${t('synced passkey')}` : ''}`), remove);
-      }) : [h('div', {class: 'row-item muted'}, t('No passkeys. With one, you sign in from any device without a provider.'))])), error);
+      }) : [h('div', {class: 'row-item muted'}, t('No passkeys yet'))])), error);
   };
   void paint();
   return section;
@@ -317,11 +315,9 @@ function providerSection(): HTMLElement {
     const [mine, offered] = await Promise.all([account.linked().catch(() => []), account.about()]);
     const have = new Set(mine.map((a) => a.providerId));
     const rows = mine.map((a) => {
-      const off = button(t('Unlink'), 'small-button');
-      // The last provider is the way back in: it stays.
-      off.disabled = mine.length < 2;
-      if (off.disabled) off.title = t('The last way to sign in stays');
-      off.addEventListener('click', () => void pressing(off, error, async () => { await account.unlink(a.providerId); await paint(); }));
+      // The last provider is the way back in: it stays, with nothing to press.
+      const off = mine.length > 1 ? button(t('Unlink'), 'small-button') : null;
+      off?.addEventListener('click', () => void pressing(off, error, async () => { await account.unlink(a.providerId); await paint(); }));
       return h('div', {class: 'row-item usage-prompt'},
         h('span', {class: 'row-name'}, account.PROVIDER_NAME[a.providerId as account.Provider] ?? a.providerId),
         h('span', {class: 'row-meta'}, t('Linked {when}', {when: ago(Date.parse(a.createdAt))})), off);
@@ -338,6 +334,7 @@ function providerSection(): HTMLElement {
   return section;
 }
 
+/** The devices signed in, as a history: each and when it was last used, this one marked. Signing out is at the foot of the rail. */
 function deviceSection(counted: (n: number) => void): HTMLElement {
   const section = h('div', {class: 'sub-part'});
   const error = h('p', {class: 'error', role: 'alert'});
@@ -345,20 +342,9 @@ function deviceSection(counted: (n: number) => void): HTMLElement {
     const list = await account.devices().catch((e) => { error.textContent = message(e); return []; });
     counted(list.length);
     section.replaceChildren(
-      h('div', {class: 'rows'}, ...list.map((d) => {
-        const act: Node = d.current ? (() => {
-          const leave = button(t('Sign out'), 'small-button');
-          leave.title = t('Sign out on this device');
-          leave.addEventListener('click', () => void account.signOut());
-          return h('span', {class: 'device-here'}, h('span', {class: 'row-meta'}, t('This device')), leave);
-        })() : (() => {
-          const end = button(t('Remove'), 'small-button');
-          end.addEventListener('click', () => void pressing(end, error, async () => { await account.endDevice(d.token); await paint(); }));
-          return end;
-        })();
-        return h('div', {class: 'row-item usage-prompt'}, h('span', {class: 'row-name'}, account.deviceWord(d.userAgent)),
-          h('span', {class: 'row-meta'}, t('Used {when}', {when: ago(Date.parse(d.updatedAt))})), act);
-      })), error);
+      h('div', {class: 'rows'}, ...list.map((d) => h('div', {class: 'row-item usage-prompt'}, h('span', {class: 'row-name'}, account.deviceWord(d.userAgent)),
+        d.current ? h('span', {class: 'row-meta'}, t('This device')) : null,
+        h('span', {class: 'row-meta'}, t('Used {when}', {when: ago(Date.parse(d.updatedAt))}))))), error);
   };
   void paint();
   return section;
@@ -385,10 +371,10 @@ export function remote(ctx: Context): Node[] {
       : [passkeySection(), codeSection(), providerSection()]));
     page.panel('devices').append(deviceSection((n) => page.count('devices', n)));
     holder.replaceChildren(
-      // A passkey added from the offer shows under Sign-in at once.
-      ...(isNative ? [] : [passkeyOffer(() => { shown = null; paint(); })]),
       h('div', {class: 'part-bar'}, page.switch),
-      page.panel('repos'), page.panel('sign-in'), page.panel('devices'));
+      page.panel('repos'), page.panel('sign-in'), page.panel('devices'),
+      // Under the parts, not over them; a passkey added from it shows under Sign-in at once.
+      ...(isNative ? [] : [passkeyOffer(() => { shown = null; paint(); })]));
   };
   paint();
   const stop = account.onConnection(() => { if (!holder.isConnected) { stop(); return; } paint(); });
