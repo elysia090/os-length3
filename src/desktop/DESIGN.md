@@ -4,7 +4,78 @@ Plain and direct. Not luxurious, not "high tech", not boring: what you see
 is what is there, and every control looks like what it does.
 
 The rules below follow the order a person meets the app: the rail from the
-top, then the page each icon leads to.
+top, then the page each icon leads to. Under all of them are a few first
+principles (§0): what the OS does with what it holds follows from them, so
+a new feature asks them before it asks anything else.
+
+## 0. First principles
+
+The ideas a language like Rust makes a programmer state about memory
+(whose a value is, how long it lives, what still reaches it, what refers to
+it) are what people manage by hand about everything else: files, packages,
+caches, environments, posts. The OS states them itself, so nobody has to.
+
+- **Ownership.** Every byte the OS holds has one owner: a repo, the
+  person's Home, a Prompt, or the system. Nothing is "just there".
+- **Lifetime.** The owner's lifetime bounds what it owns, and each kind of
+  place says which lifetime it is (below). What outlives its owner is
+  freed; nobody is asked to remember it.
+- **Reachability.** What no live owner reaches goes: an old root, the
+  environment and caches of a repo no longer on this device, a temporary
+  whose writer is dead. What is reached stays, however old.
+- **Reference by digest.** A name points at content, and content is known
+  by its digest: roots, packs, blobs, translations (by the translator's and
+  the program's). A reference is small and exact; the bytes come when they
+  are wanted, from wherever has them.
+- **Derived is never canonical.** What a tool makes from sources (a
+  translation, node_modules, target, a venv, a pack) is a cache of that
+  making: never sent, never what keeps anything, made again from its
+  sources. Only sources travel.
+- **By proof, not by name.** Something is let go only when it is proven
+  disposable: a leftover by its dead writer and its age, a derived
+  directory by the file it is made from or its cache tag, a repo copy by
+  the Remote holding exactly it.
+- **Authority is what is handed in.** A Prompt has its repo, its
+  environment and its caches; no network unless granted; in a browser no
+  socket of any family. Nothing ambient comes in.
+- **Every change names the version it was made on.** Nothing sent
+  overwrites; when both sides changed, both are kept side by side.
+- **Leases.** What is held for a while says until when: a repo turned off
+  (30 days), a post still spreading (3 days), a device's session.
+- **Small before wide.** What reaches others is tried on a few first and
+  widens by what they did (Topic's rings), as a release goes to a few
+  before everyone.
+- **Measured, not assumed.** Every figure says how it is known, and room
+  given back is observed on the host, not inferred.
+
+### Where things live, and how long
+
+| In a Prompt | Owner | Lifetime | On the host |
+|---|---|---|---|
+| `/root/<repo>` | the repo | canonical on the Remote | the repo's directory |
+| `/usr`, `/etc`, `/var/lib` … | the repo's environment | the repo's Prompts; freed back to the plain root at will | `envs/<repo>/upper` |
+| `/var/cache`, `/var/tmp`, `/var/log`, `~/.cache` | the repo's caches | made again when needed; go whenever room is wanted | `caches/<repo>/…` |
+| `node_modules`, `target`, a venv … | derived from the repo | its sources'; not sent | inside the repo, listed apart |
+| `/tmp`, `/run` | the Prompt | until it ends | memory |
+| `/` | the system | while a repo's Prompt runs on it | `system/<digest>/root`, read-only |
+
+Each owner is a directory of its own on the host, so what a guest frees is
+freed on the host at once, and what a guest leaves (a package cache, logs,
+a build tree) the host can take back from outside, without the guest's
+help: there is no disk image whose freed blocks the host cannot see, and no
+balloon or trim for a guest to forget. Runtime lists each owner's part by
+size, with what can be done and why.
+
+### Another OS in a Prompt
+
+l3 is to a Prompt what a machine monitor is to its guest: it lays out the
+places above and stays outside. The guest sees a plain Linux (its own `/`,
+`/proc`, `/dev`, its own package manager writing to its environment) and
+nothing of l3 that it did not ask for. l3's own root is the rescue shell
+and more (BusyBox, git, a compiler, l3 itself); under another OS (Ubuntu,
+Debian, a root of one's own) all of that hands itself back: only the l3
+command comes in, from outside the guest's tree, and the guest's tools,
+names and `/etc/os-release` are its own.
 
 ## 1. The rail
 
@@ -153,6 +224,14 @@ each thing says what can be done with it.
     same word, since they would go there anyway; they are sent first, and
     the copy goes only once the Remote has every file of it (its row says
     so).
+  - **空ける** on what a repo's Prompts wrote outside it (§0): its
+    environment (what its package manager installed; the plain root comes
+    back), its caches (made again when needed), and what is derived inside
+    it (node_modules, target, a venv: made again by the tool that made it).
+    Each is its own row under the repo's name, so a repo's sources are
+    never weighed together with what can be made from them. A repo no
+    longer on this device leaves its environment and caches without an
+    owner, and they say so.
   - Otherwise, quietly, why it stays: a Prompt has it open, it holds what
     cannot be sent (a link, a file over 16 MB, a `.git`), there is no Remote
     yet, it is the root Prompts run on, it is Home's settings.
