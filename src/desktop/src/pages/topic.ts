@@ -246,3 +246,40 @@ export function timeline(scroller: HTMLElement): HTMLElement {
   seen.observe(foot);
   return root;
 }
+
+/**
+ * What Topic shares, and with whom, said plainly beside the timeline:
+ * who a post reaches (the steps it widens through, and what makes it go on),
+ * what of the writer goes with it, what this reader sees, and how far each
+ * of their own posts has gone.
+ */
+export function sharing(): HTMLElement {
+  const signedIn = connection() !== null;
+  const part = (title: string, ...body: Node[]) => h('section', {class: 'share-part'}, h('h3', {}, title), ...body);
+  const p = (text: string) => h('p', {}, text);
+  const contacts = h('p', {class: 'muted small'}, t('Contacts are those you accepted in Inbox.'));
+  const steps = h('ol', {class: 'share-steps'}, ...topic.RINGS.map((r) => h('li', {}, t(r))));
+  const mine = h('ol', {class: 'share-mine'});
+  const pane = h('div', {class: 'share'},
+    part(t('Who it reaches'),
+      p(t('First your contacts and a few readers; then a step wider each time those who saw it keep it, for three days.')),
+      steps, contacts),
+    part(t('What is shared'), p(t('The text, the address it was posted from, and when. Not your name or profile. You can take a post down at any time.'))),
+    part(t('What you see'), p(signedIn
+      ? t('Posts by those who accepted you, some posts still spreading, and those that reached everyone.')
+      : t('Only posts that reached everyone. Signed in, you also see your contacts\' posts and some still spreading.'))));
+  if (signedIn) {
+    pane.append(part(t('Your posts'), mine));
+    void import('../inbox.ts').then((inbox) => inbox.threads()).then((all) => {
+      const n = all.filter((x) => x.state === 'contact').length;
+      contacts.textContent = t('Contacts are those you accepted in Inbox ({n}).', {n});
+    }).catch(() => { /* the sentence without the count */ });
+    void topic.mine(5).then((r) => {
+      mine.replaceChildren(...(r.posts.length ? r.posts.map((x) => {
+        const at = Math.min(x.ring ?? 0, topic.RINGS.length - 1);
+        return h('li', {}, h('span', {class: 'share-body'}, x.body), h('span', {class: 'muted small'}, `${at + 1}/${topic.RINGS.length} · ${t(topic.RINGS[at])}`));
+      }) : [h('li', {class: 'muted'}, t('No posts yet'))]));
+    }).catch(() => mine.replaceChildren());
+  }
+  return pane;
+}

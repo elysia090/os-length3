@@ -20,7 +20,8 @@ frontend and no UI framework; the same frontend is the web build.
   Inbox, and a round + for a new repo). A name appears beside an icon
   on hover or keyboard focus. Choosing one replaces the main area; File and
   Topic are the operations, laid over the page instead (the tree of "/";
-  Topic with the field to post from and the right pane).
+  Topic with its own box to post from and, on the right, what it shares
+  with whom).
 - **Home** is a profile, somewhere between a Twitter and a GitHub profile.
   It looks the same to its owner and to anyone else; the owner also gets
   "edit". Until accounts exist the profile is stored on this device.
@@ -37,18 +38,13 @@ frontend and no UI framework; the same frontend is the web build.
   repos: TODO is a list on Home. Home lists the repos as cards.
 - Forge: the repos out to work on as pills in a band on the top line
   (⊕ at the left brings every other repo out at once, × takes one off;
-  with none left the center shows Topic); the center (3/4)
+  with none left the center says how to bring one out); the center (3/4)
   is the open repo's files one after another like an endless page (README
   first, loaded as they scroll near), each a plain text editor with line
   numbers that saves on its own (natively through `repo_write`, which only
   replaces existing files inside the repo, atomically; files read only in
-  part are never written), with a field at its foot as two boxes side by
-  side like the issues (one in full, the other's edge showing; a press or
-  Alt+←/→ slides there): Shell (gold, `>_`: Enter runs in the repo's `sh`)
-  and Post (violet, `#`: Enter posts to Topic, which is then laid over the
-  center), each lit from above; Shift+Enter is a new line in both, and the
-  same switch as a repo's, above the field's right end, turns the repo's
-  Prompt on and off. While the Shell box is in use the terminal flies
+  part are never written), with a prompt box at its foot that
+  types into the repo's `sh`. While the prompt is in use the terminal flies
   up above it from the right pane, where a search box for the repo sits on
   top and the reference (the repo's
   `issue/`; diff and run output not connected yet) grows into the
@@ -150,7 +146,7 @@ the app.
   be stopped; then the environment in effect.
 - Topic (first in the rail, laid over any page like File): short posts on
   the Remote (`service/topic.ts`), read as a conversation (oldest above,
-  newest at the foot by the violet box one posts from, runs of one
+  newest at the foot by the box one posts from, runs of one
   address shown once, the day named where it starts, no counts, Keep and Take down on
   hover), a page at a time as a range of ids. Anyone reads what
   has gone everywhere; posting needs an account and an Inbox address. A
