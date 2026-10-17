@@ -1,5 +1,6 @@
 import {ago, bytes, day, h} from '../dom.ts';
 import {isNative} from '../host.ts';
+import {mark} from '../icons.ts';
 import {t, tn} from '../i18n.ts';
 import {bring, look, onSync, remoteAll, repoState, type RepoSync} from '../lifecycle.ts';
 import type {RemoteRepo} from '../draft.ts';
@@ -178,21 +179,23 @@ function repoSection(ctx: Context, counted: (n: number) => void, toCode: () => v
     return el;
   };
   void look().then(paint);
-  const again = () => { if (!section.isConnected) { stop(); unreach(); return; } if (!section.querySelector('.off-ask, .share-list:not([hidden])')) void paint(); };
+  const again = () => { if (!section.isConnected) { stop(); unreach(); return; } if (!section.querySelector('.off-ask, .share-pop:not([hidden])')) void paint(); };
   const stop = onSync(again);
   const unreach = account.onReach(again);
   return section;
 }
 
 /**
- * Share: pressed, the servers one is in come out beside it, each pressed in
- * where the repo is shown, and pressing one shows it there or takes it off
- * at once. Going public is the server's (its gear); it stays as it is here.
+ * Share: as the language is chosen in the person's menu, it opens into a
+ * list over the card, one row per server one is in, the ones the repo is
+ * shown in bold; pressing one shows it there or takes it off at once, and
+ * the list stays open for the next. It goes on a press outside, Escape or
+ * Share again. Going public is the server's (its gear); it stays as it is here.
  */
 function sharing(now: servers.RepoSeen, error: HTMLElement): HTMLElement {
-  const open = button(t('Share'), 'small-button');
-  open.setAttribute('aria-expanded', 'false');
-  const list = h('span', {class: 'share-list', hidden: ''});
+  const open = h('button', {type: 'button', class: 'button small-button share-open', 'aria-haspopup': 'true', 'aria-expanded': 'false'},
+    t('Share'), mark('down')) as HTMLButtonElement;
+  const list = h('div', {class: 'pop share-pop', role: 'menu', 'aria-label': t('Share'), hidden: ''});
   let shared = new Set(now.servers.map((x) => x.id));
   const toggle = async (id: string) => {
     const next = new Set(shared);
@@ -205,24 +208,43 @@ function sharing(now: servers.RepoSeen, error: HTMLElement): HTMLElement {
     now = r;
     shared = next;
   };
-  open.addEventListener('click', async () => {
-    const out = list.hidden;
-    open.setAttribute('aria-expanded', String(out));
+  const holder = h('span', {class: 'share'}, open, list);
+  const away = (e: Event) => {
+    if (e instanceof KeyboardEvent ? e.key === 'Escape' : !holder.contains(e.target as Node)) { show(false); if (e instanceof KeyboardEvent) open.focus(); }
+  };
+  const show = (out: boolean) => {
     list.hidden = !out;
-    if (!out || (list.childElementCount && !('failed' in list.dataset))) return;
+    open.setAttribute('aria-expanded', String(out));
+    for (const k of ['pointerdown', 'keydown'] as const) (out ? document.addEventListener : document.removeEventListener).call(document, k, away);
+  };
+  const fill = async () => {
     let mine: servers.Server[];
     // Not read (away): said in the list, and read again the next time it opens.
-    try { mine = await servers.servers(); } catch (e) { list.replaceChildren(h('span', {class: 'error small'}, message(e))); list.dataset.failed = ''; return; }
-    delete list.dataset.failed;
-    list.replaceChildren(...(mine.length ? mine.map((s) => {
-      const c = h('button', {type: 'button', class: 'chip', 'aria-pressed': String(shared.has(s.id))}, s.name) as HTMLButtonElement;
-      c.addEventListener('click', () => void pressing(c, error, async () => { await toggle(s.id); c.setAttribute('aria-pressed', String(shared.has(s.id))); }));
-      return c;
-    }) : [h('span', {class: 'muted small'}, t('In no server yet'))]));
+    try { mine = await servers.servers(); } catch (e) { list.replaceChildren(h('p', {class: 'error small pop-note'}, message(e))); return; }
+    const rows = mine.map((s) => {
+      const b = h('button', {type: 'button', class: 'pop-item', role: 'menuitemcheckbox', 'aria-checked': String(shared.has(s.id))}, s.name) as HTMLButtonElement;
+      b.addEventListener('click', () => void pressing(b, error, async () => { await toggle(s.id); b.setAttribute('aria-checked', String(shared.has(s.id))); }));
+      return b;
+    });
+    list.replaceChildren(h('div', {class: 'pop-group', role: 'group', 'aria-label': t('Shown in')},
+      h('div', {class: 'pop-head muted small'}, t('Shown in')), ...(rows.length ? rows : [h('p', {class: 'muted small pop-note'}, t('In no server yet'))])));
+  };
+  open.addEventListener('click', async (event) => {
+    if (!list.hidden) { show(false); return; }
+    show(true);
+    await fill();
+    // Opened from the keyboard, the keyboard goes in with it.
+    if (event.detail === 0) list.querySelector<HTMLElement>('.pop-item')?.focus();
   });
-  // The servers come out to its left, into the space, so Share and the switch stay under the pointer.
-  // The servers come out to its right, into the free space before the switch, so Share stays under the pointer.
-  return h('span', {class: 'share'}, open, list);
+  list.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    const items = [...list.querySelectorAll<HTMLElement>('.pop-item:not([disabled])')];
+    if (!items.length) return;
+    event.preventDefault();
+    const at = items.indexOf(document.activeElement as HTMLElement);
+    items[(at + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus();
+  });
+  return holder;
 }
 
 /** What is asked for in the card before a repo is turned off or discarded: the deed's word, what will happen, and the deed. */

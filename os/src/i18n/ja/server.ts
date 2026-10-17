@@ -5,6 +5,7 @@ export default {
   'People you know': '知り合い',
   'A group of people you know. Each board is a conversation and a TODO kept together.': '知り合いの集まり。板ごとに、話とみんなで持つ TODO があります。',
   'In no server yet': 'まだどのサーバーにも入っていません',
+  'Shown in': '見せる先',
   // The boxes.
   'Boards': '板',
   'Previous board': '前の板',

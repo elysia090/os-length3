@@ -116,7 +116,7 @@ Every page:
 | `edge` | `#6B6E6B` | outlines of fields and controls, which must be seen (3.7:1) |
 | `raised` | `#E4E4E0` | field fill, hover (the same small step above ground as before) |
 | `done` | `#2F7D4F` | done and on: a step of an issue's work done, a switch on (its knob), a box ticked (its circle) |
-| `marker` | `#F3E27A` | a line marked in a diff (a review, Forge's diff), as with a highlighter |
+| `marker` | `#F3E27A` | a line marked in a diff (a review, Forge's diff), as with a highlighter: over its words only (not its indent or number, which turns ink), each wrapped line its own stroke with softened ends; the pointer on a line shows the stroke paler |
 | `off` | `#B3412F` | a repo turned off: its switch |
 
 No other colours; the last three each mean their one thing only.
@@ -201,7 +201,7 @@ what is its own.
   the bottom left, on Remote's off card and a Prompt's card; what turns a
   thing off at the right: the switch, Stop). What comes out of a button
   comes out into the free space, so nothing moves under the pointer
-  (Share's servers to its right, toward the switch). The band's + comes first, at its left
+  (Share's list over the card, from its left edge up). The band's + comes first, at its left
   end, before what it brings out: the chips come and go to its right, so
   they never move it, and the band reads + → what is out; what else the
   band holds (a search box, a gear) keeps its right end. A layer keeps its
@@ -962,9 +962,12 @@ place a page is switched, because its parts are unrelated):
   Remote at once, with its history, for good (the copy here first, refused
   the same way). The Remote remembers a repo discarded, so a device that
   still holds a copy does not quietly bring it back.
-  Share, pressed: the servers one is in come out beside it,
-  each pressed in where the repo is shown, and pressing one shows it there
-  or takes it off at once. Going public is the server's, in its gear (seen
+  Share (with the mark below it, as the language has) opens as the
+  language does in the person's menu: a list over the card from Share's
+  left edge, under the head 見せる先, a row per server one is in, the ones
+  the repo is shown in bold; pressing one shows it there or takes it off
+  at once, and the list stays for the next. A press outside, Escape or
+  Share again closes it. Going public is the server's, in its gear (seen
   as the server's, so nothing ties it to you).
 - **Sign-in**: passkeys, the code to turn a repo off (five letters or
   digits, set with a passkey; only its digest is kept), then the providers

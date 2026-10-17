@@ -50,7 +50,10 @@ export function diffFiles(files: FileDiff[], o: DiffOptions = {}): HTMLElement[]
       const no = at ? h('button', {type: 'button', class: 'diff-no go', tabindex: '-1', 'aria-label': t('Line {n} of {path}', {n: at, path: f.path})}, l.at ? `${l.at}` : '')
         : h('span', {class: 'diff-no'}, l.at ? `${l.at}` : '');
       if (at) { const go = o.reveal!; no.addEventListener('click', () => go(f.path, at)); }
-      const row = h('div', {class: `diff-line ${l.kind}`}, no, h('span', {class: 'diff-text'}, l.text || ' '));
+      // The words in a span of their own, after the indent, so a mark is drawn over them as a highlighter is, line by line as they wrap.
+      const indent = /^[ \t]*/.exec(l.text)![0];
+      const words = l.text.slice(indent.length);
+      const row = h('div', {class: `diff-line ${l.kind}`}, no, h('span', {class: 'diff-text'}, indent, h('span', {class: 'diff-words'}, words || ' ')));
       o.line?.(row, `${f.path}:${k}`, l);
       return row;
     }).filter(Boolean) as HTMLElement[];
