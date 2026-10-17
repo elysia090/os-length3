@@ -16,10 +16,11 @@ frontend and no UI framework; the same frontend is the web build.
 └────┴──────────────────────────────────────────────┘
 ```
 
-- **Rail**: icons only (Home / Forge / File / Git / Runtime / Remote / Topic /
+- **Rail**: icons only (Topic / Home / Forge / File / Git / Runtime / Remote /
   Inbox, and a round + for a new repo). A name appears beside an icon
-  on hover or keyboard focus. Choosing one replaces the main area; File is
-  the one operation, laying the tree of "/" over the page instead.
+  on hover or keyboard focus. Choosing one replaces the main area; File and
+  Topic are the operations, laid over the page instead (the tree of "/";
+  Topic with the field to post from and the right pane).
 - **Home** is a profile, somewhere between a Twitter and a GitHub profile.
   It looks the same to its owner and to anyone else; the owner also gets
   "edit". Until accounts exist the profile is stored on this device.
@@ -41,8 +42,12 @@ frontend and no UI framework; the same frontend is the web build.
   first, loaded as they scroll near), each a plain text editor with line
   numbers that saves on its own (natively through `repo_write`, which only
   replaces existing files inside the repo, atomically; files read only in
-  part are never written), with a prompt box at its foot that
-  types into the repo's `sh`. While the prompt is in use the terminal flies
+  part are never written), with a field at its foot in two lanes: Shell
+  (yellow, `>_`: Enter runs in the repo's `sh`) and Post (purple, `#`: Enter
+  posts to Topic, which is then laid over the center); the other lane waits
+  as a strip at the side (a press or Alt+←/→ slides it out), Shift+Enter is
+  a new line in both, and ⏻ above the field's right end turns the repo's
+  Prompt on and off. While the shell lane is in use the terminal flies
   up above it from the right pane, where a search box for the repo sits on
   top and the reference (the repo's
   `issue/`; diff and run output not connected yet) grows into the
@@ -142,15 +147,18 @@ the app.
   total are marked as estimates, and after freeing the change the host
   shows is reported as observed. Prompts running show their memory and can
   be stopped; then the environment in effect.
-- Topic (first in the rail): short posts on the Remote (`service/topic.ts`),
-  newest first, read a page at a time as a range of ids. Anyone reads what
+- Topic (first in the rail, laid over any page like File): short posts on
+  the Remote (`service/topic.ts`), read as a conversation (oldest above,
+  newest at the foot by the purple lane one posts from, runs of one
+  address shown once, a line where a day starts, Keep and Take down on
+  hover), a page at a time as a range of ids. Anyone reads what
   has gone everywhere; posting needs an account and an Inbox address. A
   post starts with its author's contacts and a few readers and widens ring
   by ring (1/64, 1/16, 1/4, everyone signed in, everyone) as the readers of
   each ring keep it; who is in a ring is a per-post salt against a
   per-reader seed in the page's own query, so nothing runs per post. Near
-  the end the next page is read; what came meanwhile goes on top without
-  moving the reader; pages far out of view fold to empty boxes of their
+  the top the next older page is read in without moving the reader; what
+  came meanwhile goes at the foot (followed, or a pill to go down to it); pages far out of view fold to empty boxes of their
   height and, further still, let go of their posts, read again by their
   range when they come back. A post is text, 500 characters at most, 30 an
   hour, taken down only by its author, and keeps no profile.

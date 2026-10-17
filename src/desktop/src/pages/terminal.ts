@@ -21,8 +21,12 @@ const LIMIT_BYTES = 32 << 20;
 const strip = (s: string) => s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\r\n?/g, '\n');
 /** sh -i says this once because the console is not a terminal; it means nothing here. */
 const NO_TTY = "/bin/sh: can't access tty; job control turned off\n";
-/** The prompt the shell prints (PS1 is "$PWD $ "): a run is over when it comes back. */
-const PROMPT = /\/\S* \$ $/;
+/**
+ * The prompt the shell prints, at the end of what it wrote: a run is over
+ * when it comes back. `/root/x $ ` (l3's userland, PS1 "$PWD $ ") or
+ * `x $ `, `x/src $ ` (the root's shrc).
+ */
+const PROMPT = /(?:^|\n)[^\n]*\S \$ $/;
 const RUNS = 50;
 
 /** One line sent from the prompt box and what came out until the prompt returned. */
@@ -203,6 +207,7 @@ export class Session {
     });
     this.on = 'root';
     this.live = true;
+    this.tell();
     this.status.textContent = '';
     void this.measure();
     this.poll = window.setInterval(() => void this.measure(), 3000);
@@ -267,6 +272,7 @@ export class Session {
       // Running is the usual state and says nothing; only what is missing is said.
       this.status.textContent = why ? t('Could not open on the root ({why})', {why}) : copy.complete ? '' : t('Large files and binaries are not included');
       this.live = true;
+      this.tell();
     } catch (e) {
       this.end(t('Could not start: {message}', {message: e instanceof Error ? e.message : String(e)}));
     }
@@ -278,6 +284,9 @@ export class Session {
    * stopping it; programs run again are translated and read again.
    */
   free() { this.worker?.postMessage({type: 'free'}); }
+
+  /** Whether it has ended (stopped, exited, or never started): only then does ⏻ start it again. */
+  ended = false;
 
   /** Whether the shell is running (its worker or its root process exists). */
   get running() { return this.live && (this.worker !== null || this.native !== null); }
@@ -340,13 +349,14 @@ export class Session {
   }
 
   /** A new shell for this repo in this place. */
-  private restart() {
+  restart() {
     this.stop();
     sessions.delete(this.repo);
     this.element.replaceWith(terminalFor(this.repo));
   }
 
   private end(message: string) {
+    this.ended = true;
     clearInterval(this.ticker);
     this.activity.replaceChildren();
     this.unwatch?.();

@@ -109,8 +109,8 @@ names and `/etc/os-release` are its own.
   comes right under them, a step apart, and is round because it starts
   something rather than opening a place (§4, shapes).
 - A name appears beside an icon on hover or keyboard focus. Choosing an
-  icon replaces the whole page; nothing pushes in beside the rail. File is
-  the one operation: it lays its tree over the page instead (below).
+  icon replaces the whole page; nothing pushes in beside the rail. File and
+  Topic are the operations: each is laid over the page instead (below).
 - The rail is 78 px wide: the icons keep 18 px to its line and 12 px to the
   window's side, so they do not crowd the line.
 - Item 48×48, radius 12, icon 24 px with a 1.6 px stroke; + is a 40 px
@@ -176,14 +176,26 @@ written back, and says so. Tab types a tab; Escape leaves the text. In each dire
 files, then the directories. The only line in Forge is the one between the
 center and the right pane.
 
-A prompt box, like the one for an LLM, sits at the foot of the center. What
-is written there goes to the open repo's `sh` (Enter sends, Shift+Enter is
-a new line). While the prompt is in use the terminal flies up from the
-bottom of the right pane to just above the box (280 ms, one quick movement)
-and the reference grows down into the room it leaves. The terminal's box
-is labelled Prompt, after what one does there (the shell is BusyBox sh, so
-it is not called Bash); leaving the prompt
-(or Escape) sends it back the same way.
+The field sits at the foot of the center, in two lanes side by side, and
+which lane is out says where Enter goes, so a person never has to guess
+whether Enter is a new line, a post or a command. **Post** is purple and
+marked `#`: Enter posts to Topic. **Shell** is yellow and marked `>_`:
+Enter runs the line in the open repo's `sh`, in monospace. Shift+Enter is a
+new line in either. The lane that is out takes the width; the other waits
+at the side as a strip with its mark, and a press on it (or Alt+← / Alt+→)
+slides it out. Above the field one quiet line says what Enter does there
+(`Enter posts to Topic · Shift+Enter: new line · 500`, `Enter runs in
+hello · …`), and at its right end ⏻ turns the repo's Prompt on and off
+(yellow while on; a line run while it is off turns it on).
+
+What is above the field follows the lane. In Post, Topic is laid over the
+center (the right pane stays where it is); in Shell, while the field is in
+use the terminal flies up from the bottom of the right pane to just above
+it (280 ms, one quick movement) and the reference grows down into the room
+it leaves. The terminal's box is labelled Prompt, after what one does there
+(the shell is BusyBox sh, so it is not called Bash); leaving the field (or
+Escape) sends it back the same way. Choosing a repo on the band brings
+Shell out; with no repo out, the center is Topic and Post is out.
 
 The center takes three quarters of the width; the right pane takes one
 quarter (at least 280 px) so it never gets in the way. Its bottom is the
@@ -195,7 +207,7 @@ and a line pressed opens the center there with the line selected. Below,
 on the band line, one reference at a time, switched freely with chips: Issue (the repo's `issue/`, one file each), diff (the changes not yet
 cut, file by file: added lines raised, removed lines quiet and struck,
 following every save; desktop only, as git is) and 実行結果 (each line sent
-from the prompt box, newest first: the line, how long it took or that it
+from the shell lane, newest first: the line, how long it took or that it
 is still running, and what came out until the prompt returned; the Prompt
 itself scrolls on, this keeps the record). The Prompt's own status line is
 empty while it simply runs; it speaks only when something is missing (large
@@ -212,7 +224,7 @@ The Prompt never goes silent while something takes time:
   once. Nothing of it stays on the device: it is the OS, and its copy is
   the release's (the app has it beside itself).
 - **Running.** A line done within two seconds says nothing. Past that, under
-  the output: `実行中 N秒` with 中断 (Ctrl-C in the prompt box, when nothing
+  the output: `実行中 N秒` with 中断 (Ctrl-C in the shell lane, when nothing
   is selected, does the same); `入力待ち` with 中断 when what runs reads
   input (whatever is typed in the box goes to it); `出力なし` after five
   quiet seconds; and after ten, 止めてやり直す, because a worker busy in a
@@ -395,19 +407,37 @@ Shift+Enter is a new line.
 
 ### Topic
 
-One reading column, 640 px: a place to write at the top (an edge over
-raised, as a field is; what is left of 500 characters beside Post;
-Ctrl+Enter posts), then posts, newest first, one under another with a rule
-between: the face (the address's first letters in a circle), the address
-(its name bold) and when, then the text as written, then one quiet line:
-とっておく with how many kept it, or, on one's own post, how far it reaches.
-One's own post has 取り下げる at the end of its first line, which asks once
-more in its own place for a moment.
+Topic is an operation, as File is: laid over whatever page is showing,
+never a page of its own. Resting the pointer on its icon brings it out and
+it stays a while after the pointer leaves (8 s); a press brings it out to
+stay; a press outside, Escape or a second press puts it away; while a post
+is being written it stays. Over Forge or Git it is their bench's Post lane:
+Topic over the center, the right pane where it was. Over any other page it
+brings the same bench over the page: Topic in the center, the field at its
+foot, and on the right the reference and Prompt of the repo last open
+(whose Prompt starts only when ⏻ or a line asks for it). So Topic looks and
+is used like the rest: the same center, the same field, the same right
+pane.
 
-Reading needs nothing: signed out, the place to write is one line, "Sign in
-to post", with Sign in. Posting needs an account and an address (the
-Inbox's); without one, the place says so and leads there. A post keeps no
-profile, only the address it was made from; its time is its id.
+It reads as a conversation, between a mailing list and IRC: one column as
+wide as the field below it, `# Topic` kept at its top, oldest above and
+newest at the foot, beside the purple lane one posts from (Enter posts,
+Shift+Enter is a new line, what is left of 500 characters is said above
+the field). A run of one address's posts within five minutes shows the face
+(the address's first letters in a circle), the name (bold), the domain and
+the time once, then each text under it; within a run the time shows in the
+face's place on hover. A line with the day's name marks where a day
+starts. A post's row is raised on hover, and what can be done to it comes
+out at its top right: Keep, or on one's own post Take down (which asks once
+more in its own place for a moment). Under a post, a small round mark says
+how many kept it (purple where this reader did; pressing it keeps or not),
+and on one's own, how far it reaches.
+
+Reading needs nothing: signed out, the purple lane says posting needs
+sign-in, with Sign in. Posting needs an account and an address (the
+Inbox's); without one, the line under the field says so and leads there. A
+post keeps no profile, only the address it was made from; its time is its
+id.
 
 A post spreads as a locked account's would, then wider ring by ring: first
 its author's accepted contacts and a few readers (1/64 of those signed in),
@@ -420,16 +450,17 @@ the page: each post tested on its own sample, each ring holding the one
 before, and nothing computed per post but its own counters. A small Remote's
 rings are never fewer than 24 readers, so there they are everyone.
 
-The timeline has no end to reach and nothing to press. Near its end the
-next older posts are read; at the very end it says it is every post. What
-comes meanwhile is put on top: seen as it comes when the top is in view,
-and otherwise put above without moving what is being read, with a small
-ink pill (↑ 3 new posts) floating at the top of the column, which goes up
-to them. And it lets go by itself: posts far out of view are folded into an
-empty box of the height they had, so nothing on screen moves, and further
-still they let go of their text too, read again by their range of ids when
-they come back near. Scrolling for an hour holds about what a few screens
-do. With nothing on the band, Forge's center is this timeline.
+The timeline has no end to reach and nothing to press. It opens at the
+newest; scrolled near its top, the next older posts are read in above
+without moving what is on screen, and at the very top it says it is every
+post. What comes meanwhile is put at the foot: followed when the foot is in
+view (and always after one's own post), otherwise with a small purple pill
+(↓ 3 new posts) floating just above the field, which goes down to them. And
+it lets go by itself: posts far out of view are folded into an empty box
+of the height they had, so nothing on screen moves, and further still they
+let go of their text too, read again by their range of ids when they come
+back near. Scrolling for an hour holds about what a few screens do. With
+nothing on the band, Forge's center is this timeline.
 
 ### New repo (+)
 
@@ -592,7 +623,7 @@ Every value in `styles.css` comes from a token below.
   place below it, so Home is not first off the mark, and + stands a clear
   step (40 px) under the places, a little below the middle.
 - **Motion.** 120 ms fades, and one movement: the terminal flying between
-  the right pane and the prompt box, 280 ms. Reduced motion turns them off.
+  the right pane and the field, 280 ms; the lanes sliding, 280 ms. Reduced motion turns them off.
 - No shadows, blur, glow or gradients.
 
 ## 5. Tokens
@@ -608,8 +639,10 @@ Every value in `styles.css` comes from a token below.
 | `done` | `#2F7D4F` | the done mark: a step of an issue's work is done |
 | `marker` | `#F3E27A` | a line marked in review, as with a highlighter |
 | `off` | `#B3412F` | a repo turned off: its switch |
+| `post` | `#644A9E` | the field's Post lane (Enter posts to Topic); Topic's marks |
+| `shell` | `#D9A621` | the field's Shell lane (Enter runs in the repo); ⏻ while the Prompt is on |
 
-No other colours; the last three each mean their one thing only.
+No other colours; the last five each mean their one thing only.
 
 Type: the system sans; monospace only for paths, code and the terminal.
 Sizes 28 (identity), 24 (page title), 20 (card title, figures), 15 (body),

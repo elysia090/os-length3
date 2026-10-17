@@ -15,11 +15,11 @@ import {Reader} from './reader.ts';
  * on the top line; ⊕ brings the rest out and each
  * pill comes off with its ×. The large center is the open repo's files one
  * after another, an endless page you scroll through and edit in place,
- * opened at the file chosen in File; there are no tabs. A prompt box sits at
- * the bottom of the center. The narrow right pane holds the search box and a
- * reference switched freely on top and the Prompt below; using the prompt
- * box sends the Prompt up over the center, just above the box, and the
- * reference grows down into the room it leaves.
+ * opened at the file chosen in File; there are no tabs. The field sits at
+ * the bottom of the center, in two lanes (bench.ts): Shell runs in the
+ * repo, Post sends to Topic, which is then laid over the files. The narrow
+ * right pane holds the search box and a reference switched freely on top and
+ * the Prompt below. With no repo out, the center is Topic itself.
  */
 
 /** Set when Forge is opened for a repo: the path to scroll to ('' for the top). */
@@ -44,7 +44,7 @@ export function forge(ctx: Context): Node[] {
   const strip = h('nav', {class: 'repo-strip', 'aria-label': 'repo'});
   const flow = h('section', {class: 'flow', tabindex: '0', 'aria-label': t('The repo\'s contents')});
 
-  const work = bench({strip, main: flow, reveal: (path, line) => void reader?.reveal(path, line)});
+  const work = bench({strip, main: flow, reveal: (path, line) => void reader?.reveal(path, line), go: ctx.go, topicIsMain: () => repo === null});
 
   // The band: ⊕ at its left, then the repos out to work on, each a pill that
   // comes off with its ×. One press of ⊕ brings every repo not on the band
@@ -93,8 +93,8 @@ export function forge(ctx: Context): Node[] {
     repo = null;
     reader = null;
     work.setRepo(null, t('Bring a repo out to the band to use it'));
-    flow.replaceChildren(h('div', {class: 'topic'}, pageHead('topic'), timeline(ctx, flow)));
-    flow.scrollTop = 0;
+    flow.replaceChildren(h('div', {class: 'topic'}, pageHead('topic'), timeline(flow)));
+    work.lane('post');
     paintBand();
   };
 
@@ -109,6 +109,8 @@ export function forge(ctx: Context): Node[] {
       work.setRepo(name);
       flow.replaceChildren(reader.directory(''));
       flow.scrollTop = 0;
+      // Choosing a repo is choosing to work in it: its shell, not Topic over it.
+      work.lane('shell');
     }
     paintBand();
     if (path) void reader!.reveal(path);

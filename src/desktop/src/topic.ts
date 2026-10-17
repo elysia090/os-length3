@@ -71,3 +71,10 @@ export function farFrom(count: number, near: readonly number[], keep: number): n
   for (let i = 0; i < count; i++) if (i < lo || i > hi) out.push(i);
   return out;
 }
+
+/** Posts by one address this close together read as one run: one face and name for them all. */
+export const RUN_MS = 5 * 60_000;
+/** Whether `b` (just after `a` in time) goes on in `a`'s run. */
+export const sameRun = (a: Post | undefined, b: Post) => a !== undefined && a.by === b.by && b.at - a.at >= 0 && b.at - a.at < RUN_MS;
+/** The local day of `ms`, as a key. */
+export const dayOf = (ms: number) => { const d = new Date(ms); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; };

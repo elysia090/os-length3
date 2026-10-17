@@ -1,6 +1,6 @@
 // Japanese for Topic: the timeline, writing a post, taking one down.
 export default {
-  'Short posts, free to read. A new one reaches its author\'s contacts and a few readers first, and more as they keep it.': '誰でも読める短い投稿。新しい投稿はまず連絡先と少しの人に届き、とっておかれるほど広がります。',
+  'Short posts, free to read, laid over any page. A new one reaches its author\'s contacts and a few readers first, and more as they keep it.': '誰でも読める短い投稿。どのページの上にも重ねて開きます。新しい投稿はまず連絡先と少しの人に届き、とっておかれるほど広がります。',
   'Sign in to post.': '投稿するにはサインインします。',
   'Reaches {who}': '届く先: {who}',
   'kept by {n}': '{n} 人がとっておいた',
@@ -23,4 +23,17 @@ export default {
   'Take down': '取り下げる',
   'Take it down?': '取り下げますか？',
   'See all in Topic': 'Topic ですべて見る',
+  'Today': '今日',
+  'Yesterday': '昨日',
+  // The field at the foot: two lanes, and what Enter does in each.
+  'Post to Topic': 'Topic に投稿',
+  'Shell': 'シェル',
+  'Enter posts to Topic': 'Enter で Topic に投稿',
+  'Shift+Enter: new line': 'Shift+Enter で改行',
+  'Anyone reads Topic; posting needs sign-in': 'Topic は誰でも読めます。投稿にはサインインが要ります',
+  'Enter runs in {name}': 'Enter で {name} で実行',
+  'No Prompt: no repo is open': 'Prompt はありません（repo が開いていません）',
+  'Turn the Prompt off': 'Prompt を切る',
+  'Turn the Prompt on': 'Prompt を入れる',
+  'The Prompt is off: ⏻ turns it on': 'Prompt は切れています。⏻ で入れます',
 } as Record<string, string>;

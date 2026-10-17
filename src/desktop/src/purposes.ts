@@ -1,6 +1,7 @@
 // The leftmost rail chooses a purpose and the whole main area shows it;
-// there is no intermediate pane. File is the one operation among them: it
-// lays the tree of "/" over the page instead of replacing it. Purposes are not directories: the
+// there is no intermediate pane. File and Topic are the operations among
+// them: File lays the tree of "/" over the page, Topic the timeline (with
+// the field to post from), instead of replacing it. Purposes are not directories: the
 // filesystem stays an ordinary POSIX tree and never re-implements this
 // classification.
 
@@ -23,7 +24,7 @@ export interface Purpose {
 export const PURPOSES: readonly Purpose[] = [
   // Topic first: what anyone may read, before what is one's own.
   {id: 'topic', label: 'Topic', role: 'Simple posts',
-    detail: 'Short posts, free to read. A new one reaches its author\'s contacts and a few readers first, and more as they keep it.', implemented: true},
+    detail: 'Short posts, free to read, laid over any page. A new one reaches its author\'s contacts and a few readers first, and more as they keep it.', implemented: true},
   {id: 'home', label: 'Home', role: 'Profile',
     detail: 'A page that reads the same to you and to anyone else, with your repos and posts.', implemented: true},
   {id: 'forge', label: 'Forge', role: 'Your workshop',
@@ -58,12 +59,15 @@ export function purpose(id: PurposeId): Purpose {
 /**
  * A stored value is a convenience only; anything unknown falls back to Home.
  * Creating a repo is a step, not a place to reopen the app into, and File
- * is an operation over a page.
+ * and Topic are operations over a page.
  */
 export function restorePurpose(stored: string | null | undefined): PurposeId {
-  // File opens over a page and is never the page itself.
-  return PURPOSES.some((p) => p.id === stored && p.id !== 'file') ? stored as PurposeId : DEFAULT_PURPOSE;
+  // File and Topic open over a page and are never the page itself.
+  return PURPOSES.some((p) => p.id === stored && !OVER.includes(p.id)) ? stored as PurposeId : DEFAULT_PURPOSE;
 }
+
+/** The purposes laid over a page rather than shown as one. */
+export const OVER: readonly PurposeId[] = ['file', 'topic'];
 
 /**
  * Vertical rail keys, wrapping at both ends like a tab list. Returns null for

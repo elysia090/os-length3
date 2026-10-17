@@ -162,7 +162,7 @@ export function git(ctx: Context): Node[] {
     h('section', {class: 'section', 'aria-labelledby': 'issues-title'},
       h('h2', {id: 'issues-title'}, h('span', {}, t('Issues'), ' ', count), write),
       form.element, empty, column));
-  const workbench = bench({main, reveal: (path) => { if (at) ctx.openRepo(at, path); }});
+  const workbench = bench({main, reveal: (path) => { if (at) ctx.openRepo(at, path); }, go: ctx.go});
   // Issues written anywhere (here, in the shell, with l3 in the Prompt) show
   // up at once, and any change in the repo looked at is read again; not while
   // something is being written in the box or under it, which would be lost.
