@@ -10,6 +10,7 @@
 //! main, where it is reviewed and merged or rejected.
 
 mod git;
+mod help;
 
 use length3_core::{account, history, home, inbox, paths, remote, repos::Repos, templates, text, tr, usage, work};
 use std::io::{Read, Write};
@@ -36,6 +37,7 @@ fn parse(raw: Vec<String>) -> Result<Args, String> {
             "-m" | "--detail" => a.detail = it.next().ok_or_else(|| tr!("-m needs the text after it", "-m の後に詳細を書いてください"))?,
             "-t" | "--template" => a.template = it.next().ok_or_else(|| tr!("-t needs a template after it", "-t の後にテンプレートを書いてください"))?,
             "-h" | "--help" => a.words.insert(0, "help".into()),
+            "-V" | "--version" => a.words.insert(0, "version".into()),
             _ => a.words.push(w),
         }
     }
@@ -73,140 +75,57 @@ fn now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
 }
 
-fn help() -> String {
-    tr!("l3 — Length³ OS on the command line, in the app's words and order.
+/// The repo you are in, and where in it: from the working directory (a
+/// repo's copy, or an issue's copy of it), else the Prompt's repo.
+fn here() -> Option<(String, String)> {
+    let cwd = std::env::current_dir().ok()?;
+    let parts = |rel: &std::path::Path, skip: usize| -> Option<(String, String)> {
+        let mut it = rel.iter().map(|p| p.to_string_lossy().into_owned());
+        let repo = it.next()?;
+        let rest: Vec<String> = it.skip(skip).collect();
+        Some((repo, rest.join("/")))
+    };
+    let repos = paths::repos_dir();
+    if let Some(at) = cwd.strip_prefix(&repos).ok().and_then(|r| parts(r, 0)) { return Some(at); }
+    // An issue's copy: <data>/work/<repo>/<line>/….
+    let work = paths::data_dir().join("work");
+    if let Some(at) = cwd.strip_prefix(&work).ok().filter(|r| r.iter().count() >= 2).and_then(|r| parts(r, 1)) { return Some(at); }
+    std::env::var("LENGTH3_REPO").ok().filter(|r| !r.is_empty()).map(|r| (r, String::new()))
+}
 
-Home
-  l3                          this device and the Remote, repos, TODO
-  l3 todo                     TODO
-  l3 todo add \"Fix：title\" [-m detail]
-  l3 todo done N              mark the Nth done (again to undo)
-  l3 profile                  your profile: name, handle, bio
-  l3 profile name|handle|bio \"text\"
-  l3 lang [en|ja]             the language the app and l3 speak
-Forge
-  l3 repo                     repos here, and those only on the Remote
-  l3 repo new NAME [-t standard|c|empty]
-  l3 repo open NAME           bring one from the Remote
-  l3 band                     the repos out on Forge's band
-  l3 band add|rm REPO
-  l3 prompt REPO [-- CMD…]    the Prompt: the repo inside the root (no privileges)
-      --network               give it the network (off by default)
-File
-  l3 file [REPO[/PATH]]       a directory's entries, or a file's text
-  l3 file write REPO/PATH     replace a file with standard input
-Git
-  l3 git [REPO]               the issues not merged, each with what comes next
-  l3 issue REPO#N             one issue: its card, its Review, Merge
-  l3 issue new REPO \"Fix：title\" [-m detail]
-  l3 start REPO#N             start (or continue) issue #N in its own copy
-  l3 main REPO                back to main
-  l3 commit REPO [-m note]    commit the work, named after its issue
-  l3 commit REPO \"Fix：title\" on main, named by the line
-  l3 push REPO [-m note]      push the work, handing it to main as its change (again: next version)
-  l3 reset REPO               take the change back
-  l3 reply REPO#N \"text\"      a comment in its Review
-  l3 review REPO#N approve [-m note]   approve this version
-  l3 merge REPO#N             main takes the change (once approved)
-  l3 reject REPO#N [-m why]   main does not
-  l3 diff REPO | REPO#N       the lines: what is not committed, or the issue's change
-  l3 log REPO                 the commits of what the repo shows
-Runtime
-  l3 runtime                  the root, and this device by size: what can go
-  l3 free ID… | l3 free all   free (a repo's changes go to the Remote first)
-  l3 root fetch | install BUNDLE
-  l3 ssh                      each address, and whether SSH may reach it
-  l3 ssh on|off ADDRESS
-  l3 dotfiles                 your dotfiles: every Prompt starts with them in /root
-  l3 dotfile NAME             one's text
-  l3 dotfile write NAME       replace (or make) it with standard input
-  l3 dotfile rm NAME
-Remote
-  l3 remote                   the Remote this device is on, and where each repo stands
-  l3 remote on REPO           bring back a repo turned off (turning off is the app's: it asks for a passkey)
-  l3 remote sign-in           passkeys, the code to turn a repo off, the providers
-  l3 remote devices           each device signed in, this one first
-  l3 remote devices rm N      remove the Nth (it is approved again to come back)
-  l3 login [URL]              connect: approve in the browser
-  l3 logout
-Inbox
-  l3 inbox                    conversations: contacts, then requests
-  l3 inbox ADDRESS            one conversation (name@domain)
-  l3 inbox send ADDRESS \"text\"  Review： or Question： first to ask; a /root/… path says what about
-  l3 inbox accept|block ADDRESS
-  l3 address                  your addresses
-  l3 address claim NAME[@DOMAIN]
-  l3 address domain DOMAIN    the DNS record that proves DOMAIN is yours, and whether it is there
+/// `at` (a path written from `rel` in a repo), as a path from the repo's top.
+fn from_here(rel: &str, at: &str) -> String {
+    let mut out: Vec<&str> = if at.starts_with('/') { Vec::new() } else { rel.split('/').filter(|p| !p.is_empty()).collect() };
+    for p in at.split('/') {
+        match p { "" | "." => {} ".." => { out.pop(); } _ => out.push(p) }
+    }
+    out.join("/")
+}
 
-  --json for JSON. Paths may be written as File shows them: /root/<repo>/….
-  Where: $LENGTH3_HOME (else the app's own data directory).
-  Language: Home's (the app's menu), or LENGTH3_LANG=ja|en.", "l3 — Length³ OS をコマンドで。アプリの rail と同じ言葉と順番です。
-
-Home
-  l3                          この端末と Remote、repo、TODO
-  l3 todo                     TODO
-  l3 todo add \"Fix：件名\" [-m 詳細]
-  l3 todo done N              N 番目を完了に（もう一度で戻す）
-  l3 profile                  プロフィール: 名前、ハンドル、自己紹介
-  l3 profile name|handle|bio \"文\"
-  l3 lang [en|ja]             アプリと l3 が話す言語
-Forge
-  l3 repo                     repo（この端末にあるもの、Remote だけにあるもの）
-  l3 repo new NAME [-t standard|c|empty]
-  l3 repo open NAME           Remote から持ってくる
-  l3 band                     Forge の帯に出ている repo
-  l3 band add|rm REPO
-  l3 prompt REPO [-- CMD…]    Prompt: root の中で repo を開く（権限なし）
-      --network               ネットワークを渡す（既定ではなし）
-File
-  l3 file [REPO[/PATH]]       ディレクトリなら中身、ファイルなら本文
-  l3 file write REPO/PATH     標準入力で既存のファイルを置き換える
-Git
-  l3 git [REPO]               Merge されていない Issue と、それぞれ次にすること
-  l3 issue REPO#N             Issue ひとつ: カード、Review、Merge
-  l3 issue new REPO \"Fix：件名\" [-m 詳細]
-  l3 start REPO#N             Issue #N を始める（続ける）。repo はその写しになる
-  l3 main REPO                main に戻る
-  l3 commit REPO [-m メモ]    作業を Commit（Issue の名前で）
-  l3 commit REPO \"Fix：件名\"  main で Commit
-  l3 push REPO [-m メモ]      作業を Push し、Change として main に渡す（もう一度で次の版）
-  l3 reset REPO               Change を取り下げる
-  l3 reply REPO#N \"文\"        Review にコメント
-  l3 review REPO#N approve [-m メモ]   この版を承認
-  l3 merge REPO#N             main に取り込む（承認のあと）
-  l3 reject REPO#N [-m 理由]  取り込まない
-  l3 diff REPO | REPO#N       行で: Commit していないもの、または Issue の Change
-  l3 log REPO                 repo がいま見せているもののコミット
-Runtime
-  l3 runtime                  root と この端末: 容量順、空けられるもの
-  l3 free ID… | l3 free all   空ける（変更があれば送ってから）
-  l3 root fetch | install BUNDLE
-  l3 ssh                      アドレスごとに、SSH でつないでよいか
-  l3 ssh on|off ADDRESS
-  l3 dotfiles                 あなたの dotfile（どの Prompt も /root にこれを置いて始まる）
-  l3 dotfile NAME             ひとつの本文
-  l3 dotfile write NAME       標準入力で置き換える（なければ作る）
-  l3 dotfile rm NAME
-Remote
-  l3 remote                   つながっている Remote と、各 repo の状態
-  l3 remote on REPO           切った repo をすぐ戻す（切るのはアプリで。パスキーを使います）
-  l3 remote sign-in           パスキー、repo を切るときのコード、プロバイダー
-  l3 remote devices           サインインしている端末（この端末が先頭）
-  l3 remote devices rm N      N 番目を外す（戻るにはもう一度承認）
-  l3 login [URL]              ブラウザで承認してつなぐ
-  l3 logout
-Inbox
-  l3 inbox                    会話（連絡先、次にリクエスト）
-  l3 inbox ADDRESS            ひとつの会話（name@domain）
-  l3 inbox send ADDRESS \"本文\"  頭に Review： か Question： で依頼。/root/… のパスで対象
-  l3 inbox accept|block ADDRESS
-  l3 address                  あなたのアドレス
-  l3 address claim NAME[@DOMAIN]
-  l3 address domain DOMAIN    DOMAIN があなたのものだと示す DNS レコードと、置けたか
-
-  --json で JSON に。パスは File と同じ /root/<repo>/… でも書けます。
-  置き場所: $LENGTH3_HOME（なければアプリと同じデータの場所）
-  言語: Home の設定（アプリのメニュー）か LENGTH3_LANG=ja|en")
+/// Fill in what being in a repo says: the repo where a command takes one
+/// and none is written, `#N` as that repo's issue N, and a file's path from
+/// where you are.
+fn fill(mut w: Vec<String>) -> Vec<String> {
+    let Some(c) = w.first().and_then(|f| help::find(f)) else { return w };
+    if !c.repo { return w; }
+    let Some((repo, rel)) = here() else { return w };
+    let named = |s: &str| Repos::open().is_ok_and(|r| r.dir(split(s).0.as_str()).is_ok());
+    let end = w.iter().position(|x| x == "--").unwrap_or(w.len());
+    for x in &mut w[1..end] {
+        if x.len() > 1 && x.starts_with('#') && x[1..].bytes().all(|b| b.is_ascii_digit()) { *x = format!("{repo}{x}"); }
+    }
+    let path = |at: &str| format!("{repo}/{}", from_here(&rel, at)).trim_end_matches('/').to_string();
+    match (c.name, end) {
+        ("prompt", 1) => w.insert(1, repo),
+        ("file", 1) => w.push(path(".")),
+        ("file", 2) if w[1] != "write" && !(named(&w[1]) && rel.is_empty()) => w[1] = path(&w[1].clone()),
+        ("file", 3) if w[1] == "write" && !(named(&w[2]) && rel.is_empty()) => w[2] = path(&w[2].clone()),
+        ("issue", 3) if w[1] == "new" => w.insert(2, repo),
+        ("git" | "main" | "commit" | "push" | "reset" | "diff" | "log", 1) => w.push(repo),
+        ("commit", 2) if !named(&w[1]) && !w[1].contains('/') => w.insert(1, repo),
+        _ => {}
+    }
+    w
 }
 
 /// Inside the app's Prompt only the open repo is here (under /root) and is
@@ -248,7 +167,7 @@ fn take_in(words: &[String]) {
 fn send_changed(words: &[String]) {
     if in_prompt() || remote::connection().is_none() { return; }
     // These bring every repo into step themselves, or leave the Remote.
-    if matches!(words.first().map(String::as_str), Some("help" | "login" | "logout" | "remote")) { return; }
+    if matches!(words.first().map(String::as_str), Some("help" | "login" | "logout" | "remote" | "version" | "completion" | "complete")) { return; }
     let Ok(r) = Repos::open() else { return };
     for s in r.list().unwrap_or_default() {
         if matches!(remote::status_of(&r, &s.name), Ok(st) if st.fresh || st.changed > 0) { send(&s.name); }
@@ -262,7 +181,7 @@ fn prompt(a: &Args, repo: &str, rest: &[&str]) -> Result<(), String> {
     let argv: Vec<String> = match rest {
         ["--", cmd @ ..] if !cmd.is_empty() => cmd.iter().map(|s| s.to_string()).collect(),
         [] => vec!["/bin/sh".into(), "-i".into()],
-        _ => return Err("l3 prompt REPO [-- CMD…]".into()),
+        _ => return Err("l3 prompt [REPO] [-- CMD…]".into()),
     };
     let s = length3_core::launch::Sandbox { root, repo: dir, name: repo.to_string(), argv, network: a.network, dotfiles: length3_core::launch::dotfiles(), data: Some(paths::data_dir()) };
     let code = length3_core::launch::run(&s).map_err(|e| e.to_string())?;
@@ -282,7 +201,7 @@ fn run(a: Args) -> Result<(), String> {
             Some("todo") => Some(tr!("Home's TODO", "Home の TODO")),
             Some("runtime") | Some("free") | Some("root") => Some(tr!("this device's room and roots", "この端末の容量と root")),
             Some("inbox" | "address") => Some(tr!("the Inbox", "Inbox")),
-            Some("remote" | "login" | "logout" | "start" | "main" | "commit" | "push" | "reset" | "changes" | "review" | "merge" | "reject" | "log") =>
+            Some("remote" | "login" | "logout" | "start" | "main" | "commit" | "push" | "reset" | "review" | "merge" | "reject" | "log") =>
                 Some(tr!("the Remote and history", "Remote と履歴")),
             Some("repo") if w.len() > 1 => Some(tr!("making or bringing repos", "repo を作ること・持ってくること")),
             Some("prompt") => Some(tr!("opening a Prompt", "Prompt を開くこと")),
@@ -294,10 +213,29 @@ fn run(a: Args) -> Result<(), String> {
     }
     match w.as_slice() {
         [] => overview(&a),
-        ["help"] | ["help", ..] => {
-            out(help());
-            let t: Vec<String> = templates::all().into_iter().map(|t| format!("{} ({})", t.id, t.label)).collect();
-            out(tr!("  templates: {}", "  テンプレート: {}", t.join(" ")));
+        ["help"] => { out(help::overview()); Ok(()) }
+        ["help", "all"] => { out(help::all()); Ok(()) }
+        ["help", name, ..] => match help::find(name) {
+            Some(c) => {
+                out(help::command(c));
+                if c.name == "repo" {
+                    let t: Vec<String> = templates::all().into_iter().map(|t| format!("{} ({})", t.id, t.label)).collect();
+                    out(tr!("  templates: {}", "  テンプレート: {}", t.join(" ")));
+                }
+                Ok(())
+            }
+            None => Err(help::not_a_command(&[name])),
+        },
+        ["version"] => {
+            out(format!("l3 {}", include_str!("../../RELEASE").trim()));
+            if let Some((_, i)) = length3_core::root::current(&paths::data_dir()) { out(format!("root {} {} ({})", i.name, i.version, short(&i.sha256))); }
+            Ok(())
+        }
+        ["completion", shell] => { out(help::completion(shell)?); Ok(()) }
+        ["completion"] => Err(help::completion("").unwrap_err()),
+        // For completion: the repos here, one a line.
+        ["complete", "repos"] => {
+            for s in Repos::open()?.list()? { out(s.name); }
             Ok(())
         }
         // Home
@@ -657,7 +595,7 @@ fn run(a: Args) -> Result<(), String> {
         // Kept in step by itself (take_in, send_changed): there is nothing to ask for.
         ["sync", ..] => Err(tr!("There is no l3 sync: every change goes to the Remote by itself, and the Remote's come in when a repo is read. l3 remote shows where each repo stands",
             "l3 sync はありません。変更はひとりでに Remote へ送られ、Remote の変更は repo を読むときに取り込まれます。l3 remote で各 repo の状態を見られます")),
-        _ => Err(tr!("Not a command: l3 {}\n`l3 help` shows how to use it", "わからないコマンドです: l3 {}\n`l3 help` で使い方を見られます", w.join(" "))),
+        _ => Err(help::not_a_command(&w)),
     }
 }
 
@@ -936,7 +874,8 @@ fn left(until: u64) -> String {
 
 fn main() -> ExitCode {
     let raw: Vec<String> = std::env::args().skip(1).collect();
-    let done = parse(raw).and_then(|a| {
+    let done = parse(raw).and_then(|mut a| {
+        a.words = fill(std::mem::take(&mut a.words));
         let words = a.words.clone();
         take_in(&words);
         let r = run(a);
