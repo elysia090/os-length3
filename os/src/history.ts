@@ -21,9 +21,6 @@ export interface Cut { id: string; issue: string | null; kind: string | null; ti
 export interface DiffLine { kind: 'hunk' | 'add' | 'del' | 'same'; text: string; at?: number }
 export interface FileDiff { path: string; status: FileChange['status']; binary: boolean; lines: DiffLine[]; more: number }
 
-/** How a status reads: a word, not a letter. */
-export const statusWord = (s: FileChange['status']) => ({added: t('Added'), modified: t('Changed'), removed: t('Removed')})[s];
-
 async function invoke<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
   const {invoke} = await import('@tauri-apps/api/core');
   return invoke<T>(command, args);
@@ -158,9 +155,9 @@ function cutTree(repo: string, id: string | null): Promise<Tree> {
 
 interface RemoteCut { id: string; parent: string | null; merged?: string | null; tree: Tree; kind: string; title: string; issue: string; note: string; time: number; added: number; removed: number }
 
-async function webLog(repo: string, line = lineOf(repo)): Promise<Cut[]> {
+async function webLog(repo: string): Promise<Cut[]> {
   if (!connection()) return [];
-  const r = await api(at(repo, '/log?limit=50', line));
+  const r = await api(at(repo, '/log?limit=50', lineOf(repo)));
   if (r.status === 404) return [];
   const cuts = await r.json() as RemoteCut[];
   const trees = new Map(cuts.map((c) => [c.id, c.tree]));
@@ -175,21 +172,13 @@ async function webLog(repo: string, line = lineOf(repo)): Promise<Cut[]> {
 
 // ---- the same on either host ----
 
-/** Whether this device can cut: only with a Remote, where history is kept. */
-export const canCut = () => connection() !== null;
-
 export const changes = (repo: string) => (isNative ? invoke<Changes>('history_changes', {repo}) : webChanges(repo));
 export const diff = (repo: string) => (isNative ? invoke<FileDiff[]>('history_diff', {repo}) : webDiff(repo));
 export const log = (repo: string) => (isNative ? invoke<Cut[]>('history_log', {repo}) : webLog(repo));
-/** One line's history, whichever the repo shows: main's, or an issue's work. */
-export const logOf = (repo: string, line: string) => (isNative ? invoke<Cut[]>('history_log_of', {repo, line}) : webLog(repo, line));
 
 /** Commit under `issue` (its file name in issue/), or without one, named by `line`. */
 export const cut = (repo: string, issue: string | null, line: string, note: string): Promise<Cut> =>
   isNative ? invoke<Cut>('history_cut', {repo, issue, line, note}) : webCut(repo, issue, line, note);
-
-/** One cut from the Remote, for a page that shows it. */
-export const cutById = (repo: string, id: string) => json<RemoteCut>(`/v1/repos/${encodeURIComponent(repo)}/cuts/${id}`);
 
 // ---- the work on an issue, and what it hands to main ----
 

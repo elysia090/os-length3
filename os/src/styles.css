@@ -171,7 +171,6 @@ a { color: var(--ink); }
   margin-bottom: var(--s3);
 }
 .section > h2 small { font-weight: 400; color: var(--sub); font-size: var(--t-meta); }
-/* Dashed means one thing: room for something that is not here yet. */
 /* Room for what is not here yet: a dashed box as wide as its words, never the width of the page around one line. */
 .empty { width: fit-content; max-width: 100%; margin-top: var(--s5); padding: var(--s6) var(--s5); border: 1px dashed var(--rule); border-radius: var(--r-place); color: var(--sub); }
 /* Under a section's heading the heading's own gap is the space: an empty box adds none, however deep. */
@@ -285,21 +284,11 @@ span.todo-title { min-height: 0; }
   .env-choice > :nth-child(3) { grid-column: 1 / -1; grid-row: 2; }
 }
 
-/* Git: issues read from each repo's issue/, rows named by kind and title */
+/* Git: issues read from each repo's issue/ */
 .git-filter { margin-top: var(--s5); }
 .section > h2 > span small { margin-left: var(--s2); }
-.issue-rows { display: grid; gap: var(--s1); }
-.issue-row {
-  display: grid; gap: 2px; padding: var(--s3) var(--s4); text-align: left; cursor: pointer;
-  border: 1px solid var(--rule); border-radius: var(--r-place); background: transparent;
-}
-.issue-row:hover:not([aria-current]) { background: var(--raised); }
-.issue-head { font-weight: 600; }
 .issue-kind { font-weight: 700; }
 .issue-where { font: var(--t-meta)/1.6 var(--mono); color: var(--sub); }
-.issue-detail { font-size: var(--t-meta); color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* A large place is current by its edge, not an ink fill (as a lit repo card). */
-.issue-row[aria-current] { border-color: var(--ink); background: var(--raised); }
 /* Git keeps one centred column of comfortable width: the form, the rows, the notes and the prompt box line up. */
 .git-flow > * { max-width: 760px; margin-inline: auto; }
 /* A card of rows, like the File tree and the avatar's popover: its corner
@@ -313,8 +302,6 @@ span.todo-title { min-height: 0; }
 button.row-item { cursor: pointer; width: 100%; }
 button.row-item:hover:not(:disabled) { background: var(--raised); }
 button.row-item:disabled { cursor: default; color: var(--sub); }
-.row-head { font-weight: 600; }
-.row-word { flex: none; width: 4em; color: var(--sub); }
 .row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-meta { flex: none; color: var(--sub); font: var(--t-meta) var(--mono); }
 .work-act { margin-top: var(--s3); }
@@ -373,15 +360,11 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .legend { margin-top: var(--s3); display: flex; flex-wrap: wrap; gap: var(--s5); }
 .legend b { font-size: var(--t-card); font-weight: 600; display: block; }
 /* Runtime: each repo's share, what can be given back, Prompts running */
-.usage-rows { margin-top: var(--s4); }
-.usage-size { min-width: 5em; text-align: right; }
 .usage-prompt { align-items: center; }
 .usage-prompt .button { min-height: var(--h-row); padding-block: 0; }
 .reclaimed { display: grid; gap: var(--s1); margin-bottom: var(--s3); }
-.work-act .grow, .reclaim-act .grow { flex: 1; }
-.usage-rows + .work-act, .legend + .reclaimed { margin-top: var(--s4); }
-.reclaim-act { align-items: center; }
-.space-why { max-width: 22em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--sans); }
+.work-act .grow { flex: 1; }
+.legend + .reclaimed { margin-top: var(--s4); }
 .row-item[data-room='Keep'] .row-name { color: var(--sub); }
 .remote-join { display: grid; gap: var(--s3); max-width: 560px; }
 .remote-join .line-in { flex: 1; }
@@ -520,7 +503,7 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
   width: 100%; min-height: var(--h-row); padding: 0 var(--s3); border: 1px solid var(--edge); border-radius: var(--r-field);
   background: var(--raised); color: var(--ink);
 }
-.search-in:disabled, .line-in:disabled { opacity: .5; }
+.search-in:disabled { opacity: .5; }
 /* The search box's own clear mark, in the page's ink, not the browser's blue. */
 .search-in::-webkit-search-cancel-button { filter: grayscale(1) brightness(.4); cursor: pointer; }
 .search-count { margin-bottom: var(--s2); }
@@ -649,7 +632,6 @@ mark { background: var(--ink); color: var(--ground); }
 }
 /* A way in that takes two lines takes them evenly, not one word left over. */
 .sign-in-card .button { text-wrap: balance; }
-.button.link { border-color: transparent; background: transparent; padding-inline: 0; color: var(--sub); text-decoration: underline; }
 .row-item[data-where='offline'] .row-meta { color: var(--ink); }
 .card.repo.away { border-style: dashed; }
 .pop-head { padding: var(--s2) var(--s3) 0; }
@@ -657,10 +639,6 @@ mark { background: var(--ink); color: var(--ground); }
 .sign-in-row { flex-wrap: wrap; }
 .section.offer { margin-top: var(--s5); padding: var(--s4); border: var(--line-work) solid var(--edge); border-radius: var(--r-place); }
 /* Git: the work on an issue, and changes handed in */
-.work-card { display: grid; gap: var(--s2); padding: var(--s4); border: 1px solid var(--rule); border-radius: var(--r-place); }
-.work-card[aria-current='true'] { border: var(--line-work) solid var(--edge); }
-.work-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s3); }
-.work-card .work-act { margin-top: 0; flex-wrap: wrap; }
 .handed { display: grid; padding: var(--s2); border: 1px solid var(--rule); border-radius: var(--r-card); margin-bottom: var(--s3); }
 .handed .work-act { padding: 0 var(--s3) var(--s2); }
 .state-chip { flex: none; font-size: var(--t-meta); padding: 0 var(--s2); border: 1px solid var(--edge); border-radius: var(--r-round); }
@@ -705,15 +683,8 @@ mark { background: var(--ink); color: var(--ground); }
 .inbox-write { display: grid; gap: var(--s2); padding: var(--s3) var(--s4); border-top: 1px solid var(--rule); }
 .inbox-write .row { align-items: end; }
 .bubble-in { flex: 1; resize: none; min-height: var(--h-control); max-height: 200px; padding: var(--s2) var(--s3); font: var(--t-body)/1.5 var(--sans); }
-.inbox-write .write-what { align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--s3); margin-top: 0; }
-.write-about { align-items: center; gap: var(--s2); margin-top: 0; }
 .inbox-write .write-line { margin-top: 0; }
 .write-hint { margin: 0; }
-.address-lines { display: grid; gap: var(--s1); }
-.address-line { align-items: center; gap: var(--s3); margin-top: 0; }
-.kind-in { flex: none; width: auto; }
-.address-row { align-items: center; flex-wrap: wrap; }
-.address-row .line-in { flex: 1; min-width: 8em; }
 .at { color: var(--sub); }
 .publish pre { padding: var(--s3); border: 1px solid var(--rule); border-radius: var(--r-card); }
 @media (max-width: 900px) { .inbox-box { grid-template-columns: 1fr; } .inbox-list { border-right: 0; border-bottom: 1px solid var(--rule); } }
@@ -734,7 +705,6 @@ mark { background: var(--ink); color: var(--ground); }
 .issue-foot > .issue-about { flex: 1; min-width: 0; }
 .issue-about { display: grid; gap: var(--s1); justify-items: start; min-width: 0; }
 .issue-about .issue-where { font-family: var(--mono); font-size: var(--t-meta); }
-.work-act.with-field > .line-in { flex: 1; min-width: 12em; }
 .issue-big-head .issue-where { font-family: var(--mono); font-size: var(--t-meta); }
 
 /* Issues as large boxes side by side: one in full, its neighbours' edges
@@ -759,9 +729,6 @@ mark { background: var(--ink); color: var(--ground); }
 .stage-hit.prev { left: 0; width: calc(var(--lead) * var(--peek)); }
 .stage-hit.next { right: 0; width: calc((2 - var(--lead)) * var(--peek)); }
 .stage-hit:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
-.reply-list { display: grid; gap: var(--s3); margin-bottom: var(--s3); }
-.space-open { width: 100%; border: 0; border-bottom: 1px solid var(--rule); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; border-radius: 0; }
-.space-open:hover { background: var(--raised); }
 .space-col > h3 small { margin-left: var(--s2); font-weight: 400; color: var(--sub); font-size: var(--t-meta); }
 /* A page in parts (common.ts parts()): the headings are the switch, the
    chosen one an ink fill like anything chosen; only its part is shown. */
@@ -783,11 +750,9 @@ mark { background: var(--ink); color: var(--ground); }
 .sub-part h3 { display: flex; justify-content: space-between; align-items: center; margin: 0 0 var(--s3); font-size: var(--t-body); font-weight: 600; }
 .sub-part h3 small { margin-left: var(--s2); font-weight: 400; color: var(--sub); font-size: var(--t-meta); }
 
-/* A step's head and its actions (the review inside the issue's box). */
+/* A step's head (the review inside the issue's box). */
 .stage-head { display: flex; align-items: center; gap: var(--s3); }
 .stage-head h3 { margin: 0; font-size: var(--t-body); font-weight: 600; }
-.stage-act { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--s2); }
-.stage-act .grow { flex: 1; }
 /* Done: a circle with a check in it. */
 .done-mark { width: 22px; height: 22px; border-radius: 50%; background: var(--done); position: relative; flex: none; }
 .done-mark::after { content: ''; position: absolute; left: 7px; top: 4px; width: 6px; height: 10px; border: solid var(--ground); border-width: 0 2px 2px 0; transform: rotate(45deg); }
@@ -862,13 +827,6 @@ mark { background: var(--ink); color: var(--ground); }
 .off-ask .card-foot { margin-top: auto; align-self: stretch; }
 /* A card that asks is one row, the ask filling it. */
 .card:has(> .off-ask) { grid-template-rows: 1fr; }
-/* Who sees a repo, in its card: only you, servers, everyone. */
-.seen-choice { display: grid; gap: var(--s2); }
-.seen-note { display: grid; gap: var(--s1); }
-.check-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s2); min-width: 0; }
-.check-row > input, .check-row > select { align-self: center; }
-.check-row .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.check-row .line-in { flex: 1; min-width: 0; }
 /* The offer: its button alone, which says it. */
 .offer-holder { margin-top: var(--s5); }
 /* Under Sign-in the passkeys have their own Add: the offer steps back. */
@@ -928,7 +886,6 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .stub-text:hover { background: var(--ground); }
 .stub-in:focus { outline: none; }
 .stub:has(.stub-in:focus-visible) { outline: 2px solid var(--ink); outline-offset: 2px; }
-.stub-domain { flex: none; padding-right: var(--s2); color: var(--sub); }
 .stub-gear { display: grid; place-items: center; flex: none; width: var(--h-control); height: calc(var(--h-control) - 2px); padding: 0; border: 0; border-left: 1px solid var(--rule); border-radius: 0 var(--r-field) var(--r-field) 0; background: transparent; color: var(--sub); cursor: pointer; }
 .stub-gear:hover, .stub-gear[aria-expanded='true'] { background: var(--ground); color: var(--ink); }
 .stub-gear svg { width: 20px; height: 20px; }

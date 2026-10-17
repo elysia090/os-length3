@@ -33,8 +33,6 @@ export default {
   'direct': '直接',
   'Accept': '受ける',
   'Block': 'ブロック',
-  'What it is': '種類',
-  'About which repo': 'どの repo について',
   'Send': '送る',
   'Sent as a request: they see it once they accept you.': 'リクエストとして送りました。相手が受けると読まれます。',
   'Direct': '直接',

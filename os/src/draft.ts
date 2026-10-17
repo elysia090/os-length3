@@ -336,9 +336,6 @@ export async function treeAt(repo: string, id: string | null): Promise<Tree> {
   return c.tree;
 }
 
-/** The draft as last agreed (the tree the Remote has for this copy). */
-export const agreedTree = (repo: string): Tree => baseOf(repo)?.tree ?? {};
-
 /** A cut was made at the agreed version: it is the head now. */
 export async function setHead(repo: string, head: string | null) {
   const b = baseOf(repo);

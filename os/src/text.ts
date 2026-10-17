@@ -2,9 +2,6 @@
 // and a title, "Fix：再起動すると保存内容が消える". TODO items, issues and
 // cuts all use it.
 
-/** Kinds offered as examples; any short word before the colon is a kind. */
-export const KINDS = ['Fix', 'Patch', 'RFC'] as const;
-
 /** Split "Kind：title" (full- or half-width colon). */
 export function kindOf(text: string): {kind: string | null; title: string} {
   const m = /^\s*([A-Za-z][A-Za-z0-9-]{0,15})\s*[：:]\s*(.*)$/s.exec(text);

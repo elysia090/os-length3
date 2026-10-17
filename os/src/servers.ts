@@ -48,7 +48,6 @@ export const bringBack = (id: string) => call<{id: string; name: string; address
 export const renewServer = (id: string) => call<{address: string; until: number}>(`/v1/servers/${id}/renew`, send('POST'));
 /** Its owner's: held a while, to bring back. */
 export const removeServer = (id: string) => call<{until: number}>(`/v1/servers/${id}`, send('DELETE'));
-export const renameServer = (id: string, name: string) => call<{name: string}>(`/v1/servers/${id}`, send('PATCH', {name}));
 export const people = (id: string) => call<Person[]>(`/v1/servers/${id}/people`);
 export const addPerson = (id: string, address: string) => call<Person[]>(`/v1/servers/${id}/people`, send('POST', {address}));
 export const removePerson = (id: string, address: string) => call<void>(`/v1/servers/${id}/people/${encodeURIComponent(address)}`, send('DELETE'));

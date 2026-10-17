@@ -57,7 +57,6 @@ interface SharedTemplate { id: string; label: string; dirs: string[]; files: [st
 export const TEMPLATES: readonly {id: Template; label: string; files: readonly string[]}[] =
   (shared as SharedTemplate[]).map((t) => ({id: t.id, label: t.label, files: [...t.files.map(([p]) => p), ...t.dirs.map((d) => `${d}/`)]}));
 
-/** Same rule as the native side: a plain directory name. */
 /**
  * Whether a path part names a repo's .git however it is spelt (core's
  * is_git_name): case, trailing dots and spaces, the short name git~1 and
@@ -69,6 +68,7 @@ export function isGitName(part: string): boolean {
 }
 const touchesGit = (path: string) => path.split('/').some(isGitName);
 
+/** Same rule as the native side: a plain directory name. */
 export function validName(name: string): boolean {
   return /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}$/.test(name);
 }
