@@ -15,6 +15,7 @@ import {FileTree} from './pages/tree.ts';
 import {begin} from './lifecycle.ts';
 import {learnHome} from './inbox.ts';
 import {devicePage} from './pages/device.ts';
+import {onConnection, onReach, remoteAway} from './remote.ts';
 import {getState, loadState} from './state.ts';
 import {onLang, t, useLang} from './i18n.ts';
 import {NEW_REPO, PURPOSES, purpose, restorePurpose, stepPurpose, type PurposeId} from './purposes.ts';
@@ -119,6 +120,19 @@ const me = new Me(ctx, currentProfile, {editProfile: () => startEditing(ctx)});
 $('rail-me').append(me.element);
 
 $('rail-tabs').append(...PURPOSES.map((p) => railButton(p.id)), railButton(NEW_REPO.id));
+// The Remote not answering is said in one place, on the Remote's own: a red dot, and its name says why.
+const reach = () => {
+  const b = tabs.get('remote');
+  if (!b) return;
+  const label = remoteAway() ? t('The Remote cannot be reached') : t(purpose('remote').label);
+  b.classList.toggle('away', remoteAway());
+  b.setAttribute('aria-label', label);
+  const tag = b.querySelector('.rail-tag');
+  if (tag) tag.textContent = label;
+};
+onReach(reach);
+// Signed in or out, here or from another device: the page is drawn again for who is here now (Remote's draws itself).
+onConnection(() => { if (current === 'remote') me.paint(); else render(); });
 // Home's state is read before the first page, and again when the window
 // comes back, so what l3 changed meanwhile is what the page shows.
 // Then what the Remote has is taken in; the page shows as it comes.
@@ -132,6 +146,7 @@ onLang(() => {
     if (tag) tag.textContent = label;
   }
   for (const id of ['rail-tabs']) document.getElementById(id)?.setAttribute('aria-label', t('Purposes'));
+  reach();
   render();
 });
 const asking = new URLSearchParams(location.search);

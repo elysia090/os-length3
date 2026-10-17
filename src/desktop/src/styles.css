@@ -141,6 +141,11 @@ a { color: var(--ink); }
 .rail-tabs:has(.rail-item[aria-expanded='true']) .rail-item[aria-selected='true']:hover { background: var(--raised); }
 /* While File's tree is out, the tree itself says what it is. */
 .rail-item[aria-expanded='true'] .rail-tag { opacity: 0; }
+/* The Remote not answering: a dot on its place, the one place it is said. */
+.rail-item.away::after {
+  content: ''; position: absolute; top: var(--s2); right: var(--s2);
+  width: 7px; height: 7px; border-radius: var(--r-round); background: var(--off);
+}
 
 /* ---- 2. Pages ---- */
 .page { min-width: 0; padding: var(--top-line) clamp(var(--s5), 5vw, 72px) var(--s6); }
@@ -684,6 +689,7 @@ mark { background: var(--ink); color: var(--ground); }
 /* A page in parts (common.ts parts()): the headings are the switch, the
    chosen one an ink fill like anything chosen; only its part is shown. */
 .part-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s3); margin-top: var(--s5); }
+.away-line { margin-top: var(--s4); }
 .parts { display: flex; flex-wrap: wrap; gap: var(--s1); }
 .part {
   height: var(--h-control); padding: 0 var(--s4); border: 1px solid transparent; border-radius: var(--r-round);
@@ -746,6 +752,8 @@ mark { background: var(--ink); color: var(--ground); }
 /* On is the green circle; the switch answers the pointer before it is pressed. */
 .power[aria-checked='true'] .knob { transform: translateX(24px); background: var(--done); }
 .power:hover:not(:disabled) { border-color: var(--ink); }
+/* Waiting (the Remote not answering): there, but not to be pressed now. */
+.power:disabled { opacity: .45; cursor: default; }
 .power:active:not(:disabled) .knob { width: 24px; }
 .power[aria-checked='true']:active:not(:disabled) .knob { transform: translateX(20px); }
 .power[aria-checked='false'] { background: var(--off); border-color: var(--off); }

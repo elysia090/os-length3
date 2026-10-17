@@ -96,7 +96,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     reference.setRepo(name);
     termBox.replaceChildren(termTitle, ...(name ? [terminalFor(name)] : []));
     prompt.disabled = !name;
-    prompt.placeholder = name ? t('Run in {name}', {name}) : '';
+    prompt.placeholder = name ? t('Run in {name}', {name}) : t('Open a repo to run in it');
   };
   setRepo(null);
   return {element: work, reference, setRepo};

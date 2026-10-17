@@ -2,7 +2,7 @@ import {ago, day, h} from '../dom.ts';
 import {mark} from '../icons.ts';
 import {t} from '../i18n.ts';
 import {shown as named, shownAs} from '../inbox.ts';
-import {connection, RemoteError} from '../remote.ts';
+import {connection, onConnection, RemoteError} from '../remote.ts';
 import * as servers from '../servers.ts';
 import {parts} from './common.ts';
 import type {Context} from './context.ts';
@@ -104,6 +104,8 @@ export class ServerLayer {
       if (!this.isOpen || this.trigger?.contains(at) || this.element.contains(at)) return;
       this.close();
     });
+    // Signed in or out (or the session ended elsewhere): what is out is built again for who is here now.
+    onConnection(() => { if (this.isOpen) this.element.replaceChildren(this.build()); });
     document.addEventListener('keydown', (event) => {
       if (event.key !== 'Escape' || !this.isOpen) return;
       if (this.back()) return;

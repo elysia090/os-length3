@@ -196,6 +196,15 @@ what is its own.
   page that is showing, brought out by resting on the icon (it stays a
   while after the pointer leaves) or by a press (it stays), put away by
   Escape, a press outside, or a second press.
+- **The Remote away.** When this device's Remote does not answer, it is
+  said in one place: a small `off` dot on Remote's icon in the rail, whose
+  name then reads Remote に届きません, and one line under Remote's parts
+  (what changes here is sent once it answers). Everything else goes on as
+  it was: work is kept here and sent when the Remote answers; what only
+  the Remote can do (its switches, a repo only there) waits, quiet. When
+  the Remote no longer knows this device (its session was ended from
+  another, or ran out), the device is signed out at once, every page drawn
+  again as signed out, and nothing here is lost.
 
 ## 4. What breaks the language
 
@@ -248,6 +257,7 @@ fix is always a piece from §3, not a new rule.
 | A full stop on one lone line and none on the next (投稿はここまでです。 / repo はまだありません) | None on one statement; one on each when there are two |
 | A field with only a placeholder for its name, beside a form with labels | A label over the field, what it means under it, as New repo's |
 | Signed out, a sentence and a button on one page and a card on another | The sign-in card, in the middle, on every page that needs it |
+| The Remote away as an error on two pages and as nothing (stale cards with live switches) on the rest; a dead session kept, each page failing on it | The rail's dot and Remote's one line; a dead session signs the device out |
 | Items in one row of a band a few pixels off another's (a 40 px gear in a 32 px band) | Everything on the band is 32 px |
 | A divider left where a pane would start when there is none | No pane, no line |
 | Something painted over a focus ring (the ground under the box over its foot) | The ring is whole: what lies under the box lies behind it |

@@ -32,16 +32,37 @@ export class RemoteError extends Error {
   constructor(status: number, message: string, detail: Record<string, unknown> = {}) { super(message); this.status = status; this.detail = detail; }
 }
 
-
+// Whether this device's Remote answered when last asked. While it does not,
+// work goes on here and is sent once it answers; the rail says so (main.ts).
+let away = false;
+const reachers = new Set<() => void>();
+export const remoteAway = (): boolean => away;
+/** Hear when the Remote stops or starts answering. */
+export function onReach(fn: () => void): () => void { reachers.add(fn); return () => reachers.delete(fn); }
+function reached(answered: boolean) {
+  if (away === !answered) return;
+  away = !answered;
+  for (const fn of [...reachers]) fn();
+}
 
 /** A request to the Remote, as this device's session (or none). */
 export async function api(path: string, init: RequestInit = {}, c: Connection | null = connection(), url = c?.url ?? REMOTE_URL): Promise<Response> {
   const headers = new Headers(init.headers);
   if (c) headers.set('Authorization', `Bearer ${c.token}`);
   if (typeof init.body === 'string' && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  // Another Remote (a person's elsewhere) not answering says nothing of this one.
+  const ours = url === (connection()?.url ?? REMOTE_URL);
   let r: Response;
-  try { r = await fetch(url + path, {...init, headers, credentials: 'include'}); } catch { throw new RemoteError(0, t('The Remote cannot be reached')); }
-  if (r.status === 401 && c) throw new RemoteError(401, t('The Remote no longer knows this device. Sign in again.'));
+  try { r = await fetch(url + path, {...init, headers, credentials: 'include'}); } catch {
+    if (ours) reached(false);
+    throw new RemoteError(0, t('The Remote cannot be reached'));
+  }
+  if (ours) reached(true);
+  if (r.status === 401 && c) {
+    // The session was ended (from another device, or it ran out): this device is signed out, and nothing here is lost.
+    if (ours && c.token === connection()?.token) void ended();
+    throw new RemoteError(401, t('The Remote no longer knows this device. Sign in again.'));
+  }
   if (r.status >= 400 && r.status !== 404 && r.status !== 409) {
     const body = await r.json().catch(() => ({})) as {message?: string; error?: string};
     throw new RemoteError(r.status, body.message ?? body.error ?? `Remote: ${r.status}`);
@@ -237,6 +258,11 @@ export async function signOut(): Promise<void> {
 async function forget() {
   await setState('remote', 'null');
   told();
+}
+
+async function ended() {
+  if (isNative) { await invoke('remote_logout').catch(() => {}); await loadState(); told(); return; }
+  await forget();
 }
 
 /** Who is signed in here, as the Remote says. */

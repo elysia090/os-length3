@@ -1,6 +1,7 @@
 // Japanese for the Remote: signing in, passkeys, providers, devices, sync words.
 export default {
   'The Remote cannot be reached': 'Remote に届きません',
+  'The Remote cannot be reached. What changes here is sent once it can.': 'Remote に届きません。ここでの変更は、届くようになりしだい送られます',
   'The Remote no longer knows this device. Sign in again.': 'Remote がこの端末を覚えていません。もう一度サインインしてください',
   'Could not sign in': 'サインインできませんでした',
   'The passkey was not made.': 'パスキーの作成をやめました',

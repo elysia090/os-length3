@@ -122,11 +122,14 @@ function repoSection(ctx: Context, counted: (n: number) => void, toCode: () => v
     const error = h('p', {class: 'error', role: 'alert'});
     const size = there?.bytes ?? here?.bytes ?? 0;
     const changed = there ? Date.parse(there.updatedAt) : here?.modified ?? 0;
+    // Away, the Remote can do nothing: what only it holds waits, and so does its switch.
+    const gone = account.remoteAway();
     const forge = button(t('Forge'), 'small-button');
-    forge.disabled = off;
+    forge.disabled = off || (gone && !here);
     forge.addEventListener('click', () => void pressing(forge, error, async () => { if (!here) await bring(name); ctx.openRepo(name); }));
     const power = h('button', {type: 'button', class: 'power', role: 'switch', 'aria-checked': String(!off),
       'aria-label': off ? t('Turn {repo} on', {repo: name}) : t('Turn {repo} off', {repo: name})}, h('span', {class: 'knob'})) as HTMLButtonElement;
+    power.disabled = gone;
     const where = off
       ? t('Off · back until {date}', {date: day(there!.until!)})
       : here ? syncWord(repoState(name)) : t('Only on the Remote');
@@ -145,7 +148,9 @@ function repoSection(ctx: Context, counted: (n: number) => void, toCode: () => v
     return el;
   };
   void look().then(paint);
-  const stop = onSync(() => { if (!section.isConnected) { stop(); return; } if (!section.querySelector('.off-ask, .share-list:not([hidden])')) void paint(); });
+  const again = () => { if (!section.isConnected) { stop(); unreach(); return; } if (!section.querySelector('.off-ask, .share-list:not([hidden])')) void paint(); };
+  const stop = onSync(again);
+  const unreach = account.onReach(again);
   return section;
 }
 
@@ -315,6 +320,15 @@ function deviceSection(counted: (n: number) => void): HTMLElement {
   return section;
 }
 
+/** One line while the Remote does not answer; gone once it does. */
+function awayLine(): HTMLElement {
+  const line = h('p', {class: 'muted away-line', role: 'status'}, t('The Remote cannot be reached. What changes here is sent once it can.'));
+  const show = () => { line.hidden = !account.remoteAway(); };
+  show();
+  const stop = account.onReach(() => { if (!line.isConnected) { stop(); return; } show(); });
+  return line;
+}
+
 export function remote(ctx: Context): Node[] {
   const holder = h('div', {});
   let shown: string | null = null;
@@ -337,6 +351,7 @@ export function remote(ctx: Context): Node[] {
     page.panel('devices').append(deviceSection((n) => page.count('devices', n)));
     holder.replaceChildren(
       h('div', {class: 'part-bar'}, page.switch),
+      awayLine(),
       page.panel('repos'), page.panel('sign-in'), page.panel('devices'),
       // Under the parts, not over them; a passkey added from it shows under Sign-in at once.
       ...(isNative ? [] : [passkeyOffer(() => { shown = null; paint(); })]));

@@ -55,6 +55,7 @@ export default {
   'Reference': '参照',
   'Search this repo': 'この repo を検索',
   'Open a repo to search it': 'repo を開くと検索できます',
+  'Open a repo to run in it': 'repo を開くと実行できます',
   'Searching…': '検索中…',
   'Could not search: {message}': '検索できませんでした：{message}',
   'Nothing found for “{query}”': '「{query}」は見つかりませんでした',
