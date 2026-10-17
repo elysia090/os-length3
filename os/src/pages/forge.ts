@@ -102,6 +102,10 @@ function make(ctx: Context) {
       if (name === repo) pill.setAttribute('aria-current', 'page');
       return pill;
     }));
+    paintAdd();
+  };
+  /** ⊕, by how many repos are not on the band yet. */
+  const paintAdd = () => {
     const rest = offBand(band, every()).length;
     add.disabled = rest === 0;
     add.title = rest ? t('Bring every repo out to the band ({n} more)', {n: rest}) : t('Every repo is on the band');
@@ -195,8 +199,9 @@ function make(ctx: Context) {
     }, 150);
   });
 
-  // What the Remote holds is learnt a moment after: ⊕ counts it once it is.
-  onSync(() => paintBand());
+  // What the Remote holds is learnt a moment after: ⊕ counts it once it is. The pills stay as they
+  // are (and the one with the keyboard keeps it): what the Remote holds does not change the band.
+  onSync(() => paintAdd());
 
   /** The repo worked on as Forge last knew it: chosen anew elsewhere (Git, Home, File), Forge follows. */
   let known = ctx.repo;
