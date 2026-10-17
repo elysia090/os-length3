@@ -127,7 +127,7 @@ domain (`ren@ren.dev`), and found by its code as well. Both are claimed in
 the same namespace, so `ren` and `trip` cannot be the same name. A person may have several addresses: aliases of one principal, one
 of them shown. Everything else belongs to exactly one principal: a repo to
 a person (a server's own repos come next; there is no fork), a board with
-its plan and talk to its server.
+its talk and TODO to its server.
 
 Who sees a repo is one of three: only its owner; the servers it is shown
 in, whose people see whose it is; or everyone. Everyone sees it under the
@@ -165,7 +165,7 @@ nobody else can take it and be taken for its owner:
 | a server | its people (its owner removes it) | its Remote | removed, or its last person leaves: 30 days, then gone |
 | a repo shown in a server | its owner, lent to the server | its Remote | taken off, or its owner leaves the server: at once |
 | a repo's public name (`face:name`) | its owner, under a face | the face (the server, or the owner's address) | taken down, or the face goes: 30 days no one else's repo answers to it |
-| a board, its plan and talk | its server | its Remote | with its server, or removed |
+| a board, its talk and TODO | its server | its Remote | with its server, or removed |
 | a copy on a device | the device | the digests | taken back whenever room is wanted (owned.rs) |
 | a session, a code, a guest | the person, the address it was sent to | sign-in, mail | a lease: days for a session, minutes for a code, 30 days for a guest |
 
@@ -514,12 +514,11 @@ Shift+Enter is a new line.
 
 Every other purpose is about a repo: one edits it, walks it, decides on it,
 keeps it, sends it. Server is the one whose subject is people: the people
-you know, for talking loosely and for planning in earnest. Inbox is one
+you know, to talk with and get things done together. Inbox is one
 person to one person, about something that asks for an answer; a server is
 a group, and nobody in it is asked for anything. A repo belongs to a person,
 who may show it in a server: there it is only seen, as it was last pushed
-(§0, Names). A server's own repos are what comes next, and then its plans
-can live in one.
+(§0, Names). A server's own repos are what comes next.
 
 A server is a name and its people. Someone already in it adds people from
 their own Inbox contacts, so a server is people who know each other; anyone
@@ -527,20 +526,23 @@ may leave, the owner may remove someone, and the last to leave takes it
 with them. Its boards are what its people talk about, each one thing (a
 trip, a release, a reading group), and each holds two things:
 
-- **the plan**: one text its people write together, version by version.
-  An edit goes to the Remote as what it changed (hunks of lines, against
-  the version it was made on), and is merged with what came meanwhile:
-  changes in different places both stay; where someone else changed the
-  same lines, nothing is overwritten, and the writer is shown theirs with
-  Take theirs and Keep mine over it.
-- **the talk** around it: short posts, read as a conversation.
+- **the talk**: short posts, read as a conversation. Deciding what to do
+  is talk too; there is no document to write together.
+- **its TODO**: the same list as Home's, in the same box, written the same
+  way (Kind：title, Enter for the detail, ○ when done), kept by its people
+  together. It goes to the Remote item by item and field by field, a moment
+  after the writing stops, so two people writing different items, or one
+  ticking what another is detailing, never undo each other; only the very
+  same field written twice keeps the last. A new item takes a place between
+  its neighbours'. What others change comes in every little while, and
+  waits while one is writing in the box.
 
 How far a board goes is chosen board by board, and only ever wider by
 choice: its server's people always; if opened, anyone reads it (signed in
 or not); and if it takes guests, an outsider may write in it once they have
 shown an email address is theirs, by a six-digit code sent to it (one a
 minute, ten minutes to use, five wrong tries spend it). Everything is kept
-on the Remote, and any board can be taken home as one text (its plan, its
+on the Remote, and any board can be taken home as one text (its TODO, its
 talk, or both), in the app or with `l3 server get`.
 
 Server is an operation, as File is: laid over whatever page is showing,
@@ -553,11 +555,12 @@ one is in run as chips on the top line, with + to make one, and the
 server's gear at its right end. Under them the server's boards are boxes
 side by side, as the issues are: the board on screen in full, its
 neighbours' edges showing their names; an edge (or ← →) is the way to
-them, and the last box makes a new board. A board's plan is pinned at the
-top of its box, as tall as it is written (up to about a third of the box,
-then it scrolls in itself), written there in place by its people and saved
-on its own; its talk runs under it. Nothing is switched to see one or the
-other. The prompt box's plain box at the foot writes in the board on screen
+them, and the last box makes a new board. A board's TODO is pinned at the
+top of its box, as tall as its items (up to about a third of the box, then
+it scrolls in itself; its hints show while one writes in it), and its talk
+runs under it. Nothing is switched to see one or the other. Outside the
+server, an open board's TODO is shown, not written, and not at all while
+it is empty. The prompt box's plain box at the foot writes in the board on screen
 (Enter sends, Shift+Enter is a new line), saying whom it goes to (To the
 people of Trip).
 
@@ -573,7 +576,7 @@ its owner removes someone), the repos shown (one's own shown or taken off;
 its owner may take any off), its boards (how far each is open, its owner's
 to say; taking one home, anyone's), and leaving it or, its owner, removing
 it. What reaches past its people asks first, in its own place, saying what
-will happen (Anyone, signed in or not, will read #plan), and waits for a
+will happen (Anyone, signed in or not, will read #general), and waits for a
 yes; closing it again is at once. Removing and leaving ask by the button
 itself saying the question for a moment. No Prompt is in Server: Server is
 for people, the Prompt for a repo. Signed out, it shows the open boards

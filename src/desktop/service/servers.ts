@@ -1,15 +1,11 @@
 // Servers: the one thing whose subject is people, not a repo. A server is a
 // group of people who know each other (each added by someone already in it,
-// from their Inbox contacts), for talking loosely and for planning in
-// earnest. Its boards are what they talk about: each holds a plan, one text
-// its people write together, and the discussion around it, short posts read
-// as a conversation. (A repo belongs to a person, who may show it in a
+// from their Inbox contacts). Its boards are what they talk about: each is a
+// conversation, short posts read as a chat is, and a TODO they keep
+// together, the same list as Home's (src/todo.ts), kept here item by item
+// and field by field so that two people writing never undo each other but
+// on the very same field. (A repo belongs to a person, who may show it in a
 // server, only to be seen there: seen.ts. A server's own repos come next.)
-//
-// The plan is changed by hunks of lines against the version they were made
-// on (src/plan.ts): a change made on an older version is merged with what
-// came meanwhile, and where two people changed the same lines differently
-// nothing is overwritten: the writer is shown the plan as it now is.
 //
 // A board is its server's people's alone unless opened, board by board:
 // `open`, anyone reads it (signed in or not); `guests`, an outsider may write
@@ -26,31 +22,36 @@
 //   POST   /v1/servers/ID/people             {address}: one of my contacts
 //   DELETE /v1/servers/ID/people/ADDR        leave (one's own), or its owner removes
 //   POST   /v1/servers/ID/boards             {name}
-//   GET    /v1/boards/ID                     the board, its plan and version, its people
+//   GET    /v1/boards/ID                     the board and its people
 //   PATCH  /v1/boards/ID                     {name?, open?, guests?}: open and guests its server's owner's
 //   DELETE /v1/boards/ID
-//   PUT    /v1/boards/ID/plan                {base, hunks}
+//   GET    /v1/boards/ID/todos               its TODO, in order
+//   PUT    /v1/boards/ID/todos/TID           {kind?, title?, detail?, done?, place?, created?}: what changed of an item, or a new one
+//   DELETE /v1/boards/ID/todos/TID
 //   GET    /v1/boards/ID/posts               ?before= | ?after= | ?from=&to=
 //   POST   /v1/boards/ID/posts               {body}
 //   DELETE /v1/boards/ID/posts/PID           its writer's, or the server owner's
-//   GET    /v1/boards/ID/archive             ?from=&to=&plan=0|1&talk=0|1: markdown
+//   GET    /v1/boards/ID/archive             ?from=&to=&todo=0|1&talk=0|1: markdown
 // and, for anyone, on open boards (and guests on boards that take them):
 //   GET    /v1/open                          the open boards
-//   GET    /v1/open/ID | /posts | /archive
+//   GET    /v1/open/ID | /todos | /posts | /archive
 //   POST   /v1/open/ID/guest                 {email}: a code is sent to it
 //   POST   /v1/open/ID/guest/check           {email, code}: a token to write with
 //   POST   /v1/open/ID/posts                 {body}, with X-Guest: token
 
 import {and, asc, desc, eq, gt, gte, inArray, isNull, lt, lte, sql} from 'drizzle-orm';
 import type {Context, Hono} from 'hono';
-import {hunks, lines, merge, text, valid} from '../src/plan.ts';
 import {claim, codeOf, HOLD, live, release} from './names.ts';
 import {takeDown} from './seen.ts';
-import {address, board, contact, guest, member, planVersion, repoPublic, repoShare, server, talk} from './schema.ts';
+import {address, board, contact, guest, member, repoPublic, repoShare, server, talk, todoItem} from './schema.ts';
 
-export const SERVER = {name: 64, body: 2000, plan: 64 * 1024, perHour: 60, page: 30, maxPage: 100, servers: 50, boards: 100,
+export const SERVER = {name: 64, body: 2000, perHour: 60, page: 30, maxPage: 100, servers: 50, boards: 100,
+  /** A board's TODO: as long as Home's items may be (src/todo.ts), and so many of them. */
+  todo: {title: 200, detail: 4000, items: 500},
   /** A guest's code: how long it holds, how many wrong tries spend it, how soon another may be sent. */
-  code: {minutes: 10, tries: 5, again: 60_000}, versions: 200} as const;
+  code: {minutes: 10, tries: 5, again: 60_000}} as const;
+const TODO_ID = /^[0-9a-z-]{1,40}$/;
+const KIND = /^[A-Za-z][A-Za-z0-9-]{0,15}$/;
 const ID = /^[0-9a-z]{17}$/;
 const KEY = /^[0-9a-z]{12}$/;
 const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/;
@@ -122,7 +123,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
 
   const boardJson = async (b: Board) => {
     const [s] = await db.select().from(server).where(eq(server.id, b.serverId));
-    return {id: b.id, server: {id: s.id, name: s.name, address: s.address}, name: b.name, plan: b.plan, version: b.version, open: !!b.open, guests: !!b.guests};
+    return {id: b.id, server: {id: s.id, name: s.name, address: s.address}, name: b.name, open: !!b.open, guests: !!b.guests};
   };
   const people = async (serverId: string) =>
     (await db.select({address: member.address, owner: member.owner}).from(member).where(eq(member.serverId, serverId)).orderBy(member.addedAt))
@@ -131,7 +132,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   // ---- servers ----
   v1.get('/servers', async (c) => {
     const me = c.get('userId');
-    // Held long enough: gone for good (its boards, plans and talk with it).
+    // Held long enough: gone for good (its boards, their TODOs and talk with it).
     await db.delete(server).where(lt(server.goneAt, new Date(Date.now() - HOLD)));
     if (c.req.query('gone') === '1') {
       const held = await db.select({id: server.id, name: server.name, address: server.address, at: server.goneAt}).from(server)
@@ -301,33 +302,49 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     return c.body(null, 204);
   });
 
-  // ---- the plan ----
-  v1.put('/boards/:id/plan', async (c) => {
-    const me = c.get('userId');
-    const at = await mine(c.req.param('id'), me);
+  // ---- its TODO: Home's list, kept together ----
+  type Item = typeof todoItem.$inferSelect;
+  const todoJson = (r: Item) => ({id: r.id, kind: r.kind, title: r.title, detail: r.detail, done: !!r.done, place: r.place, created: r.created, by: r.by});
+  const todos = async (b: Board) =>
+    (await db.select().from(todoItem).where(eq(todoItem.boardId, b.id)).orderBy(asc(todoItem.place), asc(todoItem.created)) as Item[]).map(todoJson);
+
+  v1.get('/boards/:id/todos', async (c) => {
+    const at = await mine(c.req.param('id'), c.get('userId'));
     if (!at) return c.json({error: 'no such board of yours'}, 404);
-    const r = await c.req.json().catch(() => null) as {base?: unknown; hunks?: unknown} | null;
-    const base = Number(r?.base);
-    if (!Number.isInteger(base) || base < 0 || base > at.b.version) return c.json({error: 'a version'}, 400);
-    // What the change was made on: the plan then.
-    const then = base === at.b.version ? at.b.plan
-      : base === 0 ? '' : ((await db.select({t: planVersion.text}).from(planVersion).where(and(eq(planVersion.boardId, at.b.id), eq(planVersion.version, base))))[0] as {t: string} | undefined)?.t;
-    if (then === undefined) return c.json({error: 'that version is no longer kept', plan: at.b.plan, version: at.b.version}, 409);
-    const was = lines(then);
-    if (!valid(r?.hunks, was.length)) return c.json({error: 'hunks of that version'}, 400);
-    const now = lines(at.b.plan);
-    const out = base === at.b.version ? merge(was, r!.hunks as never, []) : merge(was, r!.hunks as never, hunks(was, now));
-    // The same lines changed differently: nothing is overwritten; the writer is shown the plan as it is.
-    if (!out) return c.json({error: 'changed meanwhile', plan: at.b.plan, version: at.b.version}, 409);
-    const plan = text(out);
-    if (plan.length > SERVER.plan) return c.json({error: `a plan of at most ${SERVER.plan} characters`}, 413);
-    const version = at.b.version + 1;
-    // Only over the version read: a change that came in between makes this one try again.
-    const moved = await db.update(board).set({plan, version}).where(and(eq(board.id, at.b.id), eq(board.version, at.b.version))).returning({id: board.id});
-    if (!moved.length) return c.json({error: 'changed meanwhile', ...await boardJson((await boardOf(at.b.id))!)}, 409);
-    await db.insert(planVersion).values({boardId: at.b.id, version, text: plan, by: at.m.address});
-    await db.delete(planVersion).where(and(eq(planVersion.boardId, at.b.id), lte(planVersion.version, version - SERVER.versions)));
-    return c.json({plan, version, merged: base !== at.b.version});
+    return c.json(await todos(at.b));
+  });
+
+  // What changed of one item, field by field (a new one: all of it): others' changes to its other fields stay.
+  v1.put('/boards/:id/todos/:tid', async (c) => {
+    const at = await mine(c.req.param('id'), c.get('userId'));
+    if (!at) return c.json({error: 'no such board of yours'}, 404);
+    const tid = c.req.param('tid');
+    if (!TODO_ID.test(tid)) return c.json({error: 'an item'}, 400);
+    const r = await c.req.json().catch(() => null) as Record<string, unknown> | null;
+    const set: Partial<Item> = {};
+    if (r?.kind !== undefined) { if (r.kind !== null && (typeof r.kind !== 'string' || !KIND.test(r.kind))) return c.json({error: 'a kind'}, 400); set.kind = r.kind; }
+    if (r?.title !== undefined) { if (typeof r.title !== 'string' || r.title.length > SERVER.todo.title) return c.json({error: 'a title'}, 400); set.title = r.title; }
+    if (r?.detail !== undefined) { if (typeof r.detail !== 'string' || r.detail.length > SERVER.todo.detail) return c.json({error: 'a detail'}, 400); set.detail = r.detail; }
+    if (r?.done !== undefined) { if (typeof r.done !== 'boolean') return c.json({error: 'done'}, 400); set.done = r.done ? 1 : 0; }
+    if (r?.place !== undefined) { if (typeof r.place !== 'number' || !Number.isFinite(r.place)) return c.json({error: 'a place'}, 400); set.place = r.place; }
+    const where = and(eq(todoItem.boardId, at.b.id), eq(todoItem.id, tid));
+    const changed = Object.keys(set).length
+      ? await db.update(todoItem).set({...set, updatedAt: new Date()}).where(where).returning() as Item[]
+      : await db.select().from(todoItem).where(where) as Item[];
+    if (changed.length) return c.json(todoJson(changed[0]));
+    const [{n}] = await db.select({n: sql<number>`count(*)`}).from(todoItem).where(eq(todoItem.boardId, at.b.id));
+    if (Number(n) >= SERVER.todo.items) return c.json({error: 'too many items'}, 429);
+    const created = typeof r?.created === 'number' && Number.isInteger(r.created) ? r.created : Date.now();
+    const [made] = await db.insert(todoItem).values({boardId: at.b.id, id: tid, title: '', detail: '', done: 0, place: 0, ...set, by: at.m.address, created})
+      .onConflictDoUpdate({target: [todoItem.boardId, todoItem.id], set: {...set, updatedAt: new Date()}}).returning() as Item[];
+    return c.json(todoJson(made), 201);
+  });
+
+  v1.delete('/boards/:id/todos/:tid', async (c) => {
+    const at = await mine(c.req.param('id'), c.get('userId'));
+    if (!at) return c.json({error: 'no such board of yours'}, 404);
+    await db.delete(todoItem).where(and(eq(todoItem.boardId, at.b.id), eq(todoItem.id, c.req.param('tid'))));
+    return c.body(null, 204);
   });
 
   // ---- the discussion ----
@@ -377,11 +394,18 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     return gone.length ? c.body(null, 204) : c.json({error: 'no such post of yours'}, 404);
   });
 
-  // ---- taken home: the plan and the discussion as text ----
+  // ---- taken home: the TODO and the discussion as text ----
   const archive = async (b: Board, q: Record<string, string>) => {
     const s = await boardJson(b);
     const out: string[] = [`# ${s.server.name} / ${b.name}`, ''];
-    if (q.plan !== '0') out.push(`## Plan (version ${b.version})`, '', b.plan || '(empty)', '');
+    if (q.todo !== '0') {
+      out.push('## TODO', '');
+      for (const t of await todos(b)) {
+        out.push(`- [${t.done ? 'x' : ' '}] ${t.kind ? `${t.kind}：` : ''}${t.title}`);
+        if (t.detail) out.push(...t.detail.split('\n').map((l) => `  ${l}`));
+      }
+      out.push('');
+    }
     if (q.talk !== '0') {
       const at = (k: string) => (q[k] && ID.test(q[k]) ? q[k] : null);
       const [from, to] = [at('from'), at('to')];
@@ -392,7 +416,9 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       for (const p of rows) {
         const t = new Date(timeOf(p.id)).toISOString();
         if (t.slice(0, 10) !== day) { day = t.slice(0, 10); out.push(`### ${day}`, ''); }
-        out.push(`- ${t.slice(11, 16)} ${p.by}${p.guestId ? ' (guest)' : ''}: ${p.body.replace(/\n/g, '\n  ')}`);
+        // A name on this Remote alone, as the app shows it.
+        const by = p.by.endsWith(`@${d.domain}`) ? p.by.slice(0, -d.domain.length - 1) : p.by;
+        out.push(`- ${t.slice(11, 16)} ${by}${p.guestId ? ' (guest)' : ''}: ${p.body.replace(/\n/g, '\n  ')}`);
       }
       out.push('');
     }
@@ -418,6 +444,10 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   app.get('/v1/open/:id', async (c) => {
     const b = await open(c.req.param('id'));
     return b ? c.json(await boardJson(b), 200, anyone) : c.json({error: 'no such open board'}, 404);
+  });
+  app.get('/v1/open/:id/todos', async (c) => {
+    const b = await open(c.req.param('id'));
+    return b ? c.json(await todos(b), 200, anyone) : c.json({error: 'no such open board'}, 404);
   });
   app.get('/v1/open/:id/posts', async (c) => {
     const b = await open(c.req.param('id'));

@@ -14,7 +14,7 @@
 // which the receiver reviews and merges or rejects.
 
 import {sql} from 'drizzle-orm';
-import {bigint, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex} from 'drizzle-orm/pg-core';
+import {bigint, doublePrecision, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex} from 'drizzle-orm/pg-core';
 import {user} from './schema.auth.ts';
 
 export * from './schema.auth.ts';
@@ -227,11 +227,11 @@ export const signal = pgTable('signal', {
 // ---- Servers (servers.ts) ----
 //
 // A server is the one thing whose subject is people, not a repo: a group of
-// people who know each other, and its boards are what they talk about and
-// plan. A board holds a plan (one text its people write, version by version)
-// and the discussion around it (short posts). A board is its server's people's
-// alone unless it is opened: to be read by anyone, and to be written in by an
-// outsider who has shown an email address is theirs (a guest).
+// people who know each other, and its boards are what they talk about. A
+// board is a conversation (short posts) and a TODO its people keep together,
+// the same list as Home's. A board is its server's people's alone unless it
+// is opened: to be read by anyone, and to be written in by an outsider who
+// has shown an email address is theirs (a guest).
 
 /**
  * A server: what it is called (any words), the principal name it is known
@@ -259,29 +259,39 @@ export const member = pgTable('server_member', {
 }, (t) => [primaryKey({columns: [t.serverId, t.userId]}), index('server_member_user_idx').on(t.userId)]);
 
 /**
- * A board: its plan as it is now and its version (the plan's past versions
- * are planVersion's), and how far it is open: `open` (anyone reads it),
+ * A board: one thing its server's people talk about, with a TODO they keep
+ * together (todoItem), and how far it is open: `open` (anyone reads it),
  * `guests` (an outsider with a checked email may write in it).
  */
 export const board = pgTable('server_board', {
   id: text('id').primaryKey(),
   serverId: text('server_id').notNull().references(() => server.id, {onDelete: 'cascade'}),
   name: text('name').notNull(),
-  plan: text('plan').notNull().default(''),
-  version: integer('version').notNull().default(0),
   open: integer('open').notNull().default(0),
   guests: integer('guests').notNull().default(0),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (t) => [index('server_board_server_idx').on(t.serverId)]);
 
-/** A plan's versions: what each change was made on, so one made on an older one is merged, not overwriting. */
-export const planVersion = pgTable('server_plan_version', {
+/**
+ * An item of a board's TODO, the same as one of Home's (src/todo.ts): a
+ * kind and a title, its detail, done or not. Kept item by item, field by
+ * field, so two people writing different items, or different fields of one,
+ * never meet; the same field, the last write stays. `place` orders the list
+ * (a new item takes a place between its neighbours').
+ */
+export const todoItem = pgTable('server_todo', {
   boardId: text('board_id').notNull().references(() => board.id, {onDelete: 'cascade'}),
-  version: integer('version').notNull(),
-  text: text('text').notNull(),
+  id: text('id').notNull(),
+  kind: text('kind'),
+  title: text('title').notNull().default(''),
+  detail: text('detail').notNull().default(''),
+  done: integer('done').notNull().default(0),
+  place: doublePrecision('place').notNull().default(0),
+  /** Who wrote it first, as they are shown in the server. */
   by: text('by').notNull(),
-  at: timestamp('at').defaultNow().notNull(),
-}, (t) => [primaryKey({columns: [t.boardId, t.version]})]);
+  created: bigint('created', {mode: 'number'}).notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (t) => [primaryKey({columns: [t.boardId, t.id]})]);
 
 /** A post in a board's discussion: its id sorts as its time; `by` is all a reader is shown of who wrote it. */
 export const talk = pgTable('server_post', {

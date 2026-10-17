@@ -353,7 +353,7 @@ test('Inbox: an address is claimed or published by its domain; messages are smal
   assert.deepEqual((await s.call('GET', '/.well-known/length3')).json, {remote: BASE});
 });
 
-test('Servers: people who know each other, boards with a plan written together and talk around it', async () => {
+test('Servers: people who know each other, boards with talk and a TODO kept together', async () => {
   const s = await service();
   const ren = await s.start('Ren'), mio = await s.start('Mio'), kai = await s.start('Kai');
   // A server is made by someone with an address, and comes with a first board.
@@ -371,20 +371,25 @@ test('Servers: people who know each other, boards with a plan written together a
   assert.deepEqual((added.json as unknown as {address: string}[]).map((p) => p.address), ['ren@length3.test', 'mio@length3.test']);
   assert.deepEqual(((await s.call('GET', '/v1/servers', {token: mio})).json as unknown as {name: string}[]).map((x) => x.name), ['Trip']);
 
-  // The plan: changes by hunks against the version they were made on.
-  const {hunks, lines} = await import('../src/plan.ts');
-  const put = (t: string, base: number, from: string, to: string) => s.call('PUT', `/v1/boards/${bid}/plan`, {token: t, body: {base, hunks: hunks(lines(from), lines(to))}});
-  const v1 = await put(ren, 0, '', 'Trip\n- day 1: Kyoto\n- day 2: Nara');
-  assert.deepEqual([v1.status, v1.json.version], [200, 1]);
-  // Mio and Ren both start from version 1; Mio changes day 2, Ren adds day 3: both stay.
-  assert.equal((await put(mio, 1, 'Trip\n- day 1: Kyoto\n- day 2: Nara', 'Trip\n- day 1: Kyoto\n- day 2: Osaka')).status, 200);
-  const both = await put(ren, 1, 'Trip\n- day 1: Kyoto\n- day 2: Nara', 'Trip\n- day 1: Kyoto\n- day 2: Nara\n- day 3: home');
-  assert.deepEqual([both.status, both.json.plan, both.json.merged], [200, 'Trip\n- day 1: Kyoto\n- day 2: Osaka\n- day 3: home', true]);
-  // Kai is not in the server; Ren, from version 1 again, changes the line Mio changed: nothing is overwritten.
-  assert.equal((await put(kai, 3, '', 'x')).status, 404);
-  const clash = await put(ren, 1, 'Trip\n- day 1: Kyoto\n- day 2: Nara', 'Trip\n- day 1: Kyoto\n- day 2: Kobe');
-  assert.deepEqual([clash.status, clash.json.version], [409, 3]);
-  assert.equal((await s.call('PUT', `/v1/boards/${bid}/plan`, {token: ren, body: {base: 3, hunks: [{at: 99, del: 0, ins: ['x']}]}})).status, 400);
+  // Its TODO, kept together item by item: a new item takes its fields; a change sends only what changed.
+  const item = (t: string, id: string, body: unknown) => s.call('PUT', `/v1/boards/${bid}/todos/${id}`, {token: t, body});
+  assert.equal((await item(ren, 'a1', {title: 'Book the inn', place: 1, created: 1})).status, 201);
+  assert.equal((await item(mio, 'b2', {kind: 'Ask', title: 'Who drives?', place: 2, created: 2})).status, 201);
+  assert.equal((await item(kai, 'c3', {title: 'not in it', place: 3})).status, 404);
+  // Ren ticks the item while Mio writes its detail: both stay.
+  await item(ren, 'a1', {done: true});
+  await item(mio, 'a1', {detail: 'two nights, near the station'});
+  // An item put between two takes a place between theirs.
+  await item(ren, 'm1', {title: 'Train times', place: 1.5, created: 3});
+  type Item = {id: string; kind: string | null; title: string; detail: string; done: boolean; by: string};
+  const list = (await s.call('GET', `/v1/boards/${bid}/todos`, {token: mio})).json as unknown as Item[];
+  assert.deepEqual(list.map((x) => [x.id, x.kind, x.title, x.detail, x.done, x.by]), [
+    ['a1', null, 'Book the inn', 'two nights, near the station', true, 'ren@length3.test'],
+    ['m1', null, 'Train times', '', false, 'ren@length3.test'],
+    ['b2', 'Ask', 'Who drives?', '', false, 'mio@length3.test']]);
+  assert.equal((await item(ren, 'a1', {kind: 'not a kind!'})).status, 400);
+  assert.equal((await item(ren, 'a1', {title: 'x'.repeat(201)})).status, 400);
+  assert.equal((await s.call('DELETE', `/v1/boards/${bid}/todos/m1`, {token: mio})).status, 204);
 
   // The talk around it, newest first a page at a time.
   for (const [t, b] of [[ren, 'Kyoto first?'], [mio, 'yes'], [ren, 'booked']] as const) assert.equal((await s.call('POST', `/v1/boards/${bid}/posts`, {token: t, body: {body: b}})).status, 201);
@@ -394,13 +399,14 @@ test('Servers: people who know each other, boards with a plan written together a
   // A post is taken down by its writer (or the server's owner), no one else.
   assert.equal((await s.call('DELETE', `/v1/boards/${bid}/posts/${page.posts[0].id}`, {token: mio})).status, 404);
   assert.equal((await s.call('DELETE', `/v1/boards/${bid}/posts/${page.posts[1].id}`, {token: ren})).status, 204);
-  // Taken home as text: the plan, then the talk.
+  // Taken home as text: the TODO, then the talk.
   const home = await s.call('GET', `/v1/boards/${bid}/archive`, {token: mio});
   assert.equal(home.status, 200);
-  assert.match(home.text, /^# Trip \/ plan\n\n## Plan \(version 3\)\n\nTrip\n- day 1: Kyoto\n- day 2: Osaka\n- day 3: home\n\n## Discussion\n/);
-  assert.match(home.text, /ren@length3\.test: Kyoto first\?\n.*ren@length3\.test: booked\n/);
+  assert.match(home.text, /^# Trip \/ plan\n\n## TODO\n\n- \[x\] Book the inn\n  two nights, near the station\n- \[ \] Ask：Who drives\?\n\n## Discussion\n/);
+  assert.match(home.text, /ren: Kyoto first\?\n.*ren: booked\n/);
   assert.ok(!home.text.includes(': yes'));
   assert.ok(!(await s.call('GET', `/v1/boards/${bid}/archive?talk=0`, {token: mio})).text.includes('Discussion'));
+  assert.ok(!(await s.call('GET', `/v1/boards/${bid}/archive?todo=0`, {token: mio})).text.includes('## TODO'));
 
   // Closed, nobody else reads it; opened, anyone does, signed in or not.
   assert.equal((await s.call('GET', `/v1/open/${bid}/posts`)).status, 404);
@@ -409,6 +415,7 @@ test('Servers: people who know each other, boards with a plan written together a
   assert.equal((await s.call('PATCH', `/v1/boards/${bid}`, {token: ren, body: {open: true}})).status, 200);
   assert.deepEqual(((await s.call('GET', '/v1/open')).json as unknown as {name: string}[]).map((b) => b.name), ['plan']);
   assert.equal(((await s.call('GET', `/v1/open/${bid}/posts`)).json as unknown as {posts: unknown[]}).posts.length, 2);
+  assert.equal(((await s.call('GET', `/v1/open/${bid}/todos`)).json as unknown as unknown[]).length, 2);
   // A guest writes once the email is shown to be theirs, and only where guests are taken.
   assert.equal((await s.call('POST', `/v1/open/${bid}/guest`, {body: {email: 'aki@example.org'}})).status, 404);
   await s.call('PATCH', `/v1/boards/${bid}`, {token: ren, body: {guests: true}});

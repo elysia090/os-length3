@@ -1,9 +1,9 @@
 // Japanese for Server: servers of people one knows, their boards, each
-// board's plan and talk, its people and the repos they show, how far it is
+// board's talk and TODO, its people and the repos they show, how far it is
 // open, guests; and who sees a repo.
 export default {
   'People you know': '知り合い',
-  'A group of people you know, for talking loosely and planning in earnest. Each board holds a plan written together and the talk around it.': '知り合いの集まり。緩く話し、腰を据えて計画するための場所です。板ごとに、みんなで書く計画とその周りの話があります。',
+  'A group of people you know. Each board is a conversation and a TODO kept together.': '知り合いの集まり。板ごとに、話とみんなで持つ TODO があります。',
   'In no server yet': 'まだどのサーバーにも入っていません',
   // The boxes.
   'Boards': '板',
@@ -12,12 +12,12 @@ export default {
   'New board': '新しい板',
   'What it is about': '何についての板か',
   'Make': '作る',
-  'A board is one thing to talk about and plan: a trip, a release, a reading group.': '板はひとつの話題です。旅行、リリース、読書会のように、話して計画することひとつ。',
+  'A board is one thing to talk about, with a TODO kept together: a trip, a release, a reading group.': '板はひとつの話題です。話して、TODO をみんなで持ちます。旅行、リリース、読書会のように。',
   'Open boards': '公開されている板',
   'Make a server': 'サーバーを作る',
   'Its name': '名前',
   'A server needs your address. Claim one in Inbox.': 'サーバーにはあなたのアドレスが要ります。Inbox で取ってください。',
-  'A server is people you know: you add them from your Inbox contacts. Its boards each hold a plan you write together and the talk around it.': 'サーバーは知り合いの集まりです。Inbox の連絡先から人を入れます。板ごとに、みんなで書く計画とその周りの話があります。',
+  'A server is people you know: you add them from your Inbox contacts. Its boards are each a conversation and a TODO you keep together.': 'サーバーは知り合いの集まりです。Inbox の連絡先から人を入れます。板ごとに、話とみんなで持つ TODO があります。',
   'No board is open to everyone. Sign in to make a server with people you know.': '誰でも読める板はまだありません。サインインすると、知り合いとサーバーを作れます。',
   // The talk.
   'Posts': '投稿',
@@ -42,17 +42,8 @@ export default {
   'The code sent to it': '届いたコード',
   'Send a code': 'コードを送る',
   'Check': '確かめる',
-  // The plan, pinned at the top of the board.
-  'Plan': '計画',
-  'No plan yet': '計画はまだありません',
-  'What you are going to do, and why': '何を、なぜやるか',
-  'Version {n}': '第 {n} 版',
-  'Saving…': '保存中…',
-  'Saved · version {n}': '保存しました · 第 {n} 版',
-  'Saved with what others changed meanwhile · version {n}': 'ほかの人の変更と合わせて保存しました · 第 {n} 版',
-  'Someone changed the same lines meanwhile.': 'そのあいだに、ほかの人が同じ行を変えていました。',
-  'Take theirs': 'そちらを採る',
-  'Keep mine over it': '自分のを重ねる',
+  // A board's TODO, pinned at the top of it (Home's list, kept together).
+  'Something to do together': 'みんなでやること',
   // The right: who is in it, then the repos they show.
   'Who is in it, and the repos they show': '参加している人と、見せているリポジトリ',
   'People': '人',
@@ -86,7 +77,7 @@ export default {
   'Its people only': 'サーバーの人だけ',
   'Anyone can read it': '誰でも読める',
   'Outsiders can write, after an email check': '外の人もメールの確認のあとで書ける',
-  'Anyone, signed in or not, will read #{board}: its plan and its talk.': 'サインインしていない人も含めて誰でも #{board} の計画と話を読めるようになります。',
+  'Anyone, signed in or not, will read #{board}: its TODO and its talk.': 'サインインしていない人も含めて誰でも #{board} の TODO と話を読めるようになります。',
   'Open it': '開く',
   'Someone not in {server} will write in #{board} once a code sent to their email is checked.': '{server} にいない人も、メールに届いたコードを確かめれば #{board} に書けるようになります。',
   'Take guests': 'ゲストを受け入れる',

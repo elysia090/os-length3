@@ -27,9 +27,9 @@ const fn c(name: &'static str, group: &'static str, about: Words, forms: &'stati
 }
 
 pub const COMMANDS: &[Command] = &[
-    c("server", "Server", ["people you know: boards, each a plan and its talk", "知り合いの集まり: 板ごとに計画と話"], &[
+    c("server", "Server", ["people you know: boards, each a talk and a TODO kept together", "知り合いの集まり: 板ごとに話とみんなの TODO"], &[
         ("l3 server", ["each server you are in, and its boards", "入っているサーバーと、その板"]),
-        ("l3 server get SERVER[#BOARD] [--plan]", ["take boards home as text, here (the plan only with --plan)", "板をテキストでここに置く（--plan で計画だけ）"]),
+        ("l3 server get SERVER[#BOARD] [--todo]", ["take boards home as text, here (the TODO only with --todo)", "板をテキストでここに置く（--todo で TODO だけ）"]),
         ("l3 server post SERVER#BOARD \"text\"", ["write in a board", "板に書く"]),
     ], &["get", "post"], false),
     c("todo", "Home", ["Home's TODO", "Home の TODO"], &[

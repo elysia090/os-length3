@@ -157,12 +157,12 @@ the app.
 - Server (under Remote in the rail, laid over any page like File): the one
   purpose whose subject is people, not a repo (`service/servers.ts`). A
   server is people who know each other (added from someone's Inbox
-  contacts); its boards each hold a plan they write together and the talk
-  around it. The plan changes by hunks of lines against the version they
-  were made on (`src/plan.ts`, the same on both sides), merged with what
-  came meanwhile, never overwriting. Boards are boxes slid like the issues,
-  each with its plan pinned at its top, written in place, and its talk
-  under it; the plain box at the foot writes in the board on screen. The
+  contacts); its boards are each a conversation and a TODO they keep
+  together: Home's TODO box (`pages/todo-box.ts`), kept on the Remote item
+  by item and field by field, so people writing at once do not undo each
+  other. Boards are boxes slid like the issues, each with its TODO pinned
+  at its top and its talk under it; the plain box at the foot writes in
+  the board on screen. The
   right only shows who is in it and the repos they show in it (seen as last
   pushed). What changes it for everyone is behind its gear: people, repos
   shown, how far each board is open (its owner's, asked before it widens),

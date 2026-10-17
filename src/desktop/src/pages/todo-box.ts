@@ -3,13 +3,15 @@ import {t} from '../i18n.ts';
 import {getState, setState} from '../state.ts';
 import * as todo from '../todo.ts';
 
-// The TODO box on Home. Each item is written like a short note: the first
-// line names it the way issues are named here ("Fix：再起動すると保存内容が消える"),
-// Enter breaks to the detail lines, and Enter on an empty detail line starts
-// the next item. Typing "Kind：" at the start of the first line turns it into
-// the item's kind. A done item's first line is struck through and faded;
-// its detail stays readable. The box keeps its own DOM, so typing never
-// re-renders the page.
+// The TODO box, Home's and each server board's: the same list, kept in
+// different places (Home's state; the Remote, for a board's people). Each
+// item is written like a short note: the first line names it the way issues
+// are named here ("Fix：再起動すると保存内容が消える"), Enter breaks to the
+// detail lines, and Enter on an empty detail line starts the next item.
+// Typing "Kind：" at the start of the first line turns it into the item's
+// kind. A done item's first line is struck through and faded; its detail
+// stays readable. The box keeps its own DOM, so typing never re-renders the
+// page.
 
 const KIND_AT_START = /^\s*([A-Za-z][A-Za-z0-9-]{0,15})\s*[：:]\s*/;
 
@@ -49,19 +51,39 @@ interface Row {
   meta: HTMLElement;
 }
 
-export function todoBox(): HTMLElement {
-  let items = load();
-  const status = h('p', {class: 'error', role: 'alert'});
-  const remaining = h('small', {});
+/** A TODO list on screen: its box, and taking in the list as it now is elsewhere. */
+export interface TodoList {
+  element: HTMLElement;
+  /** Take in `list` as kept elsewhere: at once, or as soon as nothing in the box is being written. */
+  update(list: todo.Todo[]): void;
+}
+
+export interface TodoOptions {
+  /** Shown, not written: no field takes text, no mark is pressed. */
+  readOnly?: boolean;
+  /** What is left, in words ('2 of 3 left'), each time it changes. */
+  counted?: (text: string) => void;
+  /** Why it could not be kept, or '' once it is. */
+  failed?: (why: string) => void;
+  /** The first item's placeholder, while the list is empty. */
+  first?: string;
+}
+
+/** A TODO list kept by `keep` (given what is worth keeping, each time it changes). */
+export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promise<void>, o: TodoOptions = {}): TodoList {
+  let items = [...start];
   const list = h('div', {class: 'todo-items', role: 'list'});
   const rows = new Map<string, Row>();
 
   const save = () => {
     const kept = todo.persisted(items);
-    setState('todo', JSON.stringify(kept)).then(() => { status.textContent = ''; },
-      (e: unknown) => { status.textContent = t('Could not save: {message}', {message: e instanceof Error ? e.message : String(e)}); });
+    keep(kept).then(() => o.failed?.(''),
+      (e: unknown) => o.failed?.(t('Could not save: {message}', {message: e instanceof Error ? e.message : String(e)})));
+    count(kept);
+  };
+  const count = (kept: readonly todo.Todo[]) => {
     const open = kept.filter((td) => !td.done).length;
-    remaining.textContent = kept.length ? t('{open} of {all} left', {open, all: kept.length}) : '';
+    o.counted?.(kept.length ? t('{open} of {all} left', {open, all: kept.length}) : '');
   };
 
   const caret = (field: HTMLInputElement | HTMLTextAreaElement, at: 'start' | 'end') => {
@@ -93,6 +115,14 @@ export function todoBox(): HTMLElement {
   };
 
   const build = (td: todo.Todo): HTMLElement => {
+    if (o.readOnly) {
+      // Read, not written: the same lines, as text.
+      const kind = h('span', {class: 'todo-kind', ...(td.kind ? {} : {hidden: ''})}, td.kind ? `${td.kind}：` : '');
+      return h('div', {class: `todo-item${td.done ? ' done' : ''}`, role: 'listitem'},
+        h('div', {class: 'todo-head'}, h('span', {class: 'todo-mark', 'aria-label': td.done ? t('Done') : t('Not done')}, mark(td.done)), kind,
+          h('span', {class: 'todo-title'}, td.title), h('span', {class: 'todo-meta'}, date(td.created))),
+        td.detail ? h('div', {class: 'todo-detail todo-read'}, td.detail) : null);
+    }
     const button = h('button', {class: 'todo-mark', type: 'button'}) as HTMLButtonElement;
     const kind = h('span', {class: 'todo-kind'});
     const title = h('input', {class: 'todo-title', maxlength: String(todo.TEXT_LIMIT), 'aria-label': t('What to do'),
@@ -199,6 +229,7 @@ export function todoBox(): HTMLElement {
 
   /** There is always one empty item at the end to write into. */
   const ensureBlankEnd = () => {
+    if (o.readOnly) return;
     const last = items.at(-1);
     if (last && !todo.filled(last)) return;
     items = todo.insertAfter(items, null).list;
@@ -207,9 +238,10 @@ export function todoBox(): HTMLElement {
   };
 
   const placeholder = () => {
+    if (o.readOnly) return;
     for (const r of rows.values()) r.title.placeholder = '';
     const last = items.at(-1);
-    if (last) rows.get(last.id)!.title.placeholder = items.length === 1 ? t('Fix: Saved work is gone') : t('Next TODO');
+    if (last) rows.get(last.id)!.title.placeholder = items.length === 1 ? o.first ?? t('Fix: Saved work is gone') : t('Next TODO');
   };
 
   // Heights can only be measured once the fields are in the page.
@@ -225,11 +257,34 @@ export function todoBox(): HTMLElement {
   };
 
   render();
-  save();
-  const hint = h('p', {class: 'todo-hint'},
+  if (o.readOnly) count(todo.persisted(items)); else save();
+  const hint = o.readOnly ? null : h('p', {class: 'todo-hint'},
     h('span', {}, t('First line as Kind: title')), h('span', {}, t('Enter for the detail')), h('span', {}, t('Enter on an empty line for the next TODO')),
     h('span', {}, t('○ or Ctrl+Enter when done')));
+  const element = h('div', {class: 'todo-box'}, list, hint);
+  // What came from elsewhere waits while something here is being written.
+  let waiting: todo.Todo[] | null = null;
+  const writing = () => element.contains(document.activeElement);
+  element.addEventListener('focusout', () => setTimeout(() => {
+    if (waiting && !writing()) { items = waiting; waiting = null; render(); count(todo.persisted(items)); }
+  }, 0));
+  return {
+    element,
+    update(next) {
+      if (writing()) { waiting = next; return; }
+      items = [...next];
+      render();
+      count(todo.persisted(items));
+    },
+  };
+}
+
+/** Home's TODO: one list for the person, kept in Home's state (the same file l3 todo reads). */
+export function todoBox(): HTMLElement {
+  const status = h('p', {class: 'error', role: 'alert'});
+  const remaining = h('small', {});
+  const box = todoList(load(), (kept) => setState('todo', JSON.stringify(kept)),
+    {counted: (text) => { remaining.textContent = text; }, failed: (why) => { status.textContent = why; }});
   return h('section', {class: 'section', 'aria-labelledby': 'todo-title'},
-    h('h2', {id: 'todo-title'}, 'TODO', remaining),
-    h('div', {class: 'todo-box'}, list, hint), status);
+    h('h2', {id: 'todo-title'}, 'TODO', remaining), box.element, status);
 }

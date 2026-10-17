@@ -1,8 +1,8 @@
 //! Servers from the device (service/servers.ts): the one thing whose subject
 //! is people, not a repo. A server is a group of people who know each other;
-//! each of its boards holds a plan they write together and the talk around
-//! it. All of it is kept on the Remote; any board can be taken home here as
-//! one text (its plan, its talk, or both).
+//! each of its boards is a conversation and a TODO they keep together. All of
+//! it is kept on the Remote; any board can be taken home here as one text
+//! (its TODO, its talk, or both).
 
 use crate::remote::Client;
 use serde::{Deserialize, Serialize};
@@ -48,9 +48,9 @@ pub fn find(target: &str) -> Result<(Server, Vec<Board>)> {
     Ok((server, boards))
 }
 
-/// A board as one markdown text: its plan, its talk, or both.
-pub fn archive(board: &str, plan: bool, talk: bool) -> Result<String> {
-    Client::open()?.text(&format!("/v1/boards/{board}/archive?plan={}&talk={}", u8::from(plan), u8::from(talk)))
+/// A board as one markdown text: its TODO, its talk, or both.
+pub fn archive(board: &str, todo: bool, talk: bool) -> Result<String> {
+    Client::open()?.text(&format!("/v1/boards/{board}/archive?todo={}&talk={}", u8::from(todo), u8::from(talk)))
 }
 
 /// Write in a board, as one of its people.

@@ -1,6 +1,7 @@
 // Servers on the Remote (service/servers.ts): groups of people who know
-// each other, whose boards each hold a plan written together and the talk
-// around it. The one thing whose subject is people, not a repo.
+// each other, whose boards are each a conversation and a TODO kept together
+// (Home's list, src/todo.ts). The one thing whose subject is people, not a
+// repo.
 //
 // A board's talk is pages, each the range of ids it was read as (its newest
 // and oldest). A page's posts can be let go of and read again by that range
@@ -8,14 +9,14 @@
 // what is near the screen however far they scroll.
 
 import {api, connection, json, RemoteError} from './remote.ts';
-import {hunks, lines} from './plan.ts';
+import type {Todo} from './todo.ts';
 import {t} from './i18n.ts';
 
 export interface BoardRef { id: string; name: string; open: boolean; guests: boolean }
 /** A server: what it is called, and its name as a principal (name@domain, in the namespace people's addresses are in). */
 export interface Server { id: string; name: string; address: string; owner: boolean; boards: BoardRef[]; code: string; until: number | null }
 export interface Person { address: string; owner: boolean }
-export interface Board { id: string; server: {id: string; name: string; address: string}; name: string; plan: string; version: number; open: boolean; guests: boolean; people?: Person[] }
+export interface Board { id: string; server: {id: string; name: string; address: string}; name: string; open: boolean; guests: boolean; people?: Person[] }
 /** A post as the Remote gives it: `by` is all a reader is shown of who wrote it. */
 export interface Post { id: string; by: string; body: string; at: number; guest?: boolean; mine?: boolean; mayTakeDown?: boolean }
 export interface OpenBoard { id: string; name: string; server: string; guests: boolean }
@@ -63,13 +64,57 @@ export const openBoards = () => json<OpenBoard[]>('/v1/open');
 export const board = (id: string, member: boolean) => call<Board>(member ? `/v1/boards/${id}` : `/v1/open/${id}`);
 export const setBoard = (id: string, change: {name?: string; open?: boolean; guests?: boolean}) => call<Board>(`/v1/boards/${id}`, send('PATCH', change));
 
-export type Saved = {ok: true; plan: string; version: number; merged: boolean} | {ok: false; plan: string; version: number};
-/** Send what changed in the plan, against the version it was made on; the Remote merges it with what came meanwhile, or says it could not. */
-export async function savePlan(id: string, base: number, was: string, now: string): Promise<Saved> {
-  const r = await api(`/v1/boards/${id}/plan`, send('PUT', {base, hunks: hunks(lines(was), lines(now))}));
-  if (r.status === 409) { const b = await r.json() as {plan: string; version: number}; return {ok: false, plan: b.plan, version: b.version}; }
-  if (!r.ok) throw await failed(r);
-  return {ok: true, ...await r.json() as {plan: string; version: number; merged: boolean}};
+// ---- a board's TODO: Home's list, kept on the Remote item by item ----
+/** An item as a board keeps it: Home's, with its place in the list and who wrote it first. */
+export interface BoardTodo extends Todo { place: number; by: string }
+export const todos = (id: string, member: boolean) => call<BoardTodo[]>(member ? `/v1/boards/${id}/todos` : `/v1/open/${id}/todos`);
+const putTodo = (board: string, id: string, change: Partial<BoardTodo>) => call<BoardTodo>(`/v1/boards/${board}/todos/${encodeURIComponent(id)}`, send('PUT', change));
+const dropTodo = (board: string, id: string) => call<void>(`/v1/boards/${board}/todos/${encodeURIComponent(id)}`, send('DELETE'));
+
+/**
+ * A board's TODO as the TODO box keeps it: after a pause in writing, each
+ * item sends only what changed of it, so others' changes to its other fields
+ * stay (a new one sends all of it, at a place between its neighbours'), and
+ * each one taken out is taken off.
+ */
+export function todoKeeper(board: string, from: readonly BoardTodo[]) {
+  const had = new Map<string, BoardTodo>(from.map((x) => [x.id, x]));
+  let latest: Todo[] | null = null, wait = 0, busy = false;
+  const placeAt = (list: readonly Todo[], i: number) => {
+    const before = i > 0 ? had.get(list[i - 1].id)?.place : undefined;
+    const after = list.slice(i + 1).map((x) => had.get(x.id)?.place).find((p) => p !== undefined);
+    return before === undefined ? (after === undefined ? i : after - 1) : after === undefined ? before + 1 : (before + after) / 2;
+  };
+  const flush = async () => {
+    const list = latest!;
+    latest = null;
+    for (const [i, x] of list.entries()) {
+      const was = had.get(x.id);
+      const change: Partial<BoardTodo> = was ? {} : {place: placeAt(list, i), created: x.created};
+      for (const k of ['kind', 'title', 'detail', 'done'] as const) if (!was || x[k] !== was[k]) (change as Record<string, unknown>)[k] = x[k];
+      if (!Object.keys(change).length) continue;
+      const got = await putTodo(board, x.id, change);
+      had.set(x.id, got);
+    }
+    for (const id of [...had.keys()]) if (!list.some((x) => x.id === id)) { await dropTodo(board, id); had.delete(id); }
+  };
+  return {
+    save(kept: Todo[]): Promise<void> {
+      latest = kept;
+      clearTimeout(wait);
+      return new Promise((resolve, reject) => {
+        wait = window.setTimeout(async () => {
+          wait = 0;
+          busy = true;
+          try { while (latest) await flush(); resolve(); } catch (e) { reject(e); } finally { busy = false; }
+        }, 600);
+      });
+    },
+    /** Nothing written here is waiting to be sent. */
+    idle: () => !latest && !wait && !busy,
+    /** The list as the Remote has it now. */
+    took(list: readonly BoardTodo[]) { had.clear(); for (const x of list) had.set(x.id, x); },
+  };
 }
 
 // ---- the talk ----
@@ -110,9 +155,9 @@ export async function seeFile(as: string, sha: string): Promise<string> {
   return new TextDecoder().decode(await r.arrayBuffer());
 }
 
-/** The board taken home as text: its plan, its talk, or both. */
-export async function archive(id: string, member: boolean, what: {plan?: boolean; talk?: boolean} = {}): Promise<string> {
-  const r = await api(`${member ? `/v1/boards/${id}` : `/v1/open/${id}`}/archive?plan=${what.plan === false ? 0 : 1}&talk=${what.talk === false ? 0 : 1}`);
+/** The board taken home as text: its TODO, its talk, or both. */
+export async function archive(id: string, member: boolean, what: {todo?: boolean; talk?: boolean} = {}): Promise<string> {
+  const r = await api(`${member ? `/v1/boards/${id}` : `/v1/open/${id}`}/archive?todo=${what.todo === false ? 0 : 1}&talk=${what.talk === false ? 0 : 1}`);
   if (!r.ok) throw await failed(r);
   return r.text();
 }

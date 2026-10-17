@@ -64,6 +64,20 @@
       "when": 1792224520544,
       "tag": "0008_names_are_leased_and_coded",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792225313189,
+      "tag": "0009_boards_hold_no_plan",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792225325276,
+      "tag": "0010_a_board_keeps_a_todo",
+      "breakpoints": true
     }
   ]
 }

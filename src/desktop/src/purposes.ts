@@ -37,7 +37,7 @@ export const PURPOSES: readonly Purpose[] = [
     detail: 'Where the canonical copy lives. What you change is sent at once, and committing makes it history. Devices and passkeys are here too.', implemented: true},
   // Under the cloud: the people one knows, on the Remote, with what they show of their repos.
   {id: 'server', label: 'Server', role: 'People you know',
-    detail: 'A group of people you know, for talking loosely and planning in earnest. Each board holds a plan written together and the talk around it.', implemented: true},
+    detail: 'A group of people you know. Each board is a conversation and a TODO kept together.', implemented: true},
   {id: 'inbox', label: 'Inbox', role: 'Typed messages to you',
     detail: 'Review requests, changes, questions and more, each with what it is about and what to do.', implemented: true},
 ];

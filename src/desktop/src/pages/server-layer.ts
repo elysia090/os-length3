@@ -6,20 +6,20 @@ import {connection, RemoteError} from '../remote.ts';
 import * as servers from '../servers.ts';
 import type {Context} from './context.ts';
 import {postNow, timeline} from './talk.ts';
+import {todoList} from './todo-box.ts';
 
 // Server is an operation, as File is: laid over whatever page is showing,
 // never a page of its own. It is the one thing whose subject is people, not
-// a repo: a server is a group of people who know each other, for talking
-// loosely and planning in earnest, and each of its boards holds a plan they
-// write together and the talk around it.
+// a repo: a server is a group of people who know each other, and each of
+// its boards is a conversation and a TODO they keep together.
 //
 // It has the bench's shape. The servers one is in run as chips on the top
 // line (+ makes one), and at its right end the server's gear. Under them its
 // boards are boxes side by side, as the issues are: the board on screen in
 // full, its neighbours' edges showing, an edge (or ← →) the way to them, and
-// the last box a new board. A board's plan is pinned at the top of its box,
-// written there in place by its people; its talk runs under it, and the box
-// at the foot writes in it. On the right, where a repo's reference would be:
+// the last box a new board. A board's TODO, the same list as Home's, is
+// pinned at the top of its box, written there by its people; its talk runs
+// under it, and the box at the foot writes in it. On the right, where a repo's reference would be:
 // who is in the server, then the repos they show in it (pressing one shows
 // it as it was last pushed; a repo shown is only seen there, never written).
 //
@@ -100,7 +100,7 @@ export class ServerLayer {
   private trigger: HTMLElement | null = null;
   private timer = 0;
   private pinned = false;
-  /** Something being written here (a post, a plan, a name): it stays out while there is. */
+  /** Something being written here (a post, a TODO, a name): it stays out while there is. */
   private writing = (): boolean => false;
   /** Escape from behind the gear, or from a repo shown: back to the boards (true), or nothing to go back from. */
   private back = (): boolean => false;
@@ -233,64 +233,45 @@ export class ServerLayer {
       if (e.key === 'ArrowRight') { e.preventDefault(); go(k + 1); }
     });
 
-    /** A board's box: in full where it is on screen (its plan pinned at the top, its talk under it), only its name beside it. */
+    /** A board's box: in full where it is on screen (its TODO pinned at the top, its talk under it), only its name beside it. */
     const card = (b: Shown, now: boolean) => {
       const head = h('header', {class: 'board-head'}, h('span', {class: 'muted', 'aria-hidden': 'true'}, '#'), h('h2', {}, b.name),
         signedIn ? null : h('span', {class: 'muted small'}, b.server));
       if (!now) return h('div', {class: 'board-card'}, head);
-      const plan = h('section', {class: 'board-plan', 'aria-label': t('Plan')}, h('p', {class: 'muted small'}, '…'));
+      const todo = h('section', {class: 'board-todo', 'aria-label': 'TODO'});
       const talk = h('section', {class: 'board-talk', tabindex: '0', 'aria-label': b.name});
       talk.append(timeline(talk, b.id, b.member));
-      void servers.board(b.id, b.member).then((full) => plan.replaceChildren(...(b.member ? planEditor(full) : planRead(full))))
-        .catch((e) => plan.replaceChildren(h('p', {class: 'error'}, message(e))));
-      return h('div', {class: 'board-card'}, head, plan, talk);
+      void boardTodo(b, todo);
+      return h('div', {class: 'board-card'}, head, todo, talk);
     };
 
-    const planRead = (full: servers.Board): Node[] => [
-      h('div', {class: 'plan-head'}, h('span', {}, t('Plan')), full.version ? h('span', {class: 'muted'}, t('Version {n}', {n: full.version})) : null),
-      h('div', {class: 'plan-read'}, full.plan || t('No plan yet'))];
-
-    /** The plan, written where it is pinned: what changed is sent on its own, as hunks against the version it was made on. */
-    const planEditor = (full: servers.Board): Node[] => {
-      const field = h('textarea', {class: 'plan-in', rows: '1', 'aria-label': t('Plan'), placeholder: t('What you are going to do, and why')}) as HTMLTextAreaElement;
-      field.value = full.plan;
-      const fit = () => { field.style.height = 'auto'; field.style.height = `${field.scrollHeight + 2}px`; };
-      requestAnimationFrame(fit);
-      const state = h('span', {class: 'muted plan-state', role: 'status'});
-      let base = full.version, was = full.plan, sending = false, again = false, wait = 0;
-      const said = () => { state.textContent = base ? t('Version {n}', {n: base}) : ''; };
-      said();
-      writers.push(() => document.activeElement === field || field.value !== was);
-      const save = async () => {
-        clearTimeout(wait);
-        if (sending) { again = true; return; }
-        const now = field.value;
-        if (now === was) return;
-        sending = true;
-        state.textContent = t('Saving…');
-        try {
-          const r = await servers.savePlan(full.id, base, was, now);
-          if (r.ok) {
-            base = r.version; was = r.plan;
-            // Taken in with what others changed meanwhile: shown, unless more was typed since.
-            if (r.merged && field.value === now) { field.value = r.plan; fit(); }
-            state.textContent = r.merged ? t('Saved with what others changed meanwhile · version {n}', {n: base}) : t('Saved · version {n}', {n: base});
-          } else {
-            // The same lines changed by someone else: nothing is overwritten; both are offered.
-            const theirs = button(t('Take theirs'), 'small-button'), keep = button(t('Keep mine over it'), 'small-button');
-            theirs.addEventListener('click', () => { field.value = r.plan; fit(); base = r.version; was = r.plan; said(); });
-            keep.addEventListener('click', () => { base = r.version; was = r.plan; void save(); });
-            state.replaceChildren(t('Someone changed the same lines meanwhile.'), ' ', theirs, ' ', keep,
-              h('pre', {class: 'plan-theirs'}, r.plan));
-          }
-        } catch (e) { state.textContent = message(e); } finally {
-          sending = false;
-          if (again) { again = false; void save(); }
-        }
-      };
-      field.addEventListener('input', () => { fit(); clearTimeout(wait); wait = window.setTimeout(() => void save(), 1200); });
-      field.addEventListener('blur', () => void save());
-      return [h('div', {class: 'plan-head'}, h('span', {}, t('Plan')), state), field];
+    /**
+     * A board's TODO, pinned at the top of its box: Home's list, kept
+     * together on the Remote (shown, not written, outside the server; not
+     * shown at all there while it is empty). What others change is taken in
+     * every little while, whenever nothing written here is waiting.
+     */
+    const boardTodo = async (b: Shown, holder: HTMLElement) => {
+      const left = h('small', {class: 'muted'});
+      const status = h('p', {class: 'error small', role: 'alert'});
+      let list: servers.BoardTodo[];
+      try { list = await servers.todos(b.id, b.member); } catch (e) { holder.replaceChildren(h('p', {class: 'error'}, message(e))); return; }
+      if (!b.member && !list.length) { holder.remove(); return; }
+      const keeper = b.member ? servers.todoKeeper(b.id, list) : null;
+      const box = todoList(list, keeper ? (kept) => keeper.save(kept) : async () => {},
+        {readOnly: !b.member, first: t('Something to do together'), counted: (x) => { left.textContent = x; }, failed: (why) => { status.textContent = why; }});
+      writers.push(() => holder.contains(document.activeElement) || (keeper ? !keeper.idle() : false));
+      holder.replaceChildren(h('div', {class: 'board-todo-head'}, h('span', {}, 'TODO'), left), box.element, status);
+      let seen = JSON.stringify(list);
+      const again = window.setInterval(async () => {
+        if (!holder.isConnected) { clearInterval(again); return; }
+        if (keeper && !keeper.idle()) return;
+        const now = await servers.todos(b.id, b.member).catch(() => null);
+        if (!now || (keeper && !keeper.idle()) || JSON.stringify(now) === seen) return;
+        seen = JSON.stringify(now);
+        keeper?.took(now);
+        box.update(now);
+      }, 15_000);
     };
 
     /** The last box: a new board in this server. */
@@ -313,7 +294,7 @@ export class ServerLayer {
       name.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); void done(); } });
       return h('div', {class: 'board-card board-new'},
         h('header', {class: 'board-head'}, h('span', {class: 'muted'}, '+'), h('h2', {}, t('New board'))),
-        h('div', {class: 'board-body'}, h('p', {class: 'muted'}, t('A board is one thing to talk about and plan: a trip, a release, a reading group.')),
+        h('div', {class: 'board-body'}, h('p', {class: 'muted'}, t('A board is one thing to talk about, with a TODO kept together: a trip, a release, a reading group.')),
           h('div', {class: 'row'}, name, make), error));
     };
 
@@ -374,7 +355,7 @@ export class ServerLayer {
       track.replaceChildren(h('div', {class: 'slide', 'aria-current': 'true'}, h('div', {class: 'board-card board-new'},
         h('header', {class: 'board-head'}, h('span', {class: 'muted'}, '+'), h('h2', {}, t('Make a server'))),
         h('div', {class: 'board-body'},
-          h('p', {}, t('A server is people you know: you add them from your Inbox contacts. Its boards each hold a plan you write together and the talk around it.')),
+          h('p', {}, t('A server is people you know: you add them from your Inbox contacts. Its boards are each a conversation and a TODO you keep together.')),
           name, h('div', {class: 'row server-address'}, handle), h('p', {class: 'muted small'}, t('Its name on this Remote, as a person has one: first come, nobody else\'s while it is the server\'s, for five years at a time, renewed by its owner.')),
           h('div', {class: 'row'}, make), error, back))));
       slides.classList.add('single');
@@ -599,7 +580,7 @@ export class ServerLayer {
           }
           const set = (change: {open?: boolean; guests?: boolean}) => servers.setBoard(b.id, change).then((n) => { b.open = n.open; b.guests = n.guests; });
           return h('div', {class: 'sheet-item'}, head,
-            reach(t('Anyone can read it'), t('Anyone, signed in or not, will read #{board}: its plan and its talk.', {board: b.name}), t('Open it'), b.open, (v) => set({open: v})),
+            reach(t('Anyone can read it'), t('Anyone, signed in or not, will read #{board}: its TODO and its talk.', {board: b.name}), t('Open it'), b.open, (v) => set({open: v})),
             reach(t('Outsiders can write, after an email check'), t('Someone not in {server} will write in #{board} once a code sent to their email is checked.', {server: s.name, board: b.name}), t('Take guests'), b.guests, (v) => set({guests: v})));
         });
 

@@ -10,6 +10,7 @@ export default {
   '{open} of {all} left': '残り {open} / {all}',
   'Mark as not done': '未完了に戻す',
   'Mark as done': '完了にする',
+  'Not done': '未完了',
   'What to do': 'やること',
   'Fix: Saved work is gone': 'Fix：保存内容が消える',
   'Next TODO': '次のTODO',

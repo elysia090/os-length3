@@ -23,11 +23,11 @@ struct Args {
     detail: String,
     template: String,
     network: bool,
-    plan: bool,
+    todo: bool,
 }
 
 fn parse(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args { words: Vec::new(), json: false, detail: String::new(), template: "standard".into(), network: false, plan: false };
+    let mut a = Args { words: Vec::new(), json: false, detail: String::new(), template: "standard".into(), network: false, todo: false };
     let mut it = raw.into_iter();
     while let Some(w) = it.next() {
         match w.as_str() {
@@ -35,7 +35,7 @@ fn parse(raw: Vec<String>) -> Result<Args, String> {
             "--" => { a.words.push(w); a.words.extend(it.by_ref()); }
             "--json" => a.json = true,
             "--network" => a.network = true,
-            "--plan" => a.plan = true,
+            "--todo" => a.todo = true,
             "-m" | "--detail" => a.detail = it.next().ok_or_else(|| tr!("-m needs the text after it", "-m の後に詳細を書いてください"))?,
             "-t" | "--template" => a.template = it.next().ok_or_else(|| tr!("-t needs a template after it", "-t の後にテンプレートを書いてください"))?,
             "-h" | "--help" => a.words.insert(0, "help".into()),
@@ -290,8 +290,8 @@ fn run(a: Args) -> Result<(), String> {
         ["server", "get", target] => {
             let (server, boards) = servers::find(target)?;
             for b in &boards {
-                let text = servers::archive(&b.id, true, !a.plan)?;
-                let name = format!("{}-{}{}.md", server.name, b.name, if a.plan { "-plan" } else { "" })
+                let text = servers::archive(&b.id, true, !a.todo)?;
+                let name = format!("{}-{}{}.md", server.name, b.name, if a.todo { "-todo" } else { "" })
                     .chars().map(|c| if c.is_alphanumeric() || matches!(c, '.' | '-' | '_') { c } else { '-' }).collect::<String>();
                 std::fs::write(&name, text).map_err(|e| e.to_string())?;
                 out(tr!("Wrote {}", "{} に書きました", name));

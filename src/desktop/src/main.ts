@@ -55,7 +55,7 @@ const fileTree = new FileTree({
   current: () => (current === 'forge' ? openRepo : null),
 });
 document.body.append(fileTree.element);
-// Server is laid over the page the same way: people one knows, their boards, each board's plan and talk.
+// Server is laid over the page the same way: people one knows, their boards, each board's talk and TODO.
 const serverLayer = new ServerLayer(ctx);
 
 function railButton(id: PurposeId): HTMLButtonElement {
