@@ -7,7 +7,27 @@
 
 use crate::elf::Elf;
 use iced_x86::{Decoder, DecoderOptions, FlowControl, Instruction, Mnemonic, OpKind};
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::hash::{BuildHasherDefault, Hasher};
+
+/// Addresses hashed by one multiply: a walk looks up every instruction it
+/// decodes, and the standard hasher (made to resist chosen keys, which
+/// addresses are not here) costs more than the lookup.
+#[derive(Default)]
+struct Address(u64);
+
+impl Hasher for Address {
+    fn finish(&self) -> u64 { self.0 }
+    fn write(&mut self, bytes: &[u8]) {
+        for &b in bytes { self.0 = (self.0.rotate_left(8) ^ b as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15); }
+    }
+    fn write_u64(&mut self, n: u64) {
+        let h = n.wrapping_mul(0x9e37_79b9_7f4a_7c15);
+        self.0 = h ^ (h >> 32);
+    }
+}
+
+type ByAddress = BuildHasherDefault<Address>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Exit {
@@ -87,7 +107,7 @@ fn direct_target(i: &Instruction) -> Option<u64> {
 /// code it goes on to, in the order given.
 fn walk_all(elf: &Elf, jobs: &[(u64, u64, &[u64])], is_start: &(dyn Fn(u64) -> bool + Sync), references: &mut BTreeSet<u64>) -> Vec<(u64, Vec<Block>, Vec<u64>)> {
     let go = |part: &[(u64, u64, &[u64])], references: &mut BTreeSet<u64>| -> Vec<(u64, Vec<Block>, Vec<u64>)> {
-        part.iter().map(|&(start, end, extra)| { let (b, c) = walk(elf, start, end, extra, is_start, references); (start, b, c) }).collect()
+        part.iter().map(|&(start, end, extra)| { let (b, c) = walk(elf, start, end, extra, is_start, Some(&mut *references)); (start, b, c) }).collect()
     };
     let threads = if cfg!(target_family = "wasm") { 1 } else { std::thread::available_parallelism().map_or(1, |t| t.get()) };
     // A few walks are not worth a thread.
@@ -128,12 +148,15 @@ fn ranges(starts: &BTreeSet<u64>, sizes: &BTreeMap<u64, u64>) -> BTreeMap<u64, u
     out
 }
 
-fn walk(elf: &Elf, start: u64, end: u64, extra: &[u64], is_start: &(dyn Fn(u64) -> bool + Sync), references: &mut BTreeSet<u64>) -> (Vec<Block>, Vec<u64>) {
+fn walk(elf: &Elf, start: u64, end: u64, extra: &[u64], is_start: &(dyn Fn(u64) -> bool + Sync), mut references: Option<&mut BTreeSet<u64>>) -> (Vec<Block>, Vec<u64>) {
     let inside = |a: u64| a >= start && a < end && (a == start || !is_start(a));
-    let mut leaders = BTreeSet::from([start]);
-    leaders.extend(extra.iter().copied().filter(|&a| inside(a)));
-    let mut instructions: BTreeMap<u64, Instruction> = BTreeMap::new();
-    let mut work: VecDeque<u64> = leaders.iter().copied().collect();
+    // Looked up by address while walking, put in order once at the end.
+    let mut first: Vec<u64> = std::iter::once(start).chain(extra.iter().copied().filter(|&a| inside(a))).collect();
+    first.sort_unstable();
+    first.dedup();
+    let mut leaders: HashSet<u64, ByAddress> = first.iter().copied().collect();
+    let mut instructions: HashMap<u64, Instruction, ByAddress> = HashMap::default();
+    let mut work: VecDeque<u64> = first.into_iter().collect();
     let mut calls = Vec::new();
     while let Some(mut at) = work.pop_front() {
         loop {
@@ -150,8 +173,8 @@ fn walk(elf: &Elf, start: u64, end: u64, extra: &[u64], is_start: &(dyn Fn(u64) 
                 leaders.insert(at);
                 leaders.insert(i.next_ip());
             }
-            if i.is_ip_rel_memory_operand() {
-                references.insert(i.ip_rel_memory_address());
+            if let Some(r) = references.as_deref_mut() {
+                if i.is_ip_rel_memory_operand() { r.insert(i.ip_rel_memory_address()); }
             }
             let next = i.next_ip();
             match flow(&i) {
@@ -207,7 +230,9 @@ fn walk(elf: &Elf, start: u64, end: u64, extra: &[u64], is_start: &(dyn Fn(u64) 
     // next leader. Following next_ip (not address order) keeps blocks right
     // even when a wrong table guess decoded bytes inside an instruction.
     let mut blocks = Vec::new();
-    for &block_start in leaders.iter().filter(|a| instructions.contains_key(a)) {
+    let mut order: Vec<u64> = leaders.iter().copied().filter(|a| instructions.contains_key(a)).collect();
+    order.sort_unstable();
+    for block_start in order {
         let mut code = Vec::new();
         let mut at = block_start;
         let exit = loop {
@@ -298,7 +323,6 @@ pub const BUDGET: usize = 1000;
 pub fn discover_within(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>, budget: usize) -> Program {
     // Starts are looked up in `known` where they are, not copied: it holds every function a large program has reached.
     let mut starts: BTreeSet<u64> = seeds.iter().copied().filter(|a| elf.is_code(*a) && !known.contains(a)).collect();
-    let mut references = BTreeSet::new();
     let mut done: BTreeMap<u64, Vec<Block>> = BTreeMap::new();
     let after = |set: &BTreeSet<u64>, a: u64| set.range(a + 1..).next().copied().unwrap_or(u64::MAX);
     let before = |set: &BTreeSet<u64>, a: u64| set.range(..a).next_back().copied();
@@ -307,7 +331,9 @@ pub fn discover_within(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>, budget: 
         for &start in &starts {
             if done.contains_key(&start) { continue; }
             let end = after(known, start).min(after(&starts, start));
-            let (blocks, calls) = walk(elf, start, end, &[], &|a| known.contains(&a) || starts.contains(&a), &mut references);
+            // The range ends at the next start of either set, so nothing inside it is a start: no lookup per
+            // instruction. Nor are data references wanted (they find jump tables when the whole program is walked).
+            let (blocks, calls) = walk(elf, start, end, &[], &|_| false, None);
             found.extend(calls.into_iter().filter(|t| elf.is_code(*t) && !known.contains(t) && !starts.contains(t)));
             done.insert(start, blocks);
         }

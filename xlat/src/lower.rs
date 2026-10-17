@@ -135,7 +135,8 @@ pub struct Report {
 }
 
 struct Fx<'p> {
-    code: Vec<I>,
+    /// The function being made: each instruction is encoded as it is emitted.
+    f: WasmFunction,
     flags: Flags,
     /// Nesting of wasm blocks between the current code and the dispatch loop.
     depth: u32,
@@ -173,11 +174,14 @@ fn xmm(r: Register) -> Option<u32> {
 }
 
 impl<'p> Fx<'p> {
-    fn e(&mut self, i: I) { self.code.push(i); }
-    fn get(&mut self, l: u32) { self.e(W::LocalGet(l)); }
-    fn set(&mut self, l: u32) { self.e(W::LocalSet(l)); }
-    fn c64(&mut self, v: i64) { self.e(W::I64Const(v)); }
-    fn c32(&mut self, v: i32) { self.e(W::I32Const(v)); }
+    fn e(&mut self, i: I) { self.f.instruction(&i); }
+    // The most frequent, straight to their bytes.
+    fn get(&mut self, l: u32) { self.f.instructions().local_get(l); }
+    fn set(&mut self, l: u32) { self.f.instructions().local_set(l); }
+    fn c64(&mut self, v: i64) { self.f.instructions().i64_const(v); }
+    fn c32(&mut self, v: i32) { self.f.instructions().i32_const(v); }
+    fn gget(&mut self, g: u32) { self.f.instructions().global_get(g); }
+    fn gset(&mut self, g: u32) { self.f.instructions().global_set(g); }
 
     fn unsupported(&mut self, i: &Instruction) {
         *self.report.unsupported.entry(format!("{:?}", i.mnemonic())).or_default() += 1;
@@ -192,12 +196,12 @@ impl<'p> Fx<'p> {
     fn save(&mut self) {
         for n in 0..16 {
             self.get(l_reg(n));
-            self.e(W::GlobalSet(n));
+            self.gset(n);
         }
         if self.uses_xmm {
             for n in 0..16 {
                 self.get(l_x(n));
-                self.e(W::GlobalSet(g_xmm(n)));
+                self.gset(g_xmm(n));
             }
         }
     }
@@ -233,12 +237,12 @@ impl<'p> Fx<'p> {
 
     fn load(&mut self) {
         for n in 0..16 {
-            self.e(W::GlobalGet(n));
+            self.gget(n);
             self.set(l_reg(n));
         }
         if self.uses_xmm {
             for n in 0..16 {
-                self.e(W::GlobalGet(g_xmm(n)));
+                self.gget(g_xmm(n));
                 self.set(l_x(n));
             }
         }
@@ -1877,11 +1881,22 @@ fn lower_function(program: &Program, index: u32, handed: &BTreeMap<u64, u32>, op
     let uses_xmm = function.blocks.iter().flat_map(|b| &b.code).any(|i| {
         (0..i.op_count()).any(|n| i.op_kind(n) == OpKind::Register && xmm(i.op_register(n)).is_some())
     });
-    let mut fx = Fx { code: Vec::new(), flags: Flags::Held, depth: 0, program, function, report, handed, uses_xmm, backward: false };
+    let f = WasmFunction::new([
+        (16, ValType::I64), (1, ValType::I32), (5, ValType::I32), (3, ValType::I64), (6, ValType::I64),
+        (2, ValType::I32), (16, ValType::V128), (2, ValType::V128), (2, ValType::F64),
+    ]);
+    let mut fx = Fx { f, flags: Flags::Held, depth: 0, program, function, report, handed, uses_xmm, backward: false };
 
-    // Body first so we know whether xmm state must be loaded and saved.
-    let mut body: Vec<I> = Vec::new();
-    std::mem::swap(&mut fx.code, &mut body);
+    // Everything the prologue depends on is known, so the function is made in order.
+    fx.get(L_ENTRY); fx.set(L_BLK);
+    fx.load();
+    // What the entries handed flags read (almost always none).
+    fx.load_flags(cases);
+    fx.e(W::Loop(BlockType::Empty));
+    for _ in 0..n { fx.e(W::Block(BlockType::Empty)); }
+    fx.get(L_BLK);
+    let targets: Vec<u32> = (0..n).collect();
+    fx.e(W::BrTable(Cow::Owned(targets), 0));
     for (k, block) in function.blocks.iter().enumerate() {
         // Close block k's label so its code starts here; code k sits inside
         // the labels of blocks k+1..n-1 and then the loop.
@@ -1988,25 +2003,8 @@ fn lower_function(program: &Program, index: u32, handed: &BTreeMap<u64, u32>, op
     // Leaving the last block falls out of the loop.
     fx.e(W::End);
     fx.e(W::Unreachable);
-    std::mem::swap(&mut fx.code, &mut body);
-
-    let mut f = WasmFunction::new([
-        (16, ValType::I64), (1, ValType::I32), (5, ValType::I32), (3, ValType::I64), (6, ValType::I64),
-        (2, ValType::I32), (16, ValType::V128), (2, ValType::V128), (2, ValType::F64),
-    ]);
-    fx.get(L_ENTRY); fx.set(L_BLK);
-    fx.load();
-    // What the entries handed flags read (almost always none).
-    fx.load_flags(cases);
-    fx.e(W::Loop(BlockType::Empty));
-    for _ in 0..n { fx.e(W::Block(BlockType::Empty)); }
-    fx.get(L_BLK);
-    let targets: Vec<u32> = (0..n).collect();
-    fx.e(W::BrTable(Cow::Owned(targets), 0));
-    for i in fx.code.drain(..) { f.instruction(&i); }
-    for i in &body { f.instruction(i); }
-    f.instruction(&W::End);
-    f
+    fx.e(W::End);
+    fx.f
 }
 
 /// Helpers: 64x64 high products, entry resolution and the dispatcher.
