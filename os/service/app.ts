@@ -79,7 +79,7 @@ export interface Deps {
 }
 
 /** What one account may keep, unless the deployment says otherwise. */
-export const QUOTA = 2 * 1024 ** 3;
+const QUOTA = 2 * 1024 ** 3;
 
 const HEX = /^[0-9a-f]{64}$/;
 export const LIMIT = {blob: 16 << 20, files: 20_000, diff: 5_000, words: 2_000, log: 200,
@@ -109,16 +109,16 @@ export async function sha256(bytes: Uint8Array): Promise<string> {
 
 export const validName = (n: string) => /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}$/.test(n);
 /** A line of work: 'main', or an issue file's stem. */
-export const validLine = (n: string) => /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(n);
+const validLine = (n: string) => /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(n);
 /** The issue a line is the work for: its file ('issue/001.md'); '' for main. */
-export const issueOf = (line: string) => (line === 'main' ? '' : `issue/${line}.md`);
+const issueOf = (line: string) => (line === 'main' ? '' : `issue/${line}.md`);
 
 /**
  * Three trees as one, path by path: what changed on one side only is taken,
  * the same change on both is taken once, and a path both changed differently
  * is a conflict (and is left as `ours`).
  */
-export function merge3(base: Tree, ours: Tree, theirs: Tree): {tree: Tree; conflicts: string[]} {
+function merge3(base: Tree, ours: Tree, theirs: Tree): {tree: Tree; conflicts: string[]} {
   const tree: Tree = {}, conflicts: string[] = [];
   const get = (t: Tree, p: string) => (p in t ? t[p] : undefined);
   for (const p of new Set([...Object.keys(base), ...Object.keys(ours), ...Object.keys(theirs)])) {
@@ -130,7 +130,7 @@ export function merge3(base: Tree, ours: Tree, theirs: Tree): {tree: Tree; confl
 }
 
 /** A repo path as the app allows one: no .., no empty part, never .git however spelt. */
-export function validPath(p: string): boolean {
+function validPath(p: string): boolean {
   if (!p || p.length > 1024 || p.startsWith('/')) return false;
   return p.split('/').every((part) => {
     if (!part || part === '.' || part === '..') return false;
@@ -140,7 +140,7 @@ export function validPath(p: string): boolean {
 }
 
 /** A draft with a diff laid on it: `remove` takes a path and everything under it, then `set` is written. */
-export function applyDiff(draft: Tree, set: Tree, remove: string[]): Tree {
+function applyDiff(draft: Tree, set: Tree, remove: string[]): Tree {
   const gone = new Set(remove);
   // A path goes when it, or a folder it is in, was removed: its own ancestors are looked up, not every path removed.
   const removed = (p: string) => {

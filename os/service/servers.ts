@@ -70,7 +70,7 @@ const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/;
 const NAME = /^[a-z0-9][a-z0-9._-]{1,30}$/;
 
 /** An id that sorts as its time: milliseconds in base 36 (nine places), then eight random places. */
-export function postId(now = Date.now()): string {
+function postId(now = Date.now()): string {
   const random = crypto.getRandomValues(new Uint32Array(2));
   const tail = [...random].map((n) => n.toString(36).padStart(7, '0').slice(-4)).join('');
   return now.toString(36).padStart(9, '0') + tail;

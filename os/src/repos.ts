@@ -307,7 +307,7 @@ export class KeptStore extends MemoryStore {
 }
 
 /** IndexedDB, as a Shelf. */
-export function indexedShelf(name = 'length3-repos'): Shelf {
+function indexedShelf(name = 'length3-repos'): Shelf {
   const open = () => new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open(name, 1);
     req.onupgradeneeded = () => req.result.createObjectStore('repos');

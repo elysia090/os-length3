@@ -24,7 +24,7 @@ import {bearer, deviceAuthorization, genericOAuth} from 'better-auth/plugins';
 import * as schema from './schema.ts';
 
 /** The desktop app and l3, the only clients that may ask for a device code. */
-export const DEVICE_CLIENTS = ['length3-app', 'l3'] as const;
+const DEVICE_CLIENTS = ['length3-app', 'l3'] as const;
 
 export interface Provider { clientId: string; clientSecret: string }
 

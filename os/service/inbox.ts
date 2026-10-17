@@ -54,7 +54,7 @@ export interface InboxDeps {
 }
 
 /** A name's TXT records through DNS over HTTPS (Cloudflare's resolver), each record's strings joined; throws when DNS could not be asked. */
-export async function txtOverHttps(name: string): Promise<string[]> {
+async function txtOverHttps(name: string): Promise<string[]> {
   const r = await fetch(`https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=TXT`,
     {headers: {accept: 'application/dns-json'}, signal: AbortSignal.timeout(5000)});
   if (!r.ok) throw new Error(`DNS over HTTPS: ${r.status}`);
@@ -63,13 +63,13 @@ export async function txtOverHttps(name: string): Promise<string[]> {
 }
 
 /** The fields of a length3 record ("v=length3; remote=…; proof=…"), or null for another record. */
-export function readRecord(text: string): {remote: string; proof: string} | null {
+function readRecord(text: string): {remote: string; proof: string} | null {
   const f = Object.fromEntries(text.split(';').map((p) => p.trim().split('=').map((x) => x.trim())).filter((kv) => kv.length === 2)) as Record<string, string>;
   return f.v === 'length3' && f.remote ? {remote: f.remote.toLowerCase(), proof: f.proof ?? ''} : null;
 }
 
 /** An address as typed: lower case, and the domain checked. */
-export function parseAddress(a: string): {name: string; domain: string} | null {
+function parseAddress(a: string): {name: string; domain: string} | null {
   const m = /^([^@\s]+)@([^@\s]+)$/.exec(a.trim().toLowerCase());
   if (!m || !NAME.test(m[1]) || !DOMAIN.test(m[2])) return null;
   return {name: m[1], domain: m[2]};

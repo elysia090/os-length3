@@ -68,7 +68,7 @@ export function restorePurpose(stored: string | null | undefined): PurposeId {
 }
 
 /** The purposes laid over a page rather than shown as one. */
-export const OVER: readonly PurposeId[] = ['file', 'server'];
+const OVER: readonly PurposeId[] = ['file', 'server'];
 
 /**
  * Vertical rail keys, wrapping at both ends like a tab list. Returns null for

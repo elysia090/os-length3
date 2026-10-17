@@ -18,8 +18,7 @@ import {connection, onConnection, RemoteError} from './remote.ts';
 import {kept, onChange} from './repos.ts';
 import {dropState, onState} from './state.ts';
 
-/** Where a repo here stands. */
-/** 'off': turned off on the Remote (kept there 30 days); nothing is sent until it is on again. */
+/** Where a repo here stands; 'off': turned off on the Remote (kept there 30 days), nothing is sent until it is on again. */
 export type Where = 'local' | 'sending' | 'synced' | 'offline' | 'off';
 export interface RepoSync {
   where: Where;
@@ -63,7 +62,7 @@ const away = (e: unknown): null => { if (e instanceof RemoteError || typeof e ==
 const SOON = 400;
 
 /** Send `repo` after `ms`, gathering what changes meanwhile into one diff. */
-export function schedule(repo: string, ms = SOON) {
+function schedule(repo: string, ms = SOON) {
   if (!connection() || states.get(repo)?.where === 'off') return;
   clearTimeout(timers.get(repo));
   const s = states.get(repo);

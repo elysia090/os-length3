@@ -20,7 +20,7 @@ import {address, principalCode, repoPublic} from './schema.ts';
 
 export const HOLD = 30 * 86_400_000;
 /** How long a name on this Remote is held before it is renewed. */
-export const TERM_YEARS = 5;
+const TERM_YEARS = 5;
 export const term = (from = Date.now()) => { const d = new Date(from); d.setUTCFullYear(d.getUTCFullYear() + TERM_YEARS); return d; };
 
 /** Names that answer: not let go, not lapsed, not past their term. */

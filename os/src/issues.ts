@@ -22,7 +22,7 @@ export interface Issue {
 }
 
 /** The number a file in issue/ is named by ("007.md" is 7), or null. */
-export const numberOf = (file: string): number | null => {
+const numberOf = (file: string): number | null => {
   const m = /^0*(\d+)\.md$/.exec(file);
   return m ? Number(m[1]) : null;
 };

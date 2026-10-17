@@ -37,7 +37,7 @@ const TOP: readonly {name: string; origin: Origin}[] = [
 ];
 
 /** Where the distribution is fetched from. */
-export const DISTRIBUTION = '/userland';
+const DISTRIBUTION = '/userland';
 
 /** The repo and the path inside it, for a path under /root/<repo>. */
 export function inRepo(path: string): {repo: string; path: string} | null {
