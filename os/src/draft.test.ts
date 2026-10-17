@@ -1,72 +1,15 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {PGlite} from '@electric-sql/pglite';
-import {drizzle} from 'drizzle-orm/pglite';
-import {migrate} from 'drizzle-orm/pglite/migrator';
-import {createApp, sha256} from '../service/app.ts';
-import {createAuth} from '../service/auth.ts';
-import {memoryBucket} from '../service/bucket.ts';
-import * as schema from '../service/schema.ts';
+import {sha256} from '../service/app.ts';
+import {browserOnRemote} from './testing-remote.ts';
 
-// A browser on one Remote, all in this process: its storage is a map, and
-// every fetch goes to the service itself.
-const shelf = new Map<string, string>();
-Object.assign(globalThis, {localStorage: {
-  getItem: (k: string) => shelf.get(k) ?? null, setItem: (k: string, v: string) => void shelf.set(k, v), removeItem: (k: string) => void shelf.delete(k),
-}});
-const URL_ = 'http://remote.test', APP = 'http://app.test';
-const db = drizzle(new PGlite(), {schema});
-await migrate(db, {migrationsFolder: new URL('../service/migrations', import.meta.url).pathname});
-const auth = createAuth({db, secret: 'test-secret-'.repeat(4), baseURL: URL_, appOrigin: APP, rateLimit: false, dev: true});
-const app = createApp({db, auth, bucket: memoryBucket(), origins: [APP], providers: ['dev']});
-/** What this browser asked the Remote, by path. */
-const asked: string[] = [];
-Object.assign(globalThis, {fetch: (url: string, init?: RequestInit) => {
-  const headers = new Headers(init?.headers);
-  headers.set('Origin', APP);
-  asked.push(new URL(url).pathname);
-  return app.request(url, {...init, headers});
-}});
-
-const {store} = await import('./repos.ts');
-const draft = await import('./draft.ts');
-const history = await import('./history.ts');
-const {setState, getState} = await import('./state.ts');
+// A browser on one Remote, all in this process (testing.ts). The tests below
+// follow one repo, `notes`, through its life, each from where the one
+// before left it.
+const b = await browserOnRemote();
+const {store, draft, history, asked, elsewhere, text, names, token, URL: URL_} = b;
+const {setState, getState} = b.state;
 const enc = new TextEncoder();
-
-/** Signing in as the browser does: the stand-in provider's page, then back. */
-const signIn = async () => {
-  const asked = await fetch(`${URL_}/api/auth/sign-in/social`, {method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({provider: 'dev', callbackURL: `${APP}/`})});
-  const cookies = asked.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
-  const go = new URL(((await asked.json()) as {url: string}).url);
-  const approve = new URL(`${URL_}/dev-oauth/approve`);
-  for (const k of ['redirect_uri', 'state']) approve.searchParams.set(k, go.searchParams.get(k) ?? '');
-  const back = (await fetch(approve.toString())).headers.get('Location')!;
-  return (await fetch(back, {headers: {Cookie: cookies}})).headers.get('set-auth-token')!;
-};
-const token = await signIn();
-await setState('remote', JSON.stringify({url: URL_, token}));
-
-/** Another device on the same account, speaking to the Remote directly. */
-async function elsewhere(repo: string, change: Record<string, Uint8Array | string | null>) {
-  const auth = {Authorization: `Bearer ${token}`, 'Content-Type': 'application/json'};
-  const now = await (await fetch(`${URL_}/v1/repos/${repo}`, {headers: auth})).json() as {version?: number};
-  const set: Record<string, string> = {};
-  const remove: string[] = [];
-  for (const [p, v] of Object.entries(change)) {
-    if (v === null) { remove.push(p); continue; }
-    const bytes = typeof v === 'string' ? enc.encode(v) : v;
-    const sha = await sha256(bytes);
-    await fetch(`${URL_}/v1/blobs/${sha}`, {method: 'PUT', headers: {Authorization: auth.Authorization}, body: bytes as BodyInit});
-    set[p] = sha;
-  }
-  const r = await fetch(`${URL_}/v1/repos/${repo}/draft`, {method: 'PATCH', headers: auth, body: JSON.stringify({version: now.version ?? 0, set, remove})});
-  assert.equal(r.status, 200, await r.clone().text());
-}
-
-const text = async (repo: string, path: string) => (await store.read(repo, path)).text;
-const names = async (repo: string, dir = '') => (await store.tree(repo, dir)).map((e) => e.name);
 
 test('a repo made here is on the Remote after one sync; the next sync sends only what changed', async () => {
   await store.create('notes', 'standard');
@@ -232,7 +175,7 @@ test('a directory is derived by proof: a cache tag, or a tool\'s directory besid
 
 test('a page asks the Remote only what moved, and reads again only that', async () => {
   const lifecycle = await import('./lifecycle.ts');
-  const settle = () => new Promise((r) => setTimeout(r, 300));
+  const settle = lifecycle.settled;
   await lifecycle.look();
   await settle();
   // Nothing moved: each look is one small request.
