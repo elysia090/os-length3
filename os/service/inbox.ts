@@ -28,12 +28,14 @@ import {and, eq, gt, isNull, or, sql} from 'drizzle-orm';
 import type {Hono} from 'hono';
 import {HTTPException} from 'hono/http-exception';
 import {byCode, claim, codeOf, HOLD, kept, live, release} from './names.ts';
-import {ago, body, ms, refuse, rows, type Db, type Vars} from './request.ts';
-import {address, contact, message, signal} from './schema.ts';
+import {ago, body, lock, ms, refuse, rows, type Db, type Vars} from './request.ts';
+import {address, contact, message, signal, throttle} from './schema.ts';
 
 export const INBOX = {
   body: 4000, perHour: 60, requestsPerPeer: 3, requestsInAll: 30, addresses: 5,
   signal: 16 * 1024, signalsPerMinute: 120, signalLife: 2 * 60_000, keepDays: 90,
+  /** Codes an account looks up an hour: someone is found by theirs, everyone is not read off by trying them all. */
+  codesPerHour: 30,
 } as const;
 const NAME = /^[a-z0-9][a-z0-9._-]{1,30}$/;
 const DOMAIN = /^(?=.{3,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
@@ -128,13 +130,26 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   /** An account's addresses: not let go (a lapsed or ended one is still theirs, and says so). */
   const mine = async (userId: string) => (await db.select().from(address).where(and(eq(address.userId, userId), isNull(address.releasedAt))).orderBy(address.createdAt)) as Address[];
 
+  /** A code looked up by `me`, counted; refused (429) past so many an hour. */
+  const codeAsked = async (me: string) => {
+    const key = `code:${me}`;
+    const n = await db.transaction(async (tx: Db) => {
+      await lock(tx, key);
+      const [r] = await rows<{n: number}>(tx, sql`select count(*)::int as n from throttle where key = ${key} and at > ${ago(3600_000)}`);
+      if (r.n < INBOX.codesPerHour) await tx.insert(throttle).values({key});
+      return r.n;
+    });
+    if (n >= INBOX.codesPerHour) refuse(429, {error: 'Too many codes looked up this hour'});
+  };
+
   /**
-   * Whom `a` reaches on this Remote, if anyone: a person's live address. A
-   * name alone is a name on this Remote (`ren`), six digits a code.
+   * Whom `a` reaches on this Remote, if anyone, asked by `me`: a person's live
+   * address. A name alone is a name on this Remote (`ren`), six digits a code.
    */
-  const resolve = async (a: string): Promise<{userId: string; address: string} | {why: string}> => {
+  const resolve = async (me: string, a: string): Promise<{userId: string; address: string} | {why: string}> => {
     const q = a.trim().toLowerCase();
     if (/^\d{6}$/.test(q)) {
+      await codeAsked(me);
       const who = await byCode(db, q);
       if (!who) return {why: 'No one has that code'};
       if (!('userId' in who)) return {why: 'That is a server, not a person'};
@@ -234,7 +249,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   });
 
   v1.get('/inbox/lookup', async (c) => {
-    const r = await resolve(c.req.query('address') ?? '');
+    const r = await resolve(c.get('userId'), c.req.query('address') ?? '');
     return 'userId' in r ? c.json({address: r.address, reachable: true}) : c.json({reachable: false, why: r.why});
   });
 
@@ -269,7 +284,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const own = await mine(me);
     const from = own.find((a) => a.address === b?.from) ?? own[0];
     if (!from) return c.json({error: 'Claim a name first'}, 409);
-    const to = await resolve(typeof b?.to === 'string' ? b.to : '');
+    const to = await resolve(me, typeof b?.to === 'string' ? b.to : '');
     if (!('userId' in to)) return c.json({error: to.why}, 404);
     if (to.userId === me) return c.json({error: 'That is you'}, 400);
     const rel = await relation(me, to.userId);
@@ -323,7 +338,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
 
   v1.get('/inbox/threads/:address', async (c) => {
     const me = c.get('userId');
-    const to = await resolve(c.req.param('address'));
+    const to = await resolve(me, c.req.param('address'));
     if (!('userId' in to)) return c.json({error: to.why}, 404);
     const list = await db.select().from(message)
       .where(or(and(eq(message.from, me), eq(message.to, to.userId)), and(eq(message.from, to.userId), eq(message.to, me))))
@@ -335,7 +350,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
 
   v1.post('/inbox/threads/:address/read', async (c) => {
     const me = c.get('userId');
-    const to = await resolve(c.req.param('address'));
+    const to = await resolve(me, c.req.param('address'));
     if (!('userId' in to)) return c.json({error: to.why}, 404);
     await db.update(message).set({readAt: sql`now()`}).where(and(eq(message.to, me), eq(message.from, to.userId), isNull(message.readAt)));
     return c.json({read: true});
@@ -345,7 +360,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   v1.post('/inbox/contacts', async (c) => {
     const me = c.get('userId');
     const b = await body<{address?: unknown; state?: unknown}>(c);
-    const to = await resolve(typeof b?.address === 'string' ? b.address : '');
+    const to = await resolve(me, typeof b?.address === 'string' ? b.address : '');
     if (!('userId' in to)) return c.json({error: to.why}, 404);
     const state = b?.state === 'blocked' ? 'blocked' : b?.state === 'none' ? null : 'accepted';
     if (!state) await db.delete(contact).where(and(eq(contact.userId, me), eq(contact.peer, to.userId)));
@@ -359,7 +374,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   v1.post('/inbox/signals', async (c) => {
     const me = c.get('userId');
     const b = await body<{to?: unknown; session?: unknown; kind?: unknown; data?: unknown}>(c);
-    const to = await resolve(typeof b?.to === 'string' ? b.to : '');
+    const to = await resolve(me, typeof b?.to === 'string' ? b.to : '');
     if (!('userId' in to)) return c.json({error: to.why}, 404);
     const rel = await relation(me, to.userId);
     if (rel.mine !== 'accepted' || rel.theirs !== 'accepted') return c.json({error: 'Live chat is between accepted contacts'}, 403);
@@ -375,7 +390,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   // of the one session asked for. Another chat, or another device's session, keeps its own.
   v1.get('/inbox/signals', async (c) => {
     const me = c.get('userId');
-    const from = await resolve(c.req.query('from') ?? '');
+    const from = await resolve(me, c.req.query('from') ?? '');
     if (!('userId' in from)) return c.json({error: from.why}, 404);
     const session = c.req.query('session') ?? '';
     const taken = await db.delete(signal).where(and(eq(signal.to, me), eq(signal.from, from.userId), gt(signal.createdAt, new Date(Date.now() - INBOX.signalLife)),

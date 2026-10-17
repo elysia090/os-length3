@@ -47,7 +47,7 @@ import {devOAuth} from './devoauth.ts';
 import {enter, type Enter} from './enter.ts';
 import {inbox} from './inbox.ts';
 import {ago, body, lock, ms, qualified, refuse, rows, type Db, type Vars} from './request.ts';
-import {blob, change, cut, guard, home, line, repo, repoGone, review, room, type Review, type Tree} from './schema.ts';
+import {blob, change, cut, guard, home, line, repo, repoGone, review, room, throttle, type Review, type Tree} from './schema.ts';
 import {seen} from './seen.ts';
 import {news} from './news.ts';
 import {servers} from './servers.ts';
@@ -488,6 +488,8 @@ export function createApp(d: Deps) {
 
   const digestOf = async (user: string, code: string) => sha256(enc.encode(`${user}:${code.toUpperCase()}`));
   const CODE = /^[A-Za-z0-9]{5}$/;
+  /** Wrong codes an account may give an hour. */
+  const OFF_TRIES = 10;
   /** Proof the person is here: this request's session is the account's latest passkey sign-in, within five minutes. */
   const proven = (g: typeof guard.$inferSelect | undefined, sessionId: string) =>
     !!g?.proofAt && g.proofSession === sessionId && Date.now() - g.proofAt.getTime() < 5 * 60 * 1000;
@@ -503,7 +505,17 @@ export function createApp(d: Deps) {
     if (!g.offDigest) refuse(409, {error: 'Set the five-letter code under Sign-in first.'});
     const same = (a: unknown, b: string) => typeof a === 'string' && a.trim().toLowerCase() === b.trim().toLowerCase();
     if (!same(b?.name, c.get('name')) || b?.repo !== name) refuse(403, {error: 'The names do not match.'});
-    if (typeof b?.code !== 'string' || !CODE.test(b.code) || await digestOf(user, b.code) !== g.offDigest) refuse(403, {error: 'That is not the code.'});
+    const right = typeof b?.code === 'string' && CODE.test(b.code) && await digestOf(user, b.code) === g.offDigest;
+    // Wrong codes are counted, and past so many an hour none is taken, the right one neither: the code is not found by trying.
+    const key = `off-code:${user}`;
+    const wrong = await db.transaction(async (tx: Db) => {
+      await lock(tx, key);
+      const [r] = await rows<{n: number}>(tx, sql`select count(*)::int as n from throttle where key = ${key} and at > ${ago(3600_000)}`);
+      if (!right && r.n < OFF_TRIES) await tx.insert(throttle).values({key});
+      return r.n;
+    });
+    if (wrong >= OFF_TRIES) refuse(429, {error: 'Too many wrong codes; try again in an hour'});
+    if (!right) refuse(403, {error: 'That is not the code.'});
   };
   const named = (user: string, name: string) => and(eq(repo.userId, user), eq(repo.name, name));
 

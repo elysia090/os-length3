@@ -761,6 +761,36 @@ const named = async (s: Service, ...people: [string, string][]) => { for (const 
 const accept = (s: Service, t: string, address: string, state = 'accepted') => s.call('POST', '/v1/inbox/contacts', {token: t, body: {address, state}});
 const count = async (s: Service, query: ReturnType<typeof sql>) => ((await s.db.execute(query)).rows as {n: number}[])[0].n;
 
+test('Guessing: codes that find people are looked up so many an hour, and the code to turn a repo off is tried so many times', async () => {
+  const s = await service();
+  const ren = await s.start('Ren'), mio = await s.start('Mio');
+  await named(s, [ren, 'ren'], [mio, 'mio']);
+  const code = (await s.call('GET', '/v1/inbox/me', {token: ren})).json.code as string;
+  const lookup = async (a: string) => (await s.call('GET', `/v1/inbox/lookup?address=${a}`, {token: mio}));
+  // Someone is found by their code; everyone is not read off by trying every code.
+  assert.equal((await lookup(code)).json.address, 'ren@length3.test');
+  const tried = [];
+  for (let i = 0; i < 30; i++) tried.push((await lookup(String(100000 + i))).status);
+  assert.deepEqual([tried.filter((x) => x === 200).length, tried.at(-1)], [29, 429]);
+  // As in every way a code is taken (here, accepting someone by it), and only codes: a name is still looked up.
+  assert.equal((await s.call('POST', '/v1/inbox/contacts', {token: mio, body: {address: code}})).status, 429);
+  assert.equal((await lookup('ren')).json.address, 'ren@length3.test');
+  assert.equal((await s.call('GET', `/v1/inbox/lookup?address=${code}`, {token: ren})).status, 200);
+  // The five-letter code: so many wrong in an hour, then none is taken, the right one neither.
+  await s.call('PATCH', '/v1/repos/r/draft', {token: ren, body: {version: 0, set: {}, remove: []}});
+  const session = ((await s.call('GET', '/api/auth/get-session', {token: ren})).json as unknown as {session: {id: string}; user: {id: string}});
+  await s.db.insert(schema.guard).values({userId: session.user.id, proofSession: session.session.id, proofAt: new Date()});
+  assert.equal((await s.call('POST', '/v1/off-code', {token: ren, body: {code: 'AB12C'}})).status, 200);
+  const off = async (c: string) => (await s.call('POST', '/v1/repos/r/off', {token: ren, body: {name: 'Ren', repo: 'r', code: c}})).status;
+  const wrong = [];
+  for (let i = 0; i < 11; i++) wrong.push(await off(`ZZZ${String(i).padStart(2, '0')}`));
+  assert.deepEqual([wrong.filter((x) => x === 403).length, wrong.at(-1)], [10, 429]);
+  assert.equal(await off('AB12C'), 429);
+  // An hour on, it is taken again.
+  await s.db.execute(sql`update throttle set at = now() - interval '61 minutes' where key like 'off-code:%'`);
+  assert.equal(await off('AB12C'), 200);
+});
+
 test('Consent: nobody is put in a server by someone they have not accepted, or have blocked; being put in servers never stops anyone making one', async () => {
   const s = await service();
   const ren = await s.start('Ren'), mio = await s.start('Mio'), kai = await s.start('Kai');
