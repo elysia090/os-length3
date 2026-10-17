@@ -733,6 +733,13 @@ each thing says what can be done with it.
   Prompt's pid namespace and is called done only once the host shows none
   left; the row then says what was given back and how long it took
   (止めました · 2.5 MB を返しました · 11 ms), or how many are still there.
+  A Prompt on the root has no network unless its repo is given one: a
+  plain switch with the word Network in its card. A namespace cannot be
+  given a network once made, so turning it on asks in the card, then stops
+  the Prompt, which has the network from its next start; turning it off
+  stops it at once. The grant is this device's (never sent), and `l3
+  prompt` reads the same one (`--network` gives it to one Prompt). In a
+  browser there is no switch: a Prompt's programs have no sockets at all.
 - **有効な環境**: the environments a Prompt can run on, a row each: l3,
   Ubuntu, Debian, Custom (a root of one's own, known by its digest). The
   one in effect is the place (an `ink` edge over `raised`): l3, with its

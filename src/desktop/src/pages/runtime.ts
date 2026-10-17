@@ -11,6 +11,7 @@ import {pageHead} from './common.ts';
 import type {Context} from './context.ts';
 import {syncWord} from './remote.ts';
 import {allSessions, type Session} from './terminal.ts';
+import {getState, setState} from '../state.ts';
 
 // Runtime: this device, then what the OS holds on it, then what is running,
 // then the environment actually in effect (what runs, not what was asked for).
@@ -224,6 +225,39 @@ function card(name: string, lines: (string | Node)[], act: Node | null, extra = 
 }
 
 /** The Prompts running, each a small card: where it runs, the memory it holds, and Stop. Shown only when one runs. */
+// Which repos' Prompts may reach the network: this device's grant (core's home `network`, which l3 reads too).
+const granted = (): string[] => { try { return JSON.parse(getState('network') ?? '[]') as string[]; } catch { return []; } };
+async function grant(repo: string, on: boolean) {
+  const all = new Set(granted());
+  if (on) all.add(repo); else all.delete(repo);
+  await setState('network', JSON.stringify([...all].sort()));
+}
+
+/**
+ * The network for a Prompt on the root, as a plain switch: a namespace cannot
+ * be given a network once made, so turning it on asks, then stops the Prompt
+ * (it has the network from its next start); turning it off stops it at once.
+ */
+function networkSwitch(repo: string, s: Session, card: () => HTMLElement): HTMLElement {
+  const on = granted().includes(repo);
+  const sw = h('button', {type: 'button', class: 'power plain', role: 'switch', 'aria-checked': String(on),
+    'aria-label': on ? t('Take the network from {repo}\'s Prompt', {repo}) : t('Give {repo}\'s Prompt the network', {repo})}, h('span', {class: 'knob'})) as HTMLButtonElement;
+  const error = h('p', {class: 'error small', role: 'alert'});
+  sw.addEventListener('click', () => {
+    const el = card();
+    if (on) { void grant(repo, false).then(() => s.stop(), (e) => { error.textContent = message(e); }); return; }
+    sw.setAttribute('aria-checked', 'true');
+    const was = [...el.childNodes];
+    const no = button(t('Not now'), 'small-button'), yes = button(t('Give it'), 'small-button primary');
+    no.addEventListener('click', () => el.replaceChildren(...was, error));
+    yes.addEventListener('click', () => void grant(repo, true).then(() => s.stop(), (e) => { el.replaceChildren(...was, error); error.textContent = message(e); }));
+    el.replaceChildren(h('span', {class: 'card-title'}, repo),
+      h('p', {class: 'muted small'}, t('Its programs reach the network from its next start; it stops now.')),
+      h('div', {class: 'card-foot'}, no, h('span', {class: 'grow'}), yes));
+  });
+  return h('div', {class: 'net-row'}, h('span', {class: 'muted small'}, t('Network')), sw, error);
+}
+
 function prompts(): HTMLElement {
   const section = h('section', {class: 'section', 'aria-labelledby': 'prompts-title', hidden: ''});
   // Each session is watched once, for as long as the page is shown.
@@ -249,9 +283,13 @@ function prompts(): HTMLElement {
         // In a browser, what it keeps for programs it ran can go without stopping it.
         const free = s.spare ? button(t('Free {size}', {size: bytes(s.spare)}), 'small-button') : null;
         free?.addEventListener('click', () => s.free());
-        const lines = [[s.on === 'root' ? `root · ${tn('{n} process', '{n} processes', s.processes)}` : 'l3', s.memory ? bytes(s.memory) : ''].filter(Boolean).join(' · ')];
+        const lines: (string | Node)[] = [[s.on === 'root' ? `root · ${tn('{n} process', '{n} processes', s.processes)}` : 'l3', s.memory ? bytes(s.memory) : ''].filter(Boolean).join(' · ')];
         if (s.freed !== null) lines.push(t('Gave back {size}', {size: bytes(s.freed)}));
-        return card(repo, lines, free ? h('span', {class: 'row'}, free, stop) : stop);
+        // Only the root's Prompt can have a network: in a browser its programs have no sockets at all.
+        let el: HTMLElement | null = null;
+        if (s.on === 'root') lines.push(networkSwitch(repo, s, () => el!));
+        el = card(repo, lines, free ? h('span', {class: 'row'}, free, stop) : stop);
+        return el;
       })));
   };
   paint();

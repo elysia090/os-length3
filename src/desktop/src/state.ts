@@ -10,11 +10,12 @@ import {t} from './i18n.ts';
 // `remote` is which Remote this device talks to and as whom; `sync` is,
 // for each repo and setting, the version on the Remote this copy came from;
 // `lang` is the language the OS speaks here (i18n.ts), l3 included.
-export type Key = 'profile' | 'todo' | 'band' | 'remote' | 'sync' | 'lang' | 'dotfiles';
-export const KEYS: readonly Key[] = ['profile', 'todo', 'band', 'remote', 'sync', 'lang', 'dotfiles'];
+// `network` is which repos' Prompts may reach the network here (the app only; never sent).
+export type Key = 'profile' | 'todo' | 'band' | 'remote' | 'sync' | 'lang' | 'dotfiles' | 'network';
+export const KEYS: readonly Key[] = ['profile', 'todo', 'band', 'remote', 'sync', 'lang', 'dotfiles', 'network'];
 /** Where a browser keeps each, and where the app kept them before. */
 const STORAGE: Record<Key, string> = {profile: 'length3.os.profile', todo: 'length3.os.todo', band: 'length3.os.band',
-  remote: 'length3.os.remote', sync: 'length3.os.sync', lang: 'length3.os.lang.setting', dotfiles: 'length3.os.dotfiles'};
+  remote: 'length3.os.remote', sync: 'length3.os.sync', lang: 'length3.os.lang.setting', dotfiles: 'length3.os.dotfiles', network: 'length3.os.network'};
 
 const cache = new Map<Key, string | null>();
 
@@ -36,7 +37,7 @@ const unread = new Map<Key, string>();
 export const unreadable = (): ReadonlyMap<Key, string> => unread;
 /** A setting as a person knows it. */
 export const settingName = (key: Key): string => ({profile: t('Profile'), todo: 'TODO', band: t('The band'), remote: t('Sign-in'),
-  sync: t('Where each repo stands'), lang: t('Language'), dotfiles: t('Dotfiles')})[key];
+  sync: t('Where each repo stands'), lang: t('Language'), dotfiles: t('Dotfiles'), network: t('Network')})[key];
 
 /** Read every key into memory. Natively, a value only the webview had is moved to its file once. */
 export async function loadState(): Promise<void> {

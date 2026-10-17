@@ -101,10 +101,13 @@ fn bind(src: &Path, dst: &Path, read_only: bool) -> io::Result<()> {
     Ok(())
 }
 
+/// Where a Prompt's programs are looked for.
+const PROMPT_PATH: &str = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
+
 /// What a Prompt runs with: set here, never taken from the host.
 fn environment(name: &str) -> Vec<CString> {
     [
-        "PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin".to_string(),
+        format!("PATH={PROMPT_PATH}"),
         "HOME=/root".into(),
         "USER=root".into(),
         "LOGNAME=root".into(),
@@ -247,12 +250,30 @@ fn environment_over(root: &Path, data: &Path, repo: &str) -> io::Result<PathBuf>
     Ok(merged)
 }
 
+/// Where `name` is run from: itself when it names a path, else the first
+/// executable of that name in the Prompt's PATH, else itself (and exec says why).
+fn find_program(name: &str) -> String {
+    use std::os::unix::fs::PermissionsExt;
+    if name.contains('/') { return name.to_string(); }
+    for dir in PROMPT_PATH.split(':') {
+        let p = Path::new(dir).join(name);
+        if std::fs::metadata(&p).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0) {
+            return p.to_string_lossy().into_owned();
+        }
+    }
+    name.to_string()
+}
+
 /// Pid 1: start the shell, reap whatever ends, and when the shell ends,
 /// end everything that is left. Returns the shell's wait status.
 fn init(s: &Sandbox) -> ! {
     let argv: Vec<CString> = s.argv.iter().map(c).collect();
     let mut ptrs: Vec<*const libc::c_char> = argv.iter().map(|a| a.as_ptr()).collect();
     ptrs.push(std::ptr::null());
+    // A command named without a path is looked for where the shell would look (the PATH it is given).
+    let program = c(find_program(&s.argv[0]));
+    // Said if it cannot start, in the child, before it would only end with 127.
+    let not_started = crate::tr!("l3: {} could not start: ", "l3: {} を起動できませんでした：", s.argv[0]);
     let env = environment(&s.name);
     let mut envp: Vec<*const libc::c_char> = env.iter().map(|a| a.as_ptr()).collect();
     envp.push(std::ptr::null());
@@ -271,7 +292,10 @@ fn init(s: &Sandbox) -> ! {
             let mut none: libc::sigset_t = std::mem::zeroed();
             libc::sigemptyset(&mut none);
             libc::sigprocmask(libc::SIG_SETMASK, &none, std::ptr::null_mut());
-            libc::execve(ptrs[0], ptrs.as_ptr(), envp.as_ptr());
+            libc::execve(program.as_ptr(), ptrs.as_ptr(), envp.as_ptr());
+            let why = std::io::Error::last_os_error().to_string();
+            let line = format!("{not_started}{why}\n");
+            libc::write(2, line.as_ptr() as *const libc::c_void, line.len());
             libc::_exit(127);
         }
     }

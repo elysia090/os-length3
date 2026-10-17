@@ -10,7 +10,8 @@ use std::fs;
 use std::path::PathBuf;
 
 /// The state the OS keeps for Home. Anything else is refused.
-pub const KEYS: [&str; 7] = ["profile", "todo", "band", "remote", "sync", "lang", "dotfiles"];
+/// `network`: the repos whose Prompts may reach the network, on this device only (it is never sent).
+pub const KEYS: [&str; 8] = ["profile", "todo", "band", "remote", "sync", "lang", "dotfiles", "network"];
 
 fn file(key: &str) -> Result<PathBuf> {
     if !KEYS.contains(&key) {
@@ -159,6 +160,12 @@ pub fn set_band(here: &[String], repo: &str, on: bool) -> Result<bool> {
     if on { b.push(repo.to_string()); } else { b.retain(|n| n != repo); }
     set("band", &serde_json::to_string(&b).map_err(|e| e.to_string())?)?;
     Ok(true)
+}
+
+/// Whether `repo`'s Prompts may reach the network (granted in Runtime; `l3 prompt --network` for one Prompt).
+pub fn network(repo: &str) -> bool {
+    let Ok(Some(text)) = get("network") else { return false };
+    serde_json::from_str::<Vec<String>>(&text).is_ok_and(|all| all.iter().any(|r| r == repo))
 }
 
 /// A dotfile's name as it may be written into /root: a dot, then letters, digits and . _ - (src/dotfiles.ts).

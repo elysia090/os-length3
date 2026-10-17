@@ -94,7 +94,7 @@ pub fn prompt(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let bash = about.distro.is_some() && root.join("bin/bash").exists() && std::io::stdin().is_terminal();
     let cmd = call.words(1);
     let argv: Vec<String> = if cmd.is_empty() { vec![if bash { "/bin/bash" } else { "/bin/sh" }.into(), "-i".into()] } else { cmd };
-    let s = launch::Sandbox { root, repo: dir, name: repo.clone(), argv, network: call.flags.network, dotfiles: launch::dotfiles(), data: Some(paths::data_dir()) };
+    let s = launch::Sandbox { root, repo: dir, name: repo.clone(), argv, network: call.flags.network || length3_core::home::network(&repo), dotfiles: launch::dotfiles(), data: Some(paths::data_dir()) };
     // What .packages and .setup ask for, first (once, while they and the root stay as they are).
     launch::set_up(&s, about.distro.is_some()).map_err(|e| Error::Io(e.to_string()))?;
     let code = launch::run(&s).map_err(|e| Error::Io(e.to_string()))?;

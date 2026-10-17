@@ -761,6 +761,8 @@ mark { background: var(--ink); color: var(--ground); }
 .power:hover:not(:disabled) { border-color: var(--ink); }
 /* Waiting (the Remote not answering): there, but not to be pressed now. */
 .power:disabled { opacity: .45; cursor: default; }
+/* A switch with its word, inside a card's lines (a Prompt's network). */
+.net-row { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); }
 .power:active:not(:disabled) .knob { width: 24px; }
 .power[aria-checked='true']:active:not(:disabled) .knob { transform: translateX(20px); }
 .power[aria-checked='false'] { background: var(--off); border-color: var(--off); }
