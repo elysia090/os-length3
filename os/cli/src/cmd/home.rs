@@ -23,6 +23,12 @@ pub fn todo_add(_: &Ctx, call: &Call) -> Result<Reply> {
     let mut list = home::todos()?;
     let item = home::todo_from(call.word(0).unwrap_or_default(), call.note(), now_ms())
         .ok_or_else(|| Error::Usage(tr!("The TODO's first line is empty", "TODO の1行目が空です")))?;
+    // The app reads no more than this of an item, so more would be lost there without a word.
+    for ((field, limit), text) in home::TODO_LIMITS.iter().zip([&item.title, &item.detail]) {
+        if text.encode_utf16().count() > *limit {
+            return Err(Error::Refused(if *field == "title" { tr!("A TODO's first line is up to {} characters", "TODO の1行目は{}文字までです", limit) } else { tr!("A TODO's detail is up to {} characters", "TODO の詳細は{}文字までです", limit) }));
+        }
+    }
     let name = text::named(item.kind.as_deref(), &item.title);
     list.push(item.clone());
     home::save_todos(&list)?;
@@ -30,18 +36,37 @@ pub fn todo_add(_: &Ctx, call: &Call) -> Result<Reply> {
     Ok(Reply::done(tr!("Added to TODO: {} ({} open)", "TODO に足しました：{}（残り{}件）", name, open), json!({"added": item, "number": list.len(), "open": open})))
 }
 
+/// Where in `list` the Nth item is, as `l3 todo` numbers them; the number said as it was written.
+fn nth(list: &[home::Todo], word: &str) -> Result<usize> {
+    match word.parse::<usize>() {
+        Ok(k) if (1..=list.len()).contains(&k) => Ok(k - 1),
+        _ => Err(Error::NotFound(match list.len() {
+            0 => tr!("There is no TODO yet", "TODO はまだありません"),
+            n => tr!("There is no TODO number {} (1 to {})", "{} 番目の TODO はありません（1〜{}）", word, n),
+        })),
+    }
+}
+
 pub fn todo_done(_: &Ctx, call: &Call) -> Result<Reply> {
     let mut list = home::todos()?;
-    let k: usize = call.word(0).unwrap_or_default().parse().unwrap_or(0);
-    let count = list.len();
-    let item = list.get_mut(k.wrapping_sub(1)).ok_or_else(|| Error::NotFound(match count {
-        0 => tr!("There is no TODO yet", "TODO はまだありません"),
-        n => tr!("There is no TODO number {} (1 to {})", "{} 番目の TODO はありません（1〜{}）", k, n),
-    }))?;
+    let at = nth(&list, call.word(0).unwrap_or_default())?;
+    let k = at + 1;
+    let item = &mut list[at];
     item.done = !item.done;
     let (name, done, item) = (text::named(item.kind.as_deref(), &item.title), item.done, item.clone());
     home::save_todos(&list)?;
     Ok(Reply::done(if done { tr!("Done: {}", "完了にしました：{}", name) } else { tr!("Not done again: {}", "未完了に戻しました：{}", name) }, json!({"number": k, "todo": item})))
+}
+
+/// `l3 todo rm N`: the Nth item goes, as emptying it does in the app.
+pub fn todo_rm(_: &Ctx, call: &Call) -> Result<Reply> {
+    let mut list = home::todos()?;
+    let at = nth(&list, call.word(0).unwrap_or_default())?;
+    let item = list.remove(at);
+    home::save_todos(&list)?;
+    let open = list.iter().filter(|t| !t.done).count();
+    Ok(Reply::done(tr!("Removed from TODO: {} ({} open)", "TODO から消しました：{}（残り{}件）", text::named(item.kind.as_deref(), &item.title), open),
+        json!({"removed": item, "number": at + 1, "open": open})))
 }
 
 pub fn profile_show(_: &Ctx, _: &Call) -> Result<Reply> {

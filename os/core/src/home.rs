@@ -83,14 +83,20 @@ pub fn save_todos(list: &[Todo]) -> Result<()> {
     set("todo", &serde_json::to_string(list).map_err(|e| e.to_string())?)
 }
 
-/// A new item from a first line written as "Kind：title" (or plain text).
+/// How long an item's first line and its detail may be, in UTF-16 units as the app counts them (src/todo.ts).
+pub const TODO_LIMITS: [(&str, usize); 2] = [("title", 200), ("detail", 4000)];
+
+/// A new item from a first line written as "Kind：title" (or plain text);
+/// lines after the first are detail, before `detail`.
 pub fn todo_from(line: &str, detail: &str, now: u64) -> Option<Todo> {
-    let (kind, title) = kind_of(line);
+    let (first, more) = line.split_once('\n').unwrap_or((line, ""));
+    let (kind, title) = kind_of(first);
     if title.trim().is_empty() && kind.is_none() {
         return None;
     }
+    let detail = [more.trim(), detail.trim_end()].into_iter().filter(|d| !d.is_empty()).collect::<Vec<_>>().join("\n");
     let id = format!("{}-l3", radix36(now));
-    Some(Todo { id, kind, title: title.trim().into(), detail: detail.trim_end().into(), done: false, repo: None, created: now })
+    Some(Todo { id, kind, title: title.trim().into(), detail, done: false, repo: None, created: now })
 }
 
 /// Home's profile, as the app keeps it (src/profile.ts).
@@ -211,4 +217,21 @@ fn radix36(mut n: u64) -> String {
     }
     out.reverse();
     String::from_utf8(out).unwrap()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_item_is_its_first_line_then_detail() {
+        let t = todo_from("Fix：title", "why", 0).unwrap();
+        assert_eq!((t.kind.as_deref(), t.title.as_str(), t.detail.as_str()), (Some("Fix"), "title", "why"));
+        // Lines after the first are detail, before the detail given (bug: they stayed in the title).
+        let t = todo_from("Fix：title\nsecond\nthird\n", "why", 0).unwrap();
+        assert_eq!((t.title.as_str(), t.detail.as_str()), ("title", "second\nthird\nwhy"));
+        assert_eq!(todo_from("Fix：title\nmore", "", 0).unwrap().detail, "more");
+        assert!(todo_from("\nFix：title", "", 0).is_none());
+        assert!(todo_from("Fix：", "", 0).is_some_and(|t| t.kind.as_deref() == Some("Fix") && t.title.is_empty()));
+    }
 }

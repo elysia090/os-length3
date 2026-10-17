@@ -129,6 +129,7 @@ pub static COMMANDS: &[Command] = &[
         hidden(Some("ls"), &[], DEVICE, Send, home::todo_list),
         f(Some("add"), &[TITLE], &[Flag::Note("detail")], ["add one", "足す"], DEVICE, Send, home::todo_add),
         f(Some("done"), &[Arg::Number("N")], &[], ["mark the Nth done (again to undo)", "N 番目を完了に（もう一度で戻す）"], DEVICE, Send, home::todo_done),
+        f(Some("rm"), &[Arg::Number("N")], &[], ["remove the Nth", "N 番目を消す"], DEVICE, Send, home::todo_rm),
     ]),
     c("profile", &[], Group::Home, ["your name, handle and bio", "名前、ハンドル、自己紹介"], &[
         f(None, &[], &[], ["as others see it", "人から見えるとおりに"], DEVICE, Send, home::profile_show),
