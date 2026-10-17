@@ -61,8 +61,8 @@ export function signInPlace(title: string, ...body: Node[]): HTMLElement {
 export function signInBox(done: () => void, words?: string, back?: string): HTMLElement {
   const error = h('p', {class: 'error', role: 'alert'});
   const box = h('div', {class: 'remote-join'}, h('p', {class: 'muted'}, words ?? (isNative
-    ? t('Your repos are kept on the Remote. Once this device is connected, each change goes there by itself, and your other devices have it too.')
-    : t('Your repos are kept on the Remote. Once you are signed in, each change goes there by itself; close this tab and this browser keeps nothing.'))));
+    ? t('Connect this device, and the Remote keeps your repos: each change goes there by itself, and your other devices have it too.')
+    : t('Sign in, and the Remote keeps your repos: each change goes there by itself, so this browser keeps nothing once the tab is closed.'))));
   if (isNative) {
     const go = button(t('Connect in the browser'), 'primary');
     const waiting = h('div', {class: 'remote-join', hidden: ''});

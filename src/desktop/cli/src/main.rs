@@ -875,7 +875,7 @@ fn free(a: &Args, ids: &[&str]) -> Result<(), String> {
 fn remote_page(a: &Args) -> Result<(), String> {
     let Some(c) = remote::connection() else {
         out(tr!("Remote  not connected", "Remote  まだつないでいません"));
-        out(tr!("  Your repos are kept on the Remote. l3 login connects this device once you approve in the browser; from then on each change goes there by itself.", "  repo は Remote に置かれます。l3 login でブラウザで承認するとこの端末がつながり、それからは変更がひとりでに Remote へ届きます。"));
+        out(tr!("  l3 login, approved in the browser, connects this device; then the Remote keeps your repos, and each change goes there by itself.", "  l3 login をブラウザで承認するとこの端末がつながり、Remote があなたの repo を持ちます。変更はひとりでに Remote へ届きます。"));
         return Ok(());
     };
     let account = remote::account();

@@ -1,12 +1,15 @@
 import {h} from '../dom.ts';
 import {currentLang, LANGS, setLang, t} from '../i18n.ts';
-import {mark} from '../icons.ts';
+import {icon, mark} from '../icons.ts';
 import {connection} from '../remote.ts';
 import {setState} from '../state.ts';
 import {initials, type Profile} from '../profile.ts';
 import {purpose} from '../purposes.ts';
 import {choosePart, reveal} from './common.ts';
 import type {Context} from './context.ts';
+
+/** The pages a setting opens. */
+type Page = 'home' | 'remote' | 'runtime';
 
 // The person's own icon at the foot of the rail: their initials, or a head
 // and shoulders before there is a name. Touching it brings out the way into
@@ -30,9 +33,12 @@ export class Me {
     this.ctx = ctx;
     this.profile = profile;
     this.button = h('button', {type: 'button', class: 'me', 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'aria-controls': 'me-pop'}) as HTMLButtonElement;
-    // `checked`: one of a choice (the language), on or off.
-    const item = (label: string, run: (() => void) | null, where?: string, checked?: boolean) => {
-      const b = h('button', {type: 'button', class: 'me-item', role: checked === undefined ? 'menuitem' : 'menuitemradio'}, label, where ? h('span', {class: 'muted small'}, where) : null);
+    // `page`: where it opens, shown by that page's own icon (named in its title). `checked`: one of a choice (the language), on or off.
+    const item = (label: string, run: (() => void) | null, page?: Page, checked?: boolean) => {
+      const at = page ? icon(page) : null;
+      at?.classList.add('me-where');
+      const b = h('button', {type: 'button', class: 'me-item', role: checked === undefined ? 'menuitem' : 'menuitemradio'}, label, at);
+      if (page) b.title = t(purpose(page).label);
       if (checked !== undefined) b.setAttribute('aria-checked', String(checked));
       if (run) b.addEventListener('click', () => { this.close(); run(); }); else b.setAttribute('disabled', '');
       return b;
@@ -40,13 +46,11 @@ export class Me {
     const group = (title: string, ...items: HTMLElement[]) =>
       h('div', {class: 'me-group', role: 'group', 'aria-label': title}, h('div', {class: 'me-head muted small'}, title), ...items);
     // A part of a page, or a section of one, brought into view.
-    const to = (page: 'home' | 'remote' | 'runtime', part?: string, section?: string) => () => {
+    const to = (page: Page, part?: string, section?: string) => () => {
       if (part) choosePart(page, part);
       this.ctx.go(page);
       if (section) reveal(section);
     };
-    // The page a setting lives on, named as the rail names it.
-    const where = (page: 'home' | 'remote' | 'runtime') => t(purpose(page).label);
     this.pop = h('div', {class: 'me-pop', id: 'me-pop', role: 'menu', 'aria-label': t('Me')});
     const fill = () => {
       const p = this.profile();
@@ -55,15 +59,16 @@ export class Me {
         h('div', {class: 'me-who'}, this.face(), h('div', {class: 'me-name'},
           h('b', {}, p.name || (p.handle ? `@${p.handle}` : t('No name yet'))),
           p.name && p.handle ? h('span', {class: 'muted small'}, `@${p.handle}`) : null)),
+        // Each a word or two: the group says what it is about.
         group(t('Profile'),
-          item(t('See profile'), to('home'), where('home')),
-          item(t('Edit profile'), () => actions.editProfile(), where('home'))),
+          item(t('View'), to('home'), 'home'),
+          item(t('Edit'), () => actions.editProfile(), 'home')),
         group(t('Account'), ...(signedIn
-          ? [item(t('Sign-in and passkeys'), to('remote', 'sign-in'), where('remote')), item(t('Devices'), to('remote', 'devices'), where('remote'))]
-          : [item(t('Sign in'), to('remote'), where('remote'))])),
+          ? [item(t('Sign-in'), to('remote', 'sign-in'), 'remote'), item(t('Devices'), to('remote', 'devices'), 'remote')]
+          : [item(t('Sign in'), to('remote'), 'remote')])),
         group(t('This device'),
-          item(t('Room on this device'), to('runtime'), where('runtime')),
-          item(t('Environment and dotfiles'), to('runtime', undefined, 'env-title'), where('runtime'))),
+          item(t('Room'), to('runtime'), 'runtime'),
+          item(t('Environment'), to('runtime', undefined, 'env-title'), 'runtime')),
         // The language is Home's setting, so l3 speaks the same one.
         group(t('Language'),
           ...LANGS.map((l) => item(l.name, () => { setLang(l.id); void setState('lang', JSON.stringify(l.id)); }, undefined, l.id === currentLang()))));
