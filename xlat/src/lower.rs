@@ -51,11 +51,17 @@ const FIRST_GUEST: u32 = 12;
 /// Imported functions, in index order: the host's, then (in a module made later) the first module's.
 const HOST_IMPORTS: [&str; 7] = ["syscall", "trap", "div128", "clock", "fpu", "trace", "miss"];
 const SHARED: [&str; 5] = ["mulhu", "mulhs", "resolve", "dispatch", "run"];
-/// Globals every module of a program shares: r0..r15, fs, x0..x15.
-const GLOBALS: u32 = 33;
-fn global_name(n: u32) -> String { if n < 16 { format!("r{n}") } else if n == G_FS { "fs".into() } else { format!("x{}", n - 17) } }
+/// Globals every module of a program shares: r0..r15, fs, x0..x15, and the
+/// flags handed from one function to another (fl).
+const GLOBALS: u32 = 34;
+fn global_name(n: u32) -> String { if n < 16 { format!("r{n}") } else if n == G_FS { "fs".into() } else if n == G_FLAGS { "fl".into() } else { format!("x{}", n - 17) } }
+fn global_type(n: u32) -> ValType { if n < 17 || n == G_FLAGS { ValType::I64 } else { ValType::V128 } }
 
 const G_FS: u32 = 16;
+/// CF, ZF, SF, OF and PF as bits 0..4, for code that goes on to another function's head.
+const G_FLAGS: u32 = 33;
+/// The flags' locals in the order of their bits in G_FLAGS.
+const FLAG_LOCALS: [u32; 5] = [L_CF, L_ZF, L_SF, L_OF, L_PF];
 const fn g_xmm(n: u32) -> u32 { 17 + n }
 
 // ---- Function locals ----
@@ -189,6 +195,29 @@ impl<'p> Fx<'p> {
                 self.e(W::GlobalSet(g_xmm(n)));
             }
         }
+    }
+
+    /// Hand the flags on in G_FLAGS, for code outside this function that may read them.
+    fn save_flags(&mut self) {
+        self.hold_flags();
+        for (k, l) in FLAG_LOCALS.iter().enumerate() {
+            self.get(*l);
+            if k > 0 { self.c32(k as i32); self.e(W::I32Shl); self.e(W::I32Or); }
+        }
+        self.e(W::I64ExtendI32U);
+        self.e(W::GlobalSet(G_FLAGS));
+    }
+
+    /// Take the flags a function that came before left in G_FLAGS.
+    fn load_flags(&mut self) {
+        for (k, l) in FLAG_LOCALS.iter().enumerate() {
+            self.e(W::GlobalGet(G_FLAGS));
+            self.e(W::I32WrapI64);
+            if k > 0 { self.c32(k as i32); self.e(W::I32ShrU); }
+            self.c32(1); self.e(W::I32And);
+            self.set(*l);
+        }
+        self.flags = Flags::Held;
     }
 
     fn load(&mut self) {
@@ -507,6 +536,8 @@ impl<'p> Fx<'p> {
     /// Transfer to code outside this function without growing the stack.
     fn tail(&mut self, address: u64) {
         self.save();
+        // What it goes on to may read the flags left here (post-linked code shares one function's tail with another's head).
+        self.save_flags();
         match self.program.entries.get(&address) {
             Some(&(f, b)) => {
                 self.c32(b as i32);
@@ -1730,14 +1761,19 @@ impl Fx<'_> {
 fn flags_read(i: &Instruction) -> u32 { i.rflags_read() & ALL_FLAGS }
 fn flags_written(i: &Instruction) -> u32 { i.rflags_modified() & ALL_FLAGS }
 
+/// The blocks of `f` that `b` goes on to, and whether it can also go on to
+/// code outside them. Code outside (another function's entry reached by a
+/// fall, a jump or a tail jump, as post-linked code shares one function's
+/// tail with another's head, or an indirect jump) may read the flags `b`
+/// leaves, so they are kept for it.
 fn successors(f: &Function, b: &Block) -> (Vec<usize>, bool) {
     let mut out = Vec::new();
     let mut unknown = false;
-    let mut add = |a: u64| match f.block_index(a) { Some(k) => out.push(k), None => {} };
+    let mut add = |a: u64| match f.block_index(a) { Some(k) => out.push(k), None => unknown = true };
     match b.exit {
         Exit::Fall(a) | Exit::Jump(a) => add(a),
         Exit::Branch { taken, fall } => { add(taken); add(fall); }
-        Exit::IndirectJump => unknown = true,
+        Exit::IndirectJump | Exit::TailJump(_) => unknown = true,
         _ => {}
     }
     (out, unknown)
@@ -1897,6 +1933,7 @@ fn lower_function(program: &Program, index: u32, options: Options, report: &mut 
     ]);
     fx.get(L_ENTRY); fx.set(L_BLK);
     fx.load();
+    fx.load_flags();
     fx.e(W::Loop(BlockType::Empty));
     for _ in 0..n { fx.e(W::Block(BlockType::Empty)); }
     fx.get(L_BLK);
@@ -2039,8 +2076,7 @@ pub fn translate_more(program: &Program, base: u32, options: Options) -> Transla
     for (name, ty) in HOST_IMPORTS.iter().zip(host_types) { imports.import("env", name, EntityType::Function(ty)); }
     for (name, ty) in SHARED.iter().zip([T_PAIR, T_PAIR, T_RESOLVE, T_RESOLVE, T_RUN]) { imports.import("main", name, EntityType::Function(ty)); }
     for n in 0..GLOBALS {
-        let val_type = if n < 17 { ValType::I64 } else { ValType::V128 };
-        imports.import("main", &global_name(n), EntityType::Global(GlobalType { val_type, mutable: true, shared: false }));
+        imports.import("main", &global_name(n), EntityType::Global(GlobalType { val_type: global_type(n), mutable: true, shared: false }));
     }
     imports.import("main", "table", EntityType::Table(TableType { element_type: RefType::FUNCREF, minimum: (base as u64) + program.functions.len() as u64, maximum: None, table64: false, shared: false }));
     module.section(&imports);
@@ -2118,6 +2154,7 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
     for _ in 0..16 {
         globals.global(GlobalType { val_type: ValType::V128, mutable: true, shared: false }, &ConstExpr::v128_const(0));
     }
+    globals.global(GlobalType { val_type: ValType::I64, mutable: true, shared: false }, &ConstExpr::i64_const(0));
     module.section(&globals);
 
     let mut exports = ExportSection::new();

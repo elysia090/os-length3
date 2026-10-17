@@ -23,21 +23,24 @@ const cacheDir = join(here, '..', 'target', 'xlat-cache');
 // never reuses modules made by an older one.
 const translatorId = createHash('sha256').update(readFileSync(translator)).digest('hex');
 
+// XLAT_BLOCKS=1: translate with --trace, so every block entered is reported (process.mjs prints it).
+const traced = process.env.XLAT_BLOCKS ? ['--trace'] : [];
+
 function translate(bytes) {
-  const key = createHash('sha256').update(translatorId).update(bytes).digest('hex');
+  const key = createHash('sha256').update(translatorId).update(traced.join()).update(bytes).digest('hex');
   const wasm = join(cacheDir, key + '.wasm');
   if (!existsSync(wasm)) {
     mkdirSync(cacheDir, {recursive: true});
     const elf = join(cacheDir, key + '.elf');
     writeFileSync(elf, bytes);
-    execFileSync(translator, [elf, wasm], {stdio: ['ignore', 'ignore', 'ignore']});
+    execFileSync(translator, [...traced, elf, wasm], {stdio: ['ignore', 'ignore', 'ignore']});
   }
   return readFileSync(wasm);
 }
 
 /** Code reached later, from `seeds` past the `known` starts, filling table slots from `base`. */
 translate.more = function more(bytes, seeds, known, base) {
-  const key = createHash('sha256').update(translatorId).update(bytes).update(`${seeds}|${known}|${base}`).digest('hex');
+  const key = createHash('sha256').update(translatorId).update(traced.join()).update(bytes).update(`${seeds}|${known}|${base}`).digest('hex');
   const wasm = join(cacheDir, key + '.more.wasm');
   if (!existsSync(wasm)) {
     mkdirSync(cacheDir, {recursive: true});
@@ -45,7 +48,7 @@ translate.more = function more(bytes, seeds, known, base) {
     if (!existsSync(elf)) writeFileSync(elf, bytes);
     writeFileSync(`${wasm}.seeds`, seeds.join('\n'));
     writeFileSync(`${wasm}.known`, known.join('\n'));
-    const done = spawnSync(translator, [`--more=${wasm}.seeds`, `--known=${wasm}.known`, `--base=${base}`, elf, wasm], {stdio: ['ignore', 'ignore', 'pipe']});
+    const done = spawnSync(translator, [...traced, `--more=${wasm}.seeds`, `--known=${wasm}.known`, `--base=${base}`, elf, wasm], {stdio: ['ignore', 'ignore', 'pipe']});
     if (done.status !== 0) throw new Error(`xlat --more failed: ${done.stderr}`);
     const report = done.stderr.toString();
     // XLAT_UNSUPPORTED=1: say which instructions code reached later uses that are not translated yet.

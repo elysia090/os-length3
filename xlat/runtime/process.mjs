@@ -255,7 +255,7 @@ export class Process {
       div128: (hi, lo, d, signed) => div128(hi, lo, d, signed),
       clock: () => BigInt(Math.round(performance.now() * 1e6)),
       fpu: (op, size, address, a, b) => this.fpu.call(op, size, address, a, b),
-      trace: (address) => { if (this.trail) this.trail[this.trailAt++ & 255] = address; },
+      trace: (address) => { if (TRACE_BLOCKS) console.error(`[${this.pid}] block 0x${BigInt.asUintN(64, BigInt(address)).toString(16)}`); else if (this.trail) this.trail[this.trailAt++ & 255] = address; },
       miss: (address) => this.miss(address),
     }};
   }
@@ -411,6 +411,7 @@ export class Process {
     const from = this.instance.exports, to = child.instance.exports;
     for (let n = 0; n < 16; n++) to[`r${n}`].value = from[`r${n}`].value;
     to.fs.value = from.fs.value;
+    if (to.fl && from.fl) to.fl.value = from.fl.value;
     to.r0.value = 0n; // fork returns 0 in the child
     if (stack) to.r4.value = stack;
     child.resumeAt = resume;
@@ -451,6 +452,8 @@ export class Process {
 
 /** XLAT_SYSCALLS=1 lists every system call on stderr (node only). */
 const TRACE_SYSCALLS = typeof process !== 'undefined' && !!process.env?.XLAT_SYSCALLS;
+/** XLAT_BLOCKS=1 lists every block entered (node only; run.mjs then translates with --trace). */
+const TRACE_BLOCKS = typeof process !== 'undefined' && !!process.env?.XLAT_BLOCKS;
 /** Which argument of a call names a path (0: the first, 1: the second, after a directory). */
 const PATH_ARG = {2: 0, 4: 0, 6: 0, 21: 0, 59: 0, 80: 0, 83: 0, 84: 0, 87: 0, 89: 0, 257: 1, 262: 1, 263: 1, 269: 1, 439: 1};
 
