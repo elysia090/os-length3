@@ -7,5 +7,8 @@ export function readingOrder<T extends {name: string; kind: string}>(entries: re
 /** Lines as an editor counts them: a final newline does not start another. */
 export function lineCount(text: string): number {
   if (!text) return 0;
-  return text.split('\n').length - (text.endsWith('\n') ? 1 : 0);
+  // Counted where they are, not split apart: the editor asks at every keystroke.
+  let n = 0;
+  for (let at = text.indexOf('\n'); at >= 0; at = text.indexOf('\n', at + 1)) n++;
+  return n + (text.endsWith('\n') ? 0 : 1);
 }

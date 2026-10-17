@@ -120,8 +120,13 @@ export class Reader {
     const sheet = h('div', {class: 'sheet'}, gutter, h('pre', {class: 'code'}, '…'));
     section.append(sheet);
     if (entry.kind === 'link') { sheet.replaceWith(h('p', {class: 'muted sheet-note'}, t('Symbolic link'))); return section; }
+    // The numbers are written again only when the count of lines changed, not at every keystroke.
+    let numbered = 0;
     const number = (text: string) => {
-      gutter.textContent = Array.from({length: Math.max(lineCount(text), 1)}, (_, i) => String(i + 1)).join('\n');
+      const n = Math.max(lineCount(text), 1);
+      if (n === numbered) return;
+      numbered = n;
+      gutter.textContent = Array.from({length: n}, (_, i) => String(i + 1)).join('\n');
     };
     this.fileLoads.set(path, lazy(section, this.flow, async () => {
       let c;
