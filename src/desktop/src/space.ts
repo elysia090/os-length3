@@ -35,6 +35,24 @@ export async function readSpace(open: string[] = []): Promise<Space | null> {
   };
 }
 
+/**
+ * 空ける a repo turned off on the Remote: nothing can be sent to it now, so
+ * the copy here goes only when it holds nothing the Remote lacks.
+ */
+export async function freeOff(name: string): Promise<void> {
+  if (isNative) {
+    const r = await nativeFree([`repo:${name}`]);
+    if (r.kept.length) throw new Error(r.kept[0][1]);
+  } else {
+    const s = (await draft.status()).find((x) => x.name === name);
+    if (s?.changed) throw new Error(tn('{n} change here is not on the Remote; turn it on to send it first', '{n} changes here are not on the Remote; turn it on to send them first', s.changed));
+    await kept!.letGo([name]);
+    await draft.forget(name);
+  }
+  store.changedOutside(name, 'space');
+  await look();
+}
+
 /** 空ける these; each repo is sent first and goes only once the Remote has all of it. */
 export async function free(ids: string[]): Promise<Freed> {
   let result: Freed;

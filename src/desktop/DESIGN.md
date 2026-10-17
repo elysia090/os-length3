@@ -834,7 +834,10 @@ place a page is switched, because its parts are unrelated):
   repo's name and the five-letter code, then a passkey. Off, the knob is at
   the left on `off` red and the card is quiet (dashed): the Remote keeps
   the repo 30 days, answering only that it is off, and pressing the switch
-  again brings it back at once. Its copy on this device goes with it.
+  again brings it back at once. The copy on this device stays until it is
+  freed: off, what was Forge at the bottom left is 空ける, and it frees the
+  copy here (refused while the copy holds changes the Remote lacks, since
+  nothing is sent to a repo that is off).
   Beside Forge, Share: pressed, the servers one is in come out beside it,
   each pressed in where the repo is shown, and pressing one shows it there
   or takes it off at once. Going public is the server's, in its gear (seen

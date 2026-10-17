@@ -2,10 +2,10 @@ import {ago, bytes, day, h} from '../dom.ts';
 import {isNative} from '../host.ts';
 import {t, tn} from '../i18n.ts';
 import {bring, look, onSync, remoteAll, repoState, type RepoSync} from '../lifecycle.ts';
-import * as draft from '../draft.ts';
 import type {RemoteRepo} from '../draft.ts';
 import * as account from '../remote.ts';
-import {kept, store} from '../repos.ts';
+import {store} from '../repos.ts';
+import {freeOff} from '../space.ts';
 import * as servers from '../servers.ts';
 import {pageHead, parts} from './common.ts';
 import type {Context} from './context.ts';
@@ -127,9 +127,14 @@ function repoSection(ctx: Context, counted: (n: number) => void, toCode: () => v
     const changed = there ? Date.parse(there.updatedAt) : here?.modified ?? 0;
     // Away, the Remote can do nothing: what only it holds waits, and so does its switch.
     const gone = account.remoteAway();
-    const forge = button(t('Forge'), 'small-button');
-    forge.disabled = off || (gone && !here);
-    forge.addEventListener('click', () => void pressing(forge, error, async () => { if (!here) await bring(name); ctx.openRepo(name); }));
+    // On, the repo opens in Forge; off, what was Forge frees the copy here (the Remote keeps it 30 days).
+    const forge = button(off ? t('Free') : t('Forge'), 'small-button');
+    forge.disabled = gone && !here;
+    if (off) {
+      forge.hidden = !here;
+      forge.title = t('The Remote keeps it until {date}; the copy here goes', {date: day(there!.until!)});
+      forge.addEventListener('click', () => void pressing(forge, error, async () => { await freeOff(name); await paint(); }));
+    } else forge.addEventListener('click', () => void pressing(forge, error, async () => { if (!here) await bring(name); ctx.openRepo(name); }));
     const power = h('button', {type: 'button', class: 'power', role: 'switch', 'aria-checked': String(!off),
       'aria-label': off ? t('Turn {repo} on', {repo: name}) : t('Turn {repo} off', {repo: name})}, h('span', {class: 'knob'})) as HTMLButtonElement;
     power.disabled = gone;
@@ -214,8 +219,7 @@ async function confirm(el: HTMLElement, repo: string, done: () => Promise<void>,
   const go = button(t('Turn off'), 'small-button primary');
   go.addEventListener('click', () => void pressing(go, error, async () => {
     await account.turnOff(repo, who.value, which.value, five.value);
-    // The copy here goes with it; it comes back from the Remote when turned on and opened.
-    if (!isNative) { await kept?.letGo([repo]); await draft.forget(repo); }
+    // The copy here stays until it is freed from the card (where Forge was).
     await look();
     await done();
   }));
