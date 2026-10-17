@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {test} from 'node:test';
+import {afterEach, test} from 'node:test';
 import {PGlite} from '@electric-sql/pglite';
 import {sql} from 'drizzle-orm';
 import {drizzle} from 'drizzle-orm/pglite';
@@ -14,9 +14,27 @@ import {sweep} from './sweep.ts';
 const BASE = 'http://remote.test';
 const APP = 'http://app.test';
 
+// Each test's database is a copy of one made and migrated once: making one
+// anew (initdb) is most of a test's time, a copy a fraction of it. Each is
+// closed when its test ends, so the file's tests do not hold them all at once.
+let migrated: Promise<File | Blob> | undefined;
+const open: PGlite[] = [];
+const fresh = async () => {
+  migrated ??= (async () => {
+    const pg = new PGlite();
+    await migrate(drizzle(pg, {schema}), {migrationsFolder: new URL('./migrations', import.meta.url).pathname});
+    const dump = await pg.dumpDataDir('none');
+    await pg.close();
+    return dump;
+  })();
+  const pg = new PGlite({loadDataDir: await migrated});
+  open.push(pg);
+  return drizzle(pg, {schema});
+};
+afterEach(() => Promise.all(open.splice(0).map((pg) => pg.close())).then(() => {}));
+
 async function service(records: Record<string, string[]> = {}, o: {quota?: number; enter?: Enter} = {}) {
-  const db = drizzle(new PGlite(), {schema});
-  await migrate(db, {migrationsFolder: new URL('./migrations', import.meta.url).pathname});
+  const db = await fresh();
   const auth = createAuth({db, secret: 'test-secret-'.repeat(4), baseURL: BASE, appOrigin: APP, rateLimit: false, dev: true, only: o.enter && enterEmail(o.enter.as)});
   const bucket = memoryBucket();
   // DNS as a map of name → TXT records.
@@ -1096,8 +1114,7 @@ test('The sweep: what was held long enough goes in one place, blobs no tree name
 
 test('On Workers the app is made once, and each request uses the database it opened', async () => {
   const {scoped} = await import('./worker.ts');
-  const open = async () => { const db = drizzle(new PGlite(), {schema}); await migrate(db, {migrationsFolder: new URL('./migrations', import.meta.url).pathname}); return db; };
-  const [one, two] = [await open(), await open()];
+  const [one, two] = [await fresh(), await fresh()];
   const {db, at} = scoped(one);
   const auth = createAuth({db, secret: 'test-secret-'.repeat(4), baseURL: BASE, appOrigin: APP, rateLimit: false, dev: true});
   const app = createApp({db, auth, bucket: memoryBucket(), origins: [APP], providers: ['dev'], domain: 'length3.test', baseURL: BASE});
