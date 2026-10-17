@@ -68,16 +68,18 @@ export const about = (): Promise<About | null> =>
 
 /**
  * The whole root for the browser's Prompt, when this build carries one
- * (scripts/webroot.mjs): its index, and where its pack is. Each file comes
- * from the pack only when a program first reads it.
+ * (scripts/webroot.mjs): its index, and where its packs are. Each file comes
+ * from its package's pack only when a program first reads it; a pack is
+ * named by what it holds, so one a release did not change is fetched again
+ * from the browser's cache, not the network.
  */
-export interface WebRoot { index: {version: string; pack: string; files: unknown[]}; url: string }
+export interface WebRoot { index: {version: string; packs: {name: string}[]; files: unknown[]}; url: string }
 let rooting: Promise<WebRoot | null> | null = null;
 export const loadWebRoot = (): Promise<WebRoot | null> => (rooting ??= fetch('/root/root.json', {cache: 'no-cache'})
   .then(async (r) => {
     if (!r.ok || !r.headers.get('content-type')?.includes('json')) return null;
     const index = await r.json() as WebRoot['index'];
-    return {index, url: new URL(`/root/${index.pack}`, location.href).href};
+    return {index, url: new URL('/root/', location.href).href};
   })
   .catch(() => null));
 

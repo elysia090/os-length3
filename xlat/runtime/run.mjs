@@ -3,7 +3,7 @@
 //
 // Run a static x86-64 program translated by xlat. PROGRAM is a host path
 // (placed at /bin/<name>) or, with --root, a path inside that tree; --pack
-// mounts a web root (root.json and its pack, scripts/webroot.mjs) as the
+// mounts a web root (root.json and its packs, scripts/webroot.mjs) as the
 // browser does, each file read from the pack when first opened.
 // stdin/stdout/stderr attach to this process.
 import {execFileSync, spawnSync} from 'node:child_process';
@@ -58,6 +58,9 @@ function translate(bytes) {
 }
 
 /** Code reached later, from `seeds` past the `known` starts, filling table slots from `base`. */
+// What the translator keeps, and giving it back (Kernel.free), when it runs here.
+if (inProcess) Object.assign(translate, {held: inProcess.held, spare: inProcess.spare, close: inProcess.close, renew: inProcess.renew});
+
 translate.more = inProcess ? inProcess.more : function more(bytes, seeds, known, base) {
   const key = createHash('sha256').update(translatorId).update(traced.join()).update(digest(bytes)).update(`${seeds}|${known}|${base}`).digest('hex');
   const wasm = join(cacheDir, key + '.more.wasm');
@@ -104,9 +107,10 @@ const vfs = new Vfs();
 if (root) mount(vfs, root, '/');
 if (pack) {
   const index = JSON.parse(readFileSync(join(pack, 'root.json'), 'utf8'));
-  const fd = openSync(join(pack, index.pack), 'r');
-  mountPack(vfs, index, (at, len) => { const b = new Uint8Array(len); readSync(fd, b, 0, len, at); PROFILE.fetches++; PROFILE.fetched += len; return b; });
-  process.on('exit', () => closeSync(fd));
+  const fds = new Map();
+  const fd = (name) => { if (!fds.has(name)) fds.set(name, openSync(join(pack, 'packs', name), 'r')); return fds.get(name); };
+  mountPack(vfs, index, (name, at, len) => { const b = new Uint8Array(len); readSync(fd(name), b, 0, len, at); PROFILE.fetches++; PROFILE.fetched += len; return b; });
+  process.on('exit', () => { for (const f of fds.values()) closeSync(f); });
 }
 let path = program;
 if (!root && !pack) {
@@ -128,5 +132,19 @@ const kernel = new Kernel({
 });
 const started = performance.now();
 const status = kernel.spawn(path, [path, ...rest], ['HOME=/root', 'PATH=/bin:/usr/bin', 'LANG=C.UTF-8', 'TERM=dumb'], cwd);
-if (process.env.XLAT_TIMING) process.stderr.write(JSON.stringify({ms: Math.round(performance.now() - started), ...PROFILE, translate: Math.round(PROFILE.translate), compile: Math.round(PROFILE.compile)}) + '\n');
+if (process.env.XLAT_TIMING) {
+  // What the run still holds once its programs have ended (after a collection, when node allows one).
+  globalThis.gc?.();
+  const m = process.memoryUsage(), mb = (n) => Math.round(n / 2 ** 20);
+  process.stderr.write(JSON.stringify({ms: Math.round(performance.now() - started), ...PROFILE, translate: Math.round(PROFILE.translate), compile: Math.round(PROFILE.compile),
+    heldMB: {rss: mb(m.rss), heap: mb(m.heapUsed), buffers: mb(m.arrayBuffers), external: mb(m.external)},
+    kernelMB: Object.fromEntries(Object.entries(kernel.held()).map(([k, v]) => [k, mb(v)]))}) + '\n');
+  // XLAT_FREE=1: then give back all that can go, and say what the host shows.
+  if (process.env.XLAT_FREE) {
+    const r = kernel.free(0);
+    globalThis.gc?.();
+    const n = process.memoryUsage();
+    process.stderr.write(JSON.stringify({freedMB: mb(r.before.total - r.after.total), kernelAfterMB: Object.fromEntries(Object.entries(r.after).map(([k, v]) => [k, mb(v)])), hostAfterMB: {rss: mb(n.rss), external: mb(n.external)}}) + '\n');
+  }
+}
 process.exitCode = status & 0x7f ? 128 + (status & 0x7f) : status >> 8;

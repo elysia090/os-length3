@@ -66,7 +66,7 @@ jobs:
         if: env.SKIP != '1'
         working-directory: src/desktop
         run: |
-          # The same root, as a pack the browser's Prompt reads file by file (scripts/webroot.mjs).
+          # The same root, as packs (one per package, named by what each holds) the browser's Prompt reads file by file (scripts/webroot.mjs).
           mkdir -p "$RUNNER_TEMP/opened"
           tar --zstd -xf "$GITHUB_WORKSPACE"/out/os-length3-linux-$VERSION-x86_64-*.tar.zst -C "$RUNNER_TEMP/opened"
           node scripts/webroot.mjs "$RUNNER_TEMP/opened/root" public/root

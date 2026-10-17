@@ -16,7 +16,7 @@ test('inflate gives back what zlib deflated, at every level and size', () => {
   }
 });
 
-test('a pack mounts its tree at once and each file only when read; what was there stays', () => {
+test('packs mount their tree at once and each file only when read; what was there stays', () => {
   const blobs = [];
   let at = 0;
   const put = (text, raw = false) => {
@@ -26,18 +26,19 @@ test('a pack mounts its tree at once and each file only when read; what was ther
     at += stored.length;
     return p;
   };
-  const one = put('#!/bin/sh\necho one\n');
+  const one = {...put('#!/bin/sh\necho one\n'), pack: 0};
   const index = {
     dirs: [{path: '/usr', mode: 0o755}, {path: '/usr/bin', mode: 0o755}, {path: '/etc', mode: 0o755}],
     links: [{path: '/usr/bin/again', target: 'one'}, {path: '/etc/given', target: '/nowhere'}],
     files: [{path: '/usr/bin/one', mode: 0o755, ...one}, {path: '/usr/bin/hard', mode: 0o755, ...one},
-      {path: '/etc/os-release', mode: 0o644, ...put('NAME=x\n', true)}, {path: '/etc/given', mode: 0o644, ...put('from the pack')}],
+      {path: '/etc/os-release', mode: 0o644, ...put('NAME=x\n', true), pack: 0}, {path: '/etc/given', mode: 0o644, ...put('from the pack'), pack: 0}],
+    packs: [{name: 'p.pack', owner: 'local', bytes: 0}],
   };
   const pack = Buffer.concat(blobs);
   const reads = [];
   const v = new Vfs();
   v.writeFile('/etc/given', enc.encode('given first'));
-  mountPack(v, index, (a, n) => { reads.push(a); return new Uint8Array(pack.subarray(a, a + n)); });
+  mountPack(v, index, (name, a, n) => { assert.equal(name, 'p.pack'); reads.push(a); return new Uint8Array(pack.subarray(a, a + n)); });
   assert.equal(reads.length, 0);
   assert.equal(v.lookup('/usr/bin/one', '/').size, one.size);
   assert.equal(dec.decode(v.readFile('/usr/bin/again', '/')), '#!/bin/sh\necho one\n');

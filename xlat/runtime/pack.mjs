@@ -1,8 +1,9 @@
-// A root from a pack (src/desktop/scripts/webroot.mjs): its directories and
+// A root from packs (src/desktop/scripts/webroot.mjs): its directories and
 // links at once, each file's bytes only when a program first reads it. The
 // kernel reads inside a system call, where nothing can wait, so the bytes
-// are fetched synchronously: `range(at, len)` returns them (in a Worker, a
-// synchronous Range request; in node, a read of the pack file).
+// are fetched synchronously: `range(pack, at, len)` returns them from the
+// pack of that name (in a Worker, a synchronous Range request; in node, a
+// read of the pack file).
 
 import {Dir, File, Link} from './fs.mjs';
 import {inflateRaw} from './inflate.mjs';
@@ -25,8 +26,9 @@ export function mountPack(vfs, index, range, at = '/') {
   for (const f of index.files) {
     const [dir, name] = place(f.path);
     if (dir.entries.has(name)) continue;
+    const pack = index.packs[f.pack].name;
     const file = new File(new Uint8Array(0), f.mode, () => {
-      const stored = range(f.at, f.len);
+      const stored = range(pack, f.at, f.len);
       return f.raw ? stored.slice() : inflateRaw(stored, f.size);
     });
     file.size = f.size;
@@ -34,10 +36,11 @@ export function mountPack(vfs, index, range, at = '/') {
   }
 }
 
-/** In a Worker: the bytes [at, at+len) of the pack at `url`, fetched synchronously. */
-export function syncRange(url) {
-  return (at, len) => {
+/** In a Worker: the bytes [at, at+len) of a pack in `packs/` under `base`, fetched synchronously. */
+export function syncRange(base) {
+  return (pack, at, len) => {
     if (!len) return new Uint8Array(0);
+    const url = new URL(`packs/${pack}`, base).href;
     const x = new XMLHttpRequest();
     x.open('GET', url, false);
     x.responseType = 'arraybuffer';
