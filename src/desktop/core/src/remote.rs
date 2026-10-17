@@ -65,15 +65,7 @@ pub fn default_url() -> String {
 // ---- HTTP ----
 
 fn agent(url: &str) -> ureq::Agent {
-    let mut b = ureq::AgentBuilder::new().timeout_connect(Duration::from_secs(15)).timeout_read(Duration::from_secs(60));
-    let local = url.split("://").nth(1).is_some_and(|h| h.starts_with("127.") || h.starts_with("localhost") || h.starts_with("[::1]"));
-    let proxy = ["HTTPS_PROXY", "https_proxy"].iter().find_map(|k| std::env::var(k).ok().filter(|v| !v.trim().is_empty()));
-    if let (false, Some(p)) = (local, proxy) {
-        if let Ok(p) = ureq::Proxy::new(p) {
-            b = b.proxy(p);
-        }
-    }
-    b.build()
+    crate::net::agent(url, Duration::from_secs(60))
 }
 
 pub(crate) struct Client {

@@ -19,20 +19,6 @@ pub enum Progress<'a> {
     Retry(u32, &'a str),
 }
 
-fn agent(url: &str) -> ureq::Agent {
-    let mut b = ureq::AgentBuilder::new().timeout_connect(Duration::from_secs(15)).timeout_read(STALL);
-    // A proxy the host already uses is honoured (never for this machine
-    // itself); nothing else of the host's environment is.
-    let local = url.split("://").nth(1).is_some_and(|h| h.starts_with("127.") || h.starts_with("localhost") || h.starts_with("[::1]"));
-    let proxy = ["HTTPS_PROXY", "https_proxy"].iter().find_map(|k| std::env::var(k).ok().filter(|v| !v.trim().is_empty()));
-    if let (false, Some(p)) = (local, proxy) {
-        if let Ok(proxy) = ureq::Proxy::new(p) {
-            b = b.proxy(proxy);
-        }
-    }
-    b.build()
-}
-
 fn digest_of(path: &Path) -> io::Result<String> {
     let mut f = fs::File::open(path)?;
     let mut h = Sha256::new();
@@ -47,7 +33,7 @@ pub fn fetch(url: &str, sha256: &str, size: u64, dest: &Path, mut progress: impl
         return Ok(());
     }
     let part = dest.with_extension("part");
-    let agent = agent(url);
+    let agent = crate::net::agent(url, STALL);
     let mut why = String::new();
     for attempt in 1..=ATTEMPTS {
         if attempt > 1 {

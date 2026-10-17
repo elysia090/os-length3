@@ -14,3 +14,8 @@ ruzstd = "0.9"
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 sha2 = "0.10"
 ureq = { version = "2", default-features = false, features = ["tls", "json"] }
+# The host's trusted certificates beside the bundled ones (net.rs): what the
+# person's machine trusts (its store, or SSL_CERT_FILE), the Remote is reached through.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "0.26"
+rustls-native-certs = "0.8"

@@ -542,7 +542,12 @@ What leaves this system is kept to what is said here:
   "not implemented", so a program in it can reach nothing. The page itself
   may reach its own origin and the Remote, nothing else: the web build
   carries that Content-Security-Policy, and the desktop's (Tauri's) says the
-  same. The Remote answers only the app's origins.
+  same. The Remote answers only the app's origins. From the host (the app
+  and l3: the Remote, a release, a distribution's root) it goes one way
+  (core/src/net.rs), taking of the host only what the machine already
+  decided: its proxy (HTTPS_PROXY, minus NO_PROXY, never for the machine
+  itself) and the certificates it trusts (its store or SSL_CERT_FILE,
+  beside the bundled ones).
 - **The root.** In the app a Prompt is the distribution's root, run by this
   machine's kernel without privilege (`l3 prompt`, core/src/launch.rs): a user
   namespace makes the user root inside it only; its own mount, pid, ipc,
