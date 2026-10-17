@@ -124,6 +124,8 @@ jobs:
             echo "mkdir opened && tar --zstd -xf $root -C opened"
             echo '```'
             echo
+            echo "To serve this release on the web, pin its web zip in \`os/shared/web-releases.json\` (\"$VERSION\": its SHA-256 above), as its root is pinned in \`os/core/src/root.rs\`."
+            echo
             echo "\`manifest\` names the base, the l3 inside and the script that made it. The web build opens with any static server (\`npx serve\` in the unzipped folder). The desktop app: \`sudo apt install ./$deb\`, or \`chmod +x $appimage\` and run it."
           } > ../notes.md
           cat ../notes.md

@@ -223,13 +223,17 @@ to this repository, and its Settings → Build say, once:
 | | |
 |---|---|
 | Root directory | `os` |
-| Build command | `npm run build:cloudflare`: the Prompt from the release `RELEASE` names (`scripts/prompt-files.mjs`, checked against its SHA256SUMS), then the app |
+| Build command | `npm run build:cloudflare`: the Prompt from the release `RELEASE` names (`scripts/prompt-files.mjs`, checked against the digest `shared/web-releases.json` pins for it), then the app |
 | Deploy command | `node service/deploy.ts`: the migrations on Neon's production branch (no branch is made for a deploy), the bucket, then the Worker with the secrets it lacks; the first build prints the link in its log |
 | Variables and secrets | `NEON_PROJECT_ID`; secrets `NEON_API_KEY` (a Neon API key for the project) and `GITHUB_TOKEN` (read-only, for this private repository's releases) |
 | Branch control | main; no preview builds |
 
 The Prompt the web serves is a released one: a newer one ships by releasing
-it (a new version in `RELEASE`, `.github/workflows/release.yml`). A new link
+it (a new version in `RELEASE`, `.github/workflows/release.yml`), then
+pinning what was released, as its notes give them: the root in
+`core/src/root.rs` and the web zip in `shared/web-releases.json`. A build
+takes only the web zip this tree pins, so a release made under that tag by
+anyone else is not what production serves. A new link
 is a new `ENTER_KEY`: set in the Worker's Variables and Secrets, the old
 link opens nothing at once. By hand, from a machine that reaches Neon and
 Cloudflare (`npx wrangler login`):

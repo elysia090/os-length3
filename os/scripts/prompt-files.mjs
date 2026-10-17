@@ -3,8 +3,11 @@
 // the root it reads (public/root). They are made where Rust is, by the
 // release (.github/workflows/release.yml), and are the OS that version is; a
 // build that only has Node (Cloudflare's Workers Builds) takes them from it,
-// checked against the release's SHA256SUMS, so the web app ships a released
-// Prompt. Shipping a newer Prompt is releasing it (a new version in RELEASE).
+// checked against the digest this tree pins for that version
+// (shared/web-releases.json) as well as the release's SHA256SUMS, so the web
+// app ships the Prompt this source names, not whatever a release under that
+// tag holds. Shipping a newer Prompt is releasing it (a new version in
+// RELEASE) and pinning its web zip here, as its root is in core/src/root.rs.
 //
 //   node scripts/prompt-files.mjs
 //
@@ -25,6 +28,10 @@ const token = process.env.GITHUB_TOKEN;
 const version = readFileSync(join(here, 'RELEASE'), 'utf8').trim();
 const tag = `os-length3-linux-v${version}`;
 const zip = `os-length3-linux-${version}-web.zip`;
+// The digest this tree pins comes first: without one, nothing is fetched or taken.
+const pins = JSON.parse(readFileSync(join(here, 'shared', 'web-releases.json'), 'utf8'));
+const want = pins[version];
+if (!/^[0-9a-f]{64}$/.test(want ?? '')) throw new Error(`shared/web-releases.json pins no web zip for ${version}: pin the release's (its notes say it) before building`);
 
 const ask = (path, accept = 'application/vnd.github+json') => fetch(`${api}/repos/${repo}${path}`, {
   headers: {accept, 'x-github-api-version': '2022-11-28', 'user-agent': 'length3-build', ...(token ? {authorization: `Bearer ${token}`} : {})},
@@ -43,11 +50,11 @@ const asset = async (name) => {
 };
 
 const sums = (await asset('SHA256SUMS')).toString('utf8');
-const want = sums.split('\n').map((l) => l.trim().split(/\s+/)).find(([, name]) => name === zip)?.[0];
-if (!want) throw new Error(`SHA256SUMS of ${tag} does not name ${zip}`);
+const listed = sums.split('\n').map((l) => l.trim().split(/\s+/)).find(([, name]) => name === zip)?.[0];
+if (listed !== want) throw new Error(`SHA256SUMS of ${tag} says ${listed ?? 'nothing'} for ${zip}; this tree pins ${want}`);
 const bytes = await asset(zip);
 const got = createHash('sha256').update(bytes).digest('hex');
-if (got !== want) throw new Error(`${zip}: sha256 ${got}, the release says ${want}`);
+if (got !== want) throw new Error(`${zip}: sha256 ${got}, this tree pins ${want}`);
 
 const work = mkdtempSync(join(tmpdir(), 'prompt-'));
 try {
