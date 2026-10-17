@@ -1,3 +1,4 @@
+import {t} from './i18n.ts';
 import {getState, setState} from './state.ts';
 
 // The person's dotfiles: Home keeps them (`dotfiles`, name → text), the
@@ -21,6 +22,20 @@ export function read(): Record<string, string> {
 
 export async function write(all: Record<string, string>): Promise<void> {
   await setState('dotfiles', JSON.stringify(Object.fromEntries(Object.entries(all).sort(([a], [b]) => (a < b ? -1 : 1)))));
+}
+
+/** Keep `text` as `name` (made or changed), on every device; a Prompt has it from its next start. */
+export async function save(name: string, text: string): Promise<void> {
+  if (!validName(name)) throw new Error(t('A dotfile is named with a dot first: .profile'));
+  await write({...read(), [name]: text});
+}
+
+/** Take `name` away, from every device (asked first: nothing keeps it); a running Prompt keeps its copy until it starts again. */
+export async function remove(name: string): Promise<void> {
+  const all = read();
+  if (!(name in all)) return;
+  delete all[name];
+  await write(all);
 }
 
 /** What a Prompt starts with: each dotfile as a file under /root. */

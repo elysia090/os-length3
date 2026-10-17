@@ -194,9 +194,12 @@ export async function setOffCode(code: string): Promise<void> {
   await json('/v1/off-code', {method: 'POST', body: JSON.stringify({code})});
 }
 
-/** Turn `repo` off: kept 30 days on the Remote, back at once until then. */
-export async function turnOff(repo: string, name: string, typed: string, code: string): Promise<{offAt: number; until: number}> {
-  await signIn();
+/**
+ * Turn `repo` off: kept 30 days on the Remote, back at once until then. `proven`: a passkey confirmed it a
+ * moment ago (setting the code), which the Remote still takes; else one is asked for now.
+ */
+export async function turnOff(repo: string, name: string, typed: string, code: string, proven = false): Promise<{offAt: number; until: number}> {
+  if (!proven) await signIn();
   const r = await api(`/v1/repos/${encodeURIComponent(repo)}/off`, {method: 'POST', body: JSON.stringify({name, repo: typed, code})});
   const body = await r.json() as {offAt?: number; until?: number; error?: string};
   if (!r.ok) throw new RemoteError(r.status, t(body.error ?? `Remote: ${r.status}`));
@@ -207,8 +210,8 @@ export async function turnOff(repo: string, name: string, typed: string, code: s
 export const turnOn = (repo: string) => json(`/v1/repos/${encodeURIComponent(repo)}/on`, {method: 'POST'});
 
 /** Discard a repo turned off: gone from the Remote now, with its history, for good. Asked for as turning it off is. */
-export async function discard(repo: string, name: string, typed: string, code: string): Promise<void> {
-  await signIn();
+export async function discard(repo: string, name: string, typed: string, code: string, proven = false): Promise<void> {
+  if (!proven) await signIn();
   const r = await api(`/v1/repos/${encodeURIComponent(repo)}/discard`, {method: 'POST', body: JSON.stringify({name, repo: typed, code})});
   if (!r.ok) throw new RemoteError(r.status, t(((await r.json()) as {error?: string}).error ?? `Remote: ${r.status}`));
 }
@@ -228,8 +231,14 @@ export async function devices(): Promise<Device[]> {
   return list.map((d) => ({...d, current: d.token === mine})).sort((a, b) => Number(b.current) - Number(a.current) || b.updatedAt.localeCompare(a.updatedAt));
 }
 
-/** End another device's session; it will have to be approved again. */
-export const endDevice = (token: string) => json('/api/auth/revoke-session', {method: 'POST', body: JSON.stringify({token})});
+/**
+ * End another device's session (as `l3 remote devices rm N` does); it will have to sign in again. This
+ * device is never ended from the list: it signs out from the person's menu, which forgets it here too.
+ */
+export async function endDevice(d: Pick<Device, 'token'>): Promise<void> {
+  if (d.token === connection()?.token.split('.')[0]) throw new RemoteError(0, t('This device signs out from your menu at the foot of the rail.'));
+  await json('/api/auth/revoke-session', {method: 'POST', body: JSON.stringify({token: d.token})});
+}
 
 /** A device asking to join (l3, the app): which one, before it is let in. */
 export async function deviceAsking(userCode: string): Promise<{clientId: string; status: string}> {

@@ -75,4 +75,9 @@ export default {
   'Dotfiles': 'Dotfiles',
   'A dotfile is named with a dot first: .profile': 'dotfile の名前はドットで始めます（.profile など）',
   'Close': '閉じる',
+  'Remove {name}': '{name}を外す',
+  '{name} goes from every device.':'{name}はすべての端末から消えます。',
+  'Prompts running keep it until they start again.': '動いている Prompt には、もう一度起動するまで残ります。',
+  'The Prompt in {list} gets it when it starts again': '{list}の Prompt には、もう一度起動すると入ります',
+  'The Prompts in {list} get it when they start again': '{list}の Prompt には、もう一度起動すると入ります',
 } as Record<string, string>;

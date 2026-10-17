@@ -280,7 +280,7 @@ fix is always a piece from §3, not a new rule.
 | A button that says where a thing is shared (旅行に共有) and opens a form | Share, and the servers beside it to press in or out |
 | A rule under a lone row (Runtime's Remote column) | Space between rows; a line only where regions meet |
 | A sentence beside a way in (what the Remote is, a lost passkey, "sign in faster") | The buttons alone: Continue with…, Sign in with a passkey, Add a passkey |
-| A button in a history that cannot act, or ends something from a list of the past (外す on a device or the last provider) | A history is only read; sign out from the person's menu |
+| A button that cannot act, or ends what one is standing on from a list (外す on the last provider; Sign out on this device's own row) | The last way in stays with nothing to press; this device signs out from the person's menu; another device signs out from its row, asked in the row |
 | A sentence broken where the card ends (名前 / は出ません) | Short lines, each broken where the sentence breaks |
 | Answers right under the question, high in a card that shrank to ask (やめる, 見せる) | The card keeps its size; the answers sit at its foot, where its own buttons were |
 | The browser's own colour (a blue checkbox), or a tick in `ink` | The green circle, as a switch on: one green for on, everywhere |
@@ -875,6 +875,14 @@ each thing says what can be done with it.
   above it, Remove at the left, Close and Save at the right. Every Prompt
   starts with them in `/root` (the app's root and the browser's alike), and
   the Remote keeps them in step across devices, as it does Home's settings.
+  A Prompt already running keeps what it started with: its shell has read
+  them, and its `/root` is its own (in the app a tmpfs in its namespace),
+  so nothing is put into it behind its back. Saved while Prompts run, one
+  line under the box says so (The Prompt in notes gets it when it starts
+  again) with Start again, which starts each of them anew; under the box,
+  so Save does not move. Remove asks in the box, where its deeds were (it
+  goes from every device; Prompts running keep it until they start again),
+  Remove under the pointer and Not now at the right.
 
 In a browser the same list is the browser's copy of the repos (このブラウザ,
 its share an estimate), and the same three answers apply.
@@ -970,6 +978,14 @@ place a page is switched, because its parts are unrelated):
   left with Share beside it, the power switch at the bottom right; the switch's knob
   is green at the right, and turning it off asks, in the card, for the
   account's name, the repo's name and the five-letter code, then a passkey.
+  The name is the account's as its provider gave it (what `l3 remote`
+  shows), which no page shows otherwise, so the ask says it: To confirm,
+  type Sora, notes and your code (the profile's name is the person's to
+  change at will, so it is not what is checked). With no code yet, the
+  same card sets it first (New code, Set the code; a passkey is made for
+  this device if the account has none, then confirms it is you) and goes
+  straight on to the names; the passkey just used still counts, so turning
+  off does not ask for another (the Remote takes one for five minutes).
   Off, the knob is at the left on `off` red and the card is quiet (dashed):
   the Remote keeps the repo 30 days, answering only that it is off, and
   pressing the switch again brings it back at once. Off, at the bottom left:
@@ -990,9 +1006,15 @@ place a page is switched, because its parts are unrelated):
 - **Sign-in**: passkeys, the code to turn a repo off (five letters or
   digits, set with a passkey; only its digest is kept), then the providers
   (the last way in stays, with nothing to press beside it).
-- **Devices**: a history: each session and when it was last used, this
-  one marked, nothing to press. Signing out is in the person's menu at the
-  foot of the rail (`l3 remote devices rm N` ends another device's).
+- **Devices**: each session signed in now and when it was last used, this
+  one marked. Every other row has Sign out at its right end, the same
+  Remote call as `l3 remote devices rm N`; pressed, the row asks in its
+  place (its own line on top, then what will happen: it is signed out at
+  once, and what is on it stays there), Not now at the left and Sign out
+  under the pointer. That device finds out at its next word with the
+  Remote and is signed out there (§3, the Remote away). This device has
+  nothing to press in its row: it signs out from the person's menu at the
+  foot of the rail, which also forgets the session here.
 
 Under the parts, while there is no passkey, Add a passkey: the button alone,
 below what the page is about rather than over it.

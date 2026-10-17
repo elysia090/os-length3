@@ -68,6 +68,20 @@ async function service(records: Record<string, string[]> = {}, o: {quota?: numbe
 
 const enc = new TextEncoder();
 
+type Service = Awaited<ReturnType<typeof service>>;
+/** Who a session is, as the Remote says (the name the app's off ask shows comes from here). */
+const whoIs = async (s: Service, token: string) =>
+  (await s.call('GET', '/api/auth/get-session', {token})).json as unknown as {user: {id: string; name: string}; session: {id: string; token: string}};
+/** A passkey sign-in `ago` ms before now made this session, as auth.ts records one (no authenticator in a test). */
+async function prove(s: Service, token: string, ago = 0) {
+  const {user, session} = await whoIs(s, token);
+  const proof = {proofSession: session.id, proofAt: new Date(Date.now() - ago)};
+  await s.db.insert(schema.guard).values({userId: user.id, ...proof}).onConflictDoUpdate({target: schema.guard.userId, set: proof});
+}
+/** The sessions of the account `token` is in, as Remote → Devices lists them. */
+const sessionsOf = async (s: Service, token: string) =>
+  (await s.call('GET', '/api/auth/list-sessions', {token})).json as unknown as {id: string; token: string}[];
+
 test('nothing of the work is answered without a session', async () => {
   const s = await service();
   assert.equal((await s.call('GET', '/v1/repos')).status, 401);
@@ -117,6 +131,57 @@ test('a device asks for a code, a signed-in browser approves it, the device gets
   // Each is a session of its own, listed together, and ended one by one.
   const list = await s.call('GET', '/api/auth/list-sessions', {token: t});
   assert.equal((list.json as unknown[]).length, 2);
+});
+
+test('Devices: another device is signed out from any of the account\'s, and from no one else\'s', async () => {
+  const s = await service();
+  const laptop = await s.start('Ren'), phone = await s.start('Ren'), mio = await s.start('Mio');
+  const phoneId = (await whoIs(s, phone)).session.id;
+  const phoneRow = (await sessionsOf(s, laptop)).find((d) => d.id === phoneId);
+  assert.ok(phoneRow, 'the other device is listed');
+  // Another account cannot end it, even holding the row's token: it is not that account's session.
+  await s.call('POST', '/api/auth/revoke-session', {token: mio, body: {token: phoneRow.token}});
+  assert.equal((await s.call('GET', '/v1/repos', {token: phone})).status, 200);
+  // The same call l3 makes (`l3 remote devices rm N`) and the row's Sign out makes: the phone is out, the laptop stays.
+  assert.equal((await s.call('POST', '/api/auth/revoke-session', {token: laptop, body: {token: phoneRow.token}})).status, 200);
+  assert.equal((await s.call('GET', '/v1/repos', {token: phone})).status, 401);
+  assert.equal((await s.call('GET', '/v1/repos', {token: laptop})).status, 200);
+  assert.deepEqual((await sessionsOf(s, laptop)).map((d) => d.id), [(await whoIs(s, laptop)).session.id]);
+});
+
+test('Turning off checks the account\'s name as the Remote says it, not one the person chose elsewhere', async () => {
+  const s = await service();
+  const t = await s.start('Sora Tamura');
+  await s.call('PATCH', '/v1/repos/notes/draft', {token: t, body: {version: 0, set: {}, remove: []}});
+  // The profile is the person's to write: it is not what is checked.
+  assert.equal((await s.call('PUT', '/v1/home/profile', {token: t, body: {value: JSON.stringify({name: 'Sora', handle: 'sora', bio: ''}), version: 0}})).status, 200);
+  await prove(s, t);
+  await s.call('POST', '/v1/off-code', {token: t, body: {code: 'AB12C'}});
+  const off = (name: string) => s.call('POST', '/v1/repos/notes/off', {token: t, body: {name, repo: 'notes', code: 'AB12C'}});
+  const refused = await off('Sora');
+  assert.deepEqual([refused.status, refused.json.error], [403, 'The names do not match.']);
+  // The name get-session gives (what the ask says to type), in any case and with spaces around it.
+  assert.equal((await whoIs(s, t)).user.name, 'Sora Tamura');
+  assert.equal((await off(' sora tamura ')).status, 200);
+});
+
+test('Setting the code and turning off are confirmed by one passkey, for five minutes and no longer', async () => {
+  const s = await service();
+  const t = await s.start('Ren');
+  for (const r of ['notes', 'trip']) await s.call('PATCH', `/v1/repos/${r}/draft`, {token: t, body: {version: 0, set: {}, remove: []}});
+  const off = (repo: string) => s.call('POST', `/v1/repos/${repo}/off`, {token: t, body: {name: 'Ren', repo, code: 'AB12C'}});
+  // The off ask sets the code with a passkey, then turns off without asking for another (src/pages/remote.ts PROOF, four minutes).
+  await prove(s, t, 4 * 60 * 1000);
+  assert.equal((await s.call('POST', '/v1/off-code', {token: t, body: {code: 'AB12C'}})).status, 200);
+  assert.equal((await off('notes')).status, 200);
+  // Past five minutes the passkey is asked again.
+  await prove(s, t, 5 * 60 * 1000 + 1000);
+  const late = await off('trip');
+  assert.deepEqual([late.status, late.json.error], [403, 'Confirm with a passkey.']);
+  // A proof is one session's: another device of the same account is not confirmed by it.
+  await prove(s, t);
+  const other = await s.start('Ren');
+  assert.equal((await s.call('POST', '/v1/repos/trip/off', {token: other, body: {name: 'Ren', repo: 'trip', code: 'AB12C'}})).status, 403);
 });
 
 test('a draft changes only from the version it was read at; a cut records it', async () => {
@@ -636,7 +701,6 @@ test('Names on the Remote: first come, for five years at a time, renewed by thei
 
 // ---- What the review of this service found, each kept fixed by a test ----
 
-type Service = Awaited<ReturnType<typeof service>>;
 const idOf = async (s: Service, t: string) => ((await s.call('GET', '/api/auth/get-session', {token: t})).json as unknown as {user: {id: string}}).user.id;
 const upload = async (s: Service, t: string, bytes: Uint8Array) => {
   const sha = await sha256(bytes);

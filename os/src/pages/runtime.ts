@@ -7,7 +7,7 @@ import * as dotfiles from '../dotfiles.ts';
 import * as inbox from '../inbox.ts';
 import {free, readSpace} from '../space.ts';
 import {about, loadWebRoot} from '../userland.ts';
-import {pageHead} from './common.ts';
+import {askFoot, pageHead, SETTLE} from './common.ts';
 import type {Context} from './context.ts';
 import {syncWord} from './remote.ts';
 import {allSessions, type Session} from './terminal.ts';
@@ -266,6 +266,8 @@ function prompts(): HTMLElement {
   const paint = () => {
     if (!first && !section.isConnected) { for (const u of watched.values()) u(); watched.clear(); return; }
     first = false;
+    // Every session is heard, so one still starting is shown once it runs.
+    for (const [, s] of allSessions()) if (!watched.has(s)) watched.set(s, s.watch(paint));
     // Running ones, and ones stopped here, with what stopping gave back.
     const shown = allSessions().filter(([, s]) => s.running || s.stopped);
     section.hidden = !shown.length;
@@ -330,12 +332,16 @@ function ssh(): HTMLElement {
 /**
  * Dotfiles: a small card each (name, size), a dashed one to make another;
  * a card opens its text under them to edit. Every Prompt starts with them
- * in /root, and the Remote keeps them in step across devices.
+ * in /root, and the Remote keeps them in step across devices. A Prompt
+ * already running has what it started with (its shell has read them, and
+ * its /root is its own), so a save says so under the box, with Start again;
+ * Remove asks in the box first, since it goes from every device.
  */
-function dotfilesSection(): HTMLElement {
+function dotfilesSection(restarted: () => void): HTMLElement {
   const section = h('section', {class: 'section', 'aria-labelledby': 'dot-title'});
   const editor = h('div', {});
-  const paint = (open: string | null = null) => {
+  const running = () => allSessions().filter(([, s]) => s.running);
+  const paint = (open: string | null = null, saved = false) => {
     const all = dotfiles.read();
     const names = Object.keys(all).sort();
     const cards = names.map((n) => {
@@ -354,10 +360,10 @@ function dotfilesSection(): HTMLElement {
     });
     section.replaceChildren(h('h2', {id: 'dot-title'}, h('span', {}, t('Dotfiles'), names.length ? h('small', {}, `${names.length}`) : null)),
       h('div', {class: 'grid small-grid'}, ...cards, make), editor);
-    editor.replaceChildren(...(open && open in all ? [edit(open, all[open], false)] : []));
+    editor.replaceChildren(...(open && open in all ? [edit(open, all[open], false, saved)] : []));
   };
   // The file's text in a box like Forge's, its name above (editable when new), Save and Remove.
-  const edit = (name: string, text: string, fresh: boolean): HTMLElement => {
+  const edit = (name: string, text: string, fresh: boolean, saved = false): HTMLElement => {
     const error = h('p', {class: 'error', role: 'alert'});
     const title = h('input', {class: 'line-in mono dot-name', value: name, 'aria-label': t('Name'), spellcheck: 'false'}) as HTMLInputElement;
     title.disabled = !fresh;
@@ -366,19 +372,43 @@ function dotfilesSection(): HTMLElement {
     const save = button(t('Save'), 'primary');
     save.addEventListener('click', async () => {
       const n = title.value.trim();
-      if (!dotfiles.validName(n)) { error.textContent = t('A dotfile is named with a dot first: .profile'); return; }
-      const all = dotfiles.read();
-      all[n] = body.value;
-      await dotfiles.write(all);
-      paint(n);
+      try { await dotfiles.save(n, body.value); } catch (e) { error.textContent = message(e); return; }
+      paint(n, true);
     });
     const remove = button(t('Remove'));
     remove.hidden = fresh;
-    remove.addEventListener('click', async () => { const all = dotfiles.read(); delete all[name]; await dotfiles.write(all); paint(); });
     const close = button(t('Close'));
     close.addEventListener('click', () => paint());
-    return h('div', {class: 'dot-editor'}, h('div', {class: 'row dot-head'}, h('span', {class: 'muted mono'}, '/root/'), title), body, error,
-      h('div', {class: 'row work-act'}, remove, h('span', {class: 'grow'}), close, save));
+    const acts = h('div', {class: 'row work-act'}, remove, h('span', {class: 'grow'}), close, save);
+    const box = h('div', {class: 'dot-editor'}, h('div', {class: 'row dot-head'}, h('span', {class: 'muted mono'}, '/root/'), title), body, error, acts);
+    // Asked in the box, where its deeds were: it goes from every device. Remove stays under the pointer, Not now at the right.
+    remove.addEventListener('click', () => {
+      const foot = askFoot(remove, box);
+      const no = button(t('Not now')), yes = button(t('Remove'), 'primary');
+      const ask = h('div', {class: 'dot-ask', role: 'group', 'aria-label': t('Remove {name}', {name})},
+        h('p', {class: 'muted small'}, t('{name} goes from every device.', {name})),
+        running().length ? h('p', {class: 'muted small'}, t('Prompts running keep it until they start again.')) : null,
+        foot(no, yes));
+      no.addEventListener('click', () => { ask.replaceWith(acts); remove.focus(); });
+      const shown = performance.now();
+      yes.addEventListener('click', async () => {
+        if (performance.now() - shown < SETTLE) return;
+        yes.disabled = true;
+        try { await dotfiles.remove(name); paint(); } catch (e) { error.textContent = message(e); yes.disabled = false; }
+      });
+      acts.replaceWith(ask);
+      yes.focus();
+    });
+    // Saved while Prompts run: they have what they started with until they start again. Under the box, so Save stays put.
+    const now = saved ? running() : [];
+    if (now.length) {
+      const again = button(t('Start again'));
+      again.addEventListener('click', () => { for (const [, s] of running()) s.restart(); note.remove(); restarted(); });
+      const note = h('p', {class: 'muted small dot-note', role: 'status'},
+        tn('The Prompt in {list} gets it when it starts again', 'The Prompts in {list} get it when they start again', now.length, {list: now.map(([repo]) => repo).join(', ')}), ' ', again);
+      box.append(note);
+    }
+    return box;
   };
   paint();
   return section;
@@ -394,7 +424,10 @@ export function runtime(ctx: Context): Node[] {
   read();
   // What the Remote holds changes what can come here.
   const stop = onSync(() => { if (!holder.isConnected) { stop(); return; } read(); });
-  return [pageHead('runtime'), holder, prompts(), ssh(),
+  // Prompts started again from Dotfiles are new sessions: the section is drawn again to follow them.
+  let running = prompts();
+  const restarted = () => { const next = prompts(); running.replaceWith(next); running = next; };
+  return [pageHead('runtime'), holder, running, ssh(),
     h('section', {class: 'section', 'aria-labelledby': 'env-title'}, h('h2', {id: 'env-title'}, t('Environment in effect')), environment()),
-    dotfilesSection()];
+    dotfilesSection(restarted)];
 }

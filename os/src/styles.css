@@ -906,6 +906,10 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .small-card.new { min-height: 128px; }
 .dot-editor { display: grid; gap: var(--s3); margin-top: var(--s4); padding: var(--s4); border: var(--line-work) solid var(--edge); border-radius: var(--r-place); max-width: 760px; }
 .dot-head { align-items: center; gap: var(--s1); margin-top: 0; }
+/* Remove asked where the box's deeds were: what will happen, then the answers on the same line as they were. */
+.dot-ask { display: grid; gap: var(--s2); margin-top: var(--s3); }
+.dot-ask p, .dot-note { margin: 0; }
+.dot-note { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); }
 .dot-name { max-width: 20em; }
 .dot-text { min-height: 16em; resize: vertical; padding: var(--s2) var(--s3); font: var(--t-meta)/1.6 var(--mono); }
 /* Remote's Sign-in and Devices: rows of a readable width, not the page's. */
@@ -930,8 +934,10 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .stub-gear svg { width: 20px; height: 20px; }
 .stub-panel { position: absolute; top: calc(100% + var(--s1)); left: 0; z-index: 4; width: min(100%, 400px); }
 /* A row of the panel as the menu's rows are: its padding, the field or the ask in a row's place. */
-.stub-own, .stub-ask { display: grid; gap: var(--s2); padding: var(--s2) var(--s3); }
-.stub-ask p { margin: 0; }
+.stub-own, .stub-ask, .row-ask { display: grid; gap: var(--s2); padding: var(--s2) var(--s3); }
+.stub-ask p, .row-ask p { margin: 0; }
+/* A row asking keeps its own line on top, as a card asking keeps its title. */
+.row-ask > .row-item { padding: 0; }
 .stub-record { display: grid; gap: var(--s1); }
 .stub-record p { margin: 0 0 var(--s1); }
 .record-row { display: grid; grid-template-columns: 4em minmax(0, 1fr); align-items: center; gap: var(--s2); }

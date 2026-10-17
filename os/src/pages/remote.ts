@@ -8,7 +8,7 @@ import * as account from '../remote.ts';
 import {store} from '../repos.ts';
 import {freeOff} from '../space.ts';
 import * as servers from '../servers.ts';
-import {answers, askFoot, pageHead, parts} from './common.ts';
+import {answers, askFoot, pageHead, parts, SETTLE} from './common.ts';
 import type {Context} from './context.ts';
 
 // Remote: where one's repos are kept, and who this device is there.
@@ -110,10 +110,11 @@ export function signInBox(done: () => void, back?: string): HTMLElement {
  * at the right a power switch. Who sees it is one of three: only you, the
  * servers it is shown in, or everyone (seen as a server's when it goes
  * public from one, so it is not tied to you; as yours when you choose). Turning a repo off asks for a passkey, the account's name, the
- * repo's name and the five-letter code; it is then kept 30 days, its switch
- * at the right and red, and pressing it again brings it back at once.
+ * repo's name and the five-letter code (set there and then if it is not yet);
+ * it is then kept 30 days, its switch at the right and red, and pressing it
+ * again brings it back at once. `keyed` hears of a passkey made on the way.
  */
-function repoSection(ctx: Context, counted: (n: number) => void, toCode: () => void): HTMLElement {
+function repoSection(ctx: Context, counted: (n: number) => void, keyed: () => void): HTMLElement {
   const grid = h('div', {class: 'grid repo-cards'});
   const section = h('div', {class: 'sub-part'}, grid);
   let seen: servers.RepoSeen[] = [];
@@ -165,7 +166,7 @@ function repoSection(ctx: Context, counted: (n: number) => void, toCode: () => v
     power.addEventListener('click', () => {
       if (off) { void pressing(power, error, async () => { await account.turnOn(name); await look(); await paint(); }); return; }
       if (isNative) { error.textContent = t('A repo is turned off from the browser, where its passkey is.'); return; }
-      void confirm(el, power, name, turningOff(name), paint, toCode);
+      void confirm(el, power, name, turningOff(name), paint, keyed);
     });
     discard?.addEventListener('click', () => {
       if (isNative) { error.textContent = t('A repo is discarded from the browser, where its passkey is.'); return; }
@@ -173,8 +174,8 @@ function repoSection(ctx: Context, counted: (n: number) => void, toCode: () => v
         verb: t('Discard'),
         what: [t('It goes from the Remote now, with its history, and cannot be brought back.'), ...(here ? [t('The copy here goes with it.')] : [])],
         // The copy here first: one holding what the Remote lacks is kept, and nothing is discarded.
-        act: async (who, typed, code) => { if (here) await freeOff(name); await account.discard(name, who, typed, code); },
-      }, paint, toCode);
+        act: async (who, typed, code, proven) => { if (here) await freeOff(name); await account.discard(name, who, typed, code, proven); },
+      }, paint, keyed);
     });
     return el;
   };
@@ -247,50 +248,82 @@ function sharing(now: servers.RepoSeen, error: HTMLElement): HTMLElement {
   return holder;
 }
 
-/** What is asked for in the card before a repo is turned off or discarded: the deed's word, what will happen, and the deed. */
-interface Ask { verb: string; what: string[]; act(name: string, typed: string, code: string): Promise<unknown> }
+/**
+ * What is asked for in the card before a repo is turned off or discarded: the deed's word, what will happen, and
+ * the deed (`proven`: a passkey confirmed it was you a moment ago, setting the code, so it is not asked again).
+ */
+interface Ask { verb: string; what: string[]; act(name: string, typed: string, code: string, proven: boolean): Promise<unknown> }
 const turningOff = (repo: string): Ask => ({
   verb: t('Turn off'),
   what: [t('Kept on the Remote for 30 days; turning it on brings it back at once.')],
   // The copy here stays until it is freed from the card (where Forge was).
-  act: (who, typed, code) => account.turnOff(repo, who, typed, code),
+  act: (who, typed, code, proven) => account.turnOff(repo, who, typed, code, proven),
 });
+
+/** A passkey used this long ago still counts as just now: the Remote takes one for five minutes (service/app.ts `proven`). */
+const PROOF = 4 * 60 * 1000;
 
 /**
  * In the card: the names and the code, then a passkey; then the deed, on the
  * side it was pressed (`from`: the switch at the right, 廃棄 at the left), so
- * each step on to it comes under the pointer, and Not now on the other.
+ * each step on to it comes under the pointer, and Not now on the other. With
+ * no code yet, the card sets it first (making a passkey if the account has
+ * none, then confirming with it) and goes straight on to the names.
  */
-async function confirm(el: HTMLElement, from: Element, repo: string, ask: Ask, done: () => Promise<void>, toCode: () => void) {
+async function confirm(el: HTMLElement, from: Element, repo: string, ask: Ask, done: () => Promise<void>, keyed: () => void) {
   const answers = askFoot(from, el);
-  const error = h('p', {class: 'error', role: 'alert'});
+  // The card keeps its size while it asks, so the answers come where its own deeds were.
+  el.style.minHeight = `${el.offsetHeight}px`;
   const cancel = button(t('Not now'), 'small-button');
   cancel.addEventListener('click', () => void done());
-  const foot = (go: HTMLElement) => answers(cancel, go);
-  const code = await account.offCode().catch(() => ({set: false}));
-  if (!code.set) {
-    const go = button(t('Set the code'), 'small-button primary');
-    go.addEventListener('click', () => toCode());
-    el.replaceChildren(h('div', {class: 'off-ask'}, h('span', {class: 'card-title'}, repo),
-      h('p', {class: 'muted small'}, t('Turning a repo off or discarding it asks for your five-letter code. Set it under Sign-in first.')),
-      foot(go)));
-    return;
-  }
   const field = (label: string, attrs: Record<string, string> = {}) => h('input', {class: 'line-in', 'aria-label': label, placeholder: label, autocomplete: 'off', spellcheck: 'false', ...attrs}) as HTMLInputElement;
-  const who = field(t('Your name'));
-  const which = field(t('The repo\'s name'));
-  const five = field(t('Code'), {maxlength: '5', class: 'line-in mono'});
-  // 廃棄 is asked for as it was pressed, ink when the pointer is on it.
-  const go = button(ask.verb, from.classList.contains('discard') ? 'small-button discard' : 'small-button primary');
-  go.addEventListener('click', () => void pressing(go, error, async () => {
-    await ask.act(who.value, which.value, five.value);
-    await look();
-    await done();
-  }));
-  el.replaceChildren(h('div', {class: 'off-ask'}, h('span', {class: 'card-title'}, repo),
-    ...ask.what.map((line) => h('p', {class: 'muted small'}, line)),
-    who, which, five, error, foot(go)));
-  who.focus();
+  // A deed that comes under the pointer holds still a moment, so a double click does not answer it.
+  const settled = (b: HTMLButtonElement, error: HTMLElement, f: () => Promise<void>) => {
+    const shown = performance.now();
+    b.addEventListener('click', () => { if (performance.now() - shown >= SETTLE) void pressing(b, error, f); });
+  };
+  // The name checked is the account's, as its provider gave it; no page shows it, so the ask says it.
+  const [code, me] = await Promise.all([account.offCode().catch(() => ({set: false})), account.me().catch(() => null)]);
+  let provenAt = 0;
+  const names = () => {
+    const error = h('p', {class: 'error', role: 'alert'});
+    const who = field(t('Your name'));
+    const which = field(t('The repo\'s name'));
+    const five = field(t('Code'), {maxlength: '5', class: 'line-in mono'});
+    // 廃棄 is asked for as it was pressed, ink when the pointer is on it.
+    const go = button(ask.verb, from.classList.contains('discard') ? 'small-button discard' : 'small-button primary');
+    settled(go, error, async () => {
+      await ask.act(who.value, which.value, five.value, Date.now() - provenAt < PROOF);
+      await look();
+      await done();
+    });
+    el.replaceChildren(h('div', {class: 'off-ask', role: 'group', 'aria-label': repo}, h('span', {class: 'card-title'}, repo),
+      ...ask.what.map((line) => h('p', {class: 'muted small'}, line)),
+      me?.name ? h('p', {class: 'muted small'}, t('To confirm, type {name}, {repo} and your code.', {name: me.name, repo})) : null,
+      who, which, five, error, answers(cancel, go)));
+    who.focus();
+  };
+  if (code.set) { names(); return; }
+  // No code yet: it is set here, then the names are asked at once.
+  const keys = await account.passkeys().catch(() => null);
+  let none = !!keys && !keys.length;
+  const error = h('p', {class: 'error', role: 'alert'});
+  const five = field(t('New code'), {maxlength: '5', class: 'line-in mono'});
+  const go = button(t('Set the code'), 'small-button primary');
+  settled(go, error, async () => {
+    if (!/^[A-Za-z0-9]{5}$/.test(five.value)) throw new Error(t('Five letters or digits.'));
+    // Made once: pressed again after the confirming step was stopped, the passkey made is the one used.
+    if (none) { await account.addPasskey(); none = false; keyed(); }
+    await account.setOffCode(five.value);
+    keyed();
+    provenAt = Date.now();
+    names();
+  });
+  el.replaceChildren(h('div', {class: 'off-ask', role: 'group', 'aria-label': repo}, h('span', {class: 'card-title'}, repo),
+    h('p', {class: 'muted small'}, t('This asks for a five-letter code of your own.')),
+    h('p', {class: 'muted small'}, none ? t('Set it here, with a new passkey on this device.') : t('Set it here, with your passkey.')),
+    five, error, answers(cancel, go)));
+  five.focus();
 }
 
 /** No passkey yet: the button, which says it. */
@@ -376,20 +409,50 @@ function providerSection(): HTMLElement {
   return section;
 }
 
-/** The devices signed in, as a history: each and when it was last used, this one marked. Signing out is at the foot of the rail. */
+/**
+ * The devices signed in: each and when it was last used, this one marked.
+ * Any other is signed out from its row (the same Remote call as `l3 remote
+ * devices rm N`), asked in the row first, Sign out where it was pressed and
+ * Not now at the left; this one signs out from the person's menu.
+ */
 function deviceSection(counted: (n: number) => void): HTMLElement {
   const section = h('div', {class: 'sub-part'});
   const error = h('p', {class: 'error', role: 'alert'});
   const paint = async () => {
     const list = await account.devices().catch((e) => { error.textContent = message(e); return []; });
     counted(list.length);
-    section.replaceChildren(
-      h('div', {class: 'rows'}, ...list.map((d) => h('div', {class: 'row-item usage-prompt'}, h('span', {class: 'row-name'}, account.deviceWord(d.userAgent)),
-        d.current ? h('span', {class: 'row-meta'}, t('This device')) : null,
-        h('span', {class: 'row-meta'}, t('Used {when}', {when: ago(Date.parse(d.updatedAt))}))))), error);
+    section.replaceChildren(h('div', {class: 'rows'}, ...list.map((d) => deviceRow(d, paint))), error);
   };
   void paint();
   return section;
+}
+
+function deviceRow(d: account.Device, again: () => Promise<void>): HTMLElement {
+  const name = account.deviceWord(d.userAgent);
+  const out = d.current ? null : button(t('Sign out'), 'small-button');
+  out?.setAttribute('aria-label', t('Sign out {name}', {name}));
+  // Which one it is: its word and when it was last used (two browsers of a kind read the same).
+  const head = () => [h('span', {class: 'row-name'}, name), d.current ? h('span', {class: 'row-meta'}, t('This device')) : null,
+    h('span', {class: 'row-meta'}, t('Used {when}', {when: ago(Date.parse(d.updatedAt))}))];
+  const row = h('div', {class: 'row-item usage-prompt'}, ...head(), out);
+  out?.addEventListener('click', () => {
+    const foot = askFoot(out, row);
+    const error = h('p', {class: 'error small', role: 'alert'});
+    const no = button(t('Not now'), 'small-button'), yes = button(t('Sign out'), 'small-button primary');
+    const ask = h('div', {class: 'row-ask', role: 'group', 'aria-label': t('Sign out {name}', {name})},
+      h('div', {class: 'row-item'}, ...head()),
+      h('p', {class: 'muted small'}, t('It is signed out at once.')),
+      h('p', {class: 'muted small'}, t('What is on it stays there; signing in again brings it back.')), error, foot(no, yes));
+    no.addEventListener('click', () => { ask.replaceWith(row); out.focus(); });
+    const shown = performance.now();
+    yes.addEventListener('click', () => {
+      if (performance.now() - shown < SETTLE) return;
+      void pressing(yes, error, async () => { await account.endDevice(d); await again(); });
+    });
+    row.replaceWith(ask);
+    yes.focus();
+  });
+  return row;
 }
 
 /** One line while the Remote does not answer; gone once it does. */
@@ -416,19 +479,25 @@ export function remote(ctx: Context): Node[] {
     // One part at a time: the repos it keeps, how this account signs in, the devices in it.
     const page = parts<'repos' | 'sign-in' | 'devices'>('remote', [
       {id: 'repos', label: t('Repos')}, {id: 'sign-in', label: t('Sign-in')}, {id: 'devices', label: t('Devices')}]);
-    page.panel('repos').append(repoSection(ctx, (n) => page.count('repos', n), () => page.show('sign-in')));
+    // Under the parts, not over them; a passkey added from it shows under Sign-in at once.
+    const offer = isNative ? null : passkeyOffer(() => { shown = null; paint(); });
     // A Remote entered by its link has no passkeys or providers to manage: only the code a repo is turned off with.
-    if (isNative) page.panel('sign-in').append(h('p', {class: 'muted'}, t('Passkeys and providers are managed in the browser.')));
-    else void account.about().then(({enter}) => page.panel('sign-in').replaceChildren(...(enter
-      ? [h('p', {class: 'muted'}, t('You came in by the link you were given; each time lasts a day.')), codeSection()]
-      : [passkeySection(), codeSection(), providerSection()])));
+    const signIn = () => {
+      if (isNative) page.panel('sign-in').replaceChildren(h('p', {class: 'muted'}, t('Passkeys and providers are managed in the browser.')));
+      else void account.about().then(({enter}) => page.panel('sign-in').replaceChildren(...(enter
+        ? [h('p', {class: 'muted'}, t('You came in by the link you were given; each time lasts a day.')), codeSection()]
+        : [passkeySection(), codeSection(), providerSection()])));
+    };
+    signIn();
+    // The code (and a passkey) set while a repo is turned off: the offer has done its work, and Sign-in reads them again when shown.
+    let stale = false;
+    page.onShow((k) => { if (k === 'sign-in' && stale) { stale = false; signIn(); } });
+    page.panel('repos').append(repoSection(ctx, (n) => page.count('repos', n), () => { stale = true; if (offer) offer.hidden = true; }));
     page.panel('devices').append(deviceSection((n) => page.count('devices', n)));
     holder.replaceChildren(
       h('div', {class: 'part-bar'}, page.switch),
       awayLine(),
-      page.panel('repos'), page.panel('sign-in'), page.panel('devices'),
-      // Under the parts, not over them; a passkey added from it shows under Sign-in at once.
-      ...(isNative ? [] : [passkeyOffer(() => { shown = null; paint(); })]));
+      page.panel('repos'), page.panel('sign-in'), page.panel('devices'), ...(offer ? [offer] : []));
   };
   paint();
   const stop = account.onConnection(() => { if (!holder.isConnected) { stop(); return; } paint(); });
