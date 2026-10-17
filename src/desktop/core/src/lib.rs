@@ -19,6 +19,7 @@ pub mod paths;
 pub mod prompt;
 pub mod remote;
 pub mod repos;
+pub mod servers;
 pub mod system;
 pub mod templates;
 pub mod usage;

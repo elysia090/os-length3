@@ -86,7 +86,7 @@ export function forge(ctx: Context): Node[] {
     else paintBand();
   };
 
-  /** Nothing on the band: the center says how to bring a repo out (Topic is laid over any page, not kept here). */
+  /** Nothing on the band: the center says how to bring a repo out (Server is laid over any page, not kept here). */
   const none = () => {
     repo = null;
     reader = null;

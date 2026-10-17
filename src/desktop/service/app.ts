@@ -24,7 +24,7 @@ import {cors} from 'hono/cors';
 import type {Auth} from './auth.ts';
 import {devOAuth} from './devoauth.ts';
 import {inbox} from './inbox.ts';
-import {topic} from './topic.ts';
+import {servers} from './servers.ts';
 import type {Bucket} from './bucket.ts';
 import {blob, change, cut, home, offCode, passkeyProof, repo, review, type Tree} from './schema.ts';
 import {user as people} from './schema.auth.ts';
@@ -48,8 +48,8 @@ export interface Deps {
   secret?: string;
   /** TXT records of a name (DNS over HTTPS by default; a stand-in in tests). */
   txt?: (name: string) => Promise<string[]>;
-  /** The fewest readers a Topic ring holds (where there are as many). */
-  topicFloor?: number;
+  /** Sends mail (a server board's guest's code); without it, guests cannot be checked. */
+  mail?: (to: string, subject: string, text: string) => Promise<void>;
 }
 
 /** What one account may keep, unless the deployment says otherwise. */
@@ -109,7 +109,7 @@ export function createApp(d: Deps) {
   const app = new Hono<Vars>();
   app.use('*', cors({
     origin: (o) => (d.origins.includes(o) ? o : null),
-    allowHeaders: ['Authorization', 'Content-Type'],
+    allowHeaders: ['Authorization', 'Content-Type', 'X-Guest'],
     allowMethods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     // The bearer plugin hands a new session's token back in this header.
     exposeHeaders: ['set-auth-token'],
@@ -549,7 +549,7 @@ export function createApp(d: Deps) {
   });
 
   inbox({db: d.db, domain: d.domain ?? 'length3.com', baseURL: d.baseURL ?? '', secret: d.secret ?? '', txt: d.txt}, v1, app);
-  topic({db: d.db, floor: d.topicFloor}, v1, app);
+  servers({db: d.db, mail: d.mail, secret: d.secret}, v1, app);
 
   app.route('/v1', v1);
   return app;

@@ -41,10 +41,11 @@ caches, environments, posts. The OS states them itself, so nobody has to.
 - **Every change names the version it was made on.** Nothing sent
   overwrites; when both sides changed, both are kept side by side.
 - **Leases.** What is held for a while says until when: a repo turned off
-  (30 days), a post still spreading (3 days), a device's session.
-- **Small before wide.** What reaches others is tried on a few first and
-  widens by what they did (Topic's rings), as a release goes to a few
-  before everyone.
+  (30 days), a guest's code (10 minutes), a device's session.
+- **Small before wide.** What reaches others starts with the few it is
+  for and is opened further only by choice (a server's board: its people,
+  then, if opened, anyone reading, outsiders writing), as a release goes to
+  a few before everyone.
 - **Measured, not assumed.** Every figure says how it is known, and room
   given back is observed on the host, not inferred.
 
@@ -100,8 +101,9 @@ names and `/etc/os-release` are its own.
 
 ## 1. The rail
 
-- Icons only, top to bottom: **Topic** (posts, which anyone may read)
-  first, then the order of one's own work: **Home** (who you are, what you
+- Icons only, top to bottom: **Server** (the people you know: the one
+  purpose whose subject is people, not a repo) first, then the order of
+  one's own work: **Home** (who you are, what you
   are doing) → **Forge** (where you work; a terminal icon) → **File** (the
   tree of "/") → **Git** (what happened outside) → **Runtime** (the
   environment) → **Remote** (the canonical copy) → **Inbox** (what was sent
@@ -110,7 +112,7 @@ names and `/etc/os-release` are its own.
   something rather than opening a place (§4, shapes).
 - A name appears beside an icon on hover or keyboard focus. Choosing an
   icon replaces the whole page; nothing pushes in beside the rail. File and
-  Topic are the operations: each is laid over the page instead (below).
+  Server are the operations: each is laid over the page instead (below).
 - The rail is 78 px wide: the icons keep 18 px to its line and 12 px to the
   window's side, so they do not crowd the line.
 - Item 48×48, radius 12, icon 24 px with a 1.6 px stroke; + is a 40 px
@@ -395,57 +397,75 @@ the way an issue is ("Review：…", "Question：…"), and a `/root/…` path i
 says what it is about, so there is nothing else to choose. Enter sends,
 Shift+Enter is a new line.
 
-### Topic
+### Server
 
-Topic is an operation, as File is: laid over whatever page is showing,
-never a page of its own, and the same over every page. Resting the pointer
-on its icon brings it out and it stays a while after the pointer leaves
-(8 s); a press brings it out to stay; a press outside, Escape or a second
-press puts it away; while a post is being written it stays. It has the
-bench's shape without being one: the timeline in the center, a box at its
-foot to post from (the prompt box's plain look; Enter posts, Shift+Enter is
-a new line), and on the right, where a repo's reference and Prompt would
-be, what Topic shares with whom: who a post reaches, what goes with it,
-what this reader sees, and how far each of one's own posts has gone. No
-Prompt is in Topic: Topic is for people, the Prompt for a repo.
+Every other purpose is about a repo: one edits it, walks it, decides on it,
+keeps it, sends it. Server is the one whose subject is people: the people
+you know, for talking loosely and for planning in earnest. Inbox is one
+person to one person, about something that asks for an answer; a server is
+a group, and nobody in it is asked for anything. A repo belongs to a person;
+a server's own repos (shared by its people) are what comes next, and then
+its plans can live in one.
 
-It reads as a conversation: one column, `# Topic` kept at its top, oldest
-above and newest at the foot, by the box one posts from. No rules: a run of
-one address's posts within five minutes shows the face (the address's first
-letters in a circle), the name, the domain and the time once, then each
-text under it, and the day's name, quiet and centred, marks where a day
-starts. What can be done to a post comes out at its top right on hover, as
-a round action: Keep, or on one's own post Take down (which asks once more
-in its own place for a moment). No count is shown under a post; only its
-author sees, under it, how far it reaches.
+A server is a name and its people. Someone already in it adds people from
+their own Inbox contacts, so a server is people who know each other; anyone
+may leave, the owner may remove someone, and the last to leave takes it
+with them. Its boards are what its people talk about, each one thing (a
+trip, a release, a reading group), and each holds two things:
 
-Reading needs nothing: signed out, the box says posting needs sign-in,
-with Sign in. Posting needs an account and an address (the
-Inbox's); without one, the line under the field says so and leads there. A
-post keeps no profile, only the address it was made from; its time is its
-id.
+- **the plan**: one text its people write together, version by version.
+  An edit goes to the Remote as what it changed (hunks of lines, against
+  the version it was made on), and is merged with what came meanwhile:
+  changes in different places both stay; where someone else changed the
+  same lines, nothing is overwritten, and the writer is shown theirs with
+  Take theirs and Keep mine over it.
+- **the talk** around it: short posts, read as a conversation.
 
-A post spreads as a locked account's would, then wider ring by ring: first
-its author's accepted contacts and a few readers (1/64 of those signed in),
-then one in sixteen, one in four, everyone signed in, and at last everyone,
-signed in or not (only then can a signed-out reader see it). It goes one
-ring wider when those who were shown it in its ring have kept it often
-enough (8 seen, a tenth kept), within three days. Who is in a ring is a
-post's random salt against a reader's seed, checked in the query that reads
-the page: each post tested on its own sample, each ring holding the one
-before, and nothing computed per post but its own counters. A small Remote's
-rings are never fewer than 24 readers, so there they are everyone.
+How far a board goes is chosen board by board, and only ever wider by
+choice: its server's people always; if opened, anyone reads it (signed in
+or not); and if it takes guests, an outsider may write in it once they have
+shown an email address is theirs, by a six-digit code sent to it (one a
+minute, ten minutes to use, five wrong tries spend it). Everything is kept
+on the Remote, and any board can be taken home as one text (its plan, its
+talk, or both), in the app or with `l3 server get`.
 
-The timeline has no end to reach and nothing to press. It opens at the
-newest; scrolled near its top, the next older posts are read in above
-without moving what is on screen, and at the very top it says it is every
-post. What comes meanwhile is put at the foot: followed when the foot is in
-view (and always after one's own post), otherwise with a small ink pill
-(↓ 3 new posts) floating just above the box, which goes down to them. And
-it lets go by itself: posts far out of view are folded into an empty box
-of the height they had, so nothing on screen moves, and further still they
-let go of their text too, read again by their range of ids when they come
-back near. Scrolling for an hour holds about what a few screens do.
+Server is an operation, as File is: laid over whatever page is showing,
+never a page of its own. Resting the pointer on its icon (two people)
+brings it out and it stays a while after the pointer leaves (8 s); a press
+brings it out to stay; a press outside, Escape or a second press puts it
+away; while something is being written it stays. It has the bench's shape.
+The servers one is in run as chips on the top line, with + to make one.
+Under them the server's boards are boxes side by side, as the issues are:
+the board on screen in full, with its talk, its neighbours' edges showing
+their names; an edge (or ← →) is the way to them, and the last box makes a
+new board. The prompt box's plain box at the foot writes in the board on
+screen (Enter sends, Shift+Enter is a new line), saying whom it goes to (To
+the people of Trip). The board on screen turns between Talk and Plan (two
+chips on its head): the plan is written there, in the box, the text being
+the field as a file's is in Forge, saved on its own. Nothing is typed on
+the right: where a repo's reference and Prompt would be are the board's
+plan (to read), its people (and adding someone you know), who can see it
+(its two switches), and taking it home. No Prompt is in Server: Server is for people, the
+Prompt for a repo. Signed out, it shows the open boards, and where a board
+takes guests the box asks for an email, then the code sent to it.
+
+The talk reads as a conversation: oldest above and newest at the foot. No
+rules: a run of one address's posts within five minutes shows the face
+(the address's first letters in a circle), the name, the domain (or guest)
+and the time once, then each text under it, and the day's name, quiet and
+centred, marks where a day starts. A post's writer, and the server's owner,
+may take it down: it comes out at its top right on hover, round, and asks
+once more in its own place for a moment. Nothing is counted.
+
+The talk has no end to reach and nothing to press. It opens at the newest;
+scrolled near its top, the next older posts are read in above without
+moving what is on screen, and at the very top it says it is every post.
+What comes meanwhile is put at the foot: followed when the foot is in view
+(and always after one's own post), otherwise with a small ink pill (↓ 3 new
+posts), which goes down to them. And it lets go by itself: posts far out of
+view are folded into an empty box of the height they had, so nothing on
+screen moves, and further still they let go of their text too, read again
+by their range of ids when they come back near.
 
 ### New repo (+)
 

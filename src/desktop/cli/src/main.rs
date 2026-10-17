@@ -12,7 +12,7 @@
 mod git;
 mod help;
 
-use length3_core::{account, history, home, inbox, paths, remote, repos::Repos, templates, text, tr, usage, work};
+use length3_core::{account, history, home, inbox, paths, remote, repos::Repos, servers, templates, text, tr, usage, work};
 use std::io::{Read, Write};
 use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -23,10 +23,11 @@ struct Args {
     detail: String,
     template: String,
     network: bool,
+    plan: bool,
 }
 
 fn parse(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args { words: Vec::new(), json: false, detail: String::new(), template: "standard".into(), network: false };
+    let mut a = Args { words: Vec::new(), json: false, detail: String::new(), template: "standard".into(), network: false, plan: false };
     let mut it = raw.into_iter();
     while let Some(w) = it.next() {
         match w.as_str() {
@@ -34,6 +35,7 @@ fn parse(raw: Vec<String>) -> Result<Args, String> {
             "--" => { a.words.push(w); a.words.extend(it.by_ref()); }
             "--json" => a.json = true,
             "--network" => a.network = true,
+            "--plan" => a.plan = true,
             "-m" | "--detail" => a.detail = it.next().ok_or_else(|| tr!("-m needs the text after it", "-m の後に詳細を書いてください"))?,
             "-t" | "--template" => a.template = it.next().ok_or_else(|| tr!("-t needs a template after it", "-t の後にテンプレートを書いてください"))?,
             "-h" | "--help" => a.words.insert(0, "help".into()),
@@ -201,6 +203,7 @@ fn run(a: Args) -> Result<(), String> {
             Some("todo") => Some(tr!("Home's TODO", "Home の TODO")),
             Some("runtime") | Some("free") | Some("root") => Some(tr!("this device's room and roots", "この端末の容量と root")),
             Some("inbox" | "address") => Some(tr!("the Inbox", "Inbox")),
+            Some("server") => Some(tr!("your servers", "サーバー")),
             Some("remote" | "login" | "logout" | "start" | "main" | "commit" | "push" | "reset" | "review" | "merge" | "reject" | "log") =>
                 Some(tr!("the Remote and history", "Remote と履歴")),
             Some("repo") if w.len() > 1 => Some(tr!("making or bringing repos", "repo を作ること・持ってくること")),
@@ -236,6 +239,38 @@ fn run(a: Args) -> Result<(), String> {
         // For completion: the repos here, one a line.
         ["complete", "repos"] => {
             for s in Repos::open()?.list()? { out(s.name); }
+            Ok(())
+        }
+        // Server
+        ["server"] => {
+            let list = servers::list()?;
+            if a.json { return json(&list); }
+            if list.is_empty() { out(tr!("In no server yet (make one in the app's Server)", "まだどのサーバーにも入っていません（アプリの Server で作れます）")); }
+            for s in &list {
+                out(format!("{}{}", s.name, if s.owner { tr!(" · owner", " · オーナー") } else { String::new() }));
+                for b in &s.boards {
+                    let open = match (b.open, b.guests) { (true, true) => tr!(" · open, guests write", " · 公開・ゲストも書ける"), (true, false) => tr!(" · open", " · 公開"), _ => String::new() };
+                    out(format!("  #{}{open}", b.name));
+                }
+            }
+            Ok(())
+        }
+        ["server", "get", target] => {
+            let (server, boards) = servers::find(target)?;
+            for b in &boards {
+                let text = servers::archive(&b.id, true, !a.plan)?;
+                let name = format!("{}-{}{}.md", server.name, b.name, if a.plan { "-plan" } else { "" })
+                    .chars().map(|c| if c.is_alphanumeric() || matches!(c, '.' | '-' | '_') { c } else { '-' }).collect::<String>();
+                std::fs::write(&name, text).map_err(|e| e.to_string())?;
+                out(tr!("Wrote {}", "{} に書きました", name));
+            }
+            Ok(())
+        }
+        ["server", "post", target, words] => {
+            let (server, boards) = servers::find(target)?;
+            let [b] = boards.as_slice() else { return Err(tr!("Name the board: l3 server post {}/BOARD \"text\"", "板を書いてください: l3 server post {}/BOARD \"文\"", server.name)) };
+            servers::post(&b.id, words)?;
+            out(tr!("Wrote in {}/{}", "{}/{} に書きました", server.name, b.name));
             Ok(())
         }
         // Home

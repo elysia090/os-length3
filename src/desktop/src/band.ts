@@ -1,6 +1,6 @@
 // The band at the top of Forge: the repos the person has out to work on, in
 // the order they put them there. Taking a repo off the band never touches
-// the repo itself. An empty band is a choice too: Forge then shows Topic.
+// the repo itself. An empty band is a choice too: Forge then says how to bring one out.
 
 /** Read a stored band. Never stored yet: start with the open repo (or the first). */
 export function parseBand(stored: string | null, repos: readonly string[], current: string | null): string[] {

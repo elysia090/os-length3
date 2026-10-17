@@ -3,7 +3,7 @@
 // end-to-end checks; the same app as on Workers.
 //
 //   node service/dev.ts DIR [PORT] [APP_ORIGIN] [OTHER_ORIGIN…]
-import {existsSync, mkdirSync, readFileSync, renameSync, writeFileSync} from 'node:fs';
+import {appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync} from 'node:fs';
 import {createServer} from 'node:http';
 import {join} from 'node:path';
 import {PGlite} from '@electric-sql/pglite';
@@ -39,7 +39,13 @@ const baseURL = process.env.LENGTH3_DEV_BASE ?? `http://127.0.0.1:${port}`;
 // Sign-in here is the stand-in provider (devoauth.ts): a name, and you are in.
 const secret = readFileSync(secretFile, 'utf8');
 const auth = createAuth({db, secret, baseURL, appOrigin, origins: others, dev: true});
-const app = createApp({db, auth, bucket, origins: [appOrigin, ...others], providers: ['dev'], domain: 'length3.test', baseURL, secret});
+// Mail is not sent from here: it is written to the console and to mail.log (a Topic guest's code is read there).
+const mail = async (to: string, subject: string, text: string) => {
+  const line = `mail to ${to}: ${subject}\n  ${text}\n`;
+  console.log(line.trimEnd());
+  appendFileSync(join(dir, 'mail.log'), line);
+};
+const app = createApp({db, auth, bucket, origins: [appOrigin, ...others], providers: ['dev'], domain: 'length3.test', baseURL, secret, mail});
 
 createServer(async (req, res) => {
   const chunks: Buffer[] = [];

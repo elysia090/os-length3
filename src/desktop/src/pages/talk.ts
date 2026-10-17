@@ -1,14 +1,10 @@
 import {h} from '../dom.ts';
 import {t} from '../i18n.ts';
-import {connection} from '../remote.ts';
-import * as topic from '../topic.ts';
+import * as servers from '../servers.ts';
 
-// Topic: one timeline, read as a conversation is: oldest above, newest at
-// the foot, beside the field one posts from (the purple lane of the field
-// at the foot of the center). Anyone reads it; signed in, one also posts,
-// and keeps what is worth more readers (a post widens ring by ring as those
-// who see it keep it; only its author sees how far it has gone, and no one
-// sees a count).
+// A board's talk: read as a conversation is, oldest above and newest at the
+// foot, by the box one writes in. Its people write in it; so may a guest,
+// where the board takes them; anyone reads it where the board is open.
 //
 // It goes on by itself: scrolled near its top, the next older page is read
 // in above without moving what is on screen; what came meanwhile is put at
@@ -28,30 +24,29 @@ const EVERY = 15_000;
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /** The letters of a face: the first two of the address's name. */
-const face = (p: topic.Post) => [...p.by.split('@')[0]].slice(0, 2).join('').toUpperCase();
+const face = (p: servers.Post) => [...p.by.split('@')[0]].slice(0, 2).join('').toUpperCase();
 const clock = (ms: number) => new Date(ms).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', hour12: false});
 function dayName(ms: number): string {
   const now = Date.now();
-  if (topic.dayOf(ms) === topic.dayOf(now)) return t('Today');
-  if (topic.dayOf(ms) === topic.dayOf(now - 86_400_000)) return t('Yesterday');
+  if (servers.dayOf(ms) === servers.dayOf(now)) return t('Today');
+  if (servers.dayOf(ms) === servers.dayOf(now - 86_400_000)) return t('Yesterday');
   return new Date(ms).toLocaleDateString([], {weekday: 'short', month: 'short', day: 'numeric'});
 }
 
-/** The timelines on screen, each with how to read what came now (`mine`: the reader just posted, so go to it). */
-const onScreen = new Set<(mine: boolean) => Promise<void>>();
+/** The talks on screen, by board, each with how to read what came now (`mine`: the reader just wrote, so go to it). */
+const onScreen = new Set<{board: string; read(mine: boolean): Promise<void>}>();
 
-/** Post as this reader; every timeline on screen reads it in at once. */
-export async function postNow(body: string): Promise<void> {
-  await topic.post(body);
-  await Promise.all([...onScreen].map((read) => read(true)));
+/** Write in a board (as one of its people, or as a guest with their token); every talk of it on screen reads it in at once. */
+export async function postNow(board: string, body: string, guest?: string): Promise<void> {
+  await (guest ? servers.guestPost(board, guest, body) : servers.post(board, body));
+  await Promise.all([...onScreen].filter((x) => x.board === board).map((x) => x.read(true)));
 }
 
-interface Shown { page: topic.Page; el: HTMLElement; drawn: boolean; near: boolean; reading: boolean }
+interface Shown { page: servers.Page; el: HTMLElement; drawn: boolean; near: boolean; reading: boolean }
 
-/** The timeline, in `scroller` (the box that scrolls it). */
-export function timeline(scroller: HTMLElement): HTMLElement {
+/** A board's talk, in `scroller` (the box that scrolls it); `member`: read as one of its people. */
+export function timeline(scroller: HTMLElement, board: string, member: boolean): HTMLElement {
   const root = h('div', {class: 'timeline'});
-  const signedIn = connection() !== null;
 
   // Newest page first; on screen the other way round, newest at the foot.
   const pages: Shown[] = [];
@@ -75,22 +70,22 @@ export function timeline(scroller: HTMLElement): HTMLElement {
   };
 
   // ---- a post: a face and a name where a run starts, then the text ----
-  const card = (p: topic.Post, s: Shown, runs: boolean) => {
+  const card = (p: servers.Post, s: Shown, runs: boolean) => {
     const when = new Date(p.at);
     const [name, domain] = p.by.split('@');
+    // A guest is shown by the name of their email, and as a guest.
+    const where = p.guest ? t('guest') : `@${domain}`;
     const time = h('time', {class: 'muted small', datetime: when.toISOString(), title: when.toLocaleString()}, clock(p.at));
     const below = h('div', {class: 'tl-foot muted small'});
     const acts = h('div', {class: 'tl-acts'});
     const main = h('div', {class: 'tl-main'},
-      ...(runs ? [] : [h('div', {class: 'tl-who'}, h('b', {}, name), h('span', {class: 'muted small'}, `@${domain}`), time)]),
+      ...(runs ? [] : [h('div', {class: 'tl-who'}, h('b', {}, name), h('span', {class: 'muted small'}, where), time)]),
       h('p', {class: 'tl-body'}, p.body), below);
     const art = h('article', {class: runs ? 'tl-post tl-runs' : 'tl-post'},
       runs ? h('span', {class: 'tl-face tl-at'}, time) : h('span', {class: 'tl-face', 'aria-hidden': 'true'}, face(p)), main, acts);
 
-    if (p.mine) {
-      // Its author sees how far it has gone.
-      below.append(t('Reaches {who}', {who: t(topic.RINGS[Math.min(p.ring ?? 0, topic.RINGS.length - 1)])}));
-      // Taking one's own post down asks once more, briefly.
+    if (p.mayTakeDown) {
+      // Taking a post down (one's own, or any as the server's owner) asks once more, briefly.
       const down = h('button', {type: 'button', class: 'button small-button tl-act'}, t('Take down')) as HTMLButtonElement;
       let armed = 0;
       down.addEventListener('click', async () => {
@@ -98,24 +93,12 @@ export function timeline(scroller: HTMLElement): HTMLElement {
         clearTimeout(armed);
         down.disabled = true;
         try {
-          await topic.takeDown(p.id);
+          await servers.takeDown(board, p.id);
           if (s.page.posts) s.page.posts = s.page.posts.filter((q) => q.id !== p.id);
           steady(() => art.remove());
         } catch (e) { down.disabled = false; down.textContent = message(e); }
       });
       acts.append(down);
-    } else if (signedIn) {
-      // Keeping is what lets it reach more readers. No count is shown: a post
-      // is read for what it says, and only its author sees how far it went.
-      const keep = h('button', {type: 'button', class: 'button small-button tl-act'}, t('Keep')) as HTMLButtonElement;
-      const paint = () => keep.setAttribute('aria-pressed', String(Boolean(p.kept)));
-      keep.addEventListener('click', async () => {
-        const on = !p.kept;
-        p.kept = on; paint();
-        try { await topic.keep(p.id, on); } catch { p.kept = !on; paint(); }
-      });
-      paint();
-      acts.append(keep);
     }
     return art;
   };
@@ -126,12 +109,12 @@ export function timeline(scroller: HTMLElement): HTMLElement {
     if (s.drawn || !s.page.posts) return;
     const i = pages.indexOf(s);
     // The post just before this page, if the page before it is held.
-    let prev: topic.Post | undefined = pages[i + 1]?.page.posts?.[0];
+    let prev: servers.Post | undefined = pages[i + 1]?.page.posts?.[0];
     const out: Node[] = [];
     for (const p of [...s.page.posts].reverse()) {
-      const day = !prev || topic.dayOf(prev.at) !== topic.dayOf(p.at);
+      const day = !prev || servers.dayOf(prev.at) !== servers.dayOf(p.at);
       if (day) out.push(h('div', {class: 'tl-day', role: 'separator'}, h('span', {}, dayName(p.at))));
-      out.push(card(p, s, !day && topic.sameRun(prev, p)));
+      out.push(card(p, s, !day && servers.sameRun(prev, p)));
       prev = p;
     }
     s.el.replaceChildren(...out);
@@ -150,7 +133,7 @@ export function timeline(scroller: HTMLElement): HTMLElement {
     if (!s.page.posts) {
       if (s.reading) return;
       s.reading = true;
-      try { s.page.posts = (await topic.range(s.page.oldest, s.page.newest)).posts; } catch { return; } finally { s.reading = false; }
+      try { s.page.posts = (await servers.range(board, member, s.page.oldest, s.page.newest)).posts; } catch { return; } finally { s.reading = false; }
       if (!s.near) return;
     }
     if (above(s)) steady(() => draw(s)); else draw(s);
@@ -158,7 +141,7 @@ export function timeline(scroller: HTMLElement): HTMLElement {
   /** Folded pages far from every drawn one let go of their posts. */
   const letGo = () => {
     const near = pages.flatMap((s, i) => (s.near ? [i] : []));
-    for (const i of topic.farFrom(pages.length, near, KEEP)) if (!pages[i].drawn) pages[i].page.posts = null;
+    for (const i of servers.farFrom(pages.length, near, KEEP)) if (!pages[i].drawn) pages[i].page.posts = null;
   };
   const watch = new IntersectionObserver((entries) => {
     for (const e of entries) {
@@ -171,7 +154,7 @@ export function timeline(scroller: HTMLElement): HTMLElement {
   }, {root: scroller, rootMargin: NEAR});
 
   /** A page older than all (above them) or newer than all (at the foot). */
-  const add = (page: topic.Page, where: 'older' | 'newer') => {
+  const add = (page: servers.Page, where: 'older' | 'newer') => {
     const s: Shown = {page, el: h('div', {class: 'tl-page'}), drawn: false, near: true, reading: false};
     if (where === 'older') { pages.push(s); list.prepend(s.el); } else { pages.unshift(s); list.append(s.el); }
     draw(s);
@@ -186,8 +169,8 @@ export function timeline(scroller: HTMLElement): HTMLElement {
     list.setAttribute('aria-busy', 'true');
     start.textContent = t('Reading…');
     try {
-      const r = await topic.older(pages.at(-1)?.page.oldest ?? null);
-      const page = topic.pageOf(r.posts);
+      const r = await servers.older(board, member, pages.at(-1)?.page.oldest ?? null);
+      const page = servers.pageOf(r.posts);
       const first = !pages.length;
       if (page) { if (first) { add(page, 'older'); toFoot(); } else steady(() => add(page, 'older')); }
       done = !r.more;
@@ -208,10 +191,10 @@ export function timeline(scroller: HTMLElement): HTMLElement {
     if (!pages.length) { done = false; return void older(); }
     looking = true;
     try {
-      const got: topic.Post[] = [];
+      const got: servers.Post[] = [];
       let after = pages[0].page.newest;
       for (;;) {
-        const r = await topic.newer(after, 100);
+        const r = await servers.newer(board, member, after, 100);
         got.push(...r.posts);
         if (!r.more || !r.posts.length) break;
         after = r.posts[r.posts.length - 1].id;
@@ -219,12 +202,13 @@ export function timeline(scroller: HTMLElement): HTMLElement {
       if (!got.length) return;
       const following = mine || atFoot();
       // Oldest page first, each at the foot.
-      for (const p of topic.onTop(got).reverse()) add(p, 'newer');
+      for (const p of servers.onTop(got).reverse()) add(p, 'newer');
       if (following) toFoot(mine); else { unseen += got.length; tell(); }
     } catch { /* tried again on the next look */ } finally { looking = false; }
   };
   fresh.addEventListener('click', () => { unseen = 0; tell(); toFoot(true); });
-  onScreen.add(came);
+  const here = {board, read: came};
+  onScreen.add(here);
 
   // Back at the foot: what came is seen.
   const seen = new IntersectionObserver((e) => { if (e.some((x) => x.isIntersecting) && unseen) { unseen = 0; tell(); } }, {root: scroller});
@@ -233,7 +217,7 @@ export function timeline(scroller: HTMLElement): HTMLElement {
   const look = () => { if (document.visibilityState === 'visible') void came(); };
   const poll = window.setInterval(() => {
     if (!root.isConnected) {
-      clearInterval(poll); watch.disconnect(); more.disconnect(); seen.disconnect(); onScreen.delete(came); removeEventListener('focus', look);
+      clearInterval(poll); watch.disconnect(); more.disconnect(); seen.disconnect(); onScreen.delete(here); removeEventListener('focus', look);
       return;
     }
     look();
@@ -247,39 +231,3 @@ export function timeline(scroller: HTMLElement): HTMLElement {
   return root;
 }
 
-/**
- * What Topic shares, and with whom, said plainly beside the timeline:
- * who a post reaches (the steps it widens through, and what makes it go on),
- * what of the writer goes with it, what this reader sees, and how far each
- * of their own posts has gone.
- */
-export function sharing(): HTMLElement {
-  const signedIn = connection() !== null;
-  const part = (title: string, ...body: Node[]) => h('section', {class: 'share-part'}, h('h3', {}, title), ...body);
-  const p = (text: string) => h('p', {}, text);
-  const contacts = h('p', {class: 'muted small'}, t('Contacts are those you accepted in Inbox.'));
-  const steps = h('ol', {class: 'share-steps'}, ...topic.RINGS.map((r) => h('li', {}, t(r))));
-  const mine = h('ol', {class: 'share-mine'});
-  const pane = h('div', {class: 'share'},
-    part(t('Who it reaches'),
-      p(t('First your contacts and a few readers; then a step wider each time those who saw it keep it, for three days.')),
-      steps, contacts),
-    part(t('What is shared'), p(t('The text, the address it was posted from, and when. Not your name or profile. You can take a post down at any time.'))),
-    part(t('What you see'), p(signedIn
-      ? t('Posts by those who accepted you, some posts still spreading, and those that reached everyone.')
-      : t('Only posts that reached everyone. Signed in, you also see your contacts\' posts and some still spreading.'))));
-  if (signedIn) {
-    pane.append(part(t('Your posts'), mine));
-    void import('../inbox.ts').then((inbox) => inbox.threads()).then((all) => {
-      const n = all.filter((x) => x.state === 'contact').length;
-      contacts.textContent = t('Contacts are those you accepted in Inbox ({n}).', {n});
-    }).catch(() => { /* the sentence without the count */ });
-    void topic.mine(5).then((r) => {
-      mine.replaceChildren(...(r.posts.length ? r.posts.map((x) => {
-        const at = Math.min(x.ring ?? 0, topic.RINGS.length - 1);
-        return h('li', {}, h('span', {class: 'share-body'}, x.body), h('span', {class: 'muted small'}, `${at + 1}/${topic.RINGS.length} · ${t(topic.RINGS[at])}`));
-      }) : [h('li', {class: 'muted'}, t('No posts yet'))]));
-    }).catch(() => mine.replaceChildren());
-  }
-  return pane;
-}

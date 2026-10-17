@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {dayOf, farFrom, onTop, pageOf, RUN_MS, sameRun, type Post} from './topic.ts';
+import {dayOf, farFrom, onTop, pageOf, RUN_MS, sameRun, type Post} from './servers.ts';
 
-const post = (id: string): Post => ({id, by: 'ren@length3.test', body: id, at: 0, keeps: 0});
+const post = (id: string): Post => ({id, by: 'ren@length3.test', body: id, at: 0});
 
 test('a page is the range of ids it was read as, newest first', () => {
   assert.equal(pageOf([]), null);

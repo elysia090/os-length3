@@ -16,12 +16,11 @@ frontend and no UI framework; the same frontend is the web build.
 └────┴──────────────────────────────────────────────┘
 ```
 
-- **Rail**: icons only (Topic / Home / Forge / File / Git / Runtime / Remote /
+- **Rail**: icons only (Server / Home / Forge / File / Git / Runtime / Remote /
   Inbox, and a round + for a new repo). A name appears beside an icon
   on hover or keyboard focus. Choosing one replaces the main area; File and
-  Topic are the operations, laid over the page instead (the tree of "/";
-  Topic with its own box to post from and, on the right, what it shares
-  with whom).
+  Server are the operations, laid over the page instead (the tree of "/";
+  the people you know and their boards).
 - **Home** is a profile, somewhere between a Twitter and a GitHub profile.
   It looks the same to its owner and to anyone else; the owner also gets
   "edit". Until accounts exist the profile is stored on this device.
@@ -79,6 +78,7 @@ an issue or a TODO. Templates and the naming rules live once in `shared/`,
 read by the core, the app and both test suites.
 
 ```
+Server    server
 Home      todo · profile · lang
 Forge     repo · band · prompt
 File      file
@@ -144,21 +144,16 @@ the app.
   total are marked as estimates, and after freeing the change the host
   shows is reported as observed. Prompts running show their memory and can
   be stopped; then the environment in effect.
-- Topic (first in the rail, laid over any page like File): short posts on
-  the Remote (`service/topic.ts`), read as a conversation (oldest above,
-  newest at the foot by the box one posts from, runs of one
-  address shown once, the day named where it starts, no counts, Keep and Take down on
-  hover), a page at a time as a range of ids. Anyone reads what
-  has gone everywhere; posting needs an account and an Inbox address. A
-  post starts with its author's contacts and a few readers and widens ring
-  by ring (1/64, 1/16, 1/4, everyone signed in, everyone) as the readers of
-  each ring keep it; who is in a ring is a per-post salt against a
-  per-reader seed in the page's own query, so nothing runs per post. Near
-  the top the next older page is read in without moving the reader; what
-  came meanwhile goes at the foot (followed, or a pill to go down to it); pages far out of view fold to empty boxes of their
-  height and, further still, let go of their posts, read again by their
-  range when they come back. A post is text, 500 characters at most, 30 an
-  hour, taken down only by its author, and keeps no profile.
+- Server (first in the rail, laid over any page like File): the one
+  purpose whose subject is people, not a repo (`service/servers.ts`). A
+  server is people who know each other (added from someone's Inbox
+  contacts); its boards each hold a plan they write together and the talk
+  around it. The plan changes by hunks of lines against the version they
+  were made on (`src/plan.ts`, the same on both sides), merged with what
+  came meanwhile, never overwriting. Boards are boxes slid like the issues;
+  the plain box at the foot writes in the board on screen; on the right are
+  its plan, its people, who can see it (anyone reading, outsiders writing
+  after a mailed code) and taking it home as text (`l3 server get`).
 - Every other purpose shows what it will hold, as a dashed empty box.
 
 The webview has no other host access: it reads nothing outside the app's

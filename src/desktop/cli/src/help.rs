@@ -1,7 +1,8 @@
 //! l3's commands as one table: the help (`l3 help`, `l3 help COMMAND`,
 //! `l3 COMMAND --help`), the suggestion for a mistyped word, and the shell
 //! completion all read it, so they cannot drift from each other. Its order
-//! is the app's rail.
+//! is the app's rail: Server first (the one whose subject is people), then
+//! what is done with repos.
 
 use length3_core::i18n::ja;
 use std::io::IsTerminal;
@@ -26,6 +27,11 @@ const fn c(name: &'static str, group: &'static str, about: Words, forms: &'stati
 }
 
 pub const COMMANDS: &[Command] = &[
+    c("server", "Server", ["people you know: boards, each a plan and its talk", "知り合いの集まり: 板ごとに計画と話"], &[
+        ("l3 server", ["each server you are in, and its boards", "入っているサーバーと、その板"]),
+        ("l3 server get SERVER[/BOARD] [--plan]", ["take boards home as text, here (the plan only with --plan)", "板をテキストでここに置く（--plan で計画だけ）"]),
+        ("l3 server post SERVER/BOARD \"text\"", ["write in a board", "板に書く"]),
+    ], &["get", "post"], false),
     c("todo", "Home", ["Home's TODO", "Home の TODO"], &[
         ("l3 todo", ["the list", "一覧"]),
         ("l3 todo add \"Fix：title\" [-m detail]", ["add one", "足す"]),

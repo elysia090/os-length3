@@ -14,7 +14,7 @@
 // which the receiver reviews and merges or rejects.
 
 import {sql} from 'drizzle-orm';
-import {bigint, index, integer, jsonb, pgTable, primaryKey, smallint, text, timestamp, uniqueIndex} from 'drizzle-orm/pg-core';
+import {bigint, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex} from 'drizzle-orm/pg-core';
 import {user} from './schema.auth.ts';
 
 export * from './schema.auth.ts';
@@ -199,31 +199,78 @@ export const signal = pgTable('signal', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (t) => [index('signal_to_idx').on(t.to, t.createdAt)]);
 
-// ---- Topic (topic.ts) ----
+// ---- Servers (servers.ts) ----
+//
+// A server is the one thing whose subject is people, not a repo: a group of
+// people who know each other, and its boards are what they talk about and
+// plan. A board holds a plan (one text its people write, version by version)
+// and the discussion around it (short posts). A board is its server's people's
+// alone unless it is opened: to be read by anyone, and to be written in by an
+// outsider who has shown an email address is theirs (a guest).
 
-/**
- * A post, as little as it can be: its id (which sorts as its time and says
- * when it was made), whose it is, the address it was made from (all a
- * reader is shown of its author), the text, and how far it has spread:
- * its ring, and what the people of that ring did with it (seen, kept). A
- * random salt picks, with each reader's seed, who is in a ring.
- */
-export const post = pgTable('post', {
+/** A server: a name and its people. */
+export const server = pgTable('server', {
   id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+/** Who is in a server, by the address they are shown as; the first is its owner. */
+export const member = pgTable('server_member', {
+  serverId: text('server_id').notNull().references(() => server.id, {onDelete: 'cascade'}),
   userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
   address: text('address').notNull(),
-  body: text('body').notNull(),
-  ring: smallint('ring').notNull().default(0),
-  salt: integer('salt').notNull().default(0),
-  /** In the current ring: how many it was shown to, and how many kept it. */
-  seen: integer('seen').notNull().default(0),
-  kept: integer('kept').notNull().default(0),
-  /** Kept in all. */
-  keeps: integer('keeps').notNull().default(0),
-}, (t) => [index('post_user_idx').on(t.userId, t.id)]);
+  owner: integer('owner').notNull().default(0),
+  addedAt: timestamp('added_at').defaultNow().notNull(),
+}, (t) => [primaryKey({columns: [t.serverId, t.userId]}), index('server_member_user_idx').on(t.userId)]);
 
-/** Who kept which post: once each. */
-export const keep = pgTable('post_keep', {
-  postId: text('post_id').notNull().references(() => post.id, {onDelete: 'cascade'}),
-  userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
-}, (t) => [primaryKey({columns: [t.postId, t.userId]})]);
+/**
+ * A board: its plan as it is now and its version (the plan's past versions
+ * are planVersion's), and how far it is open: `open` (anyone reads it),
+ * `guests` (an outsider with a checked email may write in it).
+ */
+export const board = pgTable('server_board', {
+  id: text('id').primaryKey(),
+  serverId: text('server_id').notNull().references(() => server.id, {onDelete: 'cascade'}),
+  name: text('name').notNull(),
+  plan: text('plan').notNull().default(''),
+  version: integer('version').notNull().default(0),
+  open: integer('open').notNull().default(0),
+  guests: integer('guests').notNull().default(0),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => [index('server_board_server_idx').on(t.serverId)]);
+
+/** A plan's versions: what each change was made on, so one made on an older one is merged, not overwriting. */
+export const planVersion = pgTable('server_plan_version', {
+  boardId: text('board_id').notNull().references(() => board.id, {onDelete: 'cascade'}),
+  version: integer('version').notNull(),
+  text: text('text').notNull(),
+  by: text('by').notNull(),
+  at: timestamp('at').defaultNow().notNull(),
+}, (t) => [primaryKey({columns: [t.boardId, t.version]})]);
+
+/** A post in a board's discussion: its id sorts as its time; `by` is all a reader is shown of who wrote it. */
+export const talk = pgTable('server_post', {
+  id: text('id').primaryKey(),
+  boardId: text('board_id').notNull().references(() => board.id, {onDelete: 'cascade'}),
+  userId: text('user_id').references(() => user.id, {onDelete: 'cascade'}),
+  guestId: text('guest_id'),
+  by: text('by').notNull(),
+  body: text('body').notNull(),
+}, (t) => [index('server_post_board_idx').on(t.boardId, t.id)]);
+
+/**
+ * An outsider writing in one board: the email they showed is theirs (by a
+ * short code sent to it), and a token for writing there. Codes and tokens
+ * are kept only as digests.
+ */
+export const guest = pgTable('server_guest', {
+  id: text('id').primaryKey(),
+  boardId: text('board_id').notNull().references(() => board.id, {onDelete: 'cascade'}),
+  email: text('email').notNull(),
+  code: text('code'),
+  codeUntil: timestamp('code_until'),
+  tries: integer('tries').notNull().default(0),
+  token: text('token'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => [uniqueIndex('server_guest_board_email_idx').on(t.boardId, t.email), index('server_guest_token_idx').on(t.token)]);

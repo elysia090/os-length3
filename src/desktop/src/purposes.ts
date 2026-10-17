@@ -1,12 +1,13 @@
 // The leftmost rail chooses a purpose and the whole main area shows it;
-// there is no intermediate pane. File and Topic are the operations among
-// them: File lays the tree of "/" over the page, Topic the timeline (with
-// the field to post from), instead of replacing it. Purposes are not directories: the
+// there is no intermediate pane. File and Server are the operations among
+// them: File lays the tree of "/" over the page, Server the people one knows
+// and their boards, instead of replacing it. Every purpose is about repos
+// but Server, whose subject is people. Purposes are not directories: the
 // filesystem stays an ordinary POSIX tree and never re-implements this
 // classification.
 
 export type PurposeId =
-  | 'home' | 'file' | 'git' | 'forge' | 'runtime' | 'remote' | 'topic' | 'inbox'
+  | 'home' | 'file' | 'git' | 'forge' | 'runtime' | 'remote' | 'server' | 'inbox'
   | 'new-repo';
 
 /** Label, role and detail are English; they are shown through t(). */
@@ -22,9 +23,9 @@ export interface Purpose {
 }
 
 export const PURPOSES: readonly Purpose[] = [
-  // Topic first: what anyone may read, before what is one's own.
-  {id: 'topic', label: 'Topic', role: 'Simple posts',
-    detail: 'Short posts, free to read, laid over any page. A new one reaches its author\'s contacts and a few readers first, and more as they keep it.', implemented: true},
+  // Server first: the people one knows, before what one makes.
+  {id: 'server', label: 'Server', role: 'People you know',
+    detail: 'A group of people you know, for talking loosely and planning in earnest. Each board holds a plan written together and the talk around it.', implemented: true},
   {id: 'home', label: 'Home', role: 'Profile',
     detail: 'A page that reads the same to you and to anyone else, with your repos and posts.', implemented: true},
   {id: 'forge', label: 'Forge', role: 'Your workshop',
@@ -59,15 +60,15 @@ export function purpose(id: PurposeId): Purpose {
 /**
  * A stored value is a convenience only; anything unknown falls back to Home.
  * Creating a repo is a step, not a place to reopen the app into, and File
- * and Topic are operations over a page.
+ * and Server are operations over a page.
  */
 export function restorePurpose(stored: string | null | undefined): PurposeId {
-  // File and Topic open over a page and are never the page itself.
+  // File and Server open over a page and are never the page itself.
   return PURPOSES.some((p) => p.id === stored && !OVER.includes(p.id)) ? stored as PurposeId : DEFAULT_PURPOSE;
 }
 
 /** The purposes laid over a page rather than shown as one. */
-export const OVER: readonly PurposeId[] = ['file', 'topic'];
+export const OVER: readonly PurposeId[] = ['file', 'server'];
 
 /**
  * Vertical rail keys, wrapping at both ends like a tab list. Returns null for

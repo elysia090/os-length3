@@ -9,7 +9,7 @@ import {Me} from './pages/me.ts';
 import {newRepo} from './pages/new-repo.ts';
 import {remote} from './pages/remote.ts';
 import {inboxPage} from './pages/inbox.ts';
-import {TopicLayer} from './pages/topic-layer.ts';
+import {ServerLayer} from './pages/server-layer.ts';
 import {runtime} from './pages/runtime.ts';
 import {FileTree} from './pages/tree.ts';
 import {begin} from './lifecycle.ts';
@@ -35,8 +35,8 @@ function save(key: string, value: string) {
 
 let openRepo = load(REPO_KEY);
 const ctx: Context = {
-  // Topic, like File, is laid over the page rather than being one.
-  go: (id) => (id === 'topic' ? topicLayer.open(true) : select(id)),
+  // Server, like File, is laid over the page rather than being one.
+  go: (id) => (id === 'server' ? serverLayer.open(true) : select(id)),
   openRepo(name, path = '') {
     if (current === 'forge' && showInForge(name, path)) return;
     ctx.remember(name);
@@ -54,8 +54,8 @@ const fileTree = new FileTree({
   current: () => (current === 'forge' ? openRepo : null),
 });
 document.body.append(fileTree.element);
-// Topic is laid over the page the same way: its bench's Post lane, or a bench of its own.
-const topicLayer = new TopicLayer(ctx);
+// Server is laid over the page the same way: people one knows, their boards, each board's plan and talk.
+const serverLayer = new ServerLayer(ctx);
 
 function railButton(id: PurposeId): HTMLButtonElement {
   const p = purpose(id), button = document.createElement('button');
@@ -66,8 +66,8 @@ function railButton(id: PurposeId): HTMLButtonElement {
   button.append(icon(id), h('span', {class: 'rail-tag', 'aria-hidden': 'true'}, t(p.label)));
   if (id === 'file') {
     fileTree.attach(button);
-  } else if (id === 'topic') {
-    topicLayer.attach(button);
+  } else if (id === 'server') {
+    serverLayer.attach(button);
   } else {
     button.setAttribute('role', 'tab');
     button.setAttribute('aria-controls', 'page');
@@ -77,8 +77,8 @@ function railButton(id: PurposeId): HTMLButtonElement {
     const next = stepPurpose(id, event.key);
     if (next === null) return;
     event.preventDefault();
-    // Arrows move along the rail; passing File or Topic only focuses it.
-    if (next !== 'file' && next !== 'topic') select(next);
+    // Arrows move along the rail; passing File or Server only focuses it.
+    if (next !== 'file' && next !== 'server') select(next);
     tabs.get(next)?.focus();
   });
   tabs.set(id, button);
@@ -87,10 +87,10 @@ function railButton(id: PurposeId): HTMLButtonElement {
 
 function select(id: PurposeId) {
   current = id;
-  topicLayer.close();
+  serverLayer.close();
   for (const [tabId, tab] of tabs) {
     const selected = tabId === id;
-    if (tabId !== 'file' && tabId !== 'topic') tab.setAttribute('aria-selected', String(selected));
+    if (tabId !== 'file' && tabId !== 'server') tab.setAttribute('aria-selected', String(selected));
     tab.tabIndex = selected ? 0 : -1;
   }
   $('page').setAttribute('aria-labelledby', `purpose-${id}`);

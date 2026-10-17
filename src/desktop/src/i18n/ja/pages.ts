@@ -1,8 +1,6 @@
 // Japanese for the pages part of the OS (English text -> Japanese).
 export default {
   // Home
-  'Posts': '投稿',
-  'posts': '投稿',
   'No posts yet': 'まだ投稿はありません',
   'Handle': 'ハンドル',
   'Bio': '自己紹介',
@@ -116,4 +114,7 @@ export default {
   'Bringing it…': '持ってきています…',
   'Could not read the repos: {why}': 'repoを読めませんでした: {why}',
   'In this browser, repos go when this page closes.': 'このブラウザでは、repoはこのページを閉じると消えます。',
+  // The Prompt's switch, on its own head.
+  'Turn the Prompt off': 'Prompt を切る',
+  'Turn the Prompt on': 'Prompt を入れる',
 } as Record<string, string>;

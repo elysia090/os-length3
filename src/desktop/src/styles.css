@@ -350,7 +350,6 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .band-add { flex: none; display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; cursor: pointer; }
 /* Nothing left to bring out: ⊕ steps back. */
 .band-add:disabled { opacity: .5; cursor: default; background: transparent; }
-.topic .empty { margin-top: var(--s5); }
 /* A chip picks one of several, like the template choice: round, outlined. */
 .chip {
   flex: none; min-height: var(--h-row); padding: 0 var(--s3); border: 1px solid var(--edge); border-radius: var(--r-round);
@@ -405,11 +404,10 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .prompt-in:focus { outline: none; }
 .prompt-in:disabled { cursor: default; }
 .prompt-note:empty { display: none; }
-/* Topic over any page: its own place in the bench's shape, to the window's foot so nothing of the page shows below it, its scrolling its own. */
-.topic-layer { position: fixed; top: 0; bottom: 0; left: calc(var(--outer) + var(--rail)); right: 0; z-index: 4; padding: var(--outer-top) var(--outer) var(--outer-bottom) 0; background: var(--ground); animation: layer-in var(--move) cubic-bezier(.2, .9, .25, 1); }
-.topic-layer .flow { overscroll-behavior: contain; }
+/* Server over any page: its own place in the bench's shape, to the window's foot so nothing of the page shows below it. */
+.server-layer { position: fixed; top: 0; bottom: 0; left: calc(var(--outer) + var(--rail)); right: 0; z-index: 4; padding: var(--outer-top) var(--outer) var(--outer-bottom) 0; background: var(--ground); animation: layer-in var(--move) cubic-bezier(.2, .9, .25, 1); }
 @keyframes layer-in { from { opacity: 0; transform: translateX(calc(-1 * var(--s4))); } }
-@media (prefers-reduced-motion: reduce) { .topic-layer { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .server-layer { animation: none; } }
 /* Narrow: the center and its box keep the width; the side steps aside (the Prompt still flies up above the box). */
 @media (max-width: 760px) {
   .work { grid-template-columns: minmax(0, 1fr); }
@@ -821,8 +819,6 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
    its name kept at the top, oldest above and newest by the box. A run of
    one person's posts shows their face and name once; the day is named where
    it starts; what can be done to a post comes out on hover, round. */
-.topic { max-width: 760px; margin: 0 auto; }
-.topic > .page-head { position: sticky; top: calc(-1 * var(--s3)); z-index: 2; padding: var(--s3) 0 var(--s2); background: var(--ground); }
 .tl-start { padding: var(--s5) 0 var(--s2); text-align: center; min-height: 1lh; }
 .tl-pages { overflow-anchor: none; }
 .tl-day { margin: var(--s5) 0 var(--s1); text-align: center; color: var(--sub); font: 600 var(--t-meta) var(--sans); }
@@ -843,22 +839,50 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .tl-act[aria-pressed='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 .tl-foot-mark { height: 1px; }
 /* The mark for what came floats just above the box (its holder has no height), so showing it moves nothing. */
-.tl-new-at { position: sticky; bottom: 120px; z-index: 3; height: 0; display: flex; justify-content: center; align-items: flex-end; }
+.tl-new-at { position: sticky; bottom: var(--s3); z-index: 3; height: 0; display: flex; justify-content: center; align-items: flex-end; }
 .tl-new { flex: none; min-height: var(--h-row); padding: 0 var(--s4); border: 0; border-radius: var(--r-round); background: var(--ink); color: var(--ground); font: 600 var(--t-meta) var(--sans); cursor: pointer; }
 .tl-new[hidden] { display: none; }
-.topic-signed-out { align-items: center; justify-content: space-between; gap: var(--s3); }
-/* Beside Topic, what it shares with whom: parts under small headings, no rules. */
-.topic-side { display: block; overflow-y: auto; padding: var(--band) 0 var(--s5) var(--s5); }
-.share { display: grid; gap: var(--s5); }
-.share-part { display: grid; gap: var(--s2); }
-.share-part h3 { margin: 0; font-size: var(--t-meta); font-weight: 600; color: var(--sub); }
-.share-steps, .share-mine { display: grid; gap: var(--s1); margin: 0; padding: 0; list-style: none; counter-reset: step; }
-.share-steps li { counter-increment: step; display: flex; gap: var(--s2); }
-.share-steps li::before { content: counter(step); flex: none; width: 1.5em; color: var(--sub); font-variant-numeric: tabular-nums; }
-.share-mine li { display: grid; padding: var(--s1) 0; }
-.share-body { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-/* The Prompt's head: its name, and the switch that turns it on and off. */
-.term-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); }
-.home-posts { display: grid; gap: var(--s3); max-width: 640px; }
-.home-post { padding-bottom: var(--s3); border-bottom: 1px solid var(--rule); }
-.home-posts > .button.link { justify-self: start; }
+/* Server: servers as chips on the top line, then the boards as boxes side by
+   side, slid as the issues are (one in full, the neighbours' edges showing),
+   with the box at the foot; on the right, the board's plan and people. */
+.server-center { display: grid; grid-template-rows: auto minmax(0, 1fr); padding: var(--band) var(--s5) 120px; }
+.server-top { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin-bottom: var(--s3); }
+.server-top .band-add { font-size: var(--t-body); }
+.slides { --peek: 48px; --gap: var(--s3); --lead: 0; min-height: 0; }
+.slides.single { --peek: 0px; }
+.slide-stage { position: relative; height: 100%; overflow-x: clip; }
+.slide-stage:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: var(--r-place); }
+.slide-track { --at: 0; display: flex; gap: var(--gap); height: 100%; transform: translateX(calc(var(--lead) * var(--peek) - var(--at) * (100% - 2 * var(--peek) + var(--gap)))); transition: transform var(--move); }
+@media (prefers-reduced-motion: reduce) { .slide-track { transition: none; } }
+.slide { flex: 0 0 calc(100% - 2 * var(--peek)); min-width: 0; height: 100%; }
+.board-card { display: flex; flex-direction: column; height: 100%; border: 1px solid var(--rule); border-radius: var(--r-place); }
+.slide[aria-current='false'] .board-card { color: var(--sub); }
+.slide[aria-current='true'] .board-card { border-color: var(--ink); }
+.slide-stage:has(.stage-hit.next:hover) .slide[aria-current='true'] + .slide .board-card,
+.slide-stage:has(.stage-hit.prev:hover) .slide:has(+ .slide[aria-current='true']) .board-card { background: var(--raised); }
+.board-head { display: flex; align-items: baseline; gap: var(--s2); padding: var(--s4) var(--s5) var(--s2); }
+.board-head h2 { font-size: var(--t-card); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.board-faces { margin-left: auto; flex-wrap: nowrap; }
+.board-plan { flex: 1; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: var(--s2); padding: 0 var(--s5) var(--s4); }
+.board-talk { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--s5) var(--s3); overscroll-behavior: contain; }
+.board-talk:focus-visible { outline-offset: -2px; }
+.board-body { display: grid; gap: var(--s3); align-content: start; padding: var(--s2) var(--s5) var(--s5); max-width: 560px; }
+.board-body .row { gap: var(--s2); }
+.board-body .line-in { flex: 1; }
+.server-say { flex-wrap: wrap; align-items: center; gap: var(--s2); }
+.server-say .line-in { flex: 1; min-width: 10em; }
+.server-side { display: grid; grid-template-rows: none; align-content: start; gap: var(--s5); overflow-y: auto; padding: var(--band) 0 var(--s5) var(--s5); }
+.side-part { display: grid; gap: var(--s2); }
+.side-part h3 { margin: 0; font-size: var(--t-meta); font-weight: 600; color: var(--sub); }
+/* The plan is the field, as a file is in Forge: the box's room, saved on its own. */
+.plan-in { width: 100%; height: 100%; padding: var(--s3) var(--s4); border: var(--line-work) solid var(--edge); border-radius: var(--r-place); background: transparent; resize: none; font: inherit; color: inherit; }
+.plan-in:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.plan-read { white-space: pre-wrap; overflow-wrap: anywhere; overflow-y: auto; }
+.plan-state { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); min-height: 1lh; }
+.plan-theirs { flex-basis: 100%; margin: 0; padding: var(--s2) var(--s3); border: 1px solid var(--rule); border-radius: var(--r-field); white-space: pre-wrap; font: var(--t-meta)/1.5 var(--sans); color: var(--ink); }
+.people { display: grid; gap: var(--s1); margin: 0; padding: 0; list-style: none; }
+.people li { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
+.people .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.face { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--rule); border-radius: var(--r-round); font: 600 11px var(--sans); }
+.switch-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); }
+.home-servers { display: flex; flex-wrap: wrap; gap: var(--s2); }

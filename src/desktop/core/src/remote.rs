@@ -126,6 +126,17 @@ impl Client {
         }
     }
 
+    /// A text the Remote answers with (a board taken home as markdown).
+    pub(crate) fn text(&self, path: &str) -> Result<String> {
+        match self.agent.get(&format!("{}{path}", self.url)).set("Authorization", &self.auth()).call() {
+            Ok(r) => r.into_string().map_err(|e| e.to_string()),
+            Err(ureq::Error::Status(404, _)) => Err(crate::tr!("The Remote does not have it", "Remote にありません")),
+            Err(ureq::Error::Status(401, _)) => Err(UNKNOWN.into()),
+            Err(ureq::Error::Status(code, _)) => Err(format!("Remote: {code}")),
+            Err(e) => Err(crate::tr!("The Remote cannot be reached: {}", "Remote に届きません: {}", e)),
+        }
+    }
+
     fn put_blob(&self, sha: &str, bytes: &[u8]) -> Result<()> {
         self.agent.put(&format!("{}/v1/blobs/{sha}", self.url))
             .set("Authorization", &self.auth())

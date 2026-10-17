@@ -10,7 +10,8 @@ const PATHS: Record<PurposeId, string> = {
   forge: 'M4 5h16v14H4zM8 10l3 2.5L8 15M13 15h4',
   runtime: 'M12 4 3 9l9 5 9-5zM3 14l9 5 9-5',
   remote: 'M7 18h10a4 4 0 0 0 .5-7.97A6 6 0 0 0 6 11.5 3.25 3.25 0 0 0 7 18z',
-  topic: 'M5 9h14M5 15h14M10 4 8 20M16 4l-2 16',
+  // People: one in front, another beside and behind.
+  server: 'M9.5 11.5a3.25 3.25 0 1 0 0-6.5 3.25 3.25 0 0 0 0 6.5zM3.5 19.5a6 6 0 0 1 12 0M15.5 5.2a3.25 3.25 0 0 1 0 6.1M17.5 13.8a6 6 0 0 1 3 5.7',
   inbox: 'M4 13 7 5h10l3 8v6H4zM4 13h5l1 2h4l1-2h5',
   'new-repo': 'M12 5v14M5 12h14',
 };
