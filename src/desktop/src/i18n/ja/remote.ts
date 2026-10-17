@@ -24,6 +24,7 @@ export default {
   'Sign in': 'サインイン',
   'Sign in with a passkey': 'パスキーでサインイン',
   'Repos': 'repo',
+  'Share': '共有',
   'Open': '開く',
   'Only on the Remote · {size}': 'Remote だけ · {size}',
   'Add a passkey': 'パスキーを足す',

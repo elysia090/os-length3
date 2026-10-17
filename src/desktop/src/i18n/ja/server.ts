@@ -110,18 +110,5 @@ export default {
   'Choose a server': 'サーバーを選んでください',
   'That repo is not on the Remote': 'その repo は Remote にありません',
   // Who sees a repo (Remote): only you, servers, everyone.
-  'Who sees it': '公開範囲',
-  'Only you': '自分だけ',
   'Servers': 'サーバー',
-  'Everyone': '全体',
-  'In {server}': '{server}に共有',
-  'In {n} servers': '{n}個のサーバーに共有',
-  'You are in no server yet.': 'まだどのサーバーにも入っていません。',
-  'Seen as': '見える名前',
-  'Anyone sees it under your name.': '誰にでも、あなたの名前で見えます。',
-  'Only you see it.': '自分だけに見えます。',
-  'It comes off every server too.': 'どのサーバーからも外れます。',
-  'Their people see it as last pushed.': 'サーバーの人に、push した状態が見えます。',
-  'Only you write in it.': '書けるのはあなただけです。',
-  'Anyone sees it as the server\'s.': 'サーバーのものとして誰でも見られます。',
 } as Record<string, string>;

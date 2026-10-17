@@ -217,6 +217,8 @@ fix is always a piece from §3, not a new rule.
 | A dashed box as wide as the page around one line | As wide as its words |
 | Every pane saying what will appear once something is done (repoを開くと出ます, 帯にrepoを出すと動きます) | Said once, where it is done (the center); the other panes are empty |
 | A paragraph explaining the screen | The word on the thing; what will happen, in the ask |
+| A button that says where a thing is shared (旅行に共有) and opens a form | Share, and the servers beside it to press in or out |
+| A rule under a lone row (Runtime's Remote column) | Space between rows; a line only where regions meet |
 | A sentence beside a way in (what the Remote is, a lost passkey, "sign in faster") | The buttons alone: Continue with…, Sign in with a passkey, Add a passkey |
 | A button in a history that cannot act, or ends something from a list of the past (外す on a device or the last provider) | A history is only read; sign out from the person's menu |
 | A sentence broken where the card ends (名前 / は出ません) | Short lines, each broken where the sentence breaks |
@@ -811,10 +813,10 @@ place a page is switched, because its parts are unrelated):
   the left on `off` red and the card is quiet (dashed): the Remote keeps
   the repo 30 days, answering only that it is off, and pressing the switch
   again brings it back at once. Its copy on this device goes with it.
-  Beside Forge, who sees it, in a word (Only you, In Trip, Everyone);
-  pressing it asks in the card: Only you, Servers (which, ticked), or
-  Everyone, and as what (a server it is in, so nothing ties it to you, or
-  your own address), each said in a line before it is saved.
+  Beside Forge, Share: pressed, the servers one is in come out beside it,
+  each pressed in where the repo is shown, and pressing one shows it there
+  or takes it off at once. Going public is the server's, in its gear (seen
+  as the server's, so nothing ties it to you).
 - **Sign-in**: passkeys, the code to turn a repo off (five letters or
   digits, set with a passkey; only its digest is kept), then the providers
   (the last way in stays, with nothing to press beside it).

@@ -84,7 +84,7 @@ a { color: var(--ink); }
 .rail-item:hover, .button:hover, .chip:hover, .pill:hover, .band-add:hover:not(:disabled), .me:hover, .me-item:hover:not(:disabled), .tree-row:hover, .todo-mark:hover,
 .card.repo:hover, .card.new:hover { background: var(--raised); }
 .rail-item[aria-selected='true'], .button.primary,
-.chip[aria-current], .chip[aria-checked='true'], .pill[aria-current], .tree-row:has(> [aria-current='page']),
+.chip[aria-current], .chip[aria-checked='true'], .chip[aria-pressed='true'], .pill[aria-current], .tree-row:has(> [aria-current='page']),
 .rail-item[aria-expanded='true'], .me[aria-expanded='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 
 /* ---- 1. Rail ---- */
@@ -596,7 +596,7 @@ mark { background: var(--ink); color: var(--ground); }
 .space-col > h3 { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s3); margin: 0 0 var(--s3); font-size: var(--t-body); font-weight: 600; }
 .space-col > h3 b { font-weight: 600; font-variant-numeric: tabular-nums; }
 .space-list { display: grid; align-content: start; gap: var(--s1); flex: 1; overflow-y: auto; }
-.space-row { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) 0; border-bottom: 1px solid var(--rule); }
+.space-row { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) 0; }
 .space-what { display: grid; min-width: 0; flex: 1; }
 .space-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .space-what .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -732,6 +732,10 @@ mark { background: var(--ink); color: var(--ground); }
 .repo-cards .card:hover { background: transparent; }
 .card-foot { display: flex; align-items: center; gap: var(--s2); align-self: end; }
 .card-foot .grow { flex: 1; }
+/* Share, and once pressed the servers beside it, each pressed in where the repo is shown. */
+.share, .share-list { display: inline-flex; align-items: center; gap: var(--s2); }
+.share-list[hidden] { display: none; }
+.share > .button[aria-expanded='true'] { background: var(--raised); border-color: var(--ink); }
 .card.off { border-style: dashed; }
 /* What was turned off, pressed again to bring it back: red, as a repo turned off is. */
 .button.off { background: var(--off); border-color: var(--off); color: var(--ground); }
@@ -935,6 +939,8 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .board-todo-head { display: flex; align-items: baseline; gap: var(--s2); font-size: var(--t-meta); font-weight: 600; color: var(--sub); }
 .board-todo-head .muted { font-weight: 400; }
 .board-todo .todo-box { min-height: 0; height: clamp(220px, 40vh, 440px); overflow-y: auto; }
+/* Its edge a little outside the board's # and TODO, so the marks inside sit near their line. */
+.board-todo .todo-box { margin-inline: calc(-1 * var(--s2)); }
 /* Its first line a little down from the box's top, as Home's is. */
 .board-todo .todo-items { padding: var(--s3) var(--s2) 0; }
 .board-todo .todo-hint { display: none; }

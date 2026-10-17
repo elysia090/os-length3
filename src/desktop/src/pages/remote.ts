@@ -6,7 +6,6 @@ import * as draft from '../draft.ts';
 import type {RemoteRepo} from '../draft.ts';
 import * as account from '../remote.ts';
 import {kept, store} from '../repos.ts';
-import {shown} from '../inbox.ts';
 import * as servers from '../servers.ts';
 import {pageHead, parts} from './common.ts';
 import type {Context} from './context.ts';
@@ -132,13 +131,12 @@ function repoSection(ctx: Context, counted: (n: number) => void, toCode: () => v
       ? t('Off · back until {date}', {date: day(there!.until!)})
       : here ? syncWord(repoState(name)) : t('Only on the Remote');
     const who = seen.find((x) => x.name === name);
-    const sees = who && !off ? button(seenWord(who), 'small-button seen-button') : null;
+    const share = who && !off ? sharing(who, error) : null;
     const el = h('div', {class: `card repo${off ? ' off' : ''}`, 'data-repo': name},
       h('span', {class: 'card-title'}, name),
       h('span', {class: 'muted'}, `${bytes(size)} · ${t('Changed {when}', {when: ago(changed)})}`),
       h('span', {class: 'muted card-sync'}, where),
-      h('div', {class: 'card-foot'}, forge, sees, h('span', {class: 'grow'}), power), error);
-    sees?.addEventListener('click', () => void whoSees(el, who!, paint));
+      h('div', {class: 'card-foot'}, forge, share, h('span', {class: 'grow'}), power), error);
     power.addEventListener('click', () => {
       if (off) { void pressing(power, error, async () => { await account.turnOn(name); await look(); await paint(); }); return; }
       if (isNative) { error.textContent = t('A repo is turned off from the browser, where its passkey is.'); return; }
@@ -147,77 +145,44 @@ function repoSection(ctx: Context, counted: (n: number) => void, toCode: () => v
     return el;
   };
   void look().then(paint);
-  const stop = onSync(() => { if (!section.isConnected) { stop(); return; } if (!section.querySelector('.off-ask')) void paint(); });
+  const stop = onSync(() => { if (!section.isConnected) { stop(); return; } if (!section.querySelector('.off-ask, .share-list:not([hidden])')) void paint(); });
   return section;
 }
 
-/** Who sees a repo, in a word or two. */
-function seenWord(s: servers.RepoSeen): string {
-  if (s.seen === 'everyone') return t('Everyone');
-  if (s.seen === 'servers') return s.servers.length === 1 ? t('In {server}', {server: s.servers[0].name}) : t('In {n} servers', {n: s.servers.length});
-  return t('Only you');
-}
-
 /**
- * In the card: who sees it. Only you; the servers it is shown in (only seen
- * there, as it was last pushed); or everyone, as a server's (by default the
- * one it goes public from, so nothing ties it to you) or as your own.
+ * Share: pressed, the servers one is in come out beside it, each pressed in
+ * where the repo is shown, and pressing one shows it there or takes it off
+ * at once. Going public is the server's (its gear); it stays as it is here.
  */
-async function whoSees(el: HTMLElement, now: servers.RepoSeen, done: () => Promise<void>) {
-  const error = h('p', {class: 'error', role: 'alert'});
-  const mine = await servers.servers().catch(() => [] as servers.Server[]);
-  const me = await import('../inbox.ts').then((inbox) => inbox.me()).catch(() => null);
-  let to = now.seen;
-  const chosen = new Set(now.servers.map((s) => s.id));
-  const chips = h('div', {class: 'chips', role: 'radiogroup', 'aria-label': t('Who sees it')});
-  const body = h('div', {class: 'seen-choice'});
-  // Seen by everyone as: a server it is in, else the first it is shown in, else yours.
-  let as = now.asServer ?? now.servers[0]?.id ?? 'me';
-  const paint = () => {
-    chips.replaceChildren(...(['private', 'servers', 'everyone'] as const).map((v) => {
-      const c = h('button', {type: 'button', class: 'chip', role: 'radio', 'aria-checked': String(v === to)},
-        v === 'private' ? t('Only you') : v === 'servers' ? t('Servers') : t('Everyone'));
-      c.addEventListener('click', () => { to = v; paint(); });
-      return c;
-    }));
-    // What each means, in short lines broken where the sentence breaks.
-    const lines = (...ls: string[]) => ls.map((l) => h('p', {class: 'muted small'}, l));
-    if (to === 'private') { body.replaceChildren(...lines(t('Only you see it.'), t('It comes off every server too.'))); return; }
-    if (to === 'servers') {
-      body.replaceChildren(...(mine.length ? mine.map((s) => {
-        const box = h('input', {type: 'checkbox'}) as HTMLInputElement;
-        box.checked = chosen.has(s.id);
-        box.addEventListener('change', () => { if (box.checked) chosen.add(s.id); else chosen.delete(s.id); });
-        return h('label', {class: 'check-row'}, box, h('span', {}, s.name), h('span', {class: 'muted small'}, shown(s.address)));
-      }) : [h('p', {class: 'muted small'}, t('You are in no server yet.'))]),
-      ...lines(t('Their people see it as last pushed.'), t('Only you write in it.')));
-      return;
-    }
-    const pick = h('select', {class: 'line-in', 'aria-label': t('Seen as')}) as HTMLSelectElement;
-    const mineName = me?.addresses[0]?.address;
-    pick.replaceChildren(...mine.filter((s) => s.address).map((s) => h('option', {value: s.id}, `${shown(s.address)}:${now.name}`)),
-      ...(mineName ? [h('option', {value: 'me'}, `${shown(mineName)}:${now.name}`)] : []));
-    pick.value = as;
-    if (pick.selectedIndex < 0) pick.selectedIndex = 0;
-    as = pick.value;
-    const note = h('div', {class: 'seen-note'});
-    const say = () => note.replaceChildren(...(as === 'me' ? lines(t('Anyone sees it under your name.')) : lines(t('Anyone sees it as the server\'s.'), t('Your name is not shown.'))));
-    say();
-    pick.addEventListener('change', () => { as = pick.value; say(); });
-    body.replaceChildren(h('label', {class: 'check-row'}, h('span', {class: 'muted small'}, t('Seen as')), pick), note);
+function sharing(now: servers.RepoSeen, error: HTMLElement): HTMLElement {
+  const open = button(t('Share'), 'small-button');
+  open.setAttribute('aria-expanded', 'false');
+  const list = h('span', {class: 'share-list', hidden: ''});
+  let shared = new Set(now.servers.map((x) => x.id));
+  const toggle = async (id: string) => {
+    const next = new Set(shared);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    const ids = [...next];
+    // Public as a server it leaves: no longer public. Public otherwise: kept, with the new list.
+    const r = now.seen === 'everyone' && !(now.asServer && !next.has(now.asServer))
+      ? await servers.setSeen(now.name, 'everyone', {servers: ids, as: now.asServer ?? 'me'})
+      : await servers.setSeen(now.name, ids.length ? 'servers' : 'private', ids.length ? {servers: ids} : {});
+    now = r;
+    shared = next;
   };
-  paint();
-  const cancel = button(t('Not now'), 'small-button');
-  cancel.addEventListener('click', () => void done());
-  const save = button(t('Save'), 'small-button primary');
-  save.addEventListener('click', () => void pressing(save, error, async () => {
-    if (to === 'servers') await servers.setSeen(now.name, 'servers', {servers: [...chosen]});
-    else if (to === 'everyone') await servers.setSeen(now.name, 'everyone', {as});
-    else await servers.setSeen(now.name, 'private');
-    await done();
-  }));
-  el.replaceChildren(h('div', {class: 'off-ask'}, h('span', {class: 'card-title'}, now.name), chips, body, error,
-    h('div', {class: 'card-foot'}, cancel, h('span', {class: 'grow'}), save)));
+  open.addEventListener('click', async () => {
+    const out = list.hidden;
+    open.setAttribute('aria-expanded', String(out));
+    list.hidden = !out;
+    if (!out || list.childElementCount) return;
+    const mine = await servers.servers().catch(() => [] as servers.Server[]);
+    list.replaceChildren(...(mine.length ? mine.map((s) => {
+      const c = h('button', {type: 'button', class: 'chip', 'aria-pressed': String(shared.has(s.id))}, s.name) as HTMLButtonElement;
+      c.addEventListener('click', () => void pressing(c, error, async () => { await toggle(s.id); c.setAttribute('aria-pressed', String(shared.has(s.id))); }));
+      return c;
+    }) : [h('span', {class: 'muted small'}, t('In no server yet'))]));
+  });
+  return h('span', {class: 'share'}, open, list);
 }
 
 /** In the card: the names and the code, then a passkey; the switch goes right and red. */

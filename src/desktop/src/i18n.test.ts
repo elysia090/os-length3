@@ -75,9 +75,9 @@ test('each English text has one Japanese', () => {
 
 test('a name is a space apart from Japanese only when it is Latin', () => {
   setLang('ja');
-  assert.equal(t('In {server}', {server: '旅行'}), '旅行に共有');
-  assert.equal(t('In {server}', {server: 'trip'}), 'trip に共有');
+  assert.equal(t('To the people of {server}', {server: '旅行'}), '旅行の人たちへ');
+  assert.equal(t('To the people of {server}', {server: 'trip'}), 'trip の人たちへ');
   assert.equal(t('{n} new posts', {n: 3}), '新しい投稿 3件');
   setLang('en');
-  assert.equal(t('In {server}', {server: 'trip'}), 'In trip');
+  assert.equal(t('To the people of {server}', {server: 'trip'}), 'To the people of trip');
 });
