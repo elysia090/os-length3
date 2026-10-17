@@ -228,7 +228,7 @@ pub fn issue_show(ctx: &Ctx, call: &Call) -> Result<Reply> {
         for rv in c.reviews.iter().rev().filter(|r| !(r.verdict == "approve" && r.note.is_empty())) {
             let of = if rv.version != c.version { tr!(" (version {}, older)", "（第{}版、古い版）", rv.version) } else { String::new() };
             let asked = match rv.verdict.as_str() { "changes" => tr!(" asked for changes", " 変更を依頼"), "approve" => tr!(" approved", " 承認"), _ => String::new() };
-            t.push(format!("    {} · {}{asked}{of}: {}", rv.by, ago(rv.time), rv.note));
+            t.push(format!("    {} · {}{asked}{of}{}{}", rv.by, ago(rv.time), tr!(": ", "："), rv.note));
         }
         let by = approvers(c);
         if c.state == "open" {

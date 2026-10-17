@@ -20,7 +20,7 @@ pub fn page(_: &Ctx, _: &Call) -> Result<Reply> {
     for i in &s.items {
         let act = match i.room { usage::Room::Free | usage::Room::SyncFree => tr!("free", "空ける"), usage::Room::Keep => tr!("stays", "残す") };
         t.push(format!("  {:>9}  {}  {}  {}", bytes(i.allocated), act, i.what, i.detail));
-        t.push(format!("             {}{}", i.why, if i.room == usage::Room::Keep { String::new() } else { format!("  (l3 free {})", i.id.strip_prefix("repo:").unwrap_or(&i.id)) }));
+        t.push(format!("             {}{}", i.why, if i.room == usage::Room::Keep { String::new() } else { tr!("  (l3 free {})", "（l3 free {}）", i.id.strip_prefix("repo:").unwrap_or(&i.id)) }));
     }
     if s.freeable > 0 { t.push(tr!("Can be freed: {} (all of it: l3 free all)", "空けられるもの：{}（全部なら l3 free all）", bytes(s.freeable))); }
     let items: Vec<_> = s.items.iter().map(|i| json!({"id": i.id, "what": i.what, "allocated": i.allocated, "room": i.room})).collect();

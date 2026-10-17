@@ -22,6 +22,14 @@ pub fn servers(_: &Ctx, _: &Call) -> Result<Reply> {
     Ok(Reply::data(t.join("\n"), json!(list)))
 }
 
+/// A server, or its board, by name: one you are not in is not found (4), as a repo is.
+fn find(target: &str) -> Result<(servers::Server, Vec<servers::Board>)> {
+    servers::find(target).map_err(|e| match Error::from(e) {
+        Error::Refused(m) => Error::NotFound(m),
+        other => other,
+    })
+}
+
 /// A board's file name: server-board[-todo].md, plain characters only.
 fn file_name(server: &str, board: &str, todo: bool) -> String {
     format!("{server}-{board}{}.md", if todo { "-todo" } else { "" })
@@ -31,7 +39,7 @@ fn file_name(server: &str, board: &str, todo: bool) -> String {
 /// `l3 server get SERVER[#BOARD]`: the boards as text on standard output;
 /// with -o, into that file (or, a folder, a file each).
 pub fn server_get(_: &Ctx, call: &Call) -> Result<Reply> {
-    let (server, boards) = servers::find(call.word(0).unwrap_or_default())?;
+    let (server, boards) = find(call.word(0).unwrap_or_default())?;
     let todo = call.flags.todo;
     let mut texts = Vec::new();
     for b in &boards { texts.push((b.name.clone(), servers::archive(&b.id, true, !todo)?)); }
@@ -62,7 +70,7 @@ pub fn server_post(_: &Ctx, call: &Call) -> Result<Reply> {
     let target = call.word(0).unwrap_or_default();
     let words = call.word(1).unwrap_or_default();
     if words.trim().is_empty() { return Err(Error::Usage(tr!("A post needs words", "書き込みには本文がいります"))); }
-    let (server, boards) = servers::find(target)?;
+    let (server, boards) = find(target)?;
     let [b] = boards.as_slice() else {
         return Err(Error::Usage(tr!("Name the board: l3 server post {}#BOARD \"text\"", "板を書いてください：l3 server post {}#BOARD \"本文\"", target)));
     };

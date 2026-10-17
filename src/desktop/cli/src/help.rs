@@ -95,7 +95,7 @@ fn widest(cs: &[&Command]) -> usize {
 /// `l3 help COMMAND`: what it does, and each way to write it.
 pub fn command(c: &Command) -> String {
     let mut s = format!("{} — {}\n\n{}", bold(&format!("l3 {}", c.name)), say(c.about), forms(&[c], widest(&[c])).trim_end());
-    if !c.aliases.is_empty() { s += &format!("\n\n{} {}", if ja() { "別名：" } else { "Also:" }, c.aliases.iter().map(|a| format!("l3 {a}")).collect::<Vec<_>>().join(", ")); }
+    if !c.aliases.is_empty() { s += &format!("\n\n{}{}", if ja() { "別名：" } else { "Also: " }, c.aliases.iter().map(|a| format!("l3 {a}")).collect::<Vec<_>>().join(", ")); }
     if c.name == "repo" {
         let t: Vec<String> = length3_core::templates::all().into_iter().map(|t| format!("{} ({})", t.id, t.label)).collect();
         s += &format!("\n\n{}{}", if ja() { "テンプレート：" } else { "Templates: " }, t.join(", "));
