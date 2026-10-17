@@ -71,8 +71,7 @@ function railButton(id: PurposeId): HTMLButtonElement {
   } else if (id === 'server') {
     serverLayer.attach(button);
   } else {
-    button.setAttribute('role', 'tab');
-    button.setAttribute('aria-controls', 'page');
+    // A place in the rail is a link to a page, the one shown marked current; File and Server open over it.
     button.addEventListener('click', () => select(id));
   }
   button.addEventListener('keydown', (event) => {
@@ -92,7 +91,7 @@ function select(id: PurposeId) {
   serverLayer.close();
   for (const [tabId, tab] of tabs) {
     const selected = tabId === id;
-    if (tabId !== 'file' && tabId !== 'server') tab.setAttribute('aria-selected', String(selected));
+    if (tabId !== 'file' && tabId !== 'server') { if (selected) tab.setAttribute('aria-current', 'page'); else tab.removeAttribute('aria-current'); }
     tab.tabIndex = selected ? 0 : -1;
   }
   $('page').setAttribute('aria-labelledby', `purpose-${id}`);
@@ -151,7 +150,7 @@ onLang(() => {
     const tag = b.querySelector('.rail-tag');
     if (tag) tag.textContent = label;
   }
-  for (const id of ['rail-tabs']) document.getElementById(id)?.setAttribute('aria-label', t('Purposes'));
+  document.querySelector('.rail')?.setAttribute('aria-label', t('Purposes'));
   reach();
   render();
 });

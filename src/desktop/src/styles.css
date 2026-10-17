@@ -83,7 +83,7 @@ a { color: var(--ink); }
    current or chosen thing is an ink fill, focus is a 2px ink ring. */
 .rail-item:hover, .button:hover, .chip:hover, .pill:hover, .band-add:hover:not(:disabled), .me:hover, .me-item:hover:not(:disabled), .tree-row:hover, .todo-mark:hover,
 .card.repo:hover, .card.new:hover { background: var(--raised); }
-.rail-item[aria-selected='true'], .button.primary,
+.rail-item[aria-current='page'], .button.primary,
 .chip[aria-current], .chip[aria-checked='true'], .chip[aria-pressed='true'], .pill[aria-current], .tree-row:has(> [aria-current='page']),
 .rail-item[aria-expanded='true'], .me[aria-expanded='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 
@@ -137,8 +137,8 @@ a { color: var(--ink); }
 .rail-item:hover .rail-tag, .rail-item:focus-visible .rail-tag { opacity: 1; }
 /* While File's tree is out, File is the one filled icon; the page's own
    icon steps back until the tree goes. */
-.rail-tabs:has(.rail-item[aria-expanded='true']) .rail-item[aria-selected='true'] { background: transparent; color: var(--ink); }
-.rail-tabs:has(.rail-item[aria-expanded='true']) .rail-item[aria-selected='true']:hover { background: var(--raised); }
+.rail-tabs:has(.rail-item[aria-expanded='true']) .rail-item[aria-current='page'] { background: transparent; color: var(--ink); }
+.rail-tabs:has(.rail-item[aria-expanded='true']) .rail-item[aria-current='page']:hover { background: var(--raised); }
 /* While File's tree is out, the tree itself says what it is. */
 .rail-item[aria-expanded='true'] .rail-tag { opacity: 0; }
 /* The Remote not answering: a dot on its place, the one place it is said. */
@@ -146,6 +146,9 @@ a { color: var(--ink); }
   content: ''; position: absolute; top: var(--s2); right: var(--s2);
   width: 7px; height: 7px; border-radius: var(--r-round); background: var(--off);
 }
+
+/* Said to a screen reader, not shown. */
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 
 /* ---- 2. Pages ---- */
 .page { min-width: 0; padding: var(--top-line) clamp(var(--s5), 5vw, 72px) var(--s6); }

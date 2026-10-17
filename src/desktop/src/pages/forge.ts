@@ -149,5 +149,7 @@ export function forge(ctx: Context): Node[] {
     const first = ctx.repo && band.includes(ctx.repo) ? ctx.repo : band[0];
     if (first) show(first); else none();
   });
+  // Forge's head is its band; its name is still the page's heading, for those who hear the page.
+  work.element.prepend(h('h1', {class: 'sr-only'}, t('Forge')));
   return [work.element];
 }

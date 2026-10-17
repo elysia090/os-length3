@@ -96,7 +96,7 @@ export class ServerLayer {
 
   constructor(ctx: Context) {
     this.ctx = ctx;
-    this.element = h('div', {class: 'server-layer', id: 'server-layer', role: 'dialog', 'aria-label': 'Server'});
+    this.element = h('section', {class: 'server-layer', id: 'server-layer', role: 'dialog', 'aria-label': 'Server'});
     this.element.addEventListener('pointerenter', () => clearTimeout(this.timer));
     this.element.addEventListener('pointerleave', () => this.leave());
     document.addEventListener('pointerdown', (event) => {
@@ -231,7 +231,7 @@ export class ServerLayer {
 
     /** A board's box: in full where it is on screen (its TODO pinned at the top, its talk under it), only its name beside it. */
     const card = (b: Shown, now: boolean) => {
-      const head = h('header', {class: 'board-head'}, h('span', {class: 'muted', 'aria-hidden': 'true'}, '#'), h('h2', {}, b.name),
+      const head = h('div', {class: 'board-head'}, h('span', {class: 'muted', 'aria-hidden': 'true'}, '#'), h('h2', {}, b.name),
         signedIn ? null : h('span', {class: 'muted small'}, b.server));
       if (!now) return h('div', {class: 'board-card'}, head);
       const todo = h('section', {class: 'board-todo', 'aria-label': 'TODO'});
@@ -272,7 +272,7 @@ export class ServerLayer {
 
     /** The last box: a new board in this server. */
     const newBoard = (now: boolean) => {
-      if (!now) return h('div', {class: 'board-card board-new'}, h('header', {class: 'board-head'}, h('span', {class: 'muted'}, '+'), h('h2', {class: 'muted'}, t('New board'))));
+      if (!now) return h('div', {class: 'board-card board-new'}, h('div', {class: 'board-head'}, h('span', {class: 'muted'}, '+'), h('h2', {class: 'muted'}, t('New board'))));
       const name = h('input', {class: 'line-in', maxlength: '64', placeholder: t('What it is about'), 'aria-label': t('New board')}) as HTMLInputElement;
       const make = button(t('Make'), 'primary');
       const error = h('p', {class: 'error', role: 'alert'});
@@ -289,7 +289,7 @@ export class ServerLayer {
       make.addEventListener('click', () => void done());
       name.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); void done(); } });
       return h('div', {class: 'board-card board-new'},
-        h('header', {class: 'board-head'}, h('span', {class: 'muted'}, '+'), h('h2', {}, t('New board'))),
+        h('div', {class: 'board-head'}, h('span', {class: 'muted'}, '+'), h('h2', {}, t('New board'))),
         h('div', {class: 'board-body'}, h('p', {class: 'muted'}, t('A board is one thing to talk about, with a TODO kept together: a trip, a release, a reading group.')),
           h('div', {class: 'row'}, name, make), error));
     };
@@ -350,7 +350,7 @@ export class ServerLayer {
         return b;
       }))).catch(() => {});
       track.replaceChildren(h('div', {class: 'slide', 'aria-current': 'true'}, h('div', {class: 'board-card board-new'},
-        h('header', {class: 'board-head'}, h('span', {class: 'muted'}, '+'), h('h2', {}, t('Make a server'))),
+        h('div', {class: 'board-head'}, h('span', {class: 'muted'}, '+'), h('h2', {}, t('Make a server'))),
         h('div', {class: 'board-body'},
           h('p', {}, t('A server is people you know: you add them from your Inbox contacts. Its boards are each a conversation and a TODO you keep together.')),
           // Fields as New repo's: a label over each, what it means under it.
@@ -474,7 +474,7 @@ export class ServerLayer {
       const files = h('ul', {class: 'seen-files', 'aria-label': t('Files')});
       const text = h('pre', {class: 'seen-text', tabindex: '0'});
       sheet.replaceChildren(
-        h('header', {class: 'sheet-head'}, h('div', {class: 'sheet-title'}, h('h2', {}, r.name), h('p', {}, named(r.owner))), h('span', {class: 'grow'}), forge, back),
+        h('div', {class: 'sheet-head'}, h('div', {class: 'sheet-title'}, h('h2', {}, r.name), h('p', {}, named(r.owner))), h('span', {class: 'grow'}), forge, back),
         h('div', {class: 'sheet-sub'}, sub, r.as ? h('p', {class: 'muted small'}, t('Everyone sees it as {name}', {name: shownAs(r.as)})) : null),
         h('div', {class: 'seen-body'}, files, text));
       try {
@@ -516,7 +516,7 @@ export class ServerLayer {
       const tabs = parts<Part>('server-gear', [{id: 'people', label: t('People')}, {id: 'repos', label: t('Repos')}, {id: 'boards', label: t('Boards')}, {id: 'server', label: t('This server')}]);
       const ids: Part[] = ['people', 'repos', 'boards', 'server'];
       sheet.replaceChildren(
-        h('header', {class: 'sheet-head'}, h('div', {class: 'sheet-title'}, h('h2', {}, s.name), h('p', {}, `${named(s.address)} · ${s.code}`)), h('span', {class: 'grow'}), done),
+        h('div', {class: 'sheet-head'}, h('div', {class: 'sheet-title'}, h('h2', {}, s.name), h('p', {}, `${named(s.address)} · ${s.code}`)), h('span', {class: 'grow'}), done),
         h('div', {class: 'sheet-body'}, tabs.switch, ...ids.map((k) => tabs.panel(k))));
       const again = () => { if (showing === 'settings') void settings(); paintSide(); };
       // Narrow, the parts slide: the one chosen is kept in view.
