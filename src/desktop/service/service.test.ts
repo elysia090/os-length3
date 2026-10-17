@@ -404,7 +404,9 @@ test('Servers: people who know each other, boards with a plan written together a
 
   // Closed, nobody else reads it; opened, anyone does, signed in or not.
   assert.equal((await s.call('GET', `/v1/open/${bid}/posts`)).status, 404);
-  await s.call('PATCH', `/v1/boards/${bid}`, {token: mio, body: {open: true}});
+  // How far it is open is its server's owner's to say.
+  assert.equal((await s.call('PATCH', `/v1/boards/${bid}`, {token: mio, body: {open: true}})).status, 403);
+  assert.equal((await s.call('PATCH', `/v1/boards/${bid}`, {token: ren, body: {open: true}})).status, 200);
   assert.deepEqual(((await s.call('GET', '/v1/open')).json as unknown as {name: string}[]).map((b) => b.name), ['plan']);
   assert.equal(((await s.call('GET', `/v1/open/${bid}/posts`)).json as unknown as {posts: unknown[]}).posts.length, 2);
   // A guest writes once the email is shown to be theirs, and only where guests are taken.
@@ -435,6 +437,88 @@ test('Servers: people who know each other, boards with a plan written together a
   assert.equal((await s.call('POST', `/v1/servers/${sid}/back`, {token: kai})).status, 404);
   assert.equal((await s.call('POST', `/v1/servers/${sid}/back`, {token: mio})).status, 200);
   assert.equal((await s.call('GET', `/v1/boards/${bid}`, {token: mio})).status, 200);
+});
+
+test('Who sees a repo: its owner, the servers it is shown in, or everyone, under a name that need not be its owner\'s', async () => {
+  const s = await service();
+  const ren = await s.start('Ren'), mio = await s.start('Mio'), kai = await s.start('Kai');
+  for (const [t, n] of [[ren, 'ren'], [mio, 'mio'], [kai, 'kai']] as const) await s.call('POST', '/v1/inbox/addresses', {token: t, body: {name: n}});
+  // Ren's repo, committed twice, pushed once: what others see is what was pushed.
+  const put = async (t: string, text: string) => {
+    const bytes = enc.encode(text);
+    const sha = await sha256(bytes);
+    await s.call('PUT', `/v1/blobs/${sha}`, {token: t, bytes});
+    return sha;
+  };
+  const [readme, later, secret] = await Promise.all(['# hello\n', '# hello again\n', 'not in any tree\n'].map((x) => put(ren, x)));
+  const commit = async (t: string, set: Record<string, string>, title: string) => {
+    const now = (await s.call('GET', '/v1/repos/hello', {token: t})).json as unknown as {version?: number; head?: string | null};
+    const version = now.version ?? 0;
+    await s.call('PATCH', '/v1/repos/hello/draft', {token: t, body: {version, set, remove: []}});
+    return (await s.call('POST', '/v1/repos/hello/cuts', {token: t, body: {version: version + 1, parent: now.head ?? null, title}})).json.id as string;
+  };
+  const first = await commit(ren, {'README.md': readme}, 'start');
+  assert.equal((await s.call('POST', '/v1/repos/hello/lines/main/push', {token: ren, body: {head: first}})).status, 200);
+  await commit(ren, {'README.md': later}, 'not pushed');
+  const see = (as: string, t?: string) => s.call('GET', `/v1/seen/${as.replace(':', '/')}`, {token: t});
+  const state = async () => ((await s.call('GET', '/v1/seen', {token: ren})).json as unknown as {seen: string; servers: {name: string}[]; as: string | null}[])[0];
+  const seen = (body: unknown) => s.call('PUT', '/v1/repos/hello/seen', {token: ren, body});
+  // Private at first: only Ren sees it.
+  assert.deepEqual([(await state()).seen, (await see('ren@length3.test:hello', ren)).status, (await see('ren@length3.test:hello', mio)).status], ['private', 200, 404]);
+  // Shown in a server: its people see it, and whose it is; nobody else does.
+  await s.call('POST', '/v1/inbox/contacts', {token: ren, body: {address: 'mio@length3.test', state: 'accepted'}});
+  const sid = (await s.call('POST', '/v1/servers', {token: ren, body: {name: 'Trip', address: 'trip'}})).json.id as string;
+  await s.call('POST', `/v1/servers/${sid}/people`, {token: ren, body: {address: 'mio@length3.test'}});
+  assert.equal((await s.call('POST', `/v1/servers/${sid}/repos`, {token: mio, body: {repo: 'hello'}})).status, 404);
+  assert.equal((await s.call('POST', `/v1/servers/${sid}/repos`, {token: ren, body: {repo: 'hello'}})).status, 201);
+  assert.deepEqual([(await state()).seen, (await state()).servers.map((x) => x.name)], ['servers', ['Trip']]);
+  const listed = (await s.call('GET', `/v1/servers/${sid}/repos`, {token: mio})).json as unknown as {owner: string; name: string; mine: boolean}[];
+  assert.deepEqual(listed.map((r) => [r.owner, r.name, r.mine]), [['ren@length3.test', 'hello', false]]);
+  const shown = await see('ren@length3.test:hello', mio);
+  assert.deepEqual([shown.status, shown.json.owner, shown.json.title, shown.json.tree], [200, 'ren@length3.test', 'start', {'README.md': readme}]);
+  assert.equal((await s.call('GET', `/v1/seen/ren@length3.test/hello/blobs/${readme}`, {token: mio})).text, '# hello\n');
+  // Only what is in the tree it was pushed to: not the commit after it, nor any other blob of Ren's.
+  assert.equal((await s.call('GET', `/v1/seen/ren@length3.test/hello/blobs/${later}`, {token: mio})).status, 404);
+  assert.equal((await s.call('GET', `/v1/seen/ren@length3.test/hello/blobs/${secret}`, {token: mio})).status, 404);
+  assert.equal((await see('ren@length3.test:hello', kai)).status, 404);
+  // Taken off the list by Ren or the server's owner; Mio may not.
+  assert.equal((await s.call('DELETE', `/v1/servers/${sid}/repos/ren@length3.test/hello`, {token: mio})).status, 403);
+  // From the server to everyone: it is seen as the server's, and nothing it answers names Ren.
+  const pub = await seen({seen: 'everyone'});
+  assert.deepEqual([pub.json.seen, pub.json.as], ['everyone', 'trip@length3.test:hello']);
+  const out = await see('trip@length3.test:hello');
+  assert.equal(out.status, 200);
+  assert.ok(!JSON.stringify(out.json).includes('ren'), JSON.stringify(out.json));
+  assert.equal((await s.call('GET', `/v1/seen/trip@length3.test/hello/blobs/${readme}`)).text, '# hello\n');
+  // Ren's own name does not open it to everyone: that would tie the two together.
+  assert.deepEqual([(await see('ren@length3.test:hello')).status, (await see('ren@length3.test:hello', kai)).status], [404, 404]);
+  // A face's names are one namespace: Mio's hello cannot also be trip:hello.
+  const mine = await put(mio, '# mio\n');
+  await commit(mio, {'README.md': mine}, 'mio');
+  await s.call('POST', `/v1/servers/${sid}/repos`, {token: mio, body: {repo: 'hello'}});
+  const clash = await s.call('PUT', '/v1/repos/hello/seen', {token: mio, body: {seen: 'everyone', as: sid}});
+  assert.deepEqual([clash.status, clash.json.error], [409, 'taken']);
+  // Taken down, it is held for Ren a while: nobody else's repo answers to it meanwhile.
+  assert.equal((await seen({seen: 'servers', servers: [sid]})).json.seen, 'servers');
+  assert.equal((await see('trip@length3.test:hello')).status, 404);
+  const held = await s.call('PUT', '/v1/repos/hello/seen', {token: mio, body: {seen: 'everyone', as: sid}});
+  assert.deepEqual([held.status, held.json.error], [409, 'held']);
+  assert.equal((await seen({seen: 'everyone', as: sid})).status, 200);
+  // Made public by Ren as Ren: then Ren's name is its face, by choice.
+  assert.equal((await seen({seen: 'everyone', as: 'me'})).json.as, 'ren@length3.test:hello');
+  assert.deepEqual([(await see('ren@length3.test:hello')).status, (await see('trip@length3.test:hello')).status], [200, 404]);
+  // Choices are only among servers one is in.
+  assert.equal((await seen({seen: 'servers', servers: []})).status, 400);
+  assert.equal((await seen({seen: 'servers', servers: ['nope']})).status, 403);
+  // Private again: off every list, and its face taken down.
+  assert.equal((await seen({seen: 'private'})).json.seen, 'private');
+  assert.deepEqual([(await see('ren@length3.test:hello')).status, (await see('ren@length3.test:hello', mio)).status], [404, 404]);
+  // A share lasts as long as its owner's place: Ren leaves, and what was public as Trip ends with it.
+  await seen({seen: 'everyone', as: sid});
+  assert.equal((await see('trip@length3.test:hello')).status, 200);
+  assert.equal((await s.call('DELETE', `/v1/servers/${sid}/people/ren@length3.test`, {token: ren})).status, 204);
+  assert.equal((await see('trip@length3.test:hello')).status, 404);
+  assert.deepEqual(((await s.call('GET', `/v1/servers/${sid}/repos`, {token: mio})).json as unknown as {owner: string}[]).map((r) => r.owner), ['mio@length3.test']);
 });
 
 test('Names: people and servers share one namespace; a name let go is held for its owner; a domain that stops naming the Remote stops answering', async () => {

@@ -16,7 +16,7 @@ frontend and no UI framework; the same frontend is the web build.
 └────┴──────────────────────────────────────────────┘
 ```
 
-- **Rail**: icons only (Server / Home / Forge / File / Git / Runtime / Remote /
+- **Rail**: icons only (Home / Forge / File / Git / Runtime / Remote / Server /
   Inbox, and a round + for a new repo). A name appears beside an icon
   on hover or keyboard focus. Choosing one replaces the main area; File and
   Server are the operations, laid over the page instead (the tree of "/";
@@ -151,16 +151,24 @@ the app.
   total are marked as estimates, and after freeing the change the host
   shows is reported as observed. Prompts running show their memory and can
   be stopped; then the environment in effect.
-- Server (first in the rail, laid over any page like File): the one
+- Server (under Remote in the rail, laid over any page like File): the one
   purpose whose subject is people, not a repo (`service/servers.ts`). A
   server is people who know each other (added from someone's Inbox
   contacts); its boards each hold a plan they write together and the talk
   around it. The plan changes by hunks of lines against the version they
   were made on (`src/plan.ts`, the same on both sides), merged with what
-  came meanwhile, never overwriting. Boards are boxes slid like the issues;
-  the plain box at the foot writes in the board on screen; on the right are
-  its plan, its people, who can see it (anyone reading, outsiders writing
-  after a mailed code) and taking it home as text (`l3 server get`).
+  came meanwhile, never overwriting. Boards are boxes slid like the issues,
+  each with its plan pinned at its top, written in place, and its talk
+  under it; the plain box at the foot writes in the board on screen. The
+  right only shows who is in it and the repos they show in it (seen as last
+  pushed). What changes it for everyone is behind its gear: people, repos
+  shown, how far each board is open (its owner's, asked before it widens),
+  taking a board home as text (`l3 server get`), leaving or removing it.
+- Who sees a repo (`service/seen.ts`): only you, the servers it is shown
+  in, or everyone, set on its card in Remote. Everyone sees it under the
+  name it went public as: the server's (`trip@length3.com:hello`) when it
+  went public from one, so nothing it answers names you; your own when you
+  choose. Others only see it, as it was last pushed.
 - Every other purpose shows what it will hold, as a dashed empty box.
 
 The webview has no other host access: it reads nothing outside the app's

@@ -50,6 +50,13 @@
       "when": 1792221714898,
       "tag": "0006_one_namespace_and_leases",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792223271808,
+      "tag": "0007_who_sees_a_repo",
+      "breakpoints": true
     }
   ]
 }

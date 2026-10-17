@@ -29,7 +29,8 @@ const failed = async (r: Response) => {
   const why: Record<string, string> = {'claim an address first': t('Claim an address first'), 'too many posts this hour': t('Too many posts this hour'),
     'only your contacts can be added': t('Only your contacts can be added'), 'a code was just sent': t('A code was just sent'), 'not that code': t('Not that code'),
     'this Remote sends no mail': t('This Remote sends no mail'), 'taken': t('That name is taken'), 'held': t('That name was let go, and is held for its owner a while'),
-    'an address for it: letters, digits, - . _': t('Its address: letters, digits, - . _'), 'a domain you hold an address on': t('Only on a domain you hold an address on')};
+    'an address for it: letters, digits, - . _': t('Its address: letters, digits, - . _'), 'a domain you hold an address on': t('Only on a domain you hold an address on'),
+    'only servers you are in': t('Only servers you are in'), 'which servers': t('Choose a server'), 'no repo': t('That repo is not on the Remote')};
   return new RemoteError(r.status, why[body.error ?? ''] ?? String(body.error ?? r.status));
 };
 const call = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
@@ -45,6 +46,8 @@ export const makeServer = (name: string, address: string) => call<Server>('/v1/s
 /** Servers this person removed or left last, still held for them, and until when. */
 export const goneServers = () => call<{id: string; name: string; address: string; until: number}[]>('/v1/servers?gone=1');
 export const bringBack = (id: string) => call<{id: string; name: string; address: string}>(`/v1/servers/${id}/back`, send('POST'));
+/** Its owner's: held a while, to bring back. */
+export const removeServer = (id: string) => call<{until: number}>(`/v1/servers/${id}`, send('DELETE'));
 export const renameServer = (id: string, name: string) => call<{name: string}>(`/v1/servers/${id}`, send('PATCH', {name}));
 export const people = (id: string) => call<Person[]>(`/v1/servers/${id}/people`);
 export const addPerson = (id: string, address: string) => call<Person[]>(`/v1/servers/${id}/people`, send('POST', {address}));
@@ -77,6 +80,33 @@ export const newer = (id: string, member: boolean, after: string, limit = 30) =>
 export const range = (id: string, member: boolean, oldest: string, newest: string) => call<Read>(`${posts(id, member)}?limit=100&from=${oldest}&to=${newest}`);
 export const post = (id: string, body: string) => call<Post>(`/v1/boards/${id}/posts`, send('POST', {body}));
 export const takeDown = (id: string, post: string) => call<void>(`/v1/boards/${id}/posts/${post}`, send('DELETE'));
+
+// ---- repos: who sees each (service/seen.ts) ----
+/** Only its owner, the servers it is shown in, or everyone. */
+export type Seen = 'private' | 'servers' | 'everyone';
+/** Who sees one of mine: and, seen by everyone, the name it is seen as (`as`), a server's or my own. */
+export interface RepoSeen { name: string; seen: Seen; servers: {id: string; name: string; address: string}[]; as: string | null; asServer: string | null }
+/** A repo shown in a server: whose, and the name everyone sees it as, if they do. */
+export interface ShownRepo { owner: string; name: string; at: number | null; mine: boolean; as: string | null; asServer: string | null }
+/** A repo as seen by someone not its owner: what it was last pushed to. `owner` only where whose it is may be told. */
+export interface SeenRepo { as: string; owner?: string; title: string | null; at: number | null; tree: Record<string, string | null> }
+
+export const seenAll = () => call<RepoSeen[]>('/v1/seen');
+/** `as`: a server's id, or 'me' (by default the first server it is shown in, else me). */
+export const setSeen = (repo: string, seen: Seen, more: {servers?: string[]; as?: string} = {}) =>
+  call<RepoSeen>(`/v1/repos/${encodeURIComponent(repo)}/seen`, send('PUT', {seen, ...more}));
+export const shownIn = (server: string) => call<ShownRepo[]>(`/v1/servers/${server}/repos`);
+export const showIn = (server: string, repo: string) => call<ShownRepo[]>(`/v1/servers/${server}/repos`, send('POST', {repo}));
+export const takeOff = (server: string, owner: string, repo: string) => call<void>(`/v1/servers/${server}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, send('DELETE'));
+const seenPath = (as: string) => { const [face, name] = as.split(':'); return `/v1/seen/${encodeURIComponent(face)}/${encodeURIComponent(name)}`; };
+/** `face:name`: what it was last pushed to. */
+export const seeRepo = (as: string) => call<SeenRepo>(seenPath(as));
+/** A file of it, as text. */
+export async function seeFile(as: string, sha: string): Promise<string> {
+  const r = await api(`${seenPath(as)}/blobs/${sha}`);
+  if (!r.ok) throw await failed(r);
+  return new TextDecoder().decode(await r.arrayBuffer());
+}
 
 /** The board taken home as text: its plan, its talk, or both. */
 export async function archive(id: string, member: boolean, what: {plan?: boolean; talk?: boolean} = {}): Promise<string> {

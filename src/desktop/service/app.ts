@@ -24,9 +24,10 @@ import {cors} from 'hono/cors';
 import type {Auth} from './auth.ts';
 import {devOAuth} from './devoauth.ts';
 import {inbox} from './inbox.ts';
+import {seen, takeDown} from './seen.ts';
 import {servers} from './servers.ts';
 import type {Bucket} from './bucket.ts';
-import {blob, change, cut, home, offCode, passkeyProof, repo, review, type Tree} from './schema.ts';
+import {blob, change, cut, home, offCode, passkeyProof, repo, repoPublic, repoShare, review, type Tree} from './schema.ts';
 import {user as people} from './schema.auth.ts';
 
 export interface Deps {
@@ -203,6 +204,9 @@ export function createApp(d: Deps) {
   const purge = async (user: string, name: string) => {
     await d.db.delete(change).where(and(eq(change.userId, user), eq(change.repo, name)));
     await d.db.delete(cut).where(and(eq(cut.userId, user), eq(cut.repo, name)));
+    await d.db.delete(repoShare).where(and(eq(repoShare.userId, user), eq(repoShare.repo, name)));
+    // Its public name is held a while, so no other repo answers to it meanwhile.
+    await takeDown(d.db, and(eq(repoPublic.userId, user), eq(repoPublic.repo, name)));
     await d.db.delete(repo).where(and(eq(repo.userId, user), eq(repo.name, name)));
   };
   /** Proof the person is here: this request's session was made with a passkey within five minutes. */
@@ -552,6 +556,7 @@ export function createApp(d: Deps) {
 
   inbox({db: d.db, domain: d.domain ?? 'length3.com', baseURL: d.baseURL ?? '', secret: d.secret ?? '', txt: d.txt, recheck: d.recheck}, v1, app);
   servers({db: d.db, domain: d.domain ?? 'length3.com', mail: d.mail, secret: d.secret}, v1, app);
+  seen({db: d.db, bucket: d.bucket, viewer: async (req) => (await d.auth.api.getSession({headers: req.headers}))?.user.id ?? null}, v1, app);
 
   app.route('/v1', v1);
   return app;

@@ -3,8 +3,8 @@
 // from their Inbox contacts), for talking loosely and for planning in
 // earnest. Its boards are what they talk about: each holds a plan, one text
 // its people write together, and the discussion around it, short posts read
-// as a conversation. (A repo belongs to a person; a server's own repos, and
-// its plans kept in one, come next.)
+// as a conversation. (A repo belongs to a person, who may show it in a
+// server, only to be seen there: seen.ts. A server's own repos come next.)
 //
 // The plan is changed by hunks of lines against the version they were made
 // on (src/plan.ts): a change made on an older version is merged with what
@@ -20,14 +20,14 @@
 //   GET    /v1/servers                       mine, each with its boards (?gone=1: those I may bring back)
 //   POST   /v1/servers                       {name, address}: a new one, named name@domain, with a first board
 //   POST   /v1/servers/ID/back               bring back one removed or left (within the hold)
-//   PATCH  /v1/servers/ID                    {name}
+//   PATCH  /v1/servers/ID                    {name}: its owner's
 //   DELETE /v1/servers/ID                    its owner's
 //   GET    /v1/servers/ID/people
 //   POST   /v1/servers/ID/people             {address}: one of my contacts
 //   DELETE /v1/servers/ID/people/ADDR        leave (one's own), or its owner removes
 //   POST   /v1/servers/ID/boards             {name}
 //   GET    /v1/boards/ID                     the board, its plan and version, its people
-//   PATCH  /v1/boards/ID                     {name?, open?, guests?}
+//   PATCH  /v1/boards/ID                     {name?, open?, guests?}: open and guests its server's owner's
 //   DELETE /v1/boards/ID
 //   PUT    /v1/boards/ID/plan                {base, hunks}
 //   GET    /v1/boards/ID/posts               ?before= | ?after= | ?from=&to=
@@ -45,7 +45,8 @@ import {and, asc, desc, eq, gt, gte, inArray, isNull, lt, lte, sql} from 'drizzl
 import type {Context, Hono} from 'hono';
 import {hunks, lines, merge, text, valid} from '../src/plan.ts';
 import {claim, HOLD, live, release} from './names.ts';
-import {address, board, contact, guest, member, planVersion, server, talk} from './schema.ts';
+import {takeDown} from './seen.ts';
+import {address, board, contact, guest, member, planVersion, repoPublic, repoShare, server, talk} from './schema.ts';
 
 export const SERVER = {name: 64, body: 2000, plan: 64 * 1024, perHour: 60, page: 30, maxPage: 100, servers: 50, boards: 100,
   /** A guest's code: how long it holds, how many wrong tries spend it, how soon another may be sent. */
@@ -191,7 +192,9 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
 
   v1.patch('/servers/:id', async (c) => {
     const me = c.get('userId'), id = c.req.param('id');
-    if (!await membership(id, me)) return c.json({error: 'no such server of yours'}, 404);
+    const m = await membership(id, me);
+    if (!m) return c.json({error: 'no such server of yours'}, 404);
+    if (!m.owner) return c.json({error: 'only its owner renames a server'}, 403);
     const n = name((await c.req.json().catch(() => null) as {name?: unknown} | null)?.name);
     if (!fine(n)) return c.json({error: `a name of at most ${SERVER.name} characters`}, 400);
     await db.update(server).set({name: n}).where(eq(server.id, id));
@@ -232,6 +235,9 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     if (!them) return c.json({error: 'not in this server'}, 404);
     if (them.userId !== me && !m.owner) return c.json({error: 'only its owner removes someone else'}, 403);
     await db.delete(member).where(and(eq(member.serverId, id), eq(member.userId, them.userId)));
+    // What they showed in it goes with them, and what went public as it ends: a share lasts as long as its owner's place.
+    await db.delete(repoShare).where(and(eq(repoShare.serverId, id), eq(repoShare.userId, them.userId)));
+    await takeDown(db, and(eq(repoPublic.serverId, id), eq(repoPublic.userId, them.userId)));
     const left = await db.select().from(member).where(eq(member.serverId, id)).orderBy(member.addedAt) as (typeof member.$inferSelect)[];
     // The last to leave: the server is held for them a while, then gone. An owner leaving hands it to whoever came first.
     if (!left.length) await gone(id, me);
@@ -264,6 +270,8 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const b = await c.req.json().catch(() => null) as {name?: unknown; open?: unknown; guests?: unknown} | null;
     const set: Partial<Board> = {};
     if (b?.name !== undefined) { const n = name(b.name); if (!fine(n)) return c.json({error: 'a name'}, 400); set.name = n; }
+    // How far a board is open reaches past its people: its server's owner says.
+    if ((typeof b?.open === 'boolean' || typeof b?.guests === 'boolean') && !at.m.owner) return c.json({error: 'only its server\'s owner opens a board'}, 403);
     if (typeof b?.open === 'boolean') set.open = b.open ? 1 : 0;
     if (typeof b?.guests === 'boolean') set.guests = b.guests ? 1 : 0;
     if (Object.keys(set).length) await db.update(board).set(set).where(eq(board.id, at.b.id));

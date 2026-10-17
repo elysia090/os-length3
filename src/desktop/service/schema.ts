@@ -292,3 +292,39 @@ export const guest = pgTable('server_guest', {
   tokenUntil: timestamp('token_until'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (t) => [uniqueIndex('server_guest_board_email_idx').on(t.boardId, t.email), index('server_guest_token_idx').on(t.token)]);
+
+/**
+ * Who sees a repo is one of three, read from rows so they can never disagree:
+ * only its owner (no rows), the servers it is shown in (repoShare), or
+ * everyone (repoPublic). In a server its people see whose it is; everyone
+ * sees it under the name it was made public as, its face: the server's
+ * (trip@length3.com:hello), when it went public from one, so it is not tied
+ * to its owner, or its owner's own, when they made it public themselves.
+ *
+ * A share lasts as long as its owner's place in the server: leaving takes
+ * their repos off its list, and ends what went public under its name.
+ */
+export const repoShare = pgTable('repo_share', {
+  userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
+  repo: text('repo').notNull(),
+  serverId: text('server_id').notNull().references(() => server.id, {onDelete: 'cascade'}),
+  sharedAt: timestamp('shared_at').defaultNow().notNull(),
+}, (t) => [primaryKey({columns: [t.userId, t.repo, t.serverId]}), index('repo_share_server_idx').on(t.serverId)]);
+
+/**
+ * A repo seen by everyone, as `face:name`. A face's names are one namespace
+ * (two people's `hello` cannot both be trip:hello), and one taken down is
+ * held a while for whoever had it, as an address is (names.ts), so nobody
+ * else's repo answers to it meanwhile.
+ */
+export const repoPublic = pgTable('repo_public', {
+  /** The principal it is seen as: a server it went public from, or its owner's address. */
+  face: text('face').notNull(),
+  name: text('name').notNull(),
+  userId: text('user_id').notNull().references(() => user.id, {onDelete: 'cascade'}),
+  repo: text('repo').notNull(),
+  /** The server whose face it is; null when it is its owner's own. */
+  serverId: text('server_id').references(() => server.id, {onDelete: 'cascade'}),
+  publishedAt: timestamp('published_at').defaultNow().notNull(),
+  releasedAt: timestamp('released_at'),
+}, (t) => [primaryKey({columns: [t.face, t.name]}), index('repo_public_owner_idx').on(t.userId, t.repo)]);

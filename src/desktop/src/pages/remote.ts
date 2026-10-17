@@ -6,6 +6,7 @@ import * as draft from '../draft.ts';
 import type {RemoteRepo} from '../draft.ts';
 import * as account from '../remote.ts';
 import {kept, store} from '../repos.ts';
+import * as servers from '../servers.ts';
 import {pageHead, parts} from './common.ts';
 import type {Context} from './context.ts';
 
@@ -98,17 +99,21 @@ export function signInBox(done: () => void, words?: string, back?: string): HTML
 
 /**
  * The repos the Remote holds, as cards the size of Home's: name, size and
- * when it last changed; Forge at the bottom left, and at the right a power
- * switch. Turning a repo off asks for a passkey, the account's name, the
+ * when it last changed; Forge at the bottom left, who sees it beside it, and
+ * at the right a power switch. Who sees it is one of three: only you, the
+ * servers it is shown in, or everyone (seen as a server's when it goes
+ * public from one, so it is not tied to you; as yours when you choose). Turning a repo off asks for a passkey, the account's name, the
  * repo's name and the five-letter code; it is then kept 30 days, its switch
  * at the right and red, and pressing it again brings it back at once.
  */
 function repoSection(ctx: Context, counted: (n: number) => void, toCode: () => void): HTMLElement {
   const grid = h('div', {class: 'grid repo-cards'});
   const section = h('div', {class: 'sub-part'}, grid);
+  let seen: servers.RepoSeen[] = [];
   const paint = async () => {
     const here = await store.list().catch(() => []);
     const there = remoteAll();
+    seen = account.connection() ? await servers.seenAll().catch(() => []) : [];
     const names = [...new Set([...here.map((r) => r.name), ...there.map((r) => r.name)])].sort();
     counted(names.length);
     grid.replaceChildren(...(names.length ? names.map((name) => card(name, here.find((r) => r.name === name) ?? null, there.find((r) => r.name === name) ?? null))
@@ -127,11 +132,14 @@ function repoSection(ctx: Context, counted: (n: number) => void, toCode: () => v
     const where = off
       ? t('Off · back until {date}', {date: new Date(there!.until!).toLocaleDateString()})
       : here ? syncWord(repoState(name)) : t('On the Remote');
+    const who = seen.find((x) => x.name === name);
+    const sees = who && !off ? button(seenWord(who), 'small-button seen-button') : null;
     const el = h('div', {class: `card repo${off ? ' off' : ''}`, 'data-repo': name},
       h('span', {class: 'card-title'}, name),
       h('span', {class: 'muted'}, `${bytes(size)} · ${t('Changed {when}', {when: ago(changed)})}`),
       h('span', {class: 'muted card-sync'}, where),
-      h('div', {class: 'card-foot'}, forge, h('span', {class: 'grow'}), power), error);
+      h('div', {class: 'card-foot'}, forge, sees, h('span', {class: 'grow'}), power), error);
+    sees?.addEventListener('click', () => void whoSees(el, who!, paint));
     power.addEventListener('click', () => {
       if (off) { void pressing(power, error, async () => { await account.turnOn(name); await look(); await paint(); }); return; }
       if (isNative) { error.textContent = t('A repo is turned off from the browser, where its passkey is.'); return; }
@@ -142,6 +150,73 @@ function repoSection(ctx: Context, counted: (n: number) => void, toCode: () => v
   void look().then(paint);
   const stop = onSync(() => { if (!section.isConnected) { stop(); return; } if (!section.querySelector('.off-ask')) void paint(); });
   return section;
+}
+
+/** Who sees a repo, in a word or two. */
+function seenWord(s: servers.RepoSeen): string {
+  if (s.seen === 'everyone') return t('Everyone');
+  if (s.seen === 'servers') return s.servers.length === 1 ? t('In {server}', {server: s.servers[0].name}) : t('In {n} servers', {n: s.servers.length});
+  return t('Only you');
+}
+
+/**
+ * In the card: who sees it. Only you; the servers it is shown in (only seen
+ * there, as it was last pushed); or everyone, as a server's (by default the
+ * one it goes public from, so nothing ties it to you) or as your own.
+ */
+async function whoSees(el: HTMLElement, now: servers.RepoSeen, done: () => Promise<void>) {
+  const error = h('p', {class: 'error', role: 'alert'});
+  const mine = await servers.servers().catch(() => [] as servers.Server[]);
+  const me = await import('../inbox.ts').then((inbox) => inbox.me()).catch(() => null);
+  let to = now.seen;
+  const chosen = new Set(now.servers.map((s) => s.id));
+  const chips = h('div', {class: 'chips', role: 'radiogroup', 'aria-label': t('Who sees it')});
+  const body = h('div', {class: 'seen-choice'});
+  // Seen by everyone as: a server it is in, else the first it is shown in, else yours.
+  let as = now.asServer ?? now.servers[0]?.id ?? 'me';
+  const paint = () => {
+    chips.replaceChildren(...(['private', 'servers', 'everyone'] as const).map((v) => {
+      const c = h('button', {type: 'button', class: 'chip', role: 'radio', 'aria-checked': String(v === to)},
+        v === 'private' ? t('Only you') : v === 'servers' ? t('Servers') : t('Everyone'));
+      c.addEventListener('click', () => { to = v; paint(); });
+      return c;
+    }));
+    if (to === 'private') { body.replaceChildren(h('p', {class: 'muted small'}, t('Only you see it. It comes off every server too.'))); return; }
+    if (to === 'servers') {
+      body.replaceChildren(...(mine.length ? mine.map((s) => {
+        const box = h('input', {type: 'checkbox'}) as HTMLInputElement;
+        box.checked = chosen.has(s.id);
+        box.addEventListener('change', () => { if (box.checked) chosen.add(s.id); else chosen.delete(s.id); });
+        return h('label', {class: 'check-row'}, box, h('span', {}, s.name), h('span', {class: 'muted small mono'}, s.address));
+      }) : [h('p', {class: 'muted small'}, t('You are in no server yet.'))]),
+      h('p', {class: 'muted small'}, t('Their people see it as it was last pushed, and whose it is. Nobody writes in it but you.')));
+      return;
+    }
+    const pick = h('select', {class: 'line-in', 'aria-label': t('Seen as')}) as HTMLSelectElement;
+    const mineName = me?.addresses[0]?.address;
+    pick.replaceChildren(...mine.filter((s) => s.address).map((s) => h('option', {value: s.id}, `${s.address}:${now.name}`)),
+      ...(mineName ? [h('option', {value: 'me'}, `${mineName}:${now.name}`)] : []));
+    pick.value = as;
+    if (pick.selectedIndex < 0) pick.selectedIndex = 0;
+    as = pick.value;
+    const note = h('p', {class: 'muted small'});
+    const say = () => { note.textContent = as === 'me' ? t('Anyone sees it under your name.') : t('Anyone sees it as the server\'s, without your name.'); };
+    say();
+    pick.addEventListener('change', () => { as = pick.value; say(); });
+    body.replaceChildren(h('label', {class: 'check-row'}, h('span', {class: 'muted small'}, t('Seen as')), pick), note);
+  };
+  paint();
+  const cancel = button(t('Not now'), 'small-button');
+  cancel.addEventListener('click', () => void done());
+  const save = button(t('Save'), 'small-button primary');
+  save.addEventListener('click', () => void pressing(save, error, async () => {
+    if (to === 'servers') await servers.setSeen(now.name, 'servers', {servers: [...chosen]});
+    else if (to === 'everyone') await servers.setSeen(now.name, 'everyone', {as});
+    else await servers.setSeen(now.name, 'private');
+    await done();
+  }));
+  el.replaceChildren(h('div', {class: 'off-ask'}, h('span', {class: 'card-title'}, now.name), chips, body, error,
+    h('div', {class: 'card-foot'}, cancel, h('span', {class: 'grow'}), save)));
 }
 
 /** In the card: the names and the code, then a passkey; the switch goes right and red. */

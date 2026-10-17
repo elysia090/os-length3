@@ -23,9 +23,6 @@ export interface Purpose {
 }
 
 export const PURPOSES: readonly Purpose[] = [
-  // Server first: the people one knows, before what one makes.
-  {id: 'server', label: 'Server', role: 'People you know',
-    detail: 'A group of people you know, for talking loosely and planning in earnest. Each board holds a plan written together and the talk around it.', implemented: true},
   {id: 'home', label: 'Home', role: 'Profile',
     detail: 'A page that reads the same to you and to anyone else, with your repos and posts.', implemented: true},
   {id: 'forge', label: 'Forge', role: 'Your workshop',
@@ -38,6 +35,9 @@ export const PURPOSES: readonly Purpose[] = [
     detail: 'What this device holds, largest first. What can be freed is freed right there. The active environments too.', implemented: true},
   {id: 'remote', label: 'Remote', role: 'The canonical copy',
     detail: 'Where the canonical copy lives. What you change is sent at once, and committing makes it history. Devices and passkeys are here too.', implemented: true},
+  // Under the cloud: the people one knows, on the Remote, with what they show of their repos.
+  {id: 'server', label: 'Server', role: 'People you know',
+    detail: 'A group of people you know, for talking loosely and planning in earnest. Each board holds a plan written together and the talk around it.', implemented: true},
   {id: 'inbox', label: 'Inbox', role: 'Typed messages to you',
     detail: 'Review requests, changes, questions and more, each with what it is about and what to do.', implemented: true},
 ];
