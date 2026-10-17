@@ -60,6 +60,8 @@ body {
   font: var(--t-body)/1.6 var(--sans);
 }
 button, input, textarea { font: inherit; color: inherit; }
+/* A box to tick is ink when ticked, not the browser's own colour. */
+input[type='checkbox'], input[type='radio'] { accent-color: var(--ink); }
 h1, h2, p { margin: 0; }
 a { color: var(--ink); }
 [hidden] { display: none !important; }
@@ -724,13 +726,16 @@ mark { background: var(--ink); color: var(--ground); }
 .power.plain[aria-checked='false'] { background: var(--raised); border-color: var(--edge); }
 .power.plain[aria-checked='false'] .knob { background: var(--sub); }
 @media (prefers-reduced-motion: reduce) { .power, .power .knob { transition: none; } }
-.off-ask { display: grid; gap: var(--s2); align-content: start; height: 100%; }
-.off-ask .card-foot { margin-top: auto; }
-/* Asked in a small card: the answers at its foot, as the card's own deeds were. */
-.small-card:has(> .off-ask) { grid-template-rows: 1fr; }
+/* Asked in a card: what will happen from the top, the answers at the card's foot, where its own deeds were. */
+.off-ask { display: flex; flex-direction: column; gap: var(--s2); height: 100%; }
+.off-ask .card-foot { margin-top: auto; align-self: stretch; }
+/* A card that asks is one row, the ask filling it. */
+.card:has(> .off-ask) { grid-template-rows: 1fr; }
 /* Who sees a repo, in its card: only you, servers, everyone. */
 .seen-choice { display: grid; gap: var(--s2); }
-.check-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); min-width: 0; }
+.seen-note { display: grid; gap: var(--s1); }
+.check-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s2); min-width: 0; }
+.check-row > input, .check-row > select { align-self: center; }
 .check-row .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .check-row .line-in { flex: 1; min-width: 0; }
 /* The offer: one short line and its button, no wider than they are. */

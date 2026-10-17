@@ -127,8 +127,9 @@ what is its own.
   undone at once or reaches past who sees it now: the card gives way to
   what will happen, in short lines broken where the sentence breaks
   (trip:notes として誰でも見られます。 / あなたの名前は出ません。), Not now at the
-  left and the deed at the right (Show, Remove, Delete), at the card's
-  foot; the card comes back if the answer is no. Narrowing again (closing,
+  left and the deed at the right (Show, Remove, Delete). The card keeps
+  its size while it asks, and the answers come at its foot, where its own
+  buttons were; the card comes back if the answer is no. Narrowing again (closing,
   turning a share off) is at once.
 - **The switch.** A setting that is on or off: a round track with a knob,
   on at the left in `ink`, off at the right. Off as the usual state is
@@ -190,6 +191,8 @@ fix is always a piece from §3, not a new rule.
 | An empty state as a plain line of text | The dashed box with a quiet line, where the thing would be |
 | A paragraph explaining the screen | The word on the thing; what will happen, in the ask |
 | A sentence broken where the card ends (名前 / は出ません) | Short lines, each broken where the sentence breaks |
+| Answers right under the question, high in a card that shrank to ask (やめる, 見せる) | The card keeps its size; the answers sit at its foot, where its own buttons were |
+| The browser's own colour (a blue checkbox) | `ink`, as anything ticked or chosen |
 | Words of two sizes centred in one row (sora and オーナー a pixel or two apart) | They share a baseline; a face or an icon beside them is centred |
 | A hidden label beside a line taller than the line (a run's posts spaced 32, 37, 37) | Nothing beside a line is taller than it: one rhythm down a run |
 | A button not centred on its row's title (Done below 旅行's middle) | The title and its line share a baseline; the row centres the button on them |

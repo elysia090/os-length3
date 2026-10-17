@@ -56,9 +56,11 @@ function remember(at: {server?: string; board?: string}) {
  */
 function askIn(card: HTMLElement, title: string, what: string | string[], verb: string, act: () => Promise<void>) {
   const was = [...card.childNodes];
+  // The card keeps its size while it asks, so the answers come where its own deeds were.
+  card.style.minHeight = `${card.offsetHeight}px`;
   const error = h('p', {class: 'error small', role: 'alert'});
   const no = button(t('Not now'), 'small-button'), yes = button(verb, 'small-button primary');
-  no.addEventListener('click', () => card.replaceChildren(...was));
+  no.addEventListener('click', () => { card.style.minHeight = ''; card.replaceChildren(...was); });
   yes.addEventListener('click', async () => {
     yes.disabled = true;
     try { await act(); } catch (e) { error.textContent = message(e); yes.disabled = false; }

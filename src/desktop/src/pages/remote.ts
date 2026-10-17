@@ -182,15 +182,17 @@ async function whoSees(el: HTMLElement, now: servers.RepoSeen, done: () => Promi
       c.addEventListener('click', () => { to = v; paint(); });
       return c;
     }));
-    if (to === 'private') { body.replaceChildren(h('p', {class: 'muted small'}, t('Only you see it. It comes off every server too.'))); return; }
+    // What each means, in short lines broken where the sentence breaks.
+    const lines = (...ls: string[]) => ls.map((l) => h('p', {class: 'muted small'}, l));
+    if (to === 'private') { body.replaceChildren(...lines(t('Only you see it.'), t('It comes off every server too.'))); return; }
     if (to === 'servers') {
       body.replaceChildren(...(mine.length ? mine.map((s) => {
         const box = h('input', {type: 'checkbox'}) as HTMLInputElement;
         box.checked = chosen.has(s.id);
         box.addEventListener('change', () => { if (box.checked) chosen.add(s.id); else chosen.delete(s.id); });
-        return h('label', {class: 'check-row'}, box, h('span', {}, s.name), h('span', {class: 'muted small mono'}, shown(s.address)));
+        return h('label', {class: 'check-row'}, box, h('span', {}, s.name), h('span', {class: 'muted small'}, shown(s.address)));
       }) : [h('p', {class: 'muted small'}, t('You are in no server yet.'))]),
-      h('p', {class: 'muted small'}, t('Their people see it as it was last pushed, and whose it is. Nobody writes in it but you.')));
+      ...lines(t('Their people see it as last pushed.'), t('Only you write in it.')));
       return;
     }
     const pick = h('select', {class: 'line-in', 'aria-label': t('Seen as')}) as HTMLSelectElement;
@@ -200,8 +202,8 @@ async function whoSees(el: HTMLElement, now: servers.RepoSeen, done: () => Promi
     pick.value = as;
     if (pick.selectedIndex < 0) pick.selectedIndex = 0;
     as = pick.value;
-    const note = h('p', {class: 'muted small'});
-    const say = () => { note.textContent = as === 'me' ? t('Anyone sees it under your name.') : t('Anyone sees it as the server\'s, without your name.'); };
+    const note = h('div', {class: 'seen-note'});
+    const say = () => note.replaceChildren(...(as === 'me' ? lines(t('Anyone sees it under your name.')) : lines(t('Anyone sees it as the server\'s.'), t('Your name is not shown.'))));
     say();
     pick.addEventListener('change', () => { as = pick.value; say(); });
     body.replaceChildren(h('label', {class: 'check-row'}, h('span', {class: 'muted small'}, t('Seen as')), pick), note);
