@@ -354,13 +354,47 @@ export async function setHead(repo: string, head: string | null) {
 export const HOME_KEYS = ['profile', 'todo', 'dotfiles'] as const;
 export type HomeKey = typeof HOME_KEYS[number];
 
-/** Two TODO lists as one: every item from both, this device's where both have it. */
-function mergeTodo(here: string, there: string): string {
-  try {
-    const a = JSON.parse(here) as {id: string}[], b = JSON.parse(there) as {id: string}[];
-    const ids = new Set(a.map((x) => x.id));
-    return JSON.stringify([...b.filter((x) => !ids.has(x.id)), ...a]);
-  } catch { return here; } // one side is not a list: this device's stands
+/** A value with its objects' keys in order, so two writings of one item (the app's, l3's) are the same. */
+const canon = (v: unknown): unknown => (Array.isArray(v) ? v.map(canon)
+  : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon((v as Record<string, unknown>)[k])])) : v);
+const same = (a: unknown, b: unknown) => JSON.stringify(canon(a)) === JSON.stringify(canon(b));
+
+/**
+ * Two TODO lists as one, item by item against the list both were read from
+ * (`base`; null: nothing agreed yet): an item done, edited or removed on one
+ * device is so on both, one added on either is kept, and of an item changed
+ * on both, an edit stands over a removal (nothing written is lost) and of two
+ * edits this device's. The Remote's order stands; an item new here follows
+ * the one it follows here. One side not a list, or an item that is null:
+ * this device's stands. core/src/home.rs `merge_todo` is the same, for l3.
+ */
+export function mergeTodo(base: string | null, here: string, there: string): string {
+  type Item = Record<string, unknown> | string | number | boolean;
+  const list = (s: string | null): Item[] | null => { try { const v = JSON.parse(s ?? ''); return Array.isArray(v) ? v : null; } catch { return null; } };
+  const h = list(here), r = list(there), b = list(base) ?? [];
+  if (!h || !r || [...h, ...r].some((x) => x === null)) return here;
+  const id = (x: Item) => (typeof x === 'object' && typeof x.id === 'string' ? x.id : undefined);
+  const find = (l: Item[], k: string) => l.find((x) => id(x) === k);
+  const pick = (k: string): Item | undefined => {
+    const x = find(b, k), y = find(h, k), z = find(r, k);
+    if (same(y, z)) return y;
+    if (same(y, x)) return z;
+    if (same(z, x)) return y;
+    return y ?? z;
+  };
+  const out: Item[] = [];
+  for (const x of r) { const k = id(x); const v = k === undefined ? x : pick(k); if (v !== undefined) out.push(v); }
+  let after = -1;
+  for (const x of h) {
+    const k = id(x);
+    const at = out.findIndex((o) => (k === undefined ? same(o, x) : id(o) === k));
+    if (at >= 0) { after = at; continue; }
+    // On the Remote and not placed: removed here, as the Remote has it unchanged.
+    if (k !== undefined && find(r, k) !== undefined) continue;
+    const v = k === undefined ? x : pick(k);
+    if (v !== undefined) out.splice(++after, 0, v);
+  }
+  return same(out, r) ? there : JSON.stringify(out);
 }
 
 /** Whether a setting needs agreeing: its version on the Remote moved, or its value here is not the one agreed. */
@@ -372,8 +406,8 @@ export function homeMoved(key: HomeKey, version: number): boolean {
 /**
  * Agree a setting with the Remote. Unchanged here: the Remote's is taken.
  * Changed here: it is sent from the version it was read at; if another
- * device changed it meanwhile, the TODO lists are joined and the profile
- * is the Remote's. l3 agrees them the same way, in the same record
+ * device changed it meanwhile, the TODO lists are joined against the list
+ * both were read from (mergeTodo), and any other setting is the Remote's. l3 agrees them the same way, in the same record
  * (core/src/home.rs), so the app and l3 on one device are one device.
  */
 export async function syncHome(key: HomeKey): Promise<void> {
@@ -396,8 +430,13 @@ export async function syncHome(key: HomeKey): Promise<void> {
         await saveState({...syncState(), home: {...syncState().home, [key]: {version: there.version, value: there.value}}});
         return;
       }
-      value = mergeTodo(here!, there.value);
+      value = mergeTodo(b?.value ?? null, here!, there.value);
       if (value !== here) await setState(key, value);
+      // Nothing here the Remote lacks (all that changed here was done there too): its own is agreed, nothing sent.
+      if (value === there.value) {
+        await saveState({...syncState(), home: {...syncState().home, [key]: {version: there.version, value}}});
+        return;
+      }
     }
     const r = await api(`/v1/home/${key}`, {method: 'PUT', body: JSON.stringify({value, version: there.version})});
     const done = await r.json() as {version: number; value?: string};

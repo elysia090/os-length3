@@ -184,6 +184,25 @@ test("TODO from two devices is joined; the profile is the Remote's when both cha
   assert.equal(draft.homeMoved('profile', p.version + 1), false);
 });
 
+test('TODO from two devices is joined against what both read: done and removed elsewhere stay so, added here is kept', async () => {
+  const item = (id: string, done = false) => ({id, title: id, done});
+  await setState('todo', JSON.stringify([item('x'), item('y'), item('w')]));
+  await draft.syncHome('todo');
+  const r = await (await fetch(`${URL_}/v1/home/todo`, {headers: {Authorization: `Bearer ${token}`}})).json() as {version: number};
+  // Another device: y done, w removed.
+  await fetch(`${URL_}/v1/home/todo`, {method: 'PUT', headers: {Authorization: `Bearer ${token}`, 'Content-Type': 'application/json'},
+    body: JSON.stringify({value: JSON.stringify([item('x'), item('y', true)]), version: r.version})});
+  // This one, meanwhile (offline, say): z added.
+  await setState('todo', JSON.stringify([item('x'), item('y'), item('w'), item('z')]));
+  await draft.syncHome('todo');
+  const now = JSON.parse(getState('todo')!) as {id: string; done: boolean}[];
+  assert.deepEqual(now.map((t) => `${t.id}${t.done ? '*' : ''}`), ['x', 'y*', 'z']);
+  const there = await (await fetch(`${URL_}/v1/home/todo`, {headers: {Authorization: `Bearer ${token}`}})).json() as {value: string};
+  assert.equal(there.value, getState('todo'));
+  // Removed here while edited there: the edit stands, so nothing written is lost.
+  assert.equal(draft.mergeTodo(JSON.stringify([item('a')]), '[]', JSON.stringify([{...item('a'), title: 'edited'}])), JSON.stringify([{...item('a'), title: 'edited'}]));
+});
+
 test('an issue is worked on in its own copy; pushed, submitted, reviewed and merged into main', async () => {
   await store.add('notes', 'issue', '001.md', 'Fix：落ちる\n');
   await draft.sync('notes');
