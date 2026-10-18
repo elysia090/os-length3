@@ -73,17 +73,6 @@ pub fn end_device(token: &str) -> Result<()> {
     Client::open()?.json("POST", "/api/auth/revoke-session", Some(serde_json::json!({"token": token}))).map(|_| ())
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn a_devices_token_is_never_written_out() {
-        let d: super::Device = serde_json::from_str(r#"{"token":"secret","userAgent":"l3","updatedAt":"2026-10-17"}"#).unwrap();
-        assert_eq!(d.token, "secret");
-        let out = serde_json::to_string(&d).unwrap();
-        assert!(!out.contains("secret") && !out.contains("token"), "{out}");
-    }
-}
-
 /// What a session is, from its user agent, in the app's words.
 pub fn device_word(ua: Option<&str>) -> String {
     let u = ua.unwrap_or_default();
@@ -93,4 +82,15 @@ pub fn device_word(ua: Option<&str>) -> String {
     let browser = if has("Edg/") { "Edge" } else if has("Chrome/") { "Chrome" } else if has("Firefox/") { "Firefox" } else if has("Safari/") { "Safari" } else { "" };
     let w = [browser, os].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" · ");
     if w.is_empty() { crate::tr!("A device", "端末") } else { w }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_devices_token_is_never_written_out() {
+        let d: super::Device = serde_json::from_str(r#"{"token":"secret","userAgent":"l3","updatedAt":"2026-10-17"}"#).unwrap();
+        assert_eq!(d.token, "secret");
+        let out = serde_json::to_string(&d).unwrap();
+        assert!(!out.contains("secret") && !out.contains("token"), "{out}");
+    }
 }

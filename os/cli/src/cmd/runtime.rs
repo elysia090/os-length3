@@ -203,6 +203,13 @@ pub fn dotfile_write(_: &Ctx, call: &Call) -> Result<Reply> {
     Ok(Reply::done(said, json!({"name": name, "bytes": text.len(), "made": !was})))
 }
 
+pub fn dotfile_rm(_: &Ctx, call: &Call) -> Result<Reply> {
+    let name = call.word(0).unwrap_or_default();
+    if !home::dotfiles().iter().any(|(n, _)| n == name) { return Err(Error::NotFound(tr!("There is no dotfile {}", "dotfile {} はありません", name))); }
+    home::set_dotfile(name, None)?;
+    Ok(Reply::done(tr!("Removed {}", "{} を消しました", name), json!({"name": name})))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -216,11 +223,4 @@ mod tests {
             assert!(matches!(free(&c, &call), Err(Error::Usage(_))), "{argv:?}");
         }
     }
-}
-
-pub fn dotfile_rm(_: &Ctx, call: &Call) -> Result<Reply> {
-    let name = call.word(0).unwrap_or_default();
-    if !home::dotfiles().iter().any(|(n, _)| n == name) { return Err(Error::NotFound(tr!("There is no dotfile {}", "dotfile {} はありません", name))); }
-    home::set_dotfile(name, None)?;
-    Ok(Reply::done(tr!("Removed {}", "{} を消しました", name), json!({"name": name})))
 }
