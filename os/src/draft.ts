@@ -188,16 +188,22 @@ async function apply(repo: string, p: Plan, away: Set<string>): Promise<string[]
     try { await write(path, what); } catch (e) {
       // Not to be had now (offline): the sync stops and is tried again; nothing is agreed meanwhile.
       if (e instanceof RemoteError) throw e;
-      // Something here is in its way (a folder for a file, a file for a folder): beside it. If that
+      // Something here is in its way (a folder for a file, a file for a folder): beside it; and where
+      // a file here is in the way of its folder, the whole way beside that (as remote.rs does). If that
       // fails too, the sync fails and says so, rather than agree a tree this copy does not have.
-      await write(beside(path), what);
+      const top = path.split('/')[0];
+      await write(beside(path), what).catch((e2: unknown) => {
+        if (e2 instanceof RemoteError || top === path) throw e2;
+        return write(`${beside(top)}${path.slice(top.length)}`, what);
+      });
       aside.push(path);
     }
   }
   for (const [path, theirs] of p.both) {
     // The Remote's keeps the name (it got there first); this device's is kept beside it first, under
-    // this device's name, so neither is lost if writing the other fails.
-    const mine = (await store.read(repo, path)).text;
+    // this device's name, so neither is lost if writing the other fails. Not a file here (a folder
+    // made here at its name): the Remote's goes beside it.
+    const mine = await store.read(repo, path).then((c) => c.text, () => null);
     if (mine !== null) {
       let n = 1;
       while (await store.read(repo, beside(path, deviceTag(), n)).then(() => true, () => false)) n++;
@@ -354,13 +360,30 @@ export async function setHead(repo: string, head: string | null) {
 export const HOME_KEYS = ['profile', 'todo', 'dotfiles'] as const;
 export type HomeKey = typeof HOME_KEYS[number];
 
-/** Two TODO lists as one: every item from both, this device's where both have it. */
-function mergeTodo(here: string, there: string): string {
-  try {
-    const a = JSON.parse(here) as {id: string}[], b = JSON.parse(there) as {id: string}[];
-    const ids = new Set(a.map((x) => x.id));
-    return JSON.stringify([...b.filter((x) => !ids.has(x.id)), ...a]);
-  } catch { return here; } // one side is not a list: this device's stands
+/**
+ * Two TODO lists as one, against the one both last agreed (`base`): an item
+ * only one side changed or removed is as that side left it, one both changed
+ * is this device's, and every item either side added is kept, the Remote's
+ * new ones first. Nothing agreed yet: every item from both, this device's
+ * where both have it.
+ */
+export function joinTodo(base: string, here: string, there: string): string {
+  type Item = {id: string};
+  const items = (text: string): Item[] | null => { try { const v = JSON.parse(text) as unknown; return Array.isArray(v) ? v as Item[] : null; } catch { return null; } };
+  const a = items(here), b = items(there);
+  // One side is not a list, or holds an item that is null (no id to read): this device's stands.
+  if (!a || !b || [...a, ...b].some((x) => x === null)) return here;
+  // An item as one text, whatever order its fields were written in.
+  const text = (x: Item) => JSON.stringify(x, Object.keys(x).sort());
+  const was = new Map((items(base) ?? []).filter((x) => x !== null).map((x) => [x.id, text(x)]));
+  const mine = new Set(a.map((x) => x.id)), theirs = new Map(b.map((x) => [x.id, x]));
+  const untouched = (x: Item) => was.get(x.id) === text(x);
+  return JSON.stringify([
+    // The Remote's that are not here: new there, or changed there after this device removed them.
+    ...b.filter((x) => !mine.has(x.id) && !untouched(x)),
+    // This device's, as the Remote has each that only the Remote changed, without each only the Remote removed.
+    ...a.flatMap((x) => (!untouched(x) ? [x] : theirs.has(x.id) ? [theirs.get(x.id)!] : [])),
+  ]);
 }
 
 /** Whether a setting needs agreeing: its version on the Remote moved, or its value here is not the one agreed. */
@@ -396,7 +419,7 @@ export async function syncHome(key: HomeKey): Promise<void> {
         await saveState({...syncState(), home: {...syncState().home, [key]: {version: there.version, value: there.value}}});
         return;
       }
-      value = mergeTodo(here!, there.value);
+      value = joinTodo(b?.value ?? '', here!, there.value);
       if (value !== here) await setState(key, value);
     }
     const r = await api(`/v1/home/${key}`, {method: 'PUT', body: JSON.stringify({value, version: there.version})});
