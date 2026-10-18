@@ -185,7 +185,7 @@ fn unreachable(e: ureq::Error) -> String {
 
 /// What the Remote said when it refused: its `error`, in its words.
 fn refused(code: u16, r: ureq::Response) -> String {
-    let v: serde_json::Value = r.into_json().unwrap_or_default();
+    let v = refusal(r);
     let said = v["error"].as_str().or(v["message"].as_str()).unwrap_or_default().to_string();
     let message = match (code, said.as_str()) {
         (401, _) => return unknown(),
@@ -200,13 +200,32 @@ fn refused(code: u16, r: ureq::Response) -> String {
     failed(Failure::Status(code), message)
 }
 
-/// The JSON a Remote answered with; an empty answer (204) is null. One that is not JSON is no
-/// answer to go by: what is in the way (a network's sign-in page, a proxy's) is not the Remote.
+/// The most of one answer read as JSON. The largest a Remote gives is a log: 50 commits with a tree each
+/// (a tree is at most 8 MiB, service/app.ts LIMIT.tree); what goes past this is not an answer but a stream
+/// that would be held in memory until there is none left (ureq's into_json reads without end).
+const ANSWER_LIMIT: u64 = 256 << 20;
+/// The most of a refusal read: its words, a few fields.
+const REFUSAL_LIMIT: u64 = 64 << 10;
+
+/// The JSON a Remote answered with; an empty answer (204) is null. One that is not JSON, or larger than
+/// any answer is, is no answer to go by: what is in the way (a network's sign-in page, a proxy's) is not the Remote.
 fn answer(url: &str, r: ureq::Response) -> Result<serde_json::Value> {
-    let mut text = String::new();
-    r.into_reader().read_to_string(&mut text).map_err(|e| failed(Failure::Unreachable, crate::tr!("The Remote's answer broke off ({})", "Remote の答えが途中で切れました（{}）", e)))?;
+    let text = body(r, ANSWER_LIMIT).map_err(|e| failed(Failure::Unreachable, crate::tr!("The Remote's answer broke off ({})", "Remote の答えが途中で切れました（{}）", e)))?;
+    let Some(text) = text else { return Err(odd(url)) };
     if text.trim().is_empty() { return Ok(serde_json::Value::Null); }
     serde_json::from_str(&text).map_err(|_| odd(url))
+}
+
+/// A body read whole, as text, if it is at most `limit` bytes; None if it is larger (or not text).
+fn body(r: ureq::Response, limit: u64) -> std::io::Result<Option<String>> {
+    let mut bytes = Vec::new();
+    r.into_reader().take(limit + 1).read_to_end(&mut bytes)?;
+    Ok(if bytes.len() as u64 > limit { None } else { String::from_utf8(bytes).ok() })
+}
+
+/// What a refusal says, as JSON (null when it says nothing readable).
+fn refusal(r: ureq::Response) -> serde_json::Value {
+    body(r, REFUSAL_LIMIT).ok().flatten().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
 }
 
 /// The Remote at `url` answered, but not as a Remote does: as if it were out of reach.
@@ -232,7 +251,7 @@ impl Client {
         };
         match r {
             Ok(r) => Ok(Reply::Ok(answer(&self.url, r)?)),
-            Err(ureq::Error::Status(409, r)) => Ok(Reply::Conflict(r.into_json().unwrap_or_default())),
+            Err(ureq::Error::Status(409, r)) => Ok(Reply::Conflict(refusal(r))),
             Err(ureq::Error::Status(404, _)) => Ok(Reply::NotFound),
             Err(ureq::Error::Status(code, r)) => Err(refused(code, r)),
             Err(e) => Err(unreachable(e)),
@@ -307,7 +326,7 @@ pub struct DeviceCode {
 /// Ask for a code to approve in a browser; `client` is "l3" or "length3-app".
 pub fn device_start(url: &str, client: &str) -> Result<DeviceCode> {
     match agent(url).post(&format!("{url}/api/auth/device/code")).send_json(serde_json::json!({"client_id": client})) {
-        Ok(r) => r.into_json().map_err(|_| crate::tr!("{} did not answer as a Remote does", "{} は Remote の答え方をしませんでした", url)),
+        Ok(r) => serde_json::from_value(answer(url, r)?).map_err(|_| odd(url)),
         Err(ureq::Error::Status(code, r)) => Err(refused(code, r)),
         Err(e) => Err(unreachable(e)),
     }
@@ -315,7 +334,7 @@ pub fn device_start(url: &str, client: &str) -> Result<DeviceCode> {
 
 /// The origin of the web app the Remote `url` says it approves devices on (GET /v1/about, `app`), if it says one.
 pub fn app_origin(url: &str) -> Option<String> {
-    let v: serde_json::Value = agent(url).get(&format!("{url}/v1/about")).call().ok()?.into_json().ok()?;
+    let v = answer(url, agent(url).get(&format!("{url}/v1/about")).call().ok()?).ok()?;
     v.get("app")?.as_str().map(String::from)
 }
 
@@ -363,7 +382,7 @@ fn device_poll(url: &str, client: &str, code: &DeviceCode) -> Result<Polled> {
         }
         Err(ureq::Error::Status(429, _)) => Ok(Polled::SlowDown),
         Err(ureq::Error::Status(code, r)) => {
-            let v: serde_json::Value = r.into_json().unwrap_or_default();
+            let v = refusal(r);
             match v.get("error").and_then(|e| e.as_str()) {
                 Some("authorization_pending") => Ok(Polled::Waiting),
                 Some("slow_down") => Ok(Polled::SlowDown),
