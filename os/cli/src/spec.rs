@@ -173,8 +173,10 @@ pub static COMMANDS: &[Command] = &[
     c("git", &[], Group::Git, ["the issues not merged, and what comes next", "Merge されていない Issue と、次にすること"], &[
         f(None, &[REPO_HERE], &[], ["each issue, with what comes next", "Issue ごとに、次にすること"], LOCAL, TakeIn, git::page),
     ]),
-    c("issue", &[], Group::Git, ["one issue, or a new one", "Issue ひとつ、または新しく"], &[
+    c("issue", &[], Group::Git, ["one issue, a new one, or closing one", "Issue ひとつ、新しく、または閉じる"], &[
         f(Some("new"), &[REPO_HERE, TITLE], &[Flag::Note("detail")], ["write a new one", "新しく書く"], LOCAL, Send, git::issue_new),
+        f(Some("close"), &[Arg::Issue], &[], ["one that will not be done", "やらないものを閉じる"], LOCAL, Send, git::issue_close),
+        f(Some("reopen"), &[Arg::Issue], &[], ["a closed one, open again", "閉じたものをもう一度開く"], LOCAL, Send, git::issue_reopen),
         f(None, &[Arg::Issue], &[], ["its card, its Review, Merge", "カード、Review、Merge"], LOCAL, TakeIn, git::issue_show),
         hidden(None, &[REPO_HERE], LOCAL, TakeIn, git::page),
     ]),
@@ -377,6 +379,7 @@ mod tests {
         }
         assert!(all.contains(&"l3 server get SERVER[#BOARD] [--todo] [-o FILE] [--force]".to_string()));
         assert!(all.contains(&"l3 prompt [REPO] [-- CMD…] [--network]".to_string()));
+        assert!(all.contains(&"l3 issue close ISSUE".to_string()) && all.contains(&"l3 issue reopen ISSUE".to_string()), "{all:?}");
         assert!(all.contains(&"l3 root use l3|ubuntu|debian".to_string()));
     }
 

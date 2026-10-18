@@ -66,9 +66,12 @@ impl Stand {
     fn merged(&self, i: &Issue) -> bool {
         self.change(i).is_some_and(|c| c.state == "merged") || self.merged.contains(&path_of(i))
     }
+    /// Still to do: neither merged nor closed (as the app's Git lays them out).
+    fn open(&self, i: &Issue) -> bool { !self.merged(i) && i.closed.is_none() }
     /// Where it stands, as one word for data.
     fn state(&self, i: &Issue) -> &'static str {
         if self.merged(i) { return "merged"; }
+        if i.closed.is_some() { return "closed"; }
         if !self.known { return "unknown"; }
         if self.here(i) { return "working"; }
         match self.change(i).map(|c| c.state.as_str()) {
@@ -85,6 +88,7 @@ impl Stand {
 fn standing(ctx: &Ctx, s: &Stand, i: &Issue) -> String {
     if ctx.prompt { return String::new(); }
     if s.merged(i) { return state_word("merged"); }
+    if let Some(c) = &i.closed { return tr!("closed {}", "閉じた：{}", c); }
     if !s.known { return tr!("not known offline", "オフラインでは不明"); }
     let who = |by: &str, at: u64| tr!("{} · started {}", "{} · 開始 {}", if by.is_empty() { "—" } else { by }, ago(at));
     if let (true, Some(w)) = (s.here(i), s.work.as_ref()) { return who(&w.started_by, w.started_at); }
@@ -99,9 +103,12 @@ fn standing(ctx: &Ctx, s: &Stand, i: &Issue) -> String {
 /// What can be done next, the one to do first first: as the box's buttons.
 fn next(ctx: &Ctx, s: &Stand, i: &Issue) -> Vec<String> {
     if ctx.prompt { return vec![tr!("the app's Git page", "アプリの Git")]; }
-    if !ctx.connected() { return vec!["l3 login".into()]; }
-    if s.merged(i) || !s.known { return Vec::new(); }
+    if s.merged(i) { return Vec::new(); }
     let m = me(i);
+    // Reopening is the file's own change: it needs no Remote.
+    if i.closed.is_some() { return vec![format!("l3 issue reopen {m}")]; }
+    if !ctx.connected() { return vec!["l3 login".into()]; }
+    if !s.known { return Vec::new(); }
     let mut out = Vec::new();
     let change = s.change(i);
     let open = change.is_some_and(|c| c.state == "open");
@@ -146,7 +153,7 @@ fn card(ctx: &Ctx, s: &Stand, i: &Issue, full: bool) -> Vec<String> {
     if full && !i.detail.is_empty() { for l in i.detail.lines() { t.push(format!("    {l}")); } }
     let done = |yes: bool| if yes { "✓" } else { " " };
     let change = s.change(i);
-    if !ctx.prompt && !s.merged(i) {
+    if !ctx.prompt && s.open(i) {
         if let (true, Some(w)) = (s.here(i), s.work.as_ref()) {
             let committed = s.uncommitted == 0 && w.commits > 0;
             let pushed = w.commits > 0 && w.unpushed == 0 && change.is_some_and(|c| c.state == "open");
@@ -184,7 +191,7 @@ pub fn page(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let r = ctx.repos()?;
     // The repo named, or the one you are in; else every repo here.
     let names: Vec<String> = if call.word(0).is_some() || ctx.here.is_some() { vec![target::repo(ctx, call, 0)?] } else { r.list()?.into_iter().map(|s| s.name).collect() };
-    let (mut boxes, mut data, mut merged) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut boxes, mut data, mut merged, mut closed) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     let mut offline = false;
     for n in &names {
         let s = stand(ctx, &r, n);
@@ -194,16 +201,23 @@ pub fn page(ctx: &Ctx, call: &Call) -> Result<Reply> {
         offline |= ctx.connected() && !s.known;
         let done = list.iter().filter(|i| s.merged(i)).count();
         if done > 0 { merged.push((n.clone(), done)); }
-        for i in list.iter().filter(|i| !s.merged(i)) {
+        let shut: Vec<String> = list.iter().filter(|i| !s.merged(i) && i.closed.is_some()).map(me).collect();
+        if !shut.is_empty() { closed.push((n.clone(), shut)); }
+        for i in list.iter().filter(|i| s.open(i)) {
             boxes.push(card(ctx, &s, i, false).join("\n"));
             data.push(issue_json(ctx, &s, i));
         }
     }
     let mut t = boxes.join("\n\n");
-    if boxes.is_empty() { t = if merged.is_empty() { tr!("No issues yet (l3 issue new [REPO] \"Fix：title\")", "Issue はまだありません（l3 issue new [REPO] \"Fix：件名\" で書けます）") } else { tr!("Every issue is merged", "すべての Issue が Merge 済みです") }; }
+    if boxes.is_empty() {
+        t = if !merged.is_empty() || !closed.is_empty() { tr!("No open issues", "開いている Issue はありません") }
+            else { tr!("No issues yet (l3 issue new [REPO] \"Fix：title\")", "Issue はまだありません（l3 issue new [REPO] \"Fix：件名\" で書けます）") };
+    }
     for (n, k) in &merged { t += &format!("\n\n{}", tr!("{0} merged in {1} (l3 log {1})", "{1} で Merge 済み：{0}（l3 log {1}）", issues(*k), n)); }
+    for (n, list) in &closed { t += &format!("\n\n{}", tr!("{0} closed in {1}: {2} (l3 issue reopen REPO#N)", "{1} で閉じた：{0}（{2}。もう一度開くには l3 issue reopen REPO#N）", issues(list.len()), n, list.join(" "))); }
     if offline { t += &format!("\n\n{}", tr!("The Remote could not be reached: where each issue stands is not known (merges seen before are)", "Remote に届きませんでした。各 Issue の状態は不明です（前に見た Merge はわかります）")); }
-    Ok(Reply::data(t, json!({"issues": data, "merged": merged.iter().map(|(r, n)| json!({"repo": r, "count": n})).collect::<Vec<_>>(), "known": !offline})))
+    Ok(Reply::data(t, json!({"issues": data, "merged": merged.iter().map(|(r, n)| json!({"repo": r, "count": n})).collect::<Vec<_>>(),
+        "closed": closed.iter().map(|(r, l)| json!({"repo": r, "issues": l})).collect::<Vec<_>>(), "known": !offline})))
 }
 
 fn read_issue(ctx: &Ctx, at: &IssueRef) -> Result<Issue> {
@@ -279,9 +293,47 @@ pub fn issue_new(ctx: &Ctx, call: &Call) -> Result<Reply> {
         json!({"repo": repo, "file": file, "number": number(&file), "kind": kind, "title": title.trim()})))
 }
 
+/// `l3 issue close REPO#N`: one that will not be done. Its file says so on its
+/// last line ("Closed：2031-10-17 sora"), so the app, l3 and a Prompt agree;
+/// it leaves the issues as a merged one does, and `l3 issue reopen` brings it back.
+pub fn issue_close(ctx: &Ctx, call: &Call) -> Result<Reply> { set_closed(ctx, call, true) }
+pub fn issue_reopen(ctx: &Ctx, call: &Call) -> Result<Reply> { set_closed(ctx, call, false) }
+
+fn set_closed(ctx: &Ctx, call: &Call, close: bool) -> Result<Reply> {
+    let at = target::issue(ctx, call, 0)?;
+    let r = ctx.repos()?;
+    // The issue is main's: a work's copy of issue/ is the work's.
+    if r.line(&at.repo) != work::MAIN {
+        return Err(Error::Refused(tr!("{0} shows the work on {1}; issues are closed on main (l3 main {0} first)", "{0} は {1} の作業を見せています。Issue は main で閉じます（先に l3 main {0}）", at.repo, line_called(&r.line(&at.repo)))));
+    }
+    let text = r.read(&at.repo, &at.path(), 256 * 1024)?.text.ok_or_else(|| Error::Refused(tr!("{} is binary", "{} はバイナリです", at.name())))?;
+    let i = length3_core::issues::parse(&at.repo, &at.file, &text);
+    let s = stand(ctx, &r, &at.repo);
+    if s.merged(&i) { return Err(Error::Refused(tr!("{} is merged already", "{} はもう Merge 済みです", at.name()))); }
+    // Undecided, it is main's to take or not first, as the app's card offers no Close then.
+    if close && s.change(&i).is_some_and(|c| c.state == "open") {
+        return Err(Error::Refused(tr!("{0} has an undecided change; decide it first (l3 reject {0})", "{0} には未決の Change があります。先に決めてください（l3 reject {0}）", at.name())));
+    }
+    let data = |changed: bool| json!({"repo": at.repo, "n": length3_core::issues::number_of(&at.file), "file": at.file, "closed": close, "changed": changed});
+    if close == i.closed.is_some() {
+        let said = if close { tr!("{} is closed already", "{} はもう閉じています", at.name()) } else { tr!("{} is open", "{} は開いています", at.name()) };
+        return Ok(Reply::done(said, data(false)));
+    }
+    let new = if close {
+        let who = if ctx.connected() { length3_core::remote::account().ok().flatten().map(|a| a.name).unwrap_or_default() } else { String::new() };
+        length3_core::issues::close_text(&text, format!("{} {who}", out::day(out::now_ms())).trim())
+    } else { length3_core::issues::reopen_text(&text) };
+    r.write(&at.repo, &at.path(), &new, 256 * 1024)?;
+    Ok(Reply::done(if close { tr!("Closed {0}; it will not be done (back with: l3 issue reopen {0})", "{0} を閉じました。やらないものです（戻すには l3 issue reopen {0}）", at.name()) }
+        else { tr!("Reopened {}", "{} をもう一度開きました", at.name()) }, data(true)))
+}
+
 pub fn start(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let mut at = target::issue(ctx, call, 0)?;
     let r = ctx.repos()?;
+    if read_issue(ctx, &at).is_ok_and(|i| i.closed.is_some()) {
+        return Err(Error::Refused(tr!("{0} is closed; open it again first (l3 issue reopen {0})", "{0} は閉じています。先にもう一度開いてください（l3 issue reopen {0}）", at.name())));
+    }
     // One without a number takes its number first, so its work is named by it (as Git would have done).
     if length3_core::issues::number_of(&at.file).is_none() {
         let s = stand(ctx, &r, &at.repo);
@@ -440,6 +492,7 @@ fn counts(binary: bool, added: usize, removed: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use length3_core::issues::parse;
 
     #[test]
     fn a_line_is_named_by_its_first_line_and_the_rest_is_its_note() {
@@ -447,5 +500,23 @@ mod tests {
         assert_eq!(split_line("Fix：a\nwhy\nmore\n", "-m's"), ("Fix：a", "why\nmore\n-m's".to_string()));
         assert_eq!(split_line("Fix：a", ""), ("Fix：a", String::new()));
         assert_eq!(split_line("Fix：a\n\n", " note "), ("Fix：a", "note".to_string()));
+    }
+
+    /// Where a repo stands, known just now: #1 merged, nothing else started.
+    fn stand() -> Stand {
+        Stand { known: true, work: None, lines: Vec::new(), changes: Vec::new(), merged: vec!["issue/001.md".into()], uncommitted: 0 }
+    }
+
+    #[test]
+    fn a_closed_issue_leaves_the_issues_as_a_merged_one_does_and_says_how_it_comes_back() {
+        let (ctx, s) = (Ctx::test(None, Vec::new()), stand());
+        let closed = parse("r", "002.md", "Fix：x\n\nClosed：2031-10-07 sora\n");
+        let open = parse("r", "003.md", "Fix：y\n");
+        let merged_and_closed = parse("r", "001.md", "Fix：z\n\nClosed：2031-10-07 sora\n");
+        assert!(!s.open(&closed) && s.open(&open) && !s.open(&merged_and_closed));
+        assert_eq!([s.state(&closed), s.state(&open), s.state(&merged_and_closed)], ["closed", "notStarted", "merged"]);
+        assert_eq!(next(&ctx, &s, &closed), ["l3 issue reopen r#2"]);
+        assert_eq!(next(&ctx, &s, &merged_and_closed), Vec::<String>::new());
+        assert!(standing(&ctx, &s, &closed).ends_with("2031-10-07 sora"));
     }
 }

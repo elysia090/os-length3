@@ -19,6 +19,8 @@ export interface Issue {
   kind: string | null;
   title: string;
   detail: string;
+  /** Closed without being done: what its last line says after "Closed：" (the day, and who), or null while open. */
+  closed: string | null;
 }
 
 /** The number a file in issue/ is named by ("007.md" is 7), or null. */
@@ -33,10 +35,48 @@ export const issueName = (i: Pick<Issue, 'n'>): string => (i.n === null ? '' : `
 /** The path an issue is kept at. */
 export const issuePath = (i: Pick<Issue, 'file'>): string => `issue/${i.file}`;
 
+/**
+ * A closed issue says so on its last line, after its detail: "Closed：2031-10-17 sora"
+ * (the day it was closed, and who). Reopening takes the line away again.
+ */
+const CLOSED = /^Closed[：:]\s*(.*)$/;
+
+/** The line that closes `lines`, if their last one with words is it (never the first, which names the issue). */
+function closedAt(lines: readonly string[]): number {
+  let j = lines.length - 1;
+  while (j > 0 && !lines[j].trim()) j--;
+  return j > 0 && CLOSED.test(lines[j].trim()) ? j : -1;
+}
+
 export function parseIssue(repo: string, file: string, text: string): Issue {
-  const [first = '', ...rest] = text.replace(/^﻿/, '').split('\n');
+  const lines = text.replace(/^﻿/, '').split('\n');
+  const at = closedAt(lines);
+  const closed = at < 0 ? null : CLOSED.exec(lines[at].trim())![1].trim();
+  const [first = '', ...rest] = at < 0 ? lines : lines.slice(0, at);
   const {kind, title} = kindOf(first.replace(/^#+\s*/, ''));
-  return {repo, n: numberOf(file), file, kind, title: title || file.replace(/\.md$/, ''), detail: rest.join('\n').trim()};
+  return {repo, n: numberOf(file), file, kind, title: title || file.replace(/\.md$/, ''), detail: rest.join('\n').trim(), closed};
+}
+
+/** An issue's text open again: without the line that closed it. */
+export function reopenText(text: string): string {
+  const lines = text.split('\n');
+  const at = closedAt(lines);
+  return at < 0 ? text : `${lines.slice(0, at).join('\n').replace(/\s+$/, '')}\n`;
+}
+
+/** An issue's text closed: its words as they are, then "Closed：" and `mark` (the day, and who) on a line of its own. */
+export const closeText = (text: string, mark: string): string => `${reopenText(text).replace(/\s+$/, '')}\n\nClosed：${mark.trim()}\n`;
+
+/** What closed it, as its line says: the day (as a time, to be written as the language writes days) and who. */
+export function closedBy(closed: string): {at: number | null; by: string} {
+  const m = /^(\d{4})-(\d{2})-(\d{2})\s*(.*)$/.exec(closed.trim());
+  return m ? {at: new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime(), by: m[4].trim()} : {at: null, by: closed.trim()};
+}
+
+/** The mark a close is written with: the day here (2031-10-17) and who, if known. */
+export function closeMark(by: string, now = new Date()): string {
+  const two = (n: number) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}${by ? ` ${by}` : ''}`;
 }
 
 /** The text of an issue's file. */
@@ -77,9 +117,16 @@ export async function writeIssue(store: Pick<RepoStore, 'tree' | 'mkdir' | 'add'
   return file;
 }
 
-/** Change an issue's words; its number stays. */
+/** Change an issue's words; its number stays, and so does its being closed. */
 export const saveIssue = (store: Pick<RepoStore, 'write'>, i: Issue, kind: string | null, title: string, detail: string) =>
-  store.write(i.repo, issuePath(i), issueText(kind, title, detail));
+  store.write(i.repo, issuePath(i), i.closed === null ? issueText(kind, title, detail) : closeText(issueText(kind, title, detail), i.closed));
+
+/** Close an issue that will not be done (`mark`: closeMark), or open it again: only its last line changes. */
+export async function setClosed(store: Pick<RepoStore, 'read' | 'write'>, i: Issue, mark: string | null): Promise<void> {
+  const c = await store.read(i.repo, issuePath(i));
+  if (c.text === null) throw new Error(issuePath(i));
+  await store.write(i.repo, issuePath(i), mark === null ? reopenText(c.text) : closeText(c.text, mark));
+}
 
 /**
  * Give every issue without a number the next free one, oldest name first,

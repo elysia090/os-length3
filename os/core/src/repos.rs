@@ -760,6 +760,17 @@ mod shared_cases {
             let t = issues::text(k[0].as_str(), k[1].as_str().unwrap(), k[2].as_str().unwrap());
             assert_eq!(t, k[3].as_str().unwrap(), "{k}");
         }
+        for k in c["closed"].as_array().unwrap() {
+            let t = k[0].as_str().unwrap();
+            let i = issues::parse("r", "x.md", t);
+            assert_eq!((i.kind, i.title, i.detail, i.closed), (opt(&k[1]), k[2].as_str().unwrap().into(), k[3].as_str().unwrap().into(), opt(&k[4])), "{k}");
+            assert_eq!(issues::reopen_text(t), k[5].as_str().unwrap(), "{k}");
+        }
+        for k in c["close"].as_array().unwrap() {
+            let t = issues::close_text(k[0].as_str().unwrap(), k[1].as_str().unwrap());
+            assert_eq!(t, k[2].as_str().unwrap(), "{k}");
+            assert_eq!(issues::parse("r", "x.md", &t).closed, opt(&k[1]));
+        }
         for k in c["nextIssue"].as_array().unwrap() {
             let names: Vec<&str> = k[0].as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
             assert_eq!(issues::next_name(&names), k[1].as_str().unwrap(), "{k}");

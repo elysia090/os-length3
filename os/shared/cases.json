@@ -157,5 +157,56 @@
       "x.git",
       false
     ]
+  ],
+  "closed": [
+    [
+      "Fix：x\n\nWhy\n\nClosed：2031-10-17 sora\n",
+      "Fix",
+      "x",
+      "Why",
+      "2031-10-17 sora",
+      "Fix：x\n\nWhy\n"
+    ],
+    [
+      "Fix：x\n\nClosed：2031-10-17\n\n",
+      "Fix",
+      "x",
+      "",
+      "2031-10-17",
+      "Fix：x\n"
+    ],
+    [
+      "Closed：not this one\n",
+      "Closed",
+      "not this one",
+      "",
+      null,
+      "Closed：not this one\n"
+    ],
+    [
+      "Fix：x\n\nClosed: 2031-10-17 sora\nmore after it\n",
+      "Fix",
+      "x",
+      "Closed: 2031-10-17 sora\nmore after it",
+      null,
+      "Fix：x\n\nClosed: 2031-10-17 sora\nmore after it\n"
+    ]
+  ],
+  "close": [
+    [
+      "Fix：x\n",
+      "2031-10-17 sora",
+      "Fix：x\n\nClosed：2031-10-17 sora\n"
+    ],
+    [
+      "Fix：x\n\nWhy\n\n\n",
+      "2031-10-17",
+      "Fix：x\n\nWhy\n\nClosed：2031-10-17\n"
+    ],
+    [
+      "Fix：x\n\nClosed：2031-10-16 mio\n",
+      "2031-10-17 sora",
+      "Fix：x\n\nClosed：2031-10-17 sora\n"
+    ]
   ]
 }
