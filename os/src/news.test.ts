@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {forget, furtherThan, isNewBoard, isNewServer, marks, NONE, notTold, type News} from './news.ts';
+import {forget, furtherThan, isNewBoard, isNewServer, marks, NONE, notTold, sawBoard, type News} from './news.ts';
 
 const board = (id: string, server: string, post: string) => ({id, server, post});
 const heard = (inbox: number, ...boards: News['boards']): News => ({inbox, boards});
@@ -40,4 +40,20 @@ test('reading a board is told the Remote only past what was told, ids sorting as
   assert.equal(furtherThan(told, 'plan', '00000000bbbbbbbbb'), false);
   assert.equal(furtherThan(told, 'plan', '00000000ccccccccc'), true);
   assert.equal(furtherThan(told, 'read', '00000000aaaaaaaaa'), true);
+});
+
+test('a board seen up to a post, when the Remote could not be told, is told again the next time', async () => {
+  const kept = new Map([['length3.os.remote', JSON.stringify({url: 'http://remote.test', token: 't'})]]);
+  const sent: string[] = [];
+  let away = true;
+  Object.assign(globalThis, {
+    localStorage: {getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => void kept.set(k, v), removeItem: (k: string) => void kept.delete(k)},
+    fetch: async (url: string) => { sent.push(new URL(url).pathname); if (away) throw new TypeError('offline'); return new Response('{}'); },
+  });
+  await sawBoard('plan/x', '00000000aaaaaaaaa');
+  // Before: told was kept though nothing reached the Remote, so this asked nothing and the board stayed new everywhere else.
+  away = false;
+  await sawBoard('plan/x', '00000000aaaaaaaaa');
+  await sawBoard('plan/x', '00000000aaaaaaaaa');
+  assert.deepEqual(sent, ['/v1/boards/plan%2Fx/seen', '/v1/boards/plan%2Fx/seen']);
 });

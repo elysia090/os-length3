@@ -426,8 +426,9 @@ pub static COMMANDS: &[Command] = &[
         f(None, &[Arg::Dotfile], &[], ["one's text", "ひとつの本文"], DEVICE, Send, runtime::dotfile_show),
     ])),
     c("address", &[], Group::Runtime, ["where to reach this device over SSH, as `ip addr` gives an IP", "この端末に SSH で届く先（ip addr が IP を答えるように）"], &[
-        f(None, &[], &[], ["each repo's destination for ssh, one a line (off: asks whether to turn it on)", "repo ごとの ssh の接続先を1行にひとつ（オフならオンにするか聞く）"], DEVICE, Keep, address::show),
-        f(Some("ssh"), &[Arg::Choice(&["on", "off"])], &[], ["turn SSH on or off here without asking", "聞かずに、この端末の SSH をオン・オフ"], DEVICE, Keep, address::set),
+        f(None, &[], &[], ["each repo's destination for ssh, one a line, and who may connect (off: asks whether to turn it on, and from where)", "repo ごとの ssh の接続先を1行にひとつと、どこから接続できるか（オフならオンにするか、どこからかを聞く）"], DEVICE, Keep, address::show),
+        f(Some("ssh"), &[Arg::Choice(&["on", "off"])], &[], ["turn SSH on or off here without asking (on: from where it was last chosen; at first this device only)", "聞かずに、この端末の SSH をオン・オフ（オンは前に選んだ範囲で。最初はこの端末からだけ）"], DEVICE, Keep, address::set),
+        f(Some("ssh"), &[Arg::Choice(&["on"]), Arg::Choice(&["device", "network"])], &[], ["on, from this device only, or from PCs on the same network too (never the Internet)", "オン：この端末からだけ、または同じネットワークの PC からも（インターネットからは入れない）"], DEVICE, Keep, address::set),
         hidden(Some("ssh"), &[Arg::Choice(&["serve"])], DEVICE, Keep, address::serve),
     ]),
     c("remote", &[], Group::Remote, ["the Remote, and where each repo stands", "Remote と、各 repo の状態"], &[

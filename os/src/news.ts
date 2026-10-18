@@ -61,11 +61,16 @@ export function look(): Promise<void> {
 }
 
 /** A board's talk was on screen up to `post`: it is not new here at once, and the Remote is told. */
-export function sawBoard(board: string, post: string) {
+export function sawBoard(board: string, post: string): Promise<void> {
   hear(forget(now, board));
-  if (!connection() || !furtherThan(told, board, post)) return;
+  if (!connection() || !furtherThan(told, board, post)) return Promise.resolve();
+  const was = told.get(board);
   told.set(board, post);
-  void api(`/v1/boards/${board}/seen`, {method: 'POST', body: JSON.stringify({post})}).catch(() => {});
+  // Not told (the Remote away): taken back, so the next time it is on screen tells it again; the mark here is gone either way.
+  return api(`/v1/boards/${encodeURIComponent(board)}/seen`, {method: 'POST', body: JSON.stringify({post})}).then(() => {}, () => {
+    if (told.get(board) !== post) return;
+    if (was === undefined) told.delete(board); else told.set(board, was);
+  });
 }
 
 let timer = 0;

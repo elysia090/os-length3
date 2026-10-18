@@ -104,8 +104,7 @@ export default {
   'The Remote does not reach its database': 'Remote がデータベースに届いていません',
   // SSH, per device.
   'SSH is turned on at the device itself': 'SSH をオンにするのはその端末でです',
-  'a port and destinations': 'ポートと接続先がいります',
-  'destinations': '接続先がいります',
+  'device or network': 'device か network のどちらかです',
   'No device of yours listens there': 'それはあなたの端末で待ち受けているものではありません',
   // The plan, and Stripe.
   'The free plan keeps no more repos on the Remote': '無料プランでは、これ以上の repo を Remote に置けません',

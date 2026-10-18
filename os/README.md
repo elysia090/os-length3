@@ -158,16 +158,20 @@ your choosing on a domain you own (`ren@ren.dev`) is shown beside it.
 
 ### SSH into a repo's Prompt
 
-From the host (or another machine on its network), an ordinary OpenSSH
+SSH is the desktop app's (and l3's): the web does not offer it. From the
+host, or, when chosen, another PC on its network, an ordinary OpenSSH
 client lands in a repo's Prompt: the same shell `l3 prompt REPO` gives,
 inside the root, without privileges, with the repo's network grant.
-`l3 address` says where, one line a repo, ready to paste:
+`l3 address` says where, one line a repo, ready to paste, and on standard
+error what to check of it:
 
 ```
 $ l3 address
-ssh -p 23000 notes@192.168.1.5
-ssh -p 23000 trip@192.168.1.5
-$ ssh -p 23000 notes@192.168.1.5 'make test'; echo $?
+ssh -p 23000 notes@127.0.0.1
+l3: From this device only (127.0.0.1): no other PC finds it
+l3: 1 key let in (.authorized_keys)
+l3: Host key SHA256:Fgq+7vT/… (ssh shows it the first time it connects: check it is this)
+$ ssh -p 23000 notes@127.0.0.1 'make test'; echo $?
 ```
 
 The SSH user is the repo. A command runs in the Prompt (`/bin/sh -c`) and
@@ -179,27 +183,49 @@ copies in and out. There is no sftp subsystem, so `sftp`, and `scp`
 without `-O` (it speaks sftp), do not work; and no port, agent or X11
 forwarding.
 
+What others see, in each scope:
+
+| Who | この端末だけ (this device only) | 同じネットワークにも (the same network too) |
+|---|---|---|
+| this device | the port on 127.0.0.1 (and ::1); `l3 address` and the app's card show the destinations, the host key and the keys let in | the same, and the LAN addresses too |
+| another PC on the LAN/VPN | nothing: the port is closed (connection refused, no handshake, no banner) | the port on each private address: `SSH-2.0-length3` and the host key, then only a key from `.authorized_keys` gets in |
+| the internet | nothing: no socket on a public address | nothing: no socket on a public address, nor on 0.0.0.0 |
+| the Remote | that the device listens, `device`, since when, last heard | that the device listens, `network`, since when, last heard |
+
+No address, port or repo name leaves the device: other devices' pages say
+only "listens for SSH, from that device only" (or "from its network's PCs
+too") with the off switch.
+
 - **Off at first.** `l3 address` with SSH off asks on a terminal whether
-  to turn it on (y/N, No by default); in a script it never asks: it says
-  how and exits 5. `l3 address ssh on|off` sets it without asking; the
-  app's Runtime has the same switch for its own device.
+  to turn it on (y/N, No by default), then from where: this device only
+  (the default, Enter) or the same network's PCs too. In a script it never
+  asks: it says how and exits 5. `l3 address ssh on [device|network]` and
+  `l3 address ssh off` set it without asking; the app's Runtime has the
+  same switch for its own device, which asks from where in its card first.
+- **Scope**: kept on the device (`<data>/ssh/scope.json`), never on the
+  Remote; `on` alone takes the one kept. *This device only* listens on
+  127.0.0.1 and ::1 alone. *The same network too* listens, besides, on each
+  private address of the host, one socket each (10/8, 172.16/12,
+  192.168/16, a VPN's 100.64/10, link-local), never on 0.0.0.0 and never
+  on a public address. The listener looks at the interfaces again every
+  5 s: an address that goes, or stops being private, is let go, and the
+  connections that came in on it are closed; so is every connection from
+  elsewhere when the scope narrows to this device only.
 - **Keys**: public keys only (no password, no keyboard-interactive), one
   OpenSSH public key a line in the Runtime dotfile `.authorized_keys`
   (`l3 dotfile write .authorized_keys < ~/.ssh/id_ed25519.pub`). Dotfiles
   are kept on the Remote, so a key added (or removed) on one device counts
   on every one; the listener takes them in at most every 10 s as keys are
-  tried. Ed25519 and ECDSA keys; not RSA. A line with options before its
-  key is left out (they are not honoured), and turning on says which.
+  tried. Ed25519 and ECDSA keys, the only kinds offered; not RSA. A line
+  with options before its key is left out (they are not honoured), and
+  turning on says which.
 - **Port**: one per person on the host, the same every time: 22000 plus
   their user number (uid 1000 → 23000), whatever repos there are, never
   another person's; `LENGTH3_SSH_PORT` names another when that one is taken.
-- **Where**: it listens on every IPv4 address but takes a connection only
-  if it came in on loopback or a private network (10/8, 172.16/12,
-  192.168/16, a VPN's 100.64/10, link-local), so a host with a public
-  address is not reachable from the Internet. `l3 address` names the LAN
-  address the host's traffic leaves by, or 127.0.0.1 when it has none.
-- **Host key**: Ed25519, made once per device in `<data>/ssh/host_ed25519`;
-  turning on shows its fingerprint (what ssh asks about the first time).
+- **What it says of itself**: `SSH-2.0-length3`, not the SSH library or
+  its version. The host key is Ed25519, made once per device in
+  `<data>/ssh/host_ed25519`; `l3 address` and the app's card show its
+  SHA256 fingerprint, the one ssh asks about the first time.
 - **Who runs it**: turning on starts `l3 address ssh serve` in the
   background (its own session, its log in `<data>/ssh/log`), recorded in
   `<data>/ssh/listening.json` while it runs, as a Prompt records itself;
@@ -209,12 +235,12 @@ forwarding.
   minute and that address is not heard for a minute. A connection not
   signed in within a minute is closed.
 - **Off from anywhere**: which devices listen is kept on the Remote, per
-  device (its session), and Runtime shows a card for each, its
-  destinations copied by a press, and a switch that turns it off; a page
-  can only turn SSH off. The listener asks the Remote every 5 s, and when
-  it was turned off (or the device signed out, here or from another
-  device: `l3 logout` stops it at once) it stops taking connections and
-  ends every session.
+  device (its session), with the scope's word and nothing of where; every
+  page of the account shows a card for each, with a switch that turns it
+  off; a page can only turn SSH off. The listener asks the Remote every
+  5 s, and when it was turned off (or the device signed out, here or from
+  another device: `l3 logout` stops it at once) it stops taking
+  connections and ends every session.
 
 There is no sync command. Connected, l3 keeps each repo in step with the
 Remote by itself: a command that reads a repo takes in the Remote's changes
@@ -320,7 +346,11 @@ The Remote (`service/`): Hono with Better Auth (provider sign-in, then
 passkeys; device authorization; bearer sessions) on Drizzle; Neon in
 production, PGlite in tests and here. Its schema is the migrations in
 `service/migrations`: those Drizzle generates from `service/schema.ts`, and
-`0001` for what Drizzle cannot say (the counted room, the service's role). The service connects as
+`0001` for what Drizzle cannot say (the counted room, the service's role). A step that drops what
+the running Worker still reads is a contract step, tagged `NNNN_contract_…`
+(`drizzle-kit generate --name contract_…`): a deploy runs the migrations
+before it, ships the Worker, and runs it once the new Worker answers
+(`service/stages.ts`). The service connects as
 `remote_worker`, a member of `remote_app`, which reads and writes rows and
 nothing else. What each part of it does, its routes and tables, and which
 of them the app and l3 need: `service/README.md`.
@@ -385,7 +415,7 @@ to this repository, and its Settings → Build say, once:
 |---|---|
 | Root directory | `os` |
 | Build command | `npm run build:cloudflare`: the Prompt from the release `RELEASE` names (`scripts/prompt-files.mjs`, checked against the digest `shared/web-releases.json` pins for it), then the app |
-| Deploy command | `node service/deploy.ts`: the migrations on Neon's production branch (no branch is made for a deploy), the bucket, then the Worker with the secrets it lacks (the first build prints the link in its log), then the release's files the Remote serves to anyone (`service/mirror.ts`): each root `core/src/root.rs` pins and the desktop app `shared/desktop-releases.json` pins for `RELEASE`, taken from the GitHub release where the bucket lacks them, checked against those pins, and put with wrangler |
+| Deploy command | `node service/deploy.ts`: the migrations on Neon's production branch (no branch is made for a deploy; a contract step waits until the new Worker answers), the bucket, then the Worker with the secrets it lacks (the first build prints the link in its log), then the release's files the Remote serves to anyone (`service/mirror.ts`): each root `core/src/root.rs` pins and the desktop app `shared/desktop-releases.json` pins for `RELEASE`, taken from the GitHub release where the bucket lacks them, checked against those pins, and put with wrangler |
 | Variables and secrets | `NEON_PROJECT_ID`; secrets `NEON_API_KEY` (a Neon API key for the project) and `GITHUB_TOKEN` (read-only, for this private repository's releases: the build's Prompt and the deploy's release files) |
 | Branch control | main; no preview builds |
 

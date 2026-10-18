@@ -6,7 +6,10 @@
 //
 //   node service/deploy.ts
 //       the migrations, as the database's owner, on the project's default
-//       branch (production: no branch is made for a deploy); the bucket, if
+//       branch (production: no branch is made for a deploy), up to the first
+//       contract step not applied yet (stages.ts: one that drops what the
+//       Worker running now still reads, which waits for the new Worker and
+//       runs once it answers); the bucket, if
 //       there is none; then the Worker, given what it lacks of what it needs,
 //       and asked whether it answers from its database:
 //         DATABASE_URL, as remote_worker: the login role it connects as, a
@@ -40,7 +43,7 @@ import {readFileSync} from 'node:fs';
 import {sql} from 'drizzle-orm';
 import {enterEmail} from './enter.ts';
 import {mirror, remoteStore} from './mirror.ts';
-import {defaultBranchUrl, migrateRemote, owner as ownerOn, workerRole} from './neon.ts';
+import {defaultBranchUrl, migrateBeforeWorker, migrateRemote, owner as ownerOn, workerRole} from './neon.ts';
 import {pinnedDesktop, pinnedRoots} from './releases.ts';
 
 const config = new URL('../wrangler.toml', import.meta.url).pathname;
@@ -130,7 +133,8 @@ if (!step) {
   const given = process.env.ENTER_KEY || undefined;
   if (given && !/^[A-Za-z0-9_-]{32,}$/.test(given)) { console.error('ENTER_KEY: 32 or more letters, digits, - and _'); process.exit(2); }
   const {url, pool, db} = await owner();
-  await migrateRemote(db);
+  const waiting = await migrateBeforeWorker(db);
+  if (waiting) console.log(`migrations: ${waiting} and after wait for the new Worker`);
   console.log('migrations: done');
   const bucket = vars('bucket_name')!;
   if ((await wrangler(['r2', 'bucket', 'info', bucket, '--json'], {heard: true})).code !== 0) await must(['r2', 'bucket', 'create', bucket]);
@@ -146,6 +150,13 @@ if (!step) {
   await must(['deploy', ...(Object.keys(give).length ? ['--secrets-file', '/dev/stdin'] : [])], JSON.stringify(give));
   if (made) handOn(give.ENTER_KEY, 'This Remote has its first link.');
   await answers(vars('BASE_URL')!);
+  if (waiting) {
+    // The Worker that read what the contract step drops is gone now.
+    const later = await owner();
+    await migrateRemote(later.db);
+    await later.pool.end();
+    console.log('migrations: the contract step is done');
+  }
   await releaseFiles(bucket);
 } else if (step === 'link') {
   const as = vars('ENTER_AS');

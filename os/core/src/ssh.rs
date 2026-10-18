@@ -8,20 +8,27 @@
 //!   port       one a person on a host: 22000 plus their user number, the
 //!              same every time (whatever repos there are) and never another
 //!              person's on the same host; each repo is reached at it by its
-//!              name as the SSH user (`ssh -p 22000 notes@192.168.1.5`)
-//!   where      every address of this host, but taken only on loopback and
-//!              on private networks (a LAN, a VPN's 100.64/10, link-local):
-//!              a connection that came in on a public address is closed
+//!              name as the SSH user (`ssh -p 22000 notes@127.0.0.1`)
+//!   scope      who may connect, chosen when it is turned on and kept on this
+//!              device alone (`<data>/ssh/scope.json`): this device only
+//!              (the default: 127.0.0.1 and ::1, so no other PC finds the
+//!              port open at all), or PCs on the same network too (each
+//!              private or VPN address of the host besides, one by one; never
+//!              0.0.0.0, never a public address), looked at again every few
+//!              seconds so an address that goes or changes is let go
 //!   record     `<data>/ssh/listening.json` while the listener runs, as a
 //!              running Prompt records itself (prompt.rs), so l3 and the app
 //!              see it and stop it; the host key beside it, made once
-//!   Remote     which devices listen, per device (service/ssh.ts): the
-//!              listener says so when it starts and asks every few seconds
-//!              whether it still should (off from any page stops it)
+//!   Remote     only that a device listens, and to whom (its scope word),
+//!              per device (service/ssh.ts): no address, port or repo name
+//!              leaves the device. The listener says so when it starts and
+//!              asks every few seconds whether it still should (off from any
+//!              page stops it); where it is reached is worked out and shown
+//!              on the device alone (`l3 address`, the app's Runtime)
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -146,40 +153,106 @@ pub fn port() -> u16 {
         .unwrap_or_else(|| port_for(unsafe { libc::getuid() }))
 }
 
-/// Whether a connection that came in on this address of the host is taken: loopback, a private network
-/// (10/8, 172.16/12, 192.168/16), a VPN's shared space (100.64/10, Tailscale's) or link-local. Not a public one.
+/// Who may connect: from this device only (the default), or from PCs on the same network too. Chosen when SSH is
+/// turned on and kept on this device alone; the Remote hears only this word, never an address.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Scope {
+    /// 127.0.0.1 and ::1 only: another PC finds the port closed, with no handshake and no banner.
+    #[default]
+    Device,
+    /// Each private or VPN address of the host besides, one by one: never 0.0.0.0, never a public address.
+    Network,
+}
+
+impl Scope {
+    /// The word for it: in `l3 address ssh on device|network`, the record and what the Remote hears.
+    pub fn word(self) -> &'static str {
+        match self { Scope::Device => "device", Scope::Network => "network" }
+    }
+
+    pub fn from_word(w: &str) -> Option<Scope> {
+        match w { "device" => Some(Scope::Device), "network" => Some(Scope::Network), _ => None }
+    }
+
+    /// Who may connect, said plainly.
+    pub fn said(self) -> String {
+        match self {
+            Scope::Device => crate::tr!("from this device only", "この端末からだけ"),
+            Scope::Network => crate::tr!("from PCs on the same network too", "同じネットワークの PC からも"),
+        }
+    }
+}
+
+fn scope_file(data: &Path) -> PathBuf {
+    dir(data).join("scope.json")
+}
+
+/// The scope chosen on this device last, or this device only when none was.
+pub fn scope(data: &Path) -> Scope {
+    std::fs::read(scope_file(data)).ok().and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+        .and_then(|v| v["scope"].as_str().and_then(Scope::from_word)).unwrap_or_default()
+}
+
+/// Keep the scope chosen, on this device (never sent).
+pub fn set_scope(data: &Path, s: Scope) -> std::io::Result<()> {
+    crate::boundary::private_dir(&dir(data))?;
+    crate::atomic::replace(&scope_file(data), serde_json::json!({"scope": s.word()}).to_string().as_bytes(), crate::atomic::How::PRIVATE)
+}
+
+/// Whether an IPv4 address is on a private network: a LAN (10/8, 172.16/12, 192.168/16), a VPN's shared space
+/// (100.64/10, Tailscale's) or link-local (169.254/16).
+fn private_v4(v: Ipv4Addr) -> bool {
+    v.is_private() || v.is_link_local() || (v.octets()[0] == 100 && v.octets()[1] & 0xc0 == 64)
+}
+
+/// Whether a connection that came in on this address of the host is taken: loopback or a private network. What
+/// the listener binds is that already; this is said again of each connection, in case.
 pub fn reachable(ip: IpAddr) -> bool {
     match ip {
-        IpAddr::V4(v) => v.is_loopback() || v.is_private() || v.is_link_local() || (v.octets()[0] == 100 && v.octets()[1] & 0xc0 == 64),
+        IpAddr::V4(v) => v.is_loopback() || private_v4(v),
         // An IPv4 connection to a socket that takes both comes as ::ffff:a.b.c.d.
         IpAddr::V6(v) => v.to_ipv4_mapped().is_some_and(|m| reachable(IpAddr::V4(m))) || v.is_loopback(),
     }
 }
 
-/// This host's IPv4 addresses a connection is taken on, its LAN's first: the one its traffic leaves by when that
-/// one is taken, then the rest, loopback last.
-pub fn addresses() -> Vec<Ipv4Addr> {
-    let mut all = interfaces();
-    all.retain(|a| reachable(IpAddr::V4(*a)));
-    // Which way out the host would send to the world (a UDP socket's connect sends nothing).
-    let out = std::net::UdpSocket::bind("0.0.0.0:0").and_then(|s| { s.connect("192.0.2.1:9")?; s.local_addr() }).ok()
-        .and_then(|a| match a.ip() { IpAddr::V4(v) => Some(v), _ => None });
-    all.sort_by_key(|a| (a.is_loopback(), Some(*a) != out, a.is_link_local(), a.octets()[0] == 100, *a));
-    all.dedup();
-    if !all.iter().any(|a| a.is_loopback()) { all.push(Ipv4Addr::LOCALHOST); }
-    all
+/// Where the listener listens, for `scope`, given the host's interface addresses: 127.0.0.1 and ::1 always; with
+/// Network, each private or VPN IPv4 address of the host besides, the LAN's before a VPN's and link-local. Never the
+/// unspecified address (every interface), never a public one, and no IPv6 but loopback.
+pub fn listen_on(scope: Scope, interfaces: &[IpAddr]) -> Vec<IpAddr> {
+    let mut out: Vec<IpAddr> = Vec::new();
+    if scope == Scope::Network {
+        let mut lan: Vec<Ipv4Addr> = interfaces.iter().filter_map(|a| match a { IpAddr::V4(v) => Some(*v), _ => None })
+            .filter(|v| private_v4(*v) && !v.is_loopback() && !v.is_unspecified() && !v.is_broadcast()).collect();
+        lan.sort_by_key(|a| (a.is_link_local(), a.octets()[0] == 100, *a));
+        lan.dedup();
+        out.extend(lan.into_iter().map(IpAddr::V4));
+    }
+    out.push(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    out.push(IpAddr::V6(Ipv6Addr::LOCALHOST));
+    out
 }
 
-fn interfaces() -> Vec<Ipv4Addr> {
+/// This host's interface addresses, IPv4 and IPv6, as the kernel has them now.
+pub fn interfaces() -> Vec<IpAddr> {
     let mut out = Vec::new();
     let mut list: *mut libc::ifaddrs = std::ptr::null_mut();
     if unsafe { libc::getifaddrs(&mut list) } != 0 { return out; }
     let mut at = list;
     while !at.is_null() {
         let i = unsafe { &*at };
-        if !i.ifa_addr.is_null() && unsafe { (*i.ifa_addr).sa_family } as i32 == libc::AF_INET {
-            let sin = unsafe { &*(i.ifa_addr as *const libc::sockaddr_in) };
-            out.push(Ipv4Addr::from(u32::from_be(sin.sin_addr.s_addr)));
+        if !i.ifa_addr.is_null() {
+            match unsafe { (*i.ifa_addr).sa_family } as i32 {
+                libc::AF_INET => {
+                    let sin = unsafe { &*(i.ifa_addr as *const libc::sockaddr_in) };
+                    out.push(IpAddr::V4(Ipv4Addr::from(u32::from_be(sin.sin_addr.s_addr))));
+                }
+                libc::AF_INET6 => {
+                    let sin6 = unsafe { &*(i.ifa_addr as *const libc::sockaddr_in6) };
+                    out.push(IpAddr::V6(Ipv6Addr::from(sin6.sin6_addr.s6_addr)));
+                }
+                _ => {}
+            }
         }
         at = i.ifa_next;
     }
@@ -187,9 +260,25 @@ fn interfaces() -> Vec<Ipv4Addr> {
     out
 }
 
+/// The address a destination names, of those listened on: the one the host's traffic leaves by when it is one
+/// of them, else the first private one, else 127.0.0.1.
+pub fn host(bound: &[IpAddr]) -> Ipv4Addr {
+    let v4: Vec<Ipv4Addr> = bound.iter().filter_map(|a| match a { IpAddr::V4(v) if !v.is_loopback() => Some(*v), _ => None }).collect();
+    if v4.is_empty() { return Ipv4Addr::LOCALHOST; }
+    // Which way out the host would send to the world (a UDP socket's connect sends nothing).
+    let out = std::net::UdpSocket::bind("0.0.0.0:0").and_then(|s| { s.connect("192.0.2.1:9")?; s.local_addr() }).ok()
+        .and_then(|a| match a.ip() { IpAddr::V4(v) => Some(v), _ => None });
+    out.filter(|o| v4.contains(o)).unwrap_or(v4[0])
+}
+
 /// Where each repo is reached, one a line, as OpenSSH takes it: `ssh -p PORT REPO@HOST`.
 pub fn destinations(port: u16, repos: &[String], host: Ipv4Addr) -> Vec<String> {
     repos.iter().map(|r| format!("ssh -p {port} {r}@{host}")).collect()
+}
+
+/// The repos here, by name: the SSH users there are (no repo is walked).
+pub fn repo_names() -> Vec<String> {
+    crate::repos::Repos::open().and_then(|r| r.names()).unwrap_or_default()
 }
 
 // ---- failed tries ----
@@ -202,16 +291,25 @@ pub const TRIES_WHILE: Duration = Duration::from_secs(60);
 #[derive(Default)]
 pub struct Tries(HashMap<IpAddr, Vec<Instant>>);
 
+/// One address one way: an IPv4 peer that reached a socket taking both comes as ::ffff:a.b.c.d, and is a.b.c.d.
+pub fn canonical(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V6(v) => v.to_ipv4_mapped().map_or(ip, IpAddr::V4),
+        _ => ip,
+    }
+}
+
 impl Tries {
     /// Whether `ip` is held off now.
     pub fn held(&mut self, ip: IpAddr, now: Instant) -> bool {
+        let ip = canonical(ip);
         let Some(v) = self.0.get_mut(&ip) else { return false };
         v.retain(|t| now.duration_since(*t) < TRIES_WHILE);
         if v.is_empty() { self.0.remove(&ip); return false; }
         v.len() >= TRIES
     }
     pub fn failed(&mut self, ip: IpAddr, now: Instant) {
-        let v = self.0.entry(ip).or_default();
+        let v = self.0.entry(canonical(ip)).or_default();
         v.push(now);
         // Kept no longer than it counts.
         if v.len() > TRIES { v.remove(0); }
@@ -220,7 +318,8 @@ impl Tries {
 
 // ---- the listener's record ----
 
-/// The listener running here, recorded while it runs: its process, where it listens, its host key's fingerprint.
+/// The listener running here, recorded while it runs: its process, its port, who may connect and the addresses it
+/// listens on for that, its host key's fingerprint. Kept on this device (owner-only), never sent.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Listening {
     pub pid: u32,
@@ -229,8 +328,43 @@ pub struct Listening {
     pub port: u16,
     /// When it started, in ms since the epoch.
     pub started: u64,
-    pub destinations: Vec<String>,
+    #[serde(default)]
+    pub scope: Scope,
+    /// The addresses it listens on now (listen_on: loopback, and with Network the private ones).
+    #[serde(default)]
+    pub bound: Vec<IpAddr>,
     pub fingerprint: String,
+}
+
+impl Listening {
+    /// Where each repo here is reached, worked out on this device as it is asked.
+    pub fn destinations(&self) -> Vec<String> {
+        destinations(self.port, &repo_names(), host(&self.bound))
+    }
+}
+
+/// This device's SSH as l3 address and the app's card show it, worked out here and never sent: whether it listens,
+/// who may connect (the scope chosen, when it is off), where each repo is reached, the host key's fingerprint, and
+/// how many keys `.authorized_keys` lets in.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Here {
+    pub on: bool,
+    pub scope: Scope,
+    pub port: Option<u16>,
+    pub bound: Vec<String>,
+    pub destinations: Vec<String>,
+    pub fingerprint: Option<String>,
+    pub keys: usize,
+    pub started: Option<u64>,
+}
+
+pub fn here(data: &Path) -> Here {
+    let keys = keys().keys.len();
+    match listening(data) {
+        Some(l) => Here { on: true, scope: l.scope, port: Some(l.port), bound: l.bound.iter().map(|a| a.to_string()).collect(),
+            destinations: l.destinations(), fingerprint: Some(l.fingerprint), keys, started: Some(l.started) },
+        None => Here { on: false, scope: scope(data), port: None, bound: Vec::new(), destinations: Vec::new(), fingerprint: None, keys, started: None },
+    }
 }
 
 /// Where SSH keeps its things on this device.
@@ -251,9 +385,10 @@ fn record_file(data: &Path) -> PathBuf {
 pub struct Recorded(PathBuf, Listening);
 
 impl Recorded {
-    /// Where it is reached now (the host's addresses, or the repos, changed).
-    pub fn set_destinations(&mut self, destinations: Vec<String>) -> std::io::Result<()> {
-        self.1.destinations = destinations;
+    /// What it listens on now (the scope chosen, or the host's addresses, changed).
+    pub fn set_bound(&mut self, scope: Scope, bound: Vec<IpAddr>) -> std::io::Result<()> {
+        self.1.scope = scope;
+        self.1.bound = bound;
         write_record(&self.0, &self.1)
     }
 }
@@ -270,12 +405,12 @@ fn write_record(path: &Path, l: &Listening) -> std::io::Result<()> {
 }
 
 /// Record that this process listens.
-pub fn record(data: &Path, port: u16, destinations: Vec<String>, fingerprint: String) -> std::io::Result<Recorded> {
+pub fn record(data: &Path, port: u16, scope: Scope, bound: Vec<IpAddr>, fingerprint: String) -> std::io::Result<Recorded> {
     crate::boundary::private_dir(&dir(data))?;
     let pid = std::process::id();
     let start_ticks = crate::prompt::start_ticks(pid).ok_or_else(|| std::io::Error::other(format!("/proc/{pid}/stat")))?;
     let started = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64);
-    let l = Listening { pid, start_ticks, port, started, destinations, fingerprint };
+    let l = Listening { pid, start_ticks, port, started, scope, bound, fingerprint };
     let path = record_file(data);
     write_record(&path, &l)?;
     Ok(Recorded(path, l))
@@ -287,6 +422,24 @@ pub fn listening(data: &Path) -> Option<Listening> {
     let l: Listening = serde_json::from_slice(&std::fs::read(&path).ok()?).ok()?;
     if crate::prompt::start_ticks(l.pid) == Some(l.start_ticks) && !crate::prompt::zombie(l.pid) { return Some(l); }
     let _ = std::fs::remove_file(&path);
+    None
+}
+
+/// Have the listener here take the scope kept now (set_scope) at once rather than at its next beat: it binds what
+/// that scope asks, lets go of the rest and closes the connections that came in on what it let go. The record as it
+/// is then, or None when it did not within a few seconds (or none runs).
+pub fn rescope(data: &Path, to: Scope) -> Option<Listening> {
+    let l = listening(data)?;
+    if l.scope == to { return Some(l); }
+    unsafe { libc::kill(l.pid as libc::pid_t, libc::SIGUSR1) };
+    let started = Instant::now();
+    while started.elapsed() < Duration::from_secs(5) {
+        match listening(data) {
+            Some(n) if n.scope == to => return Some(n),
+            Some(_) => std::thread::sleep(Duration::from_millis(20)),
+            None => return None,
+        }
+    }
     None
 }
 
@@ -308,12 +461,16 @@ pub fn stop(data: &Path) -> Option<Listening> {
 }
 
 // ---- the Remote (service/ssh.ts) ----
+//
+// What it hears is that this device listens, and the scope word: no address,
+// no port, no repo name. Pages of the account show "<device> listens for SSH"
+// with its off switch, and nothing of where.
 
 use crate::remote::{Client, Failure};
 
-/// Tell the Remote this device listens, at these destinations.
-pub fn announce(port: u16, destinations: &[String]) -> crate::Result<()> {
-    Client::open()?.json("PUT", "/v1/ssh/this", Some(serde_json::json!({"port": port, "destinations": destinations}))).map(|_| ())
+/// Tell the Remote this device listens, to whom (the scope's word, nothing more).
+pub fn announce(scope: Scope) -> crate::Result<()> {
+    Client::open()?.json("PUT", "/v1/ssh/this", Some(serde_json::json!({"scope": scope.word()}))).map(|_| ())
 }
 
 /// Tell the Remote this device stopped.
@@ -334,10 +491,10 @@ pub enum Heard {
     Unreachable,
 }
 
-/// Ask the Remote whether this device's SSH is still on (and say where it is now).
-pub fn beat(destinations: &[String]) -> Heard {
+/// Ask the Remote whether this device's SSH is still on (and say to whom it listens now).
+pub fn beat(scope: Scope) -> Heard {
     let Some(_) = crate::remote::connection() else { return Heard::SignedOut };
-    let asked = Client::open().and_then(|c| c.json("POST", "/v1/ssh/this/beat", Some(serde_json::json!({"destinations": destinations}))));
+    let asked = Client::open().and_then(|c| c.json("POST", "/v1/ssh/this/beat", Some(serde_json::json!({"scope": scope.word()}))));
     match asked {
         Ok(v) if v["on"] == serde_json::json!(true) => Heard::On,
         Ok(v) if v["on"] == serde_json::json!(false) => Heard::Off,
@@ -416,8 +573,52 @@ mod tests {
         for no in ["8.8.8.8", "100.128.0.1", "172.32.0.1", "203.0.113.9", "2001:db8::1", "::ffff:8.8.8.8"] {
             assert!(!reachable(no.parse().unwrap()), "{no}");
         }
-        let here = addresses();
-        assert!(here.contains(&Ipv4Addr::LOCALHOST) && here.last() == Some(&Ipv4Addr::LOCALHOST), "{here:?}");
+    }
+
+    fn ips(list: &[&str]) -> Vec<IpAddr> {
+        list.iter().map(|a| a.parse().unwrap()).collect()
+    }
+
+    #[test]
+    fn this_device_only_listens_on_loopback_alone_whatever_the_host_has() {
+        let have = ips(&["127.0.0.1", "192.168.1.5", "10.0.0.7", "100.101.102.103", "203.0.113.9", "8.8.8.8", "::1", "fe80::1", "2001:db8::5", "fd00::1"]);
+        assert_eq!(listen_on(Scope::Device, &have), ips(&["127.0.0.1", "::1"]));
+        assert_eq!(listen_on(Scope::Device, &[]), ips(&["127.0.0.1", "::1"]));
+    }
+
+    #[test]
+    fn the_same_network_listens_on_each_private_address_and_never_a_public_one_or_every_interface() {
+        // A laptop on Wi-Fi with Tailscale, a docker bridge, a link-local, and a public address on another interface.
+        let have = ips(&["127.0.0.1", "127.0.1.1", "203.0.113.9", "192.168.1.5", "100.101.102.103", "172.17.0.1", "169.254.3.4", "10.0.0.7",
+            "0.0.0.0", "255.255.255.255", "100.128.0.1", "172.32.0.1", "8.8.8.8", "::1", "fe80::1", "2001:db8::5", "fd00::1", "::", "::ffff:192.168.1.9"]);
+        let on = listen_on(Scope::Network, &have);
+        assert_eq!(on, ips(&["10.0.0.7", "172.17.0.1", "192.168.1.5", "100.101.102.103", "169.254.3.4", "127.0.0.1", "::1"]));
+        for a in &on { assert!(reachable(*a) && !a.is_unspecified(), "{a}"); }
+        for never in ["203.0.113.9", "8.8.8.8", "100.128.0.1", "172.32.0.1", "0.0.0.0", "255.255.255.255", "2001:db8::5", "::", "fe80::1", "fd00::1"] {
+            assert!(!on.contains(&never.parse().unwrap()), "{never}");
+        }
+        // A host with only a public address (a server on the Internet): loopback alone, as this device only.
+        assert_eq!(listen_on(Scope::Network, &ips(&["127.0.0.1", "198.51.100.20", "2001:db8::1"])), ips(&["127.0.0.1", "::1"]));
+        // The same address twice (two interfaces) is listened on once.
+        assert_eq!(listen_on(Scope::Network, &ips(&["192.168.1.5", "192.168.1.5"])), ips(&["192.168.1.5", "127.0.0.1", "::1"]));
+        // The address a destination names is one listened on, never a public one, and 127.0.0.1 when only loopback is.
+        assert_eq!(host(&ips(&["127.0.0.1", "::1"])), Ipv4Addr::LOCALHOST);
+        assert!(on.contains(&IpAddr::V4(host(&on))));
+    }
+
+    #[test]
+    fn the_scope_is_kept_on_this_device_and_this_device_only_until_one_is_chosen() {
+        let data = std::env::temp_dir().join(format!("length3-ssh-scope-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&data);
+        assert_eq!(scope(&data), Scope::Device);
+        set_scope(&data, Scope::Network).unwrap();
+        assert_eq!(scope(&data), Scope::Network);
+        set_scope(&data, Scope::Device).unwrap();
+        assert_eq!(scope(&data), Scope::Device);
+        std::fs::write(scope_file(&data), "{\"scope\":\"everyone\"}").unwrap();
+        assert_eq!(scope(&data), Scope::Device);
+        assert_eq!((Scope::from_word("network"), Scope::from_word("0.0.0.0")), (Some(Scope::Network), None));
+        let _ = std::fs::remove_dir_all(&data);
     }
 
     #[test]
@@ -431,6 +632,10 @@ mod tests {
         assert!(t.held(a, now) && !t.held(b, now));
         assert!(t.held(a, now + TRIES_WHILE - Duration::from_secs(1)));
         assert!(!t.held(a, now + TRIES_WHILE));
+        // An IPv4 peer is one peer however its address came: ::ffff:a.b.c.d counts as a.b.c.d.
+        let (v4, mapped): (IpAddr, IpAddr) = ("192.168.1.11".parse().unwrap(), "::ffff:192.168.1.11".parse().unwrap());
+        for i in 0..TRIES { t.failed(if i % 2 == 0 { v4 } else { mapped }, now); }
+        assert!(t.held(v4, now) && t.held(mapped, now));
     }
 
     #[test]
@@ -452,15 +657,16 @@ mod tests {
         let data = std::env::temp_dir().join(format!("length3-ssh-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&data);
         assert_eq!(listening(&data), None);
-        let mut kept = record(&data, 22000, vec!["ssh -p 22000 notes@127.0.0.1".into()], "SHA256:x".into()).unwrap();
+        let mut kept = record(&data, 22000, Scope::Device, ips(&["127.0.0.1", "::1"]), "SHA256:x".into()).unwrap();
         let l = listening(&data).expect("recorded");
-        assert_eq!((l.pid, l.port, l.destinations.len()), (std::process::id(), 22000, 1));
-        kept.set_destinations(vec![]).unwrap();
-        assert_eq!(listening(&data).map(|l| l.destinations.len()), Some(0));
+        assert_eq!((l.pid, l.port, l.scope, l.bound.len()), (std::process::id(), 22000, Scope::Device, 2));
+        assert!(l.destinations().iter().all(|d| d.starts_with("ssh -p 22000 ") && d.ends_with("@127.0.0.1")), "{:?}", l.destinations());
+        kept.set_bound(Scope::Network, ips(&["192.168.1.5", "127.0.0.1", "::1"])).unwrap();
+        assert_eq!(listening(&data).map(|l| (l.scope, l.bound.len())), Some((Scope::Network, 3)));
         drop(kept);
         assert_eq!(listening(&data), None);
         // One whose process is gone is let go when read.
-        std::fs::write(record_file(&data), r#"{"pid":4194304,"startTicks":1,"port":22000,"started":1,"destinations":[],"fingerprint":""}"#).unwrap();
+        std::fs::write(record_file(&data), r#"{"pid":4194304,"startTicks":1,"port":22000,"started":1,"scope":"device","bound":["127.0.0.1"],"fingerprint":""}"#).unwrap();
         assert_eq!(listening(&data), None);
         assert!(!record_file(&data).exists());
         let _ = std::fs::remove_dir_all(&data);

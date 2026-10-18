@@ -5,12 +5,13 @@
 // and Reject. What is not committed is the draft against the work's last
 // commit, by folder. The app asks its core; a browser does the same here.
 
-import {at, baseOf, blobText, headTree, lineOf, setHead, showLine, sync, treeAt, type Tree} from './draft.ts';
+import {at, baseOf, blobText, headTree, lineOf, setHead, sha256, showLine, sync, treeAt, type Tree} from './draft.ts';
 import {isNative, native} from './host.ts';
 import {counts, hunks, lineOps, type DiffLine} from './linediff.ts';
 import {api, connection, json, RemoteError} from './remote.ts';
 import {restore} from './putback.ts';
 import {store} from './repos.ts';
+import {atMost} from './runs.ts';
 import {kindOf} from './text.ts';
 import {t} from './i18n.ts';
 
@@ -28,7 +29,7 @@ const folderOf = (p: string) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')
 interface Pair { path: string; status: FileChange['status']; before: string | null; after: string | null; binary: boolean }
 
 async function hereTree(repo: string): Promise<Record<string, string>> {
-  // Only files count; a file's text is compared, not its digest, so no hashing here.
+  // Only files count, by their text (pairs() compares a file's digest with the commit's before reading the commit's text).
   const out: Record<string, string> = {};
   const walk = async (dir: string) => {
     for (const e of await store.tree(repo, dir)) {
@@ -42,20 +43,36 @@ async function hereTree(repo: string): Promise<Record<string, string>> {
   return out;
 }
 
+/** Blobs read from the Remote at once, at most: side by side, not one round trip after another. */
+const READ_AT_ONCE = 6;
+
+/** Each file's digest as last worked out, by repo and path, kept while its text stays the same. */
+const digests = new Map<string, {text: string; sha: string}>();
+const enc = new TextEncoder();
+async function digestOf(repo: string, path: string, text: string): Promise<string> {
+  const k = `${repo}\0${path}`, d = digests.get(k);
+  if (d?.text === text) return d.sha;
+  const sha = await sha256(enc.encode(text));
+  digests.set(k, {text, sha});
+  return sha;
+}
+
 async function pairs(repo: string): Promise<Pair[]> {
   const then: Tree = connection() ? await headTree(repo).catch(() => ({})) : {};
   const away = new Set(baseOf(repo)?.away ?? []);
   const now = await hereTree(repo);
-  const out: Pair[] = [];
-  for (const path of [...new Set([...Object.keys(then), ...Object.keys(now)])].sort()) {
+  const paths = [...new Set([...Object.keys(then), ...Object.keys(now)])].sort();
+  const out = await atMost(READ_AT_ONCE, paths, async (path): Promise<Pair | null> => {
     const was = then[path], is = now[path];
-    if (was === null || (was === undefined && is === undefined) || away.has(path)) continue;
+    if (was === null || (was === undefined && is === undefined) || away.has(path)) return null;
+    // The same digest as at the last commit: unchanged, and nothing is read back from the Remote to say so.
+    if (typeof was === 'string' && is !== undefined && await digestOf(repo, path, is) === was) return null;
     const before = typeof was === 'string' ? await blobText(was) : '';
-    if (before === null) { if (is === undefined) out.push({path, status: 'removed', before: null, after: null, binary: true}); continue; }
-    if (is !== undefined && before === is && typeof was === 'string') continue;
-    out.push({path, status: was === undefined ? 'added' : is === undefined ? 'removed' : 'modified', before, after: is ?? '', binary: false});
-  }
-  return out;
+    if (before === null) return is === undefined ? {path, status: 'removed', before: null, after: null, binary: true} : null;
+    if (is !== undefined && before === is && typeof was === 'string') return null;
+    return {path, status: was === undefined ? 'added' : is === undefined ? 'removed' : 'modified', before, after: is ?? '', binary: false};
+  });
+  return out.filter((x): x is Pair => x !== null);
 }
 
 function group(files: FileChange[], connected: boolean): Changes {
@@ -308,14 +325,13 @@ export const reject = (repo: string, c: Change, note = ''): Promise<Change> =>
 export async function changeDiff(repo: string, c: Change): Promise<FileDiff[]> {
   if (isNative) return native<FileDiff[]>('change_diff', {repo, id: c.id});
   const [then, now] = await Promise.all([cutTree(repo, c.base), cutTree(repo, c.head)]);
-  const out: FileDiff[] = [];
-  for (const path of [...new Set([...Object.keys(then), ...Object.keys(now)])].sort()) {
+  const paths = [...new Set([...Object.keys(then), ...Object.keys(now)])].sort()
+    .filter((p) => then[p] !== now[p] && (typeof then[p] === 'string' || typeof now[p] === 'string'));
+  return atMost(READ_AT_ONCE, paths, async (path): Promise<FileDiff> => {
     const a = then[path], b = now[path];
-    if (a === b || !(typeof a === 'string' || typeof b === 'string')) continue;
-    const before = typeof a === 'string' ? await blobText(a) : '', after = typeof b === 'string' ? await blobText(b) : '';
+    const [before, after] = await Promise.all([typeof a === 'string' ? blobText(a) : '', typeof b === 'string' ? blobText(b) : '']);
     const status: FileChange['status'] = typeof a !== 'string' ? 'added' : typeof b !== 'string' ? 'removed' : 'modified';
-    if (before === null || after === null) { out.push({path, status, binary: true, lines: [], more: 0}); continue; }
-    out.push({path, status, binary: false, ...hunks(lineOps(before, after))});
-  }
-  return out;
+    if (before === null || after === null) return {path, status, binary: true, lines: [], more: 0};
+    return {path, status, binary: false, ...hunks(lineOps(before, after))};
+  });
 }

@@ -10,15 +10,23 @@
 //!             tried, so one added or removed elsewhere counts here at once);
 //!             no password, no keyboard-interactive; an address refused too
 //!             often is not heard for a minute (core ssh::Tries)
-//!   where     every address, but a connection is taken only if it came in
-//!             on loopback or a private network (core ssh::reachable)
+//!   where     the scope chosen (core ssh::listen_on): 127.0.0.1 and ::1
+//!             alone, so another PC finds the port closed; or, for the same
+//!             network too, each private or VPN address besides, a socket
+//!             each, never 0.0.0.0 and never a public address. Looked at
+//!             again at every beat (and at once on SIGUSR1, when another
+//!             scope is chosen): an address gone or no longer asked for is
+//!             let go, and the connections that came in on it are closed
+//!   says      `SSH-2.0-length3` when a client connects: not the library or
+//!             its version
 //!   channels  sessions only: no port or agent forwarding, no X11, no
 //!             subsystem (sftp); a command's exit code goes back to ssh
 //!   lifetime  one thread (every session's process is started from it, so
 //!             each dies with the listener: PR_SET_PDEATHSIG); asks the
-//!             Remote every 5 s whether it is still on, and stops, ending
-//!             every session, when it is off, the device is signed out, or
-//!             it is told to (SIGTERM: l3 address ssh off, logout, the app)
+//!             Remote every 5 s whether it is still on (saying only the
+//!             scope's word), and stops, ending every session, when it is
+//!             off, the device is signed out, or it is told to (SIGTERM:
+//!             l3 address ssh off, logout, the app)
 
 use length3_core::{paths, remote, repos, ssh, tr};
 use russh::keys::{PrivateKey, PublicKey};
@@ -26,7 +34,7 @@ use russh::server::{self, Auth, Msg, Session};
 use russh::{Channel, ChannelId, ChannelMsg, MethodKind, MethodSet};
 use std::collections::HashSet;
 use std::io::{Read, Write};
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -73,16 +81,6 @@ pub fn host_key(data: &Path) -> Result<PrivateKey, String> {
 /// The host key's fingerprint, as ssh shows it when it first connects.
 pub fn fingerprint(key: &PrivateKey) -> String {
     ssh::fingerprint(&key.public_key().to_bytes().unwrap_or_default())
-}
-
-/// The repos here, by name: the SSH users there are. Asked every few seconds (BEAT), so no repo is walked.
-fn repo_names() -> Vec<String> {
-    repos::Repos::open().and_then(|r| r.names()).unwrap_or_default()
-}
-
-/// Where each repo is reached now.
-pub fn destinations(port: u16) -> Vec<String> {
-    ssh::destinations(port, &repo_names(), ssh::addresses()[0])
 }
 
 /// What every connection shares.
@@ -393,8 +391,75 @@ async fn pump(mut from: impl tokio::io::AsyncRead + Unpin, handle: server::Handl
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Why { Off, SignedOut, Asked }
 
-/// Run the listener: bind, tell the Remote, record itself, say `ready` on standard output (what turning on waits
-/// for), then serve until it stops. Standard output and error are the log from then on.
+/// What it says of itself when a client connects, before anything else: the protocol and a plain name, not the
+/// SSH library or its version.
+const SERVER_ID: &str = "SSH-2.0-length3";
+
+/// The key kinds offered and taken, for the host key and the clients' (ssh::KINDS): no RSA.
+const KEY_KINDS: [russh::keys::ssh_key::Algorithm; 4] = {
+    use russh::keys::ssh_key::{Algorithm, EcdsaCurve};
+    [Algorithm::Ed25519, Algorithm::Ecdsa { curve: EcdsaCurve::NistP256 }, Algorithm::Ecdsa { curve: EcdsaCurve::NistP384 }, Algorithm::Ecdsa { curve: EcdsaCurve::NistP521 }]
+};
+
+/// The sockets listened on, one an address (ssh::listen_on), each with the task taking its connections; and the
+/// addresses listened on, as every connection watches them: one that came in on an address let go is closed.
+struct Sockets {
+    port: u16,
+    open: Vec<(IpAddr, tokio::task::JoinHandle<()>)>,
+    bound: tokio::sync::watch::Sender<Vec<IpAddr>>,
+}
+
+impl Sockets {
+    /// Listen on what `scope` asks of the host's addresses now, and on nothing else. Run inside the runtime. What it
+    /// listens on then; an error when 127.0.0.1 cannot be listened on (the port is another program's).
+    fn take(&mut self, scope: ssh::Scope, shared: &Arc<Shared>, config: &Arc<server::Config>) -> Result<Vec<IpAddr>, String> {
+        let want = ssh::listen_on(scope, &ssh::interfaces());
+        self.open.retain(|(ip, task)| {
+            let keep = want.contains(ip);
+            if !keep { task.abort(); log(&format!("no longer listening on {ip}")); }
+            keep
+        });
+        for ip in &want {
+            if self.open.iter().any(|(a, _)| a == ip) { continue; }
+            match bind(*ip, self.port) {
+                Ok(l) => {
+                    log(&format!("listening on {ip}"));
+                    self.open.push((*ip, tokio::spawn(take_connections(l, shared.clone(), config.clone(), self.bound.subscribe()))));
+                }
+                Err(e) if *ip == IpAddr::V4(Ipv4Addr::LOCALHOST) => {
+                    return Err(tr!("Port {} cannot be listened on ({}); LENGTH3_SSH_PORT names another", "ポート {} で待てません（{}）。LENGTH3_SSH_PORT で別のポートを選べます", self.port, e));
+                }
+                // ::1 where IPv6 is off, an address gone meanwhile: listened on at a later look if it is there then.
+                Err(e) => log(&format!("not listening on {ip}: {e}")),
+            }
+        }
+        let now: Vec<IpAddr> = want.into_iter().filter(|a| self.open.iter().any(|(b, _)| b == a)).collect();
+        self.bound.send_replace(now.clone());
+        Ok(now)
+    }
+}
+
+/// A socket on one address of this host (never the unspecified one), its connections taken in by the runtime.
+fn bind(ip: IpAddr, port: u16) -> std::io::Result<tokio::net::TcpListener> {
+    let l = std::net::TcpListener::bind((ip, port))?;
+    l.set_nonblocking(true)?;
+    tokio::net::TcpListener::from_std(l)
+}
+
+/// One socket's connections, until it is let go (its task aborted, the socket closed with it).
+async fn take_connections(listener: tokio::net::TcpListener, shared: Arc<Shared>, config: Arc<server::Config>, bound: tokio::sync::watch::Receiver<Vec<IpAddr>>) {
+    loop {
+        match listener.accept().await {
+            Ok((stream, peer)) => accept(stream, peer, &shared, &config, bound.clone()),
+            // Out of descriptors, say: not spun on.
+            Err(_) => tokio::time::sleep(Duration::from_millis(100)).await,
+        }
+    }
+}
+
+/// Run the listener: bind what the scope chosen asks, tell the Remote (the scope's word alone), record itself, say
+/// `ready` on standard output (what turning on waits for), then serve until it stops. Standard output and error are
+/// the log from then on.
 pub fn serve() -> Result<(), String> {
     let data = paths::data_dir();
     if ssh::keys().keys.is_empty() {
@@ -403,22 +468,11 @@ pub fn serve() -> Result<(), String> {
     let key = host_key(&data)?;
     let print = fingerprint(&key);
     let port = ssh::port();
-    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::UNSPECIFIED, port))
-        .map_err(|e| tr!("Port {} cannot be listened on ({}); LENGTH3_SSH_PORT names another", "ポート {} で待てません（{}）。LENGTH3_SSH_PORT で別のポートを選べます", port, e))?;
-    listener.set_nonblocking(true).map_err(|e| e.to_string())?;
-    let mut now = destinations(port);
-    ssh::announce(port, &now)?;
-    let mut recorded = ssh::record(&data, port, now.clone(), print.clone()).map_err(|e| e.to_string())?;
-    // Turning on waits for this line; then the log takes standard output and error.
-    println!("ready");
-    let _ = std::io::stdout().flush();
-    if let Ok(f) = std::fs::OpenOptions::new().create(true).write(true).truncate(true).open(ssh::dir(&data).join("log")) {
-        unsafe { libc::dup2(f.as_raw_fd(), 1); libc::dup2(f.as_raw_fd(), 2); }
-    }
-    log(&format!("listening on port {port} · {print}"));
+    let mut scope = ssh::scope(&data);
     let shared = Arc::new(Shared { exe: std::env::current_exe().map_err(|e| e.to_string())?, keys: Mutex::new((Instant::now(), ssh::keys().keys)),
         tries: Mutex::new(ssh::Tries::default()), sessions: Mutex::new(HashSet::new()) });
     let config = Arc::new(server::Config {
+        server_id: russh::SshId::Standard(SERVER_ID.into()),
         methods: MethodSet::from(&[MethodKind::PublicKey][..]),
         auth_rejection_time: Duration::from_secs(1),
         auth_rejection_time_initial: Some(Duration::ZERO),
@@ -427,35 +481,57 @@ pub fn serve() -> Result<(), String> {
         inactivity_timeout: None,
         keepalive_interval: Some(Duration::from_secs(30)),
         nodelay: true,
+        // The kinds of key there are here (ssh::KINDS), and nothing more said of them (server-sig-algs).
+        preferred: russh::Preferred { key: std::borrow::Cow::Borrowed(&KEY_KINDS), ..Default::default() },
         ..Default::default()
     });
     let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|e| e.to_string())?;
+    let mut sockets = Sockets { port, open: Vec::new(), bound: tokio::sync::watch::channel(Vec::new()).0 };
+    let mut bound = rt.block_on(async { sockets.take(scope, &shared, &config) })?;
+    ssh::announce(scope)?;
+    let mut recorded = ssh::record(&data, port, scope, bound.clone(), print.clone()).map_err(|e| e.to_string())?;
+    // Turning on waits for this line; then the log takes standard output and error.
+    println!("ready");
+    let _ = std::io::stdout().flush();
+    if let Ok(f) = std::fs::OpenOptions::new().create(true).write(true).truncate(true).open(ssh::dir(&data).join("log")) {
+        unsafe { libc::dup2(f.as_raw_fd(), 1); libc::dup2(f.as_raw_fd(), 2); }
+    }
+    log(&format!("on port {port}, {} · {print}", scope.word()));
     let why = rt.block_on(async {
-        let listener = tokio::net::TcpListener::from_std(listener).map_err(|e| e.to_string())?;
         use tokio::signal::unix::{signal, SignalKind};
-        let (mut term, mut int, mut hup) = (signal(SignalKind::terminate()), signal(SignalKind::interrupt()), signal(SignalKind::hangup()));
-        let (term, int, hup) = match (term.as_mut(), int.as_mut(), hup.as_mut()) {
-            (Ok(t), Ok(i), Ok(h)) => (t, i, h),
+        let (mut term, mut int, mut hup, mut usr1) = (signal(SignalKind::terminate()), signal(SignalKind::interrupt()), signal(SignalKind::hangup()), signal(SignalKind::user_defined1()));
+        let (term, int, hup, usr1) = match (term.as_mut(), int.as_mut(), hup.as_mut(), usr1.as_mut()) {
+            (Ok(t), Ok(i), Ok(h), Ok(u)) => (t, i, h, u),
             _ => return Err("signals".to_string()),
+        };
+        // The scope kept now, and the host's addresses now: what is listened on follows both.
+        let mut follow = |sockets: &mut Sockets, scope: &mut ssh::Scope, bound: &mut Vec<IpAddr>| {
+            let next = ssh::scope(&data);
+            match sockets.take(next, &shared, &config) {
+                Ok(now) if (next, &now) != (*scope, &*bound) => {
+                    if next != *scope { log(&format!("now {}", next.word())); }
+                    (*scope, *bound) = (next, now);
+                    let _ = recorded.set_bound(*scope, bound.clone());
+                }
+                Ok(_) => {}
+                Err(e) => log(&e),
+            }
         };
         let mut beat = tokio::time::interval(BEAT);
         beat.tick().await;
         loop {
             tokio::select! {
-                got = listener.accept() => {
-                    let Ok((stream, peer)) = got else { continue };
-                    accept(stream, peer, &shared, &config);
-                }
                 _ = beat.tick() => {
-                    let next = destinations(port);
-                    let said = next.clone();
-                    let heard = tokio::time::timeout(Duration::from_secs(20), tokio::task::spawn_blocking(move || ssh::beat(&said))).await
+                    follow(&mut sockets, &mut scope, &mut bound);
+                    let said = scope;
+                    let heard = tokio::time::timeout(Duration::from_secs(20), tokio::task::spawn_blocking(move || ssh::beat(said))).await
                         .ok().and_then(|r| r.ok()).unwrap_or(ssh::Heard::Unreachable);
                     if !ssh::goes_on(heard) {
                         return Ok(if heard == ssh::Heard::Off { Why::Off } else { Why::SignedOut });
                     }
-                    if next != now { let _ = recorded.set_destinations(next.clone()); now = next; }
                 }
+                // Another scope was chosen (l3 address ssh on device|network): taken now, not at the next beat.
+                _ = usr1.recv() => follow(&mut sockets, &mut scope, &mut bound),
                 _ = term.recv() => return Ok(Why::Asked),
                 _ = int.recv() => return Ok(Why::Asked),
                 _ = hup.recv() => return Ok(Why::Asked),
@@ -477,13 +553,13 @@ pub fn serve() -> Result<(), String> {
     Ok(())
 }
 
-/// A connection: taken only on loopback or a private network, from an address not held off.
-fn accept(stream: tokio::net::TcpStream, peer: SocketAddr, shared: &Arc<Shared>, config: &Arc<server::Config>) {
-    let local = stream.local_addr().map(|a| a.ip()).ok();
-    if !local.is_some_and(ssh::reachable) {
-        log(&format!("{} closed: came in on {}, not a private address", peer.ip(), local.map_or("?".into(), |a| a.to_string())));
+/// A connection: taken only on loopback or a private network, from an address not held off; closed when the
+/// address it came in on is no longer listened on (the scope narrowed, or the address went).
+fn accept(stream: tokio::net::TcpStream, peer: SocketAddr, shared: &Arc<Shared>, config: &Arc<server::Config>, mut bound: tokio::sync::watch::Receiver<Vec<IpAddr>>) {
+    let Some(local) = stream.local_addr().map(|a| a.ip()).ok().filter(|a| ssh::reachable(*a)) else {
+        log(&format!("{} closed: not on loopback or a private address", peer.ip()));
         return;
-    }
+    };
     if shared.tries.lock().map(|mut t| t.held(peer.ip(), Instant::now())).unwrap_or(true) {
         log(&format!("{} closed: refused too often lately", peer.ip()));
         return;
@@ -493,18 +569,29 @@ fn accept(stream: tokio::net::TcpStream, peer: SocketAddr, shared: &Arc<Shared>,
     let conn = Conn { shared: shared.clone(), peer: peer.ip(), repo: None, channels: Default::default(), authed: authed.clone() };
     let config = config.clone();
     tokio::spawn(async move {
-        let session = match server::run_stream(config, stream, conn).await {
+        let mut session = match server::run_stream(config, stream, conn).await {
             Ok(s) => s,
             Err(e) => { log(&format!("{} ended: {e}", peer.ip())); return; }
         };
-        // Not signed in within the grace, the connection goes (dropped, it is closed).
+        // Not signed in within the grace, the connection goes.
         let grace = async {
             tokio::time::sleep(GRACE).await;
             if authed.load(std::sync::atomic::Ordering::SeqCst) { std::future::pending::<()>().await; }
         };
-        tokio::select! {
-            _ = session => {}
-            _ = grace => log(&format!("{} closed: not signed in within {} s", peer.ip(), GRACE.as_secs())),
-        }
+        let let_go = async {
+            while bound.borrow_and_update().contains(&local) {
+                if bound.changed().await.is_err() { std::future::pending::<()>().await; }
+            }
+        };
+        let why = tokio::select! {
+            _ = &mut session => return,
+            _ = grace => format!("not signed in within {} s", GRACE.as_secs()),
+            _ = let_go => format!("{local} is no longer listened on"),
+        };
+        // The session runs in a task of its own, which dropping it here would leave running: it is told to end,
+        // and with it the channels and the sessions' processes (run_channel).
+        log(&format!("{} closed: {why}", peer.ip()));
+        let _ = session.handle().disconnect(russh::Disconnect::ByApplication, why, String::new()).await;
+        let _ = tokio::time::timeout(Duration::from_secs(5), session).await;
     });
 }

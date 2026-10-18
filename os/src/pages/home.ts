@@ -8,6 +8,7 @@ import {repoList} from './repo-list.ts';
 import {todoBox} from './todo-box.ts';
 import type {Context} from './context.ts';
 import {answers} from './common.ts';
+import {errorText} from '../errors.ts';
 
 let editing = false;
 
@@ -55,7 +56,7 @@ function ownServers(ctx: Context): HTMLElement {
       b.addEventListener('click', () => { try { localStorage.setItem('length3.server.at', JSON.stringify({server: s.id})); } catch { /* a convenience */ } ctx.go('server'); });
       return b;
     }));
-  }, (e) => box.replaceChildren(h('p', {class: 'error'}, e instanceof Error ? e.message : String(e))));
+  }, (e) => box.replaceChildren(h('p', {class: 'error'}, errorText(e))));
   return box;
 }
 
@@ -103,7 +104,7 @@ function editForm(ctx: Context): HTMLElement {
     const result = normalize({name: name.value, handle: handle.value, bio: bio.value});
     if (result.error) { error.textContent = t('A handle is up to 32 lowercase letters, digits, - and _'); handle.focus(); return; }
     try { await setState('profile', JSON.stringify(result.profile)); } catch (e) {
-      error.textContent = t('Could not save: {message}', {message: e instanceof Error ? e.message : String(e)});
+      error.textContent = t('Could not save: {message}', {message: errorText(e)});
       return;
     }
     editing = false;

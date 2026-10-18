@@ -2,7 +2,8 @@ import {ago, h} from '../dom.ts';
 import {t} from '../i18n.ts';
 import {shown as named, shownAs} from '../inbox.ts';
 import * as servers from '../servers.ts';
-import {button, message} from './server-parts.ts';
+import {button} from './server-parts.ts';
+import {errorText} from '../errors.ts';
 
 /** Past this, a file shown is cut short. */
 const SHOW_BYTES = 256 * 1024;
@@ -29,14 +30,20 @@ export async function seeRepo(sheet: HTMLElement, r: servers.ShownRepo, ways: {b
     const got = await servers.seeRepo(as);
     sub.textContent = got.at ? t('Pushed {when}: {title}', {when: ago(got.at), title: got.title ?? ''}) : t('Nothing pushed yet');
     const paths = Object.entries(got.tree).filter(([, sha]) => sha !== null).map(([p]) => p).sort((a, b) => a.localeCompare(b));
+    // The file chosen last is the one shown: an earlier one that answers after it is not drawn over it.
+    let chosen = '';
     const open = async (path: string, row: HTMLElement) => {
+      chosen = path;
       files.querySelectorAll('[aria-current]').forEach((x) => x.removeAttribute('aria-current'));
       row.setAttribute('aria-current', 'true');
       text.textContent = '…';
+      let shown: string;
       try {
         const body = await servers.seeFile(as, path);
-        text.textContent = body.includes('\0') ? t('Not text') : body.length > SHOW_BYTES ? `${body.slice(0, SHOW_BYTES)}\n…` : body;
-      } catch (e) { text.textContent = message(e); }
+        shown = body.includes('\0') ? t('Not text') : body.length > SHOW_BYTES ? `${body.slice(0, SHOW_BYTES)}\n…` : body;
+      } catch (e) { shown = errorText(e); }
+      if (chosen !== path) return;
+      text.textContent = shown;
       text.setAttribute('aria-label', path);
     };
     files.replaceChildren(...paths.map((path) => {
@@ -47,5 +54,5 @@ export async function seeRepo(sheet: HTMLElement, r: servers.ShownRepo, ways: {b
     const first = paths.findIndex((p) => /^readme(\.|$)/i.test(p));
     const pick = first >= 0 ? first : 0;
     if (paths[pick]) void open(paths[pick], files.querySelectorAll('button')[pick] as HTMLElement);
-  } catch (e) { sub.textContent = message(e); }
+  } catch (e) { sub.textContent = errorText(e); }
 }

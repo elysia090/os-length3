@@ -4,11 +4,13 @@
 // WebSocket): a Neon host directly, a Postgres on this machine through the
 // bridge in this process (bridge.ts).
 
+import {rmSync} from 'node:fs';
 import {Pool} from '@neondatabase/serverless';
 import {sql} from 'drizzle-orm';
 import {drizzle} from 'drizzle-orm/neon-serverless';
 import {migrate} from 'drizzle-orm/neon-serverless/migrator';
 import {bridge, throughBridge} from './bridge.ts';
+import {beforeWorker, firstOf, journalOf} from './stages.ts';
 
 export const MIGRATIONS = new URL('./migrations', import.meta.url).pathname;
 
@@ -30,6 +32,28 @@ export async function workerRole(db: ReturnType<typeof drizzle>, password: strin
   await db.execute(sql`grant remote_app to remote_worker`);
   for (const s of ["statement_timeout = '15s'", "idle_in_transaction_session_timeout = '15s'", "lock_timeout = '5s'"]) await db.execute(sql.raw(`alter role remote_worker set ${s}`));
   return password;
+}
+
+/** When the newest migration applied to `db` was made (its journal `when`); 0 when none was. */
+async function applied(db: ReturnType<typeof drizzle>): Promise<number> {
+  const [had] = (await db.execute(sql`select to_regclass('drizzle.__drizzle_migrations') as t`)).rows as {t: string | null}[];
+  if (!had?.t) return 0;
+  const [last] = (await db.execute(sql`select max(created_at) as at from drizzle.__drizzle_migrations`)).rows as {at: string | number | null}[];
+  return Number(last?.at ?? 0);
+}
+
+/**
+ * The migrations the Worker running now can meet, before a deploy ships the new one (stages.ts): every one before
+ * the first contract step not applied yet. That step's tag when it waits for the new Worker (then migrateRemote,
+ * once the new one answers), or null when nothing waits.
+ */
+export async function migrateBeforeWorker(db: ReturnType<typeof drizzle>): Promise<string | null> {
+  const j = journalOf(MIGRATIONS);
+  const n = beforeWorker(j, await applied(db));
+  if (n === j.entries.length) { await migrateRemote(db); return null; }
+  const first = firstOf(MIGRATIONS, n);
+  try { await migrate(db, {migrationsFolder: first}); } finally { rmSync(first, {recursive: true}); }
+  return j.entries[n].tag;
 }
 
 /** A pool on `url` and its Drizzle database (no schema: for the owner's statements). */

@@ -363,22 +363,21 @@ export const signal = pgTable('signal', {
 
 /**
  * A device listening for SSH: its session (a device is its session, as
- * Remote → Devices lists them; signing it out takes this row with it), the
- * port it listens on and the destinations it gives (`ssh -p 22000
- * notes@192.168.1.5`, one a repo), when it was turned on and when it last
- * said it still listens. A row is SSH on; off is its absence. Only the
- * device itself makes one; any of the account's sessions may remove one.
+ * Remote → Devices lists them; signing it out takes this row with it), to
+ * whom it listens (`device`: from itself only; `network`: from its
+ * network's PCs too), when it was turned on and when it last said it still
+ * listens. No address, port or repo name: where a device is reached stays on
+ * it. A row is SSH on; off is its absence. Only the device itself makes
+ * one; any of the account's sessions may remove one.
  */
 export const ssh = pgTable('ssh', {
   sessionId: text('session_id').primaryKey().references(() => session.id, {onDelete: 'cascade'}),
   userId: owner(),
-  port: integer('port').notNull(),
-  destinations: jsonb('destinations').$type<string[]>().notNull(),
+  scope: text('scope').default('device').notNull(),
   since: moment('since').defaultNow().notNull(),
   seenAt: moment('seen_at').defaultNow().notNull(),
 }, (t) => [index('ssh_user_idx').on(t.userId, t.since),
-  check('ssh_port', sql`${t.port} between 1 and 65535`),
-  check('ssh_destinations', sql`jsonb_typeof(${t.destinations}) = 'array' and jsonb_array_length(${t.destinations}) <= 200 and octet_length(${t.destinations}::text) <= 32768`)]);
+  check('ssh_scope', sql`${t.scope} in ('device', 'network')`)]);
 
 // ---- Servers (servers.ts) ----
 //

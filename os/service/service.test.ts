@@ -92,7 +92,7 @@ test('Devices: another device is signed out from any of the account\'s, and from
   assert.deepEqual((await sessionsOf(s, laptop)).map((d) => d.id), [(await whoIs(s, laptop)).session.id]);
 });
 
-test('SSH: a device says it listens, any of the account\'s pages may stop it, a page never starts one, and no one else sees or stops it', async () => {
+test('SSH: a device says it listens, and to whom, but never where; any of the account\'s pages may stop it, a page never starts one, and no one else sees or stops it', async () => {
   const s = await service();
   const laptop = await s.start('Ren'), web = await s.start('Ren'), mio = await s.start('Mio');
   // As l3 and the app's core call: the bearer, and no Origin (a browser always sends one).
@@ -101,41 +101,56 @@ test('SSH: a device says it listens, any of the account\'s pages may stop it, a 
       body: body === undefined ? undefined : JSON.stringify(body)});
     return {status: r.status, json: await r.json() as Record<string, unknown>};
   };
-  const here = ['ssh -p 22000 notes@192.168.1.5', 'ssh -p 22000 trip@192.168.1.5'];
-  assert.deepEqual((await s.call('GET', '/v1/ssh', {token: laptop})).json, []);
-  assert.equal((await device('PUT', '/v1/ssh/this', laptop, {port: 22000, destinations: here})).status, 200);
+  type Row = {device: string; scope: string; current: boolean; since: number; seen: number};
+  const listed = async (token: string) => (await s.call('GET', '/v1/ssh', {token})).json as unknown as Row[];
+  assert.deepEqual(await listed(laptop), []);
+  assert.equal((await device('PUT', '/v1/ssh/this', laptop, {scope: 'device'})).status, 200);
   const laptopId = (await whoIs(s, laptop)).session.id;
-  // Each of the account's sessions sees it, and which is its own.
-  const seen = (await s.call('GET', '/v1/ssh', {token: web})).json as unknown as {device: string; port: number; destinations: string[]; current: boolean; since: number; seen: number}[];
-  assert.deepEqual(seen.map((r) => [r.device, r.port, r.destinations, r.current]), [[laptopId, 22000, here, false]]);
+  // Each of the account's sessions sees that it listens, to whom, since when, and which is its own: nothing more.
+  const seen = await listed(web);
+  assert.deepEqual(seen.map((r) => [r.device, r.scope, r.current]), [[laptopId, 'device', false]]);
+  assert.deepEqual(Object.keys(seen[0]).sort(), ['agent', 'current', 'device', 'scope', 'seen', 'since']);
   assert.ok(seen[0].since > 0 && seen[0].seen >= seen[0].since);
-  assert.equal(((await s.call('GET', '/v1/ssh', {token: laptop})).json as unknown as {current: boolean}[])[0].current, true);
+  assert.equal((await listed(laptop))[0].current, true);
+  // An older l3 still sends where it is reached: none of it is kept, and none of it is ever answered.
+  const old = {port: 22000, destinations: ['ssh -p 22000 notes@192.168.1.5', 'ssh -p 22000 trip@192.168.1.5']};
+  assert.equal((await device('PUT', '/v1/ssh/this', laptop, old)).status, 200);
+  assert.equal((await device('POST', '/v1/ssh/this/beat', laptop, {destinations: old.destinations})).json.on, true);
+  const text = JSON.stringify(await listed(web));
+  for (const never of ['192.168', '22000', 'notes', 'trip', 'destinations', 'port']) assert.ok(!text.includes(never), `${never} in ${text}`);
+  const kept = JSON.stringify((await s.db.execute(sql`select * from ssh`)).rows);
+  for (const never of ['192.168', '22000', 'notes']) assert.ok(!kept.includes(never), `${never} kept: ${kept}`);
+  assert.deepEqual((await listed(web)).map((r) => r.scope), ['device']);
+  // To whom it listens changes with what the device says at its beat; a word that is not one is refused.
+  assert.equal((await device('POST', '/v1/ssh/this/beat', laptop, {scope: 'network'})).json.on, true);
+  assert.deepEqual((await listed(web)).map((r) => r.scope), ['network']);
+  for (const bad of [{scope: 'everyone'}, {scope: '0.0.0.0'}, {scope: 1}]) {
+    assert.equal((await device('PUT', '/v1/ssh/this', laptop, bad)).status, 400, JSON.stringify(bad));
+    assert.equal((await device('POST', '/v1/ssh/this/beat', laptop, bad)).status, 400, JSON.stringify(bad));
+  }
   // Another account sees none of it and cannot stop it.
-  assert.deepEqual((await s.call('GET', '/v1/ssh', {token: mio})).json, []);
+  assert.deepEqual(await listed(mio), []);
   assert.equal((await s.call('POST', `/v1/ssh/${laptopId}/off`, {token: mio})).status, 404);
   assert.equal((await device('POST', '/v1/ssh/this/beat', laptop, {})).json.on, true);
   // A page cannot turn SSH on, for itself or anyone: only the device, as itself.
-  const fromPage = await s.call('PUT', '/v1/ssh/this', {token: web, body: {port: 22000, destinations: here}});
+  const fromPage = await s.call('PUT', '/v1/ssh/this', {token: web, body: {scope: 'device'}});
   assert.deepEqual([fromPage.status, fromPage.json.error], [403, 'SSH is turned on at the device itself']);
   assert.equal((await s.call('POST', `/v1/ssh/${laptopId}/on`, {token: web})).status, 404);
-  assert.equal(((await s.call('GET', '/v1/ssh', {token: web})).json as unknown[]).length, 1);
-  // What a device says it listens at is checked: a port, and destinations as l3 writes them.
-  for (const bad of [{port: 0, destinations: here}, {port: 22000, destinations: ['ssh -p 22000 notes@host; rm -rf /']}, {port: 22000, destinations: 'x'}]) {
-    assert.equal((await device('PUT', '/v1/ssh/this', laptop, bad)).status, 400, JSON.stringify(bad));
-  }
+  assert.equal((await listed(web)).length, 1);
   // The web turns it off; the device's next beat hears so, and a beat never turns it on again.
   const off = await s.call('POST', `/v1/ssh/${laptopId}/off`, {token: web});
   assert.deepEqual([off.status, off.json.on], [200, false]);
-  assert.equal((await device('POST', '/v1/ssh/this/beat', laptop, {destinations: here})).json.on, false);
-  assert.deepEqual((await s.call('GET', '/v1/ssh', {token: web})).json, []);
+  assert.equal((await device('POST', '/v1/ssh/this/beat', laptop, {scope: 'device'})).json.on, false);
+  assert.deepEqual(await listed(web), []);
   assert.equal((await s.call('POST', `/v1/ssh/${laptopId}/off`, {token: web})).status, 404);
-  // On again at the device, then off from the device itself; signing the device out takes it too.
-  await device('PUT', '/v1/ssh/this', laptop, {port: 22000, destinations: here});
+  // On again at the device (no scope said: this device only), then off from the device itself; signing the device out takes it too.
+  await device('PUT', '/v1/ssh/this', laptop, {});
+  assert.deepEqual((await listed(web)).map((r) => r.scope), ['device']);
   assert.deepEqual((await device('DELETE', '/v1/ssh/this', laptop)).json, {on: false, changed: true});
-  await device('PUT', '/v1/ssh/this', laptop, {port: 22000, destinations: here});
+  await device('PUT', '/v1/ssh/this', laptop, {scope: 'network'});
   const row = (await sessionsOf(s, web)).find((d) => d.id === laptopId)!;
   assert.equal((await s.call('POST', '/api/auth/revoke-session', {token: web, body: {token: row.token}})).status, 200);
-  assert.deepEqual((await s.call('GET', '/v1/ssh', {token: web})).json, []);
+  assert.deepEqual(await listed(web), []);
   assert.equal((await device('POST', '/v1/ssh/this/beat', laptop, {})).status, 401);
 });
 

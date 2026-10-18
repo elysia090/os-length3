@@ -50,6 +50,20 @@
       "when": 1792290732701,
       "tag": "0006_plan_and_billing",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792306938592,
+      "tag": "0007_ssh_scope_and_no_address",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792306969308,
+      "tag": "0008_contract_ssh_address_columns",
+      "breakpoints": true
     }
   ]
 }

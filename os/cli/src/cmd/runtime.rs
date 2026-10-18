@@ -25,7 +25,7 @@ pub fn page(_: &Ctx, _: &Call) -> Result<Reply> {
     // SSH into the Prompts: the listener, when it runs (l3 address lists where; l3 address ssh off stops it).
     let listening = length3_core::ssh::listening(&paths::data_dir());
     t.push(match &listening {
-        Some(l) => tr!("SSH  on · port {} · {} repos (l3 address; l3 address ssh off stops it)", "SSH  オン · ポート {} · repo {}（l3 address。止めるなら l3 address ssh off）", l.port, l.destinations.len()),
+        Some(l) => tr!("SSH  on · {} · port {} (l3 address; l3 address ssh off stops it)", "SSH  オン · {} · ポート {}（l3 address。止めるなら l3 address ssh off）", l.scope.said(), l.port),
         None => tr!("SSH  off (l3 address ssh on)", "SSH  オフ（l3 address ssh on）"),
     });
     t.push(String::new());
@@ -40,7 +40,7 @@ pub fn page(_: &Ctx, _: &Call) -> Result<Reply> {
     }
     if s.freeable > 0 { t.push(tr!("Can be freed: {} (all of it: l3 free all)", "空けられるもの：{}（全部なら l3 free all）", bytes(s.freeable))); }
     let items: Vec<_> = s.items.iter().map(|i| json!({"id": i.id, "what": i.what, "allocated": i.allocated, "room": i.room})).collect();
-    Ok(Reply::data(t.join("\n"), json!({"root": current, "ssh": listening.map(|l| json!({"port": l.port, "destinations": l.destinations, "fingerprint": l.fingerprint})), "hostTotal": s.host_total, "hostFree": s.host_free, "host": s.host,
+    Ok(Reply::data(t.join("\n"), json!({"root": current, "ssh": listening.map(|l| json!({"port": l.port, "scope": l.scope, "destinations": l.destinations(), "fingerprint": l.fingerprint})), "hostTotal": s.host_total, "hostFree": s.host_free, "host": s.host,
         "allocated": s.allocated, "freeable": s.freeable, "items": items})))
 }
 

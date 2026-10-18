@@ -8,6 +8,7 @@ import {changeFor, type Standing} from '../git-state.ts';
 import {named} from '../text.ts';
 import {diffFiles} from './diff-view.ts';
 import {beingChanged, issueEditor} from './issue-form.ts';
+import {errorText} from '../errors.ts';
 
 // An issue on the Git page, as one large box (issue #17). Its branch and
 // worktree are never named: Start gives the issue its own copy of the repo,
@@ -31,7 +32,6 @@ export interface RepoState extends Standing { lines: git.Line[];
   /** Where it stands could not be read (the Remote away, or refusing): said on its issues, and nothing offered meanwhile. */
   error?: string }
 
-const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 function button(text: string, primary = false): HTMLButtonElement {
   return h('button', {class: primary ? 'button primary' : 'button', type: 'button'}, text) as HTMLButtonElement;
@@ -43,18 +43,15 @@ const STATE = (s: git.Change['state']) => ({open: t('Undecided'), merged: t('Mer
 const doing = (b: HTMLButtonElement, error: HTMLElement, f: () => Promise<unknown>, after: () => void) => async () => {
   b.disabled = true;
   error.textContent = '';
-  try { await f(); after(); } catch (e) { error.textContent = message(e); b.disabled = false; }
+  try { await f(); after(); } catch (e) { error.textContent = errorText(e); b.disabled = false; }
 };
-
-/** The issue's change (the latest record of it). */
-export const changeOf = changeFor;
 
 /** Who is signed in, for the line a close is written with; read once. */
 let whoAmI: Promise<string> | null = null;
 const myName = () => (whoAmI ??= me().then((m) => m?.name ?? '', () => { whoAmI = null; return ''; }));
 
 /** Close an issue that will not be done: its file says so on its last line (the day, and who). */
-export const closeIssue = async (issue: Issue) => setClosed(store, issue, closeMark(await myName()));
+const closeIssue = async (issue: Issue) => setClosed(store, issue, closeMark(await myName()));
 /** Open a closed issue again. */
 export const reopenIssue = (issue: Issue) => setClosed(store, issue, null);
 const hereOf = (s: RepoState | undefined, issue: Issue) => !!s?.work && s.work.line !== 'main' && s.work.issue === issuePath(issue);
@@ -62,7 +59,7 @@ const hereOf = (s: RepoState | undefined, issue: Issue) => !!s?.work && s.work.l
 /** Where the issue stands, quietly, in a few words. */
 function standing(s: RepoState | undefined, issue: Issue): string {
   const path = issuePath(issue);
-  const c = changeOf(s, issue);
+  const c = changeFor(s, issue);
   const w = s?.work;
   // Worked on here: who and when; the boxes under it say the rest.
   if (hereOf(s, issue) && w) return t('{who} · started {when}', {who: w.started_by || '—', when: ago(w.started_at)});
@@ -87,7 +84,7 @@ export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEv
   const error = h('p', {class: 'error', role: 'alert'});
   const line = s?.lines.find((l) => l.issue === path) ?? null;
   const here = hereOf(s, issue);
-  const change = connection() ? changeOf(s, issue) : null;
+  const change = connection() ? changeFor(s, issue) : null;
   const acts: Node[] = [];
   let leave: HTMLButtonElement | null = null;
   // Nothing is offered until where it stands is known.
@@ -139,7 +136,7 @@ export function notCommitted(at: string, n: number, events: IssueEvents): HTMLEl
     for (const k of ['pointerdown', 'keydown'] as const) (fold.open ? document.addEventListener : document.removeEventListener).call(document, k, away);
     if (!fold.open || read) return;
     read = true;
-    void git.diff(at).then((files) => inside.replaceChildren(...diffFiles(files, {reveal: (p) => events.open(at, p)})), (e) => inside.replaceChildren(h('p', {class: 'error'}, message(e))));
+    void git.diff(at).then((files) => inside.replaceChildren(...diffFiles(files, {reveal: (p) => events.open(at, p)})), (e) => inside.replaceChildren(h('p', {class: 'error'}, errorText(e))));
   });
   return fold;
 }
@@ -213,7 +210,7 @@ function received(change: git.Change): HTMLElement {
  * approved.
  */
 export function mergeRow(issue: Issue, s: RepoState | undefined, events: IssueEvents, after: () => void): HTMLElement | null {
-  const change = connection() ? changeOf(s, issue) : null;
+  const change = connection() ? changeFor(s, issue) : null;
   if (!change || change.state !== 'open') return null;
   const at = issue.repo;
   const here = hereOf(s, issue);
@@ -257,7 +254,7 @@ function markedDiff(files: git.FileDiff[], marked: Set<string>, pending: Set<str
  */
 export function reviewBox(issue: Issue, s: RepoState | undefined, after: () => void): HTMLElement | null {
   const at = issue.repo;
-  const change = changeOf(s, issue);
+  const change = changeFor(s, issue);
   if (!connection() || !change || change.state === 'reset') return null;
 
   // Review: the change's diff, marked where reviewers marked it, what was said, and room to say more.
@@ -266,7 +263,7 @@ export function reviewBox(issue: Issue, s: RepoState | undefined, after: () => v
   const marked = new Set(current.flatMap((r) => r.marks ?? []));
   const pending = change.state === 'open' ? new Set<string>() : null;
   const diff = h('div', {class: 'review-diff'}, h('p', {class: 'muted small'}, t('Reading…')));
-  void git.changeDiff(at, change).then((files) => diff.replaceChildren(...markedDiff(files, marked, pending)), (e) => diff.replaceChildren(h('p', {class: 'error'}, message(e))));
+  void git.changeDiff(at, change).then((files) => diff.replaceChildren(...markedDiff(files, marked, pending)), (e) => diff.replaceChildren(h('p', {class: 'error'}, errorText(e))));
   // What was said, in order: a verdict with its note, or a comment alone.
   // What was said, in order, as a conversation: a verdict with its note, or a comment alone.
   // An approval is the ○ turning green, not a box in the conversation (its note, if any, still shows).
