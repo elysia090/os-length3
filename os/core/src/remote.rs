@@ -169,6 +169,20 @@ fn refused(code: u16, r: ureq::Response) -> String {
     failed(Failure::Status(code), message)
 }
 
+/// The JSON a Remote answered with; an empty answer (204) is null. One that is not JSON is no
+/// answer to go by: what is in the way (a network's sign-in page, a proxy's) is not the Remote.
+fn answer(url: &str, r: ureq::Response) -> Result<serde_json::Value> {
+    let mut text = String::new();
+    r.into_reader().read_to_string(&mut text).map_err(|e| failed(Failure::Unreachable, crate::tr!("The Remote's answer broke off ({})", "Remote の答えが途中で切れました（{}）", e)))?;
+    if text.trim().is_empty() { return Ok(serde_json::Value::Null); }
+    serde_json::from_str(&text).map_err(|_| odd(url))
+}
+
+/// The Remote at `url` answered, but not as a Remote does: as if it were out of reach.
+fn odd(url: &str) -> String {
+    failed(Failure::Unreachable, crate::tr!("{} did not answer as a Remote does (is a network's sign-in page in the way?)", "{} は Remote の答え方をしませんでした（ネットワークのサインイン画面が間に入っていませんか）", url))
+}
+
 impl Client {
     pub(crate) fn open() -> Result<Client> {
         let c = connection().ok_or_else(|| failed(Failure::NotConnected, crate::tr!("This device is not signed in to a Remote (l3 login)", "この端末は Remote にサインインしていません（l3 login）")))?;
@@ -186,7 +200,7 @@ impl Client {
             None => req.call(),
         };
         match r {
-            Ok(r) => Ok(Reply::Ok(r.into_json().unwrap_or(serde_json::Value::Null))),
+            Ok(r) => Ok(Reply::Ok(answer(&self.url, r)?)),
             Err(ureq::Error::Status(409, r)) => Ok(Reply::Conflict(r.into_json().unwrap_or_default())),
             Err(ureq::Error::Status(404, _)) => Ok(Reply::NotFound),
             Err(ureq::Error::Status(code, r)) => Err(refused(code, r)),
@@ -811,6 +825,28 @@ pub(crate) fn tree_of(v: &serde_json::Value) -> Tree {
     v.as_object().map(|o| o.iter().map(|(k, v)| (k.clone(), v.as_str().map(String::from))).collect()).unwrap_or_default()
 }
 
+/// A line of a repo as the Remote holds it (`GET /v1/repos/:name`).
+#[derive(Debug, PartialEq)]
+struct LineThere {
+    version: i64,
+    draft: Tree,
+    head: Option<String>,
+}
+
+/// What the Remote said of a line, when it said it as a Remote does: a version, a draft each of whose
+/// entries is a digest or a folder (null), and a head or none. Anything else is refused, never taken for
+/// a line with no files (bug: a network's sign-in page was read as version 0 with nothing in it, and
+/// every file here unchanged since the last agreement was removed).
+fn line_there(url: &str, v: &serde_json::Value) -> Result<LineThere> {
+    let version = v["version"].as_i64().filter(|n| *n >= 0);
+    let draft = v["draft"].as_object().filter(|d| d.values().all(|x| x.is_string() || x.is_null()));
+    let head = match &v["head"] { serde_json::Value::Null => Some(None), serde_json::Value::String(h) => Some(Some(h.clone())), _ => None };
+    match (version, draft, head) {
+        (Some(version), Some(_), Some(head)) => Ok(LineThere { version, draft: tree_of(&v["draft"]), head }),
+        _ => Err(odd(url)),
+    }
+}
+
 // ---- syncing ----
 
 #[derive(Serialize, Debug, Clone, PartialEq, Default)]
@@ -843,25 +879,25 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
         let base = base(&key).unwrap_or_default();
         let here = local_tree(&dir);
         out.unsynced = here.unsynced.clone();
-        // Before sending, see whether the Remote moved.
+        // Before sending, see whether the Remote moved. Not there, it has nothing of the line (version 0).
         let there = match client.call("GET", &path, None)? {
-            Reply::Ok(v) => Some(v),
-            _ => None,
+            Reply::Ok(v) => Some(line_there(&client.url, &v)?),
+            Reply::NotFound => None,
+            Reply::Conflict(_) => return Err(odd(&client.url)),
         };
-        let remote_version = there.as_ref().and_then(|v| v["version"].as_i64()).unwrap_or(0);
+        let remote_version = there.as_ref().map_or(0, |l| l.version);
         if remote_version != base.version {
-            let v = there.unwrap_or_default();
-            let tree = tree_of(&v["draft"]);
+            let (tree, head) = there.map_or((Tree::new(), None), |l| (l.draft, l.head));
             let p = plan(&base.tree, &here.tree, &tree);
             out.both.extend(apply(client, &dir, &here.tree, &p)?);
             out.taken += p.take.len();
-            set_base(&key, &Base { version: remote_version, tree, head: v["head"].as_str().map(String::from) })?;
+            set_base(&key, &Base { version: remote_version, tree, head })?;
             continue;
         }
         // The Remote can commit without touching the draft (a work's first start commits main
         // as it stands): its head is then newer than the one kept, though the version is not.
         let mut base = base;
-        let head = there.as_ref().map(|v| v["head"].as_str().map(String::from));
+        let head = there.map(|l| l.head);
         if let Some(head) = head.filter(|h| *h != base.head) {
             base.head = head;
             set_base(&key, &base)?;
@@ -896,7 +932,8 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
         });
         // A conflict (someone else moved it, or a blob went missing) goes round again.
         if let Reply::Ok(v) = client.call("PATCH", &draft, Some(body))? {
-            let version = v["version"].as_i64().unwrap_or(base.version + 1);
+            // Without the version it is at now, nothing is agreed: the next round reads the line again.
+            let version = v["version"].as_i64().ok_or_else(|| odd(&client.url))?;
             let mut tree = base.tree.clone();
             for p in &remove {
                 tree.remove(*p);
@@ -1071,8 +1108,8 @@ pub fn free(repos: &Repos, repo: &str) -> Result<u64> {
             return Err(crate::tr!("It changed while it was being sent; try again", "送っているあいだに変わりました。もう一度どうぞ"));
         }
         // Asked once more: the Remote's draft must be this very tree.
-        let there = client.json("GET", &at(repo, line, ""), None)?;
-        if tree_of(&there["draft"]) != here.tree {
+        let there = line_there(&client.url, &client.json("GET", &at(repo, line, ""), None)?)?;
+        if there.draft != here.tree {
             return Err(crate::tr!("The Remote's copy is not complete yet", "Remote の写しがまだ揃っていません"));
         }
         gone.push((key, dir));
@@ -1131,6 +1168,19 @@ mod tests {
         // Removed here but changed there: the change comes back.
         assert_eq!(p.take, vec![("b".into(), Some(Some("3".into()))), ("dir".into(), Some(None)), ("edited".into(), Some(Some("2".into()))), ("gone".into(), None)]);
         assert_eq!(p.both, vec![("c".into(), Some("y".into()))]);
+    }
+
+    #[test]
+    fn only_a_line_as_the_remote_answers_it_is_taken() {
+        let url = "https://os.length3.com";
+        let ok = serde_json::json!({"version": 3, "draft": {"a.txt": "ab", "dir": null}, "head": "c1", "updatedAt": 1});
+        assert_eq!(line_there(url, &ok).unwrap(), LineThere { version: 3, draft: t(&[("a.txt", Some("ab")), ("dir", None)]), head: Some("c1".into()) });
+        assert_eq!(line_there(url, &serde_json::json!({"version": 0, "draft": {}, "head": null})).unwrap().head, None);
+        for odd in [serde_json::Value::Null, serde_json::json!({}), serde_json::json!({"version": "3", "draft": {}, "head": null}),
+            serde_json::json!({"version": 3, "draft": null, "head": null}), serde_json::json!({"version": 3, "draft": {"a": 1}, "head": null}),
+            serde_json::json!({"version": -1, "draft": {}, "head": null}), serde_json::json!({"version": 3, "draft": {}, "head": 7})] {
+            assert!(line_there(url, &odd).is_err(), "{odd}");
+        }
     }
 
     #[test]
