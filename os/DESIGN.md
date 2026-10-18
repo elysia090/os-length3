@@ -183,6 +183,24 @@ what is its own.
   board, always its people's, has the second and guests). Nothing that
   starts by being used has a switch to start it (a Prompt starts when one
   writes to it, and says so in its place when it has ended).
+- **The meter.** How much of an allowance is used: a round track a
+  step high (8 px), `raised` inside an `edge` line, filled `ink` as far as
+  the use goes, in a row of its own with what it measures at the left and
+  its figures at the right end (2 of 3, 25.0 MB of 100 MB) in `sub`. Over
+  the allowance it is full and its figures are `ink` 600; it never takes a
+  colour of its own (`done`, `marker` and `off` each mean their one thing).
+  With no allowance (paid), the row has its figure alone and no track.
+  Remote's Plan.
+- **Paid, said in place.** Where the Remote refuses something for the
+  plan's sake (a repo or a change past what the free plan keeps, making a
+  server, a name on one's own domain), the place says it in its own words
+  where its error goes, with See the plan beside them: what was written
+  stays, the work stays on the device, and the deed is never greyed out or
+  hidden without a word. Where it is known before anything is written (a
+  free account making a server, or adding a domain), the same line stands
+  under the form, quiet. A repo the Remote holds back says it where it
+  stands (この端末に保存 · Remote に空きができるのを待っています), with See the
+  plan beside it on its card.
 - **Where a deed sits.** By what the box is for and what follows a press,
   never by the word alone. The box's own deed is at the right: at the top
   right what the box is for (Write an issue, Edit profile, Add a passkey),
@@ -335,6 +353,8 @@ fix is always a piece from §3, not a new rule.
 | A divider left where a pane would start when there is none | No pane, no line |
 | Something painted over a focus ring (the ground under the box over its foot) | The ring is whole: what lies under the box lies behind it |
 | Text, not a field, sitting at the top of a row its mark is centred in (a read-only TODO) | Centred on the mark's line, as the field is |
+| A paid thing greyed out, hidden, or refused with the Remote's bare error; work dropped because the Remote would not keep it | Said in place with See the plan beside; the work stays on the device and waits |
+| A use against an allowance said by a colour (a red bar when over) | The meter: `ink` as far as the use goes, full and its figures 600 when over |
 
 # Part II. What the OS is under the pages
 
@@ -713,6 +733,60 @@ What leaves this system is kept to what is said here:
   0600). Writes go to a new temporary next to the file and are renamed over
   it; `.git` is refused in every spelling and through any symlink, from the
   webview, from `l3` and from the Prompt's write-back.
+
+### The plan: the Remote decides what an account may do
+
+Billing lives on the Remote. The Remote alone decides what an account may
+do (`service/plan.ts`); every client, the web app, the desktop app and l3,
+only shows what it says (Remote → Plan, `l3 remote plan`) and asks. No
+client counts, guesses or greys out on its own.
+
+| | Free | Paid |
+|---|---|---|
+| repos on a device | never limited | never limited |
+| what the Remote keeps | 3 repos and 100 MB (the deployment's `FREE_REPOS`, `FREE_MB`) | more (up to the account's room, `QUOTA_MB`) |
+| servers | joining when asked, writing in them | making them too |
+| names | one on the Remote (`ren`) | names on one's own domain (`ren@ren.dev`), and more on the Remote |
+
+What counts is read from what the Remote holds, never counted beside it:
+the account's repos on the Remote (those turned off among them, still kept)
+and its room (`room.used`: its files, every version history names, its
+trees and reviews), kept by the database's triggers in the same statement
+as each row, and counted again from the rows by the daily sweep, so it
+cannot drift. Each rule is one function, called by the one route it guards:
+a new repo and a draft that grows (PATCH draft), making a server, claiming
+a name. Going over never loses or blocks local work: the Remote refuses
+only what would exceed (a new repo past the allowance; a change that makes
+a draft larger while the account keeps more than the allowance), with 402,
+the rule and the way to the plan, and the app and l3 keep the work on the
+device and say it waits (it is asked again every few minutes, and goes the
+moment there is room or the plan is paid). A change that does not make a
+draft larger (an edit of the same size, a removal, a commit) is always
+taken, however much is kept.
+
+**When a subscription ends**, nothing is taken away and nothing is made
+read-only: servers go on with their people, boards and talk; names on a
+domain go on answering while its DNS says so, and names on the Remote are
+renewed as before; every repo the Remote holds stays, read and written. Only
+what would be new is refused: a server, a name, a repo past the allowance,
+a draft growing while over it. This is the least surprising rule: what a
+person made while paying is theirs as it was; paying again lets it grow.
+
+**A payment that fails** leaves the plan paid for 14 days from the first
+failure (`GRACE_DAYS`; Stripe retries meanwhile), and the Plan says until
+when; then it reads as free until a payment goes through. A subscription
+whose period ended more than that long ago without word of its renewal
+reads as free too.
+
+**Stripe** sells it, when the Remote has its keys: a Checkout session for
+the one price (`STRIPE_PRICE`), the customer portal to manage or cancel,
+and a webhook (`/v1/stripe/webhook`) whose every event is checked against
+the webhook secret, taken once by its id (one sent again changes nothing)
+and in the order Stripe made them (an older one arriving later changes
+nothing). Without the keys billing is off: the free allowance still holds,
+and the Remote says paid features cannot be bought here yet. A Remote given
+no plan (a Remote of one's own, development unless asked, a Remote for
+research) has no allowance at all.
 
 # Part III. Each place in turn
 
@@ -1173,6 +1247,20 @@ place a page is switched, because its parts are unrelated):
   nothing to press in its row: it signs out from the person's menu at the
   foot of the rail, which also forgets the session here.
 
+- **Plan**: what the account has, Free plan or Paid plan in a figure's size
+  (20/600), and under it the one date that matters in `sub` (renews, ends,
+  how long a failed payment stays paid; free: what free keeps). Then On the
+  Remote, two **meters** (§3): repos on the Remote and what is kept there,
+  each against the free allowance (paid: the figure alone), and, when over,
+  one quiet line that what is there stays and what is new waits on the
+  device. Then what paid adds, in three plain lines (keep more on the
+  Remote; make servers; names on your own domain). One primary button at
+  the bottom right: Subscribe (Stripe's Checkout) when free, Manage the plan
+  (Stripe's portal) when paid; none, and a quiet line saying so, where the
+  Remote sells nothing yet. Back from Stripe (or the window coming back),
+  the part reads the Remote again. Shown only when the Remote has a plan.
+  A repo card the Remote holds back says it waits, with See the plan.
+
 Under the parts, while there is no passkey, Add a passkey: the button alone,
 below what the page is about rather than over it.
 
@@ -1186,7 +1274,8 @@ name to claim; Enter claims. The gear opens, over what is under it (Escape or a 
 outside closes it), a popover: your names with their terms (Renew near the
 end), Add a domain, and Let a name go last. Add a domain becomes, in its
 row, one field where the name is written whole, `name@domain` with the @
-too (no second box to go to), then the one DNS record that proves it (`_length3.<domain>` TXT
+too (no second box to go to; a name on one's own domain is paid, and a free
+account is told so under the field, with See the plan), then the one DNS record that proves it (`_length3.<domain>` TXT
 `v=length3; remote=<host>; proof=<…>`, each part copied by pressing it;
 the host is the one name the Remote this OS ships with has everywhere,
 `os.length3.com`: its app, its Remote, its records and its passkeys).
@@ -1279,7 +1368,9 @@ Server is an overlay (§3), on the bench's shape. Its pieces, from §3:
 
 - **The band**: + first at the top line's left end, to make a server, then
   the servers one is in; the gear at the right end (kept in its place,
-  unpressable, while none is chosen).
+  unpressable, while none is chosen). Making a server is paid (§6, The
+  plan): a free account's box says so under its fields, with See the plan
+  (§3, Paid, said in place); being asked into one, and writing, are free.
 - **Boxes side by side**: its boards, the last box making a new one. A
   board holds **the TODO box** at its top and its talk under it, with
   nothing switched to see one or the other. Outside the server an open

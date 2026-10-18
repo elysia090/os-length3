@@ -78,8 +78,9 @@ export async function api(path: string, init: RequestInit = {}, c: Connection | 
   }
   if (r.status >= 400 && r.status !== 404 && r.status !== 409) {
     const body = await r.json().catch(() => ({})) as {message?: string; error?: string};
-    // The Remote says why in a short English sentence; it is shown in the person's language.
-    throw new RemoteError(r.status, t(body.message ?? body.error ?? `Remote: ${r.status}`));
+    // The Remote says why in a short English sentence; it is shown in the person's language. What else it
+    // says (the plan's rule, what is used) comes along for the place that asked.
+    throw new RemoteError(r.status, t(body.message ?? body.error ?? `Remote: ${r.status}`), body as Record<string, unknown>);
   }
   return r;
 }

@@ -32,6 +32,14 @@ APP_ORIGINS = "tauri://localhost http://tauri.localhost"
 ENTER_AS = "banana000000"
 # What the one account may keep (blobs and trees), in MB.
 QUOTA_MB = "1024"
+# The plan (service/plan.ts), on a Remote that is not for research: a free account keeps 3 repos and
+# 100 MB on the Remote unless these say otherwise; a failed payment stays paid 14 days.
+# FREE_REPOS = "3"
+# FREE_MB = "100"
+# GRACE_DAYS = "14"
+# Stripe: the price a subscription is to. Its keys are secrets (wrangler secret put STRIPE_SECRET_KEY,
+# STRIPE_WEBHOOK_SECRET); with any of the three missing, billing is off.
+# STRIPE_PRICE = "price_…"
 
 # What was held long enough goes, once a day (sweep.ts; worker.ts scheduled()).
 [triggers]

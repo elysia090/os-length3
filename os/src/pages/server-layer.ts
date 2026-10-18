@@ -12,6 +12,8 @@ import {gear as gearSheet} from './server-gear.ts';
 import {seeRepo as repoSheet} from './server-repo.ts';
 import {button, initials, message, type Shown} from './server-parts.ts';
 import {answers} from './common.ts';
+import {goToPlan, planRefused} from './remote.ts';
+import {plan as readPlan, refusalWords} from '../plan.ts';
 import {boardNew, onNews, sawBoard, serverNew} from '../news.ts';
 
 // Server is an operation, as File is: laid over whatever page is showing,
@@ -384,7 +386,10 @@ export class ServerLayer {
           show(s.id);
         } catch (e) {
           make.disabled = false;
-          if (e instanceof RemoteError && e.status === 409 && /address/i.test(e.message)) {
+          // Making a server is the plan's to allow: said here, with the way to the Plan.
+          const plan = planRefused(e, () => { this.close(); goToPlan(this.ctx); });
+          if (plan) error.replaceChildren(plan);
+          else if (e instanceof RemoteError && e.status === 409 && /address/i.test(e.message)) {
             const inbox = button(t('Go to Inbox'), 'small-button');
             inbox.addEventListener('click', () => { this.close(); this.ctx.go('inbox'); });
             error.replaceChildren(t('A server needs your name. Claim one in Inbox.'), ' ', inbox);
@@ -392,6 +397,14 @@ export class ServerLayer {
         }
       };
       make.addEventListener('click', () => void done());
+      // Free, making one is not offered by the Remote: said before anything is written, with the way to the Plan.
+      const paid = h('p', {class: 'muted small'});
+      void readPlan().then((p) => {
+        if (p.plan !== 'free') return;
+        const to = button(t('See the plan'), 'small-button');
+        to.addEventListener('click', () => { this.close(); goToPlan(this.ctx); });
+        paid.replaceChildren(refusalWords({rule: 'server', buy: !!p.buy}), ' ', to);
+      }, () => {});
       for (const f of [name, handle]) f.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); void done(); } });
       // What one removed or left last, still held: brought back with its name and boards.
       const back = h('div', {class: 'server-back'});
@@ -409,7 +422,7 @@ export class ServerLayer {
           h('label', {class: 'field'}, h('span', {class: 'field-label'}, t('Name')), name),
           h('label', {class: 'field'}, h('span', {class: 'field-label'}, t('Name on this Remote')), handle,
             h('span', {class: 'muted small'}, t('First come, as a person\'s: nobody else\'s while the server has it, renewed by its owner every five years.'))),
-          answers(null, make), error, back))));
+          paid, answers(null, make), error, back))));
       slides.classList.add('single');
       track.style.setProperty('--at', '0');
       prev.hidden = next.hidden = true;

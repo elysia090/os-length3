@@ -799,6 +799,21 @@ mark { background: var(--ink); color: var(--ground); }
 .sub-part h3 { display: flex; justify-content: space-between; align-items: center; margin: 0 0 var(--s3); font-size: var(--t-body); font-weight: 600; }
 .sub-part h3 small { margin-left: var(--s2); font-weight: 400; color: var(--sub); font-size: var(--t-meta); }
 
+/* Remote's Plan: what one has (a figure's size), the use against the allowance, what paid adds, one deed. */
+.plan-part { max-width: 760px; }
+.plan-title { margin: 0; font-size: var(--t-card); font-weight: 600; }
+.plan-now p { margin: var(--s1) 0 0; }
+.plan-meter { align-items: center; }
+.plan-note { margin: var(--s2) 0 0; }
+.plan-part > .answers { margin-top: var(--s5); }
+/* The meter (DESIGN.md §3): a round track, `raised` inside an `edge` line, filled `ink` as far as the use goes. */
+.meter { flex: 0 0 min(40%, 240px); height: var(--s2); border: 1px solid var(--edge); border-radius: var(--r-round); background: var(--raised); overflow: hidden; }
+.meter > span { display: block; height: 100%; width: calc(var(--share, 0) * 100%); background: var(--ink); }
+.plan-meter.over .row-meta { color: var(--ink); font-weight: 600; }
+/* A refusal of the plan's, said in place: the words, then the way to the Plan beside them. */
+.plan-refused .button { margin-left: var(--s2); vertical-align: middle; }
+.card-sync .small-button { margin-left: var(--s2); }
+
 /* A step's head (the review inside the issue's box). */
 .stage-head { display: flex; align-items: center; gap: var(--s3); }
 .stage-head h3 { margin: 0; font-size: var(--t-body); font-weight: 600; }

@@ -3,7 +3,7 @@
 // them is what `l3` does on the command line, through the same core.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use length3_core::{history, home, paths, remote, repos, system, usage};
+use length3_core::{account, history, home, paths, remote, repos, system, usage};
 
 #[cfg(target_os = "linux")]
 mod shells;
@@ -161,7 +161,27 @@ async fn remote_status() -> Result<Vec<remote::Status>, String> {
 /// Send what changed here and take in what changed there.
 #[tauri::command]
 async fn sync_repo(repo: String) -> Result<remote::Synced, String> {
-    blocking(move || remote::sync(&managed()?, &repo)).await
+    blocking(move || remote::sync(&managed()?, &repo).map_err(plan_said)).await
+}
+
+/// A refusal of the plan's (service/plan.ts) is said with its own word first, so the page keeps the repo
+/// here, waiting (src/lifecycle.ts PLAN), rather than as offline.
+fn plan_said(e: String) -> String {
+    match remote::last_failure() {
+        Some((remote::Failure::Status(402), said)) if said == e => format!("plan: {e}"),
+        _ => e,
+    }
+}
+
+/// The plan's page, Checkout (`checkout`) or the portal (`portal`), as the Remote makes it for this account,
+/// opened in the browser. The page names nothing: the Remote does, and only Stripe's page or the Remote's
+/// own is opened (account::plan_page).
+#[tauri::command]
+async fn plan_open(app: tauri::AppHandle, kind: String) -> Result<(), String> {
+    let kind = if kind == "portal" { "portal" } else { "checkout" };
+    let url = blocking(move || account::plan_page(kind)).await?;
+    use tauri_plugin_opener::OpenerExt;
+    app.opener().open_url(&url, None::<&str>).map_err(|e| e.to_string())
 }
 
 /// Bring a repo that is only on the Remote here.
@@ -308,7 +328,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             capacity, space, free, repo_list, repo_create, repo_tree, repo_read, repo_write, repo_add,
             repo_mkdir, repo_remove, repo_rename, state_get, state_set,
-            remote_login_start, remote_login_wait, remote_logout, remote_repos, remote_status,
+            remote_login_start, remote_login_wait, remote_logout, remote_repos, remote_status, plan_open,
             sync_repo, repo_fetch, history_changes, history_diff, history_at_head, history_cut, history_log,
             work_start, work_switch, work_state, work_lines, history_push, history_submit, history_reset,
             changes_list, change_review, change_merge, change_reject, change_diff,

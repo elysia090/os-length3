@@ -54,12 +54,14 @@ import {address, billingEvent, plan, user} from './schema.ts';
 import {verify, type StripeApi} from './stripe.ts';
 
 const DAY = 86_400_000;
+/** A megabyte as the app shows one (dom.ts bytes): a million bytes. */
+export const MB = 1_000_000;
 
 /** What a free account may keep on the Remote: repos, bytes (room.used), names on the Remote's own domain. */
 export interface Allowance { repos: number; bytes: number; names: number }
 export interface PlanConfig { free: Allowance; grace: number }
 
-export const FREE: Allowance = {repos: 3, bytes: 100 * 1024 ** 2, names: 1};
+export const FREE: Allowance = {repos: 3, bytes: 100 * MB, names: 1};
 /** How long a plan whose payment failed stays paid. */
 export const GRACE = 14 * DAY;
 /** How long a webhook event is remembered as taken; one made longer ago is not taken at all. */
@@ -68,7 +70,7 @@ export const KEEP_EVENTS = 30 * DAY;
 /** The plan as the deployment says it (FREE_REPOS, FREE_MB, GRACE_DAYS); what it leaves out, as above. */
 export function planConfig(env: {FREE_REPOS?: string; FREE_MB?: string; GRACE_DAYS?: string} = {}): PlanConfig {
   const n = (v: string | undefined, d: number) => { const x = Number(v); return v !== undefined && v.trim() !== '' && Number.isFinite(x) && x >= 0 ? x : d; };
-  return {free: {repos: Math.floor(n(env.FREE_REPOS, FREE.repos)), bytes: Math.floor(n(env.FREE_MB, FREE.bytes / 1024 ** 2) * 1024 ** 2), names: FREE.names},
+  return {free: {repos: Math.floor(n(env.FREE_REPOS, FREE.repos)), bytes: Math.floor(n(env.FREE_MB, FREE.bytes / MB) * MB), names: FREE.names},
     grace: n(env.GRACE_DAYS, GRACE / DAY) * DAY};
 }
 

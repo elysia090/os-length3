@@ -11,7 +11,9 @@ import {drizzle} from 'drizzle-orm/pglite';
 import {migrate} from 'drizzle-orm/pglite/migrator';
 import {createApp} from './app.ts';
 import {createAuth} from './auth.ts';
+import {devBilling} from './devbilling.ts';
 import {enterEmail} from './enter.ts';
+import {planConfig} from './plan.ts';
 import type {Bucket} from './bucket.ts';
 import * as schema from './schema.ts';
 import {sweep} from './sweep.ts';
@@ -48,12 +50,21 @@ const secret = readFileSync(secretFile, 'utf8');
 // provider then, the link …/#enter=KEY the only way in.
 const enter = process.env.LENGTH3_ENTER_AS ? {as: process.env.LENGTH3_ENTER_AS, key: process.env.LENGTH3_ENTER_KEY ?? ''} : undefined;
 const auth = createAuth({db, secret, baseURL, appOrigin, origins: others, dev: !enter, only: enter && enterEmail(enter.as)});
-const app = createApp({db, auth, bucket, origins: [appOrigin, ...others], appOrigin, providers: enter ? [] : ['dev'], domain: 'length3.test', baseURL, secret, enter});
+// LENGTH3_PLAN=1 gives it the plan the Remote on Workers has (LENGTH3_FREE_REPOS, LENGTH3_FREE_MB to say it
+// otherwise), bought from a stand-in for Stripe (devbilling.ts); without it, no plan: everything is open.
+const plan = process.env.LENGTH3_PLAN === '1' ? planConfig({FREE_REPOS: process.env.LENGTH3_FREE_REPOS, FREE_MB: process.env.LENGTH3_FREE_MB}) : undefined;
+const hook = `whsec_dev_${secret.slice(0, 24)}`;
+const stripe = plan && devBilling(baseURL, hook, [appOrigin, ...others],
+  async (payload, signature) => app.fetch(new Request(`${baseURL}/v1/stripe/webhook`, {method: 'POST', body: payload, headers: {'Stripe-Signature': signature, 'Content-Type': 'application/json'}})));
+const app = createApp({db, auth, bucket, origins: [appOrigin, ...others], appOrigin, providers: enter ? [] : ['dev'], domain: 'length3.test', baseURL, secret, enter,
+  plan, billing: stripe ? {stripe: stripe.api, webhookSecret: hook} : undefined});
+const serve = (r: Request) => (stripe && new URL(r.url).pathname.startsWith('/dev-billing/')
+  ? stripe.app.fetch(new Request(r.url.replace('/dev-billing/', '/'), r)) : app.fetch(r));
 
 createServer(async (req, res) => {
   const chunks: Buffer[] = [];
   for await (const c of req) chunks.push(c as Buffer);
-  const r = await app.fetch(new Request(`${baseURL}${req.url}`, {
+  const r = await serve(new Request(`${baseURL}${req.url}`, {
     method: req.method, headers: req.headers as Record<string, string>,
     body: ['GET', 'HEAD', 'OPTIONS'].includes(req.method!) ? undefined : Buffer.concat(chunks),
   }));

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {sql} from 'drizzle-orm';
-import {FREE, GRACE, planConfig, standing, type PlanConfig} from './plan.ts';
+import {FREE, GRACE, MB, planConfig, standing, type PlanConfig} from './plan.ts';
 import * as schema from './schema.ts';
 import {form, sign, stripeRest, verify} from './stripe.ts';
 import {sweep} from './sweep.ts';
@@ -308,8 +308,8 @@ test('standing: paid while active or trialing; set to end, until then; a failed 
 
 test('the plan as the deployment says it, and what it leaves out', () => {
   assert.deepEqual(planConfig({}), {free: FREE, grace: GRACE});
-  assert.deepEqual(FREE, {repos: 3, bytes: 100 * 1024 ** 2, names: 1});
-  assert.deepEqual(planConfig({FREE_REPOS: '10', FREE_MB: '1.5', GRACE_DAYS: '3'}), {free: {repos: 10, bytes: 1.5 * 1024 ** 2, names: 1}, grace: 3 * DAY});
+  assert.deepEqual(FREE, {repos: 3, bytes: 100_000_000, names: 1});
+  assert.deepEqual(planConfig({FREE_REPOS: '10', FREE_MB: '1.5', GRACE_DAYS: '3'}), {free: {repos: 10, bytes: 1.5 * MB, names: 1}, grace: 3 * DAY});
   assert.deepEqual(planConfig({FREE_REPOS: 'many', FREE_MB: '-1', GRACE_DAYS: ' '}), {free: FREE, grace: GRACE});
 });
 
