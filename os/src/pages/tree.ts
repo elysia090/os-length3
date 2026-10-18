@@ -201,7 +201,7 @@ export class FileTree {
   private away(repo: string, depth: number): HTMLElement {
     const meta = h('span', {class: 'tree-meta'}, 'Remote');
     const name = h('button', {class: 'tree-name', type: 'button'}, repo);
-    const item = h('li', {role: 'treeitem', class: 'tree-repo tree-away'},
+    const item = h('li', {role: 'treeitem', class: 'tree-repo tree-away', 'aria-label': repo},
       h('div', {class: 'tree-row', style: `--depth:${depth}`}, h('span', {class: 'tree-spacer', 'aria-hidden': 'true'}), name, meta));
     name.addEventListener('click', async () => {
       meta.textContent = t('Bringing it…');
@@ -220,7 +220,8 @@ export class FileTree {
     const at = inRepo(e.path);
     const isRepo = at !== null && at.path === '';
     const row = h('div', {class: 'tree-row', style: `--depth:${depth}`});
-    const item = h('li', {role: 'treeitem', class: isRepo ? 'tree-repo' : e.kind === 'dir' ? 'tree-dir' : 'tree-file'}, row);
+    // Heard by its name alone, not by everything in its row (its triangle, its menu).
+    const item = h('li', {role: 'treeitem', class: isRepo ? 'tree-repo' : e.kind === 'dir' ? 'tree-dir' : 'tree-file', 'aria-label': e.name}, row);
     const meta = e.origin ? t(ORIGIN_LABEL[e.origin]) : e.kind === 'file' && e.size ? bytes(e.size) : '';
 
     if (e.kind !== 'dir') {

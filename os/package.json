@@ -10,6 +10,7 @@
     "build:cloudflare": "node scripts/prompt-files.mjs && VITE_LENGTH3_REMOTE= npm run build",
     "check": "tsc --noEmit && node --test \"src/**/*.test.ts\" \"service/*.test.ts\"",
     "selftest:l3": "tsc -p selftest/l3 && node --test \"selftest/l3/*.test.ts\"",
+    "selftest": "playwright test -c selftest",
     "verify:remote": "node service/verify.ts",
     "tauri": "tauri",
     "userland": "sh scripts/userland.sh",
@@ -17,6 +18,7 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.10",
+    "@playwright/test": "1.56.1",
     "@tauri-apps/cli": "2.12.3",
     "@types/node": "^22.20.5",
     "drizzle-kit": "^0.31.11",

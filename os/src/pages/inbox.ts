@@ -253,6 +253,7 @@ export function inboxPage(ctx: Context): Node[] {
       ...(requests.length ? [h('h3', {class: 'inbox-head'}, t('Requests')), ...requests.map(row)] : []));
     if (had) rows.querySelector<HTMLElement>(`.inbox-row[data-address="${CSS.escape(had)}"]`)?.focus();
     // One quiet line in the open pane says what to do; none yet, it says so instead.
+    if (!open && !unread) pane.removeAttribute('aria-label');
     if (!open && !unread) pane.replaceChildren(h('p', {class: 'quiet'}, all.length ? t('Choose a conversation, or write to a name or a code.') : t('No messages yet. Write to someone by their name or code.')));
     // What came to the open conversation since it was drawn is put at its foot.
     const open_ = shownThread;
@@ -267,6 +268,8 @@ export function inboxPage(ctx: Context): Node[] {
     shownThread = null;
     const th = await inbox.thread(address).catch((e) => { pane.replaceChildren(h('p', {class: 'error'}, message(e))); return null; });
     if (!th || open !== address) return;
+    // Heard as the conversation it is, named by the other.
+    pane.setAttribute('aria-label', t('Conversation with {who}', {who: inbox.shown(address)}));
     // Read is said again the next time the conversation opens; nothing waits on it. The rail's mark follows.
     const read = () => void inbox.markRead(address).then(() => look(), () => {});
     read();

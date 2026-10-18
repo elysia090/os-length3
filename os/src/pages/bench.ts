@@ -236,6 +236,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   // A page taken off the screen loses its focus without a focusout, so the Prompt may still be up.
   const settle = () => {
     room();
+    reference.resume();
     if (!prompting || dock.contains(document.activeElement)) return;
     prompting = false;
     work.classList.remove('prompting');
