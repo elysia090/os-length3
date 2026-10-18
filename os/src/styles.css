@@ -420,7 +420,7 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
   background: transparent; cursor: pointer; white-space: nowrap; font-size: var(--t-meta);
 }
 .chips { display: flex; flex-wrap: wrap; gap: var(--s2); }
-.center { grid-column: 1; position: relative; min-height: 0; border-right: 1px solid var(--rule); overflow: hidden; }
+.center { grid-column: 1; position: relative; min-height: 0; border-right: 1px solid var(--rule); overflow: clip; }
 .flow { height: 100%; overflow-y: auto; padding: var(--s3) var(--s5) 160px; }
 .flow:focus-visible { outline-offset: -2px; }
 .path {
