@@ -44,6 +44,6 @@ fn main() -> ExitCode {
         Err(e) => out::fail(&e, call.flags.json),
     };
     sync::after(&ctx, &call, offline);
-    if person && ok { menu::after(&ctx, &call, seen); }
+    if person && ok { menu::after(&ctx, &call, &argv, seen); }
     code
 }

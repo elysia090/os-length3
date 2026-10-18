@@ -127,8 +127,9 @@ pub fn page_forms(group: Group) -> Vec<(&'static Command, &'static Form)> {
     spec::COMMANDS.iter().filter(|c| c.group == group).flat_map(|c| c.forms.iter().filter(|f| f.page).map(move |f| (c, f))).collect()
 }
 
-/// A page as the menu holds it: the things on it, and whether it is the purpose's own page.
-pub struct View { pub group: Group, pub subjects: Vec<Subject>, pub facts: Vec<Fact>, pub own: bool }
+/// A page as the menu holds it: the things on it, whether it is the purpose's own page, and the
+/// command lines that made it (read again after a deed, so the page stays the one the person was on).
+pub struct View { pub group: Group, pub subjects: Vec<Subject>, pub facts: Vec<Fact>, pub own: bool, pub made_by: Vec<Vec<String>> }
 
 /// Where a row leads.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -355,7 +356,7 @@ pub fn command_line(c: &Command, f: &Form, words: &[Option<String>], flags: &[(F
 }
 
 /// What came of a deed.
-enum Done { Ran { ok: bool, seen: Seen }, NotNow }
+enum Done { Ran { ok: bool, seen: Seen, argv: Vec<String> }, NotNow }
 
 /// Say what is being done, as the command it is.
 fn said(argv: &[String]) {
@@ -445,12 +446,12 @@ fn run(ctx: &Ctx, offer: Offer, subject: Option<&Subject>) -> Done {
         let argv = command_line(offer.command, offer.form, &words, &flags);
         said(&argv);
         match perform(ctx, &argv, !typed.is_empty()) {
-            (Ok(()), seen) => return Done::Ran { ok: true, seen },
+            (Ok(()), seen) => return Done::Ran { ok: true, seen, argv },
             // The person's words were refused: said under the field, and asked again.
             (Err(e), _) if !typed.is_empty() && !e.message().is_empty() => {
                 for l in e.message().lines() { term::put(&format!("    {l}\n")); }
             }
-            (Err(_), seen) => return Done::Ran { ok: false, seen },
+            (Err(_), seen) => return Done::Ran { ok: false, seen, argv },
         }
     }
 }
@@ -462,11 +463,17 @@ enum Flow { Leave, Rail }
 /// A purpose's page: each of its forms said as the command it is, then what it answers (printed),
 /// or only read for its things (not printed: after a deed, to offer what comes next).
 fn page(ctx: &Ctx, group: Group, print: bool) -> View {
-    let mut view = View { group, subjects: Vec::new(), facts: Vec::new(), own: true };
-    for (c, f) in page_forms(group) {
-        let argv = command_line(c, f, &[], &[]);
-        if print { said(&argv); }
-        let Ok(call) = args::parse(&argv, ctx) else { continue };
+    let made_by: Vec<Vec<String>> = page_forms(group).into_iter().map(|(c, f)| command_line(c, f, &[], &[])).collect();
+    let seen = read(ctx, &made_by, print);
+    View { group, subjects: seen.subjects, facts: seen.facts, own: true, made_by }
+}
+
+/// Run these command lines as l3 runs them, for what they show; printed (each said first), or not.
+fn read(ctx: &Ctx, lines: &[Vec<String>], print: bool) -> Seen {
+    let mut all = Seen::default();
+    for argv in lines {
+        if print { said(argv); }
+        let Ok(call) = args::parse(argv, ctx) else { continue };
         let (done, seen) = noting(|| cmd::perform(ctx, &call));
         let offline = matches!(done, Err(Error::Offline(_)));
         match done {
@@ -474,10 +481,17 @@ fn page(ctx: &Ctx, group: Group, print: bool) -> View {
             Err(e) => if print { out::fail(&e, false); },
         }
         crate::sync::after(ctx, &call, offline);
-        view.subjects.extend(seen.subjects);
-        view.facts.extend(seen.facts);
+        all.subjects.extend(seen.subjects);
+        all.facts.extend(seen.facts);
     }
-    view
+    all
+}
+
+/// After a deed: what it showed is the page now (an issue opened, a folder); else the page as it was made, read again.
+fn next_view(ctx: &Ctx, view: &View, seen: Seen, argv: Vec<String>) -> View {
+    if !seen.subjects.is_empty() { return View { group: view.group, subjects: seen.subjects, facts: seen.facts, own: false, made_by: vec![argv] }; }
+    let again = read(ctx, &view.made_by, false);
+    View { group: view.group, subjects: again.subjects, facts: again.facts, own: view.own, made_by: view.made_by.clone() }
 }
 
 /// What is there now in each place on the rail, in a few words (as bare `l3` says it off a terminal).
@@ -563,7 +577,7 @@ pub fn rail(ctx: &Ctx) -> ExitCode {
                 let flow = if g == Group::New { new_repo(ctx) } else { let view = page(ctx, g, true); browse(ctx, view, None) };
                 match flow {
                     Flow::Leave => return ExitCode::SUCCESS,
-                    Flow::Rail => term::put(&format!("\n{}\n", style.bold(&heading(ctx)))),
+                    Flow::Rail => term::put(&format!("{}\n", style.bold(&heading(ctx)))),
                 }
             }
         }
@@ -610,9 +624,8 @@ fn browse(ctx: &Ctx, mut view: View, mut land: Option<String>) -> Flow {
                     let subject = match rows[r].go { Go::Thing(k) => Some(view.subjects[k].clone()), _ => None };
                     let offer = rows[r].offers[d];
                     let before: Vec<String> = view.subjects.iter().map(|s| s.word.clone()).collect();
-                    if let Done::Ran { seen, .. } = run(ctx, offer, subject.as_ref()) {
-                        // What the deed showed is the page now (an issue opened, a folder); else the purpose's page, read again.
-                        view = if seen.subjects.is_empty() { page(ctx, view.group, false) } else { View { group: view.group, subjects: seen.subjects, facts: seen.facts, own: false } };
+                    if let Done::Ran { seen, argv, .. } = run(ctx, offer, subject.as_ref()) {
+                        view = next_view(ctx, &view, seen, argv);
                         land = subject.map(|s| s.word).filter(|w| view.subjects.iter().any(|s| s.word == *w))
                             .or_else(|| view.subjects.iter().find(|s| !before.contains(&s.word)).map(|s| s.word.clone()));
                     }
@@ -639,14 +652,14 @@ fn is(s: &Subject, word: &str) -> bool {
 }
 
 /// After a command typed by hand, on a terminal: its next deeds in a short row that Enter or Esc passes by.
-pub fn after(ctx: &Ctx, call: &args::Call, seen: Seen) {
+pub fn after(ctx: &Ctx, call: &args::Call, argv: &[String], seen: Seen) {
     let c = call.command;
     if c.group == Group::Other || c.hidden || call.form.args.contains(&Arg::Argv) { return; }
     if seen.subjects.is_empty() && !call.form.page && call.form.deeds.is_empty() { return; }
     ACTIVE.with(|a| a.set(true));
     let mut word = if seen.subjects.is_empty() { named(ctx, call) } else { None };
-    let mut view = if !seen.subjects.is_empty() { View { group: c.group, subjects: seen.subjects, facts: seen.facts, own: call.form.page } }
-        else if word.is_some() { page(ctx, c.group, false) } else { View { group: c.group, subjects: Vec::new(), facts: Vec::new(), own: false } };
+    let mut view = if !seen.subjects.is_empty() { View { group: c.group, subjects: seen.subjects, facts: seen.facts, own: call.form.page, made_by: vec![argv.to_vec()] } }
+        else if word.is_some() { page(ctx, c.group, false) } else { View { group: c.group, subjects: Vec::new(), facts: Vec::new(), own: false, made_by: Vec::new() } };
     loop {
         // Never take keys the person typed ahead for their next command.
         if term::typed_ahead() { return; }
@@ -681,8 +694,8 @@ pub fn after(ctx: &Ctx, call: &args::Call, seen: Seen) {
         let (thing, offer, _) = items[k].clone();
         let subject = thing.map(|k| view.subjects[k].clone());
         let before: Vec<String> = view.subjects.iter().map(|s| s.word.clone()).collect();
-        let Done::Ran { seen, .. } = run(ctx, offer, subject.as_ref()) else { return };
-        view = if seen.subjects.is_empty() { page(ctx, view.group, false) } else { View { group: view.group, subjects: seen.subjects, facts: seen.facts, own: false } };
+        let Done::Ran { seen, argv, .. } = run(ctx, offer, subject.as_ref()) else { return };
+        view = next_view(ctx, &view, seen, argv);
         word = subject.map(|s| s.word).filter(|w| view.subjects.iter().any(|s| s.word == *w))
             .or_else(|| view.subjects.iter().find(|s| !before.contains(&s.word)).map(|s| s.word.clone()));
     }
@@ -755,7 +768,7 @@ mod tests {
     }
 
     fn git_page() -> View {
-        View { group: Group::Git, own: true, facts: Vec::new(), subjects: vec![
+        View { group: Group::Git, own: true, facts: Vec::new(), made_by: Vec::new(), subjects: vec![
             issue(1, "Fix：restart loses the draft", "notes · not started", &[Fact::CanStart]),
             issue(2, "Docs：readme", "notes · sora · started just now", &[Fact::WorkedHere, Fact::CanCommit, Fact::OnWork]),
         ] }
@@ -825,7 +838,7 @@ mod tests {
     #[test]
     fn a_long_page_says_how_much_is_above_and_below_the_focus() {
         let subjects = (1..=30).map(|n| issue(n, "Fix：x", "", &[Fact::CanStart])).collect();
-        let rows = rows(&View { group: Group::Git, own: true, facts: Vec::new(), subjects }, ONLINE, &[Fact::SignedIn]);
+        let rows = rows(&View { group: Group::Git, own: true, facts: Vec::new(), made_by: Vec::new(), subjects }, ONLINE, &[Fact::SignedIn]);
         let lines = draw(&rows, Some((15, 0)), 80, 12, Style::PLAIN, "keys");
         assert!(lines.len() <= 12, "{lines:?}");
         assert!(lines.first().is_some_and(|l| l.contains('↑')) && lines.iter().any(|l| l.contains('↓')), "{lines:?}");

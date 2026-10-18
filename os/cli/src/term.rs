@@ -106,6 +106,13 @@ impl Keys {
             t.c_cc[libc::VMIN] = 1;
             t.c_cc[libc::VTIME] = 0;
             if libc::tcsetattr(0, libc::TCSANOW, &t) != 0 { return None; }
+            // Even if l3 fails while it holds the keys (a release aborts on a panic, so no Drop runs), the terminal is given back.
+            static HOOK: std::sync::Once = std::sync::Once::new();
+            HOOK.call_once(|| {
+                let before = std::panic::take_hook();
+                std::panic::set_hook(Box::new(move |p| { give_back(); before(p) }));
+            });
+            *HELD.lock().unwrap_or_else(|e| e.into_inner()) = Some(saved);
             put("\x1b[?25l");
             Some(Keys { saved })
         }
@@ -145,6 +152,20 @@ impl Drop for Keys {
         put("\x1b[?25h");
         #[cfg(unix)]
         unsafe { libc::tcsetattr(0, libc::TCSANOW, &self.saved); }
+        #[cfg(unix)]
+        { *HELD.lock().unwrap_or_else(|e| e.into_inner()) = None; }
+    }
+}
+
+/// The terminal's modes from before the keys were held, to give back if l3 fails meanwhile.
+#[cfg(unix)]
+static HELD: std::sync::Mutex<Option<libc::termios>> = std::sync::Mutex::new(None);
+
+#[cfg(unix)]
+fn give_back() {
+    if let Some(t) = HELD.lock().unwrap_or_else(|e| e.into_inner()).take() {
+        put("\x1b[?25h\r\n");
+        unsafe { libc::tcsetattr(0, libc::TCSANOW, &t); }
     }
 }
 

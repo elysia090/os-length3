@@ -90,11 +90,40 @@ Server    server
 Inbox     inbox · name
 ```
 
+Nobody has to learn these first. At a terminal, `l3` alone is the rail:
+the same purposes in the same order and words, each with what is there now;
+pick one (↑↓, a number or its first letter, Enter) and its page is printed
+as `l3 <page>` prints it, then its things with their deeds, the ones where
+they stand (an issue not started: Start; changed: Commit; committed: Push;
+handed in: Approve, Merge…). A deed asks for what it needs in place, one line
+each, says the command it runs (`→ l3 issue new notes "Fix：title"`) and
+then offers what comes next; q or Esc leaves, and what stays in the
+scrollback is plain text. After a command typed by hand, its next deeds come
+in one short row that Enter or Esc passes by. It is all lines under what is
+there (over SSH, in a Prompt), redrawn only on a key, the focus a › and
+brackets. Through a pipe, with `--json`, `TERM=dumb` or `L3_PLAIN=1`, nothing
+is offered or asked and l3 writes exactly what it always did.
+
+```
+$ l3
+Length³ OS · length3.com
+  › 1  Home     Profile · TODO 1 open of 2
+    2  Forge    Your workshop · 1 repo · 1 on the band
+    3  File     The tree of / · /root holds 1 repo
+    4  Git      Issues and commits · 1 issue open
+    …
+    9  +        New repo
+  ↑↓ choose · Enter open · 1-9 or a letter jumps · q leaves
+```
+
 One table (`cli/src/spec.rs`) says every form: its words and what each
 slot is (a repo, a path, an issue, text…), its flags, what it needs (the
 Remote; whether it may run inside the app's Prompt) and how it keeps in step
-with the Remote. Parsing, the help, the completion, what a Prompt may run and
-what is sent and taken in around each command are all read from it. `l3 help` lists the
+with the Remote, and, for the menu, which forms make a purpose's page and
+which deeds a form is offered as (its word in both languages, what it is
+pressed on, the facts it is offered under, what it asks). Parsing, the help,
+the completion, the menu, what a Prompt may run and what is sent and taken
+in around each command are all read from it. `l3 help` lists the
 commands by the rail, `l3 help COMMAND` (or `l3 COMMAND --help`) gives one
 command's forms, `l3 help all` every form, a mistyped word gets the nearest
 one ("Did you mean: l3 commit"), and `l3 completion bash|zsh|fish` completes

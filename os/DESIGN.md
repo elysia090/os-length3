@@ -561,6 +561,65 @@ number in both (#3), and Home's state is the same files, so anything done in one
 the other. The Prompt's shell works on the repo itself: what it changes is
 written back, and what is saved elsewhere comes in.
 
+### The command line without learning it first
+
+The GUI asks nobody to learn it before using it: the rail shows the
+purposes, a press shows the page, and the next deed is on the page. `l3`
+at a terminal is used the same way, and stays a command line:
+
+- **`l3` alone is the rail.** The purposes in the rail's order and words
+  (Home, Forge, File, Git, Runtime, Remote, Server, Inbox, +), each with its
+  role and what is there now (TODO open, repos, issues open, the root, where
+  the Remote stands, servers, what is not read). It is a few lines under
+  what is already in the terminal, never a screen taken over: it works over
+  SSH and inside a Prompt, and the scrollback stays readable.
+- **A purpose picked prints its page** as its commands print it, each said
+  first as the command it is (`→ l3 git`), then **its things with their
+  deeds**: each issue, TODO item, repo, conversation, board or thing by size
+  is a row, and the focused row's deeds are under it, what the thing is for
+  first, what goes against it or leaves it last (§3, Where a deed sits); the
+  page's own deeds (Write an issue, Add a TODO, Sign in) are rows of their
+  own. The deeds are where the thing stands: an issue not started offers
+  Start; changed, Commit; committed, Push; handed in, Approve and Merge (Merge
+  first once approved), Reply, Ask for changes, Reject.
+- **A deed takes its words from the thing it is pressed on** and asks only
+  for the rest, in place, one line each, as the app's fields ask: the name
+  over the field, what goes in it beside (First line, Kind：title, as Fix：…),
+  a repo or a template chosen in a row of their own (one repo is chosen
+  without asking). What cannot be undone at once (Remove, Free, Reset, Sign
+  out, Block) is asked first, Not now first and the deed beside it. Words
+  the command refuses (a name taken) are said under the field, which is
+  asked again. An empty line is Not now.
+- **Every deed says the command it is** before it runs (`→ l3 start
+  notes#1`), so the words are learned by seeing them and never needed. Its
+  answer is l3's own, and then the page's rows again, read anew, with the
+  focus on what was just done or made (§1, What one was doing stays).
+- **After a command typed by hand**, its next deeds come in one short row
+  (`notes#1  Push · Open · Back to main`), with nothing chosen: Enter alone,
+  Esc or any other key passes it by and leaves nothing behind; keys typed
+  ahead for the next command are never taken for it.
+- **One table drives both.** A deed is a form of `cli/src/spec.rs` with what
+  the menu needs beside it: its word in both languages, what it is pressed
+  on, the facts it is offered under, the words it gives itself, what it
+  asks, its weight. Each page notes its things and their facts while it is
+  made (the issue's from the same reading that writes its card's `next:`
+  line), so the menu, the help, the completion and the card cannot drift;
+  the tests read every deed back through the parser as the form it is.
+- **Keys** as a list has them: ↑↓ (Tab) to choose a row, ←→ a deed, Enter to
+  do it, 1–9 or a letter to jump (again for the next with that letter),
+  Backspace to the rail, q or Esc to leave. The focus is a › and brackets,
+  so nothing depends on colour (NO_COLOR is honoured); the lines are drawn
+  again only when a key is pressed, and what is left when a choice is made
+  is plain text: the choice, the command, its answer.
+- **Still a plain command.** With words after it (`l3 git`), l3 does and
+  answers what it did, the short row only following at a terminal; through
+  a pipe or a file (standard input or output not a terminal), with
+  `--json`, with `TERM=dumb`, or with `L3_PLAIN=1` (the one switch that keeps
+  a terminal plain too, for a screen reader that prefers it or a recorded
+  session), nothing is offered or asked, and what l3 writes and how it exits
+  are byte for byte what they were (`cli/tests/plain.rs` keeps the
+  transcripts; `cli/tests/menu.rs` drives the menu through a real pty).
+
 ### The canonical copy is on the Remote
 
 As with GitHub, the copy that counts is the Remote's, and work on a device
