@@ -465,16 +465,15 @@ function desktopApp(): HTMLElement {
     const first = deb ?? appimage;
     if (!first) return;
     const other = deb && appimage ? appimage : null;
-    const get = h('a', {class: 'button primary download', href: url(first.file), download: first.file}, mark('download'), h('span', {}, t('Download')));
-    const also = other ? h('a', {class: 'button small-button download-other', href: url(other.file), download: other.file,
-      title: t('For any other x86-64 Linux')}, t('AppImage · {size}', {size: bytes(other.bytes)})) : null;
+    const get = h('a', {class: 'button primary small-button download', href: url(first.file), download: first.file}, mark('download'), h('span', {}, t('Download')));
+    const also = other ? h('a', {class: 'button small-button', href: url(other.file), download: other.file,
+      title: t('AppImage · {size} · for any other x86-64 Linux', {size: bytes(other.bytes)})}, 'AppImage') : null;
+    // Its card is the SSH card's size, beside it: what it is, what it takes, and Download at its bottom left.
     section.replaceChildren(h('h2', {id: 'app-title'}, t('Desktop app')),
       h('div', {class: 'card small-card app-card'},
         h('span', {class: 'card-title'}, t('Length³ OS {version}', {version: RELEASE})),
-        // Two sentences, a line each, so neither is broken where the card ends.
-        h('p', {class: 'muted'}, h('span', {}, t('Runs on this computer as an app.')), h('span', {}, t('Its Prompts run on the computer\'s own Linux.'))),
-        h('span', {class: 'muted small'}, first === deb
-          ? t('x86-64 Linux · .deb for Debian and Ubuntu · {size}', {size: bytes(first.bytes)})
+        h('span', {class: 'muted small'}, t('Runs on this computer as an app.')),
+        h('span', {class: 'muted small'}, first === deb ? t('x86-64 Linux · .deb · {size}', {size: bytes(first.bytes)})
           : t('x86-64 Linux · AppImage · {size}', {size: bytes(first.bytes)})),
         h('div', {class: 'card-foot'}, get, also, h('span', {class: 'grow'}))));
     section.hidden = false;
@@ -495,9 +494,9 @@ export function runtime(ctx: Context): Node[] {
   // Prompts started again from Dotfiles are new sessions: the section is drawn again to follow them.
   let running = prompts();
   const restarted = () => { const next = prompts(); running.replaceWith(next); running = next; };
-  return [pageHead('runtime'), holder, running, sshSection(),
+  // SSH and, on the web, the desktop app side by side: two small things this device can be reached by or become.
+  // (The desktop app is offered on the web; the app itself is it.)
+  return [pageHead('runtime'), holder, running, h('div', {class: 'section-row'}, sshSection(), ...(isNative ? [] : [desktopApp()])),
     h('section', {class: 'section', 'aria-labelledby': 'env-title'}, h('h2', {id: 'env-title'}, t('Environment in effect')), environment()),
-    dotfilesSection(restarted),
-    // The desktop app is offered on the web; the app itself is it.
-    ...(isNative ? [] : [desktopApp()])];
+    dotfilesSection(restarted)];
 }

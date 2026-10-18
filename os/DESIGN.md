@@ -899,9 +899,9 @@ The Prompt never goes silent while something takes time:
 
 ### Runtime
 
-この端末 first, then what can go from it, then what is running, then the
-environment actually in effect (what runs, not what was asked for), and on
-the web, at its foot, the desktop app. There is no table of policies: what
+この端末 first, then what can go from it, then what is running, then SSH
+(on the web with the desktop app beside it), then the environment actually
+in effect (what runs, not what was asked for). There is no table of policies: what
 the device holds is shown as things, and each thing says what can be done
 with it.
 
@@ -1016,22 +1016,22 @@ with it.
   Remove under the pointer and Not now at the right.
 
 - **デスクトップアプリ**, on the web only (the app does not offer itself):
-  one small card under its heading, not wide (480 px at most, so it reads
-  as a box and not a band across the page). Its title is Length³ OS and the
-  version `RELEASE` names; a line each for what it is (この端末で、アプリと
-  して動きます。 / Prompt は端末の Linux の上で動きます。), so neither sentence
-  is broken where the card ends; then, quietly, x86-64 Linux, which file
-  and its size. At its bottom left, Download (ダウンロード): a primary
-  button drawn with the download mark (an arrow into a tray, `icons.ts`)
-  and the word. It is at the left because it leaves the page for this
-  computer, as Forge does on Remote's card. It gives the .deb, which
-  Debian and Ubuntu install; beside it, a small plain button offers the
-  AppImage, for any other x86-64 Linux, with its size. Both are the files
-  `shared/desktop-releases.json` pins for that version, served by the
-  Remote (`/v1/desktop/<file>`, to anyone, by range), where each deploy
-  puts them from the release (`service/mirror.ts`). Each is offered only
-  once the Remote says it has it; with neither there, the section is not
-  shown, never a button that cannot act.
+  beside SSH, on one row (two small things this device can be reached by
+  or become), its card the SSH card's size, the two ending level; where the
+  row has no room for both, it goes under. Few words: its title, Length³
+  OS and the version `RELEASE` names; one line of what it is (この端末で
+  アプリとして動きます); quietly, x86-64 Linux, which file and its size. At
+  its bottom left, Download (ダウンロード): a small primary button with the
+  download mark (an arrow into a tray, `icons.ts`) and the word. It is at
+  the left because it leaves the page for this computer, as Forge does on
+  Remote's card. It gives the .deb, which Debian and Ubuntu install; beside
+  it, a small plain button, AppImage, for any other x86-64 Linux (its size
+  in its title). Both are the files `shared/desktop-releases.json` pins for
+  that version, served by the Remote (`/v1/desktop/<file>`, to anyone, by
+  range), where each deploy puts them from the release
+  (`service/mirror.ts`). Each is offered only once the Remote says it has
+  it; with neither there, the section is not shown, never a button that
+  cannot act.
 
 In a browser the same list is the browser's copy of the repos (このブラウザ,
 its share an estimate), and the same three answers apply.
