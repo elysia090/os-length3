@@ -10,7 +10,9 @@ name: Release
 # the Prompt's userland, os/scripts/web-release.sh) and the desktop app (the
 # same UI, its Prompt running that root on the machine: a .deb and an
 # AppImage), with their digests. Devices then trust the root once its digest is pinned in
-# os/core/src/root.rs.
+# os/core/src/root.rs. No Cloudflare credentials are kept here: the Remote's
+# deploy (os/service/deploy.ts) takes the pinned root and desktop files from
+# the release and puts them on the Remote, which serves them to anyone.
 on:
   push:
     tags: ['os-length3-linux-v*']
@@ -133,7 +135,14 @@ jobs:
             echo "mkdir opened && tar --zstd -xf $root -C opened"
             echo '```'
             echo
-            echo "To serve this release on the web, pin its web zip in \`os/shared/web-releases.json\` (\"$VERSION\": its SHA-256 above), as its root is pinned in \`os/core/src/root.rs\`."
+            echo "To serve this release, pin what it made, as its root is pinned in \`os/core/src/root.rs\`: its web zip in \`os/shared/web-releases.json\` (\"$VERSION\": its SHA-256 above), and its desktop app in \`os/shared/desktop-releases.json\`, as below. Each deploy of the Remote then takes the pinned root and desktop files from this release, checks them against those pins and puts them on the Remote, which hands them to anyone (this repository is private)."
+            echo
+            echo '```json'
+            echo "\"$VERSION\": {"
+            echo "  \"deb\": {\"file\": \"$deb\", \"bytes\": $(stat -c %s "$deb"), \"sha256\": \"$(sha256sum "$deb" | cut -d' ' -f1)\"},"
+            echo "  \"appimage\": {\"file\": \"$appimage\", \"bytes\": $(stat -c %s "$appimage"), \"sha256\": \"$(sha256sum "$appimage" | cut -d' ' -f1)\"}"
+            echo "}"
+            echo '```'
             echo
             echo "\`manifest\` names the base, the l3 inside and the script that made it. The web build opens with any static server (\`npx serve\` in the unzipped folder). The desktop app: \`sudo apt install ./$deb\`, or \`chmod +x $appimage\` and run it."
           } > ../notes.md
