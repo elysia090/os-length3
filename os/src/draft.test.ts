@@ -290,6 +290,20 @@ test('a file larger than the Remote takes stays here, named, and the rest of the
   await store.remove('big', 'big.log');
 });
 
+test('a repo made here under a name the Remote remembers as discarded is sent as a new repo', async () => {
+  await store.create('again', 'standard');
+  await draft.sync('again');
+  await db.execute(sql`update repo set off_at = now() where name = 'again'`);
+  await purge(db, sql`r.name = 'again'`);
+  // Made here anew (on this device or another): never in step, so it is a new repo, not the discarded one back.
+  await draft.forget('again');
+  await store.write('again', 'README.md', '# made again\n');
+  const s = await draft.sync('again');
+  assert.ok(s.sent > 0);
+  const there = await (await fetch(`${URL_}/v1/repos/again`, {headers: {Authorization: `Bearer ${token}`}})).json() as {draft: Record<string, string>};
+  assert.equal(await (await fetch(`${URL_}/v1/blobs/${there.draft['README.md']}`, {headers: {Authorization: `Bearer ${token}`}})).text(), '# made again\n');
+});
+
 test('an issue is worked on in its own copy; pushed, submitted, reviewed and merged into main', async () => {
   await store.add('notes', 'issue', '001.md', 'Fix：落ちる\n');
   await draft.sync('notes');

@@ -820,10 +820,11 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
     let dir = repos.dir(repo)?;
     let (key, line) = key(repos, repo);
     let path = at(repo, &line, "");
-    let draft = at(repo, &line, "/draft");
     let mut out = Synced::default();
     for _ in 0..12 {
-        let base = base(&key).unwrap_or_default();
+        let agreed = base(&key);
+        let draft = draft_path(repo, &line, agreed.is_some());
+        let base = agreed.unwrap_or_default();
         let here = local_tree(&dir);
         out.unsynced = here.unsynced.clone();
         // Before sending, see whether the Remote moved.
@@ -890,6 +891,14 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
         }
     }
     Ok(out)
+}
+
+/// Where a line's diff is sent. A copy never in step with the Remote makes it
+/// anew, even under a name the Remote remembers as discarded (src/draft.ts);
+/// one that was in step cannot bring back what was discarded by sending itself.
+fn draft_path(repo: &str, line: &str, agreed: bool) -> String {
+    let p = at(repo, line, "/draft");
+    if agreed || line != crate::work::MAIN { p } else { format!("{p}?anew=1") }
 }
 
 /// What the Remote has of a line, for a copy that last agreed `agreed` with it.
@@ -1133,6 +1142,13 @@ mod tests {
         // In step before: not taken for removed there, and said.
         assert!(there_of(Reply::NotFound, 3).is_err_and(|e| e.contains("does not have this repo") || e.contains("この repo がありません")));
         assert_eq!(there_of(Reply::Ok(serde_json::json!({"version": 3})), 3), Ok(Some(serde_json::json!({"version": 3}))));
+    }
+
+    #[test]
+    fn a_copy_never_in_step_is_sent_as_a_new_repo() {
+        assert!(draft_path("notes", crate::work::MAIN, false).ends_with("/draft?anew=1"));
+        assert!(draft_path("notes", crate::work::MAIN, true).ends_with("/draft"));
+        assert_eq!(draft_path("notes", "001", false), "/v1/repos/notes/draft?line=001");
     }
 
     #[test]

@@ -307,7 +307,10 @@ async function inStep(repo: string): Promise<Synced> {
         if (!put.ok) throw new RemoteError(put.status, put.status === 507 ? t('The Remote is full for this account') : t('The Remote did not take it ({status})', {status: put.status}));
       }
     }
-    const patched = await api(at(repo, '/draft'), {method: 'PATCH', body: JSON.stringify({version: base.version, set: Object.fromEntries(set), remove})});
+    // Never in step with the Remote: it is made anew, even under a name the Remote remembers as discarded.
+    // A copy that was in step does not ask so, and cannot bring back what was discarded by sending itself.
+    const anew = !agreed && lineOf(repo) === 'main' ? '?anew=1' : '';
+    const patched = await api(at(repo, `/draft${anew}`), {method: 'PATCH', body: JSON.stringify({version: base.version, set: Object.fromEntries(set), remove})});
     if (patched.status !== 200) continue; // someone else moved it, or a blob went missing: once more
     const {version} = await patched.json() as {version: number};
     const tree = {...base.tree};
