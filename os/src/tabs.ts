@@ -1,14 +1,19 @@
 // The other tabs of this app in this browser. They share one copy of the
 // repos (repos.ts, IndexedDB) and one set of settings (state.ts,
-// localStorage), so nothing is let go while another tab still holds it
-// (lifecycle.ts). In the app there is one window and none of this is
-// needed: every call here is a no-op there.
+// localStorage), so each tab hears what the others keep, a repo is kept in
+// step by one tab at a time (draft.ts), and nothing is let go while another
+// tab still holds it (lifecycle.ts). In the app there is one window and none
+// of this is needed: every call here is a no-op there.
 
 import {isNative} from './host.ts';
 
 export type Message =
+  /** `key`'s copy was kept: these paths of it changed (none: the whole copy). */
+  | {kind: 'kept'; key: string; paths?: string[]}
+  /** These copies were let go from this browser. */
+  | {kind: 'gone'; keys: string[]}
   /** A tab says it is here (`hello` asks the others to say so too) or going. */
-  {kind: 'hello' | 'here' | 'bye'; tab: string};
+  | {kind: 'hello' | 'here' | 'bye'; tab: string};
 
 /** What tabs speak through (a BroadcastChannel): what one posts, every other hears. */
 export interface Channel { postMessage(m: Message): void; onmessage: ((e: {data: Message}) => void) | null }
@@ -57,13 +62,23 @@ export class Tabs {
     const alive = new Set(q.held.map((h) => h.name ?? '').filter((n) => n.startsWith('length3:tab:')).map((n) => n.slice('length3:tab:'.length)));
     for (const id of [...this.others]) if (!alive.has(id)) this.others.delete(id);
   }
+  /**
+   * Run `f` holding `name` across every tab of this browser, so two tabs never
+   * do it at once (Web Locks); a browser without them runs it as it comes.
+   */
+  exclusive<T>(name: string, f: () => Promise<T>): Promise<T> {
+    return this.locks ? this.locks.request(`length3:${name}`, f) as Promise<T> : f();
+  }
 }
 
 // Only in a page: a worker, or the tests' Node, has no tabs.
 const channel = !isNative && typeof document !== 'undefined' && typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('length3') as unknown as Channel : null;
 const tabs = new Tabs(channel, isNative ? undefined : (globalThis.navigator as {locks?: Locks} | undefined)?.locks);
+export const post = (m: Message) => tabs.post(m);
+export const hear = (fn: (m: Message) => void) => tabs.hear(fn);
 export const othersOpen = () => tabs.othersOpen();
 export const prune = () => tabs.prune();
+export const exclusive = <T>(name: string, f: () => Promise<T>) => tabs.exclusive(name, f);
 if (channel) {
   addEventListener('pagehide', () => tabs.bye());
   addEventListener('pageshow', (e) => { if ((e as PageTransitionEvent).persisted) tabs.again(); });

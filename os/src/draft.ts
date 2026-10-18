@@ -15,7 +15,8 @@ import {t} from './i18n.ts';
 import {isNative, native} from './host.ts';
 import {api, deviceWord, json, RemoteError} from './remote.ts';
 import {kept, store} from './repos.ts';
-import {getState, setState} from './state.ts';
+import {freshState, setState} from './state.ts';
+import {exclusive} from './tabs.ts';
 
 export type Tree = Record<string, string | null>;
 
@@ -39,8 +40,9 @@ export async function sha256(bytes: Uint8Array): Promise<string> {
 }
 
 const syncState = (): SyncState => {
+  // As kept now (another tab of this browser may have moved it), so nothing is decided from an old copy of it.
   // None kept yet (or not readable): nothing is agreed, and every repo is taken in afresh.
-  try { const s = JSON.parse(getState('sync') ?? '') as SyncState; return {...s, repos: s.repos ?? {}}; } catch { return {repos: {}}; }
+  try { const s = JSON.parse(freshState('sync') ?? '') as SyncState; return {...s, repos: s.repos ?? {}}; } catch { return {repos: {}}; }
 };
 const saveState = (s: SyncState) => setState('sync', JSON.stringify(s));
 /** The line a repo shows (main, or an issue's work), and the key its agreement is kept under. */
@@ -231,7 +233,18 @@ async function agree(repo: string, b: Base) {
   await setBase(repo, b);
 }
 
-async function webSync(repo: string): Promise<Synced> {
+/**
+ * Keep `repo` in step from this browser. Every tab of the app shares one copy
+ * (repos.ts) and one record of what was agreed (the `sync` setting), so a
+ * sync runs in one tab at a time and starts from both as they are kept now:
+ * this tab's changes kept first, then what other tabs kept taken in.
+ */
+const webSync = (repo: string): Promise<Synced> => exclusive(`sync:${keyOf(repo)}`, async () => {
+  if (kept) { await kept.flush(); await kept.reload(repo); }
+  return inStep(repo);
+});
+
+async function inStep(repo: string): Promise<Synced> {
   const out: Synced = {version: 0, sent: 0, taken: 0, both: [], unsynced: []};
   const path = at(repo);
   for (let round = 0; round < 12; round++) {
@@ -411,7 +424,7 @@ export function mergeTodo(base: string | null, here: string, there: string): str
 /** Whether a setting needs agreeing: its version on the Remote moved, or its value here is not the one agreed. */
 export function homeMoved(key: HomeKey, version: number): boolean {
   const b = syncState().home?.[key];
-  return version !== (b?.version ?? 0) || (getState(key) ?? '') !== (b?.value ?? '');
+  return version !== (b?.version ?? 0) || (freshState(key) ?? '') !== (b?.value ?? '');
 }
 
 /**
@@ -419,7 +432,7 @@ export function homeMoved(key: HomeKey, version: number): boolean {
  * with the Remote. One changed here and not sent yet (written offline)
  * stays, and is sent at the next visit.
  */
-export const homeAgreed = (): HomeKey[] => HOME_KEYS.filter((k) => (getState(k) ?? '') === (syncState().home?.[k]?.value ?? ''));
+export const homeAgreed = (): HomeKey[] => HOME_KEYS.filter((k) => (freshState(k) ?? '') === (syncState().home?.[k]?.value ?? ''));
 
 /**
  * Agree a setting with the Remote. Unchanged here: the Remote's is taken.
@@ -428,11 +441,14 @@ export const homeAgreed = (): HomeKey[] => HOME_KEYS.filter((k) => (getState(k) 
  * both were read from (mergeTodo), and any other setting is the Remote's. l3 agrees them the same way, in the same record
  * (core/src/home.rs), so the app and l3 on one device are one device.
  */
-export async function syncHome(key: HomeKey): Promise<void> {
+export const syncHome = (key: HomeKey): Promise<void> => exclusive(`home:${key}`, () => serial(`home:${key}`, () => agreeSetting(key)));
+
+async function agreeSetting(key: HomeKey): Promise<void> {
   for (let round = 0; round < 3; round++) {
     const s = syncState();
     const b = s.home?.[key];
-    const here = getState(key);
+    // As kept now: another tab may have written it, or agreed it, since this one read it.
+    const here = freshState(key);
     const there = await json<{value: string | null; version: number}>(`/v1/home/${key}`);
     const changedHere = here !== null && here !== b?.value;
     if (!changedHere) {

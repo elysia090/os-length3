@@ -15,7 +15,7 @@ import {forgetExcept} from './fetch.ts';
 import * as draft from './draft.ts';
 import {isNative} from './host.ts';
 import {connection, onConnection, onReach, remoteAway, RemoteError} from './remote.ts';
-import {kept, onChange} from './repos.ts';
+import {kept, onChange, TAB} from './repos.ts';
 import {dropState, onState} from './state.ts';
 import {othersOpen, prune} from './tabs.ts';
 
@@ -188,9 +188,10 @@ export async function begin() {
   void forgetExcept(new Set());
   // A browser shows again the work each repo showed.
   draft.restoreLines();
-  // Every change a person (or a Prompt) makes is sent; sync's own writes are not news.
-  onChange((c) => { if (c.by !== draft.BY) schedule(c.repo); else tell(); });
-  onState((k) => { if ((k === 'profile' || k === 'todo' || k === 'dotfiles') && connection()) void draft.syncHome(k).catch(away); });
+  // Every change a person (or a Prompt) makes is sent; sync's own writes are not news, nor another tab's (it sends its own).
+  onChange((c) => { if (c.by !== draft.BY && c.by !== TAB) schedule(c.repo); else tell(); });
+  // A setting changed here is sent; one another tab changed, that tab sends.
+  onState((k, outside) => { if (!outside && (k === 'profile' || k === 'todo' || k === 'dotfiles') && connection()) void draft.syncHome(k).catch(away); });
   // This browser's storage started or stopped refusing what is kept: said where each repo stands.
   kept?.onTrouble(() => void look());
   // The Remote answers again: what waited for it goes now, not at its next try (up to a minute away).
