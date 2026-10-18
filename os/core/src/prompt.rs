@@ -142,7 +142,9 @@ fn record_as(data: &Path, pid: u32, repo: &str, network: bool) -> std::io::Resul
     let started = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64);
     let r = Running { repo: repo.into(), pid, network, started, start_ticks };
     let path = dir.join(format!("{pid}.json"));
-    fs::write(&path, serde_json::to_vec(&r).map_err(std::io::Error::other)?)?;
+    // Whole or not at all: `running` lets go of a record it cannot read, so one seen half written was
+    // taken for a Prompt that had gone, while it ran (bug: it was written in place).
+    crate::atomic::replace(&path, &serde_json::to_vec(&r).map_err(std::io::Error::other)?, crate::atomic::How::RECORD)?;
     Ok(Recorded(path))
 }
 
@@ -227,6 +229,28 @@ mod tests {
         assert_eq!(running(&data).iter().map(|r| r.repo.as_str()).collect::<Vec<_>>(), ["here"]);
         drop(mine);
         assert!(running(&data).is_empty());
+        let _ = fs::remove_dir_all(&data);
+    }
+
+    #[test]
+    fn a_record_being_written_is_never_taken_for_one_whose_prompt_is_gone() {
+        let data = std::env::temp_dir().join(format!("length3-prompts-race-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&data);
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        // Another l3 (or the app) looking at what runs, all the while.
+        let looking = {
+            let (data, stop) = (data.clone(), stop.clone());
+            std::thread::spawn(move || while !stop.load(std::sync::atomic::Ordering::Relaxed) { running(&data); })
+        };
+        let mut lost = 0;
+        for _ in 0..200 {
+            let kept = record(&data, "here", false).unwrap();
+            if !kept.0.exists() { lost += 1; }
+            drop(kept);
+        }
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        looking.join().unwrap();
+        assert_eq!(lost, 0, "records let go while their Prompt ran");
         let _ = fs::remove_dir_all(&data);
     }
 }

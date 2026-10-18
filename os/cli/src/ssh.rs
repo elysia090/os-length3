@@ -49,22 +49,25 @@ fn log(s: &str) {
     let _ = writeln!(std::io::stderr(), "{now} {s}");
 }
 
-/// The host key: read, or made once (Ed25519, from the kernel's randomness) and kept owner-only.
+/// The host key: read, or made once (Ed25519, from the kernel's randomness) and kept owner-only. It is made
+/// whole or not at all (bug: a crash while writing it left half a key, and SSH could not be turned on again).
 pub fn host_key(data: &Path) -> Result<PrivateKey, String> {
     let at = ssh::host_key(data);
-    if let Ok(text) = std::fs::read(&at) {
-        return PrivateKey::from_openssh(text).map_err(|e| tr!("The host key {} cannot be read: {}", "ホスト鍵 {} を読めません：{}", at.display(), e));
-    }
+    let read = |text: Vec<u8>| PrivateKey::from_openssh(text).map_err(|e| tr!("The host key {} cannot be read: {}. Remove it to make a new one (each ssh client then says the host key changed)",
+        "ホスト鍵 {} を読めません：{}。消せば新しく作ります（そのあと各 ssh クライアントはホスト鍵が変わったと言います）", at.display(), e));
+    if let Ok(text) = std::fs::read(&at) { return read(text); }
     length3_core::boundary::private_dir(&ssh::dir(data)).map_err(|e| e.to_string())?;
     let mut seed = [0u8; 32];
     std::fs::File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut seed)).map_err(|e| e.to_string())?;
     let pair = russh::keys::ssh_key::private::Ed25519Keypair::from_seed(&seed);
     let key = PrivateKey::new(pair.into(), "length3").map_err(|e| e.to_string())?;
     let text = key.to_openssh(russh::keys::ssh_key::LineEnding::LF).map_err(|e| e.to_string())?;
-    use std::os::unix::fs::OpenOptionsExt;
-    let mut f = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&at).map_err(|e| e.to_string())?;
-    f.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
-    Ok(key)
+    match length3_core::atomic::create(&at, text.as_bytes(), length3_core::atomic::How::PRIVATE) {
+        Ok(()) => Ok(key),
+        // Another start made it first: that one is this device's.
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => read(std::fs::read(&at).map_err(|e| e.to_string())?),
+        Err(e) => Err(tr!("{}: {}", "{}：{}", at.display(), e)),
+    }
 }
 
 /// The host key's fingerprint, as ssh shows it when it first connects.

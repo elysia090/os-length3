@@ -28,9 +28,16 @@ pub fn current(repo: &str) -> String {
 }
 
 fn set_current(repo: &str, line: &str) -> Result<()> {
-    crate::boundary::private_dir(line_file(repo).parent().unwrap()).map_err(|e| e.to_string())?;
-    if line == MAIN { let _ = fs::remove_file(line_file(repo)); return Ok(()); }
-    fs::write(line_file(repo), line).map_err(|e| e.to_string())
+    let file = line_file(repo);
+    crate::boundary::private_dir(file.parent().unwrap()).map_err(|e| e.to_string())?;
+    let done = if line == MAIN {
+        // Not there is main already; one that stays would keep the repo on the issue's copy.
+        fs::remove_file(&file).or_else(|e| if e.kind() == std::io::ErrorKind::NotFound { Ok(()) } else { Err(e) })
+    } else {
+        // Whole: a crash part way through left it empty (main) or naming a line with no copy.
+        crate::atomic::replace(&file, line.as_bytes(), crate::atomic::How::RECORD)
+    };
+    done.map_err(|e| crate::tr!("{}: {}", "{}：{}", file.display(), e))
 }
 
 pub fn valid(line: &str) -> bool {

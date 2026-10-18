@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
@@ -500,8 +500,8 @@ fn stamps_save(file: &Path, read: &[PathBuf]) {
     drop(map);
     let Some(dir) = file.parent() else { return };
     if fs::create_dir_all(dir).is_err() { return; }
-    let aside = dir.join(format!(".{}.length3-{}-0", file.file_name().unwrap_or_default().to_string_lossy(), std::process::id()));
-    if fs::write(&aside, text).is_ok() { let _ = fs::rename(&aside, file); }
+    // Not kept, the next run reads those files again: work lost, nothing wrong.
+    let _ = crate::atomic::replace(file, text.as_bytes(), crate::atomic::How::CACHE);
 }
 
 fn walk(dir: &Path, prefix: &str, out: &mut Local) {
@@ -592,11 +592,9 @@ pub fn base(repo: &str) -> Option<Base> {
 fn set_base(repo: &str, b: &Base) -> Result<()> {
     crate::boundary::private_dir(&sync_dir()).map_err(|e| e.to_string())?;
     let path = base_file(repo);
-    let tmp = sync_dir().join(format!(".{repo}.json.length3-{}-0", std::process::id()));
-    fs::write(&tmp, serde_json::to_vec(b).map_err(|e| e.to_string())?).and_then(|_| fs::rename(&tmp, &path)).map_err(|e| {
-        let _ = fs::remove_file(&tmp);
-        e.to_string()
-    })
+    // Durable: it is the record of what the Remote agreed, which every later sync goes by.
+    crate::atomic::replace(&path, &serde_json::to_vec(b).map_err(|e| e.to_string())?, crate::atomic::How::RECORD)
+        .map_err(|e| crate::tr!("{}: {}", "{}：{}", path.display(), e))
 }
 
 /// A cut was made at the base's version: it is the head now.
@@ -713,32 +711,16 @@ fn place(dir: &Path, rel: &str) -> Result<PathBuf> {
     Ok(at.join(parts[parts.len() - 1]))
 }
 
-/// Write `bytes` to `path` whole: into a new file beside it, then renamed
-/// over it. The new file is made afresh (O_EXCL), never opened through what
-/// is already there: a program in a Prompt can plant a link at any name in
-/// the repo, and writing through it would reach any file the person can
-/// write. Its name is this OS's temporary (usage.rs), so the walk skips it
-/// and a leftover is reclaimed.
+/// Write `bytes` to `path` whole (atomic.rs): never through what is already
+/// there, since a program in a Prompt can plant a link at any name in the
+/// repo, and writing through it would reach any file the person can write.
+/// Durable before the base that records it is (set_base): a file the base
+/// says came from the Remote but a crash took back would be sent as a change.
 fn write_file(path: &Path, bytes: &[u8]) -> Result<()> {
     if fs::symlink_metadata(path).is_ok_and(|m| !m.is_file()) {
         return Err(crate::tr!("{}: something that is not a file is there", "{}：ファイルではないものがあります", path.display()));
     }
-    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
-    let (tmp, mut f) = (0..64).find_map(|_| {
-        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let tmp = path.with_file_name(format!(".{name}.length3-{}-{n}", std::process::id()));
-        match fs::OpenOptions::new().write(true).create_new(true).open(&tmp) {
-            Ok(f) => Some(Ok((tmp, f))),
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => None,
-            Err(e) => Some(Err(crate::tr!("{}: {}", "{}：{}", tmp.display(), e))),
-        }
-    }).unwrap_or_else(|| Err(crate::tr!("{}: no free name beside it to write through", "{}：書くための名前が横に空いていません", path.display())))?;
-    let done = f.write_all(bytes).and_then(|_| f.sync_all()).and_then(|_| fs::rename(&tmp, path));
-    done.map_err(|e| {
-        let _ = fs::remove_file(&tmp);
-        crate::tr!("{}: {}", "{}：{}", path.display(), e)
-    })
+    crate::atomic::replace(path, bytes, crate::atomic::How::RECORD).map_err(|e| crate::tr!("{}: {}", "{}：{}", path.display(), e))
 }
 
 /// Whether what is at `at` is still what the tree read said (None: nothing).

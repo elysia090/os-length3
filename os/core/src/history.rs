@@ -118,7 +118,7 @@ fn head_tree(client: &Client, repo: &str, key: &str, head: Option<&str>) -> Resu
     let tree = tree_at(client, repo, id)?;
     // Kept to spare the next read; not kept, the next read asks again.
     if let Ok(b) = serde_json::to_vec(&Head { id: Some(id.into()), tree: tree.clone() }) {
-        let _ = fs::write(head_file(key), b);
+        let _ = crate::atomic::replace(&head_file(key), &b, crate::atomic::How::CACHE);
     }
     Ok(tree)
 }
@@ -513,7 +513,7 @@ fn remember_merged(repo: &str, issues: impl Iterator<Item = String>) {
     all.sort();
     // What this device saw merged, to hide it while away; not kept, it is seen again once the Remote answers.
     if crate::boundary::private_dir(&crate::paths::data_dir().join("sync")).is_ok() {
-        if let Ok(b) = serde_json::to_vec(&all) { let _ = fs::write(merged_file(repo), b); }
+        if let Ok(b) = serde_json::to_vec(&all) { let _ = crate::atomic::replace(&merged_file(repo), &b, crate::atomic::How::CACHE); }
     }
 }
 

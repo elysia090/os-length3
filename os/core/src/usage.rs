@@ -149,8 +149,8 @@ pub fn system(data: &Path) -> Vec<(SystemUsage, PathBuf)> {
             None => {
                 let n = tally(&e.path()).2;
                 about.allocated = Some(n);
-                let aside = e.path().join(format!(".installed.json.length3-{}-0", std::process::id()));
-                if fs::write(&aside, serde_json::to_string(&about).unwrap_or_default()).is_ok() { let _ = fs::rename(&aside, e.path().join("installed.json")); }
+                // Not kept, it is counted again next time.
+                if let Ok(text) = serde_json::to_vec(&about) { let _ = crate::atomic::replace(&e.path().join("installed.json"), &text, crate::atomic::How::RECORD); }
                 if let Some(t) = meta.as_ref().and_then(|m| m.modified().ok()) { let _ = fs::File::open(e.path()).and_then(|f| f.set_modified(t)); }
                 n
             }

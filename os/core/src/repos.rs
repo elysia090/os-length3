@@ -281,25 +281,13 @@ impl Repos {
         if !meta.is_file() {
             return Err(tr!("{} is not a file", "{} はファイルではありません", shown(repo, relative)));
         }
-        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        // `.<name>.length3-<pid>-<n>`: usage.rs recognises it as this OS's own
-        // temporary, reclaimable once its writer is gone.
-        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let temp = path.with_file_name(format!(".{name}.length3-{}-{n}", std::process::id()));
-        // Made afresh (never through a link or into a file already there).
-        let made = fs::OpenOptions::new().write(true).create_new(true).open(&temp);
-        let result = made.and_then(|mut f| {
-            use std::io::Write;
-            f.write_all(text.as_bytes())?;
-            f.sync_all()
-        })
-            .and_then(|_| fs::set_permissions(&temp, meta.permissions()))
-            .and_then(|_| fs::rename(&temp, &path));
-        if let Err(e) = result {
-            if e.kind() != std::io::ErrorKind::AlreadyExists { let _ = fs::remove_file(&temp); }
-            return Err(io_error(shown(repo, relative), &e));
-        }
+        // The file keeps its permissions (a script stays executable).
+        #[cfg(unix)]
+        let mode = { use std::os::unix::fs::PermissionsExt; Some(meta.permissions().mode() & 0o7777) };
+        #[cfg(not(unix))]
+        let mode = None;
+        crate::atomic::replace(&path, text.as_bytes(), crate::atomic::How { mode, durable: true })
+            .map_err(|e| io_error(shown(repo, relative), &e))?;
         Ok(text.len() as u64)
     }
 
