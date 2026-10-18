@@ -6,7 +6,7 @@ import {look} from '../news.ts';
 import {Drafts} from '../drafts.ts';
 import {kindOf} from '../text.ts';
 import {mark} from '../icons.ts';
-import {copying, pageHead, SETTLE} from './common.ts';
+import {copying, deed, pageHead, SETTLE} from './common.ts';
 import {every} from '../runs.ts';
 import {signInBox, signInPlace} from './remote.ts';
 import type {Context} from './context.ts';
@@ -143,10 +143,7 @@ function addressStub(me: inbox.Me, again: () => void): HTMLElement {
         : a.ended ? h('span', {class: 'small error'}, t('Its term ended; held for you until {date}', {date: day(a.until! + 30 * 86_400_000)}))
         : a.until ? h('span', {class: 'muted small'}, t('Until {date}', {date: day(a.until)})) : null;
       const renew = a.until && (a.ended || a.until - Date.now() < YEAR) ? h('button', {type: 'button', class: 'button small-button primary'}, t('Renew')) as HTMLButtonElement : null;
-      renew?.addEventListener('click', async () => {
-        renew.disabled = true;
-        try { await inbox.renew(a.address); again(); } catch (e) { renew.disabled = false; renew.textContent = errorText(e); }
-      });
+      if (renew) deed(renew, async () => { await inbox.renew(a.address); again(); });
       return h('div', {class: 'your-row'}, h('span', {class: 'mono'}, inbox.shown(a.address)), state, renew);
     }));
   };

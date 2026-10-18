@@ -2,7 +2,7 @@ import {day, h} from '../dom.ts';
 import {t} from '../i18n.ts';
 import {shown as named, shownAs} from '../inbox.ts';
 import * as servers from '../servers.ts';
-import {copying, parts} from './common.ts';
+import {copying, deed, parts} from './common.ts';
 import {askIn, boardName, button, foot, footLeft, line, MOVE, smallCard} from './server-parts.ts';
 import {errorText} from '../errors.ts';
 
@@ -104,7 +104,7 @@ export async function gear(s: servers.Server, w: GearWays): Promise<void> {
       const pick = h('div', {class: 'card small-card add-card'}, h('span', {class: 'card-title'}, t('Add someone you know')),
         ...(why ? [h('p', {class: 'error small'}, why)] : known.map((x) => {
           const b = button(named(x.address), 'small-button');
-          b.addEventListener('click', async () => { b.disabled = true; try { await servers.addPerson(s.id, x.address); w.again(); } catch (e) { b.textContent = errorText(e); } });
+          deed(b, async () => { await servers.addPerson(s.id, x.address); w.again(); });
           return b;
         })),
         h('div', {class: 'row add-by-name'}, typed, go), said);
@@ -140,7 +140,7 @@ export async function gear(s: servers.Server, w: GearWays): Promise<void> {
       const c = smallCard(r.name, line(named(r.owner)), r.as ? line(t('Everyone sees it as {name}', {name: shownAs(r.as)})) : null);
       if (s.owner) {
         const off = button(t('Remove'), 'small-button');
-        off.addEventListener('click', async () => { off.disabled = true; try { await servers.takeOff(s.id, r.owner, r.name); w.again(); } catch (e) { off.textContent = errorText(e); } });
+        deed(off, async () => { await servers.takeOff(s.id, r.owner, r.name); w.again(); });
         c.append(footLeft(off));
       }
       return c;
@@ -203,10 +203,7 @@ export async function gear(s: servers.Server, w: GearWays): Promise<void> {
       // Removed: quiet, held until then, its 外す red; pressed again, it is back at once.
       if (b.gone) {
         const back = s.owner ? h('button', {type: 'button', class: 'button small-button off', 'aria-pressed': 'true', title: t('Bring it back')}, t('Remove')) as HTMLButtonElement : null;
-        back?.addEventListener('click', async () => {
-          back.disabled = true;
-          try { await servers.bringBackBoard(b.id); delete b.gone; w.boardsChanged(); w.again(); } catch (e) { back.textContent = errorText(e); back.disabled = false; }
-        });
+        if (back) deed(back, async () => { await servers.bringBackBoard(b.id); delete b.gone; w.boardsChanged(); w.again(); });
         return h('div', {class: 'card small-card off'}, h('span', {class: 'card-title'}, boardName(b.name)), line(t('Removed · back until {date}', {date: day(b.gone)})),
           back ? h('div', {class: 'card-foot'}, back, h('span', {class: 'grow'})) : null);
       }
@@ -221,14 +218,11 @@ export async function gear(s: servers.Server, w: GearWays): Promise<void> {
       }
       const take = button(t('Take home'), 'small-button');
       take.title = t('Everything stays on the Remote. Take a copy as text when you want one here.');
-      take.addEventListener('click', async () => {
-        take.disabled = true;
-        try {
-          const text = await servers.archive(b.id, true);
-          const a = h('a', {href: URL.createObjectURL(new Blob([text], {type: 'text/markdown'})), download: `${s.name}-${b.name}.md`.replace(/[^\w.-]+/g, '-')}) as HTMLAnchorElement;
-          a.click();
-          setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
-        } catch (e) { take.textContent = errorText(e); } finally { take.disabled = false; }
+      deed(take, async () => {
+        const text = await servers.archive(b.id, true);
+        const a = h('a', {href: URL.createObjectURL(new Blob([text], {type: 'text/markdown'})), download: `${s.name}-${b.name}.md`.replace(/[^\w.-]+/g, '-')}) as HTMLAnchorElement;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
       });
       const out = s.owner ? button(t('Remove'), 'small-button') : null;
       out?.addEventListener('click', () => askIn(c, out, boardName(b.name), [t('#{board} goes with its talk and TODO.', {board: b.name}), t('You can bring it back within 30 days.')], t('Remove'), async () => {
@@ -247,7 +241,7 @@ export async function gear(s: servers.Server, w: GearWays): Promise<void> {
       s.until ? line(s.until <= Date.now() ? t('Its term ended; held for it until {date}', {date: day(s.until + 30 * 86_400_000)}) : t('Until {date}', {date: day(s.until)})) : null);
     if (s.owner && s.until && s.until - Date.now() < YEAR) {
       const renew = button(t('Renew'), 'small-button primary');
-      renew.addEventListener('click', async () => { renew.disabled = true; try { const r = await servers.renewServer(s.id); s.until = r.until; w.again(); } catch (e) { renew.textContent = errorText(e); } });
+      deed(renew, async () => { const r = await servers.renewServer(s.id); s.until = r.until; w.again(); });
       name.append(foot(renew));
     }
     const leaving = mine ? smallCard(t('Leave this server'), line(s.owner ? t('It goes to whoever came next.') : '')) : null;

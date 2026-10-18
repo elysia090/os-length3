@@ -11,7 +11,7 @@ import {dockFor} from './server-dock.ts';
 import {gear as gearSheet} from './server-gear.ts';
 import {seeRepo as repoSheet} from './server-repo.ts';
 import {button, initials, type Shown} from './server-parts.ts';
-import {answers} from './common.ts';
+import {answers, deed} from './common.ts';
 import {boardNew, onNews, sawBoard, serverNew} from '../news.ts';
 import {every} from '../runs.ts';
 import {errorText} from '../errors.ts';
@@ -408,7 +408,7 @@ export class ServerLayer {
       void servers.goneServers().then((held) => back.replaceChildren(...held.map((g) => {
         const b = button(t('Bring back {name}', {name: g.name}), 'small-button');
         b.title = t('Held until {date}', {date: day(g.until)});
-        b.addEventListener('click', async () => { b.disabled = true; try { await servers.bringBack(g.id); list = await servers.servers(); show(g.id); } catch (e) { b.textContent = errorText(e); } });
+        deed(b, async () => { await servers.bringBack(g.id); list = await servers.servers(); show(g.id); });
         return b;
       })), (e) => back.replaceChildren(h('p', {class: 'error small'}, errorText(e))));
       track.replaceChildren(h('div', {class: 'slide', 'aria-current': 'true'}, h('div', {class: 'board-card board-new'},
