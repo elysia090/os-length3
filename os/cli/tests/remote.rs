@@ -115,6 +115,49 @@ fn what_a_remote_says_when_it_refuses_reaches_the_terminal_as_words_only() {
     assert!(ran.stderr.contains("no\u{FFFD}]0;pwned") && !ran.stderr.contains('\u{1b}'), "{ran:?}");
 }
 
+/// A Remote that discarded the repo notes: it takes it again only as new (?anew=1), and then holds it.
+fn discarded() -> FakeRemote {
+    let held = std::sync::Mutex::new(None::<String>);
+    FakeRemote::start(move |a| match (a.method.as_str(), a.path.as_str()) {
+        ("GET", "/v1/repos/notes") => match held.lock().unwrap().clone() {
+            Some(line) => (200, line),
+            None => (404, r#"{"error":"That repo is not on the Remote","gone":1}"#.into()),
+        },
+        ("POST", "/v1/blobs/missing") => (200, "[]".into()),
+        ("PATCH", "/v1/repos/notes/draft?anew=1") => {
+            let set = serde_json::from_str::<serde_json::Value>(&a.text()).unwrap()["set"].to_string();
+            *held.lock().unwrap() = Some(format!(r#"{{"version":1,"draft":{set},"head":null}}"#));
+            (200, r#"{"version":1}"#.into())
+        }
+        ("PATCH", _) => (410, r#"{"error":"This repo was discarded on the Remote.","gone":1}"#.into()),
+        _ => (NOT_FOUND.0, NOT_FOUND.1.to_string()),
+    })
+}
+
+#[test]
+fn a_repo_made_here_under_a_name_the_remote_discarded_goes_there_as_new() {
+    // Never in step with the Remote, it asks to be taken as new (bug: l3 never did, so it was refused for good
+    // and told to turn on a repo that could not be).
+    let remote = discarded();
+    let home = Home::new("discarded-fresh");
+    home.signed_in(&remote.url);
+    home.repo("notes", &[("a.txt", "mine\n")]);
+    let ran = home.run("en", &["file", "notes"]);
+    assert_eq!((ran.code, ran.stderr.as_str()), (0, ""), "{ran:?}");
+    assert!(remote.said().contains(&"PATCH /v1/repos/notes/draft?anew=1".to_string()), "{:?}", remote.said());
+    assert!(home.path("repos/notes/a.txt").exists());
+    // A copy that was in step does not ask so: what was discarded stays discarded, and l3 says what it is.
+    let remote = discarded();
+    let home = Home::new("discarded-agreed");
+    home.signed_in(&remote.url);
+    home.repo("notes", &[("a.txt", "mine\n"), ("b.txt", "changed here\n")]);
+    home.agreed("notes", &format!(r#"{{"version":3,"tree":{{"a.txt":"{}","b.txt":"{}"}},"head":null}}"#, sha("mine\n"), sha("b\n")));
+    let ran = home.run("en", &["file", "notes"]);
+    assert!(ran.stderr.contains("discarded on the Remote") && !ran.stderr.contains("l3 remote on"), "{ran:?}");
+    assert!(home.path("repos/notes/b.txt").exists(), "what changed here stays");
+    assert!(!remote.said().iter().any(|s| s.contains("anew")), "{:?}", remote.said());
+}
+
 #[test]
 fn a_page_to_approve_on_that_the_remote_does_not_stand_behind_is_never_shown() {
     let remote = FakeRemote::start(|a| match a.path.as_str() {

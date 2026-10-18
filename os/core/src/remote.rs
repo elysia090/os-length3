@@ -190,6 +190,10 @@ fn refused(code: u16, r: ureq::Response) -> String {
     let message = match (code, said.as_str()) {
         (401, _) => return unknown(),
         (429, _) => crate::tr!("The Remote is asked too often just now; try again in a minute", "いま Remote への問い合わせが多すぎます。少し待ってからどうぞ"),
+        // Discarded for good (service/app.ts `gone`): nothing brings it back, and saying "turn it on" sent
+        // people to a command that could only fail.
+        (410, _) if !v["gone"].is_null() => crate::tr!("This repo was discarded on the Remote, and a copy that was in step with it does not bring it back; what changed here since stays on this device (to keep it on the Remote, make a new repo and move it there)",
+            "この repo は Remote で破棄されました。同期していた写しからは戻りません。そのあとここで変えたものはこの端末に残ります（Remote に置くなら、新しい repo を作って移してください）"),
         // Turned off: the Remote keeps it for a while, answering only that.
         (410, _) => crate::tr!("It is turned off on the Remote (l3 remote on brings it back)", "Remote でオフになっています（l3 remote on で戻せます）"),
         (507, _) => crate::tr!("The Remote is full: {} of {} used", "Remote がいっぱいです：{} のうち {} を使用", v["used"], v["quota"]),
@@ -945,7 +949,11 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
     let draft = at(repo, &line, "/draft");
     let mut out = Synced::default();
     for _ in 0..12 {
-        let base = base(&key).unwrap_or_default();
+        let kept = base(&key);
+        // Never in step with this Remote: what is sent is new there, even under a name it discarded. One that
+        // was in step does not ask so, and cannot bring back what was discarded by sending itself again.
+        let fresh = kept.is_none();
+        let base = kept.unwrap_or_default();
         let here = local_tree(&dir);
         out.unsynced = here.unsynced.clone();
         // Before sending, see whether the Remote moved. Not there, it has nothing of the line (version 0).
@@ -1000,7 +1008,8 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
             "remove": remove,
         });
         // A conflict (someone else moved it, or a blob went missing) goes round again.
-        if let Reply::Ok(v) = client.call("PATCH", &draft, Some(body))? {
+        let diff = if fresh { format!("{draft}{}anew=1", if draft.contains('?') { '&' } else { '?' }) } else { draft.clone() };
+        if let Reply::Ok(v) = client.call("PATCH", &diff, Some(body))? {
             // Without the version it is at now, nothing is agreed: the next round reads the line again.
             let version = v["version"].as_i64().ok_or_else(|| odd(&client.url))?;
             let mut tree = base.tree.clone();
