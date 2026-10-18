@@ -486,6 +486,11 @@ export class KeptStore extends MemoryStore {
     }
   }
 
+  /** The files of one copy of `repo` (`line`'s), as held here; for telling whether a copy not shown has changes. */
+  copyOf(repo: string, line: string): ReadonlyMap<string, string | null> | undefined {
+    return this.repos.get(line === 'main' ? repo : `${repo}\u0001${line}`)?.files;
+  }
+
   // Nothing is answered before what was kept is read.
   override async list() { await this.ready; return super.list(); }
   override async create(name: string, template: Template) {

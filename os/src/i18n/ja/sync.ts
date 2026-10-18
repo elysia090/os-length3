@@ -8,4 +8,5 @@ export default {
   'a file over 16 MB': '16 MB を超えるファイル',
   'The Remote kept moving; it is tried again': 'Remote の側が動き続けています。あとでもう一度送ります',
   '{what} kept changing on the Remote; it is tried again': '{what}が Remote で変わり続けています。あとでもう一度合わせます',
+  'Another work of it has changes not sent yet; show that work to send them first': '別の作業にまだ送っていない変更があります。その作業を開いて先に送ってください',
 };

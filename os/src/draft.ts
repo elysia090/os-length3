@@ -21,7 +21,8 @@ import {exclusive} from './tabs.ts';
 export type Tree = Record<string, string | null>;
 
 export interface Synced { version: number; sent: number; taken: number; both: string[]; unsynced: [string, string][] }
-export interface Status { name: string; changed: number; fresh: boolean; unsynced: [string, string][]; bytes: number; head: string | null; version: number }
+/** Where a copy stands; `elsewhere`: changes in its other works' copies kept here (a browser's), not sent until shown. */
+export interface Status { name: string; changed: number; fresh: boolean; unsynced: [string, string][]; bytes: number; head: string | null; version: number; elsewhere?: number }
 /** A repo on the Remote; one turned off says when it went and until when it can come back. */
 export interface RemoteRepo { name: string; head: string | null; version: number; bytes: number; updatedAt: string; offAt?: number | null; until?: number | null }
 
@@ -354,12 +355,62 @@ export async function status(): Promise<Status[]> {
   for (const r of await store.list()) {
     const b = baseOf(r.name);
     const here = await localTree(r.name, b?.away, b?.tree);
-    // What cannot be sent is said apart (unsynced), not counted as a change waiting to go.
-    const changed = (b ? [...new Set([...Object.keys(here.tree), ...Object.keys(b.tree)])].filter((p) => here.tree[p] !== b.tree[p]) : Object.keys(here.tree))
-      .filter((p) => here.tree[p] !== HERE_ONLY).length;
-    out.push({name: r.name, changed, fresh: !b, unsynced: here.unsynced, bytes: here.bytes, head: b?.head ?? null, version: b?.version ?? 0});
+    out.push({name: r.name, changed: changes(here.tree, b), fresh: !b, unsynced: here.unsynced, bytes: here.bytes, head: b?.head ?? null, version: b?.version ?? 0,
+      elsewhere: await elsewhere(r.name)});
   }
   return out;
+}
+
+/** How many paths of `tree` differ from what was agreed (all, when nothing was); what cannot be sent is said apart, not counted. */
+const changes = (tree: Tree, b: Base | null) =>
+  (b ? [...new Set([...Object.keys(tree), ...Object.keys(b.tree)])].filter((p) => tree[p] !== b.tree[p]) : Object.keys(tree)).filter((p) => tree[p] !== HERE_ONLY).length;
+
+/**
+ * Changes in the copies of `repo` not shown now (another work's, kept here
+ * while the repo shows main, say: its change could not be sent when it was
+ * left): not sent until shown again, so the repo is not let go meanwhile.
+ * Read from the copy as held, as localTree reads the one shown.
+ */
+async function elsewhere(repo: string): Promise<number> {
+  if (!kept) return 0;
+  let n = 0;
+  for (const line of store.copies(repo)) {
+    if (line === lineOf(repo)) continue;
+    const files = kept.copyOf(repo, line);
+    if (!files) continue;
+    const key = keyOf(repo, line), b = syncState().repos[key] ?? null;
+    // What each folder holds, to leave out the derived ones as localTree does.
+    const inside = new Map<string, Set<string>>();
+    for (const p of files.keys()) {
+      const parts = p.split('/');
+      for (let i = 0; i < parts.length; i++) {
+        const dir = parts.slice(0, i).join('/');
+        if (!inside.has(dir)) inside.set(dir, new Set());
+        inside.get(dir)!.add(parts[i]);
+      }
+    }
+    const isDerived = (p: string) => {
+      const parts = p.split('/');
+      for (let i = 1; i < parts.length; i++) {
+        const dir = parts.slice(0, i).join('/'), parent = parts.slice(0, i - 1).join('/');
+        if (derived(parts[i - 1], inside.get(parent) ?? new Set(), inside.get(dir) ?? new Set())) return true;
+      }
+      return false;
+    };
+    const tree: Tree = {}, was = digests.get(key), now: NonNullable<typeof was> = new Map();
+    for (const [p, v] of files) {
+      if (isDerived(p)) continue;
+      if (v === null) { if (!inside.has(p)) tree[p] = null; continue; }
+      let d = was?.get(p);
+      if (d?.text !== v) { const bytes = enc.encode(v); d = {text: v, sha: await sha256(bytes), size: bytes.length}; }
+      now.set(p, d);
+      tree[p] = d.size > FILE_MAX ? HERE_ONLY : d.sha;
+    }
+    digests.set(key, now);
+    for (const p of b?.away ?? []) if (!(p in tree) && b?.tree[p] !== undefined) tree[p] = b.tree[p];
+    n += changes(tree, b);
+  }
+  return n;
 }
 
 /** The copy here has gone (freed, or left with the page): forget what was agreed for it. */
