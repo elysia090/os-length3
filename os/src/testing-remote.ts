@@ -16,14 +16,15 @@ import {fileDb, SECRET} from '../service/testing.ts';
 const URL_ = 'http://remote.test', APP = 'http://app.test';
 const enc = new TextEncoder();
 
-export async function browserOnRemote() {
+/** `bucket: false`: a Remote that holds no files (service/bucket.ts), as a Worker without R2 is. */
+export async function browserOnRemote(o: {bucket?: boolean} = {}) {
   const shelf = new Map<string, string>();
   Object.assign(globalThis, {localStorage: {
     getItem: (k: string) => shelf.get(k) ?? null, setItem: (k: string, v: string) => void shelf.set(k, v), removeItem: (k: string) => void shelf.delete(k),
   }});
   const db = await fileDb();
   const auth = createAuth({db, secret: SECRET, baseURL: URL_, appOrigin: APP, rateLimit: false, dev: true});
-  const app = createApp({db, auth, bucket: memoryBucket(), origins: [APP], providers: ['dev'], domain: 'length3.test', baseURL: URL_});
+  const app = createApp({db, auth, bucket: o.bucket === false ? null : memoryBucket(), origins: [APP], providers: ['dev'], domain: 'length3.test', baseURL: URL_});
   /** What this browser asked the Remote, by path. */
   const asked: string[] = [];
   Object.assign(globalThis, {fetch: (url: string, init?: RequestInit) => {

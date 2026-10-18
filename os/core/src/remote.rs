@@ -158,6 +158,9 @@ fn refused(code: u16, r: ureq::Response) -> String {
     let said = v["error"].as_str().or(v["message"].as_str()).unwrap_or_default().to_string();
     let message = match (code, said.as_str()) {
         (401, _) => return unknown(),
+        // A Remote with no place for files (service/bucket.ts): nothing was agreed, so what is here stays and is sent later.
+        (503, _) if v["files"] == serde_json::Value::Bool(false) => crate::tr!("The Remote cannot hold files just now; your work stays on this device",
+            "Remote はいまファイルを置けません。作業はこの端末に残ります"),
         (429, _) => crate::tr!("The Remote is asked too often just now; try again in a minute", "いま Remote への問い合わせが多すぎます。少し待ってからどうぞ"),
         // Turned off: the Remote keeps it for a while, answering only that.
         (410, _) => crate::tr!("It is turned off on the Remote (l3 remote on brings it back)", "Remote でオフになっています（l3 remote on で戻せます）"),
@@ -1135,6 +1138,16 @@ fn free_off(repos: &Repos, repo: &str, copies: &[String]) -> Result<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_remote_that_holds_no_files_says_the_work_stays_here() {
+        let said = |code: u16, body: &str| refused(code, ureq::Response::new(code, "", body).unwrap());
+        let no_files = said(503, r#"{"error":"The Remote cannot hold files just now","files":false}"#);
+        assert!(no_files == "The Remote cannot hold files just now; your work stays on this device"
+            || no_files == "Remote はいまファイルを置けません。作業はこの端末に残ります", "{no_files}");
+        // Any other 503 (its database out of reach) is said as the Remote says it.
+        assert!(said(503, r#"{"error":"The Remote does not reach its database"}"#).contains("The Remote does not reach its database"));
+    }
 
     fn t(pairs: &[(&str, Option<&str>)]) -> Tree {
         pairs.iter().map(|(k, v)| (k.to_string(), v.map(String::from))).collect()

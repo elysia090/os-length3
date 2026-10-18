@@ -41,7 +41,8 @@ export {applyDiff, cutId, issueOf, merge3, validLine, validName, validPath} from
 export interface Deps {
   db: Db;
   auth: Auth;
-  bucket: Bucket;
+  /** Where file contents are kept; none (null) and every route that would move bytes says so (bucket.ts). */
+  bucket: Bucket | null;
   /** Pages that may call: the web app, the desktop app's webview. */
   origins: string[];
   /**

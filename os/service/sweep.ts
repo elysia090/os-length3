@@ -46,7 +46,7 @@ export async function purge(tx: Db, which: SQL): Promise<{repo: number}> {
 }
 
 /** Let go of everything held long enough; what went, counted. */
-export async function sweep(db: Db, bucket: Bucket): Promise<Record<string, number>> {
+export async function sweep(db: Db, bucket: Bucket | null): Promise<Record<string, number>> {
   const gone: Record<string, number> = {};
   const run = async (what: string, q: Db, query: SQL) => { gone[what] = (gone[what] ?? 0) + (await rows(q, sql`${query} returning 1`)).length; };
 
@@ -77,7 +77,9 @@ export async function sweep(db: Db, bucket: Bucket): Promise<Record<string, numb
   // Blobs no tree of their account names any more: their rows, then their bytes. Only accounts whose
   // room says something their blobs are named by changed; each under its lock, as an upload is, so
   // nothing is sent between a blob going and its bytes going. A room stays unswept while it holds a
-  // blob too new to be taken for unnamed.
+  // blob too new to be taken for unnamed. With no bucket, none goes: a row is how its bytes are found
+  // again once there is one to take them from.
+  if (!bucket) return gone;
   const rooms = await rows<{user_id: string}>(db, sql`select user_id from room where unswept`);
   for (const {user_id: user} of rooms) {
     await db.transaction(async (tx: Db) => {

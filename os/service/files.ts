@@ -10,18 +10,23 @@
 //
 // An account holds its own work, up to its room: the Remote is no free store
 // for anything else. A blob no tree names any more goes with the sweep.
+//
+// With no bucket, each route that moves bytes answers 503 NO_FILES, to
+// anyone, before anything else; which digests are missing is rows, and is
+// answered all the same.
 
 import {and, eq, inArray} from 'drizzle-orm';
 import type {Hono} from 'hono';
-import {blobKey, releaseKey, type Bucket} from './bucket.ts';
+import {blobKey, noFiles, releaseKey, type Bucket} from './bucket.ts';
 import {body, fits, HEX, LIMIT, lock, sha256, type Db, type Vars} from './request.ts';
 import {blob} from './schema.ts';
 
-export function files(d: {db: Db; bucket: Bucket; quota?: number}, v1: Hono<Vars>, app: Hono<Vars>) {
+export function files(d: {db: Db; bucket: Bucket | null; quota?: number}, v1: Hono<Vars>, app: Hono<Vars>) {
   const db = d.db;
 
   // The OS is public: its canonical copy is the release, named by its digest.
   app.on(['GET', 'HEAD'], '/v1/os/:sha', async (c) => {
+    if (!d.bucket) return noFiles(c);
     const sha = c.req.param('sha');
     if (!HEX.test(sha)) return c.json({error: 'Not found'}, 404);
     const m = /^bytes=(\d+)-(\d*)$/.exec(c.req.header('Range') ?? '');
@@ -49,6 +54,8 @@ export function files(d: {db: Db; bucket: Bucket; quota?: number}, v1: Hono<Vars
 
   // Checked, stored and counted under the account's lock, so uploads at once cannot pass its room together.
   v1.put('/blobs/:sha', async (c) => {
+    if (!d.bucket) return noFiles(c);
+    const bucket = d.bucket;
     const sha = c.req.param('sha'), user = c.get('userId');
     if (!HEX.test(sha)) return c.json({error: 'Not found'}, 404);
     if (Number(c.req.header('Content-Length') ?? 0) > LIMIT.blob) return c.json({error: 'A file is at most 16 MB'}, 413);
@@ -59,13 +66,14 @@ export function files(d: {db: Db; bucket: Bucket; quota?: number}, v1: Hono<Vars
       await lock(tx, user);
       if ((await tx.select({sha: blob.sha256}).from(blob).where(and(eq(blob.userId, user), eq(blob.sha256, sha)))).length) return;
       await fits(tx, user, bytes.length, d.quota);
-      await d.bucket.put(blobKey(user, sha), bytes);
+      await bucket.put(blobKey(user, sha), bytes);
       await tx.insert(blob).values({userId: user, sha256: sha, bytes: bytes.length});
     });
     return c.json({sha256: sha}, 201);
   });
 
   v1.get('/blobs/:sha', async (c) => {
+    if (!d.bucket) return noFiles(c);
     const sha = c.req.param('sha');
     if (!HEX.test(sha)) return c.json({error: 'Not found'}, 404);
     const known = await db.select({sha: blob.sha256}).from(blob).where(and(eq(blob.userId, c.get('userId')), eq(blob.sha256, sha)));

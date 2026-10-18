@@ -1,6 +1,7 @@
 // Japanese for the Remote: signing in, passkeys, providers, devices, where each repo stands.
 export default {
   'The Remote cannot be reached': 'Remote に届きません',
+  'The Remote cannot hold files just now; your work stays on this device': 'Remote はいまファイルを置けません。作業はこの端末に残ります',
   'The Remote keeps it until {date}; the copy here goes': 'Remote は{date}まで持っています。ここの写しを消します。',
   '{n} change here is not on the Remote; turn it on to send it first': 'ここの変更 {n}件が Remote にありません。オンにして先に送ってください。',
   '{n} changes here are not on the Remote; turn it on to send them first': 'ここの変更 {n}件が Remote にありません。オンにして先に送ってください。',

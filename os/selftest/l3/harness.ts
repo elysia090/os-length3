@@ -22,7 +22,7 @@ import {fileURLToPath} from 'node:url';
 const OS = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const APP = 'http://localhost:4173';
 /** Ports this machine's other servers use: never taken here. */
-const TAKEN = (p: number) => [1420, 8787, 1430, 8797].includes(p) || (p >= 1450 && p <= 1560) || (p >= 8810 && p <= 8930);
+const TAKEN = (p: number) => [1420, 8787, 1430, 8797].includes(p) || (p >= 1450 && p <= 1580) || (p >= 8810 && p <= 8950);
 
 /** l3 built from this tree (cargo build -p l3), or $L3 when given; its path. */
 function buildL3(): string {
@@ -69,7 +69,8 @@ const cookiesOf = (h: Record<string, string | string[] | undefined>) => ([h['set
 
 export interface Ran { code: number; out: string; err: string; json: any } // eslint-disable-line @typescript-eslint/no-explicit-any
 
-export async function remote() {
+/** `bucket: false`: a Remote that holds no files (dev.ts --no-bucket), as a Worker without R2 is. */
+export async function remote(o: {bucket?: boolean} = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'l3-selftest-'));
   const l3bin = join(dir, 'l3');
   copyFileSync(buildL3(), l3bin);
@@ -79,7 +80,7 @@ export async function remote() {
   let log = '';
   /** The Remote started (again: on the same port, from the same data, so every session stays). */
   async function start() {
-    const p = spawn(process.execPath, [join(OS, 'service', 'dev.ts'), join(dir, 'remote'), String(port), APP], {cwd: OS, stdio: ['ignore', 'pipe', 'pipe']});
+    const p = spawn(process.execPath, [join(OS, 'service', 'dev.ts'), join(dir, 'remote'), String(port), APP, ...(o.bucket === false ? ['--no-bucket'] : [])], {cwd: OS, stdio: ['ignore', 'pipe', 'pipe']});
     server = p;
     p.stderr.on('data', (d: Buffer) => { log += d; });
     const from = log.length;
