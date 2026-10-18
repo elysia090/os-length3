@@ -81,8 +81,6 @@ export interface Deps {
   txt?: (name: string) => Promise<string[]>;
   /** How long a domain's DNS is taken as still saying what it said (inbox.ts). */
   recheck?: number;
-  /** Sends mail (a server board's guest's code); without it, guests cannot be checked. */
-  mail?: (to: string, subject: string, text: string) => Promise<void>;
   /** A Remote for research: one account, entered by its link (enter.ts); nobody signs up, nothing is shown to everyone. */
   enter?: Enter;
 }
@@ -207,7 +205,7 @@ export function createApp(d: Deps) {
     c.header('Cache-Control', 'no-store');
     c.header('X-Content-Type-Options', 'nosniff');
   });
-  // A body is read whole before it is looked at, by anyone's request (signing in, a guest's code, a link's key):
+  // A body is read whole before it is looked at, by anyone's request (signing in, a guest's invitation, a link's key):
   // none is read past what its route can take, counted as it comes, whatever it says its length is.
   app.use('*', (c, next) => bodyLimit({maxSize: roomFor(c.req.method, c.req.path), onError: (c) => c.json({error: 'What was sent is too large'}, 413)})(c, next));
 
@@ -773,7 +771,7 @@ export function createApp(d: Deps) {
 
   const domain = d.domain ?? 'length3.com';
   inbox({db, domain, baseURL: d.baseURL ?? '', secret: d.secret ?? '', txt: d.txt, recheck: d.recheck}, v1, app);
-  servers({db, domain, mail: d.mail, secret: d.secret, closed: !!d.enter}, v1, app);
+  servers({db, domain, appOrigin: d.appOrigin, secret: d.secret, closed: !!d.enter}, v1, app);
   news({db}, v1);
   sshRoutes({db}, v1);
   seen({db, bucket: d.bucket, domain, closed: !!d.enter, viewer: async (req) => (await d.auth.api.getSession({headers: req.headers}))?.user.id ?? null}, v1, app);

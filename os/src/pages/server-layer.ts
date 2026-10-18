@@ -157,6 +157,8 @@ export class ServerLayer {
     let list: servers.Server[] = [];
     let shown: Shown[] = [];
     let serverId: string | null = null;
+    /** A board shown alone, outside the servers one is in: one written in as a guest, or invited to. */
+    let alone: string | null = null;
     let k = 0;
     const at = remembered();
     const writers: (() => boolean)[] = [];
@@ -314,12 +316,54 @@ export class ServerLayer {
         b.addEventListener('click', () => show(s.id));
         return b;
       });
-      chips.replaceChildren(...each);
+      // The boards one writes in as a guest, after one's servers: each alone, said to be a guest's.
+      const ours = new Set(list.flatMap((s) => s.boards.map((b) => b.id)));
+      const guesting = servers.guestBoards().filter(({id}) => !ours.has(id)).map(({id, here}) => {
+        const b = h('button', {type: 'button', class: 'chip guest-chip', role: 'radio', 'aria-checked': String(id === alone),
+          title: t('#{board} of {server}, as a guest', {board: here.name, server: here.server})}, `#${here.name}`, h('span', {class: 'muted small'}, t('guest')));
+        b.addEventListener('click', () => showAlone({id, name: here.name, member: false, guests: true, server: here.server}));
+        return b;
+      });
+      chips.replaceChildren(...each, ...guesting);
+    };
+
+    /** A board outside the servers one is in, shown alone: no server is chosen, so the gear and the side rest. */
+    const showAlone = (b: Shown) => {
+      serverId = null;
+      alone = b.id;
+      place('boards');
+      paintTop();
+      shown = [b];
+      track.replaceChildren(h('div', {class: 'slide'}));
+      go(0);
+      paintSide();
+    };
+    /** An invitation that opens no board taking guests here: said in the boards' place, and let go. */
+    const noInvite = () => {
+      servers.dropInvite();
+      shown = [];
+      track.replaceChildren(h('div', {class: 'slide', 'aria-current': 'true'}, h('div', {class: 'board-card board-new'},
+        h('div', {class: 'board-body'}, h('p', {}, t('This invitation opens no board that takes guests. Ask whoever gave it to you for another.'))))));
+      slides.classList.add('single');
+      prev.hidden = next.hidden = true;
+      paintDock(null);
+    };
+    /**
+     * Opened by an invitation's link: its board, whatever else is here. One of its people already
+     * needs no invitation, and is shown it in its server.
+     */
+    const invited = async (held: {board: string}): Promise<Shown | null> => {
+      const s = list.find((x) => x.boards.some((b) => b.id === held.board && !b.gone));
+      if (s) { servers.dropInvite(); show(s.id, held.board); return null; }
+      const b = await servers.openBoard(held.board).catch(() => null);
+      if (!b?.guests) { noInvite(); return null; }
+      return {id: b.id, name: b.name, member: false, guests: true, server: b.server.name};
     };
 
     /** No server chosen (or none yet): the one box makes a server, with a name on this Remote as a person has (first come, for five years at a time). */
     const makeServer = () => {
       shown = [];
+      alone = null;
       place('boards');
       const name = h('input', {class: 'line-in', maxlength: '64', placeholder: t('Trip')}) as HTMLInputElement;
       const handle = h('input', {class: 'line-in mono', maxlength: '31', placeholder: 'trip', autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
@@ -379,6 +423,7 @@ export class ServerLayer {
       const s = list.find((x) => x.id === id);
       if (!s) { makeServer(); return; }
       serverId = id;
+      alone = null;
       place('boards');
       paintTop();
       shown = s.boards.filter((b) => !b.gone).map((b) => ({id: b.id, name: b.name, member: true, guests: b.guests, server: s.name}));
@@ -404,6 +449,7 @@ export class ServerLayer {
         writing: (busy) => writers.push(busy),
         holding: (words) => { this.holding = words; },
         signIn: () => { this.close(); this.ctx.go('remote'); },
+        guestChanged: () => paintTop(),
       }));
     };
 
@@ -456,18 +502,30 @@ export class ServerLayer {
     };
 
     // ---- first: what there is ----
+    const held = servers.heldInvite();
     if (signedIn) {
-      void servers.servers().then((got) => {
+      void servers.servers().then(async (got) => {
         list = got;
         paintTop();
+        if (held) {
+          const b = await invited(held);
+          if (b) showAlone(b);
+          return;
+        }
         const first = list.find((s) => s.id === at.server) ?? list[0];
         if (first) show(first.id); else makeServer();
       }).catch((e) => track.replaceChildren(h('p', {class: 'error'}, message(e))));
     } else {
       paintTop();
       paintSide();
-      void servers.openBoards().then((got) => {
+      void servers.openBoards().then(async (got) => {
         shown = got.map((b) => ({id: b.id, name: b.name, member: false, guests: b.guests, server: b.server}));
+        // Opened by an invitation: its board is among them, and on screen.
+        if (held && !shown.some((b) => b.id === held.board && b.guests)) {
+          const b = await invited(held);
+          if (!b) return;
+          shown = [b, ...shown.filter((x) => x.id !== b.id)];
+        }
         if (!shown.length) {
           track.replaceChildren(h('div', {class: 'slide', 'aria-current': 'true'}, h('div', {class: 'board-card board-new'},
             h('div', {class: 'board-body'}, h('p', {}, t('No board is open to everyone. Sign in to make a server with people you know.'))))));
@@ -477,7 +535,7 @@ export class ServerLayer {
           return;
         }
         track.replaceChildren(...shown.map(() => h('div', {class: 'slide'})));
-        const i = shown.findIndex((b) => b.id === at.board);
+        const i = shown.findIndex((b) => b.id === (held?.board ?? at.board));
         go(i >= 0 ? i : 0);
       }).catch((e) => track.replaceChildren(h('p', {class: 'error'}, message(e))));
     }

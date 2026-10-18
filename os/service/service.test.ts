@@ -597,22 +597,20 @@ test('Servers: people who know each other, boards with talk and a TODO kept toge
   assert.deepEqual(((await s.call('GET', '/v1/open')).json as unknown as {name: string}[]).map((b) => b.name), ['plan']);
   assert.equal(((await s.call('GET', `/v1/open/${bid}/posts`)).json as unknown as {posts: unknown[]}).posts.length, 2);
   assert.equal(((await s.call('GET', `/v1/open/${bid}/todos`)).json as unknown as unknown[]).length, 2);
-  // A guest writes once the email is shown to be theirs, and only where guests are taken.
-  assert.equal((await s.call('POST', `/v1/open/${bid}/guest`, {body: {email: 'aki@example.org'}})).status, 404);
+  // A guest writes once one of its people has invited them, and only where guests are taken.
+  assert.equal((await s.call('POST', `/v1/boards/${bid}/invites`, {token: mio})).status, 409);
   await s.call('PATCH', `/v1/boards/${bid}`, {token: ren, body: {guests: true}});
-  assert.equal((await s.call('POST', `/v1/open/${bid}/guest`, {body: {email: 'aki@example.org'}})).status, 202);
-  assert.equal((await s.call('POST', `/v1/open/${bid}/guest`, {body: {email: 'aki@example.org'}})).status, 429);
-  const code = /is (\d{6})/.exec(s.mails.at(-1)!.text)![1];
-  assert.equal(s.mails.at(-1)!.to, 'aki@example.org');
-  assert.equal((await s.call('POST', `/v1/open/${bid}/guest/check`, {body: {email: 'aki@example.org', code: code === '000000' ? '000001' : '000000'}})).status, 403);
-  const ok = await s.call('POST', `/v1/open/${bid}/guest/check`, {body: {email: 'aki@example.org', code}});
-  assert.equal(ok.status, 200);
+  const inv = await s.call('POST', `/v1/boards/${bid}/invites`, {token: mio});
+  assert.equal(inv.status, 201);
+  assert.equal(inv.json.link, `${APP}/#guest=${bid}.${inv.json.invite}`);
+  const ok = await s.call('POST', `/v1/open/${bid}/guest`, {body: {invite: inv.json.invite, name: 'Aki'}});
+  assert.deepEqual([ok.status, ok.json.as], [200, 'Aki']);
   assert.equal((await s.call('POST', `/v1/open/${bid}/posts`, {body: {body: 'can I come?'}})).status, 403);
   const g = await s.call('POST', `/v1/open/${bid}/posts`, {body: {body: 'can I come?'}, headers: {'X-Guest': ok.json.token as string}});
-  assert.deepEqual([g.status, g.json.by, g.json.guest], [201, 'aki', true]);
+  assert.deepEqual([g.status, g.json.by, g.json.guest], [201, 'Aki', true]);
   // A guest writes for a while: the token is a lease.
   const {eq} = await import('drizzle-orm');
-  await s.db.update(schema.guest).set({tokenUntil: new Date(Date.now() - 1000)}).where(eq(schema.guest.email, 'aki@example.org'));
+  await s.db.update(schema.guest).set({tokenUntil: new Date(Date.now() - 1000)}).where(eq(schema.guest.name, 'Aki'));
   assert.equal((await s.call('POST', `/v1/open/${bid}/posts`, {body: {body: 'still?'}, headers: {'X-Guest': ok.json.token as string}})).status, 403);
   // Leaving: the owner leaves, and the server is the one who came next's.
   assert.equal((await s.call('DELETE', `/v1/servers/${sid}/people/ren@length3.test`, {token: ren})).status, 204);
@@ -849,38 +847,147 @@ test('Consent: nobody is put in a server by someone they have not accepted, or h
   assert.deepEqual([full.status, full.json.error], [429, 'Too many servers']);
 });
 
-test('Guests: codes go to an address a few an hour whatever the board, and from one sender so many; a board has a few waiting; the mail says only the code; tries at once are each counted', async () => {
-  const s = await service();
-  const ren = await s.start('Ren');
-  await named(s, [ren, 'ren']);
-  const made = await s.call('POST', '/v1/servers', {token: ren, body: {name: 'Prizes', board: 'CLAIM YOUR PRIZE at evil.example'}});
-  const boards = [(made.json.boards as {id: string}[])[0].id];
-  for (let i = 1; i < 4; i++) boards.push((await s.call('POST', `/v1/servers/${made.json.id}/boards`, {token: ren, body: {name: `Win big ${i}`}})).json.id as string);
+/** A server of Ren's with Mio and Sora in it, its first board taking guests; Kai is signed in but not in it. */
+async function guestsBoard(s: Service) {
+  const ren = await s.start('Ren'), mio = await s.start('Mio'), sora = await s.start('Sora'), kai = await s.start('Kai');
+  await named(s, [ren, 'ren'], [mio, 'mio'], [sora, 'sora'], [kai, 'kai']);
+  const made = await s.call('POST', '/v1/servers', {token: ren, body: {name: 'Trip'}});
+  const sid = made.json.id as string, bid = (made.json.boards as {id: string}[])[0].id;
+  for (const [t, a] of [[mio, 'mio'], [sora, 'sora']]) {
+    await accept(s, ren, `${a}@length3.test`);
+    await accept(s, t, 'ren@length3.test');
+    assert.equal((await s.call('POST', `/v1/servers/${sid}/people`, {token: ren, body: {address: `${a}@length3.test`}})).status, 201);
+  }
   // Taking guests opens a board: guests write only where anyone reads.
-  for (const b of boards) assert.equal((await s.call('PATCH', `/v1/boards/${b}`, {token: ren, body: {guests: true}})).json.open, true);
-  const ask = (b: string, email: string, from: string) => s.call('POST', `/v1/open/${b}/guest`, {body: {email}, headers: {'CF-Connecting-IP': from}});
-  // One address: three codes an hour, whichever boards ask, from wherever.
-  for (let i = 0; i < 3; i++) assert.equal((await ask(boards[i], 'victim@example.org', `10.0.0.${i}`)).status, 202);
-  const fourth = await ask(boards[3], 'victim@example.org', '10.0.0.9');
-  assert.deepEqual([fourth.status, fourth.json.error], [429, 'Too many codes asked for; try again in an hour']);
-  // Nothing anyone chose reaches the address: no board's name, in the subject or the text.
-  assert.ok(s.mails.length === 3 && s.mails.every((m) => !/prize|win|evil/i.test(m.subject + m.text) && /^Your code is \d{6}\. It holds for 10 minutes\.$/.test(m.text)));
-  // One sender: ten an hour.
-  for (let i = 0; i < 10; i++) assert.equal((await ask(boards[1], `a${i}@example.org`, '10.9.9.9')).status, 202);
-  assert.equal((await ask(boards[1], 'a10@example.org', '10.9.9.9')).status, 429);
-  // One board: twenty waiting for a code at once (the victim's is one of them on this board).
-  for (let i = 0; i < 19; i++) assert.equal((await ask(boards[2], `w${i}@example.org`, `10.1.0.${i}`)).status, 202);
-  const crowd = await ask(boards[2], 'w19@example.org', '10.1.0.99');
-  assert.deepEqual([crowd.status, crowd.json.error], [429, 'Too many people are waiting for a code here; try again soon']);
-  // Ten wrong tries at once are ten tries: the code is spent after five, and the right one then does nothing.
-  assert.equal((await ask(boards[3], 'tries@example.org', '10.2.0.1')).status, 202);
-  const code = /is (\d{6})/.exec(s.mails.at(-1)!.text)![1];
-  const check = (c: string) => s.call('POST', `/v1/open/${boards[3]}/guest/check`, {body: {email: 'tries@example.org', code: c}});
-  const wrong = await Promise.all(Array.from({length: 10}, () => check(code === '000000' ? '000001' : '000000')));
-  assert.ok(wrong.every((r) => r.status === 403));
-  assert.equal((await check(code)).status, 403);
+  assert.equal((await s.call('PATCH', `/v1/boards/${bid}`, {token: ren, body: {guests: true}})).json.open, true);
+  const invite = (t: string, body?: unknown, b = bid) => s.call('POST', `/v1/boards/${b}/invites`, {token: t, body: body ?? {}});
+  const come = (code: unknown, name: string, b = bid) => s.call('POST', `/v1/open/${b}/guest`, {body: {invite: code, name}});
+  const say = (token: string, body: string, b = bid) => s.call('POST', `/v1/open/${b}/posts`, {body: {body}, headers: {'X-Guest': token}});
+  return {ren, mio, sora, kai, sid, bid, invite, come, say};
+}
+
+test('Guests: an invitation one of its people hands out is the whole proof; it lets in so many, for so long, and is refused alike when wrong, used up, revoked or run out', async () => {
+  const s = await service();
+  const {ren, mio, sora, kai, sid, bid, invite, come} = await guestsBoard(s);
+  const other = (await s.call('POST', `/v1/servers/${sid}/boards`, {token: ren, body: {name: 'food'}})).json.id as string;
+  await s.call('PATCH', `/v1/boards/${other}`, {token: ren, body: {guests: true}});
+  // Only its people invite, and only its people see who is invited.
+  assert.equal((await invite(kai)).status, 404);
+  assert.equal((await s.call('GET', `/v1/boards/${bid}/guests`, {token: kai})).status, 404);
+  assert.equal((await s.call('POST', `/v1/boards/${bid}/invites`)).status, 401);
+  for (const bad of [{uses: 21}, {uses: 0}, {days: 31}, {days: 0}, {uses: 'x'}, {uses: 1.5}]) assert.equal((await invite(mio, bad)).status, 400, JSON.stringify(bad));
+  const one = await invite(mio);
+  assert.deepEqual([one.status, one.json.uses], [201, 1]);
+  assert.match(one.json.invite as string, /^[0-9a-f]{32}$/);
+  assert.ok(Math.abs((one.json.until as number) - (Date.now() + 7 * 86_400_000)) < 60_000);
+  // The Remote keeps only its digest: its own copy opens nothing.
+  const kept = (await s.db.execute(sql`select digest from board_invite`)).rows as {digest: string}[];
+  assert.ok(kept.length === 1 && kept[0].digest !== one.json.invite && !kept[0].digest.includes(one.json.invite as string));
+  assert.equal((await come(kept[0].digest, 'Aki')).status, 403);
+  // Wrong, malformed, or for another board: the same refusal, and nothing is spent.
+  const refused = [403, 'This invitation does not open this board'];
+  for (const code of ['0'.repeat(32), 'nonsense', 42, null]) assert.deepEqual([(await come(code, 'Aki')).status, (await come(code, 'Aki')).json.error], refused);
+  assert.deepEqual([(await come(one.json.invite, 'Aki', other)).status], [403]);
+  // A name is the guest's own, but never one of its people's (nor the server's), never an address, never hidden marks.
+  for (const name of ['ren', 'MIO', 'Trip']) assert.deepEqual([(await come(one.json.invite, name)).status, (await come(one.json.invite, name)).json.error], [409, 'That name is taken here'], name);
+  for (const name of ['', '   ', 'aki@example.org', 'x'.repeat(33), '‮evil', 'a​b', 'tab\u0007']) assert.equal((await come(one.json.invite, name)).status, 400, JSON.stringify(name));
+  // None of that spent its one use; then it lets one person in, once.
+  const aki = await come(one.json.invite, '  Aki  ');
+  assert.deepEqual([aki.status, aki.json.as], [200, 'Aki']);
+  assert.match(aki.json.token as string, /^[0-9a-f]{64}$/);
+  assert.deepEqual([(await come(one.json.invite, 'Bo')).status, (await come(one.json.invite, 'Bo')).json.error], refused);
+  // Who one is here, by the token; on another board it is nobody.
+  assert.deepEqual((await s.call('GET', `/v1/open/${bid}/guest`, {headers: {'X-Guest': aki.json.token as string}})).json, {id: aki.json.id, as: 'Aki'});
+  assert.equal((await s.call('GET', `/v1/open/${other}/guest`, {headers: {'X-Guest': aki.json.token as string}})).status, 403);
+  assert.equal((await s.call('POST', `/v1/open/${other}/posts`, {body: {body: 'hi'}, headers: {'X-Guest': aki.json.token as string}})).status, 403);
   // A guest without a token is refused as a guest (403), not as a session the Remote does not know (401).
-  assert.equal((await s.call('POST', `/v1/open/${boards[0]}/posts`, {body: {body: 'hi'}})).status, 403);
+  assert.equal((await s.call('POST', `/v1/open/${bid}/posts`, {body: {body: 'hi'}})).status, 403);
+
+  // For a few people: each a name of their own, so many and no more.
+  const few = await invite(sora, {uses: 2, days: 1});
+  assert.equal((await come(few.json.invite, 'aki')).status, 409);
+  assert.equal((await come(few.json.invite, 'Bo')).status, 200);
+  assert.equal((await come(few.json.invite, 'Cy')).status, 200);
+  assert.equal((await come(few.json.invite, 'Dee')).status, 403);
+  // Run out: refused alike.
+  const late = await invite(mio);
+  await s.db.execute(sql`update board_invite set until = now() - interval '1 second' where id = ${late.json.id as string}`);
+  assert.equal((await come(late.json.invite, 'Eve')).status, 403);
+
+  // Every one of its people sees what is out and who is in; each may revoke their own, the owner any.
+  const kept2 = await invite(mio), mine2 = await invite(sora);
+  type Seen = {invites: {id: string; by: string; uses: number; mine: boolean; mayRevoke: boolean}[]; guests: {id: string; name: string; by: string; mayRemove: boolean}[]};
+  const seen = (t: string) => s.call('GET', `/v1/boards/${bid}/guests`, {token: t}).then((r) => r.json as unknown as Seen);
+  const bySora = await seen(sora);
+  assert.deepEqual(bySora.invites.map((x) => [x.by, x.mine, x.mayRevoke]), [['mio@length3.test', false, false], ['sora@length3.test', true, true]]);
+  assert.deepEqual(bySora.guests.map((x) => [x.name, x.by, x.mayRemove]), [['Aki', 'mio@length3.test', false], ['Bo', 'sora@length3.test', true], ['Cy', 'sora@length3.test', true]]);
+  assert.ok((await seen(ren)).invites.every((x) => x.mayRevoke) && (await seen(ren)).guests.every((x) => x.mayRemove));
+  assert.equal((await s.call('DELETE', `/v1/boards/${bid}/invites/${kept2.json.id}`, {token: sora})).status, 404);
+  assert.equal((await s.call('DELETE', `/v1/boards/${bid}/invites/${kept2.json.id}`, {token: kai})).status, 404);
+  assert.equal((await s.call('DELETE', `/v1/boards/${bid}/invites/${kept2.json.id}`, {token: ren})).status, 204);
+  assert.equal((await s.call('DELETE', `/v1/boards/${bid}/invites/${mine2.json.id}`, {token: sora})).status, 204);
+  for (const x of [kept2, mine2]) assert.deepEqual([(await come(x.json.invite, 'Fay')).status], [403]);
+  assert.deepEqual((await seen(mio)).invites, []);
+
+  // A board has so many out at once.
+  for (let i = 0; i < 20; i++) assert.equal((await invite(mio)).status, 201);
+  const more = await invite(sora);
+  assert.deepEqual([more.status, more.json.error], [429, 'This board has as many invitations out as it takes; revoke one first']);
+  // Someone who leaves the server takes the invitations they made with them.
+  assert.equal((await s.call('DELETE', `/v1/servers/${sid}/people/mio@length3.test`, {token: mio})).status, 204);
+  assert.equal(await count(s, sql`select count(*)::int as n from board_invite where board_id = ${bid} and uses > 0`), 0);
+});
+
+test('Guests: shown as guests, held to so many posts an hour each and on a board; removed with their posts; ended with the board taking them', async () => {
+  const s = await service();
+  const {ren, mio, sora, bid, invite, come, say} = await guestsBoard(s);
+  const many = await invite(mio, {uses: 20});
+  const aki = (await come(many.json.invite, 'Aki')).json.token as string, bo = (await come(many.json.invite, 'Bo')).json.token as string;
+  // Shown as a guest's, to anyone and in what is taken home.
+  assert.equal((await say(aki, 'hello from outside')).status, 201);
+  const open = (await s.call('GET', `/v1/open/${bid}/posts`)).json as unknown as {posts: {by: string; guest?: boolean; body: string}[]};
+  assert.deepEqual(open.posts.map((p) => [p.by, p.guest]), [['Aki', true]]);
+  assert.match((await s.call('GET', `/v1/open/${bid}/archive`)).text, /Aki \(guest\): hello from outside/);
+  // A guest: twenty posts an hour.
+  for (let i = 1; i < 20; i++) assert.equal((await say(aki, `post ${i}`)).status, 201);
+  assert.deepEqual([(await say(aki, 'one more')).status, (await say(aki, 'one more')).json.error], [429, 'Too many posts this hour']);
+  // A board's guests together: a hundred an hour, whoever they are (guests gone still count); its people write on.
+  const hour = Date.now() - 60_000;
+  for (let i = 0; i < 80; i++) await s.db.insert(schema.talk).values({id: hour.toString(36).padStart(9, '0') + i.toString(36).padStart(8, '0'), boardId: bid, by: 'Gone', body: 'x'});
+  const full = await say(bo, 'and me?');
+  assert.deepEqual([full.status, full.json.error], [429, 'Guests have written as much as they may here this hour']);
+  assert.equal((await s.call('POST', `/v1/boards/${bid}/posts`, {token: sora, body: {body: 'we still can'}})).status, 201);
+  await s.db.execute(sql`delete from board_post where by = 'Gone'`);
+  assert.equal((await say(bo, 'and me?')).status, 201);
+  // Removed by whoever invited them or the owner, not by another of its people: their posts go with them.
+  const gs = ((await s.call('GET', `/v1/boards/${bid}/guests`, {token: mio})).json as unknown as {guests: {id: string; name: string}[]}).guests;
+  const akiId = gs.find((g) => g.name === 'Aki')!.id, boId = gs.find((g) => g.name === 'Bo')!.id;
+  assert.equal((await s.call('DELETE', `/v1/boards/${bid}/guests/${akiId}`, {token: sora})).status, 404);
+  assert.equal((await s.call('DELETE', `/v1/boards/${bid}/guests/${akiId}`, {token: mio})).status, 204);
+  assert.equal((await say(aki, 'back?')).status, 403);
+  assert.equal((await s.call('GET', `/v1/open/${bid}/guest`, {headers: {'X-Guest': aki}})).status, 403);
+  const left = ((await s.call('GET', `/v1/open/${bid}/posts?limit=100`)).json as unknown as {posts: {by: string}[]}).posts;
+  assert.deepEqual([...new Set(left.map((p) => p.by))].sort(), ['Bo', 'sora@length3.test']);
+  assert.equal((await s.call('DELETE', `/v1/boards/${bid}/guests/${boId}`, {token: ren})).status, 204);
+  assert.equal((await say(bo, 'back?')).status, 403);
+  // No longer taking guests ends every invitation and guest: taking them again lets nobody back by an old link.
+  const cy = (await come(many.json.invite, 'Cy')).json.token as string;
+  assert.deepEqual((await s.call('PATCH', `/v1/boards/${bid}`, {token: ren, body: {guests: false}})).json.guests, false);
+  assert.equal((await say(cy, 'still here?')).status, 404);
+  assert.equal((await invite(mio)).status, 409);
+  await s.call('PATCH', `/v1/boards/${bid}`, {token: ren, body: {guests: true}});
+  assert.equal((await come(many.json.invite, 'Dee')).status, 403);
+  assert.equal((await say(cy, 'still here?')).status, 403);
+  // The sweep lets go of a guest whose lease ran out (their posts stay, a guest's), and of invitations used up or run out.
+  const again = await invite(mio, {uses: 1}), lapsing = await invite(mio);
+  const dee = (await come(again.json.invite, 'Dee')).json.token as string;
+  assert.equal((await say(dee, 'last words')).status, 201);
+  await s.db.execute(sql`update board_guest set token_until = now() - interval '1 second'`);
+  await s.db.execute(sql`update board_invite set until = now() - interval '1 second' where id = ${lapsing.json.id as string}`);
+  const gone = await sweep(s.db, s.bucket);
+  assert.deepEqual([gone.guest, gone.invite], [1, 2]);
+  const last = ((await s.call('GET', `/v1/open/${bid}/posts?limit=1`)).json as unknown as {posts: {by: string; guest?: boolean}[]}).posts;
+  assert.deepEqual(last.map((p) => [p.by, p.guest]), [['Dee', true]]);
 });
 
 test('Names: an account keeps five, those it let go among them; a few servers a day; a server its maker leaves with nobody else in it is held a day', async () => {
@@ -1127,7 +1234,7 @@ test('A board item taken off is not brought back by a late change; closing a boa
   const set = (body: unknown) => s.call('PATCH', `/v1/boards/${bid}`, {token: ren, body}).then((r) => [r.json.open, r.json.guests]);
   assert.deepEqual(await set({guests: true}), [true, true]);
   assert.deepEqual(await set({open: false}), [false, false]);
-  assert.equal((await s.call('POST', `/v1/open/${bid}/guest`, {body: {email: 'a@example.org'}})).status, 404);
+  assert.equal((await s.call('POST', `/v1/open/${bid}/guest`, {body: {invite: '0'.repeat(32), name: 'Aki'}})).status, 404);
 });
 
 test('Letting an address go takes down what went public under it; a face its owner no longer has holds nothing for them', async () => {

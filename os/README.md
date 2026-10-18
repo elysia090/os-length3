@@ -285,7 +285,12 @@ the app.
   right only shows who is in it and the repos they show in it (seen as last
   pushed). What changes it for everyone is behind its gear: people, repos
   shown, how far each board is open (its owner's, asked before it widens),
-  taking a board home as text (`l3 server get`), leaving or removing it.
+  its guests, taking a board home as text (`l3 server get`), leaving or
+  removing it. A board that takes guests lets outsiders write by invitation,
+  never by email: any of its people makes a link (one person, once, a week)
+  and passes it on themselves; the guest picks a name, always shown as a
+  guest's; guests are held to so many posts an hour, each and per board,
+  and whoever invited one (or the owner) removes them with their posts.
 - Who sees a repo (`service/seen.ts`): only you, the servers it is shown
   in, or everyone, set on its card in Remote. Everyone sees it under the
   name it went public as: the server's (`trip@length3.com:hello`) when it
@@ -298,9 +303,9 @@ program for a repo; its own tools run inside the root (`core/src/launch.rs`).
 
 The Remote (`service/`): Hono with Better Auth (provider sign-in, then
 passkeys; device authorization; bearer sessions) on Drizzle; Neon in
-production, PGlite in tests and here. Its schema is two migrations: the one
-Drizzle generates from `service/schema.ts`, and `0001` for what Drizzle cannot
-say (the counted room, the service's role). The service connects as
+production, PGlite in tests and here. Its schema is the migrations in
+`service/migrations`: those Drizzle generates from `service/schema.ts`, and
+`0001` for what Drizzle cannot say (the counted room, the service's role). The service connects as
 `remote_worker`, a member of `remote_app`, which reads and writes rows and
 nothing else.
 

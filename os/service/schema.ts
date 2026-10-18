@@ -350,8 +350,8 @@ export const ssh = pgTable('ssh', {
 // people who know each other, and its boards are what they talk about. A
 // board is a conversation (short posts) and a TODO its people keep together,
 // the same list as Home's. A board is its server's people's alone unless it
-// is opened: to be read by anyone, and to be written in by an outsider who
-// has shown an email address is theirs (a guest).
+// is opened: to be read by anyone, and to be written in by an outsider one
+// of its people invited (a guest).
 
 /**
  * A server: what it is called (any words), and its people; the principal
@@ -454,29 +454,49 @@ export const boardSeen = pgTable('board_seen', {
   check('board_seen_post', matches('post', re.post))]);
 
 /**
- * An outsider writing in one board: the email they showed is theirs (by a
- * short code sent to it, which holds ten minutes from codeAt), and a token
- * for writing there, a lease until tokenUntil. Codes and tokens are kept
- * only as digests.
+ * An invitation to write in one board as a guest. One of its people makes it
+ * and hands it to whomever they choose, by any channel they like (a link to
+ * pass on): the Remote sends nothing to anyone. It lets so many in (uses,
+ * counted down), until a moment, and is kept only as a digest. It hangs from
+ * its maker's place in the server, so it goes when they leave; revoked, used
+ * up or run out, it opens nothing.
+ */
+export const invite = pgTable('board_invite', {
+  id: text('id').primaryKey(),
+  boardId: text('board_id').notNull().references(() => board.id, {onDelete: 'cascade'}),
+  serverId: text('server_id').notNull(),
+  userId: text('user_id').notNull(),
+  digest: text('digest').notNull(),
+  uses: smallint('uses').notNull(),
+  until: moment('until').notNull(),
+  createdAt: moment('created_at').defaultNow().notNull(),
+}, (t) => [uniqueIndex('board_invite_digest_idx').on(t.digest), index('board_invite_board_idx').on(t.boardId, t.createdAt),
+  foreignKey({name: 'board_invite_member', columns: [t.serverId, t.userId], foreignColumns: [member.serverId, member.userId]}).onDelete('cascade'),
+  check('board_invite_id', matches('id', re.key)), check('board_invite_digest', matches('digest', re.sha)),
+  check('board_invite_uses', sql`${t.uses} between 0 and 20`)]);
+
+/**
+ * An outsider writing in one board, let in by an invitation: the name they
+ * chose (always shown as a guest's, never as one of its people's), and a
+ * token for writing there, a lease until tokenUntil, kept only as a digest.
+ * Whoever invited them may remove them, as may the server's owner.
  */
 export const guest = pgTable('board_guest', {
   id: text('id').primaryKey(),
   boardId: text('board_id').notNull().references(() => board.id, {onDelete: 'cascade'}),
-  email: text('email').notNull(),
-  code: text('code'),
-  codeAt: moment('code_at'),
-  tries: smallint('tries').notNull().default(0),
-  token: text('token'),
-  tokenUntil: moment('token_until'),
-}, (t) => [uniqueIndex('board_guest_email_idx').on(t.boardId, t.email), uniqueIndex('board_guest_token_idx').on(t.token),
-  check('board_guest_id', matches('id', re.key)), check('board_guest_email', sql`char_length(${t.email}) <= 260`),
-  check('board_guest_digests', sql.raw(`(code is null or code ~ ${re.sha}) and (token is null or token ~ ${re.sha})`)),
-  check('board_guest_tries', sql`${t.tries} >= 0`)]);
+  name: text('name').notNull(),
+  token: text('token').notNull(),
+  tokenUntil: moment('token_until').notNull(),
+  invitedBy: text('invited_by').references(() => user.id, {onDelete: 'set null'}),
+  createdAt: moment('created_at').defaultNow().notNull(),
+}, (t) => [uniqueIndex('board_guest_token_idx').on(t.token), uniqueIndex('board_guest_name_idx').on(t.boardId, sql`lower(${t.name})`),
+  check('board_guest_id', matches('id', re.key)), check('board_guest_token', matches('token', re.sha)),
+  check('board_guest_name', sql.raw(`char_length(name) between 1 and 32 and position('@' in name) = 0`))]);
 
 /**
- * What was asked of the Remote by someone it does not know, and when: a
- * guest's code mailed, by the address it went from and the one it went to.
- * Counted to say how often; a day old, gone.
+ * What was asked of the Remote, and when, to say how often: a link's key
+ * tried from an address (enter.ts), a repo's code tried wrong (app.ts), a
+ * name's code looked up (inbox.ts). A day old, gone.
  */
 export const throttle = pgTable('throttle', {
   key: text('key').notNull(),

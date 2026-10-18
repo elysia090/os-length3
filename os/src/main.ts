@@ -18,6 +18,7 @@ import {learnHome} from './inbox.ts';
 import {begin as lookForNews, look, marks, news, onNews} from './news.ts';
 import {devicePage} from './pages/device.ts';
 import {about, claim, connection, enterWith, onConnection, onReach, remoteAway} from './remote.ts';
+import {heldInvite, holdInvite, inviteIn} from './servers.ts';
 import {getState, loadState} from './state.ts';
 import {onLang, t, useLang} from './i18n.ts';
 import {NEW_REPO, PURPOSES, purpose, restorePurpose, stepPurpose, type PurposeId} from './purposes.ts';
@@ -184,7 +185,11 @@ const asking = new URLSearchParams(location.search);
 // A link for research (…/#enter=KEY): the key is taken out of the address before anything else runs,
 // so it is not left in the history, a bookmark or a screenshot, and is sent once (remote.ts enterWith).
 const entering = /(?:^#|&)enter=([^&]+)/.exec(location.hash)?.[1];
-if (entering) history.replaceState(null, '', location.pathname + location.search);
+// An invitation to write in a board as a guest (…/#guest=BOARD.INVITE), handed on by one of its people:
+// taken out of the address the same way, held for this tab until it is used, and its board shown.
+const invitation = inviteIn(location.hash);
+if (invitation) holdInvite(invitation.board, invitation.code);
+if (entering || invitation) history.replaceState(null, '', location.pathname + location.search);
 if (asking.has('device')) {
   void loadState().finally(() => { useLang(getState('lang')); document.body.replaceChildren(devicePage(asking.get('user_code') ?? '')); });
 } else {
@@ -202,6 +207,7 @@ if (asking.has('device')) {
     // Which domain is this Remote's, so a name on it is shown alone (`ren`), not as a domain's.
     void learnHome();
     select(restorePurpose(load(PURPOSE_KEY)));
+    if (heldInvite()) serverLayer.open(true);
     void begin().then(() => render());
     // What came in meanwhile, for the rail's marks: now, and every little while.
     lookForNews();

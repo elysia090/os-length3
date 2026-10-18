@@ -1016,6 +1016,8 @@ summary.done-head:hover { background: var(--raised); }
 .tl-post.tl-runs { margin-top: 0; }
 .tl-post:hover, .tl-post:focus-within { background: var(--raised); }
 .tl-face { display: grid; place-items: center; width: 36px; height: 36px; margin-top: var(--s1); border: 1px solid var(--rule); border-radius: var(--r-round); font: 600 var(--t-meta) var(--sans); }
+/* A guest's face is dashed, beside the word guest: never taken for one of its people's. */
+.tl-guest > .tl-face { border-style: dashed; border-color: var(--edge); }
 /* In a run, the face's place holds the time, shown on hover. */
 /* A post in a run: its time, on hover, no taller than the line beside it, so a run's lines keep one rhythm. */
 .tl-face.tl-at { height: 1lh; margin-top: 0; border: 0; border-radius: 0; place-items: center end; font-size: 11px; line-height: inherit; overflow: hidden; visibility: hidden; }
@@ -1130,6 +1132,12 @@ summary.done-head:hover { background: var(--raised); }
 /* A setting in a small card: its word, and the switch at the right. */
 .card-row { display: flex; align-items: center; gap: var(--s3); min-height: var(--h-control); }
 .card-row .grow { flex: 1; min-width: 0; }
+/* A board's guests and invitations out; an invitation's link, said once, copied by a press. */
+.guest-rows { display: grid; }
+.guest-link { display: grid; gap: var(--s1); }
+.guest-link:empty { display: none; }
+.guest-link-text { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; justify-content: flex-start; }
+.guest-chip { display: inline-flex; align-items: center; gap: var(--s1); }
 .small-card > .small-button { align-self: flex-start; }
 .small-card.new { justify-content: center; align-items: center; }
 .grid > .empty { grid-column: 1 / -1; margin-top: 0; }

@@ -371,7 +371,7 @@ caches, environments, posts. The OS states them itself, so nobody has to.
 - **Every change names the version it was made on.** Nothing sent
   overwrites; when both sides changed, both are kept side by side.
 - **Leases.** What is held for a while says until when: a repo turned off
-  (30 days), a guest's code (10 minutes), a device's session.
+  (30 days), a guest's invitation (a week), a device's session.
 - **Small before wide.** What reaches others starts with the few it is
   for and is opened further only by choice (a server's board: its people,
   then, if opened, anyone reading, outsiders writing), as a release goes to
@@ -498,7 +498,9 @@ nobody else can take it and be taken for its owner:
 | a repo's public name (`face:name`) | its owner, under a face | the face (the server, or the owner's address) | taken down, or the face goes: 30 days no one else's repo answers to it |
 | a board, its talk and TODO | its server | its Remote | removed by its owner: 30 days, back at once until then, then gone; or with its server |
 | a copy on a device | the device | the digests | taken back whenever room is wanted (owned.rs) |
-| a session, a code, a guest | the person, the address it was sent to | sign-in, mail | a lease: days for a session, minutes for a code, 30 days for a guest |
+| a session, a code | the person | sign-in | a lease: days for a session, minutes for a code |
+| a guest's invitation | the one of its people who made it, lent to whoever they hand it | its Remote, and its digest | used, revoked, its maker leaves the server, or a week (at most 30 days) |
+| a guest | the board, by an invitation | its token's digest | a lease of 30 days; removed (their posts with them), or the board stops taking guests: at once |
 
 What goes, goes in one place, once a day (`service/sweep.ts`): nothing a
 person asks for purges anything on the way, and a file no tree names any
@@ -1239,11 +1241,37 @@ trip, a release, a reading group), and each holds two things:
 
 How far a board goes is chosen board by board, and only ever wider by
 choice: its server's people always; if opened, anyone reads it (signed in
-or not); and if it takes guests, an outsider may write in it once they have
-shown an email address is theirs, by a six-digit code sent to it (one a
-minute, ten minutes to use, five wrong tries spend it). Everything is kept
+or not); and if it takes guests, an outsider may write in it once one of
+its people has invited them. Everything is kept
 on the Remote, and any board can be taken home as one text (its TODO, its
 talk, or both), in the app or with `l3 server get`.
+
+**Guests** come by invitation, never by email: the Remote sends nothing to
+anyone, keeps no address, and so cannot be made to send mail for a
+stranger, costs nothing per guest, and has no address to lose. Any of a
+board's people makes an invitation behind the gear: a link
+(`https://os.length3.com/#guest=BOARD.INVITE`, 128 random bits after the
+board) shown only then, which they pass on themselves, by whatever way
+they already reach that person. It lets one person in, once, within a week;
+the Remote can let in up to 20 by one and keep it up to 30 days, and holds
+a board to 20 invitations out at once. The link's part after `#` never
+reaches a server's log; the Remote keeps only its digest, so its own copy
+opens nothing, and an invitation wrong, used up, revoked or run out is
+refused with the same words. Whoever opens it chooses the name they write
+as, at most 32 characters, no `@` (so it is never written as an address
+is), nothing invisible, never the name of one of the server's people or of
+the server, and not another guest's on that board; it is always shown with
+**guest** beside it and a dashed face, and their posts never run on from
+one of its people's. A guest holds a token for that board alone, for 30
+days, kept by the browser they came in on. A guest writes 20 posts an hour,
+and a board's guests together 100, so a link passed around cannot fill a
+board. Every one of its people sees the invitations out (whose, until when)
+and the guests in (who invited them); each revokes their own invitations
+and removes whom they invited, its owner any; a guest removed writes no
+more and what they wrote there is taken down with them. A board that stops
+taking guests (or stops being open) ends every invitation and guest at
+once, so opening it again lets nobody back by an old link; someone who
+leaves the server takes the invitations they made with them.
 
 Server is an overlay (§3), on the bench's shape. Its pieces, from §3:
 
@@ -1273,15 +1301,23 @@ Server is an overlay (§3), on the bench's shape. Its pieces, from §3:
   server's; others' shown here, whose, its owner may take them off),
   Boards (to everyone and guests, its owner's; Take home, anyone's;
   Remove, its owner's: the board is held 30 days, off the boards, its card
-  quiet with its 外す red, and pressed again it is back at once), This server (its name, code and term, Renew near its
+  quiet with its 外す red, and pressed again it is back at once; beside a
+  board that takes guests, its Guests card: the guests in, each with who
+  invited them and Remove, asked in the card; the invitations out, each with
+  whose and until when and Revoke, at once; and Invite a guest at its foot,
+  which shows the link once, copied by a press), This server (its name, code and term, Renew near its
   end; Leave; its owner's Delete). Whatever reaches past its people or
   cannot be taken back at once is **asked in the card**.
 
 Escape from behind the gear, or from a repo shown, goes back to the boards
 first. No Prompt is in Server: Server is for people, the Prompt for a
 repo. Signed out, it shows the open boards (and no right pane, since whose
-they are is not told), and where a board takes guests the box at the foot
-asks for an email, then the code sent to it.
+they are is not told). Where a board takes guests the box at the foot says
+that its people invite them; opened by an invitation's link, Server comes
+out at that board (signed in or not), and the box asks only the name to
+write as, then is the guest's box (ゲストの…として). Signed in, the boards one
+writes in as a guest are chips after one's servers (#board ゲスト), each
+shown alone. A guest removed, or whose lease ran out, is told so in the box.
 
 The talk reads as a conversation: oldest above and newest at the foot. No
 rules: a run of one address's posts within five minutes shows the face

@@ -1,5 +1,5 @@
 // For tests: the Remote in this process (service/app.ts on PGlite), signed
-// in to the way a browser is, with DNS and mail as stand-ins. Not part of
+// in to the way a browser is, with DNS as a stand-in. Not part of
 // the service; only the tests import it.
 //
 // A database is made once per process, migrated, and each one after that
@@ -86,9 +86,8 @@ async function make(pg: PGlite, records: Record<string, string[]>, o: Options) {
   const bucket = memoryBucket();
   // DNS as a map of name → TXT records.
   const dns = new Map(Object.entries(records));
-  const mails: {to: string; subject: string; text: string}[] = [];
   const app = createApp({db, auth, bucket, origins: [APP], appOrigin: APP, providers: ['dev'], domain: 'length3.test', baseURL: BASE,
-    secret: SECRET, txt: async (name) => dns.get(name) ?? [], recheck: 0, mail: async (to, subject, text) => { mails.push({to, subject, text}); }, quota: o.quota,
+    secret: SECRET, txt: async (name) => dns.get(name) ?? [], recheck: 0, quota: o.quota,
     enter: o.enter});
   // The service asks its own stand-in provider for tokens over the network: here, itself.
   const real = globalThis.fetch;
@@ -131,7 +130,7 @@ async function make(pg: PGlite, records: Record<string, string[]>, o: Options) {
   const person = (word = 'Person') => start(`${word} ${process.pid}-${++people}`);
   const publish = (name: string, value: string) => dns.set(name, [...(dns.get(name) ?? []), value]);
   const unpublish = (name: string) => dns.delete(name);
-  return {db, app, call, start, person, bucket, publish, unpublish, mails, sessions, close: () => pg.close()};
+  return {db, app, call, start, person, bucket, publish, unpublish, sessions, close: () => pg.close()};
 }
 
 // ---- what many tests do ----

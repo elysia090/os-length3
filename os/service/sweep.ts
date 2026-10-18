@@ -8,11 +8,12 @@
 //                                     public names); its name remembered as gone
 //   a repo gone 90 days ago           the memory of it
 //   a line merged 30 days ago         its draft (its commits stay: main's history names them)
-//   a server or a board held 30 days  with all that hangs from it (boards, talk, TODO, guests, shares, name)
+//   a server or a board held 30 days  with all that hangs from it (boards, talk, TODO, guests, invitations, shares, name)
 //   a name held 30 days               (let go, past its term, or lapsed 30 days and then held 30)
 //   a public name held 30 days        or one whose face its owner no longer has
 //   a message read, 90 days after it was sent (one unread waits for its reader)
-//   a signal two minutes old, a passkey sign-in five minutes old, a guest whose code and lease ran out,
+//   a signal two minutes old, a passkey sign-in five minutes old, a guest whose lease ran out (their
+//                                     posts stay, a guest's still), an invitation used up or run out,
 //   what was asked of the Remote a day ago (throttle)
 //   a session, a device's code or a sign-in's verification that ran out (Better Auth's own: it lets
 //                                     one go only when it is asked for again)
@@ -67,8 +68,8 @@ export async function sweep(db: Db, bucket: Bucket): Promise<Record<string, numb
   await run('signal', db, sql`delete from signal where created_at < ${ago(2 * 60_000)}`);
   await run('proof', db, sql`update guard set proof_session = null, proof_at = null where proof_at < ${ago(5 * 60_000)}`);
   await run('guard', db, sql`delete from guard where off_digest is null and proof_at is null`);
-  await run('guest', db, sql`delete from board_guest where (token_until is null or token_until < now())
-    and (code is null or code_at is null or code_at < ${ago(10 * 60_000)})`);
+  await run('guest', db, sql`delete from board_guest where token_until < now()`);
+  await run('invite', db, sql`delete from board_invite where uses = 0 or until < now()`);
   await run('throttle', db, sql`delete from throttle where at < ${ago(DAY)}`);
   // Better Auth's moments are kept without a zone, as UTC.
   for (const t of ['session', 'device_code', 'verification']) await run(t, db, sql`delete from ${sql.identifier(t)} where expires_at < now() at time zone 'utc'`);

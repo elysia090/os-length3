@@ -10,9 +10,10 @@
 //
 // A board is its server's people's alone unless opened, board by board:
 // open, anyone reads it (signed in or not); guests, an outsider may also
-// write in it once they have shown an email address is theirs, by a short
-// code sent to it. All of it is kept here; any of it can be taken home as
-// text (archive).
+// write in it, let in by an invitation one of its people made and handed
+// them (the Remote sends nothing to anyone), under a name they choose that
+// is always shown as a guest's. All of it is kept here; any of it can be
+// taken home as text (archive).
 //
 //   GET    /v1/servers                       mine, each with its boards (?gone=1: those I may bring back)
 //   POST   /v1/servers                       {name, address}: a new one, named name@domain, with a first board
@@ -36,18 +37,22 @@
 //   DELETE /v1/boards/ID/posts/PID           its writer's, or the server owner's
 //   POST   /v1/boards/ID/seen                {post}: read so far (news.ts tells what came past it)
 //   GET    /v1/boards/ID/archive             ?from=&to=&todo=0|1&talk=0|1: markdown
+//   GET    /v1/boards/ID/guests              its invitations out and its guests
+//   POST   /v1/boards/ID/invites             {uses?, days?}: an invitation, its link said once
+//   DELETE /v1/boards/ID/invites/IID         revoked: its maker's, or the server owner's
+//   DELETE /v1/boards/ID/guests/GID          removed, their posts with them: whoever invited them, or the server owner
 // and, for anyone, on open boards (and guests on boards that take them):
 //   GET    /v1/open                          the open boards
 //   GET    /v1/open/ID | /todos | /posts | /archive
-//   POST   /v1/open/ID/guest                 {email}: a code is sent to it
-//   POST   /v1/open/ID/guest/check           {email, code}: a token to write with
+//   POST   /v1/open/ID/guest                 {invite, name}: a token to write with
+//   GET    /v1/open/ID/guest                 who one is here, with X-Guest: token
 //   POST   /v1/open/ID/posts                 {body}, with X-Guest: token
 
 import {and, asc, desc, eq, gt, gte, inArray, isNull, lt, lte, sql} from 'drizzle-orm';
 import type {Context, Hono} from 'hono';
 import {claim, codeOf, HOLD, liveAddress, serverAddress, shownAs, takeDown} from './names.ts';
 import {ago, body, lock, qualified, refuse, rows, type Db, type Vars} from './request.ts';
-import {address, board, boardSeen, guest, member, principalCode, REACH, repoPublic, server, talk, throttle, todoItem} from './schema.ts';
+import {address, board, boardSeen, guest, invite, member, principalCode, REACH, repoPublic, server, talk, todoItem} from './schema.ts';
 
 export const SERVER = {name: 64, body: 2000, perHour: 60, page: 30, maxPage: 100, boards: 100,
   /** Servers a person owns or has held for them, at most; servers they make in a day. */
@@ -57,16 +62,23 @@ export const SERVER = {name: 64, body: 2000, perHour: 60, page: 30, maxPage: 100
   /** A board's TODO: as long as Home's items may be (src/todo.ts), and so many of them. */
   todo: {title: 200, detail: 4000, items: 500},
   /**
-   * A guest's code: how long it holds, how many wrong tries spend it, how soon another may be sent
-   * to the same address for the same board; how many an hour one sender may ask for, and one
-   * address may be sent, whatever the board; how many may wait on one board at once.
+   * Guests: an invitation lets in so many (one unless asked, at most 20) for so many days (7 unless
+   * asked, at most 30); a board has so many invitations out and so many guests at once; a guest
+   * writes so many posts an hour, and a board's guests together so many; a guest's name is so long.
    */
-  code: {minutes: 10, tries: 5, again: 60_000, perSender: 10, perEmail: 3, waiting: 20}} as const;
+  guest: {uses: 20, days: 7, maxDays: 30, invites: 20, guests: 100, perHour: 20, boardPerHour: 100, name: 32}} as const;
 const TODO_ID = /^[0-9a-z-]{1,40}$/;
 const KIND = /^[A-Za-z][A-Za-z0-9-]{0,15}$/;
 const ID = /^[0-9a-z]{17}$/;
 const KEY = /^[0-9a-z]{12}$/;
-const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/;
+/** An invitation: 128 random bits, as hex. */
+const INVITE = /^[0-9a-f]{32}$/;
+/**
+ * A guest's name: a few words of their choosing, but no @ (so it is never written as an address is)
+ * and nothing that is not seen as itself (control characters, and the invisible marks that turn
+ * text around or join it), so what one reads is what they chose.
+ */
+const guestName = (n: string) => n.length > 0 && [...n].length <= SERVER.guest.name && !/[@\p{C}]/u.test(n);
 /** A principal's name before @, as an address's is (inbox.ts). */
 const NAME = /^[a-z0-9][a-z0-9._-]{1,30}$/;
 
@@ -88,9 +100,9 @@ export interface ServerDeps {
   db: Db;
   /** This Remote's own domain: a server's name is claimed on it, or on a domain one of its people holds. */
   domain: string;
-  /** Sends a guest their code; without it, guests cannot be checked (and the Remote says so). */
-  mail?: (to: string, subject: string, text: string) => Promise<void>;
-  /** Mixed into the digests of codes and tokens. */
+  /** The web app's origin: an invitation's link opens it (…/#guest=BOARD.INVITE). */
+  appOrigin?: string;
+  /** Mixed into the digests of invitations and tokens. */
   secret?: string;
   /** No board is opened past its people (a Remote for research: enter.ts). */
   closed?: boolean;
@@ -113,6 +125,8 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   const db = d.db;
   const name = (v: unknown) => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ') : '');
   const fine = (n: string) => n.length > 0 && n.length <= SERVER.name;
+  /** An invitation's or a token's digest: what is kept of it, so the Remote's copy opens nothing. */
+  const seal = (s: string) => digest(`${d.secret ?? ''}:${s}`);
 
   // ---- who may do what ----
   /** `me`'s place in a server that is not gone (removed or left, it answers nothing while it is held). */
@@ -332,7 +346,14 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       if (typeof b.guests === 'boolean') reach = b.guests ? REACH.guests : Math.min(reach, REACH.open);
       set.reach = reach;
     }
-    if (Object.keys(set).length) await db.update(board).set(set).where(eq(board.id, at.b.id));
+    await db.transaction(async (tx: Db) => {
+      if (Object.keys(set).length) await tx.update(board).set(set).where(eq(board.id, at.b.id));
+      // No longer taking guests ends its invitations and its guests: taking them again lets nobody back by an old link.
+      if (set.reach !== undefined && set.reach < REACH.guests) {
+        await tx.delete(invite).where(eq(invite.boardId, at.b.id));
+        await tx.delete(guest).where(eq(guest.boardId, at.b.id));
+      }
+    });
     return c.json(boardJson({...at, b: {...at.b, ...set}}));
   });
 
@@ -417,13 +438,13 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     return c.json(await read(at.b, c.req.query(), me, !!at.owner));
   });
 
-  const write = async (c: Context, b: Board, who: {userId?: string; guestId?: string; by: string}) => {
+  const write = async (c: Context, b: Board, who: {userId?: string; guestId?: string; by: string}, perHour: number = SERVER.perHour) => {
     const r = await body<{body?: unknown}>(c);
     const text = typeof r?.body === 'string' ? r.body.trim() : '';
     if (!text || text.length > SERVER.body) return c.json({error: 'A post is at most 2000 characters'}, 400);
     const whose = who.userId ? eq(talk.userId, who.userId) : eq(talk.guestId, who.guestId!);
     const [{n}] = await db.select({n: sql<number>`count(*)::int`}).from(talk).where(and(whose, gte(talk.id, idAt(Date.now() - 3600_000))));
-    if (n >= SERVER.perHour) return c.json({error: 'Too many posts this hour'}, 429);
+    if (n >= perHour) return c.json({error: 'Too many posts this hour'}, 429);
     const row = {id: postId(), boardId: b.id, userId: who.userId ?? null, guestId: who.guestId ?? null, by: who.by, body: text};
     await db.insert(talk).values(row);
     return c.json(shape(who.userId ?? null, false)(row), 201);
@@ -492,6 +513,74 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     return markdown(c, await archive(at, c.req.query()), at.b);
   });
 
+  // ---- its guests: let in by invitations its people hand out themselves ----
+  //
+  // Nothing is sent by the Remote: one of its people makes an invitation and passes it on as they
+  // like. Every one of its people sees the invitations live and the guests in; an invitation is
+  // revoked by whoever made it or by the server's owner, and a guest removed (their posts with them)
+  // by whoever invited them or by the server's owner.
+
+  v1.get('/boards/:id/guests', async (c) => {
+    const me = c.get('userId');
+    const at = await mine(c.req.param('id'), me) ?? notMine();
+    const invites = await db.select({id: invite.id, userId: invite.userId, by: shownAs(qualified(invite.userId)), uses: invite.uses, until: invite.until}).from(invite)
+      .where(and(eq(invite.boardId, at.b.id), gt(invite.uses, 0), gt(invite.until, sql`now()`))).orderBy(invite.createdAt) as
+      {id: string; userId: string; by: string | null; uses: number; until: Date}[];
+    const guests = await db.select({id: guest.id, name: guest.name, invitedBy: guest.invitedBy, by: shownAs(qualified(guest.invitedBy)), until: guest.tokenUntil}).from(guest)
+      .where(and(eq(guest.boardId, at.b.id), gt(guest.tokenUntil, sql`now()`))).orderBy(guest.createdAt) as
+      {id: string; name: string; invitedBy: string | null; by: string | null; until: Date}[];
+    return c.json({
+      invites: invites.map((x) => ({id: x.id, by: x.by ?? '', uses: x.uses, until: x.until.getTime(), mine: x.userId === me, mayRevoke: x.userId === me || !!at.owner})),
+      guests: guests.map((x) => ({id: x.id, name: x.name, by: x.by ?? '', until: x.until.getTime(), mayRemove: x.invitedBy === me || !!at.owner})),
+    });
+  });
+
+  // An invitation: for one person unless more are asked for (at most 20), for a week unless fewer or
+  // more days are (at most 30). Its link is said once, here: the Remote keeps only its digest.
+  v1.post('/boards/:id/invites', async (c) => {
+    const me = c.get('userId');
+    const at = await mine(c.req.param('id'), me) ?? notMine();
+    if (at.b.reach !== REACH.guests) return c.json({error: 'This board takes no guests'}, 409);
+    const r = await body<{uses?: unknown; days?: unknown}>(c);
+    const whole = (v: unknown, otherwise: number, most: number) => (v === undefined ? otherwise : Number.isInteger(v) && (v as number) >= 1 && (v as number) <= most ? v as number : NaN);
+    const uses = whole(r?.uses, 1, SERVER.guest.uses), days = whole(r?.days, SERVER.guest.days, SERVER.guest.maxDays);
+    if (Number.isNaN(uses) || Number.isNaN(days)) return c.json({error: 'For 1 to 20 people, for 1 to 30 days'}, 400);
+    const code = hex(crypto.getRandomValues(new Uint8Array(16))), id = key(), until = new Date(Date.now() + days * 86_400_000);
+    await db.transaction(async (tx: Db) => {
+      await lock(tx, `guests:${at.b.id}`);
+      const [{n}] = await tx.select({n: sql<number>`count(*)::int`}).from(invite)
+        .where(and(eq(invite.boardId, at.b.id), gt(invite.uses, 0), gt(invite.until, sql`now()`)));
+      if (n >= SERVER.guest.invites) refuse(429, {error: 'This board has as many invitations out as it takes; revoke one first'});
+      await tx.insert(invite).values({id, boardId: at.b.id, serverId: at.b.serverId, userId: me, digest: await seal(code), uses, until});
+    });
+    const link = `${(d.appOrigin ?? '').replace(/\/$/, '')}/#guest=${at.b.id}.${code}`;
+    return c.json({id, invite: code, link, uses, until: until.getTime()}, 201);
+  });
+
+  v1.delete('/boards/:id/invites/:iid', async (c) => {
+    const me = c.get('userId');
+    const at = await mine(c.req.param('id'), me) ?? notMine();
+    const gone = await db.delete(invite).where(and(eq(invite.id, c.req.param('iid')), eq(invite.boardId, at.b.id), at.owner ? undefined : eq(invite.userId, me)))
+      .returning({id: invite.id});
+    return gone.length ? c.body(null, 204) : c.json({error: 'No such invitation of yours'}, 404);
+  });
+
+  // A guest removed writes no more, and what they wrote here is taken down with them.
+  v1.delete('/boards/:id/guests/:gid', async (c) => {
+    const me = c.get('userId');
+    const at = await mine(c.req.param('id'), me) ?? notMine();
+    // Their posts first: the guest going would let go of whose they are (guest_id is set null).
+    const gone = await db.transaction(async (tx: Db) => {
+      const [g] = await tx.select({id: guest.id}).from(guest)
+        .where(and(eq(guest.id, c.req.param('gid')), eq(guest.boardId, at.b.id), at.owner ? undefined : eq(guest.invitedBy, me))).for('update') as {id: string}[];
+      if (!g) return null;
+      await tx.delete(talk).where(and(eq(talk.boardId, at.b.id), eq(talk.guestId, g.id)));
+      await tx.delete(guest).where(eq(guest.id, g.id));
+      return g;
+    });
+    return gone ? c.body(null, 204) : c.json({error: 'No such guest of yours'}, 404);
+  });
+
   // ---- for anyone: open boards, and guests (made before /v1's own routes, which ask who is calling) ----
   const open = async (id: string, reach: number = REACH.open) => { const at = await boardAt(id, null); return at && at.b.reach >= reach ? at : null; };
   const noOpen = () => refuse(404, {error: 'No such open board'});
@@ -506,66 +595,66 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   app.get('/v1/open/:id/posts', async (c) => c.json(await read((await open(c.req.param('id')) ?? noOpen()).b, c.req.query(), null, false), 200, anyone));
   app.get('/v1/open/:id/archive', async (c) => { const at = await open(c.req.param('id')) ?? noOpen(); return markdown(c, await archive(at, c.req.query()), at.b); });
 
-  // A guest: a code to the email they give, then a token for writing in this board.
+  // A guest: an invitation one of its people handed them, and a name they choose; then a token for
+  // writing in this board, and nothing else.
   const guestBoard = async (id: string) => (await open(id, REACH.guests)) ?? refuse(404, {error: 'This board takes no guests'});
-  const seal = (s: string) => digest(`${d.secret ?? ''}:${s}`);
 
-  // Anyone may ask, so the asking is held to a few: an address is sent a code for one board once a
-  // minute, and at most a few an hour whatever the board; one sender asks for so many an hour; a
-  // board has so many waiting at once. The mail says only the code: nothing anyone chose.
+  // The invitation is the whole proof: 128 random bits, kept only as a digest, so it is not found by
+  // trying and the Remote's copy opens nothing. Spending a use, checking the name and letting the guest
+  // in are one transaction: refused at any step, the use is not spent. The answer is the same for an
+  // invitation that is wrong, revoked, used up or run out, so none of them is told from another.
   app.post('/v1/open/:id/guest', async (c) => {
     const at = await guestBoard(c.req.param('id'));
-    if (!d.mail) return c.json({error: 'This Remote sends no mail'}, 503);
-    const email = name((await body<{email?: unknown}>(c))?.email).toLowerCase();
-    if (!EMAIL.test(email)) return c.json({error: 'That is not an email address'}, 400);
-    const sender = `guest-from:${c.req.header('CF-Connecting-IP') ?? ''}`, to = `guest-to:${email}`;
-    const code = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000).padStart(6, '0'), sealed = await seal(code);
-    await db.transaction(async (tx: Db) => {
-      await lock(tx, sender);
-      await lock(tx, to);
-      const [n] = await rows<{again: number; sender: number; to: number; waiting: number}>(tx, sql`select
-        (select count(*)::int from board_guest where board_id = ${at.b.id} and email = ${email} and code_at > ${ago(SERVER.code.again)}) as again,
-        (select count(*)::int from throttle where key = ${sender} and at > ${ago(3600_000)}) as sender,
-        (select count(*)::int from throttle where key = ${to} and at > ${ago(3600_000)}) as to,
-        (select count(*)::int from board_guest where board_id = ${at.b.id} and email <> ${email} and code is not null
-          and code_at > ${ago(SERVER.code.minutes * 60_000)}) as waiting`);
-      if (n.again) refuse(429, {error: 'A code was just sent'});
-      if (n.sender >= SERVER.code.perSender || n.to >= SERVER.code.perEmail) refuse(429, {error: 'Too many codes asked for; try again in an hour'});
-      if (n.waiting >= SERVER.code.waiting) refuse(429, {error: 'Too many people are waiting for a code here; try again soon'});
-      await tx.insert(throttle).values([{key: sender}, {key: to}]);
-      await tx.insert(guest).values({id: key(), boardId: at.b.id, email, code: sealed, codeAt: sql`now()`})
-        .onConflictDoUpdate({target: [guest.boardId, guest.email], set: {code: sealed, codeAt: sql`now()`, tries: 0}});
+    const r = await body<{invite?: unknown; name?: unknown}>(c);
+    const code = typeof r?.invite === 'string' ? r.invite.trim().toLowerCase() : '';
+    const as = name(r?.name);
+    if (!guestName(as)) return c.json({error: 'A name of at most 32 characters, without @'}, 400);
+    if (!INVITE.test(code)) return c.json({error: 'This invitation does not open this board'}, 403);
+    const sealed = await seal(code), token = hex(crypto.getRandomValues(new Uint8Array(32)));
+    const g = await db.transaction(async (tx: Db) => {
+      await lock(tx, `guests:${at.b.id}`);
+      const [used] = await tx.update(invite).set({uses: sql`${invite.uses} - 1`})
+        .where(and(eq(invite.digest, sealed), eq(invite.boardId, at.b.id), gt(invite.uses, 0), gt(invite.until, sql`now()`)))
+        .returning({by: invite.userId}) as {by: string}[];
+      if (!used) refuse(403, {error: 'This invitation does not open this board'});
+      // Never one of its people's names, nor the server's: a guest is not taken for someone they are not.
+      const [n] = await rows<{taken: boolean; guests: number}>(tx, sql`select
+        exists (select 1 from address a where a.released_at is null and lower(a.name) = lower(${as})
+          and (a.server_id = ${at.b.serverId} or a.user_id in (select m.user_id from server_member m where m.server_id = ${at.b.serverId}))) as taken,
+        (select count(*)::int from board_guest where board_id = ${at.b.id} and token_until > now()) as guests`);
+      if (n.taken) refuse(409, {error: 'That name is taken here'});
+      if (n.guests >= SERVER.guest.guests) refuse(429, {error: 'This board has as many guests as it takes'});
+      const [made] = await tx.insert(guest).values({id: key(), boardId: at.b.id, name: as, token: await seal(token),
+        tokenUntil: new Date(Date.now() + HOLD), invitedBy: used.by}).onConflictDoNothing().returning({id: guest.id}) as {id: string}[];
+      if (!made) refuse(409, {error: 'That name is taken here'});
+      return made;
     });
-    await d.mail(email, 'Your Length³ code', `Your code is ${code}. It holds for ${SERVER.code.minutes} minutes.`);
-    return c.json({sent: true}, 202, anyone);
+    return c.json({id: g.id, token, as}, 200, anyone);
   });
 
-  app.post('/v1/open/:id/guest/check', async (c) => {
+  /** The guest a token names on this board, while it holds; else refused (403: 401 is for a session the Remote does not know). */
+  const guestOf = async (c: Context, b: Board) => {
+    const token = c.req.header('X-Guest') ?? '';
+    const [g] = /^[0-9a-f]{64}$/.test(token) ? await db.select({id: guest.id, name: guest.name}).from(guest)
+      .where(and(eq(guest.boardId, b.id), eq(guest.token, await seal(token)), gt(guest.tokenUntil, sql`now()`))) as {id: string; name: string}[] : [];
+    return g ?? refuse(403, {error: 'You are not a guest here'});
+  };
+
+  // Who one is here, as a guest: so a guest removed, or whose lease ran out, is told so before writing.
+  app.get('/v1/open/:id/guest', async (c) => {
     const at = await guestBoard(c.req.param('id'));
-    const r = await body<{email?: unknown; code?: unknown}>(c);
-    const email = name(r?.email).toLowerCase(), code = name(r?.code);
-    // Each try is counted before it is compared, in the one statement that finds the code: a few
-    // tries spend it, however many come at once.
-    const [g] = await db.update(guest).set({tries: sql`${guest.tries} + 1`})
-      .where(and(eq(guest.boardId, at.b.id), eq(guest.email, email), sql`${guest.code} is not null`, lt(guest.tries, SERVER.code.tries),
-        sql`${guest.codeAt} > ${ago(SERVER.code.minutes * 60_000)}`))
-      .returning({id: guest.id, code: guest.code}) as {id: string; code: string}[];
-    if (!g || g.code !== await seal(code)) return c.json({error: 'Not that code'}, 403);
-    const token = hex(crypto.getRandomValues(new Uint8Array(32)));
-    // A guest writes for a while (a lease), then shows the email again. The code is spent once.
-    const won = await db.update(guest).set({code: null, tries: 0, token: await seal(token), tokenUntil: new Date(Date.now() + HOLD)})
-      .where(and(eq(guest.id, g.id), eq(guest.code, g.code))).returning({id: guest.id});
-    if (!won.length) return c.json({error: 'Not that code'}, 403);
-    return c.json({token, as: email.split('@')[0]}, 200, anyone);
+    const g = await guestOf(c, at.b);
+    return c.json({id: g.id, as: g.name}, 200, anyone);
   });
 
-  // Without a token that still holds, a guest is refused (403: 401 is for a session the Remote does not know).
+  // A guest writes so many posts an hour, and a board's guests together so many: one invitation passed
+  // around cannot fill a board.
   app.post('/v1/open/:id/posts', async (c) => {
     const at = await guestBoard(c.req.param('id'));
-    const token = c.req.header('X-Guest') ?? '';
-    const [g] = token ? await db.select({id: guest.id, email: guest.email}).from(guest)
-      .where(and(eq(guest.boardId, at.b.id), eq(guest.token, await seal(token)), gt(guest.tokenUntil, sql`now()`))) as {id: string; email: string}[] : [];
-    if (!g) return c.json({error: 'Show your email first'}, 403);
-    return write(c, at.b, {guestId: g.id, by: g.email.split('@')[0]});
+    const g = await guestOf(c, at.b);
+    const [{n}] = await db.select({n: sql<number>`count(*)::int`}).from(talk)
+      .where(and(eq(talk.boardId, at.b.id), isNull(talk.userId), gte(talk.id, idAt(Date.now() - 3600_000))));
+    if (n >= SERVER.guest.boardPerHour) return c.json({error: 'Guests have written as much as they may here this hour'}, 429);
+    return write(c, at.b, {guestId: g.id, by: g.name}, SERVER.guest.perHour);
   });
 }

@@ -3,7 +3,7 @@
 // end-to-end checks; the same app as on Workers.
 //
 //   node service/dev.ts DIR [PORT] [APP_ORIGIN] [OTHER_ORIGIN…]
-import {appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
 import {createServer} from 'node:http';
 import {join} from 'node:path';
 import {PGlite} from '@electric-sql/pglite';
@@ -48,13 +48,7 @@ const secret = readFileSync(secretFile, 'utf8');
 // provider then, the link …/#enter=KEY the only way in.
 const enter = process.env.LENGTH3_ENTER_AS ? {as: process.env.LENGTH3_ENTER_AS, key: process.env.LENGTH3_ENTER_KEY ?? ''} : undefined;
 const auth = createAuth({db, secret, baseURL, appOrigin, origins: others, dev: !enter, only: enter && enterEmail(enter.as)});
-// Mail is not sent from here: it is written to the console and to mail.log (a Topic guest's code is read there).
-const mail = async (to: string, subject: string, text: string) => {
-  const line = `mail to ${to}: ${subject}\n  ${text}\n`;
-  console.log(line.trimEnd());
-  appendFileSync(join(dir, 'mail.log'), line);
-};
-const app = createApp({db, auth, bucket, origins: [appOrigin, ...others], appOrigin, providers: enter ? [] : ['dev'], domain: 'length3.test', baseURL, secret, mail, enter});
+const app = createApp({db, auth, bucket, origins: [appOrigin, ...others], appOrigin, providers: enter ? [] : ['dev'], domain: 'length3.test', baseURL, secret, enter});
 
 createServer(async (req, res) => {
   const chunks: Buffer[] = [];
