@@ -64,6 +64,8 @@ export function timeline(scroller: HTMLElement, board: string, member: boolean, 
   const foot = h('div', {class: 'tl-foot-mark'});
   const fresh = h('button', {type: 'button', class: 'tl-new', hidden: ''}) as HTMLButtonElement;
   let done = false, reading = false, looking = false, unseen = 0, footIn = false;
+  /** Something came (or was sent) while the first page was being read: it is read again once that is done. */
+  let cameMeanwhile = false;
   /** The foot in view: the newest post held is read. */
   const read = () => { if (footIn && pages.length && document.visibilityState === 'visible') saw?.(pages[0].page.newest); };
 
@@ -189,6 +191,8 @@ export function timeline(scroller: HTMLElement, board: string, member: boolean, 
       start.textContent = done ? (pages.length ? t('That is every post') : t('No posts yet')) : '';
     } catch (e) { start.textContent = message(e); reading = false; return; } finally { list.setAttribute('aria-busy', 'false'); }
     reading = false;
+    // Something came while the first page was being read (one's own post, just sent): read again, so it shows.
+    if (cameMeanwhile) { cameMeanwhile = false; if (!pages.length) { done = false; void older(); } else void came(true); return; }
     // A short page leaves the start in view: read on.
     if (!done && nearStart()) void older();
   };
@@ -200,7 +204,7 @@ export function timeline(scroller: HTMLElement, board: string, member: boolean, 
   };
   const came = async (mine = false) => {
     if (looking) return;
-    if (!pages.length) { done = false; return void older(); }
+    if (!pages.length) { done = false; if (reading) { cameMeanwhile = true; return; } return void older(); }
     looking = true;
     try {
       const got: servers.Post[] = [];

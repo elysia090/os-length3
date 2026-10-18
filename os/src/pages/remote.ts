@@ -118,8 +118,9 @@ function repoSection(ctx: Context, counted: (n: number) => void, keyed: () => vo
   const grid = h('div', {class: 'grid repo-cards'});
   const section = h('div', {class: 'sub-part'}, grid);
   let seen: servers.RepoSeen[] = [];
-  // A card asking (or about to) is not drawn over by a look that crossed the press; what ends the ask draws them all (`ended`).
-  const asking = () => !!grid.querySelector('.off-ask, [data-asking]');
+  // A card asking (or about to), or its Share list out, is not drawn over by a look that crossed the
+  // press; what ends the ask draws them all (`ended`).
+  const asking = () => !!grid.querySelector('.off-ask, [data-asking], .share-pop:not([hidden])');
   const paint = (force = false) => draw(force).catch((e) => grid.replaceChildren(h('p', {class: 'error'}, message(e))));
   const ended = () => paint(true);
   const draw = async (force: boolean) => {
@@ -188,7 +189,7 @@ function repoSection(ctx: Context, counted: (n: number) => void, keyed: () => vo
     return el;
   };
   void look().then(() => paint());
-  const again = () => { if (!section.isConnected) { stop(); unreach(); return; } if (!section.querySelector('.share-pop:not([hidden])')) void paint(); };
+  const again = () => { if (!section.isConnected) { stop(); unreach(); return; } void paint(); };
   const stop = onSync(again);
   const unreach = account.onReach(again);
   return section;
