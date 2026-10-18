@@ -51,7 +51,7 @@ test('the Worker with no bucket starts, answers from its database, and refuses o
   assert.deepEqual(await ask('PUT', '/v1/home/todo', {token, body: {value: '[]', version: 0}}), {status: 200, json: {version: 1}});
   assert.deepEqual(((await ask('GET', '/v1/repos', {token})).json as unknown as {name: string}[]).map((r) => r.name), ['notes']);
   // Bytes: one answer, wherever they would move.
-  for (const [m, p, o] of [['PUT', `/v1/blobs/${sha}`, {token, bytes: enc.encode('# notes\n')}], ['GET', `/v1/blobs/${sha}`, {token}], ['GET', `/v1/os/${sha}`, {}]] as const) {
+  for (const [m, p, o] of [['PUT', `/v1/blobs/${sha}`, {token, bytes: enc.encode('# notes\n')}], ['GET', `/v1/blobs/${sha}`, {token}], ['GET', `/v1/os/${sha}`, {}], ['GET', '/v1/desktop/length3.deb', {}]] as const) {
     assert.deepEqual(await ask(m, p, o), {status: 503, json: {...NO_FILES}}, `${m} ${p}`);
   }
 });

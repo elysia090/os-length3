@@ -9,7 +9,7 @@
 //   about.ts    /v1/about, /v1/health                  what this Remote is; whether it answers
 //   auth.ts     /api/auth/*, /dev-oauth/*              who someone is: providers, passkeys, devices
 //   enter.ts    /v1/enter                              a Remote for research: in by its link
-//   files.ts    /v1/os/:sha, /v1/blobs…                the only bytes: release bundles and file contents
+//   files.ts    /v1/os, /v1/desktop, /v1/blobs…        the only bytes: releases and file contents
 //   repos.ts    /v1/moved, /v1/repos…, /v1/off-code    the canonical copy: drafts, history, off and on
 //   home.ts     /v1/home/:key                          Home's settings
 //   inbox.ts    /v1/inbox…, /.well-known/length3       names and messages

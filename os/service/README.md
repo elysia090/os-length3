@@ -27,7 +27,7 @@ that may call, body limits, `LIMIT`, refusals, the account's lock and room),
 | What this Remote is | `about.ts` | `GET /v1/about`, `GET /v1/health` | (reads nothing; health `select 1`) | page, core (app and l3 read `app` to know where a device code is approved), deploy |
 | Who someone is | `auth.ts` (Better Auth), `devoauth.ts` | `/api/auth/*`: social sign-in, passkeys, `get-session`, `list-sessions`, `revoke-session`, `sign-out`, linked providers; the device flow `device/code`, `device/token` (core), `device`, `device/approve`, `device/deny` (page); `/dev-oauth/*` only where `dev` is offered | `user`, `session`, `account`, `verification`, `passkey`, `device_code`, `rate_limit`; `guard` (a passkey sign-in is proof of presence) | page, core |
 | A Remote for research | `enter.ts` | `POST /v1/enter` | `user`, `session`, `guard`, `throttle` | page |
-| File contents | `files.ts`, `bucket.ts` | `GET /v1/os/:sha` (anyone), `POST /v1/blobs/missing`, `PUT/GET /v1/blobs/:sha` | `blob` (and `room.used`, by trigger); bytes in the bucket: `u/USER/SHA`, `os/SHA` | page, core (`/v1/os` for a Prompt's root, falling back to the release) |
+| File contents and releases | `files.ts`, `bucket.ts`, `releases.ts` (what is pinned), `mirror.ts` (the deploy puts it in the bucket) | `GET /v1/os/:sha`, `GET /v1/desktop/:file` (anyone, Range, streamed), `POST /v1/blobs/missing`, `PUT/GET /v1/blobs/:sha` | `blob` (and `room.used`, by trigger); bytes in the bucket: `u/USER/SHA`, `os/SHA`, `desktop/FILE` | page (the desktop app's download), core (`/v1/os` for a Prompt's root, falling back to the release) |
 | Repos kept | `repos.ts` | `GET /v1/moved`; `/v1/repos`, `/v1/repos/gone`, `/v1/repos/:name` (`?line=`), `draft`, `cuts`, `cuts/:id`, `log`, `lines`, `lines/:line/push`, `changes`, `changes/:id/reviews\|merge\|reject\|reset`, `off`, `on`, `discard`; `/v1/off-code` | `repo`, `line`, `cut`, `change`, `review`, `repo_gone`, `room` (stamp, used), `guard` (the code), `throttle` (wrong codes) | page, core (sync, history, work); off and discard only from the page (they ask a passkey) |
 | Home | `home.ts` | `GET/PUT /v1/home/:key` (profile, todo, dotfiles) | `home` | page, core |
 | Names and Inbox | `inbox.ts`, `names.ts` | `/v1/inbox/me`, `addresses` (claim, renew, let go), `domains/:domain`, `lookup`, `messages`, `threads`, `threads/:address(/read)`, `contacts`, `signals`; `GET /.well-known/length3` (anyone: other Remotes) | `address`, `principal_code`, `contact`, `message`, `signal`, `throttle` | page, core (l3 name, l3 inbox) |
@@ -64,7 +64,8 @@ read the sweep through it.
 The database and the bucket are separate: Postgres (Neon) holds every row,
 the bucket (R2) only bytes. With no bucket bound, the Remote starts and
 answers everything that does not move bytes, and each route that would
-(`PUT/GET /v1/blobs/:sha`, `GET /v1/os/:sha`, `GET /v1/seen/:face/:name/file`)
+(`PUT/GET /v1/blobs/:sha`, `GET /v1/os/:sha`, `GET /v1/desktop/:file`,
+`GET /v1/seen/:face/:name/file`)
 answers one thing:
 
     503 {"error": "The Remote cannot hold files just now", "files": false}
