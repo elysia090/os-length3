@@ -129,11 +129,16 @@ pub fn login(ctx: &Ctx, call: &Call) -> Result<Reply> {
         return Ok(Reply::done(tr!("Signed in already · {} as {}", "サインイン済みです · {}（{}）", host(&c.url), a.name), json!({"url": c.url, "changed": false, "repos": []})));
     }
     let code = remote::device_start(&url, "l3")?;
+    // Only a page that Remote stands behind is shown to open, as the app opens only such a page (bug: l3
+    // printed whatever page was named, for a person to open and approve this device on).
+    if !remote::device_page_ok(&url, remote::app_origin(&url).as_deref(), &code.verification_uri_complete) {
+        return Err(Error::Refused(tr!("{} named a page that is not its own to approve this device on; nothing was signed in", "{} が、この端末を承認するページとして自分のものでないページを示しました。サインインしていません", url)));
+    }
     // Seen before l3 waits (on standard error when standard output is data).
     let say = |s: &str| if call.flags.json { eprintln!("{s}") } else { out::line(s) };
     say(&tr!("Open this page in a browser and approve:", "ブラウザでこのページを開き、承認してください："));
-    say(&format!("  {}", code.verification_uri_complete));
-    say(&tr!("  code {}", "  コード {}", code.user_code));
+    say(&format!("  {}", out::plain(&code.verification_uri_complete)));
+    say(&tr!("  code {}", "  コード {}", out::plain(&code.user_code)));
     eprint!("{}", tr!("Waiting for approval…", "承認を待っています…"));
     let done = remote::device_finish(&url, "l3", &code);
     eprintln!();

@@ -91,6 +91,19 @@ fn signing_in_as_another_account_or_on_another_remote_lets_go_of_what_the_last_o
 }
 
 #[test]
+fn a_page_to_approve_on_that_the_remote_does_not_stand_behind_is_never_shown() {
+    let remote = FakeRemote::start(|a| match a.path.as_str() {
+        "/api/auth/device/code" => (200, r#"{"device_code":"d","user_code":"ABCD","verification_uri":"https://evil.example/","verification_uri_complete":"https://evil.example/?user_code=ABCD","interval":1,"expires_in":60}"#.into()),
+        _ => (NOT_FOUND.0, NOT_FOUND.1.to_string()),
+    });
+    let home = Home::new("evil-page");
+    let ran = home.run("en", &["login", &remote.url]);
+    assert_eq!(ran.code, 1, "{ran:?}");
+    assert!(!ran.stdout.contains("evil.example") && ran.stderr.contains("not its own"), "{ran:?}");
+    assert!(!remote.said().iter().any(|s| s.contains("/device/token")), "{:?}", remote.said());
+}
+
+#[test]
 fn signing_in_again_where_the_session_is_alive_changes_nothing() {
     let remote = approving("u1");
     let home = agreed_home("login-again", &format!(r#"{{"url":"{}","token":"new","user":"u1"}}"#, remote.url));

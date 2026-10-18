@@ -342,22 +342,31 @@ pub fn valid_url(url: &str) -> bool {
         && !rest.contains(char::is_whitespace)
 }
 
-/// Poll once: Some(token) when approved, None while waiting.
-pub fn device_poll(url: &str, client: &str, code: &DeviceCode) -> Result<Option<String>> {
+/// What one poll for a device's code heard.
+#[derive(Debug, PartialEq)]
+enum Polled {
+    Approved(String),
+    Waiting,
+    /// Asked too often: wait longer between asks from now on (RFC 8628 §3.5).
+    SlowDown,
+}
+
+/// Poll once.
+fn device_poll(url: &str, client: &str, code: &DeviceCode) -> Result<Polled> {
     let r = agent(url).post(&format!("{url}/api/auth/device/token")).send_json(serde_json::json!({
         "grant_type": "urn:ietf:params:oauth:grant-type:device_code", "device_code": code.device_code, "client_id": client,
     }));
     match r {
         Ok(r) => {
-            let v: serde_json::Value = r.into_json().map_err(|e| e.to_string())?;
-            Ok(v.get("access_token").and_then(|t| t.as_str()).map(String::from))
+            let v = answer(url, r)?;
+            Ok(v["access_token"].as_str().filter(|t| !t.is_empty()).map_or(Polled::Waiting, |t| Polled::Approved(t.into())))
         }
-        // Asked too often: wait, as for slow_down.
-        Err(ureq::Error::Status(429, _)) => Ok(None),
+        Err(ureq::Error::Status(429, _)) => Ok(Polled::SlowDown),
         Err(ureq::Error::Status(code, r)) => {
             let v: serde_json::Value = r.into_json().unwrap_or_default();
             match v.get("error").and_then(|e| e.as_str()) {
-                Some("authorization_pending") | Some("slow_down") => Ok(None),
+                Some("authorization_pending") => Ok(Polled::Waiting),
+                Some("slow_down") => Ok(Polled::SlowDown),
                 Some("access_denied") => Err(crate::tr!("It was declined in the browser", "ブラウザで断られました")),
                 Some("expired_token") => Err(expired()),
                 other => {
@@ -374,14 +383,24 @@ fn expired() -> String {
     crate::tr!("The code expired before it was approved", "承認される前にコードの期限が切れました")
 }
 
+/// How long to wait for approval, and between asks, from what the Remote said: held to a minute to half
+/// an hour, and to 1 to 60 seconds (bug: an expires_in near u64::MAX, from a Remote or from the page that
+/// hands the code back to the app, overflowed the deadline and l3 panicked; an interval as large waited
+/// for ever).
+fn polling(code: &DeviceCode) -> (Duration, Duration) {
+    (Duration::from_secs(code.expires_in.clamp(60, 1800)), Duration::from_secs(code.interval.clamp(1, 60)))
+}
+
 /// Wait for a code to be approved, then keep the session here.
 pub fn device_finish(url: &str, client: &str, code: &DeviceCode) -> Result<()> {
-    let deadline = std::time::Instant::now() + Duration::from_secs(code.expires_in.max(60));
-    let step = Duration::from_secs(code.interval.max(1));
+    let (wait, mut step) = polling(code);
+    let deadline = std::time::Instant::now() + wait;
     loop {
         std::thread::sleep(step);
-        if let Some(token) = device_poll(url, client, code)? {
-            return connect(url, token);
+        match device_poll(url, client, code)? {
+            Polled::Approved(token) => return connect(url, token),
+            Polled::SlowDown => step = (step + Duration::from_secs(5)).min(Duration::from_secs(60)),
+            Polled::Waiting => {}
         }
         if std::time::Instant::now() > deadline {
             return Err(expired());
@@ -1212,6 +1231,19 @@ mod tests {
             serde_json::json!({"version": -1, "draft": {}, "head": null}), serde_json::json!({"version": 3, "draft": {}, "head": 7})] {
             assert!(line_there(url, &odd).is_err(), "{odd}");
         }
+    }
+
+    #[test]
+    fn what_a_remote_says_of_its_code_never_makes_the_wait_overflow_or_last_for_ever() {
+        let code = |interval: u64, expires_in: u64| DeviceCode { device_code: "d".into(), user_code: "U".into(), verification_uri: String::new(),
+            verification_uri_complete: String::new(), interval, expires_in };
+        assert_eq!(polling(&code(5, 900)), (Duration::from_secs(900), Duration::from_secs(5)));
+        assert_eq!(polling(&code(0, 0)), (Duration::from_secs(60), Duration::from_secs(1)));
+        let (wait, step) = polling(&code(u64::MAX, u64::MAX));
+        assert_eq!((wait, step), (Duration::from_secs(1800), Duration::from_secs(60)));
+        // What panicked before: a deadline that far out.
+        assert!(std::time::Instant::now().checked_add(Duration::from_secs(u64::MAX)).is_none());
+        let _ = std::time::Instant::now() + wait;
     }
 
     #[test]
