@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {Hono} from 'hono';
-import {failed, refuse} from './request.ts';
-import {sharedService} from './testing.ts';
+import {sql} from 'drizzle-orm';
+import {failed, ms, refuse, rows} from './request.ts';
+import {freshDb, sharedService} from './testing.ts';
 
 // What the Remote answers when something fails that no route foresaw
 // (request.ts failed): JSON with words and an id, 503 with when to try again
@@ -54,4 +55,11 @@ test('the Remote\'s own routes answer so: a setting\'s version past what Postgre
     if (r.status === 500) assert.equal(r.json.error, 'Something went wrong on the Remote');
     assert.match(r.headers.get('Content-Type') ?? '', /json/);
   } finally { console.error = quiet; }
+});
+
+test('a moment is read as whole milliseconds, though Postgres keeps microseconds (core and l3 read a u64)', async () => {
+  const db = await freshDb();
+  const [r] = await rows<{t: number}>(db, sql`select ${ms(sql`'2026-10-18 06:49:17.528123+00'::timestamptz`)} as t`);
+  assert.equal(r.t, Date.UTC(2026, 9, 18, 6, 49, 17, 528));
+  assert.ok(Number.isInteger(r.t));
 });
