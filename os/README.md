@@ -84,10 +84,10 @@ Forge     repo · band · prompt
 File      file (write · mkdir · rm)
 Git       git · issue · start · main · commit · push · reset · diff · log
           review · reply · merge · reject
-Runtime   runtime · free · root · ssh · network · dotfile
+Runtime   runtime · free · root · network · dotfile · address
 Remote    remote · login · logout
 Server    server
-Inbox     inbox · address
+Inbox     inbox · name
 ```
 
 One table (`cli/src/spec.rs`) says every form: its words and what each
@@ -113,7 +113,8 @@ or change refers to it. `--` ends the
 flags for every command (`l3 todo add -- "-1 day"`). Every command takes
 `--json` (data, camelCase keys; an error is `{"error":{"kind","message"}}`),
 and exits 0 when done, 1 when not, 2 when not how it is written, 3 when the
-Remote is out of reach, 4 when what was named is not there. `l3 -V` gives
+Remote is out of reach, 4 when what was named is not there, 5 when it is
+turned off here (`l3 address` with SSH off, in a script). `l3 -V` gives
 l3's version and the root's.
 
 Names are written owner first, as DESIGN.md §5 "Names" sets out (one
@@ -121,10 +122,70 @@ namespace of principals, people and servers alike): `hello`,
 `hello/src/a.c`, `hello#3`, `ren:hello` (a repo of `ren`'s), `trip#general`
 (a server's board; `#general` when one is in one server). A name on the
 Remote (`ren`, `trip`) is first come and held five years at a time:
-`l3 address` shows each name's term and your code (six digits anyone can
-find you by, or write to), `l3 address renew NAME` holds it five more years,
-and `l3 address release NAME` lets it go (held for you 30 days). A name of
+`l3 name list` shows each name's term and your code (six digits anyone can
+find you by, or write to), `l3 name renew NAME` holds it five more years,
+and `l3 name release NAME` lets it go (held for you 30 days). A name of
 your choosing on a domain you own (`ren@ren.dev`) is shown beside it.
+
+### SSH into a repo's Prompt
+
+From the host (or another machine on its network), an ordinary OpenSSH
+client lands in a repo's Prompt: the same shell `l3 prompt REPO` gives,
+inside the root, without privileges, with the repo's network grant.
+`l3 address` says where, one line a repo, ready to paste:
+
+```
+$ l3 address
+ssh -p 23000 notes@192.168.1.5
+ssh -p 23000 trip@192.168.1.5
+$ ssh -p 23000 notes@192.168.1.5 'make test'; echo $?
+```
+
+The SSH user is the repo. A command runs in the Prompt (`/bin/sh -c`) and
+its exit code comes back; with a terminal (`ssh -t`, or no command) it is
+the interactive shell. Standard input reaches the command, so `ssh …
+'cat > notes.txt' < notes.txt` writes into the repo itself, and `scp -O`
+(the classic protocol, which runs `scp` in the Prompt: l3's root has it)
+copies in and out. There is no sftp subsystem, so `sftp`, and `scp`
+without `-O` (it speaks sftp), do not work; and no port, agent or X11
+forwarding.
+
+- **Off at first.** `l3 address` with SSH off asks on a terminal whether
+  to turn it on (y/N, No by default); in a script it never asks: it says
+  how and exits 5. `l3 address ssh on|off` sets it without asking; the
+  app's Runtime has the same switch for its own device.
+- **Keys**: public keys only (no password, no keyboard-interactive), one
+  OpenSSH public key a line in the Runtime dotfile `.authorized_keys`
+  (`l3 dotfile write .authorized_keys < ~/.ssh/id_ed25519.pub`). Dotfiles
+  are kept on the Remote, so a key added (or removed) on one device counts
+  on every one; the listener takes them in at most every 10 s as keys are
+  tried. Ed25519 and ECDSA keys; not RSA. A line with options before its
+  key is left out (they are not honoured), and turning on says which.
+- **Port**: one per person on the host, the same every time: 22000 plus
+  their user number (uid 1000 → 23000), whatever repos there are, never
+  another person's; `LENGTH3_SSH_PORT` names another when that one is taken.
+- **Where**: it listens on every IPv4 address but takes a connection only
+  if it came in on loopback or a private network (10/8, 172.16/12,
+  192.168/16, a VPN's 100.64/10, link-local), so a host with a public
+  address is not reachable from the Internet. `l3 address` names the LAN
+  address the host's traffic leaves by, or 127.0.0.1 when it has none.
+- **Host key**: Ed25519, made once per device in `<data>/ssh/host_ed25519`;
+  turning on shows its fingerprint (what ssh asks about the first time).
+- **Who runs it**: turning on starts `l3 address ssh serve` in the
+  background (its own session, its log in `<data>/ssh/log`), recorded in
+  `<data>/ssh/listening.json` while it runs, as a Prompt records itself;
+  `l3 runtime` shows it and `l3 address ssh off` stops it. Each session is
+  an `l3 prompt REPO` it starts, so `l3 prompt ls` lists it, and every one
+  ends with the listener. A failed key from an address counts; twenty in a
+  minute and that address is not heard for a minute. A connection not
+  signed in within a minute is closed.
+- **Off from anywhere**: which devices listen is kept on the Remote, per
+  device (its session), and Runtime shows a card for each, its
+  destinations copied by a press, and a switch that turns it off; a page
+  can only turn SSH off. The listener asks the Remote every 5 s, and when
+  it was turned off (or the device signed out, here or from another
+  device: `l3 logout` stops it at once) it stops taking connections and
+  ends every session.
 
 There is no sync command. Connected, l3 keeps each repo in step with the
 Remote by itself: a command that reads a repo takes in the Remote's changes

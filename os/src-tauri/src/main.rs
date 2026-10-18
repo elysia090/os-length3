@@ -264,6 +264,43 @@ async fn change_diff(repo: String, id: String) -> Result<Vec<history::FileDiff>,
     blocking(move || history::change_diff(&repo, &id, DIFF_LIMIT)).await
 }
 
+// ---- SSH into this device's Prompts (core/src/ssh.rs; the listener is l3's) ----
+
+/// Whether this device listens for SSH, where each repo is reached, and its host key.
+#[derive(serde::Serialize)]
+struct SshHere { on: bool, port: Option<u16>, destinations: Vec<String>, fingerprint: Option<String> }
+
+fn ssh_now() -> SshHere {
+    #[cfg(unix)]
+    if let Some(l) = length3_core::ssh::listening(&paths::data_dir()) {
+        return SshHere { on: true, port: Some(l.port), destinations: l.destinations, fingerprint: Some(l.fingerprint) };
+    }
+    SshHere { on: false, port: None, destinations: Vec::new(), fingerprint: None }
+}
+
+#[tauri::command]
+fn ssh_here() -> SshHere {
+    ssh_now()
+}
+
+/// Turn it on or off as `l3 address ssh on|off` does, by the l3 beside the app: the same listener, kept by l3
+/// in the background whether or not the app stays open, and the same checks (a key in .authorized_keys first).
+#[tauri::command]
+async fn ssh_set(on: bool) -> Result<SshHere, String> {
+    blocking(move || {
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        let out = std::process::Command::new(length3_core::prompt::l3_path(&exe))
+            .args(["address", "ssh", if on { "on" } else { "off" }, "--json"])
+            .stdin(std::process::Stdio::null()).output()
+            .map_err(|e| length3_core::tr!("Could not start l3: {}", "l3 を起動できませんでした：{}", e))?;
+        if !out.status.success() {
+            let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap_or_default();
+            return Err(v["error"]["message"].as_str().map(String::from).unwrap_or_else(|| String::from_utf8_lossy(&out.stderr).trim().to_string()));
+        }
+        Ok(ssh_now())
+    }).await
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -276,7 +313,7 @@ fn main() {
             work_start, work_switch, work_state, work_lines, history_push, history_submit, history_reset,
             changes_list, change_review, change_merge, change_reject, change_diff,
             shells::prompt_open, shells::prompt_input, shells::prompt_interrupt, shells::prompt_held, shells::prompt_close,
-            shells::root_status, shells::root_fetch, shells::root_use
+            shells::root_status, shells::root_fetch, shells::root_use, ssh_here, ssh_set
         ])
         .run(tauri::generate_context!())
         .expect("Length³ OS shell failed to start");

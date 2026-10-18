@@ -378,6 +378,9 @@ pub fn logout(repos: &Repos) -> Result<()> {
             }
         }
     }
+    // SSH stops with the device's session: no one reaches its Prompts once it is signed out.
+    #[cfg(unix)]
+    let _ = crate::ssh::stop(&crate::paths::data_dir());
     // Everything is sent: signed out here whatever the Remote answers (its session ends there by itself).
     let _ = c.call("POST", "/api/auth/sign-out", Some(serde_json::json!({})));
     forget_connection()

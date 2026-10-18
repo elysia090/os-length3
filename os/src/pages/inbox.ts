@@ -6,7 +6,7 @@ import {look} from '../news.ts';
 import {Drafts} from '../drafts.ts';
 import {kindOf} from '../text.ts';
 import {mark} from '../icons.ts';
-import {pageHead, SETTLE} from './common.ts';
+import {copying, pageHead, SETTLE} from './common.ts';
 import {signInBox, signInPlace} from './remote.ts';
 import type {Context} from './context.ts';
 
@@ -17,7 +17,7 @@ import type {Context} from './context.ts';
 //   your name      as a stub: your name on this Remote and your code (each
 //                  copied by a press); its gear for your names' terms and a
 //                  name on your own domain beside it (proved by a DNS
-//                  record); SSH is Runtime's
+//                  record); SSH is Runtime's, per device
 //   left           conversations: contacts, then requests (accept or block)
 //   right          the conversation, the line's state (direct, or through
 //                  the Remote), and the box to write in
@@ -27,17 +27,6 @@ const KIND = (k: inbox.Kind) => ({message: t('Message'), review: t('Review reque
 
 function button(text: string, kind = ''): HTMLButtonElement {
   return h('button', {class: `button ${kind}`.trim(), type: 'button'}, text) as HTMLButtonElement;
-}
-
-/** Copy `text` and say so in `el` for a moment. */
-function copying(el: HTMLElement, text: string) {
-  el.addEventListener('click', () => {
-    void navigator.clipboard?.writeText(text);
-    el.dataset.copiedWord = t('Copied');
-    el.dataset.copied = '';
-    window.setTimeout(() => delete el.dataset.copied, 1200);
-  });
-  el.title = t('Press to copy');
 }
 
 /**

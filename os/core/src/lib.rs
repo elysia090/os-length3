@@ -22,6 +22,8 @@ pub mod prompt;
 pub mod remote;
 pub mod repos;
 pub mod servers;
+#[cfg(unix)]
+pub mod ssh;
 pub mod system;
 pub mod templates;
 pub mod usage;

@@ -15,6 +15,8 @@ mod completion;
 mod help;
 mod out;
 mod spec;
+#[cfg(all(target_os = "linux", feature = "ssh"))]
+mod ssh;
 mod sync;
 mod target;
 

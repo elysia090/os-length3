@@ -93,4 +93,9 @@ export default {
   'Too many wrong codes; try again in an hour': '間違ったコードが多すぎます。1時間後にもう一度どうぞ',
   'Too many codes looked up this hour': 'この1時間にコードを調べすぎました',
   'The Remote does not reach its database': 'Remote がデータベースに届いていません',
+  // SSH, per device.
+  'SSH is turned on at the device itself': 'SSH をオンにするのはその端末でです',
+  'a port and destinations': 'ポートと接続先がいります',
+  'destinations': '接続先がいります',
+  'No device of yours listens there': 'それはあなたの端末で待ち受けているものではありません',
 } as Record<string, string>;

@@ -33,7 +33,7 @@ jobs:
         working-directory: os
         run: |
           cargo test -p length3-core -p l3
-          cargo build --profile prompt -p l3 --target x86_64-unknown-linux-musl
+          cargo build --profile prompt -p l3 --no-default-features --target x86_64-unknown-linux-musl
       - name: xlat against native (C and Rust std), and its unit tests
         working-directory: xlat
         run: sh tests/run.sh

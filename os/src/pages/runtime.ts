@@ -1,13 +1,13 @@
-import {bytes, h} from '../dom.ts';
+import {ago, bytes, h} from '../dom.ts';
 import {isNative, rootFetch, rootStatus, rootUse, type Certainty, type Freed, type Space} from '../host.ts';
 import {t, tn} from '../i18n.ts';
 import {bring, onSync, remoteOnly, repoState} from '../lifecycle.ts';
-import {connection} from '../remote.ts';
+import {connection, deviceWord} from '../remote.ts';
 import * as dotfiles from '../dotfiles.ts';
-import * as inbox from '../inbox.ts';
+import * as ssh from '../ssh.ts';
 import {free, readSpace} from '../space.ts';
 import {about, loadWebRoot} from '../userland.ts';
-import {askFoot, pageHead, SETTLE} from './common.ts';
+import {askFoot, copying, pageHead, SETTLE} from './common.ts';
 import type {Context} from './context.ts';
 import {syncWord} from './remote.ts';
 import {allSessions, type Session} from './terminal.ts';
@@ -301,29 +301,54 @@ function prompts(): HTMLElement {
 }
 
 /**
- * SSH, per Inbox address: a power switch that says whether the address may
- * be reached over SSH. Turning it on records that it is allowed; connecting
- * over SSH is not built yet, and the card says so.
+ * SSH into a repo's Prompt, per device: a small card for each device that
+ * listens, its destinations (one a repo, `ssh -p 22000 notes@192.168.1.5`,
+ * each copied by a press), and the power switch at its bottom right, on:
+ * pressed, that device stops taking connections and ends its sessions
+ * within seconds. A page can only turn a device's SSH off; it is turned on
+ * at the device itself (`l3 address`), and in the app this device's card is
+ * there off too, its switch running the same l3 here. Read again every few
+ * seconds while shown, so a device turned off elsewhere goes.
  */
-function ssh(): HTMLElement {
+function sshSection(): HTMLElement {
   const section = h('section', {class: 'section', 'aria-labelledby': 'ssh-title', hidden: ''});
+  const power = (on: boolean, label: string, act: () => Promise<unknown>, said: HTMLElement) => {
+    const b = h('button', {type: 'button', class: 'power plain', role: 'switch', 'aria-checked': String(on), 'aria-label': label}, h('span', {class: 'knob'})) as HTMLButtonElement;
+    b.addEventListener('click', async () => {
+      b.disabled = true;
+      said.textContent = '';
+      try { await act(); void paint(); } catch (e) { said.textContent = message(e); b.disabled = false; }
+    });
+    return b;
+  };
+  let timer = 0;
   const paint = async () => {
-    if (!connection()) return;
-    // SSH is a setting of an address on the Remote: away, the section waits (the rail says why).
-    const me = await inbox.me().catch(() => null);
-    if (!me?.addresses.length) return;
+    window.clearTimeout(timer);
+    if (!section.isConnected && section.dataset.drawn) return;
+    section.dataset.drawn = '1';
+    timer = window.setTimeout(() => void paint(), 5000);
+    if (!connection()) { section.hidden = true; return; }
+    const [list, mine] = await Promise.all([ssh.listening().catch(() => null), ssh.here().catch(() => null)]);
+    if (!list) return;
+    const cards = list.map((l) => {
+      const said = h('p', {class: 'error small', role: 'alert'});
+      const name = l.current ? (isNative ? t('This device') : t('This browser')) : deviceWord(l.agent);
+      const dests = l.destinations.map((d) => { const b = h('button', {type: 'button', class: 'record-value'}, d); copying(b, d); return b; });
+      const lines: (string | Node)[] = [...dests, ssh.quiet(l) ? t('Not heard from since {when}', {when: ago(l.seen)}) : t('On since {when}', {when: ago(l.since)}), said];
+      // This device's own, in the app, goes off here (the listener stops at once); any other is told by the Remote.
+      const off = () => (isNative && l.current ? ssh.setHere(false) : ssh.turnOff(l.device));
+      return card(name, lines, power(true, t('Turn SSH off on {device}', {device: name}), off, said), 'ssh-card');
+    });
+    // In the app, this device when it does not listen: its switch turns it on (l3 address ssh on).
+    if (isNative && mine && !list.some((l) => l.current)) {
+      const said = h('p', {class: 'error small', role: 'alert'});
+      cards.unshift(card(t('This device'), [t('SSH off. On, each repo here is reached with ssh, by a key in the .authorized_keys dotfile.'), said],
+        power(false, t('Turn SSH on on this device'), () => ssh.setHere(true), said), 'ssh-card'));
+    }
     section.hidden = false;
-    section.replaceChildren(h('h2', {id: 'ssh-title'}, 'SSH'),
-      h('div', {class: 'grid small-grid'}, ...me.addresses.map((a) => {
-        const power = h('button', {type: 'button', class: 'power plain', role: 'switch', 'aria-checked': String(a.ssh),
-          'aria-label': a.ssh ? t('Do not allow SSH to {address}', {address: a.address}) : t('Allow SSH to {address}', {address: a.address})}, h('span', {class: 'knob'})) as HTMLButtonElement;
-        const said = h('p', {class: 'error small', role: 'alert'});
-        power.addEventListener('click', async () => {
-          power.disabled = true;
-          try { await inbox.setSsh(a.address, !a.ssh); void paint(); } catch (e) { said.textContent = message(e); power.disabled = false; }
-        });
-        return card(a.address, [t('Connecting is not built yet'), said], power, 'mono-title');
-      })));
+    section.replaceChildren(h('h2', {id: 'ssh-title'}, h('span', {}, 'SSH', list.length ? h('small', {}, `${list.length}`) : null)),
+      cards.length ? h('div', {class: 'grid small-grid'}, ...cards)
+        : h('p', {class: 'muted small'}, t('No device listens for SSH. It is turned on at the device: l3 address, or Runtime in the app.')));
   };
   void paint();
   return section;
@@ -427,7 +452,7 @@ export function runtime(ctx: Context): Node[] {
   // Prompts started again from Dotfiles are new sessions: the section is drawn again to follow them.
   let running = prompts();
   const restarted = () => { const next = prompts(); running.replaceWith(next); running = next; };
-  return [pageHead('runtime'), holder, running, ssh(),
+  return [pageHead('runtime'), holder, running, sshSection(),
     h('section', {class: 'section', 'aria-labelledby': 'env-title'}, h('h2', {id: 'env-title'}, t('Environment in effect')), environment()),
     dotfilesSection(restarted)];
 }

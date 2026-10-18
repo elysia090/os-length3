@@ -2,6 +2,7 @@
 //! Remote, then people (Server, Inbox). Each takes where l3 runs (Ctx) and
 //! the call, and answers with a Reply.
 
+pub mod address;
 pub mod file;
 pub mod forge;
 pub mod git;

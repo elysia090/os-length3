@@ -17,7 +17,7 @@ pub fn pid_ns(pid: u32) -> Option<u64> {
 }
 
 /// Whether a process has ended and only waits to be reaped (it holds nothing).
-fn zombie(pid: u32) -> bool {
+pub(crate) fn zombie(pid: u32) -> bool {
     // The state follows the command name, which is in parentheses and may hold spaces.
     fs::read_to_string(format!("/proc/{pid}/stat")).ok()
         .and_then(|t| t.rsplit_once(')').map(|(_, rest)| rest.trim_start().starts_with('Z')))
@@ -115,7 +115,7 @@ fn records(data: &Path) -> std::path::PathBuf {
 }
 
 /// When process `pid` started, in the host's clock ticks since boot.
-fn start_ticks(pid: u32) -> Option<u64> {
+pub(crate) fn start_ticks(pid: u32) -> Option<u64> {
     let t = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
     // After the command's name (in parentheses, which may hold anything), the state is field 3; the start time is field 22.
     t.rsplit_once(')')?.1.split_whitespace().nth(19)?.parse().ok()

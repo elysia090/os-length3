@@ -29,6 +29,7 @@
 //   GET    /v1/repos/:name/changes    POST {line, kind, title, note}: Submit change
 //   POST   /v1/repos/:name/changes/:id/reviews | merge | reject | reset
 //   GET    /v1/home/:key  PUT {value, version}
+//   /v1/ssh…                          which devices listen for SSH, and stopping one (ssh.ts)
 //
 // Every write that is checked against what the account already has (its
 // room, how many repos or lines or settings) holds the account's lock in a
@@ -52,6 +53,7 @@ import {blob, change, cut, guard, home, line, repo, repoGone, review, room, thro
 import {seen} from './seen.ts';
 import {news} from './news.ts';
 import {servers} from './servers.ts';
+import {sshRoutes} from './ssh.ts';
 import {KEPT, purge, REMEMBERED} from './sweep.ts';
 
 export interface Deps {
@@ -773,6 +775,7 @@ export function createApp(d: Deps) {
   inbox({db, domain, baseURL: d.baseURL ?? '', secret: d.secret ?? '', txt: d.txt, recheck: d.recheck}, v1, app);
   servers({db, domain, mail: d.mail, secret: d.secret, closed: !!d.enter}, v1, app);
   news({db}, v1);
+  sshRoutes({db}, v1);
   seen({db, bucket: d.bucket, domain, closed: !!d.enter, viewer: async (req) => (await d.auth.api.getSession({headers: req.headers}))?.user.id ?? null}, v1, app);
 
   app.route('/v1', v1);

@@ -5,7 +5,7 @@
 //! rail: Home, Forge (and its Prompt), File, Git, Runtime, Remote; then the
 //! two whose subject is people, Server and Inbox; then l3's own words.
 
-use crate::cmd::{file, forge, git, home, people, remote, runtime, Ctx};
+use crate::cmd::{address, file, forge, git, home, people, remote, runtime, Ctx};
 use crate::{args::Call, help, out::{Reply, Result}};
 
 /// Words in English and in Japanese.
@@ -239,6 +239,11 @@ pub static COMMANDS: &[Command] = &[
         f(None, &[], &[], ["the list", "一覧"], DEVICE, Send, runtime::dotfile_list),
         f(None, &[Arg::Dotfile], &[], ["one's text", "ひとつの本文"], DEVICE, Send, runtime::dotfile_show),
     ])),
+    c("address", &[], Group::Runtime, ["where to reach this device over SSH, as `ip addr` gives an IP", "この端末に SSH で届く先（ip addr が IP を答えるように）"], &[
+        f(None, &[], &[], ["each repo's destination for ssh, one a line (off: asks whether to turn it on)", "repo ごとの ssh の接続先を1行にひとつ（オフならオンにするか聞く）"], DEVICE, Keep, address::show),
+        f(Some("ssh"), &[Arg::Choice(&["on", "off"])], &[], ["turn SSH on or off here without asking", "聞かずに、この端末の SSH をオン・オフ"], DEVICE, Keep, address::set),
+        hidden(Some("ssh"), &[Arg::Choice(&["serve"])], DEVICE, Keep, address::serve),
+    ]),
     c("remote", &[], Group::Remote, ["the Remote, and where each repo stands", "Remote と、各 repo の状態"], &[
         f(None, &[], &[], ["each repo, and where it stands", "各 repo とその状態"], DEVICE, Keep, remote::page),
         f(Some("on"), &[Arg::Text("REPO")], &[], ["bring back a repo turned off", "オフにした repo を戻す"], REMOTE, Keep, remote::on),
@@ -264,14 +269,13 @@ pub static COMMANDS: &[Command] = &[
         f(None, &[], &[], ["each conversation", "会話ごとに"], REMOTE, Send, people::inbox_list),
         f(None, &[Arg::Address], &[], ["one", "ひとつ"], REMOTE, Send, people::inbox_thread),
     ]),
-    c("address", &[], Group::Inbox, ["your address, as `ip addr` gives an IP: what to reach you at", "あなたのアドレス（ip addr が IP を答えるように）"], &[
-        f(None, &[], &[], ["each address, one a line, nothing else", "アドレスを1行にひとつ、それだけ"], REMOTE, Send, people::address_only),
-        f(Some("list"), &[], &[], ["each with its term and SSH, and your code", "それぞれの期限と SSH、あなたのコード"], REMOTE, Send, people::addresses),
-        f(Some("ssh"), &[Arg::Choice(&["on", "off"]), Arg::Address], &[], ["let SSH reach it, or not", "SSH が届くようにする、しない"], REMOTE, Send, people::address_ssh),
-        f(Some("claim"), &[Arg::Text("NAME[@DOMAIN]")], &[], ["a name here: first come, for five years; on your domain, beside it", "ここでの名前（早い者勝ち、5年）。自分のドメインなら並べて"], REMOTE, Send, people::address_claim),
-        f(Some("renew"), &[Arg::Address], &[], ["five more years from now", "今から5年延ばす"], REMOTE, Send, people::address_renew),
-        f(Some("release"), &[Arg::Address], &[], ["let it go: held for you 30 days, claim it again to take it back", "手放す（30日はあなたのために取り置き、取り直せば戻る）"], REMOTE, Send, people::address_release),
-        f(Some("domain"), &[Arg::Text("DOMAIN")], &[], ["the DNS record that proves it is yours", "あなたのものだと示す DNS レコード"], REMOTE, Send, people::address_domain),
+    c("name", &[], Group::Inbox, ["your names, as people find you (name@domain), and your code", "あなたの名前（人があなたを見つける name@domain）と、あなたのコード"], &[
+        f(None, &[], &[], ["each name, one a line, nothing else", "名前を1行にひとつ、それだけ"], REMOTE, Send, people::name_only),
+        f(Some("list"), &[], &[], ["each with its term, and your code", "それぞれの期限と、あなたのコード"], REMOTE, Send, people::names),
+        f(Some("claim"), &[Arg::Text("NAME[@DOMAIN]")], &[], ["a name here: first come, for five years; on your domain, beside it", "ここでの名前（早い者勝ち、5年）。自分のドメインなら並べて"], REMOTE, Send, people::name_claim),
+        f(Some("renew"), &[Arg::Address], &[], ["five more years from now", "今から5年延ばす"], REMOTE, Send, people::name_renew),
+        f(Some("release"), &[Arg::Address], &[], ["let it go: held for you 30 days, claim it again to take it back", "手放す（30日はあなたのために取り置き、取り直せば戻る）"], REMOTE, Send, people::name_release),
+        f(Some("domain"), &[Arg::Text("DOMAIN")], &[], ["the DNS record that proves it is yours", "あなたのものだと示す DNS レコード"], REMOTE, Send, people::name_domain),
     ]),
     c("help", &[], Group::Other, ["how to use l3", "l3 の使い方"], &[
         f(None, &[], &[], ["each command", "コマンドの一覧"], LOCAL, Keep, help::run),
@@ -381,6 +385,11 @@ mod tests {
         assert!(all.contains(&"l3 prompt [REPO] [-- CMD…] [--network]".to_string()));
         assert!(all.contains(&"l3 issue close ISSUE".to_string()) && all.contains(&"l3 issue reopen ISSUE".to_string()), "{all:?}");
         assert!(all.contains(&"l3 root use l3|ubuntu|debian".to_string()));
+        // SSH is the device's (Runtime's), names are Inbox's: neither keeps the other's old forms.
+        assert!(all.contains(&"l3 address".to_string()) && all.contains(&"l3 address ssh on|off".to_string()), "{all:?}");
+        assert!(all.contains(&"l3 name claim NAME[@DOMAIN]".to_string()) && !all.iter().any(|u| u.starts_with("l3 address claim") || u.contains("ssh serve")), "{all:?}");
+        assert_eq!(find("address").map(|c| c.group), Some(Group::Runtime));
+        assert_eq!(find("name").map(|c| c.group), Some(Group::Inbox));
     }
 
     #[test]
@@ -404,7 +413,7 @@ mod tests {
 
     #[test]
     fn what_reaches_the_remote_or_the_device_is_kept_out_of_the_prompt() {
-        for name in ["review", "reply", "network", "band", "profile", "lang", "dotfile", "todo", "remote", "login", "logout", "start", "commit", "push", "merge", "reject", "log", "diff", "server", "inbox", "address", "runtime", "free", "root", "prompt"] {
+        for name in ["review", "reply", "network", "band", "profile", "lang", "dotfile", "todo", "remote", "login", "logout", "start", "commit", "push", "merge", "reject", "log", "diff", "server", "inbox", "address", "name", "runtime", "free", "root", "prompt"] {
             let c = find(name).unwrap();
             assert!(c.forms.iter().all(|f| !f.needs.in_prompt), "{name}");
         }

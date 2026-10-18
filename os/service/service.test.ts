@@ -170,6 +170,53 @@ test('Devices: another device is signed out from any of the account\'s, and from
   assert.deepEqual((await sessionsOf(s, laptop)).map((d) => d.id), [(await whoIs(s, laptop)).session.id]);
 });
 
+test('SSH: a device says it listens, any of the account\'s pages may stop it, a page never starts one, and no one else sees or stops it', async () => {
+  const s = await service();
+  const laptop = await s.start('Ren'), web = await s.start('Ren'), mio = await s.start('Mio');
+  // As l3 and the app's core call: the bearer, and no Origin (a browser always sends one).
+  const device = async (method: string, path: string, token: string, body?: unknown) => {
+    const r = await s.app.request(`${BASE}${path}`, {method, headers: {Authorization: `Bearer ${token}`, ...(body === undefined ? {} : {'Content-Type': 'application/json'})},
+      body: body === undefined ? undefined : JSON.stringify(body)});
+    return {status: r.status, json: await r.json() as Record<string, unknown>};
+  };
+  const here = ['ssh -p 22000 notes@192.168.1.5', 'ssh -p 22000 trip@192.168.1.5'];
+  assert.deepEqual((await s.call('GET', '/v1/ssh', {token: laptop})).json, []);
+  assert.equal((await device('PUT', '/v1/ssh/this', laptop, {port: 22000, destinations: here})).status, 200);
+  const laptopId = (await whoIs(s, laptop)).session.id;
+  // Each of the account's sessions sees it, and which is its own.
+  const seen = (await s.call('GET', '/v1/ssh', {token: web})).json as unknown as {device: string; port: number; destinations: string[]; current: boolean; since: number; seen: number}[];
+  assert.deepEqual(seen.map((r) => [r.device, r.port, r.destinations, r.current]), [[laptopId, 22000, here, false]]);
+  assert.ok(seen[0].since > 0 && seen[0].seen >= seen[0].since);
+  assert.equal(((await s.call('GET', '/v1/ssh', {token: laptop})).json as unknown as {current: boolean}[])[0].current, true);
+  // Another account sees none of it and cannot stop it.
+  assert.deepEqual((await s.call('GET', '/v1/ssh', {token: mio})).json, []);
+  assert.equal((await s.call('POST', `/v1/ssh/${laptopId}/off`, {token: mio})).status, 404);
+  assert.equal((await device('POST', '/v1/ssh/this/beat', laptop, {})).json.on, true);
+  // A page cannot turn SSH on, for itself or anyone: only the device, as itself.
+  const fromPage = await s.call('PUT', '/v1/ssh/this', {token: web, body: {port: 22000, destinations: here}});
+  assert.deepEqual([fromPage.status, fromPage.json.error], [403, 'SSH is turned on at the device itself']);
+  assert.equal((await s.call('POST', `/v1/ssh/${laptopId}/on`, {token: web})).status, 404);
+  assert.equal(((await s.call('GET', '/v1/ssh', {token: web})).json as unknown[]).length, 1);
+  // What a device says it listens at is checked: a port, and destinations as l3 writes them.
+  for (const bad of [{port: 0, destinations: here}, {port: 22000, destinations: ['ssh -p 22000 notes@host; rm -rf /']}, {port: 22000, destinations: 'x'}]) {
+    assert.equal((await device('PUT', '/v1/ssh/this', laptop, bad)).status, 400, JSON.stringify(bad));
+  }
+  // The web turns it off; the device's next beat hears so, and a beat never turns it on again.
+  const off = await s.call('POST', `/v1/ssh/${laptopId}/off`, {token: web});
+  assert.deepEqual([off.status, off.json.on], [200, false]);
+  assert.equal((await device('POST', '/v1/ssh/this/beat', laptop, {destinations: here})).json.on, false);
+  assert.deepEqual((await s.call('GET', '/v1/ssh', {token: web})).json, []);
+  assert.equal((await s.call('POST', `/v1/ssh/${laptopId}/off`, {token: web})).status, 404);
+  // On again at the device, then off from the device itself; signing the device out takes it too.
+  await device('PUT', '/v1/ssh/this', laptop, {port: 22000, destinations: here});
+  assert.deepEqual((await device('DELETE', '/v1/ssh/this', laptop)).json, {on: false, changed: true});
+  await device('PUT', '/v1/ssh/this', laptop, {port: 22000, destinations: here});
+  const row = (await sessionsOf(s, web)).find((d) => d.id === laptopId)!;
+  assert.equal((await s.call('POST', '/api/auth/revoke-session', {token: web, body: {token: row.token}})).status, 200);
+  assert.deepEqual((await s.call('GET', '/v1/ssh', {token: web})).json, []);
+  assert.equal((await device('POST', '/v1/ssh/this/beat', laptop, {})).status, 401);
+});
+
 test('Turning off checks the account\'s name as the Remote says it, not one the person chose elsewhere', async () => {
   const s = await service();
   const t = await s.start('Sora Tamura');

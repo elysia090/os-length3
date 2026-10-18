@@ -1,6 +1,6 @@
 //! Runtime: the root Prompts run on, then this device (everything this OS
 //! holds, largest first, each with what can be done with it); what every
-//! Prompt is given (dotfiles); and whether SSH may reach each address.
+//! Prompt is given (dotfiles); and whether SSH reaches this device's Prompts (l3 address).
 
 use super::{stdin_text, Ctx};
 use crate::args::Call;
@@ -20,7 +20,14 @@ pub fn page(_: &Ctx, _: &Call) -> Result<Reply> {
     let mut t = vec![match &current {
         Some(r) => tr!("root  {} {} (where Prompts run)", "root  {} {}（Prompt が動く環境）", r.name, r.version),
         None => tr!("root  none yet (l3 root fetch)", "root  まだありません（l3 root fetch）"),
-    }, String::new()];
+    }];
+    // SSH into the Prompts: the listener, when it runs (l3 address lists where; l3 address ssh off stops it).
+    let listening = length3_core::ssh::listening(&paths::data_dir());
+    t.push(match &listening {
+        Some(l) => tr!("SSH  on · port {} · {} repos (l3 address; l3 address ssh off stops it)", "SSH  オン · ポート {} · repo {}（l3 address。止めるなら l3 address ssh off）", l.port, l.destinations.len()),
+        None => tr!("SSH  off (l3 address ssh on)", "SSH  オフ（l3 address ssh on）"),
+    });
+    t.push(String::new());
     t.push(tr!("This device  {} free of {} (the host's figures) · this OS {}", "この端末  空き {} / {}（ホストの値） · この OS {}", bytes(s.host_free), bytes(s.host_total), bytes(s.allocated)));
     for i in &s.items {
         let act = match i.room { usage::Room::Free | usage::Room::SyncFree => tr!("free", "空ける"), usage::Room::Keep => tr!("stays", "残す") };
@@ -29,7 +36,7 @@ pub fn page(_: &Ctx, _: &Call) -> Result<Reply> {
     }
     if s.freeable > 0 { t.push(tr!("Can be freed: {} (all of it: l3 free all)", "空けられるもの：{}（全部なら l3 free all）", bytes(s.freeable))); }
     let items: Vec<_> = s.items.iter().map(|i| json!({"id": i.id, "what": i.what, "allocated": i.allocated, "room": i.room})).collect();
-    Ok(Reply::data(t.join("\n"), json!({"root": current, "hostTotal": s.host_total, "hostFree": s.host_free, "host": s.host,
+    Ok(Reply::data(t.join("\n"), json!({"root": current, "ssh": listening.map(|l| json!({"port": l.port, "destinations": l.destinations, "fingerprint": l.fingerprint})), "hostTotal": s.host_total, "hostFree": s.host_free, "host": s.host,
         "allocated": s.allocated, "freeable": s.freeable, "items": items})))
 }
 

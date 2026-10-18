@@ -28,6 +28,17 @@ export function askFoot(from: Element, box: Element): (no: Node, yes: Node) => H
   return (no, yes) => h('div', {class: 'card-foot'}, ...(left ? [yes, h('span', {class: 'grow'}), no] : [no, h('span', {class: 'grow'}), yes]));
 }
 
+/** Copy `text` when `el` is pressed, and say so in its place for a moment (there is no Copy button). */
+export function copying(el: HTMLElement, text: string) {
+  el.addEventListener('click', () => {
+    void navigator.clipboard?.writeText(text);
+    el.dataset.copiedWord = t('Copied');
+    el.dataset.copied = '';
+    window.setTimeout(() => delete el.dataset.copied, 1200);
+  });
+  el.title = t('Press to copy');
+}
+
 /**
  * A deed that asks first comes back under the pointer, so the second click
  * of a double click would land on it: it holds still this long after showing.

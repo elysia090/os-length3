@@ -549,9 +549,13 @@ The GUI and the command line are two ways into the same things. `l3`'s
 nouns and order are the rail's: Home (`todo`, `profile`, `lang`), Forge
 (`repo`, `band`, `prompt`), File (`file`), Git (`git`, `issue`, `start`,
 `main`, `commit`, `push`, `reset`, `diff`, `log`, `review`, `reply`,
-`merge`, `reject`), Runtime (`runtime`, `free`, `root`, `network`, `dotfile`),
-Remote (`remote`, `login`, `logout`), Server (`server`), Inbox (`inbox`,
-`address`); `l3 help` lists them in this order. A path is written as File shows it (`/root/<repo>/…`). A line is
+`merge`, `reject`), Runtime (`runtime`, `free`, `root`, `network`, `dotfile`,
+`address`), Remote (`remote`, `login`, `logout`), Server (`server`), Inbox
+(`inbox`, `name`); `l3 help` lists them in this order. `l3 address` is where
+this device is reached over SSH, as `ip addr` answers with an address: one
+`ssh -p PORT REPO@HOST` a line, the SSH user being the repo (Runtime's SSH,
+below); the names people find you by (name@domain, and your code) are `l3
+name`. A path is written as File shows it (`/root/<repo>/…`). A line is
 named the same way everywhere ("Fix：件名"), an issue is called by its
 number in both (#3), and Home's state is the same files, so anything done in one shows in
 the other. The Prompt's shell works on the repo itself: what it changes is
@@ -909,8 +913,27 @@ each thing says what can be done with it.
   run before a Prompt, with the network, over the repo's environment, so
   what they install is the repo's and stays; and again only when the root
   or either file changes.
-- **SSH**, once there is a name (Inbox): a small card per name with
-  the power switch at its bottom right, whether it may be reached over SSH.
+- **SSH** into a repo's Prompt, per device: an ordinary OpenSSH client,
+  with the repo as its user, lands in that repo's Prompt, the same shell
+  `l3 prompt REPO` gives (a command runs there and its exit code comes
+  back). A small card for each of the account's devices that listens: what
+  it is (This device in the app), its destinations, one a repo (`ssh -p
+  23000 notes@192.168.1.5`, each copied by a press, as Inbox's stub is),
+  how long it has been on (or that it has not been heard from lately), and
+  the power switch at its bottom right, on; pressed, that device stops
+  taking connections and ends its sessions within seconds. Off is the
+  first state, and SSH is turned on only at the device itself (`l3
+  address` asks, `l3 address ssh on`, or, in the app, This device's card,
+  there off with its switch): a page can only turn a device's SSH off, so
+  the switch on another device's card only goes one way. The listener is
+  l3's, in the background, recorded under the data directory as a Prompt
+  is; which devices listen is kept on the Remote by device (a session),
+  and the listener asks it every 5 s, stopping once it was turned off or
+  the device signed out. Keys are the `.authorized_keys` dotfile (below),
+  public keys only, so a key added on one device counts on every one.
+  With none there, turning on says to add one first, and how. Shown only
+  while signed in; with no device listening, one line says where it is
+  turned on.
 - **Dotfiles**: a small card each (its name, its size), and a dashed one to
   make another. A card opens its text under the cards, `/root/` and its name
   above it, Remove at the left, Close and Save at the right. Every Prompt
@@ -1108,7 +1131,7 @@ The proof is the Remote's keyed digest of the account and the domain, so
 only the domain's holder can publish it and no other account can reuse it;
 it is looked for while the gear is open, and the address is claimed the
 moment it is found. The same record says which Remote holds the domain's
-addresses, as MX does for mail. SSH is Runtime's. Then one tall box: conversations on
+addresses, as MX does for mail. SSH is Runtime's, by device, not by name. Then one tall box: conversations on
 the left (requests apart, with Accept and Block), the chosen one on the
 right. Writing is one line that grows as it is written: a message is named
 the way an issue is ("Review：…", "Question：…"), and a `/root/…` path in it

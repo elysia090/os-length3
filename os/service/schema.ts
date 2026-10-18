@@ -35,7 +35,7 @@ import {sql} from 'drizzle-orm';
 import {
   bigint, boolean, check, doublePrecision, foreignKey, index, integer, jsonb, pgTable, primaryKey, smallint, text, timestamp, unique, uniqueIndex, uuid,
 } from 'drizzle-orm/pg-core';
-import {user} from './schema.auth.ts';
+import {session, user} from './schema.auth.ts';
 
 export * from './schema.auth.ts';
 
@@ -236,8 +236,7 @@ export interface Review { version: number; verdict: 'approve' | 'changes' | 'com
 // ---- Inbox (inbox.ts) ----
 
 /**
- * A principal's name: a person's (how they are found, the same shape an SSH
- * target has) or a server's, claimed here in one namespace (names.ts).
+ * A principal's name: a person's (how they are found) or a server's, claimed here in one namespace (names.ts).
  *
  * A name on this Remote is just a name (`ren`; stored as name@domain under
  * the Remote's own domain, which is where it is kept, not something its
@@ -254,8 +253,6 @@ export const address = pgTable('address', {
   serverId: text('server_id').references(() => server.id, {onDelete: 'cascade'}),
   name: text('name').notNull(),
   domain: text('domain').notNull(),
-  /** Opt-in to be reached over SSH at this address; its own permission, off unless asked. */
-  ssh: boolean('ssh').notNull().default(false),
   /** A name on this Remote answers until then, unless renewed; null on a domain of one's own. */
   until: moment('until'),
   releasedAt: moment('released_at'),
@@ -325,6 +322,27 @@ export const signal = pgTable('signal', {
 }, (t) => [index('signal_to_idx').on(t.to, t.from, t.createdAt), index('signal_from_idx').on(t.from, t.createdAt), index('signal_time_idx').on(t.createdAt),
   check('signal_kind', sql`${t.kind} in ('offer', 'answer', 'candidate', 'bye')`),
   check('signal_size', sql.raw('char_length(session) <= 64 and char_length(data) <= 16384'))]);
+
+// ---- SSH into a repo's Prompt (ssh.ts) ----
+
+/**
+ * A device listening for SSH: its session (a device is its session, as
+ * Remote → Devices lists them; signing it out takes this row with it), the
+ * port it listens on and the destinations it gives (`ssh -p 22000
+ * notes@192.168.1.5`, one a repo), when it was turned on and when it last
+ * said it still listens. A row is SSH on; off is its absence. Only the
+ * device itself makes one; any of the account's sessions may remove one.
+ */
+export const ssh = pgTable('ssh', {
+  sessionId: text('session_id').primaryKey().references(() => session.id, {onDelete: 'cascade'}),
+  userId: owner(),
+  port: integer('port').notNull(),
+  destinations: jsonb('destinations').$type<string[]>().notNull(),
+  since: moment('since').defaultNow().notNull(),
+  seenAt: moment('seen_at').defaultNow().notNull(),
+}, (t) => [index('ssh_user_idx').on(t.userId, t.since),
+  check('ssh_port', sql`${t.port} between 1 and 65535`),
+  check('ssh_destinations', sql`jsonb_typeof(${t.destinations}) = 'array' and jsonb_array_length(${t.destinations}) <= 200 and octet_length(${t.destinations}::text) <= 32768`)]);
 
 // ---- Servers (servers.ts) ----
 //

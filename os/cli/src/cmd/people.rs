@@ -1,5 +1,5 @@
 //! The two whose subject is people: Server (boards: a talk and a TODO kept
-//! together) and Inbox (conversations, and the addresses people find you by).
+//! together) and Inbox (conversations, and the names people find you by).
 
 use super::Ctx;
 use crate::args::Call;
@@ -157,47 +157,32 @@ pub fn inbox_decide(_: &Ctx, call: &Call) -> Result<Reply> {
     Ok(Reply::done(if accept { tr!("Accepted {}", "{} を受けました", who) } else { tr!("Blocked {}", "{} をブロックしました", who) }, json!({"address": who, "state": if accept { "accepted" } else { "blocked" }})))
 }
 
-/// `l3 address`: the addresses alone, one a line, as `ip addr` answers with an IP, for a script or a quick look.
-pub fn address_only(_: &Ctx, _: &Call) -> Result<Reply> {
+/// `l3 name`: your names alone, one a line, for a script or a quick look.
+pub fn name_only(_: &Ctx, _: &Call) -> Result<Reply> {
     let me = inbox::me()?;
     if me.addresses.is_empty() {
-        return Err(Error::NotFound(tr!("No address yet (l3 address claim NAME)", "アドレスはまだありません（l3 address claim NAME）")));
+        return Err(Error::NotFound(tr!("No name yet (l3 name claim NAME)", "名前はまだありません（l3 name claim NAME）")));
     }
     let all: Vec<&str> = me.addresses.iter().map(|x| x.address.as_str()).collect();
     Ok(Reply::data(all.join("\n"), json!(all)))
 }
 
-/// `l3 address list`: each with its term and whether SSH reaches it, and the code one is found by.
-pub fn addresses(_: &Ctx, _: &Call) -> Result<Reply> {
+/// `l3 name list`: each with its term, and the code one is found by.
+pub fn names(_: &Ctx, _: &Call) -> Result<Reply> {
     let me = inbox::me()?;
     let mut t = Vec::new();
-    if me.addresses.is_empty() { t.push(tr!("No name yet (l3 address claim NAME: first come, yours for five years at a time)", "名前はまだありません（l3 address claim NAME：早い者勝ち、5年ごとの更新であなたのもの）")); }
+    if me.addresses.is_empty() { t.push(tr!("No name yet (l3 name claim NAME: first come, yours for five years at a time)", "名前はまだありません（l3 name claim NAME：早い者勝ち、5年ごとの更新であなたのもの）")); }
     for x in &me.addresses {
         let state = if x.lapsed { tr!("  · its domain no longer names this Remote", "  · ドメインがこの Remote を指していません") }
-            else if x.ended { tr!("  · its term ended: l3 address renew {}", "  · 期限切れ：l3 address renew {}", me.shown(&x.address)) }
+            else if x.ended { tr!("  · its term ended: l3 name renew {}", "  · 期限切れ：l3 name renew {}", me.shown(&x.address)) }
             else if let Some(u) = x.until { tr!("  · until {}", "  · {} まで", day(u)) } else { String::new() };
-        // Each line says whether SSH reaches that name, on or off, so this is the check before SSH.
-        t.push(format!("{}{state}{}", me.shown(&x.address), if x.ssh { tr!("  · SSH on", "  · SSH オン") } else { tr!("  · SSH off", "  · SSH オフ") }));
+        t.push(format!("{}{state}", me.shown(&x.address)));
     }
     if !me.code.is_empty() { t.push(tr!("Your code: {} (anyone can find you by it)", "あなたのコード：{}（これで見つけてもらえます）", me.code)); }
-    if me.addresses.iter().any(|x| x.ssh) { t.push(tr!("SSH on is kept for each name; connecting over SSH is not open yet", "SSH オンは名前ごとに残ります。SSH での接続はまだ開いていません")); }
     Ok(Reply::data(t.join("\n"), json!(me)))
 }
 
-/// `l3 address ssh on|off NAME`: whether SSH may reach one of your names (Runtime's switch).
-pub fn address_ssh(_: &Ctx, call: &Call) -> Result<Reply> {
-    let on = call.word(0) == Some("on");
-    let (me, address) = yours(call.word(1).unwrap_or_default())?;
-    let a = me.addresses.iter().find(|a| a.address == address).expect("yours");
-    let shown = me.shown(&address).to_string();
-    if a.ssh == on {
-        return Ok(Reply::done(if on { tr!("SSH reached {} already", "{} にはもう SSH が届きます", shown) } else { tr!("SSH was off for {} already", "{} の SSH はもうオフです", shown) }, json!({"address": address, "ssh": on, "changed": false})));
-    }
-    inbox::set_ssh(&address, on)?;
-    Ok(Reply::done(if on { tr!("SSH on for {}", "{} の SSH をオンにしました", shown) } else { tr!("SSH off for {}", "{} の SSH をオフにしました", shown) }, json!({"address": address, "ssh": on, "changed": true})))
-}
-
-pub fn address_claim(_: &Ctx, call: &Call) -> Result<Reply> {
+pub fn name_claim(_: &Ctx, call: &Call) -> Result<Reply> {
     let a = inbox::claim(call.word(0).unwrap_or_default())?;
     Ok(Reply::done(tr!("Yours: {}", "あなたの名前：{}", a), json!({"address": a})))
 }
@@ -207,30 +192,30 @@ fn yours(word: &str) -> Result<(inbox::Me, String)> {
     let address = target::address(word)?;
     let me = inbox::me()?;
     if !mine(&me, &address) {
-        return Err(Error::NotFound(tr!("{} is not one of your names (l3 address lists them)", "{} はあなたの名前ではありません（l3 address で一覧）", me.shown(&address))));
+        return Err(Error::NotFound(tr!("{} is not one of your names (l3 name lists them)", "{} はあなたの名前ではありません（l3 name で一覧）", me.shown(&address))));
     }
     Ok((me, address))
 }
 
-pub fn address_renew(_: &Ctx, call: &Call) -> Result<Reply> {
+pub fn name_renew(_: &Ctx, call: &Call) -> Result<Reply> {
     let (me, address) = yours(call.word(0).unwrap_or_default())?;
     let until = inbox::renew(&address)?;
     Ok(Reply::done(tr!("{} is yours until {}", "{} は {} まであなたのものです", me.shown(&address), day(until)), json!({"address": address, "until": until})))
 }
 
-pub fn address_release(_: &Ctx, call: &Call) -> Result<Reply> {
+pub fn name_release(_: &Ctx, call: &Call) -> Result<Reply> {
     let (me, address) = yours(call.word(0).unwrap_or_default())?;
     let until = inbox::release(&address)?;
     Ok(Reply::done(tr!("Let go of {} (held for you until {}; claim it again to take it back)", "{} を手放しました（{} まであなたのために取り置き。取り直せば戻ります）", me.shown(&address), day(until)), json!({"address": address, "heldUntil": until})))
 }
 
-pub fn address_domain(_: &Ctx, call: &Call) -> Result<Reply> {
+pub fn name_domain(_: &Ctx, call: &Call) -> Result<Reply> {
     let domain = call.word(0).unwrap_or_default();
     let r = inbox::domain_record(domain)?;
     let t = [
         tr!("Put this record in {}'s DNS (it says this account holds names there, and on which Remote):", "{} の DNS にこのレコードを置きます（このアカウントがそこの名前を持つこと、どの Remote かを示します）：", domain),
         format!("  {}  {}  {}", r.name, r.kind, r.value),
-        if r.found { tr!("Found: l3 address claim NAME@{} takes a name on it", "見つかりました：l3 address claim NAME@{} で名前を取れます", domain) } else { tr!("Not found yet", "まだ見つかりません") },
+        if r.found { tr!("Found: l3 name claim NAME@{} takes a name on it", "見つかりました：l3 name claim NAME@{} で名前を取れます", domain) } else { tr!("Not found yet", "まだ見つかりません") },
     ];
     Ok(Reply::data(t.join("\n"), json!(r)))
 }
