@@ -5,6 +5,7 @@ import {store} from '../repos.ts';
 import {bring, onSync, remoteOnly, repoState} from '../lifecycle.ts';
 import {syncWord} from './remote.ts';
 import type {Context} from './context.ts';
+import {errorText} from '../errors.ts';
 
 // The repos as large cards, about three across: on Home, and under the New
 // repo form so a repo just made is seen joining the others.
@@ -33,7 +34,7 @@ function awayCard(ctx: Context, name: string, size: number, modified: number): H
     card.setAttribute('aria-busy', 'true');
     (card.querySelector('.card-sync') as HTMLElement).textContent = t('Bringing it…');
     try { await bring(name); ctx.openRepo(name); } catch (e) {
-      (card.querySelector('.card-sync') as HTMLElement).textContent = e instanceof Error ? e.message : String(e);
+      (card.querySelector('.card-sync') as HTMLElement).textContent = errorText(e);
       card.removeAttribute('aria-busy');
     }
   });
@@ -57,7 +58,7 @@ export function repoList(ctx: Context, options: {newCard: boolean; counted?: (n:
   const refresh = async (light?: string | null) => {
     let repos;
     try { repos = await store.list(); } catch (e) {
-      grid.replaceChildren(h('p', {class: 'muted'}, t('Could not read the repos: {why}', {why: String(e)})));
+      grid.replaceChildren(h('p', {class: 'muted'}, t('Could not read the repos: {why}', {why: errorText(e)})));
       return;
     }
     options.counted?.(repos.length + remoteOnly().length);

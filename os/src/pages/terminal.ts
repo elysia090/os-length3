@@ -4,6 +4,8 @@ import {bytes, h} from '../dom.ts';
 import {isNative, promptOpen, rootStatus, type Held, type Stopped} from '../host.ts';
 import {currentLang, t, tn} from '../i18n.ts';
 import {loadUserland, loadWebRoot, watchLoad, type Stage} from '../userland.ts';
+import {every} from '../runs.ts';
+import {errorText} from '../errors.ts';
 
 // A shell per repo, running translated BusyBox (and l3) in a Worker. Sessions
 // outlive page switches: the workbench re-attaches the same element. A
@@ -90,7 +92,8 @@ export class Session {
   /** How the last stop went, on the root: what it held, and how long until none was left. */
   stopped: Stopped | null = null;
   private native: Awaited<ReturnType<typeof promptOpen>> | null = null;
-  private poll = 0;
+  /** What the root's processes hold, read every 3 s while the page is in view. */
+  private measuring: {stop(): void} | null = null;
   private ttySaid = false;
 
   constructor(repo: string) {
@@ -133,9 +136,16 @@ export class Session {
     if (!this.ttySaid && this.text.includes(NO_TTY)) { this.text = this.text.replace(NO_TTY, ''); this.ttySaid = true; }
     // Keep the last 200k characters; older output scrolls away.
     if (this.text.length > 200_000) this.text = this.text.slice(-150_000);
-    this.output.textContent = this.text;
-    this.output.scrollTop = this.output.scrollHeight;
+    // Drawn once a frame, however many pieces came in it. Output comes a stdio buffer (about 1 KB) at a time,
+    // and drawing up to 200k characters and scrolling to them for each piece measured about 22 ms a piece in
+    // Chromium: 1 MB of output held the page for 22 s; drawn once for every 17 pieces, 1.3 s.
+    this.painting ||= requestAnimationFrame(() => {
+      this.painting = 0;
+      this.output.textContent = this.text;
+      this.output.scrollTop = this.output.scrollHeight;
+    });
   }
+  private painting = 0;
 
   /** Output goes on screen and into the run in progress, which ends at the next prompt. */
   private received(s: string) {
@@ -215,7 +225,7 @@ export class Session {
     this.tell();
     this.status.textContent = '';
     void this.measure();
-    this.poll = window.setInterval(() => void this.measure(), 3000);
+    this.measuring = every(3000, () => this.measure());
     return true;
   }
 
@@ -224,14 +234,14 @@ export class Session {
       // In the app the Prompt is the distribution's root; l3 through xlat
       // only until a root is installed, and the Runtime page says which.
       let why = '';
-      if (isNative && await this.startRoot().catch((e) => { why = e instanceof Error ? e.message : String(e); return false; })) return;
+      if (isNative && await this.startRoot().catch((e) => { why = errorText(e); return false; })) return;
       this.on = 'l3';
       // While l3 comes, the status says how far it is and what it is doing.
       const unwatch = watchLoad((s) => { this.status.textContent = loadWords(s); });
       // The whole root not reached: the Prompt runs l3 and its BusyBox alone, and says why.
       let rootWhy = '';
       const [land, copy, root] = await Promise.all([loadUserland(), snapshot(this.repo),
-        loadWebRoot().catch((e: unknown) => { rootWhy = e instanceof Error ? e.message : String(e); return null; })]).finally(unwatch);
+        loadWebRoot().catch((e: unknown) => { rootWhy = errorText(e); return null; })]).finally(unwatch);
       const worker = new Worker(new URL('../../../xlat/runtime/worker.mjs', import.meta.url), {type: 'module'});
       this.worker = worker;
       worker.onmessage = ({data}) => {
@@ -286,7 +296,7 @@ export class Session {
       this.live = true;
       this.tell();
     } catch (e) {
-      this.end(t('Could not start: {message}', {message: e instanceof Error ? e.message : String(e)}));
+      this.end(t('Could not start: {message}', {message: errorText(e)}));
     }
   }
 
@@ -377,7 +387,8 @@ export class Session {
     this.unwatch = null;
     this.worker?.terminate();
     this.worker = null;
-    clearInterval(this.poll);
+    this.measuring?.stop();
+    this.measuring = null;
     this.native?.forget();
     this.native = null;
     this.live = false;

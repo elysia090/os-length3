@@ -2,6 +2,8 @@ import {h} from '../dom.ts';
 import {currentLang, t} from '../i18n.ts';
 import {shown} from '../inbox.ts';
 import * as servers from '../servers.ts';
+import {coalesced, every} from '../runs.ts';
+import {errorText} from '../errors.ts';
 
 // A board's talk: read as a conversation is, oldest above and newest at the
 // foot, by the box one writes in. Its people write in it; so may a guest,
@@ -22,7 +24,6 @@ const KEEP = 8;
 /** How often what came is looked for, while the page is in view. */
 const EVERY = 15_000;
 
-const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /** The letters of a face: the first two of the address's name. */
 const face = (p: servers.Post) => [...p.by.split('@')[0]].slice(0, 2).join('').toUpperCase();
@@ -63,7 +64,7 @@ export function timeline(scroller: HTMLElement, board: string, member: boolean, 
   const start = h('div', {class: 'tl-start muted small', 'aria-live': 'polite'});
   const foot = h('div', {class: 'tl-foot-mark'});
   const fresh = h('button', {type: 'button', class: 'tl-new', hidden: ''}) as HTMLButtonElement;
-  let done = false, reading = false, looking = false, unseen = 0, footIn = false;
+  let done = false, reading = false, unseen = 0, footIn = false;
   /** Something came (or was sent) while the first page was being read: it is read again once that is done. */
   let cameMeanwhile = false;
   /** The foot in view: the newest post held is read. */
@@ -110,7 +111,7 @@ export function timeline(scroller: HTMLElement, board: string, member: boolean, 
           await servers.takeDown(board, p.id);
           if (s.page.posts) s.page.posts = s.page.posts.filter((q) => q.id !== p.id);
           steady(() => art.remove());
-        } catch (e) { down.disabled = false; down.textContent = message(e); }
+        } catch (e) { down.disabled = false; down.textContent = errorText(e); }
       });
       acts.append(down);
     }
@@ -189,7 +190,7 @@ export function timeline(scroller: HTMLElement, board: string, member: boolean, 
       if (page) { if (first) { add(page, 'older'); toFoot(); read(); } else steady(() => add(page, 'older')); }
       done = !r.more;
       start.textContent = done ? (pages.length ? t('That is every post') : t('No posts yet')) : '';
-    } catch (e) { start.textContent = message(e); reading = false; return; } finally { list.setAttribute('aria-busy', 'false'); }
+    } catch (e) { start.textContent = errorText(e); reading = false; return; } finally { list.setAttribute('aria-busy', 'false'); }
     reading = false;
     // Something came while the first page was being read (one's own post, just sent): read again, so it shows.
     if (cameMeanwhile) { cameMeanwhile = false; if (!pages.length) { done = false; void older(); } else void came(true); return; }
@@ -202,10 +203,10 @@ export function timeline(scroller: HTMLElement, board: string, member: boolean, 
     fresh.hidden = unseen === 0;
     fresh.textContent = `↓ ${unseen === 1 ? t('{n} new post', {n: 1}) : t('{n} new posts', {n: unseen})}`;
   };
-  const came = async (mine = false) => {
-    if (looking) return;
-    if (!pages.length) { done = false; if (reading) { cameMeanwhile = true; return; } return void older(); }
-    looking = true;
+  // One look at a time; asked again while one is out (one's own post just sent, the rail's news), one more
+  // after it, which goes to the foot if any asker had just written.
+  const came = coalesced<boolean>(async (mine) => {
+    if (!pages.length) { done = false; if (reading) { cameMeanwhile = true; return; } return older(); }
     try {
       const got: servers.Post[] = [];
       let after = pages[0].page.newest;
@@ -220,8 +221,8 @@ export function timeline(scroller: HTMLElement, board: string, member: boolean, 
       // Oldest page first, each at the foot.
       for (const p of servers.onTop(got).reverse()) add(p, 'newer');
       if (following) { toFoot(mine); read(); } else { unseen += got.length; tell(); }
-    } catch { /* tried again on the next look */ } finally { looking = false; }
-  };
+    } catch { /* tried again on the next look */ }
+  }, (a, b) => a || b);
   fresh.addEventListener('click', () => { unseen = 0; tell(); toFoot(true); });
   const here = {board, read: came};
   onScreen.add(here);
@@ -233,15 +234,12 @@ export function timeline(scroller: HTMLElement, board: string, member: boolean, 
     read();
   }, {root: scroller});
 
-  // While it is on screen, what came is looked for now and then; once it is gone, all of this stops.
-  const look = () => { if (document.visibilityState === 'visible') { void came(); read(); } };
-  const poll = window.setInterval(() => {
-    if (!root.isConnected) {
-      clearInterval(poll); watch.disconnect(); more.disconnect(); seen.disconnect(); onScreen.delete(here); removeEventListener('focus', look);
-      return;
-    }
-    look();
-  }, EVERY);
+  // While it is on screen, what came is looked for now and then (not while the page is hidden); once it is gone, all of this stops.
+  const look = () => { if (document.visibilityState === 'visible') { void came(false); read(); } };
+  every(EVERY, () => { const c = came(false); read(); return c; }, {
+    alive: () => root.isConnected,
+    ended: () => { watch.disconnect(); more.disconnect(); seen.disconnect(); onScreen.delete(here); removeEventListener('focus', look); },
+  });
   addEventListener('focus', look);
 
   // The mark floats over the posts at the foot (its holder has no height), so showing it moves nothing.

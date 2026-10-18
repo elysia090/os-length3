@@ -6,15 +6,16 @@ import {connection, onConnection, RemoteError} from '../remote.ts';
 import * as servers from '../servers.ts';
 import type {Context} from './context.ts';
 import {cameTo, timeline} from './talk.ts';
-import {todoList} from './todo-box.ts';
 import {dockFor} from './server-dock.ts';
+import {boardTodo} from './server-todo.ts';
 import {gear as gearSheet} from './server-gear.ts';
 import {seeRepo as repoSheet} from './server-repo.ts';
-import {button, initials, message, type Shown} from './server-parts.ts';
-import {answers} from './common.ts';
+import {button, initials, type Shown} from './server-parts.ts';
+import {answers, deed} from './common.ts';
 import {goToPlan, planRefused, planSaid} from './remote.ts';
 import {plan as readPlan} from '../plan.ts';
 import {boardNew, onNews, sawBoard, serverNew} from '../news.ts';
+import {errorText} from '../errors.ts';
 
 // Server is an operation, as File is: laid over whatever page is showing,
 // never a page of its own. It is the one thing whose subject is people, not
@@ -163,8 +164,14 @@ export class ServerLayer {
     let alone: string | null = null;
     let k = 0;
     const at = remembered();
-    const writers: (() => boolean)[] = [];
-    this.writing = () => writers.some((f) => f());
+    // What is being written, by where it is written: a board's TODO, a name, the box at the foot. One no longer on
+    // screen (the board moved away from) is let go, so moving along the boards holds no old box or talk.
+    const writers = new Map<Element | 'dock', () => boolean>();
+    const writer = (at: Element | 'dock', busy: () => boolean) => {
+      for (const k of writers.keys()) if (k !== 'dock' && !k.isConnected) writers.delete(k);
+      writers.set(at, busy);
+    };
+    this.writing = () => { for (const [k, f] of writers) if (k === 'dock' || k.isConnected) { if (f()) return true; } return false; };
     // Who one is, to mark oneself among the people; not known (away), no one is marked, and nothing else changes.
     const myself = signedIn ? import('../inbox.ts').then((inbox) => inbox.me()).catch(() => null) : Promise.resolve(null);
     const isMe = async (address: string) => !!(await myself)?.addresses.some((a) => a.address === address);
@@ -225,38 +232,8 @@ export class ServerLayer {
       const talk = h('section', {class: 'board-talk', tabindex: '0', 'aria-label': b.name});
       // Its foot in view, what came is seen: the marks go, here and on the rail.
       talk.append(timeline(talk, b.id, b.member, b.member ? (post) => sawBoard(b.id, post) : undefined));
-      void boardTodo(b, todo);
+      void boardTodo(b, todo, (busy) => writer(todo, busy));
       return h('div', {class: 'board-card'}, head, todo, talk);
-    };
-
-    /**
-     * A board's TODO, pinned at the top of its box: Home's list, kept
-     * together on the Remote (shown, not written, outside the server; not
-     * shown at all there while it is empty). What others change is taken in
-     * every little while, whenever nothing written here is waiting.
-     */
-    const boardTodo = async (b: Shown, holder: HTMLElement) => {
-      const left = h('small', {class: 'muted'});
-      const status = h('p', {class: 'error small', role: 'alert'});
-      let list: servers.BoardTodo[];
-      try { list = await servers.todos(b.id, b.member); } catch (e) { holder.replaceChildren(h('p', {class: 'error'}, message(e))); return; }
-      if (!b.member && !list.length) { holder.remove(); return; }
-      const keeper = b.member ? servers.todoKeeper(b.id, list) : null;
-      const box = todoList(list, keeper ? (kept) => keeper.save(kept) : async () => {},
-        {readOnly: !b.member, first: t('Something to do together'), counted: (x) => { left.textContent = x; }, failed: (why) => { status.textContent = why; }});
-      writers.push(() => holder.contains(document.activeElement) || (keeper ? !keeper.idle() : false));
-      holder.replaceChildren(h('div', {class: 'board-todo-head'}, h('span', {}, 'TODO'), left), box.element, status);
-      let seen = JSON.stringify(list);
-      const again = window.setInterval(async () => {
-        if (!holder.isConnected) { clearInterval(again); return; }
-        if (keeper && !keeper.idle()) return;
-        // Looked at again every 15 s: one not answered is the next one's to bring.
-        const now = await servers.todos(b.id, b.member).catch(() => null);
-        if (!now || (keeper && !keeper.idle()) || JSON.stringify(now) === seen) return;
-        seen = JSON.stringify(now);
-        keeper?.took(now);
-        box.update(now);
-      }, 15_000);
     };
 
     /** The last box: a new board in this server. */
@@ -265,15 +242,16 @@ export class ServerLayer {
       const name = h('input', {class: 'line-in', maxlength: '64', placeholder: t('What it is about'), 'aria-label': t('New board')}) as HTMLInputElement;
       const make = button(t('Make'), 'primary');
       const error = h('p', {class: 'error', role: 'alert'});
-      writers.push(() => document.activeElement === name || !!name.value.trim());
+      writer(name, () => document.activeElement === name || !!name.value.trim());
       const done = async () => {
-        if (!name.value.trim() || !serverId) return;
+        // Enter pressed again while it is made makes no second board.
+        if (!name.value.trim() || !serverId || make.disabled) return;
         make.disabled = true;
         try {
           const b = await servers.makeBoard(serverId, name.value);
           current()?.boards.push(b);
           show(serverId, b.id);
-        } catch (e) { error.textContent = message(e); make.disabled = false; }
+        } catch (e) { error.textContent = errorText(e); make.disabled = false; }
       };
       make.addEventListener('click', () => void done());
       name.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); void done(); } });
@@ -376,9 +354,10 @@ export class ServerLayer {
       handle.addEventListener('input', () => { own = handle.value !== ''; });
       const make = button(t('Make'), 'primary');
       const error = h('p', {class: 'error', role: 'alert'});
-      writers.push(() => document.activeElement === name || document.activeElement === handle || !!name.value.trim());
+      writer(name, () => document.activeElement === name || document.activeElement === handle || !!name.value.trim());
       const done = async () => {
-        if (!name.value.trim()) return;
+        // Enter pressed again while it is made makes no second server.
+        if (!name.value.trim() || make.disabled) return;
         make.disabled = true;
         try {
           const s = await servers.makeServer(name.value, handle.value);
@@ -394,7 +373,7 @@ export class ServerLayer {
             const inbox = button(t('Go to Inbox'), 'small-button');
             inbox.addEventListener('click', () => { this.close(); this.ctx.go('inbox'); });
             error.replaceChildren(t('A server needs your name. Claim one in Inbox.'), ' ', inbox);
-          } else error.textContent = message(e);
+          } else error.textContent = errorText(e);
         }
       };
       make.addEventListener('click', () => void done());
@@ -410,9 +389,9 @@ export class ServerLayer {
       void servers.goneServers().then((held) => back.replaceChildren(...held.map((g) => {
         const b = button(t('Bring back {name}', {name: g.name}), 'small-button');
         b.title = t('Held until {date}', {date: day(g.until)});
-        b.addEventListener('click', async () => { b.disabled = true; try { await servers.bringBack(g.id); list = await servers.servers(); show(g.id); } catch (e) { b.textContent = message(e); } });
+        deed(b, async () => { await servers.bringBack(g.id); list = await servers.servers(); show(g.id); });
         return b;
-      })), (e) => back.replaceChildren(h('p', {class: 'error small'}, message(e))));
+      })), (e) => back.replaceChildren(h('p', {class: 'error small'}, errorText(e))));
       track.replaceChildren(h('div', {class: 'slide', 'aria-current': 'true'}, h('div', {class: 'board-card board-new'},
         h('div', {class: 'board-head'}, h('span', {class: 'muted'}, '+'), h('h2', {}, t('Make a server'))),
         h('div', {class: 'board-body'},
@@ -458,7 +437,7 @@ export class ServerLayer {
       dock.replaceChildren(...dockFor(b, {
         signedIn,
         pinned: () => this.pinned,
-        writing: (busy) => writers.push(busy),
+        writing: (busy) => writer('dock', busy),
         holding: (words) => { this.holding = words; },
         signIn: () => { this.close(); this.ctx.go('remote'); },
         guestChanged: () => paintTop(),
@@ -488,7 +467,7 @@ export class ServerLayer {
               b.addEventListener('click', () => seeRepo(r));
               return h('li', {}, b);
             }))) : '');
-      }).catch((e) => { if (mine === sideToken) side.replaceChildren(h('p', {class: 'error'}, message(e))); });
+      }).catch((e) => { if (mine === sideToken) side.replaceChildren(h('p', {class: 'error'}, errorText(e))); });
     };
 
     // ---- a repo shown: seen as it was last pushed, in the boards' place ----
@@ -526,7 +505,7 @@ export class ServerLayer {
         }
         const first = list.find((s) => s.id === at.server) ?? list[0];
         if (first) show(first.id); else makeServer();
-      }).catch((e) => track.replaceChildren(h('p', {class: 'error'}, message(e))));
+      }).catch((e) => track.replaceChildren(h('p', {class: 'error'}, errorText(e))));
     } else {
       paintTop();
       paintSide();
@@ -549,7 +528,7 @@ export class ServerLayer {
         track.replaceChildren(...shown.map(() => h('div', {class: 'slide'})));
         const i = shown.findIndex((b) => b.id === (held?.board ?? at.board));
         go(i >= 0 ? i : 0);
-      }).catch((e) => track.replaceChildren(h('p', {class: 'error'}, message(e))));
+      }).catch((e) => track.replaceChildren(h('p', {class: 'error'}, errorText(e))));
     }
 
     return work;

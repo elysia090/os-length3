@@ -10,6 +10,7 @@
 import {api, json, RemoteError} from './remote.ts';
 import {t} from './i18n.ts';
 import {day} from './dom.ts';
+import {every} from './runs.ts';
 
 export type Kind = 'message' | 'review' | 'question' | 'run';
 /** What a message is about; `server`: asking its reader into that server (service/inbox.ts). */
@@ -25,6 +26,49 @@ export interface Message { id: string; mine: boolean; type: Kind; target: Target
 export interface Me { domain: string; account: string; code: string; addresses: {address: string; until?: number; ended?: boolean; lapsed?: boolean}[] }
 
 const enc = (a: string) => encodeURIComponent(a);
+
+const KINDS: readonly Kind[] = ['message', 'review', 'question', 'run'];
+/** As the Remote holds a message to (service/inbox.ts): its words, and what it may say it is about. */
+const BODY = 4000;
+const TARGET_KEYS = ['repo', 'issue', 'change', 'version', 'server'];
+
+/** What a message may say it is about, as the Remote keeps it: those keys, each a short string or a number. */
+function targetOf(raw: unknown): Target {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {};
+  return Object.fromEntries(Object.entries(raw).filter(([k, v]) => TARGET_KEYS.includes(k)
+    && (typeof v === 'string' ? v.length <= 200 : typeof v === 'number' && Number.isFinite(v)))) as Target;
+}
+
+/**
+ * The place here a message points to, if it names one a repo here could be:
+ * a repo by a name a repo can have (repos.ts validName), and an issue by a plain
+ * file name in its issue/ (no folder, not hidden). Anyone may write anything there (the Remote keeps any
+ * short string), so a target that names no such place is shown as words only.
+ */
+export function placeOf(target: Target): {repo: string; issue?: string} | null {
+  const {repo, issue} = target;
+  if (typeof repo !== 'string' || !/^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}$/.test(repo)) return null;
+  if (issue === undefined) return {repo};
+  return typeof issue === 'string' && /^[A-Za-z0-9_-][A-Za-z0-9._-]*\.md$/.test(issue) ? {repo, issue} : null;
+}
+
+/**
+ * A message come over the direct line, as the Remote would have taken it, or
+ * null. The peer's device sends what it likes: nothing it says is used before
+ * it is checked as the Remote checks a message sent to it, and it is never one's own.
+ */
+export function liveMessage(data: unknown): Message | null {
+  if (typeof data !== 'string' || data.length > 4 * BODY + 2048) return null;
+  let m: Record<string, unknown>;
+  try { m = JSON.parse(data) as Record<string, unknown>; } catch { return null; }
+  if (typeof m !== 'object' || m === null) return null;
+  const body = typeof m.body === 'string' ? m.body.trim() : '';
+  if (typeof m.id !== 'string' || !m.id || m.id.length > 64 || !body || body.length > BODY) return null;
+  const type = KINDS.includes(m.type as Kind) ? m.type as Kind : 'message';
+  // Its clock is the peer's: never later than now here.
+  const time = typeof m.time === 'number' && Number.isFinite(m.time) ? Math.min(m.time, Date.now()) : Date.now();
+  return {id: m.id, mine: false, type, target: targetOf(m.target), body, time, read: false, live: true};
+}
 
 export const me = () => json<Me>('/v1/inbox/me').then((m) => { home = m.domain; return m; });
 
@@ -107,6 +151,7 @@ export class Conversation {
 const ICE = [{urls: 'stun:stun.cloudflare.com:3478'}];
 
 type Signal = {from: string; session: string; kind: 'offer' | 'answer' | 'candidate' | 'bye'; data: string};
+/** A signal not delivered leaves the line unopened, and messages go through the Remote as they do without one: nothing to say. */
 const signal = (to: string, session: string, kind: Signal['kind'], data: string) =>
   api('/v1/inbox/signals', {method: 'POST', body: JSON.stringify({to, session, kind, data})}).then(() => {}, () => {});
 
@@ -121,7 +166,9 @@ export class Live {
   private pc: RTCPeerConnection | null = null;
   private channel: RTCDataChannel | null = null;
   private session = '';
-  private timer = 0;
+  private looking: {stop(): void} | null = null;
+  /** Stopped: a look still out when it was makes no connection after it. */
+  private ended = false;
   private hear: (m: Message) => void;
   private state: (open: boolean) => void;
   constructor(me: string, peer: string, hear: (m: Message) => void, state: (open: boolean) => void) {
@@ -129,10 +176,16 @@ export class Live {
   }
   get open() { return this.channel?.readyState === 'open'; }
 
-  start() {
+  /**
+   * Begin: signals are looked for every moment while the page is in view
+   * (every 15 s while it is hidden, so a line can still open), one look at a
+   * time, until it is stopped or `alive` says the conversation is gone.
+   */
+  start(alive: () => boolean) {
     if (typeof RTCPeerConnection === 'undefined') return;
-    this.timer = window.setInterval(() => void this.poll(), 1500);
-    if (this.me < this.peer) void this.offer();
+    this.looking = every(1500, () => this.poll(), {alive, whileHidden: 15_000, ended: () => this.stop()});
+    // Not offered (no media stack, refused): messages go through the Remote, as without a line.
+    if (this.me < this.peer) void this.offer().catch(() => this.state(false));
   }
 
   private connection(session: string): RTCPeerConnection {
@@ -150,7 +203,7 @@ export class Live {
     this.channel = ch;
     ch.onopen = () => this.state(true);
     ch.onclose = () => this.state(false);
-    ch.onmessage = (e) => { try { this.hear({...(JSON.parse(String(e.data)) as Message), mine: false, live: true}); } catch { /* not ours */ } };
+    ch.onmessage = (e) => { const m = liveMessage(e.data); if (m) this.hear(m); };
   }
 
   private async offer() {
@@ -162,20 +215,26 @@ export class Live {
 
   /** What came from this peer: its offers, and the rest of this line's session; another chat's or device's stays for it. */
   private async poll() {
-    // Polled every moment: one that is not answered is asked again at the next.
+    // Looked for every moment: one that is not answered is asked again at the next.
     const got = await json<Signal[]>(`/v1/inbox/signals?from=${enc(this.peer)}${this.session ? `&session=${enc(this.session)}` : ''}`).catch(() => [] as Signal[]);
     for (const s of got) {
-      if (s.kind === 'bye') { this.channel?.close(); this.state(false); continue; }
-      if (s.kind === 'offer') {
-        const pc = this.connection(s.session);
-        await pc.setRemoteDescription(JSON.parse(s.data));
-        await pc.setLocalDescription(await pc.createAnswer());
-        await signal(this.peer, s.session, 'answer', JSON.stringify(pc.localDescription));
-      } else if (s.session === this.session && this.pc) {
-        // A late answer or a candidate the connection has moved past is refused by it, and the line goes on as it was.
-        if (s.kind === 'answer') await this.pc.setRemoteDescription(JSON.parse(s.data)).catch(() => {});
-        else await this.pc.addIceCandidate(JSON.parse(s.data)).catch(() => {});
-      }
+      if (this.ended) return;
+      // One the line cannot use (not JSON, a late answer, a candidate the connection has moved past) is
+      // refused by it and passed over: the line goes on as it was, and the signals after it are still taken.
+      try { await this.take(s); } catch { /* passed over, as said */ }
+    }
+  }
+
+  private async take(s: Signal) {
+    if (s.kind === 'bye') { this.channel?.close(); this.state(false); return; }
+    if (s.kind === 'offer') {
+      const pc = this.connection(s.session);
+      await pc.setRemoteDescription(JSON.parse(s.data));
+      await pc.setLocalDescription(await pc.createAnswer());
+      await signal(this.peer, s.session, 'answer', JSON.stringify(pc.localDescription));
+    } else if (s.session === this.session && this.pc) {
+      if (s.kind === 'answer') await this.pc.setRemoteDescription(JSON.parse(s.data));
+      else await this.pc.addIceCandidate(JSON.parse(s.data));
     }
   }
 
@@ -187,7 +246,9 @@ export class Live {
   }
 
   stop() {
-    clearInterval(this.timer);
+    if (this.ended) return;
+    this.ended = true;
+    this.looking?.stop();
     if (this.pc) void signal(this.peer, this.session, 'bye', '');
     this.channel?.close();
     this.pc?.close();

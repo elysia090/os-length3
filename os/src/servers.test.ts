@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {addByName, dayOf, farFrom, inviteIn, onTop, pageOf, RUN_MS, sameRun, type AddWays, type Post} from './servers.ts';
+import {addByName, dayOf, farFrom, inviteIn, onTop, pageOf, RUN_MS, sameRun, todoKeeper, type AddWays, type BoardTodo, type Post, type TodoWays} from './servers.ts';
 import {RemoteError} from './remote.ts';
 
 const post = (id: string): Post => ({id, by: 'ren@length3.test', body: id, at: 0});
@@ -100,4 +100,78 @@ test('someone in it already is said so; a name no one has is the Remote\'s reaso
   assert.deepEqual(await addByName(trip, 'mio', ['mio@length3.test'], r.ways), {address: 'mio@length3.test', is: 'already'});
   await assert.rejects(addByName(trip, 'nobody', [], r.ways), /No one has that address/);
   assert.deepEqual(r.did, []);
+});
+
+// ---- a board's TODO, as the keeper sends it ----
+
+const item = (id: string, title: string, place = 0): BoardTodo => ({id, kind: null, title, detail: '', done: false, repo: null, created: 1, place, by: 'ren'});
+/** A Remote's TODO for one board that can be away: `away` refuses as an unreachable Remote does. */
+function boardRemote(start: BoardTodo[]) {
+  const held = new Map(start.map((x) => [x.id, x]));
+  const calls: string[] = [];
+  const r = {held, calls, away: false, ways: {} as TodoWays};
+  const unreachable = () => new RemoteError(0, 'The Remote cannot be reached');
+  r.ways = {
+    async put(_board, id, change) {
+      calls.push(`put ${id}`);
+      if (r.away) throw unreachable();
+      const now = {...(held.get(id) ?? item(id, '')), ...change} as BoardTodo;
+      held.set(id, now);
+      return now;
+    },
+    async drop(_board, id) {
+      calls.push(`drop ${id}`);
+      if (r.away) throw unreachable();
+      if (!held.delete(id)) throw new RemoteError(404, 'Not found');
+    },
+  };
+  return r;
+}
+const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
+
+test('a TODO change that could not be sent is sent again by itself, and the keeper is not idle until it is', async () => {
+  const r = boardRemote([item('a', 'one')]);
+  const said: string[] = [];
+  const keeper = todoKeeper('b1', [...r.held.values()], {ways: r.ways, pause: 1, backoff: () => 5, trouble: (why) => said.push(why)});
+  r.away = true;
+  let settled = false;
+  const saved = keeper.save([item('a', 'one, changed')]).then(() => { settled = true; });
+  for (let i = 0; i < 4; i++) await tick();
+  // Away: said, not settled, and not idle, so the board's next look leaves the box alone.
+  assert.ok(said.length >= 1);
+  assert.equal(said[0], 'The Remote cannot be reached');
+  assert.equal(settled, false);
+  assert.equal(keeper.idle(), false);
+  assert.equal(r.held.get('a')!.title, 'one');
+  // Back: the change goes by itself, and the save is answered.
+  r.away = false;
+  await saved;
+  assert.equal(r.held.get('a')!.title, 'one, changed');
+  assert.equal(keeper.idle(), true);
+});
+
+test('what is written while a try again waits goes in its place, and what failed is not sent over it', async () => {
+  const r = boardRemote([item('a', 'one'), item('b', 'two', 1)]);
+  const keeper = todoKeeper('b1', [...r.held.values()], {ways: r.ways, pause: 1, backoff: () => 20});
+  r.away = true;
+  const first = keeper.save([item('a', 'first try')]);
+  await tick();
+  await tick();
+  r.away = false;
+  const second = keeper.save([item('a', 'written since'), item('c', 'new', 2)]);
+  await Promise.all([first, second]);
+  assert.equal(r.held.get('a')!.title, 'written since');
+  assert.ok(r.held.has('c'));
+  assert.ok(!r.held.has('b'));
+});
+
+test('a TODO item already taken off elsewhere is not a failure, and a refusal for good settles the save', async () => {
+  const r = boardRemote([item('a', 'one'), item('b', 'two', 1)]);
+  const keeper = todoKeeper('b1', [...r.held.values()], {ways: r.ways, pause: 1});
+  r.held.delete('b');
+  await keeper.save([item('a', 'one')]);
+  assert.deepEqual(r.calls, ['drop b']);
+  const refused = todoKeeper('b1', [item('a', 'one')], {ways: {...r.ways, put: async () => { throw new RemoteError(403, 'Only its people write here'); }}, pause: 1});
+  await assert.rejects(refused.save([item('a', 'mine')]), /Only its people/);
+  assert.equal(refused.idle(), true);
 });

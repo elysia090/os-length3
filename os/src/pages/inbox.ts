@@ -6,10 +6,12 @@ import {look} from '../news.ts';
 import {Drafts} from '../drafts.ts';
 import {kindOf} from '../text.ts';
 import {mark} from '../icons.ts';
-import {copying, pageHead, SETTLE} from './common.ts';
+import {copying, deed, pageHead, SETTLE} from './common.ts';
+import {every} from '../runs.ts';
 import {goToPlan, planRefused, planSaid, signInBox, signInPlace} from './remote.ts';
 import {plan as readPlan} from '../plan.ts';
 import type {Context} from './context.ts';
+import {errorText} from '../errors.ts';
 
 // Inbox: what comes to you, typed, from people found by address. Not a mail
 // screen: each message says what it is (a message, a review request, a
@@ -23,7 +25,6 @@ import type {Context} from './context.ts';
 //   right          the conversation, the line's state (direct, or through
 //                  the Remote), and the box to write in
 
-const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const KIND = (k: inbox.Kind) => ({message: t('Message'), review: t('Review request'), question: t('Question'), run: t('Run failed')})[k];
 
 function button(text: string, kind = ''): HTMLButtonElement {
@@ -56,15 +57,17 @@ function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLE
   } else {
     const name = h('input', {class: 'stub-in mono', placeholder: t('name'), 'aria-label': t('Name'), autocapitalize: 'off', spellcheck: 'false', maxlength: '31'}) as HTMLInputElement;
     name.addEventListener('keydown', async (e) => {
-      if (e.key !== 'Enter' || e.isComposing || !name.value.trim()) return;
+      if (e.key !== 'Enter' || e.isComposing || !name.value.trim() || name.readOnly) return;
       error.textContent = '';
-      try { await inbox.claim(name.value); again(); } catch (err) { const plan = planRefused(err, toPlan); if (plan) error.replaceChildren(plan); else error.textContent = message(err); }
+      // Asked once: Enter again while it is asked claims nothing more.
+      name.readOnly = true;
+      try { await inbox.claim(name.value); again(); } catch (err) { const plan = planRefused(err, toPlan); if (plan) error.replaceChildren(plan); else error.textContent = errorText(err); } finally { name.readOnly = false; }
     });
     stub = h('div', {class: 'stub'}, name, gear);
     note.textContent = t('A name on this Remote: first come, yours for five years at a time, renewed by you.');
   }
   // The gear's panel, as the person's menu: your names with their terms, then Add a domain, then letting one go.
-  let looking = 0;
+  let looking: {stop(): void} | null = null;
   const item = (label: string, at: Node | null = null) => h('button', {type: 'button', class: 'pop-item'}, label, at) as HTMLButtonElement;
   /** Your own domain, written whole in one field (name@domain, the @ too); its record looked for while the panel is open. */
   const own = (): HTMLElement => {
@@ -76,11 +79,14 @@ function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLE
       return at < 0 ? {name: '', domain: v} : {name: v.slice(0, at), domain: v.slice(at + 1)};
     };
     const look = async () => {
-      if (!panel.isConnected || panel.hidden) { clearInterval(looking); return; }
+      if (!panel.isConnected || panel.hidden) return;
+      const asked = field.value.trim();
       const {name, domain} = parts();
       if (!domain) { record.replaceChildren(); return; }
-      const r = await inbox.domainRecord(domain).catch((e) => { record.replaceChildren(h('p', {class: 'error'}, message(e))); return null; });
-      if (!r) return;
+      const r = await inbox.domainRecord(domain).catch((e: unknown) => e instanceof Error ? e : new Error(String(e)));
+      // Written over meanwhile: this answer is for a domain no longer asked about, and is not shown (nor claimed).
+      if (field.value.trim() !== asked) return;
+      if (r instanceof Error) { record.replaceChildren(h('p', {class: 'error'}, r.message)); return; }
       const row = (label: string, value: string) => {
         const v = h('button', {type: 'button', class: 'record-value mono'}, value);
         copying(v, value);
@@ -91,18 +97,18 @@ function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLE
         row(t('Name'), r.name), row(t('Type'), r.type), row(t('Value'), r.value),
         h('p', {class: `small record-found${r.found ? ' found' : ''}`}, !r.found ? t('Not found yet') : name ? t('Found. Claiming {address}…', {address: `${name}@${domain}`}) : t('Found')));
       if (r.found && name) {
-        clearInterval(looking);
+        looking?.stop();
         try { await inbox.claim(name, domain); again(); } catch (e) {
           const plan = planRefused(e, toPlan);
           if (plan) paid.replaceChildren();
-          record.append(h('p', {class: 'error'}, plan ?? message(e)));
+          record.append(h('p', {class: 'error'}, plan ?? errorText(e)));
         }
       }
     };
     field.addEventListener('change', () => void look());
     field.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) void look(); });
-    clearInterval(looking);
-    looking = window.setInterval(() => void look(), 8000);
+    looking?.stop();
+    looking = every(8000, look, {alive: () => panel.isConnected && !panel.hidden});
     // A name on one's own domain is paid: a free account is told before it goes to its DNS, with the way to the Plan.
     const paid = h('p', {class: 'muted small'});
     void readPlan().then((p) => {
@@ -133,7 +139,7 @@ function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLE
       yes.addEventListener('click', async () => {
         if (performance.now() - shown < SETTLE) return;
         yes.disabled = true;
-        try { await inbox.release(a.address); again(); } catch (e) { yes.disabled = false; yes.textContent = message(e); }
+        try { await inbox.release(a.address); again(); } catch (e) { yes.disabled = false; yes.textContent = errorText(e); }
       });
       b.replaceWith(ask);
       yes.focus();
@@ -148,10 +154,7 @@ function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLE
         : a.ended ? h('span', {class: 'small error'}, t('Its term ended; held for you until {date}', {date: day(a.until! + 30 * 86_400_000)}))
         : a.until ? h('span', {class: 'muted small'}, t('Until {date}', {date: day(a.until)})) : null;
       const renew = a.until && (a.ended || a.until - Date.now() < YEAR) ? h('button', {type: 'button', class: 'button small-button primary'}, t('Renew')) as HTMLButtonElement : null;
-      renew?.addEventListener('click', async () => {
-        renew.disabled = true;
-        try { await inbox.renew(a.address); again(); } catch (e) { renew.disabled = false; renew.textContent = message(e); }
-      });
+      if (renew) deed(renew, async () => { await inbox.renew(a.address); again(); });
       return h('div', {class: 'your-row'}, h('span', {class: 'mono'}, inbox.shown(a.address)), state, renew);
     }));
   };
@@ -170,7 +173,7 @@ function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLE
     panel.hidden = !open;
     gear.setAttribute('aria-expanded', String(open));
     for (const k of ['pointerdown', 'keydown'] as const) (open ? document.addEventListener : document.removeEventListener).call(document, k, away);
-    if (open) fill(); else clearInterval(looking);
+    if (open) fill(); else looking?.stop();
   };
   gear.addEventListener('click', () => toggle(panel.hidden));
   return holder;
@@ -200,7 +203,8 @@ export function inboxPage(ctx: Context): Node[] {
   let open: string | null = null;
   let live: inbox.Live | null = null;
   let mine = '';
-  let poll = 0;
+  /** Which reading of the list, and which opening of a conversation, is the latest: an older answer that comes after it is not drawn. */
+  let listed = 0, opened = 0;
   /** The open conversation: the time of the newest it has, and how to take in what came since. */
   let shownThread: {address: string; on: inbox.Conversation; more(): Promise<void>} | null = null;
 
@@ -211,7 +215,7 @@ export function inboxPage(ctx: Context): Node[] {
       return;
     }
     let me: inbox.Me;
-    try { me = await inbox.me(); } catch (e) { holder.replaceChildren(h('p', {class: 'error'}, message(e))); return; }
+    try { me = await inbox.me(); } catch (e) { holder.replaceChildren(h('p', {class: 'error'}, errorText(e))); return; }
     if (!me.addresses.length) { holder.replaceChildren(addressStub(me, () => void paint(), () => goToPlan(ctx))); return; }
     mine = me.addresses[0].address;
     // The field to write to someone new is made once: what comes every little while changes only the rows under it.
@@ -227,7 +231,7 @@ export function inboxPage(ctx: Context): Node[] {
     start.addEventListener('click', async () => {
       if (!to.value.trim()) { to.focus(); return; }
       error.textContent = '';
-      const found: {address?: string; reachable: boolean; why?: string} = await inbox.lookup(to.value).catch((e) => ({reachable: false, why: message(e)}));
+      const found: {address?: string; reachable: boolean; why?: string} = await inbox.lookup(to.value).catch((e) => ({reachable: false, why: errorText(e)}));
       if (!found.reachable) { error.textContent = t('Cannot reach {address} ({why})', {address: to.value, why: t(found.why ?? '')}); return; }
       // Gone to: the field has done its work.
       to.value = '';
@@ -241,8 +245,10 @@ export function inboxPage(ctx: Context): Node[] {
   };
 
   const paintList = async (rows: HTMLElement, pane: HTMLElement) => {
+    const asked = ++listed;
     let all: inbox.Thread[] = [], unread = '';
-    try { all = await inbox.threads(); } catch (e) { unread = message(e); }
+    try { all = await inbox.threads(); } catch (e) { unread = errorText(e); }
+    if (asked !== listed) return;
     const row = (th: inbox.Thread) => {
       // The open one is being read: what came to it is not counted as waiting.
       const waiting = th.address === open ? 0 : th.unread;
@@ -273,12 +279,15 @@ export function inboxPage(ctx: Context): Node[] {
   };
 
   const show = async (address: string, rows: HTMLElement, pane: HTMLElement) => {
+    // Opened again before the last opening was drawn (a row pressed twice): only the latest is drawn,
+    // so one conversation never gets two panes, nor two direct lines.
+    const asked = ++opened;
     open = address;
     live?.stop();
     live = null;
     shownThread = null;
-    const th = await inbox.thread(address).catch((e) => { pane.replaceChildren(h('p', {class: 'error'}, message(e))); return null; });
-    if (!th || open !== address) return;
+    const th = await inbox.thread(address).catch((e) => { if (asked === opened) pane.replaceChildren(h('p', {class: 'error'}, errorText(e))); return null; });
+    if (!th || asked !== opened) return;
     // Heard as the conversation it is, named by the other.
     pane.setAttribute('aria-label', t('Conversation with {who}', {who: inbox.shown(address)}));
     // Read is said again the next time the conversation opens; nothing waits on it. The rail's mark follows.
@@ -290,11 +299,13 @@ export function inboxPage(ctx: Context): Node[] {
     /** A message as a bubble at the foot. */
     const bubble = (m: inbox.Message) => {
       const about = [m.target.repo, m.target.issue, m.target.change ? t('change {id}', {id: String(m.target.change).slice(0, 8)}) : ''].filter(Boolean).join(' · ');
-      const go = m.target.repo ? (() => {
-        const b = h('button', {type: 'button', class: 'link'}, about);
-        b.addEventListener('click', () => { if (m.target.issue) ctx.openRepo(m.target.repo!, `issue/${m.target.issue}`); else { ctx.remember(m.target.repo!); ctx.go('git'); } });
-        return b;
-      })() : null;
+      // A way there only where it names a place a repo here could be; a repo named otherwise is said, as words.
+      const place = inbox.placeOf(m.target);
+      let go: HTMLElement | null = null;
+      if (place) {
+        go = h('button', {type: 'button', class: 'link'}, about);
+        go.addEventListener('click', () => { if (place.issue) ctx.openRepo(place.repo, `issue/${place.issue}`); else { ctx.remember(place.repo); ctx.go('git'); } });
+      } else if (m.target.repo) go = h('span', {class: 'muted small'}, about);
       messages.append(h('div', {class: 'bubble', 'data-mine': String(m.mine)},
         m.type !== 'message' ? h('span', {class: 'state-chip'}, KIND(m.type)) : null,
         go, h('p', {class: 'bubble-text'}, m.body),
@@ -307,13 +318,15 @@ export function inboxPage(ctx: Context): Node[] {
     const add = (m: inbox.Message) => { if (on.have(m)) bubble(m); };
     // Accepted both ways: a direct line between the two devices, when both are here.
     const startLive = () => {
+      live?.stop();
       live = new inbox.Live(mine, address, add, (direct) => { lineWord.textContent = direct ? t('Direct') : t('Through the Remote'); });
-      live.start();
+      // Ends with the page, not at the page's next look.
+      live.start(() => holder.isConnected);
     };
     // Taken in every little while through the Remote: what is not here yet goes at the foot, and is read.
     const more = async () => {
       const now = await inbox.thread(address).catch(() => null);
-      if (!now || open !== address || !pane.contains(messages)) return;
+      if (!now || asked !== opened || !pane.contains(messages)) return;
       const came = on.took(now.messages);
       came.forEach(bubble);
       if (came.some((m) => !m.mine)) read();
@@ -321,12 +334,24 @@ export function inboxPage(ctx: Context): Node[] {
       if (now.mutual && !live) startLive();
     };
     shownThread = {address, on, more};
-    // Accept or block someone who wrote first.
-    const decide: Node[] = [];
+    const error = h('p', {class: 'error', role: 'alert'});
+    // Accept or block someone who wrote first: one answer, asked once (both held while it is), and said if it did not go.
+    const decide: HTMLButtonElement[] = [];
     if (th.state === 'request') {
+      const answer = (state: 'accepted' | 'blocked', then: () => void) => async () => {
+        if (decide.some((b) => b.disabled)) return;
+        for (const b of decide) b.disabled = true;
+        error.textContent = '';
+        try { await inbox.setContact(address, state); } catch (e) {
+          for (const b of decide) b.disabled = false;
+          error.textContent = errorText(e);
+          return;
+        }
+        then();
+      };
       const yes = button(t('Accept'), 'small-button primary'), no = button(t('Block'), 'small-button');
-      yes.addEventListener('click', async () => { await inbox.setContact(address, 'accepted'); void show(address, rows, pane); void paintList(rows, pane); });
-      no.addEventListener('click', async () => { await inbox.setContact(address, 'blocked'); open = null; shownThread = null; void paintList(rows, pane); });
+      yes.addEventListener('click', answer('accepted', () => { void show(address, rows, pane); void paintList(rows, pane); }));
+      no.addEventListener('click', answer('blocked', () => { open = null; shownThread = null; void paintList(rows, pane); }));
       decide.push(yes, no);
     }
     // Writing is one line that grows as it is written. What it is reads off the text the way
@@ -338,7 +363,6 @@ export function inboxPage(ctx: Context): Node[] {
     const grow = () => { text.style.height = 'auto'; text.style.height = `${Math.min(text.scrollHeight + 2, 200)}px`; };
     text.addEventListener('input', () => { drafts.set(address, text.value); grow(); });
     const sendB = button(t('Send'), 'primary');
-    const error = h('p', {class: 'error', role: 'alert'});
     const go = async () => {
       if (!text.value.trim() || sendB.disabled) return;
       sendB.disabled = true;
@@ -353,7 +377,7 @@ export function inboxPage(ctx: Context): Node[] {
         drafts.sent(address);
         grow();
         if (r.request) error.textContent = t('Sent as a request: they see it once they accept you.');
-      } catch (e) { error.textContent = message(e); }
+      } catch (e) { error.textContent = errorText(e); }
       sendB.disabled = false;
     };
     sendB.addEventListener('click', () => void go());
@@ -377,11 +401,10 @@ export function inboxPage(ctx: Context): Node[] {
 
   void paint();
   // New messages through the Remote are looked for while the page is shown: the rows, and the open conversation.
-  poll = window.setInterval(() => {
-    if (!holder.isConnected) { clearInterval(poll); live?.stop(); return; }
+  every(10_000, async () => {
     const rows = holder.querySelector<HTMLElement>('.inbox-rows'), pane = holder.querySelector<HTMLElement>('.inbox-thread');
     // Not while a row has the keyboard: drawn again, it would be lost.
-    if (rows && pane && document.visibilityState === 'visible' && !rows.contains(document.activeElement)) void paintList(rows, pane);
-  }, 10_000);
+    if (rows && pane && !rows.contains(document.activeElement)) await paintList(rows, pane);
+  }, {alive: () => holder.isConnected, ended: () => live?.stop()});
   return [pageHead('inbox'), holder];
 }
