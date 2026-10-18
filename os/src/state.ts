@@ -6,6 +6,7 @@
 
 import {isNative, native} from './host.ts';
 import {t} from './i18n.ts';
+import {errorText} from './errors.ts';
 
 // `remote` is which Remote this device talks to and as whom; `sync` is,
 // for each repo and setting, the version on the Remote this copy came from;
@@ -40,7 +41,7 @@ export async function loadState(): Promise<void> {
     if (!isNative) { cache.set(key, local(key)); continue; }
     let value: string | null;
     try { value = await native<string | null>('state_get', {key}); } catch (e) {
-      unread.set(key, e instanceof Error ? e.message : String(e));
+      unread.set(key, errorText(e));
       continue;
     }
     unread.delete(key);

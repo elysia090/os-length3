@@ -1,13 +1,13 @@
 import {h} from '../dom.ts';
 import {t} from '../i18n.ts';
 import {askFoot, SETTLE} from './common.ts';
+import {errorText} from '../errors.ts';
 
 // The pieces Server's parts share (server-layer, -gear, -dock, -repo).
 
 /** A switch's knob moves this long before what it turns on is asked. */
 export const MOVE = 240;
 
-export const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 export const initials = (address: string) => [...address.split('@')[0]].slice(0, 2).join('').toUpperCase();
 export const button = (text: string, kind = '') => h('button', {type: 'button', class: `button ${kind}`.trim()}, text) as HTMLButtonElement;
 
@@ -33,7 +33,7 @@ export function askIn(card: HTMLElement, from: Element, title: string | Node, wh
   yes.addEventListener('click', async () => {
     if (performance.now() - shown < SETTLE) return;
     yes.disabled = true;
-    try { await act(); } catch (e) { error.textContent = message(e); yes.disabled = false; }
+    try { await act(); } catch (e) { error.textContent = errorText(e); yes.disabled = false; }
   });
   // What will happen, a short line each: a line breaks where the sentence does, not where the card ends.
   card.replaceChildren(h('div', {class: 'off-ask'}, h('span', {class: 'card-title'}, title), ...[what].flat().map((l) => h('p', {class: 'muted small'}, l)), error,

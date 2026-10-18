@@ -16,8 +16,10 @@ import * as draft from './draft.ts';
 import {isNative} from './host.ts';
 import {connection, onConnection, onReach, remoteAway, RemoteError} from './remote.ts';
 import {kept, onChange, TAB} from './repos.ts';
+import {coalesced, shared} from './runs.ts';
 import {dropState, onState} from './state.ts';
 import {othersOpen, prune} from './tabs.ts';
+import {errorText} from './errors.ts';
 
 /**
  * Where a repo here stands; 'off': turned off on the Remote (kept there 30 days), nothing is sent until it is on
@@ -58,7 +60,6 @@ export const remoteOnly = (): readonly draft.RemoteRepo[] => onlyThere;
 /** Every repo the Remote holds, those turned off among them. */
 export const remoteAll = (): readonly draft.RemoteRepo[] => everyThere;
 
-const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 /**
  * The Remote could not be asked just now (offline, or it refused): null, so
  * what was read last stands and the next look asks again. Anything else is a
@@ -100,7 +101,7 @@ async function run(repo: string) {
     // The app's core says so by its own word (src-tauri: PLAN).
     if ((e as {status?: number}).status === 402 || (typeof e === 'string' && e.startsWith(PLAN))) {
       const s = states.get(repo);
-      states.set(repo, {where: 'waits', changed: s?.changed ?? 0, both: [], unsynced: s?.unsynced ?? [], error: typeof e === 'string' ? e.slice(PLAN.length) : message(e)});
+      states.set(repo, {where: 'waits', changed: s?.changed ?? 0, both: [], unsynced: s?.unsynced ?? [], error: typeof e === 'string' ? e.slice(PLAN.length) : errorText(e)});
       if (connection()) {
         const later = setTimeout(() => void run(repo), WAIT);
         // Long enough that nothing else should wait on it: a process with nothing else to do (a test) is not held open by it.
@@ -114,7 +115,7 @@ async function run(repo: string) {
     const n = (retry.get(repo) ?? 0) + 1;
     retry.set(repo, n);
     const s = states.get(repo);
-    states.set(repo, {where: 'offline', changed: s?.changed ?? 0, both: [], unsynced: s?.unsynced ?? [], elsewhere: s?.elsewhere, error: message(e)});
+    states.set(repo, {where: 'offline', changed: s?.changed ?? 0, both: [], unsynced: s?.unsynced ?? [], elsewhere: s?.elsewhere, error: errorText(e)});
     if (connection()) timers.set(repo, setTimeout(() => void run(repo), Math.min(60_000, 2000 * 2 ** n)));
   }
   tell();
@@ -134,8 +135,47 @@ export async function settled(): Promise<void> {
 export async function flush(): Promise<void> {
   const waiting = [...timers.keys()];
   for (const r of waiting) clearTimeout(timers.get(r));
-  await Promise.all(waiting.map(run));
+  const settings = [...homeTimers.keys()];
+  for (const k of settings) { clearTimeout(homeTimers.get(k)); homeTimers.delete(k); }
+  await Promise.all([...waiting.map(run), ...settings.map((k) => agreeHome(k).catch(away))]);
 }
+
+// ---- Home's settings: each agreed with the Remote one at a time ----
+//
+// Each keystroke in Home's TODO sets the setting. Agreeing it is a read and a
+// write on the Remote (draft.syncHome), so it waits for a pause (SOON), runs
+// one at a time per setting, and a change while it runs is agreed once more
+// after it. (Before: every keystroke began its own, side by side, and each one
+// that lost the race was refused and tried again: 30 keystrokes, 146 requests.)
+
+const homeTimers = new Map<draft.HomeKey, ReturnType<typeof setTimeout>>();
+const homeRuns = new Map<draft.HomeKey, () => Promise<void>>();
+/** Changes made here to each setting, and how many of them the last agreement took in: more made than taken, not on the Remote yet. */
+const homeMade = new Map<draft.HomeKey, number>(), homeTaken = new Map<draft.HomeKey, number>();
+
+function agreeHome(k: draft.HomeKey): Promise<void> {
+  let f = homeRuns.get(k);
+  if (!f) {
+    f = coalesced(async () => {
+      const made = homeMade.get(k) ?? 0;
+      await draft.syncHome(k);
+      homeTaken.set(k, Math.max(homeTaken.get(k) ?? 0, made));
+    });
+    homeRuns.set(k, f);
+  }
+  return f();
+}
+
+/** A Home setting changed here (a keystroke in the TODO, a profile saved): agreed with the Remote after a pause. */
+export function homeChanged(k: draft.HomeKey) {
+  homeMade.set(k, (homeMade.get(k) ?? 0) + 1);
+  if (!connection()) return;
+  clearTimeout(homeTimers.get(k));
+  homeTimers.set(k, setTimeout(() => { homeTimers.delete(k); track(agreeHome(k).catch(away)); }, SOON));
+}
+
+/** Whether a change to `k` made here is not on the Remote yet. */
+export const homeUnsent = (k: draft.HomeKey): boolean => homeTimers.has(k) || (homeMade.get(k) ?? 0) > (homeTaken.get(k) ?? 0);
 
 /**
  * See where every repo here stands, and what the Remote has that is not here.
@@ -183,16 +223,21 @@ export async function look(): Promise<void> {
       }
     }
     // A setting not agreed now still differs at the next look, which agrees it then.
-    if (now) for (const k of draft.HOME_KEYS) if (draft.homeMoved(k, now.home[k] ?? 0)) track(draft.syncHome(k).catch(away));
+    if (now) for (const k of draft.HOME_KEYS) if (draft.homeMoved(k, now.home[k] ?? 0)) track(agreeHome(k).catch(away));
   } else { onlyThere = []; everyThere = []; reposSeen = null; }
   tell();
 }
 
-/** Open a repo that is only on the Remote: it comes here, then is like any other. */
-export async function bring(repo: string): Promise<void> {
+/**
+ * Open a repo that is only on the Remote: it comes here, then is like any
+ * other. Asked again while it comes (a double click, File and Home at once),
+ * it is the same bringing (before, the second made the repo again and failed:
+ * "repo trip already exists").
+ */
+export const bring: (repo: string) => Promise<void> = shared(async (repo: string) => {
   await draft.fetchRepo(repo);
   await look();
-}
+});
 
 /**
  * Leaving a web page: every repo the Remote holds all of goes from this
@@ -209,8 +254,8 @@ function leave() {
     // Which work a repo showed stays: the next visit fetches that work's copy and shows it again.
     for (const r of go) void draft.forget(r, true);
   }
-  // A setting goes only as the Remote has it: one changed here and not sent yet (offline) stays, and is sent next time.
-  for (const k of draft.homeAgreed()) dropState(k);
+  // A setting goes only as the Remote has it: one changed here and not sent yet (offline, or waiting for a pause in typing) stays, and is sent next time.
+  for (const k of draft.homeAgreed()) if (!homeUnsent(k)) dropState(k);
 }
 
 let begun = false;
@@ -224,8 +269,8 @@ export async function begin() {
   draft.restoreLines();
   // Every change a person (or a Prompt) makes is sent; sync's own writes are not news, nor another tab's (it sends its own).
   onChange((c) => { if (c.by !== draft.BY && c.by !== TAB) schedule(c.repo); else tell(); });
-  // A setting changed here is sent; one another tab changed, that tab sends.
-  onState((k, outside) => { if (!outside && (k === 'profile' || k === 'todo' || k === 'dotfiles') && connection()) void draft.syncHome(k).catch(away); });
+  // A setting changed here is agreed after a pause; one another tab changed, that tab sends.
+  onState((k, outside) => { if (!outside && (k === 'profile' || k === 'todo' || k === 'dotfiles')) homeChanged(k); });
   // This browser's storage started or stopped refusing what is kept: said where each repo stands.
   kept?.onTrouble(() => void look());
   // The Remote answers again: what waited for it goes now, not at its next try (up to a minute away).
@@ -241,4 +286,9 @@ export async function begin() {
 }
 
 /** For tests: stop looking. */
-export function end() { clearInterval(polling); for (const t of timers.values()) clearTimeout(t); timers.clear(); }
+export function end() {
+  clearInterval(polling);
+  for (const t of [...timers.values(), ...homeTimers.values()]) clearTimeout(t);
+  timers.clear();
+  homeTimers.clear();
+}

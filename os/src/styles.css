@@ -875,6 +875,9 @@ mark { background: var(--ink); color: var(--ground); }
   .repo-cards .card-foot { position: relative; }
   .repo-cards .share { position: static; }
   .repo-cards .share-pop { min-width: min(220px, 100%); }
+  /* Forge, Share and the switch do not fit one row of a phone's card: the switch goes under, still at the right. */
+  .repo-cards .card-foot { flex-wrap: wrap; row-gap: var(--s2); }
+  .repo-cards .card-foot > .power { margin-left: auto; }
 }
 .pop-note { padding: var(--s1) var(--s3) var(--s2); }
 .share > .button[aria-expanded='true'] { background: var(--raised); border-color: var(--ink); }
@@ -940,7 +943,7 @@ summary.done-head:hover { background: var(--raised); }
 .done-diff { max-height: 56vh; overflow: auto; padding: var(--s2) var(--s2) var(--s3) var(--s4); }
 
 /* An Inbox pane with nothing chosen: a quiet line in its middle, not a box in the box. */
-.inbox-thread > .quiet { margin: auto; color: var(--sub); }
+.inbox-thread > .quiet { margin: auto; padding: var(--s4); text-align: center; color: var(--sub); }
 
 /* Small cards: Prompts running, SSH, Dotfiles. The same places as Home's
    cards, smaller, so a few things do not stretch across the page. */

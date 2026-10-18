@@ -4,6 +4,7 @@ import {saveIssue, writeIssue, type Issue} from '../issues.ts';
 import {store} from '../repos.ts';
 import {kindOf, named} from '../text.ts';
 import {answers} from './common.ts';
+import {errorText} from '../errors.ts';
 
 // Writing an issue: which repo it goes in (chips), its first line named like
 // a TODO item ("Fix：件名"), then the detail. It takes the repo's next
@@ -46,7 +47,7 @@ function fields(kind: string | null, title: string, detail: string) {
 async function held(b: HTMLButtonElement, error: HTMLElement, f: () => Promise<unknown>): Promise<boolean> {
   b.disabled = true;
   try { await f(); return true; } catch (e) {
-    error.textContent = t('Could not write: {message}', {message: e instanceof Error ? e.message : String(e)});
+    error.textContent = t('Could not write: {message}', {message: errorText(e)});
     b.disabled = false;
     return false;
   }

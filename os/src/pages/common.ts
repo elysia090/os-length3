@@ -1,4 +1,5 @@
 import {h} from '../dom.ts';
+import {errorText} from '../errors.ts';
 import {t} from '../i18n.ts';
 import {icon} from '../icons.ts';
 import {purpose, RAIL, type PurposeId} from '../purposes.ts';
@@ -26,6 +27,22 @@ export function askFoot(from: Element, box: Element): (no: Node, yes: Node) => H
   const a = from.getBoundingClientRect(), b = box.getBoundingClientRect();
   const left = a.width > 0 && a.left + a.width / 2 < b.left + b.width / 2;
   return (no, yes) => h('div', {class: 'card-foot'}, ...(left ? [yes, h('span', {class: 'grow'}), no] : [no, h('span', {class: 'grow'}), yes]));
+}
+
+/**
+ * `b` does `f` when pressed, held while it runs, so a second press does
+ * nothing. Failed, `b` says why in its own place and can be pressed again to
+ * try again (its word back while it does). Before, several such buttons kept
+ * the reason and stayed held: nothing more could be done there.
+ */
+export function deed(b: HTMLButtonElement, f: () => Promise<unknown>) {
+  const word = b.textContent ?? '';
+  b.addEventListener('click', async () => {
+    if (b.disabled) return;
+    b.disabled = true;
+    b.textContent = word;
+    try { await f(); } catch (e) { b.textContent = errorText(e); } finally { b.disabled = false; }
+  });
 }
 
 /** Copy `text` when `el` is pressed, and say so in its place for a moment (there is no Copy button). */

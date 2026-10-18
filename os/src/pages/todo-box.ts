@@ -2,6 +2,7 @@ import {h, shortDay} from '../dom.ts';
 import {t} from '../i18n.ts';
 import {getState, setState} from '../state.ts';
 import * as todo from '../todo.ts';
+import {errorText} from '../errors.ts';
 
 // The TODO box, Home's and each server board's: the same list, kept in
 // different places (Home's state; the Remote, for a board's people). Each
@@ -78,7 +79,7 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
   const save = () => {
     const kept = todo.persisted(items);
     keep(kept).then(() => o.failed?.(''),
-      (e: unknown) => o.failed?.(t('Could not save: {message}', {message: e instanceof Error ? e.message : String(e)})));
+      (e: unknown) => o.failed?.(t('Could not save: {message}', {message: errorText(e)})));
     count(kept);
   };
   const count = (kept: readonly todo.Todo[]) => {
@@ -257,7 +258,9 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
   };
 
   render();
-  if (o.readOnly) count(todo.persisted(items)); else save();
+  // Drawn, not changed: nothing is kept until something is written (Home's TODO
+  // was written back, and agreed with the Remote, each time Home was drawn).
+  count(todo.persisted(items));
   const hint = o.readOnly ? null : h('p', {class: 'todo-hint'},
     h('span', {}, t('First line as Kind: title')), h('span', {}, t('Enter for the detail')), h('span', {}, t('Enter on an empty line for the next TODO')),
     h('span', {}, t('○ or Ctrl+Enter when done')));
