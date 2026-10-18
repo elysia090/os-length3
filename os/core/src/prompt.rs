@@ -155,9 +155,16 @@ pub fn running(data: &Path) -> Vec<Running> {
     for e in dir.flatten() {
         let path = e.path();
         if path.extension().is_none_or(|x| x != "json") { continue; }
-        match fs::read(&path).ok().and_then(|b| serde_json::from_slice::<Running>(&b).ok()) {
-            Some(r) if start_ticks(r.pid) == Some(r.start_ticks) && !zombie(r.pid) => out.push(r),
-            // Its process is gone (or the pid is another's now): nothing runs.
+        let read = match fs::read(&path) {
+            Ok(b) => b,
+            // Gone since the listing: nothing to let go, and removing by its name could take a record made
+            // there since (the test below lost one so).
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(_) => Vec::new(),
+        };
+        match serde_json::from_slice::<Running>(&read) {
+            Ok(r) if start_ticks(r.pid) == Some(r.start_ticks) && !zombie(r.pid) => out.push(r),
+            // Its process is gone (or the pid is another's now), or it is no record: nothing runs.
             _ => { let _ = fs::remove_file(&path); }
         }
     }
