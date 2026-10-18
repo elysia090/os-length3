@@ -34,6 +34,9 @@ jobs:
         run: |
           cargo test -p length3-core -p l3
           cargo build --profile prompt -p l3 --no-default-features --target x86_64-unknown-linux-musl
+      - name: l3 end to end, against a Remote of its own
+        working-directory: os
+        run: npm run selftest:l3
       - name: xlat against native (C and Rust std), and its unit tests
         working-directory: xlat
         run: sh tests/run.sh
