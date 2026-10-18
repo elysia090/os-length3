@@ -262,8 +262,9 @@ pub static COMMANDS: &[Command] = &[
         f(None, &[], &[], ["each conversation", "会話ごとに"], REMOTE, Send, people::inbox_list),
         f(None, &[Arg::Address], &[], ["one", "ひとつ"], REMOTE, Send, people::inbox_thread),
     ]),
-    c("address", &[], Group::Inbox, ["your names, whether SSH reaches each, and your code: the check before SSH", "あなたの名前と、それぞれに SSH が届くか、あなたのコード（SSH の前に確かめる）"], &[
-        f(None, &[], &[], ["each, with its term and SSH, and your code", "それぞれと期限と SSH、あなたのコード"], REMOTE, Send, people::addresses),
+    c("address", &[], Group::Inbox, ["your address, as `ip addr` gives an IP: what to reach you at", "あなたのアドレス（ip addr が IP を答えるように）"], &[
+        f(None, &[], &[], ["each address, one a line, nothing else", "アドレスを1行にひとつ、それだけ"], REMOTE, Send, people::address_only),
+        f(Some("list"), &[], &[], ["each with its term and SSH, and your code", "それぞれの期限と SSH、あなたのコード"], REMOTE, Send, people::addresses),
         f(Some("ssh"), &[Arg::Choice(&["on", "off"]), Arg::Address], &[], ["let SSH reach it, or not", "SSH が届くようにする、しない"], REMOTE, Send, people::address_ssh),
         f(Some("claim"), &[Arg::Text("NAME[@DOMAIN]")], &[], ["a name here: first come, for five years; on your domain, beside it", "ここでの名前（早い者勝ち、5年）。自分のドメインなら並べて"], REMOTE, Send, people::address_claim),
         f(Some("renew"), &[Arg::Address], &[], ["five more years from now", "今から5年延ばす"], REMOTE, Send, people::address_renew),

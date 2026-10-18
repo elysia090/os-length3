@@ -157,6 +157,17 @@ pub fn inbox_decide(_: &Ctx, call: &Call) -> Result<Reply> {
     Ok(Reply::done(if accept { tr!("Accepted {}", "{} を受けました", who) } else { tr!("Blocked {}", "{} をブロックしました", who) }, json!({"address": who, "state": if accept { "accepted" } else { "blocked" }})))
 }
 
+/// `l3 address`: the addresses alone, one a line, as `ip addr` answers with an IP, for a script or a quick look.
+pub fn address_only(_: &Ctx, _: &Call) -> Result<Reply> {
+    let me = inbox::me()?;
+    if me.addresses.is_empty() {
+        return Err(Error::NotFound(tr!("No address yet (l3 address claim NAME)", "アドレスはまだありません（l3 address claim NAME）")));
+    }
+    let all: Vec<&str> = me.addresses.iter().map(|x| x.address.as_str()).collect();
+    Ok(Reply::data(all.join("\n"), json!(all)))
+}
+
+/// `l3 address list`: each with its term and whether SSH reaches it, and the code one is found by.
 pub fn addresses(_: &Ctx, _: &Call) -> Result<Reply> {
     let me = inbox::me()?;
     let mut t = Vec::new();
