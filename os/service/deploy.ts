@@ -101,19 +101,19 @@ function handOn(key: string, news: string) {
   console.log(`${news} Hand it only to whoever should come in:\n\n  ${vars('APP_ORIGIN')}/#enter=${key}\n`);
 }
 
-/** Waits until the Remote answers from its database: a key that is no key is refused only after the try is counted there. */
+/** Waits until the Remote answers from its database (GET /v1/health: one read; a Remote for research or not). */
 async function answers(base: string) {
   let last = '';
   // A new custom domain is reachable once its certificate is issued: a minute, or a few.
   for (let i = 0; i < 30; i++) {
     if (i) await new Promise((r) => setTimeout(r, 10_000));
     try {
-      const r = await fetch(`${base}/v1/enter`, {method: 'POST', headers: {'content-type': 'application/json', origin: base}, body: '{"key":""}'});
-      if (r.status === 403 || r.status === 429) return console.log(`${base}: answers from its database`);
+      const r = await fetch(`${base}/v1/health`);
+      if (r.ok && ((await r.clone().json().catch(() => null)) as {ok?: boolean} | null)?.ok === true) return console.log(`${base}: answers from its database`);
       last = `${r.status} ${(await r.text()).slice(0, 300)}`;
     } catch (e) { last = String(e); }
   }
-  throw new Error(`${base}/v1/enter: ${last}`);
+  throw new Error(`${base}/v1/health: ${last}`);
 }
 
 const step = process.argv[2];

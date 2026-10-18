@@ -4,6 +4,7 @@
 // the session cookie on a request from one of the app's own pages.
 //
 //   GET    /v1/about                  what this Remote offers: its sign-in providers, and its app's origin
+//   GET    /v1/health                 whether it answers from its database (503 when not), to anyone
 //   GET    /v1/os/:sha                a release bundle, to anyone, by digest (Range)
 //   GET    /v1/moved                  what moved, cheaply: {repos: stamp, home: {key: version}}
 //   POST   /v1/blobs/missing [sha]    which of these the account does not have yet
@@ -214,6 +215,16 @@ export function createApp(d: Deps) {
 
   app.get('/v1/about', (c) => c.json({passkey: !d.enter, providers: d.enter ? [] : d.providers, domain: d.domain ?? 'length3.com',
     ...(d.appOrigin ? {app: d.appOrigin} : {}), ...(d.enter ? {enter: true} : {})}));
+  // What a deploy (deploy.ts) and a watch on the Remote ask: one read, nothing written, nothing said of what failed.
+  app.get('/v1/health', async (c) => {
+    try {
+      await db.execute(sql`select 1`);
+      return c.json({ok: true});
+    } catch (e) {
+      console.error('health', e);
+      return c.json({ok: false, error: 'The Remote does not reach its database'}, 503);
+    }
+  });
   if (d.enter) enter({db, auth: d.auth, enter: d.enter}, app);
   if (d.providers.includes('dev')) app.route('/dev-oauth', devOAuth());
 

@@ -299,6 +299,24 @@ test('Home\'s settings answer as shared/home-sync.json records them, which the a
   }
 });
 
+test('Health: anyone may ask whether the Remote answers from its database, and is told no more than that', async () => {
+  const s = await service();
+  assert.deepEqual((await s.call('GET', '/v1/health')).json, {ok: true});
+  // A database that does not answer: 503, its error kept in the log, not in the answer.
+  const down = {execute: async () => { throw new Error('connect ECONNREFUSED 10.0.0.1:5432 as remote_worker'); }};
+  const app = createApp({db: down, auth: createAuth({db: down, secret: 'test-secret-'.repeat(4), baseURL: BASE, appOrigin: APP}), bucket: memoryBucket(),
+    origins: [APP], providers: [], domain: 'length3.test', baseURL: BASE});
+  const error = console.error;
+  console.error = () => {};
+  try {
+    const r = await app.request(`${BASE}/v1/health`);
+    assert.equal(r.status, 503);
+    assert.doesNotMatch(await r.text(), /ECONNREFUSED|remote_worker/);
+  } finally {
+    console.error = error;
+  }
+});
+
 test('Sign-in is held off address by address, the address Cloudflare saw, counted in the database', async () => {
   const db = await fresh();
   // Two of the same app over one database, as two isolates of the Worker are.
