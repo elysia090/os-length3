@@ -63,7 +63,8 @@ export function scoped<T extends object>(idle: T) {
 
 /** A pool of the database's own, and the Drizzle database over it. */
 export const open = (url: string) => {
-  const pool = new Pool({connectionString: url});
+  // A database that does not answer is said in ten seconds (request.ts failed: 503), not waited on until the client gives up.
+  const pool = new Pool({connectionString: url, connectionTimeoutMillis: 10_000});
   return {pool, db: drizzle(pool, {schema})};
 };
 

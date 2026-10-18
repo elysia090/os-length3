@@ -19,8 +19,10 @@ which the desktop app's commands (`src-tauri`) and l3 (`cli/`) both use.
 
 One module a part, its routes, rules and queries together; `app.ts` only
 assembles them, `request.ts` holds what every request shares (the origins
-that may call, body limits, `LIMIT`, refusals, the account's lock and room),
-`auth.ts` who is asking (`signedIn`).
+that may call, body limits, `LIMIT`, refusals, the account's lock and room,
+and `failed`: what no route foresaw is JSON too, `{error, id}`, 503 with
+`Retry-After` when the database is busy or out of reach, else 500, the id
+in the log beside it), `auth.ts` who is asking (`signedIn`).
 
 | Part | Module | Routes | Tables | Clients |
 |---|---|---|---|---|

@@ -17,7 +17,7 @@
 //   seen.ts     /v1/seen…, /v1/repos/:name/seen, /v1/servers/:id/repos   who sees a repo
 //   news.ts     /v1/news                               what came in, for the rail
 //   ssh.ts      /v1/ssh…                               which devices listen for SSH
-// and request.ts, what every request passes through (origins, limits, refusals).
+// and request.ts, what every request passes through (origins, limits, refusals, what fails unforeseen).
 
 import {Hono} from 'hono';
 import {about} from './about.ts';
@@ -29,7 +29,7 @@ import {homeRoutes} from './home.ts';
 import {inbox} from './inbox.ts';
 import {news} from './news.ts';
 import {repos} from './repos.ts';
-import {bounded, fromOrigins, unkept, type Db, type Vars} from './request.ts';
+import {bounded, failed, fromOrigins, unkept, type Db, type Vars} from './request.ts';
 import {seen} from './seen.ts';
 import {servers} from './servers.ts';
 import {sshRoutes} from './ssh.ts';
@@ -70,6 +70,7 @@ export interface Deps {
 
 export function createApp(d: Deps) {
   const app = new Hono<Vars>();
+  app.onError(failed);
   const db = d.db, domain = d.domain ?? 'length3.com', closed = !!d.enter;
   app.use('*', fromOrigins(d.origins));
   app.use('*', unkept);

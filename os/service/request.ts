@@ -5,7 +5,7 @@
 // all (a session) is auth.ts's signedIn.
 
 import {eq, getTableName, sql, type Column, type SQL} from 'drizzle-orm';
-import type {Context, MiddlewareHandler} from 'hono';
+import type {Context, ErrorHandler, MiddlewareHandler} from 'hono';
 import {bodyLimit} from 'hono/body-limit';
 import {cors} from 'hono/cors';
 import {HTTPException} from 'hono/http-exception';
@@ -126,3 +126,35 @@ export const unkept: MiddlewareHandler = async (c, next) => {
  */
 export const bounded: MiddlewareHandler = (c, next) =>
   bodyLimit({maxSize: roomFor(c.req.method, c.req.path), onError: (c) => c.json({error: 'What was sent is too large'}, 413)})(c, next);
+
+// ---- what fails unforeseen ----
+
+/**
+ * Postgres's word that the database could not do it just now, not that the request was wrong: a lock
+ * or a statement out of time, a conflict to try again, too many connections, the server going away or
+ * not reached (class 08).
+ */
+const BUSY = new Set(['55P03', '57014', '40001', '40P01', '53300', '57P01', '57P02', '57P03']);
+const codeOf = (e: unknown): string => {
+  for (let x = e as {code?: unknown; cause?: unknown} | undefined, i = 0; x && i < 4; x = x.cause as typeof x, i++) {
+    if (typeof x.code === 'string' && /^[0-9A-Z]{5}$/.test(x.code)) return x.code;
+  }
+  return '';
+};
+
+/**
+ * Every answer is JSON with words, an unforeseen failure too (app.onError): a refusal (refuse()) is
+ * its own answer; the database busy or out of reach is 503 with when to try again; anything else is
+ * 500. Either says an id, which the log line beside it says too, and nothing of what failed.
+ */
+export const failed: ErrorHandler = (e, c) => {
+  if (e instanceof HTTPException) return e.getResponse();
+  const id = [...crypto.getRandomValues(new Uint8Array(6))].map((b) => b.toString(16).padStart(2, '0')).join('');
+  const code = codeOf(e);
+  console.error('remote failed', id, c.req.method, c.req.path, code, e);
+  if (BUSY.has(code) || code.startsWith('08')) {
+    c.header('Retry-After', '5');
+    return c.json({error: 'The Remote is busy just now; try again', id}, 503);
+  }
+  return c.json({error: 'Something went wrong on the Remote', id}, 500);
+};
