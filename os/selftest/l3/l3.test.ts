@@ -163,28 +163,24 @@ test('an issue that will not be done is closed in its own file, on the Remote to
   assert.deepEqual((ok(laptop.l3(['git', 'tasks', '--json'])).json as {closed: unknown[]}).closed, []);
 });
 
-test('l3 address answers with the address alone; SSH is turned on and off for one name, as the Remote then says', async () => {
+test('l3 name answers with the name alone, l3 name list with its term; l3 address, off a terminal with SSH off, says so with 5', async () => {
   const sora = await r.browser('Sora Selftest');
   const d = r.device();
   assert.equal((await d.login(sora)).code, 0);
-  refused(d.l3(['address']), 4, /No address yet \(l3 address claim NAME\)/);
-  ok(d.l3(['address', 'claim', 'soraself']), /^Yours: soraself@length3\.test\n$/);
-  assert.equal(ok(d.l3(['address'])).out, 'soraself@length3.test\n');
+  refused(d.l3(['name']), 4, /No name yet \(l3 name claim NAME\)/);
+  ok(d.l3(['name', 'claim', 'soraself']), /^Yours: soraself@length3\.test\n$/);
+  assert.equal(ok(d.l3(['name'])).out, 'soraself@length3.test\n');
   // In the list a name on the Remote's own domain is said without it.
-  assert.match(ok(d.l3(['address', 'list'])).out, /^soraself  · until \d{4}-\d{2}-\d{2}  · SSH off\nYour code: \d{6} /);
-  ok(d.l3(['address', 'ssh', 'on', 'soraself']), /^SSH on for soraself\n$/);
-  ok(d.l3(['address', 'ssh', 'on', 'soraself']), /^SSH reached soraself already\n$/);
-  const me = async () => ((await r.api(sora, 'GET', '/v1/inbox/me')).json as {addresses: {address: string; ssh: boolean}[]}).addresses.map((a) => [a.address, a.ssh]);
-  assert.deepEqual(await me(), [['soraself@length3.test', true]]);
-  ok(d.l3(['address', 'ssh', 'off', 'soraself']), /^SSH off for soraself\n$/);
-  assert.deepEqual(await me(), [['soraself@length3.test', false]]);
+  assert.match(ok(d.l3(['name', 'list'])).out, /^soraself  · until \d{4}-\d{2}-\d{2}\nYour code: \d{6} /);
   // A name of someone else's is not one of yours.
-  refused(d.l3(['address', 'renew', 'renself']), 4, /is not one of your names/);
+  refused(d.l3(['name', 'renew', 'renself']), 4, /is not one of your names/);
+  // SSH is this device's (service/ssh.ts): off at first, and a script is told, never asked.
+  refused(d.l3(['address']), 5, /SSH is off on this device/);
 });
 
 test('Inbox: a request to someone who has not accepted, their answer, and a block that stops them', async () => {
   const mio = await r.browser('Mio Selftest');
-  ok(laptop.l3(['address', 'claim', 'renself']), /^Yours: renself@length3\.test\n$/);
+  ok(laptop.l3(['name', 'claim', 'renself']), /^Yours: renself@length3\.test\n$/);
   assert.equal((await r.api(mio, 'POST', '/v1/inbox/addresses', {name: 'mioself'})).status, 201);
   ok(laptop.l3(['inbox', 'send', 'mioself', 'Review：見てください /root/shared/a.txt']), /^Sent to mioself@length3\.test as a request/);
   const threads = (await r.api(mio, 'GET', '/v1/inbox/threads')).json as {address: string; state: string; last: {type: string; body: string}}[];
