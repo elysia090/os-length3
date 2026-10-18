@@ -6,7 +6,7 @@ use super::{stdin_text, Ctx};
 use crate::args::Call;
 use crate::out::{self, bytes, things, Error, Reply, Result};
 use crate::target;
-use length3_core::{fetch::Progress, home, inbox, paths, remote, root, tr, usage};
+use length3_core::{fetch::Progress, home, paths, remote, root, tr, usage};
 use serde_json::json;
 
 /// The repos a Prompt has open here (the app's or l3's): they stay while it runs, as in Runtime.
@@ -140,29 +140,6 @@ pub fn root_install(_: &Ctx, call: &Call) -> Result<Reply> {
     if !bundle.is_file() { return Err(Error::NotFound(tr!("There is no file {}", "ファイル {} はありません", bundle.display()))); }
     let r = root::install(&paths::data_dir(), bundle)?;
     Ok(Reply::done(installed(&r), json!(r)))
-}
-
-pub fn ssh_list(_: &Ctx, _: &Call) -> Result<Reply> {
-    let me = inbox::me()?;
-    let mut t: Vec<String> = me.addresses.iter().map(|x| format!("{}  {}", me.shown(&x.address), if x.ssh { tr!("SSH allowed", "SSH 許可") } else { tr!("SSH off", "SSH オフ") })).collect();
-    if t.is_empty() { t.push(tr!("No name yet (l3 address claim NAME)", "名前はまだありません（l3 address claim NAME）")); }
-    t.push(tr!("  Connecting over SSH is not built yet", "  SSH の接続はまだありません"));
-    Ok(Reply::data(t.join("\n"), json!(me.addresses.iter().map(|a| json!({"address": a.address, "ssh": a.ssh})).collect::<Vec<_>>())))
-}
-
-pub fn ssh_set(_: &Ctx, call: &Call) -> Result<Reply> {
-    let on = call.word(0) == Some("on");
-    let address = target::address(call.word(1).unwrap_or_default())?;
-    let me = inbox::me()?;
-    let Some(a) = me.addresses.iter().find(|a| a.address == address) else {
-        return Err(Error::NotFound(tr!("{} is not one of your names (l3 address lists them)", "{} はあなたの名前ではありません（l3 address で一覧）", me.shown(&address))));
-    };
-    let shown = me.shown(&address).to_string();
-    if a.ssh == on {
-        return Ok(Reply::done(if on { tr!("SSH was allowed for {} already", "{} の SSH はもう許可されています", shown) } else { tr!("SSH was off for {} already", "{} の SSH はもうオフです", shown) }, json!({"address": address, "ssh": on, "changed": false})));
-    }
-    inbox::set_ssh(&address, on)?;
-    Ok(Reply::done(if on { tr!("SSH allowed for {}", "{} に SSH を許可しました", shown) } else { tr!("SSH off for {}", "{} の SSH をオフにしました", shown) }, json!({"address": address, "ssh": on, "changed": true})))
 }
 
 /// `l3 network`: the repos whose Prompts may reach the network on this device (Runtime's switch; never sent).

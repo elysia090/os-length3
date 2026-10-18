@@ -549,7 +549,7 @@ The GUI and the command line are two ways into the same things. `l3`'s
 nouns and order are the rail's: Home (`todo`, `profile`, `lang`), Forge
 (`repo`, `band`, `prompt`), File (`file`), Git (`git`, `issue`, `start`,
 `main`, `commit`, `push`, `reset`, `diff`, `log`, `review`, `reply`,
-`merge`, `reject`), Runtime (`runtime`, `free`, `root`, `ssh`, `network`, `dotfile`),
+`merge`, `reject`), Runtime (`runtime`, `free`, `root`, `network`, `dotfile`),
 Remote (`remote`, `login`, `logout`), Server (`server`), Inbox (`inbox`,
 `address`); `l3 help` lists them in this order. A path is written as File shows it (`/root/<repo>/…`). A line is
 named the same way everywhere ("Fix：件名"), an issue is called by its

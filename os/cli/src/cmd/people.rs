@@ -165,10 +165,25 @@ pub fn addresses(_: &Ctx, _: &Call) -> Result<Reply> {
         let state = if x.lapsed { tr!("  · its domain no longer names this Remote", "  · ドメインがこの Remote を指していません") }
             else if x.ended { tr!("  · its term ended: l3 address renew {}", "  · 期限切れ：l3 address renew {}", me.shown(&x.address)) }
             else if let Some(u) = x.until { tr!("  · until {}", "  · {} まで", day(u)) } else { String::new() };
-        t.push(format!("{}{state}{}", me.shown(&x.address), if x.ssh { tr!("  · SSH allowed", "  · SSH 許可") } else { String::new() }));
+        // Each line says whether SSH reaches that name, on or off, so this is the check before SSH.
+        t.push(format!("{}{state}{}", me.shown(&x.address), if x.ssh { tr!("  · SSH on", "  · SSH オン") } else { tr!("  · SSH off", "  · SSH オフ") }));
     }
     if !me.code.is_empty() { t.push(tr!("Your code: {} (anyone can find you by it)", "あなたのコード：{}（これで見つけてもらえます）", me.code)); }
+    if me.addresses.iter().any(|x| x.ssh) { t.push(tr!("SSH on is kept for each name; connecting over SSH is not open yet", "SSH オンは名前ごとに残ります。SSH での接続はまだ開いていません")); }
     Ok(Reply::data(t.join("\n"), json!(me)))
+}
+
+/// `l3 address ssh on|off NAME`: whether SSH may reach one of your names (Runtime's switch).
+pub fn address_ssh(_: &Ctx, call: &Call) -> Result<Reply> {
+    let on = call.word(0) == Some("on");
+    let (me, address) = yours(call.word(1).unwrap_or_default())?;
+    let a = me.addresses.iter().find(|a| a.address == address).expect("yours");
+    let shown = me.shown(&address).to_string();
+    if a.ssh == on {
+        return Ok(Reply::done(if on { tr!("SSH reached {} already", "{} にはもう SSH が届きます", shown) } else { tr!("SSH was off for {} already", "{} の SSH はもうオフです", shown) }, json!({"address": address, "ssh": on, "changed": false})));
+    }
+    inbox::set_ssh(&address, on)?;
+    Ok(Reply::done(if on { tr!("SSH on for {}", "{} の SSH をオンにしました", shown) } else { tr!("SSH off for {}", "{} の SSH をオフにしました", shown) }, json!({"address": address, "ssh": on, "changed": true})))
 }
 
 pub fn address_claim(_: &Ctx, call: &Call) -> Result<Reply> {

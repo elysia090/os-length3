@@ -159,7 +159,7 @@ mod tests {
         assert!(candidates(&c, &w("com")).contains(&"commit".to_string()));
         assert!(candidates(&c, &w("com")).contains(&"completion".to_string()));
         assert!(!candidates(&c, &w("")).iter().any(|x| x == "complete" || x == "sync" || x.is_empty()));
-        assert_eq!(candidates(&c, &w("address ")), ["claim", "renew", "release", "domain"]);
+        assert_eq!(candidates(&c, &w("address ")), ["ssh", "claim", "renew", "release", "domain"]);
         assert_eq!(candidates(&c, &w("dotfile ")), ["write", "rm"]);
         assert!(candidates(&c, &w("dotfile write .p")).contains(&".profile".to_string()));
         assert_eq!(candidates(&c, &w("review x#1 ")), ["approve", "changes"]);

@@ -227,10 +227,6 @@ pub static COMMANDS: &[Command] = &[
         f(Some("use"), &[Arg::Choice(&["l3", "ubuntu", "debian"])], &[], ["the one Prompts run on (fetched if not held); .packages and .setup set it up", "Prompt が動くもの（なければ取る）。.packages と .setup で用意"], DEVICE, Send, runtime::root_use),
         f(Some("install"), &[Arg::Text("BUNDLE")], &[], ["from a file", "ファイルから"], DEVICE, Send, runtime::root_install),
     ]),
-    c("ssh", &[], Group::Runtime, ["whether SSH may reach each name", "名前ごとに SSH でつないでよいか"], &[
-        f(None, &[], &[], ["each name", "名前ごとに"], REMOTE, Send, runtime::ssh_list),
-        f(None, &[Arg::Choice(&["on", "off"]), Arg::Address], &[], ["allow it, or not", "許す、許さない"], REMOTE, Send, runtime::ssh_set),
-    ]),
     c("network", &[], Group::Runtime, ["whether a repo's Prompts may reach the network (on this device)", "repo の Prompt がネットワークに届いてよいか（この端末で）"], &[
         f(None, &[], &[], ["the repos given it", "渡している repo"], DEVICE, Send, runtime::network_list),
         f(None, &[Arg::Choice(&["on", "off"]), REPO], &[], ["give it (from the next Prompt), or take it (its Prompts stop)", "渡す（次の Prompt から）、取り上げる（その Prompt は止まる）"], DEVICE, Send, runtime::network_set),
@@ -266,8 +262,9 @@ pub static COMMANDS: &[Command] = &[
         f(None, &[], &[], ["each conversation", "会話ごとに"], REMOTE, Send, people::inbox_list),
         f(None, &[Arg::Address], &[], ["one", "ひとつ"], REMOTE, Send, people::inbox_thread),
     ]),
-    c("address", &[], Group::Inbox, ["your names, and your code", "あなたの名前とコード"], &[
-        f(None, &[], &[], ["each, with its term, and your code", "それぞれと期限、あなたのコード"], REMOTE, Send, people::addresses),
+    c("address", &[], Group::Inbox, ["your names, whether SSH reaches each, and your code: the check before SSH", "あなたの名前と、それぞれに SSH が届くか、あなたのコード（SSH の前に確かめる）"], &[
+        f(None, &[], &[], ["each, with its term and SSH, and your code", "それぞれと期限と SSH、あなたのコード"], REMOTE, Send, people::addresses),
+        f(Some("ssh"), &[Arg::Choice(&["on", "off"]), Arg::Address], &[], ["let SSH reach it, or not", "SSH が届くようにする、しない"], REMOTE, Send, people::address_ssh),
         f(Some("claim"), &[Arg::Text("NAME[@DOMAIN]")], &[], ["a name here: first come, for five years; on your domain, beside it", "ここでの名前（早い者勝ち、5年）。自分のドメインなら並べて"], REMOTE, Send, people::address_claim),
         f(Some("renew"), &[Arg::Address], &[], ["five more years from now", "今から5年延ばす"], REMOTE, Send, people::address_renew),
         f(Some("release"), &[Arg::Address], &[], ["let it go: held for you 30 days, claim it again to take it back", "手放す（30日はあなたのために取り置き、取り直せば戻る）"], REMOTE, Send, people::address_release),
@@ -403,7 +400,7 @@ mod tests {
 
     #[test]
     fn what_reaches_the_remote_or_the_device_is_kept_out_of_the_prompt() {
-        for name in ["review", "reply", "ssh", "network", "band", "profile", "lang", "dotfile", "todo", "remote", "login", "logout", "start", "commit", "push", "merge", "reject", "log", "diff", "server", "inbox", "address", "runtime", "free", "root", "prompt"] {
+        for name in ["review", "reply", "network", "band", "profile", "lang", "dotfile", "todo", "remote", "login", "logout", "start", "commit", "push", "merge", "reject", "log", "diff", "server", "inbox", "address", "runtime", "free", "root", "prompt"] {
             let c = find(name).unwrap();
             assert!(c.forms.iter().all(|f| !f.needs.in_prompt), "{name}");
         }
