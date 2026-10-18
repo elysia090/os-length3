@@ -31,13 +31,14 @@ in the log beside it), `auth.ts` who is asking (`signedIn`).
 | A Remote for research | `enter.ts` | `POST /v1/enter` | `user`, `session`, `guard`, `throttle` | page |
 | File contents and releases | `files.ts`, `bucket.ts`, `releases.ts` (what is pinned), `mirror.ts` (the deploy puts it in the bucket) | `GET /v1/os/:sha`, `GET /v1/desktop/:file` (anyone, Range, streamed), `POST /v1/blobs/missing`, `PUT/GET /v1/blobs/:sha` | `blob` (and `room.used`, by trigger); bytes in the bucket: `u/USER/SHA`, `os/SHA`, `desktop/FILE` | page (the desktop app's download), core (`/v1/os` for a Prompt's root, falling back to the release) |
 | Repos kept | `repos.ts` | `GET /v1/moved`; `/v1/repos`, `/v1/repos/gone`, `/v1/repos/:name` (`?line=`), `draft`, `cuts`, `cuts/:id`, `log`, `lines`, `lines/:line/push`, `changes`, `changes/:id/reviews\|merge\|reject\|reset`, `off`, `on`, `discard`; `/v1/off-code` | `repo`, `line`, `cut`, `change`, `review`, `repo_gone`, `room` (stamp, used), `guard` (the code), `throttle` (wrong codes) | page, core (sync, history, work); off and discard only from the page (they ask a passkey) |
+| The plan and billing | `plan.ts` (the rules and routes), `stripe.ts` (Stripe's REST and webhook signatures), `devbilling.ts` (a stand-in for Stripe in `dev.ts`) | `GET /v1/plan`, `POST /v1/plan/checkout`, `POST /v1/plan/portal`; `POST /v1/stripe/webhook` (anyone, signed by Stripe); its rules are asked by the routes that make something new: a new repo and a draft that grows (`repos.ts` PATCH draft), making a server (`servers.ts`), claiming a name (`inbox.ts`), each 402 with the rule | `plan`, `billing_event`; reads `repo`, `room.used` (counted again from the rows by the sweep), `address` | page (Remote → Plan), core (`l3 remote plan`); 402 is said in place and the work stays on the device |
 | Home | `home.ts` | `GET/PUT /v1/home/:key` (profile, todo, dotfiles) | `home` | page, core |
 | Names and Inbox | `inbox.ts`, `names.ts` | `/v1/inbox/me`, `addresses` (claim, renew, let go), `domains/:domain`, `lookup`, `messages`, `threads`, `threads/:address(/read)`, `contacts`, `signals`; `GET /.well-known/length3` (anyone: other Remotes) | `address`, `principal_code`, `contact`, `message`, `signal`, `throttle` | page, core (l3 name, l3 inbox) |
 | Servers, boards, guests | `servers.ts` | `/v1/servers…` (people, boards, renew, back), `/v1/boards/:id…` (todos, posts, seen, archive, invites, guests), `/v1/open…` (anyone: open boards, a guest by invitation) | `server`, `server_member`, `board`, `board_todo`, `board_post`, `board_seen`, `board_invite`, `board_guest`, `throttle` | page, core (l3 server, `archive` as text) |
 | Who sees a repo | `seen.ts` | `GET /v1/seen`, `PUT /v1/repos/:name/seen`, `/v1/servers/:id/repos…`; `GET /v1/seen/:face/:name(/file)` (anyone, when public) | `repo_share`, `repo_public` | page |
 | News | `news.ts` | `GET /v1/news` | reads `message`, `contact`, `board_post`, `board_seen` | page |
 | SSH, per device | `ssh.ts` | `GET /v1/ssh`, `POST /v1/ssh/:device/off` (any session); `PUT/DELETE /v1/ssh/this`, `POST /v1/ssh/this/beat` (the device itself: refused with an Origin) | `ssh` (one row a session) | core (the listener), page (see, stop) |
-| The sweep | `sweep.ts`, `worker.ts` `scheduled` | (none: once a day, and when `dev.ts` starts) | every table above; the bucket's unnamed blobs | |
+| The sweep | `sweep.ts`, `worker.ts` `scheduled` | (none: once a day, and when `dev.ts` starts) | every table above (Stripe's events 30 days old; each changed room counted again from its rows); the bucket's unnamed blobs | |
 
 `GET /v1/repos/gone` is asked by no client today (a device learns a repo
 went from `GET /v1/repos/:name`'s `gone` and `PATCH draft`'s 410); the tests
@@ -78,7 +79,8 @@ is: the web keeps the repo as not sent yet (まだ送れていません) and tri
 again later, core and l3 say so (`The Remote cannot hold files just now; your work stays on this device`,
 `Remote はいまファイルを置けません。作業はこの端末に残ります`)
 and leaves what was agreed as it was. The sweep leaves blobs alone while
-there is no bucket to take their bytes from.
+there is no bucket to take their bytes from; it still counts each changed room
+again, which the plan reads.
 
 On Workers that is a Worker without its `BLOBS` binding; here,
 `node service/dev.ts DIR --no-bucket` (or `LENGTH3_NO_BUCKET=1`). The

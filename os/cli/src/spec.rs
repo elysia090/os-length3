@@ -439,6 +439,9 @@ pub static COMMANDS: &[Command] = &[
         offer(&[d(["Devices", "端末"], On::Page).second()],
             f(Some("devices"), &[], &[], ["each device signed in", "サインインしている端末"], REMOTE, Keep, remote::devices)),
         f(Some("devices"), &[Arg::Choice(&["rm"]), Arg::Number("N")], &[], ["sign one out", "ひとつサインアウトさせる"], REMOTE, Keep, remote::devices_rm),
+        offer(&[d(["Plan", "プラン"], On::Page).second()],
+            f(Some("plan"), &[], &[], ["free or paid, and what the Remote keeps against the free allowance", "無料か有料か、Remote に置いている量と無料の枠"], REMOTE, Keep, remote::plan)),
+        f(Some("plan"), &[Arg::Choice(&["subscribe", "manage"])], &[], ["the page to subscribe on, or to manage or cancel on", "登録するページ、管理・解約するページ"], REMOTE, Keep, remote::plan_page),
     ]),
     c("login", &[], Group::Remote, ["sign this device in (approved in the browser)", "この端末でサインインする（ブラウザで承認）"], &[
         offer(&[d(["Sign in", "サインイン"], On::Page).when(&[F::SignedOut]).also(&[Group::Git, Group::Server, Group::Inbox])],

@@ -18,8 +18,11 @@ import {connection, onConnection, RemoteError} from './remote.ts';
 import {kept, onChange} from './repos.ts';
 import {dropState, onState} from './state.ts';
 
-/** Where a repo here stands; 'off': turned off on the Remote (kept there 30 days), nothing is sent until it is on again. */
-export type Where = 'local' | 'sending' | 'synced' | 'offline' | 'off';
+/**
+ * Where a repo here stands; 'off': turned off on the Remote (kept there 30 days), nothing is sent until it is on
+ * again; 'waits': the Remote keeps no more for this account's plan (service/plan.ts), so it stays here and waits.
+ */
+export type Where = 'local' | 'sending' | 'synced' | 'offline' | 'off' | 'waits';
 export interface RepoSync {
   where: Where;
   /** Paths not on the Remote yet. */
@@ -58,6 +61,10 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
  * fault here, and is thrown. (The app's core answers with a string.)
  */
 const away = (e: unknown): null => { if (e instanceof RemoteError || typeof e === 'string') return null; throw e; };
+/** How a refusal of the plan's comes from the app's core: this, then its words. */
+const PLAN = 'plan: ';
+/** How long a repo the plan holds back waits before it is asked again. */
+const WAIT = 5 * 60_000;
 /** How soon a change is sent: soon enough to beat closing the tab, late enough to gather keystrokes. */
 const SOON = 400;
 
@@ -82,6 +89,20 @@ async function run(repo: string) {
     if ((e as {status?: number}).status === 410) {
       const s = states.get(repo);
       states.set(repo, {where: 'off', changed: s?.changed ?? 0, both: [], unsynced: s?.unsynced ?? []});
+      tell();
+      return;
+    }
+    // The plan keeps no more on the Remote: kept here, and asked again now and then (paying, or making room, lets it go).
+    // The app's core says so by its own word (src-tauri: PLAN).
+    if ((e as {status?: number}).status === 402 || (typeof e === 'string' && e.startsWith(PLAN))) {
+      const s = states.get(repo);
+      states.set(repo, {where: 'waits', changed: s?.changed ?? 0, both: [], unsynced: s?.unsynced ?? [], error: typeof e === 'string' ? e.slice(PLAN.length) : message(e)});
+      if (connection()) {
+        const later = setTimeout(() => void run(repo), WAIT);
+        // Long enough that nothing else should wait on it: a process with nothing else to do (a test) is not held open by it.
+        (later as unknown as {unref?: () => void}).unref?.();
+        timers.set(repo, later);
+      }
       tell();
       return;
     }

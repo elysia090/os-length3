@@ -69,8 +69,11 @@ const cookiesOf = (h: Record<string, string | string[] | undefined>) => ([h['set
 
 export interface Ran { code: number; out: string; err: string; json: any } // eslint-disable-line @typescript-eslint/no-explicit-any
 
-/** `bucket: false`: a Remote that holds no files (dev.ts --no-bucket), as a Worker without R2 is. */
-export async function remote(o: {bucket?: boolean} = {}) {
+/**
+ * `env`: what the Remote is started with besides (LENGTH3_PLAN=1: the plan, and a stand-in for Stripe;
+ * LENGTH3_NO_BUCKET=1: it holds no files, as a Worker without R2 is).
+ */
+export async function remote(env: Record<string, string> = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'l3-selftest-'));
   const l3bin = join(dir, 'l3');
   copyFileSync(buildL3(), l3bin);
@@ -80,7 +83,7 @@ export async function remote(o: {bucket?: boolean} = {}) {
   let log = '';
   /** The Remote started (again: on the same port, from the same data, so every session stays). */
   async function start() {
-    const p = spawn(process.execPath, [join(OS, 'service', 'dev.ts'), join(dir, 'remote'), String(port), APP, ...(o.bucket === false ? ['--no-bucket'] : [])], {cwd: OS, stdio: ['ignore', 'pipe', 'pipe']});
+    const p = spawn(process.execPath, [join(OS, 'service', 'dev.ts'), join(dir, 'remote'), String(port), APP], {cwd: OS, stdio: ['ignore', 'pipe', 'pipe'], env: {...process.env, ...env}});
     server = p;
     p.stderr.on('data', (d: Buffer) => { log += d; });
     const from = log.length;

@@ -15,6 +15,8 @@ import {createApp} from './app.ts';
 import {createAuth, providers} from './auth.ts';
 import {enterEmail} from './enter.ts';
 import {r2Bucket, type R2Bucket} from './bucket.ts';
+import {planConfig} from './plan.ts';
+import {stripeRest} from './stripe.ts';
 import * as schema from './schema.ts';
 import {sweep} from './sweep.ts';
 
@@ -39,6 +41,15 @@ export interface Env {
   ENTER_KEY?: string;
   /** What one account may keep, in MB (2048 unless said). */
   QUOTA_MB?: string;
+  /** The free plan (plan.ts): repos and MB a free account keeps on the Remote (3 and 100 unless said), days a failed payment stays paid (14). */
+  FREE_REPOS?: string;
+  FREE_MB?: string;
+  GRACE_DAYS?: string;
+  /** Stripe (stripe.ts), secrets all three: with any missing, billing is off and paid features cannot be bought here yet. */
+  STRIPE_SECRET_KEY?: string;
+  STRIPE_WEBHOOK_SECRET?: string;
+  /** The price a subscription is to (price_…), a variable. */
+  STRIPE_PRICE?: string;
   /** File contents (R2). Not bound: the Remote holds no files, and says so. */
   BLOBS?: R2Bucket;
 }
@@ -97,7 +108,12 @@ function make(env: Env) {
   const bucket = env.BLOBS ? r2Bucket(env.BLOBS) : null;
   const app = createApp({db, auth, bucket, origins: [env.APP_ORIGIN, ...origins], appOrigin: env.APP_ORIGIN, providers: providers({github, google, apple}),
     domain: env.DOMAIN ?? 'length3.com', baseURL: env.BASE_URL, secret: env.BETTER_AUTH_SECRET, enter,
-    quota: env.QUOTA_MB ? Number(env.QUOTA_MB) * 1024 ** 2 : undefined});
+    quota: env.QUOTA_MB ? Number(env.QUOTA_MB) * 1024 ** 2 : undefined,
+    // The plan holds here (but on a Remote for research, one person's alone); it is bought only when
+    // Stripe's keys and price are all given.
+    plan: enter ? undefined : planConfig(env),
+    billing: env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET && env.STRIPE_PRICE
+      ? {stripe: stripeRest(env.STRIPE_SECRET_KEY, env.STRIPE_PRICE), webhookSecret: env.STRIPE_WEBHOOK_SECRET} : undefined});
   return {app, at, bucket};
 }
 

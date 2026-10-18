@@ -11,6 +11,7 @@
 //   enter.ts    /v1/enter                              a Remote for research: in by its link
 //   files.ts    /v1/os, /v1/desktop, /v1/blobs…        the only bytes: releases and file contents
 //   repos.ts    /v1/moved, /v1/repos…, /v1/off-code    the canonical copy: drafts, history, off and on
+//   plan.ts     /v1/plan…, /v1/stripe/webhook          what the account's plan allows, buying it (stripe.ts)
 //   home.ts     /v1/home/:key                          Home's settings
 //   inbox.ts    /v1/inbox…, /.well-known/length3       names and messages
 //   servers.ts  /v1/servers…, /v1/boards…, /v1/open…   servers, boards, guests
@@ -28,6 +29,7 @@ import {files} from './files.ts';
 import {homeRoutes} from './home.ts';
 import {inbox} from './inbox.ts';
 import {news} from './news.ts';
+import {planRoutes, plans, type Billing, type PlanConfig} from './plan.ts';
 import {repos} from './repos.ts';
 import {bounded, failed, fromOrigins, unkept, type Db, type Vars} from './request.ts';
 import {seen} from './seen.ts';
@@ -66,12 +68,20 @@ export interface Deps {
   recheck?: number;
   /** A Remote for research: one account, entered by its link (enter.ts); nobody signs up, nothing is shown to everyone. */
   enter?: Enter;
+  /** What a free account may keep, and the rest of the plan (plan.ts); without it, no plan: everything is open. */
+  plan?: PlanConfig;
+  /** How the plan is bought (Stripe); without it, billing is off and paid features cannot be bought here yet. */
+  billing?: Billing;
+  /** The clock, for tests of what depends on when (a webhook's signature). */
+  now?: () => number;
 }
 
 export function createApp(d: Deps) {
   const app = new Hono<Vars>();
   app.onError(failed);
   const db = d.db, domain = d.domain ?? 'length3.com', closed = !!d.enter;
+  // The plan's rules, which the routes that make something new ask (repos, servers, inbox).
+  const plan = plans({db, config: d.plan, billing: d.billing, domain});
   app.use('*', fromOrigins(d.origins));
   app.use('*', unkept);
   app.use('*', bounded);
@@ -83,10 +93,11 @@ export function createApp(d: Deps) {
   const v1 = new Hono<Vars>();
   v1.use('*', signedIn(d.auth, d.origins));
   files({db, bucket: d.bucket, quota: d.quota}, v1, app);
-  repos({db, quota: d.quota}, v1);
+  repos({db, quota: d.quota, plans: plan}, v1);
   homeRoutes({db}, v1);
-  inbox({db, domain, baseURL: d.baseURL ?? '', secret: d.secret ?? '', txt: d.txt, recheck: d.recheck}, v1, app);
-  servers({db, domain, appOrigin: d.appOrigin, secret: d.secret, closed}, v1, app);
+  inbox({db, domain, baseURL: d.baseURL ?? '', secret: d.secret ?? '', txt: d.txt, recheck: d.recheck, plans: plan}, v1, app);
+  servers({db, domain, appOrigin: d.appOrigin, secret: d.secret, closed, plans: plan}, v1, app);
+  planRoutes({db, plans: plan, origins: d.origins, appOrigin: d.appOrigin, now: d.now}, v1, app);
   news({db}, v1);
   sshRoutes({db}, v1);
   seen({db, bucket: d.bucket, domain, closed, viewer: async (req) => (await d.auth.api.getSession({headers: req.headers}))?.user.id ?? null}, v1, app);

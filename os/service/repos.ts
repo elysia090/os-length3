@@ -34,6 +34,7 @@
 
 import {and, desc, eq, inArray, isNull, ne, sql} from 'drizzle-orm';
 import type {Context, Hono} from 'hono';
+import type {Plans} from './plan.ts';
 import {ago, body, fits as fitsIn, HEX, LIMIT, lock, ms, qualified, refuse, rows, sha256, type Db, type Vars} from './request.ts';
 import {blob, change, cut, guard, line, repo, repoGone, review, throttle, type Review, type Tree} from './schema.ts';
 import {KEPT, purge, REMEMBERED} from './sweep.ts';
@@ -113,7 +114,7 @@ const changeShown = (repoName: string, {repoId: _, off: __, ...r}: Change & {rep
 const count = (n: unknown) => (typeof n === 'number' && Number.isInteger(n) && n >= 0 && n < 2 ** 31 ? n : 0);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-export function repos(d: {db: Db; quota?: number}, v1: Hono<Vars>) {
+export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>) {
   const db = d.db;
   const fits = (q: Db, user: string, more: number) => fitsIn(q, user, more, d.quota);
 
@@ -222,14 +223,21 @@ export function repos(d: {db: Db; quota?: number}, v1: Hono<Vars>) {
       if (!row) {
         const [{n}] = await tx.select({n: sql<number>`count(*)::int`}).from(repo).where(eq(repo.userId, user));
         if (n >= LIMIT.repos) refuse(429, {error: 'Too many repos'});
+        await d.plans.newRepo(tx, user);
       }
       await fits(tx, user, size - JSON.stringify(was).length);
-      if (row) await tx.update(line).set({draft: tree, version: current + 1, updatedAt: sql`now()`}).where(and(lineRow(row.id, l), eq(line.version, current)));
+      // What the draft takes (its tree and its files, each blob once) before and after: the plan refuses one
+      // that grew while the account keeps more than it allows, and the whole change is undone with it.
+      const kept = {bytes: line.bytes, files: line.fileBytes};
+      const [before] = row ? await tx.select(kept).from(line).where(lineRow(row.id, l)) as {bytes: number; files: number}[] : [{bytes: 0, files: 0}];
+      let after: {bytes: number; files: number}[];
+      if (row) after = await tx.update(line).set({draft: tree, version: current + 1, updatedAt: sql`now()`}).where(and(lineRow(row.id, l), eq(line.version, current))).returning(kept);
       else {
         await tx.delete(repoGone).where(and(eq(repoGone.userId, user), eq(repoGone.name, name)));
         const [made] = await tx.insert(repo).values({userId: user, name}).returning({id: repo.id}) as {id: number}[];
-        await tx.insert(line).values({repoId: made.id, userId: user, name: 'main', draft: tree, version: 1, startedBy: c.get('name')});
+        after = await tx.insert(line).values({repoId: made.id, userId: user, name: 'main', draft: tree, version: 1, startedBy: c.get('name')}).returning(kept);
       }
+      if (after[0]) await d.plans.grew(tx, user, Number(after[0].bytes) + Number(after[0].files) - Number(before.bytes) - Number(before.files));
       return current + 1;
     });
     return c.json({version});

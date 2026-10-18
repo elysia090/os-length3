@@ -12,19 +12,24 @@ import {createApp, sha256} from '../service/app.ts';
 import {createAuth} from '../service/auth.ts';
 import {memoryBucket} from '../service/bucket.ts';
 import {fileDb, SECRET} from '../service/testing.ts';
+import type {Billing, PlanConfig} from '../service/plan.ts';
 
 const URL_ = 'http://remote.test', APP = 'http://app.test';
 const enc = new TextEncoder();
 
-/** `bucket: false`: a Remote that holds no files (service/bucket.ts), as a Worker without R2 is. */
-export async function browserOnRemote(o: {bucket?: boolean} = {}) {
+/**
+ * `o`: the Remote's plan and how it is bought (service/plan.ts), none as before: everything open;
+ * `bucket: false`: a Remote that holds no files (service/bucket.ts), as a Worker without R2 is.
+ */
+export async function browserOnRemote(o: {plan?: PlanConfig; billing?: Billing; bucket?: boolean} = {}) {
   const shelf = new Map<string, string>();
   Object.assign(globalThis, {localStorage: {
     getItem: (k: string) => shelf.get(k) ?? null, setItem: (k: string, v: string) => void shelf.set(k, v), removeItem: (k: string) => void shelf.delete(k),
   }});
   const db = await fileDb();
   const auth = createAuth({db, secret: SECRET, baseURL: URL_, appOrigin: APP, rateLimit: false, dev: true});
-  const app = createApp({db, auth, bucket: o.bucket === false ? null : memoryBucket(), origins: [APP], providers: ['dev'], domain: 'length3.test', baseURL: URL_});
+  const {bucket: keeps, ...plan} = o;
+  const app = createApp({db, auth, bucket: keeps === false ? null : memoryBucket(), origins: [APP], providers: ['dev'], domain: 'length3.test', baseURL: URL_, ...plan});
   /** What this browser asked the Remote, by path. */
   const asked: string[] = [];
   Object.assign(globalThis, {fetch: (url: string, init?: RequestInit) => {
