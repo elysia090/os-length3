@@ -6,4 +6,6 @@ export default {
   'The Remote does not have this repo; the copy here is kept': 'Remote にこの repo がありません。ここの写しは残してあります',
   'This copy was kept in step by another account; sign in as it to keep it in step': 'この写しは別のアカウントで同期していたものです。そのアカウントでサインインすると同期します',
   'a file over 16 MB': '16 MB を超えるファイル',
+  'The Remote kept moving; it is tried again': 'Remote の側が動き続けています。あとでもう一度送ります',
+  '{what} kept changing on the Remote; it is tried again': '{what}が Remote で変わり続けています。あとでもう一度合わせます',
 };

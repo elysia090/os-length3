@@ -15,7 +15,7 @@ import {t} from './i18n.ts';
 import {isNative, native} from './host.ts';
 import {accountId, api, deviceWord, json, RemoteError} from './remote.ts';
 import {kept, store} from './repos.ts';
-import {freshState, setState} from './state.ts';
+import {freshState, setState, settingName} from './state.ts';
 import {exclusive} from './tabs.ts';
 
 export type Tree = Record<string, string | null>;
@@ -311,6 +311,7 @@ async function inStep(repo: string): Promise<Synced> {
     // A copy that was in step does not ask so, and cannot bring back what was discarded by sending itself.
     const anew = !agreed && lineOf(repo) === 'main' ? '?anew=1' : '';
     const patched = await api(at(repo, `/draft${anew}`), {method: 'PATCH', body: JSON.stringify({version: base.version, set: Object.fromEntries(set), remove})});
+    if (patched.status === 404) throw new RemoteError(404, t('That work is not on the Remote'));
     if (patched.status !== 200) continue; // someone else moved it, or a blob went missing: once more
     const {version} = await patched.json() as {version: number};
     const tree = {...base.tree};
@@ -320,7 +321,8 @@ async function inStep(repo: string): Promise<Synced> {
     out.version = version;
     await agree(repo, {...base, version, tree, ...(who ? {who} : {})});
   }
-  return out;
+  // Still moving after every round: not in step, and said so (it is tried again), rather than taken for it.
+  throw new RemoteError(409, t('The Remote kept moving; it is tried again'));
 }
 
 // ---- what the shell uses, on either host ----
@@ -530,5 +532,7 @@ async function agreeSetting(key: HomeKey): Promise<void> {
       await agreeHome(key, {version: done.version, value}, who);
       return;
     }
+    // Another device wrote it meanwhile: read again, and join again.
   }
+  throw new RemoteError(409, t('{what} kept changing on the Remote; it is tried again', {what: settingName(key)}));
 }

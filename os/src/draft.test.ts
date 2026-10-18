@@ -304,6 +304,31 @@ test('a repo made here under a name the Remote remembers as discarded is sent as
   assert.equal(await (await fetch(`${URL_}/v1/blobs/${there.draft['README.md']}`, {headers: {Authorization: `Bearer ${token}`}})).text(), '# made again\n');
 });
 
+test('a change that cannot get in, round after round, is said so and not taken for in step', async () => {
+  await store.create('busy', 'standard');
+  await draft.sync('busy');
+  await store.write('busy', 'README.md', '# waits\n');
+  await setState('todo', JSON.stringify([{id: 'busy', title: 'waits'}]));
+  // Another device moves each first, every time (the Remote answers every write: moved).
+  const real = globalThis.fetch;
+  globalThis.fetch = ((url: string, init?: RequestInit) => {
+    const p = new URL(url).pathname;
+    if ((init?.method === 'PATCH' && p.endsWith('/draft')) || (init?.method === 'PUT' && p === '/v1/home/todo')) {
+      return Promise.resolve(new Response(JSON.stringify({error: 'moved', version: 999, value: '[]'}), {status: 409, headers: {'Content-Type': 'application/json'}}));
+    }
+    return real(url, init);
+  }) as typeof fetch;
+  try {
+    await assert.rejects(draft.sync('busy'), /kept moving/);
+    await assert.rejects(draft.syncHome('todo'), /kept changing/);
+  } finally { globalThis.fetch = real; }
+  assert.equal((await draft.status()).find((x) => x.name === 'busy')?.changed, 1);
+  // Once it can, it goes.
+  assert.equal((await draft.sync('busy')).sent, 1);
+  await draft.syncHome('todo');
+  assert.equal(draft.homeMoved('todo', (await (await fetch(`${URL_}/v1/home/todo`, {headers: {Authorization: `Bearer ${token}`}})).json() as {version: number}).version), false);
+});
+
 test('an issue is worked on in its own copy; pushed, submitted, reviewed and merged into main', async () => {
   await store.add('notes', 'issue', '001.md', 'Fix：落ちる\n');
   await draft.sync('notes');

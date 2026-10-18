@@ -890,7 +890,8 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
             set_base(&key, &Base { version, tree, head: base.head })?;
         }
     }
-    Ok(out)
+    // Still moving after every round: not in step, and said so, rather than taken for it.
+    Err(crate::tr!("The Remote kept moving; it is tried again", "Remote の側が動き続けています。あとでもう一度送ります"))
 }
 
 /// Where a line's diff is sent. A copy never in step with the Remote makes it
