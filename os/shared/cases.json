@@ -843,5 +843,98 @@
       "",
       false
     ]
+  ],
+  "todoJoin": [
+    {
+      "why": "one added on each side: both kept, the Remote's new ones first",
+      "base": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false}]",
+      "here": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false},{\"id\":\"c\",\"title\":\"c\",\"done\":false}]",
+      "there": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false},{\"id\":\"b\",\"title\":\"b\",\"done\":false}]",
+      "want": "[{\"id\":\"b\",\"title\":\"b\",\"done\":false},{\"id\":\"a\",\"title\":\"a\",\"done\":false},{\"id\":\"c\",\"title\":\"c\",\"done\":false}]"
+    },
+    {
+      "why": "edited there, something added here: the edit is kept",
+      "base": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false}]",
+      "here": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false},{\"id\":\"c\",\"title\":\"c\",\"done\":false}]",
+      "there": "[{\"id\":\"a\",\"title\":\"A edited\",\"done\":false}]",
+      "want": "[{\"id\":\"a\",\"title\":\"A edited\",\"done\":false},{\"id\":\"c\",\"title\":\"c\",\"done\":false}]"
+    },
+    {
+      "why": "marked done there, something added here: it stays done",
+      "base": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false}]",
+      "here": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false},{\"id\":\"c\",\"title\":\"c\",\"done\":false}]",
+      "there": "[{\"id\":\"a\",\"title\":\"a\",\"done\":true}]",
+      "want": "[{\"id\":\"a\",\"title\":\"a\",\"done\":true},{\"id\":\"c\",\"title\":\"c\",\"done\":false}]"
+    },
+    {
+      "why": "removed there, untouched here: it stays removed",
+      "base": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false},{\"id\":\"b\",\"title\":\"b\",\"done\":false}]",
+      "here": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false},{\"id\":\"b\",\"title\":\"b\",\"done\":false},{\"id\":\"c\",\"title\":\"c\",\"done\":false}]",
+      "there": "[{\"id\":\"b\",\"title\":\"b\",\"done\":false}]",
+      "want": "[{\"id\":\"b\",\"title\":\"b\",\"done\":false},{\"id\":\"c\",\"title\":\"c\",\"done\":false}]"
+    },
+    {
+      "why": "removed here, untouched there: it stays removed",
+      "base": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false},{\"id\":\"b\",\"title\":\"b\",\"done\":false}]",
+      "here": "[{\"id\":\"b\",\"title\":\"b\",\"done\":false}]",
+      "there": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false},{\"id\":\"b\",\"title\":\"b\",\"done\":false},{\"id\":\"d\",\"title\":\"d\",\"done\":false}]",
+      "want": "[{\"id\":\"d\",\"title\":\"d\",\"done\":false},{\"id\":\"b\",\"title\":\"b\",\"done\":false}]"
+    },
+    {
+      "why": "removed here, edited there: the edit comes back (nothing written is lost)",
+      "base": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false}]",
+      "here": "[]",
+      "there": "[{\"id\":\"a\",\"title\":\"A edited\",\"done\":false}]",
+      "want": "[{\"id\":\"a\",\"title\":\"A edited\",\"done\":false}]"
+    },
+    {
+      "why": "edited here, removed there: this device's edit stays",
+      "base": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false}]",
+      "here": "[{\"id\":\"a\",\"title\":\"A mine\",\"done\":false}]",
+      "there": "[]",
+      "want": "[{\"id\":\"a\",\"title\":\"A mine\",\"done\":false}]"
+    },
+    {
+      "why": "edited on both: this device's",
+      "base": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false}]",
+      "here": "[{\"id\":\"a\",\"title\":\"mine\",\"done\":false}]",
+      "there": "[{\"id\":\"a\",\"title\":\"theirs\",\"done\":false}]",
+      "want": "[{\"id\":\"a\",\"title\":\"mine\",\"done\":false}]"
+    },
+    {
+      "why": "nothing agreed yet: every item from both, this device's where both have it",
+      "base": "",
+      "here": "[{\"id\":\"a\",\"title\":\"mine\",\"done\":false},{\"id\":\"c\",\"title\":\"c\",\"done\":false}]",
+      "there": "[{\"id\":\"a\",\"title\":\"theirs\",\"done\":false},{\"id\":\"b\",\"title\":\"b\",\"done\":false}]",
+      "want": "[{\"id\":\"b\",\"title\":\"b\",\"done\":false},{\"id\":\"a\",\"title\":\"mine\",\"done\":false},{\"id\":\"c\",\"title\":\"c\",\"done\":false}]"
+    },
+    {
+      "why": "an item is the same item whatever order its fields were written in",
+      "base": "[{\"title\":\"a\",\"id\":\"a\",\"done\":false}]",
+      "here": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false},{\"id\":\"c\",\"title\":\"c\",\"done\":false}]",
+      "there": "[{\"id\":\"a\",\"title\":\"A edited\",\"done\":false}]",
+      "want": "[{\"id\":\"a\",\"title\":\"A edited\",\"done\":false},{\"id\":\"c\",\"title\":\"c\",\"done\":false}]"
+    },
+    {
+      "why": "an agreed list that cannot be read is no agreement: every item from both",
+      "base": "not json",
+      "here": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false}]",
+      "there": "[{\"id\":\"b\",\"title\":\"b\",\"done\":false}]",
+      "want": "[{\"id\":\"b\",\"title\":\"b\",\"done\":false},{\"id\":\"a\",\"title\":\"a\",\"done\":false}]"
+    },
+    {
+      "why": "the Remote's side not a list: this device's as it is",
+      "base": "[]",
+      "here": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false}]",
+      "there": "{\"not\":\"a list\"}",
+      "want": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false}]"
+    },
+    {
+      "why": "a side holding a null: this device's as it is",
+      "base": "[]",
+      "here": "[null]",
+      "there": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false}]",
+      "want": "[null]"
+    }
   ]
 }

@@ -831,6 +831,14 @@ mod shared_cases {
     }
 
     #[test]
+    fn two_todo_lists_are_joined_as_the_app_joins_them() {
+        // Compared as JSON (l3 writes an item's fields in its own order), or as text where it is none.
+        let read = |t: &str| serde_json::from_str::<Value>(t).unwrap_or_else(|_| Value::String(t.into()));
+        let got = |c: &Value| read(&crate::home::join_todo(s(&c["base"]), s(&c["here"]), s(&c["there"])));
+        assert_eq!(disagreeing("todoJoin", |c| read(s(&c["want"])), got), Vec::<String>::new());
+    }
+
+    #[test]
     fn a_dotfile_may_be_written_into_root_under_the_names_the_app_allows() {
         assert_eq!(disagreeing("dotfileName", |c| c[1].clone(), |c| serde_json::json!(crate::home::dotfile_name(s(&c[0])))), Vec::<String>::new());
     }

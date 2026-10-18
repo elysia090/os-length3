@@ -251,7 +251,7 @@ pub fn set_dotfile(name: &str, text: Option<&str>) -> Result<bool> {
 // app and l3 on one device are one device to the Remote. Each setting is a
 // value and its version there; a change is sent from the version it was
 // read at. Unchanged here, the Remote's is taken. Changed here and there
-// too: two TODO lists are joined, item by item; any other setting is the
+// too: two TODO lists are joined against what both last agreed; any other setting is the
 // Remote's (it got there first).
 
 /// Home's settings that are the person's, kept on the Remote (src/draft.ts
@@ -322,18 +322,26 @@ fn same_id(a: Option<&serde_json::Value>, b: Option<&serde_json::Value>) -> bool
     }
 }
 
-/// Two TODO lists as one (src/draft.ts `mergeTodo`): every item from both,
-/// this device's where both have it (by id): the Remote's others first, then
-/// this device's list. One side not a list: this device's stands.
-pub fn merge_todo(here: &str, there: &str) -> String {
-    let lists = (serde_json::from_str::<serde_json::Value>(here), serde_json::from_str::<serde_json::Value>(there));
-    let (Ok(serde_json::Value::Array(a)), Ok(serde_json::Value::Array(b))) = lists else { return here.to_string() };
-    // An item that is null has no id to read: the app's join fails there, and this device's stands.
+/// Two TODO lists as one, against the one both last agreed (`base`), as
+/// src/draft.ts `joinTodo`: an item only one side changed or removed is as
+/// that side left it, one both changed is this device's, and every item
+/// either side added is kept, the Remote's new ones first. Nothing agreed
+/// (or not a list): every item from both, this device's where both have it.
+/// One side not a list, or an item that is null: this device's stands.
+pub fn join_todo(base: &str, here: &str, there: &str) -> String {
+    use serde_json::Value;
+    let lists = (serde_json::from_str::<Value>(here), serde_json::from_str::<Value>(there));
+    let (Ok(Value::Array(a)), Ok(Value::Array(b))) = lists else { return here.to_string() };
     if a.iter().chain(&b).any(|x| x.is_null()) { return here.to_string(); }
-    let id = |x: &serde_json::Value| x.as_object().and_then(|o| o.get("id")).cloned();
-    let ids: Vec<Option<serde_json::Value>> = a.iter().map(id).collect();
-    let mut out: Vec<serde_json::Value> = b.into_iter().filter(|x| !ids.iter().any(|i| same_id(i.as_ref(), id(x).as_ref()))).collect();
-    out.extend(a);
+    let was: Vec<Value> = match serde_json::from_str::<Value>(base) { Ok(Value::Array(o)) => o.into_iter().filter(|x| !x.is_null()).collect(), _ => Vec::new() };
+    let id = |x: &Value| x.as_object().and_then(|o| o.get("id")).cloned();
+    // By id as the app's Map holds them: the last of each.
+    let find = |list: &[Value], x: &Value| list.iter().rev().find(|y| same_id(id(y).as_ref(), id(x).as_ref())).cloned();
+    let untouched = |x: &Value| find(&was, x).is_some_and(|w| w == *x);
+    let mut out: Vec<Value> = b.iter().filter(|x| find(&a, x).is_none() && !untouched(x)).cloned().collect();
+    for x in &a {
+        if !untouched(x) { out.push(x.clone()); } else if let Some(t) = find(&b, x) { out.push(t); }
+    }
     serde_json::to_string(&out).unwrap_or_else(|_| here.to_string())
 }
 
@@ -376,7 +384,7 @@ pub fn agree_with(here: &mut impl HomeHere, there: &impl HomeThere, key: &str) -
                 out.version = version;
                 return Ok(out);
             }
-            value = merge_todo(&mine, &t);
+            value = join_todo(&b.as_ref().map_or(String::new(), |b| b.value.clone()), &mine, &t);
             if value != mine {
                 here.set_value(key, &value)?;
                 out.joined = true;
@@ -642,7 +650,8 @@ mod tests {
         let s = agree_with(&mut d, &r, "todo").unwrap();
         assert_eq!(s.version, 5);
         let ids: Vec<String> = serde_json::from_str::<Vec<Value>>(&d.values["todo"]).unwrap().iter().map(|x| x["id"].as_str().unwrap().to_string()).collect();
-        assert_eq!(ids, ["e", "b", "a", "c", "d"]);
+        // The other device's list is [e] alone: what it removed of the list agreed goes here too; d, new here, stays.
+        assert_eq!(ids, ["e", "d"]);
         assert_eq!(r.kept.borrow()["todo"].0, d.values["todo"]);
     }
 
@@ -666,10 +675,10 @@ mod tests {
 
     #[test]
     fn two_lists_join_as_the_app_joins_them() {
-        assert_eq!(merge_todo(r#"[{"id":"a"},{"id":1}]"#, r#"[{"id":"b"},{"id":"a","x":1},{"id":1.0}]"#), r#"[{"id":"b"},{"id":"a"},{"id":1}]"#);
+        assert_eq!(join_todo("", r#"[{"id":"a"},{"id":1}]"#, r#"[{"id":"b"},{"id":"a","x":1},{"id":1.0}]"#), r#"[{"id":"b"},{"id":"a"},{"id":1}]"#);
         // One side not a list, or an item that is null: this device's stands.
-        for (here, there) in [("{}", "[]"), ("[]", "{}"), ("[]", "nonsense"), ("[null]", "[]"), ("[]", "[null]")] { assert_eq!(merge_todo(here, there), here); }
+        for (here, there) in [("{}", "[]"), ("[]", "{}"), ("[]", "nonsense"), ("[null]", "[]"), ("[]", "[null]")] { assert_eq!(join_todo("[]", here, there), here); }
         // Items without an id are one id (absent) as the app's Set holds them; object ids are never the same.
-        assert_eq!(merge_todo(r#"[{}]"#, r#"[{"t":1},{"id":{}}]"#), r#"[{"id":{}},{}]"#);
+        assert_eq!(join_todo("", r#"[{}]"#, r#"[{"t":1},{"id":{}}]"#), r#"[{"id":{}},{}]"#);
     }
 }
