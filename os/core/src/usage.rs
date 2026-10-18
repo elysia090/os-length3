@@ -149,8 +149,8 @@ pub fn system(data: &Path) -> Vec<(SystemUsage, PathBuf)> {
             None => {
                 let n = tally(&e.path()).2;
                 about.allocated = Some(n);
-                let aside = e.path().join(format!(".installed.json.length3-{}-0", std::process::id()));
-                if fs::write(&aside, serde_json::to_string(&about).unwrap_or_default()).is_ok() { let _ = fs::rename(&aside, e.path().join("installed.json")); }
+                // Not kept, it is counted again next time.
+                if let Ok(text) = serde_json::to_vec(&about) { let _ = crate::atomic::replace(&e.path().join("installed.json"), &text, crate::atomic::How::RECORD); }
                 if let Some(t) = meta.as_ref().and_then(|m| m.modified().ok()) { let _ = fs::File::open(e.path()).and_then(|f| f.set_modified(t)); }
                 n
             }
@@ -249,8 +249,8 @@ fn leftovers(dir: &Path, data: &Path, out: &mut Vec<Leftover>) {
 }
 
 fn host(dir: &Path) -> (u64, u64, Certainty) {
-    match crate::system::capacity(dir) {
-        Ok(c) => (c.total, c.free, Certainty::Estimated),
+    match crate::system::room(dir) {
+        Ok((total, free)) => (total, free, Certainty::Estimated),
         Err(_) => (0, 0, Certainty::Unknown),
     }
 }
@@ -311,7 +311,7 @@ pub struct Freed {
 fn repo_item(repos: &crate::repos::Repos, name: &str, connected: bool, open: &[String]) -> Option<Item> {
     let dir = repos.dir(name).ok()?;
     let s = crate::remote::status_of(repos, name).ok()?;
-    let files = s.unsynced.len() + crate::remote::local_tree(&dir).tree.values().filter(|v| v.is_some()).count();
+    let files = s.unsynced.len() + s.files;
     let (room, why) = if open.iter().any(|o| o == name) {
         (Room::Keep, crate::tr!("A Prompt has it open", "Prompt で開いています"))
     } else if !connected {
@@ -450,9 +450,9 @@ pub fn space(data: &Path, repos_dir: &Path, open: &[String]) -> Space {
     let mut items = Vec::new();
     let connected = crate::remote::connection().is_some();
     if let Ok(repos) = crate::repos::Repos::new(repos_dir.to_path_buf()) {
-        for s in repos.list().unwrap_or_default() {
-            items.extend(repo_item(&repos, &s.name, connected, open));
-            items.extend(derived_item(repos_dir, &s.name, open));
+        for name in repos.names().unwrap_or_default() {
+            items.extend(repo_item(&repos, &name, connected, open));
+            items.extend(derived_item(repos_dir, &name, open));
         }
     }
     for (row, _) in system(data) {

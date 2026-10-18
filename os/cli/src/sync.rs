@@ -85,7 +85,7 @@ pub fn send(repo: &str) -> bool {
 /// Send every repo that changed here since it was last agreed; stop at the first the Remote cannot be reached for.
 pub fn send_changed() {
     let Ok(r) = Repos::open() else { return };
-    for s in r.list().unwrap_or_default() {
-        if matches!(remote::status_of(&r, &s.name), Ok(st) if st.fresh || st.changed > 0) && !send(&s.name) { return; }
+    for name in r.names().unwrap_or_default() {
+        if matches!(remote::status_of(&r, &name), Ok(st) if st.fresh || st.changed > 0) && !send(&name) { return; }
     }
 }

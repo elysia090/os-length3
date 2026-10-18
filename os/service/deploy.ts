@@ -39,15 +39,12 @@
 
 import {spawn} from 'node:child_process';
 import {randomBytes} from 'node:crypto';
-import {readFileSync, rmSync} from 'node:fs';
-import {Pool} from '@neondatabase/serverless';
+import {readFileSync} from 'node:fs';
 import {sql} from 'drizzle-orm';
-import {drizzle} from 'drizzle-orm/neon-serverless';
-import {migrate} from 'drizzle-orm/neon-serverless/migrator';
 import {enterEmail} from './enter.ts';
 import {mirror, remoteStore} from './mirror.ts';
+import {defaultBranchUrl, migrateBeforeWorker, migrateRemote, owner as ownerOn} from './neon.ts';
 import {pinnedDesktop, pinnedRoots} from './releases.ts';
-import {beforeWorker, firstOf, journalOf} from './stages.ts';
 
 const config = new URL('../wrangler.toml', import.meta.url).pathname;
 const toml = readFileSync(config, 'utf8');
@@ -74,18 +71,13 @@ const secret = (bytes: number) => randomBytes(bytes).toString('base64url');
 /** The owner's connection string, on the project's default branch. */
 async function ownerUrl(): Promise<string> {
   if (process.env.OWNER_URL) return process.env.OWNER_URL;
-  const key = process.env.NEON_API_KEY, project = process.env.NEON_PROJECT_ID;
-  if (!key || !project) { console.error('OWNER_URL, or NEON_API_KEY and NEON_PROJECT_ID (Neon\'s GitHub integration sets both)'); process.exit(2); }
-  const q = new URLSearchParams({database_name: process.env.NEON_DATABASE ?? 'neondb', role_name: process.env.NEON_OWNER ?? 'neondb_owner', pooled: 'false'});
-  const r = await fetch(`https://console.neon.tech/api/v2/projects/${encodeURIComponent(project)}/connection_uri?${q}`,
-    {headers: {authorization: `Bearer ${key}`, accept: 'application/json'}});
-  if (!r.ok) throw new Error(`Neon connection_uri: ${r.status} ${(await r.text()).slice(0, 300)}`);
-  return ((await r.json()) as {uri: string}).uri;
+  const url = await defaultBranchUrl();
+  if (!url) { console.error('OWNER_URL, or NEON_API_KEY and NEON_PROJECT_ID (Neon\'s GitHub integration sets both)'); process.exit(2); }
+  return url;
 }
 async function owner() {
   const url = await ownerUrl();
-  const pool = new Pool({connectionString: url});
-  return {url: new URL(url), pool, db: drizzle(pool)};
+  return {url: new URL(url), ...ownerOn(url)};
 }
 
 /** The names of the secrets the Worker has; none when there is no Worker yet. */
@@ -106,27 +98,6 @@ async function worker(db: Awaited<ReturnType<typeof owner>>['db'], url: URL): Pr
   // The pooled host: many short connections, as a Worker makes.
   const host = url.hostname.includes('-pooler.') ? url.hostname : url.hostname.replace(/^([^.]+)\./, '$1-pooler.');
   return `postgresql://remote_worker:${password}@${host}${url.pathname}?sslmode=require`;
-}
-
-const MIGRATIONS = new URL('./migrations', import.meta.url).pathname;
-
-/** When the newest migration applied here was made (its journal `when`); 0 when none was. */
-async function applied(db: Awaited<ReturnType<typeof owner>>['db']): Promise<number> {
-  const [had] = (await db.execute(sql`select to_regclass('drizzle.__drizzle_migrations') as t`)).rows as {t: string | null}[];
-  if (!had?.t) return 0;
-  const [last] = (await db.execute(sql`select max(created_at) as at from drizzle.__drizzle_migrations`)).rows as {at: string | number | null}[];
-  return Number(last?.at ?? 0);
-}
-
-/** The migrations the Worker running now can meet (stages.ts); whether a contract step waits for the new one. */
-async function migrateBeforeWorker(db: Awaited<ReturnType<typeof owner>>['db']): Promise<boolean> {
-  const j = journalOf(MIGRATIONS);
-  const n = beforeWorker(j, await applied(db));
-  if (n === j.entries.length) { await migrate(db, {migrationsFolder: MIGRATIONS}); return false; }
-  const first = firstOf(MIGRATIONS, n);
-  try { await migrate(db, {migrationsFolder: first}); } finally { rmSync(first, {recursive: true}); }
-  console.log(`migrations: ${j.entries[n].tag} and after wait for the new Worker`);
-  return true;
 }
 
 /** Hands a new link on, once. */
@@ -167,6 +138,7 @@ if (!step) {
   if (given && !/^[A-Za-z0-9_-]{32,}$/.test(given)) { console.error('ENTER_KEY: 32 or more letters, digits, - and _'); process.exit(2); }
   const {url, pool, db} = await owner();
   const waiting = await migrateBeforeWorker(db);
+  if (waiting) console.log(`migrations: ${waiting} and after wait for the new Worker`);
   console.log('migrations: done');
   const bucket = vars('bucket_name')!;
   if ((await wrangler(['r2', 'bucket', 'info', bucket, '--json'], {heard: true})).code !== 0) await must(['r2', 'bucket', 'create', bucket]);
@@ -185,7 +157,7 @@ if (!step) {
   if (waiting) {
     // The Worker that read what the contract step drops is gone now.
     const later = await owner();
-    await migrate(later.db, {migrationsFolder: MIGRATIONS});
+    await migrateRemote(later.db);
     await later.pool.end();
     console.log('migrations: the contract step is done');
   }

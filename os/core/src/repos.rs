@@ -169,6 +169,16 @@ impl Repos {
         at.symlink_metadata().is_ok_and(|m| m.file_type().is_symlink()) && at.metadata().is_err()
     }
 
+    /// The repos' names, in order, and nothing else: no repo is walked (list walks each to say its size).
+    pub fn names(&self) -> Result<Vec<String>> {
+        let mut out: Vec<String> = fs::read_dir(&self.root).map_err(|e| io_error(self.root.display(), &e))?.flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| valid_name(n) && self.root.join(n).is_dir())
+            .collect();
+        out.sort();
+        Ok(out)
+    }
+
     pub fn list(&self) -> Result<Vec<Summary>> {
         let mut out = Vec::new();
         for entry in fs::read_dir(&self.root).map_err(|e| io_error(self.root.display(), &e))?.flatten() {
@@ -204,25 +214,38 @@ impl Repos {
 
     /// Create a repo from a template (shared/templates.json). Inbox and TODO
     /// are the OS's, not the repo's, so templates hold only the repo's own files.
+    /// The repo is made aside, under a name no repo has (a dot first), and moved into place whole, never
+    /// over one there (bug: it was made in place, so a failure or crash part way left half a repo that
+    /// `repo new` then refused as there already, and two makes at once wrote into one).
     pub fn create(&self, name: &str, template: &str) -> Result<Summary> {
         let dir = self.repo(name)?;
-        if dir.exists() {
-            return Err(tr!("There is a repo {} already", "repo {} はもうあります", name));
+        let there = || tr!("There is a repo {} already", "repo {} はもうあります", name);
+        if dir.symlink_metadata().is_ok() {
+            return Err(there());
         }
         let t = templates::find(template).ok_or_else(|| {
             let ids: Vec<String> = templates::all().into_iter().map(|t| t.id).collect();
             tr!("No template {} ({})", "テンプレート {} はありません（{}）", template, ids.join(", "))
         })?;
-        fs::create_dir_all(&dir).map_err(|e| io_error(name, &e))?;
-        for d in &t.dirs {
-            fs::create_dir_all(dir.join(d)).map_err(|e| io_error(shown(name, d), &e))?;
-        }
-        for (path, text) in t.files_for(name) {
-            let target = dir.join(&path);
-            if let Some(parent) = target.parent() {
-                fs::create_dir_all(parent).map_err(|e| io_error(shown(name, &path), &e))?;
+        let aside = self.root.join(format!(".{name}.length3-{}-0", std::process::id()));
+        let _ = fs::remove_dir_all(&aside);
+        let fill = || -> Result<()> {
+            fs::create_dir(&aside).map_err(|e| io_error(name, &e))?;
+            for d in &t.dirs {
+                fs::create_dir_all(aside.join(d)).map_err(|e| io_error(shown(name, d), &e))?;
             }
-            fs::write(target, text).map_err(|e| io_error(shown(name, &path), &e))?;
+            for (path, text) in t.files_for(name) {
+                let target = aside.join(&path);
+                if let Some(parent) = target.parent() {
+                    fs::create_dir_all(parent).map_err(|e| io_error(shown(name, &path), &e))?;
+                }
+                fs::write(target, text).map_err(|e| io_error(shown(name, &path), &e))?;
+            }
+            crate::atomic::rename_new(&aside, &dir).map_err(|e| if e.kind() == std::io::ErrorKind::AlreadyExists { there() } else { io_error(name, &e) })
+        };
+        if let Err(e) = fill() {
+            let _ = fs::remove_dir_all(&aside);
+            return Err(e);
         }
         self.summary(name)
     }
@@ -281,25 +304,13 @@ impl Repos {
         if !meta.is_file() {
             return Err(tr!("{} is not a file", "{} はファイルではありません", shown(repo, relative)));
         }
-        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        // `.<name>.length3-<pid>-<n>`: usage.rs recognises it as this OS's own
-        // temporary, reclaimable once its writer is gone.
-        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let temp = path.with_file_name(format!(".{name}.length3-{}-{n}", std::process::id()));
-        // Made afresh (never through a link or into a file already there).
-        let made = fs::OpenOptions::new().write(true).create_new(true).open(&temp);
-        let result = made.and_then(|mut f| {
-            use std::io::Write;
-            f.write_all(text.as_bytes())?;
-            f.sync_all()
-        })
-            .and_then(|_| fs::set_permissions(&temp, meta.permissions()))
-            .and_then(|_| fs::rename(&temp, &path));
-        if let Err(e) = result {
-            if e.kind() != std::io::ErrorKind::AlreadyExists { let _ = fs::remove_file(&temp); }
-            return Err(io_error(shown(repo, relative), &e));
-        }
+        // The file keeps its permissions (a script stays executable).
+        #[cfg(unix)]
+        let mode = { use std::os::unix::fs::PermissionsExt; Some(meta.permissions().mode() & 0o7777) };
+        #[cfg(not(unix))]
+        let mode = None;
+        crate::atomic::replace(&path, text.as_bytes(), crate::atomic::How { mode, durable: true })
+            .map_err(|e| io_error(shown(repo, relative), &e))?;
         Ok(text.len() as u64)
     }
 
@@ -521,6 +532,12 @@ mod tests {
         assert!(r.create("c", "c").is_err());
         assert!(r.create("x", "nope").is_err());
         assert_eq!(r.list().unwrap().len(), 3);
+        assert_eq!(r.names().unwrap(), ["c", "empty", "standard"]);
+        // Nothing made aside is left, and what is in the way of a name is never written into.
+        assert!(fs::read_dir(&r.root).unwrap().flatten().all(|e| !e.file_name().to_string_lossy().starts_with('.')));
+        fs::create_dir(r.root.join("taken")).unwrap();
+        assert!(r.create("taken", "standard").unwrap_err().contains("already"));
+        assert_eq!(fs::read_dir(r.root.join("taken")).unwrap().count(), 0);
     }
 
     #[test]

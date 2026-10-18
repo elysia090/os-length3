@@ -142,7 +142,9 @@ fn record_as(data: &Path, pid: u32, repo: &str, network: bool) -> std::io::Resul
     let started = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64);
     let r = Running { repo: repo.into(), pid, network, started, start_ticks };
     let path = dir.join(format!("{pid}.json"));
-    fs::write(&path, serde_json::to_vec(&r).map_err(std::io::Error::other)?)?;
+    // Whole or not at all: `running` lets go of a record it cannot read, so one seen half written was
+    // taken for a Prompt that had gone, while it ran (bug: it was written in place).
+    crate::atomic::replace(&path, &serde_json::to_vec(&r).map_err(std::io::Error::other)?, crate::atomic::How::RECORD)?;
     Ok(Recorded(path))
 }
 
@@ -153,9 +155,16 @@ pub fn running(data: &Path) -> Vec<Running> {
     for e in dir.flatten() {
         let path = e.path();
         if path.extension().is_none_or(|x| x != "json") { continue; }
-        match fs::read(&path).ok().and_then(|b| serde_json::from_slice::<Running>(&b).ok()) {
-            Some(r) if start_ticks(r.pid) == Some(r.start_ticks) && !zombie(r.pid) => out.push(r),
-            // Its process is gone (or the pid is another's now): nothing runs.
+        let read = match fs::read(&path) {
+            Ok(b) => b,
+            // Gone since the listing: nothing to let go, and removing by its name could take a record made
+            // there since (the test below lost one so).
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(_) => Vec::new(),
+        };
+        match serde_json::from_slice::<Running>(&read) {
+            Ok(r) if start_ticks(r.pid) == Some(r.start_ticks) && !zombie(r.pid) => out.push(r),
+            // Its process is gone (or the pid is another's now), or it is no record: nothing runs.
             _ => { let _ = fs::remove_file(&path); }
         }
     }
@@ -227,6 +236,28 @@ mod tests {
         assert_eq!(running(&data).iter().map(|r| r.repo.as_str()).collect::<Vec<_>>(), ["here"]);
         drop(mine);
         assert!(running(&data).is_empty());
+        let _ = fs::remove_dir_all(&data);
+    }
+
+    #[test]
+    fn a_record_being_written_is_never_taken_for_one_whose_prompt_is_gone() {
+        let data = std::env::temp_dir().join(format!("length3-prompts-race-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&data);
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        // Another l3 (or the app) looking at what runs, all the while.
+        let looking = {
+            let (data, stop) = (data.clone(), stop.clone());
+            std::thread::spawn(move || while !stop.load(std::sync::atomic::Ordering::Relaxed) { running(&data); })
+        };
+        let mut lost = 0;
+        for _ in 0..200 {
+            let kept = record(&data, "here", false).unwrap();
+            if !kept.0.exists() { lost += 1; }
+            drop(kept);
+        }
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        looking.join().unwrap();
+        assert_eq!(lost, 0, "records let go while their Prompt ran");
         let _ = fs::remove_dir_all(&data);
     }
 }

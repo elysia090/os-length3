@@ -158,12 +158,18 @@ pub fn fetch_distro(data: &Path, remote: &str, d: &Distro, progress: impl FnMut(
     installed
 }
 
-/// Install a distribution's root from its archive (already checked against its pin) and make it current.
+/// Install a distribution's root from its archive and make it current. The archive is checked against
+/// its pin through the handle it is then unpacked from (open_pinned).
 pub fn install_distro(data: &Path, d: &Distro, archive: &Path) -> Result<Installed, String> {
+    let file = open_pinned(archive, |sha, n| (sha == d.sha256 && n == d.bytes).then_some(()).ok_or_else(|| not_pinned(sha, n)))?.0;
+    unpack_distro(data, d, file)
+}
+
+fn unpack_distro(data: &Path, d: &Distro, archive: fs::File) -> Result<Installed, String> {
     put_in_place(data, d.sha256, d.name, d.version, Some(d.id), |aside| {
         let tree = aside.join("root");
         fs::create_dir(&tree)?;
-        let counted = unpack(flate2::read::MultiGzDecoder::new(io::BufReader::new(fs::File::open(archive)?)), &tree)?;
+        let counted = unpack(flate2::read::MultiGzDecoder::new(io::BufReader::new(archive)), &tree)?;
         ready_for_a_prompt(&tree)?;
         Ok(counted)
     })
@@ -244,21 +250,28 @@ fn hex(d: &[u8]) -> String {
 
 /// The release a bundle is, by its digest; anything not pinned is refused.
 pub fn identify(bundle: &Path) -> Result<&'static Release, String> {
-    let mut f = fs::File::open(bundle).map_err(|e| format!("{}: {e}", bundle.display()))?;
+    open_pinned(bundle, release_of).map(|(_, r)| r)
+}
+
+fn release_of(sha: &str, n: u64) -> Result<&'static Release, String> {
+    RELEASES.iter().find(|r| r.sha256 == sha && r.bytes == n).ok_or_else(|| not_pinned(sha, n))
+}
+
+fn not_pinned(sha: &str, n: u64) -> String {
+    crate::tr!("Not a known release (sha256 {}…, {} bytes)", "知らないリリースです（sha256 {}…, {} bytes）", &sha[..12], n)
+}
+
+/// Open `path` and check it against a pin by its sha256 and size (`pinned` says what it is, or why not),
+/// read through the handle that is returned, wound back to its start, for the caller to unpack. What was
+/// checked is then what is read: a check by name and a second open could read two different files (one
+/// put in its place between them, or a disk that answers twice differently).
+fn open_pinned<T>(path: &Path, pinned: impl FnOnce(&str, u64) -> Result<T, String>) -> Result<(fs::File, T), String> {
+    let mut f = fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let mut h = Sha256::new();
-    let mut buf = vec![0u8; 1 << 20];
-    let mut n = 0u64;
-    loop {
-        let k = f.read(&mut buf).map_err(|e| e.to_string())?;
-        if k == 0 {
-            break;
-        }
-        h.update(&buf[..k]);
-        n += k as u64;
-    }
-    let sha = hex(&h.finalize());
-    RELEASES.iter().find(|r| r.sha256 == sha && r.bytes == n)
-        .ok_or_else(|| crate::tr!("Not a known release (sha256 {}…, {} bytes)", "知らないリリースです（sha256 {}…, {} bytes）", &sha[..12], n))
+    let n = io::copy(&mut f, &mut h).map_err(|e| format!("{}: {e}", path.display()))?;
+    let what = pinned(&hex(&h.finalize()), n)?;
+    io::Seek::rewind(&mut f).map_err(|e| e.to_string())?;
+    Ok((f, what))
 }
 
 type Decoder<R> = ruzstd::decoding::StreamingDecoder<io::BufReader<R>, ruzstd::decoding::FrameDecoder>;
@@ -483,8 +496,8 @@ pub fn held(data: &Path) -> Vec<(Installed, bool)> {
 /// Install a release bundle: checked, unpacked aside, then made current in
 /// one rename. The root before stays, as the one to go back to.
 pub fn install(data: &Path, bundle: &Path) -> Result<Installed, String> {
-    let release = identify(bundle)?;
-    put_in_place(data, release.sha256, release.name, release.version, None, |aside| fs::File::open(bundle).and_then(Frames::new).and_then(|z| unpack(z, aside)))
+    let (file, release) = open_pinned(bundle, release_of)?;
+    put_in_place(data, release.sha256, release.name, release.version, None, |aside| Frames::new(file).and_then(|z| unpack(z, aside)))
 }
 
 /// Unpack a root (by `fill`, into a directory aside), check it, then move it
@@ -508,11 +521,31 @@ fn put_in_place(data: &Path, sha256: &str, name: &str, version: &str, distro: Op
         let about = Installed { name: name.into(), version: version.into(), sha256: sha256.into(), files, bytes,
             allocated: Some(crate::usage::allocated(&aside)), distro: distro.map(String::from) };
         fs::write(aside.join("installed.json"), serde_json::to_string(&about).unwrap()).map_err(|e| e.to_string())?;
+        // installed.json says the root is whole, and nothing checks it again: the tree is on the disk before
+        // it is renamed into place, or a crash soon after could leave a root that says so with empty files.
+        flush(&aside).map_err(|e| e.to_string())?;
         let _ = fs::remove_dir_all(&dir);
         fs::rename(&aside, &dir).map_err(|e| e.to_string())?;
     }
     point_current(data, sha256)?;
     serde_json::from_str(&fs::read_to_string(dir.join("installed.json")).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
+}
+
+/// Put what was written on the filesystem holding `dir` on the disk.
+fn flush(dir: &Path) -> io::Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::fd::AsRawFd;
+        let d = fs::File::open(dir)?;
+        // SAFETY: syncfs on a descriptor this function owns.
+        if unsafe { libc::syncfs(d.as_raw_fd()) } != 0 { return Err(io::Error::last_os_error()); }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = dir;
+        unsafe { libc::sync() };
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -591,7 +624,9 @@ mod tests {
         fs::write(d.join("a.tar.gz"), gz.finish().unwrap()).unwrap();
         let ubuntu = distro("ubuntu").unwrap();
         let data = d.join("data");
-        let r = install_distro(&data, ubuntu, &d.join("a.tar.gz")).unwrap();
+        // Not Ubuntu's own archive: taken by its pin, it is refused.
+        assert!(install_distro(&data, ubuntu, &d.join("a.tar.gz")).unwrap_err().contains("Not a known release"));
+        let r = unpack_distro(&data, ubuntu, fs::File::open(d.join("a.tar.gz")).unwrap()).unwrap();
         assert_eq!((r.distro.as_deref(), r.files), (Some("ubuntu"), 1));
         let (tree, about) = current(&data).unwrap();
         assert_eq!(about.sha256, ubuntu.sha256);

@@ -57,22 +57,25 @@ fn log(s: &str) {
     let _ = writeln!(std::io::stderr(), "{now} {s}");
 }
 
-/// The host key: read, or made once (Ed25519, from the kernel's randomness) and kept owner-only.
+/// The host key: read, or made once (Ed25519, from the kernel's randomness) and kept owner-only. It is made
+/// whole or not at all (bug: a crash while writing it left half a key, and SSH could not be turned on again).
 pub fn host_key(data: &Path) -> Result<PrivateKey, String> {
     let at = ssh::host_key(data);
-    if let Ok(text) = std::fs::read(&at) {
-        return PrivateKey::from_openssh(text).map_err(|e| tr!("The host key {} cannot be read: {}", "ホスト鍵 {} を読めません：{}", at.display(), e));
-    }
+    let read = |text: Vec<u8>| PrivateKey::from_openssh(text).map_err(|e| tr!("The host key {} cannot be read: {}. Remove it to make a new one (each ssh client then says the host key changed)",
+        "ホスト鍵 {} を読めません：{}。消せば新しく作ります（そのあと各 ssh クライアントはホスト鍵が変わったと言います）", at.display(), e));
+    if let Ok(text) = std::fs::read(&at) { return read(text); }
     length3_core::boundary::private_dir(&ssh::dir(data)).map_err(|e| e.to_string())?;
     let mut seed = [0u8; 32];
     std::fs::File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut seed)).map_err(|e| e.to_string())?;
     let pair = russh::keys::ssh_key::private::Ed25519Keypair::from_seed(&seed);
     let key = PrivateKey::new(pair.into(), "length3").map_err(|e| e.to_string())?;
     let text = key.to_openssh(russh::keys::ssh_key::LineEnding::LF).map_err(|e| e.to_string())?;
-    use std::os::unix::fs::OpenOptionsExt;
-    let mut f = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&at).map_err(|e| e.to_string())?;
-    f.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
-    Ok(key)
+    match length3_core::atomic::create(&at, text.as_bytes(), length3_core::atomic::How::PRIVATE) {
+        Ok(()) => Ok(key),
+        // Another start made it first: that one is this device's.
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => read(std::fs::read(&at).map_err(|e| e.to_string())?),
+        Err(e) => Err(tr!("{}: {}", "{}：{}", at.display(), e)),
+    }
 }
 
 /// The host key's fingerprint, as ssh shows it when it first connects.
@@ -113,7 +116,8 @@ struct Conn {
     shared: Arc<Shared>,
     peer: IpAddr,
     repo: Option<String>,
-    channels: usize,
+    /// Its sessions open now (a session ends when its channel does).
+    channels: Arc<std::sync::atomic::AtomicUsize>,
     /// Signed in: the grace for signing in is over.
     authed: Arc<std::sync::atomic::AtomicBool>,
 }
@@ -156,12 +160,24 @@ impl server::Handler for Conn {
 
     async fn channel_open_session(&mut self, channel: Channel<Msg>, reply: server::ChannelOpenHandle, session: &mut Session) -> Result<(), Self::Error> {
         let Some(repo) = self.repo.clone() else { return Ok(()) };
-        if self.channels >= CHANNELS { return Ok(()); }
-        self.channels += 1;
+        // At most CHANNELS at once (bug: every session ever opened was counted, so on a connection that is
+        // kept and reused, as OpenSSH's ControlMaster keeps it, the fifth `ssh` was refused for good).
+        if !open_another(&self.channels) { return Ok(()); }
         reply.accept().await;
-        tokio::spawn(run_channel(channel, session.handle(), self.shared.clone(), repo));
+        let open = self.channels.clone();
+        let (handle, shared) = (session.handle(), self.shared.clone());
+        tokio::spawn(async move {
+            run_channel(channel, handle, shared, repo).await;
+            open.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        });
         Ok(())
     }
+}
+
+/// Count one more session open on a connection, if fewer than CHANNELS are.
+fn open_another(open: &std::sync::atomic::AtomicUsize) -> bool {
+    use std::sync::atomic::Ordering::SeqCst;
+    open.fetch_update(SeqCst, SeqCst, |n| (n < CHANNELS).then_some(n + 1)).is_ok()
 }
 
 /// What a session asked for before it starts: a terminal (its name and size).
@@ -178,13 +194,22 @@ enum Input {
     Ended,
 }
 
-/// One session channel: its requests, in order, then the program it starts, until it ends.
+/// One session channel: its requests, in order, then the program it starts, until it ends: the client
+/// closes it, or its program ends and the channel is closed from here. The second is not heard on the
+/// channel itself while the connection stays (as OpenSSH's ControlMaster keeps it), so it is waited for
+/// apart (bug: each session's task waited on its channel until the connection went).
 async fn run_channel(mut ch: Channel<Msg>, handle: server::Handle, shared: Arc<Shared>, repo: String) {
     let id = ch.id();
     let mut asked = Asked::default();
     let mut input: Option<Input> = None;
     let mut pid = None;
-    while let Some(msg) = ch.wait().await {
+    let mut ended: Option<tokio::sync::oneshot::Receiver<()>> = None;
+    loop {
+        let msg = match ended.as_mut() {
+            Some(done) => tokio::select! { m = ch.wait() => m, _ = done => break },
+            None => ch.wait().await,
+        };
+        let Some(msg) = msg else { break };
         match msg {
             ChannelMsg::RequestPty { want_reply, term, col_width, row_height, .. } => {
                 let ok = input.is_none();
@@ -195,12 +220,12 @@ async fn run_channel(mut ch: Channel<Msg>, handle: server::Handle, shared: Arc<S
                 if want_reply { let _ = handle.channel_failure(id).await; }
             }
             ChannelMsg::RequestShell { want_reply } => {
-                (input, pid) = start(&shared, &handle, id, &repo, None, &asked).await.unzip();
+                (input, pid, ended) = started(start(&shared, &handle, id, &repo, None, &asked).await);
                 if want_reply { let _ = if input.is_some() { handle.channel_success(id).await } else { handle.channel_failure(id).await }; }
             }
             ChannelMsg::Exec { want_reply, command } => {
                 let command = String::from_utf8_lossy(&command).into_owned();
-                (input, pid) = start(&shared, &handle, id, &repo, Some(command), &asked).await.unzip();
+                (input, pid, ended) = started(start(&shared, &handle, id, &repo, Some(command), &asked).await);
                 if want_reply { let _ = if input.is_some() { handle.channel_success(id).await } else { handle.channel_failure(id).await }; }
             }
             ChannelMsg::WindowChange { col_width, row_height, .. } => {
@@ -230,11 +255,22 @@ async fn run_channel(mut ch: Channel<Msg>, handle: server::Handle, shared: Arc<S
     }
 }
 
+/// A session's program, started or not, as its channel keeps it.
+type Started = Option<(Input, u32, tokio::sync::oneshot::Receiver<()>)>;
+
+fn started(s: Started) -> (Option<Input>, Option<u32>, Option<tokio::sync::oneshot::Receiver<()>>) {
+    match s { Some((i, p, e)) => (Some(i), Some(p), Some(e)), None => (None, None, None) }
+}
+
 /// Start the session's program, `l3 prompt REPO` (with `-- /bin/sh -c CMD` for a command), on a terminal when
-/// one was asked for; what it prints goes to the client, and its exit code once it ends.
-async fn start(shared: &Arc<Shared>, handle: &server::Handle, id: ChannelId, repo: &str, command: Option<String>, asked: &Asked) -> Option<(Input, u32)> {
+/// one was asked for; what it prints goes to the client, and its exit code once it ends, then the channel is
+/// closed and `ended` (the third) is told.
+async fn start(shared: &Arc<Shared>, handle: &server::Handle, id: ChannelId, repo: &str, command: Option<String>, asked: &Asked) -> Started {
     let mut cmd = tokio::process::Command::new(&shared.exe);
-    cmd.arg("prompt").arg(repo);
+    // The repo (the SSH user) is named by LENGTH3_REPO from the data directory, never as a word: l3 reads a
+    // word against its forms first, so `ssh ls@host` was `l3 prompt ls`, the list of every Prompt on the
+    // device, and a repo called stop or --network could not be reached at all.
+    cmd.arg("prompt").env("LENGTH3_REPO", repo).current_dir(paths::data_dir());
     if let Some(c) = &command { cmd.args(["--", "/bin/sh", "-c", c]); }
     cmd.env_remove("L3_PROMPT").env("TERM", asked.pty.as_ref().map_or("dumb", |p| p.0.as_str())).kill_on_drop(false);
     log(&format!("session {repo}: {}", command.as_deref().map_or("shell".to_string(), |c| format!("exec {} bytes", c.len()))));
@@ -255,6 +291,7 @@ async fn start(shared: &Arc<Shared>, handle: &server::Handle, id: ChannelId, rep
         _ => Vec::new(),
     };
     let (handle, shared, repo) = (handle.clone(), shared.clone(), repo.to_string());
+    let (ended, done) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
         let status = child.wait().await;
         // Reaped: its pid may be another's from now, so it is no longer one to end.
@@ -266,8 +303,9 @@ async fn start(shared: &Arc<Shared>, handle: &server::Handle, id: ChannelId, rep
         let _ = handle.exit_status_request(id, code as u32).await;
         let _ = handle.eof(id).await;
         let _ = handle.close(id).await;
+        let _ = ended.send(());
     });
-    Some((input, pid))
+    Some((input, pid, done))
 }
 
 /// What every session's process is started with: its own session, and an end with the listener's.
@@ -318,7 +356,7 @@ fn resize(fd: i32, cols: u16, rows: u16) {
 async fn write_all(m: &AsyncFd<std::fs::File>, mut bytes: &[u8]) -> std::io::Result<()> {
     while !bytes.is_empty() {
         let mut g = m.writable().await?;
-        match g.try_io(|f| (&*f.get_ref()).write(bytes)) {
+        match g.try_io(|f| f.get_ref().write(bytes)) {
             Ok(Ok(n)) => bytes = &bytes[n..],
             Ok(Err(e)) => return Err(e),
             Err(_) => continue,
@@ -332,7 +370,7 @@ async fn pump_pty(m: Arc<AsyncFd<std::fs::File>>, handle: server::Handle, id: Ch
     let mut buf = vec![0u8; 16 * 1024];
     loop {
         let Ok(mut g) = m.readable().await else { return };
-        match g.try_io(|f| (&*f.get_ref()).read(&mut buf)) {
+        match g.try_io(|f| f.get_ref().read(&mut buf)) {
             Ok(Ok(0)) | Ok(Err(_)) => return,
             Ok(Ok(n)) => { if handle.data(id, buf[..n].to_vec()).await.is_err() { return; } }
             Err(_) => continue,
@@ -520,7 +558,7 @@ fn accept(stream: tokio::net::TcpStream, peer: SocketAddr, shared: &Arc<Shared>,
     }
     let _ = stream.set_nodelay(true);
     let authed = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let conn = Conn { shared: shared.clone(), peer: peer.ip(), repo: None, channels: 0, authed: authed.clone() };
+    let conn = Conn { shared: shared.clone(), peer: peer.ip(), repo: None, channels: Default::default(), authed: authed.clone() };
     let config = config.clone();
     tokio::spawn(async move {
         let session = match server::run_stream(config, stream, conn).await {

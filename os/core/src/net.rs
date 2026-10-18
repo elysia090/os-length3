@@ -81,7 +81,7 @@ mod tests {
 
     #[test]
     fn the_bundled_roots_are_always_there() {
-        assert!(tls().crypto_provider().cipher_suites.len() > 0);
+        assert!(!tls().crypto_provider().cipher_suites.is_empty());
     }
 }
 

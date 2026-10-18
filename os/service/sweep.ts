@@ -21,7 +21,7 @@
 //                                     looked for only in accounts whose room says something changed
 
 import {sql, type SQL} from 'drizzle-orm';
-import type {Bucket} from './bucket.ts';
+import {blobKey, type Bucket} from './bucket.ts';
 import {HOLD} from './names.ts';
 import {KEEP_EVENTS} from './plan.ts';
 import {ago, lock, rows, type Db} from './request.ts';
@@ -47,7 +47,7 @@ export async function purge(tx: Db, which: SQL): Promise<{repo: number}> {
 }
 
 /** Let go of everything held long enough; what went, counted. */
-export async function sweep(db: Db, bucket: Bucket): Promise<Record<string, number>> {
+export async function sweep(db: Db, bucket: Bucket | null): Promise<Record<string, number>> {
   const gone: Record<string, number> = {};
   const run = async (what: string, q: Db, query: SQL) => { gone[what] = (gone[what] ?? 0) + (await rows(q, sql`${query} returning 1`)).length; };
 
@@ -80,19 +80,21 @@ export async function sweep(db: Db, bucket: Bucket): Promise<Record<string, numb
   // Blobs no tree of their account names any more: their rows, then their bytes. Only accounts whose
   // room says something their blobs are named by changed; each under its lock, as an upload is, so
   // nothing is sent between a blob going and its bytes going. A room stays unswept while it holds a
-  // blob too new to be taken for unnamed.
+  // blob too new to be taken for unnamed. With no bucket, no blob goes and its room stays unswept: a row
+  // is how its bytes are found again once there is one to take them from. The room is counted again
+  // either way: the plan reads it, and that is rows alone.
   const rooms = await rows<{user_id: string}>(db, sql`select user_id from room where unswept`);
   for (const {user_id: user} of rooms) {
     await db.transaction(async (tx: Db) => {
       await lock(tx, user);
-      const unnamed = await rows<{sha256: string}>(tx, sql`with named as (
+      const unnamed = !bucket ? [] : await rows<{sha256: string}>(tx, sql`with named as (
           select e.value as sha from line l cross join jsonb_each_text(l.draft) e where l.user_id = ${user}
           union select e.value from repo r join cut c on c.repo_id = r.id cross join jsonb_each_text(c.tree) e where r.user_id = ${user})
         delete from blob b where b.user_id = ${user} and b.created_at < ${ago(DAY)}
           and not exists (select 1 from named where named.sha = b.sha256)
         returning b.sha256`);
       if (unnamed.length) gone.blob = (gone.blob ?? 0) + unnamed.length;
-      await tx.execute(sql`update room set unswept = exists (select 1 from blob b where b.user_id = ${user} and b.created_at >= ${ago(DAY)})
+      if (bucket) await tx.execute(sql`update room set unswept = exists (select 1 from blob b where b.user_id = ${user} and b.created_at >= ${ago(DAY)})
         where user_id = ${user}`);
       // What the room counts, counted again from its rows: the triggers keep it so with every row, and
       // a room that ever disagreed (a row written past them) is put right here, before the plan reads it.
@@ -102,7 +104,7 @@ export async function sweep(db: Db, bucket: Bucket): Promise<Record<string, numb
         where room.user_id = ${user} and room.used <> n.used returning 1`);
       if (fixed.length) gone.recounted = (gone.recounted ?? 0) + 1;
       // Bytes that fail to go are only room taken: the blob is no longer anyone's.
-      if (unnamed.length) await bucket.delete(unnamed.map((b) => `u/${user}/${b.sha256}`)).catch((e: unknown) => console.error('sweep: bytes stay', e));
+      if (bucket && unnamed.length) await bucket.delete(unnamed.map((b) => blobKey(user, b.sha256))).catch((e: unknown) => console.error('sweep: bytes stay', e));
     });
   }
   return gone;

@@ -15,9 +15,14 @@ pub struct Capacity {
 }
 
 pub fn capacity(dir: &Path) -> crate::Result<Capacity> {
+    let (total, free) = room(dir)?;
+    Ok(Capacity { total, free, app: crate::usage::allocated(dir), measured: "statvfs+st_blocks" })
+}
+
+/// The filesystem's `total` and `free` alone: no walk of what the OS holds.
+pub fn room(dir: &Path) -> crate::Result<(u64, u64)> {
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    let (total, free) = filesystem(dir).map_err(|e| e.to_string())?;
-    Ok(Capacity { total, free, app: allocated(dir), measured: "statvfs+st_blocks" })
+    filesystem(dir).map_err(|e| e.to_string())
 }
 
 #[cfg(unix)]
@@ -38,17 +43,4 @@ fn filesystem(_: &Path) -> std::io::Result<(u64, u64)> {
     Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "no host adapter for this OS yet"))
 }
 
-/// Allocated (not logical) bytes, so sparse files count only what they hold.
-pub fn allocated(path: &Path) -> u64 {
-    let Ok(meta) = std::fs::symlink_metadata(path) else { return 0 };
-    #[cfg(unix)]
-    let own = { use std::os::unix::fs::MetadataExt; meta.blocks() * 512 };
-    #[cfg(not(unix))]
-    let own = meta.len();
-    if !meta.is_dir() {
-        return own;
-    }
-    own + std::fs::read_dir(path)
-        .map(|entries| entries.flatten().map(|e| allocated(&e.path())).sum())
-        .unwrap_or(0)
-}
+

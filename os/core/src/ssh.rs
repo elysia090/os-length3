@@ -197,10 +197,7 @@ pub fn scope(data: &Path) -> Scope {
 /// Keep the scope chosen, on this device (never sent).
 pub fn set_scope(data: &Path, s: Scope) -> std::io::Result<()> {
     crate::boundary::private_dir(&dir(data))?;
-    let path = scope_file(data);
-    let temp = path.with_extension(format!("json.{}", std::process::id()));
-    std::fs::write(&temp, serde_json::json!({"scope": s.word()}).to_string())?;
-    std::fs::rename(&temp, path)
+    crate::atomic::replace(&scope_file(data), serde_json::json!({"scope": s.word()}).to_string().as_bytes(), crate::atomic::How::PRIVATE)
 }
 
 /// Whether an IPv4 address is on a private network: a LAN (10/8, 172.16/12, 192.168/16), a VPN's shared space
@@ -279,9 +276,9 @@ pub fn destinations(port: u16, repos: &[String], host: Ipv4Addr) -> Vec<String> 
     repos.iter().map(|r| format!("ssh -p {port} {r}@{host}")).collect()
 }
 
-/// The repos here, by name: the SSH users there are.
+/// The repos here, by name: the SSH users there are (no repo is walked).
 pub fn repo_names() -> Vec<String> {
-    crate::repos::Repos::open().and_then(|r| r.list()).map(|l| l.into_iter().map(|s| s.name).collect()).unwrap_or_default()
+    crate::repos::Repos::open().and_then(|r| r.names()).unwrap_or_default()
 }
 
 // ---- failed tries ----
@@ -402,11 +399,9 @@ impl Drop for Recorded {
     }
 }
 
-/// Written beside and renamed in, so a reader never sees half of it.
+/// Replaced whole (atomic.rs), so a reader never sees half of it.
 fn write_record(path: &Path, l: &Listening) -> std::io::Result<()> {
-    let temp = path.with_extension(format!("json.{}", std::process::id()));
-    std::fs::write(&temp, serde_json::to_vec(l).map_err(std::io::Error::other)?)?;
-    std::fs::rename(&temp, path)
+    crate::atomic::replace(path, &serde_json::to_vec(l).map_err(std::io::Error::other)?, crate::atomic::How::RECORD)
 }
 
 /// Record that this process listens.

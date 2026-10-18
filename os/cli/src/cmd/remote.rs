@@ -119,12 +119,26 @@ pub fn login(ctx: &Ctx, call: &Call) -> Result<Reply> {
     if !remote::valid_url(&url) {
         return Err(Error::Usage(tr!("{} is not a Remote's address: http(s)://host[:port]", "{} は Remote のアドレスではありません：http(s)://host[:port]", url)));
     }
+    // Signed in already, with a session the Remote still knows: run again, it is done (bug: each run made
+    // one more session on the Remote and left the last one there, never ended); for another Remote, the
+    // repos go to this one first, as signing out sends them.
+    if let (Some(c), Ok(Some(a))) = (remote::connection(), remote::account()) {
+        if c.url != remote::current_url(&url) {
+            return Err(Error::Refused(tr!("This device is signed in to {}: l3 logout first (it sends every repo there), then l3 login {}", "この端末は {} にサインインしています。先に l3 logout（各 repo をそこへ送ります）、それから l3 login {}", host(&c.url), url)));
+        }
+        return Ok(Reply::done(tr!("Signed in already · {} as {}", "サインイン済みです · {}（{}）", host(&c.url), a.name), json!({"url": c.url, "changed": false, "repos": []})));
+    }
     let code = remote::device_start(&url, "l3")?;
+    // Only a page that Remote stands behind is shown to open, as the app opens only such a page (bug: l3
+    // printed whatever page was named, for a person to open and approve this device on).
+    if !remote::device_page_ok(&url, remote::app_origin(&url).as_deref(), &code.verification_uri_complete) {
+        return Err(Error::Refused(tr!("{} named a page that is not its own to approve this device on; nothing was signed in", "{} が、この端末を承認するページとして自分のものでないページを示しました。サインインしていません", url)));
+    }
     // Seen before l3 waits (on standard error when standard output is data).
     let say = |s: &str| if call.flags.json { eprintln!("{s}") } else { out::line(s) };
     say(&tr!("Open this page in a browser and approve:", "ブラウザでこのページを開き、承認してください："));
-    say(&format!("  {}", code.verification_uri_complete));
-    say(&tr!("  code {}", "  コード {}", code.user_code));
+    say(&format!("  {}", out::plain(&code.verification_uri_complete)));
+    say(&tr!("  code {}", "  コード {}", out::plain(&code.user_code)));
     eprint!("{}", tr!("Waiting for approval…", "承認を待っています…"));
     let done = remote::device_finish(&url, "l3", &code);
     eprintln!();
@@ -136,7 +150,7 @@ pub fn login(ctx: &Ctx, call: &Call) -> Result<Reply> {
         t.extend(lines);
         rows.push(row);
     }
-    Ok(Reply::done(t.join("\n"), json!({"url": url, "repos": rows})))
+    Ok(Reply::done(t.join("\n"), json!({"url": url, "changed": true, "repos": rows})))
 }
 
 pub fn logout(ctx: &Ctx, _: &Call) -> Result<Reply> {
