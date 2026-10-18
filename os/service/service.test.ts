@@ -8,6 +8,7 @@ import * as schema from './schema.ts';
 import {sweep} from './sweep.ts';
 import {accept, APP, BASE, count, enc, freshDb as fresh, idOf, named, SECRET, service, upload, type Service} from './testing.ts';
 import homeSync from '../shared/home-sync.json' with {type: 'json'};
+import desktopPins from '../shared/desktop-releases.json' with {type: 'json'};
 
 /** Who a session is, as the Remote says (the name the app's off ask shows comes from here). */
 const whoIs = async (s: Service, token: string) =>
@@ -1124,6 +1125,62 @@ test('A repo named on answers only that it is off; a range that ends before it s
   assert.deepEqual([head.status, head.headers.get('Content-Length')], [200, '100']);
 });
 
+test('a release is public: its root by digest and the desktop app by its pinned name, whole, by range or HEAD; nothing else, and no listing', async () => {
+  const s = await service();
+  const sha = 'b'.repeat(64);
+  await s.bucket.put(`os/${sha}`, new Uint8Array(100).map((_, i) => i));
+  const deb = desktopPins['0.4.1'].deb.file, appimage = desktopPins['0.4.1'].appimage.file;
+  await s.bucket.put(`desktop/${deb}`, new Uint8Array(50).map((_, i) => 200 - i));
+  const get = (path: string, headers: Record<string, string> = {}, method = 'GET') => s.app.request(`${BASE}${path}`, {method, headers});
+  const body = async (r: Response) => [...new Uint8Array(await r.arrayBuffer())];
+
+  // Whole, to anyone (no session), with what a download needs.
+  const whole = await get(`/v1/desktop/${deb}`);
+  assert.equal(whole.status, 200);
+  assert.deepEqual(Object.fromEntries(['content-type', 'content-length', 'accept-ranges', 'etag', 'content-disposition'].map((k) => [k, whole.headers.get(k)])), {
+    'content-type': 'application/vnd.debian.binary-package', 'content-length': '50', 'accept-ranges': 'bytes',
+    etag: `"${desktopPins['0.4.1'].deb.sha256}"`, 'content-disposition': `attachment; filename="${deb}"`});
+  assert.equal((await body(whole)).length, 50);
+  const root = await get(`/v1/os/${sha}`);
+  assert.deepEqual([root.status, root.headers.get('content-type'), root.headers.get('content-disposition'), (await body(root)).length],
+    [200, 'application/octet-stream', null, 100]);
+
+  // A range: from a byte to a byte, from a byte to the end, an end past the end; each says which bytes of how many.
+  for (const [path, range, status, contentRange, bytes] of [
+    [`/v1/desktop/${deb}`, 'bytes=10-12', 206, 'bytes 10-12/50', [190, 189, 188]],
+    [`/v1/desktop/${deb}`, 'bytes=48-', 206, 'bytes 48-49/50', [152, 151]],
+    [`/v1/desktop/${deb}`, 'bytes=49-900', 206, 'bytes 49-49/50', [151]],
+    [`/v1/os/${sha}`, 'bytes=98-', 206, 'bytes 98-99/100', [98, 99]],
+  ] as const) {
+    const r = await get(path, {Range: range});
+    assert.deepEqual([r.status, r.headers.get('content-range'), r.headers.get('content-length'), await body(r)], [status, contentRange, String(bytes.length), bytes], `${path} ${range}`);
+  }
+  // Nothing there to give: past the end, or backwards.
+  for (const range of ['bytes=50-', 'bytes=60-70', 'bytes=20-10']) {
+    const r = await get(`/v1/desktop/${deb}`, {Range: range});
+    assert.deepEqual([r.status, r.headers.get('content-range')], [416, 'bytes */50'], range);
+  }
+  // HEAD: how much there is, and nothing of it.
+  const head = await get(`/v1/desktop/${deb}`, {}, 'HEAD');
+  assert.deepEqual([head.status, head.headers.get('content-length'), head.headers.get('content-type'), (await body(head)).length], [200, '50', 'application/vnd.debian.binary-package', 0]);
+  const headPart = await get(`/v1/os/${sha}`, {Range: 'bytes=0-0'}, 'HEAD');
+  assert.deepEqual([headPart.status, headPart.headers.get('content-range'), headPart.headers.get('content-length')], [206, 'bytes 0-0/100', '1']);
+
+  // Missing: a pinned file the bucket has not got yet, a name nobody pinned (even one the bucket holds), a digest nobody put.
+  await s.bucket.put('desktop/other.deb', new Uint8Array(3));
+  for (const path of [`/v1/desktop/${appimage}`, '/v1/desktop/other.deb', `/v1/desktop/..%2Fos%2F${sha}`, `/v1/os/${'c'.repeat(64)}`, '/v1/os/not-a-digest']) {
+    assert.equal((await get(path)).status, 404, path);
+    assert.equal((await get(path, {}, 'HEAD')).status, 404, `HEAD ${path}`);
+  }
+  // No listing: the folders answer nothing, and nothing they say names a file.
+  for (const path of ['/v1/desktop', '/v1/desktop/', '/v1/os', '/v1/os/']) {
+    const r = await get(path);
+    const text = await r.text();
+    assert.ok(r.status === 404 || r.status === 401, `${path}: ${r.status}`);
+    assert.ok(!text.includes(deb) && !text.includes(sha), path);
+  }
+});
+
 test('Discard: an off repo goes for good now, asked as off is; its name is remembered, so a copy that was in step cannot bring it back, and one made anew can', async () => {
   const s = await service();
   const t = await s.start('Ren');
@@ -1359,7 +1416,7 @@ test('On Workers a sweep that fails fails its run, and says so', async () => {
   const worker = (await import('./worker.ts')).default;
   // A database nobody answers for: the sweep's first step fails.
   const env = {DATABASE_URL: 'postgresql://nobody:nothing@127.0.0.1/none?sslmode=require', BETTER_AUTH_SECRET: crypto.randomUUID() + crypto.randomUUID(),
-    BASE_URL: BASE, APP_ORIGIN: APP, BLOBS: {get: async () => null, put: async () => undefined, delete: async () => undefined}};
+    BASE_URL: BASE, APP_ORIGIN: APP, BLOBS: {head: async () => null, get: async () => null, put: async () => undefined, delete: async () => undefined}};
   const later: Promise<unknown>[] = [], said: unknown[][] = [];
   const error = console.error;
   console.error = (...a: unknown[]) => { said.push(a); };

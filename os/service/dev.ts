@@ -3,7 +3,7 @@
 // end-to-end checks; the same app as on Workers.
 //
 //   node service/dev.ts DIR [PORT] [APP_ORIGIN] [OTHER_ORIGIN…]
-import {existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {createServer} from 'node:http';
 import {join} from 'node:path';
 import {PGlite} from '@electric-sql/pglite';
@@ -26,11 +26,8 @@ const file = (key: string) => join(dir, 'blobs', encodeURIComponent(key));
 const bucket: Bucket = {
   async get(k) { return existsSync(file(k)) ? new Uint8Array(readFileSync(file(k))) : null; },
   async put(k, b) { writeFileSync(`${file(k)}.tmp`, b); renameSync(`${file(k)}.tmp`, file(k)); },
-  async range(k, start, end) {
-    if (!existsSync(file(k))) return null;
-    const all = readFileSync(file(k));
-    return {bytes: new Uint8Array(all.subarray(start, end === null ? undefined : end + 1)), size: all.length};
-  },
+  async size(k) { return existsSync(file(k)) ? statSync(file(k)).size : null; },
+  async read(k, start, end) { return existsSync(file(k)) ? new Uint8Array(readFileSync(file(k)).subarray(start, end + 1)) : null; },
   async delete(keys) { for (const k of keys) rmSync(file(k), {force: true}); },
 };
 

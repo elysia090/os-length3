@@ -98,7 +98,10 @@ pub fn distro(id: &str) -> Option<&'static Distro> {
     DISTROS.iter().find(|d| d.id == id)
 }
 
-/// Where the publisher's release channel keeps it, should the Remote not have it.
+/// Where the publisher's release channel keeps it. It answers anyone only
+/// while the repository is public; it is private, so a device without the
+/// publisher's credentials is answered 404 there, and the Remote is where a
+/// root comes from.
 pub fn github_url(r: &Release) -> String {
     format!("https://github.com/elysia090/libqm-prototype/releases/download/{}/{}", r.tag, r.file)
 }
@@ -110,6 +113,32 @@ pub fn release_url(remote: &str, r: &Release) -> String {
 
 fn by_digest(remote: &str, sha256: &str) -> String {
     format!("{}/v1/os/{}", remote.trim_end_matches('/'), sha256)
+}
+
+/// Where a pinned root is fetched from, in turn: the Remote this device
+/// uses; the publisher's Remote (remote::DEFAULT_URL), which each of its
+/// deploys fills with every root pinned here (service/mirror.ts), when the
+/// device uses another; then the release channel (`github_url`). Each is
+/// taken only at the pinned digest.
+pub fn sources(remote: &str, r: &Release) -> Vec<String> {
+    let mut urls = vec![release_url(remote, r)];
+    let ours = release_url(crate::remote::DEFAULT_URL, r);
+    if !urls.contains(&ours) { urls.push(ours); }
+    urls.push(github_url(r));
+    urls
+}
+
+/// The first of `urls` that gives the pinned file; when none does, what each said.
+fn fetch_first(urls: &[String], sha256: &str, bytes: u64, dest: &Path, mut progress: impl FnMut(crate::fetch::Progress)) -> Result<(), String> {
+    let mut said = Vec::new();
+    for url in urls {
+        match crate::fetch::fetch(url, sha256, bytes, dest, &mut progress) {
+            Ok(()) => return Ok(()),
+            Err(e) => said.push(e),
+        }
+    }
+    Err(crate::tr!("No source has this root yet ({}). The Remote has every root pinned here once its deploy has put it there.",
+        "この root はまだどこからも取れません（{}）。ここで固定した root は、デプロイのときに Remote に置かれます。", said.join(" / ")))
 }
 
 /// Fetch another distribution's root (the Remote by digest first, then its
@@ -179,13 +208,10 @@ pub fn fetch_and_install(data: &Path, remote: &str, progress: impl FnMut(crate::
     crate::boundary::private_dir(&system_dir(data)).map_err(|e| e.to_string())?;
     fs::create_dir_all(&bundles).map_err(|e| e.to_string())?;
     let bundle = bundles.join(format!("{}.tar.zst", r.sha256));
-    // The Remote first; the release channel when it does not have it. Either
-    // way the bytes are only kept if they are the pinned digest.
-    let mut progress = progress;
-    if let Err(first) = crate::fetch::fetch(&release_url(remote, r), r.sha256, r.bytes, &bundle, &mut progress) {
-        crate::fetch::fetch(&github_url(r), r.sha256, r.bytes, &bundle, &mut progress)
-            .map_err(|e| format!("{first} / {e}"))?;
-    }
+    // The Remote first, then the publisher's, then the release channel
+    // (`sources`). Whichever gives it, the bytes are only kept if they are
+    // the pinned digest.
+    fetch_first(&sources(remote, r), r.sha256, r.bytes, &bundle, progress)?;
     let installed = install(data, &bundle)?;
     let _ = fs::remove_file(&bundle);
     Ok(installed)
@@ -598,5 +624,14 @@ mod tests {
         let e = identify(&d.join("b.tar.zst")).unwrap_err();
         assert!(e.contains("Not a known release") || e.contains("知らないリリース"), "{e}");
         let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_root_comes_from_the_remote_then_the_publishers_then_the_release_channel() {
+        let r = &RELEASES[0];
+        let ours = format!("{}/v1/os/{}", crate::remote::DEFAULT_URL, r.sha256);
+        assert_eq!(sources("http://127.0.0.1:8787/", r), [format!("http://127.0.0.1:8787/v1/os/{}", r.sha256), ours.clone(), github_url(r)]);
+        // A device on the publisher's Remote asks it once.
+        assert_eq!(sources(crate::remote::DEFAULT_URL, r), [ours, github_url(r)]);
     }
 }

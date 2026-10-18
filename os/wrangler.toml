@@ -6,9 +6,10 @@
 # Built and shipped by Cloudflare's Workers Builds on each push to main
 # (root directory os/; README.md, Deploy): the build takes the Prompt from
 # the release RELEASE names and builds the app (npm run build:cloudflare),
-# and service/deploy.ts runs the migrations, makes the bucket, and deploys
-# the Worker with the secrets it lacks (DATABASE_URL, BETTER_AUTH_SECRET,
-# ENTER_KEY).
+# and service/deploy.ts runs the migrations, makes the bucket, deploys the
+# Worker with the secrets it lacks (DATABASE_URL, BETTER_AUTH_SECRET,
+# ENTER_KEY), and puts in the bucket the release files this tree pins that it
+# lacks (the roots, the desktop app: service/mirror.ts).
 name = "os-length3"
 main = "service/worker.ts"
 compatibility_date = "2026-08-01"

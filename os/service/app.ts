@@ -5,7 +5,8 @@
 //
 //   GET    /v1/about                  what this Remote offers: its sign-in providers, and its app's origin
 //   GET    /v1/health                 whether it answers from its database (503 when not), to anyone
-//   GET    /v1/os/:sha                a release bundle, to anyone, by digest (Range)
+//   GET    /v1/os/:sha                a release's root, to anyone, by digest (Range)
+//   GET    /v1/desktop/:file          the desktop app (.deb, AppImage), to anyone, by its pinned file's name (Range)
 //   GET    /v1/moved                  what moved, cheaply: {repos: stamp, home: {key: version}}
 //   POST   /v1/blobs/missing [sha]    which of these the account does not have yet
 //   PUT    /v1/blobs/:sha             bytes, refused unless they are that digest and fit in its room
@@ -55,6 +56,7 @@ import {seen} from './seen.ts';
 import {news} from './news.ts';
 import {planRoutes, plans, type Billing, type PlanConfig} from './plan.ts';
 import {servers} from './servers.ts';
+import {desktopFile, rootKey} from './releases.ts';
 import {sshRoutes} from './ssh.ts';
 import {KEPT, purge, REMEMBERED} from './sweep.ts';
 
@@ -237,22 +239,34 @@ export function createApp(d: Deps) {
   if (d.enter) enter({db, auth: d.auth, enter: d.enter}, app);
   if (d.providers.includes('dev')) app.route('/dev-oauth', devOAuth());
 
-  // The OS is public: its canonical copy is the release, named by its digest.
-  app.on(['GET', 'HEAD'], '/v1/os/:sha', async (c) => {
+  // The OS is public: its canonical copy is the release, a root named by its digest and the desktop
+  // app by its file's name, as this tree pins them (releases.ts); the deploy puts them here (mirror.ts).
+  // There is no listing: a path names one file or nothing.
+  app.on(['GET', 'HEAD'], '/v1/os/:sha', (c) => {
     const sha = c.req.param('sha');
-    if (!HEX.test(sha)) return c.json({error: 'Not found'}, 404);
-    const m = /^bytes=(\d+)-(\d*)$/.exec(c.req.header('Range') ?? '');
-    const start = m ? Number(m[1]) : 0, end = m && m[2] ? Number(m[2]) : null;
-    // A range that ends before it starts asks for nothing; HEAD asks only how much there is.
-    const backwards = end !== null && end < start, head = c.req.method === 'HEAD';
-    const o = await d.bucket.range(`os/${sha}`, backwards ? 0 : start, backwards ? 0 : head ? start : end);
-    if (!o) return c.json({error: 'No such release'}, 404);
-    if (backwards || (start >= o.size && o.size > 0)) return new Response(null, {status: 416, headers: {'Content-Range': `bytes */${o.size}`}});
-    const length = head ? Math.min(end ?? o.size - 1, o.size - 1) - start + 1 : o.bytes.length;
-    const headers: Record<string, string> = {'Content-Type': 'application/octet-stream', 'Accept-Ranges': 'bytes', ETag: `"${sha}"`, 'Content-Length': String(length)};
-    if (m) headers['Content-Range'] = `bytes ${start}-${start + length - 1}/${o.size}`;
-    return new Response(head ? null : o.bytes as BodyInit, {status: m ? 206 : 200, headers});
+    return HEX.test(sha) ? release(c, rootKey(sha), {type: 'application/octet-stream', etag: sha}) : c.json({error: 'Not found'}, 404);
   });
+  app.on(['GET', 'HEAD'], '/v1/desktop/:file', (c) => {
+    const p = desktopFile(c.req.param('file'));
+    return p ? release(c, p.key, {type: p.type, etag: p.sha256, name: p.file}) : c.json({error: 'No such release'}, 404);
+  });
+  /** One file of a release, whole or the one range asked for (bytes=a-b, bytes=a-), streamed from the bucket. */
+  const release = async (c: Context<Vars>, key: string, o: {type: string; etag: string; name?: string}) => {
+    const m = /^bytes=(\d+)-(\d*)$/.exec(c.req.header('Range') ?? '');
+    const size = await d.bucket.size(key);
+    if (size === null) return c.json({error: 'No such release'}, 404);
+    const start = m ? Number(m[1]) : 0, asked = m && m[2] ? Number(m[2]) : null;
+    // A range that ends before it starts, or starts past the end, asks for nothing there is.
+    if (m && ((asked !== null && asked < start) || start >= size)) return new Response(null, {status: 416, headers: {'Content-Range': `bytes */${size}`}});
+    const end = Math.min(asked ?? size - 1, size - 1), length = Math.max(0, end - start + 1);
+    const headers: Record<string, string> = {'Content-Type': o.type, 'Accept-Ranges': 'bytes', ETag: `"${o.etag}"`, 'Content-Length': String(length)};
+    if (o.name) headers['Content-Disposition'] = `attachment; filename="${o.name}"`;
+    if (m) headers['Content-Range'] = `bytes ${start}-${end}/${size}`;
+    // HEAD asks only how much there is; an empty file has nothing to read.
+    const body = c.req.method === 'HEAD' || !length ? null : await d.bucket.read(key, start, end);
+    if (length && c.req.method !== 'HEAD' && !body) return c.json({error: 'No such release'}, 404);
+    return new Response(body as BodyInit | null, {status: m ? 206 : 200, headers});
+  };
 
   // A page elsewhere can make a browser send the session cookie, never the bearer token: a write
   // that comes with the cookie alone is taken only from the app's own pages.
