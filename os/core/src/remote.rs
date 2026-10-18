@@ -43,6 +43,9 @@ const CHUNK: usize = 2000;
 pub struct Connection {
     pub url: String,
     pub token: String,
+    /// The account the session is (its id on the Remote), when it was told at sign-in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
 }
 
 /// A Remote's URL as it is used now: the former name of the one this OS ships with is its name today.
@@ -60,6 +63,34 @@ pub fn connection() -> Option<Connection> {
 
 pub fn save_connection(c: &Connection) -> Result<()> {
     crate::home::set("remote", &serde_json::to_string(c).map_err(|e| e.to_string())?)
+}
+
+/// Keep a session just approved. What was agreed with another Remote, or
+/// with another account as far as can be told, goes first: kept, it would be
+/// taken for what this one agreed, and every file it holds that this one
+/// does not (all of them, for an account that has never seen the repo) would
+/// be removed here as if removed there (bug: signing in elsewhere without
+/// signing out emptied each repo of what was unchanged).
+fn connect(url: &str, token: String) -> Result<()> {
+    let url = current_url(url);
+    let user = whose(&url, &token);
+    if connection().is_some_and(|was| another(&was, &url, user.as_deref())) {
+        gone(fs::remove_dir_all(sync_dir()))?;
+    }
+    save_connection(&Connection { url, token, user })
+}
+
+/// Whether a session at `url` for `user` is another than `was`: another Remote, or another account on it.
+/// Whose `was` is cannot always be told (a session kept before accounts were noted): the same, then.
+fn another(was: &Connection, url: &str, user: Option<&str>) -> bool {
+    was.url != url || matches!((was.user.as_deref(), user), (Some(a), Some(b)) if a != b)
+}
+
+/// The account a session is, as the Remote at `url` says; None when it does not say.
+fn whose(url: &str, token: &str) -> Option<String> {
+    let r = agent(url).get(&format!("{url}/api/auth/get-session")).set("Authorization", &format!("Bearer {token}")).call().ok()?;
+    let v = answer(url, r).ok()?;
+    v["user"]["id"].as_str().filter(|id| !id.is_empty()).map(String::from)
 }
 
 /// Forget the Remote here: its session and every base (the repos stay).
@@ -350,7 +381,7 @@ pub fn device_finish(url: &str, client: &str, code: &DeviceCode) -> Result<()> {
     loop {
         std::thread::sleep(step);
         if let Some(token) = device_poll(url, client, code)? {
-            return save_connection(&Connection { url: url.trim_end_matches('/').into(), token });
+            return connect(url, token);
         }
         if std::time::Instant::now() > deadline {
             return Err(expired());
@@ -1181,6 +1212,22 @@ mod tests {
             serde_json::json!({"version": -1, "draft": {}, "head": null}), serde_json::json!({"version": 3, "draft": {}, "head": 7})] {
             assert!(line_there(url, &odd).is_err(), "{odd}");
         }
+    }
+
+    #[test]
+    fn a_session_is_another_on_another_remote_or_for_another_account() {
+        let was = |user: Option<&str>| Connection { url: DEFAULT_URL.into(), token: "t".into(), user: user.map(String::from) };
+        assert!(!another(&was(Some("u1")), DEFAULT_URL, Some("u1")));
+        assert!(another(&was(Some("u1")), DEFAULT_URL, Some("u2")));
+        assert!(another(&was(Some("u1")), "http://127.0.0.1:8787", Some("u1")));
+        assert!(another(&was(None), "http://127.0.0.1:8787", None));
+        // Whose either is cannot be told: the same account.
+        assert!(!another(&was(None), DEFAULT_URL, Some("u2")));
+        assert!(!another(&was(Some("u1")), DEFAULT_URL, None));
+        // A session kept without an account reads as before; one with it keeps it.
+        let old: Connection = serde_json::from_str(r#"{"url":"https://os.length3.com","token":"t"}"#).unwrap();
+        assert_eq!(old.user, None);
+        assert_eq!(serde_json::to_string(&was(None)).unwrap(), r#"{"url":"https://os.length3.com","token":"t"}"#);
     }
 
     #[test]

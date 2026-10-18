@@ -32,3 +32,75 @@ fn an_answer_that_is_not_a_repo_leaves_the_copy_here_as_it_is() {
         assert!(!remote.said().iter().any(|s| s.starts_with("PATCH")), "{said}: {:?}", remote.said());
     }
 }
+
+/// A Remote that approves every device code at once as the account `user` (token "new"), knows no session
+/// but that one, holds no repo until notes is sent, and takes whatever is sent.
+fn approving(user: &'static str) -> FakeRemote {
+    let url = std::sync::Arc::new(std::sync::OnceLock::<String>::new());
+    let at = url.clone();
+    let notes = std::sync::Mutex::new(None::<String>);
+    let remote = FakeRemote::start(move |a| {
+        let page = format!("{}/?device=&user_code=ABCD", at.get().map_or("", String::as_str));
+        match (a.method.as_str(), a.path.as_str()) {
+            ("POST", "/api/auth/device/code") => (200, format!(r#"{{"device_code":"d","user_code":"ABCD","verification_uri":"{page}","verification_uri_complete":"{page}","interval":1,"expires_in":60}}"#)),
+            ("POST", "/api/auth/device/token") => (200, r#"{"access_token":"new"}"#.into()),
+            ("GET", "/api/auth/get-session") if a.auth.as_deref() == Some("Bearer new") => (200, format!(r#"{{"user":{{"id":"{user}","name":"{user}"}}}}"#)),
+            ("GET", "/api/auth/get-session") => (401, r#"{"error":"Unauthorized"}"#.into()),
+            ("POST", "/v1/blobs/missing") => (200, a.text()),
+            ("PUT", p) if p.starts_with("/v1/blobs/") => (200, "{}".into()),
+            ("PATCH", "/v1/repos/notes/draft") => {
+                let set = serde_json::from_str::<serde_json::Value>(&a.text()).unwrap()["set"].to_string();
+                *notes.lock().unwrap() = Some(format!(r#"{{"version":1,"draft":{set},"head":null}}"#));
+                (200, r#"{"version":1}"#.into())
+            }
+            ("GET", "/v1/repos/notes") if notes.lock().unwrap().is_some() => (200, notes.lock().unwrap().clone().unwrap()),
+            ("GET", "/v1/repos") => (200, "[]".into()),
+            _ => (NOT_FOUND.0, NOT_FOUND.1.to_string()),
+        }
+    });
+    url.set(remote.url.clone()).unwrap();
+    remote
+}
+
+/// A home with the repo notes (a.txt) agreed at version 3 with the session `remote.json` names.
+fn agreed_home(name: &str, remote_json: &str) -> Home {
+    let home = Home::new(name);
+    std::fs::create_dir_all(home.path("home")).unwrap();
+    std::fs::write(home.path("home/remote.json"), remote_json).unwrap();
+    home.repo("notes", &[("a.txt", "kept\n")]);
+    home.agreed("notes", &format!(r#"{{"version":3,"tree":{{"a.txt":"{}"}},"head":null}}"#, sha("kept\n")));
+    home
+}
+
+#[test]
+fn signing_in_as_another_account_or_on_another_remote_lets_go_of_what_the_last_one_agreed() {
+    // Kept, the last one's base was taken for what this one agreed, and every file it held that this one
+    // does not (all of them: this account has never seen notes) was removed here as if removed there.
+    for (case, was) in [("another account", r#"{"url":"URL","token":"test-token","user":"u1"}"#), ("another Remote", r#"{"url":"http://127.0.0.1:9","token":"test-token"}"#)] {
+        let remote = approving("u2");
+        let home = agreed_home("another-account", &was.replace("URL", &remote.url));
+        let ran = home.run("en", &["login", &remote.url]);
+        assert_eq!(ran.code, 0, "{case}: {ran:?}");
+        assert!(home.path("repos/notes/a.txt").exists(), "{case}: a.txt was removed\n{ran:?}");
+        // It went to this account as new.
+        let sent = remote.asked.lock().unwrap().iter().find(|a| a.method == "PATCH").map(|a| a.text()).unwrap_or_default();
+        assert!(sent.contains("\"a.txt\"") && sent.contains("\"version\":0"), "{case}: {sent}");
+        let kept = std::fs::read_to_string(home.path("home/remote.json")).unwrap();
+        assert!(kept.contains("\"token\":\"new\"") && kept.contains("\"user\":\"u2\""), "{case}: {kept}");
+    }
+}
+
+#[test]
+fn signing_in_again_where_the_session_is_alive_changes_nothing() {
+    let remote = approving("u1");
+    let home = agreed_home("login-again", &format!(r#"{{"url":"{}","token":"new","user":"u1"}}"#, remote.url));
+    let ran = home.run("en", &["login", &remote.url]);
+    assert_eq!((ran.code, ran.stdout.as_str()), (0, &*format!("Signed in already · {} as u1\n", remote.url.trim_start_matches("http://"))), "{ran:?}");
+    assert!(!remote.said().iter().any(|s| s.contains("/device/")), "no new session was asked for: {:?}", remote.said());
+    // On another Remote, it is refused, and the session here stays.
+    let ran = home.run("en", &["login", "http://127.0.0.1:9"]);
+    assert_eq!(ran.code, 1, "{ran:?}");
+    assert!(ran.stderr.contains("l3 logout first"), "{ran:?}");
+    assert!(std::fs::read_to_string(home.path("home/remote.json")).unwrap().contains("\"token\":\"new\""));
+    assert!(home.path("sync/notes.json").exists());
+}

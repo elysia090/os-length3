@@ -215,6 +215,12 @@ pub struct Asked {
     pub method: String,
     pub path: String,
     pub body: Vec<u8>,
+    /// Its Authorization header, if it had one.
+    pub auth: Option<String>,
+}
+
+impl Asked {
+    pub fn text(&self) -> String { String::from_utf8_lossy(&self.body).into_owned() }
 }
 
 /// An HTTP Remote on 127.0.0.1 answering each request with what `answer` says: (status, body).
@@ -255,17 +261,18 @@ fn serve_one(mut stream: std::net::TcpStream, answer: &Answer, kept: &std::sync:
     if r.read_line(&mut first).is_err() { return; }
     let mut parts = first.split_whitespace();
     let (method, path) = (parts.next().unwrap_or_default().to_string(), parts.next().unwrap_or_default().to_string());
-    let mut length = 0usize;
+    let (mut length, mut auth) = (0usize, None);
     loop {
         let mut line = String::new();
         if r.read_line(&mut line).is_err() || line.trim().is_empty() { break; }
         if let Some((k, v)) = line.split_once(':') {
             if k.eq_ignore_ascii_case("content-length") { length = v.trim().parse().unwrap_or(0); }
+            if k.eq_ignore_ascii_case("authorization") { auth = Some(v.trim().to_string()); }
         }
     }
     let mut body = vec![0u8; length];
     if r.read_exact(&mut body).is_err() { return; }
-    let a = Asked { method, path, body };
+    let a = Asked { method, path, body, auth };
     let (status, text) = answer(&a);
     kept.lock().unwrap().push(a);
     let head = format!("HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", text.len());
