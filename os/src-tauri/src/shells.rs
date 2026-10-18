@@ -60,8 +60,20 @@ fn decode(pending: &mut Vec<u8>, chunk: &[u8]) -> String {
     text
 }
 
+/// Run `f` off the window's thread: a command without `async` runs on it (Tauri 2), and the window draws
+/// nothing until it returns. What is typed (prompt_input, prompt_interrupt) stays on it, in order.
+async fn apart<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(f).await.map_err(|e| e.to_string())?
+}
+
+/// Open a Prompt; it waits up to a second for the Prompt's pid 1 to appear.
 #[tauri::command]
-pub fn prompt_open(app: AppHandle, shells: State<'_, Shells>, repo: String) -> Result<u32, String> {
+pub async fn prompt_open(app: AppHandle, repo: String) -> Result<u32, String> {
+    apart(move || open(app, repo)).await
+}
+
+fn open(app: AppHandle, repo: String) -> Result<u32, String> {
+    let shells = tauri::Manager::state::<Shells>(&app);
     if root::current(&paths::data_dir()).is_none() {
         return Err(length3_core::tr!("There is no root", "root がありません"));
     }
@@ -128,16 +140,22 @@ pub fn prompt_interrupt(shells: State<'_, Shells>, id: u32) -> Result<(), String
     Ok(())
 }
 
-/// What the Prompt's processes hold now.
+/// What the Prompt's processes hold now (every process on the host looked at in /proc).
 #[tauri::command]
-pub fn prompt_held(shells: State<'_, Shells>, id: u32) -> Option<prompt::Held> {
-    let open = shells.open.lock().unwrap();
-    open.get(&id)?.ns.map(prompt::held)
+pub async fn prompt_held(app: AppHandle, id: u32) -> Result<Option<prompt::Held>, String> {
+    apart(move || {
+        let ns = tauri::Manager::state::<Shells>(&app).open.lock().unwrap().get(&id).and_then(|s| s.ns);
+        Ok(ns.map(prompt::held))
+    }).await
 }
 
-/// Stop: every process inside ends; said done only once the host shows none.
+/// Stop: every process inside ends; said done only once the host shows none (up to 3 s).
 #[tauri::command]
-pub fn prompt_close(shells: State<'_, Shells>, id: u32) -> Result<prompt::Stopped, String> {
+pub async fn prompt_close(app: AppHandle, id: u32) -> Result<prompt::Stopped, String> {
+    apart(move || close(&tauri::Manager::state::<Shells>(&app), id)).await
+}
+
+fn close(shells: &Shells, id: u32) -> Result<prompt::Stopped, String> {
     let (supervisor, ns) = {
         let open = shells.open.lock().unwrap();
         let s = open.get(&id).ok_or_else(|| length3_core::tr!("This Prompt has ended", "この Prompt は終わっています"))?;
