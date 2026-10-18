@@ -98,48 +98,103 @@ export const todos = (id: string, member: boolean) => call<BoardTodo[]>(member ?
 const putTodo = (board: string, id: string, change: Partial<BoardTodo>) => call<BoardTodo>(`/v1/boards/${board}/todos/${encodeURIComponent(id)}`, send('PUT', change));
 const dropTodo = (board: string, id: string) => call<void>(`/v1/boards/${board}/todos/${encodeURIComponent(id)}`, send('DELETE'));
 
+/** How a board's TODO reaches the Remote, item by item; a test gives its own. */
+export interface TodoWays {
+  put(board: string, id: string, change: Partial<BoardTodo>): Promise<BoardTodo>;
+  drop(board: string, id: string): Promise<void>;
+}
+const remoteTodos: TodoWays = {put: putTodo, drop: dropTodo};
+
+export interface KeeperOptions {
+  ways?: TodoWays;
+  /** Why what was written is not on the Remote yet; it is sent again by itself. */
+  trouble?: (why: string) => void;
+  /** The pause in writing before it is sent. */
+  pause?: number;
+  /** The wait before the n-th try again (n from 1). */
+  backoff?: (n: number) => number;
+}
+
+/** A failure another try may get past: the Remote away, too busy, or failing for a moment. */
+const passing = (e: unknown) => e instanceof RemoteError && (e.status === 0 || e.status === 408 || e.status === 429 || e.status >= 500);
+
 /**
  * A board's TODO as the TODO box keeps it: after a pause in writing, each
  * item sends only what changed of it, so others' changes to its other fields
  * stay (a new one sends all of it, at a place between its neighbours'), and
  * each one taken out is taken off.
+ *
+ * What could not be sent for a passing reason (the Remote away) is sent again
+ * by itself, later each time, and until it is, the keeper is not idle, so
+ * the board's next look does not put the Remote's list over it. A save's
+ * promise settles once what it held is on the Remote, or is refused for good.
  */
-export function todoKeeper(board: string, from: readonly BoardTodo[]) {
+export function todoKeeper(board: string, from: readonly BoardTodo[], o: KeeperOptions = {}) {
+  const {ways = remoteTodos, trouble, pause = 600, backoff = (n) => Math.min(30_000, 1000 * 2 ** (n - 1))} = o;
   const had = new Map<string, BoardTodo>(from.map((x) => [x.id, x]));
-  let latest: Todo[] | null = null, wait = 0, busy = false;
+  let latest: Todo[] | null = null, wait: ReturnType<typeof setTimeout> | undefined, busy = false, tries = 0;
+  /** Those waiting on a save: answered when nothing written is left to send. */
+  let waiting: {resolve(): void; reject(e: unknown): void}[] = [];
   const placeAt = (list: readonly Todo[], i: number) => {
     const before = i > 0 ? had.get(list[i - 1].id)?.place : undefined;
     const after = list.slice(i + 1).map((x) => had.get(x.id)?.place).find((p) => p !== undefined);
     return before === undefined ? (after === undefined ? i : after - 1) : after === undefined ? before + 1 : (before + after) / 2;
   };
-  const flush = async () => {
-    const list = latest!;
-    latest = null;
+  /** Send `list`: what changed of each item since the Remote last had it, then what was taken out. Sent again, only what is still to send goes. */
+  const send = async (list: readonly Todo[]) => {
     for (const [i, x] of list.entries()) {
       const was = had.get(x.id);
       const change: Partial<BoardTodo> = was ? {} : {place: placeAt(list, i), created: x.created};
       for (const k of ['kind', 'title', 'detail', 'done'] as const) if (!was || x[k] !== was[k]) (change as Record<string, unknown>)[k] = x[k];
       if (!Object.keys(change).length) continue;
       // Taken off by someone else meanwhile: it stays off (the next look shows it gone), not brought back.
-      const got = await putTodo(board, x.id, change).catch((e: unknown) => { if (was && e instanceof RemoteError && e.status === 404) return null; throw e; });
+      const got = await ways.put(board, x.id, change).catch((e: unknown) => { if (was && e instanceof RemoteError && e.status === 404) return null; throw e; });
       if (got) had.set(x.id, got); else had.delete(x.id);
     }
-    for (const id of [...had.keys()]) if (!list.some((x) => x.id === id)) { await dropTodo(board, id); had.delete(id); }
+    for (const id of [...had.keys()]) {
+      if (list.some((x) => x.id === id)) continue;
+      // Already gone (taken off elsewhere, or by a try whose answer was lost): what was wanted.
+      await ways.drop(board, id).catch((e: unknown) => { if (!(e instanceof RemoteError && e.status === 404)) throw e; });
+      had.delete(id);
+    }
+  };
+  const answer = (e?: unknown) => {
+    const w = waiting;
+    waiting = [];
+    for (const x of w) if (e === undefined) x.resolve(); else x.reject(e);
+  };
+  const go = async () => {
+    wait = undefined;
+    busy = true;
+    try {
+      while (latest) {
+        const list = latest;
+        latest = null;
+        try { await send(list); } catch (e) {
+          // What failed is sent again, unless something newer is waiting to go in its place.
+          latest ??= list;
+          if (!passing(e)) { latest = null; tries = 0; answer(e); return; }
+          tries++;
+          trouble?.(e instanceof Error ? e.message : String(e));
+          wait = setTimeout(() => void go(), backoff(tries));
+          return;
+        }
+      }
+      tries = 0;
+      answer();
+    } finally { busy = false; }
   };
   return {
     save(kept: Todo[]): Promise<void> {
       latest = kept;
+      // While a try again waits, writing on sends sooner: after the pause, as any change.
       clearTimeout(wait);
-      return new Promise((resolve, reject) => {
-        wait = window.setTimeout(async () => {
-          wait = 0;
-          busy = true;
-          try { while (latest) await flush(); resolve(); } catch (e) { reject(e); } finally { busy = false; }
-        }, 600);
-      });
+      const done = new Promise<void>((resolve, reject) => { waiting.push({resolve, reject}); });
+      if (busy) wait = undefined; else wait = setTimeout(() => void go(), pause);
+      return done;
     },
     /** Nothing written here is waiting to be sent. */
-    idle: () => !latest && !wait && !busy,
+    idle: () => !latest && wait === undefined && !busy,
     /** The list as the Remote has it now. */
     took(list: readonly BoardTodo[]) { had.clear(); for (const x of list) had.set(x.id, x); },
   };

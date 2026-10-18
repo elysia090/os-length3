@@ -13,6 +13,7 @@ import {seeRepo as repoSheet} from './server-repo.ts';
 import {button, initials, message, type Shown} from './server-parts.ts';
 import {answers} from './common.ts';
 import {boardNew, onNews, sawBoard, serverNew} from '../news.ts';
+import {every} from '../runs.ts';
 
 // Server is an operation, as File is: laid over whatever page is showing,
 // never a page of its own. It is the one thing whose subject is people, not
@@ -239,22 +240,22 @@ export class ServerLayer {
       let list: servers.BoardTodo[];
       try { list = await servers.todos(b.id, b.member); } catch (e) { holder.replaceChildren(h('p', {class: 'error'}, message(e))); return; }
       if (!b.member && !list.length) { holder.remove(); return; }
-      const keeper = b.member ? servers.todoKeeper(b.id, list) : null;
+      // Not sent (the Remote away): said under the list, and sent again by itself.
+      const keeper = b.member ? servers.todoKeeper(b.id, list, {trouble: (why) => { status.textContent = t('Could not save: {message}', {message: why}); }}) : null;
       const box = todoList(list, keeper ? (kept) => keeper.save(kept) : async () => {},
         {readOnly: !b.member, first: t('Something to do together'), counted: (x) => { left.textContent = x; }, failed: (why) => { status.textContent = why; }});
       writers.push(() => holder.contains(document.activeElement) || (keeper ? !keeper.idle() : false));
       holder.replaceChildren(h('div', {class: 'board-todo-head'}, h('span', {}, 'TODO'), left), box.element, status);
       let seen = JSON.stringify(list);
-      const again = window.setInterval(async () => {
-        if (!holder.isConnected) { clearInterval(again); return; }
+      // Looked at again every 15 s while the page is in view, until the box is gone: one not answered is the next one's to bring.
+      every(15_000, async () => {
         if (keeper && !keeper.idle()) return;
-        // Looked at again every 15 s: one not answered is the next one's to bring.
         const now = await servers.todos(b.id, b.member).catch(() => null);
         if (!now || (keeper && !keeper.idle()) || JSON.stringify(now) === seen) return;
         seen = JSON.stringify(now);
         keeper?.took(now);
         box.update(now);
-      }, 15_000);
+      }, {alive: () => holder.isConnected});
     };
 
     /** The last box: a new board in this server. */
