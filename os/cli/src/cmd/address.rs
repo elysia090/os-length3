@@ -1,10 +1,18 @@
 //! `l3 address`: where to reach this device over SSH, one destination a
-//! line as OpenSSH takes it (`ssh -p 22000 notes@192.168.1.5`, one a repo),
-//! as `ip addr` answers with an address. SSH is off until it is turned on:
-//! asked on a terminal (y/N), never in a script (it says so, exit 5), or set
-//! with `l3 address ssh on|off`. Turning on starts l3's listener in the
-//! background (ssh.rs), which says so to the Remote; Runtime shows it on
-//! every device, and any of them can turn it off.
+//! line as OpenSSH takes it (`ssh -p 22000 notes@127.0.0.1`, one a repo),
+//! as `ip addr` answers with an address; beside it, on standard error, who
+//! may connect, how many keys are let in and the host key's fingerprint.
+//! All of it is worked out here and shown here: the Remote hears only that
+//! this device listens, and to whom (its scope's word).
+//!
+//! SSH is off until it is turned on: asked on a terminal (y/N, then from
+//! where: this device only, the default, or PCs on the same network too),
+//! never in a script (it says so, exit 5), or set with
+//! `l3 address ssh on [device|network]` and `l3 address ssh off`. The scope
+//! chosen is kept on this device; `on` alone takes it again. Turning on
+//! starts l3's listener in the background (ssh.rs), which says so to the
+//! Remote; Runtime shows on every device that it listens, and any of them
+//! can turn it off.
 
 use super::Ctx;
 use crate::args::Call;
@@ -12,21 +20,43 @@ use crate::out::{note, Error, Reply, Result};
 use length3_core::{paths, remote, ssh, tr};
 use serde_json::json;
 
-/// The listener as data: where it is reached, its port, its host key.
-fn shown(l: &ssh::Listening) -> serde_json::Value {
-    json!({"on": true, "port": l.port, "destinations": l.destinations, "fingerprint": l.fingerprint, "pid": l.pid, "started": l.started})
+/// This device's SSH as data: whether it listens, to whom, where, its host key, the keys let in.
+fn shown(h: &ssh::Here) -> serde_json::Value {
+    json!({"on": h.on, "scope": h.scope, "port": h.port, "bound": h.bound, "destinations": h.destinations, "fingerprint": h.fingerprint,
+        "keys": h.keys, "started": h.started})
+}
+
+/// What a person checks before trusting it, plainly, a line each: who may connect (and on which addresses here),
+/// how many keys are let in, and the host key ssh will show the first time.
+fn facts(h: &ssh::Here) -> Vec<String> {
+    let lan: Vec<&str> = h.bound.iter().map(String::as_str).filter(|a| !matches!(*a, "127.0.0.1" | "::1")).collect();
+    let mut out = vec![match h.scope {
+        ssh::Scope::Device => tr!("From this device only (127.0.0.1): no other PC finds it", "この端末からだけ（127.0.0.1）：ほかの PC からは見えません"),
+        ssh::Scope::Network if lan.is_empty() => tr!("From PCs on the same network too (no private address here now: this device only until one comes)",
+            "同じネットワークの PC からも（いまはプライベートなアドレスがないので、できるまでこの端末からだけ）"),
+        ssh::Scope::Network => tr!("From PCs on the same network too ({}); never from the Internet", "同じネットワークの PC からも（{}）。インターネットからは入れません", lan.join(", ")),
+    }];
+    out.push(if h.keys == 1 { tr!("1 key let in ({})", "入れる鍵：1本（{}）", ssh::KEYS) } else { tr!("{} keys let in ({})", "入れる鍵：{}本（{}）", h.keys, ssh::KEYS) });
+    if let Some(f) = &h.fingerprint {
+        out.push(tr!("Host key {} (ssh shows it the first time it connects: check it is this)", "ホスト鍵 {}（初めて接続するとき ssh が表示します。これと同じか確かめてください）", f));
+    }
+    out
 }
 
 /// How to turn it on, said wherever it is off.
 fn how_on() -> String {
-    tr!("l3 address ssh on turns it on; your key goes in the {} dotfile", "l3 address ssh on でオンにできます。鍵は {} の dotfile に置きます", ssh::KEYS)
+    tr!("l3 address ssh on turns it on, from this device only (on network: from the same network too); your key goes in the {} dotfile",
+        "l3 address ssh on でオンにできます。この端末からだけです（on network なら同じネットワークからも）。鍵は {} の dotfile に置きます", ssh::KEYS)
 }
 
-/// `l3 address`: each destination, one a line, nothing else; off, it asks on a terminal and says so elsewhere.
+/// `l3 address`: each destination, one a line, and what to check of it on standard error; off, it asks on a
+/// terminal (whether, then from where) and says so elsewhere.
 pub fn show(_: &Ctx, call: &Call) -> Result<Reply> {
     let data = paths::data_dir();
-    if let Some(l) = ssh::listening(&data) {
-        return Ok(Reply::data(l.destinations.join("\n"), shown(&l)));
+    let h = ssh::here(&data);
+    if h.on {
+        for f in facts(&h) { note(&f); }
+        return Ok(Reply::data(h.destinations.join("\n"), shown(&h)));
     }
     use std::io::IsTerminal;
     let asking = !call.flags.json && std::io::stdin().is_terminal() && std::io::stderr().is_terminal();
@@ -39,19 +69,38 @@ pub fn show(_: &Ctx, call: &Call) -> Result<Reply> {
     if !matches!(answer.trim(), "y" | "Y" | "yes" | "Yes" | "YES" | "はい") {
         return Err(Error::Off(tr!("SSH stays off. {}", "SSH はオフのままです。{}", how_on())));
     }
-    let l = turn_on()?;
-    note(&on_said(&l));
-    Ok(Reply::data(l.destinations.join("\n"), shown(&l)))
+    let kept = ssh::scope(&data);
+    let first = if kept == ssh::Scope::Network { 2 } else { 1 };
+    eprint!("{}", tr!("Who may connect?\n  1  this device only: no other PC finds it\n  2  PCs on the same network too (a LAN, a VPN), never the Internet\n[{}] ",
+        "どこから接続できるようにしますか？\n  1  この端末からだけ：ほかの PC からは見えません\n  2  同じネットワークの PC からも（LAN、VPN）。インターネットからは入れません\n[{}] ", first));
+    let mut answer = String::new();
+    let _ = std::io::stdin().read_line(&mut answer);
+    let scope = match answer.trim() {
+        "" => kept,
+        "1" => ssh::Scope::Device,
+        "2" => ssh::Scope::Network,
+        _ => return Err(Error::Off(tr!("SSH stays off: 1 or 2 is the answer. {}", "SSH はオフのままです（1 か 2 で答えます）。{}", how_on()))),
+    };
+    let h = turn_on(scope)?;
+    note(&tr!("SSH is on", "SSH をオンにしました"));
+    for f in facts(&h) { note(&f); }
+    Ok(Reply::data(h.destinations.join("\n"), shown(&h)))
 }
 
-/// `l3 address ssh on|off`: without asking.
+/// `l3 address ssh on [device|network]` and `l3 address ssh off`: without asking. `on` alone takes the scope kept.
 pub fn set(_: &Ctx, call: &Call) -> Result<Reply> {
     let data = paths::data_dir();
     if call.word(0) == Some("on") {
-        let was = ssh::listening(&data).is_some();
-        let l = turn_on()?;
-        let first = if was { tr!("SSH was on already · host key {}", "SSH はもうオンです · ホスト鍵 {}", l.fingerprint) } else { on_said(&l) };
-        return Ok(Reply::done(format!("{first}\n{}", l.destinations.join("\n")), json!({"changed": !was, "ssh": shown(&l)})));
+        let was = ssh::listening(&data);
+        let scope = call.word(1).and_then(ssh::Scope::from_word).unwrap_or_else(|| ssh::scope(&data));
+        let h = turn_on(scope)?;
+        let first = match &was {
+            Some(l) if l.scope == scope => tr!("SSH was on already", "SSH はもうオンです"),
+            Some(_) => tr!("SSH stays on; who may connect changed", "SSH はオンのまま、接続できる範囲を変えました"),
+            None => tr!("SSH is on", "SSH をオンにしました"),
+        };
+        let lines: Vec<String> = std::iter::once(first).chain(facts(&h)).chain(h.destinations.iter().cloned()).collect();
+        return Ok(Reply::done(lines.join("\n"), json!({"changed": was.is_none_or(|l| l.scope != scope), "ssh": shown(&h)})));
     }
     let stopped = ssh::stop(&data);
     // Said to the Remote here too, in case the listener could not (it was killed): pages stop showing it.
@@ -61,15 +110,16 @@ pub fn set(_: &Ctx, call: &Call) -> Result<Reply> {
     Ok(Reply::done(text, json!({"changed": stopped.is_some(), "ssh": {"on": false}})))
 }
 
-fn on_said(l: &ssh::Listening) -> String {
-    tr!("SSH is on · host key {} (ssh shows it the first time it connects)", "SSH をオンにしました · ホスト鍵 {}（初めて接続するとき ssh が表示します）", l.fingerprint)
-}
-
-/// Turn SSH on here: the keys taken in from the Remote and checked, then the listener started in the background
-/// and waited for until it listens (or says why it cannot).
-fn turn_on() -> Result<ssh::Listening> {
+/// Turn SSH on here, to `scope` (kept for next time): the keys taken in from the Remote and checked, then the
+/// listener started in the background and waited for until it listens (or says why it cannot). One running already
+/// takes the scope at once, its other sessions going on.
+fn turn_on(scope: ssh::Scope) -> Result<ssh::Here> {
     let data = paths::data_dir();
-    if let Some(l) = ssh::listening(&data) { return Ok(l); }
+    if ssh::listening(&data).is_some() {
+        ssh::set_scope(&data, scope)?;
+        ssh::rescope(&data, scope).ok_or_else(|| Error::Io(tr!("The SSH listener did not take the scope asked; l3 address ssh off, then on", "SSH の待ち受けが範囲の変更を受けませんでした。l3 address ssh off のあと、もう一度 on にしてください")))?;
+        return Ok(ssh::here(&data));
+    }
     if remote::connection().is_none() {
         return Err(Error::Offline(tr!("SSH is turned on for a device signed in to a Remote, so any of your devices can see it and turn it off (l3 login)",
             "SSH は Remote にサインインした端末でオンにします。どの端末からも見えて、オフにできるように（l3 login）")));
@@ -82,8 +132,11 @@ fn turn_on() -> Result<ssh::Listening> {
         return Err(Error::Refused(tr!("Add a key first: your OpenSSH public key, one a line, in the {0} dotfile (Runtime → Dotfiles, or l3 dotfile write {0} < ~/.ssh/id_ed25519.pub)",
             "先に鍵を置いてください：OpenSSH の公開鍵を1行にひとつ、{0} の dotfile に（Runtime → Dotfiles、または l3 dotfile write {0} < ~/.ssh/id_ed25519.pub）", ssh::KEYS)));
     }
+    ssh::set_scope(&data, scope)?;
     start_listener()?;
-    ssh::listening(&data).ok_or_else(|| Error::Io(tr!("The SSH listener said it listens, but is not there", "SSH の待ち受けは始まったと言いましたが、見当たりません")))
+    let h = ssh::here(&data);
+    if !h.on { return Err(Error::Io(tr!("The SSH listener said it listens, but is not there", "SSH の待ち受けは始まったと言いましたが、見当たりません"))); }
+    Ok(h)
 }
 
 #[cfg(all(target_os = "linux", feature = "ssh"))]

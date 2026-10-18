@@ -286,31 +286,34 @@ async fn change_diff(repo: String, id: String) -> Result<Vec<history::FileDiff>,
 
 // ---- SSH into this device's Prompts (core/src/ssh.rs; the listener is l3's) ----
 
-/// Whether this device listens for SSH, where each repo is reached, and its host key.
-#[derive(serde::Serialize)]
-struct SshHere { on: bool, port: Option<u16>, destinations: Vec<String>, fingerprint: Option<String> }
+/// This device's SSH as its card shows it (core ssh::Here): whether it listens, who may connect, where each repo is
+/// reached, its host key and how many keys are let in. Worked out here; none of it goes to the Remote.
+#[cfg(unix)]
+fn ssh_now() -> serde_json::Value {
+    serde_json::to_value(length3_core::ssh::here(&paths::data_dir())).unwrap_or_default()
+}
 
-fn ssh_now() -> SshHere {
-    #[cfg(unix)]
-    if let Some(l) = length3_core::ssh::listening(&paths::data_dir()) {
-        return SshHere { on: true, port: Some(l.port), destinations: l.destinations, fingerprint: Some(l.fingerprint) };
-    }
-    SshHere { on: false, port: None, destinations: Vec::new(), fingerprint: None }
+#[cfg(not(unix))]
+fn ssh_now() -> serde_json::Value {
+    serde_json::json!({"on": false, "scope": "device", "destinations": [], "bound": [], "keys": 0})
 }
 
 #[tauri::command]
-fn ssh_here() -> SshHere {
+fn ssh_here() -> serde_json::Value {
     ssh_now()
 }
 
-/// Turn it on or off as `l3 address ssh on|off` does, by the l3 beside the app: the same listener, kept by l3
-/// in the background whether or not the app stays open, and the same checks (a key in .authorized_keys first).
+/// Turn it on (to `scope`: "device", this device only, or "network", the same network's PCs too; none: the one kept)
+/// or off, as `l3 address ssh on|off` does, by the l3 beside the app: the same listener, kept by l3 in the background
+/// whether or not the app stays open, and the same checks (a key in .authorized_keys first).
 #[tauri::command]
-async fn ssh_set(on: bool) -> Result<SshHere, String> {
+async fn ssh_set(on: bool, scope: Option<String>) -> Result<serde_json::Value, String> {
     blocking(move || {
         let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-        let out = std::process::Command::new(length3_core::prompt::l3_path(&exe))
-            .args(["address", "ssh", if on { "on" } else { "off" }, "--json"])
+        let mut args = vec!["address", "ssh", if on { "on" } else { "off" }];
+        if on { if let Some(s) = scope.as_deref().filter(|s| matches!(*s, "device" | "network")) { args.push(s); } }
+        args.push("--json");
+        let out = std::process::Command::new(length3_core::prompt::l3_path(&exe)).args(&args)
             .stdin(std::process::Stdio::null()).output()
             .map_err(|e| length3_core::tr!("Could not start l3: {}", "l3 を起動できませんでした：{}", e))?;
         if !out.status.success() {
