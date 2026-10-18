@@ -230,6 +230,19 @@ pub fn diff(repos: &Repos, repo: &str, limit: usize) -> Result<Vec<FileDiff>> {
     diff_of(pairs(client.as_ref(), After::Here(repos.dir(repo)?), &then, &now)?, limit)
 }
 
+/// A file as it was at the last commit of what the repo shows, to put it
+/// back: its text, or none when it was not there (it was added since).
+pub fn at_head(repos: &Repos, repo: &str, path: &str) -> Result<Option<String>> {
+    let (client, then, _) = draft_and_head(repos, repo)?;
+    // Without the Remote, the last commit is not known here: nothing is put back on a guess.
+    let client = client.ok_or_else(|| crate::tr!("The last commit is kept on the Remote. Connect first (l3 login)", "最後のコミットは Remote にあります。先につないでください（l3 login）"))?;
+    match then.get(path) {
+        Some(Some(sha)) => text(&blob(&client, sha)?).map(Some)
+            .ok_or_else(|| crate::tr!("{} is binary; it cannot be put back here", "{} はバイナリなので、ここでは戻せません", path)),
+        _ => Ok(None),
+    }
+}
+
 fn diff_of(pairs: Vec<Pair>, limit: usize) -> Result<Vec<FileDiff>> {
     let mut left = limit;
     let mut out = Vec::new();

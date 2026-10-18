@@ -182,6 +182,12 @@ async fn history_diff(repo: String) -> Result<Vec<history::FileDiff>, String> {
     blocking(move || history::diff(&managed()?, &repo, DIFF_LIMIT)).await
 }
 
+/// A file as it was at the last commit (none: it was not there), to put it back.
+#[tauri::command]
+async fn history_at_head(repo: String, path: String) -> Result<Option<String>, String> {
+    blocking(move || history::at_head(&managed()?, &repo, &path)).await
+}
+
 /// Commit, under an issue (its file name in issue/) or named by `line` ("Kind：件名").
 #[tauri::command]
 async fn history_cut(repo: String, issue: Option<String>, line: String, note: String) -> Result<history::Cut, String> {
@@ -266,7 +272,7 @@ fn main() {
             capacity, space, free, repo_list, repo_create, repo_tree, repo_read, repo_write, repo_add,
             repo_mkdir, repo_remove, repo_rename, state_get, state_set,
             remote_login_start, remote_login_wait, remote_logout, remote_repos, remote_status,
-            sync_repo, repo_fetch, history_changes, history_diff, history_cut, history_log,
+            sync_repo, repo_fetch, history_changes, history_diff, history_at_head, history_cut, history_log,
             work_start, work_switch, work_state, work_lines, history_push, history_submit, history_reset,
             changes_list, change_review, change_merge, change_reject, change_diff,
             shells::prompt_open, shells::prompt_input, shells::prompt_interrupt, shells::prompt_held, shells::prompt_close,

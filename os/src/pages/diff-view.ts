@@ -1,6 +1,7 @@
 import {h} from '../dom.ts';
 import type {DiffLine, FileDiff} from '../history.ts';
 import {t, tn} from '../i18n.ts';
+import {askFoot, SETTLE} from './common.ts';
 
 /** Files open at first; past them, a file shows its name and counts until opened. */
 const OPEN = 3;
@@ -15,6 +16,44 @@ export interface DiffOptions {
   reveal?: (path: string, line?: number) => void;
   /** Called for each line drawn, with its key (`path:index`), to mark it or make it markable. */
   line?: (row: HTMLElement, key: string, l: DiffLine) => void;
+  /** Put a file back as it was at the last commit (the copy here only); asked in its head first. */
+  putBack?: (f: FileDiff) => Promise<void>;
+}
+
+/** What putting a file back does, a short line each. */
+const BACK = (f: FileDiff) => (f.status === 'added' ? [t('It was not in the last commit, so it goes')]
+  : f.status === 'removed' ? [t('It comes back as it was at the last commit')]
+  : [t('Back as it was at the last commit.'), t('What was changed here goes.')]);
+
+/**
+ * Put back, at the right end of a file's head. Pressed, the head gives way to
+ * what will happen, Not now at the left and Put back at the right (under the
+ * pointer), and comes back as it was if the answer is no. The lines stay under
+ * it, so what goes is in view.
+ */
+function putBackButton(f: FileDiff, head: HTMLElement, act: (f: FileDiff) => Promise<void>): HTMLElement {
+  const back = h('button', {type: 'button', class: 'button small-button put-back', 'aria-label': t('Put back {path}', {path: f.path})}, t('Put back')) as HTMLButtonElement;
+  back.addEventListener('click', (e) => {
+    e.preventDefault();
+    const was = [...head.childNodes];
+    const foot = askFoot(back, head);
+    const no = h('button', {type: 'button', class: 'button small-button'}, t('Not now')) as HTMLButtonElement;
+    const yes = h('button', {type: 'button', class: 'button small-button primary'}, t('Put back')) as HTMLButtonElement;
+    const error = h('span', {class: 'error small', role: 'alert'});
+    no.addEventListener('click', (e) => { e.preventDefault(); head.classList.remove('asking'); head.replaceChildren(...was); back.focus(); });
+    const shown = performance.now();
+    yes.addEventListener('click', async (e) => {
+      e.preventDefault();
+      if (performance.now() - shown < SETTLE) return;
+      yes.disabled = true;
+      // Done, the diff is drawn again from what is there now.
+      try { await act(f); } catch (x) { error.textContent = x instanceof Error ? x.message : String(x); yes.disabled = false; }
+    });
+    head.classList.add('asking');
+    head.replaceChildren(h('span', {class: 'diff-name'}, f.path), ...BACK(f).map((l) => h('span', {class: 'muted small'}, l)), error, foot(no, yes));
+    yes.focus();
+  });
+  return back;
 }
 
 /**
@@ -34,6 +73,12 @@ export function diffFiles(files: FileDiff[], o: DiffOptions = {}): HTMLElement[]
     }
     const head = h('summary', {class: 'diff-head'}, name,
       f.binary ? h('span', {class: 'muted small'}, t('Binary')) : h('span', {class: 'diff-count'}, add ? `+${add}` : '', del ? ` −${del}` : ''));
+    // A binary file is put back only by going (one added since); its bytes are not written here.
+    if (o.putBack && (!f.binary || f.status === 'added')) {
+      head.append(h('span', {class: 'grow'}), putBackButton(f, head, o.putBack));
+      // While it asks, the head is not the fold's switch.
+      head.addEventListener('click', (e) => { if (head.classList.contains('asking')) e.preventDefault(); });
+    }
     // Where each line is in the file as it is now: its own number, or for a removed line the next line kept (else the last).
     const now = (k: number): number | undefined => {
       const l = f.lines[k];

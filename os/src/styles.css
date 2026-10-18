@@ -564,6 +564,12 @@ button.diff-no:hover { color: var(--ink); text-decoration: underline; }
 .diff-head { display: flex; align-items: baseline; gap: var(--s3); min-height: var(--h-row); padding: var(--s1) var(--s1); border-radius: var(--r-field); cursor: pointer; font: var(--t-meta) var(--mono); }
 .diff-head:hover { background: var(--raised); }
 .review-box .diff-head:hover, .step-diff .diff-head:hover { background: var(--ground); }
+/* Put back, at the head's right end; pressed, the head asks in its place (its lines stay under it). */
+.diff-head > .grow { flex: 1; }
+.diff-head .button { align-self: center; font-family: var(--sans); }
+.diff-head.asking { display: grid; gap: var(--s2); padding: var(--s2) var(--s1); cursor: default; }
+.diff-head.asking:hover { background: transparent; }
+.diff-head.asking > .muted { font-family: var(--sans); }
 .diff-name { font-weight: 600; overflow-wrap: anywhere; }
 .diff-name.link:hover { text-decoration: underline; }
 .diff-count { color: var(--sub); white-space: nowrap; }
@@ -894,6 +900,19 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .step-about .stage-diff summary { line-height: 1.5; }
 .step-about p { margin: 0; }
 .steps > .error { grid-column: 1 / -1; }
+/* main's card on Git, for what it has not committed: a card (rule edge), its repo, Commit at the right. */
+.main-card { display: grid; gap: var(--s3); padding: var(--s4) var(--s5); border: 1px solid var(--rule); border-radius: var(--r-place); }
+.main-card + .main-card { margin-top: var(--s3); }
+.main-card > .steps { padding: 0; }
+/* What is done with (merged, closed): rows, space between them; a merged one opens to its diff. */
+.done-list { display: grid; gap: var(--s1); }
+.done-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s1) var(--s3); min-height: var(--h-row); padding: var(--s1) var(--s2); border-radius: var(--r-field); }
+summary.done-head { cursor: pointer; }
+summary.done-head:hover { background: var(--raised); }
+.done-head > .grow { flex: 1; }
+.done-name { font-weight: 600; overflow-wrap: anywhere; }
+.done-head > .error { flex-basis: 100%; }
+.done-diff { max-height: 56vh; overflow: auto; padding: var(--s2) var(--s2) var(--s3) var(--s4); }
 
 /* An Inbox pane with nothing chosen: a quiet line in its middle, not a box in the box. */
 .inbox-thread > .quiet { margin: auto; color: var(--sub); }

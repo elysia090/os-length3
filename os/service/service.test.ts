@@ -449,6 +449,58 @@ test('a file both sides changed stops the merge; reject is the receiver\'s, rese
   assert.deepEqual(list.map((l) => [l.title, l.state]).sort(), [['one', 'merged'], ['two', 'reset']]);
 });
 
+test('main takes commits of its own; a review may ask for changes; what was merged is listed with who handed it in and when; another account reaches none of it', async () => {
+  const s = await service();
+  const t = await s.start('Sora'), other = await s.start('Mio');
+  const sha = async (text: string) => {
+    const bytes = enc.encode(text);
+    const d = await sha256(bytes);
+    await s.call('PUT', `/v1/blobs/${d}`, {token: t, bytes});
+    return d;
+  };
+  const [readme, edited, issue, fix] = await Promise.all(['# r\n', '# r\nmore\n', 'Fix：x\n', 'fixed\n'].map(sha));
+  const head = async (line = 'main') => (await s.call('GET', `/v1/repos/r?line=${line}`, {token: t})).json as unknown as {version: number; head: string | null};
+  const commitOn = async (line: string, kind: string, title: string) => {
+    const h = await head(line);
+    const r = await s.call('POST', `/v1/repos/r/cuts?line=${line}`, {token: t, body: {version: h.version, parent: h.head, kind, title, added: 1, removed: 0}});
+    assert.equal(r.status, 201, JSON.stringify(r.json));
+    return r.json.id as string;
+  };
+  // Commit on main, named by its line as `l3 commit r "Docs：…"` names it, once and again after an edit.
+  await s.call('PATCH', '/v1/repos/r/draft', {token: t, body: {version: 0, set: {'README.md': readme}, remove: []}});
+  const first = await commitOn('main', 'Docs', 'Start');
+  await s.call('PATCH', '/v1/repos/r/draft', {token: t, body: {version: 1, set: {'README.md': edited, 'issue/001.md': issue}, remove: []}});
+  const second = await commitOn('main', 'Docs', 'Say more');
+  const log = (await s.call('GET', '/v1/repos/r/log', {token: t})).json as unknown as {id: string; parent: string | null; kind: string; title: string}[];
+  assert.deepEqual(log.map((c) => [c.id, c.parent, c.kind, c.title]), [[second, first, 'Docs', 'Say more'], [first, null, 'Docs', 'Start']]);
+  // A commit on main needs words; another account cannot commit on it, nor read its log.
+  const h = await head();
+  assert.equal((await s.call('POST', '/v1/repos/r/cuts', {token: t, body: {version: h.version, parent: h.head, title: ' '}})).status, 400);
+  assert.notEqual((await s.call('POST', '/v1/repos/r/cuts', {token: other, body: {version: h.version, parent: h.head, title: 'Fix：mine'}})).status, 201);
+  assert.deepEqual((await s.call('GET', '/v1/repos/r/log', {token: other})).json, []);
+  // An issue's work, handed in: asking for changes is a review of its version, with words and marks.
+  await s.call('POST', '/v1/repos/r/lines', {token: t, body: {issue: 'issue/001.md'}});
+  await s.call('PATCH', '/v1/repos/r/draft?line=001', {token: t, body: {version: 1, set: {'f.txt': fix}, remove: []}});
+  const c1 = await commitOn('001', 'Fix', 'x');
+  await s.call('POST', '/v1/repos/r/lines/001/push', {token: t, body: {head: c1}});
+  const submitted = await s.call('POST', '/v1/repos/r/changes', {token: t, body: {line: '001', kind: 'Fix', title: 'x'}});
+  const id = submitted.json.id as string;
+  const asked = await s.call('POST', `/v1/repos/r/changes/${id}/reviews`, {token: t, body: {version: 1, verdict: 'changes', note: 'Say why.', marks: ['f.txt:0']}});
+  assert.equal(asked.status, 201);
+  assert.deepEqual((asked.json.reviews as {verdict: string; note: string; marks: string[]; by: string}[]).map((r) => [r.verdict, r.note, r.marks, r.by]), [['changes', 'Say why.', ['f.txt:0'], 'Sora']]);
+  assert.equal(asked.json.state, 'open');
+  // Another account can neither review it nor see it.
+  assert.equal((await s.call('POST', `/v1/repos/r/changes/${id}/reviews`, {token: other, body: {version: 1, verdict: 'changes', note: 'no'}})).status, 404);
+  assert.deepEqual((await s.call('GET', '/v1/repos/r/changes', {token: other})).json, []);
+  // Approved and merged, it is listed as merged: who handed it in, and when it was merged (after it was handed in).
+  await s.call('POST', `/v1/repos/r/changes/${id}/reviews`, {token: t, body: {version: 1, verdict: 'approve'}});
+  assert.equal((await s.call('POST', `/v1/repos/r/changes/${id}/merge`, {token: other, body: {version: 1}})).status, 404);
+  assert.equal((await s.call('POST', `/v1/repos/r/changes/${id}/merge`, {token: t, body: {version: 1}})).status, 200);
+  const list = (await s.call('GET', '/v1/repos/r/changes', {token: t})).json as unknown as {id: string; issue: string; state: string; submittedBy: string; updatedAt: number}[];
+  assert.deepEqual(list.map((c) => [c.id, c.issue, c.state, c.submittedBy]), [[id, 'issue/001.md', 'merged', 'Sora']]);
+  assert.ok(list[0].updatedAt >= (submitted.json.updatedAt as number));
+});
+
 test('Inbox: an address is claimed or published by its domain; messages are small, and strangers are held to a few', async () => {
   const s = await service({'_length3.example.org': ['some other record'], '_length3.elsewhere.example': ['v=length3; remote=remote.elsewhere.example; proof=x']});
   const ren = await s.start('Ren'), mio = await s.start('Mio');

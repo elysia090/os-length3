@@ -784,14 +784,19 @@ folds away and the search box stays where it was, on the band's line at
 the right; its results open under it over the center. On the band's line sits the search box for the open
 repo: plain, case-insensitive, line by line; results are grouped by file,
 and a line pressed opens the center there with the line selected. Below,
-on the band line, one reference at a time, switched freely with chips: Issue (the repo's issues, one line each as #3 Fix：件名, pressed to read one in full), diff (the changes not yet
+on the band line, one reference at a time, switched freely with chips: Issue (the repo's open issues, as Git shows them: one merged or
+closed is not among them; one line each as #3 Fix：件名, pressed to read one in full), diff (the changes not yet
 cut, file by file: added lines in ink with no fill, the lines kept quiet,
 removed lines quiet and struck, following every save; a file's name opens
 it in the center, a line's number opens it at that line, selected, to
 write in, and a removed line's the line that took its place; pressing a
 line elsewhere marks it with the `marker`, as a review does, to come back
 to, and again unmarks it, the mark staying on its line while the app is
-open) and 実行結果 (each line sent
+open; at the right end of a file's head, Put back, which asks in the head
+first (Not now, Put back under the pointer) what will happen, its lines
+still under it, then makes the file what the last commit held: its text
+again, a removed one written back, one added since gone; a binary file only
+by going. A part of a file is not put back on its own) and 実行結果 (each line sent
 from the prompt box, newest first: the line, how long it took or that it
 is still running, and what came out until the prompt returned; the Prompt
 itself scrolls on, this keeps the record). A line pressed there is back in
@@ -927,7 +932,8 @@ its share an estimate), and the same three answers apply.
 
 What happens between a repo and the outside, in the mental model of the
 issues: an issue hides its branch and worktree, and the operations are
-Commit, Push, Change (with Reset), Review, Merge. It uses the same workbench
+Commit, Push, Change (with Reset), Review, Merge, and Close for one that
+will not be done. It uses the same workbench
 as Forge: the center (one centred column, 760 px at most) with the prompt
 box at its foot, and the narrow right pane with the search box, the
 reference and the Prompt. The page header, then the repo chips (one repo or
@@ -939,7 +945,7 @@ is the one shown, its repo's chip chosen if another was, with the keyboard
 on its words; one half written (new, or its words half changed) is still
 half written after reading its neighbours or another page.
 
-- **Issues**: every issue not merged yet. An issue is its number and its
+- **Issues**: every issue still open: not merged, not closed. An issue is its number and its
   words ("#3 Fix：件名", then the detail); that is all a person meets. Any
   repo takes one, and it takes the repo's next number. How it is kept is the
   OS's business: one plain file in the repo's `issue/`, named by its number,
@@ -976,7 +982,14 @@ half written after reading its neighbours or another page.
 - **The card's foot**: Back to main at its left (it leaves the work), then
   its repo and who started it and when; Start or Continue here at the
   right. No file name
-  is shown anywhere an issue is.
+  is shown anywhere an issue is. One not worked on here, with no undecided
+  change, while the repo shows main, has Close at the left instead: it will
+  not be done. It goes at once (Reopen brings it back, so nothing is
+  asked) and is listed under Closed. Being closed is the issue's own: its
+  file says so on its last line, after the detail (`Closed：2031-10-17
+  sora`, the day and who), so l3 (`l3 issue close REPO#N`, `l3 issue
+  reopen REPO#N`) and a Prompt see the same, and it reaches the Remote as
+  every change does, with nothing kept twice.
 - **A diff**, wherever it shows: each file a fold, its name (which opens it)
   and what was added and removed (+56 −2); each line with which line it is.
   The first three files are open, the rest wait closed, so a large change
@@ -986,11 +999,35 @@ half written after reading its neighbours or another page.
   where a reviewer marks lines as with a highlighter (`marker`); what was
   said, in order (an approval without words is not shown there); then a
   comment more, in a field tall from the start (Ctrl+Enter or Comment sends
-  it with the marks), and beside Comment, Approve as a ○ that turns green
-  when pressed.
+  it with the marks), and beside Comment, Ask for changes, which sends the
+  same with its verdict (it says something: with nothing written or marked,
+  the field is where to say it), shown in what was said as Asked for
+  changes, as `l3 review REPO#N changes` is; at the left, Approve as a ○
+  that turns green when pressed.
 - **Merge**, under the Review and not in it: Reject at the left, who
   approved it, and Merge at the right, primary once the version is
   approved.
+
+Under the issues, each its own section, shown only when it has something:
+
+- **main**: a card for each repo that shows main and has something not
+  committed there (an edit in Forge, an issue written, one closed): its
+  repo, what is not committed (▸ 2 files, whose diff opens over what is
+  under it, as in an issue's Commit row) and Commit at the right. Commit
+  asks in the card for the line the commit goes by ("Fix：title"), as
+  `l3 commit REPO "Fix：title"` takes it, Not now at the left and Commit
+  under the pointer; Enter commits the one line. What is typed is kept
+  with its repo until it is committed or put back. This is Commit, not an
+  issue made of the changes: an issue hides a branch that starts from
+  main's last commit, and moving main's draft onto one would be a new
+  operation the Remote does not have; a commit on main is already one
+  (`l3 commit` on main), so the app offers the same.
+- **Merged**: the issues whose change main took, newest first, a row each:
+  "#1 Fix：件名", who handed it in and when it was merged; pressed, the
+  row opens to the change's diff. It is history, so it is only read.
+- **Closed**: the issues closed without being done, a row each: "#2
+  Feat：件名", who closed it and the day; Reopen at the row's right end
+  (while the repo shows main) puts it back among the issues at once.
 
 Every change is already on the Remote (the draft, §6); Commit makes it
 history there, the same from the app, a browser and `l3 commit`. Without a
