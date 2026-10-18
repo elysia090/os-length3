@@ -19,7 +19,9 @@ import {createApp, sha256} from './app.ts';
 import {createAuth} from './auth.ts';
 import {memoryBucket} from './bucket.ts';
 import {enterEmail, type Enter} from './enter.ts';
+import type {Billing, PlanConfig} from './plan.ts';
 import * as schema from './schema.ts';
+import {sign, type StripeApi} from './stripe.ts';
 
 export const BASE = 'http://remote.test';
 export const APP = 'http://app.test';
@@ -61,7 +63,7 @@ export async function fileDb() {
 }
 
 export type Service = Awaited<ReturnType<typeof make>>;
-export interface Options { quota?: number; enter?: Enter }
+export interface Options { quota?: number; enter?: Enter; plan?: PlanConfig; billing?: Billing; now?: () => number }
 
 /** A Remote of its own for one test: `records` is DNS, a name → its TXT records. */
 export async function service(records: Record<string, string[]> = {}, o: Options = {}): Promise<Service> {
@@ -80,6 +82,13 @@ export function sharedService(): Promise<Service> {
   return shared;
 }
 
+/** A Remote of its own for a whole file, made as `o` says, closed when the file is done. */
+export async function fileService(records: Record<string, string[]> = {}, o: Options = {}): Promise<Service> {
+  const made = await make(await database(), records, o);
+  after(() => made.close());
+  return made;
+}
+
 async function make(pg: PGlite, records: Record<string, string[]>, o: Options) {
   const db = drizzle(pg, {schema});
   const auth = createAuth({db, secret: SECRET, baseURL: BASE, appOrigin: APP, rateLimit: false, dev: true, only: o.enter && enterEmail(o.enter.as)});
@@ -88,7 +97,7 @@ async function make(pg: PGlite, records: Record<string, string[]>, o: Options) {
   const dns = new Map(Object.entries(records));
   const app = createApp({db, auth, bucket, origins: [APP], appOrigin: APP, providers: ['dev'], domain: 'length3.test', baseURL: BASE,
     secret: SECRET, txt: async (name) => dns.get(name) ?? [], recheck: 0, quota: o.quota,
-    enter: o.enter});
+    enter: o.enter, plan: o.plan, billing: o.billing, now: o.now});
   // The service asks its own stand-in provider for tokens over the network: here, itself.
   const real = globalThis.fetch;
   globalThis.fetch = ((url: string | URL | Request, init?: RequestInit) =>
@@ -146,3 +155,35 @@ export const upload = async (s: Service, t: string, bytes: Uint8Array) => {
 export const named = async (s: Service, ...people: [string, string][]) => { for (const [t, n] of people) await s.call('POST', '/v1/inbox/addresses', {token: t, body: {name: n}}); };
 export const accept = (s: Service, t: string, address: string, state = 'accepted') => s.call('POST', '/v1/inbox/contacts', {token: t, body: {address, state}});
 export const count = async (s: Service, query: ReturnType<typeof sql>) => ((await s.db.execute(query)).rows as {n: number}[])[0].n;
+
+// ---- Stripe, never reached: a stand-in that says what it was asked, and events signed as Stripe signs them ----
+
+export const WEBHOOK_SECRET = 'whsec_test_' + 'x'.repeat(24);
+
+/** A StripeApi that answers at once and keeps what it was asked. */
+export function fakeStripe() {
+  const asked: {call: string; [k: string]: unknown}[] = [];
+  let n = 0;
+  const api: StripeApi = {
+    async customer(p) { asked.push({call: 'customer', ...p}); return `cus_test${p.user.replace(/[^A-Za-z0-9]/g, '').slice(0, 20)}`; },
+    async checkout(p) { asked.push({call: 'checkout', ...p}); return `https://checkout.stripe.test/c/${++n}`; },
+    async portal(p) { asked.push({call: 'portal', ...p}); return `https://billing.stripe.test/p/${++n}`; },
+  };
+  return {api, asked, billing: {stripe: api, webhookSecret: WEBHOOK_SECRET} as Billing};
+}
+
+let events = 0;
+/** An event as Stripe sends it: its id, type, when it was made (seconds), and the object it is about. */
+export const stripeEvent = (type: string, object: Record<string, unknown>, o: {id?: string; created?: number} = {}) =>
+  JSON.stringify({id: o.id ?? `evt_test${process.pid}x${++events}`, object: 'event', type, created: o.created ?? Math.floor(Date.now() / 1000), data: {object}});
+
+/** Post `payload` to the webhook, signed with `secret` at `t` (seconds), as Stripe does. */
+export async function sendEvent(s: Service, payload: string, o: {secret?: string; t?: number; signature?: string} = {}) {
+  const signature = o.signature ?? await sign(payload, o.secret ?? WEBHOOK_SECRET, o.t);
+  return s.call('POST', '/v1/stripe/webhook', {bytes: enc.encode(payload), headers: {'Stripe-Signature': signature, 'Content-Type': 'application/json'}});
+}
+
+/** A subscription object for `user` (as Checkout makes one: the account in its metadata). */
+export const subscription = (user: string, o: Record<string, unknown> = {}) => ({id: `sub_test${user.replace(/[^A-Za-z0-9]/g, '').slice(0, 20)}`, object: 'subscription',
+  customer: `cus_test${user.replace(/[^A-Za-z0-9]/g, '').slice(0, 20)}`, status: 'active', cancel_at_period_end: false, cancel_at: null,
+  current_period_end: Math.floor(Date.now() / 1000) + 30 * 86_400, metadata: {user}, ...o});

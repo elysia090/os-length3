@@ -22,6 +22,7 @@ export default {
   'Not found yet': 'まだ見つかりません',
   'Found': '見つかりました',
   'Conversations': '会話',
+  'Conversation with {who}': '{who}との会話',
   'Write': '書く',
   'Cannot reach {address} ({why})': '{address}に届きません（{why}）',
   'You: ': 'あなた：',

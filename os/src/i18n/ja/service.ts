@@ -104,4 +104,18 @@ export default {
   'a port and destinations': 'ポートと接続先がいります',
   'destinations': '接続先がいります',
   'No device of yours listens there': 'それはあなたの端末で待ち受けているものではありません',
+  // The plan, and Stripe.
+  'The free plan keeps no more repos on the Remote': '無料プランでは、これ以上の repo を Remote に置けません',
+  'The free plan keeps no more on the Remote': '無料プランでは、これ以上を Remote に置けません',
+  'Making a server is part of the paid plan': 'サーバーを作るのは有料プランです',
+  'A name on your own domain is part of the paid plan': '自分のドメインの名前は有料プランです',
+  'More names on this Remote are part of the paid plan': 'この Remote で2つ目からの名前は有料プランです',
+  'Paid features cannot be bought on this Remote yet': 'この Remote ではまだ有料プランを購入できません',
+  'This Remote has no plan': 'この Remote にはプランがありません',
+  'This account is on the paid plan already': 'このアカウントはすでに有料プランです',
+  'Stripe did not answer; try again': 'Stripe が応答しませんでした。もう一度どうぞ',
+  'Nothing to manage yet: this account has not subscribed': 'まだ管理するものはありません。このアカウントは登録していません',
+  'This Remote takes no payments': 'この Remote は支払いを受け付けていません',
+  'The signature does not match': '署名が一致しません',
+  'Not an event': 'イベントではありません',
 } as Record<string, string>;

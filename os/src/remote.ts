@@ -78,8 +78,9 @@ export async function api(path: string, init: RequestInit = {}, c: Connection | 
   }
   if (r.status >= 400 && r.status !== 404 && r.status !== 409) {
     const body = await r.json().catch(() => ({})) as {message?: string; error?: string};
-    // The Remote says why in a short English sentence; it is shown in the person's language.
-    throw new RemoteError(r.status, t(body.message ?? body.error ?? `Remote: ${r.status}`));
+    // The Remote says why in a short English sentence; it is shown in the person's language. What else it
+    // says (the plan's rule, what is used) comes along for the place that asked.
+    throw new RemoteError(r.status, t(body.message ?? body.error ?? `Remote: ${r.status}`), body as Record<string, unknown>);
   }
   return r;
 }
@@ -302,6 +303,25 @@ async function ended() {
   // The Remote already let this session go: signing out there can only fail, and here it is done either way.
   if (isNative) { await native('remote_logout').catch(() => {}); await loadState(); told(); return; }
   await forget();
+}
+
+/**
+ * The account this device's session is of (its id), asked once a session:
+ * what is agreed with the Remote is agreed with an account, and is not
+ * taken for another's that signs in on the same device later.
+ */
+let account: {token: string; id: Promise<string | null>} | null = null;
+export function accountId(): Promise<string | null> {
+  const c = connection();
+  if (!c) return Promise.resolve(null);
+  if (account?.token !== c.token) {
+    const token = c.token;
+    const id = json<{user?: {id?: string}} | null>('/api/auth/get-session').then((s) => s?.user?.id ?? null);
+    // Not answered (offline): asked again next time.
+    id.catch(() => { if (account?.token === token) account = null; });
+    account = {token, id};
+  }
+  return account.id;
 }
 
 /** Who is signed in here, as the Remote says. */

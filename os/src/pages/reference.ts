@@ -85,6 +85,8 @@ export class Reference {
   /** An issue shown in full stays until the person chooses something else. */
   private pinned = false;
   private unwatch: (() => void) | null = null;
+  /** Stops following the store; null while it does not (off the screen). */
+  private stop: (() => void) | null = null;
 
   constructor(events: ReferenceEvents) {
     this.events = events;
@@ -112,14 +114,30 @@ export class Reference {
     form.addEventListener('submit', (event) => event.preventDefault());
     this.element = h('section', {class: 'pane reference', 'aria-label': t('Reference')}, form, bar, this.body);
     this.choose(this.view);
-    // The diff follows what is saved, here or in the Prompt; the issue list, what is written in issue/.
+    this.follow();
+  }
+
+  /**
+   * The diff follows what is saved, here or in the Prompt; the issue list, what is written in
+   * issue/. Off the screen it stops following; a page that comes back with it (Forge's) calls
+   * `resume`, which follows again and draws what changed meanwhile.
+   */
+  private follow() {
     const stop = onChange((c) => {
-      if (!this.element.isConnected) { stop(); return; }
+      if (!this.element.isConnected) { stop(); this.stop = null; return; }
       if (c.repo !== this.repo || this.pinned || this.query.value.trim()) return;
       if (this.view !== 'diff' && !(this.view === 'issue' && (c.what === 'repo' || c.path === 'issue' || c.path.startsWith('issue/')))) return;
       clearTimeout(this.timer);
       this.timer = window.setTimeout(() => this.paint(), 250);
     });
+    this.stop = stop;
+  }
+
+  /** Back on the screen: following again, and drawn afresh if it had stopped (what changed meanwhile is in it). */
+  resume() {
+    if (this.stop) return;
+    this.follow();
+    if (!this.pinned) this.paint();
   }
 
   /** The repo Forge shows; what was searched in it comes back with it. */
@@ -259,11 +277,15 @@ export class Reference {
         times.set(line, n);
         const what = `${line}\n${n}`;
         row.classList.add('markable');
-        row.classList.toggle('marked', marked.has(what));
+        // The line's words are what is marked: heard as a toggle named by them, pressed while marked.
+        const words = row.querySelector<HTMLElement>('.diff-words');
+        words?.setAttribute('role', 'button');
+        const paint = () => { row.classList.toggle('marked', marked.has(what)); words?.setAttribute('aria-pressed', String(marked.has(what))); };
+        paint();
         row.addEventListener('click', (event) => {
           if ((event.target as HTMLElement).closest('.diff-no')) return;
           if (marked.has(what)) marked.delete(what); else marked.add(what);
-          row.classList.toggle('marked', marked.has(what));
+          paint();
         });
       },
     });

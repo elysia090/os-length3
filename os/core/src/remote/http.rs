@@ -84,6 +84,15 @@ pub(super) fn refused(code: u16, r: ureq::Response) -> String {
             "この repo は Remote で破棄されました。同期していた写しからは戻りません。そのあとここで変えたものはこの端末に残ります（Remote に置くなら、新しい repo を作って移してください）"),
         // Turned off: the Remote keeps it for a while, answering only that.
         (410, _) => crate::tr!("It is turned off on the Remote (l3 remote on brings it back)", "Remote でオフになっています（l3 remote on で戻せます）"),
+        // The plan's (service/plan.ts): what is paid, and what happens to the work (it stays here).
+        (402, _) => match v["rule"].as_str().unwrap_or_default() {
+            "repos" => crate::tr!("The free plan keeps no more repos on the Remote: this one stays on this device and waits (l3 remote plan)", "無料プランでは、これ以上の repo を Remote に置けません。この repo はこの端末に残り、待ちます（l3 remote plan）"),
+            "bytes" => crate::tr!("The free plan keeps no more on the Remote: the change stays on this device and waits (l3 remote plan)", "無料プランでは、これ以上を Remote に置けません。変更はこの端末に残り、待ちます（l3 remote plan）"),
+            "server" => crate::tr!("Making a server is part of the paid plan (l3 remote plan)", "サーバーを作るのは有料プランです（l3 remote plan）"),
+            "domain" => crate::tr!("A name on your own domain is part of the paid plan (l3 remote plan)", "自分のドメインの名前は有料プランです（l3 remote plan）"),
+            "names" => crate::tr!("More names on this Remote are part of the paid plan (l3 remote plan)", "この Remote で2つ目からの名前は有料プランです（l3 remote plan）"),
+            _ => crate::tr!("That is part of the paid plan (l3 remote plan)", "それは有料プランです（l3 remote plan）"),
+        },
         (507, _) => crate::tr!("The Remote is full: {} of {} used", "Remote がいっぱいです：{} のうち {} を使用", v["used"], v["quota"]),
         (413, _) => crate::tr!("Too large for the Remote ({})", "Remote には大きすぎます（{}）", said),
         (_, "") => crate::tr!("The Remote refused it ({})", "Remote が受け付けませんでした（{}）", code),

@@ -5,11 +5,34 @@ import {t, tn} from '../i18n.ts';
 import {bring, look, onSync, remoteAll, repoState, type RepoSync} from '../lifecycle.ts';
 import type {RemoteRepo} from '../draft.ts';
 import * as account from '../remote.ts';
+import {openPlan, plan as readPlan, planRefusal, planView, refusalWords, type PlanRefusal} from '../plan.ts';
 import {store} from '../repos.ts';
 import {freeOff} from '../space.ts';
 import * as servers from '../servers.ts';
 import {answers, askFoot, pageHead, parts, SETTLE} from './common.ts';
 import type {Context} from './context.ts';
+
+/** Remote's page, at its Plan part: where a place refused for the plan's sake leads. */
+export function goToPlan(ctx: Context) {
+  try { localStorage.setItem('length3.part.remote', 'plan'); } catch { /* the Repos part, then */ }
+  ctx.go('remote');
+}
+
+/**
+ * Said in place where the Remote refused for the plan's sake: what is paid, what happens to the work, and the
+ * way to the Plan (`go`). Anything else, null: the place says it as it says any failure.
+ */
+export function planRefused(e: unknown, go: () => void): HTMLElement | null {
+  const r = planRefusal(e);
+  return r ? planSaid(r, go) : null;
+}
+
+/** What the plan says of `r` (refused, or known before anything is asked), with See the plan after it: the sentence whole, the button beside it or under it. */
+export function planSaid(r: PlanRefusal, go: () => void): HTMLElement {
+  const to = h('button', {type: 'button', class: 'button small-button'}, t('See the plan')) as HTMLButtonElement;
+  to.addEventListener('click', go);
+  return h('span', {class: 'plan-refused'}, h('span', {}, refusalWords(r)), to);
+}
 
 // Remote: where one's repos are kept, and who this device is there.
 //
@@ -28,8 +51,13 @@ export function syncWord(s: RepoSync | undefined): string {
   if (!s) return '';
   if (s.where === 'local') return t('Only on this device');
   if (s.where === 'off') return t('Off on the Remote');
+  if (s.where === 'waits') return t('Kept here · waits for room on the Remote');
   if (s.where === 'sending') return t('Sending');
-  if (s.where === 'offline') return s.changed ? tn('Not sent yet ({n} change)', 'Not sent yet ({n} changes)', s.changed) : t('Not sent yet');
+  if (s.where === 'offline') {
+    const not = s.changed ? tn('Not sent yet ({n} change)', 'Not sent yet ({n} changes)', s.changed) : t('Not sent yet');
+    // Why, as the Remote (or this browser) said it: not reached, full, too large.
+    return s.error ? `${not} · ${s.error}` : not;
+  }
   if (s.unsynced.length) return tn('In step · {n} thing cannot be sent', 'In step · {n} things cannot be sent', s.unsynced.length);
   return t('In step');
 }
@@ -114,18 +142,23 @@ export function signInBox(done: () => void, back?: string): HTMLElement {
  * it is then kept 30 days, its switch at the right and red, and pressing it
  * again brings it back at once. `keyed` hears of a passkey made on the way.
  */
-function repoSection(ctx: Context, counted: (n: number) => void, keyed: () => void): HTMLElement {
+function repoSection(ctx: Context, counted: (n: number) => void, keyed: () => void, toPlan: () => void): HTMLElement {
   const grid = h('div', {class: 'grid repo-cards'});
   const section = h('div', {class: 'sub-part'}, grid);
   let seen: servers.RepoSeen[] = [];
-  const paint = () => draw().catch((e) => grid.replaceChildren(h('p', {class: 'error'}, message(e))));
-  const draw = async () => {
+  // A card asking (or about to), or its Share list out, is not drawn over by a look that crossed the
+  // press; what ends the ask draws them all (`ended`).
+  const asking = () => !!grid.querySelector('.off-ask, [data-asking], .share-pop:not([hidden])');
+  const paint = (force = false) => draw(force).catch((e) => grid.replaceChildren(h('p', {class: 'error'}, message(e))));
+  const ended = () => paint(true);
+  const draw = async (force: boolean) => {
     const here = await store.list();
     const there = remoteAll();
     // Who sees each is the Remote's to say: away, no Share is offered (the rail and the line above say why).
     seen = account.connection() ? await servers.seenAll().catch(() => []) : [];
     const names = [...new Set([...here.map((r) => r.name), ...there.map((r) => r.name)])].sort();
     counted(names.length);
+    if (!force && asking()) return;
     grid.replaceChildren(...(names.length ? names.map((name) => card(name, here.find((r) => r.name === name) ?? null, there.find((r) => r.name === name) ?? null))
       : [h('div', {class: 'empty'}, t('No repos yet'))]));
   };
@@ -150,37 +183,45 @@ function repoSection(ctx: Context, counted: (n: number) => void, keyed: () => vo
     const where = off
       ? t('Off · back until {date}', {date: day(there!.until!)})
       : here ? syncWord(repoState(name)) : t('Only on the Remote');
+    // Held back by the plan: said where it stands, and the way to the Plan beside it.
+    const waits = !off && here && repoState(name)?.where === 'waits';
+    const plan = waits ? button(t('See the plan'), 'small-button') : null;
+    plan?.addEventListener('click', toPlan);
     const who = seen.find((x) => x.name === name);
     const share = who && !off ? sharing(who, error) : null;
     // Off, beside 空ける: 廃棄, which takes it from the Remote now, for good, asked for as turning it off was.
     const discard = off ? h('button', {type: 'button', class: 'button small-button discard'}, t('Discard')) as HTMLButtonElement : null;
     if (discard) discard.disabled = gone;
-    const el = h('div', {class: `card repo${off ? ' off' : ''}`, 'data-repo': name},
+    // A group named by its repo, so what is in it (its switch, Share, Forge) is heard as the repo's.
+    const el = h('div', {class: `card repo${off ? ' off' : ''}`, 'data-repo': name, role: 'group', 'aria-label': name},
       h('span', {class: 'card-title'}, name),
       h('span', {class: 'muted'}, `${bytes(size)} · ${t('Changed {when}', {when: ago(changed)})}`),
       h('span', {class: 'muted card-sync'}, where),
       // What one does with the repo goes at the left: Forge (which leaves for another page) and Share beside
       // it, its servers coming out to its right. The switch keeps the right end; turned off, it makes Forge
       // 空ける in the same place, 廃棄 beside it.
-      h('div', {class: 'card-foot'}, forge, discard, share, h('span', {class: 'grow'}), power), error);
+      h('div', {class: 'card-foot'}, forge, discard, share, plan, h('span', {class: 'grow'}), power), error);
     power.addEventListener('click', () => {
       if (off) { void pressing(power, error, async () => { await account.turnOn(name); await look(); await paint(); }); return; }
       if (isNative) { error.textContent = t('A repo is turned off from the browser, where its passkey is.'); return; }
-      void confirm(el, power, name, turningOff(name), paint, keyed);
+      // Asking from now on, before the ask is drawn: the cards are not drawn again under it meanwhile.
+      el.dataset.asking = '';
+      void confirm(el, power, name, turningOff(name), ended, keyed);
     });
     discard?.addEventListener('click', () => {
       if (isNative) { error.textContent = t('A repo is discarded from the browser, where its passkey is.'); return; }
+      el.dataset.asking = '';
       void confirm(el, discard, name, {
         verb: t('Discard'),
         what: [t('It goes from the Remote now, with its history, and cannot be brought back.'), ...(here ? [t('The copy here goes with it.')] : [])],
         // The copy here first: one holding what the Remote lacks is kept, and nothing is discarded.
         act: async (who, typed, code, proven) => { if (here) await freeOff(name); await account.discard(name, who, typed, code, proven); },
-      }, paint, keyed);
+      }, ended, keyed);
     });
     return el;
   };
-  void look().then(paint);
-  const again = () => { if (!section.isConnected) { stop(); unreach(); return; } if (!section.querySelector('.off-ask, .share-pop:not([hidden])')) void paint(); };
+  void look().then(() => paint());
+  const again = () => { if (!section.isConnected) { stop(); unreach(); return; } void paint(); };
   const stop = onSync(again);
   const unreach = account.onReach(again);
   return section;
@@ -458,6 +499,45 @@ function deviceRow(d: account.Device, again: () => Promise<void>): HTMLElement {
   return row;
 }
 
+/**
+ * Plan: what this account has (Free or Paid, and when it renews or ends), its
+ * use of what the Remote keeps against the free allowance, what paid adds, and
+ * one deed at the right of its foot: Subscribe (Checkout) or Manage the plan
+ * (the portal). The Remote decides all of it (service/plan.ts); this shows it.
+ * `offered` says whether this Remote has a plan at all.
+ */
+function planSection(offered: (on: boolean) => void): {el: HTMLElement; paint(): Promise<void>} {
+  const el = h('div', {class: 'plan-part'});
+  const error = h('p', {class: 'error', role: 'alert'});
+  const paint = async () => {
+    let p: Awaited<ReturnType<typeof readPlan>>;
+    try { p = await readPlan(); } catch (e) { error.textContent = message(e); return; }
+    offered(p.plan !== 'none');
+    if (p.plan === 'none') { el.replaceChildren(); return; }
+    const v = planView(p);
+    error.textContent = '';
+    const go = v.action ? button(v.action.label, 'primary') : null;
+    if (go && v.action) {
+      const kind = v.action.kind;
+      go.addEventListener('click', () => void pressing(go, error, () => openPlan(kind)));
+    }
+    el.replaceChildren(
+      h('section', {class: 'sub-part plan-now', 'aria-labelledby': 'plan-title'},
+        h('h2', {id: 'plan-title', class: 'plan-title'}, v.title), h('p', {class: 'muted'}, v.line)),
+      h('section', {class: 'sub-part', 'aria-labelledby': 'plan-use'}, h('h3', {id: 'plan-use'}, h('span', {}, t('On the Remote'))),
+        h('div', {class: 'rows'}, ...v.meters.map((m) => h('div', {class: `row-item plan-meter${m.over ? ' over' : ''}`},
+          h('span', {class: 'row-name'}, m.label),
+          m.of === null ? null : h('span', {class: 'meter', role: 'meter', 'aria-label': m.label, 'aria-valuemin': '0', 'aria-valuemax': '100',
+            'aria-valuenow': String(Math.round(m.share * 100)), style: `--share: ${m.share}`}, h('span', {})),
+          h('span', {class: 'row-meta'}, m.of === null ? m.used : t('{used} of {of}', {used: m.used, of: m.of}))))),
+        v.note ? h('p', {class: 'muted small plan-note'}, v.note) : null),
+      h('section', {class: 'sub-part', 'aria-labelledby': 'plan-adds'}, h('h3', {id: 'plan-adds'}, h('span', {}, p.plan === 'paid' ? t('Paid gives') : t('Paid adds'))),
+        h('div', {class: 'rows plan-adds'}, ...v.adds.map((a) => h('div', {class: 'row-item'}, h('span', {class: 'row-name'}, a))))),
+      ...(go ? [answers(null, go)] : []), error);
+  };
+  return {el, paint};
+}
+
 /** One line while the Remote does not answer; gone once it does. */
 function awayLine(): HTMLElement {
   const line = h('p', {class: 'muted away-line', role: 'status'}, t('The Remote cannot be reached. What changes here is sent once it can.'));
@@ -480,8 +560,16 @@ export function remote(ctx: Context): Node[] {
       return;
     }
     // One part at a time: the repos it keeps, how this account signs in, the devices in it.
-    const page = parts<'repos' | 'sign-in' | 'devices'>('remote', [
-      {id: 'repos', label: t('Repos')}, {id: 'sign-in', label: t('Sign-in')}, {id: 'devices', label: t('Devices')}]);
+    const page = parts<'repos' | 'sign-in' | 'devices' | 'plan'>('remote', [
+      {id: 'repos', label: t('Repos')}, {id: 'sign-in', label: t('Sign-in')}, {id: 'devices', label: t('Devices')}, {id: 'plan', label: t('Plan')}]);
+    // The plan is the Remote's to say: shown once it says there is one, read again whenever its part is shown
+    // or the window comes back (from Checkout or the portal, in another tab or the browser).
+    const plan = planSection((on) => page.offer('plan', on));
+    page.panel('plan').append(plan.el);
+    void plan.paint();
+    page.onShow((k) => { if (k === 'plan') void plan.paint(); });
+    const back = () => { if (!holder.isConnected) { document.removeEventListener('visibilitychange', back); return; } if (!document.hidden) void plan.paint(); };
+    document.addEventListener('visibilitychange', back);
     // Under the parts, not over them; a passkey added from it shows under Sign-in at once.
     const offer = isNative ? null : passkeyOffer(() => { shown = null; paint(); });
     // A Remote entered by its link has no passkeys or providers to manage: only the code a repo is turned off with.
@@ -495,12 +583,12 @@ export function remote(ctx: Context): Node[] {
     // The code (and a passkey) set while a repo is turned off: the offer has done its work, and Sign-in reads them again when shown.
     let stale = false;
     page.onShow((k) => { if (k === 'sign-in' && stale) { stale = false; signIn(); } });
-    page.panel('repos').append(repoSection(ctx, (n) => page.count('repos', n), () => { stale = true; if (offer) offer.hidden = true; }));
+    page.panel('repos').append(repoSection(ctx, (n) => page.count('repos', n), () => { stale = true; if (offer) offer.hidden = true; }, () => page.show('plan')));
     page.panel('devices').append(deviceSection((n) => page.count('devices', n)));
     holder.replaceChildren(
       h('div', {class: 'part-bar'}, page.switch),
       awayLine(),
-      page.panel('repos'), page.panel('sign-in'), page.panel('devices'), ...(offer ? [offer] : []));
+      page.panel('repos'), page.panel('sign-in'), page.panel('devices'), page.panel('plan'), ...(offer ? [offer] : []));
   };
   paint();
   const stop = account.onConnection(() => { if (!holder.isConnected) { stop(); return; } paint(); });

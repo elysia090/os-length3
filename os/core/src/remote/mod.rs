@@ -245,22 +245,15 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
     let dir = repos.dir(repo)?;
     let (key, line) = key(repos, repo);
     let path = at(repo, &line, "");
-    let draft = at(repo, &line, "/draft");
     let mut out = Synced::default();
     for _ in 0..12 {
-        let kept = base(&key);
-        // Never in step with this Remote: what is sent is new there, even under a name it discarded. One that
-        // was in step does not ask so, and cannot bring back what was discarded by sending itself again.
-        let fresh = kept.is_none();
-        let base = kept.unwrap_or_default();
+        let agreed = base(&key);
+        let draft = draft_path(repo, &line, agreed.is_some());
+        let base = agreed.unwrap_or_default();
         let here = local_tree(&dir);
         out.unsynced = here.unsynced.clone();
-        // Before sending, see whether the Remote moved. Not there, it has nothing of the line (version 0).
-        let there = match client.call("GET", &path, None)? {
-            Reply::Ok(v) => Some(line_there(&client.url, &v)?),
-            Reply::NotFound => None,
-            Reply::Conflict(_) => return Err(odd(&client.url)),
-        };
+        // Before sending, see whether the Remote moved.
+        let there = there_of(&client.url, client.call("GET", &path, None)?, base.version)?;
         let remote_version = there.as_ref().map_or(0, |l| l.version);
         if remote_version != base.version {
             let (tree, head) = there.map_or((Tree::new(), None), |l| (l.draft, l.head));
@@ -307,8 +300,7 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
             "remove": remove,
         });
         // A conflict (someone else moved it, or a blob went missing) goes round again.
-        let diff = if fresh { format!("{draft}{}anew=1", if draft.contains('?') { '&' } else { '?' }) } else { draft.clone() };
-        if let Reply::Ok(v) = client.call("PATCH", &diff, Some(body))? {
+        if let Reply::Ok(v) = client.call("PATCH", &draft, Some(body))? {
             // Without the version it is at now, nothing is agreed: the next round reads the line again.
             let version = v["version"].as_i64().ok_or_else(|| odd(&client.url))?;
             let mut tree = base.tree.clone();
@@ -323,7 +315,31 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
             set_base(&key, &Base { version, tree, head: base.head })?;
         }
     }
-    Ok(out)
+    // Still moving after every round: not in step, and said so, rather than taken for it.
+    Err(crate::tr!("The Remote kept moving; it is tried again", "Remote の側が動き続けています。あとでもう一度送ります"))
+}
+
+/// Where a line's diff is sent. A copy never in step with the Remote makes it
+/// anew, even under a name the Remote remembers as discarded (src/draft.ts);
+/// one that was in step cannot bring back what was discarded by sending itself.
+fn draft_path(repo: &str, line: &str, agreed: bool) -> String {
+    let p = at(repo, line, "/draft");
+    if agreed || line != crate::work::MAIN { p } else { format!("{p}?anew=1") }
+}
+
+/// What the Remote has of a line, for a copy that last agreed `agreed` with it,
+/// taken only as a Remote says it (line_there). Not there, it has nothing of the
+/// line, unless the copy was in step before (discarded there, or another
+/// account's): then nothing here is taken for removed, and why is said
+/// (src/draft.ts does the same).
+fn there_of(url: &str, reply: Reply, agreed: i64) -> Result<Option<LineThere>> {
+    match reply {
+        Reply::Ok(v) => Ok(Some(line_there(url, &v)?)),
+        Reply::NotFound if agreed > 0 => Err(failed(Failure::Status(404),
+            crate::tr!("The Remote does not have this repo; the copy here is kept", "Remote にこの repo がありません。ここの写しは残してあります"))),
+        Reply::NotFound => Ok(None),
+        Reply::Conflict(_) => Err(odd(url)),
+    }
 }
 
 /// A repo the Remote holds.
@@ -589,6 +605,24 @@ mod tests {
         let old: Connection = serde_json::from_str(r#"{"url":"https://os.length3.com","token":"t"}"#).unwrap();
         assert_eq!(old.user, None);
         assert_eq!(serde_json::to_string(&was(None)).unwrap(), r#"{"url":"https://os.length3.com","token":"t"}"#);
+    }
+
+    #[test]
+    fn a_copy_in_step_is_not_taken_apart_by_a_remote_without_it() {
+        let url = "https://os.length3.com";
+        // Never in step: the Remote's empty, and all here is new.
+        assert_eq!(there_of(url, Reply::NotFound, 0), Ok(None));
+        // In step before: not taken for removed there, and said.
+        assert!(there_of(url, Reply::NotFound, 3).is_err_and(|e| e.contains("does not have this repo") || e.contains("この repo がありません")));
+        let line = serde_json::json!({"version": 3, "draft": {}, "head": null});
+        assert_eq!(there_of(url, Reply::Ok(line), 3), Ok(Some(LineThere { version: 3, draft: Tree::new(), head: None })));
+    }
+
+    #[test]
+    fn a_copy_never_in_step_is_sent_as_a_new_repo() {
+        assert!(draft_path("notes", crate::work::MAIN, false).ends_with("/draft?anew=1"));
+        assert!(draft_path("notes", crate::work::MAIN, true).ends_with("/draft"));
+        assert_eq!(draft_path("notes", "001", false), "/v1/repos/notes/draft?line=001");
     }
 
     #[test]

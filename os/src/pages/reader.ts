@@ -98,9 +98,19 @@ export class Reader {
     this.flow.scrollTop = top + (line - 1) * height - this.flow.clientHeight / 3;
   }
 
-  /** The file being read: the first whose box reaches below the top of the center. */
+  /**
+   * The file being read: the one with the caret while it is in view (the
+   * last file, chosen in File, cannot reach the top), else the first whose
+   * box reaches below the top of the center.
+   */
   reading(): string | null {
-    const top = this.flow.getBoundingClientRect().top + 8;
+    const view = this.flow.getBoundingClientRect();
+    const top = view.top + 8;
+    const caret = document.activeElement instanceof HTMLElement ? document.activeElement.closest<HTMLElement>('section.file') : null;
+    if (caret && this.flow.contains(caret)) {
+      const r = caret.getBoundingClientRect();
+      if (r.bottom > top && r.top < view.bottom) return caret.dataset.path ?? null;
+    }
     for (const section of this.flow.querySelectorAll<HTMLElement>('section.file')) {
       if (section.getBoundingClientRect().bottom > top) return section.dataset.path ?? null;
     }
@@ -251,6 +261,10 @@ export class Reader {
         timer = window.setTimeout(() => void save(), 700);
       });
       area.addEventListener('blur', () => void save());
+      // The tab closing (or put away) saves what is written, before the store keeps what it has (repos.ts).
+      const leaving = () => { if (!area.isConnected) { removeEventListener('beforeunload', leaving); document.removeEventListener('visibilitychange', leaving); return; } if (area.value !== held.saved) void save(); };
+      addEventListener('beforeunload', leaving);
+      document.addEventListener('visibilitychange', leaving);
       area.addEventListener('keydown', (event) => {
         if ((event.ctrlKey || event.metaKey) && event.key === 's') { event.preventDefault(); void save(); return; }
         if (event.key === 'Tab' && !event.shiftKey && !event.ctrlKey && !event.altKey) {

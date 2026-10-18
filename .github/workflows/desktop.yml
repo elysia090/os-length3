@@ -46,3 +46,53 @@ jobs:
           out=$(LENGTH3_REPOS=/root node ../xlat/runtime/run.mjs target/x86_64-unknown-linux-musl/prompt/l3 help all)
           echo "$out" | head -3
           echo "$out" | grep -q 'l3 issue new'
+
+  # The app end to end, as a person uses it (os/selftest): Chromium against a
+  # fresh Remote of its own. A job of its own, beside check, so neither waits.
+  selftest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: os/package-lock.json
+      - name: Packages and Chromium
+        working-directory: os
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: The Prompt's files, from the release RELEASE names
+        working-directory: os
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/prompt-files.mjs
+      - name: Selftest (with the Prompt's @slow tests)
+        working-directory: os
+        env:
+          SELFTEST_SLOW: '1'
+        run: npm run selftest
+      # Failed: the report, every failed attempt's trace and screenshot, and what the two servers printed.
+      - name: Report, traces and the servers' logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: selftest
+          path: |
+            os/selftest/.report
+            os/selftest/.results
+            os/selftest/.logs
+          retention-days: 14
+      # Passed, but only on a retry (flaky): the failed attempt's trace is kept too, to be read.
+      - name: Traces of attempts that failed before passing
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: selftest-flaky
+          path: os/selftest/.results
+          if-no-files-found: ignore
+          retention-days: 14

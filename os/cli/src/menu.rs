@@ -745,7 +745,7 @@ mod tests {
         assert_eq!(deeds(Group::Git, On::Issue, &[], OFFLINE), ["Open", "Close"]);
         assert_eq!(deeds(Group::Git, On::Page, &[], OFFLINE), ["Write an issue", "Sign in"]);
         assert_eq!(deeds(Group::Inbox, On::Page, &[], OFFLINE), ["Sign in"]);
-        assert_eq!(deeds(Group::Remote, On::Page, &[], ONLINE), ["Sign-in", "Devices", "Sign out"]);
+        assert_eq!(deeds(Group::Remote, On::Page, &[], ONLINE), ["Sign-in", "Devices", "Plan", "Sign out"]);
         // In the app's Prompt only what may run there: the device and the Remote are the app's.
         assert_eq!(deeds(Group::Git, On::Issue, &[Fact::CanStart], IN_A_PROMPT), ["Open", "Close"]);
         assert_eq!(deeds(Group::Git, On::Page, &[], IN_A_PROMPT), ["Write an issue"]);

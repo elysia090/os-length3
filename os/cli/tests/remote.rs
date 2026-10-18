@@ -146,16 +146,16 @@ fn a_repo_made_here_under_a_name_the_remote_discarded_goes_there_as_new() {
     assert_eq!((ran.code, ran.stderr.as_str()), (0, ""), "{ran:?}");
     assert!(remote.said().contains(&"PATCH /v1/repos/notes/draft?anew=1".to_string()), "{:?}", remote.said());
     assert!(home.path("repos/notes/a.txt").exists());
-    // A copy that was in step does not ask so: what was discarded stays discarded, and l3 says what it is.
+    // A copy that was in step does not ask so, nor is it taken apart: what was discarded stays discarded there.
     let remote = discarded();
     let home = Home::new("discarded-agreed");
     home.signed_in(&remote.url);
     home.repo("notes", &[("a.txt", "mine\n"), ("b.txt", "changed here\n")]);
     home.agreed("notes", &format!(r#"{{"version":3,"tree":{{"a.txt":"{}","b.txt":"{}"}},"head":null}}"#, sha("mine\n"), sha("b\n")));
     let ran = home.run("en", &["file", "notes"]);
-    assert!(ran.stderr.contains("discarded on the Remote") && !ran.stderr.contains("l3 remote on"), "{ran:?}");
-    assert!(home.path("repos/notes/b.txt").exists(), "what changed here stays");
-    assert!(!remote.said().iter().any(|s| s.contains("anew")), "{:?}", remote.said());
+    assert!(ran.stderr.contains("does not have this repo") && !ran.stderr.contains("l3 remote on"), "{ran:?}");
+    assert!(home.path("repos/notes/a.txt").exists() && home.path("repos/notes/b.txt").exists(), "the copy here is kept");
+    assert!(!remote.said().iter().any(|s| s.contains("anew") || s.starts_with("PATCH")), "{:?}", remote.said());
 }
 
 #[test]

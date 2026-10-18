@@ -31,6 +31,7 @@
 //   POST   /v1/repos/:name/changes/:id/reviews | merge | reject | reset
 //   GET    /v1/home/:key  PUT {value, version}
 //   /v1/ssh…                          which devices listen for SSH, and stopping one (ssh.ts)
+//   /v1/plan…  /v1/stripe/webhook     what the account's plan allows, buying it, Stripe's events (plan.ts)
 //
 // Every write that is checked against what the account already has (its
 // room, how many repos or lines or settings) holds the account's lock in a
@@ -53,6 +54,7 @@ import {ago, body, lock, ms, qualified, refuse, rows, type Db, type Vars} from '
 import {blob, change, cut, guard, home, line, repo, repoGone, review, room, throttle, type Review, type Tree} from './schema.ts';
 import {seen} from './seen.ts';
 import {news} from './news.ts';
+import {planRoutes, plans, type Billing, type PlanConfig} from './plan.ts';
 import {servers} from './servers.ts';
 import {desktopFile, rootKey} from './releases.ts';
 import {sshRoutes} from './ssh.ts';
@@ -85,6 +87,12 @@ export interface Deps {
   recheck?: number;
   /** A Remote for research: one account, entered by its link (enter.ts); nobody signs up, nothing is shown to everyone. */
   enter?: Enter;
+  /** What a free account may keep, and the rest of the plan (plan.ts); without it, no plan: everything is open. */
+  plan?: PlanConfig;
+  /** How the plan is bought (Stripe); without it, billing is off and paid features cannot be bought here yet. */
+  billing?: Billing;
+  /** The clock, for tests of what depends on when (a webhook's signature). */
+  now?: () => number;
 }
 
 /** What one account may keep, unless the deployment says otherwise. */
@@ -192,6 +200,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export function createApp(d: Deps) {
   const app = new Hono<Vars>();
   const db = d.db;
+  const plan = plans({db, config: d.plan, billing: d.billing, domain: d.domain ?? 'length3.com'});
   app.use('*', cors({
     origin: (o) => (d.origins.includes(o) ? o : null),
     allowHeaders: ['Authorization', 'Content-Type', 'X-Guest'],
@@ -430,14 +439,21 @@ export function createApp(d: Deps) {
       if (!row) {
         const [{n}] = await tx.select({n: sql<number>`count(*)::int`}).from(repo).where(eq(repo.userId, user));
         if (n >= LIMIT.repos) refuse(429, {error: 'Too many repos'});
+        await plan.newRepo(tx, user);
       }
       await fits(tx, user, size - JSON.stringify(was).length);
-      if (row) await tx.update(line).set({draft: tree, version: current + 1, updatedAt: sql`now()`}).where(and(lineRow(row.id, l), eq(line.version, current)));
+      // What the draft takes (its tree and its files, each blob once) before and after: the plan refuses one
+      // that grew while the account keeps more than it allows, and the whole change is undone with it.
+      const kept = {bytes: line.bytes, files: line.fileBytes};
+      const [before] = row ? await tx.select(kept).from(line).where(lineRow(row.id, l)) as {bytes: number; files: number}[] : [{bytes: 0, files: 0}];
+      let after: {bytes: number; files: number}[];
+      if (row) after = await tx.update(line).set({draft: tree, version: current + 1, updatedAt: sql`now()`}).where(and(lineRow(row.id, l), eq(line.version, current))).returning(kept);
       else {
         await tx.delete(repoGone).where(and(eq(repoGone.userId, user), eq(repoGone.name, name)));
         const [made] = await tx.insert(repo).values({userId: user, name}).returning({id: repo.id}) as {id: number}[];
-        await tx.insert(line).values({repoId: made.id, userId: user, name: 'main', draft: tree, version: 1, startedBy: c.get('name')});
+        after = await tx.insert(line).values({repoId: made.id, userId: user, name: 'main', draft: tree, version: 1, startedBy: c.get('name')}).returning(kept);
       }
+      if (after[0]) await plan.grew(tx, user, Number(after[0].bytes) + Number(after[0].files) - Number(before.bytes) - Number(before.files));
       return current + 1;
     });
     return c.json({version});
@@ -784,8 +800,9 @@ export function createApp(d: Deps) {
   });
 
   const domain = d.domain ?? 'length3.com';
-  inbox({db, domain, baseURL: d.baseURL ?? '', secret: d.secret ?? '', txt: d.txt, recheck: d.recheck}, v1, app);
-  servers({db, domain, appOrigin: d.appOrigin, secret: d.secret, closed: !!d.enter}, v1, app);
+  inbox({db, domain, baseURL: d.baseURL ?? '', secret: d.secret ?? '', txt: d.txt, recheck: d.recheck, plans: plan}, v1, app);
+  servers({db, domain, appOrigin: d.appOrigin, secret: d.secret, closed: !!d.enter, plans: plan}, v1, app);
+  planRoutes({db, plans: plan, origins: d.origins, appOrigin: d.appOrigin, now: d.now}, v1, app);
   news({db}, v1);
   sshRoutes({db}, v1);
   seen({db, bucket: d.bucket, domain, closed: !!d.enter, viewer: async (req) => (await d.auth.api.getSession({headers: req.headers}))?.user.id ?? null}, v1, app);
