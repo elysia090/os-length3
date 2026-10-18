@@ -14,7 +14,7 @@
 import {forgetExcept} from './fetch.ts';
 import * as draft from './draft.ts';
 import {isNative} from './host.ts';
-import {connection, onConnection, RemoteError} from './remote.ts';
+import {connection, onConnection, onReach, remoteAway, RemoteError} from './remote.ts';
 import {kept, onChange} from './repos.ts';
 import {dropState, onState} from './state.ts';
 
@@ -185,6 +185,8 @@ export async function begin() {
   // Every change a person (or a Prompt) makes is sent; sync's own writes are not news.
   onChange((c) => { if (c.by !== draft.BY) schedule(c.repo); else tell(); });
   onState((k) => { if ((k === 'profile' || k === 'todo' || k === 'dotfiles') && connection()) void draft.syncHome(k).catch(away); });
+  // The Remote answers again: what waited for it goes now, not at its next try (up to a minute away).
+  onReach(() => { if (remoteAway() || !connection()) return; for (const [r, s] of states) if (s.where === 'offline' && timers.has(r)) schedule(r, 0); });
   // Another account, or none: nothing read for the last one holds.
   onConnection(() => { reposSeen = null; void look(); });
   // The Remote's changes are seen within five seconds while the page is in view.
