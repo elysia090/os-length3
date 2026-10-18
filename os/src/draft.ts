@@ -34,6 +34,10 @@ interface SyncState { repos: Record<string, Base>; home?: Record<string, HomeAgr
 /** Whoever writes on sync's behalf, so listeners can tell its writes from a person's. */
 export const BY = 'sync';
 const CHUNK = 2000;
+/** The largest file the Remote takes (service/app.ts LIMIT.blob); one larger stays here, and is said. */
+const FILE_MAX = 16 << 20;
+/** In a tree here, a file that cannot be sent: never a digest, so never sent nor taken for one. */
+const HERE_ONLY = 'here-only';
 const enc = new TextEncoder();
 const dec = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true});
 
@@ -94,7 +98,7 @@ export const deviceTag = (ua = globalThis.navigator?.userAgent): string =>
 
 // ---- the browser's copy ----
 
-interface Local { tree: Tree; texts: Map<string, string>; bytes: number }
+interface Local { tree: Tree; texts: Map<string, string>; bytes: number; unsynced: [string, string][] }
 
 /**
  * Whether a directory is derived: made from the repo's own files by a tool
@@ -124,7 +128,7 @@ export function derived(name: string, siblings: ReadonlySet<string>, inside: Rea
 const digests = new Map<string, Map<string, {text: string; sha: string; size: number}>>();
 
 async function localTree(repo: string, away: string[] = [], base: Tree = {}): Promise<Local> {
-  const tree: Tree = {}, texts = new Map<string, string>();
+  const tree: Tree = {}, texts = new Map<string, string>(), unsynced: [string, string][] = [];
   const key = keyOf(repo), was = digests.get(key), now: NonNullable<typeof was> = new Map();
   let bytes = 0;
   const walk = async (dir: string, entries: Awaited<ReturnType<typeof store.tree>>) => {
@@ -143,9 +147,16 @@ async function localTree(repo: string, away: string[] = [], base: Tree = {}): Pr
       let d = was?.get(path);
       if (d?.text !== c.text) { const b = enc.encode(c.text); d = {text: c.text, sha: await sha256(b), size: b.length}; }
       now.set(path, d);
+      bytes += d.size;
+      // Larger than the Remote takes: kept here and named, never sent. It stands as changed here
+      // (HERE_ONLY), so one the Remote changes meanwhile is taken in beside it, never over it.
+      if (d.size > FILE_MAX) {
+        unsynced.push([path, t('a file over 16 MB')]);
+        tree[path] = HERE_ONLY;
+        continue;
+      }
       tree[path] = d.sha;
       texts.set(d.sha, c.text);
-      bytes += d.size;
     }
   };
   await walk('', await store.tree(repo, ''));
@@ -153,7 +164,7 @@ async function localTree(repo: string, away: string[] = [], base: Tree = {}): Pr
   digests.set(key, now);
   // What this copy cannot hold stays as the Remote has it.
   for (const p of away) if (!(p in tree) && base[p] !== undefined) tree[p] = base[p];
-  return {tree, texts, bytes};
+  return {tree, texts, bytes, unsynced};
 }
 
 const blobs = new Map<string, string | null>();
@@ -258,6 +269,7 @@ async function inStep(repo: string): Promise<Synced> {
     if (agreed?.who && who && agreed.who !== who) throw new RemoteError(403, t('This copy was kept in step by another account; sign in as it to keep it in step'));
     const base = agreed ?? {version: 0, tree: {}, head: null};
     const here = await localTree(repo, base.away, base.tree);
+    out.unsynced = here.unsynced;
     const r = await api(path);
     const missing = r.status === 404 ? await r.json().catch(() => ({})) as {gone?: number} : null;
     // In step before and not on the Remote now (discarded there, or another account's): nothing here is taken
@@ -276,7 +288,8 @@ async function inStep(repo: string): Promise<Synced> {
       await agree(repo, {version: remoteVersion, tree, head: there?.head ?? null, away: [...away].filter((a) => a in tree), ...(who ? {who} : {})});
       continue;
     }
-    const set = Object.entries(here.tree).filter(([p, v]) => !(p in base.tree) || base.tree[p] !== v).slice(0, CHUNK);
+    // What cannot be sent (a file over what the Remote takes) is no change to send.
+    const set = Object.entries(here.tree).filter(([p, v]) => v !== HERE_ONLY && (!(p in base.tree) || base.tree[p] !== v)).slice(0, CHUNK);
     const remove = Object.keys(base.tree).filter((p) => !(p in here.tree)).slice(0, CHUNK);
     if (!set.length && !remove.length) {
       out.version = base.version;
@@ -336,8 +349,10 @@ export async function status(): Promise<Status[]> {
   for (const r of await store.list()) {
     const b = baseOf(r.name);
     const here = await localTree(r.name, b?.away, b?.tree);
-    const changed = b ? [...new Set([...Object.keys(here.tree), ...Object.keys(b.tree)])].filter((p) => here.tree[p] !== b.tree[p]).length : Object.keys(here.tree).length;
-    out.push({name: r.name, changed, fresh: !b, unsynced: [], bytes: here.bytes, head: b?.head ?? null, version: b?.version ?? 0});
+    // What cannot be sent is said apart (unsynced), not counted as a change waiting to go.
+    const changed = (b ? [...new Set([...Object.keys(here.tree), ...Object.keys(b.tree)])].filter((p) => here.tree[p] !== b.tree[p]) : Object.keys(here.tree))
+      .filter((p) => here.tree[p] !== HERE_ONLY).length;
+    out.push({name: r.name, changed, fresh: !b, unsynced: here.unsynced, bytes: here.bytes, head: b?.head ?? null, version: b?.version ?? 0});
   }
   return out;
 }

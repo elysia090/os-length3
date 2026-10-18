@@ -275,6 +275,21 @@ test('a copy, or a setting, agreed with one account is not sent to another that 
   assert.match(soraTodo.value, /not sent yet/);
 });
 
+test('a file larger than the Remote takes stays here, named, and the rest of the repo is sent all the same', async () => {
+  await store.create('big', 'standard');
+  await store.add('big', '', 'big.log', 'x'.repeat((16 << 20) + 1));
+  await store.write('big', 'README.md', '# sent\n');
+  const s = await draft.sync('big');
+  assert.deepEqual(s.unsynced.map(([p]) => p), ['big.log']);
+  const remote = await (await fetch(`${URL_}/v1/repos/big`, {headers: {Authorization: `Bearer ${token}`}})).json() as {draft: Record<string, string>};
+  assert.equal('big.log' in remote.draft, false);
+  assert.equal(await (await fetch(`${URL_}/v1/blobs/${remote.draft['README.md']}`, {headers: {Authorization: `Bearer ${token}`}})).text(), '# sent\n');
+  // Said apart, and not a change waiting to go (so it is not sent again and again, nor shown as sending).
+  const st = (await draft.status()).find((x) => x.name === 'big');
+  assert.deepEqual([st?.unsynced.map(([p]) => p), st?.changed], [['big.log'], 0]);
+  await store.remove('big', 'big.log');
+});
+
 test('an issue is worked on in its own copy; pushed, submitted, reviewed and merged into main', async () => {
   await store.add('notes', 'issue', '001.md', 'Fix：落ちる\n');
   await draft.sync('notes');
