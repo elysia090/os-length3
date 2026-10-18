@@ -206,3 +206,99 @@ pub fn golden(name: &str, got: &str) {
         panic!("{name} differs first at line {}:\n want: {:?}\n  got: {:?}\n\n--- got\n{got}", line + 1, want.lines().nth(line), got.lines().nth(line));
     }
 }
+
+// ---- a Remote of a test's own: it answers as the test says, and keeps what it was asked ----
+
+/// One request a Remote was asked: its method, its path (with the query) and its body.
+#[derive(Debug, Clone)]
+pub struct Asked {
+    pub method: String,
+    pub path: String,
+    pub body: Vec<u8>,
+    /// Its Authorization header, if it had one.
+    pub auth: Option<String>,
+}
+
+impl Asked {
+    pub fn text(&self) -> String { String::from_utf8_lossy(&self.body).into_owned() }
+}
+
+/// An HTTP Remote on 127.0.0.1 answering each request with what `answer` says: (status, body).
+pub struct FakeRemote {
+    pub url: String,
+    pub asked: std::sync::Arc<std::sync::Mutex<Vec<Asked>>>,
+}
+
+type Answer = dyn Fn(&Asked) -> (u16, String) + Send + Sync;
+
+impl FakeRemote {
+    pub fn start(answer: impl Fn(&Asked) -> (u16, String) + Send + Sync + 'static) -> FakeRemote {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a port");
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let answer: std::sync::Arc<Answer> = std::sync::Arc::new(answer);
+        let kept = asked.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                let (answer, kept) = (answer.clone(), kept.clone());
+                std::thread::spawn(move || serve_one(stream, &*answer, &kept));
+            }
+        });
+        FakeRemote { url, asked }
+    }
+
+    /// The requests so far, as "METHOD path".
+    pub fn said(&self) -> Vec<String> {
+        self.asked.lock().unwrap().iter().map(|a| format!("{} {}", a.method, a.path)).collect()
+    }
+}
+
+/// Read one request (its headers, then as many bytes as Content-Length says), answer it, and close.
+fn serve_one(mut stream: std::net::TcpStream, answer: &Answer, kept: &std::sync::Mutex<Vec<Asked>>) {
+    use std::io::{BufRead, Read, Write};
+    let mut r = std::io::BufReader::new(stream.try_clone().unwrap());
+    let mut first = String::new();
+    if r.read_line(&mut first).is_err() { return; }
+    let mut parts = first.split_whitespace();
+    let (method, path) = (parts.next().unwrap_or_default().to_string(), parts.next().unwrap_or_default().to_string());
+    let (mut length, mut auth) = (0usize, None);
+    loop {
+        let mut line = String::new();
+        if r.read_line(&mut line).is_err() || line.trim().is_empty() { break; }
+        if let Some((k, v)) = line.split_once(':') {
+            if k.eq_ignore_ascii_case("content-length") { length = v.trim().parse().unwrap_or(0); }
+            if k.eq_ignore_ascii_case("authorization") { auth = Some(v.trim().to_string()); }
+        }
+    }
+    let mut body = vec![0u8; length];
+    if r.read_exact(&mut body).is_err() { return; }
+    let a = Asked { method, path, body, auth };
+    let (status, text) = answer(&a);
+    kept.lock().unwrap().push(a);
+    let head = format!("HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", text.len());
+    let _ = stream.write_all(head.as_bytes()).and_then(|_| stream.write_all(text.as_bytes()));
+}
+
+impl Home {
+    /// This home signed in to `url` (Home's `remote` setting, as l3 login leaves it).
+    pub fn signed_in(&self, url: &str) {
+        let dir = self.path("home");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("remote.json"), format!(r#"{{"url":"{url}","token":"test-token"}}"#)).unwrap();
+    }
+
+    /// A repo here holding these files (path, text).
+    pub fn repo(&self, name: &str, files: &[(&str, &str)]) {
+        for (path, text) in files {
+            let at = self.path(&format!("repos/{name}/{path}"));
+            std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+            std::fs::write(at, text).unwrap();
+        }
+    }
+
+    /// What was last agreed with the Remote for `name` (its base, as sync keeps it).
+    pub fn agreed(&self, name: &str, json: &str) {
+        std::fs::create_dir_all(self.path("sync")).unwrap();
+        std::fs::write(self.path(&format!("sync/{name}.json")), json).unwrap();
+    }
+}

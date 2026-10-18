@@ -96,7 +96,8 @@ pub fn candidates(ctx: &Ctx, words: &[String]) -> Vec<String> {
 
 /// What fits one slot.
 fn slot(ctx: &Ctx, _c: &Command, a: Arg, cur: &str, verb: Option<&str>) -> Vec<String> {
-    let repos = || ctx.repos().and_then(|r| Ok(r.list()?)).map(|l| l.into_iter().map(|s| s.name).collect::<Vec<_>>()).unwrap_or_default();
+    // Names alone: listing walks every repo to say its size, and a slot may be asked for once per form.
+    let repos = || ctx.repos().and_then(|r| Ok(r.names()?)).unwrap_or_default();
     match a {
         Arg::Repo { .. } => repos(),
         Arg::Choice(c) => c.iter().map(|s| s.to_string()).collect(),
@@ -128,7 +129,7 @@ fn paths(ctx: &Ctx, cur: &str) -> Vec<String> {
     let shown_base = if cur.contains('/') { format!("{base}/") } else { String::new() };
     let mut out = Vec::new();
     if !cur.contains('/') && ctx.here.as_ref().is_none_or(|h| h.folder.is_empty()) {
-        out.extend(ctx.repos().and_then(|r| Ok(r.list()?)).unwrap_or_default().into_iter().map(|s| format!("{}/", s.name)));
+        out.extend(ctx.repos().and_then(|r| Ok(r.names()?)).unwrap_or_default().into_iter().map(|n| format!("{n}/")));
     }
     let word = if cur.contains('/') { Some(base) } else { None };
     if word.is_none() && ctx.here.is_none() { return out; }

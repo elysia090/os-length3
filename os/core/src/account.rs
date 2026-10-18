@@ -127,6 +127,17 @@ pub fn plan_page(kind: &str) -> Result<String> {
     Ok(url)
 }
 
+/// What a session is, from its user agent, in the app's words.
+pub fn device_word(ua: Option<&str>) -> String {
+    let u = ua.unwrap_or_default();
+    if u.starts_with("l3") || u.to_ascii_lowercase().contains("ureq") { return crate::tr!("l3 / the app", "l3 / アプリ"); }
+    let has = |s: &str| u.contains(s);
+    let os = if has("iPhone") || has("iPad") { "iOS" } else if has("Android") { "Android" } else if has("Mac OS X") { "macOS" } else if has("Windows") { "Windows" } else if has("Linux") { "Linux" } else { "" };
+    let browser = if has("Edg/") { "Edge" } else if has("Chrome/") { "Chrome" } else if has("Firefox/") { "Firefox" } else if has("Safari/") { "Safari" } else { "" };
+    let w = [browser, os].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" · ");
+    if w.is_empty() { crate::tr!("A device", "端末") } else { w }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -153,15 +164,4 @@ mod tests {
         let out = serde_json::to_string(&d).unwrap();
         assert!(!out.contains("secret") && !out.contains("token"), "{out}");
     }
-}
-
-/// What a session is, from its user agent, in the app's words.
-pub fn device_word(ua: Option<&str>) -> String {
-    let u = ua.unwrap_or_default();
-    if u.starts_with("l3") || u.to_ascii_lowercase().contains("ureq") { return crate::tr!("l3 / the app", "l3 / アプリ"); }
-    let has = |s: &str| u.contains(s);
-    let os = if has("iPhone") || has("iPad") { "iOS" } else if has("Android") { "Android" } else if has("Mac OS X") { "macOS" } else if has("Windows") { "Windows" } else if has("Linux") { "Linux" } else { "" };
-    let browser = if has("Edg/") { "Edge" } else if has("Chrome/") { "Chrome" } else if has("Firefox/") { "Firefox" } else if has("Safari/") { "Safari" } else { "" };
-    let w = [browser, os].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" · ");
-    if w.is_empty() { crate::tr!("A device", "端末") } else { w }
 }

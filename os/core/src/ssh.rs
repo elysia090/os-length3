@@ -264,11 +264,9 @@ impl Drop for Recorded {
     }
 }
 
-/// Written beside and renamed in, so a reader never sees half of it.
+/// Replaced whole (atomic.rs), so a reader never sees half of it.
 fn write_record(path: &Path, l: &Listening) -> std::io::Result<()> {
-    let temp = path.with_extension(format!("json.{}", std::process::id()));
-    std::fs::write(&temp, serde_json::to_vec(l).map_err(std::io::Error::other)?)?;
-    std::fs::rename(&temp, path)
+    crate::atomic::replace(path, &serde_json::to_vec(l).map_err(std::io::Error::other)?, crate::atomic::How::RECORD)
 }
 
 /// Record that this process listens.
