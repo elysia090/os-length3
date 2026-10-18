@@ -47,12 +47,86 @@ test('turning a repo off asks in its card first, and Not now leaves it on', asyn
   await expect(app.remote.card('hello')).toContainText('In step');
 
   await app.remote.power('hello').click();
-  // With no code set yet, the card says what turning off asks for, and where to set it.
-  const card = app.remote.card('hello');
-  await expect(card).toContainText('asks for your five-letter code');
-  await expect(card.getByRole('button', {name: 'Set the code'})).toBeVisible();
+  // With no code yet, the card asks for one right there (a passkey confirms it), then for the names.
+  const ask = app.remote.ask('hello');
+  await expect(ask).toContainText('This asks for a five-letter code of your own.');
+  await expect(ask.getByRole('textbox', {name: 'New code'})).toBeFocused();
+  await expect(ask.getByRole('button', {name: 'Set the code'})).toBeVisible();
   await expect(app.remote.power('hello')).toBeHidden();
 
-  await card.getByRole('button', {name: 'Not now'}).click();
+  await ask.getByRole('button', {name: 'Not now'}).click();
   await expect(app.remote.power('hello')).toBeChecked();
+});
+
+test('a repo is turned off from its card in one ask, kept off, and its switch brings it back', async ({signedIn: app}) => {
+  await app.newRepo.make('hello');
+  await app.rail.go('remote');
+  await expect(app.remote.card('hello')).toContainText('In step');
+
+  await app.remote.turnOff('hello', 'k3y42');
+
+  const card = app.remote.card('hello');
+  await expect(card).toContainText(/Off · back until /);
+  await expect(app.remote.power('hello')).not.toBeChecked();
+  await expect(app.remote.power('hello')).toHaveAccessibleName('Turn hello on');
+  // Off, Forge is what frees the copy here, and Discard is beside it.
+  await expect(card.getByRole('button', {name: 'Free'})).toBeVisible();
+  await expect(card.getByRole('button', {name: 'Discard'})).toBeVisible();
+
+  // On again at once, with no ask.
+  await app.remote.power('hello').click();
+  await expect(app.remote.power('hello')).toBeChecked();
+  await expect(card).toContainText('In step');
+});
+
+test('a code that is wrong does not turn the repo off, and says so in the card', async ({signedIn: app}) => {
+  await app.newRepo.make('hello');
+  await app.rail.go('remote');
+  await expect(app.remote.card('hello')).toContainText('In step');
+  // The code is set once (on the way to turning something off), then asked for each time.
+  await app.remote.turnOff('hello', 'k3y42');
+  await app.remote.power('hello').click();
+  await expect(app.remote.power('hello')).toBeChecked();
+
+  await app.remote.power('hello').click();
+  const ask = app.remote.ask('hello');
+  // Set already: straight to the names, once.
+  await expect(ask.getByRole('textbox', {name: 'Your name'})).toBeFocused();
+  await expect(ask.getByRole('textbox', {name: 'New code'})).toHaveCount(0);
+  await ask.getByRole('textbox', {name: 'Your name'}).fill(app.person);
+  await ask.getByRole('textbox', {name: 'The repo\'s name'}).fill('hello');
+  await ask.getByRole('textbox', {name: 'Code', exact: true}).fill('wrong');
+  const off = ask.getByRole('button', {name: 'Turn off'});
+  await expect(async () => {
+    await off.click({timeout: 1000});
+    await expect(ask.getByRole('alert')).not.toBeEmpty({timeout: 1000});
+  }).toPass({timeout: 15_000});
+  await expect(ask.getByRole('alert')).toHaveText('That is not the code.');
+
+  await ask.getByRole('button', {name: 'Not now'}).click();
+  await expect(app.remote.power('hello')).toBeChecked();
+});
+
+test('another device of yours is signed out from Devices, and finds itself signed out', async ({signedIn: app, another}) => {
+  // The same person in a second browser: another device of the same account.
+  const laptop = await another('Ada');
+  // Its devices are read as Remote is drawn: drawn again, the laptop is among them.
+  await app.rail.go('home');
+  await app.rail.go('remote');
+  await app.remote.part('Devices').click();
+  const devices = app.main.getByRole('tabpanel', {name: /^Devices/});
+  // This device has nothing to press; the other is signed out from its row.
+  const out = devices.getByRole('button', {name: /^Sign out /});
+  await expect(out).toHaveCount(1);
+  const which = (await out.getAttribute('aria-label'))!;
+
+  await out.click();
+  const ask = devices.getByRole('group', {name: which, exact: true});
+  await expect(ask).toContainText('It is signed out at once.');
+  await app.answer(ask.getByRole('button', {name: 'Sign out', exact: true}), ask);
+  await expect(devices.getByRole('button', {name: /^Sign out /})).toHaveCount(0);
+
+  await laptop.rail.go('home');
+  await laptop.rail.go('remote');
+  await expect(laptop.main.getByRole('region', {name: 'Sign in'})).toBeVisible();
 });

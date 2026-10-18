@@ -25,7 +25,7 @@ const naming = new Map<string, string>();
  * at the left and Commit at the right, under the pointer.
  */
 export function mainCard(repo: string, n: number, events: IssueEvents, after: () => void): HTMLElement {
-  const card = h('div', {class: 'main-card', 'aria-label': t('Not committed on main in {repo}', {repo})});
+  const card = h('div', {class: 'main-card', role: 'group', 'aria-label': t('Not committed on main in {repo}', {repo})});
   const plain = () => {
     card.style.minHeight = '';
     const commit = button(t('Commit'), 'primary');
@@ -67,6 +67,9 @@ export function mainCard(repo: string, n: number, events: IssueEvents, after: ()
 const named = (n: number | null, kind: string | null, title: string) => h('span', {class: 'done-name'},
   n === null ? null : h('span', {class: 'issue-no'}, `#${n} `), kind ? h('span', {class: 'issue-kind'}, `${kind}：`) : null, title);
 
+/** The merged ones opened, by change: the page drawn again (anything saved in the repo does it) keeps them open. */
+const opened = new Set<string>();
+
 /** The issues merged into main, newest first: who handed each in and when it was merged; opened, its diff. Only read. */
 export function mergedList(list: {repo: string; change: git.Change}[], all: boolean): HTMLElement {
   return h('div', {class: 'done-list'}, ...list.map(({repo, change: c}) => {
@@ -78,11 +81,13 @@ export function mergedList(list: {repo: string; change: git.Change}[], all: bool
       inside) as HTMLDetailsElement;
     let read = false;
     fold.addEventListener('toggle', () => {
+      if (fold.open) opened.add(c.id); else opened.delete(c.id);
       if (!fold.open || read) return;
       read = true;
       void git.changeDiff(repo, c).then((files) => inside.replaceChildren(...(files.length ? diffFiles(files) : [h('p', {class: 'muted small'}, t('No changes'))])),
         (e) => inside.replaceChildren(h('p', {class: 'error'}, message(e))));
     });
+    fold.open = opened.has(c.id);
     return fold;
   }));
 }

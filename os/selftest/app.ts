@@ -56,6 +56,19 @@ export class App {
   /** The page the rail chose. */
   get main(): Locator { return this.page.getByRole('main'); }
 
+  /**
+   * This browser has a platform authenticator that says yes at once (Chromium's virtual one,
+   * over CDP): a passkey made or asked for here is made or given without a person at a sensor.
+   */
+  async withPasskeys() {
+    const cdp = await this.page.context().newCDPSession(this.page);
+    await cdp.send('WebAuthn.enable');
+    await cdp.send('WebAuthn.addVirtualAuthenticator', {options: {
+      protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true,
+      isUserVerified: true, automaticPresenceSimulation: true,
+    }});
+  }
+
   /** Open the app and wait until it has drawn what it knows. */
   async open() {
     await this.page.goto('/');
@@ -65,6 +78,26 @@ export class App {
   /** The first look at the Remote is done and the page drawn from it (main is busy until then). */
   async settled() {
     await expect(this.main).not.toHaveAttribute('aria-busy', 'true');
+  }
+
+  /**
+   * Answer an ask with `yes`: a deed that comes under the pointer holds still a moment (so a double
+   * click cannot answer it), so it is pressed until the ask (`ask`) is gone.
+   */
+  async answer(yes: Locator, ask: Locator) {
+    await expect(async () => {
+      if (await yes.isVisible()) await yes.click({timeout: 1000});
+      await expect(ask).toBeHidden({timeout: 1000});
+    }).toPass({timeout: 15_000});
+  }
+
+  /**
+   * The person comes back to this window: the app looks at once for what came meanwhile (the
+   * Remote's changes, messages, posts), as it does otherwise every little while. Headless, a
+   * window never loses its focus, so it is said to it as the browser says it.
+   */
+  async comeBack() {
+    await this.page.evaluate(() => window.dispatchEvent(new Event('focus')));
   }
 
   /** Who is signed in here (as the development provider was told), and the Inbox name they claim. */
@@ -95,7 +128,9 @@ class Part {
 /** The rail at the left: one place at a time; File and Server open over the page. */
 class Rail extends Part {
   button(place: Place): Locator {
-    return this.page.getByRole('navigation', {name: 'Purposes'}).getByRole('button', {name: PLACES[place], exact: true});
+    // Its name says more while something is to be seen there ("Inbox has messages not read").
+    // The rail is named in the language spoken; its places keep their names in both.
+    return this.page.getByRole('navigation', {name: /^(Purposes|目的)$/}).getByRole('button', {name: new RegExp(`^${PLACES[place]}( |$)`)});
   }
 
   async go(place: Place) {
@@ -225,11 +260,66 @@ class Forge extends Part {
   get promptBox() { return this.main.getByRole('textbox', {name: 'Prompt box', exact: true}); }
   get prompt() { return this.main.getByRole('region', {name: 'Prompt', exact: true}); }
 
+  /** What is said under the prompt box (the choices Tab found, Still starting…). */
+  promptSays(text: string | RegExp) { return this.main.getByRole('status').filter({hasText: text}); }
+
+  /** Start the open repo's Prompt by writing to it, and wait for its prompt line (`hello $ `). */
+  async startPrompt(repo: string) {
+    await this.promptBox.focus();
+    await expect(this.prompt).toContainText(new RegExp(`${escape(repo)} \\$|Could not start`), {timeout: 240_000});
+    await expect(this.prompt).not.toContainText('Could not start');
+  }
+
   /** Write `line` in the prompt box and send it (Ctrl+Enter; Enter is a new line). */
   async run(line: string) {
     await this.promptBox.fill(line);
     await this.promptBox.press('Control+Enter');
     await expect(this.promptBox).toHaveValue('');
+  }
+
+  /** A run in Output (the reference's record of what was run), by its line: pressed, it is put back in the box. */
+  ran(line: string) { return this.reference.getByRole('button', {name: line, exact: true}); }
+
+  /**
+   * Write `text` as the whole of `path` and go on writing: it stays unsaved for as long as the
+   * steps after it take. (A pause in writing saves it, 0.7 s on the page's clock, so that clock is
+   * held still from here: only `lookUntil` moves it, a little at a time, and `writingDone` lets it run.)
+   */
+  async writeOn(path: string, text: string) {
+    // Its time starts as this machine's now, and is held a little ahead of it (never behind, however slow the step).
+    await this.page.clock.install();
+    await this.page.clock.pauseAt(Date.now() + 2000);
+    await this.editor(path).fill(text);
+    await expect(this.fileState(path)).toHaveText('Unsaved');
+  }
+
+  /** The page's clock runs again (after `writeOn`). */
+  async writingDone() { await this.page.clock.resume(); }
+
+  /**
+   * Look for what the Remote has (as on coming back to the window) until `what` shows, the held
+   * clock stepped on a little each time so what the look schedules runs, never as far as a save.
+   */
+  async lookUntil(what: Locator) {
+    await expect(async () => {
+      await this.app.comeBack();
+      await this.page.clock.runFor(20);
+      await expect(what).toBeVisible({timeout: 500});
+    }).toPass({timeout: 15_000});
+  }
+
+  /** What Forge asks when a file open here with unsaved words was saved elsewhere. */
+  get changedElsewhere() { return this.main.getByRole('group', {name: 'Changed elsewhere'}); }
+
+  /**
+   * Put `path` back as it was at the last commit, from its head in the diff: it asks in the head
+   * (what will happen, Not now, Put back), which is answered. `says` is what it should say it does.
+   */
+  async putBack(path: string, says: string) {
+    await this.show('diff');
+    await this.reference.getByRole('button', {name: `Put back ${path}`, exact: true}).click();
+    await expect(this.reference.getByText(says)).toBeVisible();
+    await this.app.answer(this.reference.getByRole('button', {name: 'Put back', exact: true}), this.reference.getByRole('button', {name: 'Not now'}));
   }
 
   /** A line of the diff, by what it says: pressed, it is marked as with a highlighter. */
@@ -239,25 +329,45 @@ class Forge extends Part {
 /** File: the tree of "/" over the page. */
 class FileTree extends Part {
   get tree() { return this.page.getByRole('tree', {name: '/'}); }
-  /** The tree's row for a repo or a file, by its name. */
+  /** The tree's row for a repo or a file (its name, which is pressed to choose it), wherever it is. */
   name(text: string) { return this.tree.getByRole('button', {name: text, exact: true}); }
 
   async openTree() {
+    if (await this.tree.isVisible()) return;
     await this.app.rail.button('file').click();
     await expect(this.tree).toBeVisible();
   }
 
-  /** Open `path` of `repo` from the tree: the repo's folder first, then each folder down to it, then the file. */
-  async open(repo: string, path: string) {
+  /**
+   * The item for `path` in `repo` ('' for the repo itself), with the tree out and every folder
+   * down to it opened (the repo's own too, when `open`).
+   */
+  async item(repo: string, path = '', o: {open?: boolean} = {}): Promise<Locator> {
     await this.openTree();
-    let at = this.tree.getByRole('treeitem').filter({has: this.page.getByRole('button', {name: repo, exact: true})}).first();
-    const parts = path.split('/');
-    await this.expand(at, repo);
-    for (const dir of parts.slice(0, -1)) {
-      at = at.getByRole('treeitem').filter({has: this.page.getByRole('button', {name: dir, exact: true})}).first();
-      await this.expand(at, dir);
+    let at = this.tree.getByRole('treeitem', {name: 'root', exact: true}).getByRole('treeitem', {name: repo, exact: true});
+    let name = repo;
+    for (const part of path ? path.split('/') : []) {
+      await this.expand(at, name);
+      at = at.getByRole('treeitem', {name: part, exact: true});
+      name = part;
     }
-    await at.getByRole('button', {name: parts.at(-1)!, exact: true}).click();
+    if (o.open) await this.expand(at, name);
+    await expect(at).toBeVisible();
+    return at;
+  }
+
+  /** Choose `path` of `repo` in the tree: each folder down to it opened, then the file pressed. */
+  async open(repo: string, path: string) {
+    const item = await this.item(repo, path);
+    await item.getByRole('button', {name: path.split('/').at(-1)!, exact: true}).first().click();
+  }
+
+  /** Bring a repo that is only on the Remote here, from its row (it says Remote): Forge then shows it. */
+  async bring(repo: string) {
+    const item = await this.item(repo);
+    await expect(item).toContainText('Remote');
+    await item.getByRole('button', {name: repo, exact: true}).click();
+    await expect(this.app.forge.editor('README.md')).toBeVisible();
   }
 
   /** Open a folder of the tree (its triangle), unless it is open. */
@@ -270,6 +380,32 @@ class FileTree extends Part {
   async close() {
     await this.page.keyboard.press('Escape');
     await expect(this.tree).toBeHidden();
+  }
+
+  /** A row's menu (its deeds at its right end: New file, New folder, Rename, Delete), by where the row is. */
+  async deeds(repo: string, path = '') {
+    const name = path ? path.split('/').at(-1)! : repo;
+    const item = await this.item(repo, path);
+    await item.getByRole('button', {name: `What to do with ${name}`, exact: true}).first().click();
+    const menu = this.page.getByRole('menu', {name, exact: true});
+    await expect(menu).toBeVisible();
+    return menu;
+  }
+
+  /** In a row's menu: a deed that asks for a name (New file, New folder, Rename), the name written, Enter. */
+  async named(repo: string, path: string, deed: 'New file' | 'New folder' | 'Rename', name: string) {
+    const menu = await this.deeds(repo, path);
+    await menu.getByRole('menuitem', {name: deed}).click();
+    const field = menu.getByRole('textbox');
+    await field.fill(name);
+    await field.press('Enter');
+  }
+
+  /** Delete a row from its menu, answering its ask (what it says is the caller's to check first, if wanted). */
+  async remove(repo: string, path: string) {
+    const menu = await this.deeds(repo, path);
+    await menu.getByRole('menuitem', {name: 'Delete'}).click();
+    await this.app.answer(menu.getByRole('button', {name: 'Delete', exact: true}), menu);
   }
 }
 
@@ -291,6 +427,53 @@ class Git extends Part {
 
   /** A step's button in the issue on screen (Start, Commit, Push, Merge…): only the issue on screen has them. */
   step(name: string) { return this.main.getByRole('button', {name, exact: true}); }
+
+  /** The issues not done with yet (each a box, one on screen), or what is said in their place. */
+  get issues() { return this.main.getByRole('region', {name: /^Issues/}); }
+
+  /** One of the sections under the issues, by its heading: main (what main has not committed), Merged, Closed. */
+  section(name: 'main' | 'Merged' | 'Closed') { return this.main.getByRole('region', {name: new RegExp(`^${name}( \\d+)?$`)}); }
+  /** main's card for `repo`, while something there is not committed. */
+  mainCard(repo: string) { return this.section('main').getByRole('group', {name: `Not committed on main in ${repo}`}); }
+
+  /** Commit what main has not committed in `repo`, its line written as Kind: title (Enter commits it). */
+  async commitOnMain(repo: string, line: string) {
+    await this.app.rail.go('git');
+    const card = this.mainCard(repo);
+    await card.getByRole('button', {name: 'Commit', exact: true}).click();
+    const field = card.getByRole('textbox', {name: 'The commit\'s line as Kind: title'});
+    await expect(field).toBeFocused();
+    await field.fill(line);
+    await this.commitLine(repo);
+  }
+
+  /**
+   * Enter in main's card commits its line, or says under it why not. Within a moment of the ask
+   * coming it is not taken (a double press is not an answer), so it is pressed until one happens.
+   */
+  async commitLine(repo: string) {
+    const card = this.mainCard(repo);
+    const field = card.getByRole('textbox');
+    const said = card.getByRole('alert');
+    await expect(async () => {
+      if (await field.isVisible()) await field.press('Enter', {timeout: 1000});
+      expect(!(await card.isVisible()) || !!(await said.textContent({timeout: 1000}))?.trim()).toBe(true);
+    }).toPass();
+  }
+
+  /** Start the issue on screen, make the change in Forge, then Commit and Push it: handed in for review. */
+  async handIn(edit: {path: string; text: string}) {
+    await this.step('Start').click();
+    await expect(this.step('Back to main')).toBeVisible();
+    // The work is done where files are written: in Forge, on the issue's own copy.
+    await this.app.rail.go('forge');
+    await this.app.forge.editFile(edit.path, edit.text);
+    await this.app.rail.go('git');
+    await this.step('Commit').click();
+    await expect(this.step('Push')).toBeEnabled();
+    await this.step('Push').click();
+    await expect(this.review).toBeVisible();
+  }
 }
 
 /** Remote: the canonical copy; signed in, its parts (Repos, Sign-in, Devices). */
@@ -298,9 +481,32 @@ class Remote extends Part {
   /** One of its parts, by the heading that switches to it (a count may follow the word). */
   part(name: 'Repos' | 'Sign-in' | 'Devices') { return this.main.getByRole('tab', {name: new RegExp(`^${name}`)}); }
   /** A repo's card, by its name. */
-  card(repo: string) { return this.main.getByRole('tabpanel', {name: /^Repos/}).getByRole('group', {name: repo, exact: true}); }
+  card(repo: string) { return this.main.getByRole('tabpanel', {name: /^Repos/}).getByRole('group', {name: repo, exact: true}).first(); }
+  /** What a card asks before its repo is turned off (a group of its own, named by the repo, inside the card). */
+  ask(repo: string) { return this.card(repo).getByRole('group', {name: repo, exact: true}); }
   /** Its power switch: on while the Remote keeps it on. */
   power(repo: string) { return this.card(repo).getByRole('switch'); }
+  /**
+   * Turn `repo` off from its card, as its switch asks: with no code yet the code is set first
+   * (a passkey made and confirmed with it), then the names and the code are asked once.
+   */
+  async turnOff(repo: string, code: string) {
+    await this.power(repo).click();
+    const ask = this.ask(repo);
+    const fresh = ask.getByRole('textbox', {name: 'New code'});
+    const name = ask.getByRole('textbox', {name: 'Your name'});
+    await expect(fresh.or(name)).toBeFocused();
+    if (await fresh.isVisible()) {
+      await fresh.fill(code);
+      await this.app.answer(ask.getByRole('button', {name: 'Set the code'}), fresh);
+    }
+    await expect(name).toBeFocused();
+    await name.fill(this.app.person);
+    await ask.getByRole('textbox', {name: 'The repo\'s name'}).fill(repo);
+    await ask.getByRole('textbox', {name: 'Code', exact: true}).fill(code);
+    await this.app.answer(ask.getByRole('button', {name: 'Turn off'}), ask);
+  }
+
   /** Who sees it: Share opens the list of one's servers, the ones it is shown in checked. */
   async share(repo: string) {
     await this.card(repo).getByRole('button', {name: 'Share'}).click();
@@ -317,6 +523,14 @@ class Runtime extends Part {
   dotfile(name: string) { return this.dotfiles.getByRole('button', {name: new RegExp(`^${escape(name)} `)}); }
   /** The text of the dotfile open under the cards (its field is named by the file). */
   text(name: string) { return this.dotfiles.getByRole('textbox', {name, exact: true}); }
+
+  /** Remove, under the open dotfile's text: it asks in the box first, and that ask is returned. */
+  async askRemove(name: string) {
+    await this.dotfiles.getByRole('button', {name: 'Remove', exact: true}).click();
+    const ask = this.dotfiles.getByRole('group', {name: `Remove ${name}`, exact: true});
+    await expect(ask).toBeVisible();
+    return ask;
+  }
 
   /** Make a dotfile and save it. */
   async makeDotfile(name: string, text: string) {
@@ -336,6 +550,8 @@ class Inbox extends Part {
   /** A conversation in the list, by the other's name or address (it shows both, then the last message). */
   conversation(who: string) { return this.conversations.getByRole('button', {name: who}); }
   get message() { return this.main.getByRole('textbox', {name: 'Message', exact: true}); }
+  /** The conversation open at the right, named by the other (their name on this Remote). */
+  thread(who: string) { return this.main.getByRole('region', {name: `Conversation with ${who}`, exact: true}); }
 
   /** Claim `name` on this Remote (the stub before there is one); claimed, the stub is the name. */
   async claim(name = this.app.handle) {
@@ -349,7 +565,7 @@ class Inbox extends Part {
   /** Write `text` to `to` (a name or a code) and send it. */
   async writeTo(to: string, text: string) {
     await this.app.rail.go('inbox');
-    await this.conversations.getByRole('textbox', {name: 'Write to an address'}).fill(to);
+    await this.conversations.getByRole('textbox', {name: 'Write to a name or a code'}).fill(to);
     await this.conversations.getByRole('button', {name: 'Write', exact: true}).click();
     await this.message.fill(text);
     await this.main.getByRole('button', {name: 'Send', exact: true}).click();
@@ -368,9 +584,12 @@ class Server extends Part {
     await expect(this.layer).toBeVisible();
   }
 
+  /** Put it away with Escape: from behind the gear (or a repo shown) the first goes back to the boards. */
   async close() {
-    await this.page.keyboard.press('Escape');
-    await expect(this.layer).toBeHidden();
+    await expect(async () => {
+      await this.page.keyboard.press('Escape');
+      await expect(this.layer).toBeHidden({timeout: 1000});
+    }).toPass({timeout: 15_000});
   }
 
   /** Make a server named `name`, `handle` its name on this Remote (one's own Inbox name is needed first). */
@@ -400,6 +619,27 @@ class Server extends Part {
   talk(board: string) { return this.layer.getByRole('region', {name: board, exact: true}); }
   /** Its TODO, pinned at the top of its box. */
   get todo() { return this.layer.getByRole('region', {name: 'TODO', exact: true}); }
+
+  /** A server's chip on the top line (its name says so while a board in it has posts not seen). */
+  chip(name: string) { return this.layer.getByRole('radiogroup', {name: 'Server'}).getByRole('radio', {name: new RegExp(`^${escape(name)}(, |$)`)}); }
+
+  /** The box at the board's foot that writes in it. */
+  box(board: string) { return this.layer.getByRole('textbox', {name: `Write in ${board}`, exact: true}); }
+
+  /**
+   * Add someone to the server on screen by their name or code, from behind its gear (People,
+   * Add someone you know). What the card then says is returned, to be checked by the caller.
+   */
+  async addSomeone(who: string) {
+    await this.layer.getByRole('button', {name: 'Its people, boards and repos'}).click();
+    await this.layer.getByRole('tab', {name: /^People/}).click();
+    await this.layer.getByRole('button', {name: 'Add someone you know'}).click();
+    const typed = this.layer.getByRole('textbox', {name: 'Name or code of someone to add'});
+    await expect(typed).toBeFocused();
+    await typed.fill(who);
+    await this.layer.getByRole('button', {name: 'Add', exact: true}).click();
+    return this.layer.getByRole('tabpanel', {name: /^People/}).getByRole('status');
+  }
 
   /** Post `text` in `board` from the box at the foot (Ctrl+Enter sends). */
   async post(board: string, text: string) {

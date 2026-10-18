@@ -8,6 +8,11 @@
 //   3. `vite preview` serves the build on another free port and passes /api
 //      and /v1 to that Remote (LENGTH3_DEV_REMOTE), as `vite` does in development.
 //
+// Both are reached by the name localhost (bound to 127.0.0.1): a passkey's
+// relying party is a domain, never an address, so Chromium's virtual
+// authenticator (fixtures.ts) works only there, and the session cookie the
+// Remote sets is the app's because cookies do not tell ports apart.
+//
 // The function returned is the teardown: both stop and the directory goes,
 // however the tests went. Nothing listens on a fixed port, so runs (and
 // other work on this machine) never meet.
@@ -97,8 +102,8 @@ export default async function globalSetup(_config: FullConfig) {
   build();
   const data = mkdtempSync(join(tmpdir(), 'length3-selftest-'));
   const [remotePort, appPort] = [await freePort(), await freePort()];
-  const app = `http://127.0.0.1:${appPort}`;
-  const remoteURL = `http://127.0.0.1:${remotePort}`;
+  const app = `http://localhost:${appPort}`;
+  const remoteURL = `http://localhost:${remotePort}`;
   const children: ChildProcess[] = [];
   const teardown = async () => {
     await Promise.all(children.map(stop));
@@ -109,17 +114,18 @@ export default async function globalSetup(_config: FullConfig) {
   process.once('exit', kill);
   try {
     // Every person here signs in from this machine, so the sign-in rate limit is lifted (service/dev.ts).
-    children.push(start('remote', ['service/dev.ts', data, String(remotePort), app], {LENGTH3_DEV_RATE_LIMIT: 'off'}));
+    children.push(start('remote', ['service/dev.ts', data, String(remotePort), app], {LENGTH3_DEV_RATE_LIMIT: 'off', LENGTH3_DEV_BASE: remoteURL}));
     children.push(start('preview', [join(OS, 'node_modules/vite/bin/vite.js'), 'preview', '--outDir', OUT,
-      '--host', '127.0.0.1', '--port', String(appPort), '--strictPort'], {LENGTH3_DEV_REMOTE: remoteURL}));
-    // Through the preview, so both are up and the one passes to the other.
-    await ready(`${app}/v1/about`, children);
+      '--host', '127.0.0.1', '--port', String(appPort), '--strictPort'], {LENGTH3_DEV_REMOTE: `http://127.0.0.1:${remotePort}`}));
+    // Through the preview, so both are up and the one passes to the other. (Between the servers and
+    // from here, the address itself: what localhost names first, ::1 or 127.0.0.1, is the system's.)
+    await ready(`http://127.0.0.1:${appPort}/v1/about`, children);
   } catch (e) {
     await teardown();
     throw e;
   }
   process.env.SELFTEST_APP = app;
-  process.env.SELFTEST_REMOTE = remoteURL;
+  process.env.SELFTEST_REMOTE = `http://127.0.0.1:${remotePort}`;
   process.env.SELFTEST_DATA = data;
   console.log(`selftest: the app on ${app}, its Remote on ${remoteURL}`);
   return async () => {

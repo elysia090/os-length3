@@ -71,11 +71,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/prompt-files.mjs
-      - name: Selftest (with the Prompt's @slow test)
+      - name: Selftest (with the Prompt's @slow tests)
         working-directory: os
         env:
           SELFTEST_SLOW: '1'
         run: npm run selftest
+      # Failed: the report, every failed attempt's trace and screenshot, and what the two servers printed.
       - name: Report, traces and the servers' logs
         if: failure()
         uses: actions/upload-artifact@v4
@@ -85,4 +86,13 @@ jobs:
             os/selftest/.report
             os/selftest/.results
             os/selftest/.logs
+          retention-days: 14
+      # Passed, but only on a retry (flaky): the failed attempt's trace is kept too, to be read.
+      - name: Traces of attempts that failed before passing
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: selftest-flaky
+          path: os/selftest/.results
+          if-no-files-found: ignore
           retention-days: 14

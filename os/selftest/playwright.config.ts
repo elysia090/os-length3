@@ -19,7 +19,8 @@ export default defineConfig({
   // A journey is a few dozen steps against a real Remote; on a busy machine the steps are slow, never the waits.
   timeout: 60_000,
   expect: {timeout: 15_000},
-  reporter: [['list'], ['html', {open: 'never', outputFolder: '.report'}]],
+  // On CI, each failure is also an annotation on the run (and a flaky one is named as such).
+  reporter: [['list'], ...(CI ? [['github'] as const] : []), ['html', {open: 'never', outputFolder: '.report'}]],
   use: {
     ...BROWSER,
     trace: 'retain-on-failure',

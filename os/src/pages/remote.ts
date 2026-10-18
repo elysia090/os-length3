@@ -118,14 +118,18 @@ function repoSection(ctx: Context, counted: (n: number) => void, keyed: () => vo
   const grid = h('div', {class: 'grid repo-cards'});
   const section = h('div', {class: 'sub-part'}, grid);
   let seen: servers.RepoSeen[] = [];
-  const paint = () => draw().catch((e) => grid.replaceChildren(h('p', {class: 'error'}, message(e))));
-  const draw = async () => {
+  // A card asking (or about to) is not drawn over by a look that crossed the press; what ends the ask draws them all (`ended`).
+  const asking = () => !!grid.querySelector('.off-ask, [data-asking]');
+  const paint = (force = false) => draw(force).catch((e) => grid.replaceChildren(h('p', {class: 'error'}, message(e))));
+  const ended = () => paint(true);
+  const draw = async (force: boolean) => {
     const here = await store.list();
     const there = remoteAll();
     // Who sees each is the Remote's to say: away, no Share is offered (the rail and the line above say why).
     seen = account.connection() ? await servers.seenAll().catch(() => []) : [];
     const names = [...new Set([...here.map((r) => r.name), ...there.map((r) => r.name)])].sort();
     counted(names.length);
+    if (!force && asking()) return;
     grid.replaceChildren(...(names.length ? names.map((name) => card(name, here.find((r) => r.name === name) ?? null, there.find((r) => r.name === name) ?? null))
       : [h('div', {class: 'empty'}, t('No repos yet'))]));
   };
@@ -167,21 +171,24 @@ function repoSection(ctx: Context, counted: (n: number) => void, keyed: () => vo
     power.addEventListener('click', () => {
       if (off) { void pressing(power, error, async () => { await account.turnOn(name); await look(); await paint(); }); return; }
       if (isNative) { error.textContent = t('A repo is turned off from the browser, where its passkey is.'); return; }
-      void confirm(el, power, name, turningOff(name), paint, keyed);
+      // Asking from now on, before the ask is drawn: the cards are not drawn again under it meanwhile.
+      el.dataset.asking = '';
+      void confirm(el, power, name, turningOff(name), ended, keyed);
     });
     discard?.addEventListener('click', () => {
       if (isNative) { error.textContent = t('A repo is discarded from the browser, where its passkey is.'); return; }
+      el.dataset.asking = '';
       void confirm(el, discard, name, {
         verb: t('Discard'),
         what: [t('It goes from the Remote now, with its history, and cannot be brought back.'), ...(here ? [t('The copy here goes with it.')] : [])],
         // The copy here first: one holding what the Remote lacks is kept, and nothing is discarded.
         act: async (who, typed, code, proven) => { if (here) await freeOff(name); await account.discard(name, who, typed, code, proven); },
-      }, paint, keyed);
+      }, ended, keyed);
     });
     return el;
   };
-  void look().then(paint);
-  const again = () => { if (!section.isConnected) { stop(); unreach(); return; } if (!section.querySelector('.off-ask, .share-pop:not([hidden])')) void paint(); };
+  void look().then(() => paint());
+  const again = () => { if (!section.isConnected) { stop(); unreach(); return; } if (!section.querySelector('.share-pop:not([hidden])')) void paint(); };
   const stop = onSync(again);
   const unreach = account.onReach(again);
   return section;
