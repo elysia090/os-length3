@@ -89,6 +89,25 @@ pub fn create(path: &Path, bytes: &[u8], how: How) -> io::Result<()> {
     done
 }
 
+/// Move `from` to `to` in one step unless something is at `to` (AlreadyExists then): a directory made
+/// aside goes into place whole, and never over (or, empty, into) one another made meanwhile.
+pub fn rename_new(from: &Path, to: &Path) -> io::Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let c = |p: &Path| std::ffi::CString::new(p.as_os_str().as_bytes()).map_err(io::Error::other);
+        let (a, b) = (c(from)?, c(to)?);
+        // SAFETY: two NUL-terminated paths that live across the call.
+        let r = unsafe { libc::syscall(libc::SYS_renameat2, libc::AT_FDCWD, a.as_ptr(), libc::AT_FDCWD, b.as_ptr(), libc::RENAME_NOREPLACE) };
+        if r == 0 { return Ok(()); }
+        let e = io::Error::last_os_error();
+        // A kernel or filesystem without it: asked the slower way below.
+        if !matches!(e.raw_os_error(), Some(libc::ENOSYS) | Some(libc::EINVAL)) { return Err(e); }
+    }
+    if to.symlink_metadata().is_ok() { return Err(io::Error::from(io::ErrorKind::AlreadyExists)); }
+    fs::rename(from, to)
+}
+
 /// Flush the directory `path` is in, so a rename into it is on the disk.
 /// Where a directory cannot be opened to flush (not unix), the rename stands as the system keeps it.
 fn sync_dir(path: &Path) {
@@ -131,6 +150,18 @@ mod tests {
         assert_eq!(create(&at, b"second", How::PRIVATE).unwrap_err().kind(), io::ErrorKind::AlreadyExists);
         assert_eq!(fs::read(&at).unwrap(), b"first");
         assert_eq!(fs::read_dir(&d).unwrap().count(), 1);
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_directory_goes_into_place_whole_and_never_over_another() {
+        let d = scratch("rename-new");
+        fs::create_dir_all(d.join("aside/sub")).unwrap();
+        fs::create_dir(d.join("taken")).unwrap();
+        assert_eq!(rename_new(&d.join("aside"), &d.join("taken")).unwrap_err().kind(), io::ErrorKind::AlreadyExists);
+        assert!(d.join("aside/sub").is_dir() && fs::read_dir(d.join("taken")).unwrap().count() == 0);
+        rename_new(&d.join("aside"), &d.join("free")).unwrap();
+        assert!(d.join("free/sub").is_dir() && !d.join("aside").exists());
         let _ = fs::remove_dir_all(&d);
     }
 
