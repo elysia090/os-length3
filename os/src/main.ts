@@ -216,3 +216,13 @@ if (asking.has('device')) {
 window.addEventListener('focus', () => {
   void loadState().then(() => { useLang(getState('lang')); if (current === 'home') render(); else me.paint(); });
 });
+// An invitation's link opened in a tab already showing the app (pasted into its address) changes only
+// the fragment: it is taken the same way, and Server comes out afresh at its board.
+window.addEventListener('hashchange', () => {
+  const came = inviteIn(location.hash);
+  if (!came) return;
+  holdInvite(came.board, came.code);
+  history.replaceState(null, '', location.pathname + location.search);
+  serverLayer.close();
+  serverLayer.open(true);
+});

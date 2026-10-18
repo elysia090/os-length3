@@ -1138,6 +1138,7 @@ summary.done-head:hover { background: var(--raised); }
 .guest-link:empty { display: none; }
 .guest-link-text { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; justify-content: flex-start; }
 .guest-chip { display: inline-flex; align-items: center; gap: var(--s1); }
+.guest-chip[aria-checked='true'] .muted { color: inherit; opacity: .75; }
 .small-card > .small-button { align-self: flex-start; }
 .small-card.new { justify-content: center; align-items: center; }
 .grid > .empty { grid-column: 1 / -1; margin-top: 0; }
