@@ -60,9 +60,35 @@ export function getState(key: Key): string | null {
   return isNative ? null : local(key);
 }
 
-const listeners = new Set<(key: Key) => void>();
-/** Hear each key set here; returns how to stop. */
-export function onState(fn: (key: Key) => void): () => void { listeners.add(fn); return () => listeners.delete(fn); }
+/**
+ * `key` as it is kept now: in a browser, read again from its storage, where
+ * another tab of this browser may have written it since; the app's are its
+ * own files, read at start and on focus.
+ */
+export function freshState(key: Key): string | null {
+  if (isNative) return getState(key);
+  const v = local(key);
+  if (!unread.has(key)) cache.set(key, v);
+  return v;
+}
+
+/** Each listener hears the key, and whether another tab of this browser set it (`outside`). */
+const listeners = new Set<(key: Key, outside: boolean) => void>();
+/** Hear each key set here (or by another tab of this browser); returns how to stop. */
+export function onState(fn: (key: Key, outside: boolean) => void): () => void { listeners.add(fn); return () => listeners.delete(fn); }
+
+// Another tab of this browser set a key: this one reads it as it is now, so
+// nothing here is decided from (or written back over) a value that has moved.
+if (!isNative && typeof addEventListener === 'function') {
+  const byName = new Map(KEYS.map((k) => [STORAGE[k], k] as const));
+  addEventListener('storage', (e: StorageEvent) => {
+    const keys = e.key === null ? KEYS : [byName.get(e.key)].filter((k): k is Key => !!k);
+    for (const key of keys) {
+      cache.set(key, local(key));
+      for (const fn of [...listeners]) fn(key, true);
+    }
+  });
+}
 
 /** Let `key` go from this browser (the app keeps its files). */
 export function dropState(key: Key) {
@@ -75,7 +101,7 @@ export async function setState(key: Key, json: string): Promise<void> {
   const why = unread.get(key);
   if (why !== undefined) throw new Error(t('{what} could not be read, so it is not written over ({why})', {what: settingName(key), why}));
   cache.set(key, json);
-  for (const fn of [...listeners]) fn(key);
+  for (const fn of [...listeners]) fn(key, false);
   if (isNative) { await native('state_set', {key, json}); return; }
   try { localStorage.setItem(STORAGE[key], json); } catch (e) { throw new Error(String(e)); }
 }

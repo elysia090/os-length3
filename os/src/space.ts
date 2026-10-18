@@ -45,7 +45,8 @@ export async function freeOff(name: string): Promise<void> {
     if (r.kept.length) throw new Error(r.kept[0][1]);
   } else {
     const s = (await draft.status()).find((x) => x.name === name);
-    if (s?.changed) throw new Error(tn('{n} change here is not on the Remote; turn it on to send it first', '{n} changes here are not on the Remote; turn it on to send them first', s.changed));
+    const n = (s?.changed ?? 0) + (s?.elsewhere ?? 0);
+    if (n) throw new Error(tn('{n} change here is not on the Remote; turn it on to send it first', '{n} changes here are not on the Remote; turn it on to send them first', n));
     await kept!.letGo([name]);
     await draft.forget(name);
   }
@@ -72,6 +73,8 @@ export async function free(ids: string[]): Promise<Freed> {
         if (s.both.length) throw new Error(t('Both changed {path}: this device\'s is kept beside it; check it before freeing', {path: s.both[0]}));
         const left = (await draft.status()).find((x) => x.name === name);
         if (left?.changed) throw new Error(t('It changed while it was being sent; try again'));
+        // Another work's copy holds what the Remote lacks: it goes only once that is sent.
+        if (left?.elsewhere) throw new Error(t('Another work of it has changes not sent yet; show that work to send them first'));
         await kept!.letGo([name]);
         await draft.forget(name);
         removed.push(id);

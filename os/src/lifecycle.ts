@@ -14,9 +14,10 @@
 import {forgetExcept} from './fetch.ts';
 import * as draft from './draft.ts';
 import {isNative} from './host.ts';
-import {connection, onConnection, RemoteError} from './remote.ts';
-import {kept, onChange} from './repos.ts';
+import {connection, onConnection, onReach, remoteAway, RemoteError} from './remote.ts';
+import {kept, onChange, TAB} from './repos.ts';
 import {dropState, onState} from './state.ts';
+import {othersOpen, prune} from './tabs.ts';
 
 /**
  * Where a repo here stands; 'off': turned off on the Remote (kept there 30 days), nothing is sent until it is on
@@ -31,6 +32,9 @@ export interface RepoSync {
   both: string[];
   /** What cannot be sent (links, large files, .git), so the copy is never let go. */
   unsynced: [string, string][];
+  /** Changes in its other works' copies here, sent when each is shown again (so it is not let go meanwhile). */
+  elsewhere?: number;
+  /** Why it is not in step, in the person's words (what the Remote or this browser said). */
   error?: string;
 }
 
@@ -73,7 +77,7 @@ function schedule(repo: string, ms = SOON) {
   if (!connection() || states.get(repo)?.where === 'off') return;
   clearTimeout(timers.get(repo));
   const s = states.get(repo);
-  states.set(repo, {where: 'sending', changed: s?.changed ?? 0, both: [], unsynced: s?.unsynced ?? []});
+  states.set(repo, {where: 'sending', changed: s?.changed ?? 0, both: [], unsynced: s?.unsynced ?? [], elsewhere: s?.elsewhere});
   tell();
   timers.set(repo, setTimeout(() => void run(repo), ms));
 }
@@ -83,7 +87,7 @@ async function run(repo: string) {
   try {
     const r = await draft.sync(repo);
     retry.delete(repo);
-    states.set(repo, {where: 'synced', changed: 0, both: r.both, unsynced: r.unsynced});
+    states.set(repo, {where: 'synced', changed: 0, both: r.both, unsynced: r.unsynced, elsewhere: states.get(repo)?.elsewhere});
   } catch (e) {
     // Turned off on the Remote: nothing more is sent until it is on again.
     if ((e as {status?: number}).status === 410) {
@@ -110,7 +114,7 @@ async function run(repo: string) {
     const n = (retry.get(repo) ?? 0) + 1;
     retry.set(repo, n);
     const s = states.get(repo);
-    states.set(repo, {where: 'offline', changed: s?.changed ?? 0, both: [], unsynced: s?.unsynced ?? [], error: message(e)});
+    states.set(repo, {where: 'offline', changed: s?.changed ?? 0, both: [], unsynced: s?.unsynced ?? [], elsewhere: s?.elsewhere, error: message(e)});
     if (connection()) timers.set(repo, setTimeout(() => void run(repo), Math.min(60_000, 2000 * 2 ** n)));
   }
   tell();
@@ -142,13 +146,16 @@ export async function look(): Promise<void> {
   // What is here could not be read: nothing is decided from nothing (no state is dropped), and it is said.
   const here = await draft.status().catch((e: unknown) => { console.error('look: the repos here could not be read', e); return null; });
   if (!here) return;
+  void prune();
   const c = connection();
   for (const s of here) {
     if (timers.has(s.name)) continue;
     const before = states.get(s.name);
     if (before?.where === 'off') continue;
-    const where: Where = !c ? 'local' : s.fresh || s.changed ? (before?.where === 'offline' ? 'offline' : 'sending') : 'synced';
-    states.set(s.name, {where, changed: s.changed, both: before?.both ?? [], unsynced: s.unsynced, error: before?.error});
+    // Changed here and not kept by this browser (its storage refused it): said, and not taken for in step.
+    const unkept = kept?.trouble && kept.waiting(s.name) ? kept.trouble : undefined;
+    const where: Where = !c ? 'local' : s.fresh || s.changed ? (before?.where === 'offline' ? 'offline' : 'sending') : unkept ? 'offline' : 'synced';
+    states.set(s.name, {where, changed: s.changed, both: before?.both ?? [], unsynced: s.unsynced, elsewhere: s.elsewhere, error: unkept ?? (where === 'synced' ? undefined : before?.error)});
     if (c && (s.fresh || s.changed) && before?.where !== 'offline') schedule(s.name, 0);
   }
   for (const k of [...states.keys()]) if (!here.some((s) => s.name === k)) states.delete(k);
@@ -194,13 +201,16 @@ export async function bring(repo: string): Promise<void> {
  */
 function leave() {
   if (!kept || !connection()) return;
-  const go = [...states].filter(([r, s]) => s.where === 'synced' && !s.unsynced.length && !timers.has(r) && !kept!.waiting(r)).map(([r]) => r);
+  // Another tab of this browser still holds the same copy and settings: they stay for it, and go with the last tab.
+  if (othersOpen()) return;
+  const go = [...states].filter(([r, s]) => s.where === 'synced' && !s.unsynced.length && !s.elsewhere && !timers.has(r) && !kept!.waiting(r)).map(([r]) => r);
   if (go.length) {
     void kept.letGo(go);
     // Which work a repo showed stays: the next visit fetches that work's copy and shows it again.
     for (const r of go) void draft.forget(r, true);
   }
-  for (const k of draft.HOME_KEYS) dropState(k);
+  // A setting goes only as the Remote has it: one changed here and not sent yet (offline) stays, and is sent next time.
+  for (const k of draft.homeAgreed()) dropState(k);
 }
 
 let begun = false;
@@ -212,9 +222,14 @@ export async function begin() {
   void forgetExcept(new Set());
   // A browser shows again the work each repo showed.
   draft.restoreLines();
-  // Every change a person (or a Prompt) makes is sent; sync's own writes are not news.
-  onChange((c) => { if (c.by !== draft.BY) schedule(c.repo); else tell(); });
-  onState((k) => { if ((k === 'profile' || k === 'todo' || k === 'dotfiles') && connection()) void draft.syncHome(k).catch(away); });
+  // Every change a person (or a Prompt) makes is sent; sync's own writes are not news, nor another tab's (it sends its own).
+  onChange((c) => { if (c.by !== draft.BY && c.by !== TAB) schedule(c.repo); else tell(); });
+  // A setting changed here is sent; one another tab changed, that tab sends.
+  onState((k, outside) => { if (!outside && (k === 'profile' || k === 'todo' || k === 'dotfiles') && connection()) void draft.syncHome(k).catch(away); });
+  // This browser's storage started or stopped refusing what is kept: said where each repo stands.
+  kept?.onTrouble(() => void look());
+  // The Remote answers again: what waited for it goes now, not at its next try (up to a minute away).
+  onReach(() => { if (remoteAway() || !connection()) return; for (const [r, s] of states) if (s.where === 'offline' && timers.has(r)) schedule(r, 0); });
   // Another account, or none: nothing read for the last one holds.
   onConnection(() => { reposSeen = null; void look(); });
   // The Remote's changes are seen within five seconds while the page is in view.

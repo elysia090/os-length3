@@ -40,14 +40,15 @@ export async function browserOnRemote(o: {plan?: PlanConfig; billing?: Billing} 
   const history = await import('./history.ts');
   const state = await import('./state.ts');
 
-  /** Signing in as the browser does: the stand-in provider's page, then back. */
-  const signIn = async () => {
+  /** Signing in as the browser does: the stand-in provider's page, then back (as `name`: another person). */
+  const signIn = async (name?: string) => {
     const start = await fetch(`${URL_}/api/auth/sign-in/social`, {method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({provider: 'dev', callbackURL: `${APP}/`})});
     const cookies = start.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
     const go = new URL(((await start.json()) as {url: string}).url);
     const approve = new URL(`${URL_}/dev-oauth/approve`);
     for (const k of ['redirect_uri', 'state']) approve.searchParams.set(k, go.searchParams.get(k) ?? '');
+    if (name) approve.searchParams.set('name', name);
     const back = (await fetch(approve.toString())).headers.get('Location')!;
     return (await fetch(back, {headers: {Cookie: cookies}})).headers.get('set-auth-token')!;
   };
@@ -106,5 +107,5 @@ export async function browserOnRemote(o: {plan?: PlanConfig; billing?: Billing} 
     return out;
   }
 
-  return {URL: URL_, token, store, draft, history, state, asked, elsewhere, elsewhereFolder, elsewhereHome, remoteFiles, remoteHome, text, names, files};
+  return {URL: URL_, token, db, signIn, store, draft, history, state, asked, elsewhere, elsewhereFolder, elsewhereHome, remoteFiles, remoteHome, text, names, files};
 }
