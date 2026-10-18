@@ -251,6 +251,10 @@ export class Reader {
         timer = window.setTimeout(() => void save(), 700);
       });
       area.addEventListener('blur', () => void save());
+      // The tab closing (or put away) saves what is written, before the store keeps what it has (repos.ts).
+      const leaving = () => { if (!area.isConnected) { removeEventListener('beforeunload', leaving); document.removeEventListener('visibilitychange', leaving); return; } if (area.value !== held.saved) void save(); };
+      addEventListener('beforeunload', leaving);
+      document.addEventListener('visibilitychange', leaving);
       area.addEventListener('keydown', (event) => {
         if ((event.ctrlKey || event.metaKey) && event.key === 's') { event.preventDefault(); void save(); return; }
         if (event.key === 'Tab' && !event.shiftKey && !event.ctrlKey && !event.altKey) {

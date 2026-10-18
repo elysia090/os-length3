@@ -282,6 +282,12 @@ export interface Shelf {
    * Resolves once it is kept, rejects (the storage is full, say) when not.
    */
   merge(name: string, change: Keep): Promise<void>;
+  /**
+   * Keep `change` while the page is being left: begun and asked to commit
+   * before this returns (a browser ends the page before anything later is
+   * kept), and laid over its copy at the next read. False: it cannot be now.
+   */
+  note(name: string, change: Keep): boolean;
   /** Remove these repos; the work starts synchronously, so it can run while the page is left. */
   drop(names: string[]): Promise<void>;
 }
@@ -341,8 +347,32 @@ export class KeptStore extends MemoryStore {
     const was = this.dirty.get(key);
     if (!paths || was === 'all') this.dirty.set(key, 'all');
     else { const s = was ?? new Set<string>(); for (const p of paths) s.add(p); this.dirty.set(key, s); }
-    this.soon(300);
+    // Written while the page is being left (a field saving itself as the tab closes): kept at once.
+    if (this.leaving) this.leave(); else this.soon(300);
   }
+
+  /** The page is being left: nothing written after this waits for a timer. */
+  private leaving = false;
+  /**
+   * The page is being left (pagehide): every change still waiting is kept
+   * now, each in one request begun and committed before this returns, which
+   * is all a closing tab is given time for. What cannot be is tried as usual.
+   */
+  leave() {
+    this.leaving = true;
+    clearTimeout(this.timer);
+    for (const [key, paths] of [...this.dirty]) {
+      const r = this.repos.get(key);
+      if (!r) { this.dirty.delete(key); continue; }
+      const change: Keep = paths === 'all' ? {whole: [...r.files], modified: r.modified}
+        : {set: [...paths].map((p) => [p, r.files.has(p) ? r.files.get(p) : undefined]), modified: r.modified};
+      if (!this.shelf.note(key, change)) { void this.flush().catch(() => {}); return; }
+      this.dirty.delete(key);
+      this.tabs.post({kind: 'kept', key, paths: paths === 'all' ? undefined : [...paths]});
+    }
+  }
+  /** The page is shown again (from the back-forward cache): writes wait for their timer again. */
+  back() { this.leaving = false; }
 
   private soon(ms: number) {
     clearTimeout(this.timer);
@@ -475,6 +505,12 @@ export class KeptStore extends MemoryStore {
   override async put(repo: string, path: string, text: string | null) { await this.ready; return super.put(repo, path, text); }
 }
 
+/** A change kept while the page is being left, beside the copies (no repo is named so): laid over its copy at the next read. */
+interface Note extends Keep { key: string }
+const NOTE = '\u0002note\u0002';
+const NOTES = typeof IDBKeyRange === 'undefined' ? null : IDBKeyRange.bound(NOTE, '\u0002note\u0003');
+let noted = 0;
+
 /** `change` laid over `was` (nothing kept yet: undefined). */
 export function lay(was: Kept | undefined, change: Keep): Kept {
   if (change.whole) return {files: change.whole, modified: change.modified};
@@ -485,10 +521,11 @@ export function lay(was: Kept | undefined, change: Keep): Kept {
 
 /** IndexedDB, as a Shelf. */
 function indexedShelf(name = 'length3-repos'): Shelf {
+  let opened: IDBDatabase | null = null;
   const db = new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open(name, 1);
     req.onupgradeneeded = () => req.result.createObjectStore('repos');
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => { opened = req.result; resolve(req.result); };
     req.onerror = () => reject(req.error);
   });
   const done = <T>(r: IDBRequest<T>) => new Promise<T>((resolve, reject) => { r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
@@ -507,19 +544,68 @@ function indexedShelf(name = 'length3-repos'): Shelf {
       try { f(tx.objectStore('repos'), fail); } catch (e) { fail(e); }
     });
   };
+  /** Notes for `key` (all of them: undefined) and the copy kept for it, read in `s`; then `then` with them. */
+  const withNotes = (s: IDBObjectStore, then: (notes: [IDBValidKey, Note][]) => void) => {
+    const keys = s.getAllKeys(NOTES!), values = s.getAll(NOTES!);
+    values.onsuccess = () => then((keys.result ?? []).map((k, i) => [k, values.result[i] as Note]));
+  };
   return {
     async all() {
-      const s = (await db).transaction('repos').objectStore('repos');
+      const d = await db;
+      const s = d.transaction('repos').objectStore('repos');
       const [keys, values] = await Promise.all([done(s.getAllKeys()), done(s.getAll())]);
-      return keys.map((k, i) => [String(k), values[i] as Kept]);
+      const copies = new Map<string, Kept>(), notes: [IDBValidKey, Note][] = [];
+      keys.forEach((k, i) => { if (String(k).startsWith(NOTE)) notes.push([k, values[i] as Note]); else copies.set(String(k), values[i] as Kept); });
+      if (!notes.length) return [...copies];
+      // What was kept while a page was left is laid over its copy, in the order it was kept; a note for a copy
+      // let go since is nothing (unless it is a whole copy, made then).
+      const touched = new Set<string>();
+      for (const [, n] of notes) {
+        if (!n.whole && !copies.has(n.key)) continue;
+        copies.set(n.key, lay(copies.get(n.key), n));
+        touched.add(n.key);
+      }
+      // Kept as copies now, the notes go; if that fails they are laid again next time, to the same end.
+      await writing((w) => { for (const k of touched) w.put(copies.get(k), k); for (const [k] of notes) w.delete(k); }).catch(() => {});
+      return [...copies];
     },
-    async get(n) { return await done((await db).transaction('repos').objectStore('repos').get(n)) as Kept | undefined; },
+    async get(n) {
+      const d = await db;
+      return new Promise<Kept | undefined>((resolve, reject) => {
+        const tx = d.transaction('repos');
+        tx.onerror = () => reject(tx.error);
+        const s = tx.objectStore('repos');
+        const g = s.get(n);
+        withNotes(s, (notes) => {
+          let kept = g.result as Kept | undefined;
+          for (const [, note] of notes) if (note.key === n && (note.whole || kept)) kept = lay(kept, note);
+          resolve(kept);
+        });
+      });
+    },
     merge(n, change) {
-      // Read and written in one transaction, so what another tab kept meanwhile is laid under this change, never lost.
+      // Read and written in one transaction, so what another tab kept meanwhile (or a note) is laid under this change, never lost.
       return writing((s, fail) => {
         const g = s.get(n);
-        g.onsuccess = () => { try { s.put(lay(g.result as Kept | undefined, change), n); } catch (e) { fail(e); } };
+        withNotes(s, (notes) => {
+          try {
+            let kept = g.result as Kept | undefined;
+            for (const [k, note] of notes) if (note.key === n) { if (note.whole || kept) kept = lay(kept, note); s.delete(k); }
+            s.put(lay(kept, change), n);
+          } catch (e) { fail(e); }
+        });
       });
+    },
+    note(n, change) {
+      // The page is being left: what is written now must be a whole request made at once, asked to commit
+      // at once, or the browser ends the page before it is kept.
+      if (!opened) return false;
+      try {
+        const tx = opened.transaction('repos', 'readwrite');
+        tx.objectStore('repos').put({...change, key: n} satisfies Note, `${NOTE}${Date.now().toString(36).padStart(10, '0')}-${(noted++).toString(36).padStart(6, '0')}`);
+        (tx as IDBTransaction & {commit?: () => void}).commit?.();
+        return true;
+      } catch { return false; }
     },
     async drop(names) {
       const s = (await db).transaction('repos', 'readwrite').objectStore('repos');
@@ -630,8 +716,13 @@ class Observed implements RepoStore {
 }
 
 export const kept = isNative || typeof indexedDB === 'undefined' ? null : new KeptStore(indexedShelf(), tabs);
-// Leaving the page writes what is still waiting (what cannot be is said, and stays in the tab while it lives).
-if (kept) addEventListener('pagehide', () => void kept.flush().catch(() => {}));
+// Leaving the page keeps what is still waiting, at once (KeptStore.leave).
+if (kept) {
+  addEventListener('pagehide', () => kept.leave());
+  addEventListener('pageshow', () => kept.back());
+  // Hidden (another tab, the window put away; on a phone, often the last a page hears): kept now, not in a while.
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') void kept.flush().catch(() => {}); });
+}
 export const store = new Observed(isNative ? new NativeStore() : kept ?? new MemoryStore());
 // What another tab kept is shown here as it is, when it is of the copy shown.
 if (kept) kept.heard = (repo, key, paths) => { if (!paths || key === (kept.lineOf(repo) === 'main' ? repo : `${repo}\u0001${kept.lineOf(repo)}`)) void store.changedInTab(repo, paths); };

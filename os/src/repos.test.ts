@@ -75,15 +75,25 @@ test('the memory store renames a file or a folder in its place, never over anoth
 /** A shelf as IndexedDB is one: kept apart from any page, laid over path by path, and refusing writes while `full`. */
 function fakeShelf() {
   const kept = new Map<string, Kept>();
+  const notes: [string, Keep][] = [];
   const shelf = {
     full: false,
     kept,
-    async all() { return [...kept].map(([k, v]) => [k, structuredClone(v)] as [string, Kept]); },
-    async get(n: string) { const k = kept.get(n); return k && structuredClone(k); },
+    async all() {
+      for (const [n, c] of notes.splice(0)) if (c.whole || kept.has(n)) kept.set(n, lay(kept.get(n), c));
+      return [...kept].map(([k, v]) => [k, structuredClone(v)] as [string, Kept]);
+    },
+    async get(n: string) {
+      let k = kept.get(n);
+      for (const [m, c] of notes) if (m === n && (c.whole || k)) k = lay(k, c);
+      return k && structuredClone(k);
+    },
     async merge(n: string, c: Keep) {
       if (shelf.full) throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
-      kept.set(n, lay(kept.get(n), structuredClone(c)));
+      kept.set(n, lay(await shelf.get(n), structuredClone(c)));
+      for (let i = notes.length - 1; i >= 0; i--) if (notes[i][0] === n) notes.splice(i, 1);
     },
+    note(n: string, c: Keep) { if (shelf.full) return false; notes.push([n, structuredClone(c)]); return true; },
     async drop(names: string[]) { for (const n of names) kept.delete(n); },
   };
   return shelf;
@@ -183,4 +193,20 @@ test('a change this browser cannot keep (its storage full) waits, is said, and i
   assert.equal(told, 2);
   assert.equal(a.waiting('notes'), false);
   assert.equal((await new KeptStore(fake).read('notes', 'README.md')).text, '# kept later\n');
+});
+
+test('leaving the page keeps what waits at once, and what is written while it is left', async () => {
+  const fake = fakeShelf();
+  const a = new KeptStore(fake);
+  await a.create('notes', 'standard');
+  await a.flush();
+  await a.write('notes', 'README.md', '# as the tab closed\n');
+  a.leave();
+  assert.equal(a.waiting('notes'), false);
+  // A field that saves itself as the page goes: kept then too, with no timer to wait for.
+  await a.add('notes', '', 'late.md', 'saved on the way out');
+  assert.equal(a.waiting('notes'), false);
+  const next = new KeptStore(fake);
+  assert.equal((await next.read('notes', 'README.md')).text, '# as the tab closed\n');
+  assert.equal((await next.read('notes', 'late.md')).text, 'saved on the way out');
 });
