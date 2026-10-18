@@ -164,7 +164,8 @@ function make(ctx: Context) {
     if (path && again) { clearTimeout(again); readAgain(false); }
     // Nor does a page just read again put it back where it was, over the place asked for.
     if (path) cancelAnimationFrame(putBack);
-    if (path) void view()?.reader.reveal(path, 0, write).then(() => track());
+    // A place asked for is where the center goes: coming back does not put it back where it was.
+    if (path) { revealing = true; void view()?.reader.reveal(path, 0, write).then(() => track()); }
     else track();
   };
   live = {element: work.element, show};
@@ -180,6 +181,8 @@ function make(ctx: Context) {
   };
   // Taken off the screen and put back, a place that scrolls starts at its top again: each comes back where it was.
   let restoring = false;
+  /** A path was asked for since Forge came back on screen (File, Git, a search): that wins over where it was. */
+  let revealing = false;
   const tops = new Map<Element, number>();
   work.element.addEventListener('scroll', (event) => {
     if (restoring || !work.element.isConnected) return;
@@ -219,10 +222,11 @@ function make(ctx: Context) {
   let first = true;
   const enter = () => {
     restoring = true;
+    revealing = false;
     work.settle();
     requestAnimationFrame(() => {
       const v = view();
-      if (v) flow.scrollTop = v.top;
+      if (v && !revealing) flow.scrollTop = v.top;
       for (const [el, top] of tops) { if (el.isConnected) el.scrollTop = top; else tops.delete(el); }
       restoring = false;
     });

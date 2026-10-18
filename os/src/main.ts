@@ -208,7 +208,8 @@ if (asking.has('device')) {
     void learnHome();
     select(restorePurpose(load(PURPOSE_KEY)));
     if (heldInvite()) serverLayer.open(true);
-    void begin().then(() => render());
+    // Busy until what the Remote has is taken in and the page drawn from it (the first look).
+    void begin().then(() => render()).finally(() => $('page').removeAttribute('aria-busy'));
     // What came in meanwhile, for the rail's marks: now, and every little while.
     lookForNews();
   });

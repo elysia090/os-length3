@@ -363,9 +363,54 @@ Linux needs the WebKitGTK toolchain:
 ```
 npm ci
 npm run check                  # tsc + node:test
+npm run selftest               # the app end to end in Chromium (below)
 npx tauri dev                  # window against the Vite dev server
 npx tauri build --debug --no-bundle
 ```
+
+### Selftest
+
+`npm run selftest` uses the web app the way a person does, in Chromium
+(`@playwright/test`, `selftest/`). One run builds the app for a Remote on
+its own origin into `selftest/.dist` (again only when a source is newer),
+starts a fresh Remote (`service/dev.ts` with a new temporary data
+directory) and `vite preview` on free ports, runs every `selftest/*.spec.ts`,
+and stops both whatever happened (`global-setup.ts`). Nothing listens on a
+fixed port and nothing outside the repository is read. A failure leaves
+its trace and screenshot in `selftest/.results`, the HTML report in
+`selftest/.report` (`npx playwright show-report selftest/.report`), and
+what the two servers printed in `selftest/.logs`. Locally Chromium is
+`npx playwright install chromium`. The Prompt's test is tagged `@slow`
+(BusyBox through the translator) and runs with `SELFTEST_SLOW=1` once
+`public/userland` holds the Prompt (`npm run userland`, or `node
+scripts/prompt-files.mjs`); CI (`selftest` in
+`.github/workflows/desktop.yml`) runs everything and uploads the report on
+failure. One test, by its words: `npm run selftest -- -g 'Share'`.
+
+A spec is one area (`git.spec.ts`, `inbox.spec.ts`…), a test one thing a
+person does, and it asserts what they then see. Writing one:
+
+- Start from a fixture (`fixtures.ts`): `app` (a fresh browser, no one
+  signed in), `signedIn` (signed in through the development provider as
+  this test's own person), `another('Bo')` (a second person, in a browser
+  of their own). Every test is its own person on the run's Remote, so tests
+  share nothing and names can stay plain (`hello`).
+- Say it in the app's words through `app.ts`: `app.rail.go('forge')`,
+  `app.newRepo.make('hello', {template: 'C', summary})`,
+  `app.forge.editFile('README.md', text)`, `app.file.open('hello',
+  'src/main.c')`, `app.git.write('hello', 'Fix: …')` then
+  `app.git.step('Commit')`, `app.remote.card('hello')`, `app.inbox.claim()`,
+  `app.server.make('Trip', handle)`. A step the app gains goes there once.
+- Find things by role and accessible name (`getByRole`, labels), never by
+  CSS class: restyling keeps the tests, and a word changed is a one-line
+  change in `app.ts`. When something a test needs has no name, the fix is
+  in the app: an `aria-label` through `t()`, its Japanese in the catalog.
+- No sleeps: wait for what a person would see, with web-first assertions
+  (`await expect(locator).toHaveText(…)`, `toBeVisible`, `toBeChecked`);
+  what the app does a moment later is `expect(…).toPass()`. The page is
+  `aria-busy` until its first look at the Remote is drawn, and
+  `app.settled()` waits for that.
+
 
 Icons in `src-tauri/icons` are generated from `src-tauri/icon.svg` with
 `npx tauri icon src-tauri/icon.svg -o src-tauri/icons`.

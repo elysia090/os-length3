@@ -259,11 +259,15 @@ export class Reference {
         times.set(line, n);
         const what = `${line}\n${n}`;
         row.classList.add('markable');
-        row.classList.toggle('marked', marked.has(what));
+        // The line's words are what is marked: heard as a toggle named by them, pressed while marked.
+        const words = row.querySelector<HTMLElement>('.diff-words');
+        words?.setAttribute('role', 'button');
+        const paint = () => { row.classList.toggle('marked', marked.has(what)); words?.setAttribute('aria-pressed', String(marked.has(what))); };
+        paint();
         row.addEventListener('click', (event) => {
           if ((event.target as HTMLElement).closest('.diff-no')) return;
           if (marked.has(what)) marked.delete(what); else marked.add(what);
-          row.classList.toggle('marked', marked.has(what));
+          paint();
         });
       },
     });

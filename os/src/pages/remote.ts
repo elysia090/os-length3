@@ -155,7 +155,8 @@ function repoSection(ctx: Context, counted: (n: number) => void, keyed: () => vo
     // Off, beside 空ける: 廃棄, which takes it from the Remote now, for good, asked for as turning it off was.
     const discard = off ? h('button', {type: 'button', class: 'button small-button discard'}, t('Discard')) as HTMLButtonElement : null;
     if (discard) discard.disabled = gone;
-    const el = h('div', {class: `card repo${off ? ' off' : ''}`, 'data-repo': name},
+    // A group named by its repo, so what is in it (its switch, Share, Forge) is heard as the repo's.
+    const el = h('div', {class: `card repo${off ? ' off' : ''}`, 'data-repo': name, role: 'group', 'aria-label': name},
       h('span', {class: 'card-title'}, name),
       h('span', {class: 'muted'}, `${bytes(size)} · ${t('Changed {when}', {when: ago(changed)})}`),
       h('span', {class: 'muted card-sync'}, where),
