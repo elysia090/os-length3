@@ -1,11 +1,15 @@
 // SSH into a repo's Prompt: which of the account's devices listen, kept here
 // so any page can see them and stop one. The listening itself is the
 // device's (l3's listener, cli/src/ssh.rs); what is kept is a row a device,
-// keyed by its session (signing it out takes the row with it).
+// keyed by its session (signing it out takes the row with it), and in it
+// only that the device listens, to whom (its scope: `device`, from that
+// device only, or `network`, from its network's PCs too), since when, and
+// when it last said so. No address, port or repo name is sent or kept:
+// where a device is reached is worked out and shown on that device alone.
 //
-//   GET    /v1/ssh               each device listening: [{device, agent, port, destinations, since, seen, current}]
-//   PUT    /v1/ssh/this          {port, destinations}: this device listens (only a device says so: never a page)
-//   POST   /v1/ssh/this/beat     {destinations?}: still listening -> {on}; on false, it was turned off elsewhere
+//   GET    /v1/ssh               each device listening: [{device, agent, scope, since, seen, current}]
+//   PUT    /v1/ssh/this          {scope?}: this device listens (only a device says so: never a page)
+//   POST   /v1/ssh/this/beat     {scope?}: still listening -> {on}; on false, it was turned off elsewhere
 //   DELETE /v1/ssh/this          this device stopped
 //   POST   /v1/ssh/:device/off   stop that device's (any session of the account, a page too)
 //
@@ -14,27 +18,29 @@
 // makes (it always carries Origin, which l3 and the app's core never send)
 // is refused it, so the web can only turn a device's SSH off. A device asks
 // with its beat every few seconds, and stops at once when its row is gone.
+// Whatever else a body carries (an older l3 sent its destinations) is not
+// read, and not kept.
 
 import {and, desc, eq, sql} from 'drizzle-orm';
 import type {Hono} from 'hono';
 import {body, ms, type Db, type Vars} from './request.ts';
 import {session, ssh} from './schema.ts';
 
-/** A destination as a device gives it: `ssh -p PORT REPO@HOST`, plain characters only. */
-const DESTINATION = /^ssh -p [0-9]{1,5} [A-Za-z0-9_-][A-Za-z0-9._-]{0,63}@[0-9A-Za-z.:%_-]{1,253}$/;
-export const SSH = {destinations: 200};
+/** To whom a device listens: from itself only, or from its network's PCs too. */
+export const SCOPES = ['device', 'network'] as const;
+export type Scope = typeof SCOPES[number];
 
-/** What a device sends of where it listens, checked; null when it is not that. */
-function destinations(v: unknown): string[] | null {
-  if (!Array.isArray(v) || v.length > SSH.destinations || !v.every((d) => typeof d === 'string' && DESTINATION.test(d))) return null;
-  return v as string[];
+/** The scope a device says, checked: absent is `device`; null when it is not one. */
+function scopeOf(v: unknown): Scope | null {
+  if (v === undefined) return 'device';
+  return SCOPES.includes(v as Scope) ? v as Scope : null;
 }
 
 export function sshRoutes(d: {db: Db}, v1: Hono<Vars>) {
   const db = d.db;
 
   v1.get('/ssh', async (c) => {
-    const list = await db.select({device: ssh.sessionId, agent: session.userAgent, port: ssh.port, destinations: ssh.destinations,
+    const list = await db.select({device: ssh.sessionId, agent: session.userAgent, scope: ssh.scope,
       since: ms(sql`${ssh.since}`), seen: ms(sql`${ssh.seenAt}`)})
       .from(ssh).innerJoin(session, eq(session.id, ssh.sessionId)).where(eq(ssh.userId, c.get('userId'))).orderBy(desc(ssh.since));
     return c.json(list.map((r: {device: string}) => ({...r, current: r.device === c.get('sessionId')})));
@@ -43,21 +49,20 @@ export function sshRoutes(d: {db: Db}, v1: Hono<Vars>) {
   v1.put('/ssh/this', async (c) => {
     // A page cannot turn SSH on: that is done at the device (l3 address, the app's switch).
     if (c.req.header('Origin')) return c.json({error: 'SSH is turned on at the device itself'}, 403);
-    const b = await body<{port?: unknown; destinations?: unknown}>(c);
-    const port = b?.port, list = destinations(b?.destinations);
-    if (typeof port !== 'number' || !Number.isInteger(port) || port < 1 || port > 65535 || !list) return c.json({error: 'a port and destinations'}, 400);
-    const row = {sessionId: c.get('sessionId'), userId: c.get('userId'), port, destinations: list};
-    await db.insert(ssh).values(row).onConflictDoUpdate({target: ssh.sessionId, set: {port, destinations: list, since: sql`now()`, seenAt: sql`now()`}});
+    const scope = scopeOf((await body<{scope?: unknown}>(c))?.scope);
+    if (!scope) return c.json({error: 'device or network'}, 400);
+    await db.insert(ssh).values({sessionId: c.get('sessionId'), userId: c.get('userId'), scope})
+      .onConflictDoUpdate({target: ssh.sessionId, set: {scope, since: sql`now()`, seenAt: sql`now()`}});
     return c.json({on: true});
   });
 
   // Never makes a row: one gone was turned off, and stays off until the device turns it on again.
   v1.post('/ssh/this/beat', async (c) => {
-    const b = await body<{destinations?: unknown}>(c);
-    const list = b?.destinations === undefined ? undefined : destinations(b.destinations);
-    if (list === null) return c.json({error: 'destinations'}, 400);
-    const done = await db.update(ssh).set({seenAt: sql`now()`, ...(list ? {destinations: list} : {})})
-      .where(eq(ssh.sessionId, c.get('sessionId'))).returning({port: ssh.port});
+    const said = (await body<{scope?: unknown}>(c))?.scope;
+    const scope = said === undefined ? undefined : scopeOf(said);
+    if (scope === null) return c.json({error: 'device or network'}, 400);
+    const done = await db.update(ssh).set({seenAt: sql`now()`, ...(scope ? {scope} : {})})
+      .where(eq(ssh.sessionId, c.get('sessionId'))).returning({device: ssh.sessionId});
     return c.json({on: done.length > 0});
   });
 

@@ -6,7 +6,10 @@
 //
 //   node service/deploy.ts
 //       the migrations, as the database's owner, on the project's default
-//       branch (production: no branch is made for a deploy); the bucket, if
+//       branch (production: no branch is made for a deploy), up to the first
+//       contract step not applied yet (stages.ts: one that drops what the
+//       Worker running now still reads, which waits for the new Worker and
+//       runs once it answers); the bucket, if
 //       there is none; then the Worker, given what it lacks of what it needs,
 //       and asked whether it answers from its database:
 //         DATABASE_URL, as remote_worker: the login role it connects as, a
@@ -36,7 +39,7 @@
 
 import {spawn} from 'node:child_process';
 import {randomBytes} from 'node:crypto';
-import {readFileSync} from 'node:fs';
+import {readFileSync, rmSync} from 'node:fs';
 import {Pool} from '@neondatabase/serverless';
 import {sql} from 'drizzle-orm';
 import {drizzle} from 'drizzle-orm/neon-serverless';
@@ -44,6 +47,7 @@ import {migrate} from 'drizzle-orm/neon-serverless/migrator';
 import {enterEmail} from './enter.ts';
 import {mirror, remoteStore} from './mirror.ts';
 import {pinnedDesktop, pinnedRoots} from './releases.ts';
+import {beforeWorker, firstOf, journalOf} from './stages.ts';
 
 const config = new URL('../wrangler.toml', import.meta.url).pathname;
 const toml = readFileSync(config, 'utf8');
@@ -104,6 +108,27 @@ async function worker(db: Awaited<ReturnType<typeof owner>>['db'], url: URL): Pr
   return `postgresql://remote_worker:${password}@${host}${url.pathname}?sslmode=require`;
 }
 
+const MIGRATIONS = new URL('./migrations', import.meta.url).pathname;
+
+/** When the newest migration applied here was made (its journal `when`); 0 when none was. */
+async function applied(db: Awaited<ReturnType<typeof owner>>['db']): Promise<number> {
+  const [had] = (await db.execute(sql`select to_regclass('drizzle.__drizzle_migrations') as t`)).rows as {t: string | null}[];
+  if (!had?.t) return 0;
+  const [last] = (await db.execute(sql`select max(created_at) as at from drizzle.__drizzle_migrations`)).rows as {at: string | number | null}[];
+  return Number(last?.at ?? 0);
+}
+
+/** The migrations the Worker running now can meet (stages.ts); whether a contract step waits for the new one. */
+async function migrateBeforeWorker(db: Awaited<ReturnType<typeof owner>>['db']): Promise<boolean> {
+  const j = journalOf(MIGRATIONS);
+  const n = beforeWorker(j, await applied(db));
+  if (n === j.entries.length) { await migrate(db, {migrationsFolder: MIGRATIONS}); return false; }
+  const first = firstOf(MIGRATIONS, n);
+  try { await migrate(db, {migrationsFolder: first}); } finally { rmSync(first, {recursive: true}); }
+  console.log(`migrations: ${j.entries[n].tag} and after wait for the new Worker`);
+  return true;
+}
+
 /** Hands a new link on, once. */
 function handOn(key: string, news: string) {
   console.log(`${news} Hand it only to whoever should come in:\n\n  ${vars('APP_ORIGIN')}/#enter=${key}\n`);
@@ -141,7 +166,7 @@ if (!step) {
   const given = process.env.ENTER_KEY || undefined;
   if (given && !/^[A-Za-z0-9_-]{32,}$/.test(given)) { console.error('ENTER_KEY: 32 or more letters, digits, - and _'); process.exit(2); }
   const {url, pool, db} = await owner();
-  await migrate(db, {migrationsFolder: new URL('./migrations', import.meta.url).pathname});
+  const waiting = await migrateBeforeWorker(db);
   console.log('migrations: done');
   const bucket = vars('bucket_name')!;
   if ((await wrangler(['r2', 'bucket', 'info', bucket, '--json'], {heard: true})).code !== 0) await must(['r2', 'bucket', 'create', bucket]);
@@ -157,6 +182,13 @@ if (!step) {
   await must(['deploy', ...(Object.keys(give).length ? ['--secrets-file', '/dev/stdin'] : [])], JSON.stringify(give));
   if (made) handOn(give.ENTER_KEY, 'This Remote has its first link.');
   await answers(vars('BASE_URL')!);
+  if (waiting) {
+    // The Worker that read what the contract step drops is gone now.
+    const later = await owner();
+    await migrate(later.db, {migrationsFolder: MIGRATIONS});
+    await later.pool.end();
+    console.log('migrations: the contract step is done');
+  }
   await releaseFiles(bucket);
 } else if (step === 'link') {
   const as = vars('ENTER_AS');
