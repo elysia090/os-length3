@@ -1144,6 +1144,9 @@ test('a release is public: its root by digest and the desktop app by its pinned 
   const root = await get(`/v1/os/${sha}`);
   assert.deepEqual([root.status, root.headers.get('content-type'), root.headers.get('content-disposition'), (await body(root)).length],
     [200, 'application/octet-stream', null, 100]);
+  // Never changed under its name: any cache keeps it, as long as it likes; what the Remote says of anything else is kept by none.
+  for (const r of [whole, root]) assert.equal(r.headers.get('cache-control'), 'public, max-age=31536000, immutable');
+  assert.equal((await get('/v1/about')).headers.get('cache-control'), 'no-store');
 
   // A range: from a byte to a byte, from a byte to the end, an end past the end; each says which bytes of how many.
   for (const [path, range, status, contentRange, bytes] of [

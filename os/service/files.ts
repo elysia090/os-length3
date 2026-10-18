@@ -23,6 +23,9 @@ import {desktopFile, rootKey} from './releases.ts';
 import {body, fits, HEX, LIMIT, lock, sha256, type Db, type Vars} from './request.ts';
 import {blob} from './schema.ts';
 
+/** What never changes under its name. */
+const IMMUTABLE = 'public, max-age=31536000, immutable';
+
 /** One file of a release, whole or the one range asked for (bytes=a-b, bytes=a-), streamed from the bucket. */
 async function release(c: Context<Vars>, bucket: Bucket, key: string, o: {type: string; etag: string; name?: string}) {
   const m = /^bytes=(\d+)-(\d*)$/.exec(c.req.header('Range') ?? '');
@@ -32,7 +35,9 @@ async function release(c: Context<Vars>, bucket: Bucket, key: string, o: {type: 
   // A range that ends before it starts, or starts past the end, asks for nothing there is.
   if (m && ((asked !== null && asked < start) || start >= size)) return new Response(null, {status: 416, headers: {'Content-Range': `bytes */${size}`}});
   const end = Math.min(asked ?? size - 1, size - 1), length = Math.max(0, end - start + 1);
-  const headers: Record<string, string> = {'Content-Type': o.type, 'Accept-Ranges': 'bytes', ETag: `"${o.etag}"`, 'Content-Length': String(length)};
+  // Named by its digest or its pinned name, it never changes: kept by any cache for a year, asked again by none.
+  const headers: Record<string, string> = {'Content-Type': o.type, 'Accept-Ranges': 'bytes', ETag: `"${o.etag}"`, 'Content-Length': String(length),
+    'Cache-Control': IMMUTABLE};
   if (o.name) headers['Content-Disposition'] = `attachment; filename="${o.name}"`;
   if (m) headers['Content-Range'] = `bytes ${start}-${end}/${size}`;
   // HEAD asks only how much there is; an empty file has nothing to read.
@@ -94,6 +99,8 @@ export function files(d: {db: Db; bucket: Bucket | null; quota?: number}, v1: Ho
     if (!HEX.test(sha)) return c.json({error: 'Not found'}, 404);
     const known = await db.select({sha: blob.sha256}).from(blob).where(and(eq(blob.userId, c.get('userId')), eq(blob.sha256, sha)));
     const bytes = known.length ? await d.bucket.get(blobKey(c.get('userId'), sha)) : null;
-    return bytes ? new Response(bytes as BodyInit, {headers: {'Content-Type': 'application/octet-stream', ETag: `"${sha}"`}}) : c.json({error: 'The Remote has no such file'}, 404);
+    // Its name is its digest: this browser keeps it (it is the account's: no shared cache does).
+    return bytes ? new Response(bytes as BodyInit, {headers: {'Content-Type': 'application/octet-stream', ETag: `"${sha}"`, 'Cache-Control': 'private, max-age=31536000, immutable'}})
+      : c.json({error: 'The Remote has no such file'}, 404);
   });
 }

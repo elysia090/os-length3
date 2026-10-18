@@ -116,10 +116,13 @@ export const fromOrigins = (origins: string[]) => cors({
   maxAge: 600,
 });
 
-/** Nothing the Remote answers is kept by a cache, or read as another type than it says. */
+/**
+ * Nothing the Remote answers is kept by a cache, or read as another type than it says; but what a
+ * route says may be kept is (a file named by its digest or its pinned name: files.ts).
+ */
 export const unkept: MiddlewareHandler = async (c, next) => {
   await next();
-  c.header('Cache-Control', 'no-store');
+  if (!c.res.headers.has('Cache-Control')) c.header('Cache-Control', 'no-store');
   c.header('X-Content-Type-Options', 'nosniff');
 };
 
