@@ -364,6 +364,7 @@ Linux needs the WebKitGTK toolchain:
 npm ci
 npm run check                  # tsc + node:test
 npm run selftest               # the app end to end in Chromium (below)
+npm run selftest:l3            # l3 end to end against a Remote of its own (selftest/l3)
 npx tauri dev                  # window against the Vite dev server
 npx tauri build --debug --no-bundle
 ```
@@ -400,8 +401,8 @@ A spec is one area (`git.spec.ts`, `inbox.spec.ts`…), a test one thing a
 person does, and it asserts what they then see. Writing one:
 
 - Start from a fixture (`fixtures.ts`): `app` (a fresh browser, no one
-  signed in, with a virtual authenticator that makes and gives passkeys at
-  once), `signedIn` (signed in through the development provider as this
+  signed in, from an address of its own as the Remote sees it, with a
+  virtual authenticator that makes and gives passkeys at once), `signedIn` (signed in through the development provider as this
   test's own person), `another('Bo')` (a second person, in a browser of
   their own; `another('Ada')` is the same person on a second device).
   Every test is its own person on the run's Remote, so tests share nothing

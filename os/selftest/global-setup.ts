@@ -113,8 +113,8 @@ export default async function globalSetup(_config: FullConfig) {
   const kill = () => { for (const c of children) if (c.exitCode === null) c.kill('SIGKILL'); };
   process.once('exit', kill);
   try {
-    // Every person here signs in from this machine, so the sign-in rate limit is lifted (service/dev.ts).
-    children.push(start('remote', ['service/dev.ts', data, String(remotePort), app], {LENGTH3_DEV_RATE_LIMIT: 'off', LENGTH3_DEV_BASE: remoteURL}));
+    // The Remote's own name is localhost too, so the session it sets on sign-in is the app's.
+    children.push(start('remote', ['service/dev.ts', data, String(remotePort), app], {LENGTH3_DEV_BASE: remoteURL}));
     children.push(start('preview', [join(OS, 'node_modules/vite/bin/vite.js'), 'preview', '--outDir', OUT,
       '--host', '127.0.0.1', '--port', String(appPort), '--strictPort'], {LENGTH3_DEV_REMOTE: `http://127.0.0.1:${remotePort}`}));
     // Through the preview, so both are up and the one passes to the other. (Between the servers and

@@ -25,9 +25,18 @@ export function personName(info: TestInfo, who = 'Ada'): string {
   return `${who} ${id}${info.retry ? ` r${info.retry}` : ''}`;
 }
 
-async function opened(browser: Browser, url: string): Promise<{app: App; close(): Promise<void>}> {
+/**
+ * Where a person's browser is, as the Remote sees it (CF-Connecting-IP, as Cloudflare says it): an
+ * address of its own for each, as people have, so the sign-ins of a whole run are not one address's.
+ */
+export function addressOf(info: TestInfo, who = 'Ada'): string {
+  const [a, b, c] = createHash('sha256').update(`${info.testId} ${who} ${info.retry}`).digest();
+  return `10.${a}.${b}.${c}`;
+}
+
+async function opened(browser: Browser, url: string, address: string): Promise<{app: App; close(): Promise<void>}> {
   // Its own browser context: its own storage and cookies, so its own person. (The trace records it too.)
-  const context = await browser.newContext({...BROWSER, baseURL: url});
+  const context = await browser.newContext({...BROWSER, baseURL: url, extraHTTPHeaders: {'CF-Connecting-IP': address}});
   const app = new App(await context.newPage());
   await app.withPasskeys();
   await app.open();
@@ -40,10 +49,11 @@ export const test = base.extend<{app: App; signedIn: App; another: (who: string)
     if (!url) throw new Error('SELFTEST_APP is not set: run the selftest with `npm run selftest` (global-setup.ts starts the app)');
     await use(url);
   },
-  app: async ({page}, use) => {
+  app: async ({page}, use, info) => {
     // The run's Remote answers, or the failure says so (and where its log is) rather than timing out in a page.
     const remote = process.env.SELFTEST_REMOTE;
     await fetch(`${remote}/v1/about`).catch(() => { throw new Error(`the selftest's Remote (${remote}) does not answer: see selftest/.logs/remote.log`); });
+    await page.context().setExtraHTTPHeaders({'CF-Connecting-IP': addressOf(info)});
     const app = new App(page);
     await app.withPasskeys();
     await app.open();
@@ -56,7 +66,8 @@ export const test = base.extend<{app: App; signedIn: App; another: (who: string)
   another: async ({browser, baseURL}, use, info) => {
     const opened_: {close(): Promise<void>}[] = [];
     await use(async (who) => {
-      const o = await opened(browser, baseURL!);
+      // A second device of the same person is somewhere else too.
+      const o = await opened(browser, baseURL!, addressOf(info, `${who} ${opened_.length + 1}`));
       opened_.push(o);
       await o.app.signIn(personName(info, who));
       return o.app;
