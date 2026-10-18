@@ -575,8 +575,9 @@ nouns and order are the rail's: Home (`todo`, `profile`, `lang`), Forge
 `address`), Remote (`remote`, `login`, `logout`), Server (`server`), Inbox
 (`inbox`, `name`); `l3 help` lists them in this order. `l3 address` is where
 this device is reached over SSH, as `ip addr` answers with an address: one
-`ssh -p PORT REPO@HOST` a line, the SSH user being the repo (Runtime's SSH,
-below); the names people find you by (name@domain, and your code) are `l3
+`ssh -p PORT REPO@HOST` a line, the SSH user being the repo, and on
+standard error who may connect, the keys let in and the host key (Runtime's
+SSH, below); the names people find you by (name@domain, and your code) are `l3
 name`. A path is written as File shows it (`/root/<repo>/…`). A line is
 named the same way everywhere ("Fix：件名"), an issue is called by its
 number in both (#3), and Home's state is the same files, so anything done in one shows in
@@ -746,7 +747,7 @@ is the Remote's and stays so: who someone is (a provider's identity, then
 passkeys; the app and l3 come in by a code a browser approves, each device a
 session any other can end), the canonical copy of each repo and its
 history, Home's settings, names, the Inbox and servers, and which devices
-listen for SSH. Running natively moves the OS onto the device, not these:
+listen for SSH (that they do, and to whom; never where). Running natively moves the OS onto the device, not these:
 they are what every device agrees through. Its rows and its files are
 apart: Postgres holds everything said here, the bucket only file contents,
 and a Remote without a bucket does all the rest and says plainly that it
@@ -1069,27 +1070,53 @@ with it.
   run before a Prompt, with the network, over the repo's environment, so
   what they install is the repo's and stays; and again only when the root
   or either file changes.
-- **SSH** into a repo's Prompt, per device: an ordinary OpenSSH client,
-  with the repo as its user, lands in that repo's Prompt, the same shell
-  `l3 prompt REPO` gives (a command runs there and its exit code comes
-  back). A small card for each of the account's devices that listens: what
-  it is (This device in the app), its destinations, one a repo (`ssh -p
-  23000 notes@192.168.1.5`, each copied by a press, as Inbox's stub is),
-  how long it has been on (or that it has not been heard from lately), and
-  the power switch at its bottom right, on; pressed, that device stops
-  taking connections and ends its sessions within seconds. Off is the
-  first state, and SSH is turned on only at the device itself (`l3
-  address` asks, `l3 address ssh on`, or, in the app, This device's card,
-  there off with its switch): a page can only turn a device's SSH off, so
-  the switch on another device's card only goes one way. The listener is
-  l3's, in the background, recorded under the data directory as a Prompt
-  is; which devices listen is kept on the Remote by device (a session),
-  and the listener asks it every 5 s, stopping once it was turned off or
-  the device signed out. Keys are the `.authorized_keys` dotfile (below),
-  public keys only, so a key added on one device counts on every one.
-  With none there, turning on says to add one first, and how. Shown only
-  while signed in; with no device listening, one line says where it is
-  turned on.
+- **SSH** into a repo's Prompt, per device, and the desktop app's alone
+  (the web offers none): an ordinary OpenSSH client, with the repo as its
+  user, lands in that repo's Prompt, the same shell `l3 prompt REPO` gives
+  (a command runs there and its exit code comes back). It is built to show
+  as little as it can, and to say plainly what it shows:
+  - **Who may connect** is chosen as it is turned on, in the same press:
+    *この端末だけ* (this device only, first and the default: 127.0.0.1 and
+    ::1, so another PC finds the port closed, with no handshake and no
+    banner), or *同じネットワークにも* (the same network too: each private
+    or VPN address of the host besides, one socket each, never 0.0.0.0 and
+    never a public address, looked at again every few seconds). Kept on the
+    device, never on the Remote.
+  - **Nothing of where leaves the device.** The Remote keeps only that a
+    device listens, its scope's word, since when and when last heard;
+    destinations are worked out and shown on the device itself.
+  - **What it says of itself** is `SSH-2.0-length3`: keys only (Ed25519,
+    ECDSA), no forwarding, no sftp.
+
+  | Who | この端末だけ | 同じネットワークにも |
+  |---|---|---|
+  | this device | the port on loopback; its card shows the destinations, the host key, the keys let in | the same, and the LAN addresses |
+  | another PC on the LAN/VPN | nothing: the port is closed | `SSH-2.0-length3` and the host key; only a listed key gets in |
+  | the internet | nothing | nothing: no socket on a public address |
+  | the Remote | listens, `device` | listens, `network` |
+
+  In the app, This device's card says, plainly and in this order: each
+  repo's destination (`ssh -p 23000 notes@127.0.0.1`, copied by a press,
+  as Inbox's stub is), from where (この端末からだけ / 同じネットワークの PC
+  からも, with the addresses), how many keys `.authorized_keys` lets in, and
+  the host key's SHA256 fingerprint to check at the first `ssh`; at its
+  foot, the other scope at the left and the power switch at the right. Off,
+  the switch pressed asks from where in the card first (This device only
+  first, as the network grant asks), with Not now. Every other device that
+  listens is a small card of its name and to whom ("Listens for SSH from
+  that device only"), how long it has been on (or that it has not been
+  heard from lately), and the switch, on; pressed, that device stops taking
+  connections and ends its sessions within seconds. SSH is turned on only
+  at the device itself (`l3 address` asks whether, then from where; `l3
+  address ssh on [device|network]`; or the app's card): a page can only
+  turn a device's SSH off, so the switch on another device's card only goes
+  one way. On the web one short line over those cards says SSH is the
+  desktop app's. The listener is l3's, in the background, recorded under
+  the data directory as a Prompt is, and asks the Remote every 5 s,
+  stopping once it was turned off or the device signed out. Keys are the
+  `.authorized_keys` dotfile (below), public keys only, so a key added on
+  one device counts on every one. With none there, turning on says to add
+  one first, and how. Shown only while signed in.
 - **Dotfiles**: a small card each (its name, its size), and a dashed one to
   make another. A card opens its text under the cards, `/root/` and its name
   above it, Remove at the left, Close and Save at the right. Every Prompt
