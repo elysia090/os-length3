@@ -2,7 +2,7 @@
 export default {
   'Purposes': '目的',
   'Me': '自分',
-  'No name yet': '名前が未設定です',
+  'No name yet': '名前はまだありません',
   'Edit profile': 'プロフィールを編集する',
   'Language': '言語',
   'Account': 'アカウント',

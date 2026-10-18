@@ -40,7 +40,7 @@ export default {
   'Close {name}': '{name}を閉じる',
 
   // Forge: the reader
-  'No files yet': 'file はまだありません',
+  'No files yet': 'ファイルはまだありません',
   'Symbolic link': 'シンボリックリンク',
   'Binary · {size}': 'バイナリ · {size}',
   'Only the first {part} (of {size}) · read only': '先頭 {part} だけ（全体 {size}）· 読むだけ',
@@ -82,7 +82,7 @@ export default {
   'Could not search: {message}': '検索できませんでした：{message}',
   'Nothing found for “{query}”': '「{query}」は見つかりませんでした',
   '{n} lines (only the first)': '{n}行（先頭だけ）',
-  'Nothing run yet': 'まだ実行していません',
+  'Nothing run yet': '実行結果はまだありません',
   'No changes': '変更はありません',
   'Running': '実行中',
   'Put back in the prompt box': 'プロンプトに戻す',
@@ -117,7 +117,7 @@ export default {
   'Running {n}s': '実行中 {n}秒',
   'no output': '出力なし',
   'Stop and start again': '止めてやり直す',
-  'Start again': 'もう一度起動',
+  'Start again': 'もう一度起動する',
   'The Remote has no file {sha}': 'Remote にないファイル {sha}',
   'What came from the Remote is not what its name says': 'Remote から届いたものが名前と合いません',
   'The Remote is full for this account': 'このアカウントの Remote の容量がいっぱいです',

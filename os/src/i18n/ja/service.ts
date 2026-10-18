@@ -30,7 +30,7 @@ export default {
   'Too many settings': '設定が多すぎます',
   // A Remote for research: entered by its link alone.
   'This link does not open this Remote': 'このリンクではこの Remote に入れません',
-  'Too many tries; try again in an hour': '試しすぎです。1時間後にもう一度どうぞ',
+  'Too many tries; try again in an hour': '試しすぎです。1時間後にもう一度どうぞ。',
   // What a provider is told when it would admit someone there (auth.ts only).
   'closed': 'この Remote は新しいアカウントを受け付けません',
   'This Remote takes no new accounts': 'この Remote は新しいアカウントを受け付けません',
@@ -53,7 +53,7 @@ export default {
   'Its domain no longer names this Remote': 'そのドメインはもうこの Remote を名乗っていません',
   'The domain publishes no Length³ address': 'そのドメインは Length³ のアドレスを公開していません',
   'It is on another Remote, which this one does not reach yet': 'ほかの Remote にあり、この Remote からはまだ届きません',
-  "The domain's DNS could not be read; try again": 'そのドメインの DNS を読めませんでした。もう一度どうぞ',
+  "The domain's DNS could not be read; try again": 'そのドメインの DNS を読めませんでした。もう一度どうぞ。',
   // Servers, boards, guests.
   'A name of at most 64 characters': '名前は64文字までです',
   'Too many servers': 'サーバーが多すぎます',
@@ -82,8 +82,8 @@ export default {
   'No such open board': 'その公開されている板はありません',
   'This board takes no guests': 'この板はゲストを受け入れていません',
   'That is not an email address': 'それはメールアドレスではありません',
-  'Too many codes asked for; try again in an hour': 'コードを求める回数が多すぎます。1時間後にもう一度どうぞ',
-  'Too many people are waiting for a code here; try again soon': 'この板でコードを待つ人が多すぎます。少ししてからもう一度どうぞ',
+  'Too many codes asked for; try again in an hour': 'コードを求める回数が多すぎます。1時間後にもう一度どうぞ。',
+  'Too many people are waiting for a code here; try again soon': 'この板でコードを待つ人が多すぎます。少ししてからもう一度どうぞ。',
   'Show your email first': '先にメールアドレスを確かめてください',
   // Who sees a repo.
   "Only its owner, or the server's, takes it off": '外せるのは repo の持ち主かサーバーのオーナーだけです',

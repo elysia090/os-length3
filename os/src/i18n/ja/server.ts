@@ -53,14 +53,14 @@ export default {
   // A repo shown: seen as it was last pushed.
   'Back to the boards': '板に戻る',
   'Files': 'ファイル',
-  'Pushed {when}: {title}': '{when}に push: {title}',
-  'Nothing pushed yet': 'まだ何も push されていません',
+  'Pushed {when}: {title}': '{when}に Push: {title}',
+  'Nothing pushed yet': 'Push したものはまだありません',
   'Not text': 'テキストではありません',
   // Behind the gear: what changes the server for everyone.
   'Show': '見せる',
   'Show to its people': '内部の人に見せる',
   'Show to everyone': '全体に見せる',
-  'The people of {server} see it as last pushed.': '{server}の人に、最後に push した状態を見せます。',
+  'The people of {server} see it as last pushed.': '{server}の人に、最後に Push した状態を見せます。',
   'Anyone sees it as {name}.': '{name}として誰でも見られます。',
   'Your name is not shown.': 'あなたの名前は出ません。',
   'No repo on the Remote yet': 'Remote に repo はまだありません',
@@ -109,7 +109,7 @@ export default {
   // A server's name, in the namespace people's addresses are in.
   'First come, as a person\'s: nobody else\'s while the server has it, renewed by its owner every five years.': '人の名前と同じく早い者勝ちで、サーバーが持つ間はほかの誰のものにもならず、5年ごとにオーナーが更新します。',
   'Its code': 'コード',
-  'Its term ended; held for it until {date}': '期限が切れました。{date}まではこのサーバーのために取り置かれます',
+  'Its term ended; held for it until {date}': '期限が切れました。{date}まではこのサーバーのために取り置かれます。',
   'Bring back {name}': '{name}を戻す',
   'Held until {date}': '{date}まで取り置き',
   'That name is taken': 'その名前は使われています',
