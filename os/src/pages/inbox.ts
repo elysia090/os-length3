@@ -7,6 +7,7 @@ import {Drafts} from '../drafts.ts';
 import {kindOf} from '../text.ts';
 import {mark} from '../icons.ts';
 import {copying, pageHead, SETTLE} from './common.ts';
+import {every} from '../runs.ts';
 import {signInBox, signInPlace} from './remote.ts';
 import type {Context} from './context.ts';
 
@@ -55,15 +56,17 @@ function addressStub(me: inbox.Me, again: () => void): HTMLElement {
   } else {
     const name = h('input', {class: 'stub-in mono', placeholder: t('name'), 'aria-label': t('Name'), autocapitalize: 'off', spellcheck: 'false', maxlength: '31'}) as HTMLInputElement;
     name.addEventListener('keydown', async (e) => {
-      if (e.key !== 'Enter' || e.isComposing || !name.value.trim()) return;
+      if (e.key !== 'Enter' || e.isComposing || !name.value.trim() || name.readOnly) return;
       error.textContent = '';
-      try { await inbox.claim(name.value); again(); } catch (err) { error.textContent = message(err); }
+      // Asked once: Enter again while it is asked claims nothing more.
+      name.readOnly = true;
+      try { await inbox.claim(name.value); again(); } catch (err) { error.textContent = message(err); } finally { name.readOnly = false; }
     });
     stub = h('div', {class: 'stub'}, name, gear);
     note.textContent = t('A name on this Remote: first come, yours for five years at a time, renewed by you.');
   }
   // The gear's panel, as the person's menu: your names with their terms, then Add a domain, then letting one go.
-  let looking = 0;
+  let looking: {stop(): void} | null = null;
   const item = (label: string, at: Node | null = null) => h('button', {type: 'button', class: 'pop-item'}, label, at) as HTMLButtonElement;
   /** Your own domain, written whole in one field (name@domain, the @ too); its record looked for while the panel is open. */
   const own = (): HTMLElement => {
@@ -75,11 +78,14 @@ function addressStub(me: inbox.Me, again: () => void): HTMLElement {
       return at < 0 ? {name: '', domain: v} : {name: v.slice(0, at), domain: v.slice(at + 1)};
     };
     const look = async () => {
-      if (!panel.isConnected || panel.hidden) { clearInterval(looking); return; }
+      if (!panel.isConnected || panel.hidden) return;
+      const asked = field.value.trim();
       const {name, domain} = parts();
       if (!domain) { record.replaceChildren(); return; }
-      const r = await inbox.domainRecord(domain).catch((e) => { record.replaceChildren(h('p', {class: 'error'}, message(e))); return null; });
-      if (!r) return;
+      const r = await inbox.domainRecord(domain).catch((e: unknown) => e instanceof Error ? e : new Error(String(e)));
+      // Written over meanwhile: this answer is for a domain no longer asked about, and is not shown (nor claimed).
+      if (field.value.trim() !== asked) return;
+      if (r instanceof Error) { record.replaceChildren(h('p', {class: 'error'}, r.message)); return; }
       const row = (label: string, value: string) => {
         const v = h('button', {type: 'button', class: 'record-value mono'}, value);
         copying(v, value);
@@ -90,14 +96,14 @@ function addressStub(me: inbox.Me, again: () => void): HTMLElement {
         row(t('Name'), r.name), row(t('Type'), r.type), row(t('Value'), r.value),
         h('p', {class: `small record-found${r.found ? ' found' : ''}`}, !r.found ? t('Not found yet') : name ? t('Found. Claiming {address}…', {address: `${name}@${domain}`}) : t('Found')));
       if (r.found && name) {
-        clearInterval(looking);
+        looking?.stop();
         try { await inbox.claim(name, domain); again(); } catch (e) { record.append(h('p', {class: 'error'}, message(e))); }
       }
     };
     field.addEventListener('change', () => void look());
     field.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) void look(); });
-    clearInterval(looking);
-    looking = window.setInterval(() => void look(), 8000);
+    looking?.stop();
+    looking = every(8000, look, {alive: () => panel.isConnected && !panel.hidden});
     queueMicrotask(() => field.focus());
     return h('div', {class: 'stub-own'}, field, record);
   };
@@ -159,7 +165,7 @@ function addressStub(me: inbox.Me, again: () => void): HTMLElement {
     panel.hidden = !open;
     gear.setAttribute('aria-expanded', String(open));
     for (const k of ['pointerdown', 'keydown'] as const) (open ? document.addEventListener : document.removeEventListener).call(document, k, away);
-    if (open) fill(); else clearInterval(looking);
+    if (open) fill(); else looking?.stop();
   };
   gear.addEventListener('click', () => toggle(panel.hidden));
   return holder;
@@ -189,7 +195,6 @@ export function inboxPage(ctx: Context): Node[] {
   let open: string | null = null;
   let live: inbox.Live | null = null;
   let mine = '';
-  let poll = 0;
   /** The open conversation: the time of the newest it has, and how to take in what came since. */
   let shownThread: {address: string; on: inbox.Conversation; more(): Promise<void>} | null = null;
 
@@ -296,7 +301,8 @@ export function inboxPage(ctx: Context): Node[] {
     // Accepted both ways: a direct line between the two devices, when both are here.
     const startLive = () => {
       live = new inbox.Live(mine, address, add, (direct) => { lineWord.textContent = direct ? t('Direct') : t('Through the Remote'); });
-      live.start();
+      // Ends with the page, not at the page's next look.
+      live.start(() => holder.isConnected);
     };
     // Taken in every little while through the Remote: what is not here yet goes at the foot, and is read.
     const more = async () => {
@@ -365,11 +371,10 @@ export function inboxPage(ctx: Context): Node[] {
 
   void paint();
   // New messages through the Remote are looked for while the page is shown: the rows, and the open conversation.
-  poll = window.setInterval(() => {
-    if (!holder.isConnected) { clearInterval(poll); live?.stop(); return; }
+  every(10_000, async () => {
     const rows = holder.querySelector<HTMLElement>('.inbox-rows'), pane = holder.querySelector<HTMLElement>('.inbox-thread');
     // Not while a row has the keyboard: drawn again, it would be lost.
-    if (rows && pane && document.visibilityState === 'visible' && !rows.contains(document.activeElement)) void paintList(rows, pane);
-  }, 10_000);
+    if (rows && pane && !rows.contains(document.activeElement)) await paintList(rows, pane);
+  }, {alive: () => holder.isConnected, ended: () => live?.stop()});
   return [pageHead('inbox'), holder];
 }
