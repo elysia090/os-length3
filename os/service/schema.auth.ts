@@ -1,6 +1,7 @@
 import { relations } from "drizzle-orm";
 import {
   pgTable,
+  bigint,
   text,
   timestamp,
   boolean,
@@ -123,6 +124,15 @@ export const deviceCode = pgTable(
     uniqueIndex("deviceCode_userCode_uidx").on(table.userCode),
   ],
 );
+
+// Better Auth's rate limiting, kept in the database (auth.ts): on Workers each isolate has a memory
+// of its own, so a count kept there holds off no one.
+export const rateLimit = pgTable("rate_limit", {
+  id: text("id").primaryKey(),
+  key: text("key").notNull().unique(),
+  count: integer("count").notNull(),
+  lastRequest: bigint("last_request", { mode: "number" }).notNull(),
+});
 
 export const userRelations = relations(user, ({ many }) => ({
   sessions: many(session),

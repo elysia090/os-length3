@@ -299,17 +299,25 @@ test('Home\'s settings answer as shared/home-sync.json records them, which the a
   }
 });
 
-test('Sign-in is held off address by address, the address Cloudflare saw', async () => {
+test('Sign-in is held off address by address, the address Cloudflare saw, counted in the database', async () => {
   const db = await fresh();
-  const auth = createAuth({db, secret: 'test-secret-'.repeat(4), baseURL: BASE, appOrigin: APP, dev: true});
-  const app = createApp({db, auth, bucket: memoryBucket(), origins: [APP], providers: ['dev'], domain: 'length3.test', baseURL: BASE});
-  const signIn = async (ip: string) => (await app.request(`${BASE}/api/auth/sign-in/social`, {method: 'POST',
+  // Two of the same app over one database, as two isolates of the Worker are.
+  const made = () => createApp({db, auth: createAuth({db, secret: 'test-secret-'.repeat(4), baseURL: BASE, appOrigin: APP, dev: true}),
+    bucket: memoryBucket(), origins: [APP], providers: ['dev'], domain: 'length3.test', baseURL: BASE});
+  const [a, b] = [made(), made()];
+  const signIn = async (app: ReturnType<typeof made>, ip: string) => (await app.request(`${BASE}/api/auth/sign-in/social`, {method: 'POST',
     headers: {Origin: APP, 'Content-Type': 'application/json', 'CF-Connecting-IP': ip}, body: JSON.stringify({provider: 'dev', callbackURL: `${APP}/`})})).status;
-  // Three sign-ins in ten seconds from one address, then it waits; another address does not.
+  // Three sign-ins in ten seconds from one address, then it waits, in either isolate; another address does not.
   const one = [];
-  for (let i = 0; i < 4; i++) one.push(await signIn('203.0.113.1'));
+  for (const app of [a, b, a, b]) one.push(await signIn(app, '203.0.113.1'));
   assert.deepEqual(one, [200, 200, 200, 429]);
-  assert.equal(await signIn('203.0.113.2'), 200);
+  assert.equal(await signIn(b, '203.0.113.2'), 200);
+  // The count is the database's (an isolate's memory is its own alone), kept by the service's role.
+  const kept = await db.transaction(async (tx) => {
+    await tx.execute(sql`set local role remote_app`);
+    return (await tx.execute(sql`update rate_limit set count = count where key like '203.0.113.%' returning key, count`)).rows;
+  });
+  assert.deepEqual(kept.map((r) => [String(r.key).split('|')[0], r.count]).sort(), [['203.0.113.1', 3], ['203.0.113.2', 1]]);
 });
 
 test('only the app\'s pages may call, and they can read a new session\'s token', async () => {

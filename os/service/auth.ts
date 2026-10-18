@@ -80,7 +80,8 @@ export function createAuth(c: AuthConfig) {
     // For research, no provider admits anyone: the one account is entered by its link alone.
     ...(c.only ? {user: {validateUserInfo: ({user}: {user: {email?: string | null}}) =>
       (user.email === c.only ? undefined : {error: 'closed', errorDescription: 'This Remote takes no new accounts'})}} : {}),
-    rateLimit: {enabled: c.rateLimit ?? true, window: 60, max: 120},
+    // Counted in the database: on Workers each isolate has a memory of its own (Better Auth's default store).
+    rateLimit: {enabled: c.rateLimit ?? true, window: 60, max: 120, storage: 'database'},
     // Who is asking is the address Cloudflare saw, as everywhere on the Remote (enter.ts, servers.ts): Better
     // Auth reads only X-Forwarded-For unless told, which a Worker's request need not carry, and without an
     // address it counts everyone in one bucket a path (three sign-ins in ten seconds, for all).
