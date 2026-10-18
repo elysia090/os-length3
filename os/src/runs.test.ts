@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {mock, test} from 'node:test';
-import {coalesced, every, shared} from './runs.ts';
+import {atMost, coalesced, every, shared} from './runs.ts';
 
 /** Let what is waiting on promises go on. */
 const settle = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
@@ -131,6 +131,19 @@ test('a deed that fails says so to whoever asked for that run, and the run asked
   gates[1].answer();
   await second;
   assert.equal(gates.length, 2);
+});
+
+test('a list worked on a few at a time keeps its order and never has more than that many out', async () => {
+  let out = 0, most = 0;
+  const got = await atMost(3, [5, 1, 4, 2, 3, 0, 6], async (ms) => {
+    out++; most = Math.max(most, out);
+    await new Promise((r) => setTimeout(r, ms));
+    out--;
+    return ms * 10;
+  });
+  assert.deepEqual(got, [50, 10, 40, 20, 30, 0, 60]);
+  assert.equal(most, 3);
+  assert.deepEqual(await atMost(4, [], async () => 1), []);
 });
 
 test('the same deed for the same thing, asked twice at once, is done once', async () => {

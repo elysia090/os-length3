@@ -74,6 +74,15 @@ export function coalesced<A = void>(run: (a: A) => Promise<void>, join: (was: A,
   };
 }
 
+/** `f` over `items`, at most `n` at a time (requests side by side, not one after another), the answers in the items' order. */
+export async function atMost<T, R>(n: number, items: readonly T[], f: (x: T) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  const one = async () => { while (next < items.length) { const i = next++; out[i] = await f(items[i]); } };
+  await Promise.all(Array.from({length: Math.min(n, items.length)}, one));
+  return out;
+}
+
 /** `run` for one key at a time: asked again for a key while it runs, the same promise answers. */
 export function shared<K, T>(run: (k: K) => Promise<T>): (k: K) => Promise<T> {
   const running = new Map<K, Promise<T>>();
