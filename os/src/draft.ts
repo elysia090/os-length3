@@ -13,7 +13,7 @@
 
 import {t} from './i18n.ts';
 import {isNative, native} from './host.ts';
-import {api, deviceWord, json, RemoteError} from './remote.ts';
+import {accountId, api, deviceWord, json, RemoteError} from './remote.ts';
 import {kept, store} from './repos.ts';
 import {freshState, setState} from './state.ts';
 import {exclusive} from './tabs.ts';
@@ -25,8 +25,11 @@ export interface Status { name: string; changed: number; fresh: boolean; unsynce
 /** A repo on the Remote; one turned off says when it went and until when it can come back. */
 export interface RemoteRepo { name: string; head: string | null; version: number; bytes: number; updatedAt: string; offAt?: number | null; until?: number | null }
 
-interface Base { version: number; tree: Tree; head: string | null; away?: string[] }
-interface SyncState { repos: Record<string, Base>; home?: Record<string, {version: number; value: string}>; lines?: Record<string, string> }
+/** What was last agreed with the Remote for a copy, and with which account (`who`, its id; older ones say none). */
+interface Base { version: number; tree: Tree; head: string | null; away?: string[]; who?: string }
+/** A setting's value as last agreed with the Remote, and with which account. */
+interface HomeAgreed { version: number; value: string; who?: string }
+interface SyncState { repos: Record<string, Base>; home?: Record<string, HomeAgreed>; lines?: Record<string, string> }
 
 /** Whoever writes on sync's behalf, so listeners can tell its writes from a person's. */
 export const BY = 'sync';
@@ -247,8 +250,13 @@ const webSync = (repo: string): Promise<Synced> => exclusive(`sync:${keyOf(repo)
 async function inStep(repo: string): Promise<Synced> {
   const out: Synced = {version: 0, sent: 0, taken: 0, both: [], unsynced: []};
   const path = at(repo);
+  const who = await accountId();
   for (let round = 0; round < 12; round++) {
-    const base = baseOf(repo) ?? {version: 0, tree: {}, head: null};
+    const agreed = baseOf(repo);
+    // Agreed with another account (another person signed in on this browser): this copy is theirs, and is
+    // neither sent to this account nor joined with its repo of the same name.
+    if (agreed?.who && who && agreed.who !== who) throw new RemoteError(403, t('This copy was kept in step by another account; sign in as it to keep it in step'));
+    const base = agreed ?? {version: 0, tree: {}, head: null};
     const here = await localTree(repo, base.away, base.tree);
     const r = await api(path);
     const missing = r.status === 404 ? await r.json().catch(() => ({})) as {gone?: number} : null;
@@ -265,12 +273,17 @@ async function inStep(repo: string): Promise<Synced> {
       const away = new Set(base.away ?? []);
       out.both.push(...await apply(repo, p, away));
       out.taken += p.take.length;
-      await agree(repo, {version: remoteVersion, tree, head: there?.head ?? null, away: [...away].filter((a) => a in tree)});
+      await agree(repo, {version: remoteVersion, tree, head: there?.head ?? null, away: [...away].filter((a) => a in tree), ...(who ? {who} : {})});
       continue;
     }
     const set = Object.entries(here.tree).filter(([p, v]) => !(p in base.tree) || base.tree[p] !== v).slice(0, CHUNK);
     const remove = Object.keys(base.tree).filter((p) => !(p in here.tree)).slice(0, CHUNK);
-    if (!set.length && !remove.length) { out.version = base.version; return out; }
+    if (!set.length && !remove.length) {
+      out.version = base.version;
+      // An agreement from before accounts were named is this account's from now on.
+      if (who && agreed && agreed.who !== who) await setBase(repo, {...agreed, who});
+      return out;
+    }
     const shas = [...new Set(set.map(([, v]) => v).filter((v): v is string => typeof v === 'string'))];
     if (shas.length) {
       const missing = await json<string[]>('/v1/blobs/missing', {method: 'POST', body: JSON.stringify(shas)});
@@ -289,7 +302,7 @@ async function inStep(repo: string): Promise<Synced> {
     for (const [p, v] of set) tree[p] = v;
     out.sent += set.length + remove.length;
     out.version = version;
-    await agree(repo, {...base, version, tree});
+    await agree(repo, {...base, version, tree, ...(who ? {who} : {})});
   }
   return out;
 }
@@ -449,17 +462,32 @@ export const homeAgreed = (): HomeKey[] => HOME_KEYS.filter((k) => (freshState(k
  */
 export const syncHome = (key: HomeKey): Promise<void> => exclusive(`home:${key}`, () => serial(`home:${key}`, () => agreeSetting(key)));
 
+/** `key` agreed as `a`, with the account signed in (`who`). */
+const agreeHome = (key: HomeKey, a: HomeAgreed, who: string | null) => {
+  const s = syncState();
+  return saveState({...s, home: {...s.home, [key]: {...a, ...(who ? {who} : {})}}});
+};
+
 async function agreeSetting(key: HomeKey): Promise<void> {
+  const who = await accountId();
   for (let round = 0; round < 3; round++) {
     const s = syncState();
     const b = s.home?.[key];
     // As kept now: another tab may have written it, or agreed it, since this one read it.
     const here = freshState(key);
     const there = await json<{value: string | null; version: number}>(`/v1/home/${key}`);
+    if (b?.who && who && b.who !== who) {
+      // Changed under the account it was agreed with, and never sent: it waits here for that account.
+      if (here !== null && here !== b.value) return;
+      // As that account left it: this account's own comes in its place.
+      await setState(key, there.value ?? '');
+      await agreeHome(key, {version: there.version, value: there.value ?? ''}, who);
+      return;
+    }
     const changedHere = here !== null && here !== b?.value;
     if (!changedHere) {
       if (there.value !== null && there.value !== here) await setState(key, there.value);
-      await saveState({...syncState(), home: {...syncState().home, [key]: {version: there.version, value: there.value ?? here ?? ''}}});
+      await agreeHome(key, {version: there.version, value: there.value ?? here ?? ''}, who);
       return;
     }
     let value = here!;
@@ -467,21 +495,21 @@ async function agreeSetting(key: HomeKey): Promise<void> {
       if (key !== 'todo') {
         // The Remote's stands, and is what is agreed now (bug: taken but never agreed, so it was taken again at every look).
         await setState(key, there.value);
-        await saveState({...syncState(), home: {...syncState().home, [key]: {version: there.version, value: there.value}}});
+        await agreeHome(key, {version: there.version, value: there.value}, who);
         return;
       }
       value = mergeTodo(b?.value ?? null, here!, there.value);
       if (value !== here) await setState(key, value);
       // Nothing here the Remote lacks (all that changed here was done there too): its own is agreed, nothing sent.
       if (value === there.value) {
-        await saveState({...syncState(), home: {...syncState().home, [key]: {version: there.version, value}}});
+        await agreeHome(key, {version: there.version, value}, who);
         return;
       }
     }
     const r = await api(`/v1/home/${key}`, {method: 'PUT', body: JSON.stringify({value, version: there.version})});
     const done = await r.json() as {version: number; value?: string};
     if (r.status === 200 || r.status === 201) {
-      await saveState({...syncState(), home: {...syncState().home, [key]: {version: done.version, value}}});
+      await agreeHome(key, {version: done.version, value}, who);
       return;
     }
   }

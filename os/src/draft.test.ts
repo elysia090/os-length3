@@ -228,12 +228,51 @@ test('a copy in step is never taken apart by a Remote that does not have it: dis
   await assert.rejects(draft.sync('kept'), /discarded on the Remote/);
   assert.deepEqual(await files(), before);
   assert.equal(await text('kept', 'README.md'), '# kept\n');
-  // Someone else signed in on this browser, whose Remote has no such repo: the same.
+  // Someone else signed in on this browser: not theirs to take apart either.
   const other = await signIn('Mio Other');
   await setState('remote', JSON.stringify({url: URL_, token: other}));
+  await assert.rejects(draft.sync('kept'), /another account/);
+  assert.deepEqual(await files(), before);
+  // An agreement from before accounts were named, and a Remote without the repo: the same.
+  const s = JSON.parse(getState('sync')!);
+  delete s.repos.kept.who;
+  await setState('sync', JSON.stringify(s));
   await assert.rejects(draft.sync('kept'), /does not have this repo/);
   assert.deepEqual(await files(), before);
   await setState('remote', JSON.stringify({url: URL_, token}));
+});
+
+test('a copy, or a setting, agreed with one account is not sent to another that signs in on this browser', async () => {
+  await store.create('mine', 'standard');
+  await store.write('mine', 'README.md', '# Sora\'s\n');
+  await draft.sync('mine');
+  const files = async () => (await store.tree('mine', '')).map((e) => e.name).sort();
+  const before = await files();
+  // Another person, whose Remote has a repo of the same name.
+  const other = await signIn('Mio Other');
+  const auth = {Authorization: `Bearer ${other}`, 'Content-Type': 'application/json'};
+  const sha = await sha256(enc.encode('Mio\'s\n'));
+  await fetch(`${URL_}/v1/blobs/${sha}`, {method: 'PUT', headers: {Authorization: `Bearer ${other}`}, body: 'Mio\'s\n'});
+  await fetch(`${URL_}/v1/repos/mine/draft`, {method: 'PATCH', headers: auth, body: JSON.stringify({version: 0, set: {'mio.md': sha}, remove: []})});
+  // Sora's TODO, changed here and not sent yet.
+  await draft.syncHome('todo');
+  await setState('todo', JSON.stringify([{id: 'sora', title: 'Sora\'s, not sent yet'}]));
+  await setState('remote', JSON.stringify({url: URL_, token: other}));
+  // Signed in as Mio: Sora's copy is neither sent into Mio's repo nor joined with it, and Sora's TODO stays Sora's.
+  await assert.rejects(draft.sync('mine'), /another account/);
+  assert.deepEqual(await files(), before);
+  const mio = await (await fetch(`${URL_}/v1/repos/mine`, {headers: auth})).json() as {draft: Record<string, string>};
+  assert.deepEqual(Object.keys(mio.draft), ['mio.md']);
+  await draft.syncHome('todo');
+  const mioTodo = await (await fetch(`${URL_}/v1/home/todo`, {headers: auth})).json() as {value: string | null};
+  assert.equal((mioTodo.value ?? '').includes('Sora'), false);
+  assert.match(getState('todo') ?? '', /not sent yet/);
+  // Sora again: all of it goes to Sora's.
+  await setState('remote', JSON.stringify({url: URL_, token}));
+  assert.equal((await draft.sync('mine')).sent, 0);
+  await draft.syncHome('todo');
+  const soraTodo = await (await fetch(`${URL_}/v1/home/todo`, {headers: {Authorization: `Bearer ${token}`}})).json() as {value: string};
+  assert.match(soraTodo.value, /not sent yet/);
 });
 
 test('an issue is worked on in its own copy; pushed, submitted, reviewed and merged into main', async () => {

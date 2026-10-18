@@ -291,6 +291,25 @@ async function ended() {
   await forget();
 }
 
+/**
+ * The account this device's session is of (its id), asked once a session:
+ * what is agreed with the Remote is agreed with an account, and is not
+ * taken for another's that signs in on the same device later.
+ */
+let account: {token: string; id: Promise<string | null>} | null = null;
+export function accountId(): Promise<string | null> {
+  const c = connection();
+  if (!c) return Promise.resolve(null);
+  if (account?.token !== c.token) {
+    const token = c.token;
+    const id = json<{user?: {id?: string}} | null>('/api/auth/get-session').then((s) => s?.user?.id ?? null);
+    // Not answered (offline): asked again next time.
+    id.catch(() => { if (account?.token === token) account = null; });
+    account = {token, id};
+  }
+  return account.id;
+}
+
 /** Who is signed in here, as the Remote says. */
 export async function me(): Promise<{id: string; name: string} | null> {
   if (!connection()) return null;
