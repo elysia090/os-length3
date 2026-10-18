@@ -41,11 +41,15 @@ crons = ["41 4 * * *"]
 binding = "BLOBS"
 bucket_name = "length3-blobs"
 
-# The app's origin, and the name the desktop app and l3 reach the Remote by.
+# The one name: the app's origin, the Remote the desktop app and l3 reach, what a domain's
+# record names (remote=os.length3.com), and the passkeys' (APP_ORIGIN).
 [[routes]]
 pattern = "os.length3.com"
 custom_domain = true
 
+# The name the Remote had before, kept on the same Worker so the releases that reach it by
+# it (0.4.x) keep working. Nothing names it any more; a newer client that finds it kept takes
+# the one name instead (core/src/remote.rs current_url).
 [[routes]]
 pattern = "remote.length3.com"
 custom_domain = true

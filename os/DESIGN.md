@@ -1187,7 +1187,9 @@ outside closes it), a popover: your names with their terms (Renew near the
 end), Add a domain, and Let a name go last. Add a domain becomes, in its
 row, one field where the name is written whole, `name@domain` with the @
 too (no second box to go to), then the one DNS record that proves it (`_length3.<domain>` TXT
-`v=length3; remote=<host>; proof=<…>`, each part copied by pressing it).
+`v=length3; remote=<host>; proof=<…>`, each part copied by pressing it;
+the host is the one name the Remote this OS ships with has everywhere,
+`os.length3.com`: its app, its Remote, its records and its passkeys).
 The proof is the Remote's keyed digest of the account and the domain, so
 only the domain's holder can publish it and no other account can reuse it;
 it is looked for while the gear is open, and the address is claimed the

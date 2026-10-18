@@ -33,7 +33,7 @@ export interface AuthConfig {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: any;
   secret: string;
-  /** Where this service is, e.g. https://remote.length3.com. */
+  /** Where this service is, e.g. https://os.length3.com. */
   baseURL: string;
   /** The web app's origin, where passkeys are made and used (and devices approved). */
   appOrigin: string;

@@ -195,13 +195,9 @@ struct Fetching {
     retry: Option<String>,
 }
 
-/// The Remote this device talks to (Home's `remote` setting), or the default.
+/// The Remote this device talks to (Home's `remote` setting, by its name today), or the default.
 fn remote_url() -> String {
-    length3_core::home::get("remote").ok().flatten()
-        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
-        .and_then(|v| v.get("url")?.as_str().map(String::from))
-        .or_else(|| std::env::var("LENGTH3_REMOTE").ok())
-        .unwrap_or_else(|| "https://remote.length3.com".into())
+    length3_core::remote::connection().map_or_else(length3_core::remote::default_url, |c| c.url)
 }
 
 /// Fetch the release root from the Remote and install it, saying how far it is.

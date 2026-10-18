@@ -316,7 +316,14 @@ LENGTH3_REMOTE=http://127.0.0.1:8787 l3 login
 ```
 
 On Cloudflare it is one Worker on one origin, the app's files and the Remote
-together (`wrangler.toml`). For research it has one account,
+together (`wrangler.toml`), under one name: `os.length3.com` is the app, the
+Remote the desktop app and l3 sign in to (`core/src/remote.rs` DEFAULT_URL,
+the desktop CSP), what a domain's DNS record names (`remote=os.length3.com`,
+and `/.well-known/length3`) and where passkeys belong. Its former name,
+`remote.length3.com`, still reaches the same Worker, so released clients
+(0.4.x) that sign in by it keep working; nothing names it any more, and a
+newer client that finds it kept goes on by `os.length3.com` with the same
+session. For research it has one account,
 `ENTER_AS`: nobody signs up, nothing is shown to everyone, and whoever is
 given the link `https://os.length3.com/#enter=KEY` comes in as it (a day at a
 time; a new key ends every old link and session at once).

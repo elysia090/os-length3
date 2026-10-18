@@ -4,7 +4,7 @@
 // own domain is claimed here; a name on any other domain needs its owner to
 // say so in the domain's DNS, as mail says where it goes with MX:
 //
-//   _length3.example.org  TXT  "v=length3; remote=remote.length3.com; proof=<26 letters>"
+//   _length3.example.org  TXT  "v=length3; remote=os.length3.com; proof=<26 letters>"
 //
 // remote= is which Remote holds the domain's addresses (what another Remote
 // asks to reach one), and proof= is an HMAC of the account and the domain

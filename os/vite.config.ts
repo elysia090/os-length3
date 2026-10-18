@@ -15,7 +15,7 @@ import {defineConfig, type Plugin} from 'vite';
 // canonical copy lives. VITE_LENGTH3_REMOTE points a build at another one;
 // '' is this page's own origin, which in development LENGTH3_DEV_REMOTE
 // (a `node service/dev.ts`) answers through the dev server.
-const REMOTE_URL = process.env.VITE_LENGTH3_REMOTE ?? 'https://remote.length3.com';
+const REMOTE_URL = process.env.VITE_LENGTH3_REMOTE ?? 'https://os.length3.com';
 const REMOTE = REMOTE_URL ? new URL(REMOTE_URL).origin : '';
 const DEV_REMOTE = process.env.LENGTH3_DEV_REMOTE;
 const WEB_POLICY = [

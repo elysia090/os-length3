@@ -49,3 +49,12 @@ test('the name the off ask shows is the one the Remote checks', async () => {
   const off = await account.turnOff('notes', me!.name, 'notes', 'AB12C', true);
   assert.ok(off.until > off.offAt);
 });
+
+test('this OS signs in to os.length3.com; a device that kept the former name goes on by it, session and all', async () => {
+  assert.equal(account.DEFAULT_REMOTE, 'https://os.length3.com');
+  for (const former of ['https://remote.length3.com', 'https://remote.length3.com/', 'https://Remote.Length3.com']) assert.equal(account.currentURL(former), account.DEFAULT_REMOTE);
+  for (const other of ['', 'https://os.length3.com', 'http://127.0.0.1:8787', 'https://remote.length3.com/x', 'http://remote.length3.com']) assert.equal(account.currentURL(other), other);
+  await setState('remote', JSON.stringify({url: 'https://remote.length3.com', token: 'kept'}));
+  assert.deepEqual(account.connection(), {url: 'https://os.length3.com', token: 'kept'});
+  await setState('remote', 'null');
+});

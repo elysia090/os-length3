@@ -67,16 +67,16 @@ mod tests {
     #[test]
     fn the_hosts_proxy_except_for_itself_and_what_it_says_to_skip() {
         let e = env(&[("HTTPS_PROXY", "http://proxy:3128"), ("NO_PROXY", "internal.example, .corp.test")]);
-        assert_eq!(proxy_for("https://remote.length3.com/v1", &e).as_deref(), Some("http://proxy:3128"));
+        assert_eq!(proxy_for("https://os.length3.com/v1", &e).as_deref(), Some("http://proxy:3128"));
         assert_eq!(proxy_for("http://127.0.0.1:8787/v1", &e), None);
         assert_eq!(proxy_for("http://localhost:8787", &e), None);
         assert_eq!(proxy_for("http://[::1]:8787", &e), None);
         assert_eq!(proxy_for("https://internal.example/x", &e), None);
         assert_eq!(proxy_for("https://a.corp.test/x", &e), None);
         assert_eq!(proxy_for("https://corp.test.evil/x", &e).as_deref(), Some("http://proxy:3128"));
-        assert_eq!(proxy_for("https://user:pw@remote.length3.com:443/", &env(&[("https_proxy", "http://p:1")])).as_deref(), Some("http://p:1"));
-        assert_eq!(proxy_for("https://remote.length3.com", &env(&[("HTTPS_PROXY", "http://p:1"), ("no_proxy", "*")])), None);
-        assert_eq!(proxy_for("https://remote.length3.com", &env(&[])), None);
+        assert_eq!(proxy_for("https://user:pw@os.length3.com:443/", &env(&[("https_proxy", "http://p:1")])).as_deref(), Some("http://p:1"));
+        assert_eq!(proxy_for("https://os.length3.com", &env(&[("HTTPS_PROXY", "http://p:1"), ("no_proxy", "*")])), None);
+        assert_eq!(proxy_for("https://os.length3.com", &env(&[])), None);
     }
 
     #[test]
