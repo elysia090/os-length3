@@ -89,4 +89,8 @@ export default {
   "Only its owner, or the server's, takes it off": '外せるのは repo の持ち主かサーバーのオーナーだけです',
   'No such repo to see': '見られる repo はありません',
   'No such file to see': '見られるファイルはありません',
+  // Held off, and the Remote's own health.
+  'Too many wrong codes; try again in an hour': '間違ったコードが多すぎます。1時間後にもう一度どうぞ',
+  'Too many codes looked up this hour': 'この1時間にコードを調べすぎました',
+  'The Remote does not reach its database': 'Remote がデータベースに届いていません',
 } as Record<string, string>;
