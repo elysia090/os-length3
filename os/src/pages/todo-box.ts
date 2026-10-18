@@ -257,7 +257,9 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
   };
 
   render();
-  if (o.readOnly) count(todo.persisted(items)); else save();
+  // Drawn, not changed: nothing is kept until something is written (Home's TODO
+  // was written back, and agreed with the Remote, each time Home was drawn).
+  count(todo.persisted(items));
   const hint = o.readOnly ? null : h('p', {class: 'todo-hint'},
     h('span', {}, t('First line as Kind: title')), h('span', {}, t('Enter for the detail')), h('span', {}, t('Enter on an empty line for the next TODO')),
     h('span', {}, t('○ or Ctrl+Enter when done')));
