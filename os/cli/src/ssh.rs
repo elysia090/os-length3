@@ -394,6 +394,10 @@ enum Why { Off, SignedOut, Asked }
 /// What it says of itself when a client connects, before anything else: the protocol and a plain name, not the
 /// SSH library or its version.
 const SERVER_ID: &str = "SSH-2.0-length3";
+
+/// The key kinds offered and taken, for the host key and the clients' (ssh::KINDS): no RSA.
+const KEY_KINDS: [russh::keys::ssh_key::Algorithm; 4] = {
+    use russh::keys::ssh_key::{Algorithm, EcdsaCurve};
     [Algorithm::Ed25519, Algorithm::Ecdsa { curve: EcdsaCurve::NistP256 }, Algorithm::Ecdsa { curve: EcdsaCurve::NistP384 }, Algorithm::Ecdsa { curve: EcdsaCurve::NistP521 }]
 };
 
@@ -477,6 +481,8 @@ pub fn serve() -> Result<(), String> {
         inactivity_timeout: None,
         keepalive_interval: Some(Duration::from_secs(30)),
         nodelay: true,
+        // The kinds of key there are here (ssh::KINDS), and nothing more said of them (server-sig-algs).
+        preferred: russh::Preferred { key: std::borrow::Cow::Borrowed(&KEY_KINDS), ..Default::default() },
         ..Default::default()
     });
     let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|e| e.to_string())?;
