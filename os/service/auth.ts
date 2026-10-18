@@ -15,12 +15,22 @@
 // Clients hold a session token (the bearer plugin): the web app reads its
 // own once the provider sends it back, the app and l3 get theirs from the
 // device flow, so a session can be seen and ended from any of them.
+//
+//   /api/auth/*   Better Auth: sign-in (social, passkey), sessions and devices
+//                 (get-session, list-sessions, revoke-session, sign-out), linked
+//                 providers, and the device flow (device/code, device/token,
+//                 device, device/approve, device/deny)
+//   /dev-oauth/*  the stand-in provider, only where 'dev' is offered (devoauth.ts)
+// and signedIn, which every /v1 route behind it asks first.
 
 import {passkey} from '@better-auth/passkey';
 import {betterAuth} from 'better-auth';
 import {createAuthMiddleware} from 'better-auth/api';
 import {drizzleAdapter} from 'better-auth/adapters/drizzle';
 import {bearer, deviceAuthorization, genericOAuth} from 'better-auth/plugins';
+import type {Hono, MiddlewareHandler} from 'hono';
+import {devOAuth} from './devoauth.ts';
+import type {Vars} from './request.ts';
 import * as schema from './schema.ts';
 
 /** The desktop app and l3, the only clients that may ask for a device code. */
@@ -124,3 +134,27 @@ export function createAuth(c: AuthConfig) {
 }
 
 export type Auth = ReturnType<typeof createAuth>;
+
+/** Sign-in's own routes: Better Auth's, and the stand-in provider where it is offered. */
+export function signIn(d: {auth: Auth; providers: string[]; enter: boolean}, app: Hono<Vars>) {
+  // For research no passkey is added: a passkey would let a link's holder back in after its key changed.
+  if (d.enter) app.all('/api/auth/passkey/*', (c) => c.json({error: 'This Remote is entered by its link'}, 403));
+  app.on(['GET', 'POST'], '/api/auth/*', (c) => d.auth.handler(c.req.raw));
+  if (d.providers.includes('dev')) app.route('/dev-oauth', devOAuth());
+}
+
+/**
+ * Who is asking, or 401: a bearer token (the app, l3, the web once it took its token), or the session
+ * cookie. A page elsewhere can make a browser send the cookie, never the bearer token: a write that
+ * comes with the cookie alone is taken only from the app's own pages.
+ */
+export const signedIn = (auth: Auth, origins: string[]): MiddlewareHandler<Vars> => async (c, next) => {
+  const bearer = /^Bearer\s/i.test(c.req.header('Authorization') ?? '');
+  if (!bearer && c.req.method !== 'GET' && c.req.method !== 'HEAD' && !origins.includes(c.req.header('Origin') ?? '')) return c.json({error: 'not from the app'}, 403);
+  const s = await auth.api.getSession({headers: c.req.raw.headers});
+  if (!s) return c.json({error: 'not signed in'}, 401);
+  c.set('userId', s.user.id);
+  c.set('sessionId', s.session.id);
+  c.set('name', s.user.name);
+  await next();
+};

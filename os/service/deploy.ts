@@ -37,12 +37,10 @@
 import {spawn} from 'node:child_process';
 import {randomBytes} from 'node:crypto';
 import {readFileSync} from 'node:fs';
-import {Pool} from '@neondatabase/serverless';
 import {sql} from 'drizzle-orm';
-import {drizzle} from 'drizzle-orm/neon-serverless';
-import {migrate} from 'drizzle-orm/neon-serverless/migrator';
 import {enterEmail} from './enter.ts';
 import {mirror, remoteStore} from './mirror.ts';
+import {defaultBranchUrl, migrateRemote, owner as ownerOn} from './neon.ts';
 import {pinnedDesktop, pinnedRoots} from './releases.ts';
 
 const config = new URL('../wrangler.toml', import.meta.url).pathname;
@@ -70,18 +68,13 @@ const secret = (bytes: number) => randomBytes(bytes).toString('base64url');
 /** The owner's connection string, on the project's default branch. */
 async function ownerUrl(): Promise<string> {
   if (process.env.OWNER_URL) return process.env.OWNER_URL;
-  const key = process.env.NEON_API_KEY, project = process.env.NEON_PROJECT_ID;
-  if (!key || !project) { console.error('OWNER_URL, or NEON_API_KEY and NEON_PROJECT_ID (Neon\'s GitHub integration sets both)'); process.exit(2); }
-  const q = new URLSearchParams({database_name: process.env.NEON_DATABASE ?? 'neondb', role_name: process.env.NEON_OWNER ?? 'neondb_owner', pooled: 'false'});
-  const r = await fetch(`https://console.neon.tech/api/v2/projects/${encodeURIComponent(project)}/connection_uri?${q}`,
-    {headers: {authorization: `Bearer ${key}`, accept: 'application/json'}});
-  if (!r.ok) throw new Error(`Neon connection_uri: ${r.status} ${(await r.text()).slice(0, 300)}`);
-  return ((await r.json()) as {uri: string}).uri;
+  const url = await defaultBranchUrl();
+  if (!url) { console.error('OWNER_URL, or NEON_API_KEY and NEON_PROJECT_ID (Neon\'s GitHub integration sets both)'); process.exit(2); }
+  return url;
 }
 async function owner() {
   const url = await ownerUrl();
-  const pool = new Pool({connectionString: url});
-  return {url: new URL(url), pool, db: drizzle(pool)};
+  return {url: new URL(url), ...ownerOn(url)};
 }
 
 /** The names of the secrets the Worker has; none when there is no Worker yet. */
@@ -141,7 +134,7 @@ if (!step) {
   const given = process.env.ENTER_KEY || undefined;
   if (given && !/^[A-Za-z0-9_-]{32,}$/.test(given)) { console.error('ENTER_KEY: 32 or more letters, digits, - and _'); process.exit(2); }
   const {url, pool, db} = await owner();
-  await migrate(db, {migrationsFolder: new URL('./migrations', import.meta.url).pathname});
+  await migrateRemote(db);
   console.log('migrations: done');
   const bucket = vars('bucket_name')!;
   if ((await wrangler(['r2', 'bucket', 'info', bucket, '--json'], {heard: true})).code !== 0) await must(['r2', 'bucket', 'create', bucket]);

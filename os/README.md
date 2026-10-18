@@ -322,14 +322,21 @@ production, PGlite in tests and here. Its schema is the migrations in
 `service/migrations`: those Drizzle generates from `service/schema.ts`, and
 `0001` for what Drizzle cannot say (the counted room, the service's role). The service connects as
 `remote_worker`, a member of `remote_app`, which reads and writes rows and
-nothing else.
+nothing else. What each part of it does, its routes and tables, and which
+of them the app and l3 need: `service/README.md`.
 
 ```
 node service/dev.ts DIR 8787 http://localhost:1420     # the Remote, here (no plan: everything open)
+node service/dev.ts DIR 8787 http://localhost:1420 --no-bucket   # one that holds no files, as a Worker without R2
 LENGTH3_PLAN=1 node service/dev.ts DIR 8787 http://localhost:1420   # with the plan, bought from a stand-in for Stripe
 LENGTH3_DEV_REMOTE=http://127.0.0.1:8787 VITE_LENGTH3_REMOTE= npx vite
 LENGTH3_REMOTE=http://127.0.0.1:8787 l3 login
 ```
+
+The database and the files are apart: Postgres holds every row, R2 only
+the bytes. Without R2 bound the Remote does all the rest, and each route
+that would move bytes answers 503 `{files: false}`; the app and l3 then keep
+the work on the device, say so, and send it once the Remote can hold it.
 
 On Cloudflare it is one Worker on one origin, the app's files and the Remote
 together (`wrangler.toml`), under one name: `os.length3.com` is the app, the
@@ -403,6 +410,26 @@ OWNER_URL='postgresql://neondb_owner:…' node service/deploy.ts        # migrat
 OWNER_URL='postgresql://neondb_owner:…' node service/deploy.ts link   # a new link, and every session of the account ends
 ```
 
+Before a deploy, the migrations and the Remote can be verified on a Neon
+branch (made on the Neon side, from production or empty), pooled URL or
+direct:
+
+```
+DATABASE_URL='postgresql://neondb_owner:…@ep-…-pooler….neon.tech/neondb' NEON_API_KEY=… NEON_PROJECT_ID=… npm run verify:remote
+```
+
+It makes a database of its own beside the one named (`remote_verify_…`),
+runs the migrations there with the function `deploy.ts` runs, runs the
+contract tests on it with no bucket through the Worker's own driver, and
+drops it, also when the tests fail or it is stopped (Ctrl-C); `remote_app`
+goes too only if those migrations made it. Nothing else is touched, and it
+prints neither the URL nor anything in it. It refuses what looks like
+production: a host named prod, production or live, any host that is not
+Neon's or this machine's, and the Neon project's default branch, which it
+learns from Neon (`NEON_API_KEY`, `NEON_PROJECT_ID`) or from
+`REMOTE_PRODUCTION_HOSTS` (endpoint ids, comma separated; not secret);
+knowing neither, it refuses any Neon host. `-- --production` runs it anyway.
+
 ## Develop
 
 Linux needs the WebKitGTK toolchain:
@@ -410,9 +437,10 @@ Linux needs the WebKitGTK toolchain:
 
 ```
 npm ci
-npm run check                  # tsc + node:test
+npm run check                  # tsc + node:test (the Remote's contracts with a bucket and without)
 npm run selftest               # the app end to end in Chromium (below)
 npm run selftest:l3            # l3 end to end against a Remote of its own (selftest/l3)
+npm run verify:remote          # the Remote on a real Postgres: DATABASE_URL (see Deploy)
 npx tauri dev                  # window against the Vite dev server
 npx tauri build --debug --no-bundle
 ```

@@ -21,7 +21,7 @@
 
 import {and, eq, inArray, isNull, not, sql} from 'drizzle-orm';
 import type {Context, Hono} from 'hono';
-import type {Bucket} from './bucket.ts';
+import {blobKey, noFiles, type Bucket} from './bucket.ts';
 import {byCode, HOLD, live, liveAddress, serverAddress, shownAs, takeDown} from './names.ts';
 import {body, qualified, refuse, rows, type Db, type Vars} from './request.ts';
 import {address, cut, line, member, repo, repoPublic, repoShare, server} from './schema.ts';
@@ -32,7 +32,8 @@ type Public = {face: string; name: string; repo: string; serverId: string | null
 
 export interface SeenDeps {
   db: Db;
-  bucket: Bucket;
+  /** Where file contents are kept; none, and a file is not to be seen (bucket.ts). */
+  bucket: Bucket | null;
   /** Who is asking, if they are signed in. */
   viewer: (req: Request) => Promise<string | null>;
   /** This Remote's own domain: a name written alone is on it. */
@@ -248,11 +249,13 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   // A file by its path in the tree it was pushed to: one lookup of that path, so nothing else of
   // its owner's can be asked for, and reading a large repo file by file costs each file once.
   app.get('/v1/seen/:face/:name/file', async (c) => {
+    if (!d.bucket) return noFiles(c);
+    const bucket = d.bucket;
     const path = c.req.query('path') ?? '';
     const at = path && path.length <= 1024 ? await find(c, c.req.param('face'), c.req.param('name')) : null;
     const [f] = at ? await db.select({sha: sql<string | null>`${cut.tree} ->> ${path}`}).from(cut).where(pushedAt(at.row)) as {sha: string | null}[] : [];
     if (!at || !f?.sha) return c.json({error: 'No such file to see'}, 404);
-    const bytes = await d.bucket.get(`u/${at.row.userId}/${f.sha}`);
+    const bytes = await bucket.get(blobKey(at.row.userId, f.sha));
     return bytes ? new Response(bytes as BodyInit, {headers: {'Content-Type': 'application/octet-stream', ETag: `"${f.sha}"`}}) : c.json({error: 'The Remote has no such file'}, 404);
   });
 }

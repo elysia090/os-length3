@@ -4,6 +4,14 @@
 // deleted (sweep.ts). What a release is (os/<sha256>, desktop/<file>) is put
 // here by the deploy (mirror.ts) and only read by the service, a range at a
 // time and as a stream, since it is larger than a Worker may hold.
+//
+// The bucket is the only thing the Remote needs besides its database, and
+// only for bytes: a Remote with none bound (no R2 yet, `dev.ts --no-bucket`)
+// does everything else, and each route that would move bytes answers
+// `noFiles` instead (files.ts, seen.ts), so a client keeps its files where
+// they are and says so.
+
+import type {Context} from 'hono';
 
 export interface Bucket {
   get(key: string): Promise<Uint8Array | null>;
@@ -15,6 +23,13 @@ export interface Bucket {
   /** These objects gone (those already gone are no matter). */
   delete(keys: string[]): Promise<void>;
 }
+
+/** Where an account's blob is kept: one key per account and digest. */
+export const blobKey = (user: string, sha: string) => `u/${user}/${sha}`;
+
+/** What a Remote with no bucket says to a request that would move bytes: one answer, everywhere. */
+export const NO_FILES = {error: 'The Remote cannot hold files just now', files: false} as const;
+export const noFiles = (c: Context) => c.json(NO_FILES, 503);
 
 export function memoryBucket(): Bucket & {keys(): string[]} {
   const m = new Map<string, Uint8Array>();
