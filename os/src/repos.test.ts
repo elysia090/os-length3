@@ -103,3 +103,36 @@ test('repos kept in the browser come back in a new page, as they were left', asy
   assert.deepEqual(await c.list(), []);
   assert.deepEqual(await new KeptStore(fake).list(), []);
 });
+
+test('a change this browser cannot keep (its storage full) waits, is said, and is kept once there is room', async () => {
+  const {KeptStore} = await import('./repos.ts');
+  const shelf = new Map<string, import('./repos.ts').Kept>();
+  const fake = {
+    full: false,
+    async all() { return [...shelf].map(([k, v]) => [k, structuredClone(v)] as [string, import('./repos.ts').Kept]); },
+    async put(n: string, r: import('./repos.ts').Kept) {
+      if (fake.full) throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+      shelf.set(n, structuredClone(r));
+    },
+    async drop(names: string[]) { for (const n of names) shelf.delete(n); },
+  };
+  const a = new KeptStore(fake);
+  let told = 0;
+  a.onTrouble(() => told++);
+  await a.create('notes', 'standard');
+  await a.flush();
+  fake.full = true;
+  await a.write('notes', 'README.md', '# kept later\n');
+  // Not kept: it rejects (so nothing is agreed on top of it), says why, and the change still waits here.
+  await assert.rejects(a.flush(), /could not keep/);
+  assert.match(a.trouble ?? '', /quota/);
+  assert.equal(told, 1);
+  assert.ok(a.waiting('notes'));
+  assert.equal(shelf.get('notes')?.files.find(([p]) => p === 'README.md')?.[1], '# notes\n');
+  fake.full = false;
+  await a.flush();
+  assert.equal(a.trouble, null);
+  assert.equal(told, 2);
+  assert.equal(a.waiting('notes'), false);
+  assert.equal((await new KeptStore(fake).read('notes', 'README.md')).text, '# kept later\n');
+});

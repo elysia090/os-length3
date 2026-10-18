@@ -265,15 +265,20 @@ export class MemoryStore implements RepoStore {
 /** Where a KeptStore keeps repos: one record per repo. */
 export interface Shelf {
   all(): Promise<[string, Kept][]>;
+  /** Resolves once it is kept, rejects (the storage is full, say) when it is not. */
   put(name: string, repo: Kept): Promise<void>;
   /** Remove these repos; the work starts synchronously, so it can run while the page is left. */
   drop(names: string[]): Promise<void>;
 }
 
+const why = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
 /**
  * Repos kept in this browser: read whole at start, and each change written
  * back shortly after (or at once when the page is being left), so closing
- * or reloading the tab loses nothing that was saved.
+ * or reloading the tab loses nothing that was saved. A change the browser
+ * will not keep (its storage full) stays waiting here, is tried again, and
+ * is said (trouble).
  */
 export class KeptStore extends MemoryStore {
   override readonly persistent = true;
@@ -281,17 +286,32 @@ export class KeptStore extends MemoryStore {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private shelf: Shelf;
   readonly ready: Promise<void>;
+  /** Why the last keeping failed (the storage is full, or cannot be read); null while it works. */
+  trouble: string | null = null;
+  private troubled = new Set<() => void>();
   constructor(shelf: Shelf) {
     super();
     this.shelf = shelf;
     this.ready = shelf.all().then((all) => {
       for (const [name, r] of all) if (validName(name.split('\u0001')[0])) this.repos.set(name, {files: new Map(r.files), modified: r.modified});
-    }, () => {});
+    }, (e: unknown) => this.say(t('This browser\'s storage could not be read ({why})', {why: why(e)})));
   }
+
+  /** Hear when keeping starts or stops failing; returns how to stop. */
+  onTrouble(fn: () => void): () => void { this.troubled.add(fn); return () => this.troubled.delete(fn); }
+  private say(trouble: string | null) {
+    if (trouble === this.trouble) return;
+    this.trouble = trouble;
+    for (const fn of [...this.troubled]) fn();
+  }
+
   protected override touched(repo: string) {
     this.dirty.add(this.key(repo));
+    this.soon(300);
+  }
+  private soon(ms: number) {
     clearTimeout(this.timer);
-    this.timer = setTimeout(() => void this.flush(), 300);
+    this.timer = setTimeout(() => void this.flush().catch(() => {}), ms);
   }
   /**
    * Let these repos go from this browser (their copy holds nothing the
@@ -308,15 +328,27 @@ export class KeptStore extends MemoryStore {
   /** Whether `repo` has changes not yet written to the shelf. */
   waiting(repo: string) { return this.copies(repo).some((l) => this.dirty.has(l === 'main' ? repo : `${repo}\u0001${l}`)); }
 
-  /** Write every changed repo now. */
+  /**
+   * Write every changed repo now. One that cannot be kept stays waiting, is
+   * tried again shortly, and is said (trouble); the promise then rejects
+   * with why.
+   */
   async flush() {
     clearTimeout(this.timer);
     const names = [...this.dirty];
     this.dirty.clear();
-    await Promise.all(names.map((n) => {
+    const failed: unknown[] = [];
+    await Promise.all(names.map(async (n) => {
       const r = this.repos.get(n);
-      return r ? this.shelf.put(n, {files: [...r.files], modified: r.modified}) : Promise.resolve();
+      if (!r) return;
+      try { await this.shelf.put(n, {files: [...r.files], modified: r.modified}); } catch (e) { this.dirty.add(n); failed.push(e); }
     }));
+    if (failed.length) {
+      this.say(t('This browser could not keep the latest changes ({why}); they are kept in this tab until it can', {why: why(failed[0])}));
+      this.soon(5000);
+      throw new Error(this.trouble!);
+    }
+    if (names.length) this.say(null);
   }
   // Nothing is answered before what was kept is read.
   override async list() { await this.ready; return super.list(); }
@@ -353,7 +385,15 @@ function indexedShelf(name = 'length3-repos'): Shelf {
       const [keys, values] = await Promise.all([done(s.getAllKeys()), done(s.getAll())]);
       return keys.map((k, i) => [String(k), values[i] as Kept]);
     },
-    async put(n, repo) { await done((await db).transaction('repos', 'readwrite').objectStore('repos').put(repo, n)); },
+    async put(n, repo) {
+      // Kept once its transaction completes: a write the storage refuses (full) aborts it, and says so here.
+      const tx = (await db).transaction('repos', 'readwrite');
+      await new Promise<void>((resolve, reject) => {
+        tx.oncomplete = () => resolve();
+        tx.onabort = () => reject(tx.error ?? new Error('aborted'));
+        try { tx.objectStore('repos').put(repo, n); } catch (e) { try { tx.abort(); } catch { /* over already */ } reject(e); }
+      });
+    },
     async drop(names) {
       const s = (await db).transaction('repos', 'readwrite').objectStore('repos');
       await Promise.all(names.map((n) => done(s.delete(n))));
@@ -452,8 +492,8 @@ class Observed implements RepoStore {
 }
 
 export const kept = isNative || typeof indexedDB === 'undefined' ? null : new KeptStore(indexedShelf());
-// Leaving the page writes what is still waiting.
-if (kept) addEventListener('pagehide', () => void kept.flush());
+// Leaving the page writes what is still waiting (what cannot be is said, and stays in the tab while it lives).
+if (kept) addEventListener('pagehide', () => void kept.flush().catch(() => {}));
 export const store = new Observed(isNative ? new NativeStore() : kept ?? new MemoryStore());
 
 /** Hear every change made through the store; returns the way to stop. */

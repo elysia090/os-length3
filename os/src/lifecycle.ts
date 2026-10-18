@@ -116,8 +116,10 @@ export async function look(): Promise<void> {
     if (timers.has(s.name)) continue;
     const before = states.get(s.name);
     if (before?.where === 'off') continue;
-    const where: Where = !c ? 'local' : s.fresh || s.changed ? (before?.where === 'offline' ? 'offline' : 'sending') : 'synced';
-    states.set(s.name, {where, changed: s.changed, both: before?.both ?? [], unsynced: s.unsynced, error: before?.error});
+    // Changed here and not kept by this browser (its storage refused it): said, and not taken for in step.
+    const unkept = kept?.trouble && kept.waiting(s.name) ? kept.trouble : undefined;
+    const where: Where = !c ? 'local' : s.fresh || s.changed ? (before?.where === 'offline' ? 'offline' : 'sending') : unkept ? 'offline' : 'synced';
+    states.set(s.name, {where, changed: s.changed, both: before?.both ?? [], unsynced: s.unsynced, error: unkept ?? (where === 'synced' ? undefined : before?.error)});
     if (c && (s.fresh || s.changed) && before?.where !== 'offline') schedule(s.name, 0);
   }
   for (const k of [...states.keys()]) if (!here.some((s) => s.name === k)) states.delete(k);
@@ -185,6 +187,8 @@ export async function begin() {
   // Every change a person (or a Prompt) makes is sent; sync's own writes are not news.
   onChange((c) => { if (c.by !== draft.BY) schedule(c.repo); else tell(); });
   onState((k) => { if ((k === 'profile' || k === 'todo' || k === 'dotfiles') && connection()) void draft.syncHome(k).catch(away); });
+  // This browser's storage started or stopped refusing what is kept: said where each repo stands.
+  kept?.onTrouble(() => void look());
   // The Remote answers again: what waited for it goes now, not at its next try (up to a minute away).
   onReach(() => { if (remoteAway() || !connection()) return; for (const [r, s] of states) if (s.where === 'offline' && timers.has(r)) schedule(r, 0); });
   // Another account, or none: nothing read for the last one holds.

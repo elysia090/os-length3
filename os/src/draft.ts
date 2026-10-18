@@ -14,7 +14,7 @@
 import {t} from './i18n.ts';
 import {isNative, native} from './host.ts';
 import {api, deviceWord, json, RemoteError} from './remote.ts';
-import {store} from './repos.ts';
+import {kept, store} from './repos.ts';
 import {getState, setState} from './state.ts';
 
 export type Tree = Record<string, string | null>;
@@ -220,6 +220,17 @@ function serial<T>(repo: string, f: () => Promise<T>): Promise<T> {
   return next;
 }
 
+/**
+ * Agree `b` for `repo`, once the files it names are kept: what was agreed is
+ * never kept ahead of the copy (a tab that ends before the copy is written,
+ * or a browser whose storage refuses it, would read an older copy against a
+ * newer agreement next time, and send the older files back over the newer).
+ */
+async function agree(repo: string, b: Base) {
+  await kept?.flush();
+  await setBase(repo, b);
+}
+
 async function webSync(repo: string): Promise<Synced> {
   const out: Synced = {version: 0, sent: 0, taken: 0, both: [], unsynced: []};
   const path = at(repo);
@@ -235,7 +246,7 @@ async function webSync(repo: string): Promise<Synced> {
       const away = new Set(base.away ?? []);
       out.both.push(...await apply(repo, p, away));
       out.taken += p.take.length;
-      await setBase(repo, {version: remoteVersion, tree, head: there?.head ?? null, away: [...away].filter((a) => a in tree)});
+      await agree(repo, {version: remoteVersion, tree, head: there?.head ?? null, away: [...away].filter((a) => a in tree)});
       continue;
     }
     const set = Object.entries(here.tree).filter(([p, v]) => !(p in base.tree) || base.tree[p] !== v).slice(0, CHUNK);
@@ -259,7 +270,7 @@ async function webSync(repo: string): Promise<Synced> {
     for (const [p, v] of set) tree[p] = v;
     out.sent += set.length + remove.length;
     out.version = version;
-    await setBase(repo, {...base, version, tree});
+    await agree(repo, {...base, version, tree});
   }
   return out;
 }
