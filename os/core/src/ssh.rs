@@ -294,16 +294,25 @@ pub const TRIES_WHILE: Duration = Duration::from_secs(60);
 #[derive(Default)]
 pub struct Tries(HashMap<IpAddr, Vec<Instant>>);
 
+/// One address one way: an IPv4 peer that reached a socket taking both comes as ::ffff:a.b.c.d, and is a.b.c.d.
+pub fn canonical(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V6(v) => v.to_ipv4_mapped().map_or(ip, IpAddr::V4),
+        _ => ip,
+    }
+}
+
 impl Tries {
     /// Whether `ip` is held off now.
     pub fn held(&mut self, ip: IpAddr, now: Instant) -> bool {
+        let ip = canonical(ip);
         let Some(v) = self.0.get_mut(&ip) else { return false };
         v.retain(|t| now.duration_since(*t) < TRIES_WHILE);
         if v.is_empty() { self.0.remove(&ip); return false; }
         v.len() >= TRIES
     }
     pub fn failed(&mut self, ip: IpAddr, now: Instant) {
-        let v = self.0.entry(ip).or_default();
+        let v = self.0.entry(canonical(ip)).or_default();
         v.push(now);
         // Kept no longer than it counts.
         if v.len() > TRIES { v.remove(0); }
@@ -628,6 +637,10 @@ mod tests {
         assert!(t.held(a, now) && !t.held(b, now));
         assert!(t.held(a, now + TRIES_WHILE - Duration::from_secs(1)));
         assert!(!t.held(a, now + TRIES_WHILE));
+        // An IPv4 peer is one peer however its address came: ::ffff:a.b.c.d counts as a.b.c.d.
+        let (v4, mapped): (IpAddr, IpAddr) = ("192.168.1.11".parse().unwrap(), "::ffff:192.168.1.11".parse().unwrap());
+        for i in 0..TRIES { t.failed(if i % 2 == 0 { v4 } else { mapped }, now); }
+        assert!(t.held(v4, now) && t.held(mapped, now));
     }
 
     #[test]
