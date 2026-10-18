@@ -83,4 +83,10 @@ export default {
   'Prompts running keep it until they start again.': '動いている Prompt には、もう一度起動するまで残ります。',
   'The Prompt in {list} gets it when it starts again': '{list}の Prompt には、もう一度起動すると入ります',
   'The Prompts in {list} get it when they start again': '{list}の Prompt には、もう一度起動すると入ります',
+  'Desktop app': 'デスクトップアプリ',
+  'Length³ OS {version}': 'Length³ OS {version}',
+  'x86-64 Linux · .deb · {size}': 'x86-64 Linux · .deb · {size}',
+  'x86-64 Linux · AppImage · {size}': 'x86-64 Linux · AppImage · {size}',
+  'Download': 'ダウンロード',
+  'AppImage · {size} · for any other x86-64 Linux': 'AppImage · {size} · ほかの x86-64 Linux 向け',
 } as Record<string, string>;

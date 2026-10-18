@@ -335,16 +335,21 @@ to this repository, and its Settings → Build say, once:
 |---|---|
 | Root directory | `os` |
 | Build command | `npm run build:cloudflare`: the Prompt from the release `RELEASE` names (`scripts/prompt-files.mjs`, checked against the digest `shared/web-releases.json` pins for it), then the app |
-| Deploy command | `node service/deploy.ts`: the migrations on Neon's production branch (no branch is made for a deploy), the bucket, then the Worker with the secrets it lacks; the first build prints the link in its log |
-| Variables and secrets | `NEON_PROJECT_ID`; secrets `NEON_API_KEY` (a Neon API key for the project) and `GITHUB_TOKEN` (read-only, for this private repository's releases) |
+| Deploy command | `node service/deploy.ts`: the migrations on Neon's production branch (no branch is made for a deploy), the bucket, then the Worker with the secrets it lacks (the first build prints the link in its log), then the release's files the Remote serves to anyone (`service/mirror.ts`): each root `core/src/root.rs` pins and the desktop app `shared/desktop-releases.json` pins for `RELEASE`, taken from the GitHub release where the bucket lacks them, checked against those pins, and put with wrangler |
+| Variables and secrets | `NEON_PROJECT_ID`; secrets `NEON_API_KEY` (a Neon API key for the project) and `GITHUB_TOKEN` (read-only, for this private repository's releases: the build's Prompt and the deploy's release files) |
 | Branch control | main; no preview builds |
 
 The Prompt the web serves is a released one: a newer one ships by releasing
 it (a new version in `RELEASE`, `.github/workflows/release.yml`), then
 pinning what was released, as its notes give them: the root in
-`core/src/root.rs` and the web zip in `shared/web-releases.json`. A build
-takes only the web zip this tree pins, so a release made under that tag by
-anyone else is not what production serves. A new link
+`core/src/root.rs`, the web zip in `shared/web-releases.json` and the
+desktop app in `shared/desktop-releases.json`. A build takes only the web
+zip this tree pins, and a deploy puts on the Remote only the roots and
+desktop files this tree pins, so a release made under that tag by anyone
+else is not what production serves. The Remote serves them to anyone, the
+roots by digest (`/v1/os/<sha256>`, what the app and l3 fetch first) and
+the desktop app by its file's name (`/v1/desktop/<file>`, what the web's
+Runtime offers to download); GitHub keeps no Cloudflare credentials. A new link
 is a new `ENTER_KEY`: set in the Worker's Variables and Secrets, the old
 link opens nothing at once. By hand, from a machine that reaches Neon and
 Cloudflare (`npx wrangler login`):
