@@ -73,8 +73,79 @@ pub fn end_device(token: &str) -> Result<()> {
     Client::open()?.json("POST", "/api/auth/revoke-session", Some(serde_json::json!({"token": token}))).map(|_| ())
 }
 
+// ---- the plan (service/plan.ts): the Remote decides; this only reads it and asks ----
+
+/// What a free account may keep on the Remote, and what it keeps now.
+#[derive(Serialize, Deserialize, Debug, Default, Clone, Copy)]
+pub struct Allowance { pub repos: u64, pub bytes: u64, #[serde(default)] pub names: u64 }
+
+/// The account's plan as the Remote says it; `plan` is "free", "paid", or "none" (this Remote has no plan).
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Plan {
+    pub plan: String,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub renews: Option<u64>,
+    #[serde(default)]
+    pub ends: Option<u64>,
+    #[serde(rename = "graceUntil", default)]
+    pub grace_until: Option<u64>,
+    #[serde(default)]
+    pub usage: Option<Allowance>,
+    #[serde(default)]
+    pub free: Option<Allowance>,
+    /// Paying is offered on this Remote (it has Stripe's keys).
+    #[serde(default)]
+    pub buy: bool,
+    /// There is a subscription to manage.
+    #[serde(default)]
+    pub manage: bool,
+}
+
+pub fn plan() -> Result<Plan> { get("/v1/plan") }
+
+/// Whether `page` is one the plan may be bought or managed on: Stripe's own (https, on stripe.com), or a
+/// page of the Remote `remote` itself (a Remote of one's own may stand in for Stripe, as in development).
+pub fn plan_page_ok(remote: &str, page: &str) -> bool {
+    let host = |u: &str| u.split_once("://").map(|(s, r)| (s.to_string(), r.split(['/', '?', '#']).next().unwrap_or_default().to_ascii_lowercase()));
+    match (host(page), host(remote)) {
+        (Some((s, h)), Some((rs, rh))) => (s == "https" && (h == "stripe.com" || h.ends_with(".stripe.com"))) || (s == rs && h == rh),
+        _ => false,
+    }
+}
+
+/// The page to subscribe on (`checkout`) or to manage the subscription on (`portal`), as the Remote makes
+/// it for this account: Stripe's, never one this device names.
+pub fn plan_page(kind: &str) -> Result<String> {
+    if kind != "checkout" && kind != "portal" { return Err(crate::tr!("No such page of the plan", "プランにそのページはありません")); }
+    let c = Client::open()?;
+    let v = c.json("POST", &format!("/v1/plan/{kind}"), Some(serde_json::json!({})))?;
+    let url = v["url"].as_str().unwrap_or_default().to_string();
+    let remote = crate::remote::connection().map(|c| c.url).unwrap_or_default();
+    if !plan_page_ok(&remote, &url) { return Err(crate::tr!("The Remote named a page that is not Stripe's or its own", "Remote が Stripe のものでも自分のものでもないページを示しました")); }
+    Ok(url)
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_plan_is_bought_only_on_stripes_pages_or_the_remotes_own() {
+        let r = "https://os.length3.com";
+        for ok in ["https://checkout.stripe.com/c/pay/cs_1", "https://billing.stripe.com/p/session/x", "https://os.length3.com/dev-billing/checkout?x"] { assert!(super::plan_page_ok(r, ok), "{ok}"); }
+        for no in ["http://checkout.stripe.com/c", "https://stripe.com.evil.example/", "https://evilstripe.com/", "https://os.length3.com.evil/", "javascript:alert(1)", ""] { assert!(!super::plan_page_ok(r, no), "{no}"); }
+        assert!(super::plan_page_ok("http://127.0.0.1:8950", "http://127.0.0.1:8950/dev-billing/portal?c=1"));
+        assert!(!super::plan_page_ok("http://127.0.0.1:8950", "http://127.0.0.1:8951/dev-billing/portal"));
+    }
+
+    #[test]
+    fn a_plan_reads_as_the_remote_says_it() {
+        let p: super::Plan = serde_json::from_str(r#"{"plan":"free","status":null,"usage":{"repos":2,"bytes":25000000,"names":1},"free":{"repos":3,"bytes":100000000,"names":1},"buy":true,"manage":false}"#).unwrap();
+        assert_eq!((p.plan.as_str(), p.usage.unwrap().repos, p.free.unwrap().bytes, p.buy), ("free", 2, 100_000_000, true));
+        let none: super::Plan = serde_json::from_str(r#"{"plan":"none"}"#).unwrap();
+        assert!(none.usage.is_none() && !none.buy);
+    }
+
     #[test]
     fn a_devices_token_is_never_written_out() {
         let d: super::Device = serde_json::from_str(r#"{"token":"secret","userAgent":"l3","updatedAt":"2026-10-17"}"#).unwrap();

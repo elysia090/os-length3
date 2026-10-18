@@ -51,6 +51,7 @@
 import {and, asc, desc, eq, gt, gte, inArray, isNull, lt, lte, sql} from 'drizzle-orm';
 import type {Context, Hono} from 'hono';
 import {claim, codeOf, HOLD, liveAddress, serverAddress, shownAs, takeDown} from './names.ts';
+import type {Plans} from './plan.ts';
 import {ago, body, lock, qualified, refuse, rows, type Db, type Vars} from './request.ts';
 import {address, board, boardSeen, guest, invite, member, principalCode, REACH, repoPublic, server, talk, todoItem} from './schema.ts';
 
@@ -106,6 +107,8 @@ export interface ServerDeps {
   secret?: string;
   /** No board is opened past its people (a Remote for research: enter.ts). */
   closed?: boolean;
+  /** What the account's plan allows (plan.ts): making a server is paid. */
+  plans?: Plans;
 }
 
 type Board = {id: string; serverId: string; name: string; reach: number; goneAt: Date | null};
@@ -197,6 +200,8 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     if (!NAME.test(handle)) return c.json({error: 'Its name: letters, digits, - . _'}, 400);
     const made = await db.transaction(async (tx: Db) => {
       await lock(tx, me);
+      // Making one is the plan's to allow; being asked into one, and writing in it, never is.
+      await d.plans?.makeServer(tx, me);
       if (!await liveAddress(tx, me)) refuse(409, {error: 'Claim a name first'});
       if (domain !== d.domain) {
         const [on] = await tx.select({a: address.address}).from(address).where(and(eq(address.userId, me), eq(address.domain, domain), isNull(address.releasedAt), isNull(address.lapsedAt)));

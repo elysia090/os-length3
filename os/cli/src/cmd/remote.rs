@@ -152,3 +152,57 @@ pub fn no_sync(_: &Ctx, _: &Call) -> Result<Reply> {
     Err(Error::Usage(tr!("There is no l3 sync: every change goes to the Remote by itself, and the Remote's come in when a repo is read. l3 remote shows where each repo stands",
         "l3 sync はありません。変更はひとりでに Remote へ送られ、Remote の変更は repo を読むときに取り込まれます。l3 remote で各 repo の状態を見られます")))
 }
+
+/// A size as the Remote's allowance is said (a megabyte a million bytes, as the app says it).
+fn kept(n: u64) -> String {
+    let units = ["B", "KB", "MB", "GB", "TB"];
+    let (mut v, mut u) = (n as f64, 0);
+    while v >= 1000.0 && u < units.len() - 1 { v /= 1000.0; u += 1; }
+    if u == 0 { format!("{n} B") } else if v >= 100.0 { format!("{v:.0} {}", units[u]) } else { format!("{v:.1} {}", units[u]) }
+}
+
+/// What paid adds, the same three as the app's Plan says.
+fn paid_adds() -> [String; 3] {
+    [tr!("Keep more than the free allowance on the Remote", "無料の枠を超えて Remote に置ける"),
+        tr!("Make servers: boards and talk with people you know", "サーバーを作れる：知り合いとの板と話"),
+        tr!("Names on your own domain (name@yourdomain), and more names here", "自分のドメインの名前（name@yourdomain）と、この Remote での2つ目からの名前")]
+}
+
+/// `l3 remote plan`: free or paid, until when, and what the Remote keeps against the free allowance, as the
+/// Remote says it (it decides; l3 shows). The page to subscribe or manage on is `l3 remote plan subscribe|manage`.
+pub fn plan(_: &Ctx, _: &Call) -> Result<Reply> {
+    let p = account::plan()?;
+    if p.plan == "none" {
+        return Ok(Reply::data(tr!("Plan  none: this Remote keeps everything for everyone", "プラン  なし：この Remote は誰のものでもすべて置きます"), json!(p)));
+    }
+    let paid = p.plan == "paid";
+    let when = if let Some(g) = p.grace_until.filter(|_| paid) { tr!(" · a payment did not go through; paid until {}", " · 支払いができませんでした。{}まで有料プラン", out::day(g)) }
+        else if let Some(e) = p.ends { if paid { tr!(" · ends {}", " · {}に終了", out::day(e)) } else { tr!(" · ended {}; what you made stays", " · {}に終了。作ったものはそのまま残ります", out::day(e)) } }
+        else if let Some(r) = p.renews.filter(|_| paid) { tr!(" · renews {}", " · {}に更新", out::day(r)) }
+        else { String::new() };
+    let mut t = vec![format!("{}  {}{when}", tr!("Plan", "プラン"), if paid { tr!("paid", "有料") } else { tr!("free", "無料") })];
+    let (u, f) = (p.usage.unwrap_or_default(), p.free.unwrap_or_default());
+    let of = |used: String, cap: String| if paid { used } else { tr!("{} of {}", "{} / {}", used, cap) };
+    t.push(format!("  {}  {}", tr!("Repos on the Remote", "Remote にある repo"), of(u.repos.to_string(), f.repos.to_string())));
+    t.push(format!("  {}  {}", tr!("Kept on the Remote", "Remote に置いている量"), of(kept(u.bytes), kept(f.bytes))));
+    if !paid && (u.repos > f.repos || u.bytes > f.bytes) {
+        t.push(tr!("  The Remote keeps what is there; what is new stays on this device until there is room", "  Remote にあるものはそのままです。新しいものは空きができるまでこの端末に残ります"));
+    }
+    t.push(if paid { tr!("Paid gives", "有料プランで使えるもの") } else { tr!("Paid adds", "有料プランで増えるもの") });
+    for a in paid_adds() { t.push(format!("  {a}")); }
+    t.push(if !p.buy { tr!("Paid features cannot be bought on this Remote yet", "この Remote ではまだ有料プランを購入できません") }
+        else if paid && p.manage { tr!("l3 remote plan manage gives the page to manage or cancel it", "l3 remote plan manage で管理・解約するページを出します") }
+        else if paid { String::new() }
+        else { tr!("l3 remote plan subscribe gives the page to subscribe on", "l3 remote plan subscribe で登録するページを出します") });
+    t.retain(|l| !l.is_empty());
+    Ok(Reply::data(t.join("\n"), json!(p)))
+}
+
+/// `l3 remote plan subscribe|manage`: the page, as the Remote makes it for this account (Stripe's), to open in a browser.
+pub fn plan_page(_: &Ctx, call: &Call) -> Result<Reply> {
+    let kind = if call.word(0) == Some("manage") { "portal" } else { "checkout" };
+    let url = account::plan_page(kind)?;
+    let said = if kind == "portal" { tr!("Open this page in a browser to manage or cancel the plan:", "ブラウザでこのページを開くと、プランを管理・解約できます：") }
+        else { tr!("Open this page in a browser to subscribe:", "ブラウザでこのページを開くと登録できます：") };
+    Ok(Reply::data(format!("{said}\n  {url}"), json!({"url": url})))
+}

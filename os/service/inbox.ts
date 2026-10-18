@@ -26,6 +26,7 @@ import {and, eq, gt, isNull, or, sql} from 'drizzle-orm';
 import type {Hono} from 'hono';
 import {HTTPException} from 'hono/http-exception';
 import {byCode, claim, codeOf, HOLD, kept, live, release} from './names.ts';
+import type {Plans} from './plan.ts';
 import {ago, body, lock, ms, refuse, rows, type Db, type Vars} from './request.ts';
 import {address, contact, message, signal, throttle} from './schema.ts';
 
@@ -51,6 +52,8 @@ export interface InboxDeps {
   txt?: (name: string) => Promise<string[]>;
   /** How long what a domain's DNS said is taken as still so (an hour; tests read it every time). */
   recheck?: number;
+  /** What the account's plan allows (plan.ts): a name on one's own domain, and more than one here, are paid. */
+  plans?: Plans;
 }
 
 /** A name's TXT records through DNS over HTTPS (Cloudflare's resolver), each record's strings joined; throws when DNS could not be asked. */
@@ -208,6 +211,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const [{n, own}] = await db.select({n: sql<number>`count(*)::int`, own: sql<number>`count(*) filter (where ${address.address} = ${`${name}@${domain}`})::int`})
       .from(address).where(and(eq(address.userId, me), kept));
     if (!own && n >= INBOX.addresses) return c.json({error: 'Too many names'}, 409);
+    await d.plans?.claimName(db, me, `${name}@${domain}`, domain, !!own);
     if (domain !== d.domain) {
       // The domain's owner says, in its DNS, that this Remote holds it for this account.
       const proof = await proofOf(me, domain);
