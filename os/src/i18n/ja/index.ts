@@ -7,6 +7,7 @@
 //   git      Git: issues, work, changes           inbox    Inbox
 //   runtime  Runtime                             server   Server
 //   service  what the Remote says when it refuses (service/*.ts)
+//   sync     keeping in step: the browser's copy, sync, Home's settings
 
 import base from './base.ts';
 import git from './git.ts';
@@ -17,7 +18,8 @@ import runtime from './runtime.ts';
 import shell from './shell.ts';
 import server from './server.ts';
 import service from './service.ts';
+import sync from './sync.ts';
 
-const parts: Record<string, string>[] = [shell, base, pages, remote, git, inbox, runtime, server, service];
+const parts: Record<string, string>[] = [shell, base, pages, remote, git, inbox, runtime, server, service, sync];
 const ja: Record<string, string> = Object.assign({}, ...parts);
 export default ja;

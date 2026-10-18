@@ -2,12 +2,14 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {sha256} from '../service/app.ts';
 import {browserOnRemote} from './testing-remote.ts';
+import {purge} from '../service/sweep.ts';
+import {sql} from 'drizzle-orm';
 
 // A browser on one Remote, all in this process (testing.ts). The tests below
 // follow one repo, `notes`, through its life, each from where the one
 // before left it.
 const b = await browserOnRemote();
-const {store, draft, history, asked, elsewhere, text, names, token, URL: URL_} = b;
+const {store, draft, history, asked, elsewhere, text, names, token, URL: URL_, db, signIn} = b;
 const {setState, getState} = b.state;
 const enc = new TextEncoder();
 
@@ -125,6 +127,129 @@ test("TODO from two devices is joined; the profile is the Remote's when both cha
   // Agreed then and there (bug: taken but never agreed, so each look took it again, three reads at a time).
   assert.deepEqual(asked, ['/v1/home/profile']);
   assert.equal(draft.homeMoved('profile', p.version + 1), false);
+});
+
+test('a setting changed here and not sent yet is not let go with the page; one as the Remote has it is', async () => {
+  await draft.syncHome('todo');
+  assert.ok(draft.homeAgreed().includes('todo'));
+  // Written while the Remote cannot be reached: it stays with this browser until it is sent.
+  await setState('todo', JSON.stringify([{id: 'offline', title: 'written while away'}]));
+  assert.equal(draft.homeAgreed().includes('todo'), false);
+  await draft.syncHome('todo');
+  assert.ok(draft.homeAgreed().includes('todo'));
+});
+
+test('a copy in step is never taken apart by a Remote that does not have it: discarded there, or another account\'s', async () => {
+  await store.create('kept', 'standard');
+  await store.write('kept', 'README.md', '# kept\n');
+  await draft.sync('kept');
+  const files = async () => (await store.tree('kept', '')).map((e) => e.name).sort();
+  const before = await files();
+  // Discarded on another device (turned off, then for good): nothing here is taken for removed, nor called in step.
+  await db.execute(sql`update repo set off_at = now() where name = 'kept'`);
+  await purge(db, sql`r.name = 'kept'`);
+  await assert.rejects(draft.sync('kept'), /discarded on the Remote/);
+  assert.deepEqual(await files(), before);
+  assert.equal(await text('kept', 'README.md'), '# kept\n');
+  // Someone else signed in on this browser: not theirs to take apart either.
+  const other = await signIn('Mio Other');
+  await setState('remote', JSON.stringify({url: URL_, token: other}));
+  await assert.rejects(draft.sync('kept'), /another account/);
+  assert.deepEqual(await files(), before);
+  // An agreement from before accounts were named, and a Remote without the repo: the same.
+  const s = JSON.parse(getState('sync')!);
+  delete s.repos.kept.who;
+  await setState('sync', JSON.stringify(s));
+  await assert.rejects(draft.sync('kept'), /does not have this repo/);
+  assert.deepEqual(await files(), before);
+  await setState('remote', JSON.stringify({url: URL_, token}));
+});
+
+test('a copy, or a setting, agreed with one account is not sent to another that signs in on this browser', async () => {
+  await store.create('mine', 'standard');
+  await store.write('mine', 'README.md', '# Sora\'s\n');
+  await draft.sync('mine');
+  const files = async () => (await store.tree('mine', '')).map((e) => e.name).sort();
+  const before = await files();
+  // Another person, whose Remote has a repo of the same name.
+  const other = await signIn('Mio Other');
+  const auth = {Authorization: `Bearer ${other}`, 'Content-Type': 'application/json'};
+  const sha = await sha256(enc.encode('Mio\'s\n'));
+  await fetch(`${URL_}/v1/blobs/${sha}`, {method: 'PUT', headers: {Authorization: `Bearer ${other}`}, body: 'Mio\'s\n'});
+  await fetch(`${URL_}/v1/repos/mine/draft`, {method: 'PATCH', headers: auth, body: JSON.stringify({version: 0, set: {'mio.md': sha}, remove: []})});
+  // Sora's TODO, changed here and not sent yet.
+  await draft.syncHome('todo');
+  await setState('todo', JSON.stringify([{id: 'sora', title: 'Sora\'s, not sent yet'}]));
+  await setState('remote', JSON.stringify({url: URL_, token: other}));
+  // Signed in as Mio: Sora's copy is neither sent into Mio's repo nor joined with it, and Sora's TODO stays Sora's.
+  await assert.rejects(draft.sync('mine'), /another account/);
+  assert.deepEqual(await files(), before);
+  const mio = await (await fetch(`${URL_}/v1/repos/mine`, {headers: auth})).json() as {draft: Record<string, string>};
+  assert.deepEqual(Object.keys(mio.draft), ['mio.md']);
+  await draft.syncHome('todo');
+  const mioTodo = await (await fetch(`${URL_}/v1/home/todo`, {headers: auth})).json() as {value: string | null};
+  assert.equal((mioTodo.value ?? '').includes('Sora'), false);
+  assert.match(getState('todo') ?? '', /not sent yet/);
+  // Sora again: all of it goes to Sora's.
+  await setState('remote', JSON.stringify({url: URL_, token}));
+  assert.equal((await draft.sync('mine')).sent, 0);
+  await draft.syncHome('todo');
+  const soraTodo = await (await fetch(`${URL_}/v1/home/todo`, {headers: {Authorization: `Bearer ${token}`}})).json() as {value: string};
+  assert.match(soraTodo.value, /not sent yet/);
+});
+
+test('a file larger than the Remote takes stays here, named, and the rest of the repo is sent all the same', async () => {
+  await store.create('big', 'standard');
+  await store.add('big', '', 'big.log', 'x'.repeat((16 << 20) + 1));
+  await store.write('big', 'README.md', '# sent\n');
+  const s = await draft.sync('big');
+  assert.deepEqual(s.unsynced.map(([p]) => p), ['big.log']);
+  const remote = await (await fetch(`${URL_}/v1/repos/big`, {headers: {Authorization: `Bearer ${token}`}})).json() as {draft: Record<string, string>};
+  assert.equal('big.log' in remote.draft, false);
+  assert.equal(await (await fetch(`${URL_}/v1/blobs/${remote.draft['README.md']}`, {headers: {Authorization: `Bearer ${token}`}})).text(), '# sent\n');
+  // Said apart, and not a change waiting to go (so it is not sent again and again, nor shown as sending).
+  const st = (await draft.status()).find((x) => x.name === 'big');
+  assert.deepEqual([st?.unsynced.map(([p]) => p), st?.changed], [['big.log'], 0]);
+  await store.remove('big', 'big.log');
+});
+
+test('a repo made here under a name the Remote remembers as discarded is sent as a new repo', async () => {
+  await store.create('again', 'standard');
+  await draft.sync('again');
+  await db.execute(sql`update repo set off_at = now() where name = 'again'`);
+  await purge(db, sql`r.name = 'again'`);
+  // Made here anew (on this device or another): never in step, so it is a new repo, not the discarded one back.
+  await draft.forget('again');
+  await store.write('again', 'README.md', '# made again\n');
+  const s = await draft.sync('again');
+  assert.ok(s.sent > 0);
+  const there = await (await fetch(`${URL_}/v1/repos/again`, {headers: {Authorization: `Bearer ${token}`}})).json() as {draft: Record<string, string>};
+  assert.equal(await (await fetch(`${URL_}/v1/blobs/${there.draft['README.md']}`, {headers: {Authorization: `Bearer ${token}`}})).text(), '# made again\n');
+});
+
+test('a change that cannot get in, round after round, is said so and not taken for in step', async () => {
+  await store.create('busy', 'standard');
+  await draft.sync('busy');
+  await store.write('busy', 'README.md', '# waits\n');
+  await setState('todo', JSON.stringify([{id: 'busy', title: 'waits'}]));
+  // Another device moves each first, every time (the Remote answers every write: moved).
+  const real = globalThis.fetch;
+  globalThis.fetch = ((url: string, init?: RequestInit) => {
+    const p = new URL(url).pathname;
+    if ((init?.method === 'PATCH' && p.endsWith('/draft')) || (init?.method === 'PUT' && p === '/v1/home/todo')) {
+      return Promise.resolve(new Response(JSON.stringify({error: 'moved', version: 999, value: '[]'}), {status: 409, headers: {'Content-Type': 'application/json'}}));
+    }
+    return real(url, init);
+  }) as typeof fetch;
+  try {
+    await assert.rejects(draft.sync('busy'), /kept moving/);
+    await assert.rejects(draft.syncHome('todo'), /kept changing/);
+  } finally { globalThis.fetch = real; }
+  assert.equal((await draft.status()).find((x) => x.name === 'busy')?.changed, 1);
+  // Once it can, it goes.
+  assert.equal((await draft.sync('busy')).sent, 1);
+  await draft.syncHome('todo');
+  assert.equal(draft.homeMoved('todo', (await (await fetch(`${URL_}/v1/home/todo`, {headers: {Authorization: `Bearer ${token}`}})).json() as {version: number}).version), false);
 });
 
 test('an issue is worked on in its own copy; pushed, submitted, reviewed and merged into main', async () => {
