@@ -17,6 +17,7 @@ import {isNative} from './host.ts';
 import {connection, onConnection, onReach, remoteAway, RemoteError} from './remote.ts';
 import {kept, onChange} from './repos.ts';
 import {dropState, onState} from './state.ts';
+import {othersOpen, prune} from './tabs.ts';
 
 /** Where a repo here stands; 'off': turned off on the Remote (kept there 30 days), nothing is sent until it is on again. */
 export type Where = 'local' | 'sending' | 'synced' | 'offline' | 'off';
@@ -111,6 +112,7 @@ export async function look(): Promise<void> {
   // What is here could not be read: nothing is decided from nothing (no state is dropped), and it is said.
   const here = await draft.status().catch((e: unknown) => { console.error('look: the repos here could not be read', e); return null; });
   if (!here) return;
+  void prune();
   const c = connection();
   for (const s of here) {
     if (timers.has(s.name)) continue;
@@ -165,6 +167,8 @@ export async function bring(repo: string): Promise<void> {
  */
 function leave() {
   if (!kept || !connection()) return;
+  // Another tab of this browser still holds the same copy and settings: they stay for it, and go with the last tab.
+  if (othersOpen()) return;
   const go = [...states].filter(([r, s]) => s.where === 'synced' && !s.unsynced.length && !timers.has(r) && !kept!.waiting(r)).map(([r]) => r);
   if (go.length) {
     void kept.letGo(go);
