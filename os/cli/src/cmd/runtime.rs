@@ -5,6 +5,7 @@
 use super::{stdin_text, Ctx};
 use crate::args::Call;
 use crate::out::{self, bytes, things, Error, Reply, Result};
+use crate::spec::{Fact, On};
 use crate::target;
 use length3_core::{fetch::Progress, home, paths, remote, root, tr, usage};
 use serde_json::json;
@@ -29,8 +30,11 @@ pub fn page(_: &Ctx, _: &Call) -> Result<Reply> {
     });
     t.push(String::new());
     t.push(tr!("This device  {} free of {} (the host's figures) · this OS {}", "この端末  空き {} / {}（ホストの値） · この OS {}", bytes(s.host_free), bytes(s.host_total), bytes(s.allocated)));
+    if s.freeable > 0 { crate::menu::page_fact(Fact::AnyFreeable); }
     for i in &s.items {
         let act = match i.room { usage::Room::Free | usage::Room::SyncFree => tr!("free", "空ける"), usage::Room::Keep => tr!("stays", "残す") };
+        crate::menu::see(|| crate::menu::Subject { on: On::Thing, word: i.id.strip_prefix("repo:").unwrap_or(&i.id).to_string(), repo: None,
+            label: i.what.clone(), detail: format!("{} · {act}", bytes(i.allocated)), facts: if i.room == usage::Room::Keep { Vec::new() } else { vec![Fact::Freeable] } });
         t.push(format!("  {:>9}  {}  {}  {}", bytes(i.allocated), act, i.what, i.detail));
         t.push(format!("             {}{}", i.why, if i.room == usage::Room::Keep { String::new() } else { tr!("  (l3 free {})", "（l3 free {}）", i.id.strip_prefix("repo:").unwrap_or(&i.id)) }));
     }

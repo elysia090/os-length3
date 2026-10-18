@@ -11,17 +11,153 @@ use crate::{args::Call, help, out::{Reply, Result}};
 /// Words in English and in Japanese.
 pub type Words = [&'static str; 2];
 
+/// The words for the language spoken.
+pub fn say(w: Words) -> &'static str {
+    if length3_core::i18n::ja() { w[1] } else { w[0] }
+}
+
+/// Each command's purpose: the rail's places, then l3's own words. New is
+/// the rail's round + (a new repo): it starts something rather than opening
+/// a place, so no command is its own, only a deed offered there.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Group { Home, Forge, File, Git, Runtime, Remote, Server, Inbox, Other }
+pub enum Group { Home, Forge, File, Git, Runtime, Remote, Server, Inbox, Other, New }
 
 impl Group {
     pub const ALL: [Group; 9] = [Group::Home, Group::Forge, Group::File, Group::Git, Group::Runtime, Group::Remote, Group::Server, Group::Inbox, Group::Other];
+    /// The rail, top to bottom, as the menu shows it (purposes.ts RAIL).
+    pub const RAIL: [Group; 9] = [Group::Home, Group::Forge, Group::File, Group::Git, Group::Runtime, Group::Remote, Group::Server, Group::Inbox, Group::New];
 
     pub fn name(self) -> &'static str {
         match self {
             Group::Home => "Home", Group::Forge => "Forge", Group::File => "File", Group::Git => "Git", Group::Runtime => "Runtime",
-            Group::Remote => "Remote", Group::Server => "Server", Group::Inbox => "Inbox", Group::Other => "l3",
+            Group::Remote => "Remote", Group::Server => "Server", Group::Inbox => "Inbox", Group::Other => "l3", Group::New => "+",
         }
+    }
+
+    /// What the place is for, in one phrase: the rail's role line (purposes.ts, its Japanese the app's).
+    pub fn role(self) -> Words {
+        match self {
+            Group::Home => ["Profile", "プロフィール"],
+            Group::Forge => ["Your workshop", "自分の作業場"],
+            Group::File => ["The tree of /", "/ の tree"],
+            Group::Git => ["Issues and commits", "Issue とコミット"],
+            Group::Runtime => ["This device and its environments", "この端末と環境"],
+            Group::Remote => ["Where your repos are kept", "repo を置く場所"],
+            Group::Server => ["People you know", "知り合い"],
+            Group::Inbox => ["Messages to you", "自分に届くメッセージ"],
+            Group::New => ["New repo", "新しい repo"],
+            Group::Other => ["", ""],
+        }
+    }
+}
+
+// ---- What the menu offers (menu.rs) ----
+//
+// Bare `l3` on a terminal shows the rail; a purpose shows its page (the
+// forms marked `page`), and under it the deeds of each thing on the page and
+// of the page itself. A deed is a form of this table, given the words the
+// thing it is pressed on supplies, asking for the rest in place; so every
+// choice in the menu is a command l3 parses and runs, and says as it runs.
+
+/// What holds of this device or of a thing on a page. Each is read where the
+/// page is made (cmd/*), by the same reading that writes the page itself
+/// (an issue's from the facts its card's "next:" line is written from).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Fact {
+    // This device.
+    SignedIn, SignedOut, NoRoot,
+    // A TODO item.
+    Done, NotDone,
+    // A repo here: on Forge's band or not; a Prompt of it running.
+    OnBand, OffBand, Running,
+    // A repo on the Remote: turned off; only there.
+    TurnedOff, OnlyThere,
+    // An issue (git.rs `facts`).
+    CanStart, CanCommit, CanPush, Undecided, Approved, WorkedHere, OnWork, Closed,
+    // A conversation: someone who wrote first, not accepted yet.
+    Request,
+    // Something on this device by size that can go; anything on the page that can.
+    Freeable, AnyFreeable,
+    // A folder, not a file (File).
+    Folder,
+}
+
+/// What a deed is pressed on: a thing on the page (its word fills the slot
+/// that takes it), or the page itself.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum On { Page, Todo, Repo, Issue, RemoteRepo, Path, Thing, Board, Thread }
+
+/// Where a deed sits among a thing's deeds (DESIGN.md §3, "Where a deed
+/// sits"): what the thing is for first, then the rest, then what goes
+/// against it or leaves it.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub enum Weight { Own, Also, Away }
+
+/// A deed the menu offers: a button's word, what it is pressed on, when it is
+/// offered, the words it gives the form itself and what it asks for.
+#[derive(Clone, Copy, Debug)]
+pub struct Deed {
+    /// The button's word (the app's, where the app has the button).
+    pub label: Words,
+    pub on: On,
+    /// Offered when each of these holds of the thing (or of the device)…
+    pub when: &'static [Fact],
+    /// …and none of these.
+    pub unless: &'static [Fact],
+    /// Words it gives slots itself (slot, word): `review ISSUE approve`.
+    pub gives: &'static [(usize, &'static str)],
+    /// Flags it asks for too: a note (-m, may be left empty), a template (-t, chosen).
+    pub asks: &'static [Flag],
+    /// The words over its one written field, where the slot's own do not say it ("Name").
+    pub field: Option<Words>,
+    pub weight: Weight,
+    /// Asked in place first, as the app asks in the card: it cannot be undone at once.
+    pub confirm: bool,
+    /// Purposes it is offered on besides its command's own.
+    pub also: &'static [Group],
+}
+
+impl Deed {
+    pub const fn when(self, when: &'static [Fact]) -> Deed { Deed { when, ..self } }
+    pub const fn unless(self, unless: &'static [Fact]) -> Deed { Deed { unless, ..self } }
+    pub const fn gives(self, gives: &'static [(usize, &'static str)]) -> Deed { Deed { gives, ..self } }
+    pub const fn asks(self, asks: &'static [Flag]) -> Deed { Deed { asks, ..self } }
+    pub const fn field(self, w: Words) -> Deed { Deed { field: Some(w), ..self } }
+    pub const fn also(self, also: &'static [Group]) -> Deed { Deed { also, ..self } }
+    pub const fn second(self) -> Deed { Deed { weight: Weight::Also, ..self } }
+    pub const fn away(self) -> Deed { Deed { weight: Weight::Away, ..self } }
+    pub const fn confirm(self) -> Deed { Deed { confirm: true, ..self } }
+}
+
+/// A deed pressed on `on`, offered always, asking only for what its slots need.
+const fn d(label: Words, on: On) -> Deed {
+    Deed { label, on, when: &[], unless: &[], gives: &[], asks: &[], field: None, weight: Weight::Own, confirm: false, also: &[] }
+}
+
+/// The words over a field the menu asks to be written, and under it what goes in it.
+pub fn field_words(a: Arg) -> (Words, Words) {
+    match a {
+        Arg::Text("\"Fix：title\"") => (["First line", "1行目"], ["Kind：title, as Fix：The title wraps on a phone", "種別：件名。例：Fix：スマホでタイトルが折り返す"]),
+        Arg::Text("NAME") => (["Name", "名前"], ["Letters, digits and . _ -, up to 64 characters", "英数字と . _ - 、64文字まで"]),
+        Arg::Text("\"text\"") => (["Text", "本文"], ["", ""]),
+        Arg::Address => (["To", "宛先"], ["A name on your Remote (ren), or name@domain", "Remote の名前（ren）か name@domain"]),
+        Arg::Path { .. } => (["Path", "パス"], ["REPO/PATH, as File shows it", "REPO/PATH（File の見せ方で）"]),
+        Arg::Repo { .. } => (["Repo", "repo"], ["", ""]),
+        Arg::Issue => (["Issue", "Issue"], ["", ""]),
+        Arg::Number(_) => (["Number", "番号"], ["", ""]),
+        Arg::Dotfile => (["Dotfile", "dotfile"], ["", ""]),
+        _ => (["", ""], ["", ""]),
+    }
+}
+
+/// The words over a flag the menu asks for.
+pub fn flag_words(f: Flag) -> Words {
+    match f {
+        Flag::Note("detail") => ["Detail (may be left empty)", "詳細（なくてもよい）"],
+        Flag::Note("why") => ["Why (may be left empty)", "理由（なくてもよい）"],
+        Flag::Note(_) => ["Note (may be left empty)", "メモ（なくてもよい）"],
+        Flag::Template => ["Template", "テンプレート"],
+        _ => ["", ""],
     }
 }
 
@@ -92,6 +228,10 @@ pub struct Form {
     pub run: Run,
     /// Kept for those used to it, not shown in help.
     pub hidden: bool,
+    /// Part of its purpose's page: what picking the purpose in the menu prints.
+    pub page: bool,
+    /// What the menu offers that this form does.
+    pub deeds: &'static [Deed],
 }
 
 pub struct Command {
@@ -111,10 +251,18 @@ const DEVICE: Needs = Needs { remote: false, in_prompt: false };
 const REMOTE: Needs = Needs { remote: true, in_prompt: false };
 
 const fn f(verb: Option<&'static str>, args: &'static [Arg], flags: &'static [Flag], about: Words, needs: Needs, sync: Sync, run: Run) -> Form {
-    Form { verb, args, flags, about, needs, sync, run, hidden: false }
+    Form { verb, args, flags, about, needs, sync, run, hidden: false, page: false, deeds: &[] }
 }
 const fn hidden(verb: Option<&'static str>, args: &'static [Arg], needs: Needs, sync: Sync, run: Run) -> Form {
-    Form { verb, args, flags: &[], about: ["", ""], needs, sync, run, hidden: true }
+    Form { verb, args, flags: &[], about: ["", ""], needs, sync, run, hidden: true, page: false, deeds: &[] }
+}
+/// A form that is (part of) its purpose's page in the menu.
+const fn page(f: Form) -> Form {
+    Form { page: true, ..f }
+}
+/// A form the menu offers as these deeds.
+const fn offer(deeds: &'static [Deed], f: Form) -> Form {
+    Form { deeds, ..f }
 }
 const fn c(name: &'static str, aliases: &'static [&'static str], group: Group, about: Words, forms: &'static [Form]) -> Command {
     Command { name, aliases, group, about, forms, hidden: false, home: &[] }
@@ -131,19 +279,27 @@ const PATH_HERE: Arg = Arg::Path { optional: true };
 const TITLE: Arg = Arg::Text("\"Fix：title\"");
 const SAID: Arg = Arg::Text("\"text\"");
 use self::Sync::{None as Keep, Send, TakeIn};
+use self::Fact as F;
 
 pub static COMMANDS: &[Command] = &[
     on_home(&["todo"], c("todo", &[], Group::Home, ["Home's TODO", "Home の TODO"], &[
-        f(None, &[], &[], ["the list", "一覧"], DEVICE, Send, home::todo_list),
+        page(f(None, &[], &[], ["the list", "一覧"], DEVICE, Send, home::todo_list)),
         hidden(Some("ls"), &[], DEVICE, Send, home::todo_list),
-        f(Some("add"), &[TITLE], &[Flag::Note("detail")], ["add one", "足す"], DEVICE, Send, home::todo_add),
-        f(Some("edit"), &[Arg::Number("N"), TITLE], &[Flag::Note("detail")], ["rewrite the Nth (its detail stays unless given)", "N 番目を書き直す（詳細は書かなければそのまま）"], DEVICE, Send, home::todo_edit),
-        f(Some("done"), &[Arg::Number("N")], &[], ["mark the Nth done (again to undo)", "N 番目を完了に（もう一度で戻す）"], DEVICE, Send, home::todo_done),
-        f(Some("rm"), &[Arg::Number("N")], &[], ["remove the Nth", "N 番目を消す"], DEVICE, Send, home::todo_rm),
+        offer(&[d(["Add a TODO", "TODO を足す"], On::Page)],
+            f(Some("add"), &[TITLE], &[Flag::Note("detail")], ["add one", "足す"], DEVICE, Send, home::todo_add)),
+        offer(&[d(["Edit", "書き直す"], On::Todo).second()],
+            f(Some("edit"), &[Arg::Number("N"), TITLE], &[Flag::Note("detail")], ["rewrite the Nth (its detail stays unless given)", "N 番目を書き直す（詳細は書かなければそのまま）"], DEVICE, Send, home::todo_edit)),
+        offer(&[d(["Done", "完了"], On::Todo).when(&[F::NotDone]), d(["Not done", "未完了に戻す"], On::Todo).when(&[F::Done]).second()],
+            f(Some("done"), &[Arg::Number("N")], &[], ["mark the Nth done (again to undo)", "N 番目を完了に（もう一度で戻す）"], DEVICE, Send, home::todo_done)),
+        offer(&[d(["Remove", "消す"], On::Todo).away()],
+            f(Some("rm"), &[Arg::Number("N")], &[], ["remove the Nth", "N 番目を消す"], DEVICE, Send, home::todo_rm)),
     ])),
     on_home(&["profile"], c("profile", &[], Group::Home, ["your name, handle and bio", "名前、ハンドル、自己紹介"], &[
-        f(None, &[], &[], ["as others see it", "人から見えるとおりに"], DEVICE, Send, home::profile_show),
-        f(None, &[Arg::Choice(&["name", "handle", "bio"]), SAID], &[], ["change one", "ひとつ変える"], DEVICE, Send, home::profile_set),
+        page(f(None, &[], &[], ["as others see it", "人から見えるとおりに"], DEVICE, Send, home::profile_show)),
+        offer(&[d(["Edit name", "名前を変える"], On::Page).gives(&[(0, "name")]).field(["Name", "名前"]).second(),
+                d(["Edit handle", "ハンドルを変える"], On::Page).gives(&[(0, "handle")]).field(["Handle", "ハンドル"]).second(),
+                d(["Edit bio", "自己紹介を変える"], On::Page).gives(&[(0, "bio")]).field(["Bio", "自己紹介"]).second()],
+            f(None, &[Arg::Choice(&["name", "handle", "bio"]), SAID], &[], ["change one", "ひとつ変える"], DEVICE, Send, home::profile_set)),
     ])),
     c("lang", &[], Group::Home, ["the language l3 and the app speak", "l3 とアプリが話す言語"], &[
         f(None, &[], &[], ["the one spoken now", "いま話している言語"], DEVICE, Send, home::lang_show),
@@ -152,81 +308,111 @@ pub static COMMANDS: &[Command] = &[
     c("repo", &[], Group::Forge, ["repos here and on the Remote", "この端末と Remote の repo"], &[
         f(None, &[], &[], ["each, and where it stands", "それぞれと、その状態"], LOCAL, TakeIn, forge::repo_list),
         hidden(Some("ls"), &[], LOCAL, TakeIn, forge::repo_list),
-        f(Some("new"), &[Arg::Text("NAME")], &[Flag::Template], ["make one", "作る"], DEVICE, Send, forge::repo_new),
-        f(Some("open"), &[Arg::Text("NAME")], &[], ["bring one from the Remote", "Remote から持ってくる"], REMOTE, Keep, forge::repo_open),
+        offer(&[d(["New repo", "新しい repo"], On::Page).asks(&[Flag::Template]).also(&[Group::New])],
+            f(Some("new"), &[Arg::Text("NAME")], &[Flag::Template], ["make one", "作る"], DEVICE, Send, forge::repo_new)),
+        offer(&[d(["Open here", "この端末に開く"], On::RemoteRepo).when(&[F::OnlyThere]).also(&[Group::File, Group::Remote])],
+            f(Some("open"), &[Arg::Text("NAME")], &[], ["bring one from the Remote", "Remote から持ってくる"], REMOTE, Keep, forge::repo_open)),
     ]),
     c("band", &[], Group::Forge, ["the repos out on Forge's band", "Forge の帯に出ている repo"], &[
-        f(None, &[], &[], ["the list", "一覧"], DEVICE, Send, forge::band_list),
-        f(None, &[Arg::Choice(&["add", "rm"]), REPO], &[], ["put one out, or take it in", "出す、しまう"], DEVICE, Send, forge::band_set),
+        page(f(None, &[], &[], ["the list", "一覧"], DEVICE, Send, forge::band_list)),
+        offer(&[d(["Put on the band", "帯に出す"], On::Repo).gives(&[(0, "add")]).when(&[F::OffBand]).second(),
+                d(["Take off the band", "帯から外す"], On::Repo).gives(&[(0, "rm")]).when(&[F::OnBand]).away()],
+            f(None, &[Arg::Choice(&["add", "rm"]), REPO], &[], ["put one out, or take it in", "出す、しまう"], DEVICE, Send, forge::band_set)),
     ]),
     on_home(&["dotfiles"], c("prompt", &[], Group::Forge, ["a shell in the repo, inside the root", "root の中で repo のシェル"], &[
-        f(None, &[REPO_HERE, Arg::Argv], &[Flag::Network], ["the repo inside the root, without privileges; --network gives it the network", "root の中で repo を開く（権限なし）。--network でネットワークを渡す"], DEVICE, TakeIn, forge::prompt),
+        offer(&[d(["Prompt", "Prompt"], On::Repo).unless(&[F::NoRoot])],
+            f(None, &[REPO_HERE, Arg::Argv], &[Flag::Network], ["the repo inside the root, without privileges; --network gives it the network", "root の中で repo を開く（権限なし）。--network でネットワークを渡す"], DEVICE, TakeIn, forge::prompt)),
         f(Some("ls"), &[], &[], ["the Prompts running on this device (the app's too)", "この端末で動いている Prompt（アプリのものも）"], DEVICE, Keep, forge::prompt_list),
-        f(Some("stop"), &[REPO_HERE], &[], ["stop the repo's Prompts: every process in them ends", "repo の Prompt を止める（中のプロセスはすべて終わる）"], DEVICE, Send, forge::prompt_stop),
+        offer(&[d(["Stop", "止める"], On::Repo).when(&[F::Running]).away()],
+            f(Some("stop"), &[REPO_HERE], &[], ["stop the repo's Prompts: every process in them ends", "repo の Prompt を止める（中のプロセスはすべて終わる）"], DEVICE, Send, forge::prompt_stop)),
     ])),
     c("file", &[], Group::File, ["a folder's entries, a file's text", "フォルダーの中身、ファイルの本文"], &[
         f(Some("write"), &[PATH], &[Flag::Empty], ["replace or make a file with standard input", "標準入力でファイルを置き換える・作る"], LOCAL, Send, file::write),
-        f(Some("mkdir"), &[PATH], &[], ["make a folder", "フォルダーを作る"], LOCAL, Send, file::mkdir),
-        f(Some("rm"), &[PATH], &[], ["remove a file, or a folder and all in it", "ファイル、またはフォルダーを中身ごと消す"], LOCAL, Send, file::rm),
-        f(None, &[PATH_HERE], &[], ["read (in a repo, PATH is from where you are)", "読む（repo の中では今いる所から）"], LOCAL, TakeIn, file::read),
+        offer(&[d(["New folder", "フォルダーを作る"], On::Page).second()],
+            f(Some("mkdir"), &[PATH], &[], ["make a folder", "フォルダーを作る"], LOCAL, Send, file::mkdir)),
+        offer(&[d(["Remove", "消す"], On::Path).away().confirm()],
+            f(Some("rm"), &[PATH], &[], ["remove a file, or a folder and all in it", "ファイル、またはフォルダーを中身ごと消す"], LOCAL, Send, file::rm)),
+        page(offer(&[d(["Open", "開く"], On::Repo), d(["Open", "開く"], On::Path)],
+            f(None, &[PATH_HERE], &[], ["read (in a repo, PATH is from where you are)", "読む（repo の中では今いる所から）"], LOCAL, TakeIn, file::read))),
     ]),
     c("git", &[], Group::Git, ["the issues not merged, and what comes next", "Merge されていない Issue と、次にすること"], &[
-        f(None, &[REPO_HERE], &[], ["each issue, with what comes next", "Issue ごとに、次にすること"], LOCAL, TakeIn, git::page),
+        page(f(None, &[REPO_HERE], &[], ["each issue, with what comes next", "Issue ごとに、次にすること"], LOCAL, TakeIn, git::page)),
     ]),
     c("issue", &[], Group::Git, ["one issue, a new one, or closing one", "Issue ひとつ、新しく、または閉じる"], &[
-        f(Some("new"), &[REPO_HERE, TITLE], &[Flag::Note("detail")], ["write a new one", "新しく書く"], LOCAL, Send, git::issue_new),
-        f(Some("close"), &[Arg::Issue], &[], ["one that will not be done", "やらないものを閉じる"], LOCAL, Send, git::issue_close),
-        f(Some("reopen"), &[Arg::Issue], &[], ["a closed one, open again", "閉じたものをもう一度開く"], LOCAL, Send, git::issue_reopen),
-        f(None, &[Arg::Issue], &[], ["its card, its Review, Merge", "カード、Review、Merge"], LOCAL, TakeIn, git::issue_show),
+        offer(&[d(["Write an issue", "Issue を書く"], On::Page)],
+            f(Some("new"), &[REPO_HERE, TITLE], &[Flag::Note("detail")], ["write a new one", "新しく書く"], LOCAL, Send, git::issue_new)),
+        offer(&[d(["Close", "閉じる"], On::Issue).unless(&[F::Undecided, F::OnWork, F::Closed]).away()],
+            f(Some("close"), &[Arg::Issue], &[], ["one that will not be done", "やらないものを閉じる"], LOCAL, Send, git::issue_close)),
+        offer(&[d(["Reopen", "もう一度開く"], On::Issue).when(&[F::Closed])],
+            f(Some("reopen"), &[Arg::Issue], &[], ["a closed one, open again", "閉じたものをもう一度開く"], LOCAL, Send, git::issue_reopen)),
+        offer(&[d(["Open", "開く"], On::Issue).second()],
+            f(None, &[Arg::Issue], &[], ["its card, its Review, Merge", "カード、Review、Merge"], LOCAL, TakeIn, git::issue_show)),
         hidden(None, &[REPO_HERE], LOCAL, TakeIn, git::page),
     ]),
     c("start", &[], Group::Git, ["work on an issue, in its own copy", "Issue の作業を、その写しで"], &[
-        f(None, &[Arg::Issue], &[], ["start (or continue): the repo shows its copy", "始める（続ける）。repo はその写しになる"], REMOTE, TakeIn, git::start),
+        offer(&[d(["Start", "始める"], On::Issue).when(&[F::CanStart])],
+            f(None, &[Arg::Issue], &[], ["start (or continue): the repo shows its copy", "始める（続ける）。repo はその写しになる"], REMOTE, TakeIn, git::start)),
     ]),
     c("main", &[], Group::Git, ["back to main", "main に戻る"], &[
-        f(None, &[REPO_HERE], &[], ["the repo shows main again", "repo は main に戻る"], DEVICE, Send, git::main),
+        offer(&[d(["Back to main", "main に戻る"], On::Issue).when(&[F::WorkedHere]).away()],
+            f(None, &[REPO_HERE], &[], ["the repo shows main again", "repo は main に戻る"], DEVICE, Send, git::main)),
     ]),
     c("commit", &[], Group::Git, ["commit the work", "作業を Commit"], &[
-        f(None, &[REPO_HERE], &[Flag::Note("note")], ["on an issue, named after it", "Issue の作業では、その名前で"], REMOTE, Send, git::commit),
+        offer(&[d(["Commit", "Commit"], On::Issue).when(&[F::CanCommit])],
+            f(None, &[REPO_HERE], &[Flag::Note("note")], ["on an issue, named after it", "Issue の作業では、その名前で"], REMOTE, Send, git::commit)),
         f(None, &[REPO_HERE, TITLE], &[Flag::Note("note")], ["named by its line (on an issue, the line is its note)", "行の名前で（Issue の作業では、行はメモに）"], REMOTE, Send, git::commit),
     ]),
     c("push", &[], Group::Git, ["hand the work to main as its change", "作業を Change として main に渡す"], &[
-        f(None, &[REPO_HERE], &[Flag::Note("note")], ["again: its next version", "もう一度で次の版"], REMOTE, Send, git::push),
+        offer(&[d(["Push", "Push"], On::Issue).when(&[F::CanPush])],
+            f(None, &[REPO_HERE], &[Flag::Note("note")], ["again: its next version", "もう一度で次の版"], REMOTE, Send, git::push)),
     ]),
     c("reset", &[], Group::Git, ["take the change back", "Change を取り下げる"], &[
-        f(None, &[REPO_HERE], &[], ["the one the work handed in", "作業が渡したもの"], REMOTE, Send, git::reset),
+        offer(&[d(["Reset", "Reset"], On::Issue).when(&[F::WorkedHere, F::Undecided]).away().confirm()],
+            f(None, &[REPO_HERE], &[], ["the one the work handed in", "作業が渡したもの"], REMOTE, Send, git::reset)),
     ]),
     c("diff", &[], Group::Git, ["the lines changed", "変えた行"], &[
-        f(None, &[Arg::Issue], &[], ["the issue's change", "Issue の Change"], REMOTE, Send, git::diff),
-        f(None, &[REPO_HERE], &[], ["what is not committed", "Commit していないもの"], REMOTE, TakeIn, git::diff),
+        offer(&[d(["Diff", "Diff"], On::Issue).when(&[F::Undecided]).second()],
+            f(None, &[Arg::Issue], &[], ["the issue's change", "Issue の Change"], REMOTE, Send, git::diff)),
+        offer(&[d(["Diff", "Diff"], On::Issue).when(&[F::CanCommit]).unless(&[F::Undecided]).second()],
+            f(None, &[REPO_HERE], &[], ["what is not committed", "Commit していないもの"], REMOTE, TakeIn, git::diff)),
     ]),
     c("log", &[], Group::Git, ["the commits", "コミット"], &[
-        f(None, &[REPO_HERE], &[], ["of what the repo shows", "repo がいま見せているものの"], REMOTE, TakeIn, git::log),
+        offer(&[d(["Log", "ログ"], On::Page).second()],
+            f(None, &[REPO_HERE], &[], ["of what the repo shows", "repo がいま見せているものの"], REMOTE, TakeIn, git::log)),
     ]),
     c("review", &[], Group::Git, ["approve a version, or ask for changes", "版を承認する、直しを頼む"], &[
-        f(None, &[Arg::Issue, Arg::Choice(&["approve", "changes"])], &[Flag::Note("note")], ["of its current version", "いまの版について"], REMOTE, Send, git::review),
+        offer(&[d(["Approve", "承認"], On::Issue).gives(&[(1, "approve")]).when(&[F::Undecided]).unless(&[F::Approved]),
+                d(["Ask for changes", "直しを頼む"], On::Issue).gives(&[(1, "changes")]).asks(&[Flag::Note("note")]).when(&[F::Undecided]).second()],
+            f(None, &[Arg::Issue, Arg::Choice(&["approve", "changes"])], &[Flag::Note("note")], ["of its current version", "いまの版について"], REMOTE, Send, git::review)),
     ]),
     c("reply", &[], Group::Git, ["a comment in its Review", "Review にコメント"], &[
-        f(None, &[Arg::Issue, SAID], &[], ["under its current version", "いまの版に"], REMOTE, Send, git::reply),
+        offer(&[d(["Reply", "返信する"], On::Issue).when(&[F::Undecided]).second()],
+            f(None, &[Arg::Issue, SAID], &[], ["under its current version", "いまの版に"], REMOTE, Send, git::reply)),
     ]),
     c("merge", &[], Group::Git, ["main takes the change", "main に取り込む"], &[
-        f(None, &[Arg::Issue], &[], ["its current version", "いまの版を"], REMOTE, Send, git::merge),
+        offer(&[d(["Merge", "Merge"], On::Issue).when(&[F::Undecided])],
+            f(None, &[Arg::Issue], &[], ["its current version", "いまの版を"], REMOTE, Send, git::merge)),
     ]),
     c("reject", &[], Group::Git, ["main does not take it", "取り込まない"], &[
-        f(None, &[Arg::Issue], &[Flag::Note("why")], ["its issue stays open", "Issue は開いたまま"], REMOTE, Send, git::reject),
+        offer(&[d(["Reject", "Reject"], On::Issue).asks(&[Flag::Note("why")]).when(&[F::Undecided]).away()],
+            f(None, &[Arg::Issue], &[Flag::Note("why")], ["its issue stays open", "Issue は開いたまま"], REMOTE, Send, git::reject)),
     ]),
     c("runtime", &[], Group::Runtime, ["the root, and this device by size", "root と、この端末の容量"], &[
-        f(None, &[], &[], ["what is here, and what can go", "あるものと、空けられるもの"], DEVICE, Send, runtime::page),
+        page(f(None, &[], &[], ["what is here, and what can go", "あるものと、空けられるもの"], DEVICE, Send, runtime::page)),
     ]),
     c("free", &[], Group::Runtime, ["give room back", "容量を空ける"], &[
-        f(None, &[Arg::Choice(&["all"])], &[], ["everything that can go", "空けられるものすべて"], DEVICE, Keep, runtime::free),
-        f(None, &[Arg::Many("ID")], &[], ["what l3 runtime names; a repo's changes go to the Remote first", "l3 runtime が示すもの。repo の変更は先に Remote へ"], DEVICE, Keep, runtime::free),
+        offer(&[d(["Free all", "すべて空ける"], On::Page).gives(&[(0, "all")]).when(&[F::AnyFreeable]).second().confirm()],
+            f(None, &[Arg::Choice(&["all"])], &[], ["everything that can go", "空けられるものすべて"], DEVICE, Keep, runtime::free)),
+        offer(&[d(["Free", "空ける"], On::Thing).when(&[F::Freeable]).confirm()],
+            f(None, &[Arg::Many("ID")], &[], ["what l3 runtime names; a repo's changes go to the Remote first", "l3 runtime が示すもの。repo の変更は先に Remote へ"], DEVICE, Keep, runtime::free)),
         hidden(None, &[], DEVICE, Send, runtime::page),
     ]),
     c("root", &[], Group::Runtime, ["the root Prompts run on", "Prompt が動く root"], &[
         f(None, &[], &[], ["each held, and which is in use", "持っているものと、使っているもの"], DEVICE, Send, runtime::roots),
-        f(Some("fetch"), &[], &[], ["the newest release", "最新のリリースを取る"], DEVICE, Send, runtime::root_fetch),
-        f(Some("use"), &[Arg::Choice(&["l3", "ubuntu", "debian"])], &[], ["the one Prompts run on (fetched if not held); .packages and .setup set it up", "Prompt が動くもの（なければ取る）。.packages と .setup で用意"], DEVICE, Send, runtime::root_use),
+        offer(&[d(["Fetch the root", "root を取ってくる"], On::Page).when(&[F::NoRoot])],
+            f(Some("fetch"), &[], &[], ["the newest release", "最新のリリースを取る"], DEVICE, Send, runtime::root_fetch)),
+        offer(&[d(["Use a root", "root を選ぶ"], On::Page).second()],
+            f(Some("use"), &[Arg::Choice(&["l3", "ubuntu", "debian"])], &[], ["the one Prompts run on (fetched if not held); .packages and .setup set it up", "Prompt が動くもの（なければ取る）。.packages と .setup で用意"], DEVICE, Send, runtime::root_use)),
         f(Some("install"), &[Arg::Text("BUNDLE")], &[], ["from a file", "ファイルから"], DEVICE, Send, runtime::root_install),
     ]),
     c("network", &[], Group::Runtime, ["whether a repo's Prompts may reach the network (on this device)", "repo の Prompt がネットワークに届いてよいか（この端末で）"], &[
@@ -245,29 +431,40 @@ pub static COMMANDS: &[Command] = &[
         hidden(Some("ssh"), &[Arg::Choice(&["serve"])], DEVICE, Keep, address::serve),
     ]),
     c("remote", &[], Group::Remote, ["the Remote, and where each repo stands", "Remote と、各 repo の状態"], &[
-        f(None, &[], &[], ["each repo, and where it stands", "各 repo とその状態"], DEVICE, Keep, remote::page),
-        f(Some("on"), &[Arg::Text("REPO")], &[], ["bring back a repo turned off", "オフにした repo を戻す"], REMOTE, Keep, remote::on),
-        f(Some("sign-in"), &[], &[], ["passkeys, the code to turn a repo off, the providers", "パスキー、repo をオフにするコード、サインイン方法"], REMOTE, Keep, remote::sign_in),
-        f(Some("devices"), &[], &[], ["each device signed in", "サインインしている端末"], REMOTE, Keep, remote::devices),
+        page(f(None, &[], &[], ["each repo, and where it stands", "各 repo とその状態"], DEVICE, Keep, remote::page)),
+        offer(&[d(["Turn on", "戻す"], On::RemoteRepo).when(&[F::TurnedOff])],
+            f(Some("on"), &[Arg::Text("REPO")], &[], ["bring back a repo turned off", "オフにした repo を戻す"], REMOTE, Keep, remote::on)),
+        offer(&[d(["Sign-in", "サインイン方法"], On::Page).second()],
+            f(Some("sign-in"), &[], &[], ["passkeys, the code to turn a repo off, the providers", "パスキー、repo をオフにするコード、サインイン方法"], REMOTE, Keep, remote::sign_in)),
+        offer(&[d(["Devices", "端末"], On::Page).second()],
+            f(Some("devices"), &[], &[], ["each device signed in", "サインインしている端末"], REMOTE, Keep, remote::devices)),
         f(Some("devices"), &[Arg::Choice(&["rm"]), Arg::Number("N")], &[], ["sign one out", "ひとつサインアウトさせる"], REMOTE, Keep, remote::devices_rm),
     ]),
     c("login", &[], Group::Remote, ["sign this device in (approved in the browser)", "この端末でサインインする（ブラウザで承認）"], &[
-        f(None, &[], &[], ["to the Remote this OS ships with ($LENGTH3_REMOTE)", "この OS の Remote へ（$LENGTH3_REMOTE）"], DEVICE, Keep, remote::login),
+        offer(&[d(["Sign in", "サインイン"], On::Page).when(&[F::SignedOut]).also(&[Group::Git, Group::Server, Group::Inbox])],
+            f(None, &[], &[], ["to the Remote this OS ships with ($LENGTH3_REMOTE)", "この OS の Remote へ（$LENGTH3_REMOTE）"], DEVICE, Keep, remote::login)),
         f(None, &[Arg::Text("URL")], &[], ["to another Remote", "別の Remote へ"], DEVICE, Keep, remote::login),
     ]),
     c("logout", &[], Group::Remote, ["sign this device out", "この端末をサインアウトする"], &[
-        f(None, &[], &[], ["every repo is sent first; the repos stay here", "先に各 repo を送る。repo はこの端末に残る"], DEVICE, Keep, remote::logout),
+        offer(&[d(["Sign out", "サインアウト"], On::Page).when(&[F::SignedIn]).away().confirm()],
+            f(None, &[], &[], ["every repo is sent first; the repos stay here", "先に各 repo を送る。repo はこの端末に残る"], DEVICE, Keep, remote::logout)),
     ]),
     c("server", &[], Group::Server, ["people you know: boards, each a talk and a TODO kept together", "知り合いの集まり：板ごとに話とみんなの TODO"], &[
-        f(None, &[], &[], ["each server you are in, and its boards", "入っているサーバーと、その板"], REMOTE, Send, people::servers),
-        f(Some("get"), &[Arg::Text("SERVER[#BOARD]")], &[Flag::Todo, Flag::Out, Flag::Force], ["boards as text (--todo: the TODO only; -o: into a file, or a folder; --force: over what is there)", "板をテキストで（--todo で TODO だけ、-o でファイルかフォルダーへ、--force で上書き）"], REMOTE, Send, people::server_get),
-        f(Some("post"), &[Arg::Text("SERVER#BOARD"), SAID], &[], ["write in a board", "板に書く"], REMOTE, Send, people::server_post),
+        page(f(None, &[], &[], ["each server you are in, and its boards", "入っているサーバーと、その板"], REMOTE, Send, people::servers)),
+        offer(&[d(["Read", "読む"], On::Board).second()],
+            f(Some("get"), &[Arg::Text("SERVER[#BOARD]")], &[Flag::Todo, Flag::Out, Flag::Force], ["boards as text (--todo: the TODO only; -o: into a file, or a folder; --force: over what is there)", "板をテキストで（--todo で TODO だけ、-o でファイルかフォルダーへ、--force で上書き）"], REMOTE, Send, people::server_get)),
+        offer(&[d(["Write", "書く"], On::Board)],
+            f(Some("post"), &[Arg::Text("SERVER#BOARD"), SAID], &[], ["write in a board", "板に書く"], REMOTE, Send, people::server_post)),
     ]),
     c("inbox", &[], Group::Inbox, ["conversations: contacts, then requests", "会話（連絡先、次にリクエスト）"], &[
-        f(Some("send"), &[Arg::Address, SAID], &[], ["Review： or Question： first to ask; a /root/… path says what about", "頭に Review： か Question： で依頼。/root/… で対象"], REMOTE, Send, people::inbox_send),
-        f(None, &[Arg::Choice(&["accept", "block"]), Arg::Address], &[], ["someone who wrote first", "先に書いてきた人を"], REMOTE, Send, people::inbox_decide),
-        f(None, &[], &[], ["each conversation", "会話ごとに"], REMOTE, Send, people::inbox_list),
-        f(None, &[Arg::Address], &[], ["one", "ひとつ"], REMOTE, Send, people::inbox_thread),
+        offer(&[d(["Write", "書く"], On::Thread).second(), d(["Write to someone", "誰かに書く"], On::Page)],
+            f(Some("send"), &[Arg::Address, SAID], &[], ["Review： or Question： first to ask; a /root/… path says what about", "頭に Review： か Question： で依頼。/root/… で対象"], REMOTE, Send, people::inbox_send)),
+        offer(&[d(["Accept", "受ける"], On::Thread).gives(&[(0, "accept")]).when(&[F::Request]),
+                d(["Block", "ブロック"], On::Thread).gives(&[(0, "block")]).when(&[F::Request]).away().confirm()],
+            f(None, &[Arg::Choice(&["accept", "block"]), Arg::Address], &[], ["someone who wrote first", "先に書いてきた人を"], REMOTE, Send, people::inbox_decide)),
+        page(f(None, &[], &[], ["each conversation", "会話ごとに"], REMOTE, Send, people::inbox_list)),
+        offer(&[d(["Open", "開く"], On::Thread)],
+            f(None, &[Arg::Address], &[], ["one", "ひとつ"], REMOTE, Send, people::inbox_thread)),
     ]),
     c("name", &[], Group::Inbox, ["your names, as people find you (name@domain), and your code", "あなたの名前（人があなたを見つける name@domain）と、あなたのコード"], &[
         f(None, &[], &[], ["each name, one a line, nothing else", "名前を1行にひとつ、それだけ"], REMOTE, Send, people::name_only),
@@ -390,6 +587,51 @@ mod tests {
         assert!(all.contains(&"l3 name claim NAME[@DOMAIN]".to_string()) && !all.iter().any(|u| u.starts_with("l3 address claim") || u.contains("ssh serve")), "{all:?}");
         assert_eq!(find("address").map(|c| c.group), Some(Group::Runtime));
         assert_eq!(find("name").map(|c| c.group), Some(Group::Inbox));
+    }
+
+    /// A word that fits a slot, as the menu would give it.
+    fn sample(a: Arg) -> Option<String> {
+        Some(match a {
+            Arg::Issue => "notes#1".into(), Arg::Repo { .. } => "notes".into(), Arg::Path { .. } => "notes/a.txt".into(),
+            Arg::Text(_) => "Fix：x".into(), Arg::Number(_) => "1".into(), Arg::Choice(c) => c[0].into(), Arg::Address => "ren".into(),
+            Arg::Dotfile => ".profile".into(), Arg::Many(_) => "notes".into(), Arg::Argv => return None,
+        })
+    }
+
+    #[test]
+    fn every_deed_the_menu_offers_is_a_form_l3_reads_back_as_itself() {
+        let ctx = crate::cmd::Ctx::test(None, vec!["notes"]);
+        let mut n = 0;
+        for c in COMMANDS {
+            for f in c.forms {
+                for d in f.deeds {
+                    let words: Vec<Option<String>> = f.args.iter().enumerate()
+                        .map(|(i, a)| d.gives.iter().find(|(k, _)| *k == i).map(|(_, w)| w.to_string()).or_else(|| sample(*a))).collect();
+                    let flags: Vec<(Flag, String)> = d.asks.iter().map(|fl| (*fl, if *fl == Flag::Template { "standard".into() } else { "why".into() })).collect();
+                    let argv = crate::menu::command_line(c, f, &words, &flags);
+                    let call = crate::args::parse(&argv, &ctx).unwrap_or_else(|e| panic!("{} ({argv:?}): {e:?}", d.label[0]));
+                    assert!(std::ptr::eq(call.form, f), "{} ({argv:?}) is read as {}", d.label[0], usage(call.command, call.form));
+                    // What it gives itself is one of the words its slot takes; what it is pressed on fills a slot.
+                    for (k, w) in d.gives { assert!(matches!(f.args.get(*k), Some(Arg::Choice(c)) if c.contains(w)), "{}: {w}", d.label[0]); }
+                    assert!(d.on == On::Page || f.args.iter().any(|a| crate::menu::takes(*a, d.on)), "{}: nothing takes a {:?}", d.label[0], d.on);
+                    assert!(!d.label[0].is_empty() && !d.label[1].is_empty() && !f.hidden, "{}", c.name);
+                    n += 1;
+                }
+            }
+        }
+        assert!(n > 30, "{n} deeds");
+    }
+
+    #[test]
+    fn every_place_on_the_rail_has_a_page_and_plus_makes_a_repo() {
+        for g in Group::RAIL.iter().filter(|g| **g != Group::New) {
+            assert!(!crate::menu::page_forms(*g).is_empty(), "{}", g.name());
+            assert!(!g.role()[0].is_empty() && !g.role()[1].is_empty());
+        }
+        let plus = crate::menu::deeds_of(Group::New);
+        assert_eq!(plus.iter().map(|o| (o.command.name, o.form.verb)).collect::<Vec<_>>(), [("repo", Some("new"))]);
+        // The help's groups stay as they were: + is the rail's alone.
+        assert!(!Group::ALL.contains(&Group::New) && COMMANDS.iter().all(|c| c.group != Group::New));
     }
 
     #[test]

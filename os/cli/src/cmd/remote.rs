@@ -4,6 +4,7 @@
 use super::{host, Ctx};
 use crate::args::Call;
 use crate::out::{self, bytes, Error, Reply, Result};
+use crate::spec::{Fact, On};
 use length3_core::{account, remote, tr};
 use serde_json::{json, Value};
 
@@ -59,9 +60,13 @@ pub fn page(ctx: &Ctx, _: &Call) -> Result<Reply> {
             "unsendable": s.unsynced.iter().map(|(p, _)| p).collect::<Vec<_>>(), "error": outcome.and_then(|o| o.as_ref().err())}));
     }
     for o in there.iter().filter(|o| o.off_at.is_some()) {
+        crate::menu::see(|| crate::menu::Subject { on: On::RemoteRepo, word: o.name.clone(), repo: None, label: o.name.clone(),
+            detail: tr!("off · kept {} more", "オフ · あと{}残ります", out::left(o.until.unwrap_or(0))), facts: vec![Fact::TurnedOff] });
         t.push(tr!("  {}  off · kept {} more (l3 remote on {})", "  {}  オフ · あと{}残ります（l3 remote on {}）", o.name, out::left(o.until.unwrap_or(0)), o.name));
     }
     for o in there.iter().filter(|o| o.off_at.is_none() && !here.iter().any(|h| h.name == o.name)) {
+        crate::menu::see(|| crate::menu::Subject { on: On::RemoteRepo, word: o.name.clone(), repo: None, label: o.name.clone(),
+            detail: tr!("only on the Remote · {}", "Remote にだけあります · {}", bytes(o.bytes)), facts: vec![Fact::OnlyThere] });
         t.push(tr!("  {}  only on the Remote · {} (l3 repo open {})", "  {}  Remote にだけあります · {}（l3 repo open {}）", o.name, bytes(o.bytes), o.name));
     }
     Ok(Reply::data(t.join("\n"), json!({"url": c.url, "account": account.ok().flatten(), "here": rows, "remote": there})))

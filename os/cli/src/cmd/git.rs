@@ -7,6 +7,7 @@
 use super::Ctx;
 use crate::args::Call;
 use crate::out::{self, ago, commits, files, issues, Error, Reply, Result};
+use crate::spec::{Fact, On};
 use crate::target::{self, IssueRef};
 use length3_core::history::{self, state_word, Change, Work};
 use length3_core::issues::{number, Issue};
@@ -100,36 +101,66 @@ fn standing(ctx: &Ctx, s: &Stand, i: &Issue) -> String {
     }
 }
 
+/// Where an issue stands, as what can be done with it: what its card's
+/// next line is written from, and what the menu offers on it (spec.rs).
+fn facts(ctx: &Ctx, s: &Stand, i: &Issue) -> Vec<Fact> {
+    if s.merged(i) { return Vec::new(); }
+    // Reopening is the file's own change: it needs no Remote.
+    if i.closed.is_some() { return vec![Fact::Closed]; }
+    if !ctx.connected() || !s.known { return Vec::new(); }
+    let mut f = Vec::new();
+    let change = s.change(i);
+    let open = change.is_some_and(|c| c.state == "open");
+    if !s.here(i) {
+        f.push(Fact::CanStart);
+    } else if let Some(w) = &s.work {
+        f.push(Fact::WorkedHere);
+        if s.uncommitted > 0 { f.push(Fact::CanCommit); }
+        else if w.unpushed > 0 || (w.commits > 0 && !open) { f.push(Fact::CanPush); }
+    }
+    if let Some(c) = change.filter(|_| open) {
+        f.push(Fact::Undecided);
+        if !approvers(c).is_empty() { f.push(Fact::Approved); }
+    }
+    f
+}
+
 /// What can be done next, the one to do first first: as the box's buttons.
 fn next(ctx: &Ctx, s: &Stand, i: &Issue) -> Vec<String> {
     if ctx.prompt { return vec![tr!("the app's Git page", "アプリの Git")]; }
     if s.merged(i) { return Vec::new(); }
     let m = me(i);
-    // Reopening is the file's own change: it needs no Remote.
-    if i.closed.is_some() { return vec![format!("l3 issue reopen {m}")]; }
+    let f = facts(ctx, s, i);
+    let has = |x: Fact| f.contains(&x);
+    if has(Fact::Closed) { return vec![format!("l3 issue reopen {m}")]; }
     if !ctx.connected() { return vec!["l3 login".into()]; }
-    if !s.known { return Vec::new(); }
     let mut out = Vec::new();
-    let change = s.change(i);
-    let open = change.is_some_and(|c| c.state == "open");
-    if !s.here(i) {
-        out.push(format!("l3 start {m}"));
-    } else if let Some(w) = &s.work {
-        if s.uncommitted > 0 { out.push(format!("l3 commit {} [-m {}]", i.repo, crate::spec::placeholder("note"))); }
-        else if w.unpushed > 0 || (w.commits > 0 && !open) { out.push(format!("l3 push {}", i.repo)); }
-    }
+    if has(Fact::CanStart) { out.push(format!("l3 start {m}")); }
+    if has(Fact::CanCommit) { out.push(format!("l3 commit {} [-m {}]", i.repo, crate::spec::placeholder("note"))); }
+    if has(Fact::CanPush) { out.push(format!("l3 push {}", i.repo)); }
     // An undecided change, in the app's order: its Review (approve, or a comment more), then
     // Merge once this version is approved; Reject and Reset (taking it back) last.
-    if let Some(c) = change.filter(|_| open) {
+    if has(Fact::Undecided) {
         let review = format!("l3 review {m} approve [-m {}]", crate::spec::placeholder("note"));
         let merge = format!("l3 merge {m}");
-        if approvers(c).is_empty() { out.push(review); out.push(merge); } else { out.push(merge); out.push(review); }
+        if has(Fact::Approved) { out.push(merge); out.push(review); } else { out.push(review); out.push(merge); }
         out.push(format!("l3 reply {m} \"…\""));
         out.push(format!("l3 reject {m}"));
-        if s.here(i) { out.push(format!("l3 reset {}", i.repo)); }
+        if has(Fact::WorkedHere) { out.push(format!("l3 reset {}", i.repo)); }
     }
-    if s.here(i) { out.push(format!("l3 main {}", i.repo)); }
+    if has(Fact::WorkedHere) { out.push(format!("l3 main {}", i.repo)); }
     out
+}
+
+/// The issue as a thing on the page, for the menu: its card's head and foot, and its facts.
+fn seen(ctx: &Ctx, r: &length3_core::repos::Repos, s: &Stand, i: &Issue) {
+    crate::menu::see(|| {
+        let mut f = facts(ctx, s, i);
+        if r.line(&i.repo) != work::MAIN { f.push(Fact::OnWork); }
+        let st = standing(ctx, s, i);
+        crate::menu::Subject { on: On::Issue, word: me(i), repo: Some(i.repo.clone()), label: heading(i),
+            detail: if st.is_empty() { i.repo.clone() } else { format!("{} · {st}", i.repo) }, facts: f }
+    });
 }
 
 /// Who approved the current version, each once.
@@ -204,6 +235,7 @@ pub fn page(ctx: &Ctx, call: &Call) -> Result<Reply> {
         let shut: Vec<String> = list.iter().filter(|i| !s.merged(i) && i.closed.is_some()).map(me).collect();
         if !shut.is_empty() { closed.push((n.clone(), shut)); }
         for i in list.iter().filter(|i| s.open(i)) {
+            seen(ctx, &r, &s, i);
             boxes.push(card(ctx, &s, i, false).join("\n"));
             data.push(issue_json(ctx, &s, i));
         }
@@ -236,6 +268,7 @@ pub fn issue_show(ctx: &Ctx, call: &Call) -> Result<Reply> {
         return Ok(Reply::data(t, json!({"issue": i})));
     }
     let s = stand(ctx, &r, &at.repo);
+    seen(ctx, &r, &s, &i);
     let mut t = card(ctx, &s, &i, true);
     let mut uncommitted = Vec::new();
     // What is not committed, while it is worked on here (beside Commit in the app).
@@ -518,5 +551,48 @@ mod tests {
         assert_eq!(next(&ctx, &s, &closed), ["l3 issue reopen r#2"]);
         assert_eq!(next(&ctx, &s, &merged_and_closed), Vec::<String>::new());
         assert!(standing(&ctx, &s, &closed).ends_with("2031-10-07 sora"));
+    }
+
+    /// The work on issue 001 here: so many commits, so many not pushed, so many files not committed.
+    fn working(commits: usize, unpushed: usize, uncommitted: usize, change: Option<Change>) -> Stand {
+        let work = Work { line: "001".into(), issue: Some("issue/001.md".into()), started_by: "sora".into(), started_at: 0, commits, unpushed, change: None };
+        Stand { known: true, work: Some(work), lines: Vec::new(), changes: change.into_iter().collect(), merged: Vec::new(), uncommitted }
+    }
+
+    /// Issue 001's change, open or decided, approved by sora or not.
+    fn change(state: &str, approved: bool) -> Change {
+        let reviews = if approved { serde_json::json!([{"version": 1, "verdict": "approve", "by": "sora", "time": 0}]) } else { serde_json::json!([]) };
+        serde_json::from_value(serde_json::json!({"id": "c1", "repo": "r", "line": "001", "issue": "issue/001.md", "kind": "Fix", "title": "x",
+            "version": 1, "base": null, "head": "h", "state": state, "reviews": reviews})).expect("a change")
+    }
+
+    #[test]
+    fn the_cards_next_line_and_the_menus_deeds_are_read_from_the_same_facts() {
+        use crate::menu::{offered, Env};
+        use crate::spec::{Group, Weight};
+        let ctx = Ctx::test(None, Vec::new()).online();
+        let i = parse("r", "001.md", "Fix：x\n");
+        let not_here = stand_with_nothing();
+        let handed_in = Stand { changes: vec![change("open", true)], ..stand_with_nothing() };
+        let cases = [("not started", not_here), ("just started", working(0, 0, 0, None)), ("changed", working(0, 0, 2, None)),
+            ("committed", working(1, 1, 0, None)), ("handed in", working(1, 0, 0, Some(change("open", false)))),
+            ("approved", working(1, 0, 0, Some(change("open", true)))), ("handed in elsewhere", handed_in)];
+        for (what, s) in cases {
+            let said = next(&ctx, &s, &i);
+            let mut facts = facts(&ctx, &s, &i);
+            facts.push(Fact::SignedIn);
+            let offers = offered(Group::Git, On::Issue, &facts, Env { prompt: false, connected: true });
+            let commands: Vec<&str> = offers.iter().map(|o| o.command.name).collect();
+            // Each command the card names next is a deed the menu offers on the issue…
+            for n in &said { assert!(commands.contains(&n.split(' ').nth(1).unwrap()), "{what}: {n} not in {commands:?}"); }
+            // …and the first thing the card says to do is the menu's first deed.
+            if let Some(first) = offers.first().filter(|o| o.deed.weight == Weight::Own) {
+                assert_eq!(Some(first.command.name), said.first().and_then(|n| n.split(' ').nth(1)), "{what}");
+            }
+        }
+    }
+
+    fn stand_with_nothing() -> Stand {
+        Stand { known: true, work: None, lines: Vec::new(), changes: Vec::new(), merged: Vec::new(), uncommitted: 0 }
     }
 }
