@@ -4,6 +4,7 @@ import {bytes, h} from '../dom.ts';
 import {isNative, promptOpen, rootStatus, type Held, type Stopped} from '../host.ts';
 import {currentLang, t, tn} from '../i18n.ts';
 import {loadUserland, loadWebRoot, watchLoad, type Stage} from '../userland.ts';
+import {every} from '../runs.ts';
 import {errorText} from '../errors.ts';
 
 // A shell per repo, running translated BusyBox (and l3) in a Worker. Sessions
@@ -91,7 +92,8 @@ export class Session {
   /** How the last stop went, on the root: what it held, and how long until none was left. */
   stopped: Stopped | null = null;
   private native: Awaited<ReturnType<typeof promptOpen>> | null = null;
-  private poll = 0;
+  /** What the root's processes hold, read every 3 s while the page is in view. */
+  private measuring: {stop(): void} | null = null;
   private ttySaid = false;
 
   constructor(repo: string) {
@@ -223,7 +225,7 @@ export class Session {
     this.tell();
     this.status.textContent = '';
     void this.measure();
-    this.poll = window.setInterval(() => void this.measure(), 3000);
+    this.measuring = every(3000, () => this.measure());
     return true;
   }
 
@@ -385,7 +387,8 @@ export class Session {
     this.unwatch = null;
     this.worker?.terminate();
     this.worker = null;
-    clearInterval(this.poll);
+    this.measuring?.stop();
+    this.measuring = null;
     this.native?.forget();
     this.native = null;
     this.live = false;
