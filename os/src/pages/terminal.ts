@@ -134,9 +134,16 @@ export class Session {
     if (!this.ttySaid && this.text.includes(NO_TTY)) { this.text = this.text.replace(NO_TTY, ''); this.ttySaid = true; }
     // Keep the last 200k characters; older output scrolls away.
     if (this.text.length > 200_000) this.text = this.text.slice(-150_000);
-    this.output.textContent = this.text;
-    this.output.scrollTop = this.output.scrollHeight;
+    // Drawn once a frame, however many pieces came in it. Output comes a stdio buffer (about 1 KB) at a time,
+    // and drawing up to 200k characters and scrolling to them for each piece measured about 22 ms a piece in
+    // Chromium: 1 MB of output held the page for 22 s; drawn once for every 17 pieces, 1.3 s.
+    this.painting ||= requestAnimationFrame(() => {
+      this.painting = 0;
+      this.output.textContent = this.text;
+      this.output.scrollTop = this.output.scrollHeight;
+    });
   }
+  private painting = 0;
 
   /** Output goes on screen and into the run in progress, which ends at the next prompt. */
   private received(s: string) {
