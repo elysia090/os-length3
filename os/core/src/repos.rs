@@ -169,6 +169,16 @@ impl Repos {
         at.symlink_metadata().is_ok_and(|m| m.file_type().is_symlink()) && at.metadata().is_err()
     }
 
+    /// The repos' names, in order, and nothing else: no repo is walked (list walks each to say its size).
+    pub fn names(&self) -> Result<Vec<String>> {
+        let mut out: Vec<String> = fs::read_dir(&self.root).map_err(|e| io_error(self.root.display(), &e))?.flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| valid_name(n) && self.root.join(n).is_dir())
+            .collect();
+        out.sort();
+        Ok(out)
+    }
+
     pub fn list(&self) -> Result<Vec<Summary>> {
         let mut out = Vec::new();
         for entry in fs::read_dir(&self.root).map_err(|e| io_error(self.root.display(), &e))?.flatten() {
@@ -509,6 +519,7 @@ mod tests {
         assert!(r.create("c", "c").is_err());
         assert!(r.create("x", "nope").is_err());
         assert_eq!(r.list().unwrap().len(), 3);
+        assert_eq!(r.names().unwrap(), ["c", "empty", "standard"]);
     }
 
     #[test]

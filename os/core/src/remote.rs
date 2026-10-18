@@ -454,20 +454,20 @@ pub fn account() -> Result<Option<Account>> {
 /// Remote's copy comes back as new. So a repo that cannot be sent stops it.
 pub fn logout(repos: &Repos) -> Result<()> {
     let Ok(c) = Client::open() else { return forget_connection() };
-    for s in repos.list()? {
+    for name in repos.names()? {
         // Main's copy and each issue's, each in step before any record of them goes.
-        let shown = repos.line(&s.name);
-        let mut lines: Vec<String> = crate::work::worktrees(&s.name).into_iter().map(|(l, _)| l).collect();
+        let shown = repos.line(&name);
+        let mut lines: Vec<String> = crate::work::worktrees(&name).into_iter().map(|(l, _)| l).collect();
         lines.push(crate::work::MAIN.into());
         for line in lines {
-            let r = lock(&key_of(&s.name, &line)).and_then(|_held| {
+            let r = lock(&key_of(&name, &line)).and_then(|_held| {
                 // Not shown, it would not be the copy sent; and the repo is shown again as it was, whatever sending did.
-                crate::work::show_for_free(&s.name, &line)?;
-                let r = sync_with(&c, repos, &s.name);
-                crate::work::show_for_free(&s.name, &shown).and(r)
+                crate::work::show_for_free(&name, &line)?;
+                let r = sync_with(&c, repos, &name);
+                crate::work::show_for_free(&name, &shown).and(r)
             });
             if let Err(e) = r {
-                let what = if line == crate::work::MAIN { s.name.clone() } else { format!("{}@{line}", s.name) };
+                let what = if line == crate::work::MAIN { name.clone() } else { format!("{name}@{line}") };
                 return Err(crate::tr!("{} could not be sent first ({}); this device stays on the Remote so nothing is lost. Once it is sent, sign out again",
                     "{} を先に送れませんでした（{}）。何も失わないよう、この端末は Remote につないだままです。送れたら、もう一度外してください", what, e));
             }
@@ -1116,6 +1116,8 @@ pub struct Status {
     pub changed: usize,
     /// Never agreed with the Remote.
     pub fresh: bool,
+    /// Files in the copy here (what is sent of it).
+    pub files: usize,
     pub unsynced: Vec<(String, String)>,
     pub bytes: u64,
     pub head: Option<String>,
@@ -1130,7 +1132,7 @@ pub fn status_of(repos: &Repos, name: &str) -> Result<Status> {
         None => here.tree.len(),
     };
     Ok(Status {
-        name: name.into(), changed, fresh: b.is_none(), unsynced: here.unsynced, bytes: here.bytes,
+        name: name.into(), changed, fresh: b.is_none(), files: here.tree.values().filter(|v| v.is_some()).count(), unsynced: here.unsynced, bytes: here.bytes,
         head: b.as_ref().and_then(|b| b.head.clone()), version: b.map_or(0, |b| b.version),
     })
 }

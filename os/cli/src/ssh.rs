@@ -75,9 +75,9 @@ pub fn fingerprint(key: &PrivateKey) -> String {
     ssh::fingerprint(&key.public_key().to_bytes().unwrap_or_default())
 }
 
-/// The repos here, by name: the SSH users there are.
+/// The repos here, by name: the SSH users there are. Asked every few seconds (BEAT), so no repo is walked.
 fn repo_names() -> Vec<String> {
-    repos::Repos::open().and_then(|r| r.list()).map(|l| l.into_iter().map(|s| s.name).collect()).unwrap_or_default()
+    repos::Repos::open().and_then(|r| r.names()).unwrap_or_default()
 }
 
 /// Where each repo is reached now.
