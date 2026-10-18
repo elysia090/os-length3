@@ -77,11 +77,17 @@ fn open(app: AppHandle, repo: String) -> Result<u32, String> {
     if root::current(&paths::data_dir()).is_none() {
         return Err(length3_core::tr!("There is no root", "root がありません"));
     }
+    // Said plainly when it is not here, rather than as l3's "which repo?".
+    length3_core::repos::Repos::open()?.dir(&repo)?;
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let (mut reader, writer) = std::io::pipe().map_err(|e| e.to_string())?;
-    // One pipe for both, so what it prints keeps its order.
+    // One pipe for both, so what it prints keeps its order. The repo is named by LENGTH3_REPO from the data
+    // directory, never as a word: l3 reads a word against its forms first, so a repo called ls or stop was
+    // `l3 prompt ls` (the list) or `l3 prompt stop`, and one called --network a flag.
     let mut child = Command::new(prompt::l3_path(&exe))
-        .args(["prompt", &repo])
+        .arg("prompt")
+        .env("LENGTH3_REPO", &repo)
+        .current_dir(paths::data_dir())
         .stdin(Stdio::piped())
         .stdout(writer.try_clone().map_err(|e| e.to_string())?)
         .stderr(writer)

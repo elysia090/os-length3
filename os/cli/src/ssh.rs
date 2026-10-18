@@ -239,7 +239,10 @@ async fn run_channel(mut ch: Channel<Msg>, handle: server::Handle, shared: Arc<S
 /// one was asked for; what it prints goes to the client, and its exit code once it ends.
 async fn start(shared: &Arc<Shared>, handle: &server::Handle, id: ChannelId, repo: &str, command: Option<String>, asked: &Asked) -> Option<(Input, u32)> {
     let mut cmd = tokio::process::Command::new(&shared.exe);
-    cmd.arg("prompt").arg(repo);
+    // The repo (the SSH user) is named by LENGTH3_REPO from the data directory, never as a word: l3 reads a
+    // word against its forms first, so `ssh ls@host` was `l3 prompt ls`, the list of every Prompt on the
+    // device, and a repo called stop or --network could not be reached at all.
+    cmd.arg("prompt").env("LENGTH3_REPO", repo).current_dir(paths::data_dir());
     if let Some(c) = &command { cmd.args(["--", "/bin/sh", "-c", c]); }
     cmd.env_remove("L3_PROMPT").env("TERM", asked.pty.as_ref().map_or("dumb", |p| p.0.as_str())).kill_on_drop(false);
     log(&format!("session {repo}: {}", command.as_deref().map_or("shell".to_string(), |c| format!("exec {} bytes", c.len()))));
