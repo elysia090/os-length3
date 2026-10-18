@@ -714,6 +714,21 @@ What leaves this system is kept to what is said here:
   it; `.git` is refused in every spelling and through any symlink, from the
   webview, from `l3` and from the Prompt's write-back.
 
+### The Remote
+
+However the OS is reached, in a browser, the desktop app or l3, some of it
+is the Remote's and stays so: who someone is (a provider's identity, then
+passkeys; the app and l3 come in by a code a browser approves, each device a
+session any other can end), the canonical copy of each repo and its
+history, Home's settings, names, the Inbox and servers, and which devices
+listen for SSH. Running natively moves the OS onto the device, not these:
+they are what every device agrees through. Its rows and its files are
+apart: Postgres holds everything said here, the bucket only file contents,
+and a Remote without a bucket does all the rest and says plainly that it
+cannot hold files now, so a device keeps its work until it can. Each part,
+its routes and tables, and what the app and l3 need of it that a page does
+not: `service/README.md`.
+
 # Part III. Each place in turn
 
 ## 7. The rail
