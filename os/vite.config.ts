@@ -1,3 +1,4 @@
+import {readFileSync} from 'node:fs';
 import {defineConfig, type Plugin} from 'vite';
 
 // Tauri serves the built files from ../dist and points its dev webview at this
@@ -18,6 +19,9 @@ import {defineConfig, type Plugin} from 'vite';
 const REMOTE_URL = process.env.VITE_LENGTH3_REMOTE ?? 'https://os.length3.com';
 const REMOTE = REMOTE_URL ? new URL(REMOTE_URL).origin : '';
 const DEV_REMOTE = process.env.LENGTH3_DEV_REMOTE;
+// The release this tree ships (RELEASE): the web's Runtime offers that version's desktop app
+// (shared/desktop-releases.json), as the deploy puts it on the Remote (service/mirror.ts).
+process.env.VITE_LENGTH3_RELEASE ??= readFileSync(new URL('./RELEASE', import.meta.url), 'utf8').trim();
 const WEB_POLICY = [
   "default-src 'self'", "script-src 'self' 'wasm-unsafe-eval'", "worker-src 'self'",
   "style-src 'self' 'unsafe-inline'", "img-src 'self' data:", `connect-src 'self'${REMOTE ? ` ${REMOTE}` : ''}`,

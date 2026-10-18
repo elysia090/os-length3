@@ -33,13 +33,15 @@ const MARKS = {
   close: 'M7 7l10 10M17 7L7 17',
   // More to choose from, below.
   down: 'M7 10l5 5 5-5',
+  // Down onto this computer: an arrow into a tray, the tray as wide as the arrow's room.
+  download: 'M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14',
   // Someone not named yet: a head and shoulders.
   person: 'M12 12a3.75 3.75 0 1 0 0-7.5 3.75 3.75 0 0 0 0 7.5zM5 19.5a7 7 0 0 1 14 0',
   // A cog: eight teeth round a ring, the hole in its middle.
   gear: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z',
 } as const;
 
-/** A small mark drawn like the icons: + to add, × to take off, the gear for settings, a person not named yet. */
+/** A small mark drawn like the icons: + to add, × to take off, the gear for settings, a person not named yet, download. */
 export function mark(name: keyof typeof MARKS): SVGSVGElement {
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');

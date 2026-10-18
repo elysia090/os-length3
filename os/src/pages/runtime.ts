@@ -2,7 +2,9 @@ import {ago, bytes, h} from '../dom.ts';
 import {isNative, rootFetch, rootStatus, rootUse, type Certainty, type Freed, type Space} from '../host.ts';
 import {t, tn} from '../i18n.ts';
 import {bring, onSync, remoteOnly, repoState} from '../lifecycle.ts';
-import {connection, deviceWord} from '../remote.ts';
+import {connection, deviceWord, REMOTE_URL} from '../remote.ts';
+import {mark} from '../icons.ts';
+import desktopPins from '../../shared/desktop-releases.json' with {type: 'json'};
 import * as dotfiles from '../dotfiles.ts';
 import * as ssh from '../ssh.ts';
 import {free, readSpace} from '../space.ts';
@@ -25,6 +27,8 @@ import {getState, setState} from '../state.ts';
 //                    on the Remote yet are sent first); and Free all
 //   On the Remote    what can come here: repos only on the Remote, and the
 //                    release root when it is not installed; Fetch
+//
+// On the web, at the foot, the desktop app: a box with Download.
 
 /** How a figure is known, in one word; a counted figure needs none. */
 const known = (c: Certainty) => (c === 'Verified' ? '' : c === 'Estimated' ? t('estimated') : t('unknown'));
@@ -439,6 +443,45 @@ function dotfilesSection(restarted: () => void): HTMLElement {
   return section;
 }
 
+/** The release this build ships (RELEASE, through vite.config.ts). */
+const RELEASE = (import.meta as {env?: Record<string, string>}).env?.VITE_LENGTH3_RELEASE ?? '';
+
+/**
+ * The desktop app, on the web only: one box, not wide, saying what it is
+ * with its version and size, and Download (its icon and the word) at its
+ * bottom left, as a deed that leaves the page for this computer. Download
+ * gives the .deb (Debian, Ubuntu: most of x86-64 Linux); the AppImage, for
+ * any other, is the quiet second choice beside it. Both come from the Remote
+ * (the deploy puts the pinned files there), and each is offered only once
+ * the Remote says it has it: without them the section is not shown.
+ */
+function desktopApp(): HTMLElement {
+  const section = h('section', {class: 'section', 'aria-labelledby': 'app-title', hidden: ''});
+  const pins = (desktopPins as Record<string, Partial<Record<'deb' | 'appimage', {file: string; bytes: number}>>>)[RELEASE] ?? {};
+  const url = (file: string) => `${REMOTE_URL}/v1/desktop/${encodeURIComponent(file)}`;
+  const there = async (file: string) => { try { return (await fetch(url(file), {method: 'HEAD'})).ok; } catch { return false; } };
+  void (async () => {
+    const [deb, appimage] = await Promise.all([pins.deb, pins.appimage].map(async (p) => (p && (await there(p.file)) ? p : null)));
+    const first = deb ?? appimage;
+    if (!first) return;
+    const other = deb && appimage ? appimage : null;
+    const get = h('a', {class: 'button primary download', href: url(first.file), download: first.file}, mark('download'), h('span', {}, t('Download')));
+    const also = other ? h('a', {class: 'button small-button download-other', href: url(other.file), download: other.file,
+      title: t('For any other x86-64 Linux')}, t('AppImage · {size}', {size: bytes(other.bytes)})) : null;
+    section.replaceChildren(h('h2', {id: 'app-title'}, t('Desktop app')),
+      h('div', {class: 'card small-card app-card'},
+        h('span', {class: 'card-title'}, t('Length³ OS {version}', {version: RELEASE})),
+        // Two sentences, a line each, so neither is broken where the card ends.
+        h('p', {class: 'muted'}, h('span', {}, t('Runs on this computer as an app.')), h('span', {}, t('Its Prompts run on the computer\'s own Linux.'))),
+        h('span', {class: 'muted small'}, first === deb
+          ? t('x86-64 Linux · .deb for Debian and Ubuntu · {size}', {size: bytes(first.bytes)})
+          : t('x86-64 Linux · AppImage · {size}', {size: bytes(first.bytes)})),
+        h('div', {class: 'card-foot'}, get, also, h('span', {class: 'grow'}))));
+    section.hidden = false;
+  })();
+  return section;
+}
+
 /** Runtime: this device and what can go from it and come to it, the Prompts running, and the environment in effect. */
 export function runtime(ctx: Context): Node[] {
   const holder = h('div', {}, h('section', {class: 'section'}, h('p', {class: 'muted'}, t('Measuring…'))));
@@ -454,5 +497,7 @@ export function runtime(ctx: Context): Node[] {
   const restarted = () => { const next = prompts(); running.replaceWith(next); running = next; };
   return [pageHead('runtime'), holder, running, sshSection(),
     h('section', {class: 'section', 'aria-labelledby': 'env-title'}, h('h2', {id: 'env-title'}, t('Environment in effect')), environment()),
-    dotfilesSection(restarted)];
+    dotfilesSection(restarted),
+    // The desktop app is offered on the web; the app itself is it.
+    ...(isNative ? [] : [desktopApp()])];
 }

@@ -706,7 +706,12 @@ What leaves this system is kept to what is said here:
   everything and ends what is left with the shell, and it dies with its
   supervisor. The root itself is installed only from a pinned release,
   checked by digest before it is read, unpacked refusing anything that
-  would land outside, go through a link or be a device.
+  would land outside, go through a link or be a device. It is fetched from
+  the Remote this device uses, then the publisher's Remote, which each of
+  its deploys fills with every root pinned in `core/src/root.rs`
+  (`service/mirror.ts`), and last from the GitHub release, which answers
+  only while the repository is public; when none has it, the error says
+  what each said.
 - **Host.** The app starts no host program for a repo: history is the
   Remote's, and a repo's own tools (git among them) run inside the root.
 - **Files.** The data directory and its settings are the user's alone (0700,
@@ -895,9 +900,10 @@ The Prompt never goes silent while something takes time:
 ### Runtime
 
 この端末 first, then what can go from it, then what is running, then the
-environment actually in effect (what runs, not what was asked for). There
-is no table of policies: what the device holds is shown as things, and
-each thing says what can be done with it.
+environment actually in effect (what runs, not what was asked for), and on
+the web, at its foot, the desktop app. There is no table of policies: what
+the device holds is shown as things, and each thing says what can be done
+with it.
 
 - **この端末**: one bar of the host's whole, with this OS's share darker
   (not an ink fill, which means current), and three figures: this OS, free,
@@ -1008,6 +1014,24 @@ each thing says what can be done with it.
   so Save does not move. Remove asks in the box, where its deeds were (it
   goes from every device; Prompts running keep it until they start again),
   Remove under the pointer and Not now at the right.
+
+- **デスクトップアプリ**, on the web only (the app does not offer itself):
+  one small card under its heading, not wide (480 px at most, so it reads
+  as a box and not a band across the page). Its title is Length³ OS and the
+  version `RELEASE` names; a line each for what it is (この端末で、アプリと
+  して動きます。 / Prompt は端末の Linux の上で動きます。), so neither sentence
+  is broken where the card ends; then, quietly, x86-64 Linux, which file
+  and its size. At its bottom left, Download (ダウンロード): a primary
+  button drawn with the download mark (an arrow into a tray, `icons.ts`)
+  and the word. It is at the left because it leaves the page for this
+  computer, as Forge does on Remote's card. It gives the .deb, which
+  Debian and Ubuntu install; beside it, a small plain button offers the
+  AppImage, for any other x86-64 Linux, with its size. Both are the files
+  `shared/desktop-releases.json` pins for that version, served by the
+  Remote (`/v1/desktop/<file>`, to anyone, by range), where each deploy
+  puts them from the release (`service/mirror.ts`). Each is offered only
+  once the Remote says it has it; with neither there, the section is not
+  shown, never a button that cannot act.
 
 In a browser the same list is the browser's copy of the repos (このブラウザ,
 its share an estimate), and the same three answers apply.
