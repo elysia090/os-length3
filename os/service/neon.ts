@@ -5,6 +5,7 @@
 // bridge in this process (bridge.ts).
 
 import {Pool} from '@neondatabase/serverless';
+import {sql} from 'drizzle-orm';
 import {drizzle} from 'drizzle-orm/neon-serverless';
 import {migrate} from 'drizzle-orm/neon-serverless/migrator';
 import {bridge, throughBridge} from './bridge.ts';
@@ -14,6 +15,21 @@ export const MIGRATIONS = new URL('./migrations', import.meta.url).pathname;
 /** The migrations, as a deploy runs them, as the database's owner: what is not applied yet, in order, each once. */
 export async function migrateRemote(db: ReturnType<typeof drizzle>) {
   await migrate(db, {migrationsFolder: MIGRATIONS});
+}
+
+/**
+ * remote_worker, the login role the Worker connects as, made (or given this new password) as the
+ * owner: a member of remote_app (rows, nothing else; 0001) and of nothing more, its statements cut
+ * off at 15 s. What deploy.ts gives the Worker, and what the production-like selftest connects as
+ * (selftest/prod). `password` is letters and digits only, so it is written into the statement as it is.
+ */
+export async function workerRole(db: ReturnType<typeof drizzle>, password: string): Promise<string> {
+  if (!/^[A-Za-z0-9]+$/.test(password)) throw new Error('remote_worker: a password of letters and digits');
+  const [had] = (await db.execute(sql`select 1 from pg_roles where rolname = 'remote_worker'`)).rows;
+  await db.execute(sql.raw(`${had ? 'ALTER' : 'CREATE'} ROLE remote_worker WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT PASSWORD '${password}'`));
+  await db.execute(sql`grant remote_app to remote_worker`);
+  for (const s of ["statement_timeout = '15s'", "idle_in_transaction_session_timeout = '15s'", "lock_timeout = '5s'"]) await db.execute(sql.raw(`alter role remote_worker set ${s}`));
+  return password;
 }
 
 /** A pool on `url` and its Drizzle database (no schema: for the owner's statements). */

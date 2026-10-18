@@ -40,7 +40,7 @@ import {readFileSync} from 'node:fs';
 import {sql} from 'drizzle-orm';
 import {enterEmail} from './enter.ts';
 import {mirror, remoteStore} from './mirror.ts';
-import {defaultBranchUrl, migrateRemote, owner as ownerOn} from './neon.ts';
+import {defaultBranchUrl, migrateRemote, owner as ownerOn, workerRole} from './neon.ts';
 import {pinnedDesktop, pinnedRoots} from './releases.ts';
 
 const config = new URL('../wrangler.toml', import.meta.url).pathname;
@@ -85,13 +85,9 @@ async function held(): Promise<Set<string>> {
   return new Set((JSON.parse(out) as {name: string}[]).map((s) => s.name));
 }
 
-/** remote_worker with a new password (letters and digits only, so it is written into the statement as it is); the URL the Worker reaches it by. */
+/** remote_worker with a new password (workerRole, neon.ts); the URL the Worker reaches it by. */
 async function worker(db: Awaited<ReturnType<typeof owner>>['db'], url: URL): Promise<string> {
-  const password = secret(30).replace(/[^A-Za-z0-9]/g, 'x');
-  const [had] = (await db.execute(sql`select 1 from pg_roles where rolname = 'remote_worker'`)).rows;
-  await db.execute(sql.raw(`${had ? 'ALTER' : 'CREATE'} ROLE remote_worker WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT PASSWORD '${password}'`));
-  await db.execute(sql`grant remote_app to remote_worker`);
-  for (const s of ["statement_timeout = '15s'", "idle_in_transaction_session_timeout = '15s'", "lock_timeout = '5s'"]) await db.execute(sql.raw(`alter role remote_worker set ${s}`));
+  const password = await workerRole(db, secret(30).replace(/[^A-Za-z0-9]/g, 'x'));
   // The pooled host: many short connections, as a Worker makes.
   const host = url.hostname.includes('-pooler.') ? url.hostname : url.hostname.replace(/^([^.]+)\./, '$1-pooler.');
   return `postgresql://remote_worker:${password}@${host}${url.pathname}?sslmode=require`;
