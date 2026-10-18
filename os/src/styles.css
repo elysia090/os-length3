@@ -816,12 +816,11 @@ mark { background: var(--ink); color: var(--ground); }
 /* A refusal of the plan's, said in place: the words, then the way to the Plan beside them. */
 /* What paid adds is read whole, wrapping where it must, never cut short. */
 .plan-adds .row-name { white-space: normal; }
-/* Narrow (a phone, a tall window): what is measured and its figures on one line, the track under them, as wide as the row. */
+/* Narrow (a phone, a tall window): what is measured, its track as wide as the row, its figures; one under another. */
 @media (max-width: 760px) {
-  .plan-meter { grid-template-columns: minmax(0, 1fr) auto; row-gap: var(--s1); padding-block: var(--s2); }
-  .plan-meter > .meter { grid-column: 1 / -1; grid-row: 2; }
+  .plan-meter { grid-template-columns: minmax(0, 1fr); row-gap: var(--s1); padding-block: var(--s2); }
   .plan-meter > .row-name { white-space: normal; }
-  .plan-meter > .row-meta:nth-child(2) { grid-column: 2; }
+  .plan-meter > .row-meta, .plan-meter > .row-meta:nth-child(2) { grid-column: 1; text-align: left; }
 }
 .plan-refused { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s2); }
 
