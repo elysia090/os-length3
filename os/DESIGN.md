@@ -1019,8 +1019,8 @@ with it.
   beside SSH, on one row (two small things this device can be reached by
   or become), its card the SSH card's size, the two ending level; where the
   row has no room for both, it goes under. Few words: its title, Length³
-  OS and the version `RELEASE` names; one line of what it is (この端末で
-  アプリとして動きます); quietly, x86-64 Linux, which file and its size. At
+  OS and the version `RELEASE` names; quietly, x86-64 Linux, which file
+  and its size (what it is goes without saying). At
   its bottom left, Download (ダウンロード): a small primary button with the
   download mark (an arrow into a tray, `icons.ts`) and the word. It is at
   the left because it leaves the page for this computer, as Forge does on

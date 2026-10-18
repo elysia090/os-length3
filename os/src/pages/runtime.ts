@@ -468,11 +468,10 @@ function desktopApp(): HTMLElement {
     const get = h('a', {class: 'button primary small-button download', href: url(first.file), download: first.file}, mark('download'), h('span', {}, t('Download')));
     const also = other ? h('a', {class: 'button small-button', href: url(other.file), download: other.file,
       title: t('AppImage · {size} · for any other x86-64 Linux', {size: bytes(other.bytes)})}, 'AppImage') : null;
-    // Its card is the SSH card's size, beside it: what it is, what it takes, and Download at its bottom left.
+    // Its card is the SSH card's size, beside it: which file and its size, and Download at its bottom left.
     section.replaceChildren(h('h2', {id: 'app-title'}, t('Desktop app')),
       h('div', {class: 'card small-card app-card'},
         h('span', {class: 'card-title'}, t('Length³ OS {version}', {version: RELEASE})),
-        h('span', {class: 'muted small'}, t('Runs on this computer as an app.')),
         h('span', {class: 'muted small'}, first === deb ? t('x86-64 Linux · .deb · {size}', {size: bytes(first.bytes)})
           : t('x86-64 Linux · AppImage · {size}', {size: bytes(first.bytes)})),
         h('div', {class: 'card-foot'}, get, also, h('span', {class: 'grow'}))));

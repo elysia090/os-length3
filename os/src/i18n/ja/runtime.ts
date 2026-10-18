@@ -85,7 +85,6 @@ export default {
   'The Prompts in {list} get it when they start again': '{list}の Prompt には、もう一度起動すると入ります',
   'Desktop app': 'デスクトップアプリ',
   'Length³ OS {version}': 'Length³ OS {version}',
-  'Runs on this computer as an app.': 'この端末でアプリとして動きます',
   'x86-64 Linux · .deb · {size}': 'x86-64 Linux · .deb · {size}',
   'x86-64 Linux · AppImage · {size}': 'x86-64 Linux · AppImage · {size}',
   'Download': 'ダウンロード',
