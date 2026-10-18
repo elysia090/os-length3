@@ -46,15 +46,12 @@ const doing = (b: HTMLButtonElement, error: HTMLElement, f: () => Promise<unknow
   try { await f(); after(); } catch (e) { error.textContent = errorText(e); b.disabled = false; }
 };
 
-/** The issue's change (the latest record of it). */
-export const changeOf = changeFor;
-
 /** Who is signed in, for the line a close is written with; read once. */
 let whoAmI: Promise<string> | null = null;
 const myName = () => (whoAmI ??= me().then((m) => m?.name ?? '', () => { whoAmI = null; return ''; }));
 
 /** Close an issue that will not be done: its file says so on its last line (the day, and who). */
-export const closeIssue = async (issue: Issue) => setClosed(store, issue, closeMark(await myName()));
+const closeIssue = async (issue: Issue) => setClosed(store, issue, closeMark(await myName()));
 /** Open a closed issue again. */
 export const reopenIssue = (issue: Issue) => setClosed(store, issue, null);
 const hereOf = (s: RepoState | undefined, issue: Issue) => !!s?.work && s.work.line !== 'main' && s.work.issue === issuePath(issue);
@@ -62,7 +59,7 @@ const hereOf = (s: RepoState | undefined, issue: Issue) => !!s?.work && s.work.l
 /** Where the issue stands, quietly, in a few words. */
 function standing(s: RepoState | undefined, issue: Issue): string {
   const path = issuePath(issue);
-  const c = changeOf(s, issue);
+  const c = changeFor(s, issue);
   const w = s?.work;
   // Worked on here: who and when; the boxes under it say the rest.
   if (hereOf(s, issue) && w) return t('{who} · started {when}', {who: w.started_by || '—', when: ago(w.started_at)});
@@ -87,7 +84,7 @@ export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEv
   const error = h('p', {class: 'error', role: 'alert'});
   const line = s?.lines.find((l) => l.issue === path) ?? null;
   const here = hereOf(s, issue);
-  const change = connection() ? changeOf(s, issue) : null;
+  const change = connection() ? changeFor(s, issue) : null;
   const acts: Node[] = [];
   let leave: HTMLButtonElement | null = null;
   // Nothing is offered until where it stands is known.
@@ -213,7 +210,7 @@ function received(change: git.Change): HTMLElement {
  * approved.
  */
 export function mergeRow(issue: Issue, s: RepoState | undefined, events: IssueEvents, after: () => void): HTMLElement | null {
-  const change = connection() ? changeOf(s, issue) : null;
+  const change = connection() ? changeFor(s, issue) : null;
   if (!change || change.state !== 'open') return null;
   const at = issue.repo;
   const here = hereOf(s, issue);
@@ -252,7 +249,7 @@ function markedDiff(files: git.FileDiff[], marked: Set<string>, pending: Set<str
  */
 export function reviewBox(issue: Issue, s: RepoState | undefined, after: () => void): HTMLElement | null {
   const at = issue.repo;
-  const change = changeOf(s, issue);
+  const change = changeFor(s, issue);
   if (!connection() || !change || change.state === 'reset') return null;
 
   // Review: the change's diff, marked where reviewers marked it, what was said, and room to say more.

@@ -6,14 +6,13 @@ import {connection, onConnection, RemoteError} from '../remote.ts';
 import * as servers from '../servers.ts';
 import type {Context} from './context.ts';
 import {cameTo, timeline} from './talk.ts';
-import {todoList} from './todo-box.ts';
 import {dockFor} from './server-dock.ts';
+import {boardTodo} from './server-todo.ts';
 import {gear as gearSheet} from './server-gear.ts';
 import {seeRepo as repoSheet} from './server-repo.ts';
 import {button, initials, type Shown} from './server-parts.ts';
 import {answers, deed} from './common.ts';
 import {boardNew, onNews, sawBoard, serverNew} from '../news.ts';
-import {every} from '../runs.ts';
 import {errorText} from '../errors.ts';
 
 // Server is an operation, as File is: laid over whatever page is showing,
@@ -231,38 +230,8 @@ export class ServerLayer {
       const talk = h('section', {class: 'board-talk', tabindex: '0', 'aria-label': b.name});
       // Its foot in view, what came is seen: the marks go, here and on the rail.
       talk.append(timeline(talk, b.id, b.member, b.member ? (post) => sawBoard(b.id, post) : undefined));
-      void boardTodo(b, todo);
+      void boardTodo(b, todo, (busy) => writer(todo, busy));
       return h('div', {class: 'board-card'}, head, todo, talk);
-    };
-
-    /**
-     * A board's TODO, pinned at the top of its box: Home's list, kept
-     * together on the Remote (shown, not written, outside the server; not
-     * shown at all there while it is empty). What others change is taken in
-     * every little while, whenever nothing written here is waiting.
-     */
-    const boardTodo = async (b: Shown, holder: HTMLElement) => {
-      const left = h('small', {class: 'muted'});
-      const status = h('p', {class: 'error small', role: 'alert'});
-      let list: servers.BoardTodo[];
-      try { list = await servers.todos(b.id, b.member); } catch (e) { holder.replaceChildren(h('p', {class: 'error'}, errorText(e))); return; }
-      if (!b.member && !list.length) { holder.remove(); return; }
-      // Not sent (the Remote away): said under the list, and sent again by itself.
-      const keeper = b.member ? servers.todoKeeper(b.id, list, {trouble: (why) => { status.textContent = t('Could not save: {message}', {message: why}); }}) : null;
-      const box = todoList(list, keeper ? (kept) => keeper.save(kept) : async () => {},
-        {readOnly: !b.member, first: t('Something to do together'), counted: (x) => { left.textContent = x; }, failed: (why) => { status.textContent = why; }});
-      writer(holder, () => holder.contains(document.activeElement) || (keeper ? !keeper.idle() : false));
-      holder.replaceChildren(h('div', {class: 'board-todo-head'}, h('span', {}, 'TODO'), left), box.element, status);
-      let seen = JSON.stringify(list);
-      // Looked at again every 15 s while the page is in view, until the box is gone: one not answered is the next one's to bring.
-      every(15_000, async () => {
-        if (keeper && !keeper.idle()) return;
-        const now = await servers.todos(b.id, b.member).catch(() => null);
-        if (!now || (keeper && !keeper.idle()) || JSON.stringify(now) === seen) return;
-        seen = JSON.stringify(now);
-        keeper?.took(now);
-        box.update(now);
-      }, {alive: () => holder.isConnected});
     };
 
     /** The last box: a new board in this server. */
