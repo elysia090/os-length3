@@ -26,6 +26,49 @@ export interface Me { domain: string; account: string; code: string; addresses: 
 
 const enc = (a: string) => encodeURIComponent(a);
 
+const KINDS: readonly Kind[] = ['message', 'review', 'question', 'run'];
+/** As the Remote holds a message to (service/inbox.ts): its words, and what it may say it is about. */
+const BODY = 4000;
+const TARGET_KEYS = ['repo', 'issue', 'change', 'version', 'server'];
+
+/** What a message may say it is about, as the Remote keeps it: those keys, each a short string or a number. */
+function targetOf(raw: unknown): Target {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {};
+  return Object.fromEntries(Object.entries(raw).filter(([k, v]) => TARGET_KEYS.includes(k)
+    && (typeof v === 'string' ? v.length <= 200 : typeof v === 'number' && Number.isFinite(v)))) as Target;
+}
+
+/**
+ * The place here a message points to, if it names one a repo here could be:
+ * a repo by a name a repo can have (repos.ts validName), and an issue by a plain
+ * file name in its issue/ (no folder, not hidden). Anyone may write anything there (the Remote keeps any
+ * short string), so a target that names no such place is shown as words only.
+ */
+export function placeOf(target: Target): {repo: string; issue?: string} | null {
+  const {repo, issue} = target;
+  if (typeof repo !== 'string' || !/^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}$/.test(repo)) return null;
+  if (issue === undefined) return {repo};
+  return typeof issue === 'string' && /^[A-Za-z0-9_-][A-Za-z0-9._-]*\.md$/.test(issue) ? {repo, issue} : null;
+}
+
+/**
+ * A message come over the direct line, as the Remote would have taken it, or
+ * null. The peer's device sends what it likes: nothing it says is used before
+ * it is checked as the Remote checks a message sent to it, and it is never one's own.
+ */
+export function liveMessage(data: unknown): Message | null {
+  if (typeof data !== 'string' || data.length > 4 * BODY + 2048) return null;
+  let m: Record<string, unknown>;
+  try { m = JSON.parse(data) as Record<string, unknown>; } catch { return null; }
+  if (typeof m !== 'object' || m === null) return null;
+  const body = typeof m.body === 'string' ? m.body.trim() : '';
+  if (typeof m.id !== 'string' || !m.id || m.id.length > 64 || !body || body.length > BODY) return null;
+  const type = KINDS.includes(m.type as Kind) ? m.type as Kind : 'message';
+  // Its clock is the peer's: never later than now here.
+  const time = typeof m.time === 'number' && Number.isFinite(m.time) ? Math.min(m.time, Date.now()) : Date.now();
+  return {id: m.id, mine: false, type, target: targetOf(m.target), body, time, read: false, live: true};
+}
+
 export const me = () => json<Me>('/v1/inbox/me').then((m) => { home = m.domain; return m; });
 
 /** This Remote's own domain, once known: a name on it is shown alone. */
@@ -150,7 +193,7 @@ export class Live {
     this.channel = ch;
     ch.onopen = () => this.state(true);
     ch.onclose = () => this.state(false);
-    ch.onmessage = (e) => { try { this.hear({...(JSON.parse(String(e.data)) as Message), mine: false, live: true}); } catch { /* not ours */ } };
+    ch.onmessage = (e) => { const m = liveMessage(e.data); if (m) this.hear(m); };
   }
 
   private async offer() {

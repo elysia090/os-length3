@@ -276,11 +276,13 @@ export function inboxPage(ctx: Context): Node[] {
     /** A message as a bubble at the foot. */
     const bubble = (m: inbox.Message) => {
       const about = [m.target.repo, m.target.issue, m.target.change ? t('change {id}', {id: String(m.target.change).slice(0, 8)}) : ''].filter(Boolean).join(' · ');
-      const go = m.target.repo ? (() => {
-        const b = h('button', {type: 'button', class: 'link'}, about);
-        b.addEventListener('click', () => { if (m.target.issue) ctx.openRepo(m.target.repo!, `issue/${m.target.issue}`); else { ctx.remember(m.target.repo!); ctx.go('git'); } });
-        return b;
-      })() : null;
+      // A way there only where it names a place a repo here could be; a repo named otherwise is said, as words.
+      const place = inbox.placeOf(m.target);
+      let go: HTMLElement | null = null;
+      if (place) {
+        go = h('button', {type: 'button', class: 'link'}, about);
+        go.addEventListener('click', () => { if (place.issue) ctx.openRepo(place.repo, `issue/${place.issue}`); else { ctx.remember(place.repo); ctx.go('git'); } });
+      } else if (m.target.repo) go = h('span', {class: 'muted small'}, about);
       messages.append(h('div', {class: 'bubble', 'data-mine': String(m.mine)},
         m.type !== 'message' ? h('span', {class: 'state-chip'}, KIND(m.type)) : null,
         go, h('p', {class: 'bubble-text'}, m.body),
