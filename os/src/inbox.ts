@@ -22,7 +22,7 @@ export interface Message { id: string; mine: boolean; type: Kind; target: Target
  * held for them a while). `lapsed`: on a domain whose DNS no longer names
  * this Remote; it answers no one until it does again.
  */
-export interface Me { domain: string; account: string; code: string; addresses: {address: string; ssh: boolean; until?: number; ended?: boolean; lapsed?: boolean}[] }
+export interface Me { domain: string; account: string; code: string; addresses: {address: string; until?: number; ended?: boolean; lapsed?: boolean}[] }
 
 const enc = (a: string) => encodeURIComponent(a);
 
@@ -44,7 +44,6 @@ export const thread = (address: string) => json<{address: string; state: Thread[
 export const markRead = (address: string) => json(`/v1/inbox/threads/${enc(address)}/read`, {method: 'POST', body: '{}'});
 export const lookup = (address: string) => json<{address?: string; reachable: boolean; why?: string}>(`/v1/inbox/lookup?address=${enc(address)}`);
 export const setContact = (address: string, state: 'accepted' | 'blocked' | 'none') => json('/v1/inbox/contacts', {method: 'POST', body: JSON.stringify({address, state})});
-export const setSsh = (address: string, on: boolean) => json(`/v1/inbox/addresses/${enc(address)}/ssh`, {method: 'POST', body: JSON.stringify({on})});
 
 /** Claim an address; for another domain, what the domain must publish first comes back in the error. */
 export async function claim(name: string, domain?: string): Promise<string> {

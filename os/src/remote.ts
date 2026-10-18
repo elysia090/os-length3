@@ -14,16 +14,29 @@ import {isNative, native} from './host.ts';
 import {t} from './i18n.ts';
 import {getState, loadState, setState} from './state.ts';
 
+/** The Remote this OS ships with: one name for the app, the Remote, the DNS records people publish and passkeys. */
+export const DEFAULT_REMOTE = 'https://os.length3.com';
+/** Its name before (0.4.x signed in by it): the same Worker answers it, and a device that kept it goes on by the one name. */
+const FORMER_REMOTE = 'https://remote.length3.com';
+/** A Remote's URL as it is used now (core/src/remote.rs current_url). */
+export const currentURL = (url: string): string => {
+  const u = url.replace(/\/$/, '');
+  return u.toLowerCase() === FORMER_REMOTE ? DEFAULT_REMOTE : u;
+};
+
 /** The Remote this build signs in to; '' is this page's own origin (development). */
 export const REMOTE_URL: string = (() => {
   const v = (import.meta as {env?: Record<string, string>}).env?.VITE_LENGTH3_REMOTE;
-  return v === undefined ? 'https://remote.length3.com' : v.replace(/\/$/, '');
+  return v === undefined ? DEFAULT_REMOTE : v.replace(/\/$/, '');
 })();
 
 export interface Connection { url: string; token: string }
 
 export const connection = (): Connection | null => {
-  try { const c = JSON.parse(getState('remote') ?? 'null') as Connection | null; return c?.token ? c : null; } catch { return null; }
+  try {
+    const c = JSON.parse(getState('remote') ?? 'null') as Connection | null;
+    return c?.token ? {...c, url: currentURL(c.url ?? '')} : null;
+  } catch { return null; }
 };
 
 export class RemoteError extends Error {

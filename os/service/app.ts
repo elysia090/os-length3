@@ -3,8 +3,10 @@
 // bundles, open boards and public repos needs a session: a bearer token, or
 // the session cookie on a request from one of the app's own pages.
 //
-//   GET    /v1/about                  what this Remote offers: its sign-in providers
-//   GET    /v1/os/:sha                a release bundle, to anyone, by digest (Range)
+//   GET    /v1/about                  what this Remote offers: its sign-in providers, and its app's origin
+//   GET    /v1/health                 whether it answers from its database (503 when not), to anyone
+//   GET    /v1/os/:sha                a release's root, to anyone, by digest (Range)
+//   GET    /v1/desktop/:file          the desktop app (.deb, AppImage), to anyone, by its pinned file's name (Range)
 //   GET    /v1/moved                  what moved, cheaply: {repos: stamp, home: {key: version}}
 //   POST   /v1/blobs/missing [sha]    which of these the account does not have yet
 //   PUT    /v1/blobs/:sha             bytes, refused unless they are that digest and fit in its room
@@ -28,6 +30,7 @@
 //   GET    /v1/repos/:name/changes    POST {line, kind, title, note}: Submit change
 //   POST   /v1/repos/:name/changes/:id/reviews | merge | reject | reset
 //   GET    /v1/home/:key  PUT {value, version}
+//   /v1/ssh…                          which devices listen for SSH, and stopping one (ssh.ts)
 //
 // Every write that is checked against what the account already has (its
 // room, how many repos or lines or settings) holds the account's lock in a
@@ -47,10 +50,12 @@ import {devOAuth} from './devoauth.ts';
 import {enter, type Enter} from './enter.ts';
 import {inbox} from './inbox.ts';
 import {ago, body, lock, ms, qualified, refuse, rows, type Db, type Vars} from './request.ts';
-import {blob, change, cut, guard, home, line, repo, repoGone, review, room, type Review, type Tree} from './schema.ts';
+import {blob, change, cut, guard, home, line, repo, repoGone, review, room, throttle, type Review, type Tree} from './schema.ts';
 import {seen} from './seen.ts';
 import {news} from './news.ts';
 import {servers} from './servers.ts';
+import {desktopFile, rootKey} from './releases.ts';
+import {sshRoutes} from './ssh.ts';
 import {KEPT, purge, REMEMBERED} from './sweep.ts';
 
 export interface Deps {
@@ -59,6 +64,11 @@ export interface Deps {
   bucket: Bucket;
   /** Pages that may call: the web app, the desktop app's webview. */
   origins: string[];
+  /**
+   * The web app's origin, where a device's code is approved (auth.ts verificationUri): said in
+   * /v1/about, so a device that reaches the Remote by another name opens that page and no other.
+   */
+  appOrigin?: string;
   /** The providers offered for sign-in (auth.ts providers()). */
   providers: string[];
   /** Bytes one account may keep: its blobs and the trees its repos hold. */
@@ -73,8 +83,6 @@ export interface Deps {
   txt?: (name: string) => Promise<string[]>;
   /** How long a domain's DNS is taken as still saying what it said (inbox.ts). */
   recheck?: number;
-  /** Sends mail (a server board's guest's code); without it, guests cannot be checked. */
-  mail?: (to: string, subject: string, text: string) => Promise<void>;
   /** A Remote for research: one account, entered by its link (enter.ts); nobody signs up, nothing is shown to everyone. */
   enter?: Enter;
 }
@@ -110,16 +118,16 @@ export async function sha256(bytes: Uint8Array): Promise<string> {
 
 export const validName = (n: string) => /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}$/.test(n);
 /** A line of work: 'main', or an issue file's stem. */
-const validLine = (n: string) => /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(n);
+export const validLine = (n: string) => /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(n);
 /** The issue a line is the work for: its file ('issue/001.md'); '' for main. */
-const issueOf = (line: string) => (line === 'main' ? '' : `issue/${line}.md`);
+export const issueOf = (line: string) => (line === 'main' ? '' : `issue/${line}.md`);
 
 /**
  * Three trees as one, path by path: what changed on one side only is taken,
  * the same change on both is taken once, and a path both changed differently
  * is a conflict (and is left as `ours`).
  */
-function merge3(base: Tree, ours: Tree, theirs: Tree): {tree: Tree; conflicts: string[]} {
+export function merge3(base: Tree, ours: Tree, theirs: Tree): {tree: Tree; conflicts: string[]} {
   const tree: Tree = {}, conflicts: string[] = [];
   const get = (t: Tree, p: string) => (p in t ? t[p] : undefined);
   for (const p of new Set([...Object.keys(base), ...Object.keys(ours), ...Object.keys(theirs)])) {
@@ -131,7 +139,7 @@ function merge3(base: Tree, ours: Tree, theirs: Tree): {tree: Tree; conflicts: s
 }
 
 /** A repo path as the app allows one: no .., no empty part, never .git however spelt. */
-function validPath(p: string): boolean {
+export function validPath(p: string): boolean {
   if (!p || p.length > 1024 || p.startsWith('/')) return false;
   return p.split('/').every((part) => {
     if (!part || part === '.' || part === '..') return false;
@@ -141,7 +149,7 @@ function validPath(p: string): boolean {
 }
 
 /** A draft with a diff laid on it: `remove` takes a path and everything under it, then `set` is written. */
-function applyDiff(draft: Tree, set: Tree, remove: string[]): Tree {
+export function applyDiff(draft: Tree, set: Tree, remove: string[]): Tree {
   const gone = new Set(remove);
   // A path goes when it, or a folder it is in, was removed: its own ancestors are looked up, not every path removed.
   const removed = (p: string) => {
@@ -199,7 +207,7 @@ export function createApp(d: Deps) {
     c.header('Cache-Control', 'no-store');
     c.header('X-Content-Type-Options', 'nosniff');
   });
-  // A body is read whole before it is looked at, by anyone's request (signing in, a guest's code, a link's key):
+  // A body is read whole before it is looked at, by anyone's request (signing in, a guest's invitation, a link's key):
   // none is read past what its route can take, counted as it comes, whatever it says its length is.
   app.use('*', (c, next) => bodyLimit({maxSize: roomFor(c.req.method, c.req.path), onError: (c) => c.json({error: 'What was sent is too large'}, 413)})(c, next));
 
@@ -207,26 +215,49 @@ export function createApp(d: Deps) {
   if (d.enter) app.all('/api/auth/passkey/*', (c) => c.json({error: 'This Remote is entered by its link'}, 403));
   app.on(['GET', 'POST'], '/api/auth/*', (c) => d.auth.handler(c.req.raw));
 
-  app.get('/v1/about', (c) => c.json({passkey: !d.enter, providers: d.enter ? [] : d.providers, domain: d.domain ?? 'length3.com', ...(d.enter ? {enter: true} : {})}));
+  app.get('/v1/about', (c) => c.json({passkey: !d.enter, providers: d.enter ? [] : d.providers, domain: d.domain ?? 'length3.com',
+    ...(d.appOrigin ? {app: d.appOrigin} : {}), ...(d.enter ? {enter: true} : {})}));
+  // What a deploy (deploy.ts) and a watch on the Remote ask: one read, nothing written, nothing said of what failed.
+  app.get('/v1/health', async (c) => {
+    try {
+      await db.execute(sql`select 1`);
+      return c.json({ok: true});
+    } catch (e) {
+      console.error('health', e);
+      return c.json({ok: false, error: 'The Remote does not reach its database'}, 503);
+    }
+  });
   if (d.enter) enter({db, auth: d.auth, enter: d.enter}, app);
   if (d.providers.includes('dev')) app.route('/dev-oauth', devOAuth());
 
-  // The OS is public: its canonical copy is the release, named by its digest.
-  app.on(['GET', 'HEAD'], '/v1/os/:sha', async (c) => {
+  // The OS is public: its canonical copy is the release, a root named by its digest and the desktop
+  // app by its file's name, as this tree pins them (releases.ts); the deploy puts them here (mirror.ts).
+  // There is no listing: a path names one file or nothing.
+  app.on(['GET', 'HEAD'], '/v1/os/:sha', (c) => {
     const sha = c.req.param('sha');
-    if (!HEX.test(sha)) return c.json({error: 'Not found'}, 404);
-    const m = /^bytes=(\d+)-(\d*)$/.exec(c.req.header('Range') ?? '');
-    const start = m ? Number(m[1]) : 0, end = m && m[2] ? Number(m[2]) : null;
-    // A range that ends before it starts asks for nothing; HEAD asks only how much there is.
-    const backwards = end !== null && end < start, head = c.req.method === 'HEAD';
-    const o = await d.bucket.range(`os/${sha}`, backwards ? 0 : start, backwards ? 0 : head ? start : end);
-    if (!o) return c.json({error: 'No such release'}, 404);
-    if (backwards || (start >= o.size && o.size > 0)) return new Response(null, {status: 416, headers: {'Content-Range': `bytes */${o.size}`}});
-    const length = head ? Math.min(end ?? o.size - 1, o.size - 1) - start + 1 : o.bytes.length;
-    const headers: Record<string, string> = {'Content-Type': 'application/octet-stream', 'Accept-Ranges': 'bytes', ETag: `"${sha}"`, 'Content-Length': String(length)};
-    if (m) headers['Content-Range'] = `bytes ${start}-${start + length - 1}/${o.size}`;
-    return new Response(head ? null : o.bytes as BodyInit, {status: m ? 206 : 200, headers});
+    return HEX.test(sha) ? release(c, rootKey(sha), {type: 'application/octet-stream', etag: sha}) : c.json({error: 'Not found'}, 404);
   });
+  app.on(['GET', 'HEAD'], '/v1/desktop/:file', (c) => {
+    const p = desktopFile(c.req.param('file'));
+    return p ? release(c, p.key, {type: p.type, etag: p.sha256, name: p.file}) : c.json({error: 'No such release'}, 404);
+  });
+  /** One file of a release, whole or the one range asked for (bytes=a-b, bytes=a-), streamed from the bucket. */
+  const release = async (c: Context<Vars>, key: string, o: {type: string; etag: string; name?: string}) => {
+    const m = /^bytes=(\d+)-(\d*)$/.exec(c.req.header('Range') ?? '');
+    const size = await d.bucket.size(key);
+    if (size === null) return c.json({error: 'No such release'}, 404);
+    const start = m ? Number(m[1]) : 0, asked = m && m[2] ? Number(m[2]) : null;
+    // A range that ends before it starts, or starts past the end, asks for nothing there is.
+    if (m && ((asked !== null && asked < start) || start >= size)) return new Response(null, {status: 416, headers: {'Content-Range': `bytes */${size}`}});
+    const end = Math.min(asked ?? size - 1, size - 1), length = Math.max(0, end - start + 1);
+    const headers: Record<string, string> = {'Content-Type': o.type, 'Accept-Ranges': 'bytes', ETag: `"${o.etag}"`, 'Content-Length': String(length)};
+    if (o.name) headers['Content-Disposition'] = `attachment; filename="${o.name}"`;
+    if (m) headers['Content-Range'] = `bytes ${start}-${end}/${size}`;
+    // HEAD asks only how much there is; an empty file has nothing to read.
+    const body = c.req.method === 'HEAD' || !length ? null : await d.bucket.read(key, start, end);
+    if (length && c.req.method !== 'HEAD' && !body) return c.json({error: 'No such release'}, 404);
+    return new Response(body as BodyInit | null, {status: m ? 206 : 200, headers});
+  };
 
   // A page elsewhere can make a browser send the session cookie, never the bearer token: a write
   // that comes with the cookie alone is taken only from the app's own pages.
@@ -482,6 +513,8 @@ export function createApp(d: Deps) {
 
   const digestOf = async (user: string, code: string) => sha256(enc.encode(`${user}:${code.toUpperCase()}`));
   const CODE = /^[A-Za-z0-9]{5}$/;
+  /** Wrong codes an account may give an hour. */
+  const OFF_TRIES = 10;
   /** Proof the person is here: this request's session is the account's latest passkey sign-in, within five minutes. */
   const proven = (g: typeof guard.$inferSelect | undefined, sessionId: string) =>
     !!g?.proofAt && g.proofSession === sessionId && Date.now() - g.proofAt.getTime() < 5 * 60 * 1000;
@@ -497,7 +530,17 @@ export function createApp(d: Deps) {
     if (!g.offDigest) refuse(409, {error: 'Set the five-letter code under Sign-in first.'});
     const same = (a: unknown, b: string) => typeof a === 'string' && a.trim().toLowerCase() === b.trim().toLowerCase();
     if (!same(b?.name, c.get('name')) || b?.repo !== name) refuse(403, {error: 'The names do not match.'});
-    if (typeof b?.code !== 'string' || !CODE.test(b.code) || await digestOf(user, b.code) !== g.offDigest) refuse(403, {error: 'That is not the code.'});
+    const right = typeof b?.code === 'string' && CODE.test(b.code) && await digestOf(user, b.code) === g.offDigest;
+    // Wrong codes are counted, and past so many an hour none is taken, the right one neither: the code is not found by trying.
+    const key = `off-code:${user}`;
+    const wrong = await db.transaction(async (tx: Db) => {
+      await lock(tx, key);
+      const [r] = await rows<{n: number}>(tx, sql`select count(*)::int as n from throttle where key = ${key} and at > ${ago(3600_000)}`);
+      if (!right && r.n < OFF_TRIES) await tx.insert(throttle).values({key});
+      return r.n;
+    });
+    if (wrong >= OFF_TRIES) refuse(429, {error: 'Too many wrong codes; try again in an hour'});
+    if (!right) refuse(403, {error: 'That is not the code.'});
   };
   const named = (user: string, name: string) => and(eq(repo.userId, user), eq(repo.name, name));
 
@@ -742,8 +785,9 @@ export function createApp(d: Deps) {
 
   const domain = d.domain ?? 'length3.com';
   inbox({db, domain, baseURL: d.baseURL ?? '', secret: d.secret ?? '', txt: d.txt, recheck: d.recheck}, v1, app);
-  servers({db, domain, mail: d.mail, secret: d.secret, closed: !!d.enter}, v1, app);
+  servers({db, domain, appOrigin: d.appOrigin, secret: d.secret, closed: !!d.enter}, v1, app);
   news({db}, v1);
+  sshRoutes({db}, v1);
   seen({db, bucket: d.bucket, domain, closed: !!d.enter, viewer: async (req) => (await d.auth.api.getSession({headers: req.headers}))?.user.id ?? null}, v1, app);
 
   app.route('/v1', v1);

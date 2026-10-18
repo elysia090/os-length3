@@ -75,8 +75,15 @@ pub struct Todo {
 
 pub fn todos() -> Result<Vec<Todo>> {
     let Some(text) = get("todo")? else { return Ok(Vec::new()) };
-    // Items the app cannot read are left out, as the app does.
-    let raw: Vec<serde_json::Value> = serde_json::from_str(&text).unwrap_or_default();
+    parse_todos(&text)
+}
+
+/// A stored list. Items the app cannot read are left out, as the app does;
+/// a list that cannot be read at all is refused, not taken for an empty one,
+/// which the next change would be written over.
+pub fn parse_todos(text: &str) -> Result<Vec<Todo>> {
+    let raw: Vec<serde_json::Value> = serde_json::from_str(text)
+        .map_err(|e| crate::tr!("Home's TODO could not be read ({}), so nothing is written over it", "Home の TODO を読めませんでした（{}）。上書きはしません", e))?;
     Ok(raw.into_iter().filter_map(|v| serde_json::from_value(v).ok()).collect())
 }
 
@@ -96,7 +103,8 @@ pub fn todo_from(line: &str, detail: &str, now: u64) -> Option<Todo> {
         return None;
     }
     let detail = [more.trim(), detail.trim_end()].into_iter().filter(|d| !d.is_empty()).collect::<Vec<_>>().join("\n");
-    let id = format!("{}-l3", radix36(now));
+    // The moment, and a part of its own: two made in one millisecond (a script, two devices) are two items.
+    let id = format!("{}-l3{}", radix36(now), radix36(unique() % 36u64.pow(6)));
     Some(Todo { id, kind, title: title.trim().into(), detail, done: false, repo: None, created: now })
 }
 
@@ -243,8 +251,7 @@ pub fn set_dotfile(name: &str, text: Option<&str>) -> Result<bool> {
 // app and l3 on one device are one device to the Remote. Each setting is a
 // value and its version there; a change is sent from the version it was
 // read at. Unchanged here, the Remote's is taken. Changed here and there
-// too: two TODO lists are joined, item by item against the list both were
-// read from; any other setting is the
+// too: two TODO lists are joined against what both last agreed; any other setting is the
 // Remote's (it got there first).
 
 /// Home's settings that are the person's, kept on the Remote (src/draft.ts
@@ -303,45 +310,38 @@ pub fn put_version(v: &serde_json::Value) -> Result<i64> {
     v["version"].as_i64().ok_or_else(|| crate::tr!("The Remote's answer is not a setting", "Remote の答えが設定の形ではありません"))
 }
 
-/// Two TODO lists as one (src/draft.ts `mergeTodo`), item by item against the
-/// list both were read from (`base`; None: nothing agreed yet): an item done,
-/// edited or removed on one device is so on both, one added on either is
-/// kept, and of an item changed on both, an edit stands over a removal
-/// (nothing written is lost) and of two edits this device's. The Remote's
-/// order stands; an item new here follows the one it follows here. One side
-/// not a list, or an item that is null: this device's stands.
-pub fn merge_todo(base: Option<&str>, here: &str, there: &str) -> String {
+/// Whether two items' ids are the same as a JavaScript Set sees them (src/draft.ts):
+/// absent ones are, as are equal strings, numbers, booleans and nulls; objects never are.
+fn same_id(a: Option<&serde_json::Value>, b: Option<&serde_json::Value>) -> bool {
     use serde_json::Value as V;
-    let list = |s: &str| match serde_json::from_str::<V>(s) { Ok(V::Array(a)) => Some(a), _ => None };
-    let (Some(h), Some(r)) = (list(here), list(there)) else { return here.to_string() };
-    let b = base.and_then(list).unwrap_or_default();
-    if h.iter().chain(&r).any(|x| x.is_null()) { return here.to_string(); }
-    let id = |x: &V| x.as_object().and_then(|o| o.get("id")).and_then(V::as_str).map(String::from);
-    let find = |l: &[V], k: &str| l.iter().find(|x| id(x).as_deref() == Some(k)).cloned();
-    let pick = |k: &str| -> Option<V> {
-        let (x, y, z) = (find(&b, k), find(&h, k), find(&r, k));
-        if y == z { return y; }
-        if y == x { return z; }
-        if z == x { return y; }
-        y.or(z)
-    };
-    let mut out: Vec<V> = Vec::new();
-    for x in &r {
-        match id(x) { Some(k) => out.extend(pick(&k)), None => out.push(x.clone()) }
+    match (a, b) {
+        (None, None) => true,
+        (Some(V::Number(x)), Some(V::Number(y))) => x.as_f64() == y.as_f64(),
+        (Some(x @ (V::String(_) | V::Bool(_) | V::Null)), Some(y)) => x == y,
+        _ => false,
     }
-    let mut next = 0;
-    for x in &h {
-        let k = id(x);
-        let at = match &k { Some(k) => out.iter().position(|o| id(o).as_deref() == Some(k.as_str())), None => out.iter().position(|o| o == x) };
-        if let Some(i) = at { next = i + 1; continue; }
-        // On the Remote and not placed: removed here, as the Remote has it unchanged.
-        if k.as_deref().is_some_and(|k| find(&r, k).is_some()) { continue; }
-        if let Some(v) = match &k { Some(k) => pick(k), None => Some(x.clone()) } {
-            out.insert(next, v);
-            next += 1;
-        }
+}
+
+/// Two TODO lists as one, against the one both last agreed (`base`), as
+/// src/draft.ts `joinTodo`: an item only one side changed or removed is as
+/// that side left it, one both changed is this device's, and every item
+/// either side added is kept, the Remote's new ones first. Nothing agreed
+/// (or not a list): every item from both, this device's where both have it.
+/// One side not a list, or an item that is null: this device's stands.
+pub fn join_todo(base: &str, here: &str, there: &str) -> String {
+    use serde_json::Value;
+    let lists = (serde_json::from_str::<Value>(here), serde_json::from_str::<Value>(there));
+    let (Ok(Value::Array(a)), Ok(Value::Array(b))) = lists else { return here.to_string() };
+    if a.iter().chain(&b).any(|x| x.is_null()) { return here.to_string(); }
+    let was: Vec<Value> = match serde_json::from_str::<Value>(base) { Ok(Value::Array(o)) => o.into_iter().filter(|x| !x.is_null()).collect(), _ => Vec::new() };
+    let id = |x: &Value| x.as_object().and_then(|o| o.get("id")).cloned();
+    // By id as the app's Map holds them: the last of each.
+    let find = |list: &[Value], x: &Value| list.iter().rev().find(|y| same_id(id(y).as_ref(), id(x).as_ref())).cloned();
+    let untouched = |x: &Value| find(&was, x).is_some_and(|w| w == *x);
+    let mut out: Vec<Value> = b.iter().filter(|x| find(&a, x).is_none() && !untouched(x)).cloned().collect();
+    for x in &a {
+        if !untouched(x) { out.push(x.clone()); } else if let Some(t) = find(&b, x) { out.push(t); }
     }
-    if out == r { return there.to_string(); }
     serde_json::to_string(&out).unwrap_or_else(|_| here.to_string())
 }
 
@@ -355,8 +355,8 @@ pub fn waiting(here: &impl HomeHere, key: &str) -> bool {
 
 /// Agree `key` with the Remote. Unchanged here, the Remote's is taken.
 /// Changed here, it is sent from the version it was read at; if another
-/// device changed it meanwhile, the TODO lists are joined against the list
-/// both were read from, and any other setting is the Remote's.
+/// device changed it meanwhile, the TODO lists are joined and any other
+/// setting is the Remote's.
 pub fn agree_with(here: &mut impl HomeHere, there: &impl HomeThere, key: &str) -> Result<HomeSynced> {
     let mut out = HomeSynced::default();
     for _ in 0..3 {
@@ -384,17 +384,7 @@ pub fn agree_with(here: &mut impl HomeHere, there: &impl HomeThere, key: &str) -
                 out.version = version;
                 return Ok(out);
             }
-            value = merge_todo(b.as_ref().map(|b| b.value.as_str()), &mine, &t);
-            if value == t {
-                // Nothing here the Remote lacks (all that changed here was done there too): its own is agreed, nothing sent.
-                if value != mine {
-                    here.set_value(key, &value)?;
-                    out.taken = true;
-                }
-                here.agree(key, Agreed { version, value })?;
-                out.version = version;
-                return Ok(out);
-            }
+            value = join_todo(&b.as_ref().map_or(String::new(), |b| b.value.clone()), &mine, &t);
             if value != mine {
                 here.set_value(key, &value)?;
                 out.joined = true;
@@ -441,6 +431,14 @@ impl HomeHere for Files {
     }
 }
 
+/// A number no other call is likely to have: std's random per-process keys, moved on at each call, over the time.
+fn unique() -> u64 {
+    use std::hash::{BuildHasher, Hasher};
+    let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+    h.write_u128(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos()));
+    h.finish()
+}
+
 fn radix36(mut n: u64) -> String {
     let digits = b"0123456789abcdefghijklmnopqrstuvwxyz";
     let mut out = Vec::new();
@@ -456,6 +454,39 @@ fn radix36(mut n: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn item(id: &str, title: &str) -> String {
+        format!(r#"{{"id":"{id}","kind":null,"title":"{title}","detail":"","done":false,"repo":null,"created":1}}"#)
+    }
+
+    #[test]
+    fn a_list_is_read_without_the_items_the_app_cannot_read() {
+        let text = format!("[{},{{\"id\":1}},null,{}]", item("a", "one"), item("b", "two"));
+        assert_eq!(parse_todos(&text).unwrap().iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), ["a", "b"]);
+        // An item the app wrote before it had details, or in its own field order, is read all the same.
+        let t = parse_todos(r#"[{"created":2,"repo":null,"done":true,"title":"x","kind":"Fix","id":"c"}]"#).unwrap();
+        assert_eq!((t[0].kind.as_deref(), t[0].detail.as_str(), t[0].done), (Some("Fix"), "", true));
+    }
+
+    #[test]
+    fn a_list_that_cannot_be_read_is_refused_not_taken_for_empty() {
+        // Taken for empty, the next `l3 todo add` would write the one new item over every item there.
+        for text in ["", "not json", "{\"a\":1}", "[1,", "\"[]\""] {
+            assert!(parse_todos(text).is_err(), "{text:?}");
+        }
+        // A character the app cut in half (a lone surrogate, as an older app could write) is one serde
+        // cannot read: refused too, not wiped.
+        let half = format!("[{}]", item("a", r"x\ud83d"));
+        assert!(parse_todos(&half).is_err());
+        assert_eq!(parse_todos("[]").unwrap(), Vec::<Todo>::new());
+    }
+
+    #[test]
+    fn two_items_made_in_the_same_millisecond_have_ids_of_their_own() {
+        let (a, b) = (todo_from("a", "", 7).unwrap(), todo_from("b", "", 7).unwrap());
+        assert_ne!(a.id, b.id);
+        assert!(a.id.starts_with(&radix36(7)), "{}", a.id);
+    }
 
     #[test]
     fn an_item_is_its_first_line_then_detail() {
@@ -609,36 +640,19 @@ mod tests {
         d.values.insert("todo".into(), r#"[{"id":"a","title":"here, changed"},{"id":"c","title":"mine"}]"#.into());
         let s = agree_with(&mut d, &r, "todo").unwrap();
         assert_eq!((s.joined, s.sent, s.version), (true, true, 3));
-        // The Remote's order; this device's new item after the one it follows here; a changed here only, so it is this device's.
-        let joined = r#"[{"id":"a","title":"here, changed"},{"id":"c","title":"mine"},{"id":"b","title":"there"}]"#;
+        // The Remote's others first, then this device's list; this device's where both have one.
+        let joined = r#"[{"id":"b","title":"there"},{"id":"a","title":"here, changed"},{"id":"c","title":"mine"}]"#;
         assert_eq!((d.values["todo"].as_str(), r.kept.borrow()["todo"].0.as_str()), (joined, joined));
         assert!(!waiting(&d, "todo"));
-        // Another device writes between this one's read and its write (it removed a, b and c, and added e):
-        // read again, joined again against what both read; d, new here, is kept.
+        // Another device writes between this one's read and its write: read again, joined again.
         d.values.insert("todo".into(), format!(r#"{},{{"id":"d"}}]"#, &joined[..joined.len() - 1]));
         *r.before_put.borrow_mut() = Some(("todo".into(), r#"[{"id":"e"}]"#.into()));
         let s = agree_with(&mut d, &r, "todo").unwrap();
         assert_eq!(s.version, 5);
         let ids: Vec<String> = serde_json::from_str::<Vec<Value>>(&d.values["todo"]).unwrap().iter().map(|x| x["id"].as_str().unwrap().to_string()).collect();
-        assert_eq!(ids, ["d", "e"]);
+        // The other device's list is [e] alone: what it removed of the list agreed goes here too; d, new here, stays.
+        assert_eq!(ids, ["e", "d"]);
         assert_eq!(r.kept.borrow()["todo"].0, d.values["todo"]);
-    }
-
-    #[test]
-    fn a_todo_list_that_holds_nothing_new_takes_the_remotes_and_sends_nothing() {
-        // Both read [a, b]; there b was removed; here it was removed too, and a done as there.
-        let r = Remote::default();
-        let mut d = Device::default();
-        d.values.insert("todo".into(), r#"[{"id":"a"},{"id":"b"}]"#.into());
-        agree_with(&mut d, &r, "todo").unwrap();
-        r.elsewhere("todo", r#"[{"id":"a","done":true}]"#);
-        d.values.insert("todo".into(), r#"[{"done":true,"id":"a"}]"#.into());
-        r.asked.borrow_mut().clear();
-        let s = agree_with(&mut d, &r, "todo").unwrap();
-        assert_eq!((s.taken, s.sent, s.version), (true, false, 2));
-        assert_eq!(*r.asked.borrow(), ["GET todo"]);
-        assert_eq!(d.values["todo"], r#"[{"id":"a","done":true}]"#);
-        assert!(!waiting(&d, "todo"));
     }
 
     #[test]
@@ -661,18 +675,10 @@ mod tests {
 
     #[test]
     fn two_lists_join_as_the_app_joins_them() {
-        // As src/draft.test.ts: both read [x, y, w]; there y was done and w removed; here z was added.
-        let base = r#"[{"id":"x"},{"id":"y"},{"id":"w"}]"#;
-        let there = r#"[{"id":"x"},{"id":"y","done":true}]"#;
-        let here = r#"[{"id":"x"},{"id":"y"},{"id":"w"},{"id":"z"}]"#;
-        assert_eq!(merge_todo(Some(base), here, there), r#"[{"id":"x"},{"done":true,"id":"y"},{"id":"z"}]"#);
-        // Nothing agreed yet: every item from both, this device's where both have one, in the Remote's order.
-        assert_eq!(merge_todo(None, r#"[{"id":"a","t":1},{"id":"c"}]"#, r#"[{"id":"b"},{"id":"a"}]"#), r#"[{"id":"b"},{"id":"a","t":1},{"id":"c"}]"#);
-        // Removed here while edited there, the edit stands; removed there while unchanged here, it goes.
-        assert_eq!(merge_todo(Some(r#"[{"id":"a"},{"id":"b"}]"#), "[]", r#"[{"id":"a","t":2},{"id":"b"}]"#), r#"[{"id":"a","t":2}]"#);
-        // Nothing new here: the Remote's text itself.
-        assert_eq!(merge_todo(Some(base), base, there), there);
+        assert_eq!(join_todo("", r#"[{"id":"a"},{"id":1}]"#, r#"[{"id":"b"},{"id":"a","x":1},{"id":1.0}]"#), r#"[{"id":"b"},{"id":"a"},{"id":1}]"#);
         // One side not a list, or an item that is null: this device's stands.
-        for (here, there) in [("{}", "[]"), ("[]", "{}"), ("[]", "nonsense"), ("[null]", "[]"), ("[]", "[null]")] { assert_eq!(merge_todo(None, here, there), here); }
+        for (here, there) in [("{}", "[]"), ("[]", "{}"), ("[]", "nonsense"), ("[null]", "[]"), ("[]", "[null]")] { assert_eq!(join_todo("[]", here, there), here); }
+        // Items without an id are one id (absent) as the app's Set holds them; object ids are never the same.
+        assert_eq!(join_todo("", r#"[{}]"#, r#"[{"t":1},{"id":{}}]"#), r#"[{"id":{}},{}]"#);
     }
 }

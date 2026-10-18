@@ -118,12 +118,13 @@ fn state_set(key: String, json: String) -> Result<(), String> {
 
 /// Sign in: a code to approve in the browser, which is opened on its page.
 /// The Remote is this device's own, never one the page names, and only a
-/// page of that Remote is opened.
+/// page that Remote stands behind is opened: its own, or its app's, on the
+/// origin it says in /v1/about (remote::device_page_ok).
 #[tauri::command]
 async fn remote_login_start(app: tauri::AppHandle) -> Result<remote::DeviceCode, String> {
     let url = remote::default_url();
-    let code = blocking({ let url = url.clone(); move || remote::device_start(&url, "length3-app") }).await?;
-    if !code.verification_uri_complete.starts_with(&format!("{}/", url.trim_end_matches('/'))) {
+    let (code, origin) = blocking({ let url = url.clone(); move || Ok((remote::device_start(&url, "length3-app")?, remote::app_origin(&url))) }).await?;
+    if !remote::device_page_ok(&url, origin.as_deref(), &code.verification_uri_complete) {
         return Err(length3_core::tr!("The Remote named a page that is not its own", "Remote が自分のものでないページを示しました"));
     }
     use tauri_plugin_opener::OpenerExt;
@@ -179,6 +180,12 @@ async fn history_changes(repo: String) -> Result<history::Changes, String> {
 #[tauri::command]
 async fn history_diff(repo: String) -> Result<Vec<history::FileDiff>, String> {
     blocking(move || history::diff(&managed()?, &repo, DIFF_LIMIT)).await
+}
+
+/// A file as it was at the last commit (none: it was not there), to put it back.
+#[tauri::command]
+async fn history_at_head(repo: String, path: String) -> Result<Option<String>, String> {
+    blocking(move || history::at_head(&managed()?, &repo, &path)).await
 }
 
 /// Commit, under an issue (its file name in issue/) or named by `line` ("Kind：件名").
@@ -257,6 +264,43 @@ async fn change_diff(repo: String, id: String) -> Result<Vec<history::FileDiff>,
     blocking(move || history::change_diff(&repo, &id, DIFF_LIMIT)).await
 }
 
+// ---- SSH into this device's Prompts (core/src/ssh.rs; the listener is l3's) ----
+
+/// Whether this device listens for SSH, where each repo is reached, and its host key.
+#[derive(serde::Serialize)]
+struct SshHere { on: bool, port: Option<u16>, destinations: Vec<String>, fingerprint: Option<String> }
+
+fn ssh_now() -> SshHere {
+    #[cfg(unix)]
+    if let Some(l) = length3_core::ssh::listening(&paths::data_dir()) {
+        return SshHere { on: true, port: Some(l.port), destinations: l.destinations, fingerprint: Some(l.fingerprint) };
+    }
+    SshHere { on: false, port: None, destinations: Vec::new(), fingerprint: None }
+}
+
+#[tauri::command]
+fn ssh_here() -> SshHere {
+    ssh_now()
+}
+
+/// Turn it on or off as `l3 address ssh on|off` does, by the l3 beside the app: the same listener, kept by l3
+/// in the background whether or not the app stays open, and the same checks (a key in .authorized_keys first).
+#[tauri::command]
+async fn ssh_set(on: bool) -> Result<SshHere, String> {
+    blocking(move || {
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        let out = std::process::Command::new(length3_core::prompt::l3_path(&exe))
+            .args(["address", "ssh", if on { "on" } else { "off" }, "--json"])
+            .stdin(std::process::Stdio::null()).output()
+            .map_err(|e| length3_core::tr!("Could not start l3: {}", "l3 を起動できませんでした：{}", e))?;
+        if !out.status.success() {
+            let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap_or_default();
+            return Err(v["error"]["message"].as_str().map(String::from).unwrap_or_else(|| String::from_utf8_lossy(&out.stderr).trim().to_string()));
+        }
+        Ok(ssh_now())
+    }).await
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -265,11 +309,11 @@ fn main() {
             capacity, space, free, repo_list, repo_create, repo_tree, repo_read, repo_write, repo_add,
             repo_mkdir, repo_remove, repo_rename, state_get, state_set,
             remote_login_start, remote_login_wait, remote_logout, remote_repos, remote_status,
-            sync_repo, repo_fetch, history_changes, history_diff, history_cut, history_log,
+            sync_repo, repo_fetch, history_changes, history_diff, history_at_head, history_cut, history_log,
             work_start, work_switch, work_state, work_lines, history_push, history_submit, history_reset,
             changes_list, change_review, change_merge, change_reject, change_diff,
             shells::prompt_open, shells::prompt_input, shells::prompt_interrupt, shells::prompt_held, shells::prompt_close,
-            shells::root_status, shells::root_fetch, shells::root_use
+            shells::root_status, shells::root_fetch, shells::root_use, ssh_here, ssh_set
         ])
         .run(tauri::generate_context!())
         .expect("Length³ OS shell failed to start");

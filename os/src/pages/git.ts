@@ -1,6 +1,6 @@
 import {h} from '../dom.ts';
 import * as gitops from '../history.ts';
-import {t, tn} from '../i18n.ts';
+import {t} from '../i18n.ts';
 import {number, readIssues, type Issue} from '../issues.ts';
 import {bring, remoteOnly} from '../lifecycle.ts';
 import {connection} from '../remote.ts';
@@ -8,7 +8,9 @@ import {onChange, store} from '../repos.ts';
 import {bench} from './bench.ts';
 import {pageHead} from './common.ts';
 import type {Context} from './context.ts';
-import {issueBox, issueHead, mergeRow, reviewBox, unmerged, type RepoState} from './git-issue.ts';
+import {closedList, mainCard, mergedList} from './git-done.ts';
+import {issueBox, issueHead, mergeRow, reviewBox, type RepoState} from './git-issue.ts';
+import {laidOut, type Laid} from '../git-state.ts';
 import {issueForm} from './issue-form.ts';
 
 /**
@@ -149,7 +151,8 @@ export function git(ctx: Context): Node[] {
     const issues = all.flatMap((x, j) => (!filter || repos[j] === filter ? x : []));
     // Where each repo stands: the work it shows, the issues started, the changes to main.
     const fresh = new Map<string, RepoState>();
-    if (connection()) await Promise.all([...new Set(issues.map((i) => i.repo))].map(async (r) => {
+    // Every repo looked at, issues or not: what its main has not committed shows too.
+    if (connection()) await Promise.all(repos.filter((r) => !filter || r === filter).map(async (r) => {
       try {
         let {work, lines, changes} = await gitops.standing(r);
         // A work whose change was merged (here or on another device) is done: the repo shows main again.
@@ -157,7 +160,7 @@ export function git(ctx: Context): Node[] {
           await gitops.switchWork(r, 'main');
           work = await gitops.work(r);
         }
-        const uncommitted = work.line !== 'main' ? (await gitops.changes(r)).files : 0;
+        const uncommitted = (await gitops.changes(r)).files;
         fresh.set(r, {work, lines, changes, uncommitted});
       } catch (e) {
         fresh.set(r, {work: null, lines: [], changes: [], uncommitted: 0, error: e instanceof Error ? e.message : String(e)});
@@ -173,16 +176,16 @@ export function git(ctx: Context): Node[] {
       return number(store, r, issues.filter((i) => i.repo === r), inUse);
     }));
     if (renumbered.some(Boolean)) return;
-    // Oldest first, so #1 is on the left; merged ones are done.
-    shown = issues.filter((i) => unmerged(states.get(i.repo), i)).sort((a, b) => (a.repo === b.repo ? (a.file < b.file ? -1 : 1) : a.repo < b.repo ? -1 : 1));
-    const done = issues.length - shown.length;
+    // Oldest first, so #1 is on the left; merged and closed ones are done with, and listed under the issues.
+    const laid = laidOut(repos.filter((r) => !filter || r === filter), issues, states);
+    shown = laid.open;
     count.textContent = shown.length ? `${shown.length}` : '';
-    count.title = done ? tn('{n} merged', '{n} merged', done) : '';
+    drawDone(laid);
     if (!shown.length) {
       track.replaceChildren();
       stage.hidden = true;
       empty.replaceChildren(!repos.length && remoteOnly().length ? onlyThere()
-        : h('div', {class: 'empty'}, !repos.length ? t('No repos yet') : issues.length ? t('Every issue is merged') : t('No issues yet')));
+        : h('div', {class: 'empty'}, !repos.length ? t('No repos yet') : issues.length ? t('No open issues') : t('No issues yet')));
       return;
     }
     empty.replaceChildren();
@@ -195,6 +198,20 @@ export function git(ctx: Context): Node[] {
     let was = shown.findIndex((i) => key(i) === mine);
     if (was < 0 && ctx.repo) was = shown.findIndex((i) => i.repo === ctx.repo);
     go(was >= 0 ? was : 0, false, had);
+  };
+
+  // Under the issues: what main has not committed, then what is done with (merged, closed), each its own section.
+  const heading = (id: string, text: string, n = 0) => h('h2', {id}, h('span', {}, text, ' ', h('small', {}, n ? `${n}` : '')));
+  const mainPart = h('section', {class: 'section', 'aria-labelledby': 'main-title', hidden: ''});
+  const mergedPart = h('section', {class: 'section', 'aria-labelledby': 'merged-title', hidden: ''});
+  const closedPart = h('section', {class: 'section', 'aria-labelledby': 'closed-title', hidden: ''});
+  const drawDone = ({dirty, merged, closed}: Laid) => {
+    mainPart.hidden = !dirty.length;
+    mainPart.replaceChildren(heading('main-title', 'main'), ...dirty.map((r) => mainCard(r, states.get(r)!.uncommitted, events, again)));
+    mergedPart.hidden = !merged.length;
+    mergedPart.replaceChildren(heading('merged-title', t('Merged'), merged.length), mergedList(merged, !filter));
+    closedPart.hidden = !closed.length;
+    closedPart.replaceChildren(heading('closed-title', t('Closed'), closed.length), closedList(closed, !filter, again));
   };
 
   write.addEventListener('click', () => {
@@ -229,13 +246,14 @@ export function git(ctx: Context): Node[] {
     h('div', {class: 'git-filter'}, chips),
     h('section', {class: 'section', 'aria-labelledby': 'issues-title'},
       h('h2', {id: 'issues-title'}, h('span', {}, t('Issues'), ' ', count), write),
-      form.element, empty, column));
+      form.element, empty, column),
+    mainPart, mergedPart, closedPart);
   const workbench = bench({main, reveal: (path) => { if (at) ctx.openRepo(at, path); }});
   // Issues written anywhere (here, in the shell, with l3 in the Prompt) show
   // up at once, and any change in the repo looked at is read again; not while
   // something is being written in the box or under it, which would be lost.
   let timer = 0;
-  const typing = () => { const a = document.activeElement; return !!a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA') && stage.contains(a) && !!(a as HTMLInputElement).value; };
+  const typing = () => { const a = document.activeElement; return !!a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA') && (stage.contains(a) || mainPart.contains(a)) && !!(a as HTMLInputElement).value; };
   const soon = () => { clearTimeout(timer); timer = window.setTimeout(() => { if (typing()) soon(); else void paint(); }, 250); };
   const stop = onChange((c) => {
     if (!workbench.element.isConnected) { stop(); return; }

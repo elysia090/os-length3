@@ -9,6 +9,7 @@
     "build": "tsc --noEmit && vite build",
     "build:cloudflare": "node scripts/prompt-files.mjs && VITE_LENGTH3_REMOTE= npm run build",
     "check": "tsc --noEmit && node --test \"src/**/*.test.ts\" \"service/*.test.ts\"",
+    "selftest:l3": "tsc -p selftest/l3 && node --test \"selftest/l3/*.test.ts\"",
     "tauri": "tauri",
     "userland": "sh scripts/userland.sh",
     "web-release": "sh scripts/web-release.sh"

@@ -35,3 +35,8 @@ export function ago(ms: number, now = Date.now()): string {
 export function day(ms: number): string {
   return new Date(ms).toLocaleDateString(currentLang(), {year: 'numeric', month: 'short', day: 'numeric'});
 }
+
+/** A day without its year, as on a TODO, written as the language writes one: Oct 17 / 10月17日, never 10/17. */
+export function shortDay(ms: number): string {
+  return new Date(ms).toLocaleDateString(currentLang(), {month: 'short', day: 'numeric'});
+}

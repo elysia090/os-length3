@@ -14,8 +14,8 @@ out="$here/target/userland"
 mkdir -p "$out"
 wasm-tools strip "$xlat/target/wasm32-unknown-unknown/release/xlat.wasm" -o "$out/xlat.wasm"
 cp "$xlat/userland/out/busybox" "$xlat/userland/out/applets" "$out/"
-# l3 in the Prompt is the same command as on the host, built static for xlat.
-(cd "$here" && cargo build --profile prompt -p l3 --target x86_64-unknown-linux-musl)
+# l3 in the Prompt is the same command as on the host, built static for xlat (without the SSH listener).
+(cd "$here" && cargo build --profile prompt -p l3 --no-default-features --target x86_64-unknown-linux-musl)
 cp "$here/target/x86_64-unknown-linux-musl/prompt/l3" "$out/l3"
 # Translated ahead of time; the same output the browser's translator gives.
 (cd "$xlat" && cargo build --release --bin xlat)

@@ -99,6 +99,16 @@ async function run(repo: string) {
   tell();
 }
 
+/** What a look began and does not wait for (a setting being agreed); `settled` waits for it. A fault in it is still thrown, unheard, as before. */
+const agreeing = new Set<Promise<unknown>>();
+const track = (p: Promise<unknown>) => { agreeing.add(p); void p.then(() => { agreeing.delete(p); }, (e: unknown) => { agreeing.delete(p); throw e; }); };
+
+/** Once every send scheduled so far, and every setting a look began agreeing, is done (a test waits so, not by the clock). */
+export async function settled(): Promise<void> {
+  await flush();
+  await Promise.allSettled([...agreeing]);
+}
+
 /** Every change made now goes out at once (leaving the page, or before a step that needs it). */
 export async function flush(): Promise<void> {
   const waiting = [...timers.keys()];
@@ -152,7 +162,7 @@ export async function look(): Promise<void> {
       }
     }
     // A setting not agreed now still differs at the next look, which agrees it then.
-    if (now) for (const k of draft.HOME_KEYS) if (draft.homeMoved(k, now.home[k] ?? 0)) void draft.syncHome(k).catch(away);
+    if (now) for (const k of draft.HOME_KEYS) if (draft.homeMoved(k, now.home[k] ?? 0)) track(draft.syncHome(k).catch(away));
   } else { onlyThere = []; everyThere = []; reposSeen = null; }
   tell();
 }

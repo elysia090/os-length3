@@ -1,93 +1,15 @@
 import assert from 'node:assert/strict';
-import {afterEach, test} from 'node:test';
-import {PGlite} from '@electric-sql/pglite';
+import {test} from 'node:test';
 import {sql} from 'drizzle-orm';
-import {drizzle} from 'drizzle-orm/pglite';
-import {migrate} from 'drizzle-orm/pglite/migrator';
 import {createApp, sha256} from './app.ts';
 import {createAuth} from './auth.ts';
-import {enterEmail, type Enter} from './enter.ts';
 import {memoryBucket} from './bucket.ts';
 import * as schema from './schema.ts';
 import {sweep} from './sweep.ts';
+import {accept, APP, BASE, count, enc, freshDb as fresh, idOf, named, SECRET, service, upload, type Service} from './testing.ts';
 import homeSync from '../shared/home-sync.json' with {type: 'json'};
+import desktopPins from '../shared/desktop-releases.json' with {type: 'json'};
 
-const BASE = 'http://remote.test';
-const APP = 'http://app.test';
-
-// Each test's database is a copy of one made and migrated once: making one
-// anew (initdb) is most of a test's time, a copy a fraction of it. Each is
-// closed when its test ends, so the file's tests do not hold them all at once.
-let migrated: Promise<File | Blob> | undefined;
-const open: PGlite[] = [];
-const fresh = async () => {
-  migrated ??= (async () => {
-    const pg = new PGlite();
-    await migrate(drizzle(pg, {schema}), {migrationsFolder: new URL('./migrations', import.meta.url).pathname});
-    const dump = await pg.dumpDataDir('none');
-    await pg.close();
-    return dump;
-  })();
-  const pg = new PGlite({loadDataDir: await migrated});
-  open.push(pg);
-  return drizzle(pg, {schema});
-};
-afterEach(() => Promise.all(open.splice(0).map((pg) => pg.close())).then(() => {}));
-
-async function service(records: Record<string, string[]> = {}, o: {quota?: number; enter?: Enter} = {}) {
-  const db = await fresh();
-  const auth = createAuth({db, secret: 'test-secret-'.repeat(4), baseURL: BASE, appOrigin: APP, rateLimit: false, dev: true, only: o.enter && enterEmail(o.enter.as)});
-  const bucket = memoryBucket();
-  // DNS as a map of name → TXT records.
-  const dns = new Map(Object.entries(records));
-  const mails: {to: string; subject: string; text: string}[] = [];
-  const app = createApp({db, auth, bucket, origins: [APP], providers: ['dev'], domain: 'length3.test', baseURL: BASE,
-    secret: 'test-secret-'.repeat(4), txt: async (name) => dns.get(name) ?? [], recheck: 0, mail: async (to, subject, text) => { mails.push({to, subject, text}); }, quota: o.quota,
-    enter: o.enter});
-  // The service asks its own stand-in provider for tokens over the network: here, itself.
-  const real = globalThis.fetch;
-  globalThis.fetch = ((url: string | URL | Request, init?: RequestInit) =>
-    (String(url instanceof Request ? url.url : url).startsWith(BASE) ? app.request(url as string, init) : real(url, init))) as typeof fetch;
-  const call = async (method: string, path: string, opts: {token?: string; body?: unknown; bytes?: Uint8Array; headers?: Record<string, string>} = {}) => {
-    const r = await app.request(BASE + path, {
-      method,
-      headers: {Origin: APP, ...(opts.token ? {Authorization: `Bearer ${opts.token}`} : {}), ...(opts.body !== undefined ? {'Content-Type': 'application/json'} : {}), ...opts.headers},
-      body: (opts.bytes as BodyInit | undefined) ?? (opts.body === undefined ? undefined : JSON.stringify(opts.body)),
-    });
-    const text = await r.text();
-    let json: unknown = null;
-    try { json = JSON.parse(text); } catch { /* not json */ }
-    return {status: r.status, json: json as Record<string, unknown> & unknown[], headers: r.headers, text};
-  };
-  /** Each session's cookie, as the browser that signed in holds it. */
-  const sessions = new Map<string, string>();
-  /** Signing in as a browser does: the provider's page, then back through the callback. */
-  const start = async (name = 'Ren') => {
-    const asked = await app.request(`${BASE}/api/auth/sign-in/social`, {method: 'POST', headers: {Origin: APP, 'Content-Type': 'application/json'},
-      body: JSON.stringify({provider: 'dev', callbackURL: `${APP}/?signed-in`})});
-    assert.equal(asked.status, 200, await asked.clone().text());
-    const cookies = asked.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
-    const go = new URL(((await asked.json()) as {url: string}).url);
-    const approve = new URL(`${BASE}/dev-oauth/approve`);
-    for (const k of ['redirect_uri', 'state']) approve.searchParams.set(k, go.searchParams.get(k) ?? '');
-    approve.searchParams.set('name', name);
-    const back = (await app.request(approve.toString())).headers.get('Location')!;
-    const done = await app.request(back, {headers: {Cookie: cookies}});
-    assert.equal(done.status, 302, await done.clone().text());
-    assert.equal(done.headers.get('Location'), `${APP}/?signed-in`);
-    const token = done.headers.get('set-auth-token');
-    assert.ok(token);
-    sessions.set(token!, done.headers.getSetCookie().map((c) => c.split(';')[0]).join('; '));
-    return token!;
-  };
-  const publish = (name: string, value: string) => dns.set(name, [...(dns.get(name) ?? []), value]);
-  const unpublish = (name: string) => dns.delete(name);
-  return {db, app, call, start, bucket, publish, unpublish, mails, sessions};
-}
-
-const enc = new TextEncoder();
-
-type Service = Awaited<ReturnType<typeof service>>;
 /** Who a session is, as the Remote says (the name the app's off ask shows comes from here). */
 const whoIs = async (s: Service, token: string) =>
   (await s.call('GET', '/api/auth/get-session', {token})).json as unknown as {user: {id: string; name: string}; session: {id: string; token: string}};
@@ -121,7 +43,7 @@ test('an account is a provider identity: the same person signs in to the same ac
   assert.equal((await s.call('GET', '/v1/repos', {token: raw})).status, 200);
   // No way in without a provider: there are no blank accounts.
   assert.notEqual((await s.call('POST', '/api/auth/sign-in/anonymous', {body: {}})).status, 200);
-  assert.deepEqual((await s.call('GET', '/v1/about')).json, {passkey: true, providers: ['dev'], domain: 'length3.test'});
+  assert.deepEqual((await s.call('GET', '/v1/about')).json, {passkey: true, providers: ['dev'], domain: 'length3.test', app: APP});
 });
 
 test('a device asks for a code, a signed-in browser approves it, the device gets its own session', async () => {
@@ -131,6 +53,8 @@ test('a device asks for a code, a signed-in browser approves it, the device gets
   assert.equal(asked.status, 200, JSON.stringify(asked.json));
   const {device_code, user_code, verification_uri_complete} = asked.json as unknown as {device_code: string; user_code: string; verification_uri_complete: string};
   assert.ok(verification_uri_complete.startsWith(`${APP}/?device`));
+  // On the origin the Remote says its app is on, by whatever name a device reaches it (core/src/remote.rs device_page_ok).
+  assert.ok(verification_uri_complete.startsWith(`${(await s.call('GET', '/v1/about')).json.app}/?device`));
   const poll = () => s.call('POST', '/api/auth/device/token', {body: {grant_type: 'urn:ietf:params:oauth:grant-type:device_code', device_code, client_id: 'l3'}});
   assert.equal((await poll()).json.error, 'authorization_pending');
   // Unknown clients cannot ask.
@@ -166,6 +90,53 @@ test('Devices: another device is signed out from any of the account\'s, and from
   assert.equal((await s.call('GET', '/v1/repos', {token: phone})).status, 401);
   assert.equal((await s.call('GET', '/v1/repos', {token: laptop})).status, 200);
   assert.deepEqual((await sessionsOf(s, laptop)).map((d) => d.id), [(await whoIs(s, laptop)).session.id]);
+});
+
+test('SSH: a device says it listens, any of the account\'s pages may stop it, a page never starts one, and no one else sees or stops it', async () => {
+  const s = await service();
+  const laptop = await s.start('Ren'), web = await s.start('Ren'), mio = await s.start('Mio');
+  // As l3 and the app's core call: the bearer, and no Origin (a browser always sends one).
+  const device = async (method: string, path: string, token: string, body?: unknown) => {
+    const r = await s.app.request(`${BASE}${path}`, {method, headers: {Authorization: `Bearer ${token}`, ...(body === undefined ? {} : {'Content-Type': 'application/json'})},
+      body: body === undefined ? undefined : JSON.stringify(body)});
+    return {status: r.status, json: await r.json() as Record<string, unknown>};
+  };
+  const here = ['ssh -p 22000 notes@192.168.1.5', 'ssh -p 22000 trip@192.168.1.5'];
+  assert.deepEqual((await s.call('GET', '/v1/ssh', {token: laptop})).json, []);
+  assert.equal((await device('PUT', '/v1/ssh/this', laptop, {port: 22000, destinations: here})).status, 200);
+  const laptopId = (await whoIs(s, laptop)).session.id;
+  // Each of the account's sessions sees it, and which is its own.
+  const seen = (await s.call('GET', '/v1/ssh', {token: web})).json as unknown as {device: string; port: number; destinations: string[]; current: boolean; since: number; seen: number}[];
+  assert.deepEqual(seen.map((r) => [r.device, r.port, r.destinations, r.current]), [[laptopId, 22000, here, false]]);
+  assert.ok(seen[0].since > 0 && seen[0].seen >= seen[0].since);
+  assert.equal(((await s.call('GET', '/v1/ssh', {token: laptop})).json as unknown as {current: boolean}[])[0].current, true);
+  // Another account sees none of it and cannot stop it.
+  assert.deepEqual((await s.call('GET', '/v1/ssh', {token: mio})).json, []);
+  assert.equal((await s.call('POST', `/v1/ssh/${laptopId}/off`, {token: mio})).status, 404);
+  assert.equal((await device('POST', '/v1/ssh/this/beat', laptop, {})).json.on, true);
+  // A page cannot turn SSH on, for itself or anyone: only the device, as itself.
+  const fromPage = await s.call('PUT', '/v1/ssh/this', {token: web, body: {port: 22000, destinations: here}});
+  assert.deepEqual([fromPage.status, fromPage.json.error], [403, 'SSH is turned on at the device itself']);
+  assert.equal((await s.call('POST', `/v1/ssh/${laptopId}/on`, {token: web})).status, 404);
+  assert.equal(((await s.call('GET', '/v1/ssh', {token: web})).json as unknown[]).length, 1);
+  // What a device says it listens at is checked: a port, and destinations as l3 writes them.
+  for (const bad of [{port: 0, destinations: here}, {port: 22000, destinations: ['ssh -p 22000 notes@host; rm -rf /']}, {port: 22000, destinations: 'x'}]) {
+    assert.equal((await device('PUT', '/v1/ssh/this', laptop, bad)).status, 400, JSON.stringify(bad));
+  }
+  // The web turns it off; the device's next beat hears so, and a beat never turns it on again.
+  const off = await s.call('POST', `/v1/ssh/${laptopId}/off`, {token: web});
+  assert.deepEqual([off.status, off.json.on], [200, false]);
+  assert.equal((await device('POST', '/v1/ssh/this/beat', laptop, {destinations: here})).json.on, false);
+  assert.deepEqual((await s.call('GET', '/v1/ssh', {token: web})).json, []);
+  assert.equal((await s.call('POST', `/v1/ssh/${laptopId}/off`, {token: web})).status, 404);
+  // On again at the device, then off from the device itself; signing the device out takes it too.
+  await device('PUT', '/v1/ssh/this', laptop, {port: 22000, destinations: here});
+  assert.deepEqual((await device('DELETE', '/v1/ssh/this', laptop)).json, {on: false, changed: true});
+  await device('PUT', '/v1/ssh/this', laptop, {port: 22000, destinations: here});
+  const row = (await sessionsOf(s, web)).find((d) => d.id === laptopId)!;
+  assert.equal((await s.call('POST', '/api/auth/revoke-session', {token: web, body: {token: row.token}})).status, 200);
+  assert.deepEqual((await s.call('GET', '/v1/ssh', {token: web})).json, []);
+  assert.equal((await device('POST', '/v1/ssh/this/beat', laptop, {})).status, 401);
 });
 
 test('Turning off checks the account\'s name as the Remote says it, not one the person chose elsewhere', async () => {
@@ -297,6 +268,45 @@ test('Home\'s settings answer as shared/home-sync.json records them, which the a
   }
 });
 
+test('Health: anyone may ask whether the Remote answers from its database, and is told no more than that', async () => {
+  const s = await service();
+  assert.deepEqual((await s.call('GET', '/v1/health')).json, {ok: true});
+  // A database that does not answer: 503, its error kept in the log, not in the answer.
+  const down = {execute: async () => { throw new Error('connect ECONNREFUSED 10.0.0.1:5432 as remote_worker'); }};
+  const app = createApp({db: down, auth: createAuth({db: down, secret: 'test-secret-'.repeat(4), baseURL: BASE, appOrigin: APP}), bucket: memoryBucket(),
+    origins: [APP], providers: [], domain: 'length3.test', baseURL: BASE});
+  const error = console.error;
+  console.error = () => {};
+  try {
+    const r = await app.request(`${BASE}/v1/health`);
+    assert.equal(r.status, 503);
+    assert.doesNotMatch(await r.text(), /ECONNREFUSED|remote_worker/);
+  } finally {
+    console.error = error;
+  }
+});
+
+test('Sign-in is held off address by address, the address Cloudflare saw, counted in the database', async () => {
+  const db = await fresh();
+  // Two of the same app over one database, as two isolates of the Worker are.
+  const made = () => createApp({db, auth: createAuth({db, secret: 'test-secret-'.repeat(4), baseURL: BASE, appOrigin: APP, dev: true}),
+    bucket: memoryBucket(), origins: [APP], providers: ['dev'], domain: 'length3.test', baseURL: BASE});
+  const [a, b] = [made(), made()];
+  const signIn = async (app: ReturnType<typeof made>, ip: string) => (await app.request(`${BASE}/api/auth/sign-in/social`, {method: 'POST',
+    headers: {Origin: APP, 'Content-Type': 'application/json', 'CF-Connecting-IP': ip}, body: JSON.stringify({provider: 'dev', callbackURL: `${APP}/`})})).status;
+  // Three sign-ins in ten seconds from one address, then it waits, in either isolate; another address does not.
+  const one = [];
+  for (const app of [a, b, a, b]) one.push(await signIn(app, '203.0.113.1'));
+  assert.deepEqual(one, [200, 200, 200, 429]);
+  assert.equal(await signIn(b, '203.0.113.2'), 200);
+  // The count is the database's (an isolate's memory is its own alone), kept by the service's role.
+  const kept = await db.transaction(async (tx) => {
+    await tx.execute(sql`set local role remote_app`);
+    return (await tx.execute(sql`update rate_limit set count = count where key like '203.0.113.%' returning key, count`)).rows;
+  });
+  assert.deepEqual(kept.map((r) => [String(r.key).split('|')[0], r.count]).sort(), [['203.0.113.1', 3], ['203.0.113.2', 1]]);
+});
+
 test('only the app\'s pages may call, and they can read a new session\'s token', async () => {
   const s = await service();
   const ok = await s.call('OPTIONS', '/v1/repos', {headers: {'Access-Control-Request-Method': 'GET'}});
@@ -406,6 +416,58 @@ test('a file both sides changed stops the merge; reject is the receiver\'s, rese
   assert.equal((await s.call('POST', `/v1/repos/r/changes/${y}/reset`, {token: t, body: {}})).json.state, 'reset');
   const list = (await s.call('GET', '/v1/repos/r/changes', {token: t})).json as unknown as {title: string; state: string}[];
   assert.deepEqual(list.map((l) => [l.title, l.state]).sort(), [['one', 'merged'], ['two', 'reset']]);
+});
+
+test('main takes commits of its own; a review may ask for changes; what was merged is listed with who handed it in and when; another account reaches none of it', async () => {
+  const s = await service();
+  const t = await s.start('Sora'), other = await s.start('Mio');
+  const sha = async (text: string) => {
+    const bytes = enc.encode(text);
+    const d = await sha256(bytes);
+    await s.call('PUT', `/v1/blobs/${d}`, {token: t, bytes});
+    return d;
+  };
+  const [readme, edited, issue, fix] = await Promise.all(['# r\n', '# r\nmore\n', 'Fix：x\n', 'fixed\n'].map(sha));
+  const head = async (line = 'main') => (await s.call('GET', `/v1/repos/r?line=${line}`, {token: t})).json as unknown as {version: number; head: string | null};
+  const commitOn = async (line: string, kind: string, title: string) => {
+    const h = await head(line);
+    const r = await s.call('POST', `/v1/repos/r/cuts?line=${line}`, {token: t, body: {version: h.version, parent: h.head, kind, title, added: 1, removed: 0}});
+    assert.equal(r.status, 201, JSON.stringify(r.json));
+    return r.json.id as string;
+  };
+  // Commit on main, named by its line as `l3 commit r "Docs：…"` names it, once and again after an edit.
+  await s.call('PATCH', '/v1/repos/r/draft', {token: t, body: {version: 0, set: {'README.md': readme}, remove: []}});
+  const first = await commitOn('main', 'Docs', 'Start');
+  await s.call('PATCH', '/v1/repos/r/draft', {token: t, body: {version: 1, set: {'README.md': edited, 'issue/001.md': issue}, remove: []}});
+  const second = await commitOn('main', 'Docs', 'Say more');
+  const log = (await s.call('GET', '/v1/repos/r/log', {token: t})).json as unknown as {id: string; parent: string | null; kind: string; title: string}[];
+  assert.deepEqual(log.map((c) => [c.id, c.parent, c.kind, c.title]), [[second, first, 'Docs', 'Say more'], [first, null, 'Docs', 'Start']]);
+  // A commit on main needs words; another account cannot commit on it, nor read its log.
+  const h = await head();
+  assert.equal((await s.call('POST', '/v1/repos/r/cuts', {token: t, body: {version: h.version, parent: h.head, title: ' '}})).status, 400);
+  assert.notEqual((await s.call('POST', '/v1/repos/r/cuts', {token: other, body: {version: h.version, parent: h.head, title: 'Fix：mine'}})).status, 201);
+  assert.deepEqual((await s.call('GET', '/v1/repos/r/log', {token: other})).json, []);
+  // An issue's work, handed in: asking for changes is a review of its version, with words and marks.
+  await s.call('POST', '/v1/repos/r/lines', {token: t, body: {issue: 'issue/001.md'}});
+  await s.call('PATCH', '/v1/repos/r/draft?line=001', {token: t, body: {version: 1, set: {'f.txt': fix}, remove: []}});
+  const c1 = await commitOn('001', 'Fix', 'x');
+  await s.call('POST', '/v1/repos/r/lines/001/push', {token: t, body: {head: c1}});
+  const submitted = await s.call('POST', '/v1/repos/r/changes', {token: t, body: {line: '001', kind: 'Fix', title: 'x'}});
+  const id = submitted.json.id as string;
+  const asked = await s.call('POST', `/v1/repos/r/changes/${id}/reviews`, {token: t, body: {version: 1, verdict: 'changes', note: 'Say why.', marks: ['f.txt:0']}});
+  assert.equal(asked.status, 201);
+  assert.deepEqual((asked.json.reviews as {verdict: string; note: string; marks: string[]; by: string}[]).map((r) => [r.verdict, r.note, r.marks, r.by]), [['changes', 'Say why.', ['f.txt:0'], 'Sora']]);
+  assert.equal(asked.json.state, 'open');
+  // Another account can neither review it nor see it.
+  assert.equal((await s.call('POST', `/v1/repos/r/changes/${id}/reviews`, {token: other, body: {version: 1, verdict: 'changes', note: 'no'}})).status, 404);
+  assert.deepEqual((await s.call('GET', '/v1/repos/r/changes', {token: other})).json, []);
+  // Approved and merged, it is listed as merged: who handed it in, and when it was merged (after it was handed in).
+  await s.call('POST', `/v1/repos/r/changes/${id}/reviews`, {token: t, body: {version: 1, verdict: 'approve'}});
+  assert.equal((await s.call('POST', `/v1/repos/r/changes/${id}/merge`, {token: other, body: {version: 1}})).status, 404);
+  assert.equal((await s.call('POST', `/v1/repos/r/changes/${id}/merge`, {token: t, body: {version: 1}})).status, 200);
+  const list = (await s.call('GET', '/v1/repos/r/changes', {token: t})).json as unknown as {id: string; issue: string; state: string; submittedBy: string; updatedAt: number}[];
+  assert.deepEqual(list.map((c) => [c.id, c.issue, c.state, c.submittedBy]), [[id, 'issue/001.md', 'merged', 'Sora']]);
+  assert.ok(list[0].updatedAt >= (submitted.json.updatedAt as number));
 });
 
 test('Inbox: an address is claimed or published by its domain; messages are small, and strangers are held to a few', async () => {
@@ -536,22 +598,20 @@ test('Servers: people who know each other, boards with talk and a TODO kept toge
   assert.deepEqual(((await s.call('GET', '/v1/open')).json as unknown as {name: string}[]).map((b) => b.name), ['plan']);
   assert.equal(((await s.call('GET', `/v1/open/${bid}/posts`)).json as unknown as {posts: unknown[]}).posts.length, 2);
   assert.equal(((await s.call('GET', `/v1/open/${bid}/todos`)).json as unknown as unknown[]).length, 2);
-  // A guest writes once the email is shown to be theirs, and only where guests are taken.
-  assert.equal((await s.call('POST', `/v1/open/${bid}/guest`, {body: {email: 'aki@example.org'}})).status, 404);
+  // A guest writes once one of its people has invited them, and only where guests are taken.
+  assert.equal((await s.call('POST', `/v1/boards/${bid}/invites`, {token: mio})).status, 409);
   await s.call('PATCH', `/v1/boards/${bid}`, {token: ren, body: {guests: true}});
-  assert.equal((await s.call('POST', `/v1/open/${bid}/guest`, {body: {email: 'aki@example.org'}})).status, 202);
-  assert.equal((await s.call('POST', `/v1/open/${bid}/guest`, {body: {email: 'aki@example.org'}})).status, 429);
-  const code = /is (\d{6})/.exec(s.mails.at(-1)!.text)![1];
-  assert.equal(s.mails.at(-1)!.to, 'aki@example.org');
-  assert.equal((await s.call('POST', `/v1/open/${bid}/guest/check`, {body: {email: 'aki@example.org', code: code === '000000' ? '000001' : '000000'}})).status, 403);
-  const ok = await s.call('POST', `/v1/open/${bid}/guest/check`, {body: {email: 'aki@example.org', code}});
-  assert.equal(ok.status, 200);
+  const inv = await s.call('POST', `/v1/boards/${bid}/invites`, {token: mio});
+  assert.equal(inv.status, 201);
+  assert.equal(inv.json.link, `${APP}/#guest=${bid}.${inv.json.invite}`);
+  const ok = await s.call('POST', `/v1/open/${bid}/guest`, {body: {invite: inv.json.invite, name: 'Aki'}});
+  assert.deepEqual([ok.status, ok.json.as], [200, 'Aki']);
   assert.equal((await s.call('POST', `/v1/open/${bid}/posts`, {body: {body: 'can I come?'}})).status, 403);
   const g = await s.call('POST', `/v1/open/${bid}/posts`, {body: {body: 'can I come?'}, headers: {'X-Guest': ok.json.token as string}});
-  assert.deepEqual([g.status, g.json.by, g.json.guest], [201, 'aki', true]);
+  assert.deepEqual([g.status, g.json.by, g.json.guest], [201, 'Aki', true]);
   // A guest writes for a while: the token is a lease.
   const {eq} = await import('drizzle-orm');
-  await s.db.update(schema.guest).set({tokenUntil: new Date(Date.now() - 1000)}).where(eq(schema.guest.email, 'aki@example.org'));
+  await s.db.update(schema.guest).set({tokenUntil: new Date(Date.now() - 1000)}).where(eq(schema.guest.name, 'Aki'));
   assert.equal((await s.call('POST', `/v1/open/${bid}/posts`, {body: {body: 'still?'}, headers: {'X-Guest': ok.json.token as string}})).status, 403);
   // Leaving: the owner leaves, and the server is the one who came next's.
   assert.equal((await s.call('DELETE', `/v1/servers/${sid}/people/ren@length3.test`, {token: ren})).status, 204);
@@ -729,14 +789,36 @@ test('Names on the Remote: first come, for five years at a time, renewed by thei
 
 // ---- What the review of this service found, each kept fixed by a test ----
 
-const idOf = async (s: Service, t: string) => ((await s.call('GET', '/api/auth/get-session', {token: t})).json as unknown as {user: {id: string}}).user.id;
-const upload = async (s: Service, t: string, bytes: Uint8Array) => {
-  const sha = await sha256(bytes);
-  return {sha, status: (await s.call('PUT', `/v1/blobs/${sha}`, {token: t, bytes})).status};
-};
-const named = async (s: Service, ...people: [string, string][]) => { for (const [t, n] of people) await s.call('POST', '/v1/inbox/addresses', {token: t, body: {name: n}}); };
-const accept = (s: Service, t: string, address: string, state = 'accepted') => s.call('POST', '/v1/inbox/contacts', {token: t, body: {address, state}});
-const count = async (s: Service, query: ReturnType<typeof sql>) => ((await s.db.execute(query)).rows as {n: number}[])[0].n;
+
+test('Guessing: codes that find people are looked up so many an hour, and the code to turn a repo off is tried so many times', async () => {
+  const s = await service();
+  const ren = await s.start('Ren'), mio = await s.start('Mio');
+  await named(s, [ren, 'ren'], [mio, 'mio']);
+  const code = (await s.call('GET', '/v1/inbox/me', {token: ren})).json.code as string;
+  const lookup = async (a: string) => (await s.call('GET', `/v1/inbox/lookup?address=${a}`, {token: mio}));
+  // Someone is found by their code; everyone is not read off by trying every code.
+  assert.equal((await lookup(code)).json.address, 'ren@length3.test');
+  const tried = [];
+  for (let i = 0; i < 30; i++) tried.push((await lookup(String(100000 + i))).status);
+  assert.deepEqual([tried.filter((x) => x === 200).length, tried.at(-1)], [29, 429]);
+  // As in every way a code is taken (here, accepting someone by it), and only codes: a name is still looked up.
+  assert.equal((await s.call('POST', '/v1/inbox/contacts', {token: mio, body: {address: code}})).status, 429);
+  assert.equal((await lookup('ren')).json.address, 'ren@length3.test');
+  assert.equal((await s.call('GET', `/v1/inbox/lookup?address=${code}`, {token: ren})).status, 200);
+  // The five-letter code: so many wrong in an hour, then none is taken, the right one neither.
+  await s.call('PATCH', '/v1/repos/r/draft', {token: ren, body: {version: 0, set: {}, remove: []}});
+  const session = ((await s.call('GET', '/api/auth/get-session', {token: ren})).json as unknown as {session: {id: string}; user: {id: string}});
+  await s.db.insert(schema.guard).values({userId: session.user.id, proofSession: session.session.id, proofAt: new Date()});
+  assert.equal((await s.call('POST', '/v1/off-code', {token: ren, body: {code: 'AB12C'}})).status, 200);
+  const off = async (c: string) => (await s.call('POST', '/v1/repos/r/off', {token: ren, body: {name: 'Ren', repo: 'r', code: c}})).status;
+  const wrong = [];
+  for (let i = 0; i < 11; i++) wrong.push(await off(`ZZZ${String(i).padStart(2, '0')}`));
+  assert.deepEqual([wrong.filter((x) => x === 403).length, wrong.at(-1)], [10, 429]);
+  assert.equal(await off('AB12C'), 429);
+  // An hour on, it is taken again.
+  await s.db.execute(sql`update throttle set at = now() - interval '61 minutes' where key like 'off-code:%'`);
+  assert.equal(await off('AB12C'), 200);
+});
 
 test('Consent: nobody is put in a server by someone they have not accepted, or have blocked; being put in servers never stops anyone making one', async () => {
   const s = await service();
@@ -766,38 +848,147 @@ test('Consent: nobody is put in a server by someone they have not accepted, or h
   assert.deepEqual([full.status, full.json.error], [429, 'Too many servers']);
 });
 
-test('Guests: codes go to an address a few an hour whatever the board, and from one sender so many; a board has a few waiting; the mail says only the code; tries at once are each counted', async () => {
-  const s = await service();
-  const ren = await s.start('Ren');
-  await named(s, [ren, 'ren']);
-  const made = await s.call('POST', '/v1/servers', {token: ren, body: {name: 'Prizes', board: 'CLAIM YOUR PRIZE at evil.example'}});
-  const boards = [(made.json.boards as {id: string}[])[0].id];
-  for (let i = 1; i < 4; i++) boards.push((await s.call('POST', `/v1/servers/${made.json.id}/boards`, {token: ren, body: {name: `Win big ${i}`}})).json.id as string);
+/** A server of Ren's with Mio and Sora in it, its first board taking guests; Kai is signed in but not in it. */
+async function guestsBoard(s: Service) {
+  const ren = await s.start('Ren'), mio = await s.start('Mio'), sora = await s.start('Sora'), kai = await s.start('Kai');
+  await named(s, [ren, 'ren'], [mio, 'mio'], [sora, 'sora'], [kai, 'kai']);
+  const made = await s.call('POST', '/v1/servers', {token: ren, body: {name: 'Trip'}});
+  const sid = made.json.id as string, bid = (made.json.boards as {id: string}[])[0].id;
+  for (const [t, a] of [[mio, 'mio'], [sora, 'sora']]) {
+    await accept(s, ren, `${a}@length3.test`);
+    await accept(s, t, 'ren@length3.test');
+    assert.equal((await s.call('POST', `/v1/servers/${sid}/people`, {token: ren, body: {address: `${a}@length3.test`}})).status, 201);
+  }
   // Taking guests opens a board: guests write only where anyone reads.
-  for (const b of boards) assert.equal((await s.call('PATCH', `/v1/boards/${b}`, {token: ren, body: {guests: true}})).json.open, true);
-  const ask = (b: string, email: string, from: string) => s.call('POST', `/v1/open/${b}/guest`, {body: {email}, headers: {'CF-Connecting-IP': from}});
-  // One address: three codes an hour, whichever boards ask, from wherever.
-  for (let i = 0; i < 3; i++) assert.equal((await ask(boards[i], 'victim@example.org', `10.0.0.${i}`)).status, 202);
-  const fourth = await ask(boards[3], 'victim@example.org', '10.0.0.9');
-  assert.deepEqual([fourth.status, fourth.json.error], [429, 'Too many codes asked for; try again in an hour']);
-  // Nothing anyone chose reaches the address: no board's name, in the subject or the text.
-  assert.ok(s.mails.length === 3 && s.mails.every((m) => !/prize|win|evil/i.test(m.subject + m.text) && /^Your code is \d{6}\. It holds for 10 minutes\.$/.test(m.text)));
-  // One sender: ten an hour.
-  for (let i = 0; i < 10; i++) assert.equal((await ask(boards[1], `a${i}@example.org`, '10.9.9.9')).status, 202);
-  assert.equal((await ask(boards[1], 'a10@example.org', '10.9.9.9')).status, 429);
-  // One board: twenty waiting for a code at once (the victim's is one of them on this board).
-  for (let i = 0; i < 19; i++) assert.equal((await ask(boards[2], `w${i}@example.org`, `10.1.0.${i}`)).status, 202);
-  const crowd = await ask(boards[2], 'w19@example.org', '10.1.0.99');
-  assert.deepEqual([crowd.status, crowd.json.error], [429, 'Too many people are waiting for a code here; try again soon']);
-  // Ten wrong tries at once are ten tries: the code is spent after five, and the right one then does nothing.
-  assert.equal((await ask(boards[3], 'tries@example.org', '10.2.0.1')).status, 202);
-  const code = /is (\d{6})/.exec(s.mails.at(-1)!.text)![1];
-  const check = (c: string) => s.call('POST', `/v1/open/${boards[3]}/guest/check`, {body: {email: 'tries@example.org', code: c}});
-  const wrong = await Promise.all(Array.from({length: 10}, () => check(code === '000000' ? '000001' : '000000')));
-  assert.ok(wrong.every((r) => r.status === 403));
-  assert.equal((await check(code)).status, 403);
+  assert.equal((await s.call('PATCH', `/v1/boards/${bid}`, {token: ren, body: {guests: true}})).json.open, true);
+  const invite = (t: string, body?: unknown, b = bid) => s.call('POST', `/v1/boards/${b}/invites`, {token: t, body: body ?? {}});
+  const come = (code: unknown, name: string, b = bid) => s.call('POST', `/v1/open/${b}/guest`, {body: {invite: code, name}});
+  const say = (token: string, body: string, b = bid) => s.call('POST', `/v1/open/${b}/posts`, {body: {body}, headers: {'X-Guest': token}});
+  return {ren, mio, sora, kai, sid, bid, invite, come, say};
+}
+
+test('Guests: an invitation one of its people hands out is the whole proof; it lets in so many, for so long, and is refused alike when wrong, used up, revoked or run out', async () => {
+  const s = await service();
+  const {ren, mio, sora, kai, sid, bid, invite, come} = await guestsBoard(s);
+  const other = (await s.call('POST', `/v1/servers/${sid}/boards`, {token: ren, body: {name: 'food'}})).json.id as string;
+  await s.call('PATCH', `/v1/boards/${other}`, {token: ren, body: {guests: true}});
+  // Only its people invite, and only its people see who is invited.
+  assert.equal((await invite(kai)).status, 404);
+  assert.equal((await s.call('GET', `/v1/boards/${bid}/guests`, {token: kai})).status, 404);
+  assert.equal((await s.call('POST', `/v1/boards/${bid}/invites`)).status, 401);
+  for (const bad of [{uses: 21}, {uses: 0}, {days: 31}, {days: 0}, {uses: 'x'}, {uses: 1.5}]) assert.equal((await invite(mio, bad)).status, 400, JSON.stringify(bad));
+  const one = await invite(mio);
+  assert.deepEqual([one.status, one.json.uses], [201, 1]);
+  assert.match(one.json.invite as string, /^[0-9a-f]{32}$/);
+  assert.ok(Math.abs((one.json.until as number) - (Date.now() + 7 * 86_400_000)) < 60_000);
+  // The Remote keeps only its digest: its own copy opens nothing.
+  const kept = (await s.db.execute(sql`select digest from board_invite`)).rows as {digest: string}[];
+  assert.ok(kept.length === 1 && kept[0].digest !== one.json.invite && !kept[0].digest.includes(one.json.invite as string));
+  assert.equal((await come(kept[0].digest, 'Aki')).status, 403);
+  // Wrong, malformed, or for another board: the same refusal, and nothing is spent.
+  const refused = [403, 'This invitation does not open this board'];
+  for (const code of ['0'.repeat(32), 'nonsense', 42, null]) assert.deepEqual([(await come(code, 'Aki')).status, (await come(code, 'Aki')).json.error], refused);
+  assert.deepEqual([(await come(one.json.invite, 'Aki', other)).status], [403]);
+  // A name is the guest's own, but never one of its people's (nor the server's), never an address, never hidden marks.
+  for (const name of ['ren', 'MIO', 'Trip']) assert.deepEqual([(await come(one.json.invite, name)).status, (await come(one.json.invite, name)).json.error], [409, 'That name is taken here'], name);
+  for (const name of ['', '   ', 'aki@example.org', 'x'.repeat(33), '‮evil', 'a​b', 'tab\u0007']) assert.equal((await come(one.json.invite, name)).status, 400, JSON.stringify(name));
+  // None of that spent its one use; then it lets one person in, once.
+  const aki = await come(one.json.invite, '  Aki  ');
+  assert.deepEqual([aki.status, aki.json.as], [200, 'Aki']);
+  assert.match(aki.json.token as string, /^[0-9a-f]{64}$/);
+  assert.deepEqual([(await come(one.json.invite, 'Bo')).status, (await come(one.json.invite, 'Bo')).json.error], refused);
+  // Who one is here, by the token; on another board it is nobody.
+  assert.deepEqual((await s.call('GET', `/v1/open/${bid}/guest`, {headers: {'X-Guest': aki.json.token as string}})).json, {id: aki.json.id, as: 'Aki'});
+  assert.equal((await s.call('GET', `/v1/open/${other}/guest`, {headers: {'X-Guest': aki.json.token as string}})).status, 403);
+  assert.equal((await s.call('POST', `/v1/open/${other}/posts`, {body: {body: 'hi'}, headers: {'X-Guest': aki.json.token as string}})).status, 403);
   // A guest without a token is refused as a guest (403), not as a session the Remote does not know (401).
-  assert.equal((await s.call('POST', `/v1/open/${boards[0]}/posts`, {body: {body: 'hi'}})).status, 403);
+  assert.equal((await s.call('POST', `/v1/open/${bid}/posts`, {body: {body: 'hi'}})).status, 403);
+
+  // For a few people: each a name of their own, so many and no more.
+  const few = await invite(sora, {uses: 2, days: 1});
+  assert.equal((await come(few.json.invite, 'aki')).status, 409);
+  assert.equal((await come(few.json.invite, 'Bo')).status, 200);
+  assert.equal((await come(few.json.invite, 'Cy')).status, 200);
+  assert.equal((await come(few.json.invite, 'Dee')).status, 403);
+  // Run out: refused alike.
+  const late = await invite(mio);
+  await s.db.execute(sql`update board_invite set until = now() - interval '1 second' where id = ${late.json.id as string}`);
+  assert.equal((await come(late.json.invite, 'Eve')).status, 403);
+
+  // Every one of its people sees what is out and who is in; each may revoke their own, the owner any.
+  const kept2 = await invite(mio), mine2 = await invite(sora);
+  type Seen = {invites: {id: string; by: string; uses: number; mine: boolean; mayRevoke: boolean}[]; guests: {id: string; name: string; by: string; mayRemove: boolean}[]};
+  const seen = (t: string) => s.call('GET', `/v1/boards/${bid}/guests`, {token: t}).then((r) => r.json as unknown as Seen);
+  const bySora = await seen(sora);
+  assert.deepEqual(bySora.invites.map((x) => [x.by, x.mine, x.mayRevoke]), [['mio@length3.test', false, false], ['sora@length3.test', true, true]]);
+  assert.deepEqual(bySora.guests.map((x) => [x.name, x.by, x.mayRemove]), [['Aki', 'mio@length3.test', false], ['Bo', 'sora@length3.test', true], ['Cy', 'sora@length3.test', true]]);
+  assert.ok((await seen(ren)).invites.every((x) => x.mayRevoke) && (await seen(ren)).guests.every((x) => x.mayRemove));
+  assert.equal((await s.call('DELETE', `/v1/boards/${bid}/invites/${kept2.json.id}`, {token: sora})).status, 404);
+  assert.equal((await s.call('DELETE', `/v1/boards/${bid}/invites/${kept2.json.id}`, {token: kai})).status, 404);
+  assert.equal((await s.call('DELETE', `/v1/boards/${bid}/invites/${kept2.json.id}`, {token: ren})).status, 204);
+  assert.equal((await s.call('DELETE', `/v1/boards/${bid}/invites/${mine2.json.id}`, {token: sora})).status, 204);
+  for (const x of [kept2, mine2]) assert.deepEqual([(await come(x.json.invite, 'Fay')).status], [403]);
+  assert.deepEqual((await seen(mio)).invites, []);
+
+  // A board has so many out at once.
+  for (let i = 0; i < 20; i++) assert.equal((await invite(mio)).status, 201);
+  const more = await invite(sora);
+  assert.deepEqual([more.status, more.json.error], [429, 'This board has as many invitations out as it takes; revoke one first']);
+  // Someone who leaves the server takes the invitations they made with them.
+  assert.equal((await s.call('DELETE', `/v1/servers/${sid}/people/mio@length3.test`, {token: mio})).status, 204);
+  assert.equal(await count(s, sql`select count(*)::int as n from board_invite where board_id = ${bid} and uses > 0`), 0);
+});
+
+test('Guests: shown as guests, held to so many posts an hour each and on a board; removed with their posts; ended with the board taking them', async () => {
+  const s = await service();
+  const {ren, mio, sora, bid, invite, come, say} = await guestsBoard(s);
+  const many = await invite(mio, {uses: 20});
+  const aki = (await come(many.json.invite, 'Aki')).json.token as string, bo = (await come(many.json.invite, 'Bo')).json.token as string;
+  // Shown as a guest's, to anyone and in what is taken home.
+  assert.equal((await say(aki, 'hello from outside')).status, 201);
+  const open = (await s.call('GET', `/v1/open/${bid}/posts`)).json as unknown as {posts: {by: string; guest?: boolean; body: string}[]};
+  assert.deepEqual(open.posts.map((p) => [p.by, p.guest]), [['Aki', true]]);
+  assert.match((await s.call('GET', `/v1/open/${bid}/archive`)).text, /Aki \(guest\): hello from outside/);
+  // A guest: twenty posts an hour.
+  for (let i = 1; i < 20; i++) assert.equal((await say(aki, `post ${i}`)).status, 201);
+  assert.deepEqual([(await say(aki, 'one more')).status, (await say(aki, 'one more')).json.error], [429, 'Too many posts this hour']);
+  // A board's guests together: a hundred an hour, whoever they are (guests gone still count); its people write on.
+  const hour = Date.now() - 60_000;
+  for (let i = 0; i < 80; i++) await s.db.insert(schema.talk).values({id: hour.toString(36).padStart(9, '0') + i.toString(36).padStart(8, '0'), boardId: bid, by: 'Gone', body: 'x'});
+  const full = await say(bo, 'and me?');
+  assert.deepEqual([full.status, full.json.error], [429, 'Guests have written as much as they may here this hour']);
+  assert.equal((await s.call('POST', `/v1/boards/${bid}/posts`, {token: sora, body: {body: 'we still can'}})).status, 201);
+  await s.db.execute(sql`delete from board_post where by = 'Gone'`);
+  assert.equal((await say(bo, 'and me?')).status, 201);
+  // Removed by whoever invited them or the owner, not by another of its people: their posts go with them.
+  const gs = ((await s.call('GET', `/v1/boards/${bid}/guests`, {token: mio})).json as unknown as {guests: {id: string; name: string}[]}).guests;
+  const akiId = gs.find((g) => g.name === 'Aki')!.id, boId = gs.find((g) => g.name === 'Bo')!.id;
+  assert.equal((await s.call('DELETE', `/v1/boards/${bid}/guests/${akiId}`, {token: sora})).status, 404);
+  assert.equal((await s.call('DELETE', `/v1/boards/${bid}/guests/${akiId}`, {token: mio})).status, 204);
+  assert.equal((await say(aki, 'back?')).status, 403);
+  assert.equal((await s.call('GET', `/v1/open/${bid}/guest`, {headers: {'X-Guest': aki}})).status, 403);
+  const left = ((await s.call('GET', `/v1/open/${bid}/posts?limit=100`)).json as unknown as {posts: {by: string}[]}).posts;
+  assert.deepEqual([...new Set(left.map((p) => p.by))].sort(), ['Bo', 'sora@length3.test']);
+  assert.equal((await s.call('DELETE', `/v1/boards/${bid}/guests/${boId}`, {token: ren})).status, 204);
+  assert.equal((await say(bo, 'back?')).status, 403);
+  // No longer taking guests ends every invitation and guest: taking them again lets nobody back by an old link.
+  const cy = (await come(many.json.invite, 'Cy')).json.token as string;
+  assert.deepEqual((await s.call('PATCH', `/v1/boards/${bid}`, {token: ren, body: {guests: false}})).json.guests, false);
+  assert.equal((await say(cy, 'still here?')).status, 404);
+  assert.equal((await invite(mio)).status, 409);
+  await s.call('PATCH', `/v1/boards/${bid}`, {token: ren, body: {guests: true}});
+  assert.equal((await come(many.json.invite, 'Dee')).status, 403);
+  assert.equal((await say(cy, 'still here?')).status, 403);
+  // The sweep lets go of a guest whose lease ran out (their posts stay, a guest's), and of invitations used up or run out.
+  const again = await invite(mio, {uses: 1}), lapsing = await invite(mio);
+  const dee = (await come(again.json.invite, 'Dee')).json.token as string;
+  assert.equal((await say(dee, 'last words')).status, 201);
+  await s.db.execute(sql`update board_guest set token_until = now() - interval '1 second'`);
+  await s.db.execute(sql`update board_invite set until = now() - interval '1 second' where id = ${lapsing.json.id as string}`);
+  const gone = await sweep(s.db, s.bucket);
+  assert.deepEqual([gone.guest, gone.invite], [1, 2]);
+  const last = ((await s.call('GET', `/v1/open/${bid}/posts?limit=1`)).json as unknown as {posts: {by: string; guest?: boolean}[]}).posts;
+  assert.deepEqual(last.map((p) => [p.by, p.guest]), [['Dee', true]]);
 });
 
 test('Names: an account keeps five, those it let go among them; a few servers a day; a server its maker leaves with nobody else in it is held a day', async () => {
@@ -934,6 +1125,62 @@ test('A repo named on answers only that it is off; a range that ends before it s
   assert.deepEqual([head.status, head.headers.get('Content-Length')], [200, '100']);
 });
 
+test('a release is public: its root by digest and the desktop app by its pinned name, whole, by range or HEAD; nothing else, and no listing', async () => {
+  const s = await service();
+  const sha = 'b'.repeat(64);
+  await s.bucket.put(`os/${sha}`, new Uint8Array(100).map((_, i) => i));
+  const deb = desktopPins['0.4.1'].deb.file, appimage = desktopPins['0.4.1'].appimage.file;
+  await s.bucket.put(`desktop/${deb}`, new Uint8Array(50).map((_, i) => 200 - i));
+  const get = (path: string, headers: Record<string, string> = {}, method = 'GET') => s.app.request(`${BASE}${path}`, {method, headers});
+  const body = async (r: Response) => [...new Uint8Array(await r.arrayBuffer())];
+
+  // Whole, to anyone (no session), with what a download needs.
+  const whole = await get(`/v1/desktop/${deb}`);
+  assert.equal(whole.status, 200);
+  assert.deepEqual(Object.fromEntries(['content-type', 'content-length', 'accept-ranges', 'etag', 'content-disposition'].map((k) => [k, whole.headers.get(k)])), {
+    'content-type': 'application/vnd.debian.binary-package', 'content-length': '50', 'accept-ranges': 'bytes',
+    etag: `"${desktopPins['0.4.1'].deb.sha256}"`, 'content-disposition': `attachment; filename="${deb}"`});
+  assert.equal((await body(whole)).length, 50);
+  const root = await get(`/v1/os/${sha}`);
+  assert.deepEqual([root.status, root.headers.get('content-type'), root.headers.get('content-disposition'), (await body(root)).length],
+    [200, 'application/octet-stream', null, 100]);
+
+  // A range: from a byte to a byte, from a byte to the end, an end past the end; each says which bytes of how many.
+  for (const [path, range, status, contentRange, bytes] of [
+    [`/v1/desktop/${deb}`, 'bytes=10-12', 206, 'bytes 10-12/50', [190, 189, 188]],
+    [`/v1/desktop/${deb}`, 'bytes=48-', 206, 'bytes 48-49/50', [152, 151]],
+    [`/v1/desktop/${deb}`, 'bytes=49-900', 206, 'bytes 49-49/50', [151]],
+    [`/v1/os/${sha}`, 'bytes=98-', 206, 'bytes 98-99/100', [98, 99]],
+  ] as const) {
+    const r = await get(path, {Range: range});
+    assert.deepEqual([r.status, r.headers.get('content-range'), r.headers.get('content-length'), await body(r)], [status, contentRange, String(bytes.length), bytes], `${path} ${range}`);
+  }
+  // Nothing there to give: past the end, or backwards.
+  for (const range of ['bytes=50-', 'bytes=60-70', 'bytes=20-10']) {
+    const r = await get(`/v1/desktop/${deb}`, {Range: range});
+    assert.deepEqual([r.status, r.headers.get('content-range')], [416, 'bytes */50'], range);
+  }
+  // HEAD: how much there is, and nothing of it.
+  const head = await get(`/v1/desktop/${deb}`, {}, 'HEAD');
+  assert.deepEqual([head.status, head.headers.get('content-length'), head.headers.get('content-type'), (await body(head)).length], [200, '50', 'application/vnd.debian.binary-package', 0]);
+  const headPart = await get(`/v1/os/${sha}`, {Range: 'bytes=0-0'}, 'HEAD');
+  assert.deepEqual([headPart.status, headPart.headers.get('content-range'), headPart.headers.get('content-length')], [206, 'bytes 0-0/100', '1']);
+
+  // Missing: a pinned file the bucket has not got yet, a name nobody pinned (even one the bucket holds), a digest nobody put.
+  await s.bucket.put('desktop/other.deb', new Uint8Array(3));
+  for (const path of [`/v1/desktop/${appimage}`, '/v1/desktop/other.deb', `/v1/desktop/..%2Fos%2F${sha}`, `/v1/os/${'c'.repeat(64)}`, '/v1/os/not-a-digest']) {
+    assert.equal((await get(path)).status, 404, path);
+    assert.equal((await get(path, {}, 'HEAD')).status, 404, `HEAD ${path}`);
+  }
+  // No listing: the folders answer nothing, and nothing they say names a file.
+  for (const path of ['/v1/desktop', '/v1/desktop/', '/v1/os', '/v1/os/']) {
+    const r = await get(path);
+    const text = await r.text();
+    assert.ok(r.status === 404 || r.status === 401, `${path}: ${r.status}`);
+    assert.ok(!text.includes(deb) && !text.includes(sha), path);
+  }
+});
+
 test('Discard: an off repo goes for good now, asked as off is; its name is remembered, so a copy that was in step cannot bring it back, and one made anew can', async () => {
   const s = await service();
   const t = await s.start('Ren');
@@ -1044,7 +1291,7 @@ test('A board item taken off is not brought back by a late change; closing a boa
   const set = (body: unknown) => s.call('PATCH', `/v1/boards/${bid}`, {token: ren, body}).then((r) => [r.json.open, r.json.guests]);
   assert.deepEqual(await set({guests: true}), [true, true]);
   assert.deepEqual(await set({open: false}), [false, false]);
-  assert.equal((await s.call('POST', `/v1/open/${bid}/guest`, {body: {email: 'a@example.org'}})).status, 404);
+  assert.equal((await s.call('POST', `/v1/open/${bid}/guest`, {body: {invite: '0'.repeat(32), name: 'Aki'}})).status, 404);
 });
 
 test('Letting an address go takes down what went public under it; a face its owner no longer has holds nothing for them', async () => {
@@ -1081,6 +1328,24 @@ test('Live chat: a device takes only what came from the one it talks with, in it
   assert.deepEqual(await take('from=mio&session=a'), ['mio@length3.test a answer']);
   assert.deepEqual(await take('from=mio&session=b'), ['mio@length3.test b candidate']);
   assert.deepEqual(await take('from=mio&session=a'), []);
+});
+
+test('The sweep lets go of sessions, devices\' codes and verifications that ran out, and of none that still holds', async () => {
+  const s = await service();
+  const t = await s.start('Ren');
+  const me = await idOf(s, t);
+  assert.equal((await s.call('POST', '/api/auth/device/code', {body: {client_id: 'l3'}})).status, 200);
+  // Written as Better Auth writes them (UTC, without a zone): one run out a minute ago of each.
+  const ago = new Date(Date.now() - 60_000);
+  await s.db.insert(schema.session).values({id: 'gone-session', token: 'gone-token', userId: me, expiresAt: ago, updatedAt: ago});
+  await s.db.insert(schema.deviceCode).values({id: 'gone-code', deviceCode: 'gone-device', userCode: 'GONE0000', expiresAt: ago, status: 'pending'});
+  await s.db.insert(schema.verification).values({id: 'gone-verification', identifier: 'x', value: 'y', expiresAt: ago});
+  await s.db.insert(schema.verification).values({id: 'kept-verification', identifier: 'x', value: 'y', expiresAt: new Date(Date.now() + 60_000)});
+  const gone = await sweep(s.db, s.bucket);
+  assert.deepEqual([gone.session, gone.device_code, gone.verification], [1, 1, 1]);
+  assert.deepEqual([await count(s, sql`select count(*)::int as n from session`), await count(s, sql`select count(*)::int as n from device_code`),
+    await count(s, sql`select count(*)::int as n from verification where id = 'kept-verification'`)], [1, 1, 1]);
+  assert.equal((await s.call('GET', '/v1/repos', {token: t})).status, 200);
 });
 
 test('The sweep: what was held long enough goes in one place, blobs no tree names among it, and nothing else', async () => {
@@ -1126,7 +1391,7 @@ test('On Workers the app is made once, and each request uses the database it ope
   const {scoped} = await import('./worker.ts');
   const [one, two] = [await fresh(), await fresh()];
   const {db, at} = scoped(one);
-  const auth = createAuth({db, secret: 'test-secret-'.repeat(4), baseURL: BASE, appOrigin: APP, rateLimit: false, dev: true});
+  const auth = createAuth({db, secret: SECRET, baseURL: BASE, appOrigin: APP, rateLimit: false, dev: true});
   const app = createApp({db, auth, bucket: memoryBucket(), origins: [APP], providers: ['dev'], domain: 'length3.test', baseURL: BASE});
   let on = one;
   const ask = (url: string, init: RequestInit = {}) => at(on, () => app.request(url, {...init, headers: {Origin: APP, ...(init.headers as Record<string, string>)}}));
@@ -1145,6 +1410,24 @@ test('On Workers the app is made once, and each request uses the database it ope
   assert.equal(await repos(), 401);
   on = one;
   assert.equal(await repos(), 200);
+});
+
+test('On Workers a sweep that fails fails its run, and says so', async () => {
+  const worker = (await import('./worker.ts')).default;
+  // A database nobody answers for: the sweep's first step fails.
+  const env = {DATABASE_URL: 'postgresql://nobody:nothing@127.0.0.1/none?sslmode=require', BETTER_AUTH_SECRET: crypto.randomUUID() + crypto.randomUUID(),
+    BASE_URL: BASE, APP_ORIGIN: APP, BLOBS: {head: async () => null, get: async () => null, put: async () => undefined, delete: async () => undefined}};
+  const later: Promise<unknown>[] = [], said: unknown[][] = [];
+  const error = console.error;
+  console.error = (...a: unknown[]) => { said.push(a); };
+  try {
+    await assert.rejects(worker.scheduled({}, env, {waitUntil: (p) => { later.push(p); }}));
+  } finally {
+    console.error = error;
+  }
+  assert.equal(said[0]?.[0], 'sweep failed');
+  // The connection is let go however the sweep went.
+  assert.deepEqual((await Promise.allSettled(later)).map((r) => r.status), ['fulfilled']);
 });
 
 test('The room is counted as things come and go, and agrees with counting it all again; its stamp moves with the repo list', async () => {
@@ -1191,7 +1474,7 @@ test('The service\'s role reads and writes rows, and nothing else', async () => 
 test('For research: nobody signs up, the link enters the one account, and nothing is shown to everyone', async () => {
   const key = 'k'.repeat(40);
   const s = await service({}, {enter: {as: 'banana000000', key}});
-  assert.deepEqual((await s.call('GET', '/v1/about')).json, {passkey: false, providers: [], domain: 'length3.test', enter: true});
+  assert.deepEqual((await s.call('GET', '/v1/about')).json, {passkey: false, providers: [], domain: 'length3.test', app: APP, enter: true});
   // A provider admits nobody, not even one this Remote could offer.
   const asked = await s.app.request(`${BASE}/api/auth/sign-in/social`, {method: 'POST', headers: {Origin: APP, 'Content-Type': 'application/json'},
     body: JSON.stringify({provider: 'dev', callbackURL: `${APP}/`})});

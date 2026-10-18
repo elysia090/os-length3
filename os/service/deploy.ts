@@ -17,6 +17,12 @@
 //         BETTER_AUTH_SECRET, once (a new one would sign everyone out).
 //         ENTER_KEY, for a Remote for research (enter.ts): the one given, or
 //           else, the first time, a new one, whose link is handed on.
+//       Then the release's files the Remote serves to anyone (mirror.ts):
+//       every root core/src/root.rs pins and the desktop app of the version
+//       RELEASE names (shared/desktop-releases.json), each one the bucket
+//       lacks taken from the GitHub release with GITHUB_TOKEN (read-only;
+//       GITHUB_REPOSITORY names the repository when it is not this one),
+//       checked against its pin, and put with wrangler.
 //   node service/deploy.ts link
 //       a new ENTER_KEY: the old link stops opening the Remote, and every
 //       session the one account has ends now. The new link is handed on.
@@ -36,6 +42,8 @@ import {sql} from 'drizzle-orm';
 import {drizzle} from 'drizzle-orm/neon-serverless';
 import {migrate} from 'drizzle-orm/neon-serverless/migrator';
 import {enterEmail} from './enter.ts';
+import {mirror, remoteStore} from './mirror.ts';
+import {pinnedDesktop, pinnedRoots} from './releases.ts';
 
 const config = new URL('../wrangler.toml', import.meta.url).pathname;
 const toml = readFileSync(config, 'utf8');
@@ -101,19 +109,31 @@ function handOn(key: string, news: string) {
   console.log(`${news} Hand it only to whoever should come in:\n\n  ${vars('APP_ORIGIN')}/#enter=${key}\n`);
 }
 
-/** Waits until the Remote answers from its database: a key that is no key is refused only after the try is counted there. */
+/** Waits until the Remote answers from its database (GET /v1/health: one read; a Remote for research or not). */
 async function answers(base: string) {
   let last = '';
   // A new custom domain is reachable once its certificate is issued: a minute, or a few.
   for (let i = 0; i < 30; i++) {
     if (i) await new Promise((r) => setTimeout(r, 10_000));
     try {
-      const r = await fetch(`${base}/v1/enter`, {method: 'POST', headers: {'content-type': 'application/json', origin: base}, body: '{"key":""}'});
-      if (r.status === 403 || r.status === 429) return console.log(`${base}: answers from its database`);
+      const r = await fetch(`${base}/v1/health`);
+      if (r.ok && ((await r.clone().json().catch(() => null)) as {ok?: boolean} | null)?.ok === true) return console.log(`${base}: answers from its database`);
       last = `${r.status} ${(await r.text()).slice(0, 300)}`;
     } catch (e) { last = String(e); }
   }
-  throw new Error(`${base}/v1/enter: ${last}`);
+  throw new Error(`${base}/v1/health: ${last}`);
+}
+
+/** What the Remote serves of the release, put in its bucket where it lacks it (mirror.ts). */
+async function releaseFiles(bucket: string) {
+  const version = readFileSync(new URL('../RELEASE', import.meta.url), 'utf8').trim();
+  const desktop = pinnedDesktop(version);
+  if (!desktop.length) console.log(`shared/desktop-releases.json pins no desktop app for ${version}: the web offers none until it is pinned (the release's notes say what to pin)`);
+  const pins = [...pinnedRoots(readFileSync(new URL('../core/src/root.rs', import.meta.url), 'utf8')), ...desktop];
+  const store = remoteStore(vars('BASE_URL')!, async (p, file) => must(['r2', 'object', 'put', `${bucket}/${p.key}`, '--file', file, '--content-type', p.type, '--remote']));
+  const {kept, put} = await mirror(pins, store, {api: process.env.GITHUB_API_URL || 'https://api.github.com',
+    repo: process.env.GITHUB_REPOSITORY || 'elysia090/os-length3', token: process.env.GITHUB_TOKEN});
+  console.log(`release files on the Remote: ${put.length} put, ${kept.length} there already`);
 }
 
 const step = process.argv[2];
@@ -137,6 +157,7 @@ if (!step) {
   await must(['deploy', ...(Object.keys(give).length ? ['--secrets-file', '/dev/stdin'] : [])], JSON.stringify(give));
   if (made) handOn(give.ENTER_KEY, 'This Remote has its first link.');
   await answers(vars('BASE_URL')!);
+  await releaseFiles(bucket);
 } else if (step === 'link') {
   const as = vars('ENTER_AS');
   if (!as) { console.error('wrangler.toml has no ENTER_AS: this Remote is not one for research'); process.exit(2); }

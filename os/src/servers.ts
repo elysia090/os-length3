@@ -190,19 +190,77 @@ export async function archive(id: string, member: boolean, what: {todo?: boolean
   return r.text();
 }
 
-// ---- guests: an outsider writes once an email is shown to be theirs ----
+// ---- guests: an outsider writes once one of a board's people has invited them ----
+//
+// One of its people makes an invitation and passes its link on themselves (…/#guest=BOARD.INVITE);
+// the Remote sends nothing. Whoever opens it chooses a name, always shown as a guest's, and this
+// browser keeps the token it is given for that board.
+
+/** An invitation as one of its people sees it; a guest let in. */
+export interface Invitation { id: string; by: string; uses: number; until: number; mine: boolean; mayRevoke: boolean }
+export interface Guest { id: string; name: string; by: string; until: number; mayRemove: boolean }
+/** What this browser holds as a guest of a board: its token, the name it writes as, and the board's names. */
+export interface GuestHere { token: string; as: string; name: string; server: string }
+
 const GUEST = 'length3.guest.';
+const INVITED = 'length3.invited';
 /** This browser's guest token for a board, if it has one (a convenience: it may be forgotten). */
-export function guestOf(id: string): {token: string; as: string} | null {
-  try { const v = localStorage.getItem(GUEST + id); return v ? JSON.parse(v) as {token: string; as: string} : null; } catch { return null; }
+export function guestOf(id: string): GuestHere | null {
+  try { const v = localStorage.getItem(GUEST + id); return v ? JSON.parse(v) as GuestHere : null; } catch { return null; }
 }
-export const guestCode = (id: string, email: string) => call<{sent: boolean}>(`/v1/open/${id}/guest`, send('POST', {email}));
-export async function guestCheck(id: string, email: string, code: string) {
-  const g = await call<{token: string; as: string}>(`/v1/open/${id}/guest/check`, send('POST', {email, code}));
-  try { localStorage.setItem(GUEST + id, JSON.stringify(g)); } catch { /* asked again next time */ }
-  return g;
+/** The boards this browser is a guest of, by id. */
+export function guestBoards(): {id: string; here: GuestHere}[] {
+  const out: {id: string; here: GuestHere}[] = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      const here = k?.startsWith(GUEST) ? guestOf(k.slice(GUEST.length)) : null;
+      if (k && here?.token) out.push({id: k.slice(GUEST.length), here});
+    }
+  } catch { /* none kept */ }
+  return out;
 }
+/** No longer a guest of that board here (removed, or the lease ran out). */
+export function forgetGuest(id: string) {
+  try { localStorage.removeItem(GUEST + id); } catch { /* nothing kept */ }
+}
+
+/** An invitation's link, as the app was opened by it: held for this tab until it is used. */
+export function holdInvite(board: string, code: string) {
+  try { sessionStorage.setItem(INVITED, JSON.stringify({board, code})); } catch { /* used now or not at all */ }
+}
+export function heldInvite(): {board: string; code: string} | null {
+  try { return JSON.parse(sessionStorage.getItem(INVITED) ?? 'null') as {board: string; code: string} | null; } catch { return null; }
+}
+export function dropInvite() {
+  try { sessionStorage.removeItem(INVITED); } catch { /* nothing held */ }
+}
+/** Read from an address's fragment (…#guest=BOARD.INVITE), if it is one. */
+export const inviteIn = (hash: string): {board: string; code: string} | null => {
+  const m = /(?:^#|&)guest=([0-9a-z]{12})\.([0-9a-f]{32})(?:&|$)/.exec(hash);
+  return m ? {board: m[1], code: m[2]} : null;
+};
+
+/** In as a guest, by the invitation held: the token is kept here for that board, and the invitation is spent. */
+export async function guestJoin(board: {id: string; name: string; server: string}, code: string, as: string): Promise<GuestHere> {
+  const g = await call<{token: string; as: string}>(`/v1/open/${board.id}/guest`, send('POST', {invite: code, name: as}));
+  const here = {token: g.token, as: g.as, name: board.name, server: board.server};
+  try { localStorage.setItem(GUEST + board.id, JSON.stringify(here)); } catch { /* asked again next time */ }
+  dropInvite();
+  return here;
+}
+/** Still a guest here? 403 says not (removed, or the lease ran out). */
+export const guestStill = (id: string, token: string) => call<{id: string; as: string}>(`/v1/open/${id}/guest`, {headers: {'X-Guest': token}});
 export const guestPost = (id: string, token: string, body: string) => call<Post>(`/v1/open/${id}/posts`, {...send('POST', {body}), headers: {'X-Guest': token}});
+/** An open board by its id (what an invitation's link names). */
+export const openBoard = (id: string) => call<Board>(`/v1/open/${id}`);
+
+// Its people's side: invitations out and guests in.
+export const guestsOf = (board: string) => call<{invites: Invitation[]; guests: Guest[]}>(`/v1/boards/${board}/guests`);
+export const invite = (board: string, o: {uses?: number; days?: number} = {}) =>
+  call<{id: string; invite: string; link: string; uses: number; until: number}>(`/v1/boards/${board}/invites`, send('POST', o));
+export const revokeInvite = (board: string, id: string) => call<void>(`/v1/boards/${board}/invites/${id}`, send('DELETE'));
+export const removeGuest = (board: string, id: string) => call<void>(`/v1/boards/${board}/guests/${id}`, send('DELETE'));
 
 /** A page of the timeline: the range of ids it was read as, and its posts while they are held. */
 export interface Page { newest: string; oldest: string; posts: Post[] | null }
@@ -232,6 +290,6 @@ export function farFrom(count: number, near: readonly number[], keep: number): n
 /** Posts by one address this close together read as one run: one face and name for them all. */
 export const RUN_MS = 5 * 60_000;
 /** Whether `b` (just after `a` in time) goes on in `a`'s run. */
-export const sameRun = (a: Post | undefined, b: Post) => a !== undefined && a.by === b.by && b.at - a.at >= 0 && b.at - a.at < RUN_MS;
+export const sameRun = (a: Post | undefined, b: Post) => a !== undefined && a.by === b.by && !a.guest === !b.guest && b.at - a.at >= 0 && b.at - a.at < RUN_MS;
 /** The local day of `ms`, as a key. */
 export const dayOf = (ms: number) => { const d = new Date(ms); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; };

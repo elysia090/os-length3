@@ -117,7 +117,7 @@ Every page:
 | `raised` | `#E4E4E0` | field fill, hover (the same small step above ground as before) |
 | `done` | `#2F7D4F` | done and on: a step of an issue's work done, a switch on (its knob), a box ticked (its circle) |
 | `marker` | `#F3E27A` | a line marked in a diff (a review, Forge's diff), as with a highlighter: over its words only (not its indent or number, which turns ink), each wrapped line its own stroke with softened ends; the pointer on a line shows the stroke paler |
-| `off` | `#B3412F` | a repo turned off: its switch |
+| `off` | `#A63C2C` | a repo turned off: its switch; a removal held, its button red (`ground` words on it 4.5:1) |
 
 No other colours; the last three each mean their one thing only.
 
@@ -371,7 +371,7 @@ caches, environments, posts. The OS states them itself, so nobody has to.
 - **Every change names the version it was made on.** Nothing sent
   overwrites; when both sides changed, both are kept side by side.
 - **Leases.** What is held for a while says until when: a repo turned off
-  (30 days), a guest's code (10 minutes), a device's session.
+  (30 days), a guest's invitation (a week), a device's session.
 - **Small before wide.** What reaches others starts with the few it is
   for and is opened further only by choice (a server's board: its people,
   then, if opened, anyone reading, outsiders writing), as a release goes to
@@ -498,7 +498,9 @@ nobody else can take it and be taken for its owner:
 | a repo's public name (`face:name`) | its owner, under a face | the face (the server, or the owner's address) | taken down, or the face goes: 30 days no one else's repo answers to it |
 | a board, its talk and TODO | its server | its Remote | removed by its owner: 30 days, back at once until then, then gone; or with its server |
 | a copy on a device | the device | the digests | taken back whenever room is wanted (owned.rs) |
-| a session, a code, a guest | the person, the address it was sent to | sign-in, mail | a lease: days for a session, minutes for a code, 30 days for a guest |
+| a session, a code | the person | sign-in | a lease: days for a session, minutes for a code |
+| a guest's invitation | the one of its people who made it, lent to whoever they hand it | its Remote, and its digest | used, revoked, its maker leaves the server, or a week (at most 30 days) |
+| a guest | the board, by an invitation | its token's digest | a lease of 30 days; removed (their posts with them), or the board stops taking guests: at once |
 
 What goes, goes in one place, once a day (`service/sweep.ts`): nothing a
 person asks for purges anything on the way, and a file no tree names any
@@ -549,13 +551,76 @@ The GUI and the command line are two ways into the same things. `l3`'s
 nouns and order are the rail's: Home (`todo`, `profile`, `lang`), Forge
 (`repo`, `band`, `prompt`), File (`file`), Git (`git`, `issue`, `start`,
 `main`, `commit`, `push`, `reset`, `diff`, `log`, `review`, `reply`,
-`merge`, `reject`), Runtime (`runtime`, `free`, `root`, `ssh`, `network`, `dotfile`),
-Remote (`remote`, `login`, `logout`), Server (`server`), Inbox (`inbox`,
-`address`); `l3 help` lists them in this order. A path is written as File shows it (`/root/<repo>/…`). A line is
+`merge`, `reject`), Runtime (`runtime`, `free`, `root`, `network`, `dotfile`,
+`address`), Remote (`remote`, `login`, `logout`), Server (`server`), Inbox
+(`inbox`, `name`); `l3 help` lists them in this order. `l3 address` is where
+this device is reached over SSH, as `ip addr` answers with an address: one
+`ssh -p PORT REPO@HOST` a line, the SSH user being the repo (Runtime's SSH,
+below); the names people find you by (name@domain, and your code) are `l3
+name`. A path is written as File shows it (`/root/<repo>/…`). A line is
 named the same way everywhere ("Fix：件名"), an issue is called by its
 number in both (#3), and Home's state is the same files, so anything done in one shows in
 the other. The Prompt's shell works on the repo itself: what it changes is
 written back, and what is saved elsewhere comes in.
+
+### The command line without learning it first
+
+The GUI asks nobody to learn it before using it: the rail shows the
+purposes, a press shows the page, and the next deed is on the page. `l3`
+at a terminal is used the same way, and stays a command line:
+
+- **`l3` alone is the rail.** The purposes in the rail's order and words
+  (Home, Forge, File, Git, Runtime, Remote, Server, Inbox, +), each with its
+  role and what is there now (TODO open, repos, issues open, the root, where
+  the Remote stands, servers, what is not read). It is a few lines under
+  what is already in the terminal, never a screen taken over: it works over
+  SSH and inside a Prompt, and the scrollback stays readable.
+- **A purpose picked prints its page** as its commands print it, each said
+  first as the command it is (`→ l3 git`), then **its things with their
+  deeds**: each issue, TODO item, repo, conversation, board or thing by size
+  is a row, and the focused row's deeds are under it, what the thing is for
+  first, what goes against it or leaves it last (§3, Where a deed sits); the
+  page's own deeds (Write an issue, Add a TODO, Sign in) are rows of their
+  own. The deeds are where the thing stands: an issue not started offers
+  Start; changed, Commit; committed, Push; handed in, Approve and Merge (Merge
+  first once approved), Reply, Ask for changes, Reject.
+- **A deed takes its words from the thing it is pressed on** and asks only
+  for the rest, in place, one line each, as the app's fields ask: the name
+  over the field, what goes in it beside (First line, Kind：title, as Fix：…),
+  a repo or a template chosen in a row of their own (one repo is chosen
+  without asking). What cannot be undone at once (Remove, Free, Reset, Sign
+  out, Block) is asked first, Not now first and the deed beside it. Words
+  the command refuses (a name taken) are said under the field, which is
+  asked again. An empty line is Not now.
+- **Every deed says the command it is** before it runs (`→ l3 start
+  notes#1`), so the words are learned by seeing them and never needed. Its
+  answer is l3's own, and then the page's rows again, read anew, with the
+  focus on what was just done or made (§1, What one was doing stays).
+- **After a command typed by hand**, its next deeds come in one short row
+  (`notes#1  Push · Open · Back to main`), with nothing chosen: Enter alone,
+  Esc or any other key passes it by and leaves nothing behind; keys typed
+  ahead for the next command are never taken for it.
+- **One table drives both.** A deed is a form of `cli/src/spec.rs` with what
+  the menu needs beside it: its word in both languages, what it is pressed
+  on, the facts it is offered under, the words it gives itself, what it
+  asks, its weight. Each page notes its things and their facts while it is
+  made (the issue's from the same reading that writes its card's `next:`
+  line), so the menu, the help, the completion and the card cannot drift;
+  the tests read every deed back through the parser as the form it is.
+- **Keys** as a list has them: ↑↓ (Tab) to choose a row, ←→ a deed, Enter to
+  do it, 1–9 or a letter to jump (again for the next with that letter),
+  Backspace to the rail, q or Esc to leave. The focus is a › and brackets,
+  so nothing depends on colour (NO_COLOR is honoured); the lines are drawn
+  again only when a key is pressed, and what is left when a choice is made
+  is plain text: the choice, the command, its answer.
+- **Still a plain command.** With words after it (`l3 git`), l3 does and
+  answers what it did, the short row only following at a terminal; through
+  a pipe or a file (standard input or output not a terminal), with
+  `--json`, with `TERM=dumb`, or with `L3_PLAIN=1` (the one switch that keeps
+  a terminal plain too, for a screen reader that prefers it or a recorded
+  session), nothing is offered or asked, and what l3 writes and how it exits
+  are byte for byte what they were (`cli/tests/plain.rs` keeps the
+  transcripts; `cli/tests/menu.rs` drives the menu through a real pty).
 
 ### The canonical copy is on the Remote
 
@@ -641,7 +706,12 @@ What leaves this system is kept to what is said here:
   everything and ends what is left with the shell, and it dies with its
   supervisor. The root itself is installed only from a pinned release,
   checked by digest before it is read, unpacked refusing anything that
-  would land outside, go through a link or be a device.
+  would land outside, go through a link or be a device. It is fetched from
+  the Remote this device uses, then the publisher's Remote, which each of
+  its deploys fills with every root pinned in `core/src/root.rs`
+  (`service/mirror.ts`), and last from the GitHub release, which answers
+  only while the repository is public; when none has it, the error says
+  what each said.
 - **Host.** The app starts no host program for a repo: history is the
   Remote's, and a repo's own tools (git among them) run inside the root.
 - **Files.** The data directory and its settings are the user's alone (0700,
@@ -784,14 +854,19 @@ folds away and the search box stays where it was, on the band's line at
 the right; its results open under it over the center. On the band's line sits the search box for the open
 repo: plain, case-insensitive, line by line; results are grouped by file,
 and a line pressed opens the center there with the line selected. Below,
-on the band line, one reference at a time, switched freely with chips: Issue (the repo's issues, one line each as #3 Fix：件名, pressed to read one in full), diff (the changes not yet
+on the band line, one reference at a time, switched freely with chips: Issue (the repo's open issues, as Git shows them: one merged or
+closed is not among them; one line each as #3 Fix：件名, pressed to read one in full), diff (the changes not yet
 cut, file by file: added lines in ink with no fill, the lines kept quiet,
 removed lines quiet and struck, following every save; a file's name opens
 it in the center, a line's number opens it at that line, selected, to
 write in, and a removed line's the line that took its place; pressing a
 line elsewhere marks it with the `marker`, as a review does, to come back
 to, and again unmarks it, the mark staying on its line while the app is
-open) and 実行結果 (each line sent
+open; at the right end of a file's head, Put back, which asks in the head
+first (Not now, Put back under the pointer) what will happen, its lines
+still under it, then makes the file what the last commit held: its text
+again, a removed one written back, one added since gone; a binary file only
+by going. A part of a file is not put back on its own) and 実行結果 (each line sent
 from the prompt box, newest first: the line, how long it took or that it
 is still running, and what came out until the prompt returned; the Prompt
 itself scrolls on, this keeps the record). A line pressed there is back in
@@ -824,10 +899,11 @@ The Prompt never goes silent while something takes time:
 
 ### Runtime
 
-この端末 first, then what can go from it, then what is running, then the
-environment actually in effect (what runs, not what was asked for). There
-is no table of policies: what the device holds is shown as things, and
-each thing says what can be done with it.
+この端末 first, then what can go from it, then what is running, then SSH
+(on the web with the desktop app beside it), then the environment actually
+in effect (what runs, not what was asked for). There is no table of policies: what
+the device holds is shown as things, and each thing says what can be done
+with it.
 
 - **この端末**: one bar of the host's whole, with this OS's share darker
   (not an ink fill, which means current), and three figures: this OS, free,
@@ -904,8 +980,27 @@ each thing says what can be done with it.
   run before a Prompt, with the network, over the repo's environment, so
   what they install is the repo's and stays; and again only when the root
   or either file changes.
-- **SSH**, once there is a name (Inbox): a small card per name with
-  the power switch at its bottom right, whether it may be reached over SSH.
+- **SSH** into a repo's Prompt, per device: an ordinary OpenSSH client,
+  with the repo as its user, lands in that repo's Prompt, the same shell
+  `l3 prompt REPO` gives (a command runs there and its exit code comes
+  back). A small card for each of the account's devices that listens: what
+  it is (This device in the app), its destinations, one a repo (`ssh -p
+  23000 notes@192.168.1.5`, each copied by a press, as Inbox's stub is),
+  how long it has been on (or that it has not been heard from lately), and
+  the power switch at its bottom right, on; pressed, that device stops
+  taking connections and ends its sessions within seconds. Off is the
+  first state, and SSH is turned on only at the device itself (`l3
+  address` asks, `l3 address ssh on`, or, in the app, This device's card,
+  there off with its switch): a page can only turn a device's SSH off, so
+  the switch on another device's card only goes one way. The listener is
+  l3's, in the background, recorded under the data directory as a Prompt
+  is; which devices listen is kept on the Remote by device (a session),
+  and the listener asks it every 5 s, stopping once it was turned off or
+  the device signed out. Keys are the `.authorized_keys` dotfile (below),
+  public keys only, so a key added on one device counts on every one.
+  With none there, turning on says to add one first, and how. Shown only
+  while signed in; with no device listening, one line says where it is
+  turned on.
 - **Dotfiles**: a small card each (its name, its size), and a dashed one to
   make another. A card opens its text under the cards, `/root/` and its name
   above it, Remove at the left, Close and Save at the right. Every Prompt
@@ -920,6 +1015,24 @@ each thing says what can be done with it.
   goes from every device; Prompts running keep it until they start again),
   Remove under the pointer and Not now at the right.
 
+- **デスクトップアプリ**, on the web only (the app does not offer itself):
+  beside SSH, on one row (two small things this device can be reached by
+  or become), its card the SSH card's size, the two ending level; where the
+  row has no room for both, it goes under. Few words: its title, Length³
+  OS and the version `RELEASE` names; quietly, x86-64 Linux, which file
+  and its size (what it is goes without saying). At
+  its bottom left, Download (ダウンロード): a small primary button with the
+  download mark (an arrow into a tray, `icons.ts`) and the word. It is at
+  the left because it leaves the page for this computer, as Forge does on
+  Remote's card. It gives the .deb, which Debian and Ubuntu install; beside
+  it, a small plain button, AppImage, for any other x86-64 Linux (its size
+  in its title). Both are the files `shared/desktop-releases.json` pins for
+  that version, served by the Remote (`/v1/desktop/<file>`, to anyone, by
+  range), where each deploy puts them from the release
+  (`service/mirror.ts`). Each is offered only once the Remote says it has
+  it; with neither there, the section is not shown, never a button that
+  cannot act.
+
 In a browser the same list is the browser's copy of the repos (このブラウザ,
 its share an estimate), and the same three answers apply.
 
@@ -927,7 +1040,8 @@ its share an estimate), and the same three answers apply.
 
 What happens between a repo and the outside, in the mental model of the
 issues: an issue hides its branch and worktree, and the operations are
-Commit, Push, Change (with Reset), Review, Merge. It uses the same workbench
+Commit, Push, Change (with Reset), Review, Merge, and Close for one that
+will not be done. It uses the same workbench
 as Forge: the center (one centred column, 760 px at most) with the prompt
 box at its foot, and the narrow right pane with the search box, the
 reference and the Prompt. The page header, then the repo chips (one repo or
@@ -939,7 +1053,7 @@ is the one shown, its repo's chip chosen if another was, with the keyboard
 on its words; one half written (new, or its words half changed) is still
 half written after reading its neighbours or another page.
 
-- **Issues**: every issue not merged yet. An issue is its number and its
+- **Issues**: every issue still open: not merged, not closed. An issue is its number and its
   words ("#3 Fix：件名", then the detail); that is all a person meets. Any
   repo takes one, and it takes the repo's next number. How it is kept is the
   OS's business: one plain file in the repo's `issue/`, named by its number,
@@ -976,7 +1090,14 @@ half written after reading its neighbours or another page.
 - **The card's foot**: Back to main at its left (it leaves the work), then
   its repo and who started it and when; Start or Continue here at the
   right. No file name
-  is shown anywhere an issue is.
+  is shown anywhere an issue is. One not worked on here, with no undecided
+  change, while the repo shows main, has Close at the left instead: it will
+  not be done. It goes at once (Reopen brings it back, so nothing is
+  asked) and is listed under Closed. Being closed is the issue's own: its
+  file says so on its last line, after the detail (`Closed：2031-10-17
+  sora`, the day and who), so l3 (`l3 issue close REPO#N`, `l3 issue
+  reopen REPO#N`) and a Prompt see the same, and it reaches the Remote as
+  every change does, with nothing kept twice.
 - **A diff**, wherever it shows: each file a fold, its name (which opens it)
   and what was added and removed (+56 −2); each line with which line it is.
   The first three files are open, the rest wait closed, so a large change
@@ -986,11 +1107,35 @@ half written after reading its neighbours or another page.
   where a reviewer marks lines as with a highlighter (`marker`); what was
   said, in order (an approval without words is not shown there); then a
   comment more, in a field tall from the start (Ctrl+Enter or Comment sends
-  it with the marks), and beside Comment, Approve as a ○ that turns green
-  when pressed.
+  it with the marks), and beside Comment, Ask for changes, which sends the
+  same with its verdict (it says something: with nothing written or marked,
+  the field is where to say it), shown in what was said as Asked for
+  changes, as `l3 review REPO#N changes` is; at the left, Approve as a ○
+  that turns green when pressed.
 - **Merge**, under the Review and not in it: Reject at the left, who
   approved it, and Merge at the right, primary once the version is
   approved.
+
+Under the issues, each its own section, shown only when it has something:
+
+- **main**: a card for each repo that shows main and has something not
+  committed there (an edit in Forge, an issue written, one closed): its
+  repo, what is not committed (▸ 2 files, whose diff opens over what is
+  under it, as in an issue's Commit row) and Commit at the right. Commit
+  asks in the card for the line the commit goes by ("Fix：title"), as
+  `l3 commit REPO "Fix：title"` takes it, Not now at the left and Commit
+  under the pointer; Enter commits the one line. What is typed is kept
+  with its repo until it is committed or put back. This is Commit, not an
+  issue made of the changes: an issue hides a branch that starts from
+  main's last commit, and moving main's draft onto one would be a new
+  operation the Remote does not have; a commit on main is already one
+  (`l3 commit` on main), so the app offers the same.
+- **Merged**: the issues whose change main took, newest first, a row each:
+  "#1 Fix：件名", who handed it in and when it was merged; pressed, the
+  row opens to the change's diff. It is history, so it is only read.
+- **Closed**: the issues closed without being done, a row each: "#2
+  Feat：件名", who closed it and the day; Reopen at the row's right end
+  (while the repo shows main) puts it back among the issues at once.
 
 Every change is already on the Remote (the draft, §6); Commit makes it
 history there, the same from the app, a browser and `l3 commit`. Without a
@@ -1066,12 +1211,14 @@ outside closes it), a popover: your names with their terms (Renew near the
 end), Add a domain, and Let a name go last. Add a domain becomes, in its
 row, one field where the name is written whole, `name@domain` with the @
 too (no second box to go to), then the one DNS record that proves it (`_length3.<domain>` TXT
-`v=length3; remote=<host>; proof=<…>`, each part copied by pressing it).
+`v=length3; remote=<host>; proof=<…>`, each part copied by pressing it;
+the host is the one name the Remote this OS ships with has everywhere,
+`os.length3.com`: its app, its Remote, its records and its passkeys).
 The proof is the Remote's keyed digest of the account and the domain, so
 only the domain's holder can publish it and no other account can reuse it;
 it is looked for while the gear is open, and the address is claimed the
 moment it is found. The same record says which Remote holds the domain's
-addresses, as MX does for mail. SSH is Runtime's. Then one tall box: conversations on
+addresses, as MX does for mail. SSH is Runtime's, by device, not by name. Then one tall box: conversations on
 the left (requests apart, with Accept and Block), the chosen one on the
 right. Writing is one line that grows as it is written: a message is named
 the way an issue is ("Review：…", "Question：…"), and a `/root/…` path in it
@@ -1120,11 +1267,37 @@ trip, a release, a reading group), and each holds two things:
 
 How far a board goes is chosen board by board, and only ever wider by
 choice: its server's people always; if opened, anyone reads it (signed in
-or not); and if it takes guests, an outsider may write in it once they have
-shown an email address is theirs, by a six-digit code sent to it (one a
-minute, ten minutes to use, five wrong tries spend it). Everything is kept
+or not); and if it takes guests, an outsider may write in it once one of
+its people has invited them. Everything is kept
 on the Remote, and any board can be taken home as one text (its TODO, its
 talk, or both), in the app or with `l3 server get`.
+
+**Guests** come by invitation, never by email: the Remote sends nothing to
+anyone, keeps no address, and so cannot be made to send mail for a
+stranger, costs nothing per guest, and has no address to lose. Any of a
+board's people makes an invitation behind the gear: a link
+(`https://os.length3.com/#guest=BOARD.INVITE`, 128 random bits after the
+board) shown only then, which they pass on themselves, by whatever way
+they already reach that person. It lets one person in, once, within a week;
+the Remote can let in up to 20 by one and keep it up to 30 days, and holds
+a board to 20 invitations out at once. The link's part after `#` never
+reaches a server's log; the Remote keeps only its digest, so its own copy
+opens nothing, and an invitation wrong, used up, revoked or run out is
+refused with the same words. Whoever opens it chooses the name they write
+as, at most 32 characters, no `@` (so it is never written as an address
+is), nothing invisible, never the name of one of the server's people or of
+the server, and not another guest's on that board; it is always shown with
+**guest** beside it and a dashed face, and their posts never run on from
+one of its people's. A guest holds a token for that board alone, for 30
+days, kept by the browser they came in on. A guest writes 20 posts an hour,
+and a board's guests together 100, so a link passed around cannot fill a
+board. Every one of its people sees the invitations out (whose, until when)
+and the guests in (who invited them); each revokes their own invitations
+and removes whom they invited, its owner any; a guest removed writes no
+more and what they wrote there is taken down with them. A board that stops
+taking guests (or stops being open) ends every invitation and guest at
+once, so opening it again lets nobody back by an old link; someone who
+leaves the server takes the invitations they made with them.
 
 Server is an overlay (§3), on the bench's shape. Its pieces, from §3:
 
@@ -1154,15 +1327,23 @@ Server is an overlay (§3), on the bench's shape. Its pieces, from §3:
   server's; others' shown here, whose, its owner may take them off),
   Boards (to everyone and guests, its owner's; Take home, anyone's;
   Remove, its owner's: the board is held 30 days, off the boards, its card
-  quiet with its 外す red, and pressed again it is back at once), This server (its name, code and term, Renew near its
+  quiet with its 外す red, and pressed again it is back at once; beside a
+  board that takes guests, its Guests card: the guests in, each with who
+  invited them and Remove, asked in the card; the invitations out, each with
+  whose and until when and Revoke, at once; and Invite a guest at its foot,
+  which shows the link once, copied by a press), This server (its name, code and term, Renew near its
   end; Leave; its owner's Delete). Whatever reaches past its people or
   cannot be taken back at once is **asked in the card**.
 
 Escape from behind the gear, or from a repo shown, goes back to the boards
 first. No Prompt is in Server: Server is for people, the Prompt for a
 repo. Signed out, it shows the open boards (and no right pane, since whose
-they are is not told), and where a board takes guests the box at the foot
-asks for an email, then the code sent to it.
+they are is not told). Where a board takes guests the box at the foot says
+that its people invite them; opened by an invitation's link, Server comes
+out at that board (signed in or not), and the box asks only the name to
+write as, then is the guest's box (ゲストの…として). Signed in, the boards one
+writes in as a guest are chips after one's servers (#board ゲスト), each
+shown alone. A guest removed, or whose lease ran out, is told so in the box.
 
 The talk reads as a conversation: oldest above and newest at the foot. No
 rules: a run of one address's posts within five minutes shows the face

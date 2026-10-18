@@ -1,12 +1,13 @@
 //! Runtime: the root Prompts run on, then this device (everything this OS
 //! holds, largest first, each with what can be done with it); what every
-//! Prompt is given (dotfiles); and whether SSH may reach each address.
+//! Prompt is given (dotfiles); and whether SSH reaches this device's Prompts (l3 address).
 
 use super::{stdin_text, Ctx};
 use crate::args::Call;
 use crate::out::{self, bytes, things, Error, Reply, Result};
+use crate::spec::{Fact, On};
 use crate::target;
-use length3_core::{fetch::Progress, home, inbox, paths, remote, root, tr, usage};
+use length3_core::{fetch::Progress, home, paths, remote, root, tr, usage};
 use serde_json::json;
 
 /// The repos a Prompt has open here (the app's or l3's): they stay while it runs, as in Runtime.
@@ -20,16 +21,26 @@ pub fn page(_: &Ctx, _: &Call) -> Result<Reply> {
     let mut t = vec![match &current {
         Some(r) => tr!("root  {} {} (where Prompts run)", "root  {} {}（Prompt が動く環境）", r.name, r.version),
         None => tr!("root  none yet (l3 root fetch)", "root  まだありません（l3 root fetch）"),
-    }, String::new()];
+    }];
+    // SSH into the Prompts: the listener, when it runs (l3 address lists where; l3 address ssh off stops it).
+    let listening = length3_core::ssh::listening(&paths::data_dir());
+    t.push(match &listening {
+        Some(l) => tr!("SSH  on · port {} · {} repos (l3 address; l3 address ssh off stops it)", "SSH  オン · ポート {} · repo {}（l3 address。止めるなら l3 address ssh off）", l.port, l.destinations.len()),
+        None => tr!("SSH  off (l3 address ssh on)", "SSH  オフ（l3 address ssh on）"),
+    });
+    t.push(String::new());
     t.push(tr!("This device  {} free of {} (the host's figures) · this OS {}", "この端末  空き {} / {}（ホストの値） · この OS {}", bytes(s.host_free), bytes(s.host_total), bytes(s.allocated)));
+    if s.freeable > 0 { crate::menu::page_fact(Fact::AnyFreeable); }
     for i in &s.items {
         let act = match i.room { usage::Room::Free | usage::Room::SyncFree => tr!("free", "空ける"), usage::Room::Keep => tr!("stays", "残す") };
+        crate::menu::see(|| crate::menu::Subject { on: On::Thing, word: i.id.strip_prefix("repo:").unwrap_or(&i.id).to_string(), repo: None,
+            label: i.what.clone(), detail: format!("{} · {act}", bytes(i.allocated)), facts: if i.room == usage::Room::Keep { Vec::new() } else { vec![Fact::Freeable] } });
         t.push(format!("  {:>9}  {}  {}  {}", bytes(i.allocated), act, i.what, i.detail));
         t.push(format!("             {}{}", i.why, if i.room == usage::Room::Keep { String::new() } else { tr!("  (l3 free {})", "（l3 free {}）", i.id.strip_prefix("repo:").unwrap_or(&i.id)) }));
     }
     if s.freeable > 0 { t.push(tr!("Can be freed: {} (all of it: l3 free all)", "空けられるもの：{}（全部なら l3 free all）", bytes(s.freeable))); }
     let items: Vec<_> = s.items.iter().map(|i| json!({"id": i.id, "what": i.what, "allocated": i.allocated, "room": i.room})).collect();
-    Ok(Reply::data(t.join("\n"), json!({"root": current, "hostTotal": s.host_total, "hostFree": s.host_free, "host": s.host,
+    Ok(Reply::data(t.join("\n"), json!({"root": current, "ssh": listening.map(|l| json!({"port": l.port, "destinations": l.destinations, "fingerprint": l.fingerprint})), "hostTotal": s.host_total, "hostFree": s.host_free, "host": s.host,
         "allocated": s.allocated, "freeable": s.freeable, "items": items})))
 }
 
@@ -140,29 +151,6 @@ pub fn root_install(_: &Ctx, call: &Call) -> Result<Reply> {
     if !bundle.is_file() { return Err(Error::NotFound(tr!("There is no file {}", "ファイル {} はありません", bundle.display()))); }
     let r = root::install(&paths::data_dir(), bundle)?;
     Ok(Reply::done(installed(&r), json!(r)))
-}
-
-pub fn ssh_list(_: &Ctx, _: &Call) -> Result<Reply> {
-    let me = inbox::me()?;
-    let mut t: Vec<String> = me.addresses.iter().map(|x| format!("{}  {}", me.shown(&x.address), if x.ssh { tr!("SSH allowed", "SSH 許可") } else { tr!("SSH off", "SSH オフ") })).collect();
-    if t.is_empty() { t.push(tr!("No name yet (l3 address claim NAME)", "名前はまだありません（l3 address claim NAME）")); }
-    t.push(tr!("  Connecting over SSH is not built yet", "  SSH の接続はまだありません"));
-    Ok(Reply::data(t.join("\n"), json!(me.addresses.iter().map(|a| json!({"address": a.address, "ssh": a.ssh})).collect::<Vec<_>>())))
-}
-
-pub fn ssh_set(_: &Ctx, call: &Call) -> Result<Reply> {
-    let on = call.word(0) == Some("on");
-    let address = target::address(call.word(1).unwrap_or_default())?;
-    let me = inbox::me()?;
-    let Some(a) = me.addresses.iter().find(|a| a.address == address) else {
-        return Err(Error::NotFound(tr!("{} is not one of your names (l3 address lists them)", "{} はあなたの名前ではありません（l3 address で一覧）", me.shown(&address))));
-    };
-    let shown = me.shown(&address).to_string();
-    if a.ssh == on {
-        return Ok(Reply::done(if on { tr!("SSH was allowed for {} already", "{} の SSH はもう許可されています", shown) } else { tr!("SSH was off for {} already", "{} の SSH はもうオフです", shown) }, json!({"address": address, "ssh": on, "changed": false})));
-    }
-    inbox::set_ssh(&address, on)?;
-    Ok(Reply::done(if on { tr!("SSH allowed for {}", "{} に SSH を許可しました", shown) } else { tr!("SSH off for {}", "{} の SSH をオフにしました", shown) }, json!({"address": address, "ssh": on, "changed": true})))
 }
 
 /// `l3 network`: the repos whose Prompts may reach the network on this device (Runtime's switch; never sent).

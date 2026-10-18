@@ -22,6 +22,27 @@
       "when": 1792257800216,
       "tag": "0002_read_so_far",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792285567424,
+      "tag": "0003_held_off_in_the_database",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792287186972,
+      "tag": "0004_ssh_per_device",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792290417694,
+      "tag": "0005_guests_by_invitation",
+      "breakpoints": true
     }
   ]
 }

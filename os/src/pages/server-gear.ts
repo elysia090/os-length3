@@ -2,7 +2,7 @@ import {day, h} from '../dom.ts';
 import {t} from '../i18n.ts';
 import {shown as named, shownAs} from '../inbox.ts';
 import * as servers from '../servers.ts';
-import {parts} from './common.ts';
+import {copying, parts} from './common.ts';
 import {askIn, boardName, button, foot, footLeft, line, message, MOVE, smallCard} from './server-parts.ts';
 
 // Behind the gear: what changes the server for everyone. In parts, as
@@ -146,8 +146,59 @@ export async function gear(s: servers.Server, w: GearWays): Promise<void> {
     });
     grid('repos', ...own, ...others, own.length || others.length ? null : h('div', {class: 'empty'}, t('No repo on the Remote yet')));
 
+    // Its guests, where a board takes them: any of its people invites someone, by a link they pass on
+    // themselves (the Remote sends nothing), for one person, shown only when it is made. Each revokes
+    // their own invitations and removes whom they invited; its owner, any. Narrowing is at once; a
+    // guest removed, with what they wrote, is asked in the card first.
+    const guestsCard = (b: servers.BoardRef) => {
+      const rows = h('div', {class: 'guest-rows'});
+      const made = h('div', {class: 'guest-link'});
+      const said = h('p', {class: 'error small', role: 'alert'});
+      const ask = button(t('Invite a guest'), 'small-button primary');
+      const c = smallCard(t('Guests of #{board}', {board: b.name}), rows, made, said, foot(ask));
+      const row = (text: string, sub: string, act: HTMLButtonElement | null) =>
+        h('div', {class: 'card-row'}, h('span', {class: 'grow'}, text, sub ? h('span', {class: 'muted small'}, ` · ${sub}`) : null), act);
+      const fill = async () => {
+        try {
+          const {invites, guests} = await servers.guestsOf(b.id);
+          if (!w.still()) return;
+          const people = guests.map((g) => {
+            const out = g.mayRemove ? button(t('Remove'), 'small-button') : null;
+            out?.addEventListener('click', () => askIn(c, out, g.name, [t('{name} no longer writes in #{board}.', {name: g.name, board: b.name}), t('What they wrote there is taken down.')],
+              t('Remove'), async () => { await servers.removeGuest(b.id, g.id); w.again(); }));
+            return row(`${g.name} (${t('guest')})`, t('invited by {who}', {who: named(g.by)}), out);
+          });
+          const out = invites.map((x) => {
+            const revoke = x.mayRevoke ? button(t('Revoke'), 'small-button') : null;
+            revoke?.addEventListener('click', async () => {
+              revoke.disabled = true;
+              try { await servers.revokeInvite(b.id, x.id); await fill(); } catch (e) { revoke.disabled = false; said.textContent = message(e); }
+            });
+            return row(t('An invitation from {who}', {who: named(x.by)}), t('until {date}', {date: day(x.until)}), revoke);
+          });
+          rows.replaceChildren(...people, ...out);
+          if (!people.length && !out.length) rows.append(h('span', {class: 'muted small'}, t('No guests yet.')));
+        } catch (e) { rows.replaceChildren(h('p', {class: 'error small'}, message(e))); }
+      };
+      ask.addEventListener('click', async () => {
+        ask.disabled = true;
+        said.textContent = '';
+        try {
+          const got = await servers.invite(b.id);
+          // The link is said once: pressed, it is copied; the Remote keeps only its digest.
+          const link = h('button', {type: 'button', class: 'button small-button mono guest-link-text', 'aria-label': t('The invitation\'s link')}, got.link) as HTMLButtonElement;
+          copying(link, got.link);
+          made.replaceChildren(link, h('span', {class: 'muted small'}, t('Pass it on yourself, to one person. It lets them in once, until {date}, and is shown only now.', {date: day(got.until)})));
+          await fill();
+        } catch (e) { said.textContent = message(e); }
+        ask.disabled = false;
+      });
+      void fill();
+      return c;
+    };
+
     // Its boards: how far each is open and removing one, its owner's to say; taking one home, anyone's.
-    grid('boards', ...s.boards.map((b) => {
+    grid('boards', ...s.boards.flatMap((b) => {
       // Removed: quiet, held until then, its 外す red; pressed again, it is back at once.
       if (b.gone) {
         const back = s.owner ? h('button', {type: 'button', class: 'button small-button off', 'aria-pressed': 'true', title: t('Bring it back')}, t('Remove')) as HTMLButtonElement : null;
@@ -164,7 +215,8 @@ export async function gear(s: servers.Server, w: GearWays): Promise<void> {
         const set = (change: {open?: boolean; guests?: boolean}) => servers.setBoard(b.id, change).then((n) => { b.open = n.open; b.guests = n.guests; });
         c.append(
           setting(c, t('Show to everyone'), b.open, {what: t('Anyone reads #{board}, signed in or not.', {board: b.name}), verb: t('Show')}, (v) => set({open: v})),
-          setting(c, t('Guests can write'), b.guests, {what: t('Others write in #{board} after an email check.', {board: b.name}), verb: t('Take guests')}, (v) => set({guests: v})));
+          setting(c, t('Guests can write'), b.guests, {what: [t('Someone its people invite writes in #{board}, shown as a guest.', {board: b.name}), t('Nobody is sent anything: you pass the invitation on yourself.')],
+            verb: t('Take guests')}, (v) => set({guests: v})));
       }
       const take = button(t('Take home'), 'small-button');
       take.title = t('Everything stays on the Remote. Take a copy as text when you want one here.');
@@ -185,7 +237,7 @@ export async function gear(s: servers.Server, w: GearWays): Promise<void> {
         w.again();
       }));
       c.append(h('div', {class: 'card-foot'}, out, h('span', {class: 'grow'}), take));
-      return c;
+      return b.guests ? [c, guestsCard(b)] : [c];
     }));
 
     // The server itself: its name's term (renewed by its owner near its end), leaving it, and, its owner, removing it.

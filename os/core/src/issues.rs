@@ -20,6 +20,8 @@ pub struct Issue {
     pub kind: Option<String>,
     pub title: String,
     pub detail: String,
+    /// Closed without being done: what its last line says after "Closed：" (the day, and who).
+    pub closed: Option<String>,
 }
 
 /// The number a file in issue/ is named by ("007.md" is 7), or none (`^0*\d+\.md$`).
@@ -29,14 +31,45 @@ pub fn number_of(file: &str) -> Option<u64> {
     stem.parse().ok()
 }
 
+/// A closed issue says so on its last line, after its detail: "Closed：2031-10-17 sora"
+/// (the day it was closed, and who); reopening takes the line away again.
+fn closed_line(line: &str) -> Option<&str> {
+    let t = line.trim();
+    t.strip_prefix("Closed：").or_else(|| t.strip_prefix("Closed:")).map(str::trim)
+}
+
+/// Which of `lines` closes the issue: its last one with words, if it is such a line (never the first, which names it).
+fn closed_at(lines: &[&str]) -> Option<usize> {
+    let j = lines.iter().rposition(|l| !l.trim().is_empty())?;
+    (j > 0 && closed_line(lines[j]).is_some()).then_some(j)
+}
+
 pub fn parse(repo: &str, file: &str, text: &str) -> Issue {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
-    let mut lines = text.split('\n');
-    let first = lines.next().unwrap_or("");
+    // A file written with CRLF line ends reads as one written with LF: no line keeps its CR.
+    let all: Vec<&str> = text.split('\n').map(|l| l.strip_suffix('\r').unwrap_or(l)).collect();
+    let at = closed_at(&all);
+    let closed = at.and_then(|j| closed_line(all[j])).map(String::from);
+    let lines = &all[..at.unwrap_or(all.len())];
+    let first = lines.first().copied().unwrap_or("");
     let (kind, title) = kind_of(first.trim_start_matches('#').trim_start());
-    let detail = lines.collect::<Vec<_>>().join("\n").trim().to_string();
+    let detail = lines.iter().skip(1).copied().collect::<Vec<_>>().join("\n").trim().to_string();
     let title = if title.is_empty() { file.strip_suffix(".md").unwrap_or(file).to_string() } else { title };
-    Issue { repo: repo.into(), n: number_of(file), file: file.into(), kind, title, detail }
+    Issue { repo: repo.into(), n: number_of(file), file: file.into(), kind, title, detail, closed }
+}
+
+/// An issue's text open again: without the line that closed it.
+pub fn reopen_text(text: &str) -> String {
+    let lines: Vec<&str> = text.split('\n').collect();
+    match closed_at(&lines) {
+        Some(j) => format!("{}\n", lines[..j].join("\n").trim_end()),
+        None => text.to_string(),
+    }
+}
+
+/// An issue's text closed: its words as they are, then "Closed：" and `mark` (the day, and who) on a line of its own.
+pub fn close_text(text: &str, mark: &str) -> String {
+    format!("{}\n\nClosed：{}\n", reopen_text(text).trim_end(), mark.trim())
 }
 
 /// The text of a new issue file.

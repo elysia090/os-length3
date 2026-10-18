@@ -1,4 +1,4 @@
-import {h} from '../dom.ts';
+import {h, shortDay} from '../dom.ts';
 import {t} from '../i18n.ts';
 import {getState, setState} from '../state.ts';
 import * as todo from '../todo.ts';
@@ -19,7 +19,7 @@ function load(): todo.Todo[] {
   try { return todo.parse(getState('todo')); } catch { return []; }
 }
 
-const date = (ms: number) => { const d = new Date(ms); return `${d.getMonth() + 1}/${d.getDate()}`; };
+const date = shortDay;
 
 const CIRCLE = 'M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17z';
 const CHECK = 'M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17zM8 12.2l2.7 2.7L16.2 9.3';

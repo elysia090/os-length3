@@ -18,6 +18,7 @@ import {learnHome} from './inbox.ts';
 import {begin as lookForNews, look, marks, news, onNews} from './news.ts';
 import {devicePage} from './pages/device.ts';
 import {about, claim, connection, enterWith, onConnection, onReach, remoteAway} from './remote.ts';
+import {heldInvite, holdInvite, inviteIn} from './servers.ts';
 import {getState, loadState} from './state.ts';
 import {onLang, t, useLang} from './i18n.ts';
 import {NEW_REPO, PURPOSES, purpose, restorePurpose, stepPurpose, type PurposeId} from './purposes.ts';
@@ -85,9 +86,11 @@ function railButton(id: PurposeId): HTMLButtonElement {
     const next = stepPurpose(id, event.key);
     if (next === null) return;
     event.preventDefault();
-    // Arrows move along the rail; passing File or Server only focuses it.
+    // Arrows move along the rail; passing File or Server only focuses it. The keyboard stays on the
+    // rail, after whatever the page just drawn asks for (New repo's name), until Enter or Tab goes in.
     if (next !== 'file' && next !== 'server') select(next);
     tabs.get(next)?.focus();
+    queueMicrotask(() => tabs.get(next)?.focus());
   });
   tabs.set(id, button);
   return button;
@@ -135,6 +138,8 @@ const me = new Me(ctx, currentProfile, {editProfile: () => startEditing(ctx)});
 $('rail-me').append(me.element);
 
 $('rail-tabs').append(...PURPOSES.map((p) => railButton(p.id)), railButton(NEW_REPO.id));
+// The rail's name, in the language the OS starts in (index.html has the English).
+document.querySelector('.rail')?.setAttribute('aria-label', t('Purposes'));
 // The Remote not answering is said in one place, on the Remote's own: a red dot, and its name says why.
 // Something come in and not seen yet is said the same way on Inbox and Server: a dot in the colour
 // of the place (ink, or ground on ink when it is current), gone once it is seen.
@@ -180,7 +185,11 @@ const asking = new URLSearchParams(location.search);
 // A link for research (…/#enter=KEY): the key is taken out of the address before anything else runs,
 // so it is not left in the history, a bookmark or a screenshot, and is sent once (remote.ts enterWith).
 const entering = /(?:^#|&)enter=([^&]+)/.exec(location.hash)?.[1];
-if (entering) history.replaceState(null, '', location.pathname + location.search);
+// An invitation to write in a board as a guest (…/#guest=BOARD.INVITE), handed on by one of its people:
+// taken out of the address the same way, held for this tab until it is used, and its board shown.
+const invitation = inviteIn(location.hash);
+if (invitation) holdInvite(invitation.board, invitation.code);
+if (entering || invitation) history.replaceState(null, '', location.pathname + location.search);
 if (asking.has('device')) {
   void loadState().finally(() => { useLang(getState('lang')); document.body.replaceChildren(devicePage(asking.get('user_code') ?? '')); });
 } else {
@@ -198,6 +207,7 @@ if (asking.has('device')) {
     // Which domain is this Remote's, so a name on it is shown alone (`ren`), not as a domain's.
     void learnHome();
     select(restorePurpose(load(PURPOSE_KEY)));
+    if (heldInvite()) serverLayer.open(true);
     void begin().then(() => render());
     // What came in meanwhile, for the rail's marks: now, and every little while.
     lookForNews();
@@ -205,4 +215,14 @@ if (asking.has('device')) {
 }
 window.addEventListener('focus', () => {
   void loadState().then(() => { useLang(getState('lang')); if (current === 'home') render(); else me.paint(); });
+});
+// An invitation's link opened in a tab already showing the app (pasted into its address) changes only
+// the fragment: it is taken the same way, and Server comes out afresh at its board.
+window.addEventListener('hashchange', () => {
+  const came = inviteIn(location.hash);
+  if (!came) return;
+  holdInvite(came.board, came.code);
+  history.replaceState(null, '', location.pathname + location.search);
+  serverLayer.close();
+  serverLayer.open(true);
 });

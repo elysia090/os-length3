@@ -279,7 +279,9 @@ async function confirm(el: HTMLElement, from: Element, repo: string, ask: Ask, d
   // The card keeps its size while it asks, so the answers come where its own deeds were.
   el.style.minHeight = `${el.offsetHeight}px`;
   const cancel = button(t('Not now'), 'small-button');
-  cancel.addEventListener('click', () => void done());
+  // The card drawn again, the keyboard goes back to its switch rather than to the page.
+  const back = () => { if (document.activeElement === document.body) document.querySelector<HTMLElement>(`.card[data-repo="${CSS.escape(repo)}"] .power`)?.focus(); };
+  cancel.addEventListener('click', () => void done().then(back));
   const field = (label: string, attrs: Record<string, string> = {}) => h('input', {class: 'line-in', 'aria-label': label, placeholder: label, autocomplete: 'off', spellcheck: 'false', ...attrs}) as HTMLInputElement;
   // A deed that comes under the pointer holds still a moment, so a double click does not answer it.
   const settled = (b: HTMLButtonElement, error: HTMLElement, f: () => Promise<void>) => {
@@ -300,6 +302,7 @@ async function confirm(el: HTMLElement, from: Element, repo: string, ask: Ask, d
       await ask.act(who.value, which.value, five.value, Date.now() - provenAt < PROOF);
       await look();
       await done();
+      back();
     });
     el.replaceChildren(h('div', {class: 'off-ask', role: 'group', 'aria-label': repo}, h('span', {class: 'card-title'}, repo),
       ...ask.what.map((line) => h('p', {class: 'muted small'}, line)),

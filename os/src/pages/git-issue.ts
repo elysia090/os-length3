@@ -1,8 +1,10 @@
 import {ago, h} from '../dom.ts';
 import * as git from '../history.ts';
 import {t, tn} from '../i18n.ts';
-import {issueName, issuePath, type Issue} from '../issues.ts';
-import {connection} from '../remote.ts';
+import {closeMark, issueName, issuePath, setClosed, type Issue} from '../issues.ts';
+import {connection, me} from '../remote.ts';
+import {store} from '../repos.ts';
+import {changeFor, type Standing} from '../git-state.ts';
 import {named} from '../text.ts';
 import {diffFiles} from './diff-view.ts';
 import {beingChanged, issueEditor} from './issue-form.ts';
@@ -25,7 +27,7 @@ export interface IssueEvents {
 }
 
 /** Where a repo stands, read once for every issue of it. */
-export interface RepoState { work: git.Work | null; lines: git.Line[]; changes: git.Change[]; uncommitted: number;
+export interface RepoState extends Standing { lines: git.Line[];
   /** Where it stands could not be read (the Remote away, or refusing): said on its issues, and nothing offered meanwhile. */
   error?: string }
 
@@ -45,9 +47,16 @@ const doing = (b: HTMLButtonElement, error: HTMLElement, f: () => Promise<unknow
 };
 
 /** The issue's change (the latest record of it). */
-export const changeOf = (s: RepoState | undefined, issue: Issue) => s?.changes.find((x) => x.issue === issuePath(issue)) ?? null;
-/** Still to do: not merged into main. */
-export const unmerged = (s: RepoState | undefined, issue: Issue) => changeOf(s, issue)?.state !== 'merged';
+export const changeOf = changeFor;
+
+/** Who is signed in, for the line a close is written with; read once. */
+let whoAmI: Promise<string> | null = null;
+const myName = () => (whoAmI ??= me().then((m) => m?.name ?? '', () => { whoAmI = null; return ''; }));
+
+/** Close an issue that will not be done: its file says so on its last line (the day, and who). */
+export const closeIssue = async (issue: Issue) => setClosed(store, issue, closeMark(await myName()));
+/** Open a closed issue again. */
+export const reopenIssue = (issue: Issue) => setClosed(store, issue, null);
 const hereOf = (s: RepoState | undefined, issue: Issue) => !!s?.work && s.work.line !== 'main' && s.work.issue === issuePath(issue);
 
 /** Where the issue stands, quietly, in a few words. */
@@ -94,6 +103,13 @@ export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEv
     leave = button(t('Back to main'));
     leave.addEventListener('click', doing(leave, error, async () => { await git.switchWork(at, 'main'); events.moved(at); }, after));
   }
+  // One that will not be done is closed, at the foot's left as what goes against the box: it goes
+  // under Closed, where Reopen brings it back. Only while the repo shows main, whose issue/ it is in.
+  if (known && !here && change?.state !== 'open' && s?.work?.line === 'main') {
+    leave = button(t('Close'));
+    leave.title = t('Will not be done: it goes under Closed, where it can be reopened');
+    leave.addEventListener('click', doing(leave, error, () => closeIssue(issue), after));
+  }
   // At the box's foot, opposite its action: its repo and, quietly, who started it and when.
   const say = !connection() ? t('History and work are kept on the Remote. Sign in to it to work on an issue and commit.') : s?.error ?? standing(s, issue);
   // Its words are changed where they are read: pressed, the head and the detail become the fields they were written in.
@@ -108,6 +124,24 @@ export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEv
   // Its words half changed when the box was left: the box opens as the fields, as they were.
   if (beingChanged(issue)) words.replaceWith(editor());
   return box;
+}
+
+/**
+ * What is not committed in the copy `at` shows (▸ 5 files): pressed, its diff
+ * lies over what is under it, so nothing moves; Escape or a press outside closes it.
+ */
+export function notCommitted(at: string, n: number, events: IssueEvents): HTMLElement {
+  const inside = h('div', {class: 'step-diff'}, quiet(t('Reading…')));
+  const fold = h('details', {class: 'stage-diff'}, h('summary', {}, tn('{n} file not committed', '{n} files not committed', n)), inside) as HTMLDetailsElement;
+  let read = false;
+  const away = (e: Event) => { if (e instanceof KeyboardEvent ? e.key === 'Escape' : !fold.contains(e.target as Node)) fold.open = false; };
+  fold.addEventListener('toggle', () => {
+    for (const k of ['pointerdown', 'keydown'] as const) (fold.open ? document.addEventListener : document.removeEventListener).call(document, k, away);
+    if (!fold.open || read) return;
+    read = true;
+    void git.diff(at).then((files) => inside.replaceChildren(...diffFiles(files, {reveal: (p) => events.open(at, p)})), (e) => inside.replaceChildren(h('p', {class: 'error'}, message(e))));
+  });
+  return fold;
 }
 
 /** A step's place at the right: its button, or once done the done mark and the same word (green says it is done). */
@@ -133,18 +167,7 @@ function steps(issue: Issue, s: RepoState, events: IssueEvents, after: () => voi
   const dirty = s.uncommitted;
   let what: Node;
   if (dirty) {
-    const inside = h('div', {class: 'step-diff'}, quiet(t('Reading…')));
-    const fold = h('details', {class: 'stage-diff'}, h('summary', {}, tn('{n} file not committed', '{n} files not committed', dirty)), inside) as HTMLDetailsElement;
-    let read = false;
-    // Open, the diff lies over what is under it (nothing moves); Escape or a press outside closes it.
-    const away = (e: Event) => { if (e instanceof KeyboardEvent ? e.key === 'Escape' : !fold.contains(e.target as Node)) fold.open = false; };
-    fold.addEventListener('toggle', () => {
-      for (const k of ['pointerdown', 'keydown'] as const) (fold.open ? document.addEventListener : document.removeEventListener).call(document, k, away);
-      if (!fold.open || read) return;
-      read = true;
-      void git.diff(at).then((files) => inside.replaceChildren(...diffFiles(files, {reveal: (p) => events.open(at, p)})), (e) => inside.replaceChildren(h('p', {class: 'error'}, message(e))));
-    });
-    what = fold;
+    what = notCommitted(at, dirty, events);
   } else {
     what = quiet(w.commits ? t('No changes') : t('Edit in File, Forge or the Prompt; what changes shows here.'));
   }
@@ -253,8 +276,9 @@ export function reviewBox(issue: Issue, s: RepoState | undefined, after: () => v
     // with the lines marked (Ctrl+Enter, or Comment); under it, Approve as a
     // ○. Merge and Reject follow under the box.
     const text = h('textarea', {class: 'line-in review-in', rows: '7', placeholder: t('Comment…'), 'aria-label': t('Comment'), maxlength: '4000'}) as HTMLTextAreaElement;
+    // A comment, or asking for changes, says something: with nothing written or marked, the field is where to say it.
     const send = (verdict: git.Review['verdict'], b: HTMLButtonElement) => doing(b, error, async () => {
-      if (verdict === 'comment' && !text.value.trim() && !pending!.size) return;
+      if (!text.value.trim() && !pending!.size) { text.focus(); throw new Error(verdict === 'changes' ? t('Say what to change, or mark its lines') : ''); }
       await git.review(at, change, verdict, text.value, [...pending!]);
     }, after);
     // Approve is a ○: pressed, it turns green (the done mark) and stays so.
@@ -268,8 +292,11 @@ export function reviewBox(issue: Issue, s: RepoState | undefined, after: () => v
     }
     const comment = button(t('Comment'));
     comment.addEventListener('click', send('comment', comment));
+    // Asking for changes: what is written and marked goes with it, and the conversation says it was asked.
+    const changes = button(t('Ask for changes'));
+    changes.addEventListener('click', send('changes', changes));
     text.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing) { e.preventDefault(); comment.click(); } });
-    body.push(text, h('div', {class: 'review-verdict'}, approve, h('span', {class: 'grow'}), comment));
+    body.push(text, h('div', {class: 'review-verdict'}, approve, h('span', {class: 'grow'}), changes, comment));
   }
   body.push(error);
   return h('section', {class: 'review-box', 'aria-label': t('Review')},

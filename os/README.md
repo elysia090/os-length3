@@ -84,17 +84,46 @@ Forge     repo · band · prompt
 File      file (write · mkdir · rm)
 Git       git · issue · start · main · commit · push · reset · diff · log
           review · reply · merge · reject
-Runtime   runtime · free · root · ssh · network · dotfile
+Runtime   runtime · free · root · network · dotfile · address
 Remote    remote · login · logout
 Server    server
-Inbox     inbox · address
+Inbox     inbox · name
+```
+
+Nobody has to learn these first. At a terminal, `l3` alone is the rail:
+the same purposes in the same order and words, each with what is there now;
+pick one (↑↓, a number or its first letter, Enter) and its page is printed
+as `l3 <page>` prints it, then its things with their deeds, the ones where
+they stand (an issue not started: Start; changed: Commit; committed: Push;
+handed in: Approve, Merge…). A deed asks for what it needs in place, one line
+each, says the command it runs (`→ l3 issue new notes "Fix：title"`) and
+then offers what comes next; q or Esc leaves, and what stays in the
+scrollback is plain text. After a command typed by hand, its next deeds come
+in one short row that Enter or Esc passes by. It is all lines under what is
+there (over SSH, in a Prompt), redrawn only on a key, the focus a › and
+brackets. Through a pipe, with `--json`, `TERM=dumb` or `L3_PLAIN=1`, nothing
+is offered or asked and l3 writes exactly what it always did.
+
+```
+$ l3
+Length³ OS · length3.com
+  › 1  Home     Profile · TODO 1 open of 2
+    2  Forge    Your workshop · 1 repo · 1 on the band
+    3  File     The tree of / · /root holds 1 repo
+    4  Git      Issues and commits · 1 issue open
+    …
+    9  +        New repo
+  ↑↓ choose · Enter open · 1-9 or a letter jumps · q leaves
 ```
 
 One table (`cli/src/spec.rs`) says every form: its words and what each
 slot is (a repo, a path, an issue, text…), its flags, what it needs (the
 Remote; whether it may run inside the app's Prompt) and how it keeps in step
-with the Remote. Parsing, the help, the completion, what a Prompt may run and
-what is sent and taken in around each command are all read from it. `l3 help` lists the
+with the Remote, and, for the menu, which forms make a purpose's page and
+which deeds a form is offered as (its word in both languages, what it is
+pressed on, the facts it is offered under, what it asks). Parsing, the help,
+the completion, the menu, what a Prompt may run and what is sent and taken
+in around each command are all read from it. `l3 help` lists the
 commands by the rail, `l3 help COMMAND` (or `l3 COMMAND --help`) gives one
 command's forms, `l3 help all` every form, a mistyped word gets the nearest
 one ("Did you mean: l3 commit"), and `l3 completion bash|zsh|fish` completes
@@ -113,7 +142,8 @@ or change refers to it. `--` ends the
 flags for every command (`l3 todo add -- "-1 day"`). Every command takes
 `--json` (data, camelCase keys; an error is `{"error":{"kind","message"}}`),
 and exits 0 when done, 1 when not, 2 when not how it is written, 3 when the
-Remote is out of reach, 4 when what was named is not there. `l3 -V` gives
+Remote is out of reach, 4 when what was named is not there, 5 when it is
+turned off here (`l3 address` with SSH off, in a script). `l3 -V` gives
 l3's version and the root's.
 
 Names are written owner first, as DESIGN.md §5 "Names" sets out (one
@@ -121,10 +151,70 @@ namespace of principals, people and servers alike): `hello`,
 `hello/src/a.c`, `hello#3`, `ren:hello` (a repo of `ren`'s), `trip#general`
 (a server's board; `#general` when one is in one server). A name on the
 Remote (`ren`, `trip`) is first come and held five years at a time:
-`l3 address` shows each name's term and your code (six digits anyone can
-find you by, or write to), `l3 address renew NAME` holds it five more years,
-and `l3 address release NAME` lets it go (held for you 30 days). A name of
+`l3 name list` shows each name's term and your code (six digits anyone can
+find you by, or write to), `l3 name renew NAME` holds it five more years,
+and `l3 name release NAME` lets it go (held for you 30 days). A name of
 your choosing on a domain you own (`ren@ren.dev`) is shown beside it.
+
+### SSH into a repo's Prompt
+
+From the host (or another machine on its network), an ordinary OpenSSH
+client lands in a repo's Prompt: the same shell `l3 prompt REPO` gives,
+inside the root, without privileges, with the repo's network grant.
+`l3 address` says where, one line a repo, ready to paste:
+
+```
+$ l3 address
+ssh -p 23000 notes@192.168.1.5
+ssh -p 23000 trip@192.168.1.5
+$ ssh -p 23000 notes@192.168.1.5 'make test'; echo $?
+```
+
+The SSH user is the repo. A command runs in the Prompt (`/bin/sh -c`) and
+its exit code comes back; with a terminal (`ssh -t`, or no command) it is
+the interactive shell. Standard input reaches the command, so `ssh …
+'cat > notes.txt' < notes.txt` writes into the repo itself, and `scp -O`
+(the classic protocol, which runs `scp` in the Prompt: l3's root has it)
+copies in and out. There is no sftp subsystem, so `sftp`, and `scp`
+without `-O` (it speaks sftp), do not work; and no port, agent or X11
+forwarding.
+
+- **Off at first.** `l3 address` with SSH off asks on a terminal whether
+  to turn it on (y/N, No by default); in a script it never asks: it says
+  how and exits 5. `l3 address ssh on|off` sets it without asking; the
+  app's Runtime has the same switch for its own device.
+- **Keys**: public keys only (no password, no keyboard-interactive), one
+  OpenSSH public key a line in the Runtime dotfile `.authorized_keys`
+  (`l3 dotfile write .authorized_keys < ~/.ssh/id_ed25519.pub`). Dotfiles
+  are kept on the Remote, so a key added (or removed) on one device counts
+  on every one; the listener takes them in at most every 10 s as keys are
+  tried. Ed25519 and ECDSA keys; not RSA. A line with options before its
+  key is left out (they are not honoured), and turning on says which.
+- **Port**: one per person on the host, the same every time: 22000 plus
+  their user number (uid 1000 → 23000), whatever repos there are, never
+  another person's; `LENGTH3_SSH_PORT` names another when that one is taken.
+- **Where**: it listens on every IPv4 address but takes a connection only
+  if it came in on loopback or a private network (10/8, 172.16/12,
+  192.168/16, a VPN's 100.64/10, link-local), so a host with a public
+  address is not reachable from the Internet. `l3 address` names the LAN
+  address the host's traffic leaves by, or 127.0.0.1 when it has none.
+- **Host key**: Ed25519, made once per device in `<data>/ssh/host_ed25519`;
+  turning on shows its fingerprint (what ssh asks about the first time).
+- **Who runs it**: turning on starts `l3 address ssh serve` in the
+  background (its own session, its log in `<data>/ssh/log`), recorded in
+  `<data>/ssh/listening.json` while it runs, as a Prompt records itself;
+  `l3 runtime` shows it and `l3 address ssh off` stops it. Each session is
+  an `l3 prompt REPO` it starts, so `l3 prompt ls` lists it, and every one
+  ends with the listener. A failed key from an address counts; twenty in a
+  minute and that address is not heard for a minute. A connection not
+  signed in within a minute is closed.
+- **Off from anywhere**: which devices listen is kept on the Remote, per
+  device (its session), and Runtime shows a card for each, its
+  destinations copied by a press, and a switch that turns it off; a page
+  can only turn SSH off. The listener asks the Remote every 5 s, and when
+  it was turned off (or the device signed out, here or from another
+  device: `l3 logout` stops it at once) it stops taking connections and
+  ends every session.
 
 There is no sync command. Connected, l3 keeps each repo in step with the
 Remote by itself: a command that reads a repo takes in the Remote's changes
@@ -195,7 +285,12 @@ the app.
   right only shows who is in it and the repos they show in it (seen as last
   pushed). What changes it for everyone is behind its gear: people, repos
   shown, how far each board is open (its owner's, asked before it widens),
-  taking a board home as text (`l3 server get`), leaving or removing it.
+  its guests, taking a board home as text (`l3 server get`), leaving or
+  removing it. A board that takes guests lets outsiders write by invitation,
+  never by email: any of its people makes a link (one person, once, a week)
+  and passes it on themselves; the guest picks a name, always shown as a
+  guest's; guests are held to so many posts an hour, each and per board,
+  and whoever invited one (or the owner) removes them with their posts.
 - Who sees a repo (`service/seen.ts`): only you, the servers it is shown
   in, or everyone, set on its card in Remote. Everyone sees it under the
   name it went public as: the server's (`trip@length3.com:hello`) when it
@@ -208,9 +303,9 @@ program for a repo; its own tools run inside the root (`core/src/launch.rs`).
 
 The Remote (`service/`): Hono with Better Auth (provider sign-in, then
 passkeys; device authorization; bearer sessions) on Drizzle; Neon in
-production, PGlite in tests and here. Its schema is two migrations: the one
-Drizzle generates from `service/schema.ts`, and `0001` for what Drizzle cannot
-say (the counted room, the service's role). The service connects as
+production, PGlite in tests and here. Its schema is the migrations in
+`service/migrations`: those Drizzle generates from `service/schema.ts`, and
+`0001` for what Drizzle cannot say (the counted room, the service's role). The service connects as
 `remote_worker`, a member of `remote_app`, which reads and writes rows and
 nothing else.
 
@@ -221,7 +316,14 @@ LENGTH3_REMOTE=http://127.0.0.1:8787 l3 login
 ```
 
 On Cloudflare it is one Worker on one origin, the app's files and the Remote
-together (`wrangler.toml`). For research it has one account,
+together (`wrangler.toml`), under one name: `os.length3.com` is the app, the
+Remote the desktop app and l3 sign in to (`core/src/remote.rs` DEFAULT_URL,
+the desktop CSP), what a domain's DNS record names (`remote=os.length3.com`,
+and `/.well-known/length3`) and where passkeys belong. Its former name,
+`remote.length3.com`, still reaches the same Worker, so released clients
+(0.4.x) that sign in by it keep working; nothing names it any more, and a
+newer client that finds it kept goes on by `os.length3.com` with the same
+session. For research it has one account,
 `ENTER_AS`: nobody signs up, nothing is shown to everyone, and whoever is
 given the link `https://os.length3.com/#enter=KEY` comes in as it (a day at a
 time; a new key ends every old link and session at once).
@@ -233,16 +335,21 @@ to this repository, and its Settings → Build say, once:
 |---|---|
 | Root directory | `os` |
 | Build command | `npm run build:cloudflare`: the Prompt from the release `RELEASE` names (`scripts/prompt-files.mjs`, checked against the digest `shared/web-releases.json` pins for it), then the app |
-| Deploy command | `node service/deploy.ts`: the migrations on Neon's production branch (no branch is made for a deploy), the bucket, then the Worker with the secrets it lacks; the first build prints the link in its log |
-| Variables and secrets | `NEON_PROJECT_ID`; secrets `NEON_API_KEY` (a Neon API key for the project) and `GITHUB_TOKEN` (read-only, for this private repository's releases) |
+| Deploy command | `node service/deploy.ts`: the migrations on Neon's production branch (no branch is made for a deploy), the bucket, then the Worker with the secrets it lacks (the first build prints the link in its log), then the release's files the Remote serves to anyone (`service/mirror.ts`): each root `core/src/root.rs` pins and the desktop app `shared/desktop-releases.json` pins for `RELEASE`, taken from the GitHub release where the bucket lacks them, checked against those pins, and put with wrangler |
+| Variables and secrets | `NEON_PROJECT_ID`; secrets `NEON_API_KEY` (a Neon API key for the project) and `GITHUB_TOKEN` (read-only, for this private repository's releases: the build's Prompt and the deploy's release files) |
 | Branch control | main; no preview builds |
 
 The Prompt the web serves is a released one: a newer one ships by releasing
 it (a new version in `RELEASE`, `.github/workflows/release.yml`), then
 pinning what was released, as its notes give them: the root in
-`core/src/root.rs` and the web zip in `shared/web-releases.json`. A build
-takes only the web zip this tree pins, so a release made under that tag by
-anyone else is not what production serves. A new link
+`core/src/root.rs`, the web zip in `shared/web-releases.json` and the
+desktop app in `shared/desktop-releases.json`. A build takes only the web
+zip this tree pins, and a deploy puts on the Remote only the roots and
+desktop files this tree pins, so a release made under that tag by anyone
+else is not what production serves. The Remote serves them to anyone, the
+roots by digest (`/v1/os/<sha256>`, what the app and l3 fetch first) and
+the desktop app by its file's name (`/v1/desktop/<file>`, what the web's
+Runtime offers to download); GitHub keeps no Cloudflare credentials. A new link
 is a new `ENTER_KEY`: set in the Worker's Variables and Secrets, the old
 link opens nothing at once. By hand, from a machine that reaches Neon and
 Cloudflare (`npx wrangler login`):

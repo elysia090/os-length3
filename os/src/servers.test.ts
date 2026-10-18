@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {addByName, dayOf, farFrom, onTop, pageOf, RUN_MS, sameRun, type AddWays, type Post} from './servers.ts';
+import {addByName, dayOf, farFrom, inviteIn, onTop, pageOf, RUN_MS, sameRun, type AddWays, type Post} from './servers.ts';
 import {RemoteError} from './remote.ts';
 
 const post = (id: string): Post => ({id, by: 'ren@length3.test', body: id, at: 0});
@@ -30,9 +30,22 @@ test('one address\'s posts close together are one run; a day starts anew', () =>
   assert.equal(sameRun(a, at('b', 'ren@x', 60_000)), true);
   assert.equal(sameRun(a, at('c', 'aoi@x', 60_000)), false);
   assert.equal(sameRun(a, at('d', 'ren@x', RUN_MS)), false);
+  // A guest's posts never run on from one of its people's, whatever they are called.
+  const g = {...at('e', 'Aki', 0), guest: true};
+  assert.equal(sameRun(g, {...at('f', 'Aki', 60_000), guest: true}), true);
+  assert.equal(sameRun(g, at('h', 'Aki', 60_000)), false);
   const noon = new Date(2026, 9, 17, 12).getTime();
   assert.equal(dayOf(noon), dayOf(noon + 3600_000));
   assert.notEqual(dayOf(noon), dayOf(noon + 13 * 3600_000));
+});
+
+test('an invitation is read from the link\'s fragment only in its one shape', () => {
+  const code = '0123456789abcdef0123456789abcdef';
+  assert.deepEqual(inviteIn(`#guest=boardaaaaaaa.${code}`), {board: 'boardaaaaaaa', code});
+  assert.deepEqual(inviteIn(`#x=1&guest=boardaaaaaaa.${code}`), {board: 'boardaaaaaaa', code});
+  for (const bad of ['', '#guest=', `#guest=BOARDAAAAAAA.${code}`, `#guest=boardaaaaaaa.${code}0`, `#guest=board.${code}`, `#guest=boardaaaaaaa.${code.toUpperCase()}`, `#enter=${code}`]) {
+    assert.equal(inviteIn(bad), null, bad);
+  }
 });
 
 // Adding someone by a name or a code, against a Remote that is a few facts: who has which name,

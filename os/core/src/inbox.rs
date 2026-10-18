@@ -14,7 +14,6 @@ pub struct Me { pub domain: String, pub account: String, #[serde(default)] pub c
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Address {
     pub address: String,
-    pub ssh: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")] pub until: Option<u64>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")] pub ended: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")] pub lapsed: bool,
@@ -61,8 +60,8 @@ pub fn claim(address: &str) -> Result<String> {
         Reply::Ok(v) => Ok(v["address"].as_str().unwrap_or_default().to_string()),
         Reply::Conflict(v) if v["publish"].is_object() => {
             let p = &v["publish"];
-            Err(crate::tr!("Put this record in {}'s DNS, then claim again (l3 address domain {} says when it is there):\n  {}  {}  {}",
-                "{} の DNS にこのレコードを置いてから、もう一度取ってください（置けたかは l3 address domain {}）:\n  {}  {}  {}",
+            Err(crate::tr!("Put this record in {}'s DNS, then claim again (l3 name domain {} says when it is there):\n  {}  {}  {}",
+                "{} の DNS にこのレコードを置いてから、もう一度取ってください（置けたかは l3 name domain {}）:\n  {}  {}  {}",
                 domain.unwrap_or(""), domain.unwrap_or(""), p["name"].as_str().unwrap_or(""), p["type"].as_str().unwrap_or("TXT"), p["value"].as_str().unwrap_or("")))
         }
         Reply::Conflict(_) => Err(crate::tr!("That name is taken", "その名前は使われています")),
@@ -87,11 +86,6 @@ pub fn release(address: &str) -> Result<u64> {
     Ok(v["until"].as_u64().unwrap_or(0))
 }
 
-/// Whether `address` may be reached over SSH.
-pub fn set_ssh(address: &str, on: bool) -> Result<()> {
-    Client::open()?.json("POST", &format!("/v1/inbox/addresses/{address}/ssh"), Some(serde_json::json!({"on": on}))).map(|_| ())
-}
-
 /// Write to `to`; `kind` is message, review, question or run. Returns whether it went as a request.
 /// What a written message is, as in the app: its kind named first the way an issue is
 /// ("Review：…", "Question：…"), and the repo a /root/… path in it is about.
@@ -108,7 +102,7 @@ pub fn send(to: &str, body: &str, kind: &str, repo: Option<&str>) -> Result<bool
     let v = Client::open()?.call("POST", "/v1/inbox/messages", Some(serde_json::json!({"to": to, "body": body, "type": kind, "target": target})))?;
     match v {
         Reply::Ok(v) => Ok(v["request"].as_bool().unwrap_or(false)),
-        Reply::Conflict(_) => Err(crate::tr!("Claim a name first (l3 address claim NAME)", "先に名前を取ってください（l3 address claim NAME）")),
+        Reply::Conflict(_) => Err(crate::tr!("Claim a name first (l3 name claim NAME)", "先に名前を取ってください（l3 name claim NAME）")),
         Reply::NotFound => Err(crate::tr!("No one has that name", "その名前の人はいません")),
     }
 }

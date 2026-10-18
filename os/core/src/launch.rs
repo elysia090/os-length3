@@ -282,6 +282,14 @@ fn init(s: &Sandbox) -> ! {
         unsafe {
             // Its own process group: what it runs is in it, and Ctrl-C goes to it.
             libc::setpgid(0, 0);
+            // On a terminal (a terminal emulator's, or an SSH session's), that group is the one in front, as a
+            // shell started at a terminal expects: a shell in a group behind it is stopped the moment it reads
+            // (SIGTTIN), and Ctrl-C reaches it straight from the terminal. (Asking from behind is SIGTTOU, so
+            // that is ignored for the asking, and set back below with every other signal.)
+            if libc::isatty(0) == 1 {
+                libc::signal(libc::SIGTTOU, libc::SIG_IGN);
+                libc::tcsetpgrp(0, libc::getpid());
+            }
             libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0);
             // The shell starts with every signal as a program expects it. An
             // ignored signal survives exec, and Rust ignores SIGPIPE: left so,

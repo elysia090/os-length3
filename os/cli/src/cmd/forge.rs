@@ -3,6 +3,7 @@
 use super::Ctx;
 use crate::args::Call;
 use crate::out::{bytes, files, Error, Reply, Result};
+use crate::spec::{Fact, On};
 use crate::target;
 use length3_core::{home, remote, repos, tr, work};
 use serde_json::json;
@@ -28,11 +29,15 @@ pub fn repo_list(ctx: &Ctx, _: &Call) -> Result<Reply> {
             Some(_) => ("inStep", tr!(" · in step", " · Remote と同じ")),
         };
         let working = if line != work::MAIN { tr!(" · working on {}", " · {} の作業中", super::git::line_called(&line)) } else { String::new() };
+        crate::menu::see(|| crate::menu::Subject { on: On::Repo, word: s.name.clone(), repo: Some(s.name.clone()), label: s.name.clone(),
+            detail: format!("{} · {}{working}{said}", files(s.files as usize), bytes(s.bytes)), facts: Vec::new() });
         t.push(format!("{}\t{} · {}{working}{said}", s.name, files(s.files as usize), bytes(s.bytes)));
         rows.push(json!({"name": s.name, "files": s.files, "bytes": s.bytes, "modified": s.modified, "line": line, "state": state,
             "changed": st.as_ref().map_or(0, |s| s.changed), "unsendable": st.as_ref().map(|s| s.unsynced.iter().map(|(p, _)| p.clone()).collect::<Vec<_>>()).unwrap_or_default()}));
     }
     for o in &only_there {
+        crate::menu::see(|| crate::menu::Subject { on: On::RemoteRepo, word: o.name.clone(), repo: None, label: o.name.clone(),
+            detail: tr!("only on the Remote · {}", "Remote にだけあります · {}", bytes(o.bytes)), facts: vec![Fact::OnlyThere] });
         t.push(tr!("{}\tonly on the Remote · {} (l3 repo open {})", "{}\tRemote にだけあります · {}（l3 repo open {} で開けます）", o.name, bytes(o.bytes), o.name));
     }
     if t.is_empty() { t.push(tr!("No repos yet (l3 repo new NAME makes one)", "repo はまだありません（l3 repo new NAME で作れます）")); }
@@ -69,7 +74,20 @@ fn here_names(ctx: &Ctx) -> Result<Vec<String>> {
 }
 
 pub fn band_list(ctx: &Ctx, _: &Call) -> Result<Reply> {
-    let b = home::band(&here_names(ctx)?)?;
+    let here = here_names(ctx)?;
+    let b = home::band(&here)?;
+    // Each repo here, for the menu: those out on the band first, as the band reads.
+    let running: Vec<String> = length3_core::prompt::running(&length3_core::paths::data_dir()).into_iter().map(|r| r.repo).collect();
+    for name in b.iter().chain(here.iter().filter(|n| !b.contains(n))) {
+        let on = b.contains(name);
+        crate::menu::see(|| {
+            let mut facts = vec![if on { Fact::OnBand } else { Fact::OffBand }];
+            if running.contains(name) { facts.push(Fact::Running); }
+            let detail = [if on { tr!("on the band", "帯に出ています") } else { String::new() }, if running.contains(name) { tr!("a Prompt running", "Prompt が動いています") } else { String::new() }]
+                .into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" · ");
+            crate::menu::Subject { on: On::Repo, word: name.clone(), repo: Some(name.clone()), label: name.clone(), detail, facts }
+        });
+    }
     let text = if b.is_empty() { tr!("Nothing on the band (l3 band add REPO)", "帯には何もありません（l3 band add REPO）") } else { b.join("\n") };
     Ok(Reply::data(text, json!(b)))
 }
@@ -108,6 +126,8 @@ pub fn prompt(ctx: &Ctx, call: &Call) -> Result<Reply> {
     drop(recorded);
     let code = code?;
     if ctx.connected() { crate::sync::send(&repo); }
+    // Opened from the menu, the menu goes on once the shell ends; typed, l3 ends with the shell's code.
+    if crate::menu::active() { return Ok(Reply::Nothing); }
     std::process::exit(code);
 }
 

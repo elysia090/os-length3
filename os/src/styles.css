@@ -11,7 +11,8 @@
   /* Three marks that say one thing each: a step done, a line marked in a diff, a repo off. */
   --done: #2f7d4f;
   --marker: #f3e27a;
-  --off: #b3412f;
+  /* Dark enough that `ground` words on it (a removal held, its button red) read at 4.5:1. */
+  --off: #a63c2c;
 
   --sans: system-ui, -apple-system, 'Segoe UI', 'Noto Sans JP', 'Hiragino Sans', sans-serif;
   --mono: ui-monospace, 'SF Mono', Consolas, 'Noto Sans Mono', monospace;
@@ -60,6 +61,10 @@ body {
   font: var(--t-body)/1.6 var(--sans);
 }
 button, input, textarea { font: inherit; color: inherit; }
+/* What goes in a field is said in `sub`, as every quiet word is: the browser's own grey is too pale on `raised`. */
+::placeholder { color: var(--sub); opacity: 1; }
+/* Japanese breaks where a phrase does, not in the middle of a word, where the browser can tell. */
+:root:lang(ja) { word-break: auto-phrase; }
 /* A box to tick is a circle, the green one when ticked, as a switch on is: never the browser's blue. */
 input[type='checkbox'] { appearance: none; display: inline-grid; place-content: center; flex: none; width: 20px; height: 20px; margin: 0; border: 1.5px solid var(--edge); border-radius: 50%; background: transparent; cursor: pointer; transition: background var(--motion), border-color var(--motion); }
 input[type='checkbox']::after { content: ''; width: 9px; height: 5px; margin-top: -2px; border: 2px solid var(--ground); border-top: 0; border-right: 0; transform: rotate(-45deg); opacity: 0; }
@@ -217,6 +222,8 @@ a { color: var(--ink); }
 .counts { margin-top: var(--s3); display: flex; gap: var(--s5); color: var(--sub); }
 .counts b { color: var(--ink); }
 .edit { display: grid; gap: var(--s3); max-width: 520px; }
+/* A field takes its column's width, never its own: on a phone the form stays inside the window. */
+.edit > label, .edit > label > *, .edit input, .edit textarea { min-width: 0; }
 .edit label { display: grid; gap: var(--s1); font-size: var(--t-meta); color: var(--sub); }
 .edit textarea { resize: vertical; min-height: 72px; }
 .handle-field { display: flex; align-items: center; min-height: var(--h-control); border: 1px solid var(--edge); border-radius: var(--r-field); padding-left: var(--s3); background: var(--raised); color: var(--ink); }
@@ -229,6 +236,8 @@ a { color: var(--ink); }
   border: 1px solid var(--edge); border-radius: var(--r-place); background: var(--raised);
   min-height: max(360px, 55vh); display: grid; grid-template-rows: 1fr auto;
 }
+/* Its lines are written straight in it, as the prompt box's are: the box carries the ring. */
+.todo-box:focus-within { outline: 2px solid var(--ink); outline-offset: 2px; }
 .todo-items { padding: var(--s3) var(--s3) var(--s2); }
 .todo-item { padding-bottom: var(--s2); }
 .todo-head { display: grid; grid-template-columns: var(--h-control) auto minmax(0, 1fr) auto; align-items: center; column-gap: var(--s1); min-height: var(--h-control); padding-right: var(--s2); }
@@ -255,8 +264,8 @@ span.todo-title { min-height: 0; }
 }
 .todo-title:focus, .todo-detail:focus { outline: none; }
 .todo-meta { color: var(--sub); font-size: var(--t-meta); font-variant-numeric: tabular-nums; }
-/* Done: only the first line is struck through and faded. */
-.todo-item.done .todo-head .todo-title, .todo-item.done .todo-head .todo-kind { text-decoration: line-through; opacity: .45; }
+/* Done: only the first line is struck through and quiet, in `sub`, which still reads (an opacity would not). */
+.todo-item.done .todo-head .todo-title, .todo-item.done .todo-head .todo-kind { text-decoration: line-through; color: var(--sub); }
 .todo-item.done .todo-mark { color: var(--ink); }
 .todo-hint { display: flex; flex-wrap: wrap; gap: var(--s4); padding: var(--s2) var(--s4) var(--s3); color: var(--sub); font-size: var(--t-meta); }
 
@@ -411,7 +420,7 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
   background: transparent; cursor: pointer; white-space: nowrap; font-size: var(--t-meta);
 }
 .chips { display: flex; flex-wrap: wrap; gap: var(--s2); }
-.center { grid-column: 1; position: relative; min-height: 0; border-right: 1px solid var(--rule); overflow: hidden; }
+.center { grid-column: 1; position: relative; min-height: 0; border-right: 1px solid var(--rule); overflow: clip; }
 .flow { height: 100%; overflow-y: auto; padding: var(--s3) var(--s5) 160px; }
 .flow:focus-visible { outline-offset: -2px; }
 .path {
@@ -499,6 +508,12 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
     max-height: 60vh; overflow: auto; padding: var(--s3); background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-card);
   }
   .repo-strip { padding-right: calc(var(--search-w) + var(--s4)); }
+  /* With no band (Git), the page's head keeps clear of the search box on its line, as the band does. */
+  .work.no-strip .flow > .page-head { padding-right: calc(var(--search-w) + var(--s2)); }
+  /* Server's side holds only what its gear holds too (people, repos): it folds, the gear stays. */
+  .work > .side.server-side { display: none; }
+  .work > .center.server-center { padding-left: var(--s2); padding-right: var(--s2); }
+  .server-center .slides { --peek: var(--s5); }
   .center, .repo-strip { border-right: 0; }
   .dock { left: var(--s2); right: var(--s2); bottom: var(--s3); }
   .flow { padding-left: var(--s2); padding-right: var(--s2); }
@@ -549,6 +564,12 @@ button.diff-no:hover { color: var(--ink); text-decoration: underline; }
 .diff-head { display: flex; align-items: baseline; gap: var(--s3); min-height: var(--h-row); padding: var(--s1) var(--s1); border-radius: var(--r-field); cursor: pointer; font: var(--t-meta) var(--mono); }
 .diff-head:hover { background: var(--raised); }
 .review-box .diff-head:hover, .step-diff .diff-head:hover { background: var(--ground); }
+/* Put back, at the head's right end; pressed, the head asks in its place (its lines stay under it). */
+.diff-head > .grow { flex: 1; }
+.diff-head .button { align-self: center; font-family: var(--sans); }
+.diff-head.asking { display: grid; gap: var(--s2); padding: var(--s2) var(--s1); cursor: default; }
+.diff-head.asking:hover { background: transparent; }
+.diff-head.asking > .muted { font-family: var(--sans); }
 .diff-name { font-weight: 600; overflow-wrap: anywhere; }
 .diff-name.link:hover { text-decoration: underline; }
 .diff-count { color: var(--sub); white-space: nowrap; }
@@ -675,7 +696,7 @@ mark { background: var(--ink); color: var(--ground); }
 .space-col { display: flex; flex-direction: column; min-width: 0; padding: var(--s4); }
 .space-col + .space-col { border-left: 1px solid var(--rule); }
 .space-col > h3 { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s3); margin: 0 0 var(--s3); font-size: var(--t-body); font-weight: 600; }
-.space-col > h3 b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.space-col > h3 b { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .space-list { display: grid; align-content: start; gap: var(--s1); flex: 1; overflow-y: auto; }
 .space-row { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) 0; }
 .space-what { display: grid; min-width: 0; flex: 1; }
@@ -824,12 +845,19 @@ mark { background: var(--ink); color: var(--ground); }
 .share-open .mark { width: var(--s4); height: var(--s4); color: var(--sub); }
 .share-pop { position: absolute; left: 0; bottom: calc(100% + var(--s1)); z-index: 5; min-width: 220px; }
 .share-pop[hidden] { display: none; }
+/* A phone has no room to the button's right: the list opens from the card's own left edge, still over the card. */
+@media (max-width: 560px) {
+  .repo-cards .card-foot { position: relative; }
+  .repo-cards .share { position: static; }
+  .repo-cards .share-pop { min-width: min(220px, 100%); }
+}
 .pop-note { padding: var(--s1) var(--s3) var(--s2); }
 .share > .button[aria-expanded='true'] { background: var(--raised); border-color: var(--ink); }
 .card.off { border-style: dashed; }
 /* What was turned off, pressed again to bring it back: red, as a repo turned off is. */
 .button.off { background: var(--off); border-color: var(--off); color: var(--ground); }
-.button.off:hover:not(:disabled) { background: var(--off); filter: none; opacity: .9; }
+/* Hovered, a step toward ink rather than toward the ground, so its words keep their contrast. */
+.button.off:hover:not(:disabled) { background: color-mix(in srgb, var(--off) 85%, var(--ink)); filter: none; }
 .card.off .card-title, .card.off > .muted { color: var(--sub); }
 .power { position: relative; width: 52px; height: 28px; flex: none; padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: var(--raised); cursor: pointer; transition: background var(--motion), border-color var(--motion); }
 .power .knob { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: var(--ink); transition: transform var(--move), background var(--move); }
@@ -872,6 +900,19 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .step-about .stage-diff summary { line-height: 1.5; }
 .step-about p { margin: 0; }
 .steps > .error { grid-column: 1 / -1; }
+/* main's card on Git, for what it has not committed: a card (rule edge), its repo, Commit at the right. */
+.main-card { display: grid; gap: var(--s3); padding: var(--s4) var(--s5); border: 1px solid var(--rule); border-radius: var(--r-place); }
+.main-card + .main-card { margin-top: var(--s3); }
+.main-card > .steps { padding: 0; }
+/* What is done with (merged, closed): rows, space between them; a merged one opens to its diff. */
+.done-list { display: grid; gap: var(--s1); }
+.done-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s1) var(--s3); min-height: var(--h-row); padding: var(--s1) var(--s2); border-radius: var(--r-field); }
+summary.done-head { cursor: pointer; }
+summary.done-head:hover { background: var(--raised); }
+.done-head > .grow { flex: 1; }
+.done-name { font-weight: 600; overflow-wrap: anywhere; }
+.done-head > .error { flex-basis: 100%; }
+.done-diff { max-height: 56vh; overflow: auto; padding: var(--s2) var(--s2) var(--s3) var(--s4); }
 
 /* An Inbox pane with nothing chosen: a quiet line in its middle, not a box in the box. */
 .inbox-thread > .quiet { margin: auto; color: var(--sub); }
@@ -894,6 +935,19 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .add-card { gap: var(--s2); }
 .add-by-name { margin-top: auto; }
 .add-by-name .line-in { flex: 1; min-width: 0; }
+/* SSH and the desktop app on one row, each its own section, the cards their small size; a row that has
+   no room for both puts the second under the first, and the cards of either wrap within it. */
+.section-row { display: flex; flex-wrap: wrap; column-gap: var(--s6); }
+/* Side by side, their cards end level: each section's cards take the row's height. */
+.section-row > .section { flex: 0 1 auto; min-width: 0; max-width: 100%; display: flex; flex-direction: column; }
+.section-row > .section > .small-grid, .section-row > .section > .small-card { flex: 1; }
+.section-row .small-grid { display: flex; flex-wrap: wrap; }
+.section-row .small-card { width: 270px; max-width: 100%; }
+/* The desktop app's card: Download (its icon and the word) at its bottom left, the other file beside it. */
+.app-card > .card-foot { flex-wrap: wrap; align-self: stretch; }
+a.button { display: inline-flex; align-items: center; justify-content: center; color: inherit; text-decoration: none; white-space: nowrap; }
+.download { gap: var(--s1); padding-left: var(--s2); }
+.download .mark { width: var(--s4); height: var(--s4); }
 .dot-editor { display: grid; gap: var(--s3); margin-top: var(--s4); padding: var(--s4); border: var(--line-work) solid var(--edge); border-radius: var(--r-place); max-width: 760px; }
 .dot-head { align-items: center; gap: var(--s1); margin-top: 0; }
 /* Remove asked where the box's deeds were: what will happen, then the answers on the same line as they were. */
@@ -933,10 +987,11 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .record-value { min-height: var(--h-row); padding: var(--s1) var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: var(--ink); font: var(--t-meta)/1.4 var(--mono); text-align: left; overflow-wrap: anywhere; cursor: copy; }
 .record-value:hover { background: var(--raised); }
 .record-found { margin-top: var(--s2) !important; color: var(--sub); }
-.record-found.found { color: var(--done); font-weight: 600; }
+/* Words are ink: `done` is the mark's green (3.6:1 on ground), too light for words. */
+.record-found.found { color: var(--ink); font-weight: 600; }
 /* Copied: the text gives way to the word for a moment, in the same place. */
 [data-copied] { position: relative; color: transparent !important; }
-[data-copied]::after { content: attr(data-copied-word); position: absolute; inset: 0; display: flex; align-items: center; padding: inherit; color: var(--done); font-family: var(--sans); font-weight: 600; }
+[data-copied]::after { content: attr(data-copied-word); position: absolute; inset: 0; display: flex; align-items: center; padding: inherit; color: var(--ink); font-family: var(--sans); font-weight: 600; }
 /* What is not committed, beside Commit; its diff opens over what is under it. */
 .step-changes { position: relative; }
 /* The open diff lies over what is under it, from under its line across its column; nothing moves. */
@@ -974,6 +1029,8 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .tl-post.tl-runs { margin-top: 0; }
 .tl-post:hover, .tl-post:focus-within { background: var(--raised); }
 .tl-face { display: grid; place-items: center; width: 36px; height: 36px; margin-top: var(--s1); border: 1px solid var(--rule); border-radius: var(--r-round); font: 600 var(--t-meta) var(--sans); }
+/* A guest's face is dashed, beside the word guest: never taken for one of its people's. */
+.tl-guest > .tl-face { border-style: dashed; border-color: var(--edge); }
 /* In a run, the face's place holds the time, shown on hover. */
 /* A post in a run: its time, on hover, no taller than the line beside it, so a run's lines keep one rhythm. */
 .tl-face.tl-at { height: 1lh; margin-top: 0; border: 0; border-radius: 0; place-items: center end; font-size: 11px; line-height: inherit; overflow: hidden; visibility: hidden; }
@@ -1088,13 +1145,21 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 /* A setting in a small card: its word, and the switch at the right. */
 .card-row { display: flex; align-items: center; gap: var(--s3); min-height: var(--h-control); }
 .card-row .grow { flex: 1; min-width: 0; }
+/* A board's guests and invitations out; an invitation's link, said once, copied by a press. */
+.guest-rows { display: grid; }
+.guest-link { display: grid; gap: var(--s1); }
+.guest-link:empty { display: none; }
+.guest-link-text { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; justify-content: flex-start; }
+.guest-chip { display: inline-flex; align-items: center; gap: var(--s1); }
+.guest-chip[aria-checked='true'] .muted { color: inherit; opacity: .75; }
 .small-card > .small-button { align-self: flex-start; }
 .small-card.new { justify-content: center; align-items: center; }
 .grid > .empty { grid-column: 1 / -1; margin-top: 0; }
 /* Narrow: the parts slide rather than stack, and the server's name and code are left to its own part. */
 @media (max-width: 760px) {
-  .sheet-body > .parts { flex-wrap: nowrap; overflow-x: auto; }
-  .sheet-body > .parts .part { flex: none; }
+  /* Every page's parts (Remote's too, not only the gear's): room round them so a focus ring is not cut by the slide. */
+  .parts { flex-wrap: nowrap; overflow-x: auto; padding: var(--s1); margin: calc(-1 * var(--s1)); }
+  .parts .part { flex: none; }
   .sheet-title > p { display: none; }
 }
 .seen-body { min-height: 0; margin-top: var(--s4); display: grid; grid-template-columns: minmax(10em, 1fr) minmax(0, 3fr); border: 1px solid var(--rule); border-radius: var(--r-place); overflow: hidden; }

@@ -1,0 +1,10 @@
+{
+  "0.4.0": {
+    "deb": {"file": "os-length3-linux-0.4.0-desktop-amd64.deb", "bytes": 2970286, "sha256": "49e09feb073796025557410ffb3728a51652eb31575481eb538c99edec93e7c8"},
+    "appimage": {"file": "os-length3-linux-0.4.0-desktop-x86_64.AppImage", "bytes": 81734136, "sha256": "8eb20e72b140d692062d3b54eb308031e4b305f9fa27663c128a001636a000e8"}
+  },
+  "0.4.1": {
+    "deb": {"file": "os-length3-linux-0.4.1-desktop-amd64.deb", "bytes": 2970878, "sha256": "56c93788b5bf3fa83ff6dffb285b404e1bfd1d87bd1d47a970a526d66b17c4c3"},
+    "appimage": {"file": "os-length3-linux-0.4.1-desktop-x86_64.AppImage", "bytes": 81734136, "sha256": "11ae6d916ee49884ca6420b7d1e4b1bbe467fcccf757397bbd703d44b7f8c0ef"}
+  }
+}

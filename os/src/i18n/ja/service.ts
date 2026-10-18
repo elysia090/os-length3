@@ -30,7 +30,7 @@ export default {
   'Too many settings': '設定が多すぎます',
   // A Remote for research: entered by its link alone.
   'This link does not open this Remote': 'このリンクではこの Remote に入れません',
-  'Too many tries; try again in an hour': '試しすぎです。1時間後にもう一度どうぞ',
+  'Too many tries; try again in an hour': '試しすぎです。1時間後にもう一度どうぞ。',
   // What a provider is told when it would admit someone there (auth.ts only).
   'closed': 'この Remote は新しいアカウントを受け付けません',
   'This Remote takes no new accounts': 'この Remote は新しいアカウントを受け付けません',
@@ -53,7 +53,7 @@ export default {
   'Its domain no longer names this Remote': 'そのドメインはもうこの Remote を名乗っていません',
   'The domain publishes no Length³ address': 'そのドメインは Length³ のアドレスを公開していません',
   'It is on another Remote, which this one does not reach yet': 'ほかの Remote にあり、この Remote からはまだ届きません',
-  "The domain's DNS could not be read; try again": 'そのドメインの DNS を読めませんでした。もう一度どうぞ',
+  "The domain's DNS could not be read; try again": 'そのドメインの DNS を読めませんでした。もう一度どうぞ。',
   // Servers, boards, guests.
   'A name of at most 64 characters': '名前は64文字までです',
   'Too many servers': 'サーバーが多すぎます',
@@ -81,12 +81,27 @@ export default {
   'No such post of yours': 'あなたの投稿にはありません',
   'No such open board': 'その公開されている板はありません',
   'This board takes no guests': 'この板はゲストを受け入れていません',
-  'That is not an email address': 'それはメールアドレスではありません',
-  'Too many codes asked for; try again in an hour': 'コードを求める回数が多すぎます。1時間後にもう一度どうぞ',
-  'Too many people are waiting for a code here; try again soon': 'この板でコードを待つ人が多すぎます。少ししてからもう一度どうぞ',
-  'Show your email first': '先にメールアドレスを確かめてください',
+  'This invitation does not open this board': 'この招待ではこの板に入れません',
+  'A name of at most 32 characters, without @': '名前は @ を含まない32文字までです',
+  'That name is taken here': 'その名前はここでは使われています',
+  'This board has as many guests as it takes': 'この板のゲストはもう上限です',
+  'You are not a guest here': 'ここではゲストではありません',
+  'Guests have written as much as they may here this hour': 'この1時間、この板のゲストの投稿は上限に達しました',
+  'For 1 to 20 people, for 1 to 30 days': '1〜20人、1〜30日で',
+  'This board has as many invitations out as it takes; revoke one first': 'この板の招待はもう上限です。先にひとつ取り消してください',
+  'No such invitation of yours': 'あなたの招待にはありません',
+  'No such guest of yours': 'あなたが外せるゲストにはいません',
   // Who sees a repo.
   "Only its owner, or the server's, takes it off": '外せるのは repo の持ち主かサーバーのオーナーだけです',
   'No such repo to see': '見られる repo はありません',
   'No such file to see': '見られるファイルはありません',
+  // Held off, and the Remote's own health.
+  'Too many wrong codes; try again in an hour': '間違ったコードが多すぎます。1時間後にもう一度どうぞ',
+  'Too many codes looked up this hour': 'この1時間にコードを調べすぎました',
+  'The Remote does not reach its database': 'Remote がデータベースに届いていません',
+  // SSH, per device.
+  'SSH is turned on at the device itself': 'SSH をオンにするのはその端末でです',
+  'a port and destinations': 'ポートと接続先がいります',
+  'destinations': '接続先がいります',
+  'No device of yours listens there': 'それはあなたの端末で待ち受けているものではありません',
 } as Record<string, string>;

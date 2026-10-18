@@ -76,7 +76,7 @@ function make(env: Env) {
   const auth = createAuth({db, secret: env.BETTER_AUTH_SECRET, baseURL: env.BASE_URL, appOrigin: env.APP_ORIGIN, origins, github, google, apple,
     only: enter && enterEmail(enter.as)});
   const bucket = r2Bucket(env.BLOBS);
-  const app = createApp({db, auth, bucket, origins: [env.APP_ORIGIN, ...origins], providers: providers({github, google, apple}),
+  const app = createApp({db, auth, bucket, origins: [env.APP_ORIGIN, ...origins], appOrigin: env.APP_ORIGIN, providers: providers({github, google, apple}),
     domain: env.DOMAIN ?? 'length3.com', baseURL: env.BASE_URL, secret: env.BETTER_AUTH_SECRET, enter,
     quota: env.QUOTA_MB ? Number(env.QUOTA_MB) * 1024 ** 2 : undefined});
   return {app, at, bucket};
@@ -92,10 +92,18 @@ export default {
       ctx.waitUntil(pool.end());
     }
   },
-  // Once a day (wrangler.toml's trigger): what was held long enough goes.
+  // Once a day (wrangler.toml's trigger): what was held long enough goes. Awaited, not handed to
+  // waitUntil: a sweep that fails is said in the log and fails its run, as Cron Events shows it.
   async scheduled(_event: unknown, env: Env, ctx: Ctx) {
     const m = made ??= make(env);
     const {pool, db} = open(env);
-    ctx.waitUntil(sweep(db, m.bucket).then((gone) => console.log('sweep', JSON.stringify(gone))).finally(() => pool.end()));
+    try {
+      console.log('sweep', JSON.stringify(await sweep(db, m.bucket)));
+    } catch (e) {
+      console.error('sweep failed', e);
+      throw e;
+    } finally {
+      ctx.waitUntil(pool.end());
+    }
   },
 };

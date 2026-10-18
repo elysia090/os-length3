@@ -3,6 +3,7 @@
 use super::Ctx;
 use crate::args::Call;
 use crate::out::{now_ms, Error, Reply, Result};
+use crate::spec::{Fact, On};
 use length3_core::{home, i18n, text, tr};
 use serde_json::json;
 
@@ -13,7 +14,11 @@ pub fn todo_list(_: &Ctx, _: &Call) -> Result<Reply> {
     }
     let mut t = Vec::new();
     for (k, item) in list.iter().enumerate() {
-        t.push(format!("{:>3} {} {}", k + 1, if item.done { "✓" } else { "○" }, text::named(item.kind.as_deref(), &item.title)));
+        let mark = if item.done { "✓" } else { "○" };
+        crate::menu::see(|| crate::menu::Subject { on: On::Todo, word: (k + 1).to_string(), repo: None,
+            label: format!("{mark} {}", text::named(item.kind.as_deref(), &item.title)), detail: String::new(),
+            facts: vec![if item.done { Fact::Done } else { Fact::NotDone }] });
+        t.push(format!("{:>3} {} {}", k + 1, mark, text::named(item.kind.as_deref(), &item.title)));
         for line in item.detail.lines() { t.push(format!("        {line}")); }
     }
     Ok(Reply::data(t.join("\n"), json!(list)))

@@ -5,6 +5,7 @@
 use super::{stdin_text, Ctx};
 use crate::args::Call;
 use crate::out::{bytes, files, note, Error, Reply, Result};
+use crate::spec::{Fact, On};
 use crate::target;
 use length3_core::repos::shown;
 use length3_core::tr;
@@ -23,6 +24,15 @@ pub fn read(ctx: &Ctx, call: &Call) -> Result<Reply> {
     // A link to nothing is there, but what it names is not (4, as for anything not there; bug: 1).
     if r.dangling(&repo, &rel) { return Err(Error::NotFound(tr!("{} is a link to something that is not there", "{} はリンクですが、指す先がありません", at))); }
     if let Ok(entries) = r.tree(&repo, &rel) {
+        // Each entry, for the menu, named as File names it (REPO/PATH).
+        for e in &entries {
+            crate::menu::see(|| {
+                let path = if rel.is_empty() { format!("{repo}/{}", e.name) } else { format!("{repo}/{rel}/{}", e.name) };
+                let dir = e.kind == "dir";
+                crate::menu::Subject { on: On::Path, word: path, repo: Some(repo.clone()), label: format!("{}{}", e.name, if dir { "/" } else { "" }),
+                    detail: if dir || e.kind == "link" { String::new() } else { bytes(e.size) }, facts: if dir { vec![Fact::Folder] } else { Vec::new() } }
+            });
+        }
         // Folders first, like File.
         let t: Vec<String> = entries.iter().map(|e| match e.kind { "dir" => format!("{}/", e.name), "link" => format!("{}@", e.name), _ => format!("{}\t{}", e.name, bytes(e.size)) }).collect();
         let text = if t.is_empty() { tr!("{} is empty", "{} は空です", at) } else { t.join("\n") };

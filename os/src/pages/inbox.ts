@@ -6,7 +6,7 @@ import {look} from '../news.ts';
 import {Drafts} from '../drafts.ts';
 import {kindOf} from '../text.ts';
 import {mark} from '../icons.ts';
-import {pageHead, SETTLE} from './common.ts';
+import {copying, pageHead, SETTLE} from './common.ts';
 import {signInBox, signInPlace} from './remote.ts';
 import type {Context} from './context.ts';
 
@@ -17,7 +17,7 @@ import type {Context} from './context.ts';
 //   your name      as a stub: your name on this Remote and your code (each
 //                  copied by a press); its gear for your names' terms and a
 //                  name on your own domain beside it (proved by a DNS
-//                  record); SSH is Runtime's
+//                  record); SSH is Runtime's, per device
 //   left           conversations: contacts, then requests (accept or block)
 //   right          the conversation, the line's state (direct, or through
 //                  the Remote), and the box to write in
@@ -27,17 +27,6 @@ const KIND = (k: inbox.Kind) => ({message: t('Message'), review: t('Review reque
 
 function button(text: string, kind = ''): HTMLButtonElement {
   return h('button', {class: `button ${kind}`.trim(), type: 'button'}, text) as HTMLButtonElement;
-}
-
-/** Copy `text` and say so in `el` for a moment. */
-function copying(el: HTMLElement, text: string) {
-  el.addEventListener('click', () => {
-    void navigator.clipboard?.writeText(text);
-    el.dataset.copiedWord = t('Copied');
-    el.dataset.copied = '';
-    window.setTimeout(() => delete el.dataset.copied, 1200);
-  });
-  el.title = t('Press to copy');
 }
 
 /**
@@ -159,7 +148,13 @@ function addressStub(me: inbox.Me, again: () => void): HTMLElement {
   const fill = () => panel.replaceChildren(...(me.addresses.length ? [yours(), adding(), ...me.addresses.map(letting)] : [own()]));
   // The panel lies over the Inbox under it; Escape or a press outside closes it.
   const holder = h('div', {class: 'stub-holder'}, stub, note, error, panel);
-  const away = (e: Event) => { if (e instanceof KeyboardEvent ? e.key === 'Escape' : !holder.contains(e.target as Node)) toggle(false); };
+  // Put away by Escape from inside it, the keyboard goes back to the gear rather than to the page.
+  const away = (e: Event) => {
+    if (!(e instanceof KeyboardEvent ? e.key === 'Escape' : !holder.contains(e.target as Node))) return;
+    const inside = panel.contains(document.activeElement);
+    toggle(false);
+    if (e instanceof KeyboardEvent && inside) gear.focus();
+  };
   const toggle = (open: boolean) => {
     panel.hidden = !open;
     gear.setAttribute('aria-expanded', String(open));
@@ -371,7 +366,8 @@ export function inboxPage(ctx: Context): Node[] {
   poll = window.setInterval(() => {
     if (!holder.isConnected) { clearInterval(poll); live?.stop(); return; }
     const rows = holder.querySelector<HTMLElement>('.inbox-rows'), pane = holder.querySelector<HTMLElement>('.inbox-thread');
-    if (rows && pane && document.visibilityState === 'visible') void paintList(rows, pane);
+    // Not while a row has the keyboard: drawn again, it would be lost.
+    if (rows && pane && document.visibilityState === 'visible' && !rows.contains(document.activeElement)) void paintList(rows, pane);
   }, 10_000);
   return [pageHead('inbox'), holder];
 }

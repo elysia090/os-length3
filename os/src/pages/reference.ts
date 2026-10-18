@@ -7,6 +7,7 @@ import {onChange, store} from '../repos.ts';
 import {findInText, nameMatches, type Hit} from '../search.ts';
 import {sessionIfAny, type Run} from './terminal.ts';
 import {answers} from './common.ts';
+import {connection} from '../remote.ts';
 
 // The top of Forge's right pane: a search box over the band line, then one
 // reference at a time, switched freely with chips. While something is
@@ -250,6 +251,7 @@ export class Reference {
     const times = new Map<string, number>();
     return diffFiles(files, {
       reveal: (p, line) => this.events.reveal(p, line),
+      putBack: (f) => gitops.putBack(repo, f.path),
       // Pressing a line marks it, again unmarks it; its number still opens the center there.
       line: (row, key, l) => {
         const line = `${key.slice(0, key.lastIndexOf(':'))}\n${l.kind}\n${l.text}`;
@@ -287,9 +289,11 @@ export class Reference {
     const repo = this.repo;
     // No repo: nothing to refer to, and nothing said about it here.
     if (!repo) { this.body.replaceChildren(); return; }
-    const list = await readIssues(store, repo);
+    // Only the open ones, as Git shows them: one merged or closed is done with.
+    const [all, merged] = await Promise.all([readIssues(store, repo), mergedIssues(repo)]);
+    const list = all.filter((i) => i.closed === null && !merged.has(issuePath(i)));
     if (this.repo !== repo || this.view !== 'issue' || this.query.value.trim() || this.pinned) return;
-    if (!list.length) { this.empty(t('No issues yet')); return; }
+    if (!list.length) { this.empty(all.length ? t('No open issues') : t('No issues yet')); return; }
     this.body.replaceChildren(h('ul', {class: 'issue-list'}, ...list.map((i) => {
       const b = h('button', {type: 'button', class: 'link'}, issueName(i) ? h('span', {class: 'issue-no'}, `${issueName(i)} `) : null, i.kind ? `${i.kind}：` : '', i.title);
       b.addEventListener('click', () => this.showIssue(i));
@@ -297,6 +301,11 @@ export class Reference {
     })));
   }
 }
+
+/** The issues of `repo` whose change was merged ("issue/001.md"); none known without the Remote. */
+const mergedIssues = (repo: string): Promise<Set<string>> => (connection()
+  ? gitops.changesOf(repo).then((list) => new Set(list.filter((c) => c.state === 'merged').map((c) => c.issue)), () => new Set<string>())
+  : Promise.resolve(new Set<string>()));
 
 /** One run: the line (pressed, it is back in the prompt box), how long it took (or that it is running), then its output. */
 function runView(r: Run, recall?: (line: string) => void): HTMLElement {

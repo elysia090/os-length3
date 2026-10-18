@@ -97,7 +97,8 @@ export class Session {
     this.repo = repo;
     this.output = h('pre', {class: 'term-out', 'aria-live': 'polite'});
     this.status = h('p', {class: 'muted small'}, t('Starting…'));
-    this.activity = h('div', {class: 'term-activity small', 'aria-live': 'polite'});
+    // Not a live region: its count goes up each second, which a screen reader would read out each second.
+    this.activity = h('div', {class: 'term-activity small'});
     this.element = h('div', {class: 'term'}, this.status, this.output, this.activity);
     void this.start();
   }
@@ -332,22 +333,21 @@ export class Session {
     clearInterval(this.ticker);
     const run = this.runs.at(-1);
     if (!this.live || !run || run.ms !== null) { this.activity.replaceChildren(); return; }
+    // Made once for the run and only moved in or out: a button drawn anew each second would drop the keyboard on it.
+    const said = h('span', {class: 'muted'});
+    const cut = h('button', {class: 'button small-button', type: 'button'}, t('Interrupt'));
+    cut.addEventListener('click', () => this.interrupt());
+    const again = h('button', {class: 'button small-button', type: 'button'}, t('Stop and start again'));
+    again.addEventListener('click', () => this.restart());
     const paint = () => {
       if (run.ms !== null || !this.live) { clearInterval(this.ticker); this.activity.replaceChildren(); return; }
       const s = Math.floor((Date.now() - run.started) / 1000);
       // A sleep is quiet but heard: quiet is counted from when it is over.
       const now = Date.now(), quiet = Math.floor((now - Math.max(this.heard, Math.min(this.sleepsUntil, now))) / 1000);
-      const cut = h('button', {class: 'button small-button', type: 'button'}, t('Interrupt'));
-      cut.addEventListener('click', () => this.interrupt());
-      if (this.inputWait) { this.activity.replaceChildren(h('span', {class: 'muted'}, t('Waiting for input')), cut); return; }
-      if (s < 2) { this.activity.replaceChildren(); return; }
-      const parts: Node[] = [h('span', {class: 'muted'}, `${t('Running {n}s', {n: s})}${quiet >= 5 ? ` · ${t('no output')}` : ''}`), cut];
-      if (quiet >= 10) {
-        const again = h('button', {class: 'button small-button', type: 'button'}, t('Stop and start again'));
-        again.addEventListener('click', () => this.restart());
-        parts.push(again);
-      }
-      this.activity.replaceChildren(...parts);
+      said.textContent = this.inputWait ? t('Waiting for input') : `${t('Running {n}s', {n: s})}${quiet >= 5 ? ` · ${t('no output')}` : ''}`;
+      const parts = this.inputWait ? [said, cut] : s < 2 ? [] : quiet >= 10 ? [said, cut, again] : [said, cut];
+      const shown = [...this.activity.childNodes];
+      if (parts.length !== shown.length || parts.some((x, i) => x !== shown[i])) this.activity.replaceChildren(...parts);
     };
     paint();
     this.ticker = window.setInterval(paint, 1000);

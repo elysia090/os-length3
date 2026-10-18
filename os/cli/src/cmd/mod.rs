@@ -2,6 +2,7 @@
 //! Remote, then people (Server, Inbox). Each takes where l3 runs (Ctx) and
 //! the call, and answers with a Reply.
 
+pub mod address;
 pub mod file;
 pub mod forge;
 pub mod git;
@@ -22,6 +23,9 @@ pub struct Ctx {
     pub prompt: bool,
     #[cfg(test)]
     known: Vec<&'static str>,
+    /// Tests say whether the device is on a Remote; they never read the person's.
+    #[cfg(test)]
+    online: bool,
 }
 
 impl Ctx {
@@ -31,13 +35,19 @@ impl Ctx {
             prompt: std::env::var_os("L3_PROMPT").is_some(),
             #[cfg(test)]
             known: Vec::new(),
+            #[cfg(test)]
+            online: false,
         }
     }
 
     #[cfg(test)]
     pub fn test(here: Option<&str>, known: Vec<&'static str>) -> Ctx {
-        Ctx { here: here.map(|r| work::Here { repo: r.into(), line: work::MAIN.into(), folder: String::new() }), prompt: false, known }
+        Ctx { here: here.map(|r| work::Here { repo: r.into(), line: work::MAIN.into(), folder: String::new() }), prompt: false, known, online: false }
     }
+
+    /// For tests: the device on a Remote.
+    #[cfg(test)]
+    pub fn online(self) -> Ctx { Ctx { online: true, ..self } }
 
     pub fn repos(&self) -> Result<Repos> {
         // Tests read words, never the person's repos.
@@ -61,7 +71,10 @@ impl Ctx {
 
     /// Whether this device is on a Remote (never from inside a Prompt).
     pub fn connected(&self) -> bool {
-        !self.prompt && core_remote::connection().is_some()
+        #[cfg(test)]
+        { self.online }
+        #[cfg(not(test))]
+        { !self.prompt && core_remote::connection().is_some() }
     }
 }
 
@@ -79,6 +92,11 @@ pub fn before(ctx: &Ctx, call: &Call) -> Result<()> {
     }
     crate::sync::before(ctx, call);
     Ok(())
+}
+
+/// A call from its checks to its answer: what l3 does with a command typed, and the menu with a deed.
+pub fn perform(ctx: &Ctx, call: &Call) -> Result<Reply> {
+    before(ctx, call).and_then(|_| (call.form.run)(ctx, call))
 }
 
 /// `l3 version`: l3's, and the root's in use.

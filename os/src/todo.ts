@@ -3,7 +3,7 @@
 // and a title ("Fix：再起動すると保存内容が消える"); the lines after it are the
 // detail. The list is kept in Home's state (state.ts), the same file l3 todo reads.
 
-import {kindOf} from './text.ts';
+import {clipUnits, kindOf} from './text.ts';
 
 export interface Todo {
   id: string;
@@ -27,7 +27,7 @@ const newId = (now: number) => `${now.toString(36)}-${(counter++).toString(36)}`
 
 /** Add a line written as "Kind：title" or plain text. */
 export function add(list: readonly Todo[], text: string, repo: string | null = null, now = Date.now()): Todo[] {
-  const {kind, title} = kindOf(text.slice(0, TEXT_LIMIT));
+  const {kind, title} = kindOf(clipUnits(text, TEXT_LIMIT));
   if (!title.trim() && !kind) return [...list];
   return [...list, {id: newId(now), kind, title: title.trim(), detail: '', done: false, repo, created: now}];
 }
@@ -42,8 +42,8 @@ export function insertAfter(list: readonly Todo[], id: string | null, now = Date
 }
 
 export function edit(list: readonly Todo[], id: string, change: {kind?: string | null; title?: string; detail?: string}): Todo[] {
-  return list.map((t) => (t.id === id ? {...t, ...change, title: (change.title ?? t.title).slice(0, TEXT_LIMIT),
-    detail: (change.detail ?? t.detail).slice(0, DETAIL_LIMIT)} : t));
+  return list.map((t) => (t.id === id ? {...t, ...change, title: clipUnits(change.title ?? t.title, TEXT_LIMIT),
+    detail: clipUnits(change.detail ?? t.detail, DETAIL_LIMIT)} : t));
 }
 
 /** True when an item holds anything worth keeping. */
@@ -73,8 +73,8 @@ export function parse(stored: string | null): Todo[] {
         // Earlier lists stored "Kind：title" as one string.
         const {kind, title} = typeof t.title === 'string'
           ? {kind: typeof t.kind === 'string' ? t.kind : null, title: t.title} : kindOf(t.text);
-        const detail = typeof t.detail === 'string' ? t.detail.slice(0, DETAIL_LIMIT) : '';
-        return {id: t.id, kind, title: title.slice(0, TEXT_LIMIT), detail, done: t.done, repo: t.repo, created: t.created};
+        const detail = typeof t.detail === 'string' ? clipUnits(t.detail, DETAIL_LIMIT) : '';
+        return {id: t.id, kind, title: clipUnits(title, TEXT_LIMIT), detail, done: t.done, repo: t.repo, created: t.created};
       });
   } catch {
     return [];

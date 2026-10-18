@@ -59,7 +59,7 @@ export function timeline(scroller: HTMLElement, board: string, member: boolean, 
 
   // Newest page first; on screen the other way round, newest at the foot.
   const pages: Shown[] = [];
-  const list = h('div', {class: 'tl-pages', 'aria-label': t('Posts')});
+  const list = h('div', {class: 'tl-pages', role: 'region', 'aria-label': t('Posts')});
   const start = h('div', {class: 'tl-start muted small', 'aria-live': 'polite'});
   const foot = h('div', {class: 'tl-foot-mark'});
   const fresh = h('button', {type: 'button', class: 'tl-new', hidden: ''}) as HTMLButtonElement;
@@ -83,7 +83,8 @@ export function timeline(scroller: HTMLElement, board: string, member: boolean, 
   // ---- a post: a face and a name where a run starts, then the text ----
   const card = (p: servers.Post, s: Shown, runs: boolean) => {
     const when = new Date(p.at);
-    // A name on this Remote is shown alone; one on a domain with it. A guest by the name of their email, and as a guest.
+    // A name on this Remote is shown alone; one on a domain with it. A guest by the name they chose, always
+    // with "guest" beside it and their face dashed, so they are never taken for one of its people.
     const [name, domain] = shown(p.by).split('@');
     const where = p.guest ? t('guest') : domain ? `@${domain}` : '';
     const time = h('time', {class: 'muted small', datetime: when.toISOString(), title: when.toLocaleString(currentLang())}, clock(p.at));
@@ -92,7 +93,7 @@ export function timeline(scroller: HTMLElement, board: string, member: boolean, 
     const main = h('div', {class: 'tl-main'},
       ...(runs ? [] : [h('div', {class: 'tl-who'}, h('b', {}, name), h('span', {class: 'muted small'}, where), time)]),
       h('p', {class: 'tl-body'}, p.body), below);
-    const art = h('article', {class: runs ? 'tl-post tl-runs' : 'tl-post'},
+    const art = h('article', {class: `tl-post${runs ? ' tl-runs' : ''}${p.guest ? ' tl-guest' : ''}`},
       runs ? h('span', {class: 'tl-face tl-at'}, time) : h('span', {class: 'tl-face', 'aria-hidden': 'true'}, face(p)), main, acts);
 
     if (p.mayTakeDown) {

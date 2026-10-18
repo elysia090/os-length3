@@ -49,7 +49,7 @@ pub fn overview() -> String {
     let mut s = String::new();
     s += if ja() { "l3 — Length³ OS をコマンドで。アプリと同じ言葉と順番です。\n\n" } else { "l3 — Length³ OS on the command line, in the app's words and order.\n\n" };
     s += &format!("{}  l3 <command> [args] [--json]   {}\n", bold(if ja() { "使い方" } else { "Usage" }),
-        if ja() { "（l3 だけで、この端末のいま）" } else { "(l3 alone: this device at a glance)" });
+        if ja() { "（l3 だけで、ターミナルではメニュー、ほかではこの端末のいま）" } else { "(l3 alone: the menu at a terminal, elsewhere this device at a glance)" });
     for g in Group::ALL {
         let cs: Vec<&Command> = spec::shown().filter(|c| c.group == g).collect();
         if cs.is_empty() { continue; }
@@ -68,9 +68,9 @@ pub fn overview() -> String {
     s += &format!("\n{}\n", bold(if ja() { "終了コード" } else { "Exit codes" }));
     s += if ja() { "  0 できた · 1 できなかった · 2 書き方の誤り · 3 Remote に届かない · 4 見つからない\n\n" } else { "  0 done · 1 not done · 2 not how it is written · 3 the Remote out of reach · 4 not found\n\n" };
     s += if ja() {
-        "repo の中（とその Prompt）では REPO を省けます。ISSUE は repo の中なら N か #N、外なら REPO#N、または件名の言葉（「再起動」など）です。\n`l3 help all` ですべての書き方、`l3 completion bash|zsh|fish` で補完。\n\n名前は持ち主が先：hello, hello/src/a.c, hello#3, ren@length3.com:hello（あなたの repo を全部書いた形）, trip#general（サーバーの板）。"
+        "repo の中（とその Prompt）では REPO を省けます。ISSUE は repo の中なら N か #N、外なら REPO#N、または件名の言葉（「再起動」など）です。\n`l3 help all` ですべての書き方、`l3 completion bash|zsh|fish` で補完。\nターミナルでは、l3 だけでアプリのレールと同じ目的が並び、選ぶとそのページと次の操作が出ます（実行するコマンドも表示）。コマンドのあとにも次の操作を出します（Enter か Esc でそのまま）。パイプ、--json、TERM=dumb、L3_PLAIN=1 では何も尋ねません。\n\n名前は持ち主が先：hello, hello/src/a.c, hello#3, ren@length3.com:hello（あなたの repo を全部書いた形）, trip#general（サーバーの板）。"
     } else {
-        "In a repo (or its Prompt) REPO may be left out. An ISSUE is N or #N in its repo, REPO#N elsewhere, or words of its title (\"restart\").\n`l3 help all` lists every form; `l3 completion bash|zsh|fish` completes them.\n\nNames, owner first: hello, hello/src/a.c, hello#3, ren@length3.com:hello (yours, written in full), trip#general (a server's board)."
+        "In a repo (or its Prompt) REPO may be left out. An ISSUE is N or #N in its repo, REPO#N elsewhere, or words of its title (\"restart\").\n`l3 help all` lists every form; `l3 completion bash|zsh|fish` completes them.\nAt a terminal, l3 alone lists the app's purposes as its rail does; one picked shows its page and what can be done next, each deed saying the command it runs. A command typed is followed by its next deeds too (Enter or Esc passes them by). Through a pipe, with --json, TERM=dumb or L3_PLAIN=1, nothing is offered or asked.\n\nNames, owner first: hello, hello/src/a.c, hello#3, ren@length3.com:hello (yours, written in full), trip#general (a server's board)."
     };
     s
 }

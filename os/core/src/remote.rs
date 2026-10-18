@@ -30,7 +30,12 @@ pub type Tree = BTreeMap<String, Option<String>>;
 type Result<T> = std::result::Result<T, String>;
 
 pub const BLOB_LIMIT: u64 = 16 << 20;
-pub const DEFAULT_URL: &str = "https://remote.length3.com";
+/// The Remote this OS ships with: one name for the app, the Remote, the DNS records people
+/// publish (`remote=os.length3.com`) and passkeys.
+pub const DEFAULT_URL: &str = "https://os.length3.com";
+/// The name the Remote had before (0.4.x signed in by it). The same Worker still answers it, so
+/// those releases keep working; a device that kept it is taken to DEFAULT_URL, its session and all.
+pub const FORMER_URL: &str = "https://remote.length3.com";
 /// Paths one diff carries at most (the Remote takes 5000).
 const CHUNK: usize = 2000;
 
@@ -40,10 +45,17 @@ pub struct Connection {
     pub token: String,
 }
 
+/// A Remote's URL as it is used now: the former name of the one this OS ships with is its name today.
+pub fn current_url(url: &str) -> String {
+    let url = url.trim_end_matches('/');
+    if url.eq_ignore_ascii_case(FORMER_URL) { DEFAULT_URL.into() } else { url.into() }
+}
+
 /// The Remote this device is connected to, if it is (Home's `remote` setting).
 pub fn connection() -> Option<Connection> {
     let text = crate::home::get("remote").ok()??;
-    serde_json::from_str(&text).ok()
+    let c: Connection = serde_json::from_str(&text).ok()?;
+    Some(Connection { url: current_url(&c.url), ..c })
 }
 
 pub fn save_connection(c: &Connection) -> Result<()> {
@@ -68,7 +80,7 @@ fn gone(r: std::io::Result<()>) -> Result<()> {
 
 /// The Remote to sign in to: $LENGTH3_REMOTE, else the one this OS ships with.
 pub fn default_url() -> String {
-    std::env::var("LENGTH3_REMOTE").ok().filter(|v| !v.trim().is_empty()).unwrap_or_else(|| DEFAULT_URL.into()).trim_end_matches('/').into()
+    current_url(&std::env::var("LENGTH3_REMOTE").ok().filter(|v| !v.trim().is_empty()).unwrap_or_else(|| DEFAULT_URL.into()))
 }
 
 // ---- HTTP ----
@@ -256,6 +268,26 @@ pub fn device_start(url: &str, client: &str) -> Result<DeviceCode> {
     }
 }
 
+/// The origin of the web app the Remote `url` says it approves devices on (GET /v1/about, `app`), if it says one.
+pub fn app_origin(url: &str) -> Option<String> {
+    let v: serde_json::Value = agent(url).get(&format!("{url}/v1/about")).call().ok()?.into_json().ok()?;
+    v.get("app")?.as_str().map(String::from)
+}
+
+/// Whether a device's code may be approved on `page`, the page the Remote `url` named: a page of
+/// that Remote itself, or of the app's origin it says it has (`app`, app_origin), which is a bare
+/// origin over https (http only for a Remote itself on http, as in development). The one this OS
+/// ships with is both on os.length3.com; one elsewhere may keep its app on another name. Any other
+/// site, or scheme, is not a page it stands behind.
+pub fn device_page_ok(url: &str, app: Option<&str>, page: &str) -> bool {
+    let url = url.trim_end_matches('/');
+    if page.starts_with(&format!("{url}/")) { return true; }
+    let Some(app) = app.map(|a| a.trim_end_matches('/')) else { return false };
+    let bare = valid_url(app) && app.split_once("://").is_some_and(|(_, host)| !host.contains('/'));
+    let over = app.starts_with("https://") || (app.starts_with("http://") && url.starts_with("http://"));
+    bare && over && page.starts_with(&format!("{app}/"))
+}
+
 /// Whether `url` can name a Remote: http(s)://host[:port][/path], nothing else.
 pub fn valid_url(url: &str) -> bool {
     let Some((scheme, rest)) = url.split_once("://") else { return false };
@@ -358,6 +390,9 @@ pub fn logout(repos: &Repos) -> Result<()> {
             }
         }
     }
+    // SSH stops with the device's session: no one reaches its Prompts once it is signed out.
+    #[cfg(unix)]
+    let _ = crate::ssh::stop(&crate::paths::data_dir());
     // Everything is sent: signed out here whatever the Remote answers (its session ends there by itself).
     let _ = c.call("POST", "/api/auth/sign-out", Some(serde_json::json!({})));
     forget_connection()
@@ -1187,8 +1222,43 @@ mod tests {
 
     #[test]
     fn a_remote_is_named_by_an_http_url() {
-        for ok in ["http://127.0.0.1:8787", "https://remote.length3.com", "https://r.example/x"] { assert!(valid_url(ok), "{ok}"); }
-        for bad in ["nonsense", "ftp://x", "https://", "http:// x", "remote.length3.com"] { assert!(!valid_url(bad), "{bad}"); }
+        for ok in ["http://127.0.0.1:8787", "https://os.length3.com", "https://r.example/x"] { assert!(valid_url(ok), "{ok}"); }
+        for bad in ["nonsense", "ftp://x", "https://", "http:// x", "os.length3.com"] { assert!(!valid_url(bad), "{bad}"); }
+    }
+
+    #[test]
+    fn the_remote_this_os_ships_with_is_os_length3_com_and_its_former_name_is_taken_to_it() {
+        assert_eq!(DEFAULT_URL, "https://os.length3.com");
+        assert!(valid_url(DEFAULT_URL));
+        // A device that signed in by the former name (0.4.x) goes on with the same session on the one name.
+        for former in ["https://remote.length3.com", "https://remote.length3.com/", "https://Remote.Length3.com"] { assert_eq!(current_url(former), DEFAULT_URL, "{former}"); }
+        // Anything else is left as it is: another Remote, a path under the former name, plain http.
+        for other in ["https://os.length3.com", "http://127.0.0.1:8787", "https://r.example/x", "https://remote.length3.com/x", "http://remote.length3.com"] {
+            assert_eq!(current_url(other), other.trim_end_matches('/'), "{other}");
+        }
+    }
+
+    #[test]
+    fn a_device_is_approved_on_the_remote_or_the_app_it_names_and_nowhere_else() {
+        // As the production Remote answers: the app on the one name the device reaches it by.
+        let page = "https://os.length3.com/?device=&user_code=ABCD1234";
+        assert!(device_page_ok(DEFAULT_URL, Some(DEFAULT_URL), page));
+        assert!(device_page_ok(DEFAULT_URL, None, page));
+        // A Remote that keeps its app on another name (as the former name did), only on that app's origin.
+        let (remote, app) = ("https://remote.length3.com", Some("https://os.length3.com"));
+        assert!(device_page_ok(remote, app, page));
+        assert!(device_page_ok(remote, None, "https://remote.length3.com/?device=&user_code=X"));
+        assert!(!device_page_ok(remote, None, page));
+        assert!(!device_page_ok(DEFAULT_URL, Some(DEFAULT_URL), "https://remote.length3.com/?device=&user_code=X"));
+        for bad in ["https://os.length3.com.evil.example/?device", "https://os.length3.com@evil.example/?device", "https://evil.example/?device",
+            "http://os.length3.com/?device", "file:///etc/passwd", "javascript:alert(1)"] {
+            assert!(!device_page_ok(remote, app, bad), "{bad}");
+        }
+        // What it names must be a bare origin over https; http only beside a Remote on http.
+        for bad_app in ["http://os.length3.com", "https://os.length3.com/x", "file://os.length3.com", "javascript:x", ""] {
+            assert!(!device_page_ok(remote, Some(bad_app), &format!("{bad_app}/?device")), "{bad_app}");
+        }
+        assert!(device_page_ok("http://127.0.0.1:8790", Some("http://localhost:1420"), "http://localhost:1420/?device=&user_code=X"));
     }
 
     #[test]

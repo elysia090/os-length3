@@ -9,6 +9,7 @@ import {at, baseOf, blobText, headTree, lineOf, setHead, showLine, sync, treeAt,
 import {isNative, native} from './host.ts';
 import {counts, hunks, lineOps, type DiffLine} from './linediff.ts';
 import {api, connection, json, RemoteError} from './remote.ts';
+import {restore} from './putback.ts';
 import {store} from './repos.ts';
 import {kindOf} from './text.ts';
 import {t} from './i18n.ts';
@@ -81,6 +82,24 @@ async function webDiff(repo: string): Promise<FileDiff[]> {
     return {path: p.path, status: p.status, binary: false, ...hunks(lineOps(p.before ?? '', p.after ?? ''))};
   });
 }
+
+/** A file as it was at the last commit of what the repo shows: its text, or null when it was not there (added since). */
+async function atLastCommit(repo: string, path: string): Promise<string | null> {
+  if (isNative) return native<string | null>('history_at_head', {repo, path});
+  // Without the Remote the last commit is not known here: nothing is put back on a guess.
+  if (!connection()) throw new RemoteError(0, t('The last commit is kept on the Remote. Sign in to it first.'));
+  const sha = (await headTree(repo))[path];
+  if (typeof sha !== 'string') return null;
+  const text = await blobText(sha);
+  if (text === null) throw new RemoteError(0, t('{path} is binary; it cannot be put back here', {path}));
+  return text;
+}
+
+/**
+ * Put a file back as it was at the last commit: its text again, a removed
+ * one written back (its folders made), one added since removed.
+ */
+export const putBack = async (repo: string, path: string): Promise<void> => restore(store, repo, path, await atLastCommit(repo, path));
 
 /** The words a cut goes by: an issue's first line, or the line given. */
 async function wordsFor(repo: string, issue: string | null, line: string): Promise<{kind: string; title: string}> {

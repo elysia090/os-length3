@@ -62,7 +62,7 @@ export async function claim(db: Db, name: string, domain: string, owner: Owner, 
       target: address.address,
       // Its owner's: renewed, or taken back. Held long enough: anyone's, from now.
       set: {userId: sql`excluded.user_id`, serverId: sql`excluded.server_id`, until, releasedAt: null, lapsedAt: null,
-        ssh: sql`${theirs} and ${address.ssh}`, createdAt: sql`case when ${theirs} then ${address.createdAt} else now() end`},
+        createdAt: sql`case when ${theirs} then ${address.createdAt} else now() end`},
       setWhere: sql`${theirs} or not ${kept}`,
     }).returning({a: address.address});
   if (done.length) return {ok: true, until: until?.getTime() ?? null};

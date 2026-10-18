@@ -1,7 +1,7 @@
 import {h} from '../dom.ts';
 import {t} from '../i18n.ts';
 import {icon} from '../icons.ts';
-import {purpose, type PurposeId} from '../purposes.ts';
+import {purpose, RAIL, type PurposeId} from '../purposes.ts';
 
 export function pageHead(id: PurposeId): HTMLElement {
   const p = purpose(id);
@@ -26,6 +26,17 @@ export function askFoot(from: Element, box: Element): (no: Node, yes: Node) => H
   const a = from.getBoundingClientRect(), b = box.getBoundingClientRect();
   const left = a.width > 0 && a.left + a.width / 2 < b.left + b.width / 2;
   return (no, yes) => h('div', {class: 'card-foot'}, ...(left ? [yes, h('span', {class: 'grow'}), no] : [no, h('span', {class: 'grow'}), yes]));
+}
+
+/** Copy `text` when `el` is pressed, and say so in its place for a moment (there is no Copy button). */
+export function copying(el: HTMLElement, text: string) {
+  el.addEventListener('click', () => {
+    void navigator.clipboard?.writeText(text);
+    el.dataset.copiedWord = t('Copied');
+    el.dataset.copied = '';
+    window.setTimeout(() => delete el.dataset.copied, 1200);
+  });
+  el.title = t('Press to copy');
 }
 
 /**
@@ -80,11 +91,13 @@ export function choosePart(page: string, part: string) {
   try { localStorage.setItem(`length3.part.${page}`, part); } catch { /* convenience only */ }
 }
 
-export function parts<K extends string>(page: string, list: readonly {id: K; label: string}[]): Parts<K> {
+export function parts<K extends string>(page: string, list: readonly {id: K; label: string}[],
+  label = RAIL.some((p) => p.id === page) ? t(purpose(page as PurposeId).label) : ''): Parts<K> {
   const key = `length3.part.${page}`;
   const tabs = new Map<K, {tab: HTMLButtonElement; small: HTMLElement; panel: HTMLElement}>();
   const heard: ((k: K) => void)[] = [];
-  const bar = h('div', {class: 'parts', role: 'tablist', 'aria-label': page});
+  // Heard by the name it is given (the page's, in the language spoken), never by the key it is kept under.
+  const bar = h('div', {class: 'parts', role: 'tablist', ...(label ? {'aria-label': label} : {})});
   for (const p of list) {
     const small = h('small', {});
     const tab = h('button', {type: 'button', class: 'part', role: 'tab', id: `part-${page}-${p.id}`, 'aria-controls': `panel-${page}-${p.id}`, 'aria-selected': 'false', tabindex: '-1'},
@@ -111,6 +124,8 @@ export function parts<K extends string>(page: string, list: readonly {id: K; lab
       x.tab.setAttribute('aria-selected', String(on));
       x.tab.tabIndex = on ? 0 : -1;
       x.panel.hidden = !on;
+      // On a narrow window the switch slides sideways: the chosen one is kept in view.
+      if (on && bar.isConnected && bar.scrollWidth > bar.clientWidth) x.tab.scrollIntoView({block: 'nearest', inline: 'nearest'});
     }
     try { localStorage.setItem(key, k); } catch { /* convenience only */ }
     for (const f of heard) f(k);
