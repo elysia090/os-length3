@@ -195,6 +195,8 @@ export function inboxPage(ctx: Context): Node[] {
   let open: string | null = null;
   let live: inbox.Live | null = null;
   let mine = '';
+  /** Which reading of the list, and which opening of a conversation, is the latest: an older answer that comes after it is not drawn. */
+  let listed = 0, opened = 0;
   /** The open conversation: the time of the newest it has, and how to take in what came since. */
   let shownThread: {address: string; on: inbox.Conversation; more(): Promise<void>} | null = null;
 
@@ -235,8 +237,10 @@ export function inboxPage(ctx: Context): Node[] {
   };
 
   const paintList = async (rows: HTMLElement, pane: HTMLElement) => {
+    const asked = ++listed;
     let all: inbox.Thread[] = [], unread = '';
     try { all = await inbox.threads(); } catch (e) { unread = message(e); }
+    if (asked !== listed) return;
     const row = (th: inbox.Thread) => {
       // The open one is being read: what came to it is not counted as waiting.
       const waiting = th.address === open ? 0 : th.unread;
@@ -266,12 +270,15 @@ export function inboxPage(ctx: Context): Node[] {
   };
 
   const show = async (address: string, rows: HTMLElement, pane: HTMLElement) => {
+    // Opened again before the last opening was drawn (a row pressed twice): only the latest is drawn,
+    // so one conversation never gets two panes, nor two direct lines.
+    const asked = ++opened;
     open = address;
     live?.stop();
     live = null;
     shownThread = null;
-    const th = await inbox.thread(address).catch((e) => { pane.replaceChildren(h('p', {class: 'error'}, message(e))); return null; });
-    if (!th || open !== address) return;
+    const th = await inbox.thread(address).catch((e) => { if (asked === opened) pane.replaceChildren(h('p', {class: 'error'}, message(e))); return null; });
+    if (!th || asked !== opened) return;
     // Read is said again the next time the conversation opens; nothing waits on it. The rail's mark follows.
     const read = () => void inbox.markRead(address).then(() => look(), () => {});
     read();
@@ -300,6 +307,7 @@ export function inboxPage(ctx: Context): Node[] {
     const add = (m: inbox.Message) => { if (on.have(m)) bubble(m); };
     // Accepted both ways: a direct line between the two devices, when both are here.
     const startLive = () => {
+      live?.stop();
       live = new inbox.Live(mine, address, add, (direct) => { lineWord.textContent = direct ? t('Direct') : t('Through the Remote'); });
       // Ends with the page, not at the page's next look.
       live.start(() => holder.isConnected);
@@ -307,7 +315,7 @@ export function inboxPage(ctx: Context): Node[] {
     // Taken in every little while through the Remote: what is not here yet goes at the foot, and is read.
     const more = async () => {
       const now = await inbox.thread(address).catch(() => null);
-      if (!now || open !== address || !pane.contains(messages)) return;
+      if (!now || asked !== opened || !pane.contains(messages)) return;
       const came = on.took(now.messages);
       came.forEach(bubble);
       if (came.some((m) => !m.mine)) read();
@@ -315,12 +323,24 @@ export function inboxPage(ctx: Context): Node[] {
       if (now.mutual && !live) startLive();
     };
     shownThread = {address, on, more};
-    // Accept or block someone who wrote first.
-    const decide: Node[] = [];
+    const error = h('p', {class: 'error', role: 'alert'});
+    // Accept or block someone who wrote first: one answer, asked once (both held while it is), and said if it did not go.
+    const decide: HTMLButtonElement[] = [];
     if (th.state === 'request') {
+      const answer = (state: 'accepted' | 'blocked', then: () => void) => async () => {
+        if (decide.some((b) => b.disabled)) return;
+        for (const b of decide) b.disabled = true;
+        error.textContent = '';
+        try { await inbox.setContact(address, state); } catch (e) {
+          for (const b of decide) b.disabled = false;
+          error.textContent = message(e);
+          return;
+        }
+        then();
+      };
       const yes = button(t('Accept'), 'small-button primary'), no = button(t('Block'), 'small-button');
-      yes.addEventListener('click', async () => { await inbox.setContact(address, 'accepted'); void show(address, rows, pane); void paintList(rows, pane); });
-      no.addEventListener('click', async () => { await inbox.setContact(address, 'blocked'); open = null; shownThread = null; void paintList(rows, pane); });
+      yes.addEventListener('click', answer('accepted', () => { void show(address, rows, pane); void paintList(rows, pane); }));
+      no.addEventListener('click', answer('blocked', () => { open = null; shownThread = null; void paintList(rows, pane); }));
       decide.push(yes, no);
     }
     // Writing is one line that grows as it is written. What it is reads off the text the way
@@ -332,7 +352,6 @@ export function inboxPage(ctx: Context): Node[] {
     const grow = () => { text.style.height = 'auto'; text.style.height = `${Math.min(text.scrollHeight + 2, 200)}px`; };
     text.addEventListener('input', () => { drafts.set(address, text.value); grow(); });
     const sendB = button(t('Send'), 'primary');
-    const error = h('p', {class: 'error', role: 'alert'});
     const go = async () => {
       if (!text.value.trim() || sendB.disabled) return;
       sendB.disabled = true;
