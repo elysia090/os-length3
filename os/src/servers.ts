@@ -11,6 +11,7 @@
 import {api, connection, json, RemoteError} from './remote.ts';
 import type {Todo} from './todo.ts';
 import {t} from './i18n.ts';
+import {errorText} from './errors.ts';
 
 /** `gone`: removed, and held until then (ms); its server's owner may bring it back meanwhile. */
 export interface BoardRef { id: string; name: string; open: boolean; guests: boolean; gone?: number }
@@ -175,7 +176,7 @@ export function todoKeeper(board: string, from: readonly BoardTodo[], o: KeeperO
           latest ??= list;
           if (!passing(e)) { latest = null; tries = 0; answer(e); return; }
           tries++;
-          trouble?.(e instanceof Error ? e.message : String(e));
+          trouble?.(errorText(e));
           wait = setTimeout(() => void go(), backoff(tries));
           return;
         }

@@ -5,6 +5,7 @@ import {bring, remoteOnly} from '../lifecycle.ts';
 import {plainPart, renamed, store} from '../repos.ts';
 import {inRepo, list, ORIGIN_LABEL, type SystemEntry} from '../system.ts';
 import {askFoot, SETTLE} from './common.ts';
+import {errorText} from '../errors.ts';
 
 // File is an operation, not a page: the tree of "/", the whole system, as a
 // card laid over whatever page is showing, right beside the rail and only as
@@ -57,7 +58,6 @@ export function triangle(): SVGSVGElement {
 }
 
 const note = (text: string, depth: number) => h('li', {class: 'tree-note muted', style: `--depth:${depth}`}, text);
-const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const joined = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
 
 export class FileTree {
@@ -211,7 +211,7 @@ export class FileTree {
         expandedPaths.add(`/root/${repo}`);
         await this.again(item.parentElement?.closest('li') ?? null);
         this.events.choose(repo, '', false);
-      } catch (err) { meta.textContent = err instanceof Error ? err.message : String(err); }
+      } catch (err) { meta.textContent = errorText(err); }
     });
     return item;
   }
@@ -260,7 +260,7 @@ export class FileTree {
       children.replaceChildren(note('…', depth + 1));
       let entries: SystemEntry[];
       try { entries = await list(e.path); } catch (err) {
-        children.replaceChildren(note(err instanceof Error ? err.message : String(err), depth + 1));
+        children.replaceChildren(note(errorText(err), depth + 1));
         return;
       }
       children.replaceChildren();
@@ -354,7 +354,7 @@ export class FileTree {
         error.textContent = '';
         if (!plainPart(v)) { error.textContent = t('A name has no “/” and does not start with “.”'); input.focus(); return; }
         input.disabled = true;
-        try { await go(v); } catch (err) { input.disabled = false; error.textContent = message(err); input.focus(); }
+        try { await go(v); } catch (err) { input.disabled = false; error.textContent = errorText(err); input.focus(); }
       });
       b.replaceWith(h('div', {class: 'pop-field'}, input, error));
       input.focus();
@@ -417,7 +417,7 @@ export class FileTree {
             this.unpop();
             await this.again(parent);
             parent?.querySelector<HTMLElement>(':scope > .tree-row > .tree-name')?.focus();
-          } catch (err) { yes.disabled = false; error.textContent = message(err); }
+          } catch (err) { yes.disabled = false; error.textContent = errorText(err); }
         });
         b.replaceWith(ask);
         yes.focus();

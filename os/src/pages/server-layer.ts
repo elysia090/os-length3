@@ -10,10 +10,11 @@ import {todoList} from './todo-box.ts';
 import {dockFor} from './server-dock.ts';
 import {gear as gearSheet} from './server-gear.ts';
 import {seeRepo as repoSheet} from './server-repo.ts';
-import {button, initials, message, type Shown} from './server-parts.ts';
+import {button, initials, type Shown} from './server-parts.ts';
 import {answers} from './common.ts';
 import {boardNew, onNews, sawBoard, serverNew} from '../news.ts';
 import {every} from '../runs.ts';
+import {errorText} from '../errors.ts';
 
 // Server is an operation, as File is: laid over whatever page is showing,
 // never a page of its own. It is the one thing whose subject is people, not
@@ -244,7 +245,7 @@ export class ServerLayer {
       const left = h('small', {class: 'muted'});
       const status = h('p', {class: 'error small', role: 'alert'});
       let list: servers.BoardTodo[];
-      try { list = await servers.todos(b.id, b.member); } catch (e) { holder.replaceChildren(h('p', {class: 'error'}, message(e))); return; }
+      try { list = await servers.todos(b.id, b.member); } catch (e) { holder.replaceChildren(h('p', {class: 'error'}, errorText(e))); return; }
       if (!b.member && !list.length) { holder.remove(); return; }
       // Not sent (the Remote away): said under the list, and sent again by itself.
       const keeper = b.member ? servers.todoKeeper(b.id, list, {trouble: (why) => { status.textContent = t('Could not save: {message}', {message: why}); }}) : null;
@@ -279,7 +280,7 @@ export class ServerLayer {
           const b = await servers.makeBoard(serverId, name.value);
           current()?.boards.push(b);
           show(serverId, b.id);
-        } catch (e) { error.textContent = message(e); make.disabled = false; }
+        } catch (e) { error.textContent = errorText(e); make.disabled = false; }
       };
       make.addEventListener('click', () => void done());
       name.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); void done(); } });
@@ -397,7 +398,7 @@ export class ServerLayer {
             const inbox = button(t('Go to Inbox'), 'small-button');
             inbox.addEventListener('click', () => { this.close(); this.ctx.go('inbox'); });
             error.replaceChildren(t('A server needs your name. Claim one in Inbox.'), ' ', inbox);
-          } else error.textContent = message(e);
+          } else error.textContent = errorText(e);
         }
       };
       make.addEventListener('click', () => void done());
@@ -407,9 +408,9 @@ export class ServerLayer {
       void servers.goneServers().then((held) => back.replaceChildren(...held.map((g) => {
         const b = button(t('Bring back {name}', {name: g.name}), 'small-button');
         b.title = t('Held until {date}', {date: day(g.until)});
-        b.addEventListener('click', async () => { b.disabled = true; try { await servers.bringBack(g.id); list = await servers.servers(); show(g.id); } catch (e) { b.textContent = message(e); } });
+        b.addEventListener('click', async () => { b.disabled = true; try { await servers.bringBack(g.id); list = await servers.servers(); show(g.id); } catch (e) { b.textContent = errorText(e); } });
         return b;
-      })), (e) => back.replaceChildren(h('p', {class: 'error small'}, message(e))));
+      })), (e) => back.replaceChildren(h('p', {class: 'error small'}, errorText(e))));
       track.replaceChildren(h('div', {class: 'slide', 'aria-current': 'true'}, h('div', {class: 'board-card board-new'},
         h('div', {class: 'board-head'}, h('span', {class: 'muted'}, '+'), h('h2', {}, t('Make a server'))),
         h('div', {class: 'board-body'},
@@ -485,7 +486,7 @@ export class ServerLayer {
               b.addEventListener('click', () => seeRepo(r));
               return h('li', {}, b);
             }))) : '');
-      }).catch((e) => { if (mine === sideToken) side.replaceChildren(h('p', {class: 'error'}, message(e))); });
+      }).catch((e) => { if (mine === sideToken) side.replaceChildren(h('p', {class: 'error'}, errorText(e))); });
     };
 
     // ---- a repo shown: seen as it was last pushed, in the boards' place ----
@@ -523,7 +524,7 @@ export class ServerLayer {
         }
         const first = list.find((s) => s.id === at.server) ?? list[0];
         if (first) show(first.id); else makeServer();
-      }).catch((e) => track.replaceChildren(h('p', {class: 'error'}, message(e))));
+      }).catch((e) => track.replaceChildren(h('p', {class: 'error'}, errorText(e))));
     } else {
       paintTop();
       paintSide();
@@ -546,7 +547,7 @@ export class ServerLayer {
         track.replaceChildren(...shown.map(() => h('div', {class: 'slide'})));
         const i = shown.findIndex((b) => b.id === (held?.board ?? at.board));
         go(i >= 0 ? i : 0);
-      }).catch((e) => track.replaceChildren(h('p', {class: 'error'}, message(e))));
+      }).catch((e) => track.replaceChildren(h('p', {class: 'error'}, errorText(e))));
     }
 
     return work;

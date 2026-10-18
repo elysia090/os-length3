@@ -12,6 +12,7 @@ import {closedList, mainCard, mergedList} from './git-done.ts';
 import {issueBox, issueHead, mergeRow, reviewBox, type RepoState} from './git-issue.ts';
 import {laidOut, type Laid} from '../git-state.ts';
 import {issueForm} from './issue-form.ts';
+import {errorText} from '../errors.ts';
 
 /**
  * Git: what happens between a repo and the outside, in the issues' terms.
@@ -163,7 +164,7 @@ export function git(ctx: Context): Node[] {
         const uncommitted = (await gitops.changes(r)).files;
         fresh.set(r, {work, lines, changes, uncommitted});
       } catch (e) {
-        fresh.set(r, {work: null, lines: [], changes: [], uncommitted: 0, error: e instanceof Error ? e.message : String(e)});
+        fresh.set(r, {work: null, lines: [], changes: [], uncommitted: 0, error: errorText(e)});
       }
     }));
     states = fresh;
@@ -235,7 +236,7 @@ export function git(ctx: Context): Node[] {
     b.addEventListener('click', async () => {
       b.disabled = true;
       b.textContent = t('Bringing it…');
-      try { await bring(r.name); load(); } catch (e) { b.disabled = false; b.textContent = e instanceof Error ? e.message : String(e); }
+      try { await bring(r.name); load(); } catch (e) { b.disabled = false; b.textContent = errorText(e); }
     });
     return h('div', {class: 'fetch-row'}, h('span', {}, r.name), b);
   }));

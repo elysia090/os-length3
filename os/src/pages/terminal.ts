@@ -4,6 +4,7 @@ import {bytes, h} from '../dom.ts';
 import {isNative, promptOpen, rootStatus, type Held, type Stopped} from '../host.ts';
 import {currentLang, t, tn} from '../i18n.ts';
 import {loadUserland, loadWebRoot, watchLoad, type Stage} from '../userland.ts';
+import {errorText} from '../errors.ts';
 
 // A shell per repo, running translated BusyBox (and l3) in a Worker. Sessions
 // outlive page switches: the workbench re-attaches the same element. A
@@ -224,14 +225,14 @@ export class Session {
       // In the app the Prompt is the distribution's root; l3 through xlat
       // only until a root is installed, and the Runtime page says which.
       let why = '';
-      if (isNative && await this.startRoot().catch((e) => { why = e instanceof Error ? e.message : String(e); return false; })) return;
+      if (isNative && await this.startRoot().catch((e) => { why = errorText(e); return false; })) return;
       this.on = 'l3';
       // While l3 comes, the status says how far it is and what it is doing.
       const unwatch = watchLoad((s) => { this.status.textContent = loadWords(s); });
       // The whole root not reached: the Prompt runs l3 and its BusyBox alone, and says why.
       let rootWhy = '';
       const [land, copy, root] = await Promise.all([loadUserland(), snapshot(this.repo),
-        loadWebRoot().catch((e: unknown) => { rootWhy = e instanceof Error ? e.message : String(e); return null; })]).finally(unwatch);
+        loadWebRoot().catch((e: unknown) => { rootWhy = errorText(e); return null; })]).finally(unwatch);
       const worker = new Worker(new URL('../../../xlat/runtime/worker.mjs', import.meta.url), {type: 'module'});
       this.worker = worker;
       worker.onmessage = ({data}) => {
@@ -286,7 +287,7 @@ export class Session {
       this.live = true;
       this.tell();
     } catch (e) {
-      this.end(t('Could not start: {message}', {message: e instanceof Error ? e.message : String(e)}));
+      this.end(t('Could not start: {message}', {message: errorText(e)}));
     }
   }
 

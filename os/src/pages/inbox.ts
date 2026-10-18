@@ -10,6 +10,7 @@ import {copying, pageHead, SETTLE} from './common.ts';
 import {every} from '../runs.ts';
 import {signInBox, signInPlace} from './remote.ts';
 import type {Context} from './context.ts';
+import {errorText} from '../errors.ts';
 
 // Inbox: what comes to you, typed, from people found by address. Not a mail
 // screen: each message says what it is (a message, a review request, a
@@ -23,7 +24,6 @@ import type {Context} from './context.ts';
 //   right          the conversation, the line's state (direct, or through
 //                  the Remote), and the box to write in
 
-const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const KIND = (k: inbox.Kind) => ({message: t('Message'), review: t('Review request'), question: t('Question'), run: t('Run failed')})[k];
 
 function button(text: string, kind = ''): HTMLButtonElement {
@@ -60,7 +60,7 @@ function addressStub(me: inbox.Me, again: () => void): HTMLElement {
       error.textContent = '';
       // Asked once: Enter again while it is asked claims nothing more.
       name.readOnly = true;
-      try { await inbox.claim(name.value); again(); } catch (err) { error.textContent = message(err); } finally { name.readOnly = false; }
+      try { await inbox.claim(name.value); again(); } catch (err) { error.textContent = errorText(err); } finally { name.readOnly = false; }
     });
     stub = h('div', {class: 'stub'}, name, gear);
     note.textContent = t('A name on this Remote: first come, yours for five years at a time, renewed by you.');
@@ -97,7 +97,7 @@ function addressStub(me: inbox.Me, again: () => void): HTMLElement {
         h('p', {class: `small record-found${r.found ? ' found' : ''}`}, !r.found ? t('Not found yet') : name ? t('Found. Claiming {address}…', {address: `${name}@${domain}`}) : t('Found')));
       if (r.found && name) {
         looking?.stop();
-        try { await inbox.claim(name, domain); again(); } catch (e) { record.append(h('p', {class: 'error'}, message(e))); }
+        try { await inbox.claim(name, domain); again(); } catch (e) { record.append(h('p', {class: 'error'}, errorText(e))); }
       }
     };
     field.addEventListener('change', () => void look());
@@ -128,7 +128,7 @@ function addressStub(me: inbox.Me, again: () => void): HTMLElement {
       yes.addEventListener('click', async () => {
         if (performance.now() - shown < SETTLE) return;
         yes.disabled = true;
-        try { await inbox.release(a.address); again(); } catch (e) { yes.disabled = false; yes.textContent = message(e); }
+        try { await inbox.release(a.address); again(); } catch (e) { yes.disabled = false; yes.textContent = errorText(e); }
       });
       b.replaceWith(ask);
       yes.focus();
@@ -145,7 +145,7 @@ function addressStub(me: inbox.Me, again: () => void): HTMLElement {
       const renew = a.until && (a.ended || a.until - Date.now() < YEAR) ? h('button', {type: 'button', class: 'button small-button primary'}, t('Renew')) as HTMLButtonElement : null;
       renew?.addEventListener('click', async () => {
         renew.disabled = true;
-        try { await inbox.renew(a.address); again(); } catch (e) { renew.disabled = false; renew.textContent = message(e); }
+        try { await inbox.renew(a.address); again(); } catch (e) { renew.disabled = false; renew.textContent = errorText(e); }
       });
       return h('div', {class: 'your-row'}, h('span', {class: 'mono'}, inbox.shown(a.address)), state, renew);
     }));
@@ -207,7 +207,7 @@ export function inboxPage(ctx: Context): Node[] {
       return;
     }
     let me: inbox.Me;
-    try { me = await inbox.me(); } catch (e) { holder.replaceChildren(h('p', {class: 'error'}, message(e))); return; }
+    try { me = await inbox.me(); } catch (e) { holder.replaceChildren(h('p', {class: 'error'}, errorText(e))); return; }
     if (!me.addresses.length) { holder.replaceChildren(addressStub(me, () => void paint())); return; }
     mine = me.addresses[0].address;
     // The field to write to someone new is made once: what comes every little while changes only the rows under it.
@@ -223,7 +223,7 @@ export function inboxPage(ctx: Context): Node[] {
     start.addEventListener('click', async () => {
       if (!to.value.trim()) { to.focus(); return; }
       error.textContent = '';
-      const found: {address?: string; reachable: boolean; why?: string} = await inbox.lookup(to.value).catch((e) => ({reachable: false, why: message(e)}));
+      const found: {address?: string; reachable: boolean; why?: string} = await inbox.lookup(to.value).catch((e) => ({reachable: false, why: errorText(e)}));
       if (!found.reachable) { error.textContent = t('Cannot reach {address} ({why})', {address: to.value, why: t(found.why ?? '')}); return; }
       // Gone to: the field has done its work.
       to.value = '';
@@ -239,7 +239,7 @@ export function inboxPage(ctx: Context): Node[] {
   const paintList = async (rows: HTMLElement, pane: HTMLElement) => {
     const asked = ++listed;
     let all: inbox.Thread[] = [], unread = '';
-    try { all = await inbox.threads(); } catch (e) { unread = message(e); }
+    try { all = await inbox.threads(); } catch (e) { unread = errorText(e); }
     if (asked !== listed) return;
     const row = (th: inbox.Thread) => {
       // The open one is being read: what came to it is not counted as waiting.
@@ -277,7 +277,7 @@ export function inboxPage(ctx: Context): Node[] {
     live?.stop();
     live = null;
     shownThread = null;
-    const th = await inbox.thread(address).catch((e) => { if (asked === opened) pane.replaceChildren(h('p', {class: 'error'}, message(e))); return null; });
+    const th = await inbox.thread(address).catch((e) => { if (asked === opened) pane.replaceChildren(h('p', {class: 'error'}, errorText(e))); return null; });
     if (!th || asked !== opened) return;
     // Read is said again the next time the conversation opens; nothing waits on it. The rail's mark follows.
     const read = () => void inbox.markRead(address).then(() => look(), () => {});
@@ -333,7 +333,7 @@ export function inboxPage(ctx: Context): Node[] {
         error.textContent = '';
         try { await inbox.setContact(address, state); } catch (e) {
           for (const b of decide) b.disabled = false;
-          error.textContent = message(e);
+          error.textContent = errorText(e);
           return;
         }
         then();
@@ -366,7 +366,7 @@ export function inboxPage(ctx: Context): Node[] {
         drafts.sent(address);
         grow();
         if (r.request) error.textContent = t('Sent as a request: they see it once they accept you.');
-      } catch (e) { error.textContent = message(e); }
+      } catch (e) { error.textContent = errorText(e); }
       sendB.disabled = false;
     };
     sendB.addEventListener('click', () => void go());

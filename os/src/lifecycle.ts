@@ -18,6 +18,7 @@ import {connection, onConnection, RemoteError} from './remote.ts';
 import {kept, onChange} from './repos.ts';
 import {coalesced, shared} from './runs.ts';
 import {dropState, onState} from './state.ts';
+import {errorText} from './errors.ts';
 
 /** Where a repo here stands; 'off': turned off on the Remote (kept there 30 days), nothing is sent until it is on again. */
 export type Where = 'local' | 'sending' | 'synced' | 'offline' | 'off';
@@ -52,7 +53,6 @@ export const remoteOnly = (): readonly draft.RemoteRepo[] => onlyThere;
 /** Every repo the Remote holds, those turned off among them. */
 export const remoteAll = (): readonly draft.RemoteRepo[] => everyThere;
 
-const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 /**
  * The Remote could not be asked just now (offline, or it refused): null, so
  * what was read last stands and the next look asks again. Anything else is a
@@ -90,7 +90,7 @@ async function run(repo: string) {
     const n = (retry.get(repo) ?? 0) + 1;
     retry.set(repo, n);
     const s = states.get(repo);
-    states.set(repo, {where: 'offline', changed: s?.changed ?? 0, both: [], unsynced: s?.unsynced ?? [], error: message(e)});
+    states.set(repo, {where: 'offline', changed: s?.changed ?? 0, both: [], unsynced: s?.unsynced ?? [], error: errorText(e)});
     if (connection()) timers.set(repo, setTimeout(() => void run(repo), Math.min(60_000, 2000 * 2 ** n)));
   }
   tell();

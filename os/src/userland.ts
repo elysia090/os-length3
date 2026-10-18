@@ -1,4 +1,5 @@
 import {download, Fatal} from './fetch.ts';
+import {errorText} from './errors.ts';
 
 // l3, the one thing the Prompt depends on: the distribution's root, the l3
 // command and the translator, in one file (scripts/bundle.mjs). l3.json
@@ -115,6 +116,6 @@ export const loadUserland = (): Promise<Userland> => (loading ??= (async () => {
   return {about: a, translator, files, dirs: index.dirs, links: index.links};
 })().catch((e) => {
   loading = null;
-  tell({at: 'failed', message: e instanceof Error ? e.message : String(e)});
+  tell({at: 'failed', message: errorText(e)});
   throw e;
 }));

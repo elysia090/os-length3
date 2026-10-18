@@ -6,13 +6,13 @@ import {kindOf} from '../text.ts';
 import {answers, askFoot, SETTLE} from './common.ts';
 import {diffFiles} from './diff-view.ts';
 import {notCommitted, reopenIssue, type IssueEvents} from './git-issue.ts';
+import {errorText} from '../errors.ts';
 
 // What Git shows under the issues: what main has not committed (with its
 // Commit, named by its line as l3 commit names it), then what is done with,
 // newest first: the issues merged, read only with their diffs, and those
 // closed without being done, each with Reopen.
 
-const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const button = (text: string, kind = '') => h('button', {type: 'button', class: `button ${kind}`.trim()}, text) as HTMLButtonElement;
 
 /** The line a commit on main is being named by, per repo: kept as written until it is committed or put back with Not now. */
@@ -51,7 +51,7 @@ export function mainCard(repo: string, n: number, events: IssueEvents, after: ()
       if (!kindOf(line.value).title.trim()) { error.textContent = t('A commit needs a title (for example Fix：title)'); line.focus(); return; }
       yes.disabled = true;
       error.textContent = '';
-      try { await git.cut(repo, null, line.value, ''); naming.delete(repo); after(); } catch (e) { error.textContent = message(e); yes.disabled = false; }
+      try { await git.cut(repo, null, line.value, ''); naming.delete(repo); after(); } catch (e) { error.textContent = errorText(e); yes.disabled = false; }
     });
     // One line, nothing to break: Enter commits it, as Ctrl+Enter does.
     line.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); yes.click(); } });
@@ -81,7 +81,7 @@ export function mergedList(list: {repo: string; change: git.Change}[], all: bool
       if (!fold.open || read) return;
       read = true;
       void git.changeDiff(repo, c).then((files) => inside.replaceChildren(...(files.length ? diffFiles(files) : [h('p', {class: 'muted small'}, t('No changes'))])),
-        (e) => inside.replaceChildren(h('p', {class: 'error'}, message(e))));
+        (e) => inside.replaceChildren(h('p', {class: 'error'}, errorText(e))));
     });
     return fold;
   }));
@@ -100,7 +100,7 @@ export function closedList(list: {issue: Issue; reopen: boolean}[], all: boolean
       act.setAttribute('aria-label', t('Reopen {issue}', {issue: i.n === null ? i.title : `#${i.n}`}));
       act.addEventListener('click', async () => {
         act!.disabled = true;
-        try { await reopenIssue(i); after(); } catch (e) { error.textContent = message(e); act!.disabled = false; }
+        try { await reopenIssue(i); after(); } catch (e) { error.textContent = errorText(e); act!.disabled = false; }
       });
     }
     return h('div', {class: 'done-row done-head'}, named(i.n, i.kind, i.title), h('span', {class: 'muted small'}, all ? `${i.repo} · ${meta}` : meta), h('span', {class: 'grow'}), act, error);

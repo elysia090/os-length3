@@ -3,8 +3,9 @@ import {t} from '../i18n.ts';
 import {RemoteError} from '../remote.ts';
 import * as servers from '../servers.ts';
 import {postNow} from './talk.ts';
-import {button, message, type Shown} from './server-parts.ts';
+import {button, type Shown} from './server-parts.ts';
 import {Drafts} from '../drafts.ts';
+import {errorText} from '../errors.ts';
 
 /**
  * A post half written stays with its board (DESIGN §1): going to another board, or putting the
@@ -66,7 +67,7 @@ export function dockFor(b: Shown | null, ways: DockWays): Node[] {
       sending = true;
       note.replaceChildren();
       try { await postNow(b.id, field.value, guest?.token); field.value = ''; drafts.sent(key); fit(); } catch (e) {
-        note.textContent = message(e);
+        note.textContent = errorText(e);
         if (guest) noLonger(e);
       } finally { sending = false; }
     });
@@ -104,7 +105,7 @@ function guestIn(b: Shown, code: string, ways: DockWays): HTMLElement {
       ways.guestChanged();
     } catch (e) {
       join.disabled = false;
-      error.textContent = message(e);
+      error.textContent = errorText(e);
       // An invitation that opens nothing is let go: asking again with it cannot help.
       if (e instanceof RemoteError && e.status === 403) { servers.dropInvite(); name.disabled = join.disabled = true; }
     }

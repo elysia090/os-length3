@@ -3,6 +3,7 @@ import {currentLang, t} from '../i18n.ts';
 import {shown} from '../inbox.ts';
 import * as servers from '../servers.ts';
 import {coalesced, every} from '../runs.ts';
+import {errorText} from '../errors.ts';
 
 // A board's talk: read as a conversation is, oldest above and newest at the
 // foot, by the box one writes in. Its people write in it; so may a guest,
@@ -23,7 +24,6 @@ const KEEP = 8;
 /** How often what came is looked for, while the page is in view. */
 const EVERY = 15_000;
 
-const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /** The letters of a face: the first two of the address's name. */
 const face = (p: servers.Post) => [...p.by.split('@')[0]].slice(0, 2).join('').toUpperCase();
@@ -109,7 +109,7 @@ export function timeline(scroller: HTMLElement, board: string, member: boolean, 
           await servers.takeDown(board, p.id);
           if (s.page.posts) s.page.posts = s.page.posts.filter((q) => q.id !== p.id);
           steady(() => art.remove());
-        } catch (e) { down.disabled = false; down.textContent = message(e); }
+        } catch (e) { down.disabled = false; down.textContent = errorText(e); }
       });
       acts.append(down);
     }
@@ -188,7 +188,7 @@ export function timeline(scroller: HTMLElement, board: string, member: boolean, 
       if (page) { if (first) { add(page, 'older'); toFoot(); read(); } else steady(() => add(page, 'older')); }
       done = !r.more;
       start.textContent = done ? (pages.length ? t('That is every post') : t('No posts yet')) : '';
-    } catch (e) { start.textContent = message(e); reading = false; return; } finally { list.setAttribute('aria-busy', 'false'); }
+    } catch (e) { start.textContent = errorText(e); reading = false; return; } finally { list.setAttribute('aria-busy', 'false'); }
     reading = false;
     // A short page leaves the start in view: read on.
     if (!done && nearStart()) void older();

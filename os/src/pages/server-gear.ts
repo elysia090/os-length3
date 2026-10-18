@@ -3,7 +3,8 @@ import {t} from '../i18n.ts';
 import {shown as named, shownAs} from '../inbox.ts';
 import * as servers from '../servers.ts';
 import {copying, parts} from './common.ts';
-import {askIn, boardName, button, foot, footLeft, line, message, MOVE, smallCard} from './server-parts.ts';
+import {askIn, boardName, button, foot, footLeft, line, MOVE, smallCard} from './server-parts.ts';
+import {errorText} from '../errors.ts';
 
 // Behind the gear: what changes the server for everyone. In parts, as
 // Remote's page is (its people, the repos shown, its boards, the server
@@ -56,7 +57,7 @@ export async function gear(s: servers.Server, w: GearWays): Promise<void> {
       }
       sw.disabled = true;
       // Not narrowed: the switch goes back on, and says why.
-      try { await change(false); w.again(); } catch (e) { to(true); sw.disabled = false; said.textContent = message(e); }
+      try { await change(false); w.again(); } catch (e) { to(true); sw.disabled = false; said.textContent = errorText(e); }
     });
     return h('div', {class: 'card-row'}, h('span', {class: 'grow'}, label), sw, said);
   };
@@ -75,7 +76,7 @@ export async function gear(s: servers.Server, w: GearWays): Promise<void> {
     add.addEventListener('click', async () => {
       const inbox = await import('../inbox.ts');
       let known: {address: string}[] = [], why = '';
-      try { known = (await inbox.threads()).filter((x) => x.state === 'contact' && !people.some((p) => p.address === x.address)); } catch (e) { why = message(e); }
+      try { known = (await inbox.threads()).filter((x) => x.state === 'contact' && !people.some((p) => p.address === x.address)); } catch (e) { why = errorText(e); }
       const typed = h('input', {class: 'line-in', placeholder: t('A name or a code'), 'aria-label': t('Name or code of someone to add'),
         autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
       const go = button(t('Add'), 'small-button primary');
@@ -95,7 +96,7 @@ export async function gear(s: servers.Server, w: GearWays): Promise<void> {
           said.textContent = r.is === 'already' ? t('{who} is in it already', {who: named(r.address)})
             : t('Asked {who} in the Inbox. They come in once they accept you.', {who: named(r.address)});
           typed.value = '';
-        } catch (e) { said.className = 'error small'; said.textContent = message(e); typed.focus(); }
+        } catch (e) { said.className = 'error small'; said.textContent = errorText(e); typed.focus(); }
         go.disabled = false;
       };
       go.addEventListener('click', () => void adding());
@@ -103,7 +104,7 @@ export async function gear(s: servers.Server, w: GearWays): Promise<void> {
       const pick = h('div', {class: 'card small-card add-card'}, h('span', {class: 'card-title'}, t('Add someone you know')),
         ...(why ? [h('p', {class: 'error small'}, why)] : known.map((x) => {
           const b = button(named(x.address), 'small-button');
-          b.addEventListener('click', async () => { b.disabled = true; try { await servers.addPerson(s.id, x.address); w.again(); } catch (e) { b.textContent = message(e); } });
+          b.addEventListener('click', async () => { b.disabled = true; try { await servers.addPerson(s.id, x.address); w.again(); } catch (e) { b.textContent = errorText(e); } });
           return b;
         })),
         h('div', {class: 'row add-by-name'}, typed, go), said);
@@ -139,7 +140,7 @@ export async function gear(s: servers.Server, w: GearWays): Promise<void> {
       const c = smallCard(r.name, line(named(r.owner)), r.as ? line(t('Everyone sees it as {name}', {name: shownAs(r.as)})) : null);
       if (s.owner) {
         const off = button(t('Remove'), 'small-button');
-        off.addEventListener('click', async () => { off.disabled = true; try { await servers.takeOff(s.id, r.owner, r.name); w.again(); } catch (e) { off.textContent = message(e); } });
+        off.addEventListener('click', async () => { off.disabled = true; try { await servers.takeOff(s.id, r.owner, r.name); w.again(); } catch (e) { off.textContent = errorText(e); } });
         c.append(footLeft(off));
       }
       return c;
@@ -172,13 +173,13 @@ export async function gear(s: servers.Server, w: GearWays): Promise<void> {
             const revoke = x.mayRevoke ? button(t('Revoke'), 'small-button') : null;
             revoke?.addEventListener('click', async () => {
               revoke.disabled = true;
-              try { await servers.revokeInvite(b.id, x.id); await fill(); } catch (e) { revoke.disabled = false; said.textContent = message(e); }
+              try { await servers.revokeInvite(b.id, x.id); await fill(); } catch (e) { revoke.disabled = false; said.textContent = errorText(e); }
             });
             return row(t('An invitation from {who}', {who: named(x.by)}), t('until {date}', {date: day(x.until)}), revoke);
           });
           rows.replaceChildren(...people, ...out);
           if (!people.length && !out.length) rows.append(h('span', {class: 'muted small'}, t('No guests yet.')));
-        } catch (e) { rows.replaceChildren(h('p', {class: 'error small'}, message(e))); }
+        } catch (e) { rows.replaceChildren(h('p', {class: 'error small'}, errorText(e))); }
       };
       ask.addEventListener('click', async () => {
         ask.disabled = true;
@@ -190,7 +191,7 @@ export async function gear(s: servers.Server, w: GearWays): Promise<void> {
           copying(link, got.link);
           made.replaceChildren(link, h('span', {class: 'muted small'}, t('Pass it on yourself, to one person. It lets them in once, until {date}, and is shown only now.', {date: day(got.until)})));
           await fill();
-        } catch (e) { said.textContent = message(e); }
+        } catch (e) { said.textContent = errorText(e); }
         ask.disabled = false;
       });
       void fill();
@@ -204,7 +205,7 @@ export async function gear(s: servers.Server, w: GearWays): Promise<void> {
         const back = s.owner ? h('button', {type: 'button', class: 'button small-button off', 'aria-pressed': 'true', title: t('Bring it back')}, t('Remove')) as HTMLButtonElement : null;
         back?.addEventListener('click', async () => {
           back.disabled = true;
-          try { await servers.bringBackBoard(b.id); delete b.gone; w.boardsChanged(); w.again(); } catch (e) { back.textContent = message(e); back.disabled = false; }
+          try { await servers.bringBackBoard(b.id); delete b.gone; w.boardsChanged(); w.again(); } catch (e) { back.textContent = errorText(e); back.disabled = false; }
         });
         return h('div', {class: 'card small-card off'}, h('span', {class: 'card-title'}, boardName(b.name)), line(t('Removed · back until {date}', {date: day(b.gone)})),
           back ? h('div', {class: 'card-foot'}, back, h('span', {class: 'grow'})) : null);
@@ -227,7 +228,7 @@ export async function gear(s: servers.Server, w: GearWays): Promise<void> {
           const a = h('a', {href: URL.createObjectURL(new Blob([text], {type: 'text/markdown'})), download: `${s.name}-${b.name}.md`.replace(/[^\w.-]+/g, '-')}) as HTMLAnchorElement;
           a.click();
           setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
-        } catch (e) { take.textContent = message(e); } finally { take.disabled = false; }
+        } catch (e) { take.textContent = errorText(e); } finally { take.disabled = false; }
       });
       const out = s.owner ? button(t('Remove'), 'small-button') : null;
       out?.addEventListener('click', () => askIn(c, out, boardName(b.name), [t('#{board} goes with its talk and TODO.', {board: b.name}), t('You can bring it back within 30 days.')], t('Remove'), async () => {
@@ -246,7 +247,7 @@ export async function gear(s: servers.Server, w: GearWays): Promise<void> {
       s.until ? line(s.until <= Date.now() ? t('Its term ended; held for it until {date}', {date: day(s.until + 30 * 86_400_000)}) : t('Until {date}', {date: day(s.until)})) : null);
     if (s.owner && s.until && s.until - Date.now() < YEAR) {
       const renew = button(t('Renew'), 'small-button primary');
-      renew.addEventListener('click', async () => { renew.disabled = true; try { const r = await servers.renewServer(s.id); s.until = r.until; w.again(); } catch (e) { renew.textContent = message(e); } });
+      renew.addEventListener('click', async () => { renew.disabled = true; try { const r = await servers.renewServer(s.id); s.until = r.until; w.again(); } catch (e) { renew.textContent = errorText(e); } });
       name.append(foot(renew));
     }
     const leaving = mine ? smallCard(t('Leave this server'), line(s.owner ? t('It goes to whoever came next.') : '')) : null;
@@ -264,5 +265,5 @@ export async function gear(s: servers.Server, w: GearWays): Promise<void> {
       removing.append(foot(go));
     }
     grid('server', name, leaving, removing);
-  } catch (e) { tabs.panel(tabs.current()).replaceChildren(h('p', {class: 'error'}, message(e))); }
+  } catch (e) { tabs.panel(tabs.current()).replaceChildren(h('p', {class: 'error'}, errorText(e))); }
 }

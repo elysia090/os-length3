@@ -6,6 +6,7 @@ import {answers, pageHead} from './common.ts';
 import {repoList} from './repo-list.ts';
 import type {Context} from './context.ts';
 import {triangle} from './tree.ts';
+import {errorText} from '../errors.ts';
 
 /**
  * +: the repo's name on the first line; under it, in a large box, what it
@@ -121,7 +122,7 @@ export function newRepo(ctx: Context): Node[] {
     try {
       await store.create(n, template);
     } catch (e) {
-      error.textContent = t('Could not create: {message}', {message: String(e)});
+      error.textContent = t('Could not create: {message}', {message: errorText(e)});
       submit.disabled = false;
       submit.focus();
       return;
@@ -130,7 +131,7 @@ export function newRepo(ctx: Context): Node[] {
     let unwritten = '';
     // Every template begins its README.md with the title; what it is for goes under it.
     if (about && TEMPLATES.find((x) => x.id === template)!.files.includes('README.md')) {
-      try { await store.write(n, 'README.md', `# ${n}\n\n${about}\n`); } catch (e) { unwritten = String(e); }
+      try { await store.write(n, 'README.md', `# ${n}\n\n${about}\n`); } catch (e) { unwritten = errorText(e); }
     }
     made(n);
     if (unwritten) error.textContent = t('{what} could not be written ({why})', {what: `${n}/README.md`, why: unwritten});

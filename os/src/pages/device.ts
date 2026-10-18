@@ -3,6 +3,7 @@ import {t} from '../i18n.ts';
 import * as remote from '../remote.ts';
 import {signInBox} from './remote.ts';
 import {answers} from './common.ts';
+import {errorText} from '../errors.ts';
 
 // The page a device's code opens (?device&user_code=…): l3 or the app asks
 // to join this account. The person signs in here if not already (and comes
@@ -35,19 +36,19 @@ export function devicePage(given: string): HTMLElement {
     }
     let who: {clientId: string; status: string};
     try { who = await remote.deviceAsking(code); } catch (e) {
-      body.replaceChildren(h('p', {class: 'error'}, t('This code cannot be used ({why}).', {why: e instanceof Error ? e.message : String(e)})));
+      body.replaceChildren(h('p', {class: 'error'}, t('This code cannot be used ({why}).', {why: errorText(e)})));
       return;
     }
     const yes = h('button', {class: 'button primary', type: 'button'}, t('Connect')) as HTMLButtonElement;
     const no = h('button', {class: 'button', type: 'button'}, t('Refuse')) as HTMLButtonElement;
     yes.addEventListener('click', async () => {
       yes.disabled = no.disabled = true;
-      try { await remote.approveDevice(code); finish(t('Connected. Go back to the device.')); } catch (e) { error.textContent = e instanceof Error ? e.message : String(e); yes.disabled = no.disabled = false; }
+      try { await remote.approveDevice(code); finish(t('Connected. Go back to the device.')); } catch (e) { error.textContent = errorText(e); yes.disabled = no.disabled = false; }
     });
     no.addEventListener('click', async () => {
       yes.disabled = no.disabled = true;
       // Refused only once the Remote says so; until then the device could still be let in.
-      try { await remote.denyDevice(code); finish(t('Refused.')); } catch (e) { error.textContent = e instanceof Error ? e.message : String(e); yes.disabled = no.disabled = false; }
+      try { await remote.denyDevice(code); finish(t('Refused.')); } catch (e) { error.textContent = errorText(e); yes.disabled = no.disabled = false; }
     });
     body.replaceChildren(
       h('p', {}, t('{client} asks to join this account. Check that the device shows the same code.', {client: client(who.clientId)})),

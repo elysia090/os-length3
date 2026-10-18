@@ -11,6 +11,7 @@ import {flush, look, repoState} from './lifecycle.ts';
 import {connection} from './remote.ts';
 import {kept, store} from './repos.ts';
 import {t, tn} from './i18n.ts';
+import {errorText} from './errors.ts';
 
 /** `open`: repos a Prompt has open in this page (the app knows its own). */
 export async function readSpace(open: string[] = []): Promise<Space> {
@@ -76,7 +77,7 @@ export async function free(ids: string[]): Promise<Freed> {
         await draft.forget(name);
         removed.push(id);
         freed += size;
-      } catch (e) { kept_.push([id, e instanceof Error ? e.message : String(e)]); }
+      } catch (e) { kept_.push([id, errorText(e)]); }
     }
     const after = (await readCapacity())?.free ?? before;
     result = {freed, freed_certainty: 'Estimated', removed, kept: kept_, host_free_before: before, host_free_after: after, host_change: 'Estimated', reflected_ms: null};

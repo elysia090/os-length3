@@ -2,6 +2,7 @@ import {h} from '../dom.ts';
 import type {DiffLine, FileDiff} from '../history.ts';
 import {t, tn} from '../i18n.ts';
 import {askFoot, SETTLE} from './common.ts';
+import {errorText} from '../errors.ts';
 
 /** Files open at first; past them, a file shows its name and counts until opened. */
 const OPEN = 3;
@@ -47,7 +48,7 @@ function putBackButton(f: FileDiff, head: HTMLElement, act: (f: FileDiff) => Pro
       if (performance.now() - shown < SETTLE) return;
       yes.disabled = true;
       // Done, the diff is drawn again from what is there now.
-      try { await act(f); } catch (x) { error.textContent = x instanceof Error ? x.message : String(x); yes.disabled = false; }
+      try { await act(f); } catch (x) { error.textContent = errorText(x); yes.disabled = false; }
     });
     head.classList.add('asking');
     head.replaceChildren(h('span', {class: 'diff-name'}, f.path), ...BACK(f).map((l) => h('span', {class: 'muted small'}, l)), error, foot(no, yes));
