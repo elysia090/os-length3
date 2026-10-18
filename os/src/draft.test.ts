@@ -7,6 +7,8 @@ import {createApp, sha256} from '../service/app.ts';
 import {createAuth} from '../service/auth.ts';
 import {memoryBucket} from '../service/bucket.ts';
 import * as schema from '../service/schema.ts';
+import {purge} from '../service/sweep.ts';
+import {sql} from 'drizzle-orm';
 
 // A browser on one Remote, all in this process: its storage is a map, and
 // every fetch goes to the service itself.
@@ -35,13 +37,14 @@ const {setState, getState} = await import('./state.ts');
 const enc = new TextEncoder();
 
 /** Signing in as the browser does: the stand-in provider's page, then back. */
-const signIn = async () => {
+const signIn = async (name?: string) => {
   const asked = await fetch(`${URL_}/api/auth/sign-in/social`, {method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({provider: 'dev', callbackURL: `${APP}/`})});
   const cookies = asked.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
   const go = new URL(((await asked.json()) as {url: string}).url);
   const approve = new URL(`${URL_}/dev-oauth/approve`);
   for (const k of ['redirect_uri', 'state']) approve.searchParams.set(k, go.searchParams.get(k) ?? '');
+  if (name) approve.searchParams.set('name', name);
   const back = (await fetch(approve.toString())).headers.get('Location')!;
   return (await fetch(back, {headers: {Cookie: cookies}})).headers.get('set-auth-token')!;
 };
@@ -211,6 +214,26 @@ test('a setting changed here and not sent yet is not let go with the page; one a
   assert.equal(draft.homeAgreed().includes('todo'), false);
   await draft.syncHome('todo');
   assert.ok(draft.homeAgreed().includes('todo'));
+});
+
+test('a copy in step is never taken apart by a Remote that does not have it: discarded there, or another account\'s', async () => {
+  await store.create('kept', 'standard');
+  await store.write('kept', 'README.md', '# kept\n');
+  await draft.sync('kept');
+  const files = async () => (await store.tree('kept', '')).map((e) => e.name).sort();
+  const before = await files();
+  // Discarded on another device (turned off, then for good): nothing here is taken for removed, nor called in step.
+  await db.execute(sql`update repo set off_at = now() where name = 'kept'`);
+  await purge(db, sql`r.name = 'kept'`);
+  await assert.rejects(draft.sync('kept'), /discarded on the Remote/);
+  assert.deepEqual(await files(), before);
+  assert.equal(await text('kept', 'README.md'), '# kept\n');
+  // Someone else signed in on this browser, whose Remote has no such repo: the same.
+  const other = await signIn('Mio Other');
+  await setState('remote', JSON.stringify({url: URL_, token: other}));
+  await assert.rejects(draft.sync('kept'), /does not have this repo/);
+  assert.deepEqual(await files(), before);
+  await setState('remote', JSON.stringify({url: URL_, token}));
 });
 
 test('an issue is worked on in its own copy; pushed, submitted, reviewed and merged into main', async () => {

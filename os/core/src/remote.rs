@@ -827,10 +827,7 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
         let here = local_tree(&dir);
         out.unsynced = here.unsynced.clone();
         // Before sending, see whether the Remote moved.
-        let there = match client.call("GET", &path, None)? {
-            Reply::Ok(v) => Some(v),
-            _ => None,
-        };
+        let there = there_of(client.call("GET", &path, None)?, base.version)?;
         let remote_version = there.as_ref().and_then(|v| v["version"].as_i64()).unwrap_or(0);
         if remote_version != base.version {
             let v = there.unwrap_or_default();
@@ -893,6 +890,19 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
         }
     }
     Ok(out)
+}
+
+/// What the Remote has of a line, for a copy that last agreed `agreed` with it.
+/// In step before and not on the Remote now (discarded there, or another
+/// account's): nothing here is taken for removed, and why is said
+/// (src/draft.ts does the same).
+fn there_of(reply: Reply, agreed: i64) -> Result<Option<serde_json::Value>> {
+    match reply {
+        Reply::Ok(v) => Ok(Some(v)),
+        Reply::NotFound if agreed > 0 => Err(failed(Failure::Status(404),
+            crate::tr!("The Remote does not have this repo; the copy here is kept", "Remote にこの repo がありません。ここの写しは残してあります"))),
+        _ => Ok(None),
+    }
 }
 
 /// A repo the Remote holds.
@@ -1114,6 +1124,15 @@ mod tests {
         // Removed here but changed there: the change comes back.
         assert_eq!(p.take, vec![("b".into(), Some(Some("3".into()))), ("dir".into(), Some(None)), ("edited".into(), Some(Some("2".into()))), ("gone".into(), None)]);
         assert_eq!(p.both, vec![("c".into(), Some("y".into()))]);
+    }
+
+    #[test]
+    fn a_copy_in_step_is_not_taken_apart_by_a_remote_without_it() {
+        // Never in step: the Remote's empty, and all here is new.
+        assert_eq!(there_of(Reply::NotFound, 0), Ok(None));
+        // In step before: not taken for removed there, and said.
+        assert!(there_of(Reply::NotFound, 3).is_err_and(|e| e.contains("does not have this repo") || e.contains("この repo がありません")));
+        assert_eq!(there_of(Reply::Ok(serde_json::json!({"version": 3})), 3), Ok(Some(serde_json::json!({"version": 3}))));
     }
 
     #[test]

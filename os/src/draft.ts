@@ -251,7 +251,13 @@ async function inStep(repo: string): Promise<Synced> {
     const base = baseOf(repo) ?? {version: 0, tree: {}, head: null};
     const here = await localTree(repo, base.away, base.tree);
     const r = await api(path);
-    const there = r.status === 404 ? null : await r.json() as {version: number; draft: Tree; head: string | null};
+    const missing = r.status === 404 ? await r.json().catch(() => ({})) as {gone?: number} : null;
+    // In step before and not on the Remote now (discarded there, or another account's): nothing here is taken
+    // for removed, nor is it called in step. The copy stays as it is, and why is said.
+    if (missing && base.version > 0) {
+      throw new RemoteError(404, missing.gone ? t('This repo was discarded on the Remote; the copy here is kept') : t('The Remote does not have this repo; the copy here is kept'));
+    }
+    const there = missing ? null : await r.json() as {version: number; draft: Tree; head: string | null};
     const remoteVersion = there?.version ?? 0;
     if (remoteVersion !== base.version) {
       const tree = there?.draft ?? {};
