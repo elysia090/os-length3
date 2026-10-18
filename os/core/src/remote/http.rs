@@ -77,6 +77,9 @@ pub(super) fn refused(code: u16, r: ureq::Response) -> String {
     let said = v["error"].as_str().or(v["message"].as_str()).unwrap_or_default().to_string();
     let message = match (code, said.as_str()) {
         (401, _) => return unknown(),
+        // A Remote with no place for files (service/bucket.ts): nothing was agreed, so what is here stays and is sent later.
+        (503, _) if v["files"] == serde_json::Value::Bool(false) => crate::tr!("The Remote cannot hold files just now; your work stays on this device",
+            "Remote はいまファイルを置けません。作業はこの端末に残ります"),
         (429, _) => crate::tr!("The Remote is asked too often just now; try again in a minute", "いま Remote への問い合わせが多すぎます。少し待ってからどうぞ"),
         // Discarded for good (service/app.ts `gone`): nothing brings it back, and saying "turn it on" sent
         // people to a command that could only fail.

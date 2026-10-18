@@ -77,7 +77,9 @@ export async function api(path: string, init: RequestInit = {}, c: Connection | 
     throw new RemoteError(401, t('The Remote no longer knows this device. Sign in again.'));
   }
   if (r.status >= 400 && r.status !== 404 && r.status !== 409) {
-    const body = await r.json().catch(() => ({})) as {message?: string; error?: string};
+    const body = await r.json().catch(() => ({})) as {message?: string; error?: string; files?: boolean};
+    // A Remote with no place for files (service/bucket.ts): nothing is lost, the work waits here and is sent once it can be.
+    if (r.status === 503 && body.files === false) throw new RemoteError(503, t('The Remote cannot hold files just now; your work stays on this device'), body);
     // The Remote says why in a short English sentence; it is shown in the person's language. What else it
     // says (the plan's rule, what is used) comes along for the place that asked.
     throw new RemoteError(r.status, t(body.message ?? body.error ?? `Remote: ${r.status}`), body as Record<string, unknown>);

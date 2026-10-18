@@ -11,7 +11,7 @@
 //   3. a name on a domain of one's own (name@yourdomain), and more names here
 //
 // Each rule is one function below, called by the one route it guards: a new
-// repo and a draft that grows (app.ts PATCH draft), making a server
+// repo and a draft that grows (repos.ts PATCH draft), making a server
 // (servers.ts), claiming a name (inbox.ts). A refusal is 402 with the rule,
 // what is used and what the allowance is, and whether paying is offered
 // here, so a client says it in place and keeps the work on the device.
