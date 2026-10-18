@@ -570,7 +570,7 @@ export function remote(ctx: Context): Node[] {
     page.onShow((k) => { if (k === 'plan') void plan.paint(); });
     const back = () => { if (!holder.isConnected) { document.removeEventListener('visibilitychange', back); return; } if (!document.hidden) void plan.paint(); };
     document.addEventListener('visibilitychange', back);
-    // Under the parts, not over them; a passkey added from it shows under Sign-in at once.
+    // Under the repos (it is what lets one be turned off); a passkey added from it shows under Sign-in at once.
     const offer = isNative ? null : passkeyOffer(() => { shown = null; paint(); });
     // A Remote entered by its link has no passkeys or providers to manage: only the code a repo is turned off with.
     const signIn = () => {
@@ -588,7 +588,9 @@ export function remote(ctx: Context): Node[] {
     holder.replaceChildren(
       h('div', {class: 'part-bar'}, page.switch),
       awayLine(),
-      page.panel('repos'), page.panel('sign-in'), page.panel('devices'), page.panel('plan'), ...(offer ? [offer] : []));
+      page.panel('repos'), page.panel('sign-in'), page.panel('devices'), page.panel('plan'));
+    // The passkey offer belongs to the repos it lets be turned off: under them, never under another part.
+    if (offer) page.panel('repos').append(offer);
   };
   paint();
   const stop = account.onConnection(() => { if (!holder.isConnected) { stop(); return; } paint(); });
