@@ -162,8 +162,14 @@ export class ServerLayer {
     let alone: string | null = null;
     let k = 0;
     const at = remembered();
-    const writers: (() => boolean)[] = [];
-    this.writing = () => writers.some((f) => f());
+    // What is being written, by where it is written: a board's TODO, a name, the box at the foot. One no longer on
+    // screen (the board moved away from) is let go, so moving along the boards holds no old box or talk.
+    const writers = new Map<Element | 'dock', () => boolean>();
+    const writer = (at: Element | 'dock', busy: () => boolean) => {
+      for (const k of writers.keys()) if (k !== 'dock' && !k.isConnected) writers.delete(k);
+      writers.set(at, busy);
+    };
+    this.writing = () => { for (const [k, f] of writers) if (k === 'dock' || k.isConnected) { if (f()) return true; } return false; };
     // Who one is, to mark oneself among the people; not known (away), no one is marked, and nothing else changes.
     const myself = signedIn ? import('../inbox.ts').then((inbox) => inbox.me()).catch(() => null) : Promise.resolve(null);
     const isMe = async (address: string) => !!(await myself)?.addresses.some((a) => a.address === address);
@@ -244,7 +250,7 @@ export class ServerLayer {
       const keeper = b.member ? servers.todoKeeper(b.id, list, {trouble: (why) => { status.textContent = t('Could not save: {message}', {message: why}); }}) : null;
       const box = todoList(list, keeper ? (kept) => keeper.save(kept) : async () => {},
         {readOnly: !b.member, first: t('Something to do together'), counted: (x) => { left.textContent = x; }, failed: (why) => { status.textContent = why; }});
-      writers.push(() => holder.contains(document.activeElement) || (keeper ? !keeper.idle() : false));
+      writer(holder, () => holder.contains(document.activeElement) || (keeper ? !keeper.idle() : false));
       holder.replaceChildren(h('div', {class: 'board-todo-head'}, h('span', {}, 'TODO'), left), box.element, status);
       let seen = JSON.stringify(list);
       // Looked at again every 15 s while the page is in view, until the box is gone: one not answered is the next one's to bring.
@@ -264,9 +270,10 @@ export class ServerLayer {
       const name = h('input', {class: 'line-in', maxlength: '64', placeholder: t('What it is about'), 'aria-label': t('New board')}) as HTMLInputElement;
       const make = button(t('Make'), 'primary');
       const error = h('p', {class: 'error', role: 'alert'});
-      writers.push(() => document.activeElement === name || !!name.value.trim());
+      writer(name, () => document.activeElement === name || !!name.value.trim());
       const done = async () => {
-        if (!name.value.trim() || !serverId) return;
+        // Enter pressed again while it is made makes no second board.
+        if (!name.value.trim() || !serverId || make.disabled) return;
         make.disabled = true;
         try {
           const b = await servers.makeBoard(serverId, name.value);
@@ -375,9 +382,10 @@ export class ServerLayer {
       handle.addEventListener('input', () => { own = handle.value !== ''; });
       const make = button(t('Make'), 'primary');
       const error = h('p', {class: 'error', role: 'alert'});
-      writers.push(() => document.activeElement === name || document.activeElement === handle || !!name.value.trim());
+      writer(name, () => document.activeElement === name || document.activeElement === handle || !!name.value.trim());
       const done = async () => {
-        if (!name.value.trim()) return;
+        // Enter pressed again while it is made makes no second server.
+        if (!name.value.trim() || make.disabled) return;
         make.disabled = true;
         try {
           const s = await servers.makeServer(name.value, handle.value);
@@ -447,7 +455,7 @@ export class ServerLayer {
       dock.replaceChildren(...dockFor(b, {
         signedIn,
         pinned: () => this.pinned,
-        writing: (busy) => writers.push(busy),
+        writing: (busy) => writer('dock', busy),
         holding: (words) => { this.holding = words; },
         signIn: () => { this.close(); this.ctx.go('remote'); },
         guestChanged: () => paintTop(),
