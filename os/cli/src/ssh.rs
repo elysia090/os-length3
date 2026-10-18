@@ -320,7 +320,7 @@ fn resize(fd: i32, cols: u16, rows: u16) {
 async fn write_all(m: &AsyncFd<std::fs::File>, mut bytes: &[u8]) -> std::io::Result<()> {
     while !bytes.is_empty() {
         let mut g = m.writable().await?;
-        match g.try_io(|f| (&*f.get_ref()).write(bytes)) {
+        match g.try_io(|f| f.get_ref().write(bytes)) {
             Ok(Ok(n)) => bytes = &bytes[n..],
             Ok(Err(e)) => return Err(e),
             Err(_) => continue,
@@ -334,7 +334,7 @@ async fn pump_pty(m: Arc<AsyncFd<std::fs::File>>, handle: server::Handle, id: Ch
     let mut buf = vec![0u8; 16 * 1024];
     loop {
         let Ok(mut g) = m.readable().await else { return };
-        match g.try_io(|f| (&*f.get_ref()).read(&mut buf)) {
+        match g.try_io(|f| f.get_ref().read(&mut buf)) {
             Ok(Ok(0)) | Ok(Err(_)) => return,
             Ok(Ok(n)) => { if handle.data(id, buf[..n].to_vec()).await.is_err() { return; } }
             Err(_) => continue,
