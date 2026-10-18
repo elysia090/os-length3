@@ -394,6 +394,8 @@ enum Why { Off, SignedOut, Asked }
 /// What it says of itself when a client connects, before anything else: the protocol and a plain name, not the
 /// SSH library or its version.
 const SERVER_ID: &str = "SSH-2.0-length3";
+    [Algorithm::Ed25519, Algorithm::Ecdsa { curve: EcdsaCurve::NistP256 }, Algorithm::Ecdsa { curve: EcdsaCurve::NistP384 }, Algorithm::Ecdsa { curve: EcdsaCurve::NistP521 }]
+};
 
 /// The sockets listened on, one an address (ssh::listen_on), each with the task taking its connections; and the
 /// addresses listened on, as every connection watches them: one that came in on an address let go is closed.
@@ -561,11 +563,11 @@ fn accept(stream: tokio::net::TcpStream, peer: SocketAddr, shared: &Arc<Shared>,
     let conn = Conn { shared: shared.clone(), peer: peer.ip(), repo: None, channels: Default::default(), authed: authed.clone() };
     let config = config.clone();
     tokio::spawn(async move {
-        let session = match server::run_stream(config, stream, conn).await {
+        let mut session = match server::run_stream(config, stream, conn).await {
             Ok(s) => s,
             Err(e) => { log(&format!("{} ended: {e}", peer.ip())); return; }
         };
-        // Not signed in within the grace, the connection goes (dropped, it is closed).
+        // Not signed in within the grace, the connection goes.
         let grace = async {
             tokio::time::sleep(GRACE).await;
             if authed.load(std::sync::atomic::Ordering::SeqCst) { std::future::pending::<()>().await; }
@@ -575,10 +577,15 @@ fn accept(stream: tokio::net::TcpStream, peer: SocketAddr, shared: &Arc<Shared>,
                 if bound.changed().await.is_err() { std::future::pending::<()>().await; }
             }
         };
-        tokio::select! {
-            _ = session => {}
-            _ = grace => log(&format!("{} closed: not signed in within {} s", peer.ip(), GRACE.as_secs())),
-            _ = let_go => log(&format!("{} closed: {local} is no longer listened on", peer.ip())),
-        }
+        let why = tokio::select! {
+            _ = &mut session => return,
+            _ = grace => format!("not signed in within {} s", GRACE.as_secs()),
+            _ = let_go => format!("{local} is no longer listened on"),
+        };
+        // The session runs in a task of its own, which dropping it here would leave running: it is told to end,
+        // and with it the channels and the sessions' processes (run_channel).
+        log(&format!("{} closed: {why}", peer.ip()));
+        let _ = session.handle().disconnect(russh::Disconnect::ByApplication, why, String::new()).await;
+        let _ = tokio::time::timeout(Duration::from_secs(5), session).await;
     });
 }
