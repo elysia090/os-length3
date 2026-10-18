@@ -443,7 +443,7 @@ pub fn serve() -> Result<(), String> {
 fn accept(stream: tokio::net::TcpStream, peer: SocketAddr, shared: &Arc<Shared>, config: &Arc<server::Config>) {
     let local = stream.local_addr().map(|a| a.ip()).ok();
     if !local.is_some_and(ssh::reachable) {
-        log(&format!("{} closed: came in on {:?}, not a private address", peer.ip(), local));
+        log(&format!("{} closed: came in on {}, not a private address", peer.ip(), local.map_or("?".into(), |a| a.to_string())));
         return;
     }
     if shared.tries.lock().map(|mut t| t.held(peer.ip(), Instant::now())).unwrap_or(true) {
