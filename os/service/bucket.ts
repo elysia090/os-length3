@@ -2,6 +2,14 @@
 // service writes each blob once, under a key that is its digest, so nothing
 // here is ever overwritten in place; a blob no tree names any more is
 // deleted (sweep.ts).
+//
+// The bucket is the only thing the Remote needs besides its database, and
+// only for bytes: a Remote with none bound (no R2 yet, `dev.ts --no-bucket`)
+// does everything else, and each route that would move bytes answers
+// `noFiles` instead (files.ts, seen.ts), so a client keeps its files where
+// they are and says so.
+
+import type {Context} from 'hono';
 
 export interface Bucket {
   get(key: string): Promise<Uint8Array | null>;
@@ -11,6 +19,15 @@ export interface Bucket {
   /** These objects gone (those already gone are no matter). */
   delete(keys: string[]): Promise<void>;
 }
+
+/** Where an account's blob is kept: one key per account and digest. */
+export const blobKey = (user: string, sha: string) => `u/${user}/${sha}`;
+/** Where a release bundle is kept, by its digest (deploy uploads, GET /v1/os/:sha). */
+export const releaseKey = (sha: string) => `os/${sha}`;
+
+/** What a Remote with no bucket says to a request that would move bytes: one answer, everywhere. */
+export const NO_FILES = {error: 'The Remote cannot hold files just now', files: false} as const;
+export const noFiles = (c: Context) => c.json(NO_FILES, 503);
 
 export function memoryBucket(): Bucket & {keys(): string[]} {
   const m = new Map<string, Uint8Array>();

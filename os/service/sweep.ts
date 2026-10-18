@@ -21,7 +21,7 @@
 //                                     looked for only in accounts whose room says something changed
 
 import {sql, type SQL} from 'drizzle-orm';
-import type {Bucket} from './bucket.ts';
+import {blobKey, type Bucket} from './bucket.ts';
 import {HOLD} from './names.ts';
 import {ago, lock, rows, type Db} from './request.ts';
 
@@ -92,7 +92,7 @@ export async function sweep(db: Db, bucket: Bucket): Promise<Record<string, numb
       await tx.execute(sql`update room set unswept = exists (select 1 from blob b where b.user_id = ${user} and b.created_at >= ${ago(DAY)})
         where user_id = ${user}`);
       // Bytes that fail to go are only room taken: the blob is no longer anyone's.
-      if (unnamed.length) await bucket.delete(unnamed.map((b) => `u/${user}/${b.sha256}`)).catch((e: unknown) => console.error('sweep: bytes stay', e));
+      if (unnamed.length) await bucket.delete(unnamed.map((b) => blobKey(user, b.sha256))).catch((e: unknown) => console.error('sweep: bytes stay', e));
     });
   }
   return gone;

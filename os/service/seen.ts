@@ -21,7 +21,7 @@
 
 import {and, eq, inArray, isNull, not, sql} from 'drizzle-orm';
 import type {Context, Hono} from 'hono';
-import type {Bucket} from './bucket.ts';
+import {blobKey, type Bucket} from './bucket.ts';
 import {byCode, HOLD, live, liveAddress, serverAddress, shownAs, takeDown} from './names.ts';
 import {body, qualified, refuse, rows, type Db, type Vars} from './request.ts';
 import {address, cut, line, member, repo, repoPublic, repoShare, server} from './schema.ts';
@@ -252,7 +252,7 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const at = path && path.length <= 1024 ? await find(c, c.req.param('face'), c.req.param('name')) : null;
     const [f] = at ? await db.select({sha: sql<string | null>`${cut.tree} ->> ${path}`}).from(cut).where(pushedAt(at.row)) as {sha: string | null}[] : [];
     if (!at || !f?.sha) return c.json({error: 'No such file to see'}, 404);
-    const bytes = await d.bucket.get(`u/${at.row.userId}/${f.sha}`);
+    const bytes = await d.bucket.get(blobKey(at.row.userId, f.sha));
     return bytes ? new Response(bytes as BodyInit, {headers: {'Content-Type': 'application/octet-stream', ETag: `"${f.sha}"`}}) : c.json({error: 'The Remote has no such file'}, 404);
   });
 }

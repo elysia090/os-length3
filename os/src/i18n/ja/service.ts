@@ -10,6 +10,7 @@ export default {
   'What was sent is too large': '送られたものが大きすぎます',
   'The bytes are not what their name says': '中身が名前と合いません',
   'The Remote has no such file': 'Remote にそのファイルはありません',
+  'The Remote cannot hold files just now': 'Remote はいまファイルを置けません',
   'This repo is turned off': 'この repo はオフになっています',
   'Too many changes at once': '一度の変更が多すぎます',
   'A path no repo may have': 'repo に置けないパスです',
