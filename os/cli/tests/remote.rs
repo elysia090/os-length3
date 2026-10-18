@@ -91,6 +91,31 @@ fn signing_in_as_another_account_or_on_another_remote_lets_go_of_what_the_last_o
 }
 
 #[test]
+fn an_answer_larger_than_any_a_remote_gives_is_refused_not_held() {
+    // ureq's into_json read without end: an answer that never stops was held in memory until there was none.
+    let remote = FakeRemote::start(|a| match a.path.as_str() {
+        "/v1/repos" => (200, format!("[{}\"x\"]", "\"x\",".repeat((256 << 20) / 4 + 1))),
+        _ => (NOT_FOUND.0, NOT_FOUND.1.to_string()),
+    });
+    let home = Home::new("endless");
+    home.signed_in(&remote.url);
+    let ran = home.run("en", &["remote", "on", "notes"]);
+    assert_eq!(ran.code, 3, "{ran:?}");
+    assert!(ran.stderr.contains("did not answer as a Remote does"), "{ran:?}");
+}
+
+#[test]
+fn what_a_remote_says_when_it_refuses_reaches_the_terminal_as_words_only() {
+    // Its `error` was printed as it came: ESC ] retitles the window, ESC [ moves the cursor over what was said.
+    let remote = FakeRemote::start(|_| (403, "{\"error\":\"no\\u001b]0;pwned\\u0007\\u001b[2J\"}".into()));
+    let home = Home::new("refusal-words");
+    home.signed_in(&remote.url);
+    let ran = home.run("en", &["remote", "on", "notes"]);
+    assert_eq!(ran.code, 1, "{ran:?}");
+    assert!(ran.stderr.contains("no\u{FFFD}]0;pwned") && !ran.stderr.contains('\u{1b}'), "{ran:?}");
+}
+
+#[test]
 fn a_page_to_approve_on_that_the_remote_does_not_stand_behind_is_never_shown() {
     let remote = FakeRemote::start(|a| match a.path.as_str() {
         "/api/auth/device/code" => (200, r#"{"device_code":"d","user_code":"ABCD","verification_uri":"https://evil.example/","verification_uri_complete":"https://evil.example/?user_code=ABCD","interval":1,"expires_in":60}"#.into()),
