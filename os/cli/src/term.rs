@@ -14,7 +14,7 @@ use std::io::{IsTerminal, Write};
 pub fn interactive(json: bool) -> bool {
     !json && std::io::stdin().is_terminal() && std::io::stdout().is_terminal()
         && std::env::var("TERM").as_deref() != Ok("dumb")
-        && std::env::var_os("L3_PLAIN").map_or(true, |v| v.is_empty())
+        && std::env::var_os("L3_PLAIN").is_none_or(|v| v.is_empty())
         && cfg!(unix)
 }
 

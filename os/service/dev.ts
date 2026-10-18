@@ -2,7 +2,10 @@
 // directory, blobs in files beside it. For development and the app's
 // end-to-end checks; the same app as on Workers.
 //
-//   node service/dev.ts DIR [PORT] [APP_ORIGIN] [OTHER_ORIGIN…]
+//   node service/dev.ts DIR [PORT] [APP_ORIGIN] [OTHER_ORIGIN…] [--no-bucket]
+//
+// --no-bucket (or LENGTH3_NO_BUCKET=1): a Remote that holds no files, as a
+// Worker without its R2 binding is; every route that would move bytes says so.
 import {existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {createServer} from 'node:http';
 import {join} from 'node:path';
@@ -11,17 +14,21 @@ import {drizzle} from 'drizzle-orm/pglite';
 import {migrate} from 'drizzle-orm/pglite/migrator';
 import {createApp} from './app.ts';
 import {createAuth} from './auth.ts';
+import {devBilling} from './devbilling.ts';
 import {enterEmail} from './enter.ts';
+import {planConfig} from './plan.ts';
 import type {Bucket} from './bucket.ts';
 import * as schema from './schema.ts';
 import {sweep} from './sweep.ts';
 
-const [dir, port = '8790', appOrigin = 'http://localhost:4173', ...others] = process.argv.slice(2);
-if (!dir) { console.error('usage: dev.ts DIR [PORT] [APP_ORIGIN] [OTHER_ORIGIN…]'); process.exit(2); }
-mkdirSync(join(dir, 'blobs'), {recursive: true});
+const args = process.argv.slice(2);
+const noBucket = args.includes('--no-bucket') || process.env.LENGTH3_NO_BUCKET === '1';
+const [dir, port = '8790', appOrigin = 'http://localhost:4173', ...others] = args.filter((a) => a !== '--no-bucket');
+if (!dir) { console.error('usage: dev.ts DIR [PORT] [APP_ORIGIN] [OTHER_ORIGIN…] [--no-bucket]'); process.exit(2); }
+mkdirSync(noBucket ? dir : join(dir, 'blobs'), {recursive: true});
 
 const file = (key: string) => join(dir, 'blobs', encodeURIComponent(key));
-const bucket: Bucket = {
+const bucket: Bucket | null = noBucket ? null : {
   async get(k) { return existsSync(file(k)) ? new Uint8Array(readFileSync(file(k))) : null; },
   async put(k, b) { writeFileSync(`${file(k)}.tmp`, b); renameSync(`${file(k)}.tmp`, file(k)); },
   async size(k) { return existsSync(file(k)) ? statSync(file(k)).size : null; },
@@ -45,12 +52,21 @@ const secret = readFileSync(secretFile, 'utf8');
 // provider then, the link …/#enter=KEY the only way in.
 const enter = process.env.LENGTH3_ENTER_AS ? {as: process.env.LENGTH3_ENTER_AS, key: process.env.LENGTH3_ENTER_KEY ?? ''} : undefined;
 const auth = createAuth({db, secret, baseURL, appOrigin, origins: others, dev: !enter, only: enter && enterEmail(enter.as)});
-const app = createApp({db, auth, bucket, origins: [appOrigin, ...others], appOrigin, providers: enter ? [] : ['dev'], domain: 'length3.test', baseURL, secret, enter});
+// LENGTH3_PLAN=1 gives it the plan the Remote on Workers has (LENGTH3_FREE_REPOS, LENGTH3_FREE_MB to say it
+// otherwise), bought from a stand-in for Stripe (devbilling.ts); without it, no plan: everything is open.
+const plan = process.env.LENGTH3_PLAN === '1' ? planConfig({FREE_REPOS: process.env.LENGTH3_FREE_REPOS, FREE_MB: process.env.LENGTH3_FREE_MB}) : undefined;
+const hook = `whsec_dev_${secret.slice(0, 24)}`;
+const stripe = plan && devBilling(baseURL, hook, [appOrigin, ...others],
+  async (payload, signature) => app.fetch(new Request(`${baseURL}/v1/stripe/webhook`, {method: 'POST', body: payload, headers: {'Stripe-Signature': signature, 'Content-Type': 'application/json'}})));
+const app = createApp({db, auth, bucket, origins: [appOrigin, ...others], appOrigin, providers: enter ? [] : ['dev'], domain: 'length3.test', baseURL, secret, enter,
+  plan, billing: stripe ? {stripe: stripe.api, webhookSecret: hook} : undefined});
+const serve = (r: Request) => (stripe && new URL(r.url).pathname.startsWith('/dev-billing/')
+  ? stripe.app.fetch(new Request(r.url.replace('/dev-billing/', '/'), r)) : app.fetch(r));
 
 createServer(async (req, res) => {
   const chunks: Buffer[] = [];
   for await (const c of req) chunks.push(c as Buffer);
-  const r = await app.fetch(new Request(`${baseURL}${req.url}`, {
+  const r = await serve(new Request(`${baseURL}${req.url}`, {
     method: req.method, headers: req.headers as Record<string, string>,
     body: ['GET', 'HEAD', 'OPTIONS'].includes(req.method!) ? undefined : Buffer.concat(chunks),
   }));
@@ -58,4 +74,4 @@ createServer(async (req, res) => {
   r.headers.forEach((v, k) => { headers[k] = k === 'set-cookie' ? r.headers.getSetCookie() : v; });
   res.writeHead(r.status, headers);
   res.end(Buffer.from(await r.arrayBuffer()));
-}).listen(Number(port), '127.0.0.1', () => console.log(`remote on ${baseURL} for ${appOrigin} (${dir})`));
+}).listen(Number(port), '127.0.0.1', () => console.log(`remote on ${baseURL} for ${appOrigin} (${dir}${noBucket ? ', no bucket: files are not kept' : ''})`));

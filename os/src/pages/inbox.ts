@@ -8,7 +8,8 @@ import {kindOf} from '../text.ts';
 import {mark} from '../icons.ts';
 import {copying, deed, pageHead, SETTLE} from './common.ts';
 import {every} from '../runs.ts';
-import {signInBox, signInPlace} from './remote.ts';
+import {goToPlan, planRefused, planSaid, signInBox, signInPlace} from './remote.ts';
+import {plan as readPlan} from '../plan.ts';
 import type {Context} from './context.ts';
 import {errorText} from '../errors.ts';
 
@@ -40,7 +41,7 @@ function button(text: string, kind = ''): HTMLButtonElement {
  * record to put in its DNS, looked for every few seconds while open, and the
  * name claimed as soon as the record is there.
  */
-function addressStub(me: inbox.Me, again: () => void): HTMLElement {
+function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLElement {
   const error = h('p', {class: 'error', role: 'alert'});
   const gear = h('button', {type: 'button', class: 'stub-gear', 'aria-label': t('Your names'), 'aria-expanded': 'false'}, mark('gear')) as HTMLButtonElement;
   const note = h('p', {class: 'muted small'});
@@ -60,7 +61,7 @@ function addressStub(me: inbox.Me, again: () => void): HTMLElement {
       error.textContent = '';
       // Asked once: Enter again while it is asked claims nothing more.
       name.readOnly = true;
-      try { await inbox.claim(name.value); again(); } catch (err) { error.textContent = errorText(err); } finally { name.readOnly = false; }
+      try { await inbox.claim(name.value); again(); } catch (err) { const plan = planRefused(err, toPlan); if (plan) error.replaceChildren(plan); else error.textContent = errorText(err); } finally { name.readOnly = false; }
     });
     stub = h('div', {class: 'stub'}, name, gear);
     note.textContent = t('A name on this Remote: first come, yours for five years at a time, renewed by you.');
@@ -97,15 +98,25 @@ function addressStub(me: inbox.Me, again: () => void): HTMLElement {
         h('p', {class: `small record-found${r.found ? ' found' : ''}`}, !r.found ? t('Not found yet') : name ? t('Found. Claiming {address}…', {address: `${name}@${domain}`}) : t('Found')));
       if (r.found && name) {
         looking?.stop();
-        try { await inbox.claim(name, domain); again(); } catch (e) { record.append(h('p', {class: 'error'}, errorText(e))); }
+        try { await inbox.claim(name, domain); again(); } catch (e) {
+          const plan = planRefused(e, toPlan);
+          if (plan) paid.replaceChildren();
+          record.append(h('p', {class: 'error'}, plan ?? errorText(e)));
+        }
       }
     };
     field.addEventListener('change', () => void look());
     field.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) void look(); });
     looking?.stop();
     looking = every(8000, look, {alive: () => panel.isConnected && !panel.hidden});
+    // A name on one's own domain is paid: a free account is told before it goes to its DNS, with the way to the Plan.
+    const paid = h('p', {class: 'muted small'});
+    void readPlan().then((p) => {
+      if (p.plan !== 'free') return;
+      paid.replaceChildren(planSaid({rule: 'domain', buy: !!p.buy}, toPlan));
+    }, () => {});
     queueMicrotask(() => field.focus());
-    return h('div', {class: 'stub-own'}, field, record);
+    return h('div', {class: 'stub-own'}, field, paid, record);
   };
   /** Add a domain: pressed, the row is the field, where it was. */
   const adding = (): HTMLElement => {
@@ -205,7 +216,7 @@ export function inboxPage(ctx: Context): Node[] {
     }
     let me: inbox.Me;
     try { me = await inbox.me(); } catch (e) { holder.replaceChildren(h('p', {class: 'error'}, errorText(e))); return; }
-    if (!me.addresses.length) { holder.replaceChildren(addressStub(me, () => void paint())); return; }
+    if (!me.addresses.length) { holder.replaceChildren(addressStub(me, () => void paint(), () => goToPlan(ctx))); return; }
     mine = me.addresses[0].address;
     // The field to write to someone new is made once: what comes every little while changes only the rows under it.
     const to = h('input', {class: 'line-in', placeholder: t('Write to a name or a code'), 'aria-label': t('Write to a name or a code'), autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
@@ -228,7 +239,7 @@ export function inboxPage(ctx: Context): Node[] {
       void show(found.address!, rows, pane);
     });
     holder.replaceChildren(
-      addressStub(me, () => void paint()),
+      addressStub(me, () => void paint(), () => goToPlan(ctx)),
       h('div', {class: 'inbox-box'}, list, pane));
     await paintList(rows, pane);
   };
@@ -259,6 +270,7 @@ export function inboxPage(ctx: Context): Node[] {
       ...(requests.length ? [h('h3', {class: 'inbox-head'}, t('Requests')), ...requests.map(row)] : []));
     if (had) rows.querySelector<HTMLElement>(`.inbox-row[data-address="${CSS.escape(had)}"]`)?.focus();
     // One quiet line in the open pane says what to do; none yet, it says so instead.
+    if (!open && !unread) pane.removeAttribute('aria-label');
     if (!open && !unread) pane.replaceChildren(h('p', {class: 'quiet'}, all.length ? t('Choose a conversation, or write to a name or a code.') : t('No messages yet. Write to someone by their name or code.')));
     // What came to the open conversation since it was drawn is put at its foot.
     const open_ = shownThread;
@@ -276,6 +288,8 @@ export function inboxPage(ctx: Context): Node[] {
     shownThread = null;
     const th = await inbox.thread(address).catch((e) => { if (asked === opened) pane.replaceChildren(h('p', {class: 'error'}, errorText(e))); return null; });
     if (!th || asked !== opened) return;
+    // Heard as the conversation it is, named by the other.
+    pane.setAttribute('aria-label', t('Conversation with {who}', {who: inbox.shown(address)}));
     // Read is said again the next time the conversation opens; nothing waits on it. The rail's mark follows.
     const read = () => void inbox.markRead(address).then(() => look(), () => {});
     read();

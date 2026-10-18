@@ -3,7 +3,7 @@
 // them is what `l3` does on the command line, through the same core.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use length3_core::{history, home, paths, remote, repos, system, usage};
+use length3_core::{account, history, home, paths, remote, repos, system, usage};
 
 #[cfg(target_os = "linux")]
 mod shells;
@@ -16,7 +16,7 @@ mod shells {
     #[tauri::command] pub fn prompt_open(_repo: String) -> Result<u32, String> { Err(not_here()) }
     #[tauri::command] pub fn prompt_input(_id: u32, _text: String) -> Result<(), String> { Err(not_here()) }
     #[tauri::command] pub fn prompt_interrupt(_id: u32) -> Result<(), String> { Err(not_here()) }
-    #[tauri::command] pub fn prompt_held(_id: u32) -> Option<length3_core::prompt::Held> { None }
+    #[tauri::command] pub fn prompt_held(_id: u32) -> Result<Option<length3_core::prompt::Held>, String> { Ok(None) }
     #[tauri::command] pub fn prompt_close(_id: u32) -> Result<length3_core::prompt::Stopped, String> { Err(not_here()) }
     #[tauri::command] pub fn root_status() -> Option<()> { None }
     #[tauri::command] pub async fn root_fetch() -> Result<(), String> { Err(not_here()) }
@@ -33,15 +33,22 @@ fn managed() -> Result<repos::Repos, String> {
     repos::Repos::open()
 }
 
+// A command without `async` runs on the window's own thread (Tauri 2), and the window draws nothing
+// until it returns. Those that walk the disk or wait are async and run on a blocking thread; those
+// that write stay on the window's thread, which keeps two writes in the order the page sent them.
+
+/// The filesystem's room and what this OS holds: a walk of the whole data directory, roots and all.
 #[tauri::command]
-fn capacity() -> Result<system::Capacity, String> {
-    system::capacity(&paths::data_dir())
+async fn capacity() -> Result<system::Capacity, String> {
+    blocking(|| system::capacity(&paths::data_dir())).await
 }
 
-/// この端末: everything this OS holds, largest first, and what can be done with each.
+/// この端末: everything this OS holds, largest first, and what can be done with each (every repo walked and
+/// digested: 0.4 to 0.7 s for ten repos of 2,000 files, which froze the window while it ran).
 #[tauri::command]
-fn space(shells: tauri::State<'_, shells::Shells>) -> usage::Space {
-    usage::space(&paths::data_dir(), &paths::repos_dir(), &shells.open_repos())
+async fn space(app: tauri::AppHandle) -> Result<usage::Space, String> {
+    let open = tauri::Manager::state::<shells::Shells>(&app).open_repos();
+    blocking(move || Ok(usage::space(&paths::data_dir(), &paths::repos_dir(), &open))).await
 }
 
 /// 空ける: these go, each looked at again first (a repo's changes are sent before it goes).
@@ -56,9 +63,10 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Sen
     tauri::async_runtime::spawn_blocking(f).await.map_err(|e| e.to_string())?
 }
 
+/// Each repo walked (up to 20,000 entries each) to say its size.
 #[tauri::command]
-fn repo_list() -> Result<Vec<repos::Summary>, String> {
-    managed()?.list()
+async fn repo_list() -> Result<Vec<repos::Summary>, String> {
+    blocking(|| managed()?.list()).await
 }
 
 #[tauri::command]
@@ -161,7 +169,27 @@ async fn remote_status() -> Result<Vec<remote::Status>, String> {
 /// Send what changed here and take in what changed there.
 #[tauri::command]
 async fn sync_repo(repo: String) -> Result<remote::Synced, String> {
-    blocking(move || remote::sync(&managed()?, &repo)).await
+    blocking(move || remote::sync(&managed()?, &repo).map_err(plan_said)).await
+}
+
+/// A refusal of the plan's (service/plan.ts) is said with its own word first, so the page keeps the repo
+/// here, waiting (src/lifecycle.ts PLAN), rather than as offline.
+fn plan_said(e: String) -> String {
+    match remote::last_failure() {
+        Some((remote::Failure::Status(402), said)) if said == e => format!("plan: {e}"),
+        _ => e,
+    }
+}
+
+/// The plan's page, Checkout (`checkout`) or the portal (`portal`), as the Remote makes it for this account,
+/// opened in the browser. The page names nothing: the Remote does, and only Stripe's page or the Remote's
+/// own is opened (account::plan_page).
+#[tauri::command]
+async fn plan_open(app: tauri::AppHandle, kind: String) -> Result<(), String> {
+    let kind = if kind == "portal" { "portal" } else { "checkout" };
+    let url = blocking(move || account::plan_page(kind)).await?;
+    use tauri_plugin_opener::OpenerExt;
+    app.opener().open_url(&url, None::<&str>).map_err(|e| e.to_string())
 }
 
 /// Bring a repo that is only on the Remote here.
@@ -279,8 +307,8 @@ fn ssh_now() -> SshHere {
 }
 
 #[tauri::command]
-fn ssh_here() -> SshHere {
-    ssh_now()
+async fn ssh_here() -> Result<SshHere, String> {
+    blocking(|| Ok(ssh_now())).await
 }
 
 /// Turn it on or off as `l3 address ssh on|off` does, by the l3 beside the app: the same listener, kept by l3
@@ -308,7 +336,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             capacity, space, free, repo_list, repo_create, repo_tree, repo_read, repo_write, repo_add,
             repo_mkdir, repo_remove, repo_rename, state_get, state_set,
-            remote_login_start, remote_login_wait, remote_logout, remote_repos, remote_status,
+            remote_login_start, remote_login_wait, remote_logout, remote_repos, remote_status, plan_open,
             sync_repo, repo_fetch, history_changes, history_diff, history_at_head, history_cut, history_log,
             work_start, work_switch, work_state, work_lines, history_push, history_submit, history_reset,
             changes_list, change_review, change_merge, change_reject, change_diff,

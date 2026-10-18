@@ -38,26 +38,10 @@ pub fn set(key: &str, json: &str) -> Result<()> {
         return Err(crate::tr!("Home's {} would be larger than 1 MiB in all, so nothing was saved; make room in it first", "Home の {} が合わせて 1 MiB を超えるので、保存していません。先に空きを作ってください", key));
     }
     let path = file(key)?;
-    // Home's state (profile, TODO) is the person's alone: the directory is
-    // private and the file is made afresh, owner-only, before it is renamed in.
+    // Home's state (profile, TODO, the Remote's session) is the person's alone: the directory is private and
+    // the file owner-only.
     crate::boundary::private_dir(path.parent().unwrap()).map_err(|e| e.to_string())?;
-    let temp = path.with_extension(format!("json.{}", std::process::id()));
-    let mut options = fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let _ = fs::remove_file(&temp);
-    options.open(&temp).and_then(|mut f| {
-        use std::io::Write;
-        f.write_all(json.as_bytes())?;
-        f.sync_all()
-    }).and_then(|_| fs::rename(&temp, &path)).map_err(|e| {
-        let _ = fs::remove_file(&temp);
-        e.to_string()
-    })
+    crate::atomic::replace(&path, json.as_bytes(), crate::atomic::How::PRIVATE).map_err(|e| crate::tr!("{}: {}", "{}：{}", path.display(), e))
 }
 
 /// One TODO item, the same shape the app stores.

@@ -12,18 +12,24 @@ import {createApp, sha256} from '../service/app.ts';
 import {createAuth} from '../service/auth.ts';
 import {memoryBucket} from '../service/bucket.ts';
 import {fileDb, SECRET} from '../service/testing.ts';
+import type {Billing, PlanConfig} from '../service/plan.ts';
 
 const URL_ = 'http://remote.test', APP = 'http://app.test';
 const enc = new TextEncoder();
 
-export async function browserOnRemote() {
+/**
+ * `o`: the Remote's plan and how it is bought (service/plan.ts), none as before: everything open;
+ * `bucket: false`: a Remote that holds no files (service/bucket.ts), as a Worker without R2 is.
+ */
+export async function browserOnRemote(o: {plan?: PlanConfig; billing?: Billing; bucket?: boolean} = {}) {
   const shelf = new Map<string, string>();
   Object.assign(globalThis, {localStorage: {
     getItem: (k: string) => shelf.get(k) ?? null, setItem: (k: string, v: string) => void shelf.set(k, v), removeItem: (k: string) => void shelf.delete(k),
   }});
   const db = await fileDb();
   const auth = createAuth({db, secret: SECRET, baseURL: URL_, appOrigin: APP, rateLimit: false, dev: true});
-  const app = createApp({db, auth, bucket: memoryBucket(), origins: [APP], providers: ['dev'], domain: 'length3.test', baseURL: URL_});
+  const {bucket: keeps, ...plan} = o;
+  const app = createApp({db, auth, bucket: keeps === false ? null : memoryBucket(), origins: [APP], providers: ['dev'], domain: 'length3.test', baseURL: URL_, ...plan});
   /** What this browser asked the Remote, by path. */
   const asked: string[] = [];
   Object.assign(globalThis, {fetch: (url: string, init?: RequestInit) => {
@@ -38,14 +44,15 @@ export async function browserOnRemote() {
   const history = await import('./history.ts');
   const state = await import('./state.ts');
 
-  /** Signing in as the browser does: the stand-in provider's page, then back. */
-  const signIn = async () => {
+  /** Signing in as the browser does: the stand-in provider's page, then back (as `name`: another person). */
+  const signIn = async (name?: string) => {
     const start = await fetch(`${URL_}/api/auth/sign-in/social`, {method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({provider: 'dev', callbackURL: `${APP}/`})});
     const cookies = start.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
     const go = new URL(((await start.json()) as {url: string}).url);
     const approve = new URL(`${URL_}/dev-oauth/approve`);
     for (const k of ['redirect_uri', 'state']) approve.searchParams.set(k, go.searchParams.get(k) ?? '');
+    if (name) approve.searchParams.set('name', name);
     const back = (await fetch(approve.toString())).headers.get('Location')!;
     return (await fetch(back, {headers: {Cookie: cookies}})).headers.get('set-auth-token')!;
   };
@@ -104,5 +111,5 @@ export async function browserOnRemote() {
     return out;
   }
 
-  return {URL: URL_, token, store, draft, history, state, asked, elsewhere, elsewhereFolder, elsewhereHome, remoteFiles, remoteHome, text, names, files};
+  return {URL: URL_, token, db, signIn, store, draft, history, state, asked, elsewhere, elsewhereFolder, elsewhereHome, remoteFiles, remoteHome, text, names, files};
 }

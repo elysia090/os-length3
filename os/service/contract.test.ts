@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {sql} from 'drizzle-orm';
 import * as schema from './schema.ts';
+import {sha256} from './request.ts';
 import {sweep} from './sweep.ts';
 import {count, enc, idOf, named, sessionOf, sharedService, upload} from './testing.ts';
 
@@ -9,6 +10,11 @@ import {count, enc, idOf, named, sessionOf, sharedService, upload} from './testi
 // repo turned off and on, and the shape of each refusal. One Remote for the
 // whole file; each test signs in as people of its own, so none depends on
 // another, or on their order.
+//
+// The file runs twice: with a bucket, and without one (contract.nobucket.test.ts),
+// where every route that does not move bytes must answer as it does here,
+// and those that would say once that files are not kept. verify.ts runs it
+// without a bucket against a real Postgres.
 
 const s = await sharedService();
 const DAY = 86_400_000;
@@ -68,7 +74,8 @@ test('another account\'s repo answers as if it were not there, by every route a 
   refused(await asB('GET', '/v1/repos/shared-name'), 404, 'That repo is not on the Remote');
   refused(await asB('GET', '/v1/repos/shared-name?line=001'), 404);
   refused(await asB('GET', `/v1/repos/shared-name/cuts/${r.cut}`), 404, 'No such commit');
-  refused(await asB('GET', `/v1/blobs/${r.blob}`), 404);
+  // With no bucket, no file is anyone's to read: the same answer to everyone, before whose it is.
+  refused(await asB('GET', `/v1/blobs/${r.blob}`), s.files ? 404 : 503);
   // Reads of lists answer nothing of A's.
   assert.deepEqual((await asB('GET', '/v1/repos/shared-name/log')).json, []);
   assert.deepEqual((await asB('GET', '/v1/repos/shared-name/lines')).json, []);
@@ -199,7 +206,7 @@ test('the 30 days are kept to the day: the sweep leaves a repo off 29 days, and 
   for (const n of ['day29', 'day31']) assert.equal((await s.call('PATCH', `/v1/repos/${n}/draft`, {token: t, body: {version: 0, set: {'a.txt': null}, remove: []}})).status, 200);
   await s.db.execute(sql`update repo set off_at = now() - interval '29 days' where user_id = ${me} and name = 'day29'`);
   await s.db.execute(sql`update repo set off_at = now() - interval '31 days' where user_id = ${me} and name = 'day31'`);
-  await sweep(s.db, s.bucket);
+  await sweep(s.db, s.files);
   assert.deepEqual(((await s.call('GET', '/v1/repos', {token: t})).json as unknown as {name: string}[]).map((r) => r.name), ['day29']);
   assert.deepEqual(((await s.call('GET', '/v1/repos/gone', {token: t})).json as unknown as {name: string}[]).map((r) => r.name), ['day31']);
   refused(await s.call('GET', '/v1/repos/day31', {token: t}), 404, 'That repo is not on the Remote');
@@ -315,4 +322,36 @@ test('a setting: a short lowercase key, a value with its version; a stale versio
   const stale = await put('todo', {value: '[2]', version: 0});
   assert.deepEqual([stale.status, stale.json], [409, {value: '[1]', version: 1}]);
   assert.deepEqual((await s.call('GET', '/v1/home/todo', {token: t})).json, {value: '[1]', version: 1});
+});
+
+// ---- a Remote that holds no files ----
+
+test('with no bucket, each route that would move bytes says so, the same to everyone, and nothing else is refused', {skip: !!s.files}, async () => {
+  const t = await s.person('Bucketless');
+  const bytes = enc.encode('kept here\n');
+  const sha = (await upload(s, t, bytes)).sha;
+  const noFiles = {error: 'The Remote cannot hold files just now', files: false};
+  const asks: [string, string, string | undefined][] = [['PUT', `/v1/blobs/${sha}`, t], ['GET', `/v1/blobs/${sha}`, t], ['GET', `/v1/os/${sha}`, undefined],
+    ['HEAD', `/v1/os/${sha}`, undefined], ['GET', '/v1/desktop/length3.AppImage', undefined], ['GET', `/v1/seen/x@length3.test/notes/file?path=a`, undefined]];
+  for (const [m, p, token] of asks) {
+    const r = await s.call(m, p, {token, ...(m === 'PUT' ? {bytes} : {})});
+    assert.equal(r.status, 503, `${m} ${p}`);
+    if (m !== 'HEAD') assert.deepEqual(r.json, noFiles, `${m} ${p}`);
+  }
+  // What a client asks first is rows: which it lacks. A file never sent is missing; a draft naming it says so.
+  const fresh = await sha256(enc.encode('never sent'));
+  assert.deepEqual((await s.call('POST', '/v1/blobs/missing', {token: t, body: [sha, fresh]})).json, [fresh]);
+  const named = await s.call('PATCH', '/v1/repos/nofiles/draft', {token: t, body: {version: 0, set: {'a.txt': fresh}, remove: []}});
+  assert.deepEqual([named.status, named.json], [409, {missing: [fresh]}]);
+  // Everything else is the Remote as ever: a draft of what it has, a commit, Home, the health of its database.
+  assert.equal((await s.call('PATCH', '/v1/repos/nofiles/draft', {token: t, body: {version: 0, set: {'a.txt': sha, 'empty': null}, remove: []}})).status, 200);
+  assert.equal((await s.call('POST', '/v1/repos/nofiles/cuts', {token: t, body: {version: 1, parent: null, title: 'kept'}})).status, 201);
+  assert.equal((await s.call('PUT', '/v1/home/todo', {token: t, body: {value: '[]', version: 0}})).status, 200);
+  assert.deepEqual((await s.call('GET', '/v1/health')).json, {ok: true});
+  // The sweep lets no blob go while there is no bucket to take its bytes from: one no tree names stays.
+  const me = await idOf(s, t);
+  await upload(s, t, enc.encode('named by nothing'));
+  await s.db.execute(sql`update blob set created_at = now() - interval '2 days' where user_id = ${me}`);
+  assert.equal((await sweep(s.db, s.files)).blob, undefined);
+  assert.equal(await count(s, sql`select count(*)::int as n from blob where user_id = ${me}`), 2);
 });

@@ -3,6 +3,7 @@
 //! or inside the app's Prompt) both use this crate, so the two cannot drift.
 
 pub mod account;
+pub mod atomic;
 pub mod boundary;
 pub mod fetch;
 pub mod root;

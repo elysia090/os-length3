@@ -233,10 +233,15 @@ function markedDiff(files: git.FileDiff[], marked: Set<string>, pending: Set<str
     if (marked.has(key)) row.classList.add('marked');
     if (!pending) return;
     row.classList.add('markable');
+    // The line's words are what is marked: heard as a toggle named by them, pressed while marked.
+    const words = row.querySelector<HTMLElement>('.diff-words');
+    words?.setAttribute('role', 'button');
+    words?.setAttribute('aria-pressed', String(marked.has(key)));
     row.addEventListener('click', () => {
       if (marked.has(key)) return;
       if (pending.has(key)) pending.delete(key); else pending.add(key);
       row.classList.toggle('marking', pending.has(key));
+      words?.setAttribute('aria-pressed', String(pending.has(key)));
     });
   }});
 }

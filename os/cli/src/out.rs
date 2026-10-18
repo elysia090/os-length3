@@ -105,9 +105,10 @@ pub fn plain(s: &str) -> String {
     s.chars().map(|c| if c.is_control() && c != '\n' && c != '\t' { '\u{FFFD}' } else { c }).collect()
 }
 
-/// A note beside the answer, on standard error ("l3: …"); never fails.
+/// A note beside the answer, on standard error ("l3: …"); never fails. Notes and errors carry what the
+/// Remote said in its own words (its `error`), so they are printed plain: a terminal never takes them as commands.
 pub fn note(s: &str) {
-    let _ = writeln!(std::io::stderr().lock(), "l3: {s}");
+    let _ = writeln!(std::io::stderr().lock(), "l3: {}", plain(s));
 }
 
 /// The answer: its text, or with --json its data (keys in camelCase).
@@ -131,7 +132,7 @@ pub fn fail(e: &Error, json: bool) -> std::process::ExitCode {
     } else {
         let mut lines = e.message().lines();
         note(lines.next().unwrap_or_default());
-        for l in lines { let _ = writeln!(std::io::stderr().lock(), "{l}"); }
+        for l in lines { let _ = writeln!(std::io::stderr().lock(), "{}", plain(l)); }
     }
     std::process::ExitCode::from(e.code())
 }

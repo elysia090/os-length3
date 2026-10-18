@@ -263,6 +263,21 @@ the app.
   version that reached the Remote first, and puts this device's beside it as
   "name (<this device>).ext". In a browser, closing the tab lets go of every
   copy the Remote holds all of.
+- Remote → Plan (`service/plan.ts`): the Remote decides what an account
+  may do; the app, the desktop app and `l3 remote plan` only show it. Free
+  keeps 3 repos and 100 MB on the Remote and one name there; paid adds
+  keeping more, making servers, and names on one's own domain (and more
+  names on the Remote). Repos on a device are never limited: past the
+  allowance the Remote refuses only what would exceed (a new repo, a draft
+  that grows), and the repo stays on the device and waits (この端末に保存 ·
+  Remote に空きができるのを待っています), with See the plan beside it; a server
+  or a domain name refused says so in place. The Plan part shows Free or
+  Paid and until when, the use against the allowance as meters, what paid
+  adds, and Subscribe (Stripe Checkout) or Manage the plan (Stripe's
+  portal); `l3 remote plan subscribe|manage` prints the same page. A
+  subscription that ends takes nothing away: servers, names and repos stay
+  as they were, only what would be new is refused. A failed payment stays
+  paid 14 days.
 - Runtime: この端末, then everything this OS holds on it in one list,
   largest first — repos, roots, leftovers, Home — each with what can be
   done: 空ける (a repo's changes not on the Remote yet are sent first; it
@@ -307,13 +322,21 @@ production, PGlite in tests and here. Its schema is the migrations in
 `service/migrations`: those Drizzle generates from `service/schema.ts`, and
 `0001` for what Drizzle cannot say (the counted room, the service's role). The service connects as
 `remote_worker`, a member of `remote_app`, which reads and writes rows and
-nothing else.
+nothing else. What each part of it does, its routes and tables, and which
+of them the app and l3 need: `service/README.md`.
 
 ```
-node service/dev.ts DIR 8787 http://localhost:1420     # the Remote, here
+node service/dev.ts DIR 8787 http://localhost:1420     # the Remote, here (no plan: everything open)
+node service/dev.ts DIR 8787 http://localhost:1420 --no-bucket   # one that holds no files, as a Worker without R2
+LENGTH3_PLAN=1 node service/dev.ts DIR 8787 http://localhost:1420   # with the plan, bought from a stand-in for Stripe
 LENGTH3_DEV_REMOTE=http://127.0.0.1:8787 VITE_LENGTH3_REMOTE= npx vite
 LENGTH3_REMOTE=http://127.0.0.1:8787 l3 login
 ```
+
+The database and the files are apart: Postgres holds every row, R2 only
+the bytes. Without R2 bound the Remote does all the rest, and each route
+that would move bytes answers 503 `{files: false}`; the app and l3 then keep
+the work on the device, say so, and send it once the Remote can hold it.
 
 On Cloudflare it is one Worker on one origin, the app's files and the Remote
 together (`wrangler.toml`), under one name: `os.length3.com` is the app, the
@@ -327,6 +350,33 @@ session. For research it has one account,
 `ENTER_AS`: nobody signs up, nothing is shown to everyone, and whoever is
 given the link `https://os.length3.com/#enter=KEY` comes in as it (a day at a
 time; a new key ends every old link and session at once).
+
+**Billing (the plan, Stripe).** On Workers the plan always holds (but on
+a Remote for research, `ENTER_AS`, which is one person's): `FREE_REPOS`
+(3), `FREE_MB` (100) and `GRACE_DAYS` (14) say it otherwise, as variables.
+It is bought with Stripe when all three are given; with any missing,
+billing is off and the Remote says paid features cannot be bought here yet.
+Stripe is reached over its REST API with fetch (`service/stripe.ts`: a
+customer, a Checkout session, a portal session; the webhook's signature
+checked with Web Crypto); tests and dev never reach it. To connect it:
+
+1. In Stripe, a product with one recurring price; its id is `STRIPE_PRICE`
+   (a variable in `wrangler.toml` or the Worker's settings).
+2. The secret key: `npx wrangler secret put STRIPE_SECRET_KEY` (a restricted
+   key may do: Customers, Checkout Sessions and Customer portal, write).
+3. A webhook endpoint at `https://os.length3.com/v1/stripe/webhook`, sending
+   `checkout.session.completed`, `customer.subscription.created`,
+   `customer.subscription.updated`, `customer.subscription.deleted`,
+   `invoice.payment_failed` and `invoice.paid`; its signing secret:
+   `npx wrangler secret put STRIPE_WEBHOOK_SECRET`.
+4. The customer portal turned on in Stripe (Settings → Billing → Customer
+   portal), with cancelling allowed.
+
+Each event is taken once by its id (kept 30 days in `billing_event`; one
+made longer ago is not taken) and in the order Stripe made it; a payment
+that fails leaves the plan paid for `GRACE_DAYS` from the first failure.
+Migration `0006_plan_and_billing` holds each account's plan as Stripe last
+said it; what an account uses is read from what the Remote holds.
 
 It ships from main with Cloudflare's Workers Builds: the Worker is connected
 to this repository, and its Settings → Build say, once:
@@ -360,6 +410,26 @@ OWNER_URL='postgresql://neondb_owner:…' node service/deploy.ts        # migrat
 OWNER_URL='postgresql://neondb_owner:…' node service/deploy.ts link   # a new link, and every session of the account ends
 ```
 
+Before a deploy, the migrations and the Remote can be verified on a Neon
+branch (made on the Neon side, from production or empty), pooled URL or
+direct:
+
+```
+DATABASE_URL='postgresql://neondb_owner:…@ep-…-pooler….neon.tech/neondb' NEON_API_KEY=… NEON_PROJECT_ID=… npm run verify:remote
+```
+
+It makes a database of its own beside the one named (`remote_verify_…`),
+runs the migrations there with the function `deploy.ts` runs, runs the
+contract tests on it with no bucket through the Worker's own driver, and
+drops it, also when the tests fail or it is stopped (Ctrl-C); `remote_app`
+goes too only if those migrations made it. Nothing else is touched, and it
+prints neither the URL nor anything in it. It refuses what looks like
+production: a host named prod, production or live, any host that is not
+Neon's or this machine's, and the Neon project's default branch, which it
+learns from Neon (`NEON_API_KEY`, `NEON_PROJECT_ID`) or from
+`REMOTE_PRODUCTION_HOSTS` (endpoint ids, comma separated; not secret);
+knowing neither, it refuses any Neon host. `-- --production` runs it anyway.
+
 ## Develop
 
 Linux needs the WebKitGTK toolchain:
@@ -367,10 +437,76 @@ Linux needs the WebKitGTK toolchain:
 
 ```
 npm ci
-npm run check                  # tsc + node:test
+npm run check                  # tsc + node:test (the Remote's contracts with a bucket and without)
+npm run selftest               # the app end to end in Chromium (below)
+npm run selftest:l3            # l3 end to end against a Remote of its own (selftest/l3)
+npm run verify:remote          # the Remote on a real Postgres: DATABASE_URL (see Deploy)
 npx tauri dev                  # window against the Vite dev server
 npx tauri build --debug --no-bundle
 ```
+
+### Selftest
+
+`npm run selftest` uses the web app the way a person does, in Chromium
+(`@playwright/test`, `selftest/`). One run builds the app for a Remote on
+its own origin into `selftest/.dist` (again only when a source is newer),
+starts a fresh Remote (`service/dev.ts` with a new temporary data
+directory) and `vite preview` on free ports, runs every `selftest/*.spec.ts`
+in parallel, and stops both whatever happened (`global-setup.ts`). The
+browser reaches both as `localhost` (a passkey's relying party is a name,
+never an address); nothing listens on a fixed port and nothing outside the
+repository is read. About 45 journeys take under two minutes on four cores.
+
+- One test, by its words: `npm run selftest -- -g 'Share'`; one area:
+  `npm run selftest -- git.spec`.
+- A failure leaves its trace and screenshot in `selftest/.results`
+  (`npx playwright show-trace …/trace.zip`), the HTML report in
+  `selftest/.report`, and what the two servers printed in `selftest/.logs`.
+- Locally Chromium is `npx playwright install chromium` (or
+  `PLAYWRIGHT_BROWSERS_PATH` where one is installed).
+- The Prompt's tests are tagged `@slow` (BusyBox and l3 through the
+  translator) and run with `SELFTEST_SLOW=1` once `public/userland` and
+  `public/root` hold the Prompt (`npm run userland`, or `node
+  scripts/prompt-files.mjs`); the build then carries it.
+- CI (`selftest` in `.github/workflows/desktop.yml`) runs everything on each
+  push and pull request that touches `os/`, retries a failure once, and
+  uploads the report, the traces and the servers' logs when it fails (the
+  traces alone when a test passed only on its retry).
+
+A spec is one area (`git.spec.ts`, `inbox.spec.ts`…), a test one thing a
+person does, and it asserts what they then see. Writing one:
+
+- Start from a fixture (`fixtures.ts`): `app` (a fresh browser, no one
+  signed in, from an address of its own as the Remote sees it, with a
+  virtual authenticator that makes and gives passkeys at once), `signedIn` (signed in through the development provider as this
+  test's own person), `another('Bo')` (a second person, in a browser of
+  their own; `another('Ada')` is the same person on a second device).
+  Every test is its own person on the run's Remote, so tests share nothing
+  and names can stay plain (`hello`).
+- Say it in the app's words through `app.ts`: `app.rail.go('forge')`,
+  `app.newRepo.make('hello', {template: 'C', summary})`,
+  `app.forge.editFile('README.md', text)`, `app.file.open('hello',
+  'src/main.c')`, `app.file.named('hello', '', 'New file', 'a.txt')`,
+  `app.git.write('hello', 'Fix: …')` then `app.git.step('Commit')`,
+  `app.git.commitOnMain('hello', 'Docs: …')`, `app.remote.turnOff('hello',
+  code)`, `app.inbox.claim()`, `app.server.make('Trip', handle)`. A step
+  the app gains goes there once.
+- Find things by role and accessible name (`getByRole`, labels), never by
+  CSS class: restyling keeps the tests, and a word changed is a one-line
+  change in `app.ts`. When something a test needs has no name, the fix is
+  in the app: an `aria-label` through `t()`, its Japanese in the catalog.
+- No sleeps: wait for what a person would see, with web-first assertions
+  (`await expect(locator).toHaveText(…)`, `toBeVisible`, `toBeChecked`);
+  what the app does a moment later is `expect(…).toPass()`. The page is
+  `aria-busy` until its first look at the Remote is drawn, and
+  `app.settled()` waits for that. A deed that comes under the pointer holds
+  still for a moment (no double press answers it): `app.answer(yes, ask)`
+  presses until the ask is gone.
+- What the app looks for every little while (news, the Remote's changes)
+  it also looks for when its window comes back: `app.comeBack()` says so,
+  rather than waiting out the interval. Where the app's own time matters
+  (a file left unsaved while another device saves it), the page's clock is
+  held: `app.forge.writeOn(…)`, `lookUntil(…)`, `writingDone()`.
 
 Icons in `src-tauri/icons` are generated from `src-tauri/icon.svg` with
 `npx tauri icon src-tauri/icon.svg -o src-tauri/icons`.
