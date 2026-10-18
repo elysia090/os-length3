@@ -637,9 +637,11 @@ fn browse(ctx: &Ctx, mut view: View, mut land: Option<String>) -> Flow {
 
 /// What a typed command was about: the thing its words name, as the page names it.
 fn named(ctx: &Ctx, call: &args::Call) -> Option<String> {
+    // A repo beside words written is where something new went (`issue new notes "…"`), not the thing.
+    let writes = call.form.args.iter().any(|a| matches!(a, Arg::Text(_)));
     call.form.args.iter().enumerate().find_map(|(i, a)| match a {
         Arg::Issue => crate::target::issue(ctx, call, i).ok().map(|r| r.name()),
-        Arg::Repo { .. } => crate::target::repo(ctx, call, i).ok(),
+        Arg::Repo { .. } if !writes => crate::target::repo(ctx, call, i).ok(),
         Arg::Path { .. } => crate::target::path(ctx, call, i).ok().map(|(r, p)| if p.is_empty() { r } else { format!("{r}/{p}") }),
         Arg::Number(_) | Arg::Address => call.word(i).map(String::from),
         _ => None,
@@ -657,9 +659,10 @@ pub fn after(ctx: &Ctx, call: &args::Call, argv: &[String], seen: Seen) {
     if c.group == Group::Other || c.hidden || call.form.args.contains(&Arg::Argv) { return; }
     if seen.subjects.is_empty() && !call.form.page && call.form.deeds.is_empty() { return; }
     ACTIVE.with(|a| a.set(true));
+    // What the command showed; else its purpose's page, read (not printed) for what is there now.
     let mut word = if seen.subjects.is_empty() { named(ctx, call) } else { None };
     let mut view = if !seen.subjects.is_empty() { View { group: c.group, subjects: seen.subjects, facts: seen.facts, own: call.form.page, made_by: vec![argv.to_vec()] } }
-        else if word.is_some() { page(ctx, c.group, false) } else { View { group: c.group, subjects: Vec::new(), facts: Vec::new(), own: false, made_by: Vec::new() } };
+        else { page(ctx, c.group, false) };
     loop {
         // Never take keys the person typed ahead for their next command.
         if term::typed_ahead() { return; }

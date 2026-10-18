@@ -13,7 +13,7 @@ use std::io::{IsTerminal, Write};
 /// command it was: it writes its answer and exits.
 pub fn interactive(json: bool) -> bool {
     !json && std::io::stdin().is_terminal() && std::io::stdout().is_terminal()
-        && std::env::var("TERM").map_or(true, |t| t != "dumb")
+        && std::env::var("TERM").as_deref() != Ok("dumb")
         && std::env::var_os("L3_PLAIN").map_or(true, |v| v.is_empty())
         && cfg!(unix)
 }
