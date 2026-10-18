@@ -404,6 +404,13 @@ export function homeMoved(key: HomeKey, version: number): boolean {
 }
 
 /**
+ * The settings this browser may let go with the page: each as last agreed
+ * with the Remote. One changed here and not sent yet (written offline)
+ * stays, and is sent at the next visit.
+ */
+export const homeAgreed = (): HomeKey[] => HOME_KEYS.filter((k) => (getState(k) ?? '') === (syncState().home?.[k]?.value ?? ''));
+
+/**
  * Agree a setting with the Remote. Unchanged here: the Remote's is taken.
  * Changed here: it is sent from the version it was read at; if another
  * device changed it meanwhile, the TODO lists are joined against the list

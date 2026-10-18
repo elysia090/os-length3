@@ -203,6 +203,16 @@ test('TODO from two devices is joined against what both read: done and removed e
   assert.equal(draft.mergeTodo(JSON.stringify([item('a')]), '[]', JSON.stringify([{...item('a'), title: 'edited'}])), JSON.stringify([{...item('a'), title: 'edited'}]));
 });
 
+test('a setting changed here and not sent yet is not let go with the page; one as the Remote has it is', async () => {
+  await draft.syncHome('todo');
+  assert.ok(draft.homeAgreed().includes('todo'));
+  // Written while the Remote cannot be reached: it stays with this browser until it is sent.
+  await setState('todo', JSON.stringify([{id: 'offline', title: 'written while away'}]));
+  assert.equal(draft.homeAgreed().includes('todo'), false);
+  await draft.syncHome('todo');
+  assert.ok(draft.homeAgreed().includes('todo'));
+});
+
 test('an issue is worked on in its own copy; pushed, submitted, reviewed and merged into main', async () => {
   await store.add('notes', 'issue', '001.md', 'Fix：落ちる\n');
   await draft.sync('notes');

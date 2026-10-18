@@ -169,7 +169,8 @@ function leave() {
     // Which work a repo showed stays: the next visit fetches that work's copy and shows it again.
     for (const r of go) void draft.forget(r, true);
   }
-  for (const k of draft.HOME_KEYS) dropState(k);
+  // A setting goes only as the Remote has it: one changed here and not sent yet (offline) stays, and is sent next time.
+  for (const k of draft.homeAgreed()) dropState(k);
 }
 
 let begun = false;
