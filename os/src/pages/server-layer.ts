@@ -12,8 +12,8 @@ import {gear as gearSheet} from './server-gear.ts';
 import {seeRepo as repoSheet} from './server-repo.ts';
 import {button, initials, message, type Shown} from './server-parts.ts';
 import {answers} from './common.ts';
-import {goToPlan, planRefused} from './remote.ts';
-import {plan as readPlan, refusalWords} from '../plan.ts';
+import {goToPlan, planRefused, planSaid} from './remote.ts';
+import {plan as readPlan} from '../plan.ts';
 import {boardNew, onNews, sawBoard, serverNew} from '../news.ts';
 
 // Server is an operation, as File is: laid over whatever page is showing,
@@ -388,7 +388,8 @@ export class ServerLayer {
           make.disabled = false;
           // Making a server is the plan's to allow: said here, with the way to the Plan.
           const plan = planRefused(e, () => { this.close(); goToPlan(this.ctx); });
-          if (plan) error.replaceChildren(plan);
+          // Said once: the line under the form already says it, so the refusal takes its place.
+          if (plan) { paid.replaceChildren(); error.replaceChildren(plan); }
           else if (e instanceof RemoteError && e.status === 409 && /address/i.test(e.message)) {
             const inbox = button(t('Go to Inbox'), 'small-button');
             inbox.addEventListener('click', () => { this.close(); this.ctx.go('inbox'); });
@@ -401,9 +402,7 @@ export class ServerLayer {
       const paid = h('p', {class: 'muted small'});
       void readPlan().then((p) => {
         if (p.plan !== 'free') return;
-        const to = button(t('See the plan'), 'small-button');
-        to.addEventListener('click', () => { this.close(); goToPlan(this.ctx); });
-        paid.replaceChildren(refusalWords({rule: 'server', buy: !!p.buy}), ' ', to);
+        paid.replaceChildren(planSaid({rule: 'server', buy: !!p.buy}, () => { this.close(); goToPlan(this.ctx); }));
       }, () => {});
       for (const f of [name, handle]) f.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); void done(); } });
       // What one removed or left last, still held: brought back with its name and boards.

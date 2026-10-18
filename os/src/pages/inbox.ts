@@ -7,8 +7,8 @@ import {Drafts} from '../drafts.ts';
 import {kindOf} from '../text.ts';
 import {mark} from '../icons.ts';
 import {copying, pageHead, SETTLE} from './common.ts';
-import {goToPlan, planRefused, signInBox, signInPlace} from './remote.ts';
-import {plan as readPlan, refusalWords} from '../plan.ts';
+import {goToPlan, planRefused, planSaid, signInBox, signInPlace} from './remote.ts';
+import {plan as readPlan} from '../plan.ts';
 import type {Context} from './context.ts';
 
 // Inbox: what comes to you, typed, from people found by address. Not a mail
@@ -92,7 +92,11 @@ function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLE
         h('p', {class: `small record-found${r.found ? ' found' : ''}`}, !r.found ? t('Not found yet') : name ? t('Found. Claiming {address}…', {address: `${name}@${domain}`}) : t('Found')));
       if (r.found && name) {
         clearInterval(looking);
-        try { await inbox.claim(name, domain); again(); } catch (e) { record.append(h('p', {class: 'error'}, planRefused(e, toPlan) ?? message(e))); }
+        try { await inbox.claim(name, domain); again(); } catch (e) {
+          const plan = planRefused(e, toPlan);
+          if (plan) paid.replaceChildren();
+          record.append(h('p', {class: 'error'}, plan ?? message(e)));
+        }
       }
     };
     field.addEventListener('change', () => void look());
@@ -103,9 +107,7 @@ function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLE
     const paid = h('p', {class: 'muted small'});
     void readPlan().then((p) => {
       if (p.plan !== 'free') return;
-      const to = h('button', {type: 'button', class: 'button small-button'}, t('See the plan'));
-      to.addEventListener('click', toPlan);
-      paid.replaceChildren(refusalWords({rule: 'domain', buy: !!p.buy}), ' ', to);
+      paid.replaceChildren(planSaid({rule: 'domain', buy: !!p.buy}, toPlan));
     }, () => {});
     queueMicrotask(() => field.focus());
     return h('div', {class: 'stub-own'}, field, paid, record);

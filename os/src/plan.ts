@@ -55,7 +55,7 @@ export function planView(p: Plan, now = Date.now()): PlanView {
       : p.renews ? t('Renews {date}', {date: day(p.renews)}) : t('Paid, with no end set')
     : p.status === 'canceled' && p.ends && p.ends <= now ? t('Ended {date}; what you made stays', {date: day(p.ends)})
       : p.status === 'past_due' || p.status === 'unpaid' ? t('A payment did not go through; free until one does')
-      : t('Free: {repos} on the Remote, {bytes}, one name', {repos: tn('{n} repo', '{n} repos', free.repos), bytes: bytes(free.bytes)});
+      : t('Keeps {repos} and {bytes} on the Remote, and one name', {repos: tn('{n} repo', '{n} repos', free.repos), bytes: bytes(free.bytes)});
   const meter = (label: string, used: number, of: number, show: (n: number) => string): Meter =>
     ({label, used: show(used), of: paid ? null : show(of), share: paid || of <= 0 ? 0 : Math.min(1, used / of), over: !paid && used > of});
   const meters = [meter(t('Repos on the Remote'), use.repos, free.repos, String), meter(t('Kept on the Remote'), use.bytes, free.bytes, bytes)];

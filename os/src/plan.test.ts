@@ -24,7 +24,7 @@ const free = {repos: 3, bytes: 100_000_000, names: 1};
 test('the Plan part: free, its use against the allowance and Subscribe; paid, when it renews or ends and Manage', () => {
   const f = plan.planView({plan: 'free', status: null, usage: {repos: 2, bytes: 25_000_000, names: 1}, free, buy: true, manage: false}, now);
   assert.equal(f.title, 'Free plan');
-  assert.equal(f.line, 'Free: 3 repos on the Remote, 100 MB, one name');
+  assert.equal(f.line, 'Keeps 3 repos and 100 MB on the Remote, and one name');
   assert.deepEqual(f.meters.map((m) => [m.label, m.used, m.of, m.share, m.over]),
     [['Repos on the Remote', '2', '3', 2 / 3, false], ['Kept on the Remote', '25.0 MB', '100 MB', 0.25, false]]);
   assert.deepEqual([f.action, f.note, f.adds.length], [{kind: 'checkout', label: 'Subscribe'}, null, 3]);
@@ -44,7 +44,7 @@ test('the Plan part: free, its use against the allowance and Subscribe; paid, wh
   const off = plan.planView({plan: 'free', usage: {repos: 0, bytes: 0, names: 0}, free, buy: false}, now);
   assert.deepEqual([off.action, off.note], [null, 'Paid features cannot be bought on this Remote yet']);
   setLang('ja');
-  assert.equal(plan.planView({plan: 'free', usage: {repos: 0, bytes: 0, names: 0}, free, buy: true}, now).line, '無料：Remote に repo 3個、100 MB、名前1つ');
+  assert.equal(plan.planView({plan: 'free', usage: {repos: 0, bytes: 0, names: 0}, free, buy: true}, now).line, 'Remote に repo 3個と 100 MB、名前1つまで');
   setLang('en');
 });
 

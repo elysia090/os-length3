@@ -120,7 +120,7 @@ export default {
   'A payment did not go through · paid until {date}': '支払いができませんでした · {date}までは有料プラン',
   'A payment did not go through; free until one does': '支払いができませんでした。支払いが済むまでは無料プランです。',
   'Ended {date}; what you made stays': '{date}に終了しました。作ったものはそのまま残ります。',
-  'Free: {repos} on the Remote, {bytes}, one name': '無料：Remote に{repos}、{bytes}、名前1つ',
+  'Keeps {repos} and {bytes} on the Remote, and one name': 'Remote に{repos}と{bytes}、名前1つまで',
   'The Remote keeps what is there; what is new stays on your device until there is room': 'Remote にあるものはそのままです。新しいものは空きができるまでこの端末に残ります。',
   'Kept here · waits for room on the Remote': 'この端末に保存 · Remote に空きができるのを待っています',
   'The free plan keeps no more repos on the Remote. This one stays on your device.': '無料プランでは、これ以上の repo を Remote に置けません。この repo はこの端末に残ります。',

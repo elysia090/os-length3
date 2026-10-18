@@ -5,7 +5,7 @@ import {t, tn} from '../i18n.ts';
 import {bring, look, onSync, remoteAll, repoState, type RepoSync} from '../lifecycle.ts';
 import type {RemoteRepo} from '../draft.ts';
 import * as account from '../remote.ts';
-import {openPlan, plan as readPlan, planRefusal, planView, refusalWords} from '../plan.ts';
+import {openPlan, plan as readPlan, planRefusal, planView, refusalWords, type PlanRefusal} from '../plan.ts';
 import {store} from '../repos.ts';
 import {freeOff} from '../space.ts';
 import * as servers from '../servers.ts';
@@ -24,10 +24,14 @@ export function goToPlan(ctx: Context) {
  */
 export function planRefused(e: unknown, go: () => void): HTMLElement | null {
   const r = planRefusal(e);
-  if (!r) return null;
+  return r ? planSaid(r, go) : null;
+}
+
+/** What the plan says of `r` (refused, or known before anything is asked), with See the plan after it: the sentence whole, the button beside it or under it. */
+export function planSaid(r: PlanRefusal, go: () => void): HTMLElement {
   const to = h('button', {type: 'button', class: 'button small-button'}, t('See the plan')) as HTMLButtonElement;
   to.addEventListener('click', go);
-  return h('span', {class: 'plan-refused'}, refusalWords(r), ' ', to);
+  return h('span', {class: 'plan-refused'}, h('span', {}, refusalWords(r)), to);
 }
 
 // Remote: where one's repos are kept, and who this device is there.
@@ -182,11 +186,11 @@ function repoSection(ctx: Context, counted: (n: number) => void, keyed: () => vo
     const el = h('div', {class: `card repo${off ? ' off' : ''}`, 'data-repo': name},
       h('span', {class: 'card-title'}, name),
       h('span', {class: 'muted'}, `${bytes(size)} · ${t('Changed {when}', {when: ago(changed)})}`),
-      h('span', {class: 'muted card-sync'}, where, plan ? ' ' : null, plan),
+      h('span', {class: 'muted card-sync'}, where),
       // What one does with the repo goes at the left: Forge (which leaves for another page) and Share beside
       // it, its servers coming out to its right. The switch keeps the right end; turned off, it makes Forge
       // 空ける in the same place, 廃棄 beside it.
-      h('div', {class: 'card-foot'}, forge, discard, share, h('span', {class: 'grow'}), power), error);
+      h('div', {class: 'card-foot'}, forge, discard, share, plan, h('span', {class: 'grow'}), power), error);
     power.addEventListener('click', () => {
       if (off) { void pressing(power, error, async () => { await account.turnOn(name); await look(); await paint(); }); return; }
       if (isNative) { error.textContent = t('A repo is turned off from the browser, where its passkey is.'); return; }
@@ -515,7 +519,7 @@ function planSection(offered: (on: boolean) => void): {el: HTMLElement; paint():
           h('span', {class: 'row-meta'}, m.of === null ? m.used : t('{used} of {of}', {used: m.used, of: m.of}))))),
         v.note ? h('p', {class: 'muted small plan-note'}, v.note) : null),
       h('section', {class: 'sub-part', 'aria-labelledby': 'plan-adds'}, h('h3', {id: 'plan-adds'}, h('span', {}, p.plan === 'paid' ? t('Paid gives') : t('Paid adds'))),
-        h('div', {class: 'rows'}, ...v.adds.map((a) => h('div', {class: 'row-item'}, h('span', {class: 'row-name'}, a))))),
+        h('div', {class: 'rows plan-adds'}, ...v.adds.map((a) => h('div', {class: 'row-item'}, h('span', {class: 'row-name'}, a))))),
       ...(go ? [answers(null, go)] : []), error);
   };
   return {el, paint};
