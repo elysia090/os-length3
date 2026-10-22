@@ -168,30 +168,32 @@ class Home extends Part {
   mark(item: Locator) { return item.getByRole('button', {name: /^Mark as (not )?done$/}); }
 }
 
-/** + : a new repo from a template, with what it is for written into its README. */
+/** + : a new repo from the one scaffold (C's files), with what it is for written into its README. */
 class NewRepo extends Part {
-  get name() { return this.main.getByRole('textbox', {name: 'Name'}); }
+  get name() { return this.main.getByRole('textbox', {name: 'Name', exact: true}); }
   get summary() { return this.main.getByRole('textbox', {name: 'Summary'}); }
   get create() { return this.main.getByRole('button', {name: 'Create'}); }
   /** What is said under the name when it cannot be used. */
   get problem() { return this.main.getByRole('alert'); }
   get made() { return this.main.getByRole('status'); }
-  template(label: string) { return this.main.getByRole('radiogroup', {name: 'Template'}).getByRole('radio', {name: label, exact: true}); }
+  /** The name a file of the scaffold will have (its field in the box, by the scaffold's path). */
+  fileName(path: string) { return this.main.getByRole('textbox', {name: `Name of ${path}`, exact: true}); }
 
-  /** Fill the form and press Create (the outcome is the caller's to check). */
-  async fill(name: string, o: {template?: string; summary?: string} = {}) {
+  /**
+   * Fill the form and press Create (the outcome is the caller's to check). There is no template to
+   * choose: every repo starts from the one scaffold, which has the C files (`template: 'C'` says a
+   * test relies on them); `files` names its files in the box first, by the scaffold's path.
+   */
+  async fill(name: string, o: {template?: 'C'; summary?: string; files?: Record<string, string>} = {}) {
     await this.app.rail.go('new-repo');
     await this.name.fill(name);
-    if (o.template) {
-      await this.template(o.template).click();
-      await expect(this.template(o.template)).toBeChecked();
-    }
+    for (const [path, as] of Object.entries(o.files ?? {})) await this.fileName(path).fill(as);
     if (o.summary) await this.summary.fill(o.summary);
     await this.create.click();
   }
 
   /** Make a repo and see it made. */
-  async make(name: string, o: {template?: string; summary?: string} = {}) {
+  async make(name: string, o: {template?: 'C'; summary?: string; files?: Record<string, string>} = {}) {
     await this.fill(name, o);
     await expect(this.made).toHaveText(`Made ${name}`);
   }
@@ -229,10 +231,12 @@ class Forge extends Part {
   async editFile(path: string, text: string) {
     const editor = this.editor(path);
     await editor.fill(text);
-    await expect(this.fileState(path)).toHaveText('Unsaved');
+    // Not waited for as "Unsaved": a pause of 0.7 s saves it, and a slow machine may take longer than
+    // that to look (`writeOn` holds the clock for a step that needs it unsaved). What counts is that it is saved.
     // Leaving the text saves it at once (as do Ctrl+S and a moment's pause).
     await editor.press('Escape');
     await expect(this.fileState(path)).toBeHidden();
+    await expect(editor).toHaveValue(text);
   }
 
   /** Search the open repo: the results take the reference's place. */
@@ -419,11 +423,18 @@ class Git extends Part {
   async write(repo: string, first: string, detail = '') {
     await this.app.rail.go('git');
     await this.main.getByRole('button', {name: 'Write an issue'}).click();
-    await this.main.getByRole('radiogroup', {name: 'Repo to write in'}).getByRole('radio', {name: repo, exact: true}).click();
+    // Where it goes is chosen in the one row of repos above the box, as the issues shown are.
+    await this.repos.getByRole('radio', {name: repo, exact: true}).click();
+    await expect(this.firstLine).toHaveAccessibleDescription(repo);
     await this.main.getByRole('textbox', {name: 'First line as Kind: title'}).fill(first);
     if (detail) await this.main.getByRole('textbox', {name: 'Detail'}).fill(detail);
     await this.main.getByRole('button', {name: 'Create'}).click();
   }
+
+  /** The one row of repos above the issues: which are shown, and, while one is written, where it goes. */
+  get repos() { return this.main.getByRole('radiogroup', {name: 'repo'}); }
+  /** A new issue's first line, which says the repo it goes in (its description). */
+  get firstLine() { return this.main.getByRole('textbox', {name: 'First line as Kind: title'}); }
 
   /** A step's button in the issue on screen (Start, Commit, Push, Merge…): only the issue on screen has them. */
   step(name: string) { return this.main.getByRole('button', {name, exact: true}); }
