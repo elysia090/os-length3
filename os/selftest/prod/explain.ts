@@ -4,21 +4,31 @@
 // triggers' bookkeeping done by hand), many accounts and one heavy one, whose
 // figures are what is shown: a poll is only as quick as its slowest account.
 //
-//   node selftest/prod/explain.ts [--scale K]   (K: 1 is 5,000 accounts; rows grow with it)
+//   node selftest/prod/explain.ts [--scale K] [--upto N]   (K: 1 is 5,000 accounts; rows grow with it;
+//                                   N: only the first N migrations, to compare with what came before)
 
 import {cluster} from './postgres.ts';
-import {migrateRemote, owner, reach} from '../../service/neon.ts';
+import {rmSync} from 'node:fs';
+import {drizzle} from 'drizzle-orm/neon-serverless';
+import {migrate} from 'drizzle-orm/neon-serverless/migrator';
+import {MIGRATIONS, migrateRemote, owner, reach} from '../../service/neon.ts';
+import {firstOf} from '../../service/stages.ts';
 
 const argv = process.argv.slice(2);
 const K = argv.includes('--scale') ? Number(argv[argv.indexOf('--scale') + 1]) : 1;
 const U = 5000 * K;
+const UPTO = argv.includes('--upto') ? Number(argv[argv.indexOf('--upto') + 1]) : null;
 
 const pg = await cluster();
 try {
   pg.createdb('remote');
   const reached = await reach(pg.ownerUrl('remote'));
   const own = owner(pg.ownerUrl('remote'));
-  await migrateRemote(own.db);
+  if (UPTO === null) await migrateRemote(own.db);
+  else {
+    const first = firstOf(MIGRATIONS, UPTO);
+    try { await migrate(own.db as ReturnType<typeof drizzle>, {migrationsFolder: first}); } finally { rmSync(first, {recursive: true}); }
+  }
   await own.pool.end();
   await reached.close();
   const t0 = Date.now();
@@ -54,9 +64,9 @@ insert into board_post (id, board_id, user_id, by, body) select lpad(n::text, 8,
   from generate_series(1, ${U / 5}) i, generate_series(1, 4) j, generate_series(1, 100) n;
 insert into board_seen (board_id, user_id, post) select b.id, m.user_id, '00000050000000001' from board b join server_member m on m.server_id = b.server_id where m.user_id <> 'u1';
 insert into throttle (key, at) select 'k' || (i % 5000), now() - (i % 48) * interval '1 hour' from generate_series(1, ${40 * U}) i;
-insert into ssh (session_id, user_id, port, destinations) select 's' || i, 'u' || (1 + i % ${U}), 2222, '[]' from generate_series(1, ${U}) i;
+insert into ssh (session_id, user_id) select 's' || i, 'u' || (1 + i % ${U}) from generate_series(1, ${U}) i;
 set session_replication_role = origin;
-analyze;
+vacuum analyze;
 `, 'remote');
   console.log(`explain: ${U} accounts made in ${Math.round((Date.now() - t0) / 1000)} s; ${pg.psql(`select pg_size_pretty(pg_database_size('remote'))`, 'remote').trim()}`);
 
@@ -69,7 +79,7 @@ analyze;
       join board b on b.server_id = sm.server_id and b.gone_at is null left join board_seen r on r.board_id = b.id and r.user_id = 'u1'
       cross join lateral (select p.id as post from board_post p where p.board_id = b.id and (p.user_id is null or p.user_id <> 'u1') order by p.id desc limit 1) n
       where sm.user_id = 'u1' and n.post > coalesce(r.post, '') order by b.created_at`],
-    ['SSH beat', `update ssh set seen_at = now() where session_id = 's1' returning port`],
+    ['SSH beat', `update ssh set seen_at = now() where session_id = 's1' returning scope`],
     ['repos list', `select r.name, l.head, l.version from repo r join line l on l.repo_id = r.id and l.name = 'main' where r.user_id = 'u1' order by l.file_bytes desc, r.name`],
     ['blobs missing (50)', `select sha256 from blob where user_id = 'u1' and sha256 in (select ${sha("'b' || i")} from generate_series(1, 250000, 5000) i)`],
     ['log walk (50)', `with recursive walk(id, n) as (select (select head from line l join repo r on r.id = l.repo_id where r.user_id = 'u1' and r.name = 'repo1' and l.name = 'main'), 1

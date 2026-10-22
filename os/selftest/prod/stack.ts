@@ -1,6 +1,7 @@
 // The production-like Remote, one at a time: a database of its own in the
 // selftest's Postgres (postgres.ts), migrated and given remote_worker as
-// deploy.ts does it (neon.ts migrateRemote and workerRole, through the
+// deploy.ts does it (neon.ts migrateBeforeWorker, workerRole, then once the
+// Worker answers migrateRemote for a contract step that waited; through the
 // Worker's own driver), and the Worker on workerd (`wrangler dev --local`)
 // from a configuration made from wrangler.toml, serving the built app as
 // Workers Assets do and the Remote on the same origin, with local R2.
@@ -23,7 +24,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {sql} from 'drizzle-orm';
-import {migrateRemote, owner, reach, workerRole} from '../../service/neon.ts';
+import {migrateBeforeWorker, migrateRemote, owner, reach, workerRole} from '../../service/neon.ts';
 import {freePort, type Cluster} from './postgres.ts';
 
 export const OS = fileURLToPath(new URL('../..', import.meta.url));
@@ -121,12 +122,14 @@ export async function remote(pg: Cluster, o: RemoteOptions): Promise<Remote> {
   const db = `remote_${process.pid}_${++made}_${randomBytes(2).toString('hex')}`;
   pg.createdb(db);
 
-  // As deploy.ts: the migrations as the owner, then remote_worker, through the Worker's driver.
+  // As deploy.ts: the migrations the running Worker can meet as the owner (a contract step waits for the
+  // new Worker: stages.ts), then remote_worker, through the Worker's driver.
   const reached = await reach(pg.ownerUrl(db));
   const own = owner(pg.ownerUrl(db));
   const password = randomBytes(18).toString('hex');
+  let waiting: string | null = null;
   try {
-    await migrateRemote(own.db);
+    waiting = await migrateBeforeWorker(own.db);
     await workerRole(own.db, password);
     // remote_worker connects to this database (Neon's role may connect to its own; here, said so).
     await own.db.execute(sql.raw(`grant connect on database "${db}" to remote_worker`));
@@ -193,6 +196,13 @@ export async function remote(pg: Cluster, o: RemoteOptions): Promise<Remote> {
   }
   process.once('exit', () => { if (child?.pid && child.exitCode === null) try { process.kill(-child.pid, 'SIGKILL'); } catch { /* gone */ } });
   await start();
+  // The new Worker answers: the contract step and those after it, as deploy.ts runs them then.
+  if (waiting) {
+    const again = await reach(pg.ownerUrl(db));
+    const later = owner(pg.ownerUrl(db));
+    try { await migrateRemote(later.db); } finally { await later.pool.end(); await again.close(); }
+    log += `\nselftest: migrations from ${waiting} applied once the Worker answered\n`;
+  }
   return {
     url, port, db, databaseUrl, env: {...vars, ...secrets}, start, stop,
     sweep: async () => (await fetch(`${url}/__scheduled?cron=${encodeURIComponent(p.crons.replace(/[[\]"]/g, ''))}`)).status,

@@ -116,7 +116,7 @@ async function main() {
     }
     // Small repos beside it, as an account has; SSH on, as a device turns it.
     for (const name of ['notes', 'site', 'todo-app']) await api(r.url, 'PATCH', `/v1/repos/${name}/draft`, {version: 0, set: {'README.md': sha('content 0 v0')}, remove: []});
-    const ssh = await api(r.url, 'PUT', '/v1/ssh/this', {port: 2222, destinations: ['ssh -p 2222 big@127.0.0.1']}, {origin: false});
+    const ssh = await api(r.url, 'PUT', '/v1/ssh/this', {scope: 'device'}, {origin: false});
     if (ssh.status !== 200) throw new Error(`ssh: ${ssh.status} ${ssh.bytes}`);
     const missing50 = Array.from({length: 50}, (_, i) => sha(`content ${i} v0`));
     let n = 0;
