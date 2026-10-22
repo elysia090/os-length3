@@ -175,15 +175,16 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
         .where(and(eq(server.goneBy, me), sql`${server.goneAt} > ${ago(HOLD)}`)) as {id: string; name: string; address: string; at: Date}[];
       return c.json(list.map((x) => ({id: x.id, name: x.name, address: x.address, until: x.at.getTime() + HOLD})));
     }
-    const list = await db.select({id: server.id, name: server.name, address: sql<string>`coalesce(${address.address}, '')`, owner: member.owner, until: address.until, code: principalCode.code})
+    const list = await db.select({id: server.id, name: server.name, address: sql<string>`coalesce(${address.address}, '')`, owner: member.owner, until: address.until, code: principalCode.code, madeBy: server.madeBy})
       .from(member).innerJoin(server, and(eq(server.id, member.serverId), isNull(server.goneAt)))
       .leftJoin(address, eq(address.serverId, server.id)).leftJoin(principalCode, eq(principalCode.serverId, server.id))
-      .where(eq(member.userId, me)).orderBy(member.addedAt) as {id: string; name: string; address: string; owner: boolean; until: Date | null; code: string | null}[];
+      .where(eq(member.userId, me)).orderBy(member.addedAt) as {id: string; name: string; address: string; owner: boolean; until: Date | null; code: string | null; madeBy: string | null}[];
     if (!list.length) return c.json([]);
     // A board removed is listed with when it goes for good (`gone`), so its owner may bring it back.
     const boards = await db.select({id: board.id, serverId: board.serverId, name: board.name, reach: board.reach, goneAt: board.goneAt}).from(board)
       .where(and(inArray(board.serverId, list.map((r) => r.id)), sql`(${board.goneAt} is null or ${board.goneAt} > ${ago(HOLD)})`)).orderBy(board.createdAt) as Board[];
-    return c.json(list.map((r) => ({id: r.id, name: r.name, address: r.address, owner: r.owner, code: r.code ?? '', until: r.until?.getTime() ?? null,
+    // `made`: whether the asker made it, so what leaving or removing it comes to is said before (its maker alone: a day).
+    return c.json(list.map((r) => ({id: r.id, name: r.name, address: r.address, owner: r.owner, made: r.madeBy === me, code: r.code ?? '', until: r.until?.getTime() ?? null,
       boards: boards.filter((b) => b.serverId === r.id).map((b) => ({id: b.id, name: b.name, open: b.reach >= REACH.open, guests: b.reach === REACH.guests,
         ...(b.goneAt ? {gone: b.goneAt.getTime() + HOLD} : {})}))})));
   });
@@ -220,7 +221,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       if (!got.ok) refuse(409, got.until ? {error: 'That name was let go, and is held for its owner a while', until: got.until} : {error: 'That name is taken'});
       await tx.insert(member).values({serverId: id, userId: me, owner: true});
       await tx.insert(board).values({id: bid, serverId: id, name: first});
-      return {id, name: n, address: `${handle}@${domain}`, owner: true, code: await codeOf(tx, {serverId: id}), until: got.until,
+      return {id, name: n, address: `${handle}@${domain}`, owner: true, made: true, code: await codeOf(tx, {serverId: id}), until: got.until,
         boards: [{id: bid, name: first, open: false, guests: false}]};
     });
     return c.json(made, 201);

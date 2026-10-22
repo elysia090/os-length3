@@ -233,7 +233,15 @@ export class ServerLayer {
       // Its foot in view, what came is seen: the marks go, here and on the rail.
       talk.append(timeline(talk, b.id, b.member, b.member ? (post) => sawBoard(b.id, post) : undefined));
       void boardTodo(b, todo, (busy) => writer(todo, busy));
-      return h('div', {class: 'board-card'}, head, todo, talk);
+      const box = h('div', {class: 'board-card'}, head, todo, talk);
+      // While its talk goes on below what is shown, the box is open at its foot: the posts run past the edge, so the
+      // reader sees there is more to scroll to. At the talk's foot it closes. Said by what really scrolls, nothing else.
+      const more = () => box.classList.toggle('more-below', talk.scrollHeight - talk.scrollTop - talk.clientHeight > 1);
+      talk.addEventListener('scroll', more, {passive: true});
+      const grown = new ResizeObserver(more);
+      grown.observe(talk);
+      for (const el of talk.children) grown.observe(el);
+      return box;
     };
 
     /** The last box: a new board in this server. */
@@ -257,7 +265,8 @@ export class ServerLayer {
       name.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); void done(); } });
       return h('div', {class: 'board-card board-new'},
         h('div', {class: 'board-head'}, h('span', {class: 'muted'}, '+'), h('h2', {}, t('New board'))),
-        h('div', {class: 'board-body'}, h('p', {class: 'muted'}, t('A board is one thing to talk about, with a TODO kept together: a trip, a release, a reading group.')),
+        // Broken where the sentence is: what a board is, then what one may be about.
+        h('div', {class: 'board-body'}, h('p', {class: 'muted'}, t('A board is one thing to talk about, with a TODO kept together:'), h('br'), t('a trip, a release, a reading group.')),
           h('div', {class: 'row'}, name, make), error));
     };
 

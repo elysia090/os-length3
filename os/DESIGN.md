@@ -140,7 +140,8 @@ what is its own.
   Server) has no page head: it is laid over the page whose head is there.
   A step within a page that stands in the page's place (Server's gear, a
   repo shown in Server) has the same head: its title, a line in `sub`, and
-  its way back (Done) at the right.
+  its way back at the right (a repo shown: Back); behind Server's gear,
+  Done is the sheet's answer, at its bottom right, under what scrolls.
 - **The band.** What is out to work on, on the top line: each thing as a
   round chip, the current one an `ink` fill, then + after them (round, an
   `edge` outline, `sub`), as a browser's new tab comes after its tabs.
@@ -158,7 +159,8 @@ what is its own.
   never inside another box.
 - **The dashed card.** Room for something that is not here yet, and the
   way to make it: a card with a dashed `rule` edge and a quiet word in its
-  middle (New repo, Add someone you know). Pressed, it becomes the card it
+  middle (New repo; Add someone you know, among the people's cards, starts
+  where their names start). Pressed, it becomes the card it
   makes. A dashed box with a quiet line is also the empty state: nothing
   here yet, said once, in the place where it would be (the center), as
   wide as its words. A pane beside it with nothing to show says nothing:
@@ -1454,7 +1456,8 @@ Server is an overlay (§3), on the bench's shape. Its pieces, from §3:
   box in two panes: its files, the one chosen (its README first), as it
   was last pushed.
 - **Behind the gear**, in the boards' place: the page head (the server's
-  name, its name on the Remote and code, Done), then **parts** of **small
+  name, its name on the Remote and code; Done at the sheet's bottom right),
+  then **parts** of **small
   cards**: People (a dashed card to add someone one knows, pressed the card
   that adds: one's contacts not in it, each a button, then a field for a
   name or a code and 入れる; its owner removes someone), Repos (each of one's own with **the pair of
@@ -1467,7 +1470,10 @@ Server is an overlay (§3), on the bench's shape. Its pieces, from §3:
   invited them and Remove, asked in the card; the invitations out, each with
   whose and until when and Revoke, at once; and Invite a guest at its foot,
   which shows the link once, copied by a press), This server (its name, code and term, Renew near its
-  end; Leave; its owner's Delete). Whatever reaches past its people or
+  end; Leave; its owner's Delete). Leave and Delete say what they come to,
+  as the Remote does it: who owns it next (the first of the others to have
+  come in), or that it goes with the last one out, and how long it can be
+  brought back (30 days; a day when its maker is alone in it). Whatever reaches past its people or
   cannot be taken back at once is **asked in the card**.
 
 Escape from behind the gear, or from a repo shown, goes back to the boards
@@ -1488,7 +1494,11 @@ centred, marks where a day starts. A post's writer, and the server's owner,
 may take it down: it comes out at its top right on hover, round, and asks
 once more in its own place for a moment. Nothing is counted.
 
-The talk has no end to reach and nothing to press. It opens at the newest;
+The talk has no end to reach and nothing to press. With no post yet, it
+says so at its foot, by the box one writes in, where the first will come.
+While it goes on below what is shown, the board's box is open at its foot
+(no line under it, the posts running past the edge), so there is plainly
+more to scroll to; at the foot it closes. It opens at the newest;
 scrolled near its top, the next older posts are read in above without
 moving what is on screen, and at the very top it says it is every post.
 What comes meanwhile is put at the foot: followed when the foot is in view
