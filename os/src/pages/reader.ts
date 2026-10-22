@@ -107,6 +107,20 @@ export class Reader {
   }
 
   /**
+   * Give `path`'s editor the keyboard again, its selection as it was, without moving the page: the page was
+   * read again under the person's caret. Nothing is taken from what has the keyboard meanwhile.
+   */
+  async refocus(path: string, start: number, end: number) {
+    const parts = path.split('/');
+    for (let i = 0; i < parts.length; i++) await this.loads.get(parts.slice(0, i).join('/'))?.();
+    await this.fileLoads.get(path)?.();
+    const area = this.editors.get(path);
+    if (!area?.isConnected || (document.activeElement && document.activeElement !== document.body)) return;
+    area.focus({preventScroll: true});
+    area.setSelectionRange(start, end);
+  }
+
+  /**
    * Load the directories down to `path` and scroll it into view; at `line`,
    * that line is selected with the caret in it; with `write`, the caret is put
    * at the file's start (a file chosen to work on, from File).

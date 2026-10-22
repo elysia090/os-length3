@@ -228,6 +228,7 @@ jobs:
             os/selftest/.results
             os/selftest/.logs
           retention-days: 14
+          include-hidden-files: true
       # Passed, but only on a retry (flaky): the failed attempt's trace is kept too, to be read.
       - name: Traces of attempts that failed before passing
         if: success()
@@ -237,3 +238,4 @@ jobs:
           path: os/selftest/.results
           if-no-files-found: ignore
           retention-days: 14
+          include-hidden-files: true

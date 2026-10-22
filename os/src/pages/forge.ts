@@ -227,10 +227,14 @@ function make(ctx: Context) {
     const reader = new Reader(repo, flow);
     const fresh = {reader, root: reader.directory(''), top, stale: false};
     const was = views.get(repo);
+    // The file being written keeps the keyboard and its caret through the page read again.
+    const writing = was && document.activeElement instanceof HTMLTextAreaElement && was.root.contains(document.activeElement) ? document.activeElement : null;
+    const at = writing?.closest<HTMLElement>('section.file')?.dataset.path;
     views.set(repo, fresh);
     if (was) was.root.replaceWith(fresh.root);
     put(fresh.root);
     if (keep) putBack = requestAnimationFrame(() => { flow.scrollTop = top; });
+    if (writing && at) void reader.refocus(at, writing.selectionStart, writing.selectionEnd);
   };
   const offChange = onChange((c) => {
     const v = views.get(c.repo);
