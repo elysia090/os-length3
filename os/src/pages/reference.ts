@@ -307,12 +307,11 @@ export class Reference {
       b.addEventListener('click', () => to?.go());
       return b;
     };
-    // What the one in hand is, said under the box between the steps, not over what it holds.
+    // Under the box, ← and → side by side at its left, then what the one in hand is (not over what it holds).
     const here = slots[k];
-    const nav = h('div', {class: 'found-nav'}, step(-1),
+    const nav = h('div', {class: 'found-nav'}, ...(slots.length > 1 ? [h('span', {class: 'found-steps'}, step(-1), step(1))] : []),
       h('p', {class: 'found-here'}, h('span', {class: 'found-kind'}, here.kind), here.label ? h('span', {class: 'found-what'}, here.label) : null,
-        slots.length > 1 ? h('span', {class: 'found-at'}, `${k + 1} / ${slots.length}`) : null),
-      step(1));
+        slots.length > 1 ? h('span', {class: 'found-at'}, `${k + 1} / ${slots.length}`) : null));
     this.panel.replaceChildren(h('div', {class: `slides${slots.length === 1 ? ' single' : ''}${k < slots.length - 1 ? ' more' : ''}`, style: `--lead:${slots.length === 1 || k === 0 ? 0 : k === slots.length - 1 ? 2 : 1}`}, stage), nav);
     // Moved along by a press at an edge: the keyboard stays on the line.
     if (moved) {

@@ -646,9 +646,12 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .work.bench > .side::before { content: ''; position: absolute; left: 0; top: 0; bottom: var(--s5); width: 1px; background: var(--rule); }
 /* What was found, under the box and over the center, while the box (or what was found) has the keyboard. */
 .search-box { position: relative; min-width: 0; }
+/* What opens under the box: its ground runs a step (s3) past the large box on every side, so the lines behind it
+   (the file's box, the pane's line) stop that same step short of it, everywhere alike. It starts at the top line's
+   foot, so the large box's top is level with the center's file box. */
 .search-results {
-  position: absolute; z-index: 4; top: calc(100% + var(--s2)); right: 0; width: calc(2 * var(--pane-w));
-  padding: var(--s1) 0 var(--s2); background: var(--ground);
+  position: absolute; z-index: 4; top: calc(100% + var(--s3)); right: calc(-1 * var(--s3)); width: calc(2 * var(--pane-w) + 2 * var(--s3));
+  padding: var(--s3); background: var(--ground);
 }
 /* Under the box, while it has the keyboard or something chosen is read there: Issue, diff and Output side by
    side, and under them the large box. In it what was searched and read lines up sideways, the one in hand
@@ -656,8 +659,9 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
    boards do; the card in hand scrolls within the box. */
 .search-box:not(:focus-within):not(.reading):not(.moving) > .search-results { display: none; }
 .search-results { display: flex; flex-direction: column; gap: var(--s3); max-height: none; overflow: visible; }
-/* Issue, diff and Output under the box itself, at its width; the large box under them reaches into the center. */
-.search-pills { display: flex; flex-wrap: wrap; gap: var(--s2); align-self: flex-end; width: var(--search-w); }
+/* Issue, diff and Output at the large box's left end, standing on it: their foot a hair (s1) over its top, up
+   beside the search box rather than level with it, so the three and the box they switch read as one. */
+.search-pills { display: flex; gap: var(--s2); position: absolute; left: var(--s3); bottom: calc(100% - var(--s3) + var(--s1)); }
 .search-panel { min-width: 0; }
 /* No slivers: ← and → under the box move along. What comes next shows as the edge of a card behind, past the
    box's right end, without narrowing it; what came before is ←'s to say. */
@@ -670,7 +674,7 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
    Prompt's top): the Prompt brought up over the center is never under it. */
 .found-card {
   display: flex; flex-direction: column; border: 1px solid var(--rule); border-radius: var(--r-place); background: var(--ground);
-  height: max(120px, min(60vh, 560px, calc(var(--search-room, 100vh) - 2 * var(--h-row) - var(--s1) - 2 * var(--s2) - var(--s3) - var(--s2))));
+  height: max(120px, min(60vh, 560px, calc(var(--search-room, 100vh) - var(--h-row) - 3 * var(--s3) - var(--s2))));
 }
 .slide[aria-current='true'] > .found-card { border-color: var(--ink); }
 .slide[aria-current='false'] > .found-card { color: var(--sub); }
@@ -681,14 +685,16 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .found-foot { flex: none; padding: var(--s3) var(--s4); }
 .found-foot:empty { display: none; }
 .found-foot > .diff-foot { padding: 0; }
-/* Under the box: ← where the line goes back, → where it goes on, and where in it the one in hand is. */
+/* Under the box at its left: ← and → side by side (one at the line's end is there, faint, so neither moves),
+   then what the one in hand is and where in the line. */
 .found-nav { display: flex; align-items: center; gap: var(--s3); margin-top: var(--s2); }
-.found-here { flex: 1; min-width: 0; margin: 0; display: flex; align-items: baseline; justify-content: center; gap: var(--s2); }
+.found-steps { display: flex; gap: var(--s1); flex: none; }
+.found-here { flex: 1; min-width: 0; margin: 0; display: flex; align-items: baseline; gap: var(--s2); }
 .found-here > .found-what { min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .found-here > .found-kind, .found-here > .found-at { flex: none; }
 .found-step { display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; color: var(--ink); cursor: pointer; }
 .found-step:hover:not(:disabled) { background: var(--raised); }
-.found-step:disabled { visibility: hidden; }
+.found-step:disabled { opacity: .35; cursor: default; }
 .found-at { font: var(--t-meta) var(--mono); color: var(--sub); }
 .work.bench .search-results { max-height: var(--search-room, none); }
 .found-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s1); }
@@ -730,6 +736,8 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
   /* Laid over, it is the plugin area: the Prompt is the center's here (its dock, while it is written to). */
   .work.bench.pane-out > .side > .term-home { display: none; }
   .work.bench .search-results { left: auto; right: 0; transform: none; width: min(360px, calc(100vw - var(--rail) - 2 * var(--s4))); }
+  /* No room on the top line here: Issue, diff and Output at the top of what opens. */
+  .search-pills { position: static; }
 }
 /* One line to type in, the same everywhere: the search box, a repo's name. */
 .search-in, .line-in {

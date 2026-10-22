@@ -117,7 +117,7 @@ export default {
   'Halted: {message}': '停止しました：{message}',
   'Could not open on the root ({why})': 'root で開けませんでした（{why}）',
   'Large files and binaries are not included': '大きいファイルとバイナリは入っていません',
-  'Could not start: {message}': '起動できませんでした：{message}',
+  'Could not start': '起動できませんでした',
   'Stopped': '止めました',
   '{size} given back': '{size} を返しました',
   'Stopping ({n} process left)': '止めています（{n}個のプロセスが残っています）',

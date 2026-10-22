@@ -302,7 +302,9 @@ export class Session {
       this.l3 = l3;
       this.tell();
     } catch (e) {
-      this.end(() => t('Could not start: {message}', {message: errorText(e)}));
+      // Said short at the Prompt's foot; why is the line's title, there when asked for, not a sentence beside the switch.
+      const why = errorText(e);
+      this.end(() => t('Could not start'), why);
     }
   }
 
@@ -389,10 +391,13 @@ export class Session {
 
   /** What the ended Prompt says, drawn again in the language chosen meanwhile. */
   private said: (() => string) | null = null;
+  /** Why it ended, when it did not start: the title of what it says. */
+  private why = '';
 
-  private end(message: () => string) {
+  private end(message: () => string, why = '') {
     this.ended = true;
     this.said = message;
+    this.why = why;
     clearInterval(this.ticker);
     this.activity.replaceChildren();
     this.unwatch?.();
@@ -417,7 +422,7 @@ export class Session {
     const restart = h('button', {class: 'power', type: 'button', role: 'switch', 'aria-checked': 'false', 'aria-label': t('Start again')}, h('span', {class: 'knob'}));
     restart.addEventListener('click', () => this.restart());
     this.element.classList.add('ended');
-    this.status.replaceChildren(h('span', {}, this.said()), restart);
+    this.status.replaceChildren(h('span', this.why ? {title: this.why} : {}, this.said()), restart);
   }
 }
 
