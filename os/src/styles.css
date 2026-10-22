@@ -119,7 +119,10 @@ a { color: var(--ink); }
 /* A popover (the person's menu, Inbox's names): one box, a head over each group, a row per item. */
 .pop { display: grid; padding: var(--s2); background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-card); }
 .me-pop {
-  position: absolute; left: calc(100% + var(--s3)); bottom: 0; z-index: 6; min-width: 280px;
+  position: absolute; left: calc(100% + var(--s3)); bottom: 0; z-index: 6;
+  /* As wide as it needs, but never past the window's own gutter (a 320 px phone has 194 px beside the rail). */
+  min-width: min(280px, calc(100vw - 2 * var(--outer) - var(--rail)));
+  max-width: calc(100vw - 2 * var(--outer) - var(--rail));
   visibility: hidden; opacity: 0; transition: opacity var(--motion), visibility 0s var(--motion);
 }
 .me-wrap.open .me-pop { visibility: visible; opacity: 1; transition: opacity var(--motion), visibility 0s; }
@@ -225,7 +228,7 @@ a { color: var(--ink); }
 .identity .unset { color: var(--sub); font-weight: 400; }
 .handle { color: var(--sub); }
 .bio { margin-top: var(--s3); max-width: 60ch; white-space: pre-wrap; }
-.counts { margin-top: var(--s3); display: flex; gap: var(--s5); color: var(--sub); }
+.counts { margin-top: var(--s3); display: flex; flex-wrap: wrap; gap: 0 var(--s5); color: var(--sub); }
 .counts b { color: var(--ink); }
 .edit { display: grid; gap: var(--s3); max-width: 520px; }
 /* A field takes its column's width, never its own: on a phone the form stays inside the window. */
@@ -329,9 +332,6 @@ button.row-item:hover:not(:disabled) { background: var(--raised); }
 button.row-item:disabled { cursor: default; color: var(--sub); }
 .row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-meta { flex: none; color: var(--sub); font: var(--t-meta) var(--mono); }
-.work-act { margin-top: var(--s3); }
-.work-act .line-in { flex: 1; }
-.issue-one { display: grid; gap: var(--s2); }
 /* A phone has no room for a row's name beside its facts: the name takes its own line, the facts the next, the deed
    still at the right end. Before, the facts (which never shrink) squeezed the name to nothing (a device unnamed). */
 @media (max-width: 560px) {
@@ -339,6 +339,9 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
   .rows > .row-item > .row-name { flex-basis: 100%; }
   .rows > .row-item > .button:last-child { margin-left: auto; }
 }
+.work-act { margin-top: var(--s3); }
+.work-act .line-in { flex: 1; }
+.issue-one { display: grid; gap: var(--s2); }
 .issue-one h3 { margin: 0; font-size: var(--t-body); font-weight: 600; }
 .issue-body { white-space: pre-wrap; }
 .issue-form { display: grid; gap: var(--s3); margin-bottom: var(--s4); padding: var(--s4); border: var(--line-work) solid var(--edge); border-radius: var(--r-place); }
@@ -435,6 +438,8 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 }
 .chips { display: flex; flex-wrap: wrap; gap: var(--s2); }
 .center { grid-column: 1; position: relative; min-height: 0; border-right: 1px solid var(--rule); overflow: clip; }
+/* No pane, no line (Server signed out): the center keeps its width, so nothing on it moves. */
+.work.no-side > .center { border-right-color: transparent; }
 .flow { height: 100%; overflow-y: auto; padding: var(--s3) var(--s5) 160px; }
 .flow:focus-visible { outline-offset: -2px; }
 .path {
@@ -452,8 +457,6 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
    flow's top), so the center's first box and the rail end on one line, and
    the center is read by scrolling down, never packed to fit a screen. Never
    so tall that, read from its top, its foot meets the prompt box: a clear
-/* No pane, no line (Server signed out): the center keeps its width, so nothing on it moves. */
-.work.no-side > .center { border-right-color: transparent; }
    gap (s6) stays between them, so the box floats over the page rather than
    hanging off a file. */
 .file {
@@ -623,7 +626,7 @@ mark { background: var(--ink); color: var(--ground); }
    leaves (tree.ts). */
 .tree {
   position: fixed; top: var(--tree-top, var(--outer-top)); left: calc(var(--outer) + var(--rail) + var(--s2)); z-index: 5;
-  width: clamp(260px, 20vw, 340px); max-height: calc(100vh - var(--tree-top, var(--outer-top)) - var(--outer-bottom)); overflow: auto;
+  width: min(clamp(260px, 20vw, 340px), calc(100vw - 2 * var(--outer) - var(--rail) - var(--s2))); max-height: calc(100vh - var(--tree-top, var(--outer-top)) - var(--outer-bottom)); overflow: auto;
   /* Concentric with its rows: the card's corner is the row's corner plus the padding between them. */
   padding: var(--s2); background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-card);
   visibility: hidden; opacity: 0;
