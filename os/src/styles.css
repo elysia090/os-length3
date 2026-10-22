@@ -322,13 +322,15 @@ span.todo-title { min-height: 0; }
 .repo-gear-pop .pop-item:disabled { color: var(--sub); }
 @media (prefers-reduced-motion: reduce) { .repo-gear-button { transition: none; } }
 
-/* Runtime: the environments a Prompt can run on, in one small card the size of a Prompt's: the one in effect at
-   its top (its name, its version, what it is, its digest), the others under it, a row each, quiet, what can be
-   done at the right. A version is set apart from its name in the mono face (the desktop app's too). On the web
-   SSH is one line, kept to a card's width, so SSH, the environments and the desktop app share a laptop's row. */
+/* Runtime's Environments (issue #20, screen ③): the environments a Prompt can run on, in one card as wide as two
+   of Prompts running's side by side: the one in effect at its top (its name, its version, what it is, its digest),
+   then Ubuntu, Debian and Custom one under another, quiet, what can be done (or why not) at the right. The card
+   stands where the desktop app stood, the desktop app one to its right; SSH under the two. A version is set apart
+   from its name in the mono face (the desktop app's too). Narrower than two cards it takes the width it has, and
+   wraps rather than cutting a word off. */
 .version { font: 400 var(--t-meta) var(--mono); color: var(--sub); }
-.section-row > .section[aria-labelledby='ssh-title']:not(:has(.small-grid)) { max-width: 270px; }
 .env-card { gap: var(--s1); }
+.section-row .small-card.env-card { width: calc(2 * 270px + var(--s4)); }
 .env-sha { font: var(--t-meta) var(--mono); overflow-wrap: anywhere; }
 .env-rows { display: grid; margin-top: var(--s3); }
 .env-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--s3); min-height: var(--h-control); padding: var(--s1) 0; }

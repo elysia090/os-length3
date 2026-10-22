@@ -72,8 +72,8 @@ test('Runtime is in parts as Remote is: the one chosen shows, the others blend i
   await expect(app.runtime.part('Environments')).toBeInViewport();
 });
 
-test('the environments are one card beside the desktop app: Length³ and its version apart, one Download a size smaller', async ({app}) => {
-  // The Remote has the release's files, as a deploy puts them there.
+test('the environments are one card two wide, the desktop app at its right and SSH under both: Length³ and its version apart, one Download a size smaller', async ({signedIn: app}) => {
+  // The Remote has the release's files, as a deploy puts them there. (Signed in, so SSH is there to be under them.)
   await app.page.route('**/v1/desktop/**', (r) => (r.request().method() === 'HEAD' ? r.fulfill({status: 200, body: ''}) : r.continue()));
   await app.runtime.open('Environments');
   const panel = app.main.getByRole('tabpanel', {name: /^Environments/});
@@ -86,6 +86,11 @@ test('the environments are one card beside the desktop app: Length³ and its ver
   // Side by side, the environments at the left, ending level.
   expect(d.x).toBeGreaterThan(e.x + e.width);
   expect(Math.abs(d.y - e.y)).toBeLessThan(2);
+  // As wide as two of Prompts running's cards side by side; SSH under the two, not beside them.
+  expect(e.width).toBeGreaterThanOrEqual(2 * 270);
+  const ssh = (await panel.getByRole('heading', {name: 'SSH'}).boundingBox())!;
+  expect(ssh.y).toBeGreaterThan(Math.max(e.y + e.height, d.y + d.height));
+  expect(Math.abs(ssh.x - e.x)).toBeLessThan(2);
   // One download: the .deb, which says what it is; no AppImage beside it.
   await expect(app_.getByRole('link')).toHaveCount(1);
   await expect(app_.getByRole('link', {name: 'Download'})).toHaveAttribute('href', /\.deb$/);
@@ -128,7 +133,7 @@ test("a repo's name in Runtime is the repo itself; its gear offers Forge or Free
   await expect(ask).toContainText('notes leaves this device.It stays on the Remote and comes back when opened.');
   await app.answer(ask.getByRole('button', {name: 'Free', exact: true}), ask);
   // What it came to, over the box; and it is on the Remote now, to fetch.
-  await expect(panel.getByRole('status').filter({hasText: 'Freed'})).toBeVisible();
+  await expect(panel.getByRole('status').filter({hasText: 'Let go of'})).toBeVisible();
   const remote = panel.getByRole('region', {name: /^On the Remote/});
   await expect(remote.getByRole('button', {name: 'notes', exact: true})).toBeVisible();
   await remote.getByRole('button', {name: 'What to do with notes'}).click();

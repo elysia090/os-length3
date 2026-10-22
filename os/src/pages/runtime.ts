@@ -93,9 +93,10 @@ function environment(): HTMLElement {
     }
     let a: Awaited<ReturnType<typeof about>>;
     try { a = await about(); } catch (e) { card.replaceChildren(h('p', {class: 'error'}, message(e))); return; }
-    if (!a) { card.replaceChildren(h('p', {class: 'muted small'}, t('There is no l3 (npm run l3)'))); return; }
     // The same l3 as the app's: its version, and the digest of the root it is (core/src/root.rs), run here through xlat.
-    card.replaceChildren(...top('l3', a.version, t('{name} · through xlat', {name: a.root.name}), a.sha256),
+    // A build that carries no l3 says so in l3's own row: Ubuntu, Debian and Custom are under it all the same.
+    card.replaceChildren(...(a ? top('l3', a.version, t('{name} · through xlat', {name: a.root.name}), a.sha256)
+      : top('l3', '', t('There is no l3 (npm run l3)'), '')),
       others(other('Ubuntu', '24.04.5 LTS', t('In the app only'), null),
         other('Debian', '13', t('In the app only'), null),
         other(t('Custom'), '', t('Your own root (.tar)'), notYet())));
@@ -595,11 +596,11 @@ export function runtime(ctx: Context): Node[] {
   const restarted = () => { const next = prompts(heard, following); running.replaceWith(next); running = next; };
   page.panel('device').append(holder);
   page.panel('prompts').append(running);
-  // SSH, the environment in effect and, on the web, the desktop app side by side: how this device runs, and is
-  // reached or becomes the app. (The desktop app is offered on the web; the app itself is it.)
-  page.panel('environments').append(h('div', {class: 'section-row'}, sshSection(),
+  // The environments and, on the web, the desktop app one to their right: how this device runs, or becomes the
+  // app. SSH, how it is reached, under the two. (The desktop app is offered on the web; the app itself is it.)
+  page.panel('environments').append(h('div', {class: 'section-row'},
     h('section', {class: 'section', 'aria-labelledby': 'env-title'}, h('h2', {id: 'env-title'}, t('Environment in effect')), environment()),
-    ...(isNative ? [] : [desktopApp()])));
+    ...(isNative ? [] : [desktopApp()])), sshSection());
   page.panel('dotfiles').append(dotfilesSection(restarted, (n) => page.count('dotfiles', n)));
   return [pageHead('runtime'), h('div', {class: 'part-bar'}, page.switch),
     page.panel('device'), page.panel('prompts'), page.panel('environments'), page.panel('dotfiles')];
