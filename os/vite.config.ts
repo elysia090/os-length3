@@ -1,17 +1,13 @@
 import {readFileSync} from 'node:fs';
 import {defineConfig, type Plugin} from 'vite';
+import {headersOf, webPolicy} from './src/policy.ts';
 
 // Tauri serves the built files from ../dist and points its dev webview at this
 // fixed port, so the port must not drift to a free one. The Terminal's kernel
 // lives in ../xlat.
 
-/**
- * The web build talks to nothing but its own origin and the Remote: no
- * third-party script, frame, form target or connection. Tauri applies its own policy (with its
- * ipc: channel) to the desktop build, so the meta tag is only for the web.
- * Inline style attributes stay allowed: rows are indented through them, and
- * they cannot run code.
- */
+// The web build's policy is src/policy.ts's: its own origin and the Remote. Tauri applies its own
+// policy (with its ipc: channel) to the desktop build, so the meta tag is only for the web.
 // The Remote (service/) is the one other origin it may reach: where the
 // canonical copy lives. VITE_LENGTH3_REMOTE points a build at another one;
 // '' is this page's own origin, which in development LENGTH3_DEV_REMOTE
@@ -22,13 +18,9 @@ const DEV_REMOTE = process.env.LENGTH3_DEV_REMOTE;
 // The release this tree ships (RELEASE): the web's Runtime offers that version's desktop app
 // (shared/desktop-releases.json), as the deploy puts it on the Remote (service/mirror.ts).
 process.env.VITE_LENGTH3_RELEASE ??= readFileSync(new URL('./RELEASE', import.meta.url), 'utf8').trim();
-const WEB_POLICY = [
-  "default-src 'self'", "script-src 'self' 'wasm-unsafe-eval'", "worker-src 'self'",
-  "style-src 'self' 'unsafe-inline'", "img-src 'self' data:", `connect-src 'self'${REMOTE ? ` ${REMOTE}` : ''}`,
-  "object-src 'none'", "base-uri 'none'", "form-action 'none'",
-].join('; ');
+const WEB_POLICY = webPolicy(REMOTE);
 
-const webPolicy = (): Plugin => ({
+const metaPolicy = (): Plugin => ({
   name: 'length3-web-policy',
   apply: 'build',
   transformIndexHtml(html) {
@@ -39,9 +31,12 @@ const webPolicy = (): Plugin => ({
 
 export default defineConfig({
   clearScreen: false,
+  // The preview (the selftest's) serves the build with the headers Workers Assets gives it (public/_headers),
+  // so the app is tested under its real policy, frame-ancestors and all.
+  preview: {headers: headersOf(readFileSync(new URL('./public/_headers', import.meta.url), 'utf8'))},
   server: {port: 1420, strictPort: true, fs: {allow: ['..']},
     proxy: DEV_REMOTE ? {'/api': DEV_REMOTE, '/v1': DEV_REMOTE} : undefined},
   worker: {format: 'es'},
   build: {target: 'es2022', outDir: 'dist', emptyOutDir: true},
-  plugins: [webPolicy()],
+  plugins: [metaPolicy()],
 });
