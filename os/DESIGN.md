@@ -23,12 +23,12 @@ One rule per thing, applied everywhere, with no exceptions made by eye.
 Every value in `styles.css` comes from a token (§2).
 
 - **Shapes.** A place you go to (rail item, card, tree row) is a rounded
-  square. An action you press or a choice you make (button, template
-  choice, repo chip, +) is round. A field
+  square. An action you press or a choice you make (button, repo
+  chip, +) is round. A field
   you type into is slightly rounded and filled `raised`.
 - **States.** Hover is a `raised` fill. The current or chosen thing is an
   `ink` fill with `ground` text: the rail item (File while its tree is
-  out), the repo chip, the open repo in the tree, the chosen template, the primary button. A large place
+  out), the repo chip, the open repo in the tree, the primary button. A large place
   (a card, an issue row) is too big to fill with ink: it is current by an
   `ink` edge over `raised`, as a lit repo card is. Where one is inside
   the current thing (the file Forge is reading, under the open repo in
@@ -1503,12 +1503,19 @@ A name alone on the first line (the same field as the search box). Under
 it, two columns: on the left, filling it, what the repo is for (概要), a
 raised box written straight into as a TODO's detail is, reaching down as
 far as the column beside it, whose words go into the repo's README.md under
-its title; on the right, level with it, the template as chips like the
-reference's (one chosen, ink) with no label over them, standing where the
-summary's label stands, and under the chips what will be made,
-shown exactly as File will show it: a card of tree rows under `root`, the
-new repo's name bold, its folders open. Then 作成, the one primary action,
-under both. Narrow, they stack: name, what it is for, template, the files.
+its title; on the right, level with it, under 作成されるもの, the one
+scaffold every repo starts from (nothing to choose: shared/templates.json's
+`c`, as `l3 repo new -t c` makes it), shown exactly as File will show it: a
+card of tree rows under `root`, the new repo's name bold, its folders open,
+and each file's name a field in its row. A name and its extension are
+changed there and nothing else: what a file says is never turned into
+another language, and what one file says of another's path (the Makefile of
+src/main.c) follows it. A name that cannot be (one with a "/", one met twice
+in a folder) is said under the card before 作成, which puts the keyboard
+there. Then 作成, the one primary action, under both. What is written stays
+while other pages are seen, until the repo is made. The two columns stand
+side by side only while what is written keeps a reading width beside the
+card; narrower, they stack: name, what it is for, the files.
 
 Under the form is the list of repos, the same cards as on Home. Once made,
 the page stays where it is: the new repo's card joins the list and lights

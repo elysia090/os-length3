@@ -26,7 +26,7 @@ export default {
   'Make another': '続けて作る',
   'Made {name}': '{name}を作りました',
   'Letters, digits and . _ -, up to 64 characters': '英数字と . _ - 、64文字まで',
-  'Template': 'テンプレート',
+  'Name of {path}': '{path}の名前',
   'Use letters, digits and . _ -, and do not start with .': '名前は英数字と . _ - で、先頭は . 以外にしてください',
   'Could not create: {message}': '作成できませんでした：{message}',
   'There is a repo named {name} already': '{name}という repo はもうあります',

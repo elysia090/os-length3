@@ -53,7 +53,8 @@ test('a change on main is committed from main\'s card, named by its line', async
   await app.forge.editFile('README.md', '# hello\n\nOn main.\n');
 
   await app.rail.go('git');
-  await expect(app.git.mainCard('hello')).toContainText('1 file not committed');
+  // A repo nobody has committed yet: the scaffold's three files are not committed either.
+  await expect(app.git.mainCard('hello')).toContainText('3 files not committed');
   // A line without a title is not a commit: said under it, the keyboard kept there.
   await app.git.commitOnMain('hello', 'Docs:');
   await expect(app.git.mainCard('hello').getByRole('alert')).toHaveText('A commit needs a title (for example Fix：title)');

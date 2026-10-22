@@ -336,27 +336,38 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .fetch-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s5); color: var(--ink); }
 
 /* New repo: the name alone on the first line; under it, what the repo is
-   for, and beside that the template and what File will show. The box for
-   what it is for reaches down as far as the column beside it. */
+   for, and beside that the one scaffold as File will show it, its files'
+   names written in place. The box for what it is for reaches down as far
+   as the column beside it. What is written comes first: the two stand side
+   by side only while it keeps a reading width (320 px) beside the
+   scaffold's 360; narrower, they stack, whatever the window. */
+.new-repo-wrap { container-type: inline-size; }
 .new-repo {
   margin-top: var(--s5); display: grid; gap: var(--s5); max-width: 960px;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 360px); align-items: start;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 360px); align-items: start;
 }
 .new-repo > .name-field { grid-area: 1 / 1; }
 .new-repo > .summary-field { grid-area: 2 / 1; align-self: stretch; grid-template-rows: auto 1fr; }
-.new-repo > .template-field { grid-area: 2 / 2; }
+.new-repo > .scaffold-field { grid-area: 2 / 2; }
 .new-repo > .answers { grid-column: 1 / -1; }
-.template-field > .tree-still { margin-top: var(--s2); }
+@container (max-width: 704px) {
+  .new-repo { grid-template-columns: minmax(0, 1fr); }
+  .new-repo > .name-field, .new-repo > .summary-field, .new-repo > .scaffold-field { grid-area: auto; }
+}
+/* A file's name in the scaffold is a field in its row, as File's rename is. */
+.tree-name-in {
+  flex: 0 1 32ch; min-width: 0; height: calc(var(--h-row) - var(--s1)); padding: 0 var(--s2); margin-right: var(--s2);
+  border: 1px solid var(--edge); border-radius: var(--r-field); background: var(--raised); color: var(--ink); font: inherit;
+}
+.tree-name-in::placeholder { color: var(--sub); }
+.tree-name-in[aria-invalid] { border-color: var(--ink); }
+.tree-name-in:disabled { opacity: .5; }
 .field { display: grid; gap: var(--s2); }
 .field-label { font-size: var(--t-meta); color: var(--sub); }
 .tree.tree-still { position: static; z-index: auto; visibility: visible; opacity: 1; width: auto; max-height: none; transition: none; }
 .tree-caption { padding: 0 var(--s2) var(--s1); }
 .tree-still .tree-name.plain { color: var(--ink); }
 .tree-still .tree-toggle { cursor: default; }
-@media (max-width: 760px) {
-  .new-repo { grid-template-columns: minmax(0, 1fr); }
-  .new-repo > .name-field, .new-repo > .summary-field, .new-repo > .template-field { grid-area: auto; }
-}
 /* What it is for: a raised box as Home's TODO is, the words written straight in it as a TODO's detail is. */
 .summary-box {
   display: flex; min-height: 240px; border: 1px solid var(--edge); border-radius: var(--r-place);
