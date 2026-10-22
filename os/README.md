@@ -98,8 +98,9 @@ they stand (an issue not started: Start; changed: Commit; committed: Push;
 handed in: Approve, Merge…). A deed asks for what it needs in place, one line
 each, says the command it runs (`→ l3 issue new notes "Fix：title"`) and
 then offers what comes next; q or Esc leaves, and what stays in the
-scrollback is plain text. After a command typed by hand, its next deeds come
-in one short row that Enter or Esc passes by. It is all lines under what is
+scrollback is plain text. After a command typed by hand, its next deeds are
+said in one line without taking a key, and `l3 next` opens them to choose
+with the keys. It is all lines under what is
 there (over SSH, in a Prompt), redrawn only on a key, the focus a › and
 brackets. Through a pipe, with `--json`, `TERM=dumb` or `L3_PLAIN=1`, nothing
 is offered or asked and l3 writes exactly what it always did.
@@ -109,7 +110,7 @@ $ l3
 Length³ OS · length3.com
   › 1  Home     Profile · TODO 1 open of 2
     2  Forge    Your workshop · 1 repo · 1 on the band
-    3  File     The tree of / · /root holds 1 repo
+    3  File     Files in your repos · /root holds 1 repo
     4  Git      Issues and commits · 1 issue open
     …
     9  +        New repo

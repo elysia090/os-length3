@@ -62,6 +62,20 @@ pub fn fit(s: &str, cols: usize) -> String {
     out
 }
 
+/// `s` in lines of at most `cols` columns, broken between characters (a long name is said whole, not cut).
+pub fn break_lines(s: &str, cols: usize) -> Vec<String> {
+    let cols = cols.max(4);
+    let mut lines = vec![String::new()];
+    let mut used = 0;
+    for c in s.chars() {
+        let w = crate::help::width(c.encode_utf8(&mut [0; 4]));
+        if used + w > cols && used > 0 { lines.push(String::new()); used = 0; }
+        lines.last_mut().expect("a line").push(c);
+        used += w;
+    }
+    lines
+}
+
 /// The terminal's columns and rows (80×24 when it does not say).
 pub fn size() -> (usize, usize) {
     #[cfg(unix)]
@@ -72,19 +86,9 @@ pub fn size() -> (usize, usize) {
     (80, 24)
 }
 
-/// Whether the person has typed ahead (keys waiting): then nothing is offered, so no key is taken from them.
-pub fn typed_ahead() -> bool {
-    #[cfg(unix)]
-    unsafe {
-        let mut n: libc::c_int = 0;
-        if libc::ioctl(0, libc::FIONREAD, &mut n) == 0 { return n > 0; }
-    }
-    false
-}
-
 /// A key as the menu reads it.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Key { Up, Down, Left, Right, Home, End, Enter, Esc, Back, Tab, BackTab, Quit, Char(char), Other }
+pub enum Key { Up, Down, Left, Right, Home, End, Enter, Esc, Back, Delete, Tab, BackTab, Quit, Interrupt, Ctrl(u8), Char(char), Other }
 
 /// The terminal one key at a time, without echo, while this lives; the
 /// cursor hidden. Dropped (or l3 ending any way), it is as it was.
@@ -133,8 +137,10 @@ impl Keys {
             b'\r' | b'\n' => Key::Enter,
             0x7f | 0x08 => Key::Back,
             b'\t' => Key::Tab,
-            0x03 | 0x04 => Key::Quit,
-            b if b < 0x20 => Key::Other,
+            // Ctrl-C, said apart from input ending (Ctrl-D), so each place can say what it does.
+            0x03 => Key::Interrupt,
+            0x04 => Key::Quit,
+            b if b < 0x20 => Key::Ctrl(b + b'@'),
             b if b < 0x80 => Key::Char(b as char),
             lead => {
                 // The rest of one character in UTF-8.
@@ -178,7 +184,7 @@ fn csi() -> Key {
             return match (b, params.as_str()) {
                 (b'A', _) => Key::Up, (b'B', _) => Key::Down, (b'C', _) => Key::Right, (b'D', _) => Key::Left,
                 (b'H', _) => Key::Home, (b'F', _) => Key::End, (b'Z', _) => Key::BackTab,
-                (b'~', "1" | "7") => Key::Home, (b'~', "4" | "8") => Key::End,
+                (b'~', "1" | "7") => Key::Home, (b'~', "4" | "8") => Key::End, (b'~', "3") => Key::Delete,
                 _ => Key::Other,
             };
         }
@@ -257,5 +263,6 @@ mod tests {
         assert_eq!(width("Issue を書く"), 12);
         assert_eq!(fit("Issue を書く", 8), "Issue …");
         assert_eq!(fit("short", 8), "short");
+        assert_eq!(break_lines("Fix：とても長い名前", 8), ["Fix：と", "ても長い", "名前"]);
     }
 }

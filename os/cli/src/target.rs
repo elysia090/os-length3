@@ -69,6 +69,13 @@ pub fn path_of(ctx: &Ctx, word: Option<&str>) -> Result<(String, String)> {
         let first = w.split('/').next().unwrap_or_default();
         // At the top of a repo, a word naming another repo here (and nothing in this one) is that repo.
         if !w.starts_with(['.', '/']) && first != h.repo && !ctx.exists(&r, &p) && ctx.has_repo(first) { split(w) } else { (r, p) }
+    } else if w.starts_with('/') {
+        // Outside a repo, / is the device's own: l3 reads the repos only, kept under /root (as a Prompt sees them).
+        if w.trim_end_matches('/') == "/root" {
+            return Err(Error::Usage(tr!("Name a repo in /root: /root/REPO/PATH (l3 file lists them)", "/root の中の repo を書いてください：/root/REPO/PATH（l3 file で一覧）")));
+        }
+        return Err(Error::NotFound(tr!("{} is not in your repos: l3 reads them as /root/REPO/PATH or REPO/PATH (the rest of / is a Prompt's root, seen inside it)",
+            "{} は repo の中ではありません。l3 が読むのは /root/REPO/PATH か REPO/PATH です（/ のほかは Prompt の root で、その中から見えます）", w)));
     } else {
         split(w)
     };

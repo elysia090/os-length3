@@ -100,6 +100,11 @@ pub fn perform(ctx: &Ctx, call: &Call) -> Result<Reply> {
 }
 
 /// `l3 version`: l3's, and the root's in use.
+/// `l3 next` off a terminal: there are no keys to choose with (at one, menu::next runs instead).
+pub fn next(_: &Ctx, _: &Call) -> Result<Reply> {
+    Err(Error::Refused(tr!("l3 next chooses with the keys, at a terminal", "l3 next は端末でキーを使って選びます")))
+}
+
 pub fn version(_: &Ctx, _: &Call) -> Result<Reply> {
     let v = include_str!("../../../RELEASE").trim();
     let root = length3_core::root::current(&paths::data_dir()).map(|(_, i)| i);

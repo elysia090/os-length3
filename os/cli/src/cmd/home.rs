@@ -36,6 +36,19 @@ pub fn todo_add(_: &Ctx, call: &Call) -> Result<Reply> {
     Ok(Reply::done(tr!("Added to TODO: {} ({} open)", "TODO に足しました：{}（残り{}件）", name, open), json!({"added": item, "number": list.len(), "open": open})))
 }
 
+/// The Nth item's first line as it is written (Kind：title), for the menu's Edit to start from.
+pub fn todo_line(word: Option<&str>) -> Option<String> {
+    let k: usize = word?.parse().ok()?;
+    let item = home::todos().ok()?.into_iter().nth(k.checked_sub(1)?)?;
+    Some(text::named(item.kind.as_deref(), &item.title))
+}
+
+/// A field of the profile as it is now, for the menu's Edit to start from.
+pub fn profile_now(field: &str) -> Option<String> {
+    let p = home::profile();
+    Some(match field { "name" => p.name, "handle" => p.handle, _ => p.bio }).filter(|s| !s.is_empty())
+}
+
 /// The app reads no more than this of an item, so more would be lost there without a word.
 fn fits(item: &home::Todo) -> Result<()> {
     for ((field, limit), text) in home::TODO_LIMITS.iter().zip([&item.title, &item.detail]) {

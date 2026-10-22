@@ -88,6 +88,51 @@ issue/
 README.md	8 B
 --- stderr
 
+$ l3 file /
+[exit 4]
+--- stdout
+--- stderr
+l3: / は repo の中ではありません。l3 が読むのは /root/REPO/PATH か REPO/PATH です（/ のほかは Prompt の root で、その中から見えます）
+
+$ l3 file /root
+[exit 0]
+--- stdout
+notes	2ファイル · 38 B
+--- stderr
+
+$ l3 file /bin
+[exit 4]
+--- stdout
+--- stderr
+l3: /bin は repo の中ではありません。l3 が読むのは /root/REPO/PATH か REPO/PATH です（/ のほかは Prompt の root で、その中から見えます）
+
+$ l3 file /root/vocab
+[exit 4]
+--- stdout
+--- stderr
+l3: この端末に repo vocab はありません
+
+$ l3 file notes/README.md
+[exit 0]
+--- stdout
+# notes
+--- stderr
+
+$ l3 file rm notes/docs
+[exit 0]
+--- stdout
+フォルダー notes/docs を消しました（0ファイル）
+--- stderr
+
+$ l3 help commit
+[exit 0]
+--- stdout
+l3 commit — 作業を Commit
+
+  l3 commit [REPO] [-m メモ]              Issue の作業では、その名前で
+  l3 commit [REPO] "Fix：件名" [-m メモ]  Commit の件名（種別：件名）で（Issue の作業では、メモに）
+--- stderr
+
 $ l3 git
 [exit 0]
 --- stdout

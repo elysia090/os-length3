@@ -609,18 +609,41 @@ at a terminal is used the same way, and stays a command line:
   for the rest, in place, one line each, as the app's fields ask: the name
   over the field, what goes in it beside (First line, Kind：title, as Fix：…),
   a repo or a template chosen in a row of their own (one repo is chosen
-  without asking). What cannot be undone at once (Remove, Free, Reset, Sign
+  without asking). What cannot be undone at once (Delete, Free, Reset, Sign
   out, Block) is asked first, Not now first and the deed beside it. Words
   the command refuses (a name taken) are said under the field, which is
-  asked again. An empty line is Not now.
+  asked again with them in it, to be fixed. An empty line is Not now.
+- **A field is a line editor**: it starts with what the thing says now
+  (Edit a TODO: its line; a profile's name), or, asking a path, with the
+  folder the menu is in (`notes/src/`); ←→, Home, End, Backspace and Delete
+  move and take by whole characters, Japanese as English; only what is
+  typed is kept, never a key's own bytes. Its keys are said under it.
+- **Ctrl-C, Esc and Enter by place**, said where they act: in the rows q,
+  Esc or Ctrl-C leave l3 and Backspace goes back to the rail; in a field
+  Enter keeps, Esc is Not now (back to the rows, nothing done) and Ctrl-C
+  leaves l3 as a program Ctrl-C ends does (130), with nothing half made; in
+  a Prompt opened from the menu Ctrl-C is the program's, as at any shell,
+  and `exit` comes back to the menu on the repo it was opened on (said as
+  it opens). Whether Ctrl-C in a field should go back rather than leave is
+  the person's to decide; it leaves, as it did.
+- **Narrow terminals**: a row too wide is cut with … except the focused
+  one, which is said whole over as many lines as it takes; the keys line
+  wraps by whole phrases, the ways back or out (Backspace, q, Esc) first, so
+  at 50 columns nothing that leaves is cut off. Past nine rows each keeps its
+  number to be read by (1–9 still jump).
 - **Every deed says the command it is** before it runs (`→ l3 start
   notes#1`), so the words are learned by seeing them and never needed. Its
   answer is l3's own, and then the page's rows again, read anew, with the
   focus on what was just done or made (§1, What one was doing stays).
-- **After a command typed by hand**, its next deeds come in one short row
-  (`notes#1  Push · Open · Back to main`), with nothing chosen: Enter alone,
-  Esc or any other key passes it by and leaves nothing behind; keys typed
-  ahead for the next command are never taken for it.
+- **After a command typed by hand**, its next deeds are said in one line
+  (`Next for notes#1  Push · Open · Back to main`), and asked nothing: l3
+  reads no key, so all the person types next is the shell's (a row that
+  waited for a key took the first character of the next command, which l3
+  cannot give back without replaying input). What a command just made comes
+  first (the 13th TODO's Done, not the first twelve's), and what is left
+  out past twelve is said. `l3 next` opens them: the same row walked with
+  ←→ and Enter, Enter alone or Esc going on, each deed done as its command
+  and those after it offered again.
 - **One table drives both.** A deed is a form of `cli/src/spec.rs` with what
   the menu needs beside it: its word in both languages, what it is pressed
   on, the facts it is offered under, the words it gives itself, what it

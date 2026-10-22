@@ -403,7 +403,7 @@ pub fn commit(ctx: &Ctx, call: &Call) -> Result<Reply> {
         (first.trim().to_string(), note)
     };
     if on == work::MAIN && text::kind_of(&line).1.trim().is_empty() {
-        return Err(Error::Usage(tr!("On main a commit is named by its line: l3 commit [REPO] \"Fix：title\" (on an issue, after it: l3 start REPO#N)", "main では行の名前で Commit します：l3 commit [REPO] \"Fix：件名\"（Issue の作業ならその名前で：l3 start REPO#N）")));
+        return Err(Error::Usage(tr!("On main a commit needs its subject, Kind：subject: l3 commit [REPO] \"Fix：title\" (on an issue it is named after the issue, and words given are its note: l3 start REPO#N)", "main では Commit の件名（種別：件名）が要ります：l3 commit [REPO] \"Fix：件名\"（Issue の作業では Issue の名前で、書いた言葉はメモに：l3 start REPO#N）")));
     }
     let c = history::cut(&r, &repo, None, &line, &note)?;
     let mut text = tr!("Committed {}  {} ({}{})", "Commit しました {}  {}（{}{}）", out::short(&c.id), history::line(&c), files(c.files), out::added_removed(c.added, c.removed));

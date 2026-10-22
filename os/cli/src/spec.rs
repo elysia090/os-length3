@@ -39,7 +39,8 @@ impl Group {
         match self {
             Group::Home => ["Profile", "プロフィール"],
             Group::Forge => ["Your workshop", "自分の作業場"],
-            Group::File => ["The tree of /", "/ の tree"],
+            // The app's File opens all of /; l3 reads the repos only (/root/REPO/PATH), so its line says that.
+            Group::File => ["Files in your repos", "repo のファイル"],
             Group::Git => ["Issues and commits", "Issue とコミット"],
             Group::Runtime => ["This device and its environments", "この端末と環境"],
             Group::Remote => ["Where your repos are kept", "repo を置く場所"],
@@ -115,7 +116,12 @@ pub struct Deed {
     pub confirm: bool,
     /// Purposes it is offered on besides its command's own.
     pub also: &'static [Group],
+    /// What its written field starts with, from the thing it is pressed on (its word): a TODO's line to fix in place.
+    pub prefill: Option<Prefill>,
 }
+
+/// What a field starts with, given the word of the thing a deed is pressed on.
+pub type Prefill = fn(Option<&str>) -> Option<String>;
 
 impl Deed {
     pub const fn when(self, when: &'static [Fact]) -> Deed { Deed { when, ..self } }
@@ -127,11 +133,12 @@ impl Deed {
     pub const fn second(self) -> Deed { Deed { weight: Weight::Also, ..self } }
     pub const fn away(self) -> Deed { Deed { weight: Weight::Away, ..self } }
     pub const fn confirm(self) -> Deed { Deed { confirm: true, ..self } }
+    pub const fn prefill(self, f: Prefill) -> Deed { Deed { prefill: Some(f), ..self } }
 }
 
 /// A deed pressed on `on`, offered always, asking only for what its slots need.
 const fn d(label: Words, on: On) -> Deed {
-    Deed { label, on, when: &[], unless: &[], gives: &[], asks: &[], field: None, weight: Weight::Own, confirm: false, also: &[] }
+    Deed { label, on, when: &[], unless: &[], gives: &[], asks: &[], field: None, weight: Weight::Own, confirm: false, also: &[], prefill: None }
 }
 
 /// The words over a field the menu asks to be written, and under it what goes in it.
@@ -287,7 +294,7 @@ pub static COMMANDS: &[Command] = &[
         hidden(Some("ls"), &[], DEVICE, Send, home::todo_list),
         offer(&[d(["Add a TODO", "TODO を足す"], On::Page)],
             f(Some("add"), &[TITLE], &[Flag::Note("detail")], ["add one", "足す"], DEVICE, Send, home::todo_add)),
-        offer(&[d(["Edit", "書き直す"], On::Todo).second()],
+        offer(&[d(["Edit", "書き直す"], On::Todo).prefill(home::todo_line).second()],
             f(Some("edit"), &[Arg::Number("N"), TITLE], &[Flag::Note("detail")], ["rewrite the Nth (its detail stays unless given)", "N 番目を書き直す（詳細は書かなければそのまま）"], DEVICE, Send, home::todo_edit)),
         offer(&[d(["Done", "完了"], On::Todo).when(&[F::NotDone]), d(["Not done", "未完了に戻す"], On::Todo).when(&[F::Done]).second()],
             f(Some("done"), &[Arg::Number("N")], &[], ["mark the Nth done (again to undo)", "N 番目を完了に（もう一度で戻す）"], DEVICE, Send, home::todo_done)),
@@ -296,9 +303,9 @@ pub static COMMANDS: &[Command] = &[
     ])),
     on_home(&["profile"], c("profile", &[], Group::Home, ["your name, handle and bio", "名前、ハンドル、自己紹介"], &[
         page(f(None, &[], &[], ["as others see it", "人から見えるとおりに"], DEVICE, Send, home::profile_show)),
-        offer(&[d(["Edit name", "名前を変える"], On::Page).gives(&[(0, "name")]).field(["Name", "名前"]).second(),
-                d(["Edit handle", "ハンドルを変える"], On::Page).gives(&[(0, "handle")]).field(["Handle", "ハンドル"]).second(),
-                d(["Edit bio", "自己紹介を変える"], On::Page).gives(&[(0, "bio")]).field(["Bio", "自己紹介"]).second()],
+        offer(&[d(["Edit name", "名前を変える"], On::Page).gives(&[(0, "name")]).field(["Name", "名前"]).prefill(|_| home::profile_now("name")).second(),
+                d(["Edit handle", "ハンドルを変える"], On::Page).gives(&[(0, "handle")]).field(["Handle", "ハンドル"]).prefill(|_| home::profile_now("handle")).second(),
+                d(["Edit bio", "自己紹介を変える"], On::Page).gives(&[(0, "bio")]).field(["Bio", "自己紹介"]).prefill(|_| home::profile_now("bio")).second()],
             f(None, &[Arg::Choice(&["name", "handle", "bio"]), SAID], &[], ["change one", "ひとつ変える"], DEVICE, Send, home::profile_set)),
     ])),
     c("lang", &[], Group::Home, ["the language l3 and the app speak", "l3 とアプリが話す言語"], &[
@@ -330,8 +337,8 @@ pub static COMMANDS: &[Command] = &[
         f(Some("write"), &[PATH], &[Flag::Empty], ["replace or make a file with standard input", "標準入力でファイルを置き換える・作る"], LOCAL, Send, file::write),
         offer(&[d(["New folder", "フォルダーを作る"], On::Page).second()],
             f(Some("mkdir"), &[PATH], &[], ["make a folder", "フォルダーを作る"], LOCAL, Send, file::mkdir)),
-        offer(&[d(["Remove", "消す"], On::Path).away().confirm()],
-            f(Some("rm"), &[PATH], &[], ["remove a file, or a folder and all in it", "ファイル、またはフォルダーを中身ごと消す"], LOCAL, Send, file::rm)),
+        offer(&[d(["Delete", "消す"], On::Path).away().confirm()],
+            f(Some("rm"), &[PATH], &[], ["delete a file, or a folder and all in it", "ファイル、またはフォルダーを中身ごと消す"], LOCAL, Send, file::rm)),
         page(offer(&[d(["Open", "開く"], On::Repo), d(["Open", "開く"], On::Path)],
             f(None, &[PATH_HERE], &[], ["read (in a repo, PATH is from where you are)", "読む（repo の中では今いる所から）"], LOCAL, TakeIn, file::read))),
     ]),
@@ -360,7 +367,7 @@ pub static COMMANDS: &[Command] = &[
     c("commit", &[], Group::Git, ["commit the work", "作業を Commit"], &[
         offer(&[d(["Commit", "Commit"], On::Issue).when(&[F::CanCommit])],
             f(None, &[REPO_HERE], &[Flag::Note("note")], ["on an issue, named after it", "Issue の作業では、その名前で"], REMOTE, Send, git::commit)),
-        f(None, &[REPO_HERE, TITLE], &[Flag::Note("note")], ["named by its line (on an issue, the line is its note)", "行の名前で（Issue の作業では、行はメモに）"], REMOTE, Send, git::commit),
+        f(None, &[REPO_HERE, TITLE], &[Flag::Note("note")], ["with its subject, Kind：subject (on an issue, the words are its note)", "Commit の件名（種別：件名）で（Issue の作業では、メモに）"], REMOTE, Send, git::commit),
     ]),
     c("push", &[], Group::Git, ["hand the work to main as its change", "作業を Change として main に渡す"], &[
         offer(&[d(["Push", "Push"], On::Issue).when(&[F::CanPush])],
@@ -481,6 +488,9 @@ pub static COMMANDS: &[Command] = &[
     c("help", &[], Group::Other, ["how to use l3", "l3 の使い方"], &[
         f(None, &[], &[], ["each command", "コマンドの一覧"], LOCAL, Keep, help::run),
         f(None, &[Arg::Text("COMMAND|all")], &[], ["a command's forms, or every form", "コマンドの書き方、またはすべての書き方"], LOCAL, Keep, help::run),
+    ]),
+    c("next", &[], Group::Other, ["the last command's next deeds, chosen with the keys", "直前のコマンドの次を、キーで選ぶ"], &[
+        f(None, &[], &[], ["at a terminal", "端末で"], LOCAL, Keep, crate::cmd::next),
     ]),
     c("version", &[], Group::Other, ["l3's version, and the root's", "l3 と root の版"], &[
         f(None, &[], &[], ["", ""], LOCAL, Keep, crate::cmd::version),

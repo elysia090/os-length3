@@ -7,8 +7,8 @@
 //! table (spec.rs): the thing it is pressed on gives it its word, the rest is
 //! asked in place, one line each, and it runs as the command it is, said
 //! first (`→ l3 start notes#1`), so the words are learned by seeing them.
-//! After a command typed by hand, its next deeds are offered the same way,
-//! in a short row that Enter or Esc passes by.
+//! After a command typed by hand, its next deeds are said in a line, no key
+//! taken from what the person types next; `l3 next` offers them the same way.
 //!
 //! What it offers is read from the table and from what each page shows
 //! (its things and their facts, noted while the page is made: `see`), so the
@@ -40,9 +40,10 @@ pub struct Subject {
     pub facts: Vec<Fact>,
 }
 
-/// What a page showed: its things, and what holds of the page as a whole.
+/// What a page showed: its things, what holds of the page as a whole, and the place it is (a folder,
+/// REPO/PATH) when it shows one, empty or not.
 #[derive(Default, Debug)]
-pub struct Seen { pub subjects: Vec<Subject>, pub facts: Vec<Fact> }
+pub struct Seen { pub subjects: Vec<Subject>, pub facts: Vec<Fact>, pub place: Option<String> }
 
 thread_local! {
     static SEEN: RefCell<Option<Seen>> = const { RefCell::new(None) };
@@ -59,6 +60,11 @@ pub fn see(make: impl FnOnce() -> Subject) {
 /// Note what holds of the page as a whole.
 pub fn page_fact(f: Fact) {
     SEEN.with(|seen| if let Some(seen) = seen.borrow_mut().as_mut() { if !seen.facts.contains(&f) { seen.facts.push(f) } });
+}
+
+/// Note that the page is a place (a folder, as REPO/PATH): the menu is there now, though nothing be in it.
+pub fn shown_at(place: String) {
+    SEEN.with(|seen| if let Some(seen) = seen.borrow_mut().as_mut() { seen.place = Some(place) });
 }
 
 /// Run `f`, noting what it shows.
@@ -129,7 +135,7 @@ pub fn page_forms(group: Group) -> Vec<(&'static Command, &'static Form)> {
 
 /// A page as the menu holds it: the things on it, whether it is the purpose's own page, and the
 /// command lines that made it (read again after a deed, so the page stays the one the person was on).
-pub struct View { pub group: Group, pub subjects: Vec<Subject>, pub facts: Vec<Fact>, pub own: bool, pub made_by: Vec<Vec<String>> }
+pub struct View { pub group: Group, pub subjects: Vec<Subject>, pub facts: Vec<Fact>, pub own: bool, pub made_by: Vec<Vec<String>>, pub place: Option<String> }
 
 /// Where a row leads.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -163,11 +169,16 @@ pub fn rows(view: &View, env: Env, device: &[Fact]) -> Vec<Row> {
 fn pad(s: &str, cols: usize) -> String { format!("{s}{}", " ".repeat(cols.saturating_sub(term::width(s)))) }
 
 /// The rows as lines: the focused one marked › with its deeds under it, the
-/// chosen deed in brackets; numbers to jump by; at most `height` lines, the
-/// rest said as more above or below. `focus` None: the rows as they were left.
-pub fn draw(rows: &[Row], focus: Option<(usize, usize)>, cols: usize, height: usize, style: Style, hint: &str) -> Vec<String> {
+/// chosen deed in brackets; numbers to jump by (1-9; past 9 a row keeps its
+/// number to be read by); at most `height` lines, the rest said as more above
+/// or below. The focused row is said whole, over more lines where it is wider
+/// than the terminal, so what a deed is done on is seen before it is done.
+/// `focus` None: the rows as they were left.
+pub fn draw(rows: &[Row], focus: Option<(usize, usize)>, cols: usize, height: usize, style: Style, hint: &Hint) -> Vec<String> {
     let lw = rows.iter().map(|r| term::width(&r.label)).max().unwrap_or(0).min(34);
-    let room = height.saturating_sub(4).max(3);
+    let hints = if focus.is_some() { hint.lines(cols) } else { Vec::new() };
+    let room = height.saturating_sub(3 + hints.len()).max(3);
+    let nw = if rows.len() > 9 { 2 } else { 1 };
     let at = focus.map_or(0, |f| f.0);
     let (from, to) = if rows.len() <= room { (0, rows.len()) } else {
         let from = at.saturating_sub(room / 2).min(rows.len() - room);
@@ -177,20 +188,34 @@ pub fn draw(rows: &[Row], focus: Option<(usize, usize)>, cols: usize, height: us
     if from > 0 { out.push(style.dim(&format!("      {}", tr!("↑ {} more", "↑ ほか{}件", from)))); }
     for (i, r) in rows.iter().enumerate().take(to).skip(from) {
         let here = focus.is_some_and(|f| f.0 == i);
-        let num = if i < 9 { (i + 1).to_string() } else { " ".to_string() };
-        let label = if here { style.bold(&pad(&r.label, lw)) } else { pad(&r.label, lw) };
-        let detail = if r.detail.is_empty() { String::new() } else { format!("  {}", style.dim(&r.detail)) };
-        out.push(format!("  {} {num}  {label}{detail}", if here { "›" } else { " " }).trim_end().to_string());
+        let num = format!("{:>nw$}", i + 1);
+        let mark = if here { "›" } else { " " };
+        let whole = format!("{}{}", pad(&r.label, lw), if r.detail.is_empty() { String::new() } else { format!("  {}", r.detail) });
+        if here && term::width(&whole) + nw + 6 > cols {
+            // Too wide for one line: the label whole over as many as it takes, then where it stands.
+            let indent = " ".repeat(nw + 6);
+            for (k, part) in term::break_lines(&r.label, cols.saturating_sub(nw + 6)).into_iter().enumerate() {
+                out.push(if k == 0 { format!("  {mark} {num}  {}", style.bold(&part)) } else { format!("{indent}{}", style.bold(&part)) });
+            }
+            if !r.detail.is_empty() {
+                for part in term::break_lines(&r.detail, cols.saturating_sub(nw + 6)) { out.push(format!("{indent}{}", style.dim(&part))); }
+            }
+        } else {
+            let label = if here { style.bold(&pad(&r.label, lw)) } else { pad(&r.label, lw) };
+            let detail = if r.detail.is_empty() { String::new() } else { format!("  {}", style.dim(&r.detail)) };
+            // Another row too wide is cut with …, as the terminal shows it; focused, it is said whole (above).
+            out.push(term::fit(format!("  {mark} {num}  {label}{detail}").trim_end(), cols));
+        }
         // The deeds of the focused thing, under it; a row that is one deed is its own button.
         if let (true, Some((_, d))) = (here, focus) {
             if matches!(r.go, Go::Thing(_)) || r.offers.len() > 1 {
                 let words: Vec<String> = r.offers.iter().enumerate().map(|(j, o)| if j == d { format!("[{}]", style.bold(o.label())) } else { format!(" {} ", o.label()) }).collect();
-                out.extend(wrap(&words, "       ", cols).into_iter().map(|l| l.trim_end().to_string()));
+                out.extend(wrap(&words, &" ".repeat(nw + 6), cols).into_iter().map(|l| l.trim_end().to_string()));
             }
         }
     }
     if to < rows.len() { out.push(style.dim(&format!("      {}", tr!("↓ {} more", "↓ ほか{}件", rows.len() - to)))); }
-    if focus.is_some() && !hint.is_empty() { out.push(style.dim(&format!("  {hint}"))); }
+    out.extend(hints.iter().map(|l| style.dim(l)));
     out
 }
 
@@ -209,16 +234,49 @@ fn wrap(words: &[String], lead: &str, cols: usize) -> Vec<String> {
     lines
 }
 
-fn hint_rail() -> String { tr!("↑↓ choose · Enter open · 1-9 or a letter jumps · q leaves", "↑↓ 選ぶ · Enter 開く · 1-9 か頭文字で移る · q 終わる") }
-fn hint_after() -> String { tr!("←→ choose, then Enter · Enter alone or Esc goes on", "←→ で選んで Enter · Enter だけか Esc でそのまま") }
-fn hint_page() -> String { tr!("↑↓ choose · ←→ deed · Enter do · Backspace purposes · q leaves", "↑↓ 選ぶ · ←→ 操作 · Enter 実行 · Backspace 目的 · q 終わる") }
+/// What the keys do where the person is: the ways about, then the ways back or out (Back, Cancel, Exit).
+#[derive(Clone, Debug, Default)]
+pub struct Hint { about: Vec<String>, out: Vec<String> }
+
+impl Hint {
+    fn of(about: &[String], out: &[String]) -> Hint { Hint { about: about.to_vec(), out: out.to_vec() } }
+
+    /// As lines no wider than `cols`: one line where it fits, as it reads; narrower (50 columns), the ways
+    /// back or out first, then the rest, each said whole and none cut off at the edge.
+    pub fn lines(&self, cols: usize) -> Vec<String> {
+        let all: Vec<&str> = self.about.iter().chain(&self.out).map(String::as_str).collect();
+        if all.is_empty() { return Vec::new(); }
+        let one = format!("  {}", all.join(" · "));
+        if term::width(&one) <= cols { return vec![one]; }
+        let mut lines: Vec<String> = Vec::new();
+        for s in self.out.iter().chain(&self.about) {
+            match lines.last_mut() {
+                Some(l) if term::width(l) + 3 + term::width(s) <= cols => { l.push_str(" · "); l.push_str(s); }
+                _ => lines.push(format!("  {s}")),
+            }
+        }
+        lines
+    }
+}
+
+fn hint_rail() -> Hint {
+    Hint::of(&[tr!("↑↓ choose", "↑↓ 選ぶ"), tr!("Enter open", "Enter 開く"), tr!("1-9 or a letter jumps", "1-9 か頭文字で移る")], &[tr!("q leaves", "q 終わる")])
+}
+fn hint_after() -> Hint { Hint::of(&[tr!("←→ choose, then Enter", "←→ で選んで Enter")], &[tr!("Enter alone or Esc goes on", "Enter だけか Esc でそのまま")]) }
+fn hint_page() -> Hint {
+    Hint::of(&[tr!("↑↓ choose", "↑↓ 選ぶ"), tr!("←→ deed", "←→ 操作"), tr!("Enter do", "Enter 実行")], &[tr!("Backspace purposes", "Backspace 目的"), tr!("q leaves", "q 終わる")])
+}
+/// In a field: Enter keeps what is written, Esc goes back to the rows with nothing done, Ctrl-C leaves l3 (as in the rows).
+fn hint_field() -> Hint {
+    Hint::of(&[tr!("Enter done", "Enter 決定")], &[tr!("Esc not now", "Esc やめる"), tr!("Ctrl-C leaves l3", "Ctrl-C で l3 を終わる")])
+}
 
 // ---- Picking ----
 
 enum Picked { Do(usize, usize), Leave, Rail }
 
 /// The rows, drawn in place and walked with the keys, until one is done or the person leaves.
-fn pick(rows: &[Row], focus: &mut (usize, usize), hint: &str) -> Picked {
+fn pick(rows: &[Row], focus: &mut (usize, usize), hint: &Hint) -> Picked {
     let Some(keys) = Keys::take() else { return Picked::Leave };
     let style = Style::now();
     let mut block = Block::default();
@@ -243,8 +301,8 @@ fn pick(rows: &[Row], focus: &mut (usize, usize), hint: &str) -> Picked {
                 drop(keys);
                 return Picked::Do(focus.0, focus.1);
             }
-            Key::Esc | Key::Quit | Key::Char('q') => {
-                block.draw(&draw(rows, None, cols.saturating_sub(1), height, style, ""));
+            Key::Esc | Key::Quit | Key::Interrupt | Key::Char('q') => {
+                block.draw(&draw(rows, None, cols.saturating_sub(1), height, style, &Hint::default()));
                 block.keep();
                 return Picked::Leave;
             }
@@ -266,9 +324,27 @@ fn pick(rows: &[Row], focus: &mut (usize, usize), hint: &str) -> Picked {
     }
 }
 
+/// Words in lines no wider than `cols`: the first line starting with `first` (said dim or bold), the rest
+/// two spaces in. Where `first` and the first word do not fit on one line, `first` has lines of its own, whole.
+fn lead_lines(first: &str, dim: bool, words: &[String], cols: usize) -> Vec<String> {
+    let style = Style::now();
+    let em = |t: &str| if t.trim().is_empty() { t.to_string() } else if dim { style.dim(t) } else { style.bold(t) };
+    let fw = term::width(first);
+    let fits = words.first().is_none_or(|w| fw + term::width(w) < cols);
+    if fits {
+        let mut lines = wrap(words, &" ".repeat(fw), cols);
+        lines[0] = format!("{}{}", em(first), &lines[0][fw..]);
+        for l in lines.iter_mut().skip(1) { *l = format!("  {}", l.trim_start()); }
+        return lines;
+    }
+    let mut lines: Vec<String> = term::break_lines(first.trim(), cols.saturating_sub(2)).iter().map(|l| format!("  {}", em(l))).collect();
+    lines.extend(wrap(words, "  ", cols));
+    lines
+}
+
 /// One line of choices (a repo, a template, yes or no, the next deeds), walked with the keys.
-/// `start`: the choice focused first; None: none, and Enter passes by (the short row after a command).
-fn choose(lead: &str, items: &[String], start: Option<usize>, hint: &str) -> Option<usize> {
+/// `start`: the choice focused first; None: none, and Enter passes by (the row `l3 next` opens).
+fn choose(lead: &str, dim: bool, items: &[String], start: Option<usize>, hint: &Hint) -> Option<usize> {
     let keys = Keys::take()?;
     let style = Style::now();
     let mut block = Block::default();
@@ -277,9 +353,8 @@ fn choose(lead: &str, items: &[String], start: Option<usize>, hint: &str) -> Opt
     loop {
         let words: Vec<String> = items.iter().enumerate().map(|(j, w)| if Some(j) == at { format!("[{}]", style.bold(w)) } else { format!(" {w} ") }).collect();
         let cols = term::size().0.saturating_sub(1);
-        let mut lines = wrap(&words, "  ", cols);
-        lines[0] = format!("{lead}{}", &lines[0][2..]);
-        if !hint.is_empty() { lines.push(style.dim(&format!("  {hint}"))); }
+        let mut lines = lead_lines(lead, dim, &words, cols);
+        lines.extend(hint.lines(cols).iter().map(|l| style.dim(l)));
         block.draw(&lines);
         match keys.next() {
             Key::Right | Key::Down | Key::Tab => at = Some(at.map_or(0, |a| (a + 1).min(n - 1))),
@@ -287,28 +362,78 @@ fn choose(lead: &str, items: &[String], start: Option<usize>, hint: &str) -> Opt
             Key::Char(c) if c.is_ascii_digit() && c != '0' && (c as usize - '1' as usize) < n => at = Some(c as usize - '1' as usize),
             Key::Enter => { block.clear(); return at; }
             Key::Esc | Key::Quit | Key::Back | Key::Char('q') => { block.clear(); return None; }
-            // Passing by: any other key leaves the row, so the next command is never taken for a choice.
-            _ if start.is_none() => { block.clear(); return None; }
+            // Ctrl-C leaves l3 here as in the rows, the terminal as it was.
+            Key::Interrupt => { block.clear(); drop(keys); interrupted() }
             _ => {}
         }
     }
 }
 
-/// One line written in place, as the terminal edits a line; None when nothing is written or input ends.
-fn line(label: &str, hint: &str) -> Option<String> {
+/// Ctrl-C where l3 asks: l3 ends as a program Ctrl-C ends does (130), with nothing half done left behind.
+fn interrupted() -> ! {
+    term::put("^C\n");
+    std::process::exit(130);
+}
+
+/// What a field gave: words, nothing (Enter on an empty line), or Not now (Esc, or input ended).
+#[derive(Debug, PartialEq)]
+enum Field { Text(String), Empty, NotNow }
+
+/// One line written in place, as a line editor edits it: it starts with `start`; ←→, Home, End, Backspace
+/// and Delete move and take by whole characters (Japanese as English); what is kept is only what was
+/// typed, never a key's own bytes (bug: ←, Esc and the like went into a TODO's title as escapes).
+fn line(label: &str, hint: &str, start: Option<&str>) -> Field {
     let style = Style::now();
-    term::put(&format!("  {}{}\n  › ", style.bold(label), if hint.is_empty() { String::new() } else { format!("  {}", style.dim(hint)) }));
-    let mut bytes = Vec::new();
-    let mut b = [0u8; 1];
-    loop {
-        // Byte by byte, so nothing typed after the line is read here and lost.
-        let n = unsafe { libc::read(0, b.as_mut_ptr().cast(), 1) };
-        if n <= 0 { if n < 0 && std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted { continue; } term::put("\n"); return None; }
-        if b[0] == b'\n' { break; }
-        bytes.push(b[0]);
+    term::put(&format!("  {}{}\n", style.bold(label), if hint.is_empty() { String::new() } else { format!("  {}", style.dim(hint)) }));
+    let Some(keys) = Keys::take() else { return Field::NotNow };
+    let mut text: Vec<char> = start.unwrap_or_default().chars().collect();
+    let mut at = text.len();
+    let keys_said = hint_field();
+    let done = loop {
+        let cols = term::size().0.saturating_sub(1).max(20);
+        let (shown, col) = window(&text, at, cols.saturating_sub(5));
+        let below: Vec<String> = keys_said.lines(cols).iter().map(|l| style.dim(l)).collect();
+        // The field, the keys under it, and the cursor back where the next character goes.
+        term::put(&format!("\r\x1b[J  › {shown}\r\n{}\x1b[{}A\r\x1b[{}C\x1b[?25h", below.join("\r\n"), below.len(), col + 4));
+        match keys.next() {
+            Key::Enter => break true,
+            Key::Esc | Key::Quit => break false,
+            Key::Interrupt => { term::put("\r\x1b[J"); drop(keys); interrupted() }
+            Key::Left => at = at.saturating_sub(1),
+            Key::Right => at = (at + 1).min(text.len()),
+            Key::Home | Key::Ctrl(b'A') => at = 0,
+            Key::End | Key::Ctrl(b'E') => at = text.len(),
+            Key::Back => if at > 0 { at -= 1; text.remove(at); },
+            Key::Delete => if at < text.len() { text.remove(at); },
+            Key::Ctrl(b'U') => { text.drain(..at); at = 0; }
+            Key::Ctrl(b'K') => text.truncate(at),
+            Key::Char(c) if !c.is_control() => { text.insert(at, c); at += 1; }
+            _ => {}
+        }
+    };
+    let written: String = text.iter().collect::<String>().trim().to_string();
+    // What stays is the field as written, as a terminal leaves a line typed.
+    let room = term::size().0.saturating_sub(6).max(15);
+    term::put(&format!("\r\x1b[J  › {}\r\n", window(&text, text.len(), room).0));
+    drop(keys);
+    match (done, written.is_empty()) {
+        (false, _) => Field::NotNow,
+        (true, true) => Field::Empty,
+        (true, false) => Field::Text(written),
     }
-    let s = String::from_utf8_lossy(&bytes).trim().to_string();
-    (!s.is_empty()).then_some(s)
+}
+
+/// What of `text` shows in `room` columns with the cursor at `at` in sight, and the cursor's column in it.
+fn window(text: &[char], at: usize, room: usize) -> (String, usize) {
+    let w = |cs: &[char]| term::width(&cs.iter().collect::<String>());
+    if w(text) < room { return (text.iter().collect(), w(&text[..at])); }
+    // Too long: what leads up to the cursor, after a … where it was cut, and as much after it as fits.
+    let mut from = 0;
+    while from < at && w(&text[from..at]) + 2 > room { from += 1; }
+    let lead = usize::from(from > 0);
+    let mut to = at;
+    while to < text.len() && lead + w(&text[from..=to]) < room { to += 1; }
+    (format!("{}{}", if lead == 1 { "…" } else { "" }, text[from..to].iter().collect::<String>()), lead + w(&text[from..at]))
 }
 
 // ---- Doing a deed ----
@@ -383,7 +508,8 @@ fn perform(ctx: &Ctx, argv: &[String], words_asked: bool) -> (Result<(), Error>,
 }
 
 /// Do a deed on a thing (or on the page): its words from the thing and from the deed, the rest asked in place.
-fn run(ctx: &Ctx, offer: Offer, subject: Option<&Subject>) -> Done {
+/// `place`: the folder the menu is in (REPO/PATH), where a path asked for starts.
+fn run(ctx: &Ctx, offer: Offer, subject: Option<&Subject>, place: Option<&str>) -> Done {
     let style = Style::now();
     let deed = offer.deed;
     term::put(&format!("{}\n", style.bold(&format!("› {}{}", offer.label(), subject.map(|s| format!("  {}", s.label)).unwrap_or_default()))));
@@ -402,14 +528,14 @@ fn run(ctx: &Ctx, offer: Offer, subject: Option<&Subject>) -> Done {
                 let pick = match (here.len(), at) {
                     (0, _) => { out::note(&tr!("No repos yet (l3 repo new NAME makes one)", "repo はまだありません（l3 repo new NAME で作れます）")); return Done::NotNow; }
                     (1, _) => Some(0),
-                    (_, start) => choose(&format!("  {}  ", style.bold(say(label))), &here, Some(start.unwrap_or(0)), ""),
+                    (_, start) => choose(&format!("  {}  ", say(label)), false, &here, Some(start.unwrap_or(0)), &Hint::default()),
                 };
                 let Some(k) = pick else { return Done::NotNow };
                 term::put(&format!("  {}  {}\n", style.bold(say(label)), here[k]));
                 words[i] = Some(here[k].clone());
             }
             Arg::Choice(c) => {
-                let k = choose("  ", &c.iter().map(|s| s.to_string()).collect::<Vec<_>>(), Some(0), "");
+                let k = choose("  ", false, &c.iter().map(|s| s.to_string()).collect::<Vec<_>>(), Some(0), &Hint::default());
                 let Some(k) = k else { return Done::NotNow };
                 term::put(&format!("  {}\n", c[k]));
                 words[i] = Some(c[k].to_string());
@@ -421,26 +547,39 @@ fn run(ctx: &Ctx, offer: Offer, subject: Option<&Subject>) -> Done {
     if deed.asks.contains(&Flag::Template) {
         let ids: Vec<String> = length3_core::templates::all().into_iter().map(|t| t.id).collect();
         let label = say(spec::flag_words(Flag::Template));
-        let Some(k) = choose(&format!("  {}  ", style.bold(label)), &ids, Some(0), "") else { return Done::NotNow };
+        let Some(k) = choose(&format!("  {label}  "), false, &ids, Some(0), &Hint::default()) else { return Done::NotNow };
         term::put(&format!("  {}  {}\n", style.bold(label), ids[k]));
         flags.push((Flag::Template, ids[k].clone()));
     }
     let mut confirmed = !deed.confirm;
+    let not_done = || { term::put(&format!("{}\n", style.dim(&format!("  {}", tr!("Not done", "していません"))))); Done::NotNow };
+    // What a field starts with: what the thing says now (a TODO's line, to fix in place); a path, the folder the menu is in.
+    let mut start: Vec<Option<String>> = typed.iter().map(|&i| match offer.form.args[i] {
+        Arg::Path { .. } => place.map(|p| format!("{p}/")),
+        _ => deed.prefill.and_then(|f| f(subject.map(|s| s.word.as_str()))),
+    }).collect();
     loop {
         // Each word written, one line each, under its name and what goes in it.
-        for &i in &typed {
+        for (k, &i) in typed.iter().enumerate() {
             let (label, hint) = spec::field_words(offer.form.args[i]);
             let label = deed.field.map_or(say(label), say);
-            match line(label, say(hint)) { Some(w) => words[i] = Some(w), None => { term::put(&format!("{}\n", style.dim(&format!("  {}", tr!("Not done", "していません"))))); return Done::NotNow; } }
+            match line(label, say(hint), start[k].as_deref()) {
+                Field::Text(w) => words[i] = Some(w),
+                Field::Empty | Field::NotNow => return not_done(),
+            }
         }
         for f in deed.asks.iter().filter(|f| matches!(f, Flag::Note(_))) {
             flags.retain(|(g, _)| !matches!(g, Flag::Note(_)));
-            if let Some(w) = line(say(spec::flag_words(*f)), "") { flags.push((*f, w)); }
+            match line(say(spec::flag_words(*f)), "", None) {
+                Field::Text(w) => flags.push((*f, w)),
+                Field::Empty => {}
+                Field::NotNow => return not_done(),
+            }
         }
         // What cannot be undone at once is asked first, as the app asks in the card: Not now, or the deed.
         if !confirmed {
             let items = [tr!("Not now", "やめる"), offer.label().to_string()];
-            if choose("  ", &items, Some(0), "") != Some(1) { term::put(&format!("{}\n", style.dim(&format!("  {}", tr!("Not done", "していません"))))); return Done::NotNow; }
+            if choose("  ", false, &items, Some(0), &Hint::default()) != Some(1) { return not_done(); }
             confirmed = true;
         }
         let argv = command_line(offer.command, offer.form, &words, &flags);
@@ -450,6 +589,8 @@ fn run(ctx: &Ctx, offer: Offer, subject: Option<&Subject>) -> Done {
             // The person's words were refused: said under the field, and asked again.
             (Err(e), _) if !typed.is_empty() && !e.message().is_empty() => {
                 for l in e.message().lines() { term::put(&format!("    {l}\n")); }
+                // Asked again with what was written, to be fixed rather than typed again.
+                start = typed.iter().map(|&i| words[i].clone()).collect();
             }
             (Err(_), seen) => return Done::Ran { ok: false, seen, argv },
         }
@@ -465,7 +606,7 @@ enum Flow { Leave, Rail }
 fn page(ctx: &Ctx, group: Group, print: bool) -> View {
     let made_by: Vec<Vec<String>> = page_forms(group).into_iter().map(|(c, f)| command_line(c, f, &[], &[])).collect();
     let seen = read(ctx, &made_by, print);
-    View { group, subjects: seen.subjects, facts: seen.facts, own: true, made_by }
+    View { group, subjects: seen.subjects, facts: seen.facts, own: true, made_by, place: seen.place }
 }
 
 /// Run these command lines as l3 runs them, for what they show; printed (each said first), or not.
@@ -483,15 +624,19 @@ fn read(ctx: &Ctx, lines: &[Vec<String>], print: bool) -> Seen {
         crate::sync::after(ctx, &call, offline);
         all.subjects.extend(seen.subjects);
         all.facts.extend(seen.facts);
+        if seen.place.is_some() { all.place = seen.place; }
     }
     all
 }
 
-/// After a deed: what it showed is the page now (an issue opened, a folder); else the page as it was made, read again.
+/// After a deed: what it showed is the page now (an issue opened, a folder, even an empty one: being in a
+/// place is not the same as finding things there); else the page as it was made, read again.
 fn next_view(ctx: &Ctx, view: &View, seen: Seen, argv: Vec<String>) -> View {
-    if !seen.subjects.is_empty() { return View { group: view.group, subjects: seen.subjects, facts: seen.facts, own: false, made_by: vec![argv] }; }
+    if !seen.subjects.is_empty() || seen.place.is_some() {
+        return View { group: view.group, subjects: seen.subjects, facts: seen.facts, own: false, made_by: vec![argv], place: seen.place };
+    }
     let again = read(ctx, &view.made_by, false);
-    View { group: view.group, subjects: again.subjects, facts: again.facts, own: view.own, made_by: view.made_by.clone() }
+    View { group: view.group, subjects: again.subjects, facts: again.facts, own: view.own, made_by: view.made_by.clone(), place: again.place }
 }
 
 /// What is there now in each place on the rail, in a few words (as bare `l3` says it off a terminal).
@@ -588,7 +733,7 @@ pub fn rail(ctx: &Ctx) -> ExitCode {
 fn new_repo(ctx: &Ctx) -> Flow {
     let Some(offer) = offered(Group::New, On::Page, &device(ctx), Env::of(ctx)).into_iter().next() else { return Flow::Rail };
     let before = page(ctx, Group::Forge, false);
-    match run(ctx, offer, None) {
+    match run(ctx, offer, None, None) {
         Done::Ran { ok: true, .. } => {
             let view = page(ctx, Group::Forge, false);
             let land = view.subjects.iter().find(|s| !before.subjects.iter().any(|b| b.word == s.word)).map(|s| s.word.clone());
@@ -610,6 +755,11 @@ fn browse(ctx: &Ctx, mut view: View, mut land: Option<String>) -> Flow {
             if let Some(k) = rows.iter().position(|r| matches!(r.go, Go::Thing(k) if view.subjects[k].word == w)) { focus = (k, 0); }
         }
         term::put("\n");
+        // Away from its purpose's own page, where the menu is: the place, else the thing it opened.
+        if !view.own {
+            let at = view.place.clone().or_else(|| (view.subjects.len() == 1).then(|| view.subjects[0].label.clone()));
+            if let Some(at) = at { term::put(&format!("{}\n", style.dim(&format!("  {} · {at}", view.group.name())))); }
+        }
         match pick(&rows, &mut focus, &hint_page()) {
             Picked::Leave => return Flow::Leave,
             Picked::Rail => return Flow::Rail,
@@ -624,8 +774,11 @@ fn browse(ctx: &Ctx, mut view: View, mut land: Option<String>) -> Flow {
                     let subject = match rows[r].go { Go::Thing(k) => Some(view.subjects[k].clone()), _ => None };
                     let offer = rows[r].offers[d];
                     let before: Vec<String> = view.subjects.iter().map(|s| s.word.clone()).collect();
-                    if let Done::Ran { seen, argv, .. } = run(ctx, offer, subject.as_ref()) {
+                    if let Done::Ran { seen, argv, .. } = run(ctx, offer, subject.as_ref(), view.place.as_deref()) {
+                        let was = view.made_by.clone();
                         view = next_view(ctx, &view, seen, argv);
+                        // Another page now (a folder opened): its first row, unless something is landed on.
+                        if view.made_by != was { focus = (0, 0); }
                         land = subject.map(|s| s.word).filter(|w| view.subjects.iter().any(|s| s.word == *w))
                             .or_else(|| view.subjects.iter().find(|s| !before.contains(&s.word)).map(|s| s.word.clone()));
                     }
@@ -653,55 +806,120 @@ fn is(s: &Subject, word: &str) -> bool {
     s.word == word || (s.on == On::Issue && s.repo.as_deref() == Some(word))
 }
 
-/// After a command typed by hand, on a terminal: its next deeds in a short row that Enter or Esc passes by.
-pub fn after(ctx: &Ctx, call: &args::Call, argv: &[String], seen: Seen) {
+/// The thing a command just made, by the word that names it on its page (`todo add` → its number): its
+/// next deeds come first after it (bug: after the 13th TODO, Done 1–12 were offered and not the new one).
+pub fn made(call: &args::Call, reply: &out::Reply) -> Option<String> {
+    let out::Reply::Done { json, .. } = reply else { return None };
+    match (call.command.name, call.form.verb) {
+        ("todo", Some("add")) => json["number"].as_u64().map(|n| n.to_string()),
+        ("issue", Some("new")) => Some(crate::target::called(json["repo"].as_str()?, json["file"].as_str()?,
+            &length3_core::text::named(json["kind"].as_str().filter(|k| !k.is_empty()), json["title"].as_str()?))),
+        ("repo", Some("new")) => json["repo"]["name"].as_str().map(String::from),
+        _ => None,
+    }
+}
+
+/// A next deed: the thing it is done on (None: the page), the deed, and its words in the row.
+type Next = (Option<usize>, Offer, String);
+
+/// The next deeds of a view: those of the thing `word` names, else each thing's first deed and then the
+/// page's; with what they are done on (the lead), and how many were left out past the twelfth.
+fn next_deeds(ctx: &Ctx, view: &View, word: Option<&str>) -> (String, Vec<Next>, usize) {
+    let env = Env::of(ctx);
+    let dev = device(ctx);
+    let thing = word.and_then(|w| view.subjects.iter().position(|s| is(s, w) && s.facts.contains(&Fact::WorkedHere)).or_else(|| view.subjects.iter().position(|s| is(s, w))));
+    let mut items: Vec<Next> = Vec::new();
+    let lead = match thing {
+        Some(k) => {
+            let s = &view.subjects[k];
+            let facts: Vec<Fact> = s.facts.iter().chain(&dev).copied().collect();
+            for o in offered(view.group, s.on, &facts, env) { items.push((Some(k), o, o.label().to_string())); }
+            // Named as a command names it, but a TODO item (with its number) or a thing by size, by what it says.
+            match s.on { On::Todo => format!("{} {}", s.word, s.label), On::Thing => s.label.clone(), _ => s.word.clone() }
+        }
+        None => {
+            for (k, s) in view.subjects.iter().enumerate() {
+                let facts: Vec<Fact> = s.facts.iter().chain(&dev).copied().collect();
+                if let Some(o) = offered(view.group, s.on, &facts, env).into_iter().next() { items.push((Some(k), o, format!("{} {}", o.label(), s.word))); }
+            }
+            let facts: Vec<Fact> = view.facts.iter().chain(&dev).copied().collect();
+            for o in offered(view.group, On::Page, &facts, env) { items.push((None, o, o.label().to_string())); }
+            String::new()
+        }
+    };
+    let left = items.len().saturating_sub(12);
+    items.truncate(12);
+    (lead, items, left)
+}
+
+/// Where the last command's next deeds are kept for `l3 next`: its words, and the thing it was about.
+fn next_file() -> std::path::PathBuf { paths::data_dir().join("l3").join("next.json") }
+
+/// After a command typed by hand, on a terminal: its next deeds, said in a line and not asked. Nothing is
+/// read from the terminal, so what the person types next is all the shell's (bug: a key typed while a row
+/// of choices waited was taken by it, and `printf` reached the shell as `rintf`). `l3 next` opens them.
+pub fn after(ctx: &Ctx, call: &args::Call, argv: &[String], seen: Seen, made: Option<String>) {
     let c = call.command;
     if c.group == Group::Other || c.hidden || call.form.args.contains(&Arg::Argv) { return; }
     if seen.subjects.is_empty() && !call.form.page && call.form.deeds.is_empty() { return; }
-    ACTIVE.with(|a| a.set(true));
-    // What the command showed; else its purpose's page, read (not printed) for what is there now.
-    let mut word = if seen.subjects.is_empty() { named(ctx, call) } else { None };
-    let mut view = if !seen.subjects.is_empty() { View { group: c.group, subjects: seen.subjects, facts: seen.facts, own: call.form.page, made_by: vec![argv.to_vec()] } }
+    let shown = !seen.subjects.is_empty();
+    let word = made.or_else(|| if shown { None } else { named(ctx, call) });
+    let view = if shown { View { group: c.group, subjects: seen.subjects, facts: seen.facts, own: call.form.page, made_by: vec![argv.to_vec()], place: seen.place } }
         else { page(ctx, c.group, false) };
+    let (lead, items, left) = next_deeds(ctx, &view, word.as_deref());
+    if items.is_empty() { return; }
+    let style = Style::now();
+    let mut words: Vec<String> = items.iter().map(|(_, _, w)| w.clone()).collect();
+    if left > 0 { words.push(tr!("({} more)", "（ほか{}件）", left)); }
+    let words: Vec<String> = words.iter().enumerate().map(|(k, w)| if k + 1 < words.len() { format!("{w} ·") } else { w.clone() }).collect();
+    let first = if lead.is_empty() { tr!("  Next  ", "  次  ") } else { tr!("  Next for {}  ", "  {} の次  ", lead) };
+    let cols = term::size().0.saturating_sub(1);
+    let mut lines = lead_lines(&first, true, &words, cols);
+    lines.push(style.dim(&tr!("  l3 next chooses one with the keys", "  l3 next でキーで選べます")));
+    for l in lines { term::put(&format!("{l}\n")); }
+    // Kept for `l3 next`; not kept, `l3 next` says there is nothing, and nothing is lost.
+    let kept = serde_json::json!({"argv": argv, "word": word, "shown": shown});
+    let file = next_file();
+    if file.parent().is_some_and(|d| std::fs::create_dir_all(d).is_ok()) {
+        let _ = length3_core::atomic::replace(&file, kept.to_string().as_bytes(), length3_core::atomic::How::CACHE);
+    }
+}
+
+/// `l3 next` on a terminal: the next deeds of the last command typed, walked with the keys as the menu's,
+/// done as the commands they are, and those after each, until Enter alone or Esc goes on.
+pub fn next(ctx: &Ctx) -> ExitCode {
+    let kept: Option<serde_json::Value> = std::fs::read(next_file()).ok().and_then(|b| serde_json::from_slice(&b).ok());
+    let argv: Vec<String> = kept.as_ref().and_then(|k| k["argv"].as_array().map(|a| a.iter().filter_map(|w| w.as_str().map(String::from)).collect())).unwrap_or_default();
+    let Some(call) = kept.as_ref().and_then(|_| args::parse(&argv, ctx).ok()) else {
+        out::note(&tr!("Nothing to go on from yet: a command typed here says its next deeds", "まだ続きはありません。ここで打ったコマンドの次が出ます"));
+        return ExitCode::SUCCESS;
+    };
+    ACTIVE.with(|a| a.set(true));
+    let kept = kept.unwrap_or_default();
+    let mut word = kept["word"].as_str().map(String::from);
+    // What it showed, read again when reading is all it does; else its purpose's page as it is now.
+    let reads = call.form.page || call.form.sync == spec::Sync::TakeIn;
+    let mut view = if kept["shown"].as_bool() == Some(true) && reads {
+        let seen = read(ctx, std::slice::from_ref(&argv), false);
+        View { group: call.command.group, subjects: seen.subjects, facts: seen.facts, own: call.form.page, made_by: vec![argv.clone()], place: seen.place }
+    } else { page(ctx, call.command.group, false) };
+    term::put(&format!("{}\n", Style::now().dim(&format!("→ l3 {}", argv.iter().map(|w| shell_word(w)).collect::<Vec<_>>().join(" ")))));
     loop {
-        // Never take keys the person typed ahead for their next command.
-        if term::typed_ahead() { return; }
-        let env = Env::of(ctx);
-        let dev = device(ctx);
-        let thing = word.as_deref().and_then(|w| view.subjects.iter().position(|s| is(s, w) && s.facts.contains(&Fact::WorkedHere)).or_else(|| view.subjects.iter().position(|s| is(s, w))));
-        // The deeds of the thing it was about; else each thing's first deed, then the page's.
-        let mut items: Vec<(Option<usize>, Offer, String)> = Vec::new();
-        let lead = match thing {
-            Some(k) => {
-                let s = &view.subjects[k];
-                let facts: Vec<Fact> = s.facts.iter().chain(&dev).copied().collect();
-                for o in offered(view.group, s.on, &facts, env) { items.push((Some(k), o, o.label().to_string())); }
-                // Named as a command names it, but a TODO item or a thing by size, by what it says.
-                if matches!(s.on, On::Todo | On::Thing) { s.label.clone() } else { s.word.clone() }
-            }
-            None => {
-                for (k, s) in view.subjects.iter().enumerate() {
-                    let facts: Vec<Fact> = s.facts.iter().chain(&dev).copied().collect();
-                    if let Some(o) = offered(view.group, s.on, &facts, env).into_iter().next() { items.push((Some(k), o, format!("{} {}", o.label(), s.word))); }
-                }
-                let facts: Vec<Fact> = view.facts.iter().chain(&dev).copied().collect();
-                for o in offered(view.group, On::Page, &facts, env) { items.push((None, o, o.label().to_string())); }
-                tr!("Next", "次")
-            }
-        };
-        items.truncate(12);
-        if items.is_empty() { return; }
-        let style = Style::now();
-        let words: Vec<String> = items.iter().map(|(_, _, w)| w.clone()).collect();
-        let Some(k) = choose(&format!("{}  ", style.dim(&lead)), &words, None, &hint_after()) else { return };
+        let (lead, items, left) = next_deeds(ctx, &view, word.as_deref());
+        if items.is_empty() { break; }
+        let mut words: Vec<String> = items.iter().map(|(_, _, w)| w.clone()).collect();
+        if left > 0 { words.push(tr!("({} more in the menu)", "（ほか{}件はメニューで）", left)); }
+        let first = if lead.is_empty() { tr!("Next  ", "次  ") } else { format!("{lead}  ") };
+        let Some(k) = choose(&first, true, &words, None, &hint_after()).filter(|k| *k < items.len()) else { break };
         let (thing, offer, _) = items[k].clone();
         let subject = thing.map(|k| view.subjects[k].clone());
         let before: Vec<String> = view.subjects.iter().map(|s| s.word.clone()).collect();
-        let Done::Ran { seen, argv, .. } = run(ctx, offer, subject.as_ref()) else { return };
+        let Done::Ran { seen, argv, .. } = run(ctx, offer, subject.as_ref(), view.place.as_deref()) else { break };
         view = next_view(ctx, &view, seen, argv);
         word = subject.map(|s| s.word).filter(|w| view.subjects.iter().any(|s| s.word == *w))
             .or_else(|| view.subjects.iter().find(|s| !before.contains(&s.word)).map(|s| s.word.clone()));
     }
+    ExitCode::SUCCESS
 }
 
 #[cfg(test)]
@@ -771,7 +989,7 @@ mod tests {
     }
 
     fn git_page() -> View {
-        View { group: Group::Git, own: true, facts: Vec::new(), made_by: Vec::new(), subjects: vec![
+        View { group: Group::Git, own: true, facts: Vec::new(), made_by: Vec::new(), place: None, subjects: vec![
             issue(1, "Fix：restart loses the draft", "notes · not started", &[Fact::CanStart]),
             issue(2, "Docs：readme", "notes · sora · started just now", &[Fact::WorkedHere, Fact::CanCommit, Fact::OnWork]),
         ] }
@@ -815,7 +1033,7 @@ mod tests {
         let want = if ja() { [
             "    1  Home     プロフィール · TODO 残り 1 / 2",
             "    2  Forge    自分の作業場 · repo 1 · 帯に 1",
-            "    3  File     / の tree · /root に repo 1",
+            "    3  File     repo のファイル · /root に repo 1",
             "  › 4  Git      Issue とコミット · 開いている Issue 1件",
             "    5  Runtime  この端末と環境 · root はまだありません",
             "    6  Remote   repo を置く場所 · サインインしていません",
@@ -826,7 +1044,7 @@ mod tests {
         ].join("\n") } else { [
             "    1  Home     Profile · TODO 1 open of 2",
             "    2  Forge    Your workshop · 1 repo · 1 on the band",
-            "    3  File     The tree of / · /root holds 1 repo",
+            "    3  File     Files in your repos · /root holds 1 repo",
             "  › 4  Git      Issues and commits · 1 issue open",
             "    5  Runtime  This device and its environments · no root yet",
             "    6  Remote   Where your repos are kept · not signed in",
@@ -841,11 +1059,50 @@ mod tests {
     #[test]
     fn a_long_page_says_how_much_is_above_and_below_the_focus() {
         let subjects = (1..=30).map(|n| issue(n, "Fix：x", "", &[Fact::CanStart])).collect();
-        let rows = rows(&View { group: Group::Git, own: true, facts: Vec::new(), made_by: Vec::new(), subjects }, ONLINE, &[Fact::SignedIn]);
-        let lines = draw(&rows, Some((15, 0)), 80, 12, Style::PLAIN, "keys");
+        let rows = rows(&View { group: Group::Git, own: true, facts: Vec::new(), made_by: Vec::new(), place: None, subjects }, ONLINE, &[Fact::SignedIn]);
+        let lines = draw(&rows, Some((15, 0)), 80, 12, Style::PLAIN, &Hint::of(&["keys".into()], &[]));
         assert!(lines.len() <= 12, "{lines:?}");
         assert!(lines.first().is_some_and(|l| l.contains('↑')) && lines.iter().any(|l| l.contains('↓')), "{lines:?}");
         assert!(lines.iter().any(|l| l.contains("› ") && l.contains("#16")), "{lines:?}");
+    }
+
+    #[test]
+    fn at_fifty_columns_the_ways_back_and_out_come_first_and_none_is_cut() {
+        for cols in [50, 40] {
+            let lines = hint_page().lines(cols);
+            assert!(lines.len() > 1 && lines.iter().all(|l| term::width(l) <= cols), "{lines:?}");
+            let first = &lines[0];
+            assert!(first.contains(&tr!("q leaves", "q 終わる")) && first.contains(&tr!("Backspace purposes", "Backspace 目的")), "{lines:?}");
+            assert!(lines.join(" ").contains(&tr!("Enter do", "Enter 実行")), "{lines:?}");
+        }
+        // Where it fits, one line, read as before.
+        assert_eq!(hint_page().lines(100).len(), 1);
+    }
+
+    #[test]
+    fn a_long_name_is_said_whole_where_it_is_focused_and_rows_past_nine_keep_their_numbers() {
+        let long = "Fix：a TODO whose title is far longer than the terminal is wide, and ends in the part that differs";
+        let subjects: Vec<Subject> = (1..=12).map(|n| Subject { on: On::Todo, word: n.to_string(), repo: None, label: format!("○ {long} {n}"),
+            detail: String::new(), facts: vec![Fact::NotDone] }).collect();
+        let view = View { group: Group::Home, own: true, facts: Vec::new(), made_by: Vec::new(), place: None, subjects };
+        let rows = rows(&view, OFFLINE, &[Fact::SignedOut]);
+        let lines = draw(&rows, Some((11, 0)), 50, 40, Style::PLAIN, &hint_page());
+        assert!(lines.iter().all(|l| term::width(l) <= 50), "{lines:#?}");
+        // The focused one whole, its end (where TODOs that start alike differ) included, and its deeds under it.
+        let joined = lines.join("");
+        assert!(joined.contains("differs 12") && lines.iter().any(|l| l.contains(&format!("[{}]", tr!("Done", "完了")))), "{lines:#?}");
+        assert!(lines.iter().any(|l| l.starts_with("  › 12  ")) && lines.iter().any(|l| l.starts_with("    10  ")), "{lines:#?}");
+    }
+
+    #[test]
+    fn a_field_too_long_for_the_line_shows_around_the_cursor() {
+        let text: Vec<char> = "一二三四五六七八九十abcdefghij".chars().collect();
+        assert_eq!(window(&text[..3], 1, 20), ("一二三".to_string(), 2));
+        let (shown, col) = window(&text, text.len(), 12);
+        assert!(shown.starts_with('…') && shown.ends_with('j') && term::width(&shown) < 12, "{shown}");
+        assert_eq!(col, term::width(&shown));
+        let (shown, col) = window(&text, 0, 12);
+        assert!(shown.starts_with('一') && col == 0 && term::width(&shown) < 12, "{shown}");
     }
 
     #[test]
