@@ -1,7 +1,7 @@
 import {h} from '../dom.ts';
 import {t} from '../i18n.ts';
 import {mark} from '../icons.ts';
-import {onPlugins, pluginsOpen, slots} from '../plugins.ts';
+import {onPlugins, pluginsOpen, setPluginsOpen, slots} from '../plugins.ts';
 import {complete, pathWord, Recall} from '../recall.ts';
 import {onChange, store, type Entry} from '../repos.ts';
 import {Reference} from './reference.ts';
@@ -73,6 +73,7 @@ function pluginArea(): HTMLElement {
     };
     const stage = h('div', {class: 'slide-stage', tabindex: '0', 'aria-label': t('Plugins')}, track, edge(-1), edge(1));
     stage.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') { event.preventDefault(); setPluginsOpen(false); return; }
       if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
       event.preventDefault();
       slots.step(event.key === 'ArrowRight' ? 1 : -1);

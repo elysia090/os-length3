@@ -205,6 +205,23 @@ test('the plug opens a plain plugin area at the top of the center, and closes it
   await expect(area).toBeVisible();
 });
 
+test('the plug says the area is out only where it is, and Escape on it puts the area away', async ({app}) => {
+  const area = app.main.getByRole('region', {name: 'Plugins', exact: true});
+  const plug = app.rail.button('plugin');
+  await plug.click();
+  await expect(area).toBeVisible();
+  // Runtime has no plugin area: the plug is not shown out there, and the area waits for Forge.
+  await app.rail.go('runtime');
+  await expect(plug).toHaveAttribute('aria-expanded', 'false');
+  await app.rail.go('forge');
+  await expect(area).toBeVisible();
+  await expect(plug).toHaveAttribute('aria-expanded', 'true');
+  await plug.focus();
+  await plug.press('Escape');
+  await expect(area).toBeHidden();
+  await expect(plug).toHaveAttribute('aria-expanded', 'false');
+});
+
 test('the prompt box has a Run button that names its keys, and the box reaches a little left of the files', async ({app}) => {
   const run = app.main.getByRole('button', {name: /^Run/});
   await expect(run).toHaveAttribute('aria-keyshortcuts', /Enter/);

@@ -31,6 +31,8 @@ const REPO_KEY = 'length3.os.repo';
 const $ = (id: string) => document.getElementById(id)!;
 const tabs = new Map<PurposeId, HTMLButtonElement>();
 let current: PurposeId = 'home';
+/** The plug's state in the rail, said again whenever the page or the plugin area changes. */
+let plugState = () => {};
 
 function load(key: string): string | null {
   try { return localStorage.getItem(key); } catch { return null; }
@@ -84,12 +86,18 @@ function railButton(id: PurposeId): HTMLButtonElement {
     serverLayer.attach(button);
   } else if (id === 'plugin') {
     // The plug opens the plugin area at the top of the center, and closes it; elsewhere it opens it in Forge.
-    button.setAttribute('aria-expanded', 'false');
-    onPlugins(() => button.setAttribute('aria-expanded', String(pluginsOpen())));
+    // It says the area is out only where the area is (Forge's, Git's center): on another page it is kept for
+    // coming back, not out. Escape on the plug puts it away, as Escape does File's tree.
+    plugState = () => button.setAttribute('aria-expanded', String(pluginsOpen() && (current === 'forge' || current === 'git')));
+    plugState();
+    onPlugins(() => plugState());
     button.addEventListener('click', () => {
       const work = current === 'forge' || current === 'git';
       if (!work) select('forge');
       setPluginsOpen(!work || !pluginsOpen());
+    });
+    button.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && button.getAttribute('aria-expanded') === 'true') { event.preventDefault(); setPluginsOpen(false); }
     });
   } else {
     // A place in the rail is a link to a page, the one shown marked current; File and Server open over it.
@@ -120,6 +128,7 @@ function select(id: PurposeId) {
   $('page').setAttribute('aria-labelledby', `purpose-${id}`);
   named();
   render();
+  plugState();
   if (id !== 'new-repo') save(PURPOSE_KEY, id);
 }
 
