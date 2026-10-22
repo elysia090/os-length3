@@ -332,6 +332,13 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .work-act { margin-top: var(--s3); }
 .work-act .line-in { flex: 1; }
 .issue-one { display: grid; gap: var(--s2); }
+/* A phone has no room for a row's name beside its facts: the name takes its own line, the facts the next, the deed
+   still at the right end. Before, the facts (which never shrink) squeezed the name to nothing (a device unnamed). */
+@media (max-width: 560px) {
+  .rows > .row-item { flex-wrap: wrap; }
+  .rows > .row-item > .row-name { flex-basis: 100%; }
+  .rows > .row-item > .button:last-child { margin-left: auto; }
+}
 .issue-one h3 { margin: 0; font-size: var(--t-body); font-weight: 600; }
 .issue-body { white-space: pre-wrap; }
 .issue-form { display: grid; gap: var(--s3); margin-bottom: var(--s4); padding: var(--s4); border: var(--line-work) solid var(--edge); border-radius: var(--r-place); }
@@ -1159,7 +1166,9 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 /* Words of two sizes in a row share a baseline; the face sits centred by them. */
 .people li { display: flex; align-items: baseline; gap: var(--s2); min-width: 0; }
 .people li > .face { align-self: center; }
-.people li > :not(.face) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A long name wraps rather than being cut short at the pane's edge (§4), and owner is never cut. */
+.people li > :not(.face) { min-width: 0; overflow-wrap: anywhere; }
+.people li > .muted { flex: none; }
 .face { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--rule); border-radius: var(--r-round); font: 600 11px var(--sans); }
 .side-repo { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s2); width: 100%; padding: var(--s1) var(--s2); margin: 0 calc(-1 * var(--s2)); border: 0; border-radius: var(--r-field); background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
 .side-repo:hover { background: var(--raised); }
