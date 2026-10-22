@@ -2,7 +2,7 @@ import * as dotfiles from '../dotfiles.ts';
 import {onChange, store} from '../repos.ts';
 import {bytes, h} from '../dom.ts';
 import {isNative, promptOpen, rootStatus, type Held, type Stopped} from '../host.ts';
-import {currentLang, t, tn} from '../i18n.ts';
+import {currentLang, onLang, t, tn} from '../i18n.ts';
 import {loadUserland, loadWebRoot, watchLoad, type Stage} from '../userland.ts';
 import {every} from '../runs.ts';
 import {errorText} from '../errors.ts';
@@ -100,6 +100,8 @@ export class Session {
     this.repo = repo;
     this.output = h('pre', {class: 'term-out', 'aria-live': 'polite'});
     this.status = h('p', {class: 'muted small'}, t('Starting…'));
+    // A Prompt that ended says so in the language chosen since, as the rest of the page does.
+    onLang(() => this.sayEnded());
     // Not a live region: its count goes up each second, which a screen reader would read out each second.
     this.activity = h('div', {class: 'term-activity small'});
     this.element = h('div', {class: 'term'}, this.status, this.output, this.activity);
@@ -124,7 +126,7 @@ export class Session {
     this.heard = Date.now();
     this.follow();
     this.tell();
-    if (this.native) { void this.native.input(lines).catch(() => this.end(t('Not running'))); return true; }
+    if (this.native) { void this.native.input(lines).catch(() => this.end(() => t('Not running'))); return true; }
     const bytes = new TextEncoder().encode(lines);
     this.worker!.postMessage({type: 'input', bytes}, [bytes.buffer]);
     return true;
@@ -218,7 +220,7 @@ export class Session {
     if (!root?.current) return false;
     this.native = await promptOpen(this.repo, {
       output: (text) => { this.heard = Date.now(); this.received(text); },
-      exit: (code) => { if (this.live) this.end(t('Exited ({code})', {code})); },
+      exit: (code) => { if (this.live) this.end(() => t('Exited ({code})', {code})); },
     });
     this.on = 'root';
     this.live = true;
@@ -264,8 +266,8 @@ export class Session {
           this.follow();
           this.tell();
         }
-        else if (data.type === 'exit') this.end(t('Exited ({code})', {code: data.status >> 8}));
-        else if (data.type === 'error') this.end(t('Halted: {message}', {message: data.message.split('\n')[0]}));
+        else if (data.type === 'exit') this.end(() => t('Exited ({code})', {code: data.status >> 8}));
+        else if (data.type === 'error') this.end(() => t('Halted: {message}', {message: data.message.split('\n')[0]}));
       };
       const cwd = `/root/${this.repo}`;
       worker.postMessage({
@@ -296,7 +298,7 @@ export class Session {
       this.live = true;
       this.tell();
     } catch (e) {
-      this.end(t('Could not start: {message}', {message: errorText(e)}));
+      this.end(() => t('Could not start: {message}', {message: errorText(e)}));
     }
   }
 
@@ -319,15 +321,17 @@ export class Session {
    * then does it say so.
    */
   stop() {
-    if (!this.native) { this.end(t('Stopped')); return; }
+    if (!this.native) { this.end(() => t('Stopped')); return; }
     // On the root: stopped only once the host shows none of its processes left.
     const n = this.native;
     void n.close().then((s) => {
       this.stopped = s;
-      const back = s.before.memory ? t('{size} given back', {size: bytes(s.before.memory)}) : '';
-      this.end(s.left ? tn('Stopping ({n} process left)', 'Stopping ({n} processes left)', s.left)
-        : back ? t('Stopped ({back} · {ms} ms)', {back, ms: String(s.ms)}) : t('Stopped'));
-    }, () => this.end(t('Stopped')));
+      this.end(() => {
+        const back = s.before.memory ? t('{size} given back', {size: bytes(s.before.memory)}) : '';
+        return s.left ? tn('Stopping ({n} process left)', 'Stopping ({n} processes left)', s.left)
+          : back ? t('Stopped ({back} · {ms} ms)', {back, ms: String(s.ms)}) : t('Stopped');
+      });
+    }, () => this.end(() => t('Stopped')));
   }
 
   /**
@@ -379,8 +383,12 @@ export class Session {
     this.element.replaceWith(terminalFor(this.repo));
   }
 
-  private end(message: string) {
+  /** What the ended Prompt says, drawn again in the language chosen meanwhile. */
+  private said: (() => string) | null = null;
+
+  private end(message: () => string) {
     this.ended = true;
+    this.said = message;
     clearInterval(this.ticker);
     this.activity.replaceChildren();
     this.unwatch?.();
@@ -395,9 +403,14 @@ export class Session {
     this.memory = 0;
     this.processes = 0;
     this.tell();
+    this.sayEnded();
+  }
+
+  private sayEnded() {
+    if (!this.ended || !this.said) return;
     const restart = h('button', {class: 'button', type: 'button'}, t('Start again'));
     restart.addEventListener('click', () => this.restart());
-    this.status.replaceChildren(message, ' ', restart);
+    this.status.replaceChildren(this.said(), ' ', restart);
   }
 }
 

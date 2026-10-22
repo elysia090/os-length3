@@ -1,5 +1,6 @@
 import {download, Fatal} from './fetch.ts';
 import {errorText} from './errors.ts';
+import {t} from './i18n.ts';
 
 // l3, the one thing the Prompt depends on: the distribution's root, the l3
 // command and the translator, in one file (scripts/bundle.mjs). l3.json
@@ -67,7 +68,8 @@ export function watchLoad(fn: (s: Stage) => void): () => void {
 /** What l3 this build carries; null when it carries none (a build made without `npm run userland`). Not reached: the reason. */
 export const about = async (): Promise<About | null> => {
   const r = await fetch('/userland/l3.json', {cache: 'no-store'});
-  if (r.status === 404) return null;
+  // A build without it: the server answers 404, or with the page itself (a host that serves the app for any path).
+  if (r.status === 404 || (r.ok && !r.headers.get('content-type')?.includes('json'))) return null;
   if (!r.ok) throw new Fatal(`l3.json: ${r.status}`);
   return await r.json() as About;
 };
@@ -94,7 +96,10 @@ export const loadWebRoot = (): Promise<WebRoot | null> => (rooting ??= fetch('/r
 
 let loading: Promise<Userland> | null = null;
 export const loadUserland = (): Promise<Userland> => (loading ??= (async () => {
-  const a = await download('/userland/l3.json', {}, undefined, {attempts: 4}).then((b) => JSON.parse(new TextDecoder().decode(b)) as About);
+  const a = await download('/userland/l3.json', {}, undefined, {attempts: 4}).then((b) => {
+    // Not JSON is a build without l3 (the host answered with the page): said so, never the parser's words.
+    try { return JSON.parse(new TextDecoder().decode(b)) as About; } catch { throw new Fatal(t('There is no l3 (npm run userland)')); }
+  });
   const {size, sha256} = a.bundle;
   tell({at: 'fetch', got: 0, of: size});
   let got = 0;
