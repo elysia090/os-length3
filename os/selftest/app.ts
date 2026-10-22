@@ -201,7 +201,7 @@ class NewRepo extends Part {
     await this.fill(name, o);
     await expect(this.made).toHaveText(`Made ${name}`);
     if (o.template !== 'C') return;
-    const c = new Map(TEMPLATES.find((t) => t.id === 'c')!.files);
+    const c = new Map(TEMPLATES.find((t) => t.id === 'c')!.files as [string, string][]);
     await this.app.file.named(name, '', 'New folder', 'src');
     await this.app.file.named(name, 'src', 'New file', 'main.c');
     await this.app.forge.editFile('src/main.c', c.get('src/main.c')!);
