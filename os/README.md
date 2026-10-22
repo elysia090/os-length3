@@ -189,7 +189,10 @@ What others see, in each scope:
 | Who | この端末だけ (this device only) | 同じネットワークにも (the same network too) |
 |---|---|---|
 | this device | the port on 127.0.0.1 (and ::1); `l3 address` and the app's card show the destinations, the host key and the keys let in | the same, and the LAN addresses too |
-| another PC on the LAN/VPN | nothing: the port is closed (connection refused, no handshake, no banner) | the port on each private address: `SSH-2.0-length3` and the host key, then only a key from `.authorized_keys` gets in |
+| another PC on the LAN/VPN | nothing: the port is closed (connection refused, no handshake, no banner) | the port on each LAN address and VPN address: `SSH-2.0-length3` and the host key, then only a key from `.authorized_keys` gets in |
+| a sender on another segment (the public side) that routes to the LAN or VPN address through this device | nothing: the port is closed | the TCP handshake (Linux takes a packet for any of its addresses on any interface), then closed at accept: no banner, no host key |
+| the carrier's other customers, when an ordinary interface has a 100.64/10 address (a carrier's shared NAT) | nothing | nothing: connection refused, no socket there; at the VPN address, closed at accept |
+| containers and VMs behind a bridge (`docker0`, `br-*`, `virbr0`, `veth*`, …), whatever its address | nothing | nothing: connection refused, no socket on a bridge's address |
 | the internet | nothing: no socket on a public address | nothing: no socket on a public address, nor on 0.0.0.0 |
 | the Remote | that the device listens, `device`, since when, last heard | that the device listens, `network`, since when, last heard |
 
@@ -206,12 +209,29 @@ too") with the off switch.
 - **Scope**: kept on the device (`<data>/ssh/scope.json`), never on the
   Remote; `on` alone takes the one kept. *This device only* listens on
   127.0.0.1 and ::1 alone. *The same network too* listens, besides, on each
-  private address of the host, one socket each (10/8, 172.16/12,
-  192.168/16, a VPN's 100.64/10, link-local), never on 0.0.0.0 and never
-  on a public address. The listener looks at the interfaces again every
-  5 s: an address that goes, or stops being private, is let go, and the
+  LAN address of the host, one socket each (10/8, 172.16/12, 192.168/16,
+  link-local), and on an address in 100.64/10 only when it is on a VPN's
+  interface: `tailscale*` (Headscale's clients too), `wg*`, `zt*`
+  (ZeroTier), `nebula*`, `wt*` (NetBird), `CloudflareWARP`. Anywhere else
+  100.64/10 is a carrier's shared NAT, where its other customers are, so
+  it is never listened on. Never on a bridge or a container's or VM's
+  interface (`docker*`, `br-*`, `virbr*`, `veth*`, `ve-*`, `vb-*`,
+  `lxcbr*`, `lxdbr*`, `incusbr*`, `cni*`, `flannel*`, `cali*`,
+  `cilium_*`, `podman*`, `vmnet*`, `vboxnet*`), whatever its address;
+  never on 0.0.0.0, a public address, or IPv6 but ::1 (deliberately, for
+  now). `l3 address` and the app's card name each interface taken:
+  `From PCs on the same network too (wlan0 192.168.1.5, tailscale0
+  100.101.102.103)`. The listener looks at the interfaces again every
+  5 s: an address that goes, or stops being taken, is let go, and the
   connections that came in on it are closed; so is every connection from
   elsewhere when the scope narrows to this device only.
+- **From the network it came in on**: a connection is taken only from
+  inside the subnet of the address it came in on, from this device itself
+  (any of its own addresses: `ssh` to its own LAN address works), or, on a
+  VPN's interface, from a non-public address the kernel routes by that
+  interface (asked as `ip route get` is, so Tailscale's table 52 counts).
+  Anything else, such as a sender on the public side routing to the LAN
+  address through this host, is closed at accept, before the banner.
 - **Keys**: public keys only (no password, no keyboard-interactive), one
   OpenSSH public key a line in the Runtime dotfile `.authorized_keys`
   (`l3 dotfile write .authorized_keys < ~/.ssh/id_ed25519.pub`). Dotfiles

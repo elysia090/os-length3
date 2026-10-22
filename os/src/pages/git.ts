@@ -16,6 +16,9 @@ import {errorText} from '../errors.ts';
 
 /**
  * Git: what happens between a repo and the outside, in the issues' terms.
+ * The repo chips are one row that slides sideways, however many repos there
+ * are, so they never push the issues down; while an issue is written, the
+ * repo chosen there is the one it goes in (All leaves that as it was).
  * Under the repo chips, the issues not merged yet as large boxes side by
  * side: one in full, its neighbours' edges showing at both sides. An edge is
  * the way to the box beside (hover lifts it; ← → do the same), and the track
@@ -50,8 +53,10 @@ export function git(ctx: Context): Node[] {
   const column = h('div', {class: 'issue-column'}, stage);
   const empty = h('div', {});
   // Written: its repo is the one looked at and worked on, and the new issue is the one shown, with the keyboard on it.
-  const form = issueForm({done: (made) => {
+  const form = issueForm({done: (made, back) => {
     write.hidden = false;
+    // Asked for from Forge's reference and put back: back there, as it was.
+    if (!made && back) { ctx.openRepo(back); return; }
     if (!made) { write.focus({preventScroll: true}); return; }
     if (filter && filter !== made.repo) { filter = made.repo; paintChips(); }
     chosen = `${made.repo}/${made.file}`;
@@ -87,17 +92,37 @@ export function git(ctx: Context): Node[] {
   let land = false;
 
   const paintChips = () => {
+    // A chip pressed from the keyboard keeps it when the row is drawn again.
+    const had = [...chips.children].indexOf(document.activeElement as Element);
     chips.replaceChildren(...[ALL, ...repos].map((r) => {
       const b = h('button', {type: 'button', class: 'chip', role: 'radio', 'aria-checked': String(filter === r)}, r || t('All'));
-      b.addEventListener('click', () => { filter = r; paintChips(); if (r) look(r, true); void paint(); });
+      b.addEventListener('click', () => { filter = r; paintChips(); if (r) { look(r, true); form.retarget(r); } void paint(); });
       return b;
     }));
+    if (had >= 0) (chips.children[had] as HTMLElement | undefined)?.focus({preventScroll: true});
+    // The chosen one is kept in view as the row slides.
+    const on = chips.querySelector<HTMLElement>('[aria-checked="true"]');
+    if (on && chips.scrollWidth > chips.clientWidth) {
+      if (on.offsetLeft < chips.scrollLeft) chips.scrollLeft = on.offsetLeft;
+      else if (on.offsetLeft + on.offsetWidth > chips.scrollLeft + chips.clientWidth) chips.scrollLeft = on.offsetLeft + on.offsetWidth - chips.clientWidth;
+    }
   };
 
   /** Slide to the `n`th box: it gets the whole box, the others only their heads. */
   const sized = new ResizeObserver(([e]) => track.style.setProperty('--card-h', `${(e.target as HTMLElement).offsetHeight}px`));
   /** The part of the box that has the keyboard (its words, a button), so the box gone to or drawn again gives it back. */
-  const part = () => (document.activeElement instanceof HTMLElement && track.contains(document.activeElement) ? document.activeElement.className.split(' ')[0] || null : null);
+  // Told by its kind and its words: every button in a box is a .button, and the first of them is Close, so a box
+  // drawn again under the keyboard on Start must not hand it to Close (the next Enter would close the issue).
+  const part = (): {kind: string; words: string} | null => {
+    const a = document.activeElement;
+    if (!(a instanceof HTMLElement) || !track.contains(a)) return null;
+    const kind = a.className.split(' ')[0];
+    return kind ? {kind, words: a.textContent?.trim() ?? ''} : null;
+  };
+  const sameDeed = (slot: HTMLElement | undefined, had: {kind: string; words: string}) => {
+    const all = [...(slot?.querySelectorAll<HTMLElement>(`.${had.kind}`) ?? [])];
+    return all.find((e) => (e.textContent?.trim() ?? '') === had.words) ?? (all.length === 1 && had.kind !== 'button' ? all[0] : null);
+  };
   const go = (n: number, moved = false, had = part()) => {
     if (!shown.length) return;
     k = Math.max(0, Math.min(shown.length - 1, n));
@@ -116,7 +141,7 @@ export function git(ctx: Context): Node[] {
       const st = states.get(x.repo);
       slot.replaceChildren(...(j === k
         ? [h('div', {class: 'issue-card'}, issueBox(x, st, events, again)), reviewBox(x, st, again), mergeRow(x, st, events, again)].filter((n): n is HTMLElement => !!n)
-        : [h('div', {class: 'issue-card'}, issueHead(x))]));
+        : [h('div', {class: 'issue-card'}, issueHead(x, true))]));
     });
     // The neighbours' cards are as tall as the current one, so the row reads as one line of boxes.
     const card = track.children[k]?.querySelector<HTMLElement>('.issue-card');
@@ -127,7 +152,7 @@ export function git(ctx: Context): Node[] {
     next.hidden = k === shown.length - 1;
     const slot = track.children[k] as HTMLElement | undefined;
     if (land) { land = false; slot?.querySelector<HTMLElement>('.issue-words')?.focus({preventScroll: true}); return; }
-    if (had) (slot?.querySelector<HTMLElement>(`.${had}`) ?? stage).focus({preventScroll: true});
+    if (had) (sameDeed(slot, had) ?? stage).focus({preventScroll: true});
     // An edge pressed that is gone now (the first or last box reached): the keyboard stays on the row.
     else if (edge && (document.activeElement as HTMLElement | null)?.hidden) stage.focus({preventScroll: true});
   };

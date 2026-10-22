@@ -678,7 +678,7 @@ fn states(ctx: &Ctx) -> Vec<String> {
         Group::Git => if i18n::ja() { format!("開いている Issue {open_issues}件") } else if open_issues == 1 { "1 issue open".into() } else { format!("{open_issues} issues open") },
         Group::Runtime => if running > 0 { tr!("{} · {} Prompts running", "{} · Prompt {} 個が動いています", root_now, running) } else { root_now.clone() },
         Group::Remote => match remote::connection().filter(|_| connected) {
-            Some(c) => format!("{} · {}", cmd::host(&c.url), if not_sent == 0 { tr!("in step", "Remote と同じ") } else { tr!("{} repos not sent", "未送信の repo {}", not_sent) }),
+            Some(c) => format!("{} · {}", cmd::host(&c.url), if not_sent == 0 { tr!("in step", "Remote と同じ") } else { if not_sent == 1 { tr!("1 repo not sent", "未送信の repo 1") } else { tr!("{} repos not sent", "未送信の repo {}", not_sent) } }),
             None => signed_out.clone(),
         },
         Group::Server => server.clone(),

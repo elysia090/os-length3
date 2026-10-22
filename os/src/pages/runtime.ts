@@ -367,7 +367,7 @@ function sshSection(): HTMLElement {
     const lan = ssh.lan(m);
     const scope = m.scope === 'network'
       ? (lan.length ? t('From PCs on the same network too ({list}); never from the Internet', {list: lan.join(', ')})
-        : t('From PCs on the same network too (no private address here now)'))
+        : t('From PCs on the same network too (no LAN or VPN address here now)'))
       : t('From this device only (127.0.0.1): no other PC finds it');
     const print = m.fingerprint ? h('button', {type: 'button', class: 'record-value'}, m.fingerprint) : null;
     if (print && m.fingerprint) copying(print, m.fingerprint);
