@@ -3,10 +3,14 @@ name: Desktop, l3 and xlat
 # The product: the app (os), the l3 command and its core, and the
 # x86-64 → wasm translator the Prompt runs on.
 on:
+  # A pull request runs once for each push to it; main runs on its own pushes. A branch without a pull
+  # request runs by hand (workflow_dispatch), never twice for one push.
   push:
+    branches: ['main']
     paths: ['os/**', 'xlat/**', '.github/workflows/desktop.yml']
   pull_request:
     paths: ['os/**', 'xlat/**', '.github/workflows/desktop.yml']
+  workflow_dispatch:
 
 # Nothing here writes: the token reads the repository and nothing else. Every action is pinned
 # to the full commit its tag named when it was pinned (the tag is beside it), so a moved tag
@@ -14,9 +18,50 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same pull request (or branch) stops the run it makes old; main's runs all finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  # Each job builds once: incremental artifacts only make the cache larger.
+  CARGO_INCREMENTAL: '0'
+
+# Four jobs side by side, so the run takes as long as its longest, and one failure never hides another.
 jobs:
-  check:
+  # The page and the Remote: types, the tests (the browser's core is the same Rust, built for wasm32-wasip1),
+  # and the build that ships.
+  app:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: os/package-lock.json
+      - run: rustup target add wasm32-wasip1
+      - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+        with:
+          workspaces: os -> target
+          shared-key: app
+      - name: Types and tests
+        working-directory: os
+        run: |
+          npm ci
+          npm run check
+      - name: The build that ships
+        working-directory: os
+        run: npx vite build
+
+  # The core and l3: lint, tests, l3 as the Prompt carries it (static, musl), and l3 end to end against a Remote.
+  rust:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -30,60 +75,104 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y musl-tools
-          rustup target add x86_64-unknown-linux-musl wasm32-unknown-unknown wasm32-wasip1
+          rustup target add x86_64-unknown-linux-musl wasm32-wasip1
           # l3 prompt makes user namespaces, as on a person's machine; this image's AppArmor keeps them from users.
           if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; fi
-      - name: App (types, tests, web build)
-        working-directory: os
-        run: |
-          npm ci
-          npm run check
-          npx vite build
+      - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+        with:
+          workspaces: os -> target
+          shared-key: rust
       # Each step below runs whatever failed before it (only a cancel stops them), so one failure never
-      # hides another as skipped: the job fails for each that fails. The translated l3 needs the musl build.
-      # What the Remote and the app ship with: no known high or critical advisory (build-only tools
-      # such as drizzle-kit are dev dependencies, and are left out).
-      - name: Advisories in what ships
+      # hides another as skipped: the job fails for each that fails.
+      - name: Lint (the app's window needs GTK, so its crate is linted where it is built)
+        working-directory: os
+        run: cargo clippy --locked --all-targets -p length3-core -p length3-core-web -p l3 -- -D warnings
+      - name: Lint the core as a browser builds it
         if: ${{ !cancelled() }}
         working-directory: os
-        run: npm audit --omit=dev --audit-level=high
-      # Rust's advisories (RustSec) against both lockfiles: a vulnerability fails the run; an
-      # unmaintained or unsound crate deep in the desktop's GTK tree is said, not failed on.
-      - name: Advisories in the Rust crates
-        if: ${{ !cancelled() }}
-        run: |
-          cargo install --locked cargo-audit@0.22.2
-          cargo audit --file os/Cargo.lock
-          cargo audit --file xlat/Cargo.lock
+        run: cargo clippy --locked -p length3-core -p length3-core-web --target wasm32-wasip1 -- -D warnings
       - name: Core and l3
         if: ${{ !cancelled() }}
         working-directory: os
         run: cargo test --locked -p length3-core -p l3
-      # The same core a browser runs (src/host.ts core()): what the app does, the web does by this code.
-      - name: The core for the web
-        if: ${{ !cancelled() }}
-        working-directory: os
-        run: cargo build --locked -p length3-core --target wasm32-wasip1
       - name: l3 for the Prompt (static, musl)
-        id: musl
         if: ${{ !cancelled() }}
         working-directory: os
         run: cargo build --locked --profile prompt -p l3 --no-default-features --target x86_64-unknown-linux-musl
       - name: l3 end to end, against a Remote of its own
         if: ${{ !cancelled() }}
         working-directory: os
-        run: npm run selftest:l3
+        run: |
+          npm ci
+          npm run selftest:l3
+
+  # The x86-64 → wasm translator against native, and l3 translated as a browser's Prompt runs it.
+  xlat:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: Toolchains
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          rustup target add x86_64-unknown-linux-musl wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+        with:
+          workspaces: |
+            xlat -> target
+            os -> target
+          shared-key: xlat
       - name: xlat against native (C and Rust std), and its unit tests
-        if: ${{ !cancelled() }}
         working-directory: xlat
         run: sh tests/run.sh
       - name: l3 translated, as the Prompt runs it
-        if: ${{ !cancelled() && steps.musl.outcome == 'success' }}
+        if: ${{ !cancelled() }}
         working-directory: os
         run: |
+          cargo build --locked --profile prompt -p l3 --no-default-features --target x86_64-unknown-linux-musl
           out=$(LENGTH3_REPOS=/root node ../xlat/runtime/run.mjs target/x86_64-unknown-linux-musl/prompt/l3 help all)
           echo "$out" | head -3
           echo "$out" | grep -q 'l3 issue new'
+
+  # What ships has no known high or critical advisory: npm's (build-only tools such as drizzle-kit are dev
+  # dependencies, left out) and RustSec's against both lockfiles (an unmaintained or unsound crate deep in the
+  # desktop's GTK tree is said, not failed on).
+  advisories:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: os/package-lock.json
+      - name: npm
+        working-directory: os
+        run: |
+          npm ci
+          npm audit --omit=dev --audit-level=high
+      # cargo-audit built once and kept (it took five minutes a run to compile).
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        id: audit
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: cargo-audit-0.22.2-${{ runner.os }}
+      - if: ${{ !cancelled() && steps.audit.outputs.cache-hit != 'true' }}
+        run: cargo install --locked cargo-audit@0.22.2
+      - name: Rust
+        if: ${{ !cancelled() }}
+        run: |
+          cargo audit --file os/Cargo.lock
+          cargo audit --file xlat/Cargo.lock
 
   # The app end to end, as a person uses it (os/selftest): Chromium against a
   # fresh Remote of its own. A job of its own, beside check, so neither waits.
@@ -106,6 +195,12 @@ jobs:
         run: |
           npm ci
           npx playwright install --with-deps chromium
+      - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+        with:
+          workspaces: |
+            xlat -> target
+            os -> target
+          shared-key: selftest
       - name: l3 for the browser, made from the root this tree pins, and the same as it
         working-directory: os
         env:

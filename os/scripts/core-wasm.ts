@@ -9,7 +9,7 @@ import {fileURLToPath} from 'node:url';
 const OS = fileURLToPath(new URL('..', import.meta.url));
 const TARGET = 'wasm32-wasip1';
 const BUILD = ['build', '--release', '-p', 'length3-core-web', '--target', TARGET];
-const SOURCES = ['core/src', 'core/web/src', 'core/Cargo.toml', 'core/web/Cargo.toml'].map((p) => join(OS, p));
+const SOURCES = ['core/src', 'core/web/src', 'core/Cargo.toml', 'core/web/Cargo.toml', 'Cargo.toml'].map((p) => join(OS, p));
 
 /** Where cargo puts the module (CARGO_TARGET_DIR is honoured, as cargo honours it). */
 export function coreWasmPath(): string {

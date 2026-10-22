@@ -29,6 +29,12 @@ pub(super) fn seen() -> &'static Mutex<Seen> {
     S.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// Each digests file as last read or written here: when it was written, and what it held after that line.
+fn kept_as() -> &'static Mutex<HashMap<PathBuf, (i128, String)>> {
+    static K: OnceLock<Mutex<HashMap<PathBuf, (i128, String)>>> = OnceLock::new();
+    K.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 pub(super) fn stamp(m: &fs::Metadata) -> (u64, i128, u64) {
     #[cfg(unix)]
     {
@@ -119,6 +125,7 @@ pub(super) fn stamps_load(file: &Path) {
     let Ok(text) = fs::read_to_string(file) else { return };
     let mut lines = text.lines();
     let Some(written) = lines.next().and_then(|l| l.parse::<i128>().ok()) else { return };
+    if let (Ok(mut k), Some((_, body))) = (kept_as().lock(), text.split_once('\n')) { k.insert(file.to_path_buf(), (written, body.to_string())); }
     let Ok(mut map) = seen().lock() else { return };
     for line in lines {
         let mut w = line.splitn(5, ' ');
@@ -133,14 +140,23 @@ pub(super) fn stamps_load(file: &Path) {
 pub(super) fn stamps_save(file: &Path, read: &[PathBuf]) {
     let Ok(map) = seen().lock() else { return };
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos() as i128);
-    let mut text = format!("{now}\n");
+    let mut body = String::new();
+    let mut newest = i128::MIN;
     for p in read {
         let Some(((len, t, ino), sha)) = map.get(p) else { continue };
         let path = p.to_string_lossy();
         if path.contains('\n') { continue; }
-        text.push_str(&format!("{len} {t} {ino} {sha} {path}\n"));
+        newest = newest.max(*t);
+        body.push_str(&format!("{len} {t} {ino} {sha} {path}\n"));
     }
     drop(map);
+    // The same digests, none of them too close to when they were written to be trusted: nothing to write
+    // (each look would otherwise write it again, and a browser keep and tell every tab of it each time).
+    if let Ok(k) = kept_as().lock() {
+        if k.get(file).is_some_and(|(written, was)| *was == body && newest < written - 2_000_000_000) { return; }
+    }
+    if let Ok(mut k) = kept_as().lock() { k.insert(file.to_path_buf(), (now, body.clone())); }
+    let text = format!("{now}\n{body}");
     let Some(dir) = file.parent() else { return };
     if fs::create_dir_all(dir).is_err() { return; }
     // Not kept, the next run reads those files again: work lost, nothing wrong.
