@@ -15,5 +15,5 @@ root=${1:-}
 out=${2:-$here/public/l3}
 if [ -z "$root" ]; then root=$(node "$here/scripts/root-file.mjs" "$here/target/root"); fi
 target=${CARGO_TARGET_DIR:-$xlat/target}
-(cd "$xlat" && cargo build -q --release --target wasm32-unknown-unknown --lib && cargo build -q --release --bin xlat)
+(cd "$xlat" && cargo build -q --locked --release --target wasm32-unknown-unknown --lib && cargo build -q --locked --release --bin xlat)
 node "$here/scripts/l3.mjs" "$root" "$out" --translator "$target/wasm32-unknown-unknown/release/xlat.wasm" --xlat "$target/release/xlat" --stage "$here/target/userland"

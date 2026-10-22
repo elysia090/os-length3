@@ -6,9 +6,9 @@ here=$(cd "$(dirname "$0")" && pwd)
 root=$(dirname "$here")
 out="$here/out"
 mkdir -p "$out"
-cargo build -q --release --manifest-path "$root/Cargo.toml"
+cargo build -q --locked --release --manifest-path "$root/Cargo.toml"
 # The same translator as wasm (as the browser runs it); run.mjs uses it when it is current.
-cargo build -q --release --target wasm32-unknown-unknown --lib --manifest-path "$root/Cargo.toml"
+cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path "$root/Cargo.toml"
 status=0
 for c in "$here"/c/*.c; do
   name=$(basename "$c" .c)

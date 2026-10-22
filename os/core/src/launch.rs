@@ -13,6 +13,9 @@
 //!   /dev            null, zero, full, random, urandom, tty only
 //!   /proc           this Prompt's processes only (its own pid namespace)
 //!   network         none (its own empty namespace) unless asked for
+//!   system calls    none of those a sandboxed program has no use for and
+//!                   escapes are found through (seccomp.rs): ptrace, mount,
+//!                   namespaces, modules, bpf, keys and the like
 //!
 //! The environment is set, not inherited: no host home, keys, agent or
 //! variables come in. Pid 1 inside is a small init (this process) that
@@ -357,6 +360,13 @@ pub fn run(s: &Sandbox) -> io::Result<i32> {
             eprintln!("{}", crate::tr!("l3: Could not prepare the Prompt: {}", "l3: Prompt を用意できませんでした：{}", e));
             unsafe { libc::_exit(126) };
         }
+        // The tree is laid out: from here on nothing in the Prompt asks the kernel what seccomp.rs refuses,
+        // init and everything it starts. A kernel that cannot filter runs no Prompt (fails closed).
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+        if let Err(e) = crate::seccomp::install() {
+            eprintln!("{}", crate::tr!("l3: Could not prepare the Prompt: {}", "l3: Prompt を用意できませんでした：{}", format!("seccomp: {e}")));
+            unsafe { libc::_exit(126) };
+        }
         init(s);
     }
     // The supervisor: pass Ctrl-C to init, which hands it to the shell's group.
@@ -515,5 +525,108 @@ mod tests {
     fn a_link_into_run_is_followed_inside_the_root() {
         assert_eq!(clean(Path::new("/etc/../run/systemd/resolve/stub-resolv.conf")), PathBuf::from("/run/systemd/resolve/stub-resolv.conf"));
         assert_eq!(clean(Path::new("/../../x")), PathBuf::from("/x"));
+    }
+
+    /// A real Prompt, on a root made of this host's own /usr and /etc (a user namespace of the test's
+    /// own lays it out), running a script: what it wrote into the repo. None where this host gives no
+    /// user namespace (a CI runner may not), or has no compiler or Python to try.
+    #[cfg(target_arch = "x86_64")]
+    fn prompt_on_this_host(script: &str, network: bool) -> Option<String> {
+        if !Path::new("/usr/bin/cc").exists() || !Path::new("/usr/bin/python3").exists() { return None; }
+        let top = std::env::temp_dir().join(format!("l3-prompt-test-{}-{}", std::process::id(), network));
+        let (root, repo) = (top.join("root"), top.join("repo"));
+        std::fs::create_dir_all(&root).ok()?;
+        std::fs::create_dir_all(&repo).ok()?;
+        // SAFETY: the child is single-threaded after fork, lays out its own namespaces, runs the Prompt and
+        // leaves with _exit; the parent only waits.
+        let pid = unsafe { libc::fork() };
+        if pid == 0 {
+            let code = (|| -> io::Result<i32> {
+                let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
+                check(unsafe { libc::unshare(libc::CLONE_NEWUSER | libc::CLONE_NEWNS) }, "unshare")?;
+                write("/proc/self/setgroups", "deny")?;
+                write("/proc/self/uid_map", &format!("0 {uid} 1"))?;
+                write("/proc/self/gid_map", &format!("0 {gid} 1"))?;
+                mount(None, Path::new("/"), None, libc::MS_REC | libc::MS_PRIVATE, None)?;
+                mount(Some(Path::new("tmpfs")), &root, Some("tmpfs"), 0, Some("mode=0755"))?;
+                for d in ["usr", "etc", "root", "tmp", "run", "dev", "proc"] { std::fs::create_dir(root.join(d))?; }
+                for (link, to) in [("bin", "usr/bin"), ("sbin", "usr/sbin"), ("lib", "usr/lib"), ("lib64", "usr/lib64")] {
+                    std::os::unix::fs::symlink(to, root.join(link))?;
+                }
+                for d in ["usr", "etc"] { bind(&Path::new("/").join(d), &root.join(d), false)?; }
+                run_apart(&Sandbox { root: root.clone(), repo: repo.clone(), name: "t".into(), argv: vec!["/bin/sh".into(), "-c".into(), script.into()],
+                    network, dotfiles: Vec::new(), data: None })
+            })();
+            unsafe { libc::_exit(match code { Ok(c) => c, Err(_) => 200 }) };
+        }
+        let mut status = 0;
+        unsafe { libc::waitpid(pid, &mut status, 0) };
+        let out = std::fs::read_to_string(repo.join("out")).ok();
+        let _ = std::fs::remove_dir_all(&top);
+        let code = if libc::WIFEXITED(status) { libc::WEXITSTATUS(status) } else { -1 };
+        if code == 200 { return None; }
+        assert_eq!(code, 0, "the Prompt ended with {code}; it wrote: {out:?}");
+        out
+    }
+
+    /// Calls the filter refuses, asked from Python inside the Prompt (x86-64 numbers), each line `name result errno`.
+    #[cfg(target_arch = "x86_64")]
+    const ASK: &str = r#"
+import ctypes
+libc = ctypes.CDLL(None, use_errno=True)
+for name, nr, args in [('ptrace', 101, (0, 0, 0, 0)), ('mount', 165, (0, 0, 0, 0, 0)), ('umount2', 166, (0, 0)),
+        ('unshare', 272, (0x10000000,)), ('setns', 308, (0, 0)), ('kexec_load', 246, (0, 0, 0, 0)), ('init_module', 175, (0, 0, 0)),
+        ('finit_module', 313, (0, 0, 0)), ('bpf', 321, (0, 0, 0)), ('perf_event_open', 298, (0, 0, -1, -1, 0)),
+        ('keyctl', 250, (0, 0, 0, 0, 0)), ('add_key', 248, (0, 0, 0, 0, 0)), ('userfaultfd', 323, (0,)),
+        ('open_by_handle_at', 304, (0, 0, 0)), ('clone_newuser', 56, (0x10000000 | 17, 0, 0, 0, 0)),
+        ('clone3', 435, (0, 0)), ('io_uring_setup', 425, (1, 0)), ('fsopen', 430, (0, 0)), ('pivot_root', 155, (0, 0))]:
+    r = libc.syscall(nr, *args)
+    print(name, r, ctypes.get_errno())
+"#;
+
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn a_prompt_runs_a_shell_and_a_compiler_and_refuses_each_call_the_filter_names() {
+        let script = format!(r#"
+out=/root/t/out
+echo shell ok > $out
+printf 'int main(void) {{ return 42; }}\n' > /tmp/a.c && cc /tmp/a.c -o /tmp/a; /tmp/a; echo "cc $?" >> $out
+cat > /tmp/ask.py <<'PY'
+{ASK}
+PY
+python3 /tmp/ask.py >> $out 2>&1
+grep '^Seccomp:' /proc/self/status >> $out
+unshare -U true 2>/dev/null; echo "unshare-command $?" >> $out
+"#);
+        let Some(out) = prompt_on_this_host(&script, false) else { eprintln!("skipped: no user namespace, compiler or Python here"); return };
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines[0], "shell ok");
+        assert!(lines.contains(&"cc 42"), "{out}");
+        assert!(lines.contains(&"Seccomp:\t2"), "the Prompt's processes are filtered: {out}");
+        assert!(lines.iter().any(|l| l.starts_with("unshare-command ") && *l != "unshare-command 0"), "{out}");
+        for (name, errno) in [("ptrace", libc::EPERM), ("mount", libc::EPERM), ("umount2", libc::EPERM), ("unshare", libc::EPERM), ("setns", libc::EPERM),
+            ("kexec_load", libc::EPERM), ("init_module", libc::EPERM), ("finit_module", libc::EPERM), ("bpf", libc::EPERM), ("perf_event_open", libc::EPERM),
+            ("keyctl", libc::EPERM), ("add_key", libc::EPERM), ("userfaultfd", libc::EPERM), ("open_by_handle_at", libc::EPERM),
+            ("clone_newuser", libc::EPERM), ("clone3", libc::ENOSYS), ("io_uring_setup", libc::ENOSYS), ("fsopen", libc::EPERM), ("pivot_root", libc::EPERM)] {
+            assert!(lines.contains(&format!("{name} -1 {errno}").as_str()), "{name}: {out}");
+        }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn a_prompt_granted_the_network_reaches_it() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let heard = std::thread::spawn(move || {
+            listener.set_nonblocking(false).unwrap();
+            let (mut s, _) = listener.accept().unwrap();
+            let mut b = [0u8; 2];
+            std::io::Read::read_exact(&mut s, &mut b).unwrap();
+            b
+        });
+        let script = format!("python3 -c 'import socket; s = socket.create_connection((\"127.0.0.1\", {port}), timeout=5); s.sendall(b\"hi\"); print(\"net ok\")' > /root/t/out 2>&1");
+        let Some(out) = prompt_on_this_host(&script, true) else { eprintln!("skipped: no user namespace, compiler or Python here"); return };
+        assert_eq!(out.trim(), "net ok");
+        assert_eq!(&heard.join().unwrap(), b"hi");
     }
 }

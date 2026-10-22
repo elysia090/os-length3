@@ -2,6 +2,9 @@
 //! `lang` setting (the same one the app writes), or $LENGTH3_LANG over it.
 //! `tr!("English {}", "日本語 {}", x)` picks one; both take the same arguments.
 
+// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
+#![forbid(unsafe_code)]
+
 use std::sync::OnceLock;
 
 /// Whether this process speaks Japanese (read once).

@@ -838,7 +838,12 @@ What leaves this system is kept to what is said here:
   uts and network namespaces (no network unless granted); the root
   read-only, the repo the only writable place of the person's, fresh
   `/tmp`, `/run` and a minimal `/dev`; an environment set, not inherited (no
-  host home, keys, agent or variables). Pid 1 is a small init that reaps
+  host home, keys, agent or variables); and a seccomp filter
+  (core/src/seccomp.rs) over all of it, so the kernel answers none of what a
+  sandboxed program has no use for and escapes are found through: ptrace,
+  mounting, new namespaces, modules, kexec, bpf, perf, keys, userfaultfd,
+  io_uring (strace and gdb do not run in a Prompt; a shell, compilers,
+  package managers and a granted network do). Pid 1 is a small init that reaps
   everything and ends what is left with the shell, and it dies with its
   supervisor. The root itself is installed only from a pinned release,
   checked by digest before it is read, unpacked refusing anything that

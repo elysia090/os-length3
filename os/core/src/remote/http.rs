@@ -2,6 +2,9 @@
 //! session, what kind of failure the last request was (l3 says each with
 //! its own exit code), and answers taken only as a Remote gives them.
 
+// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
+#![forbid(unsafe_code)]
+
 use super::*;
 
 pub(super) fn agent(url: &str) -> ureq::Agent {

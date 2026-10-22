@@ -15,6 +15,8 @@ import {randomBytes} from 'node:crypto';
 import {existsSync, mkdtempSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {API_POLICY} from '../../service/request.ts';
+import {webPolicy} from '../../src/policy.ts';
 import {cluster} from './postgres.ts';
 import {appBuild, bridgeProcess, OS, remote} from './stack.ts';
 
@@ -49,10 +51,16 @@ async function withRemote<T>(o: Omit<Parameters<typeof remote>[1], 'dir' | 'asse
 }
 
 /** What public/_headers says of every file of the app (Workers Assets puts it there). */
-const APP_HEADERS: [string, RegExp][] = [['content-security-policy', /frame-ancestors 'none'/], ['x-frame-options', /^DENY$/],
-  ['strict-transport-security', /max-age=31536000/], ['referrer-policy', /^no-referrer$/], ['cross-origin-opener-policy', /^same-origin$/],
+const exactly = (s: string) => new RegExp(`^${s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`);
+const APP_HEADERS: [string, RegExp][] = [['content-security-policy', exactly(`${webPolicy('')}; frame-ancestors 'none'`)], ['x-frame-options', /^DENY$/],
+  ['strict-transport-security', /^max-age=31536000; includeSubDomains$/], ['referrer-policy', /^no-referrer$/], ['cross-origin-opener-policy', /^same-origin$/],
   ['cross-origin-embedder-policy', /^require-corp$/],
-  ['x-content-type-options', /^nosniff$/]];
+  ['cross-origin-resource-policy', /^same-origin$/], ['x-content-type-options', /^nosniff$/],
+  ['permissions-policy', /camera=\(\).*publickey-credentials-get=\(self\)/]];
+/** What the Worker's middleware (service/request.ts unkept) puts on every answer of the Remote's own. */
+const REMOTE_HEADERS: [string, RegExp][] = [['content-security-policy', exactly(API_POLICY)], ['x-frame-options', /^DENY$/],
+  ['strict-transport-security', /^max-age=31536000; includeSubDomains$/], ['referrer-policy', /^no-referrer$/],
+  ['cross-origin-resource-policy', /^same-origin$/], ['x-content-type-options', /^nosniff$/]];
 
 /** The headers of real answers of workerd and Workers Assets: the app's files carry _headers; the Remote's routes their own. */
 async function headers() {
@@ -76,6 +84,7 @@ async function headers() {
       ['GET /api/auth/get-session', await get('/api/auth/get-session', {headers: {Origin: r.url}})],
       ['OPTIONS /v1/repos (preflight)', await get('/v1/repos', {method: 'OPTIONS', headers: {Origin: r.url, 'Access-Control-Request-Method': 'PATCH'}})],
       ['GET /.well-known/length3', await get('/.well-known/length3?name=x')],
+      ['GET /.well-known/security.txt', await get('/.well-known/security.txt')],
     ];
     const shown = ['cache-control', 'content-security-policy', 'x-frame-options', 'strict-transport-security', 'x-content-type-options', 'access-control-allow-origin', 'etag'];
     for (const [what, res] of answers) say(`${what.padEnd(34)} ${res.status} ${shown.map((h) => `${h}=${res.headers.get(h) ?? '-'}`).join(' ')}`);
@@ -90,7 +99,11 @@ async function headers() {
     for (const [what, res] of answers.slice(3).filter(([w]) => !w.startsWith('OPTIONS'))) {
       assert.equal(res.headers.get('cache-control'), 'no-store', `${what}: cache-control`);
       assert.equal(res.headers.get('x-content-type-options'), 'nosniff', `${what}: nosniff`);
+      for (const [h, want] of REMOTE_HEADERS) assert.match(res.headers.get(h) ?? '', want, `${what}: ${h}`);
     }
+    const txt = answers.find(([w]) => w.includes('security.txt'))![1];
+    assert.equal(txt.status, 200, 'security.txt');
+    assert.match(await (await fetch(`${r.url}/.well-known/security.txt`)).text(), /^Contact: .+\nExpires: \d{4}-/m, 'security.txt: Contact and Expires (RFC 9116)');
     assert.equal(answers[7][1].headers.get('access-control-allow-origin'), r.url, 'preflight: the app\'s origin');
     const file = await (await fetch(`${r.url}/_headers`, {headers: {'Sec-Fetch-Mode': 'no-cors'}})).text();
     assert.ok(!file.includes('frame-ancestors'), '_headers is not served as a file');

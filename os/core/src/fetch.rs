@@ -4,6 +4,9 @@
 //! accepted only when it is the file the pin names. Nothing else is read
 //! from the network by l3.
 
+// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
+#![forbid(unsafe_code)]
+
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::{self, Read, Seek, Write};

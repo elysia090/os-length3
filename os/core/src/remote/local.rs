@@ -1,6 +1,9 @@
 //! The copy here as the Remote would hold it: each file by its digest,
 //! read again only when it changed, and what cannot travel, with why.
 
+// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
+#![forbid(unsafe_code)]
+
 use super::*;
 
 #[derive(Debug, Default)]

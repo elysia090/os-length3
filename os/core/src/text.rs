@@ -1,6 +1,9 @@
 //! The one way a first line is named in this OS: a kind and a title,
 //! "Fix：再起動すると保存内容が消える". TODO items and issues both use it.
 
+// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
+#![forbid(unsafe_code)]
+
 /// Split "Kind：title" (full- or half-width colon). A kind is a short word
 /// starting with a letter; anything else is a plain line. An address's
 /// scheme (https://) is no kind: the line is its title whole.

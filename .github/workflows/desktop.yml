@@ -8,12 +8,20 @@ on:
   pull_request:
     paths: ['os/**', 'xlat/**', '.github/workflows/desktop.yml']
 
+# Nothing here writes: the token reads the repository and nothing else. Every action is pinned
+# to the full commit its tag named when it was pinned (the tag is beside it), so a moved tag
+# runs nothing new; Dependabot (.github/dependabot.yml) proposes each update.
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -33,15 +41,29 @@ jobs:
           npx vite build
       # Each step below runs whatever failed before it (only a cancel stops them), so one failure never
       # hides another as skipped: the job fails for each that fails. The translated l3 needs the musl build.
+      # What the Remote and the app ship with: no known high or critical advisory (build-only tools
+      # such as drizzle-kit are dev dependencies, and are left out).
+      - name: Advisories in what ships
+        if: ${{ !cancelled() }}
+        working-directory: os
+        run: npm audit --omit=dev --audit-level=high
+      # Rust's advisories (RustSec) against both lockfiles: a vulnerability fails the run; an
+      # unmaintained or unsound crate deep in the desktop's GTK tree is said, not failed on.
+      - name: Advisories in the Rust crates
+        if: ${{ !cancelled() }}
+        run: |
+          cargo install --locked cargo-audit@0.22.2
+          cargo audit --file os/Cargo.lock
+          cargo audit --file xlat/Cargo.lock
       - name: Core and l3
         if: ${{ !cancelled() }}
         working-directory: os
-        run: cargo test -p length3-core -p l3
+        run: cargo test --locked -p length3-core -p l3
       - name: l3 for the Prompt (static, musl)
         id: musl
         if: ${{ !cancelled() }}
         working-directory: os
-        run: cargo build --profile prompt -p l3 --no-default-features --target x86_64-unknown-linux-musl
+        run: cargo build --locked --profile prompt -p l3 --no-default-features --target x86_64-unknown-linux-musl
       - name: l3 end to end, against a Remote of its own
         if: ${{ !cancelled() }}
         working-directory: os
@@ -66,8 +88,10 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -96,7 +120,7 @@ jobs:
       # Failed: the report, every failed attempt's trace and screenshot, and what the two servers printed.
       - name: Report, traces and the servers' logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: selftest
           path: |
@@ -107,7 +131,7 @@ jobs:
       # Passed, but only on a retry (flaky): the failed attempt's trace is kept too, to be read.
       - name: Traces of attempts that failed before passing
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: selftest-flaky
           path: os/selftest/.results

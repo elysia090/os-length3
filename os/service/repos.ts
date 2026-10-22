@@ -37,7 +37,8 @@
 import {and, desc, eq, inArray, isNull, ne, sql} from 'drizzle-orm';
 import type {Context, Hono} from 'hono';
 import type {Plans} from './plan.ts';
-import {ago, body, fits as fitsIn, HEX, LIMIT, lock, ms, qualified, refuse, rows, sha256, type Db, type Vars} from './request.ts';
+import {hmacHex, same as sameText} from './keys.ts';
+import {ago, body, fits as fitsIn, HEX, LIMIT, lock, ms, qualified, refuse, rows, sha256, slowDown, type Db, type Vars} from './request.ts';
 import {blob, change, cut, guard, line, repo, repoGone, review, throttle, type Modes, type Review, type Tree} from './schema.ts';
 import {KEPT, purge, REMEMBERED} from './sweep.ts';
 
@@ -138,7 +139,7 @@ const changeShown = (repoName: string, {repoId: _, off: __, ...r}: Change & {rep
 const count = (n: unknown) => (typeof n === 'number' && Number.isInteger(n) && n >= 0 && n < 2 ** 31 ? n : 0);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>) {
+export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-codes are kept under (keys.ts: off-code). */ offKey?: string}, v1: Hono<Vars>) {
   const db = d.db;
   const fits = (q: Db, user: string, more: number) => fitsIn(q, user, more, d.quota);
 
@@ -345,7 +346,9 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
 
   // ---- turning a repo off: kept 30 days, back at once until then, or discarded now ----
 
-  const digestOf = async (user: string, code: string) => sha256(enc.encode(`${user}:${code.toUpperCase()}`));
+  // An HMAC under a key of the Remote's own, not a bare digest: 36^5 codes are tried in seconds against a
+  // digest read from a copy of the database (audit A10), never against a key that is not in it.
+  const digestOf = async (user: string, code: string) => (d.offKey ? hmacHex(d.offKey, `off-code\n${user}\n${code.toUpperCase()}`) : sha256(enc.encode(`${user}:${code.toUpperCase()}`)));
   const CODE = /^[A-Za-z0-9]{5}$/;
   /** Wrong codes an account may give an hour. */
   const OFF_TRIES = 10;
@@ -364,7 +367,7 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
     if (!g.offDigest) refuse(409, {error: 'Set the five-letter code under Sign-in first.'});
     const same = (a: unknown, b: string) => typeof a === 'string' && a.trim().toLowerCase() === b.trim().toLowerCase();
     if (!same(b?.name, c.get('name')) || b?.repo !== name) refuse(403, {error: 'The names do not match.'});
-    const right = typeof b?.code === 'string' && CODE.test(b.code) && await digestOf(user, b.code) === g.offDigest;
+    const right = typeof b?.code === 'string' && CODE.test(b.code) && sameText(await digestOf(user, b.code), g.offDigest);
     // Wrong codes are counted, and past so many an hour none is taken, the right one neither: the code is not found by trying.
     const key = `off-code:${user}`;
     const wrong = await db.transaction(async (tx: Db) => {
@@ -373,7 +376,7 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
       if (!right && r.n < OFF_TRIES) await tx.insert(throttle).values({key});
       return r.n;
     });
-    if (wrong >= OFF_TRIES) refuse(429, {error: 'Too many wrong codes; try again in an hour'});
+    if (wrong >= OFF_TRIES) slowDown(3600, {error: 'Too many wrong codes; try again in an hour'});
     if (!right) refuse(403, {error: 'That is not the code.'});
   };
   const named = (user: string, name: string) => and(eq(repo.userId, user), eq(repo.name, name));

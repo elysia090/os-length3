@@ -14,10 +14,16 @@ name: Release
 # os/core/src/root.rs. No Cloudflare credentials are kept here: the Remote's
 # deploy (os/service/deploy.ts) takes the pinned root and desktop files from
 # the release and puts them on the Remote, which serves them to anyone.
+#
+# Only main's commits are released (audit R1): a push to main, a tag on a
+# commit main has, or a run by hand from main; anything else stops at
+# Version. One version at a time (audit R2). The token can write the
+# repository's contents (the release) in this job alone; every action is
+# pinned to a full commit (the tag is beside it).
 on:
   push:
     tags: ['os-length3-linux-v*']
-    branches: ['**']
+    branches: ['main']
     # Changing how releases are made tries again too (a published version is left).
     paths: ['os/RELEASE', '.github/workflows/release.yml']
   workflow_dispatch:
@@ -27,14 +33,22 @@ on:
         required: true
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -44,11 +58,22 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y musl-tools zstd zip
           rustup target add x86_64-unknown-linux-musl wasm32-unknown-unknown
+          # What is built is what the lockfiles say (npm ci in web-release.sh; cargo here and --locked in the scripts).
+          cargo fetch --locked --manifest-path os/Cargo.toml
+          cargo fetch --locked --manifest-path xlat/Cargo.toml
       - name: Version
         env:
           INPUT_VERSION: ${{ inputs.version }}
           GH_TOKEN: ${{ github.token }}
         run: |
+          # main's commits only: a branch's run stops here, and so does a tag on a commit main has not.
+          case "$GITHUB_REF" in
+            refs/heads/main) ;;
+            refs/tags/*)
+              on=$(gh api "repos/$GITHUB_REPOSITORY/compare/main...$GITHUB_SHA" --jq .status)
+              case "$on" in identical|behind) ;; *) echo "$GITHUB_REF_NAME is not on main ($on)" >&2; exit 1 ;; esac ;;
+            *) echo "releases are made from main, not $GITHUB_REF" >&2; exit 1 ;;
+          esac
           case "$GITHUB_REF" in
             refs/tags/*) v=${GITHUB_REF_NAME#os-length3-linux-v} ;;
             *) v=${INPUT_VERSION:-$(tr -d ' \n' < os/RELEASE)} ;;

@@ -7,6 +7,9 @@
 //! that has none (one written by hand, or two devices' issues that met under
 //! one number). Dates go in the text, never in the name.
 
+// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
+#![forbid(unsafe_code)]
+
 use crate::text::{kind_of, named};
 use serde::Serialize;
 

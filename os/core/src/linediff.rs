@@ -4,6 +4,9 @@
 //! as a multiset instead (still right for appends and removals; only a move
 //! reads as both). The same as src/linediff.ts, for the app and l3.
 
+// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
+#![forbid(unsafe_code)]
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Kind { Same, Add, Del }
 

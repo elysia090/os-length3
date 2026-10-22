@@ -17,7 +17,7 @@
 import {eq, sql} from 'drizzle-orm';
 import type {Hono} from 'hono';
 import type {Auth} from './auth.ts';
-import {ago, body, lock, rows, type Db, type Vars} from './request.ts';
+import {ago, body, lock, rows, slowDown, type Db, type Vars} from './request.ts';
 import {guard, throttle, user} from './schema.ts';
 
 export interface Enter {
@@ -57,7 +57,7 @@ export function enter(d: {db: Db; auth: Auth; enter: Enter}, app: Hono<Vars>) {
       await tx.insert(throttle).values({key: from});
       return n.n;
     });
-    if (tries >= TRIES) return c.json({error: 'Too many tries; try again in an hour'}, 429);
+    if (tries >= TRIES) slowDown(3600, {error: 'Too many tries; try again in an hour'});
     if (typeof b?.key !== 'string' || !d.enter.key || !await same(b.key, d.enter.key)) return c.json({error: 'This link does not open this Remote'}, 403);
     // The one account is made the first time it is entered: its row is ours to make (no provider
     // stands behind it), its sessions Better Auth's.

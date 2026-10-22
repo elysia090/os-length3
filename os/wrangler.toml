@@ -26,8 +26,9 @@ run_worker_first = ["/v1/*", "/api/*", "/.well-known/*"]
 BASE_URL = "https://os.length3.com"
 APP_ORIGIN = "https://os.length3.com"
 DOMAIN = "length3.com"
-# The desktop app's webview (tauri:// on macOS and Linux, http://tauri.localhost on Windows).
-APP_ORIGINS = "tauri://localhost http://tauri.localhost"
+# The desktop app's webview (tauri:// on Linux and macOS; a Windows build would be https://tauri.localhost,
+# tauri.conf.json useHttpsScheme: never plain http, which any local process on port 80 could serve).
+APP_ORIGINS = "tauri://localhost"
 # For research (enter.ts): the one account. Nobody signs up; the link …/#enter=ENTER_KEY is the way
 # in, and nothing is shown to everyone. Without it, the providers whose secrets are set are offered.
 ENTER_AS = "banana000000"

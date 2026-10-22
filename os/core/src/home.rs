@@ -2,6 +2,9 @@
 //! keeps its profile, TODO and band here (in a browser, in its storage), and
 //! l3 reads and writes the same TODO.
 
+// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
+#![forbid(unsafe_code)]
+
 use crate::paths::home_dir;
 use crate::text::kind_of;
 use crate::Result;

@@ -5,6 +5,9 @@
 //! (its store, or SSL_CERT_FILE), beside the ones bundled for a host that
 //! has none. A root fetched is checked by digest whatever the TLS says.
 
+// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
+#![forbid(unsafe_code)]
+
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 

@@ -23,8 +23,11 @@ import {and, eq, inArray, isNull, not, sql} from 'drizzle-orm';
 import type {Context, Hono} from 'hono';
 import {blobKey, noFiles, type Bucket} from './bucket.ts';
 import {byCode, HOLD, live, liveAddress, serverAddress, shownAs, takeDown} from './names.ts';
-import {body, qualified, refuse, rows, type Db, type Vars} from './request.ts';
+import {addressOf, body, qualified, refuse, rows, throttled, type Db, type Vars} from './request.ts';
 import {address, cut, line, member, repo, repoPublic, repoShare, server} from './schema.ts';
+
+/** Codes one address may resolve to a face in an hour, as Inbox lets an account look them up (inbox.ts INBOX.codesPerHour). */
+const CODES_PER_HOUR = 30;
 
 export type Seen = 'private' | 'servers' | 'everyone';
 
@@ -216,6 +219,11 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
    * only then).
    */
   const find = async (c: Context, written: string, name: string): Promise<Found | null> => {
+    // A code is a short number: resolving one, signed out, is counted by address as looking one up in
+    // Inbox is by account (inbox.ts codeAsked), so codes are not read off for addresses by trying them
+    // all (audit N1; ASVS 2.2.1, 11.1.4). The app itself asks by address, never by code.
+    const from = addressOf(c);
+    if (from && /^\d{6}$/.test(written)) await throttled(db, `seen-code:${from}`, CODES_PER_HOUR, 3600_000, {error: 'Too many codes looked up from here; try again later'});
     const face = await faceOf(written);
     if (!face) return null;
     const [p] = await db.select(seenCols).from(repoPublic)
