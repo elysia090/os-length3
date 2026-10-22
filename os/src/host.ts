@@ -2,7 +2,8 @@
 // in a browser they come from the origin's storage estimate. Each reading
 // says which layer measured it so the two are never presented as one.
 
-import {ask, type Ask} from './core-client.ts';
+import {ask, type Answer, type Ask} from './core-client.ts';
+import {RemoteError} from './remote.ts';
 
 export interface Capacity {
   /** Bytes the measured layer can hold in total. */
@@ -35,13 +36,18 @@ export async function native<T>(command: string, args: Record<string, unknown> =
   return invoke<T>(command, args);
 }
 
-let asked: Ask = isNative ? (name, args) => native('core', {name, args}) : ask;
+let asked: Ask = isNative ? (name, args) => native<Answer>('core', {name, args}) : ask;
 /** Ask another core (tests run it in their own process). */
 export const useCore = (a: Ask) => { asked = a; };
 
 /** A command of the core's (core/src/api.rs), by name: the one code a repo, its history and the Remote
  *  are kept by, whichever host runs it (the app's own, or the same built for the web in a worker). */
-export const core = <T>(name: string, args: Record<string, unknown> = {}): Promise<T> => asked<T>(name, args);
+export async function core<T>(name: string, args: Record<string, unknown> = {}): Promise<T> {
+  const a = await asked(name, args);
+  if ('ok' in a) return a.ok as T;
+  // The Remote's refusal is the same RemoteError the page's own requests give (a plan's rule, offline, …).
+  throw a.status === undefined ? new Error(a.error) : new RemoteError(a.status, a.error, a.detail ?? {});
+}
 
 
 export async function readCapacity(): Promise<Capacity | null> {

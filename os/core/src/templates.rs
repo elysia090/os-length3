@@ -22,7 +22,11 @@ pub fn all() -> Vec<Template> {
     serde_json::from_str(SOURCE).expect("shared/templates.json is valid")
 }
 
+/// `id`'s template; "" is none at all: a repo whose files all come from elsewhere (the Remote, a Prompt).
 pub fn find(id: &str) -> Option<Template> {
+    if id.is_empty() {
+        return Some(Template { id: String::new(), label: String::new(), dirs: Vec::new(), files: Vec::new() });
+    }
     all().into_iter().find(|t| t.id == id)
 }
 

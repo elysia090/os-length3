@@ -68,7 +68,7 @@ pub fn claim(address: &str) -> Result<String> {
                 domain.unwrap_or(""), domain.unwrap_or(""), p["name"].as_str().unwrap_or(""), p["type"].as_str().unwrap_or("TXT"), p["value"].as_str().unwrap_or("")))
         }
         Reply::Conflict(_) => Err(crate::tr!("That name is taken", "その名前は使われています")),
-        Reply::NotFound => Err(crate::tr!("The Remote has no Inbox", "Remote に Inbox がありません")),
+        Reply::NotFound(_) => Err(crate::tr!("The Remote has no Inbox", "Remote に Inbox がありません")),
     }
 }
 
@@ -106,7 +106,7 @@ pub fn send(to: &str, body: &str, kind: &str, repo: Option<&str>) -> Result<bool
     match v {
         Reply::Ok(v) => Ok(v["request"].as_bool().unwrap_or(false)),
         Reply::Conflict(_) => Err(crate::tr!("Claim a name first (l3 name claim NAME)", "先に名前を取ってください（l3 name claim NAME）")),
-        Reply::NotFound => Err(crate::tr!("No one has that name", "その名前の人はいません")),
+        Reply::NotFound(_) => Err(crate::tr!("No one has that name", "その名前の人はいません")),
     }
 }
 

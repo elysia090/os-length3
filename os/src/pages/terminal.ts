@@ -58,9 +58,8 @@ async function snapshot(repo: string) {
       if (e.kind === 'dir') { dirs.push(`/root/${repo}/${path}`); await walk(path); continue; }
       if (e.kind !== 'file') continue;
       if (files.length >= LIMIT_FILES || total + e.size > LIMIT_BYTES) { complete = false; continue; }
-      const c = await store.read(repo, path);
-      if (c.text === null || c.truncated) { complete = false; continue; }
-      const bytes = new TextEncoder().encode(c.text);
+      const bytes = await store.bytes(repo, path).catch(() => null);
+      if (!bytes) { complete = false; continue; }
       total += bytes.length;
       files.push({path: `/root/${repo}/${path}`, bytes});
     }
@@ -193,17 +192,11 @@ export class Session {
       const skipped: string[] = [];
       for (const d of c.dirs) await store.mkdir(this.repo, d, this.id).catch(() => skipped.push(`${d}/`));
       for (const f of c.files) {
-        let text: string;
-        try { text = new TextDecoder('utf-8', {fatal: true}).decode(f.bytes); } catch { skipped.push(f.path); continue; }
-        if (f.bytes.length > 256 * 1024 || this.budget.files <= 0 || this.budget.bytes < f.bytes.length) { skipped.push(f.path); continue; }
+        // Any file, text or not, as the app's Prompt writes the repo itself.
+        if (this.budget.files <= 0 || this.budget.bytes < f.bytes.length) { skipped.push(f.path); continue; }
         this.budget.files--;
         this.budget.bytes -= f.bytes.length;
-        const at = f.path.lastIndexOf('/');
-        const ok = f.existed
-          ? store.write(this.repo, f.path, text, this.id)
-          : store.add(this.repo, at < 0 ? '' : f.path.slice(0, at), f.path.slice(at + 1), text, this.id)
-            .catch(() => store.write(this.repo, f.path, text, this.id));
-        await ok.catch(() => skipped.push(f.path));
+        await store.put(this.repo, f.path, f.bytes, this.id).catch(() => skipped.push(f.path));
       }
       for (const r of c.removed) await store.remove(this.repo, r, this.id).catch(() => skipped.push(r));
       if (skipped.length) this.status.textContent = t('Not written back to the repo: {list}', {list: `${skipped.slice(0, 5).join(', ')}${skipped.length > 5 ? ' …' : ''}`});

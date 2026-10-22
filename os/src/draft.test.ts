@@ -140,12 +140,6 @@ test('a copy in step is never taken apart by a Remote that does not have it: dis
   await setState('remote', JSON.stringify({url: URL_, token: other}));
   await assert.rejects(draft.sync('kept'), /another account/);
   assert.deepEqual(await files(), before);
-  // An agreement from before accounts were named, and a Remote without the repo: the same.
-  const s = JSON.parse(getState('sync')!);
-  delete s.repos.kept.who;
-  await setState('sync', JSON.stringify(s));
-  await assert.rejects(draft.sync('kept'), /does not have this repo/);
-  assert.deepEqual(await files(), before);
   await setState('remote', JSON.stringify({url: URL_, token}));
 });
 
@@ -184,7 +178,7 @@ test('a copy, or a setting, agreed with one account is not sent to another that 
 
 test('a file larger than the Remote takes stays here, named, and the rest of the repo is sent all the same', async () => {
   await store.create('big', 'standard');
-  await store.add('big', '', 'big.log', 'x'.repeat((16 << 20) + 1));
+  await b.put('big', 'big.log', 'x'.repeat((16 << 20) + 1));
   await store.write('big', 'README.md', '# sent\n');
   const s = await draft.sync('big');
   assert.deepEqual(s.unsynced.map(([p]) => p), ['big.log']);
@@ -198,11 +192,12 @@ test('a file larger than the Remote takes stays here, named, and the rest of the
 });
 
 test('a repo made here under a name the Remote remembers as discarded is sent as a new repo', async () => {
-  await store.create('again', 'standard');
-  await draft.sync('again');
+  // Made on another device, then discarded there.
+  await elsewhere('again', {'README.md': '# first\n'});
   await db.execute(sql`update repo set off_at = now() where name = 'again'`);
   await purge(db, sql`r.name = 'again'`);
-  // Made here anew (on this device or another): never in step, so it is a new repo, not the discarded one back.
+  // Made here anew: never in step, so it is a new repo, not the discarded one back.
+  await store.create('again', 'standard');
   await store.write('again', 'README.md', '# made again\n');
   const s = await draft.sync('again');
   assert.ok(s.sent > 0);

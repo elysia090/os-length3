@@ -38,10 +38,10 @@ async fn core(app: tauri::AppHandle, name: String, mut args: serde_json::Value) 
     }
     if api::WRITES.contains(&name.as_str()) {
         let (tx, rx) = std::sync::mpsc::channel();
-        app.run_on_main_thread(move || { let _ = tx.send(api::call(&name, &args)); }).map_err(|e| e.to_string())?;
-        return rx.recv().map_err(|e| e.to_string())?;
+        app.run_on_main_thread(move || { let _ = tx.send(api::answer(&name, &args)); }).map_err(|e| e.to_string())?;
+        return rx.recv().map_err(|e| e.to_string());
     }
-    tauri::async_runtime::spawn_blocking(move || api::call(&name, &args)).await.map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || api::answer(&name, &args)).await.map_err(|e| e.to_string())
 }
 
 /// Sign in: the core gets the code and checks the page is the Remote's own; the app opens it in the browser.

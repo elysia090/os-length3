@@ -291,6 +291,16 @@ impl Repos {
         };
         Ok(Contents { text, size, truncated })
     }
+
+    /// A file's bytes whole, whatever it holds (a Prompt's copy of the repo); one over `limit` is refused.
+    pub fn bytes(&self, repo: &str, relative: &str, limit: u64) -> Result<Vec<u8>> {
+        let path = self.inside(repo, relative)?;
+        let at = shown(repo, relative);
+        let meta = fs::metadata(&path).map_err(|e| io_error(&at, &e))?;
+        if meta.is_dir() { return Err(tr!("{} is a folder, not a file", "{} はファイルではなくフォルダーです", at)); }
+        if meta.len() > limit { return Err(too_large(&at, limit)); }
+        fs::read(&path).map_err(|e| io_error(&at, &e))
+    }
 }
 
 impl Repos {
@@ -299,6 +309,10 @@ impl Repos {
     /// file beside the target first and is renamed over it, so a failed write
     /// never leaves half a file.
     pub fn write(&self, repo: &str, relative: &str, text: &str, limit: u64) -> Result<u64> {
+        self.write_bytes(repo, relative, text.as_bytes(), limit)
+    }
+
+    fn write_bytes(&self, repo: &str, relative: &str, text: &[u8], limit: u64) -> Result<u64> {
         if text.len() as u64 > limit {
             return Err(too_large(&shown(repo, relative), limit));
         }
@@ -312,22 +326,23 @@ impl Repos {
         let mode = { use std::os::unix::fs::PermissionsExt; Some(meta.permissions().mode() & 0o7777) };
         #[cfg(not(unix))]
         let mode = None;
-        crate::atomic::replace(&path, text.as_bytes(), crate::atomic::How { mode, durable: true })
+        crate::atomic::replace(&path, text, crate::atomic::How { mode, durable: true })
             .map_err(|e| io_error(shown(repo, relative), &e))?;
         Ok(text.len() as u64)
     }
 
     /// Write `relative` in `repo` whole: replace the file there, or, with
     /// `create`, make it new (and the folders on its way). The bytes written,
-    /// and whether the file is new.
-    pub fn put(&self, repo: &str, relative: &str, text: &str, limit: u64, create: bool) -> Result<(u64, bool)> {
+    /// and whether the file is new. Any bytes: what a Prompt made is not only text.
+    pub fn put(&self, repo: &str, relative: &str, text: impl AsRef<[u8]>, limit: u64, create: bool) -> Result<(u64, bool)> {
+        let text = text.as_ref();
         let rel = relative.trim_matches('/');
         let at = shown(repo, rel);
         if rel.is_empty() {
             return Err(tr!("Name a file in {}: {}/PATH", "{} の中のファイルを書いてください：{}/PATH", repo, repo));
         }
         if fs::symlink_metadata(self.place(repo)?.join(rel)).is_ok() {
-            return self.write(repo, rel, text, limit).map(|n| (n, false));
+            return self.write_bytes(repo, rel, text, limit).map(|n| (n, false));
         }
         if !create {
             return Err(tr!("There is no {}", "{} はありません", at));
@@ -343,7 +358,7 @@ impl Repos {
         let parent = self.inside(repo, dir)?;
         use std::io::Write;
         let mut file = fs::OpenOptions::new().write(true).create_new(true).open(parent.join(name)).map_err(|e| io_error(&at, &e))?;
-        file.write_all(text.as_bytes()).map_err(|e| io_error(&at, &e))?;
+        file.write_all(text).map_err(|e| io_error(&at, &e))?;
         Ok((text.len() as u64, true))
     }
 }

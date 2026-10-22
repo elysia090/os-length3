@@ -179,7 +179,7 @@ async function handle(m: Message) {
       return;
     }
     const answer = await call(m.name ?? '', m.args);
-    scope.postMessage('ok' in answer ? {id, ok: answer.ok} : {id, error: answer.error});
+    scope.postMessage({id, ...answer});
   } catch (e) {
     scope.postMessage({id, error: said(e)});
   }

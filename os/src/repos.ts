@@ -45,6 +45,10 @@ export interface RepoStore {
    * part, as a new file's); never replaces what is there.
    */
   rename(repo: string, path: string, name: string): Promise<void>;
+  /** Write `path` whole as these bytes, of any size or kind, its folders made (what a Prompt wrote back). */
+  put(repo: string, path: string, bytes: Uint8Array): Promise<number>;
+  /** A file's bytes whole, whatever it holds (what a Prompt copies in). */
+  bytes(repo: string, path: string): Promise<Uint8Array>;
 }
 
 interface SharedTemplate { id: string; label: string; dirs: string[]; files: [string, string][] }
@@ -85,6 +89,15 @@ class CoreStore implements RepoStore {
   mkdir(repo: string, path: string) { return core<void>('repo_mkdir', {repo, path}); }
   remove(repo: string, path: string) { return core<void>('repo_remove', {repo, path}); }
   rename(repo: string, path: string, name: string) { return core<void>('repo_rename', {repo, path, name}); }
+  put(repo: string, path: string, bytes: Uint8Array) { return core<number>('repo_put', {repo, path, bytes: base64(bytes)}); }
+  async bytes(repo: string, path: string) { return Uint8Array.from(atob(await core<string>('repo_bytes', {repo, path})), (c) => c.charCodeAt(0)); }
+}
+
+/** Bytes as base64, a piece at a time (a large file would overflow one call's arguments). */
+function base64(bytes: Uint8Array): string {
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
 }
 
 /** Files of a new repo, from the same shared/templates.json as the native
@@ -123,6 +136,7 @@ class Observed implements RepoStore {
   list() { return this.inner.list(); }
   tree(repo: string, path: string) { return this.inner.tree(repo, path); }
   read(repo: string, path: string) { return this.inner.read(repo, path); }
+  bytes(repo: string, path: string) { return this.inner.bytes(repo, path); }
   async create(name: string, template: Template, by?: string) {
     const r = await this.inner.create(name, template);
     this.tell({repo: name, path: '', what: 'repo', by});
@@ -136,6 +150,11 @@ class Observed implements RepoStore {
   async add(repo: string, dir: string, name: string, text: string, by?: string) {
     const n = await this.inner.add(repo, dir, name, text);
     this.tell({repo, path: dir ? `${dir}/${name}` : name, what: 'file', text, by});
+    return n;
+  }
+  async put(repo: string, path: string, bytes: Uint8Array, by?: string) {
+    const n = await this.inner.put(repo, path, bytes);
+    await this.made(repo, path, by);
     return n;
   }
   async mkdir(repo: string, path: string, by?: string) {

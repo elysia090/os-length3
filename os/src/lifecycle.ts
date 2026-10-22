@@ -63,11 +63,9 @@ export const remoteAll = (): readonly draft.RemoteRepo[] => everyThere;
 /**
  * The Remote could not be asked just now (offline, or it refused): null, so
  * what was read last stands and the next look asks again. Anything else is a
- * fault here, and is thrown. (The app's core answers with a string.)
+ * fault here, and is thrown. The core's refusals are RemoteErrors too (host.ts core).
  */
-const away = (e: unknown): null => { if (e instanceof RemoteError || typeof e === 'string') return null; throw e; };
-/** How a refusal of the plan's comes from the app's core: this, then its words. */
-const PLAN = 'plan: ';
+const away = (e: unknown): null => { if (e instanceof RemoteError) return null; throw e; };
 /** How long a repo the plan holds back waits before it is asked again. */
 const WAIT = 5 * 60_000;
 /** How soon a change is sent: soon enough to beat closing the tab, late enough to gather keystrokes. */
@@ -98,10 +96,9 @@ async function run(repo: string) {
       return;
     }
     // The plan keeps no more on the Remote: kept here, and asked again now and then (paying, or making room, lets it go).
-    // The app's core says so by its own word (src-tauri: PLAN).
-    if ((e as {status?: number}).status === 402 || (typeof e === 'string' && e.startsWith(PLAN))) {
+    if (e instanceof RemoteError && e.status === 402) {
       const s = states.get(repo);
-      states.set(repo, {where: 'waits', changed: s?.changed ?? 0, both: [], unsynced: s?.unsynced ?? [], error: typeof e === 'string' ? e.slice(PLAN.length) : errorText(e)});
+      states.set(repo, {where: 'waits', changed: s?.changed ?? 0, both: [], unsynced: s?.unsynced ?? [], error: errorText(e)});
       if (connection()) {
         const later = setTimeout(() => void run(repo), WAIT);
         // Long enough that nothing else should wait on it: a process with nothing else to do (a test) is not held open by it.

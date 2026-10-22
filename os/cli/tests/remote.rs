@@ -73,7 +73,7 @@ fn agreed_home(name: &str, remote_json: &str) -> Home {
 }
 
 #[test]
-fn signing_in_as_another_account_or_on_another_remote_lets_go_of_what_the_last_one_agreed() {
+fn signing_in_as_another_account_or_on_another_remote_never_takes_the_last_ones_copy_apart() {
     // Kept, the last one's base was taken for what this one agreed, and every file it held that this one
     // does not (all of them: this account has never seen notes) was removed here as if removed there.
     for (case, was) in [("another account", r#"{"url":"URL","token":"test-token","user":"u1"}"#), ("another Remote", r#"{"url":"http://127.0.0.1:9","token":"test-token"}"#)] {
@@ -82,9 +82,16 @@ fn signing_in_as_another_account_or_on_another_remote_lets_go_of_what_the_last_o
         let ran = home.run("en", &["login", &remote.url]);
         assert_eq!(ran.code, 0, "{case}: {ran:?}");
         assert!(home.path("repos/notes/a.txt").exists(), "{case}: a.txt was removed\n{ran:?}");
-        // It went to this account as new.
         let sent = remote.asked.lock().unwrap().iter().find(|a| a.method == "PATCH").map(|a| a.text()).unwrap_or_default();
-        assert!(sent.contains("\"a.txt\"") && sent.contains("\"version\":0"), "{case}: {sent}");
+        if case == "another account" {
+            // The last account's copy stays theirs: never sent into this account's repo of the same name.
+            assert!(sent.is_empty(), "{case}: {sent}");
+            let agreed = std::fs::read_to_string(home.path("sync/notes.json")).unwrap();
+            assert!(agreed.contains("\"who\":\"u1\""), "{case}: {agreed}");
+        } else {
+            // Another Remote: it goes there as new.
+            assert!(sent.contains("\"a.txt\"") && sent.contains("\"version\":0"), "{case}: {sent}");
+        }
         let kept = std::fs::read_to_string(home.path("home/remote.json")).unwrap();
         assert!(kept.contains("\"token\":\"new\"") && kept.contains("\"user\":\"u2\""), "{case}: {kept}");
     }
@@ -153,7 +160,7 @@ fn a_repo_made_here_under_a_name_the_remote_discarded_goes_there_as_new() {
     home.repo("notes", &[("a.txt", "mine\n"), ("b.txt", "changed here\n")]);
     home.agreed("notes", &format!(r#"{{"version":3,"tree":{{"a.txt":"{}","b.txt":"{}"}},"head":null}}"#, sha("mine\n"), sha("b\n")));
     let ran = home.run("en", &["file", "notes"]);
-    assert!(ran.stderr.contains("does not have this repo") && !ran.stderr.contains("l3 remote on"), "{ran:?}");
+    assert!(ran.stderr.contains("discarded on the Remote") && !ran.stderr.contains("l3 remote on"), "{ran:?}");
     assert!(home.path("repos/notes/a.txt").exists() && home.path("repos/notes/b.txt").exists(), "the copy here is kept");
     assert!(!remote.said().iter().any(|s| s.contains("anew") || s.starts_with("PATCH")), "{:?}", remote.said());
 }
