@@ -19,7 +19,7 @@
 
 import {spawn, spawnSync, type ChildProcess} from 'node:child_process';
 import {randomBytes} from 'node:crypto';
-import {existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -107,6 +107,8 @@ export function appBuild(): string {
   const given = process.env.PROD_ASSETS;
   if (given && existsSync(join(given, 'index.html'))) return given;
   const out = mkdtempSync(join(tmpdir(), 'length3-prod-app-'));
+  // Its own build goes when this process does.
+  process.once('exit', () => rmSync(out, {recursive: true, force: true}));
   const r = spawnSync(process.execPath, [join(OS, 'node_modules', 'vite', 'bin', 'vite.js'), 'build', '--outDir', out, '--logLevel', 'error'],
     {cwd: OS, stdio: 'inherit', env: {...process.env, VITE_LENGTH3_REMOTE: ''}});
   if (r.status !== 0) throw new Error('the app did not build');
