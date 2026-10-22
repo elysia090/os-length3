@@ -268,3 +268,21 @@ fn a_repo_a_program_holds_open_is_not_freed_and_what_it_writes_after_stays() {
     drop(held);
     assert_eq!(std::fs::read_to_string(home.path("repos/notes/a.txt")).unwrap(), "kept\nafter\n");
 }
+
+#[test]
+fn an_execute_bit_a_remote_cannot_keep_is_said_and_its_last_copy_is_not_freed() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = Home::new("free-mode");
+    home.repo("notes", &[("a.txt", "kept\n")]);
+    home.agreed("notes", &format!(r#"{{"version":1,"tree":{{"a.txt":"{}"}},"head":null}}"#, sha("kept\n")));
+    std::fs::set_permissions(home.path("repos/notes/a.txt"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    // A Remote from before modes were kept: its line says none.
+    let (remote, _) = holding_notes(&home, usize::MAX, &Default::default());
+    home.signed_in(&remote.url);
+    let ran = home.run("en", &["repo", "--json"]);
+    assert!(ran.stdout.contains("\"unsendable\": [\n        \"a.txt\"\n      ]"), "{ran:?}");
+    let ran = home.run("en", &["free", "notes"]);
+    assert_eq!(ran.code, 1, "{ran:?}");
+    assert!(ran.stderr.contains("execute bit"), "{ran:?}");
+    assert_eq!(std::fs::metadata(home.path("repos/notes/a.txt")).unwrap().permissions().mode() & 0o777, 0o755);
+}

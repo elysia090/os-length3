@@ -273,6 +273,46 @@ test('a draft\'s diff: each malformed part is refused with words, and nothing is
   assert.deepEqual([now.version, now.draft], [1, {'a.txt': sha}]);
 });
 
+test('a file\'s mode is kept beside its digest through the draft, a commit, work on an issue and its merge; a client that sends none keeps the modes there', async () => {
+  const t = await s.person('modes');
+  const run = (await upload(s, t, enc.encode('#!/bin/sh\necho hi\n'))).sha, issue = (await upload(s, t, enc.encode('Fix：x\n'))).sha;
+  const patch = (body: Record<string, unknown>, q = '') => s.call('PATCH', `/v1/repos/modes/draft${q}`, {token: t, body});
+  const line = async (q = '') => (await s.call('GET', `/v1/repos/modes${q}`, {token: t})).json as unknown as {version: number; head: string | null; modes: Record<string, number>};
+  assert.equal((await patch({version: 0, set: {'run.sh': run, 'issue/001.md': issue, 'docs': null}, remove: [], modes: {'run.sh': 0o755}})).status, 200);
+  assert.deepEqual((await line()).modes, {'run.sh': 0o755});
+  // Refused: a mode for a path not set, one without an execute bit, one that is not bits, a folder's.
+  for (const modes of [{'other.sh': 0o755}, {'run.sh': 0o644}, {'run.sh': 0o4755}, {'run.sh': '755'}, {docs: 0o755}, ['run.sh']]) {
+    refused(await patch({version: 1, set: {'run.sh': run, docs: null}, remove: [], modes}), 400);
+  }
+  // An older client sends none: what it sets keeps the mode it had.
+  assert.equal((await patch({version: 1, set: {'run.sh': run}, remove: []})).status, 200);
+  assert.deepEqual((await line()).modes, {'run.sh': 0o755});
+  // One that keeps modes and sends the file without one: a plain file now; sent with one again, an executable.
+  assert.equal((await patch({version: 2, set: {'run.sh': run}, remove: [], modes: {}})).status, 200);
+  assert.deepEqual((await line()).modes, {});
+  assert.equal((await patch({version: 3, set: {'run.sh': run}, remove: [], modes: {'run.sh': 0o750}})).status, 200);
+  // A commit keeps them, and the work on an issue starts with them.
+  const cut = await s.call('POST', '/v1/repos/modes/cuts', {token: t, body: {version: 4, parent: null, title: 'start'}});
+  assert.equal(cut.status, 201, cut.text);
+  assert.deepEqual((await s.call('GET', `/v1/repos/modes/cuts/${cut.json.id}`, {token: t})).json.modes, {'run.sh': 0o750});
+  assert.equal((await s.call('POST', '/v1/repos/modes/lines', {token: t, body: {issue: 'issue/001.md'}})).status, 201);
+  assert.deepEqual((await line('?line=001')).modes, {'run.sh': 0o750});
+  // The work makes another executable and the old one plain; merged, main has the work's modes.
+  const tool = (await upload(s, t, enc.encode('#!/bin/sh\n'))).sha;
+  assert.equal((await patch({version: 1, set: {'tool.sh': tool, 'run.sh': run}, remove: [], modes: {'tool.sh': 0o755}}, '?line=001')).status, 200);
+  const work = await s.call('POST', '/v1/repos/modes/cuts?line=001', {token: t, body: {version: 2, parent: cut.json.id, title: 'tool'}});
+  assert.equal((await s.call('POST', '/v1/repos/modes/lines/001/push', {token: t, body: {head: work.json.id}})).status, 200);
+  const change = await s.call('POST', '/v1/repos/modes/changes', {token: t, body: {line: '001', title: 'tool'}});
+  const merged = await s.call('POST', `/v1/repos/modes/changes/${change.json.id}/merge`, {token: t, body: {version: change.json.version}});
+  assert.equal(merged.status, 200, merged.text);
+  assert.deepEqual((await line()).modes, {'tool.sh': 0o755});
+  assert.deepEqual((await s.call('GET', `/v1/repos/modes/cuts/${merged.json.merged}`, {token: t})).json.modes, {'tool.sh': 0o755});
+  // A path removed takes its mode with it.
+  const v = (await line()).version;
+  assert.equal((await patch({version: v, set: {}, remove: ['tool.sh']})).status, 200);
+  assert.deepEqual((await line()).modes, {});
+});
+
 test('a commit: words of at most 2000 characters and a title; a parent that is not the head is refused, leaving no commit', async () => {
   const t = await s.person('Committer');
   assert.equal((await s.call('PATCH', '/v1/repos/c/draft', {token: t, body: {version: 0, set: {'a.txt': null}, remove: []}})).status, 200);

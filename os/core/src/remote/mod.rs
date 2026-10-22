@@ -44,7 +44,15 @@ use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 pub type Tree = BTreeMap<String, Option<String>>;
+/// Beside a tree, each file's mode where it has an execute bit: path -> its permission bits (0o755). A path
+/// not in it is a plain file. The Remote keeps the same beside each draft and commit (DESIGN.md §6, "A file's mode").
+pub type Modes = BTreeMap<String, u32>;
 type Result<T> = std::result::Result<T, String>;
+
+/// The modes of `tree`'s files only.
+pub(crate) fn modes_for(tree: &Tree, modes: &Modes) -> Modes {
+    modes.iter().filter(|(p, _)| matches!(tree.get(*p), Some(Some(_)))).map(|(p, m)| (p.clone(), *m)).collect()
+}
 
 pub const BLOB_LIMIT: u64 = 16 << 20;
 /// The Remote this OS ships with: one name for the app, the Remote, the DNS records people
@@ -110,6 +118,12 @@ pub struct Base {
     pub version: i64,
     pub tree: Tree,
     pub head: Option<String>,
+    /// The modes agreed with the tree; none kept before modes were (an old base reads as none).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub modes: Modes,
+    /// Whether the Remote said it keeps modes when this was agreed (one before modes were keeps none).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub moded: bool,
 }
 
 /// Bases are kept one file per line: `<data>/sync/<repo>.json` for main,
@@ -203,6 +217,8 @@ struct LineThere {
     version: i64,
     draft: Tree,
     head: Option<String>,
+    /// Its files' modes; None from a Remote that keeps none yet (one before modes were).
+    modes: Option<Modes>,
 }
 
 /// What the Remote said of a line, when it said it as a Remote does: a version, a draft each of whose
@@ -213,8 +229,18 @@ fn line_there(url: &str, v: &serde_json::Value) -> Result<LineThere> {
     let version = v["version"].as_i64().filter(|n| *n >= 0);
     let draft = v["draft"].as_object().filter(|d| d.values().all(|x| x.is_string() || x.is_null()));
     let head = match &v["head"] { serde_json::Value::Null => Some(None), serde_json::Value::String(h) => Some(Some(h.clone())), _ => None };
-    match (version, draft, head) {
-        (Some(version), Some(_), Some(head)) => Ok(LineThere { version, draft: tree_of(&v["draft"]), head }),
+    // Modes, when it keeps them: each a file's permission bits.
+    let modes = match &v["modes"] {
+        serde_json::Value::Null => Some(None),
+        serde_json::Value::Object(o) => o.iter().map(|(p, m)| m.as_u64().filter(|m| *m <= 0o777).map(|m| (p.clone(), m as u32))).collect::<Option<Modes>>().map(Some),
+        _ => None,
+    };
+    match (version, draft, head, modes) {
+        (Some(version), Some(_), Some(head), Some(modes)) => {
+            let draft = tree_of(&v["draft"]);
+            let modes = modes.map(|m| modes_for(&draft, &m));
+            Ok(LineThere { version, draft, head, modes })
+        }
         _ => Err(odd(url)),
     }
 }
@@ -255,23 +281,32 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
         // Before sending, see whether the Remote moved.
         let there = there_of(&client.url, client.call("GET", &path, None)?, base.version)?;
         let remote_version = there.as_ref().map_or(0, |l| l.version);
+        // Whether the Remote keeps modes: one that has the line says; one that has not, is taken to (what is sent says them).
+        let kept = there.as_ref().is_none_or(|l| l.modes.is_some());
+        if !kept {
+            // Said, never let go of: an execute bit only here is not on the Remote, so this copy is not the last to free.
+            for p in here.modes.keys() { out.unsynced.push((p.clone(), crate::tr!("its execute bit (this Remote keeps no modes yet)", "実行ビット（この Remote はまだモードを持ちません）"))); }
+        }
         if remote_version != base.version {
-            let (tree, head) = there.map_or((Tree::new(), None), |l| (l.draft, l.head));
+            let (tree, head, modes) = there.map_or((Tree::new(), None, None), |l| (l.draft, l.head, l.modes));
             let p = plan(&base.tree, &here.tree, &tree);
-            out.both.extend(apply(client, &dir, &here.tree, &p)?);
+            out.both.extend(apply(client, &dir, &here.tree, &p, modes.as_ref())?);
+            // A mode changed there only (the file's bytes as they were) is taken too; one changed here stays and is sent.
+            if let Some(m) = &modes { take_modes(&dir, &base.modes, &here.modes, m, &tree, &p); }
             out.taken += p.take.len();
-            set_base(&key, &Base { version: remote_version, tree, head })?;
+            set_base(&key, &Base { version: remote_version, tree, head, moded: modes.is_some(), modes: modes.unwrap_or(base.modes) })?;
             continue;
         }
         // The Remote can commit without touching the draft (a work's first start commits main
         // as it stands): its head is then newer than the one kept, though the version is not.
         let mut base = base;
-        let head = there.map(|l| l.head);
-        if let Some(head) = head.filter(|h| *h != base.head) {
-            base.head = head;
+        let said = there.as_ref().map(|l| (l.head.clone(), l.modes.is_some()));
+        if let Some((head, moded)) = said.filter(|(h, m)| *h != base.head || *m != base.moded) {
+            (base.head, base.moded) = (head, moded);
             set_base(&key, &base)?;
         }
-        let mut set: Vec<(&String, &Option<String>)> = here.tree.iter().filter(|(p, v)| base.tree.get(*p) != Some(*v)).collect();
+        let moded = |p: &String| kept && here.modes.get(p) != base.modes.get(p);
+        let mut set: Vec<(&String, &Option<String>)> = here.tree.iter().filter(|(p, v)| base.tree.get(*p) != Some(*v) || moded(p)).collect();
         let mut remove: Vec<&String> = base.tree.keys().filter(|p| !here.tree.contains_key(*p)).collect();
         if set.is_empty() && remove.is_empty() {
             out.version = base.version;
@@ -294,11 +329,13 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
             }
             if moved { continue; }
         }
-        let body = serde_json::json!({
+        let mut body = serde_json::json!({
             "version": base.version,
             "set": set.iter().map(|(p, v)| ((*p).clone(), serde_json::json!(v))).collect::<serde_json::Map<_, _>>(),
             "remove": remove,
         });
+        // Each file set with an execute bit, its mode; a file set without one is a plain file there too.
+        if kept { body["modes"] = serde_json::json!(set.iter().filter_map(|(p, _)| here.modes.get(*p).map(|m| ((*p).clone(), *m))).collect::<Modes>()); }
         // A conflict (someone else moved it, or a blob went missing) goes round again.
         if let Reply::Ok(v) = client.call("PATCH", &draft, Some(body))? {
             // Without the version it is at now, nothing is agreed: the next round reads the line again.
@@ -310,9 +347,12 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
                 tree.retain(|q, _| !q.starts_with(&under));
             }
             for (p, v) in &set { tree.insert((*p).clone(), (*v).clone()); }
+            let mut modes = base.modes.clone();
+            if kept { for (p, _) in &set { match here.modes.get(*p) { Some(m) => { modes.insert((*p).clone(), *m); } None => { modes.remove(*p); } } } }
+            let modes = modes_for(&tree, &modes);
             out.sent += set.len() + remove.len();
             out.version = version;
-            set_base(&key, &Base { version, tree, head: base.head })?;
+            set_base(&key, &Base { version, tree, head: base.head, modes, moded: base.moded || kept })?;
         }
     }
     // Still moving after every round: not in step, and said so, rather than taken for it.
@@ -449,12 +489,15 @@ pub struct Status {
 }
 
 pub fn status_of(repos: &Repos, name: &str) -> Result<Status> {
-    let here = local_tree(&repos.dir(name)?);
+    let mut here = local_tree(&repos.dir(name)?);
     let b = base(&key(repos, name).0);
+    // A mode is a change only where the Remote keeps modes; where it said it keeps none, an execute bit cannot be sent.
+    let moded = b.as_ref().is_none_or(|b| b.moded);
     let changed = match &b {
-        Some(b) => here.tree.iter().filter(|(p, v)| b.tree.get(*p) != Some(*v)).count() + b.tree.keys().filter(|p| !here.tree.contains_key(*p)).count(),
+        Some(b) => here.tree.iter().filter(|(p, v)| b.tree.get(*p) != Some(*v) || (moded && here.modes.get(*p) != b.modes.get(*p))).count() + b.tree.keys().filter(|p| !here.tree.contains_key(*p)).count(),
         None => here.tree.len(),
     };
+    if !moded { for p in here.modes.keys() { here.unsynced.push((p.clone(), crate::tr!("its execute bit (this Remote keeps no modes yet)", "実行ビット（この Remote はまだモードを持ちません）"))); } }
     Ok(Status {
         name: name.into(), changed, fresh: b.is_none(), files: here.tree.values().filter(|v| v.is_some()).count(), unsynced: here.unsynced, bytes: here.bytes,
         head: b.as_ref().and_then(|b| b.head.clone()), version: b.map_or(0, |b| b.version),
@@ -496,15 +539,17 @@ fn free_with(client: &Client, repos: &Repos, repo: &str) -> Result<u64> {
         .into_iter().any(|r| r.name == repo && r.off_at.is_some());
     // Each copy's sync is held until it is gone or back, so no sync here writes it meanwhile.
     let mut held = Vec::new();
-    let mut checked: Vec<(String, String, PathBuf, Tree)> = Vec::new();
+    let mut checked: Vec<(String, String, PathBuf, Tree, Modes)> = Vec::new();
     for line in &copies {
         let key = key_of(repo, line);
         held.push(lock(&key)?);
         let dir = copy_dir(repos, repo, line);
         if off {
-            let agreed = base(&key).map(|b| b.tree).unwrap_or_default();
-            let here = local_tree(&dir).tree;
-            let changed = here.keys().chain(agreed.keys()).collect::<BTreeSet<_>>().into_iter().filter(|p| here.get(*p) != agreed.get(*p)).count();
+            let (agreed, modes) = base(&key).map(|b| (b.tree, b.modes)).unwrap_or_default();
+            let local = local_tree(&dir);
+            let here = &local.tree;
+            let changed = here.keys().chain(agreed.keys()).collect::<BTreeSet<_>>().into_iter()
+                .filter(|p| here.get(*p) != agreed.get(*p) || local.modes.get(*p) != modes.get(*p)).count();
             if changed > 0 {
                 return Err(if changed == 1 {
                     crate::tr!("1 change here is not on the Remote; turn it on to send it first", "ここの変更 1件が Remote にありません。オンにして先に送ってください")
@@ -512,7 +557,7 @@ fn free_with(client: &Client, repos: &Repos, repo: &str) -> Result<u64> {
                     crate::tr!("{} changes here are not on the Remote; turn it on to send them first", "ここの変更 {}件が Remote にありません。オンにして先に送ってください", changed)
                 });
             }
-            checked.push((key, line.clone(), dir, agreed));
+            checked.push((key, line.clone(), dir, agreed, modes));
             continue;
         }
         crate::work::show_for_free(repo, line)?;
@@ -527,14 +572,14 @@ fn free_with(client: &Client, repos: &Repos, repo: &str) -> Result<u64> {
         }
         let here = local_tree(&dir);
         let b = base(&key).ok_or_else(|| crate::tr!("Not on the Remote yet", "まだ Remote にありません"))?;
-        if here.tree != b.tree {
+        if here.tree != b.tree || here.modes != b.modes {
             return Err(crate::tr!("It changed while it was being sent; try again", "送っているあいだに変わりました。もう一度どうぞ"));
         }
-        checked.push((key, line.clone(), dir, b.tree));
+        checked.push((key, line.clone(), dir, b.tree, b.modes));
     }
     // Moved aside, every copy, before any is let go.
     let mut moved: Vec<(String, PathBuf, PathBuf)> = Vec::new();
-    for (key, _, dir, _) in &checked {
+    for (key, _, dir, _, _) in &checked {
         let aside = aside_of(dir);
         if let Err(e) = crate::atomic::rename_new(dir, &aside) {
             let why = crate::tr!("{} could not be moved to be freed: {}", "{} を空けるために動かせませんでした：{}", dir.display(), e);
@@ -551,9 +596,9 @@ fn free_with(client: &Client, repos: &Repos, repo: &str) -> Result<u64> {
         }
     }
     // Read again whole, every byte (no digest kept from before counts): exactly what the Remote holds.
-    for ((_, line, _, agreed), (_, _, aside)) in checked.iter().zip(&moved) {
+    for ((_, line, _, agreed, modes), (_, _, aside)) in checked.iter().zip(&moved) {
         let now = local_tree_fresh(aside);
-        if !now.unsynced.is_empty() || now.tree != *agreed {
+        if !now.unsynced.is_empty() || now.tree != *agreed || now.modes != *modes {
             return Err(refused(crate::tr!("It changed while it was being freed; it is kept here and sent next", "空けているあいだに変わりました。ここに残し、次に送ります")));
         }
         if !off {
@@ -563,6 +608,10 @@ fn free_with(client: &Client, repos: &Repos, repo: &str) -> Result<u64> {
             };
             if there.draft != now.tree {
                 return Err(refused(crate::tr!("The Remote's copy is not complete yet", "Remote の写しがまだ揃っていません")));
+            }
+            // An execute bit here is let go only when the Remote keeps it too: the last copy that has it is never freed otherwise.
+            if there.modes.as_ref().unwrap_or(&Modes::new()) != &now.modes {
+                return Err(refused(crate::tr!("The Remote does not keep a file's execute bit yet; it is kept here", "Remote がまだ実行ビットを持っていません。ここに残しました")));
             }
         }
     }
@@ -628,7 +677,14 @@ mod tests {
     fn only_a_line_as_the_remote_answers_it_is_taken() {
         let url = "https://os.length3.com";
         let ok = serde_json::json!({"version": 3, "draft": {"a.txt": "ab", "dir": null}, "head": "c1", "updatedAt": 1});
-        assert_eq!(line_there(url, &ok).unwrap(), LineThere { version: 3, draft: t(&[("a.txt", Some("ab")), ("dir", None)]), head: Some("c1".into()) });
+        assert_eq!(line_there(url, &ok).unwrap(), LineThere { version: 3, draft: t(&[("a.txt", Some("ab")), ("dir", None)]), head: Some("c1".into()), modes: None });
+        // A Remote that keeps modes says them; only its files' are taken, and only as permission bits.
+        let moded = serde_json::json!({"version": 3, "draft": {"run.sh": "ab", "dir": null}, "head": null, "modes": {"run.sh": 493, "dir": 493, "gone": 493}});
+        assert_eq!(line_there(url, &moded).unwrap().modes, Some(Modes::from([("run.sh".to_string(), 0o755)])));
+        for odd in [serde_json::json!({"version": 3, "draft": {}, "head": null, "modes": []}), serde_json::json!({"version": 3, "draft": {}, "head": null, "modes": {"a": "755"}}),
+            serde_json::json!({"version": 3, "draft": {}, "head": null, "modes": {"a": 0o4755}})] {
+            assert!(line_there(url, &odd).is_err(), "{odd}");
+        }
         assert_eq!(line_there(url, &serde_json::json!({"version": 0, "draft": {}, "head": null})).unwrap().head, None);
         for odd in [serde_json::Value::Null, serde_json::json!({}), serde_json::json!({"version": "3", "draft": {}, "head": null}),
             serde_json::json!({"version": 3, "draft": null, "head": null}), serde_json::json!({"version": 3, "draft": {"a": 1}, "head": null}),
@@ -674,7 +730,7 @@ mod tests {
         // In step before: not taken for removed there, and said.
         assert!(there_of(url, Reply::NotFound, 3).is_err_and(|e| e.contains("does not have this repo") || e.contains("この repo がありません")));
         let line = serde_json::json!({"version": 3, "draft": {}, "head": null});
-        assert_eq!(there_of(url, Reply::Ok(line), 3), Ok(Some(LineThere { version: 3, draft: Tree::new(), head: None })));
+        assert_eq!(there_of(url, Reply::Ok(line), 3), Ok(Some(LineThere { version: 3, draft: Tree::new(), head: None, modes: None })));
     }
 
     #[test]

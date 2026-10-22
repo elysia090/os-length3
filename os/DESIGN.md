@@ -673,13 +673,47 @@ As with GitHub, the copy that counts is the Remote's, and work on a device
 is not trusted until it is there; here that reaches to the whole OS. A
 repo on the Remote (`service/`) has two things:
 
-- **draft**: the working tree as it is now, path → the sha256 of the file.
+- **draft**: the working tree as it is now, path → the sha256 of the file
+  (and, beside it, each executable file's mode: "A file's mode" below).
   It has a version, and a change is a diff made on a version: one that
   names an older version is refused with the draft as it is, so nothing
   sent is ever overwritten.
 - **head**: the last commit. Commit makes the draft at a version a commit, named
   by the sha256 of its record (tree, parent, words), and moves the head by
   compare-and-set.
+
+#### A file's mode
+
+A tree is path → digest; beside it, a draft and each commit keep **modes**:
+path → the file's permission bits (`{"run.sh": 493}`, 0755), only for a
+file the tree names that has an execute bit. A path not there is a plain
+file. One representation everywhere, for the app's native sync (core), l3
+and the web's writeback alike: it is not folded into the tree's values, so
+a tree stays path → digest for everyone who reads one (an old client, the
+sweep, the log's counts), and a commit's id changes only when it has modes.
+
+- **GET** `/v1/repos/:name` says `modes` beside `draft`; a Remote from
+  before modes says none, and a client takes that as "this Remote keeps no
+  modes".
+- **PATCH** `…/draft` takes `modes` beside `set`: each path set that has an
+  execute bit, with its bits; a path set and not in `modes` is a plain file
+  there. A mode alone is a change: the path is set again with the same
+  digest and its mode. A client that sends no `modes` (one from before)
+  cannot say, so what it sets keeps the mode it had: an execute bit is never
+  dropped for not being known of. A mode on a path not set, without an
+  execute bit, or beyond 0777 is refused.
+- **Commits** keep the draft's modes; work on an issue starts with its
+  commit's; a merge merges them as trees are merged (one both changed keeps
+  main's: a mode never refuses a merge); a path removed takes its mode.
+- **Taking in** writes each file with the Remote's mode, and a mode changed
+  there only (the file's bytes as agreed) is taken as a file changed there
+  only is; one changed here is sent. A file rewritten here keeps its mode.
+- **Expand only** (migration 0010): both columns default to `{}`, so the
+  Worker before reads past them and every client before keeps working.
+- Where the Remote keeps no modes yet, an execute bit here is named among
+  what cannot be sent (`l3 repo`'s `unsendable`), and **the last copy that
+  has one is never freed**: Free asks the Remote's modes to be this copy's.
+  Owner, ACLs and extended attributes are not carried.
 
 So a device's copy is never the only copy, and history stays deliberate.
 Every change made here (in Forge, by l3, by a Prompt) is sent as a diff

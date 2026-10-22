@@ -16,6 +16,8 @@ export default {
   'This repo is turned off': 'この repo はオフになっています',
   'Too many changes at once': '一度の変更が多すぎます',
   'A path no repo may have': 'repo に置けないパスです',
+  'A mode no file here may have': 'ここのファイルが持てないモードです',
+  'modes: path -> mode': 'modes は パス → モード です',
   'That work is not on the Remote': 'その作業は Remote にありません',
   'Too many files for one repo': 'repo ひとつのファイルが多すぎます',
   'Too many repos': 'repo が多すぎます',

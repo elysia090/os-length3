@@ -6,6 +6,8 @@ use super::*;
 #[derive(Debug, Default)]
 pub struct Local {
     pub tree: Tree,
+    /// Each file's mode where it has an execute bit (Modes).
+    pub modes: Modes,
     /// sha -> where its bytes are (one place is enough).
     pub(super) files: BTreeMap<String, PathBuf>,
     /// Paths that are not sent, and why.
@@ -172,6 +174,12 @@ pub(super) fn walk(dir: &Path, prefix: &str, out: &mut Local) {
             let sha = if out.fresh { fs::read(e.path()).ok().map(|b| sha256(&b)) } else { digest(&e.path(), &meta) };
             let Some(sha) = sha else { out.unsynced.push((rel, crate::tr!("a file that cannot be read", "読めないファイル"))); continue };
             out.bytes += meta.len();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mode = meta.permissions().mode() & 0o777;
+                if mode & 0o111 != 0 { out.modes.insert(rel.clone(), mode); }
+            }
             out.read.push(e.path());
             out.files.insert(sha.clone(), e.path());
             out.tree.insert(rel, Some(sha));

@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
+import {chmodSync, existsSync, statSync} from 'node:fs';
+import {join} from 'node:path';
 import {test} from 'node:test';
 import {remote, type Ran} from './harness.ts';
 
@@ -80,6 +83,38 @@ test('another device opens the repo from the Remote, and takes in each change ma
   ok(desk.l3(['file', 'write', 'shared/b.txt'], 'from the desk\n'));
   assert.equal(ok(laptop.l3(['file', 'shared/b.txt'])).out, 'from the desk\n');
   assert.match(ok(laptop.l3(['remote'])).out, /\n {2}shared {2}in step/);
+});
+
+test('a script\'s execute bit goes to the Remote and comes back with it: opened on another device, after a change, and after Free and opening again', async () => {
+  const at = (d: {home: string}, path: string) => join(d.home, 'length3', 'repos', path);
+  const mode = (d: {home: string}, path: string) => statSync(at(d, path)).mode & 0o777;
+  const runs = (d: {home: string}, path: string) => spawnSync(at(d, path), [], {encoding: 'utf8'});
+  ok(laptop.l3(['repo', 'new', 'scripts', '-t', 'empty']));
+  ok(laptop.l3(['file', 'write', 'scripts/run.sh'], '#!/bin/sh\necho ran one\n'));
+  chmodSync(at(laptop, 'scripts/run.sh'), 0o755);
+  // A mode alone is a change: it is sent (l3 repo sends what changed before it lists).
+  ok(laptop.l3(['repo']));
+  assert.deepEqual((await r.api(ren, 'GET', '/v1/repos/scripts')).json.modes, {'run.sh': 0o755});
+  ok(desk.l3(['repo', 'open', 'scripts']));
+  assert.equal(mode(desk, 'scripts/run.sh'), 0o755);
+  assert.equal(runs(desk, 'scripts/run.sh').stdout, 'ran one\n');
+  // Changed on the laptop: the desk takes the new bytes, and the bit stays.
+  ok(laptop.l3(['file', 'write', 'scripts/run.sh'], '#!/bin/sh\necho ran two\n'));
+  assert.equal(mode(laptop, 'scripts/run.sh'), 0o755);
+  ok(desk.l3(['file', 'scripts/run.sh']));
+  assert.equal(mode(desk, 'scripts/run.sh'), 0o755);
+  assert.equal(runs(desk, 'scripts/run.sh').stdout, 'ran two\n');
+  // Freed on the desk and opened again: as it was.
+  ok(desk.l3(['free', 'scripts']));
+  assert.ok(!existsSync(at(desk, 'scripts')));
+  ok(desk.l3(['repo', 'open', 'scripts']));
+  assert.equal(mode(desk, 'scripts/run.sh'), 0o755);
+  assert.equal(runs(desk, 'scripts/run.sh').stdout, 'ran two\n');
+  // Taken off on the laptop: a plain file on the desk too.
+  chmodSync(at(laptop, 'scripts/run.sh'), 0o644);
+  ok(laptop.l3(['repo']));
+  ok(desk.l3(['file', 'scripts/run.sh']));
+  assert.equal(mode(desk, 'scripts/run.sh') & 0o111, 0);
 });
 
 test('an issue goes from written to merged with l3: start, commit, push, review, merge; the Remote holds each step', async () => {
