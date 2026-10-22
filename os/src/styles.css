@@ -123,6 +123,8 @@ a { color: var(--ink); }
 .me-who > svg.icon { padding: 4px; box-sizing: border-box; }
 .me-name { display: grid; min-width: 0; }
 .pop-group { display: grid; margin-top: var(--s2); }
+/* The first group starts at the box's own padding: its head's room is enough, without a group's step before it. */
+.pop > .pop-group:first-child { margin-top: 0; }
 .pop-mark { width: 18px; height: 18px; flex: none; color: var(--sub); }
 .pop-item {
   display: flex; justify-content: space-between; align-items: center; gap: var(--s3);

@@ -1338,7 +1338,9 @@ it, and it says Copied for a moment in the same place; there is no Copy
 button), its gear at the right end. Before there is one, the stub is the
 name to claim; Enter claims. The gear opens, over what is under it (Escape or a press
 outside closes it), a popover: your names with their terms (Renew near the
-end), Add a domain, and Let a name go last. Add a domain becomes, in its
+end), then Add a domain; its first head starts at the box's own room, with no
+group's step before it. Letting a name go is not offered here (the Remote
+still lets a name go, `l3`'s way). Add a domain becomes, in its
 row, one field where the name is written whole, `name@domain` with the @
 too (no second box to go to; a name on one's own domain is paid, and a free
 account is told so under the field, with See the plan), then the one DNS record that proves it (`_length3.<domain>` TXT

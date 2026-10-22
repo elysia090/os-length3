@@ -6,7 +6,7 @@ import {look} from '../news.ts';
 import {Drafts} from '../drafts.ts';
 import {kindOf} from '../text.ts';
 import {mark} from '../icons.ts';
-import {copying, deed, pageHead, SETTLE} from './common.ts';
+import {copying, deed, pageHead} from './common.ts';
 import {every} from '../runs.ts';
 import {goToPlan, planRefused, planSaid, signInBox, signInPlace} from './remote.ts';
 import {plan as readPlan} from '../plan.ts';
@@ -125,27 +125,6 @@ function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLE
     b.addEventListener('click', () => b.replaceWith(own()));
     return b;
   };
-  /** Letting a name go: pressed, it asks in its row, Let it go where the press was (at the left), Not now at the right. */
-  const letting = (a: inbox.Me['addresses'][number]): HTMLElement => {
-    const b = item(t('Let {name} go', {name: inbox.shown(a.address)}));
-    b.addEventListener('click', () => {
-      const no = h('button', {type: 'button', class: 'button small-button'}, t('Not now'));
-      const yes = h('button', {type: 'button', class: 'button small-button primary'}, t('Let it go')) as HTMLButtonElement;
-      const ask = h('div', {class: 'stub-ask'},
-        h('p', {class: 'muted small'}, t('{name} is held for you 30 days; claiming it again takes it back.', {name: inbox.shown(a.address)})),
-        h('div', {class: 'card-foot'}, yes, h('span', {class: 'grow'}), no));
-      no.addEventListener('click', () => ask.replaceWith(letting(a)));
-      const shown = performance.now();
-      yes.addEventListener('click', async () => {
-        if (performance.now() - shown < SETTLE) return;
-        yes.disabled = true;
-        try { await inbox.release(a.address); again(); } catch (e) { yes.disabled = false; yes.textContent = errorText(e); }
-      });
-      b.replaceWith(ask);
-      yes.focus();
-    });
-    return b;
-  };
   /** Your names, each with its state: its term (Renew near its end), or that its domain no longer names this Remote. */
   const yours = (): HTMLElement => {
     const YEAR = 365 * 86_400_000;
@@ -159,7 +138,8 @@ function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLE
     }));
   };
   // With no name yet there is nothing else in it: the field at once.
-  const fill = () => panel.replaceChildren(...(me.addresses.length ? [yours(), adding(), ...me.addresses.map(letting)] : [own()]));
+  // Letting a name go is not offered here; the Remote's way to do it stays (l3 people release uses it).
+  const fill = () => panel.replaceChildren(...(me.addresses.length ? [yours(), adding()] : [own()]));
   // The panel lies over the Inbox under it; Escape or a press outside closes it.
   const holder = h('div', {class: 'stub-holder'}, stub, note, error, panel);
   // Put away by Escape from inside it, the keyboard goes back to the gear rather than to the page.
