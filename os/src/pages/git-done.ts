@@ -84,7 +84,7 @@ export function mergedList(list: {repo: string; change: git.Change}[], all: bool
       if (fold.open) opened.add(c.id); else opened.delete(c.id);
       if (!fold.open || read) return;
       read = true;
-      void git.changeDiff(repo, c).then((files) => inside.replaceChildren(...(files.length ? diffFiles(files) : [h('p', {class: 'muted small'}, t('No changes'))])),
+      void git.changeDiff(repo, c).then((files) => inside.replaceChildren(...(files.length ? diffFiles(files, {beside: true}) : [h('p', {class: 'muted small'}, t('No changes'))])),
         (e) => inside.replaceChildren(h('p', {class: 'error'}, errorText(e))));
     });
     fold.open = opened.has(c.id);

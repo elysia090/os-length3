@@ -54,7 +54,7 @@ export const beingChanged = (issue: Issue) => changing.has(keyOf(issue));
 function fields(kind: string | null, title: string, detail: string) {
   const first = h('input', {class: 'line-in', placeholder: t('Fix: The title wraps on a phone'), 'aria-label': t('First line as Kind: title'),
     maxlength: '200', spellcheck: 'false', value: title ? named(kind, title) : ''}) as HTMLInputElement;
-  const body = h('textarea', {class: 'line-in issue-text', rows: '4', 'aria-label': t('Detail'), placeholder: t('Detail (optional)')}) as HTMLTextAreaElement;
+  const body = h('textarea', {class: 'line-in issue-text', rows: '4', 'aria-label': t('Summary'), placeholder: t('Summary')}) as HTMLTextAreaElement;
   body.value = detail;
   first.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); body.focus(); } });
   const read = () => ({...kindOf(first.value), detail: body.value});

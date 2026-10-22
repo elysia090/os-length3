@@ -100,7 +100,6 @@ export default {
   'No plugins yet': 'プラグインはまだありません',
 
   // Writing an issue
-  'Detail (optional)': '詳細（なくてもよい）',
   'Not now': 'やめる',
   'Write a title on the first line': '1行目に件名を書いてください',
   'Could not write: {message}': '書けませんでした：{message}',

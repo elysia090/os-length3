@@ -30,6 +30,11 @@ export interface DiffOptions {
   line?: (row: HTMLElement, key: string, l: DiffLine) => void;
   /** Put a file back as it was at the last commit (the copy here only); asked in its head first. */
   putBack?: (f: FileDiff) => Promise<void>;
+  /**
+   * The lines beside the file's name and its +n −n, from that row, not under it: for a box as wide as Git's,
+   * where a file is read whole (issue #20). Unfolded, always open. (A search's diff, narrow, keeps them under.)
+   */
+  beside?: boolean;
 }
 
 /** What putting a file back does, a short line each. */
@@ -100,7 +105,7 @@ export function diffFiles(files: FileDiff[], o: DiffOptions = {}): HTMLElement[]
     };
     const body = f.binary ? [] : f.lines.map((l, k) => {
       // Between two parts of a file, a quiet "…".
-      if (l.kind === 'hunk') return k === 0 ? null : h('div', {class: 'diff-line hunk'}, h('span', {class: 'diff-no'}), h('span', {}, '…'));
+      if (l.kind === 'hunk') return k === 0 ? null : h('div', {class: 'diff-line hunk'}, h('span', {class: 'diff-no'}), h('span'), h('span', {}, '…'));
       const at = o.reveal && f.status !== 'removed' ? now(k) : undefined;
       const no = at ? h('button', {type: 'button', class: 'diff-no go', tabindex: '-1', 'aria-label': t('Line {n} of {path}', {n: at, path: fileName(f.path)})}, l.at ? `${l.at}` : '')
         : h('span', {class: 'diff-no'}, l.at ? `${l.at}` : '');
@@ -108,11 +113,14 @@ export function diffFiles(files: FileDiff[], o: DiffOptions = {}): HTMLElement[]
       // The words in a span of their own, after the indent, so a mark is drawn over them as a highlighter is, line by line as they wrap.
       const indent = /^[ \t]*/.exec(l.text)![0];
       const words = l.text.slice(indent.length);
-      const row = h('div', {class: `diff-line ${l.kind}`}, no, h('span', {class: 'diff-text'}, indent, h('span', {class: 'diff-words'}, words || ' ')));
+      // + or − before the words (nothing for a line that stays), as any diff writes it.
+      const sign = h('span', {class: 'diff-sign', 'aria-hidden': 'true'}, l.kind === 'add' ? '+' : l.kind === 'del' ? '−' : '');
+      const row = h('div', {class: `diff-line ${l.kind}`}, no, sign, h('span', {class: 'diff-text'}, indent, h('span', {class: 'diff-words'}, words || ' ')));
       o.line?.(row, `${f.path}:${k}`, l);
       return row;
     }).filter(Boolean) as HTMLElement[];
     if (f.more) body.push(h('p', {class: 'muted small'}, tn('{n} more line', '{n} more lines', f.more)));
+    if (o.beside) return h('div', {class: 'diff-file beside'}, h('div', {class: 'diff-head'}, ...head.childNodes), h('div', {class: 'diff'}, ...body), ...(foot ? [foot] : []));
     const fold = h('details', {class: 'diff-file'}, head, h('div', {class: 'diff'}, ...body), ...(foot ? [foot] : [])) as HTMLDetailsElement;
     fold.open = i < OPEN;
     return fold;

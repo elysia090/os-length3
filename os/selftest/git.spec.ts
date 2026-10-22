@@ -22,7 +22,7 @@ test('an issue goes from written to merged, and is listed under Merged', async (
   await app.forge.editFile('README.md', '# hello\n\nHELLO.\n');
 
   await app.rail.go('git');
-  await expect(app.main.getByText('1 file not committed')).toBeVisible();
+  await expect(app.main.getByRole('region', {name: '1 file not committed'})).toContainText('HELLO.');
   await app.git.step('Commit').click();
   // Committed: Commit is done (no button), and Push is the next step.
   await expect(app.git.step('Commit')).toBeHidden();
@@ -54,7 +54,7 @@ test('a change on main is committed from main\'s card, named by its line', async
 
   await app.rail.go('git');
   // A repo nobody has committed yet: the scaffold's README is not committed either.
-  await expect(app.git.mainCard('hello')).toContainText('1 file not committed');
+  await expect(app.git.mainCard('hello').getByRole('region', {name: '1 file not committed'})).toBeVisible();
   // A line without a title is not a commit: said under it, the keyboard kept there.
   await app.git.commitOnMain('hello', 'Docs:');
   await expect(app.git.mainCard('hello').getByRole('alert')).toHaveText('A commit needs a title (for example Fix：title)');
@@ -153,7 +153,7 @@ test('a new issue\'s repo is chosen in the one row above the box, Create at the 
   await expect(app.git.issue('#1 Fix：The table wraps')).toBeVisible();
 
   // Its detail is right under the title, above Commit: written there, and saved as it is left.
-  const summary = app.main.getByRole('textbox', {name: 'Detail'});
+  const summary = app.main.getByRole('textbox', {name: 'Summary'});
   await expect(summary).toHaveValue('On a phone.');
   await expect(summary).toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)');
   await summary.fill('On a phone, at 320 px.');
@@ -169,7 +169,7 @@ test('the detail of a new issue has the room the repos inside the box had', asyn
   await app.rail.go('git');
   await app.main.getByRole('button', {name: 'Write an issue'}).click();
   // 96 px, and two rows of chips and the gap under them (32 + 8 + 32 + 12).
-  expect((await app.main.getByRole('textbox', {name: 'Detail'}).boundingBox())!.height).toBeGreaterThanOrEqual(180);
+  expect((await app.main.getByRole('textbox', {name: 'Summary'}).boundingBox())!.height).toBeGreaterThanOrEqual(180);
 });
 
 test('an empty Issue view in Forge writes the first issue for its repo, and Not now goes back there', async ({app}) => {

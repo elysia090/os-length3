@@ -772,7 +772,17 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 button.run-line { margin-inline-start: calc(-1 * var(--s1)); min-width: 0; }
 .run-out { margin: 0; color: var(--sub); font: var(--t-meta)/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .diff { display: grid; font: var(--t-meta)/1.6 var(--mono); }
-.diff-line { display: grid; grid-template-columns: 4ch minmax(0, 1fr); gap: var(--s2); padding: 0 var(--s1); }
+.diff-line { display: grid; grid-template-columns: 4ch 1ch minmax(0, 1fr); gap: var(--s2); padding: 0 var(--s1); }
+/* Git's diffs: the file's name and +n −n at the left, its lines beside them from the same row. */
+.diff-file.beside { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: var(--s4); align-items: start; }
+.diff-file.beside > .diff-head { grid-column: 1; min-height: 0; padding: 0 var(--s1); cursor: default; }
+.diff-file.beside > .diff-head:hover { background: transparent; }
+.diff-file.beside > .diff { grid-column: 2; min-width: 0; }
+.diff-file.beside > :not(.diff-head):not(.diff) { grid-column: 1 / -1; }
+/* + or − before a line's words, in its colour; the words start right beside it. */
+.diff-sign { user-select: none; text-align: center; }
+.diff-line.add .diff-sign { color: var(--done); }
+.diff-line.del .diff-sign { color: var(--off); }
 .diff-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 /* Which line it is, quiet at the left of each line. */
 .diff-no { align-self: start; color: var(--sub); text-align: right; font-variant-numeric: tabular-nums; user-select: none; }
@@ -795,9 +805,10 @@ button.diff-no:hover { color: var(--ink); background: var(--raised); border-radi
 .diff-name.link { margin-inline: 0; padding-inline: var(--s1); }
 .diff-name.link:hover { background: var(--raised); }
 .diff-count { color: var(--sub); white-space: nowrap; }
-/* What was added is in ink, what stays quiet, what went struck through. No fill: a filled line is one marked, with the marker. */
-.diff-line.del { color: var(--sub); }
-.diff-line.del .diff-text { text-decoration: line-through; }
+/* What was added on green, what went on red, what stays quiet, as any diff; yellow is the marker's alone (a line
+   marked while reading). */
+.diff-line.add { background: color-mix(in srgb, var(--done) 14%, transparent); }
+.diff-line.del { background: color-mix(in srgb, var(--off) 12%, transparent); }
 .diff-line.same { color: var(--sub); }
 .diff-line.hunk { color: var(--sub); margin-top: var(--s2); }
 .diff-line.hunk:first-child { margin-top: 0; }
@@ -1273,8 +1284,11 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 /* Copied: the text gives way to the word for a moment, in the same place. */
 [data-copied] { position: relative; color: transparent !important; }
 [data-copied]::after { content: attr(data-copied-word); position: absolute; inset: 0; display: flex; align-items: center; padding: inherit; color: var(--ink); font-family: var(--sans); font-weight: 600; }
-/* What is not committed, beside Commit; its diff opens there, under its line, as any diff does. */
-.step-diff { margin-top: var(--s2); }
+/* What is not committed, beside Commit: its diff in a box of its own, scrolling in it when long, its top level
+   with Commit's (the step that sets words on the button's middle sets no box there). */
+.step-about:has(> .step-diff) { padding-top: 0; }
+.step-diff { max-height: 320px; overflow: auto; padding: var(--s3); border: 1px solid var(--rule); border-radius: var(--r-place); }
+.step-diff > .diff-file:last-child { margin-bottom: 0; }
 /* A step's line with its quiet second action at the right end (Reset, Reject). */
 .step-line { display: flex; align-items: center; gap: var(--s3); margin-top: calc((1.5em - var(--h-control)) / 2); }
 .step-line > p { flex: 1; min-width: 0; }

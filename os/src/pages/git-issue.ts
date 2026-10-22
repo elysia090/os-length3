@@ -42,13 +42,13 @@ function button(text: string, primary = false): HTMLButtonElement {
 const summaries = new Map<string, string>();
 
 /**
- * The issue's detail (what was written under its first line), above Commit and Push: written right there, the
+ * The issue's summary (what was written under its first line), above Commit and Push: written right there, the
  * field one with the box's ground until it is pressed (then a field), saved as it is left. The box is that much
- * taller (issue #20). The same detail, named as where it was first written.
+ * taller (issue #20). The same summary, named as where it was first written.
  */
 function summary(issue: Issue, after: () => void): HTMLElement {
   const key = `${issue.repo}/${issuePath(issue)}`;
-  const field = h('textarea', {class: 'issue-summary', rows: '4', 'aria-label': t('Detail'), placeholder: t('Detail (optional)'), spellcheck: 'false'}) as HTMLTextAreaElement;
+  const field = h('textarea', {class: 'issue-summary', rows: '4', 'aria-label': t('Summary'), placeholder: t('Summary'), spellcheck: 'false'}) as HTMLTextAreaElement;
   field.value = summaries.get(key) ?? issue.detail;
   const error = h('p', {class: 'error', role: 'alert'});
   field.addEventListener('input', () => summaries.set(key, field.value));
@@ -151,19 +151,14 @@ export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEv
 }
 
 /**
- * What is not committed in the copy `at` shows (▸ 5 files): pressed, its diff opens right there, as any diff
- * does, under the line; pressed again it folds.
+ * What is not committed in the copy `at`: its diff in a box of its own, there from the start (named for a screen
+ * reader by how many files: "5 files not committed"); a file's name opens it in Forge.
  */
 export function notCommitted(at: string, n: number, events: IssueEvents): HTMLElement {
-  const inside = h('div', {class: 'step-diff'}, quiet(t('Reading…')));
-  const fold = h('details', {class: 'stage-diff'}, h('summary', {}, tn('{n} file not committed', '{n} files not committed', n)), inside) as HTMLDetailsElement;
-  let read = false;
-  fold.addEventListener('toggle', () => {
-    if (!fold.open || read) return;
-    read = true;
-    void git.diff(at).then((files) => inside.replaceChildren(...diffFiles(files, {reveal: (p) => events.open(at, p)})), (e) => inside.replaceChildren(h('p', {class: 'error'}, errorText(e))));
-  });
-  return fold;
+  const box = h('div', {class: 'step-diff', role: 'region', 'aria-label': tn('{n} file not committed', '{n} files not committed', n)}, quiet(t('Reading…')));
+  void git.diff(at).then((files) => box.replaceChildren(...diffFiles(files, {reveal: (p) => events.open(at, p), beside: true})),
+    (e) => box.replaceChildren(h('p', {class: 'error'}, errorText(e))));
+  return box;
 }
 
 /**
@@ -262,7 +257,7 @@ export function mergeRow(issue: Issue, s: RepoState | undefined, events: IssueEv
 
 /** A diff whose lines can be marked, as with a highlighter: `marked` shows, `pending` collects what is pressed now. */
 function markedDiff(files: git.FileDiff[], marked: Set<string>, pending: Set<string> | null): HTMLElement[] {
-  return diffFiles(files, {line: (row, key) => {
+  return diffFiles(files, {beside: true, line: (row, key) => {
     if (marked.has(key)) row.classList.add('marked');
     if (!pending) return;
     row.classList.add('markable');
