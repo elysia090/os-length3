@@ -14,6 +14,7 @@ import {ServerLayer} from './pages/server-layer.ts';
 import {runtime} from './pages/runtime.ts';
 import {FileTree} from './pages/tree.ts';
 import {begin} from './lifecycle.ts';
+import {keepFocus} from './focus.ts';
 import {learnHome} from './inbox.ts';
 import {begin as lookForNews, look, marks, news, onNews} from './news.ts';
 import {devicePage} from './pages/device.ts';
@@ -64,6 +65,8 @@ const fileTree = new FileTree({
   currentFile: () => (current === 'forge' ? readingPath : null),
 });
 document.body.append(fileTree.element);
+// A control drawn again or held while its deed runs gives the keyboard back, never to the body (focus.ts).
+keepFocus();
 // Server is laid over the page the same way: people one knows, their boards, each board's talk and TODO.
 const serverLayer = new ServerLayer(ctx);
 

@@ -49,13 +49,13 @@ function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLE
   let stub: HTMLElement;
   if (me.addresses.length) {
     const a = inbox.shown(me.addresses[0].address);
-    const text = h('button', {type: 'button', class: 'stub-text mono'}, a);
+    const text = h('button', {type: 'button', class: 'stub-text'}, a);
     copying(text, a);
     const code = h('button', {type: 'button', class: 'stub-code mono', 'aria-label': t('Your code {code}', {code: me.code})}, me.code);
     copying(code, me.code);
     stub = h('div', {class: 'stub'}, text, code, gear);
   } else {
-    const name = h('input', {class: 'stub-in mono', placeholder: t('name'), 'aria-label': t('Name'), autocapitalize: 'off', spellcheck: 'false', maxlength: '31'}) as HTMLInputElement;
+    const name = h('input', {class: 'stub-in', placeholder: t('name'), 'aria-label': t('Name'), autocapitalize: 'off', spellcheck: 'false', maxlength: '31'}) as HTMLInputElement;
     name.addEventListener('keydown', async (e) => {
       if (e.key !== 'Enter' || e.isComposing || !name.value.trim() || name.readOnly) return;
       error.textContent = '';
@@ -71,7 +71,7 @@ function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLE
   const item = (label: string, at: Node | null = null) => h('button', {type: 'button', class: 'pop-item'}, label, at) as HTMLButtonElement;
   /** Your own domain, written whole in one field (name@domain, the @ too); its record looked for while the panel is open. */
   const own = (): HTMLElement => {
-    const field = h('input', {class: 'line-in mono', placeholder: t('name@example.org'), 'aria-label': t('Name on your domain'),
+    const field = h('input', {class: 'line-in', placeholder: t('name@example.org'), 'aria-label': t('Name on your domain'),
       autocapitalize: 'off', spellcheck: 'false', maxlength: '285'}) as HTMLInputElement;
     const record = h('div', {class: 'stub-record'});
     const parts = () => {
@@ -134,7 +134,7 @@ function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLE
         : a.until ? h('span', {class: 'muted small'}, t('Until {date}', {date: day(a.until)})) : null;
       const renew = a.until && (a.ended || a.until - Date.now() < YEAR) ? h('button', {type: 'button', class: 'button small-button primary'}, t('Renew')) as HTMLButtonElement : null;
       if (renew) deed(renew, async () => { await inbox.renew(a.address); again(); });
-      return h('div', {class: 'your-row'}, h('span', {class: 'mono'}, inbox.shown(a.address)), state, renew);
+      return h('div', {class: 'your-row'}, h('span', {}, inbox.shown(a.address)), state, renew);
     }));
   };
   // With no name yet there is nothing else in it: the field at once.
@@ -234,7 +234,7 @@ export function inboxPage(ctx: Context): Node[] {
       const waiting = th.address === open ? 0 : th.unread;
       const b = h('button', {type: 'button', class: 'inbox-row', 'data-state': th.state, 'data-address': th.address},
         h('span', {class: 'inbox-who'}, h('b', {}, th.name || inbox.shown(th.address)), waiting ? h('span', {class: 'unread'}, `${waiting}`) : null),
-        h('span', {class: 'muted small mono'}, inbox.shown(th.address)),
+        h('span', {class: 'muted small'}, inbox.shown(th.address)),
         h('span', {class: 'muted small inbox-last'}, `${th.last.mine ? t('You: ') : ''}${th.last.type === 'message' ? '' : `${KIND(th.last.type)} · `}${th.last.body}`));
       if (th.address === open) b.setAttribute('aria-current', 'true');
       b.addEventListener('click', () => void show(th.address, rows, pane));
@@ -363,7 +363,7 @@ export function inboxPage(ctx: Context): Node[] {
     sendB.addEventListener('click', () => void go());
     text.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing) { e.preventDefault(); void go(); } });
     pane.replaceChildren(
-      h('header', {class: 'inbox-top'}, h('b', {class: 'mono'}, inbox.shown(address)), lineWord, h('span', {class: 'grow'}), ...decide),
+      h('header', {class: 'inbox-top'}, h('b', {}, inbox.shown(address)), lineWord, h('span', {class: 'grow'}), ...decide),
       messages,
       h('div', {class: 'inbox-write'},
         h('div', {class: 'row write-line'}, text, sendB),

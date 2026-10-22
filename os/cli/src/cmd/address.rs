@@ -22,18 +22,25 @@ use serde_json::json;
 
 /// This device's SSH as data: whether it listens, to whom, where, its host key, the keys let in.
 fn shown(h: &ssh::Here) -> serde_json::Value {
-    json!({"on": h.on, "scope": h.scope, "port": h.port, "bound": h.bound, "destinations": h.destinations, "fingerprint": h.fingerprint,
-        "keys": h.keys, "started": h.started})
+    json!({"on": h.on, "scope": h.scope, "port": h.port, "bound": h.bound, "interfaces": h.interfaces, "destinations": h.destinations,
+        "fingerprint": h.fingerprint, "keys": h.keys, "started": h.started})
 }
 
-/// What a person checks before trusting it, plainly, a line each: who may connect (and on which addresses here),
-/// how many keys are let in, and the host key ssh will show the first time.
+/// The addresses taken besides loopback, each after its interface (`wlan0 192.168.1.5`); a record from before
+/// interfaces were kept names the addresses alone.
+fn taken(h: &ssh::Here) -> Vec<String> {
+    if !h.interfaces.is_empty() { return h.interfaces.iter().map(|t| format!("{} {}", t.interface, t.addr)).collect(); }
+    h.bound.iter().filter(|a| !matches!(a.as_str(), "127.0.0.1" | "::1")).cloned().collect()
+}
+
+/// What a person checks before trusting it, plainly, a line each: who may connect (and on which interfaces and
+/// addresses here), how many keys are let in, and the host key ssh will show the first time.
 fn facts(h: &ssh::Here) -> Vec<String> {
-    let lan: Vec<&str> = h.bound.iter().map(String::as_str).filter(|a| !matches!(*a, "127.0.0.1" | "::1")).collect();
+    let lan = taken(h);
     let mut out = vec![match h.scope {
         ssh::Scope::Device => tr!("From this device only (127.0.0.1): no other PC finds it", "この端末からだけ（127.0.0.1）：ほかの PC からは見えません"),
-        ssh::Scope::Network if lan.is_empty() => tr!("From PCs on the same network too (no private address here now: this device only until one comes)",
-            "同じネットワークの PC からも（いまはプライベートなアドレスがないので、できるまでこの端末からだけ）"),
+        ssh::Scope::Network if lan.is_empty() => tr!("From PCs on the same network too (no LAN or VPN address here now: this device only until one comes)",
+            "同じネットワークの PC からも（いまは LAN や VPN のアドレスがないので、できるまでこの端末からだけ）"),
         ssh::Scope::Network => tr!("From PCs on the same network too ({}); never from the Internet", "同じネットワークの PC からも（{}）。インターネットからは入れません", lan.join(", ")),
     }];
     out.push(if h.keys == 1 { tr!("1 key let in ({})", "入れる鍵：1本（{}）", ssh::KEYS) } else { tr!("{} keys let in ({})", "入れる鍵：{}本（{}）", h.keys, ssh::KEYS) });

@@ -97,6 +97,12 @@ a { color: var(--ink); }
    window's side, so they do not crowd it. */
 .rail { border-right: 1px solid var(--rule); padding-right: calc(var(--rail-line-gap) - var(--s3)); height: var(--inner-h); position: sticky; top: var(--outer-top); z-index: 6; display: flex; flex-direction: column; }
 .rail-tabs { display: flex; flex-direction: column; align-items: center; gap: var(--s1); flex: 1; min-height: 0; padding: var(--rail-top) 0 var(--s3); }
+/* A window too short for the rail (a laptop at 200% zoom): the rail is as tall as its places and goes with the page,
+   so + and the person's icon are reached by scrolling rather than lying under each other. */
+@media (max-height: 700px) {
+  .rail { position: static; height: auto; min-height: var(--inner-h); }
+  .rail-tabs { flex: 1 0 auto; }
+}
 
 /* The person's own icon at the foot of the rail, and what it brings out. It
    sits a little above the prompt box's line (the box floats s5 over the
@@ -113,7 +119,10 @@ a { color: var(--ink); }
 /* A popover (the person's menu, Inbox's names): one box, a head over each group, a row per item. */
 .pop { display: grid; padding: var(--s2); background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-card); }
 .me-pop {
-  position: absolute; left: calc(100% + var(--s3)); bottom: 0; z-index: 6; min-width: 280px;
+  position: absolute; left: calc(100% + var(--s3)); bottom: 0; z-index: 6;
+  /* As wide as it needs, but never past the window's own gutter (a 320 px phone has 194 px beside the rail). */
+  min-width: min(280px, calc(100vw - 2 * var(--outer) - var(--rail)));
+  max-width: calc(100vw - 2 * var(--outer) - var(--rail));
   visibility: hidden; opacity: 0; transition: opacity var(--motion), visibility 0s var(--motion);
 }
 .me-wrap.open .me-pop { visibility: visible; opacity: 1; transition: opacity var(--motion), visibility 0s; }
@@ -221,7 +230,7 @@ a { color: var(--ink); }
 .identity .unset { color: var(--sub); font-weight: 400; }
 .handle { color: var(--sub); }
 .bio { margin-top: var(--s3); max-width: 60ch; white-space: pre-wrap; }
-.counts { margin-top: var(--s3); display: flex; gap: var(--s5); color: var(--sub); }
+.counts { margin-top: var(--s3); display: flex; flex-wrap: wrap; gap: 0 var(--s5); color: var(--sub); }
 .counts b { color: var(--ink); }
 .edit { display: grid; gap: var(--s3); max-width: 520px; }
 /* A field takes its column's width, never its own: on a phone the form stays inside the window. */
@@ -312,7 +321,8 @@ span.todo-title { min-height: 0; }
 .git-filter { margin-top: var(--s5); }
 .section > h2 > span small { margin-left: var(--s2); }
 .issue-kind { font-weight: 700; }
-.issue-where { font: var(--t-meta)/1.6 var(--mono); color: var(--sub); }
+/* Where an issue is (its repo) is a name: the sans, as every name is. */
+.issue-where { font: var(--t-meta)/1.6 var(--sans); color: var(--sub); }
 /* Git keeps one centred column of comfortable width: the form, the rows, the notes and the prompt box line up. */
 .git-flow > * { max-width: 760px; margin-inline: auto; }
 /* A card of rows, like the File tree and the avatar's popover: its corner
@@ -328,6 +338,13 @@ button.row-item:hover:not(:disabled) { background: var(--raised); }
 button.row-item:disabled { cursor: default; color: var(--sub); }
 .row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-meta { flex: none; color: var(--sub); font: var(--t-meta) var(--mono); }
+/* A phone has no room for a row's name beside its facts: the name takes its own line, the facts the next, the deed
+   still at the right end. Before, the facts (which never shrink) squeezed the name to nothing (a device unnamed). */
+@media (max-width: 560px) {
+  .rows > .row-item { flex-wrap: wrap; }
+  .rows > .row-item > .row-name { flex-basis: 100%; }
+  .rows > .row-item > .button:last-child { margin-left: auto; }
+}
 .work-act { margin-top: var(--s3); }
 .work-act .line-in { flex: 1; }
 .issue-one { display: grid; gap: var(--s2); }
@@ -427,6 +444,8 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 }
 .chips { display: flex; flex-wrap: wrap; gap: var(--s2); }
 .center { grid-column: 1; position: relative; min-height: 0; border-right: 1px solid var(--rule); overflow: clip; }
+/* No pane, no line (Server signed out): the center keeps its width, so nothing on it moves. */
+.work.no-side > .center { border-right-color: transparent; }
 .flow { height: 100%; overflow-y: auto; padding: var(--s3) var(--s5) 160px; }
 .flow:focus-visible { outline-offset: -2px; }
 .path {
@@ -564,7 +583,7 @@ button.run-line { margin-inline-start: calc(-1 * var(--s1)); min-width: 0; }
 .diff-no { align-self: start; color: var(--sub); text-align: right; font-variant-numeric: tabular-nums; user-select: none; }
 /* A line's number in the copy here opens the center at it. */
 button.diff-no { padding: 0; border: 0; background: transparent; font: inherit; cursor: pointer; }
-button.diff-no:hover { color: var(--ink); text-decoration: underline; }
+button.diff-no:hover { color: var(--ink); background: var(--raised); border-radius: var(--r-field); }
 /* A file of a diff: a fold, its name and what was added and removed. */
 .diff-file { margin-bottom: var(--s3); }
 .diff-head { display: flex; align-items: baseline; gap: var(--s3); min-height: var(--h-row); padding: var(--s1) var(--s1); border-radius: var(--r-field); cursor: pointer; font: var(--t-meta) var(--mono); }
@@ -577,7 +596,8 @@ button.diff-no:hover { color: var(--ink); text-decoration: underline; }
 .diff-head.asking:hover { background: transparent; }
 .diff-head.asking > .muted { font-family: var(--sans); }
 .diff-name { font-weight: 600; overflow-wrap: anywhere; }
-.diff-name.link:hover { text-decoration: underline; }
+.diff-name.link { margin-inline: 0; padding-inline: var(--s1); }
+.diff-name.link:hover { background: var(--raised); }
 .diff-count { color: var(--sub); white-space: nowrap; }
 /* What was added is in ink, what stays quiet, what went struck through. No fill: a filled line is one marked, with the marker. */
 .diff-line.del { color: var(--sub); }
@@ -595,7 +615,9 @@ mark { background: var(--ink); color: var(--ground); }
 .facts dd { margin: 0; overflow-wrap: anywhere; }
 .mono { font-family: var(--mono); font-size: var(--t-meta); }
 .issue-list { list-style: none; margin: 0; padding: 0; }
-.link { border: 0; padding: var(--s1) 0; background: transparent; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; text-align: left; }
+/* What leads somewhere from a list (an issue in the reference, what a message is about): a row, never an underlined word. */
+.link { border: 0; padding: var(--s1) var(--s2); margin-inline: calc(-1 * var(--s2)); border-radius: var(--r-field); background: transparent; cursor: pointer; text-align: left; }
+.link:hover { background: var(--raised); }
 .pane { padding: var(--s5); overflow: auto; min-height: 0; }
 .pane h2 { font-size: var(--t-body); font-weight: 600; }
 .pane .empty { margin-top: var(--s3); padding: var(--s5); }
@@ -610,7 +632,7 @@ mark { background: var(--ink); color: var(--ground); }
    leaves (tree.ts). */
 .tree {
   position: fixed; top: var(--tree-top, var(--outer-top)); left: calc(var(--outer) + var(--rail) + var(--s2)); z-index: 5;
-  width: clamp(260px, 20vw, 340px); max-height: calc(100vh - var(--tree-top, var(--outer-top)) - var(--outer-bottom)); overflow: auto;
+  width: min(clamp(260px, 20vw, 340px), calc(100vw - 2 * var(--outer) - var(--rail) - var(--s2))); max-height: calc(100vh - var(--tree-top, var(--outer-top)) - var(--outer-bottom)); overflow: auto;
   /* Concentric with its rows: the card's corner is the row's corner plus the padding between them. */
   padding: var(--s2); background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-card);
   visibility: hidden; opacity: 0;
@@ -712,7 +734,7 @@ mark { background: var(--ink); color: var(--ground); }
 .space-foot { display: flex; align-items: center; gap: var(--s3); padding-top: var(--s3); }
 .space-foot .grow { flex: 1; }
 .link-name { border: 0; padding: 0; background: transparent; font: inherit; font-weight: 600; color: inherit; text-align: left; cursor: pointer; }
-.link-name:hover { text-decoration: underline; }
+.link-name:hover { background: var(--raised); border-radius: var(--r-field); }
 @media (max-width: 900px) { .space-box { grid-template-columns: 1fr; min-height: 0; } .space-col + .space-col { border-left: 0; border-top: 1px solid var(--rule); } }
 /* Inbox: conversations on the left, the one open on the right */
 .inbox-box { display: grid; grid-template-columns: minmax(220px, 1fr) 2fr; margin-top: var(--s4); height: max(420px, calc(var(--inner-h) - 150px)); border: 1px solid var(--rule); border-radius: var(--r-place); overflow: hidden; }
@@ -759,8 +781,8 @@ mark { background: var(--ink); color: var(--ground); }
 .issue-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); margin-top: var(--s2); }
 .issue-foot > .issue-about { flex: 1; min-width: 0; }
 .issue-about { display: grid; gap: var(--s1); justify-items: start; min-width: 0; }
-.issue-about .issue-where { font-family: var(--mono); font-size: var(--t-meta); }
-.issue-big-head .issue-where { font-family: var(--mono); font-size: var(--t-meta); }
+.issue-about .issue-where { font-size: var(--t-meta); }
+.issue-big-head .issue-where { font-size: var(--t-meta); }
 
 /* Issues as large boxes side by side: one in full, its neighbours' edges
    showing at both sides; the track slides to the one chosen. An edge is a
@@ -998,7 +1020,7 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
    copies it, and it says so for a moment. */
 .stub-holder { position: relative; display: grid; gap: var(--s2); justify-items: start; margin: var(--s5) 0 var(--s4); }
 .stub { display: flex; align-items: center; width: min(100%, 400px); min-height: var(--h-control); border: 1px solid var(--edge); border-radius: var(--r-field); background: var(--raised); }
-.stub-text, .stub-in { flex: 1; min-width: 0; height: calc(var(--h-control) - 2px); padding: 0 var(--s3); border: 0; border-radius: var(--r-field) 0 0 var(--r-field); background: transparent; color: var(--ink); font: 600 var(--t-body)/1 var(--mono); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stub-text, .stub-in { flex: 1; min-width: 0; height: calc(var(--h-control) - 2px); padding: 0 var(--s3); border: 0; border-radius: var(--r-field) 0 0 var(--r-field); background: transparent; color: var(--ink); font: 600 var(--t-body)/1 var(--sans); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stub-text { cursor: copy; }
 /* The code beside the name: six digits to be found by, copied by a press. */
 .stub-code { flex: none; height: calc(var(--h-control) - 2px); padding: 0 var(--s3); border: 0; border-left: 1px solid var(--rule); background: transparent; color: var(--sub); font: var(--t-meta)/1 var(--mono); letter-spacing: .08em; cursor: copy; }
@@ -1159,7 +1181,9 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 /* Words of two sizes in a row share a baseline; the face sits centred by them. */
 .people li { display: flex; align-items: baseline; gap: var(--s2); min-width: 0; }
 .people li > .face { align-self: center; }
-.people li > :not(.face) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A long name wraps rather than being cut short at the pane's edge (§4), and owner is never cut. */
+.people li > :not(.face) { min-width: 0; overflow-wrap: anywhere; }
+.people li > .muted { flex: none; }
 .face { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--rule); border-radius: var(--r-round); font: 600 11px var(--sans); }
 .side-repo { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s2); width: 100%; padding: var(--s1) var(--s2); margin: 0 calc(-1 * var(--s2)); border: 0; border-radius: var(--r-field); background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
 .side-repo:hover { background: var(--raised); }

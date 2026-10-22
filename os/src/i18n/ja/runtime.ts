@@ -84,7 +84,7 @@ export default {
   'PCs on this LAN or VPN; never the Internet.': 'この LAN や VPN の PC から。インターネットからは入れません。',
   'From this device only (127.0.0.1): no other PC finds it': 'この端末からだけ（127.0.0.1）：ほかの PC からは見えません',
   'From PCs on the same network too ({list}); never from the Internet': '同じネットワークの PC からも（{list}）。インターネットからは入れません',
-  'From PCs on the same network too (no private address here now)': '同じネットワークの PC からも（いまはプライベートなアドレスがありません）',
+  'From PCs on the same network too (no LAN or VPN address here now)': '同じネットワークの PC からも（いまは LAN や VPN のアドレスがありません）',
   'Host key, as ssh shows it the first time:': 'ホスト鍵（初めて接続するとき ssh が表示します）：',
   'SSH is the desktop app\'s: a device turns it on there, and its addresses stay on it.': 'SSH はデスクトップアプリのものです。オンにするのはその端末で、アドレスはその端末から出ません。',
   'New dotfile': '新しい dotfile',
