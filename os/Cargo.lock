@@ -2446,6 +2446,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "length3-core-web"
+version = "0.1.0"
+dependencies = [
+ "length3-core",
+ "serde_json",
+]
+
+[[package]]
 name = "length3-os"
 version = "0.1.0"
 dependencies = [

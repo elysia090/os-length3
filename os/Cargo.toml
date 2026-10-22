@@ -1,7 +1,7 @@
 # One workspace for the app, the l3 command and the core they share, so the
 # app and the command can never disagree about what a repo or an issue is.
 [workspace]
-members = ["core", "cli", "src-tauri"]
+members = ["core", "core/web", "cli", "src-tauri"]
 resolver = "2"
 
 [profile.release]
