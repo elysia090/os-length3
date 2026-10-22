@@ -169,20 +169,27 @@ function cutTree(repo: string, id: string | null): Promise<Tree> {
   return p;
 }
 
-interface RemoteCut { id: string; parent: string | null; merged?: string | null; tree: Tree; kind: string; title: string; issue: string; note: string; time: number; added: number; removed: number }
+interface RemoteCut { id: string; parent: string | null; merged?: string | null; tree?: Tree; files?: number; folders?: string[];
+  kind: string; title: string; issue: string; note: string; time: number; added: number; removed: number }
 
 async function webLog(repo: string): Promise<Cut[]> {
   if (!connection()) return [];
-  const r = await api(at(repo, '/log?limit=50', lineOf(repo)));
+  // What each commit changed, as the Remote counted it, without its tree; a Remote that does not count
+  // it yet sends the trees, and they are compared here.
+  const r = await api(at(repo, '/log?limit=50&summary=1', lineOf(repo)));
   if (r.status === 404) return [];
   const cuts = await r.json() as RemoteCut[];
-  const trees = new Map(cuts.map((c) => [c.id, c.tree]));
+  const trees = new Map(cuts.map((c) => [c.id, c.tree ?? {}]));
   return cuts.map((c) => {
-    const parent = (c.parent && trees.get(c.parent)) || {};
-    const changed = [...new Set([...Object.keys(c.tree), ...Object.keys(parent)])]
-      .filter((p) => c.tree[p] !== parent[p] && (typeof c.tree[p] === 'string' || typeof parent[p] === 'string'));
-    const folders = [...new Set(changed.map(folderOf))];
-    return {id: c.id, issue: c.issue || null, kind: c.kind || null, title: c.title, note: c.note, time: c.time, folders, files: changed.length, added: c.added, removed: c.removed, merged: c.merged ?? null};
+    let folders = c.folders, files = c.files;
+    if (typeof files !== 'number' || !Array.isArray(folders)) {
+      const tree = c.tree ?? {}, parent = (c.parent && trees.get(c.parent)) || {};
+      const changed = [...new Set([...Object.keys(tree), ...Object.keys(parent)])]
+        .filter((p) => tree[p] !== parent[p] && (typeof tree[p] === 'string' || typeof parent[p] === 'string'));
+      folders = [...new Set(changed.map(folderOf))];
+      files = changed.length;
+    }
+    return {id: c.id, issue: c.issue || null, kind: c.kind || null, title: c.title, note: c.note, time: c.time, folders, files, added: c.added, removed: c.removed, merged: c.merged ?? null};
   });
 }
 

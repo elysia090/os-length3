@@ -71,8 +71,11 @@ export async function throttled(q: Db, key: string, max: number, windowMs: numbe
  */
 export const lock = (tx: Db, key: string) => tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
 
-/** A moment as milliseconds since the epoch, as clients read them. */
-export const ms = (moment: SQL) => sql<number>`(extract(epoch from ${moment}) * 1000)::float8`;
+/**
+ * A moment as whole milliseconds since the epoch, as clients read them. Postgres keeps microseconds:
+ * unfloored, a moment made by now() reads as 1792307357528.123, which core and l3 refuse (a u64).
+ */
+export const ms = (moment: SQL) => sql<number>`floor(extract(epoch from ${moment}) * 1000)::float8`;
 
 /** That many milliseconds before now, as Postgres reads it (`at > ${ago(KEPT)}`): a parameter, never text in the query. */
 export const ago = (span: number) => sql`(now() - make_interval(secs => ${span / 1000}))`;
@@ -149,13 +152,14 @@ export const fromOrigins = (origins: string[]) => cors({
 export const API_POLICY = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
 
 /**
- * Nothing the Remote answers is kept by a cache, read as another type than it says, framed, taken
- * by another site's page as a resource, or reached again but by HTTPS; and a link followed from it
+ * Nothing the Remote answers is kept by a cache (but what a route says may be kept: a file named by
+ * its digest or its pinned name, files.ts), read as another type than it says, framed, taken by
+ * another site's page as a resource, or reached again but by HTTPS; and a link followed from it
  * says nothing of where it came from (OWASP ASVS 14.4; the app's own files: public/_headers).
  */
 export const unkept: MiddlewareHandler = async (c, next) => {
   await next();
-  c.header('Cache-Control', 'no-store');
+  if (!c.res.headers.has('Cache-Control')) c.header('Cache-Control', 'no-store');
   c.header('X-Content-Type-Options', 'nosniff');
   if (!c.res.headers.has('Content-Security-Policy')) c.header('Content-Security-Policy', API_POLICY);
   c.header('X-Frame-Options', 'DENY');

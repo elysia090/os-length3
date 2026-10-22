@@ -15,7 +15,8 @@
 //   POST   /v1/repos/:name/cuts       {version, parent, kind, title, issue, note, added, removed}:
 //                                      the draft at that version becomes a cut
 //   GET    /v1/repos/:name/cuts/:id
-//   GET    /v1/repos/:name/log        from the line's head along first parents
+//   GET    /v1/repos/:name/log        from the line's head along first parents, each commit with what it changed
+//                                      (files, folders); ?summary=1 leaves each one's tree out
 //   POST   /v1/repos/:name/off | on   off: a passkey just now, the names and the code; on: back at once
 //   POST   /v1/repos/:name/discard    an off repo goes for good, now (asked as off is)
 //   GET    /v1/off-code  POST {code}
@@ -293,10 +294,12 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
   });
 
   // As git log: from the line's head along first parents, so a work's history goes on into main's
-  // from where it began, and every commit's parent is there to compare with. One walk in the database,
-  // each step one lookup of the repo's commits by their key.
+  // from where it began. One walk in the database, each step one lookup of the repo's commits by their
+  // key. Each commit says what it changed from its parent (files, folders: 0007's cut_change); with
+  // ?summary=1 that is all, and no tree is read or sent (a client that compares trees itself asks without).
   v1.get('/repos/:name/log', async (c) => {
     const limit = Math.min(LIMIT.log, Math.max(1, Number(c.req.query('limit') ?? 50) || 50));
+    const trees = c.req.query('summary') === '1' ? sql`` : sql`c.tree, `;
     const row = await lineAt(db, c.get('userId'), c.req.param('name'), lineOf(c));
     on(row?.off);
     if (!row?.head) return c.json([]);
@@ -306,7 +309,8 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
         select c.parent, w.n + 1 from walk w join cut c on c.repo_id = ${row.id} and c.id = w.id
         where c.parent is not null and w.n < ${limit}
       )
-      select c.id, c.parent, c.merged, c.tree, c.kind, c.title, c.issue, c.note, c.added, c.removed, ${ms(sql`c.time`)} as time
+      select c.id, c.parent, c.merged, ${trees}c.kind, c.title, c.issue, c.note, c.added, c.removed, ${ms(sql`c.time`)} as time,
+        coalesce(c.files, 0) as files, coalesce(c.folders, '{}') as folders
       from walk w join cut c on c.repo_id = ${row.id} and c.id = w.id order by w.n`));
   });
 

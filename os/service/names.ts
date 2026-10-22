@@ -66,7 +66,7 @@ export async function claim(db: Db, name: string, domain: string, owner: Owner, 
       setWhere: sql`${theirs} or not ${kept}`,
     }).returning({a: address.address});
   if (done.length) return {ok: true, until: until?.getTime() ?? null};
-  const [row] = await db.select({freed: sql<number | null>`(extract(epoch from ${freed}) * 1000)::float8`}).from(address).where(eq(address.address, a)) as {freed: number | null}[];
+  const [row] = await db.select({freed: sql<number | null>`floor(extract(epoch from ${freed}) * 1000)::float8`}).from(address).where(eq(address.address, a)) as {freed: number | null}[];
   return row?.freed ? {ok: false, until: row.freed + HOLD} : {ok: false};
 }
 

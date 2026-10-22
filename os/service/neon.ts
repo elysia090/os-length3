@@ -19,6 +19,21 @@ export async function migrateRemote(db: ReturnType<typeof drizzle>) {
   await migrate(db, {migrationsFolder: MIGRATIONS});
 }
 
+/**
+ * remote_worker, the login role the Worker connects as, made (or given this new password) as the
+ * owner: a member of remote_app (rows, nothing else; 0001) and of nothing more, its statements cut
+ * off at 15 s. What deploy.ts gives the Worker, and what the production-like selftest connects as
+ * (selftest/prod). `password` is letters and digits only, so it is written into the statement as it is.
+ */
+export async function workerRole(db: ReturnType<typeof drizzle>, password: string): Promise<string> {
+  if (!/^[A-Za-z0-9]+$/.test(password)) throw new Error('remote_worker: a password of letters and digits');
+  const [had] = (await db.execute(sql`select 1 from pg_roles where rolname = 'remote_worker'`)).rows;
+  await db.execute(sql.raw(`${had ? 'ALTER' : 'CREATE'} ROLE remote_worker WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT PASSWORD '${password}'`));
+  await db.execute(sql`grant remote_app to remote_worker`);
+  for (const s of ["statement_timeout = '15s'", "idle_in_transaction_session_timeout = '15s'", "lock_timeout = '5s'"]) await db.execute(sql.raw(`alter role remote_worker set ${s}`));
+  return password;
+}
+
 /** When the newest migration applied to `db` was made (its journal `when`); 0 when none was. */
 async function applied(db: ReturnType<typeof drizzle>): Promise<number> {
   const [had] = (await db.execute(sql`select to_regclass('drizzle.__drizzle_migrations') as t`)).rows as {t: string | null}[];
