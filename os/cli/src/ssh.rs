@@ -12,11 +12,19 @@
 //!             often is not heard for a minute (core ssh::Tries)
 //!   where     the scope chosen (core ssh::listen_on): 127.0.0.1 and ::1
 //!             alone, so another PC finds the port closed; or, for the same
-//!             network too, each private or VPN address besides, a socket
-//!             each, never 0.0.0.0 and never a public address. Looked at
-//!             again at every beat (and at once on SIGUSR1, when another
-//!             scope is chosen): an address gone or no longer asked for is
-//!             let go, and the connections that came in on it are closed
+//!             network too, each LAN address besides and a VPN interface's
+//!             100.64/10 one, a socket each, never 0.0.0.0, a public
+//!             address, a bridge's or a container's. Looked at again at
+//!             every beat (and at once on SIGUSR1, when another scope is
+//!             chosen): an address gone or no longer asked for is let go,
+//!             and the connections that came in on it are closed
+//!   from      only the network of the address a connection came in on
+//!             (core ssh::admit: its subnet, or for a VPN's interface a peer
+//!             the kernel routes by it), or the device itself: Linux takes a
+//!             packet for any of its addresses on any interface, so without
+//!             this a sender on another segment could route to the LAN
+//!             address through the host. Anything else is closed at accept,
+//!             before the banner
 //!   says      `SSH-2.0-length3` when a client connects: not the library or
 //!             its version
 //!   channels  sessions only: no port or agent forwarding, no X11, no
@@ -411,9 +419,11 @@ struct Sockets {
 
 impl Sockets {
     /// Listen on what `scope` asks of the host's addresses now, and on nothing else. Run inside the runtime. What it
-    /// listens on then; an error when 127.0.0.1 cannot be listened on (the port is another program's).
-    fn take(&mut self, scope: ssh::Scope, shared: &Arc<Shared>, config: &Arc<server::Config>) -> Result<Vec<IpAddr>, String> {
-        let want = ssh::listen_on(scope, &ssh::interfaces());
+    /// listens on then, and those besides loopback with their interfaces; an error when 127.0.0.1 cannot be listened
+    /// on (the port is another program's).
+    fn take(&mut self, scope: ssh::Scope, shared: &Arc<Shared>, config: &Arc<server::Config>) -> Result<(Vec<IpAddr>, Vec<ssh::Taken>), String> {
+        let interfaces = ssh::interfaces();
+        let want = ssh::listen_on(scope, &interfaces);
         self.open.retain(|(ip, task)| {
             let keep = want.contains(ip);
             if !keep { task.abort(); log(&format!("no longer listening on {ip}")); }
@@ -435,7 +445,8 @@ impl Sockets {
         }
         let now: Vec<IpAddr> = want.into_iter().filter(|a| self.open.iter().any(|(b, _)| b == a)).collect();
         self.bound.send_replace(now.clone());
-        Ok(now)
+        let taken = ssh::taken(&now, &interfaces);
+        Ok((now, taken))
     }
 }
 
@@ -487,9 +498,9 @@ pub fn serve() -> Result<(), String> {
     });
     let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|e| e.to_string())?;
     let mut sockets = Sockets { port, open: Vec::new(), bound: tokio::sync::watch::channel(Vec::new()).0 };
-    let mut bound = rt.block_on(async { sockets.take(scope, &shared, &config) })?;
+    let (mut bound, taken) = rt.block_on(async { sockets.take(scope, &shared, &config) })?;
     ssh::announce(scope)?;
-    let mut recorded = ssh::record(&data, port, scope, bound.clone(), print.clone()).map_err(|e| e.to_string())?;
+    let mut recorded = ssh::record(&data, port, scope, bound.clone(), taken, print.clone()).map_err(|e| e.to_string())?;
     // Turning on waits for this line; then the log takes standard output and error.
     println!("ready");
     let _ = std::io::stdout().flush();
@@ -508,10 +519,10 @@ pub fn serve() -> Result<(), String> {
         let mut follow = |sockets: &mut Sockets, scope: &mut ssh::Scope, bound: &mut Vec<IpAddr>| {
             let next = ssh::scope(&data);
             match sockets.take(next, &shared, &config) {
-                Ok(now) if (next, &now) != (*scope, &*bound) => {
+                Ok((now, taken)) if (next, &now) != (*scope, &*bound) => {
                     if next != *scope { log(&format!("now {}", next.word())); }
                     (*scope, *bound) = (next, now);
-                    let _ = recorded.set_bound(*scope, bound.clone());
+                    let _ = recorded.set_bound(*scope, bound.clone(), taken);
                 }
                 Ok(_) => {}
                 Err(e) => log(&e),
@@ -553,13 +564,15 @@ pub fn serve() -> Result<(), String> {
     Ok(())
 }
 
-/// A connection: taken only on loopback or a private network, from an address not held off; closed when the
-/// address it came in on is no longer listened on (the scope narrowed, or the address went).
+/// A connection: taken only from the network of the address it came in on, or from the device itself (ssh::admit),
+/// and from an address not held off; otherwise closed before a byte is said. Closed later when the address it came
+/// in on is no longer listened on (the scope narrowed, or the address went).
 fn accept(stream: tokio::net::TcpStream, peer: SocketAddr, shared: &Arc<Shared>, config: &Arc<server::Config>, mut bound: tokio::sync::watch::Receiver<Vec<IpAddr>>) {
-    let Some(local) = stream.local_addr().map(|a| a.ip()).ok().filter(|a| ssh::reachable(*a)) else {
-        log(&format!("{} closed: not on loopback or a private address", peer.ip()));
+    let Ok(local) = stream.local_addr().map(|a| a.ip()) else { return };
+    if !ssh::admit(local, peer.ip(), &ssh::interfaces(), ssh::route_dev) {
+        log(&format!("{} closed: not from the network of {local}", peer.ip()));
         return;
-    };
+    }
     if shared.tries.lock().map(|mut t| t.held(peer.ip(), Instant::now())).unwrap_or(true) {
         log(&format!("{} closed: refused too often lately", peer.ip()));
         return;

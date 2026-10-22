@@ -34,12 +34,20 @@ const reach = (host: string, port: number) => new Promise<string>((resolve) => {
   c.on('close', () => resolve(got || 'closed'));
 });
 const ok = (x: Ran) => { assert.equal(x.code, 0, `${x.out}${x.err}`); return x; };
-/** A private address as the listener counts one: a LAN's, a VPN's shared space, link-local. */
-const priv = (a: string) => /^(10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/.test(a);
-const v4 = Object.values(networkInterfaces()).flat().filter((i) => i && i.family === 'IPv4').map((i) => i!.address);
-const others = v4.filter((a) => !a.startsWith('127.'));
+/**
+ * Whether the same network too listens on an address of an interface, as the listener decides (core ssh::listened):
+ * a LAN's (RFC 1918, link-local) on any interface but a bridge or a container's, or 100.64/10 on a VPN's.
+ */
+const lanV4 = (a: string) => /^(10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/.test(a);
+const sharedV4 = (a: string) => /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(a);
+const bridge = (n: string) => /^(docker|br-|virbr|veth|ve-|vb-|lxcbr|lxdbr|incusbr|cni|flannel|cali|cilium_|podman|vmnet|vboxnet)/.test(n);
+const vpn = (n: string) => /^(tailscale|wg|zt|nebula|wt|CloudflareWARP)/.test(n);
+const v4 = Object.entries(networkInterfaces()).flatMap(([name, list]) => (list ?? []).filter((i) => i.family === 'IPv4').map((i) => ({name, addr: i.address})));
+const listened = new Set(v4.filter((i) => !bridge(i.name) && (lanV4(i.addr) || (sharedV4(i.addr) && vpn(i.name)))).map((i) => i.addr));
+const priv = (a: string) => listened.has(a);
+const others = [...new Set(v4.map((i) => i.addr).filter((a) => !a.startsWith('127.')))];
 
-interface Here { on: boolean; scope: string; port: number; bound: string[]; destinations: string[]; fingerprint: string; keys: number }
+interface Here { on: boolean; scope: string; port: number; bound: string[]; interfaces: {addr: string; interface: string}[]; destinations: string[]; fingerprint: string; keys: number }
 const here = () => ok(d.l3(['address', '--json'])).json as Here;
 
 test('SSH: on from this device only, then the same network too, then back; the Remote hears the scope alone; a page turns it off', {skip: spawnSync('ssh-keygen', ['-?']).error ? 'no ssh-keygen' : false}, async () => {
@@ -75,6 +83,8 @@ test('SSH: on from this device only, then the same network too, then back; the R
     h = here();
     assert.equal(h.scope, 'network');
     assert.deepEqual(h.bound.filter((a) => a !== '127.0.0.1' && a !== '::1').sort(), others.filter(priv).sort());
+    // Each named with its interface, as l3 address and the card say it.
+    assert.deepEqual(h.interfaces.map((t) => `${t.interface} ${t.addr}`).sort(), v4.filter((i) => priv(i.addr)).map((i) => `${i.name} ${i.addr}`).sort());
     for (const a of others) assert.equal(await reach(a, port), priv(a) ? 'SSH-2.0-length3' : 'ECONNREFUSED', a);
     // The Remote hears the new scope at the listener's next beat.
     for (let i = 0; i < 100 && ((await r.api(kai, 'GET', '/v1/ssh')).json as {scope: string}[])[0]?.scope !== 'network'; i++) await new Promise((w) => setTimeout(w, 100));
