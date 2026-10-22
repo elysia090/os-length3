@@ -231,10 +231,12 @@ class Forge extends Part {
   async editFile(path: string, text: string) {
     const editor = this.editor(path);
     await editor.fill(text);
-    await expect(this.fileState(path)).toHaveText('Unsaved');
+    // Not waited for as "Unsaved": a pause of 0.7 s saves it, and a slow machine may take longer than
+    // that to look (`writeOn` holds the clock for a step that needs it unsaved). What counts is that it is saved.
     // Leaving the text saves it at once (as do Ctrl+S and a moment's pause).
     await editor.press('Escape');
     await expect(this.fileState(path)).toBeHidden();
+    await expect(editor).toHaveValue(text);
   }
 
   /** Search the open repo: the results take the reference's place. */
