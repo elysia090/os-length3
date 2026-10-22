@@ -42,6 +42,13 @@ jobs:
       - name: Advisories in what ships
         working-directory: os
         run: npm audit --omit=dev --audit-level=high
+      # Rust's advisories (RustSec) against both lockfiles: a vulnerability fails the run; an
+      # unmaintained or unsound crate deep in the desktop's GTK tree is said, not failed on.
+      - name: Advisories in the Rust crates
+        run: |
+          cargo install --locked cargo-audit@0.22.2
+          cargo audit --file os/Cargo.lock
+          cargo audit --file xlat/Cargo.lock
       - name: Core and l3
         working-directory: os
         run: |
