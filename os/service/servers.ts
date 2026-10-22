@@ -52,7 +52,8 @@ import {and, asc, desc, eq, gt, gte, inArray, isNull, lt, lte, sql} from 'drizzl
 import type {Context, Hono} from 'hono';
 import {claim, codeOf, HOLD, liveAddress, serverAddress, shownAs, takeDown} from './names.ts';
 import type {Plans} from './plan.ts';
-import {ago, body, lock, qualified, refuse, rows, type Db, type Vars} from './request.ts';
+import {hmacHex} from './keys.ts';
+import {addressOf, ago, body, lock, qualified, refuse, rows, slowDown, throttled, type Db, type Vars} from './request.ts';
 import {address, board, boardSeen, guest, invite, member, principalCode, REACH, repoPublic, server, talk, todoItem} from './schema.ts';
 
 export const SERVER = {name: 64, body: 2000, perHour: 60, page: 30, maxPage: 100, boards: 100,
@@ -67,7 +68,7 @@ export const SERVER = {name: 64, body: 2000, perHour: 60, page: 30, maxPage: 100
    * asked, at most 30); a board has so many invitations out and so many guests at once; a guest
    * writes so many posts an hour, and a board's guests together so many; a guest's name is so long.
    */
-  guest: {uses: 20, days: 7, maxDays: 30, invites: 20, guests: 100, perHour: 20, boardPerHour: 100, name: 32}} as const;
+  guest: {uses: 20, days: 7, maxDays: 30, invites: 20, guests: 100, perHour: 20, boardPerHour: 100, name: 32, joinsPerHour: 30}} as const;
 const TODO_ID = /^[0-9a-z-]{1,40}$/;
 const KIND = /^[A-Za-z][A-Za-z0-9-]{0,15}$/;
 const ID = /^[0-9a-z]{17}$/;
@@ -103,7 +104,7 @@ export interface ServerDeps {
   domain: string;
   /** The web app's origin: an invitation's link opens it (…/#guest=BOARD.INVITE). */
   appOrigin?: string;
-  /** Mixed into the digests of invitations and tokens. */
+  /** The key invitations and tokens are kept under (keys.ts: invite); none, a plain digest (tests of other things). */
   secret?: string;
   /** No board is opened past its people (a Remote for research: enter.ts). */
   closed?: boolean;
@@ -129,7 +130,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   const name = (v: unknown) => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ') : '');
   const fine = (n: string) => n.length > 0 && n.length <= SERVER.name;
   /** An invitation's or a token's digest: what is kept of it, so the Remote's copy opens nothing. */
-  const seal = (s: string) => digest(`${d.secret ?? ''}:${s}`);
+  const seal = (s: string) => (d.secret ? hmacHex(d.secret, `invite\n${s}`) : digest(s));
 
   // ---- who may do what ----
   /** `me`'s place in a server that is not gone (removed or left, it answers nothing while it is held). */
@@ -213,7 +214,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
           + (select count(*)::int from server s where s.gone_by = ${me} and s.gone_at > ${ago(HOLD)}) as kept,
         (select count(*)::int from server s where s.made_by = ${me} and s.created_at > ${ago(86_400_000)}) as today`);
       if (count.kept >= SERVER.servers) refuse(429, {error: 'Too many servers'});
-      if (count.today >= SERVER.perDay) refuse(429, {error: 'Too many servers made today'});
+      if (count.today >= SERVER.perDay) slowDown(86_400, {error: 'Too many servers made today'});
       const id = key(), bid = key();
       await tx.insert(server).values({id, name: n, madeBy: me});
       const got = await claim(tx, handle, domain, {serverId: id}, domain === d.domain);
@@ -449,7 +450,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     if (!text || text.length > SERVER.body) return c.json({error: 'A post is at most 2000 characters'}, 400);
     const whose = who.userId ? eq(talk.userId, who.userId) : eq(talk.guestId, who.guestId!);
     const [{n}] = await db.select({n: sql<number>`count(*)::int`}).from(talk).where(and(whose, gte(talk.id, idAt(Date.now() - 3600_000))));
-    if (n >= perHour) return c.json({error: 'Too many posts this hour'}, 429);
+    if (n >= perHour) slowDown(3600, {error: 'Too many posts this hour'});
     const row = {id: postId(), boardId: b.id, userId: who.userId ?? null, guestId: who.guestId ?? null, by: who.by, body: text};
     await db.insert(talk).values(row);
     return c.json(shape(who.userId ?? null, false)(row), 201);
@@ -615,6 +616,10 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const as = name(r?.name);
     if (!guestName(as)) return c.json({error: 'A name of at most 32 characters, without @'}, 400);
     if (!INVITE.test(code)) return c.json({error: 'This invitation does not open this board'}, 403);
+    // Tries from one address are counted too (where Cloudflare says the address): 128 bits are not
+    // found by trying, but each try takes the board's lock and a write (audit V3; ASVS 2.2.1).
+    const from = addressOf(c);
+    if (from) await throttled(db, `guest-join:${from}`, SERVER.guest.joinsPerHour, 3600_000, {error: 'Too many tries from here; try again later'});
     const sealed = await seal(code), token = hex(crypto.getRandomValues(new Uint8Array(32)));
     const g = await db.transaction(async (tx: Db) => {
       await lock(tx, `guests:${at.b.id}`);
@@ -659,7 +664,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const g = await guestOf(c, at.b);
     const [{n}] = await db.select({n: sql<number>`count(*)::int`}).from(talk)
       .where(and(eq(talk.boardId, at.b.id), isNull(talk.userId), gte(talk.id, idAt(Date.now() - 3600_000))));
-    if (n >= SERVER.guest.boardPerHour) return c.json({error: 'Guests have written as much as they may here this hour'}, 429);
+    if (n >= SERVER.guest.boardPerHour) slowDown(3600, {error: 'Guests have written as much as they may here this hour'});
     return write(c, at.b, {guestId: g.id, by: g.name}, SERVER.guest.perHour);
   });
 }

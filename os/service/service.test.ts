@@ -524,9 +524,9 @@ test('Inbox: an address is claimed or published by its domain; messages are smal
   // Mio accepts: now both ways, so signalling may pass, and is taken once.
   await s.call('POST', '/v1/inbox/contacts', {token: mio, body: {address: 'ren@length3.test', state: 'accepted'}});
   assert.equal((await s.call('POST', '/v1/inbox/signals', {token: ren, body: {to: 'mio@example.org', session: 's1', kind: 'offer', data: 'sdp'}})).status, 201);
-  const got = (await s.call('GET', '/v1/inbox/signals?from=ren@length3.test', {token: mio})).json as unknown as {from: string; kind: string}[];
+  const got = (await s.call('POST', '/v1/inbox/signals/take', {token: mio, body: {from: 'ren@length3.test'}})).json as unknown as {from: string; kind: string}[];
   assert.deepEqual(got.map((g) => [g.from, g.kind]), [['ren@length3.test', 'offer']]);
-  assert.deepEqual((await s.call('GET', '/v1/inbox/signals?from=ren@length3.test', {token: mio})).json, []);
+  assert.deepEqual((await s.call('POST', '/v1/inbox/signals/take', {token: mio, body: {from: 'ren@length3.test'}})).json, []);
   // Blocked: nothing more arrives.
   await s.call('POST', '/v1/inbox/contacts', {token: mio, body: {address: 'ren@length3.test', state: 'blocked'}});
   assert.equal((await s.call('POST', '/v1/inbox/messages', {token: ren, body: {to: 'mio@example.org', body: 'hello?'}})).status, 403);
@@ -1331,7 +1331,7 @@ test('Live chat: a device takes only what came from the one it talks with, in it
   await named(s, [ren, 'ren'], [mio, 'mio'], [kai, 'kai']);
   for (const [a, b] of [[ren, 'mio'], [mio, 'ren'], [ren, 'kai'], [kai, 'ren']] as const) await accept(s, a, b);
   const send = (t: string, session: string, kind: string) => s.call('POST', '/v1/inbox/signals', {token: t, body: {to: 'ren', session, kind, data: kind}});
-  const take = (query: string) => s.call('GET', `/v1/inbox/signals?${query}`, {token: ren}).then((r) => (r.json as unknown as {from: string; session: string; kind: string}[]).map((x) => `${x.from} ${x.session} ${x.kind}`));
+  const take = (query: string) => s.call('POST', '/v1/inbox/signals/take', {token: ren, body: Object.fromEntries(new URLSearchParams(query))}).then((r) => (r.json as unknown as {from: string; session: string; kind: string}[]).map((x) => `${x.from} ${x.session} ${x.kind}`));
   await send(mio, 'm1', 'offer');
   await send(kai, 'k1', 'offer');
   // Two chats open: each takes its own peer's offer, and leaves the other's.

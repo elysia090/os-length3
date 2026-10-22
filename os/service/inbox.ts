@@ -27,7 +27,8 @@ import type {Hono} from 'hono';
 import {HTTPException} from 'hono/http-exception';
 import {byCode, claim, codeOf, HOLD, kept, live, release} from './names.ts';
 import type {Plans} from './plan.ts';
-import {ago, body, lock, ms, refuse, rows, type Db, type Vars} from './request.ts';
+import {hmacHex, same} from './keys.ts';
+import {ago, body, lock, ms, refuse, rows, slowDown, type Db, type Vars} from './request.ts';
 import {address, contact, message, signal, throttle} from './schema.ts';
 
 export const INBOX = {
@@ -46,7 +47,7 @@ export interface InboxDeps {
   domain: string;
   /** This Remote's address; a domain's record names its host. */
   baseURL: string;
-  /** The key a domain's proof is made with (the service's secret). */
+  /** The key a domain's proof is made with (keys.ts: domain-proof). */
   secret: string;
   /** A name's TXT records (DNS over HTTPS, or a stand-in in tests). */
   txt?: (name: string) => Promise<string[]>;
@@ -86,8 +87,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   const host = new URL(d.baseURL || 'https://localhost').host.toLowerCase();
   /** The proof for an account on a domain: HMAC-SHA256 under the secret, 26 letters of base32. */
   const proofOf = async (userId: string, domain: string) => {
-    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(d.secret), {name: 'HMAC', hash: 'SHA-256'}, false, ['sign']);
-    const mac = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`length3-domain\n${userId}\n${domain}`)));
+    const mac = (await hmacHex(d.secret, `length3-domain\n${userId}\n${domain}`)).match(/../g)!.map((h) => parseInt(h, 16));
     const abc = 'abcdefghijklmnopqrstuvwxyz234567';
     let bits = 0, value = 0, out = '';
     for (const byte of mac) { value = (value << 8) | byte; bits += 8; while (bits >= 5 && out.length < 26) { out += abc[(value >>> (bits - 5)) & 31]; bits -= 5; } }
@@ -122,7 +122,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     // DNS that cannot be asked now leaves the name as it was found last (and asks again next time).
     const records = await published(row.domain).catch((e: unknown) => { if (e instanceof HTTPException) return null; throw e; });
     if (!records) return !row.lapsedAt;
-    const ok = records.some((r) => r.remote === host && r.proof === proof);
+    const ok = records.some((r) => r.remote === host && same(r.proof, proof));
     seen.set(key, {at: Date.now(), ok});
     if (ok === !!row.lapsedAt) await db.update(address).set({lapsedAt: ok ? null : new Date()}).where(eq(address.address, row.address));
     return ok;
@@ -140,7 +140,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       if (r.n < INBOX.codesPerHour) await tx.insert(throttle).values({key});
       return r.n;
     });
-    if (n >= INBOX.codesPerHour) refuse(429, {error: 'Too many codes looked up this hour'});
+    if (n >= INBOX.codesPerHour) slowDown(3600, {error: 'Too many codes looked up this hour'});
   };
 
   /**
@@ -188,7 +188,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const proof = await proofOf(c.get('userId'), domain);
     const records = await published(domain);
     return c.json({name: recordName(domain), type: 'TXT', value: `v=length3; remote=${host}; proof=${proof}`,
-      found: records.some((r) => r.remote === host && r.proof === proof)});
+      found: records.some((r) => r.remote === host && same(r.proof, proof))});
   });
 
   v1.get('/inbox/me', async (c) => {
@@ -215,7 +215,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     if (domain !== d.domain) {
       // The domain's owner says, in its DNS, that this Remote holds it for this account.
       const proof = await proofOf(me, domain);
-      if (!(await published(domain)).some((r) => r.remote === host && r.proof === proof)) {
+      if (!(await published(domain)).some((r) => r.remote === host && same(r.proof, proof))) {
         return c.json({error: 'The domain does not name this account yet', publish: {name: recordName(domain), type: 'TXT', value: `v=length3; remote=${host}; proof=${proof}`}}, 409);
       }
     }
@@ -291,7 +291,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       (select count(*)::int from message where from_user = ${me} and to_user = ${to.userId} and read_at is null) as pair,
       (select count(*)::int from message m where m.to_user = ${to.userId} and m.read_at is null
         and not exists (select 1 from contact k where k.user_id = ${to.userId} and k.peer = m.from_user and k.state = 'accepted')) as waiting`);
-    if (n.sent >= INBOX.perHour) return c.json({error: 'Too many messages this hour'}, 429);
+    if (n.sent >= INBOX.perHour) slowDown(3600, {error: 'Too many messages this hour'});
     // Not accepted by them yet: a request, of which they hold only a few.
     if (rel.theirs !== 'accepted') {
       if (n.pair >= INBOX.requestsPerPeer) return c.json({error: 'Wait for them to answer before writing more'}, 429);
@@ -376,18 +376,22 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const data = typeof b?.data === 'string' ? b.data : '';
     if (!['offer', 'answer', 'candidate', 'bye'].includes(String(b?.kind)) || data.length > INBOX.signal || typeof b?.session !== 'string' || b.session.length > 64) return c.json({error: 'a signal'}, 400);
     const [{n}] = await db.select({n: sql<number>`count(*)::int`}).from(signal).where(and(eq(signal.from, me), gt(signal.createdAt, new Date(Date.now() - 60_000))));
-    if (n >= INBOX.signalsPerMinute) return c.json({error: 'too many'}, 429);
+    if (n >= INBOX.signalsPerMinute) slowDown(60, {error: 'too many'});
     await db.insert(signal).values({id: crypto.randomUUID(), to: to.userId, from: me, session: b.session, kind: String(b.kind), data});
     return c.json({sent: true}, 201);
   });
 
   // What has come from one person, taken once: their offers (a line not begun yet), and the rest
-  // of the one session asked for. Another chat, or another device's session, keeps its own.
-  v1.get('/inbox/signals', async (c) => {
+  // of the one session asked for. Another chat, or another device's session, keeps its own. Taking
+  // is a POST ({from, session}): it deletes what it hands back, and no GET changes anything, so no
+  // link or page elsewhere can make a browser take someone's signals (audit I2; ASVS 4.2.2, 13.1.x).
+  v1.get('/inbox/signals', (c) => c.json({error: 'Signals are taken with POST /v1/inbox/signals/take'}, 405, {Allow: 'POST'}));
+  v1.post('/inbox/signals/take', async (c) => {
     const me = c.get('userId');
-    const from = await resolve(me, c.req.query('from') ?? '');
+    const b = await body<{from?: unknown; session?: unknown}>(c);
+    const from = await resolve(me, typeof b?.from === 'string' ? b.from : '');
     if (!('userId' in from)) return c.json({error: from.why}, 404);
-    const session = c.req.query('session') ?? '';
+    const session = typeof b?.session === 'string' ? b.session : '';
     const taken = await db.delete(signal).where(and(eq(signal.to, me), eq(signal.from, from.userId), gt(signal.createdAt, new Date(Date.now() - INBOX.signalLife)),
       session ? or(eq(signal.kind, 'offer'), eq(signal.session, session)) : eq(signal.kind, 'offer'))).returning() as (typeof signal.$inferSelect)[];
     return c.json(taken.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())

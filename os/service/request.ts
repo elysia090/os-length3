@@ -10,7 +10,7 @@ import {bodyLimit} from 'hono/body-limit';
 import {cors} from 'hono/cors';
 import {HTTPException} from 'hono/http-exception';
 import type {ContentfulStatusCode} from 'hono/utils/http-status';
-import {room} from './schema.ts';
+import {room, throttle} from './schema.ts';
 
 /** A Drizzle database or transaction of any Postgres driver (Neon in production, PGlite in tests). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -31,8 +31,36 @@ export async function body<T = Record<string, unknown>>(c: Context): Promise<T |
 }
 
 /** End the request with `status` and `answer`. Thrown inside a transaction, nothing it wrote stays. */
-export function refuse(status: ContentfulStatusCode, answer: Record<string, unknown>): never {
-  throw new HTTPException(status, {res: Response.json(answer, {status})});
+export function refuse(status: ContentfulStatusCode, answer: Record<string, unknown>, headers?: Record<string, string>): never {
+  throw new HTTPException(status, {res: Response.json(answer, {status, headers})});
+}
+
+/**
+ * Asked too often: 429, `Retry-After` the seconds until the window that counted it has passed, and
+ * the same seconds as `retryAfter` beside the words, every time a rate is what refused (RFC 6585 §4,
+ * RFC 9110 §10.2.3). A limit on how many of a thing are kept (repos, boards) is not a rate: it
+ * passes with no waiting, so it says no time.
+ */
+export function slowDown(seconds: number, answer: {error: string}): never {
+  const s = Math.max(1, Math.ceil(seconds));
+  refuse(429, {...answer, retryAfter: s}, {'Retry-After': String(s)});
+}
+
+/** The address Cloudflare saw the request come from; '' where nothing in front of the Remote says (dev, tests). */
+export const addressOf = (c: Context) => c.req.header('CF-Connecting-IP') ?? '';
+
+/**
+ * One more of `key` in the window, or refused (slowDown) when `max` were there already; nothing is
+ * counted for a refused one. The key's lock makes the count and the row one step, so many at once
+ * are counted one by one (audit V2). Rows go with the daily sweep (throttle, an hour and more old).
+ */
+export async function throttled(q: Db, key: string, max: number, windowMs: number, answer: {error: string}) {
+  await q.transaction(async (tx: Db) => {
+    await lock(tx, key);
+    const [r] = await rows<{n: number; first: number | null}>(tx, sql`select count(*)::int as n, ${ms(sql`min(at)`)} as first from throttle where key = ${key} and at > ${ago(windowMs)}`);
+    if (r.n >= max) slowDown(((r.first ?? Date.now()) + windowMs - Date.now()) / 1000, answer);
+    await tx.insert(throttle).values({key});
+  });
 }
 
 /**
@@ -113,11 +141,27 @@ export const fromOrigins = (origins: string[]) => cors({
   maxAge: 600,
 });
 
-/** Nothing the Remote answers is kept by a cache, or read as another type than it says. */
+/**
+ * What the Remote answers is data, never a page: no document may run it, frame it or be sent on
+ * from it (a JSON answer opened as a page in a tab runs nothing, embeds nothing, posts nowhere).
+ * A route that answers a page of its own (the stand-in provider's, devoauth.ts) says its own policy.
+ */
+export const API_POLICY = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+
+/**
+ * Nothing the Remote answers is kept by a cache, read as another type than it says, framed, taken
+ * by another site's page as a resource, or reached again but by HTTPS; and a link followed from it
+ * says nothing of where it came from (OWASP ASVS 14.4; the app's own files: public/_headers).
+ */
 export const unkept: MiddlewareHandler = async (c, next) => {
   await next();
   c.header('Cache-Control', 'no-store');
   c.header('X-Content-Type-Options', 'nosniff');
+  if (!c.res.headers.has('Content-Security-Policy')) c.header('Content-Security-Policy', API_POLICY);
+  c.header('X-Frame-Options', 'DENY');
+  c.header('Referrer-Policy', 'no-referrer');
+  c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  c.header('Cross-Origin-Resource-Policy', 'same-origin');
 };
 
 /**

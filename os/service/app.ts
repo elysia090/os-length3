@@ -28,6 +28,7 @@ import {enter, type Enter} from './enter.ts';
 import {files} from './files.ts';
 import {homeRoutes} from './home.ts';
 import {inbox} from './inbox.ts';
+import {keyFor, type Purpose} from './keys.ts';
 import {news} from './news.ts';
 import {planRoutes, plans, type Billing, type PlanConfig} from './plan.ts';
 import {repos} from './repos.ts';
@@ -60,7 +61,7 @@ export interface Deps {
   domain?: string;
   /** The Remote's own address (a domain's DNS record names its host). */
   baseURL?: string;
-  /** The key Inbox domain proofs are made with (the service's secret). */
+  /** The service's one secret: each purpose gets a key derived from it (keys.ts), never the secret itself. */
   secret?: string;
   /** TXT records of a name (DNS over HTTPS by default; a stand-in in tests). */
   txt?: (name: string) => Promise<string[]>;
@@ -82,21 +83,22 @@ export function createApp(d: Deps) {
   const db = d.db, domain = d.domain ?? 'length3.com', closed = !!d.enter;
   // The plan's rules, which the routes that make something new ask (repos, servers, inbox).
   const plan = plans({db, config: d.plan, billing: d.billing, domain});
+  const key = (purpose: Purpose) => keyFor(d.secret ?? '', purpose);
   app.use('*', fromOrigins(d.origins));
   app.use('*', unkept);
   app.use('*', bounded);
 
   signIn({auth: d.auth, providers: d.providers, enter: closed}, app);
-  about({db, providers: d.providers, domain, appOrigin: d.appOrigin, enter: closed}, app);
+  about({db, providers: d.providers, domain, appOrigin: d.appOrigin, enter: closed, baseURL: d.baseURL}, app);
   if (d.enter) enter({db, auth: d.auth, enter: d.enter}, app);
 
   const v1 = new Hono<Vars>();
   v1.use('*', signedIn(d.auth, d.origins));
   files({db, bucket: d.bucket, quota: d.quota}, v1, app);
-  repos({db, quota: d.quota, plans: plan}, v1);
+  repos({db, quota: d.quota, plans: plan, offKey: key('off-code')}, v1);
   homeRoutes({db}, v1);
-  inbox({db, domain, baseURL: d.baseURL ?? '', secret: d.secret ?? '', txt: d.txt, recheck: d.recheck, plans: plan}, v1, app);
-  servers({db, domain, appOrigin: d.appOrigin, secret: d.secret, closed, plans: plan}, v1, app);
+  inbox({db, domain, baseURL: d.baseURL ?? '', secret: key('domain-proof'), txt: d.txt, recheck: d.recheck, plans: plan}, v1, app);
+  servers({db, domain, appOrigin: d.appOrigin, secret: key('invite'), closed, plans: plan}, v1, app);
   planRoutes({db, plans: plan, origins: d.origins, appOrigin: d.appOrigin, now: d.now}, v1, app);
   news({db}, v1);
   sshRoutes({db}, v1);

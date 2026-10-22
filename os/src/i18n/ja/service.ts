@@ -101,6 +101,11 @@ export default {
   // Held off, and the Remote's own health.
   'Too many wrong codes; try again in an hour': '間違ったコードが多すぎます。1時間後にもう一度どうぞ',
   'Too many codes looked up this hour': 'この1時間にコードを調べすぎました',
+  'Too many codes looked up from here; try again later': 'ここからコードを調べすぎました。しばらくしてからどうぞ',
+  'Too many tries from here; try again later': 'ここから試しすぎです。しばらくしてからどうぞ',
+  'Too many requests; try again later': '問い合わせが多すぎます。しばらくしてからどうぞ',
+  'This passkey did not verify you (a PIN or biometrics); use one that does': 'このパスキーは本人確認（PIN や生体認証）をしませんでした。本人確認をするものを使ってください',
+  'Signals are taken with POST /v1/inbox/signals/take': 'シグナルは POST /v1/inbox/signals/take で受け取ります',
   'The Remote does not reach its database': 'Remote がデータベースに届いていません',
   // SSH, per device.
   'SSH is turned on at the device itself': 'SSH をオンにするのはその端末でです',

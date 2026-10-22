@@ -216,7 +216,9 @@ export class Live {
   /** What came from this peer: its offers, and the rest of this line's session; another chat's or device's stays for it. */
   private async poll() {
     // Looked for every moment: one that is not answered is asked again at the next.
-    const got = await json<Signal[]>(`/v1/inbox/signals?from=${enc(this.peer)}${this.session ? `&session=${enc(this.session)}` : ''}`).catch(() => [] as Signal[]);
+    // Taken with a POST: taking deletes them on the Remote, and no GET changes anything there.
+    const got = await json<Signal[]>('/v1/inbox/signals/take', {method: 'POST', body: JSON.stringify({from: this.peer, ...(this.session ? {session: this.session} : {})})})
+      .catch(() => [] as Signal[]);
     for (const s of got) {
       if (this.ended) return;
       // One the line cannot use (not JSON, a late answer, a candidate the connection has moved past) is

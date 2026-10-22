@@ -25,11 +25,12 @@
 
 import {passkey} from '@better-auth/passkey';
 import {betterAuth} from 'better-auth';
-import {createAuthMiddleware} from 'better-auth/api';
+import {APIError, createAuthMiddleware} from 'better-auth/api';
 import {drizzleAdapter} from 'better-auth/adapters/drizzle';
 import {bearer, deviceAuthorization, genericOAuth} from 'better-auth/plugins';
 import type {Hono, MiddlewareHandler} from 'hono';
 import {devOAuth} from './devoauth.ts';
+import {keyFor} from './keys.ts';
 import type {Vars} from './request.ts';
 import * as schema from './schema.ts';
 
@@ -69,12 +70,39 @@ export interface AuthConfig {
 export const providers = (c: Pick<AuthConfig, 'github' | 'google' | 'apple' | 'dev'>) =>
   [c.github && 'github', c.google && 'google', c.apple && 'apple', c.dev && 'dev'].filter(Boolean) as ('github' | 'google' | 'apple' | 'dev')[];
 
+/**
+ * What each sign-in route may be asked, an address a minute, where Better Auth's 120 is too many (RFC
+ * 8628 §5.1-5.2: a device code's user code is not found by trying, nor polled for faster than its
+ * interval; OWASP ASVS 2.2.1: anti-automation on every way in). Social sign-in keeps Better Auth's
+ * own, 3 in 10 seconds; looking a user code up (/device) its plugin's, 5 in the code's 10 minutes.
+ */
+export const AUTH_LIMITS: Record<string, {window: number; max: number}> = {
+  '/device/code': {window: 60, max: 10},
+  // Asked every 2 s while a code waits (interval below): 30 a minute, and room for a retry.
+  '/device/token': {window: 60, max: 40},
+  '/device/approve': {window: 60, max: 10},
+  '/device/deny': {window: 60, max: 10},
+  '/passkey/generate-authenticate-options': {window: 60, max: 20},
+  '/passkey/verify-authentication': {window: 60, max: 10},
+  '/passkey/generate-register-options': {window: 60, max: 10},
+  '/passkey/verify-registration': {window: 60, max: 10},
+  '/revoke-session': {window: 60, max: 30},
+  '/revoke-other-sessions': {window: 60, max: 10},
+};
+
+/** A passkey ceremony that did not verify the person (PIN, biometrics), refused: a passkey is the whole sign-in. */
+const verifiedPerson = (ok: boolean | undefined) => {
+  if (!ok) throw new APIError('UNAUTHORIZED', {message: 'This passkey did not verify you (a PIN or biometrics); use one that does'});
+};
+
 export function createAuth(c: AuthConfig) {
   const rpID = new URL(c.appOrigin).hostname;
+  const https = c.baseURL.startsWith('https://');
   return betterAuth({
     appName: 'Length³ OS',
     baseURL: c.baseURL,
-    secret: c.secret,
+    // Sign-in's own key, derived from the one secret (keys.ts): never the key domain proofs or invitations are made with.
+    secret: keyFor(c.secret, 'better-auth'),
     database: drizzleAdapter(c.db, {provider: 'pg', schema}),
     // Apple answers by posting the sign-in back from its own page.
     trustedOrigins: [c.appOrigin, ...(c.origins ?? []), ...(c.apple ? ['https://appleid.apple.com'] : [])],
@@ -91,11 +119,16 @@ export function createAuth(c: AuthConfig) {
     ...(c.only ? {user: {validateUserInfo: ({user}: {user: {email?: string | null}}) =>
       (user.email === c.only ? undefined : {error: 'closed', errorDescription: 'This Remote takes no new accounts'})}} : {}),
     // Counted in the database: on Workers each isolate has a memory of its own (Better Auth's default store).
-    rateLimit: {enabled: c.rateLimit ?? true, window: 60, max: 120, storage: 'database'},
+    rateLimit: {enabled: c.rateLimit ?? true, window: 60, max: 120, storage: 'database', customRules: AUTH_LIMITS},
     // Who is asking is the address Cloudflare saw, as everywhere on the Remote (enter.ts, servers.ts): Better
     // Auth reads only X-Forwarded-For unless told, which a Worker's request need not carry, and without an
     // address it counts everyone in one bucket a path (three sign-ins in ten seconds, for all).
-    advanced: {ipAddress: {ipAddressHeaders: ['cf-connecting-ip']}},
+    //
+    // Over HTTPS every cookie is a __Host- one: Secure, Path=/ and no Domain, so no other host under
+    // length3.com can set or shadow it (RFC 6265bis §4.1.3.2; ASVS 3.4.1-3.4.4). HttpOnly and
+    // SameSite=Lax are Better Auth's own for every cookie it sets.
+    advanced: {ipAddress: {ipAddressHeaders: ['cf-connecting-ip']},
+      ...(https ? {useSecureCookies: false, cookiePrefix: '__Host-length3', defaultCookieAttributes: {secure: true, path: '/'}} : {})},
     // A sign-in with a passkey is proof the person is at the device just now: turning a repo
     // off (and setting the code for it) asks for a session made that way minutes ago. Only the
     // latest is kept: one sign-in proves one session.
@@ -113,7 +146,13 @@ export function createAuth(c: AuthConfig) {
         rpID,
         rpName: 'Length³ OS',
         origin: c.appOrigin,
-        authenticatorSelection: {residentKey: 'required', userVerification: 'preferred'},
+        // The person is verified by the authenticator, every time: asked for when a passkey is made, and a
+        // ceremony that says it did not verify them is refused, made or used (WebAuthn L3 §13.4.6; ASVS
+        // 2.7, 2.9). Its counter is checked by SimpleWebAuthn (a clone is refused); attestation is
+        // not asked for (any authenticator a person has is theirs to use).
+        authenticatorSelection: {residentKey: 'required', userVerification: 'required'},
+        registration: {afterVerification: ({verification}) => { verifiedPerson(verification.registrationInfo?.userVerified); return {}; }},
+        authentication: {afterVerification: ({verification}) => verifiedPerson(verification.authenticationInfo.userVerified)},
       }),
       bearer(),
       deviceAuthorization({
@@ -139,7 +178,14 @@ export type Auth = ReturnType<typeof createAuth>;
 export function signIn(d: {auth: Auth; providers: string[]; enter: boolean}, app: Hono<Vars>) {
   // For research no passkey is added: a passkey would let a link's holder back in after its key changed.
   if (d.enter) app.all('/api/auth/passkey/*', (c) => c.json({error: 'This Remote is entered by its link'}, 403));
-  app.on(['GET', 'POST'], '/api/auth/*', (c) => d.auth.handler(c.req.raw));
+  app.on(['GET', 'POST'], '/api/auth/*', async (c) => {
+    const res = await d.auth.handler(c.req.raw);
+    // Asked too often: said as everywhere on the Remote (request.ts slowDown), Retry-After and retryAfter,
+    // beside Better Auth's own X-Retry-After.
+    const wait = res.status === 429 ? res.headers.get('X-Retry-After') : null;
+    if (!wait) return res;
+    return c.json({error: 'Too many requests; try again later', retryAfter: Number(wait)}, 429, {'Retry-After': wait, 'X-Retry-After': wait});
+  });
   if (d.providers.includes('dev')) app.route('/dev-oauth', devOAuth());
 }
 
@@ -150,7 +196,13 @@ export function signIn(d: {auth: Auth; providers: string[]; enter: boolean}, app
  */
 export const signedIn = (auth: Auth, origins: string[]): MiddlewareHandler<Vars> => async (c, next) => {
   const bearer = /^Bearer\s/i.test(c.req.header('Authorization') ?? '');
-  if (!bearer && c.req.method !== 'GET' && c.req.method !== 'HEAD' && !origins.includes(c.req.header('Origin') ?? '')) return c.json({error: 'not from the app'}, 403);
+  const ours = origins.includes(c.req.header('Origin') ?? '');
+  if (!bearer && c.req.method !== 'GET' && c.req.method !== 'HEAD' && !ours) return c.json({error: 'not from the app'}, 403);
+  // A read with the cookie alone that the browser says another site's page started (a link, an
+  // image, a frame, a script) is refused too: no page elsewhere has the Remote read for it with
+  // someone's cookie, whatever a GET would do (Fetch Metadata, W3C; ASVS 4.2.2, 13.2.3).
+  const site = c.req.header('Sec-Fetch-Site');
+  if (!bearer && (site === 'cross-site' || site === 'same-site') && !ours) return c.json({error: 'not from the app'}, 403);
   const s = await auth.api.getSession({headers: c.req.raw.headers});
   if (!s) return c.json({error: 'not signed in'}, 401);
   c.set('userId', s.user.id);

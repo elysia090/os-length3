@@ -16,7 +16,10 @@ export function devOAuth(): Hono {
     return c.html(`<!doctype html><meta charset="utf-8"><title>Dev sign-in</title>
 <form action="approve" method="get" style="font:16px system-ui;max-width:420px;margin:15vh auto;display:grid;gap:12px">
 <h1 style="font-size:20px">Development provider</h1><p>Sign in as</p>
-<input name="name" value="Dev Person" aria-label="Name">${hidden}<button>Continue</button></form>`);
+<input name="name" value="Dev Person" aria-label="Name">${hidden}<button>Continue</button></form>`, 200,
+      // A page, unlike everything else the Remote answers (request.ts API_POLICY): its inline style, and
+      // its form, which goes on through the provider's redirects to wherever sign-in returns.
+      {'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'"});
   });
   app.get('/approve', (c) => {
     const q = new URL(c.req.url).searchParams;
