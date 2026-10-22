@@ -52,7 +52,8 @@ test("Home's repos are three across at a laptop's width, and one under another o
   for (const name of ['notes', 'trip', 'site']) await app.newRepo.make(name);
   await app.rail.go('home');
   // The three, then New repo.
-  const cards = app.main.getByRole('region', {name: 'Repos'}).getByRole('button');
+  const repos = app.main.getByRole('region', {name: 'Repos'});
+  const cards = repos.getByRole('group').or(repos.getByRole('button', {name: 'New repo'}));
   await expect(cards).toHaveCount(4);
   const tops = async () => Promise.all((await cards.all()).map(async (c) => Math.round((await c.boundingBox())!.y)));
   await app.page.setViewportSize({width: 1180, height: 800});

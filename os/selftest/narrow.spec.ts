@@ -45,7 +45,7 @@ test('signed out, Server has no right pane and so no line where it would start',
 });
 
 test('a build without l3 says so in Runtime, never a parser\'s words', async ({app}) => {
-  await app.rail.go('runtime');
+  await app.runtime.open('Environments');
   await expect(app.main.getByRole('heading', {name: /Environment in effect/})).toBeVisible();
   await expect(app.main).not.toContainText(/Unexpected token|not valid JSON/);
 });

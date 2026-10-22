@@ -518,7 +518,15 @@ class Remote extends Part {
 
 /** Runtime: this device, the environments, the dotfiles. */
 class Runtime extends Part {
-  get dotfiles() { return this.main.getByRole('region', {name: /^Dotfiles/}); }
+  /** One of its parts, by the heading that switches to it (a count may follow the word). */
+  part(name: 'This browser' | 'Prompts running' | 'Environments' | 'Dotfiles') { return this.main.getByRole('tab', {name: new RegExp(`^${name}`)}); }
+  /** Runtime, at part `name`. */
+  async open(name: 'This browser' | 'Prompts running' | 'Environments' | 'Dotfiles') {
+    await this.app.rail.go('runtime');
+    await this.part(name).click();
+    await expect(this.part(name)).toHaveAttribute('aria-selected', 'true');
+  }
+  get dotfiles() { return this.main.getByRole('tabpanel', {name: /^Dotfiles/}); }
   /** A dotfile's card (its name, then its size). */
   dotfile(name: string) { return this.dotfiles.getByRole('button', {name: new RegExp(`^${escape(name)} `)}); }
   /** The text of the dotfile open under the cards (its field is named by the file). */
@@ -534,7 +542,7 @@ class Runtime extends Part {
 
   /** Make a dotfile and save it. */
   async makeDotfile(name: string, text: string) {
-    await this.app.rail.go('runtime');
+    await this.open('Dotfiles');
     await this.dotfiles.getByRole('button', {name: /New dotfile/}).click();
     const field = this.dotfiles.getByRole('textbox', {name: 'Name', exact: true});
     await field.fill(name);

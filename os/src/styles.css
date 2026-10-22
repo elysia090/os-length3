@@ -298,23 +298,48 @@ span.todo-title { min-height: 0; }
 
 .card.repo.revealed { background: var(--raised); border-color: var(--ink); }
 
-/* Runtime: the environments a Prompt can run on, a row each; the one in
-   effect is the place (ink over raised), those not here yet quiet and dashed. */
-.env-choices { display: grid; gap: var(--s2); max-width: 760px; }
-.env-choice {
-  display: grid; grid-template-columns: 6rem 6rem minmax(0, 1fr) auto; align-items: baseline; gap: var(--s3);
-  padding: var(--s3) var(--s4); border: 1px solid var(--rule); border-radius: var(--r-place);
+/* A repo in a list (Home's and New repo's cards, Runtime's rows): its body is the repo itself; its gear, small
+   and round, shows near it (the pointer on it, the keyboard in it; always on a touch screen) and offers Forge or
+   Free from this device in a popover (repo-gear.ts). Showing it does nothing. */
+.card.repo.gear-card { position: relative; padding: 0; align-content: stretch; }
+.gear-card > .card-open { display: grid; align-content: start; gap: var(--s2); width: 100%; padding: var(--s4); border: 0; border-radius: inherit; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.gear-card > .card-open > .card-title { padding-right: calc(var(--h-row) + var(--s2)); }
+.gear-card > .repo-gear { position: absolute; top: var(--s3); right: var(--s3); }
+.gear-card[aria-busy='true'] > .card-open { cursor: progress; }
+.repo-gear-button {
+  display: grid; place-items: center; flex: none; width: var(--h-row); height: var(--h-row); padding: 0;
+  border: 1px solid var(--edge); border-radius: var(--r-round); background: var(--ground); color: var(--sub); cursor: pointer;
+  opacity: 0; transition: opacity var(--motion);
 }
-.env-choice[aria-current='true'] { border-color: var(--ink); background: var(--raised); }
-.env-choice.later { border-style: dashed; color: var(--sub); }
-.env-choice code { font: var(--t-meta) var(--mono); }
+.repo-gear-button .mark { width: 18px; height: 18px; }
+.gear-card:is(:hover, :focus-within) .repo-gear-button, .space-row:is(:hover, :focus-within) .repo-gear-button, .repo-gear-button[aria-expanded='true'] { opacity: 1; }
+@media (hover: none) { .repo-gear-button { opacity: 1; } }
+.repo-gear-button:hover, .repo-gear-button[aria-expanded='true'] { background: var(--raised); color: var(--ink); border-color: var(--ink); }
+.gear-card .repo-gear-pop { position: absolute; top: calc(100% + var(--s1)); right: 0; z-index: 5; width: max-content; min-width: 240px; max-width: min(320px, calc(100vw - 2 * var(--outer) - var(--rail))); }
+/* In a row of a column that scrolls, the list opens under the row, in its own place. */
+.space-row { flex-wrap: wrap; }
+.space-row > .repo-gear-pop { flex-basis: 100%; margin-top: var(--s1); }
+.repo-gear-pop .pop-item:disabled { color: var(--sub); }
+@media (prefers-reduced-motion: reduce) { .repo-gear-button { transition: none; } }
+
+/* Runtime: the environments a Prompt can run on, in one small card the size of a Prompt's: the one in effect at
+   its top (its name, its version, what it is, its digest), the others under it, a row each, quiet, what can be
+   done at the right. A version is set apart from its name in the mono face (the desktop app's too). On the web
+   SSH is one line, kept to a card's width, so SSH, the environments and the desktop app share a laptop's row. */
+.version { font: 400 var(--t-meta) var(--mono); color: var(--sub); }
+.section-row > .section[aria-labelledby='ssh-title']:not(:has(.small-grid)) { max-width: 270px; }
+.env-card { gap: var(--s1); }
+.env-sha { font: var(--t-meta) var(--mono); overflow-wrap: anywhere; }
+.env-rows { display: grid; margin-top: var(--s3); }
+.env-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--s3); min-height: var(--h-control); padding: var(--s1) 0; }
+.env-name { color: var(--sub); font-weight: 600; overflow-wrap: anywhere; }
+.env-note { grid-column: 1; overflow-wrap: anywhere; }
+.env-row > :last-child:not(.env-note):not(.env-name) { grid-column: 2; grid-row: 1 / span 2; }
 @media (max-width: 640px) {
   /* A narrow Home: a smaller face, and Edit profile on a row of its own rather than over the name. */
   .profile { grid-template-columns: auto minmax(0, 1fr); gap: var(--s4); }
   .profile > .button { grid-column: 1 / -1; justify-self: start; white-space: nowrap; }
   .avatar { width: 72px; height: 72px; font-size: var(--t-title); }
-  .env-choice { grid-template-columns: auto 1fr auto; }
-  .env-choice > :nth-child(3) { grid-column: 1 / -1; grid-row: 2; }
 }
 
 /* Git: issues read from each repo's issue/ */
@@ -730,6 +755,7 @@ mark { background: var(--ink); color: var(--ground); }
 .space-what { display: grid; min-width: 0; flex: 1; }
 .space-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .space-what .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.space-what .space-why { overflow: visible; white-space: normal; overflow-wrap: anywhere; }
 .space-size { flex: none; font: var(--t-meta) var(--mono); color: var(--sub); }
 .space-foot { display: flex; align-items: center; gap: var(--s3); padding-top: var(--s3); }
 .space-foot .grow { flex: 1; }
@@ -976,6 +1002,9 @@ summary.done-head:hover { background: var(--raised); }
 /* Small cards: Prompts running, SSH, Dotfiles. The same places as Home's
    cards, smaller, so a few things do not stretch across the page. */
 .small-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: var(--s4); }
+/* Runtime in parts: a part's first section starts at the part's own step; the environments' row wraps 40 apart. */
+[id^='panel-runtime-'] > .section:first-child, [id^='panel-runtime-'] > .section-row > .section { margin-top: 0; }
+[id^='panel-runtime-'] > .section-row { row-gap: var(--s6); }
 .small-card { min-height: 128px; display: flex; flex-direction: column; }
 /* What can be done sits at the card's foot, however many lines are above it, so cards side by side keep their buttons on one line. */
 .small-card > .card-foot { margin-top: auto; align-self: stretch; }
@@ -1002,8 +1031,8 @@ summary.done-head:hover { background: var(--raised); }
 /* The desktop app's card: Download (its icon and the word) at its bottom left, the other file beside it. */
 .app-card > .card-foot { flex-wrap: wrap; align-self: stretch; }
 a.button { display: inline-flex; align-items: center; justify-content: center; color: inherit; text-decoration: none; white-space: nowrap; }
-.download { gap: var(--s1); padding-left: var(--s2); }
-.download .mark { width: var(--s4); height: var(--s4); }
+.download { gap: var(--s1); padding: 0 var(--s3) 0 var(--s2); font-size: var(--t-meta); }
+.download .mark { width: var(--s3); height: var(--s3); }
 .dot-editor { display: grid; gap: var(--s3); margin-top: var(--s4); padding: var(--s4); border: var(--line-work) solid var(--edge); border-radius: var(--r-place); max-width: 760px; }
 .dot-head { align-items: center; gap: var(--s1); margin-top: 0; }
 /* Remove asked where the box's deeds were: what will happen, then the answers on the same line as they were. */

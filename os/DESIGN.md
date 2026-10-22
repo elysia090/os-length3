@@ -150,7 +150,7 @@ what is its own.
   round headings, each with a bare count, the chosen one `ink`; only its
   part is shown, so a page never becomes one long scroll. On a narrow
   window the switch slides sideways and keeps the chosen one in view.
-  Remote's page, Server's gear.
+  Remote's page, Runtime's, Server's gear.
 - **Cards.** A place you go to or a thing you act on: a rounded square
   with a `rule` edge, its title (20/600) on top, a line or two in `sub`,
   what can be done at its foot (the main deed at the right). Home and
@@ -866,8 +866,11 @@ identity (avatar, name, @handle, bio, counts of repos and servers) →
 **TODO** → repos → servers (each one is in, a chip that opens Server on it).
 TODO is the person's single list; repos do not carry their own inbox or
 TODO files. An item is a first line named like an issue ("Fix：件名"),
-then detail lines; Enter on an empty line starts the next item. Done
-strikes through and fades the first line only.
+then detail lines (starting on the first line's column, with a kind or
+without); Enter on an empty line starts the next item. Done strikes through
+and fades the first line only. The repos are large cards, three across at a
+laptop's width (two, then one, as it narrows); each is a repo in a list as
+Runtime says it: its body the repo itself, its gear Forge or Free.
 
 ### Forge
 
@@ -995,11 +998,30 @@ The Prompt never goes silent while something takes time:
 
 ### Runtime
 
-この端末 first, then what can go from it, then what is running, then SSH
-(on the web with the desktop app beside it), then the environment actually
-in effect (what runs, not what was asked for). There is no table of policies: what
-the device holds is shown as things, and each thing says what can be done
-with it.
+In **parts** (§3), as Remote's page is: この端末 (what it holds, what can go
+from it and come to it), what is running (offered while a Prompt runs, or one
+stopped here says what it gave back), the environments (SSH, the environment
+actually in effect, what runs, not what was asked for, and on the web the
+desktop app, side by side), and the dotfiles. A part not shown goes on: a
+Prompt runs, what holds a repo is read again, a dotfile half written stays.
+There is no table of policies: what the device holds is shown as things, and
+each thing says what can be done with it.
+
+**A repo in a list** is the same in every list of repos (Home's cards, the
+three columns here, New repo's list): its body (a card's, a row's name) is the
+repo itself, its own place: its card on Remote, shown and lit (signed out,
+Forge, where all of it is). Near it (the pointer on it, the keyboard in it,
+always on a touch screen) a small round gear shows at its edge; pressed, a
+popover offers the two things done to a repo from a list, each chosen on its
+own: Open in Forge, and Free from this device (空ける: the same Free as below,
+its conditions unchanged). Free that cannot be done now is there, not
+pressable, with why under it; pressed, it asks in its row what it does ({repo}
+leaves this device; it stays on the Remote and comes back when opened), Free
+under the pointer, Not now beside it. Showing the gear or its list does
+nothing; Escape or a press outside puts it away. On a card the list opens over
+the card; in a column that scrolls, under the row, in its own place. Freed,
+the place says what it came to where it is (the row's result over the box;
+the card becomes the Remote's).
 
 - **この端末**: one bar of the host's whole, with this OS's share darker
   (not an ink fill, which means current), and three figures: this OS, free,
@@ -1031,7 +1053,9 @@ with it.
     owner, and they say so.
   - Otherwise, quietly, why it stays: a Prompt has it open, it holds what
     cannot be sent (a link, a file over 16 MB, a `.git`), there is no Remote
-    yet, it is the root Prompts run on, it is Home's settings.
+    yet, it is the root Prompts run on, it is Home's settings. Why (and what
+    freeing does) is a line of its own under the row's facts, read whole,
+    never cut short; a Prompt stopped or started reads it again at once.
   Under the list, 空けられるもの with its total and 全部空ける. Freeing stays
   to say what happened: the bytes removed (counted before removal), the
   host's free space as it was seen to change and how long it took to show,
@@ -1056,12 +1080,16 @@ with it.
   does, and neither 空ける here nor `l3 free` lets a repo go while one has
   it open. In a browser there is no switch: a Prompt's programs have no
   sockets at all.
-- **有効な環境**: the environments a Prompt can run on, a row each: l3,
-  Ubuntu, Debian, Custom (a root of one's own, known by its digest). The
-  one in effect is the place (an `ink` edge over `raised`): l3, with its
-  version, what it is here (in the app, the root installed, on this
+- **有効な環境**: the environments a Prompt can run on, in one small card
+  (a Prompt's card's size), beside the desktop app's (SSH, then it, then the
+  desktop app, in one row; on the web SSH's one line is a card wide; where
+  the row has no room, each goes under). The one in
+  effect is the card's head: l3, with its version (in the mono face, as a
+  version is), what it is here (in the app, the root installed, on this
   device's kernel; in a browser, the whole root through xlat, or l3 and
-  its BusyBox) and its digest. In the app each other one has Use at its
+  its BusyBox) and its digest. Under it the others, a row each, quiet:
+  Ubuntu, Debian, Custom (a root of one's own, known by its digest), what
+  each is, and at its right what can be done. In the app each other one has Use at its
   right: fetched if it is not here (Ubuntu's base and Debian's official
   root, from their makers or the Remote, taken only at the digest pinned
   in core/src/root.rs), then the one Prompts run on, each with its own
@@ -1164,22 +1192,23 @@ with it.
   Remove under the pointer and Not now at the right.
 
 - **デスクトップアプリ**, on the web only (the app does not offer itself):
-  beside SSH, on one row (two small things this device can be reached by
-  or become), its card the SSH card's size, the two ending level; where the
-  row has no room for both, it goes under. Few words: its title, Length³
-  OS and the version `RELEASE` names; quietly, x86-64 Linux, which file
-  and its size (what it is goes without saying). At
-  its bottom left, Download (ダウンロード): a small primary button with the
+  after the environments, on one row (what this device runs on, and can be
+  reached by or become), its card the SSH card's size, the cards ending
+  level; where the row has no room, it goes under. Few words: its title,
+  Length³, and the version `RELEASE` names apart from it in the mono face (a
+  name and a number are two things); quietly, x86-64 Linux, which file and
+  its size (what it is goes without saying). At its bottom left, Download
+  (ダウンロード), the one download: a primary button a size smaller than a
+  small one (its word 13, its mark 12, still 32 high to press) with the
   download mark (an arrow into a tray, `icons.ts`) and the word. It is at
   the left because it leaves the page for this computer, as Forge does on
-  Remote's card. It gives the .deb, which Debian and Ubuntu install; beside
-  it, a small plain button, AppImage, for any other x86-64 Linux (its size
-  in its title). Both are the files `shared/desktop-releases.json` pins for
-  that version, served by the Remote (`/v1/desktop/<file>`, to anyone, by
-  range), where each deploy puts them from the release
-  (`service/mirror.ts`). Each is offered only once the Remote says it has
-  it; with neither there, the section is not shown, never a button that
-  cannot act.
+  Remote's card. It gives the .deb, which Debian and Ubuntu install, or the
+  AppImage when the Remote has no .deb (the release still has both). They are
+  the files `shared/desktop-releases.json` pins for that version, served by
+  the Remote (`/v1/desktop/<file>`, to anyone, by range), where each deploy
+  puts them from the release (`service/mirror.ts`). It is offered only once
+  the Remote says it has it; with neither there, the section is not shown,
+  never a button that cannot act.
 
 In a browser the same list is the browser's copy of the repos (このブラウザ,
 its share an estimate), and the same three answers apply.
