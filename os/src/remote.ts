@@ -10,9 +10,9 @@
 // Every client holds a session token, sent as a bearer token; each device
 // is a session that can be seen and ended from any other.
 
-import {core, isNative, native} from './host.ts';
+import {core, native} from './host.ts';
 import {t} from './i18n.ts';
-import {getState, loadState, setState} from './state.ts';
+import {getState, loadState} from './state.ts';
 import {setEnvironment} from './core-client.ts';
 
 /** The Remote this OS ships with: one name for the app, the Remote, the DNS records people publish and passkeys. */
@@ -136,7 +136,9 @@ export function onConnection(fn: () => void): () => void { listeners.add(fn); re
 const told = () => { for (const fn of [...listeners]) fn(); };
 
 async function keep(token: string, url = REMOTE_URL) {
-  await setState('remote', JSON.stringify({url, token}));
+  // As the app keeps a session it signed in with: the core notes whose it is, and another account's copies stay theirs.
+  await core('remote_connect', {url, token});
+  await loadState(['remote', 'sync']);
   told();
 }
 
@@ -339,21 +341,17 @@ export async function appSignIn(): Promise<{code: string; url: string; wait: Pro
 
 /** Leave the Remote on this device: its session ends; the repos here stay. */
 export async function signOut(): Promise<void> {
-  if (isNative) { await core('remote_logout'); await loadState(); told(); return; }
-  // Signed out here whatever the Remote answers: away, the session there ends by itself when it runs out.
-  await api('/api/auth/sign-out', {method: 'POST', body: '{}'}).catch(() => {});
-  await forget();
-}
-
-async function forget() {
-  await setState('remote', 'null');
+  // What is not on the Remote yet is sent first; what cannot be sent keeps this device on it, and says why (core logout).
+  await core('remote_logout');
+  await loadState();
   told();
 }
 
 async function ended() {
-  // The Remote already let this session go: signing out there can only fail, and here it is done either way.
-  if (isNative) { await core('remote_logout').catch(() => {}); await loadState(); told(); return; }
-  await forget();
+  // The Remote already let this session go: nothing can be sent with it, and nothing here is let go.
+  await core('remote_forget').catch(() => {});
+  await loadState(['remote']);
+  told();
 }
 
 /**

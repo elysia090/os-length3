@@ -64,6 +64,11 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         }
         "remote_login_wait" => to(remote::device_finish(&remote::default_url(), &a.s("client")?, &a.get("code")?)?),
         "remote_logout" => to(remote::logout(&repos()?)?),
+        // A session a page signed in with (a provider, a passkey): kept as the app keeps its own, another account's
+        // copies kept theirs (login.rs connect).
+        "remote_connect" => to(remote::connect(&a.s("url")?, a.s("token")?)?),
+        // The Remote already let this session go: nothing can be sent with it, and nothing here is let go.
+        "remote_forget" => to(remote::forget_connection()?),
         "remote_repos" => to(remote::remote_repos()?),
         "remote_status" => to(remote::status(&repos()?)?),
         "sync_repo" => to(remote::sync(&repos()?, &a.s("repo")?)?),

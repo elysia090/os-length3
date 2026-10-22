@@ -28,6 +28,16 @@ let wasi: WASI | undefined;
 let core: Core | undefined;
 // The generation of what fs holds; -1 until read (or once it can no longer be trusted).
 let seen = -1;
+// Another tab wrote since this one last read what is kept: the next call reads it again first.
+let behind = true;
+channel.onmessage = (e: MessageEvent<{from?: string}>) => { if (e.data?.from !== tab) behind = true; };
+
+/**
+ * Calls that only read this device's files (no network, nothing written): with nothing new from another tab
+ * they need no turn and no look at what is kept, so a page reading a repo is not a lock and a transaction a
+ * file. One that wrote after all is kept as any other.
+ */
+const READS = new Set(['repo_list', 'repo_tree', 'repo_read', 'repo_bytes', 'state_get', 'remote_status', 'capacity']);
 
 // ---- the network: synchronously, as the core waits for its answer (a worker may) ----
 
@@ -125,10 +135,44 @@ const locked = <T>(f: () => Promise<T>): Promise<T> =>
 
 const said = (e: unknown) => (e instanceof Error ? e.message || e.name : String(e));
 
+/** The core's answer; a trap (a panic is one) ends the instance, the files it wrote being outside it. */
+async function run(name: string, args: unknown): Promise<Answer> {
+  try {
+    return (await instance()).call(name, args);
+  } catch (e) {
+    core = undefined;
+    return {error: `the core stopped: ${said(e)}`};
+  } finally {
+    wasi?.flushOutput();
+  }
+}
+
+/** Keep what the last call changed, and tell the other tabs each path; under the lock. */
+async function persist(db: IDBDatabase | null, answer: Answer): Promise<Answer> {
+  if (!fs.dirty) return answer;
+  const changes = fs.flush();
+  if (!db) return answer;
+  try {
+    await keep(db, changes, seen + 1);
+    seen++;
+    channel.postMessage({changed: true, from: tab, paths: [...changes.put.map((e) => e.path), ...changes.removed]});
+  } catch (e) {
+    // What is in memory is no longer what is kept: the next call reads the files again.
+    seen = -1;
+    return {error: `the browser did not keep the change: ${said(e)}`};
+  }
+  return answer;
+}
+
 /** One call, with this tab's files as the last write (of any tab) left them, and what it changed kept. */
-function call(name: string, args: unknown): Promise<Answer> {
+async function call(name: string, args: unknown): Promise<Answer> {
+  if (READS.has(name) && !behind && seen >= 0) {
+    const answer = await run(name, args);
+    return fs.dirty ? locked(async () => persist(await open(), answer)) : answer;
+  }
   return locked(async () => {
     const db = await open();
+    behind = false;
     if (db && (seen < 0 || await generation(db) !== seen)) {
       const all = await readAll(db);
       fs.restore(all.entries);
@@ -136,28 +180,7 @@ function call(name: string, args: unknown): Promise<Answer> {
       // What the core held in its memory was of the files before.
       core = undefined;
     }
-    let answer: Answer;
-    try {
-      answer = (await instance()).call(name, args);
-    } catch (e) {
-      // A trap (a panic is one) ends the instance; the files it wrote are outside it, and are kept below.
-      core = undefined;
-      answer = {error: `the core stopped: ${said(e)}`};
-    }
-    wasi?.flushOutput();
-    if (!fs.dirty) return answer;
-    const changes = fs.flush();
-    if (!db) return answer;
-    try {
-      await keep(db, changes, seen + 1);
-      seen++;
-      channel.postMessage({changed: true, from: tab, paths: [...changes.put.map((e) => e.path), ...changes.removed]});
-    } catch (e) {
-      // What is in memory is no longer what is kept: the next call reads the files again.
-      seen = -1;
-      return {error: `the browser did not keep the change: ${said(e)}`};
-    }
-    return answer;
+    return persist(db, await run(name, args));
   });
 }
 

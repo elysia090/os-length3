@@ -12,7 +12,7 @@ use super::*;
 /// does not (all of them, for an account that has never seen the repo) would
 /// be removed here as if removed there (bug: signing in elsewhere without
 /// signing out emptied each repo of what was unchanged).
-pub(super) fn connect(url: &str, token: String) -> Result<()> {
+pub fn connect(url: &str, token: String) -> Result<()> {
     let url = current_url(url);
     let user = whose(&url, &token);
     if let Some(was) = connection().filter(|was| another(was, &url, user.as_deref())) {
