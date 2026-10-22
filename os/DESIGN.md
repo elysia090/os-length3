@@ -1050,9 +1050,27 @@ with it.
     cannot be sent (a link, a file over 16 MB, a `.git`), there is no Remote
     yet, it is the root Prompts run on, it is Home's settings.
   Under the list, 空けられるもの with its total and 全部空ける. Freeing stays
-  to say what happened: the bytes removed (counted before removal), the
-  host's free space as it was seen to change and how long it took to show,
-  and anything kept with the reason.
+  to say what happened, as two things that are not one: what this device
+  had allocated and let go (counted from the files' blocks before removal:
+  Verified), and the host's free space as it was observed to change and how
+  long it took to show (a file still linked from elsewhere or held open is
+  given back only when its last link or holder goes, and other programs
+  write meanwhile, so the second can be less); then anything kept, with the
+  reason.
+- **What is checked is what goes.** A repo's copy is freed only as it was
+  when the Remote was seen to hold it, up to the moment it goes: each copy,
+  checked, is moved aside in one rename (beside it, `.<name>.freeing-<pid>`,
+  a name nothing lists, syncs or reclaims), so nothing can open its files by
+  name any more; then no process may still hold anything in it (a file or
+  folder open or mapped, or as its current folder or root, read from
+  `/proc`: what it holds it could write on into); then what was moved is
+  read again whole, every byte, no kept digest taken, and must be exactly
+  the Remote's draft, asked once more; only then is it removed. Anything
+  short of that puts every copy back where it was and Free is refused, so
+  late bytes are on the Remote or here, never freed and nowhere (a file
+  written by name after the move fails, and its writer is told). A final
+  rehash alone would only narrow the window, and the sync's lock does not
+  stop an ordinary write; this holds to the delete.
 - **動いている Prompt** is shown while one runs, a small card each (the
   size of Home's cards, smaller, so a few do not stretch across the page):
   where it runs (root, with its process count, or l3), the memory its

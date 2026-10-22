@@ -469,8 +469,24 @@ pub fn status(repos: &Repos) -> Result<Vec<Status>> {
 /// cannot go there, the copy here goes; it comes back when the repo is opened.
 /// Every copy of the repo goes: main's and each issue's being worked on.
 /// Returns the bytes they took.
+///
+/// What was checked is what goes, up to the moment it goes (bug: a file written after the check and
+/// before the delete was deleted, and Free said it was freed). Each copy, checked, is moved aside in one
+/// rename, so nothing can open its files by their names any more; then nothing may still hold it (a
+/// program with a file or a folder in it open, or there as its current folder, could write on after);
+/// then what was moved is read again whole, every byte, and must be what the Remote holds; only then
+/// does it go. Anything short of that puts every copy back where it was and Free is refused: late bytes
+/// are either on the Remote or here, never freed and nowhere.
 pub fn free(repos: &Repos, repo: &str) -> Result<u64> {
-    let client = Client::open()?;
+    free_with(&Client::open()?, repos, repo)
+}
+
+/// Where a copy of `repo` is: main's in the repos, an issue's among the works.
+fn copy_dir(repos: &Repos, repo: &str, line: &str) -> PathBuf {
+    if line == crate::work::MAIN { repos.root().join(repo) } else { crate::work::worktree(repo, line) }
+}
+
+fn free_with(client: &Client, repos: &Repos, repo: &str) -> Result<u64> {
     let shown = repos.line(repo);
     let mut copies: Vec<String> = crate::work::worktrees(repo).into_iter().map(|(l, _)| l).collect();
     copies.push(crate::work::MAIN.into());
@@ -478,17 +494,29 @@ pub fn free(repos: &Repos, repo: &str) -> Result<u64> {
     // only when it holds nothing the Remote lacks (the Remote keeps it 30 days).
     let off = serde_json::from_value::<Vec<RemoteRepo>>(client.json("GET", "/v1/repos", None)?).map_err(|e| e.to_string())?
         .into_iter().any(|r| r.name == repo && r.off_at.is_some());
-    if off {
-        return free_off(repos, repo, &copies);
-    }
-    // Each copy is brought into step and checked, all before any goes.
-    let mut gone = Vec::new();
+    // Each copy's sync is held until it is gone or back, so no sync here writes it meanwhile.
+    let mut held = Vec::new();
+    let mut checked: Vec<(String, String, PathBuf, Tree)> = Vec::new();
     for line in &copies {
         let key = key_of(repo, line);
-        let _held = lock(&key)?;
-        let dir = if line == crate::work::MAIN { repos.root().join(repo) } else { crate::work::worktree(repo, line) };
+        held.push(lock(&key)?);
+        let dir = copy_dir(repos, repo, line);
+        if off {
+            let agreed = base(&key).map(|b| b.tree).unwrap_or_default();
+            let here = local_tree(&dir).tree;
+            let changed = here.keys().chain(agreed.keys()).collect::<BTreeSet<_>>().into_iter().filter(|p| here.get(*p) != agreed.get(*p)).count();
+            if changed > 0 {
+                return Err(if changed == 1 {
+                    crate::tr!("1 change here is not on the Remote; turn it on to send it first", "ここの変更 1件が Remote にありません。オンにして先に送ってください")
+                } else {
+                    crate::tr!("{} changes here are not on the Remote; turn it on to send them first", "ここの変更 {}件が Remote にありません。オンにして先に送ってください", changed)
+                });
+            }
+            checked.push((key, line.clone(), dir, agreed));
+            continue;
+        }
         crate::work::show_for_free(repo, line)?;
-        let s = sync_with(&client, repos, repo);
+        let s = sync_with(client, repos, repo);
         crate::work::show_for_free(repo, &shown)?;
         let s = s?;
         if let Some((path, why)) = s.unsynced.first() {
@@ -502,48 +530,69 @@ pub fn free(repos: &Repos, repo: &str) -> Result<u64> {
         if here.tree != b.tree {
             return Err(crate::tr!("It changed while it was being sent; try again", "送っているあいだに変わりました。もう一度どうぞ"));
         }
-        // Asked once more: the Remote's draft must be this very tree.
-        let there = line_there(&client.url, &client.json("GET", &at(repo, line, ""), None)?)?;
-        if there.draft != here.tree {
-            return Err(crate::tr!("The Remote's copy is not complete yet", "Remote の写しがまだ揃っていません"));
+        checked.push((key, line.clone(), dir, b.tree));
+    }
+    // Moved aside, every copy, before any is let go.
+    let mut moved: Vec<(String, PathBuf, PathBuf)> = Vec::new();
+    for (key, _, dir, _) in &checked {
+        let aside = aside_of(dir);
+        if let Err(e) = crate::atomic::rename_new(dir, &aside) {
+            let why = crate::tr!("{} could not be moved to be freed: {}", "{} を空けるために動かせませんでした：{}", dir.display(), e);
+            return Err(put_back(&moved).map_or(why.clone(), |lost| format!("{why}; {lost}")));
         }
-        gone.push((key, dir));
+        moved.push((key.clone(), dir.clone(), aside));
+    }
+    let refused = |why: String| -> String { put_back(&moved).map_or(why.clone(), |lost| format!("{why}; {lost}")) };
+    // Nothing may hold what was moved: it could write on into it, and that would go with it.
+    for (_, dir, aside) in &moved {
+        if let Some(who) = held_open(aside) {
+            return Err(refused(crate::tr!("{} is open in {}: it could still write there, so it is kept here (close it and free again)",
+                "{} は {} が開いています。まだ書けるので、ここに残しました（閉じてからもう一度空けてください）", dir.display(), who)));
+        }
+    }
+    // Read again whole, every byte (no digest kept from before counts): exactly what the Remote holds.
+    for ((_, line, _, agreed), (_, _, aside)) in checked.iter().zip(&moved) {
+        let now = local_tree_fresh(aside);
+        if !now.unsynced.is_empty() || now.tree != *agreed {
+            return Err(refused(crate::tr!("It changed while it was being freed; it is kept here and sent next", "空けているあいだに変わりました。ここに残し、次に送ります")));
+        }
+        if !off {
+            let there = match client.json("GET", &at(repo, line, ""), None).and_then(|v| line_there(&client.url, &v)) {
+                Ok(t) => t,
+                Err(e) => return Err(refused(e)),
+            };
+            if there.draft != now.tree {
+                return Err(refused(crate::tr!("The Remote's copy is not complete yet", "Remote の写しがまだ揃っていません")));
+            }
+        }
     }
     let mut bytes = 0;
-    for (key, dir) in gone {
-        bytes += crate::usage::allocated(&dir);
-        fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
-        forget_base(&key)?;
+    for (key, _, aside) in &moved {
+        bytes += crate::usage::allocated(aside);
+        fs::remove_dir_all(aside).map_err(|e| e.to_string())?;
+        forget_base(key)?;
     }
-    crate::work::show_for_free(repo, crate::work::MAIN)?;
+    drop(held);
+    if !off { crate::work::show_for_free(repo, crate::work::MAIN)?; }
     Ok(bytes)
 }
 
-/// Free the copies of a repo that is off: each must be as it was agreed, since none can be sent now.
-fn free_off(repos: &Repos, repo: &str, copies: &[String]) -> Result<u64> {
-    let mut gone = Vec::new();
-    for line in copies {
-        let key = key_of(repo, line);
-        let dir = if line == crate::work::MAIN { repos.root().join(repo) } else { crate::work::worktree(repo, line) };
-        let agreed = base(&key).map(|b| b.tree).unwrap_or_default();
-        let here = local_tree(&dir).tree;
-        let changed = here.keys().chain(agreed.keys()).collect::<std::collections::BTreeSet<_>>().into_iter().filter(|p| here.get(*p) != agreed.get(*p)).count();
-        if changed > 0 {
-            return Err(if changed == 1 {
-                crate::tr!("1 change here is not on the Remote; turn it on to send it first", "ここの変更 1件が Remote にありません。オンにして先に送ってください")
-            } else {
-                crate::tr!("{} changes here are not on the Remote; turn it on to send them first", "ここの変更 {}件が Remote にありません。オンにして先に送ってください", changed)
-            });
+/// Where a copy is moved to be freed: beside it, under a name no repo, work or temporary has (a dot first,
+/// and not this OS's temporary's), so nothing lists it, syncs it or reclaims it as a leftover meanwhile.
+fn aside_of(dir: &Path) -> PathBuf {
+    let name = dir.file_name().unwrap_or_default().to_string_lossy().into_owned();
+    dir.with_file_name(format!(".{name}.freeing-{}", std::process::id()))
+}
+
+/// Every copy moved aside put back where it was. None when all went back; else what could not, and where it is.
+fn put_back(moved: &[(String, PathBuf, PathBuf)]) -> Option<String> {
+    let mut lost = Vec::new();
+    for (_, dir, aside) in moved.iter().rev() {
+        if let Err(e) = crate::atomic::rename_new(aside, dir) {
+            lost.push(crate::tr!("{} is kept at {} ({})", "{} は {} に残しました（{}）", dir.display(), aside.display(), e));
         }
-        gone.push((key, dir));
     }
-    let mut bytes = 0;
-    for (key, dir) in gone {
-        bytes += crate::usage::allocated(&dir);
-        fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
-        forget_base(&key)?;
-    }
-    Ok(bytes)
+    (!lost.is_empty()).then(|| lost.join("; "))
 }
 
 #[cfg(test)]

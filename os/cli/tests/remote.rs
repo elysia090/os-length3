@@ -185,3 +185,86 @@ fn signing_in_again_where_the_session_is_alive_changes_nothing() {
     assert!(std::fs::read_to_string(home.path("home/remote.json")).unwrap().contains("\"token\":\"new\""));
     assert!(home.path("sync/notes.json").exists());
 }
+
+/// What a writer here did while Free ran: each file it wrote by its name and was told was written.
+type Wrote = std::sync::Arc<std::sync::Mutex<Vec<(std::path::PathBuf, String)>>>;
+
+/// A Remote holding notes at version 1 (a.txt as `kept`), taking nothing sent; at its `at`'th answer of the
+/// line's draft (1: the sync's, 2: Free's last ask, after the copy is checked), a writer here begins to write
+/// new files into the repo by their names for a while, as an editor saves, and the answer waits on it a little.
+fn holding_notes(home: &Home, at: usize, wrote: &Wrote) -> (FakeRemote, std::sync::Arc<std::sync::Mutex<Option<std::thread::JoinHandle<()>>>>) {
+    let draft = format!(r#"{{"version":1,"draft":{{"a.txt":"{}"}},"head":null}}"#, sha("kept\n"));
+    let asked = std::sync::atomic::AtomicUsize::new(0);
+    let writer = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let (w, wrote, repo) = (writer.clone(), wrote.clone(), home.path("repos/notes"));
+    let remote = FakeRemote::start(move |a| match (a.method.as_str(), a.path.as_str()) {
+        ("GET", "/v1/repos") => (200, r#"[{"name":"notes","head":null,"version":1,"bytes":5,"updatedAt":"x"}]"#.into()),
+        ("GET", "/v1/repos/notes") => {
+            if asked.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1 == at {
+                let (wrote, repo) = (wrote.clone(), repo.clone());
+                *w.lock().unwrap() = Some(std::thread::spawn(move || {
+                    let end = std::time::Instant::now() + std::time::Duration::from_millis(400);
+                    let mut n = 0;
+                    while std::time::Instant::now() < end {
+                        let (path, text) = (repo.join(format!("late-{n}.txt")), format!("late {n}\n"));
+                        if std::fs::write(&path, &text).is_ok() { wrote.lock().unwrap().push((path, text)); }
+                        n += 1;
+                        std::thread::yield_now();
+                    }
+                }));
+                // The writer is under way while Free waits for this answer.
+                let begun = std::time::Instant::now();
+                while begun.elapsed() < std::time::Duration::from_millis(100) { std::thread::yield_now(); }
+            }
+            (200, draft.clone())
+        }
+        _ => (NOT_FOUND.0, NOT_FOUND.1.to_string()),
+    });
+    (remote, writer)
+}
+
+#[test]
+fn bytes_written_while_free_runs_are_kept_here_or_never_written_and_never_freed_into_nowhere() {
+    for at in [1, 2] {
+        let home = Home::new(&format!("free-late-{at}"));
+        home.repo("notes", &[("a.txt", "kept\n")]);
+        home.agreed("notes", &format!(r#"{{"version":1,"tree":{{"a.txt":"{}"}},"head":null}}"#, sha("kept\n")));
+        let wrote: Wrote = Default::default();
+        let (remote, writer) = holding_notes(&home, at, &wrote);
+        home.signed_in(&remote.url);
+        let ran = home.run("en", &["free", "notes"]);
+        if let Some(w) = writer.lock().unwrap().take() { w.join().unwrap(); }
+        let wrote = wrote.lock().unwrap();
+        // Whatever the writer was told it wrote is here, byte for byte: the Remote took none of it.
+        for (path, text) in wrote.iter() {
+            assert_eq!(std::fs::read_to_string(path).ok().as_deref(), Some(text.as_str()), "at {at}: {} was lost; {ran:?}", path.display());
+        }
+        if !wrote.is_empty() { assert_ne!(ran.code, 0, "at {at}: freed over late bytes: {ran:?}"); }
+        if ran.code == 0 {
+            assert!(!home.path("repos/notes").exists(), "at {at}: {ran:?}");
+        } else {
+            assert_eq!(std::fs::read_to_string(home.path("repos/notes/a.txt")).unwrap(), "kept\n", "at {at}: {ran:?}");
+            assert!(std::fs::read_dir(home.path("repos")).unwrap().flatten().all(|e| !e.file_name().to_string_lossy().contains("freeing")), "at {at}: a copy was left aside");
+        }
+        // Once the copy is moved aside, a write by its name cannot land anywhere Free lets go: it fails, and is told.
+        if at == 2 { assert!(wrote.is_empty() && ran.code == 0, "{ran:?} {wrote:?}"); }
+    }
+}
+
+#[test]
+fn a_repo_a_program_holds_open_is_not_freed_and_what_it_writes_after_stays() {
+    use std::io::Write;
+    let home = Home::new("free-held");
+    home.repo("notes", &[("a.txt", "kept\n")]);
+    home.agreed("notes", &format!(r#"{{"version":1,"tree":{{"a.txt":"{}"}},"head":null}}"#, sha("kept\n")));
+    let (remote, _) = holding_notes(&home, usize::MAX, &Default::default());
+    home.signed_in(&remote.url);
+    // Open for writing before Free begins, as an editor or a log holds a file: it could write on after any check.
+    let mut held = std::fs::OpenOptions::new().append(true).open(home.path("repos/notes/a.txt")).unwrap();
+    let ran = home.run("en", &["free", "notes"]);
+    assert_eq!(ran.code, 1, "{ran:?}");
+    assert!(ran.stderr.contains("is open in pid") && ran.stderr.contains("kept here"), "{ran:?}");
+    held.write_all(b"after\n").unwrap();
+    drop(held);
+    assert_eq!(std::fs::read_to_string(home.path("repos/notes/a.txt")).unwrap(), "kept\nafter\n");
+}

@@ -13,6 +13,8 @@ pub struct Local {
     pub bytes: u64,
     /// Every file digested, for the stamps kept (stamps_save).
     read: Vec<PathBuf>,
+    /// Read whole, every file, no digest kept taken (local_tree_fresh).
+    fresh: bool,
 }
 
 /// What a file's digest was when it was last read, by what it looked like then.
@@ -56,6 +58,39 @@ pub fn local_tree(dir: &Path) -> Local {
     walk(dir, "", &mut out);
     if let Some(f) = &kept { stamps_save(f, &out.read); }
     out
+}
+
+/// The same, every file read again whole: no digest kept from before is taken (what Free goes by last).
+pub fn local_tree_fresh(dir: &Path) -> Local {
+    let mut out = Local { fresh: true, ..Local::default() };
+    walk(dir, "", &mut out);
+    out
+}
+
+/// A process that holds something in `dir`: a file or a folder in it open, mapped, or as its current
+/// folder or root; it could write on into it by what it holds, whatever is done to its name. Said as
+/// "pid N (its name)"; None when nothing does (or, off Linux, when this cannot be told: then None too).
+pub fn held_open(dir: &Path) -> Option<String> {
+    let me = std::process::id().to_string();
+    let inside = |p: &Path| p.starts_with(dir);
+    for e in fs::read_dir("/proc").ok()?.flatten() {
+        let pid = e.file_name().to_string_lossy().into_owned();
+        if pid == me || !pid.bytes().all(|b| b.is_ascii_digit()) { continue; }
+        let at = e.path();
+        let mut holds = ["cwd", "root"].iter().any(|l| fs::read_link(at.join(l)).is_ok_and(|t| inside(&t)));
+        if !holds {
+            holds = fs::read_dir(at.join("fd")).into_iter().flatten().flatten().any(|f| fs::read_link(f.path()).is_ok_and(|t| inside(&t)));
+        }
+        if !holds {
+            // A mapped file shows by its path, last on its line.
+            holds = fs::read_to_string(at.join("maps")).is_ok_and(|m| m.lines().any(|l| l.split_whitespace().nth(5).is_some_and(|p| inside(Path::new(p)))));
+        }
+        if holds {
+            let name = fs::read_to_string(at.join("comm")).unwrap_or_default();
+            return Some(format!("pid {pid} ({})", name.trim()));
+        }
+    }
+    None
 }
 
 /// Where the digests of a repo copy are kept between runs, as git keeps its
@@ -134,7 +169,8 @@ pub(super) fn walk(dir: &Path, prefix: &str, out: &mut Local) {
                 out.unsynced.push((rel, crate::tr!("a file over 16 MB", "16 MB を超えるファイル")));
                 continue;
             }
-            let Some(sha) = digest(&e.path(), &meta) else { out.unsynced.push((rel, crate::tr!("a file that cannot be read", "読めないファイル"))); continue };
+            let sha = if out.fresh { fs::read(e.path()).ok().map(|b| sha256(&b)) } else { digest(&e.path(), &meta) };
+            let Some(sha) = sha else { out.unsynced.push((rel, crate::tr!("a file that cannot be read", "読めないファイル"))); continue };
             out.bytes += meta.len();
             out.read.push(e.path());
             out.files.insert(sha.clone(), e.path());
