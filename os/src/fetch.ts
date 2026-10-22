@@ -1,5 +1,5 @@
-// Fetching l3's files (its index, the translator, the hot programs)
-// the page and its server: a proxy may cut a transfer midway, stall it, or
+// Fetching l3's files (its index, the translator, the hot programs) through
+// whatever lies between the page and its server: a proxy may cut a transfer midway, stall it, or
 // answer with an error for a moment. A download here keeps what it has,
 // notices a stall instead of waiting forever, continues from the byte it
 // reached (a Range request, guarded so two versions are never spliced), and
