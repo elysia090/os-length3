@@ -17,7 +17,8 @@ test.describe('the first Prompt', {tag: '@slow'}, () => {
 
   test('comes with a few megabytes, not the whole root, and sooner again once cached', async ({app}) => {
     test.setTimeout(300_000);
-    await app.newRepo.make('hello', {template: 'C'});
+    // Made from New repo alone (no file written in Forge first), so opening it in Forge is the Prompt's first start.
+    await app.newRepo.make('hello');
     let counting = false;
     const got: {url: string; bytes: number}[] = [];
     // Every response the page and its workers take while the Prompt starts (a worker's synchronous reads too).

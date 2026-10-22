@@ -71,7 +71,10 @@ export async function list(path: string): Promise<SystemEntry[]> {
   }
   // Anything else is l3's root, as its index has it: the same tree as the app's.
   distribution ??= root().catch((e) => { distribution = null; throw e; });
-  const entries = (await distribution).get(path) ?? [];
+  // Its index not here yet (offline, or l3 still on its way): "/" still has /root, the repos, which are this
+  // device's own; the rest of the tree comes with l3.
+  const entries = path === '/' ? await distribution.then((d) => d.get('/') ?? [], () => [{name: 'root', kind: 'dir' as const, path: '/root'}])
+    : (await distribution).get(path) ?? [];
   if (path !== '/') return entries;
   return entries.map((e) => (e.kind !== 'dir' ? e : {...e,
     origin: e.name === 'root' ? 'repos' : KERNEL.has(e.name) ? 'kernel' : EMPTY.has(e.name) ? 'empty' : 'distribution'}));

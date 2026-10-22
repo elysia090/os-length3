@@ -64,7 +64,9 @@ test('a press on a line\'s number selects that line; below the text, the caret g
   // The room left of the numbers is the same line.
   await app.page.mouse.click(box.x - 6, box.y + 3.5 * height);
   await expect.poll(() => app.forge.selected('src/main.c')).toBe(lines[3]);
-  // Below the text, as before: the caret at the end.
+  // Below the text, as before: the caret at the end. (The file's foot brought into view first: the prompt box lies
+  // over the center's foot, and what is under it is not the file's.)
+  await app.main.locator('section.file[data-path="src/main.c"] .sheet').evaluate((e) => e.scrollIntoView({block: 'center'}));
   const sheet = (await app.main.locator('section.file[data-path="src/main.c"] .sheet').boundingBox())!;
   await app.page.mouse.click(sheet.x + sheet.width / 2, sheet.y + sheet.height - 8);
   expect(await editor.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.selectionEnd])).toEqual([text.length, text.length]);
@@ -187,7 +189,9 @@ test('a narrow window reaches the issues, the diff and the output from the searc
   await expect(app.forge.search).toBeFocused();
   await app.page.keyboard.press('Escape');
   await expect(app.forge.results).toBeHidden();
-  // The search reaches a changed file's diff as well.
+  // The search reaches a changed file's diff as well (diff, still pressed, let go: what is found is every kind again).
+  await app.forge.search.click();
+  await app.forge.kind('diff').click();
   await app.forge.search.fill('README');
   await app.forge.results.getByRole('button', {name: 'The diff of README.md'}).click();
   await expect(app.forge.diffLine('Written in Forge.')).toBeVisible();
@@ -247,10 +251,11 @@ test('the plug says the area is out only where it is, and Escape on it puts the 
   await expect(plug).toHaveAttribute('aria-expanded', 'false');
 });
 
-test('the prompt box has a Run button that names its keys, and the box reaches a little left of the files', async ({app}) => {
+test('the prompt box has a Run button, its keys in its title rather than beside the word, and the box reaches a little left of the files', async ({app}) => {
   const run = app.main.getByRole('button', {name: /^Run/});
   await expect(run).toHaveAttribute('aria-keyshortcuts', /Enter/);
-  await expect(run).toContainText('Enter');
+  await expect(run).toHaveText('Run');
+  await expect(run).toHaveAttribute('title', /Enter/);
   await app.page.setViewportSize({width: 808, height: 800});
   const box = (await app.main.locator('.prompt').boundingBox())!;
   const file = (await app.main.locator('section.file').first().boundingBox())!;
@@ -261,7 +266,8 @@ test('before anything is run, the Prompt over the center is only as tall as what
   await app.forge.promptBox.focus();
   const box = app.main.locator('.term-slot .term-box');
   await expect(box).toBeVisible();
-  expect((await box.boundingBox())!.height).toBeLessThan(180);
+  // What it holds is said with it, so a box grown by something it shows is told apart from one stretched empty.
+  expect((await box.boundingBox())!.height, await box.innerText()).toBeLessThan(180);
 });
 
 test('the current repo\'s pill shows which part has the keyboard, in ground over its ink, and the ring is not cut', async ({app}) => {
