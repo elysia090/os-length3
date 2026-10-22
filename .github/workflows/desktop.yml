@@ -66,11 +66,17 @@ jobs:
         run: |
           npm ci
           npx playwright install --with-deps chromium
-      - name: The Prompt's files, from the release RELEASE names
+      - name: l3 for the browser, made from the root this tree pins, and the same as it
         working-directory: os
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: node scripts/prompt-files.mjs
+        run: |
+          rustup target add wasm32-unknown-unknown
+          # The root the desktop app installs (core/src/root.rs, for RELEASE), as the browser reads it with this tree's translator...
+          root=$(node scripts/root-file.mjs target/root)
+          sh scripts/l3.sh "$root" public/l3
+          # ...and the same paths, types, modes, link targets and bytes as that root.
+          node scripts/l3-parity.mjs "$root" public/l3
       - name: Selftest (with the Prompt's @slow tests)
         working-directory: os
         env:

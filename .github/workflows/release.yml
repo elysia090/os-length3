@@ -7,7 +7,8 @@ name: Release
 # (the pinned 0.1.0 root, laid out for Prompts (what only booting needed
 # dropped, merged /usr) with this tree's l3, profile and shell, repackaged
 # by os/scripts/root-release.sh), the web build (the app with
-# the Prompt's userland, os/scripts/web-release.sh) and the desktop app (the
+# l3 for the browser: the same root as the browser reads it, os/scripts/l3.mjs
+# and web-release.sh) and the desktop app (the
 # same UI, its Prompt running that root on the machine: a .deb and an
 # AppImage), with their digests. Devices then trust the root once its digest is pinned in
 # os/core/src/root.rs. No Cloudflare credentials are kept here: the Remote's
@@ -66,30 +67,28 @@ jobs:
           # The base is the 0.1.0 release's root; root-release.sh checks its digest.
           gh release download os-length3-linux-v0.1.0 --pattern 'os-length3-linux-0.1.0-x86_64-*.tar.zst' --output "$RUNNER_TEMP/base.tar.zst"
           sh scripts/root-release.sh "$RUNNER_TEMP/base.tar.zst" "$GITHUB_WORKSPACE/out" "$VERSION"
-      - name: Pin this release's root
-        if: env.SKIP != '1'
-        working-directory: os
-        # What is built from here on (the Prompt's l3, the desktop app) trusts the root this release ships.
-        run: node scripts/pin-root.mjs "$GITHUB_WORKSPACE"/out/os-length3-linux-$VERSION-x86_64-*.tar.zst
-      - name: The root for the browser
+      - name: l3 for the browser, the same root
         if: env.SKIP != '1'
         working-directory: os
         run: |
-          # The same root, as packs (one per package, named by what each holds) the browser's Prompt reads file by file (scripts/webroot.mjs).
-          mkdir -p "$RUNNER_TEMP/opened"
-          tar --zstd -xf "$GITHUB_WORKSPACE"/out/os-length3-linux-$VERSION-x86_64-*.tar.zst -C "$RUNNER_TEMP/opened"
-          node scripts/webroot.mjs "$RUNNER_TEMP/opened/root" public/root
-      # web-release.sh builds wasm-tools from source when it is not there (about 4 minutes): the
-      # same version's build is kept between runs. The version is web-release.sh's.
-      - name: wasm-tools
+          root=$(ls "$GITHUB_WORKSPACE"/out/os-length3-linux-$VERSION-x86_64-*.tar.zst)
+          # The root itself as the browser reads it (packs by package, the translator, BusyBox and l3 translated ahead of time; scripts/l3.mjs)...
+          sh scripts/l3.sh "$root" public/l3
+          # ...and it is the root: every path, type, mode, link target and sha256 the same as the desktop app installs.
+          node scripts/l3-parity.mjs "$root" public/l3
+          tar -C public/l3 --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --format=pax \
+            --pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime -cf "$GITHUB_WORKSPACE/out/os-length3-linux-$VERSION-l3-web.tar" .
+      - name: Pin this release's l3
         if: env.SKIP != '1'
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/bin/wasm-tools
-          key: wasm-tools-1.262.0-${{ runner.os }}
+        working-directory: os
+        # One entry, both ways in: the root the desktop app installs and the index the web reads it by. What is built
+        # from here on (the desktop app, the web build) trusts what this release ships.
+        run: node scripts/pin-root.mjs "$GITHUB_WORKSPACE"/out/os-length3-linux-$VERSION-x86_64-*.tar.zst public/l3
       - name: Web
         if: env.SKIP != '1'
         working-directory: os
+        env:
+          L3_READY: '1'
         run: |
           sh scripts/web-release.sh
           mv length3-web.zip "$GITHUB_WORKSPACE/out/os-length3-linux-$VERSION-web.zip"
@@ -101,9 +100,9 @@ jobs:
           APPIMAGE_EXTRACT_AND_RUN: '1'
         run: |
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf
-          # The app runs its Prompt on the machine, from the root it installs: the browser's userland and root stay out of it.
+          # The app runs its Prompt on the machine, from the root it installs: l3 for the browser stays out of it.
           mkdir -p "$RUNNER_TEMP/web-only"
-          mv public/root public/userland "$RUNNER_TEMP/web-only/"
+          mv public/l3 "$RUNNER_TEMP/web-only/"
           # The web step checked the types: the app's bundle is made again for the app, not checked again.
           npx tauri build --config "{\"version\":\"$VERSION\",\"build\":{\"beforeBuildCommand\":\"npx vite build\"}}"
           cp target/release/bundle/deb/*.deb "$GITHUB_WORKSPACE/out/os-length3-linux-$VERSION-desktop-amd64.deb"
@@ -112,8 +111,9 @@ jobs:
         if: env.SKIP != '1'
         working-directory: out
         run: |
-          sha256sum os-length3-linux-$VERSION-web.zip os-length3-linux-$VERSION-desktop-* >> SHA256SUMS
+          sha256sum os-length3-linux-$VERSION-l3-web.tar os-length3-linux-$VERSION-web.zip os-length3-linux-$VERSION-desktop-* >> SHA256SUMS
           root=$(ls os-length3-linux-$VERSION-x86_64-*.tar.zst)
+          l3web=os-length3-linux-$VERSION-l3-web.tar
           web=os-length3-linux-$VERSION-web.zip
           deb=os-length3-linux-$VERSION-desktop-amd64.deb
           appimage=os-length3-linux-$VERSION-desktop-x86_64.AppImage
@@ -124,7 +124,7 @@ jobs:
             echo
             echo "| File | Bytes | SHA-256 |"
             echo "| --- | --- | --- |"
-            for f in "$root" "$web" "$deb" "$appimage"; do
+            for f in "$root" "$l3web" "$web" "$deb" "$appimage"; do
               echo "| \`$f\` | $(stat -c %s "$f") | \`$(sha256sum "$f" | cut -d' ' -f1)\` |"
             done
             echo
@@ -135,7 +135,13 @@ jobs:
             echo "mkdir opened && tar --zstd -xf $root -C opened"
             echo '```'
             echo
-            echo "To serve this release, pin what it made, as its root is pinned in \`os/core/src/root.rs\`: its web zip in \`os/shared/web-releases.json\` (\"$VERSION\": its SHA-256 above), and its desktop app in \`os/shared/desktop-releases.json\`, as below. Each deploy of the Remote then takes the pinned root and desktop files from this release, checks them against those pins and puts them on the Remote, which hands them to anyone (this repository is private)."
+            echo "l3 $VERSION is the root (the desktop app installs it) and \`$l3web\`, the same root as the browser reads it (the same paths, modes, links and bytes: checked in this run). One entry of \`os/core/src/root.rs\` RELEASES pins both; this run pinned it, and serving this release is committing it:"
+            echo
+            echo '```rust'
+            awk '/^pub const RELEASES/{on=1; sub(/^pub const RELEASES: &\[Release\] = &\[/, "")} on{print} on && /^}/{exit}' ../os/core/src/root.rs
+            echo '```'
+            echo
+            echo "and its desktop app in \`os/shared/desktop-releases.json\`, as below. Each deploy of the Remote then takes the pinned root and desktop files from this release, checks them against those pins and puts them on the Remote, which hands them to anyone (this repository is private); a web build takes l3 from \`$l3web\` only at the pinned index (\`os/scripts/prompt-files.mjs\`)."
             echo
             echo '```json'
             echo "\"$VERSION\": {"
