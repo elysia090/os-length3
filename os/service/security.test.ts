@@ -16,7 +16,7 @@ import {SECURITY_TXT} from './about.ts';
 import {createApp} from './app.ts';
 import {AUTH_LIMITS, createAuth} from './auth.ts';
 import {hmacHex, keyFor, same} from './keys.ts';
-import {MIGRATIONS} from './neon.ts';
+import {MIGRATIONS, workerRole} from './neon.ts';
 import {API_POLICY, throttled} from './request.ts';
 import * as schema from './schema.ts';
 import {APP, BASE, freshDb, named, SECRET, service} from './testing.ts';
@@ -205,8 +205,16 @@ test('the role the Worker connects as reads and writes rows, and can make, chang
   const pg = new PGlite();
   try {
     await migrate(drizzle(pg, {schema}), {migrationsFolder: MIGRATIONS});
-    // As deploy.ts makes it (worker()): a login role in remote_app and nothing more.
-    await pg.exec(`CREATE ROLE remote_worker WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT PASSWORD 'x'; GRANT remote_app TO remote_worker;`);
+    // Made by the function deploy.ts makes it with (neon.ts workerRole): a login role in remote_app and
+    // nothing more, its statements, idle transactions and lock waits cut off.
+    await workerRole(drizzle(pg, {schema}) as unknown as Parameters<typeof workerRole>[0], 'test1');
+    const [r] = (await pg.query<{super: boolean; settings: string[]}>(`select r.rolsuper as super, s.setconfig as settings from pg_roles r
+      left join pg_db_role_setting s on s.setrole = r.oid where r.rolname = 'remote_worker'`)).rows;
+    assert.equal(r.super, false);
+    assert.deepEqual([...r.settings].sort(), ['idle_in_transaction_session_timeout=15s', 'lock_timeout=5s', 'statement_timeout=15s']);
+    const member = (await pg.query<{role: string}>(`select b.rolname as role from pg_auth_members m join pg_roles a on a.oid = m.member
+      join pg_roles b on b.oid = m.roleid where a.rolname = 'remote_worker'`)).rows.map((x) => x.role);
+    assert.deepEqual(member, ['remote_app']);
     await pg.exec('SET ROLE remote_worker');
     assert.deepEqual((await pg.query<{n: number}>('select count(*)::int as n from "user"')).rows, [{n: 0}]);
     const refused = async (q: string) => {
