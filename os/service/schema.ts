@@ -186,7 +186,15 @@ export const cut = pgTable('cut', {
   added: integer('added').notNull().default(0),
   removed: integer('removed').notNull().default(0),
   time: moment('time').defaultNow().notNull(),
+  /**
+   * What it changed from its (first) parent: how many files, and their folders in path order. Set by
+   * the database as the commit is made (0007: cut_change), so the log names them without its trees.
+   */
+  files: integer('files'),
+  folders: text('folders').array(),
 }, (t) => [primaryKey({columns: [t.repoId, t.id]}),
+  // What an account's commits take, read by the sweep's recount without reading the table.
+  index('cut_user_idx').on(t.userId, t.bytes),
   foreignKey({name: 'cut_repo', columns: [t.repoId, t.userId], foreignColumns: [repo.id, repo.userId]}).onDelete('cascade'),
   foreignKey({name: 'cut_parent', columns: [t.repoId, t.parent], foreignColumns: [t.repoId, t.id]}),
   foreignKey({name: 'cut_merged', columns: [t.repoId, t.merged], foreignColumns: [t.repoId, t.id]}),
@@ -262,7 +270,7 @@ export const review = pgTable('review', {
   bytes: integer('bytes').generatedAlwaysAs(sql`octet_length(note) + octet_length(marks::text)`).notNull(),
   by: text('by').notNull(),
   time: moment('time').defaultNow().notNull(),
-}, (t) => [index('review_change_idx').on(t.changeId, t.time),
+}, (t) => [index('review_change_idx').on(t.changeId, t.time), index('review_user_idx').on(t.userId, t.bytes),
   check('review_verdict', sql`${t.verdict} in ('approve', 'changes', 'comment')`), check('review_note', within('note', 2000)),
   check('review_marks', sql`jsonb_typeof(${t.marks}) = 'array' and jsonb_array_length(${t.marks}) <= 200 and octet_length(${t.marks}::text) <= 40000`)]);
 
@@ -338,6 +346,8 @@ export const message = pgTable('message', {
   readAt: moment('read_at'),
 }, (t) => [index('message_to_idx').on(t.to, t.createdAt), index('message_from_idx').on(t.from, t.createdAt),
   index('message_read_idx').on(t.createdAt).where(sql`${t.readAt} is not null`),
+  // What one has not read: the rail's count (news.ts), asked every little while, of only those rows.
+  index('message_unread_idx').on(t.to, t.from).where(sql`${t.readAt} is null`),
   check('message_type', sql`${t.type} in ('message', 'review', 'question', 'run')`),
   check('message_body', sql`char_length(${t.body}) between 1 and 4000`),
   check('message_target', sql`jsonb_typeof(${t.target}) = 'object' and octet_length(${t.target}::text) <= 1024`)]);

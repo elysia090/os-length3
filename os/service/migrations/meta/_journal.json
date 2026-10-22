@@ -64,6 +64,13 @@
       "when": 1792306969308,
       "tag": "0008_contract_ssh_address_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792310106605,
+      "tag": "0009_the_log_without_trees",
+      "breakpoints": true
     }
   ]
 }
