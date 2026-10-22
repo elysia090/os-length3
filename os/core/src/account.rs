@@ -4,6 +4,9 @@
 //! turning a repo off need a passkey, so they are the browser's; here they
 //! are read, and another device can be removed.
 
+// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
+#![forbid(unsafe_code)]
+
 use crate::remote::Client;
 use crate::Result;
 use serde::{Deserialize, Serialize};

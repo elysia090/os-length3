@@ -21,6 +21,9 @@
 //! Anything of a repo that is no longer on this device has no owner here,
 //! and goes.
 
+// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
+#![forbid(unsafe_code)]
+
 use std::path::{Path, PathBuf};
 
 /// The repo's environment: `upper` (what was written over the root) and

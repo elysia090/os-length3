@@ -9,6 +9,9 @@
 //!   <data>/work/<repo>/<line>/        each issue's copy
 //!   <data>/sync/<repo>.line           which one the repo shows now
 
+// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
+#![forbid(unsafe_code)]
+
 use crate::remote::{self, Client, Reply};
 use crate::repos::Repos;
 use serde::{Deserialize, Serialize};

@@ -14,6 +14,9 @@
 //! What is not committed is the draft against the line's last commit, shown
 //! by the folder it is in, so a reader enters from the area they look after.
 
+// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
+#![forbid(unsafe_code)]
+
 use crate::linediff::{self, Kind};
 use crate::remote::{self, Client, Reply, Tree};
 use crate::repos::Repos;

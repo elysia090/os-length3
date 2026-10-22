@@ -2,6 +2,9 @@
 //! the app and l3. A template holds only the repo's own files; Inbox and TODO
 //! belong to the OS, not to a repo.
 
+// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
+#![forbid(unsafe_code)]
+
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug, Clone)]

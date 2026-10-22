@@ -1,6 +1,9 @@
 //! Repos the app manages, under its own data directory. Every path from the
 //! webview is checked to stay inside one repo, after following symlinks.
 
+// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
+#![forbid(unsafe_code)]
+
 use serde::Serialize;
 use std::fs;
 use std::io::Read;

@@ -2,6 +2,9 @@
 //! repo: history is the Remote's (history.rs), and a repo's own tools run
 //! inside the root (launch.rs). Its own data is private to the person.
 
+// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
+#![forbid(unsafe_code)]
+
 use std::path::Path;
 
 /// Make the OS's own directory private to the person (0700). Other users of

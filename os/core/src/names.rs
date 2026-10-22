@@ -9,6 +9,9 @@
 //!   hello#3  trip:hello#3      an issue
 //!   trip#general  #general     a server's board (the server one is in, when left out)
 
+// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
+#![forbid(unsafe_code)]
+
 /// A principal's name: `name` alone is on one's own domain.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Principal { pub name: String, pub domain: Option<String> }

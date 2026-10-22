@@ -4,6 +4,9 @@
 //! it is kept on the Remote; any board can be taken home here as one text
 //! (its TODO, its talk, or both).
 
+// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
+#![forbid(unsafe_code)]
+
 use crate::remote::Client;
 use serde::{Deserialize, Serialize};
 type Result<T> = std::result::Result<T, String>;

@@ -3,6 +3,9 @@
 //! app's (a WebRTC line between two open pages); here messages go through the
 //! Remote as text.
 
+// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
+#![forbid(unsafe_code)]
+
 use crate::remote::{Client, Reply};
 use serde::{Deserialize, Serialize};
 type Result<T> = std::result::Result<T, String>;

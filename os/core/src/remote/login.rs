@@ -1,6 +1,9 @@
 //! Signing a device in (the device code a person approves in a browser),
 //! who it is signed in as, and signing it out.
 
+// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
+#![forbid(unsafe_code)]
+
 use super::*;
 
 /// Keep a session just approved. What was agreed with another Remote, or

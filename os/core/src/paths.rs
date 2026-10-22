@@ -1,6 +1,9 @@
 //! Where the OS keeps its things. One data directory per person:
 //! `<data>/repos/<name>` for repos and `<data>/home/` for Home's state.
 
+// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
+#![forbid(unsafe_code)]
+
 use std::env;
 use std::path::PathBuf;
 
