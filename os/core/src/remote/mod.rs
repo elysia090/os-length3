@@ -430,9 +430,11 @@ pub fn sync_home(key: &str) -> Result<crate::home::HomeSynced> {
         return Err(crate::tr!("{} is this device's own; it is not kept on the Remote", "{} はこの端末のもので、Remote には置きません", key));
     }
     let client = Client::open()?;
+    // A session kept without its account noted (a browser's): the Remote is asked whose it is.
+    let who = connection().and_then(|c| c.user.or_else(|| login::whose(&c.url, &c.token)));
     // Not a repo's name (no repo is called with a ~), so its own lock.
     let _held = lock("~home")?;
-    crate::home::agree_with(&mut crate::home::Files, &client, key)
+    crate::home::agree_with(&mut crate::home::Files, &client, key, who.as_deref())
 }
 
 /// Whether a setting here waits to be sent (it differs from what was last agreed); no request is made.

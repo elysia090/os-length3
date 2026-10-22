@@ -32,6 +32,14 @@ pub fn get(key: &str) -> Result<Option<String>> {
     }
 }
 
+/// Let `key` go: there is none of it here.
+pub fn remove(key: &str) -> Result<()> {
+    match fs::remove_file(file(key)?) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
+        _ => Ok(()),
+    }
+}
+
 /// Store `json` for `key`: it must parse, and it is replaced whole (written
 /// beside and renamed), so a reader never sees half of it.
 pub fn set(key: &str, json: &str) -> Result<()> {
@@ -250,12 +258,15 @@ pub const SYNCED: [&str; 3] = ["profile", "todo", "dotfiles"];
 pub struct Agreed {
     pub version: i64,
     pub value: String,
+    /// The account it was agreed with (its id); none from before accounts were noted.
+    pub who: Option<String>,
 }
 
 /// Where a setting is kept here: its value, and what was last agreed for it.
 pub trait HomeHere {
     fn value(&self, key: &str) -> Result<Option<String>>;
-    fn set_value(&mut self, key: &str, value: &str) -> Result<()>;
+    /// Set `key`'s value; None: there is none (the Remote never kept one for this account).
+    fn set_value(&mut self, key: &str, value: Option<&str>) -> Result<()>;
     fn agreed(&self, key: &str) -> Result<Option<Agreed>>;
     fn agree(&mut self, key: &str, a: Agreed) -> Result<()>;
 }
@@ -269,7 +280,7 @@ pub trait HomeThere {
 }
 
 /// What agreeing a setting did.
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Serialize)]
 pub struct HomeSynced {
     /// The version agreed.
     pub version: i64,
@@ -344,19 +355,34 @@ pub fn waiting(here: &impl HomeHere, key: &str) -> bool {
 /// Changed here, it is sent from the version it was read at; if another
 /// device changed it meanwhile, the TODO lists are joined and any other
 /// setting is the Remote's.
-pub fn agree_with(here: &mut impl HomeHere, there: &impl HomeThere, key: &str) -> Result<HomeSynced> {
+///
+/// `who` is the account signed in. One agreed with another account (another who signed in on this device)
+/// is never sent to this one: changed under that account and not sent, it waits here for it; as that
+/// account left it, this account's own takes its place.
+pub fn agree_with(here: &mut impl HomeHere, there: &impl HomeThere, key: &str, who: Option<&str>) -> Result<HomeSynced> {
     let mut out = HomeSynced::default();
+    let who = who.map(String::from);
     for _ in 0..3 {
         let b = here.agreed(key)?;
         let mine = here.value(key)?;
         let (theirs, version) = there.get(key)?;
         let changed = mine.is_some() && mine.as_deref() != b.as_ref().map(|b| b.value.as_str());
+        if let (Some(was), Some(now)) = (b.as_ref().and_then(|b| b.who.as_deref()), who.as_deref()) {
+            if was != now {
+                if changed { return Ok(out); }
+                here.set_value(key, theirs.as_deref())?;
+                here.agree(key, Agreed { version, value: theirs.unwrap_or_default(), who })?;
+                out.taken = true;
+                out.version = version;
+                return Ok(out);
+            }
+        }
         if !changed {
             if let Some(t) = theirs.as_deref().filter(|t| Some(*t) != mine.as_deref()) {
-                here.set_value(key, t)?;
+                here.set_value(key, Some(t))?;
                 out.taken = true;
             }
-            here.agree(key, Agreed { version, value: theirs.or(mine).unwrap_or_default() })?;
+            here.agree(key, Agreed { version, value: theirs.or(mine).unwrap_or_default(), who })?;
             out.version = version;
             return Ok(out);
         }
@@ -365,20 +391,20 @@ pub fn agree_with(here: &mut impl HomeHere, there: &impl HomeThere, key: &str) -
         if let Some(t) = theirs.filter(|_| version != b.as_ref().map_or(0, |b| b.version)) {
             if key != "todo" {
                 // The Remote's stands, and is what is agreed now (bug: it was taken but never agreed, so it was taken again and again).
-                here.set_value(key, &t)?;
-                here.agree(key, Agreed { version, value: t })?;
+                here.set_value(key, Some(&t))?;
+                here.agree(key, Agreed { version, value: t, who })?;
                 out.taken = true;
                 out.version = version;
                 return Ok(out);
             }
             value = join_todo(&b.as_ref().map_or(String::new(), |b| b.value.clone()), &mine, &t);
             if value != mine {
-                here.set_value(key, &value)?;
+                here.set_value(key, Some(&value))?;
                 out.joined = true;
             }
         }
         if let Some(v) = there.put(key, &value, version)? {
-            here.agree(key, Agreed { version: v, value })?;
+            here.agree(key, Agreed { version: v, value, who })?;
             out.sent = true;
             out.version = v;
             return Ok(out);
@@ -397,15 +423,18 @@ impl HomeHere for Files {
         get(key)
     }
 
-    fn set_value(&mut self, key: &str, value: &str) -> Result<()> {
-        set(key, value)
+    fn set_value(&mut self, key: &str, value: Option<&str>) -> Result<()> {
+        match value {
+            Some(v) => set(key, v),
+            None => remove(key),
+        }
     }
 
     fn agreed(&self, key: &str) -> Result<Option<Agreed>> {
         let Some(text) = get("sync")? else { return Ok(None) };
         let v: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
         let b = &v["home"][key];
-        Ok(b["value"].as_str().map(|value| Agreed { version: b["version"].as_i64().unwrap_or(0), value: value.into() }))
+        Ok(b["value"].as_str().map(|value| Agreed { version: b["version"].as_i64().unwrap_or(0), value: value.into(), who: b["who"].as_str().map(String::from) }))
     }
 
     fn agree(&mut self, key: &str, a: Agreed) -> Result<()> {
@@ -414,6 +443,7 @@ impl HomeHere for Files {
             .unwrap_or_else(|| serde_json::json!({"repos": {}}));
         if !v["home"].is_object() { v["home"] = serde_json::json!({}); }
         v["home"][key] = serde_json::json!({"version": a.version, "value": a.value});
+        if let Some(who) = a.who { v["home"][key]["who"] = who.into(); }
         set("sync", &serde_json::to_string(&v).map_err(|e| e.to_string())?)
     }
 }
@@ -563,7 +593,10 @@ mod tests {
 
     impl HomeHere for Device {
         fn value(&self, key: &str) -> Result<Option<String>> { Ok(self.values.get(key).cloned()) }
-        fn set_value(&mut self, key: &str, value: &str) -> Result<()> { self.values.insert(key.into(), value.into()); Ok(()) }
+        fn set_value(&mut self, key: &str, value: Option<&str>) -> Result<()> {
+            match value { Some(v) => self.values.insert(key.into(), v.into()), None => self.values.remove(key) };
+            Ok(())
+        }
         fn agreed(&self, key: &str) -> Result<Option<Agreed>> { Ok(self.agreed.get(key).cloned()) }
         fn agree(&mut self, key: &str, a: Agreed) -> Result<()> { self.agreed.insert(key.into(), a); Ok(()) }
     }
@@ -596,23 +629,23 @@ mod tests {
         let mut d = Device::default();
         d.values.insert("todo".into(), r#"[{"id":"a"}]"#.into());
         assert!(waiting(&d, "todo"));
-        let s = agree_with(&mut d, &r, "todo").unwrap();
+        let s = agree_with(&mut d, &r, "todo", None).unwrap();
         assert_eq!((s.sent, s.taken, s.version), (true, false, 1));
         assert_eq!(r.kept.borrow()["todo"], (r#"[{"id":"a"}]"#.to_string(), 1));
         assert!(!waiting(&d, "todo"));
         // Agreed and unchanged: one read, nothing sent.
         r.asked.borrow_mut().clear();
-        assert_eq!(agree_with(&mut d, &r, "todo").unwrap(), HomeSynced { version: 1, ..Default::default() });
+        assert_eq!(agree_with(&mut d, &r, "todo", None).unwrap(), HomeSynced { version: 1, ..Default::default() });
         assert_eq!(*r.asked.borrow(), ["GET todo"]);
         // Changed on another device, not here: taken.
         r.elsewhere("todo", r#"[{"id":"a"},{"id":"b"}]"#);
-        let s = agree_with(&mut d, &r, "todo").unwrap();
+        let s = agree_with(&mut d, &r, "todo", None).unwrap();
         assert_eq!((s.taken, s.sent, s.version), (true, false, 2));
         assert_eq!(d.values["todo"], r#"[{"id":"a"},{"id":"b"}]"#);
         // Nothing here and nothing there: nothing is sent, and nothing waits.
         let mut e = Device::default();
-        assert_eq!(agree_with(&mut e, &r, "profile").unwrap(), HomeSynced::default());
-        assert_eq!(e.agreed["profile"], Agreed { version: 0, value: String::new() });
+        assert_eq!(agree_with(&mut e, &r, "profile", None).unwrap(), HomeSynced::default());
+        assert_eq!(e.agreed["profile"], Agreed { version: 0, value: String::new(), who: None });
         assert!(!waiting(&e, "profile") && !e.values.contains_key("profile"));
     }
 
@@ -622,10 +655,10 @@ mod tests {
         let r = Remote::default();
         let mut d = Device::default();
         d.values.insert("todo".into(), r#"[{"id":"a","title":"here"}]"#.into());
-        agree_with(&mut d, &r, "todo").unwrap();
+        agree_with(&mut d, &r, "todo", None).unwrap();
         r.elsewhere("todo", r#"[{"id":"a","title":"here"},{"id":"b","title":"there"}]"#);
         d.values.insert("todo".into(), r#"[{"id":"a","title":"here, changed"},{"id":"c","title":"mine"}]"#.into());
-        let s = agree_with(&mut d, &r, "todo").unwrap();
+        let s = agree_with(&mut d, &r, "todo", None).unwrap();
         assert_eq!((s.joined, s.sent, s.version), (true, true, 3));
         // The Remote's others first, then this device's list; this device's where both have one.
         let joined = r#"[{"id":"b","title":"there"},{"id":"a","title":"here, changed"},{"id":"c","title":"mine"}]"#;
@@ -634,7 +667,7 @@ mod tests {
         // Another device writes between this one's read and its write: read again, joined again.
         d.values.insert("todo".into(), format!(r#"{},{{"id":"d"}}]"#, &joined[..joined.len() - 1]));
         *r.before_put.borrow_mut() = Some(("todo".into(), r#"[{"id":"e"}]"#.into()));
-        let s = agree_with(&mut d, &r, "todo").unwrap();
+        let s = agree_with(&mut d, &r, "todo", None).unwrap();
         assert_eq!(s.version, 5);
         let ids: Vec<String> = serde_json::from_str::<Vec<Value>>(&d.values["todo"]).unwrap().iter().map(|x| x["id"].as_str().unwrap().to_string()).collect();
         // The other device's list is [e] alone: what it removed of the list agreed goes here too; d, new here, stays.
@@ -647,17 +680,39 @@ mod tests {
         let r = Remote::default();
         let mut d = Device::default();
         d.values.insert("profile".into(), r#"{"name":"Ren"}"#.into());
-        agree_with(&mut d, &r, "profile").unwrap();
+        agree_with(&mut d, &r, "profile", None).unwrap();
         r.elsewhere("profile", r#"{"name":"Ren T."}"#);
         d.values.insert("profile".into(), r#"{"name":"れん"}"#.into());
         r.asked.borrow_mut().clear();
-        let s = agree_with(&mut d, &r, "profile").unwrap();
+        let s = agree_with(&mut d, &r, "profile", None).unwrap();
         assert_eq!((s.taken, s.sent, s.version), (true, false, 2));
         assert_eq!(d.values["profile"], r#"{"name":"Ren T."}"#);
         // Agreed then and there (bug: it was taken but never agreed, so every look took it again, three reads each time).
         assert_eq!(*r.asked.borrow(), ["GET profile"]);
         assert!(!waiting(&d, "profile"));
-        assert_eq!(d.agreed["profile"], Agreed { version: 2, value: r#"{"name":"Ren T."}"#.into() });
+        assert_eq!(d.agreed["profile"], Agreed { version: 2, value: r#"{"name":"Ren T."}"#.into(), who: None });
+    }
+
+    #[test]
+    fn a_setting_of_another_account_is_never_sent_to_this_one() {
+        let r = Remote::default();
+        r.elsewhere("profile", r#"{"name":"B"}"#);
+        let mut d = Device::default();
+        d.agreed.insert("profile".into(), Agreed { version: 4, value: r#"{"name":"A"}"#.into(), who: Some("a".into()) });
+        // Changed under A and not sent: it waits here for A, and nothing is asked of B's.
+        d.values.insert("profile".into(), r#"{"name":"A2"}"#.into());
+        assert_eq!(agree_with(&mut d, &r, "profile", Some("b")).unwrap(), HomeSynced::default());
+        assert_eq!(d.values["profile"], r#"{"name":"A2"}"#);
+        // As A left it: B's own takes its place, agreed with B.
+        d.values.insert("profile".into(), r#"{"name":"A"}"#.into());
+        let s = agree_with(&mut d, &r, "profile", Some("b")).unwrap();
+        assert_eq!((s.taken, s.sent, s.version), (true, false, 1));
+        assert_eq!(d.agreed["profile"], Agreed { version: 1, value: r#"{"name":"B"}"#.into(), who: Some("b".into()) });
+        // B never kept a TODO: A's goes, rather than becoming B's.
+        d.values.insert("todo".into(), "[1]".into());
+        d.agreed.insert("todo".into(), Agreed { version: 1, value: "[1]".into(), who: Some("a".into()) });
+        agree_with(&mut d, &r, "todo", Some("b")).unwrap();
+        assert!(!d.values.contains_key("todo"));
     }
 
     #[test]
