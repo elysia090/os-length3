@@ -17,6 +17,8 @@ pub mod names;
 pub mod net;
 #[cfg(target_os = "linux")]
 pub mod launch;
+#[cfg(all(target_os = "linux", any(target_arch = "x86_64", target_arch = "aarch64")))]
+pub mod seccomp;
 pub mod owned;
 pub mod paths;
 pub mod prompt;
