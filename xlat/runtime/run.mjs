@@ -8,13 +8,14 @@
 // stdin/stdout/stderr attach to this process.
 import {execFileSync, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, readlinkSync, statSync, writeFileSync} from 'node:fs';
+import {closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, readlinkSync, statSync, writeFileSync, writeSync} from 'node:fs';
 import {basename, dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {zstdDecompressSync} from 'node:zlib';
 import {Dir, File, Link, Vfs} from './fs.mjs';
 import {mountPack} from './pack.mjs';
 import {Kernel, PROFILE} from './process.mjs';
+import {RemoteKernel, canRunApart} from './remote.mjs';
 import {loadTranslator} from './translator.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -124,17 +125,20 @@ vfs.mkdirp(cwd);
 
 let stdin = new Uint8Array(0), stdinAt = 0;
 try { if (!process.stdin.isTTY) stdin = new Uint8Array(readFileSync(0)); } catch {}
-const kernel = new Kernel({
+// Each thread in a Worker of its own, as a cross-origin isolated page runs them; XLAT_INLINE=1: all here, in turn.
+const apart = canRunApart() && !process.env.XLAT_INLINE;
+const kernel = new (apart ? RemoteKernel : Kernel)({
   vfs,
   translate,
   console: {
     interactive: false,
-    write: (fd, bytes) => (fd === 2 ? process.stderr : process.stdout).write(bytes),
+    // At once, not when this thread next idles: a sleep here holds it, and what was said before must show before.
+    write: (fd, bytes) => { for (let at = 0; at < bytes.length;) { try { at += writeSync(fd === 2 ? 2 : 1, bytes, at); } catch (e) { if (e.code !== "EAGAIN") throw e; } } },
     read: (n) => { const out = stdin.subarray(stdinAt, stdinAt + n); stdinAt += out.length; return out; },
   },
 });
 const started = performance.now();
-const status = kernel.spawn(path, [path, ...rest], ['HOME=/root', 'PATH=/bin:/usr/bin', 'LANG=C.UTF-8', 'TERM=dumb'], cwd);
+const status = await kernel.spawn(path, [path, ...rest], ['HOME=/root', 'PATH=/bin:/usr/bin', 'LANG=C.UTF-8', 'TERM=dumb'], cwd);
 if (process.env.XLAT_TIMING) {
   // What the run still holds once its programs have ended (after a collection, when node allows one).
   globalThis.gc?.();

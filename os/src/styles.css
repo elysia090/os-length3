@@ -294,7 +294,7 @@ span.todo-title { min-height: 0; }
 
 /* Runtime: the environments a Prompt can run on, a row each; the one in
    effect is the place (ink over raised), those not here yet quiet and dashed. */
-.env-choices { display: grid; gap: var(--s2); max-width: 760px; }
+.env-choices { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s2); max-width: 760px; }
 .env-choice {
   display: grid; grid-template-columns: 6rem 6rem minmax(0, 1fr) auto; align-items: baseline; gap: var(--s3);
   padding: var(--s3) var(--s4); border: 1px solid var(--rule); border-radius: var(--r-place);
@@ -307,12 +307,19 @@ span.todo-title { min-height: 0; }
   .profile { grid-template-columns: auto minmax(0, 1fr); gap: var(--s4); }
   .profile > .button { grid-column: 1 / -1; justify-self: start; white-space: nowrap; }
   .avatar { width: 72px; height: 72px; font-size: var(--t-title); }
-  .env-choice { grid-template-columns: auto 1fr auto; }
+  /* Held to the window whatever face it is set in: a wider fallback font wraps the words, never the page. */
+  .env-choice { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .env-choice > * { min-width: 0; overflow-wrap: anywhere; }
   .env-choice > :nth-child(3) { grid-column: 1 / -1; grid-row: 2; }
 }
 
 /* Git: issues read from each repo's issue/ */
 .git-filter { margin-top: var(--s5); }
+/* Git's repos are one row that slides sideways, never more rows: a ring kept clear of its edge. */
+.git-filter > .chips { position: relative; flex-wrap: nowrap; overflow-x: auto; margin: calc(-1 * var(--s1)); padding: var(--s1); scrollbar-width: thin; scrollbar-color: var(--rule) transparent; }
+.git-filter > .chips > .chip { flex: none; }
+/* Git's column keeps its width whether it scrolls or not (read, then its words changed). */
+.git-flow { scrollbar-gutter: stable; }
 .section > h2 > span small { margin-left: var(--s2); }
 .issue-kind { font-weight: 700; }
 /* Where an issue is (its repo) is a name: the sans, as every name is. */
@@ -347,33 +354,49 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .issue-form { display: grid; gap: var(--s3); margin-bottom: var(--s4); padding: var(--s4); border: var(--line-work) solid var(--edge); border-radius: var(--r-place); }
 .issue-form[hidden] { display: none; }
 .issue-text { min-height: 96px; padding: var(--s2) var(--s3); resize: none; font: var(--t-body)/1.6 var(--sans); }
+/* A new issue: the repo it goes in before its first line; the room the repos inside took (two rows of chips and the gap under them) is the detail's. */
+.issue-first { display: flex; align-items: center; gap: var(--s3); min-width: 0; }
+.issue-first > .line-in { flex: 1; min-width: 0; }
+.issue-target { flex: 0 1 auto; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.issue-new .issue-text { min-height: calc(96px + 2 * var(--h-row) + var(--s2) + var(--s3)); }
 .empty p + p { margin-top: var(--s2); }
 /* What is only on the Remote, each with a press to fetch it, as Runtime's column. */
 .fetch-list { display: grid; gap: var(--s2); }
 .fetch-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s5); color: var(--ink); }
 
 /* New repo: the name alone on the first line; under it, what the repo is
-   for, and beside that the template and what File will show. The box for
-   what it is for reaches down as far as the column beside it. */
+   for, and beside that the one scaffold as File will show it, its files'
+   names written in place. The box for what it is for reaches down as far
+   as the column beside it. What is written comes first: the two stand side
+   by side only while it keeps a reading width (320 px) beside the
+   scaffold's 360; narrower, they stack, whatever the window. */
+.new-repo-wrap { container-type: inline-size; }
 .new-repo {
   margin-top: var(--s5); display: grid; gap: var(--s5); max-width: 960px;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 360px); align-items: start;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 360px); align-items: start;
 }
 .new-repo > .name-field { grid-area: 1 / 1; }
 .new-repo > .summary-field { grid-area: 2 / 1; align-self: stretch; grid-template-rows: auto 1fr; }
-.new-repo > .template-field { grid-area: 2 / 2; }
+.new-repo > .scaffold-field { grid-area: 2 / 2; }
 .new-repo > .answers { grid-column: 1 / -1; }
-.template-field > .tree-still { margin-top: var(--s2); }
+@container (max-width: 704px) {
+  .new-repo { grid-template-columns: minmax(0, 1fr); }
+  .new-repo > .name-field, .new-repo > .summary-field, .new-repo > .scaffold-field { grid-area: auto; }
+}
+/* A file's name in the scaffold is a field in its row, as File's rename is. */
+.tree-name-in {
+  flex: 0 1 32ch; min-width: 0; height: calc(var(--h-row) - var(--s1)); padding: 0 var(--s2); margin-right: var(--s2);
+  border: 1px solid var(--edge); border-radius: var(--r-field); background: var(--raised); color: var(--ink); font: inherit;
+}
+.tree-name-in::placeholder { color: var(--sub); }
+.tree-name-in[aria-invalid] { border-color: var(--ink); }
+.tree-name-in:disabled { opacity: .5; }
 .field { display: grid; gap: var(--s2); }
 .field-label { font-size: var(--t-meta); color: var(--sub); }
 .tree.tree-still { position: static; z-index: auto; visibility: visible; opacity: 1; width: auto; max-height: none; transition: none; }
 .tree-caption { padding: 0 var(--s2) var(--s1); }
 .tree-still .tree-name.plain { color: var(--ink); }
 .tree-still .tree-toggle { cursor: default; }
-@media (max-width: 760px) {
-  .new-repo { grid-template-columns: minmax(0, 1fr); }
-  .new-repo > .name-field, .new-repo > .summary-field, .new-repo > .template-field { grid-area: auto; }
-}
 /* What it is for: a raised box as Home's TODO is, the words written straight in it as a TODO's detail is. */
 .summary-box {
   display: flex; min-height: 240px; border: 1px solid var(--edge); border-radius: var(--r-place);
@@ -794,6 +817,10 @@ mark { background: var(--ink); color: var(--ground); }
 .issue-card { padding: calc(var(--s4) + var(--s1)) var(--s5) var(--s6); border: 1px solid var(--rule); border-radius: var(--r-place); transition: background var(--motion); }
 .issue-slot[aria-current='false'] .issue-card { color: var(--sub); min-height: var(--card-h, auto); }
 .issue-slot[aria-current='true'] .issue-card { border-color: var(--ink); background: var(--raised); }
+/* A neighbour shows its number at the edge that shows: the one after at its left, the one before at its right. */
+.issue-slot[aria-current='false'] .issue-card { padding-inline: var(--s2); }
+.issue-big-head.peek h2 { font-size: var(--t-body); white-space: nowrap; }
+.issue-slot:has(+ .issue-slot[aria-current='true']) .issue-big-head.peek { text-align: right; }
 .issue-stage:has(.stage-hit.next:hover) .issue-slot[aria-current='true'] + .issue-slot .issue-card,
 .issue-stage:has(.stage-hit.prev:hover) .issue-slot:has(+ .issue-slot[aria-current='true']) .issue-card { background: var(--raised); }
 .stage-hit { position: absolute; top: 0; bottom: 0; z-index: 1; width: var(--peek); padding: 0; border: 0; border-radius: var(--r-place); background: transparent; cursor: pointer; }

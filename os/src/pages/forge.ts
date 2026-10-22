@@ -8,6 +8,7 @@ import {onChange, store} from '../repos.ts';
 import type {Context} from './context.ts';
 import {bench} from './bench.ts';
 import {Reader} from './reader.ts';
+import {startIssue} from './issue-form.ts';
 
 /**
  * Forge, the place you work. The repos out to work on run as pills in a band
@@ -65,6 +66,8 @@ function make(ctx: Context) {
   const flow = h('section', {class: 'flow', tabindex: '0', 'aria-label': t('The repo\'s contents')});
 
   const work = bench({strip, main: flow, reveal: (path, line) => void view()?.reader.reveal(path, line).then(() => track())});
+  // The Issue view with none open begins one for this repo on Git; Not now there comes back here.
+  work.reference.writeIssue = (r) => { startIssue(r); ctx.go('git'); };
 
   // The band: ⊕ first, then the repos out to work on, each a pill that comes
   // off with its ×. One press of ⊕ brings every repo not on the band out at

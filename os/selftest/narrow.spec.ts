@@ -9,8 +9,12 @@ const sideways = (page: Page) => page.evaluate(() => document.documentElement.sc
 
 test('a 320 px window never scrolls sideways, with the menus out or put away', async ({app}) => {
   await app.page.setViewportSize({width: 320, height: 700});
+  // In a wide face, as on a machine without the narrow system one: what fits only in a narrow font is caught here too.
+  await app.page.addStyleTag({content: '* { font-family: "DejaVu Sans", "DejaVu Sans Mono", sans-serif !important; }'});
   for (const place of ['home', 'forge', 'git', 'runtime', 'remote', 'inbox', 'new-repo'] as const) {
     await app.rail.go(place);
+    // Runtime's environments are read after it opens; measured before they are, its rows would never be.
+    if (place === 'runtime') await expect(app.page.locator('.env-choice').first()).toBeVisible();
     expect(await sideways(app.page), place).toBeLessThanOrEqual(0);
   }
   await app.me.openMenu();

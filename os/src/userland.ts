@@ -1,6 +1,17 @@
 import {digest, download, Fatal} from './fetch.ts';
 import {errorText} from './errors.ts';
 import {t} from './i18n.ts';
+import {prepare, type Segment} from '../../xlat/runtime/share.mjs';
+
+export type {Segment};
+
+/**
+ * Whether each guest thread runs in a Worker of its own, all at once: the page
+ * shares memory (cross-origin isolated: COOP and COEP, public/_headers) and
+ * a Worker can wait on it. Otherwise they take turns in the Prompt's Worker.
+ */
+export const threadsApart = (): boolean => typeof SharedArrayBuffer === 'function' && globalThis.crossOriginIsolated === true
+  && typeof (Atomics as {waitAsync?: unknown}).waitAsync === 'function';
 
 // l3, the one thing the Prompt depends on: the release root the desktop app
 // installs (core/src/root.rs pins it, one entry for both), read here as the
@@ -51,8 +62,11 @@ export interface L3 {
   about: About;
   index: Index;
   translator: WebAssembly.Module;
-  /** What the Worker is given beside the packs: each hot program at its own path in the root, with its translation. */
-  files: {path: string; bytes: Uint8Array; module: WebAssembly.Module | null; mode: number}[];
+  /**
+   * What the Worker is given beside the packs: each hot program at its own path in the root, with its translation
+   * (its module, its data kept outside it, and whether its memory is shared: threads in Workers of their own).
+   */
+  files: {path: string; bytes: Uint8Array; module: WebAssembly.Module | null; mode: number; segments: Segment[] | null; shared: boolean}[];
   /** Where the packs are (the Worker reads them under packs/). */
   url: string;
 }
@@ -205,8 +219,11 @@ async function unblob(b: Blob, progress?: Parameters<typeof download>[2], sha256
  */
 async function hot(t: Translation, mode: number, progress?: Parameters<typeof download>[2]) {
   const [bytes, wasm] = await Promise.all([unblob(t.elf, progress, t.sha256), unblob(t.wasm, progress)]);
-  const module = await WebAssembly.compile(wasm as BufferSource).catch(() => null);
-  return {path: t.path, bytes, module, mode};
+  // As the kernel runs it (xlat/runtime/share.mjs): its data kept beside it, its memory shared where the page may share memory.
+  const shared = threadsApart();
+  const p = prepare(wasm, {shared});
+  const module = await WebAssembly.compile(p.wasm as BufferSource).catch(() => null);
+  return {path: t.path, bytes, module, mode, segments: module ? p.segments : null, shared};
 }
 
 /**
@@ -226,6 +243,14 @@ function warm(index: Index) {
     }
   })();
 }
+
+/** l3's index, for what only reads it (File's "/"): from what is kept or fetched; null when this build carries none. */
+let indexing: Promise<Index | null> | null = null;
+export const l3Index = (): Promise<Index | null> => (indexing ??= (async () => {
+  const a = await about();
+  if (!a) return null;
+  return JSON.parse(new TextDecoder().decode(await bytesOf(a.index.path, a.index))) as Index;
+})().catch((e) => { indexing = null; throw e; }));
 
 let loading: Promise<L3> | null = null;
 /** l3 for a Prompt: its index, the translator and the hot programs (once per page; again after a failure). */

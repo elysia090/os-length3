@@ -131,7 +131,8 @@ export class Device extends Node {
 
 export const E = {PERM: 1, NOENT: 2, IO: 5, BADF: 9, CHILD: 10, AGAIN: 11, NOMEM: 12, ACCES: 13, FAULT: 14, EXIST: 17,
   XDEV: 18, NOTDIR: 20, ISDIR: 21, INVAL: 22, MFILE: 24, NOTTY: 25, NOSPC: 28, SPIPE: 29, RANGE: 34, NOSYS: 38,
-  NOTEMPTY: 39, LOOP: 40, NAMETOOLONG: 36, PIPE: 32, NOEXEC: 8, SRCH: 3, INTR: 4, AFNOSUPPORT: 97};
+  NOTEMPTY: 39, LOOP: 40, NAMETOOLONG: 36, PIPE: 32, NOEXEC: 8, SRCH: 3, INTR: 4, AFNOSUPPORT: 97, NXIO: 6, TIMEDOUT: 110,
+  OPNOTSUPP: 95, BUSY: 16};
 
 export class FsError extends Error {
   constructor(errno) {
@@ -150,6 +151,8 @@ export class Vfs {
     dev.entries.set('zero', new Device(0x105, (n) => new Uint8Array(n), (b) => b.length));
     dev.entries.set('urandom', new Device(0x109, (n) => crypto.getRandomValues(new Uint8Array(Math.min(n, 65536))), (b) => b.length));
     dev.entries.set('random', dev.entries.get('urandom'));
+    // The controlling terminal: the console, where it is one (sys-file.mjs opens it as such).
+    dev.entries.set('tty', new Device(0x500, () => new Uint8Array(0), (b) => b.length));
     for (const d of ['/tmp', '/root', '/proc', '/etc']) this.mkdirp(d);
   }
 
