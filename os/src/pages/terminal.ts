@@ -250,6 +250,8 @@ export class Session {
         this.heard = Date.now();
         if (data.type === 'output') this.received(new TextDecoder().decode(data.bytes));
         else if (data.type === 'changes') this.writeBack(data);
+        // Where its threads run: each in a Worker of its own (the page is cross-origin isolated), or in turn in this one.
+        else if (data.type === 'threads') this.element.dataset.threads = data.apart ? 'apart' : 'in-turn';
         else if (data.type === 'freed') {
           this.memory = data.after.total;
           this.spare = data.after.spare;

@@ -32,7 +32,9 @@ export const canRunApart = () => typeof SharedArrayBuffer === 'function' && type
 
 function newWorker() {
   if (NodeWorker) {
-    const w = new NodeWorker(new URL('./cpu.mjs', import.meta.url));
+    // (Not new URL(…, import.meta.url) as such: a bundler would take this for a file of the page's to carry.)
+    const here = import.meta.url;
+    const w = new NodeWorker(new URL('./cpu.mjs', here));
     // A spare one waiting for a thread keeps nothing alive.
     w.unref();
     return {post: (m) => w.postMessage(m), end: () => w.terminate(), on: (fn) => w.on('message', fn), onError: (fn) => w.on('error', fn), raw: w};

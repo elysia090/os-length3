@@ -51,6 +51,7 @@ async function withRemote<T>(o: Omit<Parameters<typeof remote>[1], 'dir' | 'asse
 /** What public/_headers says of every file of the app (Workers Assets puts it there). */
 const APP_HEADERS: [string, RegExp][] = [['content-security-policy', /frame-ancestors 'none'/], ['x-frame-options', /^DENY$/],
   ['strict-transport-security', /max-age=31536000/], ['referrer-policy', /^no-referrer$/], ['cross-origin-opener-policy', /^same-origin$/],
+  ['cross-origin-embedder-policy', /^require-corp$/],
   ['x-content-type-options', /^nosniff$/]];
 
 /** The headers of real answers of workerd and Workers Assets: the app's files carry _headers; the Remote's routes their own. */
