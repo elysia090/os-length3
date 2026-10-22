@@ -561,7 +561,7 @@ button.run-line { margin-inline-start: calc(-1 * var(--s1)); min-width: 0; }
 .diff-no { align-self: start; color: var(--sub); text-align: right; font-variant-numeric: tabular-nums; user-select: none; }
 /* A line's number in the copy here opens the center at it. */
 button.diff-no { padding: 0; border: 0; background: transparent; font: inherit; cursor: pointer; }
-button.diff-no:hover { color: var(--ink); text-decoration: underline; }
+button.diff-no:hover { color: var(--ink); background: var(--raised); border-radius: var(--r-field); }
 /* A file of a diff: a fold, its name and what was added and removed. */
 .diff-file { margin-bottom: var(--s3); }
 .diff-head { display: flex; align-items: baseline; gap: var(--s3); min-height: var(--h-row); padding: var(--s1) var(--s1); border-radius: var(--r-field); cursor: pointer; font: var(--t-meta) var(--mono); }
@@ -574,7 +574,8 @@ button.diff-no:hover { color: var(--ink); text-decoration: underline; }
 .diff-head.asking:hover { background: transparent; }
 .diff-head.asking > .muted { font-family: var(--sans); }
 .diff-name { font-weight: 600; overflow-wrap: anywhere; }
-.diff-name.link:hover { text-decoration: underline; }
+.diff-name.link { margin-inline: 0; padding-inline: var(--s1); }
+.diff-name.link:hover { background: var(--raised); }
 .diff-count { color: var(--sub); white-space: nowrap; }
 /* What was added is in ink, what stays quiet, what went struck through. No fill: a filled line is one marked, with the marker. */
 .diff-line.del { color: var(--sub); }
@@ -592,7 +593,9 @@ mark { background: var(--ink); color: var(--ground); }
 .facts dd { margin: 0; overflow-wrap: anywhere; }
 .mono { font-family: var(--mono); font-size: var(--t-meta); }
 .issue-list { list-style: none; margin: 0; padding: 0; }
-.link { border: 0; padding: var(--s1) 0; background: transparent; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; text-align: left; }
+/* What leads somewhere from a list (an issue in the reference, what a message is about): a row, never an underlined word. */
+.link { border: 0; padding: var(--s1) var(--s2); margin-inline: calc(-1 * var(--s2)); border-radius: var(--r-field); background: transparent; cursor: pointer; text-align: left; }
+.link:hover { background: var(--raised); }
 .pane { padding: var(--s5); overflow: auto; min-height: 0; }
 .pane h2 { font-size: var(--t-body); font-weight: 600; }
 .pane .empty { margin-top: var(--s3); padding: var(--s5); }
@@ -709,7 +712,7 @@ mark { background: var(--ink); color: var(--ground); }
 .space-foot { display: flex; align-items: center; gap: var(--s3); padding-top: var(--s3); }
 .space-foot .grow { flex: 1; }
 .link-name { border: 0; padding: 0; background: transparent; font: inherit; font-weight: 600; color: inherit; text-align: left; cursor: pointer; }
-.link-name:hover { text-decoration: underline; }
+.link-name:hover { background: var(--raised); border-radius: var(--r-field); }
 @media (max-width: 900px) { .space-box { grid-template-columns: 1fr; min-height: 0; } .space-col + .space-col { border-left: 0; border-top: 1px solid var(--rule); } }
 /* Inbox: conversations on the left, the one open on the right */
 .inbox-box { display: grid; grid-template-columns: minmax(220px, 1fr) 2fr; margin-top: var(--s4); height: max(420px, calc(var(--inner-h) - 150px)); border: 1px solid var(--rule); border-radius: var(--r-place); overflow: hidden; }
