@@ -41,7 +41,7 @@ test('l3 login connects a device through the Remote\'s approval in a browser; l3
   const fresh = r.device();
   const done = await fresh.login(ren);
   assert.equal(done.code, 0, done.err);
-  assert.match(done.out, /Open this page in a browser and approve:\n {2}http:\/\/localhost:4173\/\?device=&user_code=\w+\n {2}code \w+\n/);
+  assert.match(done.out, new RegExp(`Open this page in a browser and approve:\n {2}${r.app.replace(/[./]/g, '\\$&')}/\\?device=&user_code=\\w+\n {2}code \\w+\n`));
   assert.match(done.out, new RegExp(`Signed in · ${r.url.replace('http://', '').replace(/\./g, '\\.')}`));
   const remote = ok(fresh.l3(['remote', '--json'])).json;
   assert.deepEqual([remote.url, remote.account.name], [r.url, 'Ren Selftest']);

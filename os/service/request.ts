@@ -43,8 +43,11 @@ export function refuse(status: ContentfulStatusCode, answer: Record<string, unkn
  */
 export const lock = (tx: Db, key: string) => tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
 
-/** A moment as milliseconds since the epoch, as clients read them. */
-export const ms = (moment: SQL) => sql<number>`(extract(epoch from ${moment}) * 1000)::float8`;
+/**
+ * A moment as whole milliseconds since the epoch, as clients read them. Postgres keeps microseconds:
+ * unfloored, a moment made by now() reads as 1792307357528.123, which core and l3 refuse (a u64).
+ */
+export const ms = (moment: SQL) => sql<number>`floor(extract(epoch from ${moment}) * 1000)::float8`;
 
 /** That many milliseconds before now, as Postgres reads it (`at > ${ago(KEPT)}`): a parameter, never text in the query. */
 export const ago = (span: number) => sql`(now() - make_interval(secs => ${span / 1000}))`;
@@ -113,10 +116,13 @@ export const fromOrigins = (origins: string[]) => cors({
   maxAge: 600,
 });
 
-/** Nothing the Remote answers is kept by a cache, or read as another type than it says. */
+/**
+ * Nothing the Remote answers is kept by a cache, or read as another type than it says; but what a
+ * route says may be kept is (a file named by its digest or its pinned name: files.ts).
+ */
 export const unkept: MiddlewareHandler = async (c, next) => {
   await next();
-  c.header('Cache-Control', 'no-store');
+  if (!c.res.headers.has('Cache-Control')) c.header('Cache-Control', 'no-store');
   c.header('X-Content-Type-Options', 'nosniff');
 };
 
