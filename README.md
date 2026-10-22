@@ -1,124 +1,94 @@
-# libqm-prototype
+# os-length3
 
-Post-link compilation of a Linux distribution: the kernel and each linked
-x86-64 ELF are reduced to equivalent, smaller, ordinary executables, and the
-result is booted and measured.
-
-> Take an ordinary linked x86-64 program and obtain another ordinary x86-64
-> program — the same complete machine behaviour, less machine computation, with
-> the equivalence verified rather than assumed.
-
-The distribution is the destination. The fixed `development-standard-v1`
-profile names the Linux kernel, BusyBox, the C/Git/HTTPS toolchain and the
-service graph. Every linked `ET_EXEC`/`ET_DYN` in that closure is post-link
-compiled before its package is signed, each optimized ELF is independently
-checked against its ordinary linked input, and the optimized packages are
-assembled into one candidate root that actually boots. Publication then
-requires a same-identity reduction in canonical release size and in paired
-native execution. Native optimized x86 is the executable result.
-
-The distribution is what Length³ OS ([`os/`](os/)) runs: `l3`
-installs the release root on a device and opens a repo inside it, without
-privilege, on the host's own kernel.
-
-QM is the same quotient-and-minimum idea at the scale of a small C function:
-it removes distinctions that no declared observer or future computation can
-detect, then chooses the cheapest remaining physical representative — and
-verifies the result.
+**Length³ OS**: a work OS that is the same in a window, in a browser and on
+the command line, over one Linux root, **OS Length3 Linux**. The root
+itself comes from the post-link compiler in this repository, which reduces
+each linked x86-64 ELF of a fixed Linux distribution to an equivalent,
+smaller, ordinary executable.
 
 ```
-C / C++  →  Clang -O2  →  semantics  →  quotient  →  normalized action
-         →  minimum physical representative  →  verification
-
-linked x86-64 ELF  →  post-link compiler  →  optimized ELF + proof
-                                             `-> native execution
+             the desktop app (Tauri)      the web app        l3 (terminal, SSH)
+                         \                     |                    /
+                          one Rust core: repos, history, the Remote's sync, Home
+                         /                     |                    \
+   the Prompt:   the root on the host's    the root through xlat     the root on the host's
+                 kernel (namespaces)       (x86-64 → wasm) in a      kernel (namespaces)
+                                           Worker
+                                               |
+                       OS Length3 Linux: BusyBox, gcc, make, git, l3 … (one pinned root)
+                                               |
+                 compiler/ + distribution/: the post-link compiled, booted base root
 ```
 
-The grammar QM normalizes into is GF(2)-linear maps, convolutions, lane-local
-steps, gathers, whole-word reductions and a bounded case analysis — so the
-bit-manipulation exercises from CS:APP, MIT 6.172 and Princeton's *Algorithms*
-are in the categorized `research/corpus/` alongside the lane kernels.
+## Get it
+
+Every release is a [GitHub release](https://github.com/elysia090/os-length3/releases)
+named `os-length3-linux-vX.Y.Z`; the current one is in [`os/RELEASE`](os/RELEASE),
+and [`releases/README.md`](releases/README.md) lists them all. A release carries:
+
+| File | What it is |
+| --- | --- |
+| `…-desktop-amd64.deb`, `…-desktop-x86_64.AppImage` | the desktop app for x86-64 Linux: `sudo apt install ./….deb`, or `chmod +x` the AppImage and run it |
+| `…-web.zip` | the web app, ready for any static server (`npx serve` in the unzipped folder) |
+| `…-x86_64-<sha256>.tar.zst` | the root (with `/usr/bin/l3`), which the app installs and trusts by that digest |
+| `…-l3-web.tar` | the same root as a browser reads it (packs by package, BusyBox and l3 translated ahead of time) |
+| `SHA256SUMS` | the digests of everything above |
+
+[os.length3.com](https://os.length3.com) is the web app and its Remote,
+where a signed-in person's repos, TODO and settings are kept between
+devices. Building from source, `l3` is `cargo install --path os/cli`.
 
 ## Layout
 
-* [`os/`](os/) — **Length³ OS**: the desktop app (Tauri), `l3`, and the Remote.
-  It runs the distribution the compiler builds.
-* [`compiler/`](compiler/) — the product: a C post-link compiler that reduces a
-  linked x86-64 ELF (including the Linux kernel image) to an equivalent,
-  ordinary, optimized ELF, and the release tooling. Start at
-  [`compiler/README.md`](compiler/README.md); the compiler, its acceptance
-  contract and remaining work are in
-  [`compiler/postlink-compiler/`](compiler/postlink-compiler/), and the
-  bootable-distribution contract and publication gates in
-  [`compiler/docs/DISTRIBUTION.md`](compiler/docs/DISTRIBUTION.md).
-* [`distribution/`](distribution/) — the end target, the fixed
-  `development-standard-v1` distribution, assembled and booted as one root: its
-  pinned sources, build host and build, with the profile, recipes and checks in
-  [`distribution/packaging/`](distribution/packaging/).
-* [`releases/`](releases/) — release notes, verification receipts and evidence.
-  A receipt keeps the paths of the tree it was made from.
-* [`research/qm/`](research/qm/) — the original research prototype.
-  [`SPEC.md`](research/qm/SPEC.md) is the product specification;
-  `qm-prototype-observation.py` is the solver study it came from, and
-  `x86_oracle.py` is its native execution oracle.
-* [`research/corpus/`](research/corpus/) — categorized C, assembly,
-  physical-array, and VM kernels.
-* [`xlat/`](xlat/) — static x86-64 Linux programs as WebAssembly, for the app in
-  a browser.
+| Directory | What is there | Start at |
+| --- | --- | --- |
+| [`os/`](os/) | **Length³ OS**: the app (TypeScript, no framework; Tauri for the window), `l3` (`cli/`), the core both use (`core/`, also built for `wasm32-wasip1` for the browser), and the Remote (`service/`: Hono on a Cloudflare Worker, Postgres on Neon) | [`os/README.md`](os/README.md), the design language in [`os/DESIGN.md`](os/DESIGN.md) |
+| [`xlat/`](xlat/) | static x86-64 Linux programs as WebAssembly: the browser's Prompt runs the root through it | [`xlat/README.md`](xlat/README.md) |
+| [`compiler/`](compiler/) | the post-link compiler: a linked x86-64 ELF (the kernel image included) to an equivalent, ordinary, optimized ELF, with its verifier and release tooling | [`compiler/README.md`](compiler/README.md) |
+| [`distribution/`](distribution/) | `development-standard-v1`, the fixed distribution the base root is built, post-link compiled and booted as | [`distribution/README.md`](distribution/README.md) |
+| [`releases/`](releases/) | every release, and the native base's notes, receipts and evidence | [`releases/README.md`](releases/README.md) |
+| [`research/`](research/) | QM, the quotient-and-minimum idea at the scale of one C function ([`SPEC.md`](research/qm/SPEC.md)), and its categorized corpus | [`research/qm/SPEC.md`](research/qm/SPEC.md) |
 
-`compiler/` is self-contained: it does not import from `research/qm/`.
+`compiler/` is self-contained: it imports nothing from `research/`.
 
-## Quick start
+## Develop
 
-The initial **OS Length3 Linux 0.1.0** stable native bundle is distributed as a
-[GitHub Release asset](https://github.com/elysia090/libqm-prototype/releases/tag/os-length3-linux-v0.1.0).
-See [release scope and verification](releases/native/RELEASE-0.1.0.md) and
-[bootstrap trust / object delivery](compiler/docs/DELIVERY.md).
-The previous RC and its receipts remain historical. The earlier browser VM
-(its Web Release ZIP, what os.length3.com served then, and the qm.length3.com
-UI) has been removed from this repository; its release asset stays on the
-release page. os.length3.com is now the app in `os/` and its Remote
-([os/README.md](os/README.md), Deploy).
-
-The native products build and check as ordinary C:
+Length³ OS (Node 22 and Rust with the `wasm32-wasip1` target):
 
 ```sh
-cd compiler
-make -j4                             # support, x86, postlink-compiler, artifact, ...
-make check                           # the product-level suite
+cd os
+npm ci
+npm run check            # types, then every unit test (npm test)
+npm run selftest         # the web app end to end in Chromium
+npm run selftest:l3      # l3 end to end against a Remote of its own
+npx tauri dev            # the desktop app against the dev server
 ```
 
-A single linked ELF is compiled through the post-link CLI described in
-[`compiler/postlink-compiler/README.md`](compiler/postlink-compiler/README.md):
+The post-link compiler and the distribution are ordinary C and shell:
 
 ```sh
-cc -static source.c -o input.elf
-compiler/postlink-compiler/build/postlink-compiler input.elf -o output.elf
-compiler/optimized-x86/build/postlink-verify input.elf output.elf
+cd compiler && make -j4 && make check
+cd distribution && ./build.sh   # on the fixed build host it describes
 ```
 
-The distribution itself is assembled on the fixed Linux build host described in
-[`distribution/README.md`](distribution/README.md):
+CI (`.github/workflows/desktop.yml`) runs on each pull request; what each
+job does is in [`os/README.md`](os/README.md) (Develop, CI). A release is
+made from main by changing [`os/RELEASE`](os/RELEASE)
+(`.github/workflows/release.yml`), or by hand with `os/scripts/release.sh`
+(see [`releases/README.md`](releases/README.md)).
 
-```sh
-cd distribution
-./build.sh                           # profile, packages, post-link pass, root gate
-```
+## The compiler, in one line
 
-## What it produces
+> Take an ordinary linked x86-64 program and obtain another ordinary x86-64
+> program — the same complete machine behaviour, less machine computation,
+> with the equivalence verified rather than assumed.
 
-For the 14-line `ranks8` from the spec:
+Every linked `ET_EXEC`/`ET_DYN` of the distribution's closure is post-link
+compiled before its package is signed, each optimized ELF is checked against
+its linked input, and the packages are assembled into one root that boots.
+What is and is not yet established (a complete semantic checker, the
+canonical artifact size, speed) is in
+[`compiler/postlink-compiler/`](compiler/postlink-compiler/) and
+[`releases/native/RELEASE-0.1.0.md`](releases/native/RELEASE-0.1.0.md).
 
-```
-Quotient Minimizer    2 core operations      PDEP ; IMUL
-Residual freedom      502 solutions
-Verification          exact exhaustive, 256 / 256
-Artifact               2,148 bytes           pack(code(z))
-```
-
-The distribution result is a different comparison. It is reported only when
-the complete fixed profile has been post-link compiled, proved, packaged, and
-booted, and it names canonical release bytes and paired native execution
-against the same fixed source identities. Until then the recipe reports its
-verified inputs and stops; a tar, SquashFS extent or partial root is never
-substituted for either result.
+Security reports: [`SECURITY.md`](SECURITY.md).

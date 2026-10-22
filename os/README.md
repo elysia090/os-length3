@@ -1,7 +1,9 @@
 # Length³ OS desktop shell
 
-Native work shell for Length³ OS (issue #17). Tauri v2 with a TypeScript
-frontend and no UI framework; the same frontend is the web build.
+The work OS of this repository: the desktop app (Tauri v2), the same
+TypeScript frontend (no UI framework) as the web app, `l3` on the command
+line, the Rust core all three ask, and the Remote. What is still open is
+tracked in issue #20.
 
 ## Layout
 
@@ -487,7 +489,9 @@ to this repository, and its Settings → Build say, once:
 | Branch control | main; no preview builds |
 
 The Prompt the web serves is a released one: a newer one ships by releasing
-it (a new version in `RELEASE`, `.github/workflows/release.yml`), then
+it (a new version in `RELEASE`, `.github/workflows/release.yml`; without
+Actions, `scripts/release.sh` and `scripts/publish-release.mjs` by hand, as
+[`releases/README.md`](../releases/README.md) says), then
 committing what was released, as its notes give them: l3's one entry in
 `core/src/root.rs` (the root, and the index the web reads it by; the release
 writes it) and the desktop app in `shared/desktop-releases.json`. A build

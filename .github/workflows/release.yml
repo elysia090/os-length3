@@ -56,7 +56,7 @@ jobs:
       - name: Toolchains
         run: |
           sudo apt-get update
-          sudo apt-get install -y musl-tools zstd zip
+          sudo apt-get install -y musl-tools zstd zip libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf
           rustup target add x86_64-unknown-linux-musl wasm32-unknown-unknown wasm32-wasip1
           # What is built is what the lockfiles say (npm ci in web-release.sh; cargo here and --locked in the scripts).
           cargo fetch --locked --manifest-path os/Cargo.toml
@@ -83,106 +83,16 @@ jobs:
           echo "TAG=os-length3-linux-v$v" >> "$GITHUB_ENV"
           # A version already published is left as it is.
           if gh release view "os-length3-linux-v$v" >/dev/null 2>&1; then echo "SKIP=1" >> "$GITHUB_ENV"; echo "os-length3-linux-v$v is published already"; fi
-      - name: Root
+      # What the release holds and its notes, made as by hand (os/scripts/release.sh), then published.
+      - name: Root, l3 for the browser, web build and desktop app
         if: env.SKIP != '1'
         working-directory: os
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # The base is the 0.1.0 release's root; root-release.sh checks its digest.
-          gh release download os-length3-linux-v0.1.0 --pattern 'os-length3-linux-0.1.0-x86_64-*.tar.zst' --output "$RUNNER_TEMP/base.tar.zst"
-          sh scripts/root-release.sh "$RUNNER_TEMP/base.tar.zst" "$GITHUB_WORKSPACE/out" "$VERSION"
-      - name: l3 for the browser, the same root
-        if: env.SKIP != '1'
-        working-directory: os
-        run: |
-          root=$(ls "$GITHUB_WORKSPACE"/out/os-length3-linux-$VERSION-x86_64-*.tar.zst)
-          # The root itself as the browser reads it (packs by package, the translator, BusyBox and l3 translated ahead of time; scripts/l3.mjs)...
-          sh scripts/l3.sh "$root" public/l3
-          # ...and it is the root: every path, type, mode, link target and sha256 the same as the desktop app installs.
-          node scripts/l3-parity.mjs "$root" public/l3
-          tar -C public/l3 --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --format=pax \
-            --pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime -cf "$GITHUB_WORKSPACE/out/os-length3-linux-$VERSION-l3-web.tar" .
-      - name: Pin this release's l3
-        if: env.SKIP != '1'
-        working-directory: os
-        # One entry, both ways in: the root the desktop app installs and the index the web reads it by. What is built
-        # from here on (the desktop app, the web build) trusts what this release ships.
-        run: node scripts/pin-root.mjs "$GITHUB_WORKSPACE"/out/os-length3-linux-$VERSION-x86_64-*.tar.zst public/l3
-      - name: Web
-        if: env.SKIP != '1'
-        working-directory: os
-        env:
-          L3_READY: '1'
-        run: |
-          sh scripts/web-release.sh
-          mv length3-web.zip "$GITHUB_WORKSPACE/out/os-length3-linux-$VERSION-web.zip"
-      - name: Desktop app
-        if: env.SKIP != '1'
-        working-directory: os
-        # The AppImage is bundled by linuxdeploy, itself an AppImage: the runner has no FUSE to mount it, so it unpacks itself.
-        env:
-          APPIMAGE_EXTRACT_AND_RUN: '1'
-        run: |
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf
-          # The app runs its Prompt on the machine, from the root it installs: l3 for the browser stays out of it.
-          mkdir -p "$RUNNER_TEMP/web-only"
-          mv public/l3 "$RUNNER_TEMP/web-only/"
-          # The web step checked the types: the app's bundle is made again for the app, not checked again.
-          npx tauri build --config "{\"version\":\"$VERSION\",\"build\":{\"beforeBuildCommand\":\"npx vite build\"}}"
-          cp target/release/bundle/deb/*.deb "$GITHUB_WORKSPACE/out/os-length3-linux-$VERSION-desktop-amd64.deb"
-          cp target/release/bundle/appimage/*.AppImage "$GITHUB_WORKSPACE/out/os-length3-linux-$VERSION-desktop-x86_64.AppImage"
-      - name: Digests and notes
-        if: env.SKIP != '1'
-        working-directory: out
-        run: |
-          sha256sum os-length3-linux-$VERSION-l3-web.tar os-length3-linux-$VERSION-web.zip os-length3-linux-$VERSION-desktop-* >> SHA256SUMS
-          root=$(ls os-length3-linux-$VERSION-x86_64-*.tar.zst)
-          l3web=os-length3-linux-$VERSION-l3-web.tar
-          web=os-length3-linux-$VERSION-web.zip
-          deb=os-length3-linux-$VERSION-desktop-amd64.deb
-          appimage=os-length3-linux-$VERSION-desktop-x86_64.AppImage
-          {
-            echo "# OS Length3 Linux $VERSION"
-            echo
-            echo "The 0.1.0 root laid out for Prompts (nothing only a booted machine needs, merged /usr), with l3, its profile and shell from \`$GITHUB_SHA\`; the web build of the same tree, whose Prompt runs that whole root (each file fetched when a program first reads it); and the desktop app (Length³ OS for x86-64 Linux, a .deb and an AppImage): the same UI, its Prompt running that root on the machine, which it installs and trusts by the digest pinned in this release."
-            echo
-            echo "| File | Bytes | SHA-256 |"
-            echo "| --- | --- | --- |"
-            for f in "$root" "$l3web" "$web" "$deb" "$appimage"; do
-              echo "| \`$f\` | $(stat -c %s "$f") | \`$(sha256sum "$f" | cut -d' ' -f1)\` |"
-            done
-            echo
-            echo "Check and open the root:"
-            echo
-            echo '```sh'
-            echo "sha256sum -c SHA256SUMS"
-            echo "mkdir opened && tar --zstd -xf $root -C opened"
-            echo '```'
-            echo
-            echo "l3 $VERSION is the root (the desktop app installs it) and \`$l3web\`, the same root as the browser reads it (the same paths, modes, links and bytes: checked in this run). One entry of \`os/core/src/root.rs\` RELEASES pins both; this run pinned it, and serving this release is committing it:"
-            echo
-            echo '```rust'
-            awk '/^pub const RELEASES/{on=1; sub(/^pub const RELEASES: &\[Release\] = &\[/, "")} on{print} on && /^}/{exit}' ../os/core/src/root.rs
-            echo '```'
-            echo
-            echo "and its desktop app in \`os/shared/desktop-releases.json\`, as below. Each deploy of the Remote then takes the pinned root and desktop files from this release, checks them against those pins and puts them on the Remote, which hands them to anyone (this repository is private); a web build takes l3 from \`$l3web\` only at the pinned index (\`os/scripts/prompt-files.mjs\`)."
-            echo
-            echo '```json'
-            echo "\"$VERSION\": {"
-            echo "  \"deb\": {\"file\": \"$deb\", \"bytes\": $(stat -c %s "$deb"), \"sha256\": \"$(sha256sum "$deb" | cut -d' ' -f1)\"},"
-            echo "  \"appimage\": {\"file\": \"$appimage\", \"bytes\": $(stat -c %s "$appimage"), \"sha256\": \"$(sha256sum "$appimage" | cut -d' ' -f1)\"}"
-            echo "}"
-            echo '```'
-            echo
-            echo "\`manifest\` names the base, the l3 inside and the script that made it. The web build opens with any static server (\`npx serve\` in the unzipped folder). The desktop app: \`sudo apt install ./$deb\`, or \`chmod +x $appimage\` and run it."
-          } > ../notes.md
-          cat ../notes.md
+          GITHUB_TOKEN: ${{ github.token }}
+        run: sh scripts/release.sh "$GITHUB_WORKSPACE/out"
       - name: Publish
         if: env.SKIP != '1'
+        working-directory: os
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # A pushed tag is used as it is; from a run by hand, the tag is made at this commit.
-          gh release create "$TAG" out/* --target "$GITHUB_SHA" \
-            --title "OS Length3 Linux $VERSION" --notes-file notes.md
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/publish-release.mjs "$GITHUB_WORKSPACE/out"
