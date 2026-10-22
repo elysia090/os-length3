@@ -95,6 +95,10 @@ int main(void) {
   close(ep); close(p[0]); close(p[1]);
 
   // SIGPIPE ends a writer by default; ignored, the write says EPIPE.
+  // Default first, as said: an ignored signal stays ignored across exec, and some hosts
+  // start programs with SIGPIPE ignored (GitHub Actions' runner does), which the native
+  // program would inherit; node resets what it inherits, so the translated one never can.
+  signal(SIGPIPE, SIG_DFL);
   pipe(p);
   close(p[0]);
   child = fork();
