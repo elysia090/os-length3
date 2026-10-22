@@ -38,7 +38,7 @@ fn beside(path: &Path, how: How) -> io::Result<(PathBuf, fs::File)> {
     let mut last = None;
     for _ in 0..64 {
         let n = NEXT.fetch_add(1, Ordering::Relaxed);
-        let tmp = path.with_file_name(format!(".{name}.length3-{}-{n}", std::process::id()));
+        let tmp = path.with_file_name(format!(".{name}.length3-{}-{n}", crate::pid()));
         let mut options = fs::OpenOptions::new();
         options.write(true).create_new(true);
         #[cfg(unix)]

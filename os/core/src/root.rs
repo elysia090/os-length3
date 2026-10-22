@@ -221,7 +221,7 @@ pub fn use_held(data: &Path, sha256: &str) -> Option<Installed> {
 
 fn point_current(data: &Path, sha256: &str) -> Result<(), String> {
     // A new link renamed over the old one: never a moment without one.
-    let link = system_dir(data).join(format!(".current.length3-{}-0", std::process::id()));
+    let link = system_dir(data).join(format!(".current.length3-{}-0", crate::pid()));
     let _ = fs::remove_file(&link);
     symlink(sha256, &link).map_err(|e| e.to_string())?;
     fs::rename(&link, current_link(data)).map_err(|e| e.to_string())
@@ -532,7 +532,7 @@ fn put_in_place(data: &Path, sha256: &str, name: &str, version: &str, distro: Op
     crate::boundary::private_dir(&system).map_err(|e| e.to_string())?;
     let dir = system.join(sha256);
     if !dir.join("installed.json").exists() {
-        let aside = system.join(format!(".{sha256}.length3-{}-0", std::process::id()));
+        let aside = system.join(format!(".{sha256}.length3-{}-0", crate::pid()));
         let _ = fs::remove_dir_all(&aside);
         fs::create_dir(&aside).map_err(|e| e.to_string())?;
         let (files, bytes) = match fill(&aside) {

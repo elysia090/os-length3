@@ -230,7 +230,7 @@ impl Repos {
             let ids: Vec<String> = templates::all().into_iter().map(|t| t.id).collect();
             tr!("No template {} ({})", "テンプレート {} はありません（{}）", template, ids.join(", "))
         })?;
-        let aside = self.root.join(format!(".{name}.length3-{}-0", std::process::id()));
+        let aside = self.root.join(format!(".{name}.length3-{}-0", crate::pid()));
         let _ = fs::remove_dir_all(&aside);
         let fill = || -> Result<()> {
             fs::create_dir(&aside).map_err(|e| io_error(name, &e))?;

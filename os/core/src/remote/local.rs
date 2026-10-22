@@ -76,7 +76,7 @@ pub fn local_tree_fresh(dir: &Path) -> Local {
 /// folder or root; it could write on into it by what it holds, whatever is done to its name. Said as
 /// "pid N (its name)"; None when nothing does (or, off Linux, when this cannot be told: then None too).
 pub fn held_open(dir: &Path) -> Option<String> {
-    let me = std::process::id().to_string();
+    let me = crate::pid().to_string();
     let inside = |p: &Path| p.starts_with(dir);
     for e in fs::read_dir("/proc").ok()?.flatten() {
         let pid = e.file_name().to_string_lossy().into_owned();

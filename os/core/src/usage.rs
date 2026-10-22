@@ -181,7 +181,7 @@ fn system_leftovers(data: &Path, out: &mut Vec<Leftover>) {
         // `.<sha>.length3-<pid>-0`: an install's unpacking, whose installer is gone.
         if meta.is_dir() && name.starts_with('.') {
             if let Some(pid) = temporary_writer(&name, false) {
-                if age(&meta) >= AGE && pid != std::process::id() && !running(pid) {
+                if age(&meta) >= AGE && pid != crate::pid() && !running(pid) {
                     out.push(Leftover { allocated: tally(&e.path()).2 + blocks(&meta), path: e.path(), what: crate::tr!("An unpacking that stopped half way", "途中で止まった展開"), root: false });
                 }
             }
@@ -242,7 +242,7 @@ fn leftovers(dir: &Path, data: &Path, out: &mut Vec<Leftover>) {
         if !meta.is_file() || links(&meta) != 1 { continue; }
         let Some(pid) = temporary_writer(&name, dir == settings.as_path()) else { continue };
         let old = meta.modified().ok().and_then(|t| SystemTime::now().duration_since(t).ok()).is_some_and(|age| age >= AGE);
-        if old && pid != std::process::id() && !running(pid) {
+        if old && pid != crate::pid() && !running(pid) {
             out.push(Leftover { path, allocated: blocks(&meta), what: crate::tr!("A temporary file left behind", "残った一時ファイル"), root: false });
         }
     }
@@ -420,7 +420,7 @@ fn leftover_at(data: &Path, path: &Path) -> Option<Leftover> {
     let meta = path.symlink_metadata().ok()?;
     if !meta.is_file() || links(&meta) != 1 { return None; }
     let pid = temporary_writer(&path.file_name()?.to_string_lossy(), dir == data.join("home"))?;
-    (age(&meta) >= AGE && pid != std::process::id() && !running(pid))
+    (age(&meta) >= AGE && pid != crate::pid() && !running(pid))
         .then(|| Leftover { path: path.to_path_buf(), allocated: blocks(&meta), what: crate::tr!("A temporary file left behind", "残った一時ファイル"), root: false })
 }
 

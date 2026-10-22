@@ -632,7 +632,7 @@ fn free_with(client: &Client, repos: &Repos, repo: &str) -> Result<u64> {
 /// and not this OS's temporary's), so nothing lists it, syncs it or reclaims it as a leftover meanwhile.
 fn aside_of(dir: &Path) -> PathBuf {
     let name = dir.file_name().unwrap_or_default().to_string_lossy().into_owned();
-    dir.with_file_name(format!(".{name}.freeing-{}", std::process::id()))
+    dir.with_file_name(format!(".{name}.freeing-{}", crate::pid()))
 }
 
 /// Every copy moved aside put back where it was. None when all went back; else what could not, and where it is.

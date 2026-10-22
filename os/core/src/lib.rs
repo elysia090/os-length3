@@ -45,3 +45,12 @@ pub mod work;
 pub mod text;
 
 pub type Result<T> = std::result::Result<T, String>;
+
+/// This process's id, as temporaries are named by it. The core built for the browser (wasm32-wasip1) has
+/// none, and std panics when asked: one instance runs at a time there, so its number is always 1.
+pub fn pid() -> u32 {
+    #[cfg(not(target_os = "wasi"))]
+    return std::process::id();
+    #[cfg(target_os = "wasi")]
+    return 1;
+}
