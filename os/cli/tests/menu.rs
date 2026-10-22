@@ -214,15 +214,16 @@ fn a_prompt_opened_from_the_menu_comes_back_to_the_menu_on_its_repo_when_it_ends
     l3.send("2").expect("› 2  Forge");
     l3.send(ENTER).expect("→ l3 band").expect("› 1  notes").expect("[Prompt]");
     l3.send(ENTER).expect("→ l3 prompt notes");
-    // Where the host lets a user make namespaces, the shell; elsewhere l3 says it cannot, and the menu goes on all the same.
-    let ran = l3.wait_for(&["# ", "$ ", "unshare"]);
-    if ran != "unshare" {
+    // Where the host lets a user make namespaces, the shell; elsewhere l3 says why it could not, the Prompt ends with
+    // its code, and the menu goes on all the same.
+    let ran = l3.wait_for(&["# ", "$ ", "ended ("]);
+    if ran != "ended (" {
         l3.send("echo in-$((40+2))\r").expect("in-42");
         l3.send("exit\r").expect("The Prompt of notes ended (0); back to the menu");
     }
     // Back on the repo it was opened on, its deeds offered again, and the keys the menu's.
     l3.expect("› 1  notes").expect("[Prompt]").expect("Backspace purposes");
-    if ran != "unshare" {
+    if ran != "ended (" {
         // Again, from the same menu: a second Prompt is made as the first was, and its code said.
         l3.send(ENTER).expect("→ l3 prompt notes");
         l3.wait_for(&["# ", "$ "]);

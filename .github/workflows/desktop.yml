@@ -23,24 +23,35 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y musl-tools
           rustup target add x86_64-unknown-linux-musl wasm32-unknown-unknown
+          # l3 prompt makes user namespaces, as on a person's machine; this image's AppArmor keeps them from users.
+          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; fi
       - name: App (types, tests, web build)
         working-directory: os
         run: |
           npm ci
           npm run check
           npx vite build
+      # Each step below runs whatever failed before it (only a cancel stops them), so one failure never
+      # hides another as skipped: the job fails for each that fails. The translated l3 needs the musl build.
       - name: Core and l3
+        if: ${{ !cancelled() }}
         working-directory: os
-        run: |
-          cargo test -p length3-core -p l3
-          cargo build --profile prompt -p l3 --no-default-features --target x86_64-unknown-linux-musl
+        run: cargo test -p length3-core -p l3
+      - name: l3 for the Prompt (static, musl)
+        id: musl
+        if: ${{ !cancelled() }}
+        working-directory: os
+        run: cargo build --profile prompt -p l3 --no-default-features --target x86_64-unknown-linux-musl
       - name: l3 end to end, against a Remote of its own
+        if: ${{ !cancelled() }}
         working-directory: os
         run: npm run selftest:l3
       - name: xlat against native (C and Rust std), and its unit tests
+        if: ${{ !cancelled() }}
         working-directory: xlat
         run: sh tests/run.sh
       - name: l3 translated, as the Prompt runs it
+        if: ${{ !cancelled() && steps.musl.outcome == 'success' }}
         working-directory: os
         run: |
           out=$(LENGTH3_REPOS=/root node ../xlat/runtime/run.mjs target/x86_64-unknown-linux-musl/prompt/l3 help all)
