@@ -209,13 +209,17 @@ function device(ctx: Context, u: Space, last: Freed | null, again: (r: Freed | n
     error);
 }
 
-/** What freeing did: counted bytes, and the host's free space as it was seen to change. */
+/**
+ * What freeing did, as two things that are not one: what this device had allocated and let go (counted
+ * from the files' blocks), and the host's free space as it was seen to change, which can be less (a file
+ * still linked from elsewhere, or held open, is given back only when the last goes; other programs write).
+ */
 function result(r: Freed): HTMLElement {
   const change = r.host_free_after - r.host_free_before;
   const seen = r.reflected_ms === null ? (isNative ? t('the device does not show it yet') : '')
-    : t('device free space {sign}{size} ({how} · {ms} ms)', {sign: change >= 0 ? '+' : '−', size: bytes(Math.abs(change)), how: known(r.host_change) || t('counted'), ms: r.reflected_ms});
+    : t('device free space, observed: {sign}{size} ({how} · {ms} ms)', {sign: change >= 0 ? '+' : '−', size: bytes(Math.abs(change)), how: known(r.host_change) || t('counted'), ms: r.reflected_ms});
   return h('div', {class: 'reclaimed', role: 'status'},
-    r.removed.length ? h('p', {}, h('b', {}, t('Freed {size}', {size: bytes(r.freed)})), ` · ${tn('{n} thing', '{n} things', r.removed.length)}`) : null,
+    r.removed.length ? h('p', {}, h('b', {}, t('Let go of {size} allocated here', {size: bytes(r.freed)})), ` · ${tn('{n} thing', '{n} things', r.removed.length)}`) : null,
     seen ? h('p', {class: 'muted small'}, seen) : null,
     ...r.kept.map(([id, why]) => h('p', {class: 'muted small'}, t('Kept {what}: {why}', {what: id.replace(/^(repo|root|path):/, '').split('/').at(-1) ?? id, why}))));
 }

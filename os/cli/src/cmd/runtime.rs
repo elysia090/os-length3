@@ -70,11 +70,15 @@ pub fn free(_: &Ctx, call: &Call) -> Result<Reply> {
     if r.removed.is_empty() {
         return Err(Error::Refused(format!("{}\n{}", tr!("Nothing was freed", "何も空けられませんでした"), reasons.join("\n"))));
     }
-    let mut t = vec![tr!("Freed {} ({}, counted from the files' blocks)", "{} を空けました（{}、ファイルの実割当で確認）", bytes(r.freed), things(r.removed.len()))];
+    // Two things, said apart: what this device had allocated and let go (counted, Verified), and the host's free
+    // space as seen to change (observed), which can be less: a file still linked from elsewhere or held open
+    // goes back only when the last of it goes, and other programs write meanwhile.
+    let mut t = vec![tr!("Let go of {} allocated here ({}, counted from the files' blocks)", "この端末の割当 {} を手放しました（{}、ファイルの実割当で確認）", bytes(r.freed), things(r.removed.len()))];
     let change = r.host_free_after as i64 - r.host_free_before as i64;
     t.push(match r.reflected_ms {
-        Some(ms) => tr!("  host free space {:+} B (seen in {} ms; observed, other programs write too)", "  ホストの空き {:+} B（{} ms で反映。他のプログラムの書込も含む観測値）", change, ms),
-        None => tr!("  host free space {:+} B (not seen to change within 2 s)", "  ホストの空き {:+} B（2秒以内には反映が見えませんでした）", change),
+        Some(ms) => tr!("  host free space, observed: {:+} B (in {} ms; other programs write too, and a file linked elsewhere or held open goes back only when it is let go)",
+            "  ホストの空き（観測）：{:+} B（{} ms で反映。他のプログラムの書込も含み、別の場所からリンクされたファイルや開かれたファイルの分は手放されてから戻ります）", change, ms),
+        None => tr!("  host free space, observed: {:+} B (not seen to change within 2 s)", "  ホストの空き（観測）：{:+} B（2秒以内には反映が見えませんでした）", change),
     });
     for id in r.removed.iter().filter_map(|i| i.strip_prefix("repo:")) {
         t.push(tr!("  {} stays on the Remote; l3 repo open {} brings it back", "  {} は Remote にあります。l3 repo open {} で戻ります", id, id));
