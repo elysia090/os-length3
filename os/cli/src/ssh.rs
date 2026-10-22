@@ -553,6 +553,10 @@ pub fn serve() -> Result<(), String> {
     for pid in shared.sessions.lock().map(|s| s.clone()).unwrap_or_default() {
         if pid > 0 { unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL) }; }
     }
+    // The sockets close before the record goes (bug: they lived as long as the runtime, after the record was gone,
+    // so l3 said SSH was off while the port still took a connection, reset when the process ended).
+    drop(sockets);
+    drop(rt);
     if why == Why::Asked {
         // Said to the Remote, so pages stop showing it; not waited on past a few seconds.
         let (tx, rx) = std::sync::mpsc::channel();
