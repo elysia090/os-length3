@@ -190,7 +190,9 @@ export function timeline(scroller: HTMLElement, board: string, member: boolean, 
       if (page) { if (first) { add(page, 'older'); toFoot(); read(); } else steady(() => add(page, 'older')); }
       done = !r.more;
       start.textContent = done ? (pages.length ? t('That is every post') : t('No posts yet')) : '';
-    } catch (e) { start.textContent = errorText(e); reading = false; return; } finally { list.setAttribute('aria-busy', 'false'); }
+      // Empty, the line sits at the talk's foot, where the first post will come; read or loading, at the top as ever.
+      root.classList.toggle('tl-empty', done && !pages.length);
+    } catch (e) { start.textContent = errorText(e); root.classList.remove('tl-empty'); reading = false; return; } finally { list.setAttribute('aria-busy', 'false'); }
     reading = false;
     // Something came while the first page was being read (one's own post, just sent): read again, so it shows.
     if (cameMeanwhile) { cameMeanwhile = false; if (!pages.length) { done = false; void older(); } else void came(true); return; }

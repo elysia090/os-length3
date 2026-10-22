@@ -1,5 +1,5 @@
 import {day, h} from '../dom.ts';
-import {t} from '../i18n.ts';
+import {t, tn} from '../i18n.ts';
 import {shown as named, shownAs} from '../inbox.ts';
 import * as servers from '../servers.ts';
 import {copying, deed, parts} from './common.ts';
@@ -35,9 +35,12 @@ export async function gear(s: servers.Server, w: GearWays): Promise<void> {
   done.addEventListener('click', () => w.done());
   const tabs = parts<Part>('server-gear', [{id: 'people', label: t('People')}, {id: 'repos', label: t('Repos')}, {id: 'boards', label: t('Boards')}, {id: 'server', label: t('This server')}]);
   const ids: Part[] = ['people', 'repos', 'boards', 'server'];
+  // Done is the sheet's answer, so it is at its bottom right (DESIGN.md §3, Where a deed sits), under what scrolls:
+  // found at the same place however long a part is, and on a phone too.
   w.sheet.replaceChildren(
-    h('div', {class: 'sheet-head'}, h('div', {class: 'sheet-title'}, h('h2', {}, s.name), h('p', {}, `${named(s.address)} · ${s.code}`)), h('span', {class: 'grow'}), done),
-    h('div', {class: 'sheet-body'}, tabs.switch, ...ids.map((k) => tabs.panel(k))));
+    h('div', {class: 'sheet-head'}, h('div', {class: 'sheet-title'}, h('h2', {}, s.name), h('p', {}, `${named(s.address)} · ${s.code}`))),
+    h('div', {class: 'sheet-body'}, tabs.switch, ...ids.map((k) => tabs.panel(k))),
+    h('div', {class: 'sheet-foot'}, h('span', {class: 'grow'}), done));
   // Narrow, the parts slide: the one chosen is kept in view.
   const inView = () => tabs.switch.querySelector('[aria-selected="true"]')?.scrollIntoView({block: 'nearest', inline: 'nearest'});
   tabs.onShow(inView);
@@ -72,7 +75,8 @@ export async function gear(s: servers.Server, w: GearWays): Promise<void> {
     // Its people: anyone in it adds someone they know; only its owner takes someone out. Pressed, the
     // dashed card is the card that adds: one's contacts not in it yet, each a press away, and a name or
     // a code for anyone else, asked in the Inbox and in once they accept.
-    const add = h('button', {type: 'button', class: 'card small-card new'}, t('Add someone you know')) as HTMLButtonElement;
+    // Its word starts where the people's names start, at the card's own padding (not in its middle).
+    const add = h('button', {type: 'button', class: 'card small-card new add-someone'}, t('Add someone you know')) as HTMLButtonElement;
     add.addEventListener('click', async () => {
       const inbox = await import('../inbox.ts');
       let known: {address: string}[] = [], why = '';
@@ -244,17 +248,22 @@ export async function gear(s: servers.Server, w: GearWays): Promise<void> {
       deed(renew, async () => { const r = await servers.renewServer(s.id); s.until = r.until; w.again(); });
       name.append(foot(renew));
     }
-    const leaving = mine ? smallCard(t('Leave this server'), line(s.owner ? t('It goes to whoever came next.') : '')) : null;
+    // What leaving and removing come to, as the Remote does them: who is left in it, and who made it.
+    const end = servers.ending(s, people, mine);
+    const back = (ms: number) => tn('You can bring it back within {n} day.', 'You can bring it back within {n} days.', Math.round(ms / 86_400_000));
+    const leaves = end.last ? [t('Nobody else is in it: it goes with you.'), back(end.leave)]
+      : end.heir ? [t('{who} becomes its owner.', {who: named(end.heir)})] : [];
+    const leaving = mine ? smallCard(t('Leave this server'), ...leaves.map(line)) : null;
     if (leaving && mine) {
       const go = button(t('Leave'), 'small-button');
-      go.addEventListener('click', () => askIn(leaving, go, t('Leave this server'), t('You leave {server}.', {server: s.name}), t('Leave'),
+      go.addEventListener('click', () => askIn(leaving, go, t('Leave this server'), [t('You leave {server}.', {server: s.name}), ...leaves], t('Leave'),
         async () => { await servers.removePerson(s.id, mine); w.gone(s.id); }));
       leaving.append(foot(go));
     }
-    const removing = s.owner ? smallCard(t('Remove this server'), line(t('You can bring it back within 30 days.'))) : null;
+    const removing = s.owner ? smallCard(t('Remove this server'), line(back(end.remove))) : null;
     if (removing) {
       const go = button(t('Delete'), 'small-button');
-      go.addEventListener('click', () => askIn(removing, go, t('Remove this server'), [t('{server} goes, with its boards.', {server: s.name}), t('You can bring it back within 30 days.')], t('Delete'),
+      go.addEventListener('click', () => askIn(removing, go, t('Remove this server'), [t('{server} goes, with its boards.', {server: s.name}), back(end.remove)], t('Delete'),
         async () => { await servers.removeServer(s.id); w.gone(s.id); }));
       removing.append(foot(go));
     }

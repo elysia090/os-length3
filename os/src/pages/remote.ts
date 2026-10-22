@@ -12,6 +12,24 @@ import * as servers from '../servers.ts';
 import {answers, askFoot, pageHead, parts, SETTLE} from './common.ts';
 import type {Context} from './context.ts';
 
+/**
+ * The repo to bring into view and light on Remote's Repos once they are drawn (openRepoPlace): kept a moment,
+ * since the page draws the cards again as what the Remote says comes in, and the card lit is drawn anew.
+ */
+let lit: {name: string; until: number} | null = null;
+
+/**
+ * A repo's own place, where what is done to the repo itself is (its switch, who sees it, Forge): its card on
+ * Remote, shown and lit. A list's repo body leads here (Home, Runtime). Signed out there is no card on a Remote
+ * yet: the repo opens in Forge, where all of it is.
+ */
+export function openRepoPlace(ctx: Context, name: string) {
+  if (!account.connection()) { ctx.openRepo(name); return; }
+  lit = {name, until: Date.now() + 3000};
+  try { localStorage.setItem('length3.part.remote', 'repos'); } catch { /* the part kept, then */ }
+  ctx.go('remote');
+}
+
 /** Remote's page, at its Plan part: where a place refused for the plan's sake leads. */
 export function goToPlan(ctx: Context) {
   try { localStorage.setItem('length3.part.remote', 'plan'); } catch { /* the Repos part, then */ }
@@ -111,7 +129,7 @@ export function signInBox(done: () => void, back?: string): HTMLElement {
   }
   const providers = h('div', {class: 'row sign-in-row'});
   const passkey = button(t('Sign in with a passkey'));
-  const ways = () => void account.about().then(({providers: list, enter}) => {
+  const ways = () => void account.about().then(({providers: list, enter, trouble}) => {
     // Entered by a link alone: no provider, no passkey, and the card says where the way in is.
     passkey.hidden = !!enter;
     providers.replaceChildren(...list.map((p, i) => {
@@ -119,9 +137,16 @@ export function signInBox(done: () => void, back?: string): HTMLElement {
       b.addEventListener('click', () => void pressing(b, error, () => account.signInWith(p, back)));
       return b;
     }));
-    // No ways because it did not answer is not the same as none offered; the ways come once it answers.
-    if (!list.length) providers.replaceChildren(h('span', {class: 'muted'}, account.remoteAway() ? t('The Remote cannot be reached')
-      : enter ? t('This Remote is entered by the link you were given.') : t('This Remote offers no way to sign in yet.')));
+    if (list.length) return;
+    // No ways because it could not be asked is not the same as none offered: why, and Try again (it is also asked
+    // again by itself while it is away, and the ways come once it answers).
+    if (trouble) {
+      const again = button(t('Try again'), 'small-button');
+      again.addEventListener('click', () => { again.disabled = true; ways(); });
+      providers.replaceChildren(h('span', {class: 'muted', role: 'status'}, trouble), again);
+      return;
+    }
+    providers.replaceChildren(h('span', {class: 'muted'}, enter ? t('This Remote is entered by the link you were given.') : t('This Remote offers no way to sign in yet.')));
   });
   ways();
   const stop = account.onReach(() => { if (!box.isConnected) { stop(); return; } if (!account.remoteAway()) ways(); });
@@ -161,6 +186,18 @@ function repoSection(ctx: Context, counted: (n: number) => void, keyed: () => vo
     if (!force && asking()) return;
     grid.replaceChildren(...(names.length ? names.map((name) => card(name, here.find((r) => r.name === name) ?? null, there.find((r) => r.name === name) ?? null))
       : [h('div', {class: 'empty'}, t('No repos yet'))]));
+    // Come to from a list's repo: its card in view, lit a moment, with the keyboard on it.
+    if (lit && lit.until < Date.now()) lit = null;
+    const at = lit ? grid.querySelector<HTMLElement>(`.card[data-repo="${CSS.escape(lit.name)}"]`) : null;
+    if (at) {
+      at.scrollIntoView({block: 'center'});
+      at.classList.add('revealed');
+      at.tabIndex = -1;
+      // The keyboard on it, unless the person has put it somewhere since.
+      const now = document.activeElement;
+      if (!now || now === document.body || now.tagName === 'MAIN' || !now.isConnected || grid.contains(now)) at.focus({preventScroll: true});
+      setTimeout(() => at.classList.remove('revealed'), 1600);
+    }
   };
   const card = (name: string, here: {bytes: number; modified: number} | null, there: RemoteRepo | null): HTMLElement => {
     const off = !!there?.offAt;

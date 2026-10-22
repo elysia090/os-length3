@@ -13,8 +13,14 @@ test('a 320 px window never scrolls sideways, with the menus out or put away', a
   await app.page.addStyleTag({content: '* { font-family: "DejaVu Sans", "DejaVu Sans Mono", sans-serif !important; }'});
   for (const place of ['home', 'forge', 'git', 'runtime', 'remote', 'inbox', 'new-repo'] as const) {
     await app.rail.go(place);
-    // Runtime's environments are read after it opens; measured before they are, its rows would never be.
-    if (place === 'runtime') await expect(app.page.locator('.env-choice').first()).toBeVisible();
+    // Runtime is in parts, each measured; its environments are read after it opens, so they are waited for.
+    if (place === 'runtime') {
+      for (const part of ['This browser', 'Dotfiles', 'Environments'] as const) {
+        await app.runtime.part(part).click();
+        expect(await sideways(app.page), `runtime ${part}`).toBeLessThanOrEqual(0);
+      }
+      await expect(app.main.getByRole('list', {name: 'Other environments'})).toBeVisible();
+    }
     expect(await sideways(app.page), place).toBeLessThanOrEqual(0);
   }
   await app.me.openMenu();
@@ -49,7 +55,7 @@ test('signed out, Server has no right pane and so no line where it would start',
 });
 
 test('a build without l3 says so in Runtime, never a parser\'s words', async ({app}) => {
-  await app.rail.go('runtime');
+  await app.runtime.open('Environments');
   await expect(app.main.getByRole('heading', {name: /Environment in effect/})).toBeVisible();
   await expect(app.main).not.toContainText(/Unexpected token|not valid JSON/);
 });

@@ -39,10 +39,20 @@ export const connection = (): Connection | null => {
   } catch { return null; }
 };
 
+/**
+ * Why the Remote did not give what was asked, when it was not the Remote saying no: it was not reached (or not
+ * in time), it is there but not taking requests (a gateway's 502, 503 or 504), or what answered is not its reply
+ * (a page, as a host's fallback or a proxy gives, or words that do not read as its JSON).
+ */
+export type Trouble = 'unreached' | 'unavailable' | 'malformed';
+
 export class RemoteError extends Error {
   readonly status: number;
   readonly detail: Record<string, unknown>;
-  constructor(status: number, message: string, detail: Record<string, unknown> = {}) { super(message); this.status = status; this.detail = detail; }
+  readonly trouble?: Trouble;
+  constructor(status: number, message: string, detail: Record<string, unknown> = {}, trouble?: Trouble) {
+    super(message); this.status = status; this.detail = detail; this.trouble = trouble;
+  }
 }
 
 // Whether this device's Remote answered when last asked. While it does not,
@@ -66,9 +76,26 @@ export async function api(path: string, init: RequestInit = {}, c: Connection | 
   // Another Remote (a person's elsewhere) not answering says nothing of this one.
   const ours = url === (connection()?.url ?? REMOTE_URL);
   let r: Response;
-  try { r = await fetch(url + path, {...init, headers, credentials: 'include'}); } catch {
+  try { r = await fetch(url + path, {...init, headers, credentials: 'include'}); } catch (e) {
     if (ours) reached(false);
-    throw new RemoteError(0, t('The Remote cannot be reached'));
+    const late = e instanceof DOMException && e.name === 'TimeoutError';
+    throw new RemoteError(0, late ? t('The Remote did not answer in time') : t('The Remote cannot be reached'), {}, 'unreached');
+  }
+  // Something answered; it is the Remote only if its answer is the Remote's. A page is a host's or a proxy's, and a
+  // gateway's 502, 503 or 504 says the Remote is not taking requests: either way it is away (the rail says so, and it is
+  // asked again), never "offers nothing".
+  const type = r.headers.get('content-type') ?? '';
+  if (type.includes('text/html')) {
+    if (ours) reached(false);
+    throw new RemoteError(r.status, t('What answered is not the Remote ({status})', {status: r.status}), {}, 'malformed');
+  }
+  if (r.status === 502 || r.status === 503 || r.status === 504) {
+    const body = await r.clone().json().catch(() => ({})) as {files?: boolean};
+    // A Remote with no place for files says so itself, and is the Remote answering (below).
+    if (body.files !== false) {
+      if (ours) reached(false);
+      throw new RemoteError(r.status, t('The Remote is not taking requests just now ({status})', {status: r.status}), {}, 'unavailable');
+    }
   }
   if (ours) reached(true);
   if (r.status === 401 && c) {
@@ -88,7 +115,15 @@ export async function api(path: string, init: RequestInit = {}, c: Connection | 
 }
 
 export async function json<T>(path: string, init: RequestInit = {}): Promise<T> {
-  return (await api(path, init)).json() as Promise<T>;
+  return reading<T>(await api(path, init));
+}
+
+/** The Remote's JSON in `r`; words that do not read as it are not its answer (said so, never the parser's own error). */
+export async function reading<T>(r: Response): Promise<T> {
+  try { return await r.json() as T; } catch {
+    reached(false);
+    throw new RemoteError(r.status, t('The Remote\'s answer could not be read'), {}, 'malformed');
+  }
 }
 
 const listeners = new Set<() => void>();
@@ -113,10 +148,20 @@ function tokenOf(r: Response): string {
 export type Provider = 'github' | 'google' | 'apple' | 'dev';
 export const PROVIDER_NAME: Record<Provider, string> = {github: 'GitHub', google: 'Google', apple: 'Apple', dev: 'Development'};
 
-/** What this Remote offers to sign in with; `enter`, that it is entered by the link one was given and nothing else (a Remote for research). */
-export interface Ways { providers: Provider[]; passkey?: boolean; enter?: boolean }
+/**
+ * What this Remote offers to sign in with; `enter`, that it is entered by the link one was given and nothing else (a
+ * Remote for research). `trouble`: it could not be asked (not reached, not in time, not taking requests, or what
+ * answered was not its reply), in words, so a list that is empty for that is never taken for one it offers empty.
+ */
+export interface Ways { providers: Provider[]; passkey?: boolean; enter?: boolean; trouble?: string }
+/** How long the first look at the Remote waits before it says it did not answer. */
+const ABOUT_WAIT = 10_000;
 export async function about(): Promise<Ways> {
-  try { return await (await api('/v1/about', {}, null)).json() as Ways; } catch { return {providers: []}; }
+  try {
+    const w = await reading<Ways>(await api('/v1/about', {signal: AbortSignal.timeout(ABOUT_WAIT)}, null));
+    if (!w || !Array.isArray(w.providers)) { reached(false); return {providers: [], trouble: t('The Remote\'s answer could not be read')}; }
+    return w;
+  } catch (e) { return {providers: [], trouble: e instanceof Error ? e.message : String(e)}; }
 }
 
 /** In by a link (…/#enter=KEY): the one account of a Remote for research. Why not, said once on the sign-in card. */

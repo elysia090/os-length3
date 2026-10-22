@@ -87,6 +87,19 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(app.forge.prompt.getByText(/^Running /)).toHaveCount(0);
   });
 
+  test('stopped from Runtime, its repo no longer says a Prompt has it, without leaving the page', async ({app}) => {
+    await app.forge.run('true');
+    await app.runtime.open('This browser');
+    const here = app.main.getByRole('region', {name: /^In this browser/});
+    await expect(here).toContainText('A Prompt has it open');
+    await app.runtime.part('Prompts running').click();
+    await app.main.getByRole('tabpanel', {name: /^Prompts running/}).getByRole('button', {name: 'Stop', exact: true}).click();
+    await app.runtime.part('This browser').click();
+    await expect(here).not.toContainText('A Prompt has it open');
+    // What holds it now, said whole (signed out, there is no Remote to free it to).
+    await expect(here).toContainText('Sign in to the Remote to free it');
+  });
+
   test('a dotfile saved while the Prompt runs says it gets it when it starts again', async ({app}) => {
     await app.forge.run('true');
     await app.runtime.makeDotfile('.profile', 'export EDITOR=vi\n');

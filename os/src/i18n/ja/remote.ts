@@ -1,6 +1,12 @@
 // Japanese for the Remote: signing in, passkeys, providers, devices, where each repo stands.
 export default {
   'The Remote cannot be reached': 'Remote に届きません',
+  // It could not be asked, each way said as itself (never "offers no way in"), with the way to ask again.
+  'The Remote did not answer in time': 'Remote が時間内に答えませんでした',
+  'The Remote is not taking requests just now ({status})': 'Remote はいま受け付けていません（{status}）',
+  'What answered is not the Remote ({status})': '答えたのは Remote ではありません（{status}）',
+  "The Remote's answer could not be read": 'Remote の答えを読めませんでした',
+  'Try again': 'もう一度試す',
   'The Remote cannot hold files just now; your work stays on this device': 'Remote はいまファイルを置けません。作業はこの端末に残ります',
   'The Remote keeps it until {date}; the copy here goes': 'Remote は{date}まで持っています。ここの写しを消します。',
   '{n} change here is not on the Remote; turn it on to send it first': 'ここの変更 {n}件が Remote にありません。オンにして先に送ってください。',

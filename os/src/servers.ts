@@ -8,7 +8,7 @@
 // (the same posts, less any taken down), so what a reader holds stays about
 // what is near the screen however far they scroll.
 
-import {api, connection, json, RemoteError} from './remote.ts';
+import {api, connection, json, reading, RemoteError} from './remote.ts';
 import type {Todo} from './todo.ts';
 import {t} from './i18n.ts';
 import {errorText} from './errors.ts';
@@ -16,7 +16,8 @@ import {errorText} from './errors.ts';
 /** `gone`: removed, and held until then (ms); its server's owner may bring it back meanwhile. */
 export interface BoardRef { id: string; name: string; open: boolean; guests: boolean; gone?: number }
 /** A server: what it is called, and its name as a principal (name@domain, in the namespace people's addresses are in). */
-export interface Server { id: string; name: string; address: string; owner: boolean; boards: BoardRef[]; code: string; until: number | null }
+/** `made`: the one asking made it (the Remote holds what its maker leaves alone a day, not HOLD). */
+export interface Server { id: string; name: string; address: string; owner: boolean; boards: BoardRef[]; code: string; until: number | null; made?: boolean }
 export interface Person { address: string; owner: boolean }
 export interface Board { id: string; server: {id: string; name: string; address: string}; name: string; open: boolean; guests: boolean; people?: Person[] }
 /** A post as the Remote gives it: `by` is all a reader is shown of who wrote it. */
@@ -35,7 +36,7 @@ const failed = async (r: Response) => {
 const call = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
   const r = await api(path, init);
   if (!r.ok) throw await failed(r);
-  return r.status === 204 ? undefined as T : r.json() as Promise<T>;
+  return r.status === 204 ? undefined as T : reading<T>(r);
 };
 const send = (method: string, body?: unknown): RequestInit => ({method, ...(body === undefined ? {} : {body: JSON.stringify(body)})});
 
@@ -49,6 +50,20 @@ export const bringBack = (id: string) => call<{id: string; name: string; address
 export const renewServer = (id: string) => call<{address: string; until: number}>(`/v1/servers/${id}/renew`, send('POST'));
 /** Its owner's: held a while, to bring back. */
 export const removeServer = (id: string) => call<{until: number}>(`/v1/servers/${id}`, send('DELETE'));
+/** How long the Remote holds a server removed or left last (service/names.ts HOLD), and one its maker leaves alone in it (SERVER.alone). */
+export const HELD = 30 * 86_400_000, HELD_ALONE = 86_400_000;
+
+/**
+ * What leaving `s` and removing it come to, as the Remote does them (service/servers.ts, gone and the leave):
+ * `people` as the Remote lists them (by when they came in), `mine` the asker's address among them. Left by the
+ * last in it, it goes; left by its owner with others in it, the first of them to have come in owns it.
+ * Removed, or left last, it is held HELD, or HELD_ALONE when its maker is alone in it.
+ */
+export function ending(s: Pick<Server, 'owner' | 'made'>, people: Person[], mine: string | null): {remove: number; leave: number; last: boolean; heir: string | null} {
+  const others = people.filter((p) => p.address !== mine);
+  const held = s.made && !others.length ? HELD_ALONE : HELD;
+  return {remove: held, leave: held, last: !others.length, heir: s.owner && others.length ? others[0].address : null};
+}
 export const people = (id: string) => call<Person[]>(`/v1/servers/${id}/people`);
 export const addPerson = (id: string, address: string) => call<Person[]>(`/v1/servers/${id}/people`, send('POST', {address}));
 export const removePerson = (id: string, address: string) => call<void>(`/v1/servers/${id}/people/${encodeURIComponent(address)}`, send('DELETE'));

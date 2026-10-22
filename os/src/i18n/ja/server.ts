@@ -14,6 +14,9 @@ export default {
   'What it is about': '何についての板か',
   'Make': '作る',
   'A board is one thing to talk about, with a TODO kept together: a trip, a release, a reading group.': '板はひとつの話題です。話して、TODO をみんなで持ちます。旅行、リリース、読書会のように。',
+  // The same, broken where the sentence is.
+  'A board is one thing to talk about, with a TODO kept together:': '板はひとつの話題です。話して、TODO をみんなで持ちます。',
+  'a trip, a release, a reading group.': '旅行、リリース、読書会のように。',
   'Open boards': '公開されている板',
   'Make a server': 'サーバーを作る',
   'Trip': '旅行',
@@ -89,6 +92,11 @@ export default {
   'You leave {server}.': '{server}から出ます。',
   '{server} goes, with its boards.': '{server}を板ごと消します。',
   'You can bring it back within 30 days.': '30日以内なら戻せます。',
+  // A server removed or left last is held as the Remote holds it: a day when its maker was alone in it.
+  'You can bring it back within {n} day.': '{n}日以内なら戻せます。',
+  'You can bring it back within {n} days.': '{n}日以内なら戻せます。',
+  'Nobody else is in it: it goes with you.': 'ほかに誰もいないので、出るとサーバーはなくなります。',
+  '{who} becomes its owner.': 'オーナーは{who}に移ります。',
   'you': 'あなた',
   'A name or a code': '名前かコード',
   'Name or code of someone to add': '入れる人の名前かコード',

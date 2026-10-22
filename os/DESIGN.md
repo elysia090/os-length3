@@ -140,7 +140,8 @@ what is its own.
   Server) has no page head: it is laid over the page whose head is there.
   A step within a page that stands in the page's place (Server's gear, a
   repo shown in Server) has the same head: its title, a line in `sub`, and
-  its way back (Done) at the right.
+  its way back at the right (a repo shown: Back); behind Server's gear,
+  Done is the sheet's answer, at its bottom right, under what scrolls.
 - **The band.** What is out to work on, on the top line: each thing as a
   round chip, the current one an `ink` fill, then + after them (round, an
   `edge` outline, `sub`), as a browser's new tab comes after its tabs.
@@ -149,7 +150,7 @@ what is its own.
   round headings, each with a bare count, the chosen one `ink`; only its
   part is shown, so a page never becomes one long scroll. On a narrow
   window the switch slides sideways and keeps the chosen one in view.
-  Remote's page, Server's gear.
+  Remote's page, Runtime's, Server's gear.
 - **Cards.** A place you go to or a thing you act on: a rounded square
   with a `rule` edge, its title (20/600) on top, a line or two in `sub`,
   what can be done at its foot (the main deed at the right). Home and
@@ -158,7 +159,8 @@ what is its own.
   never inside another box.
 - **The dashed card.** Room for something that is not here yet, and the
   way to make it: a card with a dashed `rule` edge and a quiet word in its
-  middle (New repo, Add someone you know). Pressed, it becomes the card it
+  middle (New repo; Add someone you know, among the people's cards, starts
+  where their names start). Pressed, it becomes the card it
   makes. A dashed box with a quiet line is also the empty state: nothing
   here yet, said once, in the place where it would be (the center), as
   wide as its words. A pane beside it with nothing to show says nothing:
@@ -267,12 +269,16 @@ what is its own.
   Escape (whatever has the keyboard; the topmost one only), a press
   outside, or a second press. A press outside leaves out one whose box
   holds words (Server's, §8), so what is written is not put away under it.
-- **The Remote away.** When this device's Remote does not answer, it is
-  said in one place: a small `off` dot on Remote's icon in the rail, whose
+- **The Remote away.** When this device's Remote does not answer (not
+  reached, not in time, a gateway's 502, 503 or 504, or a page or words
+  that are not its reply), it is said in one place: a small `off` dot on Remote's icon in the rail, whose
   name then reads Remote に届きません, and one line under Remote's parts
   (what changes here is sent once it answers). Everything else goes on as
   it was: work is kept here and sent when the Remote answers; what only
-  the Remote can do (its switches, a repo only there) waits, quiet. When
+  the Remote can do (its switches, a repo only there) waits, quiet.
+  Signed out, the sign-in card says which of these it was, never that the
+  Remote offers no way in, with Try again (it is also asked again by
+  itself). When
   the Remote no longer knows this device (its session was ended from
   another, or ran out), the device is signed out at once, every page drawn
   again as signed out, and nothing here is lost.
@@ -918,8 +924,11 @@ identity (avatar, name, @handle, bio, counts of repos and servers) →
 **TODO** → repos → servers (each one is in, a chip that opens Server on it).
 TODO is the person's single list; repos do not carry their own inbox or
 TODO files. An item is a first line named like an issue ("Fix：件名"),
-then detail lines; Enter on an empty line starts the next item. Done
-strikes through and fades the first line only.
+then detail lines (starting on the first line's column, with a kind or
+without); Enter on an empty line starts the next item. Done strikes through
+and fades the first line only. The repos are large cards, three across at a
+laptop's width (two, then one, as it narrows); each is a repo in a list as
+Runtime says it: its body the repo itself, its gear Forge or Free.
 
 ### Forge
 
@@ -1047,11 +1056,30 @@ The Prompt never goes silent while something takes time:
 
 ### Runtime
 
-この端末 first, then what can go from it, then what is running, then SSH
-(on the web with the desktop app beside it), then the environment actually
-in effect (what runs, not what was asked for). There is no table of policies: what
-the device holds is shown as things, and each thing says what can be done
-with it.
+In **parts** (§3), as Remote's page is: この端末 (what it holds, what can go
+from it and come to it), what is running (offered while a Prompt runs, or one
+stopped here says what it gave back), the environments (SSH, the environment
+actually in effect, what runs, not what was asked for, and on the web the
+desktop app, side by side), and the dotfiles. A part not shown goes on: a
+Prompt runs, what holds a repo is read again, a dotfile half written stays.
+There is no table of policies: what the device holds is shown as things, and
+each thing says what can be done with it.
+
+**A repo in a list** is the same in every list of repos (Home's cards, the
+three columns here, New repo's list): its body (a card's, a row's name) is the
+repo itself, its own place: its card on Remote, shown and lit (signed out,
+Forge, where all of it is). Near it (the pointer on it, the keyboard in it,
+always on a touch screen) a small round gear shows at its edge; pressed, a
+popover offers the two things done to a repo from a list, each chosen on its
+own: Open in Forge, and Free from this device (空ける: the same Free as below,
+its conditions unchanged). Free that cannot be done now is there, not
+pressable, with why under it; pressed, it asks in its row what it does ({repo}
+leaves this device; it stays on the Remote and comes back when opened), Free
+under the pointer, Not now beside it. Showing the gear or its list does
+nothing; Escape or a press outside puts it away. On a card the list opens over
+the card; in a column that scrolls, under the row, in its own place. Freed,
+the place says what it came to where it is (the row's result over the box;
+the card becomes the Remote's).
 
 - **この端末**: one bar of the host's whole, with this OS's share darker
   (not an ink fill, which means current), and three figures: this OS, free,
@@ -1083,7 +1111,9 @@ with it.
     owner, and they say so.
   - Otherwise, quietly, why it stays: a Prompt has it open, it holds what
     cannot be sent (a link, a file over 16 MB, a `.git`), there is no Remote
-    yet, it is the root Prompts run on, it is Home's settings.
+    yet, it is the root Prompts run on, it is Home's settings. Why (and what
+    freeing does) is a line of its own under the row's facts, read whole,
+    never cut short; a Prompt stopped or started reads it again at once.
   Under the list, 空けられるもの with its total and 全部空ける. Freeing stays
   to say what happened, as two things that are not one: what this device
   had allocated and let go (counted from the files' blocks before removal:
@@ -1126,12 +1156,16 @@ with it.
   does, and neither 空ける here nor `l3 free` lets a repo go while one has
   it open. In a browser there is no switch: a Prompt's programs have no
   sockets at all.
-- **有効な環境**: the environments a Prompt can run on, a row each: l3,
-  Ubuntu, Debian, Custom (a root of one's own, known by its digest). The
-  one in effect is the place (an `ink` edge over `raised`): l3, with its
-  version, what it is here (in the app, the root installed, on this
+- **有効な環境**: the environments a Prompt can run on, in one small card
+  (a Prompt's card's size), beside the desktop app's (SSH, then it, then the
+  desktop app, in one row; on the web SSH's one line is a card wide; where
+  the row has no room, each goes under). The one in
+  effect is the card's head: l3, with its version (in the mono face, as a
+  version is), what it is here (in the app, the root installed, on this
   device's kernel; in a browser, the whole root through xlat, or l3 and
-  its BusyBox) and its digest. In the app each other one has Use at its
+  its BusyBox) and its digest. Under it the others, a row each, quiet:
+  Ubuntu, Debian, Custom (a root of one's own, known by its digest), what
+  each is, and at its right what can be done. In the app each other one has Use at its
   right: fetched if it is not here (Ubuntu's base and Debian's official
   root, from their makers or the Remote, taken only at the digest pinned
   in core/src/root.rs), then the one Prompts run on, each with its own
@@ -1234,22 +1268,23 @@ with it.
   Remove under the pointer and Not now at the right.
 
 - **デスクトップアプリ**, on the web only (the app does not offer itself):
-  beside SSH, on one row (two small things this device can be reached by
-  or become), its card the SSH card's size, the two ending level; where the
-  row has no room for both, it goes under. Few words: its title, Length³
-  OS and the version `RELEASE` names; quietly, x86-64 Linux, which file
-  and its size (what it is goes without saying). At
-  its bottom left, Download (ダウンロード): a small primary button with the
+  after the environments, on one row (what this device runs on, and can be
+  reached by or become), its card the SSH card's size, the cards ending
+  level; where the row has no room, it goes under. Few words: its title,
+  Length³, and the version `RELEASE` names apart from it in the mono face (a
+  name and a number are two things); quietly, x86-64 Linux, which file and
+  its size (what it is goes without saying). At its bottom left, Download
+  (ダウンロード), the one download: a primary button a size smaller than a
+  small one (its word 13, its mark 12, still 32 high to press) with the
   download mark (an arrow into a tray, `icons.ts`) and the word. It is at
   the left because it leaves the page for this computer, as Forge does on
-  Remote's card. It gives the .deb, which Debian and Ubuntu install; beside
-  it, a small plain button, AppImage, for any other x86-64 Linux (its size
-  in its title). Both are the files `shared/desktop-releases.json` pins for
-  that version, served by the Remote (`/v1/desktop/<file>`, to anyone, by
-  range), where each deploy puts them from the release
-  (`service/mirror.ts`). Each is offered only once the Remote says it has
-  it; with neither there, the section is not shown, never a button that
-  cannot act.
+  Remote's card. It gives the .deb, which Debian and Ubuntu install, or the
+  AppImage when the Remote has no .deb (the release still has both). They are
+  the files `shared/desktop-releases.json` pins for that version, served by
+  the Remote (`/v1/desktop/<file>`, to anyone, by range), where each deploy
+  puts them from the release (`service/mirror.ts`). It is offered only once
+  the Remote says it has it; with neither there, the section is not shown,
+  never a button that cannot act.
 
 In a browser the same list is the browser's copy of the repos (このブラウザ,
 its share an estimate), and the same three answers apply.
@@ -1455,7 +1490,9 @@ it, and it says Copied for a moment in the same place; there is no Copy
 button), its gear at the right end. Before there is one, the stub is the
 name to claim; Enter claims. The gear opens, over what is under it (Escape or a press
 outside closes it), a popover: your names with their terms (Renew near the
-end), Add a domain, and Let a name go last. Add a domain becomes, in its
+end), then Add a domain; its first head starts at the box's own room, with no
+group's step before it. Letting a name go is not offered here (the Remote
+still lets a name go, `l3`'s way). Add a domain becomes, in its
 row, one field where the name is written whole, `name@domain` with the @
 too (no second box to go to; a name on one's own domain is paid, and a free
 account is told so under the field, with See the plan), then the one DNS record that proves it (`_length3.<domain>` TXT
@@ -1569,7 +1606,8 @@ Server is an overlay (§3), on the bench's shape. Its pieces, from §3:
   box in two panes: its files, the one chosen (its README first), as it
   was last pushed.
 - **Behind the gear**, in the boards' place: the page head (the server's
-  name, its name on the Remote and code, Done), then **parts** of **small
+  name, its name on the Remote and code; Done at the sheet's bottom right),
+  then **parts** of **small
   cards**: People (a dashed card to add someone one knows, pressed the card
   that adds: one's contacts not in it, each a button, then a field for a
   name or a code and 入れる; its owner removes someone), Repos (each of one's own with **the pair of
@@ -1582,7 +1620,10 @@ Server is an overlay (§3), on the bench's shape. Its pieces, from §3:
   invited them and Remove, asked in the card; the invitations out, each with
   whose and until when and Revoke, at once; and Invite a guest at its foot,
   which shows the link once, copied by a press), This server (its name, code and term, Renew near its
-  end; Leave; its owner's Delete). Whatever reaches past its people or
+  end; Leave; its owner's Delete). Leave and Delete say what they come to,
+  as the Remote does it: who owns it next (the first of the others to have
+  come in), or that it goes with the last one out, and how long it can be
+  brought back (30 days; a day when its maker is alone in it). Whatever reaches past its people or
   cannot be taken back at once is **asked in the card**.
 
 Escape from behind the gear, or from a repo shown, goes back to the boards
@@ -1603,7 +1644,11 @@ centred, marks where a day starts. A post's writer, and the server's owner,
 may take it down: it comes out at its top right on hover, round, and asks
 once more in its own place for a moment. Nothing is counted.
 
-The talk has no end to reach and nothing to press. It opens at the newest;
+The talk has no end to reach and nothing to press. With no post yet, it
+says so at its foot, by the box one writes in, where the first will come.
+While it goes on below what is shown, the board's box is open at its foot
+(no line under it, the posts running past the edge), so there is plainly
+more to scroll to; at the foot it closes. It opens at the newest;
 scrolled near its top, the next older posts are read in above without
 moving what is on screen, and at the very top it says it is every post.
 What comes meanwhile is put at the foot: followed when the foot is in view

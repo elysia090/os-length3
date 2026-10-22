@@ -56,3 +56,17 @@ test('a name no one has is said under the field, and nothing is opened', async (
   await expect(ada.inbox.conversations.getByRole('alert')).toHaveText(/^Cannot reach no-one-here \(/);
   await expect(ada.inbox.message).toHaveCount(0);
 });
+
+test('your names open with their heading at the top, and no name is let go from here', async ({signedIn: ada}) => {
+  await ada.inbox.claim();
+  await ada.main.getByRole('button', {name: 'Your names', exact: true}).click();
+  const names = ada.main.getByRole('group', {name: 'Your names', exact: true});
+  await expect(names).toContainText(ada.handle);
+  await expect(ada.main.getByRole('button', {name: 'Add a domain'})).toBeVisible();
+  // Renewing and adding stay; letting a name go is not offered in Inbox.
+  await expect(ada.main.getByRole('button', {name: /^Let .* go$/})).toHaveCount(0);
+  // The heading sits on the box's own room (8) and its own (8), with no group's step before it.
+  const box = (await names.locator('xpath=..').boundingBox())!;
+  const head = (await names.getByText('Your names', {exact: true}).boundingBox())!;
+  expect(head.y - box.y).toBeLessThanOrEqual(17);
+});

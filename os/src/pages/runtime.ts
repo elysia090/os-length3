@@ -9,9 +9,10 @@ import * as dotfiles from '../dotfiles.ts';
 import * as ssh from '../ssh.ts';
 import {free, readSpace} from '../space.ts';
 import {about, loadWebRoot} from '../userland.ts';
-import {askFoot, copying, pageHead, SETTLE} from './common.ts';
+import {askFoot, copying, pageHead, parts, SETTLE} from './common.ts';
 import type {Context} from './context.ts';
-import {syncWord} from './remote.ts';
+import {openRepoPlace, syncWord} from './remote.ts';
+import {repoGear} from './repo-gear.ts';
 import {allSessions, type Session} from './terminal.ts';
 import {getState, setState} from '../state.ts';
 
@@ -28,30 +29,42 @@ import {getState, setState} from '../state.ts';
 //   On the Remote    what can come here: repos only on the Remote, and the
 //                    release root when it is not installed; Fetch
 //
-// On the web, at the foot, the desktop app: a box with Download.
+// In parts, as Remote's page is: this device (the bar and the box), the
+// Prompts running (offered while one runs), the environments (SSH, the
+// environment in effect and, on the web, the desktop app, side by side), and
+// the dotfiles. Only the part chosen shows; the others are hidden, never
+// stopped or emptied (a Prompt runs on, a dotfile half written stays).
 
 /** How a figure is known, in one word; a counted figure needs none. */
 const known = (c: Certainty) => (c === 'Verified' ? '' : c === 'Estimated' ? t('estimated') : t('unknown'));
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /**
- * The environments a Prompt can run on, one row each: l3 (this OS's own
- * root), Ubuntu and Debian (their makers' roots, pinned by digest), and a
- * root of one's own. The one in effect is the place, an ink edge over
- * raised. In the app every other one can be used with a press: fetched if
- * it is not here, then the one Prompts run on, set up from .packages and
- * .setup at the next Prompt. In a browser only l3 runs (through xlat, which
- * does not link programs as they run); the others say where they do.
+ * The environments a Prompt can run on, in one card: the one in effect at its
+ * top (its name, its version in the mono face, what it is here, its digest),
+ * then the others, a row each, quiet: Ubuntu and Debian (their makers' roots,
+ * pinned by digest), and a root of one's own. In the app each other one can be
+ * used with a press (Use, at its right): fetched if it is not here, then the
+ * one Prompts run on, set up from .packages and .setup at the next Prompt. In
+ * a browser only l3 runs (through xlat, which does not link programs as they
+ * run); the others say where they do. Custom is not yet.
  */
 function environment(): HTMLElement {
-  const body = h('div', {class: 'env-choices'}, h('p', {class: 'muted'}, t('Reading…')));
-  const row = (name: string, version: string, note: string | Node, current: boolean, end: Node | null, sha = '') =>
-    h('div', {class: current ? 'env-choice' : 'env-choice later', 'aria-current': current ? 'true' : 'false'},
-      h('b', {}, name), h('span', {}, version), typeof note === 'string' ? h('span', {class: current ? 'muted' : ''}, note) : note,
-      sha ? h('code', {class: 'muted', title: sha}, sha.slice(0, 12)) : end ?? h('span', {}));
+  const card = h('div', {class: 'card small-card env-card'}, h('span', {class: 'muted small'}, t('Reading…')));
+  const version = (v: string) => (v ? h('span', {class: 'version'}, v) : null);
+  /** The one in effect: the card's head. */
+  const top = (name: string, v: string, note: string, sha: string) => [
+    h('span', {class: 'card-title'}, name, ' ', version(v)), h('span', {class: 'muted small'}, note),
+    ...(sha ? [h('code', {class: 'muted small env-sha', title: sha}, sha.slice(0, 12))] : [])];
+  /** Another: its name and version, what it is (or its state), and at its right what can be done (or nothing). */
+  const other = (name: string, v: string, note: string | Node, end: Node | null) =>
+    h('div', {class: 'env-row', role: 'listitem'}, h('span', {class: 'env-name'}, name, ' ', version(v)),
+      typeof note === 'string' ? h('span', {class: 'muted small env-note'}, note) : note, end);
+  const others = (...rows: HTMLElement[]) => h('div', {class: 'env-rows', role: 'list', 'aria-label': t('Other environments')}, ...rows);
+  const notYet = () => h('span', {class: 'muted small'}, t('Not yet'));
   const paint = async () => {
     let root: Awaited<ReturnType<typeof rootStatus>> = null;
-    try { root = await rootStatus(); } catch (e) { body.replaceChildren(h('p', {class: 'error'}, message(e))); return; }
+    try { root = await rootStatus(); } catch (e) { card.replaceChildren(h('p', {class: 'error'}, message(e))); return; }
     if (isNative && root) {
       const now = root.current?.distro ?? (root.current ? 'l3' : null);
       // Pressed: fetched if it is not here, then the one in effect.
@@ -65,34 +78,33 @@ function environment(): HTMLElement {
         });
         return b;
       };
-      const line = (id: string, name: string, version: string, what: string, sha?: string) => {
-        const note = h('span', {}, what);
-        return row(name, version, note, now === id, now === id ? null : use(id, note), now === id ? sha : '');
-      };
       const l3 = root.current && now === 'l3' ? root.current : null;
-      body.replaceChildren(
-        line('l3', 'l3', l3?.version ?? root.release.version, l3 ? t('{name} · {size}', {name: l3.name, size: bytes(l3.bytes)}) : root.release.name, l3?.sha256),
+      const all = [
+        {id: 'l3', name: 'l3', version: l3?.version ?? root.release.version, what: l3 ? t('{name} · {size}', {name: l3.name, size: bytes(l3.bytes)}) : root.release.name, sha: l3?.sha256 ?? ''},
         ...root.distros.map((d) => {
           const held = root.current?.distro === d.id ? root.current : null;
-          return line(d.id, d.name, d.version, held ? t('{name} · {size}', {name: d.name, size: bytes(held.bytes)}) : t('apt; .packages and .setup set it up'), held?.sha256);
-        }),
-        row(t('Custom'), '', t('Your own root (.tar)'), false, h('span', {class: 'small'}, t('Not yet'))));
+          return {id: d.id, name: d.name, version: d.version, what: held ? t('{name} · {size}', {name: d.name, size: bytes(held.bytes)}) : t('apt; .packages and .setup set it up'), sha: held?.sha256 ?? ''};
+        })];
+      const current = all.find((e) => e.id === now);
+      card.replaceChildren(...(current ? top(current.name, current.version, current.what, current.sha) : [h('span', {class: 'card-title'}, t('Environment in effect'))]),
+        others(...all.filter((e) => e !== current).map((e) => { const note = h('span', {class: 'muted small env-note'}, e.what); return other(e.name, e.version, note, use(e.id, note)); }),
+          other(t('Custom'), '', t('Your own root (.tar)'), notYet())));
       return;
     }
     let a: Awaited<ReturnType<typeof about>>, web: Awaited<ReturnType<typeof loadWebRoot>>;
-    try { [a, web] = await Promise.all([about(), isNative ? null : loadWebRoot()]); } catch (e) { body.replaceChildren(h('p', {class: 'error'}, message(e))); return; }
-    if (!a) { body.replaceChildren(h('div', {class: 'empty'}, t('There is no l3 (npm run userland)'))); return; }
+    try { [a, web] = await Promise.all([about(), isNative ? null : loadWebRoot()]); } catch (e) { card.replaceChildren(h('p', {class: 'error'}, message(e))); return; }
+    if (!a) { card.replaceChildren(h('p', {class: 'muted small'}, t('There is no l3 (npm run userland)'))); return; }
     // In a browser with the whole root: every program of it, through xlat; else l3 and its BusyBox.
     const note = web
       ? t('{name} · through xlat', {name: a.root.name})
       : t('{name} · {base} {version} · {size}', {name: a.root.name, base: a.base.name, version: a.base.version, size: bytes(a.bundle.size)});
-    body.replaceChildren(row('l3', web?.index.version || a.root.version, note, true, null, a.bundle.sha256),
-      row('Ubuntu', '24.04.5 LTS', t('In the app only'), false, null),
-      row('Debian', '13', t('In the app only'), false, null),
-      row(t('Custom'), '', t('Your own root (.tar)'), false, h('span', {class: 'small'}, t('Not yet'))));
+    card.replaceChildren(...top('l3', web?.index.version || a.root.version, note, a.bundle.sha256),
+      others(other('Ubuntu', '24.04.5 LTS', t('In the app only'), null),
+        other('Debian', '13', t('In the app only'), null),
+        other(t('Custom'), '', t('Your own root (.tar)'), notYet())));
   };
   void paint();
-  return body;
+  return card;
 }
 
 /** A bar of the whole: this OS's part, everything else's, and what is free. */
@@ -118,10 +130,16 @@ function column(id: string, title: string, total: number | null, rows: Node[], e
     ...(foot.length ? [h('div', {class: 'space-foot'}, ...foot)] : []));
 }
 
-const thing = (name: Node | string, size: number | null, note: string, act?: Node) =>
+/**
+ * A row: the thing, its facts on one line, and on a line of its own (whole, as long as it is) why it stays or
+ * what freeing it does; its size, a repo's gear, and at its end what can be done. A repo's gear list opens under
+ * the row, in its own place.
+ */
+const thing = (name: Node | string, size: number | null, note: string, act?: Node | null, why = '', gear?: {gear: HTMLElement; list: HTMLElement}) =>
   h('div', {class: 'space-row'},
-    h('div', {class: 'space-what'}, h('span', {class: 'space-name'}, name), h('span', {class: 'muted small'}, note)),
-    size === null ? null : h('span', {class: 'space-size'}, bytes(size)), act ?? null);
+    h('div', {class: 'space-what'}, h('span', {class: 'space-name'}, name), note ? h('span', {class: 'muted small'}, note) : null,
+      why ? h('span', {class: 'muted small space-why'}, why) : null),
+    size === null ? null : h('span', {class: 'space-size'}, bytes(size)), gear?.gear ?? null, act ?? null, gear?.list ?? null);
 
 /**
  * This device: the bar and its figures, then the box of three columns. What
@@ -139,15 +157,27 @@ function device(ctx: Context, u: Space, last: Freed | null, again: (r: Freed | n
     });
   };
 
-  // On this device: everything, largest first; a repo opens in Forge.
+  // A repo, in whichever column: its name is the repo itself (its own place), its gear Forge or Free, as on Home.
+  const repoName = (name: string) => {
+    const b = h('button', {type: 'button', class: 'link-name'}, name);
+    b.addEventListener('click', () => openRepoPlace(ctx, name));
+    return b;
+  };
+  let freed: Freed | null = null;
+  const gearOf = (name: string, why: string | null, bring_ = false) => repoGear(name, {
+    forge: async () => { if (bring_) await bring(name); ctx.openRepo(name); },
+    why: async () => why,
+    // Freed from its row: what it came to is said over the box, as Free all's is, and the columns read again.
+    free: async () => { const r = await free([`repo:${name}`]); if (r.kept.length && !r.removed.length) throw new Error(r.kept[0][1]); freed = r; },
+    freed: () => again(freed),
+  });
+
+  // On this device: everything, largest first, and why what stays stays.
   const here = u.items.map((i) => {
-    const name: Node | string = i.id.startsWith('repo:') ? (() => {
-      const b = h('button', {type: 'button', class: 'link-name'}, i.what);
-      b.addEventListener('click', () => ctx.openRepo(i.what));
-      return b;
-    })() : i.what;
-    const repoNote = i.id.startsWith('repo:') ? syncWord(repoState(i.what)) : '';
-    return thing(name, i.allocated, [i.detail, repoNote, i.room === 'Keep' ? i.why : ''].filter(Boolean).join(' · '));
+    const repo = i.id.startsWith('repo:');
+    const repoNote = repo ? syncWord(repoState(i.what)) : '';
+    return thing(repo ? repoName(i.what) : i.what, i.allocated, [i.detail, repoNote].filter(Boolean).join(' · '), null,
+      i.room === 'Keep' ? i.why : '', repo ? gearOf(i.what, i.room === 'Keep' ? i.why : null) : undefined);
   });
 
   // Can be freed: Free; a repo's changes go to the Remote first, as they would anyway.
@@ -157,7 +187,8 @@ function device(ctx: Context, u: Space, last: Freed | null, again: (r: Freed | n
     b.title = i.why;
     buttons.push(b);
     b.addEventListener('click', () => go([i.id], [b]));
-    return thing(i.what, i.allocated, i.why, b);
+    const repo = i.id.startsWith('repo:');
+    return thing(repo ? repoName(i.what) : i.what, i.allocated, '', b, i.why, repo ? gearOf(i.what, null) : undefined);
   });
   const all = h('button', {class: 'button', type: 'button'}, t('Free all')) as HTMLButtonElement;
   all.addEventListener('click', () => go(freeable.map((i) => i.id), [all, ...buttons]));
@@ -169,7 +200,7 @@ function device(ctx: Context, u: Space, last: Freed | null, again: (r: Freed | n
       b.disabled = true;
       try { await bring(r.name); again(null); } catch (e) { error.textContent = message(e); b.disabled = false; }
     });
-    return thing(r.name, r.bytes, t('repo · comes here, then opens'), b);
+    return thing(repoName(r.name), r.bytes, t('repo · comes here, then opens'), b, '', gearOf(r.name, t('It is only on the Remote: nothing of it is here to free'), true));
   });
   const remoteCol = column('remote-col', t('On the Remote'), remoteOnly().reduce((n, r) => n + r.bytes, 0), coming,
     connection() ? t('Everything on the Remote is here too.') : t('Sign in to the Remote to see what it holds.'));
@@ -192,8 +223,7 @@ function device(ctx: Context, u: Space, last: Freed | null, again: (r: Freed | n
     }, (e) => { error.textContent = message(e); });
   }
 
-  return h('section', {class: 'section', 'aria-labelledby': 'device-title'},
-    h('h2', {id: 'device-title'}, isNative ? t('This device') : t('This browser')),
+  return h('section', {class: 'section device-part', 'aria-label': isNative ? t('This device') : t('This browser')},
     meter(total, u.host_free, u.allocated, t('{os} of {total} is this OS', {os: bytes(u.allocated), total: bytes(u.host_total)})),
     h('div', {class: 'legend'},
       figure(bytes(u.allocated), t('this OS')),
@@ -266,8 +296,14 @@ function networkSwitch(repo: string, s: Session, card: () => HTMLElement): HTMLE
   return h('div', {class: 'net-row'}, h('span', {class: 'muted small'}, t('Network')), sw, error);
 }
 
-function prompts(): HTMLElement {
-  const section = h('section', {class: 'section', 'aria-labelledby': 'prompts-title', hidden: ''});
+/**
+ * The Prompts running. `shown(n, any)` hears how many run and whether there is any to show (running, or stopped
+ * here with what it gave back); `changed` hears when which repos have a Prompt running changes (one stopped, or
+ * started), so what holds a repo is read again then, not at the next page.
+ */
+function prompts(shown_: (running: number, any: boolean) => void = () => {}, changed: () => void = () => {}): HTMLElement {
+  const section = h('section', {class: 'section prompts-part', 'aria-label': t('Prompts running'), hidden: ''});
+  let had = '';
   // Each session is watched once, for as long as the page is shown.
   const watched = new Map<Session, () => void>();
   let first = true;
@@ -280,7 +316,10 @@ function prompts(): HTMLElement {
     const shown = allSessions().filter(([, s]) => s.running || s.stopped);
     section.hidden = !shown.length;
     const running = shown.filter(([, s]) => s.running).length;
-    section.replaceChildren(h('h2', {id: 'prompts-title'}, h('span', {}, t('Prompts running'), running ? h('small', {}, `${running}`) : null)),
+    shown_(running, shown.length > 0);
+    const now = shown.filter(([, s]) => s.running).map(([repo]) => repo).sort().join('\n');
+    if (now !== had) { const before = had; had = now; if (before || now) changed(); }
+    section.replaceChildren(
       h('div', {class: 'grid small-grid'}, ...shown.map(([repo, s]) => {
         if (!watched.has(s)) watched.set(s, s.watch(paint));
         if (!s.running && s.stopped) {
@@ -416,8 +455,8 @@ function sshSection(): HTMLElement {
  * its /root is its own), so a save says so under the box, with Start again;
  * Remove asks in the box first, since it goes from every device.
  */
-function dotfilesSection(restarted: () => void): HTMLElement {
-  const section = h('section', {class: 'section', 'aria-labelledby': 'dot-title'});
+function dotfilesSection(restarted: () => void, counted: (n: number) => void = () => {}): HTMLElement {
+  const section = h('section', {class: 'section dotfiles-part', 'aria-label': t('Dotfiles')});
   const editor = h('div', {});
   const running = () => allSessions().filter(([, s]) => s.running);
   const paint = (open: string | null = null, saved = false) => {
@@ -437,8 +476,8 @@ function dotfilesSection(restarted: () => void): HTMLElement {
       editor.replaceChildren(edit(name, '', true));
       editor.querySelector<HTMLInputElement>('input')?.select();
     });
-    section.replaceChildren(h('h2', {id: 'dot-title'}, h('span', {}, t('Dotfiles'), names.length ? h('small', {}, `${names.length}`) : null)),
-      h('div', {class: 'grid small-grid'}, ...cards, make), editor);
+    counted(names.length);
+    section.replaceChildren(h('div', {class: 'grid small-grid'}, ...cards, make), editor);
     editor.replaceChildren(...(open && open in all ? [edit(open, all[open], false, saved)] : []));
   };
   // The file's text in a box like Forge's, its name above (editable when new), Save and Remove.
@@ -497,13 +536,14 @@ function dotfilesSection(restarted: () => void): HTMLElement {
 const RELEASE = (import.meta as {env?: Record<string, string>}).env?.VITE_LENGTH3_RELEASE ?? '';
 
 /**
- * The desktop app, on the web only: one box, not wide, saying what it is
- * with its version and size, and Download (its icon and the word) at its
+ * The desktop app, on the web only: one small card, saying what it is (Length³,
+ * its version apart in the mono face) and which file with its size, and
+ * Download (its icon and the word, a size smaller than a small button) at its
  * bottom left, as a deed that leaves the page for this computer. Download
- * gives the .deb (Debian, Ubuntu: most of x86-64 Linux); the AppImage, for
- * any other, is the quiet second choice beside it. Both come from the Remote
- * (the deploy puts the pinned files there), and each is offered only once
- * the Remote says it has it: without them the section is not shown.
+ * gives the .deb (Debian, Ubuntu: most of x86-64 Linux), or the AppImage when
+ * the Remote has no .deb; one download only. Both come from the Remote (the
+ * deploy puts the pinned files there), and one is offered only once the Remote
+ * says it has it: without either the section is not shown.
  */
 function desktopApp(): HTMLElement {
   const section = h('section', {class: 'section', 'aria-labelledby': 'app-title', hidden: ''});
@@ -511,41 +551,59 @@ function desktopApp(): HTMLElement {
   const url = (file: string) => `${REMOTE_URL}/v1/desktop/${encodeURIComponent(file)}`;
   const there = async (file: string) => { try { return (await fetch(url(file), {method: 'HEAD'})).ok; } catch { return false; } };
   void (async () => {
-    const [deb, appimage] = await Promise.all([pins.deb, pins.appimage].map(async (p) => (p && (await there(p.file)) ? p : null)));
-    const first = deb ?? appimage;
+    const deb = pins.deb && (await there(pins.deb.file)) ? pins.deb : null;
+    const first = deb ?? (pins.appimage && (await there(pins.appimage.file)) ? pins.appimage : null);
     if (!first) return;
-    const other = deb && appimage ? appimage : null;
-    const get = h('a', {class: 'button primary small-button download', href: url(first.file), download: first.file}, mark('download'), h('span', {}, t('Download')));
-    const also = other ? h('a', {class: 'button small-button', href: url(other.file), download: other.file,
-      title: t('AppImage · {size} · for any other x86-64 Linux', {size: bytes(other.bytes)})}, 'AppImage') : null;
-    // Its card is the SSH card's size, beside it: which file and its size, and Download at its bottom left.
+    const what = first === deb ? t('x86-64 Linux · .deb · {size}', {size: bytes(first.bytes)}) : t('x86-64 Linux · AppImage · {size}', {size: bytes(first.bytes)});
+    const get = h('a', {class: 'button primary small-button download', href: url(first.file), download: first.file, title: `${first.file} · ${bytes(first.bytes)}`},
+      mark('download'), h('span', {}, t('Download')));
+    // Beside the environments, the same small card: what it is, which file and its size, and Download at its bottom left.
     section.replaceChildren(h('h2', {id: 'app-title'}, t('Desktop app')),
       h('div', {class: 'card small-card app-card'},
-        h('span', {class: 'card-title'}, t('Length³ OS {version}', {version: RELEASE})),
-        h('span', {class: 'muted small'}, first === deb ? t('x86-64 Linux · .deb · {size}', {size: bytes(first.bytes)})
-          : t('x86-64 Linux · AppImage · {size}', {size: bytes(first.bytes)})),
-        h('div', {class: 'card-foot'}, get, also, h('span', {class: 'grow'}))));
+        // The product's name, and its version apart: a name and a number are two things.
+        h('span', {class: 'card-title'}, 'Length³', ' ', h('span', {class: 'version'}, RELEASE)),
+        h('span', {class: 'muted small'}, what),
+        h('div', {class: 'card-foot'}, get, h('span', {class: 'grow'}))));
     section.hidden = false;
   })();
   return section;
 }
 
-/** Runtime: this device and what can go from it and come to it, the Prompts running, and the environment in effect. */
+/**
+ * Runtime, in parts as Remote's page is: this device and what can go from it and come to it, the Prompts
+ * running (offered while there is one), the environments, and the dotfiles. Hidden parts go on: a Prompt runs,
+ * what is read is read again, a dotfile half written stays.
+ */
 export function runtime(ctx: Context): Node[] {
+  const page = parts<'device' | 'prompts' | 'environments' | 'dotfiles'>('runtime', [
+    {id: 'device', label: isNative ? t('This device') : t('This browser')}, {id: 'prompts', label: t('Prompts running')},
+    {id: 'environments', label: t('Environments')}, {id: 'dotfiles', label: t('Dotfiles')}]);
   const holder = h('div', {}, h('section', {class: 'section'}, h('p', {class: 'muted'}, t('Measuring…'))));
   let last: Freed | null = null;
-  const read = () => void readSpace(allSessions().filter(([, s]) => s.running).map(([repo]) => repo)).then(
-    (u) => holder.replaceChildren(device(ctx, u, last, (r) => { last = r; read(); })),
+  const read = (): void => void readSpace(allSessions().filter(([, s]) => s.running).map(([repo]) => repo)).then((u) => {
+    // A repo's gear list out is not drawn away under the pointer: read again once it is put away.
+    if (holder.isConnected && holder.querySelector('.repo-gear-pop:not([hidden])')) { setTimeout(read, 1000); return; }
+    holder.replaceChildren(device(ctx, u, last, (r) => { last = r; read(); }));
+  },
     (e) => holder.replaceChildren(h('section', {class: 'section'}, h('p', {class: 'error'}, t('Could not measure ({why})', {why: message(e)})))));
   read();
   // What the Remote holds changes what can come here.
   const stop = onSync(() => { if (!holder.isConnected) { stop(); return; } read(); });
-  // Prompts started again from Dotfiles are new sessions: the section is drawn again to follow them.
-  let running = prompts();
-  const restarted = () => { const next = prompts(); running.replaceWith(next); running = next; };
-  // SSH and, on the web, the desktop app side by side: two small things this device can be reached by or become.
-  // (The desktop app is offered on the web; the app itself is it.)
-  return [pageHead('runtime'), holder, running, h('div', {class: 'section-row'}, sshSection(), ...(isNative ? [] : [desktopApp()])),
+  // Prompts started again from Dotfiles are new sessions: the section is drawn again to follow them. Its part is
+  // offered while one runs (or one stopped here says what it gave back); a Prompt stopped or started reads again
+  // what holds each repo, so its row says at once whether it can be freed.
+  const heard = (n: number, any: boolean) => { page.count('prompts', n); page.offer('prompts', any); };
+  const following = () => { if (holder.isConnected) read(); };
+  let running = prompts(heard, following);
+  const restarted = () => { const next = prompts(heard, following); running.replaceWith(next); running = next; };
+  page.panel('device').append(holder);
+  page.panel('prompts').append(running);
+  // SSH, the environment in effect and, on the web, the desktop app side by side: how this device runs, and is
+  // reached or becomes the app. (The desktop app is offered on the web; the app itself is it.)
+  page.panel('environments').append(h('div', {class: 'section-row'}, sshSection(),
     h('section', {class: 'section', 'aria-labelledby': 'env-title'}, h('h2', {id: 'env-title'}, t('Environment in effect')), environment()),
-    dotfilesSection(restarted)];
+    ...(isNative ? [] : [desktopApp()])));
+  page.panel('dotfiles').append(dotfilesSection(restarted, (n) => page.count('dotfiles', n)));
+  return [pageHead('runtime'), h('div', {class: 'part-bar'}, page.switch),
+    page.panel('device'), page.panel('prompts'), page.panel('environments'), page.panel('dotfiles')];
 }
