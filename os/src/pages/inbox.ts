@@ -155,7 +155,7 @@ function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLE
     for (const k of ['pointerdown', 'keydown'] as const) (open ? document.addEventListener : document.removeEventListener).call(document, k, away);
     if (open) fill(); else looking?.stop();
   };
-  gear.addEventListener('click', () => toggle(panel.hidden));
+  gear.addEventListener('click', () => toggle(panel.hidden !== false));
   return holder;
 }
 

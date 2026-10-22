@@ -18,7 +18,6 @@
 //! makers' own root archive, taken only at the digest pinned here, unpacked
 //! by the same rules. A Prompt runs whichever root is current.
 
-use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::{self, Read};
 #[cfg(unix)]
@@ -51,6 +50,14 @@ pub struct Release {
 
 /// The releases l3 trusts, newest first. Nothing else is installed.
 pub const RELEASES: &[Release] = &[Release {
+    name: "OS Length3 Linux",
+    version: "0.5.0",
+    sha256: "5e005ef2d90d4729fdc544fc0f73a3b8cb0e48b0a8c723828777cff405c81b72",
+    bytes: 59_325_012,
+    file: "os-length3-linux-0.5.0-x86_64-5e005ef2d90d4729fdc544fc0f73a3b8cb0e48b0a8c723828777cff405c81b72.tar.zst",
+    tag: "os-length3-linux-v0.5.0",
+    web: "36c33085fd930a59aee38bc6af3cd1f531e5c44baf297538db78aeb5c5283161",
+}, Release {
     name: "OS Length3 Linux",
     version: "0.4.1",
     sha256: "e5b393a96c826d198f30ced37db740d4e17c1743af4de06eb393fc758de45ed9",
@@ -122,7 +129,7 @@ pub fn distro(id: &str) -> Option<&'static Distro> {
 /// publisher's credentials is answered 404 there, and the Remote is where a
 /// root comes from.
 pub fn github_url(r: &Release) -> String {
-    format!("https://github.com/elysia090/libqm-prototype/releases/download/{}/{}", r.tag, r.file)
+    format!("https://github.com/elysia090/os-length3/releases/download/{}/{}", r.tag, r.file)
 }
 
 /// The Remote serves roots by digest, to anyone (service/app.ts, /v1/os).
@@ -266,8 +273,21 @@ pub fn system_dir(data: &Path) -> PathBuf {
     data.join("system")
 }
 
-fn hex(d: &[u8]) -> String {
-    d.iter().map(|b| format!("{b:02x}")).collect()
+/// The sha256 of all `r` reads (in hex), and how many bytes that was.
+pub(crate) fn sha256_read(r: &mut impl io::Read) -> io::Result<(String, u64)> {
+    use sha2::Digest;
+    let mut h = sha2::Sha256::new();
+    let mut buf = vec![0u8; 1 << 16];
+    let mut n = 0u64;
+    loop {
+        match r.read(&mut buf) {
+            Ok(0) => break,
+            Ok(k) => { h.update(&buf[..k]); n += k as u64; }
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok((h.finalize().iter().map(|b| format!("{b:02x}")).collect(), n))
 }
 
 /// The release a bundle is, by its digest; anything not pinned is refused.
@@ -289,9 +309,8 @@ fn not_pinned(sha: &str, n: u64) -> String {
 /// put in its place between them, or a disk that answers twice differently).
 fn open_pinned<T>(path: &Path, pinned: impl FnOnce(&str, u64) -> Result<T, String>) -> Result<(fs::File, T), String> {
     let mut f = fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let mut h = Sha256::new();
-    let n = io::copy(&mut f, &mut h).map_err(|e| format!("{}: {e}", path.display()))?;
-    let what = pinned(&hex(&h.finalize()), n)?;
+    let (sha, n) = sha256_read(&mut f).map_err(|e| format!("{}: {e}", path.display()))?;
+    let what = pinned(&sha, n)?;
     io::Seek::rewind(&mut f).map_err(|e| e.to_string())?;
     Ok((f, what))
 }

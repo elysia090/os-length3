@@ -103,7 +103,9 @@ test('the pins: every root core/src/root.rs pins, newest first, and the desktop 
   // An entry not as pin-root.mjs writes it is refused, not skipped.
   assert.throws(() => pinnedRoots('pub const RELEASES: &[Release] = &[Release { name: "x" }];'), /not as pin-root\.mjs writes one/);
 
-  const version = readFileSync(new URL('../RELEASE', import.meta.url), 'utf8').trim();
+  // The newest desktop app this tree pins (while a release is made, RELEASE names one not pinned yet).
+  const pins = JSON.parse(readFileSync(new URL('../shared/desktop-releases.json', import.meta.url), 'utf8')) as Record<string, unknown>;
+  const version = Object.keys(pins).sort((a, b) => a.localeCompare(b, 'en', {numeric: true})).at(-1)!;
   const desktop = pinnedDesktop(version);
   assert.deepEqual(desktop.map((p) => [p.key, p.type, p.tag]), [
     [`desktop/os-length3-linux-${version}-desktop-amd64.deb`, 'application/vnd.debian.binary-package', `os-length3-linux-v${version}`],

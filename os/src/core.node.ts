@@ -39,7 +39,7 @@ export function nodeCore(wasm: string, env: Record<string, string>): Ask {
     waiting.delete(id);
     p.resolve(answer);
   });
-  worker.on('error', (e) => { for (const p of waiting.values()) p.reject(e); waiting.clear(); });
+  worker.on('error', (e: Error) => { for (const p of waiting.values()) p.reject(e); waiting.clear(); });
   // Listening refs the worker too: only a question asked keeps the process up.
   worker.unref();
   return (name, args) => new Promise<Answer>((resolve, reject) => {

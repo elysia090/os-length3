@@ -60,12 +60,12 @@ export function files(d: {db: Db; bucket: Bucket | null; quota?: number}, v1: Ho
   // The OS is public: its canonical copy is the release, a root named by its digest and the desktop
   // app by its file's name, as this tree pins them (releases.ts); the deploy puts them here (mirror.ts).
   // There is no listing: a path names one file or nothing.
-  app.on(['GET', 'HEAD'], '/v1/os/:sha', (c) => {
+  app.on(['GET', 'HEAD'], '/v1/os/:sha', async (c) => {
     if (!d.bucket) return noFiles(c);
     const sha = c.req.param('sha');
     return HEX.test(sha) ? release(c, d.bucket, rootKey(sha), {type: 'application/octet-stream', etag: sha}) : c.json({error: 'Not found'}, 404);
   });
-  app.on(['GET', 'HEAD'], '/v1/desktop/:file', (c) => {
+  app.on(['GET', 'HEAD'], '/v1/desktop/:file', async (c) => {
     if (!d.bucket) return noFiles(c);
     const p = desktopFile(c.req.param('file'));
     return p ? release(c, d.bucket, p.key, {type: p.type, etag: p.sha256, name: p.file}) : c.json({error: 'No such release'}, 404);

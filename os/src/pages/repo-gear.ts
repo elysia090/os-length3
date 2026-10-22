@@ -94,7 +94,7 @@ export function repoGear(repo: string, w: GearWays): {gear: HTMLButtonElement; l
     });
   };
 
-  gear.addEventListener('click', (e) => { e.stopPropagation(); show(list.hidden); });
+  gear.addEventListener('click', (e) => { e.stopPropagation(); show(list.hidden !== false); });
   // Inside a card that is pressed as a whole, the gear and its list are the gear's own.
   list.addEventListener('click', (e) => e.stopPropagation());
   return {gear, list};
