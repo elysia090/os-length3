@@ -111,7 +111,7 @@ export function signInBox(done: () => void, back?: string): HTMLElement {
   }
   const providers = h('div', {class: 'row sign-in-row'});
   const passkey = button(t('Sign in with a passkey'));
-  const ways = () => void account.about().then(({providers: list, enter}) => {
+  const ways = () => void account.about().then(({providers: list, enter, trouble}) => {
     // Entered by a link alone: no provider, no passkey, and the card says where the way in is.
     passkey.hidden = !!enter;
     providers.replaceChildren(...list.map((p, i) => {
@@ -119,9 +119,16 @@ export function signInBox(done: () => void, back?: string): HTMLElement {
       b.addEventListener('click', () => void pressing(b, error, () => account.signInWith(p, back)));
       return b;
     }));
-    // No ways because it did not answer is not the same as none offered; the ways come once it answers.
-    if (!list.length) providers.replaceChildren(h('span', {class: 'muted'}, account.remoteAway() ? t('The Remote cannot be reached')
-      : enter ? t('This Remote is entered by the link you were given.') : t('This Remote offers no way to sign in yet.')));
+    if (list.length) return;
+    // No ways because it could not be asked is not the same as none offered: why, and Try again (it is also asked
+    // again by itself while it is away, and the ways come once it answers).
+    if (trouble) {
+      const again = button(t('Try again'), 'small-button');
+      again.addEventListener('click', () => { again.disabled = true; ways(); });
+      providers.replaceChildren(h('span', {class: 'muted', role: 'status'}, trouble), again);
+      return;
+    }
+    providers.replaceChildren(h('span', {class: 'muted'}, enter ? t('This Remote is entered by the link you were given.') : t('This Remote offers no way to sign in yet.')));
   });
   ways();
   const stop = account.onReach(() => { if (!box.isConnected) { stop(); return; } if (!account.remoteAway()) ways(); });

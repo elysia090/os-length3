@@ -8,7 +8,7 @@
 // (the same posts, less any taken down), so what a reader holds stays about
 // what is near the screen however far they scroll.
 
-import {api, connection, json, RemoteError} from './remote.ts';
+import {api, connection, json, reading, RemoteError} from './remote.ts';
 import type {Todo} from './todo.ts';
 import {t} from './i18n.ts';
 import {errorText} from './errors.ts';
@@ -36,7 +36,7 @@ const failed = async (r: Response) => {
 const call = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
   const r = await api(path, init);
   if (!r.ok) throw await failed(r);
-  return r.status === 204 ? undefined as T : r.json() as Promise<T>;
+  return r.status === 204 ? undefined as T : reading<T>(r);
 };
 const send = (method: string, body?: unknown): RequestInit => ({method, ...(body === undefined ? {} : {body: JSON.stringify(body)})});
 

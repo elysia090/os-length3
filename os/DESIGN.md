@@ -268,12 +268,16 @@ what is its own.
   Escape (whatever has the keyboard; the topmost one only), a press
   outside, or a second press. A press outside leaves out one whose box
   holds words (Server's, §8), so what is written is not put away under it.
-- **The Remote away.** When this device's Remote does not answer, it is
-  said in one place: a small `off` dot on Remote's icon in the rail, whose
+- **The Remote away.** When this device's Remote does not answer (not
+  reached, not in time, a gateway's 502, 503 or 504, or a page or words
+  that are not its reply), it is said in one place: a small `off` dot on Remote's icon in the rail, whose
   name then reads Remote に届きません, and one line under Remote's parts
   (what changes here is sent once it answers). Everything else goes on as
   it was: work is kept here and sent when the Remote answers; what only
-  the Remote can do (its switches, a repo only there) waits, quiet. When
+  the Remote can do (its switches, a repo only there) waits, quiet.
+  Signed out, the sign-in card says which of these it was, never that the
+  Remote offers no way in, with Try again (it is also asked again by
+  itself). When
   the Remote no longer knows this device (its session was ended from
   another, or ran out), the device is signed out at once, every page drawn
   again as signed out, and nothing here is lost.
