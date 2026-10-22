@@ -192,7 +192,14 @@ export class ServerLayer {
     const toBoards = () => {
       if (boardsChanged && serverId) { boardsChanged = false; show(serverId); } else place('boards');
     };
-    this.back = () => { if (showing === 'boards') return false; toBoards(); return true; };
+    /** Back to the boards with the keyboard where it went in: the gear, when it was behind the gear. */
+    const leaveSheet = () => {
+      const had = sheet.contains(document.activeElement);
+      const fromGear = showing === 'settings';
+      toBoards();
+      if (had && fromGear) gear.focus({preventScroll: true});
+    };
+    this.back = () => { if (showing === 'boards') return false; leaveSheet(); return true; };
     gear.addEventListener('click', () => { if (showing === 'settings') place('boards'); else settings(); });
 
     // ---- the boxes, slid as the issues are ----
@@ -484,7 +491,7 @@ export class ServerLayer {
       void gearSheet(s, {
         sheet,
         still: () => showing === 'settings' && current() === s,
-        done: toBoards,
+        done: leaveSheet,
         again: () => { if (showing === 'settings') settings(); paintSide(); },
         boardsChanged: () => { boardsChanged = true; },
         gone,
