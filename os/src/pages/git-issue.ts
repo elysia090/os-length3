@@ -1,7 +1,7 @@
 import {ago, h} from '../dom.ts';
 import * as git from '../history.ts';
 import {t, tn} from '../i18n.ts';
-import {closeMark, issueName, issuePath, setClosed, type Issue} from '../issues.ts';
+import {closeMark, issueName, issuePath, saveIssue, setClosed, type Issue} from '../issues.ts';
 import {connection, me} from '../remote.ts';
 import {store} from '../repos.ts';
 import {changeFor, type Standing} from '../git-state.ts';
@@ -36,6 +36,28 @@ export interface RepoState extends Standing { lines: git.Line[];
 
 function button(text: string, primary = false): HTMLButtonElement {
   return h('button', {class: primary ? 'button primary' : 'button', type: 'button'}, text) as HTMLButtonElement;
+}
+
+/** A summary half written in an issue's box, by its path, kept while the page is drawn again under it. */
+const summaries = new Map<string, string>();
+
+/**
+ * The issue's detail (what was written under its first line), above Commit and Push: written right there, the
+ * field one with the box's ground until it is pressed (then a field), saved as it is left. The box is that much
+ * taller (issue #20). The same detail, named as where it was first written.
+ */
+function summary(issue: Issue, after: () => void): HTMLElement {
+  const key = `${issue.repo}/${issuePath(issue)}`;
+  const field = h('textarea', {class: 'issue-summary', rows: '4', 'aria-label': t('Detail'), placeholder: t('Detail (optional)'), spellcheck: 'false'}) as HTMLTextAreaElement;
+  field.value = summaries.get(key) ?? issue.detail;
+  const error = h('p', {class: 'error', role: 'alert'});
+  field.addEventListener('input', () => summaries.set(key, field.value));
+  field.addEventListener('blur', async () => {
+    if (field.value === issue.detail) { summaries.delete(key); return; }
+    try { await saveIssue(store, issue, issue.kind, issue.title, field.value); summaries.delete(key); after(); }
+    catch (e) { error.textContent = t('Could not write: {message}', {message: errorText(e)}); }
+  });
+  return h('div', {class: 'issue-summary-wrap'}, field, error);
 }
 
 const STATE = (s: git.Change['state']) => ({open: t('Undecided'), merged: t('Merged'), rejected: t('Rejected'), reset: t('Taken back')})[s];
@@ -111,12 +133,15 @@ export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEv
   }
   // At the box's foot, opposite its action: its repo and, quietly, who started it and when.
   const say = !connection() ? t('History and work are kept on the Remote. Sign in to it to work on an issue and commit.') : s?.error ?? standing(s, issue);
-  // Its words are changed where they are read: pressed, the head and the detail become the fields they were written in.
-  const words = h('button', {type: 'button', class: 'issue-words', title: t('Change its words')},
-    issueHead(issue), issue.detail ? h('p', {class: 'issue-body'}, issue.detail) : null);
+  // Its title is changed where it is read: pressed, the head becomes the fields it was written in. Its summary is
+  // written right under it, above Commit and Push.
+  const words = h('button', {type: 'button', class: 'issue-words', title: t('Change its words')}, issueHead(issue));
+  const work = here && s?.work ? steps(issue, s, events, after) : null;
+  // The change's power switch, low at the box's right, where its foot's action is.
+  if (work?.reset) acts.push(work.reset);
   const box = h('div', {class: 'issue-box'},
-    words,
-    ...(here && s?.work ? [steps(issue, s, events, after)] : change?.state === 'open' ? [received(change)] : []),
+    words, summary(issue, after),
+    ...(work ? [work.element] : change?.state === 'open' ? [received(change)] : []),
     h('div', {class: 'issue-foot'}, leave, h('div', {class: 'issue-about'}, h('span', {class: 'issue-where'}, issue.repo), say ? h('span', {class: s?.error ? 'error small' : 'muted small'}, say) : null), ...acts), error);
   const editor = () => issueEditor(issue, (saved) => { if (saved) after(); else box.replaceWith(issueBox(issue, s, events, after)); });
   words.addEventListener('click', () => words.replaceWith(editor()));
@@ -126,16 +151,14 @@ export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEv
 }
 
 /**
- * What is not committed in the copy `at` shows (▸ 5 files): pressed, its diff
- * lies over what is under it, so nothing moves; Escape or a press outside closes it.
+ * What is not committed in the copy `at` shows (▸ 5 files): pressed, its diff opens right there, as any diff
+ * does, under the line; pressed again it folds.
  */
 export function notCommitted(at: string, n: number, events: IssueEvents): HTMLElement {
   const inside = h('div', {class: 'step-diff'}, quiet(t('Reading…')));
   const fold = h('details', {class: 'stage-diff'}, h('summary', {}, tn('{n} file not committed', '{n} files not committed', n)), inside) as HTMLDetailsElement;
   let read = false;
-  const away = (e: Event) => { if (e instanceof KeyboardEvent ? e.key === 'Escape' : !fold.contains(e.target as Node)) fold.open = false; };
   fold.addEventListener('toggle', () => {
-    for (const k of ['pointerdown', 'keydown'] as const) (fold.open ? document.addEventListener : document.removeEventListener).call(document, k, away);
     if (!fold.open || read) return;
     read = true;
     void git.diff(at).then((files) => inside.replaceChildren(...diffFiles(files, {reveal: (p) => events.open(at, p)})), (e) => inside.replaceChildren(h('p', {class: 'error'}, errorText(e))));
@@ -164,12 +187,11 @@ const quiet = (text: string) => h('p', {class: 'muted small'}, text);
 
 /**
  * Commit and Push, inside the issue's box, one under the other at its left (green, the done mark, once done),
- * what each stands at beside it, and at the right of Push's row the change's power switch: on while the change
- * is in, switched off it is taken back (Reset). Beside Commit, what is not committed: its diff opens over what is
- * under it, so nothing moves. Pushing hands the work to main as its change, again as the next version; until it
- * is decided, the switch takes it back.
+ * what each stands at beside it. Beside Commit, what is not committed: its diff opens there. Pushing hands the
+ * work to main as its change, again as the next version; until it is decided, the change's power switch (low at
+ * the box's right: `reset`) is on, and switched off takes it back.
  */
-function steps(issue: Issue, s: RepoState, events: IssueEvents, after: () => void): HTMLElement {
+function steps(issue: Issue, s: RepoState, events: IssueEvents, after: () => void): {element: HTMLElement; reset: HTMLElement | null} {
   const at = issue.repo;
   const w = s.work!;
   const error = h('p', {class: 'error', role: 'alert'});
@@ -203,16 +225,16 @@ function steps(issue: Issue, s: RepoState, events: IssueEvents, after: () => voi
   const where = pushed ? quiet(t('Change · version {n} · {state}', {n: w.change!.version, state: STATE(w.change!.state)}))
     : w.unpushed ? quiet(tn('{n} commit to push', '{n} commits to push', w.unpushed)) : null;
 
-  return h('div', {class: 'steps issue-steps'},
-    slot(commit, committed, t('Commit')), h('div', {class: 'step-about step-changes'}, what), h('span'),
-    slot(push, pushed, t('Push')), about(where), reset ? h('div', {class: 'step-act step-switch'}, reset) : h('span'), error);
+  return {element: h('div', {class: 'steps issue-steps'},
+    slot(commit, committed, t('Commit')), h('div', {class: 'step-about step-changes'}, what),
+    slot(push, pushed, t('Push')), about(where), error), reset};
 }
 
 /** Someone else's change, received: committed and pushed already, by whom and which version. */
 function received(change: git.Change): HTMLElement {
   return h('div', {class: 'steps issue-steps'},
-    slot(h('span'), true, t('Commit')), about(quiet(change.submittedBy || '—')), h('span'),
-    slot(h('span'), true, t('Push')), about(quiet(t('Change · version {n} · {state}', {n: change.version, state: STATE(change.state)}))), h('span'));
+    slot(h('span'), true, t('Commit')), about(quiet(change.submittedBy || '—')),
+    slot(h('span'), true, t('Push')), about(quiet(t('Change · version {n} · {state}', {n: change.version, state: STATE(change.state)}))));
 }
 
 /**

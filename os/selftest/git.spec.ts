@@ -151,6 +151,17 @@ test('a new issue\'s repo is chosen in the one row above the box, Create at the 
 
   await app.git.write('tide-tables', 'Fix: The table wraps', 'On a phone.');
   await expect(app.git.issue('#1 Fix：The table wraps')).toBeVisible();
+
+  // Its detail is right under the title, above Commit: written there, and saved as it is left.
+  const summary = app.main.getByRole('textbox', {name: 'Detail'});
+  await expect(summary).toHaveValue('On a phone.');
+  await expect(summary).toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)');
+  await summary.fill('On a phone, at 320 px.');
+  await summary.press('Tab');
+  await app.page.reload();
+  await app.settled();
+  await app.rail.go('git');
+  await expect(summary).toHaveValue('On a phone, at 320 px.');
 });
 
 test('the detail of a new issue has the room the repos inside the box had', async ({app}) => {
