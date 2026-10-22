@@ -341,16 +341,22 @@ pub fn log(repos: &Repos, repo: &str, n: usize) -> Result<Vec<Cut>> {
 
 pub fn log_of(repo: &str, line: &str, n: usize) -> Result<Vec<Cut>> {
     let Ok(client) = Client::open() else { return Ok(Vec::new()) };
-    let v = match client.call("GET", &format!("{}{}limit={n}", remote::at_path(repo, line, "/log"), if line == crate::work::MAIN { "?" } else { "&" }), None)? {
+    // What each commit changed, as the Remote counted it, without its tree; a Remote that does not count
+    // it yet sends the trees, and they are compared here.
+    let v = match client.call("GET", &format!("{}{}limit={n}&summary=1", remote::at_path(repo, line, "/log"), if line == crate::work::MAIN { "?" } else { "&" }), None)? {
         Reply::Ok(v) => v,
         _ => return Ok(Vec::new()),
     };
     let list = v.as_array().cloned().unwrap_or_default();
     let trees: HashMap<String, Tree> = list.iter().filter_map(|c| Some((c["id"].as_str()?.to_string(), remote::tree_of(&c["tree"])))).collect();
     Ok(list.iter().map(|c| {
-        let tree = remote::tree_of(&c["tree"]);
-        let parent = c["parent"].as_str().and_then(|p| trees.get(p)).cloned().unwrap_or_default();
-        let (folders, files) = places(&parent, &tree);
+        let counted = c["files"].as_u64().zip(c["folders"].as_array())
+            .map(|(n, f)| (f.iter().filter_map(|x| x.as_str().map(String::from)).collect::<Vec<_>>(), n as usize));
+        let (folders, files) = counted.unwrap_or_else(|| {
+            let tree = remote::tree_of(&c["tree"]);
+            let parent = c["parent"].as_str().and_then(|p| trees.get(p)).cloned().unwrap_or_default();
+            places(&parent, &tree)
+        });
         let s = |k: &str| c[k].as_str().unwrap_or_default().to_string();
         Cut {
             id: s("id"), issue: Some(s("issue")).filter(|i| !i.is_empty()), kind: Some(s("kind")).filter(|k| !k.is_empty()),

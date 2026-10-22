@@ -10,3 +10,8 @@
   Referrer-Policy: no-referrer
   Cross-Origin-Opener-Policy: same-origin
   X-Content-Type-Options: nosniff
+
+# The hashed files never change under their names (a new build names its own): kept a year, never asked
+# again. index.html is not hashed and stays as Workers Assets serves it (asked again each time, by its ETag).
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
