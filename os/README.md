@@ -550,13 +550,39 @@ its requests answered by the test's own Remote.
 
 ```
 npm ci
-npm run check                  # tsc + node:test (the Remote's contracts with a bucket and without)
+npm run check                  # tsc, then npm test
+npm test                       # node:test: the page, the core it asks, the Remote's contracts with a bucket and without
 npm run selftest               # the app end to end in Chromium (below)
 npm run selftest:l3            # l3 end to end against a Remote of its own (selftest/l3)
 npm run verify:remote          # the Remote on a real Postgres: DATABASE_URL (see Deploy)
 npx tauri dev                  # window against the Vite dev server
 npx tauri build --debug --no-bundle
 ```
+
+### CI
+
+`.github/workflows/desktop.yml` tests a change once, in its pull request
+(on what merging it would make; main is not tested again when it lands),
+and a newer push cancels the run it makes old. Its jobs run side by side,
+so a run takes as long as its longest, about two minutes:
+
+| Job | What it does |
+| --- | --- |
+| `core` | the core for the browser (`core/web`, `wasm32-wasip1`), made once and kept by its sources |
+| `l3-web` | l3 for the browser (`public/l3`) from the root this tree pins, checked against that root; kept by the root and the translator |
+| `types` | `tsc --noEmit` |
+| `unit` ×4 | `npm test`, node giving each shard every fourth file (`NODE_OPTIONS=--test-shard=1/4 npm test` locally) |
+| `selftest` ×4 | Playwright in Chromium, one Remote and one build of the app per shard, with the `@slow` Prompt tests |
+| `lint` | clippy `-D warnings` on the core, core/web and l3, natively and for `wasm32-wasip1` |
+| `rust` | `cargo test` for the core and l3, then `npm run selftest:l3` |
+| `xlat` | the translator against native, and l3 (static, musl) translated as the Prompt runs it |
+| `advisories` | `npm audit` of what ships and `cargo audit` of both lockfiles (cargo-audit built once and kept) |
+
+Nothing is made twice: what several jobs need (the core's module, l3 for
+the browser) is made by its own job only when what it is made from
+changed, and the others take it; Chromium and cargo's dependencies are
+kept between runs. A test file's in-process Remote is closed when the file
+ends (an open PGlite keeps its process up for seconds).
 
 ### Selftest
 
@@ -568,7 +594,7 @@ directory) and `vite preview` on free ports, runs every `selftest/*.spec.ts`
 in parallel, and stops both whatever happened (`global-setup.ts`). The
 browser reaches both as `localhost` (a passkey's relying party is a name,
 never an address); nothing listens on a fixed port and nothing outside the
-repository is read. About 45 journeys take under two minutes on four cores.
+repository is read. About 95 journeys take about four minutes on four cores.
 
 - One test, by its words: `npm run selftest -- -g 'Share'`; one area:
   `npm run selftest -- git.spec`.
@@ -581,10 +607,10 @@ repository is read. About 45 journeys take under two minutes on four cores.
   the translator) and run with `SELFTEST_SLOW=1` once `public/l3` holds l3
   (`npm run l3`, or `node scripts/prompt-files.mjs`); the build then
   carries it. `first-prompt.spec.ts` measures what a first Prompt fetches.
-- CI (`selftest` in `.github/workflows/desktop.yml`) runs everything on each
-  push and pull request that touches `os/`, retries a failure once, and
-  uploads the report, the traces and the servers' logs when it fails (the
-  traces alone when a test passed only on its retry).
+- CI (`selftest` in `.github/workflows/desktop.yml`) runs everything in four
+  shards (`npm run selftest -- --shard=2/4` is one), retries a failure once,
+  and uploads each shard's report, traces and servers' logs when it fails
+  (the traces alone when a test passed only on its retry).
 
 A spec is one area (`git.spec.ts`, `inbox.spec.ts`…), a test one thing a
 person does, and it asserts what they then see. Writing one:

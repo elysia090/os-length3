@@ -2,13 +2,11 @@
 // is a map, and every fetch goes to the service itself (service/app.ts), so a
 // client module is tested against the Remote it really talks to.
 
-import {PGlite} from '@electric-sql/pglite';
-import {drizzle} from 'drizzle-orm/pglite';
-import {migrate} from 'drizzle-orm/pglite/migrator';
 import {createApp} from '../service/app.ts';
 import {createAuth} from '../service/auth.ts';
 import {memoryBucket} from '../service/bucket.ts';
 import * as schema from '../service/schema.ts';
+import {fileDb} from '../service/testing.ts';
 
 export const REMOTE = 'http://remote.test';
 const APP = 'http://app.test';
@@ -18,8 +16,8 @@ export async function inProcessRemote() {
   Object.assign(globalThis, {localStorage: {
     getItem: (k: string) => shelf.get(k) ?? null, setItem: (k: string, v: string) => void shelf.set(k, v), removeItem: (k: string) => void shelf.delete(k),
   }});
-  const db = drizzle(new PGlite(), {schema});
-  await migrate(db, {migrationsFolder: new URL('../service/migrations', import.meta.url).pathname});
+  // Migrated as every test's database is, and closed when the file is done (an open one keeps the process up).
+  const db = await fileDb();
   const auth = createAuth({db, secret: 'test-secret-'.repeat(4), baseURL: REMOTE, appOrigin: APP, rateLimit: false, dev: true});
   const app = createApp({db, auth, bucket: memoryBucket(), origins: [APP], providers: ['dev']});
   Object.assign(globalThis, {fetch: (url: string, init?: RequestInit) => {

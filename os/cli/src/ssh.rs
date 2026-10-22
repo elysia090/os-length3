@@ -185,7 +185,14 @@ impl server::Handler for Conn {
 /// Count one more session open on a connection, if fewer than CHANNELS are.
 fn open_another(open: &std::sync::atomic::AtomicUsize) -> bool {
     use std::sync::atomic::Ordering::SeqCst;
-    open.fetch_update(SeqCst, SeqCst, |n| (n < CHANNELS).then_some(n + 1)).is_ok()
+    let mut n = open.load(SeqCst);
+    while n < CHANNELS {
+        match open.compare_exchange_weak(n, n + 1, SeqCst, SeqCst) {
+            Ok(_) => return true,
+            Err(now) => n = now,
+        }
+    }
+    false
 }
 
 /// What a session asked for before it starts: a terminal (its name and size).

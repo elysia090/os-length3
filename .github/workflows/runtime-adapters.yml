@@ -2,7 +2,7 @@ name: Native distribution checks
 
 on:
   push:
-    branches: [main, codex/native-release-wasm-1002]
+    branches: [codex/native-release-wasm-1002]
     paths:
       - '.github/workflows/runtime-adapters.yml'
       - 'compiler/Makefile'
@@ -50,10 +50,10 @@ on:
 permissions:
   contents: read
 
-# A newer push to the same pull request stops the run it makes old; main's runs all finish.
+# A newer push to the same pull request stops the run it makes old. Main is not run again on merge: its pull request ran it.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   adapters:
