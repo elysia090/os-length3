@@ -4,7 +4,7 @@ import {mark} from '../icons.ts';
 import {bring, remoteOnly} from '../lifecycle.ts';
 import {plainPart, renamed, store} from '../repos.ts';
 import {inRepo, list, ORIGIN_LABEL, type SystemEntry} from '../system.ts';
-import {askFoot, SETTLE} from './common.ts';
+import {answers, askFoot, SETTLE} from './common.ts';
 import {errorText} from '../errors.ts';
 
 // File is an operation, not a page: the tree of "/", the whole system, as a
@@ -12,7 +12,9 @@ import {errorText} from '../errors.ts';
 // tall as what is in it. It opens when the
 // pointer rests on the File icon or on the tree, or when File is pressed;
 // once out it stays for LINGER after the pointer leaves, so reaching across
-// the page and back does not lose it. A press outside or Escape closes it at
+// the page and back does not lose it; while a name is being written in it or
+// it asks something (or the keyboard is in it), it stays however far the
+// pointer goes, until that is done. A press outside or Escape closes it at
 // once, whatever has the keyboard. Nothing under it moves. A folder's
 // triangle comes before its name: ▷ closed, ▽ open. A file chosen is the one
 // to work on: the tree goes and the caret is in it. The file Forge is
@@ -70,6 +72,8 @@ export class FileTree {
   private pop: {element: HTMLElement; name: HTMLElement; more: HTMLElement} | null = null;
   /** Each folder's way to be read again, open, by its row. */
   private folders = new WeakMap<HTMLElement, () => Promise<void>>();
+  /** Whether the pointer is over the tree or File, so a hold let go knows to start the linger. */
+  private over = false;
 
   constructor(events: FileTreeEvents) {
     this.events = events;
@@ -121,8 +125,21 @@ export class FileTree {
     });
   }
 
-  enter() { this.later(true, this.isOpen ? 0 : OPEN_DELAY); }
-  leave() { this.later(false, LINGER); }
+  enter() { this.over = true; this.later(true, this.isOpen ? 0 : OPEN_DELAY); }
+  leave() {
+    this.over = false;
+    // A name being written, an ask, or the keyboard in the tree: it stays until that is done.
+    if (this.isOpen && this.holding()) { clearTimeout(this.timer); return; }
+    this.later(false, LINGER);
+  }
+
+  /** Something in the tree that the pointer going away must not put away: a field or an ask in a row's menu, or the keyboard. */
+  private holding(): boolean {
+    return !!this.pop?.element.querySelector('.pop-field, .pop-ask') || !!this.element.querySelector(':focus-visible');
+  }
+
+  /** What held the tree is done: with the pointer away, it goes after the linger as it would have. */
+  private letGo() { if (this.isOpen && !this.over && !this.holding()) this.later(false, LINGER); }
 
   open(focus = false) {
     clearTimeout(this.timer);
@@ -314,6 +331,7 @@ export class FileTree {
     this.pop.more.setAttribute('aria-expanded', 'false');
     this.pop.element.remove();
     this.pop = null;
+    this.letGo();
   }
 
   /** The folder row `item` read again and open. */
@@ -342,22 +360,34 @@ export class FileTree {
       b.addEventListener('click', () => then(b));
       return b;
     };
-    /** A name written in the row's place: Enter makes it; a name it cannot be keeps the keyboard in it. */
-    const field = (b: HTMLElement, label: string, value: string, go: (name: string) => Promise<void>) => {
+    /**
+     * A name written in the row's place, with Not now and the deed at its foot, as every ask has:
+     * the deed or Enter makes it; Not now (or Escape) puts it back. A name it cannot be is said
+     * under it and keeps the keyboard in it, to be put right there.
+     */
+    const field = (b: HTMLElement, label: string, value: string, deed: string, go: (name: string) => Promise<void>) => {
       const input = h('input', {class: 'line-in mono', placeholder: label, 'aria-label': label, autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
       input.value = value;
       const error = h('p', {class: 'error small', role: 'alert'});
-      input.addEventListener('keydown', async (event) => {
-        if (event.key !== 'Enter' || event.isComposing) return;
-        event.preventDefault();
+      const no = h('button', {type: 'button', class: 'button small-button'}, t('Not now')) as HTMLButtonElement;
+      const yes = h('button', {type: 'button', class: 'button small-button primary'}, deed) as HTMLButtonElement;
+      const make = async () => {
         const v = input.value.trim();
-        if (!v) return;
+        if (!v || input.disabled) return;
         error.textContent = '';
         if (!plainPart(v)) { error.textContent = t('A name has no “/” and does not start with “.”'); input.focus(); return; }
-        input.disabled = true;
-        try { await go(v); } catch (err) { input.disabled = false; error.textContent = errorText(err); input.focus(); }
+        input.disabled = yes.disabled = true;
+        try { await go(v); } catch (err) { input.disabled = yes.disabled = false; error.textContent = errorText(err); input.focus(); }
+      };
+      input.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' || event.isComposing) return;
+        event.preventDefault();
+        void make();
       });
-      b.replaceWith(h('div', {class: 'pop-field'}, input, error));
+      yes.addEventListener('click', () => void make());
+      const box = h('div', {class: 'pop-field'}, input, error, answers(no, yes));
+      no.addEventListener('click', () => { box.replaceWith(b); b.focus(); this.letGo(); });
+      b.replaceWith(box);
       input.focus();
       // A new name is written over the old one's stem, its ending kept.
       const dot = value.lastIndexOf('.');
@@ -368,7 +398,7 @@ export class FileTree {
     const taken = (child: string) => new Error(t('{name} is there already', {name: child}));
     const rows: HTMLElement[] = [];
     if (dir) {
-      rows.push(entry(t('New file'), (b) => field(b, t('File name'), '', async (n) => {
+      rows.push(entry(t('New file'), (b) => field(b, t('File name'), '', t('Create'), async (n) => {
         if (await there(at.path, n)) throw taken(n);
         await store.add(at.repo, at.path, n, '');
         // The new file is the one to work on: the tree goes and the caret is in it. Out again, it shows the file.
@@ -376,7 +406,7 @@ export class FileTree {
         this.unpop();
         this.events.choose(at.repo, joined(at.path, n), true);
       })));
-      rows.push(entry(t('New folder'), (b) => field(b, t('Folder name'), '', async (n) => {
+      rows.push(entry(t('New folder'), (b) => field(b, t('Folder name'), '', t('Create'), async (n) => {
         if (await there(at.path, n)) throw taken(n);
         await store.mkdir(at.repo, joined(at.path, n));
         this.unpop();
@@ -385,7 +415,7 @@ export class FileTree {
       })));
     }
     if (at.path !== '') {
-      rows.push(entry(t('Rename'), (b) => field(b, t('New name'), e.name, async (n) => {
+      rows.push(entry(t('Rename'), (b) => field(b, t('New name'), e.name, t('Rename'), async (n) => {
         if (n !== e.name) {
           if (await there(folder, n)) throw taken(n);
           await store.rename(at.repo, at.path, n);
@@ -407,7 +437,7 @@ export class FileTree {
         const ask = h('div', {class: 'pop-ask'},
           h('p', {class: 'muted small'}, dir ? t('{name} goes, with what is in it', {name: e.name}) : t('{name} goes', {name: e.name})),
           error, foot(no, yes));
-        no.addEventListener('click', () => { ask.replaceWith(b); b.focus(); });
+        no.addEventListener('click', () => { ask.replaceWith(b); b.focus(); this.letGo(); });
         const shown = performance.now();
         yes.addEventListener('click', async () => {
           if (performance.now() - shown < SETTLE) return;
