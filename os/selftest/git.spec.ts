@@ -109,6 +109,18 @@ test('a reviewer asks for changes with a line marked, and the change waits for t
   await expect(app.git.step('Merge')).toBeDisabled();
 });
 
+test('a step pressed from the keyboard keeps the keyboard in the issues, never on the page body', async ({signedIn: app}) => {
+  await app.newRepo.make('hello');
+  await app.git.write('hello', 'Fix: Say hello louder');
+  await expect(app.git.issue('#1 Fix：Say hello louder')).toBeVisible();
+
+  // Start is held while it runs and the box is drawn again after: the keyboard comes back into the issues.
+  await app.git.step('Start').focus();
+  await app.page.keyboard.press('Enter');
+  await expect(app.git.step('Back to main')).toBeVisible();
+  await expect.poll(() => app.page.evaluate(() => document.activeElement !== document.body && !!document.activeElement?.closest('main'))).toBe(true);
+});
+
 // The box an issue is written in, and the one row of repos above it.
 
 test('a new issue\'s repo is chosen in the one row above the box, Create at the left and Not now at the right', async ({app}) => {

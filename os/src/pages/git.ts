@@ -111,7 +111,18 @@ export function git(ctx: Context): Node[] {
   /** Slide to the `n`th box: it gets the whole box, the others only their heads. */
   const sized = new ResizeObserver(([e]) => track.style.setProperty('--card-h', `${(e.target as HTMLElement).offsetHeight}px`));
   /** The part of the box that has the keyboard (its words, a button), so the box gone to or drawn again gives it back. */
-  const part = () => (document.activeElement instanceof HTMLElement && track.contains(document.activeElement) ? document.activeElement.className.split(' ')[0] || null : null);
+  // Told by its kind and its words: every button in a box is a .button, and the first of them is Close, so a box
+  // drawn again under the keyboard on Start must not hand it to Close (the next Enter would close the issue).
+  const part = (): {kind: string; words: string} | null => {
+    const a = document.activeElement;
+    if (!(a instanceof HTMLElement) || !track.contains(a)) return null;
+    const kind = a.className.split(' ')[0];
+    return kind ? {kind, words: a.textContent?.trim() ?? ''} : null;
+  };
+  const sameDeed = (slot: HTMLElement | undefined, had: {kind: string; words: string}) => {
+    const all = [...(slot?.querySelectorAll<HTMLElement>(`.${had.kind}`) ?? [])];
+    return all.find((e) => (e.textContent?.trim() ?? '') === had.words) ?? (all.length === 1 && had.kind !== 'button' ? all[0] : null);
+  };
   const go = (n: number, moved = false, had = part()) => {
     if (!shown.length) return;
     k = Math.max(0, Math.min(shown.length - 1, n));
@@ -141,7 +152,7 @@ export function git(ctx: Context): Node[] {
     next.hidden = k === shown.length - 1;
     const slot = track.children[k] as HTMLElement | undefined;
     if (land) { land = false; slot?.querySelector<HTMLElement>('.issue-words')?.focus({preventScroll: true}); return; }
-    if (had) (slot?.querySelector<HTMLElement>(`.${had}`) ?? stage).focus({preventScroll: true});
+    if (had) (sameDeed(slot, had) ?? stage).focus({preventScroll: true});
     // An edge pressed that is gone now (the first or last box reached): the keyboard stays on the row.
     else if (edge && (document.activeElement as HTMLElement | null)?.hidden) stage.focus({preventScroll: true});
   };
