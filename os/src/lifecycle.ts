@@ -263,7 +263,7 @@ let polling: ReturnType<typeof setInterval> | undefined;
 export async function begin() {
   if (begun) return;
   begun = true;
-  // The web keeps no copy of l3: it is fetched each visit. The app has it beside itself.
+  // What an earlier build kept of l3 goes; l3 now keeps its own copies, by digest, and lets them go itself (userland.ts).
   void forgetExcept(new Set());
   // A browser shows again the work each repo showed.
   draft.restoreLines();

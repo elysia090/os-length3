@@ -1,5 +1,5 @@
 # Headers Workers Assets puts on the app's own files (index.html, the hashed
-# assets, the userland). The page's CSP is a <meta> tag (vite.config.ts), and a
+# assets, l3). The page's CSP is a <meta> tag (vite.config.ts), and a
 # meta CSP cannot say frame-ancestors: so here, as headers, the page may not be
 # framed by any other page (a framed device-approval page could be clicked
 # through by someone who was never asked), and it is reached only by HTTPS.
@@ -14,4 +14,16 @@
 # The hashed files never change under their names (a new build names its own): kept a year, never asked
 # again. index.html is not hashed and stays as Workers Assets serves it (asked again each time, by its ETag).
 /assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# l3 (scripts/l3.mjs): every file but l3.json is named by its digest, so it never changes under its name and
+# is kept a year; the Worker's Range requests into a pack are answered from what the browser has of it.
+# l3.json says which l3 this build carries: asked again each time.
+/l3/l3.json
+  Cache-Control: no-cache
+/l3/index-*
+  Cache-Control: public, max-age=31536000, immutable
+/l3/packs/*
+  Cache-Control: public, max-age=31536000, immutable
+/l3/blobs/*
   Cache-Control: public, max-age=31536000, immutable

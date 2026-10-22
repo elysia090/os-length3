@@ -8,7 +8,7 @@ import desktopPins from '../../shared/desktop-releases.json' with {type: 'json'}
 import * as dotfiles from '../dotfiles.ts';
 import * as ssh from '../ssh.ts';
 import {free, readSpace} from '../space.ts';
-import {about, loadWebRoot} from '../userland.ts';
+import {about} from '../userland.ts';
 import {askFoot, copying, pageHead, SETTLE} from './common.ts';
 import type {Context} from './context.ts';
 import {syncWord} from './remote.ts';
@@ -79,14 +79,11 @@ function environment(): HTMLElement {
         row(t('Custom'), '', t('Your own root (.tar)'), false, h('span', {class: 'small'}, t('Not yet'))));
       return;
     }
-    let a: Awaited<ReturnType<typeof about>>, web: Awaited<ReturnType<typeof loadWebRoot>>;
-    try { [a, web] = await Promise.all([about(), isNative ? null : loadWebRoot()]); } catch (e) { body.replaceChildren(h('p', {class: 'error'}, message(e))); return; }
-    if (!a) { body.replaceChildren(h('div', {class: 'empty'}, t('There is no l3 (npm run userland)'))); return; }
-    // In a browser with the whole root: every program of it, through xlat; else l3 and its BusyBox.
-    const note = web
-      ? t('{name} · through xlat', {name: a.root.name})
-      : t('{name} · {base} {version} · {size}', {name: a.root.name, base: a.base.name, version: a.base.version, size: bytes(a.bundle.size)});
-    body.replaceChildren(row('l3', web?.index.version || a.root.version, note, true, null, a.bundle.sha256),
+    let a: Awaited<ReturnType<typeof about>>;
+    try { a = await about(); } catch (e) { body.replaceChildren(h('p', {class: 'error'}, message(e))); return; }
+    if (!a) { body.replaceChildren(h('div', {class: 'empty'}, t('There is no l3 (npm run l3)'))); return; }
+    // The same l3 as the app's: its version, and the digest of the root it is (core/src/root.rs), read here through xlat.
+    body.replaceChildren(row('l3', a.version, t('{name} · through xlat', {name: a.root.name}), true, null, a.sha256),
       row('Ubuntu', '24.04.5 LTS', t('In the app only'), false, null),
       row('Debian', '13', t('In the app only'), false, null),
       row(t('Custom'), '', t('Your own root (.tar)'), false, h('span', {class: 'small'}, t('Not yet'))));

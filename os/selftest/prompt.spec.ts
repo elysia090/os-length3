@@ -5,13 +5,13 @@ import {OS} from './paths.ts';
 
 // The prompt box and the Prompt (the repo's sh) behind it. Tab completes a
 // path from the repo's tree as the store has it, so it needs no Prompt. The
-// rest runs BusyBox sh and l3 through the WebAssembly translator: slow (it
-// fetches l3 and translates as it runs), so tagged @slow and run with
-// SELFTEST_SLOW=1, as CI does. Those need the Prompt's files in public/
-// (`npm run userland`, or `node scripts/prompt-files.mjs` from the release),
-// which the build then carries.
+// rest runs the root's BusyBox sh and l3 through the WebAssembly translator:
+// slow (it fetches l3 and translates as it runs), so tagged @slow and run
+// with SELFTEST_SLOW=1, as CI does. Those need l3 in public/l3 (`npm run l3`,
+// or `node scripts/prompt-files.mjs` from the release), which the build then
+// carries.
 
-const PROMPT = join(OS, 'public', 'userland', 'l3.json');
+const PROMPT = join(OS, 'public', 'l3', 'l3.json');
 
 test.beforeEach(async ({app}) => {
   await app.newRepo.make('hello', {template: 'C'});
@@ -45,7 +45,7 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
   test.skip(!process.env.SELFTEST_SLOW, '@slow: SELFTEST_SLOW=1 runs it');
   test.beforeEach(async ({app}) => {
     // Asked for, it is run: without the Prompt's files that is a failure, not a skip.
-    expect(existsSync(PROMPT), 'this build carries no Prompt (public/userland): npm run userland, or node scripts/prompt-files.mjs').toBe(true);
+    expect(existsSync(PROMPT), 'this build carries no l3 (public/l3): npm run l3, or node scripts/prompt-files.mjs').toBe(true);
     test.setTimeout(300_000);
     await app.forge.startPrompt('hello');
   });

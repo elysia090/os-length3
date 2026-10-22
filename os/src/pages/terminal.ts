@@ -3,12 +3,13 @@ import {onChange, store} from '../repos.ts';
 import {bytes, h} from '../dom.ts';
 import {isNative, promptOpen, rootStatus, type Held, type Stopped} from '../host.ts';
 import {currentLang, onLang, t, tn} from '../i18n.ts';
-import {loadUserland, loadWebRoot, watchLoad, type Stage} from '../userland.ts';
+import {filesNow, loadL3, warmL3, watchLoad, type L3, type Stage} from '../userland.ts';
 import {every} from '../runs.ts';
 import {errorText} from '../errors.ts';
 
-// A shell per repo, running translated BusyBox (and l3) in a Worker. Sessions
-// outlive page switches: the workbench re-attaches the same element. A
+// A shell per repo: in a browser, l3's root (its BusyBox sh, and every other
+// program of it) translated in a Worker; in the app, the same root on the
+// machine. Sessions outlive page switches: the workbench re-attaches the same element. A
 // session only shows output; what is typed comes from the prompt box through
 // send(). The repo in the shell is the repo: what the shell changes under
 // /root/<repo> is written back through the store, and what is saved
@@ -25,8 +26,8 @@ const strip = (s: string) => s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\
 const NO_TTY = "/bin/sh: can't access tty; job control turned off\n";
 /**
  * The prompt the shell prints, at the end of what it wrote: a run is over
- * when it comes back. `/root/x $ ` (l3's userland, PS1 "$PWD $ ") or
- * `x $ `, `x/src $ ` (the root's shrc).
+ * when it comes back: `x $ `, `x/src $ ` (the root's shrc), or a path
+ * (`/root/x $ `) outside the repo.
  */
 const PROMPT = /(?:^|\n)[^\n]*\S \$ $/;
 const RUNS = 50;
@@ -152,6 +153,9 @@ export class Session {
   /** Output goes on screen and into the run in progress, which ends at the next prompt. */
   private received(s: string) {
     this.print(s);
+    // Its first prompt line: up. What the Prompts after it are given ahead of time (l3's translation) comes a moment later, quietly,
+    // so it takes nothing from the first line run.
+    if (this.l3 && PROMPT.test(this.text)) { const l3 = this.l3; this.l3 = null; setTimeout(() => warmL3(l3), 3000); }
     const run = this.runs.at(-1);
     if (!run || run.ms !== null) return;
     run.output += strip(s);
@@ -168,6 +172,8 @@ export class Session {
   }
 
   private readonly id = `shell:${Math.random().toString(36).slice(2)}`;
+  /** l3, in a browser, until the shell's first prompt line. */
+  private l3: L3 | null = null;
   private activity: HTMLElement;
   /** When the worker last said anything. */
   private heard = 0;
@@ -240,10 +246,7 @@ export class Session {
       this.on = 'l3';
       // While l3 comes, the status says how far it is and what it is doing.
       const unwatch = watchLoad((s) => { this.status.textContent = loadWords(s); });
-      // The whole root not reached: the Prompt runs l3 and its BusyBox alone, and says why.
-      let rootWhy = '';
-      const [land, copy, root] = await Promise.all([loadUserland(), snapshot(this.repo),
-        loadWebRoot().catch((e: unknown) => { rootWhy = errorText(e); return null; })]).finally(unwatch);
+      const [l3, copy] = await Promise.all([loadL3(), snapshot(this.repo)]).finally(unwatch);
       const worker = new Worker(new URL('../../../xlat/runtime/worker.mjs', import.meta.url), {type: 'module'});
       this.worker = worker;
       worker.onmessage = ({data}) => {
@@ -271,17 +274,16 @@ export class Session {
       };
       const cwd = `/root/${this.repo}`;
       worker.postMessage({
-        type: 'start', translator: land.translator,
-        // The person's dotfiles, fresh in every Prompt.
-        files: [...land.files, ...dotfiles.asFiles(), ...copy.files],
-        dirs: [...land.dirs, ...copy.dirs],
-        links: land.links,
-        // The whole root, where this build has it: the same programs as the app's Prompt.
-        ...(root ? {root: {index: root.index, url: root.url}} : {}),
+        type: 'start', translator: l3.translator,
+        // l3's hot programs at their own paths (the same bytes as the root's), the person's dotfiles fresh in every Prompt, and the repo.
+        files: [...filesNow(l3), ...dotfiles.asFiles(), ...copy.files],
+        dirs: copy.dirs,
+        // The whole root around them: the same programs, files and links as the app's Prompt, each file read when a program first opens it.
+        root: {index: l3.index, url: l3.url},
         argv: ['/bin/sh', '-i'],
-        // l3 here sees repos where the shell does, under /root; with the root, its shell reads as the app's.
+        // l3 here sees repos where the shell does, under /root; its shell reads as the app's.
         env: ['HOME=/root', 'TERM=dumb', 'LENGTH3_REPOS=/root', 'L3_PROMPT=1', `LENGTH3_LANG=${currentLang()}`, `LENGTH3_REPO=${this.repo}`,
-          ...(root ? ['PATH=/bin:/usr/bin:/sbin:/usr/sbin', 'ENV=/etc/length3/shrc'] : ['PATH=/bin', 'PS1=$PWD $ '])],
+          'PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', 'ENV=/etc/length3/shrc'],
         cwd,
         mirror: cwd,
       });
@@ -293,9 +295,9 @@ export class Session {
       });
       // Running is the usual state and says nothing; only what is missing is said.
       this.status.textContent = why ? t('Could not open on the root ({why})', {why})
-        : rootWhy ? t('Without the whole root ({why}): l3 and BusyBox only', {why: rootWhy})
         : copy.complete ? '' : t('Large files and binaries are not included');
       this.live = true;
+      this.l3 = l3;
       this.tell();
     } catch (e) {
       this.end(() => t('Could not start: {message}', {message: errorText(e)}));

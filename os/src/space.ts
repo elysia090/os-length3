@@ -1,6 +1,7 @@
 // この端末: everything this OS holds here, largest first, and what can be
 // done with each (core/src/usage.rs in the app). In a browser what it holds
-// is its copy of the repos; each one the Remote has all of can go now, one
+// is its copy of the repos, and what l3 keeps of itself for the Prompt (which
+// can always go: it is fetched again); each one the Remote has all of can go now, one
 // with changes not sent yet goes once they are sent, and without a Remote
 // nothing goes. A repo that goes stays on the Remote and comes back when
 // it is opened.
@@ -12,6 +13,7 @@ import {connection} from './remote.ts';
 import {kept, store} from './repos.ts';
 import {t, tn} from './i18n.ts';
 import {errorText} from './errors.ts';
+import {forgetL3, keptL3} from './userland.ts';
 
 /** `open`: repos a Prompt has open in this page (the app knows its own). */
 export async function readSpace(open: string[] = []): Promise<Space> {
@@ -28,6 +30,10 @@ export async function readSpace(open: string[] = []): Promise<Space> {
     const works = store.copies(r.name).length - 1;
     items.push({id: `repo:${r.name}`, what: r.name, detail: works ? t('repo · {files} · {works}', {files: tn('{n} file', '{n} files', r.files), works: tn('{n} work', '{n} works', works)}) : `repo · ${tn('{n} file', '{n} files', r.files)}`, allocated: r.bytes, room, why});
   }
+  // What l3 keeps of itself for the next Prompt (its index, the translator, the hot programs): derived, so it can always go.
+  const l3 = await keptL3();
+  if (l3.files) items.push({id: 'l3', what: 'l3', detail: tn('{n} file kept for the Prompt', '{n} files kept for the Prompt', l3.files), allocated: l3.bytes,
+    room: open.length ? 'Keep' : 'Free', why: open.length ? t('A Prompt has it open') : t('Fetched again at the next Prompt')});
   items.sort((a, b) => b.allocated - a.allocated || a.what.localeCompare(b.what));
   return {
     host_total: c?.total ?? 0, host_free: c?.free ?? 0, host: 'Estimated',
@@ -67,6 +73,7 @@ export async function free(ids: string[]): Promise<Freed> {
     let freed = 0;
     await flush();
     for (const id of ids) {
+      if (id === 'l3') { freed += await forgetL3(); removed.push(id); continue; }
       const name = id.replace(/^repo:/, '');
       const size = (await store.list()).find((r) => r.name === name)?.bytes ?? 0;
       try {
