@@ -13,6 +13,7 @@
 import {core, isNative, native} from './host.ts';
 import {t} from './i18n.ts';
 import {getState, loadState, setState} from './state.ts';
+import {setEnvironment} from './core-client.ts';
 
 /** The Remote this OS ships with: one name for the app, the Remote, the DNS records people publish and passkeys. */
 export const DEFAULT_REMOTE = 'https://os.length3.com';
@@ -29,6 +30,9 @@ export const REMOTE_URL: string = (() => {
   const v = (import.meta as {env?: Record<string, string>}).env?.VITE_LENGTH3_REMOTE;
   return v === undefined ? DEFAULT_REMOTE : v.replace(/\/$/, '');
 })();
+
+// The core signs in to the same Remote as the page.
+setEnvironment({LENGTH3_REMOTE: REMOTE_URL});
 
 export interface Connection { url: string; token: string }
 

@@ -124,6 +124,9 @@ pub struct Base {
     /// Whether the Remote said it keeps modes when this was agreed (one before modes were keeps none).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub moded: bool,
+    /// The account it was agreed with (its id); none from before accounts were noted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub who: Option<String>,
 }
 
 /// Bases are kept one file per line: `<data>/sync/<repo>.json` for main,
@@ -256,6 +259,10 @@ pub struct Synced {
     /// Changed on both sides: the Remote's kept at its name, this device's beside it.
     pub both: Vec<String>,
     pub unsynced: Vec<(String, String)>,
+    /// Every path this copy changed by taking in (a file written or removed, a folder made, a copy kept
+    /// beside), so a page tells each to what shows it, rather than reading the whole repo again.
+    #[serde(default)]
+    pub paths: Vec<String>,
 }
 
 /// Bring `repo` and the Remote into step: send what changed here, take in
@@ -272,11 +279,22 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
     let (key, line) = key(repos, repo);
     let path = at(repo, &line, "");
     let mut out = Synced::default();
+    let who = account_id();
+    let mut first: Option<Tree> = None;
     for _ in 0..12 {
         let agreed = base(&key);
+        // Agreed with another account (another person signed in on this device): this copy is theirs, and is
+        // neither sent to this account nor joined with its repo of the same name.
+        if let (Some(was), Some(now)) = (agreed.as_ref().and_then(|b| b.who.as_deref()), who.as_deref()) {
+            if was != now {
+                return Err(failed(Failure::Status(403), crate::tr!("This copy was kept in step by another account; sign in as it to keep it in step",
+                    "この写しは別のアカウントで同期していました。そのアカウントでサインインすると同期します")));
+            }
+        }
         let draft = draft_path(repo, &line, agreed.is_some());
         let base = agreed.unwrap_or_default();
         let here = local_tree(&dir);
+        first.get_or_insert_with(|| here.tree.clone());
         out.unsynced = here.unsynced.clone();
         // Before sending, see whether the Remote moved.
         let there = there_of(&client.url, client.call("GET", &path, None)?, base.version)?;
@@ -294,7 +312,7 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
             // A mode changed there only (the file's bytes as they were) is taken too; one changed here stays and is sent.
             if let Some(m) = &modes { take_modes(&dir, &base.modes, &here.modes, m, &tree, &p); }
             out.taken += p.take.len();
-            set_base(&key, &Base { version: remote_version, tree, head, moded: modes.is_some(), modes: modes.unwrap_or(base.modes) })?;
+            set_base(&key, &Base { version: remote_version, tree, head, moded: modes.is_some(), modes: modes.unwrap_or(base.modes), who: who.clone() })?;
             continue;
         }
         // The Remote can commit without touching the draft (a work's first start commits main
@@ -310,6 +328,16 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
         let mut remove: Vec<&String> = base.tree.keys().filter(|p| !here.tree.contains_key(*p)).collect();
         if set.is_empty() && remove.is_empty() {
             out.version = base.version;
+            if let Some(was) = first.as_ref().filter(|_| out.taken > 0 || !out.both.is_empty()) {
+                out.paths = was.keys().chain(here.tree.keys()).filter(|p| was.get(*p) != here.tree.get(*p)).cloned().collect();
+                out.paths.sort();
+                out.paths.dedup();
+            }
+            // An agreement from before accounts were noted is this account's from now on.
+            if who.is_some() && base.version > 0 && base.who != who {
+                base.who = who.clone();
+                set_base(&key, &base)?;
+            }
             return Ok(out);
         }
         // At most CHUNK paths a diff; what is left goes in the next round.
@@ -352,7 +380,7 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
             let modes = modes_for(&tree, &modes);
             out.sent += set.len() + remove.len();
             out.version = version;
-            set_base(&key, &Base { version, tree, head: base.head, modes, moded: base.moded || kept })?;
+            set_base(&key, &Base { version, tree, head: base.head, modes, moded: base.moded || kept, who: who.clone() })?;
         }
     }
     // Still moving after every round: not in step, and said so, rather than taken for it.
@@ -375,9 +403,12 @@ fn draft_path(repo: &str, line: &str, agreed: bool) -> String {
 fn there_of(url: &str, reply: Reply, agreed: i64) -> Result<Option<LineThere>> {
     match reply {
         Reply::Ok(v) => Ok(Some(line_there(url, &v)?)),
-        Reply::NotFound if agreed > 0 => Err(failed(Failure::Status(404),
-            crate::tr!("The Remote does not have this repo; the copy here is kept", "Remote にこの repo がありません。ここの写しは残してあります"))),
-        Reply::NotFound => Ok(None),
+        Reply::NotFound(v) if agreed > 0 => Err(failed(Failure::Status(404), if v["gone"].is_null() {
+            crate::tr!("The Remote does not have this repo; the copy here is kept", "Remote にこの repo がありません。ここの写しは残してあります")
+        } else {
+            crate::tr!("This repo was discarded on the Remote; the copy here is kept", "この repo は Remote で破棄されました。ここの写しは残してあります")
+        })),
+        Reply::NotFound(_) => Ok(None),
         Reply::Conflict(_) => Err(odd(url)),
     }
 }
@@ -418,9 +449,19 @@ impl crate::home::HomeThere for Client {
         match self.call("PUT", &format!("/v1/home/{key}"), Some(crate::home::put_body(value, version)))? {
             Reply::Ok(v) => crate::home::put_version(&v).map(Some),
             Reply::Conflict(_) => Ok(None),
-            Reply::NotFound => Err(failed(Failure::Status(404), crate::tr!("The Remote does not keep {}", "Remote は {} を持ちません", key))),
+            Reply::NotFound(_) => Err(failed(Failure::Status(404), crate::tr!("The Remote does not keep {}", "Remote は {} を持ちません", key))),
         }
     }
+}
+
+/// The account this device is signed in as. A session kept without it noted (a browser's sign-in): the
+/// Remote is asked whose it is, once, and it is noted.
+fn account_id() -> Option<String> {
+    connection().and_then(|c| c.user.clone().or_else(|| {
+        let who = login::whose(&c.url, &c.token)?;
+        let _ = save_connection(&Connection { user: Some(who.clone()), ..c });
+        Some(who)
+    }))
 }
 
 /// Agree one of Home's settings (home::SYNCED) with the Remote: what changed
@@ -430,8 +471,7 @@ pub fn sync_home(key: &str) -> Result<crate::home::HomeSynced> {
         return Err(crate::tr!("{} is this device's own; it is not kept on the Remote", "{} はこの端末のもので、Remote には置きません", key));
     }
     let client = Client::open()?;
-    // A session kept without its account noted (a browser's): the Remote is asked whose it is.
-    let who = connection().and_then(|c| c.user.or_else(|| login::whose(&c.url, &c.token)));
+    let who = account_id();
     // Not a repo's name (no repo is called with a ~), so its own lock.
     let _held = lock("~home")?;
     crate::home::agree_with(&mut crate::home::Files, &client, key, who.as_deref())
@@ -464,7 +504,7 @@ pub fn fetch(repos: &Repos, repo: &str) -> Result<Synced> {
     }
     let client = Client::open()?;
     let _held = lock(repo)?;
-    if let Reply::NotFound = client.call("GET", &format!("/v1/repos/{repo}"), None)? {
+    if let Reply::NotFound(_) = client.call("GET", &format!("/v1/repos/{repo}"), None)? {
         return Err(failed(Failure::Status(404), crate::tr!("The Remote has no repo {}", "Remote に repo {} はありません", repo)));
     }
     // It comes as main; the work on its issues comes when chosen.
@@ -632,7 +672,7 @@ fn free_with(client: &Client, repos: &Repos, repo: &str) -> Result<u64> {
 /// and not this OS's temporary's), so nothing lists it, syncs it or reclaims it as a leftover meanwhile.
 fn aside_of(dir: &Path) -> PathBuf {
     let name = dir.file_name().unwrap_or_default().to_string_lossy().into_owned();
-    dir.with_file_name(format!(".{name}.freeing-{}", std::process::id()))
+    dir.with_file_name(format!(".{name}.freeing-{}", crate::pid()))
 }
 
 /// Every copy moved aside put back where it was. None when all went back; else what could not, and where it is.
@@ -728,9 +768,10 @@ mod tests {
     fn a_copy_in_step_is_not_taken_apart_by_a_remote_without_it() {
         let url = "https://os.length3.com";
         // Never in step: the Remote's empty, and all here is new.
-        assert_eq!(there_of(url, Reply::NotFound, 0), Ok(None));
+        assert_eq!(there_of(url, Reply::NotFound(Default::default()), 0), Ok(None));
         // In step before: not taken for removed there, and said.
-        assert!(there_of(url, Reply::NotFound, 3).is_err_and(|e| e.contains("does not have this repo") || e.contains("この repo がありません")));
+        assert!(there_of(url, Reply::NotFound(serde_json::json!({"gone": 1})), 3).is_err_and(|e| e.contains("discarded") || e.contains("破棄")));
+        assert!(there_of(url, Reply::NotFound(Default::default()), 3).is_err_and(|e| e.contains("does not have this repo") || e.contains("この repo がありません")));
         let line = serde_json::json!({"version": 3, "draft": {}, "head": null});
         assert_eq!(there_of(url, Reply::Ok(line), 3), Ok(Some(LineThere { version: 3, draft: Tree::new(), head: None, modes: None })));
     }

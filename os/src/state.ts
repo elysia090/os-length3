@@ -1,10 +1,10 @@
-// Home's state: the profile, the TODO list and Forge's band. In the app these
-// are files in the OS's data directory (<data>/home/<key>.json), the same
-// files `l3 todo` reads and writes; in a plain browser they stay in its
-// storage. Reads are served from memory, filled at start and again whenever
-// the window comes back, so a change made with l3 shows up.
+// Home's state: the profile, the TODO list and Forge's band. They are files in the OS's data directory
+// (<data>/home/<key>.json), kept by the core: the same files `l3 todo` reads and writes, in the app or in
+// a browser's own. Reads are served from memory, filled at start and again whenever the window comes back
+// (or another tab of this browser wrote), so a change made with l3 shows up.
 
-import {core, isNative} from './host.ts';
+import {core} from './host.ts';
+import {home, onElsewhere} from './core-client.ts';
 import {t} from './i18n.ts';
 import {errorText} from './errors.ts';
 
@@ -14,13 +14,13 @@ import {errorText} from './errors.ts';
 // `network` is which repos' Prompts may reach the network here (the app only; never sent).
 export type Key = 'profile' | 'todo' | 'band' | 'remote' | 'sync' | 'lang' | 'dotfiles' | 'network';
 const KEYS: readonly Key[] = ['profile', 'todo', 'band', 'remote', 'sync', 'lang', 'dotfiles', 'network'];
-/** Where a browser keeps each, and where the app kept them before. */
+/** Where a browser (and the app's webview) kept each before they were the core's files. */
 const STORAGE: Record<Key, string> = {profile: 'length3.os.profile', todo: 'length3.os.todo', band: 'length3.os.band',
   remote: 'length3.os.remote', sync: 'length3.os.sync', lang: 'length3.os.lang.setting', dotfiles: 'length3.os.dotfiles', network: 'length3.os.network'};
 
 const cache = new Map<Key, string | null>();
 
-/** What the browser keeps for `key`; storage it refuses (a private window) keeps nothing. */
+/** What the browser kept for `key`; storage it refuses (a private window) kept nothing. */
 function local(key: Key): string | null {
   try { return localStorage.getItem(STORAGE[key]); } catch { return null; }
 }
@@ -35,10 +35,9 @@ export const unreadable = (): ReadonlyMap<Key, string> => unread;
 export const settingName = (key: Key): string => ({profile: t('Profile'), todo: 'TODO', band: t('The band'), remote: t('Sign-in'),
   sync: t('Where each repo stands'), lang: t('Language'), dotfiles: t('Dotfiles'), network: t('Network')})[key];
 
-/** Read every key into memory. Natively, a value only the webview had is moved to its file once. */
-export async function loadState(): Promise<void> {
-  for (const key of KEYS) {
-    if (!isNative) { cache.set(key, local(key)); continue; }
+/** Read every key (or these) into memory; a value only the page's storage had is moved to its file once. */
+export async function loadState(keys: readonly Key[] = KEYS): Promise<void> {
+  for (const key of keys) {
     let value: string | null;
     try { value = await core<string | null>('state_get', {key}); } catch (e) {
       unread.set(key, errorText(e));
@@ -55,47 +54,25 @@ export async function loadState(): Promise<void> {
   }
 }
 
-export function getState(key: Key): string | null {
-  if (cache.has(key)) return cache.get(key)!;
-  // The app's settings are its files: the webview's old copy is never read in their place.
-  return isNative ? null : local(key);
-}
+/** `key` as last read (the page's old copy is never read in place of its file). */
+export const getState = (key: Key): string | null => cache.get(key) ?? null;
 
-/**
- * `key` as it is kept now: in a browser, read again from its storage, where
- * another tab of this browser may have written it since; the app's are its
- * own files, read at start and on focus.
- */
-export function freshState(key: Key): string | null {
-  if (isNative) return getState(key);
-  const v = local(key);
-  if (!unread.has(key)) cache.set(key, v);
-  return v;
-}
-
-/** Each listener hears the key, and whether another tab of this browser set it (`outside`). */
+/** Each listener hears the key, and whether another writer set it (`outside`): l3, the core syncing, another tab. */
 const listeners = new Set<(key: Key, outside: boolean) => void>();
 /** Hear each key set here (or by another tab of this browser); returns how to stop. */
 export function onState(fn: (key: Key, outside: boolean) => void): () => void { listeners.add(fn); return () => listeners.delete(fn); }
 
-// Another tab of this browser set a key: this one reads it as it is now, so
-// nothing here is decided from (or written back over) a value that has moved.
-if (!isNative && typeof addEventListener === 'function') {
-  const byName = new Map(KEYS.map((k) => [STORAGE[k], k] as const));
-  addEventListener('storage', (e: StorageEvent) => {
-    const keys = e.key === null ? KEYS : [byName.get(e.key)].filter((k): k is Key => !!k);
-    for (const key of keys) {
-      cache.set(key, local(key));
-      for (const fn of [...listeners]) fn(key, true);
-    }
-  });
+/**
+ * Read these keys again, as another writer left them, and tell each listener of a key that moved: nothing
+ * here is decided from (or written back over) a value that has moved.
+ */
+export async function reloadState(keys: readonly Key[] = KEYS): Promise<void> {
+  const was = new Map(keys.map((k) => [k, cache.get(k)]));
+  await loadState(keys);
+  for (const key of keys) if (cache.get(key) !== was.get(key)) for (const fn of [...listeners]) fn(key, true);
 }
-
-/** Let `key` go from this browser (the app keeps its files). */
-export function dropState(key: Key) {
-  cache.delete(key);
-  if (!isNative) try { localStorage.removeItem(STORAGE[key]); } catch { /* nothing kept */ }
-}
+// Another tab of this browser wrote Home's state through its core.
+onElsewhere((paths) => { if (paths.some((p) => p.startsWith(`${home()}/home/`))) void reloadState(); });
 
 /** Store `json` for `key`; rejects with the reason when it could not be kept. */
 export async function setState(key: Key, json: string): Promise<void> {
@@ -103,6 +80,5 @@ export async function setState(key: Key, json: string): Promise<void> {
   if (why !== undefined) throw new Error(t('{what} could not be read, so it is not written over ({why})', {what: settingName(key), why}));
   cache.set(key, json);
   for (const fn of [...listeners]) fn(key, false);
-  if (isNative) { await core('state_set', {key, json}); return; }
-  try { localStorage.setItem(STORAGE[key], json); } catch (e) { throw new Error(String(e)); }
+  await core('state_set', {key, json});
 }

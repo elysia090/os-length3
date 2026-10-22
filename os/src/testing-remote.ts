@@ -1,6 +1,6 @@
-// For tests: a browser on one Remote, all in this process. Its storage is a
-// map, and every fetch goes to the service itself (service/testing.ts), so
-// the app's own sync (draft.ts, history.ts) runs as it does in a page. Not
+// For tests: a browser on one Remote, all in this process. Its core is the one a page runs (core.node.ts),
+// and every fetch, the core's too, goes to the service itself (service/testing.ts), so the app's own sync
+// runs as it does in a page. Not
 // part of the app; only the tests import it.
 //
 // The app's modules read the browser as they load, so they are loaded here,
@@ -13,6 +13,8 @@ import {createAuth} from '../service/auth.ts';
 import {memoryBucket} from '../service/bucket.ts';
 import {fileDb, SECRET} from '../service/testing.ts';
 import type {Billing, PlanConfig} from '../service/plan.ts';
+import {buildCoreWasm} from '../scripts/core-wasm.ts';
+import {nodeCore} from './core.node.ts';
 
 const URL_ = 'http://remote.test', APP = 'http://app.test';
 const enc = new TextEncoder();
@@ -39,6 +41,10 @@ export async function browserOnRemote(o: {plan?: PlanConfig; billing?: Billing; 
     return app.request(url, {...init, headers});
   }});
 
+  // The core this browser runs, the very one (core/web), over files of its own; it is the device named in
+  // a file both sides changed.
+  const {useCore} = await import('./host.ts');
+  useCore(nodeCore(buildCoreWasm({quiet: true}), {LENGTH3_HOME: '/data', LENGTH3_REMOTE: URL_, LENGTH3_DEVICE: 'Chrome Linux'}));
   const {store} = await import('./repos.ts');
   const draft = await import('./draft.ts');
   const history = await import('./history.ts');
@@ -99,6 +105,11 @@ export async function browserOnRemote(o: {plan?: PlanConfig; billing?: Billing; 
   const remoteHome = async (key: string) => (await (await fetch(`${URL_}/v1/home/${key}`, {headers: auth_})).json() as {value: string | null; version: number});
 
   const text = async (repo: string, path: string) => (await store.read(repo, path)).text;
+  /** A file at `path` as a Prompt writes it back, of any size, its folders made (null: an empty folder). */
+  async function put(repo: string, path: string, value: string | null) {
+    if (value === null) { await store.mkdir(repo, path); return; }
+    await store.put(repo, path, enc.encode(value));
+  }
   const names = async (repo: string, dir = '') => (await store.tree(repo, dir)).map((e) => e.name);
   /** Every file here, as text by path. */
   async function files(repo: string, dir = ''): Promise<Record<string, string>> {
@@ -111,5 +122,5 @@ export async function browserOnRemote(o: {plan?: PlanConfig; billing?: Billing; 
     return out;
   }
 
-  return {URL: URL_, token, db, signIn, store, draft, history, state, asked, elsewhere, elsewhereFolder, elsewhereHome, remoteFiles, remoteHome, text, names, files};
+  return {URL: URL_, token, db, signIn, store, draft, history, state, asked, elsewhere, elsewhereFolder, elsewhereHome, remoteFiles, remoteHome, text, put, names, files};
 }

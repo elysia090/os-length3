@@ -93,7 +93,6 @@ export function repoList(ctx: Context, options: {newCard: boolean; counted?: (n:
       ...remoteOnly().map((r) => awayCard(ctx, r.name, r.bytes, Date.parse(r.updatedAt), again)),
       ...(options.newCard ? [newRepoCard(ctx)] : []));
     if (!repos.length && !remoteOnly().length && !options.newCard) grid.replaceChildren(h('div', {class: 'empty'}, t('No repos yet')));
-    if (!store.persistent) grid.append(h('p', {class: 'muted note'}, t('In this browser, repos go when this page closes.')));
     marks();
     const shown = light ? grid.querySelector<HTMLElement>(`.card.repo[data-repo="${CSS.escape(light)}"]`) : null;
     // The page stays where it is: the new card only lights where it joins the list.

@@ -48,7 +48,8 @@ pub(super) fn request(method: &str, url: &str, token: Option<&str>, body: Body) 
 pub(crate) enum Reply {
     Ok(serde_json::Value),
     Conflict(serde_json::Value),
-    NotFound,
+    /// Not there; what the Remote said of it (a repo discarded for good says `gone`).
+    NotFound(serde_json::Value),
 }
 
 /// Why the last request to the Remote failed, for a caller that says it in
@@ -65,20 +66,37 @@ pub enum Failure {
     Status(u16),
 }
 
-pub(super) fn failures() -> &'static Mutex<Option<(Failure, String)>> {
-    static F: OnceLock<Mutex<Option<(Failure, String)>>> = OnceLock::new();
+/// The last failure: its kind, its words, and what the Remote said with it (a plan's rule, say).
+type Last = Option<(Failure, String, serde_json::Value)>;
+
+pub(super) fn failures() -> &'static Mutex<Last> {
+    static F: OnceLock<Mutex<Last>> = OnceLock::new();
     F.get_or_init(|| Mutex::new(None))
 }
 
 /// Keep `message` as the last failure of kind `f`, and give it back.
 pub(super) fn failed(f: Failure, message: String) -> String {
-    if let Ok(mut last) = failures().lock() { *last = Some((f, message.clone())); }
+    failed_with(f, message, serde_json::Value::Null)
+}
+
+fn failed_with(f: Failure, message: String, detail: serde_json::Value) -> String {
+    if let Ok(mut last) = failures().lock() { *last = Some((f, message.clone(), detail)); }
     message
 }
 
 /// The last failure talking to the Remote in this process, and what it said.
 pub fn last_failure() -> Option<(Failure, String)> {
-    failures().lock().ok().and_then(|f| f.clone())
+    failures().lock().ok().and_then(|f| f.as_ref().map(|(f, m, _)| (*f, m.clone())))
+}
+
+/// What the Remote said with the last failure (its refusal's body), Null when nothing.
+pub fn last_detail() -> serde_json::Value {
+    failures().lock().ok().and_then(|f| f.as_ref().map(|(_, _, d)| d.clone())).unwrap_or_default()
+}
+
+/// Forget the last failure: what follows is told by its own.
+pub fn forget_failure() {
+    if let Ok(mut last) = failures().lock() { *last = None; }
 }
 
 pub(super) fn unknown() -> String {
@@ -121,7 +139,7 @@ pub(super) fn refused(code: u16, r: impl Read) -> String {
         (_, "") => crate::tr!("The Remote refused it ({})", "Remote が受け付けませんでした（{}）", code),
         _ => crate::tr!("The Remote refused it ({}): {}", "Remote が受け付けませんでした（{}）：{}", code, said),
     };
-    failed(Failure::Status(code), message)
+    failed_with(Failure::Status(code), message, v)
 }
 
 /// The most of one answer read as JSON. The largest a Remote gives is a log: 50 commits with a tree each
@@ -171,7 +189,7 @@ impl Client {
         match self.to(method, path, body.map_or(Body::None, Body::Json)) {
             Got::Ok(r) => Ok(Reply::Ok(answer(&self.url, r)?)),
             Got::Status(409, r) => Ok(Reply::Conflict(refusal(r))),
-            Got::Status(404, _) => Ok(Reply::NotFound),
+            Got::Status(404, r) => Ok(Reply::NotFound(refusal(r))),
             Got::Status(code, r) => Err(refused(code, r)),
             Got::Unreachable(e) => Err(e),
         }
@@ -184,7 +202,7 @@ impl Client {
                 Some(e) => crate::tr!("The Remote holds something else here: {}", "Remote と食い違いました：{}", e),
                 None => crate::tr!("The Remote holds something else here", "Remote と食い違いました"),
             })),
-            Reply::NotFound => Err(failed(Failure::Status(404), crate::tr!("The Remote does not have it", "Remote にありません"))),
+            Reply::NotFound(_) => Err(failed(Failure::Status(404), crate::tr!("The Remote does not have it", "Remote にありません"))),
         }
     }
 

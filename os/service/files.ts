@@ -8,6 +8,7 @@
 //   POST   /v1/blobs/missing [sha]   which of these the account does not have yet (rows only)
 //   PUT    /v1/blobs/:sha            bytes, refused unless they are that digest and fit in its room
 //   GET    /v1/blobs/:sha
+//   POST   /v1/blobs/read [sha]      several at once (base64 by digest), so a diff of many files is one wait
 //
 // An account holds its own work, up to its room: the Remote is no free store
 // for anything else. A blob no tree names any more goes with the sweep.
@@ -22,6 +23,13 @@ import {blobKey, noFiles, type Bucket} from './bucket.ts';
 import {desktopFile, rootKey} from './releases.ts';
 import {body, fits, HEX, LIMIT, lock, sha256, type Db, type Vars} from './request.ts';
 import {blob} from './schema.ts';
+
+/** Bytes as base64, a piece at a time. */
+function base64(bytes: Uint8Array): string {
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
 
 /** What never changes under its name. */
 const IMMUTABLE = 'public, max-age=31536000, immutable';
@@ -91,6 +99,20 @@ export function files(d: {db: Db; bucket: Bucket | null; quota?: number}, v1: Ho
       await tx.insert(blob).values({userId: user, sha256: sha, bytes: bytes.length});
     });
     return c.json({sha256: sha}, 201);
+  });
+
+  // Up to 64 at once, and as many as fit in 8 MB: what is left out the client reads by itself (GET).
+  v1.post('/blobs/read', async (c) => {
+    if (!d.bucket) return noFiles(c);
+    const bucket = d.bucket, user = c.get('userId');
+    const list = await body<unknown[]>(c);
+    if (!Array.isArray(list) || list.length > 64 || !list.every((s) => typeof s === 'string' && HEX.test(s))) return c.json({error: 'at most 64 digests'}, 400);
+    const wanted = [...new Set(list as string[])];
+    const known = wanted.length ? await db.select({sha: blob.sha256, bytes: blob.bytes}).from(blob).where(and(eq(blob.userId, user), inArray(blob.sha256, wanted))) : [];
+    let room = 8 << 20;
+    const take = known.filter((r: {bytes: number}) => (room -= r.bytes) >= 0);
+    const got = await Promise.all(take.map(async (r: {sha: string}) => [r.sha, await bucket.get(blobKey(user, r.sha))] as const));
+    return c.json(Object.fromEntries(got.filter(([, b]) => b).map(([sha, b]) => [sha, base64(b!)])));
   });
 
   v1.get('/blobs/:sha', async (c) => {

@@ -413,8 +413,11 @@ class FileTree extends Part {
   /** Open a folder of the tree (its triangle), unless it is open. */
   private async expand(item: Locator, name: string) {
     const toggle = item.getByRole('button', {name: new RegExp(`^(Open|Close) ${escape(name)}$`)}).first();
-    if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
-    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    // The tree may open it by itself meanwhile (a file just made there): read, press, and see again, as a person does.
+    await expect(async () => {
+      if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
+      await expect(toggle).toHaveAttribute('aria-expanded', 'true', {timeout: 1000});
+    }).toPass({timeout: 15_000});
   }
 
   async close() {

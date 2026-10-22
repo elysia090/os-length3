@@ -111,7 +111,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          rustup target add wasm32-unknown-unknown
+          rustup target add wasm32-unknown-unknown wasm32-wasip1
           # The root the desktop app installs (core/src/root.rs, for RELEASE), as the browser reads it with this tree's translator...
           root=$(node scripts/root-file.mjs target/root)
           sh scripts/l3.sh "$root" public/l3

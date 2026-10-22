@@ -149,6 +149,28 @@ fn blob(client: &Client, sha: &str) -> Result<Vec<u8>> {
     Ok(b)
 }
 
+/// Bring the blobs named here at once (POST /v1/blobs/read), so a diff of many files is one wait, not one each.
+/// What the Remote does not answer in it (too much for one answer, or a Remote without the route) is read
+/// one by one, later, as before.
+fn prefetch(client: &Client, shas: Vec<&String>) {
+    use base64::Engine;
+    let Ok(cache) = blobs().lock() else { return };
+    let mut wanted: Vec<&String> = shas.into_iter().filter(|s| !cache.contains_key(*s)).collect();
+    wanted.sort();
+    wanted.dedup();
+    if wanted.len() < 2 { return; }
+    drop(cache);
+    for chunk in wanted.chunks(64) {
+        let Ok(v) = client.json("POST", "/v1/blobs/read", Some(serde_json::json!(chunk))) else { return };
+        let Ok(mut cache) = blobs().lock() else { return };
+        for (sha, b64) in v.as_object().into_iter().flatten() {
+            let Some(bytes) = b64.as_str().and_then(|t| base64::engine::general_purpose::STANDARD.decode(t).ok()) else { continue };
+            // Only what its name says: a digest is the file's own proof.
+            if remote::sha256(&bytes) == *sha && bytes.len() <= TEXT_LIMIT { cache.insert(sha.clone(), bytes); }
+        }
+    }
+}
+
 fn text(bytes: &[u8]) -> Option<String> {
     if bytes.len() > TEXT_LIMIT || bytes.contains(&0) { None } else { String::from_utf8(bytes.to_vec()).ok() }
 }
@@ -162,6 +184,15 @@ enum After<'a> { Here(std::path::PathBuf), Remote(&'a Client) }
 fn pairs(client: Option<&Client>, after_from: After, then: &Tree, now: &Tree) -> Result<Vec<Pair>> {
     let mut out = Vec::new();
     let paths: std::collections::BTreeSet<&String> = then.keys().chain(now.keys()).collect();
+    if let Some(c) = client {
+        let remote_after = matches!(after_from, After::Remote(_));
+        let mut need: Vec<&String> = Vec::new();
+        for p in paths.iter().filter(|p| then.get(**p) != now.get(**p)) {
+            if let Some(Some(sha)) = then.get(*p) { need.push(sha); }
+            if let (true, Some(Some(sha))) = (remote_after, now.get(*p)) { need.push(sha); }
+        }
+        prefetch(c, need);
+    }
     for path in paths {
         let (was, is) = (then.get(path), now.get(path));
         if was == is { continue; }
@@ -331,7 +362,7 @@ pub fn cut(repos: &Repos, repo: &str, issue: Option<&str>, line: &str, note: &st
             // Another device moved the draft or committed first: in step again, and once more.
             // The Remote's head is taken in to try again from; not kept, the next sync takes it.
             Reply::Conflict(v) => { let _ = remote::set_head_from(&key, &v); }
-            Reply::NotFound => return Err(crate::tr!("The Remote does not have this repo", "Remote にこの repo がありません")),
+            Reply::NotFound(_) => return Err(crate::tr!("The Remote does not have this repo", "Remote にこの repo がありません")),
         }
     }
     Err(crate::tr!("The Remote kept moving; could not commit", "Remote が動き続けていて Commit できませんでした"))
@@ -495,13 +526,24 @@ pub struct Review {
 pub fn changes_of_repo(repo: &str) -> Result<Vec<Change>> {
     let client = Client::open()?;
     let mut list: Vec<Change> = serde_json::from_value(client.json("GET", &format!("/v1/repos/{repo}/changes"), None)?).map_err(|e| e.to_string())?;
-    for c in &mut list {
-        let then = c.base.as_deref().map_or_else(|| Ok(Tree::new()), |b| tree_at(&client, repo, b))?;
-        let now = tree_at(&client, repo, &c.head)?;
-        (c.folders, c.files) = places(&then, &now);
-    }
+    for c in &mut list { place(&client, repo, c)?; }
     remember_merged(repo, list.iter().filter(|c| c.state == "merged").map(|c| c.issue.clone()));
     Ok(list)
+}
+
+/// Fill in where `c` reaches: the folders it touches and how many files (the Remote says only its commits).
+fn place(client: &Client, repo: &str, c: &mut Change) -> Result<()> {
+    let then = c.base.as_deref().map_or_else(|| Ok(Tree::new()), |b| tree_at(client, repo, b))?;
+    let now = tree_at(client, repo, &c.head)?;
+    (c.folders, c.files) = places(&then, &now);
+    Ok(())
+}
+
+/// A change as the Remote answered it, with where it reaches.
+fn placed(repo: &str, v: serde_json::Value) -> Result<Change> {
+    let mut c: Change = serde_json::from_value(v).map_err(|e| e.to_string())?;
+    place(&Client::open()?, repo, &mut c)?;
+    Ok(c)
 }
 
 /// The issues of `repo` seen merged ("issue/001.md"), kept here so a page
@@ -537,11 +579,11 @@ pub fn submit(repos: &Repos, repo: &str, note: &str) -> Result<Change> {
     let v = client.call("POST", &format!("/v1/repos/{repo}/changes"), Some(serde_json::json!({
         "line": on, "kind": kind.unwrap_or_default(), "title": title.trim(), "note": note.trim()})))?;
     match v {
-        Reply::Ok(v) => serde_json::from_value(v).map_err(|e| e.to_string()),
+        Reply::Ok(v) => placed(repo, v),
         Reply::Conflict(v) if v["error"] == "Push first: the change is what was pushed" => Err(crate::tr!("Push first: the change is what was pushed", "先に Push してください。Change は Push したものです")),
         Reply::Conflict(v) if v["error"] == "This change is merged already" => Err(crate::tr!("Its change is merged already", "この作業の Change はもう Merge 済みです")),
         Reply::Conflict(_) => Err(crate::tr!("Nothing committed since the work began", "作業を始めてから何も Commit していません")),
-        Reply::NotFound => Err(crate::tr!("The Remote has no such work", "Remote にその作業がありません")),
+        Reply::NotFound(_) => Err(crate::tr!("The Remote has no such work", "Remote にその作業がありません")),
     }
 }
 
@@ -596,7 +638,7 @@ fn change_call(repo: &str, id: &str, verb: &str, body: serde_json::Value) -> Res
             v["conflicts"].as_array().unwrap().iter().filter_map(|p| p.as_str()).collect::<Vec<_>>().join(", "))),
         Reply::Conflict(v) if v["version"].is_number() => Err(crate::tr!("The change has a newer version ({}); look at it first", "Change に新しい版があります（第{}版）。先にそれを見てください", v["version"])),
         Reply::Conflict(v) => Err(crate::tr!("The change is {} already", "この Change はもう{}です", state_word(v["state"].as_str().unwrap_or("?")))),
-        Reply::NotFound => Err(crate::tr!("No such change", "その Change はありません")),
+        Reply::NotFound(_) => Err(crate::tr!("No such change", "その Change はありません")),
     }
 }
 
@@ -614,19 +656,19 @@ pub fn review(repo: &str, id: &str, verdict: &str, note: &str, marks: &[String])
     // Approving a version one handed in oneself is allowed, as in the app and on the Remote:
     // every repo is one account's today, so its Review is the owner's own check before Merge.
     // A repo with more than one member is when this tightens (another member approves).
-    serde_json::from_value(change_call(repo, &c.id, "reviews", serde_json::json!({"version": c.version, "verdict": verdict, "note": note, "marks": marks}))?).map_err(|e| e.to_string())
+    placed(repo, change_call(repo, &c.id, "reviews", serde_json::json!({"version": c.version, "verdict": verdict, "note": note, "marks": marks}))?)
 }
 
 /// Merge: main takes the change's current version.
 pub fn merge(repo: &str, id: &str) -> Result<Change> {
     let c = find(repo, id)?;
-    serde_json::from_value(change_call(repo, &c.id, "merge", serde_json::json!({"version": c.version}))?).map_err(|e| e.to_string())
+    placed(repo, change_call(repo, &c.id, "merge", serde_json::json!({"version": c.version}))?)
 }
 
 /// Reject: main does not take it (the receiver's decision; the issue stays open).
 pub fn reject(repo: &str, id: &str, note: &str) -> Result<Change> {
     let c = find(repo, id)?;
-    serde_json::from_value(change_call(repo, &c.id, "reject", serde_json::json!({"note": note}))?).map_err(|e| e.to_string())
+    placed(repo, change_call(repo, &c.id, "reject", serde_json::json!({"note": note}))?)
 }
 
 /// Reset: take back the change the work handed in (its author's decision).
@@ -636,7 +678,7 @@ pub fn reset(repos: &Repos, repo: &str) -> Result<Change> {
         return Err(crate::tr!("{} shows main: reset takes back the change of the issue being worked on (l3 start REPO#N first)", "{} は main を見せています。reset は作業中の Issue の Change を取り下げます（先に l3 start REPO#N）", repo));
     }
     let c = find(repo, &on)?;
-    serde_json::from_value(change_call(repo, &c.id, "reset", serde_json::json!({}))?).map_err(|e| e.to_string())
+    placed(repo, change_call(repo, &c.id, "reset", serde_json::json!({}))?)
 }
 
 /// A change's diff against where it began, line by line.

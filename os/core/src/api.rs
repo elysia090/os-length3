@@ -17,7 +17,7 @@ pub const DIFF_LIMIT: usize = 2000;
 
 /// The commands that write a repo's files or Home's state: a host runs them in the order the page sent them
 /// (the app on its window's thread), never side by side with each other.
-pub const WRITES: &[&str] = &["repo_create", "repo_write", "repo_add", "repo_mkdir", "repo_remove", "repo_rename", "state_set"];
+pub const WRITES: &[&str] = &["repo_create", "repo_write", "repo_put", "repo_add", "repo_mkdir", "repo_remove", "repo_rename", "state_set"];
 
 /// Answer `name` with `args` (an object of the command's arguments, by name).
 pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
@@ -29,6 +29,17 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         "repo_tree" => to(repos()?.tree(&a.s("repo")?, &a.s("path")?)?),
         "repo_read" => to(repos()?.read(&a.s("repo")?, &a.s("path")?, READ_LIMIT)?),
         "repo_write" => to(repos()?.write(&a.s("repo")?, &a.s("path")?, &a.s("text")?, READ_LIMIT)?),
+        // A file's bytes for a browser's Prompt (as base64), of any kind, up to what one Prompt copies in all.
+        "repo_bytes" => {
+            use base64::Engine;
+            to(base64::engine::general_purpose::STANDARD.encode(repos()?.bytes(&a.s("repo")?, &a.s("path")?, 32 << 20)?))
+        }
+        // What a browser's Prompt wrote back, whole (its bytes as base64): a file of any kind, its folders made.
+        "repo_put" => {
+            use base64::Engine;
+            let bytes = base64::engine::general_purpose::STANDARD.decode(a.s("bytes")?).map_err(|e| format!("bytes: {e}"))?;
+            to(repos()?.put(&a.s("repo")?, &a.s("path")?, bytes, u64::MAX, true)?.0)
+        }
         "repo_add" => to(repos()?.add(&a.s("repo")?, &a.s("dir")?, &a.s("name")?, &a.s("text")?, READ_LIMIT)?),
         "repo_mkdir" => to(repos()?.mkdir(&a.s("repo")?, &a.s("path")?)?),
         "repo_remove" => to(repos()?.remove(&a.s("repo")?, &a.s("path")?)?),
@@ -55,7 +66,7 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         "remote_logout" => to(remote::logout(&repos()?)?),
         "remote_repos" => to(remote::remote_repos()?),
         "remote_status" => to(remote::status(&repos()?)?),
-        "sync_repo" => to(remote::sync(&repos()?, &a.s("repo")?).map_err(plan_said)?),
+        "sync_repo" => to(remote::sync(&repos()?, &a.s("repo")?)?),
         "repo_fetch" => to(remote::fetch(&repos()?, &a.s("repo")?)?),
         // One of Home's settings agreed with the Remote (home.rs agree_with).
         "home_sync" => to(remote::sync_home(&a.s("key")?)?),
@@ -86,15 +97,6 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
     }
 }
 
-/// A refusal of the plan's (service/plan.ts) is said with its own word first, so the page keeps the repo
-/// here, waiting (src/lifecycle.ts PLAN), rather than as offline.
-fn plan_said(e: String) -> String {
-    match remote::last_failure() {
-        Some((remote::Failure::Status(402), said)) if said == e => format!("plan: {e}"),
-        _ => e,
-    }
-}
-
 fn to<T: Serialize>(v: T) -> crate::Result<Value> {
     serde_json::to_value(v).map_err(|e| e.to_string())
 }
@@ -115,9 +117,19 @@ impl Args<'_> {
 }
 
 /// The answer as a host passes it on: `{"ok": …}` or `{"error": "…"}`.
+///
+/// A refusal of the Remote's says how it answered too: `status` (0: not reached, 401: it no longer knows
+/// this device) and its `detail` (a plan's rule, say), so a page tells a refusal from a fault as the app does.
 pub fn answer(name: &str, args: &Value) -> Value {
+    remote::forget_failure();
     match call(name, args) {
         Ok(v) => json!({"ok": v}),
-        Err(e) => json!({"error": e}),
+        Err(e) => match remote::last_failure().filter(|(_, said)| *said == e) {
+            Some((f, _)) => {
+                let status = match f { remote::Failure::Status(code) => code, remote::Failure::Unknown => 401, _ => 0 };
+                json!({"error": e, "status": status, "detail": remote::last_detail()})
+            }
+            None => json!({"error": e}),
+        },
     }
 }

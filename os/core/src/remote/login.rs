@@ -15,10 +15,29 @@ use super::*;
 pub(super) fn connect(url: &str, token: String) -> Result<()> {
     let url = current_url(url);
     let user = whose(&url, &token);
-    if connection().is_some_and(|was| another(&was, &url, user.as_deref())) {
-        gone(fs::remove_dir_all(sync_dir()))?;
+    if let Some(was) = connection().filter(|was| another(was, &url, user.as_deref())) {
+        if was.url != url {
+            gone(fs::remove_dir_all(sync_dir()))?;
+        } else {
+            // Another account on the same Remote: each copy stays the account's it was agreed with, and is not
+            // sent to this one (sync refuses it), rather than joined into this account's repo of the same name.
+            stamp(was.user.as_deref())?;
+        }
     }
     save_connection(&Connection { url, token, user })
+}
+
+/// Note `who` on every agreement that does not say whose it is yet.
+fn stamp(who: Option<&str>) -> Result<()> {
+    let Some(who) = who else { return gone(fs::remove_dir_all(sync_dir())) };
+    let Ok(dir) = fs::read_dir(sync_dir()) else { return Ok(()) };
+    for e in dir.flatten() {
+        let Some(key) = e.file_name().to_str().and_then(|n| n.strip_suffix(".json")).map(String::from) else { continue };
+        if let Some(b) = base(&key).filter(|b| b.who.is_none()) {
+            set_base(&key, &Base { who: Some(who.into()), ..b })?;
+        }
+    }
+    Ok(())
 }
 
 /// Whether a session at `url` for `user` is another than `was`: another Remote, or another account on it.

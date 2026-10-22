@@ -34,7 +34,7 @@ test("the other device's changes come in; a file changed on both keeps the Remot
   await store.write('notes', 'README.md', 'mine\n');
   const both = await draft.sync('notes');
   assert.deepEqual(both.both, ['README.md']);
-  const mine = `README (${draft.deviceTag()}).md`;
+  const mine = 'README (Chrome Linux).md';
   assert.equal(await text('notes', 'README.md'), 'theirs\n');
   assert.equal(await text('notes', mine), 'mine\n');
   // And the Remote has both now, under the same names as here: the name says whose it is everywhere.
@@ -43,17 +43,11 @@ test("the other device's changes come in; a file changed on both keeps the Remot
   assert.equal(now.draft[mine], await sha256(enc.encode('mine\n')));
 });
 
-test('this device is named in a file name by its words alone', () => {
-  assert.equal(draft.deviceTag('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/130.0 Safari/537.36'), 'Chrome Linux');
-  assert.equal(draft.beside('docs/plan.md', 'Chrome Linux'), 'docs/plan (Chrome Linux).md');
-  assert.equal(draft.beside('Makefile', 'Chrome Linux', 2), 'Makefile (Chrome Linux 2)');
-});
-
-test('a file this browser cannot hold stays on the Remote, untouched by this copy', async () => {
+test('a file that is not text comes here as its bytes, and stays on the Remote as it was', async () => {
   const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0, 0xff, 0xfe]);
   await elsewhere('notes', {'logo.png': png});
   await draft.sync('notes');
-  assert.ok(!(await names('notes')).includes('logo.png'));
+  assert.ok((await names('notes')).includes('logo.png'));
   await store.write('notes', 'README.md', 'mine, again\n');
   await draft.sync('notes');
   const now = await (await fetch(`${URL_}/v1/repos/notes`, {headers: {Authorization: `Bearer ${token}`}})).json() as {draft: Record<string, string>};
@@ -129,16 +123,6 @@ test("TODO from two devices is joined; the profile is the Remote's when both cha
   assert.equal(draft.homeMoved('profile', p.version + 1), false);
 });
 
-test('a setting changed here and not sent yet is not let go with the page; one as the Remote has it is', async () => {
-  await draft.syncHome('todo');
-  assert.ok(draft.homeAgreed().includes('todo'));
-  // Written while the Remote cannot be reached: it stays with this browser until it is sent.
-  await setState('todo', JSON.stringify([{id: 'offline', title: 'written while away'}]));
-  assert.equal(draft.homeAgreed().includes('todo'), false);
-  await draft.syncHome('todo');
-  assert.ok(draft.homeAgreed().includes('todo'));
-});
-
 test('a copy in step is never taken apart by a Remote that does not have it: discarded there, or another account\'s', async () => {
   await store.create('kept', 'standard');
   await store.write('kept', 'README.md', '# kept\n');
@@ -155,12 +139,6 @@ test('a copy in step is never taken apart by a Remote that does not have it: dis
   const other = await signIn('Mio Other');
   await setState('remote', JSON.stringify({url: URL_, token: other}));
   await assert.rejects(draft.sync('kept'), /another account/);
-  assert.deepEqual(await files(), before);
-  // An agreement from before accounts were named, and a Remote without the repo: the same.
-  const s = JSON.parse(getState('sync')!);
-  delete s.repos.kept.who;
-  await setState('sync', JSON.stringify(s));
-  await assert.rejects(draft.sync('kept'), /does not have this repo/);
   assert.deepEqual(await files(), before);
   await setState('remote', JSON.stringify({url: URL_, token}));
 });
@@ -200,7 +178,7 @@ test('a copy, or a setting, agreed with one account is not sent to another that 
 
 test('a file larger than the Remote takes stays here, named, and the rest of the repo is sent all the same', async () => {
   await store.create('big', 'standard');
-  await store.add('big', '', 'big.log', 'x'.repeat((16 << 20) + 1));
+  await b.put('big', 'big.log', 'x'.repeat((16 << 20) + 1));
   await store.write('big', 'README.md', '# sent\n');
   const s = await draft.sync('big');
   assert.deepEqual(s.unsynced.map(([p]) => p), ['big.log']);
@@ -214,12 +192,12 @@ test('a file larger than the Remote takes stays here, named, and the rest of the
 });
 
 test('a repo made here under a name the Remote remembers as discarded is sent as a new repo', async () => {
-  await store.create('again', 'standard');
-  await draft.sync('again');
+  // Made on another device, then discarded there.
+  await elsewhere('again', {'README.md': '# first\n'});
   await db.execute(sql`update repo set off_at = now() where name = 'again'`);
   await purge(db, sql`r.name = 'again'`);
-  // Made here anew (on this device or another): never in step, so it is a new repo, not the discarded one back.
-  await draft.forget('again');
+  // Made here anew: never in step, so it is a new repo, not the discarded one back.
+  await store.create('again', 'standard');
   await store.write('again', 'README.md', '# made again\n');
   const s = await draft.sync('again');
   assert.ok(s.sent > 0);
@@ -258,7 +236,7 @@ test('an issue is worked on in its own copy; pushed, submitted, reviewed and mer
   await history.cut('notes', null, 'Patch：issue', '');
   await history.startWork('notes', '001.md');
   // The repo shows the work's copy: what main has, as of its last commit.
-  assert.equal(store.lineOf('notes'), '001');
+  assert.equal((await history.work('notes')).line, '001');
   assert.equal(await text('notes', 'issue/001.md'), 'Fix：落ちる\n');
   await store.add('notes', '', 'fix.txt', 'fixed\n');
   const c = await history.cut('notes', null, '', 'first');
@@ -282,20 +260,6 @@ test('an issue is worked on in its own copy; pushed, submitted, reviewed and mer
   assert.equal(merged.state, 'merged');
   await draft.sync('notes');
   assert.equal(await text('notes', 'fix.txt'), 'fixed\n');
-  // The work's copy is still here until it goes; back on it, it is as it was.
-  assert.deepEqual(store.copies('notes').sort(), ['001', 'main']);
-});
-
-test('a directory is derived by proof: a cache tag, or a tool\'s directory beside what it is made from', async () => {
-  const {derived} = await import('./draft.ts');
-  const none = new Set<string>();
-  assert.equal(derived('node_modules', new Set(['package.json']), none), true);
-  assert.equal(derived('node_modules', none, none), false);
-  assert.equal(derived('target', new Set(['Cargo.toml']), none), true);
-  assert.equal(derived('target', new Set(['Makefile']), none), false);
-  assert.equal(derived('.venv', none, new Set(['pyvenv.cfg'])), true);
-  assert.equal(derived('out', none, new Set(['CACHEDIR.TAG'])), true);
-  assert.equal(derived('src', new Set(['package.json']), none), false);
 });
 
 test('a page asks the Remote only what moved, and reads again only that', async () => {

@@ -7,8 +7,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "build:cloudflare": "node scripts/prompt-files.mjs && VITE_LENGTH3_REMOTE= npm run build",
-    "check": "tsc --noEmit && node --test \"src/**/*.test.ts\" \"service/*.test.ts\" \"scripts/*.test.mjs\"",
+    "build:cloudflare": ". scripts/rust.sh && node scripts/prompt-files.mjs && VITE_LENGTH3_REMOTE= npm run build",
+    "check": "tsc --noEmit && node --test --import ./src/testing-core.ts \"src/**/*.test.ts\" \"service/*.test.ts\" \"scripts/*.test.mjs\"",
     "selftest:l3": "tsc -p selftest/l3 && node --test \"selftest/l3/*.test.ts\"",
     "selftest": "playwright test -c selftest",
     "selftest:prod": "node selftest/prod/run.ts",

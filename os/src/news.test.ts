@@ -43,11 +43,11 @@ test('reading a board is told the Remote only past what was told, ids sorting as
 });
 
 test('a board seen up to a post, when the Remote could not be told, is told again the next time', async () => {
-  const kept = new Map([['length3.os.remote', JSON.stringify({url: 'http://remote.test', token: 't'})]]);
+  const {setState} = await import('./state.ts');
+  await setState('remote', JSON.stringify({url: 'http://remote.test', token: 't'}));
   const sent: string[] = [];
   let away = true;
   Object.assign(globalThis, {
-    localStorage: {getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => void kept.set(k, v), removeItem: (k: string) => void kept.delete(k)},
     fetch: async (url: string) => { sent.push(new URL(url).pathname); if (away) throw new TypeError('offline'); return new Response('{}'); },
   });
   await sawBoard('plan/x', '00000000aaaaaaaaa');

@@ -1,5 +1,7 @@
 import {readFileSync} from 'node:fs';
+import {dirname} from 'node:path';
 import {defineConfig, type Plugin} from 'vite';
+import {buildCoreWasm, coreWasmPath} from './scripts/core-wasm.ts';
 import {headersOf, webPolicy} from './src/policy.ts';
 
 // Tauri serves the built files from ../dist and points its dev webview at this
@@ -30,6 +32,20 @@ const metaPolicy = (): Plugin => ({
 });
 
 /**
+ * The core the app runs, built for the browser (core/web) when its sources changed, once per dev-server start
+ * and per build; `virtual:length3-core.wasm?url` is the module's URL (a hashed asset in a build), from any
+ * bundle, the core's worker's included, as an alias reaches them all.
+ */
+const coreWasm = (): Plugin => ({
+  name: 'length3-core-wasm',
+  config: () => ({
+    resolve: {alias: [{find: /^virtual:length3-core\.wasm/, replacement: coreWasmPath()}]},
+    server: {fs: {allow: [dirname(coreWasmPath())]}},
+  }),
+  buildStart() { buildCoreWasm(); },
+});
+
+/**
  * Cross-origin isolation, as public/_headers gives it in production: the page
  * may share memory, so the Prompt runs each guest thread in a Worker of its
  * own. The development server and the preview (the selftest's) say the same.
@@ -45,5 +61,5 @@ export default defineConfig({
     proxy: DEV_REMOTE ? {'/api': DEV_REMOTE, '/v1': DEV_REMOTE} : undefined},
   worker: {format: 'es'},
   build: {target: 'es2022', outDir: 'dist', emptyOutDir: true},
-  plugins: [metaPolicy()],
+  plugins: [coreWasm(), metaPolicy()],
 });

@@ -13,7 +13,7 @@ const {store, draft} = b;
 /** A repo made here and on the Remote, holding `files`. */
 async function made(repo: string, files: Record<string, string>) {
   await store.create(repo, '');
-  for (const [p, text] of Object.entries(files)) await store.put(repo, p, text);
+  for (const [p, text] of Object.entries(files)) await b.put(repo, p, text);
   await draft.sync(repo);
 }
 
@@ -70,7 +70,7 @@ test('changed on both sides twice: each of this device\'s versions is kept, unde
     await store.write('s-twice', 'a.md', `mine ${n}\n`);
     await draft.sync('s-twice');
   }
-  const tag = draft.deviceTag();
+  const tag = 'Chrome Linux';
   assert.deepEqual(await b.files('s-twice'), {'a.md': 'theirs 2\n', [`a (${tag}).md`]: 'mine 1\n', [`a (${tag} 2).md`]: 'mine 2\n'});
 });
 
@@ -119,7 +119,7 @@ test('TODO changed on two devices at once: the other\'s edit and this one\'s new
 test('more files than one diff carries reach the Remote over several rounds, and are agreed', async () => {
   const many = Object.fromEntries(Array.from({length: 2300}, (_, i) => [`f/${String(i).padStart(4, '0')}.txt`, `${i}\n`]));
   await store.create('s-many', '');
-  for (const [p, text] of Object.entries(many)) await store.put('s-many', p, text);
+  for (const [p, text] of Object.entries(many)) await b.put('s-many', p, text);
   const done = await draft.sync('s-many');
   assert.equal(done.sent, 2300);
   assert.equal(Object.keys(await b.remoteFiles('s-many')).length, 2300);
