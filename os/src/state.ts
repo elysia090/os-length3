@@ -4,7 +4,7 @@
 // storage. Reads are served from memory, filled at start and again whenever
 // the window comes back, so a change made with l3 shows up.
 
-import {isNative, native} from './host.ts';
+import {core, isNative} from './host.ts';
 import {t} from './i18n.ts';
 import {errorText} from './errors.ts';
 
@@ -40,14 +40,14 @@ export async function loadState(): Promise<void> {
   for (const key of KEYS) {
     if (!isNative) { cache.set(key, local(key)); continue; }
     let value: string | null;
-    try { value = await native<string | null>('state_get', {key}); } catch (e) {
+    try { value = await core<string | null>('state_get', {key}); } catch (e) {
       unread.set(key, errorText(e));
       continue;
     }
     unread.delete(key);
     const old = local(key);
     if (value === null && old !== null) {
-      await native('state_set', {key, json: old});
+      await core('state_set', {key, json: old});
       value = old;
       try { localStorage.removeItem(STORAGE[key]); } catch { /* moved; the leftover is never read again natively */ }
     }
@@ -103,6 +103,6 @@ export async function setState(key: Key, json: string): Promise<void> {
   if (why !== undefined) throw new Error(t('{what} could not be read, so it is not written over ({why})', {what: settingName(key), why}));
   cache.set(key, json);
   for (const fn of [...listeners]) fn(key, false);
-  if (isNative) { await native('state_set', {key, json}); return; }
+  if (isNative) { await core('state_set', {key, json}); return; }
   try { localStorage.setItem(STORAGE[key], json); } catch (e) { throw new Error(String(e)); }
 }

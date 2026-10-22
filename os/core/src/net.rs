@@ -5,13 +5,86 @@
 //! (its store, or SSL_CERT_FILE), beside the ones bundled for a host that
 //! has none. A root fetched is checked by digest whatever the TLS says.
 
-// No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
-#![forbid(unsafe_code)]
+// Unsafe code only in `web`: the two calls to the page that sends a request for the core in a browser.
 
+use std::io::Read;
+#[cfg(not(target_os = "wasi"))]
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
+/// What a request came to: an answer (any status: a refusal is an answer too), or no answer at all, and why.
+pub enum Sent {
+    Answer { status: u16, body: Box<dyn Read + Send> },
+    /// Not reached: where (its host, and port if any) and why, in a person's words.
+    Unreachable { host: String, why: String },
+}
+
+/// Send one request: `method` to `url` with these headers and body, giving up when nothing is read for `read`.
+/// The one way the core reaches the network: through the host's proxy and trust here, through the page's own
+/// fetch in a browser (the same request, as the browser sends it).
+pub fn send(method: &str, url: &str, headers: &[(&str, &str)], body: Option<&[u8]>, read: Duration) -> Sent {
+    #[cfg(not(target_os = "wasi"))]
+    return native(method, url, headers, body, read);
+    #[cfg(target_os = "wasi")]
+    return web::send(method, url, headers, body, read);
+}
+
+#[cfg(not(target_os = "wasi"))]
+fn native(method: &str, url: &str, headers: &[(&str, &str)], body: Option<&[u8]>, read: Duration) -> Sent {
+    let mut req = agent(url, read).request(method, url);
+    for (k, v) in headers { req = req.set(k, v); }
+    let r = match body { Some(b) => req.send_bytes(b), None => req.call() };
+    match r {
+        Ok(r) | Err(ureq::Error::Status(_, r)) => Sent::Answer { status: r.status(), body: Box::new(r.into_reader()) },
+        Err(ureq::Error::Transport(t)) => Sent::Unreachable {
+            host: t.url().map(|u| u.host_str().unwrap_or_default().to_string() + &u.port().map(|p| format!(":{p}")).unwrap_or_default()).unwrap_or_default(),
+            why: match t.kind() {
+                ureq::ErrorKind::Dns => crate::tr!("its name is not found", "名前が見つかりません"),
+                ureq::ErrorKind::ConnectionFailed => crate::tr!("no connection", "接続できません"),
+                ureq::ErrorKind::TooManyRedirects => crate::tr!("too many redirects", "リダイレクトが多すぎます"),
+                ureq::ErrorKind::Io => crate::tr!("the connection broke or timed out", "接続が切れたか、時間切れです"),
+                ureq::ErrorKind::ProxyConnect | ureq::ErrorKind::ProxyUnauthorized | ureq::ErrorKind::InvalidProxyUrl => crate::tr!("the proxy refused", "プロキシが通しません"),
+                ureq::ErrorKind::InvalidUrl | ureq::ErrorKind::UnknownScheme => crate::tr!("not an address", "アドレスではありません"),
+                k => k.to_string(),
+            },
+        },
+    }
+}
+
+/// In a browser the page sends it (web/core.js, `length3.http`), from the Worker the core runs in, synchronously:
+/// the answer's status and body are copied in once it is whole.
+#[cfg(target_os = "wasi")]
+mod web {
+    use super::Sent;
+    use std::time::Duration;
+
+    #[link(wasm_import_module = "length3")]
+    extern "C" {
+        /// Send a request (`head`: JSON {method, url, headers, timeout}); the answer's status (0: not reached) and
+        /// its body's length are written back, the body (or why it was not reached) kept as `handle`.
+        fn http(head: *const u8, head_len: usize, body: *const u8, body_len: usize, status: *mut u32, len: *mut u32) -> u32;
+        /// Copy the body kept as `handle` (its length as said) and let it go.
+        fn http_body(handle: u32, out: *mut u8);
+    }
+
+    pub fn send(method: &str, url: &str, headers: &[(&str, &str)], body: Option<&[u8]>, read: Duration) -> Sent {
+        let head = serde_json::json!({"method": method, "url": url, "headers": headers, "timeout": read.as_millis() as u64}).to_string();
+        let body = body.unwrap_or_default();
+        let (mut status, mut len) = (0u32, 0u32);
+        // SAFETY: the pointers are to this function's own buffers, valid for the lengths given; the host writes
+        // only `status` and `len`, then copies `len` bytes into a buffer of exactly that length.
+        let handle = unsafe { http(head.as_ptr(), head.len(), body.as_ptr(), body.len(), &mut status, &mut len) };
+        let mut bytes = vec![0u8; len as usize];
+        unsafe { http_body(handle, bytes.as_mut_ptr()) };
+        if status == 0 {
+            return Sent::Unreachable { host: String::new(), why: String::from_utf8_lossy(&bytes).into_owned() };
+        }
+        Sent::Answer { status: status as u16, body: Box::new(std::io::Cursor::new(bytes)) }
+    }
+}
+
 /// An agent for `url`, giving up when nothing is read for `read`.
+#[cfg(not(target_os = "wasi"))]
 pub fn agent(url: &str, read: Duration) -> ureq::Agent {
     let mut b = ureq::AgentBuilder::new().timeout_connect(Duration::from_secs(15)).timeout_read(read).tls_config(tls());
     if let Some(p) = proxy_for(url, &var) {
@@ -23,11 +96,13 @@ pub fn agent(url: &str, read: Duration) -> ureq::Agent {
     b.build()
 }
 
+#[cfg(not(target_os = "wasi"))]
 fn var(k: &str) -> Option<String> {
     std::env::var(k).ok().filter(|v| !v.trim().is_empty())
 }
 
 /// The host of a URL, without its port or brackets.
+#[cfg(not(target_os = "wasi"))]
 fn host_of(url: &str) -> &str {
     let rest = url.split("://").nth(1).unwrap_or(url);
     let auth = rest.split(['/', '?', '#']).next().unwrap_or("");
@@ -37,6 +112,7 @@ fn host_of(url: &str) -> &str {
 }
 
 /// The proxy the host would use for `url`, if any.
+#[cfg(not(target_os = "wasi"))]
 fn proxy_for(url: &str, var: &dyn Fn(&str) -> Option<String>) -> Option<String> {
     let host = host_of(url).to_ascii_lowercase();
     if host == "localhost" || host.starts_with("127.") || host == "::1" { return None; }
@@ -48,6 +124,7 @@ fn proxy_for(url: &str, var: &dyn Fn(&str) -> Option<String>) -> Option<String> 
 }
 
 /// The bundled roots and the host's, read once.
+#[cfg(not(target_os = "wasi"))]
 fn tls() -> Arc<rustls::ClientConfig> {
     static CONFIG: OnceLock<Arc<rustls::ClientConfig>> = OnceLock::new();
     CONFIG.get_or_init(|| {

@@ -21,7 +21,15 @@
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::{self, Read};
+#[cfg(unix)]
 use std::os::unix::fs::{symlink, PermissionsExt};
+
+/// Built for the web there is no root to fetch or install (a Prompt there runs the web's own), but the
+/// roots held are read, counted and let go by this same code.
+#[cfg(not(unix))]
+fn symlink(_: impl AsRef<Path>, _: impl AsRef<Path>) -> io::Result<()> {
+    Err(io::Error::from(io::ErrorKind::Unsupported))
+}
 use std::path::{Component, Path, PathBuf};
 
 /// A release the device may install, as published.
@@ -140,6 +148,7 @@ pub fn sources(remote: &str, r: &Release) -> Vec<String> {
 }
 
 /// The first of `urls` that gives the pinned file; when none does, what each said.
+#[cfg(not(target_os = "wasi"))]
 fn fetch_first(urls: &[String], sha256: &str, bytes: u64, dest: &Path, mut progress: impl FnMut(crate::fetch::Progress)) -> Result<(), String> {
     let mut said = Vec::new();
     for url in urls {
@@ -154,6 +163,7 @@ fn fetch_first(urls: &[String], sha256: &str, bytes: u64, dest: &Path, mut progr
 
 /// Fetch another distribution's root (the Remote by digest first, then its
 /// makers), install it, and make it the one Prompts use.
+#[cfg(not(target_os = "wasi"))]
 pub fn fetch_distro(data: &Path, remote: &str, d: &Distro, progress: impl FnMut(crate::fetch::Progress)) -> Result<Installed, String> {
     if let Some(had) = use_held(data, d.sha256) { return Ok(had); }
     let bundles = system_dir(data).join(".bundles");
@@ -219,6 +229,7 @@ fn point_current(data: &Path, sha256: &str) -> Result<(), String> {
 
 /// Fetch the newest pinned release from the Remote and install it; the
 /// bundle is let go once its root is in place.
+#[cfg(not(target_os = "wasi"))]
 pub fn fetch_and_install(data: &Path, remote: &str, progress: impl FnMut(crate::fetch::Progress)) -> Result<Installed, String> {
     let r = &RELEASES[0];
     let bundles = system_dir(data).join(".bundles");
@@ -377,6 +388,7 @@ fn through_no_link(top: &Path, rel: &Path) -> io::Result<()> {
 }
 
 /// Unpack a tar stream into the empty directory `top`; returns (files, bytes).
+#[cfg_attr(not(unix), allow(unused_variables))] // modes and directory syncs are the host's
 pub fn unpack(stream: impl Read, top: &Path) -> io::Result<(u64, u64)> {
     let mut r = io::BufReader::with_capacity(1 << 20, stream);
     let (mut files, mut bytes) = (0u64, 0u64);
@@ -444,6 +456,7 @@ pub fn unpack(stream: impl Read, top: &Path) -> io::Result<(u64, u64)> {
                     Err(e) if e.kind() == io::ErrorKind::AlreadyExists && fs::symlink_metadata(&path)?.is_dir() => {}
                     other => other?,
                 }
+                #[cfg(unix)]
                 fs::set_permissions(&path, fs::Permissions::from_mode(mode | 0o700))?;
             }
             Kind::File => {
@@ -453,6 +466,7 @@ pub fn unpack(stream: impl Read, top: &Path) -> io::Result<(u64, u64)> {
                 let mut pad = vec![0u8; (padded - size) as usize];
                 r.read_exact(&mut pad)?;
                 // No set-id bits come from an archive.
+                #[cfg(unix)]
                 f.set_permissions(fs::Permissions::from_mode(mode & 0o777))?;
                 files += 1;
                 bytes += size;
@@ -551,11 +565,13 @@ fn flush(dir: &Path) -> io::Result<()> {
         // SAFETY: syncfs on a descriptor this function owns.
         if unsafe { libc::syncfs(d.as_raw_fd()) } != 0 { return Err(io::Error::last_os_error()); }
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(all(unix, not(target_os = "linux")))]
     {
         let _ = dir;
         unsafe { libc::sync() };
     }
+    #[cfg(not(unix))]
+    let _ = dir;
     Ok(())
 }
 

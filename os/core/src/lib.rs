@@ -9,8 +9,10 @@
 //! Every other module says `#![forbid(unsafe_code)]`, so none is added there.
 
 pub mod account;
+pub mod api;
 pub mod atomic;
 pub mod boundary;
+#[cfg(not(target_os = "wasi"))]
 pub mod fetch;
 pub mod root;
 pub mod history;
@@ -27,6 +29,7 @@ pub mod launch;
 pub mod seccomp;
 pub mod owned;
 pub mod paths;
+#[cfg(not(target_os = "wasi"))]
 pub mod prompt;
 pub mod remote;
 pub mod repos;

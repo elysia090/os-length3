@@ -4,7 +4,7 @@
 // runs; the work stays until the site's data is cleared. MemoryStore is
 // the same without keeping, for tests.
 
-import {askToKeep, isNative, native} from './host.ts';
+import {askToKeep, core, isNative} from './host.ts';
 import {t} from './i18n.ts';
 import * as tabs from './tabs.ts';
 import type {Message} from './tabs.ts';
@@ -89,15 +89,15 @@ export function validName(name: string): boolean {
 
 class NativeStore implements RepoStore {
   readonly persistent = true;
-  list() { return native<RepoSummary[]>('repo_list'); }
-  create(name: string, template: Template) { return native<RepoSummary>('repo_create', {name, template}); }
-  tree(repo: string, path: string) { return native<Entry[]>('repo_tree', {repo, path}); }
-  read(repo: string, path: string) { return native<Contents>('repo_read', {repo, path}); }
-  write(repo: string, path: string, text: string) { return native<number>('repo_write', {repo, path, text}); }
-  add(repo: string, dir: string, name: string, text: string) { return native<number>('repo_add', {repo, dir, name, text}); }
-  mkdir(repo: string, path: string) { return native<void>('repo_mkdir', {repo, path}); }
-  remove(repo: string, path: string) { return native<void>('repo_remove', {repo, path}); }
-  rename(repo: string, path: string, name: string) { return native<void>('repo_rename', {repo, path, name}); }
+  list() { return core<RepoSummary[]>('repo_list'); }
+  create(name: string, template: Template) { return core<RepoSummary>('repo_create', {name, template}); }
+  tree(repo: string, path: string) { return core<Entry[]>('repo_tree', {repo, path}); }
+  read(repo: string, path: string) { return core<Contents>('repo_read', {repo, path}); }
+  write(repo: string, path: string, text: string) { return core<number>('repo_write', {repo, path, text}); }
+  add(repo: string, dir: string, name: string, text: string) { return core<number>('repo_add', {repo, dir, name, text}); }
+  mkdir(repo: string, path: string) { return core<void>('repo_mkdir', {repo, path}); }
+  remove(repo: string, path: string) { return core<void>('repo_remove', {repo, path}); }
+  rename(repo: string, path: string, name: string) { return core<void>('repo_rename', {repo, path, name}); }
 }
 
 /** Files of a new repo, from the same shared/templates.json as the native

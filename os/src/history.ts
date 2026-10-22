@@ -6,7 +6,7 @@
 // commit, by folder. The app asks its core; a browser does the same here.
 
 import {at, baseOf, blobText, headTree, lineOf, setHead, sha256, showLine, sync, treeAt, type Tree} from './draft.ts';
-import {isNative, native} from './host.ts';
+import {core, isNative} from './host.ts';
 import {counts, hunks, lineOps, type DiffLine} from './linediff.ts';
 import {api, connection, json, RemoteError} from './remote.ts';
 import {restore} from './putback.ts';
@@ -102,7 +102,7 @@ async function webDiff(repo: string): Promise<FileDiff[]> {
 
 /** A file as it was at the last commit of what the repo shows: its text, or null when it was not there (added since). */
 async function atLastCommit(repo: string, path: string): Promise<string | null> {
-  if (isNative) return native<string | null>('history_at_head', {repo, path});
+  if (isNative) return core<string | null>('history_at_head', {repo, path});
   // Without the Remote the last commit is not known here: nothing is put back on a guess.
   if (!connection()) throw new RemoteError(0, t('The last commit is kept on the Remote. Sign in to it first.'));
   const sha = (await headTree(repo))[path];
@@ -195,13 +195,13 @@ async function webLog(repo: string): Promise<Cut[]> {
 
 // ---- the same on either host ----
 
-export const changes = (repo: string) => (isNative ? native<Changes>('history_changes', {repo}) : webChanges(repo));
-export const diff = (repo: string) => (isNative ? native<FileDiff[]>('history_diff', {repo}) : webDiff(repo));
-export const log = (repo: string) => (isNative ? native<Cut[]>('history_log', {repo}) : webLog(repo));
+export const changes = (repo: string) => (isNative ? core<Changes>('history_changes', {repo}) : webChanges(repo));
+export const diff = (repo: string) => (isNative ? core<FileDiff[]>('history_diff', {repo}) : webDiff(repo));
+export const log = (repo: string) => (isNative ? core<Cut[]>('history_log', {repo}) : webLog(repo));
 
 /** Commit under `issue` (its file name in issue/), or without one, named by `line`. */
 export const cut = (repo: string, issue: string | null, line: string, note: string): Promise<Cut> =>
-  isNative ? native<Cut>('history_cut', {repo, issue, line, note}) : webCut(repo, issue, line, note);
+  isNative ? core<Cut>('history_cut', {repo, issue, line, note}) : webCut(repo, issue, line, note);
 
 // ---- the work on an issue, and what it hands to main ----
 
@@ -267,7 +267,7 @@ async function changeCall(repo: string, id: string, verb: string, body: Record<s
 export async function startWork(repo: string, issue: string): Promise<void> {
   // The work starts from the Remote's main: what was just written here (the issue itself, often) goes there first.
   await sync(repo);
-  if (isNative) { await native('work_start', {repo, issue: `issue/${issue}`}); store.changedOutside(repo, 'work'); return; }
+  if (isNative) { await core('work_start', {repo, issue: `issue/${issue}`}); store.changedOutside(repo, 'work'); return; }
   const r = await api(repoPath(repo, '/lines'), {method: 'POST', body: JSON.stringify({issue: `issue/${issue}`})});
   if (!r.ok) throw new RemoteError(r.status, t('Could not start the work ({why})', {why: t(String(((await r.json()) as {error?: string}).error ?? r.status))}));
   await showLine(repo, issue.replace(/\.md$/, ''));
@@ -276,12 +276,12 @@ export async function startWork(repo: string, issue: string): Promise<void> {
 /** Show main (or another work) where the repo is seen. */
 export const switchWork = (repo: string, line: string) => showLine(repo, line);
 /** The work the repo shows, and where it stands. */
-export const work = (repo: string): Promise<Work> => (isNative ? native<Work>('work_state', {repo}) : webWork(repo));
+export const work = (repo: string): Promise<Work> => (isNative ? core<Work>('work_state', {repo}) : webWork(repo));
 /** Every issue's work on the Remote (main not among them). */
 export const lines = (repo: string): Promise<Line[]> =>
-  isNative ? native<Line[]>('work_lines', {repo}) : connection() ? json<Line[]>(repoPath(repo, '/lines')) : Promise.resolve([]);
+  isNative ? core<Line[]>('work_lines', {repo}) : connection() ? json<Line[]>(repoPath(repo, '/lines')) : Promise.resolve([]);
 /** The changes handed to the repo's main, newest first. */
-export const changesOf = (repo: string): Promise<Change[]> => (isNative ? native<Change[]>('changes_list', {repo}) : webChangesOf(repo));
+export const changesOf = (repo: string): Promise<Change[]> => (isNative ? core<Change[]>('changes_list', {repo}) : webChangesOf(repo));
 
 /** Where a repo stands in one go: the work it shows, every issue's work, the changes (each read once). */
 export async function standing(repo: string): Promise<{work: Work; lines: Line[]; changes: Change[]}> {
@@ -292,7 +292,7 @@ export async function standing(repo: string): Promise<{work: Work; lines: Line[]
 
 /** Push: the work's commits become its state on the Remote. */
 export async function push(repo: string): Promise<void> {
-  if (isNative) { await native('history_push', {repo}); return; }
+  if (isNative) { await core('history_push', {repo}); return; }
   const line = lineOf(repo);
   if (line === 'main') throw new RemoteError(0, t('main takes changes by merging them; work on an issue to push'));
   await sync(repo);
@@ -302,7 +302,7 @@ export async function push(repo: string): Promise<void> {
 
 /** Change: what the work pushed is handed to main (again: its next version). */
 export async function submit(repo: string, note = ''): Promise<Change> {
-  if (isNative) return native<Change>('history_submit', {repo, note});
+  if (isNative) return core<Change>('history_submit', {repo, note});
   const line = lineOf(repo);
   const words = await wordsFor(repo, null, '');
   const r = await api(repoPath(repo, '/changes'), {method: 'POST', body: JSON.stringify({line, kind: words.kind, title: words.title, note})});
@@ -314,7 +314,7 @@ export async function submit(repo: string, note = ''): Promise<Change> {
 
 /** Reset: take back the change this work handed in. */
 export async function reset(repo: string): Promise<Change> {
-  if (isNative) return native<Change>('history_reset', {repo});
+  if (isNative) return core<Change>('history_reset', {repo});
   const c = (await webChangesOf(repo)).find((x) => x.line === lineOf(repo));
   if (!c) throw new RemoteError(404, t('This work has no change yet'));
   return changeCall(repo, c.id, 'reset', {});
@@ -322,15 +322,15 @@ export async function reset(repo: string): Promise<Change> {
 
 /** A review of the change's version: a verdict, or a comment alone; `marks` are lines marked in its diff ("path:index"). */
 export const review = (repo: string, c: Change, verdict: Review['verdict'], note = '', marks: string[] = []): Promise<Change> =>
-  isNative ? native<Change>('change_review', {repo, id: c.id, verdict, note, marks}) : changeCall(repo, c.id, 'reviews', {version: c.version, verdict, note, marks});
+  isNative ? core<Change>('change_review', {repo, id: c.id, verdict, note, marks}) : changeCall(repo, c.id, 'reviews', {version: c.version, verdict, note, marks});
 export const merge = (repo: string, c: Change): Promise<Change> =>
-  isNative ? native<Change>('change_merge', {repo, id: c.id}) : changeCall(repo, c.id, 'merge', {version: c.version});
+  isNative ? core<Change>('change_merge', {repo, id: c.id}) : changeCall(repo, c.id, 'merge', {version: c.version});
 export const reject = (repo: string, c: Change, note = ''): Promise<Change> =>
-  isNative ? native<Change>('change_reject', {repo, id: c.id, note}) : changeCall(repo, c.id, 'reject', {note});
+  isNative ? core<Change>('change_reject', {repo, id: c.id, note}) : changeCall(repo, c.id, 'reject', {note});
 
 /** A change's diff against where it began. */
 export async function changeDiff(repo: string, c: Change): Promise<FileDiff[]> {
-  if (isNative) return native<FileDiff[]>('change_diff', {repo, id: c.id});
+  if (isNative) return core<FileDiff[]>('change_diff', {repo, id: c.id});
   const [then, now] = await Promise.all([cutTree(repo, c.base), cutTree(repo, c.head)]);
   const paths = [...new Set([...Object.keys(then), ...Object.keys(now)])].sort()
     .filter((p) => then[p] !== now[p] && (typeof then[p] === 'string' || typeof now[p] === 'string'));

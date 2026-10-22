@@ -3,7 +3,7 @@
 // them is what `l3` does on the command line, through the same core.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use length3_core::{account, history, home, paths, remote, repos, system, usage};
+use length3_core::{api, paths};
 
 #[cfg(target_os = "linux")]
 mod shells;
@@ -24,272 +24,50 @@ mod shells {
     impl Shells { pub fn open_repos(&self) -> Vec<String> { Vec::new() } }
 }
 
-/// Files the editor may save; anything read in part is never written back.
-const READ_LIMIT: u64 = 256 * 1024;
-/// Lines of difference shown at most, across all files.
-const DIFF_LIMIT: usize = 2000;
+// Every command a page sends goes to the core's one dispatcher (core/src/api.rs), the same one a browser runs
+// built for the web: the app adds only what a host does around it. A command without `async` runs on the
+// window's own thread (Tauri 2), and the window draws nothing until it returns, so only writes run there,
+// which keeps two writes in the order the page sent them; the rest (walks of the disk, the network) run off it.
 
-fn managed() -> Result<repos::Repos, String> {
-    repos::Repos::open()
+/// A command of the core's, by name, with its arguments; `space` and `free` are told which repos a Prompt has open.
+#[tauri::command]
+async fn core(app: tauri::AppHandle, name: String, mut args: serde_json::Value) -> Result<serde_json::Value, String> {
+    if matches!(name.as_str(), "space" | "free") {
+        let open = tauri::Manager::state::<shells::Shells>(&app).open_repos();
+        args["open"] = serde_json::json!(open);
+    }
+    if api::WRITES.contains(&name.as_str()) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        app.run_on_main_thread(move || { let _ = tx.send(api::call(&name, &args)); }).map_err(|e| e.to_string())?;
+        return rx.recv().map_err(|e| e.to_string())?;
+    }
+    tauri::async_runtime::spawn_blocking(move || api::call(&name, &args)).await.map_err(|e| e.to_string())?
 }
 
-// A command without `async` runs on the window's own thread (Tauri 2), and the window draws nothing
-// until it returns. Those that walk the disk or wait are async and run on a blocking thread; those
-// that write stay on the window's thread, which keeps two writes in the order the page sent them.
-
-/// The filesystem's room and what this OS holds: a walk of the whole data directory, roots and all.
+/// Sign in: the core gets the code and checks the page is the Remote's own; the app opens it in the browser.
 #[tauri::command]
-async fn capacity() -> Result<system::Capacity, String> {
-    blocking(|| system::capacity(&paths::data_dir())).await
+async fn remote_login_start(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let code = tauri::async_runtime::spawn_blocking(|| api::call("remote_login_start", &serde_json::json!({"client": "length3-app"})))
+        .await.map_err(|e| e.to_string())??;
+    use tauri_plugin_opener::OpenerExt;
+    // Not opened (no browser to hand it to): the page shows the code and its address to open by hand.
+    if let Some(page) = code["verification_uri_complete"].as_str() { let _ = app.opener().open_url(page, None::<&str>); }
+    Ok(code)
 }
 
-/// この端末: everything this OS holds, largest first, and what can be done with each (every repo walked and
-/// digested: 0.4 to 0.7 s for ten repos of 2,000 files, which froze the window while it ran).
+/// The plan's page, Checkout (`checkout`) or the portal (`portal`), as the Remote makes it for this account,
+/// opened in the browser. Only Stripe's page or the Remote's own is opened (account::plan_page).
 #[tauri::command]
-async fn space(app: tauri::AppHandle) -> Result<usage::Space, String> {
-    let open = tauri::Manager::state::<shells::Shells>(&app).open_repos();
-    blocking(move || Ok(usage::space(&paths::data_dir(), &paths::repos_dir(), &open))).await
-}
-
-/// 空ける: these go, each looked at again first (a repo's changes are sent before it goes).
-#[tauri::command]
-async fn free(app: tauri::AppHandle, ids: Vec<String>) -> Result<usage::Freed, String> {
-    let open = tauri::Manager::state::<shells::Shells>(&app).open_repos();
-    blocking(move || Ok(usage::free(&paths::data_dir(), &paths::repos_dir(), &ids, &open))).await
+async fn plan_open(app: tauri::AppHandle, kind: String) -> Result<(), String> {
+    let url = tauri::async_runtime::spawn_blocking(move || api::call("plan_page", &serde_json::json!({"kind": kind})))
+        .await.map_err(|e| e.to_string())??;
+    use tauri_plugin_opener::OpenerExt;
+    app.opener().open_url(url.as_str().unwrap_or_default(), None::<&str>).map_err(|e| e.to_string())
 }
 
 /// Network and file walks run off the window's thread.
 async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
     tauri::async_runtime::spawn_blocking(f).await.map_err(|e| e.to_string())?
-}
-
-/// Each repo walked (up to 20,000 entries each) to say its size.
-#[tauri::command]
-async fn repo_list() -> Result<Vec<repos::Summary>, String> {
-    blocking(|| managed()?.list()).await
-}
-
-#[tauri::command]
-fn repo_create(name: String, template: String) -> Result<repos::Summary, String> {
-    managed()?.create(&name, &template)
-}
-
-#[tauri::command]
-fn repo_tree(repo: String, path: String) -> Result<Vec<repos::Entry>, String> {
-    managed()?.tree(&repo, &path)
-}
-
-#[tauri::command]
-fn repo_read(repo: String, path: String) -> Result<repos::Contents, String> {
-    managed()?.read(&repo, &path, READ_LIMIT)
-}
-
-#[tauri::command]
-fn repo_write(repo: String, path: String, text: String) -> Result<u64, String> {
-    managed()?.write(&repo, &path, &text, READ_LIMIT)
-}
-
-/// A new file in an existing directory of the repo; never replaces one.
-#[tauri::command]
-fn repo_add(repo: String, dir: String, name: String, text: String) -> Result<u64, String> {
-    managed()?.add(&repo, &dir, &name, &text, READ_LIMIT)
-}
-
-#[tauri::command]
-fn repo_mkdir(repo: String, path: String) -> Result<(), String> {
-    managed()?.mkdir(&repo, &path)
-}
-
-#[tauri::command]
-fn repo_remove(repo: String, path: String) -> Result<(), String> {
-    managed()?.remove(&repo, &path)
-}
-
-/// A file or folder of the repo given a new name in its folder; never over another.
-#[tauri::command]
-fn repo_rename(repo: String, path: String, name: String) -> Result<(), String> {
-    managed()?.rename(&repo, &path, &name)
-}
-
-/// Home's state (profile, TODO, band) as JSON text; l3 reads the same files.
-#[tauri::command]
-fn state_get(key: String) -> Result<Option<String>, String> {
-    home::get(&key)
-}
-
-#[tauri::command]
-fn state_set(key: String, json: String) -> Result<(), String> {
-    home::set(&key, &json)
-}
-
-// ---- the Remote (core/src/remote.rs, history.rs) ----
-
-/// Sign in: a code to approve in the browser, which is opened on its page.
-/// The Remote is this device's own, never one the page names, and only a
-/// page that Remote stands behind is opened: its own, or its app's, on the
-/// origin it says in /v1/about (remote::device_page_ok).
-#[tauri::command]
-async fn remote_login_start(app: tauri::AppHandle) -> Result<remote::DeviceCode, String> {
-    let url = remote::default_url();
-    let (code, origin) = blocking({ let url = url.clone(); move || Ok((remote::device_start(&url, "length3-app")?, remote::app_origin(&url))) }).await?;
-    if !remote::device_page_ok(&url, origin.as_deref(), &code.verification_uri_complete) {
-        return Err(length3_core::tr!("The Remote named a page that is not its own", "Remote が自分のものでないページを示しました"));
-    }
-    use tauri_plugin_opener::OpenerExt;
-    // Not opened (no browser to hand it to): the page shows the code and its address to open by hand.
-    let _ = app.opener().open_url(&code.verification_uri_complete, None::<&str>);
-    Ok(code)
-}
-
-/// Wait until the code is approved (or refused, or expires).
-#[tauri::command]
-async fn remote_login_wait(code: remote::DeviceCode) -> Result<(), String> {
-    let url = remote::default_url();
-    blocking(move || remote::device_finish(&url, "length3-app", &code)).await
-}
-
-#[tauri::command]
-async fn remote_logout() -> Result<(), String> {
-    // Every repo is sent first; one that cannot be keeps the device signed in.
-    blocking(|| remote::logout(&managed()?)).await
-}
-
-/// Repos the Remote holds (those not here can be opened).
-#[tauri::command]
-async fn remote_repos() -> Result<Vec<remote::RemoteRepo>, String> {
-    blocking(remote::remote_repos).await
-}
-
-/// Where each repo here stands, from what is here alone.
-#[tauri::command]
-async fn remote_status() -> Result<Vec<remote::Status>, String> {
-    blocking(|| remote::status(&managed()?)).await
-}
-
-/// Send what changed here and take in what changed there.
-#[tauri::command]
-async fn sync_repo(repo: String) -> Result<remote::Synced, String> {
-    blocking(move || remote::sync(&managed()?, &repo).map_err(plan_said)).await
-}
-
-/// A refusal of the plan's (service/plan.ts) is said with its own word first, so the page keeps the repo
-/// here, waiting (src/lifecycle.ts PLAN), rather than as offline.
-fn plan_said(e: String) -> String {
-    match remote::last_failure() {
-        Some((remote::Failure::Status(402), said)) if said == e => format!("plan: {e}"),
-        _ => e,
-    }
-}
-
-/// The plan's page, Checkout (`checkout`) or the portal (`portal`), as the Remote makes it for this account,
-/// opened in the browser. The page names nothing: the Remote does, and only Stripe's page or the Remote's
-/// own is opened (account::plan_page).
-#[tauri::command]
-async fn plan_open(app: tauri::AppHandle, kind: String) -> Result<(), String> {
-    let kind = if kind == "portal" { "portal" } else { "checkout" };
-    let url = blocking(move || account::plan_page(kind)).await?;
-    use tauri_plugin_opener::OpenerExt;
-    app.opener().open_url(&url, None::<&str>).map_err(|e| e.to_string())
-}
-
-/// Bring a repo that is only on the Remote here.
-#[tauri::command]
-async fn repo_fetch(repo: String) -> Result<remote::Synced, String> {
-    blocking(move || remote::fetch(&managed()?, &repo)).await
-}
-
-/// What is not yet cut, by folder.
-#[tauri::command]
-async fn history_changes(repo: String) -> Result<history::Changes, String> {
-    blocking(move || history::changes(&managed()?, &repo)).await
-}
-
-/// The same, line by line.
-#[tauri::command]
-async fn history_diff(repo: String) -> Result<Vec<history::FileDiff>, String> {
-    blocking(move || history::diff(&managed()?, &repo, DIFF_LIMIT)).await
-}
-
-/// A file as it was at the last commit (none: it was not there), to put it back.
-#[tauri::command]
-async fn history_at_head(repo: String, path: String) -> Result<Option<String>, String> {
-    blocking(move || history::at_head(&managed()?, &repo, &path)).await
-}
-
-/// Commit, under an issue (its file name in issue/) or named by `line` ("Kind：件名").
-#[tauri::command]
-async fn history_cut(repo: String, issue: Option<String>, line: String, note: String) -> Result<history::Cut, String> {
-    blocking(move || history::cut(&managed()?, &repo, issue.as_deref().map(|f| format!("issue/{}", f.trim_start_matches("issue/"))).as_deref(), &line, &note)).await
-}
-
-#[tauri::command]
-async fn history_log(repo: String) -> Result<Vec<history::Cut>, String> {
-    blocking(move || history::log(&managed()?, &repo, 50)).await
-}
-
-// ---- work on an issue, and the changes handed to main (core/src/work.rs, history.rs) ----
-
-/// Work on `issue` (its file, issue/NNN.md): the repo then shows that work's copy.
-#[tauri::command]
-async fn work_start(repo: String, issue: String) -> Result<length3_core::work::Line, String> {
-    blocking(move || length3_core::work::start(&managed()?, &repo, &issue)).await
-}
-
-/// Show `line` ("main" or an issue's) where the repo is seen.
-#[tauri::command]
-async fn work_switch(repo: String, line: String) -> Result<(), String> {
-    blocking(move || length3_core::work::switch(&managed()?, &repo, &line)).await
-}
-
-/// The work the repo shows, and where it stands.
-#[tauri::command]
-async fn work_state(repo: String) -> Result<history::Work, String> {
-    blocking(move || history::work(&managed()?, &repo)).await
-}
-
-#[tauri::command]
-async fn work_lines(repo: String) -> Result<Vec<length3_core::work::Line>, String> {
-    blocking(move || length3_core::work::lines(&repo)).await
-}
-
-#[tauri::command]
-async fn history_push(repo: String) -> Result<String, String> {
-    blocking(move || history::push(&managed()?, &repo)).await
-}
-
-#[tauri::command]
-async fn history_submit(repo: String, note: String) -> Result<history::Change, String> {
-    blocking(move || history::submit(&managed()?, &repo, &note)).await
-}
-
-#[tauri::command]
-async fn history_reset(repo: String) -> Result<history::Change, String> {
-    blocking(move || history::reset(&managed()?, &repo)).await
-}
-
-#[tauri::command]
-async fn changes_list(repo: String) -> Result<Vec<history::Change>, String> {
-    blocking(move || history::changes_of_repo(&repo)).await
-}
-
-#[tauri::command]
-async fn change_review(repo: String, id: String, verdict: String, note: String, marks: Vec<String>) -> Result<history::Change, String> {
-    blocking(move || history::review(&repo, &id, &verdict, &note, &marks)).await
-}
-
-#[tauri::command]
-async fn change_merge(repo: String, id: String) -> Result<history::Change, String> {
-    blocking(move || history::merge(&repo, &id)).await
-}
-
-#[tauri::command]
-async fn change_reject(repo: String, id: String, note: String) -> Result<history::Change, String> {
-    blocking(move || history::reject(&repo, &id, &note)).await
-}
-
-#[tauri::command]
-async fn change_diff(repo: String, id: String) -> Result<Vec<history::FileDiff>, String> {
-    blocking(move || history::change_diff(&repo, &id, DIFF_LIMIT)).await
 }
 
 // ---- SSH into this device's Prompts (core/src/ssh.rs; the listener is l3's) ----
@@ -337,12 +115,7 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .manage(shells::Shells::default())
         .invoke_handler(tauri::generate_handler![
-            capacity, space, free, repo_list, repo_create, repo_tree, repo_read, repo_write, repo_add,
-            repo_mkdir, repo_remove, repo_rename, state_get, state_set,
-            remote_login_start, remote_login_wait, remote_logout, remote_repos, remote_status, plan_open,
-            sync_repo, repo_fetch, history_changes, history_diff, history_at_head, history_cut, history_log,
-            work_start, work_switch, work_state, work_lines, history_push, history_submit, history_reset,
-            changes_list, change_review, change_merge, change_reject, change_diff,
+            core, remote_login_start, plan_open,
             shells::prompt_open, shells::prompt_input, shells::prompt_interrupt, shells::prompt_held, shells::prompt_close,
             shells::root_status, shells::root_fetch, shells::root_use, ssh_here, ssh_set
         ])

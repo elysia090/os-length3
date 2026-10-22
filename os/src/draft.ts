@@ -12,7 +12,7 @@
 // on every device.
 
 import {t} from './i18n.ts';
-import {isNative, native} from './host.ts';
+import {core, isNative} from './host.ts';
 import {accountId, api, deviceWord, json, RemoteError} from './remote.ts';
 import {kept, store} from './repos.ts';
 import {freshState, setState, settingName} from './state.ts';
@@ -336,11 +336,11 @@ async function inStep(repo: string): Promise<Synced> {
 
 /** Send what changed here and take in what changed there, until both are the same. */
 export const sync = (repo: string): Promise<Synced> =>
-  isNative ? native<Synced>('sync_repo', {repo}) : serial(repo, () => webSync(repo));
+  isNative ? core<Synced>('sync_repo', {repo}) : serial(repo, () => webSync(repo));
 
 /** Bring a repo that is only on the Remote here (opening it does this). */
 export async function fetchRepo(repo: string): Promise<Synced> {
-  if (isNative) return native<Synced>('repo_fetch', {repo});
+  if (isNative) return core<Synced>('repo_fetch', {repo});
   if (!(await store.list()).some((r) => r.name === repo)) {
     await setBase(repo, null);
     await store.create(repo, '', BY);
@@ -348,7 +348,7 @@ export async function fetchRepo(repo: string): Promise<Synced> {
   return sync(repo);
 }
 
-export const remoteRepos = (): Promise<RemoteRepo[]> => (isNative ? native<RemoteRepo[]>('remote_repos') : json<RemoteRepo[]>('/v1/repos'));
+export const remoteRepos = (): Promise<RemoteRepo[]> => (isNative ? core<RemoteRepo[]>('remote_repos') : json<RemoteRepo[]>('/v1/repos'));
 
 /** What moved on the Remote, in one small read: a stamp of its repos (the list changes when it does) and each setting's version. */
 export interface Moved { repos: string; home: Record<string, number> }
@@ -356,7 +356,7 @@ export const moved = () => json<Moved>('/v1/moved');
 
 /** Where each repo here stands, from what is here alone. */
 export async function status(): Promise<Status[]> {
-  if (isNative) return native<Status[]>('remote_status');
+  if (isNative) return core<Status[]>('remote_status');
   const out: Status[] = [];
   for (const r of await store.list()) {
     const b = baseOf(r.name);
@@ -436,7 +436,7 @@ export function restoreLines() {
 
 /** Show `line`'s work as `repo` here; its copy comes from the Remote when it is not here yet. */
 export async function showLine(repo: string, line: string): Promise<void> {
-  if (isNative) { await native('work_switch', {repo, line}); store.changedOutside(repo, 'work'); return; }
+  if (isNative) { await core('work_switch', {repo, line}); store.changedOutside(repo, 'work'); return; }
   // Offline, the copy shown so far stays here with what it has not sent (sent when it is shown again).
   await sync(repo).catch((e: unknown) => { if (!(e instanceof RemoteError)) throw e; });
   const made = store.showLine(repo, line);

@@ -557,7 +557,7 @@ mod tests {
                 run_apart(&Sandbox { root: root.clone(), repo: repo.clone(), name: "t".into(), argv: vec!["/bin/sh".into(), "-c".into(), script.into()],
                     network, dotfiles: Vec::new(), data: None })
             })();
-            unsafe { libc::_exit(match code { Ok(c) => c, Err(_) => 200 }) };
+            unsafe { libc::_exit(code.unwrap_or(200)) };
         }
         let mut status = 0;
         unsafe { libc::waitpid(pid, &mut status, 0) };

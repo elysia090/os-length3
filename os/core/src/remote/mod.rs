@@ -650,7 +650,7 @@ mod tests {
 
     #[test]
     fn a_remote_that_holds_no_files_says_the_work_stays_here() {
-        let said = |code: u16, body: &str| http::refused(code, ureq::Response::new(code, "", body).unwrap());
+        let said = |code: u16, body: &str| http::refused(code, body.as_bytes());
         let no_files = said(503, r#"{"error":"The Remote cannot hold files just now","files":false}"#);
         assert!(no_files == "The Remote cannot hold files just now; your work stays on this device"
             || no_files == "Remote はいまファイルを置けません。作業はこの端末に残ります", "{no_files}");

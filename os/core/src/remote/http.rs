@@ -6,15 +6,43 @@
 #![forbid(unsafe_code)]
 
 use super::*;
-
-pub(super) fn agent(url: &str) -> ureq::Agent {
-    crate::net::agent(url, Duration::from_secs(60))
-}
+use crate::net::{send, Sent};
 
 pub(crate) struct Client {
-    agent: ureq::Agent,
     pub(super) url: String,
     token: String,
+}
+
+/// What a request's body is.
+pub(super) enum Body<'a> {
+    None,
+    Json(serde_json::Value),
+    Bytes(&'a [u8]),
+}
+
+/// What one request to a Remote came to: an answer it gave (under 400), a refusal (its status, and what it
+/// said), or no answer at all (said, and kept as the last failure).
+pub(super) enum Got {
+    Ok(Box<dyn Read + Send>),
+    Status(u16, Box<dyn Read + Send>),
+    Unreachable(String),
+}
+
+/// One request to the Remote: `method` to `url`, carrying `token` when there is one.
+pub(super) fn request(method: &str, url: &str, token: Option<&str>, body: Body) -> Got {
+    let auth = token.map(|t| format!("Bearer {t}"));
+    let mut headers: Vec<(&str, &str)> = auth.as_deref().map(|a| vec![("Authorization", a)]).unwrap_or_default();
+    let json = match &body { Body::Json(v) => Some(v.to_string()), _ => None };
+    let bytes = match (&body, &json) {
+        (Body::Json(_), Some(j)) => { headers.push(("Content-Type", "application/json")); Some(j.as_bytes()) }
+        (Body::Bytes(b), _) => { headers.push(("Content-Type", "application/octet-stream")); Some(*b) }
+        _ => None,
+    };
+    match send(method, url, &headers, bytes, Duration::from_secs(60)) {
+        Sent::Answer { status, body } if status < 400 => Got::Ok(body),
+        Sent::Answer { status, body } => Got::Status(status, body),
+        Sent::Unreachable { host, why } => Got::Unreachable(unreachable(&host, &why)),
+    }
 }
 
 pub(crate) enum Reply {
@@ -57,25 +85,14 @@ pub(super) fn unknown() -> String {
     failed(Failure::Unknown, crate::tr!("The Remote no longer knows this device. Sign in again (l3 login)", "Remote がこの端末を覚えていません。もう一度サインインしてください（l3 login）"))
 }
 
-pub(super) fn unreachable(e: ureq::Error) -> String {
-    let (url, why) = match &e {
-        ureq::Error::Transport(t) => (t.url().map(|u| u.host_str().unwrap_or_default().to_string() + &u.port().map(|p| format!(":{p}")).unwrap_or_default()).unwrap_or_default(), match t.kind() {
-            ureq::ErrorKind::Dns => crate::tr!("its name is not found", "名前が見つかりません"),
-            ureq::ErrorKind::ConnectionFailed => crate::tr!("no connection", "接続できません"),
-            ureq::ErrorKind::TooManyRedirects => crate::tr!("too many redirects", "リダイレクトが多すぎます"),
-            ureq::ErrorKind::Io => crate::tr!("the connection broke or timed out", "接続が切れたか、時間切れです"),
-            ureq::ErrorKind::ProxyConnect | ureq::ErrorKind::ProxyUnauthorized | ureq::ErrorKind::InvalidProxyUrl => crate::tr!("the proxy refused", "プロキシが通しません"),
-            ureq::ErrorKind::InvalidUrl | ureq::ErrorKind::UnknownScheme => crate::tr!("not an address", "アドレスではありません"),
-            k => k.to_string(),
-        }),
-        other => (String::new(), other.to_string()),
-    };
-    let at = if url.is_empty() { String::new() } else { format!(" {url}") };
+/// Not reached: `host` (and port), and why (net::send's words).
+pub(super) fn unreachable(host: &str, why: &str) -> String {
+    let at = if host.is_empty() { String::new() } else { format!(" {host}") };
     failed(Failure::Unreachable, crate::tr!("The Remote{} cannot be reached ({})", "Remote{} に届きません（{}）", at, why))
 }
 
 /// What the Remote said when it refused: its `error`, in its words.
-pub(super) fn refused(code: u16, r: ureq::Response) -> String {
+pub(super) fn refused(code: u16, r: impl Read) -> String {
     let v = refusal(r);
     let said = v["error"].as_str().or(v["message"].as_str()).unwrap_or_default().to_string();
     let message = match (code, said.as_str()) {
@@ -116,7 +133,7 @@ pub(super) const REFUSAL_LIMIT: u64 = 64 << 10;
 
 /// The JSON a Remote answered with; an empty answer (204) is null. One that is not JSON, or larger than
 /// any answer is, is no answer to go by: what is in the way (a network's sign-in page, a proxy's) is not the Remote.
-pub(super) fn answer(url: &str, r: ureq::Response) -> Result<serde_json::Value> {
+pub(super) fn answer(url: &str, r: impl Read) -> Result<serde_json::Value> {
     let text = body(r, ANSWER_LIMIT).map_err(|e| failed(Failure::Unreachable, crate::tr!("The Remote's answer broke off ({})", "Remote の答えが途中で切れました（{}）", e)))?;
     let Some(text) = text else { return Err(odd(url)) };
     if text.trim().is_empty() { return Ok(serde_json::Value::Null); }
@@ -124,14 +141,14 @@ pub(super) fn answer(url: &str, r: ureq::Response) -> Result<serde_json::Value> 
 }
 
 /// A body read whole, as text, if it is at most `limit` bytes; None if it is larger (or not text).
-pub(super) fn body(r: ureq::Response, limit: u64) -> std::io::Result<Option<String>> {
+pub(super) fn body(r: impl Read, limit: u64) -> std::io::Result<Option<String>> {
     let mut bytes = Vec::new();
-    r.into_reader().take(limit + 1).read_to_end(&mut bytes)?;
+    r.take(limit + 1).read_to_end(&mut bytes)?;
     Ok(if bytes.len() as u64 > limit { None } else { String::from_utf8(bytes).ok() })
 }
 
 /// What a refusal says, as JSON (null when it says nothing readable).
-pub(super) fn refusal(r: ureq::Response) -> serde_json::Value {
+pub(super) fn refusal(r: impl Read) -> serde_json::Value {
     body(r, REFUSAL_LIMIT).ok().flatten().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
 }
 
@@ -143,25 +160,20 @@ pub(super) fn odd(url: &str) -> String {
 impl Client {
     pub(crate) fn open() -> Result<Client> {
         let c = connection().ok_or_else(|| failed(Failure::NotConnected, crate::tr!("This device is not signed in to a Remote (l3 login)", "この端末は Remote にサインインしていません（l3 login）")))?;
-        Ok(Client { agent: agent(&c.url), url: c.url, token: c.token })
+        Ok(Client { url: c.url, token: c.token })
     }
 
-    fn auth(&self) -> String {
-        format!("Bearer {}", self.token)
+    fn to(&self, method: &str, path: &str, body: Body) -> Got {
+        request(method, &format!("{}{path}", self.url), Some(&self.token), body)
     }
 
     pub(crate) fn call(&self, method: &str, path: &str, body: Option<serde_json::Value>) -> Result<Reply> {
-        let req = self.agent.request(method, &format!("{}{path}", self.url)).set("Authorization", &self.auth());
-        let r = match body {
-            Some(b) => req.send_json(b),
-            None => req.call(),
-        };
-        match r {
-            Ok(r) => Ok(Reply::Ok(answer(&self.url, r)?)),
-            Err(ureq::Error::Status(409, r)) => Ok(Reply::Conflict(refusal(r))),
-            Err(ureq::Error::Status(404, _)) => Ok(Reply::NotFound),
-            Err(ureq::Error::Status(code, r)) => Err(refused(code, r)),
-            Err(e) => Err(unreachable(e)),
+        match self.to(method, path, body.map_or(Body::None, Body::Json)) {
+            Got::Ok(r) => Ok(Reply::Ok(answer(&self.url, r)?)),
+            Got::Status(409, r) => Ok(Reply::Conflict(refusal(r))),
+            Got::Status(404, _) => Ok(Reply::NotFound),
+            Got::Status(code, r) => Err(refused(code, r)),
+            Got::Unreachable(e) => Err(e),
         }
     }
 
@@ -178,34 +190,30 @@ impl Client {
 
     /// A text the Remote answers with (a board taken home as markdown).
     pub(crate) fn text(&self, path: &str) -> Result<String> {
-        match self.agent.get(&format!("{}{path}", self.url)).set("Authorization", &self.auth()).call() {
-            Ok(r) => r.into_string().map_err(|e| e.to_string()),
-            Err(ureq::Error::Status(404, _)) => Err(failed(Failure::Status(404), crate::tr!("The Remote does not have it", "Remote にありません"))),
-            Err(ureq::Error::Status(code, r)) => Err(refused(code, r)),
-            Err(e) => Err(unreachable(e)),
+        match self.to("GET", path, Body::None) {
+            Got::Ok(mut r) => { let mut s = String::new(); r.read_to_string(&mut s).map_err(|e| e.to_string())?; Ok(s) }
+            Got::Status(404, _) => Err(failed(Failure::Status(404), crate::tr!("The Remote does not have it", "Remote にありません"))),
+            Got::Status(code, r) => Err(refused(code, r)),
+            Got::Unreachable(e) => Err(e),
         }
     }
 
     pub(super) fn put_blob(&self, sha: &str, bytes: &[u8]) -> Result<()> {
-        match self.agent.put(&format!("{}/v1/blobs/{sha}", self.url))
-            .set("Authorization", &self.auth())
-            .set("Content-Type", "application/octet-stream")
-            .send_bytes(bytes)
-        {
-            Ok(_) => Ok(()),
-            Err(ureq::Error::Status(code, r)) => Err(refused(code, r)),
-            Err(e) => Err(unreachable(e)),
+        match self.to("PUT", &format!("/v1/blobs/{sha}"), Body::Bytes(bytes)) {
+            Got::Ok(_) => Ok(()),
+            Got::Status(code, r) => Err(refused(code, r)),
+            Got::Unreachable(e) => Err(e),
         }
     }
 
     pub(crate) fn blob(&self, sha: &str) -> Result<Vec<u8>> {
-        let r = match self.agent.get(&format!("{}/v1/blobs/{sha}", self.url)).set("Authorization", &self.auth()).call() {
-            Ok(r) => r,
-            Err(ureq::Error::Status(code, r)) => return Err(refused(code, r)),
-            Err(e) => return Err(unreachable(e)),
+        let r = match self.to("GET", &format!("/v1/blobs/{sha}"), Body::None) {
+            Got::Ok(r) => r,
+            Got::Status(code, r) => return Err(refused(code, r)),
+            Got::Unreachable(e) => return Err(e),
         };
         let mut bytes = Vec::new();
-        r.into_reader().take(BLOB_LIMIT + 1).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+        r.take(BLOB_LIMIT + 1).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
         // Trusted only as far as it is what its name says.
         if sha256(&bytes) != sha {
             return Err(crate::tr!("What the Remote sent is not what its name says ({})", "Remote から届いたものが名前と合いません（{}）", &sha[..12.min(sha.len())]));

@@ -374,8 +374,11 @@ fn derived_item(repos_dir: &Path, repo: &str, open: &[String]) -> Option<Item> {
 /// every directory is made the owner's own first.
 fn remove_owned(dir: &Path) -> Result<u64, String> {
     fn open_up(dir: &Path) {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(dir, fs::Permissions::from_mode(0o700));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(dir, fs::Permissions::from_mode(0o700));
+        }
         for e in fs::read_dir(dir).into_iter().flatten().flatten() {
             if e.file_type().is_ok_and(|t| t.is_dir()) { open_up(&e.path()); }
         }

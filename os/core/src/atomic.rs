@@ -31,6 +31,7 @@ impl How {
 }
 
 /// The temporary `path` is written through: a name of this OS's own, free beside it.
+#[cfg_attr(not(unix), allow(unused_variables))] // modes and directory syncs are the host's
 fn beside(path: &Path, how: How) -> io::Result<(PathBuf, fs::File)> {
     static NEXT: AtomicU64 = AtomicU64::new(0);
     let name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
@@ -110,6 +111,7 @@ pub fn rename_new(from: &Path, to: &Path) -> io::Result<()> {
 
 /// Flush the directory `path` is in, so a rename into it is on the disk.
 /// Where a directory cannot be opened to flush (not unix), the rename stands as the system keeps it.
+#[cfg_attr(not(unix), allow(unused_variables))] // modes and directory syncs are the host's
 fn sync_dir(path: &Path) {
     #[cfg(unix)]
     if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {

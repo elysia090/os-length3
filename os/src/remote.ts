@@ -10,7 +10,7 @@
 // Every client holds a session token, sent as a bearer token; each device
 // is a session that can be seen and ended from any other.
 
-import {isNative, native} from './host.ts';
+import {core, isNative, native} from './host.ts';
 import {t} from './i18n.ts';
 import {getState, loadState, setState} from './state.ts';
 
@@ -329,13 +329,13 @@ interface DeviceCode { device_code: string; user_code: string; verification_uri_
 /** The app asks for a code and opens the browser on it; `wait` ends when it is approved. */
 export async function appSignIn(): Promise<{code: string; url: string; wait: Promise<void>}> {
   const c = await native<DeviceCode>('remote_login_start');
-  const wait = native<void>('remote_login_wait', {code: c}).then(async () => { await loadState(); told(); });
+  const wait = core<void>('remote_login_wait', {code: c}).then(async () => { await loadState(); told(); });
   return {code: c.user_code, url: c.verification_uri_complete, wait};
 }
 
 /** Leave the Remote on this device: its session ends; the repos here stay. */
 export async function signOut(): Promise<void> {
-  if (isNative) { await native('remote_logout'); await loadState(); told(); return; }
+  if (isNative) { await core('remote_logout'); await loadState(); told(); return; }
   // Signed out here whatever the Remote answers: away, the session there ends by itself when it runs out.
   await api('/api/auth/sign-out', {method: 'POST', body: '{}'}).catch(() => {});
   await forget();
@@ -348,7 +348,7 @@ async function forget() {
 
 async function ended() {
   // The Remote already let this session go: signing out there can only fail, and here it is done either way.
-  if (isNative) { await native('remote_logout').catch(() => {}); await loadState(); told(); return; }
+  if (isNative) { await core('remote_logout').catch(() => {}); await loadState(); told(); return; }
   await forget();
 }
 

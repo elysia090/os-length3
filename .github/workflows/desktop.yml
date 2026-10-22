@@ -30,7 +30,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y musl-tools
-          rustup target add x86_64-unknown-linux-musl wasm32-unknown-unknown
+          rustup target add x86_64-unknown-linux-musl wasm32-unknown-unknown wasm32-wasip1
           # l3 prompt makes user namespaces, as on a person's machine; this image's AppArmor keeps them from users.
           if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; fi
       - name: App (types, tests, web build)
@@ -59,6 +59,11 @@ jobs:
         if: ${{ !cancelled() }}
         working-directory: os
         run: cargo test --locked -p length3-core -p l3
+      # The same core a browser runs (src/host.ts core()): what the app does, the web does by this code.
+      - name: The core for the web
+        if: ${{ !cancelled() }}
+        working-directory: os
+        run: cargo build --locked -p length3-core --target wasm32-wasip1
       - name: l3 for the Prompt (static, musl)
         id: musl
         if: ${{ !cancelled() }}

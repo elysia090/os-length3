@@ -29,7 +29,7 @@ pub(super) fn another(was: &Connection, url: &str, user: Option<&str>) -> bool {
 
 /// The account a session is, as the Remote at `url` says; None when it does not say.
 pub(super) fn whose(url: &str, token: &str) -> Option<String> {
-    let r = agent(url).get(&format!("{url}/api/auth/get-session")).set("Authorization", &format!("Bearer {token}")).call().ok()?;
+    let Got::Ok(r) = request("GET", &format!("{url}/api/auth/get-session"), Some(token), Body::None) else { return None };
     let v = answer(url, r).ok()?;
     v["user"]["id"].as_str().filter(|id| !id.is_empty()).map(String::from)
 }
@@ -48,16 +48,17 @@ pub struct DeviceCode {
 
 /// Ask for a code to approve in a browser; `client` is "l3" or "length3-app".
 pub fn device_start(url: &str, client: &str) -> Result<DeviceCode> {
-    match agent(url).post(&format!("{url}/api/auth/device/code")).send_json(serde_json::json!({"client_id": client})) {
-        Ok(r) => serde_json::from_value(answer(url, r)?).map_err(|_| odd(url)),
-        Err(ureq::Error::Status(code, r)) => Err(refused(code, r)),
-        Err(e) => Err(unreachable(e)),
+    match request("POST", &format!("{url}/api/auth/device/code"), None, Body::Json(serde_json::json!({"client_id": client}))) {
+        Got::Ok(r) => serde_json::from_value(answer(url, r)?).map_err(|_| odd(url)),
+        Got::Status(code, r) => Err(refused(code, r)),
+        Got::Unreachable(e) => Err(e),
     }
 }
 
 /// The origin of the web app the Remote `url` says it approves devices on (GET /v1/about, `app`), if it says one.
 pub fn app_origin(url: &str) -> Option<String> {
-    let v = answer(url, agent(url).get(&format!("{url}/v1/about")).call().ok()?).ok()?;
+    let Got::Ok(r) = request("GET", &format!("{url}/v1/about"), None, Body::None) else { return None };
+    let v = answer(url, r).ok()?;
     v.get("app")?.as_str().map(String::from)
 }
 
@@ -95,16 +96,16 @@ pub(super) enum Polled {
 
 /// Poll once.
 pub(super) fn device_poll(url: &str, client: &str, code: &DeviceCode) -> Result<Polled> {
-    let r = agent(url).post(&format!("{url}/api/auth/device/token")).send_json(serde_json::json!({
+    let r = request("POST", &format!("{url}/api/auth/device/token"), None, Body::Json(serde_json::json!({
         "grant_type": "urn:ietf:params:oauth:grant-type:device_code", "device_code": code.device_code, "client_id": client,
-    }));
+    })));
     match r {
-        Ok(r) => {
+        Got::Ok(r) => {
             let v = answer(url, r)?;
             Ok(v["access_token"].as_str().filter(|t| !t.is_empty()).map_or(Polled::Waiting, |t| Polled::Approved(t.into())))
         }
-        Err(ureq::Error::Status(429, _)) => Ok(Polled::SlowDown),
-        Err(ureq::Error::Status(code, r)) => {
+        Got::Status(429, _) => Ok(Polled::SlowDown),
+        Got::Status(code, r) => {
             let v = refusal(r);
             match v.get("error").and_then(|e| e.as_str()) {
                 Some("authorization_pending") => Ok(Polled::Waiting),
@@ -117,7 +118,7 @@ pub(super) fn device_poll(url: &str, client: &str, code: &DeviceCode) -> Result<
                 }
             }
         }
-        Err(e) => Err(unreachable(e)),
+        Got::Unreachable(e) => Err(e),
     }
 }
 

@@ -27,21 +27,25 @@ export interface Freed {
   host_free_before: number; host_free_after: number; host_change: Certainty; reflected_ms: number | null;
 }
 
-/** A command of the app's native side (the one way every module asks it). */
+/** A command of the app's own, around the core: what only a host does (open a page, a Prompt on the root, SSH). */
 export async function native<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
   const {invoke} = await import('@tauri-apps/api/core');
   return invoke<T>(command, args);
 }
 
+/** A command of the core's (core/src/api.rs), by name: the one code a repo, its history and the Remote
+ *  are kept by, whichever host runs it. */
+export const core = <T>(name: string, args: Record<string, unknown> = {}): Promise<T> => native<T>('core', {name, args});
+
 /** この端末: everything this OS holds, largest first (the app; space.ts for a browser). */
-export const nativeSpace = (): Promise<Space> => native<Space>('space');
+export const nativeSpace = (): Promise<Space> => core<Space>('space');
 /** 空ける these ids (a repo with changes not sent yet sends them first). */
-export const nativeFree = (ids: string[]): Promise<Freed> => native<Freed>('free', {ids});
+export const nativeFree = (ids: string[]): Promise<Freed> => core<Freed>('free', {ids});
 
 export async function readCapacity(): Promise<Capacity | null> {
   try {
     if (isNative) {
-      const c = await native<{total: number; free: number; app: number}>('capacity');
+      const c = await core<{total: number; free: number; app: number}>('capacity');
       return {total: c.total, free: c.free, app: c.app, layer: 'host-filesystem'};
     }
     const e = await navigator.storage?.estimate?.();

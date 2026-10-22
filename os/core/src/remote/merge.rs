@@ -50,9 +50,15 @@ pub fn beside_as(path: &str, who: &str, n: u32) -> String {
 
 /// This machine as a file's name can carry it: its host name, its letters, digits and . _ - alone.
 pub fn device_tag() -> String {
-    let mut buf = [0u8; 256];
-    let got = unsafe { libc::gethostname(buf.as_mut_ptr() as *mut libc::c_char, buf.len()) } == 0;
-    let raw = if got { String::from_utf8_lossy(&buf[..buf.iter().position(|&b| b == 0).unwrap_or(buf.len())]).into_owned() } else { String::new() };
+    #[cfg(unix)]
+    let raw = {
+        let mut buf = [0u8; 256];
+        let got = unsafe { libc::gethostname(buf.as_mut_ptr() as *mut libc::c_char, buf.len()) } == 0;
+        if got { String::from_utf8_lossy(&buf[..buf.iter().position(|&b| b == 0).unwrap_or(buf.len())]).into_owned() } else { String::new() }
+    };
+    // In a browser the page names the device (its host gives LENGTH3_DEVICE), as it has no host name.
+    #[cfg(not(unix))]
+    let raw = std::env::var("LENGTH3_DEVICE").unwrap_or_default();
     tag_of(&raw)
 }
 
@@ -106,6 +112,7 @@ pub(super) fn write_file_as(path: &Path, bytes: &[u8], mode: Option<Option<u32>>
 
 /// The modes the Remote changed and this device did not, for files whose bytes are as agreed: taken, as
 /// a file changed there only is (bug: 0755 came back 0644 from the Remote, whose trees kept no modes).
+#[cfg_attr(not(unix), allow(unused_variables))] // modes and directory syncs are the host's
 pub(super) fn take_modes(dir: &Path, base: &Modes, here: &Modes, there: &Modes, tree: &Tree, p: &Plan) {
     let taken: BTreeSet<&String> = p.take.iter().map(|(path, _)| path).chain(p.both.iter().map(|(path, _)| path)).collect();
     let paths: BTreeSet<&String> = base.keys().chain(there.keys()).collect();
