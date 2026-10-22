@@ -421,11 +421,18 @@ class Git extends Part {
   async write(repo: string, first: string, detail = '') {
     await this.app.rail.go('git');
     await this.main.getByRole('button', {name: 'Write an issue'}).click();
-    await this.main.getByRole('radiogroup', {name: 'Repo to write in'}).getByRole('radio', {name: repo, exact: true}).click();
+    // Where it goes is chosen in the one row of repos above the box, as the issues shown are.
+    await this.repos.getByRole('radio', {name: repo, exact: true}).click();
+    await expect(this.firstLine).toHaveAccessibleDescription(repo);
     await this.main.getByRole('textbox', {name: 'First line as Kind: title'}).fill(first);
     if (detail) await this.main.getByRole('textbox', {name: 'Detail'}).fill(detail);
     await this.main.getByRole('button', {name: 'Create'}).click();
   }
+
+  /** The one row of repos above the issues: which are shown, and, while one is written, where it goes. */
+  get repos() { return this.main.getByRole('radiogroup', {name: 'repo'}); }
+  /** A new issue's first line, which says the repo it goes in (its description). */
+  get firstLine() { return this.main.getByRole('textbox', {name: 'First line as Kind: title'}); }
 
   /** A step's button in the issue on screen (Start, Commit, Push, Merge…): only the issue on screen has them. */
   step(name: string) { return this.main.getByRole('button', {name, exact: true}); }

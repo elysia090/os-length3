@@ -244,7 +244,8 @@ what is its own.
   headings 15/600 in `ink` as Prompt's, a list under each; with nothing to
   show, nothing (no line saying what will appear once a repo is open), or
   with a repo, one quiet line of what is not there (no box: a box is
-  for the center, where things are made). It only shows; what changes it
+  for the center, where things are made), and under it, where there is a
+  first one to make (an issue), the small button that makes it in the center. It only shows; what changes it
   lives with the thing it changes, and what leads from it into the center
   (a file's name, a line's number) opens the center there.
 - **Boxes side by side.** One thing at a time in full, its neighbours'
@@ -1161,7 +1162,8 @@ will not be done. It uses the same workbench
 as Forge: the center (one centred column, 760 px at most) with the prompt
 box at its foot, and the narrow right pane with the search box, the
 reference and the Prompt. The page header, then the repo chips (one repo or
-all); choosing a repo also points the right pane and the Prompt at it, and
+all), one row that slides sideways however many there are, so they never
+push the issues down; choosing a repo also points the right pane and the Prompt at it, and
 makes it the repo worked on (§1): Forge opens there next. So does going to
 an issue (an edge, ← →) and starting or continuing one; coming to Git
 opens at the issue last looked at in the repo worked on. An issue written
@@ -1181,7 +1183,21 @@ half written after reading its neighbours or another page.
   is a large place, an `ink` edge over `raised`. An edge is a clear button
   over the neighbour, which lifts (`raised`) while hovered; pressing it, or
   ← →, slides the track there (280 ms, the one movement). The first box
-  starts at the column's edge and the last ends at it.
+  starts at the column's edge and the last ends at it. A neighbour shows its
+  number alone at the edge that shows (the one before at its right), never a
+  title cut short. The column keeps the room a scrollbar takes, so an
+  issue's edge stays put as its words are read and changed.
+- **A new issue** is written in a box over the issues: its first line, the
+  repo it goes in said quietly before it (as a card says its repo), then a
+  detail tall from the start, with the room a second row of repos would
+  take. Where it goes is chosen in the one row of repos above, never in the
+  box: a repo chosen there while writing is the one written in; All widens
+  what is shown and leaves it as it was. This box ends with its deed first:
+  Create at the left, Not now at the right, so which one is wanted reads
+  first (every other box keeps Not now at the left). An Issue view with
+  none open in Forge's reference has Issue を書く under its line: Git opens
+  with the box for that repo, its first line ready, and Not now goes back to
+  Forge as it was.
 - **The box**: the issue's number and name ("#1 Fix：件名") and its detail,
   changed where they are read (pressed, they become the fields they were
   written in, Save and Not now under them), one quiet line of its repo and

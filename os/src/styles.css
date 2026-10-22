@@ -304,6 +304,11 @@ span.todo-title { min-height: 0; }
 
 /* Git: issues read from each repo's issue/ */
 .git-filter { margin-top: var(--s5); }
+/* Git's repos are one row that slides sideways, never more rows: a ring kept clear of its edge. */
+.git-filter > .chips { position: relative; flex-wrap: nowrap; overflow-x: auto; margin: calc(-1 * var(--s1)); padding: var(--s1); scrollbar-width: thin; scrollbar-color: var(--rule) transparent; }
+.git-filter > .chips > .chip { flex: none; }
+/* Git's column keeps its width whether it scrolls or not (read, then its words changed). */
+.git-flow { scrollbar-gutter: stable; }
 .section > h2 > span small { margin-left: var(--s2); }
 .issue-kind { font-weight: 700; }
 .issue-where { font: var(--t-meta)/1.6 var(--mono); color: var(--sub); }
@@ -330,6 +335,11 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .issue-form { display: grid; gap: var(--s3); margin-bottom: var(--s4); padding: var(--s4); border: var(--line-work) solid var(--edge); border-radius: var(--r-place); }
 .issue-form[hidden] { display: none; }
 .issue-text { min-height: 96px; padding: var(--s2) var(--s3); resize: none; font: var(--t-body)/1.6 var(--sans); }
+/* A new issue: the repo it goes in before its first line; the room the repos inside took (two rows of chips and the gap under them) is the detail's. */
+.issue-first { display: flex; align-items: center; gap: var(--s3); min-width: 0; }
+.issue-first > .line-in { flex: 1; min-width: 0; }
+.issue-target { flex: 0 1 auto; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.issue-new .issue-text { min-height: calc(96px + 2 * var(--h-row) + var(--s2) + var(--s3)); }
 .empty p + p { margin-top: var(--s2); }
 /* What is only on the Remote, each with a press to fetch it, as Runtime's column. */
 .fetch-list { display: grid; gap: var(--s2); }
@@ -783,6 +793,10 @@ mark { background: var(--ink); color: var(--ground); }
 .issue-card { padding: calc(var(--s4) + var(--s1)) var(--s5) var(--s6); border: 1px solid var(--rule); border-radius: var(--r-place); transition: background var(--motion); }
 .issue-slot[aria-current='false'] .issue-card { color: var(--sub); min-height: var(--card-h, auto); }
 .issue-slot[aria-current='true'] .issue-card { border-color: var(--ink); background: var(--raised); }
+/* A neighbour shows its number at the edge that shows: the one after at its left, the one before at its right. */
+.issue-slot[aria-current='false'] .issue-card { padding-inline: var(--s2); }
+.issue-big-head.peek h2 { font-size: var(--t-body); white-space: nowrap; }
+.issue-slot:has(+ .issue-slot[aria-current='true']) .issue-big-head.peek { text-align: right; }
 .issue-stage:has(.stage-hit.next:hover) .issue-slot[aria-current='true'] + .issue-slot .issue-card,
 .issue-stage:has(.stage-hit.prev:hover) .issue-slot:has(+ .issue-slot[aria-current='true']) .issue-card { background: var(--raised); }
 .stage-hit { position: absolute; top: 0; bottom: 0; z-index: 1; width: var(--peek); padding: 0; border: 0; border-radius: var(--r-place); background: transparent; cursor: pointer; }

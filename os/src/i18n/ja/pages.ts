@@ -88,7 +88,6 @@ export default {
   'Put back in the prompt box': 'プロンプトに戻す',
 
   // Writing an issue
-  'Repo to write in': '書く repo',
   'Detail (optional)': '詳細（なくてもよい）',
   'Not now': 'やめる',
   'Write a title on the first line': '1行目に件名を書いてください',

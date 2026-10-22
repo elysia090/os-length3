@@ -6,10 +6,17 @@ import {kindOf, named} from '../text.ts';
 import {answers} from './common.ts';
 import {errorText} from '../errors.ts';
 
-// Writing an issue: which repo it goes in (chips), its first line named like
-// a TODO item ("Fix：件名"), then the detail. It takes the repo's next
-// number; how it is kept is not the writer's concern. Its words are changed
-// the same way, in its own box.
+// Writing an issue: its first line named like a TODO item ("Fix：件名"),
+// the repo it goes in said quietly before it, then the detail. The repo is
+// chosen in Git's one row of repos above the box, never in a second row
+// inside it: a repo chosen there while writing is the one written in, and
+// All only widens what is shown, leaving where it goes as it was. The room
+// a row inside took is the detail's. It takes the repo's next number; how
+// it is kept is not the writer's concern. Its words are changed the same
+// way, in its own box.
+//
+// The new issue's box has its deed first: Create at the left, Not now at
+// the right (this box only; every other one ends as common.ts `answers`).
 //
 // What is half written stays until it is saved or put back with Not now:
 // going along the row to read another issue, or to another page, and back
@@ -21,13 +28,24 @@ export interface IssueForm {
   open(repos: readonly string[], chosen: string): void;
   /** Open it again as it was left half written, if it was; true when it was. */
   resume(repos: readonly string[]): boolean;
+  /** Write in `repo` from now on (chosen in the row above), what is written kept. */
+  retarget(repo: string): void;
 }
 
-/** A new issue being written: where, and its two fields. */
-let writing: {repo: string; first: string; detail: string} | null = null;
+/**
+ * A new issue being written: where, and its two fields. `fresh` while it was
+ * asked for elsewhere and not opened yet (the first line then takes the
+ * keyboard); `back` the repo whose Forge asked for it, gone back to on Not now.
+ */
+let writing: {repo: string; first: string; detail: string; fresh?: boolean; back?: string} | null = null;
 /** An issue's words being changed, by repo/file. */
 const changing = new Map<string, {first: string; detail: string}>();
 const keyOf = (i: Issue) => `${i.repo}/${i.file}`;
+
+/** Begin a new issue in `repo`, asked for from Forge's reference: Git opens with it, its first line ready. */
+export function startIssue(repo: string) {
+  writing = {repo, first: '', detail: '', fresh: true, back: repo};
+}
 
 /** Whether `issue`'s words are being changed (its box then opens as the fields). */
 export const beingChanged = (issue: Issue) => changing.has(keyOf(issue));
@@ -53,20 +71,35 @@ async function held(b: HTMLButtonElement, error: HTMLElement, f: () => Promise<u
   }
 }
 
-export function issueForm(events: {done(made: {repo: string; file: string} | null): void}): IssueForm {
-  const element = h('div', {class: 'issue-form', hidden: ''});
-  const close = (made: {repo: string; file: string} | null) => { writing = null; element.hidden = true; element.replaceChildren(); events.done(made); };
+/** `done` hears what was made, or null and the repo whose Forge asked for it (to go back to) when put back. */
+export function issueForm(events: {done(made: {repo: string; file: string} | null, back: string | null): void}): IssueForm {
+  const element = h('div', {class: 'issue-form issue-new', hidden: ''});
+  let retarget: (repo: string) => void = () => {};
+  const close = (made: {repo: string; file: string} | null) => {
+    const back = made ? null : writing?.back ?? null;
+    writing = null;
+    retarget = () => {};
+    element.hidden = true;
+    element.replaceChildren();
+    events.done(made, back);
+  };
 
-  const open = (repos: readonly string[], chosen: string, was: {first: string; detail: string} | null = null) => {
+  const open = (repos: readonly string[], chosen: string, was: NonNullable<typeof writing> | null = null) => {
     let target = repos.includes(chosen) ? chosen : repos[0];
-    const pick = h('div', {class: 'chips', role: 'radiogroup', 'aria-label': t('Repo to write in')}, ...repos.map((r) => {
-      const b = h('button', {type: 'button', class: 'chip', role: 'radio', 'aria-checked': String(r === target)}, r) as HTMLButtonElement;
-      b.addEventListener('click', () => { target = r; keep(); for (const c of pick.children) c.setAttribute('aria-checked', String(c === b)); });
-      return b;
-    }));
+    const back = was?.back;
+    // Where it goes, before the first line, in the words a card says its repo in.
+    const where = h('span', {class: 'issue-where issue-target', id: 'issue-target', title: target}, target);
     const f = fields(null, '', '');
+    f.first.setAttribute('aria-describedby', 'issue-target');
     if (was) { f.first.value = was.first; f.body.value = was.detail; }
-    const keep = () => { writing = {repo: target, first: f.first.value, detail: f.body.value}; };
+    const keep = () => { writing = {repo: target, first: f.first.value, detail: f.body.value, ...(back ? {back} : {})}; };
+    retarget = (r) => {
+      if (!repos.includes(r)) return;
+      target = r;
+      where.textContent = r;
+      where.title = r;
+      keep();
+    };
     keep();
     f.first.addEventListener('input', keep);
     f.body.addEventListener('input', keep);
@@ -80,17 +113,18 @@ export function issueForm(events: {done(made: {repo: string; file: string} | nul
       let file = '';
       if (await held(make, error, async () => { file = await writeIssue(store, target, kind, title, detail); })) close({repo: target, file});
     });
-    element.replaceChildren(pick, f.first, f.body, error, answers(cancel, make));
+    element.replaceChildren(h('div', {class: 'issue-first'}, where, f.first), f.body, error,
+      h('div', {class: 'answers'}, make, h('span', {class: 'grow'}), cancel));
     element.hidden = false;
-    // Opened anew, the first line has the keyboard; opened again as it was left, nothing takes it.
-    if (!was) f.first.focus();
+    // Opened anew (here, or asked for from Forge), the first line has the keyboard; opened again as it was left, nothing takes it.
+    if (!was || was.fresh) f.first.focus();
   };
   const resume = (repos: readonly string[]) => {
     if (!writing) return false;
     open(repos, writing.repo, writing);
     return true;
   };
-  return {element, open, resume};
+  return {element, open, resume, retarget: (repo) => retarget(repo)};
 }
 
 /**

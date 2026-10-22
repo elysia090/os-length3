@@ -16,6 +16,9 @@ import {errorText} from '../errors.ts';
 
 /**
  * Git: what happens between a repo and the outside, in the issues' terms.
+ * The repo chips are one row that slides sideways, however many repos there
+ * are, so they never push the issues down; while an issue is written, the
+ * repo chosen there is the one it goes in (All leaves that as it was).
  * Under the repo chips, the issues not merged yet as large boxes side by
  * side: one in full, its neighbours' edges showing at both sides. An edge is
  * the way to the box beside (hover lifts it; ← → do the same), and the track
@@ -50,8 +53,10 @@ export function git(ctx: Context): Node[] {
   const column = h('div', {class: 'issue-column'}, stage);
   const empty = h('div', {});
   // Written: its repo is the one looked at and worked on, and the new issue is the one shown, with the keyboard on it.
-  const form = issueForm({done: (made) => {
+  const form = issueForm({done: (made, back) => {
     write.hidden = false;
+    // Asked for from Forge's reference and put back: back there, as it was.
+    if (!made && back) { ctx.openRepo(back); return; }
     if (!made) { write.focus({preventScroll: true}); return; }
     if (filter && filter !== made.repo) { filter = made.repo; paintChips(); }
     chosen = `${made.repo}/${made.file}`;
@@ -87,11 +92,20 @@ export function git(ctx: Context): Node[] {
   let land = false;
 
   const paintChips = () => {
+    // A chip pressed from the keyboard keeps it when the row is drawn again.
+    const had = [...chips.children].indexOf(document.activeElement as Element);
     chips.replaceChildren(...[ALL, ...repos].map((r) => {
       const b = h('button', {type: 'button', class: 'chip', role: 'radio', 'aria-checked': String(filter === r)}, r || t('All'));
-      b.addEventListener('click', () => { filter = r; paintChips(); if (r) look(r, true); void paint(); });
+      b.addEventListener('click', () => { filter = r; paintChips(); if (r) { look(r, true); form.retarget(r); } void paint(); });
       return b;
     }));
+    if (had >= 0) (chips.children[had] as HTMLElement | undefined)?.focus({preventScroll: true});
+    // The chosen one is kept in view as the row slides.
+    const on = chips.querySelector<HTMLElement>('[aria-checked="true"]');
+    if (on && chips.scrollWidth > chips.clientWidth) {
+      if (on.offsetLeft < chips.scrollLeft) chips.scrollLeft = on.offsetLeft;
+      else if (on.offsetLeft + on.offsetWidth > chips.scrollLeft + chips.clientWidth) chips.scrollLeft = on.offsetLeft + on.offsetWidth - chips.clientWidth;
+    }
   };
 
   /** Slide to the `n`th box: it gets the whole box, the others only their heads. */
@@ -116,7 +130,7 @@ export function git(ctx: Context): Node[] {
       const st = states.get(x.repo);
       slot.replaceChildren(...(j === k
         ? [h('div', {class: 'issue-card'}, issueBox(x, st, events, again)), reviewBox(x, st, again), mergeRow(x, st, events, again)].filter((n): n is HTMLElement => !!n)
-        : [h('div', {class: 'issue-card'}, issueHead(x))]));
+        : [h('div', {class: 'issue-card'}, issueHead(x, true))]));
     });
     // The neighbours' cards are as tall as the current one, so the row reads as one line of boxes.
     const card = track.children[k]?.querySelector<HTMLElement>('.issue-card');
