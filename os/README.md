@@ -531,6 +531,22 @@ knowing neither, it refuses any Neon host. `-- --production` runs it anyway.
 
 Linux needs the WebKitGTK toolchain:
 `libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev`.
+The web app runs the same core as the desktop app (`core/`, built for the
+browser by `core/web`), so every build of the page needs Rust with
+`rustup target add wasm32-wasip1`; Vite builds it when `core/` changed, and
+says that command when the target is missing.
+
+### One core, two hosts
+
+A repo, its history, the Remote's sync and Home's settings are the core's
+(`core/src/api.rs`): the app asks it through one Tauri command, and a page
+asks the very same code, built for `wasm32-wasip1`, in a worker of its own
+(`src/core.worker.ts`, `src/wasi.ts`) over files the browser keeps in
+IndexedDB. A page calls `core(name, args)` (`src/host.ts`) either way and
+gets the same answers, the Remote's refusals included. Tabs of one browser
+take turns under one Web Lock and tell each other each file they wrote.
+Tests run it too: `src/core.node.ts` is the same module in a Node worker,
+its requests answered by the test's own Remote.
 
 ```
 npm ci
