@@ -71,6 +71,13 @@
       "when": 1792310106605,
       "tag": "0009_the_log_without_trees",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792655554447,
+      "tag": "0010_each_files_mode",
+      "breakpoints": true
     }
   ]
 }

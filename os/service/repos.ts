@@ -7,9 +7,10 @@
 //   GET    /v1/moved                  what moved, cheaply: {repos: stamp, home: {key: version}}
 //   GET    /v1/repos                  each repo: head, draft version, bytes, when
 //   GET    /v1/repos/gone             each repo that went for good, lately: [{name, at}]
-//   GET    /v1/repos/:name            a line's draft (tree, version, base) and head (?line=, main by default)
+//   GET    /v1/repos/:name            a line's draft (tree, version, base), its files' modes and head (?line=, main by default)
 //                                      -> 404 {gone} when it went for good
-//   PATCH  /v1/repos/:name/draft      {version, set, remove}: a diff on that version
+//   PATCH  /v1/repos/:name/draft      {version, set, remove, modes?}: a diff on that version (modes: each set path's
+//                                      mode where it has an execute bit; without modes, a set path keeps its own)
 //                                      -> {version} | 409 {version} | 409 {missing}
 //                                      | 410 {gone} for a name that went, unless ?anew=1 makes it again
 //   POST   /v1/repos/:name/cuts       {version, parent, kind, title, issue, note, added, removed}:
@@ -37,7 +38,7 @@ import {and, desc, eq, inArray, isNull, ne, sql} from 'drizzle-orm';
 import type {Context, Hono} from 'hono';
 import type {Plans} from './plan.ts';
 import {ago, body, fits as fitsIn, HEX, LIMIT, lock, ms, qualified, refuse, rows, sha256, type Db, type Vars} from './request.ts';
-import {blob, change, cut, guard, line, repo, repoGone, review, throttle, type Review, type Tree} from './schema.ts';
+import {blob, change, cut, guard, line, repo, repoGone, review, throttle, type Modes, type Review, type Tree} from './schema.ts';
 import {KEPT, purge, REMEMBERED} from './sweep.ts';
 
 const enc = new TextEncoder();
@@ -53,9 +54,9 @@ export const issueOf = (line: string) => (line === 'main' ? '' : `issue/${line}.
  * the same change on both is taken once, and a path both changed differently
  * is a conflict (and is left as `ours`).
  */
-export function merge3(base: Tree, ours: Tree, theirs: Tree): {tree: Tree; conflicts: string[]} {
-  const tree: Tree = {}, conflicts: string[] = [];
-  const get = (t: Tree, p: string) => (p in t ? t[p] : undefined);
+export function merge3<V>(base: Record<string, V>, ours: Record<string, V>, theirs: Record<string, V>): {tree: Record<string, V>; conflicts: string[]} {
+  const tree: Record<string, V> = {}, conflicts: string[] = [];
+  const get = (t: Record<string, V>, p: string) => (p in t ? t[p] : undefined);
   for (const p of new Set([...Object.keys(base), ...Object.keys(ours), ...Object.keys(theirs)])) {
     const b = get(base, p), o = get(ours, p), t = get(theirs, p);
     const pick = o === t ? o : o === b ? t : t === b ? o : (conflicts.push(p), o);
@@ -87,14 +88,36 @@ export function applyDiff(draft: Tree, set: Tree, remove: string[]): Tree {
   return Object.assign(tree, set);
 }
 
-/** A cut's id: the digest of what it records, in one fixed order. */
-export async function cutId(c: {repo: string; parent: string | null; tree: Tree; kind: string; title: string; issue: string; note: string; time: number}) {
+/** A file's mode as a client may send one: permission bits only, with an execute bit (a plain file has none kept). */
+export const validMode = (m: unknown): m is number => typeof m === 'number' && Number.isInteger(m) && m >= 0 && m <= 0o777 && (m & 0o111) !== 0;
+
+/** The modes kept beside `tree`: only its files' (a folder, or a path it does not name, keeps none). */
+export function modesFor(tree: Tree, modes: Modes): Modes {
+  const out: Modes = {};
+  for (const [p, m] of Object.entries(modes)) if (typeof tree[p] === 'string' && validMode(m)) out[p] = m;
+  return out;
+}
+
+/**
+ * A draft's modes with a diff laid on it. A client that keeps modes sends them (`sent`): each path it sets
+ * takes its mode from them, none there being a plain file's. One that sends none (an older client) cannot
+ * say, so a path it sets keeps the mode it had (an execute bit is never dropped by not being known of).
+ */
+export function applyModes(was: Modes, tree: Tree, set: Tree, sent: Modes | undefined): Modes {
+  const out: Modes = {...was};
+  if (sent) for (const p of Object.keys(set)) { if (p in sent) out[p] = sent[p]; else delete out[p]; }
+  return modesFor(tree, out);
+}
+
+/** A cut's id: the digest of what it records, in one fixed order (its modes last, and only when it has some: the ids of commits without stay as they were). */
+export async function cutId(c: {repo: string; parent: string | null; tree: Tree; modes?: Modes; kind: string; title: string; issue: string; note: string; time: number}) {
   const tree = Object.keys(c.tree).sort().map((p) => [p, c.tree[p]]);
-  return sha256(enc.encode(JSON.stringify([c.repo, c.parent, tree, c.kind, c.title, c.issue, c.note, c.time])));
+  const modes = Object.keys(c.modes ?? {}).sort().map((p) => [p, c.modes![p]]);
+  return sha256(enc.encode(JSON.stringify([c.repo, c.parent, tree, c.kind, c.title, c.issue, c.note, c.time, ...(modes.length ? [modes] : [])])));
 }
 
 /** A commit as clients read it. */
-const cutCols = {id: cut.id, parent: cut.parent, merged: cut.merged, tree: cut.tree, kind: cut.kind, title: cut.title, issue: cut.issue,
+const cutCols = {id: cut.id, parent: cut.parent, merged: cut.merged, tree: cut.tree, modes: cut.modes, kind: cut.kind, title: cut.title, issue: cut.issue,
   note: cut.note, added: cut.added, removed: cut.removed, time: cut.time};
 /** A line as clients read it: `name` is its repo's, `line` its own; `id` (its repo's number) and `off` are the service's. */
 const lineCols = {id: repo.id, off: repo.offAt, name: repo.name, line: line.name, base: line.base, head: line.head, pushed: line.pushed,
@@ -105,11 +128,11 @@ const changeCols = {id: change.id, line: change.line, kind: change.kind, title: 
   reviews: sql<Review[]>`coalesce((select jsonb_agg(jsonb_build_object('version', r.version, 'verdict', r.verdict, 'note', r.note, 'marks', r.marks,
     'by', r.by, 'time', ${ms(sql`r.time`)}) order by r.time desc, r.id) from review r where r.change_id = ${qualified(change.id)}), '[]'::jsonb)`.as('reviews')};
 type Line = {id: number; off: Date | null; name: string; line: string; base: string | null; head: string | null; pushed: string | null; version: number;
-  startedBy: string; startedAt: Date; updatedAt: Date; draft?: Tree};
+  startedBy: string; startedAt: Date; updatedAt: Date; draft?: Tree; modes?: Modes};
 type Change = {id: string; line: string; kind: string; title: string; version: number; base: string | null; head: string;
   state: string; note: string; submittedBy: string; reviews: Review[]; updatedAt: Date};
 
-const lineShown = ({id: _, off: __, draft, ...r}: Line) => ({...r, issue: issueOf(r.line), ...(draft ? {draft} : {}), startedAt: r.startedAt.getTime()});
+const lineShown = ({id: _, off: __, draft, modes, ...r}: Line) => ({...r, issue: issueOf(r.line), ...(draft ? {draft, modes: modesFor(draft, modes ?? {})} : {}), startedAt: r.startedAt.getTime()});
 const changeShown = (repoName: string, {repoId: _, off: __, ...r}: Change & {repoId?: number; off?: Date | null}) =>
   ({...r, repo: repoName, issue: issueOf(r.line), updatedAt: r.updatedAt.getTime()});
 const count = (n: unknown) => (typeof n === 'number' && Number.isInteger(n) && n >= 0 && n < 2 ** 31 ? n : 0);
@@ -139,7 +162,7 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
     (await q.select({id: repo.id, off: repo.offAt}).from(repo).where(and(eq(repo.userId, user), eq(repo.name, name))))[0] as {id: number; off: Date | null} | undefined;
   /** A line (with its draft only when asked for), its repo's number, and whether its repo is off: one read. */
   const lineAt = async (q: Db, user: string, name: string, l: string, draft = false): Promise<Line | undefined> =>
-    (await q.select({...lineCols, ...(draft ? {draft: line.draft} : {})}).from(line).innerJoin(repo, eq(repo.id, line.repoId))
+    (await q.select({...lineCols, ...(draft ? {draft: line.draft, modes: line.modes} : {})}).from(line).innerJoin(repo, eq(repo.id, line.repoId))
       .where(and(eq(repo.userId, user), eq(repo.name, name), eq(line.name, l))))[0];
   /** The row of line `l` of repo `id`. */
   const lineRow = (id: number, l: string) => and(eq(line.repoId, id), eq(line.name, l));
@@ -150,12 +173,13 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
   /** When `name` went for good, if it did lately. */
   const goneAt = async (q: Db, user: string, name: string) =>
     ((await q.select({at: repoGone.at}).from(repoGone).where(and(remembered(user), eq(repoGone.name, name))))[0] as {at: Date} | undefined)?.at.getTime();
-  /** The trees of the commits `ids` of repo `id`; one not there is empty. */
+  /** The trees of the commits `ids` of repo `id`, and their modes; one not there is empty. */
   const treesOf = async (q: Db, id: number, ids: (string | null)[]) => {
     const wanted = [...new Set(ids.filter((x): x is string => !!x))];
-    const found = wanted.length ? await q.select({id: cut.id, tree: cut.tree}).from(cut).where(and(eq(cut.repoId, id), inArray(cut.id, wanted))) : [];
-    const by = new Map<string, Tree>(found.map((r: {id: string; tree: Tree}) => [r.id, r.tree]));
-    return (c: string | null): Tree => (c && by.get(c)) || {};
+    const found = wanted.length ? await q.select({id: cut.id, tree: cut.tree, modes: cut.modes}).from(cut).where(and(eq(cut.repoId, id), inArray(cut.id, wanted))) : [];
+    const by = new Map<string, {tree: Tree; modes: Modes}>(found.map((r: {id: string; tree: Tree; modes: Modes}) => [r.id, r]));
+    const tree = (c: string | null): Tree => (c && by.get(c)?.tree) || {};
+    return Object.assign(tree, {modes: (c: string | null): Modes => (c && by.get(c)?.modes) || {}});
   };
 
   // Repos are their main lines; one turned off says when it goes for good.
@@ -192,9 +216,13 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
   v1.patch('/repos/:name/draft', async (c) => {
     const user = c.get('userId'), name = c.req.param('name'), l = lineOf(c), anew = c.req.query('anew') === '1';
     if (!validName(name) || !validLine(l)) return c.json({error: 'Not found'}, 404);
-    const b = await body<{version?: unknown; set?: unknown; remove?: unknown}>(c);
+    const b = await body<{version?: unknown; set?: unknown; remove?: unknown; modes?: unknown}>(c);
     if (!b || typeof b.version !== 'number' || typeof b.set !== 'object' || b.set === null || Array.isArray(b.set) || !Array.isArray(b.remove)) return c.json({error: 'a diff'}, 400);
     const set = b.set as Record<string, unknown>, remove = b.remove as unknown[];
+    // Each mode is of a file this diff sets, with an execute bit: anything else is not a mode a repo keeps.
+    if (b.modes !== undefined && (typeof b.modes !== 'object' || b.modes === null || Array.isArray(b.modes))) return c.json({error: 'modes: path -> mode'}, 400);
+    const sent = b.modes as Record<string, unknown> | undefined;
+    for (const [p, m] of Object.entries(sent ?? {})) if (typeof set[p] !== 'string' || !validMode(m)) return c.json({error: 'A mode no file here may have', path: p}, 400);
     if (Object.keys(set).length + remove.length > LIMIT.diff) return c.json({error: 'Too many changes at once'}, 413);
     for (const [p, v] of Object.entries(set)) if (!validPath(p) || !(v === null || (typeof v === 'string' && HEX.test(v)))) return c.json({error: 'A path no repo may have', path: p}, 400);
     for (const p of remove) if (typeof p !== 'string' || !validPath(p)) return c.json({error: 'A path no repo may have', path: String(p)}, 400);
@@ -219,6 +247,7 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
       if (current !== b.version) refuse(409, {version: current});
       const was = row?.draft ?? {};
       const tree = applyDiff(was, set as Tree, remove as string[]);
+      const modes = applyModes(row?.modes ?? {}, tree, set as Tree, sent as Modes | undefined);
       const size = JSON.stringify(tree).length;
       if (Object.keys(tree).length > LIMIT.files || size > LIMIT.tree) refuse(413, {error: 'Too many files for one repo'});
       if (!row) {
@@ -232,11 +261,11 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
       const kept = {bytes: line.bytes, files: line.fileBytes};
       const [before] = row ? await tx.select(kept).from(line).where(lineRow(row.id, l)) as {bytes: number; files: number}[] : [{bytes: 0, files: 0}];
       let after: {bytes: number; files: number}[];
-      if (row) after = await tx.update(line).set({draft: tree, version: current + 1, updatedAt: sql`now()`}).where(and(lineRow(row.id, l), eq(line.version, current))).returning(kept);
+      if (row) after = await tx.update(line).set({draft: tree, modes, version: current + 1, updatedAt: sql`now()`}).where(and(lineRow(row.id, l), eq(line.version, current))).returning(kept);
       else {
         await tx.delete(repoGone).where(and(eq(repoGone.userId, user), eq(repoGone.name, name)));
         const [made] = await tx.insert(repo).values({userId: user, name}).returning({id: repo.id}) as {id: number}[];
-        after = await tx.insert(line).values({repoId: made.id, userId: user, name: 'main', draft: tree, version: 1, startedBy: c.get('name')}).returning(kept);
+        after = await tx.insert(line).values({repoId: made.id, userId: user, name: 'main', draft: tree, modes, version: 1, startedBy: c.get('name')}).returning(kept);
       }
       if (after[0]) await d.plans.grew(tx, user, Number(after[0].bytes) + Number(after[0].files) - Number(before.bytes) - Number(before.files));
       return current + 1;
@@ -250,13 +279,14 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
    * holds the account's lock in a transaction: refused, neither stays.
    */
   const commit = async (tx: Db, user: string, row: Line,
-    w: {merged: string | null; tree: Tree; kind: string; title: string; issue: string; note: string; added: number; removed: number}, draft?: Tree) => {
+    w: {merged: string | null; tree: Tree; modes: Modes; kind: string; title: string; issue: string; note: string; added: number; removed: number}, draft?: {tree: Tree; modes: Modes}) => {
     await fits(tx, user, JSON.stringify(w.tree).length);
     const time = Date.now();
-    const id = await cutId({repo: `${row.name}${row.line === 'main' ? '' : `@${row.line}`}`, parent: row.head, tree: w.tree, kind: w.kind, title: w.title, issue: w.issue, note: w.note, time});
-    await tx.insert(cut).values({repoId: row.id, id, userId: user, parent: row.head, merged: w.merged, tree: w.tree, kind: w.kind, title: w.title,
+    const modes = modesFor(w.tree, w.modes);
+    const id = await cutId({repo: `${row.name}${row.line === 'main' ? '' : `@${row.line}`}`, parent: row.head, tree: w.tree, modes, kind: w.kind, title: w.title, issue: w.issue, note: w.note, time});
+    await tx.insert(cut).values({repoId: row.id, id, userId: user, parent: row.head, merged: w.merged, tree: w.tree, modes, kind: w.kind, title: w.title,
       issue: w.issue, note: w.note, added: w.added, removed: w.removed, time: new Date(time)}).onConflictDoNothing();
-    const moved = await tx.update(line).set({head: id, updatedAt: sql`now()`, ...(draft ? {draft, version: row.version + 1} : {})})
+    const moved = await tx.update(line).set({head: id, updatedAt: sql`now()`, ...(draft ? {draft: draft.tree, modes: modesFor(draft.tree, draft.modes), version: row.version + 1} : {})})
       .where(and(lineRow(row.id, row.line), eq(line.version, row.version), row.head === null ? isNull(line.head) : eq(line.head, row.head))).returning({head: line.head});
     if (!moved.length) refuse(409, {head: row.head, version: row.version});
     return {id, time};
@@ -275,7 +305,7 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
       const row = await lineAt(tx, user, name, l, true);
       on(row?.off);
       if (!row || row.version !== b.version || row.head !== b.parent) refuse(409, {head: row?.head ?? null, version: row?.version ?? 0});
-      return commit(tx, user, row, {merged: null, tree: row.draft!, ...(words as {kind: string; title: string; issue: string; note: string}),
+      return commit(tx, user, row, {merged: null, tree: row.draft!, modes: row.modes ?? {}, ...(words as {kind: string; title: string; issue: string; note: string}),
         added: count(b.added), removed: count(b.removed)});
     });
     return c.json(made, 201);
@@ -298,7 +328,7 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
   // ?summary=1 that is all, and no tree is read or sent (a client that compares trees itself asks without).
   v1.get('/repos/:name/log', async (c) => {
     const limit = Math.min(LIMIT.log, Math.max(1, Number(c.req.query('limit') ?? 50) || 50));
-    const trees = c.req.query('summary') === '1' ? sql`` : sql`c.tree, `;
+    const trees = c.req.query('summary') === '1' ? sql`` : sql`c.tree, c.modes, `;
     const row = await lineAt(db, c.get('userId'), c.req.param('name'), lineOf(c));
     on(row?.off);
     if (!row?.head) return c.json([]);
@@ -422,13 +452,15 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
       // Work starts from what main last committed, not from main's uncommitted draft. A repo
       // nobody has committed yet gets its first commit (what it was made with) here, so the
       // work shows only what it changes.
-      const head = main.head ?? (await commit(tx, user, main, {merged: null, tree: main.draft!, kind: '', title: 'Start', issue: '', note: '', added: 0, removed: 0})).id;
+      const head = main.head ?? (await commit(tx, user, main, {merged: null, tree: main.draft!, modes: main.modes ?? {}, kind: '', title: 'Start', issue: '', note: '', added: 0, removed: 0})).id;
       // The issue itself comes along when main has it written but not committed: the work is about it.
-      const from = {...(head === main.head ? (await treesOf(tx, main.id, [head]))(head) : main.draft!)};
+      const cuts = await treesOf(tx, main.id, [head]);
+      const from = {...(head === main.head ? cuts(head) : main.draft!)};
+      const fromModes = head === main.head ? cuts.modes(head) : main.modes ?? {};
       const written = main.draft![issue];
       if (written && !from[issue]) from[issue] = written;
       await fits(tx, user, JSON.stringify(from).length);
-      await tx.insert(line).values({repoId: main.id, userId: user, name: stem, base: head, head, pushed: head, draft: from, version: 1, startedBy: c.get('name')});
+      await tx.insert(line).values({repoId: main.id, userId: user, name: stem, base: head, head, pushed: head, draft: from, modes: modesFor(from, fromModes), version: 1, startedBy: c.get('name')});
       return {row: (await lineAt(tx, user, name, stem))!, made: true};
     });
     return c.json(lineShown(row), made ? 201 : 200);
@@ -538,8 +570,11 @@ export function repos(d: {db: Db; quota?: number; plans: Plans}, v1: Hono<Vars>)
       // main's uncommitted draft keeps its own changes; what the merge brings is laid over it.
       const draft = merge3(tree(main.head), main.draft!, merged.tree);
       if (draft.conflicts.length) refuse(409, {conflicts: draft.conflicts, draft: true});
-      const made = await commit(tx, user, main, {merged: row.head, tree: merged.tree, kind: row.kind, title: row.title,
-        issue: issueOf(row.line), note: row.note, added: 0, removed: 0}, draft.tree);
+      // Modes are merged as the trees are; one both changed keeps main's (a mode is never what refuses a merge).
+      const modes = modesFor(merged.tree, merge3(tree.modes(row.base), tree.modes(main.head), tree.modes(row.head)).tree);
+      const draftModes = modesFor(draft.tree, merge3(tree.modes(main.head), main.modes ?? {}, modes).tree);
+      const made = await commit(tx, user, main, {merged: row.head, tree: merged.tree, modes, kind: row.kind, title: row.title,
+        issue: issueOf(row.line), note: row.note, added: 0, removed: 0}, {tree: draft.tree, modes: draftModes});
       return {merged: made.id, ...changeShown(name, (await changed(tx, row.id, {state: 'merged', updatedAt: new Date()}))!)};
     });
     return c.json(out);

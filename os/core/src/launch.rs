@@ -345,6 +345,7 @@ pub fn run(s: &Sandbox) -> io::Result<i32> {
     write("/proc/self/setgroups", "deny")?;
     write("/proc/self/uid_map", &format!("0 {uid} 1"))?;
     write("/proc/self/gid_map", &format!("0 {gid} 1"))?;
+    let front = Front::now();
     let child = unsafe { libc::fork() };
     if child < 0 {
         return Err(io::Error::last_os_error());
@@ -362,25 +363,59 @@ pub fn run(s: &Sandbox) -> io::Result<i32> {
     SUPERVISED.store(child, std::sync::atomic::Ordering::SeqCst);
     unsafe { libc::signal(libc::SIGINT, forward as *const () as libc::sighandler_t) };
     let mut status = 0;
-    loop {
+    let waited = loop {
         let r = unsafe { libc::waitpid(child, &mut status, 0) };
         if r == child {
-            break;
+            break Ok(());
         }
         if io::Error::last_os_error().raw_os_error() != Some(libc::EINTR) {
-            return Err(io::Error::last_os_error());
+            break Err(io::Error::last_os_error());
+        }
+    };
+    front.give_back();
+    waited?;
+    Ok(if libc::WIFEXITED(status) { libc::WEXITSTATUS(status) } else { 128 + libc::WTERMSIG(status) })
+}
+
+/// The terminal's group in front when a Prompt starts. The shell inside takes the terminal (init),
+/// and when it ends its group is gone: whoever started it is left behind, where reading a key stops
+/// it (SIGTTIN) or ends input (bug: Menu → Prompt → exit left l3 instead of the menu). So it is given back.
+struct Front(Option<libc::pid_t>);
+
+impl Front {
+    fn now() -> Front {
+        // SAFETY: plain calls on standard input.
+        Front(unsafe { (libc::isatty(0) == 1).then(|| libc::tcgetpgrp(0)).filter(|p| *p > 0) })
+    }
+
+    fn give_back(&self) {
+        let Some(group) = self.0 else { return };
+        // SAFETY: asked from behind, the request is SIGTTOU; ignored for the asking, then as it was.
+        unsafe {
+            let before = libc::signal(libc::SIGTTOU, libc::SIG_IGN);
+            libc::tcsetpgrp(0, group);
+            libc::signal(libc::SIGTTOU, before);
         }
     }
-    Ok(if libc::WIFEXITED(status) { libc::WEXITSTATUS(status) } else { 128 + libc::WTERMSIG(status) })
 }
 
 /// Run `s` in a child, so this process keeps its own namespaces and can run
 /// another after it; the exit code of the child's shell.
 pub fn run_apart(s: &Sandbox) -> io::Result<i32> {
+    run_apart_with(s, || Ok(()))
+}
+
+/// As run_apart, with `keep` made in the child first and held while it runs: the child is the
+/// Prompt's supervisor, so its record (prompt::record) names the child, which Stop ends.
+pub fn run_apart_with<G>(s: &Sandbox, keep: impl FnOnce() -> io::Result<G>) -> io::Result<i32> {
+    let front = Front::now();
     let pid = unsafe { libc::fork() };
     if pid < 0 { return Err(io::Error::last_os_error()); }
     if pid == 0 {
-        let code = run(s).unwrap_or_else(|e| { eprintln!("l3: {e}"); 126 });
+        let code = match keep() {
+            Ok(held) => { let code = run(s).unwrap_or_else(|e| { eprintln!("l3: {e}"); 126 }); drop(held); code }
+            Err(e) => { eprintln!("l3: {e}"); 126 }
+        };
         unsafe { libc::_exit(code) };
     }
     // Ctrl-C is the child's to pass on; this one waits it out.
@@ -392,6 +427,8 @@ pub fn run_apart(s: &Sandbox) -> io::Result<i32> {
         if io::Error::last_os_error().raw_os_error() != Some(libc::EINTR) { break Err(io::Error::last_os_error()); }
     };
     unsafe { libc::signal(libc::SIGINT, before) };
+    // Stopped from outside, the child gave nothing back itself.
+    front.give_back();
     waited?;
     Ok(if libc::WIFEXITED(status) { libc::WEXITSTATUS(status) } else { 128 + libc::WTERMSIG(status) })
 }

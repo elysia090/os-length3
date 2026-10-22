@@ -610,18 +610,41 @@ at a terminal is used the same way, and stays a command line:
   for the rest, in place, one line each, as the app's fields ask: the name
   over the field, what goes in it beside (First line, Kind：title, as Fix：…),
   a repo or a template chosen in a row of their own (one repo is chosen
-  without asking). What cannot be undone at once (Remove, Free, Reset, Sign
+  without asking). What cannot be undone at once (Delete, Free, Reset, Sign
   out, Block) is asked first, Not now first and the deed beside it. Words
   the command refuses (a name taken) are said under the field, which is
-  asked again. An empty line is Not now.
+  asked again with them in it, to be fixed. An empty line is Not now.
+- **A field is a line editor**: it starts with what the thing says now
+  (Edit a TODO: its line; a profile's name), or, asking a path, with the
+  folder the menu is in (`notes/src/`); ←→, Home, End, Backspace and Delete
+  move and take by whole characters, Japanese as English; only what is
+  typed is kept, never a key's own bytes. Its keys are said under it.
+- **Ctrl-C, Esc and Enter by place**, said where they act: in the rows q,
+  Esc or Ctrl-C leave l3 and Backspace goes back to the rail; in a field
+  Enter keeps, Esc is Not now (back to the rows, nothing done) and Ctrl-C
+  leaves l3 as a program Ctrl-C ends does (130), with nothing half made; in
+  a Prompt opened from the menu Ctrl-C is the program's, as at any shell,
+  and `exit` comes back to the menu on the repo it was opened on (said as
+  it opens). Whether Ctrl-C in a field should go back rather than leave is
+  the person's to decide; it leaves, as it did.
+- **Narrow terminals**: a row too wide is cut with … except the focused
+  one, which is said whole over as many lines as it takes; the keys line
+  wraps by whole phrases, the ways back or out (Backspace, q, Esc) first, so
+  at 50 columns nothing that leaves is cut off. Past nine rows each keeps its
+  number to be read by (1–9 still jump).
 - **Every deed says the command it is** before it runs (`→ l3 start
   notes#1`), so the words are learned by seeing them and never needed. Its
   answer is l3's own, and then the page's rows again, read anew, with the
   focus on what was just done or made (§1, What one was doing stays).
-- **After a command typed by hand**, its next deeds come in one short row
-  (`notes#1  Push · Open · Back to main`), with nothing chosen: Enter alone,
-  Esc or any other key passes it by and leaves nothing behind; keys typed
-  ahead for the next command are never taken for it.
+- **After a command typed by hand**, its next deeds are said in one line
+  (`Next for notes#1  Push · Open · Back to main`), and asked nothing: l3
+  reads no key, so all the person types next is the shell's (a row that
+  waited for a key took the first character of the next command, which l3
+  cannot give back without replaying input). What a command just made comes
+  first (the 13th TODO's Done, not the first twelve's), and what is left
+  out past twelve is said. `l3 next` opens them: the same row walked with
+  ←→ and Enter, Enter alone or Esc going on, each deed done as its command
+  and those after it offered again.
 - **One table drives both.** A deed is a form of `cli/src/spec.rs` with what
   the menu needs beside it: its word in both languages, what it is pressed
   on, the facts it is offered under, the words it gives itself, what it
@@ -650,13 +673,47 @@ As with GitHub, the copy that counts is the Remote's, and work on a device
 is not trusted until it is there; here that reaches to the whole OS. A
 repo on the Remote (`service/`) has two things:
 
-- **draft**: the working tree as it is now, path → the sha256 of the file.
+- **draft**: the working tree as it is now, path → the sha256 of the file
+  (and, beside it, each executable file's mode: "A file's mode" below).
   It has a version, and a change is a diff made on a version: one that
   names an older version is refused with the draft as it is, so nothing
   sent is ever overwritten.
 - **head**: the last commit. Commit makes the draft at a version a commit, named
   by the sha256 of its record (tree, parent, words), and moves the head by
   compare-and-set.
+
+#### A file's mode
+
+A tree is path → digest; beside it, a draft and each commit keep **modes**:
+path → the file's permission bits (`{"run.sh": 493}`, 0755), only for a
+file the tree names that has an execute bit. A path not there is a plain
+file. One representation everywhere, for the app's native sync (core), l3
+and the web's writeback alike: it is not folded into the tree's values, so
+a tree stays path → digest for everyone who reads one (an old client, the
+sweep, the log's counts), and a commit's id changes only when it has modes.
+
+- **GET** `/v1/repos/:name` says `modes` beside `draft`; a Remote from
+  before modes says none, and a client takes that as "this Remote keeps no
+  modes".
+- **PATCH** `…/draft` takes `modes` beside `set`: each path set that has an
+  execute bit, with its bits; a path set and not in `modes` is a plain file
+  there. A mode alone is a change: the path is set again with the same
+  digest and its mode. A client that sends no `modes` (one from before)
+  cannot say, so what it sets keeps the mode it had: an execute bit is never
+  dropped for not being known of. A mode on a path not set, without an
+  execute bit, or beyond 0777 is refused.
+- **Commits** keep the draft's modes; work on an issue starts with its
+  commit's; a merge merges them as trees are merged (one both changed keeps
+  main's: a mode never refuses a merge); a path removed takes its mode.
+- **Taking in** writes each file with the Remote's mode, and a mode changed
+  there only (the file's bytes as agreed) is taken as a file changed there
+  only is; one changed here is sent. A file rewritten here keeps its mode.
+- **Expand only** (migration 0010): both columns default to `{}`, so the
+  Worker before reads past them and every client before keeps working.
+- Where the Remote keeps no modes yet, an execute bit here is named among
+  what cannot be sent (`l3 repo`'s `unsendable`), and **the last copy that
+  has one is never freed**: Free asks the Remote's modes to be this copy's.
+  Owner, ACLs and extended attributes are not carried.
 
 So a device's copy is never the only copy, and history stays deliberate.
 Every change made here (in Forge, by l3, by a Prompt) is sent as a diff
@@ -1028,9 +1085,27 @@ with it.
     cannot be sent (a link, a file over 16 MB, a `.git`), there is no Remote
     yet, it is the root Prompts run on, it is Home's settings.
   Under the list, 空けられるもの with its total and 全部空ける. Freeing stays
-  to say what happened: the bytes removed (counted before removal), the
-  host's free space as it was seen to change and how long it took to show,
-  and anything kept with the reason.
+  to say what happened, as two things that are not one: what this device
+  had allocated and let go (counted from the files' blocks before removal:
+  Verified), and the host's free space as it was observed to change and how
+  long it took to show (a file still linked from elsewhere or held open is
+  given back only when its last link or holder goes, and other programs
+  write meanwhile, so the second can be less); then anything kept, with the
+  reason.
+- **What is checked is what goes.** A repo's copy is freed only as it was
+  when the Remote was seen to hold it, up to the moment it goes: each copy,
+  checked, is moved aside in one rename (beside it, `.<name>.freeing-<pid>`,
+  a name nothing lists, syncs or reclaims), so nothing can open its files by
+  name any more; then no process may still hold anything in it (a file or
+  folder open or mapped, or as its current folder or root, read from
+  `/proc`: what it holds it could write on into); then what was moved is
+  read again whole, every byte, no kept digest taken, and must be exactly
+  the Remote's draft, asked once more; only then is it removed. Anything
+  short of that puts every copy back where it was and Free is refused, so
+  late bytes are on the Remote or here, never freed and nowhere (a file
+  written by name after the move fails, and its writer is told). A final
+  rehash alone would only narrow the window, and the sync's lock does not
+  stop an ordinary write; this holds to the delete.
 - **動いている Prompt** is shown while one runs, a small card each (the
   size of Home's cards, smaller, so a few do not stretch across the page):
   where it runs (root, with its process count, or l3), the memory its

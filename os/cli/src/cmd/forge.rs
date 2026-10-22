@@ -121,13 +121,26 @@ pub fn prompt(ctx: &Ctx, call: &Call) -> Result<Reply> {
     // What .packages and .setup ask for, first (once, while they and the root stay as they are).
     launch::set_up(&s, about.distro.is_some()).map_err(|e| Error::Io(e.to_string()))?;
     // Recorded while it runs, so `l3 prompt ls` (and Runtime) see it and `l3 prompt stop` can end it.
-    let recorded = length3_core::prompt::record(&paths::data_dir(), &repo, s.network).map_err(|e| Error::Io(e.to_string()))?;
-    let code = launch::run(&s).map_err(|e| Error::Io(e.to_string()));
-    drop(recorded);
-    let code = code?;
+    let data = paths::data_dir();
+    let code = if crate::menu::active() {
+        // Said before the shell takes the keys: in it, Ctrl-C is the program's (as at any shell), and leaving it comes back here.
+        crate::out::note(&tr!("exit (or Ctrl-D) comes back to the menu; Ctrl-C goes to what runs in the Prompt", "exit（か Ctrl-D）でメニューに戻ります。Ctrl-C は Prompt の中で動くものに届きます"));
+        // From the menu, in a child: the menu keeps its own namespaces (a second Prompt could not be made
+        // in them) and may have a thread still asking the Remote (a process with two cannot make them).
+        launch::run_apart_with(&s, || length3_core::prompt::record(&data, &repo, s.network))
+    } else {
+        let recorded = length3_core::prompt::record(&data, &repo, s.network).map_err(|e| Error::Io(e.to_string()))?;
+        let code = launch::run(&s);
+        drop(recorded);
+        code
+    };
+    let code = code.map_err(|e| Error::Io(e.to_string()))?;
     if ctx.connected() { crate::sync::send(&repo); }
-    // Opened from the menu, the menu goes on once the shell ends; typed, l3 ends with the shell's code.
-    if crate::menu::active() { return Ok(Reply::Nothing); }
+    // Opened from the menu, the menu goes on once the shell ends, back on the repo it was opened on; typed, l3 ends with the shell's code.
+    if crate::menu::active() {
+        crate::out::note(&tr!("The Prompt of {} ended ({}); back to the menu", "{} の Prompt が終わりました（{}）。メニューに戻ります", repo, code));
+        return Ok(Reply::Nothing);
+    }
     std::process::exit(code);
 }
 

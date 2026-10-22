@@ -15,8 +15,8 @@ use serde_json::json;
 const LIMIT: u64 = 256 * 1024;
 
 pub fn read(ctx: &Ctx, call: &Call) -> Result<Reply> {
-    // Outside a repo, with nothing named: the repos.
-    if call.word(0).is_none() && ctx.here.is_none() { return super::forge::repo_list(ctx, call); }
+    // Outside a repo, with nothing named (or /root, where they are): the repos.
+    if ctx.here.is_none() && call.word(0).is_none_or(|w| w.trim_end_matches('/') == "/root") { return super::forge::repo_list(ctx, call); }
     let (repo, rel) = target::path(ctx, call, 0)?;
     let r = ctx.repos()?;
     let at = shown(&repo, &rel);
@@ -24,6 +24,8 @@ pub fn read(ctx: &Ctx, call: &Call) -> Result<Reply> {
     // A link to nothing is there, but what it names is not (4, as for anything not there; bug: 1).
     if r.dangling(&repo, &rel) { return Err(Error::NotFound(tr!("{} is a link to something that is not there", "{} はリンクですが、指す先がありません", at))); }
     if let Ok(entries) = r.tree(&repo, &rel) {
+        // The folder is where the menu is now, empty or not: what it offers next is done here.
+        crate::menu::shown_at(if rel.is_empty() { repo.clone() } else { format!("{repo}/{rel}") });
         // Each entry, for the menu, named as File names it (REPO/PATH).
         for e in &entries {
             crate::menu::see(|| {
@@ -81,7 +83,7 @@ pub fn rm(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let link = r.place(&repo).is_ok_and(|d| d.join(&rel).is_symlink());
     let inside = if link { None } else { r.tree(&repo, &rel).ok().map(|_| count(&r, &repo, &rel)) };
     r.remove(&repo, &rel)?;
-    let said = match inside { Some(n) => tr!("Removed the folder {} ({})", "フォルダー {} を消しました（{}）", at, files(n)), None => tr!("Removed {}", "{} を消しました", at) };
+    let said = match inside { Some(n) => tr!("Deleted the folder {} ({})", "フォルダー {} を消しました（{}）", at, files(n)), None => tr!("Deleted {}", "{} を消しました", at) };
     Ok(Reply::done(said, json!({"repo": repo, "path": rel, "files": inside})))
 }
 

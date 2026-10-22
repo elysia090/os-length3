@@ -86,10 +86,41 @@ pub(super) fn place(dir: &Path, rel: &str) -> Result<PathBuf> {
 /// Durable before the base that records it is (set_base): a file the base
 /// says came from the Remote but a crash took back would be sent as a change.
 pub(super) fn write_file(path: &Path, bytes: &[u8]) -> Result<()> {
-    if fs::symlink_metadata(path).is_ok_and(|m| !m.is_file()) {
+    write_file_as(path, bytes, None)
+}
+
+/// As write_file, with its mode: Some(Some(bits)) those, Some(None) a plain file's (as the umask makes one),
+/// None (a Remote that keeps no modes says nothing) the mode the file had here, if it was here.
+pub(super) fn write_file_as(path: &Path, bytes: &[u8], mode: Option<Option<u32>>) -> Result<()> {
+    let was = fs::symlink_metadata(path);
+    if was.as_ref().is_ok_and(|m| !m.is_file()) {
         return Err(crate::tr!("{}: something that is not a file is there", "{}：ファイルではないものがあります", path.display()));
     }
-    crate::atomic::replace(path, bytes, crate::atomic::How::RECORD).map_err(|e| crate::tr!("{}: {}", "{}：{}", path.display(), e))
+    #[cfg(unix)]
+    let kept = { use std::os::unix::fs::PermissionsExt; was.ok().map(|m| m.permissions().mode() & 0o777).filter(|m| m & 0o111 != 0) };
+    #[cfg(not(unix))]
+    let kept: Option<u32> = None;
+    let how = crate::atomic::How { mode: mode.unwrap_or(kept), ..crate::atomic::How::RECORD };
+    crate::atomic::replace(path, bytes, how).map_err(|e| crate::tr!("{}: {}", "{}：{}", path.display(), e))
+}
+
+/// The modes the Remote changed and this device did not, for files whose bytes are as agreed: taken, as
+/// a file changed there only is (bug: 0755 came back 0644 from the Remote, whose trees kept no modes).
+pub(super) fn take_modes(dir: &Path, base: &Modes, here: &Modes, there: &Modes, tree: &Tree, p: &Plan) {
+    let taken: BTreeSet<&String> = p.take.iter().map(|(path, _)| path).chain(p.both.iter().map(|(path, _)| path)).collect();
+    let paths: BTreeSet<&String> = base.keys().chain(there.keys()).collect();
+    for path in paths {
+        let (b, l, r) = (base.get(path), here.get(path), there.get(path));
+        if r == b || l != b || taken.contains(path) || !matches!(tree.get(path), Some(Some(_))) || crate::owned::within_derived(dir, path) { continue; }
+        let Ok(at) = place(dir, path) else { continue };
+        #[cfg(unix)]
+        if fs::symlink_metadata(&at).is_ok_and(|m| m.is_file()) {
+            use std::os::unix::fs::PermissionsExt;
+            let now = fs::metadata(&at).map(|m| m.permissions().mode() & 0o777).unwrap_or(0o644);
+            let to = r.copied().unwrap_or(now & !0o111);
+            let _ = fs::set_permissions(&at, fs::Permissions::from_mode(to));
+        }
+    }
 }
 
 /// Whether what is at `at` is still what the tree read said (None: nothing).
@@ -105,7 +136,9 @@ pub(super) fn still(at: &Path, expect: Option<&Option<String>>) -> bool {
 /// Write the Remote's side of `p` here. A file that cannot be written where
 /// it is (a folder in its place, or a file where its folder would be) goes
 /// beside; a path that changed here while this ran is left for the next round.
-pub(super) fn apply(client: &Client, dir: &Path, here: &Tree, p: &Plan) -> Result<Vec<String>> {
+/// `modes`: the Remote's, when it keeps them; each file written takes its mode from them.
+pub(super) fn apply(client: &Client, dir: &Path, here: &Tree, p: &Plan, modes: Option<&Modes>) -> Result<Vec<String>> {
+    let mode_of = |path: &str| modes.map(|m| m.get(path).copied());
     let mut aside = Vec::new();
     let unwritable = |path: &str| crate::tr!("{}: could not be written", "{}：書けませんでした", path);
     let put_beside = |path: &str, bytes: &[u8]| -> Result<()> {
@@ -141,7 +174,7 @@ pub(super) fn apply(client: &Client, dir: &Path, here: &Tree, p: &Plan) -> Resul
             }
             Some(Some(sha)) => {
                 let bytes = client.blob(sha)?;
-                if write_file(&at, &bytes).is_err() {
+                if write_file_as(&at, &bytes, mode_of(path)).is_err() {
                     put_beside(path, &bytes)?;
                     aside.push(path.clone());
                 }
@@ -163,8 +196,8 @@ pub(super) fn apply(client: &Client, dir: &Path, here: &Tree, p: &Plan) -> Resul
                     n += 1;
                     keep = place(dir, &beside_as(path, &who, n)).map_err(|_| unwritable(path))?;
                 }
-                write_file(&keep, &mine)?;
-                write_file(&at, &bytes)?;
+                write_file_as(&keep, &mine, None)?;
+                write_file_as(&at, &bytes, mode_of(path))?;
             }
             // Not a file here any more: the Remote's goes beside what is in its way.
             Err(_) => put_beside(path, &bytes)?,

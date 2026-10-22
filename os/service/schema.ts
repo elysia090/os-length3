@@ -41,6 +41,12 @@ export * from './schema.auth.ts';
 
 /** path -> blob sha256, or null for an empty folder. */
 export type Tree = Record<string, string | null>;
+/**
+ * Beside a tree, each file's mode where it is not a plain file's: path -> its permission bits (0o755 is 493),
+ * only for a file its tree names with an execute bit. A path not in it is a plain file. Old clients send none
+ * and read past it (DESIGN.md §6, "A file's mode").
+ */
+export type Modes = Record<string, number>;
 
 /** A moment, with its zone, so nothing depends on the session's time zone. */
 const moment = (name: string) => timestamp(name, {withTimezone: true});
@@ -177,6 +183,8 @@ export const cut = pgTable('cut', {
   /** For a merge: the commit of the line that was merged. */
   merged: text('merged'),
   tree: jsonb('tree').$type<Tree>().notNull(),
+  /** Its files' modes beside the tree (Modes). */
+  modes: jsonb('modes').$type<Modes>().notNull().default(sql`'{}'::jsonb`),
   bytes: bytesOf('tree'),
   kind: text('kind').notNull().default(''),
   title: text('title').notNull(),
@@ -198,7 +206,7 @@ export const cut = pgTable('cut', {
   foreignKey({name: 'cut_repo', columns: [t.repoId, t.userId], foreignColumns: [repo.id, repo.userId]}).onDelete('cascade'),
   foreignKey({name: 'cut_parent', columns: [t.repoId, t.parent], foreignColumns: [t.repoId, t.id]}),
   foreignKey({name: 'cut_merged', columns: [t.repoId, t.merged], foreignColumns: [t.repoId, t.id]}),
-  check('cut_id', matches('id', re.sha)), check('cut_tree', sql`jsonb_typeof(${t.tree}) = 'object'`),
+  check('cut_id', matches('id', re.sha)), check('cut_tree', sql`jsonb_typeof(${t.tree}) = 'object'`), check('cut_modes', sql`jsonb_typeof(${t.modes}) = 'object'`),
   check('cut_words', sql.raw('char_length(kind) <= 2000 and char_length(title) between 1 and 2000 and char_length(issue) <= 2000 and char_length(note) <= 2000')),
   check('cut_counts', sql`${t.added} >= 0 and ${t.removed} >= 0`)]);
 
@@ -212,6 +220,8 @@ export const line = pgTable('line', {
   head: text('head'),
   pushed: text('pushed'),
   draft: jsonb('draft').$type<Tree>().notNull().default(sql`'{}'::jsonb`),
+  /** Its draft's files' modes beside it (Modes). */
+  modes: jsonb('modes').$type<Modes>().notNull().default(sql`'{}'::jsonb`),
   bytes: bytesOf('draft'),
   /** What its draft's files take, each blob once (kept by a trigger as the draft changes). */
   fileBytes: bigint('file_bytes', {mode: 'number'}).notNull().default(0),
@@ -225,7 +235,7 @@ export const line = pgTable('line', {
   foreignKey({name: 'line_base', columns: [t.repoId, t.base], foreignColumns: [cut.repoId, cut.id]}),
   foreignKey({name: 'line_head', columns: [t.repoId, t.head], foreignColumns: [cut.repoId, cut.id]}),
   foreignKey({name: 'line_pushed', columns: [t.repoId, t.pushed], foreignColumns: [cut.repoId, cut.id]}),
-  check('line_name', matches('name', re.line)), check('line_draft', sql`jsonb_typeof(${t.draft}) = 'object'`),
+  check('line_name', matches('name', re.line)), check('line_draft', sql`jsonb_typeof(${t.draft}) = 'object'`), check('line_modes', sql`jsonb_typeof(${t.modes}) = 'object'`),
   check('line_version', sql`${t.version} >= 0`), check('line_started_by', within('started_by', 200))]);
 
 /**

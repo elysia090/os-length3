@@ -88,6 +88,51 @@ issue/
 README.md	8 B
 --- stderr
 
+$ l3 file /
+[exit 4]
+--- stdout
+--- stderr
+l3: / is not in your repos: l3 reads them as /root/REPO/PATH or REPO/PATH (the rest of / is a Prompt's root, seen inside it)
+
+$ l3 file /root
+[exit 0]
+--- stdout
+notes	2 files · 38 B
+--- stderr
+
+$ l3 file /bin
+[exit 4]
+--- stdout
+--- stderr
+l3: /bin is not in your repos: l3 reads them as /root/REPO/PATH or REPO/PATH (the rest of / is a Prompt's root, seen inside it)
+
+$ l3 file /root/vocab
+[exit 4]
+--- stdout
+--- stderr
+l3: There is no repo vocab here
+
+$ l3 file notes/README.md
+[exit 0]
+--- stdout
+# notes
+--- stderr
+
+$ l3 file rm notes/docs
+[exit 0]
+--- stdout
+Deleted the folder notes/docs (0 files)
+--- stderr
+
+$ l3 help commit
+[exit 0]
+--- stdout
+l3 commit — commit the work
+
+  l3 commit [REPO] [-m note]               on an issue, named after it
+  l3 commit [REPO] "Fix：title" [-m note]  with its subject, Kind：subject (on an issue, the words are its note)
+--- stderr
+
 $ l3 git
 [exit 0]
 --- stdout

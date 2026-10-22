@@ -96,6 +96,16 @@ impl Pty {
         self
     }
 
+    /// Wait until l3 has written one of `texts` since the last key: the first written, or fail with what it wrote.
+    pub fn wait_for(&mut self, texts: &[&'static str]) -> &'static str {
+        let end = std::time::Instant::now() + PATIENCE;
+        loop {
+            let now = strip(&String::from_utf8_lossy(&self.out[self.mark..]));
+            if let Some(t) = texts.iter().filter_map(|t| now.find(t).map(|at| (at, *t))).min().map(|(_, t)| t) { return t; }
+            if !self.read_until(end) { panic!("l3 wrote none of {texts:?}; the terminal shows:\n{}", self.screen()); }
+        }
+    }
+
     /// Type `keys`.
     pub fn send(&mut self, keys: &str) -> &mut Pty {
         use std::io::Write;
@@ -131,6 +141,13 @@ impl Pty {
 
     /// The terminal's lines as a person sees them now: l3's redrawing (cursor up, clear below) played out.
     pub fn screen(&self) -> String { screen(&String::from_utf8_lossy(&self.out)) }
+}
+
+/// A test that fails while l3 waits for a key leaves no l3 behind waiting on a terminal nobody types on.
+impl Drop for Pty {
+    fn drop(&mut self) {
+        if self.child.try_wait().ok().flatten().is_none() { let _ = self.child.kill(); let _ = self.child.wait(); }
+    }
 }
 
 /// Text without its escapes.
@@ -294,6 +311,26 @@ impl Home {
             std::fs::create_dir_all(at.parent().unwrap()).unwrap();
             std::fs::write(at, text).unwrap();
         }
+    }
+
+    /// A root for Prompts made of this host's own sh and the libraries it loads (as `ldd` names them), held
+    /// and current as `l3 root install` leaves one. False where the host has no such sh to lend.
+    pub fn root(&self) -> bool {
+        let sys = self.path("system/test");
+        let root = sys.join("root");
+        for d in ["bin", "root", "tmp", "run", "dev", "proc", "etc"] { std::fs::create_dir_all(root.join(d)).unwrap(); }
+        let Ok(sh) = std::fs::canonicalize("/bin/sh") else { return false };
+        let Ok(ldd) = Command::new("ldd").arg(&sh).output() else { return false };
+        std::fs::copy(&sh, root.join("bin/sh")).unwrap();
+        for lib in String::from_utf8_lossy(&ldd.stdout).split_whitespace().filter(|w| w.starts_with('/')) {
+            let at = root.join(lib.trim_start_matches('/'));
+            std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+            std::fs::copy(lib, &at).unwrap();
+        }
+        std::fs::write(sys.join("installed.json"), r#"{"name":"test","version":"0","sha256":"test","files":1,"bytes":1}"#).unwrap();
+        let _ = std::fs::remove_file(self.path("system/current"));
+        std::os::unix::fs::symlink("test", self.path("system/current")).unwrap();
+        true
     }
 
     /// What was last agreed with the Remote for `name` (its base, as sync keeps it).

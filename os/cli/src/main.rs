@@ -36,14 +36,16 @@ fn main() -> ExitCode {
     };
     let person = term::interactive(call.flags.json);
     if person && call.command.name.is_empty() { return menu::rail(&ctx); }
+    if person && call.command.name == "next" { return menu::next(&ctx); }
     let (done, seen) = if person { menu::noting(|| cmd::perform(&ctx, &call)) } else { (cmd::perform(&ctx, &call), menu::Seen::default()) };
     let offline = matches!(done, Err(out::Error::Offline(_)));
     let ok = done.is_ok();
+    let made = done.as_ref().ok().and_then(|r| menu::made(&call, r));
     let code = match done {
         Ok(reply) => { out::emit(reply, call.flags.json); ExitCode::SUCCESS }
         Err(e) => out::fail(&e, call.flags.json),
     };
     sync::after(&ctx, &call, offline);
-    if person && ok { menu::after(&ctx, &call, &argv, seen); }
+    if person && ok { menu::after(&ctx, &call, &argv, seen, made); }
     code
 }
