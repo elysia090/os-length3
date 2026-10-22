@@ -119,7 +119,7 @@ owned | while IFS=: read -r p f; do
 done
 
 # Without the SSH listener: a Prompt listens for no one (l3 address is the device's).
-(cd "$here" && cargo build -q --profile prompt -p l3 --no-default-features --target x86_64-unknown-linux-musl)
+(cd "$here" && cargo build -q --locked --profile prompt -p l3 --no-default-features --target x86_64-unknown-linux-musl)
 l3="$here/target/x86_64-unknown-linux-musl/prompt/l3"
 install -m 0755 "$l3" "$root/usr/bin/l3"
 mkdir -p "$root/etc/length3"

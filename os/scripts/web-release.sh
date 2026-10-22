@@ -25,7 +25,7 @@ else
   sh "$repo/xlat/userland/build-busybox.sh" "$tarball"
 fi
 
-(cd "$repo/xlat" && cargo build --release --target wasm32-unknown-unknown --lib)
+(cd "$repo/xlat" && cargo build --locked --release --target wasm32-unknown-unknown --lib)
 command -v wasm-tools >/dev/null || cargo install --locked wasm-tools@1.262.0
 sh "$here/scripts/userland.sh"
 
