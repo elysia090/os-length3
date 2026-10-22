@@ -819,7 +819,8 @@ research) has no allowance at all.
   **Runtime** (the environment) → **Remote** (where your repos are kept) →
   **Server** (the people you know, on the Remote: the one purpose whose
   subject is people, not a repo; under the cloud, as it lives there) →
-  **Inbox** (what was sent to you). **+** (a new repo)
+  **Inbox** (what was sent to you) → the **plug** (an operation, as File
+  is: it opens the plugin area at the top of the center). **+** (a new repo)
   comes right under them, a step apart, and is round because it starts
   something rather than opening a place (§1, shapes).
 - A name appears beside an icon on hover or keyboard focus. Choosing an
@@ -866,8 +867,11 @@ strikes through and fades the first line only.
 ### Forge
 
 Where you work. The repos out to work on run as pills in a band on the top
-line; the search box on the right sits on the
-same line, with the reference's chips under it. ⊕ stands first, at the band's left end, and the pills
+line; the search box sits on the same line in the middle of the center, and
+at the center's right end the round switch that puts the right pane away
+and brings it back (put away, the center takes the whole width; what the
+pane showed, what was chosen there and where it was read come back with
+it). ⊕ stands first, at the band's left end, and the pills
 follow it and scroll. One press brings every repo not on the band out at once; this is not adding tabs one at a
 time, and ⊕ stays where it was pressed however many come out.
 Each pill comes off the band with its × (the repo itself is untouched).
@@ -899,7 +903,11 @@ the answers so nothing moves under the pointer, the diff of what saving here
 would do to the other text (theirs struck, yours added, as Forge's diff
 reads). Nothing is saved on its own until it is answered; writing on until
 the two are the same ends it. A file read only in part (over 256 KB) or binary is never
-written back, and says so. Tab types a tab; Escape leaves the text. In each directory README comes first, then the other
+written back, and says so. Tab types a tab; with lines selected it moves
+each of them in by one, the selection kept, and one Undo takes it back. A
+press on a line's number selects that line. Escape leaves the text for the
+page. Undo reaches back across going to another repo or page and back: a
+repo's page is never taken out of the document, only hidden. In each directory README comes first, then the other
 files, then the directories. The only line in Forge is the one between the
 center and the right pane.
 
@@ -940,11 +948,20 @@ above the middle (the reference takes 2 parts, the Prompt 3): the reference
 scrolls and the Prompt does not, so the eye should not have to drop low to
 find it. Until then the Prompt is only its prompt line, and the reference
 takes the room, so a diff reads in it. Narrower than 760 px the right pane
-folds away and the search box stays where it was, on the band's line at
-the right; its results open under it over the center. On the band's line sits the search box for the open
-repo: plain, case-insensitive, line by line; results are grouped by file,
-and a line pressed opens the center there with the line selected. Below,
-on the band line, one reference at a time, switched freely with chips: Issue (the repo's open issues, as Git shows them: one merged or
+folds away and the search box stays on the top line, at its right; the
+switch lays the pane over the center, and Escape or a press outside puts it
+away. The search box is the way to everything the center refers to: plain,
+case-insensitive, line by line in the repo's files (a file whose name holds
+the query first), and its open issues and its runs too; what is found
+opens under the box over the center while the box has the keyboard (↓ goes
+into it, Enter takes the first, Escape back to the box), and follows what is
+saved. A file found by its name opens with the caret in it, a line with the
+line selected (where it is now, if it moved); an issue, a changed file's
+diff or a run is read in the right pane. Under the top line, the plugin
+area: nothing until the rail's plug opens it, then up to seven plugins side
+by side, one at a time (none yet; with none it says so in one quiet line).
+The right pane has no switch of its own: from the top line down, one under
+another, each under its 15/600 heading, Issue (the repo's open issues, as Git shows them: one merged or
 closed is not among them; one line each as #3 Fix：件名, pressed to read one in full), diff (the changes not yet
 cut, file by file: added lines in ink with no fill, the lines kept quiet,
 removed lines quiet and struck, following every save; a file's name opens
@@ -963,7 +980,13 @@ itself scrolls on, this keeps the record). A line pressed there is back in
 the prompt box, the caret at its end, to be changed or sent again; it is
 not run. The Prompt's own status line is
 empty while it simply runs; it speaks only when something is missing (large
-files and binaries not copied in, what could not be written back). The chosen reference is remembered on this device.
+files and binaries not copied in, what could not be written back); once it
+has ended, that and Start again sit side by side at its bottom right. Up
+over the center it is as tall as what it holds, up to 40% of the window, so
+before the first run it does not cover what one reads. The prompt box has
+Run at its right with its keys (Ctrl+Enter), and reaches a step left of the
+files' boxes, so it never reads as the foot of the file behind it. Whether
+the right pane is put away is remembered on this device.
 
 The Prompt never goes silent while something takes time:
 
@@ -1185,8 +1208,9 @@ issues: an issue hides its branch and worktree, and the operations are
 Commit, Push, Change (with Reset), Review, Merge, and Close for one that
 will not be done. It uses the same workbench
 as Forge: the center (one centred column, 760 px at most) with the prompt
-box at its foot, and the narrow right pane with the search box, the
-reference and the Prompt. The page header, then the repo chips (one repo or
+box at its foot, the top line with the search box and the right pane's
+switch, and the narrow right pane with the reference and the Prompt. Under
+the top line, the page header, then the repo chips (one repo or
 all); choosing a repo also points the right pane and the Prompt at it, and
 makes it the repo worked on (§1): Forge opens there next. So does going to
 an issue (an edge, ← →) and starting or continuing one; coming to Git

@@ -420,6 +420,8 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .pills { display: flex; gap: var(--s2); align-items: center; }
 /* The pills take the band's width and scroll there; ⊕ keeps the band's right end, wherever they reach. */
 .repo-strip > .pills { flex: 1; min-width: 0; overflow-x: auto; }
+/* Room round the pills inside their scroller, so a focus ring is not cut by its edges (as .parts has). */
+.repo-strip > .pills { padding: var(--s1); margin: calc(-1 * var(--s1)); }
 .pills:empty { display: none; }
 .pill {
   flex: none; display: flex; align-items: center; min-height: var(--h-row); padding-left: var(--s3);
@@ -428,6 +430,12 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .pill-name { border: 0; padding: 0; background: transparent; color: inherit; cursor: pointer; white-space: nowrap; }
 .pill-close { display: grid; place-items: center; width: var(--h-row); height: calc(var(--h-row) - 2px); border: 0; padding: 0; background: transparent; color: inherit; cursor: pointer; border-radius: var(--r-round); }
 .pill-close .mark, .band-add .mark { width: var(--s4); height: var(--s4); }
+/* The ring is round the part of a pill that has the keyboard, inside the pill: its name, or its ×;
+   on the current pill it is ground over the ink, so it does not sink into it. */
+.pill-name { border-radius: var(--r-round); }
+.pill-name:focus-visible { outline-offset: var(--s1); }
+.pill-close:focus-visible { outline-offset: calc(-1 * var(--s1)); }
+.pill[aria-current] .pill-name:focus-visible, .pill[aria-current] .pill-close:focus-visible { outline-color: var(--ground); }
 .band-add { flex: none; display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; cursor: pointer; }
 /* Nothing left to bring out: ⊕ steps back. */
 .band-add:disabled { opacity: .5; cursor: default; background: transparent; }
@@ -441,6 +449,9 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 /* No pane, no line (Server signed out): the center keeps its width, so nothing on it moves. */
 .work.no-side > .center { border-right-color: transparent; }
 .flow { height: 100%; overflow-y: auto; padding: var(--s3) var(--s5) 160px; }
+/* Scrollbars in the work's own colours, not the browser's white: the thumb a thing one drags (edge), its
+   track the ground under it. Still there and still dragged; forced colours draw the system's own. */
+.work.bench :is(.flow, .code, .reference-body, .search-results, .term-out, .prompt-in, .pills), .work.bench > .side.pane-out { scrollbar-color: var(--edge) transparent; }
 .flow:focus-visible { outline-offset: -2px; }
 .path {
   position: sticky; top: calc(-1 * var(--s3)); z-index: 1;
@@ -491,6 +502,9 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
   position: absolute; left: var(--s5); right: var(--s5); bottom: var(--s5); z-index: 2;
   max-width: 760px; margin: 0 auto; display: grid; gap: var(--s2);
 }
+/* Its left edge a step left of the files' (s3 from the center's edge, theirs s5), so where the two
+   would line up the box reads as its own surface, not the foot of the file behind it. Its right stays. */
+.work.bench .dock { left: var(--s3); }
 /* Under the prompt box, the ground to the center's foot: what scrolls under the box does not show below it.
    It lies behind the box (still over what scrolls), so the box's focus ring is whole. */
 .dock::after { content: ''; position: absolute; z-index: -1; top: 100%; left: -50vw; right: -50vw; height: var(--s5); background: var(--ground); }
@@ -499,10 +513,21 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .dock.resting { opacity: 0; pointer-events: none; }
 @media (prefers-reduced-motion: reduce) { .dock { transition: none; } }
 .term-slot:empty { display: none; }
-.term-slot .term-box { height: clamp(180px, 40vh, 440px); padding: var(--s4); background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-place); }
-.prompt { display: flex; border: 1px solid var(--edge); border-radius: var(--r-place); background: var(--raised); padding: var(--s3) var(--s4); }
+.term-slot .term-box { max-height: clamp(180px, 40vh, 440px); padding: var(--s4); background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-place); }
+/* Up over the center it is as tall as what it holds, up to that: before anything is run only its
+   prompt line, so it does not cover what one reads to write the first line; it grows with the output. */
+.dock > .prompt { min-width: 0; }
+.prompt { display: flex; align-items: flex-end; gap: var(--s3); border: 1px solid var(--edge); border-radius: var(--r-place); background: var(--raised); padding: var(--s3) var(--s4); }
+/* Run at the box's bottom right with its keys, a small button that does not make the box taller;
+   inside the raised box its hover is a step back to the ground. */
+.prompt-run { flex: none; display: inline-flex; align-items: center; gap: var(--s2); margin-block: calc((var(--t-body) * 1.6 - var(--h-row)) / 2); }
+.prompt-run:hover:not(:disabled) { background: var(--ground); }
+.prompt-keys { color: var(--sub); font-family: var(--mono); }
+.prompt-run:disabled { opacity: .5; cursor: default; }
+/* A phone has no keys to name and no room for them: Run alone (its keys stay in its name for those who have them). */
+@media (max-width: 560px) { .prompt-keys { display: none; } }
 .prompt:focus-within { outline: 2px solid var(--ink); outline-offset: 2px; }
-.prompt-in { flex: 1; max-height: 30vh; border: 0; padding: 0; background: transparent; resize: none; font: var(--t-body)/1.6 var(--sans); }
+.prompt-in { flex: 1; min-width: 0; max-height: 30vh; border: 0; padding: 0; background: transparent; resize: none; font: var(--t-body)/1.6 var(--sans); }
 .prompt-in:focus { outline: none; }
 .prompt-in:disabled { cursor: default; }
 .prompt-note:empty { display: none; }
@@ -512,30 +537,20 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .server-layer { position: fixed; top: 0; bottom: 0; left: calc(var(--outer) + var(--rail)); right: 0; z-index: 4; padding: var(--outer-top) var(--outer) var(--outer-bottom) 0; background: var(--ground); animation: layer-in var(--move) cubic-bezier(.2, .9, .25, 1); }
 @keyframes layer-in { from { opacity: 0; transform: translateX(calc(-1 * var(--s4))); } }
 @media (prefers-reduced-motion: reduce) { .server-layer { animation: none; } }
-/* Narrow: the center and its box keep the width; the side steps aside (the Prompt still flies up above the box). */
-/* Narrow, the right pane folds away but the search box stays where it was,
-   on the band's line at the right: pressed, its results open under it over
-   the center, and what was searched is kept as it is when wide. */
+/* Narrow: the center and its box keep the width; the right pane folds away, and the switch at the top
+   line's right end lays it over the center (the Prompt still flies up above the box). The search box
+   stays on the top line, at its right; its results open under it over the center. */
 @media (max-width: 760px) {
-  .work { grid-template-columns: minmax(0, 1fr); position: relative; --search-w: clamp(160px, 40%, 300px); }
-  .work > .side { display: block; position: absolute; top: 0; right: var(--s2); width: var(--search-w); z-index: 2; }
-  .work > .side > .term-home, .work > .side .reference > .chips, .work > .side .reference > .reference-body { display: none; }
-  .work > .side .pane.reference { position: relative; display: block; padding: var(--band) 0 0; overflow: visible; }
-  /* The results are wider than the box, opening under it to its left, over the center. */
-  .work > .side:focus-within .reference > .reference-body {
-    display: block; position: absolute; top: calc(100% + var(--s2)); right: 0; width: min(360px, calc(100vw - var(--rail) - 2 * var(--s4)));
-    max-height: 60vh; overflow: auto; padding: var(--s3); background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-card);
-  }
-  .repo-strip { padding-right: calc(var(--search-w) + var(--s4)); }
-  /* With no band (Git), the page's head keeps clear of the search box on its line, as the band does. */
-  .work.no-strip .flow > .page-head { padding-right: calc(var(--search-w) + var(--s2)); }
+  .work { grid-template-columns: minmax(0, 1fr); position: relative; }
   /* Server's side holds only what its gear holds too (people, repos): it folds, the gear stays. */
   .work > .side.server-side { display: none; }
   .work > .center.server-center { padding-left: var(--s2); padding-right: var(--s2); }
   .server-center .slides { --peek: var(--s5); }
   .center, .repo-strip { border-right: 0; }
+  /* The files 16 px from the rail's line, as every page on a phone (§1); the prompt box a step left of them (F1). */
   .dock { left: var(--s2); right: var(--s2); bottom: var(--s3); }
-  .flow { padding-left: var(--s2); padding-right: var(--s2); }
+  .work.bench .dock { left: var(--s2); }
+  .flow { padding-left: var(--s4); padding-right: var(--s2); }
 }
 
 /* The side: the reference on top, the terminal's home below. While the
@@ -545,8 +560,70 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .work.unrun .side { grid-template-rows: minmax(0, 1fr) auto; }
 .work.prompting .side, .work.reviewing .side { grid-template-rows: minmax(0, 2fr) minmax(0, 0fr); }
 .issue-one .row { flex-wrap: wrap; }
-/* The search box sits on the band's line; the reference chips under it. */
-.pane.reference { display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: var(--s3); padding-top: var(--band); }
+/* The reference: its parts one under another from the top line, the pane's own scroll. */
+.pane.reference { display: grid; grid-template-rows: minmax(0, 1fr); padding-top: var(--band); }
+.ref-parts { display: grid; gap: var(--s5); }
+.ref-part { display: grid; gap: var(--s2); align-content: start; }
+.ref-part > h2 { font-size: var(--t-body); font-weight: 600; }
+.ref-part .diff-file:last-child { margin-bottom: 0; }
+.reference-body .revealed { background: var(--raised); border-radius: var(--r-field); transition: background var(--motion); }
+
+/* The bench's top line: the band (Forge's) at the left, the search box in the middle of the center,
+   the right pane's switch at its right end. Its row is the band's, so nothing under it moves. */
+.work.bench, .work.bench.no-strip { grid-template-rows: auto minmax(0, 1fr); }
+.work.bench > .bar {
+  grid-column: 1; grid-row: 1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(200px, 360px) minmax(0, 1fr);
+  align-items: center; gap: var(--s3); padding: var(--band) var(--s5) var(--s3);
+}
+.work.bench > .bar > .repo-strip { grid-column: 1; min-width: 0; padding: 0; border: 0; overflow: visible; }
+.work.bench > .bar > .search-box { grid-column: 2; }
+.work.bench > .bar > .pane-toggle { grid-column: 3; justify-self: end; }
+.pane-toggle { display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; color: var(--ink); cursor: pointer; }
+.pane-toggle:hover { background: var(--raised); }
+.pane-toggle .mark { width: var(--s4); height: var(--s4); }
+.work.bench > .center { grid-row: 2; display: flex; flex-direction: column; border-right: 0; }
+.work.bench > .center > .flow { flex: 1; min-height: 0; height: auto; }
+/* Put away, the center takes the whole width; the pane is only out of sight. No pane, no line. */
+.work.bench.pane-closed { grid-template-columns: minmax(0, 1fr); }
+.work.bench.pane-closed > .side { display: none; }
+/* The one line, between the center and the pane: from the top line to the prompt box's foot, not edge to edge. */
+.work.bench > .side { position: relative; }
+.work.bench > .side::before { content: ''; position: absolute; left: 0; top: var(--band); bottom: var(--s5); width: 1px; background: var(--rule); }
+/* What was found, under the box and over the center, while the box (or what was found) has the keyboard. */
+.search-box { position: relative; min-width: 0; }
+.search-results {
+  position: absolute; z-index: 4; top: calc(100% + var(--s2)); left: 50%; transform: translateX(-50%); width: min(560px, 60vw);
+  max-height: 60vh; overflow: auto; padding: var(--s3); background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-card);
+}
+.search-results:empty, .search-box:not(:focus-within) > .search-results { display: none; }
+.hit-head { display: flex; align-items: center; gap: var(--s2); }
+.hit-head > .hit-file { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.hit-diff { flex: none; min-height: var(--h-row); padding: 0 var(--s2); border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; color: var(--sub); font: var(--t-meta) var(--mono); cursor: pointer; }
+.hit-diff:hover { background: var(--raised); color: var(--ink); }
+.hit-kind { margin: 0 var(--s1) var(--s1); font-size: var(--t-meta); font-weight: 600; color: var(--sub); }
+.hit-issue, .hit-run { font-family: var(--sans); font-weight: 400; overflow-wrap: anywhere; }
+.hit-run { font-family: var(--mono); }
+/* The plugin area at the top of the center: plain (nothing) until it is opened from the rail's plug. */
+.plugins { flex: none; padding: 0 var(--s5) var(--s3); }
+.plugins .empty { margin-top: 0; padding: var(--s4) var(--s5); }
+.plugins .slide { height: auto; }
+/* Narrow (after the wide rules above, which it changes): the search at the top line's right, the right pane
+   folded away and, brought out with its switch, laid over the center under the top line. */
+@media (max-width: 760px) {
+  .work.bench > .bar { grid-template-columns: minmax(0, 1fr) minmax(96px, 45%) auto; gap: var(--s2); padding-left: var(--s4); padding-right: var(--s2); }
+  .work.bench > .side { display: none; }
+  .work.bench > .side::before { display: none; }
+  .work.bench.pane-out > .side {
+    /* Placed in the one column, so that column (not an empty second one) is what it is laid over. */
+    grid-column: 1; grid-row: 1 / -1;
+    display: grid; grid-template-rows: minmax(0, 1fr); position: absolute; z-index: 3;
+    top: calc(var(--band) + var(--h-row) + var(--s2)); right: var(--s2); width: min(360px, calc(100% - 2 * var(--s2))); max-height: 70vh;
+    background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-card);
+  }
+  .work.bench.pane-out > .side > .term-home { display: none; }
+  .work.bench.pane-out > .side .pane.reference { padding: var(--s3); }
+  .work.bench .search-results { left: auto; right: 0; transform: none; width: min(360px, calc(100vw - var(--rail) - 2 * var(--s4))); }
+}
 /* One line to type in, the same everywhere: the search box, a repo's name. */
 .search-in, .line-in {
   width: 100%; min-height: var(--h-row); padding: 0 var(--s3); border: 1px solid var(--edge); border-radius: var(--r-field);
@@ -580,12 +657,13 @@ button.diff-no { padding: 0; border: 0; background: transparent; font: inherit; 
 button.diff-no:hover { color: var(--ink); background: var(--raised); border-radius: var(--r-field); }
 /* A file of a diff: a fold, its name and what was added and removed. */
 .diff-file { margin-bottom: var(--s3); }
-.diff-head { display: flex; align-items: baseline; gap: var(--s3); min-height: var(--h-row); padding: var(--s1) var(--s1); border-radius: var(--r-field); cursor: pointer; font: var(--t-meta) var(--mono); }
+.diff-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s1) var(--s3); min-height: var(--h-row); padding: var(--s1) var(--s1); border-radius: var(--r-field); cursor: pointer; font: var(--t-meta) var(--mono); }
 .diff-head:hover { background: var(--raised); }
 .review-box .diff-head:hover, .step-diff .diff-head:hover { background: var(--ground); }
 /* Put back, at the head's right end; pressed, the head asks in its place (its lines stay under it). */
 .diff-head > .grow { flex: 1; }
-.diff-head .button { align-self: center; font-family: var(--sans); }
+/* A short name, its counts and Put back keep one line; with no room, Put back takes the next line, never two. */
+.diff-head .button { align-self: center; margin-left: auto; white-space: nowrap; font-family: var(--sans); }
 .diff-head.asking { display: grid; gap: var(--s2); padding: var(--s2) var(--s1); cursor: default; }
 .diff-head.asking:hover { background: transparent; }
 .diff-head.asking > .muted { font-family: var(--sans); }
@@ -673,6 +751,8 @@ mark { background: var(--ink); color: var(--ground); }
 /* What the running line is doing, under its output; empty while it is quick. */
 .term-activity { grid-row: 3; display: flex; align-items: center; gap: var(--s2); min-height: 0; }
 .term-activity:empty { display: none; }
+/* Ended: what happened and Start again side by side, at the Prompt's bottom right under its output. */
+.term.ended > p { grid-row: 3; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: var(--s2); }
 .small-button { min-height: var(--h-row); padding: 0 var(--s3); font-size: var(--t-meta); }
 .term-out { margin: 0; overflow: auto; min-height: 0; font: var(--t-meta)/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 

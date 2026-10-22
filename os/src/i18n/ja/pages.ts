@@ -86,6 +86,13 @@ export default {
   'No changes': '変更はありません',
   'Running': '実行中',
   'Put back in the prompt box': 'プロンプトに戻す',
+  'Run': '実行する',
+  'Run ({keys})': '実行する（{keys}）',
+  'Right pane': '右ペイン',
+  'Search results': '検索結果',
+  'The diff of {path}': '{path}の diff',
+  'Plugins': 'プラグイン',
+  'No plugins yet': 'プラグインはまだありません',
 
   // Writing an issue
   'Repo to write in': '書く repo',
