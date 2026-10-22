@@ -7,7 +7,6 @@
 // No unsafe code here, nor ever added unnoticed (lib.rs: unsafe lives only where the OS is called).
 #![forbid(unsafe_code)]
 
-use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::{self, Read, Seek, Write};
 use std::path::Path;
@@ -23,11 +22,9 @@ pub enum Progress<'a> {
 }
 
 fn digest_of(path: &Path) -> io::Result<String> {
-    let mut f = fs::File::open(path)?;
-    let mut h = Sha256::new();
-    io::copy(&mut f, &mut h)?;
-    Ok(h.finalize().iter().map(|b| format!("{b:02x}")).collect())
+    Ok(crate::root::sha256_read(&mut fs::File::open(path)?)?.0)
 }
+
 
 /// Fetch `url` into `dest` (via `dest.part`), resuming after cuts; checked
 /// against `sha256` and `size` before it is moved into place.
