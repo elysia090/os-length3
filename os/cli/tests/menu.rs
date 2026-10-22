@@ -171,7 +171,6 @@ fn ctrl_c_in_a_field_leaves_l3_and_nothing_half_made_stays() {
     let mut l3 = home.pty("en", &[], &[]);
     l3.expect("q leaves");
     l3.send("+").expect("› 9  +");
-    l3.send(ENTER).expect("[standard]");
     l3.send(ENTER).expect("Name").expect("Ctrl-C leaves l3");
     l3.send("half").send("\x03");
     let (code, _) = l3.finish();
