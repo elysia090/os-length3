@@ -88,6 +88,9 @@ export class Reference {
   /** Stops following the store; null while it does not (off the screen). */
   private stop: (() => void) | null = null;
 
+  /** Begin a new issue in the repo shown, from the Issue view with none open (the page says where it is written). */
+  writeIssue: ((repo: string) => void) | null = null;
+
   constructor(events: ReferenceEvents) {
     this.events = events;
     this.query = h('input', {type: 'search', class: 'search-in', placeholder: t('Search this repo'),
@@ -315,7 +318,17 @@ export class Reference {
     const [all, merged] = await Promise.all([readIssues(store, repo), mergedIssues(repo)]);
     const list = all.filter((i) => i.closed === null && !merged.has(issuePath(i)));
     if (this.repo !== repo || this.view !== 'issue' || this.query.value.trim() || this.pinned) return;
-    if (!list.length) { this.empty(all.length ? t('No open issues') : t('No issues yet')); return; }
+    if (!list.length) {
+      this.empty(all.length ? t('No open issues') : t('No issues yet'));
+      // The way to the first one is where its absence is said, for this repo, with nothing to choose again.
+      const write = this.writeIssue;
+      if (write) {
+        const b = h('button', {type: 'button', class: 'button small-button'}, t('Write an issue'));
+        b.addEventListener('click', () => write(repo));
+        this.body.append(b);
+      }
+      return;
+    }
     this.body.replaceChildren(h('ul', {class: 'issue-list'}, ...list.map((i) => {
       const b = h('button', {type: 'button', class: 'link'}, issueName(i) ? h('span', {class: 'issue-no'}, `${issueName(i)} `) : null, i.kind ? `${i.kind}：` : '', i.title);
       b.addEventListener('click', () => this.showIssue(i));

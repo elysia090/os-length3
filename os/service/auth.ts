@@ -178,6 +178,19 @@ export type Auth = ReturnType<typeof createAuth>;
 export function signIn(d: {auth: Auth; providers: string[]; enter: boolean}, app: Hono<Vars>) {
   // For research no passkey is added: a passkey would let a link's holder back in after its key changed.
   if (d.enter) app.all('/api/auth/passkey/*', (c) => c.json({error: 'This Remote is entered by its link'}, 403));
+  // Better Auth lists a person's sessions only for a session made within a day (its freshAge), but a
+  // session here lasts 60 days, and the list is no secret of anyone else's: it is the Devices part, and
+  // a day after signing in it would stop answering. Each session is read as Better Auth reads it, for the
+  // session asking; what is sensitive (unlinking a sign-in) keeps the fresh rule.
+  app.get('/api/auth/list-sessions', async (c) => {
+    const s = await d.auth.api.getSession({headers: c.req.raw.headers});
+    if (!s) return c.json({message: 'Unauthorized', code: 'UNAUTHORIZED'}, 401);
+    const ctx = await d.auth.$context;
+    const now = Date.now();
+    const list = (await ctx.internalAdapter.listSessions(s.user.id, {onlyActiveSessions: true})).filter((x) => new Date(x.expiresAt).getTime() > now);
+    return c.json(list.map((x) => ({id: x.id, token: x.token, userId: x.userId, expiresAt: x.expiresAt, createdAt: x.createdAt, updatedAt: x.updatedAt,
+      ipAddress: x.ipAddress ?? null, userAgent: x.userAgent ?? null})));
+  });
   app.on(['GET', 'POST'], '/api/auth/*', async (c) => {
     const res = await d.auth.handler(c.req.raw);
     // Asked too often: said as everywhere on the Remote (request.ts slowDown), Retry-After and retryAfter,

@@ -76,6 +76,20 @@ test('a device asks for a code, a signed-in browser approves it, the device gets
   assert.equal((list.json as unknown[]).length, 2);
 });
 
+test('Devices: a session signed in days ago still lists the devices (Better Auth would ask for a fresh one)', async () => {
+  const s = await service();
+  const a = await s.start('Ren'), b = await s.start('Ren');
+  const raw = (t: string) => t.split('.')[0]; // the bearer is the session's token and its signature
+  await s.db.execute(sql`update session set created_at = now() - interval '3 days'`);
+  const got = await s.call('GET', '/api/auth/list-sessions', {token: a});
+  assert.equal(got.status, 200, JSON.stringify(got.json));
+  assert.deepEqual((got.json as unknown as {token: string}[]).map((x) => x.token).sort(), [raw(a), raw(b)].sort());
+  assert.equal((await s.call('GET', '/api/auth/list-sessions')).status, 401);
+  // An ended session is not listed.
+  await s.db.execute(sql`update session set expires_at = now() - interval '1 second' where token = ${raw(b)}`);
+  assert.deepEqual((await sessionsOf(s, a)).map((x) => x.token), [raw(a)]);
+});
+
 test('Devices: another device is signed out from any of the account\'s, and from no one else\'s', async () => {
   const s = await service();
   const laptop = await s.start('Ren'), phone = await s.start('Ren'), mio = await s.start('Mio');

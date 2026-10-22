@@ -53,7 +53,8 @@ test('a change on main is committed from main\'s card, named by its line', async
   await app.forge.editFile('README.md', '# hello\n\nOn main.\n');
 
   await app.rail.go('git');
-  await expect(app.git.mainCard('hello')).toContainText('1 file not committed');
+  // A repo nobody has committed yet: the scaffold's three files are not committed either.
+  await expect(app.git.mainCard('hello')).toContainText('3 files not committed');
   // A line without a title is not a commit: said under it, the keyboard kept there.
   await app.git.commitOnMain('hello', 'Docs:');
   await expect(app.git.mainCard('hello').getByRole('alert')).toHaveText('A commit needs a title (for example Fix：title)');
@@ -118,4 +119,84 @@ test('a step pressed from the keyboard keeps the keyboard in the issues, never o
   await app.page.keyboard.press('Enter');
   await expect(app.git.step('Back to main')).toBeVisible();
   await expect.poll(() => app.page.evaluate(() => document.activeElement !== document.body && !!document.activeElement?.closest('main'))).toBe(true);
+});
+
+// The box an issue is written in, and the one row of repos above it.
+
+test('a new issue\'s repo is chosen in the one row above the box, Create at the left and Not now at the right', async ({app}) => {
+  for (const r of ['notes', 'tide-tables', 'website-redesign', 'data-pipeline', 'design-system', 'infra-terraform']) await app.newRepo.make(r);
+  await app.rail.go('git');
+  await app.git.repos.getByRole('radio', {name: 'All', exact: true}).click();
+  await app.main.getByRole('button', {name: 'Write an issue'}).click();
+  // One row, outside the box: every chip on one line, however many there are; none inside the box.
+  const tops = await app.git.repos.getByRole('radio').evaluateAll((all) => all.map((c) => Math.round(c.getBoundingClientRect().top)));
+  expect(new Set(tops).size).toBe(1);
+  await expect(app.main.getByRole('radiogroup')).toHaveCount(1);
+  // The one at the far end is reached by the keyboard, and, chosen, is where it goes; All leaves that as it was.
+  const last = app.git.repos.getByRole('radio', {name: 'tide-tables', exact: true});
+  await last.focus();
+  await expect(last).toBeInViewport();
+  await last.press('Enter');
+  await expect(app.git.firstLine).toHaveAccessibleDescription('tide-tables');
+  await app.git.repos.getByRole('radio', {name: 'All', exact: true}).click();
+  await expect(app.git.firstLine).toHaveAccessibleDescription('tide-tables');
+
+  // Create first, then Not now; Not now makes nothing.
+  const create = await app.git.step('Create').boundingBox();
+  const notNow = await app.git.step('Not now').boundingBox();
+  expect(create!.x).toBeLessThan(notNow!.x);
+  await app.git.firstLine.fill('Fix: Not made');
+  await app.git.step('Not now').click();
+  await expect(app.git.issues).toContainText('No issues yet');
+
+  await app.git.write('tide-tables', 'Fix: The table wraps', 'On a phone.');
+  await expect(app.git.issue('#1 Fix：The table wraps')).toBeVisible();
+});
+
+test('the detail of a new issue has the room the repos inside the box had', async ({app}) => {
+  await app.newRepo.make('notes');
+  await app.rail.go('git');
+  await app.main.getByRole('button', {name: 'Write an issue'}).click();
+  // 96 px, and two rows of chips and the gap under them (32 + 8 + 32 + 12).
+  expect((await app.main.getByRole('textbox', {name: 'Detail'}).boundingBox())!.height).toBeGreaterThanOrEqual(180);
+});
+
+test('an empty Issue view in Forge writes the first issue for its repo, and Not now goes back there', async ({app}) => {
+  await app.newRepo.make('notes');
+  // Git was last left on another repo: that is kept for Git, and is not where this one goes.
+  await app.rail.go('git');
+  await app.git.repos.getByRole('radio', {name: 'notes', exact: true}).click();
+  await app.newRepo.make('tide');
+  await app.newRepo.openInForge();
+  await app.forge.show('Issue');
+  await expect(app.forge.reference).toContainText('No issues yet');
+  await app.forge.reference.getByRole('button', {name: 'Write an issue'}).click();
+
+  await expect(app.rail.button('git')).toHaveAttribute('aria-current', 'page');
+  await expect(app.git.firstLine).toBeFocused();
+  await expect(app.git.firstLine).toHaveAccessibleDescription('tide');
+  await expect(app.git.repos.getByRole('radio', {name: 'notes', exact: true})).toBeChecked();
+
+  await app.git.step('Not now').click();
+  await expect(app.rail.button('forge')).toHaveAttribute('aria-current', 'page');
+  await expect(app.forge.editor('README.md')).toHaveValue('# tide\n');
+  await expect(app.forge.reference).toContainText('No issues yet');
+});
+
+test('an issue\'s neighbours show their numbers at the edges that show, and the edges go to them', async ({app}) => {
+  await app.newRepo.make('notes');
+  for (const title of ['Fix: One', 'Feat: Two', 'Docs: Three']) await app.git.write('notes', title);
+  await app.git.issues.getByRole('button', {name: 'Previous issue'}).click();
+  await expect(app.git.issue('#2 Feat：Two')).toBeVisible();
+  await expect(app.git.issue('#1')).toBeInViewport();
+  await expect(app.git.issue('#3')).toBeInViewport();
+  await app.git.issues.getByRole('button', {name: 'Next issue'}).click();
+  await expect(app.git.issue('#3 Docs：Three')).toBeVisible();
+  await expect(app.git.issue('#2')).toBeInViewport();
+});
+
+test('Git\'s column keeps its width whether it scrolls or not', async ({app}) => {
+  await app.rail.go('git');
+  // The room a scrollbar takes is kept while there is none, so reading and changing an issue's words never moves its edge.
+  expect(await app.main.getByRole('region', {name: 'Git', exact: true}).evaluate((e) => getComputedStyle(e).scrollbarGutter)).toBe('stable');
 });

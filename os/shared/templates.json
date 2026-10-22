@@ -12,7 +12,7 @@
     "files": [
       ["README.md", "# {name}\n"],
       ["src/main.c", "#include <stdio.h>\n\nint main(void) {\n    puts(\"hello\");\n    return 0;\n}\n"],
-      ["Makefile", "{name}: src/main.c\n\tcc -O2 -o $@ src/main.c\n"]
+      ["Makefile", "build/{name}: src/main.c\n\tmkdir -p build\n\tcc -O2 -o $@ src/main.c\n"]
     ]
   },
   {
