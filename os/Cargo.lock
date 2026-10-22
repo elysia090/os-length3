@@ -2441,7 +2441,7 @@ dependencies = [
  "ruzstd",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.11.1",
  "ureq",
  "webpki-roots 0.26.11",
 ]
