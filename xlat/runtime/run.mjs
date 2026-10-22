@@ -8,7 +8,7 @@
 // stdin/stdout/stderr attach to this process.
 import {execFileSync, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, readlinkSync, statSync, writeFileSync} from 'node:fs';
+import {closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, readlinkSync, statSync, writeFileSync, writeSync} from 'node:fs';
 import {basename, dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {zstdDecompressSync} from 'node:zlib';
@@ -129,7 +129,8 @@ const kernel = new Kernel({
   translate,
   console: {
     interactive: false,
-    write: (fd, bytes) => (fd === 2 ? process.stderr : process.stdout).write(bytes),
+    // At once, not when this thread next idles: a sleep here holds it, and what was said before must show before.
+    write: (fd, bytes) => { for (let at = 0; at < bytes.length;) { try { at += writeSync(fd === 2 ? 2 : 1, bytes, at); } catch (e) { if (e.code !== "EAGAIN") throw e; } } },
     read: (n) => { const out = stdin.subarray(stdinAt, stdinAt + n); stdinAt += out.length; return out; },
   },
 });
