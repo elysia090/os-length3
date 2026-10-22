@@ -30,6 +30,8 @@ export function home(ctx: Context): Node[] {
   const list = repoList(ctx, {newCard: true, counted: (n) => counting(count, n, 'repo', 'repos')});
   void list.refresh();
   const grid = list.element;
+  // About three across at a laptop's width (styles.css): Home's own, so New repo's list and other grids stay as they are.
+  grid.classList.add('home-repos');
   const header = h('section', {class: 'profile'},
     h('div', {class: 'avatar', 'aria-hidden': 'true'}, initials(profile)),
     editing ? editForm(ctx) : identity(count),

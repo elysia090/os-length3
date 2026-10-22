@@ -257,8 +257,9 @@ a { color: var(--ink); }
 .todo-title::placeholder { color: var(--sub); font-weight: 400; }
 /* Read, the title is text: centred on the mark's line as the field is. */
 span.todo-title { min-height: 0; }
+/* The detail starts on the title's column: the mark's width and the head's own gap, with a kind or without. */
 .todo-detail {
-  display: block; width: calc(100% - var(--h-control) - var(--s2)); margin-left: calc(var(--h-control) + var(--s2));
+  display: block; width: calc(100% - var(--h-control) - var(--s1)); margin-left: calc(var(--h-control) + var(--s1));
   padding: 0; border: 0; background: transparent;
   resize: none; overflow: hidden; color: var(--ink); font: var(--t-body)/1.6 var(--sans);
 }
@@ -271,6 +272,9 @@ span.todo-title { min-height: 0; }
 
 /* Cards: places, so rounded squares */
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: var(--s5); }
+/* Home's repos, about three across at a laptop's width (a 1180 px window gives the grid about 900 px):
+   three need 3 × 280 + 2 × 24; then two, then one as it narrows. The cards keep their height. */
+.grid.home-repos { grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); }
 .card {
   min-height: 240px; padding: var(--s4); border: 1px solid var(--rule); border-radius: var(--r-place);
   display: grid; align-content: start; gap: var(--s2); background: transparent; text-align: left; color: var(--ink);
