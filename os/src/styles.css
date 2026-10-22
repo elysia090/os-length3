@@ -306,7 +306,8 @@ span.todo-title { min-height: 0; }
 .git-filter { margin-top: var(--s5); }
 .section > h2 > span small { margin-left: var(--s2); }
 .issue-kind { font-weight: 700; }
-.issue-where { font: var(--t-meta)/1.6 var(--mono); color: var(--sub); }
+/* Where an issue is (its repo) is a name: the sans, as every name is. */
+.issue-where { font: var(--t-meta)/1.6 var(--sans); color: var(--sub); }
 /* Git keeps one centred column of comfortable width: the form, the rows, the notes and the prompt box line up. */
 .git-flow > * { max-width: 760px; margin-inline: auto; }
 /* A card of rows, like the File tree and the avatar's popover: its corner
@@ -755,8 +756,8 @@ mark { background: var(--ink); color: var(--ground); }
 .issue-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); margin-top: var(--s2); }
 .issue-foot > .issue-about { flex: 1; min-width: 0; }
 .issue-about { display: grid; gap: var(--s1); justify-items: start; min-width: 0; }
-.issue-about .issue-where { font-family: var(--mono); font-size: var(--t-meta); }
-.issue-big-head .issue-where { font-family: var(--mono); font-size: var(--t-meta); }
+.issue-about .issue-where { font-size: var(--t-meta); }
+.issue-big-head .issue-where { font-size: var(--t-meta); }
 
 /* Issues as large boxes side by side: one in full, its neighbours' edges
    showing at both sides; the track slides to the one chosen. An edge is a
@@ -994,7 +995,7 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
    copies it, and it says so for a moment. */
 .stub-holder { position: relative; display: grid; gap: var(--s2); justify-items: start; margin: var(--s5) 0 var(--s4); }
 .stub { display: flex; align-items: center; width: min(100%, 400px); min-height: var(--h-control); border: 1px solid var(--edge); border-radius: var(--r-field); background: var(--raised); }
-.stub-text, .stub-in { flex: 1; min-width: 0; height: calc(var(--h-control) - 2px); padding: 0 var(--s3); border: 0; border-radius: var(--r-field) 0 0 var(--r-field); background: transparent; color: var(--ink); font: 600 var(--t-body)/1 var(--mono); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stub-text, .stub-in { flex: 1; min-width: 0; height: calc(var(--h-control) - 2px); padding: 0 var(--s3); border: 0; border-radius: var(--r-field) 0 0 var(--r-field); background: transparent; color: var(--ink); font: 600 var(--t-body)/1 var(--sans); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stub-text { cursor: copy; }
 /* The code beside the name: six digits to be found by, copied by a press. */
 .stub-code { flex: none; height: calc(var(--h-control) - 2px); padding: 0 var(--s3); border: 0; border-left: 1px solid var(--rule); background: transparent; color: var(--sub); font: var(--t-meta)/1 var(--mono); letter-spacing: .08em; cursor: copy; }
