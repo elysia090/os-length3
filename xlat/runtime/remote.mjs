@@ -15,6 +15,7 @@
 
 import {CH, OP, REPLY} from './channel.mjs';
 import {Exec, Exit, Kernel, REG, Redirect, TRACE_SYSCALLS, Task, trace} from './process.mjs';
+import {deliverable} from './signal.mjs';
 
 const isNode = typeof process !== 'undefined' && !!process.versions?.node;
 const NodeWorker = isNode ? (await import('node:worker_threads')).Worker : null;
@@ -160,7 +161,15 @@ export class RemoteKernel extends Kernel {
       if (e instanceof Exit) return;
       throw e;
     }
-    if (typeof v !== 'bigint') { t.call = call; this.block(t); return; }
+    if (typeof v !== 'bigint') {
+      t.call = call;
+      this.block(t);
+      // A signal that came while it ran guest code (since its last call) is pending already, and
+      // send() found no call to interrupt then: the call does not wait for another one, as Linux's
+      // interruptible sleep sees a pending signal at once (pause after a check, sigsuspend, a read).
+      if (deliverable(t)) this.interruptCall(t);
+      return;
+    }
     this.resumeWith(t, call, v, false);
   }
 
