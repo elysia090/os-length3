@@ -110,10 +110,53 @@ async fn ssh_set(on: bool, scope: Option<String>) -> Result<serde_json::Value, S
     }).await
 }
 
+// ---- one app on a device, and l3 app (core/src/desktop.rs) ----
+
+/// What the app answers l3 on its socket: it is here; its window forward; its window closed, as its close
+/// button closes it (the last window closed, the app ends as it always does).
+#[cfg(unix)]
+fn answer(app: &tauri::AppHandle, word: &str) -> String {
+    use tauri::Manager;
+    let window = app.get_webview_window("main");
+    match (word, window) {
+        ("here", _) => "here",
+        ("show", Some(w)) => { let _ = w.unminimize(); let _ = w.show(); let _ = w.set_focus(); "shown" }
+        ("show", None) => "here",
+        ("close", Some(w)) => { let _ = w.close(); "closing" }
+        ("close", None) => { app.exit(0); "closing" }
+        _ => "?",
+    }.to_string()
+}
+
 fn main() {
+    // One app on a device: one started while another is open brings that one forward and ends. A data
+    // directory that cannot hold the lock still opens the app, only l3 app cannot find it.
+    #[cfg(unix)]
+    let held = match length3_core::desktop::hold(&paths::data_dir()) {
+        Ok(Some(h)) => Some(h),
+        Ok(None) => {
+            // The one open may be a moment from answering (it has just taken the lock).
+            for _ in 0..50 {
+                if length3_core::desktop::ask(&paths::data_dir(), "show").is_some() { break; }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            return;
+        }
+        Err(_) => None,
+    };
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(shells::Shells::default())
+        .setup(move |app| {
+            #[cfg(unix)]
+            if let Some(h) = held {
+                let app = app.handle().clone();
+                std::thread::spawn(move || h.serve(|word| answer(&app, word)));
+            }
+            #[cfg(not(unix))]
+            let _ = app;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             core, remote_login_start, plan_open,
             shells::prompt_open, shells::prompt_input, shells::prompt_interrupt, shells::prompt_held, shells::prompt_close,

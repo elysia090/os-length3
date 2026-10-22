@@ -630,7 +630,7 @@ nouns and order are the rail's: Home (`todo`, `profile`, `lang`), Forge
 (`repo`, `band`, `prompt`), File (`file`), Git (`git`, `issue`, `start`,
 `main`, `commit`, `push`, `reset`, `diff`, `log`, `review`, `reply`,
 `merge`, `reject`), Runtime (`runtime`, `free`, `root`, `network`, `dotfile`,
-`address`), Remote (`remote`, `login`, `logout`), Server (`server`), Inbox
+`address`, `app`), Remote (`remote`, `login`, `logout`), Server (`server`), Inbox
 (`inbox`, `name`); `l3 help` lists them in this order. `l3 address` is where
 this device is reached over SSH, as `ip addr` answers with an address: one
 `ssh -p PORT REPO@HOST` a line, the SSH user being the repo, and on
@@ -641,6 +641,17 @@ named the same way everywhere ("Fix：件名"), an issue is called by its
 number in both (#3), and Home's state is the same files, so anything done in one shows in
 the other. The Prompt's shell works on the repo itself: what it changes is
 written back, and what is saved elsewhere comes in.
+
+The one way from the command line to the GUI is `l3 app`: it opens the
+desktop app, or brings forward the one open (one on a device at a time,
+never a second), or, on a device without it, says where the Remote hands
+it out for this release (exit 4). A start is said as one only once the app
+answers; one that ends, or cannot show a window, is said as such. `l3 app
+close` closes it as its window's close button does, and nothing else: what
+it saved stays, and what l3 runs (SSH, a Prompt in a terminal) goes on.
+Opening it turns nothing on: no network listening, no SSH, no Remote. It is
+reached through a socket in its own owner-only folder of the data
+directory (`core/src/desktop.rs`).
 
 ### The command line without learning it first
 

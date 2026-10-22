@@ -3,6 +3,7 @@
 //! the call, and answers with a Reply.
 
 pub mod address;
+pub mod app;
 pub mod file;
 pub mod forge;
 pub mod git;

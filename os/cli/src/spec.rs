@@ -5,7 +5,7 @@
 //! rail: Home, Forge (and its Prompt), File, Git, Runtime, Remote; then the
 //! two whose subject is people, Server and Inbox; then l3's own words.
 
-use crate::cmd::{address, file, forge, git, home, people, remote, runtime, Ctx};
+use crate::cmd::{address, app, file, forge, git, home, people, remote, runtime, Ctx};
 use crate::{args::Call, help, out::{Reply, Result}};
 
 /// Words in English and in Japanese.
@@ -439,6 +439,12 @@ pub static COMMANDS: &[Command] = &[
         f(Some("ssh"), &[Arg::Choice(&["on"]), Arg::Choice(&["device", "network"])], &[], ["on, from this device only, or from PCs on the same network too (never the Internet)", "オン：この端末からだけ、または同じネットワークの PC からも（インターネットからは入れない）"], DEVICE, Keep, address::set),
         hidden(Some("ssh"), &[Arg::Choice(&["serve"])], DEVICE, Keep, address::serve),
     ]),
+    // The desktop app: the same OS in a window, opened from here (the one open brought forward, never a second).
+    c("app", &[], Group::Runtime, ["the desktop app: the same OS in a window", "デスクトップアプリ：同じ OS をウィンドウで"], &[
+        offer(&[d(["Open the app", "アプリを開く"], On::Page).second()],
+            f(None, &[], &[], ["open it, or bring forward the one open (not on this device: where to get it)", "開く。開いていれば前に出す（この端末になければ入手先を出す）"], DEVICE, Keep, app::open)),
+        f(Some("close"), &[], &[], ["close it, as its window's close button does (what l3 runs goes on)", "ウィンドウの閉じるボタンと同じに閉じる（l3 が動かしているものはそのまま）"], DEVICE, Keep, app::close),
+    ]),
     c("remote", &[], Group::Remote, ["the Remote, and where each repo stands", "Remote と、各 repo の状態"], &[
         page(f(None, &[], &[], ["each repo, and where it stands", "各 repo とその状態"], DEVICE, Keep, remote::page)),
         offer(&[d(["Turn on", "戻す"], On::RemoteRepo).when(&[F::TurnedOff])],
@@ -602,6 +608,9 @@ mod tests {
         assert!(all.contains(&"l3 name claim NAME[@DOMAIN]".to_string()) && !all.iter().any(|u| u.starts_with("l3 address claim") || u.contains("ssh serve")), "{all:?}");
         assert_eq!(find("address").map(|c| c.group), Some(Group::Runtime));
         assert_eq!(find("name").map(|c| c.group), Some(Group::Inbox));
+        // The app is opened and closed from here, as Runtime's: one way each.
+        assert!(all.contains(&"l3 app".to_string()) && all.contains(&"l3 app close".to_string()), "{all:?}");
+        assert_eq!(find("app").map(|c| c.group), Some(Group::Runtime));
     }
 
     /// A word that fits a slot, as the menu would give it.
@@ -670,7 +679,7 @@ mod tests {
 
     #[test]
     fn what_reaches_the_remote_or_the_device_is_kept_out_of_the_prompt() {
-        for name in ["review", "reply", "network", "band", "profile", "lang", "dotfile", "todo", "remote", "login", "logout", "start", "commit", "push", "merge", "reject", "log", "diff", "server", "inbox", "address", "name", "runtime", "free", "root", "prompt"] {
+        for name in ["review", "reply", "network", "band", "profile", "lang", "dotfile", "todo", "remote", "login", "logout", "start", "commit", "push", "merge", "reject", "log", "diff", "server", "inbox", "address", "name", "runtime", "free", "root", "prompt", "app"] {
             let c = find(name).unwrap();
             assert!(c.forms.iter().all(|f| !f.needs.in_prompt), "{name}");
         }

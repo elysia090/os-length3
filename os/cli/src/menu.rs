@@ -975,7 +975,7 @@ mod tests {
         assert_eq!(deeds(Group::Inbox, On::Thread, &[Request], ONLINE), ["Accept", "Open", "Write", "Block"]);
         assert_eq!(deeds(Group::Inbox, On::Thread, &[], ONLINE), ["Open", "Write"]);
         assert_eq!(deeds(Group::Runtime, On::Thing, &[Freeable], OFFLINE), ["Free"]);
-        assert_eq!(deeds(Group::Runtime, On::Page, &[AnyFreeable, NoRoot], OFFLINE), ["Fetch the root", "Free all", "Use a root"]);
+        assert_eq!(deeds(Group::Runtime, On::Page, &[AnyFreeable, NoRoot], OFFLINE), ["Fetch the root", "Free all", "Use a root", "Open the app"]);
         assert_eq!(deeds(Group::Remote, On::RemoteRepo, &[TurnedOff], ONLINE), ["Turn on"]);
         assert_eq!(deeds(Group::File, On::RemoteRepo, &[OnlyThere], ONLINE), ["Open here"]);
         assert_eq!(deeds(Group::New, On::Page, &[], OFFLINE), ["New repo"]);

@@ -12,6 +12,8 @@ pub mod account;
 pub mod api;
 pub mod atomic;
 pub mod boundary;
+#[cfg(unix)]
+pub mod desktop;
 #[cfg(not(target_os = "wasi"))]
 pub mod fetch;
 pub mod root;

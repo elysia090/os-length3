@@ -90,7 +90,7 @@ Forge     repo · band · prompt
 File      file (write · mkdir · rm)
 Git       git · issue · start · main · commit · push · reset · diff · log
           review · reply · merge · reject
-Runtime   runtime · free · root · network · dotfile · address
+Runtime   runtime · free · root · network · dotfile · address · app
 Remote    remote · login · logout
 Server    server
 Inbox     inbox · name
@@ -162,6 +162,46 @@ Remote (`ren`, `trip`) is first come and held five years at a time:
 find you by, or write to), `l3 name renew NAME` holds it five more years,
 and `l3 name release NAME` lets it go (held for you 30 days). A name of
 your choosing on a domain you own (`ren@ren.dev`) is shown beside it.
+
+### The app, opened from l3
+
+The desktop app is the same OS in a window, and `l3 app` is the one way
+to it from the command line (`l3 help` says so in a line of its own):
+
+```
+$ l3 app
+Opened the app. Its window's close button, or l3 app close, closes it
+```
+
+- **Open**: the app this device has is started on its own, the terminal
+  free at once, and waited for until it answers; only then is it said as
+  open (exit 0, `{"open":true,"started":true}` with `--json`).
+- **Open already**: one app is open on a device at a time. The one open
+  is brought forward and no second is started (exit 0, `"started":false`);
+  an app started by hand while one is open (from the desktop's menu) does
+  the same and ends.
+- **Not on this device**: it says where to get it and exits 4, as for
+  anything not there. The Remote hands out this release's .deb and
+  AppImage (`/v1/desktop/<file>`, as Runtime's Desktop app card on the
+  web offers them): `sudo apt install ./os-length3-linux-X.Y.Z-desktop-amd64.deb`,
+  or the AppImage made runnable (`chmod +x`) in `~/Applications`. l3 takes
+  the program `LENGTH3_APP` names, if it names one; else `length3-os` on
+  the PATH (where the .deb puts it); else the newest such AppImage in
+  `~/Applications`, `~/Downloads`, `~/.local/bin` or `~`.
+- **Could not start**: an app that ends at once, a device without a
+  screen for its window (no `DISPLAY` or `WAYLAND_DISPLAY`, as over SSH),
+  or one that never answers is said as such (exit 1), never as open.
+
+`l3 app close` closes it as its window's close button does: what it saved
+stays, the Prompts it opened end with it, and what l3 runs (SSH, a Prompt
+in a terminal) goes on. With none open it says so and exits 0.
+
+Opening the app turns nothing else on: it listens on no network, starts no
+SSH and signs in to no Remote it is not signed in to already. l3 reaches
+it through a socket in the app's own folder of the data directory
+(`<data>/app/`, owner-only), which only the person can open; while the app
+runs it holds a lock there, which is how a second one knows it is open
+(`core/src/desktop.rs`).
 
 ### SSH into a repo's Prompt
 
