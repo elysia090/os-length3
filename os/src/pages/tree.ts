@@ -400,14 +400,16 @@ export class FileTree {
     if (dir) {
       rows.push(entry(t('New file'), (b) => field(b, t('File name'), '', t('Create'), async (n) => {
         if (await there(at.path, n)) throw taken(n);
-        await store.add(at.repo, at.path, n, '');
-        // The new file is the one to work on: the tree goes and the caret is in it. Out again, it shows the file.
+        // The new file is the one to work on: the tree goes and the caret is in it. Out again, it shows the file
+        // (its folder open from now, not once the file is written: a row drawn meanwhile is drawn open).
         expandedPaths.add(e.path);
+        await store.add(at.repo, at.path, n, '');
         this.unpop();
         this.events.choose(at.repo, joined(at.path, n), true);
       })));
       rows.push(entry(t('New folder'), (b) => field(b, t('Folder name'), '', t('Create'), async (n) => {
         if (await there(at.path, n)) throw taken(n);
+        expandedPaths.add(e.path);
         await store.mkdir(at.repo, joined(at.path, n));
         this.unpop();
         await this.again(item);

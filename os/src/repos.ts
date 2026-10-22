@@ -3,7 +3,7 @@
 // a repo is the same thing, read and written by the same code.
 
 import {core} from './host.ts';
-import {onElsewhere} from './core-client.ts';
+import {home, onElsewhere} from './core-client.ts';
 import shared from '../shared/templates.json' with {type: 'json'};
 
 export interface RepoSummary {
@@ -192,13 +192,36 @@ class Observed implements RepoStore {
   }
   /** Something outside the store changed `repo` (a Prompt on the root writes it directly, or another tab's core). */
   changedOutside(repo: string, by?: string) { this.tell({repo, path: '', what: 'repo', by}); }
+  /** These paths of `repo` changed outside the store (the core took them in from the Remote): each said as it is now. */
+  async changedPaths(repo: string, paths: string[], by?: string) {
+    for (const path of paths) {
+      const c = await this.inner.read(repo, path).catch(() => null);
+      if (c) { this.tell({repo, path, what: 'file', text: c.text !== null && !c.truncated ? c.text : undefined, by}); continue; }
+      // Not a file: a folder (made), or gone.
+      const dir = await this.inner.tree(repo, path).then(() => true, () => false);
+      this.tell({repo, path, what: dir ? 'dir' : 'removed', by});
+    }
+  }
 }
 /** Who wrote, when it was another tab of this browser. */
 export const ELSEWHERE = 'elsewhere';
 
 export const store = new Observed(new CoreStore());
-// Another tab of this browser changed what is kept: every repo shown is read again.
-onElsewhere(() => void store.list().then((all) => { for (const r of all) store.changedOutside(r.name, ELSEWHERE); }, () => {}));
+// Another tab of this browser changed what is kept: each path it wrote is said as it is now, as the core's own
+// sync says what it took in (a repo made or gone is the repo).
+onElsewhere((paths) => {
+  const at = `${home()}/repos/`;
+  const byRepo = new Map<string, Set<string>>();
+  for (const p of paths) {
+    if (!p.startsWith(at)) continue;
+    const [repo, ...rest] = p.slice(at.length).split('/');
+    if (!byRepo.has(repo)) byRepo.set(repo, new Set());
+    if (rest.length) byRepo.get(repo)!.add(rest.join('/'));
+  }
+  for (const [repo, inside] of byRepo) {
+    if (inside.size) void store.changedPaths(repo, [...inside], ELSEWHERE); else store.changedOutside(repo, ELSEWHERE);
+  }
+});
 
 /** Hear every change made through the store; returns the way to stop. */
 export function onChange(listen: (c: Change) => void): () => void {

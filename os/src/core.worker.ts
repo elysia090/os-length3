@@ -2,9 +2,9 @@
 // IndexedDB. Each tab runs a worker of its own; their calls take turns under one Web Lock, and a worker
 // that finds the files changed by another tab reads them again before it calls.
 //
-// Page → worker: {init: {env}} first, then {id, name, args}, or {id, env} to change the environment.
-// Worker → page: {id, ok} or {id, error}, in the order asked. A change kept is said on
-// BroadcastChannel('length3-core') as {changed: true}.
+// Page → worker: {init: {env, tab}} first, then {id, name, args}, or {id, env} to change the environment.
+// Worker → page: {id, ok} or {id, error, status?, detail?} (core/src/api.rs answer), in the order asked. A
+// change kept is said on BroadcastChannel('length3-core') as {changed: true, from: tab, paths}: each file's path.
 
 import coreWasm from 'virtual:length3-core.wasm?url';
 import {Core, type Answer, type Send} from './core-abi.ts';
@@ -17,6 +17,8 @@ const GENERATION = 'generation';
 
 const scope = self as unknown as {postMessage(m: unknown): void; onmessage: ((e: MessageEvent) => void) | null};
 const channel = new BroadcastChannel(NAME);
+/** The tab this worker answers, so it does not hear of its own writes as another's. */
+let tab = '';
 const encoder = new TextEncoder();
 
 const fs = new MemoryFS();
@@ -149,7 +151,7 @@ function call(name: string, args: unknown): Promise<Answer> {
     try {
       await keep(db, changes, seen + 1);
       seen++;
-      channel.postMessage({changed: true});
+      channel.postMessage({changed: true, from: tab, paths: [...changes.put.map((e) => e.path), ...changes.removed]});
     } catch (e) {
       // What is in memory is no longer what is kept: the next call reads the files again.
       seen = -1;
@@ -159,11 +161,12 @@ function call(name: string, args: unknown): Promise<Answer> {
   });
 }
 
-interface Message { id?: number; init?: {env?: Record<string, string>}; env?: Record<string, string>; name?: string; args?: unknown }
+interface Message { id?: number; init?: {env?: Record<string, string>; tab?: string}; env?: Record<string, string>; name?: string; args?: unknown }
 
 async function handle(m: Message) {
   if (m.init) {
     env = {...m.init.env};
+    tab = m.init.tab ?? '';
     core = undefined;
     // Compiled while the page is still drawing, so the first call finds it ready.
     compiled().catch(() => {});

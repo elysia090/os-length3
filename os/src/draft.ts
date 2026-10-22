@@ -9,7 +9,8 @@ import {getState, reloadState} from './state.ts';
 
 export type Tree = Record<string, string | null>;
 
-export interface Synced { version: number; sent: number; taken: number; both: string[]; unsynced: [string, string][] }
+/** `paths`: every path this copy changed by taking in (each told to what shows it). */
+export interface Synced { version: number; sent: number; taken: number; both: string[]; unsynced: [string, string][]; paths?: string[] }
 /** Where a copy stands. */
 export interface Status { name: string; changed: number; fresh: boolean; unsynced: [string, string][]; bytes: number; head: string | null; version: number; elsewhere?: number }
 /** A repo on the Remote; one turned off says when it went and until when it can come back. */
@@ -21,7 +22,7 @@ export const BY = 'sync';
 /** Send what changed here and take in what changed there, until both are the same. */
 export async function sync(repo: string): Promise<Synced> {
   const s = await core<Synced>('sync_repo', {repo});
-  if (s.taken) store.changedOutside(repo, BY);
+  if (s.paths?.length) await store.changedPaths(repo, s.paths, BY);
   return s;
 }
 

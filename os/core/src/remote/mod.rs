@@ -259,6 +259,10 @@ pub struct Synced {
     /// Changed on both sides: the Remote's kept at its name, this device's beside it.
     pub both: Vec<String>,
     pub unsynced: Vec<(String, String)>,
+    /// Every path this copy changed by taking in (a file written or removed, a folder made, a copy kept
+    /// beside), so a page tells each to what shows it, rather than reading the whole repo again.
+    #[serde(default)]
+    pub paths: Vec<String>,
 }
 
 /// Bring `repo` and the Remote into step: send what changed here, take in
@@ -276,6 +280,7 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
     let path = at(repo, &line, "");
     let mut out = Synced::default();
     let who = account_id();
+    let mut first: Option<Tree> = None;
     for _ in 0..12 {
         let agreed = base(&key);
         // Agreed with another account (another person signed in on this device): this copy is theirs, and is
@@ -289,6 +294,7 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
         let draft = draft_path(repo, &line, agreed.is_some());
         let base = agreed.unwrap_or_default();
         let here = local_tree(&dir);
+        first.get_or_insert_with(|| here.tree.clone());
         out.unsynced = here.unsynced.clone();
         // Before sending, see whether the Remote moved.
         let there = there_of(&client.url, client.call("GET", &path, None)?, base.version)?;
@@ -322,6 +328,11 @@ fn sync_with(client: &Client, repos: &Repos, repo: &str) -> Result<Synced> {
         let mut remove: Vec<&String> = base.tree.keys().filter(|p| !here.tree.contains_key(*p)).collect();
         if set.is_empty() && remove.is_empty() {
             out.version = base.version;
+            if let Some(was) = first.as_ref().filter(|_| out.taken > 0 || !out.both.is_empty()) {
+                out.paths = was.keys().chain(here.tree.keys()).filter(|p| was.get(*p) != here.tree.get(*p)).cloned().collect();
+                out.paths.sort();
+                out.paths.dedup();
+            }
             // An agreement from before accounts were noted is this account's from now on.
             if who.is_some() && base.version > 0 && base.who != who {
                 base.who = who.clone();

@@ -4,7 +4,7 @@
 // (or another tab of this browser wrote), so a change made with l3 shows up.
 
 import {core} from './host.ts';
-import {onElsewhere} from './core-client.ts';
+import {home, onElsewhere} from './core-client.ts';
 import {t} from './i18n.ts';
 import {errorText} from './errors.ts';
 
@@ -71,8 +71,8 @@ export async function reloadState(keys: readonly Key[] = KEYS): Promise<void> {
   await loadState(keys);
   for (const key of keys) if (cache.get(key) !== was.get(key)) for (const fn of [...listeners]) fn(key, true);
 }
-// Another tab of this browser wrote through its core.
-onElsewhere(() => void reloadState());
+// Another tab of this browser wrote Home's state through its core.
+onElsewhere((paths) => { if (paths.some((p) => p.startsWith(`${home()}/home/`))) void reloadState(); });
 
 /** Store `json` for `key`; rejects with the reason when it could not be kept. */
 export async function setState(key: Key, json: string): Promise<void> {
