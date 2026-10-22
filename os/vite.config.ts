@@ -37,10 +37,18 @@ const webPolicy = (): Plugin => ({
   },
 });
 
+/**
+ * Cross-origin isolation, as public/_headers gives it in production: the page
+ * may share memory, so the Prompt runs each guest thread in a Worker of its
+ * own. The development server and the preview (the selftest's) say the same.
+ */
+const ISOLATED = {'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp'};
+
 export default defineConfig({
   clearScreen: false,
-  server: {port: 1420, strictPort: true, fs: {allow: ['..']},
+  server: {port: 1420, strictPort: true, fs: {allow: ['..']}, headers: ISOLATED,
     proxy: DEV_REMOTE ? {'/api': DEV_REMOTE, '/v1': DEV_REMOTE} : undefined},
+  preview: {headers: ISOLATED},
   worker: {format: 'es'},
   build: {target: 'es2022', outDir: 'dist', emptyOutDir: true},
   plugins: [webPolicy()],

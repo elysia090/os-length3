@@ -1,6 +1,17 @@
 import {download, Fatal} from './fetch.ts';
 import {errorText} from './errors.ts';
 import {t} from './i18n.ts';
+import {prepare, type Segment} from '../../xlat/runtime/share.mjs';
+
+export type {Segment};
+
+/**
+ * Whether each guest thread runs in a Worker of its own, all at once: the page
+ * shares memory (cross-origin isolated: COOP and COEP, public/_headers) and
+ * a Worker can wait on it. Otherwise they take turns in the Prompt's Worker.
+ */
+export const threadsApart = (): boolean => typeof SharedArrayBuffer === 'function' && globalThis.crossOriginIsolated === true
+  && typeof (Atomics as {waitAsync?: unknown}).waitAsync === 'function';
 
 // l3, the one thing the Prompt depends on: the distribution's root, the l3
 // command and the translator, in one file (scripts/bundle.mjs). l3.json
@@ -29,7 +40,8 @@ interface Index {
 export interface Userland {
   about: About;
   translator: WebAssembly.Module;
-  files: {path: string; bytes: Uint8Array; module: WebAssembly.Module | null; mode: number}[];
+  /** A file's ready translation: its module, its data kept outside it (segments), and whether its memory is shared (threads in Workers). */
+  files: {path: string; bytes: Uint8Array; module: WebAssembly.Module | null; mode: number; segments: Segment[] | null; shared: boolean}[];
   dirs: string[];
   links: {path: string; target: string}[];
 }
@@ -111,12 +123,17 @@ export const loadUserland = (): Promise<Userland> => (loading ??= (async () => {
   tell({at: 'prepare'});
   const {index, bytes} = await unpack(packed);
   const slice = (p: {at: number; size: number}) => bytes.slice(p.at, p.at + p.size);
+  // Each translation as the kernel runs it (xlat/runtime/share.mjs): its data kept beside it, and its memory
+  // shared where the page may share memory (cross-origin isolated), so each thread runs in a Worker of its own.
+  const shared = threadsApart();
+  const prepared = index.files.map((f) => (f.translation ? prepare(slice(f.translation), {shared}) : null));
   const [translator, ...modules] = await Promise.all([
     WebAssembly.compile(slice(index.translator) as BufferSource),
     // A ready translation this engine will not compile is made again by the translator when its program runs.
-    ...index.files.map((f) => (f.translation ? WebAssembly.compile(slice(f.translation) as BufferSource).catch(() => null) : null)),
+    ...prepared.map((p) => (p ? WebAssembly.compile(p.wasm as BufferSource).catch(() => null) : null)),
   ]);
-  const files = index.files.map((f, k) => ({path: f.path, bytes: slice(f), module: modules[k], mode: f.mode}));
+  const files = index.files.map((f, k) => ({path: f.path, bytes: slice(f), module: modules[k], mode: f.mode,
+    segments: modules[k] ? prepared[k]!.segments : null, shared}));
   tell({at: 'ready'});
   return {about: a, translator, files, dirs: index.dirs, links: index.links};
 })().catch((e) => {
