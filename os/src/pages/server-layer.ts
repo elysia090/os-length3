@@ -156,6 +156,8 @@ export class ServerLayer {
     const side = h('aside', {class: 'side server-side', 'aria-label': t('Who is in it, and the repos they show')});
     const center = h('div', {class: 'center server-center'}, top, slides, sheet, dock);
     const work = h('div', {class: 'work no-strip'}, center, side);
+    // Signed out, whose a board is is not told: there is no right pane, and so no line where it would start.
+    if (!signedIn) { side.hidden = true; work.classList.add('no-side'); }
 
     let list: servers.Server[] = [];
     let shown: Shown[] = [];

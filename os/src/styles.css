@@ -438,6 +438,8 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
    flow's top), so the center's first box and the rail end on one line, and
    the center is read by scrolling down, never packed to fit a screen. Never
    so tall that, read from its top, its foot meets the prompt box: a clear
+/* No pane, no line (Server signed out): the center keeps its width, so nothing on it moves. */
+.work.no-side > .center { border-right-color: transparent; }
    gap (s6) stays between them, so the box floats over the page rather than
    hanging off a file. */
 .file {
