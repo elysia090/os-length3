@@ -234,3 +234,51 @@ test('the role the Worker connects as reads and writes rows, and can make, chang
     await pg.close();
   }
 });
+
+test('sign-in is the authorization code flow with state and PKCE, back only to the app, and devices are only the app and l3 (RFC 9700 §2.1, §4.1, §4.7; RFC 8628 §3.2, §5)', async () => {
+  const s = await service();
+  // A sign-in that would end on another site is refused before any provider is asked (no open redirect).
+  const evil = await s.call('POST', '/api/auth/sign-in/social', {body: {provider: 'dev', callbackURL: `${EVIL}/`}});
+  assert.equal(evil.status, 403);
+  const asked = await s.call('POST', '/api/auth/sign-in/social', {body: {provider: 'dev', callbackURL: `${APP}/`}});
+  const go = new URL(asked.json.url as string);
+  assert.equal(go.searchParams.get('response_type'), 'code');
+  assert.equal(go.searchParams.get('code_challenge_method'), 'S256');
+  assert.ok((go.searchParams.get('code_challenge') ?? '').length >= 43);
+  assert.ok((go.searchParams.get('state') ?? '').length >= 32);
+  // The redirect URI is the Remote's own, one fixed path a provider (as registered with it) matches exactly.
+  assert.equal(go.searchParams.get('redirect_uri'), `${BASE}/api/auth/callback/dev`);
+  // A callback whose state this browser was not given makes no session.
+  const cookies = asked.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
+  const forged = await s.app.request(`${BASE}/api/auth/callback/dev?code=x&state=forged`, {headers: {Cookie: cookies}});
+  assert.equal(forged.headers.get('set-auth-token'), null);
+  assert.ok(forged.status >= 300, String(forged.status));
+  assert.doesNotMatch(forged.headers.get('Location') ?? '', /signed-in/);
+
+  // Only the app and l3 ask for a device code; the code is 8 letters and digits, for ten minutes,
+  // polled no faster than every 2 s; approving it takes the app's own page.
+  assert.equal((await s.call('POST', '/api/auth/device/code', {body: {client_id: 'evil'}})).status, 400);
+  const code = (await s.call('POST', '/api/auth/device/code', {body: {client_id: 'l3'}})).json as unknown as {user_code: string; expires_in: number; interval: number; verification_uri: string};
+  assert.match(code.user_code, /^[A-Z0-9]{8}$/);
+  assert.deepEqual([code.expires_in, code.interval, code.verification_uri], [600, 2, `${APP}/?device`]);
+  const t = await s.start('Ren');
+  const approve = (headers: Record<string, string>) => s.app.request(`${BASE}/api/auth/device/approve`, {method: 'POST',
+    headers: {'Content-Type': 'application/json', Cookie: s.sessions.get(t)!, ...headers}, body: JSON.stringify({userCode: code.user_code})});
+  assert.equal((await approve({Origin: EVIL})).status, 403);
+  assert.equal((await approve({})).status, 403);
+});
+
+test('a session is listed, ended from another, and ends at sign-out; a sign-in is a new one (ASVS 3.2.1, 3.3.1, 3.3.4)', async () => {
+  const s = await service();
+  const one = await s.start('Ren'), two = await s.start('Ren');
+  assert.notEqual(one, two);
+  const listed = (await s.call('GET', '/api/auth/list-sessions', {token: one})).json as unknown as {token: string}[];
+  assert.equal(listed.length, 2);
+  // Ended from the other device, as Remote → Devices does: by the session's own token, as listed.
+  const theirs = ((await s.call('GET', '/api/auth/get-session', {token: two})).json as unknown as {session: {token: string}}).session.token;
+  assert.ok(listed.some((x) => x.token === theirs));
+  assert.equal((await s.call('POST', '/api/auth/revoke-session', {token: one, body: {token: theirs}})).status, 200);
+  assert.equal((await s.call('GET', '/v1/repos', {token: two})).status, 401);
+  assert.equal((await s.call('POST', '/api/auth/sign-out', {token: one, body: {}})).status, 200);
+  assert.equal((await s.call('GET', '/v1/repos', {token: one})).status, 401);
+});
