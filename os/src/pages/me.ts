@@ -125,6 +125,7 @@ export class Me {
   paint() {
     this.button.replaceChildren(this.face());
     this.button.setAttribute('aria-label', t('Me'));
+    this.pop.setAttribute('aria-label', t('Me'));
   }
 
   private later(open: boolean, after: number) {

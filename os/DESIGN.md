@@ -23,12 +23,12 @@ One rule per thing, applied everywhere, with no exceptions made by eye.
 Every value in `styles.css` comes from a token (§2).
 
 - **Shapes.** A place you go to (rail item, card, tree row) is a rounded
-  square. An action you press or a choice you make (button, template
-  choice, repo chip, +) is round. A field
+  square. An action you press or a choice you make (button, repo
+  chip, +) is round. A field
   you type into is slightly rounded and filled `raised`.
 - **States.** Hover is a `raised` fill. The current or chosen thing is an
   `ink` fill with `ground` text: the rail item (File while its tree is
-  out), the repo chip, the open repo in the tree, the chosen template, the primary button. A large place
+  out), the repo chip, the open repo in the tree, the primary button. A large place
   (a card, an issue row) is too big to fill with ink: it is current by an
   `ink` edge over `raised`, as a lit repo card is. Where one is inside
   the current thing (the file Forge is reading, under the open repo in
@@ -244,7 +244,8 @@ what is its own.
   headings 15/600 in `ink` as Prompt's, a list under each; with nothing to
   show, nothing (no line saying what will appear once a repo is open), or
   with a repo, one quiet line of what is not there (no box: a box is
-  for the center, where things are made). It only shows; what changes it
+  for the center, where things are made), and under it, where there is a
+  first one to make (an issue), the small button that makes it in the center. It only shows; what changes it
   lives with the thing it changes, and what leads from it into the center
   (a file's name, a line's number) opens the center there.
 - **Boxes side by side.** One thing at a time in full, its neighbours'
@@ -1078,10 +1079,33 @@ with it.
   - **Who may connect** is chosen as it is turned on, in the same press:
     *この端末だけ* (this device only, first and the default: 127.0.0.1 and
     ::1, so another PC finds the port closed, with no handshake and no
-    banner), or *同じネットワークにも* (the same network too: each private
-    or VPN address of the host besides, one socket each, never 0.0.0.0 and
-    never a public address, looked at again every few seconds). Kept on the
-    device, never on the Remote.
+    banner), or *同じネットワークにも* (the same network too: each LAN
+    address of the host besides, RFC 1918 or link-local, and an address in
+    100.64/10 only on a recognised VPN interface (`tailscale*`, `wg*`,
+    `zt*`, `nebula*`, NetBird's `wt*`, `CloudflareWARP`), since elsewhere
+    100.64/10 is a carrier's shared NAT, its other customers beside you;
+    one socket each, never 0.0.0.0, a public address, or a bridge's or a
+    container's (`docker*`, `br-*`, `virbr*`, `veth*`…: containers and VMs
+    are not the network a person means), looked at again every few
+    seconds). `l3 address` and the card name each interface taken
+    (`wlan0 192.168.1.5, tailscale0 100.101.102.103`). Kept on the device,
+    never on the Remote.
+  - **From the network it came in on.** Linux takes a packet for any of its
+    addresses on any interface, so a socket on the LAN address alone would
+    answer a sender on the public side who routes to that address through
+    the device. A connection is taken only from inside the subnet of the
+    address it came in on, from the device itself (its own addresses, so
+    `ssh` to its own LAN address works), or, on a VPN's interface, from a
+    non-public address the kernel routes by that interface (Tailscale's own
+    address is a /32 and its peers are in its table 52, so the kernel is
+    asked, over netlink); anything else is closed at accept, before the
+    banner. (Binding each socket to its device, SO_BINDTODEVICE, works
+    unprivileged here but takes anything that arrives on that interface,
+    a router's port forward from the Internet included, and needs a second
+    socket on lo for the device's own `ssh`; the subnet check refuses both.)
+  - **No IPv6 but ::1, deliberately for now**: a global IPv6 address is
+    reached from the Internet unless a firewall says otherwise, and a LAN's
+    is not yet told apart from it (a unit test holds this).
   - **Nothing of where leaves the device.** The Remote keeps only that a
     device listens, its scope's word, since when and when last heard;
     destinations are worked out and shown on the device itself.
@@ -1092,6 +1116,9 @@ with it.
   |---|---|---|
   | this device | the port on loopback; its card shows the destinations, the host key, the keys let in | the same, and the LAN addresses |
   | another PC on the LAN/VPN | nothing: the port is closed | `SSH-2.0-length3` and the host key; only a listed key gets in |
+  | a sender on another segment routing to the LAN address through this device | nothing: the port is closed | the handshake, then closed at accept before the banner |
+  | the carrier's other customers (100.64/10 on an ordinary interface) | nothing | nothing: no socket there; at a VPN address, closed at accept |
+  | containers and VMs behind a bridge (`docker0`, `virbr0`, …) | nothing | nothing: no socket on a bridge's address |
   | the internet | nothing | nothing: no socket on a public address |
   | the Remote | listens, `device` | listens, `network` |
 
@@ -1161,7 +1188,8 @@ will not be done. It uses the same workbench
 as Forge: the center (one centred column, 760 px at most) with the prompt
 box at its foot, and the narrow right pane with the search box, the
 reference and the Prompt. The page header, then the repo chips (one repo or
-all); choosing a repo also points the right pane and the Prompt at it, and
+all), one row that slides sideways however many there are, so they never
+push the issues down; choosing a repo also points the right pane and the Prompt at it, and
 makes it the repo worked on (§1): Forge opens there next. So does going to
 an issue (an edge, ← →) and starting or continuing one; coming to Git
 opens at the issue last looked at in the repo worked on. An issue written
@@ -1181,7 +1209,21 @@ half written after reading its neighbours or another page.
   is a large place, an `ink` edge over `raised`. An edge is a clear button
   over the neighbour, which lifts (`raised`) while hovered; pressing it, or
   ← →, slides the track there (280 ms, the one movement). The first box
-  starts at the column's edge and the last ends at it.
+  starts at the column's edge and the last ends at it. A neighbour shows its
+  number alone at the edge that shows (the one before at its right), never a
+  title cut short. The column keeps the room a scrollbar takes, so an
+  issue's edge stays put as its words are read and changed.
+- **A new issue** is written in a box over the issues: its first line, the
+  repo it goes in said quietly before it (as a card says its repo), then a
+  detail tall from the start, with the room a second row of repos would
+  take. Where it goes is chosen in the one row of repos above, never in the
+  box: a repo chosen there while writing is the one written in; All widens
+  what is shown and leaves it as it was. This box ends with its deed first:
+  Create at the left, Not now at the right, so which one is wanted reads
+  first (every other box keeps Not now at the left). An Issue view with
+  none open in Forge's reference has Issue を書く under its line: Git opens
+  with the box for that repo, its first line ready, and Not now goes back to
+  Forge as it was.
 - **The box**: the issue's number and name ("#1 Fix：件名") and its detail,
   changed where they are read (pressed, they become the fields they were
   written in, Save and Not now under them), one quiet line of its repo and
@@ -1503,12 +1545,19 @@ A name alone on the first line (the same field as the search box). Under
 it, two columns: on the left, filling it, what the repo is for (概要), a
 raised box written straight into as a TODO's detail is, reaching down as
 far as the column beside it, whose words go into the repo's README.md under
-its title; on the right, level with it, the template as chips like the
-reference's (one chosen, ink) with no label over them, standing where the
-summary's label stands, and under the chips what will be made,
-shown exactly as File will show it: a card of tree rows under `root`, the
-new repo's name bold, its folders open. Then 作成, the one primary action,
-under both. Narrow, they stack: name, what it is for, template, the files.
+its title; on the right, level with it, under 作成されるもの, the one
+scaffold every repo starts from (nothing to choose: shared/templates.json's
+`c`, as `l3 repo new -t c` makes it), shown exactly as File will show it: a
+card of tree rows under `root`, the new repo's name bold, its folders open,
+and each file's name a field in its row. A name and its extension are
+changed there and nothing else: what a file says is never turned into
+another language, and what one file says of another's path (the Makefile of
+src/main.c) follows it. A name that cannot be (one with a "/", one met twice
+in a folder) is said under the card before 作成, which puts the keyboard
+there. Then 作成, the one primary action, under both. What is written stays
+while other pages are seen, until the repo is made. The two columns stand
+side by side only while what is written keeps a reading width beside the
+card; narrower, they stack: name, what it is for, the files.
 
 Under the form is the list of repos, the same cards as on Home. Once made,
 the page stays where it is: the new repo's card joins the list and lights

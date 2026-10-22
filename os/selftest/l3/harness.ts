@@ -8,6 +8,11 @@
 // Nothing here waits by the clock: the Remote is ready when it says so, and
 // l3 login is done when l3 exits (it polls the Remote at the interval the
 // Remote names).
+//
+// SELFTEST_REMOTE_KIND=worker: the Remote as production runs it instead
+// (selftest/prod/README.md): the Worker on workerd over a Postgres 16 of
+// this file's own, as remote_worker through the Neon driver; stopping and
+// starting it is the Worker restarting (the database stays).
 
 import assert from 'node:assert/strict';
 import {spawn, spawnSync, type ChildProcess} from 'node:child_process';
@@ -20,7 +25,9 @@ import {after} from 'node:test';
 import {fileURLToPath} from 'node:url';
 
 const OS = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const APP = 'http://localhost:4173';
+const WORKER = process.env.SELFTEST_REMOTE_KIND === 'worker';
+/** The app's origin (where a device's code is approved, where sign-in starts): on the Worker, its own (the app is served there). */
+let APP = 'http://localhost:4173';
 /** Ports this machine's other servers use: never taken here. */
 const TAKEN = (p: number) => [1420, 8787, 1430, 8797].includes(p) || (p >= 1450 && p <= 1580) || (p >= 8810 && p <= 8950);
 
@@ -81,8 +88,11 @@ export async function remote(env: Record<string, string> = {}) {
   const url = `http://127.0.0.1:${port}`;
   let server: ChildProcess | null = null;
   let log = '';
+  const prod = WORKER ? await worker(env, dir, port) : null;
+  if (prod) APP = url;
   /** The Remote started (again: on the same port, from the same data, so every session stays). */
   async function start() {
+    if (prod) return prod.remote.start();
     const p = spawn(process.execPath, [join(OS, 'service', 'dev.ts'), join(dir, 'remote'), String(port), APP], {cwd: OS, stdio: ['ignore', 'pipe', 'pipe'], env: {...process.env, ...env}});
     server = p;
     p.stderr.on('data', (d: Buffer) => { log += d; });
@@ -94,17 +104,19 @@ export async function remote(env: Record<string, string> = {}) {
   }
   /** The Remote stopped: out of every device's reach until it is started again. */
   async function stop() {
+    if (prod) return prod.remote.stop();
     const p = server;
     if (!p || p.exitCode !== null || p.signalCode !== null) return;
     const stopped = new Promise((r) => p.once('exit', r));
     p.kill();
     await stopped;
   }
-  await start();
+  if (!prod) await start();
   // Should this process end before its tests do, the Remote ends with it.
   process.once('exit', () => { server?.kill(); });
   after(async () => {
     await stop();
+    await prod?.close();
     rmSync(dir, {recursive: true});
   });
 
@@ -176,5 +188,21 @@ export async function remote(env: Record<string, string> = {}) {
     return {home, env, l3, login};
   }
 
-  return {url, dir, browser, api, device, start, stop, log: () => log};
+  return {url, app: APP, dir, browser, api, device, start, stop, log: () => prod ? prod.remote.log() : log};
+}
+
+/**
+ * The production-like Remote for one test file, on `port` at 127.0.0.1: what `env` asks of dev.ts, asked
+ * of the Worker. LENGTH3_PLAN=1 is the plan as on Workers with billing through the stand-in for Stripe;
+ * without it, every account is paid (dev.ts has no plan then; a Worker outside research always has one).
+ */
+async function worker(env: Record<string, string>, dir: string, port: number) {
+  const {cluster} = await import('../prod/postgres.ts');
+  const {remote: started, bridgeProcess, appBuild} = await import('../prod/stack.ts');
+  const pg = await cluster();
+  const b = await bridgeProcess();
+  const plan = env.LENGTH3_PLAN === '1';
+  const r = await started(pg, {dir: join(dir, 'worker'), assets: appBuild(), bridge: b.port, port, host: '127.0.0.1', noBucket: env.LENGTH3_NO_BUCKET === '1',
+    paid: !plan, plan: plan ? {freeRepos: env.LENGTH3_FREE_REPOS, freeMb: env.LENGTH3_FREE_MB, billing: true} : undefined});
+  return {remote: r, close: async () => { await r.stop(); await b.stop(); pg.destroy(); }};
 }

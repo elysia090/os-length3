@@ -76,6 +76,20 @@ test('a device asks for a code, a signed-in browser approves it, the device gets
   assert.equal((list.json as unknown[]).length, 2);
 });
 
+test('Devices: a session signed in days ago still lists the devices (Better Auth would ask for a fresh one)', async () => {
+  const s = await service();
+  const a = await s.start('Ren'), b = await s.start('Ren');
+  const raw = (t: string) => t.split('.')[0]; // the bearer is the session's token and its signature
+  await s.db.execute(sql`update session set created_at = now() - interval '3 days'`);
+  const got = await s.call('GET', '/api/auth/list-sessions', {token: a});
+  assert.equal(got.status, 200, JSON.stringify(got.json));
+  assert.deepEqual((got.json as unknown as {token: string}[]).map((x) => x.token).sort(), [raw(a), raw(b)].sort());
+  assert.equal((await s.call('GET', '/api/auth/list-sessions')).status, 401);
+  // An ended session is not listed.
+  await s.db.execute(sql`update session set expires_at = now() - interval '1 second' where token = ${raw(b)}`);
+  assert.deepEqual((await sessionsOf(s, a)).map((x) => x.token), [raw(a)]);
+});
+
 test('Devices: another device is signed out from any of the account\'s, and from no one else\'s', async () => {
   const s = await service();
   const laptop = await s.start('Ren'), phone = await s.start('Ren'), mio = await s.start('Mio');
@@ -457,6 +471,10 @@ test('main takes commits of its own; a review may ask for changes; what was merg
   const second = await commitOn('main', 'Docs', 'Say more');
   const log = (await s.call('GET', '/v1/repos/r/log', {token: t})).json as unknown as {id: string; parent: string | null; kind: string; title: string}[];
   assert.deepEqual(log.map((c) => [c.id, c.parent, c.kind, c.title]), [[second, first, 'Docs', 'Say more'], [first, null, 'Docs', 'Start']]);
+  // Each says what it changed from its parent; asked for a summary, no tree comes with it.
+  const summary = (await s.call('GET', '/v1/repos/r/log?summary=1', {token: t})).json as unknown as {id: string; files: number; folders: string[]; tree?: object}[];
+  assert.deepEqual(summary.map((c) => [c.id, c.files, c.folders, 'tree' in c]), [[second, 2, ['', 'issue'], false], [first, 1, [''], false]]);
+  assert.deepEqual((log as unknown as {files: number; tree: object}[]).map((c) => [c.files, typeof c.tree]), [[2, 'object'], [1, 'object']]);
   // A commit on main needs words; another account cannot commit on it, nor read its log.
   const h = await head();
   assert.equal((await s.call('POST', '/v1/repos/r/cuts', {token: t, body: {version: h.version, parent: h.head, title: ' '}})).status, 400);
@@ -1159,6 +1177,9 @@ test('a release is public: its root by digest and the desktop app by its pinned 
   const root = await get(`/v1/os/${sha}`);
   assert.deepEqual([root.status, root.headers.get('content-type'), root.headers.get('content-disposition'), (await body(root)).length],
     [200, 'application/octet-stream', null, 100]);
+  // Never changed under its name: any cache keeps it, as long as it likes; what the Remote says of anything else is kept by none.
+  for (const r of [whole, root]) assert.equal(r.headers.get('cache-control'), 'public, max-age=31536000, immutable');
+  assert.equal((await get('/v1/about')).headers.get('cache-control'), 'no-store');
 
   // A range: from a byte to a byte, from a byte to the end, an end past the end; each says which bytes of how many.
   for (const [path, range, status, contentRange, bytes] of [
@@ -1602,4 +1623,20 @@ test('Asked into a server from the Inbox: in once they accept the one who asked,
   await ask(ren, 'kai');
   await s.call('POST', '/v1/inbox/messages', {token: kai, body: {to: 'ren', body: 'ok'}});
   assert.deepEqual(await people(), ['ren@length3.test', 'kai@length3.test']);
+});
+
+test('what a commit changed is counted by the database as the clients count it: files with a digest on either side, folders in path order', async () => {
+  const s = await service();
+  const t = await s.person('Folders');
+  const d = async (x: string) => { const sha = await sha256(enc.encode(x)); await s.call('PUT', `/v1/blobs/${sha}`, {token: t, bytes: enc.encode(x)}); return sha; };
+  const [one, two, three] = [await d('1'), await d('2'), await d('3')];
+  // Bytewise, 'a.txt' comes before 'a/z.txt' ('.' < '/'): the top folder first. A folder kept empty (null) is no file.
+  await s.call('PATCH', '/v1/repos/f/draft', {token: t, body: {version: 0, set: {'b/x': one, 'a/z.txt': two, 'a.txt': three, empty: null}, remove: []}});
+  await s.call('POST', '/v1/repos/f/cuts', {token: t, body: {version: 1, parent: null, title: 'Start'}});
+  const [{id}] = (await s.call('GET', '/v1/repos/f/log?summary=1', {token: t})).json as unknown as {id: string}[];
+  // Then one file changed, one gone, one folder emptied: only what has a digest on either side counts.
+  await s.call('PATCH', '/v1/repos/f/draft', {token: t, body: {version: 1, set: {'b/x': two, other: null}, remove: ['a/z.txt', 'empty']}});
+  await s.call('POST', '/v1/repos/f/cuts', {token: t, body: {version: 2, parent: id, title: 'Next'}});
+  const log = (await s.call('GET', '/v1/repos/f/log?summary=1', {token: t})).json as unknown as {title: string; files: number; folders: string[]}[];
+  assert.deepEqual(log.map((c) => [c.title, c.files, c.folders]), [['Next', 2, ['a', 'b']], ['Start', 3, ['', 'a', 'b']]]);
 });

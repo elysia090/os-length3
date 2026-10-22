@@ -156,6 +156,8 @@ export class ServerLayer {
     const side = h('aside', {class: 'side server-side', 'aria-label': t('Who is in it, and the repos they show')});
     const center = h('div', {class: 'center server-center'}, top, slides, sheet, dock);
     const work = h('div', {class: 'work no-strip'}, center, side);
+    // Signed out, whose a board is is not told: there is no right pane, and so no line where it would start.
+    if (!signedIn) { side.hidden = true; work.classList.add('no-side'); }
 
     let list: servers.Server[] = [];
     let shown: Shown[] = [];
@@ -192,7 +194,14 @@ export class ServerLayer {
     const toBoards = () => {
       if (boardsChanged && serverId) { boardsChanged = false; show(serverId); } else place('boards');
     };
-    this.back = () => { if (showing === 'boards') return false; toBoards(); return true; };
+    /** Back to the boards with the keyboard where it went in: the gear, when it was behind the gear. */
+    const leaveSheet = () => {
+      const had = sheet.contains(document.activeElement);
+      const fromGear = showing === 'settings';
+      toBoards();
+      if (had && fromGear) gear.focus({preventScroll: true});
+    };
+    this.back = () => { if (showing === 'boards') return false; leaveSheet(); return true; };
     gear.addEventListener('click', () => { if (showing === 'settings') place('boards'); else settings(); });
 
     // ---- the boxes, slid as the issues are ----
@@ -484,7 +493,7 @@ export class ServerLayer {
       void gearSheet(s, {
         sheet,
         still: () => showing === 'settings' && current() === s,
-        done: toBoards,
+        done: leaveSheet,
         again: () => { if (showing === 'settings') settings(); paintSide(); },
         boardsChanged: () => { boardsChanged = true; },
         gone,

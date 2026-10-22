@@ -52,7 +52,15 @@ export interface Env {
   STRIPE_PRICE?: string;
   /** File contents (R2). Not bound: the Remote holds no files, and says so. */
   BLOBS?: R2Bucket;
+  /**
+   * '1': the stand-in provider (devoauth.ts) is offered too, for the production-like selftest on this
+   * machine (selftest/prod). Taken only where BASE_URL is this machine itself, never on Cloudflare.
+   */
+  DEV_SIGN_IN?: string;
 }
+
+/** Whether `url` is this machine itself (localhost, 127.x, ::1). */
+const loopback = (url: string) => { try { return /^(localhost|127(\.\d{1,3}){3}|\[::1\])$/i.test(new URL(url).hostname); } catch { return false; } };
 interface Ctx { waitUntil(p: Promise<unknown>): void }
 
 /**
@@ -103,10 +111,11 @@ function make(env: Env) {
   const origins = (env.APP_ORIGINS ?? '').split(/\s+/).filter(Boolean);
   // For research: the one account, entered by its link; no key, no way in at all.
   const enter = env.ENTER_AS ? {as: env.ENTER_AS, key: env.ENTER_KEY && env.ENTER_KEY.length >= 32 ? env.ENTER_KEY : ''} : undefined;
-  const auth = createAuth({db, secret: env.BETTER_AUTH_SECRET, baseURL: env.BASE_URL, appOrigin: env.APP_ORIGIN, origins, github, google, apple,
+  const dev = env.DEV_SIGN_IN === '1' && loopback(env.BASE_URL) && !enter;
+  const auth = createAuth({db, secret: env.BETTER_AUTH_SECRET, baseURL: env.BASE_URL, appOrigin: env.APP_ORIGIN, origins, github, google, apple, dev,
     only: enter && enterEmail(enter.as)});
   const bucket = env.BLOBS ? r2Bucket(env.BLOBS) : null;
-  const app = createApp({db, auth, bucket, origins: [env.APP_ORIGIN, ...origins], appOrigin: env.APP_ORIGIN, providers: providers({github, google, apple}),
+  const app = createApp({db, auth, bucket, origins: [env.APP_ORIGIN, ...origins], appOrigin: env.APP_ORIGIN, providers: providers({github, google, apple, dev}),
     domain: env.DOMAIN ?? 'length3.com', baseURL: env.BASE_URL, secret: env.BETTER_AUTH_SECRET, enter,
     quota: env.QUOTA_MB ? Number(env.QUOTA_MB) * 1024 ** 2 : undefined,
     // The plan holds here (but on a Remote for research, one person's alone); it is bought only when

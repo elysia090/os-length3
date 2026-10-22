@@ -16,6 +16,11 @@
 // The function returned is the teardown: both stop and the directory goes,
 // however the tests went. Nothing listens on a fixed port, so runs (and
 // other work on this machine) never meet.
+//
+// SELFTEST_REMOTE_KIND=worker runs the same tests against the Remote as
+// production runs it (selftest/prod/README.md): in place of 2 and 3, the
+// Worker on workerd serving that build and the Remote on one origin, over a
+// Postgres 16 of its own reached as remote_worker through the Neon driver.
 
 import {spawn, spawnSync, type ChildProcess} from 'node:child_process';
 import {createWriteStream, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync} from 'node:fs';
@@ -97,9 +102,38 @@ function stop(child: ChildProcess): Promise<void> {
   });
 }
 
+/** The production-like Remote (selftest/prod): Postgres, the bridge, the Worker on workerd serving the build. */
+async function worker(): Promise<() => Promise<void>> {
+  const {cluster} = await import('./prod/postgres.ts');
+  const {remote, bridgeProcess} = await import('./prod/stack.ts');
+  const pg = await cluster();
+  const b = await bridgeProcess().catch((e) => { pg.destroy(); throw e; });
+  const dir = mkdtempSync(join(tmpdir(), 'length3-selftest-worker-'));
+  let r: Awaited<ReturnType<typeof remote>> | null = null;
+  const teardown = async () => {
+    if (r) writeFileSync(join(LOGS, 'worker.log'), r.log());
+    await r?.stop();
+    await b.stop();
+    pg.destroy();
+    rmSync(dir, {recursive: true, force: true});
+  };
+  try {
+    // Each person paid (the plan holds outside research; servers are paid), billing through the stand-in for Stripe.
+    r = await remote(pg, {dir, assets: OUT, bridge: b.port, paid: true, plan: {billing: true}});
+  } catch (e) {
+    await teardown();
+    throw e;
+  }
+  process.env.SELFTEST_APP = process.env.SELFTEST_REMOTE = r.url;
+  process.env.SELFTEST_DATA = dir;
+  console.log(`selftest: the app and its Remote on ${r.url}: the Worker on workerd, Postgres 16 as remote_worker`);
+  return teardown;
+}
+
 export default async function globalSetup(_config: FullConfig) {
   mkdirSync(LOGS, {recursive: true});
   build();
+  if (process.env.SELFTEST_REMOTE_KIND === 'worker') return worker();
   const data = mkdtempSync(join(tmpdir(), 'length3-selftest-'));
   const [remotePort, appPort] = [await freePort(), await freePort()];
   const app = `http://localhost:${appPort}`;
