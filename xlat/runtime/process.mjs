@@ -1008,7 +1008,7 @@ export const REG = [...Array.from({length: 16}, (_, n) => `r${n}`), 'fs', 'fl', 
 /** Where the time went (run.mjs prints it with XLAT_TIMING=1): translating, compiling wasm, how much, and what a pack root fetched. */
 export const PROFILE = {images: 0, modules: 0, bytes: 0, translate: 0, compile: 0, fetches: 0, fetched: 0};
 /** XLAT_SYSCALLS=1 lists every system call on stderr (node only). */
-const TRACE_SYSCALLS = typeof process !== 'undefined' && !!process.env?.XLAT_SYSCALLS;
+export const TRACE_SYSCALLS = typeof process !== 'undefined' && !!process.env?.XLAT_SYSCALLS;
 /** XLAT_FAULTS=1 says what each fault that ends a process was (node only). */
 const TRACE_FAULTS = typeof process !== 'undefined' && !!process.env?.XLAT_FAULTS;
 /** XLAT_BLOCKS=1 lists every block entered (node only; run.mjs then translates with --trace). */
@@ -1016,7 +1016,7 @@ const TRACE_BLOCKS = typeof process !== 'undefined' && !!process.env?.XLAT_BLOCK
 /** Which argument of a call names a path (0: the first, 1: the second, after a directory). */
 const PATH_ARG = {2: 0, 4: 0, 6: 0, 21: 0, 59: 0, 80: 0, 83: 0, 84: 0, 87: 0, 89: 0, 257: 1, 262: 1, 263: 1, 269: 1, 439: 1};
 
-function trace(t, call) {
+export function trace(t, call) {
   // A path in the first argument (or the second, for the *at calls) is shown as text.
   const at = PATH_ARG[call.nr];
   let path = '';

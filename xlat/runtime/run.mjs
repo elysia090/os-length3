@@ -15,6 +15,7 @@ import {zstdDecompressSync} from 'node:zlib';
 import {Dir, File, Link, Vfs} from './fs.mjs';
 import {mountPack} from './pack.mjs';
 import {Kernel, PROFILE} from './process.mjs';
+import {RemoteKernel, canRunApart} from './remote.mjs';
 import {loadTranslator} from './translator.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -124,7 +125,9 @@ vfs.mkdirp(cwd);
 
 let stdin = new Uint8Array(0), stdinAt = 0;
 try { if (!process.stdin.isTTY) stdin = new Uint8Array(readFileSync(0)); } catch {}
-const kernel = new Kernel({
+// Each thread in a Worker of its own, as a cross-origin isolated page runs them; XLAT_INLINE=1: all here, in turn.
+const apart = canRunApart() && !process.env.XLAT_INLINE;
+const kernel = new (apart ? RemoteKernel : Kernel)({
   vfs,
   translate,
   console: {
@@ -135,7 +138,7 @@ const kernel = new Kernel({
   },
 });
 const started = performance.now();
-const status = kernel.spawn(path, [path, ...rest], ['HOME=/root', 'PATH=/bin:/usr/bin', 'LANG=C.UTF-8', 'TERM=dumb'], cwd);
+const status = await kernel.spawn(path, [path, ...rest], ['HOME=/root', 'PATH=/bin:/usr/bin', 'LANG=C.UTF-8', 'TERM=dumb'], cwd);
 if (process.env.XLAT_TIMING) {
   // What the run still holds once its programs have ended (after a collection, when node allows one).
   globalThis.gc?.();
