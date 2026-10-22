@@ -1078,10 +1078,33 @@ with it.
   - **Who may connect** is chosen as it is turned on, in the same press:
     *この端末だけ* (this device only, first and the default: 127.0.0.1 and
     ::1, so another PC finds the port closed, with no handshake and no
-    banner), or *同じネットワークにも* (the same network too: each private
-    or VPN address of the host besides, one socket each, never 0.0.0.0 and
-    never a public address, looked at again every few seconds). Kept on the
-    device, never on the Remote.
+    banner), or *同じネットワークにも* (the same network too: each LAN
+    address of the host besides, RFC 1918 or link-local, and an address in
+    100.64/10 only on a recognised VPN interface (`tailscale*`, `wg*`,
+    `zt*`, `nebula*`, NetBird's `wt*`, `CloudflareWARP`), since elsewhere
+    100.64/10 is a carrier's shared NAT, its other customers beside you;
+    one socket each, never 0.0.0.0, a public address, or a bridge's or a
+    container's (`docker*`, `br-*`, `virbr*`, `veth*`…: containers and VMs
+    are not the network a person means), looked at again every few
+    seconds). `l3 address` and the card name each interface taken
+    (`wlan0 192.168.1.5, tailscale0 100.101.102.103`). Kept on the device,
+    never on the Remote.
+  - **From the network it came in on.** Linux takes a packet for any of its
+    addresses on any interface, so a socket on the LAN address alone would
+    answer a sender on the public side who routes to that address through
+    the device. A connection is taken only from inside the subnet of the
+    address it came in on, from the device itself (its own addresses, so
+    `ssh` to its own LAN address works), or, on a VPN's interface, from a
+    non-public address the kernel routes by that interface (Tailscale's own
+    address is a /32 and its peers are in its table 52, so the kernel is
+    asked, over netlink); anything else is closed at accept, before the
+    banner. (Binding each socket to its device, SO_BINDTODEVICE, works
+    unprivileged here but takes anything that arrives on that interface,
+    a router's port forward from the Internet included, and needs a second
+    socket on lo for the device's own `ssh`; the subnet check refuses both.)
+  - **No IPv6 but ::1, deliberately for now**: a global IPv6 address is
+    reached from the Internet unless a firewall says otherwise, and a LAN's
+    is not yet told apart from it (a unit test holds this).
   - **Nothing of where leaves the device.** The Remote keeps only that a
     device listens, its scope's word, since when and when last heard;
     destinations are worked out and shown on the device itself.
@@ -1092,6 +1115,9 @@ with it.
   |---|---|---|
   | this device | the port on loopback; its card shows the destinations, the host key, the keys let in | the same, and the LAN addresses |
   | another PC on the LAN/VPN | nothing: the port is closed | `SSH-2.0-length3` and the host key; only a listed key gets in |
+  | a sender on another segment routing to the LAN address through this device | nothing: the port is closed | the handshake, then closed at accept before the banner |
+  | the carrier's other customers (100.64/10 on an ordinary interface) | nothing | nothing: no socket there; at a VPN address, closed at accept |
+  | containers and VMs behind a bridge (`docker0`, `virbr0`, …) | nothing | nothing: no socket on a bridge's address |
   | the internet | nothing | nothing: no socket on a public address |
   | the Remote | listens, `device` | listens, `network` |
 
