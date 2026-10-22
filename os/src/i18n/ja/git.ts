@@ -62,7 +62,6 @@ export default {
   'Approved by {who}': '{who}が承認',
   'Not approved yet': 'まだ承認されていません',
   'Change its words': '文面を直す',
-  'Every issue': 'Issue 一覧',
   // main's commit, what is done with (merged, closed), and putting a file back
   'Not committed on main in {repo}': '{repo}の main で Commit していない変更',
   '{n} file to commit on main': '{n}ファイルを main に Commit します',

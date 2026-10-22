@@ -143,26 +143,29 @@ test('a file found by its name is opened to write in from the keyboard alone, an
   await expect(app.forge.search).toHaveValue('main.c');
 });
 
-test('the right pane put away gives the center the width, and comes back as it was', async ({app}) => {
+test('the right pane put away gives the center the width; the search box stays where it was, and what is read under it', async ({app}) => {
   await app.file.named('hello', '', 'New folder', 'issue');
   await app.file.named('hello', 'issue', 'New file', '001.md');
   await app.forge.editFile('issue/001.md', 'Fix: the first\n');
   await app.forge.show('Issue');
   await app.forge.reference.getByRole('button', {name: /#1 Fix：the first/}).click();
-  await expect(app.forge.reference.getByRole('button', {name: 'Every issue'})).toBeVisible();
-  await app.forge.search.fill('hello');
+  await expect(app.forge.reference.getByRole('button', {name: 'Change its words'})).toBeVisible();
   const center = app.main.locator('.center');
   const wide = (await center.boundingBox())!.width;
+  const box = (await app.forge.search.boundingBox())!;
 
   await app.forge.paneSwitch.click();
   await expect(app.forge.paneSwitch).toHaveAttribute('aria-expanded', 'false');
-  await expect(app.forge.reference).toBeHidden();
+  await expect(app.main.getByRole('complementary', {name: 'Plugins and Prompt'})).toBeHidden();
   expect((await center.boundingBox())!.width).toBeGreaterThan(wide + 200);
+  const still = (await app.forge.search.boundingBox())!;
+  expect(Math.abs(still.x - box.x)).toBeLessThan(1);
+  expect(Math.abs(still.width - box.width)).toBeLessThan(1);
+  await expect(app.forge.reference.getByRole('button', {name: 'Change its words'})).toBeVisible();
 
-  // Back: the issue still shown, the search as it was; and it stays as left when the page is opened again.
+  // Back, and it stays as left when the page is opened again.
   await app.forge.paneSwitch.click();
-  await expect(app.forge.reference.getByRole('button', {name: 'Every issue'})).toBeVisible();
-  await expect(app.forge.search).toHaveValue('hello');
+  await expect(app.main.getByRole('complementary', {name: 'Plugins and Prompt'})).toBeVisible();
   await app.forge.paneSwitch.click();
   await app.page.reload();
   await app.settled();
@@ -170,23 +173,45 @@ test('the right pane put away gives the center the width, and comes back as it w
   await expect(app.forge.paneSwitch).toHaveAttribute('aria-expanded', 'false');
 });
 
-test('a narrow window reaches the issues, the diff and the output from the switch, and Escape puts them away', async ({app}) => {
+test('a narrow window reaches the issues, the diff and the output from the search box, and Escape puts them away', async ({app}) => {
   await app.forge.editFile('README.md', '# hello\n\nWritten in Forge.\n');
   await app.page.setViewportSize({width: 552, height: 800});
-  await expect(app.forge.reference).toBeHidden();
-  await app.forge.paneSwitch.focus();
-  await app.page.keyboard.press('Enter');
-  for (const part of ['Issue', 'diff', 'Output']) await expect(app.forge.reference.getByRole('region', {name: part, exact: true})).toBeAttached();
-  await expect(app.forge.reference.getByRole('region', {name: 'Issue', exact: true})).toBeVisible();
-  await expect(app.forge.diffLine('Written in Forge.')).toBeAttached();
+  await expect(app.forge.results).toBeHidden();
+  await app.forge.search.click();
+  for (const part of ['Issue', 'diff', 'Output'] as const) await expect(app.forge.kind(part)).toBeVisible();
+  await app.forge.openDiff('README.md');
+  await expect(app.forge.diffLine('Written in Forge.')).toBeVisible();
   await app.forge.reference.getByRole('button', {name: /Put back README/}).focus();
+  // Escape: from what is read back to the box, then everything under it away.
   await app.page.keyboard.press('Escape');
-  await expect(app.forge.reference).toBeHidden();
-  await expect(app.forge.paneSwitch).toBeFocused();
+  await expect(app.forge.search).toBeFocused();
+  await app.page.keyboard.press('Escape');
+  await expect(app.forge.results).toBeHidden();
   // The search reaches a changed file's diff as well.
   await app.forge.search.fill('README');
   await app.forge.results.getByRole('button', {name: 'The diff of README.md'}).click();
   await expect(app.forge.diffLine('Written in Forge.')).toBeVisible();
+});
+
+test('what is searched and read lines up sideways: the one in hand fills the box, its neighbours a sliver past its edges, pressed to move to them', async ({app}) => {
+  await app.forge.editFile('README.md', '# hello\n\nWritten in Forge.\n');
+  await app.forge.find('Written');
+  await app.forge.results.getByRole('button', {name: 'The diff of README.md'}).click();
+  await expect(app.forge.diffLine('Written in Forge.')).toBeVisible();
+  // The search it came from is at its left, a sliver, and ← under the box: pressed, the search is in hand again, as typed.
+  await expect(app.forge.results.locator('.found-here')).toHaveText(/^diff\s*README\.md\s*2 \/ 2$/);
+  await app.forge.results.getByRole('button', {name: 'Searched Written', exact: true}).click();
+  await expect(app.forge.hit(/Written in Forge/)).toBeVisible();
+  await expect(app.forge.search).toHaveValue('Written');
+  await app.forge.results.getByRole('button', {name: 'diff README.md', exact: true}).click();
+  await expect(app.forge.diffLine('Written in Forge.')).toBeVisible();
+  // ← → along the line from the keyboard.
+  await app.page.keyboard.press('ArrowLeft');
+  await expect(app.forge.hit(/Written in Forge/)).toBeVisible();
+  // Pressed with nothing typed: what was searched and read, newest first.
+  await app.forge.search.fill('');
+  await app.forge.search.click();
+  await expect(app.forge.results.locator('.found-item')).toHaveText([/^diff\s*README\.md$/, /^Searched\s*Written$/]);
 });
 
 test('the plug opens a plain plugin area at the top of the center, and closes it', async ({app}) => {

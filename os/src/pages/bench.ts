@@ -119,21 +119,23 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   const termSlot = h('div', {class: 'term-slot'});
   const prompt = h('textarea', {class: 'prompt-in', rows: '1', 'aria-label': t('Prompt box'), spellcheck: 'false', autocapitalize: 'off'}) as HTMLTextAreaElement;
   const note = h('p', {class: 'prompt-note muted small', role: 'status'});
-  // Run, with its keys beside it: Ctrl+Enter (⌘+Enter) is how it is done from the box, and the button says so.
+  // Run: Ctrl+Enter (⌘+Enter) is how it is done from the box, said in its title, not beside the word.
   const mac = /Mac|iPhone|iPad/.test(navigator.platform);
   const keys = mac ? '⌘+Enter' : 'Ctrl+Enter';
   const runIt = h('button', {type: 'submit', class: 'button small-button prompt-run', 'aria-keyshortcuts': mac ? 'Meta+Enter' : 'Control+Enter',
-    title: t('Run ({keys})', {keys})}, t('Run'), h('span', {class: 'prompt-keys'}, keys)) as HTMLButtonElement;
+    title: t('Run ({keys})', {keys})}, t('Run')) as HTMLButtonElement;
   const form = h('form', {class: 'prompt'}, prompt, runIt);
   const dock = h('div', {class: 'dock'}, termSlot, form, note);
-  const center = h('div', {class: 'center'}, pluginArea(), parts.main, dock);
-  const reference = new Reference({reveal: parts.reveal, show: () => setPane(true), recall: (line) => {
+  const center = h('div', {class: 'center'}, parts.main, dock);
+  const reference = new Reference({reveal: parts.reveal, recall: (line) => {
     if (!repo || prompt.disabled) return;
     put(line);
     prompt.focus();
   }});
   const sideId = `side-${++benches}`;
-  const side = h('aside', {class: 'side', id: sideId, 'aria-label': t('Reference and Prompt')}, reference.element, termHome);
+  // The right pane: at its top the plugin area, plain until the rail's plug opens it; under it the Prompt.
+  // What the center refers to is under the search box, which sits over the pane (reference.ts).
+  const side = h('aside', {class: 'side', id: sideId, 'aria-label': t('Plugins and Prompt')}, pluginArea(), termHome);
   const toggle = h('button', {type: 'button', class: 'pane-toggle', 'aria-label': t('Right pane'), 'aria-controls': sideId}, mark('pane')) as HTMLButtonElement;
   const bar = h('div', {class: 'bar'}, parts.strip ?? h('span', {class: 'bar-room'}), reference.search, toggle);
   const work = h('div', {class: parts.strip ? 'work bench' : 'work bench no-strip'}, bar, center, side);
@@ -144,8 +146,6 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   /** Narrow, whether the pane is laid over the center now (never on its own: only when asked for). */
   let over = false;
   const shown = () => (narrow.matches ? over : paneOpen);
-  const body = () => reference.element.querySelector<HTMLElement>('.reference-body');
-  let read = 0;
   const paintPane = () => {
     work.classList.toggle('pane-closed', !paneOpen);
     work.classList.toggle('pane-out', over);
@@ -153,17 +153,30 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   };
   const setPane = (on: boolean) => {
     if (on === shown()) return;
-    if (!on) read = body()?.scrollTop ?? 0;
     if (narrow.matches) over = on;
     else {
       paneOpen = on;
       try { localStorage.setItem(PANE_KEY, on ? 'open' : 'closed'); } catch { /* a convenience */ }
     }
     paintPane();
-    const b = body();
-    if (on && b) b.scrollTop = read;
   };
   toggle.addEventListener('click', () => setPane(!shown()));
+  // The search's box is only as tall as the room above the center's Prompt, so the Prompt brought up over the
+  // center (its output as it grows) is never under it (issue #20).
+  const searchRoom = () => work.style.setProperty('--search-room', `${Math.max(0, dock.getBoundingClientRect().top - reference.search.getBoundingClientRect().bottom - 8)}px`);
+  // The pane's Prompt starts level with the foot of the rail's Inbox: one line across the page, rail to pane.
+  const promptAt = () => {
+    const inbox = document.getElementById('purpose-inbox');
+    if (!inbox || !side.isConnected) return;
+    const at = inbox.getBoundingClientRect().bottom - side.getBoundingClientRect().top;
+    if (at > 0) side.style.setProperty('--prompt-at', `${at}px`);
+  };
+  const roomy = new ResizeObserver(() => { searchRoom(); promptAt(); });
+  roomy.observe(dock);
+  roomy.observe(work);
+  // The plugin area is the pane's top: brought out by the plug, it brings the pane out with it.
+  const offPlug = onPlugins(() => { if (!work.isConnected && work.dataset.shown) { offPlug(); return; } if (pluginsOpen()) setPane(true); });
+  requestAnimationFrame(() => { work.dataset.shown = '1'; });
   narrow.addEventListener('change', () => { over = false; paintPane(); });
   // Laid over the center, it goes with Escape (the keyboard back on the switch) or a press outside it.
   side.addEventListener('keydown', (event) => {

@@ -38,10 +38,11 @@ const BACK = (f: FileDiff) => (f.status === 'added' ? [t('It was not in the last
   : [t('Back as it was at the last commit.'), t('What was changed here goes.')]);
 
 /**
- * Put back, at the right end of a file's head. Pressed, the head gives way to
- * what will happen, Not now at the left and Put back at the right (under the
- * pointer), and comes back as it was if the answer is no. The lines stay under
- * it, so what goes is in view.
+ * Put back, at the foot of a file's lines, its right end: out of the head, where
+ * the file's name and counts have the line to themselves (issue #20: in the head
+ * it squeezed and wrapped them). Pressed, the foot gives way to what will happen,
+ * Not now at the left and Put back at the right (under the pointer), and comes
+ * back as it was if the answer is no. The lines stay over it, so what goes is in view.
  */
 function putBackButton(f: FileDiff, head: HTMLElement, act: (f: FileDiff) => Promise<void>): HTMLElement {
   const back = h('button', {type: 'button', class: 'button small-button put-back', 'aria-label': t('Put back {path}', {path: fileName(f.path)})}, t('Put back')) as HTMLButtonElement;
@@ -62,7 +63,7 @@ function putBackButton(f: FileDiff, head: HTMLElement, act: (f: FileDiff) => Pro
       try { await act(f); head.classList.remove('asking'); } catch (x) { error.textContent = errorText(x); yes.disabled = false; }
     });
     head.classList.add('asking');
-    head.replaceChildren(h('span', {class: 'diff-name', title: f.path}, fileName(f.path)), ...BACK(f).map((l) => h('span', {class: 'muted small'}, l)), error, foot(no, yes));
+    head.replaceChildren(...BACK(f).map((l) => h('span', {class: 'muted small'}, l)), error, foot(no, yes));
     yes.focus();
   });
   return back;
@@ -86,11 +87,8 @@ export function diffFiles(files: FileDiff[], o: DiffOptions = {}): HTMLElement[]
     const head = h('summary', {class: 'diff-head'}, name,
       f.binary ? h('span', {class: 'muted small'}, t('Binary')) : h('span', {class: 'diff-count'}, add ? `+${add}` : '', del ? ` −${del}` : ''));
     // A binary file is put back only by going (one added since); its bytes are not written here.
-    if (o.putBack && (!f.binary || f.status === 'added')) {
-      head.append(h('span', {class: 'grow'}), putBackButton(f, head, o.putBack));
-      // While it asks, the head is not the fold's switch.
-      head.addEventListener('click', (e) => { if (head.classList.contains('asking')) e.preventDefault(); });
-    }
+    const foot = o.putBack && (!f.binary || f.status === 'added') ? h('div', {class: 'diff-foot'}) : null;
+    if (foot) foot.append(putBackButton(f, foot, o.putBack!));
     // Where each line is in the file as it is now: its own number, or for a removed line the next line kept (else the last).
     const now = (k: number): number | undefined => {
       const l = f.lines[k];
@@ -115,7 +113,7 @@ export function diffFiles(files: FileDiff[], o: DiffOptions = {}): HTMLElement[]
       return row;
     }).filter(Boolean) as HTMLElement[];
     if (f.more) body.push(h('p', {class: 'muted small'}, tn('{n} more line', '{n} more lines', f.more)));
-    const fold = h('details', {class: 'diff-file'}, head, h('div', {class: 'diff'}, ...body)) as HTMLDetailsElement;
+    const fold = h('details', {class: 'diff-file'}, head, h('div', {class: 'diff'}, ...body), ...(foot ? [foot] : [])) as HTMLDetailsElement;
     fold.open = i < OPEN;
     return fold;
   });

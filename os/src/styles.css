@@ -505,7 +505,7 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .flow { height: 100%; overflow-y: auto; padding: var(--s3) var(--s5) 160px; }
 /* Scrollbars in the work's own colours, not the browser's white: the thumb a thing one drags (edge), its
    track the ground under it. Still there and still dragged; forced colours draw the system's own. */
-.work.bench :is(.flow, .code, .reference-body, .search-results, .term-out, .prompt-in, .pills), .work.bench > .side.pane-out { scrollbar-color: var(--edge) transparent; }
+.work.bench :is(.flow, .code, .found-body, .search-results, .term-out, .prompt-in, .pills), .work.bench > .side.pane-out { scrollbar-color: var(--edge) transparent; }
 .flow:focus-visible { outline-offset: -2px; }
 .path {
   position: sticky; top: calc(-1 * var(--s3)); z-index: 1;
@@ -572,14 +572,11 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
    prompt line, so it does not cover what one reads to write the first line; it grows with the output. */
 .dock > .prompt { min-width: 0; }
 .prompt { display: flex; align-items: flex-end; gap: var(--s3); border: 1px solid var(--edge); border-radius: var(--r-place); background: var(--raised); padding: var(--s3) var(--s4); }
-/* Run at the box's bottom right with its keys, a small button that does not make the box taller;
-   inside the raised box its hover is a step back to the ground. */
+/* Run at the box's bottom right, the word alone (its keys are in its title and name), a small button that does
+   not make the box taller; inside the raised box its hover is a step back to the ground. */
 .prompt-run { flex: none; display: inline-flex; align-items: center; gap: var(--s2); margin-block: calc((var(--t-body) * 1.6 - var(--h-row)) / 2); }
 .prompt-run:hover:not(:disabled) { background: var(--ground); }
-.prompt-keys { color: var(--sub); font-family: var(--mono); }
 .prompt-run:disabled { opacity: .5; cursor: default; }
-/* A phone has no keys to name and no room for them: Run alone (its keys stay in its name for those who have them). */
-@media (max-width: 560px) { .prompt-keys { display: none; } }
 .prompt:focus-within { outline: 2px solid var(--ink); outline-offset: 2px; }
 .prompt-in { flex: 1; min-width: 0; max-height: 30vh; border: 0; padding: 0; background: transparent; resize: none; font: var(--t-body)/1.6 var(--sans); }
 .prompt-in:focus { outline: none; }
@@ -614,24 +611,25 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .work.unrun .side { grid-template-rows: minmax(0, 1fr) auto; }
 .work.prompting .side, .work.reviewing .side { grid-template-rows: minmax(0, 2fr) minmax(0, 0fr); }
 .issue-one .row { flex-wrap: wrap; }
-/* The reference: its parts one under another from the top line, the pane's own scroll. */
-.pane.reference { display: grid; grid-template-rows: minmax(0, 1fr); padding-top: var(--band); }
-.ref-parts { display: grid; gap: var(--s5); }
-.ref-part { display: grid; gap: var(--s2); align-content: start; }
-.ref-part > h2 { font-size: var(--t-body); font-weight: 600; }
-.ref-part .diff-file:last-child { margin-bottom: 0; }
-.reference-body .revealed { background: var(--raised); border-radius: var(--r-field); transition: background var(--motion); }
 
 /* The bench's top line: the band (Forge's) at the left, the search box in the middle of the center,
    the right pane's switch at its right end. Its row is the band's, so nothing under it moves. */
 .work.bench, .work.bench.no-strip { grid-template-rows: auto minmax(0, 1fr); }
+/* The right pane is W: a quarter of the bench, never under 280 px. The search box is the pane's, over it at
+   its width (from the pane's inner left to its inner right); only what opens under it reaches into the
+   center, 2 W wide from the box's right end, so that a diff's lines or a run's output are not cut off. With
+   nothing searched the pane is straight. The pane's switch is just left of the box; put away, the box stays. */
+.work.bench { container-type: inline-size; grid-template-columns: minmax(0, 1fr) max(280px, 25%); }
 .work.bench > .bar {
-  grid-column: 1; grid-row: 1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(200px, 360px) minmax(0, 1fr);
+  --pane-w: max(280px, 25cqw);
+  --search-w: calc(var(--pane-w) - 2 * var(--s5));
+  grid-column: 1 / -1; grid-row: 1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto var(--search-w);
   align-items: center; gap: var(--s3); padding: var(--band) var(--s5) var(--s3);
 }
 .work.bench > .bar > .repo-strip { grid-column: 1; min-width: 0; padding: 0; border: 0; overflow: visible; }
-.work.bench > .bar > .search-box { grid-column: 2; }
-.work.bench > .bar > .pane-toggle { grid-column: 3; justify-self: end; }
+.work.bench > .bar > * { grid-row: 1; }
+.work.bench > .bar > .pane-toggle { grid-column: 2; }
+.work.bench > .bar > .search-box { grid-column: 3; }
 .pane-toggle { display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; color: var(--ink); cursor: pointer; }
 .pane-toggle:hover { background: var(--raised); }
 .pane-toggle .mark { width: var(--s4); height: var(--s4); }
@@ -641,41 +639,96 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .work.bench.pane-closed { grid-template-columns: minmax(0, 1fr); }
 .work.bench.pane-closed > .side { display: none; }
 /* The one line, between the center and the pane: from the top line to the prompt box's foot, not edge to edge. */
-.work.bench > .side { position: relative; }
-.work.bench > .side::before { content: ''; position: absolute; left: 0; top: var(--band); bottom: var(--s5); width: 1px; background: var(--rule); }
+/* The pane's top is the plugin area's; the Prompt starts level with the foot of the rail's Inbox (bench.ts measures
+   it into --prompt-at), pushed down only by a plugin area opened taller than that. */
+.work.bench > .side, .work.bench:is(.unrun, .prompting, .reviewing) > .side { position: relative; grid-row: 2; grid-template-rows: minmax(var(--prompt-at, 40%), auto) minmax(0, 1fr); }
+.work.bench > .side > .term-home { grid-row: 2; margin-top: calc(-1 * var(--s5)); } /* its words, not its padding, on that line */
+.work.bench > .side::before { content: ''; position: absolute; left: 0; top: 0; bottom: var(--s5); width: 1px; background: var(--rule); }
 /* What was found, under the box and over the center, while the box (or what was found) has the keyboard. */
 .search-box { position: relative; min-width: 0; }
 .search-results {
-  position: absolute; z-index: 4; top: calc(100% + var(--s2)); left: 50%; transform: translateX(-50%); width: min(560px, 60vw);
-  max-height: 60vh; overflow: auto; padding: var(--s3); background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-card);
+  position: absolute; z-index: 4; top: calc(100% + var(--s2)); right: 0; width: calc(2 * var(--pane-w));
+  padding: var(--s1) 0 var(--s2); background: var(--ground);
 }
-.search-results:empty, .search-box:not(:focus-within) > .search-results { display: none; }
+/* Under the box, while it has the keyboard or something chosen is read there: Issue, diff and Output side by
+   side, and under them the large box. In it what was searched and read lines up sideways, the one in hand
+   filling it, its neighbours a sliver past its edges (pressed to move to them), as Git's issues and Server's
+   boards do; the card in hand scrolls within the box. */
+.search-box:not(:focus-within):not(.reading):not(.moving) > .search-results { display: none; }
+.search-results { display: flex; flex-direction: column; gap: var(--s3); max-height: none; overflow: visible; }
+/* Issue, diff and Output under the box itself, at its width; the large box under them reaches into the center. */
+.search-pills { display: flex; flex-wrap: wrap; gap: var(--s2); align-self: flex-end; width: var(--search-w); }
+.search-panel { min-width: 0; }
+/* No slivers: ← and → under the box move along. What comes next shows as the edge of a card behind, past the
+   box's right end, without narrowing it; what came before is ←'s to say. */
+.search-panel > .slides { --peek: 0px; position: relative; }
+.search-panel > .slides.more::after {
+  content: ''; position: absolute; top: var(--s2); bottom: var(--s2); right: calc(-1 * var(--s2)); width: var(--s2);
+  border: 1px solid var(--rule); border-left: 0; border-radius: 0 var(--r-place) var(--r-place) 0; pointer-events: none;
+}
+/* As tall as there is room for above the center's Prompt (bench.ts sets --search-room from the box's foot to the
+   Prompt's top): the Prompt brought up over the center is never under it. */
+.found-card {
+  display: flex; flex-direction: column; border: 1px solid var(--rule); border-radius: var(--r-place); background: var(--ground);
+  height: max(120px, min(60vh, 560px, calc(var(--search-room, 100vh) - 2 * var(--h-row) - var(--s1) - 2 * var(--s2) - var(--s3) - var(--s2))));
+}
+.slide[aria-current='true'] > .found-card { border-color: var(--ink); }
+.slide[aria-current='false'] > .found-card { color: var(--sub); }
+.search-panel .slide-stage:has(.stage-hit.next:hover) .slide[aria-current='true'] + .slide > .found-card,
+.search-panel .slide-stage:has(.stage-hit.prev:hover) .slide:has(+ .slide[aria-current='true']) > .found-card { background: var(--raised); }
+.found-body { flex: 1; min-height: 0; overflow: auto; padding: var(--s3); }
+/* What is done to what is read (Put back), at the box's bottom right, under all of it. */
+.found-foot { flex: none; padding: var(--s3) var(--s4); }
+.found-foot:empty { display: none; }
+.found-foot > .diff-foot { padding: 0; }
+/* Under the box: ← where the line goes back, → where it goes on, and where in it the one in hand is. */
+.found-nav { display: flex; align-items: center; gap: var(--s3); margin-top: var(--s2); }
+.found-here { flex: 1; min-width: 0; margin: 0; display: flex; align-items: baseline; justify-content: center; gap: var(--s2); }
+.found-here > .found-what { min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.found-here > .found-kind, .found-here > .found-at { flex: none; }
+.found-step { display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; color: var(--ink); cursor: pointer; }
+.found-step:hover:not(:disabled) { background: var(--raised); }
+.found-step:disabled { visibility: hidden; }
+.found-at { font: var(--t-meta) var(--mono); color: var(--sub); }
+.work.bench .search-results { max-height: var(--search-room, none); }
+.found-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s1); }
+.found-item { display: flex; align-items: baseline; gap: var(--s2); width: 100%; min-height: var(--h-row); padding: var(--s1) var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
+.found-item:hover { background: var(--raised); }
+.found-kind { flex: none; font-size: var(--t-meta); color: var(--sub); }
+.found-what { min-width: 0; overflow-wrap: anywhere; }
+.found-what.mono { font: var(--t-meta) var(--mono); }
+.found-item > .diff-count, .found-item > .row-meta { margin-left: auto; flex: none; }
+/* Put back at the foot of a file's lines, its right end; asking, the foot says what will happen. */
+.diff-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--s2); padding: var(--s2) 0; }
+.diff-foot.asking { justify-content: flex-start; }
 .hit-head { display: flex; align-items: center; gap: var(--s2); }
-.hit-head > .hit-file { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.hit-diff { flex: none; min-height: var(--h-row); padding: 0 var(--s2); border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; color: var(--sub); font: var(--t-meta) var(--mono); cursor: pointer; }
-.hit-diff:hover { background: var(--raised); color: var(--ink); }
+.hit-head > .hit-file { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
+/* A found file's changes (+3), right after its name in its words, not a pill of its own: pressed, its diff. */
+.hit-diff { flex: none; padding: 0; border: 0; background: transparent; color: var(--sub); font: var(--t-meta) var(--mono); cursor: pointer; }
+.hit-diff:hover { color: var(--ink); text-decoration: underline; }
 .hit-kind { margin: 0 var(--s1) var(--s1); font-size: var(--t-meta); font-weight: 600; color: var(--sub); }
 .hit-issue, .hit-run { font-family: var(--sans); font-weight: 400; overflow-wrap: anywhere; }
 .hit-run { font-family: var(--mono); }
 /* The plugin area at the top of the center: plain (nothing) until it is opened from the rail's plug. */
-.plugins { flex: none; padding: 0 var(--s5) var(--s3); }
+.plugins { padding: 0 var(--s5) var(--s3); }
 .plugins .empty { margin-top: 0; padding: var(--s4) var(--s5); }
 .plugins .slide { height: auto; }
 /* Narrow (after the wide rules above, which it changes): the search at the top line's right, the right pane
    folded away and, brought out with its switch, laid over the center under the top line. */
 @media (max-width: 760px) {
-  .work.bench > .bar { grid-template-columns: minmax(0, 1fr) minmax(96px, 45%) auto; gap: var(--s2); padding-left: var(--s4); padding-right: var(--s2); }
+  .work.bench { grid-template-columns: minmax(0, 1fr); }
+  .work.bench > .bar { grid-template-columns: minmax(0, 1fr) auto minmax(96px, 45%); gap: var(--s2); padding-left: var(--s4); padding-right: var(--s2); }
   .work.bench > .side { display: none; }
   .work.bench > .side::before { display: none; }
   .work.bench.pane-out > .side {
     /* Placed in the one column, so that column (not an empty second one) is what it is laid over. */
     grid-column: 1; grid-row: 1 / -1;
-    display: grid; grid-template-rows: minmax(0, 1fr); position: absolute; z-index: 3;
+    display: grid; grid-template-rows: auto minmax(0, 1fr); position: absolute; z-index: 3;
     top: calc(var(--band) + var(--h-row) + var(--s2)); right: var(--s2); width: min(360px, calc(100% - 2 * var(--s2))); max-height: 70vh;
     background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-card);
   }
+  /* Laid over, it is the plugin area: the Prompt is the center's here (its dock, while it is written to). */
   .work.bench.pane-out > .side > .term-home { display: none; }
-  .work.bench.pane-out > .side .pane.reference { padding: var(--s3); }
   .work.bench .search-results { left: auto; right: 0; transform: none; width: min(360px, calc(100vw - var(--rail) - 2 * var(--s4))); }
 }
 /* One line to type in, the same everywhere: the search box, a repo's name. */
@@ -734,8 +787,6 @@ button.diff-no:hover { color: var(--ink); background: var(--raised); border-radi
 .hit-line { color: var(--sub); text-align: right; font-variant-numeric: tabular-nums; }
 .hit-text { white-space: pre; overflow: hidden; text-overflow: ellipsis; }
 mark { background: var(--ink); color: var(--ground); }
-.reference-body { min-height: 0; overflow: auto; }
-.reference-body .empty { margin-top: 0; padding: var(--s5) var(--s4); }
 .facts { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: var(--s1) var(--s3); margin: 0; }
 .facts dt { color: var(--sub); font-size: var(--t-meta); }
 .facts dd { margin: 0; overflow-wrap: anywhere; }
@@ -806,7 +857,9 @@ mark { background: var(--ink); color: var(--ground); }
 .term-activity { grid-row: 3; display: flex; align-items: center; gap: var(--s2); min-height: 0; }
 .term-activity:empty { display: none; }
 /* Ended: what happened and Start again side by side, at the Prompt's bottom right under its output. */
-.term.ended > p { grid-row: 3; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: var(--s2); }
+.term.ended > p { grid-row: 3; display: flex; justify-content: flex-end; align-items: center; gap: var(--s2); }
+/* What happened wraps in its own room; the power switch stays on its line at the right, so the line is no taller. */
+.term.ended > p > span:first-child { min-width: 0; text-align: right; overflow-wrap: anywhere; }
 .small-button { min-height: var(--h-row); padding: 0 var(--s3); font-size: var(--t-meta); }
 .term-out { margin: 0; overflow: auto; min-height: 0; font: var(--t-meta)/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 

@@ -14,12 +14,13 @@ test('a file edited is saved, and what changed shows in the diff', async ({signe
 
   await app.forge.show('diff');
   await expect(app.forge.reference.getByText('README.md', {exact: true})).toBeVisible();
+  await app.forge.openDiff('README.md');
   await expect(app.forge.diffLine('Written in Forge.')).toBeVisible();
 });
 
 test('a diff line pressed is marked, and pressed again is not', async ({signedIn: app}) => {
   await app.forge.editFile('README.md', '# hello\n\nMark this line.\n');
-  await app.forge.show('diff');
+  await app.forge.openDiff('README.md');
 
   const line = app.forge.diffLine('Mark this line.');
   await expect(line).toHaveAttribute('aria-pressed', 'false');
@@ -49,6 +50,8 @@ test('a file put back from the diff is as it was at the last commit, and leaves 
   await app.forge.putBack('README.md', 'What was changed here goes.');
 
   await expect(app.forge.editor('README.md')).toHaveValue(was);
+  // Pressed with nothing typed, the box shows what is changed now: not README.md.
+  await app.forge.show('diff');
   await expect(app.forge.reference.getByText('README.md', {exact: true})).toBeHidden();
 });
 

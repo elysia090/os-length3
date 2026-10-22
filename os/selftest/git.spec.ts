@@ -180,6 +180,7 @@ test('an empty Issue view in Forge writes the first issue for its repo, and Not 
   await app.git.step('Not now').click();
   await expect(app.rail.button('forge')).toHaveAttribute('aria-current', 'page');
   await expect(app.forge.editor('README.md')).toHaveValue('# tide\n');
+  await app.forge.show('Issue');
   await expect(app.forge.reference).toContainText('No issues yet');
 });
 

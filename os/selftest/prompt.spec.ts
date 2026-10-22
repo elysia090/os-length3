@@ -57,6 +57,7 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
 
     await app.forge.show('Output');
     await expect(app.forge.reference).toContainText(/\d+ ms/);
+    await app.forge.readRun('ls');
     await app.forge.ran('ls').click();
     await expect(app.forge.promptBox).toHaveValue('ls');
     await expect(app.forge.promptBox).toBeFocused();
@@ -110,14 +111,17 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     }
   });
 
-  test('a Prompt stopped says so at its bottom right, with Start again beside it, under its output', async ({app}) => {
+  test('a Prompt stopped says so at its bottom right, with its power switch off beside it, under its output', async ({app}) => {
     await app.forge.run('echo before-stop');
     await expect(app.forge.prompt).toContainText(/^before-stop$/m);
     await app.runtime.open('Prompts running');
     await app.main.getByRole('tabpanel', {name: /^Prompts running/}).getByRole('button', {name: 'Stop', exact: true}).click();
     await app.rail.go('forge');
-    const again = app.forge.prompt.getByRole('button', {name: 'Start again'});
+    const again = app.forge.prompt.getByRole('switch', {name: 'Start again'});
     await expect(again).toBeVisible();
+    await expect(again).toHaveAttribute('aria-checked', 'false');
+    // No taller than the line it is on.
+    expect((await again.boundingBox())!.height).toBeLessThanOrEqual(32);
     const out = (await app.forge.prompt.getByText('before-stop').last().boundingBox())!;
     const at = (await again.boundingBox())!;
     const box = (await app.forge.prompt.boundingBox())!;

@@ -412,8 +412,9 @@ export class Session {
 
   private sayEnded() {
     if (!this.ended || !this.said) return;
-    // Ended: what happened and Start again side by side at the Prompt's bottom right, under its output (styles.css).
-    const restart = h('button', {class: 'button small-button', type: 'button'}, t('Start again'));
+    // Ended: what happened and, at the Prompt's bottom right under its output, its power switch, off: switched on,
+    // it starts again (styles.css). The same switch as SSH's and a repo card's, no taller than the line.
+    const restart = h('button', {class: 'power', type: 'button', role: 'switch', 'aria-checked': 'false', 'aria-label': t('Start again')}, h('span', {class: 'knob'}));
     restart.addEventListener('click', () => this.restart());
     this.element.classList.add('ended');
     this.status.replaceChildren(h('span', {}, this.said()), restart);

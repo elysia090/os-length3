@@ -217,13 +217,19 @@ class NewRepo extends Part {
   }
 }
 
-/** Forge: the band of repos and the search on the top line, the files one after another, the reference at the right. */
+/** Forge: the band of repos and the search on the top line, the files one after another, the right pane at the right. */
 class Forge extends Part {
   get band() { return this.main.getByRole('navigation', {name: 'repo'}); }
-  get reference() { return this.main.getByRole('region', {name: 'Reference'}); }
   get search() { return this.main.getByRole('searchbox', {name: 'Search this repo'}); }
-  /** What the search found, under its box while the box (or what was found) has the keyboard. */
+  /**
+   * Under the search box while it (or what is under it) has the keyboard, or something is read there: Issue,
+   * diff and Output side by side, and the large box with what was searched and read in a line.
+   */
   get results() { return this.main.getByRole('region', {name: 'Search results'}); }
+  /** What the center refers to: under the search box (issues, the diff, what was run). */
+  get reference() { return this.results; }
+  /** Issue, diff or Output, side by side under the box. */
+  kind(view: 'Issue' | 'diff' | 'Output') { return this.results.getByRole('group', {name: 'What to look in'}).getByRole('button', {name: view, exact: true}); }
   /** The switch at the top line's right end that puts the right pane away and brings it back. */
   get paneSwitch() { return this.main.getByRole('button', {name: 'Right pane', exact: true}); }
   /** A file's text, which is where it is edited. */
@@ -270,12 +276,24 @@ class Forge extends Part {
     return this.editor(path).evaluate((el: HTMLTextAreaElement) => el.value.slice(el.selectionStart, el.selectionEnd));
   }
 
-  /** One of the reference's parts, 'Issue', 'diff', 'Output', in view: the right pane brought out if it was put away. */
+  /** 'Issue', 'diff' or 'Output' pressed under the search box (pressed with nothing typed: what there is of it). */
   async show(view: 'Issue' | 'diff' | 'Output') {
-    if (await this.paneSwitch.getAttribute('aria-expanded') !== 'true') await this.paneSwitch.click();
-    const part = this.reference.getByRole('region', {name: view, exact: true});
-    await part.scrollIntoViewIfNeeded();
-    await expect(part).toBeVisible();
+    await this.search.click();
+    const b = this.kind(view);
+    if (await b.getAttribute('aria-pressed') !== 'true') await b.click();
+    await expect(b).toHaveAttribute('aria-pressed', 'true');
+  }
+
+  /** A changed file's diff, read in the box under the search (from diff's list). */
+  async openDiff(path: string) {
+    await this.show('diff');
+    await this.results.getByRole('button', {name: new RegExp(`^${escape(path)}( |$)`)}).click();
+  }
+
+  /** A run read in the box under the search (from Output's list), by its line. */
+  async readRun(line: string) {
+    await this.show('Output');
+    await this.results.getByRole('button', {name: new RegExp(`^${escape(line)} `)}).first().click();
   }
 
   /** The prompt box at the center's foot, and the Prompt (the repo's sh) it writes to. */
@@ -299,7 +317,7 @@ class Forge extends Part {
     await expect(this.promptBox).toHaveValue('');
   }
 
-  /** A run in Output (the reference's record of what was run), by its line: pressed, it is put back in the box. */
+  /** A run read under the search box (`readRun`), its line: pressed, it is put back in the prompt box. */
   ran(line: string) { return this.reference.getByRole('button', {name: line, exact: true}); }
 
   /**
@@ -338,7 +356,7 @@ class Forge extends Part {
    * (what will happen, Not now, Put back), which is answered. `says` is what it should say it does.
    */
   async putBack(path: string, says: string) {
-    await this.show('diff');
+    await this.openDiff(path);
     await this.reference.getByRole('button', {name: `Put back ${path}`, exact: true}).click();
     await expect(this.reference.getByText(says)).toBeVisible();
     await this.app.answer(this.reference.getByRole('button', {name: 'Put back', exact: true}), this.reference.getByRole('button', {name: 'Not now'}));
