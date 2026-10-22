@@ -3,17 +3,13 @@
 // operations are Commit, Push, Change (again: the next version;
 // Reset takes it back), Review (of one version), and the receiver's Merge
 // and Reject. What is not committed is the draft against the work's last
-// commit, by folder. The app asks its core; a browser does the same here.
+// commit, by folder. The core does each, the app's or the same in a browser.
 
-import {at, baseOf, blobText, headTree, lineOf, setHead, sha256, showLine, sync, treeAt, type Tree} from './draft.ts';
-import {core, isNative} from './host.ts';
-import {counts, hunks, lineOps, type DiffLine} from './linediff.ts';
-import {api, connection, json, RemoteError} from './remote.ts';
+import {showLine, sync} from './draft.ts';
+import {core} from './host.ts';
 import {restore} from './putback.ts';
 import {store} from './repos.ts';
-import {atMost} from './runs.ts';
-import {kindOf} from './text.ts';
-import {t} from './i18n.ts';
+import type {DiffLine} from './linediff.ts';
 
 export interface FileChange { path: string; status: 'added' | 'modified' | 'removed'; added: number; removed: number; binary: boolean }
 export interface Folder { folder: string; files: FileChange[]; added: number; removed: number }
@@ -22,186 +18,19 @@ export interface Cut { id: string; issue: string | null; kind: string | null; ti
 export type {DiffLine} from './linediff.ts';
 export interface FileDiff { path: string; status: FileChange['status']; binary: boolean; lines: DiffLine[]; more: number }
 
-const folderOf = (p: string) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '');
+export const changes = (repo: string) => core<Changes>('history_changes', {repo});
+export const diff = (repo: string) => core<FileDiff[]>('history_diff', {repo});
+export const log = (repo: string) => core<Cut[]>('history_log', {repo});
 
-// ---- a browser: the copy here against the head's tree ----
-
-interface Pair { path: string; status: FileChange['status']; before: string | null; after: string | null; binary: boolean }
-
-async function hereTree(repo: string): Promise<Record<string, string>> {
-  // Only files count, by their text (pairs() compares a file's digest with the commit's before reading the commit's text).
-  const out: Record<string, string> = {};
-  const walk = async (dir: string) => {
-    for (const e of await store.tree(repo, dir)) {
-      const path = dir ? `${dir}/${e.name}` : e.name;
-      if (e.kind === 'dir') await walk(path);
-      // Gone between the listing and the reading: it is not part of what is here.
-      else { const c = await store.read(repo, path).catch(() => null); if (c?.text != null) out[path] = c.text; }
-    }
-  };
-  await walk('');
-  return out;
-}
-
-/** Blobs read from the Remote at once, at most: side by side, not one round trip after another. */
-const READ_AT_ONCE = 6;
-
-/** Each file's digest as last worked out, by repo and path, kept while its text stays the same. */
-const digests = new Map<string, {text: string; sha: string}>();
-const enc = new TextEncoder();
-async function digestOf(repo: string, path: string, text: string): Promise<string> {
-  const k = `${repo}\0${path}`, d = digests.get(k);
-  if (d?.text === text) return d.sha;
-  const sha = await sha256(enc.encode(text));
-  digests.set(k, {text, sha});
-  return sha;
-}
-
-async function pairs(repo: string): Promise<Pair[]> {
-  const then: Tree = connection() ? await headTree(repo).catch(() => ({})) : {};
-  const away = new Set(baseOf(repo)?.away ?? []);
-  const now = await hereTree(repo);
-  const paths = [...new Set([...Object.keys(then), ...Object.keys(now)])].sort();
-  const out = await atMost(READ_AT_ONCE, paths, async (path): Promise<Pair | null> => {
-    const was = then[path], is = now[path];
-    if (was === null || (was === undefined && is === undefined) || away.has(path)) return null;
-    // The same digest as at the last commit: unchanged, and nothing is read back from the Remote to say so.
-    if (typeof was === 'string' && is !== undefined && await digestOf(repo, path, is) === was) return null;
-    const before = typeof was === 'string' ? await blobText(was) : '';
-    if (before === null) return is === undefined ? {path, status: 'removed', before: null, after: null, binary: true} : null;
-    if (is !== undefined && before === is && typeof was === 'string') return null;
-    return {path, status: was === undefined ? 'added' : is === undefined ? 'removed' : 'modified', before, after: is ?? '', binary: false};
-  });
-  return out.filter((x): x is Pair => x !== null);
-}
-
-function group(files: FileChange[], connected: boolean): Changes {
-  const by = new Map<string, Folder>();
-  for (const f of files) {
-    const k = folderOf(f.path);
-    const g = by.get(k) ?? {folder: k, files: [], added: 0, removed: 0};
-    g.files.push(f); g.added += f.added; g.removed += f.removed;
-    by.set(k, g);
-  }
-  const folders = [...by.values()].sort((a, b) => a.folder.localeCompare(b.folder));
-  return {connected, folders, files: files.length, added: files.reduce((n, f) => n + f.added, 0), removed: files.reduce((n, f) => n + f.removed, 0)};
-}
-
-async function webChanges(repo: string): Promise<Changes> {
-  const files = (await pairs(repo)).map((p): FileChange => ({path: p.path, status: p.status, binary: p.binary,
-    ...(p.binary ? {added: 0, removed: 0} : counts(lineOps(p.before ?? '', p.after ?? '')))}));
-  return group(files, connection() !== null);
-}
-
-async function webDiff(repo: string): Promise<FileDiff[]> {
-  return (await pairs(repo)).map((p) => {
-    if (p.binary) return {path: p.path, status: p.status, binary: true, lines: [], more: 0};
-    return {path: p.path, status: p.status, binary: false, ...hunks(lineOps(p.before ?? '', p.after ?? ''))};
-  });
-}
-
-/** A file as it was at the last commit of what the repo shows: its text, or null when it was not there (added since). */
-async function atLastCommit(repo: string, path: string): Promise<string | null> {
-  if (isNative) return core<string | null>('history_at_head', {repo, path});
-  // Without the Remote the last commit is not known here: nothing is put back on a guess.
-  if (!connection()) throw new RemoteError(0, t('The last commit is kept on the Remote. Sign in to it first.'));
-  const sha = (await headTree(repo))[path];
-  if (typeof sha !== 'string') return null;
-  const text = await blobText(sha);
-  if (text === null) throw new RemoteError(0, t('{path} is binary; it cannot be put back here', {path}));
-  return text;
-}
+/** Commit under `issue` (its file name in issue/), or without one, named by `line`. */
+export const cut = (repo: string, issue: string | null, line: string, note: string): Promise<Cut> => core<Cut>('history_cut', {repo, issue, line, note});
 
 /**
  * Put a file back as it was at the last commit: its text again, a removed
  * one written back (its folders made), one added since removed.
  */
-export const putBack = async (repo: string, path: string): Promise<void> => restore(store, repo, path, await atLastCommit(repo, path));
-
-/** The words a cut goes by: an issue's first line, or the line given. */
-async function wordsFor(repo: string, issue: string | null, line: string): Promise<{kind: string; title: string}> {
-  // Work on an issue commits under it.
-  issue ??= lineOf(repo) === 'main' ? null : `${lineOf(repo)}.md`;
-  // The issue's file gone (removed in the work): the line given names the cut instead.
-  const c = issue ? await store.read(repo, `issue/${issue}`).catch(() => null) : null;
-  const {kind, title} = kindOf(c?.text?.split('\n')[0] ?? line);
-  return {kind: kind ?? '', title};
-}
-
-async function webCut(repo: string, issue: string | null, line: string, note: string): Promise<Cut> {
-  if (!connection()) throw new RemoteError(0, t('Commits are kept on the Remote. Sign in to it first.'));
-  const words = await wordsFor(repo, issue, line);
-  issue ??= lineOf(repo) === 'main' ? null : `${lineOf(repo)}.md`;
-  if (!words.title.trim()) throw new RemoteError(0, t('A commit needs a title (for example Fix：title)'));
-  for (let round = 0; round < 4; round++) {
-    const s = await sync(repo);
-    const c = await webChanges(repo);
-    if (!c.files) throw new RemoteError(0, t('Nothing to commit'));
-    const r = await api(at(repo, '/cuts'), {method: 'POST', body: JSON.stringify({
-      version: s.version, parent: baseOf(repo)?.head ?? null, kind: words.kind, title: words.title.trim(),
-      issue: issue ? `issue/${issue}` : '', note: note.trim(), added: c.added, removed: c.removed,
-    })});
-    const body = await r.json() as {id?: string; time?: number; head?: string | null};
-    if (r.status === 201 && body.id) {
-      await setHead(repo, body.id);
-      return {id: body.id, issue: issue ? `issue/${issue}` : null, kind: words.kind || null, title: words.title.trim(), note: note.trim(),
-        time: body.time ?? Date.now(), folders: c.folders.map((f) => f.folder), files: c.files, added: c.added, removed: c.removed, merged: null};
-    }
-    // Another device moved the draft or cut first: in step again, and once more.
-    await setHead(repo, body.head ?? null);
-  }
-  throw new RemoteError(409, t('The Remote kept moving; could not commit'))
-}
-
-// A cut is named by the sha256 of what it holds, so its tree never changes:
-// each is read once a page (the newest few kept), however often Git draws.
-const trees = new Map<string, Promise<Tree>>();
-function cutTree(repo: string, id: string | null): Promise<Tree> {
-  if (!id) return Promise.resolve({});
-  const k = `${repo}\0${id}`;
-  let p = trees.get(k);
-  if (!p) {
-    p = treeAt(repo, id);
-    p.catch(() => trees.delete(k));
-    trees.set(k, p);
-    if (trees.size > 64) trees.delete(trees.keys().next().value!);
-  }
-  return p;
-}
-
-interface RemoteCut { id: string; parent: string | null; merged?: string | null; tree?: Tree; files?: number; folders?: string[];
-  kind: string; title: string; issue: string; note: string; time: number; added: number; removed: number }
-
-async function webLog(repo: string): Promise<Cut[]> {
-  if (!connection()) return [];
-  // What each commit changed, as the Remote counted it, without its tree; a Remote that does not count
-  // it yet sends the trees, and they are compared here.
-  const r = await api(at(repo, '/log?limit=50&summary=1', lineOf(repo)));
-  if (r.status === 404) return [];
-  const cuts = await r.json() as RemoteCut[];
-  const trees = new Map(cuts.map((c) => [c.id, c.tree ?? {}]));
-  return cuts.map((c) => {
-    let folders = c.folders, files = c.files;
-    if (typeof files !== 'number' || !Array.isArray(folders)) {
-      const tree = c.tree ?? {}, parent = (c.parent && trees.get(c.parent)) || {};
-      const changed = [...new Set([...Object.keys(tree), ...Object.keys(parent)])]
-        .filter((p) => tree[p] !== parent[p] && (typeof tree[p] === 'string' || typeof parent[p] === 'string'));
-      folders = [...new Set(changed.map(folderOf))];
-      files = changed.length;
-    }
-    return {id: c.id, issue: c.issue || null, kind: c.kind || null, title: c.title, note: c.note, time: c.time, folders, files, added: c.added, removed: c.removed, merged: c.merged ?? null};
-  });
-}
-
-// ---- the same on either host ----
-
-export const changes = (repo: string) => (isNative ? core<Changes>('history_changes', {repo}) : webChanges(repo));
-export const diff = (repo: string) => (isNative ? core<FileDiff[]>('history_diff', {repo}) : webDiff(repo));
-export const log = (repo: string) => (isNative ? core<Cut[]>('history_log', {repo}) : webLog(repo));
-
-/** Commit under `issue` (its file name in issue/), or without one, named by `line`. */
-export const cut = (repo: string, issue: string | null, line: string, note: string): Promise<Cut> =>
-  isNative ? core<Cut>('history_cut', {repo, issue, line, note}) : webCut(repo, issue, line, note);
+export const putBack = async (repo: string, path: string): Promise<void> =>
+  restore(store, repo, path, await core<string | null>('history_at_head', {repo, path}));
 
 // ---- the work on an issue, and what it hands to main ----
 
@@ -214,131 +43,41 @@ export interface Change {
 export interface Work { line: string; issue: string | null; started_by: string; started_at: number; commits: number; unpushed: number; change: Change | null }
 export interface Line { line: string; issue: string; head: string | null; pushed: string | null; base: string | null; startedBy: string; startedAt: number }
 
-const repoPath = (repo: string, rest: string) => `/v1/repos/${encodeURIComponent(repo)}${rest}`;
-
-/** The folders a change touches (each once) and how many files. */
-function places(then: Tree, now: Tree): {folders: string[]; files: number} {
-  const folders: string[] = [];
-  let files = 0;
-  for (const p of [...new Set([...Object.keys(then), ...Object.keys(now)])].sort()) {
-    if (then[p] === now[p] || !(typeof then[p] === 'string' || typeof now[p] === 'string')) continue;
-    files++;
-    const f = folderOf(p);
-    if (!folders.includes(f)) folders.push(f);
-  }
-  return {folders, files};
-}
-
-async function webChangesOf(repo: string): Promise<Change[]> {
-  const r = await api(repoPath(repo, '/changes'));
-  if (r.status === 404) return [];
-  const list = await r.json() as Change[];
-  await Promise.all(list.map(async (c) => Object.assign(c, places(...await Promise.all([cutTree(repo, c.base), cutTree(repo, c.head)])))));
-  return list;
-}
-
-async function webWork(repo: string, known?: Promise<Change[]>): Promise<Work> {
-  const line = lineOf(repo);
-  if (line === 'main') return {line, issue: null, started_by: '', started_at: 0, commits: 0, unpushed: 0, change: null};
-  const [l, log] = await Promise.all([json<Line>(repoPath(repo, `?line=${encodeURIComponent(line)}`)), webLog(repo)]);
-  const mine: Cut[] = [];
-  for (const c of log) { if (c.id === l.base) break; mine.push(c); }
-  let unpushed = 0;
-  for (const c of mine) { if (c.id === l.pushed) break; unpushed++; }
-  const change = (await (known ?? webChangesOf(repo))).find((c) => c.line === line) ?? null;
-  return {line, issue: l.issue, started_by: l.startedBy, started_at: l.startedAt, commits: mine.length, unpushed, change};
-}
-
-function refused(r: Response, body: Record<string, unknown>): never {
-  if (Array.isArray(body.conflicts)) throw new RemoteError(409, t('Both changed these files; fix them in the work, push and make the change again: {files}', {files: (body.conflicts as string[]).join(', ')}));
-  if (typeof body.version === 'number') throw new RemoteError(409, t('The change has a newer version ({n}); look at it first', {n: body.version}));
-  // Anything else, the Remote's own sentence (push first, nothing committed yet, not open any more).
-  throw new RemoteError(r.status, t(String(body.error ?? r.status)));
-}
-
-async function changeCall(repo: string, id: string, verb: string, body: Record<string, unknown>): Promise<Change> {
-  const r = await api(repoPath(repo, `/changes/${id}/${verb}`), {method: 'POST', body: JSON.stringify(body)});
-  const out = await r.json() as Record<string, unknown>;
-  if (!r.ok) refused(r, out);
-  return out as unknown as Change;
-}
-
 /** Work on `issue` (its file name in issue/): the repo then shows that work's copy. */
 export async function startWork(repo: string, issue: string): Promise<void> {
   // The work starts from the Remote's main: what was just written here (the issue itself, often) goes there first.
   await sync(repo);
-  if (isNative) { await core('work_start', {repo, issue: `issue/${issue}`}); store.changedOutside(repo, 'work'); return; }
-  const r = await api(repoPath(repo, '/lines'), {method: 'POST', body: JSON.stringify({issue: `issue/${issue}`})});
-  if (!r.ok) throw new RemoteError(r.status, t('Could not start the work ({why})', {why: t(String(((await r.json()) as {error?: string}).error ?? r.status))}));
-  await showLine(repo, issue.replace(/\.md$/, ''));
+  await core('work_start', {repo, issue: `issue/${issue}`});
+  store.changedOutside(repo, 'work');
 }
 
 /** Show main (or another work) where the repo is seen. */
 export const switchWork = (repo: string, line: string) => showLine(repo, line);
 /** The work the repo shows, and where it stands. */
-export const work = (repo: string): Promise<Work> => (isNative ? core<Work>('work_state', {repo}) : webWork(repo));
+export const work = (repo: string): Promise<Work> => core<Work>('work_state', {repo});
 /** Every issue's work on the Remote (main not among them). */
-export const lines = (repo: string): Promise<Line[]> =>
-  isNative ? core<Line[]>('work_lines', {repo}) : connection() ? json<Line[]>(repoPath(repo, '/lines')) : Promise.resolve([]);
+export const lines = (repo: string): Promise<Line[]> => core<Line[]>('work_lines', {repo});
 /** The changes handed to the repo's main, newest first. */
-export const changesOf = (repo: string): Promise<Change[]> => (isNative ? core<Change[]>('changes_list', {repo}) : webChangesOf(repo));
+export const changesOf = (repo: string): Promise<Change[]> => core<Change[]>('changes_list', {repo});
 
-/** Where a repo stands in one go: the work it shows, every issue's work, the changes (each read once). */
+/** Where a repo stands in one go: the work it shows, every issue's work, the changes. */
 export async function standing(repo: string): Promise<{work: Work; lines: Line[]; changes: Change[]}> {
-  const changes = changesOf(repo);
-  const [shown, lineList, list] = await Promise.all([isNative ? work(repo) : webWork(repo, changes), lines(repo), changes]);
+  const [shown, lineList, list] = await Promise.all([work(repo), lines(repo), changesOf(repo)]);
   return {work: shown, lines: lineList, changes: list};
 }
 
 /** Push: the work's commits become its state on the Remote. */
-export async function push(repo: string): Promise<void> {
-  if (isNative) { await core('history_push', {repo}); return; }
-  const line = lineOf(repo);
-  if (line === 'main') throw new RemoteError(0, t('main takes changes by merging them; work on an issue to push'));
-  await sync(repo);
-  const r = await api(repoPath(repo, `/lines/${encodeURIComponent(line)}/push`), {method: 'POST', body: JSON.stringify({head: baseOf(repo)?.head ?? null})});
-  if (!r.ok) throw new RemoteError(r.status, t('Could not push; try again'));
-}
-
+export const push = async (repo: string): Promise<void> => { await core('history_push', {repo}); };
 /** Change: what the work pushed is handed to main (again: its next version). */
-export async function submit(repo: string, note = ''): Promise<Change> {
-  if (isNative) return core<Change>('history_submit', {repo, note});
-  const line = lineOf(repo);
-  const words = await wordsFor(repo, null, '');
-  const r = await api(repoPath(repo, '/changes'), {method: 'POST', body: JSON.stringify({line, kind: words.kind, title: words.title, note})});
-  const out = await r.json() as Record<string, unknown>;
-  if (!r.ok) refused(r, out);
-  const c = out as unknown as Change;
-  return Object.assign(c, places(...await Promise.all([cutTree(repo, c.base), cutTree(repo, c.head)])));
-}
-
+export const submit = (repo: string, note = ''): Promise<Change> => core<Change>('history_submit', {repo, note});
 /** Reset: take back the change this work handed in. */
-export async function reset(repo: string): Promise<Change> {
-  if (isNative) return core<Change>('history_reset', {repo});
-  const c = (await webChangesOf(repo)).find((x) => x.line === lineOf(repo));
-  if (!c) throw new RemoteError(404, t('This work has no change yet'));
-  return changeCall(repo, c.id, 'reset', {});
-}
+export const reset = (repo: string): Promise<Change> => core<Change>('history_reset', {repo});
 
 /** A review of the change's version: a verdict, or a comment alone; `marks` are lines marked in its diff ("path:index"). */
 export const review = (repo: string, c: Change, verdict: Review['verdict'], note = '', marks: string[] = []): Promise<Change> =>
-  isNative ? core<Change>('change_review', {repo, id: c.id, verdict, note, marks}) : changeCall(repo, c.id, 'reviews', {version: c.version, verdict, note, marks});
-export const merge = (repo: string, c: Change): Promise<Change> =>
-  isNative ? core<Change>('change_merge', {repo, id: c.id}) : changeCall(repo, c.id, 'merge', {version: c.version});
-export const reject = (repo: string, c: Change, note = ''): Promise<Change> =>
-  isNative ? core<Change>('change_reject', {repo, id: c.id, note}) : changeCall(repo, c.id, 'reject', {note});
+  core<Change>('change_review', {repo, id: c.id, verdict, note, marks});
+export const merge = (repo: string, c: Change): Promise<Change> => core<Change>('change_merge', {repo, id: c.id});
+export const reject = (repo: string, c: Change, note = ''): Promise<Change> => core<Change>('change_reject', {repo, id: c.id, note});
 
 /** A change's diff against where it began. */
-export async function changeDiff(repo: string, c: Change): Promise<FileDiff[]> {
-  if (isNative) return core<FileDiff[]>('change_diff', {repo, id: c.id});
-  const [then, now] = await Promise.all([cutTree(repo, c.base), cutTree(repo, c.head)]);
-  const paths = [...new Set([...Object.keys(then), ...Object.keys(now)])].sort()
-    .filter((p) => then[p] !== now[p] && (typeof then[p] === 'string' || typeof now[p] === 'string'));
-  return atMost(READ_AT_ONCE, paths, async (path): Promise<FileDiff> => {
-    const a = then[path], b = now[path];
-    const [before, after] = await Promise.all([typeof a === 'string' ? blobText(a) : '', typeof b === 'string' ? blobText(b) : '']);
-    const status: FileChange['status'] = typeof a !== 'string' ? 'added' : typeof b !== 'string' ? 'removed' : 'modified';
-    if (before === null || after === null) return {path, status, binary: true, lines: [], more: 0};
-    return {path, status, binary: false, ...hunks(lineOps(before, after))};
-  });
-}
+export const changeDiff = (repo: string, c: Change): Promise<FileDiff[]> => core<FileDiff[]>('change_diff', {repo, id: c.id});

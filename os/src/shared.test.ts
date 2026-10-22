@@ -3,7 +3,6 @@ import {test} from 'node:test';
 import {isDeepStrictEqual} from 'node:util';
 import cases from '../shared/cases.json' with {type: 'json'};
 import {validName as validDotfile} from './dotfiles.ts';
-import {beside, plan, type Tree} from './draft.ts';
 import {closeText, issueText, nextIssueName, numberOf, parseIssue, reopenText} from './issues.ts';
 import {counts, lineOps} from './linediff.ts';
 import {isGitName, validName} from './repos.ts';
@@ -46,19 +45,6 @@ test('issues are read, written and numbered the same way here and in l3', () => 
 
 test('an issue file is numbered by its name the same way here and in l3', () => {
   assert.deepEqual(disagreeing(cases.issueNumber as [string, number | null][], ([, n]) => n, ([file]) => numberOf(file)), []);
-});
-
-type PlanCase = {why: string; base: Tree; here: Tree; there: Tree; take: ([string] | [string, string | null])[]; both: [string, string][]};
-
-test('a sync plans the same takes and conflicts here and in l3', () => {
-  // [path] is a removal, which the app says as undefined.
-  assert.deepEqual(disagreeing(cases.plan as unknown as PlanCase[],
-    (c) => ({take: c.take.map(([path, ...v]) => [path, v.length ? v[0] : undefined]), both: c.both}),
-    (c) => plan(c.base, c.here, c.there)).map((x) => x.c.why), []);
-});
-
-test('the copy kept beside a file is named the same way here and in l3', () => {
-  assert.deepEqual(disagreeing(cases.beside as [string, string, number, string][], (c) => c[3], ([path, who, n]) => beside(path, who, n)), []);
 });
 
 test('lines changed are counted, and laid out, the same way here and in l3', () => {

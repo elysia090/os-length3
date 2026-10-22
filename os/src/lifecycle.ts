@@ -13,11 +13,11 @@
 
 import {forgetExcept} from './fetch.ts';
 import * as draft from './draft.ts';
-import {isNative} from './host.ts';
+import {core, isNative} from './host.ts';
 import {connection, onConnection, onReach, remoteAway, RemoteError} from './remote.ts';
-import {kept, onChange, TAB} from './repos.ts';
+import {ELSEWHERE, onChange} from './repos.ts';
 import {coalesced, shared} from './runs.ts';
-import {dropState, onState} from './state.ts';
+import {onState} from './state.ts';
 import {othersOpen, prune} from './tabs.ts';
 import {errorText} from './errors.ts';
 
@@ -192,10 +192,8 @@ export async function look(): Promise<void> {
     if (timers.has(s.name)) continue;
     const before = states.get(s.name);
     if (before?.where === 'off') continue;
-    // Changed here and not kept by this browser (its storage refused it): said, and not taken for in step.
-    const unkept = kept?.trouble && kept.waiting(s.name) ? kept.trouble : undefined;
-    const where: Where = !c ? 'local' : s.fresh || s.changed ? (before?.where === 'offline' ? 'offline' : 'sending') : unkept ? 'offline' : 'synced';
-    states.set(s.name, {where, changed: s.changed, both: before?.both ?? [], unsynced: s.unsynced, elsewhere: s.elsewhere, error: unkept ?? (where === 'synced' ? undefined : before?.error)});
+    const where: Where = !c ? 'local' : s.fresh || s.changed ? (before?.where === 'offline' ? 'offline' : 'sending') : 'synced';
+    states.set(s.name, {where, changed: s.changed, both: before?.both ?? [], unsynced: s.unsynced, elsewhere: s.elsewhere, error: where === 'synced' ? undefined : before?.error});
     if (c && (s.fresh || s.changed) && before?.where !== 'offline') schedule(s.name, 0);
   }
   for (const k of [...states.keys()]) if (!here.some((s) => s.name === k)) states.delete(k);
@@ -240,22 +238,16 @@ export const bring: (repo: string) => Promise<void> = shared(async (repo: string
 });
 
 /**
- * Leaving a web page: every repo the Remote holds all of goes from this
- * browser, started at once so it runs while the page closes, and the
- * settings the Remote has too. What is not on the Remote yet stays.
+ * Leaving a web page: every repo the Remote holds all of goes from this browser, started at once so it runs
+ * while the page closes (the core's 空ける: one with changes not sent yet sends them first, or stays). What
+ * is not on the Remote yet stays, and is sent at the next visit.
  */
 function leave() {
-  if (!kept || !connection()) return;
-  // Another tab of this browser still holds the same copy and settings: they stay for it, and go with the last tab.
+  if (!connection()) return;
+  // Another tab of this browser still holds the same copy: it stays for it, and goes with the last tab.
   if (othersOpen()) return;
-  const go = [...states].filter(([r, s]) => s.where === 'synced' && !s.unsynced.length && !s.elsewhere && !timers.has(r) && !kept!.waiting(r)).map(([r]) => r);
-  if (go.length) {
-    void kept.letGo(go);
-    // Which work a repo showed stays: the next visit fetches that work's copy and shows it again.
-    for (const r of go) void draft.forget(r, true);
-  }
-  // A setting goes only as the Remote has it: one changed here and not sent yet (offline, or waiting for a pause in typing) stays, and is sent next time.
-  for (const k of draft.homeAgreed()) if (!homeUnsent(k)) dropState(k);
+  const go = [...states].filter(([r, s]) => s.where === 'synced' && !s.unsynced.length && !s.elsewhere && !timers.has(r)).map(([r]) => `repo:${r}`);
+  if (go.length) void core('free', {ids: go}).catch(() => {});
 }
 
 let begun = false;
@@ -265,14 +257,10 @@ export async function begin() {
   begun = true;
   // What an earlier build kept of l3 goes; l3 now keeps its own copies, by digest, and lets them go itself (userland.ts).
   void forgetExcept(new Set());
-  // A browser shows again the work each repo showed.
-  draft.restoreLines();
   // Every change a person (or a Prompt) makes is sent; sync's own writes are not news, nor another tab's (it sends its own).
-  onChange((c) => { if (c.by !== draft.BY && c.by !== TAB) schedule(c.repo); else tell(); });
+  onChange((c) => { if (c.by !== draft.BY && c.by !== ELSEWHERE) schedule(c.repo); else tell(); });
   // A setting changed here is agreed after a pause; one another tab changed, that tab sends.
   onState((k, outside) => { if (!outside && (k === 'profile' || k === 'todo' || k === 'dotfiles')) homeChanged(k); });
-  // This browser's storage started or stopped refusing what is kept: said where each repo stands.
-  kept?.onTrouble(() => void look());
   // The Remote answers again: what waited for it goes now, not at its next try (up to a minute away).
   onReach(() => { if (remoteAway() || !connection()) return; for (const [r, s] of states) if (s.where === 'offline' && timers.has(r)) schedule(r, 0); });
   // Another account, or none: nothing read for the last one holds.

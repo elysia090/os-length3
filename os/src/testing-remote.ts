@@ -99,6 +99,13 @@ export async function browserOnRemote(o: {plan?: PlanConfig; billing?: Billing; 
   const remoteHome = async (key: string) => (await (await fetch(`${URL_}/v1/home/${key}`, {headers: auth_})).json() as {value: string | null; version: number});
 
   const text = async (repo: string, path: string) => (await store.read(repo, path)).text;
+  /** A file's text at `path`, its folders made first (null: an empty folder). */
+  async function put(repo: string, path: string, value: string | null) {
+    const at = path.lastIndexOf('/'), dir = at < 0 ? '' : path.slice(0, at);
+    if (value === null) { await store.mkdir(repo, path); return; }
+    if (dir) await store.mkdir(repo, dir);
+    await store.add(repo, dir, path.slice(at + 1), value).catch(() => store.write(repo, path, value));
+  }
   const names = async (repo: string, dir = '') => (await store.tree(repo, dir)).map((e) => e.name);
   /** Every file here, as text by path. */
   async function files(repo: string, dir = ''): Promise<Record<string, string>> {
@@ -111,5 +118,5 @@ export async function browserOnRemote(o: {plan?: PlanConfig; billing?: Billing; 
     return out;
   }
 
-  return {URL: URL_, token, db, signIn, store, draft, history, state, asked, elsewhere, elsewhereFolder, elsewhereHome, remoteFiles, remoteHome, text, names, files};
+  return {URL: URL_, token, db, signIn, store, draft, history, state, asked, elsewhere, elsewhereFolder, elsewhereHome, remoteFiles, remoteHome, text, put, names, files};
 }
