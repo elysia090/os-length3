@@ -22,11 +22,11 @@ import {errorText} from '../errors.ts';
  */
 
 /**
- * The scaffold (shared/templates.json, as `l3 repo new -t c` makes it): a
- * README, a Makefile and src/main.c, with docs/ and issue/. There is no
- * choosing; its files are named in the box instead.
+ * The scaffold (shared/templates.json's `standard`, as `l3 repo new` makes
+ * it): a README, with docs/ and issue/, in no language of its own. There is
+ * no choosing; its file is named in the box instead.
  */
-const SCAFFOLD: Template = 'c';
+const SCAFFOLD: Template = 'standard';
 
 /** What is written before Create: kept while the app runs, as a half-written issue is. */
 interface Draft { name: string; summary: string; names: Record<string, string> }

@@ -1622,12 +1622,12 @@ raised box written straight into as a TODO's detail is, reaching down as
 far as the column beside it, whose words go into the repo's README.md under
 its title; on the right, level with it, under 作成されるもの, the one
 scaffold every repo starts from (nothing to choose: shared/templates.json's
-`c`, as `l3 repo new -t c` makes it), shown exactly as File will show it: a
+`standard`, as `l3 repo new` makes it: README.md with docs/ and issue/, no
+language of its own; C's files are `l3 repo new -t c`'s), shown exactly as File will show it: a
 card of tree rows under `root`, the new repo's name bold, its folders open,
 and each file's name a field in its row. A name and its extension are
 changed there and nothing else: what a file says is never turned into
-another language, and what one file says of another's path (the Makefile of
-src/main.c) follows it. A name that cannot be (one with a "/", one met twice
+another language, and what one file says of another's path follows it. A name that cannot be (one with a "/", one met twice
 in a folder) is said under the card before 作成, which puts the keyboard
 there. Then 作成, the one primary action, under both. What is written stays
 while other pages are seen, until the repo is made. The two columns stand

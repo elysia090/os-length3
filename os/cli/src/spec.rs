@@ -315,7 +315,8 @@ pub static COMMANDS: &[Command] = &[
     c("repo", &[], Group::Forge, ["repos here and on the Remote", "この端末と Remote の repo"], &[
         f(None, &[], &[], ["each, and where it stands", "それぞれと、その状態"], LOCAL, TakeIn, forge::repo_list),
         hidden(Some("ls"), &[], LOCAL, TakeIn, forge::repo_list),
-        offer(&[d(["New repo", "新しい repo"], On::Page).asks(&[Flag::Template]).also(&[Group::New])],
+        // The one scaffold, as the app makes it: nothing to choose (-t says another, typed).
+        offer(&[d(["New repo", "新しい repo"], On::Page).also(&[Group::New])],
             f(Some("new"), &[Arg::Text("NAME")], &[Flag::Template], ["make one", "作る"], DEVICE, Send, forge::repo_new)),
         offer(&[d(["Open here", "この端末に開く"], On::RemoteRepo).when(&[F::OnlyThere]).also(&[Group::File, Group::Remote])],
             f(Some("open"), &[Arg::Text("NAME")], &[], ["bring one from the Remote", "Remote から持ってくる"], REMOTE, Keep, forge::repo_open)),

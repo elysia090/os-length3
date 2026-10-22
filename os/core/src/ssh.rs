@@ -333,6 +333,7 @@ fn on_link(local: Ipv4Addr, prefix: u8, peer: Ipv4Addr) -> bool {
 ///   - on a VPN's interface, also from an address that is not public and that the kernel routes by that same
 ///     interface: Tailscale's own address is a /32 and its peers are routed by tailscale0 (in its table 52, so the
 ///     kernel is asked, not /proc/net/route). The handshake's answer went that way too.
+///
 /// Anything else is closed before a byte is said, the banner included.
 pub fn admit(local: IpAddr, peer: IpAddr, interfaces: &[Iface], route_dev: impl Fn(Ipv4Addr, Ipv4Addr) -> Option<String>) -> bool {
     let (local, peer) = (canonical(local), canonical(peer));

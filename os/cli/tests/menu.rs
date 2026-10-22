@@ -61,11 +61,11 @@ fn a_name_refused_is_said_under_its_field_and_asked_again() {
     let mut l3 = home.pty("en", &[], &[]);
     l3.expect("+        New repo");
     l3.send("+").expect("› 9  +");
-    l3.send(ENTER).expect("[standard]");
-    l3.send(ENTER).expect("Template  standard").expect("Name  Letters, digits");
+    // One scaffold, as the app makes it: nothing to choose, the name first.
+    l3.send(ENTER).expect("Name  Letters, digits");
     // The name is asked again before the next is typed, as a person reads the refusal first (typed sooner, the
     // terminal would echo it beside the refusal, as CI's faster runner once showed), with what was written in it to fix.
-    l3.send("notes\r").expect("→ l3 repo new notes -t standard").expect("There is a repo notes already").expect("Name  Letters, digits").expect("› notes");
+    l3.send("notes\r").expect("→ l3 repo new notes").expect("There is a repo notes already").expect("Name  Letters, digits").expect("› notes");
     l3.send("2\r").expect("Made notes2 (standard · 1 file)").expect("› ").expect("notes2");
     l3.send("q");
     let (code, screen) = l3.finish();

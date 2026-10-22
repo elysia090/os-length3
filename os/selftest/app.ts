@@ -10,6 +10,7 @@
 // assertions).
 
 import {expect, type Locator, type Page} from '@playwright/test';
+import TEMPLATES from '../shared/templates.json' with {type: 'json'};
 
 /** The rail's places, as the rail names them (in English). */
 export const PLACES = {
@@ -181,8 +182,8 @@ class NewRepo extends Part {
 
   /**
    * Fill the form and press Create (the outcome is the caller's to check). There is no template to
-   * choose: every repo starts from the one scaffold, which has the C files (`template: 'C'` says a
-   * test relies on them); `files` names its files in the box first, by the scaffold's path.
+   * choose: every repo starts from the one scaffold (a README, docs/ and issue/); `files` names its
+   * files in the box first, by the scaffold's path.
    */
   async fill(name: string, o: {template?: 'C'; summary?: string; files?: Record<string, string>} = {}) {
     await this.app.rail.go('new-repo');
@@ -192,15 +193,26 @@ class NewRepo extends Part {
     await this.create.click();
   }
 
-  /** Make a repo and see it made. */
+  /**
+   * Make a repo and see it made. `template: 'C'`: then C's files are written into it from File, as
+   * someone would (src/main.c and its Makefile, as `l3 repo new -t c` makes them), and Forge shows it.
+   */
   async make(name: string, o: {template?: 'C'; summary?: string; files?: Record<string, string>} = {}) {
     await this.fill(name, o);
     await expect(this.made).toHaveText(`Made ${name}`);
+    if (o.template !== 'C') return;
+    const c = new Map(TEMPLATES.find((t) => t.id === 'c')!.files);
+    await this.app.file.named(name, '', 'New folder', 'src');
+    await this.app.file.named(name, 'src', 'New file', 'main.c');
+    await this.app.forge.editFile('src/main.c', c.get('src/main.c')!);
+    await this.app.file.named(name, '', 'New file', 'Makefile');
+    await this.app.forge.editFile('Makefile', c.get('Makefile')!.replaceAll('{name}', name));
   }
 
-  /** Made: open it in Forge, as the page offers. */
+  /** Made: open it in Forge, as the page offers (made with C's files, Forge has it open already). */
   async openInForge() {
-    await this.main.getByRole('button', {name: 'Open in Forge'}).click();
+    const open = this.main.getByRole('button', {name: 'Open in Forge'});
+    if (await open.isVisible()) await open.click();
     await expect(this.app.forge.editor('README.md')).toBeVisible();
   }
 }

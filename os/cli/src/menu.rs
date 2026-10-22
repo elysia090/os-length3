@@ -544,13 +544,6 @@ fn run(ctx: &Ctx, offer: Offer, subject: Option<&Subject>, place: Option<&str>) 
         }
     }
     let mut flags: Vec<(Flag, String)> = Vec::new();
-    if deed.asks.contains(&Flag::Template) {
-        let ids: Vec<String> = length3_core::templates::all().into_iter().map(|t| t.id).collect();
-        let label = say(spec::flag_words(Flag::Template));
-        let Some(k) = choose(&format!("  {label}  "), false, &ids, Some(0), &Hint::default()) else { return Done::NotNow };
-        term::put(&format!("  {}  {}\n", style.bold(label), ids[k]));
-        flags.push((Flag::Template, ids[k].clone()));
-    }
     let mut confirmed = !deed.confirm;
     let not_done = || { term::put(&format!("{}\n", style.dim(&format!("  {}", tr!("Not done", "していません"))))); Done::NotNow };
     // What a field starts with: what the thing says now (a TODO's line, to fix in place); a path, the folder the menu is in.
