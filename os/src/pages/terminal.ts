@@ -412,9 +412,11 @@ export class Session {
 
   private sayEnded() {
     if (!this.ended || !this.said) return;
-    const restart = h('button', {class: 'button', type: 'button'}, t('Start again'));
+    // Ended: what happened and Start again side by side at the Prompt's bottom right, under its output (styles.css).
+    const restart = h('button', {class: 'button small-button', type: 'button'}, t('Start again'));
     restart.addEventListener('click', () => this.restart());
-    this.status.replaceChildren(this.said(), ' ', restart);
+    this.element.classList.add('ended');
+    this.status.replaceChildren(h('span', {}, this.said()), restart);
   }
 }
 

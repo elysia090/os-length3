@@ -33,6 +33,49 @@ function lazy(el: HTMLElement, root: HTMLElement, load: () => Promise<void>): ()
   return () => { observer.disconnect(); return run(); };
 }
 
+/** Where a text and its selection were, before and after the last indent in an editor. */
+interface Spot { text: string; start: number; end: number; direction: 'forward' | 'backward' | 'none' }
+const indents = new WeakMap<HTMLTextAreaElement, {before: Spot; after: Spot}>();
+
+/**
+ * Write `text` over `from`…`to` as typing does, so Undo takes it back: the
+ * browser's own command, or (where it has none) the range replaced by hand.
+ */
+function typeOver(area: HTMLTextAreaElement, from: number, to: number, text: string) {
+  area.setSelectionRange(from, to);
+  if (document.execCommand('insertText', false, text)) return;
+  area.setRangeText(text, from, to, 'end');
+  area.dispatchEvent(new Event('input'));
+}
+
+/**
+ * Tab in a file. With nothing selected it types a tab. With a selection, each
+ * line it touches is moved in by one tab (an empty line stays empty; a
+ * selection ending at a line's start leaves that line), the same text stays
+ * selected, and one Undo takes it all back, the selection too.
+ */
+export function indent(area: HTMLTextAreaElement) {
+  const {value, selectionStart: a, selectionEnd: b} = area;
+  const direction = area.selectionDirection;
+  if (a === b) { typeOver(area, a, b, '\t'); return; }
+  const from = value.lastIndexOf('\n', a - 1) + 1;
+  const last = value[b - 1] === '\n' ? b - 1 : b;
+  const end = value.indexOf('\n', last);
+  const to = end < 0 ? value.length : end;
+  const lines = value.slice(from, to).split('\n');
+  if (lines.every((l) => !l)) return;
+  // Where each tab goes, to move the selection with the text.
+  const at: number[] = [];
+  let k = from;
+  for (const l of lines) { if (l) at.push(k); k += l.length + 1; }
+  const start = a + at.filter((p) => p < a).length;
+  const stop = b + at.filter((p) => p < b).length;
+  const before = {text: value, start: a, end: b, direction};
+  typeOver(area, from, to, lines.map((l) => (l ? `\t${l}` : l)).join('\n'));
+  area.setSelectionRange(start, stop, direction);
+  indents.set(area, {before, after: {text: area.value, start, end: stop, direction}});
+}
+
 /** One repo read top to bottom: only files, directories are just where they come from. */
 export class Reader {
   readonly repo: string;
@@ -46,6 +89,8 @@ export class Reader {
   /** For each open editor: take a text saved elsewhere; false when the person has unsaved edits. */
   private takers = new Map<string, (text: string) => boolean>();
   private flow: HTMLElement;
+  /** The repo's own page in the flow (the flow holds every repo's, the others hidden). */
+  private root: HTMLElement | null = null;
 
   constructor(repo: string, flow: HTMLElement) { this.repo = repo; this.flow = flow; }
 
@@ -74,7 +119,7 @@ export class Reader {
     target.scrollIntoView({block: 'start'});
     // What comes after it may not be read yet, so the page cannot scroll that far (a file just
     // made, before the folders below it): as it grows, it is put there again, until the person moves.
-    const root = this.flow.firstElementChild;
+    const root = this.root;
     if (root && !line) {
       const grown = new ResizeObserver(() => target.scrollIntoView({block: 'start'}));
       const stop = () => { grown.disconnect(); for (const e of ['wheel', 'touchstart', 'keydown', 'pointerdown']) removeEventListener(e, stop, true); };
@@ -107,11 +152,12 @@ export class Reader {
     const view = this.flow.getBoundingClientRect();
     const top = view.top + 8;
     const caret = document.activeElement instanceof HTMLElement ? document.activeElement.closest<HTMLElement>('section.file') : null;
-    if (caret && this.flow.contains(caret)) {
+    const page = this.root ?? this.flow;
+    if (caret && page.contains(caret)) {
       const r = caret.getBoundingClientRect();
       if (r.bottom > top && r.top < view.bottom) return caret.dataset.path ?? null;
     }
-    for (const section of this.flow.querySelectorAll<HTMLElement>('section.file')) {
+    for (const section of page.querySelectorAll<HTMLElement>('section.file')) {
       if (section.getBoundingClientRect().bottom > top) return section.dataset.path ?? null;
     }
     return null;
@@ -119,6 +165,7 @@ export class Reader {
 
   directory(path: string): HTMLElement {
     const section = h('section', {class: 'dir', 'data-path': path || '/'}, path ? null : h('p', {class: 'muted'}, '…'));
+    if (!path) this.root = section;
     this.sections.set(path, section);
     this.loads.set(path, lazy(section, this.flow, () => this.fill(path, section)));
     return section;
@@ -170,11 +217,21 @@ export class Reader {
       sheet.replaceChildren(gutter, area);
       this.editors.set(path, area);
       const fit = () => { area.style.height = 'auto'; area.style.height = `${area.scrollHeight}px`; };
-      // The whole box is the place to write: a press below the text puts the caret at its end.
+      // The whole box is the place to write. A press beside the text (its numbers, or the room around
+      // them) is that line, selected as a line found is; a press below the text puts the caret at its end.
       sheet.addEventListener('pointerdown', (event) => {
         if (event.target === area) return;
         event.preventDefault();
-        area.focus();
+        area.focus({preventScroll: true});
+        const at = area.getBoundingClientRect();
+        if (event.clientX < at.left && event.clientY < at.bottom) {
+          const lines = area.value.split('\n');
+          const height = parseFloat(getComputedStyle(area).lineHeight) || 20;
+          const n = Math.min(Math.max(Math.floor((event.clientY - at.top) / height), 0), lines.length - 1);
+          const from = lines.slice(0, n).reduce((k, l) => k + l.length + 1, 0);
+          area.setSelectionRange(from, from + lines[n].length);
+          return;
+        }
         area.setSelectionRange(area.value.length, area.value.length);
       });
       requestAnimationFrame(fit);
@@ -267,14 +324,22 @@ export class Reader {
       document.addEventListener('visibilitychange', leaving);
       area.addEventListener('keydown', (event) => {
         if ((event.ctrlKey || event.metaKey) && event.key === 's') { event.preventDefault(); void save(); return; }
-        if (event.key === 'Tab' && !event.shiftKey && !event.ctrlKey && !event.altKey) {
+        if (event.key === 'Tab' && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey && !event.isComposing) {
           event.preventDefault();
-          area.setRangeText('\t', area.selectionStart, area.selectionEnd, 'end');
-          area.dispatchEvent(new Event('input'));
+          indent(area);
           return;
         }
-        // Escape leaves the text, so the keyboard is never caught in it.
-        if (event.key === 'Escape') area.blur();
+        // Escape leaves the text, so the keyboard is never caught in it: it is on the page, and
+        // Shift+Tab goes back up to the search from there.
+        if (event.key === 'Escape') this.flow.focus({preventScroll: true});
+      });
+      // Undo and Redo of an indent take back the selection it had, not only the text.
+      area.addEventListener('input', (event) => {
+        const how = (event as InputEvent).inputType;
+        const was = indents.get(area);
+        if (!was || (how !== 'historyUndo' && how !== 'historyRedo')) return;
+        const to = how === 'historyUndo' ? was.before : was.after;
+        if (area.value === to.text) area.setSelectionRange(to.start, to.end, to.direction);
       });
     }));
     return section;

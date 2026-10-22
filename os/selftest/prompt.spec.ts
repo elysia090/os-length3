@@ -100,6 +100,34 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(here).toContainText('Sign in to the Remote to free it');
   });
 
+  test('what the Prompt showed is still there after Git and back, and after Home and back', async ({app}) => {
+    await app.forge.run('echo kept-here');
+    await expect(app.forge.prompt).toContainText(/^kept-here$/m);
+    for (const place of ['git', 'home'] as const) {
+      await app.rail.go(place);
+      await app.rail.go('forge');
+      await expect(app.forge.prompt).toContainText(/^kept-here$/m);
+    }
+  });
+
+  test('a Prompt stopped says so at its bottom right, with Start again beside it, under its output', async ({app}) => {
+    await app.forge.run('echo before-stop');
+    await expect(app.forge.prompt).toContainText(/^before-stop$/m);
+    await app.runtime.open('Prompts running');
+    await app.main.getByRole('tabpanel', {name: /^Prompts running/}).getByRole('button', {name: 'Stop', exact: true}).click();
+    await app.rail.go('forge');
+    const again = app.forge.prompt.getByRole('button', {name: 'Start again'});
+    await expect(again).toBeVisible();
+    const out = (await app.forge.prompt.getByText('before-stop').last().boundingBox())!;
+    const at = (await again.boundingBox())!;
+    const box = (await app.forge.prompt.boundingBox())!;
+    expect(at.y).toBeGreaterThan(out.y);
+    expect(box.x + box.width - (at.x + at.width)).toBeLessThan(40);
+    await expect(app.forge.prompt.getByText('Stopped')).toBeVisible();
+    await again.click();
+    await expect(app.forge.prompt).toContainText(/hello \$/);
+  });
+
   test('a dotfile saved while the Prompt runs says it gets it when it starts again', async ({app}) => {
     await app.forge.run('true');
     await app.runtime.makeDotfile('.profile', 'export EDITOR=vi\n');

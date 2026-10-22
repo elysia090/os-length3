@@ -3,6 +3,17 @@ import type {DiffLine, FileDiff} from '../history.ts';
 import {t, tn} from '../i18n.ts';
 import {askFoot, SETTLE} from './common.ts';
 import {errorText} from '../errors.ts';
+import {numberOf} from '../issues.ts';
+
+/**
+ * A file of a diff as it is called: an issue's file is the issue (issue/001.md is issue#1),
+ * every other file its path. Only what is shown; what is done is done to the file itself.
+ */
+export function fileName(path: string): string {
+  const m = /^issue\/([^/]+)$/.exec(path);
+  const n = m ? numberOf(m[1]) : null;
+  return n === null ? path : `issue#${n}`;
+}
 
 /** Files open at first; past them, a file shows its name and counts until opened. */
 const OPEN = 3;
@@ -33,7 +44,7 @@ const BACK = (f: FileDiff) => (f.status === 'added' ? [t('It was not in the last
  * it, so what goes is in view.
  */
 function putBackButton(f: FileDiff, head: HTMLElement, act: (f: FileDiff) => Promise<void>): HTMLElement {
-  const back = h('button', {type: 'button', class: 'button small-button put-back', 'aria-label': t('Put back {path}', {path: f.path})}, t('Put back')) as HTMLButtonElement;
+  const back = h('button', {type: 'button', class: 'button small-button put-back', 'aria-label': t('Put back {path}', {path: fileName(f.path)})}, t('Put back')) as HTMLButtonElement;
   back.addEventListener('click', (e) => {
     e.preventDefault();
     const was = [...head.childNodes];
@@ -48,10 +59,10 @@ function putBackButton(f: FileDiff, head: HTMLElement, act: (f: FileDiff) => Pro
       if (performance.now() - shown < SETTLE) return;
       yes.disabled = true;
       // Done, the diff is drawn again from what is there now.
-      try { await act(f); } catch (x) { error.textContent = errorText(x); yes.disabled = false; }
+      try { await act(f); head.classList.remove('asking'); } catch (x) { error.textContent = errorText(x); yes.disabled = false; }
     });
     head.classList.add('asking');
-    head.replaceChildren(h('span', {class: 'diff-name'}, f.path), ...BACK(f).map((l) => h('span', {class: 'muted small'}, l)), error, foot(no, yes));
+    head.replaceChildren(h('span', {class: 'diff-name', title: f.path}, fileName(f.path)), ...BACK(f).map((l) => h('span', {class: 'muted small'}, l)), error, foot(no, yes));
     yes.focus();
   });
   return back;
@@ -66,7 +77,7 @@ function putBackButton(f: FileDiff, head: HTMLElement, act: (f: FileDiff) => Pro
 export function diffFiles(files: FileDiff[], o: DiffOptions = {}): HTMLElement[] {
   return files.map((f, i) => {
     const add = f.lines.filter((l) => l.kind === 'add').length, del = f.lines.filter((l) => l.kind === 'del').length;
-    const name = h('span', {class: 'diff-name'}, f.path);
+    const name = h('span', {class: 'diff-name', title: f.path}, fileName(f.path));
     if (o.reveal && f.status !== 'removed') {
       const go = o.reveal;
       name.classList.add('link');
@@ -93,7 +104,7 @@ export function diffFiles(files: FileDiff[], o: DiffOptions = {}): HTMLElement[]
       // Between two parts of a file, a quiet "…".
       if (l.kind === 'hunk') return k === 0 ? null : h('div', {class: 'diff-line hunk'}, h('span', {class: 'diff-no'}), h('span', {}, '…'));
       const at = o.reveal && f.status !== 'removed' ? now(k) : undefined;
-      const no = at ? h('button', {type: 'button', class: 'diff-no go', tabindex: '-1', 'aria-label': t('Line {n} of {path}', {n: at, path: f.path})}, l.at ? `${l.at}` : '')
+      const no = at ? h('button', {type: 'button', class: 'diff-no go', tabindex: '-1', 'aria-label': t('Line {n} of {path}', {n: at, path: fileName(f.path)})}, l.at ? `${l.at}` : '')
         : h('span', {class: 'diff-no'}, l.at ? `${l.at}` : '');
       if (at) { const go = o.reveal!; no.addEventListener('click', () => go(f.path, at)); }
       // The words in a span of their own, after the indent, so a mark is drawn over them as a highlighter is, line by line as they wrap.

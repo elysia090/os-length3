@@ -7,7 +7,7 @@
 // classification.
 
 export type PurposeId =
-  | 'home' | 'file' | 'git' | 'forge' | 'runtime' | 'remote' | 'server' | 'inbox'
+  | 'home' | 'file' | 'git' | 'forge' | 'runtime' | 'remote' | 'server' | 'inbox' | 'plugin'
   | 'new-repo';
 
 /** Label, role and detail are English; they are shown through t(). */
@@ -40,6 +40,9 @@ export const PURPOSES: readonly Purpose[] = [
     detail: 'A group of people you know. Each board is a conversation and a TODO kept together.', implemented: true},
   {id: 'inbox', label: 'Inbox', role: 'Messages to you',
     detail: 'Review requests, changes, questions and more, each with what it is about and what to do.', implemented: true},
+  // The plug: an area at the top of the center, opened over the work rather than a page of its own.
+  {id: 'plugin', label: 'Plugin', role: 'Optional plugins',
+    detail: 'Opens the plugin area at the top of the center: plain until it is opened, up to seven plugins side by side.', implemented: true},
 ];
 
 /** The round + under the rail's places: create a repo, not a purpose view. */
@@ -63,12 +66,12 @@ export function purpose(id: PurposeId): Purpose {
  * and Server are operations over a page.
  */
 export function restorePurpose(stored: string | null | undefined): PurposeId {
-  // File and Server open over a page and are never the page itself.
+  // File, Server and the plug open over a page and are never the page itself.
   return PURPOSES.some((p) => p.id === stored && !OVER.includes(p.id)) ? stored as PurposeId : DEFAULT_PURPOSE;
 }
 
 /** The purposes laid over a page rather than shown as one. */
-const OVER: readonly PurposeId[] = ['file', 'server'];
+const OVER: readonly PurposeId[] = ['file', 'server', 'plugin'];
 
 /**
  * Vertical rail keys, wrapping at both ends like a tab list. Returns null for

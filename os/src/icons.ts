@@ -14,6 +14,8 @@ const PATHS: Record<PurposeId, string> = {
   server: 'M9.5 11.5a3.25 3.25 0 1 0 0-6.5 3.25 3.25 0 0 0 0 6.5zM3.5 19.5a6 6 0 0 1 12 0M15.5 5.2a3.25 3.25 0 0 1 0 6.1M17.5 13.8a6 6 0 0 1 3 5.7',
   inbox: 'M4 13 7 5h10l3 8v6H4zM4 13h5l1 2h4l1-2h5',
   'new-repo': 'M12 5v14M5 12h14',
+  // A plug (the male end): two pins over its body, the cord under it.
+  plugin: 'M9 3.5v4M15 3.5v4M6.5 7.5h11V11a5.5 5.5 0 0 1-11 0zM12 16.5v4',
 };
 
 export function icon(id: PurposeId): SVGSVGElement {
@@ -31,6 +33,8 @@ export function icon(id: PurposeId): SVGSVGElement {
 const MARKS = {
   plus: 'M12 5v14M5 12h14',
   close: 'M7 7l10 10M17 7L7 17',
+  // A window with its right pane: the pane the switch puts away and brings back.
+  pane: 'M4 5.5h16v13H4zM14.5 5.5v13',
   // More to choose from, below.
   down: 'M7 10l5 5 5-5',
   // Down onto this computer: an arrow into a tray, the tray as wide as the arrow's room.

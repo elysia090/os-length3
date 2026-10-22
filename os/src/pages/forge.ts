@@ -48,6 +48,13 @@ export function revealNext(path: string, write = false) { pending = {path, write
 interface View { reader: Reader; root: HTMLElement; top: number; stale: boolean }
 
 let made: {element: HTMLElement; enter(): void; drop(): void} | null = null;
+
+/**
+ * Forge's element once made, which the page keeps in the document (hidden) while
+ * another page is shown: a text box taken out of the document loses what Undo
+ * would take back, so nothing written in Forge is ever taken out to show something else.
+ */
+export const keptForge = (): HTMLElement | null => (madeIn === currentLang() ? made?.element ?? null : null);
 /** The language Forge was made in: another chosen since, it is made again, so none of its words stay in the last one. */
 let madeIn: string | null = null;
 
@@ -64,8 +71,20 @@ function make(ctx: Context) {
   const view = () => (repo ? views.get(repo) ?? null : null);
   const strip = h('nav', {class: 'repo-strip', 'aria-label': 'repo'});
   const flow = h('section', {class: 'flow', tabindex: '0', 'aria-label': t('The repo\'s contents')});
+  /** What the center says with no repo out. */
+  const nothing = h('div', {class: 'empty forge-none', hidden: ''}, t('Bring a repo out to the band with ⊕, or open one from File'));
+  flow.append(nothing);
+  /**
+   * Each repo's page stays in the center once made, the others hidden: a text box taken
+   * out of the document loses its Undo, so going to another repo and back keeps it.
+   */
+  const put = (root: HTMLElement | null) => {
+    nothing.hidden = root !== null;
+    for (const v of views.values()) v.root.hidden = v.root !== root;
+    if (root && root.parentElement !== flow) flow.append(root);
+  };
 
-  const work = bench({strip, main: flow, reveal: (path, line) => void view()?.reader.reveal(path, line).then(() => track())});
+  const work = bench({strip, main: flow, reveal: (path, line, write) => void view()?.reader.reveal(path, line, write).then(() => track())});
   // The Issue view with none open begins one for this repo on Git; Not now there comes back here.
   work.reference.writeIssue = (r) => { startIssue(r); ctx.go('git'); };
 
@@ -123,6 +142,7 @@ function make(ctx: Context) {
     band = r.band;
     saveBand();
     // Off the band, its place is not kept: brought out again, it opens at its top.
+    views.get(name)?.root.remove();
     views.delete(name);
     if (!r.active) none();
     else if (r.active !== repo) show(r.active);
@@ -133,7 +153,7 @@ function make(ctx: Context) {
   const none = () => {
     repo = null;
     work.setRepo(null);
-    flow.replaceChildren(h('div', {class: 'empty forge-none'}, t('Bring a repo out to the band with ⊕, or open one from File')));
+    put(null);
     flow.scrollTop = 0;
     told(null);
     paintBand();
@@ -145,6 +165,8 @@ function make(ctx: Context) {
     if (had && !had.stale) return had;
     const reader = new Reader(name, flow);
     const v = {reader, root: reader.directory(''), top: had?.top ?? 0, stale: false};
+    // Read again: the page it was takes its place.
+    if (had) had.root.replaceWith(v.root);
     views.set(name, v);
     return v;
   };
@@ -159,7 +181,7 @@ function make(ctx: Context) {
       ctx.remember(name);
       const v = viewOf(name);
       work.setRepo(name);
-      flow.replaceChildren(v.root);
+      put(v.root);
       flow.scrollTop = v.top;
     }
     paintBand();
@@ -204,8 +226,10 @@ function make(ctx: Context) {
     const top = views.get(repo)?.top ?? 0;
     const reader = new Reader(repo, flow);
     const fresh = {reader, root: reader.directory(''), top, stale: false};
+    const was = views.get(repo);
     views.set(repo, fresh);
-    flow.replaceChildren(fresh.root);
+    if (was) was.root.replaceWith(fresh.root);
+    put(fresh.root);
     if (keep) putBack = requestAnimationFrame(() => { flow.scrollTop = top; });
   };
   const offChange = onChange((c) => {
@@ -237,7 +261,7 @@ function make(ctx: Context) {
       all = repos.map((r) => r.name);
       band = parseBand(first ? getState('band') : JSON.stringify(band), all, ctx.repo);
       first = false;
-      for (const name of [...views.keys()]) if (!all.includes(name)) views.delete(name);
+      for (const name of [...views.keys()]) if (!all.includes(name)) { views.get(name)?.root.remove(); views.delete(name); }
       const asked = pending;
       pending = null;
       const chosen = ctx.repo !== known;

@@ -3,7 +3,7 @@ import {isNative} from './host.ts';
 import {icon} from './icons.ts';
 import {placeholder} from './pages/common.ts';
 import type {Context} from './pages/context.ts';
-import {forge, revealNext, showInForge} from './pages/forge.ts';
+import {forge, keptForge, revealNext, showInForge} from './pages/forge.ts';
 import {git} from './pages/git.ts';
 import {currentProfile, home, startEditing} from './pages/home.ts';
 import {Me} from './pages/me.ts';
@@ -15,6 +15,7 @@ import {runtime} from './pages/runtime.ts';
 import {FileTree} from './pages/tree.ts';
 import {begin} from './lifecycle.ts';
 import {keepFocus} from './focus.ts';
+import {onPlugins, pluginsOpen, setPluginsOpen} from './plugins.ts';
 import {learnHome} from './inbox.ts';
 import {begin as lookForNews, look, marks, news, onNews} from './news.ts';
 import {devicePage} from './pages/device.ts';
@@ -81,6 +82,15 @@ function railButton(id: PurposeId): HTMLButtonElement {
     fileTree.attach(button);
   } else if (id === 'server') {
     serverLayer.attach(button);
+  } else if (id === 'plugin') {
+    // The plug opens the plugin area at the top of the center, and closes it; elsewhere it opens it in Forge.
+    button.setAttribute('aria-expanded', 'false');
+    onPlugins(() => button.setAttribute('aria-expanded', String(pluginsOpen())));
+    button.addEventListener('click', () => {
+      const work = current === 'forge' || current === 'git';
+      if (!work) select('forge');
+      setPluginsOpen(!work || !pluginsOpen());
+    });
   } else {
     // A place in the rail is a link to a page, the one shown marked current; File and Server open over it.
     button.addEventListener('click', () => select(id));
@@ -91,7 +101,7 @@ function railButton(id: PurposeId): HTMLButtonElement {
     event.preventDefault();
     // Arrows move along the rail; passing File or Server only focuses it. The keyboard stays on the
     // rail, after whatever the page just drawn asks for (New repo's name), until Enter or Tab goes in.
-    if (next !== 'file' && next !== 'server') select(next);
+    if (next !== 'file' && next !== 'server' && next !== 'plugin') select(next);
     tabs.get(next)?.focus();
     queueMicrotask(() => tabs.get(next)?.focus());
   });
@@ -104,7 +114,7 @@ function select(id: PurposeId) {
   serverLayer.close();
   for (const [tabId, tab] of tabs) {
     const selected = tabId === id;
-    if (tabId !== 'file' && tabId !== 'server') { if (selected) tab.setAttribute('aria-current', 'page'); else tab.removeAttribute('aria-current'); }
+    if (tabId !== 'file' && tabId !== 'server' && tabId !== 'plugin') { if (selected) tab.setAttribute('aria-current', 'page'); else tab.removeAttribute('aria-current'); }
     tab.tabIndex = selected ? 0 : -1;
   }
   $('page').setAttribute('aria-labelledby', `purpose-${id}`);
@@ -133,7 +143,13 @@ function render() {
     : current === 'remote' ? remote(ctx)
     : current === 'inbox' ? inboxPage(ctx)
     : placeholder(current);
-  page.replaceChildren(...nodes);
+  // Forge, once made, stays in the document, hidden while another page shows: a text box taken out
+  // of the document loses its Undo, so what was written there can still be taken back on return.
+  const kept = keptForge();
+  for (const n of [...page.childNodes]) if (n !== kept) n.remove();
+  if (kept && kept.parentNode !== page) page.prepend(kept);
+  page.append(...nodes.filter((n) => n !== kept));
+  if (kept) kept.hidden = current !== 'forge';
   me.paint();
 }
 

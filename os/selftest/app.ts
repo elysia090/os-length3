@@ -15,7 +15,7 @@ import TEMPLATES from '../shared/templates.json' with {type: 'json'};
 /** The rail's places, as the rail names them (in English). */
 export const PLACES = {
   home: 'Home', forge: 'Forge', file: 'File', git: 'Git', runtime: 'Runtime',
-  remote: 'Remote', server: 'Server', inbox: 'Inbox', 'new-repo': 'New repo',
+  remote: 'Remote', server: 'Server', inbox: 'Inbox', plugin: 'Plugin', 'new-repo': 'New repo',
 } as const;
 export type Place = keyof typeof PLACES;
 
@@ -136,7 +136,7 @@ class Rail extends Part {
 
   async go(place: Place) {
     await this.button(place).click();
-    if (place !== 'file' && place !== 'server') await expect(this.button(place)).toHaveAttribute('aria-current', 'page');
+    if (place !== 'file' && place !== 'server' && place !== 'plugin') await expect(this.button(place)).toHaveAttribute('aria-current', 'page');
   }
 }
 
@@ -217,11 +217,15 @@ class NewRepo extends Part {
   }
 }
 
-/** Forge: the band of repos, the files one after another, the search and the reference at the right. */
+/** Forge: the band of repos and the search on the top line, the files one after another, the reference at the right. */
 class Forge extends Part {
   get band() { return this.main.getByRole('navigation', {name: 'repo'}); }
   get reference() { return this.main.getByRole('region', {name: 'Reference'}); }
   get search() { return this.main.getByRole('searchbox', {name: 'Search this repo'}); }
+  /** What the search found, under its box while the box (or what was found) has the keyboard. */
+  get results() { return this.main.getByRole('region', {name: 'Search results'}); }
+  /** The switch at the top line's right end that puts the right pane away and brings it back. */
+  get paneSwitch() { return this.main.getByRole('button', {name: 'Right pane', exact: true}); }
   /** A file's text, which is where it is edited. */
   editor(path: string) { return this.main.getByRole('textbox', {name: `Edit ${path}`, exact: true}); }
 
@@ -251,25 +255,27 @@ class Forge extends Part {
     await expect(editor).toHaveValue(text);
   }
 
-  /** Search the open repo: the results take the reference's place. */
+  /** Search the open repo: what is found opens under the box. */
   async find(query: string) {
     await this.search.fill(query);
-    await expect(this.reference.getByText('Searching…')).toBeHidden();
+    await expect(this.results).toBeVisible();
+    await expect(this.results.getByText('Searching…')).toBeHidden();
   }
 
   /** A line found by the search, by its text. */
-  hit(text: string | RegExp) { return this.reference.getByRole('button', {name: text}); }
+  hit(text: string | RegExp) { return this.results.getByRole('button', {name: text}); }
 
   /** The text selected in a file's editor (where the search or a diff opened it). */
   selected(path: string) {
     return this.editor(path).evaluate((el: HTMLTextAreaElement) => el.value.slice(el.selectionStart, el.selectionEnd));
   }
 
-  /** One of the reference's views: 'Issue', 'diff', 'Output'. */
+  /** One of the reference's parts, 'Issue', 'diff', 'Output', in view: the right pane brought out if it was put away. */
   async show(view: 'Issue' | 'diff' | 'Output') {
-    const chip = this.reference.getByRole('button', {name: view, exact: true});
-    await chip.click();
-    await expect(chip).toHaveAttribute('aria-current', 'true');
+    if (await this.paneSwitch.getAttribute('aria-expanded') !== 'true') await this.paneSwitch.click();
+    const part = this.reference.getByRole('region', {name: view, exact: true});
+    await part.scrollIntoViewIfNeeded();
+    await expect(part).toBeVisible();
   }
 
   /** The prompt box at the center's foot, and the Prompt (the repo's sh) it writes to. */
