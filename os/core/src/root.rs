@@ -1,5 +1,7 @@
 //! The distribution's root, as l3 holds it on a device. The canonical copy
-//! is the release: a `.tar.zst` bundle named by its sha256, pinned here.
+//! is the release: a `.tar.zst` bundle named by its sha256, pinned here. It
+//! is l3: the desktop app installs it, and the web reads the same tree from
+//! it (os/scripts/l3.mjs), so one entry here pins both.
 //! Installing checks the bundle against the pin before reading a byte of
 //! it, unpacks it into a fresh directory (refusing any entry that would land
 //! outside, follow a link, or be a device), and moves that into place in one
@@ -32,6 +34,11 @@ pub struct Release {
     pub file: &'static str,
     /// The GitHub release it was published under (its tag).
     pub tag: &'static str,
+    /// The same root as a browser reads it: the sha256 of l3's index for the
+    /// web (os/scripts/l3.mjs), made from this bundle in the same release.
+    /// Empty for a release made before there was one. The app never reads it;
+    /// it is here so one entry is the whole of l3's pin, for both.
+    pub web: &'static str,
 }
 
 /// The releases l3 trusts, newest first. Nothing else is installed.
@@ -42,6 +49,7 @@ pub const RELEASES: &[Release] = &[Release {
     bytes: 58_883_079,
     file: "os-length3-linux-0.4.1-x86_64-e5b393a96c826d198f30ced37db740d4e17c1743af4de06eb393fc758de45ed9.tar.zst",
     tag: "os-length3-linux-v0.4.1",
+    web: "",
 }, Release {
     name: "OS Length3 Linux",
     version: "0.4.0",
@@ -49,6 +57,7 @@ pub const RELEASES: &[Release] = &[Release {
     bytes: 58_877_895,
     file: "os-length3-linux-0.4.0-x86_64-3746fbcc9ad191825505e37491b478a0032702d8f062cd5f92eb8716f512ab86.tar.zst",
     tag: "os-length3-linux-v0.4.0",
+    web: "",
 }, Release {
     name: "OS Length3 Linux",
     version: "0.3.0",
@@ -56,6 +65,7 @@ pub const RELEASES: &[Release] = &[Release {
     bytes: 65_041_390,
     file: "os-length3-linux-0.3.0-x86_64-48b75f1d119670fbf697ac6dd30a2787a9e2fc783af16c75c94f9a6cdf5c7c1f.tar.zst",
     tag: "os-length3-linux-v0.3.0",
+    web: "",
 }, Release {
     name: "OS Length3 Linux",
     version: "0.1.0",
@@ -63,6 +73,7 @@ pub const RELEASES: &[Release] = &[Release {
     bytes: 63_651_568,
     file: "os-length3-linux-0.1.0-x86_64-ffb53450f0f41900f1cda2cd072b9405b43c7b44f97c400794c57019578f32a9.tar.zst",
     tag: "os-length3-linux-v0.1.0",
+    web: "",
 }];
 
 /// Another distribution's root, as its makers publish it (a .tar.gz of the

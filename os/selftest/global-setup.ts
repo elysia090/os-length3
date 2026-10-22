@@ -58,7 +58,7 @@ const SOURCES = ['src', 'shared', 'public', 'index.html', 'vite.config.ts', 'pac
 const STAMP = join(OUT, '.built');
 
 /** What the build carries besides the sources: the browser's Prompt, when public/ has it. */
-const carries = () => JSON.stringify({prompt: existsSync(join(OS, 'public', 'userland', 'l3.json'))});
+const carries = () => JSON.stringify({prompt: existsSync(join(OS, 'public', 'l3', 'l3.json'))});
 
 /** Build unless selftest/.dist is newer than everything it is made from, and carries the same. */
 function build() {

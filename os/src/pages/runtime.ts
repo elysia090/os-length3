@@ -8,7 +8,7 @@ import desktopPins from '../../shared/desktop-releases.json' with {type: 'json'}
 import * as dotfiles from '../dotfiles.ts';
 import * as ssh from '../ssh.ts';
 import {free, readSpace} from '../space.ts';
-import {about, loadWebRoot} from '../userland.ts';
+import {about} from '../userland.ts';
 import {askFoot, copying, pageHead, parts, SETTLE} from './common.ts';
 import type {Context} from './context.ts';
 import {openRepoPlace, syncWord} from './remote.ts';
@@ -91,14 +91,11 @@ function environment(): HTMLElement {
           other(t('Custom'), '', t('Your own root (.tar)'), notYet())));
       return;
     }
-    let a: Awaited<ReturnType<typeof about>>, web: Awaited<ReturnType<typeof loadWebRoot>>;
-    try { [a, web] = await Promise.all([about(), isNative ? null : loadWebRoot()]); } catch (e) { card.replaceChildren(h('p', {class: 'error'}, message(e))); return; }
-    if (!a) { card.replaceChildren(h('p', {class: 'muted small'}, t('There is no l3 (npm run userland)'))); return; }
-    // In a browser with the whole root: every program of it, through xlat; else l3 and its BusyBox.
-    const note = web
-      ? t('{name} · through xlat', {name: a.root.name})
-      : t('{name} · {base} {version} · {size}', {name: a.root.name, base: a.base.name, version: a.base.version, size: bytes(a.bundle.size)});
-    card.replaceChildren(...top('l3', web?.index.version || a.root.version, note, a.bundle.sha256),
+    let a: Awaited<ReturnType<typeof about>>;
+    try { a = await about(); } catch (e) { card.replaceChildren(h('p', {class: 'error'}, message(e))); return; }
+    if (!a) { card.replaceChildren(h('p', {class: 'muted small'}, t('There is no l3 (npm run l3)'))); return; }
+    // The same l3 as the app's: its version, and the digest of the root it is (core/src/root.rs), run here through xlat.
+    card.replaceChildren(...top('l3', a.version, t('{name} · through xlat', {name: a.root.name}), a.sha256),
       others(other('Ubuntu', '24.04.5 LTS', t('In the app only'), null),
         other('Debian', '13', t('In the app only'), null),
         other(t('Custom'), '', t('Your own root (.tar)'), notYet())));

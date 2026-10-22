@@ -58,18 +58,24 @@ frontend and no UI framework; the same frontend is the web build.
   (`caches/<repo>`), `/tmp` and `/run` end with the Prompt. Runtime lists
   each part, and what is derived in the repo (node_modules beside
   package.json, target beside Cargo.toml, a venv, anything with a
-  CACHEDIR.TAG), which is never sent to the Remote. Otherwise (and in a browser) translated BusyBox `sh` and `l3`
-  running on the xlat kernel in a Worker, on the open repo. What the shell changes under `/root/<repo>` is
+  CACHEDIR.TAG), which is never sent to the Remote. Otherwise (and in a
+  browser) the same root through the xlat translator in a Worker, on the
+  open repo: its own BusyBox `sh`, coreutils, git, gcc, make and l3, at the
+  same paths with the same bytes. What the shell changes under `/root/<repo>` is
   written back through the store (text files up to the read limit), and
   what is saved anywhere else is put into the shell's copy, so the shell,
-  File, Forge and Git see one repo. Its one dependency is l3: one file
-  (`public/userland/l3-<digest>.bin`, named with its size and digest in
-  `l3.json`) carrying the distribution's root (BusyBox from its pinned
-  source and config, its `/etc` and `os-release`), the l3 command and the
-  translator with ready translations, gzip'd from 12 MB to 2.7 MB. In a
-  browser it is fetched at each visit, continued from where a proxy cut or
-  stalled it, and checked against its digest; nothing of it is kept. Make it with `npm run
-  userland` (`scripts/userland.sh`, then `scripts/bundle.mjs`).
+  File, Forge and Git see one repo. Its one dependency is l3 (DESIGN.md,
+  l3: the one base): in a browser, `public/l3`, made from the release root
+  by `scripts/l3.mjs`: `l3.json` (which l3, and the root's digest), an index
+  of every path, a pack per package that a file is read from when a program
+  first opens it, and the translator with BusyBox and l3 translated ahead of
+  time. A first Prompt fetches about 0.8 MB (the index, the translator,
+  BusyBox and its translation); what it fetched is kept by digest within
+  the browser's storage budget, so the next fetches only `l3.json`. Make it
+  with `npm run l3` (`scripts/l3.sh`: the translator from this tree and the
+  root `core/src/root.rs` pins for `RELEASE`), and check it against that root
+  with `npm run l3:parity -- ROOT public/l3`; `node scripts/l3-runnable.mjs
+  public/l3 ROOT_DIR` says which programs of it run under xlat today.
 
 ## l3: the same OS on the command line
 
@@ -435,17 +441,17 @@ to this repository, and its Settings → Build say, once:
 | | |
 |---|---|
 | Root directory | `os` |
-| Build command | `npm run build:cloudflare`: the Prompt from the release `RELEASE` names (`scripts/prompt-files.mjs`, checked against the digest `shared/web-releases.json` pins for it), then the app |
+| Build command | `npm run build:cloudflare`: l3 for the browser from the release `RELEASE` names (`scripts/prompt-files.mjs`, taken only at the index `core/src/root.rs` pins for it), then the app |
 | Deploy command | `node service/deploy.ts`: the migrations on Neon's production branch (no branch is made for a deploy; a contract step waits until the new Worker answers), the bucket, then the Worker with the secrets it lacks (the first build prints the link in its log), then the release's files the Remote serves to anyone (`service/mirror.ts`): each root `core/src/root.rs` pins and the desktop app `shared/desktop-releases.json` pins for `RELEASE`, taken from the GitHub release where the bucket lacks them, checked against those pins, and put with wrangler |
 | Variables and secrets | `NEON_PROJECT_ID`; secrets `NEON_API_KEY` (a Neon API key for the project) and `GITHUB_TOKEN` (read-only, for this private repository's releases: the build's Prompt and the deploy's release files) |
 | Branch control | main; no preview builds |
 
 The Prompt the web serves is a released one: a newer one ships by releasing
 it (a new version in `RELEASE`, `.github/workflows/release.yml`), then
-pinning what was released, as its notes give them: the root in
-`core/src/root.rs`, the web zip in `shared/web-releases.json` and the
-desktop app in `shared/desktop-releases.json`. A build takes only the web
-zip this tree pins, and a deploy puts on the Remote only the roots and
+committing what was released, as its notes give them: l3's one entry in
+`core/src/root.rs` (the root, and the index the web reads it by; the release
+writes it) and the desktop app in `shared/desktop-releases.json`. A build
+takes only the l3 this tree pins, and a deploy puts on the Remote only the roots and
 desktop files this tree pins, so a release made under that tag by anyone
 else is not what production serves. The Remote serves them to anyone, the
 roots by digest (`/v1/os/<sha256>`, what the app and l3 fetch first) and
@@ -515,10 +521,10 @@ repository is read. About 45 journeys take under two minutes on four cores.
   `selftest/.report`, and what the two servers printed in `selftest/.logs`.
 - Locally Chromium is `npx playwright install chromium` (or
   `PLAYWRIGHT_BROWSERS_PATH` where one is installed).
-- The Prompt's tests are tagged `@slow` (BusyBox and l3 through the
-  translator) and run with `SELFTEST_SLOW=1` once `public/userland` and
-  `public/root` hold the Prompt (`npm run userland`, or `node
-  scripts/prompt-files.mjs`); the build then carries it.
+- The Prompt's tests are tagged `@slow` (the root's BusyBox and l3 through
+  the translator) and run with `SELFTEST_SLOW=1` once `public/l3` holds l3
+  (`npm run l3`, or `node scripts/prompt-files.mjs`); the build then
+  carries it. `first-prompt.spec.ts` measures what a first Prompt fetches.
 - CI (`selftest` in `.github/workflows/desktop.yml`) runs everything on each
   push and pull request that touches `os/`, retries a failure once, and
   uploads the report, the traces and the servers' logs when it fails (the

@@ -26,8 +26,9 @@ interrupts, a runtime x86→wasm JIT). xlat removes the machine instead:
 - The translator also builds as wasm (`--target wasm32-unknown-unknown
   --lib`, wrapped by `runtime/translator.mjs`) and gives byte-identical
   output, so a browser translates the programs it runs.
-- `userland/build-busybox.sh` builds BusyBox from the distribution's
-  pinned source and config in the form xlat takes.
+- The programs a Prompt runs are the release root's own (os/scripts/l3.mjs
+  makes l3 for the browser from it); `os/scripts/l3-runnable.mjs` says which
+  of them run under xlat today, against the same root run natively.
 
 ```
 cargo build --release

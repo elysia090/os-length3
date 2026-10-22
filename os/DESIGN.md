@@ -561,6 +561,57 @@ is how they are written (`ren:hello`), found (`ren`, `204816`) and shown.
 Proving a domain later adds a name of their choosing beside it
 (`ren@ren.dev`); the name on the Remote stays theirs while they renew it.
 
+### l3: the one base
+
+Everything a Prompt runs comes from one artifact, **l3**, and nothing else
+is a dependency: not a BusyBox, a userland or a toolchain of its own. It is
+the same thing for the desktop app and for the web.
+
+- **Name and version.** `l3 X.Y.Z` is the release `os-length3-linux-vX.Y.Z`
+  (the version in `RELEASE`).
+- **Digest.** Its identity is the sha256 of its root,
+  `os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst`. One entry of
+  `core/src/root.rs` RELEASES pins it, for both ways in: `sha256` and
+  `bytes`, the root; `web`, the sha256 of the index the browser reads the
+  same root by. The release writes that entry (`scripts/pin-root.mjs`) and
+  it is committed; nothing else pins l3.
+- **What it holds.** The whole distribution root, the development-standard
+  profile laid out for Prompts (`scripts/root-release.sh`): BusyBox (sh and
+  its applets), the C toolchain, git, curl, openssl, nano, apk and the rest,
+  `/etc`, and `/usr/bin/l3`. For the web it also holds the translator
+  (xlat, as WebAssembly) and the translations of the hot programs made
+  ahead of time.
+- **On a device**, the app and `l3` install the root by its digest: from the
+  device's Remote, then the publisher's (each deploy mirrors every pinned
+  root to its bucket), then the release itself.
+- **In a browser**, the same root is read through xlat (`public/l3`, made
+  from the root itself by `scripts/l3.mjs`, never from anything built
+  beside it): `l3.json` (which l3: its version and the root's digest), an
+  index of every path (type, mode, link target; where each file's bytes
+  are), a pack per package of the root, each file a zstd frame, and blobs
+  for the translator and the hot programs (BusyBox and l3) with their
+  translations. Everything but `l3.json` is named by its digest. A Prompt
+  fetches the index, the translator and BusyBox with its translation; every
+  other file comes from its pack when a program first opens it, and every
+  other program is translated when it first runs (l3's translation follows
+  quietly once the first Prompt is up, for the Prompts after). What was
+  fetched is kept by digest (Cache Storage; the packs in the browser's HTTP
+  cache), checked whenever it is read, and only within a quarter of what
+  the browser says this origin may hold, the least recently used going
+  first; what the current l3 does not name goes. Runtime lists it under
+  この端末 and frees it like anything derived.
+- **The same content.** The web's tree is the root's: every path, type,
+  mode, link target and sha256 the same as the root l3 installs
+  (directories at least 0700, files without set-id bits, as the installer
+  makes them). `scripts/l3-parity.mjs` proves it on every release and in CI;
+  a program that xlat cannot run yet still ships, and
+  `scripts/l3-runnable.mjs` says which, against the same root run natively.
+- **One release, one pin.** The release makes the root, then l3 for the
+  browser from it (checked by the parity), pins both in one entry, and only
+  then builds the web app and the desktop app, which both trust that entry.
+  A web build that has only Node (Cloudflare's) takes l3 from the release
+  (`os-length3-linux-X.Y.Z-l3-web.tar`) only at the pinned index.
+
 ### Another OS in a Prompt
 
 l3 is to a Prompt what a machine monitor is to its guest: it lays out the
@@ -1162,8 +1213,9 @@ the card becomes the Remote's).
   the row has no room, each goes under). The one in
   effect is the card's head: l3, with its version (in the mono face, as a
   version is), what it is here (in the app, the root installed, on this
-  device's kernel; in a browser, the whole root through xlat, or l3 and
-  its BusyBox) and its digest. Under it the others, a row each, quiet:
+  device's kernel; in a browser, the same root through xlat) and its
+  digest: the same version and digest in both, the root's (l3: the one
+  base). Under it the others, a row each, quiet:
   Ubuntu, Debian, Custom (a root of one's own, known by its digest), what
   each is, and at its right what can be done. In the app each other one has Use at its
   right: fetched if it is not here (Ubuntu's base and Debian's official

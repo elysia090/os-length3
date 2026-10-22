@@ -1,33 +1,24 @@
 #!/bin/sh
 # Build the web release of Length³ OS from source: the app's web build with
-# the Prompt's userland (BusyBox from its pinned, checked source; l3; the
-# xlat translator as wasm). Output: dist/ and length3-web.zip with its sha256.
+# l3 for the browser (public/l3: the release root itself, as the browser
+# reads it, with the xlat translator; scripts/l3.sh). Nothing is built
+# beside the root: its BusyBox, l3 and /etc are the Prompt's. Output: dist/
+# and length3-web.zip with its sha256.
 #
-#   sh scripts/web-release.sh
+#   sh scripts/web-release.sh [ROOT.tar.zst]
 #
-# Needs node 22, cargo with the wasm32-unknown-unknown and
-# x86_64-unknown-linux-musl targets, musl-gcc, curl and zip.
+# ROOT is the release root (by default the one core/src/root.rs pins for
+# RELEASE, fetched by scripts/root-file.mjs); with L3_READY=1, a public/l3
+# made already from it is kept. Needs node 22, cargo with the
+# wasm32-unknown-unknown target, and zip.
 set -eu
 here=$(cd "$(dirname "$0")/.." && pwd)
-repo=$(cd "$here/.." && pwd)
-. "$repo/distribution/sources.env"
 
-# BusyBox from its pinned source (build-busybox.sh checks the sha256). A
-# tarball can be given in $BUSYBOX_TARBALL; with REUSE_BUSYBOX=1 an existing
-# xlat/userland/out/busybox is kept (for hosts that cannot reach busybox.net).
-if [ "${REUSE_BUSYBOX:-}" = 1 ] && [ -x "$repo/xlat/userland/out/busybox" ]; then
-  echo "keeping $repo/xlat/userland/out/busybox"
+if [ "${L3_READY:-}" = 1 ] && [ -f "$here/public/l3/l3.json" ]; then
+  echo "keeping $here/public/l3"
 else
-  work=$(mktemp -d)
-  trap 'rm -rf "$work"' EXIT
-  tarball=${BUSYBOX_TARBALL:-$work/busybox-$BUSYBOX_VERSION.tar.bz2}
-  [ -f "$tarball" ] || curl -fsSL "$BUSYBOX_URL" -o "$tarball"
-  sh "$repo/xlat/userland/build-busybox.sh" "$tarball"
+  sh "$here/scripts/l3.sh" ${1:+"$1"}
 fi
-
-(cd "$repo/xlat" && cargo build --release --target wasm32-unknown-unknown --lib)
-command -v wasm-tools >/dev/null || cargo install --locked wasm-tools@1.262.0
-sh "$here/scripts/userland.sh"
 
 cd "$here"
 npm ci
