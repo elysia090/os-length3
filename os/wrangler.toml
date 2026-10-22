@@ -1,0 +1,65 @@
+# The Remote and the web app, as one Worker on one origin: accounts (Better
+# Auth), the canonical copy of repos and settings (Postgres on Neon), file
+# contents and release bundles (R2), and the app's own files (static assets,
+# built with VITE_LENGTH3_REMOTE="" so it talks to the origin it came from).
+#
+# Built and shipped by Cloudflare's Workers Builds on each push to main
+# (root directory os/; README.md, Deploy): the build takes the Prompt from
+# the release RELEASE names and builds the app (npm run build:cloudflare),
+# and service/deploy.ts runs the migrations, makes the bucket, deploys the
+# Worker with the secrets it lacks (DATABASE_URL, BETTER_AUTH_SECRET,
+# ENTER_KEY), and puts in the bucket the release files this tree pins that it
+# lacks (the roots, the desktop app: service/mirror.ts).
+name = "os-length3"
+main = "service/worker.ts"
+compatibility_date = "2026-08-01"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = "dist"
+# A page of the app that is not a file is the app; the Remote's own paths always reach the Worker.
+not_found_handling = "single-page-application"
+run_worker_first = ["/v1/*", "/api/*", "/.well-known/*"]
+
+[vars]
+# The URL handed on: the app and the Remote are both here.
+BASE_URL = "https://os.length3.com"
+APP_ORIGIN = "https://os.length3.com"
+DOMAIN = "length3.com"
+# The desktop app's webview (tauri:// on Linux and macOS; a Windows build would be https://tauri.localhost,
+# tauri.conf.json useHttpsScheme: never plain http, which any local process on port 80 could serve).
+APP_ORIGINS = "tauri://localhost"
+# For research (enter.ts): the one account. Nobody signs up; the link …/#enter=ENTER_KEY is the way
+# in, and nothing is shown to everyone. Without it, the providers whose secrets are set are offered.
+ENTER_AS = "banana000000"
+# What the one account may keep (blobs and trees), in MB.
+QUOTA_MB = "1024"
+# The plan (service/plan.ts), on a Remote that is not for research: a free account keeps 3 repos and
+# 100 MB on the Remote unless these say otherwise; a failed payment stays paid 14 days.
+# FREE_REPOS = "3"
+# FREE_MB = "100"
+# GRACE_DAYS = "14"
+# Stripe: the price a subscription is to. Its keys are secrets (wrangler secret put STRIPE_SECRET_KEY,
+# STRIPE_WEBHOOK_SECRET); with any of the three missing, billing is off.
+# STRIPE_PRICE = "price_…"
+
+# What was held long enough goes, once a day (sweep.ts; worker.ts scheduled()).
+[triggers]
+crons = ["41 4 * * *"]
+
+[[r2_buckets]]
+binding = "BLOBS"
+bucket_name = "length3-blobs"
+
+# The one name: the app's origin, the Remote the desktop app and l3 reach, what a domain's
+# record names (remote=os.length3.com), and the passkeys' (APP_ORIGIN).
+[[routes]]
+pattern = "os.length3.com"
+custom_domain = true
+
+# The name the Remote had before, kept on the same Worker so the releases that reach it by
+# it (0.4.x) keep working. Nothing names it any more; a newer client that finds it kept takes
+# the one name instead (core/src/remote.rs current_url).
+[[routes]]
+pattern = "remote.length3.com"
+custom_domain = true

@@ -1,0 +1,26 @@
+[package]
+name = "length3-core"
+version = "0.1.0"
+description = "What Length³ OS means by a repo, a file, an issue and a TODO; shared by the app and l3"
+edition = "2021"
+publish = false
+
+[dependencies]
+base64 = "0.22"
+libc = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ruzstd = "0.9"
+# Other distributions publish their roots as .tar.gz (Ubuntu base, Debian's official images).
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+sha2 = "0.10"
+
+# The network as a host reaches it (net.rs). Built for the web (wasm32-wasip1) the core asks the page
+# that runs it instead, so none of this is in it.
+[target.'cfg(not(target_os = "wasi"))'.dependencies]
+ureq = { version = "2", default-features = false, features = ["tls", "json"] }
+# The host's trusted certificates beside the bundled ones (net.rs): what the
+# person's machine trusts (its store, or SSL_CERT_FILE), the Remote is reached through.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "0.26"
+rustls-native-certs = "0.8"

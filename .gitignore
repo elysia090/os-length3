@@ -2,13 +2,14 @@ __pycache__/
 *.py[cod]
 dist/
 node_modules/
-.wrangler/
-src/v2/data/out/
-/data/out/
-/data/upstream/
-/data/toolchain/build/
+/distribution/out/
+/distribution/upstream/
+/distribution/toolchain/build/
 /temp/
 /.tmp/
 /.pytest_cache/
 /.uv-cache/
 /*.obj
+
+# Native download bytes are release assets, not Git history. Keep receipts.
+/releases/native/*.tar.zst

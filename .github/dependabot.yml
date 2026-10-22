@@ -1,0 +1,28 @@
+# Updates proposed as pull requests, each to be read and tested as any
+# change is (desktop.yml runs on them): the actions the workflows pin by
+# commit, the app's and the Remote's npm packages, and the Rust crates of
+# the app, l3 and the translator. Security updates come as they are
+# published; the rest once a week, grouped so they come as a few PRs.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: {interval: weekly}
+    groups:
+      actions: {patterns: ['*']}
+  - package-ecosystem: npm
+    directory: /os
+    schedule: {interval: weekly}
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch: {update-types: [minor, patch]}
+  - package-ecosystem: cargo
+    directory: /os
+    schedule: {interval: weekly}
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch: {update-types: [minor, patch]}
+  - package-ecosystem: cargo
+    directory: /xlat
+    schedule: {interval: weekly}
+    open-pull-requests-limit: 3

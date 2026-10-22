@@ -1,0 +1,10 @@
+/public/l3/
+/target/
+/dist/
+/length3-web.zip
+/length3-web.zip.sha256
+/.wrangler/
+/selftest/.dist/
+/selftest/.logs/
+/selftest/.results/
+/selftest/.report/

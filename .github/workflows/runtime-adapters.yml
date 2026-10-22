@@ -1,0 +1,90 @@
+name: Native distribution checks
+
+on:
+  push:
+    branches: [codex/native-release-wasm-1002]
+    paths:
+      - '.github/workflows/runtime-adapters.yml'
+      - 'compiler/Makefile'
+      - 'distribution/packaging/prepare-qualified-native-release.py'
+      - 'distribution/oracle/check-native-producer-dhcp.sh'
+      - 'distribution/oracle/network-host-linux.go'
+      - 'distribution/oracle/inspect-dhcp-printf-table.mjs'
+      - 'distribution/oracle/check-readiness-mounts.mjs'
+      - 'distribution/packaging/boot/ready'
+      - 'distribution/packaging/boot/boot'
+      - 'distribution/packaging/*package-payload.sh'
+      - 'distribution/packaging/package-recipes.sh'
+      - 'distribution/packaging/*normalize-initramfs.py'
+      - 'distribution/packaging/*package-set*.sh'
+      - 'distribution/packaging/*native-bundle*'
+      - 'distribution/packaging/*producer*'
+      - 'distribution/packaging/optimize-payload.sh'
+      - 'distribution/packaging/check-postlink-toolchain.sh'
+      - 'distribution/build.sh'
+      - 'compiler/artifact/**'
+      - 'compiler/support/**'
+  pull_request:
+    paths:
+      - '.github/workflows/runtime-adapters.yml'
+      - 'compiler/Makefile'
+      - 'distribution/packaging/prepare-qualified-native-release.py'
+      - 'distribution/oracle/check-native-producer-dhcp.sh'
+      - 'distribution/oracle/network-host-linux.go'
+      - 'distribution/oracle/inspect-dhcp-printf-table.mjs'
+      - 'distribution/oracle/check-readiness-mounts.mjs'
+      - 'distribution/packaging/boot/ready'
+      - 'distribution/packaging/boot/boot'
+      - 'distribution/packaging/*package-payload.sh'
+      - 'distribution/packaging/package-recipes.sh'
+      - 'distribution/packaging/*normalize-initramfs.py'
+      - 'distribution/packaging/*package-set*.sh'
+      - 'distribution/packaging/*native-bundle*'
+      - 'distribution/packaging/*producer*'
+      - 'distribution/packaging/optimize-payload.sh'
+      - 'distribution/packaging/check-postlink-toolchain.sh'
+      - 'distribution/build.sh'
+      - 'compiler/artifact/**'
+      - 'compiler/support/**'
+
+permissions:
+  contents: read
+
+# A newer push to the same pull request stops the run it makes old. Main is not run again on merge: its pull request ran it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  adapters:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - name: Check release scripts, boot and readiness
+        run: |
+          python3 -m py_compile distribution/packaging/prepare-qualified-native-release.py
+          bash -n distribution/oracle/check-native-producer-dhcp.sh
+          node --check distribution/oracle/inspect-dhcp-printf-table.mjs
+          bash -n distribution/packaging/boot/ready
+          bash -n distribution/packaging/boot/boot
+          bash -n distribution/packaging/boot/console
+          bash -n distribution/initramfs/init
+          bash -n distribution/oracle/standard-provider-check.sh
+          bash -n distribution/oracle/standard-distribution-check.sh
+          node distribution/oracle/check-readiness-mounts.mjs
+      - name: Check package-set input cuts and reuse
+        run: |
+          make -C compiler/artifact -j2 all namespace-check namespace-xattrs-check
+          sudo bash distribution/packaging/check-package-set-content.sh
+          bash distribution/packaging/check-package-payload.sh
+          bash distribution/packaging/check-service-sources-fixture.sh
+          python3 distribution/packaging/check-normalize-initramfs.py
+      - name: Check native acceptance artifact and policy binding
+        run: |
+          sudo python3 distribution/packaging/check-native-bundle-acceptance.py --require-capture
+          sudo python3 distribution/packaging/check-producer-execution.py --require-native
+          python3 distribution/packaging/check-producer-binding.py
+          bash -n distribution/packaging/build-producer-cut.sh distribution/packaging/producer-run.sh distribution/packaging/optimize-payload.sh distribution/packaging/check-postlink-toolchain.sh distribution/build.sh

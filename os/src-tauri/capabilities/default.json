@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The shell window has no host permissions until a surface needs one. A Prompt on the root and fetching the root report through events, so the window may listen; the page names the window as it names its tab.",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:window:allow-set-title"
+  ]
+}

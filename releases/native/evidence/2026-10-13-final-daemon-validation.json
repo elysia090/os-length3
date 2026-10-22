@@ -1,0 +1,178 @@
+{
+  "format": "final-candidate-real-daemon-failures-v1",
+  "date": "2026-10-13",
+  "candidate": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+  "status": "pass",
+  "conditions": {
+    "worker": "production Linux Worker",
+    "workspace": "fixture-e67-services-1013",
+    "workspaceBytes": 33554432,
+    "guestRamBytes": 536870912,
+    "overlayOnly": true,
+    "unchangedSignedRoot": true,
+    "notificationFd": 3,
+    "diagnosticDeadlineMs": 60000,
+    "productionDeadlineMs": 300000,
+    "realDaemonSha256": "96081dcbf459c71f5e199752eb1493d98ec255bd0eeba1c9bc6a31765f4fe742"
+  },
+  "fork": {
+    "candidate": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+    "source": "workspace-fixture-linux-recovery-1012",
+    "fork": "fixture-e67-services-1013",
+    "sourceWrites": false,
+    "newKeys": false,
+    "status": "pass",
+    "ciphertextObjects": 199,
+    "ciphertextBytes": 795254,
+    "keyExtractable": false,
+    "sourceGeneration": "47",
+    "checkpoint": "before-e67-service-faults",
+    "scope": "isolated physical workspace copy; no process-state snapshot"
+  },
+  "cases": [
+    {
+      "name": "stopped",
+      "status": "pass",
+      "mode": "real mdevd stopped after /proc executable identity check; wrapper waits without readiness",
+      "generation": "51",
+      "events": [
+        {
+          "type": "service-status",
+          "state": "pending",
+          "reason": "console-ready",
+          "deadlineMs": 60000,
+          "releaseSha256": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+          "generation": "51"
+        },
+        {
+          "type": "service-status",
+          "state": "failed",
+          "reason": "readiness-deadline",
+          "deadlineMs": 60000,
+          "releaseSha256": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+          "generation": "51"
+        }
+      ],
+      "consoleAvailable": true,
+      "console": {
+        "bytes": 10662,
+        "sha256": "2807a83553d69fd9e62405f4857dbb6377d642bd0ef15d26431fb003cda31ace"
+      },
+      "limitation": "Bounded observation of deliberately permanent waiting; three unsupported sleep 0.01 warnings preceded the verified stopped process."
+    },
+    {
+      "name": "no-readiness",
+      "status": "pass",
+      "mode": "real mdevd -O 4; notification fd remains 3 but -D 3 is omitted",
+      "generation": "53",
+      "events": [
+        {
+          "type": "service-status",
+          "state": "pending",
+          "reason": "console-ready",
+          "deadlineMs": 60000,
+          "releaseSha256": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+          "generation": "53"
+        },
+        {
+          "type": "service-status",
+          "state": "failed",
+          "reason": "readiness-deadline",
+          "deadlineMs": 60000,
+          "releaseSha256": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+          "generation": "53"
+        },
+        {
+          "type": "service-status",
+          "state": "failed",
+          "reason": "bootstrap-exit",
+          "deadlineMs": 60000,
+          "releaseSha256": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+          "generation": "53"
+        }
+      ],
+      "consoleAvailable": true,
+      "console": {
+        "bytes": 12248,
+        "sha256": "e20c1c52385b0f31f42e2216a7471203e0f287d5bc37e8cb1ccb7e6d1948df13"
+      },
+      "limitation": "No pre-timeout process snapshot retained; the final snapshot is down, not proof of a still-running daemon."
+    },
+    {
+      "name": "process-failure",
+      "status": "pass",
+      "mode": "real mdevd -Q rejects its argument; finish exits 125 to stop restart",
+      "generation": "55",
+      "events": [
+        {
+          "type": "service-status",
+          "state": "pending",
+          "reason": "console-ready",
+          "deadlineMs": 60000,
+          "releaseSha256": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+          "generation": "55"
+        },
+        {
+          "type": "service-status",
+          "state": "failed",
+          "reason": "readiness-deadline",
+          "deadlineMs": 60000,
+          "releaseSha256": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+          "generation": "55"
+        },
+        {
+          "type": "service-status",
+          "state": "failed",
+          "reason": "bootstrap-exit",
+          "deadlineMs": 60000,
+          "releaseSha256": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+          "generation": "55"
+        }
+      ],
+      "consoleAvailable": true,
+      "console": {
+        "bytes": 11185,
+        "sha256": "6c2505185c9b94cbea51a21a9dd33de2fa91016c4acec06e7a27feb62cb7c9f4"
+      },
+      "limitation": "Actual exit 100/signal 0, permanent supervisor failure and bootstrap-exit Worker notification."
+    }
+  ],
+  "restoration": {
+    "status": "pass",
+    "generation": "58",
+    "events": [
+      {
+        "type": "service-status",
+        "state": "pending",
+        "reason": "console-ready",
+        "deadlineMs": 60000,
+        "releaseSha256": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+        "generation": "58"
+      },
+      {
+        "type": "service-status",
+        "state": "failed",
+        "reason": "readiness-deadline",
+        "deadlineMs": 60000,
+        "releaseSha256": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+        "generation": "58"
+      },
+      {
+        "type": "service-status",
+        "state": "ready",
+        "reason": "dag-complete",
+        "deadlineMs": 60000,
+        "releaseSha256": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+        "generation": "58"
+      }
+    ],
+    "consoleSha256": "0eddbe4987f08d7f15b3b8454206e2b25f5377eb8d855067304abc096b92df77",
+    "checkpoint": "before-e67-service-faults",
+    "savedDataSha256": "638c2eded19609057c2af41bc156187d71b996ce332aec3352b752cb4779df3e",
+    "limitation": "The short diagnostic deadline also expired during an unfaulted concurrent boot; subsequent real DAG completion changed failed to ready. This is not a measured production-deadline guarantee."
+  },
+  "keysChanged": false,
+  "permissionsChanged": false,
+  "sourceWorkspaceWrites": false,
+  "publicReleaseModified": false
+}

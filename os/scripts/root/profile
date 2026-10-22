@@ -1,0 +1,3 @@
+# Login shells in the root read the same as an interactive Prompt.
+export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+[ -r /etc/length3/shrc ] && . /etc/length3/shrc

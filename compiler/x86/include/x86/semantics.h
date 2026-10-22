@@ -1,0 +1,397 @@
+/* Exact x86 instruction semantics lowered into the shared physical SSA. */
+
+#ifndef X86_SEMANTICS_H
+#define X86_SEMANTICS_H
+
+#include <x86/ssa.h>
+#include <x86/profile.h>
+#include <x86/decode.h>
+
+#define PL_X86_GPR_COUNT       16u
+#define PL_X86_RFLAGS_LOCAL    16u
+#define PL_X86_FS_BASE_LOCAL   17u
+#define PL_X86_GS_BASE_LOCAL   18u
+#define PL_X86_LOCAL_COUNT     19u
+
+#define PL_ERROR_X86_SEMANTIC (-43)
+
+typedef struct {
+    pl_plan plan;
+    pl_u64 successor[2];
+    pl_operand target;
+    pl_operand predicate;
+    pl_operand fault_predicate;
+    pl_operand machine_value;
+    pl_u32 successor_count;
+    /* Transient scalar dependencies of an opaque architectural transfer. */
+    pl_u32 machine_inputs;
+    pl_u8 flow;
+    pl_u8 dynamic_target;
+    pl_u8 has_predicate;
+    pl_u8 has_fault_predicate;
+    pl_u8 trap_vector;
+    pl_u8 machine_operation;
+    pl_u64 machine_argument;
+} pl_x86_semantic;
+
+/* Lower one already-decoded source instruction.  A grammar miss is a compiler
+ * error, never a request for an interpreter.  The initial frame is the sixteen
+ * x86-64 GPR coordinates followed by RFLAGS, FS.base and GS.base. */
+int pl_x86_lower(const pl_x86_instruction *instruction,
+                 pl_arena *arena, pl_x86_semantic *out);
+
+/* The complete decoded operand set, including hidden and conditional reads,
+ * is the single source of scalar dependencies at a machine barrier. */
+pl_u32 pl_x86_machine_inputs(const pl_x86_instruction *instruction);
+
+/* A privileged halt has no value-state operands. Its continuation is the
+ * decoded fallthrough, retained across the machine's interrupt wait. */
+int pl_x86_halt_supported(const pl_x86_instruction *instruction);
+typedef struct { pl_u8 bits,decrement,zero_flag; } pl_x86_count_branch;
+/* RCX/CX/ECX count and optional incoming ZF; no arithmetic flag producer.
+ * The shared law covers LOOP/LOOPE/LOOPNE and count-zero branches. */
+int pl_x86_count_branch_lower(const pl_x86_instruction *instruction,pl_x86_count_branch *out);
+typedef struct { pl_u8 vector,bytes; } pl_x86_fault_cut;
+/* A decoder-proved synchronous #UD/#GP with a decisive source extent. Fetch
+ * incompleteness and trap-after instructions are different machine futures. */
+int pl_x86_fault_cut_lower(const pl_x86_instruction *instruction,pl_x86_fault_cut *out);
+typedef struct {pl_u8 vector,bytes,debug;} pl_x86_software_trap;
+/* One delivered software event. Explicit INT1 differs from INT imm8=1. */
+int pl_x86_software_trap_lower(const pl_x86_instruction *instruction,pl_x86_software_trap *out);
+
+typedef struct { pl_u8 bits,compare; } pl_x86_register_update;
+/* Simultaneous old-value capture, add/exchange or accumulator comparison.
+ * Narrow conditional writes preserve every unselected parent bit. */
+int pl_x86_register_update_lower(const pl_x86_instruction *instruction,pl_x86_register_update *out);
+
+typedef struct {
+    pl_u8 kind,bits,address_bits,repeated,not_equal,source_segment;
+    pl_u8 reads_source,reads_target,writes_target,reads_accumulator,writes_accumulator;
+} pl_x86_string;
+/* One element law and its optional repetition: source access precedes target,
+ * DF determines the pointer delta, and comparisons terminate on the NEW ZF. */
+int pl_x86_string_lower(const pl_x86_instruction *instruction,pl_x86_string *out);
+const pl_x86_operand *pl_x86_string_memory(const pl_x86_instruction *instruction,pl_u32 index);
+
+/* MOV ES/SS/DS/FS/GS accepts a 16-bit selector from a GPR or memory. The
+ * source access precedes descriptor admission and destination publication;
+ * descriptor/interrupt-shadow ownership belongs to the machine boundary. */
+int pl_x86_segment_move_supported(const pl_x86_instruction *instruction);
+typedef struct { pl_u8 selector,memory,register_index,bits,umip; } pl_x86_selector_read;
+/* Visible ES..TR selector snapshot. Memory receives exactly 16 bits; wider
+ * GPR destinations zero-extend. LDTR/TR reads have the conditional UMIP cut. */
+int pl_x86_selector_read_lower(const pl_x86_instruction *instruction,pl_x86_selector_read *out);
+
+typedef struct { pl_u8 status,memory; } pl_x86_x87_snapshot;
+/* No-wait FNSTCW/FNSTSW: one current 16-bit word, no floating exception
+ * consumption. EM/TS #NM precedes operand access; AX preserves its parent. */
+int pl_x86_x87_snapshot_lower(const pl_x86_instruction *instruction,pl_x86_x87_snapshot *out);
+int pl_x86_x87_control_load_supported(const pl_x86_instruction *instruction);
+/* Waiting control load: source word, old SW -> canonical CW, recomputed
+ * ES/B. New pending exceptions are deferred, never raised by the load. */
+int pl_x86_x87_control_load_plan(pl_arena *arena,pl_plan *out);
+typedef struct {pl_u8 environment_bytes,bytes,restore,registers;} pl_x86_x87_environment;
+/* Protected long-mode 14/28-byte environment and optional eight raw ST
+ * fields, in logical order. No format record is a saved execution program. */
+int pl_x86_x87_environment_lower(const pl_x86_instruction *instruction,pl_x86_x87_environment *out);
+/* WAIT is its own instruction, not a prefix or an x87 value operation. */
+int pl_x86_x87_wait_supported(const pl_x86_instruction *instruction);
+typedef struct {pl_u8 free_register,source,step;} pl_x86_x87_stack;
+#define PL_X86_X87_STACK_MAX_NODES 12u
+/* Tag release and cyclic TOP movement. No numeric payload or exception is
+ * created; an already pending exception still precedes the state change. */
+int pl_x86_x87_stack_lower(const pl_x86_instruction *instruction,pl_x86_x87_stack *out);
+int pl_x86_x87_stack_plan(const pl_x86_x87_stack *law,pl_arena *arena,pl_plan *out);
+
+typedef struct { pl_u8 source,ordered,pop;pl_u16 opcode; } pl_x86_x87_compare;
+int pl_x86_x87_compare_lower(const pl_x86_instruction *instruction,pl_x86_x87_compare *out);
+/* Pure extended-precision relation. Inputs: significand/sign-exponent A,
+ * significand/sign-exponent B, empty-stack predicate. Outputs 0..2: EFLAGS
+ * CF/PF/ZF, newly raised IE/DE/SF bits, empty predicate. No f64 conversion,
+ * rounding, architectural state effect, or serialized operation stream. */
+#define PL_X86_X87_RELATION_MAX_NODES 96u
+int pl_x86_x87_relation_plan(pl_u32 ordered,pl_u32 alias,pl_arena *arena,pl_plan *out);
+/* Exact signed 16/32/64 -> extended representation, independent of PC/RC.
+ * Input local 0 is the source word; outputs 0..2 are significand, sign/exp,
+ * zero tag. Uses the same physical SSA vocabulary and compaction. */
+int pl_x86_x87_integer_plan(pl_u32 bits,pl_arena *arena,pl_plan *out);
+typedef struct {pl_u8 bytes;pl_u16 opcode;} pl_x86_x87_integer_load;
+int pl_x86_x87_integer_load_lower(const pl_x86_instruction *instruction,pl_x86_x87_integer_load *out);
+int pl_x86_x87_memory_load_lower(const pl_x86_instruction *instruction,pl_x86_x87_integer_load *out);
+typedef struct {pl_u8 bytes,memory,source;pl_u16 opcode;} pl_x86_x87_raw_load;
+int pl_x86_x87_raw_load_lower(const pl_x86_instruction *instruction,pl_x86_x87_raw_load *out);
+typedef struct {pl_u8 source;pl_u16 opcode;} pl_x86_x87_exchange;
+int pl_x86_x87_exchange_lower(const pl_x86_instruction *instruction,pl_x86_x87_exchange *out);
+/* Inputs A.sig/A.se,B.sig/B.se,CW,two empty bits. Outputs raised,suppress,
+ * new A.sig/A.se,new B.sig/B.se. Alias projection needs only outputs0..3. */
+int pl_x86_x87_exchange_plan(pl_u32 alias,pl_arena *arena,pl_plan *out);
+typedef struct {pl_u8 kind,source,condition,constant;pl_u16 opcode;} pl_x86_x87_transfer;
+enum {PL_X86_X87_TRANSFER_CONDITIONAL,PL_X86_X87_TRANSFER_NEGATE,PL_X86_X87_TRANSFER_ABSOLUTE,PL_X86_X87_TRANSFER_CONSTANT};
+/* Raw register/constant transfer, without numeric conversion. Inputs:
+ * source sig/se, target/source tags, CW, EFLAGS. Outputs: sig,se,tag,raised,
+ * suppress,write. Empty operands are checked even for a false condition.
+ * Sign operations only need the exponent/sign field; constants ignore PC. */
+#define PL_X86_X87_TRANSFER_MAX_NODES 32u
+int pl_x86_x87_transfer_lower(const pl_x86_instruction *instruction,pl_x86_x87_transfer *out);
+int pl_x86_x87_transfer_plan(const pl_x86_x87_transfer *law,pl_arena *arena,pl_plan *out);
+/* Exact load/push. Format0 IEEE,1 signed integer,2 extended80,3 packed BCD.
+ * Inputs raw word,CW,full-stack; formats2/3 also use the high source word.
+ * Format2 additionally uses the source-empty predicate.
+ * Outputs extended fields and the exception/tag publication word. */
+int pl_x86_x87_load_plan(pl_u32 bits,pl_u32 format,pl_arena *arena,pl_plan *out);
+typedef struct {pl_u8 store;pl_u16 opcode;} pl_x86_x87_bcd;
+int pl_x86_x87_bcd_lower(const pl_x86_instruction *instruction,pl_x86_x87_bcd *out);
+#define PL_X86_X87_BCD_STORE_MAX_NODES 192u
+/* Same rounding/exception core as integer stores; four outputs are the two
+ * packed payload words, raised flags and the exact store/pop suppression. */
+int pl_x86_x87_bcd_store_plan(pl_arena *arena,pl_plan *out);
+/* Integer-memory add/subtract. Inputs: ST0 significand/sign-exponent,
+ * signed operand, control word, empty predicate. Outputs: significand,
+ * sign-exponent, outcome (new exception bits, C1, suppress bit16, tag18..19).
+ * Descriptor operations: 0 add, 2 subtract, 3 reverse subtract,
+ * 4 divide, 5 reverse divide. No state effects. */
+#define PL_X86_X87_ARITHMETIC_MAX_NODES 512u
+int pl_x86_x87_integer_arithmetic_plan(pl_u32 bits,pl_u32 operation,pl_arena *arena,pl_plan *out);
+typedef struct {pl_u8 bytes,operation;pl_u16 opcode;} pl_x86_x87_integer_arithmetic;
+int pl_x86_x87_integer_arithmetic_lower(const pl_x86_instruction *instruction,pl_x86_x87_integer_arithmetic *out);
+/* Binary32/64 memory operands share the exact extended arithmetic core.
+ * Source denormal classification survives the widening conversion. */
+int pl_x86_x87_memory_arithmetic_lower(const pl_x86_instruction *instruction,pl_x86_x87_integer_arithmetic *out);
+int pl_x86_x87_memory_arithmetic_plan(pl_u32 bits,pl_u32 operation,pl_arena *arena,pl_plan *out);
+typedef struct {pl_u8 bytes,pop,truncate;pl_u16 opcode;} pl_x86_x87_integer_store;
+int pl_x86_x87_integer_store_lower(const pl_x86_instruction *instruction,pl_x86_x87_integer_store *out);
+/* Inputs sig,sign/exp,CW,empty; outputs signed payload,raised/C1/SF,suppress.
+ * PC does not round integer destinations; FISTTP overrides RC to truncation. */
+int pl_x86_x87_integer_store_plan(pl_u32 bits,pl_u32 truncate,pl_arena *arena,pl_plan *out);
+int pl_x86_x87_round_supported(const pl_x86_instruction *instruction);
+/* Same integral-rounding core without an integer destination range limit.
+ * Inputs sig,se,unused,unused,CW,empty; outputs sig,se,publication word. */
+int pl_x86_x87_round_plan(pl_arena *arena,pl_plan *out);
+typedef struct {pl_u8 bytes,memory,destination,pop,no_check;pl_u16 opcode;} pl_x86_x87_float_store;
+int pl_x86_x87_float_store_lower(const pl_x86_instruction *instruction,pl_x86_x87_float_store *out);
+/* Inputs extended significand/sign-exponent,CW,empty. Outputs low/high
+ * payload,new exception/C1/SF bits,suppress. PC never rounds store formats. */
+#define PL_X86_X87_FLOAT_STORE_MAX_NODES 192u
+int pl_x86_x87_float_store_plan(pl_u32 bits,pl_arena *arena,pl_plan *out);
+/* Total unsigned 128/64 quotient. Inputs H,L,D in locals 0..2; outputs
+ * quotient,remainder,#DE predicate. Invalid operands publish zero payloads.
+ * Fixed radix-2^32 corrections, not a bit-serial runtime loop. */
+int pl_x86_unsigned_divide_plan(pl_arena *arena,pl_plan *out);
+/* Raw extended operands: A significand/sign-exponent, B fields, CW, empty.
+ * Results are significand, sign-exponent and exception/tag/publication word. */
+int pl_x86_x87_register_arithmetic_plan(pl_u32 operation,pl_arena *arena,pl_plan *out);
+typedef struct {pl_u8 source,destination,operation,pop;pl_u16 opcode;} pl_x86_x87_register_arithmetic;
+int pl_x86_x87_register_arithmetic_lower(const pl_x86_instruction *instruction,pl_x86_x87_register_arithmetic *out);
+/* Exact raw IEEE32/64 -> extended fields. Output class bits are source
+ * denormal(0), signaling NaN(1), zero(2). No quieting/rounding/state effect. */
+int pl_x86_x87_ieee_plan(pl_u32 bits,pl_arena *arena,pl_plan *out);
+#define PL_X86_X87_MEMORY_RELATION_MAX_NODES 192u
+int pl_x86_x87_memory_relation_plan(pl_u32 bits,pl_u32 integer,pl_arena *arena,pl_plan *out);
+int pl_x86_x87_zero_relation_plan(pl_arena *arena,pl_plan *out);
+typedef struct {pl_u8 memory,integer,bytes,source,ordered,pop,zero;pl_u16 opcode;} pl_x86_x87_status_compare;
+int pl_x86_x87_status_compare_lower(const pl_x86_instruction *instruction,pl_x86_x87_status_compare *out);
+/* Construction-only expansion of ENTER's ordered transfers. Frame reads use
+ * full RBP even with operand16; only stored words and final BP are narrow. */
+typedef struct {pl_u16 allocation;pl_u8 bytes,level;pl_u16 steps;} pl_x86_enter;
+enum {PL_X86_ENTER_OLD_BASE,PL_X86_ENTER_READ,PL_X86_ENTER_COPY,PL_X86_ENTER_FRAME,PL_X86_ENTER_PROBE};
+typedef struct {pl_u32 kind,subtract;} pl_x86_enter_step_info;
+int pl_x86_enter_lower(const pl_x86_instruction *instruction,pl_x86_enter *out);
+int pl_x86_enter_step(const pl_x86_enter *enter,pl_u32 rank,pl_x86_enter_step_info *out);
+typedef struct {pl_u8 bytes,write,repeated,address_bits,segment,index;} pl_x86_string_io;
+int pl_x86_string_io_lower(const pl_x86_instruction *instruction,pl_x86_string_io *out);
+const pl_x86_operand *pl_x86_string_io_memory(const pl_x86_instruction *instruction);
+/* XLAT's only memory coordinate is RBX/EBX + unsigned AL, then segment
+ * translation. Neither REX.B nor operand-size changes that base or result. */
+const pl_x86_operand *pl_x86_translate_byte_memory(const pl_x86_instruction *instruction);
+typedef struct {pl_u8 bytes,interrupt;pl_u16 discard;} pl_x86_return;
+int pl_x86_return_lower(const pl_x86_instruction *instruction,pl_x86_return *out);
+
+/* A static lane selection over one or two 128-bit inputs. Coordinates below
+ * 16 name the first input; coordinates 16..31 name the second input. Input
+ * names and byte coordinates are construction facts, not saved runtime rows.
+ * lane_bytes==1 is a whole-byte region translation: start is the saturated
+ * byte count, control chooses left/right, and the second region is zero.
+ * inputs==0 carries a constant zero result without reading the old register. */
+typedef struct {
+    pl_u8 lane_bytes;
+    pl_u8 start;
+    pl_u8 control;
+    pl_u8 inputs;
+    pl_u8 first_register;
+    pl_u8 second_register;
+    pl_u8 source_memory;
+    pl_u8 identity;
+} pl_x86_vector_projection;
+#define PL_X86_VECTOR_SELECT_COORDINATES 32u
+#define PL_X86_VECTOR_INSERT_COORDINATES 48u
+#define PL_X86_VECTOR_DUPLICATE_COORDINATES 64u
+pl_u32 pl_x86_vector_projection_extent(const pl_x86_vector_projection *projection);
+
+int pl_x86_vector_project(const pl_x86_instruction *instruction,
+                           pl_x86_vector_projection *out);
+typedef struct {pl_u8 control,source_memory,source,target;} pl_x86_vector_window_distance;
+int pl_x86_vector_window_distance_lower(const pl_x86_instruction *instruction,pl_x86_vector_window_distance *out);
+typedef struct {pl_u8 control,explicit_length,index_result,length_bytes,source_memory,source,target;} pl_x86_vector_string_compare;
+int pl_x86_vector_string_compare_lower(const pl_x86_instruction *instruction,pl_x86_vector_string_compare *out);
+typedef struct {pl_u8 register_bytes,lane_bits,left,arithmetic,immediate,count,source_memory,source,target;} pl_x86_vector_shift;
+int pl_x86_vector_shift_lower(const pl_x86_instruction *instruction,pl_x86_vector_shift *out);
+typedef struct {pl_u8 source_memory,source,target,control;} pl_x86_mmx_shuffle;
+int pl_x86_mmx_shuffle_lower(const pl_x86_instruction *instruction,pl_x86_mmx_shuffle *out);
+int pl_x86_mmx_shuffle_plan(pl_u32 control,pl_arena *arena,pl_plan *out);
+typedef struct {pl_u8 register_bytes,lane_bits,high,source_memory,source_bytes,source,target,alias;} pl_x86_vector_unpack;
+int pl_x86_vector_unpack_candidate(const pl_x86_instruction *instruction);
+int pl_x86_vector_unpack_lower(const pl_x86_instruction *instruction,pl_x86_vector_unpack *out);
+int pl_x86_vector_unpack_plan(pl_u32 bits,pl_u32 alias,pl_arena *arena,pl_plan *out);
+pl_u32 pl_x86_vector_project_byte(const pl_x86_vector_projection *projection,
+                                  pl_u32 byte);
+
+enum pl_x86_vector_binary_operator {
+    PL_X86_VECTOR_BINARY_AND, PL_X86_VECTOR_BINARY_OR,
+    PL_X86_VECTOR_BINARY_XOR, PL_X86_VECTOR_BINARY_AND_NOT,
+    PL_X86_VECTOR_BINARY_ADD, PL_X86_VECTOR_BINARY_EQUAL,
+    PL_X86_VECTOR_BINARY_SUBTRACT,PL_X86_VECTOR_BINARY_GREATER,
+    PL_X86_VECTOR_BINARY_ADD_SAT,PL_X86_VECTOR_BINARY_SUBTRACT_SAT,
+    PL_X86_VECTOR_BINARY_MINIMUM,PL_X86_VECTOR_BINARY_MAXIMUM,
+    PL_X86_VECTOR_BINARY_AVERAGE,PL_X86_VECTOR_BINARY_MULTIPLY,
+    PL_X86_VECTOR_BINARY_MULTIPLY_HIGH,PL_X86_VECTOR_BINARY_MULTIPLY_ADD,
+    PL_X86_VECTOR_BINARY_MULTIPLY_EVEN,PL_X86_VECTOR_BINARY_MULTIPLY_ROUND,
+    PL_X86_VECTOR_BINARY_NARROW,PL_X86_VECTOR_BINARY_SUM_ABSOLUTE,
+    PL_X86_VECTOR_BINARY_ABSOLUTE,PL_X86_VECTOR_BINARY_HORIZONTAL_ADD,
+    PL_X86_VECTOR_BINARY_HORIZONTAL_SUBTRACT,PL_X86_VECTOR_BINARY_SIGN,
+    PL_X86_VECTOR_BINARY_MULTIPLY_ADD_BYTES,PL_X86_VECTOR_BINARY_SELECT
+};
+enum pl_x86_vector_binary_result {
+    PL_X86_VECTOR_BINARY_VALUE, PL_X86_VECTOR_BINARY_IDENTITY,
+    PL_X86_VECTOR_BINARY_ZERO, PL_X86_VECTOR_BINARY_ONES
+};
+typedef struct {
+    pl_u8 operation, lane_bytes, source_memory, alias, reverse, result;
+    pl_u8 register_bytes,signed_lanes;
+} pl_x86_vector_binary;
+/* Lower a decoded vector law, substituting equal input coordinates. AND_NOT
+ * means first & ~second; source order belongs to this frontend, not a backend. */
+int pl_x86_vector_binary_lower(const pl_x86_instruction *instruction,
+                               pl_x86_vector_binary *out);
+typedef struct {pl_u8 bytes,source_memory,target_memory,source_mmx,target_mmx,aligned;} pl_x86_mmx_transfer;
+int pl_x86_mmx_transfer_lower(const pl_x86_instruction *instruction,pl_x86_mmx_transfer *out);
+typedef struct {pl_u8 bytes,source_memory,target_memory,source,target,clear,alias,source_offset,target_offset;} pl_x86_scalar_vector_transfer;
+/* MOVSS/MOVSD and register MOVQ project a scalar region; memory loads/MOVQ
+ * clear the remaining region, scalar register moves preserve it. No FP math. */
+int pl_x86_scalar_vector_transfer_lower(const pl_x86_instruction *instruction,pl_x86_scalar_vector_transfer *out);
+typedef struct {pl_u8 source,target,word,mmx;} pl_x86_vector_extract;
+int pl_x86_vector_extract_lower(const pl_x86_instruction *instruction,pl_x86_vector_extract *out);
+typedef struct {pl_u8 bytes,mmx,source,target;} pl_x86_vector_signmask;
+int pl_x86_vector_signmask_lower(const pl_x86_instruction *instruction,pl_x86_vector_signmask *out);
+typedef struct {pl_u8 source_memory,source,target,source_lane_bytes,target_lane_bytes,signed_lanes,source_bytes;} pl_x86_vector_widen;
+/* Exactly the low source lanes needed to fill one 128-bit destination.
+ * Repeated low-half extension is a vector wave, not scalar lane extraction. */
+int pl_x86_vector_widen_lower(const pl_x86_instruction *instruction,pl_x86_vector_widen *out);
+typedef struct {pl_u8 register_bytes,source_memory,source,target,alias;} pl_x86_vector_swizzle;
+int pl_x86_vector_swizzle_lower(const pl_x86_instruction *instruction,pl_x86_vector_swizzle *out);
+typedef struct {pl_u8 minimum_position,source_memory,source,target,alias;} pl_x86_vector_reduction;
+int pl_x86_vector_reduction_lower(const pl_x86_instruction *instruction,pl_x86_vector_reduction *out);
+typedef struct {pl_u8 insert,memory,bytes,lane,vector,general;} pl_x86_vector_lane;
+int pl_x86_vector_lane_lower(const pl_x86_instruction *instruction,pl_x86_vector_lane *out);
+#define PL_X86_CRC32_MAX_NODES 384u
+/* Exact reflected Castagnoli remainder. Inputs32-bit residual and one
+ * little-endian8/16/32/64-bit word; only the new32-bit residual is live. */
+int pl_x86_crc32_plan(pl_u32 bits,pl_arena *arena,pl_plan *out);
+typedef struct {pl_u8 source_memory,source,target,source_class,source_bytes,target_bytes;} pl_x86_vector_integer_float;
+int pl_x86_vector_integer_float_lower(const pl_x86_instruction *instruction,pl_x86_vector_integer_float *out);
+/* Inputs signed word and RC, outputs raw IEEE bits and inexact predicate.
+ * Exact normalization followed by one format rounding; no host FP state. */
+#define PL_X86_SIGNED_FLOAT_MAX_NODES 64u
+int pl_x86_signed_float_plan(pl_u32 input_bits,pl_u32 output_bits,pl_arena *arena,pl_plan *out);
+typedef struct {pl_u8 bytes,ordered,source_memory,source,target,alias,predicate,result_mask,lanes;} pl_x86_float_compare;
+int pl_x86_float_compare_lower(const pl_x86_instruction *instruction,pl_x86_float_compare *out);
+/* Inputs raw A,B,MXCSR; outputs CF/PF/ZF and newly raised IE/DE. */
+#define PL_X86_FLOAT_COMPARE_MAX_NODES 96u
+int pl_x86_float_compare_plan(pl_u32 bits,pl_u32 ordered,pl_u32 alias,pl_arena *arena,pl_plan *out);
+int pl_x86_float_predicate_plan(pl_u32 bits,pl_u32 predicate,pl_u32 alias,pl_arena *arena,pl_plan *out);
+/* MIN/MAX select the second operand on equality or unordered, without
+ * quieting its NaN payload. DAZ applies before comparison and selection. */
+int pl_x86_float_minmax_plan(pl_u32 bits,pl_u32 maximum,pl_arena *arena,pl_plan *out);
+
+typedef struct {pl_u8 bytes,lanes,operation,source_memory,source,target;} pl_x86_float_arithmetic;
+int pl_x86_float_arithmetic_candidate(const pl_x86_instruction *instruction);
+int pl_x86_float_arithmetic_lower(const pl_x86_instruction *instruction,pl_x86_float_arithmetic *out);
+/* Raw A,B,MXCSR -> raw result,new exceptions. One target-format rounding
+ * of the shared exact arithmetic residual, including gradual underflow. */
+int pl_x86_float_arithmetic_plan(pl_u32 bits,pl_u32 operation,pl_arena *arena,pl_plan *out);
+typedef struct {pl_u8 bytes,lanes,control,source_memory,source,target;} pl_x86_float_round;
+int pl_x86_float_round_lower(const pl_x86_instruction *instruction,pl_x86_float_round *out);
+/* Raw IEEE word and MXCSR -> integral IEEE word and newly raised IE/PE.
+ * Immediate bits 2/3 select MXCSR.RC and suppress precision respectively. */
+#define PL_X86_FLOAT_ROUND_MAX_NODES 128u
+int pl_x86_float_round_plan(pl_u32 bits,pl_u32 control,pl_arena *arena,pl_plan *out);
+typedef struct {pl_u8 bytes,control,source_memory,source,target;} pl_x86_float_dot;
+int pl_x86_float_dot_lower(const pl_x86_instruction *instruction,pl_x86_float_dot *out);
+typedef struct {pl_u8 bytes,lanes,source_memory,source,target,operation;} pl_x86_float_unary;
+/* Operation 0 is exact sqrt, 1/2 are ISA-bounded reciprocal/reciprocal-root.
+ * Approximation never reads RC/DAZ/FTZ or raises a SIMD FP exception. */
+int pl_x86_float_unary_lower(const pl_x86_instruction *instruction,pl_x86_float_unary *out);
+#define PL_X86_SCALAR_PLAN_MAX_NODES 1024u
+int pl_x86_float_sqrt_plan(pl_u32 bits,pl_arena *arena,pl_plan *out);
+typedef struct {pl_u8 source_bytes,target_bytes,lanes,zero_high,source_memory,source,target;} pl_x86_float_convert;
+int pl_x86_float_convert_lower(const pl_x86_instruction *instruction,pl_x86_float_convert *out);
+int pl_x86_float_convert_plan(pl_u32 source_bits,pl_u32 target_bits,pl_arena *arena,pl_plan *out);
+int pl_x86_x87_examine_supported(const pl_x86_instruction *instruction);
+#define PL_X86_X87_EXAMINE_MAX_NODES 64u
+/* Raw significand, sign/exponent, status, empty -> status classification.
+ * No arithmetic, numeric exception, tag or payload replacement. */
+int pl_x86_x87_examine_plan(pl_arena *arena,pl_plan *out);
+int pl_x86_x87_root_supported(const pl_x86_instruction *instruction);
+/* Raw A,SE,unused,unused,CW,empty -> significand,SE,publication outcome. */
+int pl_x86_x87_root_plan(pl_arena *arena,pl_plan *out);
+/* Pure compensated pair [high,low,integer exponent shift,CW,unused] ->
+ * extended rounded value, including gradual underflow and deferred wrap. */
+int pl_x86_compensated_round_plan(pl_arena *arena,pl_plan *out);
+int pl_x86_compensated_divide_plan(pl_arena *arena,pl_plan *out);
+/* Pure range-reduced sin/cos; input extended fields, output binary64 pair. */
+int pl_x86_x87_trig_value_plan(pl_u32 cosine,pl_arena *arena,pl_plan *out);
+int pl_x86_x87_trig_supported(const pl_x86_instruction *instruction);
+/* Original A,SE,CW,empty,full,computed sig,SE,outcome -> publication. */
+int pl_x86_x87_trig_result_plan(pl_u32 cosine,pl_arena *arena,pl_plan *out);
+int pl_x86_x87_exponential_supported(const pl_x86_instruction *instruction);
+int pl_x86_x87_exponential_value_plan(pl_arena *arena,pl_plan *out);
+int pl_x86_x87_exponential_result_plan(pl_arena *arena,pl_plan *out);
+/* Pure positive finite X,Y fields -> compensated Y*log2(X), exponent shift.
+ * Architectural domains, special values and publication are separate. */
+int pl_x86_x87_logarithm_value_plan(pl_arena *arena,pl_plan *out);
+int pl_x86_x87_logarithm_supported(const pl_x86_instruction *instruction);
+/* X,SE,Y,SE,CW,empty,computed significand,SE,outcome -> publication. */
+int pl_x86_x87_logarithm_result_plan(pl_arena *arena,pl_plan *out);
+int pl_x86_x87_logarithm_one_supported(const pl_x86_instruction *instruction);
+int pl_x86_x87_logarithm_one_value_plan(pl_arena *arena,pl_plan *out);
+int pl_x86_x87_logarithm_one_result_plan(pl_arena *arena,pl_plan *out);
+int pl_x86_x87_arctangent_supported(const pl_x86_instruction *instruction);
+int pl_x86_x87_arctangent_prepare_plan(pl_arena *arena,pl_plan *out);
+int pl_x86_x87_arctangent_value_plan(pl_arena *arena,pl_plan *out);
+int pl_x86_x87_arctangent_finish_plan(pl_arena *arena,pl_plan *out);
+int pl_x86_x87_arctangent_result_plan(pl_arena *arena,pl_plan *out);
+int pl_x86_x87_extract_supported(const pl_x86_instruction *instruction);
+#define PL_X86_X87_EXTRACT_MAX_NODES 128u
+/* Raw A,SE,CW,empty,full,unused -> significand pair, exponent pair,
+ * packed flags/tags, suppress publication. Both destinations are atomic. */
+int pl_x86_x87_extract_plan(pl_arena *arena,pl_plan *out);
+int pl_x86_x87_scale_supported(const pl_x86_instruction *instruction);
+int pl_x86_x87_remainder_supported(const pl_x86_instruction *instruction);
+typedef struct {
+    pl_u8 source_memory,source_bytes,truncate,source,target;
+    pl_u8 element_bytes,target_class,target_bytes;
+} pl_x86_vector_float_integer;
+int pl_x86_vector_float_integer_lower(const pl_x86_instruction *instruction,pl_x86_vector_float_integer *out);
+typedef struct {pl_u8 limit,bytes,source_memory,source,target;} pl_x86_selector_query;
+int pl_x86_selector_query_lower(const pl_x86_instruction *instruction,pl_x86_selector_query *out);
+/* Inputs descriptor,coordinate availability,CPL,selector,old parent. Outputs
+ * complete parent and ZF predicate. Long-mode type table; Present is not an admission
+ * condition. LAR's undefined nibble is canonical zero, never authority. */
+#define PL_X86_SELECTOR_QUERY_MAX_NODES 64u
+int pl_x86_selector_query_plan(pl_u32 limit,pl_u32 bits,pl_arena *arena,pl_plan *out);
+/* Privileged CLTS changes only CR0.TS. Prefixes do not change its width. */
+int pl_x86_cr0_clear_supported(const pl_x86_instruction *instruction);
+int pl_x86_cache_barrier_supported(const pl_x86_instruction *instruction);
+typedef struct {pl_u8 bytes,call;} pl_x86_far_transfer;
+int pl_x86_far_transfer_lower(const pl_x86_instruction *instruction,pl_x86_far_transfer *out);
+
+#endif /* X86_SEMANTICS_H */

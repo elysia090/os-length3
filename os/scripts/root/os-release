@@ -1,0 +1,6 @@
+NAME="OS Length3 Linux"
+ID=length3
+VERSION="@VERSION@"
+VERSION_ID=@VERSION@
+PRETTY_NAME="OS Length3 Linux @VERSION@"
+HOME_URL="https://github.com/elysia090/libqm-prototype"

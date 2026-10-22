@@ -1,0 +1,142 @@
+{
+  "format": "final-candidate-producer-binding-v1",
+  "date": "2026-10-13",
+  "status": "pass",
+  "candidate": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+  "scope": "trusted local execution observations and exact artifact reproduction; unsigned receipt consistency does not establish publisher authority",
+  "producer": {
+    "bootstrapIdentity": "df4026a1c7c02b49c8d36782c1a361dca0e89f4616349c42f0458b95fcc15dd9",
+    "cleanReplicas": 2,
+    "compilerVersion": "gcc (Alpine 15.2.0) 15.2.0",
+    "conditions": {
+      "AR": "/usr/bin/ar",
+      "CC": "/usr/bin/gcc",
+      "CFLAGS": "-O2",
+      "LANG": "C",
+      "LC_ALL": "C",
+      "SOURCE_DATE_EPOCH": "0",
+      "TZ": "UTC",
+      "command": "make -C src/v2 -j4 CC=/usr/bin/gcc AR=/usr/bin/ar CFLAGS=-O2 all",
+      "jobs": 4
+    },
+    "format": "fixed-native-producer-cut-v1",
+    "producers": {
+      "archive": {
+        "bytes": 27936,
+        "sha256": "3c45ef71c25c0bf93de34accc24dd65a6ad32c7d18e9ba64b7b71cf099fa8924"
+      },
+      "audit": {
+        "bytes": 41144,
+        "sha256": "806b1758e07dbbeb8db4d41957d8f779781f667bf30cc6acb50999b107a67775"
+      },
+      "compiler": {
+        "bytes": 1458928,
+        "sha256": "bcd5915019582878cefbc5c0663ca450bd09c422c6c03adc3049a94efb71da26"
+      },
+      "stage": {
+        "bytes": 1555864,
+        "sha256": "504b61bcf6d9649424d9da89ab64439399fc9c2f05bed0e19093edb22411b0a4"
+      },
+      "verifier": {
+        "bytes": 23432,
+        "sha256": "af9cd8a8f1e1acb1e877f37782347a559561a2ffcc3d11bb9abcdedb138d0796"
+      }
+    },
+    "scope": "two clean builds and fixed executable cut; product output binding follows actual execution",
+    "sourceArchiveSha256": "7d0d32906c1c8bc5f7a1cc90f2e13eb714f96db3d82c549f81585b93f4974bdb",
+    "toolchainFiles": 7694,
+    "toolchainFilesSha256": "9fddd47f59cf7fb81a528a271ac04ab97537a8def8ff2eb0b2d0258c50bf29e1"
+  },
+  "actualExecutions": {
+    "compiler": 6,
+    "verifier": 399,
+    "archive": 31,
+    "stage": 1,
+    "audit": 1
+  },
+  "executionLog": {
+    "bytes": 1031341,
+    "sha256": "0e25821b44f4f757b891ade4310de2cb20a1044acfa4d09609f92e4302259c1e",
+    "cutSha256": "3b037a993e03189badcbf9c65b72e8faece4de57ffb0b33b9397b82a232e81ea"
+  },
+  "toolchainPopulation": {
+    "files": 7694,
+    "sha256": "9fddd47f59cf7fb81a528a271ac04ab97537a8def8ff2eb0b2d0258c50bf29e1"
+  },
+  "recipeOverrides": [
+    {
+      "name": "build.sh",
+      "sha256": "9f12e807da1938eebc722521b250c31324cca3f11c26f7de9caf8c0c0fc6b563"
+    },
+    {
+      "name": "producer-run.sh",
+      "sha256": "61b5b6721a92f8fe0a4ce35fb1d68a3533be19b7d16ee91f3cec8c9f24222ceb"
+    },
+    {
+      "name": "producer-execution.py",
+      "sha256": "0ec32a3da6b1e6cbf5328e3b060df3ce334a7c94c002e7a1118902ab563fd87a"
+    },
+    {
+      "name": "optimize-payload.sh",
+      "sha256": "d65e906427f0e5ff7530f0534562407d1030b86ef1f9c3d68c605016b48119da"
+    },
+    {
+      "name": "check-postlink-toolchain.sh",
+      "sha256": "690184a3bc6ef24134876f38a85de1d6322be96f3494e665a118f96755ec7ea7"
+    },
+    {
+      "name": "boot",
+      "sha256": "bc38975f6ec3be626656a51309f484a05ca86d41ad6da23630357c25783c6ee9"
+    },
+    {
+      "name": "package-recipes.sh",
+      "sha256": "2763c17178f26d0c170481f45a837ed4cffbfe2b87cdd441ad739cfb39ac31f5"
+    },
+    {
+      "name": "prepare-package-payload.sh",
+      "sha256": "36fcdf885b685792684e6b3965b7179969ba99a80740a08843ba31fa29bf6960"
+    },
+    {
+      "name": "normalize-initramfs.py",
+      "sha256": "bb24ba8ee89dbc193a8e10b10c2819d2ab8d865dc8225dec49621b1facbb30ce"
+    }
+  ],
+  "nativeArchive": {
+    "bytes": 63652664,
+    "sha256": "c97f2eed201a8b8f9fbdb4ae14e4a73d096add1cfe496f7c7eb86adecd4ce3f7",
+    "originalBytesReproduced": true,
+    "originalInputsSha256": "d4646eafa4868b6a7167671778c0f299a0a6fc3c0dd952e27d55fba7f934d766"
+  },
+  "canonicalNamespace": {
+    "native": "e51726b70e1937e797f1176b188dd0a664e533a069c3a613ec96be77981fc799",
+    "readOnlySquashfs": "e51726b70e1937e797f1176b188dd0a664e533a069c3a613ec96be77981fc799"
+  },
+  "webProviders": {
+    "sdkArchiveSha256": "cccb5c323a9b34f0349a9b09e8804a0a7632c68c3310f4b5f437ed57d7e71d8f",
+    "sourcePopulationSha256": "720e4eb5b432d1dcb37968df9908b129b8a84f7afd9a77efbc280a7426cbacf1",
+    "sourceFiles": 751,
+    "toolchain": {
+      "SdkArchiveSha256": "cccb5c323a9b34f0349a9b09e8804a0a7632c68c3310f4b5f437ed57d7e71d8f",
+      "ClangSha256": "945CBA19EC5C002628BB7D226D21A443198E5DA5D9E5430FD2F61B9F143D5309",
+      "LinkerSha256": "17328444747F47133C85D815B29C5961789378798F14E4D906EDAEAC53BCF537"
+    },
+    "conditions": "product Makefiles, wasm profile 0, compiler COLD_STATIC_MIN=2097152",
+    "outputs": {
+      "vm": {
+        "bytes": 144156,
+        "sha256": "4a14da3a861d5b877a77db9334e2db20baf19eb06b5d43310e75e16703a9dccc"
+      },
+      "compiler": {
+        "bytes": 1137376,
+        "sha256": "263e444dc64d0cd93a52a9413e1046e9379ae5ad8a7900c87129b8289849e565"
+      }
+    }
+  },
+  "historicalDefectiveProducerSource": "unknown; no historical record rewritten",
+  "historicalRuntimeReceiptSchema": "v1 remains producer-source-binding=unknown; this separate replay supplies the new binding",
+  "issuer": "existing local test issuer",
+  "newIssuerKeys": false,
+  "privateKeyExport": false,
+  "publicReleaseModified": false,
+  "productQualification": "pending"
+}

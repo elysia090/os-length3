@@ -1,0 +1,87 @@
+{
+  "format": "native-busybox-runtime-counterexample-v1",
+  "date": "2026-10-13",
+  "candidate": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde",
+  "status": "fail",
+  "conditions": {
+    "kernelSha256": "a2295e89a6a9f6c35b8587798b2c9fb1da8d829039265066e82603434e48319f",
+    "systemSha256": "74b1d35af3a1c2082f1bb5290eb562bd60463d09ded586dd525f01c9889fe53d",
+    "accelerator": "QEMU WHPX; native x86-64",
+    "guestRamMiB": 1024,
+    "sameKernel": true,
+    "sameArguments": true,
+    "networkScope": "guest loopback only; no host route changes",
+    "ptrace": false,
+    "observerElf": false
+  },
+  "command": [
+    "ip",
+    "route",
+    "replace",
+    "default",
+    "via",
+    "10.55.0.1",
+    "dev",
+    "lo"
+  ],
+  "ordinary": {
+    "sha256": "9371b80e9939e4e98d47c579438ee8895c75445543d47b40779f02d51cec1577",
+    "bytes": 2771752,
+    "exit": 0,
+    "source": "retained ordinary linker result /scratch/release-work/busybox-1.36.1/busybox_unstripped from the existing build scratch; no source-history claim beyond that retained input"
+  },
+  "optimized": {
+    "sha256": "5cabb719f4d8c34b01554cfb6904540872759b96ba8e6597022c9445daea0282",
+    "bytes": 420152,
+    "exit": 139,
+    "faultFileOffset": "0x2109f"
+  },
+  "earlierSetupFailure": {
+    "ordinaryExit": 127,
+    "reason": "multicall executable was incorrectly named linked-busybox; corrected basename busybox; original log retained"
+  },
+  "diagnosis": {
+    "status": "source-fix-runtime-verified; fresh complete candidate pending",
+    "shape": "sign-extended shared-base table delta; ADD forms target in RAX; LEA reuses RDX for an argument before indirect JMP RAX",
+    "issue": "shared_base_consumer rejected a base-register write after target formation, so the finite relative table was not registered",
+    "correction": "after ADD, only a write to the actual delta/target register invalidates the completed target; preserve both-register checks before ADD"
+  },
+  "caveat": "The normal-boot oracle prints a green boot summary because the diagnostic deliberately captures both exits; that summary is not a passed runtime-equivalence result.",
+  "console": {
+    "bytes": 13499,
+    "sha256": "dbcb571dd55c8cba2ae5255ed54cd5b85508223cb233168efdd927f2836de1db"
+  },
+  "publicReleaseModified": false,
+  "newIssuerKeys": false,
+  "workspaceKeysChanged": false,
+  "hostPermissionsChanged": false,
+  "fixValidation": {
+    "status": "pass",
+    "sameE67Kernel": true,
+    "ordinaryExit": 0,
+    "oldOutputExit": 139,
+    "fixedOutputExit": 0,
+    "fixedOutputSha256": "ae5250691672e14ccfc6912234bae01415c47cd649ff88e3beea2d248db3d9cd",
+    "scope": "the retained ordinary input was transformed by the repaired project compiler in a separate native smoke build; not the fresh final producer-cut artifact",
+    "log": {
+      "bytes": 13644,
+      "sha256": "9dffd06ac7410b7442458a6ea05d8acd4dc7218a1cfeef7b55bed587962887ec"
+    }
+  },
+  "verifierLimitation": {
+    "status": "fail",
+    "oldBadOutputAccepted": true,
+    "observedExit": 0,
+    "actualCoverage": "optimized ELF/proof structure, build identity, source hash and reported cost constraints; does not establish whole-program runtime equivalence",
+    "correctionNeeded": "independently replay/check semantic transformation witnesses and relocated control/data targets; do not add an ELF hash denylist or rename metadata integrity as equivalence",
+    "sourceFiles": [
+      "src/v2/optimized-x86/cli/main.c",
+      "src/v2/optimized-x86/src/proof.c",
+      "src/v2/optimized-x86/src/reader.c"
+    ],
+    "smokeLog": {
+      "bytes": 30195,
+      "sha256": "c8f9596174ce36bc402cad24c92764e5c6f114ed8b63f796d7b32de342c14360"
+    }
+  }
+}

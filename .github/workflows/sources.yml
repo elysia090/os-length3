@@ -1,0 +1,32 @@
+name: Sources
+
+# The pinned upstream sources of the root's programs (distribution/sources.env),
+# each checked against its sha256, kept as one artifact: what xlat is
+# debugged against where those hosts cannot be reached. Runs when this file
+# or the pins change.
+on:
+  push:
+    paths: ['.github/workflows/sources.yml', 'distribution/sources.env']
+
+permissions:
+  contents: read
+
+jobs:
+  sources:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Fetch and check
+        run: |
+          . distribution/sources.env
+          mkdir -p out
+          get() { curl -fsSL --retry 4 -o "out/$(basename "$2")" "$2"; echo "$3  out/$(basename "$2")" | sha256sum -c -; }
+          get git "$GIT_URL" "$GIT_SHA256"
+          get make "$MAKE_URL" "$MAKE_SHA256"
+          get musl "$MUSL_URL" "$MUSL_SHA256"
+          ls -la out
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sources
+          path: out/
+          retention-days: 7

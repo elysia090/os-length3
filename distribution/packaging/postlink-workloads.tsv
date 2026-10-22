@@ -1,0 +1,12 @@
+format=native-postlink-workloads-v1
+busybox-arithmetic	40	bin/busybox	busybox	sh	-c	i=0; while [ "$i" -lt 4096 ]; do i=$((i + 1)); done; printf '%s\n' "$i"
+busybox-hash	20	bin/busybox	busybox	sha256sum	@REPOSITORY@/distribution/toolchain/smoke.c
+bzip2-encode	4	usr/bin/bzip2	bzip2	-c	@REPOSITORY@/distribution/toolchain/smoke.c
+curl-version	1	usr/bin/curl	curl	--version
+file-inspect	2	usr/bin/file	file	-m	@EXECUTABLE_DIR@/../share/misc/magic.mgc	@REPOSITORY@/distribution/toolchain/smoke.c
+gcc-compile	24	usr/bin/gcc	@EXECUTABLE@	-S	-O2	-nostdinc	@REPOSITORY@/distribution/packaging/benchmark-compile.c	-o	/dev/null
+git-hash-object	8	usr/bin/git	git	hash-object	@REPOSITORY@/distribution/toolchain/smoke.c
+gzip-encode	4	usr/bin/gzip	gzip	-c	@REPOSITORY@/distribution/toolchain/smoke.c
+make-parse	8	usr/bin/make	make	-n	-f	@REPOSITORY@/distribution/bootstrap/Makefile	all
+openssl-version	1	usr/bin/openssl	openssl	version	-a
+xz-encode	4	usr/bin/xz	xz	-c	@REPOSITORY@/distribution/toolchain/smoke.c

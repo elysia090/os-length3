@@ -1,0 +1,12 @@
+native workload busybox-arithmetic: parity green, mean ratio 0.991965278
+native workload busybox-hash: parity green, mean ratio 1.025061103
+native workload bzip2-encode: parity green, mean ratio 0.989071296
+native workload curl-version: parity green, mean ratio 1.043285774
+native workload file-inspect: parity green, mean ratio 1.065371861
+native workload gcc-compile: parity green, mean ratio 1.004834371
+native workload git-hash-object: parity green, mean ratio 1.079990801
+native workload gzip-encode: parity green, mean ratio 1.009451989
+native workload make-parse: parity green, mean ratio 1.018363478
+native workload openssl-version: parity green, mean ratio 1.037485928
+native workload xz-encode: parity green, mean ratio 1.005345766
+fixed native workload aggregate regressed: ratio=1.002329099; evidence=temp/native-acceptance-3238ae021182/postlink-native.report

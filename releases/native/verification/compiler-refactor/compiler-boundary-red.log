@@ -1,0 +1,27 @@
+make: Entering directory '/build/source/src/v2/postlink-compiler'
+rm -f build/libpostlink.a.tmp
+ar rcs build/libpostlink.a.tmp build/compiler.o build/emit-x86.o build/layout-elf.o build/metadata.o build/relocate-elf.o build/discover-entry.o build/jump-table.o build/compile-elf.o build/minimum.o build/format.o build/instruction-semantics.o build/form-block.o build/closure.o build/transfer.o build/template.o build/project.o build/plan.o build/compose.o build/compact.o build/normalize-ssa.o build/sweep.o build/region.o build/alu.o build/affine.o build/quotient.o build/scalar.o build/selection/encoding.o build/selection/source.o build/selection/operands.o build/selection/expressions.o build/selection/flags.o build/selection/select-rules.o build/selection/affine.o build/selection/tree-measure.o build/selection/tree-write.o build/selection/simple-frame.o build/selection/alu-frame.o build/selection/arx-frame.o build/selection/carry-frame.o build/selection/handoff.o build/selection/branch-frame.o build/selection/state-frame.o build/selection/flag-frame.o build/selection/shared-dag.o build/selection/projection.o build/selection/policy.o
+mv build/libpostlink.a.tmp build/libpostlink.a
+make -C ../support all
+make[1]: Entering directory '/build/source/src/v2/support'
+make[1]: Nothing to be done for 'all'.
+make[1]: Leaving directory '/build/source/src/v2/support'
+make -C ../x86 all
+make[1]: Entering directory '/build/source/src/v2/x86'
+make[1]: Nothing to be done for 'all'.
+make[1]: Leaving directory '/build/source/src/v2/x86'
+make -C ../optimized-x86 all
+make[1]: Entering directory '/build/source/src/v2/optimized-x86'
+make -C ../support all
+make[2]: Entering directory '/build/source/src/v2/support'
+make[2]: Nothing to be done for 'all'.
+make[2]: Leaving directory '/build/source/src/v2/support'
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -I../support/include cli/main.c build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/postlink-verify
+make[1]: Leaving directory '/build/source/src/v2/optimized-x86'
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/compiler-boundaries.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/compiler-boundaries
+unaligned compiler workspace 1: status=-102 bytes=0
+make: *** [Makefile:1170: compiler-boundaries-check] Error 1
+make: Leaving directory '/build/source/src/v2/postlink-compiler'

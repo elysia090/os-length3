@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+export PATH=/usr/bin:/usr/sbin:/bin:/sbin HOME=/root TMPDIR=/tmp TERM=linux
+cd /root
+# s6-supervise already starts its child in a new session. Do not detach with
+# setsid again: its fork would make supervision repeatedly spawn more shells
+# that compete for the same terminal. cttyhack and exec retain the child PID.
+exec /bin/busybox cttyhack /bin/sh -i \
+    </dev/console >/dev/console 2>&1

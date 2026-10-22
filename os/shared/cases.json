@@ -1,0 +1,940 @@
+{
+  "comment": "Cases both the app (TypeScript) and l3 (Rust) must agree on.",
+  "kind": [
+    [
+      "Fix：再起動すると保存内容が消える",
+      "Fix",
+      "再起動すると保存内容が消える"
+    ],
+    [
+      "RFC: Remoteの保持期間",
+      "RFC",
+      "Remoteの保持期間"
+    ],
+    [
+      "  Patch ： 起動を速く",
+      "Patch",
+      "起動を速く"
+    ],
+    [
+      "牛乳を買う",
+      null,
+      "牛乳を買う"
+    ],
+    [
+      "12:30 に会議",
+      null,
+      "12:30 に会議"
+    ],
+    [
+      "a-very-long-kind-name：x",
+      null,
+      "a-very-long-kind-name：x"
+    ],
+    [
+      "Abcdefghijklmnop：sixteen letters is a kind",
+      "Abcdefghijklmnop",
+      "sixteen letters is a kind"
+    ],
+    [
+      "Abcdefghijklmnopq：seventeen is not",
+      null,
+      "Abcdefghijklmnopq：seventeen is not"
+    ],
+    [
+      "Fix-1：x",
+      "Fix-1",
+      "x"
+    ],
+    [
+      "1Fix：x",
+      null,
+      "1Fix：x"
+    ],
+    [
+      "Fix\t:\tx",
+      "Fix",
+      "x"
+    ],
+    [
+      "Fix　：x",
+      "Fix",
+      "x"
+    ],
+    [
+      "ｆｉｘ：全角は種類ではない",
+      null,
+      "ｆｉｘ：全角は種類ではない"
+    ],
+    [
+      "Fix：",
+      "Fix",
+      ""
+    ],
+    [
+      "",
+      null,
+      ""
+    ],
+    [
+      "   ",
+      null,
+      ""
+    ],
+    [
+      "a:b:c",
+      "a",
+      "b:c"
+    ],
+    [
+      "https://example.com を読む",
+      null,
+      "https://example.com を読む"
+    ],
+    [
+      "See: https://example.com",
+      "See",
+      "https://example.com"
+    ]
+  ],
+  "issue": [
+    [
+      "Fix：再起動すると保存内容が消える\n\n再現手順\n1. 保存\n",
+      "Fix",
+      "再起動すると保存内容が消える",
+      "再現手順\n1. 保存"
+    ],
+    [
+      "# RFC: Remoteの保持期間",
+      "RFC",
+      "Remoteの保持期間",
+      ""
+    ],
+    [
+      "﻿メモ\n本文",
+      null,
+      "メモ",
+      "本文"
+    ],
+    [
+      "Fix：x\r\n\r\na\r\nb\r\n",
+      "Fix",
+      "x",
+      "a\nb"
+    ],
+    [
+      "﻿Patch：y\r\n",
+      "Patch",
+      "y",
+      ""
+    ],
+    [
+      "## Fix：x",
+      "Fix",
+      "x",
+      ""
+    ],
+    [
+      "\n本文だけ",
+      null,
+      "x",
+      "本文だけ"
+    ],
+    [
+      "https://example.com が落ちる\n",
+      null,
+      "https://example.com が落ちる",
+      ""
+    ]
+  ],
+  "issueText": [
+    [
+      "Patch",
+      " 起動を速く ",
+      "\n詳細\n",
+      "Patch：起動を速く\n\n詳細\n"
+    ],
+    [
+      null,
+      "メモ",
+      "",
+      "メモ\n"
+    ]
+  ],
+  "nextIssue": [
+    [
+      [],
+      "001.md"
+    ],
+    [
+      [
+        "001.md",
+        "007.md",
+        "notes.md"
+      ],
+      "008.md"
+    ],
+    [
+      [
+        "999.md"
+      ],
+      "1000.md"
+    ]
+  ],
+  "validName": [
+    [
+      "my-repo_1.0",
+      true
+    ],
+    [
+      "",
+      false
+    ],
+    [
+      ".git",
+      false
+    ],
+    [
+      "a/b",
+      false
+    ],
+    [
+      "..",
+      false
+    ],
+    [
+      "a b",
+      false
+    ]
+  ],
+  "gitName": [
+    [
+      ".git",
+      true
+    ],
+    [
+      ".GIT",
+      true
+    ],
+    [
+      ".Git.",
+      true
+    ],
+    [
+      ".git ",
+      true
+    ],
+    [
+      "git~1",
+      true
+    ],
+    [
+      "GIT~1",
+      true
+    ],
+    [
+      ".g‌it",
+      true
+    ],
+    [
+      "git",
+      false
+    ],
+    [
+      ".github",
+      false
+    ],
+    [
+      ".gitignore",
+      false
+    ],
+    [
+      "x.git",
+      false
+    ]
+  ],
+  "closed": [
+    [
+      "Fix：x\n\nWhy\n\nClosed：2031-10-17 sora\n",
+      "Fix",
+      "x",
+      "Why",
+      "2031-10-17 sora",
+      "Fix：x\n\nWhy\n"
+    ],
+    [
+      "Fix：x\n\nClosed：2031-10-17\n\n",
+      "Fix",
+      "x",
+      "",
+      "2031-10-17",
+      "Fix：x\n"
+    ],
+    [
+      "Closed：not this one\n",
+      "Closed",
+      "not this one",
+      "",
+      null,
+      "Closed：not this one\n"
+    ],
+    [
+      "Fix：x\n\nClosed: 2031-10-17 sora\nmore after it\n",
+      "Fix",
+      "x",
+      "Closed: 2031-10-17 sora\nmore after it",
+      null,
+      "Fix：x\n\nClosed: 2031-10-17 sora\nmore after it\n"
+    ]
+  ],
+  "close": [
+    [
+      "Fix：x\n",
+      "2031-10-17 sora",
+      "Fix：x\n\nClosed：2031-10-17 sora\n"
+    ],
+    [
+      "Fix：x\n\nWhy\n\n\n",
+      "2031-10-17",
+      "Fix：x\n\nWhy\n\nClosed：2031-10-17\n"
+    ],
+    [
+      "Fix：x\n\nClosed：2031-10-16 mio\n",
+      "2031-10-17 sora",
+      "Fix：x\n\nClosed：2031-10-17 sora\n"
+    ]
+  ],
+  "issueNumber": [
+    [
+      "007.md",
+      7
+    ],
+    [
+      "000.md",
+      0
+    ],
+    [
+      "1000.md",
+      1000
+    ],
+    [
+      "notes.md",
+      null
+    ],
+    [
+      "002 (other device).md",
+      null
+    ],
+    [
+      "3",
+      null
+    ],
+    [
+      ".md",
+      null
+    ],
+    [
+      "+1.md",
+      null
+    ],
+    [
+      "1.MD",
+      null
+    ],
+    [
+      "٣.md",
+      null
+    ],
+    [
+      "1 .md",
+      null
+    ],
+    [
+      "9999999999999999999999999.md",
+      null
+    ]
+  ],
+  "plan": [
+    {
+      "why": "only changed there: taken",
+      "base": {
+        "a": "1"
+      },
+      "here": {
+        "a": "1"
+      },
+      "there": {
+        "a": "2"
+      },
+      "take": [
+        [
+          "a",
+          "2"
+        ]
+      ],
+      "both": []
+    },
+    {
+      "why": "only changed here: nothing to take (it is sent)",
+      "base": {
+        "a": "1"
+      },
+      "here": {
+        "a": "2"
+      },
+      "there": {
+        "a": "1"
+      },
+      "take": [],
+      "both": []
+    },
+    {
+      "why": "the same change on both: nothing",
+      "base": {
+        "a": "1"
+      },
+      "here": {
+        "a": "2"
+      },
+      "there": {
+        "a": "2"
+      },
+      "take": [],
+      "both": []
+    },
+    {
+      "why": "changed on both differently: both",
+      "base": {
+        "a": "1"
+      },
+      "here": {
+        "a": "2"
+      },
+      "there": {
+        "a": "3"
+      },
+      "take": [],
+      "both": [
+        [
+          "a",
+          "3"
+        ]
+      ]
+    },
+    {
+      "why": "removed here, unchanged there: stays removed (the removal is sent)",
+      "base": {
+        "a": "1"
+      },
+      "here": {},
+      "there": {
+        "a": "1"
+      },
+      "take": [],
+      "both": []
+    },
+    {
+      "why": "removed here, changed there: the change comes back",
+      "base": {
+        "a": "1"
+      },
+      "here": {},
+      "there": {
+        "a": "2"
+      },
+      "take": [
+        [
+          "a",
+          "2"
+        ]
+      ],
+      "both": []
+    },
+    {
+      "why": "removed there, unchanged here: removed here",
+      "base": {
+        "a": "1"
+      },
+      "here": {
+        "a": "1"
+      },
+      "there": {},
+      "take": [
+        [
+          "a"
+        ]
+      ],
+      "both": []
+    },
+    {
+      "why": "removed there, changed here: this device's stays and is sent",
+      "base": {
+        "a": "1"
+      },
+      "here": {
+        "a": "2"
+      },
+      "there": {},
+      "take": [],
+      "both": []
+    },
+    {
+      "why": "removed on both: nothing",
+      "base": {
+        "a": "1"
+      },
+      "here": {},
+      "there": {},
+      "take": [],
+      "both": []
+    },
+    {
+      "why": "new on both, the same: nothing",
+      "base": {},
+      "here": {
+        "a": "1"
+      },
+      "there": {
+        "a": "1"
+      },
+      "take": [],
+      "both": []
+    },
+    {
+      "why": "new on both, differently: both",
+      "base": {},
+      "here": {
+        "a": "1"
+      },
+      "there": {
+        "a": "2"
+      },
+      "take": [],
+      "both": [
+        [
+          "a",
+          "2"
+        ]
+      ]
+    },
+    {
+      "why": "new there only: taken",
+      "base": {},
+      "here": {},
+      "there": {
+        "ノート/メモ.md": "1"
+      },
+      "take": [
+        [
+          "ノート/メモ.md",
+          "1"
+        ]
+      ],
+      "both": []
+    },
+    {
+      "why": "an empty folder there in place of an unchanged file: taken as a folder",
+      "base": {
+        "a": "1"
+      },
+      "here": {
+        "a": "1"
+      },
+      "there": {
+        "a": null
+      },
+      "take": [
+        [
+          "a",
+          null
+        ]
+      ],
+      "both": []
+    },
+    {
+      "why": "a folder made here, a file there at its name: both, the Remote's goes beside",
+      "base": {},
+      "here": {
+        "a": null
+      },
+      "there": {
+        "a": "1"
+      },
+      "take": [],
+      "both": [
+        [
+          "a",
+          "1"
+        ]
+      ]
+    },
+    {
+      "why": "a file here, a folder there at its name: this device's stays",
+      "base": {},
+      "here": {
+        "a": "1"
+      },
+      "there": {
+        "a": null
+      },
+      "take": [],
+      "both": []
+    },
+    {
+      "why": "many paths at once, in path order",
+      "base": {
+        "b": "1",
+        "c": "1",
+        "d": "1"
+      },
+      "here": {
+        "a": "1",
+        "b": "1",
+        "c": "2",
+        "d": "1"
+      },
+      "there": {
+        "b": "2",
+        "c": "3",
+        "e": "1"
+      },
+      "take": [
+        [
+          "b",
+          "2"
+        ],
+        [
+          "d"
+        ],
+        [
+          "e",
+          "1"
+        ]
+      ],
+      "both": [
+        [
+          "c",
+          "3"
+        ]
+      ]
+    }
+  ],
+  "beside": [
+    [
+      "README.md",
+      "other device",
+      1,
+      "README (other device).md"
+    ],
+    [
+      "src/main.c",
+      "other device",
+      1,
+      "src/main (other device).c"
+    ],
+    [
+      "Makefile",
+      "ren-laptop",
+      2,
+      "Makefile (ren-laptop 2)"
+    ],
+    [
+      ".env",
+      "x",
+      1,
+      ".env (x)"
+    ],
+    [
+      "a.tar.gz",
+      "x",
+      1,
+      "a.tar (x).gz"
+    ],
+    [
+      "dir.d/file",
+      "x",
+      1,
+      "dir.d/file (x)"
+    ],
+    [
+      "ノート/メモ.md",
+      "Chrome Linux",
+      3,
+      "ノート/メモ (Chrome Linux 3).md"
+    ],
+    [
+      "a.",
+      "x",
+      1,
+      "a (x)."
+    ]
+  ],
+  "lineDiff": [
+    [
+      "",
+      "",
+      0,
+      0,
+      []
+    ],
+    [
+      "a\n",
+      "a\n",
+      0,
+      0,
+      [
+        "=a"
+      ]
+    ],
+    [
+      "a",
+      "a\n",
+      0,
+      0,
+      [
+        "=a"
+      ]
+    ],
+    [
+      "a\nb\nc\n",
+      "a\nB\nc\n",
+      1,
+      1,
+      [
+        "=a",
+        "-b",
+        "+B",
+        "=c"
+      ]
+    ],
+    [
+      "a\nb\n",
+      "a\nx\nb\n",
+      1,
+      0,
+      [
+        "=a",
+        "+x",
+        "=b"
+      ]
+    ],
+    [
+      "a\nb\n",
+      "b\na\n",
+      1,
+      1,
+      null
+    ],
+    [
+      "a\nb\nc\n",
+      "c\nb\na\n",
+      2,
+      2,
+      null
+    ],
+    [
+      "x\n\n\ny\n",
+      "x\n\ny\n",
+      0,
+      1,
+      [
+        "=x",
+        "=",
+        "-",
+        "=y"
+      ]
+    ],
+    [
+      "a\r\nb\r\n",
+      "a\nb\n",
+      2,
+      2,
+      null
+    ],
+    [
+      "日本\n語\n",
+      "日本\nご\n",
+      1,
+      1,
+      [
+        "=日本",
+        "-語",
+        "+ご"
+      ]
+    ],
+    [
+      "",
+      "x\ny",
+      2,
+      0,
+      [
+        "+x",
+        "+y"
+      ]
+    ],
+    [
+      "x\n",
+      "",
+      0,
+      1,
+      [
+        "-x"
+      ]
+    ]
+  ],
+  "dotfileName": [
+    [
+      ".profile",
+      true
+    ],
+    [
+      ".x",
+      true
+    ],
+    [
+      ".a.b",
+      true
+    ],
+    [
+      ".git-credentials",
+      true
+    ],
+    [
+      ".aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      true
+    ],
+    [
+      ".",
+      false
+    ],
+    [
+      "..",
+      false
+    ],
+    [
+      "...",
+      false
+    ],
+    [
+      ".a..b",
+      false
+    ],
+    [
+      "profile",
+      false
+    ],
+    [
+      ".pro file",
+      false
+    ],
+    [
+      ".プロ",
+      false
+    ],
+    [
+      ".a/b",
+      false
+    ],
+    [
+      ".aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      false
+    ],
+    [
+      "",
+      false
+    ]
+  ],
+  "todoJoin": [
+    {
+      "why": "one added on each side: both kept, the Remote's new ones first",
+      "base": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false}]",
+      "here": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false},{\"id\":\"c\",\"title\":\"c\",\"done\":false}]",
+      "there": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false},{\"id\":\"b\",\"title\":\"b\",\"done\":false}]",
+      "want": "[{\"id\":\"b\",\"title\":\"b\",\"done\":false},{\"id\":\"a\",\"title\":\"a\",\"done\":false},{\"id\":\"c\",\"title\":\"c\",\"done\":false}]"
+    },
+    {
+      "why": "edited there, something added here: the edit is kept",
+      "base": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false}]",
+      "here": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false},{\"id\":\"c\",\"title\":\"c\",\"done\":false}]",
+      "there": "[{\"id\":\"a\",\"title\":\"A edited\",\"done\":false}]",
+      "want": "[{\"id\":\"a\",\"title\":\"A edited\",\"done\":false},{\"id\":\"c\",\"title\":\"c\",\"done\":false}]"
+    },
+    {
+      "why": "marked done there, something added here: it stays done",
+      "base": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false}]",
+      "here": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false},{\"id\":\"c\",\"title\":\"c\",\"done\":false}]",
+      "there": "[{\"id\":\"a\",\"title\":\"a\",\"done\":true}]",
+      "want": "[{\"id\":\"a\",\"title\":\"a\",\"done\":true},{\"id\":\"c\",\"title\":\"c\",\"done\":false}]"
+    },
+    {
+      "why": "removed there, untouched here: it stays removed",
+      "base": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false},{\"id\":\"b\",\"title\":\"b\",\"done\":false}]",
+      "here": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false},{\"id\":\"b\",\"title\":\"b\",\"done\":false},{\"id\":\"c\",\"title\":\"c\",\"done\":false}]",
+      "there": "[{\"id\":\"b\",\"title\":\"b\",\"done\":false}]",
+      "want": "[{\"id\":\"b\",\"title\":\"b\",\"done\":false},{\"id\":\"c\",\"title\":\"c\",\"done\":false}]"
+    },
+    {
+      "why": "removed here, untouched there: it stays removed",
+      "base": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false},{\"id\":\"b\",\"title\":\"b\",\"done\":false}]",
+      "here": "[{\"id\":\"b\",\"title\":\"b\",\"done\":false}]",
+      "there": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false},{\"id\":\"b\",\"title\":\"b\",\"done\":false},{\"id\":\"d\",\"title\":\"d\",\"done\":false}]",
+      "want": "[{\"id\":\"d\",\"title\":\"d\",\"done\":false},{\"id\":\"b\",\"title\":\"b\",\"done\":false}]"
+    },
+    {
+      "why": "removed here, edited there: the edit comes back (nothing written is lost)",
+      "base": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false}]",
+      "here": "[]",
+      "there": "[{\"id\":\"a\",\"title\":\"A edited\",\"done\":false}]",
+      "want": "[{\"id\":\"a\",\"title\":\"A edited\",\"done\":false}]"
+    },
+    {
+      "why": "edited here, removed there: this device's edit stays",
+      "base": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false}]",
+      "here": "[{\"id\":\"a\",\"title\":\"A mine\",\"done\":false}]",
+      "there": "[]",
+      "want": "[{\"id\":\"a\",\"title\":\"A mine\",\"done\":false}]"
+    },
+    {
+      "why": "edited on both: this device's",
+      "base": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false}]",
+      "here": "[{\"id\":\"a\",\"title\":\"mine\",\"done\":false}]",
+      "there": "[{\"id\":\"a\",\"title\":\"theirs\",\"done\":false}]",
+      "want": "[{\"id\":\"a\",\"title\":\"mine\",\"done\":false}]"
+    },
+    {
+      "why": "nothing agreed yet: every item from both, this device's where both have it",
+      "base": "",
+      "here": "[{\"id\":\"a\",\"title\":\"mine\",\"done\":false},{\"id\":\"c\",\"title\":\"c\",\"done\":false}]",
+      "there": "[{\"id\":\"a\",\"title\":\"theirs\",\"done\":false},{\"id\":\"b\",\"title\":\"b\",\"done\":false}]",
+      "want": "[{\"id\":\"b\",\"title\":\"b\",\"done\":false},{\"id\":\"a\",\"title\":\"mine\",\"done\":false},{\"id\":\"c\",\"title\":\"c\",\"done\":false}]"
+    },
+    {
+      "why": "an item is the same item whatever order its fields were written in",
+      "base": "[{\"title\":\"a\",\"id\":\"a\",\"done\":false}]",
+      "here": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false},{\"id\":\"c\",\"title\":\"c\",\"done\":false}]",
+      "there": "[{\"id\":\"a\",\"title\":\"A edited\",\"done\":false}]",
+      "want": "[{\"id\":\"a\",\"title\":\"A edited\",\"done\":false},{\"id\":\"c\",\"title\":\"c\",\"done\":false}]"
+    },
+    {
+      "why": "an agreed list that cannot be read is no agreement: every item from both",
+      "base": "not json",
+      "here": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false}]",
+      "there": "[{\"id\":\"b\",\"title\":\"b\",\"done\":false}]",
+      "want": "[{\"id\":\"b\",\"title\":\"b\",\"done\":false},{\"id\":\"a\",\"title\":\"a\",\"done\":false}]"
+    },
+    {
+      "why": "the Remote's side not a list: this device's as it is",
+      "base": "[]",
+      "here": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false}]",
+      "there": "{\"not\":\"a list\"}",
+      "want": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false}]"
+    },
+    {
+      "why": "a side holding a null: this device's as it is",
+      "base": "[]",
+      "here": "[null]",
+      "there": "[{\"id\":\"a\",\"title\":\"a\",\"done\":false}]",
+      "want": "[null]"
+    }
+  ]
+}

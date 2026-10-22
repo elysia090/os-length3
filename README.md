@@ -15,67 +15,93 @@ compiled before its package is signed, each optimized ELF is independently
 checked against its ordinary linked input, and the optimized packages are
 assembled into one candidate root that actually boots. Publication then
 requires a same-identity reduction in canonical release size and in paired
-native execution, measured natively first and through the browser projection
-second. Native optimized x86 is the primary executable result; the browser Wasm
-modules are a verified lowering of exactly that accepted output.
+native execution. Native optimized x86 is the executable result.
 
-QM is the same quotient-and-minimum idea at an interactive scale: paste a small
-C function and see how little machine computation its observable meaning
-actually requires. It removes distinctions that no declared observer or future
-computation can detect, then chooses the cheapest remaining physical
-representative — and verifies the result.
+The distribution is what Length³ OS ([`os/`](os/)) runs: `l3`
+installs the release root on a device and opens a repo inside it, without
+privilege, on the host's own kernel.
+
+QM is the same quotient-and-minimum idea at the scale of a small C function:
+it removes distinctions that no declared observer or future computation can
+detect, then chooses the cheapest remaining physical representative — and
+verifies the result.
 
 ```
 C / C++  →  Clang -O2  →  semantics  →  quotient  →  normalized action
          →  minimum physical representative  →  verification
 
 linked x86-64 ELF  →  post-link compiler  →  optimized ELF + proof
-                                             |-> native execution
-                                             `-> verified Wasm projection
+                                             `-> native execution
 ```
 
 The grammar QM normalizes into is GF(2)-linear maps, convolutions, lane-local
 steps, gathers, whole-word reductions and a bounded case analysis — so the
 bit-manipulation exercises from CS:APP, MIT 6.172 and Princeton's *Algorithms*
-are in the categorized top-level `corpus/` alongside the lane kernels, and what
-QM makes of each of them is in [`src/v2/README.md`](src/v2/README.md).
+are in the categorized `research/corpus/` alongside the lane kernels.
 
-## Contents
+## Layout
 
-| path | what it is |
-| --- | --- |
-| [`src/v2/`](src/v2/) | **the product**: post-link compiler, VM and browser over one Linux distribution identity |
-| [`src/v2/postlink-compiler/`](src/v2/postlink-compiler/) | the x86-64 post-link compiler, its acceptance contract and remaining work |
-| [`src/v2/docs/DISTRIBUTION.md`](src/v2/docs/DISTRIBUTION.md) | the bootable-distribution contract and publication gates |
-| [`data/distribution/`](data/distribution/) | the fixed `development-standard-v1` profile, recipes and checks |
-| [`src/v1/SPEC.md`](src/v1/SPEC.md) | the original product specification |
-| [`src/v1/`](src/v1/) | the original research prototype and its x86 execution oracle |
-| [`corpus/`](corpus/) | categorized C, assembly, physical-array, and VM kernels |
+* [`os/`](os/) — **Length³ OS**: the desktop app (Tauri), `l3`, and the Remote.
+  It runs the distribution the compiler builds.
+* [`compiler/`](compiler/) — the product: a C post-link compiler that reduces a
+  linked x86-64 ELF (including the Linux kernel image) to an equivalent,
+  ordinary, optimized ELF, and the release tooling. Start at
+  [`compiler/README.md`](compiler/README.md); the compiler, its acceptance
+  contract and remaining work are in
+  [`compiler/postlink-compiler/`](compiler/postlink-compiler/), and the
+  bootable-distribution contract and publication gates in
+  [`compiler/docs/DISTRIBUTION.md`](compiler/docs/DISTRIBUTION.md).
+* [`distribution/`](distribution/) — the end target, the fixed
+  `development-standard-v1` distribution, assembled and booted as one root: its
+  pinned sources, build host and build, with the profile, recipes and checks in
+  [`distribution/packaging/`](distribution/packaging/).
+* [`releases/`](releases/) — release notes, verification receipts and evidence.
+  A receipt keeps the paths of the tree it was made from.
+* [`research/qm/`](research/qm/) — the original research prototype.
+  [`SPEC.md`](research/qm/SPEC.md) is the product specification;
+  `qm-prototype-observation.py` is the solver study it came from, and
+  `x86_oracle.py` is its native execution oracle.
+* [`research/corpus/`](research/corpus/) — categorized C, assembly,
+  physical-array, and VM kernels.
+* [`xlat/`](xlat/) — static x86-64 Linux programs as WebAssembly, for the app in
+  a browser.
+
+`compiler/` is self-contained: it does not import from `research/qm/`.
 
 ## Quick start
+
+The initial **OS Length3 Linux 0.1.0** stable native bundle is distributed as a
+[GitHub Release asset](https://github.com/elysia090/libqm-prototype/releases/tag/os-length3-linux-v0.1.0).
+See [release scope and verification](releases/native/RELEASE-0.1.0.md) and
+[bootstrap trust / object delivery](compiler/docs/DELIVERY.md).
+The previous RC and its receipts remain historical. The earlier browser VM
+(its Web Release ZIP, what os.length3.com served then, and the qm.length3.com
+UI) has been removed from this repository; its release asset stays on the
+release page. os.length3.com is now the app in `os/` and its Remote
+([os/README.md](os/README.md), Deploy).
 
 The native products build and check as ordinary C:
 
 ```sh
-cd src/v2
+cd compiler
 make -j4                             # support, x86, postlink-compiler, artifact, ...
 make check                           # the product-level suite
 ```
 
 A single linked ELF is compiled through the post-link CLI described in
-[`src/v2/postlink-compiler/README.md`](src/v2/postlink-compiler/README.md):
+[`compiler/postlink-compiler/README.md`](compiler/postlink-compiler/README.md):
 
 ```sh
 cc -static source.c -o input.elf
-src/v2/postlink-compiler/build/postlink-compiler input.elf -o output.elf
-src/v2/optimized-x86/build/postlink-verify input.elf output.elf
+compiler/postlink-compiler/build/postlink-compiler input.elf -o output.elf
+compiler/optimized-x86/build/postlink-verify input.elf output.elf
 ```
 
 The distribution itself is assembled on the fixed Linux build host described in
-[`data/README.md`](data/README.md):
+[`distribution/README.md`](distribution/README.md):
 
 ```sh
-cd data
+cd distribution
 ./build.sh                           # profile, packages, post-link pass, root gate
 ```
 

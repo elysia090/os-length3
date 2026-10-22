@@ -1,0 +1,43 @@
+#!/bin/sh
+set -eu
+case ${1:-} in
+    api)
+        awk 'BEGIN {
+                required["/dev"] = "devtmpfs"
+                required["/proc"] = "proc"
+                required["/sys"] = "sysfs"
+                required["/run"] = "tmpfs"
+            }
+            $2 in required && $3 == required[$2] { found[$2] = 1 }
+            END { for (path in required) if (!found[path]) exit 1 }' \
+            /proc/mounts
+        test -c /dev/console
+        ;;
+    root)
+        awk '$2 == "/" && $3 == "overlay" { root = 1 }
+            $2 == "/run/release" && $3 == "squashfs" && \
+                $4 ~ /(^|,)ro(,|$)/ { release = 1 }
+            END { exit !(root && release) }' /proc/mounts
+        test -s /etc/apk/world
+        test -s /lib/apk/db/installed
+        test -s /etc/passwd
+        test -s /etc/s6-rc/compiled/current/db
+        probe=$(mktemp /root/.workspace-ready.XXXXXXXX)
+        rm -- "$probe"
+        ;;
+    interactive)
+        test "$(readlink /proc/1/exe)" = /usr/bin/s6-svscan
+        for program in /bin/sh /usr/bin/cc /usr/bin/make /usr/bin/git /usr/bin/apk; do
+            test -x "$program"
+        done
+        ;;
+    network)
+        # Process liveness alone cannot publish network readiness. Linux
+        # owns address, route and resolver state; NTP is a separate branch.
+        /usr/bin/ip -4 addr show scope global | /bin/grep -q 'inet '
+        /bin/awk '$1 != "lo" && $2 == "00000000" && $4 == "0003" { ready = 1 }
+            END { exit !ready }' /proc/net/route
+        /bin/grep -Eq '^[[:space:]]*nameserver[[:space:]]+[^[:space:]]+' /etc/resolv.conf
+        ;;
+    *) echo 'usage: ready api|root|interactive|network' >&2; exit 2 ;;
+esac

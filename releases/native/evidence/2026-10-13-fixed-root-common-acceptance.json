@@ -1,0 +1,360 @@
+{
+  "format": "fixed-candidate-common-offline-acceptance-v1",
+  "date": "2026-10-13",
+  "candidate": "7ae8a85018b49656c8212e4984baf9500656ee3a2ef642a149752954924729f9",
+  "status": "pass",
+  "conditions": {
+    "native": {
+      "ramMiB": 1024,
+      "accelerator": "QEMU WHPX",
+      "workspace": "test RAM overlay; no user workspace"
+    },
+    "web": {
+      "ramMiB": 512,
+      "workspace": "fixture-e67-services-1013",
+      "workspaceMiB": 32,
+      "origin": "http://127.0.0.1:63700",
+      "generation": "62",
+      "worker": "production Linux Worker",
+      "coldPromptMs": 160397.59999990463,
+      "serviceDeadlineMs": 300000
+    },
+    "inputs": [
+      {
+        "path": "data/oracle/browser-userland-check.sh",
+        "bytes": 6772,
+        "sha256": "06adc460e1032218a0809d98ae4bc2a525f1d2e640dcc071cb8eb07a3d414ab2"
+      },
+      {
+        "path": "data/oracle/permission-reader.c",
+        "bytes": 1124,
+        "sha256": "c83e668e097a71b397fad1147154f88ff2d7f316edca0b73482091151dfee8bd"
+      },
+      {
+        "path": "data/oracle/standard-provider-check.sh",
+        "bytes": 949,
+        "sha256": "0e759d4291b086ba443efac796cba625d80738c94b09bcc6b499e48244498ed4"
+      },
+      {
+        "path": "data/oracle/standard-distribution-check.sh",
+        "bytes": 1722,
+        "sha256": "f789a06dccf939c19bcbdb29c160d8fc79412031b0f7e52ce310396d36fcbff1"
+      }
+    ]
+  },
+  "offline": {
+    "status": "pass",
+    "groups": [
+      "provider-shell-xargs-route",
+      "shell",
+      "files",
+      "permissions",
+      "links",
+      "process",
+      "archive",
+      "ELF",
+      "C",
+      "make-j4",
+      "Git",
+      "AES",
+      "package-inspection"
+    ],
+    "nativeExit": 0,
+    "webExit": 0,
+    "equalHelloSourceSha256": "834ef3b4d7d941c70decf4cee2df15e50a27587008691a86d8571d92b593588a",
+    "equalHelloExecutableSha256": "099effe2eadf49ac5bb4f891975a6001de43d0bdeb8b4b5663c00fa5b13e8418",
+    "nondeterministicFields": "AES salt/ciphertext and tar header times are not compared bytewise; decrypt/extract bytes are compared by the common script"
+  },
+  "setupFailuresRetained": [
+    {
+      "status": "fail",
+      "reason": "first private fixture parent mode 0700 blocked nobody traversal",
+      "log": "native-fixed-standard-accept-1013.log"
+    },
+    {
+      "status": "fail",
+      "reason": "second Git clean test saw unrelated generated untracked fixtures",
+      "log": "native-fixed-standard-accept-correct-1013.log"
+    }
+  ],
+  "webProcessInspection": {
+    "jobPausedAndResumed": true,
+    "intermediateStoppedExit": 148,
+    "notCountedAsExecutionFailure": true,
+    "actualLinker": "ld child of collect2/cc; ordinary ps/proc inspection, no ptrace",
+    "finalSameJobExit": 0
+  },
+  "resources": {
+    "status": "pass",
+    "ext4": {
+      "capacityMiB": 32,
+      "error": "ENOSPC",
+      "exit": 1,
+      "partialBytes": 25702400,
+      "cleanupExit": 0
+    },
+    "tmpfs": {
+      "cycles": 4,
+      "bytesPerCycle": 2097152,
+      "shmemBeforeKiB": 1968,
+      "shmemPeakKiB": 4016,
+      "shmemAfterKiB": 1968
+    },
+    "processRlimitEnomem": "not-repeated; separate e67 measured case remains historical",
+    "wholeHostRssExhaustion": "not-tested"
+  },
+  "storageFailures": {
+    "format": "candidate-storage-failures-v1",
+    "status": "pass",
+    "candidate": "7ae8a85018b49656c8212e4984baf9500656ee3a2ef642a149752954924729f9",
+    "workspace": "fixture-e67-services-1013",
+    "newKeys": false,
+    "sourceWrites": false,
+    "databaseDeletion": false,
+    "engineGlobalQuota": "not-tested",
+    "indexedDbPhysicalQuota": "not-tested",
+    "cases": [
+      {
+        "scenario": "count",
+        "status": "pass",
+        "publicationPuts": 7
+      },
+      {
+        "scenario": "quota",
+        "faultAt": 1,
+        "status": "pass",
+        "candidate": "7ae8a85018b49656c8212e4984baf9500656ee3a2ef642a149752954924729f9",
+        "exactHeadRetained": true,
+        "restoredHashes": [
+          "c370d8b8dfba9d4d0f215540a6616e13be11f73bff47197dabbe432ddbf89f9f",
+          "eeacb1c111942e3cd6f16a4005f07ae2c2971938cf98db4dac24243e3e65853c"
+        ],
+        "plaintextErased": true
+      },
+      {
+        "scenario": "quota",
+        "faultAt": 2,
+        "status": "pass",
+        "candidate": "7ae8a85018b49656c8212e4984baf9500656ee3a2ef642a149752954924729f9",
+        "exactHeadRetained": true,
+        "restoredHashes": [
+          "c370d8b8dfba9d4d0f215540a6616e13be11f73bff47197dabbe432ddbf89f9f",
+          "eeacb1c111942e3cd6f16a4005f07ae2c2971938cf98db4dac24243e3e65853c"
+        ],
+        "plaintextErased": true
+      },
+      {
+        "scenario": "quota",
+        "faultAt": 3,
+        "status": "pass",
+        "candidate": "7ae8a85018b49656c8212e4984baf9500656ee3a2ef642a149752954924729f9",
+        "exactHeadRetained": true,
+        "restoredHashes": [
+          "c370d8b8dfba9d4d0f215540a6616e13be11f73bff47197dabbe432ddbf89f9f",
+          "eeacb1c111942e3cd6f16a4005f07ae2c2971938cf98db4dac24243e3e65853c"
+        ],
+        "plaintextErased": true
+      },
+      {
+        "scenario": "quota",
+        "faultAt": 4,
+        "status": "pass",
+        "candidate": "7ae8a85018b49656c8212e4984baf9500656ee3a2ef642a149752954924729f9",
+        "exactHeadRetained": true,
+        "restoredHashes": [
+          "c370d8b8dfba9d4d0f215540a6616e13be11f73bff47197dabbe432ddbf89f9f",
+          "eeacb1c111942e3cd6f16a4005f07ae2c2971938cf98db4dac24243e3e65853c"
+        ],
+        "plaintextErased": true
+      },
+      {
+        "scenario": "quota",
+        "faultAt": 5,
+        "status": "pass",
+        "candidate": "7ae8a85018b49656c8212e4984baf9500656ee3a2ef642a149752954924729f9",
+        "exactHeadRetained": true,
+        "restoredHashes": [
+          "c370d8b8dfba9d4d0f215540a6616e13be11f73bff47197dabbe432ddbf89f9f",
+          "eeacb1c111942e3cd6f16a4005f07ae2c2971938cf98db4dac24243e3e65853c"
+        ],
+        "plaintextErased": true
+      },
+      {
+        "scenario": "quota",
+        "faultAt": 6,
+        "status": "pass",
+        "candidate": "7ae8a85018b49656c8212e4984baf9500656ee3a2ef642a149752954924729f9",
+        "exactHeadRetained": true,
+        "restoredHashes": [
+          "c370d8b8dfba9d4d0f215540a6616e13be11f73bff47197dabbe432ddbf89f9f",
+          "eeacb1c111942e3cd6f16a4005f07ae2c2971938cf98db4dac24243e3e65853c"
+        ],
+        "plaintextErased": true
+      },
+      {
+        "scenario": "quota",
+        "faultAt": 7,
+        "status": "pass",
+        "candidate": "7ae8a85018b49656c8212e4984baf9500656ee3a2ef642a149752954924729f9",
+        "exactHeadRetained": true,
+        "restoredHashes": [
+          "c370d8b8dfba9d4d0f215540a6616e13be11f73bff47197dabbe432ddbf89f9f",
+          "eeacb1c111942e3cd6f16a4005f07ae2c2971938cf98db4dac24243e3e65853c"
+        ],
+        "plaintextErased": true
+      },
+      {
+        "scenario": "head-abort",
+        "faultAt": 0,
+        "status": "pass",
+        "candidate": "7ae8a85018b49656c8212e4984baf9500656ee3a2ef642a149752954924729f9",
+        "exactHeadRetained": true,
+        "restoredHashes": [
+          "c370d8b8dfba9d4d0f215540a6616e13be11f73bff47197dabbe432ddbf89f9f",
+          "eeacb1c111942e3cd6f16a4005f07ae2c2971938cf98db4dac24243e3e65853c"
+        ],
+        "plaintextErased": true
+      },
+      {
+        "scenario": "corruption",
+        "status": "pass",
+        "candidate": "7ae8a85018b49656c8212e4984baf9500656ee3a2ef642a149752954924729f9",
+        "corruptionRefused": true,
+        "sourceBytesUnchanged": true
+      },
+      {
+        "scenario": "engine-memory-maximum",
+        "status": "pass",
+        "initialPages": 1,
+        "maximumPages": 2,
+        "bytesAfterRefusal": 131072,
+        "scope": "actual browser engine declared memory maximum; not global engine/code or physical IndexedDB quota"
+      },
+      {
+        "scenario": "worker-interruption",
+        "status": "pass",
+        "candidate": "7ae8a85018b49656c8212e4984baf9500656ee3a2ef642a149752954924729f9",
+        "persistedObjects": 3,
+        "workerTerminatedWithoutClose": true,
+        "restoredHashes": [
+          "c370d8b8dfba9d4d0f215540a6616e13be11f73bff47197dabbe432ddbf89f9f",
+          "eeacb1c111942e3cd6f16a4005f07ae2c2971938cf98db4dac24243e3e65853c"
+        ],
+        "oldHeadRetained": true
+      }
+    ],
+    "publicationPuts": 7,
+    "retainedBranches": [
+      "qualification-20261013-4c05f4fa-7cde-4089-980b-26659d1701d6-count",
+      "qualification-20261013-4c05f4fa-7cde-4089-980b-26659d1701d6-quota-1",
+      "qualification-20261013-4c05f4fa-7cde-4089-980b-26659d1701d6-quota-2",
+      "qualification-20261013-4c05f4fa-7cde-4089-980b-26659d1701d6-quota-3",
+      "qualification-20261013-4c05f4fa-7cde-4089-980b-26659d1701d6-quota-4",
+      "qualification-20261013-4c05f4fa-7cde-4089-980b-26659d1701d6-quota-5",
+      "qualification-20261013-4c05f4fa-7cde-4089-980b-26659d1701d6-quota-6",
+      "qualification-20261013-4c05f4fa-7cde-4089-980b-26659d1701d6-quota-7",
+      "qualification-20261013-4c05f4fa-7cde-4089-980b-26659d1701d6-head-abort",
+      "qualification-20261013-4c05f4fa-7cde-4089-980b-26659d1701d6-corruption",
+      "qualification-20261013-4c05f4fa-7cde-4089-980b-26659d1701d6-interrupt"
+    ],
+    "keyExtractable": false,
+    "interruption": {
+      "scenario": "worker-interruption",
+      "status": "pass",
+      "candidate": "7ae8a85018b49656c8212e4984baf9500656ee3a2ef642a149752954924729f9",
+      "persistedObjects": 3,
+      "workerTerminatedWithoutClose": true,
+      "restoredHashes": [
+        "c370d8b8dfba9d4d0f215540a6616e13be11f73bff47197dabbe432ddbf89f9f",
+        "eeacb1c111942e3cd6f16a4005f07ae2c2971938cf98db4dac24243e3e65853c"
+      ],
+      "oldHeadRetained": true
+    }
+  },
+  "actualEngineQuota": {
+    "format": "candidate-engine-quota-v1",
+    "candidate": "7ae8a85018b49656c8212e4984baf9500656ee3a2ef642a149752954924729f9",
+    "status": "pass",
+    "newKeys": false,
+    "permissionChanges": false,
+    "databaseDeletion": false,
+    "globalCodeRssExhaustion": "not-tested",
+    "originDiskExhaustion": "not-tested",
+    "moduleAdmission": {
+      "status": "pass",
+      "definedFunctions": 1000001,
+      "wireBytes": 4000033,
+      "error": "WebAssembly.Module(): functions count of 1000001 exceeds internal limit of 1000000 @+18",
+      "scope": "actual engine per-module declared function quota; not total live native-code/RSS exhaustion"
+    },
+    "bucket": {
+      "name": "qualification-6c6209a8-aa9d-4965-8f51-94fc3aa3f3f8",
+      "requestedQuota": 1048576,
+      "estimate": {
+        "quota": 1048576,
+        "usage": 0,
+        "usageDetails": {}
+      },
+      "maximumAttemptedBytes": 2097152
+    },
+    "indexedDbQuota": {
+      "status": "pass",
+      "fillBytes": 1032192,
+      "error": "QuotaExceededError",
+      "publicationError": "QuotaExceededError",
+      "candidateHeadRetained": true,
+      "plaintextErased": true,
+      "scope": "actual browser Storage Bucket quota and current PersistentBlock publication; isolated default-origin source remains untouched"
+    }
+  },
+  "savedDataSha256": "638c2eded19609057c2af41bc156187d71b996ce332aec3352b752cb4779df3e",
+  "newCandidateWebNetwork": "not-repeated; earlier e67 disconnect/reconnect/concurrent TLS evidence remains separately pinned",
+  "clockSync": "not-tested",
+  "sshAuthenticatedNetwork": "not-tested",
+  "webColdPromptTarget": "fail",
+  "logs": [
+    {
+      "role": "native",
+      "bytes": 41236,
+      "sha256": "e66b0ccde90f7d5165f3c9833f5c2e2563b57a07dd463d2fa2960f24c580075a"
+    },
+    {
+      "role": "web",
+      "bytes": 45802,
+      "sha256": "101ee025d8ebafeb456232d9868c71f6fc4cb8ea7d8a320a0e77d10b204744e4"
+    },
+    {
+      "role": "webResources",
+      "bytes": 47250,
+      "sha256": "8aa7678b845ce06be9b1c0c467ac87709bff7034bfc558970e1bb6c971b4d3d2"
+    }
+  ],
+  "formalQualification": "pending",
+  "publicReleaseModified": false,
+  "newIssuerKeys": false,
+  "workspaceKeysChanged": false,
+  "hostPermissionsChanged": false,
+  "cleanup": {
+    "status": "pass",
+    "workspace": "fixture-e67-services-1013",
+    "restore": {
+      "operation": "restore",
+      "label": "before-r5-qualification",
+      "beforeSequence": "449",
+      "afterSequence": "450",
+      "systemRoot": "e67a26ffd99d66d48c5f54d516e0402496067d2cbfc54eb4eb9950be7d4fabde"
+    },
+    "generation": "65",
+    "normalLinuxAndDagReady": true,
+    "restoredExt4Uuid": "2a89680a-f15b-4ab5-8f49-b8518ce835a1",
+    "restoredDataSha256": "638c2eded19609057c2af41bc156187d71b996ce332aec3352b752cb4779df3e",
+    "temporaryFillFileAbsent": true,
+    "sourcePrimaryWorkspaceUnchanged": true,
+    "privateDisksRetained": true,
+    "userAppForcedExit": false,
+    "console": {
+      "bytes": 10926,
+      "sha256": "9e3df2344dd38c7a69b50beb077a6ece2d48081e077e76bbc0e866c3d837ab30"
+    }
+  }
+}

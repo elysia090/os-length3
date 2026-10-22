@@ -1,0 +1,24 @@
+make: Entering directory '/build/source/src/v2/postlink-compiler'
+make -C ../support all
+make[1]: Entering directory '/build/source/src/v2/support'
+make[1]: Nothing to be done for 'all'.
+make[1]: Leaving directory '/build/source/src/v2/support'
+make -C ../x86 all
+make[1]: Entering directory '/build/source/src/v2/x86'
+make[1]: Nothing to be done for 'all'.
+make[1]: Leaving directory '/build/source/src/v2/x86'
+make -C ../optimized-x86 all
+make[1]: Entering directory '/build/source/src/v2/optimized-x86'
+make -C ../support all
+make[2]: Entering directory '/build/source/src/v2/support'
+make[2]: Nothing to be done for 'all'.
+make[2]: Leaving directory '/build/source/src/v2/support'
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -I../support/include cli/main.c build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/postlink-verify
+make[1]: Leaving directory '/build/source/src/v2/optimized-x86'
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/selection-policy.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/selection-policy
+build/selection-policy
+selection policy: 20000 families, independent joint minima, duplicate quotient, atomic output, bounded counts and cost overflow green
+make: Leaving directory '/build/source/src/v2/postlink-compiler'

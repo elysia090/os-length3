@@ -1,0 +1,188 @@
+make: Entering directory '/tmp/tmp.keJhHQ9kQV/support'
+mkdir -p build
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -ffreestanding -c src/arena.c -o build/arena.o
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -ffreestanding -c src/sha256.c -o build/sha256.o
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -ffreestanding -c src/future.c -o build/future.o
+rm -f build/libsupport.a
+ar rcs build/libsupport.a build/arena.o build/sha256.o build/future.o
+make: Leaving directory '/tmp/tmp.keJhHQ9kQV/support'
+make: Entering directory '/tmp/tmp.keJhHQ9kQV/x86'
+mkdir -p build
+mkdir -p build/zydis
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -I../support/include -Ithird_party/zydis/include -Ithird_party/zydis/dependencies/zycore/include -Ithird_party/zydis/src -DZYDIS_STATIC_BUILD -DZYDIS_DISABLE_ENCODER -DZYDIS_DISABLE_FORMATTER -DZYDIS_DISABLE_SEGMENT -DZYDIS_DISABLE_KNC -ffreestanding -c src/elf.c -o build/elf.o
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -I../support/include -Ithird_party/zydis/include -Ithird_party/zydis/dependencies/zycore/include -Ithird_party/zydis/src -DZYDIS_STATIC_BUILD -DZYDIS_DISABLE_ENCODER -DZYDIS_DISABLE_FORMATTER -DZYDIS_DISABLE_SEGMENT -DZYDIS_DISABLE_KNC -ffreestanding -c src/decode.c -o build/decode.o
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -Iinclude -I../support/include -Ithird_party/zydis/include -Ithird_party/zydis/dependencies/zycore/include -Ithird_party/zydis/src -DZYDIS_STATIC_BUILD -DZYDIS_DISABLE_ENCODER -DZYDIS_DISABLE_FORMATTER -DZYDIS_DISABLE_SEGMENT -DZYDIS_DISABLE_KNC -ffreestanding \
+	-ffunction-sections -fdata-sections -c third_party/zydis/src/Register.c -o build/zydis/Register.o
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -Iinclude -I../support/include -Ithird_party/zydis/include -Ithird_party/zydis/dependencies/zycore/include -Ithird_party/zydis/src -DZYDIS_STATIC_BUILD -DZYDIS_DISABLE_ENCODER -DZYDIS_DISABLE_FORMATTER -DZYDIS_DISABLE_SEGMENT -DZYDIS_DISABLE_KNC -ffreestanding \
+	-ffunction-sections -fdata-sections -c third_party/zydis/src/SharedData.c -o build/zydis/SharedData.o
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -Iinclude -I../support/include -Ithird_party/zydis/include -Ithird_party/zydis/dependencies/zycore/include -Ithird_party/zydis/src -DZYDIS_STATIC_BUILD -DZYDIS_DISABLE_ENCODER -DZYDIS_DISABLE_FORMATTER -DZYDIS_DISABLE_SEGMENT -DZYDIS_DISABLE_KNC -ffreestanding \
+	-ffunction-sections -fdata-sections -c third_party/zydis/src/DecoderData.c -o build/zydis/DecoderData.o
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -Iinclude -I../support/include -Ithird_party/zydis/include -Ithird_party/zydis/dependencies/zycore/include -Ithird_party/zydis/src -DZYDIS_STATIC_BUILD -DZYDIS_DISABLE_ENCODER -DZYDIS_DISABLE_FORMATTER -DZYDIS_DISABLE_SEGMENT -DZYDIS_DISABLE_KNC -ffreestanding \
+	-ffunction-sections -fdata-sections -c third_party/zydis/src/Decoder.c -o build/zydis/Decoder.o
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -Iinclude -I../support/include -Ithird_party/zydis/include -Ithird_party/zydis/dependencies/zycore/include -Ithird_party/zydis/src -DZYDIS_STATIC_BUILD -DZYDIS_DISABLE_ENCODER -DZYDIS_DISABLE_FORMATTER -DZYDIS_DISABLE_SEGMENT -DZYDIS_DISABLE_KNC -ffreestanding \
+	-ffunction-sections -fdata-sections -c third_party/zydis/src/Mnemonic.c -o build/zydis/Mnemonic.o
+ar rcs build/libx86.a build/elf.o build/decode.o build/zydis/Register.o build/zydis/SharedData.o build/zydis/DecoderData.o build/zydis/Decoder.o build/zydis/Mnemonic.o
+make: Leaving directory '/tmp/tmp.keJhHQ9kQV/x86'
+make: Entering directory '/tmp/tmp.keJhHQ9kQV/optimized-x86'
+mkdir -p build
+make -C ../support all
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -I../support/include -ffreestanding -c src/proof.c -o build/proof.o
+make[1]: Entering directory '/tmp/tmp.keJhHQ9kQV/support'
+make[1]: Nothing to be done for 'all'.
+make[1]: Leaving directory '/tmp/tmp.keJhHQ9kQV/support'
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -I../support/include -ffreestanding -c src/reader.c -o build/reader.o
+ar rcs build/liboptimized-x86.a build/proof.o build/reader.o
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -I../support/include cli/main.c build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/postlink-verify
+make: Leaving directory '/tmp/tmp.keJhHQ9kQV/optimized-x86'
+make: Entering directory '/tmp/tmp.keJhHQ9kQV/postlink-compiler'
+mkdir -p build
+make -C ../support all
+mkdir -p build/
+make[1]: Entering directory '/tmp/tmp.keJhHQ9kQV/support'
+make[1]: Nothing to be done for 'all'.
+make[1]: Leaving directory '/tmp/tmp.keJhHQ9kQV/support'
+make -C ../x86 all
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/compiler.c -o build/compiler.o
+make[1]: Entering directory '/tmp/tmp.keJhHQ9kQV/x86'
+make[1]: Nothing to be done for 'all'.
+make[1]: Leaving directory '/tmp/tmp.keJhHQ9kQV/x86'
+make -C ../optimized-x86 all
+make[1]: Entering directory '/tmp/tmp.keJhHQ9kQV/optimized-x86'
+make -C ../support all
+make[2]: Entering directory '/tmp/tmp.keJhHQ9kQV/support'
+make[2]: Nothing to be done for 'all'.
+make[2]: Leaving directory '/tmp/tmp.keJhHQ9kQV/support'
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -I../support/include cli/main.c build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/postlink-verify
+make[1]: Leaving directory '/tmp/tmp.keJhHQ9kQV/optimized-x86'
+mkdir -p build/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/emit-x86.c -o build/emit-x86.o
+mkdir -p build/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/layout-elf.c -o build/layout-elf.o
+mkdir -p build/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/metadata.c -o build/metadata.o
+mkdir -p build/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/relocate-elf.c -o build/relocate-elf.o
+mkdir -p build/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/entry.c -o build/entry.o
+mkdir -p build/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/table.c -o build/table.o
+mkdir -p build/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/native.c -o build/native.o
+mkdir -p build/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/minimum.c -o build/minimum.o
+mkdir -p build/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/format.c -o build/format.o
+mkdir -p build/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/semantic.c -o build/semantic.o
+mkdir -p build/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/block.c -o build/block.o
+mkdir -p build/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/closure.c -o build/closure.o
+mkdir -p build/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/transfer.c -o build/transfer.o
+mkdir -p build/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/template.c -o build/template.o
+mkdir -p build/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/project.c -o build/project.o
+mkdir -p build/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/plan.c -o build/plan.o
+mkdir -p build/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/compose.c -o build/compose.o
+mkdir -p build/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/compact.c -o build/compact.o
+mkdir -p build/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/rewrite.c -o build/rewrite.o
+mkdir -p build/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/sweep.c -o build/sweep.o
+mkdir -p build/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/region.c -o build/region.o
+mkdir -p build/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/alu.c -o build/alu.o
+mkdir -p build/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/affine.c -o build/affine.o
+mkdir -p build/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/quotient.c -o build/quotient.o
+mkdir -p build/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/scalar.c -o build/scalar.o
+mkdir -p build/selection/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/selection/encoding.c -o build/selection/encoding.o
+mkdir -p build/selection/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/selection/source.c -o build/selection/source.o
+mkdir -p build/selection/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/selection/operands.c -o build/selection/operands.o
+mkdir -p build/selection/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/selection/expressions.c -o build/selection/expressions.o
+mkdir -p build/selection/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/selection/flags.c -o build/selection/flags.o
+mkdir -p build/selection/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/selection/select-rules.c -o build/selection/select-rules.o
+mkdir -p build/selection/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/selection/affine.c -o build/selection/affine.o
+mkdir -p build/selection/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/selection/tree-measure.c -o build/selection/tree-measure.o
+mkdir -p build/selection/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/selection/tree-write.c -o build/selection/tree-write.o
+mkdir -p build/selection/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/selection/simple-frame.c -o build/selection/simple-frame.o
+mkdir -p build/selection/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/selection/alu-frame.c -o build/selection/alu-frame.o
+mkdir -p build/selection/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/selection/arx-frame.c -o build/selection/arx-frame.o
+mkdir -p build/selection/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/selection/carry-frame.c -o build/selection/carry-frame.o
+mkdir -p build/selection/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/selection/handoff.c -o build/selection/handoff.o
+mkdir -p build/selection/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/selection/branch-frame.c -o build/selection/branch-frame.o
+mkdir -p build/selection/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/selection/state-frame.c -o build/selection/state-frame.o
+mkdir -p build/selection/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/selection/flag-frame.c -o build/selection/flag-frame.o
+mkdir -p build/selection/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/selection/shared-dag.c -o build/selection/shared-dag.o
+mkdir -p build/selection/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/selection/projection.c -o build/selection/projection.o
+mkdir -p build/selection/
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -ffreestanding -MMD -MP -c src/selection/policy.c -o build/selection/policy.o
+ar rcs build/libpostlink.a.tmp build/compiler.o build/emit-x86.o build/layout-elf.o build/metadata.o build/relocate-elf.o build/entry.o build/table.o build/native.o build/minimum.o build/format.o build/semantic.o build/block.o build/closure.o build/transfer.o build/template.o build/project.o build/plan.o build/compose.o build/compact.o build/rewrite.o build/sweep.o build/region.o build/alu.o build/affine.o build/quotient.o build/scalar.o build/selection/encoding.o build/selection/source.o build/selection/operands.o build/selection/expressions.o build/selection/flags.o build/selection/select-rules.o build/selection/affine.o build/selection/tree-measure.o build/selection/tree-write.o build/selection/simple-frame.o build/selection/alu-frame.o build/selection/arx-frame.o build/selection/carry-frame.o build/selection/handoff.o build/selection/branch-frame.o build/selection/state-frame.o build/selection/flag-frame.o build/selection/shared-dag.o build/selection/projection.o build/selection/policy.o
+mv build/libpostlink.a.tmp build/libpostlink.a
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/select-x86.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/select-x86
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include -pthread check/selector-reentrancy.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/selector-reentrancy
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/physical.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/physical
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/block-observation.c \
+	build/libpostlink.a ../x86/build/libx86.a \
+	../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/block-observation
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/slice-observation.c \
+	build/libpostlink.a ../x86/build/libx86.a \
+	../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/slice-observation
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/shift-width.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/shift-width
+cc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/native-closure.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/native-closure
+build/selector-reentrancy
+src/semantic.c:92:31: runtime error: store to misaligned address 0x56169dbda9cb for type 'struct pl_operand', which requires 8 byte alignment
+0x56169dbda9cb: note: pointer points here
+ 00  00 00 00 00 00 00 00 00  00 00 00 00 00 00 00 00  00 00 00 00 00 00 00 00  00 00 00 00 00 00 00
+              ^ 
+    #0 0x56169d8637e6 in open_plan src/semantic.c:92
+    #1 0x56169d877804 in pl_x86_lower src/semantic.c:2708
+    #2 0x56169d82860a in block_lower_scope src/block.c:372
+    #3 0x56169d82aeea in pl_x86_block_lower src/block.c:540
+    #4 0x56169d8208c1 in main check/selector-reentrancy.c:85
+    #5 0x7fd5f966f193  (/lib/ld-musl-x86_64.so.1+0x42193) (BuildId: 2b26dfbb1a8172e32ed88052349fd6c997e6aa79)
+
+make: *** [Makefile:1141: selector-reentrancy-check] Error 1
+make: *** Waiting for unfinished jobs....
+make: Leaving directory '/tmp/tmp.keJhHQ9kQV/postlink-compiler'

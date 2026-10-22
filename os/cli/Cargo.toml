@@ -1,0 +1,26 @@
+[package]
+name = "l3"
+version = "0.1.0"
+description = "Length³ OS on the command line: the same repos, files, issues and TODO as the app"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "l3"
+path = "src/main.rs"
+
+[features]
+default = ["ssh"]
+ssh = ["dep:russh", "dep:tokio"]
+
+[dependencies]
+length3-core = { path = "../core" }
+serde = "1"
+serde_json = "1"
+libc = "0.2"
+# SSH into a repo's Prompt (ssh.rs): a pure-Rust SSH server (Apache-2.0), with
+# ring for its cryptography (the core's TLS uses it already) and without RSA:
+# Ed25519 and ECDSA keys. Pinned: a server's protocol code moves by hand.
+# Left out of the root's own l3 (--no-default-features): a Prompt listens for no one.
+russh = { version = "=0.64.1", default-features = false, features = ["ring"], optional = true }
+tokio = { version = "1.53", default-features = false, features = ["rt", "net", "time", "process", "io-util", "macros", "signal", "sync"], optional = true }

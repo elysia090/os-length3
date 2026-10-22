@@ -1,0 +1,24 @@
+[package]
+name = "xlat"
+version = "0.1.0"
+edition = "2021"
+description = "Ahead-of-time translation of static x86-64 Linux ELF programs to WebAssembly"
+publish = false
+
+[dependencies]
+iced-x86 = { version = "1.21", default-features = false, features = ["std", "decoder", "instr_info", "gas"] }
+wasm-encoder = "0.262"
+# Decodes the browser root's packs (zstd), where a system call must have the bytes at once.
+ruzstd = { version = "0.9", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+wasmparser = "0.262"
+
+[profile.release]
+debug = 1
+# One unit, optimized across crates: the translator runs in every browser (about 9% faster there, 7% smaller).
+lto = "fat"
+codegen-units = 1
+
+[lib]
+crate-type = ["rlib", "cdylib"]

@@ -1,0 +1,83 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1792242148515,
+      "tag": "0000_the_remote",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792242149645,
+      "tag": "0001_counted_and_kept",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792257800216,
+      "tag": "0002_read_so_far",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792285567424,
+      "tag": "0003_held_off_in_the_database",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792287186972,
+      "tag": "0004_ssh_per_device",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792290417694,
+      "tag": "0005_guests_by_invitation",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792290732701,
+      "tag": "0006_plan_and_billing",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792306938592,
+      "tag": "0007_ssh_scope_and_no_address",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792306969308,
+      "tag": "0008_contract_ssh_address_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792310106605,
+      "tag": "0009_the_log_without_trees",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792655554447,
+      "tag": "0010_each_files_mode",
+      "breakpoints": true
+    }
+  ]
+}

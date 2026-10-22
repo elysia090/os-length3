@@ -1,0 +1,33 @@
+# One source population for native and cold-Wasm builds of the x86 frontend.
+X86_SOURCES = src/elf.c src/decode.c src/semantics.c src/enter.c src/string-io.c src/x87-value.c src/x87-ieee.c src/x87-status.c src/x87-arithmetic.c src/unsigned-divide.c src/vector-projection.c src/vector-binary.c \
+	src/compose.c src/compact.c src/normalize.c src/sweep.c src/region.c src/alu.c
+X86_SOURCES += src/translate-byte.c
+X86_SOURCES += src/cache.c
+X86_SOURCES += src/x87-integer-store.c
+X86_SOURCES += src/return.c
+X86_SOURCES += src/mmx-transfer.c
+X86_SOURCES += src/x87-stack.c
+X86_SOURCES += src/x87-float-store.c
+X86_SOURCES += src/x87-exchange.c
+X86_SOURCES += src/x87-transfer.c
+X86_SOURCES += src/vector-integer-float.c
+X86_SOURCES += src/float-compare.c
+X86_SOURCES += src/float-arithmetic.c
+X86_SOURCES += src/float-round.c
+X86_SOURCES += src/float-unary.c
+X86_SOURCES += src/float-convert.c
+X86_SOURCES += src/x87-examine.c
+X86_SOURCES += src/unsigned-radical.c
+X86_SOURCES += src/x87-root.c
+X86_SOURCES += src/x87-extract.c
+X86_SOURCES += src/x87-transcend.c
+X86_SOURCES += src/x87-logarithm.c
+X86_SOURCES += src/x87-arctangent.c
+X86_SOURCES += src/selector-query.c
+X86_SOURCES += src/scalar-vector-transfer.c
+X86_SOURCES += src/far-transfer.c
+X86_SOURCES += src/vector-float-integer.c
+X86_SOURCES += src/vector-unpack.c
+X86_SOURCES += src/vector-widen.c
+X86_SOURCES += src/crc32.c
+X86_SOURCES += src/vector-string-compare.c

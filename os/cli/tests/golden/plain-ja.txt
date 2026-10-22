@@ -1,0 +1,258 @@
+$ l3 repo new notes
+[exit 0]
+--- stdout
+notes を作りました（standard · 1ファイル）
+--- stderr
+
+$ l3 issue new notes Fix：restart loses the draft
+[exit 0]
+--- stdout
+notes#1 Fix：restart loses the draft を書きました
+--- stderr
+
+$ l3 todo add Fix：the rail's names
+[exit 0]
+--- stdout
+TODO に足しました：Fix：the rail's names（残り1件）
+--- stderr
+
+$ l3 todo add Docs：readme
+[exit 0]
+--- stdout
+TODO に足しました：Docs：readme（残り2件）
+--- stderr
+
+$ l3 todo done 2
+[exit 0]
+--- stdout
+完了にしました：Docs：readme
+--- stderr
+
+$ l3 
+[exit 0]
+--- stdout
+Length³ OS  $HOME
+  Remote まだサインインしていません（l3 login）
+  repo   1
+  Issue  1
+  TODO   残り 1 / 2
+`l3 help` で使い方を見られます
+--- stderr
+
+$ l3 --json
+[exit 0]
+--- stdout
+{
+  "home": "$HOME",
+  "issues": 1,
+  "prompt": false,
+  "remote": null,
+  "repos": 1,
+  "todo": {
+    "all": 2,
+    "open": 1
+  }
+}
+--- stderr
+
+$ l3 todo
+[exit 0]
+--- stdout
+  1 ○ Fix：the rail's names
+  2 ✓ Docs：readme
+--- stderr
+
+$ l3 profile
+[exit 0]
+--- stdout
+名前はまだありません（l3 profile name "名前"）
+--- stderr
+
+$ l3 band
+[exit 0]
+--- stdout
+notes
+--- stderr
+
+$ l3 file
+[exit 0]
+--- stdout
+notes	2ファイル · 38 B
+--- stderr
+
+$ l3 file notes
+[exit 0]
+--- stdout
+docs/
+issue/
+README.md	8 B
+--- stderr
+
+$ l3 file /
+[exit 4]
+--- stdout
+--- stderr
+l3: / は repo の中ではありません。l3 が読むのは /root/REPO/PATH か REPO/PATH です（/ のほかは Prompt の root で、その中から見えます）
+
+$ l3 file /root
+[exit 0]
+--- stdout
+notes	2ファイル · 38 B
+--- stderr
+
+$ l3 file /bin
+[exit 4]
+--- stdout
+--- stderr
+l3: /bin は repo の中ではありません。l3 が読むのは /root/REPO/PATH か REPO/PATH です（/ のほかは Prompt の root で、その中から見えます）
+
+$ l3 file /root/vocab
+[exit 4]
+--- stdout
+--- stderr
+l3: この端末に repo vocab はありません
+
+$ l3 file notes/README.md
+[exit 0]
+--- stdout
+# notes
+--- stderr
+
+$ l3 file rm notes/docs
+[exit 0]
+--- stdout
+フォルダー notes/docs を消しました（0ファイル）
+--- stderr
+
+$ l3 help commit
+[exit 0]
+--- stdout
+l3 commit — 作業を Commit
+
+  l3 commit [REPO] [-m メモ]              Issue の作業では、その名前で
+  l3 commit [REPO] "Fix：件名" [-m メモ]  Commit の件名（種別：件名）で（Issue の作業では、メモに）
+--- stderr
+
+$ l3 git
+[exit 0]
+--- stdout
+#1 Fix：restart loses the draft
+    notes · 未着手
+    次：l3 login
+--- stderr
+
+$ l3 git --json
+[exit 0]
+--- stdout
+{
+  "closed": [],
+  "issues": [
+    {
+      "approvedBy": [],
+      "commits": null,
+      "detail": "",
+      "file": "001.md",
+      "kind": "Fix",
+      "n": 1,
+      "next": [
+        "l3 login"
+      ],
+      "repo": "notes",
+      "startedBy": null,
+      "state": "notStarted",
+      "title": "restart loses the draft",
+      "uncommitted": null,
+      "unpushed": null,
+      "version": null
+    }
+  ],
+  "known": true,
+  "merged": []
+}
+--- stderr
+
+$ l3 issue notes#1
+[exit 0]
+--- stdout
+#1 Fix：restart loses the draft
+    notes · 未着手
+    次：l3 login
+--- stderr
+
+$ l3 issue close notes#1
+[exit 0]
+--- stdout
+notes#1 を閉じました。やらないものです（戻すには l3 issue reopen notes#1）
+--- stderr
+
+$ l3 git
+[exit 0]
+--- stdout
+開いている Issue はありません
+
+notes で閉じた：1件の Issue（notes#1。もう一度開くには l3 issue reopen REPO#N）
+--- stderr
+
+$ l3 issue reopen notes#1
+[exit 0]
+--- stdout
+notes#1 をもう一度開きました
+--- stderr
+
+$ l3 help git
+[exit 0]
+--- stdout
+l3 git — Merge されていない Issue と、次にすること
+
+  l3 git [REPO]  Issue ごとに、次にすること
+--- stderr
+
+$ l3 comit
+[exit 2]
+--- stdout
+--- stderr
+l3: わからないコマンドです：l3 comit
+もしかして：l3 commit
+
+$ l3 todo add
+[exit 2]
+--- stdout
+--- stderr
+l3: l3 todo add の書き方ではありません
+
+  l3 todo
+  l3 todo add "Fix：件名" [-m 詳細]
+  l3 todo edit N "Fix：件名" [-m 詳細]
+  l3 todo done N
+  l3 todo rm N
+
+$ l3 inbox
+[exit 3]
+--- stdout
+--- stderr
+l3: l3 inbox には Remote がいります。この端末はサインインしていません（l3 login）
+
+$ l3 start notes#1
+[exit 3]
+--- stdout
+--- stderr
+l3: l3 start には Remote がいります。この端末はサインインしていません（l3 login）
+
+$ l3 remote
+[exit 0]
+--- stdout
+Remote  まだサインインしていません
+  l3 login をブラウザで承認するとこの端末でサインインでき、Remote があなたの repo を持ちます。変更はひとりでに Remote へ届きます。
+--- stderr
+
+$ l3 server --json
+[exit 3]
+--- stdout
+{
+  "error": {
+    "kind": "offline",
+    "message": "l3 server には Remote がいります。この端末はサインインしていません（l3 login）"
+  }
+}
+--- stderr
+

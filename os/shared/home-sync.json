@@ -1,0 +1,14 @@
+{
+  "about": "Home's settings on the Remote (service/app.ts /v1/home/:key), as it answers a new account, one exchange after another. service/service.test.ts replays them against the service; core/src/home.rs reads its requests and answers from them, so the app's protocol (src/draft.ts syncHome) and l3's cannot drift from what the Remote does.",
+  "exchanges": [
+    {"method": "GET", "path": "/v1/home/todo", "status": 200, "response": {"value": null, "version": 0}},
+    {"method": "PUT", "path": "/v1/home/todo", "body": {"value": "[{\"id\":\"a\"}]", "version": 0}, "status": 200, "response": {"version": 1}},
+    {"method": "PUT", "path": "/v1/home/todo", "body": {"value": "[]", "version": 0}, "status": 409, "response": {"value": "[{\"id\":\"a\"}]", "version": 1}},
+    {"method": "GET", "path": "/v1/home/todo", "status": 200, "response": {"value": "[{\"id\":\"a\"}]", "version": 1}},
+    {"method": "PUT", "path": "/v1/home/todo", "body": {"value": "[{\"id\":\"a\"},{\"id\":\"b\"}]", "version": 1}, "status": 200, "response": {"version": 2}},
+    {"method": "PUT", "path": "/v1/home/todo", "body": {"value": "[]", "version": 1}, "status": 409, "response": {"value": "[{\"id\":\"a\"},{\"id\":\"b\"}]", "version": 2}},
+    {"method": "GET", "path": "/v1/home/profile", "status": 200, "response": {"value": null, "version": 0}},
+    {"method": "PUT", "path": "/v1/home/Todo", "body": {"value": "[]", "version": 0}, "status": 404, "response": {"error": "Not found"}},
+    {"method": "PUT", "path": "/v1/home/todo", "body": {"value": 5, "version": 2}, "status": 400, "response": {"error": "a value and its version"}}
+  ]
+}
