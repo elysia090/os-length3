@@ -1058,7 +1058,9 @@ mark { background: var(--ink); color: var(--ground); }
 /* Review, inside the issue's box: its diff scrolling in place, marked lines as with a highlighter,
    and what was said as a conversation in the middle. */
 /* The Review: a box of its own under the issue's card, in the same column. */
-.review-box { display: grid; gap: var(--s3); margin-top: var(--s4); padding: calc(var(--s4) + var(--s1)) var(--s5) var(--s6); border: 1px solid var(--ink); border-radius: var(--r-place); background: var(--raised); }
+/* Given room: it starts well under the issue's box and the line under it, and reads large, as the next thing to do. */
+.review-box { display: grid; gap: var(--s4); margin-top: var(--s6); padding: var(--s5) var(--s5) var(--s6); border: 1px solid var(--ink); border-radius: var(--r-place); background: var(--raised); }
+.review-box > .stage-head h3 { font-size: var(--t-card); }
 /* On raised, an added line is drawn on ground, so it still stands out. */
 .review-chat { display: grid; gap: var(--s3); justify-items: start; padding: var(--s2) 0; }
 .review-chat .bubble { max-width: min(560px, 85%); background: var(--ground); }
@@ -1150,6 +1152,13 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .step-about .stage-diff summary { line-height: 1.5; }
 .step-about p { margin: 0; }
 .steps > .error { grid-column: 1 / -1; }
+/* In the issue's box: Commit over Push at the left, one under the other, what each stands at beside it, and at
+   the right of Push's row the change's power switch (on while it is in; off takes it back). */
+.issue-steps { grid-template-columns: max-content minmax(0, 1fr) max-content; }
+.issue-steps > .step-act:first-child, .issue-steps > .step-act:nth-child(4) { justify-content: flex-start; }
+/* Under the current issue's box, out of it: Back to main at the left, Write an issue at the right. */
+.issue-under { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s3); margin-top: var(--s3); }
+.issue-leave { display: grid; gap: var(--s1); justify-items: start; }
 /* main's card on Git, for what it has not committed: a card (rule edge), its repo, Commit at the right. */
 .main-card { display: grid; gap: var(--s3); padding: var(--s4) var(--s5); border: 1px solid var(--rule); border-radius: var(--r-place); }
 .main-card + .main-card { margin-top: var(--s3); }

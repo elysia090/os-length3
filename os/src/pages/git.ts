@@ -9,7 +9,7 @@ import {bench} from './bench.ts';
 import {pageHead} from './common.ts';
 import type {Context} from './context.ts';
 import {closedList, mainCard, mergedList} from './git-done.ts';
-import {issueBox, issueHead, mergeRow, reviewBox, type RepoState} from './git-issue.ts';
+import {backToMain, issueBox, issueHead, mergeRow, reviewBox, type RepoState} from './git-issue.ts';
 import {laidOut, type Laid} from '../git-state.ts';
 import {issueForm} from './issue-form.ts';
 import {errorText} from '../errors.ts';
@@ -139,8 +139,11 @@ export function git(ctx: Context): Node[] {
       // Each issue is a column: its card, and once pushed, its Review and Merge
       // under it, so they slide with it. The neighbours show only their heads.
       const st = states.get(x.repo);
+      // Under the current box, out of it: Back to main at its left (for the issue the repo shows), Write an issue at its right.
       slot.replaceChildren(...(j === k
-        ? [h('div', {class: 'issue-card'}, issueBox(x, st, events, again)), reviewBox(x, st, again), mergeRow(x, st, events, again)].filter((n): n is HTMLElement => !!n)
+        ? [h('div', {class: 'issue-card'}, issueBox(x, st, events, again)),
+          h('div', {class: 'issue-under'}, backToMain(x, st, events, again) ?? h('span'), write),
+          reviewBox(x, st, again), mergeRow(x, st, events, again)].filter((n): n is HTMLElement => !!n)
         : [h('div', {class: 'issue-card'}, issueHead(x, true))]));
     });
     // The neighbours' cards are as tall as the current one, so the row reads as one line of boxes.
@@ -211,7 +214,8 @@ export function git(ctx: Context): Node[] {
       track.replaceChildren();
       stage.hidden = true;
       empty.replaceChildren(!repos.length && remoteOnly().length ? onlyThere()
-        : h('div', {class: 'empty'}, !repos.length ? t('No repos yet') : issues.length ? t('No open issues') : t('No issues yet')));
+        : h('div', {class: 'empty'}, !repos.length ? t('No repos yet') : issues.length ? t('No open issues') : t('No issues yet')),
+        h('div', {class: 'issue-under'}, h('span'), write));
       return;
     }
     empty.replaceChildren();
@@ -271,7 +275,7 @@ export function git(ctx: Context): Node[] {
     pageHead('git'),
     h('div', {class: 'git-filter'}, chips),
     h('section', {class: 'section', 'aria-labelledby': 'issues-title'},
-      h('h2', {id: 'issues-title'}, h('span', {}, t('Issues'), ' ', count), write),
+      h('h2', {id: 'issues-title'}, h('span', {}, t('Issues'), ' ', count)),
       form.element, empty, column),
     mainPart, mergedPart, closedPart);
   const workbench = bench({main, reveal: (path) => { if (at) ctx.openRepo(at, path); }});

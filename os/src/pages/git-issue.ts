@@ -17,7 +17,8 @@ import {errorText} from '../errors.ts';
 //
 //   Start (Continue here) · Changes · Commit · Push (Reset)
 //
-// and Back to main (at the foot's left, as what leaves always is). Under the box, the Review in a box of its own (Comment,
+// and Back to main (under the box at its left, out of it, as what leaves always is: backToMain). Under that, the
+// Review in a box of its own (Comment,
 // and Approve as a ○), and under that, Merge with Reject at its left. A change received from someone
 // else shows Commit and Push done already.
 
@@ -100,9 +101,6 @@ export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEv
       events.moved(at);
     }, after));
     acts.push(go);
-  } else if (here) {
-    leave = button(t('Back to main'));
-    leave.addEventListener('click', doing(leave, error, async () => { await git.switchWork(at, 'main'); events.moved(at); }, after));
   }
   // One that will not be done is closed, at the foot's left as what goes against the box: it goes
   // under Closed, where Reopen brings it back. Only while the repo shows main, whose issue/ it is in.
@@ -145,19 +143,31 @@ export function notCommitted(at: string, n: number, events: IssueEvents): HTMLEl
   return fold;
 }
 
-/** A step's place at the right: its button, or once done the done mark and the same word (green says it is done). */
+/**
+ * Back to main, for the issue the repo shows: out of the box, under it at its left (git.ts), as what leaves the
+ * work always is. Null for any other issue.
+ */
+export function backToMain(issue: Issue, s: RepoState | undefined, events: IssueEvents, after: () => void): HTMLElement | null {
+  if (!hereOf(s, issue)) return null;
+  const at = issue.repo;
+  const error = h('p', {class: 'error', role: 'alert'});
+  const leave = button(t('Back to main'));
+  leave.addEventListener('click', doing(leave, error, async () => { await git.switchWork(at, 'main'); events.moved(at); }, after));
+  return h('div', {class: 'issue-leave'}, leave, error);
+}
+
+/** A step's place: its button, or once done the done mark and the same word (green says it is done). */
 const slot = (act: HTMLElement, done: boolean, word: string) => h('div', {class: 'step-act'},
   done ? h('span', {class: 'step-done'}, h('span', {class: 'done-mark', 'aria-hidden': 'true'}), word) : act);
 const about = (...n: (Node | null)[]) => h('div', {class: 'step-about'}, ...n);
 const quiet = (text: string) => h('p', {class: 'muted small'}, text);
 
 /**
- * Commit and Push, inside the issue's box, each a row: what it stands at at
- * the left, its button at the right (green, the done mark, once done), and
- * what takes it back (Reset) at the row's left end. Beside Commit, what is not committed:
- * its diff opens over what is under it, so neither button moves. Pushing
- * hands the work to main as its change, again as the next version; until it
- * is decided, Reset takes it back.
+ * Commit and Push, inside the issue's box, one under the other at its left (green, the done mark, once done),
+ * what each stands at beside it, and at the right of Push's row the change's power switch: on while the change
+ * is in, switched off it is taken back (Reset). Beside Commit, what is not committed: its diff opens over what is
+ * under it, so nothing moves. Pushing hands the work to main as its change, again as the next version; until it
+ * is decided, the switch takes it back.
  */
 function steps(issue: Issue, s: RepoState, events: IssueEvents, after: () => void): HTMLElement {
   const at = issue.repo;
@@ -166,12 +176,9 @@ function steps(issue: Issue, s: RepoState, events: IssueEvents, after: () => voi
 
   // Change
   const dirty = s.uncommitted;
-  let what: Node;
-  if (dirty) {
-    what = notCommitted(at, dirty, events);
-  } else {
-    what = quiet(w.commits ? t('No changes') : t('Edit in File, Forge or the Prompt; what changes shows here.'));
-  }
+  // Nothing to commit says nothing (Commit's done mark says it); before the first, where the work is done.
+  const what: Node | null = dirty ? notCommitted(at, dirty, events)
+    : w.commits ? null : quiet(t('Edit in File, Forge or the Prompt; what changes shows here.'));
 
   // Commit
   const commit = button(t('Commit'), dirty > 0);
@@ -186,26 +193,26 @@ function steps(issue: Issue, s: RepoState, events: IssueEvents, after: () => voi
   const push = button(t('Push'), !dirty && !pushed && w.commits > 0);
   push.disabled = !w.commits || pushed;
   push.addEventListener('click', doing(push, error, async () => { await git.push(at); await git.submit(at); }, after));
+  // The change's power switch: on while it is in; switched off, it is taken back (Reset).
   let reset: HTMLButtonElement | null = null;
   if (pushed && open) {
-    reset = button(t('Reset'));
-    reset.title = t('Take back the change');
+    reset = h('button', {type: 'button', class: 'power', role: 'switch', 'aria-checked': 'true', 'aria-label': t('Reset'),
+      title: t('Switched off, the change is taken back')}, h('span', {class: 'knob'})) as HTMLButtonElement;
     reset.addEventListener('click', doing(reset, error, () => git.reset(at), after));
   }
-  const where = pushed
-    ? h('div', {class: 'step-line'}, reset, quiet(t('Change · version {n} · {state}', {n: w.change!.version, state: STATE(w.change!.state)})))
+  const where = pushed ? quiet(t('Change · version {n} · {state}', {n: w.change!.version, state: STATE(w.change!.state)}))
     : w.unpushed ? quiet(tn('{n} commit to push', '{n} commits to push', w.unpushed)) : null;
 
-  return h('div', {class: 'steps'},
-    h('div', {class: 'step-about step-changes'}, what), slot(commit, committed, t('Commit')),
-    about(where), slot(push, pushed, t('Push')), error);
+  return h('div', {class: 'steps issue-steps'},
+    slot(commit, committed, t('Commit')), h('div', {class: 'step-about step-changes'}, what), h('span'),
+    slot(push, pushed, t('Push')), about(where), reset ? h('div', {class: 'step-act step-switch'}, reset) : h('span'), error);
 }
 
 /** Someone else's change, received: committed and pushed already, by whom and which version. */
 function received(change: git.Change): HTMLElement {
-  return h('div', {class: 'steps'},
-    about(quiet(change.submittedBy || '—')), slot(h('span'), true, t('Commit')),
-    about(quiet(t('Change · version {n} · {state}', {n: change.version, state: STATE(change.state)}))), slot(h('span'), true, t('Push')));
+  return h('div', {class: 'steps issue-steps'},
+    slot(h('span'), true, t('Commit')), about(quiet(change.submittedBy || '—')), h('span'),
+    slot(h('span'), true, t('Push')), about(quiet(t('Change · version {n} · {state}', {n: change.version, state: STATE(change.state)}))), h('span'));
 }
 
 /**

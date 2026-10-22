@@ -43,7 +43,7 @@ export default {
   'Continue here': 'ここで続ける',
   'Start': '始める',
   'Change': 'Change',
-  'Take back the change': 'Change を取り下げる',
+  'Switched off, the change is taken back': 'オフにすると Change を取り下げます',
   'Change · version {n} · {state}': 'Change · 第{n}版 · {state}',
   'version {n} (older)': '第{n}版（古い版）',
   'Previous issue': '前の Issue',
