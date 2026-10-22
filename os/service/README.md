@@ -56,8 +56,9 @@ read the sweep through it.
   bearer token from anywhere and a cookie only from the app's own pages,
   and `PUT /v1/ssh/this` is refused to anything with an Origin, so only a
   device turns its own SSH on.
-- **The desktop webview's origins** (`APP_ORIGINS`: `tauri://localhost`,
-  `http://tauri.localhost`) in CORS and Better Auth's trusted origins.
+- **The desktop webview's origin** (`APP_ORIGINS`: `tauri://localhost`; a
+  Windows build would add `https://tauri.localhost`, never plain `http`) in
+  CORS and Better Auth's trusted origins.
 - **Roots by digest** (`/v1/os/:sha`, Range), which the app's Prompt
   installs from, falling back to the publisher's release.
 - **Text to take home** (`/v1/boards/:id/archive`, markdown) for `l3 server get`.

@@ -28,3 +28,20 @@ test('no referrer, no sniffing, no window shared with another site, no file take
   assert.deepEqual(allowed, ['publickey-credentials-get=(self)', 'publickey-credentials-create=(self)', 'clipboard-write=(self)']);
   for (const off of ['camera', 'microphone', 'geolocation', 'payment', 'usb']) assert.ok(all['Permissions-Policy'].includes(`${off}=()`), off);
 });
+
+// The desktop app (Tauri's security checklist): its webview's policy as strict as the web's but for its
+// ipc: channel, no remote page, the plain-http origin never, and a window that may do almost nothing.
+test('the desktop webview runs only the app\'s own files, under a strict policy, with no host permission but events and its title', () => {
+  const conf = JSON.parse(readFileSync(new URL('../src-tauri/tauri.conf.json', import.meta.url), 'utf8'));
+  const csp: string = conf.app.security.csp;
+  assert.doesNotMatch(csp, /'unsafe-eval'|'unsafe-inline'|\*|http:\/\/(?!ipc\.localhost)/);
+  for (const d of ["default-src 'self'", "object-src 'none'", "base-uri 'none'", "form-action 'none'", "frame-src 'none'"]) assert.ok(csp.includes(d), d);
+  assert.equal(conf.build.frontendDist, '../dist');
+  assert.ok(conf.app.windows.every((w: {url?: string; useHttpsScheme?: boolean}) => !w.url && w.useHttpsScheme === true));
+  assert.equal(JSON.stringify(conf).includes('dangerous'), false);
+  const cap = JSON.parse(readFileSync(new URL('../src-tauri/capabilities/default.json', import.meta.url), 'utf8'));
+  assert.deepEqual(cap.permissions, ['core:event:allow-listen', 'core:event:allow-unlisten', 'core:window:allow-set-title']);
+  assert.equal(cap.remote, undefined);
+  const wrangler = readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8');
+  assert.doesNotMatch(/^APP_ORIGINS = "(.*)"$/m.exec(wrangler)![1], /http:/);
+});
