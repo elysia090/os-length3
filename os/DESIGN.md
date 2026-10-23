@@ -44,9 +44,12 @@ Every value in `styles.css` comes from a token (§2).
   is worked on; everything else stands on the ground. Lighter is nearer:
   nothing lighter than the ground is ever put under something darker. The
   sheet in hand, or with the keyboard, has its edge in `ink`.
-- **Lines.** 1 px. `rule` between regions and around places; `edge` around
-  things you press or type into. A dashed `rule` means one thing: room for
-  something that is not here yet. Headings never get a rule.
+- **Lines.** 1 px. `rule` around places; `edge` around things you press or
+  type into. A dashed `rule` means one thing: room for something that is not
+  here yet. Headings never get a rule. Two lines are the exception, and the
+  same as each other: the rail's and the right pane's, 2 px in `ink` from the
+  top line to the foot. They frame the work, so the center reads at once as
+  the thing between them; put away, the pane takes its line with it.
 - **Words over symbols.** What a thing is reads off the screen as it is
   written: a TODO kind shows as "Fix：", a link in `/bin` shows as the
   command's name only, with no arrows.
@@ -398,7 +401,7 @@ fix is always a piece from §3, not a new rule.
 | A box drawn again every little while, taking what was being written and the keyboard with it (Inbox's field to write to someone, every 10 s) | Only what came is drawn: the rows under the field, the messages at the conversation's foot |
 | Items in one row of a band a few pixels off another's (a 40 px gear in a 32 px band) | Everything on the band is 32 px |
 | A divider left where a pane would start when there is none | No pane, no line |
-| A hairline as the only sign of which side is the work and which refers to it; a pane given a tone of its own | The work is a sheet (`paper`); the rail, the band, heads and the pane stand on the ground itself, and a sheet's edge is the line between them |
+| A hairline as the only sign of which side is the work and which refers to it; a pane given a tone of its own | The work is a sheet (`paper`) framed by two lines of one weight, the rail's and the pane's (2 px, `ink`, top line to foot); the rail, the band, heads and the pane stand on the ground itself |
 | What is worked on drawn one way on one page and another on the next (a raised box, a framed card, a bordered box on the ground) | One sheet everywhere: `paper`, a 1 px `rule` edge, a place's corners; the one in hand (or with the keyboard) has its edge in `ink`, nothing drawn round it |
 | Something painted over a focus ring (the ground under the box over its foot) | The ring is whole: what lies under the box lies behind it |
 | Text, not a field, sitting at the top of a row its mark is centred in (a read-only TODO) | Centred on the mark's line, as the field is |

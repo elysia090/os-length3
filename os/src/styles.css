@@ -34,6 +34,8 @@
   --land: cubic-bezier(.2, .9, .25, 1);
   /* Lines are 1px; the file being worked on is drawn a little heavier. */
   --line-work: 1.5px;
+  /* The two lines that frame the work, the rail's and the right pane's: one weight, in ink, top line to foot. */
+  --line-frame: 2px;
   /* Everything, rail included, sits a little inward from the window's edges,
      against the instinct to run to them. */
   --outer: clamp(var(--s5), 3vw, 64px);
@@ -101,7 +103,7 @@ a { color: var(--ink); }
 /* ---- 1. Rail ---- */
 /* The icons keep a little more room on the side of the line than on the
    window's side, so they do not crowd it. */
-.rail { border-right: 1px solid var(--rule); padding-right: calc(var(--rail-line-gap) - var(--s3)); height: var(--inner-h); position: sticky; top: var(--outer-top); z-index: 6; display: flex; flex-direction: column; }
+.rail { border-right: var(--line-frame) solid var(--ink); padding-right: calc(var(--rail-line-gap) - var(--s3)); height: var(--inner-h); position: sticky; top: var(--outer-top); z-index: 6; display: flex; flex-direction: column; }
 .rail-tabs { position: relative; isolation: isolate; display: flex; flex-direction: column; align-items: center; gap: var(--s1); flex: 1; min-height: 0; padding: var(--rail-top) 0 var(--s3); }
 /* The ink of the thing chosen, on its way from the one it was on (glide.ts): under the words and icons; the one
    it is going to waits un-inked, its words in ink, until it lands. */
@@ -255,8 +257,10 @@ a { color: var(--ink); }
   /* Forge's pane, where Forge's is: from the page's top to its foot, out to its right edge (over the page's margin). */
   margin: calc(-1 * var(--top-line)) calc(-1 * var(--s5)) 0 0; padding: var(--band) var(--s5) var(--s4) var(--s4);
 }
+/* Forge's line, where Forge's is: the pane's edge, top line to foot; put away, no pane, no line. */
+.home-pane { border-left: var(--line-frame) solid var(--ink); }
 .home-pane > .pane-toggle { justify-self: end; }
-.home-layout.pane-closed .home-pane { padding-left: 0; }
+.home-layout.pane-closed .home-pane { padding-left: 0; border-left-color: transparent; }
 .home-layout.pane-closed .home-side { display: none; }
 .home-side { min-height: 0; overflow: auto; }
 .home-side > .plugins { padding: 0; }
@@ -560,7 +564,7 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
   grid-template-columns: minmax(0, 3fr) minmax(280px, 1fr); grid-template-rows: auto minmax(0, 1fr);
 }
 /* The band sits on the top line. */
-.repo-strip { grid-column: 1; display: flex; gap: var(--s2); align-items: center; padding: var(--band) var(--s5) var(--s3); overflow-x: auto; border-right: 1px solid var(--rule); }
+.repo-strip { grid-column: 1; display: flex; gap: var(--s2); align-items: center; padding: var(--band) var(--s5) var(--s3); overflow-x: auto; border-right: var(--line-frame) solid var(--ink); }
 /* The band: pills for the repos out, ⊕ to bring more out beside them. */
 .pills { display: flex; gap: var(--s2); align-items: center; }
 /* The pills take the band's width and scroll there; ⊕ keeps the band's right end, wherever they reach. */
@@ -603,7 +607,7 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
   background: transparent; cursor: pointer; white-space: nowrap; font-size: var(--t-meta);
 }
 .chips { display: flex; flex-wrap: wrap; gap: var(--s2); }
-.center { grid-column: 1; position: relative; min-height: 0; border-right: 1px solid var(--rule); overflow: clip; }
+.center { grid-column: 1; position: relative; min-height: 0; border-right: var(--line-frame) solid var(--ink); overflow: clip; }
 /* No pane, no line (Server signed out): the center keeps its width, so nothing on it moves. */
 .work.no-side > .center { border-right-color: transparent; }
 .flow { height: 100%; overflow-y: auto; padding: var(--s3) var(--s5) 160px; }
@@ -843,8 +847,13 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
    it into --prompt-at), pushed down only by a plugin area opened taller than that. */
 .work.bench > .side, .work.bench:is(.unrun, .prompting, .reviewing) > .side { position: relative; grid-row: 2; grid-template-rows: minmax(var(--prompt-at, 40%), auto) minmax(0, 1fr); }
 .work.bench > .side > .term-home { grid-row: 2; margin-top: calc(-1 * var(--s5)); } /* its words, not its padding, on that line */
-/* The pane stands on the ground, as the rail does: the work is the sheets in the center, and their edges are the
-   only line between the two. No tray, no hairline. */
+/* The pane stands on the ground, as the rail does, and is cut from the work by the line the rail is: the same
+   weight, in ink, from the top line to the foot, so the center reads at once as the thing framed between the two.
+   It goes with the pane (put away, no pane, no line). */
+.work.bench > .side::before {
+  content: ''; position: absolute; left: 0; bottom: 0; top: calc(-1 * (var(--band) + var(--h-row) + var(--s3)));
+  border-left: var(--line-frame) solid var(--ink); pointer-events: none;
+}
 /* What was found, under the box and over the center, while the box (or what was found) has the keyboard. */
 .search-box { position: relative; min-width: 0; }
 /* What opens under the box: its ground runs a step (s3) past the large box on every side, so the lines behind it
