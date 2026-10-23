@@ -117,6 +117,9 @@ export async function served<R>(url: string, at: <T>(d: ReturnType<typeof open>[
 
 let made: ReturnType<typeof make> | null = null;
 function make(env: Env) {
+  // Without its secret, Better Auth would sign with its public default and every key derived from it (keys.ts) would
+  // be keyed with nothing: refused at once, never served that way.
+  if (!env.BETTER_AUTH_SECRET || env.BETTER_AUTH_SECRET.length < 32) throw new Error('BETTER_AUTH_SECRET is missing or shorter than 32 characters');
   const {db, at} = scoped(open(env.DATABASE_URL).db);
   const pair = (id?: string, secret?: string) => (id && secret ? {clientId: id, clientSecret: secret} : undefined);
   const github = pair(env.GITHUB_CLIENT_ID, env.GITHUB_CLIENT_SECRET), google = pair(env.GOOGLE_CLIENT_ID, env.GOOGLE_CLIENT_SECRET),
@@ -151,7 +154,10 @@ export default {
     const m = made ??= make(env);
     const {pool, db} = open(env.DATABASE_URL);
     try {
-      console.log('sweep', JSON.stringify(await sweep(db, m.bucket)));
+      const gone = await sweep(db, m.bucket);
+      console.log('sweep', JSON.stringify(gone));
+      // Every step ran; one or more failed (each said in the log): the run fails, as Cron Events shows it.
+      if (gone.failed) throw new Error(`${gone.failed} of the sweep's steps failed`);
     } catch (e) {
       console.error('sweep failed', e);
       throw e;

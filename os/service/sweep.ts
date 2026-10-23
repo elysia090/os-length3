@@ -25,6 +25,7 @@ import {sql, type SQL} from 'drizzle-orm';
 import {blobKey, type Bucket} from './bucket.ts';
 import {HOLD} from './names.ts';
 import {KEEP_EVENTS} from './plan.ts';
+import {recount} from './budget.ts';
 import {ago, lock, rows, type Db} from './request.ts';
 
 /** How long a repo turned off is kept. */
@@ -50,12 +51,21 @@ export async function purge(tx: Db, which: SQL): Promise<{repo: number}> {
 /** Let go of everything held long enough; what went, counted. */
 export async function sweep(db: Db, bucket: Bucket | null): Promise<Record<string, number>> {
   const gone: Record<string, number> = {};
-  const run = async (what: string, q: Db, query: SQL) => { gone[what] = (gone[what] ?? 0) + (await rows(q, sql`${query} returning 1`)).length; };
+  // Each step on its own: one that fails (a statement out of time) is said in the log and counted as failed, and
+  // every step after it still runs, today and every day. Only how many went comes back, not the rows.
+  const failed = (what: string, e: unknown) => { console.error(`sweep: ${what} failed`, e); gone.failed = (gone.failed ?? 0) + 1; };
+  const run = async (what: string, q: Db, query: SQL) => {
+    try {
+      const [r] = await rows<{n: number}>(q, sql`with done as (${query} returning 1) select count(*)::int as n from done`);
+      gone[what] = (gone[what] ?? 0) + r.n;
+    } catch (e) { failed(what, e); }
+  };
 
-  Object.assign(gone, await db.transaction((tx: Db) => purge(tx, sql`r.off_at < ${ago(KEPT)}`)));
+  try { Object.assign(gone, await db.transaction((tx: Db) => purge(tx, sql`r.off_at < ${ago(KEPT)}`))); } catch (e) { failed('repo', e); }
   await run('remembered', db, sql`delete from repo_gone where at < ${ago(REMEMBERED)}`);
+  // A line merged a while ago, unless it was worked on (or begun again for the same issue) after the merge.
   await run('line', db, sql`delete from line l using change c where l.name <> 'main' and c.repo_id = l.repo_id and c.line = l.name
-    and c.state = 'merged' and c.updated_at < ${ago(KEPT)}`);
+    and c.state = 'merged' and c.updated_at < ${ago(KEPT)} and l.started_at <= c.updated_at and l.updated_at <= c.updated_at`);
 
   await run('server', db, sql`delete from server where gone_at < ${ago(HOLD)}`);
   await run('board', db, sql`delete from board where gone_at < ${ago(HOLD)}`);
@@ -87,29 +97,42 @@ export async function sweep(db: Db, bucket: Bucket | null): Promise<Record<strin
   // blob too new to be taken for unnamed. With no bucket, no blob goes and its room stays unswept: a row
   // is how its bytes are found again once there is one to take them from. The room is counted again
   // either way: the plan reads it, and that is rows alone.
-  const rooms = await rows<{user_id: string}>(db, sql`select user_id from room where unswept`);
+  const rooms = await rows<{user_id: string}>(db, sql`select user_id from room where unswept`).catch((e: unknown) => { failed('rooms', e); return []; });
   for (const {user_id: user} of rooms) {
-    await db.transaction(async (tx: Db) => {
-      await lock(tx, user);
-      const unnamed = !bucket ? [] : await rows<{sha256: string}>(tx, sql`with named as (
-          select e.value as sha from line l cross join jsonb_each_text(l.draft) e where l.user_id = ${user}
-          union select e.value from repo r join cut c on c.repo_id = r.id cross join jsonb_each_text(c.tree) e where r.user_id = ${user})
-        delete from blob b where b.user_id = ${user} and b.created_at < ${ago(DAY)}
-          and not exists (select 1 from named where named.sha = b.sha256)
-        returning b.sha256`);
+    try {
+      const unnamed: string[] = await db.transaction(async (tx: Db) => {
+        await lock(tx, user);
+        const went = !bucket ? [] : await rows<{sha256: string}>(tx, sql`with named as (
+            select e.value as sha from line l cross join jsonb_each_text(l.draft) e where l.user_id = ${user}
+            union select e.value from repo r join cut c on c.repo_id = r.id cross join jsonb_each_text(c.tree) e where r.user_id = ${user})
+          delete from blob b where b.user_id = ${user} and b.created_at < ${ago(DAY)}
+            and not exists (select 1 from named where named.sha = b.sha256)
+          returning b.sha256`);
+        if (bucket) await tx.execute(sql`update room set unswept = exists (select 1 from blob b where b.user_id = ${user} and b.created_at >= ${ago(DAY)})
+          where user_id = ${user}`);
+        // What the room counts, counted again from its rows: the triggers keep it so with every row, and
+        // a room that ever disagreed (a row written past them) is put right here, before the plan reads it.
+        const fixed = await rows(tx, sql`update room set used = n.used from (select
+            (select coalesce(sum(bytes), 0) from blob where user_id = ${user}) + (select coalesce(sum(bytes), 0) from line where user_id = ${user})
+            + (select coalesce(sum(bytes), 0) from cut where user_id = ${user}) + (select coalesce(sum(bytes), 0) from review where user_id = ${user}) as used) n
+          where room.user_id = ${user} and room.used <> n.used returning 1`);
+        if (fixed.length) gone.recounted = (gone.recounted ?? 0) + 1;
+        return went.map((b) => b.sha256);
+      });
       if (unnamed.length) gone.blob = (gone.blob ?? 0) + unnamed.length;
-      if (bucket) await tx.execute(sql`update room set unswept = exists (select 1 from blob b where b.user_id = ${user} and b.created_at >= ${ago(DAY)})
-        where user_id = ${user}`);
-      // What the room counts, counted again from its rows: the triggers keep it so with every row, and
-      // a room that ever disagreed (a row written past them) is put right here, before the plan reads it.
-      const fixed = await rows(tx, sql`update room set used = n.used from (select
-          (select coalesce(sum(bytes), 0) from blob where user_id = ${user}) + (select coalesce(sum(bytes), 0) from line where user_id = ${user})
-          + (select coalesce(sum(bytes), 0) from cut where user_id = ${user}) + (select coalesce(sum(bytes), 0) from review where user_id = ${user}) as used) n
-        where room.user_id = ${user} and room.used <> n.used returning 1`);
-      if (fixed.length) gone.recounted = (gone.recounted ?? 0) + 1;
-      // Bytes that fail to go are only room taken: the blob is no longer anyone's.
-      if (bucket && unnamed.length) await bucket.delete(unnamed.map((b) => blobKey(user, b.sha256))).catch((e: unknown) => console.error('sweep: bytes stay', e));
-    });
+      // Their bytes go once the rows' going is kept, never before (rows back without bytes would be files lost),
+      // under the account's lock again, and only those no row names by now (one sent again meanwhile stays).
+      if (bucket && unnamed.length) {
+        await db.transaction(async (tx: Db) => {
+          await lock(tx, user);
+          const back = new Set((await rows<{sha256: string}>(tx, sql`select sha256 from blob where user_id = ${user} and sha256 in ${unnamed}`)).map((r) => r.sha256));
+          // Bytes that fail to go are only room taken in R2: the blob is no longer anyone's.
+          await bucket.delete(unnamed.filter((sha) => !back.has(sha)).map((sha) => blobKey(user, sha))).catch((e: unknown) => console.error('sweep: bytes stay', e));
+        });
+      }
+    } catch (e) { failed(`room ${user}`, e); }
   }
+  // What R2 holds, counted again from the rows that name its bytes (budget.ts).
+  try { if (await recount(db)) gone.restored = 1; } catch (e) { failed('usage recount', e); }
   return gone;
 }

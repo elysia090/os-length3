@@ -182,17 +182,34 @@ export function signIn(d: {auth: Auth; providers: string[]; enter: boolean}, app
   // session here lasts 60 days, and the list is no secret of anyone else's: it is the Devices part, and
   // a day after signing in it would stop answering. Each session is read as Better Auth reads it, for the
   // session asking; what is sensitive (unlinking a sign-in) keeps the fresh rule.
+  //
+  // Another session's token is never said (it is that device's key: with it, anyone is that device): the session
+  // asking is told its own, by which a client knows which is itself, and each other is named `id:<its id>`, which
+  // revoke-session takes in place of a token, for the asking account's own sessions alone.
   app.get('/api/auth/list-sessions', async (c) => {
     const s = await d.auth.api.getSession({headers: c.req.raw.headers});
     if (!s) return c.json({message: 'Unauthorized', code: 'UNAUTHORIZED'}, 401);
     const ctx = await d.auth.$context;
     const now = Date.now();
     const list = (await ctx.internalAdapter.listSessions(s.user.id, {onlyActiveSessions: true})).filter((x) => new Date(x.expiresAt).getTime() > now);
-    return c.json(list.map((x) => ({id: x.id, token: x.token, userId: x.userId, expiresAt: x.expiresAt, createdAt: x.createdAt, updatedAt: x.updatedAt,
-      ipAddress: x.ipAddress ?? null, userAgent: x.userAgent ?? null})));
+    return c.json(list.map((x) => ({id: x.id, token: x.id === s.session.id ? x.token : `id:${x.id}`, userId: x.userId, expiresAt: x.expiresAt,
+      createdAt: x.createdAt, updatedAt: x.updatedAt, ipAddress: x.ipAddress ?? null, userAgent: x.userAgent ?? null})));
+  });
+  app.post('/api/auth/revoke-session', async (c, next) => {
+    const named = /^id:(.+)$/.exec(String((await c.req.raw.clone().json().catch(() => ({})) as {token?: unknown}).token ?? ''))?.[1];
+    if (!named) return next();
+    const s = await d.auth.api.getSession({headers: c.req.raw.headers});
+    if (!s) return c.json({message: 'Unauthorized', code: 'UNAUTHORIZED'}, 401);
+    const ctx = await d.auth.$context;
+    const it = (await ctx.internalAdapter.listSessions(s.user.id)).find((x) => x.id === named);
+    if (it) await ctx.internalAdapter.deleteSession(it.token);
+    forgetSessions();
+    return c.json({status: true});
   });
   app.on(['GET', 'POST'], '/api/auth/*', async (c) => {
     const res = await d.auth.handler(c.req.raw);
+    // A session ended here is not taken as still there from what signedIn keeps.
+    if (res.ok && /\/(sign-out|revoke-session|revoke-sessions|revoke-other-sessions)$/.test(c.req.path)) forgetSessions();
     // Asked too often: said as everywhere on the Remote (request.ts slowDown), Retry-After and retryAfter,
     // beside Better Auth's own X-Retry-After.
     const wait = res.status === 429 ? res.headers.get('X-Retry-After') : null;
@@ -202,42 +219,60 @@ export function signIn(d: {auth: Auth; providers: string[]; enter: boolean}, app
   if (d.providers.includes('dev')) app.route('/dev-oauth', devOAuth());
 }
 
+/** The session cookie by its exact name (createAuth: `__Host-length3` over HTTPS, Better Auth's own name otherwise). */
+const SESSION_COOKIES = ['__Host-length3.session_token', 'better-auth.session_token'];
+
+/** The one credential a request names: its bearer token, else its session cookie by that exact name; null when neither. */
+export function credentialOf(headers: Headers): {kind: 'bearer' | 'cookie'; key: string; headers: Headers} | null {
+  const bearer = /^Bearer ([^\s]+)$/.exec(headers.get('Authorization') ?? '')?.[1];
+  if (bearer) return {kind: 'bearer', key: `b:${bearer}`, headers: new Headers({Authorization: `Bearer ${bearer}`})};
+  for (const part of (headers.get('Cookie') ?? '').split(';')) {
+    const at = part.indexOf('=');
+    const name = part.slice(0, at).trim(), value = part.slice(at + 1).trim();
+    if (at > 0 && SESSION_COOKIES.includes(name) && value) return {kind: 'cookie', key: `c:${name}=${value}`, headers: new Headers({Cookie: `${name}=${value}`})};
+  }
+  return null;
+}
+
+/** Sessions signedIn looked up, kept a few seconds by this isolate (the Worker's: 10 s). */
+const kept = new Map<string, {until: number; user: string; session: string; name: string}>();
+/** Let go of every session kept: one was ended (sign-out, revoke) and may be among them. */
+export const forgetSessions = () => kept.clear();
+
 /**
  * Who is asking, or 401: a bearer token (the app, l3, the web once it took its token), or the session
  * cookie. A page elsewhere can make a browser send the cookie, never the bearer token: a write that
  * comes with the cookie alone is taken only from the app's own pages.
+ *
+ * The session is looked up from that one credential alone, the rest of the request's headers left out, so
+ * what is kept (`keep` ms, never past the session's end) is kept under what was looked up: a request that
+ * names a bearer is that bearer's or no one's, never a cookie's beside it, and a cookie only by its exact name.
  */
-export const signedIn = (auth: Auth, origins: string[], keep = 0): MiddlewareHandler<Vars> => {
-  // Each session looked up is kept `keep` ms by this isolate (the Worker's: 10 s), so a client's requests one
-  // after another ask the database once; one ended elsewhere is refused here that much later at most.
-  const kept = new Map<string, {until: number; user: string; session: string; name: string}>();
-  return async (c, next) => {
-    const bearer = /^Bearer\s/i.test(c.req.header('Authorization') ?? '');
-    const cookie = /session_token=([^;]+)/.exec(c.req.header('Cookie') ?? '')?.[1];
-    // Nothing that could name a session: refused before the database is asked anything.
-    if (!bearer && !cookie) return c.json({error: 'not signed in'}, 401);
-    const ours = origins.includes(c.req.header('Origin') ?? '');
-    if (!bearer && c.req.method !== 'GET' && c.req.method !== 'HEAD' && !ours) return c.json({error: 'not from the app'}, 403);
-    // A read with the cookie alone that the browser says another site's page started (a link, an
-    // image, a frame, a script) is refused too: no page elsewhere has the Remote read for it with
-    // someone's cookie, whatever a GET would do (Fetch Metadata, W3C; ASVS 4.2.2, 13.2.3).
-    const site = c.req.header('Sec-Fetch-Site');
-    if (!bearer && (site === 'cross-site' || site === 'same-site') && !ours) return c.json({error: 'not from the app'}, 403);
-    const token = (bearer ? c.req.header('Authorization') : cookie) ?? '';
-    const now = Date.now(), had = keep ? kept.get(token) : undefined;
-    if (had && had.until > now) {
-      c.set('userId', had.user); c.set('sessionId', had.session); c.set('name', had.name);
-      return next();
-    }
-    const s = await auth.api.getSession({headers: c.req.raw.headers});
-    if (!s) { kept.delete(token); return c.json({error: 'not signed in'}, 401); }
-    if (keep) {
-      if (kept.size >= 1000) for (const [k, v] of kept) if (v.until <= now || kept.size >= 1000) kept.delete(k);
-      kept.set(token, {until: now + keep, user: s.user.id, session: s.session.id, name: s.user.name});
-    }
-    c.set('userId', s.user.id);
-    c.set('sessionId', s.session.id);
-    c.set('name', s.user.name);
-    await next();
-  };
+export const signedIn = (auth: Auth, origins: string[], keep = 0): MiddlewareHandler<Vars> => async (c, next) => {
+  const cred = credentialOf(c.req.raw.headers);
+  // Nothing that could name a session: refused before the database is asked anything.
+  if (!cred) return c.json({error: 'not signed in'}, 401);
+  const bearer = cred.kind === 'bearer';
+  const ours = origins.includes(c.req.header('Origin') ?? '');
+  if (!bearer && c.req.method !== 'GET' && c.req.method !== 'HEAD' && !ours) return c.json({error: 'not from the app'}, 403);
+  // A read with the cookie alone that the browser says another site's page started (a link, an
+  // image, a frame, a script) is refused too: no page elsewhere has the Remote read for it with
+  // someone's cookie, whatever a GET would do (Fetch Metadata, W3C; ASVS 4.2.2, 13.2.3).
+  const site = c.req.header('Sec-Fetch-Site');
+  if (!bearer && (site === 'cross-site' || site === 'same-site') && !ours) return c.json({error: 'not from the app'}, 403);
+  const now = Date.now(), had = keep ? kept.get(cred.key) : undefined;
+  if (had && had.until > now) {
+    c.set('userId', had.user); c.set('sessionId', had.session); c.set('name', had.name);
+    return next();
+  }
+  const s = await auth.api.getSession({headers: cred.headers});
+  if (!s) { kept.delete(cred.key); return c.json({error: 'not signed in'}, 401); }
+  if (keep) {
+    if (kept.size >= 1000) for (const [k, v] of kept) if (v.until <= now || kept.size >= 1000) kept.delete(k);
+    kept.set(cred.key, {until: Math.min(now + keep, new Date(s.session.expiresAt).getTime()), user: s.user.id, session: s.session.id, name: s.user.name});
+  }
+  c.set('userId', s.user.id);
+  c.set('sessionId', s.session.id);
+  c.set('name', s.user.name);
+  await next();
 };

@@ -83,7 +83,10 @@ test('Devices: a session signed in days ago still lists the devices (Better Auth
   await s.db.execute(sql`update session set created_at = now() - interval '3 days'`);
   const got = await s.call('GET', '/api/auth/list-sessions', {token: a});
   assert.equal(got.status, 200, JSON.stringify(got.json));
-  assert.deepEqual((got.json as unknown as {token: string}[]).map((x) => x.token).sort(), [raw(a), raw(b)].sort());
+  // The session asking is told its own token; another is named by its id, never its token.
+  const ids = ((await s.db.execute(sql`select id, token from session`)).rows as {id: string; token: string}[]);
+  const idOfToken = (t: string) => ids.find((x) => x.token === raw(t))!.id;
+  assert.deepEqual((got.json as unknown as {token: string}[]).map((x) => x.token).sort(), [raw(a), `id:${idOfToken(b)}`].sort());
   assert.equal((await s.call('GET', '/api/auth/list-sessions')).status, 401);
   // An ended session is not listed.
   await s.db.execute(sql`update session set expires_at = now() - interval '1 second' where token = ${raw(b)}`);
@@ -1461,7 +1464,9 @@ test('On Workers a sweep that fails fails its run, and says so', async () => {
   } finally {
     console.error = error;
   }
-  assert.equal(said[0]?.[0], 'sweep failed');
+  // Each step failed on its own, said as it failed; and the run as a whole.
+  assert.ok(said.some((a) => a[0] === 'sweep failed'), JSON.stringify(said.map((a) => a[0])));
+  assert.ok(said.some((a) => a[0] === 'sweep: repo failed'));
   // The connection is let go however the sweep went.
   assert.deepEqual((await Promise.allSettled(later)).map((r) => r.status), ['fulfilled']);
 });

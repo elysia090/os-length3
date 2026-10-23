@@ -134,6 +134,8 @@ test('a release file is read from R2 once, then the edge\'s cache answers every 
   const s = await service({}, {limits: limits({}), edge});
   const sha = 'b'.repeat(64);
   await s.bucket.put(`os/${sha}`, new Uint8Array(100).map((_, i) => i));
+  const record = (key: string, bytes: number) => s.db.execute(sql`insert into release_file (key, sha256, bytes) values (${key}, ${'d'.repeat(64)}, ${bytes})`);
+  await record(`os/${sha}`, 100);
   const asked = counted(s);
   const part = await s.call('GET', `/v1/os/${sha}`, {headers: {Range: 'bytes=10-19'}});
   assert.deepEqual([part.status, part.headers.get('Content-Range')], [206, 'bytes 10-19/100']);
@@ -141,11 +143,18 @@ test('a release file is read from R2 once, then the edge\'s cache answers every 
   for (const range of ['bytes=0-0', 'bytes=50-99']) assert.equal((await s.call('GET', `/v1/os/${sha}`, {headers: {Range: range}})).status, 206);
   assert.equal((await s.app.request(`http://remote.test/v1/os/${sha}`, {method: 'HEAD'})).status, 200);
   assert.equal(asked.size + asked.read, reads);
-  // A release not there is not cached as absent: once the deploy puts it, it is there.
+  // A digest the deploy never recorded is 404 without R2 being asked, however many are asked for.
+  const before = asked.size + asked.read;
+  for (let i = 0; i < 5; i++) assert.equal((await s.call('GET', `/v1/os/${String(i).repeat(64)}`)).status, 404);
+  assert.equal(asked.size + asked.read, before);
+  // A release not there is not cached as absent: once the deploy puts and records it, it is there.
   const none = 'c'.repeat(64);
   assert.equal((await s.call('GET', `/v1/os/${none}`)).status, 404);
   await s.bucket.put(`os/${none}`, new Uint8Array(3));
+  await record(`os/${none}`, 3);
   assert.equal((await s.call('GET', `/v1/os/${none}`)).status, 200);
+  // What R2 holds counts the release files with the blobs.
+  assert.equal(await usage(s, 'r2:stored'), 103);
 });
 
 test('a database at all it may take takes nothing new; reads, deletes and signing in go on', async () => {

@@ -1,5 +1,5 @@
 {
-  "id": "1d6a0d99-13bd-4442-af7e-85f5984fab05",
+  "id": "4413aae3-8a36-4c12-8e10-a6ae5c73053c",
   "prevId": "4415fad5-973d-44f8-9ed0-2f823d24b019",
   "version": "7",
   "dialect": "postgresql",
@@ -2129,6 +2129,57 @@
         "principal_code_whose": {
           "name": "principal_code_whose",
           "value": "num_nonnulls(\"principal_code\".\"user_id\", \"principal_code\".\"server_id\") <= 1"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.release_file": {
+      "name": "release_file",
+      "schema": "",
+      "columns": {
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "sha256": {
+          "name": "sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bytes": {
+          "name": "bytes",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "release_file_key": {
+          "name": "release_file_key",
+          "value": "char_length(key) <= 200"
+        },
+        "release_file_sha": {
+          "name": "release_file_sha",
+          "value": "sha256 ~ '^[0-9a-f]{64}$'"
+        },
+        "release_file_bytes": {
+          "name": "release_file_bytes",
+          "value": "\"release_file\".\"bytes\" >= 0"
         }
       },
       "isRLSEnabled": false

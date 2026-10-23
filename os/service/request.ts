@@ -184,8 +184,10 @@ export const bounded: MiddlewareHandler = (c, next) =>
  */
 const BUSY = new Set(['55P03', '57014', '40001', '40P01', '53300', '57P01', '57P02', '57P03']);
 const codeOf = (e: unknown): string => {
-  for (let x = e as {code?: unknown; cause?: unknown} | undefined, i = 0; x && i < 4; x = x.cause as typeof x, i++) {
+  for (let x = e as {code?: unknown; cause?: unknown; message?: unknown} | undefined, i = 0; x && i < 4; x = x.cause as typeof x, i++) {
     if (typeof x.code === 'string' && /^[0-9A-Z]{5}$/.test(x.code)) return x.code;
+    // The pool's own words for a database not reached or gone (no SQLSTATE: it never answered): class 08.
+    if (typeof x.message === 'string' && /timeout exceeded when trying to connect|Connection terminated|connection (was )?closed|ECONNREFUSED|ECONNRESET/i.test(x.message)) return '08000';
   }
   return '';
 };

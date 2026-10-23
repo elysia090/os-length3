@@ -24,7 +24,7 @@ import type {Context, Hono} from 'hono';
 import {blobKey, noFiles, type Bucket} from './bucket.ts';
 import {byCode, HOLD, live, liveAddress, serverAddress, shownAs, takeDown} from './names.ts';
 import {addressOf, body, qualified, refuse, rows, throttled, type Db, type Vars} from './request.ts';
-import {address, cut, line, member, repo, repoPublic, repoShare, server} from './schema.ts';
+import {address, blob, cut, line, member, repo, repoPublic, repoShare, server} from './schema.ts';
 
 /** Codes one address may resolve to a face in an hour, as Inbox lets an account look them up (inbox.ts INBOX.codesPerHour). */
 const CODES_PER_HOUR = 30;
@@ -263,7 +263,15 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const at = path && path.length <= 1024 ? await find(c, c.req.param('face'), c.req.param('name')) : null;
     const [f] = at ? await db.select({sha: sql<string | null>`${cut.tree} ->> ${path}`}).from(cut).where(pushedAt(at.row)) as {sha: string | null}[] : [];
     if (!at || !f?.sha) return c.json({error: 'No such file to see'}, 404);
+    // What is at a path changes with a push: kept by the browser, and asked again each time by its digest, which
+    // answers 304 without R2 when it is the same; HEAD is answered from the blob's row.
+    const headers = {'Content-Type': 'application/octet-stream', ETag: `"${f.sha}"`, 'Cache-Control': 'private, no-cache'};
+    if (c.req.header('If-None-Match') === `"${f.sha}"`) return new Response(null, {status: 304, headers});
+    if (c.req.method === 'HEAD') {
+      const [b] = await db.select({bytes: blob.bytes}).from(blob).where(and(eq(blob.userId, at.row.userId), eq(blob.sha256, f.sha))) as {bytes: number}[];
+      return b ? new Response(null, {headers: {...headers, 'Content-Length': String(b.bytes)}}) : c.json({error: 'The Remote has no such file'}, 404);
+    }
     const bytes = await bucket.get(blobKey(at.row.userId, f.sha));
-    return bytes ? new Response(bytes as BodyInit, {headers: {'Content-Type': 'application/octet-stream', ETag: `"${f.sha}"`}}) : c.json({error: 'The Remote has no such file'}, 404);
+    return bytes ? new Response(bytes as BodyInit, {headers}) : c.json({error: 'The Remote has no such file'}, 404);
   });
 }

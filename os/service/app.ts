@@ -34,7 +34,7 @@ import {keyFor, type Purpose} from './keys.ts';
 import {news} from './news.ts';
 import {planRoutes, plans, type Billing, type PlanConfig} from './plan.ts';
 import {repos} from './repos.ts';
-import {addressOf, bounded, failed, fromOrigins, sha256, slowDown, unkept, type Db, type Vars} from './request.ts';
+import {addressOf, bounded, failed, fromOrigins, slowDown, unkept, type Db, type Vars} from './request.ts';
 import {seen} from './seen.ts';
 import {servers} from './servers.ts';
 import {sshRoutes} from './ssh.ts';
@@ -81,14 +81,18 @@ export interface Deps {
   limits?: Limits;
   /** A cache in front of R2 for the release files (on Workers, caches.default). */
   edge?: Edge;
-  /** How often one session (or, signed out, one address) may ask, counted at the edge before anything else is asked. */
+  /** How often one address may ask, counted at the edge before anything else is asked. */
   limiter?: {limit(o: {key: string}): Promise<{success: boolean}>};
   /** How long a session looked up is taken as still there by this process (ms; none by default). */
   sessionKept?: number;
 }
 
-/** What a request asks that adds nothing to the database, though not a GET: signing in (the stand-in provider's too), and reading files many at once. */
-const ADDS_NOTHING = /^\/(api\/auth\/|dev-oauth\/|v1\/blobs\/(missing|read)$)/;
+/**
+ * What a request asks that is let through a database at all it may take, though not a GET or a DELETE: signing in
+ * (a provider, the stand-in's, a link), reading files many at once, and what only takes away (a repo discarded, a
+ * signal taken, SSH turned off) or must be heard (Stripe's word on a payment).
+ */
+const ADDS_NOTHING = /^\/(api\/auth\/|dev-oauth\/|v1\/enter$|v1\/blobs\/(missing|read)$|v1\/repos\/[^/]+\/discard$|v1\/inbox\/signals\/take$|v1\/ssh\/[^/]+\/off$|v1\/stripe\/webhook$)/;
 
 export function createApp(d: Deps) {
   const app = new Hono<Vars>();
@@ -99,13 +103,14 @@ export function createApp(d: Deps) {
   const key = (purpose: Purpose) => keyFor(d.secret ?? '', purpose);
   app.use('*', fromOrigins(d.origins));
   app.use('*', unkept);
-  // Asked too often, refused at the edge, before the database or R2 is asked anything: by session, else by address.
+  // Asked too often, refused at the edge, before the database or R2 is asked anything: by the address it came from.
   if (d.limiter) {
     const limiter = d.limiter;
     app.use('*', async (c, next) => {
       if (c.req.method === 'OPTIONS') return next();
-      const who = c.req.header('Authorization') ?? /session_token=([^;]+)/.exec(c.req.header('Cookie') ?? '')?.[1] ?? addressOf(c);
-      const {success} = await limiter.limit({key: (await sha256(new TextEncoder().encode(who))).slice(0, 32)});
+      // By address alone: a token is not known good until the database is asked, and one made up each time
+      // would be a count of its own each time.
+      const {success} = await limiter.limit({key: addressOf(c) || 'here'});
       if (!success) slowDown(60, {error: 'Asked too often; try again in a minute'});
       await next();
     });
@@ -131,7 +136,7 @@ export function createApp(d: Deps) {
 
   const v1 = new Hono<Vars>();
   v1.use('*', signedIn(d.auth, d.origins, d.sessionKept));
-  files({db, bucket, quota: d.quota, budget, edge: d.edge}, v1, app);
+  files({db, bucket, raw: d.bucket, quota: d.quota, budget, edge: d.edge}, v1, app);
   repos({db, quota: d.quota, plans: plan, offKey: key('off-code')}, v1);
   homeRoutes({db}, v1);
   inbox({db, domain, baseURL: d.baseURL ?? '', secret: key('domain-proof'), txt: d.txt, recheck: d.recheck, plans: plan}, v1, app);

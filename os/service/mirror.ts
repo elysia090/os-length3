@@ -3,9 +3,8 @@
 // holds no Cloudflare credentials. The deploy (deploy.ts) runs it after the
 // Worker answers, for what this tree pins (releases.ts): every root in
 // core/src/root.rs RELEASES, and the desktop app of the version RELEASE
-// names. For each, the Remote is asked how large its copy is (one byte of
-// it, by range: nothing is read whole); one of the pinned size is kept as it
-// is. Otherwise the file is taken from the GitHub release with the read-only
+// names. One the Remote recorded as put at its pinned digest and size
+// (release_file, written only once the put is done) is kept as it is. Otherwise the file is taken from the GitHub release with the read-only
 // GITHUB_TOKEN, streamed to a file while its digest is taken, and put into
 // the bucket only when it is the digest and size this tree pins. Nothing is
 // put that was not checked; running it again changes nothing.
@@ -16,9 +15,12 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {Pinned} from './releases.ts';
 
-/** Where the files go: what the Remote has at a path (its size, or null), and putting a checked file under a key. */
+/**
+ * Where the files go: whether the Remote has a file as pinned (its digest and size recorded when it was put:
+ * release_file), and putting a checked file under its key, recorded with what it cost once it is in.
+ */
 export interface Store {
-  size(p: Pinned): Promise<number | null>;
+  has(p: Pinned): Promise<boolean>;
   put(p: Pinned, file: string): Promise<void>;
 }
 
@@ -28,21 +30,6 @@ export interface Source {
   repo: string;
   token?: string;
   fetch?: typeof fetch;
-}
-
-/** The Remote's copy's size, from the one byte asked for (Content-Range says the whole); null when it has none. */
-export function remoteStore(base: string, put: Store['put'], fetcher: typeof fetch = fetch): Store {
-  return {
-    async size(p) {
-      const r = await fetcher(`${base.replace(/\/$/, '')}${p.path}`, {headers: {Range: 'bytes=0-0'}});
-      await r.body?.cancel();
-      if (r.status === 404) return null;
-      const whole = /\/(\d+)$/.exec(r.headers.get('Content-Range') ?? '')?.[1] ?? (r.status === 200 ? r.headers.get('Content-Length') : null);
-      if (!r.ok || whole == null) throw new Error(`${p.path}: ${r.status}`);
-      return Number(whole);
-    },
-    put,
-  };
 }
 
 /** One file of a GitHub release, as a response whose body is still to be read. */
@@ -85,18 +72,16 @@ async function keep(r: Response, file: string, most: number): Promise<{sha256: s
  * taken, checked and put. All are tried; what failed is said together at the end.
  */
 export async function mirror(pins: Pinned[], store: Store, source: Source, log: (line: string) => void = console.log,
-  /** Asked before a file is taken and put, with what the Remote has of it now: throws when the budget has no room (deploy.ts). */
-  allow: (p: Pinned, had: number | null) => Promise<void> = async () => {}): Promise<{kept: string[]; put: string[]}> {
+  /** Asked before a file is taken and put: throws when the budget has no room for it (deploy.ts). */
+  allow: (p: Pinned) => Promise<void> = async () => {}): Promise<{kept: string[]; put: string[]}> {
   const kept: string[] = [], put: string[] = [], failed: string[] = [];
   const work = mkdtempSync(join(tmpdir(), 'length3-mirror-'));
   try {
     for (const p of pins) {
       try {
-        const has = await store.size(p);
-        if (has === p.bytes) { kept.push(p.key); continue; }
-        if (has !== null) log(`${p.key}: the Remote has ${has} bytes, not the ${p.bytes} pinned; put again`);
-        // Counted before anything is fetched or put: R2's puts and the bytes it holds are the Worker's budget too.
-        await allow(p, has);
+        if (await store.has(p)) { kept.push(p.key); continue; }
+        // Asked before anything is fetched or put: R2's puts and the bytes it holds are the Worker's budget too.
+        await allow(p);
         const file = join(work, p.sha256);
         const got = await keep(await asset(source, p), file, p.bytes);
         if (got.sha256 !== p.sha256 || got.bytes !== p.bytes)

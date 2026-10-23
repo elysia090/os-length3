@@ -76,20 +76,29 @@ const READS_AT_ONCE = 64;
 export class Budget {
   private period = '';
   private reads = 0;
+  private refill: Promise<void> | null = null;
   private sized: {at: number; full: boolean} | null = null;
   readonly limits: Limits;
   private now: () => number;
   constructor(limits: Limits, now: () => number = Date.now) { this.limits = limits; this.now = now; }
 
-  /** `n` R2 reads, or refused (503, no files) when the month has had all it may. */
+  /**
+   * `n` R2 reads, or refused (503, no files) when the month has had all it may. Reads asked at once wait for one
+   * refill (never one each: 64 asked together are 64, not 64 × 64); `n` of 64 and more are taken as they are.
+   */
   async read(q: Db, n = 1) {
     const now = this.now(), p = month(now);
     if (p !== this.period) { this.period = p; this.reads = 0; }
     if (this.reads >= n) { this.reads -= n; return; }
-    const ahead = Math.max(n, READS_AT_ONCE);
-    if (await take(q, p, 'r2:b', ahead, this.limits.reads)) { this.reads += ahead - n; return; }
-    // Near the end of the month's reads, only what is asked for.
-    if (ahead > n && await take(q, p, 'r2:b', n, this.limits.reads)) return;
+    if (n < READS_AT_ONCE) {
+      this.refill ??= take(q, p, 'r2:b', READS_AT_ONCE, this.limits.reads)
+        .then((ok) => { if (ok && this.period === p) this.reads += READS_AT_ONCE; })
+        .finally(() => { this.refill = null; });
+      await this.refill;
+      if (this.reads >= n) { this.reads -= n; return; }
+    }
+    // Near the end of the month's reads (or many at once), only what is asked for.
+    if (await take(q, p, 'r2:b', n, this.limits.reads)) return;
     spentFor(now);
   }
 
@@ -100,15 +109,35 @@ export class Budget {
   }
 
   /**
-   * `bytes` more held in R2 and uploaded by `user` today, or refused: 507 when R2 holds what it may, 429 until
-   * tomorrow when the account has uploaded what it may today. In `q`, under the account's lock.
+   * Refused as `upload` and `held` would refuse, asked before the bytes are put (nothing counted): what an account
+   * may not send is never put in R2 at all, so a refusal leaves no bytes behind but in a race of uploads at once.
    */
+  async ahead(q: Db, user: string, bytes: number) {
+    const now = this.now();
+    if (await spent(q, day(now), `up:${user}`) + bytes > this.limits.upload) {
+      slowDown(untilNext(now, 'day'), {error: 'This account has sent all it may today; the rest is sent tomorrow'});
+    }
+    if (await spent(q, 'all', 'r2:stored') + bytes > this.limits.stored) {
+      refuse(507, {error: 'The Remote holds all the files it may just now; your work stays on this device', files: false, budget: true});
+    }
+  }
+
+  /** `bytes` more uploaded by `user` today, or refused until tomorrow (429). In `q`, the upload's transaction. */
   async upload(q: Db, user: string, bytes: number) {
     const now = this.now();
-    const held = await spent(q, 'all', 'r2:stored');
-    if (held + bytes > this.limits.stored) refuse(507, {error: 'The Remote holds all the files it may just now; your work stays on this device', files: false, budget: true});
     if (!await take(q, day(now), `up:${user}`, bytes, this.limits.upload)) {
       slowDown(untilNext(now, 'day'), {error: 'This account has sent all it may today; the rest is sent tomorrow'});
+    }
+  }
+
+  /**
+   * Refused (507, no files) when R2 would hold more than it may, asked once the row that names the bytes is in:
+   * its trigger has counted them (usage_stored, 0011) with the count's row locked, so uploads of other accounts
+   * at once are counted one after another and cannot pass the limit together. In `q`, the upload's transaction.
+   */
+  async held(q: Db) {
+    if (await spent(q, 'all', 'r2:stored') > this.limits.stored) {
+      refuse(507, {error: 'The Remote holds all the files it may just now; your work stays on this device', files: false, budget: true});
     }
   }
 
@@ -123,6 +152,14 @@ export class Budget {
     this.sized = {at: now, full: Number(r?.bytes ?? 0) >= this.limits.database};
     return this.sized.full;
   }
+}
+
+/** What R2 holds, counted again from the rows that name its bytes (the sweep, each day): a count that drifted is put right. */
+export async function recount(q: Db): Promise<boolean> {
+  const r = await rows(q, sql`insert into usage (period, kind, n)
+      select 'all', 'r2:stored', (select coalesce(sum(bytes), 0) from blob) + (select coalesce(sum(bytes), 0) from release_file)
+    on conflict (period, kind) do update set n = excluded.n where usage.n <> excluded.n returning 1`);
+  return r.length > 0;
 }
 
 /**

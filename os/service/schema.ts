@@ -203,6 +203,10 @@ export const cut = pgTable('cut', {
 }, (t) => [primaryKey({columns: [t.repoId, t.id]}),
   // What an account's commits take, read by the sweep's recount without reading the table.
   index('cut_user_idx').on(t.userId, t.bytes),
+  // A commit's going is checked against those that name it as parent or merged: found by these, not by reading the
+  // repo's every commit for each one that goes (a repo of many commits discarded in seconds, not minutes).
+  index('cut_parent_idx').on(t.repoId, t.parent).where(sql`${t.parent} is not null`),
+  index('cut_merged_idx').on(t.repoId, t.merged).where(sql`${t.merged} is not null`),
   foreignKey({name: 'cut_repo', columns: [t.repoId, t.userId], foreignColumns: [repo.id, repo.userId]}).onDelete('cascade'),
   foreignKey({name: 'cut_parent', columns: [t.repoId, t.parent], foreignColumns: [t.repoId, t.id]}),
   foreignKey({name: 'cut_merged', columns: [t.repoId, t.merged], foreignColumns: [t.repoId, t.id]}),
@@ -570,6 +574,19 @@ export const usage = pgTable('usage', {
   n: bigint('n', {mode: 'number'}).notNull().default(0),
 }, (t) => [primaryKey({columns: [t.period, t.kind]}), check('usage_n', sql`${t.n} >= 0`), check('usage_period', within('period', 10)),
   check('usage_kind', within('kind', 80))]);
+
+/**
+ * A release's file the deploy put in R2 (mirror.ts), once it was checked against its pin: what the Remote hands
+ * to anyone (files.ts) only if it is here, and what the deploy puts again only if its digest or size changed.
+ * Its bytes count in `usage` r2:stored, by trigger, as a blob's do.
+ */
+export const releaseFile = pgTable('release_file', {
+  key: text('key').primaryKey(),
+  sha256: text('sha256').notNull(),
+  bytes: bigint('bytes', {mode: 'number'}).notNull(),
+  at: moment('at').defaultNow().notNull(),
+}, (t) => [check('release_file_key', within('key', 200)), check('release_file_sha', matches('sha256', re.sha)),
+  check('release_file_bytes', sql`${t.bytes} >= 0`)]);
 
 // ---- who sees a repo (seen.ts) ----
 

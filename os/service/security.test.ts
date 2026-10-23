@@ -280,12 +280,19 @@ test('a session is listed, ended from another, and ends at sign-out; a sign-in i
   const s = await service();
   const one = await s.start('Ren'), two = await s.start('Ren');
   assert.notEqual(one, two);
-  const listed = (await s.call('GET', '/api/auth/list-sessions', {token: one})).json as unknown as {token: string}[];
+  const listed = (await s.call('GET', '/api/auth/list-sessions', {token: one})).json as unknown as {id: string; token: string}[];
   assert.equal(listed.length, 2);
-  // Ended from the other device, as Remote → Devices does: by the session's own token, as listed.
-  const theirs = ((await s.call('GET', '/api/auth/get-session', {token: two})).json as unknown as {session: {token: string}}).session.token;
-  assert.ok(listed.some((x) => x.token === theirs));
-  assert.equal((await s.call('POST', '/api/auth/revoke-session', {token: one, body: {token: theirs}})).status, 200);
+  // Another session's token is never listed (with it, anyone would be that device): it is named by its id.
+  const theirs = ((await s.call('GET', '/api/auth/get-session', {token: two})).json as unknown as {session: {id: string; token: string}}).session;
+  assert.ok(!listed.some((x) => x.token === theirs.token));
+  const named = listed.find((x) => x.id === theirs.id)!;
+  assert.equal(named.token, `id:${theirs.id}`);
+  // Nobody else ends it by its id.
+  const stranger = await s.start('Bo');
+  assert.equal((await s.call('POST', '/api/auth/revoke-session', {token: stranger, body: {token: named.token}})).status, 200);
+  assert.equal((await s.call('GET', '/v1/repos', {token: two})).status, 200);
+  // Ended from the other device, as Remote → Devices does: by what was listed.
+  assert.equal((await s.call('POST', '/api/auth/revoke-session', {token: one, body: {token: named.token}})).status, 200);
   assert.equal((await s.call('GET', '/v1/repos', {token: two})).status, 401);
   assert.equal((await s.call('POST', '/api/auth/sign-out', {token: one, body: {}})).status, 200);
   assert.equal((await s.call('GET', '/v1/repos', {token: one})).status, 401);
