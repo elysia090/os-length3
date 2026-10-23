@@ -657,7 +657,7 @@ function planSection(offered: (on: boolean) => void): {el: HTMLElement; paint():
     offered(p.plan !== 'none');
     if (p.plan === 'none') { el.replaceChildren(); return; }
     // Paid now, after a Checkout: said once, and nothing more is waited for.
-    if (came === 'paid' && p.plan === 'paid') { came = null; checkoutBack = null; tell(t('You are on the paid plan.'), 'done'); }
+    if (came === 'paid' && p.plan === 'paid') { came = null; tell(t('You are on the paid plan.'), 'done'); }
     // Not heard yet: asked again in a moment, for a minute; then said where to look (the payment itself went through).
     if (came === 'paid' && p.plan !== 'paid') {
       if (Date.now() - waitingSince < 60_000) setTimeout(() => { if (el.isConnected) void paint(); }, 3000);
