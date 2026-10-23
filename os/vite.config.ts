@@ -18,6 +18,12 @@ import {DEFAULT_REMOTE, headersOf, webPolicy} from './src/policy.ts';
 const REMOTE_URL = process.env.VITE_LENGTH3_REMOTE ?? DEFAULT_REMOTE;
 const REMOTE = REMOTE_URL ? new URL(REMOTE_URL).origin : '';
 const DEV_REMOTE = process.env.LENGTH3_DEV_REMOTE;
+// What the Worker serves (wrangler.toml): the app's files are its [assets] directory, which is where this builds
+// them (and Tauri takes them from, tauri.conf.json frontendDist); its own paths (run_worker_first) reach it before
+// them, and the development server and the preview pass the same paths to LENGTH3_DEV_REMOTE.
+const WRANGLER = readFileSync(new URL('./wrangler.toml', import.meta.url), 'utf8');
+const ASSETS = /^directory\s*=\s*"([^"]+)"/m.exec(WRANGLER)![1];
+const WORKER_FIRST = (JSON.parse(/^run_worker_first\s*=\s*(\[.*\])$/m.exec(WRANGLER)![1]) as string[]).map((p) => p.replace(/\/\*$/, ''));
 // The release this tree ships (RELEASE): the web's Runtime offers that version's desktop app
 // (shared/desktop-releases.json), as the deploy puts it on the Remote (service/mirror.ts).
 process.env.VITE_LENGTH3_RELEASE ??= readFileSync(new URL('./RELEASE', import.meta.url), 'utf8').trim();
@@ -119,9 +125,9 @@ export default defineConfig({
   // so the app is tested under its real policy, frame-ancestors and all.
   preview: {headers: headersOf(readFileSync(new URL('./public/_headers', import.meta.url), 'utf8'))},
   server: {port: 1420, strictPort: true, fs: {allow: ['..']}, headers: ISOLATED,
-    proxy: DEV_REMOTE ? {'/api': DEV_REMOTE, '/v1': DEV_REMOTE} : undefined},
+    proxy: DEV_REMOTE ? Object.fromEntries(WORKER_FIRST.map((p) => [p, DEV_REMOTE])) : undefined},
   worker: {format: 'es'},
   define: {__LENGTH3_HOST__: JSON.stringify(HOST)},
-  build: {target: 'es2022', outDir: 'dist', emptyOutDir: true},
+  build: {target: 'es2022', outDir: ASSETS, emptyOutDir: true},
   plugins: [hostOnly(), coreWasm(), metaPolicy(), buildStamp()],
 });
