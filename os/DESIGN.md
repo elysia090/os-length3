@@ -209,7 +209,9 @@ Every value in `styles.css` comes from a token (§2).
   full width (：). A name filled in (`{server}`, `{repo}`) is written
   against the Japanese in the catalog and `t()` sets it apart only when it
   is Latin (旅行の人たちへ, trip の人たちへ). `i18n.test.ts` holds all four;
-  l3 and core write their Japanese the same way.
+  l3 and core write their Japanese the same way; the language changed in
+  the app is the core's at once too (what it says next, Runtime's lines, an
+  error), not only after the page is loaded again.
 - **What one was doing stays where it belongs.** Going to another page
   and back, or to another repo and back, is going back to it: the same
   repo, where it was read, what was searched, what was half written. What
@@ -410,8 +412,12 @@ what is its own.
   Under the pointer its edge takes a step toward ink (the edge a field
   has), so it says it is there to write in before it is pressed.
 - **Overlays.** File and Server are operations, not pages: laid over the
-  page that is showing, brought out by resting on the icon (it stays a
-  while after the pointer leaves) or by a press (it stays), put away by
+  page that is showing, brought out by resting on the icon (File's small
+  tree after 300 ms, Server's layer, which covers the page, after a
+  deliberate 600 ms; it stays a while after the pointer leaves, but goes as
+  soon as the pointer rests on another place on the rail (200 ms; crossing
+  the icons on the way into the tree is not a rest), so reading the rail's
+  names never leaves one over the page) or by a press (it stays), put away by
   Escape (whatever has the keyboard; the topmost one only), a press
   outside, or a second press. A press outside leaves out one whose box
   holds words (Server's, §8), so what is written is not put away under it.
@@ -1310,7 +1316,9 @@ the query first), and its open issues and its runs too; what is found
 opens under the box over the center while the box has the keyboard (↓ goes
 into it, Enter takes the first, Escape back to the box), and follows what is
 saved. A file found by its name opens with the caret in it, a line with the
-line selected (where it is now, if it moved); an issue, a changed file's
+line selected (where it is now, if it moved), a third of the way down, or
+with its file's head at the top when it is near it (never the empty foot of
+the file before over it); an issue, a changed file's
 diff or a run is read in the right pane. Under the top line, the plugin
 area: nothing until the rail's plug opens it, then up to seven plugins side
 by side, one at a time (none yet; with none it says so in one quiet line).

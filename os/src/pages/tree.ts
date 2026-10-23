@@ -156,6 +156,9 @@ export class FileTree {
     return !!this.pop?.element.querySelector('.pop-field, .pop-ask') || !!this.element.querySelector(':focus-visible');
   }
 
+  /** The pointer on another place on the rail: the tree a rest brought out, not pressed nor held, goes at once. */
+  passedBy() { if (this.isOpen && !this.pinned && !this.holding()) this.close(); }
+
   /** What held the tree is done: with the pointer away, it goes after the linger as it would have. */
   private letGo() { if (this.isOpen && !this.over && !this.pinned && !this.holding()) this.later(false, this.visited ? LINGER : LINGER_PASSED); }
 

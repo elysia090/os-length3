@@ -37,8 +37,10 @@ import {errorText} from '../errors.ts';
 // open, what is shown and as whose, leaving it, is a step away, behind the
 // gear; and what reaches past its people asks before it does.
 //
-// Resting the pointer on its icon brings it out, and it stays for LINGER
-// after the pointer leaves; a press brings it out to stay. A press outside
+// Resting the pointer on its icon a deliberate moment (it covers the page, so
+// longer than File's small tree) brings it out, and it stays for LINGER after
+// the pointer leaves, unless the pointer goes on to another place on the rail;
+// a press brings it out to stay. A press outside
 // it, Escape, or a second press puts it away (Escape from behind the gear
 // goes back to the boards first). While something is being written it stays,
 // and a press outside does not put it away while the box at the foot holds
@@ -47,7 +49,7 @@ import {errorText} from '../errors.ts';
 // What came in and was not seen yet is marked as the rail marks it: a dot on
 // a server's chip and on a board's #, gone once its talk's foot is in view.
 
-const OPEN_DELAY = 300;
+const OPEN_DELAY = 600;
 const LINGER = 8000;
 const AT = 'length3.server.at';
 
@@ -107,6 +109,9 @@ export class ServerLayer {
   }
 
   private leave() { if (!this.pinned) this.later(false, LINGER); }
+
+  /** The pointer on another place on the rail: the layer a rest brought out, not pressed, nothing written, goes at once. */
+  passedBy() { if (this.isOpen && !this.pinned && !this.writing()) this.close(true); }
 
   private later(open: boolean, after: number) {
     clearTimeout(this.timer);

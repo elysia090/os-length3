@@ -52,7 +52,9 @@ pub fn set(key: &str, json: &str) -> Result<()> {
     // Home's state (profile, TODO, the Remote's session) is the person's alone: the directory is private and
     // the file owner-only.
     crate::boundary::private_dir(path.parent().unwrap()).map_err(|e| e.to_string())?;
-    crate::atomic::replace(&path, json.as_bytes(), crate::atomic::How::PRIVATE).map_err(|e| crate::tr!("{}: {}", "{}：{}", path.display(), e))
+    crate::atomic::replace(&path, json.as_bytes(), crate::atomic::How::PRIVATE).map_err(|e| crate::tr!("{}: {}", "{}：{}", path.display(), e))?;
+    if key == "lang" { crate::i18n::changed(); }
+    Ok(())
 }
 
 /// One TODO item, the same shape the app stores.

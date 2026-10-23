@@ -175,8 +175,12 @@ export class Reader {
     // key typed goes in beside it rather than over it. A selection the person has made since stays theirs.
     setTimeout(() => { if (area.selectionStart === at && area.selectionEnd === end) area.setSelectionRange(at, at); }, 1200);
     const height = parseFloat(getComputedStyle(area).lineHeight) || 20;
-    const top = area.getBoundingClientRect().top - this.flow.getBoundingClientRect().top + this.flow.scrollTop;
-    this.flow.scrollTop = top + (line - 1) * height - this.flow.clientHeight / 3;
+    const box = this.flow.getBoundingClientRect().top - this.flow.scrollTop;
+    const top = area.getBoundingClientRect().top - box;
+    // The line a third of the way down, or, near its file's top, the file's head at the top: not the empty foot of
+    // the file before it over a line that would show anyway.
+    const head = target.getBoundingClientRect().top - box;
+    this.flow.scrollTop = Math.max(head, top + (line - 1) * height - this.flow.clientHeight / 3);
   }
 
   /**

@@ -132,7 +132,9 @@ export class Me {
 
   private later(open: boolean, after: number) {
     clearTimeout(this.timer);
-    this.timer = window.setTimeout(() => { if (open) { this.fill(); this.open(false); } else this.close(); }, after);
+    // Out already, it is left as it is: drawn again under the pointer, the row being pressed would be another by the
+    // time the press ends (the language chosen from its list never taking).
+    this.timer = window.setTimeout(() => { if (open) { if (!this.isOpen) this.fill(); this.open(false); } else this.close(); }, after);
   }
 
   private open(focus: boolean) {

@@ -87,6 +87,10 @@ caret();
 // Server is laid over the page the same way: people one knows, their boards, each board's talk and TODO.
 const serverLayer = new ServerLayer(ctx);
 
+/** How long the pointer rests on another place on the rail before what a rest on File or Server brought out goes. */
+const PASSED = 200;
+let passing = 0;
+
 function railButton(id: PurposeId): HTMLButtonElement {
   const p = purpose(id), button = document.createElement('button');
   button.type = 'button';
@@ -94,6 +98,14 @@ function railButton(id: PurposeId): HTMLButtonElement {
   button.className = id === 'new-repo' ? 'rail-item rail-new' : 'rail-item';
   button.setAttribute('aria-label', t(p.label));
   button.append(icon(id), h('span', {class: 'rail-tag', 'aria-hidden': 'true'}, t(p.label)));
+  // The pointer resting on another place on the rail: File's tree or Server's layer that a rest only brought out
+  // (not pressed, nothing written in it) goes, so reading the rail's names never leaves one over the page. Only a
+  // rest: the hand crossing the icons on its way from File into the tree must not put the tree away under it.
+  button.addEventListener('pointerenter', () => {
+    clearTimeout(passing);
+    passing = window.setTimeout(() => { if (id !== 'file') fileTree.passedBy(); if (id !== 'server') serverLayer.passedBy(); }, PASSED);
+  });
+  button.addEventListener('pointerleave', () => clearTimeout(passing));
   if (id === 'file') {
     fileTree.attach(button);
   } else if (id === 'server') {
