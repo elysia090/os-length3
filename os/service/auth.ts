@@ -24,7 +24,8 @@
 // and signedIn, which every /v1 route behind it asks first.
 
 import {passkey} from '@better-auth/passkey';
-import {betterAuth} from 'better-auth';
+// The build of Better Auth without Kysely, its own database layer (700 KB of the Worker's 3.2 MB): Drizzle is this one's.
+import {betterAuth} from 'better-auth/minimal';
 import {APIError, createAuthMiddleware} from 'better-auth/api';
 import {drizzleAdapter} from 'better-auth/adapters/drizzle';
 import {bearer, deviceAuthorization, genericOAuth} from 'better-auth/plugins';
