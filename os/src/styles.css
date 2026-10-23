@@ -110,6 +110,30 @@ a { color: var(--ink); }
 .glide-ink { position: absolute; z-index: -1; background: var(--ink); pointer-events: none; }
 /* A repo opened from its card or its row, on its way to its box in Forge (glide.ts morph). */
 .morph-box { position: fixed; z-index: 9; pointer-events: none; border: var(--line-work) solid var(--ink); border-radius: var(--r-place); background: color-mix(in srgb, var(--paper) 35%, transparent); }
+/* Along the rail the camera pans with it (main.ts select): the page left goes up and away as the next rises in from
+   below (down the rail; up it, the other way round; --pan is 1 or -1), the rail and the window's edges standing
+   still. Only the page moves: the rest of the window is drawn as it is, its own moves (the rail's ink) going on. */
+#page { view-transition-name: page; }
+::view-transition-old(root), ::view-transition-new(root), ::view-transition-group(page) { animation: none; }
+::view-transition-old(page) { animation: pan-out 480ms var(--land) both; }
+::view-transition-new(page) { animation: pan-in 480ms var(--land) both; }
+@keyframes pan-out { to { transform: translateY(calc(var(--pan, 1) * -38%)); opacity: 0; } }
+@keyframes pan-in { from { transform: translateY(calc(var(--pan, 1) * 46%)); opacity: 0; } }
+/* The OS's caret (caret.ts), a 2 px stroke of ink gliding from where it was to where it is; the browser's own is
+   hidden in the field it stands for. Solid while it moves, blinking once it rests. */
+.os-caret-field { caret-color: transparent; }
+.os-caret {
+  position: fixed; left: 0; top: 0; z-index: 9; width: 2px; border-radius: 1px; background: var(--ink); pointer-events: none; opacity: 0;
+  transition: transform 70ms cubic-bezier(.2, .9, .25, 1), height 70ms;
+}
+.os-caret.on { opacity: 1; }
+.os-caret.jump { transition: none; }
+.os-caret.on.resting { animation: caret-blink 1.06s steps(1) infinite; }
+@keyframes caret-blink { 50% { opacity: 0; } }
+.caret-copy { position: absolute; left: -9999px; top: 0; visibility: hidden; overflow: hidden; }
+/* What was made on its way to where it is kept (glide.ts keep): a dot in ink, in an arc to the rail. */
+.kept-path { position: fixed; z-index: 9; width: 0; height: 0; pointer-events: none; }
+.kept-dot { position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; border-radius: 50%; background: var(--ink); }
 .arriving, .arriving:hover { background: transparent !important; color: var(--ink) !important; transition: none !important; }
 /* A window too short for all of it (a browser's tab under its own bars, a laptop at 200% zoom): the rail stays
    where it is, in the window, as tall as the window, never going with the page (issue #44). Its places close up;
@@ -623,6 +647,13 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
   font: 600 var(--t-meta) var(--mono);
 }
 .path span { font-weight: 400; }
+/* Beside: at the head's right end, the window cut in two; pressed (or the head with Ctrl), the file opens in a box
+   of its own beside the repo's page, the row sliding to it. Quiet until the file is pointed at. */
+.path > .file-state { margin-left: auto; }
+.file-beside { display: grid; place-items: center; flex: none; width: 24px; height: 24px; margin: -4px -6px -4px 0; padding: 0; border: 0; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: pointer; opacity: .55; transition: opacity var(--motion); }
+.file-beside .mark { width: var(--s4); height: var(--s4); }
+.file:hover .file-beside, .file-beside:focus-visible { opacity: 1; }
+.file-beside:hover { background: var(--raised); color: var(--ink); }
 /* Each file is a box drawn a little heavier than other lines, since it is
    the thing being worked on, and tall: a short file too reaches down to the
    foot of the rail's last place (Inbox, the eighth: the rail's first place,
@@ -719,6 +750,9 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .prompt-in:focus { outline: none; }
 .prompt-in:disabled { cursor: default; }
 .prompt-note:empty { display: none; }
+/* What a run prints comes in at the foot a line after another (terminal.ts), not all at once. */
+.term-out > .fresh { animation: fresh 240ms ease-out backwards; }
+@keyframes fresh { from { opacity: 0; } }
 /* What Tab could complete to, said under the box: paths, so monospace. */
 .prompt-note.paths { font-family: var(--mono); white-space: pre-wrap; }
 /* Server over any page: its own place in the bench's shape, to the window's foot so nothing of the page shows below it. */
@@ -819,6 +853,8 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 
 .col-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 0; padding: 0 var(--s1); border-radius: var(--r-field); background: transparent; color: var(--sub); font-size: var(--t-meta); cursor: pointer; }
 .col.active > .col-head > .col-name { color: var(--ink); font-weight: 600; }
+/* A file beside: its repo said quietly before its name. */
+.col-repo { margin-right: .4em; color: var(--sub); font-weight: 400; }
 .col-close { display: grid; place-items: center; width: 24px; height: 24px; margin-left: auto; padding: 0; border: 0; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: pointer; opacity: 0; transition: opacity var(--motion); }
 .col-close .mark { width: var(--s4); height: var(--s4); }
 .col-head:hover > .col-close, .col-close:focus-visible, .col.active > .col-head > .col-close { opacity: 1; }
@@ -828,7 +864,12 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .columns.split > .col:not(.active) .file { border-color: var(--rule); }
 /* The row slides as one, and a box comes in from no width where it stands (pushing in from its side) and goes back
    to none the same way, by the same move. */
-.col { transition: flex-basis 420ms var(--land), transform 420ms var(--land); }
+.col { transition: flex-basis 420ms var(--land), transform 420ms var(--land), translate 260ms var(--land); }
+/* The pointer on a box's edge, the row leans toward it a step before it is pressed: what the press will bring in
+   is already on its way, and leaving it, the row settles back. */
+.columns.split:has(> .col.after:hover) > .col { translate: calc(-1 * var(--s4)) 0; }
+.columns.split:has(> .col.before:hover) > .col { translate: var(--s4) 0; }
+.columns.split > .col:is(.before, .after):hover > .flow { opacity: .8; }
 .col.nothing { flex-basis: 0 !important; }
 .col > .flow { transition: padding-top var(--move) var(--land), opacity 240ms ease-out; }
 .columns.split > .col:not(.active) > .flow { opacity: .5; }
@@ -1041,7 +1082,11 @@ button.diff-no:hover { color: var(--ink); background: var(--raised); border-radi
 .hit-line { color: var(--sub); text-align: right; font-variant-numeric: tabular-nums; }
 .hit-text { white-space: pre; overflow: hidden; text-overflow: ellipsis; }
 /* What the search found, in its lines: the marker's stroke over the words, as a highlighter (§2). */
-mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: var(--marker); color: var(--ink); }
+mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gradient(var(--marker), var(--marker)) no-repeat 0 0 / 100% 100%; color: var(--ink); }
+/* As what was found is drawn (each letter typed draws it again), each stroke is drawn on left to right, one line
+   after the next, as a highlighter goes down a page. */
+.search-results mark { animation: stroke 280ms var(--land) backwards; animation-delay: calc(var(--i, 0) * 45ms); }
+@keyframes stroke { from { background-size: 0 100%; } }
 .facts { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: var(--s1) var(--s3); margin: 0; }
 .facts dt { color: var(--sub); font-size: var(--t-meta); }
 .facts dd { margin: 0; overflow-wrap: anywhere; }

@@ -69,10 +69,38 @@ Every value in `styles.css` comes from a token (§2).
   - *The ink travels.* The current thing's ink goes from the one it was on
     to the one it is on (the rail's places, the band's pills), under their
     words, 220 ms, so the eye follows the choice.
-  - *What comes in, comes from its side.* Down the rail the next page comes
-    up from below, up the rail from above (12 px and a fade, 240 ms); along
-    the band the next repo comes from the right, back along it from the
-    left (32 px).
+  - *The camera pans along the rail.* Going to another place, the page left
+    goes up and away as the next rises in from below (down the rail; up it,
+    the other way round; 480 ms), the rail and the window's edges standing
+    still, a floor passed in a lift.
+  - *What comes in, comes from its side, a beat at a time.* Down the rail
+    the next page comes up from below, up the rail from above; along the
+    band the next repo comes from the right, back along it from the left
+    (32 px). A page come to is staged, not shown at once: its parts (the
+    heading, each section's head, each card, box, pill and file) come in one
+    after another in reading order, 45 ms apart (16 px and a fade, 360 ms
+    each), so the eye is led through it heading first and the arrival lasts
+    long enough to be followed; what is read a moment later takes its turn
+    where it stands. Its figures count up from nothing, its bars fill.
+  - *The caret is a thing that moves.* The OS draws it (a 2 px stroke of
+    `ink`): it glides from where it was to where it is (a letter typed, a
+    line gone down, a press elsewhere, 70 ms), so what is written is seen
+    being written and Enter sweeps it to the next line's start; solid while
+    it moves, blinking once it rests. A selection is the browser's own, as
+    is the caret of a file too long to measure at every key.
+  - *What is about to come leans in.* The pointer on a box's edge in
+    Forge's row, the row leans a step toward it before it is pressed;
+    left, it settles back.
+  - *What is made goes where it is kept.* A file saved sends a dot in an
+    arc to the rail, to Runtime while it is kept on this device, to Remote
+    once the Remote keeps it, and the icon takes it in with a pop: the
+    deed's second beat, the eye led back to the rail.
+  - *What is done is rewarded, once.* A TODO done: its mark pops past its
+    size and settles. A TODO's kind, read off its line as it is typed
+    (Fix:), takes its form with a small pop; a new TODO unfolds from the
+    line it was started from. What the search found is drawn on as it is typed,
+    each line's highlighter stroke left to right, one line after the next.
+    What a run prints comes in at the foot a line after another.
   - *Room is given and taken.* A box opened beside the others grows from
     nothing as they make room, and closing gives its room back; the right
     pane opens and closes as a wipe, what it holds cut at the moving edge,
@@ -1076,7 +1104,13 @@ away: there is more that way, not a narrow box beside. One to the left says
 its name at its right end, the end that shows. Pressing one, swiping
 sideways over the row (one box a swipe) or Alt+[ / Alt+] brings it in, and
 the whole row slides with it, the one left going out to its edge; a box
-opened beside opens from no width as the row slides to it. Each box has a small head
+opened beside opens from no width as the row slides to it. Another file of
+the same repo opens beside too: each file's head has, at its right end, the
+window cut in two (quiet until the file is pointed at; Ctrl+click on the head
+does the same), and the file comes in as a box of its own, its repo said
+quietly before its name in the box's head; a place asked for in another file
+(the search, File) is read in the repo's page, which comes in where that box
+stood. Each box has a small head
 (its name, and × to close it; dragged, it moves along the row); Alt+[ and
 Alt+] go along the row. The keys an editor's hands already know work
 wherever the bench is, unsaid on the screen: Ctrl+K or Ctrl+P (Ctrl+Shift+F

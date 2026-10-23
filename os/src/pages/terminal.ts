@@ -145,11 +145,23 @@ export class Session {
     // Chromium: 1 MB of output held the page for 22 s; drawn once for every 17 pieces, 1.3 s.
     this.painting ||= requestAnimationFrame(() => {
       this.painting = 0;
-      this.output.textContent = this.text;
+      // What came since the last frame goes at the foot, a line after another, so a run is seen coming rather than
+      // appearing; a lot at once (or the start cut away) is drawn whole.
+      const add = this.drawn && this.text.startsWith(this.drawn) ? this.text.slice(this.drawn.length) : null;
+      if (add !== null && add.length < 4000 && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        this.output.append(...add.split(/(?<=\n)/).map((line, i) => {
+          const s = h('span', {class: 'fresh'}, line);
+          s.style.animationDelay = `${Math.min(i, 24) * 30}ms`;
+          return s;
+        }));
+      } else this.output.textContent = this.text;
+      this.drawn = this.text;
       this.output.scrollTop = this.output.scrollHeight;
     });
   }
   private painting = 0;
+  /** What is on the screen of the output now, to add to it what came after. */
+  private drawn = '';
 
   /** Output goes on screen and into the run in progress, which ends at the next prompt. */
   private received(s: string) {

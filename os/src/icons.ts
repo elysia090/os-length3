@@ -35,6 +35,8 @@ const MARKS = {
   close: 'M7 7l10 10M17 7L7 17',
   // A window with its right pane: the pane the switch puts away and brings back.
   pane: 'M4 5.5h16v13H4zM14.5 5.5v13',
+  // Beside: the window cut in two, another box to its right.
+  beside: 'M4 5.5h16v13H4zM12 5.5v13M15 12h2.5M16.25 10.75v2.5',
   // More to choose from, below.
   down: 'M7 10l5 5 5-5',
   // Down onto this computer: an arrow into a tray, the tray as wide as the arrow's room.

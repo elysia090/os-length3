@@ -558,6 +558,8 @@ export class Reference {
     const changes = new Map(changed.map((c) => [c.path, c]));
     const said: HTMLElement[] = [];
     if (groups.length) said.push(h('p', {class: 'muted small search-count'}, `${tn('{n} file', '{n} files', groups.length)} · ${total >= HIT_LIMIT ? t('{n} lines (only the first)', {n: total}) : tn('{n} line', '{n} lines', total)}`));
+    // Each line found is drawn a beat after the one above it (styles.css .search-results mark).
+    let stroke = 0;
     for (const g of nameFirst(groups, query)) {
       // A file chosen by its name is the one to work on: the caret goes in it.
       const name = h('button', {type: 'button', class: 'choice hit-file'}, g.path);
@@ -571,6 +573,8 @@ export class Reference {
         const b = h('button', {type: 'button', class: 'choice hit'},
           h('span', {class: 'hit-line'}, String(hit.line)),
           h('span', {class: 'hit-text'}, hit.text.slice(0, hit.from), h('mark', {}, hit.text.slice(hit.from, hit.to)), hit.text.slice(hit.to)));
+        // Through the style object, not an attribute: the desktop app's policy allows no style written inline.
+        b.style.setProperty('--i', String(Math.min(stroke++, 16)));
         b.addEventListener('click', () => void this.go(g.path, hit.line, query));
         return b;
       })));

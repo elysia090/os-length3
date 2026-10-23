@@ -26,8 +26,9 @@ import {heldInvite, holdInvite, inviteIn} from './servers.ts';
 import {getState, loadState} from './state.ts';
 import {onLang, t, useLang} from './i18n.ts';
 import {NEW_REPO, PURPOSES, RAIL, purpose, restorePurpose, stepPurpose, type PurposeId} from './purposes.ts';
-import {arrive, glide, morph, where} from './glide.ts';
+import {glide, morph, stage, where} from './glide.ts';
 import {touch} from './touch.ts';
+import {caret} from './caret.ts';
 
 const PURPOSE_KEY = 'length3.os.purpose';
 const REPO_KEY = 'length3.os.repo';
@@ -51,7 +52,7 @@ let openRepo = load(REPO_KEY);
 let readingPath: string | null = null;
 const ctx: Context = {
   // Server, like File, is laid over the page rather than being one.
-  go: (id) => (id === 'server' ? serverLayer.open(true) : select(id)),
+  go: (id) => { if (id === 'server') { serverLayer.open(true); return Promise.resolve(); } return select(id); },
   openRepo(name, path = '', write = false) {
     if (current === 'forge' && showInForge(name, path, write)) return;
     ctx.remember(name);
@@ -79,6 +80,7 @@ document.body.append(fileTree.element);
 // A control drawn again or held while its deed runs gives the keyboard back, never to the body (focus.ts).
 keepFocus();
 touch();
+caret();
 // Server is laid over the page the same way: people one knows, their boards, each board's talk and TODO.
 const serverLayer = new ServerLayer(ctx);
 
@@ -136,7 +138,27 @@ document.addEventListener('pointerdown', (event) => {
 }, true);
 
 /** `quiet`: something else carries the eye (a repo growing into its box), so the page does not come from its side. */
-function select(id: PurposeId, quiet = false) {
+type Panning = Document & {startViewTransition?(update: () => void): {updateCallbackDone: Promise<void>}};
+
+/**
+ * Going along the rail, the camera pans with it (styles.css ::view-transition): the page left goes off the way the rail
+ * was gone along as the page come to rises in after it, the rail and the window's edges staying where they are, a
+ * floor passed in a lift. Where the browser cannot, or less motion is asked for, the page is drawn in place.
+ * Settles once the page is drawn.
+ */
+function select(id: PurposeId, quiet = false): Promise<void> {
+  const order = RAIL.map((p) => p.id);
+  const pan = Math.sign(order.indexOf(id) - order.indexOf(current));
+  const begin = (document as Panning).startViewTransition;
+  if (begin && !quiet && pan && $('page').childElementCount && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    document.documentElement.style.setProperty('--pan', String(pan));
+    return begin.call(document, () => draw(id, quiet, true)).updateCallbackDone.catch(() => {});
+  }
+  draw(id, quiet, false);
+  return Promise.resolve();
+}
+
+function draw(id: PurposeId, quiet: boolean, panned: boolean) {
   const from = current;
   const inkWas = where(tabs.get(from)?.getAttribute('aria-current') ? tabs.get(from) : null);
   current = id;
@@ -155,7 +177,11 @@ function select(id: PurposeId, quiet = false) {
     // The rail's ink goes from the place left to the place come to, and the page comes from that side of the rail.
     glide(inkWas, tabs.get(id)?.getAttribute('aria-current') ? tabs.get(id)! : null, $('rail-tabs'), 'var(--r-place)');
     const order = RAIL.map((p) => p.id);
-    if (!quiet) arrive($('page'), Math.sign(order.indexOf(id) - order.indexOf(from)), 'y', 12, 240);
+    // Its parts come in a beat apart, heading first, from that side (glide.ts stage).
+    if (!quiet) {
+      if (!panned && !matchMedia('(prefers-reduced-motion: reduce)').matches) $('page').animate([{opacity: 0}, {opacity: 1}], {duration: 160, easing: 'ease-out'});
+      stage($('page'), Math.sign(order.indexOf(id) - order.indexOf(from)));
+    }
   }
 }
 

@@ -74,3 +74,96 @@ export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340, r
   requestAnimationFrame(go);
   return true;
 }
+
+/** A thing just done is rewarded: it pops past its size and settles (a TODO's mark once done). */
+export function pop(el: Element, by = .16, ms = 380) {
+  if (still()) return;
+  el.animate([{scale: 1 - by * 2}, {scale: 1 + by, offset: .5}, {scale: 1}], {duration: ms, easing: 'ease-out'});
+}
+
+/** A figure counted up from nothing to what it says ("7.9 MB", "3"), its unit kept, landing as the camera does. */
+export function countUp(el: HTMLElement, ms = 560) {
+  const text = el.textContent ?? '';
+  const m = /^(\d+(?:\.\d+)?)(.*)$/s.exec(text);
+  if (still() || !m) return;
+  const to = parseFloat(m[1]), places = m[1].split('.')[1]?.length ?? 0, rest = m[2];
+  if (!to) return;
+  const t0 = performance.now();
+  const step = (now: number) => {
+    // Written over meanwhile (the figure read again): what it says now is left as it is.
+    if (!el.isConnected || !(el.textContent ?? '').endsWith(rest)) return;
+    const k = Math.min(1, (now - t0) / ms);
+    const eased = 1 - Math.pow(1 - k, 3);
+    el.textContent = k < 1 ? `${(to * eased).toFixed(places)}${rest}` : text;
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+/** A page's parts, each a beat of its arrival: a heading, a card, a box, a pill, a file. */
+const BEATS = ['.page-head', '.identity', 'section > h2', '.todo-box', '.card', '.part-bar', '.meter', '.legend > span', '.space-box',
+  '.sign-in-card', '.stub-holder', '.inbox-box', '.new-repo > .field', '.git-filter .chip', '.issue-stage', '.issue-new',
+  '.repo-strip .pill', '.repo-strip .band-add', '.col:not([hidden]) .file'].join(', ');
+
+/**
+ * A page come to is staged rather than shown at once: its parts come in one after another in reading order (the
+ * heading first, then down and along, a card at a time), each from the side the page comes from, so the eye is led
+ * through it and the arrival lasts long enough to be followed; its figures count up, its bars fill. What is drawn a
+ * moment later (read from the store) takes its turn where it stands in that order.
+ */
+export function stage(root: HTMLElement, dir: number) {
+  if (still()) return;
+  const t0 = performance.now(), seen = new WeakSet<Element>();
+  const run = () => {
+    const tall = innerHeight;
+    const beats = [...root.querySelectorAll<HTMLElement>(BEATS)].filter((el) => {
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.top < tall && r.bottom > 0 && !el.parentElement?.closest(BEATS);
+    }).map((el) => ({el, r: el.getBoundingClientRect()}))
+      .sort((a, b) => (Math.abs(a.r.top - b.r.top) > 12 ? a.r.top - b.r.top : a.r.left - b.r.left));
+    const late = performance.now() - t0;
+    beats.forEach(({el}, i) => {
+      if (seen.has(el)) return;
+      seen.add(el);
+      el.animate([{opacity: 0, translate: `0 ${(dir || 1) * 16}px`}, {opacity: 1, translate: '0 0'}],
+        {duration: 360, delay: Math.max(0, Math.min(i, 14) * 45 - late), easing: LAND, fill: 'backwards'});
+    });
+    for (const b of root.querySelectorAll<HTMLElement>('.counts b, .legend b')) { if (!seen.has(b)) { seen.add(b); countUp(b); } }
+    for (const bar of root.querySelectorAll<HTMLElement>('.meter > span')) {
+      if (seen.has(bar) || !bar.style.width) continue;
+      seen.add(bar);
+      bar.animate([{width: '0%'}, {width: bar.style.width}], {duration: 700, delay: 120, easing: LAND, fill: 'backwards'});
+    }
+  };
+  run();
+  requestAnimationFrame(() => requestAnimationFrame(run));
+  setTimeout(run, 160);
+  setTimeout(run, 420);
+}
+
+/**
+ * What was made goes where it is kept, as a thing picked up goes to the bag: a dot leaves it in an arc to that
+ * place's icon on the rail, which takes it in with a pop (a file saved: Runtime while it is kept on this device,
+ * Remote once the Remote keeps it). The second beat of the deed, a moment after it, leading the eye back to the rail.
+ */
+export function keep(from: Element, to: string, ms = 640) {
+  const icon = document.getElementById(`purpose-${to}`);
+  if (still() || !icon || !from.isConnected) return;
+  const a = from.getBoundingClientRect(), b = icon.getBoundingClientRect();
+  if (!a.width || !b.width) return;
+  const x0 = a.right - 6, y0 = a.top + a.height / 2, x1 = b.left + b.width / 2, y1 = b.top + b.height / 2;
+  // Two moves make the arc: the outer goes across, the dot in it rises and comes down onto the icon.
+  const dot = document.createElement('span');
+  dot.className = 'kept-dot';
+  const path = document.createElement('span');
+  path.className = 'kept-path';
+  path.setAttribute('aria-hidden', 'true');
+  path.append(dot);
+  Object.assign(path.style, {left: `${x0}px`, top: `${y0}px`});
+  document.body.append(path);
+  const lift = Math.min(140, Math.abs(x1 - x0) * .22);
+  path.animate([{transform: 'none'}, {transform: `translateX(${x1 - x0}px)`}], {duration: ms, easing: 'cubic-bezier(.5, 0, .3, 1)', fill: 'forwards'});
+  dot.animate([{transform: 'none', scale: .6}, {transform: `translateY(${Math.min(0, y1 - y0) - lift}px)`, scale: 1.2, offset: .45}, {transform: `translateY(${y1 - y0}px)`, scale: .7}],
+    {duration: ms, easing: 'ease-in-out', fill: 'forwards'})
+    .finished.then(() => { path.remove(); pop(icon, .12, 340); }, () => path.remove());
+}

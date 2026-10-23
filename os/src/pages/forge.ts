@@ -63,6 +63,10 @@ const saveBeside = (shown: string[]) => { try { localStorage.setItem(BESIDE_KEY,
 /** What a drag of a repo carries: its name, for the band and the center of this page alone. */
 const DRAGGED = 'application/x-length3-repo';
 const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+/** A box in the row is a repo's page (its name) or one file of it beside (name:path; a repo's name has no colon). */
+const repoOf = (key: string) => key.split(':')[0];
+const fileOf = (key: string) => (key.includes(':') ? key.slice(key.indexOf(':') + 1) : null);
+const keyOf = (repo: string, path: string) => `${repo}:${path}`;
 
 let made: {element: HTMLElement; enter(): void; drop(): void} | null = null;
 
@@ -111,6 +115,7 @@ function make(ctx: Context) {
       v.col.classList.toggle('first', at === 0);
       v.col.classList.toggle('last', at === shown.length - 1);
       v.col.classList.toggle('before', at >= 0 && repo !== null && at < shown.indexOf(repo));
+      v.col.classList.toggle('after', at >= 0 && repo !== null && at > shown.indexOf(repo));
     }
     work.element.classList.toggle('split-on', shown.length > 1);
     // The row slides so the box worked on stands in it whole and its neighbours' edges show past the frame's lines.
@@ -123,7 +128,20 @@ function make(ctx: Context) {
   };
   new ResizeObserver(([e]) => { if (e.contentRect.width) cols.style.setProperty('--cols-w', `${e.contentRect.width}px`); }).observe(cols);
 
-  const work = bench({strip, main: cols, reveal: (path, line, write) => void view()?.reader.reveal(path, line, write).then(() => track())});
+  // A place asked for in another file than the one a box beside holds is read in the repo's page, which comes in
+  // where that box stood (or is gone to, standing in the row already).
+  const revealAt = (path: string, line = 0, write = false) => {
+    const file = repo ? fileOf(repo) : null;
+    if (repo && file !== null && file !== path) {
+      const page = repoOf(repo);
+      if (!shown.includes(page)) { shown = showIn(shown, page, repo); viewOf(page); }
+      repo = null;
+      activate(page);
+      paintBand();
+    }
+    void view()?.reader.reveal(path, line, write).then(() => track());
+  };
+  const work = bench({strip, main: cols, reveal: (path, line, write) => revealAt(path, line, write)});
   // The Issue view with none open begins one for this repo on Git; Not now there comes back here.
   work.reference.writeIssue = (r) => { startIssue(r); ctx.go('git'); };
 
@@ -140,7 +158,7 @@ function make(ctx: Context) {
   // tree at its row (New file, New folder, Rename, Delete, as each allows); ⊕ after the pills (issue #49).
   const acts = h('button', {type: 'button', class: 'band-add band-acts', 'aria-label': t('Files: new, rename, delete'),
     title: t('Files: new, rename, delete')}, mark('files')) as HTMLButtonElement;
-  acts.addEventListener('click', () => { if (repo) ctx.actOn(repo, reading ?? ''); });
+  acts.addEventListener('click', () => { if (repo) ctx.actOn(repoOf(repo), reading ?? ''); });
   strip.append(acts, pills, add);
   const saveBand = () => { void setState('band', JSON.stringify(band)).catch(() => { /* the band is a convenience */ }); };
   /** Every repo: here, and only on the Remote (fetched when it comes out, as opening one from Home does). */
@@ -181,8 +199,8 @@ function make(ctx: Context) {
       });
       pill.addEventListener('dragend', () => { dragging = null; pill.classList.remove('lifted'); unhint(); });
       // The pill shows it (ink); its button says it, which is what is heard. Beside it, its outline in ink.
-      if (name === repo) { pill.setAttribute('aria-current', 'page'); open.setAttribute('aria-current', 'page'); }
-      else if (shown.includes(name)) pill.classList.add('beside');
+      if (repo && name === repoOf(repo)) { pill.setAttribute('aria-current', 'page'); open.setAttribute('aria-current', 'page'); }
+      else if (shown.some((k) => repoOf(k) === name)) pill.classList.add('beside');
       return pill;
     }));
     if (!still()) {
@@ -231,17 +249,21 @@ function make(ctx: Context) {
   };
 
   const takeOff = (name: string) => {
-    const r = removeFromBand(band, name, repo);
+    const r = removeFromBand(band, name, repo && repoOf(repo));
     band = r.band;
     saveBand();
-    // Off the band, its box goes from the row too; its place is not kept: brought out again, it opens at its top.
-    const c = closeBeside(shown, name, repo);
+    // Off the band, its boxes go from the row too (its page, and any file of it beside); their place is not kept:
+    // brought out again, it opens at its top.
+    let c: {shown: string[]; active: string | null} = {shown, active: repo};
+    for (const k of [...views.keys()].filter((k) => repoOf(k) === name)) {
+      c = closeBeside(c.shown, k, c.active);
+      views.get(k)?.col.remove();
+      views.delete(k);
+    }
     shown = c.shown;
-    views.get(name)?.col.remove();
-    views.delete(name);
     if (!r.active) { none(); return; }
-    const next = c.active && band.includes(c.active) ? c.active : r.active;
-    if (next !== repo || !shown.includes(next)) show(next); else { layout(); paintBand(); }
+    const next = c.active && band.includes(repoOf(c.active)) ? c.active : r.active;
+    if (shown.includes(next)) { if (next !== repo) { repo = null; activate(next); } else { layout(); paintBand(); } } else show(repoOf(next));
   };
 
   /** Nothing on the band: the center says how to bring a repo out (Server is laid over any page, not kept here). */
@@ -255,19 +277,27 @@ function make(ctx: Context) {
   };
 
   /** A repo's page, made the first time it is shown, or again once what it showed changed out of sight. */
+  /** What a box reads: the repo's whole page, or the one file it was opened beside for. */
+  const pageOf = (name: string, flow: HTMLElement) => {
+    const reader = new Reader(repoOf(name), flow, {beside: (path) => beside(keyOf(repoOf(name), path))});
+    const file = fileOf(name);
+    return {reader, root: file === null ? reader.directory('') : reader.only(file)};
+  };
   const viewOf = (name: string): View => {
     const had = views.get(name);
     if (had && !had.stale) return had;
     if (had) {
       // Read again: the page it was takes its place, in the same box.
-      const reader = new Reader(name, had.flow);
-      const v = {...had, reader, root: reader.directory(''), stale: false};
+      const v = {...had, ...pageOf(name, had.flow), stale: false};
       had.root.replaceWith(v.root);
       views.set(name, v);
       return v;
     }
     // Its head says whose it is and closes it, side by side only; pressed, or dragged along the row, it moves.
-    const label = h('button', {type: 'button', class: 'col-name'}, name);
+    // A file beside says its repo quietly, then its name (its whole path when pointed at).
+    const file = fileOf(name);
+    const label = h('button', {type: 'button', class: 'col-name', title: file ?? name},
+      ...(file === null ? [name] : [h('span', {class: 'col-repo'}, repoOf(name)), file.split('/').at(-1)!]));
     label.addEventListener('click', () => activate(name));
     const close = h('button', {type: 'button', class: 'col-close', 'aria-label': t('Close {name} beside', {name})}, mark('close'));
     close.addEventListener('click', () => closeCol(name));
@@ -278,11 +308,10 @@ function make(ctx: Context) {
       dragging = name;
     });
     head.addEventListener('dragend', () => { dragging = null; unhint(); });
-    const flow = h('section', {class: 'flow', tabindex: '0', 'aria-label': t('The files of {name}', {name})});
-    const col = h('div', {class: 'col', 'data-repo': name, hidden: ''}, head, flow);
+    const flow = h('section', {class: 'flow', tabindex: '0', 'aria-label': file === null ? t('The files of {name}', {name}) : `${repoOf(name)}/${file}`});
+    const col = h('div', {class: `col${file === null ? '' : ' col-file'}`, 'data-repo': repoOf(name), 'data-key': name, hidden: ''}, head, flow);
     cols.append(col);
-    const reader = new Reader(name, flow);
-    const root = reader.directory('');
+    const {reader, root} = pageOf(name, flow);
     flow.append(root);
     const v = {col, flow, reader, root, top: 0, stale: false};
     views.set(name, v);
@@ -293,9 +322,9 @@ function make(ctx: Context) {
   const activate = (name: string) => {
     if (name === repo || !shown.includes(name)) return;
     repo = name;
-    known = name;
-    ctx.remember(name);
-    work.setRepo(name);
+    known = repoOf(name);
+    ctx.remember(repoOf(name));
+    work.setRepo(repoOf(name));
     layout();
     paintBand();
     track();
@@ -310,8 +339,8 @@ function make(ctx: Context) {
 
   /** `name` opened beside what is shown (at `at`, an index among the boxes), and worked on. */
   const beside = (name: string, at?: number) => {
-    if (matchMedia('(max-width: 760px)').matches) { show(name); return; }
-    band = addToBand(band, name);
+    if (matchMedia('(max-width: 760px)').matches) { show(repoOf(name), fileOf(name) ?? ''); return; }
+    band = addToBand(band, repoOf(name));
     saveBand();
     const before = shown;
     shown = openBeside(shown, name, repo, at);
@@ -384,7 +413,7 @@ function make(ctx: Context) {
     const d = dropAt(event.clientX);
     const box = cols.getBoundingClientRect();
     const r = d.over?.getBoundingClientRect() ?? box;
-    const left = d.instead ? r.left : d.at <= shown.indexOf(d.over?.dataset.repo ?? '') ? r.left : r.left + r.width / 2;
+    const left = d.instead ? r.left : d.at <= shown.indexOf(d.over?.dataset.key ?? '') ? r.left : r.left + r.width / 2;
     const width = d.instead ? r.width : r.width / 2;
     Object.assign(hint.style, {left: `${left - box.left}px`, width: `${width}px`});
     hint.dataset.how = d.instead ? 'instead' : 'beside';
@@ -439,12 +468,12 @@ function make(ctx: Context) {
   cols.addEventListener('pointerdown', (event) => {
     const el = event.target as HTMLElement;
     const c = el.closest<HTMLElement>('.col');
-    if (c?.dataset.repo && !el.closest('.col-close')) activate(c.dataset.repo);
+    if (c?.dataset.key && !el.closest('.col-close')) activate(c.dataset.key);
   }, true);
   cols.addEventListener('focusin', (event) => {
     const el = event.target as HTMLElement;
     const c = el.closest<HTMLElement>('.col');
-    if (c?.dataset.repo && !el.closest('.col-close')) activate(c.dataset.repo);
+    if (c?.dataset.key && !el.closest('.col-close')) activate(c.dataset.key);
   });
   // Swiped sideways over the row (a trackpad, or Shift and the wheel), the next box along is the one worked on: one
   // box a swipe, however long the swipe, so it never runs past where it was meant to stop.
@@ -498,7 +527,7 @@ function make(ctx: Context) {
       activate(name);
       v.flow.scrollTop = v.top;
       // Coming into a box another stood in, it slides in from the side its pill is on along the band.
-      if (fresh && from) arrive(v.flow, Math.sign(band.indexOf(name) - band.indexOf(from)), 'x', 32, 260);
+      if (fresh && from) arrive(v.flow, Math.sign(band.indexOf(name) - band.indexOf(repoOf(from))), 'x', 32, 260);
     }
     paintBand();
     // A file just made (from File) is read in now, so the caret lands in it, not in the page about to be read again.
@@ -543,8 +572,8 @@ function make(ctx: Context) {
     const was = views.get(repo);
     if (!was) return;
     const top = was.top;
-    const reader = new Reader(repo, was.flow);
-    const fresh = {...was, reader, root: reader.directory(''), top, stale: false};
+    const {reader, root} = pageOf(repo, was.flow);
+    const fresh = {...was, reader, root, top, stale: false};
     // The file being written keeps the keyboard and its caret through the page read again.
     const writing = document.activeElement instanceof HTMLTextAreaElement && was.root.contains(document.activeElement) ? document.activeElement : null;
     const at = writing?.closest<HTMLElement>('section.file')?.dataset.path;
@@ -555,12 +584,14 @@ function make(ctx: Context) {
     if (writing && at) void reader.refocus(at, writing.selectionStart, writing.selectionEnd);
   };
   const offChange = onChange((c) => {
-    const v = views.get(c.repo);
-    if (!v || !v.reader.take(c)) return;
-    // Beside the one worked on, a box shown is read again as it stands; one out of sight, when it is shown.
-    if (c.repo !== repo) { if (shown.includes(c.repo)) { v.stale = true; viewOf(c.repo); layout(); } else v.stale = true; return; }
-    clearTimeout(again);
-    again = window.setTimeout(() => readAgain(), 150);
+    // Every box of the repo hears it: its page, and each file of it beside.
+    for (const [key, v] of [...views]) {
+      if (repoOf(key) !== c.repo || !v.reader.take(c)) continue;
+      // Beside the one worked on, a box shown is read again as it stands; one out of sight, when it is shown.
+      if (key !== repo) { if (shown.includes(key)) { v.stale = true; viewOf(key); layout(); } else v.stale = true; continue; }
+      clearTimeout(again);
+      again = window.setTimeout(() => readAgain(), 150);
+    }
   });
 
   // What the Remote holds is learnt a moment after: ⊕ counts it once it is. The pills stay as they
@@ -583,9 +614,9 @@ function make(ctx: Context) {
       all = repos.map((r) => r.name);
       band = parseBand(first ? getState('band') : JSON.stringify(band), all, ctx.repo);
       first = false;
-      for (const name of [...views.keys()]) if (!all.includes(name)) { views.get(name)?.col.remove(); views.delete(name); }
+      for (const name of [...views.keys()]) if (!all.includes(repoOf(name))) { views.get(name)?.col.remove(); views.delete(name); }
       // What stood side by side, as far as it is still on the band.
-      shown = shown.filter((n) => band.includes(n));
+      shown = shown.filter((n) => band.includes(repoOf(n)));
       for (const n of shown) viewOf(n);
       const asked = pending;
       pending = null;
@@ -593,10 +624,10 @@ function make(ctx: Context) {
       known = ctx.repo;
       // Opened for a repo (from File, Home or a new repo), or one chosen to work on elsewhere: it goes on the band.
       if (ctx.repo && all.includes(ctx.repo) && (asked || chosen)) { show(ctx.repo, asked?.path ?? '', asked?.write ?? false); return; }
-      if (repo && all.includes(repo) && shown.includes(repo)) { layout(); paintBand(); track(); return; }
+      if (repo && all.includes(repoOf(repo)) && shown.includes(repo)) { layout(); paintBand(); track(); return; }
       repo = null;
       const open = ctx.repo && band.includes(ctx.repo) ? ctx.repo : shown[0] ?? band[0];
-      if (open) show(open); else none();
+      if (open && fileOf(open) !== null) { activate(open); paintBand(); track(); } else if (open) show(open); else none();
     });
   };
   // Forge's head is its band; its name is still the page's heading, for those who hear the page.

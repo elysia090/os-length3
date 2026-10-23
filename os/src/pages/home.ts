@@ -21,8 +21,7 @@ export const currentProfile = (): Profile => parse(getState('profile'));
 /** Open Home with the profile form out. */
 export function startEditing(ctx: Context) {
   editing = true;
-  ctx.go('home');
-  document.getElementById('profile-name')?.focus();
+  void ctx.go('home').then(() => document.getElementById('profile-name')?.focus());
 }
 
 /** Home: a profile that reads the same for its owner and for anyone else. */

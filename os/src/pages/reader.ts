@@ -4,6 +4,9 @@ import {t} from '../i18n.ts';
 import {lineCount, readingOrder} from '../reading.ts';
 import {store, type Change, type Entry} from '../repos.ts';
 import {answers} from './common.ts';
+import {mark} from '../icons.ts';
+import {keep as goesTo} from '../glide.ts';
+import {connection} from '../remote.ts';
 import {diffFiles} from './diff-view.ts';
 
 // The center of Forge: one repo read top to bottom as an endless page. Each
@@ -91,14 +94,22 @@ export class Reader {
   private flow: HTMLElement;
   /** The repo's own page in the flow (the flow holds every repo's, the others hidden). */
   private root: HTMLElement | null = null;
+  /** The one file read, in a box beside the repo's page (only()); null for the whole page. */
+  private single: string | null = null;
+  /** Each file's head opens it beside, in a box of its own, when this is given. */
+  private beside: ((path: string) => void) | null;
 
-  constructor(repo: string, flow: HTMLElement) { this.repo = repo; this.flow = flow; }
+  constructor(repo: string, flow: HTMLElement, opts: {beside?(path: string): void} = {}) {
+    this.repo = repo; this.flow = flow; this.beside = opts.beside ?? null;
+  }
 
   /**
    * A change made through the store: an open file takes the new text; true
    * when the page must be read again (a file or directory came or went).
    */
   take(c: Change): boolean {
+    // One file alone is not read again for another's change.
+    if (this.single !== null && c.what === 'file' && c.path !== this.single) return false;
     if (c.what !== 'file') return true;
     const taker = this.takers.get(c.path);
     if (taker) { taker(c.text ?? ''); return false; }
@@ -189,6 +200,19 @@ export class Reader {
     return section;
   }
 
+  /** One file alone, for a box beside the repo's page: its box as the page draws it, or that it is gone. */
+  only(path: string): HTMLElement {
+    const section = h('section', {class: 'dir only', 'data-path': path}, h('p', {class: 'muted'}, '…'));
+    this.root = section;
+    this.single = path;
+    const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+    void store.tree(this.repo, dir).then((entries) => {
+      const e = entries.find((x) => x.kind !== 'dir' && join(dir, x.name) === path);
+      section.replaceChildren(e ? this.file(path, e) : h('div', {class: 'empty'}, t('{path} is not there any more', {path})));
+    }, (err: unknown) => section.replaceChildren(h('p', {class: 'muted'}, String(err))));
+    return section;
+  }
+
   private async fill(path: string, section: HTMLElement) {
     let entries: Entry[];
     try { entries = await store.tree(this.repo, path); } catch (e) { section.replaceChildren(h('p', {class: 'muted'}, String(e))); return; }
@@ -204,6 +228,14 @@ export class Reader {
     const state = h('span', {class: 'file-state', role: 'status'});
     // The heading is the file's place in "/": the repo part quiet, the rest plain.
     const head = h('h2', {class: 'path'}, h('span', {}, h('span', {class: 'muted'}, `/root/${this.repo}/`), path), state);
+    // Beside, in a box of its own: from its head's button, or Ctrl+click (⌘) on the head, as a link opens a tab.
+    const beside = this.beside;
+    if (beside && this.single === null) {
+      const open = h('button', {type: 'button', class: 'file-beside', 'aria-label': t('Open {path} beside', {path}), title: t('Open beside')}, mark('beside'));
+      open.addEventListener('click', () => beside(path));
+      head.append(open);
+      head.addEventListener('click', (event) => { if ((event.ctrlKey || event.metaKey) && !(event.target as Element).closest('button')) beside(path); });
+    }
     const section = h('section', {class: 'file', 'data-path': path}, head);
     this.sections.set(path, section);
     const gutter = h('pre', {class: 'gutter', 'aria-hidden': 'true'});
@@ -313,6 +345,8 @@ export class Reader {
           await store.write(this.repo, path, text);
           held.wrote(text);
           state.textContent = area.value === held.saved ? '' : t('Unsaved');
+          // Saved: it goes where it is kept, this device's (Runtime) or the Remote's once signed in.
+          goesTo(head, connection() ? 'remote' : 'runtime');
         } catch (e) {
           state.textContent = t('Could not save: {message}', {message: e instanceof Error ? e.message : String(e)});
         }

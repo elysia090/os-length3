@@ -3,6 +3,7 @@ import {t} from '../i18n.ts';
 import {getState, setState} from '../state.ts';
 import * as todo from '../todo.ts';
 import {errorText} from '../errors.ts';
+import {arrive, pop} from '../glide.ts';
 
 // The TODO box, Home's and each server board's: the same list, kept in
 // different places (Home's state; the Remote, for a board's people). Each
@@ -101,10 +102,16 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
   const paint = (td: todo.Todo) => {
     const r = rows.get(td.id)!;
     // Shown as it is written, "Fix：", so the format reads off the screen.
+    // Its kind read off the line as it is typed ("Fix:"): the word takes its form with a pop, understood.
+    const understood = !!td.kind && r.kind.hidden && r.item.isConnected;
     r.kind.replaceChildren(...(td.kind ? kindWords(td.kind) : []));
     r.kind.hidden = !td.kind;
+    if (understood) pop(r.kind, .1, 300);
+    // Done just now: its mark pops and settles, the reward for it, once.
+    const now = td.done && !r.item.classList.contains('done') && r.item.isConnected;
     r.item.classList.toggle('done', td.done);
     r.button.replaceChildren(mark(td.done));
+    if (now) pop(r.button);
     r.button.setAttribute('aria-pressed', String(td.done));
     r.button.setAttribute('aria-label', td.done ? t('Mark as not done') : t('Mark as done'));
     r.meta.textContent = todo.filled(td) ? date(td.created) : '';
@@ -116,6 +123,8 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
     items = r.list;
     render();
     caret(rows.get(r.id)!.title, 'end');
+    // It unfolds from the line it was started from.
+    arrive(rows.get(r.id)!.item, -1, 'y', 10, 220);
   };
 
   const build = (td: todo.Todo): HTMLElement => {
