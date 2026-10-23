@@ -438,6 +438,16 @@ export const member = pgTable('server_member', {
 }, (t) => [primaryKey({columns: [t.serverId, t.userId]}), index('server_member_user_idx').on(t.userId),
   uniqueIndex('server_member_owner_idx').on(t.serverId).where(sql`${t.owner}`)]);
 
+/**
+ * Who left a server, or was removed from it, and when: an invitation sent before then (a message about it,
+ * inbox.ts) takes them in no more; only one sent after does. Goes with the server or the account.
+ */
+export const serverLeft = pgTable('server_left', {
+  serverId: text('server_id').notNull().references(() => server.id, {onDelete: 'cascade'}),
+  userId: owner(),
+  at: moment('at').defaultNow().notNull(),
+}, (t) => [primaryKey({columns: [t.serverId, t.userId]})]);
+
 /** How far a board reaches past its people: theirs alone, read by anyone, or written in by guests too. */
 export const REACH = {people: 0, open: 1, guests: 2} as const;
 

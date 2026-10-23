@@ -156,7 +156,7 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       .leftJoin(repoPublic, and(eq(repoPublic.repoId, repo.id), isNull(repoPublic.releasedAt)))
       .where(eq(repoShare.serverId, serverId)).orderBy(repoShare.sharedAt) as
       {userId: string; name: string; owner: string | null; at: Date | null; face: string | null; faceName: string | null; asServer: string | null}[];
-    return list.map((r) => ({owner: r.owner ?? '', name: r.name, at: r.at?.getTime() ?? null, mine: r.userId === me,
+    return list.map((r) => ({owner: r.owner ?? '', ownerId: `id:${r.userId}`, name: r.name, at: r.at?.getTime() ?? null, mine: r.userId === me,
       as: r.face ? `${r.face}:${r.faceName}` : null, asServer: r.asServer}));
   };
 
@@ -181,7 +181,8 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const me = c.get('userId'), id = c.req.param('id');
     const [r] = await rows<{owner: boolean; repo: number | null; them: string | null}>(db, sql`select m.owner, t.user_id as them, r.id as repo
       from server_member m join server s on s.id = m.server_id and s.gone_at is null
-      left join server_member t on t.server_id = m.server_id and t.user_id = (select a.user_id from address a where a.address = ${c.req.param('owner').toLowerCase()})
+      left join server_member t on t.server_id = m.server_id and t.user_id = ${c.req.param('owner').startsWith('id:') ? sql`${c.req.param('owner').slice(3)}`
+        : sql`(select a.user_id from address a where a.address = ${c.req.param('owner').toLowerCase()})`}
       left join repo r on r.user_id = t.user_id and r.name = ${c.req.param('name')}
       where m.server_id = ${id} and m.user_id = ${me}`);
     if (!r) return c.json({error: 'No such server of yours'}, 404);

@@ -139,8 +139,8 @@ export function createApp(d: Deps) {
   files({db, bucket, raw: d.bucket, quota: d.quota, budget, edge: d.edge}, v1, app);
   repos({db, quota: d.quota, plans: plan, offKey: key('off-code')}, v1);
   homeRoutes({db}, v1);
-  inbox({db, domain, baseURL: d.baseURL ?? '', secret: key('domain-proof'), txt: d.txt, recheck: d.recheck, plans: plan}, v1, app);
-  servers({db, domain, appOrigin: d.appOrigin, secret: key('invite'), closed, plans: plan}, v1, app);
+  const names = inbox({db, domain, baseURL: d.baseURL ?? '', secret: key('domain-proof'), txt: d.txt, recheck: d.recheck, plans: plan}, v1, app);
+  servers({db, domain, appOrigin: d.appOrigin, secret: key('invite'), closed, plans: plan, proven: names.proven}, v1, app);
   planRoutes({db, plans: plan, origins: d.origins, appOrigin: d.appOrigin, now: d.now}, v1, app);
   news({db}, v1);
   sshRoutes({db}, v1);

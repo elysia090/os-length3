@@ -3,8 +3,10 @@ import {test} from 'node:test';
 import {sql} from 'drizzle-orm';
 import {Hono} from 'hono';
 import {LIMITS} from './budget.ts';
+import {GRACE, type PlanConfig} from './plan.ts';
+import {sweep} from './sweep.ts';
 import {failed, sha256} from './request.ts';
-import {APP, count, enc, service} from './testing.ts';
+import {accept, APP, count, enc, fakeStripe, idOf, named, sendEvent, service, stripeEvent, subscription} from './testing.ts';
 
 // What the server-side audit found, each held here so it stays fixed: who a request is, what R2 is asked, and
 // how the Remote answers when its database is not there.
@@ -76,4 +78,81 @@ test('a commit\'s going is checked by index, so a repo of many commits goes in t
   const names = ((await s.db.execute(sql`select indexname from pg_indexes where tablename = 'cut'`)).rows as {indexname: string}[]).map((r) => r.indexname);
   for (const i of ['cut_parent_idx', 'cut_merged_idx']) assert.ok(names.includes(i), i);
   void APP;
+});
+
+// ---- servers, names, the plan ----
+
+const asked = async (s: Awaited<ReturnType<typeof service>>, ren: string, mio: string) => {
+  await named(s, [ren, 'ren'], [mio, 'mio']);
+  const made = await s.call('POST', '/v1/servers', {token: ren, body: {name: 'Trip'}});
+  return {sid: made.json.id as string, bid: (made.json.boards as {id: string}[])[0].id};
+};
+
+test('one removed from a server is not taken back by the invitation they had, only by a new one', async () => {
+  const s = await service();
+  const ren = await s.start('Ren'), mio = await s.start('Mio');
+  const {sid, bid} = await asked(s, ren, mio);
+  assert.equal((await s.call('POST', '/v1/inbox/messages', {token: ren, body: {to: 'mio@length3.test', body: 'join', target: {server: sid}}})).status, 201);
+  await accept(s, mio, 'ren@length3.test');
+  assert.equal((await s.call('GET', `/v1/boards/${bid}/posts`, {token: mio})).status, 200);
+  assert.equal((await s.call('DELETE', `/v1/servers/${sid}/people/mio@length3.test`, {token: ren})).status, 204);
+  await accept(s, mio, 'ren@length3.test');
+  assert.equal((await s.call('GET', `/v1/boards/${bid}/posts`, {token: mio})).status, 404);
+});
+
+test('one with no name left is still removed, by the id the people list gives', async () => {
+  const s = await service();
+  const ren = await s.start('Ren'), mio = await s.start('Mio');
+  await named(s, [ren, 'ren'], [mio, 'mio']);
+  await accept(s, ren, 'mio@length3.test'); await accept(s, mio, 'ren@length3.test');
+  const made = await s.call('POST', '/v1/servers', {token: ren, body: {name: 'Trip'}});
+  const sid = made.json.id as string, bid = (made.json.boards as {id: string}[])[0].id;
+  await s.call('POST', `/v1/servers/${sid}/people`, {token: ren, body: {address: 'mio@length3.test'}});
+  assert.equal((await s.call('DELETE', '/v1/inbox/addresses/mio@length3.test', {token: mio})).status, 200);
+  await s.db.execute(sql`update address set released_at = now() - interval '31 days' where address = 'mio@length3.test'`);
+  await sweep(s.db, s.files);
+  const people = (await s.call('GET', `/v1/servers/${sid}/people`, {token: ren})).json as unknown as {address: string; id: string}[];
+  const nameless = people.find((p) => !p.address)!;
+  assert.equal((await s.call('DELETE', `/v1/servers/${sid}/people/${encodeURIComponent(nameless.id)}`, {token: ren})).status, 204);
+  assert.equal((await s.call('GET', `/v1/boards/${bid}/posts`, {token: mio})).status, 404);
+});
+
+test('a TODO item\'s moment out of what a bigint holds is taken as now, not a 500', async () => {
+  const s = await service();
+  const ren = await s.start('Ren');
+  await named(s, [ren, 'ren']);
+  const bid = ((await s.call('POST', '/v1/servers', {token: ren, body: {name: 'Trip'}})).json.boards as {id: string}[])[0].id;
+  assert.equal((await s.call('PUT', `/v1/boards/${bid}/todos/a1`, {token: ren, body: {title: 'x', place: 1, created: 1e300}})).status, 201);
+});
+
+test('a name on a domain whose DNS no longer names its holder writes nothing and makes no server', async () => {
+  const s = await service();
+  const ren = await s.start('Ren'), mio = await s.start('Mio');
+  await named(s, [ren, 'ren']);
+  const rec = (await s.call('GET', '/v1/inbox/domains/example.org', {token: mio})).json as unknown as {value: string};
+  s.publish('_length3.example.org', rec.value);
+  assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'mio', domain: 'example.org'}})).status, 201);
+  s.unpublish('_length3.example.org');
+  assert.equal((await s.call('POST', '/v1/servers', {token: mio, body: {name: 'Club', address: 'club@example.org'}})).status, 400);
+  assert.equal((await s.call('POST', '/v1/inbox/messages', {token: mio, body: {to: 'ren', from: 'mio@example.org', body: 'hi'}})).status, 409);
+});
+
+test('Stripe: incomplete of the same second does not undo active; a failure delivered late does not spend the next one\'s grace', async () => {
+  const st = fakeStripe();
+  const PLAN: PlanConfig = {free: {repos: 2, bytes: 4096, names: 1}, grace: GRACE};
+  const s = await service({}, {plan: PLAN, billing: st.billing});
+  const t = await s.start('Ren');
+  const user = await idOf(s, t);
+  const now = Math.floor(Date.now() / 1000);
+  await sendEvent(s, stripeEvent('customer.subscription.updated', subscription(user, {status: 'active'}), {created: now}));
+  await sendEvent(s, stripeEvent('customer.subscription.created', subscription(user, {status: 'incomplete'}), {created: now}));
+  assert.equal((await s.call('GET', '/v1/plan', {token: t})).json.plan, 'paid');
+  const t2 = await s.start('Mio');
+  const u2 = await idOf(s, t2);
+  const cus = subscription(u2).customer;
+  await sendEvent(s, stripeEvent('customer.subscription.created', subscription(u2), {created: now - 100}));
+  await sendEvent(s, stripeEvent('invoice.paid', {object: 'invoice', customer: cus}, {created: now - 10}));
+  await sendEvent(s, stripeEvent('invoice.payment_failed', {object: 'invoice', customer: cus}, {created: now - 20 * 86400}));
+  await sendEvent(s, stripeEvent('customer.subscription.updated', subscription(u2, {status: 'past_due'}), {created: now}));
+  assert.equal((await s.call('GET', '/v1/plan', {token: t2})).json.plan, 'paid');
 });
