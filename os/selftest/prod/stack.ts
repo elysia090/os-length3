@@ -117,6 +117,9 @@ export function appBuild(): string {
 
 let made = 0;
 /** A production-like Remote on `pg`, started. */
+/** Worker roles made on this machine so far (their names, by the moment and this count, never meet). */
+let roles = 0;
+
 export async function remote(pg: Cluster, o: RemoteOptions): Promise<Remote> {
   mkdirSync(o.dir, {recursive: true});
   const port = o.port ?? await freePort();
@@ -129,12 +132,13 @@ export async function remote(pg: Cluster, o: RemoteOptions): Promise<Remote> {
   const reached = await reach(pg.ownerUrl(db));
   const own = owner(pg.ownerUrl(db));
   const password = randomBytes(18).toString('hex');
-  let waiting: string | null = null;
+  let waiting: string | null = null, role = '';
   try {
     waiting = await migrateBeforeWorker(own.db);
-    await workerRole(own.db, password);
-    // remote_worker connects to this database (Neon's role may connect to its own; here, said so).
-    await own.db.execute(sql.raw(`grant connect on database "${db}" to remote_worker`));
+    // A role of its own for each Remote on this cluster (roles are the cluster's), named as deploy.ts names them.
+    role = await workerRole(own.db, password, `remote_worker_${String(Date.now() * 10 + (++roles % 10)).padStart(14, '0').slice(-14)}`);
+    // It connects to this database (Neon's role may connect to its own; here, said so).
+    await own.db.execute(sql.raw(`grant connect on database "${db}" to ${role}`));
     if (o.paid) await own.db.execute(sql.raw(`create function selftest_paid() returns trigger language plpgsql as $$ begin
         insert into plan (user_id, customer, subscription, status, period_end) values (new.id, 'cus_selftest' || md5(new.id), 'sub_selftest' || md5(new.id), 'active', now() + interval '365 days');
         return new; end $$`));
@@ -143,7 +147,7 @@ export async function remote(pg: Cluster, o: RemoteOptions): Promise<Remote> {
     await own.pool.end();
     await reached.close();
   }
-  const databaseUrl = `postgresql://remote_worker:${password}@127.0.0.1:${pg.port}/${db}`;
+  const databaseUrl = `postgresql://${role}:${password}@127.0.0.1:${pg.port}/${db}`;
 
   const p = production();
   const vars: Record<string, string> = {...p.vars, BASE_URL: url, APP_ORIGIN: url, DOMAIN: 'length3.test',

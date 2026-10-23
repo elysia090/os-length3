@@ -428,8 +428,11 @@ the running Worker still reads is a contract step, tagged `NNNN_contract_…`
 (`drizzle-kit generate --name contract_…`): a deploy runs the migrations
 before it, ships the Worker, and runs it once the new Worker answers
 (`service/stages.ts`). The service connects as
-`remote_worker`, a member of `remote_app`, which reads and writes rows and
-nothing else. What each part of it does, its routes and tables, and which
+`remote_worker_<when>`, a member of `remote_app`, which reads and writes rows
+and nothing else: a role the deploy makes new for each new `DATABASE_URL`
+(never one changed: Neon's owner is no superuser), dropping the ones before it
+once the new Worker answers. A failure making it says its step and SQLSTATE,
+never the statement (which holds the password). What each part of it does, its routes and tables, and which
 of them the app and l3 need: `service/README.md`.
 
 ```
