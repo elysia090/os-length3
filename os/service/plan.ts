@@ -218,9 +218,13 @@ export async function apply(tx: Db, event: {type: string; created: number; data:
       // already paying (made as incomplete, then active, is one Checkout). Nor does another subscription than the
       // one this account has and pays for (two Checkouts in two tabs) take its place, nor its end end the one paid for.
       const unmade = status === 'incomplete' || status === 'incomplete_expired';
+      // One being paid for takes the place of one whose payment failed (paid again past its grace): before, the new
+      // one was heard and kept out, and the account stayed free while it paid.
+      const paying = status === 'active' || status === 'trialing';
       await tx.insert(plan).values({userId, ...set}).onConflictDoUpdate({target: plan.userId, set,
         setWhere: sql`(${plan.eventAt} is null or ${plan.eventAt} < ${at} or (${plan.eventAt} = ${at}${unmade ? sql` and ${plan.status} not in ('active', 'trialing')` : sql``}))
-          and (${plan.subscription} is null or ${plan.subscription} = ${id} or ${plan.status} is null or ${plan.status} not in ('active', 'trialing', 'past_due'))`});
+          and (${plan.subscription} is null or ${plan.subscription} = ${id} or ${plan.status} is null
+            or ${plan.status} not in ('active', 'trialing'${paying ? sql`` : sql`, 'past_due'`}))`});
       return;
     }
     case 'invoice.payment_failed': {
@@ -271,6 +275,11 @@ export function planRoutes(d: PlanDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     if (await p.paid(db, me)) return c.json({error: 'This account is on the paid plan already'}, 409);
     // One subscription an account: one being made (a Checkout in another tab) is finished, or runs out, first.
     const was = await p.rowOf(db, me);
+    // A subscription whose payment failed is paid in the portal (its card changed), not by a second one beside it,
+    // which Stripe would bill as well as the first it still tries.
+    if (was?.status === 'past_due' || was?.status === 'unpaid') {
+      return c.json({error: 'The payment for this account\'s subscription failed; change how it is paid in Manage', manage: true}, 409);
+    }
     if (was?.status === 'incomplete' && was.eventAt && Date.now() - new Date(was.eventAt).getTime() < 86_400_000) {
       return c.json({error: 'A subscription is being made for this account; finish it, or try again tomorrow'}, 409);
     }

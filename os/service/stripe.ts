@@ -55,16 +55,19 @@ export function stripeRest(key: string, price: string, f: typeof fetch = fetch):
   };
   return {
     customer: async ({user, email, name}) => (await post('customers', {email, name, metadata: {user}}, `customer-${user}`)).id,
+    // Asked twice from the same page within ten minutes (a double click, a retry after a lost answer), it is the same
+    // Checkout, not two, each of which could be paid for (two subscriptions, billed both).
     checkout: async ({customer, user, success, cancel}) => (await post('checkout/sessions', {
       mode: 'subscription', customer, client_reference_id: user, success_url: success, cancel_url: cancel,
       line_items: {0: {price, quantity: 1}}, subscription_data: {metadata: {user}}, metadata: {user},
-    })).url ?? '',
+    }, `checkout-${user}-${Math.floor(Date.now() / 600_000)}-${(await sha(`${success}\n${cancel}`)).slice(0, 16)}`)).url ?? '',
     portal: async ({customer, back}) => (await post('billing_portal/sessions', {customer, return_url: back})).url ?? '',
   };
 }
 
 const enc = new TextEncoder();
 const hex = (b: ArrayBuffer) => [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, '0')).join('');
+const sha = async (text: string) => hex(await crypto.subtle.digest('SHA-256', enc.encode(text)));
 async function hmac(secret: string, text: string): Promise<string> {
   const k = await crypto.subtle.importKey('raw', enc.encode(secret), {name: 'HMAC', hash: 'SHA-256'}, false, ['sign']);
   return hex(await crypto.subtle.sign('HMAC', k, enc.encode(text)));

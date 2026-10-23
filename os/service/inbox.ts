@@ -28,7 +28,7 @@ import {HTTPException} from 'hono/http-exception';
 import {byCode, claim, codeOf, HOLD, kept, live, release} from './names.ts';
 import type {Plans} from './plan.ts';
 import {hmacHex, same} from './keys.ts';
-import {ago, body, lock, ms, refuse, rows, slowDown, type Db, type Vars} from './request.ts';
+import {ago, body, lock, ms, refuse, rows, slowDown, UUID, type Db, type Vars} from './request.ts';
 import {address, contact, message, server, signal, throttle} from './schema.ts';
 
 export const INBOX = {
@@ -299,7 +299,9 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
 
   v1.post('/inbox/messages', async (c) => {
     const me = c.get('userId');
-    const b = await body<{to?: unknown; from?: unknown; type?: unknown; target?: unknown; body?: unknown}>(c);
+    const b = await body<{id?: unknown; to?: unknown; from?: unknown; type?: unknown; target?: unknown; body?: unknown}>(c);
+    // The sender's own id for it (a UUID), so sending it again (an answer lost on the way) is the same message, not two.
+    if (b?.id !== undefined && (typeof b.id !== 'string' || !UUID.test(b.id.toLowerCase()))) return c.json({error: 'An id is a UUID'}, 400);
     const text = typeof b?.body === 'string' ? b.body.trim() : '';
     if (!text || text.length > INBOX.body) return c.json({error: 'A message is at most 4000 characters'}, 400);
     const type = TYPES.includes(b?.type as typeof TYPES[number]) ? b!.type as string : 'message';
@@ -320,9 +322,15 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
     // What this sender sent within the hour, what waits unread from them, and from anyone they have not accepted: one read,
     // and the message written, under the sender's lock, so messages sent at once are counted one by one.
     const hour = new Date(Date.now() - 3600_000);
-    const id = crypto.randomUUID();
+    const id = (b?.id as string | undefined)?.toLowerCase() ?? crypto.randomUUID();
     await db.transaction(async (tx: Db) => {
       await lock(tx, `messages:${me}`);
+      if (b?.id !== undefined) {
+        const [had] = await rows<{from_user: string}>(tx, sql`select from_user from message where id = ${id}`);
+        if (had && had.from_user !== me) refuse(409, {error: 'That id is taken'});
+        // Sent already: nothing is counted or written again.
+        if (had) return;
+      }
       const [n] = await rows<{sent: number; pair: number; waiting: number}>(tx, sql`select
         (select count(*)::int from message where from_user = ${me} and created_at > ${hour}) as sent,
         (select count(*)::int from message where from_user = ${me} and to_user = ${to.userId} and read_at is null) as pair,
@@ -394,6 +402,8 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
     const b = await body<{address?: unknown; state?: unknown}>(c);
     const to = await resolve(me, typeof b?.address === 'string' ? b.address : '');
     if (!('userId' in to)) return c.json({error: to.why}, 404);
+    // Said, it is one of the three (a word mistyped was taken as accepted); not said, accepted, as before.
+    if (b?.state !== undefined && !['accepted', 'blocked', 'none'].includes(b.state as string)) return c.json({error: 'accepted, blocked or none'}, 400);
     const state = b?.state === 'blocked' ? 'blocked' : b?.state === 'none' ? null : 'accepted';
     if (!state) await db.delete(contact).where(and(eq(contact.userId, me), eq(contact.peer, to.userId)));
     else await db.insert(contact).values({userId: me, peer: to.userId, state}).onConflictDoUpdate({target: [contact.userId, contact.peer], set: {state}});
@@ -412,9 +422,14 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
     if (rel.mine !== 'accepted' || rel.theirs !== 'accepted') return c.json({error: 'Live chat is between accepted contacts'}, 403);
     const data = typeof b?.data === 'string' ? b.data : '';
     if (!['offer', 'answer', 'candidate', 'bye'].includes(String(b?.kind)) || data.length > INBOX.signal || typeof b?.session !== 'string' || b.session.length > 64) return c.json({error: 'a signal'}, 400);
-    const [{n}] = await db.select({n: sql<number>`count(*)::int`}).from(signal).where(and(eq(signal.from, me), gt(signal.createdAt, new Date(Date.now() - 60_000))));
-    if (n >= INBOX.signalsPerMinute) slowDown(60, {error: 'too many'});
-    await db.insert(signal).values({id: crypto.randomUUID(), to: to.userId, from: me, session: b.session, kind: String(b.kind), data});
+    const session = b.session;
+    // Counted and put in under the sender's lock: sent at once, they cannot pass the minute's together.
+    await db.transaction(async (tx: Db) => {
+      await lock(tx, `signals:${me}`);
+      const [{n}] = await tx.select({n: sql<number>`count(*)::int`}).from(signal).where(and(eq(signal.from, me), gt(signal.createdAt, new Date(Date.now() - 60_000))));
+      if (n >= INBOX.signalsPerMinute) slowDown(60, {error: 'too many'});
+      await tx.insert(signal).values({id: crypto.randomUUID(), to: to.userId, from: me, session, kind: String(b.kind), data});
+    });
     return c.json({sent: true}, 201);
   });
 

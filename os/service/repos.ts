@@ -38,7 +38,7 @@ import {and, desc, eq, inArray, isNull, ne, sql} from 'drizzle-orm';
 import type {Context, Hono} from 'hono';
 import type {Plans} from './plan.ts';
 import {hmacHex, same as sameText} from './keys.ts';
-import {ago, body, fits as fitsIn, HEX, LIMIT, lock, ms, qualified, refuse, rows, sha256, slowDown, type Db, type Vars} from './request.ts';
+import {ago, body, fits as fitsIn, HEX, LIMIT, lock, ms, qualified, refuse, rows, sha256, slowDown, UUID, type Db, type Vars} from './request.ts';
 import {blob, change, cut, guard, line, repo, repoGone, review, throttle, type Modes, type Review, type Tree} from './schema.ts';
 import {KEPT, purge, REMEMBERED} from './sweep.ts';
 
@@ -159,7 +159,6 @@ const lineShown = ({id: _, off: __, draft, modes, ...r}: Line) => ({...r, issue:
 const changeShown = (repoName: string, {repoId: _, off: __, ...r}: Change & {repoId?: number; off?: Date | null}) =>
   ({...r, repo: repoName, issue: issueOf(r.line), updatedAt: r.updatedAt.getTime()});
 const count = (n: unknown) => (typeof n === 'number' && Number.isInteger(n) && n >= 0 && n < 2 ** 31 ? n : 0);
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** Who did it, as their name is now, as long as what keeps it takes (a provider's name may be longer). */
 const whoBy = (c: Context<Vars>) => c.get('name').slice(0, 200);
@@ -355,17 +354,23 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
   // from where it began. One walk in the database, each step one lookup of the repo's commits by their
   // key. Each commit says what it changed from its parent (files, folders: 0007's cut_change); with
   // ?summary=1 that is all, and no tree is read or sent (a client that compares trees itself asks without).
+  /** The most of the log's trees one answer holds, as the database keeps them (compressed). */
+  const TREES_AT_ONCE = 8 << 20;
   v1.get('/repos/:name/log', async (c) => {
-    const limit = Math.min(LIMIT.log, Math.max(1, Number(c.req.query('limit') ?? 50) || 50));
-    const trees = c.req.query('summary') === '1' ? sql`` : sql`c.tree, c.modes, `;
+    const limit = Math.min(LIMIT.log, Math.max(1, Math.floor(Number(c.req.query('limit') ?? 50)) || 50));
+    const summary = c.req.query('summary') === '1';
+    const trees = summary ? sql`` : sql`c.tree, c.modes, `;
     const row = await lineAt(db, c.get('userId'), c.req.param('name'), lineOf(c));
     on(row?.off);
     if (!row?.head) return c.json([]);
-    return c.json(await rows(db, sql`with recursive walk(id, n) as (
-        select ${row.head}::text, 1
+    // With trees, no more of them than TREES_AT_ONCE as kept (each may be 8 MB; 50 were past what a Worker holds,
+    // and every request on it failed with it): fewer commits, and the last one's parent says where the rest go on.
+    const room = summary ? sql`` : sql`and w.held + pg_column_size(c.tree) < ${TREES_AT_ONCE}`;
+    return c.json(await rows(db, sql`with recursive walk(id, n, held) as (
+        select ${row.head}::text, 1, 0::bigint
         union all
-        select c.parent, w.n + 1 from walk w join cut c on c.repo_id = ${row.id} and c.id = w.id
-        where c.parent is not null and w.n < ${limit}
+        select c.parent, w.n + 1, w.held + pg_column_size(c.tree) from walk w join cut c on c.repo_id = ${row.id} and c.id = w.id
+        where c.parent is not null and w.n < ${limit} ${room}
       )
       select c.id, c.parent, c.merged, ${trees}c.kind, c.title, c.issue, c.note, c.added, c.removed, ${ms(sql`c.time`)} as time,
         coalesce(c.files, 0) as files, coalesce(c.folders, '{}') as folders

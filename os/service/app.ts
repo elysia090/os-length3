@@ -97,6 +97,8 @@ const ADDS_NOTHING = /^\/(api\/auth\/|dev-oauth\/|v1\/enter$|v1\/blobs\/(missing
 export function createApp(d: Deps) {
   const app = new Hono<Vars>();
   app.onError(failed);
+  // Every answer is JSON, a path that is no route's too (not Hono's text).
+  app.notFound((c) => c.json({error: 'Not found'}, 404));
   const db = d.db, domain = d.domain ?? 'length3.com', closed = !!d.enter;
   // The plan's rules, which the routes that make something new ask (repos, servers, inbox).
   const plan = plans({db, config: d.plan, billing: d.billing, domain});
@@ -144,7 +146,7 @@ export function createApp(d: Deps) {
   planRoutes({db, plans: plan, origins: d.origins, appOrigin: d.appOrigin, now: d.now}, v1, app);
   news({db}, v1);
   sshRoutes({db}, v1);
-  seen({db, bucket, domain, closed, viewer: async (req) => (await d.auth.api.getSession({headers: req.headers}))?.user.id ?? null}, v1, app);
+  seen({db, bucket, domain, closed, edge: d.edge, viewer: async (req) => (await d.auth.api.getSession({headers: req.headers}))?.user.id ?? null}, v1, app);
 
   app.route('/v1', v1);
   return app;

@@ -203,8 +203,12 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const wanted = name(b?.address).toLowerCase() || n.toLowerCase();
     const [handle, domain = d.domain] = wanted.split('@');
     if (!NAME.test(handle)) return c.json({error: 'Its name: letters, digits, - . _'}, 400);
-    // A name on another domain: its DNS names this account now, not only when the name was claimed.
-    if (domain !== d.domain && d.proven && await d.proven(me, domain) === false) return c.json({error: 'Only on a domain you hold a name on'}, 400);
+    // A name on another domain: one this account holds a name on (asked first, so no domain's DNS is asked for anyone
+    // who names it), and whose DNS names this account now, not only when the name was claimed.
+    if (domain !== d.domain) {
+      const [on] = await db.select({a: address.address}).from(address).where(and(eq(address.userId, me), eq(address.domain, domain), isNull(address.releasedAt), isNull(address.lapsedAt)));
+      if (!on || (d.proven && await d.proven(me, domain) === false)) return c.json({error: 'Only on a domain you hold a name on'}, 400);
+    }
     const made = await db.transaction(async (tx: Db) => {
       await lock(tx, me);
       // Making one is the plan's to allow; being asked into one, and writing in it, never is.
@@ -364,6 +368,8 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       // How far a board is open reaches past its people: its server's owner says.
       if (!at.owner) return c.json({error: 'Only its server\'s owner opens a board'}, 403);
       if (d.closed && (b.open === true || b.guests === true)) return c.json({error: 'Nothing is shown to everyone from this Remote'}, 403);
+      // Guests read it as everyone does: one taking guests is open, and saying both is saying nothing.
+      if (b.open === false && b.guests === true) return c.json({error: 'A board that takes guests is open'}, 400);
       let reach = at.b.reach;
       if (typeof b.open === 'boolean') reach = b.open ? Math.max(reach, REACH.open) : REACH.people;
       if (typeof b.guests === 'boolean') reach = b.guests ? REACH.guests : Math.min(reach, REACH.open);
@@ -450,7 +456,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
 
   // ---- the discussion ----
   const read = async (b: Board, q: Record<string, string>, me: string | null, owner: boolean) => {
-    const limit = Math.min(SERVER.maxPage, Math.max(1, Number(q.limit) || SERVER.page));
+    const limit = Math.min(SERVER.maxPage, Math.max(1, Math.floor(Number(q.limit)) || SERVER.page));
     const at = (k: string) => (q[k] && ID.test(q[k]) ? q[k] : null);
     const [before, after, from, to] = ['before', 'after', 'from', 'to'].map(at);
     // One more than asked says whether there is more past the page.
@@ -520,6 +526,8 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
 
   // ---- taken home: the TODO and the discussion as text ----
   /** `most`: posts taken home at once (anyone's archive of an open board takes fewer; the range asked brings the rest). */
+  /** The most of the posts' words one archive holds (characters). */
+  const ARCHIVE_TEXT = 4_000_000;
   const archive = async (at: At, q: Record<string, string>, most = 20_000) => {
     const out: string[] = [`# ${at.server.name} / ${at.b.name}`, ''];
     if (q.todo !== '0') {
@@ -536,8 +544,12 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       const list: Post[] = await db.select().from(talk).where(and(eq(talk.boardId, at.b.id), from ? gte(talk.id, from) : undefined, to ? lte(talk.id, to) : undefined))
         .orderBy(asc(talk.id)).limit(most);
       out.push('## Discussion', '');
-      let day = '';
+      let day = '', held = 0;
       for (const p of list) {
+        // No more than ARCHIVE_TEXT of it at once (20,000 posts of 2,000 characters were past what a Worker holds):
+        // where it stopped is said, and asking from there brings the rest.
+        held += p.body.length;
+        if (held > ARCHIVE_TEXT) { out.push(`(More from ${p.id}: ask again with from=${p.id})`); break; }
         const t = new Date(timeOf(p.id)).toISOString();
         if (t.slice(0, 10) !== day) { day = t.slice(0, 10); out.push(`### ${day}`, ''); }
         // A name on this Remote alone, as the app shows it.

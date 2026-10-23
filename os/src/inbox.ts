@@ -115,7 +115,13 @@ export class Published extends Error {
 }
 
 export async function send(to: string, body: string, type: Kind = 'message', target: Target = {}): Promise<{id: string; request: boolean}> {
-  const r = await api('/v1/inbox/messages', {method: 'POST', body: JSON.stringify({to, body, type, target})});
+  // Its own id, so a send whose answer was lost is sent once more as the same message (the Remote keeps one).
+  const message = JSON.stringify({id: crypto.randomUUID(), to, body, type, target});
+  const ask = () => api('/v1/inbox/messages', {method: 'POST', body: message});
+  const r = await ask().catch((e: unknown) => {
+    if (e instanceof RemoteError && (e.trouble === 'unreached' || e.trouble === 'unavailable')) return ask();
+    throw e;
+  });
   const out = await r.json() as {id?: string; request?: boolean; error?: string};
   if (r.ok) return {id: out.id!, request: Boolean(out.request)};
   throw new RemoteError(r.status, t(String(out.error ?? r.status)));

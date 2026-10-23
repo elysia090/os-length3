@@ -6,6 +6,7 @@
 
 import {eq, getTableName, sql, type Column, type SQL} from 'drizzle-orm';
 import type {Context, ErrorHandler, MiddlewareHandler} from 'hono';
+import {StoreFailed} from './bucket.ts';
 import {bodyLimit} from 'hono/body-limit';
 import {cors} from 'hono/cors';
 import {HTTPException} from 'hono/http-exception';
@@ -69,6 +70,19 @@ export async function throttled(q: Db, key: string, max: number, windowMs: numbe
  * key's lock first, so two at once cannot both pass the check. Held until
  * the transaction ends.
  */
+/**
+ * Whether If-None-Match names `tag` ("…"): one of a list, weak or strong (RFC 9110 §13.1.2 compares weakly for
+ * it), or `*`. Before, only the exact one tag was, and a browser's W/"…" or a list read the file again.
+ */
+export function unchanged(c: Context, tag: string): boolean {
+  const asked = c.req.header('If-None-Match');
+  if (!asked) return false;
+  return asked.split(',').some((t) => { const x = t.trim(); return x === '*' || x.replace(/^W\//, '') === tag; });
+}
+
+/** A UUID as the database keeps one (lower case). */
+export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 export const lock = (tx: Db, key: string) => tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
 
 /**
@@ -204,7 +218,7 @@ export const failed: ErrorHandler = (e, c) => {
   const id = [...crypto.getRandomValues(new Uint8Array(6))].map((b) => b.toString(16).padStart(2, '0')).join('');
   const code = codeOf(e);
   console.error('remote failed', id, c.req.method, c.req.path, code, e);
-  if (BUSY.has(code) || code.startsWith('08')) {
+  if (BUSY.has(code) || code.startsWith('08') || e instanceof StoreFailed) {
     c.header('Retry-After', '5');
     return c.json({error: 'The Remote is busy just now; try again', id, retryAfter: 5}, 503);
   }

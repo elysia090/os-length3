@@ -79,6 +79,8 @@ export const FULL_WAIT = 3600;
 
 /** Reads an isolate takes at once: one statement in so many reads. */
 const READS_AT_ONCE = 64;
+/** How long a read waits on another's refill before counting its own (ms). */
+const REFILL_WAIT = 3000;
 
 /** The Remote's budget: what it spends of R2 and of its database, counted before either is asked. */
 export class Budget {
@@ -102,7 +104,10 @@ export class Budget {
       this.refill ??= take(q, p, 'r2:b', READS_AT_ONCE, this.limits.reads)
         .then((ok) => { if (ok && this.period === p) this.reads += READS_AT_ONCE; })
         .finally(() => { this.refill = null; });
-      await this.refill;
+      // Not waited on for long: the request that began it may be called off (its client gone), and a refill on its
+      // connection with it; past that, this one counts its own.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([this.refill, new Promise<void>((go) => { timer = setTimeout(go, REFILL_WAIT); })]).finally(() => clearTimeout(timer));
       if (this.reads >= n) { this.reads -= n; return; }
     }
     // Near the end of the month's reads (or many at once), only what is asked for.
@@ -150,14 +155,21 @@ export class Budget {
   }
 
   /**
-   * Whether the database has taken all it may, as asked of it at most every five minutes by this isolate:
-   * its size is its own to say (pg_database_size), and a write more or less between asks is no matter.
+   * Whether the database has taken all it may, as asked of it at most every five minutes by this isolate: its size
+   * (pg_database_size), and a write more or less between asks is no matter. Past PG_MB, less the room its rows let
+   * go of (room_free, 0014: deleted rows' space, which Postgres reuses but never gives back to the files): before,
+   * a database that reached it took nothing new for good, the sweep's deletes and everyone's included.
    */
   async full(q: Db): Promise<boolean> {
     const now = this.now();
     if (this.sized && now - this.sized.at < 300_000) return this.sized.full;
     const [r] = await rows<{bytes: number}>(q, sql`select pg_database_size(current_database())::float8 as bytes`);
-    this.sized = {at: now, full: Number(r?.bytes ?? 0) >= this.limits.database};
+    let bytes = Number(r?.bytes ?? 0);
+    if (bytes >= this.limits.database) {
+      const [f] = await rows<{free: number}>(q, sql`select room_free()::float8 as free`).catch(() => [{free: 0}]);
+      bytes -= Number(f?.free ?? 0);
+    }
+    this.sized = {at: now, full: bytes >= this.limits.database};
     return this.sized.full;
   }
 }
@@ -181,5 +193,7 @@ export function metered(bucket: Bucket, budget: Budget, db: Db): Bucket {
     async size(k) { await budget.read(db); return bucket.size(k); },
     async read(k, start, end) { await budget.read(db); return bucket.read(k, start, end); },
     async delete(keys) { return bucket.delete(keys); },
+    // A list is a class A operation, as a put is: counted as one.
+    ...(bucket.list ? {list: async (prefix: string, after: string, limit: number) => { await budget.write(db); return bucket.list!(prefix, after, limit); }} : {}),
   };
 }

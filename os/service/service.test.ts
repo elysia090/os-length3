@@ -1455,7 +1455,7 @@ test('On Workers a sweep that fails fails its run, and says so', async () => {
   const worker = (await import('./worker.ts')).default;
   // A database nobody answers for: the sweep's first step fails.
   const env = {DATABASE_URL: 'postgresql://nobody:nothing@127.0.0.1/none?sslmode=require', BETTER_AUTH_SECRET: crypto.randomUUID() + crypto.randomUUID(),
-    BASE_URL: BASE, APP_ORIGIN: APP, BLOBS: {head: async () => null, get: async () => null, put: async () => undefined, delete: async () => undefined}};
+    BASE_URL: BASE, APP_ORIGIN: APP, BLOBS: {head: async () => null, get: async () => null, put: async () => undefined, delete: async () => undefined, list: async () => ({objects: [], truncated: false})}};
   const later: Promise<unknown>[] = [], said: unknown[][] = [];
   const error = console.error;
   console.error = (...a: unknown[]) => { said.push(a); };

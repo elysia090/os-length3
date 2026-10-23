@@ -26,7 +26,7 @@ import type {Context, Hono} from 'hono';
 import type {Budget} from './budget.ts';
 import {blobKey, noFiles, type Bucket} from './bucket.ts';
 import {desktopFile, rootKey} from './releases.ts';
-import {body, fits, HEX, LIMIT, lock, sha256, type Db, type Vars} from './request.ts';
+import {body, fits, HEX, LIMIT, lock, sha256, unchanged, type Db, type Vars} from './request.ts';
 import {blob, releaseFile} from './schema.ts';
 
 /** Bytes as base64, a piece at a time. */
@@ -67,6 +67,8 @@ async function release(c: Context<Vars>, bucket: Bucket, key: string, o: {type: 
   const fixed: Record<string, string> = {'Content-Type': o.type, 'Accept-Ranges': 'bytes', ETag: `"${o.etag}"`, 'Cache-Control': IMMUTABLE};
   if (o.name) fixed['Content-Disposition'] = `attachment; filename="${o.name}"`;
   const whole = new Request(`https://release.cache/${key}?sha256=${o.etag}`);
+  // Had already (a client that kept it asks by its digest): nothing is looked up, nor read.
+  if (unchanged(c, `"${o.etag}"`)) return new Response(null, {status: 304, headers: fixed});
   if (edge) {
     const hit = await fromEdge(c, edge, whole);
     if (hit) return hit;
@@ -179,6 +181,14 @@ export function files(d: {db: Db; bucket: Bucket | null; quota?: number; budget?
       }).catch(() => {});
       throw e;
     }
+    // The bytes may have gone between the put and the row (the sweep, or another upload refused, lets a key go that
+    // no row names, under the same lock): once the row is in nothing lets them go, so they are asked for now, and
+    // put again if they went. Before, the row said the file was kept and every read of it was 404 for good. Asked
+    // of R2 uncounted: one head an upload, within what its put (counted) allows, and never refused for the month's reads.
+    if (await (d.raw ?? bucket).size(key) === null) {
+      await d.budget?.write(db);
+      await bucket.put(key, bytes);
+    }
     return c.json({sha256: sha}, 201);
   });
 
@@ -204,7 +214,7 @@ export function files(d: {db: Db; bucket: Bucket | null; quota?: number; budget?
     const sha = c.req.param('sha');
     if (!HEX.test(sha)) return c.json({error: 'Not found'}, 404);
     // Asked again by one who has it (its name is its digest): nothing changed, and nothing is read.
-    if (c.req.header('If-None-Match') === `"${sha}"`) return new Response(null, {status: 304, headers: {ETag: `"${sha}"`, 'Cache-Control': 'private, max-age=31536000, immutable'}});
+    if (unchanged(c, `"${sha}"`)) return new Response(null, {status: 304, headers: {ETag: `"${sha}"`, 'Cache-Control': 'private, max-age=31536000, immutable'}});
     const [known] = await db.select({bytes: blob.bytes}).from(blob).where(and(eq(blob.userId, c.get('userId')), eq(blob.sha256, sha))) as {bytes: number}[];
     // Its name is its digest: this browser keeps it (it is the account's: no shared cache does).
     const headers = {'Content-Type': 'application/octet-stream', ETag: `"${sha}"`, 'Cache-Control': 'private, max-age=31536000, immutable'};

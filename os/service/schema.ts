@@ -264,7 +264,7 @@ export const change = pgTable('change', {
   note: text('note').notNull().default(''),
   submittedBy: text('submitted_by').notNull().default(''),
   updatedAt: moment('updated_at').defaultNow().notNull(),
-}, (t) => [uniqueIndex('change_line_idx').on(t.repoId, t.line),
+}, (t) => [uniqueIndex('change_line_idx').on(t.repoId, t.line), index('change_merged_idx').on(t.updatedAt).where(sql`${t.state} = 'merged'`),
   foreignKey({name: 'change_repo', columns: [t.repoId, t.userId], foreignColumns: [repo.id, repo.userId]}).onDelete('cascade'),
   foreignKey({name: 'change_base', columns: [t.repoId, t.base], foreignColumns: [cut.repoId, cut.id]}),
   foreignKey({name: 'change_head', columns: [t.repoId, t.head], foreignColumns: [cut.repoId, cut.id]}),
@@ -570,7 +570,7 @@ export const guest = pgTable('board_guest', {
 export const throttle = pgTable('throttle', {
   key: text('key').notNull(),
   at: moment('at').defaultNow().notNull(),
-}, (t) => [index('throttle_key_idx').on(t.key, t.at), check('throttle_key', within('key', 300))]);
+}, (t) => [index('throttle_key_idx').on(t.key, t.at), index('throttle_at_idx').on(t.at), check('throttle_key', within('key', 300))]);
 
 /**
  * What the Remote has spent of what it may, counted before it is spent (budget.ts): R2's operations of a
@@ -640,3 +640,13 @@ export const repoPublic = pgTable('repo_public', {
   uniqueIndex('repo_public_one_idx').on(t.repoId).where(sql`${t.releasedAt} is null`),
   foreignKey({name: 'repo_public_repo', columns: [t.repoId, t.userId], foreignColumns: [repo.id, repo.userId]}).onDelete('cascade'),
   check('repo_public_name', matches('name', re.repo))]);
+
+/**
+ * Where a step of the sweep that goes through something too large for one day left off (sweep.ts): R2's keys, a
+ * thousand a day, each without a row that names it let go (bytes a failed upload or sweep left, which nothing else
+ * finds), from `at` on; '' once it went round.
+ */
+export const sweepMark = pgTable('sweep_mark', {
+  name: text('name').primaryKey(),
+  at: text('at').notNull().default(''),
+}, () => [check('sweep_mark_at', within('at', 1024))]);
