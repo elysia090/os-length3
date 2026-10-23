@@ -14,12 +14,17 @@ const COPIED = ['direction', 'boxSizing', 'width', 'borderTopWidth', 'borderRigh
 
 type Field = HTMLTextAreaElement | HTMLInputElement;
 
-/** Where the caret of `f` is on the screen: the top left of its letter's height, and that height. */
-function caretAt(f: Field, copy: HTMLElement): {x: number; y: number; h: number} {
+/** The copy laid out as `f` lays its text out: taken once a field, and again when the field changes size. */
+function copyStyle(f: Field, copy: HTMLElement) {
   const cs = getComputedStyle(f);
   for (const p of COPIED) copy.style[p] = cs[p];
   // A one-line field never wraps; a box of lines wraps where it does.
   if (f instanceof HTMLInputElement) copy.style.whiteSpace = 'pre';
+}
+
+/** Where the caret of `f` is on the screen: the top left of its letter's height, and that height. */
+function caretAt(f: Field, copy: HTMLElement): {x: number; y: number; h: number} {
+  const cs = getComputedStyle(f);
   const at = f.selectionEnd ?? 0;
   copy.textContent = f.value.slice(0, at);
   const mark = document.createElement('span');
@@ -58,6 +63,9 @@ export function caret() {
   document.body.append(mark, copy);
   let field: Field | null = null;
   let frame = 0, rest = 0, shown = false;
+  /** The field the copy is laid out as; none once it changes size (or the window does). */
+  let styled: Field | null = null;
+  const resized = new ResizeObserver(() => { styled = null; });
 
   const hide = () => {
     mark.classList.remove('on');
@@ -67,6 +75,7 @@ export function caret() {
     frame = 0;
     const f = field;
     if (!f || document.activeElement !== f || f.selectionStart !== f.selectionEnd) { hide(); return; }
+    if (styled !== f) { copyStyle(f, copy); styled = f; }
     const p = caretAt(f, copy);
     const seen = seenIn(f);
     if (!seen || p.x < seen.left - 1 || p.x > seen.right + 1 || p.y + p.h / 2 < seen.top || p.y + p.h / 2 > seen.bottom) { hide(); return; }
@@ -84,9 +93,12 @@ export function caret() {
   const later = () => { frame ||= requestAnimationFrame(draw); };
 
   const take = (f: Field | null) => {
+    if (field) resized.unobserve(field);
     field?.classList.remove('os-caret-field');
     field = f && f.matches(FIELDS) && !f.readOnly && !f.disabled && f.value.length <= LONGEST ? f : null;
     field?.classList.add('os-caret-field');
+    if (field) resized.observe(field);
+    styled = null;
     shown = false;
     later();
   };

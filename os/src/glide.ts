@@ -18,8 +18,10 @@ export const where = (el: Element | null | undefined): DOMRect | null => el?.get
 
 /**
  * The ink goes from `from` (a place measured before the choice) to `to` (the one chosen now), as a slug laid in
- * `layer` (positioned, under its children: `isolation: isolate`, the slug at z-index -1). `to` waits un-inked
- * (`.arriving`) until it lands. `round` is the slug's corner.
+ * `layer` (positioned, under its children: `isolation: isolate`, the slug at z-index -1). `round` is the slug's
+ * corner. The words of each it goes over are as the ink under them is: light while the slug covers half of it or more
+ * (`.under-ink`: the one it leaves, those it passes, the one it lands on), in ink otherwise (`to` waits un-inked,
+ * `.arriving`), so none is ever ink on ink, an icon gone as the slug goes by.
  */
 export function glide(from: DOMRect | null, to: HTMLElement | null, layer: HTMLElement, round: string, ms = 220) {
   if (!from || !to || still()) return;
@@ -33,7 +35,25 @@ export function glide(from: DOMRect | null, to: HTMLElement | null, layer: HTMLE
     width: `${at.width}px`, height: `${at.height}px`, borderRadius: round});
   layer.append(slug);
   to.classList.add('arriving');
-  const done = () => { slug.remove(); to.classList.remove('arriving'); };
+  // What it can go over: `to` and the others in a row with it (the rail's places, the band's pills).
+  const row = [...(to.parentElement?.children ?? [])].filter((el) => el !== slug);
+  let over = false;
+  /** How much of `el` the slug covers now (0 to 1). */
+  const covered = (el: Element) => {
+    const s = slug.getBoundingClientRect(), r = el.getBoundingClientRect();
+    const w = Math.max(0, Math.min(s.right, r.right) - Math.max(s.left, r.left)), h = Math.max(0, Math.min(s.bottom, r.bottom) - Math.max(s.top, r.top));
+    return r.width && r.height ? (w * h) / (r.width * r.height) : 0;
+  };
+  const follow = () => {
+    if (over) return;
+    for (const el of row) {
+      const under = covered(el) >= .5;
+      if (el === to) to.classList.toggle('arriving', !under); else el.classList.toggle('under-ink', under);
+    }
+    requestAnimationFrame(follow);
+  };
+  follow();
+  const done = () => { over = true; slug.remove(); to.classList.remove('arriving'); for (const el of row) el.classList.remove('under-ink'); };
   slug.animate([
     {transform: `translate(${from.left - at.left}px, ${from.top - at.top}px)`, width: `${from.width}px`, height: `${from.height}px`},
     {transform: 'none', width: `${at.width}px`, height: `${at.height}px`},
@@ -152,12 +172,16 @@ export function stage(root: HTMLElement, dir: number) {
   if (still()) return;
   arriving?.();
   const t0 = performance.now(), seen = new WeakSet<Element>(), moving = new Map<Element, Animation>();
+  /** Whether each box clips what is in it, asked once an arrival (its style is read, not its size). */
+  const clipping = new Map<Element, boolean>();
+  const clips = (p: Element) => {
+    let c = clipping.get(p);
+    if (c === undefined) { const o = getComputedStyle(p); c = o.overflowX !== 'visible' || o.overflowY !== 'visible'; clipping.set(p, c); }
+    return c;
+  };
   /** In a row that clips it to about its own height: rising, it would come up out of a cut. */
   const tight = (el: HTMLElement, r: DOMRect) => {
-    for (let p = el.parentElement; p && p !== root; p = p.parentElement) {
-      const o = getComputedStyle(p);
-      if ((o.overflowX !== 'visible' || o.overflowY !== 'visible') && p.clientHeight < r.height + 32) return true;
-    }
+    for (let p = el.parentElement; p && p !== root; p = p.parentElement) if (clips(p) && p.clientHeight < r.height + 32) return true;
     return false;
   };
   const run = () => {

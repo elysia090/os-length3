@@ -26,7 +26,13 @@ export interface Options {
   /** Wait before the n-th retry (n from 1). */
   backoff?: (n: number) => number;
   fetch?: typeof fetch;
+  /** How the bytes are checked against their sha256 (userland.ts does it off the page's thread). */
+  check?: Check;
 }
+
+/** `bytes`' SHA-256, and the bytes (another view of them when they were lent away to be checked). */
+export type Check = (bytes: Uint8Array) => Promise<{sha256: string; bytes: Uint8Array}>;
+const here: Check = async (bytes) => ({sha256: await digest(bytes), bytes});
 
 /** A failure that another try would not change (the file is missing, refused…). */
 export class Fatal extends Error {}
@@ -55,7 +61,7 @@ const transient = (status: number) => status === 408 || status === 425 || status
  * stopped, and checked against `expect` when it is given.
  */
 export async function download(url: string, expect: Expect = {}, progress?: Progress, options: Options = {}): Promise<Uint8Array> {
-  const {stallMs = 10_000, attempts = 6, backoff = (n) => Math.min(8000, 500 * 2 ** (n - 1)), fetch: get = fetch} = options;
+  const {stallMs = 10_000, attempts = 6, backoff = (n) => Math.min(8000, 500 * 2 ** (n - 1)), fetch: get = fetch, check = here} = options;
   const state = partials.get(url) ?? {parts: [], got: 0, validator: null};
   partials.set(url, state);
   const reset = () => { state.parts = []; state.got = 0; state.validator = null; progress?.bytes(0); };
@@ -108,9 +114,13 @@ export async function download(url: string, expect: Expect = {}, progress?: Prog
         progress?.bytes(state.got);
       }
       clearTimeout(timer);
-      const bytes = join(state.parts, state.got);
+      let bytes: Uint8Array = join(state.parts, state.got);
       if (expect.size !== undefined && bytes.length !== expect.size) { reset(); why = t('The size does not match'); continue; }
-      if (expect.sha256 && await digest(bytes) !== expect.sha256) { reset(); why = t('The contents do not match'); continue; }
+      if (expect.sha256) {
+        const c = await check(bytes);
+        bytes = c.bytes;
+        if (c.sha256 !== expect.sha256) { reset(); why = t('The contents do not match'); continue; }
+      }
       partials.delete(url);
       return bytes;
     } catch (e) {

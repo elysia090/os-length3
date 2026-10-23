@@ -543,6 +543,9 @@ function make(ctx: Context) {
     if (path) cancelAnimationFrame(putBack);
     // A place asked for is where the center goes: coming back does not put it back where it was.
     landed = path ?? null;
+    // Gone to, it is the file read from now (File marks it, the band's first button opens at it), not only once the
+    // center has settled on it a moment later.
+    if (path) told(path);
     if (path) { revealing = true; void view()?.reader.reveal(path, 0, write).then(() => track()); }
     else track();
   };

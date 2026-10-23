@@ -39,12 +39,13 @@ function button(text: string, kind = ''): HTMLButtonElement {
 /**
  * Your name as a stub: your name on this Remote, shown alone (it is a name,
  * not a domain anyone holds), and your code, six digits to be found by; a
- * press copies either. Before there is a name, the name to claim (Enter
- * claims): first come, yours for five years at a time. At its right end the
- * gear opens your names, each with its term and Renew near its end, and a
- * name of your choosing on a domain you own, shown beside it: the TXT
- * record to put in its DNS, looked for every few seconds while open, and the
- * name claimed as soon as the record is there.
+ * press copies either. Before there is a name, the name to claim, alone, as
+ * it will be shown (Enter claims): first come, yours for five years at a
+ * time; nothing after an @ is the person's to think of. Once there is one, at
+ * its right end the gear opens your names, each with its term and Renew near
+ * its end, and a name of your choosing on a domain you own, shown beside it:
+ * the TXT record to put in its DNS, looked for every few seconds while open,
+ * and the name claimed as soon as the record is there.
  */
 function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLElement {
   const error = h('p', {class: 'error', role: 'alert'});
@@ -73,8 +74,9 @@ function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLE
     name.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) void claim(); });
     take = button(t('Take it'), 'primary');
     take.addEventListener('click', () => void claim());
-    // What it will be, whole, as it is written: the name, then this Remote's own @ part, quiet.
-    stub = h('div', {class: 'stub'}, name, me.domain ? h('span', {class: 'stub-at', 'aria-hidden': 'true'}, `@${me.domain}`) : null, gear);
+    // The name alone, as it will be shown everywhere: what comes after an @ is not the person's to think of (a name on
+    // a domain of one's own is behind the gear once a name is taken).
+    stub = h('div', {class: 'stub'}, name);
     note.textContent = t('A name on this Remote: first come, yours for five years at a time, renewed by you.');
   }
   // The gear's panel, as the person's menu: your names with their terms, then Add a domain, then letting one go.
@@ -148,9 +150,8 @@ function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLE
       return h('div', {class: 'your-row'}, h('span', {}, inbox.shown(a.address)), state, renew);
     }));
   };
-  // With no name yet there is nothing else in it: the field at once.
   // Letting a name go is not offered here; the Remote's way to do it stays (l3 people release uses it).
-  const fill = () => panel.replaceChildren(...(me.addresses.length ? [yours(), adding()] : [own()]));
+  const fill = () => panel.replaceChildren(yours(), adding());
   // The panel lies over the Inbox under it; Escape or a press outside closes it.
   const holder = h('div', {class: 'stub-holder'}, stub, note, error, take ? h('div', {class: 'card-foot'}, h('span', {class: 'grow'}), take) : null, panel);
   // Put away by Escape from inside it, the keyboard goes back to the gear rather than to the page.

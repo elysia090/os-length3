@@ -68,11 +68,18 @@ Every value in `styles.css` comes from a token (§2).
   one thing wherever it is seen:
   - *The ink travels.* The current thing's ink goes from the one it was on
     to the one it is on (the rail's places, the band's pills), under their
-    words, 220 ms, so the eye follows the choice.
+    words, 220 ms, so the eye follows the choice. The words of each it goes
+    over are light while half of it or more lies on the ink and in ink
+    otherwise, the one it leaves and those it passes too: an icon never
+    goes ink on ink as the ink goes by.
   - *The camera pans along the rail.* Going to another place, the page left
     goes up and away as the next rises in from below (down the rail; up it,
-    the other way round; 480 ms), the rail and the window's edges standing
-    still, a floor passed in a lift.
+    the other way round), the rail and the window's edges standing still, a
+    floor passed in a lift. The page left is out of the way first (260 ms),
+    the next rising in a beat after it (90 ms on, 440 ms), so the two never
+    stand in one place half seen, their words over each other. Only the page
+    is taken as a picture to move; the rest of the window goes on being
+    drawn as it is.
   - *What comes in, comes from its side, a beat at a time.* Down the rail
     the next page comes up from below, up the rail from above; along the
     band the next repo comes from the right, back along it from the left
@@ -566,7 +573,10 @@ trusted for one thing only:
    end of the term; not renewed, it is held for them 30 days, then anyone's).
    It is a name on this Remote, not a domain anyone holds: it is kept as
    `ren@length3.com` only because that is where it is kept, and is shown
-   alone. With it comes a **code**, six digits (`204816`), to be found by
+   alone, everywhere, as Home shows one's handle: taken, it is written alone
+   too (no @ part after the field), and nothing after an @ is the person's to
+   think of; a name on a domain of one's own waits behind the gear of the name
+   once it is taken. With it comes a **code**, six digits (`204816`), to be found by
    when a name is hard to say or spell: given once, never given again, so a
    code that reached someone goes on meaning them or no one. Most people stop
    here, and need nothing more.

@@ -1,4 +1,4 @@
-import {digest, download, Fatal} from './fetch.ts';
+import {digest, download, Fatal, type Check} from './fetch.ts';
 import {errorText} from './errors.ts';
 import {t} from './i18n.ts';
 import {prepare, type Segment} from '../../xlat/runtime/share.mjs';
@@ -115,15 +115,75 @@ const used = (url: string, at = Date.now()) => {
   try { const u = uses(); u[url] = at; localStorage.setItem(USES, JSON.stringify(u)); } catch { /* not remembered: it goes first */ }
 };
 const open = async (): Promise<Cache | null> => { try { return 'caches' in globalThis ? await caches.open(CACHE) : null; } catch { return null; } };
+const whole = (url: string) => new URL(url, location.href).href;
+/**
+ * The size of each kept copy, by its whole URL: read from what is kept once a page (each copy's head), then
+ * followed as copies are kept and let go, so what is kept is counted without opening every copy each time.
+ */
+let sizes: Promise<Map<string, number>> | null = null;
+const sizesOf = (c: Cache) => (sizes ??= (async () => {
+  const m = new Map<string, number>();
+  for (const r of await c.keys()) m.set(r.url, Number((await c.match(r))?.headers.get('content-length') ?? 0));
+  return m;
+})());
+const gone = (c: Cache, url: string) => void sizesOf(c).then((m) => m.delete(whole(url)));
+
+/**
+ * The page's work that no one waits for (the rest of l3's programs readied after a Prompt is up) is done a step
+ * at a time in the moments nothing else is being done, so it never comes between a key and what it writes.
+ */
+const idle = () => new Promise<void>((r) => ('requestIdleCallback' in globalThis ? requestIdleCallback(() => r(), {timeout: 3000}) : setTimeout(r, 100)));
+/** The worker that checks l3's files (check.worker.ts), made when first asked; null where there is none. */
+let checker: Worker | null | undefined;
+let asking = 0;
+const answers = new Map<number, (r: {bytes?: ArrayBuffer; sha256?: string; error?: string}) => void>();
+const worker = (): Worker | null => {
+  if (checker !== undefined) return checker;
+  try {
+    checker = new Worker(new URL('./check.worker.ts', import.meta.url), {type: 'module'});
+    checker.addEventListener('message', (e) => { answers.get(e.data.id)?.(e.data); answers.delete(e.data.id); });
+    checker.addEventListener('error', () => { checker = null; for (const f of answers.values()) f({error: 'stopped'}); answers.clear(); });
+  } catch { checker = null; }
+  return checker;
+};
+/**
+ * `bytes` (unpacked first when `unpack`) and their SHA-256, worked out off the page's thread, which the browser
+ * otherwise does on it, holding it 27 ms for 8 MB. `lend`: its buffer is the caller's alone, and is given to the
+ * worker and back rather than copied; the caller goes on with the bytes this gives back. Without a worker it is
+ * worked out here, as before; a worker stopped with lent bytes in it fails the check (they are read again).
+ */
+async function checked(bytes: Uint8Array, unpack: boolean, lend: boolean): Promise<{bytes: Uint8Array; sha256: string}> {
+  const w = worker();
+  if (w) {
+    const own = lend && bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength;
+    const buf = (own ? bytes.buffer : bytes.slice().buffer) as ArrayBuffer;
+    const id = ++asking;
+    const r = await new Promise<{bytes?: ArrayBuffer; sha256?: string; error?: string}>((resolve) => { answers.set(id, resolve); w.postMessage({id, bytes: buf, unpack}, [buf]); });
+    if (r.bytes && r.sha256) return {bytes: new Uint8Array(r.bytes), sha256: r.sha256};
+    // Not worked out there: here, with what was lent back (or the caller's own, when it was a copy that went).
+    if (own) bytes = r.bytes ? new Uint8Array(r.bytes) : bytes;
+    if (own && !r.bytes) throw new Error('l3: a file could not be checked');
+  }
+  const b = unpack ? await gunzip(bytes) : bytes;
+  return {bytes: b, sha256: await digest(b)};
+}
+/** A download's check, off the page's thread: the bytes joined are the download's own, lent. */
+const offThread: Check = (bytes) => checked(bytes, false, true);
+
+/** No waiting: what a Prompt starting needs, waited for. */
+const atOnce = async () => {};
 
 /** A kept copy of `url`, if it is still exactly the digest it was kept under. */
 async function kept(url: string, sha256: string): Promise<Uint8Array | null> {
   const c = await open();
   const r = await c?.match(url).catch(() => undefined);
   if (!c || !r) return null;
-  const bytes = new Uint8Array(await r.arrayBuffer());
-  if (await digest(bytes) === sha256) { used(url); return bytes; }
+  // Not checked (its worker stopped): as if it were not kept, it is fetched again.
+  const c0 = await checked(new Uint8Array(await r.arrayBuffer()), false, true).catch(() => null);
+  if (!c0) return null;
+  if (c0.sha256 === sha256) { used(url); return c0.bytes; }
   await c.delete(url).catch(() => false);
+  gone(c, url);
   return null;
 }
 
@@ -151,10 +211,12 @@ async function keep(url: string, bytes: Uint8Array): Promise<boolean> {
         const r = await c.match(k);
         mine -= Number(r?.headers.get('content-length') ?? 0);
         await c.delete(k);
+        gone(c, k);
       }
       if (room() < bytes.length) return false;
     }
     await c.put(url, new Response(bytes as BlobPart, {headers: {'content-type': 'application/octet-stream', 'content-length': String(bytes.length)}}));
+    void sizesOf(c).then((m) => m.set(whole(url), bytes.length));
     used(url);
     return true;
   } catch { return false; }
@@ -162,7 +224,7 @@ async function keep(url: string, bytes: Uint8Array): Promise<boolean> {
 
 async function keptBytes(c: Cache): Promise<number> {
   let n = 0;
-  for (const k of await c.keys()) n += Number((await c.match(k))?.headers.get('content-length') ?? 0);
+  for (const v of (await sizesOf(c)).values()) n += v;
   return n;
 }
 
@@ -170,14 +232,14 @@ async function keptBytes(c: Cache): Promise<number> {
 export async function keptL3(): Promise<{bytes: number; files: number}> {
   const c = await open();
   if (!c) return {bytes: 0, files: 0};
-  return {bytes: await keptBytes(c), files: (await c.keys()).length};
+  return {bytes: await keptBytes(c), files: (await sizesOf(c)).size};
 }
 
 /** Whatever the current l3 does not name goes: an l3 before, or what a browser kept of it. */
 async function forgetOthers(live: Set<string>) {
   const c = await open();
   if (!c) return;
-  for (const r of await c.keys()) if (!live.has(new URL(r.url).pathname)) await c.delete(r).catch(() => false);
+  for (const r of await c.keys()) if (!live.has(new URL(r.url).pathname)) { await c.delete(r).catch(() => false); gone(c, r.url); }
   try {
     const u = uses();
     for (const k of Object.keys(u)) if (!live.has(k)) delete u[k];
@@ -190,7 +252,7 @@ async function bytesOf(path: string, expect: {sha256: string; size: number}, pro
   const url = `${BASE}${path}`;
   const have = await kept(url, expect.sha256);
   if (have) { progress?.bytes(expect.size); return have; }
-  const bytes = await download(url, expect, progress);
+  const bytes = await download(url, expect, progress, {check: offThread});
   void keep(url, bytes);
   return bytes;
 }
@@ -199,9 +261,12 @@ const gunzip = async (bytes: Uint8Array) =>
   new Uint8Array(await new Response(new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer());
 
 /** A blob's bytes, unpacked and checked against what it says it is (a program's against its sha256). */
-async function unblob(b: Blob, progress?: Parameters<typeof download>[2], sha256?: string): Promise<Uint8Array> {
-  const bytes = await gunzip(await bytesOf(b.path, b, progress));
-  if (bytes.length !== b.bytes || (sha256 && await digest(bytes) !== sha256)) throw new Fatal(`l3: ${b.path} is not what its index says`);
+async function unblob(b: Blob, progress?: Parameters<typeof download>[2], sha256?: string, step = atOnce): Promise<Uint8Array> {
+  await step();
+  // Unpacked and checked off the page's thread; a copy goes, as what was fetched may be on its way to be kept.
+  const {bytes, sha256: is} = await checked(await bytesOf(b.path, b, progress), true, false);
+  await step();
+  if (bytes.length !== b.bytes || (sha256 && is !== sha256)) throw new Fatal(`l3: ${b.path} is not what its index says`);
   return bytes;
 }
 
@@ -210,8 +275,11 @@ async function unblob(b: Blob, progress?: Parameters<typeof download>[2], sha256
  * translation. A translation the engine will not compile is made again by
  * the translator when its program runs.
  */
-async function hot(t: Translation, mode: number, progress?: Parameters<typeof download>[2]) {
-  const [bytes, wasm] = await Promise.all([unblob(t.elf, progress, t.sha256), unblob(t.wasm, progress)]);
+async function hot(t: Translation, mode: number, progress?: Parameters<typeof download>[2], step = atOnce) {
+  // Waited for (a Prompt starting), both at once; readied quietly (`step` is idle), one after the other.
+  const [bytes, wasm] = step === atOnce ? await Promise.all([unblob(t.elf, progress, t.sha256), unblob(t.wasm, progress)])
+    : [await unblob(t.elf, progress, t.sha256, step), await unblob(t.wasm, progress, undefined, step)];
+  await step();
   // As the kernel runs it (xlat/runtime/share.mjs): its data kept beside it, its memory shared where the page may share memory.
   const shared = threadsApart();
   const p = prepare(wasm, {shared});
@@ -231,7 +299,7 @@ function warm(index: Index) {
   warming ??= (async () => {
     for (const t of index.translations) {
       if (FIRST.includes(t.path) || later.has(t.path)) continue;
-      const f = await hot(t, index.files.find((x) => x.path === t.path)?.mode ?? 0o755).catch(() => null);
+      const f = await hot(t, index.files.find((x) => x.path === t.path)?.mode ?? 0o755, undefined, idle).catch(() => null);
       if (f?.module) later.set(t.path, f);
     }
   })();

@@ -1,6 +1,6 @@
-import {h} from '../dom.ts';
+import {dateFormat, h} from '../dom.ts';
 import {arrive} from '../glide.ts';
-import {currentLang, t} from '../i18n.ts';
+import {t} from '../i18n.ts';
 import {shown} from '../inbox.ts';
 import * as servers from '../servers.ts';
 import {coalesced, every} from '../runs.ts';
@@ -28,12 +28,16 @@ const EVERY = 15_000;
 
 /** The letters of a face: the first two of the address's name. */
 const face = (p: servers.Post) => [...p.by.split('@')[0]].slice(0, 2).join('').toUpperCase();
-const clock = (ms: number) => new Date(ms).toLocaleTimeString(currentLang(), {hour: '2-digit', minute: '2-digit', hour12: false});
+/** A time written whole, as toLocaleString writes one. */
+const WHOLE: Intl.DateTimeFormatOptions = {year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric'};
+const CLOCK: Intl.DateTimeFormatOptions = {hour: '2-digit', minute: '2-digit', hour12: false};
+const DAY_NAME: Intl.DateTimeFormatOptions = {weekday: 'short', month: 'short', day: 'numeric'};
+const clock = (ms: number) => dateFormat(CLOCK).format(ms);
 function dayName(ms: number): string {
   const now = Date.now();
   if (servers.dayOf(ms) === servers.dayOf(now)) return t('Today');
   if (servers.dayOf(ms) === servers.dayOf(now - 86_400_000)) return t('Yesterday');
-  return new Date(ms).toLocaleDateString(currentLang(), {weekday: 'short', month: 'short', day: 'numeric'});
+  return dateFormat(DAY_NAME).format(ms);
 }
 
 /** The talks on screen, by board, each with how to read what came now (`mine`: the reader just wrote, so go to it). */
@@ -91,7 +95,7 @@ export function timeline(scroller: HTMLElement, board: string, member: boolean, 
     // with "guest" beside it and their face dashed, so they are never taken for one of its people.
     const [name, domain] = shown(p.by).split('@');
     const where = p.guest ? t('guest') : domain ? `@${domain}` : '';
-    const time = h('time', {class: 'muted small', datetime: when.toISOString(), title: when.toLocaleString(currentLang())}, clock(p.at));
+    const time = h('time', {class: 'muted small', datetime: when.toISOString(), title: dateFormat(WHOLE).format(when)}, clock(p.at));
     const below = h('div', {class: 'tl-foot muted small'});
     const acts = h('div', {class: 'tl-acts'});
     const main = h('div', {class: 'tl-main'},
