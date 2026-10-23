@@ -52,11 +52,11 @@ pub struct Release {
 pub const RELEASES: &[Release] = &[Release {
     name: "OS Length3 Linux",
     version: "0.5.0",
-    sha256: "5e005ef2d90d4729fdc544fc0f73a3b8cb0e48b0a8c723828777cff405c81b72",
-    bytes: 59_325_012,
-    file: "os-length3-linux-0.5.0-x86_64-5e005ef2d90d4729fdc544fc0f73a3b8cb0e48b0a8c723828777cff405c81b72.tar.zst",
+    sha256: "8c646888694e6b7d20173950bf66799debed5a231fac30f539569f5e0cd60dd4",
+    bytes: 59_133_286,
+    file: "os-length3-linux-0.5.0-x86_64-8c646888694e6b7d20173950bf66799debed5a231fac30f539569f5e0cd60dd4.tar.zst",
     tag: "os-length3-linux-v0.5.0",
-    web: "36c33085fd930a59aee38bc6af3cd1f531e5c44baf297538db78aeb5c5283161",
+    web: "61e5efe33526185b1e337f5d2c0b93ecaac2b778510e2e19bd7623bb93d96288",
 }, Release {
     name: "OS Length3 Linux",
     version: "0.4.1",

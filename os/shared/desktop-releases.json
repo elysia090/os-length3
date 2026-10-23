@@ -8,7 +8,7 @@
     "appimage": {"file": "os-length3-linux-0.4.1-desktop-x86_64.AppImage", "bytes": 81734136, "sha256": "11ae6d916ee49884ca6420b7d1e4b1bbe467fcccf757397bbd703d44b7f8c0ef"}
   },
   "0.5.0": {
-    "deb": {"file": "os-length3-linux-0.5.0-desktop-amd64.deb", "bytes": 3294656, "sha256": "eec44f92eb639c9c001ddfa9fd5e6a00486c1ce49825d4fd897c7d8972bfb182"},
-    "appimage": {"file": "os-length3-linux-0.5.0-desktop-x86_64.AppImage", "bytes": 82045432, "sha256": "88ecf460e7e63be6d0badb011a3124d8386b739e45628c0b3d18320999640a3f"}
+    "deb": {"file": "os-length3-linux-0.5.0-desktop-amd64.deb", "bytes": 3299488, "sha256": "4e15e5f00f8253781b094089424aa399d6096fb158ae53990ce0d7fc27f3ceb5"},
+    "appimage": {"file": "os-length3-linux-0.5.0-desktop-x86_64.AppImage", "bytes": 82045432, "sha256": "4f0f5c17c5f640be4c3b5de99ba05a3f5d455b29b464bcf335df9c4d6629b74b"}
   }
 }
