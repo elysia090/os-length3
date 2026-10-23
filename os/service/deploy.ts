@@ -144,6 +144,14 @@ async function releaseFiles(bucket: string) {
 }
 
 const step = process.argv[2];
+// On Workers Builds, only main's build deploys (README.md, Deploy): another branch's build uploads a version to
+// preview (`npx wrangler versions upload`), never this, which migrates production's database and replaces its Worker.
+const branch = process.env.WORKERS_CI_BRANCH;
+if (branch && branch !== 'main') {
+  console.error(`deploy: this is a build of ${branch}, not main: production is deployed from main alone (a branch's deploy command is \`npx wrangler versions upload\`)`);
+  process.exit(2);
+}
+
 if (!step) {
   const unbuilt = built(new URL(`../${vars('directory') ?? 'dist'}`, import.meta.url).pathname);
   if (unbuilt) { console.error(`deploy: ${unbuilt}`); process.exit(2); }

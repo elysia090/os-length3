@@ -494,7 +494,8 @@ to this repository, and its Settings → Build say, once:
 | Build command | `npm run build:cloudflare`: l3 for the browser from the release `RELEASE` names (`scripts/prompt-files.mjs`, taken only at the index `core/src/root.rs` pins for it), then the app |
 | Deploy command | `node service/deploy.ts`: the migrations on Neon's production branch (no branch is made for a deploy; a contract step waits until the new Worker answers), the bucket, then the Worker with the secrets it lacks (the first build prints the link in its log), then the release's files the Remote serves to anyone (`service/mirror.ts`): each root `core/src/root.rs` pins and the desktop app `shared/desktop-releases.json` pins for `RELEASE`, taken from the GitHub release where the bucket lacks them, checked against those pins, and put with wrangler |
 | Variables and secrets | `NEON_PROJECT_ID`; secrets `NEON_API_KEY` (a Neon API key for the project) and `GITHUB_TOKEN` (read-only, for this private repository's releases: the build's Prompt and the deploy's release files) |
-| Branch control | main deploys; another branch's build uploads a version to preview. Its build needs the token too: without it, a branch's preview is built without the Prompt, and main's build stops (`scripts/prompt-files.mjs`) |
+| Non-production branch deploy command | `npx wrangler versions upload`: another branch's build uploads a version to preview and never deploys (`service/deploy.ts` refuses to run for a branch other than main). Never `npx wrangler deploy`, which would replace production from any branch, without its migrations or its bucket |
+| Branch control | main deploys; other branches build previews. A build needs the token: without it, a branch's preview is built without the Prompt, and main's build stops (`scripts/prompt-files.mjs`) |
 
 The Prompt the web serves is a released one: a newer one ships by releasing
 it (a new version in `RELEASE`, `.github/workflows/release.yml`; without
