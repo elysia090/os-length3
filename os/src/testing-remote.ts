@@ -31,7 +31,10 @@ export async function browserOnRemote(o: {plan?: PlanConfig; billing?: Billing; 
   const db = await fileDb();
   const auth = createAuth({db, secret: SECRET, baseURL: URL_, appOrigin: APP, rateLimit: false, dev: true});
   const {bucket: keeps, ...plan} = o;
-  const app = createApp({db, auth, bucket: keeps === false ? null : memoryBucket(), origins: [APP], providers: ['dev'], domain: 'length3.test', baseURL: URL_, ...plan});
+  // Each session kept a few seconds as the Worker keeps it (auth.ts signedIn): a client's many requests ask the
+  // database once, as in production, which is most of what the client tests took.
+  const app = createApp({db, auth, bucket: keeps === false ? null : memoryBucket(), origins: [APP], providers: ['dev'], domain: 'length3.test', baseURL: URL_,
+    sessionKept: 10_000, ...plan});
   /** What this browser asked the Remote, by path. */
   const asked: string[] = [];
   Object.assign(globalThis, {fetch: (url: string, init?: RequestInit) => {
@@ -90,10 +93,15 @@ export async function browserOnRemote(o: {plan?: PlanConfig; billing?: Billing; 
   /** The draft the Remote holds for a repo, as text by path (null: a folder; undefined: not text). */
   async function remoteFiles(repo: string): Promise<Record<string, string | null>> {
     const {draft: tree} = await (await fetch(`${URL_}/v1/repos/${repo}`, {headers: auth_})).json() as {draft: Record<string, string | null>};
-    const out: Record<string, string | null> = {};
-    for (const [p, sha] of Object.entries(tree)) {
-      out[p] = sha === null ? null : new TextDecoder().decode(await (await fetch(`${URL_}/v1/blobs/${sha}`, {headers: auth_})).arrayBuffer());
+    // Read 64 at a time, as a diff of many files is (POST /v1/blobs/read), not one request a file.
+    const shas = [...new Set(Object.values(tree).filter((v): v is string => typeof v === 'string'))];
+    const bytes = new Map<string, string>();
+    for (let i = 0; i < shas.length; i += 64) {
+      const got = await (await fetch(`${URL_}/v1/blobs/read`, {method: 'POST', headers: {...auth_, 'Content-Type': 'application/json'}, body: JSON.stringify(shas.slice(i, i + 64))})).json() as Record<string, string>;
+      for (const [sha, b64] of Object.entries(got)) bytes.set(sha, new TextDecoder().decode(Uint8Array.from(atob(b64), (ch) => ch.charCodeAt(0))));
     }
+    const out: Record<string, string | null> = {};
+    for (const [p, sha] of Object.entries(tree)) out[p] = sha === null ? null : bytes.get(sha) ?? '';
     return out;
   }
   /** Another device changing a Home setting, from the version the Remote has. */

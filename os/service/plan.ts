@@ -253,8 +253,10 @@ export function planRoutes(d: PlanDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   v1.get('/plan', async (c) => {
     const me = c.get('userId');
     if (!p.on || !p.config) return c.json({plan: 'none'});
-    const [row, use, names] = await Promise.all([p.rowOf(db, me), usage(db, me), db.select({domain: address.domain, n: sql<number>`count(*)::int`})
-      .from(address).where(and(eq(address.userId, me), kept)).groupBy(address.domain) as Promise<{domain: string; n: number}[]>]);
+    // One after another on the request's one connection: asked at once, each would open a connection of its own (worker.ts).
+    const row = await p.rowOf(db, me), use = await usage(db, me);
+    const names = await db.select({domain: address.domain, n: sql<number>`count(*)::int`})
+      .from(address).where(and(eq(address.userId, me), kept)).groupBy(address.domain) as {domain: string; n: number}[];
     const s = standing(row, p.config.grace);
     return c.json({plan: s.paid ? 'paid' : 'free', status: s.status, renews: s.renews, ends: s.ends, graceUntil: s.graceUntil,
       usage: {...use, names: names.reduce((a, r) => a + r.n, 0)}, free: p.config.free,

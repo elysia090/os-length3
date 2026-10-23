@@ -86,13 +86,14 @@ export function validPath(p: string): boolean {
 }
 
 /**
- * The paths of `tree` that are a file (or an empty folder) and a folder at once: `a` and `a/b` both named. No
- * client can lay such a tree out on a disk; a draft is refused one, and a merge says each as a conflict.
+ * The paths of `tree` that are a file and a folder at once: `a` a file, and `a/b` named too. No client can lay such
+ * a tree out on a disk; a draft is refused one, and a merge says each as a conflict. (A folder may be named beside
+ * what is in it, `a: null`: that is no clash.)
  */
 export function clashes(tree: Record<string, unknown>): string[] {
   const out: string[] = [];
   for (const p of Object.keys(tree)) {
-    for (let i = p.indexOf('/'); i >= 0; i = p.indexOf('/', i + 1)) if (p.slice(0, i) in tree) { out.push(p.slice(0, i)); break; }
+    for (let i = p.indexOf('/'); i >= 0; i = p.indexOf('/', i + 1)) if (typeof tree[p.slice(0, i)] === 'string') { out.push(p.slice(0, i)); break; }
   }
   return [...new Set(out)].sort();
 }

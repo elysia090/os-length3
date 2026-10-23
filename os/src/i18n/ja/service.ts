@@ -132,4 +132,8 @@ export default {
   'The Remote takes nothing new just now; your work stays on this device': 'Remote はいま新しいものを受け取れません。作業はこの端末に残ります',
   'The Remote holds all the files it may just now; your work stays on this device': 'Remote はいま置けるだけのファイルを置いています。作業はこの端末に残ります',
   'This account has sent all it may today; the rest is sent tomorrow': 'このアカウントが今日送れる分は送りました。残りは明日送ります',
+  'A subscription is being made for this account; finish it, or try again tomorrow': 'このアカウントの購読を手続き中です。それを済ませるか、明日もう一度',
+  'A file and a folder of the same name': '同じ名前のファイルとフォルダーがあります',
+  'What was sent is not something the Remote keeps': '送られたものは Remote が保てるものではありません',
+  'That name\'s domain no longer names this account': 'その名前のドメインは、もうこのアカウントを指していません',
 } as Record<string, string>;

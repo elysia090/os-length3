@@ -76,7 +76,11 @@ export const providers = (c: Pick<AuthConfig, 'github' | 'google' | 'apple' | 'd
  * interval; OWASP ASVS 2.2.1: anti-automation on every way in). Social sign-in keeps Better Auth's
  * own, 3 in 10 seconds; looking a user code up (/device) its plugin's, 5 in the code's 10 minutes.
  */
-export const AUTH_LIMITS: Record<string, {window: number; max: number}> = {
+export const AUTH_LIMITS: Record<string, {window: number; max: number} | false> = {
+  // Read on every page load and by every client: counted at the edge (wrangler.toml LIMITER), not in the
+  // database, which would be a read and a write each time.
+  '/get-session': false,
+  '/list-accounts': false,
   '/device/code': {window: 60, max: 10},
   // Asked every 2 s while a code waits (interval below): 30 a minute, and room for a retry.
   '/device/token': {window: 60, max: 40},
@@ -127,7 +131,8 @@ export function createAuth(c: AuthConfig) {
     // Over HTTPS every cookie is a __Host- one: Secure, Path=/ and no Domain, so no other host under
     // length3.com can set or shadow it (RFC 6265bis §4.1.3.2; ASVS 3.4.1-3.4.4). HttpOnly and
     // SameSite=Lax are Better Auth's own for every cookie it sets.
-    advanced: {ipAddress: {ipAddressHeaders: ['cf-connecting-ip']},
+    // A session is read with its user in one query (the relations are schema.auth.ts's), not two.
+    advanced: {database: {joins: true}, ipAddress: {ipAddressHeaders: ['cf-connecting-ip']},
       ...(https ? {useSecureCookies: false, cookiePrefix: '__Host-length3', defaultCookieAttributes: {secure: true, path: '/'}} : {})},
     // A sign-in with a passkey is proof the person is at the device just now: turning a repo
     // off (and setting the code for it) asks for a session made that way minutes ago. Only the

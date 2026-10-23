@@ -64,8 +64,8 @@ test('a device asks for a code, a signed-in browser approves it, the device gets
   assert.equal(claimed.status, 200, JSON.stringify(claimed.json));
   const approved = await s.call('POST', '/api/auth/device/approve', {token: t, body: {userCode: user_code}});
   assert.equal(approved.status, 200, JSON.stringify(approved.json));
-  // Polling sooner than the interval says so; after it, the token comes.
-  await new Promise((r) => setTimeout(r, 2100));
+  // Polling sooner than the interval says so; after it, the token comes (its last poll moved back past the interval, not waited out).
+  await s.db.execute(sql`update device_code set last_polled_at = last_polled_at - interval '3 seconds'`);
   const got = await poll();
   assert.equal(got.status, 200, JSON.stringify(got.json));
   const deviceToken = got.json.access_token as string;

@@ -8,18 +8,16 @@
 import assert from 'node:assert/strict';
 import {hkdfSync} from 'node:crypto';
 import {test} from 'node:test';
-import {PGlite} from '@electric-sql/pglite';
 import {eq} from 'drizzle-orm';
 import {drizzle} from 'drizzle-orm/pglite';
-import {migrate} from 'drizzle-orm/pglite/migrator';
 import {SECURITY_TXT} from './about.ts';
 import {createApp} from './app.ts';
 import {AUTH_LIMITS, createAuth} from './auth.ts';
 import {hmacHex, keyFor, same} from './keys.ts';
-import {MIGRATIONS, workerRole} from './neon.ts';
+import {workerRole} from './neon.ts';
 import {API_POLICY, throttled} from './request.ts';
 import * as schema from './schema.ts';
-import {APP, BASE, freshDb, named, SECRET, service} from './testing.ts';
+import {APP, BASE, database, freshDb, named, SECRET, service} from './testing.ts';
 
 const EVIL = 'https://evil.example';
 
@@ -127,14 +125,16 @@ test('Better Auth\'s own refusals for asking too often are said the same way, an
   const app = createApp({db, auth, bucket: null, origins: [APP], appOrigin: APP, providers: ['dev'], baseURL: BASE, secret: SECRET});
   const ask = () => app.request(`${BASE}/api/auth/device/code`, {method: 'POST', headers: {'Content-Type': 'application/json', 'CF-Connecting-IP': '203.0.113.9'},
     body: JSON.stringify({client_id: 'l3'})});
-  const max = AUTH_LIMITS['/device/code'].max;
+  const max = (AUTH_LIMITS['/device/code'] as {max: number}).max;
   for (let i = 0; i < max; i++) assert.equal((await ask()).status, 200);
   const r = await ask();
   assert.equal(r.status, 429);
   const wait = r.headers.get('Retry-After');
   assert.ok(wait && Number(wait) > 0 && Number(wait) <= 60, String(wait));
   assert.deepEqual(await r.json(), {error: 'Too many requests; try again later', retryAfter: Number(wait)});
-  for (const p of ['/passkey/verify-authentication', '/device/approve', '/device/token']) assert.ok(AUTH_LIMITS[p].max <= 40, p);
+  for (const p of ['/passkey/verify-authentication', '/device/approve', '/device/token']) assert.ok((AUTH_LIMITS[p] as {max: number}).max <= 40, p);
+  // What only reads (every page load asks who it is) is counted at the edge, not written to the database each time.
+  assert.deepEqual([AUTH_LIMITS['/get-session'], AUTH_LIMITS['/list-accounts']], [false, false]);
 });
 
 test('each purpose has a key of its own, derived from the one secret with HKDF; none is the secret (audit U1, A10; ASVS 6.4.1-6.4.2)', async () => {
@@ -202,9 +202,9 @@ test('/.well-known/security.txt says where to report, until a date less than a y
 });
 
 test('the role the Worker connects as reads and writes rows, and can make, change or drop nothing (ASVS 1.4.5, 14.1.x; audit D10)', async () => {
-  const pg = new PGlite();
+  // The migrated database every test starts from (roles are the cluster's, so they come with it).
+  const pg = await database();
   try {
-    await migrate(drizzle(pg, {schema}), {migrationsFolder: MIGRATIONS});
     // Made by the function deploy.ts makes it with (neon.ts workerRole): a login role in remote_app and
     // nothing more, its statements, idle transactions and lock waits cut off.
     await workerRole(drizzle(pg, {schema}) as unknown as Parameters<typeof workerRole>[0], 'test1');
