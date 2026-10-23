@@ -64,8 +64,8 @@ test('a device asks for a code, a signed-in browser approves it, the device gets
   assert.equal(claimed.status, 200, JSON.stringify(claimed.json));
   const approved = await s.call('POST', '/api/auth/device/approve', {token: t, body: {userCode: user_code}});
   assert.equal(approved.status, 200, JSON.stringify(approved.json));
-  // Polling sooner than the interval says so; after it, the token comes.
-  await new Promise((r) => setTimeout(r, 2100));
+  // Polling sooner than the interval says so; after it, the token comes (its last poll moved back past the interval, not waited out).
+  await s.db.execute(sql`update device_code set last_polled_at = last_polled_at - interval '6 seconds'`);
   const got = await poll();
   assert.equal(got.status, 200, JSON.stringify(got.json));
   const deviceToken = got.json.access_token as string;
@@ -83,7 +83,10 @@ test('Devices: a session signed in days ago still lists the devices (Better Auth
   await s.db.execute(sql`update session set created_at = now() - interval '3 days'`);
   const got = await s.call('GET', '/api/auth/list-sessions', {token: a});
   assert.equal(got.status, 200, JSON.stringify(got.json));
-  assert.deepEqual((got.json as unknown as {token: string}[]).map((x) => x.token).sort(), [raw(a), raw(b)].sort());
+  // The session asking is told its own token; another is named by its id, never its token.
+  const ids = ((await s.db.execute(sql`select id, token from session`)).rows as {id: string; token: string}[]);
+  const idOfToken = (t: string) => ids.find((x) => x.token === raw(t))!.id;
+  assert.deepEqual((got.json as unknown as {token: string}[]).map((x) => x.token).sort(), [raw(a), `id:${idOfToken(b)}`].sort());
   assert.equal((await s.call('GET', '/api/auth/list-sessions')).status, 401);
   // An ended session is not listed.
   await s.db.execute(sql`update session set expires_at = now() - interval '1 second' where token = ${raw(b)}`);
@@ -1452,7 +1455,7 @@ test('On Workers a sweep that fails fails its run, and says so', async () => {
   const worker = (await import('./worker.ts')).default;
   // A database nobody answers for: the sweep's first step fails.
   const env = {DATABASE_URL: 'postgresql://nobody:nothing@127.0.0.1/none?sslmode=require', BETTER_AUTH_SECRET: crypto.randomUUID() + crypto.randomUUID(),
-    BASE_URL: BASE, APP_ORIGIN: APP, BLOBS: {head: async () => null, get: async () => null, put: async () => undefined, delete: async () => undefined}};
+    BASE_URL: BASE, APP_ORIGIN: APP, BLOBS: {head: async () => null, get: async () => null, put: async () => undefined, delete: async () => undefined, list: async () => ({objects: [], truncated: false})}};
   const later: Promise<unknown>[] = [], said: unknown[][] = [];
   const error = console.error;
   console.error = (...a: unknown[]) => { said.push(a); };
@@ -1461,7 +1464,9 @@ test('On Workers a sweep that fails fails its run, and says so', async () => {
   } finally {
     console.error = error;
   }
-  assert.equal(said[0]?.[0], 'sweep failed');
+  // Each step failed on its own, said as it failed; and the run as a whole.
+  assert.ok(said.some((a) => a[0] === 'sweep failed'), JSON.stringify(said.map((a) => a[0])));
+  assert.ok(said.some((a) => a[0] === 'sweep: repo failed'));
   // The connection is let go however the sweep went.
   assert.deepEqual((await Promise.allSettled(later)).map((r) => r.status), ['fulfilled']);
 });

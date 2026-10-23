@@ -15,6 +15,8 @@ import {createApp} from './app.ts';
 import {createAuth, providers} from './auth.ts';
 import {enterEmail} from './enter.ts';
 import {r2Bucket, type R2Bucket} from './bucket.ts';
+import {limitsOf} from './budget.ts';
+import type {Edge} from './files.ts';
 import {planConfig} from './plan.ts';
 import {stripeRest} from './stripe.ts';
 import * as schema from './schema.ts';
@@ -57,7 +59,18 @@ export interface Env {
    * machine (selftest/prod). Taken only where BASE_URL is this machine itself, never on Cloudflare.
    */
   DEV_SIGN_IN?: string;
+  /** What R2 and the database may be asked for (budget.ts): R2_STORED_MB, R2_WRITES_MONTH, R2_READS_MONTH, UPLOAD_MB_DAY, PG_MB. */
+  R2_STORED_MB?: string;
+  R2_WRITES_MONTH?: string;
+  R2_READS_MONTH?: string;
+  UPLOAD_MB_DAY?: string;
+  PG_MB?: string;
+  /** How often one session or address may ask (wrangler.toml [[ratelimits]]); not bound, none is counted. */
+  LIMITER?: {limit(o: {key: string}): Promise<{success: boolean}>};
 }
+
+/** The edge's own cache, where a Worker has one (not under workers.dev, nor on this machine's workerd without it). */
+const edge = (): Edge | undefined => (globalThis as {caches?: {default?: Edge}}).caches?.default;
 
 /** Whether `url` is this machine itself (localhost, 127.x, ::1). */
 const loopback = (url: string) => { try { return /^(localhost|127(\.\d{1,3}){3}|\[::1\])$/i.test(new URL(url).hostname); } catch { return false; } };
@@ -104,6 +117,9 @@ export async function served<R>(url: string, at: <T>(d: ReturnType<typeof open>[
 
 let made: ReturnType<typeof make> | null = null;
 function make(env: Env) {
+  // Without its secret, Better Auth would sign with its public default and every key derived from it (keys.ts) would
+  // be keyed with nothing: refused at once, never served that way.
+  if (!env.BETTER_AUTH_SECRET || env.BETTER_AUTH_SECRET.length < 32) throw new Error('BETTER_AUTH_SECRET is missing or shorter than 32 characters');
   const {db, at} = scoped(open(env.DATABASE_URL).db);
   const pair = (id?: string, secret?: string) => (id && secret ? {clientId: id, clientSecret: secret} : undefined);
   const github = pair(env.GITHUB_CLIENT_ID, env.GITHUB_CLIENT_SECRET), google = pair(env.GOOGLE_CLIENT_ID, env.GOOGLE_CLIENT_SECRET),
@@ -118,6 +134,7 @@ function make(env: Env) {
   const app = createApp({db, auth, bucket, origins: [env.APP_ORIGIN, ...origins], appOrigin: env.APP_ORIGIN, providers: providers({github, google, apple, dev}),
     domain: env.DOMAIN ?? 'length3.com', baseURL: env.BASE_URL, secret: env.BETTER_AUTH_SECRET, enter,
     quota: env.QUOTA_MB ? Number(env.QUOTA_MB) * 1024 ** 2 : undefined,
+    limits: limitsOf(env as unknown as Record<string, string | undefined>), edge: edge(), limiter: env.LIMITER, sessionKept: 10_000,
     // The plan holds here (but on a Remote for research, one person's alone); it is bought only when
     // Stripe's keys and price are all given.
     plan: enter ? undefined : planConfig(env),
@@ -137,7 +154,10 @@ export default {
     const m = made ??= make(env);
     const {pool, db} = open(env.DATABASE_URL);
     try {
-      console.log('sweep', JSON.stringify(await sweep(db, m.bucket)));
+      const gone = await sweep(db, m.bucket);
+      console.log('sweep', JSON.stringify(gone));
+      // Every step ran; one or more failed (each said in the log): the run fails, as Cron Events shows it.
+      if (gone.failed) throw new Error(`${gone.failed} of the sweep's steps failed`);
     } catch (e) {
       console.error('sweep failed', e);
       throw e;

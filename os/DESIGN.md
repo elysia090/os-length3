@@ -1339,7 +1339,7 @@ the card becomes the Remote's).
   turn a device's SSH off, so the switch on another device's card only goes
   one way. On the web one short line over those cards says SSH is the
   desktop app's. The listener is l3's, in the background, recorded under
-  the data directory as a Prompt is, and asks the Remote every 5 s,
+  the data directory as a Prompt is, and asks the Remote every 30 s or so,
   stopping once it was turned off or the device signed out. Keys are the
   `.authorized_keys` dotfile (below), public keys only, so a key added on
   one device counts on every one. With none there, turning on says to add

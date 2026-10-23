@@ -24,7 +24,8 @@
 // and signedIn, which every /v1 route behind it asks first.
 
 import {passkey} from '@better-auth/passkey';
-import {betterAuth} from 'better-auth';
+// The build of Better Auth without Kysely, its own database layer (700 KB of the Worker's 3.2 MB): Drizzle is this one's.
+import {betterAuth} from 'better-auth/minimal';
 import {APIError, createAuthMiddleware} from 'better-auth/api';
 import {drizzleAdapter} from 'better-auth/adapters/drizzle';
 import {bearer, deviceAuthorization, genericOAuth} from 'better-auth/plugins';
@@ -76,9 +77,13 @@ export const providers = (c: Pick<AuthConfig, 'github' | 'google' | 'apple' | 'd
  * interval; OWASP ASVS 2.2.1: anti-automation on every way in). Social sign-in keeps Better Auth's
  * own, 3 in 10 seconds; looking a user code up (/device) its plugin's, 5 in the code's 10 minutes.
  */
-export const AUTH_LIMITS: Record<string, {window: number; max: number}> = {
+export const AUTH_LIMITS: Record<string, {window: number; max: number} | false> = {
+  // Read on every page load and by every client: counted at the edge (wrangler.toml LIMITER), not in the
+  // database, which would be a read and a write each time.
+  '/get-session': false,
+  '/list-accounts': false,
   '/device/code': {window: 60, max: 10},
-  // Asked every 2 s while a code waits (interval below): 30 a minute, and room for a retry.
+  // Asked every 5 s while a code waits (interval below): 12 a minute, and room for retries.
   '/device/token': {window: 60, max: 40},
   '/device/approve': {window: 60, max: 10},
   '/device/deny': {window: 60, max: 10},
@@ -127,7 +132,8 @@ export function createAuth(c: AuthConfig) {
     // Over HTTPS every cookie is a __Host- one: Secure, Path=/ and no Domain, so no other host under
     // length3.com can set or shadow it (RFC 6265bis §4.1.3.2; ASVS 3.4.1-3.4.4). HttpOnly and
     // SameSite=Lax are Better Auth's own for every cookie it sets.
-    advanced: {ipAddress: {ipAddressHeaders: ['cf-connecting-ip']},
+    // A session is read with its user in one query (the relations are schema.auth.ts's), not two.
+    advanced: {database: {joins: true}, ipAddress: {ipAddressHeaders: ['cf-connecting-ip']},
       ...(https ? {useSecureCookies: false, cookiePrefix: '__Host-length3', defaultCookieAttributes: {secure: true, path: '/'}} : {})},
     // A sign-in with a passkey is proof the person is at the device just now: turning a repo
     // off (and setting the code for it) asks for a session made that way minutes ago. Only the
@@ -159,7 +165,8 @@ export function createAuth(c: AuthConfig) {
         verificationUri: `${c.appOrigin}/?device`,
         validateClient: (id: string) => (DEVICE_CLIENTS as readonly string[]).includes(id),
         expiresIn: '10m',
-        interval: '2s',
+        // Each poll is a request and a count in the database (rate limits): every 5 s is 120 in its ten minutes, not 300.
+        interval: '5s',
       }),
       ...(c.dev ? [genericOAuth({config: [{
         providerId: 'dev', clientId: 'dev', clientSecret: 'dev',
@@ -182,17 +189,34 @@ export function signIn(d: {auth: Auth; providers: string[]; enter: boolean}, app
   // session here lasts 60 days, and the list is no secret of anyone else's: it is the Devices part, and
   // a day after signing in it would stop answering. Each session is read as Better Auth reads it, for the
   // session asking; what is sensitive (unlinking a sign-in) keeps the fresh rule.
+  //
+  // Another session's token is never said (it is that device's key: with it, anyone is that device): the session
+  // asking is told its own, by which a client knows which is itself, and each other is named `id:<its id>`, which
+  // revoke-session takes in place of a token, for the asking account's own sessions alone.
   app.get('/api/auth/list-sessions', async (c) => {
     const s = await d.auth.api.getSession({headers: c.req.raw.headers});
     if (!s) return c.json({message: 'Unauthorized', code: 'UNAUTHORIZED'}, 401);
     const ctx = await d.auth.$context;
     const now = Date.now();
     const list = (await ctx.internalAdapter.listSessions(s.user.id, {onlyActiveSessions: true})).filter((x) => new Date(x.expiresAt).getTime() > now);
-    return c.json(list.map((x) => ({id: x.id, token: x.token, userId: x.userId, expiresAt: x.expiresAt, createdAt: x.createdAt, updatedAt: x.updatedAt,
-      ipAddress: x.ipAddress ?? null, userAgent: x.userAgent ?? null})));
+    return c.json(list.map((x) => ({id: x.id, token: x.id === s.session.id ? x.token : `id:${x.id}`, userId: x.userId, expiresAt: x.expiresAt,
+      createdAt: x.createdAt, updatedAt: x.updatedAt, ipAddress: x.ipAddress ?? null, userAgent: x.userAgent ?? null})));
+  });
+  app.post('/api/auth/revoke-session', async (c, next) => {
+    const named = /^id:(.+)$/.exec(String((await c.req.raw.clone().json().catch(() => ({})) as {token?: unknown}).token ?? ''))?.[1];
+    if (!named) return next();
+    const s = await d.auth.api.getSession({headers: c.req.raw.headers});
+    if (!s) return c.json({message: 'Unauthorized', code: 'UNAUTHORIZED'}, 401);
+    const ctx = await d.auth.$context;
+    const it = (await ctx.internalAdapter.listSessions(s.user.id)).find((x) => x.id === named);
+    if (it) await ctx.internalAdapter.deleteSession(it.token);
+    forgetSessions();
+    return c.json({status: true});
   });
   app.on(['GET', 'POST'], '/api/auth/*', async (c) => {
     const res = await d.auth.handler(c.req.raw);
+    // A session ended here is not taken as still there from what signedIn keeps.
+    if (res.ok && /\/(sign-out|revoke-session|revoke-sessions|revoke-other-sessions)$/.test(c.req.path)) forgetSessions();
     // Asked too often: said as everywhere on the Remote (request.ts slowDown), Retry-After and retryAfter,
     // beside Better Auth's own X-Retry-After.
     const wait = res.status === 429 ? res.headers.get('X-Retry-After') : null;
@@ -202,13 +226,40 @@ export function signIn(d: {auth: Auth; providers: string[]; enter: boolean}, app
   if (d.providers.includes('dev')) app.route('/dev-oauth', devOAuth());
 }
 
+/** The session cookie by its exact name (createAuth: `__Host-length3` over HTTPS, Better Auth's own name otherwise). */
+const SESSION_COOKIES = ['__Host-length3.session_token', 'better-auth.session_token'];
+
+/** The one credential a request names: its bearer token, else its session cookie by that exact name; null when neither. */
+export function credentialOf(headers: Headers): {kind: 'bearer' | 'cookie'; key: string; headers: Headers} | null {
+  const bearer = /^Bearer ([^\s]+)$/.exec(headers.get('Authorization') ?? '')?.[1];
+  if (bearer) return {kind: 'bearer', key: `b:${bearer}`, headers: new Headers({Authorization: `Bearer ${bearer}`})};
+  for (const part of (headers.get('Cookie') ?? '').split(';')) {
+    const at = part.indexOf('=');
+    const name = part.slice(0, at).trim(), value = part.slice(at + 1).trim();
+    if (at > 0 && SESSION_COOKIES.includes(name) && value) return {kind: 'cookie', key: `c:${name}=${value}`, headers: new Headers({Cookie: `${name}=${value}`})};
+  }
+  return null;
+}
+
+/** Sessions signedIn looked up, kept a few seconds by this isolate (the Worker's: 10 s). */
+const kept = new Map<string, {until: number; user: string; session: string; name: string}>();
+/** Let go of every session kept: one was ended (sign-out, revoke) and may be among them. */
+export const forgetSessions = () => kept.clear();
+
 /**
  * Who is asking, or 401: a bearer token (the app, l3, the web once it took its token), or the session
  * cookie. A page elsewhere can make a browser send the cookie, never the bearer token: a write that
  * comes with the cookie alone is taken only from the app's own pages.
+ *
+ * The session is looked up from that one credential alone, the rest of the request's headers left out, so
+ * what is kept (`keep` ms, never past the session's end) is kept under what was looked up: a request that
+ * names a bearer is that bearer's or no one's, never a cookie's beside it, and a cookie only by its exact name.
  */
-export const signedIn = (auth: Auth, origins: string[]): MiddlewareHandler<Vars> => async (c, next) => {
-  const bearer = /^Bearer\s/i.test(c.req.header('Authorization') ?? '');
+export const signedIn = (auth: Auth, origins: string[], keep = 0): MiddlewareHandler<Vars> => async (c, next) => {
+  const cred = credentialOf(c.req.raw.headers);
+  // Nothing that could name a session: refused before the database is asked anything.
+  if (!cred) return c.json({error: 'not signed in'}, 401);
+  const bearer = cred.kind === 'bearer';
   const ours = origins.includes(c.req.header('Origin') ?? '');
   if (!bearer && c.req.method !== 'GET' && c.req.method !== 'HEAD' && !ours) return c.json({error: 'not from the app'}, 403);
   // A read with the cookie alone that the browser says another site's page started (a link, an
@@ -216,8 +267,17 @@ export const signedIn = (auth: Auth, origins: string[]): MiddlewareHandler<Vars>
   // someone's cookie, whatever a GET would do (Fetch Metadata, W3C; ASVS 4.2.2, 13.2.3).
   const site = c.req.header('Sec-Fetch-Site');
   if (!bearer && (site === 'cross-site' || site === 'same-site') && !ours) return c.json({error: 'not from the app'}, 403);
-  const s = await auth.api.getSession({headers: c.req.raw.headers});
-  if (!s) return c.json({error: 'not signed in'}, 401);
+  const now = Date.now(), had = keep ? kept.get(cred.key) : undefined;
+  if (had && had.until > now) {
+    c.set('userId', had.user); c.set('sessionId', had.session); c.set('name', had.name);
+    return next();
+  }
+  const s = await auth.api.getSession({headers: cred.headers});
+  if (!s) { kept.delete(cred.key); return c.json({error: 'not signed in'}, 401); }
+  if (keep) {
+    if (kept.size >= 1000) for (const [k, v] of kept) if (v.until <= now || kept.size >= 1000) kept.delete(k);
+    kept.set(cred.key, {until: Math.min(now + keep, new Date(s.session.expiresAt).getTime()), user: s.user.id, session: s.session.id, name: s.user.name});
+  }
   c.set('userId', s.user.id);
   c.set('sessionId', s.session.id);
   c.set('name', s.user.name);

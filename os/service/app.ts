@@ -18,21 +18,23 @@
 //   seen.ts     /v1/seen…, /v1/repos/:name/seen, /v1/servers/:id/repos   who sees a repo
 //   news.ts     /v1/news                               what came in, for the rail
 //   ssh.ts      /v1/ssh…                               which devices listen for SSH
-// and request.ts, what every request passes through (origins, limits, refusals, what fails unforeseen).
+// and request.ts, what every request passes through (origins, limits, refusals, what fails unforeseen), and
+// budget.ts, what R2 and the database may be asked for (counted before either is asked).
 
 import {Hono} from 'hono';
 import {about} from './about.ts';
 import {signedIn, signIn, type Auth} from './auth.ts';
 import type {Bucket} from './bucket.ts';
+import {Budget, FULL_WAIT, metered, type Limits} from './budget.ts';
 import {enter, type Enter} from './enter.ts';
-import {files} from './files.ts';
+import {files, type Edge} from './files.ts';
 import {homeRoutes} from './home.ts';
 import {inbox} from './inbox.ts';
 import {keyFor, type Purpose} from './keys.ts';
 import {news} from './news.ts';
 import {planRoutes, plans, type Billing, type PlanConfig} from './plan.ts';
 import {repos} from './repos.ts';
-import {bounded, failed, fromOrigins, unkept, type Db, type Vars} from './request.ts';
+import {addressOf, bounded, failed, fromOrigins, slowDown, unkept, type Db, type Vars} from './request.ts';
 import {seen} from './seen.ts';
 import {servers} from './servers.ts';
 import {sshRoutes} from './ssh.ts';
@@ -75,34 +77,76 @@ export interface Deps {
   billing?: Billing;
   /** The clock, for tests of what depends on when (a webhook's signature). */
   now?: () => number;
+  /** What R2 and the database may be asked for (budget.ts); without them, nothing is counted (dev, tests). */
+  limits?: Limits;
+  /** A cache in front of R2 for the release files (on Workers, caches.default). */
+  edge?: Edge;
+  /** How often one address may ask, counted at the edge before anything else is asked. */
+  limiter?: {limit(o: {key: string}): Promise<{success: boolean}>};
+  /** How long a session looked up is taken as still there by this process (ms; none by default). */
+  sessionKept?: number;
 }
+
+/**
+ * What a request asks that is let through a database at all it may take, though not a GET or a DELETE: signing in
+ * (a provider, the stand-in's, a link), reading files many at once, and what only takes away (a repo discarded, a
+ * signal taken, SSH turned off) or must be heard (Stripe's word on a payment).
+ */
+const ADDS_NOTHING = /^\/(api\/auth\/|dev-oauth\/|v1\/enter$|v1\/blobs\/(missing|read)$|v1\/repos\/[^/]+\/discard$|v1\/inbox\/signals\/take$|v1\/ssh\/[^/]+\/off$|v1\/stripe\/webhook$)/;
 
 export function createApp(d: Deps) {
   const app = new Hono<Vars>();
   app.onError(failed);
+  // Every answer is JSON, a path that is no route's too (not Hono's text).
+  app.notFound((c) => c.json({error: 'Not found'}, 404));
   const db = d.db, domain = d.domain ?? 'length3.com', closed = !!d.enter;
   // The plan's rules, which the routes that make something new ask (repos, servers, inbox).
   const plan = plans({db, config: d.plan, billing: d.billing, domain});
   const key = (purpose: Purpose) => keyFor(d.secret ?? '', purpose);
   app.use('*', fromOrigins(d.origins));
   app.use('*', unkept);
+  // Asked too often, refused at the edge, before the database or R2 is asked anything: by the address it came from.
+  if (d.limiter) {
+    const limiter = d.limiter;
+    app.use('*', async (c, next) => {
+      if (c.req.method === 'OPTIONS') return next();
+      // By address alone: a token is not known good until the database is asked, and one made up each time
+      // would be a count of its own each time.
+      const {success} = await limiter.limit({key: addressOf(c) || 'here'});
+      if (!success) slowDown(60, {error: 'Asked too often; try again in a minute'});
+      await next();
+    });
+  }
   app.use('*', bounded);
+  const budget = d.limits ? new Budget(d.limits, d.now) : null;
+  // Every read of R2 counted first (a put, by the route that makes it); with no budget, the bucket as it is.
+  const bucket = d.bucket && budget ? metered(d.bucket, budget, db) : d.bucket;
+  // The database at all it may take: what would add to it is refused until room comes back (the sweep, a delete).
+  if (budget) {
+    app.use('*', async (c, next) => {
+      const adds = !['GET', 'HEAD', 'OPTIONS', 'DELETE'].includes(c.req.method) && !ADDS_NOTHING.test(c.req.path);
+      if (adds && await budget.full(db)) {
+        return c.json({error: 'The Remote takes nothing new just now; your work stays on this device', budget: true, retryAfter: FULL_WAIT}, 507, {'Retry-After': String(FULL_WAIT)});
+      }
+      await next();
+    });
+  }
 
   signIn({auth: d.auth, providers: d.providers, enter: closed}, app);
   about({db, providers: d.providers, domain, appOrigin: d.appOrigin, enter: closed, baseURL: d.baseURL}, app);
   if (d.enter) enter({db, auth: d.auth, enter: d.enter}, app);
 
   const v1 = new Hono<Vars>();
-  v1.use('*', signedIn(d.auth, d.origins));
-  files({db, bucket: d.bucket, quota: d.quota}, v1, app);
+  v1.use('*', signedIn(d.auth, d.origins, d.sessionKept));
+  files({db, bucket, raw: d.bucket, quota: d.quota, budget, edge: d.edge}, v1, app);
   repos({db, quota: d.quota, plans: plan, offKey: key('off-code')}, v1);
   homeRoutes({db}, v1);
-  inbox({db, domain, baseURL: d.baseURL ?? '', secret: key('domain-proof'), txt: d.txt, recheck: d.recheck, plans: plan}, v1, app);
-  servers({db, domain, appOrigin: d.appOrigin, secret: key('invite'), closed, plans: plan}, v1, app);
+  const names = inbox({db, domain, baseURL: d.baseURL ?? '', secret: key('domain-proof'), txt: d.txt, recheck: d.recheck, plans: plan}, v1, app);
+  servers({db, domain, appOrigin: d.appOrigin, secret: key('invite'), closed, plans: plan, proven: names.proven}, v1, app);
   planRoutes({db, plans: plan, origins: d.origins, appOrigin: d.appOrigin, now: d.now}, v1, app);
   news({db}, v1);
   sshRoutes({db}, v1);
-  seen({db, bucket: d.bucket, domain, closed, viewer: async (req) => (await d.auth.api.getSession({headers: req.headers}))?.user.id ?? null}, v1, app);
+  seen({db, bucket, domain, closed, edge: d.edge, viewer: async (req) => (await d.auth.api.getSession({headers: req.headers}))?.user.id ?? null}, v1, app);
 
   app.route('/v1', v1);
   return app;

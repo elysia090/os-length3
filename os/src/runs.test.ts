@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {mock, test} from 'node:test';
-import {atMost, coalesced, every, shared} from './runs.ts';
+import {atMost, coalesced, every, heard, jitter, paced, shared} from './runs.ts';
 
 /** Let what is waiting on promises go on. */
 const settle = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
@@ -163,4 +163,49 @@ test('the same deed for the same thing, asked twice at once, is done once', asyn
   const failing = shared(async () => { throw new Error('no'); });
   await assert.rejects(failing('x'), /no/);
   await assert.rejects(failing('x'), /no/);
+});
+
+test('a look at the Remote slows while nobody is at the page, and is taken at once when someone comes back', async () => {
+  const t0 = Date.now();
+  heard(t0);
+  assert.equal(paced(5000, t0 + 60_000), 5000);
+  assert.equal(paced(5000, t0 + 3 * 60_000), 60_000);
+  assert.equal(paced(5000, t0 + 11 * 60_000), 10 * 60_000);
+  // Slower than the floor already: its own.
+  assert.equal(paced(20 * 60_000, t0 + 3 * 60_000), 20 * 60_000);
+  mock.timers.enable({apis: ['setTimeout', 'Date'], now: t0});
+  try {
+    let runs = 0;
+    const loop = every(5000, () => { runs++; }, {hidden: () => false, paced: true});
+    mock.timers.tick(5000); await settle();
+    assert.equal(runs, 1);
+    // Nobody for ten minutes: one look in the next nine.
+    mock.timers.tick(10 * 60_000); await settle();
+    const quiet = runs;
+    mock.timers.tick(9 * 60_000); await settle();
+    assert.ok(runs - quiet <= 1, `${runs - quiet} looks while nobody was there`);
+    // Back: a look at once, without waiting out the ten minutes.
+    const before = runs;
+    heard();
+    await settle();
+    assert.equal(runs, before + 1);
+    loop.stop();
+  } finally { mock.timers.reset(); heard(); }
+});
+
+test('how often can be said each time, and a wait told to many is spread over a fifth either way', async () => {
+  assert.equal(jitter(1000, 0), 800);
+  assert.equal(jitter(1000, 1), 1200);
+  mock.timers.enable({apis: ['setTimeout']});
+  try {
+    let runs = 0, ms = 100;
+    const loop = every(() => ms, () => { runs++; ms = 1000; }, {hidden: () => false});
+    mock.timers.tick(100); await settle();
+    assert.equal(runs, 1);
+    mock.timers.tick(500); await settle();
+    assert.equal(runs, 1);
+    mock.timers.tick(500); await settle();
+    assert.equal(runs, 2);
+    loop.stop();
+  } finally { mock.timers.reset(); }
 });

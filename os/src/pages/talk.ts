@@ -236,13 +236,12 @@ export function timeline(scroller: HTMLElement, board: string, member: boolean, 
     read();
   }, {root: scroller});
 
-  // While it is on screen, what came is looked for now and then (not while the page is hidden); once it is gone, all of this stops.
-  const look = () => { if (document.visibilityState === 'visible') { void came(false); read(); } };
+  // While it is on screen, what came is looked for now and then (not while the page is hidden, slower while nobody is at
+  // it, at once when someone comes back: runs.ts paced); once it is gone, all of this stops.
   every(EVERY, () => { const c = came(false); read(); return c; }, {
-    alive: () => root.isConnected,
-    ended: () => { watch.disconnect(); more.disconnect(); seen.disconnect(); onScreen.delete(here); removeEventListener('focus', look); },
+    alive: () => root.isConnected, paced: true,
+    ended: () => { watch.disconnect(); more.disconnect(); seen.disconnect(); onScreen.delete(here); },
   });
-  addEventListener('focus', look);
 
   // The mark floats over the posts at the foot (its holder has no height), so showing it moves nothing.
   root.append(start, list, foot, h('div', {class: 'tl-new-at'}, fresh));

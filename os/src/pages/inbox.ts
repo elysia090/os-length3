@@ -2,7 +2,7 @@ import {ago, day, h} from '../dom.ts';
 import {t} from '../i18n.ts';
 import * as inbox from '../inbox.ts';
 import {connection} from '../remote.ts';
-import {look} from '../news.ts';
+import {look, onNews} from '../news.ts';
 import {Drafts} from '../drafts.ts';
 import {kindOf} from '../text.ts';
 import {mark} from '../icons.ts';
@@ -108,7 +108,7 @@ function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLE
     field.addEventListener('change', () => void look());
     field.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) void look(); });
     looking?.stop();
-    looking = every(8000, look, {alive: () => panel.isConnected && !panel.hidden});
+    looking = every(8000, look, {alive: () => panel.isConnected && !panel.hidden, paced: true});
     // A name on one's own domain is paid: a free account is told before it goes to its DNS, with the way to the Plan.
     const paid = h('p', {class: 'muted small'});
     void readPlan().then((p) => {
@@ -380,11 +380,14 @@ export function inboxPage(ctx: Context): Node[] {
   };
 
   void paint();
-  // New messages through the Remote are looked for while the page is shown: the rows, and the open conversation.
-  every(10_000, async () => {
+  // New messages through the Remote: the rows, and the open conversation, drawn again when what is unread changes
+  // (news.ts looks for that anyway), and now and then besides (slower while nobody is at it: runs.ts paced).
+  const again = async () => {
     const rows = holder.querySelector<HTMLElement>('.inbox-rows'), pane = holder.querySelector<HTMLElement>('.inbox-thread');
     // Not while a row has the keyboard: drawn again, it would be lost.
     if (rows && pane && !rows.contains(document.activeElement)) await paintList(rows, pane);
-  }, {alive: () => holder.isConnected, ended: () => live?.stop()});
+  };
+  const unheard = onNews(() => { if (holder.isConnected) void again(); });
+  every(60_000, again, {alive: () => holder.isConnected, ended: () => { live?.stop(); unheard(); }, paced: true});
   return [pageHead('inbox'), holder];
 }

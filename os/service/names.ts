@@ -15,12 +15,12 @@
 // a code: six digits to be found by, given once and never given again.
 
 import {and, eq, isNull, sql, type SQL} from 'drizzle-orm';
-import {ago, type Db} from './request.ts';
+import {ago, refuse, type Db} from './request.ts';
 import {address, principalCode, repoPublic} from './schema.ts';
 
 export const HOLD = 30 * 86_400_000;
 /** How long a name on this Remote is held before it is renewed. */
-const TERM_YEARS = 5;
+export const TERM_YEARS = 5;
 export const term = (from = Date.now()) => { const d = new Date(from); d.setUTCFullYear(d.getUTCFullYear() + TERM_YEARS); return d; };
 
 /** Names that answer: not let go, not lapsed, not past their term. */
@@ -88,9 +88,12 @@ export async function takeDown(db: Db, where: SQL | undefined) {
 /** `owner`'s code, given now if it has none: six digits no one else has had. */
 export async function codeOf(db: Db, owner: Owner): Promise<string> {
   const where = 'userId' in owner ? eq(principalCode.userId, owner.userId) : eq(principalCode.serverId, owner.serverId);
-  for (;;) {
+  // Codes are never given twice: as they run out each takes more tries, and with none left, none is given (not a
+  // loop for good inside the transaction that asked, holding its lock).
+  for (let tries = 0; ; tries++) {
     const [had] = await db.select({code: principalCode.code}).from(principalCode).where(where) as {code: string}[];
     if (had) return had.code;
+    if (tries >= 64) refuse(503, {error: 'No code is left to give just now'});
     const n = crypto.getRandomValues(new Uint32Array(1))[0] % 900_000 + 100_000;
     await db.insert(principalCode).values({code: String(n), userId: 'userId' in owner ? owner.userId : null, serverId: 'serverId' in owner ? owner.serverId : null}).onConflictDoNothing();
   }

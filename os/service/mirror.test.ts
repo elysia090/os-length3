@@ -2,20 +2,18 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
-import {createApp} from './app.ts';
-import {memoryBucket} from './bucket.ts';
-import {mirror, remoteStore, type Store} from './mirror.ts';
+import {mirror, type Store} from './mirror.ts';
 import {desktopFile, pinnedDesktop, pinnedRoots, type Pinned} from './releases.ts';
 
 const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 const pin = (file: string, bytes: Uint8Array, tag = 'os-length3-linux-v1.0.0'): Pinned =>
   ({key: `desktop/${file}`, path: `/v1/desktop/${file}`, tag, file, sha256: sha(bytes), bytes: bytes.length, type: 'application/octet-stream'});
 
-/** A bucket as the deploy sees it: what it holds by key, and each put. */
+/** A bucket as the deploy sees it: what it holds by key (as recorded: its digest and size), and each put. */
 function fakeBucket(had: Record<string, Uint8Array> = {}) {
   const held = new Map(Object.entries(had)), puts: string[] = [];
   const store: Store = {
-    async size(p) { return held.get(p.key)?.length ?? null; },
+    async has(p) { const b = held.get(p.key); return !!b && b.length === p.bytes && sha(b) === p.sha256; },
     async put(p, file) { puts.push(p.key); held.set(p.key, new Uint8Array(readFileSync(file))); },
   };
   return {store, held, puts};
@@ -64,7 +62,15 @@ test('mirror: a copy of another size is put again; bytes that are not the pin ar
   assert.deepEqual(bucket.puts, ['desktop/a.deb']);
   assert.deepEqual([...bucket.held.get('desktop/a.deb')!], [...a]);
   assert.ok(!bucket.held.has('desktop/b.AppImage'));
-  assert.ok(said.some((l) => l.startsWith('desktop/a.deb: the Remote has 3 bytes')), said.join('\n'));
+  assert.ok(said.some((l) => l.startsWith('desktop/a.deb: put')), said.join('\n'));
+});
+
+test('mirror: a copy of the pinned size but another digest (a file rebuilt under its name) is put again', async () => {
+  const same = new TextEncoder().encode('the DEB');
+  const bucket = fakeBucket({'desktop/a.deb': same});
+  assert.equal(same.length, a.length);
+  assert.deepEqual(await mirror([pin('a.deb', a)], bucket.store, fakeGitHub({'a.deb': a}).source, quiet), {kept: [], put: ['desktop/a.deb']});
+  assert.deepEqual([...bucket.held.get('desktop/a.deb')!], [...a]);
 });
 
 test('mirror: more bytes than pinned stop the download; a file the release lacks, or a release it cannot read, is said, not put', async () => {
@@ -76,19 +82,6 @@ test('mirror: more bytes than pinned stop the download; a file the release lacks
   const noToken = {...fakeGitHub({}, 'another').source, token: undefined};
   await assert.rejects(mirror([pin('a.deb', a)], bucket.store, noToken, quiet), /the release os-length3-linux-v1\.0\.0: 404 \(a private repository needs GITHUB_TOKEN\)/);
   assert.deepEqual(bucket.puts, []);
-});
-
-test('the deploy asks the Remote for one byte of each file: its copy\'s size, or none', async () => {
-  const bucket = memoryBucket();
-  const app = createApp({db: null as never, auth: null as never, bucket, origins: [], providers: []});
-  const deb = pinnedDesktop('0.4.1').find((p) => p.file.endsWith('.deb'))!;
-  await bucket.put(deb.key, new Uint8Array(1234));
-  const asked: (string | null)[] = [];
-  const f = ((url: string, init?: RequestInit) => { asked.push(new Headers(init?.headers).get('range')); return app.request(url, init); }) as typeof fetch;
-  const store = remoteStore('http://remote.test/', async () => {}, f);
-  assert.equal(await store.size(deb), 1234);
-  assert.equal(await store.size(pinnedDesktop('0.4.1').find((p) => p.file.endsWith('.AppImage'))!), null);
-  assert.deepEqual(asked, ['bytes=0-0', 'bytes=0-0']);
 });
 
 test('the pins: every root core/src/root.rs pins, newest first, and the desktop app of a version, by its file', () => {
@@ -118,4 +111,20 @@ test('the pins: every root core/src/root.rs pins, newest first, and the desktop 
     {exe: {file: 'os-length3-linux-1.0.0-x.exe', bytes: 1, sha256: 'a'.repeat(64)}}]) {
     assert.throws(() => pinnedDesktop('1.0.0', {'1.0.0': bad} as never), /is not a pin/);
   }
+});
+
+test('mirror: a file the budget has no room for is neither fetched nor put, the others go, and the deploy is told', async () => {
+  const pins = [pin('a.deb', a), pin('b.AppImage', b)];
+  const bucket = fakeBucket({'desktop/a.deb': a.slice(0, 3)});
+  const gh = fakeGitHub({'a.deb': a, 'b.AppImage': b});
+  const allowed: string[] = [];
+  const allow = async (p: Pinned) => {
+    allowed.push(p.key);
+    if (p.key === 'desktop/b.AppImage') throw new Error('R2 would hold more than R2_STORED_MB');
+  };
+  await assert.rejects(mirror(pins, bucket.store, gh.source, quiet, allow), /desktop\/b\.AppImage: R2 would hold more than R2_STORED_MB/);
+  // Asked of each it lacks (a copy of 3 bytes is put again).
+  assert.deepEqual(allowed, ['desktop/a.deb', 'desktop/b.AppImage']);
+  assert.deepEqual(bucket.puts, ['desktop/a.deb']);
+  assert.ok(!gh.asked.includes('/releases/assets/1'));
 });

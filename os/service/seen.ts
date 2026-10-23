@@ -23,8 +23,9 @@ import {and, eq, inArray, isNull, not, sql} from 'drizzle-orm';
 import type {Context, Hono} from 'hono';
 import {blobKey, noFiles, type Bucket} from './bucket.ts';
 import {byCode, HOLD, live, liveAddress, serverAddress, shownAs, takeDown} from './names.ts';
-import {addressOf, body, qualified, refuse, rows, throttled, type Db, type Vars} from './request.ts';
-import {address, cut, line, member, repo, repoPublic, repoShare, server} from './schema.ts';
+import {addressOf, body, lock, qualified, refuse, rows, throttled, unchanged, type Db, type Vars} from './request.ts';
+import type {Edge} from './files.ts';
+import {address, blob, cut, line, member, repo, repoPublic, repoShare, server} from './schema.ts';
 
 /** Codes one address may resolve to a face in an hour, as Inbox lets an account look them up (inbox.ts INBOX.codesPerHour). */
 const CODES_PER_HOUR = 30;
@@ -43,6 +44,8 @@ export interface SeenDeps {
   domain: string;
   /** Nothing is shown to everyone (a Remote for research: enter.ts). */
   closed?: boolean;
+  /** A cache in front of R2 (files.ts Edge): a file read by many is read from R2 once where it is asked. */
+  edge?: Edge;
 }
 
 /** A repo that is on: its number and name. */
@@ -116,6 +119,8 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     if (to === 'servers' && !ids?.length) return c.json({error: 'Choose a server'}, 400);
     if (to === 'everyone' && d.closed) return c.json({error: 'Nothing is shown to everyone from this Remote'}, 403);
     return c.json(await db.transaction(async (tx: Db) => {
+      // One at a time for the account (a double click, two tabs): both took down, then both put in, and the second was a 500.
+      await lock(tx, `seen:${me}`);
       const r = await isOn(tx, me, name);
       if (!r) refuse(404, {error: 'That repo is not on the Remote'});
       if (ids && (await inServers(tx, me, ids)).length !== ids.length) refuse(403, {error: 'Only servers you are in'});
@@ -156,7 +161,7 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       .leftJoin(repoPublic, and(eq(repoPublic.repoId, repo.id), isNull(repoPublic.releasedAt)))
       .where(eq(repoShare.serverId, serverId)).orderBy(repoShare.sharedAt) as
       {userId: string; name: string; owner: string | null; at: Date | null; face: string | null; faceName: string | null; asServer: string | null}[];
-    return list.map((r) => ({owner: r.owner ?? '', name: r.name, at: r.at?.getTime() ?? null, mine: r.userId === me,
+    return list.map((r) => ({owner: r.owner ?? '', ownerId: `id:${r.userId}`, name: r.name, at: r.at?.getTime() ?? null, mine: r.userId === me,
       as: r.face ? `${r.face}:${r.faceName}` : null, asServer: r.asServer}));
   };
 
@@ -181,7 +186,8 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const me = c.get('userId'), id = c.req.param('id');
     const [r] = await rows<{owner: boolean; repo: number | null; them: string | null}>(db, sql`select m.owner, t.user_id as them, r.id as repo
       from server_member m join server s on s.id = m.server_id and s.gone_at is null
-      left join server_member t on t.server_id = m.server_id and t.user_id = (select a.user_id from address a where a.address = ${c.req.param('owner').toLowerCase()})
+      left join server_member t on t.server_id = m.server_id and t.user_id = ${c.req.param('owner').startsWith('id:') ? sql`${c.req.param('owner').slice(3)}`
+        : sql`(select a.user_id from address a where a.address = ${c.req.param('owner').toLowerCase()})`}
       left join repo r on r.user_id = t.user_id and r.name = ${c.req.param('name')}
       where m.server_id = ${id} and m.user_id = ${me}`);
     if (!r) return c.json({error: 'No such server of yours'}, 404);
@@ -263,7 +269,22 @@ export function seen(d: SeenDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const at = path && path.length <= 1024 ? await find(c, c.req.param('face'), c.req.param('name')) : null;
     const [f] = at ? await db.select({sha: sql<string | null>`${cut.tree} ->> ${path}`}).from(cut).where(pushedAt(at.row)) as {sha: string | null}[] : [];
     if (!at || !f?.sha) return c.json({error: 'No such file to see'}, 404);
+    // What is at a path changes with a push: kept by the browser, and asked again each time by its digest, which
+    // answers 304 without R2 when it is the same; HEAD is answered from the blob's row.
+    const headers = {'Content-Type': 'application/octet-stream', ETag: `"${f.sha}"`, 'Cache-Control': 'private, no-cache'};
+    if (unchanged(c, `"${f.sha}"`)) return new Response(null, {status: 304, headers});
+    if (c.req.method === 'HEAD') {
+      const [b] = await db.select({bytes: blob.bytes}).from(blob).where(and(eq(blob.userId, at.row.userId), eq(blob.sha256, f.sha))) as {bytes: number}[];
+      return b ? new Response(null, {headers: {...headers, 'Content-Length': String(b.bytes)}}) : c.json({error: 'The Remote has no such file'}, 404);
+    }
+    // Who may see it was asked above, every time; its bytes are the same for all who may, by owner and digest, so the
+    // edge keeps them: a public repo read by many costs R2 (and the month's read budget all accounts share) once a place.
+    const whole = new Request(`https://seen.cache/${at.row.userId}/${f.sha}`);
+    const hit = d.edge ? await d.edge.match(whole).catch(() => undefined) : undefined;
+    if (hit?.ok) return new Response(hit.body, {headers});
     const bytes = await bucket.get(blobKey(at.row.userId, f.sha));
-    return bytes ? new Response(bytes as BodyInit, {headers: {'Content-Type': 'application/octet-stream', ETag: `"${f.sha}"`}}) : c.json({error: 'The Remote has no such file'}, 404);
+    if (!bytes) return c.json({error: 'The Remote has no such file'}, 404);
+    if (d.edge) await d.edge.put(whole, new Response(bytes.slice() as BodyInit, {headers: {'Cache-Control': 'public, max-age=31536000, immutable'}})).catch(() => {});
+    return new Response(bytes as BodyInit, {headers});
   });
 }

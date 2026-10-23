@@ -8,7 +8,7 @@
 // (the same posts, less any taken down), so what a reader holds stays about
 // what is near the screen however far they scroll.
 
-import {api, connection, json, reading, RemoteError} from './remote.ts';
+import {api, connection, json, reading, RemoteError, retryAfter} from './remote.ts';
 import type {Todo} from './todo.ts';
 import {t} from './i18n.ts';
 import {errorText} from './errors.ts';
@@ -18,7 +18,8 @@ export interface BoardRef { id: string; name: string; open: boolean; guests: boo
 /** A server: what it is called, and its name as a principal (name@domain, in the namespace people's addresses are in). */
 /** `made`: the one asking made it (the Remote holds what its maker leaves alone a day, not HOLD). */
 export interface Server { id: string; name: string; address: string; owner: boolean; boards: BoardRef[]; code: string; until: number | null; made?: boolean }
-export interface Person { address: string; owner: boolean }
+/** `id` names one with no name left (released or let go), whom the owner still removes by it. */
+export interface Person { address: string; owner: boolean; id?: string }
 export interface Board { id: string; server: {id: string; name: string; address: string}; name: string; open: boolean; guests: boolean; people?: Person[] }
 /** A post as the Remote gives it: `by` is all a reader is shown of who wrote it. */
 export interface Post { id: string; by: string; body: string; at: number; guest?: boolean; mine?: boolean; mayTakeDown?: boolean }
@@ -192,7 +193,8 @@ export function todoKeeper(board: string, from: readonly BoardTodo[], o: KeeperO
           if (!passing(e)) { latest = null; tries = 0; answer(e); return; }
           tries++;
           trouble?.(errorText(e));
-          wait = setTimeout(() => void go(), backoff(tries));
+          // Not sooner than the Remote said (asked too often: its Retry-After).
+          wait = setTimeout(() => void go(), Math.max(retryAfter(e) ?? 0, backoff(tries)));
           return;
         }
       }
@@ -233,7 +235,7 @@ export type Seen = 'private' | 'servers' | 'everyone';
 /** Who sees one of mine: and, seen by everyone, the name it is seen as (`as`), a server's or my own. */
 export interface RepoSeen { name: string; seen: Seen; servers: {id: string; name: string; address: string}[]; as: string | null; asServer: string | null }
 /** A repo shown in a server: whose, and the name everyone sees it as, if they do. */
-export interface ShownRepo { owner: string; name: string; at: number | null; mine: boolean; as: string | null; asServer: string | null }
+export interface ShownRepo { owner: string; ownerId?: string; name: string; at: number | null; mine: boolean; as: string | null; asServer: string | null }
 /** A repo as seen by someone not its owner: what it was last pushed to. `owner` only where whose it is may be told. */
 export interface SeenRepo { as: string; owner?: string; title: string | null; at: number | null; tree: Record<string, string | null> }
 

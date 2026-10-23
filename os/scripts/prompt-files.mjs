@@ -51,8 +51,10 @@ if (!token && process.env.WORKERS_CI) {
 }
 
 const sha = (b) => createHash('sha256').update(b).digest('hex');
+// Never waited on for good (a download that stalls holds the build until it is killed): ten minutes, its body included.
 const ask = (path, accept = 'application/vnd.github+json') => fetch(`${api}/repos/${repo}${path}`, {
   headers: {accept, 'x-github-api-version': '2022-11-28', 'user-agent': 'length3-build', ...(token ? {authorization: `Bearer ${token}`} : {})},
+  signal: AbortSignal.timeout(10 * 60_000),
 });
 const must = async (r, what) => {
   if (r.ok) return r;

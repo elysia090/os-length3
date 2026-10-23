@@ -42,7 +42,9 @@ import {randomBytes} from 'node:crypto';
 import {existsSync, readFileSync} from 'node:fs';
 import {sql} from 'drizzle-orm';
 import {enterEmail} from './enter.ts';
-import {mirror, remoteStore} from './mirror.ts';
+import {limitsOf, month, spent, take} from './budget.ts';
+import type {Db} from './request.ts';
+import {mirror, type Store} from './mirror.ts';
 import {defaultBranchUrl, migrateBeforeWorker, migrateRemote, owner as ownerOn, workerRole} from './neon.ts';
 import {pinnedDesktop, pinnedRoots} from './releases.ts';
 
@@ -123,7 +125,7 @@ async function answers(base: string) {
   for (let i = 0; i < 30; i++) {
     if (i) await new Promise((r) => setTimeout(r, 10_000));
     try {
-      const r = await fetch(`${base}/v1/health`);
+      const r = await fetch(`${base}/v1/health`, {signal: AbortSignal.timeout(15_000)});
       if (r.ok && ((await r.clone().json().catch(() => null)) as {ok?: boolean} | null)?.ok === true) return console.log(`${base}: answers from its database`);
       last = `${r.status} ${(await r.text()).slice(0, 300)}`;
     } catch (e) { last = String(e); }
@@ -131,16 +133,61 @@ async function answers(base: string) {
   throw new Error(`${base}/v1/health: ${last}`);
 }
 
+/** How long a release file no deploy pins any more is kept, for the clients of its release (days). */
+const UNPINNED_DAYS = 90;
+
 /** What the Remote serves of the release, put in its bucket where it lacks it (mirror.ts). */
 async function releaseFiles(bucket: string) {
   const version = readFileSync(new URL('../RELEASE', import.meta.url), 'utf8').trim();
   const desktop = pinnedDesktop(version);
   if (!desktop.length) console.log(`shared/desktop-releases.json pins no desktop app for ${version}: the web offers none until it is pinned (the release's notes say what to pin)`);
   const pins = [...pinnedRoots(readFileSync(new URL('../core/src/root.rs', import.meta.url), 'utf8')), ...desktop];
-  const store = remoteStore(vars('BASE_URL')!, async (p, file) => must(['r2', 'object', 'put', `${bucket}/${p.key}`, '--file', file, '--content-type', p.type, '--remote']));
-  const {kept, put} = await mirror(pins, store, {api: process.env.GITHUB_API_URL || 'https://api.github.com',
-    repo: process.env.GITHUB_REPOSITORY || 'elysia090/os-length3', token: process.env.GITHUB_TOKEN});
-  console.log(`release files on the Remote: ${put.length} put, ${kept.length} there already`);
+  // The same budget as the Worker's (wrangler.toml [vars]): asked before a file is fetched (a put of the month,
+  // and the bytes R2 would hold with it in place of what it replaces); counted once it is put, with its record
+  // (release_file, whose trigger counts its bytes), so a deploy that fails counts nothing.
+  const limits = limitsOf(Object.fromEntries(['R2_STORED_MB', 'R2_WRITES_MONTH'].map((k) => [k, vars(k)])));
+  const {pool, db} = await owner();
+  const recordOf = async (q: Db, key: string) => (await q.execute(sql`select sha256, bytes::float8 as bytes from release_file where key = ${key}`)).rows[0] as
+    {sha256: string; bytes: number} | undefined;
+  const store: Store = {
+    async has(p) {
+      const r = await recordOf(db, p.key);
+      const same = r?.sha256 === p.sha256 && Number(r.bytes) === p.bytes;
+      // Still pinned: its moment is now, so it is not taken for one this tree has let go of (below).
+      if (same) await db.execute(sql`update release_file set at = now() where key = ${p.key}`);
+      return same;
+    },
+    async put(p, file) {
+      await must(['r2', 'object', 'put', `${bucket}/${p.key}`, '--file', file, '--content-type', p.type, '--remote']);
+      await db.transaction(async (tx: Db) => {
+        await take(tx, month(Date.now()), 'r2:a', 1, Number.MAX_SAFE_INTEGER);
+        await tx.execute(sql`insert into release_file (key, sha256, bytes) values (${p.key}, ${p.sha256}, ${p.bytes})
+          on conflict (key) do update set sha256 = excluded.sha256, bytes = excluded.bytes, at = now()`);
+      });
+    },
+  };
+  try {
+    const allow = async (p: {key: string; bytes: number}) => {
+      if (await spent(db, month(Date.now()), 'r2:a') + 1 > limits.writes) throw new Error(`${p.key}: R2's puts for this month are spent`);
+      const had = Number((await recordOf(db, p.key))?.bytes ?? 0);
+      if (await spent(db, 'all', 'r2:stored') + p.bytes - had > limits.stored) throw new Error(`${p.key}: R2 would hold more than R2_STORED_MB`);
+    };
+    const {kept, put} = await mirror(pins, store, {api: process.env.GITHUB_API_URL || 'https://api.github.com',
+      repo: process.env.GITHUB_REPOSITORY || 'elysia090/os-length3', token: process.env.GITHUB_TOKEN}, console.log, allow);
+    console.log(`release files on the Remote: ${put.length} put, ${kept.length} there already`);
+    // What no deploy has pinned for UNPINNED_FOR goes (a release a client of then may still ask for stays that long):
+    // before, every deploy's roots and desktop apps (150 MB) stayed for good, in the bytes R2_STORED_MB counts with
+    // everyone's files, until uploads were refused. The object first, then its record (whose trigger counts it gone).
+    const pinned = new Set(pins.map((p) => p.key));
+    const old = (await db.execute(sql`select key from release_file where at < now() - make_interval(days => ${UNPINNED_DAYS})`)).rows as {key: string}[];
+    for (const {key} of old.filter((r) => !pinned.has(r.key))) {
+      if ((await wrangler(['r2', 'object', 'delete', `${bucket}/${key}`, '--remote'], {heard: true})).code !== 0) { console.log(`${key}: not let go this time`); continue; }
+      await db.execute(sql`delete from release_file where key = ${key}`);
+      console.log(`${key}: let go (no deploy has pinned it for ${UNPINNED_DAYS} days)`);
+    }
+  } finally {
+    await pool.end();
+  }
 }
 
 const step = process.argv[2];
@@ -161,6 +208,10 @@ if (!step) {
   const waiting = await migrateBeforeWorker(db);
   if (waiting) console.log(`migrations: ${waiting} and after wait for the new Worker`);
   console.log('migrations: done');
+  // What room_free() (0014) asks how much room the database's rows let go of: without it, a database at PG_MB is
+  // taken as full until VACUUM FULL. Neon has it; a database that does not, or an owner who may not, goes on without.
+  await db.execute(sql`create extension if not exists pgstattuple`).then(() => console.log('pgstattuple: there'),
+    (e: unknown) => console.log(`pgstattuple: not made (${e instanceof Error ? e.message : String(e)}); the database is taken as full at PG_MB until VACUUM FULL`));
   const bucket = vars('bucket_name')!;
   if ((await wrangler(['r2', 'bucket', 'info', bucket, '--json'], {heard: true})).code !== 0) await must(['r2', 'bucket', 'create', bucket]);
   const kept = await held();

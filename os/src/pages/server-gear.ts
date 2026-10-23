@@ -120,7 +120,7 @@ export async function gear(s: servers.Server, w: GearWays): Promise<void> {
       if (s.owner && p.address !== mine) {
         const out = button(t('Remove'), 'small-button');
         out.addEventListener('click', () => askIn(c, out, named(p.address), t('{who} leaves {server}.', {who: named(p.address), server: s.name}),
-          t('Remove'), async () => { await servers.removePerson(s.id, p.address); w.again(); }));
+          t('Remove'), async () => { await servers.removePerson(s.id, p.address || p.id || ''); w.again(); }));
         c.append(footLeft(out));
       }
       return c;
@@ -144,7 +144,7 @@ export async function gear(s: servers.Server, w: GearWays): Promise<void> {
       const c = smallCard(r.name, line(named(r.owner)), r.as ? line(t('Everyone sees it as {name}', {name: shownAs(r.as)})) : null);
       if (s.owner) {
         const off = button(t('Remove'), 'small-button');
-        deed(off, async () => { await servers.takeOff(s.id, r.owner, r.name); w.again(); });
+        deed(off, async () => { await servers.takeOff(s.id, r.owner || r.ownerId || '', r.name); w.again(); });
         c.append(footLeft(off));
       }
       return c;

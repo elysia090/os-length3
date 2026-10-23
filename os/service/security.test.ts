@@ -8,18 +8,16 @@
 import assert from 'node:assert/strict';
 import {hkdfSync} from 'node:crypto';
 import {test} from 'node:test';
-import {PGlite} from '@electric-sql/pglite';
 import {eq} from 'drizzle-orm';
 import {drizzle} from 'drizzle-orm/pglite';
-import {migrate} from 'drizzle-orm/pglite/migrator';
 import {SECURITY_TXT} from './about.ts';
 import {createApp} from './app.ts';
 import {AUTH_LIMITS, createAuth} from './auth.ts';
 import {hmacHex, keyFor, same} from './keys.ts';
-import {MIGRATIONS, workerRole} from './neon.ts';
+import {workerRole} from './neon.ts';
 import {API_POLICY, throttled} from './request.ts';
 import * as schema from './schema.ts';
-import {APP, BASE, freshDb, named, SECRET, service} from './testing.ts';
+import {APP, BASE, database, freshDb, named, SECRET, service} from './testing.ts';
 
 const EVIL = 'https://evil.example';
 
@@ -127,14 +125,16 @@ test('Better Auth\'s own refusals for asking too often are said the same way, an
   const app = createApp({db, auth, bucket: null, origins: [APP], appOrigin: APP, providers: ['dev'], baseURL: BASE, secret: SECRET});
   const ask = () => app.request(`${BASE}/api/auth/device/code`, {method: 'POST', headers: {'Content-Type': 'application/json', 'CF-Connecting-IP': '203.0.113.9'},
     body: JSON.stringify({client_id: 'l3'})});
-  const max = AUTH_LIMITS['/device/code'].max;
+  const max = (AUTH_LIMITS['/device/code'] as {max: number}).max;
   for (let i = 0; i < max; i++) assert.equal((await ask()).status, 200);
   const r = await ask();
   assert.equal(r.status, 429);
   const wait = r.headers.get('Retry-After');
   assert.ok(wait && Number(wait) > 0 && Number(wait) <= 60, String(wait));
   assert.deepEqual(await r.json(), {error: 'Too many requests; try again later', retryAfter: Number(wait)});
-  for (const p of ['/passkey/verify-authentication', '/device/approve', '/device/token']) assert.ok(AUTH_LIMITS[p].max <= 40, p);
+  for (const p of ['/passkey/verify-authentication', '/device/approve', '/device/token']) assert.ok((AUTH_LIMITS[p] as {max: number}).max <= 40, p);
+  // What only reads (every page load asks who it is) is counted at the edge, not written to the database each time.
+  assert.deepEqual([AUTH_LIMITS['/get-session'], AUTH_LIMITS['/list-accounts']], [false, false]);
 });
 
 test('each purpose has a key of its own, derived from the one secret with HKDF; none is the secret (audit U1, A10; ASVS 6.4.1-6.4.2)', async () => {
@@ -202,9 +202,9 @@ test('/.well-known/security.txt says where to report, until a date less than a y
 });
 
 test('the role the Worker connects as reads and writes rows, and can make, change or drop nothing (ASVS 1.4.5, 14.1.x; audit D10)', async () => {
-  const pg = new PGlite();
+  // The migrated database every test starts from (roles are the cluster's, so they come with it).
+  const pg = await database();
   try {
-    await migrate(drizzle(pg, {schema}), {migrationsFolder: MIGRATIONS});
     // Made by the function deploy.ts makes it with (neon.ts workerRole): a login role in remote_app and
     // nothing more, its statements, idle transactions and lock waits cut off.
     await workerRole(drizzle(pg, {schema}) as unknown as Parameters<typeof workerRole>[0], 'test1');
@@ -264,11 +264,11 @@ test('sign-in is the authorization code flow with state and PKCE, back only to t
   assert.doesNotMatch(forged.headers.get('Location') ?? '', /signed-in/);
 
   // Only the app and l3 ask for a device code; the code is 8 letters and digits, for ten minutes,
-  // polled no faster than every 2 s; approving it takes the app's own page.
+  // polled no faster than every 5 s; approving it takes the app's own page.
   assert.equal((await s.call('POST', '/api/auth/device/code', {body: {client_id: 'evil'}})).status, 400);
   const code = (await s.call('POST', '/api/auth/device/code', {body: {client_id: 'l3'}})).json as unknown as {user_code: string; expires_in: number; interval: number; verification_uri: string};
   assert.match(code.user_code, /^[A-Z0-9]{8}$/);
-  assert.deepEqual([code.expires_in, code.interval, code.verification_uri], [600, 2, `${APP}/?device`]);
+  assert.deepEqual([code.expires_in, code.interval, code.verification_uri], [600, 5, `${APP}/?device`]);
   const t = await s.start('Ren');
   const approve = (headers: Record<string, string>) => s.app.request(`${BASE}/api/auth/device/approve`, {method: 'POST',
     headers: {'Content-Type': 'application/json', Cookie: s.sessions.get(t)!, ...headers}, body: JSON.stringify({userCode: code.user_code})});
@@ -280,12 +280,19 @@ test('a session is listed, ended from another, and ends at sign-out; a sign-in i
   const s = await service();
   const one = await s.start('Ren'), two = await s.start('Ren');
   assert.notEqual(one, two);
-  const listed = (await s.call('GET', '/api/auth/list-sessions', {token: one})).json as unknown as {token: string}[];
+  const listed = (await s.call('GET', '/api/auth/list-sessions', {token: one})).json as unknown as {id: string; token: string}[];
   assert.equal(listed.length, 2);
-  // Ended from the other device, as Remote → Devices does: by the session's own token, as listed.
-  const theirs = ((await s.call('GET', '/api/auth/get-session', {token: two})).json as unknown as {session: {token: string}}).session.token;
-  assert.ok(listed.some((x) => x.token === theirs));
-  assert.equal((await s.call('POST', '/api/auth/revoke-session', {token: one, body: {token: theirs}})).status, 200);
+  // Another session's token is never listed (with it, anyone would be that device): it is named by its id.
+  const theirs = ((await s.call('GET', '/api/auth/get-session', {token: two})).json as unknown as {session: {id: string; token: string}}).session;
+  assert.ok(!listed.some((x) => x.token === theirs.token));
+  const named = listed.find((x) => x.id === theirs.id)!;
+  assert.equal(named.token, `id:${theirs.id}`);
+  // Nobody else ends it by its id.
+  const stranger = await s.start('Bo');
+  assert.equal((await s.call('POST', '/api/auth/revoke-session', {token: stranger, body: {token: named.token}})).status, 200);
+  assert.equal((await s.call('GET', '/v1/repos', {token: two})).status, 200);
+  // Ended from the other device, as Remote → Devices does: by what was listed.
+  assert.equal((await s.call('POST', '/api/auth/revoke-session', {token: one, body: {token: named.token}})).status, 200);
   assert.equal((await s.call('GET', '/v1/repos', {token: two})).status, 401);
   assert.equal((await s.call('POST', '/api/auth/sign-out', {token: one, body: {}})).status, 200);
   assert.equal((await s.call('GET', '/v1/repos', {token: one})).status, 401);

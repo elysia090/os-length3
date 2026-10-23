@@ -39,7 +39,7 @@ export const session = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
   },
-  (table) => [index("session_userId_idx").on(table.userId)],
+  (table) => [index("session_userId_idx").on(table.userId), index("session_expiresAt_idx").on(table.expiresAt)],
 );
 
 export const account = pgTable(
@@ -79,7 +79,7 @@ export const verification = pgTable(
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull(),
   },
-  (table) => [index("verification_identifier_idx").on(table.identifier)],
+  (table) => [index("verification_identifier_idx").on(table.identifier), index("verification_expiresAt_idx").on(table.expiresAt)],
 );
 
 export const passkey = pgTable(
@@ -92,7 +92,8 @@ export const passkey = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     credentialID: text("credential_id").notNull(),
-    counter: integer("counter").notNull(),
+    // WebAuthn's signature counter is unsigned 32-bit: past 2^31 - 1 an integer refused the authenticator for good.
+    counter: bigint("counter", { mode: "number" }).notNull(),
     deviceType: text("device_type").notNull(),
     backedUp: boolean("backed_up").notNull(),
     transports: text("transports"),
@@ -122,6 +123,7 @@ export const deviceCode = pgTable(
   (table) => [
     uniqueIndex("deviceCode_deviceCode_uidx").on(table.deviceCode),
     uniqueIndex("deviceCode_userCode_uidx").on(table.userCode),
+    index("deviceCode_expiresAt_idx").on(table.expiresAt),
   ],
 );
 

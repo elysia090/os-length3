@@ -18,6 +18,10 @@
 //                                    request (worker.ts served); verify.ts sets it
 
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
+import {existsSync, readdirSync, readFileSync, renameSync, writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {after, afterEach} from 'node:test';
 import {PGlite} from '@electric-sql/pglite';
 import {sql} from 'drizzle-orm';
@@ -26,6 +30,8 @@ import {migrate} from 'drizzle-orm/pglite/migrator';
 import {createApp, sha256} from './app.ts';
 import {createAuth} from './auth.ts';
 import {memoryBucket} from './bucket.ts';
+import type {Limits} from './budget.ts';
+import type {Edge} from './files.ts';
 import {enterEmail, type Enter} from './enter.ts';
 import {MIGRATIONS, reach} from './neon.ts';
 import type {Billing, PlanConfig} from './plan.ts';
@@ -43,13 +49,29 @@ export const APP = 'http://app.test';
 export const SECRET = 'test-secret-'.repeat(4);
 export const enc = new TextEncoder();
 
+/** fetch as the process had it, before any Remote here was laid over it. */
+const realFetch = globalThis.fetch;
+
 let template: Promise<Blob> | null = null;
-/** The migrated database every test's starts as. */
+/**
+ * The migrated database every test's starts as: made once on this machine, and kept in its temporary directory
+ * under what it was made from (the migrations and PGlite's version), so the test files after the first, each a
+ * process of its own, load it in a fraction of the 3 s a new Postgres and its migrations take.
+ */
 const migrated = () => (template ??= (async () => {
+  const pglite = (JSON.parse(readFileSync(new URL('../node_modules/@electric-sql/pglite/package.json', import.meta.url), 'utf8')) as {version: string}).version;
+  const hash = createHash('sha256').update(pglite);
+  for (const f of readdirSync(MIGRATIONS).filter((f) => f.endsWith('.sql')).sort()) hash.update(f).update(readFileSync(join(MIGRATIONS, f)));
+  const kept = join(tmpdir(), `length3-pglite-${hash.digest('hex').slice(0, 16)}.tar`);
+  if (existsSync(kept)) return new Blob([readFileSync(kept)]);
   const pg = new PGlite();
   await migrate(drizzle(pg, {schema}), {migrationsFolder: MIGRATIONS});
   const dump = await pg.dumpDataDir('none');
   await pg.close();
+  // Written aside, then named: a process reading it never meets half of it.
+  const aside = `${kept}.${process.pid}`;
+  writeFileSync(aside, new Uint8Array(await dump.arrayBuffer()));
+  renameSync(aside, kept);
   return dump;
 })());
 
@@ -80,7 +102,11 @@ export async function fileDb() {
 }
 
 export type Service = Awaited<ReturnType<typeof make>>;
-export interface Options { quota?: number; enter?: Enter; plan?: PlanConfig; billing?: Billing; now?: () => number }
+export interface Options {
+  quota?: number; enter?: Enter; plan?: PlanConfig; billing?: Billing; now?: () => number;
+  /** What R2 and the database may be asked for (budget.ts), the edge's cache and the rate (app.ts Deps). */
+  limits?: Limits; edge?: Edge; limiter?: {limit(o: {key: string}): Promise<{success: boolean}>}; sessionKept?: number;
+}
 
 /** A Remote of its own for one test: `records` is DNS, a name → its TXT records. */
 export async function service(records: Record<string, string[]> = {}, o: Options = {}): Promise<Service> {
@@ -143,11 +169,12 @@ async function make(store: Store, records: Record<string, string[]>, o: Options)
   const dns = new Map(Object.entries(records));
   const app = createApp({db: store.app, auth, bucket: files, origins: [APP], appOrigin: APP, providers: ['dev'], domain: 'length3.test', baseURL: BASE,
     secret: SECRET, txt: async (name) => dns.get(name) ?? [], recheck: 0, quota: o.quota,
-    enter: o.enter, plan: o.plan, billing: o.billing, now: o.now});
+    enter: o.enter, plan: o.plan, billing: o.billing, now: o.now, limits: o.limits, edge: o.edge, limiter: o.limiter, sessionKept: o.sessionKept});
   /** A request to the Remote, served as its database is (each its own connection, on a real one). */
   const request = (url: string, init?: RequestInit) => store.serve(async () => app.request(url, init));
-  // The service asks its own stand-in provider for tokens over the network: here, itself.
-  const real = globalThis.fetch;
+  // The service asks its own stand-in provider for tokens over the network: here, itself. Laid over the real
+  // fetch, never over the last Remote's (which kept every Remote of a file alive, 44 deep).
+  const real = realFetch;
   globalThis.fetch = ((url: string | URL | Request, init?: RequestInit) =>
     (String(url instanceof Request ? url.url : url).startsWith(BASE) ? request(url as string, init) : real(url, init))) as typeof fetch;
   const call = async (method: string, path: string, opts: {token?: string; body?: unknown; bytes?: Uint8Array; headers?: Record<string, string>} = {}) => {

@@ -203,6 +203,10 @@ export const cut = pgTable('cut', {
 }, (t) => [primaryKey({columns: [t.repoId, t.id]}),
   // What an account's commits take, read by the sweep's recount without reading the table.
   index('cut_user_idx').on(t.userId, t.bytes),
+  // A commit's going is checked against those that name it as parent or merged: found by these, not by reading the
+  // repo's every commit for each one that goes (a repo of many commits discarded in seconds, not minutes).
+  index('cut_parent_idx').on(t.repoId, t.parent).where(sql`${t.parent} is not null`),
+  index('cut_merged_idx').on(t.repoId, t.merged).where(sql`${t.merged} is not null`),
   foreignKey({name: 'cut_repo', columns: [t.repoId, t.userId], foreignColumns: [repo.id, repo.userId]}).onDelete('cascade'),
   foreignKey({name: 'cut_parent', columns: [t.repoId, t.parent], foreignColumns: [t.repoId, t.id]}),
   foreignKey({name: 'cut_merged', columns: [t.repoId, t.merged], foreignColumns: [t.repoId, t.id]}),
@@ -260,7 +264,7 @@ export const change = pgTable('change', {
   note: text('note').notNull().default(''),
   submittedBy: text('submitted_by').notNull().default(''),
   updatedAt: moment('updated_at').defaultNow().notNull(),
-}, (t) => [uniqueIndex('change_line_idx').on(t.repoId, t.line),
+}, (t) => [uniqueIndex('change_line_idx').on(t.repoId, t.line), index('change_merged_idx').on(t.updatedAt).where(sql`${t.state} = 'merged'`),
   foreignKey({name: 'change_repo', columns: [t.repoId, t.userId], foreignColumns: [repo.id, repo.userId]}).onDelete('cascade'),
   foreignKey({name: 'change_base', columns: [t.repoId, t.base], foreignColumns: [cut.repoId, cut.id]}),
   foreignKey({name: 'change_head', columns: [t.repoId, t.head], foreignColumns: [cut.repoId, cut.id]}),
@@ -434,6 +438,16 @@ export const member = pgTable('server_member', {
 }, (t) => [primaryKey({columns: [t.serverId, t.userId]}), index('server_member_user_idx').on(t.userId),
   uniqueIndex('server_member_owner_idx').on(t.serverId).where(sql`${t.owner}`)]);
 
+/**
+ * Who left a server, or was removed from it, and when: an invitation sent before then (a message about it,
+ * inbox.ts) takes them in no more; only one sent after does. Goes with the server or the account.
+ */
+export const serverLeft = pgTable('server_left', {
+  serverId: text('server_id').notNull().references(() => server.id, {onDelete: 'cascade'}),
+  userId: owner(),
+  at: moment('at').defaultNow().notNull(),
+}, (t) => [primaryKey({columns: [t.serverId, t.userId]})]);
+
 /** How far a board reaches past its people: theirs alone, read by anyone, or written in by guests too. */
 export const REACH = {people: 0, open: 1, guests: 2} as const;
 
@@ -556,7 +570,33 @@ export const guest = pgTable('board_guest', {
 export const throttle = pgTable('throttle', {
   key: text('key').notNull(),
   at: moment('at').defaultNow().notNull(),
-}, (t) => [index('throttle_key_idx').on(t.key, t.at), check('throttle_key', within('key', 300))]);
+}, (t) => [index('throttle_key_idx').on(t.key, t.at), index('throttle_at_idx').on(t.at), check('throttle_key', within('key', 300))]);
+
+/**
+ * What the Remote has spent of what it may, counted before it is spent (budget.ts): R2's operations of a
+ * month (`r2:a`, puts; `r2:b`, gets and heads; under period YYYY-MM), the bytes it holds (`r2:stored`,
+ * under `all`: blobs by trigger, release files by the deploy), and an account's uploads of a day
+ * (`up:<user>`, under YYYY-MM-DD). Rows of a month or a day gone go with the sweep.
+ */
+export const usage = pgTable('usage', {
+  period: text('period').notNull(),
+  kind: text('kind').notNull(),
+  n: bigint('n', {mode: 'number'}).notNull().default(0),
+}, (t) => [primaryKey({columns: [t.period, t.kind]}), check('usage_n', sql`${t.n} >= 0`), check('usage_period', within('period', 10)),
+  check('usage_kind', within('kind', 80))]);
+
+/**
+ * A release's file the deploy put in R2 (mirror.ts), once it was checked against its pin: what the Remote hands
+ * to anyone (files.ts) only if it is here, and what the deploy puts again only if its digest or size changed.
+ * Its bytes count in `usage` r2:stored, by trigger, as a blob's do.
+ */
+export const releaseFile = pgTable('release_file', {
+  key: text('key').primaryKey(),
+  sha256: text('sha256').notNull(),
+  bytes: bigint('bytes', {mode: 'number'}).notNull(),
+  at: moment('at').defaultNow().notNull(),
+}, (t) => [check('release_file_key', within('key', 200)), check('release_file_sha', matches('sha256', re.sha)),
+  check('release_file_bytes', sql`${t.bytes} >= 0`)]);
 
 // ---- who sees a repo (seen.ts) ----
 
@@ -600,3 +640,13 @@ export const repoPublic = pgTable('repo_public', {
   uniqueIndex('repo_public_one_idx').on(t.repoId).where(sql`${t.releasedAt} is null`),
   foreignKey({name: 'repo_public_repo', columns: [t.repoId, t.userId], foreignColumns: [repo.id, repo.userId]}).onDelete('cascade'),
   check('repo_public_name', matches('name', re.repo))]);
+
+/**
+ * Where a step of the sweep that goes through something too large for one day left off (sweep.ts): R2's keys, a
+ * thousand a day, each without a row that names it let go (bytes a failed upload or sweep left, which nothing else
+ * finds), from `at` on; '' once it went round.
+ */
+export const sweepMark = pgTable('sweep_mark', {
+  name: text('name').primaryKey(),
+  at: text('at').notNull().default(''),
+}, () => [check('sweep_mark_at', within('at', 1024))]);

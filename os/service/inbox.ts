@@ -28,8 +28,8 @@ import {HTTPException} from 'hono/http-exception';
 import {byCode, claim, codeOf, HOLD, kept, live, release} from './names.ts';
 import type {Plans} from './plan.ts';
 import {hmacHex, same} from './keys.ts';
-import {ago, body, lock, ms, refuse, rows, slowDown, type Db, type Vars} from './request.ts';
-import {address, contact, message, signal, throttle} from './schema.ts';
+import {ago, body, lock, ms, refuse, rows, slowDown, UUID, type Db, type Vars} from './request.ts';
+import {address, contact, message, server, signal, throttle} from './schema.ts';
 
 export const INBOX = {
   body: 4000, perHour: 60, requestsPerPeer: 3, requestsInAll: 30, addresses: 5,
@@ -81,7 +81,10 @@ export function parseAddress(a: string): {name: string; domain: string} | null {
 
 type Address = typeof address.$inferSelect;
 
-export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
+/** What servers.ts asks of names: whether an account's proof for a domain is in its DNS now (null: not readable now). */
+export interface Proofs { proven(owner: string, domain: string): Promise<boolean | null> }
+
+export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
   const db = d.db;
   const txt = d.txt ?? txtOverHttps;
   const host = new URL(d.baseURL || 'https://localhost').host.toLowerCase();
@@ -114,16 +117,31 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
    * one until the record is back; lapsed long enough, sweep.ts lets it go.
    */
   const seen = new Map<string, {at: number; ok: boolean}>();
-  const stillNamed = async (row: Address) => {
-    if (row.domain === d.domain || !row.userId) return true;
-    const key = `${row.domain}\n${row.userId}`, was = seen.get(key);
+  /** Whether `owner`'s proof for `domain` is in its DNS now (read again at most hourly); null when the DNS cannot be read now. */
+  const proven = async (owner: string, domain: string): Promise<boolean | null> => {
+    const key = `${domain}\n${owner}`, was = seen.get(key);
     if (was && Date.now() - was.at < (d.recheck ?? 3600_000)) return was.ok;
-    const proof = await proofOf(row.userId, row.domain);
-    // DNS that cannot be asked now leaves the name as it was found last (and asks again next time).
-    const records = await published(row.domain).catch((e: unknown) => { if (e instanceof HTTPException) return null; throw e; });
-    if (!records) return !row.lapsedAt;
+    const proof = await proofOf(owner, domain);
+    const records = await published(domain).catch((e: unknown) => { if (e instanceof HTTPException) return null; throw e; });
+    if (!records) return null;
     const ok = records.some((r) => r.remote === host && same(r.proof, proof));
     seen.set(key, {at: Date.now(), ok});
+    return ok;
+  };
+  /** A server's name on another domain stands by its maker's proof there, as a person's by their own. */
+  const holderOf = async (row: Address): Promise<string | null> => {
+    if (row.userId) return row.userId;
+    if (!row.serverId) return null;
+    const [s] = await db.select({by: server.madeBy}).from(server).where(eq(server.id, row.serverId)) as {by: string | null}[];
+    return s?.by ?? null;
+  };
+  const stillNamed = async (row: Address) => {
+    if (row.domain === d.domain) return true;
+    const owner = await holderOf(row);
+    if (!owner) return true;
+    const ok = await proven(owner, row.domain);
+    // DNS that cannot be asked now leaves the name as it was found last (and asks again next time).
+    if (ok === null) return !row.lapsedAt;
     if (ok === !!row.lapsedAt) await db.update(address).set({lapsedAt: ok ? null : new Date()}).where(eq(address.address, row.address));
     return ok;
   };
@@ -208,10 +226,14 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     if (!NAME.test(name)) return c.json({error: 'A name is 2–31 letters, digits, dots, dashes or underscores'}, 400);
     if (!DOMAIN.test(domain) && domain !== d.domain) return c.json({error: 'That is not a domain'}, 400);
     // So many names an account keeps, those let go and still held for it among them; taking one of its own back is no new one.
-    const [{n, own}] = await db.select({n: sql<number>`count(*)::int`, own: sql<number>`count(*) filter (where ${address.address} = ${`${name}@${domain}`})::int`})
-      .from(address).where(and(eq(address.userId, me), kept));
-    if (!own && n >= INBOX.addresses) return c.json({error: 'Too many names'}, 409);
-    await d.plans?.claimName(db, me, `${name}@${domain}`, domain, !!own);
+    // Asked first as they stand (what the plan says comes before what the DNS says), then again under the lock.
+    const counted = async (q: Db) => {
+      const [{n, own}] = await q.select({n: sql<number>`count(*)::int`, own: sql<number>`count(*) filter (where ${address.address} = ${`${name}@${domain}`})::int`})
+        .from(address).where(and(eq(address.userId, me), kept));
+      if (!own && n >= INBOX.addresses) refuse(409, {error: 'Too many names'});
+      await d.plans?.claimName(q, me, `${name}@${domain}`, domain, !!own);
+    };
+    await counted(db);
     if (domain !== d.domain) {
       // The domain's owner says, in its DNS, that this Remote holds it for this account.
       const proof = await proofOf(me, domain);
@@ -219,8 +241,13 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
         return c.json({error: 'The domain does not name this account yet', publish: {name: recordName(domain), type: 'TXT', value: `v=length3; remote=${host}; proof=${proof}`}}, 409);
       }
     }
-    // One namespace with servers' names; on this Remote, first come, for a term; a name let go is held for its old owner a while.
-    const got = await claim(db, name, domain, {userId: me}, domain === d.domain);
+    // Counted and claimed under the account's lock: names asked for at once are counted one by one.
+    const got = await db.transaction(async (tx: Db) => {
+      await lock(tx, me);
+      await counted(tx);
+      // One namespace with servers' names; on this Remote, first come, for a term; a name let go is held for its old owner a while.
+      return claim(tx, name, domain, {userId: me}, domain === d.domain);
+    });
     if (got.ok) return c.json({address: `${name}@${domain}`, until: got.until}, 201);
     return c.json(got.until ? {error: 'That name was let go, and is held for its owner a while', until: got.until} : {error: 'That name is taken'}, 409);
   });
@@ -259,6 +286,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
    * `me` has just accepted `peer`: each server `peer` asked them into (a message about it, target.server)
    * within the last 30 days takes them in, now that the two have accepted each other, so long as `peer`
    * is still in it. As Server's own adding (servers.ts): only someone in it, and only someone both sides accepted.
+   * One who left it or was removed since the message (server_left) is not taken back by it.
    */
   const cameIn = (me: string, peer: string) => db.execute(sql`insert into server_member (server_id, user_id)
     select distinct sm.server_id, ${me}::text from message m
@@ -266,44 +294,61 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     join server s on s.id = sm.server_id and s.gone_at is null
     where m.to_user = ${me} and m.from_user = ${peer} and m.created_at > ${ago(HOLD)}
       and exists (select 1 from contact k where k.user_id = ${peer} and k.peer = ${me} and k.state = 'accepted')
+      and not exists (select 1 from server_left l where l.server_id = sm.server_id and l.user_id = ${me} and l.at >= m.created_at)
     on conflict do nothing`);
 
   v1.post('/inbox/messages', async (c) => {
     const me = c.get('userId');
-    const b = await body<{to?: unknown; from?: unknown; type?: unknown; target?: unknown; body?: unknown}>(c);
+    const b = await body<{id?: unknown; to?: unknown; from?: unknown; type?: unknown; target?: unknown; body?: unknown}>(c);
+    // The sender's own id for it (a UUID), so sending it again (an answer lost on the way) is the same message, not two.
+    if (b?.id !== undefined && (typeof b.id !== 'string' || !UUID.test(b.id.toLowerCase()))) return c.json({error: 'An id is a UUID'}, 400);
     const text = typeof b?.body === 'string' ? b.body.trim() : '';
     if (!text || text.length > INBOX.body) return c.json({error: 'A message is at most 4000 characters'}, 400);
     const type = TYPES.includes(b?.type as typeof TYPES[number]) ? b!.type as string : 'message';
     const target = Object.fromEntries(Object.entries(typeof b?.target === 'object' && b.target ? b.target : {})
       .filter(([k, v]) => ['repo', 'issue', 'change', 'version', 'server'].includes(k) && (typeof v === 'string' ? v.length <= 200 : typeof v === 'number')));
     const own = await mine(me);
-    const from = own.find((a) => a.address === b?.from) ?? own[0];
+    // Written from a name that still answers: one on a domain whose DNS no longer names this account is not one.
+    let from: Address | undefined;
+    // The one it says first (if it is theirs), then their others: never another's, whatever it says.
+    for (const a of [...own.filter((x) => x.address === b?.from), ...own.filter((x) => x.address !== b?.from)]) if (await stillNamed(a)) { from = a; break; }
+    if (!from && own.length) return c.json({error: 'That name\'s domain no longer names this account'}, 409);
     if (!from) return c.json({error: 'Claim a name first'}, 409);
     const to = await resolve(me, typeof b?.to === 'string' ? b.to : '');
     if (!('userId' in to)) return c.json({error: to.why}, 404);
     if (to.userId === me) return c.json({error: 'That is you'}, 400);
     const rel = await relation(me, to.userId);
     if (rel.theirs === 'blocked') return c.json({error: 'They do not accept messages from you'}, 403);
-    // What this sender sent within the hour, what waits unread from them, and from anyone they have not accepted: one read.
+    // What this sender sent within the hour, what waits unread from them, and from anyone they have not accepted: one read,
+    // and the message written, under the sender's lock, so messages sent at once are counted one by one.
     const hour = new Date(Date.now() - 3600_000);
-    const [n] = await rows<{sent: number; pair: number; waiting: number}>(db, sql`select
-      (select count(*)::int from message where from_user = ${me} and created_at > ${hour}) as sent,
-      (select count(*)::int from message where from_user = ${me} and to_user = ${to.userId} and read_at is null) as pair,
-      (select count(*)::int from message m where m.to_user = ${to.userId} and m.read_at is null
-        and not exists (select 1 from contact k where k.user_id = ${to.userId} and k.peer = m.from_user and k.state = 'accepted')) as waiting`);
-    if (n.sent >= INBOX.perHour) slowDown(3600, {error: 'Too many messages this hour'});
-    // Not accepted by them yet: a request, of which they hold only a few.
-    if (rel.theirs !== 'accepted') {
-      if (n.pair >= INBOX.requestsPerPeer) return c.json({error: 'Wait for them to answer before writing more'}, 429);
-      if (n.waiting >= INBOX.requestsInAll) return c.json({error: 'They have too many requests waiting'}, 429);
-    }
+    const id = (b?.id as string | undefined)?.toLowerCase() ?? crypto.randomUUID();
+    await db.transaction(async (tx: Db) => {
+      await lock(tx, `messages:${me}`);
+      if (b?.id !== undefined) {
+        const [had] = await rows<{from_user: string}>(tx, sql`select from_user from message where id = ${id}`);
+        if (had && had.from_user !== me) refuse(409, {error: 'That id is taken'});
+        // Sent already: nothing is counted or written again.
+        if (had) return;
+      }
+      const [n] = await rows<{sent: number; pair: number; waiting: number}>(tx, sql`select
+        (select count(*)::int from message where from_user = ${me} and created_at > ${hour}) as sent,
+        (select count(*)::int from message where from_user = ${me} and to_user = ${to.userId} and read_at is null) as pair,
+        (select count(*)::int from message m where m.to_user = ${to.userId} and m.read_at is null
+          and not exists (select 1 from contact k where k.user_id = ${to.userId} and k.peer = m.from_user and k.state = 'accepted')) as waiting`);
+      if (n.sent >= INBOX.perHour) slowDown(3600, {error: 'Too many messages this hour'});
+      // Not accepted by them yet: a request, of which they hold only a few.
+      if (rel.theirs !== 'accepted') {
+        if (n.pair >= INBOX.requestsPerPeer) refuse(429, {error: 'Wait for them to answer before writing more'});
+        if (n.waiting >= INBOX.requestsInAll) refuse(429, {error: 'They have too many requests waiting'});
+      }
+      await tx.insert(message).values({id, to: to.userId, from: me, fromAddress: from!.address, toAddress: to.address, type, target, body: text});
+    });
     // Writing to someone is accepting them.
     if (rel.mine !== 'accepted') {
       await db.insert(contact).values({userId: me, peer: to.userId, state: 'accepted'}).onConflictDoUpdate({target: [contact.userId, contact.peer], set: {state: 'accepted'}});
       await cameIn(me, to.userId);
     }
-    const id = crypto.randomUUID();
-    await db.insert(message).values({id, to: to.userId, from: me, fromAddress: from.address, toAddress: to.address, type, target, body: text});
     return c.json({id, request: rel.theirs !== 'accepted'}, 201);
   });
 
@@ -323,7 +368,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       ) t
       left join "user" u on u.id = t.peer
       left join contact k on k.user_id = ${me} and k.peer = t.peer
-      order by t.time desc`);
+      order by t.time desc limit 200`);
     return c.json(list.map((t) => ({
       address: t.address ?? (t.mine ? t.to_address : t.from_address), name: t.name ?? '',
       state: t.state === 'blocked' ? 'blocked' : t.state === 'accepted' ? 'contact' : 'request',
@@ -357,6 +402,8 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const b = await body<{address?: unknown; state?: unknown}>(c);
     const to = await resolve(me, typeof b?.address === 'string' ? b.address : '');
     if (!('userId' in to)) return c.json({error: to.why}, 404);
+    // Said, it is one of the three (a word mistyped was taken as accepted); not said, accepted, as before.
+    if (b?.state !== undefined && !['accepted', 'blocked', 'none'].includes(b.state as string)) return c.json({error: 'accepted, blocked or none'}, 400);
     const state = b?.state === 'blocked' ? 'blocked' : b?.state === 'none' ? null : 'accepted';
     if (!state) await db.delete(contact).where(and(eq(contact.userId, me), eq(contact.peer, to.userId)));
     else await db.insert(contact).values({userId: me, peer: to.userId, state}).onConflictDoUpdate({target: [contact.userId, contact.peer], set: {state}});
@@ -375,9 +422,14 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     if (rel.mine !== 'accepted' || rel.theirs !== 'accepted') return c.json({error: 'Live chat is between accepted contacts'}, 403);
     const data = typeof b?.data === 'string' ? b.data : '';
     if (!['offer', 'answer', 'candidate', 'bye'].includes(String(b?.kind)) || data.length > INBOX.signal || typeof b?.session !== 'string' || b.session.length > 64) return c.json({error: 'a signal'}, 400);
-    const [{n}] = await db.select({n: sql<number>`count(*)::int`}).from(signal).where(and(eq(signal.from, me), gt(signal.createdAt, new Date(Date.now() - 60_000))));
-    if (n >= INBOX.signalsPerMinute) slowDown(60, {error: 'too many'});
-    await db.insert(signal).values({id: crypto.randomUUID(), to: to.userId, from: me, session: b.session, kind: String(b.kind), data});
+    const session = b.session;
+    // Counted and put in under the sender's lock: sent at once, they cannot pass the minute's together.
+    await db.transaction(async (tx: Db) => {
+      await lock(tx, `signals:${me}`);
+      const [{n}] = await tx.select({n: sql<number>`count(*)::int`}).from(signal).where(and(eq(signal.from, me), gt(signal.createdAt, new Date(Date.now() - 60_000))));
+      if (n >= INBOX.signalsPerMinute) slowDown(60, {error: 'too many'});
+      await tx.insert(signal).values({id: crypto.randomUUID(), to: to.userId, from: me, session, kind: String(b.kind), data});
+    });
     return c.json({sent: true}, 201);
   });
 
@@ -397,4 +449,5 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     return c.json(taken.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
       .map((r) => ({from: from.address, session: r.session, kind: r.kind, data: r.data, time: r.createdAt.getTime()})));
   });
+  return {proven};
 }

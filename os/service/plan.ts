@@ -77,7 +77,7 @@ export function planConfig(env: {FREE_REPOS?: string; FREE_MB?: string; GRACE_DA
 /** How the plan is bought: Stripe, and the secret its webhook events are signed with. */
 export interface Billing { stripe: StripeApi; webhookSecret: string }
 
-type Row = Pick<typeof plan.$inferSelect, 'customer' | 'subscription' | 'status' | 'periodEnd' | 'cancelAt' | 'failedAt'>;
+type Row = Pick<typeof plan.$inferSelect, 'customer' | 'subscription' | 'status' | 'periodEnd' | 'cancelAt' | 'failedAt'> & {eventAt?: Date | null};
 
 /**
  * Where an account stands, from its row: paid or not, and the one date that
@@ -210,16 +210,28 @@ export async function apply(tx: Db, event: {type: string; created: number; data:
       const periodEnd = secs(o.current_period_end) ?? secs(item.current_period_end);
       const status = deleted ? 'canceled' : STATUSES.has(str(o.status)) ? str(o.status) : null;
       const cancelAt = secs(o.cancel_at) ?? (o.cancel_at_period_end === true ? periodEnd : null) ?? (deleted ? secs(o.ended_at) ?? at : null);
-      const set = {subscription: id, status, periodEnd, cancelAt, eventAt: at, updatedAt: new Date()};
-      // Stripe does not send events in order: one made before the last taken changes nothing; nor does
-      // the end of another subscription than the one this account now has.
+      // Paying again (active, trialing) ends a failure before it: the next one gets its grace whole.
+      const set = {subscription: id, status, periodEnd, cancelAt, eventAt: at, updatedAt: new Date(),
+        ...(status === 'active' || status === 'trialing' ? {failedAt: null} : {})};
+      // Stripe does not send events in order, and says their moment in whole seconds: one made before the last
+      // taken changes nothing, and one of the same second as it does, but for `incomplete` over a subscription
+      // already paying (made as incomplete, then active, is one Checkout). Nor does another subscription than the
+      // one this account has and pays for (two Checkouts in two tabs) take its place, nor its end end the one paid for.
+      const unmade = status === 'incomplete' || status === 'incomplete_expired';
+      // One being paid for takes the place of one whose payment failed (paid again past its grace): before, the new
+      // one was heard and kept out, and the account stayed free while it paid.
+      const paying = status === 'active' || status === 'trialing';
       await tx.insert(plan).values({userId, ...set}).onConflictDoUpdate({target: plan.userId, set,
-        setWhere: sql`(${plan.eventAt} is null or ${plan.eventAt} <= ${at})${deleted ? sql` and (${plan.subscription} is null or ${plan.subscription} = ${id})` : sql``}`});
+        setWhere: sql`(${plan.eventAt} is null or ${plan.eventAt} < ${at} or (${plan.eventAt} = ${at}${unmade ? sql` and ${plan.status} not in ('active', 'trialing')` : sql``}))
+          and (${plan.subscription} is null or ${plan.subscription} = ${id} or ${plan.status} is null
+            or ${plan.status} not in ('active', 'trialing'${paying ? sql`` : sql`, 'past_due'`}))`});
       return;
     }
     case 'invoice.payment_failed': {
       const userId = await whose('');
-      if (userId) await tx.update(plan).set({failedAt: sql`coalesce(${plan.failedAt}, ${at})`, updatedAt: new Date()}).where(eq(plan.userId, userId));
+      // A failure older than the subscription as last heard of (delivered late, after a payment went through) is past.
+      if (userId) await tx.update(plan).set({failedAt: sql`coalesce(${plan.failedAt}, ${at})`, updatedAt: new Date()})
+        .where(and(eq(plan.userId, userId), sql`(${plan.eventAt} is null or ${plan.eventAt} <= ${at})`));
       return;
     }
     case 'invoice.paid':
@@ -245,8 +257,10 @@ export function planRoutes(d: PlanDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   v1.get('/plan', async (c) => {
     const me = c.get('userId');
     if (!p.on || !p.config) return c.json({plan: 'none'});
-    const [row, use, names] = await Promise.all([p.rowOf(db, me), usage(db, me), db.select({domain: address.domain, n: sql<number>`count(*)::int`})
-      .from(address).where(and(eq(address.userId, me), kept)).groupBy(address.domain) as Promise<{domain: string; n: number}[]>]);
+    // One after another on the request's one connection: asked at once, each would open a connection of its own (worker.ts).
+    const row = await p.rowOf(db, me), use = await usage(db, me);
+    const names = await db.select({domain: address.domain, n: sql<number>`count(*)::int`})
+      .from(address).where(and(eq(address.userId, me), kept)).groupBy(address.domain) as {domain: string; n: number}[];
     const s = standing(row, p.config.grace);
     return c.json({plan: s.paid ? 'paid' : 'free', status: s.status, renews: s.renews, ends: s.ends, graceUntil: s.graceUntil,
       usage: {...use, names: names.reduce((a, r) => a + r.n, 0)}, free: p.config.free,
@@ -259,6 +273,16 @@ export function planRoutes(d: PlanDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const me = c.get('userId');
     if (!p.on || !p.billing) return off();
     if (await p.paid(db, me)) return c.json({error: 'This account is on the paid plan already'}, 409);
+    // One subscription an account: one being made (a Checkout in another tab) is finished, or runs out, first.
+    const was = await p.rowOf(db, me);
+    // A subscription whose payment failed is paid in the portal (its card changed), not by a second one beside it,
+    // which Stripe would bill as well as the first it still tries.
+    if (was?.status === 'past_due' || was?.status === 'unpaid') {
+      return c.json({error: 'The payment for this account\'s subscription failed; change how it is paid in Manage', manage: true}, 409);
+    }
+    if (was?.status === 'incomplete' && was.eventAt && Date.now() - new Date(was.eventAt).getTime() < 86_400_000) {
+      return c.json({error: 'A subscription is being made for this account; finish it, or try again tomorrow'}, 409);
+    }
     const back = backTo((await body<{back?: unknown}>(c))?.back);
     let customer = (await p.rowOf(db, me))?.customer ?? null;
     if (!customer) {

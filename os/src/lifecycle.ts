@@ -14,9 +14,9 @@
 import {forgetExcept} from './fetch.ts';
 import * as draft from './draft.ts';
 import {core, isNative} from './host.ts';
-import {connection, onConnection, onReach, remoteAway, RemoteError} from './remote.ts';
+import {connection, mayAsk, onConnection, onReach, remoteAway, RemoteError, retryAfter} from './remote.ts';
 import {ELSEWHERE, onChange} from './repos.ts';
-import {coalesced, shared} from './runs.ts';
+import {coalesced, every, jitter, shared} from './runs.ts';
 import {onState} from './state.ts';
 import {othersOpen, prune} from './tabs.ts';
 import {errorText} from './errors.ts';
@@ -68,6 +68,19 @@ export const remoteAll = (): readonly draft.RemoteRepo[] => everyThere;
 const away = (e: unknown): null => { if (e instanceof RemoteError) return null; throw e; };
 /** How long a repo the plan holds back waits before it is asked again. */
 const WAIT = 5 * 60_000;
+/** The longest any try again waits (a timer cannot wait a month, which is when a Remote out of R2's budget says). */
+const LONGEST = 6 * 3600_000;
+/**
+ * What another try at once could not get past: too large, not taken as it is, the Remote or the account full.
+ * Each is asked again after WAIT (or when the Remote says), not every few seconds, sending the same bytes each time.
+ */
+const LASTING = new Set([400, 413, 422, 507]);
+/**
+ * When to try `e`'s send again, the n-th time: when the Remote said (Retry-After), a refusal that stays after
+ * WAIT, anything else (offline, busy) sooner each time from 2 s to 5 minutes; give or take a fifth.
+ */
+export const againIn = (e: unknown, n: number): number =>
+  jitter(Math.min(LONGEST, retryAfter(e) ?? (e instanceof RemoteError && LASTING.has(e.status) ? WAIT : Math.min(WAIT, 2000 * 2 ** n))));
 /** How soon a change is sent: soon enough to beat closing the tab, late enough to gather keystrokes. */
 const SOON = 400;
 
@@ -100,7 +113,7 @@ async function run(repo: string) {
       const s = states.get(repo);
       states.set(repo, {where: 'waits', changed: s?.changed ?? 0, both: [], unsynced: s?.unsynced ?? [], error: errorText(e)});
       if (connection()) {
-        const later = setTimeout(() => void run(repo), WAIT);
+        const later = setTimeout(() => void run(repo), jitter(WAIT));
         // Long enough that nothing else should wait on it: a process with nothing else to do (a test) is not held open by it.
         (later as unknown as {unref?: () => void}).unref?.();
         timers.set(repo, later);
@@ -113,7 +126,7 @@ async function run(repo: string) {
     retry.set(repo, n);
     const s = states.get(repo);
     states.set(repo, {where: 'offline', changed: s?.changed ?? 0, both: [], unsynced: s?.unsynced ?? [], elsewhere: s?.elsewhere, error: errorText(e)});
-    if (connection()) timers.set(repo, setTimeout(() => void run(repo), Math.min(60_000, 2000 * 2 ** n)));
+    if (connection()) timers.set(repo, setTimeout(() => void run(repo), againIn(e, n)));
   }
   tell();
 }
@@ -179,7 +192,8 @@ export const homeUnsent = (k: draft.HomeKey): boolean => homeTimers.has(k) || (h
  * The Remote is asked what moved (one small read); its repos and each setting
  * are read again only when they did.
  */
-export async function look(): Promise<void> {
+export const look: () => Promise<void> = coalesced(lookOnce);
+async function lookOnce(): Promise<void> {
   // What is here could not be read: nothing is decided from nothing (no state is dropped), and it is said.
   const here = await draft.status().catch((e: unknown) => { console.error('look: the repos here could not be read', e); return null; });
   if (!here) return;
@@ -248,7 +262,7 @@ function leave() {
 }
 
 let begun = false;
-let polling: ReturnType<typeof setInterval> | undefined;
+let polling: {stop(): void} | undefined;
 export async function begin() {
   if (begun) return;
   begun = true;
@@ -262,9 +276,9 @@ export async function begin() {
   onReach(() => { if (remoteAway() || !connection()) return; for (const [r, s] of states) if (s.where === 'offline' && timers.has(r)) schedule(r, 0); });
   // Another account, or none: nothing read for the last one holds.
   onConnection(() => { reposSeen = null; void look(); });
-  // The Remote's changes are seen within five seconds while the page is in view.
-  polling = setInterval(() => { if (document.visibilityState === 'visible' && connection()) void look(); }, 5000);
-  addEventListener('focus', () => void look());
+  // The Remote's changes are seen within five seconds while the page is in view and someone is at it; nobody for a
+  // while, a minute, then ten (runs.ts paced); back at it, at once. While the Remote is away, less often each time.
+  polling = every(5000, async () => { if (connection() && mayAsk()) await look(); }, {paced: true});
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') void flush(); });
   if (!isNative) addEventListener('pagehide', leave);
   await look();
@@ -272,7 +286,7 @@ export async function begin() {
 
 /** For tests: stop looking. */
 export function end() {
-  clearInterval(polling);
+  polling?.stop();
   for (const t of [...timers.values(), ...homeTimers.values()]) clearTimeout(t);
   timers.clear();
   homeTimers.clear();

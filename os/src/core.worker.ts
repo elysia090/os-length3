@@ -41,12 +41,18 @@ const READS = new Set(['repo_list', 'repo_tree', 'repo_read', 'repo_bytes', 'sta
 
 // ---- the network: synchronously, as the core waits for its answer (a worker may) ----
 
+/** The slowest line a file still goes over (bytes a millisecond: 32 KB/s), and the largest file (service LIMIT.blob). */
+const SLOW = 32, BLOB = 16 << 20;
+
 const send: Send = (head, body) => {
   const x = new XMLHttpRequest();
   try {
     x.open(head.method, head.url, false);
     x.responseType = 'arraybuffer';
-    if (head.timeout) x.timeout = head.timeout;
+    // The core's timeout is for nothing read in so long (net.rs), a request's here is for the whole of it: as long
+    // again as its bytes take at 32 KB/s, and a file's (a blob, up to 16 MB) as long as the largest does, so a
+    // slow line still finishes what it sends and gets, not cut at a minute and sent again from the start.
+    if (head.timeout) x.timeout = head.timeout + Math.ceil(body.length / SLOW) + (/\/v1\/blobs\/[0-9a-f]{64}$/.test(head.url) && head.method === 'GET' ? Math.ceil(BLOB / SLOW) : 0);
     for (const [k, v] of head.headers) x.setRequestHeader(k, v);
     x.send(body.length ? (body as Uint8Array<ArrayBuffer>) : null);
   } catch (e) {

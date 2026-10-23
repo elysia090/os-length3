@@ -54,7 +54,8 @@ export function enter(d: {db: Db; auth: Auth; enter: Enter}, app: Hono<Vars>) {
     const tries = await d.db.transaction(async (tx: Db) => {
       await lock(tx, from);
       const [n] = await rows<{n: number}>(tx, sql`select count(*)::int as n from throttle where key = ${from} and at > ${ago(3600_000)}`);
-      await tx.insert(throttle).values({key: from});
+      // One refused for trying too often is not counted again: the hour runs from the tries that were let try.
+      if (n.n < TRIES) await tx.insert(throttle).values({key: from});
       return n.n;
     });
     if (tries >= TRIES) slowDown(3600, {error: 'Too many tries; try again in an hour'});
