@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict';
 import {execFile, execFileSync, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {chmodSync, copyFileSync, cpSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync} from 'node:fs';
+import {chmodSync, copyFileSync, cpSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync} from 'node:fs';
 import {createServer} from 'node:http';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -159,4 +159,16 @@ test('a Node-only build takes l3 from its release only at the pin, and refuses a
     assert.notEqual(r.status, 0);
     assert.match(r.stderr, /SHA256SUMS of os-length3-linux-v9\.9\.9 says/);
   } finally { server.close(); }
+
+  // On Workers Builds without the token: a branch's preview goes on without the Prompt; main's build stops and says where it goes.
+  rmSync(join(tree, 'public/l3'), {recursive: true, force: true});
+  const ci = (branch) => spawnSync(process.execPath, [join(tree, 'scripts/prompt-files.mjs')],
+    {encoding: 'utf8', env: {...process.env, GITHUB_TOKEN: '', WORKERS_CI: '1', WORKERS_CI_BRANCH: branch, GITHUB_API_URL: 'http://127.0.0.1:9'}});
+  const preview = ci('claude/some-change');
+  assert.equal(preview.status, 0, preview.stderr);
+  assert.match(preview.stderr, /not production\): the app is built without the Prompt/);
+  assert.equal(existsSync(join(tree, 'public/l3')), false);
+  const production = ci('main');
+  assert.notEqual(production.status, 0);
+  assert.match(production.stderr, /Settings → Build → Variables and secrets/);
 });

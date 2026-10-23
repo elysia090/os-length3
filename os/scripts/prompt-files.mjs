@@ -37,6 +37,19 @@ const pin = pinnedRoots(readFileSync(join(here, 'core/src/root.rs'), 'utf8')).fi
 if (!pin) throw new Error(`core/src/root.rs pins no l3 ${version}: release it, then commit the entry it pinned`);
 if (!/^[0-9a-f]{64}$/.test(pin.web)) throw new Error(`core/src/root.rs pins l3 ${version}'s root but no index for the web (web: "${pin.web}"): a release since l3.mjs pins both`);
 
+// Cloudflare's Workers Builds (WORKERS_CI) gives a build the token only from the Worker's Settings → Build →
+// Variables and secrets. A build of a branch that is not production (WORKERS_CI_BRANCH, not main) only uploads a
+// version to preview: without the token it goes on without the Prompt (its page says there is no l3) rather than
+// failing. What os.length3.com serves, main's, never ships without it.
+if (!token && process.env.WORKERS_CI) {
+  const branch = process.env.WORKERS_CI_BRANCH;
+  if (branch && branch !== 'main') {
+    console.warn(`prompt-files: no GITHUB_TOKEN in this build of ${branch} (not production): the app is built without the Prompt`);
+    process.exit(0);
+  }
+  throw new Error('GITHUB_TOKEN is not in this build: give it in the Worker\'s Settings → Build → Variables and secrets (read-only, for this repository\'s releases)');
+}
+
 const sha = (b) => createHash('sha256').update(b).digest('hex');
 const ask = (path, accept = 'application/vnd.github+json') => fetch(`${api}/repos/${repo}${path}`, {
   headers: {accept, 'x-github-api-version': '2022-11-28', 'user-agent': 'length3-build', ...(token ? {authorization: `Bearer ${token}`} : {})},
