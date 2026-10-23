@@ -238,11 +238,18 @@ a { color: var(--ink); }
 
 /* Home: the page in its column, and beside it the right pane Forge and Git have (bench.ts), its switch at its top,
    kept in view while Home scrolls under it; put away, the switch alone stays, and Home takes the width. */
-.page > .home-layout { max-width: none; display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 22%); column-gap: var(--s5); align-items: start; }
+/* Its pane's line and its switch stand exactly where Forge's do, so going from Home to Forge (or back) nothing of the
+   pane moves: the page keeps Forge's margin at the right (s5), and the pane is Forge's W (a quarter of the page,
+   never under 280 px), less that margin, worked out from the page's own margins. */
+@media (min-width: 761px) { .page:has(> .home-layout) { padding-right: var(--s5); } }
+.page > .home-layout {
+  max-width: none; display: grid; column-gap: var(--s5); align-items: start;
+  grid-template-columns: minmax(0, 1fr) calc(max(280px, (100% + clamp(var(--s5), 5vw, 72px) + var(--s5)) / 4) - var(--s5));
+}
 .home-layout.pane-closed { grid-template-columns: minmax(0, 1fr) var(--h-row); }
 .home-main { min-width: 0; width: 100%; max-width: 1080px; margin: 0 auto; }
 .home-pane { position: sticky; top: var(--top-line); height: calc(var(--inner-h) - var(--top-line)); min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: var(--s3); border-left: 1px solid var(--rule); padding-left: var(--s4); }
-.home-pane > .pane-toggle { justify-self: end; }
+.home-pane > .pane-toggle { justify-self: end; margin-top: calc(var(--band) - var(--top-line)); }
 .home-layout.pane-closed .home-pane { border-left: 0; padding-left: 0; }
 .home-layout.pane-closed .home-side { display: none; }
 .home-side { min-height: 0; overflow: auto; }
@@ -253,6 +260,8 @@ a { color: var(--ink); }
 }
 /* Home a size smaller than the pages of work it leads to: the avatar, the name, the TODO box and the cards. */
 .home-main .avatar { width: 88px; height: 88px; font-size: var(--t-card); }
+/* No name yet: the person's mark in the circle, as on the rail, rather than an empty ring. */
+.avatar > .mark { width: 50%; height: 50%; color: var(--sub); }
 .home-main .identity h1 { font-size: var(--t-title); }
 .home-main .todo-box { min-height: max(300px, 44vh); }
 .home-main .grid.home-repos .card { min-height: 180px; }
@@ -781,7 +790,7 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
    the pane's column closes to nothing, what it holds staying at its width and cut at the moving edge (not squeezed),
    and is out of sight (and of the keyboard) once closed; brought back, it opens the same way. */
 .work.bench.pane-closed { grid-template-columns: minmax(0, 1fr) 0px; }
-.work.bench > .side { min-width: 0; }
+.work.bench > .side { min-width: 0; grid-template-columns: max(280px, calc(var(--bench-w, 1200px) / 4)); }
 .work.bench.pane-closed > .side { overflow: clip; visibility: hidden; transition: visibility 0s var(--move); }
 /* The one line, between the center and the pane: from the top line to the prompt box's foot, not edge to edge. */
 /* The pane's top is the plugin area's; the Prompt starts level with the foot of the rail's Inbox (bench.ts measures
@@ -885,6 +894,7 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
   }
   /* Laid over, it is the plugin area: the Prompt is the center's here (its dock, while it is written to). */
   .work.bench.pane-out > .side > .term-home { display: none; }
+  .work.bench.pane-out > .side { grid-template-columns: minmax(0, 1fr); }
   .work.bench .search-results { left: auto; right: 0; width: min(360px, calc(100vw - var(--rail) - 2 * var(--s4))); }
   /* No room on the top line here: Issue, diff and Output at the top of what opens. */
   .search-pills { position: static; }
@@ -980,15 +990,16 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: var(--mar
    its "/" level with the File icon; nothing under it moves. It opens under the pointer and stays a while after it
    leaves (tree.ts). */
 .tree {
-  position: fixed; top: var(--tree-top, var(--outer-top)); left: calc(var(--outer) + var(--rail) + var(--s2)); z-index: 5;
+  position: fixed; top: var(--tree-top, var(--outer-top)); left: calc(var(--outer) + var(--rail) + var(--s2) - var(--s3)); z-index: 5;
   width: min(clamp(260px, 20vw, 340px), calc(100vw - 2 * var(--outer) - var(--rail) - var(--s2))); max-height: calc(100vh - var(--tree-top, var(--outer-top)) - var(--outer-bottom)); overflow: auto;
   /* Concentric with its rows: the card's corner is the row's corner plus the padding between them. */
   padding: var(--s2); background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-card);
-  /* It comes out of the rail it was opened from: a few pixels from the left and a fade; it goes back the same way. */
-  visibility: hidden; opacity: 0; transform: translateX(calc(-1 * var(--s3)));
-  transition: opacity 160ms ease-out, transform 220ms var(--land), visibility 0s 220ms;
+  /* It comes out of the rail it was opened from: a few pixels from the left and a fade; it goes back the same way.
+     (Moved by its left edge, not a transform, which would make it the frame its row menus are placed in.) */
+  visibility: hidden; opacity: 0;
+  transition: opacity 160ms ease-out, left 220ms var(--land), visibility 0s 220ms;
 }
-.tree.open { visibility: visible; opacity: 1; transform: none; transition: opacity 160ms ease-out, transform 220ms var(--land), visibility 0s; }
+.tree.open { left: calc(var(--outer) + var(--rail) + var(--s2)); visibility: visible; opacity: 1; transition: opacity 160ms ease-out, left 220ms var(--land), visibility 0s; }
 .tree ul { list-style: none; margin: 0; padding: 0; }
 .tree-row { display: flex; align-items: center; min-height: var(--h-row); padding-left: calc(var(--depth, 0) * var(--s4)); border-radius: var(--r-field); }
 .tree-name {

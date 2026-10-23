@@ -151,7 +151,11 @@ export class Reader {
     const lines = area.value.split('\n');
     const at = lines.slice(0, line - 1).reduce((n, l) => n + l.length + 1, 0);
     area.focus({preventScroll: true});
-    area.setSelectionRange(at, at + (lines[line - 1]?.length ?? 0));
+    const end = at + (lines[line - 1]?.length ?? 0);
+    area.setSelectionRange(at, end);
+    // The line is lit for the landing (styles.css .revealed); after it, the caret waits at its start, so the next
+    // key typed goes in beside it rather than over it. A selection the person has made since stays theirs.
+    setTimeout(() => { if (area.selectionStart === at && area.selectionEnd === end) area.setSelectionRange(at, at); }, 1200);
     const height = parseFloat(getComputedStyle(area).lineHeight) || 20;
     const top = area.getBoundingClientRect().top - this.flow.getBoundingClientRect().top + this.flow.scrollTop;
     this.flow.scrollTop = top + (line - 1) * height - this.flow.clientHeight / 3;

@@ -117,3 +117,16 @@ test('New folder and Rename finish the same way, and Not now puts the row back a
   await menu.getByRole('button', {name: 'Rename', exact: true}).click();
   await expect(app.file.name('trips')).toBeFocused();
 });
+
+test('File pressed keeps out the tree its hover brought out, however late the press; pressed again it goes', async ({app}) => {
+  const file = app.rail.button('file');
+  await file.hover();
+  await expect(app.file.tree).toBeVisible();
+  await app.page.waitForTimeout(1200);
+  await file.click();
+  await expect(app.file.tree).toBeVisible();
+  await file.click();
+  await expect(app.file.tree).toBeHidden();
+  await file.click();
+  await expect(app.file.tree).toBeVisible();
+});

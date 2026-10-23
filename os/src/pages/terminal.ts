@@ -136,6 +136,8 @@ export class Session {
     this.text += strip(s);
     // It may come in pieces; it goes once whole.
     if (!this.ttySaid && this.text.includes(NO_TTY)) { this.text = this.text.replace(NO_TTY, ''); this.ttySaid = true; }
+    // Until then, what may still become it is not drawn: never a frame of it on the screen.
+    if (!this.ttySaid && this.text && NO_TTY.startsWith(this.text)) return;
     // Keep the last 200k characters; older output scrolls away.
     if (this.text.length > 200_000) this.text = this.text.slice(-150_000);
     // Drawn once a frame, however many pieces came in it. Output comes a stdio buffer (about 1 KB) at a time,

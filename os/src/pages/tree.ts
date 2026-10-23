@@ -33,8 +33,6 @@ import {errorText} from '../errors.ts';
 
 const OPEN_DELAY = 80;
 const LINGER = 8000;
-/** A press this soon after the hover opened the tree is the same reach for it, not a second press to close it. */
-const HOVER_GRACE = 600;
 
 /** Open folders by absolute path, kept while the app runs. */
 const expandedPaths = new Set<string>(['/root']);
@@ -77,7 +75,8 @@ export class FileTree {
   /** Whether the pointer is over the tree or File, so a hold let go knows to start the linger. */
   private over = false;
   /** When it last came out. */
-  private openedAt = 0;
+  /** The tree was out when the pointer came onto the File button, or a press there brought it out: pressed now, it goes. */
+  private outBefore = false;
 
   constructor(events: FileTreeEvents) {
     this.events = events;
@@ -119,14 +118,16 @@ export class FileTree {
     this.trigger = button;
     button.setAttribute('aria-controls', 'file-tree');
     button.setAttribute('aria-expanded', 'false');
-    button.addEventListener('pointerenter', () => this.enter());
+    button.addEventListener('pointerenter', () => { this.outBefore = this.isOpen; this.enter(); });
     button.addEventListener('pointerleave', () => this.leave());
-    // A press never closes what the hover just opened (a moment ago); pressed again after that, it closes, as
-    // the plug and the person's icon do (issue #45). From the keyboard (detail 0) it toggles and moves focus in.
+    // A press never closes what this same reach's hover opened, however long the press took to come: it keeps it
+    // out. Pressed again, or pressed while it was out before the pointer came, it closes, as the plug and the
+    // person's icon do (issue #45). From the keyboard (detail 0) it toggles and moves focus in.
     button.addEventListener('click', (event) => {
       const keyboard = event.detail === 0;
-      const settled = this.isOpen && performance.now() - this.openedAt > HOVER_GRACE;
-      if (this.isOpen && (keyboard || settled)) this.close(); else this.open(keyboard);
+      if (this.isOpen && (keyboard || this.outBefore)) { this.close(); return; }
+      this.open(keyboard);
+      this.outBefore = true;
     });
   }
 
@@ -158,7 +159,6 @@ export class FileTree {
       }
       this.build(focus);
     }
-    if (!this.isOpen) this.openedAt = performance.now();
     this.element.classList.add('open');
     this.trigger?.setAttribute('aria-expanded', 'true');
   }
@@ -166,6 +166,7 @@ export class FileTree {
   close() {
     clearTimeout(this.timer);
     this.unpop();
+    this.outBefore = false;
     this.element.classList.remove('open');
     this.trigger?.setAttribute('aria-expanded', 'false');
   }

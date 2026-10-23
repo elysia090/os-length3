@@ -36,7 +36,7 @@ export function home(ctx: Context): Node[] {
   // About three across at a laptop's width (styles.css): Home's own, so New repo's list and other grids stay as they are.
   grid.classList.add('home-repos');
   const header = h('section', {class: 'profile'},
-    h('div', {class: 'avatar', 'aria-hidden': 'true'}, initials(profile)),
+    h('div', {class: 'avatar', 'aria-hidden': 'true'}, initials(profile) || mark('person')),
     editing ? editForm(ctx) : identity(count),
     owner && !editing ? editButton(ctx) : null,
   );
