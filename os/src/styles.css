@@ -926,7 +926,6 @@ mark { background: var(--ink); color: var(--ground); }
 .pop-item[aria-checked='true'] { font-weight: 600; }
 .sign-in-row { flex-wrap: wrap; }
 .sign-in-lead { margin: 0 0 var(--s3); }
-.sign-in-after { margin: var(--s2) 0 0; }
 .sign-in-step { font-weight: 600; }
 .sign-in-step.done { color: var(--done); }
 .section.offer { margin-top: var(--s5); padding: var(--s4); border: var(--line-work) solid var(--edge); border-radius: var(--r-place); }
@@ -1036,7 +1035,7 @@ mark { background: var(--ink); color: var(--ground); }
 .standing { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s4); margin: var(--s4) 0 0; }
 .standing-reach.away { color: var(--off); }
 /* Just back from a provider: a passkey for next time, in a card of its own above the parts. */
-.passkey-next { margin-top: var(--s4); padding: var(--s4); border: 1px solid var(--edge); border-radius: var(--r-card); background: var(--raised); max-width: 760px; }
+.passkey-next { margin-bottom: var(--s5); padding: var(--s4); border: 1px solid var(--edge); border-radius: var(--r-card); background: var(--raised); max-width: 760px; }
 .passkey-next p { margin: 0 0 var(--s2); }
 .offer-holder.held { display: none; }
 .parts { display: flex; flex-wrap: wrap; gap: var(--s1); }
@@ -1070,6 +1069,8 @@ mark { background: var(--ink); color: var(--ground); }
 .plan-price { margin: 0 0 var(--s2); font-size: var(--t-card); font-weight: 600; }
 .plan-terms { margin: 0 0 var(--s3); padding-left: var(--s4); }
 .plan-terms li + li { margin-top: var(--s1); }
+.plan-confirm > .answers { margin-top: var(--s4); }
+.plan-confirm > p.muted { margin: 0; }
 /* How the last trip to Checkout went, above the plan until the plan says it. */
 .plan-told { margin: 0 0 var(--s4); padding: var(--s2) var(--s3); border-left: 3px solid var(--edge); }
 .plan-told.done { border-left-color: var(--done); }

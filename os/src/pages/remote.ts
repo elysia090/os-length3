@@ -107,10 +107,10 @@ export function signInPlace(title: string, ...body: Node[]): HTMLElement {
 }
 
 /**
- * The ways in, under the card's title. On the web, the first time is a provider (GitHub, Google or Apple, as
- * this Remote offers them: none is shown that cannot be used), with "I have a passkey" under it; once this
- * browser made or used a passkey, the passkey is the way in, the providers under it for a passkey lost (then a
- * new one is made, after). In the app, the browser signs in: a code it shows, approved there, and the app comes
+ * The ways in, under the card's title. On the web, the first time is a provider and nothing else (GitHub,
+ * Google or Apple, as this Remote offers them: none is shown that cannot be used); a passkey is made after it.
+ * Once this browser made or used a passkey, the passkey is the way in, the providers under it for a passkey
+ * lost (then a new one is made, after). In the app, the browser signs in: a code it shows, approved there, and the app comes
  * forward again; waiting, it can be opened again or called off, and a refusal or a code run out is said with
  * Try again. Each step is said as what it is: waiting for the browser, signed in, then connected (Remote's
  * page says that last, apart: being signed in is not the same as reaching the Remote).
@@ -122,7 +122,7 @@ export function signInBox(done: () => void, back?: string): HTMLElement {
   error.textContent = account.signInTroubleNow();
   if (isNative) {
     const go = button(t('Sign in in the browser'), 'primary');
-    const lead = h('p', {class: 'muted small sign-in-lead'}, t('Your browser opens on the Remote\'s page. Sign in there, approve this app, and come back.'));
+    const lead = h('p', {class: 'muted small sign-in-lead'}, t('Your browser opens to sign in.'));
     const waiting = h('div', {class: 'remote-join sign-in-waiting', hidden: '', role: 'status'});
     let waited = 0;
     go.addEventListener('click', () => void pressing(go, error, async () => {
@@ -135,10 +135,8 @@ export function signInBox(done: () => void, back?: string): HTMLElement {
       stop.addEventListener('click', () => { waited++; waiting.hidden = true; go.hidden = false; lead.hidden = false; go.focus(); });
       waiting.hidden = false;
       waiting.replaceChildren(
-        h('p', {class: 'sign-in-step'}, t('Waiting for you in the browser…')),
-        h('p', {}, t('Check that the browser shows this code, then approve.')),
-        h('p', {class: 'device-code mono'}, s.code),
-        h('p', {class: 'muted small'}, t('Not opened? Open this address yourself: {url}', {url: s.url})),
+        h('p', {class: 'sign-in-step'}, t('Approve this code in the browser')),
+        h('p', {class: 'device-code mono', title: s.url}, s.code),
         h('div', {class: 'row sign-in-row'}, stop, again));
       go.hidden = true;
       lead.hidden = true;
@@ -150,7 +148,7 @@ export function signInBox(done: () => void, back?: string): HTMLElement {
         go.textContent = t('Try again');
         throw e;
       }
-      waiting.replaceChildren(h('p', {class: 'sign-in-step done'}, t('Signed in. Connecting to the Remote…')));
+      waiting.replaceChildren(h('p', {class: 'sign-in-step done'}, t('Signed in')));
       // Back from the browser: this window forward, where the person began.
       void native('window_forward').catch(() => {});
       done();
@@ -159,17 +157,12 @@ export function signInBox(done: () => void, back?: string): HTMLElement {
     return box;
   }
   const returning = account.wayIn() === 'passkey' && account.passkeysHere();
-  const lead = h('p', {class: 'muted small sign-in-lead'});
+  // The buttons say it: no words around them (the card is narrow, and each is one way in).
   const providers = h('div', {class: 'row sign-in-row'});
-  const passkey = button(returning ? t('Sign in with your passkey') : t('I have a passkey'), returning ? 'primary' : '');
-  passkey.hidden = !account.passkeysHere();
-  const after = h('p', {class: 'muted small sign-in-after'});
+  const passkey = button(t('Sign in with your passkey'), 'primary');
   const ways = () => void account.about().then(({providers: list, enter, trouble}) => {
     // Entered by a link alone: no provider, no passkey, and the card says where the way in is.
     if (enter) passkey.hidden = true;
-    lead.textContent = enter ? '' : returning ? t('Welcome back. Your passkey on this device signs you in.')
-      : t('The first time, sign in with an account you already have. Then a passkey on this device signs you in.');
-    after.textContent = !enter && list.length && returning ? t('Lost your passkey, or on another device? Continue with the account you first signed in with, then add a new passkey.') : '';
     providers.replaceChildren(...list.map((p, i) => {
       const b = button(t('Continue with {name}', {name: account.PROVIDER_NAME[p]}), i === 0 && !returning ? 'primary' : '');
       b.addEventListener('click', () => void pressing(b, error, () => account.signInWith(p, back)));
@@ -189,9 +182,8 @@ export function signInBox(done: () => void, back?: string): HTMLElement {
   ways();
   const stop = account.onReach(() => { if (!box.isConnected) { stop(); return; } if (!account.remoteAway()) ways(); });
   passkey.addEventListener('click', () => void pressing(passkey, error, async () => { await account.signIn(); done(); }));
-  const passkeyRow = h('div', {class: 'row sign-in-row'}, passkey);
-  // Returning, the passkey first and the providers under it; the first time, the other way round.
-  box.append(lead, ...(returning ? [passkeyRow, providers, after] : [providers, passkeyRow]), error);
+  // Returning, the passkey first and the providers under it; the first time, the providers alone.
+  box.append(...(returning ? [h('div', {class: 'row sign-in-row'}, passkey), providers] : [providers]), error);
   return box;
 }
 
@@ -227,13 +219,14 @@ function passkeyNext(done: () => void, later: () => void): HTMLElement {
     add.addEventListener('click', () => void pressing(add, error, async () => {
       await account.addPasskey();
       account.passkeyOfferDone();
-      box.replaceChildren(h('p', {class: 'sign-in-step done', role: 'status'}, t('Passkey added. Next time, sign in with it.')));
+      box.replaceChildren(h('p', {class: 'sign-in-step done', role: 'status'}, t('Passkey added')));
+      // Said, then gone: the page is the repos again.
+      setTimeout(() => { box.hidden = true; }, 6000);
       done();
     }));
     box.hidden = false;
-    box.replaceChildren(h('h3', {id: 'passkey-next'}, h('span', {}, t('Sign in faster next time'))),
-      h('p', {}, t('Add a passkey on this device: next time it signs you in by itself, without the provider. It also confirms it is you when a repo is turned off.')),
-      h('p', {class: 'muted small'}, t('The passkey stays on your device (or your password manager); the Remote keeps no password. Lost the device? Sign in with the provider again and add a new one.')),
+    box.replaceChildren(h('h3', {id: 'passkey-next'}, h('span', {}, t('Add a passkey'))),
+      h('p', {class: 'muted'}, t('Next time, sign in with it alone.')),
       answers(no, add), error);
   }, () => {});
   return box;
@@ -244,7 +237,8 @@ function standing(): HTMLElement {
   const who = h('span', {class: 'standing-who'});
   const reach = h('span', {class: 'standing-reach'});
   const line = h('p', {class: 'standing muted small', role: 'status'}, who, reach);
-  const host = (() => { try { return new URL(account.connection()?.url ?? '').host; } catch { return ''; } })();
+  // A Remote on the page's own origin (the web app's) is named by it: its URL is ''.
+  const host = (() => { try { return new URL(account.connection()?.url || location.origin).host; } catch { return location.host; } })();
   void account.me().then((u) => { who.textContent = u?.name ? t('Signed in as {name}', {name: u.name}) : t('Signed in'); }, () => { who.textContent = t('Signed in'); });
   const show = () => {
     const away = account.remoteAway();
@@ -653,7 +647,7 @@ function planSection(offered: (on: boolean) => void): {el: HTMLElement; paint():
   /** How the last trip to Checkout went, said above the plan until the plan says it itself. */
   const told = h('p', {class: 'plan-told', role: 'status', hidden: ''});
   const tell = (text: string, kind: '' | 'done' = '') => { told.textContent = text; told.hidden = !text; told.classList.toggle('done', kind === 'done'); };
-  let came = takeCheckoutReturn(), waitingSince = came === 'paid' ? Date.now() : 0;
+  let came = checkoutReturn(), waitingSince = came === 'paid' ? Date.now() : 0;
   if (came === 'cancelled') tell(t('Payment was cancelled: nothing was charged, and the plan is as it was.'));
   if (came === 'paid') tell(t('Payment went through. The plan shows Paid as soon as Stripe tells the Remote, a moment from now.'));
   let confirming = false;
@@ -663,7 +657,7 @@ function planSection(offered: (on: boolean) => void): {el: HTMLElement; paint():
     offered(p.plan !== 'none');
     if (p.plan === 'none') { el.replaceChildren(); return; }
     // Paid now, after a Checkout: said once, and nothing more is waited for.
-    if (came === 'paid' && p.plan === 'paid') { came = null; tell(t('You are on the paid plan.'), 'done'); }
+    if (came === 'paid' && p.plan === 'paid') { came = null; checkoutBack = null; tell(t('You are on the paid plan.'), 'done'); }
     // Not heard yet: asked again in a moment, for a minute; then said where to look (the payment itself went through).
     if (came === 'paid' && p.plan !== 'paid') {
       if (Date.now() - waitingSince < 60_000) setTimeout(() => { if (el.isConnected) void paint(); }, 3000);
@@ -720,6 +714,18 @@ function planSection(offered: (on: boolean) => void): {el: HTMLElement; paint():
   return {el, paint};
 }
 
+/**
+ * How the trip to Checkout went, read once from where the page that came back kept it, and held a few minutes for
+ * every Plan drawn meanwhile (the page is drawn again as what the Remote says comes in, and the Plan with it).
+ */
+let checkoutBack: {how: 'paid' | 'cancelled'; at: number} | null = null;
+function checkoutReturn(): 'paid' | 'cancelled' | null {
+  const how = takeCheckoutReturn();
+  if (how) checkoutBack = {how, at: Date.now()};
+  if (checkoutBack && Date.now() - checkoutBack.at > 3 * 60_000) checkoutBack = null;
+  return checkoutBack?.how ?? null;
+}
+
 /** Before a page of Stripe's is opened in this tab: every change made here goes to the Remote first. */
 async function leaving() {
   if (!isNative) await flush().catch(() => {});
@@ -771,10 +777,11 @@ export function remote(ctx: Context): Node[] {
     holder.replaceChildren(
       h('div', {class: 'part-bar'}, page.switch),
       standing(),
-      ...(next ? [next] : []),
       page.panel('repos'), page.panel('sign-in'), page.panel('devices'), page.panel('plan'));
-    // The passkey offer belongs to the repos it lets be turned off: under them, never under another part.
+    // The passkey offer belongs to the repos it lets be turned off: under them, never under another part; the one
+    // just after a provider's sign-in, at their top.
     if (offer) page.panel('repos').append(offer);
+    if (next) page.panel('repos').prepend(next);
   };
   paint();
   const stop = account.onConnection(() => { if (!holder.isConnected) { stop(); return; } paint(); });

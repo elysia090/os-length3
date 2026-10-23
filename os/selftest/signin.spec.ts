@@ -53,31 +53,31 @@ test('signing out from the person menu brings back the way in', async ({signedIn
 test('the first time a provider, a passkey offered right after it; the next time the passkey is the way in', async ({app}, info) => {
   await app.rail.go('remote');
   const card = app.main.getByRole('region', {name: 'Sign in'});
-  await expect(card).toContainText('The first time, sign in with an account you already have.');
-  await expect(card.getByRole('button', {name: 'I have a passkey'})).toBeVisible();
+  // The first time, a provider alone: a passkey is made after it.
+  await expect(card.getByRole('button', {name: /passkey/})).toHaveCount(0);
   await app.signIn(personName(info));
   // Signed in, and the Remote reached: two things, said apart.
   const standing = app.main.getByRole('status').filter({hasText: 'Signed in as'});
   await expect(standing).toContainText(`Signed in as ${personName(info)}`);
   await expect(standing).toContainText('Connected to');
-  // Just back from the provider: a passkey for next time, what it is for, and one offer only.
-  const next = app.main.getByRole('region', {name: 'Sign in faster next time'});
-  await expect(next).toContainText('without the provider');
+  // Just back from the provider: a passkey for next time, and one offer only.
+  const next = app.main.getByRole('region', {name: 'Add a passkey'});
+  await expect(next).toContainText('Next time, sign in with it alone.');
   await expect(app.main.getByRole('button', {name: 'Add a passkey'})).toHaveCount(1);
   await next.getByRole('button', {name: 'Add a passkey'}).click();
-  await expect(app.main.getByText('Passkey added. Next time, sign in with it.')).toBeVisible();
+  await expect(app.main.getByText('Passkey added', {exact: true})).toBeVisible();
   // Signed out, the passkey is the way in first, the provider under it for a passkey lost.
   await app.me.openMenu();
   await app.me.menu.getByRole('menuitem', {name: 'Sign out'}).click();
-  await expect(card).toContainText('Welcome back.');
-  await expect(card).toContainText('Lost your passkey');
+  await expect(card.getByRole('button').first()).toHaveText('Sign in with your passkey');
+  await expect(card.getByRole('button', {name: 'Continue with Development'})).toBeVisible();
   await card.getByRole('button', {name: 'Sign in with your passkey'}).click();
   await app.settled();
   await expect(app.remote.part('Repos')).toBeVisible();
 });
 
 test('a passkey put off for later is offered under the repos instead', async ({signedIn: app}) => {
-  const next = app.main.getByRole('region', {name: 'Sign in faster next time'});
+  const next = app.main.getByRole('region', {name: 'Add a passkey'});
   await next.getByRole('button', {name: 'Later'}).click();
   await expect(next).toBeHidden();
   await expect(app.main.getByRole('button', {name: 'Add a passkey'})).toHaveCount(1);
