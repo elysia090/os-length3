@@ -34,6 +34,8 @@ import {caret} from './caret.ts';
 
 const PURPOSE_KEY = 'length3.os.purpose';
 const REPO_KEY = 'length3.os.repo';
+/** The file last read in Forge, and its repo: where Home says the person left off. */
+const FILE_KEY = 'length3.os.file';
 
 const $ = (id: string) => document.getElementById(id)!;
 const tabs = new Map<PurposeId, HTMLButtonElement>();
@@ -69,8 +71,11 @@ const ctx: Context = {
   },
   remember(name) { openRepo = name; save(REPO_KEY, name); fileTree.mark(name); },
   actOn(repo, path) { void fileTree.actOn(repo, path); },
-  reading(path) { readingPath = path; if (current === 'forge') fileTree.markFile(openRepo, path); },
+  reading(path) { readingPath = path; if (path && openRepo) save(FILE_KEY, JSON.stringify({repo: openRepo, path})); if (current === 'forge') fileTree.markFile(openRepo, path); },
   get repo() { return openRepo; },
+  get leftOff() {
+    try { const at = JSON.parse(load(FILE_KEY) ?? 'null') as {repo?: unknown; path?: unknown} | null; return at && typeof at.repo === 'string' && typeof at.path === 'string' ? {repo: at.repo, path: at.path} : null; } catch { return null; }
+  },
   rerender: () => render(),
 };
 

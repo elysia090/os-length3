@@ -212,6 +212,10 @@ const drafts = new Drafts();
 /** The name or code being written to, under its own key. */
 const TO = '\0to';
 
+/** The conversation the page is next come to for (Home's Lately), opened as it is drawn. */
+let wanted: string | null = null;
+export function openNext(address: string) { wanted = address; }
+
 export function inboxPage(ctx: Context): Node[] {
   const holder = h('div', {});
   let open: string | null = null;
@@ -273,6 +277,7 @@ export function inboxPage(ctx: Context): Node[] {
     if (landing && stub) took(stub, landing);
     landing = null;
     await paintList(rows, pane);
+    if (wanted) { const at = wanted; wanted = null; void show(at, rows, pane); }
   };
 
   const paintList = async (rows: HTMLElement, pane: HTMLElement) => {

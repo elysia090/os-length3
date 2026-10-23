@@ -1209,17 +1209,28 @@ quiet with it, still there to read. The repos are large cards, three across at a
 laptop's width (two, then one, as it narrows); each is a repo in a list as
 Runtime says it: its body the repo itself, its gear Forge or Free.
 
-The profile is edited where it is read, not in a form put in its place: the
-name becomes the line it is written on, where it stands and as large; @ and
-the handle, and the line about the person, come in under it a line after
-another; each is written on, not boxed (a rule under it, ink under the one
-with the keyboard). Edit profile gives way to Cancel and Save where it
-stood. The top grows and shrinks to what it holds (320 ms), never jumping
-what is under it; the face gives a little wiggle as the form opens, and
-saved, it turns round to show its new initials (or nods, when they are the
-same) while the name settles where it is shown. Enter on the name or the
-handle saves; Escape leaves it as it was. The rail's face is the new one at
-once.
+The profile is edited where it is read, not in a form put in its place:
+written in, the top is a sheet of its own as the TODO is when written in
+(`paper`, an `ink` edge, grown out around the face and the lines so nothing
+on it moves). The name becomes the line it is written on, where it stands
+and as large; @ and the handle, and the line about the person, come in under
+it a line after another, with room between them; each is written on, not
+boxed (a rule under it, ink under the one with the keyboard), and the
+counts, which are not written, step aside. The face follows what is written,
+its initials as the name (or the handle) goes in, so the change is seen as
+it is made. Edit profile gives way to Cancel and Save where it stood. The
+top grows and shrinks to what it holds (320 ms), never jumping what is under
+it; the face gives a little wiggle as the form opens, and saved, it nods
+while the name settles where it is shown. Enter on the name or the handle
+saves; Escape leaves it as it was. The rail's face is the new one at once.
+
+Home's right pane (the same pane and switch as Forge's and Git's) holds
+Lately: what waits since the person was last here, a row each and the way
+there pressed: where they left off (the file last read in Forge, opened to
+go on writing), the conversations with something not read (who, and their
+last line), the boards with posts not seen. With nothing new it says so,
+quietly: the pane out is never a line with nothing beside it. The plugin
+area comes down over it when the rail's plug opens it.
 
 ### Forge
 
@@ -1343,12 +1354,13 @@ band keeps its place: where it was read, what was searched in it. A pill
 taken off lets its place go.
 
 The center takes three quarters of the width; the right pane takes one
-quarter (at least 280 px) so it never gets in the way. Its bottom is the
-terminal's home, and once the repo's Prompt has run something it starts
-above the middle (the reference takes 2 parts, the Prompt 3): the reference
-scrolls and the Prompt does not, so the eye should not have to drop low to
-find it. Until then the Prompt is only its prompt line, and the reference
-takes the room, so a diff reads in it. Narrower than 760 px the right pane
+quarter (at least 280 px) so it never gets in the way. It is the Prompt's
+home: with the plugin area shut the Prompt holds the pane from its top, its
+head level with the file box's, so the pane reads at once as open and as what
+it is (an empty top read as nothing, or as put away). The plugin area opened
+comes down into the pane's head and the Prompt moves down, level with the
+foot of the rail's Inbox. What the search finds opens over it, under the
+box, so a diff reads there. Narrower than 760 px the right pane
 folds away and the search box stays on the top line, at its right; the
 switch lays the pane over the center, and Escape or a press outside puts it
 away. The search box is the way to everything the center refers to: plain,
@@ -2103,18 +2115,13 @@ its title; on the right, level with it, under 作成されるもの, the one
 scaffold every repo starts from (nothing to choose: shared/templates.json's
 `standard`, as `l3 repo new` makes it: README.md with docs/ and issue/, no
 language of its own; C's files are `l3 repo new -t c`'s), shown as File will show it: File's
-own card, only as tall as its rows, /root (repo) and in it the new repo,
-filled in ink as File fills the repo worked on, its folders shut, and each
-file's name its own row, quietly a field (a rule round it under the
-pointer, a field once written in), README.md's size at the row's end as
-File gives it, of what it will say (it follows the name and what it is
-for). Under README.md, its first lines as they will be written, numbered as
-Forge numbers them and quiet behind a rule: the title the repo's name, then
-what it is for, as it is typed beside. A name and its extension are
-changed there and nothing else: what a file says is never turned into
-another language, and what one file says of another's path follows it. A name that cannot be (one with a "/", one met twice
-in a folder) is said under the card before 作成, which puts the keyboard
-there. Then 作成, the one primary action, under both. What is written stays
+own card, only as tall as its rows, /root (repo) and in it the repos already
+there, shut and quiet, and among them, where its name puts it (moving as the
+name is written), the new one filled in ink as File fills the repo worked
+on, its folders shut, README.md's size at the row's end as File gives it, of
+what it will say (it follows the name and what it is for). Nothing is named
+or laid out in the card: a repo's files are named, made and moved in File,
+every repo's alike, once it is made. Then 作成, the one primary action, under both. What is written stays
 while other pages are seen, until the repo is made. The two columns stand
 side by side only while what is written keeps a reading width beside the
 card; narrower, they stack: name, what it is for, the files.

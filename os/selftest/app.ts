@@ -191,18 +191,14 @@ class NewRepo extends Part {
   get made() { return this.main.getByRole('status'); }
   /** Forge holding `name`'s page: where a repo made is gone into. */
   madeIn(name: string) { return this.page.getByRole('region', {name: `The files of ${name}`, exact: true}); }
-  /** The name a file of the scaffold will have (its field in the box, by the scaffold's path). */
-  fileName(path: string) { return this.main.getByRole('textbox', {name: `Name of ${path}`, exact: true}); }
 
   /**
    * Fill the form and press Create (the outcome is the caller's to check). There is no template to
-   * choose: every repo starts from the one scaffold (a README, docs/ and issue/); `files` names its
-   * files in the box first, by the scaffold's path.
+   * choose: every repo starts from the one scaffold (a README, docs/ and issue/).
    */
-  async fill(name: string, o: {template?: 'C'; summary?: string; files?: Record<string, string>} = {}) {
+  async fill(name: string, o: {template?: 'C'; summary?: string} = {}) {
     await this.app.rail.go('new-repo');
     await this.name.fill(name);
-    for (const [path, as] of Object.entries(o.files ?? {})) await this.fileName(path).fill(as);
     if (o.summary) await this.summary.fill(o.summary);
     await this.create.click();
   }
@@ -211,7 +207,7 @@ class NewRepo extends Part {
    * Make a repo and see it made: Forge opens it. `template: 'C'`: then C's files are written into it from File, as
    * someone would (src/main.c and its Makefile, as `l3 repo new -t c` makes them), and Forge shows it.
    */
-  async make(name: string, o: {template?: 'C'; summary?: string; files?: Record<string, string>} = {}) {
+  async make(name: string, o: {template?: 'C'; summary?: string} = {}) {
     await this.fill(name, o);
     await expect(this.madeIn(name)).toBeVisible();
     if (o.template !== 'C') return;

@@ -14,5 +14,7 @@ export interface Context {
   remember(name: string): void;
   /** The repo Forge shows, if any. */
   readonly repo: string | null;
+  /** The file last read in Forge, kept from one visit to the next: where the person left off. */
+  readonly leftOff: {repo: string; path: string} | null;
   rerender(): void;
 }

@@ -326,6 +326,16 @@ a { color: var(--ink); }
 .home-layout.pane-closed .home-side { display: none; }
 .home-side { min-height: 0; overflow: auto; }
 .home-side > .plugins { padding: 0; }
+/* Lately, in Home's pane: what waits since the person was last here, a row each, the way there pressed. */
+.lately { display: grid; gap: var(--s2); }
+.lately h2 { font-size: var(--t-meta); font-weight: 600; }
+.lately-list { display: grid; gap: var(--s1); margin: 0 calc(-1 * var(--s3)); }
+.lately-row { display: grid; gap: 2px; min-width: 0; padding: var(--s2) var(--s3); border: 0; border-radius: var(--r-card); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.lately-row:hover { background: var(--raised); }
+.lately-what { display: flex; align-items: center; gap: var(--s2); min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.lately-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lately-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--ink); }
+.lately-none { margin: 0; padding: 0 var(--s3); }
 @media (max-width: 760px) {
   .page > .home-layout, .home-layout.pane-closed { grid-template-columns: minmax(0, 1fr); }
   .home-pane { display: none; }
@@ -362,7 +372,12 @@ a { color: var(--ink); }
 .counts b { display: block; color: var(--ink); font-size: var(--t-card); font-weight: 600; line-height: 1.3; }
 /* The profile written where it is read: each line as it reads (the name as large, the handle and the line about the
    person as quiet), written on rather than boxed, a rule under each and ink under the one with the keyboard. */
-.edit { display: grid; gap: var(--s1); max-width: 560px; min-width: 0; }
+/* Written in, the profile is a sheet of its own, as the TODO is when written in: `paper` with an `ink` edge round the
+   face and the lines, grown out around them so nothing on it moves (at the right, within the column: its edge is
+   the TODO box's, clear of the pane's line). */
+.profile { border: 1px solid transparent; border-radius: var(--r-place); transition: background var(--motion), border-color var(--motion); }
+.profile.editing { margin: calc(-1 * var(--s4)) 0 calc(-1 * var(--s4)) calc(-1 * var(--s5)); padding: var(--s4) var(--s4) var(--s4) var(--s5); border-color: var(--ink); background: var(--paper); }
+.edit { display: grid; gap: var(--s3); max-width: 480px; min-width: 0; }
 .edit .name-in, .edit .handle-in, .edit .bio-in {
   width: 100%; min-width: 0; min-height: 0; margin: 0; padding: 0; border: 0; border-bottom: 1px solid var(--rule); border-radius: 0;
   background: transparent; color: var(--ink); font: inherit; transition: border-color var(--motion);
@@ -371,7 +386,9 @@ a { color: var(--ink); }
 .home-main .edit .name-in { font-size: var(--t-title); }
 .edit .handle-field { display: flex; align-items: baseline; color: var(--sub); }
 .edit .handle-in { flex: 1; color: var(--sub); }
-.edit .bio-in { margin-top: var(--s2); max-width: 60ch; line-height: 1.6; resize: none; overflow: hidden; white-space: pre-wrap; }
+.edit .bio-field { display: flex; }
+.edit .bio-in { max-width: 60ch; line-height: 1.6; resize: none; overflow: hidden; white-space: pre-wrap; }
+.edit :is(.name-in, .handle-in, .bio-in) { padding-bottom: 2px; }
 .edit :is(.name-in, .handle-in, .bio-in)::placeholder { color: var(--sub); font-weight: 400; opacity: .7; }
 .edit :is(.name-in, .handle-in, .bio-in):focus, .edit :is(.name-in, .handle-in, .bio-in):focus-visible { outline: none; border-bottom-color: var(--ink); }
 /* Cancel and Save where Edit profile stood, on the name's line. */
@@ -589,34 +606,16 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
   .new-repo { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; }
   .new-repo > .name-field, .new-repo > .summary-field, .new-repo > .scaffold-field, .new-repo > .answers { grid-area: auto; }
 }
-/* A file's name in the scaffold reads as a name in its row, as File shows it; the pointer on it shows it can be
-   renamed (a quiet line), and written in it is a field, as File's rename is. */
-.tree-name-in {
-  flex: 1; min-width: 0; height: calc(var(--h-row) - var(--s1)); padding: 0 var(--s1); margin-right: var(--s2);
-  border: 1px solid transparent; border-radius: var(--r-field); background: transparent; color: var(--ink); font: inherit;
-  transition: border-color var(--motion), background var(--motion);
-}
-.tree-name-in:hover { border-color: var(--rule); }
-.tree-name-in:focus, .tree-name-in:focus-visible { outline: none; border-color: var(--ink); background: var(--paper); }
-.tree-name-in::placeholder { color: var(--sub); }
-.tree-name-in[aria-invalid] { border-color: var(--ink); }
-/* The README's first lines under its row, quiet, numbered as Forge numbers them: what the summary will become. */
-.readme-peek {
-  display: grid; margin: 0 var(--s2) var(--s2) calc(var(--depth, 1) * var(--s4) + var(--s5) + var(--s1)); padding: var(--s1) 0 var(--s1) var(--s3);
-  border-left: var(--line-work) solid var(--rule); font: var(--t-meta)/1.6 var(--mono); color: var(--sub);
-}
-.peek-line { display: grid; grid-template-columns: 2ch minmax(0, 1fr); gap: var(--s2); white-space: pre-wrap; overflow-wrap: anywhere; }
-.peek-line:first-child { color: var(--ink); }
-.peek-no { color: var(--rule); text-align: right; font-variant-numeric: tabular-nums; }
-.tree-name-in:disabled { opacity: .5; }
 .field { display: grid; gap: var(--s2); }
 .field-label { font-size: var(--t-meta); color: var(--sub); }
 .tree.tree-still { position: static; z-index: auto; visibility: visible; opacity: 1; width: auto; max-height: none; transition: none; }
 .tree-caption { padding: 0 var(--s2) var(--s1); }
 .tree-still .tree-name.plain { color: var(--ink); }
-/* The repo to be made is the one in hand, filled as File fills the repo Forge works on. */
-.tree-still .tree-repo > .tree-row { background: var(--ink); color: var(--ground); }
-.tree-still .tree-repo > .tree-row .tree-name.plain { color: var(--ground); }
+/* The repo to be made is the one in hand, filled as File fills the repo Forge works on; the repos already there are
+   shut and quiet beside it. */
+.tree-still .tree-new > .tree-row { background: var(--ink); color: var(--ground); }
+.tree-still .tree-new > .tree-row .tree-name.plain { color: var(--ground); }
+.tree-still .tree-other .tree-name.plain, .tree-still .tree-other .tree-toggle { color: var(--sub); }
 .tree-still .tree-toggle { cursor: default; }
 /* What it is for: a raised box as Home's TODO is, the words written straight in it as a TODO's detail is. */
 .summary-box {
@@ -992,10 +991,14 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
   .home-pane, .home-layout.pane-closed .home-pane { transition: none; }
 }
 /* The one line, between the center and the pane: from the top line to the prompt box's foot, not edge to edge. */
-/* The pane's top is the plugin area's; the Prompt starts level with the foot of the rail's Inbox (bench.ts measures
-   it into --prompt-at), pushed down only by a plugin area opened taller than that. */
+/* The pane's top is the plugin area's; opened, the Prompt starts level with the foot of the rail's Inbox (bench.ts
+   measures it into --prompt-at), pushed down only by a plugin area opened taller than that. */
 .work.bench > .side, .work.bench:is(.unrun, .prompting, .reviewing) > .side { position: relative; grid-row: 2; grid-template-rows: minmax(var(--prompt-at, 40%), auto) minmax(0, 1fr); }
 .work.bench > .side > .term-home { grid-row: 2; margin-top: calc(-1 * var(--s5)); } /* its words, not its padding, on that line */
+/* The plugin area shut, nothing is over the Prompt: it holds the pane from its top, its head level with the file box's
+   top, so the pane reads at once as open and what it is (an empty top would read as nothing, or as put away). */
+.work.bench > .side:has(> .plugins[hidden]) { grid-template-rows: 0 minmax(0, 1fr); }
+.work.bench > .side:has(> .plugins[hidden]) > .term-home { margin-top: 0; }
 /* The pane stands on the ground, as the rail does, and is cut from the work by the line the rail is: the same
    weight, in ink, from the top line to the foot, so the center reads at once as the thing framed between the two.
    It goes with the pane (put away, no pane, no line). */

@@ -4,8 +4,12 @@ import {LIMITS, initials, normalize, parse, type Profile} from '../profile.ts';
 import {connection} from '../remote.ts';
 import {getState, setState, settingName, unreadable} from '../state.ts';
 import * as servers from '../servers.ts';
+import * as inbox from '../inbox.ts';
+import {news, onNews} from '../news.ts';
+import {store} from '../repos.ts';
 import {repoList} from './repo-list.ts';
 import {todoBox} from './todo-box.ts';
+import {openNext as openConversation} from './inbox.ts';
 import type {Context} from './context.ts';
 import {onRightPane, pluginArea, rightPaneOpen, setRightPane} from './bench.ts';
 import {mark, paneMark} from '../icons.ts';
@@ -43,7 +47,7 @@ export function home(ctx: Context): Node[] {
     h('section', {class: 'section', 'aria-labelledby': 'repos-title'}, h('h2', {id: 'repos-title'}, t('Repos')), grid),
     h('section', {class: 'section', 'aria-labelledby': 'servers-title'},
       h('h2', {id: 'servers-title'}, t('Servers')), ownServers(ctx)));
-  return [homePane(main)];
+  return [homePane(main, ctx)];
 }
 
 /**
@@ -51,8 +55,8 @@ export function home(ctx: Context): Node[] {
  * at its top (one setting for all three): at its top the plugin area (plain until the rail's plug opens it, here
  * as there). It stays where it is while Home scrolls under the rail; put away, Home takes the width.
  */
-function homePane(main: HTMLElement): HTMLElement {
-  const side = h('aside', {class: 'home-side', id: 'home-side', 'aria-label': t('Plugins')}, pluginArea());
+function homePane(main: HTMLElement, ctx: Context): HTMLElement {
+  const side = h('aside', {class: 'home-side', id: 'home-side', 'aria-label': t('Lately')}, pluginArea(), lately(ctx));
   const toggle = h('button', {type: 'button', class: 'pane-toggle', 'aria-label': t('Right pane'), 'aria-controls': 'home-side'}, paneMark()) as HTMLButtonElement;
   const layout = h('div', {class: 'home-layout'}, main, h('div', {class: 'home-pane'}, toggle, side));
   let was = rightPaneOpen();
@@ -68,6 +72,52 @@ function homePane(main: HTMLElement): HTMLElement {
   const offPlug = onPlugins(() => { if (!layout.isConnected) { offPlug(); return; } if (pluginsOpen()) setRightPane(true); });
   paint();
   return layout;
+}
+
+/**
+ * What waits since the person was last here, in Home's pane, each leading there: where they left off (the file last
+ * read in Forge, to go on writing in), the conversations with something not read, the boards with posts not seen.
+ * With nothing new it says so, quietly: the pane out is never a line with nothing beside it.
+ */
+function lately(ctx: Context): HTMLElement {
+  const list = h('div', {class: 'lately-list'});
+  const box = h('section', {class: 'lately', 'aria-labelledby': 'lately-title'}, h('h2', {id: 'lately-title'}, t('Lately')), list);
+  const row = (what: string, line: string, go: () => void, fresh = false) => {
+    const b = h('button', {type: 'button', class: 'lately-row'},
+      h('span', {class: 'lately-what'}, h('span', {}, what), fresh ? h('span', {class: 'lately-dot', 'aria-hidden': 'true'}) : null),
+      h('span', {class: 'muted small lately-line'}, line));
+    b.addEventListener('click', go);
+    return b;
+  };
+  let asked = 0;
+  const paint = async () => {
+    const mine = ++asked;
+    const rows: HTMLElement[] = [];
+    const left = ctx.leftOff;
+    if (left && (await store.list().catch(() => [])).some((r) => r.name === left.repo)) {
+      rows.push(row(left.path.slice(left.path.lastIndexOf('/') + 1), t('{repo} · where you left off', {repo: left.repo}), () => ctx.openRepo(left.repo, left.path, 'end')));
+    }
+    if (connection()) {
+      const [threads, all] = await Promise.all([inbox.threads().catch(() => []), servers.servers().catch(() => [])]);
+      for (const th of threads.filter((x) => x.unread > 0).slice(0, 3)) {
+        rows.push(row(th.name || inbox.shown(th.address), th.last.body, () => { openConversation(th.address); void ctx.go('inbox'); }, true));
+      }
+      for (const b of news().boards.slice(0, 3)) {
+        const s = all.find((x) => x.id === b.server);
+        const board = s?.boards.find((x) => x.id === b.id);
+        if (!s || !board) continue;
+        rows.push(row(`#${board.name}`, t('{server} · new posts', {server: s.name}), () => {
+          try { localStorage.setItem('length3.server.at', JSON.stringify({server: s.id, board: board.id})); } catch { /* a convenience */ }
+          void ctx.go('server');
+        }, true));
+      }
+    }
+    if (mine !== asked) return;
+    list.replaceChildren(...(rows.length ? rows : [h('p', {class: 'muted small lately-none'}, t('Nothing new'))]));
+  };
+  void paint();
+  const off = onNews(() => { if (!box.isConnected) { off(); return; } void paint(); });
+  return box;
 }
 
 /** The servers the person is in (Server holds them), and how many in the counts. */
@@ -121,7 +171,8 @@ function profileHeader(count: HTMLElement, owner: boolean): HTMLElement {
     const from = header.getBoundingClientRect().height;
     avatar.replaceChildren(...face());
     const counts = h('p', {class: 'counts'}, count, servers0());
-    const form = editing ? editForm(counts, done) : null;
+    // Written in, the face follows what is written: the initials the name (or the handle) gives, at once.
+    const form = editing ? editForm(done, (p) => avatar.replaceChildren(initials(p) || mark('person'))) : null;
     const edit = owner && !editing ? h('button', {class: 'button', type: 'button'}, t('Edit profile')) as HTMLButtonElement : null;
     edit?.addEventListener('click', () => { editing = true; draw('open'); header.querySelector<HTMLInputElement>('#profile-name')?.focus(); });
     header.replaceChildren(avatar, form?.element ?? identity(counts), ...(form ? [form.acts] : edit ? [edit] : []));
@@ -135,7 +186,7 @@ function profileHeader(count: HTMLElement, owner: boolean): HTMLElement {
     if (beat === 'open') {
       avatar.animate([{rotate: '0deg'}, {rotate: '-10deg'}, {rotate: '7deg'}, {rotate: '-3deg'}, {rotate: '0deg'}], {duration: 480, easing: 'ease-in-out'});
       // What was not there comes in under the name, a line after another.
-      [...header.querySelectorAll<HTMLElement>('.handle-field, .bio-in, .edit-acts')].forEach((el, i) =>
+      [...header.querySelectorAll<HTMLElement>('.handle-field, .bio-field, .edit-acts')].forEach((el, i) =>
         el.animate([{opacity: 0, translate: '0 -6px'}, {opacity: 1, translate: '0 0'}], {duration: 240, delay: 60 + i * 50, easing: LAND, fill: 'backwards'}));
     } else if (beat === 'saved') {
       const name = header.querySelector<HTMLElement>('.identity h1');
@@ -164,12 +215,12 @@ function profileHeader(count: HTMLElement, owner: boolean): HTMLElement {
 }
 
 /**
- * The profile as it is written: the name on its own line as large as it reads, @ and the handle under it, the line
- * about the person under that, each a line written on (an ink line under the one with the keyboard), the counts
- * where they were. Cancel and Save stand where Edit profile stood. Enter on the name or the handle saves, Escape
- * leaves it as it was.
+ * The profile as it is written, on a sheet of its own: the name on its own line as large as it reads, @ and the
+ * handle under it, the line about the person under that, each a line written on with room between them (an ink
+ * line under the one with the keyboard); the counts, which are not written, step aside. Cancel and Save stand where
+ * Edit profile stood. Enter on the name or the handle saves, Escape leaves it as it was. `faced` is told each change.
  */
-function editForm(counts: HTMLElement, done: (saved: boolean) => void): {element: HTMLElement; acts: HTMLElement} {
+function editForm(done: (saved: boolean) => void, faced: (p: {name: string; handle: string; bio: string}) => void): {element: HTMLElement; acts: HTMLElement} {
   const profile = currentProfile();
   const name = h('input', {id: 'profile-name', class: 'name-in', maxlength: String(LIMITS.name), autocomplete: 'name',
     placeholder: t('Your name'), 'aria-label': t('Name')}) as HTMLInputElement;
@@ -184,7 +235,8 @@ function editForm(counts: HTMLElement, done: (saved: boolean) => void): {element
   requestAnimationFrame(fit);
   const error = h('p', {class: 'error', role: 'alert'});
   const form = h('form', {id: 'profile-form', class: 'edit identity'},
-    name, h('span', {class: 'handle-field'}, '@', handle), bio, error, counts) as HTMLFormElement;
+    name, h('span', {class: 'handle-field'}, '@', handle), h('span', {class: 'bio-field'}, bio), error) as HTMLFormElement;
+  for (const f of [name, handle]) f.addEventListener('input', () => faced({name: name.value, handle: handle.value.replace(/^@/, ''), bio: ''}));
   const cancel = h('button', {class: 'button', type: 'button', 'data-cancel': ''}, t('Cancel'));
   const save = h('button', {class: 'button primary', type: 'submit', form: 'profile-form'}, t('Save'));
   const acts = h('div', {class: 'edit-acts'}, cancel, save);

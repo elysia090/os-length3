@@ -14,50 +14,37 @@ test('a repo made from the scaffold has its README, its summary under the title,
   await expect(app.forge.editor('Makefile')).toHaveCount(0);
 });
 
-test('a file named in the box is made under that name, and what it says does not change', async ({app}) => {
+test('what will be made is shown as File will show it: /root, the repos there, and the new one among them by its name', async ({app}) => {
+  await app.newRepo.make('tide', {summary: 'Tide tables.'});
+  await expect(app.forge.editor('README.md')).toHaveValue('# tide\n\nTide tables.\n');
   await app.rail.go('new-repo');
-  // There is nothing to choose: the scaffold is shown, its file's name in place.
+  // There is nothing to choose, and nothing to name in the box: its files are named in File.
   await expect(app.main.getByRole('radiogroup')).toHaveCount(0);
-  await expect(app.newRepo.fileName('README.md')).toHaveValue('README.md');
-
-  await app.newRepo.make('tide', {summary: 'Tide tables.', files: {'README.md': 'README.txt'}});
-  await expect(app.forge.editor('README.txt')).toHaveValue('# tide\n\nTide tables.\n');
-  await expect(app.forge.editor('README.md')).toHaveCount(0);
-});
-
-test('a file name that cannot be is said before Create, and Create takes the keyboard there', async ({app}) => {
-  await app.rail.go('new-repo');
-  await app.newRepo.name.fill('clash');
-  await app.newRepo.fileName('README.md').fill('docs/README.md');
-  await expect(app.main.getByRole('alert')).toHaveText('A name has no “/” and does not start with “.”');
-  await app.newRepo.create.click();
-  await expect(app.newRepo.fileName('README.md')).toBeFocused();
-  await expect(app.newRepo.made).toHaveCount(0);
-  // Put right in place, it goes.
-  await app.newRepo.fileName('README.md').fill('READ-ME.md');
-  await expect(app.main.getByRole('alert')).toBeHidden();
-  await app.newRepo.create.click();
-  await expect(app.newRepo.madeIn('clash')).toBeVisible();
+  await expect(app.main.locator('.tree-still input')).toHaveCount(0);
+  const card = app.main.locator('.tree-still');
+  await app.newRepo.name.fill('harbour');
+  // The new one stands where its name puts it among those there (harbour before tide), its scaffold under it.
+  await expect(card.locator('.tree-name')).toHaveText(['root', 'harbour', 'docs', 'issue', 'README.md', 'tide']);
+  await app.newRepo.name.fill('wharf');
+  await expect(card.locator('.tree-name')).toHaveText(['root', 'tide', 'wharf', 'docs', 'issue', 'README.md']);
 });
 
 test('what is written before Create stays while another page is seen, and goes once made', async ({app}) => {
   await app.rail.go('new-repo');
   await app.newRepo.name.fill('harbour');
   await app.newRepo.summary.fill('Tide tables for the harbour.');
-  await app.newRepo.fileName('README.md').fill('ABOUT.md');
 
   await app.rail.go('runtime');
   await app.rail.go('new-repo');
   await expect(app.newRepo.name).toHaveValue('harbour');
   await expect(app.newRepo.summary).toHaveValue('Tide tables for the harbour.');
-  await expect(app.newRepo.fileName('README.md')).toHaveValue('ABOUT.md');
 
   await app.newRepo.create.click();
   await expect(app.newRepo.madeIn('harbour')).toBeVisible();
   await app.rail.go('runtime');
   await app.rail.go('new-repo');
   await expect(app.newRepo.name).toHaveValue('');
-  await expect(app.newRepo.fileName('README.md')).toHaveValue('README.md');
+  await expect(app.newRepo.summary).toHaveValue('');
 });
 
 test('a name already taken is said under the name, and the name keeps the keyboard', async ({signedIn: app}) => {
