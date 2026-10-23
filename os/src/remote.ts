@@ -15,6 +15,7 @@ import {t} from './i18n.ts';
 import {getState, loadState} from './state.ts';
 import {setEnvironment} from './core-client.ts';
 import {webauthn} from './passkeys.ts';
+import {jitter} from './runs.ts';
 
 import {DEFAULT_REMOTE} from './policy.ts';
 export {DEFAULT_REMOTE};
@@ -70,9 +71,30 @@ export function onReach(fn: () => void): () => void { reachers.add(fn); return (
 function reached(answered: boolean) {
   if (away === !answered) return;
   away = !answered;
+  awayAsks = 0; awayNext = 0;
   for (const fn of [...reachers]) fn();
 }
+let awayAsks = 0, awayNext = 0;
+/**
+ * Whether a look taken by itself (not one a person asked for) may ask the Remote now: always while it answers;
+ * while it does not, less often each time (5 s, 10 s, … up to 5 minutes, give or take), so the pages and apps
+ * open everywhere do not all ask a Remote that is coming back, at once and every few seconds.
+ */
+export function mayAsk(now = Date.now()): boolean {
+  if (!away) return true;
+  if (now < awayNext) return false;
+  awayNext = now + jitter(Math.min(300_000, 5000 * 2 ** awayAsks++));
+  return true;
+}
 
+/** How long the Remote said to wait before asking again (its `retryAfter`, seconds, beside Retry-After), in ms; undefined when it said nothing. */
+export function retryAfter(e: unknown): number | undefined {
+  const s = e instanceof RemoteError ? e.detail.retryAfter : undefined;
+  return typeof s === 'number' && Number.isFinite(s) && s > 0 ? s * 1000 : undefined;
+}
+
+/** How long a request to the Remote is waited on, unless the caller says (its own signal). */
+const ASKED_WAIT = 30_000;
 /** A request to the Remote, as this device's session (or none). */
 export async function api(path: string, init: RequestInit = {}, c: Connection | null = connection(), url = c?.url ?? REMOTE_URL): Promise<Response> {
   const headers = new Headers(init.headers);
@@ -81,7 +103,9 @@ export async function api(path: string, init: RequestInit = {}, c: Connection | 
   // Another Remote (a person's elsewhere) not answering says nothing of this one.
   const ours = url === (connection()?.url ?? REMOTE_URL);
   let r: Response;
-  try { r = await fetch(url + path, {...init, headers, credentials: 'include'}); } catch (e) {
+  // Never waited on for good: a connection that went quiet half-open would hold every look after it (news, moved).
+  const signal = init.signal ?? AbortSignal.timeout(ASKED_WAIT);
+  try { r = await fetch(url + path, {...init, headers, signal, credentials: 'include'}); } catch (e) {
     if (ours) reached(false);
     const late = e instanceof DOMException && e.name === 'TimeoutError';
     throw new RemoteError(0, late ? t('The Remote did not answer in time') : t('The Remote cannot be reached'), {}, 'unreached');
@@ -332,11 +356,19 @@ function deviceName(): string {
 
 interface DeviceCode { device_code: string; user_code: string; verification_uri_complete: string; interval: number; expires_in: number }
 
-/** The app asks for a code and opens the browser on it; `wait` ends when it is approved. */
-export async function appSignIn(): Promise<{code: string; url: string; wait: Promise<void>}> {
-  const c = await native<DeviceCode>('remote_login_start');
-  const wait = core<void>('remote_login_wait', {code: c}).then(async () => { await loadState(); told(); });
-  return {code: c.user_code, url: c.verification_uri_complete, wait};
+let signingIn: Promise<{code: string; url: string; wait: Promise<void>}> | null = null;
+/**
+ * The app asks for a code and opens the browser on it; `wait` ends when it is approved. Asked again while one is
+ * waited on, it is the same code: a second would poll the Remote beside the first, and neither can be called off.
+ */
+export function appSignIn(): Promise<{code: string; url: string; wait: Promise<void>}> {
+  signingIn ??= (async () => {
+    const c = await native<DeviceCode>('remote_login_start');
+    const wait = core<void>('remote_login_wait', {code: c}).then(async () => { await loadState(); told(); });
+    void wait.finally(() => { signingIn = null; }).catch(() => {});
+    return {code: c.user_code, url: c.verification_uri_complete, wait};
+  })().catch((e: unknown) => { signingIn = null; throw e; });
+  return signingIn;
 }
 
 /** Leave the Remote on this device: its session ends; the repos here stay. */

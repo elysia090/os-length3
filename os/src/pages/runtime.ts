@@ -15,6 +15,7 @@ import {openRepoPlace, syncWord} from './remote.ts';
 import {repoGear} from './repo-gear.ts';
 import {allSessions, type Session} from './terminal.ts';
 import {getState, setState} from '../state.ts';
+import {every} from '../runs.ts';
 
 // Runtime: this device, then what the OS holds on it, then what is running,
 // then the environment actually in effect (what runs, not what was asked for).
@@ -418,12 +419,9 @@ function sshSection(): HTMLElement {
     el.append(h('div', {class: 'card-foot'}, change, h('span', {class: 'grow'}), power(true, t('Turn SSH off on {device}', {device: t('This device')}), () => ssh.setHere(false), said)));
     return el;
   };
-  let timer = 0;
   const paint = async () => {
-    window.clearTimeout(timer);
     if (!section.isConnected && section.dataset.drawn) return;
     section.dataset.drawn = '1';
-    timer = window.setTimeout(() => void paint(), 5000);
     if (!connection()) { section.hidden = true; return; }
     const [list, here] = await Promise.all([ssh.listening().catch(() => null), ssh.here().catch(() => null)]);
     if (!list) return;
@@ -442,7 +440,8 @@ function sshSection(): HTMLElement {
       ...(isNative ? [] : [h('p', {class: 'muted small'}, t('SSH is the desktop app\'s: a device turns it on there, and its addresses stay on it.'))]),
       ...(cards.length ? [h('div', {class: 'grid small-grid'}, ...cards)] : []));
   };
-  void paint();
+  // Drawn again now and then while it is on screen, not while the page or app is hidden, slower while nobody is at it.
+  void paint().then(() => every(15_000, paint, {alive: () => section.isConnected, paced: true}));
   return section;
 }
 /**

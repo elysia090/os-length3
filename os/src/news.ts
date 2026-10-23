@@ -4,7 +4,8 @@
 // boards. Looked for every little while, when the window comes back, and at
 // once when something here was just seen.
 
-import {api, connection, json} from './remote.ts';
+import {api, connection, json, mayAsk} from './remote.ts';
+import {every} from './runs.ts';
 
 /** As the Remote says it: each board with the newest post on it by someone else. */
 export interface News { inbox: number; boards: {id: string; server: string; post: string}[] }
@@ -73,11 +74,10 @@ export function sawBoard(board: string, post: string): Promise<void> {
   });
 }
 
-let timer = 0;
-/** Start looking: now, every little while in view, and when the window comes back. */
+let looking: {stop(): void} | null = null;
+/** Start looking: now, every little while in view (slower while nobody is at it: runs.ts paced), and when someone comes back. */
 export function begin() {
-  clearInterval(timer);
+  looking?.stop();
   void look();
-  timer = window.setInterval(() => { if (document.visibilityState === 'visible') void look(); }, EVERY);
-  window.addEventListener('focus', () => void look());
+  looking = every(EVERY, () => (mayAsk() ? look() : undefined), {paced: true});
 }

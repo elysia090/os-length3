@@ -20,7 +20,8 @@ import {onPlugins, pluginsOpen, setPluginsOpen} from './plugins.ts';
 import {learnHome} from './inbox.ts';
 import {begin as lookForNews, look, marks, news, onNews} from './news.ts';
 import {devicePage} from './pages/device.ts';
-import {about, claim, connection, enterWith, onConnection, onReach, remoteAway} from './remote.ts';
+import {about, claim, connection, enterWith, mayAsk, onConnection, onReach, remoteAway} from './remote.ts';
+import {every} from './runs.ts';
 import {heldInvite, holdInvite, inviteIn} from './servers.ts';
 import {getState, loadState} from './state.ts';
 import {onLang, t, useLang} from './i18n.ts';
@@ -190,12 +191,13 @@ const mark = (id: PurposeId) => {
 };
 const reach = () => mark('remote');
 onNews(() => { mark('inbox'); mark('server'); });
-let askAgain = 0;
+let askAgain: {stop(): void} | null = null;
 onReach(() => {
   reach();
-  // Signed in, sync's own looking finds the Remote again; signed out, nothing asks, so this does.
-  clearInterval(askAgain);
-  if (remoteAway() && !connection()) askAgain = window.setInterval(() => void about(), 15000);
+  // Signed in, sync's own looking finds the Remote again; signed out, nothing asks, so this does: in view, less often
+  // each time it is still away (remote.ts mayAsk), and slower while nobody is at it.
+  askAgain?.stop();
+  askAgain = remoteAway() && !connection() ? every(15_000, () => (mayAsk() ? about() : undefined), {paced: true}) : null;
 });
 // Signed in or out, here or from another device: the page is drawn again for who is here now (Remote's draws itself).
 onConnection(() => { void look(); if (current === 'remote') me.paint(); else render(); });

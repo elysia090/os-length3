@@ -38,5 +38,5 @@ export async function boardTodo(b: Shown, holder: HTMLElement, writing: (busy: (
     seen = JSON.stringify(now);
     keeper?.took(now);
     box.update(now);
-  }, {alive: () => holder.isConnected});
+  }, {alive: () => holder.isConnected, paced: true});
 }

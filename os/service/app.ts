@@ -25,7 +25,7 @@ import {Hono} from 'hono';
 import {about} from './about.ts';
 import {signedIn, signIn, type Auth} from './auth.ts';
 import type {Bucket} from './bucket.ts';
-import {Budget, metered, type Limits} from './budget.ts';
+import {Budget, FULL_WAIT, metered, type Limits} from './budget.ts';
 import {enter, type Enter} from './enter.ts';
 import {files, type Edge} from './files.ts';
 import {homeRoutes} from './home.ts';
@@ -124,7 +124,7 @@ export function createApp(d: Deps) {
     app.use('*', async (c, next) => {
       const adds = !['GET', 'HEAD', 'OPTIONS', 'DELETE'].includes(c.req.method) && !ADDS_NOTHING.test(c.req.path);
       if (adds && await budget.full(db)) {
-        return c.json({error: 'The Remote takes nothing new just now; your work stays on this device', budget: true}, 507);
+        return c.json({error: 'The Remote takes nothing new just now; your work stays on this device', budget: true, retryAfter: FULL_WAIT}, 507, {'Retry-After': String(FULL_WAIT)});
       }
       await next();
     });

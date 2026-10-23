@@ -31,7 +31,7 @@
 //!             subsystem (sftp); a command's exit code goes back to ssh
 //!   lifetime  one thread (every session's process is started from it, so
 //!             each dies with the listener: PR_SET_PDEATHSIG); asks the
-//!             Remote every 5 s whether it is still on (saying only the
+//!             Remote every 30 s or so whether it is still on (saying only the
 //!             scope's word), and stops, ending every session, when it is
 //!             off, the device is signed out, or it is told to (SIGTERM:
 //!             l3 address ssh off, logout, the app)
@@ -50,8 +50,19 @@ use std::time::{Duration, Instant};
 use tokio::io::unix::AsyncFd;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-/// How often the Remote is asked whether SSH is still on.
-const BEAT: Duration = Duration::from_secs(5);
+/// How often the Remote is asked whether SSH is still on: an off said elsewhere is taken within this. Each ask is a
+/// request to the Remote and a write in its database; every 5 s it was 17,280 a day for each device left on.
+const BEAT: Duration = Duration::from_secs(30);
+/// Out of reach, asked less often each time (60 s, 120 s, …), up to this.
+const BEAT_MOST: Duration = Duration::from_secs(300);
+
+/// When to ask next, after `missed` asks in a row the Remote did not answer; give or take a fifth, so devices
+/// that lost the Remote together do not all ask it again in the same second.
+fn next_beat(missed: u32) -> Duration {
+    let base = BEAT.saturating_mul(1 << missed.min(4)).min(BEAT_MOST);
+    let n = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.subsec_nanos());
+    base.mul_f64(0.8 + 0.4 * f64::from(n % 1000) / 1000.0)
+}
 /// Keys are taken in from the Remote no more often than this.
 const KEYS_FRESH: Duration = Duration::from_secs(10);
 /// Sessions one connection may have open at once.
@@ -535,11 +546,12 @@ pub fn serve() -> Result<(), String> {
                 Err(e) => log(&e),
             }
         };
-        let mut beat = tokio::time::interval(BEAT);
-        beat.tick().await;
+        let mut missed = 0;
+        let beat = tokio::time::sleep(next_beat(missed));
+        tokio::pin!(beat);
         loop {
             tokio::select! {
-                _ = beat.tick() => {
+                () = &mut beat => {
                     follow(&mut sockets, &mut scope, &mut bound);
                     let said = scope;
                     let heard = tokio::time::timeout(Duration::from_secs(20), tokio::task::spawn_blocking(move || ssh::beat(said))).await
@@ -547,6 +559,8 @@ pub fn serve() -> Result<(), String> {
                     if !ssh::goes_on(heard) {
                         return Ok(if heard == ssh::Heard::Off { Why::Off } else { Why::SignedOut });
                     }
+                    missed = if heard == ssh::Heard::Unreachable { missed + 1 } else { 0 };
+                    beat.as_mut().reset(tokio::time::Instant::now() + next_beat(missed));
                 }
                 // Another scope was chosen (l3 address ssh on device|network): taken now, not at the next beat.
                 _ = usr1.recv() => follow(&mut sockets, &mut scope, &mut bound),

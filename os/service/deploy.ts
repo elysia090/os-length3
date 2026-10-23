@@ -125,7 +125,7 @@ async function answers(base: string) {
   for (let i = 0; i < 30; i++) {
     if (i) await new Promise((r) => setTimeout(r, 10_000));
     try {
-      const r = await fetch(`${base}/v1/health`);
+      const r = await fetch(`${base}/v1/health`, {signal: AbortSignal.timeout(15_000)});
       if (r.ok && ((await r.clone().json().catch(() => null)) as {ok?: boolean} | null)?.ok === true) return console.log(`${base}: answers from its database`);
       last = `${r.status} ${(await r.text()).slice(0, 300)}`;
     } catch (e) { last = String(e); }

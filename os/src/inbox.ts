@@ -176,19 +176,31 @@ export class Live {
   }
   get open() { return this.channel?.readyState === 'open'; }
 
+  /** Until when signals are looked for every moment: a line being opened (begun, offered, or a signal just came). */
+  private busyUntil = 0;
+  private busy() { this.busyUntil = Date.now() + 30_000; }
   /**
-   * Begin: signals are looked for every moment while the page is in view
-   * (every 15 s while it is hidden, so a line can still open), one look at a
-   * time, until it is stopped or `alive` says the conversation is gone.
+   * How soon signals are looked for again: every moment while a line is being opened; once it is open, or
+   * nothing came for half a minute, now and then (an offer from the other side still finds it, a little later).
+   * Each look is a request to the Remote that takes rows from its database: not every second and a half for as
+   * long as a conversation is left open, which was 40 a minute.
+   */
+  private pace(): number { return this.open ? 60_000 : Date.now() < this.busyUntil ? 1500 : 20_000; }
+
+  /**
+   * Begin: signals are looked for while the page is in view (not while it is hidden), one look at a time, as
+   * often as pace() says, until it is stopped or `alive` says the conversation is gone.
    */
   start(alive: () => boolean) {
     if (typeof RTCPeerConnection === 'undefined') return;
-    this.looking = every(1500, () => this.poll(), {alive, whileHidden: 15_000, ended: () => this.stop()});
+    this.busy();
+    this.looking = every(() => this.pace(), () => this.poll(), {alive, ended: () => this.stop(), paced: true});
     // Not offered (no media stack, refused): messages go through the Remote, as without a line.
     if (this.me < this.peer) void this.offer().catch(() => this.state(false));
   }
 
   private connection(session: string): RTCPeerConnection {
+    this.busy();
     this.pc?.close();
     this.session = session;
     const pc = new RTCPeerConnection({iceServers: ICE});
@@ -219,6 +231,7 @@ export class Live {
     // Taken with a POST: taking deletes them on the Remote, and no GET changes anything there.
     const got = await json<Signal[]>('/v1/inbox/signals/take', {method: 'POST', body: JSON.stringify({from: this.peer, ...(this.session ? {session: this.session} : {})})})
       .catch(() => [] as Signal[]);
+    if (got.length) this.busy();
     for (const s of got) {
       if (this.ended) return;
       // One the line cannot use (not JSON, a late answer, a candidate the connection has moved past) is

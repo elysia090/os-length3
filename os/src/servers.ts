@@ -8,7 +8,7 @@
 // (the same posts, less any taken down), so what a reader holds stays about
 // what is near the screen however far they scroll.
 
-import {api, connection, json, reading, RemoteError} from './remote.ts';
+import {api, connection, json, reading, RemoteError, retryAfter} from './remote.ts';
 import type {Todo} from './todo.ts';
 import {t} from './i18n.ts';
 import {errorText} from './errors.ts';
@@ -193,7 +193,8 @@ export function todoKeeper(board: string, from: readonly BoardTodo[], o: KeeperO
           if (!passing(e)) { latest = null; tries = 0; answer(e); return; }
           tries++;
           trouble?.(errorText(e));
-          wait = setTimeout(() => void go(), backoff(tries));
+          // Not sooner than the Remote said (asked too often: its Retry-After).
+          wait = setTimeout(() => void go(), Math.max(retryAfter(e) ?? 0, backoff(tries)));
           return;
         }
       }

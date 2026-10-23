@@ -141,16 +141,24 @@ export function files(d: {db: Db; bucket: Bucket | null; quota?: number; budget?
     const bucket = d.bucket;
     const sha = c.req.param('sha'), user = c.get('userId');
     if (!HEX.test(sha)) return c.json({error: 'Not found'}, 404);
-    if (Number(c.req.header('Content-Length') ?? 0) > LIMIT.blob) return c.json({error: 'A file is at most 16 MB'}, 413);
+    const declared = Number(c.req.header('Content-Length') ?? NaN);
+    if (declared > LIMIT.blob) return c.json({error: 'A file is at most 16 MB'}, 413);
+    const named = async (q: Db) => (await q.select({sha: blob.sha256}).from(blob).where(and(eq(blob.userId, user), eq(blob.sha256, sha)))).length > 0;
+    // Had already: nothing is read, nor put (it is named by its digest, and the row says it is here).
+    if (await named(db)) return c.json({sha256: sha}, 201);
+    // What it says it is, asked before its bytes are read at all: a refusal costs no upload read and hashed.
+    if (declared > 0) {
+      await fits(db, user, declared, d.quota);
+      await d.budget?.ahead(db, user, declared);
+    }
     const bytes = new Uint8Array(await c.req.arrayBuffer());
     if (bytes.length > LIMIT.blob) return c.json({error: 'A file is at most 16 MB'}, 413);
     if (await sha256(bytes) !== sha) return c.json({error: 'The bytes are not what their name says'}, 422);
-    const named = async (q: Db) => (await q.select({sha: blob.sha256}).from(blob).where(and(eq(blob.userId, user), eq(blob.sha256, sha)))).length > 0;
-    // Had already: no put at all.
-    if (await named(db)) return c.json({sha256: sha}, 201);
-    // Nothing is put that the account may not keep at all (counted again under the lock).
-    await fits(db, user, bytes.length, d.quota);
-    await d.budget?.ahead(db, user, bytes.length);
+    // Nothing is put that the account may not keep at all (counted again under the lock); as it is, not as it said.
+    if (bytes.length !== declared) {
+      await fits(db, user, bytes.length, d.quota);
+      await d.budget?.ahead(db, user, bytes.length);
+    }
     await d.budget?.write(db);
     const key = blobKey(user, sha);
     await bucket.put(key, bytes);

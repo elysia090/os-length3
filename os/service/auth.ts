@@ -83,7 +83,7 @@ export const AUTH_LIMITS: Record<string, {window: number; max: number} | false> 
   '/get-session': false,
   '/list-accounts': false,
   '/device/code': {window: 60, max: 10},
-  // Asked every 2 s while a code waits (interval below): 30 a minute, and room for a retry.
+  // Asked every 5 s while a code waits (interval below): 12 a minute, and room for retries.
   '/device/token': {window: 60, max: 40},
   '/device/approve': {window: 60, max: 10},
   '/device/deny': {window: 60, max: 10},
@@ -165,7 +165,8 @@ export function createAuth(c: AuthConfig) {
         verificationUri: `${c.appOrigin}/?device`,
         validateClient: (id: string) => (DEVICE_CLIENTS as readonly string[]).includes(id),
         expiresIn: '10m',
-        interval: '2s',
+        // Each poll is a request and a count in the database (rate limits): every 5 s is 120 in its ten minutes, not 300.
+        interval: '5s',
       }),
       ...(c.dev ? [genericOAuth({config: [{
         providerId: 'dev', clientId: 'dev', clientSecret: 'dev',

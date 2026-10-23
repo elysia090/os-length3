@@ -264,11 +264,11 @@ test('sign-in is the authorization code flow with state and PKCE, back only to t
   assert.doesNotMatch(forged.headers.get('Location') ?? '', /signed-in/);
 
   // Only the app and l3 ask for a device code; the code is 8 letters and digits, for ten minutes,
-  // polled no faster than every 2 s; approving it takes the app's own page.
+  // polled no faster than every 5 s; approving it takes the app's own page.
   assert.equal((await s.call('POST', '/api/auth/device/code', {body: {client_id: 'evil'}})).status, 400);
   const code = (await s.call('POST', '/api/auth/device/code', {body: {client_id: 'l3'}})).json as unknown as {user_code: string; expires_in: number; interval: number; verification_uri: string};
   assert.match(code.user_code, /^[A-Z0-9]{8}$/);
-  assert.deepEqual([code.expires_in, code.interval, code.verification_uri], [600, 2, `${APP}/?device`]);
+  assert.deepEqual([code.expires_in, code.interval, code.verification_uri], [600, 5, `${APP}/?device`]);
   const t = await s.start('Ren');
   const approve = (headers: Record<string, string>) => s.app.request(`${BASE}/api/auth/device/approve`, {method: 'POST',
     headers: {'Content-Type': 'application/json', Cookie: s.sessions.get(t)!, ...headers}, body: JSON.stringify({userCode: code.user_code})});

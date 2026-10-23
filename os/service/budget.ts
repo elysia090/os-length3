@@ -67,7 +67,15 @@ export async function spent(q: Db, period: string, kind: string): Promise<number
 }
 
 /** R2 is out of what it may do this month: no file moves until the next, and the work stays on the device. */
-const spentFor = (now: number): never => refuse(503, {...NO_FILES, budget: true}, {'Retry-After': String(Math.ceil(untilNext(now, 'month')))});
+const spentFor = (now: number): never => {
+  const s = Math.max(1, Math.ceil(untilNext(now, 'month')));
+  refuse(503, {...NO_FILES, budget: true, retryAfter: s}, {'Retry-After': String(s)});
+};
+/**
+ * R2 or the database holds all it may: nothing says when room comes back (a delete, the sweep), so a client asks
+ * again in an hour, not at once (the same seconds as `retryAfter`, as everywhere a refusal says when).
+ */
+export const FULL_WAIT = 3600;
 
 /** Reads an isolate takes at once: one statement in so many reads. */
 const READS_AT_ONCE = 64;
@@ -118,7 +126,7 @@ export class Budget {
       slowDown(untilNext(now, 'day'), {error: 'This account has sent all it may today; the rest is sent tomorrow'});
     }
     if (await spent(q, 'all', 'r2:stored') + bytes > this.limits.stored) {
-      refuse(507, {error: 'The Remote holds all the files it may just now; your work stays on this device', files: false, budget: true});
+      refuse(507, {error: 'The Remote holds all the files it may just now; your work stays on this device', files: false, budget: true, retryAfter: FULL_WAIT}, {'Retry-After': String(FULL_WAIT)});
     }
   }
 
@@ -137,7 +145,7 @@ export class Budget {
    */
   async held(q: Db) {
     if (await spent(q, 'all', 'r2:stored') > this.limits.stored) {
-      refuse(507, {error: 'The Remote holds all the files it may just now; your work stays on this device', files: false, budget: true});
+      refuse(507, {error: 'The Remote holds all the files it may just now; your work stays on this device', files: false, budget: true, retryAfter: FULL_WAIT}, {'Retry-After': String(FULL_WAIT)});
     }
   }
 

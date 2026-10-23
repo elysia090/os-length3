@@ -6,6 +6,36 @@
 
 const pageHidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden';
 
+// ---- whether anyone is here ----
+//
+// A look at the Remote taken every little while is for someone looking at the page. Nobody has touched
+// it for two minutes: a minute between looks at least; for ten, ten minutes (the Remote's database
+// sleeps after five without a request, and a window left open on a desk is not someone waiting).
+// Touched again, every paced look is taken at once, then at its own pace.
+
+/** Nobody for this long: a minute between looks at least; for AWAY, ten minutes. */
+const IDLE = 2 * 60_000, AWAY = 10 * 60_000;
+let lastHeard = Date.now();
+const backs = new Set<() => void>();
+/** Someone is here (a key, a click, the window taken up): told to every paced look if nobody was for IDLE. */
+export function heard(at = Date.now()) {
+  const was = at - lastHeard >= IDLE;
+  lastHeard = at;
+  if (was) for (const f of [...backs]) f();
+}
+if (typeof addEventListener === 'function' && typeof document !== 'undefined') {
+  for (const e of ['pointerdown', 'keydown', 'wheel', 'touchstart', 'focus']) addEventListener(e, () => heard(), {capture: true, passive: true});
+  document.addEventListener('visibilitychange', () => { if (!pageHidden()) heard(); });
+}
+/** `ms`, give or take a fifth: many devices told the same wait do not all ask again in the same second. */
+export const jitter = (ms: number, r = Math.random()): number => Math.round(ms * (0.8 + 0.4 * r));
+
+/** `ms` while someone is here; at least a minute once nobody has been for two; ten once nobody has been for ten. */
+export function paced(ms: number, at = Date.now()): number {
+  const quiet = at - lastHeard;
+  return quiet < IDLE ? ms : Math.max(ms, quiet < AWAY ? 60_000 : AWAY);
+}
+
 export interface EveryOptions {
   /** Still wanted (its element still on screen): once false, it ends. */
   alive?: () => boolean;
@@ -15,21 +45,26 @@ export interface EveryOptions {
   ended?: () => void;
   /** Whether the page is hidden (a test gives its own). */
   hidden?: () => boolean;
+  /** A look at the Remote: slower while nobody is here (paced), and taken at once when someone comes back. */
+  paced?: boolean;
 }
 
 /**
- * `step` every `ms`, counted from the end of the last one, so two never run at
+ * `step` every `ms` (or as often as it says each time), counted from the end of the last one, so two never run at
  * once however slow one is. A step that fails is said in the console and the
  * next goes on.
  */
-export function every(ms: number, step: () => unknown, o: EveryOptions = {}): {stop(): void} {
+export function every(ms: number | (() => number), step: () => unknown, o: EveryOptions = {}): {stop(): void} {
   const {alive = () => true, whileHidden = 0, ended, hidden = pageHidden} = o;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let stopped = false;
+  let stopped = false, running = false;
+  const next = () => { const m = typeof ms === 'function' ? ms() : ms; return hidden() && whileHidden ? whileHidden : o.paced ? paced(m) : m; };
+  const back = () => { if (!running && !stopped) { clearTimeout(timer); void tick(); } };
   const stop = () => {
     if (stopped) return;
     stopped = true;
     clearTimeout(timer);
+    backs.delete(back);
     ended?.();
   };
   const tick = async () => {
@@ -37,12 +72,14 @@ export function every(ms: number, step: () => unknown, o: EveryOptions = {}): {s
     if (!alive()) { stop(); return; }
     const away = hidden();
     if (!away || whileHidden) {
-      try { await step(); } catch (e) { console.error('a look taken every little while failed; the next goes on', e); }
+      running = true;
+      try { await step(); } catch (e) { console.error('a look taken every little while failed; the next goes on', e); } finally { running = false; }
     }
     if (stopped) return;
-    timer = setTimeout(tick, hidden() && whileHidden ? whileHidden : ms);
+    timer = setTimeout(tick, next());
   };
-  timer = setTimeout(tick, hidden() && whileHidden ? whileHidden : ms);
+  if (o.paced) backs.add(back);
+  timer = setTimeout(tick, next());
   return {stop};
 }
 

@@ -39,8 +39,8 @@ export const lan = (h: Pick<Here, 'bound' | 'interfaces'>) => (h.interfaces?.len
   ? h.interfaces.map((i) => `${i.interface} ${i.addr}`)
   : h.bound.filter((a) => a !== '127.0.0.1' && a !== '::1'));
 
-/** A device asks every few seconds whether it still listens; one not heard from for this long is said to be quiet. */
-export const QUIET = 30_000;
+/** A device asks every 30 s or so whether it still listens (cli/src/ssh.rs BEAT); one not heard from for three of those is said to be quiet. */
+export const QUIET = 100_000;
 
 /** Whether a device has not been heard from lately (its listener may have been killed). */
 export const quiet = (l: Pick<Listening, 'seen'>, now = Date.now()) => now - l.seen > QUIET;

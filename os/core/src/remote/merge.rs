@@ -140,12 +140,69 @@ pub(super) fn still(at: &Path, expect: Option<&Option<String>>) -> bool {
     }
 }
 
+/// The Remote's bytes for the files one round writes, without a request for each: from a file here that has them
+/// already (moved or copied: the same digest), else 64 at a time (POST /v1/blobs/read: one request, and one read
+/// counted on the Remote), else one by one (GET: a file too large for a batch, or a Remote without the route).
+/// Before, a repo of 3,000 files brought here was 3,000 requests, and a renamed file was brought again.
+struct Bring<'a> {
+    client: &'a Client,
+    dir: &'a Path,
+    /// A path here for each digest here.
+    here: HashMap<&'a str, &'a str>,
+    /// The digests to bring from the Remote, in the order they are written; those before `next` were asked for.
+    wanted: Vec<&'a str>,
+    next: usize,
+    /// The last batch's bytes.
+    got: HashMap<String, Vec<u8>>,
+}
+
+impl<'a> Bring<'a> {
+    fn new(client: &'a Client, dir: &'a Path, here: &'a Tree, p: &'a Plan) -> Self {
+        let here: HashMap<&str, &str> = here.iter().filter_map(|(path, sha)| sha.as_deref().map(|s| (s, path.as_str()))).collect();
+        let mut seen = BTreeSet::new();
+        let wanted = p.take.iter().filter_map(|(_, w)| w.as_ref()?.as_deref()).chain(p.both.iter().filter_map(|(_, t)| t.as_deref()))
+            .filter(|s| !here.contains_key(s) && seen.insert(*s)).collect();
+        Bring { client, dir, here, wanted, next: 0, got: HashMap::new() }
+    }
+
+    fn get(&mut self, sha: &str) -> Result<Vec<u8>> {
+        use base64::Engine;
+        if let Some(path) = self.here.get(sha) {
+            // Only while it is still what its digest says (this round may have written over it already).
+            if let Ok(b) = place(self.dir, path).and_then(|at| fs::read(at).map_err(|e| e.to_string())) {
+                if sha256(&b) == sha { return Ok(b); }
+            }
+        }
+        if !self.got.contains_key(sha) {
+            if let Some(at) = self.wanted.get(self.next..).and_then(|rest| rest.iter().position(|s| *s == sha)) {
+                let from = self.next + at;
+                let chunk = &self.wanted[from..(from + 64).min(self.wanted.len())];
+                self.next = from + chunk.len();
+                self.got.clear();
+                // Not answered (an older Remote, or it failed): each is asked for on its own, as before.
+                if let Ok(v) = self.client.json("POST", "/v1/blobs/read", Some(serde_json::json!(chunk))) {
+                    for (s, b64) in v.as_object().into_iter().flatten() {
+                        let Some(bytes) = b64.as_str().and_then(|t| base64::engine::general_purpose::STANDARD.decode(t).ok()) else { continue };
+                        // Only what its name says: a digest is the file's own proof.
+                        if sha256(&bytes) == *s { self.got.insert(s.clone(), bytes); }
+                    }
+                }
+            }
+        }
+        match self.got.get(sha) {
+            Some(b) => Ok(b.clone()),
+            None => self.client.blob(sha),
+        }
+    }
+}
+
 /// Write the Remote's side of `p` here. A file that cannot be written where
 /// it is (a folder in its place, or a file where its folder would be) goes
 /// beside; a path that changed here while this ran is left for the next round.
 /// `modes`: the Remote's, when it keeps them; each file written takes its mode from them.
 pub(super) fn apply(client: &Client, dir: &Path, here: &Tree, p: &Plan, modes: Option<&Modes>) -> Result<Vec<String>> {
     let mode_of = |path: &str| modes.map(|m| m.get(path).copied());
+    let mut bring = Bring::new(client, dir, here, p);
     let mut aside = Vec::new();
     let unwritable = |path: &str| crate::tr!("{}: could not be written", "{}：書けませんでした", path);
     let put_beside = |path: &str, bytes: &[u8]| -> Result<()> {
@@ -157,7 +214,7 @@ pub(super) fn apply(client: &Client, dir: &Path, here: &Tree, p: &Plan, modes: O
         if crate::owned::within_derived(dir, path) { continue; }
         let Ok(at) = place(dir, path) else {
             if let Some(Some(sha)) = what {
-                let bytes = client.blob(sha)?;
+                let bytes = bring.get(sha)?;
                 let top = path.split('/').next().unwrap_or(path);
                 let moved = format!("{}{}", beside(top), &path[top.len()..]);
                 write_file(&place(dir, &moved).map_err(|_| unwritable(path))?, &bytes)?;
@@ -180,7 +237,7 @@ pub(super) fn apply(client: &Client, dir: &Path, here: &Tree, p: &Plan, modes: O
                 }
             }
             Some(Some(sha)) => {
-                let bytes = client.blob(sha)?;
+                let bytes = bring.get(sha)?;
                 if write_file_as(&at, &bytes, mode_of(path)).is_err() {
                     put_beside(path, &bytes)?;
                     aside.push(path.clone());
@@ -190,7 +247,7 @@ pub(super) fn apply(client: &Client, dir: &Path, here: &Tree, p: &Plan, modes: O
     }
     for (path, theirs) in &p.both {
         let Some(sha) = theirs else { continue };
-        let bytes = client.blob(sha)?;
+        let bytes = bring.get(sha)?;
         // The Remote's keeps the name (it got there first); this device's is kept beside it first, under
         // this device's name, so neither is lost if writing the other fails, and the name says whose it is everywhere.
         let at = place(dir, path).map_err(|_| unwritable(path))?;

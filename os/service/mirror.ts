@@ -35,8 +35,10 @@ export interface Source {
 /** One file of a GitHub release, as a response whose body is still to be read. */
 async function asset(s: Source, p: Pinned): Promise<Response> {
   const f = s.fetch ?? fetch;
+  // Never waited on for good (a download that stalls holds the deploy until the build is killed): ten minutes, its body included.
   const ask = (path: string, accept: string) => f(`${s.api}/repos/${s.repo}${path}`, {
     headers: {accept, 'x-github-api-version': '2022-11-28', 'user-agent': 'length3-deploy', ...(s.token ? {authorization: `Bearer ${s.token}`} : {})},
+    signal: AbortSignal.timeout(10 * 60_000),
   });
   const must = async (r: Response, what: string) => {
     if (r.ok) return r;

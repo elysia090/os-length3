@@ -206,7 +206,7 @@ export const failed: ErrorHandler = (e, c) => {
   console.error('remote failed', id, c.req.method, c.req.path, code, e);
   if (BUSY.has(code) || code.startsWith('08')) {
     c.header('Retry-After', '5');
-    return c.json({error: 'The Remote is busy just now; try again', id}, 503);
+    return c.json({error: 'The Remote is busy just now; try again', id, retryAfter: 5}, 503);
   }
   // What was sent is no text, number or value the database keeps (a NUL, a lone surrogate, a number out of range, a
   // check refused): the request's, not the Remote's, wherever a route did not say so first.
