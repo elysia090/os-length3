@@ -42,6 +42,8 @@ import {randomBytes} from 'node:crypto';
 import {existsSync, readFileSync} from 'node:fs';
 import {sql} from 'drizzle-orm';
 import {enterEmail} from './enter.ts';
+import {limitsOf, month, take} from './budget.ts';
+import type {Db} from './request.ts';
 import {mirror, remoteStore} from './mirror.ts';
 import {defaultBranchUrl, migrateBeforeWorker, migrateRemote, owner as ownerOn, workerRole} from './neon.ts';
 import {pinnedDesktop, pinnedRoots} from './releases.ts';
@@ -138,9 +140,23 @@ async function releaseFiles(bucket: string) {
   if (!desktop.length) console.log(`shared/desktop-releases.json pins no desktop app for ${version}: the web offers none until it is pinned (the release's notes say what to pin)`);
   const pins = [...pinnedRoots(readFileSync(new URL('../core/src/root.rs', import.meta.url), 'utf8')), ...desktop];
   const store = remoteStore(vars('BASE_URL')!, async (p, file) => must(['r2', 'object', 'put', `${bucket}/${p.key}`, '--file', file, '--content-type', p.type, '--remote']));
-  const {kept, put} = await mirror(pins, store, {api: process.env.GITHUB_API_URL || 'https://api.github.com',
-    repo: process.env.GITHUB_REPOSITORY || 'elysia090/os-length3', token: process.env.GITHUB_TOKEN});
-  console.log(`release files on the Remote: ${put.length} put, ${kept.length} there already`);
+  // The same budget as the Worker's (wrangler.toml [vars]): a put of the month, and the bytes R2 holds, counted
+  // as the file goes in (what it replaces counted out), or the file is not put and the deploy says so.
+  const limits = limitsOf(Object.fromEntries(['R2_STORED_MB', 'R2_WRITES_MONTH'].map((k) => [k, vars(k)])));
+  const {pool, db} = await owner();
+  try {
+    const allow = async (p: {key: string; bytes: number}, had: number | null) => db.transaction(async (tx: Db) => {
+      if (!await take(tx, month(Date.now()), 'r2:a', 1, limits.writes)) throw new Error(`${p.key}: R2's puts for this month are spent`);
+      const more = p.bytes - (had ?? 0);
+      if (more > 0 && !await take(tx, 'all', 'r2:stored', more, limits.stored)) throw new Error(`${p.key}: R2 would hold more than R2_STORED_MB`);
+      if (more < 0) await tx.execute(sql`update usage set n = greatest(n + ${more}, 0) where period = 'all' and kind = 'r2:stored'`);
+    });
+    const {kept, put} = await mirror(pins, store, {api: process.env.GITHUB_API_URL || 'https://api.github.com',
+      repo: process.env.GITHUB_REPOSITORY || 'elysia090/os-length3', token: process.env.GITHUB_TOKEN}, console.log, allow);
+    console.log(`release files on the Remote: ${put.length} put, ${kept.length} there already`);
+  } finally {
+    await pool.end();
+  }
 }
 
 const step = process.argv[2];

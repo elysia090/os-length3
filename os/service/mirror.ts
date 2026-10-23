@@ -84,7 +84,9 @@ async function keep(r: Response, file: string, most: number): Promise<{sha256: s
  * Each pinned file the Remote has at its pinned size is kept; each other one is
  * taken, checked and put. All are tried; what failed is said together at the end.
  */
-export async function mirror(pins: Pinned[], store: Store, source: Source, log: (line: string) => void = console.log): Promise<{kept: string[]; put: string[]}> {
+export async function mirror(pins: Pinned[], store: Store, source: Source, log: (line: string) => void = console.log,
+  /** Asked before a file is taken and put, with what the Remote has of it now: throws when the budget has no room (deploy.ts). */
+  allow: (p: Pinned, had: number | null) => Promise<void> = async () => {}): Promise<{kept: string[]; put: string[]}> {
   const kept: string[] = [], put: string[] = [], failed: string[] = [];
   const work = mkdtempSync(join(tmpdir(), 'length3-mirror-'));
   try {
@@ -93,6 +95,8 @@ export async function mirror(pins: Pinned[], store: Store, source: Source, log: 
         const has = await store.size(p);
         if (has === p.bytes) { kept.push(p.key); continue; }
         if (has !== null) log(`${p.key}: the Remote has ${has} bytes, not the ${p.bytes} pinned; put again`);
+        // Counted before anything is fetched or put: R2's puts and the bytes it holds are the Worker's budget too.
+        await allow(p, has);
         const file = join(work, p.sha256);
         const got = await keep(await asset(source, p), file, p.bytes);
         if (got.sha256 !== p.sha256 || got.bytes !== p.bytes)

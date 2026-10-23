@@ -15,6 +15,8 @@ import {createApp} from './app.ts';
 import {createAuth, providers} from './auth.ts';
 import {enterEmail} from './enter.ts';
 import {r2Bucket, type R2Bucket} from './bucket.ts';
+import {limitsOf} from './budget.ts';
+import type {Edge} from './files.ts';
 import {planConfig} from './plan.ts';
 import {stripeRest} from './stripe.ts';
 import * as schema from './schema.ts';
@@ -57,7 +59,18 @@ export interface Env {
    * machine (selftest/prod). Taken only where BASE_URL is this machine itself, never on Cloudflare.
    */
   DEV_SIGN_IN?: string;
+  /** What R2 and the database may be asked for (budget.ts): R2_STORED_MB, R2_WRITES_MONTH, R2_READS_MONTH, UPLOAD_MB_DAY, PG_MB. */
+  R2_STORED_MB?: string;
+  R2_WRITES_MONTH?: string;
+  R2_READS_MONTH?: string;
+  UPLOAD_MB_DAY?: string;
+  PG_MB?: string;
+  /** How often one session or address may ask (wrangler.toml [[ratelimits]]); not bound, none is counted. */
+  LIMITER?: {limit(o: {key: string}): Promise<{success: boolean}>};
 }
+
+/** The edge's own cache, where a Worker has one (not under workers.dev, nor on this machine's workerd without it). */
+const edge = (): Edge | undefined => (globalThis as {caches?: {default?: Edge}}).caches?.default;
 
 /** Whether `url` is this machine itself (localhost, 127.x, ::1). */
 const loopback = (url: string) => { try { return /^(localhost|127(\.\d{1,3}){3}|\[::1\])$/i.test(new URL(url).hostname); } catch { return false; } };
@@ -118,6 +131,7 @@ function make(env: Env) {
   const app = createApp({db, auth, bucket, origins: [env.APP_ORIGIN, ...origins], appOrigin: env.APP_ORIGIN, providers: providers({github, google, apple, dev}),
     domain: env.DOMAIN ?? 'length3.com', baseURL: env.BASE_URL, secret: env.BETTER_AUTH_SECRET, enter,
     quota: env.QUOTA_MB ? Number(env.QUOTA_MB) * 1024 ** 2 : undefined,
+    limits: limitsOf(env as unknown as Record<string, string | undefined>), edge: edge(), limiter: env.LIMITER, sessionKept: 10_000,
     // The plan holds here (but on a Remote for research, one person's alone); it is bought only when
     // Stripe's keys and price are all given.
     plan: enter ? undefined : planConfig(env),

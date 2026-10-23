@@ -14,7 +14,8 @@
 //   a message read, 90 days after it was sent (one unread waits for its reader)
 //   a signal two minutes old, a passkey sign-in five minutes old, a guest whose lease ran out (their
 //                                     posts stay, a guest's still), an invitation used up or run out,
-//   what was asked of the Remote a day ago (throttle), a Stripe event taken 30 days ago
+//   what was asked of the Remote a day ago (throttle), a Stripe event taken 30 days ago, what was counted of
+//                                     a day or a month gone (usage)
 //   a session, a device's code or a sign-in's verification that ran out (Better Auth's own: it lets
 //                                     one go only when it is asked for again)
 //   a blob no draft or commit of its account names (a day after it came, so a diff can name it first),
@@ -72,6 +73,9 @@ export async function sweep(db: Db, bucket: Bucket | null): Promise<Record<strin
   await run('guest', db, sql`delete from board_guest where token_until < now()`);
   await run('invite', db, sql`delete from board_invite where uses = 0 or until < now()`);
   await run('throttle', db, sql`delete from throttle where at < ${ago(DAY)}`);
+  // What was counted of a day or a month gone (budget.ts): the days before yesterday, the months before last.
+  await run('usage', db, sql`delete from usage where (char_length(period) = 10 and period < to_char(now() - interval '2 days', 'YYYY-MM-DD'))
+    or (char_length(period) = 7 and period < to_char(now() - interval '40 days', 'YYYY-MM'))`);
   // Stripe's events taken a while ago: one that old is not taken again anyway (plan.ts KEEP_EVENTS).
   await run('billing_event', db, sql`delete from billing_event where at < ${ago(KEEP_EVENTS)}`);
   // Better Auth's moments are kept without a zone, as UTC.

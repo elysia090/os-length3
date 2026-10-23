@@ -127,4 +127,9 @@ export default {
   'This Remote takes no payments': 'この Remote は支払いを受け付けていません',
   'The signature does not match': '署名が一致しません',
   'Not an event': 'イベントではありません',
+  // What R2 and the database may be asked for (budget.ts), and how often (app.ts).
+  'Asked too often; try again in a minute': '短い間に何度も頼まれました。1分ほどしてからもう一度',
+  'The Remote takes nothing new just now; your work stays on this device': 'Remote はいま新しいものを受け取れません。作業はこの端末に残ります',
+  'The Remote holds all the files it may just now; your work stays on this device': 'Remote はいま置けるだけのファイルを置いています。作業はこの端末に残ります',
+  'This account has sent all it may today; the rest is sent tomorrow': 'このアカウントが今日送れる分は送りました。残りは明日送ります',
 } as Record<string, string>;

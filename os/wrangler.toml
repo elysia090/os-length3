@@ -40,6 +40,14 @@ APP_ORIGINS = "tauri://localhost"
 ENTER_AS = "banana000000"
 # What the one account may keep (blobs and trees), in MB.
 QUOTA_MB = "1024"
+# What R2 and Neon may be asked for, counted before either is asked (service/budget.ts), within what each gives
+# free: the bytes R2 holds (blobs and release files, the deploy's included), its puts and its gets and heads in
+# a month, what one account uploads in a day, and the database's size, past which it takes nothing new.
+R2_STORED_MB = "8192"
+R2_WRITES_MONTH = "900000"
+R2_READS_MONTH = "9000000"
+UPLOAD_MB_DAY = "512"
+PG_MB = "450"
 # The plan (service/plan.ts), on a Remote that is not for research: a free account keeps 3 repos and
 # 100 MB on the Remote unless these say otherwise; a failed payment stays paid 14 days.
 # FREE_REPOS = "3"
@@ -48,6 +56,13 @@ QUOTA_MB = "1024"
 # Stripe: the price a subscription is to. Its keys are secrets (wrangler secret put STRIPE_SECRET_KEY,
 # STRIPE_WEBHOOK_SECRET); with any of the three missing, billing is off.
 # STRIPE_PRICE = "price_…"
+
+# How often one session (or, signed out, one address) may ask, counted at the edge before the database or R2 is
+# asked anything (service/app.ts): 600 a minute, a Prompt's root fetched a megabyte at a time included.
+[[ratelimits]]
+name = "LIMITER"
+namespace_id = "1001"
+simple = {limit = 600, period = 60}
 
 # What was held long enough goes, once a day (sweep.ts; worker.ts scheduled()).
 [triggers]

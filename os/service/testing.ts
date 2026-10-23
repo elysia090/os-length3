@@ -26,6 +26,8 @@ import {migrate} from 'drizzle-orm/pglite/migrator';
 import {createApp, sha256} from './app.ts';
 import {createAuth} from './auth.ts';
 import {memoryBucket} from './bucket.ts';
+import type {Limits} from './budget.ts';
+import type {Edge} from './files.ts';
 import {enterEmail, type Enter} from './enter.ts';
 import {MIGRATIONS, reach} from './neon.ts';
 import type {Billing, PlanConfig} from './plan.ts';
@@ -80,7 +82,11 @@ export async function fileDb() {
 }
 
 export type Service = Awaited<ReturnType<typeof make>>;
-export interface Options { quota?: number; enter?: Enter; plan?: PlanConfig; billing?: Billing; now?: () => number }
+export interface Options {
+  quota?: number; enter?: Enter; plan?: PlanConfig; billing?: Billing; now?: () => number;
+  /** What R2 and the database may be asked for (budget.ts), the edge's cache and the rate (app.ts Deps). */
+  limits?: Limits; edge?: Edge; limiter?: {limit(o: {key: string}): Promise<{success: boolean}>}; sessionKept?: number;
+}
 
 /** A Remote of its own for one test: `records` is DNS, a name → its TXT records. */
 export async function service(records: Record<string, string[]> = {}, o: Options = {}): Promise<Service> {
@@ -143,7 +149,7 @@ async function make(store: Store, records: Record<string, string[]>, o: Options)
   const dns = new Map(Object.entries(records));
   const app = createApp({db: store.app, auth, bucket: files, origins: [APP], appOrigin: APP, providers: ['dev'], domain: 'length3.test', baseURL: BASE,
     secret: SECRET, txt: async (name) => dns.get(name) ?? [], recheck: 0, quota: o.quota,
-    enter: o.enter, plan: o.plan, billing: o.billing, now: o.now});
+    enter: o.enter, plan: o.plan, billing: o.billing, now: o.now, limits: o.limits, edge: o.edge, limiter: o.limiter, sessionKept: o.sessionKept});
   /** A request to the Remote, served as its database is (each its own connection, on a real one). */
   const request = (url: string, init?: RequestInit) => store.serve(async () => app.request(url, init));
   // The service asks its own stand-in provider for tokens over the network: here, itself.

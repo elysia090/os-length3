@@ -119,3 +119,19 @@ test('the pins: every root core/src/root.rs pins, newest first, and the desktop 
     assert.throws(() => pinnedDesktop('1.0.0', {'1.0.0': bad} as never), /is not a pin/);
   }
 });
+
+test('mirror: a file the budget has no room for is neither fetched nor put, the others go, and the deploy is told', async () => {
+  const pins = [pin('a.deb', a), pin('b.AppImage', b)];
+  const bucket = fakeBucket({'desktop/a.deb': a.slice(0, 3)});
+  const gh = fakeGitHub({'a.deb': a, 'b.AppImage': b});
+  const allowed: [string, number | null][] = [];
+  const allow = async (p: Pinned, had: number | null) => {
+    allowed.push([p.key, had]);
+    if (p.key === 'desktop/b.AppImage') throw new Error('R2 would hold more than R2_STORED_MB');
+  };
+  await assert.rejects(mirror(pins, bucket.store, gh.source, quiet, allow), /desktop\/b\.AppImage: R2 would hold more than R2_STORED_MB/);
+  // Asked with what the Remote had of each (a copy of 3 bytes is put again; none of the other).
+  assert.deepEqual(allowed, [['desktop/a.deb', 3], ['desktop/b.AppImage', null]]);
+  assert.deepEqual(bucket.puts, ['desktop/a.deb']);
+  assert.ok(!gh.asked.includes('/releases/assets/1'));
+});

@@ -558,6 +558,19 @@ export const throttle = pgTable('throttle', {
   at: moment('at').defaultNow().notNull(),
 }, (t) => [index('throttle_key_idx').on(t.key, t.at), check('throttle_key', within('key', 300))]);
 
+/**
+ * What the Remote has spent of what it may, counted before it is spent (budget.ts): R2's operations of a
+ * month (`r2:a`, puts; `r2:b`, gets and heads; under period YYYY-MM), the bytes it holds (`r2:stored`,
+ * under `all`: blobs by trigger, release files by the deploy), and an account's uploads of a day
+ * (`up:<user>`, under YYYY-MM-DD). Rows of a month or a day gone go with the sweep.
+ */
+export const usage = pgTable('usage', {
+  period: text('period').notNull(),
+  kind: text('kind').notNull(),
+  n: bigint('n', {mode: 'number'}).notNull().default(0),
+}, (t) => [primaryKey({columns: [t.period, t.kind]}), check('usage_n', sql`${t.n} >= 0`), check('usage_period', within('period', 10)),
+  check('usage_kind', within('kind', 80))]);
+
 // ---- who sees a repo (seen.ts) ----
 
 /**

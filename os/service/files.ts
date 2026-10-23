@@ -15,10 +15,15 @@
 //
 // With no bucket, each route that moves bytes answers 503 NO_FILES, to
 // anyone, before anything else; which digests are missing is rows, and is
-// answered all the same.
+// answered all the same. With a budget (budget.ts), R2 is asked nothing past
+// what it may do this month, an upload is counted against what R2 may hold
+// and what the account may send today, and a release's file is handed out
+// from the edge's cache once it is there: R2 is read once per place, not
+// once per download.
 
 import {and, eq, inArray} from 'drizzle-orm';
 import type {Context, Hono} from 'hono';
+import type {Budget} from './budget.ts';
 import {blobKey, noFiles, type Bucket} from './bucket.ts';
 import {desktopFile, rootKey} from './releases.ts';
 import {body, fits, HEX, LIMIT, lock, sha256, type Db, type Vars} from './request.ts';
@@ -34,8 +39,42 @@ function base64(bytes: Uint8Array): string {
 /** What never changes under its name. */
 const IMMUTABLE = 'public, max-age=31536000, immutable';
 
+/** A cache in front of R2 (on Workers, the edge's: caches.default), which answers a Range request from what it holds whole. */
+export interface Edge {
+  match(request: Request): Promise<Response | undefined>;
+  put(request: Request, response: Response): Promise<void>;
+}
+
+/**
+ * One file of a release from the edge's cache: the whole file is taken from R2 once (one read) and put there,
+ * and it answers the range asked for, and HEAD; null when the cache cannot (the caller asks R2 itself).
+ */
+async function cached(c: Context<Vars>, edge: Edge, bucket: Bucket, key: string, etag: string, headers: Record<string, string>): Promise<Response | null> {
+  // One entry per file and digest, whatever range or method is asked: the cache answers ranges from the whole,
+  // and a file pinned anew under the same name (a desktop app rebuilt) is another entry, never the old bytes.
+  const whole = new Request(`https://release.cache/${key}?sha256=${etag}`);
+  const asked = () => new Request(whole.url, {headers: c.req.header('Range') ? {Range: c.req.header('Range')!} : {}});
+  let hit = await edge.match(asked());
+  if (!hit) {
+    const size = await bucket.size(key);
+    if (size === null) return c.json({error: 'No such release'}, 404);
+    const body = size ? await bucket.read(key, 0, size - 1) : new Uint8Array();
+    if (!body) return c.json({error: 'No such release'}, 404);
+    await edge.put(whole, new Response(body as BodyInit, {headers: {...headers, 'Content-Length': String(size)}})).catch(() => {});
+    hit = await edge.match(asked());
+    if (!hit) return null;
+  }
+  return c.req.method === 'HEAD' ? new Response(null, {status: hit.status, headers: hit.headers}) : hit;
+}
+
 /** One file of a release, whole or the one range asked for (bytes=a-b, bytes=a-), streamed from the bucket. */
-async function release(c: Context<Vars>, bucket: Bucket, key: string, o: {type: string; etag: string; name?: string}) {
+async function release(c: Context<Vars>, bucket: Bucket, key: string, o: {type: string; etag: string; name?: string}, edge?: Edge) {
+  if (edge) {
+    const headers: Record<string, string> = {'Content-Type': o.type, 'Accept-Ranges': 'bytes', ETag: `"${o.etag}"`, 'Cache-Control': IMMUTABLE};
+    if (o.name) headers['Content-Disposition'] = `attachment; filename="${o.name}"`;
+    const r = await cached(c, edge, bucket, key, o.etag, headers);
+    if (r) return r;
+  }
   const m = /^bytes=(\d+)-(\d*)$/.exec(c.req.header('Range') ?? '');
   const size = await bucket.size(key);
   if (size === null) return c.json({error: 'No such release'}, 404);
@@ -54,7 +93,7 @@ async function release(c: Context<Vars>, bucket: Bucket, key: string, o: {type: 
   return new Response(body as BodyInit | null, {status: m ? 206 : 200, headers});
 }
 
-export function files(d: {db: Db; bucket: Bucket | null; quota?: number}, v1: Hono<Vars>, app: Hono<Vars>) {
+export function files(d: {db: Db; bucket: Bucket | null; quota?: number; budget?: Budget | null; edge?: Edge}, v1: Hono<Vars>, app: Hono<Vars>) {
   const db = d.db;
 
   // The OS is public: its canonical copy is the release, a root named by its digest and the desktop
@@ -63,12 +102,12 @@ export function files(d: {db: Db; bucket: Bucket | null; quota?: number}, v1: Ho
   app.on(['GET', 'HEAD'], '/v1/os/:sha', async (c) => {
     if (!d.bucket) return noFiles(c);
     const sha = c.req.param('sha');
-    return HEX.test(sha) ? release(c, d.bucket, rootKey(sha), {type: 'application/octet-stream', etag: sha}) : c.json({error: 'Not found'}, 404);
+    return HEX.test(sha) ? release(c, d.bucket, rootKey(sha), {type: 'application/octet-stream', etag: sha}, d.edge) : c.json({error: 'Not found'}, 404);
   });
   app.on(['GET', 'HEAD'], '/v1/desktop/:file', async (c) => {
     if (!d.bucket) return noFiles(c);
     const p = desktopFile(c.req.param('file'));
-    return p ? release(c, d.bucket, p.key, {type: p.type, etag: p.sha256, name: p.file}) : c.json({error: 'No such release'}, 404);
+    return p ? release(c, d.bucket, p.key, {type: p.type, etag: p.sha256, name: p.file}, d.edge) : c.json({error: 'No such release'}, 404);
   });
 
   v1.post('/blobs/missing', async (c) => {
@@ -95,6 +134,8 @@ export function files(d: {db: Db; bucket: Bucket | null; quota?: number}, v1: Ho
       await lock(tx, user);
       if ((await tx.select({sha: blob.sha256}).from(blob).where(and(eq(blob.userId, user), eq(blob.sha256, sha)))).length) return;
       await fits(tx, user, bytes.length, d.quota);
+      // What R2 may hold and the account may send today, and the put itself, counted with the row that names it.
+      if (d.budget) { await d.budget.upload(tx, user, bytes.length); await d.budget.write(tx); }
       await bucket.put(blobKey(user, sha), bytes);
       await tx.insert(blob).values({userId: user, sha256: sha, bytes: bytes.length});
     });
@@ -119,6 +160,8 @@ export function files(d: {db: Db; bucket: Bucket | null; quota?: number}, v1: Ho
     if (!d.bucket) return noFiles(c);
     const sha = c.req.param('sha');
     if (!HEX.test(sha)) return c.json({error: 'Not found'}, 404);
+    // Asked again by one who has it (its name is its digest): nothing changed, and nothing is read.
+    if (c.req.header('If-None-Match') === `"${sha}"`) return new Response(null, {status: 304, headers: {ETag: `"${sha}"`, 'Cache-Control': 'private, max-age=31536000, immutable'}});
     const known = await db.select({sha: blob.sha256}).from(blob).where(and(eq(blob.userId, c.get('userId')), eq(blob.sha256, sha)));
     const bytes = known.length ? await d.bucket.get(blobKey(c.get('userId'), sha)) : null;
     // Its name is its digest: this browser keeps it (it is the account's: no shared cache does).

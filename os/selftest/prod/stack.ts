@@ -81,7 +81,7 @@ function production() {
     return rest.slice(0, rest.search(/\n\[/) < 0 ? undefined : rest.search(/\n\[/));
   };
   const vars: Record<string, string> = {};
-  for (const m of section('[vars]').matchAll(/^([A-Z_]+)\s*=\s*"([^"]*)"/gm)) vars[m[1]] = m[2];
+  for (const m of section('[vars]').matchAll(/^([A-Z0-9_]+)\s*=\s*"([^"]*)"/gm)) vars[m[1]] = m[2];
   return {
     compatibilityDate: one('compatibility_date')!, compatibilityFlags: one('compatibility_flags')!,
     notFound: one('not_found_handling')!, runWorkerFirst: JSON.parse(one('run_worker_first')!) as string[],

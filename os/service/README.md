@@ -22,7 +22,33 @@ assembles them, `request.ts` holds what every request shares (the origins
 that may call, body limits, `LIMIT`, refusals, the account's lock and room,
 and `failed`: what no route foresaw is JSON too, `{error, id}`, 503 with
 `Retry-After` when the database is busy or out of reach, else 500, the id
-in the log beside it), `auth.ts` who is asking (`signedIn`).
+in the log beside it), `auth.ts` who is asking (`signedIn`: a request that names
+no session is refused before the database is asked, and the Worker keeps a
+session it looked up for 10 s), and `budget.ts` what R2 and the database may be
+asked for.
+
+### What R2 and Neon may be asked for
+
+Counted before either is asked (`budget.ts`, rows of `usage`), each figure a
+variable of `wrangler.toml`, within what Cloudflare and Neon give free:
+
+| Limit | Variable | Past it |
+|---|---|---|
+| bytes R2 holds: blobs (by trigger with their rows) and release files (by the deploy) | `R2_STORED_MB` 8192 | an upload is 507, `files: false`: the work stays on the device |
+| R2 puts in a month (class A) | `R2_WRITES_MONTH` 900000 | 503, `files: false`, `Retry-After` the next month |
+| R2 gets and heads in a month (class B) | `R2_READS_MONTH` 9000000 | the same; an isolate takes 64 at a time, so most reads ask the database nothing |
+| what one account uploads in a day | `UPLOAD_MB_DAY` 512 | 429, `Retry-After` the next day |
+| the database's size (asked every 5 min by each isolate) | `PG_MB` 450 | what would add to it is 507; reads, deletes and signing in go on |
+| requests a minute, by session or else by address, at the edge (`[[ratelimits]]` LIMITER) | 600 | 429, before the database or R2 is asked |
+
+A put is counted in the transaction that names its blob, so one undone is
+not counted; a delete costs R2 nothing and is never refused. A release file
+is read from R2 once per place and then answered from the edge's cache
+(`caches.default`, by its pinned digest), range and HEAD alike; a blob asked
+for with its digest as `If-None-Match` is 304 without R2. The deploy's
+mirror counts each put and the bytes it adds against the same rows, and
+puts nothing past them. The sweep lets go of what was counted of days and
+months gone.
 
 | Part | Module | Routes | Tables | Clients |
 |---|---|---|---|---|

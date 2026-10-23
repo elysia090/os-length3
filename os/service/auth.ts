@@ -207,19 +207,37 @@ export function signIn(d: {auth: Auth; providers: string[]; enter: boolean}, app
  * cookie. A page elsewhere can make a browser send the cookie, never the bearer token: a write that
  * comes with the cookie alone is taken only from the app's own pages.
  */
-export const signedIn = (auth: Auth, origins: string[]): MiddlewareHandler<Vars> => async (c, next) => {
-  const bearer = /^Bearer\s/i.test(c.req.header('Authorization') ?? '');
-  const ours = origins.includes(c.req.header('Origin') ?? '');
-  if (!bearer && c.req.method !== 'GET' && c.req.method !== 'HEAD' && !ours) return c.json({error: 'not from the app'}, 403);
-  // A read with the cookie alone that the browser says another site's page started (a link, an
-  // image, a frame, a script) is refused too: no page elsewhere has the Remote read for it with
-  // someone's cookie, whatever a GET would do (Fetch Metadata, W3C; ASVS 4.2.2, 13.2.3).
-  const site = c.req.header('Sec-Fetch-Site');
-  if (!bearer && (site === 'cross-site' || site === 'same-site') && !ours) return c.json({error: 'not from the app'}, 403);
-  const s = await auth.api.getSession({headers: c.req.raw.headers});
-  if (!s) return c.json({error: 'not signed in'}, 401);
-  c.set('userId', s.user.id);
-  c.set('sessionId', s.session.id);
-  c.set('name', s.user.name);
-  await next();
+export const signedIn = (auth: Auth, origins: string[], keep = 0): MiddlewareHandler<Vars> => {
+  // Each session looked up is kept `keep` ms by this isolate (the Worker's: 10 s), so a client's requests one
+  // after another ask the database once; one ended elsewhere is refused here that much later at most.
+  const kept = new Map<string, {until: number; user: string; session: string; name: string}>();
+  return async (c, next) => {
+    const bearer = /^Bearer\s/i.test(c.req.header('Authorization') ?? '');
+    const cookie = /session_token=([^;]+)/.exec(c.req.header('Cookie') ?? '')?.[1];
+    // Nothing that could name a session: refused before the database is asked anything.
+    if (!bearer && !cookie) return c.json({error: 'not signed in'}, 401);
+    const ours = origins.includes(c.req.header('Origin') ?? '');
+    if (!bearer && c.req.method !== 'GET' && c.req.method !== 'HEAD' && !ours) return c.json({error: 'not from the app'}, 403);
+    // A read with the cookie alone that the browser says another site's page started (a link, an
+    // image, a frame, a script) is refused too: no page elsewhere has the Remote read for it with
+    // someone's cookie, whatever a GET would do (Fetch Metadata, W3C; ASVS 4.2.2, 13.2.3).
+    const site = c.req.header('Sec-Fetch-Site');
+    if (!bearer && (site === 'cross-site' || site === 'same-site') && !ours) return c.json({error: 'not from the app'}, 403);
+    const token = (bearer ? c.req.header('Authorization') : cookie) ?? '';
+    const now = Date.now(), had = keep ? kept.get(token) : undefined;
+    if (had && had.until > now) {
+      c.set('userId', had.user); c.set('sessionId', had.session); c.set('name', had.name);
+      return next();
+    }
+    const s = await auth.api.getSession({headers: c.req.raw.headers});
+    if (!s) { kept.delete(token); return c.json({error: 'not signed in'}, 401); }
+    if (keep) {
+      if (kept.size >= 1000) for (const [k, v] of kept) if (v.until <= now || kept.size >= 1000) kept.delete(k);
+      kept.set(token, {until: now + keep, user: s.user.id, session: s.session.id, name: s.user.name});
+    }
+    c.set('userId', s.user.id);
+    c.set('sessionId', s.session.id);
+    c.set('name', s.user.name);
+    await next();
+  };
 };
