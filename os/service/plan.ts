@@ -51,7 +51,7 @@ import type {Hono} from 'hono';
 import {kept} from './names.ts';
 import {body, refuse, rows, type Db, type Vars} from './request.ts';
 import {address, billingEvent, plan, user} from './schema.ts';
-import {verify, type StripeApi} from './stripe.ts';
+import {verify, type Price, type StripeApi} from './stripe.ts';
 
 const DAY = 86_400_000;
 /** A megabyte as the app shows one (dom.ts bytes): a million bytes. */
@@ -245,6 +245,20 @@ export async function apply(tx: Db, event: {type: string; created: number; data:
 
 export interface PlanDeps { db: Db; plans: Plans; origins: string[]; appOrigin?: string; now?: () => number }
 
+/** `back` with how Checkout went (?plan=paid or ?plan=cancelled), for the page it comes back to. */
+export function marked(back: string, how: 'paid' | 'cancelled'): string {
+  try { const u = new URL(back); u.searchParams.set('plan', how); return u.toString(); } catch { return back; }
+}
+
+/** The price as Stripe said it last, kept an hour by this isolate: one ask of Stripe an hour, not one a page. */
+let priced: {at: number; key: Billing; price: Price | null} | null = null;
+async function priceOf(b: Billing): Promise<Price | null> {
+  if (priced && priced.key === b && Date.now() - priced.at < (priced.price ? 3600_000 : 60_000)) return priced.price;
+  const price = await b.stripe.price().catch(() => null);
+  priced = {at: Date.now(), key: b, price};
+  return price;
+}
+
 /** The routes: the account's plan (v1, signed in), and Stripe's webhook (app, signed by Stripe). */
 export function planRoutes(d: PlanDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   const {db, plans: p} = d;
@@ -262,9 +276,11 @@ export function planRoutes(d: PlanDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     const names = await db.select({domain: address.domain, n: sql<number>`count(*)::int`})
       .from(address).where(and(eq(address.userId, me), kept)).groupBy(address.domain) as {domain: string; n: number}[];
     const s = standing(row, p.config.grace);
+    // What paying costs is said before anyone is sent to pay; not known (Stripe away), the page says it is shown there.
+    const price = p.billing && !s.paid ? await priceOf(p.billing) : null;
     return c.json({plan: s.paid ? 'paid' : 'free', status: s.status, renews: s.renews, ends: s.ends, graceUntil: s.graceUntil,
       usage: {...use, names: names.reduce((a, r) => a + r.n, 0)}, free: p.config.free,
-      buy: !!p.billing, manage: !!p.billing && !!row?.customer});
+      buy: !!p.billing, manage: !!p.billing && !!row?.customer, ...(price ? {price} : {})});
   });
 
   const off = () => (p.on ? refuse(503, {error: 'Paid features cannot be bought on this Remote yet', buy: false}) : refuse(404, {error: 'This Remote has no plan'}));
@@ -293,7 +309,9 @@ export function planRoutes(d: PlanDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       await db.insert(plan).values({userId: me, customer: made}).onConflictDoUpdate({target: plan.userId, set: {customer: made}, setWhere: sql`${plan.customer} is null`});
       customer = (await p.rowOf(db, me))!.customer!;
     }
-    const url = await p.billing.stripe.checkout({customer, user: me, success: back, cancel: back}).catch(() => refuse(502, {error: 'Stripe did not answer; try again'}));
+    // Back to the page that asked, which is told how it went (the plan itself it reads from here, as Stripe tells it).
+    const url = await p.billing.stripe.checkout({customer, user: me, success: marked(back, 'paid'), cancel: marked(back, 'cancelled')})
+      .catch(() => refuse(502, {error: 'Stripe did not answer; try again'}));
     return c.json({url});
   });
 

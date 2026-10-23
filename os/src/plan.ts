@@ -24,6 +24,45 @@ export interface Plan {
   buy?: boolean;
   /** There is a subscription to manage. */
   manage?: boolean;
+  /** What paid costs (in the currency's smallest unit, every so many intervals), when the Remote could say. */
+  price?: Price;
+}
+
+export interface Price { amount: number; currency: string; interval: 'day' | 'week' | 'month' | 'year'; every: number }
+
+/** A price in words: ¥800 a month, $5.00 every 3 months. */
+export function priceWords(p: Price, lang = 'en'): string {
+  const currency = p.currency.toUpperCase();
+  let money: string;
+  try {
+    const f = new Intl.NumberFormat(lang, {style: 'currency', currency});
+    // Stripe says the amount in the currency's smallest unit: as many places as the currency has.
+    money = f.format(p.amount / 10 ** (f.resolvedOptions().maximumFractionDigits ?? 2));
+  } catch { money = `${p.amount} ${currency}`; }
+  const one = {day: t('{price} a day', {price: money}), week: t('{price} a week', {price: money}), month: t('{price} a month', {price: money}),
+    year: t('{price} a year', {price: money})}[p.interval];
+  if (p.every === 1) return one;
+  return {day: t('{price} every {n} days', {price: money, n: p.every}), week: t('{price} every {n} weeks', {price: money, n: p.every}),
+    month: t('{price} every {n} months', {price: money, n: p.every}), year: t('{price} every {n} years', {price: money, n: p.every})}[p.interval];
+}
+
+/** What subscribing is, said before anyone is sent to pay: how it is billed, how it ends, what stays. */
+export const TERMS = () => [t('Billed by Stripe, every period, until you cancel.'),
+  t('Cancel any time under Manage the plan: it stays paid to the end of the period, and nothing more is charged.'),
+  t('If it ends, everything you made stays; the free allowance holds again.')];
+
+/** How Checkout went, as the page it came back to was told (?plan=paid or ?plan=cancelled), kept for this tab until the Plan says it. */
+const RETURN = 'length3.plan-return';
+export function cameBackFromCheckout(how: string) {
+  if (how !== 'paid' && how !== 'cancelled') return;
+  try { sessionStorage.setItem(RETURN, how); } catch { /* said nothing, then: the plan shows as it is */ }
+}
+export function takeCheckoutReturn(): 'paid' | 'cancelled' | null {
+  try {
+    const how = sessionStorage.getItem(RETURN);
+    sessionStorage.removeItem(RETURN);
+    return how === 'paid' || how === 'cancelled' ? how : null;
+  } catch { return null; }
 }
 
 export const plan = () => json<Plan>('/v1/plan');

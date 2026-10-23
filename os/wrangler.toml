@@ -14,6 +14,11 @@ name = "os-length3"
 main = "service/worker.ts"
 compatibility_date = "2026-08-01"
 compatibility_flags = ["nodejs_compat"]
+# Reached by its own name alone (the routes below), never by <name>.workers.dev; and no preview URL for a version
+# a branch's build uploads (README.md, Deploy): such a version would run against production's database and bucket.
+# Said here, so a deploy does not warn that it took them as off.
+workers_dev = false
+preview_urls = false
 
 [assets]
 # The build (npm run build:cloudflare; vite.config.ts builds into this directory, and Tauri takes the app's from

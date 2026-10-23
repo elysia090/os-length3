@@ -1,5 +1,6 @@
-// Stripe, as the Remote speaks to it: three calls of its REST API (a
-// customer, a Checkout session for the one price, a customer portal session)
+// Stripe, as the Remote speaks to it: four calls of its REST API (a
+// customer, a Checkout session for the one price, a customer portal session,
+// what that price is)
 // and the check of a webhook's signature. With fetch and Web Crypto only, so
 // the same code runs on Workers, in dev and in tests, with nothing to bundle.
 //
@@ -21,7 +22,12 @@ export interface StripeApi {
   checkout(p: {customer: string; user: string; success: string; cancel: string}): Promise<string>;
   /** A customer portal session (manage, cancel, change the card); its URL. */
   portal(p: {customer: string; back: string}): Promise<string>;
+  /** What the one price is: so much (in the currency's smallest unit), every so many days, weeks, months or years. */
+  price(): Promise<Price>;
 }
+
+/** A price as Stripe says it, as much as a person is shown before paying. */
+export interface Price { amount: number; currency: string; interval: 'day' | 'week' | 'month' | 'year'; every: number }
 
 /** The API version the Remote's requests are read as. */
 export const STRIPE_VERSION = '2024-06-20';
@@ -62,6 +68,17 @@ export function stripeRest(key: string, price: string, f: typeof fetch = fetch):
       line_items: {0: {price, quantity: 1}}, subscription_data: {metadata: {user}}, metadata: {user},
     }, `checkout-${user}-${Math.floor(Date.now() / 600_000)}-${(await sha(`${success}\n${cancel}`)).slice(0, 16)}`)).url ?? '',
     portal: async ({customer, back}) => (await post('billing_portal/sessions', {customer, return_url: back})).url ?? '',
+    async price() {
+      const r = await f(`https://api.stripe.com/v1/prices/${encodeURIComponent(price)}`, {
+        headers: {Authorization: `Bearer ${key}`, 'Stripe-Version': STRIPE_VERSION}, signal: AbortSignal.timeout(10_000)});
+      const j = await r.json().catch(() => ({})) as {unit_amount?: number; currency?: string; recurring?: {interval?: string; interval_count?: number}};
+      const interval = j.recurring?.interval;
+      if (!r.ok || typeof j.unit_amount !== 'number' || typeof j.currency !== 'string' || !['day', 'week', 'month', 'year'].includes(interval ?? '')) {
+        console.error('stripe', 'prices', r.status);
+        throw new Error(`Stripe ${r.status}`);
+      }
+      return {amount: j.unit_amount, currency: j.currency, interval: interval as Price['interval'], every: j.recurring?.interval_count ?? 1};
+    },
   };
 }
 

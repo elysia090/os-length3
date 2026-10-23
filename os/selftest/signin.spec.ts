@@ -49,3 +49,48 @@ test('signing out from the person menu brings back the way in', async ({signedIn
   await expect(app.main.getByRole('region', {name: 'Sign in'})).toBeVisible();
   await expect(app.main.getByRole('button', {name: 'Continue with Development'})).toBeVisible();
 });
+
+test('the first time a provider, a passkey offered right after it; the next time the passkey is the way in', async ({app}, info) => {
+  await app.rail.go('remote');
+  const card = app.main.getByRole('region', {name: 'Sign in'});
+  await expect(card).toContainText('The first time, sign in with an account you already have.');
+  await expect(card.getByRole('button', {name: 'I have a passkey'})).toBeVisible();
+  await app.signIn(personName(info));
+  // Signed in, and the Remote reached: two things, said apart.
+  const standing = app.main.getByRole('status').filter({hasText: 'Signed in as'});
+  await expect(standing).toContainText(`Signed in as ${personName(info)}`);
+  await expect(standing).toContainText('Connected to');
+  // Just back from the provider: a passkey for next time, what it is for, and one offer only.
+  const next = app.main.getByRole('region', {name: 'Sign in faster next time'});
+  await expect(next).toContainText('without the provider');
+  await expect(app.main.getByRole('button', {name: 'Add a passkey'})).toHaveCount(1);
+  await next.getByRole('button', {name: 'Add a passkey'}).click();
+  await expect(app.main.getByText('Passkey added. Next time, sign in with it.')).toBeVisible();
+  // Signed out, the passkey is the way in first, the provider under it for a passkey lost.
+  await app.me.openMenu();
+  await app.me.menu.getByRole('menuitem', {name: 'Sign out'}).click();
+  await expect(card).toContainText('Welcome back.');
+  await expect(card).toContainText('Lost your passkey');
+  await card.getByRole('button', {name: 'Sign in with your passkey'}).click();
+  await app.settled();
+  await expect(app.remote.part('Repos')).toBeVisible();
+});
+
+test('a passkey put off for later is offered under the repos instead', async ({signedIn: app}) => {
+  const next = app.main.getByRole('region', {name: 'Sign in faster next time'});
+  await next.getByRole('button', {name: 'Later'}).click();
+  await expect(next).toBeHidden();
+  await expect(app.main.getByRole('button', {name: 'Add a passkey'})).toHaveCount(1);
+});
+
+test('called off at the provider, the card says so, and the provider is there to try again', async ({app}) => {
+  await app.page.goto('/?sign-in-failed&error=access_denied');
+  await app.settled();
+  const card = app.main.getByRole('region', {name: 'Sign in'});
+  await expect(card.getByRole('alert')).toHaveText('Signing in was called off at the provider.');
+  await expect(card.getByRole('button', {name: 'Continue with Development'})).toBeVisible();
+  // Nothing of the address is shown: its words are anyone's to write.
+  await app.page.goto('/?sign-in-failed&error=x&error_description=Your%20account%20is%20locked');
+  await app.settled();
+  await expect(card).not.toContainText('locked');
+});

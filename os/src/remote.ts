@@ -161,6 +161,7 @@ export function onConnection(fn: () => void): () => void { listeners.add(fn); re
 const told = () => { for (const fn of [...listeners]) fn(); };
 
 async function keep(token: string, url = REMOTE_URL) {
+  tryingAgain();
   // As the app keeps a session it signed in with: the core notes whose it is, and another account's copies stay theirs.
   await core('remote_connect', {url, token});
   await loadState(['remote', 'sync']);
@@ -208,9 +209,16 @@ export async function enterWith(key: string): Promise<boolean> {
   }
 }
 
-/** Sign in with a provider: the page goes there and comes back to `back` (then claim()). */
+/**
+ * Sign in with a provider: the page goes there and comes back to `back` (then claim()), signed in or not: called
+ * off or refused at the provider, it is back here too (not on a page of the Remote's), and the card says so.
+ */
 export async function signInWith(provider: Provider, back = signedInURL()): Promise<void> {
-  const r = await api('/api/auth/sign-in/social', {method: 'POST', body: JSON.stringify({provider, callbackURL: back})}, null);
+  tryingAgain();
+  const failed = new URL(back);
+  failed.searchParams.delete('signed-in');
+  failed.searchParams.set('sign-in-failed', '');
+  const r = await api('/api/auth/sign-in/social', {method: 'POST', body: JSON.stringify({provider, callbackURL: back, errorCallbackURL: failed.toString()})}, null);
   const {url} = await r.json() as {url: string};
   location.assign(url);
 }
@@ -235,9 +243,54 @@ export async function claim(): Promise<boolean> {
   }
 }
 
-/** Why the last sign-in through a provider did not take (said once, on the sign-in card). */
+/**
+ * Back from a provider without a session (?sign-in-failed&error=…): why, by the error's code alone, in the app's own
+ * words (the address's other words are anyone's to write, and are never shown); said on the card.
+ */
+export function signInFailed(code: string | null) {
+  signInTrouble = code === 'closed' ? t('This Remote takes no new accounts')
+    : code === 'access_denied' ? t('Signing in was called off at the provider.')
+    : t('The provider did not sign you in. Try again.');
+}
+
+/**
+ * Why the last sign-in did not take, said on the sign-in card however often it is drawn (the page is drawn again
+ * as what the Remote says comes in), until a sign-in is tried again or this device is in.
+ */
 let signInTrouble = '';
-export const takeSignInTrouble = (): string => { const s = signInTrouble; signInTrouble = ''; return s; };
+export const signInTroubleNow = (): string => signInTrouble;
+/** A sign-in tried again: what the last one said is past. */
+export const tryingAgain = () => { signInTrouble = ''; };
+
+// ---- how this browser came in before: the first time a provider, after it a passkey ----
+
+/** Whether this browser can make and use passkeys at all (WebAuthn); without it, providers are the way in. */
+export const passkeysHere = (): boolean => typeof window !== 'undefined' && typeof (window as {PublicKeyCredential?: unknown}).PublicKeyCredential !== 'undefined';
+
+const WAY = 'length3.way-in';
+/** How this browser last came in: with a passkey (made here, or used here), or a provider; null, the first time. */
+export function wayIn(): 'passkey' | 'provider' | null {
+  try { const w = localStorage.getItem(WAY); return w === 'passkey' || w === 'provider' ? w : null; } catch { return null; }
+}
+/** Noted for the next sign-in: a passkey is never taken back to a provider (one that made a passkey is asked for it first). */
+function cameIn(way: 'passkey' | 'provider') {
+  try { if (way === 'passkey' || localStorage.getItem(WAY) !== 'passkey') localStorage.setItem(WAY, way); } catch { /* the first time's card, then */ }
+}
+
+const JUST = 'length3.just-signed-in';
+/** Back from a provider, signed in: Remote's page offers a passkey for next time, once, in this tab. */
+export function justSignedIn() {
+  cameIn('provider');
+  try { sessionStorage.setItem(JUST, '1'); } catch { /* the offer under the repos stays */ }
+}
+/** Whether this tab came in through a provider just now and has not had the passkey offer answered (made, or Later). */
+export function justSignedInHere(): boolean {
+  try { return sessionStorage.getItem(JUST) === '1'; } catch { return false; }
+}
+/** The offer answered (a passkey made, or put off), or there is one already: not offered again in this tab. */
+export function passkeyOfferDone() {
+  try { sessionStorage.removeItem(JUST); } catch { /* offered again, then */ }
+}
 
 /** Another provider for the same account (a second way back in). */
 export async function link(provider: Provider): Promise<void> {
@@ -261,10 +314,12 @@ export async function addPasskey(name = deviceName()): Promise<void> {
     throw new RemoteError(0, cancelled(e) ? t('The passkey was not made.') : t('Could not make a passkey ({why}).', {why: String(e)}));
   });
   await json('/api/auth/passkey/verify-registration', {method: 'POST', body: JSON.stringify({response, name})});
+  cameIn('passkey');
 }
 
 /** Sign in with a passkey (any of the account's, on this device or synced to it). */
 export async function signIn(): Promise<void> {
+  tryingAgain();
   const {startAuthentication} = await webauthn();
   const options = await (await api('/api/auth/passkey/generate-authenticate-options', {}, null)).json();
   const response = await startAuthentication({optionsJSON: options}).catch((e: unknown) => {
@@ -272,6 +327,7 @@ export async function signIn(): Promise<void> {
   });
   const r = await api('/api/auth/passkey/verify-authentication', {method: 'POST', body: JSON.stringify({response})}, null);
   await keep(tokenOf(r));
+  cameIn('passkey');
 }
 
 // ---- turning a repo off: a passkey just now, the names, and the account's five-letter code ----
@@ -380,6 +436,8 @@ export async function signOut(): Promise<void> {
 }
 
 async function ended() {
+  // Said on the sign-in card that comes next: why it is there.
+  signInTrouble = t('The Remote no longer knows this device. Sign in again.');
   // The Remote already let this session go: nothing can be sent with it, and nothing here is let go.
   await core('remote_forget').catch(() => {});
   await loadState(['remote']);

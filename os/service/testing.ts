@@ -252,6 +252,7 @@ export function fakeStripe() {
     async customer(p) { asked.push({call: 'customer', ...p}); return `cus_test${p.user.replace(/[^A-Za-z0-9]/g, '').slice(0, 20)}`; },
     async checkout(p) { asked.push({call: 'checkout', ...p}); return `https://checkout.stripe.test/c/${++n}`; },
     async portal(p) { asked.push({call: 'portal', ...p}); return `https://billing.stripe.test/p/${++n}`; },
+    async price() { asked.push({call: 'price'}); return {amount: 800, currency: 'jpy', interval: 'month', every: 1}; },
   };
   return {api, asked, billing: {stripe: api, webhookSecret: WEBHOOK_SECRET} as Billing};
 }

@@ -164,9 +164,15 @@ test('Checkout: a customer made once for the account, the session for it, back t
   assert.deepEqual(asked.map((x) => x.call), ['customer', 'checkout', 'checkout']);
   assert.equal(asked[0].user, user);
   assert.match(asked[0].email as string, /@/);
-  // Back only to the app's own pages: another is the app's origin instead.
-  assert.deepEqual([asked[1].success, asked[2].success, asked[1].user], ['http://app.test/?part=plan', 'http://app.test', user]);
-  assert.equal((await planOf(s, t)).manage, true);
+  // Back only to the app's own pages: another is the app's origin instead; told how Checkout went.
+  assert.deepEqual([asked[1].success, asked[1].cancel, asked[2].success, asked[1].user],
+    ['http://app.test/?part=plan&plan=paid', 'http://app.test/?part=plan&plan=cancelled', 'http://app.test/?plan=paid', user]);
+  const now = await planOf(s, t);
+  assert.equal(now.manage, true);
+  // What paying costs is said before anyone is sent to pay (Stripe asked once an hour, not once a page).
+  assert.deepEqual(now.price, {amount: 800, currency: 'jpy', interval: 'month', every: 1});
+  await planOf(s, t);
+  assert.equal(stripe.asked.filter((x) => x.call === 'price').length, 1);
   // Billing off: nothing can be bought, and every refusal says so.
   const u = await unsold.person('Hana');
   const off = await unsold.call('POST', '/v1/plan/checkout', {token: u, body: {}});

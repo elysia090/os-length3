@@ -81,7 +81,8 @@ test('Subscribe opens Checkout; once Stripe says it is paid, the Plan says so an
   await plan.openPlan('checkout');
   assert.match(went, /^https:\/\/checkout\.stripe\.test\//);
   const checkout = stripe.asked.find((a) => a.call === 'checkout')!;
-  assert.equal(checkout.success, 'http://app.test/');
+  // Back to the page it left, told how it went.
+  assert.deepEqual([checkout.success, checkout.cancel], ['http://app.test/?plan=paid', 'http://app.test/?plan=cancelled']);
   // Stripe tells the Remote (the stand-in's event, signed as Stripe signs).
   const payload = JSON.stringify({id: `evt_client${process.pid}`, type: 'customer.subscription.created', created: Math.floor(Date.now() / 1000), data: {object: {
     id: 'sub_client', customer: checkout.customer, status: 'active', current_period_end: Math.floor(Date.now() / 1000) + 30 * 86_400, metadata: {user: checkout.user}}}});
@@ -93,4 +94,13 @@ test('Subscribe opens Checkout; once Stripe says it is paid, the Plan says so an
   assert.equal(lifecycle.repoState('two')?.where, 'synced');
   await plan.openPlan('portal');
   assert.match(went, /^https:\/\/billing\.stripe\.test\//);
+});
+
+test('the price is said before paying, in the currency\'s own places, every period as Stripe says it', () => {
+  assert.equal(plan.priceWords({amount: 800, currency: 'jpy', interval: 'month', every: 1}), '¥800 a month');
+  assert.equal(plan.priceWords({amount: 500, currency: 'usd', interval: 'month', every: 3}), '$5.00 every 3 months');
+  assert.equal(plan.priceWords({amount: 6000, currency: 'eur', interval: 'year', every: 1}), '€60.00 a year');
+  // A currency no Intl knows still says its amount.
+  assert.match(plan.priceWords({amount: 12, currency: 'zzz', interval: 'week', every: 1}), /12|ZZZ/);
+  assert.equal(plan.TERMS().length, 3);
 });

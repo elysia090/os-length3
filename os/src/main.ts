@@ -20,7 +20,9 @@ import {onPlugins, pluginsOpen, setPluginsOpen} from './plugins.ts';
 import {learnHome} from './inbox.ts';
 import {begin as lookForNews, look, marks, news, onNews} from './news.ts';
 import {devicePage} from './pages/device.ts';
-import {about, claim, connection, enterWith, mayAsk, onConnection, onReach, remoteAway} from './remote.ts';
+import {checkoutBackPage} from './pages/remote.ts';
+import {about, claim, connection, enterWith, justSignedIn, mayAsk, onConnection, onReach, remoteAway, signInFailed} from './remote.ts';
+import {cameBackFromCheckout} from './plan.ts';
 import {every} from './runs.ts';
 import {heldInvite, holdInvite, inviteIn} from './servers.ts';
 import {getState, loadState} from './state.ts';
@@ -227,13 +229,37 @@ if (asking.has('device')) {
   void loadState().finally(async () => {
     useLang(getState('lang'));
     if (entering) await enterWith(decodeURIComponent(entering));
-    // Back from a provider: take up the session it made, then go on as usual.
+    // Back from a provider: take up the session it made, then go on as usual (Remote's page offers a passkey next).
     if (asking.has('signed-in')) {
-      await claim();
+      if (await claim()) justSignedIn();
       const u = new URL(location.href);
       u.searchParams.delete('signed-in');
       history.replaceState(null, '', u);
       save(PURPOSE_KEY, 'remote');
+    }
+    // Back from a provider without a session (called off there, refused, or run out): the card says why.
+    if (asking.has('sign-in-failed')) {
+      signInFailed(asking.get('error'));
+      const u = new URL(location.href);
+      for (const k of ['sign-in-failed', 'error', 'error_description']) u.searchParams.delete(k);
+      history.replaceState(null, '', u);
+      save(PURPOSE_KEY, 'remote');
+    }
+    // Back from Checkout: Remote's Plan says how it went (paid, or cancelled with nothing charged). In a browser
+    // not signed in here (the app sent it to pay), a page that says so, and to go back to the app.
+    const how = asking.get('plan');
+    if (how === 'paid' || how === 'cancelled') {
+      const u = new URL(location.href);
+      u.searchParams.delete('plan');
+      history.replaceState(null, '', u);
+      if (!connection()) {
+        await new Promise<void>((goOn) => document.body.replaceChildren(checkoutBackPage(how, goOn)));
+        location.reload();
+        return;
+      }
+      cameBackFromCheckout(how);
+      save(PURPOSE_KEY, 'remote');
+      try { localStorage.setItem('length3.part.remote', 'plan'); } catch { /* the part kept, then */ }
     }
     // Which domain is this Remote's, so a name on it is shown alone (`ren`), not as a domain's.
     void learnHome();

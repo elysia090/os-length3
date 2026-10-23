@@ -47,6 +47,11 @@ function wire(env: Local, ctx: Ctx) {
       if (!url.startsWith('https://api.stripe.com/v1/')) return real(input, init);
       const form = new URLSearchParams(String(init?.body ?? ''));
       const path = url.slice('https://api.stripe.com/v1/'.length);
+      // The price, as a GET of prices/<id> (what the Plan shows before anyone pays).
+      if (path.startsWith('prices/')) {
+        const p = await b.api.price();
+        return Response.json({id: path.slice(7), unit_amount: p.amount, currency: p.currency, recurring: {interval: p.interval, interval_count: p.every}});
+      }
       const id = `${path.replace(/\W/g, '_')}_${Date.now().toString(36)}`;
       if (path === 'customers') return Response.json({id: await b.api.customer({user: form.get('metadata[user]') ?? '', email: form.get('email') ?? '', name: form.get('name') ?? ''})});
       if (path === 'checkout/sessions') return Response.json({id, url: await b.api.checkout({customer: form.get('customer') ?? '', user: form.get('client_reference_id') ?? '',

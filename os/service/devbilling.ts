@@ -21,10 +21,12 @@ export function devBilling(base: string, secret: string, origins: string[], deli
   const back = (v: string | null) => { try { const u = new URL(v ?? ''); return origins.includes(u.origin) ? u.toString() : origins[0]; } catch { return origins[0]; } };
   const api: StripeApi = {
     async customer({user}) { return `cus_dev${word(user)}`; },
-    async checkout({customer, user, success}) {
-      return `${base}/dev-billing/checkout?${new URLSearchParams({customer, user, back: success})}`;
+    // Subscribing goes back to `success`; Back, without paying, to `cancel`, as Stripe's Checkout does.
+    async checkout({customer, user, success, cancel}) {
+      return `${base}/dev-billing/checkout?${new URLSearchParams({customer, user, back: success, cancel})}`;
     },
     async portal({customer, back}) { return `${base}/dev-billing/portal?${new URLSearchParams({customer, back})}`; },
+    async price() { return {amount: 800, currency: 'jpy', interval: 'month', every: 1}; },
   };
   const send = async (type: string, object: Record<string, unknown>) => {
     const payload = JSON.stringify({id: `evt_dev${Date.now()}x${++n}`, object: 'event', type, created: Math.floor(Date.now() / 1000), data: {object}});
@@ -42,7 +44,7 @@ export function devBilling(base: string, secret: string, origins: string[], deli
     const hidden = ['customer', 'user', 'back'].map((k) => `<input type="hidden" name="${k}" value="${esc(q.get(k) ?? '')}">`).join('');
     return c.html(page('Development payments', `<p>Subscribe to the paid plan. Nothing is charged: this is the Remote on this machine.</p>
 <form action="act" method="get" style="display:grid;gap:12px">${hidden}<input type="hidden" name="do" value="subscribe"><button>Subscribe</button></form>
-<a href="${esc(back(q.get('back')))}">Back</a>`));
+<a href="${esc(back(q.get('cancel') ?? q.get('back')))}">Back</a>`));
   });
   app.get('/portal', (c) => {
     const q = new URL(c.req.url).searchParams;
