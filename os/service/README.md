@@ -38,7 +38,7 @@ variable of `wrangler.toml`, within what Cloudflare and Neon give free:
 | R2 puts in a month (class A) | `R2_WRITES_MONTH` 900000 | 503, `files: false`, `Retry-After` the next month |
 | R2 gets and heads in a month (class B) | `R2_READS_MONTH` 9000000 | the same; an isolate takes 64 at a time, so most reads ask the database nothing |
 | what one account uploads in a day | `UPLOAD_MB_DAY` 512 | 429, `Retry-After` the next day |
-| the database's size (asked every 5 min by each isolate) | `PG_MB` 450 | what would add to it is 507; reads, deletes and signing in go on |
+| the database's size (asked every 5 min by each isolate) | `PG_MB` 450 | what would add to it is 507; reads, deletes, discarding, signing in (a link too) and Stripe go on. Postgres's files do not shrink as rows go (their room is used again), so once past it, the size comes back under only by `VACUUM FULL` (or Neon's own) |
 | requests a minute, by session or else by address, at the edge (`[[ratelimits]]` LIMITER) | 600 | 429, before the database or R2 is asked |
 
 A put is counted in the transaction that names its blob, so one undone is
