@@ -212,9 +212,14 @@ function make(ctx: Context) {
     }));
     if (!still()) {
       // What moved along the band glides to where it is now; the ink goes from the pill it was on to the one it is on.
+      // What is new on a band that was there (brought out with ⊕, made, opened) comes out of the ⊕ at its end, one
+      // after another, as from where it was kept.
+      let came = 0;
       for (const p of pills.querySelectorAll<HTMLElement>('.pill')) {
         const from = was.get(p.dataset.repo!), to = p.getBoundingClientRect();
         if (from && Math.abs(from.left - to.left) > 1) p.animate([{transform: `translateX(${from.left - to.left}px)`}, {transform: 'none'}], {duration: 240, easing: LAND});
+        else if (!from && was.size) p.animate([{transform: 'translateX(24px)', opacity: 0}, {transform: 'none', opacity: 1}],
+          {duration: 300, delay: came++ * 60, easing: LAND, fill: 'backwards'});
       }
     }
     glide(inkWas, pills.querySelector<HTMLElement>('.pill[aria-current]'), pills, 'var(--r-round)');

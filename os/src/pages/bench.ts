@@ -1,7 +1,7 @@
 import {h} from '../dom.ts';
 import {t} from '../i18n.ts';
 import {paneMark} from '../icons.ts';
-import {paneOut} from '../glide.ts';
+import {arrive, closeUp, paneOut} from '../glide.ts';
 import {onPlugins, pluginsOpen, setPluginsOpen, slots} from '../plugins.ts';
 import {complete, pathWord, Recall} from '../recall.ts';
 import {onChange, store, type Entry} from '../repos.ts';
@@ -70,8 +70,13 @@ let benches = 0;
 export function pluginArea(): HTMLElement {
   const area = h('section', {class: 'plugins', 'aria-label': t('Plugins'), hidden: ''});
   const paint = () => {
+    // Put away, what is under it comes up into its place; opened, it comes down into its own.
+    const was = area.hidden ? 0 : area.getBoundingClientRect().height;
     area.hidden = !pluginsOpen();
-    if (area.hidden) return;
+    if (area.hidden) {
+      if (was && area.nextElementSibling) closeUp([area.nextElementSibling], was, 260);
+      return;
+    }
     const list = slots.all;
     if (!list.length) { area.replaceChildren(); return; }
     const at = slots.shown;
@@ -93,6 +98,7 @@ export function pluginArea(): HTMLElement {
       area.querySelector<HTMLElement>('.slide-stage')?.focus();
     });
     area.replaceChildren(h('div', {class: `slides${list.length === 1 ? ' single' : ''}`, style: `--lead:${at ? 1 : 0}`}, stage));
+    if (!was && area.dataset.shown) arrive(area, -1, 'y', 10, 280);
   };
   const off = onPlugins(() => { if (!area.isConnected && area.dataset.shown) { off(); return; } paint(); });
   paint();

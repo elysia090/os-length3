@@ -7,7 +7,7 @@ import {repoList} from './repo-list.ts';
 import type {Context} from './context.ts';
 import {triangle} from './tree.ts';
 import {errorText} from '../errors.ts';
-import {morph, where} from '../glide.ts';
+import {morph, nudge, where} from '../glide.ts';
 
 /**
  * +: the repo's name on the first line; under it, in a large box, what it
@@ -177,10 +177,10 @@ export function newRepo(ctx: Context): Node[] {
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const n = name.value.trim();
-    if (!validName(n)) { error.textContent = t('Use letters, digits and . _ -, and do not start with .'); name.focus(); return; }
+    if (!validName(n)) { error.textContent = t('Use letters, digits and . _ -, and do not start with .'); name.focus(); nudge(name); return; }
     // A name taken is the name's to change, as a name not allowed is: the keyboard goes back to it, as written.
     // One the Remote keeps and this device does not hold yet is taken too: it is the same repo, not another of that name.
-    if ((await store.list()).some((r) => r.name === n) || remoteOnly().some((r) => r.name === n)) { error.textContent = t('There is a repo named {name} already', {name: n}); name.focus(); return; }
+    if ((await store.list()).some((r) => r.name === n) || remoteOnly().some((r) => r.name === n)) { error.textContent = t('There is a repo named {name} already', {name: n}); name.focus(); nudge(name); return; }
     // A file that cannot be named so is the box's to change: the keyboard goes to it.
     const {problem} = laid();
     if (problem) { inputs.get(problem.path)?.focus(); return; }

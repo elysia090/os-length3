@@ -1,4 +1,5 @@
 import {bytes, h} from '../dom.ts';
+import {closeUp, nudge} from '../glide.ts';
 import {t} from '../i18n.ts';
 import {mark} from '../icons.ts';
 import {bring, remoteOnly} from '../lifecycle.ts';
@@ -305,7 +306,8 @@ export class FileTree {
     item.append(children);
 
     const fill = async () => {
-      children.replaceChildren(note('…', depth + 1));
+      // Read again (a row made, renamed or taken away in it), its rows stay until what it holds now is read: no blink of “…”.
+      if (!children.querySelector(':scope > [role=treeitem]')) children.replaceChildren(note('…', depth + 1));
       let entries: SystemEntry[];
       try { entries = await list(e.path); } catch (err) {
         children.replaceChildren(note(errorText(err), depth + 1));
@@ -364,6 +366,14 @@ export class FileTree {
     this.letGo();
   }
 
+  /** The row a deed of its menu made or renamed, landing lit where it is now: what was done is seen done. */
+  private landed(path: string) {
+    const row = this.nameAt(path)?.closest<HTMLElement>('.tree-row');
+    if (!row) return;
+    row.classList.add('landing');
+    row.addEventListener('animationend', (e) => { if (e.animationName === 'line-lit') row.classList.remove('landing'); });
+  }
+
   /** The folder row `item` read again and open. */
   private async again(item: HTMLElement | null) {
     if (item) await this.folders.get(item)?.();
@@ -405,9 +415,9 @@ export class FileTree {
         const v = input.value.trim();
         if (!v || input.disabled) return;
         error.textContent = '';
-        if (!plainPart(v)) { error.textContent = t('A name has no “/” and does not start with “.”'); input.focus(); return; }
+        if (!plainPart(v)) { error.textContent = t('A name has no “/” and does not start with “.”'); input.focus(); nudge(input); return; }
         input.disabled = yes.disabled = true;
-        try { await go(v); } catch (err) { input.disabled = yes.disabled = false; error.textContent = errorText(err); input.focus(); }
+        try { await go(v); } catch (err) { input.disabled = yes.disabled = false; error.textContent = errorText(err); input.focus(); nudge(input); }
       };
       input.addEventListener('keydown', (event) => {
         if (event.key !== 'Enter' || event.isComposing) return;
@@ -444,6 +454,7 @@ export class FileTree {
         this.unpop();
         await this.again(item);
         this.nameAt(`${e.path}/${n}`)?.focus();
+        this.landed(`${e.path}/${n}`);
       })));
     }
     if (at.path !== '') {
@@ -459,6 +470,7 @@ export class FileTree {
         this.unpop();
         await this.again(parent);
         this.nameAt(renamed(e.path, n))?.focus();
+        if (n !== e.name) this.landed(renamed(e.path, n));
       })));
       rows.push(entry(t('Delete'), (b) => {
         // Asked in its place: the deed on the side it was pressed, Not now on the other.
@@ -477,8 +489,12 @@ export class FileTree {
           try {
             await store.remove(at.repo, at.path);
             for (const p of [...expandedPaths]) if (p === e.path || p.startsWith(`${e.path}/`)) expandedPaths.delete(p);
+            // The rows under it come up into its place, from where they stood.
+            const gap = item.getBoundingClientRect().height;
+            const place = [...item.parentElement?.children ?? []].indexOf(item);
             this.unpop();
             await this.again(parent);
+            closeUp([...parent?.querySelector(':scope > .tree-children')?.children ?? []].slice(place), gap);
             parent?.querySelector<HTMLElement>(':scope > .tree-row > .tree-name')?.focus();
           } catch (err) { yes.disabled = false; error.textContent = errorText(err); }
         });

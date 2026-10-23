@@ -2,7 +2,7 @@ import {h} from '../dom.ts';
 import {errorText} from '../errors.ts';
 import {t} from '../i18n.ts';
 import {icon} from '../icons.ts';
-import {pop} from '../glide.ts';
+import {glide, pop, where} from '../glide.ts';
 import {purpose, RAIL, type PurposeId} from '../purposes.ts';
 
 export function pageHead(id: PurposeId): HTMLElement {
@@ -155,6 +155,8 @@ export function parts<K extends string>(page: string, list: readonly {id: K; lab
   }
   let now: K = list[0].id;
   const show = (k: K) => {
+    // Chosen, the ink goes from the part it was on to this one, as along the rail and the band.
+    const was = now !== k && bar.isConnected ? where(tabs.get(now)?.tab) : null;
     now = k;
     for (const [id, x] of tabs) {
       const on = id === k;
@@ -165,6 +167,7 @@ export function parts<K extends string>(page: string, list: readonly {id: K; lab
       if (on && bar.isConnected && bar.scrollWidth > bar.clientWidth) x.tab.scrollIntoView({block: 'nearest', inline: 'nearest'});
     }
     try { localStorage.setItem(key, k); } catch { /* convenience only */ }
+    glide(was, tabs.get(k)!.tab, bar, 'var(--r-round)');
     for (const f of heard) f(k);
   };
   let kept: string | null = null;
@@ -175,7 +178,14 @@ export function parts<K extends string>(page: string, list: readonly {id: K; lab
     panel: (k) => tabs.get(k)!.panel,
     show,
     current: () => now,
-    count: (k, n) => { tabs.get(k)!.small.textContent = n ? `${n}` : ''; },
+    // A count that changes while it is seen (a Prompt stopped, an issue written) gives a small beat as it does.
+    count: (k, n) => {
+      const small = tabs.get(k)!.small, to = n ? `${n}` : '';
+      if (small.textContent === to) return;
+      const seen = small.textContent !== '' && small.isConnected;
+      small.textContent = to;
+      if (seen && to) pop(small, .12, 300);
+    },
     offer: (k, on) => {
       tabs.get(k)!.tab.hidden = !on;
       if (!on && now === k) show(list.find((p) => !tabs.get(p.id)!.tab.hidden)?.id ?? list[0].id);

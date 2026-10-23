@@ -125,6 +125,22 @@ export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340, r
   return true;
 }
 
+/**
+ * A name that cannot be (taken, or not a name): the field gives a short shake, side to side and less each time, as
+ * a head does saying no, while the keyboard goes back to it. Once, never on its own.
+ */
+export function nudge(el: Element | null) {
+  if (still() || !el) return;
+  el.animate([{translate: '0 0'}, {translate: '-5px 0'}, {translate: '4px 0'}, {translate: '-2px 0'}, {translate: '1px 0'}, {translate: '0 0'}],
+    {duration: 300, easing: 'ease-out'});
+}
+
+/** What stood under something taken away closes up over where it was (`by` pixels), rather than being there at once. */
+export function closeUp(els: Element[], by: number, ms = 220) {
+  if (still() || !by) return;
+  for (const el of els) el.animate([{translate: `0 ${by}px`}, {translate: '0 0'}], {duration: ms, easing: LAND});
+}
+
 /** A thing just done is rewarded: it pops past its size and settles (a TODO's mark once done). */
 export function pop(el: Element, by = .16, ms = 380) {
   if (still()) return;

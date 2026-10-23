@@ -184,9 +184,11 @@ a { color: var(--ink); }
   /* As wide as it needs, but never past the window's own gutter (a 320 px phone has 194 px beside the rail). */
   min-width: min(280px, calc(100vw - 2 * var(--outer) - var(--rail)));
   max-width: calc(100vw - 2 * var(--outer) - var(--rail));
-  visibility: hidden; opacity: 0; transition: opacity var(--motion), visibility 0s var(--motion);
+  visibility: hidden; opacity: 0; translate: 0 6px; transition: opacity var(--motion), translate var(--move) var(--land), visibility 0s var(--motion);
 }
-.me-wrap.open .me-pop { visibility: visible; opacity: 1; transition: opacity var(--motion), visibility 0s; }
+/* Out, it rises the last few pixels up from the face it came from as it shows. */
+.me-wrap.open .me-pop { visibility: visible; opacity: 1; translate: 0 0; transition: opacity var(--motion), translate var(--move) var(--land), visibility 0s; }
+@media (prefers-reduced-motion: reduce) { .me-pop, .me-wrap.open .me-pop { translate: none; } }
 .me-who { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) var(--s3) var(--s3); }
 /* The face again, the size of the button, beside the name. */
 .me-who > :first-child { display: grid; place-items: center; flex: none; width: 36px; height: 36px; border: 1px solid var(--rule); border-radius: var(--r-round); font: 600 var(--t-meta) var(--sans); }
@@ -476,7 +478,7 @@ kbd {
 /* Git: issues read from each repo's issue/ */
 .git-filter { margin-top: var(--s5); }
 /* Git's repos are one row that slides sideways, never more rows: a ring kept clear of its edge. */
-.git-filter > .chips { position: relative; flex-wrap: nowrap; overflow-x: auto; margin: calc(-1 * var(--s1)); padding: var(--s1); }
+.git-filter > .chips { position: relative; isolation: isolate; flex-wrap: nowrap; overflow-x: auto; margin: calc(-1 * var(--s1)); padding: var(--s1); }
 .git-filter > .chips > .chip { flex: none; }
 /* Git's column keeps its width whether it scrolls or not (read, then its words changed). */
 .git-flow { scrollbar-gutter: stable; }
@@ -966,7 +968,7 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .search-results { display: flex; flex-direction: column; gap: var(--s3); max-height: none; overflow: visible; }
 /* Issue, diff and Output at the large box's left end, standing on it: their foot a hair (s1) over its top, up
    beside the search box rather than level with it, so the three and the box they switch read as one. */
-.search-pills { display: flex; gap: var(--s2); position: absolute; left: var(--s3); bottom: calc(100% - var(--s3) + var(--s1)); }
+.search-pills { display: flex; gap: var(--s2); isolation: isolate; position: absolute; left: var(--s3); bottom: calc(100% - var(--s3) + var(--s1)); }
 /* Over the shade they stand on the ground, as they do on the page. */
 .search-pills > .chip:not([aria-pressed='true']) { background: var(--ground); }
 .search-panel { min-width: 0; }
@@ -1045,7 +1047,7 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
   .work.bench.pane-out > .side { grid-template-columns: minmax(0, 1fr); }
   .work.bench .search-results { left: auto; right: 0; width: min(360px, calc(100vw - var(--rail) - 2 * var(--s4))); }
   /* No room on the top line here: Issue, diff and Output at the top of what opens. */
-  .search-pills { position: static; }
+  .search-pills { position: relative; }
 }
 /* One line to type in, the same everywhere: the search box, a repo's name. */
 .search-in, .line-in {
@@ -1365,12 +1367,15 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
    chosen one an ink fill like anything chosen; only its part is shown. */
 .part-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s3); margin-top: var(--s5); }
 .away-line { margin-top: var(--s4); }
-.parts { display: flex; flex-wrap: wrap; gap: var(--s1); }
+.parts { position: relative; isolation: isolate; display: flex; flex-wrap: wrap; gap: var(--s1); }
+/* While the ink goes to it, its edge is not yet the ink's (glide.ts): a part has none, a chip or a pill its own. */
+.part.arriving { border-color: transparent !important; }
+.chip.arriving, .pill.arriving { border-color: var(--edge) !important; }
 .part {
   height: var(--h-control); padding: 0 var(--s4); border: 1px solid transparent; border-radius: var(--r-round);
   background: transparent; color: var(--sub); font: inherit; font-size: var(--t-body); font-weight: 600; cursor: pointer;
 }
-.part small { margin-left: var(--s2); font-weight: 400; font-size: var(--t-meta); }
+.part small { display: inline-block; margin-left: var(--s2); font-weight: 400; font-size: var(--t-meta); }
 .part small:empty { display: none; }
 .part:hover { background: var(--raised); color: var(--ink); }
 .part[aria-selected='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
@@ -1416,6 +1421,17 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 .done-mark.fresh { animation: done-land 440ms cubic-bezier(.2, 1.5, .32, 1) both; }
 .done-mark.fresh::after { animation: tick-in 220ms 200ms ease-out both; }
 @keyframes done-land { from { scale: .3; opacity: 0; } }
+/* An issue closed from its box lands as its line under Closed: in from above, lit with the marker a moment. */
+.done-row.landing { animation: line-land 360ms var(--land) both, line-lit 1200ms ease-out; border-radius: var(--r-field); }
+@keyframes line-land { from { translate: 0 -12px; opacity: 0; } }
+@keyframes line-lit { from, 30% { background: color-mix(in srgb, var(--marker) 55%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .done-row.landing { animation: none; } }
+/* A Prompt stopped from its card: what it gave back is lit a moment (runtime.ts). */
+/* A row of the tree a deed made or renamed lands lit where it now is. */
+.tree-row.landing { animation: line-land 360ms var(--land) both, line-lit 1200ms ease-out; }
+@media (prefers-reduced-motion: reduce) { .tree-row.landing { animation: none; } }
+.card.just-stopped > .muted.small { border-radius: var(--r-field); animation: line-lit 1400ms ease-out; }
+@media (prefers-reduced-motion: reduce) { .card.just-stopped > .muted.small { animation: none; } }
 @keyframes tick-in { from { clip-path: inset(0 0 100% 0); } }
 @media (prefers-reduced-motion: reduce) { .done-mark.fresh, .done-mark.fresh::after { animation: none; } }
 .stage-diff summary { cursor: pointer; color: var(--sub); }

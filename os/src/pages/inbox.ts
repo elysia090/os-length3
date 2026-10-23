@@ -12,7 +12,7 @@ import {goToPlan, planRefused, planSaid, signInBox, signInPlace} from './remote.
 import {plan as readPlan} from '../plan.ts';
 import type {Context} from './context.ts';
 import {errorText} from '../errors.ts';
-import {arrive, morph, where} from '../glide.ts';
+import {arrive, morph, nudge, where} from '../glide.ts';
 
 // Inbox: what comes to you, typed, from people found by address. Not a mail
 // screen: each message says what it is (a message, a review request, a
@@ -69,7 +69,7 @@ function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLE
       error.textContent = '';
       name.readOnly = true;
       take!.disabled = true;
-      try { await inbox.claim(name.value); again(); } catch (err) { const plan = planRefused(err, toPlan); if (plan) error.replaceChildren(plan); else error.textContent = errorText(err); } finally { name.readOnly = false; take!.disabled = false; }
+      try { await inbox.claim(name.value); again(); } catch (err) { const plan = planRefused(err, toPlan); if (plan) error.replaceChildren(plan); else { error.textContent = errorText(err); nudge(stub); } } finally { name.readOnly = false; take!.disabled = false; }
     };
     name.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) void claim(); });
     take = button(t('Take it'), 'primary');

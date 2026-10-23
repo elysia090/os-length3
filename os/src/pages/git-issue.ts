@@ -72,6 +72,13 @@ const doing = (b: HTMLButtonElement, error: HTMLElement, f: () => Promise<unknow
 };
 /** The step just done here, for a moment: its done mark, drawn next, lands rather than being there (slot). */
 let justDone: {word: string; until: number} | null = null;
+/** The issue closed here just now, for a moment: its line under Closed lands rather than being there (git-done.ts). */
+let closedNow: {repo: string; path: string; until: number} | null = null;
+export const justClosed = (i: Issue): boolean => {
+  const yes = !!closedNow && closedNow.repo === i.repo && closedNow.path === issuePath(i) && performance.now() < closedNow.until;
+  if (yes) closedNow = null;
+  return yes;
+};
 /** The issue started here last, and when: its steps unfold, through a draw again or two (issueBox). */
 let started: {path: string; at: number} | null = null;
 
@@ -135,7 +142,10 @@ export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEv
   if (known && !here && change?.state !== 'open' && s?.work?.line === 'main') {
     leave = button(t('Close'));
     leave.title = t('Will not be done: it goes under Closed, where it can be reopened');
-    leave.addEventListener('click', doing(leave, error, () => closeIssue(issue), after));
+    leave.addEventListener('click', doing(leave, error, async () => {
+      await closeIssue(issue);
+      closedNow = {repo: issue.repo, path: issuePath(issue), until: performance.now() + 3000};
+    }, after));
   }
   // At the box's foot, opposite its action: its repo and, quietly, who started it and when.
   const say = !connection() ? t('History and work are kept on the Remote. Sign in to it to work on an issue and commit.') : s?.error ?? standing(s, issue);

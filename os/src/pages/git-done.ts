@@ -5,7 +5,7 @@ import {closedBy, numberOf, type Issue} from '../issues.ts';
 import {kindOf} from '../text.ts';
 import {answers, askFoot, SETTLE} from './common.ts';
 import {diffFiles} from './diff-view.ts';
-import {notCommitted, reopenIssue, type IssueEvents} from './git-issue.ts';
+import {justClosed, notCommitted, reopenIssue, type IssueEvents} from './git-issue.ts';
 import {errorText} from '../errors.ts';
 
 // What Git shows under the issues: what main has not committed (with its
@@ -108,6 +108,7 @@ export function closedList(list: {issue: Issue; reopen: boolean}[], all: boolean
         try { await reopenIssue(i); after(); } catch (e) { error.textContent = errorText(e); act!.disabled = false; }
       });
     }
-    return h('div', {class: 'done-row done-head'}, named(i.n, i.kind, i.title), h('span', {class: 'muted small'}, all ? `${i.repo} · ${meta}` : meta), h('span', {class: 'grow'}), act, error);
+    // Closed just now from its box: its line lands here, lit a moment, where the eye goes after it.
+    return h('div', {class: justClosed(i) ? 'done-row done-head landing' : 'done-row done-head'}, named(i.n, i.kind, i.title), h('span', {class: 'muted small'}, all ? `${i.repo} · ${meta}` : meta), h('span', {class: 'grow'}), act, error);
   }));
 }

@@ -262,6 +262,9 @@ function card(name: string, lines: (string | Node)[], act: Node | null, extra = 
     act ? h('div', {class: 'card-foot'}, h('span', {class: 'grow'}), act) : null);
 }
 
+/** The repos whose Prompt was stopped from its card just now, until their card says so (and lights what it gave back). */
+const stoppedNow = new Set<string>();
+
 /** The Prompts running, each a small card: where it runs, the memory it holds, and Stop. Shown only when one runs. */
 // Which repos' Prompts may reach the network: this device's grant (core's home `network`, which l3 reads too).
 const granted = (): string[] => { try { return JSON.parse(getState('network') ?? '[]') as string[]; } catch { return []; } };
@@ -324,11 +327,13 @@ function prompts(shown_: (running: number, any: boolean) => void = () => {}, cha
         if (!watched.has(s)) watched.set(s, s.watch(paint));
         if (!s.running && s.stopped) {
           const st = s.stopped;
+          // Stopped just now from here: what it gave back is lit a moment, the reward for stopping it.
+          const now = !st.left && stoppedNow.delete(repo);
           return card(repo, [st.left ? tn('{n} left', '{n} left', st.left)
-            : `${t('Stopped · gave back {size}', {size: bytes(st.before.memory)})}${st.ms !== null ? ` · ${st.ms} ms` : ''}`], null, 'quiet');
+            : `${t('Stopped · gave back {size}', {size: bytes(st.before.memory)})}${st.ms !== null ? ` · ${st.ms} ms` : ''}`], null, now ? 'quiet just-stopped' : 'quiet');
         }
         const stop = button(t('Stop'), 'small-button');
-        stop.addEventListener('click', () => s.stop());
+        stop.addEventListener('click', () => { stoppedNow.add(repo); s.stop(); });
         // In a browser, what it keeps for programs it ran can go without stopping it.
         const free = s.spare ? button(t('Free {size}', {size: bytes(s.spare)}), 'small-button') : null;
         free?.addEventListener('click', () => s.free());

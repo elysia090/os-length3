@@ -3,7 +3,7 @@ import {t} from '../i18n.ts';
 import {getState, setState} from '../state.ts';
 import * as todo from '../todo.ts';
 import {errorText} from '../errors.ts';
-import {arrive, pop} from '../glide.ts';
+import {arrive, closeUp, pop} from '../glide.ts';
 
 // The TODO box, Home's and each server board's: the same list, kept in
 // different places (Home's state; the Remote, for a board's people). Each
@@ -108,11 +108,13 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
     r.kind.replaceChildren(...(td.kind ? kindWords(td.kind) : []));
     r.kind.hidden = !td.kind;
     if (understood) pop(r.kind, .1, 300);
-    // Done just now: its mark pops and settles, the reward for it, once.
+    // Done just now: its mark pops and settles, the reward for it, once. Taken back, it gives a smaller beat.
     const now = td.done && !r.item.classList.contains('done') && r.item.isConnected;
+    const back = !td.done && r.item.classList.contains('done') && r.item.isConnected;
     r.item.classList.toggle('done', td.done);
     r.button.replaceChildren(mark(td.done));
     if (now) pop(r.button);
+    else if (back) pop(r.button, .06, 260);
     r.button.setAttribute('aria-pressed', String(td.done));
     r.button.setAttribute('aria-label', td.done ? t('Mark as not done') : t('Mark as done'));
     r.meta.textContent = todo.filled(td) ? date(td.created) : '';
@@ -198,9 +200,13 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
           e.preventDefault();
           const before = neighbour(td.id, -1);
           const after = neighbour(td.id, 1);
+          const gap = row.item.getBoundingClientRect().height;
+          const below = items.slice(items.findIndex((x) => x.id === td.id) + 1).map((x) => x.id);
           items = todo.remove(items, td.id);
           save();
           render();
+          // The lines under it close up over where it was, rather than being there at once.
+          closeUp(below.map((id) => rows.get(id)?.item).filter((el): el is HTMLElement => !!el), gap);
           const r = rows.get(before ?? after ?? '');
           if (r) caret(r.detail.hidden ? r.title : r.detail, 'end');
         }

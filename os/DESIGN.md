@@ -113,6 +113,23 @@ Every value in `styles.css` comes from a token (§2).
     pressed and done gives a small pop where it was pressed, and so does a
     name or code copied; a message sent comes up out of the box it was
     written in, one come in from the other's side.
+  - *Every deed answers where it was done.* What a press changes never changes
+    silently. The ink goes from one to the other between a page's
+    parts (Runtime's, Remote's), Git's repos and the search's kinds as it
+    does along the rail and the band, and a part's count that changes
+    while seen gives a beat; another repo chosen in Git brings its issue
+    in. A repo brought back to the band comes out of the ⊕. An issue
+    closed lands in Closed and is lit a moment there; a Prompt stopped has
+    its card's line lit. A profile saved has its name come down into place
+    and its picture pop; Edit profile brings the form down. A TODO marked
+    not done gives its mark a small pop; a line taken away, the lines under
+    it come up into its place, as the rows under a file or folder deleted
+    in File do; a row made or renamed there lands lit. A name refused
+    (taken, or one it cannot be) shakes its field, a small no, the reason
+    under it. Server's layer put away goes out to the left as it fades
+    (180 ms), and its sheet changed (the gear, Done) comes in; the
+    person's menu rises into place; the plugin area comes down into the
+    pane's head and, put away, the Prompt rises into its place.
   - *A move is never cut.* What is drawn again just as it was is left as
     it is, so a move under way goes on (the band's ink between two pills
     when one deed draws the band twice). What is drawn while a page arrives

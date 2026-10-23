@@ -1,4 +1,5 @@
 import {h} from '../dom.ts';
+import {arrive, glide, where} from '../glide.ts';
 import * as gitops from '../history.ts';
 import {t} from '../i18n.ts';
 import {number, readIssues, type Issue} from '../issues.ts';
@@ -96,12 +97,20 @@ export function git(ctx: Context): Node[] {
   const paintChips = () => {
     // A chip pressed from the keyboard keeps it when the row is drawn again.
     const had = [...chips.children].indexOf(document.activeElement as Element);
+    const inkWas = where(chips.querySelector('[aria-checked="true"]'));
     chips.replaceChildren(...[ALL, ...repos].map((r) => {
       const b = h('button', {type: 'button', class: 'chip', role: 'radio', 'aria-checked': String(filter === r)}, r || t('All'));
       // Pressed with the pointer while an issue is being written, it only said where: the words take the keyboard back.
-      b.addEventListener('click', (e) => { filter = r; paintChips(); if (r) { look(r, true); form.retarget(r); if (e.detail && !form.element.hidden) form.writeOn(); } void paint(); });
+      // Another chosen: the issues it shows come in after the ink has gone to it.
+      b.addEventListener('click', (e) => {
+        const other = filter !== r;
+        filter = r; paintChips(); if (r) { look(r, true); form.retarget(r); if (e.detail && !form.element.hidden) form.writeOn(); }
+        void paint().then(() => { if (other) arrive(stage.hidden ? empty : stage, 1, 'y', 10, 260); });
+      });
       return b;
     }));
+    // The ink goes from the chip it was on to the one chosen, as along the rail and the band.
+    glide(inkWas, chips.querySelector<HTMLElement>('[aria-checked="true"]'), chips, 'var(--r-round)');
     if (had >= 0) (chips.children[had] as HTMLElement | undefined)?.focus({preventScroll: true});
     // The chosen one is kept in view as the row slides.
     const on = chips.querySelector<HTMLElement>('[aria-checked="true"]');

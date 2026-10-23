@@ -1,4 +1,5 @@
 import {h} from '../dom.ts';
+import {glide, where} from '../glide.ts';
 import {diffFiles, fileName} from './diff-view.ts';
 import * as gitops from '../history.ts';
 import {issueName, issuePath, readIssues, type Issue} from '../issues.ts';
@@ -211,9 +212,14 @@ export class Reference {
   /** A pill pressed shows what of its kind there is (or what of it was found); pressed again, it lets go. */
   private press(kind: Kind) {
     if (!this.repo) return;
+    // From one kind to another the ink goes along the row to it, as along Git's.
+    const was = this.pill && this.pill !== kind ? where(this.pillButtons.get(this.pill)) : null;
     pills.set(this.repo, this.pill === kind ? null : kind);
     this.close();
     void this.draw();
+    this.paintPills();
+    const to = this.pillButtons.get(kind);
+    if (to?.parentElement) glide(was, to, to.parentElement, 'var(--r-round)');
     this.query.focus({preventScroll: true});
   }
 

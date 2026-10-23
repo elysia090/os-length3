@@ -6,7 +6,7 @@ import {connection, onConnection, RemoteError} from '../remote.ts';
 import * as servers from '../servers.ts';
 import type {Context} from './context.ts';
 import {cameTo, timeline} from './talk.ts';
-import {pop} from '../glide.ts';
+import {arrive, nudge, pop} from '../glide.ts';
 import {dockFor} from './server-dock.ts';
 import {mark as todoMark} from './todo-box.ts';
 import {boardTodo} from './server-todo.ts';
@@ -79,19 +79,19 @@ export class ServerLayer {
     document.addEventListener('pointerdown', (event) => {
       const at = event.target as Node;
       if (!this.isOpen || this.trigger?.contains(at) || this.element.contains(at) || this.holding()) return;
-      this.close();
+      this.close(true);
     });
     // Signed in or out (or the session ended elsewhere): what is out is built again for who is here now.
     onConnection(() => { if (this.isOpen) this.element.replaceChildren(this.build()); });
     document.addEventListener('keydown', (event) => {
       if (event.key !== 'Escape' || !this.isOpen) return;
       if (this.back()) return;
-      this.close();
+      this.close(true);
       this.trigger?.focus();
     });
   }
 
-  get isOpen() { return this.element.isConnected; }
+  get isOpen() { return this.element.isConnected && !this.leaving; }
 
   /** The rail's Server button. */
   attach(button: HTMLElement) {
@@ -101,7 +101,7 @@ export class ServerLayer {
     button.addEventListener('pointerenter', () => this.later(true, this.isOpen ? 0 : OPEN_DELAY));
     button.addEventListener('pointerleave', () => this.leave());
     button.addEventListener('click', () => {
-      if (this.isOpen && this.pinned) { this.close(); return; }
+      if (this.isOpen && this.pinned) { this.close(true); return; }
       this.open(true);
     });
   }
@@ -110,12 +110,14 @@ export class ServerLayer {
 
   private later(open: boolean, after: number) {
     clearTimeout(this.timer);
-    this.timer = window.setTimeout(() => (open ? this.open(false) : (this.writing() ? undefined : this.close())), after);
+    this.timer = window.setTimeout(() => (open ? this.open(false) : (this.writing() ? undefined : this.close(true))), after);
   }
 
   /** Bring it out; `stay`: by a press, so it stays until put away. */
   open(stay: boolean) {
     clearTimeout(this.timer);
+    // Brought back while it was going: it is built again, at once.
+    if (this.leaving) { this.leaving.cancel(); this.leaving = null; this.element.style.pointerEvents = ''; this.element.replaceChildren(); this.element.remove(); }
     if (stay) this.pinned = true;
     // Brought out to stay, it covers the page: the keyboard goes from the rail into it, not to the page behind it.
     if (stay) document.getElementById('page')?.setAttribute('inert', '');
@@ -125,16 +127,28 @@ export class ServerLayer {
     this.trigger?.setAttribute('aria-expanded', 'true');
   }
 
-  close() {
+  /** Its going, while it goes (put away by the person, it fades the way it came from). */
+  private leaving: Animation | null = null;
+
+  /**
+   * Put it away. `gently`: by the person (Escape, a press outside, the rail's Server, the pointer gone), it goes the
+   * way it came, fading (180 ms); otherwise (another page come to, a way out of it taken) at once, as the page moves.
+   */
+  close(gently = false) {
     clearTimeout(this.timer);
     this.pinned = false;
     document.getElementById('page')?.removeAttribute('inert');
     this.writing = () => false;
     this.holding = () => false;
     this.back = () => false;
-    this.element.replaceChildren();
-    this.element.remove();
     this.trigger?.setAttribute('aria-expanded', 'false');
+    const gone = () => { this.leaving = null; this.element.style.pointerEvents = ''; this.element.replaceChildren(); this.element.remove(); };
+    if (!gently || !this.element.isConnected || matchMedia('(prefers-reduced-motion: reduce)').matches) { this.leaving?.cancel(); gone(); return; }
+    if (this.leaving) return;
+    // Going, it is no longer pressed: a press lands on what is under it.
+    this.element.style.pointerEvents = 'none';
+    this.leaving = this.element.animate([{opacity: 1, transform: 'none'}, {opacity: 0, transform: 'translateX(-16px)'}], {duration: 180, easing: 'ease-in'});
+    this.leaving.finished.then(gone, () => {});
   }
 
   private build(): HTMLElement {
@@ -185,6 +199,8 @@ export class ServerLayer {
     // ---- the boards' place: the boxes, or behind the gear, or a repo shown ----
     let showing: 'boards' | 'settings' | 'repo' = 'boards';
     const place = (now: typeof showing) => {
+      // Going behind the gear (or to a repo shown), the sheet comes in from a step away; back, the boards come in.
+      if (now !== showing) arrive(now === 'boards' ? slides : sheet, now === 'boards' ? -1 : 1, 'x', 16, 260);
       showing = now;
       slides.hidden = now !== 'boards';
       dock.hidden = now !== 'boards';
@@ -429,6 +445,7 @@ export class ServerLayer {
             // letters follows to nothing): the address shows, to be written otherwise.
             reveal();
             ask.textContent = errorText(e);
+            nudge(naming?.querySelector('.server-naming') ?? null);
           } else if (e instanceof RemoteError && e.status === 409) {
             const inbox = button(t('Go to Inbox'), 'small-button');
             inbox.addEventListener('click', () => { this.close(); this.ctx.go('inbox'); });

@@ -12,9 +12,11 @@ import {onRightPane, pluginArea, rightPaneOpen, setRightPane} from './bench.ts';
 import {mark, paneMark} from '../icons.ts';
 import {onPlugins, pluginsOpen} from '../plugins.ts';
 import {errorText} from '../errors.ts';
-import {paneOut} from '../glide.ts';
+import {arrive, paneOut, pop} from '../glide.ts';
 
 let editing = false;
+/** The profile was just saved (or its form just opened): Home drawn next gives it its beat. */
+let beat: 'saved' | 'editing' | null = null;
 
 /** The profile as it stands (Home's state, see state.ts), for Home and the rail's own icon. */
 export const currentProfile = (): Profile => parse(getState('profile'));
@@ -35,11 +37,14 @@ export function home(ctx: Context): Node[] {
   const grid = list.element;
   // About three across at a laptop's width (styles.css): Home's own, so New repo's list and other grids stay as they are.
   grid.classList.add('home-repos');
-  const header = h('section', {class: 'profile'},
-    h('div', {class: 'avatar', 'aria-hidden': 'true'}, initials(profile) || mark('person')),
-    editing ? editForm(ctx) : identity(count),
-    owner && !editing ? editButton(ctx) : null,
-  );
+  const avatar = h('div', {class: 'avatar', 'aria-hidden': 'true'}, initials(profile) || mark('person'));
+  const who = editing ? editForm(ctx) : identity(count);
+  const header = h('section', {class: 'profile'}, avatar, who, owner && !editing ? editButton(ctx) : null);
+  // Saved, the name written lands where it is shown and the face takes it in; the form opened unfolds where the
+  // name was.
+  if (beat === 'saved') { arrive(who, -1, 'y', 8, 300); pop(avatar, .08, 360); }
+  else if (beat === 'editing') arrive(who, -1, 'y', 6, 220);
+  beat = null;
   // A setting that could not be read is said here, where the person looks first; it is not written over meanwhile.
   const unread = [...unreadable()].map(([k, why]) => h('p', {class: 'error', role: 'alert'}, t('{what} could not be read ({why})', {what: settingName(k), why})));
   const main = h('div', {class: 'home-main'}, header, ...unread, todoBox(),
@@ -110,7 +115,7 @@ function identity(repoCount: HTMLElement): HTMLElement {
 
 function editButton(ctx: Context): HTMLElement {
   const b = h('button', {class: 'button', type: 'button'}, t('Edit profile'));
-  b.addEventListener('click', () => { editing = true; ctx.rerender(); document.getElementById('profile-name')?.focus(); });
+  b.addEventListener('click', () => { editing = true; beat = 'editing'; ctx.rerender(); document.getElementById('profile-name')?.focus(); });
   return b;
 }
 
@@ -138,6 +143,7 @@ function editForm(ctx: Context): HTMLElement {
       return;
     }
     editing = false;
+    beat = 'saved';
     ctx.rerender();
   });
   form.querySelector('[data-cancel]')!.addEventListener('click', () => { editing = false; ctx.rerender(); });
