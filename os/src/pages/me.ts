@@ -2,7 +2,7 @@ import {h} from '../dom.ts';
 import {currentLang, LANGS, setLang, t} from '../i18n.ts';
 import {mark} from '../icons.ts';
 import {connection, signOut} from '../remote.ts';
-import {setState} from '../state.ts';
+import {onState, setState} from '../state.ts';
 import {initials, type Profile} from '../profile.ts';
 import {choosePart} from './common.ts';
 import type {Context} from './context.ts';
@@ -84,6 +84,8 @@ export class Me {
     };
     this.element = h('div', {class: 'me-wrap'}, this.button, this.pop);
     this.paint();
+    // The profile saved (on Home, or from another device): the face on the rail is the new one at once.
+    onState((key) => { if (key === 'profile') this.paint(); });
     this.element.addEventListener('pointerenter', () => this.later(true, OPEN_DELAY));
     this.element.addEventListener('pointerleave', () => this.later(false, CLOSE_DELAY));
     this.button.addEventListener('click', (event) => {

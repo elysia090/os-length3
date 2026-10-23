@@ -94,8 +94,9 @@ export function paneOut(side: HTMLElement, toggle: HTMLElement) {
 
 /**
  * A thing opened from where it was shown (a repo's card on Home, its row in File) becomes the box it opens as:
- * an outline grows from `from` (measured before the page changed) to the box found by `find` once it is on the
- * screen, and fades as it lands, so the eye goes with the repo instead of starting over on a new page.
+ * a sheet grows from `from` (measured before the page changed) to the box found by `find` once it is on the
+ * screen, so the eye goes with the repo instead of starting over on a new page. The box it becomes waits out of
+ * sight while the sheet goes to it, and shows as the sheet lands: one box the whole way, never two at once.
  */
 export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340, round = '') {
   if (still() || !from.width) return false;
@@ -119,8 +120,14 @@ export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340, r
       else box.animate([{opacity: 1}, {opacity: 0}], {duration: 160, fill: 'forwards'}).finished.then(done, done);
       return;
     }
-    box.animate([{...rect(from), opacity: 1}, {...rect(at), opacity: 1, offset: .82}, {...rect(at), opacity: 0}], {duration: ms, easing: LAND, fill: 'forwards'})
-      .finished.then(done, done);
+    to.style.visibility = 'hidden';
+    const shown = () => { to.style.visibility = ''; };
+    box.animate([rect(from), rect(at)], {duration: ms, easing: LAND, fill: 'forwards'}).finished.then(() => {
+      // Landed: the box is there under it, and the sheet gives way to it.
+      shown();
+      to.animate([{opacity: 0}, {opacity: 1}], {duration: 140, easing: 'ease-out'});
+      box.animate([{opacity: 1}, {opacity: 0}], {duration: 140, easing: 'ease-out', fill: 'forwards'}).finished.then(done, done);
+    }, () => { shown(); done(); });
   };
   requestAnimationFrame(go);
   return true;

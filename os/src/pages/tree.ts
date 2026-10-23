@@ -366,6 +366,20 @@ export class FileTree {
     this.letGo();
   }
 
+  /**
+   * The keyboard put on the row a deed of its menu left it at (made, renamed, or the folder of one deleted): it is
+   * there to go on from, but not ringed while the row is lit for the deed, until a key is pressed on it.
+   */
+  private settle(name: HTMLElement | null | undefined) {
+    if (!name) return;
+    const row = name.closest('.tree-row');
+    row?.classList.add('settled');
+    const off = () => { row?.classList.remove('settled'); name.removeEventListener('keydown', off); name.removeEventListener('blur', off); };
+    name.addEventListener('keydown', off);
+    name.addEventListener('blur', off);
+    name.focus();
+  }
+
   /** The row a deed of its menu made or renamed, landing lit where it is now: what was done is seen done. */
   private landed(path: string) {
     const row = this.nameAt(path)?.closest<HTMLElement>('.tree-row');
@@ -453,7 +467,7 @@ export class FileTree {
         await store.mkdir(at.repo, joined(at.path, n));
         this.unpop();
         await this.again(item);
-        this.nameAt(`${e.path}/${n}`)?.focus();
+        this.settle(this.nameAt(`${e.path}/${n}`));
         this.landed(`${e.path}/${n}`);
       })));
     }
@@ -469,7 +483,7 @@ export class FileTree {
         }
         this.unpop();
         await this.again(parent);
-        this.nameAt(renamed(e.path, n))?.focus();
+        this.settle(this.nameAt(renamed(e.path, n)));
         if (n !== e.name) this.landed(renamed(e.path, n));
       })));
       rows.push(entry(t('Delete'), (b) => {
@@ -495,7 +509,7 @@ export class FileTree {
             this.unpop();
             await this.again(parent);
             closeUp([...parent?.querySelector(':scope > .tree-children')?.children ?? []].slice(place), gap);
-            parent?.querySelector<HTMLElement>(':scope > .tree-row > .tree-name')?.focus();
+            this.settle(parent?.querySelector<HTMLElement>(':scope > .tree-row > .tree-name'));
           } catch (err) { yes.disabled = false; error.textContent = errorText(err); }
         });
         b.replaceWith(ask);

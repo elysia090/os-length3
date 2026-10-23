@@ -1,6 +1,6 @@
 import {h} from '../dom.ts';
 import {glide, where} from '../glide.ts';
-import {diffFiles, fileName} from './diff-view.ts';
+import {counted, diffFiles, fileName} from './diff-view.ts';
 import * as gitops from '../history.ts';
 import {issueName, issuePath, readIssues, type Issue} from '../issues.ts';
 import {t, tn} from '../i18n.ts';
@@ -424,7 +424,7 @@ export class Reference {
       this.body.replaceChildren(h('ul', {class: 'found-list'}, ...files.map((f) => {
         const add = f.lines.filter((l) => l.kind === 'add').length, del = f.lines.filter((l) => l.kind === 'del').length;
         const b = h('button', {type: 'button', class: 'choice found-item'}, h('span', {class: 'found-what mono'}, fileName(f.path)),
-          h('span', {class: 'diff-count'}, f.binary ? t('Binary') : `${add ? `+${add}` : ''}${del ? ` −${del}` : ''}`.trim()));
+          f.binary ? h('span', {class: 'diff-count'}, t('Binary')) : counted(add, del));
         b.addEventListener('click', () => this.readDiff(f.path));
         return h('li', {}, b);
       })));
@@ -588,7 +588,7 @@ export class Reference {
     if (issueHits.length) said.push(h('div', {class: 'hit-group'}, h('h3', {class: 'hit-kind'}, t('Issue')), ...issueHits.map((i) => this.issueButton(i))));
     if (diffHits.length) said.push(h('div', {class: 'hit-group'}, h('h3', {class: 'hit-kind'}, t('diff')), ...diffHits.map((c) => {
       const b = h('button', {type: 'button', class: 'choice found-item'}, h('span', {class: 'found-what mono'}, fileName(c.path)),
-        h('span', {class: 'diff-count'}, `${c.added ? `+${c.added}` : ''}${c.removed ? ` −${c.removed}` : ''}`.trim()));
+        counted(c.added, c.removed));
       b.addEventListener('click', () => this.readDiff(c.path));
       return b;
     })));

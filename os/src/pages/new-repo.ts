@@ -100,8 +100,11 @@ export function newRepo(ctx: Context): Node[] {
   const scaffold = templateFiles('{name}', SCAFFOLD);
   // The scaffold in File's order (folders first, then names), each file's name a field; the order stays put while a name is written.
   const inputs = new Map<string, HTMLInputElement>();
-  const repoRow = row('my-repo', 1, true, {repo: true});
-  const items: HTMLElement[] = [row('root', 0, true, {meta: 'repo'}), repoRow];
+  // The repo itself at the top, as it will stand in File (where it is, /root, is File's to say, not this card's).
+  const repoRow = row('my-repo', 0, true, {repo: true});
+  const items: HTMLElement[] = [repoRow];
+  // Under the README's row, what it will say: its title the repo's name, then what it is for, as written beside.
+  const peek = h('li', {class: 'readme-peek', 'aria-hidden': 'true'});
   const walk = (nodes: Item[], depth: number) => {
     for (const n of nodes) {
       if (n.dir) { items.push(row(n.name, depth, true, {shut: !n.children.length})); walk(n.children, depth + 1); continue; }
@@ -110,9 +113,10 @@ export function newRepo(ctx: Context): Node[] {
       field.value = draft.names[n.path] ?? n.name;
       inputs.set(n.path, field);
       items.push(row(field, depth, false));
+      if (n.path === 'README.md') { peek.style.setProperty('--depth', String(depth)); items.push(peek); }
     }
   };
-  walk(nest(scaffold), 2);
+  walk(nest(scaffold), 1);
   const preview = h('ul', {class: 'tree-children'}, ...items);
   // What the card is goes to the ear: the eye sees it is File's tree.
   const caption = h('p', {class: 'sr-only'}, t('How it will look in File'));
@@ -140,9 +144,16 @@ export function newRepo(ctx: Context): Node[] {
     placeholder: t('What this repo is for'), 'aria-labelledby': 'repo-summary-label'}) as HTMLTextAreaElement;
   summary.value = draft.summary;
   const summaryBox = h('div', {class: 'summary-box'}, summary);
+  /** The README as it will be written, a few lines of it, numbered as Forge numbers them. */
+  const paintPeek = () => {
+    const about = summary.value.trim();
+    const lines = [`# ${name.value.trim() || 'my-repo'}`, ...(about ? ['', ...about.split('\n')] : [])];
+    peek.replaceChildren(...lines.slice(0, 6).map((l, i) => h('span', {class: 'peek-line'}, h('span', {class: 'peek-no'}, String(i + 1)), h('span', {}, l || ' '))),
+      ...(lines.length > 6 ? [h('span', {class: 'peek-line'}, h('span'), h('span', {}, '…'))] : []));
+  };
   // The whole box is the field, as the TODO's is.
   summaryBox.addEventListener('pointerdown', (event) => { if (event.target === summaryBox) { event.preventDefault(); summary.focus(); } });
-  summary.addEventListener('input', keep);
+  summary.addEventListener('input', () => { keep(); paintPeek(); });
   // Said where it is to be put right: under the name.
   const error = h('p', {class: 'error', role: 'alert'});
   const submit = h('button', {class: 'button primary', type: 'submit'}, t('Create')) as HTMLButtonElement;
@@ -173,7 +184,7 @@ export function newRepo(ctx: Context): Node[] {
     h('div', {class: 'field summary-field'}, h('span', {class: 'field-label', id: 'repo-summary-label'}, t('Summary')), summaryBox),
     h('div', {class: 'field scaffold-field'}, h('span', {class: 'field-label'}, t('What will be made')), card, filesError),
     actions);
-  name.addEventListener('input', () => { error.textContent = ''; keep(); showFiles(); });
+  name.addEventListener('input', () => { error.textContent = ''; keep(); showFiles(); paintPeek(); });
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const n = name.value.trim();
@@ -223,6 +234,7 @@ export function newRepo(ctx: Context): Node[] {
   const list = repoList(ctx, {newCard: false});
   void list.refresh();
   showFiles();
+  paintPeek();
   queueMicrotask(() => name.focus());
   return [pageHead('new-repo'), h('div', {class: 'new-repo-wrap'}, form),
     h('section', {class: 'section', 'aria-labelledby': 'new-repo-list'}, h('h2', {id: 'new-repo-list'}, t('Repos')), list.element)];

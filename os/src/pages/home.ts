@@ -7,16 +7,15 @@ import * as servers from '../servers.ts';
 import {repoList} from './repo-list.ts';
 import {todoBox} from './todo-box.ts';
 import type {Context} from './context.ts';
-import {answers} from './common.ts';
 import {onRightPane, pluginArea, rightPaneOpen, setRightPane} from './bench.ts';
 import {mark, paneMark} from '../icons.ts';
 import {onPlugins, pluginsOpen} from '../plugins.ts';
 import {errorText} from '../errors.ts';
-import {arrive, paneOut, pop} from '../glide.ts';
+import {LAND, nudge, paneOut, pop, still} from '../glide.ts';
 
 let editing = false;
-/** The profile was just saved (or its form just opened): Home drawn next gives it its beat. */
-let beat: 'saved' | 'editing' | null = null;
+/** The profile's form was opened from elsewhere (the person's menu): Home drawn next gives the opening its beat. */
+let opening = false;
 
 /** The profile as it stands (Home's state, see state.ts), for Home and the rail's own icon. */
 export const currentProfile = (): Profile => parse(getState('profile'));
@@ -24,12 +23,12 @@ export const currentProfile = (): Profile => parse(getState('profile'));
 /** Open Home with the profile form out. */
 export function startEditing(ctx: Context) {
   editing = true;
+  opening = true;
   void ctx.go('home').then(() => document.getElementById('profile-name')?.focus());
 }
 
 /** Home: a profile that reads the same for its owner and for anyone else. */
 export function home(ctx: Context): Node[] {
-  const profile = currentProfile();
   const owner = true;
   const count = h('span', {});
   const list = repoList(ctx, {newCard: true, counted: (n) => counting(count, n, 'repo', 'repos')});
@@ -37,14 +36,7 @@ export function home(ctx: Context): Node[] {
   const grid = list.element;
   // About three across at a laptop's width (styles.css): Home's own, so New repo's list and other grids stay as they are.
   grid.classList.add('home-repos');
-  const avatar = h('div', {class: 'avatar', 'aria-hidden': 'true'}, initials(profile) || mark('person'));
-  const who = editing ? editForm(ctx) : identity(count);
-  const header = h('section', {class: 'profile'}, avatar, who, owner && !editing ? editButton(ctx) : null);
-  // Saved, the name written lands where it is shown and the face takes it in; the form opened unfolds where the
-  // name was.
-  if (beat === 'saved') { arrive(who, -1, 'y', 8, 300); pop(avatar, .08, 360); }
-  else if (beat === 'editing') arrive(who, -1, 'y', 6, 220);
-  beat = null;
+  const header = profileHeader(count, owner);
   // A setting that could not be read is said here, where the person looks first; it is not written over meanwhile.
   const unread = [...unreadable()].map(([k, why]) => h('p', {class: 'error', role: 'alert'}, t('{what} could not be read ({why})', {what: settingName(k), why})));
   const main = h('div', {class: 'home-main'}, header, ...unread, todoBox(),
@@ -102,51 +94,113 @@ function counting(el: HTMLElement, n: number, one: string, many: string) {
   el.replaceChildren(h('b', {}, String(n)), ' ', tn(one, many, n));
 }
 
-function identity(repoCount: HTMLElement): HTMLElement {
+function identity(counts: HTMLElement): HTMLElement {
   const profile = currentProfile();
   const named = profile.name || profile.handle;
   return h('div', {class: 'identity'},
     named ? h('h1', {}, profile.name || `@${profile.handle}`) : h('h1', {class: 'unset'}, t('No name yet')),
     profile.handle && profile.name ? h('p', {class: 'handle'}, `@${profile.handle}`) : null,
     profile.bio ? h('p', {class: 'bio'}, profile.bio) : null,
-    h('p', {class: 'counts'}, repoCount, servers0()),
+    counts,
   );
 }
 
-function editButton(ctx: Context): HTMLElement {
-  const b = h('button', {class: 'button', type: 'button'}, t('Edit profile'));
-  b.addEventListener('click', () => { editing = true; beat = 'editing'; ctx.rerender(); document.getElementById('profile-name')?.focus(); });
-  return b;
+/**
+ * The profile at Home's top: the face, the name, the counts, and Edit profile. It is edited where it is read: the
+ * name becomes the line it is written on, where it stands and as large; the handle and the line about the person
+ * come in under it; Edit profile gives way to Cancel and Save. The top grows and shrinks to what it holds rather
+ * than jumping, the face gives a little wiggle as the form opens, and saved, it turns round to show its new
+ * initials (or nods, when they are the same) while the name settles where it is shown.
+ */
+function profileHeader(count: HTMLElement, owner: boolean): HTMLElement {
+  const avatar = h('div', {class: 'avatar', 'aria-hidden': 'true'});
+  const header = h('section', {class: 'profile'});
+  const face = () => [initials(currentProfile()) || mark('person')];
+  /** Drawn as it is now; from another state (`beat`), its height goes from what it was, and the face says so. */
+  const draw = (beat: 'open' | 'saved' | 'cancel' | null, faceWas: Node[] = []) => {
+    const from = header.getBoundingClientRect().height;
+    avatar.replaceChildren(...face());
+    const counts = h('p', {class: 'counts'}, count, servers0());
+    const form = editing ? editForm(counts, done) : null;
+    const edit = owner && !editing ? h('button', {class: 'button', type: 'button'}, t('Edit profile')) as HTMLButtonElement : null;
+    edit?.addEventListener('click', () => { editing = true; draw('open'); header.querySelector<HTMLInputElement>('#profile-name')?.focus(); });
+    header.replaceChildren(avatar, form?.element ?? identity(counts), ...(form ? [form.acts] : edit ? [edit] : []));
+    header.classList.toggle('editing', editing);
+    if (!beat || still() || !header.isConnected) return;
+    const to = header.getBoundingClientRect().height;
+    if (Math.abs(to - from) > 1) {
+      header.style.overflow = 'clip';
+      header.animate([{height: `${from}px`}, {height: `${to}px`}], {duration: 320, easing: LAND}).finished.then(() => { header.style.overflow = ''; }, () => { header.style.overflow = ''; });
+    }
+    if (beat === 'open') {
+      avatar.animate([{rotate: '0deg'}, {rotate: '-10deg'}, {rotate: '7deg'}, {rotate: '-3deg'}, {rotate: '0deg'}], {duration: 480, easing: 'ease-in-out'});
+      // What was not there comes in under the name, a line after another.
+      [...header.querySelectorAll<HTMLElement>('.handle-field, .bio-in, .edit-acts')].forEach((el, i) =>
+        el.animate([{opacity: 0, translate: '0 -6px'}, {opacity: 1, translate: '0 0'}], {duration: 240, delay: 60 + i * 50, easing: LAND, fill: 'backwards'}));
+    } else if (beat === 'saved') {
+      const name = header.querySelector<HTMLElement>('.identity h1');
+      if (name) pop(name, .04, 320);
+      const now = [...avatar.childNodes];
+      const same = faceWas.map((n) => n.textContent).join() === now.map((n) => n.textContent).join();
+      if (same) { pop(avatar, .06, 300); return; }
+      // It turns away showing the face it had, and comes round showing the new one.
+      avatar.replaceChildren(...faceWas);
+      avatar.animate([{transform: 'perspective(400px) rotateY(0deg)'}, {transform: 'perspective(400px) rotateY(90deg)'}], {duration: 150, easing: 'ease-in'}).finished.then(() => {
+        avatar.replaceChildren(...now);
+        avatar.animate([{transform: 'perspective(400px) rotateY(-90deg)'}, {transform: 'perspective(400px) rotateY(0deg)'}], {duration: 300, easing: 'cubic-bezier(.2, 1.4, .32, 1)'});
+      }, () => avatar.replaceChildren(...now));
+    }
+  };
+  const done = (saved: boolean) => {
+    const faceWas = [...avatar.childNodes].map((n) => n.cloneNode(true));
+    editing = false;
+    draw(saved ? 'saved' : 'cancel', faceWas);
+    header.querySelector<HTMLElement>(':scope > .button')?.focus({preventScroll: true});
+  };
+  draw(null);
+  // Opened from the person's menu: it opens as Edit profile opens it, once Home is on the screen.
+  if (opening) { opening = false; requestAnimationFrame(() => { if (!header.isConnected || still()) return; avatar.animate([{rotate: '0deg'}, {rotate: '-10deg'}, {rotate: '7deg'}, {rotate: '-3deg'}, {rotate: '0deg'}], {duration: 480, easing: 'ease-in-out'}); }); }
+  return header;
 }
 
-function editForm(ctx: Context): HTMLElement {
+/**
+ * The profile as it is written: the name on its own line as large as it reads, @ and the handle under it, the line
+ * about the person under that, each a line written on (an ink line under the one with the keyboard), the counts
+ * where they were. Cancel and Save stand where Edit profile stood. Enter on the name or the handle saves, Escape
+ * leaves it as it was.
+ */
+function editForm(counts: HTMLElement, done: (saved: boolean) => void): {element: HTMLElement; acts: HTMLElement} {
   const profile = currentProfile();
-  const name = h('input', {id: 'profile-name', maxlength: String(LIMITS.name), autocomplete: 'name'}) as HTMLInputElement;
-  const handle = h('input', {id: 'profile-handle', maxlength: String(LIMITS.handle), autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
-  const bio = h('textarea', {id: 'profile-bio', maxlength: String(LIMITS.bio), rows: '3'}) as HTMLTextAreaElement;
+  const name = h('input', {id: 'profile-name', class: 'name-in', maxlength: String(LIMITS.name), autocomplete: 'name',
+    placeholder: t('Your name'), 'aria-label': t('Name')}) as HTMLInputElement;
+  const handle = h('input', {id: 'profile-handle', class: 'handle-in', maxlength: String(LIMITS.handle), autocapitalize: 'off', spellcheck: 'false',
+    placeholder: t('handle'), 'aria-label': t('Handle')}) as HTMLInputElement;
+  const bio = h('textarea', {id: 'profile-bio', class: 'bio-in', maxlength: String(LIMITS.bio), rows: '1',
+    placeholder: t('A line about you'), 'aria-label': t('Bio')}) as HTMLTextAreaElement;
   name.value = profile.name; handle.value = profile.handle; bio.value = profile.bio;
+  // The line about the person is as tall as what is written in it.
+  const fit = () => { bio.style.height = 'auto'; bio.style.height = `${bio.scrollHeight}px`; };
+  bio.addEventListener('input', fit);
+  requestAnimationFrame(fit);
   const error = h('p', {class: 'error', role: 'alert'});
-  const form = h('form', {class: 'edit'},
-    h('label', {}, t('Name'), name),
-    h('label', {}, t('Handle'), h('span', {class: 'handle-field'}, '@', handle)),
-    h('label', {}, t('Bio'), bio),
-    error,
-    answers(h('button', {class: 'button', type: 'button', 'data-cancel': ''}, t('Cancel')),
-      h('button', {class: 'button primary', type: 'submit'}, t('Save'))),
-  );
+  const form = h('form', {id: 'profile-form', class: 'edit identity'},
+    name, h('span', {class: 'handle-field'}, '@', handle), bio, error, counts) as HTMLFormElement;
+  const cancel = h('button', {class: 'button', type: 'button', 'data-cancel': ''}, t('Cancel'));
+  const save = h('button', {class: 'button primary', type: 'submit', form: 'profile-form'}, t('Save'));
+  const acts = h('div', {class: 'edit-acts'}, cancel, save);
+  for (const f of [name, handle]) f.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); form.requestSubmit(); } });
+  form.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !e.isComposing) { e.preventDefault(); done(false); } });
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const result = normalize({name: name.value, handle: handle.value, bio: bio.value});
-    if (result.error) { error.textContent = t('A handle is up to 32 lowercase letters, digits, - and _'); handle.focus(); return; }
+    if (result.error) { error.textContent = t('A handle is up to 32 lowercase letters, digits, - and _'); handle.focus(); nudge(handle); return; }
     try { await setState('profile', JSON.stringify(result.profile)); } catch (e) {
       error.textContent = t('Could not save: {message}', {message: errorText(e)});
       return;
     }
-    editing = false;
-    beat = 'saved';
-    ctx.rerender();
+    done(true);
   });
-  form.querySelector('[data-cancel]')!.addEventListener('click', () => { editing = false; ctx.rerender(); });
-  return form;
+  cancel.addEventListener('click', () => done(false));
+  return {element: form, acts};
 }
 

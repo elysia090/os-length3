@@ -120,7 +120,8 @@ a { color: var(--ink); }
    it is going to waits un-inked, its words in ink, until it lands. */
 .glide-ink { position: absolute; z-index: -1; background: var(--ink); pointer-events: none; }
 /* A repo opened from its card or its row, on its way to its box in Forge (glide.ts morph). */
-.morph-box { position: fixed; z-index: 9; pointer-events: none; border: var(--line-work) solid var(--ink); border-radius: var(--r-place); background: color-mix(in srgb, var(--paper) 35%, transparent); }
+/* The sheet a thing opened becomes on its way to its box: the box's own paper and line, so it reads as that box. */
+.morph-box { position: fixed; z-index: 9; pointer-events: none; border: var(--line-work) solid var(--ink); border-radius: var(--r-place); background: var(--paper); }
 /* Along the rail the camera pans with it (main.ts select): the page left goes up and away as the next rises in from
    below (down the rail; up it, the other way round; --pan is 1 or -1), the rail and the window's edges standing
    still. Only the page moves, and only the page is taken as a picture to move: the rest of the window is not taken
@@ -299,7 +300,8 @@ a { color: var(--ink); }
 /* It opens and closes as Forge's does: a wipe, landing a touch past and settling as it comes out. */
 .page > .home-layout { transition: grid-template-columns var(--move) var(--land); }
 .page > .home-layout:not(.pane-closed) { transition: grid-template-columns 420ms cubic-bezier(.2, 1.4, .32, 1); }
-@media (prefers-reduced-motion: reduce) { .page > .home-layout, .page > .home-layout:not(.pane-closed), .work.bench, .work.bench:not(.pane-closed) { transition: none; } }
+.page > .home-layout.pane-closed { transition: grid-template-columns 260ms cubic-bezier(.4, 0, 1, 1); }
+@media (prefers-reduced-motion: reduce) { .page > .home-layout, .page > .home-layout:not(.pane-closed), .page > .home-layout.pane-closed, .work.bench, .work.bench:not(.pane-closed) { transition: none; } }
 .home-main { min-width: 0; width: 100%; max-width: 1080px; margin: 0 auto; }
 .home-pane {
   position: sticky; top: var(--outer-top); height: var(--inner-h); min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: var(--s3);
@@ -307,9 +309,9 @@ a { color: var(--ink); }
   margin: calc(-1 * var(--top-line)) calc(-1 * var(--s5)) 0 0; padding: var(--band) var(--s5) var(--s4) var(--s4);
 }
 /* Forge's line, where Forge's is: the pane's edge, top line to foot; put away, no pane, no line. */
-.home-pane { border-left: var(--line-frame) solid var(--ink); }
+.home-pane { border-left: var(--line-frame) solid var(--ink); transition: border-color 120ms; }
 .home-pane > .pane-toggle { justify-self: end; }
-.home-layout.pane-closed .home-pane { padding-left: 0; border-left-color: transparent; }
+.home-layout.pane-closed .home-pane { padding-left: 0; border-left-color: transparent; transition: border-color 260ms cubic-bezier(.7, 0, 1, 1); }
 .home-layout.pane-closed .home-side { display: none; }
 .home-side { min-height: 0; overflow: auto; }
 .home-side > .plugins { padding: 0; }
@@ -347,15 +349,22 @@ a { color: var(--ink); }
 /* Figures as Runtime's are: the number large (20/600), the word under it quiet; read at a glance, not as a line. */
 .counts { margin-top: var(--s2); display: flex; flex-wrap: wrap; gap: 0 var(--s5); color: var(--sub); font-size: var(--t-meta); }
 .counts b { display: block; color: var(--ink); font-size: var(--t-card); font-weight: 600; line-height: 1.3; }
-.edit { display: grid; gap: var(--s3); max-width: 520px; }
-/* A field takes its column's width, never its own: on a phone the form stays inside the window. */
-.edit > label, .edit > label > *, .edit input, .edit textarea { min-width: 0; }
-.edit label { display: grid; gap: var(--s1); font-size: var(--t-meta); color: var(--sub); }
-.edit textarea { resize: vertical; min-height: 72px; }
-.handle-field { display: flex; align-items: center; min-height: var(--h-control); border: 1px solid var(--edge); border-radius: var(--r-field); padding-left: var(--s3); background: var(--raised); color: var(--ink); }
-.handle-field input { border: 0; flex: 1; background: transparent; min-height: 0; padding-left: 0; }
-.handle-field input:focus-visible { outline: none; }
-.handle-field:focus-within { outline: 2px solid var(--ink); outline-offset: 2px; }
+/* The profile written where it is read: each line as it reads (the name as large, the handle and the line about the
+   person as quiet), written on rather than boxed, a rule under each and ink under the one with the keyboard. */
+.edit { display: grid; gap: var(--s1); max-width: 560px; min-width: 0; }
+.edit .name-in, .edit .handle-in, .edit .bio-in {
+  width: 100%; min-width: 0; min-height: 0; margin: 0; padding: 0; border: 0; border-bottom: 1px solid var(--rule); border-radius: 0;
+  background: transparent; color: var(--ink); font: inherit; transition: border-color var(--motion);
+}
+.edit .name-in { font-size: var(--t-identity); font-weight: 700; line-height: 1.25; }
+.home-main .edit .name-in { font-size: var(--t-title); }
+.edit .handle-field { display: flex; align-items: baseline; color: var(--sub); }
+.edit .handle-in { flex: 1; color: var(--sub); }
+.edit .bio-in { margin-top: var(--s2); max-width: 60ch; line-height: 1.6; resize: none; overflow: hidden; white-space: pre-wrap; }
+.edit :is(.name-in, .handle-in, .bio-in)::placeholder { color: var(--sub); font-weight: 400; opacity: .7; }
+.edit :is(.name-in, .handle-in, .bio-in):focus, .edit :is(.name-in, .handle-in, .bio-in):focus-visible { outline: none; border-bottom-color: var(--ink); }
+/* Cancel and Save where Edit profile stood, on the name's line. */
+.edit-acts { display: flex; gap: var(--s2); margin-top: calc((var(--t-title) * 1.25 - var(--h-control)) / 2); }
 
 /* Home: TODO — one tall box to write in; items are a first line and detail lines */
 .todo-box {
@@ -397,6 +406,9 @@ span.todo-title { min-height: 0; }
 .todo-meta { color: var(--sub); font-size: var(--t-meta); font-variant-numeric: tabular-nums; }
 /* Done: only the first line is struck through and quiet, in `sub`, which still reads (an opacity would not). */
 .todo-item.done .todo-head .todo-title, .todo-item.done .todo-head .todo-kind { text-decoration: line-through; color: var(--sub); }
+/* Its detail goes quiet with it, still there to read. */
+.todo-item.done .todo-detail { color: var(--sub); }
+.todo-detail::placeholder { color: var(--sub); opacity: .7; }
 .todo-item.done .todo-mark { color: var(--ink); }
 .todo-hint { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s5); padding: var(--s2) var(--s4) var(--s3); color: var(--sub); font-size: var(--t-meta); }
 /* Said only while the box is written in, fading in where it always stands, so nothing moves. */
@@ -564,13 +576,25 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
   .new-repo { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; }
   .new-repo > .name-field, .new-repo > .summary-field, .new-repo > .scaffold-field, .new-repo > .answers { grid-area: auto; }
 }
-/* A file's name in the scaffold is a field in its row, as File's rename is. */
+/* A file's name in the scaffold reads as a name in its row, as File shows it; the pointer on it shows it can be
+   renamed (a quiet line), and written in it is a field, as File's rename is. */
 .tree-name-in {
-  flex: 0 1 32ch; min-width: 0; height: calc(var(--h-row) - var(--s1)); padding: 0 var(--s2); margin-right: var(--s2);
-  border: 1px solid var(--edge); border-radius: var(--r-field); background: var(--raised); color: var(--ink); font: inherit;
+  flex: 0 1 32ch; min-width: 0; height: calc(var(--h-row) - var(--s1)); padding: 0 var(--s1); margin-right: var(--s2);
+  border: 1px solid transparent; border-radius: var(--r-field); background: transparent; color: var(--ink); font: inherit;
+  transition: border-color var(--motion), background var(--motion);
 }
+.tree-name-in:hover { border-color: var(--rule); }
+.tree-name-in:focus, .tree-name-in:focus-visible { outline: none; border-color: var(--ink); background: var(--paper); }
 .tree-name-in::placeholder { color: var(--sub); }
 .tree-name-in[aria-invalid] { border-color: var(--ink); }
+/* The README's first lines under its row, quiet, numbered as Forge numbers them: what the summary will become. */
+.readme-peek {
+  display: grid; margin: 0 var(--s2) var(--s2) calc(var(--depth, 1) * var(--s4) + var(--s5) + var(--s1)); padding: var(--s1) 0 var(--s1) var(--s3);
+  border-left: var(--line-work) solid var(--rule); font: var(--t-meta)/1.6 var(--mono); color: var(--sub);
+}
+.peek-line { display: grid; grid-template-columns: 2ch minmax(0, 1fr); gap: var(--s2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.peek-line:first-child { color: var(--ink); }
+.peek-no { color: var(--rule); text-align: right; font-variant-numeric: tabular-nums; }
 .tree-name-in:disabled { opacity: .5; }
 .field { display: grid; gap: var(--s2); }
 .field-label { font-size: var(--t-meta); color: var(--sub); }
@@ -933,9 +957,13 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 /* Put away, the center takes the whole width; the pane is only out of sight. No pane, no line. It goes as a wipe:
    the pane's column closes to nothing, what it holds staying at its width and cut at the moving edge (not squeezed),
    and is out of sight (and of the keyboard) once closed; brought back, it opens the same way. */
-.work.bench.pane-closed { grid-template-columns: minmax(0, 1fr) 0px; }
+.work.bench.pane-closed { grid-template-columns: minmax(0, 1fr) 0px; transition: grid-template-columns 260ms cubic-bezier(.4, 0, 1, 1); }
 .work.bench > .side { min-width: 0; grid-template-columns: max(280px, calc(var(--bench-w, 1200px) / 4)); }
-.work.bench.pane-closed > .side { overflow-x: clip; visibility: hidden; transition: visibility 0s var(--move); }
+.work.bench.pane-closed > .side { overflow-x: clip; visibility: hidden; transition: visibility 0s 260ms; }
+@media (prefers-reduced-motion: reduce) {
+  .work.bench.pane-closed, .work.bench > .side::before, .work.bench.pane-closed > .side::before,
+  .home-pane, .home-layout.pane-closed .home-pane { transition: none; }
+}
 /* The one line, between the center and the pane: from the top line to the prompt box's foot, not edge to edge. */
 /* The pane's top is the plugin area's; the Prompt starts level with the foot of the rail's Inbox (bench.ts measures
    it into --prompt-at), pushed down only by a plugin area opened taller than that. */
@@ -946,8 +974,11 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
    It goes with the pane (put away, no pane, no line). */
 .work.bench > .side::before {
   content: ''; position: absolute; left: 0; bottom: 0; top: calc(-1 * (var(--band) + var(--h-row) + var(--s3)));
-  border-left: var(--line-frame) solid var(--ink); pointer-events: none;
+  border-left: var(--line-frame) solid var(--ink); pointer-events: none; transition: opacity 120ms;
 }
+/* Put away, the line goes with the pane, gathering speed to the right (260 ms), and is gone as it gets there: never
+   left standing at the window's edge. */
+.work.bench.pane-closed > .side::before { opacity: 0; transition: opacity 260ms cubic-bezier(.7, 0, 1, 1); }
 /* What was found, under the box and over the center, while the box (or what was found) has the keyboard. */
 .search-box { position: relative; min-width: 0; }
 /* What opens under the box: its ground runs a step (s3) past the large box on every side, so the lines behind it
@@ -1058,6 +1089,9 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 form.search { position: relative; }
 /* In use, the box's own line turns ink and a little heavier: one line, not a ring drawn round a border. */
 .search-in:focus-visible, .search-in:focus { outline: 1px solid var(--ink); outline-offset: -1px; border-color: var(--ink); background: var(--paper); }
+/* Every line typed in does the same (a file's name in File's menu, a repo's): a box ringed round its own border was
+   two boxes. Where a line is written in its own place without a box (an issue's first line), that place says so. */
+:where(.line-in):focus, :where(.line-in):focus-visible { outline: 1px solid var(--ink); outline-offset: -1px; border-color: var(--ink); background: var(--paper); }
 /* The search box's own clear mark, in the page's ink, not the browser's blue. */
 .search-in::-webkit-search-cancel-button { filter: grayscale(1) brightness(.4); cursor: pointer; }
 .search-count { margin-bottom: var(--s2); }
@@ -1066,7 +1100,6 @@ form.search { position: relative; }
 .hit-file { min-height: var(--h-row); font: 600 var(--t-meta) var(--mono); }
 .hit { display: grid; grid-template-columns: 4ch minmax(0, 1fr); gap: var(--s2); font: var(--t-meta)/1.6 var(--mono); }
 .hit-file:hover, .hit:hover { background: var(--raised); }
-/* diff: added lines raised, removed lines quiet and struck, no colours of their own. */
 /* The Prompt's status line says something only when something is missing. */
 .term > p:empty { display: none; }
 /* 実行結果: the line as typed, then what came out, quiet. */
@@ -1075,8 +1108,10 @@ form.search { position: relative; }
 /* Pressed, the line is back in the prompt box: its hover fill reaches out past the text, which stays over the output. */
 button.run-line { margin-inline-start: calc(-1 * var(--s1)); min-width: 0; }
 .run-out { margin: 0; color: var(--sub); font: var(--t-meta)/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
-.diff { display: grid; font: var(--t-meta)/1.6 var(--mono); }
-.diff-line { display: grid; grid-template-columns: 4ch 1ch minmax(0, 1fr); gap: var(--s2); padding: 0 var(--s1); }
+/* A file's lines in a rounded body of their own; each changed line has its colour as a bar at its left and a light
+   ground, so a run of them reads as one block and a lone one still shows. */
+.diff { display: grid; font: var(--t-meta)/1.65 var(--mono); border-radius: var(--r-field); overflow: hidden; }
+.diff-line { display: grid; grid-template-columns: 4ch 1ch minmax(0, 1fr); gap: var(--s2); padding: 0 var(--s2) 0 var(--s1); border-left: 2px solid transparent; }
 /* Git's diffs: the file's name and +n −n at the left, its lines beside them from the same row. */
 .diff-file.beside { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: var(--s4); align-items: start; }
 .diff-file.beside > .diff-head { grid-column: 1; min-height: 0; padding: 0 var(--s1); cursor: default; }
@@ -1108,13 +1143,22 @@ button.diff-no:hover { color: var(--ink); background: var(--raised); border-radi
 .diff-name { font-weight: 600; overflow-wrap: anywhere; }
 .diff-name.link { margin-inline: 0; padding-inline: var(--s1); }
 .diff-name.link:hover { background: var(--raised); }
-.diff-count { color: var(--sub); white-space: nowrap; }
+/* +n green, −n red, then five small squares shared out as the lines are. */
+.diff-count { display: inline-flex; align-items: center; gap: var(--s2); color: var(--sub); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.diff-add { color: var(--done); font-weight: 600; }
+.diff-del { color: var(--off); font-weight: 600; }
+.diff-bar { display: inline-flex; gap: 2px; }
+.diff-bar > i { width: 7px; height: 7px; border-radius: 2px; background: var(--rule); }
+.diff-bar > i.add { background: var(--done); }
+.diff-bar > i.del { background: var(--off); }
 /* What was added on green, what went on red, what stays quiet, as any diff; yellow is the marker's alone (a line
    marked while reading). */
-.diff-line.add { background: color-mix(in srgb, var(--done) 14%, transparent); }
-.diff-line.del { background: color-mix(in srgb, var(--off) 12%, transparent); }
+.diff-line.add { background: color-mix(in srgb, var(--done) 10%, transparent); border-left-color: var(--done); }
+.diff-line.del { background: color-mix(in srgb, var(--off) 8%, transparent); border-left-color: var(--off); }
+.diff-line.del .diff-words { color: color-mix(in srgb, var(--ink) 80%, var(--off)); }
 .diff-line.same { color: var(--sub); }
-.diff-line.hunk { color: var(--sub); margin-top: var(--s2); }
+/* Between two parts of a file, a dashed break with a quiet "…". */
+.diff-line.hunk { color: var(--sub); margin-top: var(--s2); padding-top: var(--s1); border-top: 1px dashed var(--rule); }
 .diff-line.hunk:first-child { margin-top: 0; }
 .hit-line { color: var(--sub); text-align: right; font-variant-numeric: tabular-nums; }
 .hit-text { white-space: pre; overflow: hidden; text-overflow: ellipsis; }
@@ -1162,6 +1206,11 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .tree-name.plain { display: flex; align-items: center; cursor: default; color: var(--sub); }
+/* The keyboard on a row: the row is ringed, round as the row is, not the name in a square of its own. The row a deed
+   just made or renamed has the keyboard without the ring (it is lit for that), until a key is pressed there. */
+.tree-name:focus-visible { outline: none; }
+.tree-row:has(> .tree-name:focus-visible) { outline: 1.5px solid var(--ink); outline-offset: -1.5px; }
+.tree-row.settled:has(> .tree-name:focus-visible) { outline: none; }
 .tree-repo > .tree-row .tree-name { font-weight: 600; }
 /* The file Forge is reading: a short straight line at its row's left, kept apart from the pointer's raised row. */
 .tree-row { position: relative; }

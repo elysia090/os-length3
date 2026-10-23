@@ -75,6 +75,21 @@ function putBackButton(f: FileDiff, head: HTMLElement, act: (f: FileDiff) => Pro
 }
 
 /**
+ * What a file's change comes to: +n in the added lines' green, −n in the removed lines' red, and after them five
+ * small squares shared out between the two as the lines are, each side at least one when it has any (any diff
+ * reads so at a glance).
+ */
+export function counted(add: number, del: number): HTMLElement {
+  const all = add + del;
+  let green = all ? Math.round((5 * add) / all) : 0;
+  if (add && !green) green = 1;
+  if (del && green === 5) green = 4;
+  const squares = [...Array(all ? 5 : 0)].map((_, i) => h('i', {class: i < green ? 'add' : 'del'}));
+  return h('span', {class: 'diff-count'}, add ? h('span', {class: 'diff-add'}, `+${add}`) : null, del ? h('span', {class: 'diff-del'}, `−${del}`) : null,
+    h('span', {class: 'diff-bar', 'aria-hidden': 'true'}, ...squares));
+}
+
+/**
  * Files of a diff. Each is a fold: its name with what was added and
  * removed (+3 −1), and under it its lines, each with which line it is in
  * the file. The first few are open; with many files or long ones, the rest
@@ -89,8 +104,7 @@ export function diffFiles(files: FileDiff[], o: DiffOptions = {}): HTMLElement[]
       name.classList.add('link');
       name.addEventListener('click', (e) => { e.preventDefault(); go(f.path); });
     }
-    const head = h('summary', {class: 'diff-head'}, name,
-      f.binary ? h('span', {class: 'muted small'}, t('Binary')) : h('span', {class: 'diff-count'}, add ? `+${add}` : '', del ? ` −${del}` : ''));
+    const head = h('summary', {class: 'diff-head'}, name, f.binary ? h('span', {class: 'muted small'}, t('Binary')) : counted(add, del));
     // A binary file is put back only by going (one added since); its bytes are not written here.
     const foot = o.putBack && (!f.binary || f.status === 'added') ? h('div', {class: 'diff-foot'}) : null;
     if (foot) foot.append(putBackButton(f, foot, o.putBack!));

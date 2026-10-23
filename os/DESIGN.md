@@ -153,13 +153,17 @@ Every value in `styles.css` comes from a token (§2).
     lands a touch past where it stops and settles back (420 ms), its words
     come in after it from the right a line at a time, and its switch's
     mark fills from the right as it does, with a beat once it is out; put
-    away, the fill drains back and it goes straight.
+    away, the fill drains back and it goes the way it came, gathering speed
+    to the right (260 ms), its line going with it and gone as it gets to the
+    window's edge, never left standing there.
   - *What opens comes out of what opened it.* What the search finds comes
     down out of its box; the terminal flies between the pane and the box.
-  - *What is made goes where it lives.* An outline goes from what it was
+  - *What is made goes where it lives.* A sheet goes from what it was
     written in or shown as to what it became: a repo's card or File row to
     its box in Forge, New repo's summary to the new card, the name taken
-    to the Inbox's stub (340–420 ms).
+    to the Inbox's stub (340–420 ms). It is the box's own paper and line,
+    and the box it becomes waits out of sight until it lands, then shows
+    as the sheet gives way to it: one box the whole way, never two.
   - *What is pressed gives.* Under the pointer (or Enter, Space) anything
     pressable sinks by the same few pixels whatever its size, so a pill
     gives more than a card, and comes back past where it was by a third,
@@ -490,6 +494,10 @@ fix is always a piece from §3, not a new rule.
 | A hairline as the only sign of which side is the work and which refers to it; a pane given a tone of its own | The work is a sheet (`paper`) framed by two lines of one weight, the rail's and the pane's (2 px, `ink`, top line to foot); the rail, the band, heads and the pane stand on the ground itself |
 | What is worked on drawn one way on one page and another on the next (a raised box, a framed card, a bordered box on the ground) | One sheet everywhere: `paper`, a 1 px `rule` edge, a place's corners; the one in hand (or with the keyboard) has its edge in `ink`, nothing drawn round it |
 | Something painted over a focus ring (the ground under the box over its foot) | The ring is whole: what lies under the box lies behind it |
+| A field with a ring drawn round its own border, a box in a box (a file's name in File's menu) | One line: the field's own border turns `ink` while it has the keyboard, as the search box's does |
+| A square ring round a name left in a row after a deed (renamed, made) | The row is lit for the deed and has the keyboard without a ring; a key pressed there rings the row, round as the row is |
+| Two boxes at once: an outline flying to a box that is already drawn under it | One sheet: the box waits out of sight until the sheet lands, then shows as the sheet gives way |
+| A diff all one tint, its counts grey (+6 −2) | Each changed line its colour as a bar at its left on a light ground; +n green and −n red, then five small squares shared out as the lines are; a dashed break with "…" between the parts of a file |
 | Text, not a field, sitting at the top of a row its mark is centred in (a read-only TODO) | Centred on the mark's line, as the field is |
 | A paid thing greyed out, hidden, or refused with the Remote's bare error; work dropped because the Remote would not keep it | Said in place with See the plan beside; the work stays on the device and waits |
 | A use against an allowance said by a colour (a red bar when over) | The meter: `ink` as far as the use goes, full and its figures 600 when over |
@@ -1127,10 +1135,24 @@ identity (avatar, name, @handle, bio, counts of repos and servers) →
 TODO is the person's single list; repos do not carry their own inbox or
 TODO files. An item is a first line named like an issue ("Fix：件名"),
 then detail lines (starting on the first line's column, with a kind or
-without); Enter on an empty line starts the next item. Done strikes through
-and fades the first line only. The repos are large cards, three across at a
+without); Enter on an empty line starts the next item. An input method's Enter
+(the one that takes a Japanese word) is the method's, never a new line or the
+next item. Done strikes through and fades the first line, and its detail goes
+quiet with it, still there to read. The repos are large cards, three across at a
 laptop's width (two, then one, as it narrows); each is a repo in a list as
 Runtime says it: its body the repo itself, its gear Forge or Free.
+
+The profile is edited where it is read, not in a form put in its place: the
+name becomes the line it is written on, where it stands and as large; @ and
+the handle, and the line about the person, come in under it a line after
+another; each is written on, not boxed (a rule under it, ink under the one
+with the keyboard). Edit profile gives way to Cancel and Save where it
+stood. The top grows and shrinks to what it holds (320 ms), never jumping
+what is under it; the face gives a little wiggle as the form opens, and
+saved, it turns round to show its new initials (or nods, when they are the
+same) while the name settles where it is shown. Enter on the name or the
+handle saves; Escape leaves it as it was. The rail's face is the new one at
+once.
 
 ### Forge
 
@@ -1963,9 +1985,13 @@ far as the column beside it, whose words go into the repo's README.md under
 its title; on the right, level with it, under 作成されるもの, the one
 scaffold every repo starts from (nothing to choose: shared/templates.json's
 `standard`, as `l3 repo new` makes it: README.md with docs/ and issue/, no
-language of its own; C's files are `l3 repo new -t c`'s), shown exactly as File will show it: a
-card of tree rows under `root`, the new repo's name bold, its folders open,
-and each file's name a field in its row. A name and its extension are
+language of its own; C's files are `l3 repo new -t c`'s), shown as File will show it: a
+card of tree rows from the new repo's name (bold) down, where it is (/root)
+being File's to say, its folders shut, and each file's name its own row,
+quietly a field (a rule round it under the pointer, a field once written
+in). Under README.md, its first lines as they will be written, numbered as
+Forge numbers them and quiet behind a rule: the title the repo's name, then
+what it is for, as it is typed beside. A name and its extension are
 changed there and nothing else: what a file says is never turned into
 another language, and what one file says of another's path follows it. A name that cannot be (one with a "/", one met twice
 in a folder) is said under the card before 作成, which puts the keyboard
@@ -1976,8 +2002,8 @@ card; narrower, they stack: name, what it is for, the files.
 
 Under the form is the list of repos, the same cards as on Home. Once made,
 it is gone into at once: no page saying it was made, no form left greyed
-out. The summary's sheet grows into the README's box in Forge (an outline
-from the one to the other), the repo goes on the band, and the caret is at
+out. The summary's sheet grows into the README's box in Forge (one sheet
+from the one to the other, the box shown only as it lands), the repo goes on the band, and the caret is at
 the end of its README, after what was written under the title, to go on
 writing; the form is
 fresh for the next one (+ on the rail). Only a file that could not be

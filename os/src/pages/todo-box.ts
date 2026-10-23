@@ -144,7 +144,7 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
     const title = h('input', {class: 'todo-title', maxlength: String(todo.TEXT_LIMIT), 'aria-label': t('What to do'),
       autocomplete: 'off', spellcheck: 'false'}) as HTMLInputElement;
     const detail = h('textarea', {class: 'todo-detail', rows: '1', maxlength: String(todo.DETAIL_LIMIT), 'aria-label': t('Detail'),
-      spellcheck: 'false'}) as HTMLTextAreaElement;
+      placeholder: t('Detail'), spellcheck: 'false'}) as HTMLTextAreaElement;
     const meta = h('span', {class: 'todo-meta'});
     title.value = td.title;
     detail.value = td.detail;
@@ -178,6 +178,8 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
       previous = title.value;
     });
     title.addEventListener('keydown', (e) => {
+      // A word being made in an input method (Japanese) is the method's: its Enter takes the word, nothing here.
+      if (e.isComposing || e.keyCode === 229) return;
       const it = current();
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); button.click(); return; }
       if (e.key === 'Enter') {
@@ -222,6 +224,7 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
 
     detail.addEventListener('input', () => { fit(detail); set({detail: detail.value}); });
     detail.addEventListener('keydown', (e) => {
+      if (e.isComposing || e.keyCode === 229) return;
       const atEnd = detail.selectionStart === detail.value.length && detail.selectionEnd === detail.value.length;
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); button.click(); return; }
       if (e.key === 'Enter' && atEnd && (detail.value === '' || detail.value.endsWith('\n'))) {

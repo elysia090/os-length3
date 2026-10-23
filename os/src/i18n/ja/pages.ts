@@ -4,6 +4,8 @@ export default {
   'No posts yet': '投稿はまだありません',
   'Handle': 'ハンドル',
   'Bio': '自己紹介',
+  'handle': 'ハンドル',
+  'A line about you': 'ひとこと',
   'A handle is up to 32 lowercase letters, digits, - and _': 'ハンドルは英小文字・数字・- _ の32文字以内です',
 
   // Home's TODO box
