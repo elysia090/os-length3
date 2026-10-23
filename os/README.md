@@ -186,6 +186,16 @@ The .deb and the AppImage carry l3 beside the app (`scripts/desktop.sh`): the
 `l3 app` work at once, and the app runs that l3 for its Prompts and SSH. It
 is static (musl), with SSH; the root's own `/usr/bin/l3` is built without it.
 
+What the machine needs: x86-64 Linux with glibc 2.39 or newer (Ubuntu 24.04,
+Debian 13, Fedora 40 and later; the app is built on Ubuntu 24.04), an X11 or
+Wayland desktop, and its graphics: libEGL with a driver (`libegl1` and Mesa's
+`libegl-mesa0` on Debian and Ubuntu, there with any desktop). Everything else
+the window needs is in the AppImage, `libGLESv2` with it, which WebKitGTK opens
+only once it runs (a Debian 13 desktop has none, #37); the .deb has its
+packages say theirs. `scripts/desktop-smoke.sh` starts the AppImage as such a
+machine does (a display of its own, the host's `libGLESv2` out of sight) and
+passes only on a window that drew; `release.sh` runs it on what it ships.
+
 - **Open**: the app this device has is started on its own, the terminal
   free at once, and waited for until it answers; only then is it said as
   open (exit 0, `{"open":true,"started":true}` with `--json`).
@@ -562,7 +572,8 @@ knowing neither, it refuses any Neon host. `-- --production` runs it anyway.
 ## Develop
 
 Linux needs the WebKitGTK toolchain:
-`libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev`.
+`libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev`,
+and `libgles2` to bundle the AppImage (`scripts/desktop.sh` puts it inside).
 The web app runs the same core as the desktop app (`core/`, built for the
 browser by `core/web`), so every web build of the page needs Rust with
 `rustup target add wasm32-wasip1`; Vite builds it when `core/` changed, and

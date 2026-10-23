@@ -61,7 +61,7 @@ jobs:
       - name: Toolchains
         run: |
           sudo apt-get update
-          sudo apt-get install -y musl-tools zstd zip libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf
+          sudo apt-get install -y musl-tools zstd zip libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf libgles2 bubblewrap xvfb imagemagick
           rustup target add x86_64-unknown-linux-musl wasm32-unknown-unknown wasm32-wasip1
           # What is built is what the lockfiles say (npm ci in web-release.sh; cargo here and --locked in the scripts).
           cargo fetch --locked --manifest-path os/Cargo.toml
