@@ -4,7 +4,8 @@ import {t, tn} from '../i18n.ts';
 import {closedBy, numberOf, type Issue} from '../issues.ts';
 import {kindOf} from '../text.ts';
 import {answers, askFoot, SETTLE} from './common.ts';
-import {diffFiles} from './diff-view.ts';
+import {counted, diffFiles} from './diff-view.ts';
+import {LAND, morph, still} from '../glide.ts';
 import {justClosed, notCommitted, reopenIssue, type IssueEvents} from './git-issue.ts';
 import {errorText} from '../errors.ts';
 
@@ -18,6 +19,21 @@ const button = (text: string, kind = '') => h('button', {type: 'button', class: 
 /** The line a commit on main is being named by, per repo: kept as written until it is committed or put back with Not now. */
 const naming = new Map<string, string>();
 
+/** Committed on main from here, newest first, a few: each stays a line under main where its card was. */
+const committed: {repo: string; cut: git.Cut}[] = [];
+const KEPT = 3;
+export const committedIn = (filter: string | null) => committed.filter((c) => !filter || c.repo === filter);
+
+/** The card's height goes from what it was to what it now holds (a line asked for is shorter than the files it names). */
+function resize(card: HTMLElement, from: number) {
+  if (still() || !from || !card.isConnected) return;
+  const to = card.getBoundingClientRect().height;
+  if (Math.abs(to - from) < 2) return;
+  card.style.overflow = 'hidden';
+  const back = () => { card.style.overflow = ''; };
+  card.animate([{height: `${from}px`}, {height: `${to}px`}], {duration: 280, easing: LAND}).finished.then(back, back);
+}
+
 /**
  * main's card for a repo with something not committed: its files (▸ 2 files,
  * their diff over what is under it) and Commit. Commit asks in the card for
@@ -27,18 +43,19 @@ const naming = new Map<string, string>();
 export function mainCard(repo: string, n: number, events: IssueEvents, after: () => void): HTMLElement {
   const card = h('div', {class: 'main-card', role: 'group', 'aria-label': t('Not committed on main in {repo}', {repo})});
   const plain = () => {
-    card.style.minHeight = '';
+    const from = card.isConnected ? card.getBoundingClientRect().height : 0;
     const commit = button(t('Commit'), 'primary');
     commit.addEventListener('click', () => ask(commit));
     // The repo and how many files wait, Commit at the right of that line; under them the files, on the card itself.
     card.replaceChildren(h('div', {class: 'main-head'}, h('span', {class: 'card-title'}, repo),
       h('span', {class: 'muted small'}, tn('{n} file to commit on main', '{n} files to commit on main', n)), h('span', {class: 'grow'}), commit),
       notCommitted(repo, n, events));
+    resize(card, from);
     return commit;
   };
   const ask = (from: Element | null) => {
     const foot = from ? askFoot(from, card) : answers;
-    card.style.minHeight = `${card.offsetHeight}px`;
+    const was = card.isConnected ? card.getBoundingClientRect().height : 0;
     const line = h('input', {class: 'line-in', placeholder: t('Fix: what changed'), 'aria-label': t('The commit\'s line as Kind: title'), maxlength: '200', spellcheck: 'false'}) as HTMLInputElement;
     line.value = naming.get(repo) ?? '';
     naming.set(repo, line.value);
@@ -53,12 +70,22 @@ export function mainCard(repo: string, n: number, events: IssueEvents, after: ()
       if (!kindOf(line.value).title.trim()) { error.textContent = t('A commit needs a title (for example Fix：title)'); line.focus(); return; }
       yes.disabled = true;
       error.textContent = '';
-      try { await git.cut(repo, null, line.value, ''); naming.delete(repo); after(); } catch (e) { error.textContent = errorText(e); yes.disabled = false; }
+      try {
+        const cut = await git.cut(repo, null, line.value, '');
+        naming.delete(repo);
+        committed.unshift({repo, cut});
+        committed.splice(KEPT);
+        // The card goes down into the line that says it is committed, under main where it stood.
+        const at = card.getBoundingClientRect();
+        after();
+        morph(at, () => document.querySelector<HTMLElement>(`.done-row[data-cut="${CSS.escape(cut.id)}"]`), 340);
+      } catch (e) { error.textContent = errorText(e); yes.disabled = false; }
     });
     // One line, nothing to break: Enter commits it, as Ctrl+Enter does.
     line.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); yes.click(); } });
     card.replaceChildren(h('div', {class: 'off-ask'}, h('span', {class: 'card-title'}, repo),
       h('p', {class: 'muted small'}, tn('{n} file to commit on main', '{n} files to commit on main', n)), line, error, foot(no, yes)));
+    resize(card, was);
     line.focus({preventScroll: true});
   };
   if (naming.has(repo)) ask(null); else plain();
@@ -68,6 +95,19 @@ export function mainCard(repo: string, n: number, events: IssueEvents, after: ()
 /** "#3 Fix：title", the number quiet, as an issue's head writes it. */
 const named = (n: number | null, kind: string | null, title: string) => h('span', {class: 'done-name'},
   n === null ? null : h('span', {class: 'issue-no'}, `#${n} `), kind ? h('span', {class: 'issue-kind'}, `${kind}：`) : null, title);
+
+/** What was committed on main from here: its line, how much it changed, and when; the newest lit as it lands. */
+export function committedList(list: {repo: string; cut: git.Cut}[], all: boolean): HTMLElement {
+  const newest = committed[0]?.cut.id;
+  return h('div', {class: 'done-list'}, ...list.map(({repo, cut}) => {
+    const meta = t('Committed {when}', {when: ago(cut.time || Date.now())});
+    const row = h('div', {class: 'done-row done-head', 'data-cut': cut.id}, named(null, cut.kind, cut.title),
+      cut.added || cut.removed ? counted(cut.added, cut.removed) : null, h('span', {class: 'grow'}),
+      h('span', {class: 'muted small'}, all ? `${repo} · ${meta}` : meta));
+    if (cut.id === newest && Date.now() - (cut.time || 0) < 4000) row.classList.add('just-cut');
+    return row;
+  }));
+}
 
 /** The merged ones opened, by change: the page drawn again (anything saved in the repo does it) keeps them open. */
 const opened = new Set<string>();

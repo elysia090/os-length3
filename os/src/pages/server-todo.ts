@@ -4,7 +4,7 @@ import {t} from '../i18n.ts';
 import {every} from '../runs.ts';
 import * as servers from '../servers.ts';
 import type {Shown} from './server-parts.ts';
-import {todoList} from './todo-box.ts';
+import {sayLeft, todoList} from './todo-box.ts';
 
 /** How often a board's TODO is looked at again, while the page is in view. */
 const EVERY = 15_000;
@@ -26,7 +26,7 @@ export async function boardTodo(b: Shown, holder: HTMLElement, writing: (busy: (
   // Not sent (the Remote away): said under the list, and sent again by itself.
   const keeper = b.member ? servers.todoKeeper(b.id, list, {trouble: (why) => { status.textContent = t('Could not save: {message}', {message: why}); }}) : null;
   const box = todoList(list, keeper ? (kept) => keeper.save(kept) : async () => {},
-    {readOnly: !b.member, first: t('Something to do together'), counted: (x) => { left.textContent = x; }, failed: (why) => { status.textContent = why; }});
+    {readOnly: !b.member, first: t('Something to do together'), counted: (x) => sayLeft(left, x), failed: (why) => { status.textContent = why; }});
   writing(() => holder.contains(document.activeElement) || (keeper ? !keeper.idle() : false));
   holder.replaceChildren(h('div', {class: 'board-todo-head'}, h('span', {}, 'TODO'), left), box.element, status);
   let seen = JSON.stringify(list);

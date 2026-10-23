@@ -36,6 +36,8 @@ const REPO_KEY = 'length3.os.repo';
 const $ = (id: string) => document.getElementById(id)!;
 const tabs = new Map<PurposeId, HTMLButtonElement>();
 let current: PurposeId = 'home';
+/** Whether a page has been drawn yet: before the first, the page holds only what says the scripts did not run. */
+let opened = false;
 /** The plug's state in the rail, said again whenever the page or the plugin area changes. */
 let plugState = () => {};
 
@@ -162,6 +164,9 @@ function select(id: PurposeId, quiet = false): Promise<void> {
 
 function draw(id: PurposeId, quiet: boolean, panned: boolean) {
   const from = current;
+  // The first page the OS opens on: nothing drawn before it.
+  const first = !opened;
+  opened = true;
   const inkWas = where(tabs.get(from)?.getAttribute('aria-current') ? tabs.get(from) : null);
   current = id;
   serverLayer.close();
@@ -175,6 +180,8 @@ function draw(id: PurposeId, quiet: boolean, panned: boolean) {
   render();
   plugState();
   if (id !== 'new-repo') save(PURPOSE_KEY, id);
+  // The first page comes in as any page come to does, its parts a beat apart, rising from below as the OS opens.
+  if (first && !quiet) { stage($('page'), 1); return; }
   if (from !== id) {
     // The rail's ink goes from the place left to the place come to, and the page comes from that side of the rail.
     glide(inkWas, tabs.get(id)?.getAttribute('aria-current') ? tabs.get(id)! : null, $('rail-tabs'), 'var(--r-place)');
@@ -253,13 +260,16 @@ onReach(() => {
   askAgain = remoteAway() && !connection() ? every(15_000, () => (mayAsk() ? about() : undefined), {paced: true}) : null;
 });
 // Signed in or out, here or from another device: the page is drawn again for who is here now (Remote's draws itself).
-onConnection(() => { void look(); if (current === 'remote') me.paint(); else render(); });
+// Not before the first page is: back from a provider, the session is taken up before Remote is chosen, and Home
+// would show a moment first.
+onConnection(() => { void look(); if (current === 'remote') me.paint(); else if (opened) render(); });
 // Changing the language redraws the page and the rail's names in place.
 onLang(() => {
   for (const id of tabs.keys()) mark(id);
   document.querySelector('.rail')?.setAttribute('aria-label', t('Purposes'));
   named();
-  render();
+  // The language taken up as the OS starts comes before its first page, which is drawn in it once chosen.
+  if (opened) render();
 });
 // Home's state is read before the first page, and again when the window
 // comes back, so what l3 changed meanwhile is what the page shows.
@@ -299,7 +309,8 @@ if (asking.has('device')) {
   });
 }
 window.addEventListener('focus', () => {
-  void loadState().then(() => { useLang(getState('lang')); if (current === 'home') render(); else me.paint(); });
+  // Not before the first page is drawn (the window comes back focused from a provider before it is chosen).
+  void loadState().then(() => { useLang(getState('lang')); if (!opened) return; if (current === 'home') render(); else me.paint(); });
 });
 // An invitation's link opened in a tab already showing the app (pasted into its address) changes only
 // the fragment: it is taken the same way, and Server comes out afresh at its board.

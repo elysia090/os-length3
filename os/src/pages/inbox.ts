@@ -12,7 +12,7 @@ import {goToPlan, planRefused, planSaid, signInBox, signInPlace} from './remote.
 import {plan as readPlan} from '../plan.ts';
 import type {Context} from './context.ts';
 import {errorText} from '../errors.ts';
-import {arrive, morph, nudge, where} from '../glide.ts';
+import {arrive, LAND, nudge, still, where} from '../glide.ts';
 
 // Inbox: what comes to you, typed, from people found by address. Not a mail
 // screen: each message says what it is (a message, a review request, a
@@ -34,6 +34,28 @@ const KIND = (k: inbox.Kind) => ({message: t('Message'), review: t('Review reque
 
 function button(text: string, kind = ''): HTMLButtonElement {
   return h('button', {class: `button ${kind}`.trim(), type: 'button'}, text) as HTMLButtonElement;
+}
+
+/**
+ * A name just taken: the field it was written in, its name in it, goes up and becomes the stub (no empty box flown in
+ * its place), and from a field it turns into a name; as it lands its code and gear come in beside it, and what the
+ * Inbox holds comes in under it.
+ */
+function took(stub: HTMLElement, from: DOMRect) {
+  if (still()) return;
+  const at = stub.getBoundingClientRect();
+  if (!at.width || !at.height) return;
+  stub.style.transformOrigin = '0 0';
+  const back = () => { stub.style.transformOrigin = ''; };
+  stub.animate([
+    {transform: `translate(${from.left - at.left}px, ${from.top - at.top}px) scale(${from.width / at.width}, ${from.height / at.height})`, backgroundColor: 'var(--raised)', borderColor: 'var(--edge)'},
+    {transform: 'none'},
+  ], {duration: 380, easing: LAND}).finished.then(back, back);
+  for (const el of stub.querySelectorAll<HTMLElement>('.stub-code, .stub-gear')) {
+    el.animate([{opacity: 0, transform: 'translateX(-8px)'}, {opacity: 1, transform: 'none'}], {duration: 260, delay: 300, easing: LAND, fill: 'backwards'});
+  }
+  const under = stub.closest('.inbox-page')?.querySelector<HTMLElement>('.inbox-list');
+  under?.animate([{opacity: 0, transform: 'translateY(10px)'}, {opacity: 1, transform: 'none'}], {duration: 300, delay: 160, easing: LAND, fill: 'backwards'});
 }
 
 /**
@@ -193,6 +215,9 @@ const TO = '\0to';
 export function inboxPage(ctx: Context): Node[] {
   const holder = h('div', {});
   let open: string | null = null;
+  /** Nobody written to or from, as the list was last read (none read yet: as for a name just taken); and the field a name was just taken in. */
+  let bare = true;
+  let landing: DOMRect | null = null;
   let live: inbox.Live | null = null;
   let mine = '';
   /** Which reading of the list, and which opening of a conversation, is the latest: an older answer that comes after it is not drawn. */
@@ -212,8 +237,8 @@ export function inboxPage(ctx: Context): Node[] {
     if (!me.addresses.length) {
       // Taken: the field it was written in goes up to where the name now lives, the row at the Inbox's top.
       const place = signInPlace(t('Take a name'), addressStub(me, () => {
-        const from = where(place.querySelector('.stub'));
-        void paint().then(() => { if (from) morph(from, () => holder.querySelector<HTMLElement>('.stub'), 380, 'var(--r-field)'); });
+        landing = where(place.querySelector('.stub'));
+        void paint();
       }, () => goToPlan(ctx)));
       holder.replaceChildren(place);
       return;
@@ -239,9 +264,14 @@ export function inboxPage(ctx: Context): Node[] {
       drafts.sent(TO);
       void show(found.address!, rows, pane);
     });
+    // No sheet until the list says there is one to show (as it did last time it was read): not a sheet drawn and taken away.
     holder.replaceChildren(h('div', {class: 'inbox-page'},
       addressStub(me, () => void paint(), () => goToPlan(ctx)),
-      h('div', {class: 'inbox-box'}, list, pane)));
+      h('div', {class: bare && !open ? 'inbox-box none' : 'inbox-box'}, list, pane)));
+    // A name just taken goes up into its place as it is drawn there, before the frame after shows it standing.
+    const stub = holder.querySelector<HTMLElement>('.stub');
+    if (landing && stub) took(stub, landing);
+    landing = null;
     await paintList(rows, pane);
   };
 
@@ -275,7 +305,8 @@ export function inboxPage(ctx: Context): Node[] {
     // One quiet line in the open pane says what to do; none yet, it says so instead.
     if (!open && !unread) pane.removeAttribute('aria-label');
     // Nobody written to or from yet, there is no sheet: not a sheet of nothing.
-    pane.parentElement?.classList.toggle('none', !open && !unread && !all.length);
+    bare = !open && !unread && !all.length;
+    pane.parentElement?.classList.toggle('none', bare);
     if (!open && !unread) pane.replaceChildren(...(all.length ? [h('p', {class: 'quiet'}, t('Choose a conversation, or write to a name or a code.'))] : []));
     // What came to the open conversation since it was drawn is put at its foot.
     const open_ = shownThread;

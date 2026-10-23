@@ -10,7 +10,7 @@ import {bench} from './bench.ts';
 import {pageHead} from './common.ts';
 import {icon} from '../icons.ts';
 import type {Context} from './context.ts';
-import {closedList, mainCard, mergedList} from './git-done.ts';
+import {closedList, committedIn, committedList, mainCard, mergedList} from './git-done.ts';
 import {backToMain, issueBox, issueHead, mergeRow, reviewBox, type RepoState} from './git-issue.ts';
 import {laidOut, type Laid} from '../git-state.ts';
 import {issueForm} from './issue-form.ts';
@@ -255,8 +255,11 @@ export function git(ctx: Context): Node[] {
   const mergedPart = h('section', {class: 'section', 'aria-labelledby': 'merged-title', hidden: ''});
   const closedPart = h('section', {class: 'section', 'aria-labelledby': 'closed-title', hidden: ''});
   const drawDone = ({dirty, merged, closed}: Laid) => {
-    mainPart.hidden = !dirty.length;
-    mainPart.replaceChildren(heading('main-title', 'main'), ...dirty.map((r) => mainCard(r, states.get(r)!.uncommitted, events, again)));
+    // main: what it has not committed, each a card, and under them what was committed on it from here.
+    const cuts = committedIn(filter || null);
+    mainPart.hidden = !dirty.length && !cuts.length;
+    mainPart.replaceChildren(heading('main-title', 'main'), ...dirty.map((r) => mainCard(r, states.get(r)!.uncommitted, events, again)),
+      cuts.length ? committedList(cuts, !filter) : '');
     mergedPart.hidden = !merged.length;
     mergedPart.replaceChildren(heading('merged-title', t('Merged'), merged.length), mergedList(merged, !filter));
     closedPart.hidden = !closed.length;

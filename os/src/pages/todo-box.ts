@@ -75,6 +75,14 @@ export interface TodoOptions {
   first?: string;
 }
 
+/** What is left said at the box's head ('2 of 3 left'): a change seen there gives a beat, as Git's count of issues does. */
+export function sayLeft(el: HTMLElement, text: string) {
+  if (el.textContent === text) return;
+  const seen = el.isConnected && el.textContent !== '';
+  el.textContent = text;
+  if (seen && text) pop(el, .12, 300);
+}
+
 /** A TODO list kept by `keep` (given what is worth keeping, each time it changes). */
 export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promise<void>, o: TodoOptions = {}): TodoList {
   let items = [...start];
@@ -117,7 +125,11 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
     else if (back) pop(r.button, .06, 260);
     r.button.setAttribute('aria-pressed', String(td.done));
     r.button.setAttribute('aria-label', td.done ? t('Mark as not done') : t('Mark as done'));
-    r.meta.textContent = todo.filled(td) ? date(td.created) : '';
+    // Its day comes in at the line's end as the line becomes an item (filled), stamped there, not simply there.
+    const day = todo.filled(td) ? date(td.created) : '';
+    const dated = !r.meta.textContent && !!day && r.item.isConnected;
+    r.meta.textContent = day;
+    if (dated) arrive(r.meta, 1, 'x', 6, 260);
   };
 
   /** Start a new item after `id` and put the caret on its first line. */
@@ -318,7 +330,7 @@ export function todoBox(): HTMLElement {
   const status = h('p', {class: 'error', role: 'alert'});
   const remaining = h('small', {});
   const box = todoList(load(), (kept) => setState('todo', JSON.stringify(kept)),
-    {counted: (text) => { remaining.textContent = text; }, failed: (why) => { status.textContent = why; }});
+    {counted: (text) => sayLeft(remaining, text), failed: (why) => { status.textContent = why; }});
   return h('section', {class: 'section', 'aria-labelledby': 'todo-title'},
     h('h2', {id: 'todo-title'}, 'TODO', remaining), box.element, status);
 }

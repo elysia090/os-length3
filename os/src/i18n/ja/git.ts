@@ -71,6 +71,7 @@ export default {
   '{who} · merged {when}': '{who} · {when}に Merge',
   '{who} · closed {day}': '{who} · {day}に閉じた',
   'Closed {day}': '{day}に閉じた',
+  'Committed {when}': '{when}に Commit',
   'Closed': '閉じた Issue',
   'Reopen': 'もう一度開く',
   'Reopen {issue}': '{issue}をもう一度開く',

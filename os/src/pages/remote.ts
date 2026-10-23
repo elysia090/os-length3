@@ -407,11 +407,11 @@ async function confirm(el: HTMLElement, from: Element, repo: string, ask: Ask, d
   five.focus();
 }
 
-/** No passkey yet: the button, which says it. */
-function passkeyOffer(added: () => void): HTMLElement {
+/** No passkey yet: the button, which says it; shown once what it stands under is there (`after`), not before it to be pushed down. */
+function passkeyOffer(added: () => void, after: Promise<void>): HTMLElement {
   const box = h('section', {class: 'offer-holder', hidden: ''});
   const error = h('p', {class: 'error', role: 'alert'});
-  void account.passkeys().then((list) => {
+  void Promise.all([account.passkeys(), after]).then(([list]) => {
     if (list.length) return;
     // An offer beside the page's work, not the work: the page's ink stays on its repos.
     const add = button(t('Add a passkey'), 'small-button');
@@ -623,7 +623,10 @@ export function remote(ctx: Context): Node[] {
     const back = () => { if (!holder.isConnected) { document.removeEventListener('visibilitychange', back); return; } if (!document.hidden) void plan.paint(); };
     document.addEventListener('visibilitychange', back);
     // Under the repos (it is what lets one be turned off); a passkey added from it shows under Sign-in at once.
-    const offer = isNative ? null : passkeyOffer(() => { shown = null; paint(); });
+    // It waits for the repos to be drawn (or a few seconds, if they cannot be), so it lands under them once.
+    let listed = () => {};
+    const drawn = new Promise<void>((r) => { listed = r; setTimeout(r, 3000); });
+    const offer = isNative ? null : passkeyOffer(() => { shown = null; paint(); }, drawn);
     // A Remote entered by its link has no passkeys or providers to manage: only the code a repo is turned off with.
     const signIn = () => {
       if (isNative) page.panel('sign-in').replaceChildren(h('p', {class: 'muted'}, t('Passkeys and providers are managed in the browser.')));
@@ -635,7 +638,7 @@ export function remote(ctx: Context): Node[] {
     // The code (and a passkey) set while a repo is turned off: the offer has done its work, and Sign-in reads them again when shown.
     let stale = false;
     page.onShow((k) => { if (k === 'sign-in' && stale) { stale = false; signIn(); } });
-    page.panel('repos').append(repoSection(ctx, (n) => page.count('repos', n), () => { stale = true; if (offer) offer.hidden = true; }, () => page.show('plan')));
+    page.panel('repos').append(repoSection(ctx, (n) => { page.count('repos', n); listed(); }, () => { stale = true; if (offer) offer.hidden = true; }, () => page.show('plan')));
     page.panel('devices').append(deviceSection((n) => page.count('devices', n)));
     holder.replaceChildren(
       h('div', {class: 'part-bar'}, page.switch),

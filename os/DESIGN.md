@@ -79,7 +79,10 @@ Every value in `styles.css` comes from a token (§2).
     the next rising in a beat after it (90 ms on, 440 ms), so the two never
     stand in one place half seen, their words over each other. Only the page
     is taken as a picture to move; the rest of the window goes on being
-    drawn as it is.
+    drawn as it is. The first page the OS opens on comes in the same way,
+    its parts a beat apart, rising from below; nothing is drawn before it
+    (not Home for a moment while the place it opens on is still being
+    chosen, as when a provider sends the person back to Remote).
   - *What comes in, comes from its side, a beat at a time.* Down the rail
     the next page comes up from below, up the rail from above; along the
     band the next repo comes from the right, back along it from the left
@@ -112,7 +115,13 @@ Every value in `styles.css` comes from a token (§2).
     small past its size and settling, its tick drawn after it; a deed
     pressed and done gives a small pop where it was pressed, and so does a
     name or code copied; a message sent comes up out of the box it was
-    written in, one come in from the other's side.
+    written in, one come in from the other's side. A commit on main: its
+    card goes down into the line that says so, under main, lit as it lands.
+    A TODO line that becomes an item has its day stamped in at its end, and
+    the box's "n of n left" beats as it changes. A name taken in Inbox goes
+    up into its place as itself, its code and gear coming in beside it as
+    it lands. A menu (a row's in File, a gear's, Share) comes out of what
+    opened it, a few pixels from that side, as the person's menu rises.
   - *Every deed answers where it was done.* What a press changes never changes
     silently. The ink goes from one to the other between a page's
     parts (Runtime's, Remote's), Git's repos and the search's kinds as it
@@ -213,7 +222,10 @@ Every value in `styles.css` comes from a token (§2).
   chooses nothing. A thing made or chosen is landed on: a new issue is the
   one shown, with the keyboard on it; a file chosen in File has the caret.
   Going along a row keeps the keyboard on the same part of the box, and an
-  error that the name causes sends the keyboard back to the name.
+  error that the name causes sends the keyboard back to the name. When what
+  had the keyboard goes (a card committed), the place around it takes it
+  without a ring round it, so the page is not framed in ink for a card
+  gone; a key pressed there rings it, as it is then in use.
 - **What exists is the same everywhere.** A repo only on the Remote is a
   repo on every page: counted on Home, a card on Home and Remote that
   reads the same lines in the same order (size · when it changed, then
@@ -383,7 +395,8 @@ what is its own.
   (a file's name, a line's number) opens the center there.
 - **Boxes side by side.** One thing at a time in full, its neighbours'
   edges showing with their mark only (# a board, + a new one), never a
-  name cut short; ← → or an edge is the way to them. The current one has
+  name cut short, each running on into the ground at the column's edge;
+  ← → or an edge is the way to them. The current one has
   an `ink` edge, over `raised` when it holds no `raised` box of its own
   (Git's issues), on the ground when it does (Server's boards, which hold
   the TODO box). Git's issues, Server's boards.
@@ -394,6 +407,8 @@ what is its own.
   items written as "Kind：title", Enter for the detail, ○ when done, the
   date at the right whether a line has a kind or not. On Home it is tall;
   in a board, tall as it is on Home whatever its items (it scrolls in itself).
+  Under the pointer its edge takes a step toward ink (the edge a field
+  has), so it says it is there to write in before it is pressed.
 - **Overlays.** File and Server are operations, not pages: laid over the
   page that is showing, brought out by resting on the icon (it stays a
   while after the pointer leaves) or by a press (it stays), put away by
@@ -495,6 +510,11 @@ fix is always a piece from §3, not a new rule.
 | What is worked on drawn one way on one page and another on the next (a raised box, a framed card, a bordered box on the ground) | One sheet everywhere: `paper`, a 1 px `rule` edge, a place's corners; the one in hand (or with the keyboard) has its edge in `ink`, nothing drawn round it |
 | Something painted over a focus ring (the ground under the box over its foot) | The ring is whole: what lies under the box lies behind it |
 | A field with a ring drawn round its own border, a box in a box (a file's name in File's menu) | One line: the field's own border turns `ink` while it has the keyboard, as the search box's does |
+| A box one writes in framed by a ring a little outside its own edge (the Prompt, Server's box to its people) | Its own edge turns `ink`, two lines' weight, nothing drawn round it |
+| A neighbour cut off square at the column's edge, as if broken | It runs on into the ground there, fading over the last few pixels |
+| A deed that leaves no trace where it was done (a commit on main: its card simply gone) | What it made lands where the card was: its line, lit a moment |
+| A word that flickers with each key (未保存 while typing) | A quiet dot, once the writing pauses; the word for a screen reader |
+| Two places drawn alike when one is a name and the other a field (Inbox's stub and the field under it) | The name on the ground with a place's line; the field raised, its edge seen |
 | A square ring round a name left in a row after a deed (renamed, made) | The row is lit for the deed and has the keyboard without a ring; a key pressed there rings the row, round as the row is |
 | Two boxes at once: an outline flying to a box that is already drawn under it | One sheet: the box waits out of sight until the sheet lands, then shows as the sheet gives way |
 | A diff all one tint, its counts grey (+6 −2) | Each changed line its colour as a bar at its left on a light ground; +n green and −n red, then five small squares shared out as the lines are; a dashed break with "…" between the parts of a file |
@@ -1222,8 +1242,11 @@ line than the rest; a header with its place in "/" (`/root/<repo>/` quiet, the
 rest plain), then line numbers in a quiet gutter beside the text, which is
 itself the field (no box; the caret is the only sign). Typing saves on its
 own a moment later, on leaving the file, or with Ctrl+S; the header says
-something only when the file is not simply saved (未保存, or why it could
-not be saved). A text saved elsewhere (another device, the Prompt, Git)
+something only when the file is not simply saved: a quiet dot once the
+writing pauses before it is (未保存 to a screen reader), or why it could not
+be. Forge's files run on past the last far enough for it to come up to the
+column's top (a file just made, opened at the end), not the empty foot of
+the one before filling the column over it. A text saved elsewhere (another device, the Prompt, Git)
 comes into an open file at once, unless something written here is not saved
 yet: then it is asked in the file's box, under its head and over the text,
 which stays to be read and written on. The header says 外で変更されました;
@@ -1687,8 +1710,12 @@ Under the issues, each its own section, shown only when it has something:
   is drawn again. The issue's Commit row shows its files the same way. Commit
   asks in the card for the line the commit goes by ("Fix：title"), as
   `l3 commit REPO "Fix：title"` takes it, Not now at the left and Commit
-  under the pointer; Enter commits the one line. What is typed is kept
-  with its repo until it is committed or put back. This is Commit, not an
+  under the pointer; Enter commits the one line, and the card's height goes
+  from its files to the ask and back (280 ms) rather than held at the
+  taller. What is typed is kept with its repo until it is committed or put
+  back. Committed, the card goes down into a line under main: the commit's
+  line, +n −n and its squares, Committed just now at its right, lit as it
+  lands; the last few committed from here stay so, newest first. This is Commit, not an
   issue made of the changes: an issue hides a branch that starts from
   main's last commit, and moving main's draft onto one would be a new
   operation the Remote does not have; a commit on main is already one
@@ -1778,16 +1805,23 @@ place a page is switched, because its parts are unrelated):
   A repo card the Remote holds back says it waits, with See the plan.
 
 Under the parts, while there is no passkey, Add a passkey: the button alone,
-below what the page is about rather than over it.
+below what the page is about rather than over it, shown once the repos are
+drawn so it lands under them, not drawn first and pushed down.
 
 ### Inbox
 
 Your name as a stub: a field-sized place about as wide as a name, the name
 in it, shown alone (§5), and your code beside it (pressing either copies
 it, and it says Copied for a moment in the same place; there is no Copy
-button), its gear at the right end. Before there is one, the stub is the
-name to claim, in the sign-in card's place; Enter claims, and the field goes
-up into the stub it becomes (an outline from the one to the other). The gear opens, over what is under it (Escape or a press
+button), its gear at the right end; a name, not a field, so it stands on
+the ground with a place's line (`rule`), each part lifting under the pointer,
+and the field under it is the one that reads as a field. Before there is one,
+the stub is the name to claim, in the sign-in card's place; Enter claims,
+and the field goes up into the stub it becomes, its name in it (no empty
+outline flown in its place), turning from a field into a name; as it lands
+its code and gear come in beside it and what the Inbox holds comes in under
+it. No sheet stands at the right until there is a conversation to show
+(not one drawn empty and taken away). The gear opens, over what is under it (Escape or a press
 outside closes it), a popover: your names with their terms (Renew near the
 end), then Add a domain; its first head starts at the box's own room, with no
 group's step before it. Letting a name go is not offered here (the Remote
@@ -2026,15 +2060,21 @@ its corner concentric with its rows (a row's 8 px plus the 8 px between
 them: 16 px), only as tall as what is in it, its first row level with the
 File icon. It has no "/" label of its own: the rows are what is in "/". While it is out, File is the one filled icon in
 the rail; the page's own icon steps back until it goes. Nothing under it
-moves. Once out it stays for 8 seconds after the pointer leaves,
-so reaching across the page and back does not lose it; a press outside or
-Escape closes it at once. Each time it comes out it is read afresh.
+moves. The pointer resting on File a moment (300 ms) brings it out, never
+the pointer passing down the rail; brushed past on the icon alone, it goes
+half a second after the pointer does, and from the tree itself a little
+after (1.2 s), so a reach back finds it but the page is never left under a
+tree nobody asked to stay. Pressed, File brings it out to stay until a
+press elsewhere, Escape or File again. A press outside or Escape closes it
+at once. Each time it comes out it is read afresh.
 
 "/" is the root of the whole system, the same tree the Terminal's shell
 sees, and the tree shows where each part comes from: `/bin` is the fetched
 distribution (配布), `/dev` and `/proc` are made by the kernel, `/root`
-holds the person's repos, `/etc` and `/tmp` start empty. `/root` is open at
-first. A folder's triangle comes before its name, ▷ closed and ▽ open (one
+holds the person's repos, `/etc` and `/tmp` start empty. What the system
+is made of (those, and what is in them) is in `sub`, so `/root` and its
+repos are what the eye finds first; under the pointer or the keyboard a row
+is in ink again. `/root` is open at first. A folder's triangle comes before its name, ▷ closed and ▽ open (one
 outlined shape, turned). Inside a repo a name opens that place in Forge
 (in place when Forge is showing; a folder keeps the tree out, to go on
 down); a file is the one to work on, so choosing it puts the tree away and

@@ -240,6 +240,8 @@ export class Reader {
   private file(path: string, entry: Entry): HTMLElement {
     // Says something only when the file is not simply saved.
     const state = h('span', {class: 'file-state', role: 'status'});
+    /** Written and not saved yet: a quiet dot where the word would be (said, not shown); saved, it goes. */
+    const unsaved = () => { if (!state.querySelector('.unsaved-dot')) state.replaceChildren(h('span', {class: 'unsaved-dot', 'aria-hidden': 'true'}), h('span', {class: 'sr-only'}, t('Unsaved'))); };
     // The heading is the file's place in "/": the repo part quiet, the rest plain.
     const head = h('h2', {class: 'path'}, h('span', {}, h('span', {class: 'muted'}, `/root/${this.repo}/`), path), state);
     // Beside, in a box of its own: from its head's button, or Ctrl+click (⌘) on the head, as a link opens a tab.
@@ -358,7 +360,7 @@ export class Reader {
         try {
           await store.write(this.repo, path, text);
           held.wrote(text);
-          state.textContent = area.value === held.saved ? '' : t('Unsaved');
+          if (area.value === held.saved) state.textContent = ''; else unsaved();
           // Saved: it goes where it is kept, this device's (Runtime) or the Remote's once signed in.
           goesTo(head, connection() ? 'remote' : 'runtime');
         } catch (e) {
@@ -379,7 +381,7 @@ export class Reader {
           if (held.typed(area.value)) { settle(); state.textContent = ''; } else paintDiff();
           return;
         }
-        state.textContent = t('Unsaved');
+        unsaved();
         clearTimeout(timer);
         timer = window.setTimeout(() => void save(), 700);
       });

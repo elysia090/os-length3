@@ -58,6 +58,12 @@ export function keepFocus(doc: Document = document) {
     since = 0;
     if (!place) return;
     if (!place.hasAttribute('tabindex')) place.setAttribute('tabindex', '-1');
+    // Taken on its own, the place holds the keyboard without a ring round it (a whole page framed in ink, for a
+    // card that went); a key pressed there rings it, as the person is then using it.
+    place.classList.add('kept');
+    const plain = () => { place.classList.remove('kept'); place.removeEventListener('keydown', plain); place.removeEventListener('blur', plain); };
+    place.addEventListener('keydown', plain);
+    place.addEventListener('blur', plain);
     place.focus({preventScroll: true});
   };
   // Looked at once what changes has been drawn; the wait for the same control is counted from when it went.

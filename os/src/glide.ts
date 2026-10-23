@@ -177,7 +177,7 @@ export function countUp(el: HTMLElement, ms = 560) {
 /** A page's parts, each a beat of its arrival: a heading, a card, a box, a pill, a file. */
 const BEATS = ['.page-head', '.identity', 'section > h2', '.todo-box', '.card', '.part-bar', '.meter', '.legend > span', '.space-box',
   '.sign-in-card', '.stub-holder', '.inbox-box', '.new-repo > .field', '.git-filter .chip', '.issue-stage', '.issue-new',
-  '.repo-strip .pill', '.repo-strip .band-add', '.col:not([hidden]) .file'].join(', ');
+  '.repo-strip .pill', '.repo-strip .band-add', '.col:not([hidden]) .file', '.repo-grid > .muted', '.home-servers > .muted'].join(', ');
 
 /** The arrival under way: a page come to before the last had landed ends it, so the two never stage the same parts. */
 let arriving: (() => void) | null = null;

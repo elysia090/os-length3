@@ -32,8 +32,14 @@ import {errorText} from '../errors.ts';
 // in its place; a new file is the one to work on, so the tree goes and the
 // caret is in it.
 
-const OPEN_DELAY = 80;
-const LINGER = 8000;
+/** How long the pointer rests on File before the tree comes out: passing over the rail does not bring it out. */
+const OPEN_DELAY = 300;
+/**
+ * How long it stays once the pointer has gone: brushed past on the icon alone, a moment; gone from the tree itself,
+ * a little longer, for a reach back to it. Brought out by a press, it stays until a press elsewhere or Escape.
+ */
+const LINGER_PASSED = 450;
+const LINGER = 1200;
 
 /** Open folders by absolute path, kept while the app runs. */
 const expandedPaths = new Set<string>(['/root']);
@@ -78,13 +84,17 @@ export class FileTree {
   /** When it last came out. */
   /** The tree was out when the pointer came onto the File button, or a press there brought it out: pressed now, it goes. */
   private outBefore = false;
+  /** Brought out by a press: it stays until put away (a press elsewhere, Escape, File again), not when the pointer goes. */
+  private pinned = false;
+  /** The pointer has been in the tree since it came out. */
+  private visited = false;
 
   constructor(events: FileTreeEvents) {
     this.events = events;
     this.root = h('ul', {class: 'tree-children', role: 'tree', 'aria-label': '/'});
     // No "/" label of its own: the rows are what is in "/".
     this.element = h('nav', {class: 'tree', id: 'file-tree', 'aria-label': 'File（/）'}, this.root);
-    this.element.addEventListener('pointerenter', () => this.enter());
+    this.element.addEventListener('pointerenter', () => { this.visited = true; this.enter(); });
     this.element.addEventListener('pointerleave', () => this.leave());
     // Escape closes it from anywhere while it is out, before what has the keyboard
     // hears it (so the text being written keeps its caret); the keyboard goes back
@@ -129,6 +139,7 @@ export class FileTree {
       if (this.isOpen && (keyboard || this.outBefore)) { this.close(); return; }
       this.open(keyboard);
       this.outBefore = true;
+      this.pinned = true;
     });
   }
 
@@ -136,8 +147,8 @@ export class FileTree {
   leave() {
     this.over = false;
     // A name being written, an ask, or the keyboard in the tree: it stays until that is done.
-    if (this.isOpen && this.holding()) { clearTimeout(this.timer); return; }
-    this.later(false, LINGER);
+    if (this.isOpen && (this.pinned || this.holding())) { clearTimeout(this.timer); return; }
+    this.later(false, this.visited ? LINGER : LINGER_PASSED);
   }
 
   /** Something in the tree that the pointer going away must not put away: a field or an ask in a row's menu, or the keyboard. */
@@ -146,7 +157,7 @@ export class FileTree {
   }
 
   /** What held the tree is done: with the pointer away, it goes after the linger as it would have. */
-  private letGo() { if (this.isOpen && !this.over && !this.holding()) this.later(false, LINGER); }
+  private letGo() { if (this.isOpen && !this.over && !this.pinned && !this.holding()) this.later(false, this.visited ? LINGER : LINGER_PASSED); }
 
   open(focus = false) {
     clearTimeout(this.timer);
@@ -168,6 +179,8 @@ export class FileTree {
     clearTimeout(this.timer);
     this.unpop();
     this.outBefore = false;
+    this.pinned = false;
+    this.visited = false;
     this.element.classList.remove('open');
     this.trigger?.setAttribute('aria-expanded', 'false');
   }
@@ -270,6 +283,8 @@ export class FileTree {
     const row = h('div', {class: 'tree-row', style: `--depth:${depth}`});
     // Heard by its name alone, not by everything in its row (its triangle, its menu).
     const item = h('li', {role: 'treeitem', class: isRepo ? 'tree-repo' : e.kind === 'dir' ? 'tree-dir' : 'tree-file', 'aria-label': e.name}, row);
+    // The system's own parts (the kernel's, the distribution's) are there to be found, quieter than the person's repos.
+    if (e.origin && e.origin !== 'repos') item.classList.add('tree-sys');
     const meta = e.origin ? t(ORIGIN_LABEL[e.origin]) : e.kind === 'file' && e.size ? bytes(e.size) : '';
 
     if (e.kind !== 'dir') {

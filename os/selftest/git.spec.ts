@@ -61,7 +61,8 @@ test('a change on main is committed from main\'s card, named by its line', async
 
   await app.git.mainCard('hello').getByRole('textbox').fill('Docs: Say where it runs');
   await app.git.commitLine('hello');
-  await expect(app.git.section('main')).toBeHidden();
+  await expect(app.git.mainCard('hello')).toBeHidden();
+  await expect(app.git.committed('Say where it runs')).toBeVisible();
 
   // Committed, Forge's diff has nothing left against the last commit.
   await app.rail.go('forge');

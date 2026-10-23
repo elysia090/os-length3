@@ -95,6 +95,8 @@ a { color: var(--ink); }
 }
 @media (forced-colors: active) { :root { scrollbar-color: auto; } * { scrollbar-width: auto; } }
 :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+/* A place the keyboard was left on when what had it went (focus.ts): held, not framed, until a key is pressed there. */
+[tabindex].kept:focus-visible { outline: none; }
 ::selection { background: var(--ink); color: var(--ground); }
 .muted { color: var(--sub); }
 .small { font-size: var(--t-meta); }
@@ -180,6 +182,15 @@ a { color: var(--ink); }
 .me .icon { width: 30px; height: 30px; }
 /* A popover (the person's menu, Inbox's names): one box, a head over each group, a row per item. */
 .pop { display: grid; padding: var(--s2); background: var(--paper); border: 1px solid var(--rule); border-radius: var(--r-card); }
+/* A menu out of a row, a card or a gear comes out of it as it shows: a few pixels from the side it opens on, as the
+   person's menu rises from the face (not there at once, as if it had always been). */
+.tree-pop, .repo-gear-pop, .stub-panel, .share-pop { animation: menu-in 200ms var(--land) both; }
+.repo-gear-pop, .stub-panel { --from: 0 -4px; }
+.share-pop { --from: 0 4px; }
+/* File's beside the tree, at the row's height: out of the tree, to its right. */
+.tree-pop { --from: -6px 0; }
+@keyframes menu-in { from { opacity: 0; translate: var(--from); } }
+@media (prefers-reduced-motion: reduce) { .tree-pop, .repo-gear-pop, .stub-panel, .share-pop { animation: none; } }
 .me-pop {
   position: absolute; left: calc(100% + var(--s3)); bottom: 0; z-index: 6;
   /* As wide as it needs, but never past the window's own gutter (a 320 px phone has 194 px beside the rail). */
@@ -371,7 +382,9 @@ a { color: var(--ink); }
   border: 1px solid var(--rule); border-radius: var(--r-place); background: var(--paper); transition: border-color var(--motion);
   min-height: max(360px, 55vh); display: grid; grid-template-rows: 1fr auto;
 }
-/* A sheet: written in, its edge is ink, as a file's is. */
+/* A sheet: written in, its edge is ink, as a file's is; under the pointer, a step toward it (the edge a field has),
+   so the box says it is there to write in before it is pressed. */
+.todo-box:hover { border-color: var(--edge); }
 .todo-box:focus-within { border-color: var(--ink); }
 .todo-items { padding: var(--s3) var(--s3) var(--s2); }
 .todo-item { padding-bottom: var(--s2); }
@@ -692,6 +705,9 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .work.no-side > .center { border-right-color: transparent; }
 .flow { height: 100%; overflow-y: auto; padding: var(--s3) var(--s5) 160px; }
 .flow:focus-visible { outline-offset: -2px; }
+/* Forge's files run on far enough past the last for it to come up to the top (a file just made, opened at the end):
+   not the empty foot of the one before it filling the column over it. */
+.col > .flow::after { content: ''; display: block; height: max(0px, calc(100% + var(--s3) - var(--file-min) - var(--s6))); }
 .path {
   position: sticky; top: calc(-1 * var(--s3)); z-index: 1;
   display: flex; align-items: center; gap: var(--s2); justify-content: space-between;
@@ -716,10 +732,13 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
    so tall that, read from its top, its foot meets the prompt box: a clear
    gap (s6) stays between them, so the box floats over the page rather than
    hanging off a file. */
+.flow, .file {
+  --file-min: min(calc(var(--rail-top) + 8 * var(--h-place) + 7 * var(--s1) - var(--band) - var(--h-row) - 2 * var(--s3)),
+    calc(var(--inner-h) - var(--band) - var(--h-row) - 2 * var(--s3) - var(--s5) - var(--h-place) - var(--s6)));
+}
 .file {
   display: flex; flex-direction: column; margin-bottom: var(--s6);
-  min-height: min(calc(var(--rail-top) + 8 * var(--h-place) + 7 * var(--s1) - var(--band) - var(--h-row) - 2 * var(--s3)),
-    calc(var(--inner-h) - var(--band) - var(--h-row) - 2 * var(--s3) - var(--s5) - var(--h-place) - var(--s6)));
+  min-height: var(--file-min);
   border: 1px solid var(--rule); border-radius: var(--r-place); background: var(--paper);
   transition: border-color var(--motion);
 }
@@ -729,6 +748,11 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 /* A file reads like a plain text editor: line numbers in a quiet gutter,
    the text beside them, on the same lines. */
 .file-state { font-weight: 400; color: var(--sub); white-space: nowrap; }
+/* Not saved yet: a dot, not a word that flickers with each key; it shows only once the writing pauses (a save comes
+   0.7 s after), so steady typing is not watched over. */
+.unsaved-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--sub); vertical-align: middle; animation: unsaved-in 200ms ease-out 350ms both; }
+@keyframes unsaved-in { from { opacity: 0; scale: .4; } }
+@media (prefers-reduced-motion: reduce) { .unsaved-dot { animation: none; } }
 .sheet { flex: 1; display: grid; grid-template-columns: auto minmax(0, 1fr); align-content: start; column-gap: var(--s4); padding: var(--s2) var(--s4) var(--s4); cursor: text; }
 .gutter, .code { margin: 0; padding: 0; font: var(--t-meta)/1.6 var(--mono); white-space: pre; tab-size: 4; }
 .gutter { color: var(--sub); text-align: right; user-select: none; min-width: 2ch; font-variant-numeric: tabular-nums; }
@@ -801,7 +825,7 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .prompt-run { flex: none; display: inline-flex; align-items: center; gap: var(--s2); margin-block: calc((var(--t-body) * 1.6 - var(--h-row)) / 2); }
 .prompt-run:hover:not(:disabled) { background: var(--ground); }
 .prompt-run:disabled { opacity: .5; cursor: default; }
-.prompt:focus-within { outline: 2px solid var(--ink); outline-offset: 2px; }
+.prompt:focus-within { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
 .prompt-in { flex: 1; min-width: 0; max-height: 30vh; border: 0; padding: 0; background: transparent; resize: none; font: var(--t-body)/1.6 var(--sans); }
 .prompt-in:focus { outline: none; }
 .prompt-in:disabled { cursor: default; }
@@ -1219,6 +1243,9 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 .tree-meta { flex: none; padding: 0 var(--s2); font-size: var(--t-meta); opacity: .8; }
 /* Only on the Remote: quiet, as a card of one is dashed. */
 .tree-away > .tree-row .tree-name { color: var(--sub); }
+/* What the system is made of (/bin, /dev, /etc, /proc and what is in them) steps back, so /root and the repos in it
+   are what the eye finds first; under the pointer or the keyboard a row is in ink again. */
+.tree-sys .tree-row:not(:hover, :focus-within, :has(> [aria-current='page'])) :is(.tree-name, .tree-toggle) { color: var(--sub); }
 .tree-toggle, .tree-spacer { flex: none; width: var(--s5); height: var(--h-row); }
 .tree-toggle { display: grid; place-items: center; border: 0; background: transparent; color: inherit; cursor: pointer; }
 .tree-toggle .icon { width: var(--s3); height: var(--s3); transition: transform var(--motion); }
@@ -1411,6 +1438,11 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 .stage-hit.prev { left: 0; width: calc(var(--lead) * var(--peek)); }
 .stage-hit.next { right: 0; width: calc((2 - var(--lead)) * var(--peek)); }
 .stage-hit:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+/* A neighbour runs on past the column's edge: there it goes into the ground, not cut off square as if broken. */
+.slide-stage::before, .slide-stage::after { content: ''; position: absolute; top: 0; bottom: 0; z-index: 1; width: min(var(--peek), var(--s5)); pointer-events: none; opacity: 0; transition: opacity var(--motion); }
+.slide-stage::before { left: 0; background: linear-gradient(to left, transparent, var(--ground)); }
+.slide-stage::after { right: 0; background: linear-gradient(to right, transparent, var(--ground)); }
+.slide-stage:has(.slide[aria-current='true'] + .slide)::after, .slide-stage:has(.slide + .slide[aria-current='true'])::before { opacity: 1; }
 .space-col > h3 small { margin-left: var(--s2); font-weight: 400; color: var(--sub); font-size: var(--t-meta); }
 /* A page in parts (common.ts parts()): the headings are the switch, the
    chosen one an ink fill like anything chosen; only its part is shown. */
@@ -1475,6 +1507,9 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 @keyframes line-land { from { translate: 0 -12px; opacity: 0; } }
 @keyframes line-lit { from, 30% { background: color-mix(in srgb, var(--marker) 55%, transparent); } }
 @media (prefers-reduced-motion: reduce) { .done-row.landing { animation: none; } }
+/* Committed on main just now: the card's sheet lands on its line (git-done.ts), which is lit as it does. */
+.done-row.just-cut { animation: line-lit 1600ms ease-out both; border-radius: var(--r-field); }
+.done-head > .diff-count { font-size: var(--t-meta); }
 /* A Prompt stopped from its card: what it gave back is lit a moment (runtime.ts). */
 /* A row of the tree a deed made or renamed lands lit where it now is. */
 .tree-row.landing { animation: line-land 360ms var(--land) both, line-lit 1200ms ease-out; }
@@ -1684,19 +1719,22 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
    copies it, and it says so for a moment. */
 .stub-holder { position: relative; display: grid; gap: var(--s2); justify-items: start; margin: var(--s5) 0 var(--s4); }
 .stub { display: flex; align-items: center; width: min(100%, 400px); min-height: var(--h-control); border: 1px solid var(--edge); border-radius: var(--r-field); background: var(--raised); }
+/* Taken, it is a name, not a field: on the ground with a place's line, so the field to write to someone, under it
+   and of its size, is the one that reads as a field (raised, its edge seen). Each part lifts under the pointer. */
+.stub:has(> .stub-text) { border-color: var(--rule); background: transparent; }
+.stub-text:hover, .stub-code:hover { background: var(--raised); }
 .stub-text, .stub-in { flex: 1; min-width: 0; height: calc(var(--h-control) - 2px); padding: 0 var(--s3); border: 0; border-radius: var(--r-field) 0 0 var(--r-field); background: transparent; color: var(--ink); font: 600 var(--t-body)/1 var(--sans); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stub-text { cursor: copy; }
 /* The code beside the name: six digits to be found by, copied by a press. */
 .stub-code { flex: none; height: calc(var(--h-control) - 2px); padding: 0 var(--s3); border: 0; border-left: 1px solid var(--rule); background: transparent; color: var(--sub); font: var(--t-meta)/1 var(--mono); letter-spacing: .08em; cursor: copy; }
-.stub-code:hover { background: var(--ground); color: var(--ink); }
-.stub-text:hover { background: var(--ground); }
+.stub-code:hover { color: var(--ink); }
 .stub-in:focus { outline: none; }
 .sign-in-card .stub { width: 100%; }
 .sign-in-card .stub-holder { display: grid; gap: var(--s2); justify-items: stretch; margin: 0; }
 .sign-in-card .stub-holder > .stub { min-width: 0; }
 .stub:has(.stub-in:focus-visible) { outline: 2px solid var(--ink); outline-offset: 2px; }
 .stub-gear { display: grid; place-items: center; flex: none; width: var(--h-control); height: calc(var(--h-control) - 2px); padding: 0; border: 0; border-left: 1px solid var(--rule); border-radius: 0 var(--r-field) var(--r-field) 0; background: transparent; color: var(--sub); cursor: pointer; }
-.stub-gear:hover, .stub-gear[aria-expanded='true'] { background: var(--ground); color: var(--ink); }
+.stub-gear:hover, .stub-gear[aria-expanded='true'] { background: var(--raised); color: var(--ink); }
 .stub-gear svg { width: 20px; height: 20px; }
 .stub-panel { position: absolute; top: calc(100% + var(--s1)); left: 0; z-index: 4; width: min(100%, 400px); }
 /* A row of the panel as the menu's rows are: its padding, the field or the ask in a row's place. */

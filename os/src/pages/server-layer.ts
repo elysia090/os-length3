@@ -121,7 +121,15 @@ export class ServerLayer {
     if (stay) this.pinned = true;
     // Brought out to stay, it covers the page: the keyboard goes from the rail into it, not to the page behind it.
     if (stay) document.getElementById('page')?.setAttribute('inert', '');
-    if (this.isOpen) return;
+    if (this.isOpen) {
+      // Out already because the pointer rested on Server, and now pressed: the keyboard goes in as it does when a
+      // press brings it out (the name being made, or the box to write in), not left on the rail where Enter would
+      // put it away again.
+      if (stay && !this.element.contains(document.activeElement)) {
+        [...this.element.querySelectorAll<HTMLElement>('.server-name-in, .prompt-in')].find((el) => el.checkVisibility())?.focus();
+      }
+      return;
+    }
     this.element.replaceChildren(this.build());
     document.body.append(this.element);
     this.trigger?.setAttribute('aria-expanded', 'true');

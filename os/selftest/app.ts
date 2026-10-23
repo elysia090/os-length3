@@ -488,6 +488,8 @@ class Git extends Part {
   section(name: 'main' | 'Merged' | 'Closed') { return this.main.getByRole('region', {name: new RegExp(`^${name}( \\d+)?$`)}); }
   /** main's card for `repo`, while something there is not committed. */
   mainCard(repo: string) { return this.section('main').getByRole('group', {name: `Not committed on main in ${repo}`}); }
+  /** A commit made on main from here: its line, left under main where its card was. */
+  committed(title: string) { return this.section('main').getByText(title); }
 
   /** Commit what main has not committed in `repo`, its line written as Kind: title (Enter commits it). */
   async commitOnMain(repo: string, line: string) {
