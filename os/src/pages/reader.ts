@@ -157,7 +157,10 @@ export class Reader {
       setTimeout(stop, 1500);
     }
     target.classList.add('revealed');
-    setTimeout(() => target.classList.remove('revealed'), 1200);
+    // Off once its light has gone (not at a guess of when, which can fall a frame before its end and cut it).
+    const off = () => target.classList.remove('revealed');
+    target.querySelector(':scope > .path')?.addEventListener('animationend', off, {once: true});
+    setTimeout(off, 1600);
     if (!line && !write) return;
     await this.fileLoads.get(path)?.();
     const area = this.editors.get(path);
@@ -178,10 +181,12 @@ export class Reader {
 
   /**
    * The file being read: the one with the caret while it is in view (the
-   * last file, chosen in File, cannot reach the top), else the first whose
-   * box reaches below the top of the center.
+   * last file, chosen in File, cannot reach the top), else `landed` (the one
+   * last gone to, from File, the search or Git) while it is in view, else the
+   * first whose box reaches below the top of the center. So the file gone to
+   * stays the one read when the keyboard goes elsewhere (File pressed again).
    */
-  reading(): string | null {
+  reading(landed: string | null = null): string | null {
     const view = this.flow.getBoundingClientRect();
     const top = view.top + 8;
     const caret = document.activeElement instanceof HTMLElement ? document.activeElement.closest<HTMLElement>('section.file') : null;
@@ -189,6 +194,11 @@ export class Reader {
     if (caret && page.contains(caret)) {
       const r = caret.getBoundingClientRect();
       if (r.bottom > top && r.top < view.bottom) return caret.dataset.path ?? null;
+    }
+    const went = landed ? [...page.querySelectorAll<HTMLElement>('section.file')].find((s) => s.dataset.path === landed) : undefined;
+    if (went) {
+      const r = went.getBoundingClientRect();
+      if (r.bottom > top && r.top < view.bottom) return landed;
     }
     for (const section of page.querySelectorAll<HTMLElement>('section.file')) {
       if (section.getBoundingClientRect().bottom > top) return section.dataset.path ?? null;

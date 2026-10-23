@@ -179,7 +179,14 @@ function make(ctx: Context) {
     if (pressed) (add.disabled ? pills.querySelector<HTMLElement>(`.pill[data-repo="${CSS.escape(rest[0])}"] .pill-name`) : add)?.focus();
   });
 
+  /** The band as last drawn: which pills, and which is worked on or open beside. */
+  let painted = '';
   const paintBand = () => {
+    // Asked again as it already is (one deed can ask twice: the box chosen, then the box shown), it is left as it
+    // is: drawn anew, its pills would be new ones, and the ink on its way between two would stop where it was.
+    const state = band.map((name) => `${name}:${repo && name === repoOf(repo) ? 'on' : shown.some((k) => repoOf(k) === name) ? 'beside' : ''}`).join('|');
+    if (state === painted && pills.querySelectorAll('.pill').length === band.length) { paintAdd(); return; }
+    painted = state;
     const was = new Map([...pills.querySelectorAll<HTMLElement>('.pill')].map((p) => [p.dataset.repo!, p.getBoundingClientRect()]));
     const inkWas = where(pills.querySelector('.pill[aria-current]'));
     pills.replaceChildren(...band.map((name) => {
@@ -535,6 +542,7 @@ function make(ctx: Context) {
     // Nor does a page just read again put it back where it was, over the place asked for.
     if (path) cancelAnimationFrame(putBack);
     // A place asked for is where the center goes: coming back does not put it back where it was.
+    landed = path ?? null;
     if (path) { revealing = true; void view()?.reader.reveal(path, 0, write).then(() => track()); }
     else track();
   };
@@ -543,11 +551,13 @@ function make(ctx: Context) {
   // Where the center is read is kept for its repo at each scroll, and the
   // file being read is said to File, which marks it.
   let reading: string | null = null;
+  /** The file last gone to in this repo: the one read while it is in view, wherever the keyboard goes (reader.ts). */
+  let landed: string | null = null;
   const told = (path: string | null) => { if (path !== reading) { reading = path; ctx.reading(path); } };
   let quiet = 0;
   const track = () => {
     clearTimeout(quiet);
-    quiet = window.setTimeout(() => { const v = view(); if (v && v.flow.isConnected) told(v.reader.reading()); }, 120);
+    quiet = window.setTimeout(() => { const v = view(); if (v && v.flow.isConnected) told(v.reader.reading(landed)); }, 120);
   };
   // Taken off the screen and put back, a place that scrolls starts at its top again: each comes back where it was.
   let restoring = false;

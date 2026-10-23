@@ -27,7 +27,7 @@ import {getState, loadState} from './state.ts';
 import {onLang, t, useLang} from './i18n.ts';
 import {NEW_REPO, PURPOSES, RAIL, purpose, restorePurpose, stepPurpose, type PurposeId} from './purposes.ts';
 import {glide, morph, stage, where} from './glide.ts';
-import {touch} from './touch.ts';
+import {letGo, touch} from './touch.ts';
 import {caret} from './caret.ts';
 
 const PURPOSE_KEY = 'length3.os.purpose';
@@ -153,6 +153,7 @@ function select(id: PurposeId, quiet = false): Promise<void> {
   const begin = (document as Panning).startViewTransition;
   if (begin && !quiet && pan && $('page').childElementCount && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
     document.documentElement.style.setProperty('--pan', String(pan));
+    letGo($('page'));
     return begin.call(document, () => draw(id, quiet, true)).updateCallbackDone.catch(() => {});
   }
   draw(id, quiet, false);

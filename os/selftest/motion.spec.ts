@@ -81,3 +81,60 @@ test('the caret is drawn by the OS: it follows what is written along the line, a
   expect(c.y).toBeGreaterThan(b.y + 8);
   expect(c.x).toBeLessThan(b.x);
 });
+
+test('switching repos on the band, the ink goes all the way from one pill to the other, not cut by the band drawn again', async ({app}) => {
+  await app.newRepo.make('hello');
+  await app.newRepo.make('notes');
+  await still(app);
+  const pill = (name: string) => app.forge.band.locator(`.pill[data-repo="${name}"]`);
+  const to = (await pill('hello').boundingBox())!;
+  // The ink, frame by frame, from the press until it has landed.
+  const trip = app.page.evaluate(() => new Promise<{alive: number; left: number}>((done) => {
+    const t0 = performance.now();
+    let alive = 0, left = NaN;
+    const tick = () => {
+      const ink = document.querySelector<HTMLElement>('.repo-strip .glide-ink');
+      if (ink) { alive = performance.now() - t0; left = ink.getBoundingClientRect().left; }
+      if (performance.now() - t0 < 600) requestAnimationFrame(tick); else done({alive, left});
+    };
+    requestAnimationFrame(tick);
+  }));
+  await pill('hello').getByRole('button', {name: 'hello', exact: true}).click();
+  const {alive, left} = await trip;
+  expect(alive).toBeGreaterThan(150);
+  expect(Math.abs(left - to.x)).toBeLessThan(4);
+});
+
+test('a page coming in never shows a part and then takes it away to bring it in', async ({signedIn: app}) => {
+  await app.newRepo.make('hello');
+  await app.newRepo.make('notes');
+  await app.rail.go('remote');
+  await still(app);
+  // Each of the band's pills, each file and each card, by what it is (drawn again, it is a new element of the same
+  // thing): once seen at all, never gone back to nothing while the page arrives (Home's cards are drawn again once
+  // the Remote has said what it holds, Forge's band once its repos are read).
+  const flashes = () => app.page.evaluate(() => new Promise<string[]>((done) => {
+    const t0 = performance.now(), most = new Map<string, number>(), back: string[] = [];
+    const tick = () => {
+      for (const el of document.querySelectorAll<HTMLElement>('.repo-strip .pill, .col:not([hidden]) section.file, .home-repos .card')) {
+        // What it is and which: a card and a pill of the same repo are two things.
+        const key = `${el.className.split(' ')[0]} ${el.dataset.repo ?? el.dataset.path ?? (el.textContent ?? '').trim().slice(0, 16)}`;
+        // Only what is on the screen: a page kept out of sight (Forge's, while Home is shown) is not seen.
+        if (!el.checkVisibility()) continue;
+        let o = 1;
+        for (let p: HTMLElement | null = el; p; p = p.parentElement) o *= +getComputedStyle(p).opacity;
+        const had = most.get(key) ?? 0;
+        if (had > .9 && o < .4) back.push(`${key} ${had.toFixed(2)}→${o.toFixed(2)} @${Math.round(performance.now() - t0)}ms`);
+        most.set(key, Math.max(had, o));
+      }
+      if (performance.now() - t0 < 1200) requestAnimationFrame(tick); else done(back);
+    };
+    requestAnimationFrame(tick);
+  }));
+  const home = flashes();
+  await app.rail.go('home');
+  expect(await home).toEqual([]);
+  const forge = flashes();
+  await app.rail.go('forge');
+  expect(await forge).toEqual([]);
+});

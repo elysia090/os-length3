@@ -1,5 +1,6 @@
 import {kindWords} from './todo-box.ts';
 import {ago, h} from '../dom.ts';
+import {arrive} from '../glide.ts';
 import * as git from '../history.ts';
 import {t, tn} from '../i18n.ts';
 import {closeMark, issueName, issuePath, saveIssue, setClosed, type Issue} from '../issues.ts';
@@ -71,6 +72,8 @@ const doing = (b: HTMLButtonElement, error: HTMLElement, f: () => Promise<unknow
 };
 /** The step just done here, for a moment: its done mark, drawn next, lands rather than being there (slot). */
 let justDone: {word: string; until: number} | null = null;
+/** The issue started here last, and when: its steps unfold, through a draw again or two (issueBox). */
+let started: {path: string; at: number} | null = null;
 
 /** Who is signed in, for the line a close is written with; read once. */
 let whoAmI: Promise<string> | null = null;
@@ -140,6 +143,13 @@ export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEv
   // written right under it, above Commit and Push.
   const words = h('button', {type: 'button', class: 'issue-words', title: t('Change its words')}, issueHead(issue));
   const work = here && s?.work ? steps(issue, s, events, after) : null;
+  // Started here just now: its steps unfold where Start was, the next thing to do coming in after the deed (and the
+  // box drawn again meanwhile, as it is once the repo is read again, carries the unfolding on from where it was).
+  if (work && justDone && (justDone.word === t('Start') || justDone.word === t('Continue here')) && performance.now() < justDone.until) {
+    justDone = null;
+    started = {path, at: performance.now()};
+  }
+  if (work && started?.path === path) arrive(work.element, -1, 'y', 10, 280, performance.now() - started.at);
   // The change's power switch, low at the box's right, where its foot's action is.
   if (work?.reset) acts.push(work.reset);
   const box = h('div', {class: 'issue-box'},

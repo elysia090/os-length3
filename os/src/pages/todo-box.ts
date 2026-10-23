@@ -156,7 +156,7 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
       items = todo.edit(items, td.id, change);
       save();
       paint(current());
-      ensureBlankEnd();
+      ensureBlankEnd(true);
     };
     // A kind is taken only when the colon is typed, so text given back from
     // the chip ("Fix：…") stays text.
@@ -182,7 +182,10 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
         // A line break after the first line is where the detail begins.
         e.preventDefault();
         if (!todo.filled(it)) return;
+        // Its detail line unfolds from the first line, as the next item does.
+        const opening = detail.hidden;
         showDetail(row, true);
+        if (opening) arrive(detail, -1, 'y', 6, 200);
         caret(detail, 'start');
       } else if (e.key === 'Backspace' && title.selectionStart === 0 && title.selectionEnd === 0) {
         if (it.kind) {
@@ -242,13 +245,16 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
   };
 
   /** There is always one empty item at the end to write into. */
-  const ensureBlankEnd = () => {
+  /** There is always an empty line at the foot to write the next in; one made as the last is written unfolds there. */
+  const ensureBlankEnd = (unfold = false) => {
     if (o.readOnly) return;
     const last = items.at(-1);
     if (last && !todo.filled(last)) return;
     items = todo.insertAfter(items, null).list;
-    list.append(build(items.at(-1)!));
+    const el = build(items.at(-1)!);
+    list.append(el);
     placeholder();
+    if (unfold) arrive(el, -1, 'y', 10, 220);
   };
 
   const placeholder = () => {

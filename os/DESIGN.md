@@ -106,6 +106,21 @@ Every value in `styles.css` comes from a token (§2).
     pressed and done gives a small pop where it was pressed, and so does a
     name or code copied; a message sent comes up out of the box it was
     written in, one come in from the other's side.
+  - *A move is never cut.* What is drawn again just as it was is left as
+    it is, so a move under way goes on (the band's ink between two pills
+    when one deed draws the band twice). What is drawn while a page arrives
+    is where its turn in the arrival is by then, from before it is first
+    seen: still to come, it comes; under way, it goes on from there (a part
+    drawn again as it came in goes on as it was); over, it simply stands,
+    never shown and then taken away to come in. A page come to before the
+    last has landed ends the last's arrival, so two never stage one part. A part in a row that clips it (Git's repos, the band)
+    fades in where it stands rather than rising out of the row's edge. A
+    press on the page being left is let go before the camera pans, so the
+    page leaves at rest, not sunk. What a deed brings unfolds after it:
+    the steps Start brings, a TODO's detail line and the empty line made as
+    the last is written, the first post in an empty board as any post
+    comes. The light on a file landed on goes when it has faded, not a
+    frame before. motion.spec.ts holds the band and the arrival to it.
   - *Room is given and taken.* A box opened beside the others grows from
     nothing as they make room, and closing gives its room back; the right
     pane opens and closes as a wipe, what it holds cut at the moving edge,

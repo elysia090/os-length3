@@ -8,6 +8,8 @@ const ONE = 'button, [role="button"], [role="radio"], [role="tab"], .chip';
 const AWAY = 'input, textarea, select, [contenteditable], .power, .stage-hit, .slide-stage, .tree-row';
 
 let held: {el: HTMLElement; s: number; press: Animation} | null = null;
+/** The spring of the last press let go, while it goes. */
+let spring: {el: HTMLElement; a: Animation} | null = null;
 
 /** The thing that gives: a pill or a card as a whole when its body is pressed, a button in it (×, the gear) alone. */
 function pressable(at: EventTarget | null): HTMLElement | null {
@@ -36,7 +38,18 @@ function up() {
   held = null;
   press.cancel();
   // Past where it was by a third of the give, then home: the spring.
-  el.animate([{scale: s}, {scale: 1 + (1 - s) / 3, offset: .45}, {scale: 1}], {duration: 300, easing: 'cubic-bezier(.2, .9, .25, 1)'});
+  const a = el.animate([{scale: s}, {scale: 1 + (1 - s) / 3, offset: .45}, {scale: 1}], {duration: 300, easing: 'cubic-bezier(.2, .9, .25, 1)'});
+  spring = {el, a};
+}
+
+/**
+ * A press on what is about to be left (the page the camera pans away from, kept as it is at that moment) is let
+ * go at once, so the page leaves with it at rest, not still sunk; one elsewhere (the rail, which stays) springs on.
+ */
+export function letGo(within: Element) {
+  if (held && within.contains(held.el)) up();
+  if (spring && within.contains(spring.el)) spring.a.finish();
+  spring = null;
 }
 
 export function touch() {

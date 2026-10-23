@@ -40,12 +40,15 @@ export function glide(from: DOMRect | null, to: HTMLElement | null, layer: HTMLE
   ], {duration: ms, easing: LAND}).finished.then(done, done);
 }
 
-/** `el` comes in from `dir` (-1, 0 or 1) along `axis`: `by` pixels and a fade. */
-export function arrive(el: HTMLElement, dir: number, axis: 'x' | 'y', by = 12, ms = 240) {
-  if (still()) return;
+/**
+ * `el` comes in from `dir` (-1, 0 or 1) along `axis`: `by` pixels and a fade. `into`: how far in it already is, for
+ * a thing drawn again while it came in, which goes on from there rather than starting over or stopping.
+ */
+export function arrive(el: HTMLElement, dir: number, axis: 'x' | 'y', by = 12, ms = 240, into = 0) {
+  if (still() || into >= ms) return;
   const d = (dir || 1) * by;
   el.animate([{transform: axis === 'x' ? `translateX(${d}px)` : `translateY(${d}px)`, opacity: 0}, {transform: 'none', opacity: 1}],
-    {duration: ms, easing: LAND});
+    {duration: ms, delay: -into, easing: LAND});
 }
 
 /**
@@ -132,16 +135,37 @@ const BEATS = ['.page-head', '.identity', 'section > h2', '.todo-box', '.card', 
   '.sign-in-card', '.stub-holder', '.inbox-box', '.new-repo > .field', '.git-filter .chip', '.issue-stage', '.issue-new',
   '.repo-strip .pill', '.repo-strip .band-add', '.col:not([hidden]) .file'].join(', ');
 
+/** The arrival under way: a page come to before the last had landed ends it, so the two never stage the same parts. */
+let arriving: (() => void) | null = null;
+
 /**
  * A page come to is staged rather than shown at once: its parts come in one after another in reading order (the
  * heading first, then down and along, a card at a time), each from the side the page comes from, so the eye is led
  * through it and the arrival lasts long enough to be followed; its figures count up, its bars fill. What is drawn a
- * moment later (read from the store) takes its turn where it stands in that order.
+ * moment later (read from the store, drawn again) is where its turn in that order is by then, from before it is
+ * first painted: its turn to come, it comes; under way, it goes on from there (a part drawn again as it came in
+ * goes on as it was); over, it simply stands, never shown and then taken away to come in again. A part in a row that
+ * clips it (Git's repos, the band) comes in where it stands, fading, not up out of the row's edge; one put out of
+ * sight before it was in is where its turn is once it is back.
  */
 export function stage(root: HTMLElement, dir: number) {
   if (still()) return;
-  const t0 = performance.now(), seen = new WeakSet<Element>();
+  arriving?.();
+  const t0 = performance.now(), seen = new WeakSet<Element>(), moving = new Map<Element, Animation>();
+  /** In a row that clips it to about its own height: rising, it would come up out of a cut. */
+  const tight = (el: HTMLElement, r: DOMRect) => {
+    for (let p = el.parentElement; p && p !== root; p = p.parentElement) {
+      const o = getComputedStyle(p);
+      if ((o.overflowX !== 'visible' || o.overflowY !== 'visible') && p.clientHeight < r.height + 32) return true;
+    }
+    return false;
+  };
   const run = () => {
+    // Put out of sight (or drawn again) before it was in: once back, it is where its turn is by then.
+    for (const [el, a] of moving) {
+      if (a.playState === 'finished') moving.delete(el);
+      else if (!el.isConnected || !el.getClientRects().length) { a.cancel(); moving.delete(el); seen.delete(el); }
+    }
     const tall = innerHeight;
     const beats = [...root.querySelectorAll<HTMLElement>(BEATS)].filter((el) => {
       const r = el.getBoundingClientRect();
@@ -149,11 +173,15 @@ export function stage(root: HTMLElement, dir: number) {
     }).map((el) => ({el, r: el.getBoundingClientRect()}))
       .sort((a, b) => (Math.abs(a.r.top - b.r.top) > 12 ? a.r.top - b.r.top : a.r.left - b.r.left));
     const late = performance.now() - t0;
-    beats.forEach(({el}, i) => {
+    beats.forEach(({el, r}, i) => {
       if (seen.has(el)) return;
       seen.add(el);
-      el.animate([{opacity: 0, translate: `0 ${(dir || 1) * 16}px`}, {opacity: 1, translate: '0 0'}],
-        {duration: 360, delay: Math.max(0, Math.min(i, 14) * 45 - late), easing: LAND, fill: 'backwards'});
+      // Its turn, as the arrival's clock has it now: still to come, under way (gone on from there), or over.
+      const turn = Math.min(i, 14) * 45 - late;
+      if (turn <= -360) return;
+      const from = tight(el, r) ? '0 0' : `0 ${(dir || 1) * 16}px`;
+      moving.set(el, el.animate([{opacity: 0, translate: from}, {opacity: 1, translate: '0 0'}],
+        {duration: 360, delay: turn, easing: LAND, fill: 'backwards'}));
     });
     for (const b of root.querySelectorAll<HTMLElement>('.counts b, .legend b')) { if (!seen.has(b)) { seen.add(b); countUp(b); } }
     for (const bar of root.querySelectorAll<HTMLElement>('.meter > span')) {
@@ -164,8 +192,16 @@ export function stage(root: HTMLElement, dir: number) {
   };
   run();
   requestAnimationFrame(() => requestAnimationFrame(run));
-  setTimeout(run, 160);
-  setTimeout(run, 420);
+  // What is put in or shown while it arrives is heard as it is (before it is painted), for as long as the arrival
+  // lasts; figures counting up change only their words, and are not heard.
+  const heard = new MutationObserver((ms) => {
+    if (ms.some((m) => m.type === 'attributes' || [...m.addedNodes].some((n) => n.nodeType === Node.ELEMENT_NODE))) run();
+  });
+  heard.observe(root, {childList: true, subtree: true, attributes: true, attributeFilter: ['hidden', 'class']});
+  // Ended by the next page come to: what it still had coming stands where it is, for the next to stage.
+  const end = () => { heard.disconnect(); for (const a of moving.values()) a.cancel(); moving.clear(); if (arriving === end) arriving = null; };
+  arriving = end;
+  setTimeout(() => { heard.disconnect(); if (arriving === end) arriving = null; }, 900);
 }
 
 /**

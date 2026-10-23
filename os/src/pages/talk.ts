@@ -1,4 +1,5 @@
 import {h} from '../dom.ts';
+import {arrive} from '../glide.ts';
 import {currentLang, t} from '../i18n.ts';
 import {shown} from '../inbox.ts';
 import * as servers from '../servers.ts';
@@ -174,11 +175,13 @@ export function timeline(scroller: HTMLElement, board: string, member: boolean, 
     if (where === 'older') { pages.push(s); list.prepend(s.el); } else { pages.unshift(s); list.append(s.el); }
     draw(s);
     watch.observe(s.el);
+    return s;
   };
 
   // ---- reading on: older above, what came at the foot ----
   const nearStart = () => start.getBoundingClientRect().bottom > view().top - 2 * view().height;
-  const older = async () => {
+  /** Read the page above; `fresh`: a post just came to a talk that had none (its first), which comes in as one does. */
+  const older = async (fresh?: 'mine' | 'theirs') => {
     if (reading || done) return;
     reading = true;
     list.setAttribute('aria-busy', 'true');
@@ -187,7 +190,13 @@ export function timeline(scroller: HTMLElement, board: string, member: boolean, 
       const r = await servers.older(board, member, pages.at(-1)?.page.oldest ?? null);
       const page = servers.pageOf(r.posts);
       const first = !pages.length;
-      if (page) { if (first) { add(page, 'older'); toFoot(); read(); } else steady(() => add(page, 'older')); }
+      if (page) {
+        if (first) {
+          const s = add(page, 'older');
+          toFoot(); read();
+          if (fresh) arrive(s.el, fresh === 'mine' ? 1 : -1, fresh === 'mine' ? 'y' : 'x', 18, 300);
+        } else steady(() => add(page, 'older'));
+      }
       done = !r.more;
       start.textContent = done ? (pages.length ? t('That is every post') : t('No posts yet')) : '';
       // Empty, the line sits at the talk's foot, where the first post will come; read or loading, at the top as ever.
@@ -208,7 +217,7 @@ export function timeline(scroller: HTMLElement, board: string, member: boolean, 
   // One look at a time; asked again while one is out (one's own post just sent, the rail's news), one more
   // after it, which goes to the foot if any asker had just written.
   const came = coalesced<boolean>(async (mine) => {
-    if (!pages.length) { done = false; if (reading) { cameMeanwhile = true; return; } return older(); }
+    if (!pages.length) { done = false; if (reading) { cameMeanwhile = true; return; } return older(mine ? 'mine' : 'theirs'); }
     try {
       const got: servers.Post[] = [];
       let after = pages[0].page.newest;
@@ -220,8 +229,12 @@ export function timeline(scroller: HTMLElement, board: string, member: boolean, 
       }
       if (!got.length) return;
       const following = mine || atFoot();
-      // Oldest page first, each at the foot.
-      for (const p of servers.onTop(got).reverse()) add(p, 'newer');
+      // Oldest page first, each at the foot: one's own coming up out of the box it was written in, what someone
+      // else wrote in from their side, as a message does in the Inbox.
+      for (const p of servers.onTop(got).reverse()) {
+        const s = add(p, 'newer');
+        if (mine) arrive(s.el, 1, 'y', 18, 300); else arrive(s.el, -1, 'x', 18, 300);
+      }
       if (following) { toFoot(mine); read(); } else { unseen += got.length; tell(); }
     } catch { /* tried again on the next look */ }
   }, (a, b) => a || b);
