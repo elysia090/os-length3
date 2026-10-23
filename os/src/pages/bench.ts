@@ -385,6 +385,16 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   /** Whether the repo's Prompt has run anything yet, which is what gives it room. */
   const room = () => work.classList.toggle('unrun', !!repo && !sessionIfAny(repo)?.runs.length);
   setRepo(null);
+  // The keys an editor's hands already know, wherever this bench is on screen: Ctrl+K or Ctrl+P (or Ctrl+Shift+F)
+  // to the search, Ctrl+` to the prompt box, Ctrl+B to put the right pane away or bring it back (⌘ on a Mac).
+  document.addEventListener('keydown', (event) => {
+    if (!(event.ctrlKey || event.metaKey) || event.altKey || event.isComposing || !work.isConnected || work.closest('[hidden]')) return;
+    if (document.getElementById('page')?.hasAttribute('inert')) return;
+    const k = event.key.toLowerCase();
+    if ((k === 'k' || k === 'p') && !event.shiftKey || (k === 'f' && event.shiftKey)) { event.preventDefault(); if (narrow.matches || paneOpen) reference.findNow(); else { setPane(true); requestAnimationFrame(() => reference.findNow()); } return; }
+    if (event.key === '`' && !prompt.disabled) { event.preventDefault(); prompt.focus(); return; }
+    if (k === 'b' && !event.shiftKey) { event.preventDefault(); setPane(!shown()); }
+  });
   // A page taken off the screen loses its focus without a focusout, so the Prompt may still be up.
   const settle = () => {
     attach();

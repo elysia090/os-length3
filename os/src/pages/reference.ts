@@ -111,6 +111,8 @@ export class Reference {
   /** The search box and what is under it, for the top line over the right pane. */
   readonly search: HTMLElement;
   private query: HTMLInputElement;
+  /** The box gets the keyboard, what is written in it selected (Ctrl+K, Ctrl+P: writing replaces it). */
+  findNow() { this.query.focus(); this.query.select(); }
   /** Under the box: the switch, and under it the large box with what was searched and read in a line. */
   private under: HTMLElement;
   private pillButtons = new Map<Kind, HTMLButtonElement>();
@@ -193,7 +195,10 @@ export class Reference {
       if (event.key === 'ArrowUp' && at === 0) this.query.focus();
       else all[Math.min(at + (event.key === 'ArrowDown' ? 1 : -1), all.length - 1)]?.focus();
     });
-    const form = h('form', {class: 'search', role: 'search'}, this.query);
+    // Its keys on caps at its right end while it is not in use (Ctrl K), as the way to it from anywhere.
+    const mod = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl';
+    this.query.setAttribute('aria-keyshortcuts', mod === '⌘' ? 'Meta+K' : 'Control+K');
+    const form = h('form', {class: 'search', role: 'search'}, this.query, h('span', {class: 'search-keys', 'aria-hidden': 'true'}, h('kbd', {}, mod), h('kbd', {}, 'K')));
     form.addEventListener('submit', (event) => event.preventDefault());
     this.search = h('div', {class: 'search-box'}, form, this.under);
     this.follow();

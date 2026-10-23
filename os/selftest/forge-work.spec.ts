@@ -406,3 +406,19 @@ test('a file dragged in from the desktop goes into the folder of the box it is l
   await expect(app.forge.editor('src/notes (2).txt')).toHaveValue('dropped notes.txt\n');
   await expect(app.forge.editor('src/notes.txt')).toHaveValue('dropped notes.txt\n');
 });
+
+test('the keys an editor knows: Ctrl+K and Ctrl+P go to the search, Ctrl+` to the prompt box, Ctrl+B puts the pane away and back', async ({app}) => {
+  await app.forge.editor('README.md').focus();
+  await app.page.keyboard.press('Control+k');
+  await expect(app.forge.search).toBeFocused();
+  await app.page.keyboard.press('Escape');
+  await app.forge.editor('README.md').focus();
+  await app.page.keyboard.press('Control+p');
+  await expect(app.forge.search).toBeFocused();
+  await app.page.keyboard.press('Control+Backquote');
+  await expect(app.forge.promptBox).toBeFocused();
+  await app.page.keyboard.press('Control+b');
+  await expect(app.forge.paneSwitch).toHaveAttribute('aria-expanded', 'false');
+  await app.page.keyboard.press('Control+b');
+  await expect(app.forge.paneSwitch).toHaveAttribute('aria-expanded', 'true');
+});

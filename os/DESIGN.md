@@ -1057,7 +1057,10 @@ narrow, quiet previews of what they hold; pressing one, swiping sideways
 over the row (one box a swipe) or Alt+[ / Alt+] hands it the room in one
 move, the width travelling across. Each box has a small head
 (its name, and × to close it; dragged, it moves along the row); Alt+[ and
-Alt+] go along the row. The row is remembered on this device; a narrow
+Alt+] go along the row. The keys an editor's hands already know work
+wherever the bench is: Ctrl+K or Ctrl+P (Ctrl+Shift+F too) to the search
+(its keys on caps at the box's right end while it is not in use), Ctrl+` to
+the prompt box, Ctrl+B to put the pane away and back (⌘ on a Mac). The row is remembered on this device; a narrow
 window shows the one worked on. Files dragged in from the desktop go into the
 repo whose box they are let go over (into the folder of the file under the
 pointer, else its top; the dashed outline says where), never over a file

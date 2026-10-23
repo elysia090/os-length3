@@ -940,6 +940,10 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
   background: var(--raised); color: var(--ink);
 }
 .search-in:disabled { opacity: .5; }
+form.search { position: relative; }
+.search-keys { position: absolute; right: var(--s2); top: 50%; transform: translateY(-50%); display: flex; gap: 2px; pointer-events: none; opacity: .8; }
+.search-keys > kbd { height: 18px; min-width: 18px; font-size: 10px; background: transparent; }
+form.search:focus-within > .search-keys, .search-in:not(:placeholder-shown) ~ .search-keys { display: none; }
 /* In use, the box's own line turns ink and a little heavier: one line, not a ring drawn round a border. */
 .search-in:focus-visible, .search-in:focus { outline: 1px solid var(--ink); outline-offset: -1px; border-color: var(--ink); background: var(--paper); }
 /* The search box's own clear mark, in the page's ink, not the browser's blue. */
