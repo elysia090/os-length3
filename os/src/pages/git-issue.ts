@@ -1,6 +1,6 @@
 import {kindWords} from './todo-box.ts';
 import {ago, h} from '../dom.ts';
-import {arrive} from '../glide.ts';
+import {arrive, still} from '../glide.ts';
 import * as git from '../history.ts';
 import {t, tn} from '../i18n.ts';
 import {closeMark, issueName, issuePath, saveIssue, setClosed, type Issue} from '../issues.ts';
@@ -143,7 +143,10 @@ export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEv
     leave = button(t('Close'));
     leave.title = t('Will not be done: it goes under Closed, where it can be reopened');
     leave.addEventListener('click', doing(leave, error, async () => {
-      await closeIssue(issue);
+      // It goes down as it is closed, toward Closed under the page, where its line lands lit; not closed, it is back.
+      const going = still() ? null : (leave!.closest('.issue-slot') ?? leave!.closest('.issue-box'))?.animate([{transform: 'none', opacity: 1}, {transform: 'translateY(28px) scale(.97)', opacity: 0}],
+        {duration: 240, easing: 'cubic-bezier(.4, 0, 1, 1)', fill: 'forwards'});
+      try { await Promise.all([closeIssue(issue), going?.finished]); } catch (e) { going?.cancel(); throw e; }
       closedNow = {repo: issue.repo, path: issuePath(issue), until: performance.now() + 3000};
     }, after));
   }

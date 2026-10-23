@@ -11,7 +11,8 @@
 /** The camera's landing (styles.css --land): fast off the mark, the last pixels slow. */
 export const LAND = 'cubic-bezier(.2, .9, .25, 1)';
 
-const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+/** Whether motion is turned off (reduced motion): each thing is where it ends, at once. */
+export const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /** Where `el` is now, to glide from once it is no longer the one chosen. */
 export const where = (el: Element | null | undefined): DOMRect | null => el?.getBoundingClientRect() ?? null;

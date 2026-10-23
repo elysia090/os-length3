@@ -119,7 +119,8 @@ Every value in `styles.css` comes from a token (§2).
     does along the rail and the band, and a part's count that changes
     while seen gives a beat; another repo chosen in Git brings its issue
     in. A repo brought back to the band comes out of the ⊕. An issue
-    closed lands in Closed and is lit a moment there; a Prompt stopped has
+    closed goes down out of its box, toward Closed under the page, where
+    its line lands lit a moment, and the count of issues beats; a Prompt stopped has
     its card's line lit. A profile saved has its name come down into place
     and its picture pop; Edit profile brings the form down. A TODO marked
     not done gives its mark a small pop; a line taken away, the lines under

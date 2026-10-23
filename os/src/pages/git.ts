@@ -1,5 +1,5 @@
 import {h} from '../dom.ts';
-import {arrive, glide, where} from '../glide.ts';
+import {arrive, glide, pop, where} from '../glide.ts';
 import * as gitops from '../history.ts';
 import {t} from '../i18n.ts';
 import {number, readIssues, type Issue} from '../issues.ts';
@@ -220,7 +220,9 @@ export function git(ctx: Context): Node[] {
     // Oldest first, so #1 is on the left; merged and closed ones are done with, and listed under the issues.
     const laid = laidOut(repos.filter((r) => !filter || r === filter), issues, states);
     shown = laid.open;
-    count.textContent = shown.length ? `${shown.length}` : '';
+    // A count that changes while it is seen (an issue written, or closed and gone down) gives a beat as it does.
+    const n = shown.length ? `${shown.length}` : '';
+    if (count.textContent !== n) { const seen = count.isConnected && count.textContent !== ''; count.textContent = n; if (seen && n) pop(count, .12, 300); }
     drawDone(laid);
     if (!shown.length) {
       track.replaceChildren();
