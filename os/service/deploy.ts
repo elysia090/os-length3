@@ -34,13 +34,14 @@
 // for the project (NEON_API_KEY, NEON_PROJECT_ID: the build's secret and
 // variable). A link is handed on once: printed in the log of the build or run
 // that made it (seen by whoever can see the Worker's builds). No other secret
-// is shown, and none is written to a file: each goes to wrangler on its
-// standard input.
+// is shown. A deploy's secrets go together in an owner-only temporary JSON
+// file, removed when wrangler finishes; `link` uses its standard input.
 
 import {spawn} from 'node:child_process';
 import {randomBytes} from 'node:crypto';
 import {existsSync, readFileSync} from 'node:fs';
 import {sql} from 'drizzle-orm';
+import {deployWorker} from './deploy-worker.ts';
 import {enterEmail} from './enter.ts';
 import {limitsOf, month, spent, take} from './budget.ts';
 import type {Db} from './request.ts';
@@ -67,7 +68,7 @@ function built(dir: string): string | null {
 
 const vars = (k: string) => new RegExp(`^${k}\\s*=\\s*"([^"]*)"`, 'm').exec(toml)?.[1];
 
-/** wrangler, `input` on its standard input (never on a command line, never in a file); what it printed, when `heard`. */
+/** wrangler, `input` on its standard input (never on a command line); what it printed, when `heard`. */
 function wrangler(args: string[], o: {input?: string; heard?: boolean} = {}): Promise<{code: number; out: string; err: string}> {
   return new Promise((done, failed) => {
     const p = spawn('npx', ['wrangler', ...args, '-c', config], {stdio: ['pipe', o.heard ? 'pipe' : 'inherit', o.heard ? 'pipe' : 'inherit']});
@@ -223,7 +224,7 @@ if (!step) {
   if (given || made) give.ENTER_KEY = given ?? secret(32);
   console.log(`secrets given: ${Object.keys(give).join(', ') || 'none'}; kept: ${[...kept].filter((k) => !(k in give)).join(', ') || 'none'}`);
   // Given with the version it deploys, so no version runs without them.
-  await must(['deploy', ...(Object.keys(give).length ? ['--secrets-file', '/dev/stdin'] : [])], JSON.stringify(give));
+  await deployWorker(give, must);
   if (made) handOn(give.ENTER_KEY, 'This Remote has its first link.');
   await answers(vars('BASE_URL')!);
   if (waiting) {
