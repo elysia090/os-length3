@@ -102,6 +102,7 @@ function make(ctx: Context) {
     nothing.hidden = shown.length > 0;
     acts.disabled = repo === null;
     cols.classList.toggle('split', shown.length > 1);
+    cols.dataset.n = String(shown.length);
     for (const [name, v] of views) {
       const at = shown.indexOf(name);
       v.col.hidden = at < 0;
@@ -292,11 +293,12 @@ function make(ctx: Context) {
   };
 
   /** A box coming into the row grows from nothing as the others make room; going, it gives its room back. */
-  const grow = (col: HTMLElement, on: boolean) => {
-    if (still() || !cols.classList.contains('split') && on) return Promise.resolve();
-    const frames = [{flexGrow: 0, opacity: 0}, {flexGrow: 1, opacity: 1}];
-    return col.animate(on ? frames : frames.reverse(), {duration: 300, easing: LAND}).finished.catch(() => undefined);
-  };
+  const grow = (col: HTMLElement, on: boolean) => new Promise<void>((done) => {
+    if (still() || (!cols.classList.contains('split') && on)) { done(); return; }
+    // From (or to) no width, by the same transition that hands the width from box to box (styles.css .col).
+    col.classList.add('nothing');
+    if (on) { void col.offsetWidth; requestAnimationFrame(() => { col.classList.remove('nothing'); done(); }); } else setTimeout(done, 360);
+  });
 
   /** `name` opened beside what is shown (at `at`, an index among the boxes), and worked on. */
   const beside = (name: string, at?: number) => {
@@ -323,7 +325,7 @@ function make(ctx: Context) {
       shown = c.shown;
       if (c.active && c.active !== repo) { repo = null; activate(c.active); } else { layout(); paintBand(); }
     };
-    if (v) { v.top = v.flow.scrollTop; v.col.classList.add('going'); void grow(v.col, false).then(() => { v.col.classList.remove('going'); done(); }); } else done();
+    if (v) { v.top = v.flow.scrollTop; v.col.classList.add('going'); void grow(v.col, false).then(() => { v.col.classList.remove('going', 'nothing'); done(); }); } else done();
   };
 
   // Into the center, a pill (or a box's head) dragged shows where it would stand: over a box's left or right
@@ -433,6 +435,23 @@ function make(ctx: Context) {
     const c = el.closest<HTMLElement>('.col');
     if (c?.dataset.repo && !el.closest('.col-close')) activate(c.dataset.repo);
   });
+  // Swiped sideways over the row (a trackpad, or Shift and the wheel), the next box along is the one worked on: one
+  // box a swipe, however long the swipe, so it never runs past where it was meant to stop.
+  let swiped = 0, swipeQuiet = 0;
+  cols.addEventListener('wheel', (event) => {
+    if (shown.length < 2 || !repo) return;
+    const dx = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.shiftKey ? event.deltaY : 0;
+    if (!dx) return;
+    event.preventDefault();
+    clearTimeout(swipeQuiet);
+    swipeQuiet = window.setTimeout(() => { swiped = 0; }, 220);
+    if (swiped === Infinity) return;
+    swiped += dx;
+    if (Math.abs(swiped) < 40) return;
+    const i = shown.indexOf(repo) + Math.sign(swiped);
+    swiped = Infinity;
+    if (shown[i]) activate(shown[i]);
+  }, {passive: false});
   // Ctrl+\: the next repo on the band opens beside. Alt+[ and Alt+]: the box to the left or right is worked on.
   work.element.addEventListener('keydown', (event) => {
     if ((event.ctrlKey || event.metaKey) && event.key === '\\') {

@@ -130,10 +130,9 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   const termSlot = h('div', {class: 'term-slot'});
   const prompt = h('textarea', {class: 'prompt-in', rows: '1', 'aria-label': t('Prompt box'), spellcheck: 'false', autocapitalize: 'off'}) as HTMLTextAreaElement;
   const note = h('p', {class: 'prompt-note muted small', role: 'status'});
-  // Run: Ctrl+Enter (⌘+Enter) is how it is done from the box, said in its title, not beside the word.
-  const mac = /Mac|iPhone|iPad/.test(navigator.platform);
-  const keys = mac ? '⌘+Enter' : 'Ctrl+Enter';
-  const runIt = h('button', {type: 'submit', class: 'button small-button prompt-run', 'aria-keyshortcuts': mac ? 'Meta+Enter' : 'Control+Enter',
+  // Run: Enter is how it is done from the box, as in a terminal, said in its title, not beside the word.
+  const keys = 'Enter';
+  const runIt = h('button', {type: 'submit', class: 'button small-button prompt-run', 'aria-keyshortcuts': 'Enter',
     title: t('Run ({keys})', {keys})}, t('Run')) as HTMLButtonElement;
   const form = h('form', {class: 'prompt'}, prompt, runIt);
   const dock = h('div', {class: 'dock'}, termSlot, form, note);
@@ -311,8 +310,11 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
       sessionFor(repo).interrupt();
       return;
     }
-    // Enter is a new line; Ctrl+Enter (⌘+Enter) sends.
-    if (event.key !== 'Enter' || !(event.ctrlKey || event.metaKey) || event.isComposing) return;
+    // The box is a shell's line: Enter runs it, as in every terminal. Shift+Enter, or a line left ending in \ (the
+    // shell's own way to go on), is a new line; Ctrl+Enter (⌘+Enter) runs it from anywhere in it.
+    if (event.key !== 'Enter' || event.isComposing || event.altKey) return;
+    const before = prompt.value.slice(0, prompt.selectionStart);
+    if (!(event.ctrlKey || event.metaKey) && (event.shiftKey || before.endsWith('\\'))) return;
     event.preventDefault();
     send();
   });

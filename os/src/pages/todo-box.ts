@@ -261,9 +261,12 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
   // Drawn, not changed: nothing is kept until something is written (Home's TODO
   // was written back, and agreed with the Remote, each time Home was drawn).
   count(todo.persisted(items));
-  const hint = o.readOnly ? null : h('p', {class: 'todo-hint'},
-    h('span', {}, t('First line as Kind: title')), h('span', {}, t('Enter for the detail')), h('span', {}, t('Enter on an empty line for the next TODO')),
-    h('span', {}, t('○ or Ctrl+Enter when done')));
+  // The keys, as keys, while the box is written in (and only then): a word beside each, not a sentence. The first
+  // line's form (Kind: title) is the placeholder's to show.
+  const mod = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl';
+  const keys = (caps: string[], word: string) => h('span', {class: 'key-hint'}, ...caps.map((c) => h('kbd', {}, c)), h('span', {}, word));
+  const hint = o.readOnly ? null : h('p', {class: 'todo-hint', 'aria-hidden': 'true'},
+    keys(['Enter'], t('detail')), keys(['Enter'], t('on an empty line, the next')), keys([mod, 'Enter'], t('done')));
   const element = h('div', {class: 'todo-box'}, list, hint);
   // What came from elsewhere waits while something here is being written.
   let waiting: todo.Todo[] | null = null;

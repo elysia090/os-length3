@@ -15,9 +15,9 @@ export default {
   'Fix: The title wraps on a phone': 'Fix：スマホでタイトルが折り返す',
   'Next TODO': '次の TODO',
   'First line as Kind: title': '1行目に 種別：件名',
-  'Enter for the detail': 'Enter で詳細',
-  'Enter on an empty line for the next TODO': '空の行で Enter すると次の TODO',
-  '○ or Ctrl+Enter when done': '○ か Ctrl+Enter で完了',
+  'detail': '詳細',
+  'on an empty line, the next': '空の行で次へ',
+  'done': '完了',
 
   // New repo
   'How it will look in File': 'File ではこう見えます',

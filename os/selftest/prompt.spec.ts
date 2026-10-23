@@ -141,3 +141,17 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(note).toBeHidden();
   });
 });
+
+test('Enter runs the prompt box, as in a terminal; Shift+Enter, or a line ending in a backslash, goes on to the next line', async ({app}) => {
+  const box = app.forge.promptBox;
+  await box.fill('echo one');
+  await box.press('Shift+Enter');
+  await expect(box).toHaveValue('echo one\n');
+  await box.fill('echo two \\');
+  await box.press('Enter');
+  await expect(box).toHaveValue('echo two \\\n');
+  await box.fill('echo entered');
+  await box.press('Enter');
+  await expect(box).toHaveValue('');
+  await expect(app.forge.prompt).toContainText(/^entered$/m);
+});

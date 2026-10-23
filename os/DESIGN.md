@@ -141,6 +141,7 @@ Every page:
 | `edge` | `#6B6E6B` | outlines of fields and controls, which must be seen (3.7:1) |
 | `raised` | `#E4E4E0` | field fill, hover (the same small step above ground as before) |
 | `paper` | `#F8F8F5` | what is worked on, on a sheet of its own: a file's box in Forge, what the search found; never a card or a page |
+| `tray` | `#D2D2CD` | the right pane (Forge, Git, Home): a step under the ground, from the top line to the page's foot, its corners a place's, so what refers sits under what is worked on and no hairline is needed to say which is which |
 | `done` | `#2F7D4F` | done and on: a step of an issue's work done, a switch on (its knob), a box ticked (its circle) |
 | `marker` | `#F3E27A` | what is marked, as with a highlighter: a line marked in a diff (a review, Forge's diff), over its words only (not its indent or number, which turns ink), each wrapped line its own stroke with softened ends, the pointer on a line showing the stroke paler; the words the search found, in its lines; the head of a file just landed on, for a moment |
 | `off` | `#A63C2C` | a repo turned off: its switch; a removal held, its button red (`ground` words on it 4.5:1) |
@@ -355,7 +356,8 @@ fix is always a piece from §3, not a new rule.
 | A hidden label beside a line taller than the line (a run's posts spaced 32, 37, 37) | Nothing beside a line is taller than it: one rhythm down a run |
 | A button not centred on its row's title (Done below 旅行's middle) | The title and its line share a baseline; the row centres the button on them |
 | One thing reaching past its owner in two different ways (a repo's lone "everyone" switch, a board's pair) | The same pair everywhere: to the server's people, to everyone |
-| Enter sending in one box and making a line in another | Enter is a new line, Ctrl+Enter sends, in every box |
+| Enter sending in one box and making a line in another | Enter is a new line, Ctrl+Enter sends, in every box where words are written; the prompt box alone is a shell's line, and runs on Enter as every terminal does (Shift+Enter, or a line ending in \\, goes on to the next line) |
+| Keys said in a sentence under a box (Enter for the detail, Enter on an empty line for the next TODO) | The keys as keys (a small cap with the key's name) and one word beside each, said only while the box is written in |
 | A switch to start what starts by being used (the Prompt's) | None: using it starts it; an ended one says so in its place |
 | Changing a shared piece to fit one place (the TODO box made boxless in a board) | The piece as it is; the place makes room for it |
 | A colour, gradient, shadow or glow for emphasis | None: `ink`, `raised`, the edge, and size do it |
@@ -385,6 +387,7 @@ fix is always a piece from §3, not a new rule.
 | A box drawn again every little while, taking what was being written and the keyboard with it (Inbox's field to write to someone, every 10 s) | Only what came is drawn: the rows under the field, the messages at the conversation's foot |
 | Items in one row of a band a few pixels off another's (a 40 px gear in a 32 px band) | Everything on the band is 32 px |
 | A divider left where a pane would start when there is none | No pane, no line |
+| A hairline as the only sign of which side is the work and which refers to it | The pane is a tray (`tray`), a step under the ground; the work stands on the ground |
 | Something painted over a focus ring (the ground under the box over its foot) | The ring is whole: what lies under the box lies behind it |
 | Text, not a field, sitting at the top of a row its mark is centred in (a read-only TODO) | Centred on the mark's line, as the field is |
 | A paid thing greyed out, hidden, or refused with the Remote's bare error; work dropped because the Remote would not keep it | Said in place with See the plan beside; the work stays on the device and waits |
@@ -1048,7 +1051,11 @@ place: a dashed outline shows where before it is let go), and Ctrl+\
 opens the next on the band. Each is its own page with its own scroll; the
 one worked on (the prompt, the search and File follow it) is the last one
 pressed into, its files' boxes in `ink`, the others' in `rule`, its pill
-`ink`, theirs outlined in `ink`. Side by side each box has a small head
+`ink`, theirs outlined in `ink`. Side by side the one worked on takes most of the row (about seven tenths of
+it beside one other, six beside two) and the others stand beside it as
+narrow, quiet previews of what they hold; pressing one, swiping sideways
+over the row (one box a swipe) or Alt+[ / Alt+] hands it the room in one
+move, the width travelling across. Each box has a small head
 (its name, and × to close it; dragged, it moves along the row); Alt+[ and
 Alt+] go along the row. The row is remembered on this device; a narrow
 window shows the one worked on. Files dragged in from the desktop go into the
