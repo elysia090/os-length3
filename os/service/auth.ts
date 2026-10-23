@@ -112,6 +112,9 @@ export function createAuth(c: AuthConfig) {
     // Apple answers by posting the sign-in back from its own page.
     trustedOrigins: [c.appOrigin, ...(c.origins ?? []), ...(c.apple ? ['https://appleid.apple.com'] : [])],
     emailAndPassword: {enabled: false},
+    // A sign-in that fails where no page of the app's was named for it (a state run out at the provider, a callback
+    // forged) goes back to the app, which says it on its sign-in card, never to a bare page of the Remote's.
+    onAPIError: {errorURL: `${c.appOrigin}/?sign-in-failed`},
     socialProviders: {
       ...(c.github ? {github: {clientId: c.github.clientId, clientSecret: c.github.clientSecret}} : {}),
       ...(c.google ? {google: {clientId: c.google.clientId, clientSecret: c.google.clientSecret, prompt: 'select_account' as const}} : {}),

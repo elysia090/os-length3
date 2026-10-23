@@ -56,10 +56,13 @@ const auth = createAuth({db, secret, baseURL, appOrigin, origins: others, dev: !
 // otherwise), bought from a stand-in for Stripe (devbilling.ts); without it, no plan: everything is open.
 const plan = process.env.LENGTH3_PLAN === '1' ? planConfig({FREE_REPOS: process.env.LENGTH3_FREE_REPOS, FREE_MB: process.env.LENGTH3_FREE_MB}) : undefined;
 const hook = `whsec_dev_${secret.slice(0, 24)}`;
+// What the stand-in's Stripe holds (its customers, their cards' last digits, subscriptions, invoices) is kept beside the database.
+const stripeFile = join(dir, 'stripe.json');
 const stripe = plan && devBilling(baseURL, hook, [appOrigin, ...others],
-  async (payload, signature) => app.fetch(new Request(`${baseURL}/v1/stripe/webhook`, {method: 'POST', body: payload, headers: {'Stripe-Signature': signature, 'Content-Type': 'application/json'}})));
+  async (payload, signature) => app.fetch(new Request(`${baseURL}/v1/stripe/webhook`, {method: 'POST', body: payload, headers: {'Stripe-Signature': signature, 'Content-Type': 'application/json'}})),
+  {load: () => (existsSync(stripeFile) ? readFileSync(stripeFile, 'utf8') : null), save: (text) => { writeFileSync(`${stripeFile}.tmp`, text, {mode: 0o600}); renameSync(`${stripeFile}.tmp`, stripeFile); }});
 const app = createApp({db, auth, bucket, origins: [appOrigin, ...others], appOrigin, providers: enter ? [] : ['dev'], domain: 'length3.test', baseURL, secret, enter,
-  plan, billing: stripe ? {stripe: stripe.api, webhookSecret: hook} : undefined});
+  plan, billing: stripe ? {stripe: stripe.api, webhookSecret: hook, prices: stripe.prices} : undefined});
 const serve = (r: Request) => (stripe && new URL(r.url).pathname.startsWith('/dev-billing/')
   ? stripe.app.fetch(new Request(r.url.replace('/dev-billing/', '/'), r)) : app.fetch(r));
 

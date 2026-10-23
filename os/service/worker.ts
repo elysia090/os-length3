@@ -17,7 +17,7 @@ import {enterEmail} from './enter.ts';
 import {r2Bucket, type R2Bucket} from './bucket.ts';
 import {limitsOf} from './budget.ts';
 import type {Edge} from './files.ts';
-import {planConfig} from './plan.ts';
+import {planConfig, type Billing} from './plan.ts';
 import {stripeRest} from './stripe.ts';
 import * as schema from './schema.ts';
 import {sweep} from './sweep.ts';
@@ -47,11 +47,13 @@ export interface Env {
   FREE_REPOS?: string;
   FREE_MB?: string;
   GRACE_DAYS?: string;
-  /** Stripe (stripe.ts), secrets all three: with any missing, billing is off and paid features cannot be bought here yet. */
+  /** Stripe (stripe.ts), secrets both: with either missing, or no price below, billing is off and paid features cannot be bought here yet. */
   STRIPE_SECRET_KEY?: string;
   STRIPE_WEBHOOK_SECRET?: string;
-  /** The price a subscription is to (price_…), a variable. */
-  STRIPE_PRICE?: string;
+  /** Each tier's price (price_…), variables: a tier without one is not sold here (plan.ts TIERS). */
+  STRIPE_PRICE_GO?: string;
+  STRIPE_PRICE_PRO?: string;
+  STRIPE_PRICE_MAX?: string;
   /** File contents (R2). Not bound: the Remote holds no files, and says so. */
   BLOBS?: R2Bucket;
   /**
@@ -135,12 +137,19 @@ function make(env: Env) {
     domain: env.DOMAIN ?? 'length3.com', baseURL: env.BASE_URL, secret: env.BETTER_AUTH_SECRET, enter,
     quota: env.QUOTA_MB ? Number(env.QUOTA_MB) * 1024 ** 2 : undefined,
     limits: limitsOf(env as unknown as Record<string, string | undefined>), edge: edge(), limiter: env.LIMITER, sessionKept: 10_000,
-    // The plan holds here (but on a Remote for research, one person's alone); it is bought only when
-    // Stripe's keys and price are all given.
+    // The plan holds here (but on a Remote for research, one person's alone); a tier is bought only when
+    // Stripe's keys and its price are given.
     plan: enter ? undefined : planConfig(env),
-    billing: env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET && env.STRIPE_PRICE
-      ? {stripe: stripeRest(env.STRIPE_SECRET_KEY, env.STRIPE_PRICE), webhookSecret: env.STRIPE_WEBHOOK_SECRET} : undefined});
+    billing: billingOf(env)});
   return {app, at, bucket};
+}
+
+/** How the plan is bought here: Stripe's keys and the tiers with a price; none, when either key or every price is missing. */
+export function billingOf(env: Pick<Env, 'STRIPE_SECRET_KEY' | 'STRIPE_WEBHOOK_SECRET' | 'STRIPE_PRICE_GO' | 'STRIPE_PRICE_PRO' | 'STRIPE_PRICE_MAX'>, f?: typeof fetch): Billing | undefined {
+  const prices: Billing['prices'] = {};
+  for (const [tier, id] of [['go', env.STRIPE_PRICE_GO], ['pro', env.STRIPE_PRICE_PRO], ['max', env.STRIPE_PRICE_MAX]] as const) if (id?.trim()) prices[tier] = id.trim();
+  if (!env.STRIPE_SECRET_KEY || !env.STRIPE_WEBHOOK_SECRET || !Object.keys(prices).length) return undefined;
+  return {stripe: stripeRest(env.STRIPE_SECRET_KEY, f), webhookSecret: env.STRIPE_WEBHOOK_SECRET, prices};
 }
 
 export default {

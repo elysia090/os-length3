@@ -1,27 +1,41 @@
-// Stripe, as the Remote speaks to it: three calls of its REST API (a
-// customer, a Checkout session for the one price, a customer portal session)
-// and the check of a webhook's signature. With fetch and Web Crypto only, so
-// the same code runs on Workers, in dev and in tests, with nothing to bundle.
+// Stripe, as the Remote speaks to it: four calls of its REST API (a
+// customer, a Checkout session for a tier's price, a customer portal session,
+// what a price is) and the check of a webhook's signature. With fetch and Web
+// Crypto only, so the same code runs on Workers, in dev and in tests, with
+// nothing to bundle.
 //
 // Why not the official SDK: on Workers it must be told to use fetch
 // (createFetchHttpClient) and an async crypto provider (constructEventAsync)
-// anyway, and it brings every resource of the API for the three the Remote
+// anyway, and it brings every resource of the API for the four the Remote
 // uses. The REST API is stable per version (Stripe-Version below), and its
 // webhook signature is one HMAC (https://docs.stripe.com/webhooks#verify-manually).
 //
 // Tests never reach Stripe: they hand createApp a StripeApi of their own and
 // sign their own events (sign() below). The keys come from Worker secrets
-// (worker.ts) and are never written anywhere.
+// (worker.ts) and are never written anywhere; the prices, one a tier, are
+// variables (STRIPE_PRICE_GO, STRIPE_PRICE_PRO, STRIPE_PRICE_MAX).
 
 /** What the Remote asks of Stripe. A test or dev gives its own. */
 export interface StripeApi {
   /** A customer for this account; the same account asking again within a day gets the same one (Idempotency-Key). */
   customer(p: {user: string; email: string; name: string}): Promise<string>;
-  /** A Checkout session subscribing `customer` to the price; its URL. */
-  checkout(p: {customer: string; user: string; success: string; cancel: string}): Promise<string>;
-  /** A customer portal session (manage, cancel, change the card); its URL. */
-  portal(p: {customer: string; back: string}): Promise<string>;
+  /** A Checkout session subscribing `customer` to `price`, the price of `tier`; its URL. */
+  checkout(p: {customer: string; user: string; tier: string; price: string; success: string; cancel: string}): Promise<string>;
+  /**
+   * A customer portal session (the card, the invoices, cancelling); its URL. With `change`, it opens at the
+   * step that changes the subscription to that price (Stripe says what it costs now, and asks), and goes back
+   * to `back` once it is done.
+   */
+  portal(p: {customer: string; back: string; change?: Change}): Promise<string>;
+  /** What a price is: so much (in the currency's smallest unit), every so many days, weeks, months or years. */
+  price(id: string): Promise<Price>;
 }
+
+/** A change of tier asked in the portal: the subscription, its one item (when it is known), the price it is to. */
+export interface Change { subscription: string; item: string | null; price: string }
+
+/** A price as Stripe says it, as much as a person is shown before paying. */
+export interface Price { amount: number; currency: string; interval: 'day' | 'week' | 'month' | 'year'; every: number }
 
 /** The API version the Remote's requests are read as. */
 export const STRIPE_VERSION = '2024-06-20';
@@ -38,8 +52,8 @@ export function form(o: Record<string, unknown>, prefix = ''): string[] {
   return out;
 }
 
-/** The REST API with this secret key, subscribing to `price`. */
-export function stripeRest(key: string, price: string, f: typeof fetch = fetch): StripeApi {
+/** The REST API with this secret key. */
+export function stripeRest(key: string, f: typeof fetch = fetch): StripeApi {
   const post = async (path: string, body: Record<string, unknown>, idem?: string): Promise<{id: string; url?: string}> => {
     const r = await f(`https://api.stripe.com/v1/${path}`, {
       method: 'POST',
@@ -55,13 +69,31 @@ export function stripeRest(key: string, price: string, f: typeof fetch = fetch):
   };
   return {
     customer: async ({user, email, name}) => (await post('customers', {email, name, metadata: {user}}, `customer-${user}`)).id,
-    // Asked twice from the same page within ten minutes (a double click, a retry after a lost answer), it is the same
-    // Checkout, not two, each of which could be paid for (two subscriptions, billed both).
-    checkout: async ({customer, user, success, cancel}) => (await post('checkout/sessions', {
+    // Asked twice for the same tier from the same page within ten minutes (a double click, a retry after a lost
+    // answer), it is the same Checkout, not two, each of which could be paid for (two subscriptions, billed both).
+    // Another tier is another key: Stripe refuses one used again with other words.
+    checkout: async ({customer, user, tier, price, success, cancel}) => (await post('checkout/sessions', {
       mode: 'subscription', customer, client_reference_id: user, success_url: success, cancel_url: cancel,
-      line_items: {0: {price, quantity: 1}}, subscription_data: {metadata: {user}}, metadata: {user},
-    }, `checkout-${user}-${Math.floor(Date.now() / 600_000)}-${(await sha(`${success}\n${cancel}`)).slice(0, 16)}`)).url ?? '',
-    portal: async ({customer, back}) => (await post('billing_portal/sessions', {customer, return_url: back})).url ?? '',
+      line_items: {0: {price, quantity: 1}}, subscription_data: {metadata: {user, tier}}, metadata: {user, tier},
+    }, `checkout-${user}-${Math.floor(Date.now() / 600_000)}-${(await sha(`${price}\n${success}\n${cancel}`)).slice(0, 16)}`)).url ?? '',
+    // A change of tier opens at its own step: confirming it, when the subscription's item is known (then back to the
+    // page that asked); else choosing there, among the prices the portal is set to offer.
+    portal: async ({customer, back, change}) => (await post('billing_portal/sessions', {customer, return_url: back,
+      ...(change ? {flow_data: change.item
+        ? {type: 'subscription_update_confirm', subscription_update_confirm: {subscription: change.subscription, items: {0: {id: change.item, price: change.price, quantity: 1}}},
+          after_completion: {type: 'redirect', redirect: {return_url: back}}}
+        : {type: 'subscription_update', subscription_update: {subscription: change.subscription}}} : {})})).url ?? '',
+    async price(price) {
+      const r = await f(`https://api.stripe.com/v1/prices/${encodeURIComponent(price)}`, {
+        headers: {Authorization: `Bearer ${key}`, 'Stripe-Version': STRIPE_VERSION}, signal: AbortSignal.timeout(10_000)});
+      const j = await r.json().catch(() => ({})) as {unit_amount?: number; currency?: string; recurring?: {interval?: string; interval_count?: number}};
+      const interval = j.recurring?.interval;
+      if (!r.ok || typeof j.unit_amount !== 'number' || typeof j.currency !== 'string' || !['day', 'week', 'month', 'year'].includes(interval ?? '')) {
+        console.error('stripe', 'prices', r.status);
+        throw new Error(`Stripe ${r.status}`);
+      }
+      return {amount: j.unit_amount, currency: j.currency, interval: interval as Price['interval'], every: j.recurring?.interval_count ?? 1};
+    },
   };
 }
 

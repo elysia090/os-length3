@@ -8,6 +8,9 @@
 //               this test's own person (named after the test, so a failure
 //               says whose it was, and a retry is someone new)
 //   another     another person, in a browser of their own: another('Bo')
+//   planApp     the app on the run's other Remote, the one with the plan (the
+//               free allowance, the tiers, and Stripe's stand-in in test mode:
+//               global-setup.ts), in a fresh browser, no one signed in
 //
 // Nothing is read from outside the repository: no saved browser state, no
 // fixed port (global-setup.ts says where the app is).
@@ -43,7 +46,7 @@ async function opened(browser: Browser, url: string, address: string): Promise<{
   return {app, close: () => context.close()};
 }
 
-export const test = base.extend<{app: App; signedIn: App; another: (who: string) => Promise<App>}>({
+export const test = base.extend<{app: App; signedIn: App; another: (who: string) => Promise<App>; planApp: App}>({
   baseURL: async ({}, use) => {
     const url = process.env.SELFTEST_APP;
     if (!url) throw new Error('SELFTEST_APP is not set: run the selftest with `npm run selftest` (global-setup.ts starts the app)');
@@ -73,6 +76,13 @@ export const test = base.extend<{app: App; signedIn: App; another: (who: string)
       return o.app;
     });
     for (const o of opened_) await o.close();
+  },
+  planApp: async ({browser}, use, info) => {
+    const url = process.env.SELFTEST_PLAN_APP;
+    if (!url) throw new Error('SELFTEST_PLAN_APP is not set: run the selftest with `npm run selftest` (global-setup.ts starts the Remote with the plan)');
+    const o = await opened(browser, url, addressOf(info, 'Plan'));
+    await use(o.app);
+    await o.close();
   },
 });
 

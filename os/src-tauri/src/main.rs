@@ -52,15 +52,41 @@ async fn remote_login_start(app: tauri::AppHandle) -> Result<serde_json::Value, 
         .await.map_err(|e| e.to_string())??;
     use tauri_plugin_opener::OpenerExt;
     // Not opened (no browser to hand it to): the page shows the code and its address to open by hand.
-    if let Some(page) = code["verification_uri_complete"].as_str() { let _ = app.opener().open_url(page, None::<&str>); }
+    if let Some(page) = code["verification_uri_complete"].as_str() {
+        if let Ok(mut last) = signing_page().lock() { *last = Some(page.to_string()); }
+        let _ = app.opener().open_url(page, None::<&str>);
+    }
     Ok(code)
 }
 
-/// The plan's page, Checkout (`checkout`) or the portal (`portal`), as the Remote makes it for this account,
-/// opened in the browser. Only Stripe's page or the Remote's own is opened (account::plan_page).
+/// The page the last sign-in opened (the Remote's own, as the core checked it): opened again, never another.
+fn signing_page() -> &'static std::sync::Mutex<Option<String>> {
+    static PAGE: std::sync::OnceLock<std::sync::Mutex<Option<String>>> = std::sync::OnceLock::new();
+    PAGE.get_or_init(|| std::sync::Mutex::new(None))
+}
+
+/// The browser closed, or the tab lost: the same sign-in's page, opened again (its code still waits).
 #[tauri::command]
-async fn plan_open(app: tauri::AppHandle, kind: String) -> Result<(), String> {
-    let url = tauri::async_runtime::spawn_blocking(move || api::call("plan_page", &serde_json::json!({"kind": kind})))
+fn remote_login_reopen(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let page = signing_page().lock().ok().and_then(|p| p.clone())
+        .ok_or_else(|| length3_core::tr!("No sign-in is waiting", "待っているサインインはありません"))?;
+    app.opener().open_url(page, None::<&str>).map_err(|e| e.to_string())
+}
+
+/// Back from the browser (a sign-in approved there): the app's window forward, so the person is where they began.
+#[tauri::command]
+fn window_forward(app: tauri::AppHandle) {
+    use tauri::Manager;
+    if let Some(w) = app.get_webview_window("main") { let _ = w.unminimize(); let _ = w.show(); let _ = w.set_focus(); }
+}
+
+/// The plan's page, Checkout for `tier` (`checkout`) or the portal (`portal`; with a tier, at the step that
+/// changes to it), as the Remote makes it for this account, opened in the browser. Only Stripe's page or the
+/// Remote's own is opened (account::plan_page).
+#[tauri::command]
+async fn plan_open(app: tauri::AppHandle, kind: String, tier: Option<String>) -> Result<(), String> {
+    let url = tauri::async_runtime::spawn_blocking(move || api::call("plan_page", &serde_json::json!({"kind": kind, "tier": tier})))
         .await.map_err(|e| e.to_string())??;
     use tauri_plugin_opener::OpenerExt;
     app.opener().open_url(url.as_str().unwrap_or_default(), None::<&str>).map_err(|e| e.to_string())
@@ -159,7 +185,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            core, remote_login_start, plan_open,
+            core, remote_login_start, remote_login_reopen, window_forward, plan_open,
             shells::prompt_open, shells::prompt_input, shells::prompt_interrupt, shells::prompt_held, shells::prompt_close,
             shells::root_status, shells::root_list, shells::root_fetch, shells::root_use, ssh_here, ssh_set
         ])

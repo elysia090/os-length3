@@ -14,6 +14,11 @@ name = "os-length3"
 main = "service/worker.ts"
 compatibility_date = "2026-08-01"
 compatibility_flags = ["nodejs_compat"]
+# Reached by its own name alone (the routes below), never by <name>.workers.dev; and no preview URL for a version
+# a branch's build uploads (README.md, Deploy): such a version would run against production's database and bucket.
+# Said here, so a deploy does not warn that it took them as off.
+workers_dev = false
+preview_urls = false
 
 [assets]
 # The build (npm run build:cloudflare; vite.config.ts builds into this directory, and Tauri takes the app's from
@@ -49,13 +54,17 @@ R2_READS_MONTH = "9000000"
 UPLOAD_MB_DAY = "512"
 PG_MB = "450"
 # The plan (service/plan.ts), on a Remote that is not for research: a free account keeps 3 repos and
-# 100 MB on the Remote unless these say otherwise; a failed payment stays paid 14 days.
+# 100 MB on the Remote unless these say otherwise; a failed payment stays paid 14 days. The tiers keep
+# 50 GB (Go), 256 GB (Pro) and 512 GB (Max), within QUOTA_MB above, which bounds every account.
 # FREE_REPOS = "3"
 # FREE_MB = "100"
 # GRACE_DAYS = "14"
-# Stripe: the price a subscription is to. Its keys are secrets (wrangler secret put STRIPE_SECRET_KEY,
-# STRIPE_WEBHOOK_SECRET); with any of the three missing, billing is off.
-# STRIPE_PRICE = "price_…"
+# Stripe: each tier's price, a recurring one a month ($7, $14, $19); a tier without one is not sold. Its
+# keys are secrets (wrangler secret put STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET); with either missing, or
+# no price at all, billing is off.
+# STRIPE_PRICE_GO = "price_…"
+# STRIPE_PRICE_PRO = "price_…"
+# STRIPE_PRICE_MAX = "price_…"
 
 # How often one session (or, signed out, one address) may ask, counted at the edge before the database or R2 is
 # asked anything (service/app.ts): 600 a minute, a Prompt's root fetched a megabyte at a time included.

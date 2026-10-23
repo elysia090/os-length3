@@ -44,7 +44,10 @@ its log.
 - **web**: the app's Playwright selftest (`SELFTEST_REMOTE_KIND=worker npm
   run selftest`): app and Remote on one origin, as `os.length3.com` is. Outside
   research the plan always holds on a Worker, and servers are paid: each
-  account the run makes is paid by a trigger in that database alone.
+  account the run makes is paid by a trigger in that database alone. A
+  second Worker beside it, its accounts free until they pay through
+  Stripe's stand-in (each tier's price `service/devbilling.ts` has), is the
+  one the specs about paying meet (`SELFTEST_PLAN_APP`).
 - **l3**: `selftest/l3` with `SELFTEST_REMOTE_KIND=worker`, a Postgres and a
   Worker per test file, one file at a time; stopping the Remote is the
   Worker restarting. `L3` names the binary (the release's:

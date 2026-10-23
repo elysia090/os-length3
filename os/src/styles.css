@@ -925,6 +925,9 @@ mark { background: var(--ink); color: var(--ground); }
 .pop-head { padding: var(--s2) var(--s3) 0; }
 .pop-item[aria-checked='true'] { font-weight: 600; }
 .sign-in-row { flex-wrap: wrap; }
+.sign-in-lead { margin: 0 0 var(--s3); }
+.sign-in-step { font-weight: 600; }
+.sign-in-step.done { color: var(--done); }
 .section.offer { margin-top: var(--s5); padding: var(--s4); border: var(--line-work) solid var(--edge); border-radius: var(--r-place); }
 /* Git: the work on an issue, and changes handed in */
 .handed { display: grid; padding: var(--s2); border: 1px solid var(--rule); border-radius: var(--r-card); margin-bottom: var(--s3); }
@@ -1028,7 +1031,13 @@ mark { background: var(--ink); color: var(--ground); }
 /* A page in parts (common.ts parts()): the headings are the switch, the
    chosen one an ink fill like anything chosen; only its part is shown. */
 .part-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s3); margin-top: var(--s5); }
-.away-line { margin-top: var(--s4); }
+/* Who this device is on the Remote, and whether the Remote answers: two things on one line, said apart. */
+.standing { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s4); margin: var(--s4) 0 0; }
+.standing-reach.away { color: var(--off); }
+/* Just back from a provider: a passkey for next time, in a card of its own above the parts. */
+.passkey-next { margin-bottom: var(--s5); padding: var(--s4); border: 1px solid var(--edge); border-radius: var(--r-card); background: var(--raised); max-width: 760px; }
+.passkey-next p { margin: 0 0 var(--s2); }
+.offer-holder.held { display: none; }
 .parts { display: flex; flex-wrap: wrap; gap: var(--s1); }
 .part {
   height: var(--h-control); padding: 0 var(--s4); border: 1px solid transparent; border-radius: var(--r-round);
@@ -1045,8 +1054,20 @@ mark { background: var(--ink); color: var(--ground); }
 .sub-part h3 { display: flex; justify-content: space-between; align-items: center; margin: 0 0 var(--s3); font-size: var(--t-body); font-weight: 600; }
 .sub-part h3 small { margin-left: var(--s2); font-weight: 400; color: var(--sub); font-size: var(--t-meta); }
 
-/* Remote's Plan: what one has (a figure's size), the use against the allowance, what paid adds, one deed. */
-.plan-part { max-width: 760px; }
+/* Remote's Plan: what one has (a figure's size), the use against the allowance, the tiers side by side, what paid
+   adds, one deed. What is read keeps to 760 px; the tiers take the room for four small cards. */
+.plan-part { max-width: 1040px; }
+.plan-part > .sub-part:not(.plan-tiers), .plan-part > .plan-told, .plan-part > .error, .plan-part > .answers { max-width: 760px; }
+/* Free and each tier: small cards about four across, the account's own current (an ink edge over raised). */
+.tier-cards { grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); }
+.tier-card { min-height: 168px; gap: var(--s1); }
+.tier-card > .card-title { margin-bottom: var(--s1); }
+.tier-price { font-size: var(--t-card); font-weight: 600; }
+.tier-keeps { margin: var(--s1) 0 0; padding: 0; list-style: none; font-size: var(--t-meta); }
+.tier-keeps li + li { margin-top: var(--s1); }
+.tier-card > p.muted { margin: var(--s2) 0 0; }
+.tier-card > .card-foot { padding-top: var(--s3); }
+.plan-part > .plan-confirm { margin-top: var(--s5); }
 .plan-title { margin: 0; font-size: var(--t-card); font-weight: 600; }
 .plan-now p { margin: var(--s1) 0 0; }
 /* Each meter in the same columns: what it measures, its track, its figures (right-aligned). */
@@ -1055,6 +1076,16 @@ mark { background: var(--ink); color: var(--ground); }
 .plan-meter > .row-meta:nth-child(2) { grid-column: 2 / 4; }
 .plan-note { margin: var(--s2) 0 0; }
 .plan-part > .answers { margin-top: var(--s5); }
+/* Before payment: what is bought, how it is billed and ends, and the one step into it. */
+.plan-confirm { padding: var(--s4); border: 1px solid var(--edge); border-radius: var(--r-card); background: var(--raised); }
+.plan-price { margin: 0 0 var(--s2); font-size: var(--t-card); font-weight: 600; }
+.plan-terms { margin: 0 0 var(--s3); padding-left: var(--s4); }
+.plan-terms li + li { margin-top: var(--s1); }
+.plan-confirm > .answers { margin-top: var(--s4); }
+.plan-confirm > p.muted { margin: 0; }
+/* How the last trip to Checkout went, above the plan until the plan says it. */
+.plan-told { margin: 0 0 var(--s4); padding: var(--s2) var(--s3); border-left: 3px solid var(--edge); }
+.plan-told.done { border-left-color: var(--done); }
 /* The meter (DESIGN.md §3): a round track, `raised` inside an `edge` line, filled `ink` as far as the use goes. */
 .meter { height: var(--s2); border: 1px solid var(--edge); border-radius: var(--r-round); background: var(--raised); overflow: hidden; }
 .meter > span { display: block; height: 100%; width: calc(var(--share, 0) * 100%); background: var(--ink); }
