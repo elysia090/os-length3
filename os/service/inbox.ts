@@ -308,8 +308,9 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
     const own = await mine(me);
     // Written from a name that still answers: one on a domain whose DNS no longer names this account is not one.
     let from: Address | undefined;
-    for (const a of b?.from ? own.filter((x) => x.address === b.from) : own) if (await stillNamed(a)) { from = a; break; }
-    if (!from) return c.json({error: b?.from && own.some((x) => x.address === b.from) ? 'That name\'s domain no longer names this account' : 'Claim a name first'}, 409);
+    // The one it says first (if it is theirs), then their others: never another's, whatever it says.
+    for (const a of [...own.filter((x) => x.address === b?.from), ...own.filter((x) => x.address !== b?.from)]) if (await stillNamed(a)) { from = a; break; }
+    if (!from) return c.json({error: own.length ? 'That name\'s domain no longer names this account' : 'Claim a name first'}, 409);
     const to = await resolve(me, typeof b?.to === 'string' ? b.to : '');
     if (!('userId' in to)) return c.json({error: to.why}, 404);
     if (to.userId === me) return c.json({error: 'That is you'}, 400);

@@ -134,6 +134,7 @@ test('a name on a domain whose DNS no longer names its holder writes nothing and
   assert.equal((await s.call('POST', '/v1/inbox/addresses', {token: mio, body: {name: 'mio', domain: 'example.org'}})).status, 201);
   s.unpublish('_length3.example.org');
   assert.equal((await s.call('POST', '/v1/servers', {token: mio, body: {name: 'Club', address: 'club@example.org'}})).status, 400);
+  // Its only name's domain gone: nothing goes out from it.
   assert.equal((await s.call('POST', '/v1/inbox/messages', {token: mio, body: {to: 'ren', from: 'mio@example.org', body: 'hi'}})).status, 409);
 });
 
@@ -155,4 +156,32 @@ test('Stripe: incomplete of the same second does not undo active; a failure deli
   await sendEvent(s, stripeEvent('invoice.payment_failed', {object: 'invoice', customer: cus}, {created: now - 20 * 86400}));
   await sendEvent(s, stripeEvent('customer.subscription.updated', subscription(u2, {status: 'past_due'}), {created: now}));
   assert.equal((await s.call('GET', '/v1/plan', {token: t2})).json.plan, 'paid');
+});
+
+// ---- repos ----
+
+test('a draft takes no path a disk or the database cannot hold, nor a file and a folder of one name', async () => {
+  const s = await service();
+  const t = await s.start();
+  const bytes = enc.encode('x'), sha = await sha256(bytes);
+  assert.equal((await s.call('PUT', `/v1/blobs/${sha}`, {token: t, bytes})).status, 201);
+  const patch = (version: number, set: Record<string, string | null>) => s.call('PATCH', '/v1/repos/r/draft', {token: t, body: {version, set, remove: []}});
+  for (const bad of ['a\u0000b', 'a\ud800', 'a\\b', 'c:d', '__proto__', 'x\u001fy']) assert.equal((await patch(0, {[bad]: sha})).status, 400, JSON.stringify(bad));
+  assert.equal((await patch(0, {a: sha, 'a/b': sha})).status, 400);
+  assert.equal((await patch(0, {a: sha})).status, 200);
+  assert.equal((await patch(1, {'a/b': sha})).status, 400);
+  assert.equal((await patch(1, {'b/c': sha})).status, 200);
+});
+
+test('a name longer than a repo keeps is kept as long as it may be, and nothing sent as text or a number answers 500', async () => {
+  const s = await service();
+  const t = await s.start('R'.repeat(250));
+  assert.equal((await s.call('PATCH', '/v1/repos/long/draft', {token: t, body: {version: 0, set: {}, remove: []}})).status, 200);
+  for (const version of [1.5, 1e20, 2 ** 31]) assert.equal((await s.call('PUT', '/v1/home/profile', {token: t, body: {value: '{}', version}})).status, 400);
+  assert.equal((await s.call('PUT', '/v1/home/profile', {token: t, body: {value: 'a\u0000b', version: 0}})).status, 400);
+});
+
+test('merge3 says a file on one side and a folder of its name on the other as a conflict', async () => {
+  const {merge3} = await import('./repos.ts');
+  assert.deepEqual(merge3({}, {'a/x': 's1'}, {a: 's2'}).conflicts, ['a']);
 });

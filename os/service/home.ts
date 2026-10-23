@@ -24,7 +24,9 @@ export function homeRoutes(d: {db: Db}, v1: Hono<Vars>) {
     const k = c.req.param('key'), user = c.get('userId');
     if (!/^[a-z]{1,32}$/.test(k)) return c.json({error: 'Not found'}, 404);
     const b = await body<{value?: unknown; version?: unknown}>(c);
-    if (!b || typeof b.value !== 'string' || typeof b.version !== 'number' || b.value.length > LIMIT.home) return c.json({error: 'a value and its version'}, 400);
+    // A version is a whole number an integer column holds (1.5 and 1e20 were 500s).
+    if (!b || typeof b.value !== 'string' || typeof b.version !== 'number' || !Number.isInteger(b.version) || b.version < 0 || b.version >= 2 ** 31 - 1
+      || b.value.length > LIMIT.home) return c.json({error: 'a value and its version'}, 400);
     const value = b.value, version = b.version;
     const done = await db.transaction(async (tx: Db) => {
       await lock(tx, user);

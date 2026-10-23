@@ -183,6 +183,8 @@ export const bounded: MiddlewareHandler = (c, next) =>
  * not reached (class 08).
  */
 const BUSY = new Set(['55P03', '57014', '40001', '40P01', '53300', '57P01', '57P02', '57P03']);
+/** Postgres's word that a value is not one it keeps: text it cannot hold, a number out of range or a bad one, too long, a check refused. */
+const INPUT = new Set(['22021', '22P05', '22P02', '22003', '22001', '23514']);
 const codeOf = (e: unknown): string => {
   for (let x = e as {code?: unknown; cause?: unknown; message?: unknown} | undefined, i = 0; x && i < 4; x = x.cause as typeof x, i++) {
     if (typeof x.code === 'string' && /^[0-9A-Z]{5}$/.test(x.code)) return x.code;
@@ -206,5 +208,8 @@ export const failed: ErrorHandler = (e, c) => {
     c.header('Retry-After', '5');
     return c.json({error: 'The Remote is busy just now; try again', id}, 503);
   }
+  // What was sent is no text, number or value the database keeps (a NUL, a lone surrogate, a number out of range, a
+  // check refused): the request's, not the Remote's, wherever a route did not say so first.
+  if (INPUT.has(code)) return c.json({error: 'What was sent is not something the Remote keeps', id}, 400);
   return c.json({error: 'Something went wrong on the Remote', id}, 500);
 };

@@ -63,17 +63,38 @@ export function merge3<V>(base: Record<string, V>, ours: Record<string, V>, thei
     const pick = o === t ? o : o === b ? t : t === b ? o : (conflicts.push(p), o);
     if (pick !== undefined) tree[p] = pick;
   }
+  // Each side's tree is one a disk can hold; the two laid together may not be (a file on one, a folder on the other).
+  for (const p of clashes(tree)) if (!conflicts.includes(p)) conflicts.push(p);
   return {tree, conflicts: conflicts.sort()};
 }
 
-/** A repo path as the app allows one: no .., no empty part, never .git however spelt. */
+/** A lone half of a surrogate pair: not text Postgres (or a file system) takes. */
+const LONE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
+
+/**
+ * A repo path as the app allows one: no .., no empty part, never .git however spelt; no control character, no
+ * backslash or colon (a Windows client reads either as a way to another place: `a\b`, `.git::$INDEX_ALLOCATION`),
+ * no lone surrogate, and never `__proto__` (a tree is a plain object: that key would be taken as its prototype).
+ */
 export function validPath(p: string): boolean {
-  if (!p || p.length > 1024 || p.startsWith('/')) return false;
+  if (!p || p.length > 1024 || p.startsWith('/') || p === '__proto__' || /[\u0000-\u001f\u007f\\:]/.test(p) || LONE.test(p)) return false;
   return p.split('/').every((part) => {
     if (!part || part === '.' || part === '..') return false;
     const n = part.replace(/[‌-‏‪-‮⁪-⁯﻿]/g, '').toLowerCase().replace(/[. ]+$/, '');
     return n !== '.git' && n !== 'git~1';
   });
+}
+
+/**
+ * The paths of `tree` that are a file (or an empty folder) and a folder at once: `a` and `a/b` both named. No
+ * client can lay such a tree out on a disk; a draft is refused one, and a merge says each as a conflict.
+ */
+export function clashes(tree: Record<string, unknown>): string[] {
+  const out: string[] = [];
+  for (const p of Object.keys(tree)) {
+    for (let i = p.indexOf('/'); i >= 0; i = p.indexOf('/', i + 1)) if (p.slice(0, i) in tree) { out.push(p.slice(0, i)); break; }
+  }
+  return [...new Set(out)].sort();
 }
 
 /** A draft with a diff laid on it: `remove` takes a path and everything under it, then `set` is written. */
@@ -138,6 +159,9 @@ const changeShown = (repoName: string, {repoId: _, off: __, ...r}: Change & {rep
   ({...r, repo: repoName, issue: issueOf(r.line), updatedAt: r.updatedAt.getTime()});
 const count = (n: unknown) => (typeof n === 'number' && Number.isInteger(n) && n >= 0 && n < 2 ** 31 ? n : 0);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** Who did it, as their name is now, as long as what keeps it takes (a provider's name may be longer). */
+const whoBy = (c: Context<Vars>) => c.get('name').slice(0, 200);
 
 export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-codes are kept under (keys.ts: off-code). */ offKey?: string}, v1: Hono<Vars>) {
   const db = d.db;
@@ -248,6 +272,9 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
       if (current !== b.version) refuse(409, {version: current});
       const was = row?.draft ?? {};
       const tree = applyDiff(was, set as Tree, remove as string[]);
+      // A file and a folder of one name, made by this diff (one there before is not this diff's to refuse).
+      const clashed = new Set(clashes(was)), clash = clashes(tree).filter((p) => !clashed.has(p));
+      if (clash.length) refuse(400, {error: 'A file and a folder of the same name', path: clash[0]});
       const modes = applyModes(row?.modes ?? {}, tree, set as Tree, sent as Modes | undefined);
       const size = JSON.stringify(tree).length;
       if (Object.keys(tree).length > LIMIT.files || size > LIMIT.tree) refuse(413, {error: 'Too many files for one repo'});
@@ -266,7 +293,7 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
       else {
         await tx.delete(repoGone).where(and(eq(repoGone.userId, user), eq(repoGone.name, name)));
         const [made] = await tx.insert(repo).values({userId: user, name}).returning({id: repo.id}) as {id: number}[];
-        after = await tx.insert(line).values({repoId: made.id, userId: user, name: 'main', draft: tree, modes, version: 1, startedBy: c.get('name')}).returning(kept);
+        after = await tx.insert(line).values({repoId: made.id, userId: user, name: 'main', draft: tree, modes, version: 1, startedBy: whoBy(c)}).returning(kept);
       }
       if (after[0]) await d.plans.grew(tx, user, Number(after[0].bytes) + Number(after[0].files) - Number(before.bytes) - Number(before.files));
       return current + 1;
@@ -433,7 +460,8 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
   v1.get('/repos/:name/lines', async (c) => {
     const list = await db.select(lineCols).from(line).innerJoin(repo, eq(repo.id, line.repoId))
       .where(and(named(c.get('userId'), c.req.param('name')), ne(line.name, 'main'))).orderBy(line.startedAt) as Line[];
-    on(list[0]?.off);
+    // A repo turned off says so, lines or none.
+    on(list.length ? list[0].off : (await repoAt(db, c.get('userId'), c.req.param('name')))?.off);
     return c.json(list.map(lineShown));
   });
 
@@ -463,7 +491,7 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
       const written = main.draft![issue];
       if (written && !from[issue]) from[issue] = written;
       await fits(tx, user, JSON.stringify(from).length);
-      await tx.insert(line).values({repoId: main.id, userId: user, name: stem, base: head, head, pushed: head, draft: from, modes: modesFor(from, fromModes), version: 1, startedBy: c.get('name')});
+      await tx.insert(line).values({repoId: main.id, userId: user, name: stem, base: head, head, pushed: head, draft: from, modes: modesFor(from, fromModes), version: 1, startedBy: whoBy(c)});
       return {row: (await lineAt(tx, user, name, stem))!, made: true};
     });
     return c.json(lineShown(row), made ? 201 : 200);
@@ -497,7 +525,8 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
     const r = await repoAt(db, c.get('userId'), name);
     if (!r) return c.json([]);
     on(r.off);
-    const list = await db.select(changeCols).from(change).where(eq(change.repoId, r.id)).orderBy(desc(change.updatedAt)) as Change[];
+    // The newest 200: a repo's changes are kept, and each says its reviews.
+    const list = await db.select(changeCols).from(change).where(eq(change.repoId, r.id)).orderBy(desc(change.updatedAt)).limit(200) as Change[];
     return c.json(list.map((x) => changeShown(name, x)));
   });
 
@@ -519,7 +548,7 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
       const [was] = await tx.select({id: change.id, state: change.state, head: change.head, version: change.version}).from(change)
         .where(and(eq(change.repoId, row.id), eq(change.line, l)));
       if (was?.state === 'merged') refuse(409, {error: 'This change is merged already'});
-      const now = {...words, head: row.pushed, base: row.base, state: 'open', submittedBy: c.get('name'), updatedAt: new Date()};
+      const now = {...words, head: row.pushed, base: row.base, state: 'open', submittedBy: whoBy(c), updatedAt: new Date()};
       if (was) return [await changed(tx, was.id, {...now, version: was.head === row.pushed && was.state === 'open' ? was.version : was.version + 1}), 200] as const;
       return [(await tx.insert(change).values({repoId: row.id, userId: user, line: l, ...now}).returning(changeCols))[0], 201] as const;
     });
@@ -548,7 +577,7 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
       }
       const note = typeof b?.note === 'string' ? b.note.slice(0, LIMIT.words) : '';
       await fits(tx, user, note.length + JSON.stringify(marks).length);
-      await tx.insert(review).values({changeId: row.id, userId: user, version: row.version, verdict: b!.verdict as Review['verdict'], note, marks, by: c.get('name')});
+      await tx.insert(review).values({changeId: row.id, userId: user, version: row.version, verdict: b!.verdict as Review['verdict'], note, marks, by: whoBy(c)});
       return (await changeAt(tx, user, name, row.id))!;
     });
     return c.json(changeShown(name, out), 201);
@@ -573,12 +602,17 @@ export function repos(d: {db: Db; quota?: number; plans: Plans; /** The key off-
       // main's uncommitted draft keeps its own changes; what the merge brings is laid over it.
       const draft = merge3(tree(main.head), main.draft!, merged.tree);
       if (draft.conflicts.length) refuse(409, {conflicts: draft.conflicts, draft: true});
+      // What main holds after is held to what any of its saves is (a repo of more files than it may hold would refuse every save after).
+      for (const t of [merged.tree, draft.tree]) if (Object.keys(t).length > LIMIT.files || JSON.stringify(t).length > LIMIT.tree) refuse(413, {error: 'Too many files for one repo'});
       // Modes are merged as the trees are; one both changed keeps main's (a mode is never what refuses a merge).
       const modes = modesFor(merged.tree, merge3(tree.modes(row.base), tree.modes(main.head), tree.modes(row.head)).tree);
       const draftModes = modesFor(draft.tree, merge3(tree.modes(main.head), main.modes ?? {}, modes).tree);
       const made = await commit(tx, user, main, {merged: row.head, tree: merged.tree, modes, kind: row.kind, title: row.title,
         issue: issueOf(row.line), note: row.note, added: 0, removed: 0}, {tree: draft.tree, modes: draftModes});
-      return {merged: made.id, ...changeShown(name, (await changed(tx, row.id, {state: 'merged', updatedAt: new Date()}))!)};
+      // Still open: a reject or reset that came between is not overwritten (and the merge is undone with this refusal).
+      const done = await changed(tx, row.id, {state: 'merged', updatedAt: new Date()}, eq(change.state, 'open'));
+      if (!done) refuse(409, {error: 'The change is not open any more'});
+      return {merged: made.id, ...changeShown(name, done)};
     });
     return c.json(out);
   });
