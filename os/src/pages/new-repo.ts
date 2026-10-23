@@ -1,4 +1,4 @@
-import {h} from '../dom.ts';
+import {bytes, h} from '../dom.ts';
 import {t} from '../i18n.ts';
 import {remoteOnly} from '../lifecycle.ts';
 import {plainPart, renamed, store, templateFiles, validName, type Template} from '../repos.ts';
@@ -6,6 +6,7 @@ import {pageHead} from './common.ts';
 import {repoList} from './repo-list.ts';
 import type {Context} from './context.ts';
 import {triangle} from './tree.ts';
+import {ORIGIN_LABEL} from '../system.ts';
 import {errorText} from '../errors.ts';
 import {morph, nudge, where} from '../glide.ts';
 
@@ -84,13 +85,14 @@ function nest(scaffold: Map<string, string | null>): Item[] {
   return root.children;
 }
 
-function row(name: Node | string, depth: number, dir: boolean, extra: Partial<{meta: string; repo: boolean; shut: boolean}> = {}): HTMLElement {
+function row(name: Node | string, depth: number, dir: boolean, extra: Partial<{meta: Node | string; repo: boolean; shut: boolean}> = {}): HTMLElement {
   // A folder with nothing in it yet is shut, as File shows one: an open triangle over nothing says there is something.
   const lead = dir ? h('span', {class: 'tree-toggle', 'aria-hidden': 'true', 'aria-expanded': String(!extra.shut)}) : h('span', {class: 'tree-spacer', 'aria-hidden': 'true'});
   if (dir) lead.append(triangle());
   return h('li', {class: extra.repo ? 'tree-repo' : dir ? 'tree-dir' : 'tree-file'},
     h('div', {class: 'tree-row', style: `--depth:${depth}`}, lead,
-      typeof name === 'string' ? h('span', {class: 'tree-name plain'}, name) : name, extra.meta ? h('span', {class: 'tree-meta'}, extra.meta) : null));
+      typeof name === 'string' ? h('span', {class: 'tree-name plain'}, name) : name,
+      typeof extra.meta === 'string' ? h('span', {class: 'tree-meta'}, extra.meta) : extra.meta ?? null));
 }
 
 export function newRepo(ctx: Context): Node[] {
@@ -100,9 +102,11 @@ export function newRepo(ctx: Context): Node[] {
   const scaffold = templateFiles('{name}', SCAFFOLD);
   // The scaffold in File's order (folders first, then names), each file's name a field; the order stays put while a name is written.
   const inputs = new Map<string, HTMLInputElement>();
-  // The repo itself at the top, as it will stand in File (where it is, /root, is File's to say, not this card's).
-  const repoRow = row('my-repo', 0, true, {repo: true});
-  const items: HTMLElement[] = [repoRow];
+  // As File will show it: /root (repo), and in it the repo, the one in hand, filled as File fills the repo worked on.
+  const repoRow = row('my-repo', 1, true, {repo: true});
+  const items: HTMLElement[] = [row('root', 0, true, {meta: t(ORIGIN_LABEL.repos)}), repoRow];
+  // The README's size as File gives a file's, of what it will say: it follows the name and what it is for.
+  const readmeSize = h('span', {class: 'tree-meta'});
   // Under the README's row, what it will say: its title the repo's name, then what it is for, as written beside.
   const peek = h('li', {class: 'readme-peek', 'aria-hidden': 'true'});
   const walk = (nodes: Item[], depth: number) => {
@@ -112,11 +116,11 @@ export function newRepo(ctx: Context): Node[] {
         placeholder: n.name, 'aria-label': t('Name of {path}', {path: n.path})}) as HTMLInputElement;
       field.value = draft.names[n.path] ?? n.name;
       inputs.set(n.path, field);
-      items.push(row(field, depth, false));
+      items.push(row(field, depth, false, n.path === 'README.md' ? {meta: readmeSize} : {}));
       if (n.path === 'README.md') { peek.style.setProperty('--depth', String(depth)); items.push(peek); }
     }
   };
-  walk(nest(scaffold), 1);
+  walk(nest(scaffold), 2);
   const preview = h('ul', {class: 'tree-children'}, ...items);
   // What the card is goes to the ear: the eye sees it is File's tree.
   const caption = h('p', {class: 'sr-only'}, t('How it will look in File'));
@@ -139,7 +143,7 @@ export function newRepo(ctx: Context): Node[] {
     // Enter puts the name down, as in File; it never makes the repo from inside the box.
     i.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); i.blur(); } });
   }
-  // What it is for, in a raised box as Home's TODO is, as tall as the scaffold beside it: the words written straight in it, the box the field.
+  // What it is for, in a raised box as Home's TODO is: the words written straight in it, the box the field.
   const summary = h('textarea', {id: 'repo-summary', class: 'todo-detail', maxlength: '2000',
     placeholder: t('What this repo is for'), 'aria-labelledby': 'repo-summary-label'}) as HTMLTextAreaElement;
   summary.value = draft.summary;
@@ -147,7 +151,11 @@ export function newRepo(ctx: Context): Node[] {
   /** The README as it will be written, a few lines of it, numbered as Forge numbers them. */
   const paintPeek = () => {
     const about = summary.value.trim();
-    const lines = [`# ${name.value.trim() || 'my-repo'}`, ...(about ? ['', ...about.split('\n')] : [])];
+    const n = name.value.trim() || 'my-repo';
+    const lines = [`# ${n}`, ...(about ? ['', ...about.split('\n')] : [])];
+    // Written as Create writes it: under the title what it is for, or the scaffold's own README.
+    const text = about ? `# ${n}\n\n${about}\n` : templateFiles(n, SCAFFOLD).get('README.md') ?? '';
+    readmeSize.textContent = bytes(new TextEncoder().encode(text).length);
     peek.replaceChildren(...lines.slice(0, 6).map((l, i) => h('span', {class: 'peek-line'}, h('span', {class: 'peek-no'}, String(i + 1)), h('span', {}, l || ' '))),
       ...(lines.length > 6 ? [h('span', {class: 'peek-line'}, h('span'), h('span', {}, '…'))] : []));
   };

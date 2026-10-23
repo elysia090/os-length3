@@ -2020,16 +2020,17 @@ by their range of ids when they come back near.
 
 A name alone on the first line (the same field as the search box). Under
 it, two columns: on the left, filling it, what the repo is for (概要), a
-raised box written straight into as a TODO's detail is, reaching down as
-far as the column beside it, whose words go into the repo's README.md under
+raised box written straight into as a TODO's detail is, whose words go into the repo's README.md under
 its title; on the right, level with it, under 作成されるもの, the one
 scaffold every repo starts from (nothing to choose: shared/templates.json's
 `standard`, as `l3 repo new` makes it: README.md with docs/ and issue/, no
-language of its own; C's files are `l3 repo new -t c`'s), shown as File will show it: a
-card of tree rows from the new repo's name (bold) down, where it is (/root)
-being File's to say, its folders shut, and each file's name its own row,
-quietly a field (a rule round it under the pointer, a field once written
-in). Under README.md, its first lines as they will be written, numbered as
+language of its own; C's files are `l3 repo new -t c`'s), shown as File will show it: File's
+own card, only as tall as its rows, /root (repo) and in it the new repo,
+filled in ink as File fills the repo worked on, its folders shut, and each
+file's name its own row, quietly a field (a rule round it under the
+pointer, a field once written in), README.md's size at the row's end as
+File gives it, of what it will say (it follows the name and what it is
+for). Under README.md, its first lines as they will be written, numbered as
 Forge numbers them and quiet behind a rule: the title the repo's name, then
 what it is for, as it is typed beside. A name and its extension are
 changed there and nothing else: what a file says is never turned into
