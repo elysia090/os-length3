@@ -84,6 +84,9 @@ export async function database(): Promise<PGlite> {
   if (AGAINST) throw new Error('Only sharedService() runs against a real database');
   const pg = new PGlite({loadDataDir: await migrated()});
   await pg.waitReady;
+  // In UTC, as Neon is. PGlite takes this machine's zone, and the template keeps the zone of the machine that made it:
+  // made in Tokyo, now() as a moment without a zone was nine hours ahead of what Better Auth reads its columns as (UTC).
+  await pg.exec(`set timezone to 'UTC'`);
   return pg;
 }
 

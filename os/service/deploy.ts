@@ -12,11 +12,12 @@
 //       runs once it answers); the bucket, if
 //       there is none; then the Worker, given what it lacks of what it needs,
 //       and asked whether it answers from its database:
-//         DATABASE_URL, as remote_worker: the login role it connects as, a
-//           member of remote_app (rows, nothing else; 0001) and of nothing
-//           more, its requests cut off at 15 s. Made in SQL, not in Neon's
-//           console, where a role is given more than this. ANEW=1 makes its
-//           password again.
+//         DATABASE_URL, as remote_worker_<when>: the login role it connects
+//           as, a member of remote_app (rows, nothing else; 0001) and of
+//           nothing more, its requests cut off at 15 s. Made in SQL, not in
+//           Neon's console, where a role is given more than this; made new
+//           each time, never changed (neon.ts workerRole), and the ones before
+//           it dropped once the new Worker answers. ANEW=1 makes a new one.
 //         BETTER_AUTH_SECRET, once (a new one would sign everyone out).
 //         ENTER_KEY, for a Remote for research (enter.ts): the one given, or
 //           else, the first time, a new one, whose link is handed on.
@@ -46,7 +47,7 @@ import {enterEmail} from './enter.ts';
 import {limitsOf, month, spent, take} from './budget.ts';
 import type {Db} from './request.ts';
 import {mirror, type Store} from './mirror.ts';
-import {defaultBranchUrl, migrateBeforeWorker, migrateRemote, owner as ownerOn, workerRole} from './neon.ts';
+import {defaultBranchUrl, migrateBeforeWorker, migrateRemote, owner as ownerOn, retireWorkers, workerRole} from './neon.ts';
 import {pinnedDesktop, pinnedRoots} from './releases.ts';
 
 const config = new URL('../wrangler.toml', import.meta.url).pathname;
@@ -106,12 +107,13 @@ async function held(): Promise<Set<string>> {
   return new Set((JSON.parse(out) as {name: string}[]).map((s) => s.name));
 }
 
-/** remote_worker with a new password (workerRole, neon.ts); the URL the Worker reaches it by. */
-async function worker(db: Awaited<ReturnType<typeof owner>>['db'], url: URL): Promise<string> {
-  const password = await workerRole(db, secret(30).replace(/[^A-Za-z0-9]/g, 'x'));
+/** A new login role for the Worker, with a new password (workerRole, neon.ts): its name, and the URL the Worker reaches it by. */
+async function worker(db: Awaited<ReturnType<typeof owner>>['db'], url: URL): Promise<{name: string; url: string}> {
+  const password = secret(30).replace(/[^A-Za-z0-9]/g, 'x');
+  const name = await workerRole(db, password);
   // The pooled host: many short connections, as a Worker makes.
   const host = url.hostname.includes('-pooler.') ? url.hostname : url.hostname.replace(/^([^.]+)\./, '$1-pooler.');
-  return `postgresql://remote_worker:${password}@${host}${url.pathname}?sslmode=require`;
+  return {name, url: `postgresql://${name}:${password}@${host}${url.pathname}?sslmode=require`};
 }
 
 /** Hands a new link on, once. */
@@ -217,7 +219,15 @@ if (!step) {
   if ((await wrangler(['r2', 'bucket', 'info', bucket, '--json'], {heard: true})).code !== 0) await must(['r2', 'bucket', 'create', bucket]);
   const kept = await held();
   const give: Record<string, string> = {};
-  if (!kept.has('DATABASE_URL') || process.env.ANEW === '1') give.DATABASE_URL = await worker(db, url);
+  // A new role for a new DATABASE_URL (the Worker has none: the first deploy, or one that stopped before giving it;
+  // or ANEW=1): the role a Worker running now signs in as is left as it is until the new Worker answers (below).
+  let role: string | null = null;
+  if (!kept.has('DATABASE_URL') || process.env.ANEW === '1') {
+    const w = await worker(db, url);
+    role = w.name;
+    give.DATABASE_URL = w.url;
+    console.log(`DATABASE_URL: as ${role}, made now`);
+  }
   await pool.end();
   if (!kept.has('BETTER_AUTH_SECRET')) give.BETTER_AUTH_SECRET = secret(48);
   const made = vars('ENTER_AS') && !given && !kept.has('ENTER_KEY');
@@ -227,6 +237,14 @@ if (!step) {
   await deployWorker(give, must);
   if (made) handOn(give.ENTER_KEY, 'This Remote has its first link.');
   await answers(vars('BASE_URL')!);
+  // The Worker answers as the new role: the ones before it go (a deploy that stopped half-way left its own too).
+  if (role) {
+    const later = await owner();
+    try {
+      const {dropped, left} = await retireWorkers(later.db, role);
+      console.log(`the Worker's roles before ${role}: ${dropped.length ? `${dropped.join(', ')} dropped` : 'none to drop'}${left.length ? `; ${left.join(', ')} left (said above)` : ''}`);
+    } finally { await later.pool.end(); }
+  }
   if (waiting) {
     // The Worker that read what the contract step drops is gone now.
     const later = await owner();

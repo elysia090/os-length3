@@ -89,7 +89,8 @@ test('Devices: a session signed in days ago still lists the devices (Better Auth
   assert.deepEqual((got.json as unknown as {token: string}[]).map((x) => x.token).sort(), [raw(a), `id:${idOfToken(b)}`].sort());
   assert.equal((await s.call('GET', '/api/auth/list-sessions')).status, 401);
   // An ended session is not listed.
-  await s.db.execute(sql`update session set expires_at = now() - interval '1 second' where token = ${raw(b)}`);
+  // Better Auth keeps its moments without a zone, as UTC (as the sweep reads them).
+  await s.db.execute(sql`update session set expires_at = now() at time zone 'utc' - interval '1 second' where token = ${raw(b)}`);
   assert.deepEqual((await sessionsOf(s, a)).map((x) => x.token), [raw(a)]);
 });
 

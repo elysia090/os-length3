@@ -8,8 +8,8 @@ production runs it, on this machine, reaching nothing else:
 | Production | Here |
 |---|---|
 | `service/worker.ts` on workerd, `nodejs_compat` | the same, under `wrangler dev --local` (workerd and Miniflare from `node_modules`), from a configuration made from `wrangler.toml` (`stack.ts` says each difference and why) |
-| Neon Postgres, the Worker as `remote_worker` (member of `remote_app`), migrations as the owner | a Postgres 16 cluster of its own (`postgres.ts`: `/usr/lib/postgresql/16`, 127.0.0.1 only, a free port, a new directory, gone at the end); migrations by `migrateRemote` and the role by `workerRole` (`service/neon.ts`), exactly what `deploy.ts` runs |
-| the Neon serverless driver over a WebSocket to Neon's proxy, startup pipelined | the same driver code, pointed (`worker.ts` here: `neonConfig.wsProxy`) at `wsbridge.ts`, a process that hands each WebSocket's bytes to a TCP connection to the Postgres; `remote_worker` logs in by password so the driver pipelines its startup as it does to Neon |
+| Neon Postgres, the Worker as `remote_worker_<when>` (member of `remote_app`), migrations as the owner | a Postgres 16 cluster of its own (`postgres.ts`: `/usr/lib/postgresql/16`, 127.0.0.1 only, a free port, a new directory, gone at the end); migrations by `migrateRemote` and the role by `workerRole` (`service/neon.ts`), exactly what `deploy.ts` runs, a role of its own for each Remote on the cluster |
+| the Neon serverless driver over a WebSocket to Neon's proxy, startup pipelined | the same driver code, pointed (`worker.ts` here: `neonConfig.wsProxy`) at `wsbridge.ts`, a process that hands each WebSocket's bytes to a TCP connection to the Postgres; each `remote_worker_…` logs in by password so the driver pipelines its startup as it does to Neon |
 | R2 | Miniflare's local R2 (`--persist-to`), or none (`noBucket`) |
 | Workers Assets, SPA fallback, `run_worker_first`, `public/_headers` | the same, serving the app built for its own origin (`VITE_LENGTH3_REMOTE=''`, as `build:cloudflare` builds it; without the Prompt's files, which come from the release) |
 | the Cron Trigger | wrangler's `/__scheduled` (`--test-scheduled`) |

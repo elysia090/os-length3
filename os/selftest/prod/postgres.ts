@@ -66,17 +66,19 @@ export async function cluster(): Promise<Cluster> {
   if (asRoot) chownSync(pwfile, Number(execFileSync('id', ['-u', 'postgres']).toString()), 0);
   pg('initdb', ['-D', data, '-U', 'owner', '--pwfile', pwfile, '-A', 'scram-sha-256', '--auth-local', 'trust', '-E', 'UTF8', '--locale', 'C.UTF-8'], {quiet: true});
   rmSync(pwfile);
-  // Listening on this machine only; remote_worker by password (cleartext over loopback: Neon's proxy takes it
+  // Listening on this machine only; the Worker's roles (remote_worker…) by password (cleartext over loopback: Neon's proxy takes it
   // so, inside TLS), so the driver pipelines its startup as it does to Neon. Everyone else by SCRAM.
   writeFileSync(join(data, 'pg_hba.conf'), [
     'local all all trust',
-    'host all remote_worker 127.0.0.1/32 password',
+    'host all /^remote_worker 127.0.0.1/32 password',
     'host all all 127.0.0.1/32 scram-sha-256',
   ].join('\n') + '\n');
   const conf = [
     `listen_addresses = '127.0.0.1'`, `port = ${port}`, `unix_socket_directories = '${sock}'`,
     // As a small Neon compute: a few connections at a time, short statements.
     'max_connections = 100', 'shared_buffers = 128MB', 'fsync = on', 'synchronous_commit = on',
+    // In UTC, as Neon is, whatever this machine's own zone (Better Auth keeps its moments without one, as UTC).
+    `timezone = 'UTC'`,
     `log_destination = 'stderr'`, 'logging_collector = off', `log_min_messages = warning`,
   ];
   writeFileSync(join(data, 'postgresql.auto.conf'), conf.join('\n') + '\n');
