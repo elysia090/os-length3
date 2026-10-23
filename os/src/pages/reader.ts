@@ -80,8 +80,11 @@ export function indent(area: HTMLTextAreaElement) {
 }
 
 /** One repo read top to bottom: only files, directories are just where they come from. */
-/** Where the caret goes in a file opened to write in: its start (true), its end, or not in it (false). */
-export type Writing = boolean | 'end';
+/**
+ * Where the caret goes in a file opened to write in: its start (true), its end, back at `at` (an offset kept when it
+ * was left), or not in it (false).
+ */
+export type Writing = boolean | 'end' | {at: number};
 
 export class Reader {
   readonly repo: string;
@@ -137,20 +140,22 @@ export class Reader {
   /**
    * Load the directories down to `path` and scroll it into view; at `line`,
    * that line is selected with the caret in it; with `write`, the caret is put
-   * at the file's start (a file chosen to work on, from File), or with 'end' at its end (what was just written there,
-   * as a repo's README once made, to go on writing).
+   * at the file's start (a file chosen to work on, from File), with 'end' at its end (what was just written there,
+   * as a repo's README once made, to go on writing), or back where it was left ({at}); a place in it other than its
+   * start is put in view.
    */
   async reveal(path: string, line = 0, write: Writing = false) {
     const parts = path ? path.split('/') : [];
     for (let i = 0; i < parts.length; i++) await this.loads.get(parts.slice(0, i).join('/'))?.();
     const target = path ? this.sections.get(path) : this.sections.get('');
     if (!target) return;
-    target.scrollIntoView({block: 'start'});
+    let put = () => target.scrollIntoView({block: 'start'});
+    put();
     // What comes after it may not be read yet, so the page cannot scroll that far (a file just
     // made, before the folders below it): as it grows, it is put there again, until the person moves.
     const root = this.root;
     if (root && !line) {
-      const grown = new ResizeObserver(() => target.scrollIntoView({block: 'start'}));
+      const grown = new ResizeObserver(() => put());
       const stop = () => { grown.disconnect(); for (const e of ['wheel', 'touchstart', 'keydown', 'pointerdown']) removeEventListener(e, stop, true); };
       for (const e of ['wheel', 'touchstart', 'keydown', 'pointerdown']) addEventListener(e, stop, true);
       grown.observe(root);
@@ -165,7 +170,13 @@ export class Reader {
     await this.fileLoads.get(path)?.();
     const area = this.editors.get(path);
     if (!area) return;
-    if (!line) { const at = write === 'end' ? area.value.length : 0; area.focus({preventScroll: true}); area.setSelectionRange(at, at); return; }
+    if (!line) {
+      const at = typeof write === 'object' ? Math.min(write.at, area.value.length) : write === 'end' ? area.value.length : 0;
+      area.focus({preventScroll: true});
+      area.setSelectionRange(at, at);
+      if (at) { put = () => this.toLine(target, area, area.value.slice(0, at).split('\n').length); put(); }
+      return;
+    }
     const lines = area.value.split('\n');
     const at = lines.slice(0, line - 1).reduce((n, l) => n + l.length + 1, 0);
     area.focus({preventScroll: true});
@@ -174,13 +185,34 @@ export class Reader {
     // The line is lit for the landing (styles.css .revealed); after it, the caret waits at its start, so the next
     // key typed goes in beside it rather than over it. A selection the person has made since stays theirs.
     setTimeout(() => { if (area.selectionStart === at && area.selectionEnd === end) area.setSelectionRange(at, at); }, 1200);
+    this.toLine(target, area, line);
+  }
+
+  /**
+   * `line` of the file in `target` a third of the way down the center, or, near its file's top, the file's head at
+   * the top: not the empty foot of the file before it over a line that would show anyway.
+   */
+  private toLine(target: HTMLElement, area: HTMLTextAreaElement, line: number) {
     const height = parseFloat(getComputedStyle(area).lineHeight) || 20;
     const box = this.flow.getBoundingClientRect().top - this.flow.scrollTop;
     const top = area.getBoundingClientRect().top - box;
-    // The line a third of the way down, or, near its file's top, the file's head at the top: not the empty foot of
-    // the file before it over a line that would show anyway.
     const head = target.getBoundingClientRect().top - box;
     this.flow.scrollTop = Math.max(head, top + (line - 1) * height - this.flow.clientHeight / 3);
+  }
+
+  /**
+   * Where `path` is read, as an offset in it to come back to: the caret's while the file has it, else the start of
+   * the line a third of the way down the center (the line reveal() puts there).
+   */
+  place(path: string): number {
+    const area = this.editors.get(path);
+    if (!area) return 0;
+    if (document.activeElement === area) return area.selectionStart;
+    const height = parseFloat(getComputedStyle(area).lineHeight) || 20;
+    const third = this.flow.getBoundingClientRect().top + this.flow.clientHeight / 3;
+    const lines = area.value.split('\n');
+    const line = Math.min(lines.length - 1, Math.max(0, Math.floor((third - area.getBoundingClientRect().top) / height)));
+    return lines.slice(0, line).reduce((n, l) => n + l.length + 1, 0);
   }
 
   /**

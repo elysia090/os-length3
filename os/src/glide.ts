@@ -98,7 +98,7 @@ export function paneOut(side: HTMLElement, toggle: HTMLElement) {
  * screen, so the eye goes with the repo instead of starting over on a new page. The box it becomes waits out of
  * sight while the sheet goes to it, and shows as the sheet lands: one box the whole way, never two at once.
  */
-export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340, round = '') {
+export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340, round = '', patience = 40) {
   if (still() || !from.width) return false;
   // The outline stands where the thing was at once, so the eye has it while the page it goes to is drawn (a repo read
   // from the store a moment later); it goes on once its box is there, or fades where it stood if none comes.
@@ -116,7 +116,7 @@ export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340, r
     const to = find();
     const at = to?.getBoundingClientRect();
     if (!to || !at?.width) {
-      if (++tries < 40) requestAnimationFrame(go);
+      if (++tries < patience) requestAnimationFrame(go);
       else box.animate([{opacity: 1}, {opacity: 0}], {duration: 160, fill: 'forwards'}).finished.then(done, done);
       return;
     }

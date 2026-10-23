@@ -5,6 +5,7 @@ import {h} from '../dom.ts';
 import {mark} from '../icons.ts';
 import {bring, onSync, remoteOnly} from '../lifecycle.ts';
 import {onChange, store} from '../repos.ts';
+import {work as workOn} from '../history.ts';
 import type {Context} from './context.ts';
 import {bench} from './bench.ts';
 import {Reader, type Writing} from './reader.ts';
@@ -179,19 +180,36 @@ function make(ctx: Context) {
     if (pressed) (add.disabled ? pills.querySelector<HTMLElement>(`.pill[data-repo="${CSS.escape(rest[0])}"] .pill-name`) : add)?.focus();
   });
 
+  /**
+   * The issue each repo on the band is worked on for (#n), while its copy is an issue's rather than main: Start in Git
+   * turns the repo's files into the issue's, and its pill says so, so what is written here is seen to be for it.
+   */
+  const onIssue = new Map<string, string>();
+  const readIssues = () => {
+    for (const name of band) {
+      void workOn(name).then((w) => {
+        const n = w.issue?.match(/(\d+)/)?.[1];
+        const was = onIssue.get(name);
+        if (n) onIssue.set(name, `#${Number(n)}`); else onIssue.delete(name);
+        if (was !== onIssue.get(name)) paintBand();
+      }, () => {});
+    }
+  };
   /** The band as last drawn: which pills, and which is worked on or open beside. */
   let painted = '';
   const paintBand = () => {
     // Asked again as it already is (one deed can ask twice: the box chosen, then the box shown), it is left as it
     // is: drawn anew, its pills would be new ones, and the ink on its way between two would stop where it was.
-    const state = band.map((name) => `${name}:${repo && name === repoOf(repo) ? 'on' : shown.some((k) => repoOf(k) === name) ? 'beside' : ''}`).join('|');
+    const state = band.map((name) => `${name}${onIssue.get(name) ?? ''}:${repo && name === repoOf(repo) ? 'on' : shown.some((k) => repoOf(k) === name) ? 'beside' : ''}`).join('|');
     if (state === painted && pills.querySelectorAll('.pill').length === band.length) { paintAdd(); return; }
     painted = state;
     const was = new Map([...pills.querySelectorAll<HTMLElement>('.pill')].map((p) => [p.dataset.repo!, p.getBoundingClientRect()]));
     const inkWas = where(pills.querySelector('.pill[aria-current]'));
     pills.replaceChildren(...band.map((name) => {
       // Pressed, it is worked on in the box worked on; with Ctrl (⌘), it opens beside (as a link opens in a new tab).
-      const open = h('button', {type: 'button', class: 'pill-name', title: t('Ctrl+click: open beside')}, name);
+      const issue = onIssue.get(name);
+      const open = h('button', {type: 'button', class: 'pill-name', title: issue ? t('On {issue}: what is written here is for it', {issue}) : t('Ctrl+click: open beside')},
+        name, issue ? h('span', {class: 'pill-issue', 'aria-hidden': 'true'}, issue) : null);
       open.addEventListener('click', (event) => { if (event.ctrlKey || event.metaKey) beside(name); else show(name); });
       const close = h('button', {type: 'button', class: 'pill-close', 'aria-label': t('Take {name} off the band', {name})}, mark('close'));
       close.addEventListener('click', () => takeOff(name));
@@ -365,6 +383,9 @@ function make(ctx: Context) {
     repo = null;
     activate(name);
     v.flow.scrollTop = v.top;
+    // The keyboard goes with it: what opened it (a file's head, now only peeking) is no longer the place to hold it,
+    // and given back to the box it was in, that box would be the one worked on again.
+    v.flow.focus({preventScroll: true});
     if (opening) requestAnimationFrame(() => v.col.classList.remove('nothing'));
   };
 
@@ -377,7 +398,14 @@ function make(ctx: Context) {
       shown = c.shown;
       if (c.active && c.active !== repo) { repo = null; activate(c.active); } else { layout(); paintBand(); }
     };
-    if (v) { v.top = v.flow.scrollTop; v.col.classList.add('going'); void shrink(v.col).then(() => { v.col.classList.remove('going', 'nothing'); done(); }); } else done();
+    if (!v) { done(); return; }
+    v.top = v.flow.scrollTop;
+    v.col.classList.add('going');
+    // The one worked on closed, the one taking its place comes in as it goes (the row sliding to it), the keyboard
+    // with it: never an empty row while the closed one closes.
+    const next = c.active && c.active !== repo ? views.get(c.active) : undefined;
+    if (next && c.active) { activate(c.active); next.flow.focus({preventScroll: true}); }
+    void shrink(v.col).then(() => { v.col.classList.remove('going', 'nothing'); done(); });
   };
 
   // Into the center, a pill (or a box's head) dragged shows where it would stand: over a box's left or right
@@ -565,8 +593,17 @@ function make(ctx: Context) {
   let quiet = 0;
   const track = () => {
     clearTimeout(quiet);
-    quiet = window.setTimeout(() => { const v = view(); if (v && v.flow.isConnected) told(v.reader.reading(landed)); }, 120);
+    quiet = window.setTimeout(() => {
+      const v = view();
+      if (!v || !v.flow.isConnected) return;
+      const path = v.reader.reading(landed);
+      told(path);
+      // Where in it, to come back to (Home's Lately): the caret, or the line read.
+      if (path) ctx.leftAt(v.reader.repo, path, v.reader.place(path));
+    }, 120);
   };
+  // Written in, or the caret moved, is reading too.
+  for (const e of ['input', 'keyup', 'pointerup']) work.element.addEventListener(e, () => { if (view()) track(); }, true);
   // Taken off the screen and put back, a place that scrolls starts at its top again: each comes back where it was.
   let restoring = false;
   /** A path was asked for since Forge came back on screen (File, Git, a search): that wins over where it was. */
@@ -632,6 +669,7 @@ function make(ctx: Context) {
       all = repos.map((r) => r.name);
       band = parseBand(first ? getState('band') : JSON.stringify(band), all, ctx.repo);
       first = false;
+      readIssues();
       for (const name of [...views.keys()]) if (!all.includes(repoOf(name))) { views.get(name)?.col.remove(); views.delete(name); }
       // What stood side by side, as far as it is still on the band.
       shown = shown.filter((n) => band.includes(repoOf(n)));

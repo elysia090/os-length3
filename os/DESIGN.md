@@ -497,7 +497,7 @@ fix is always a piece from §3, not a new rule.
 | The repo worked on put back by another page (a Git chip, then Forge on the old one) | One repo worked on, chosen anywhere, opened next on every page |
 | The keyboard dropped after a step (an arrow along the row, an issue just made) | It stays on the same part of the box, or lands on what was made |
 | A file's box shrunk to its text, short files stacked to fit one screen | Each file a tall box of its own (about three quarters of the window), read by scrolling down |
-| The empty box at the foot standing over what one reads | It steps back while one reads, and comes back to the keyboard, a press on the Prompt or the pointer at the foot |
+| The empty box at the foot standing over what one reads | It steps back while one reads, and comes back to the keyboard, a press on the Prompt or the pointer resting at the foot |
 | A choice that leaves its overlay to be closed by hand (a file chosen in File) | Choosing the thing to work on puts the overlay away and the caret in it |
 | The only way to something folded away with its pane (search, narrow) | The way stays where it was; only what it shows folds |
 | A day in another country's order (10/17/2031 まで in Japanese) | `day()`: the language's own (2031年10月17日まで) |
@@ -1226,9 +1226,11 @@ saves; Escape leaves it as it was. The rail's face is the new one at once.
 
 Home's right pane (the same pane and switch as Forge's and Git's) holds
 Lately: what waits since the person was last here, a row each and the way
-there pressed: where they left off (the file last read in Forge, opened to
-go on writing), the conversations with something not read (who, and their
-last line), the boards with posts not seen. With nothing new it says so,
+there pressed: where they left off (the file last read in Forge and the
+line it was left at, quoted as written; pressed, Forge opens there, that
+line a third of the way down and the caret where it was, to go on
+writing), the conversations with something not read (who, and their last
+line; pressed, that conversation opens), the boards with posts not seen. With nothing new it says so,
 quietly: the pane out is never a line with nothing beside it. The plugin
 area comes down over it when the rail's plug opens it.
 
@@ -1246,6 +1248,10 @@ Delete), the pills follow it and scroll, and ⊕ comes right after the last
 pill. One press brings every repo not on the band out at once; this is not
 adding tabs one at a time.
 Each pill comes off the band with its × (the repo itself is untouched).
+A repo whose copy is an issue's (Start in Git) says so on its pill, after
+its name, quietly (garden #1): what is written in Forge is for that issue.
+A file opened beside from its head is the one worked on and has the
+keyboard; the box worked on closed, the next slides in as it goes.
 A pill is dragged along the band to where it is let go; the middle button
 takes it off, as it closes a tab. Up to three repos stand side by side in
 the center, tiled: Ctrl+click on a pill opens it beside the one worked on
@@ -1346,8 +1352,11 @@ Tab moves on, as everywhere.
 While one reads (the center turned by the wheel, a touch or the keys) and
 the box is empty and not being written in, it steps back (a 120 ms fade)
 and lets the text under it be pressed; the keyboard reaching it, a press on
-the Prompt, or the pointer coming down to the center's foot brings it back
-where it was. Something written in it, or a word under it, keeps it out.
+the Prompt, or the pointer resting on its place a moment (220 ms) brings it
+back where it was; the pointer only crossing its place, on its way to
+something low on the page, or resting on a button there, leaves it back, so
+it never comes up over what was about to be pressed. Something written in it, or a word under it, keeps
+it out.
 
 Forge is kept as it was while another page is shown, and each repo on the
 band keeps its place: where it was read, what was searched in it. A pill
@@ -1784,6 +1793,9 @@ Under the issues, each its own section, shown only when it has something:
 - **Merged**: the issues whose change main took, newest first, a row each:
   "#1 Fix：件名", who handed it in and when it was merged; pressed, the
   row opens to the change's diff. It is history, so it is only read.
+  Merged from here, the issue's box goes down into its row (460 ms), which
+  lands lit, and the count of issues beats: the issue is done, and seen to
+  go where done things are kept.
 - **Closed**: the issues closed without being done, a row each: "#2
   Feat：件名", who closed it and the day; Reopen at the row's right end
   (while the repo shows main) puts it back among the issues at once.

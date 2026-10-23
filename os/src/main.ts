@@ -71,10 +71,14 @@ const ctx: Context = {
   },
   remember(name) { openRepo = name; save(REPO_KEY, name); fileTree.mark(name); },
   actOn(repo, path) { void fileTree.actOn(repo, path); },
-  reading(path) { readingPath = path; if (path && openRepo) save(FILE_KEY, JSON.stringify({repo: openRepo, path})); if (current === 'forge') fileTree.markFile(openRepo, path); },
+  reading(path) { readingPath = path; if (current === 'forge') fileTree.markFile(openRepo, path); },
+  leftAt(repo, path, at) { save(FILE_KEY, JSON.stringify({repo, path, at})); },
   get repo() { return openRepo; },
   get leftOff() {
-    try { const at = JSON.parse(load(FILE_KEY) ?? 'null') as {repo?: unknown; path?: unknown} | null; return at && typeof at.repo === 'string' && typeof at.path === 'string' ? {repo: at.repo, path: at.path} : null; } catch { return null; }
+    try {
+      const was = JSON.parse(load(FILE_KEY) ?? 'null') as {repo?: unknown; path?: unknown; at?: unknown} | null;
+      return was && typeof was.repo === 'string' && typeof was.path === 'string' ? {repo: was.repo, path: was.path, at: typeof was.at === 'number' ? was.at : null} : null;
+    } catch { return null; }
   },
   rerender: () => render(),
 };

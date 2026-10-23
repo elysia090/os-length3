@@ -334,6 +334,8 @@ a { color: var(--ink); }
 .lately-row:hover { background: var(--raised); }
 .lately-what { display: flex; align-items: center; gap: var(--s2); min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
 .lately-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The line it was left at, as written there: mono, as in Forge, on a quiet rule. */
+.lately-quote { overflow: hidden; margin: 2px 0; padding-left: var(--s2); border-left: 2px solid var(--rule); font: var(--t-meta) var(--mono); text-overflow: ellipsis; white-space: nowrap; }
 .lately-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--ink); }
 .lately-none { margin: 0; padding: 0 var(--s3); }
 @media (max-width: 760px) {
@@ -680,6 +682,8 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
   border: 1px solid var(--edge); border-radius: var(--r-round); font-size: var(--t-meta);
 }
 .pill-name { border: 0; padding: 0; background: transparent; color: inherit; cursor: pointer; white-space: nowrap; }
+/* The issue the repo's copy is for, after its name, while it is not main. */
+.pill-issue { margin-left: .4em; font-family: var(--mono); opacity: .7; }
 .pill-close { display: grid; place-items: center; width: var(--h-row); height: calc(var(--h-row) - 2px); border: 0; padding: 0; background: transparent; color: inherit; cursor: pointer; border-radius: var(--r-round); }
 .pill-close .mark, .band-add .mark { width: var(--s4); height: var(--s4); }
 /* The ring is round the part of a pill that has the keyboard, inside the pill: its name, or its ×;
@@ -706,6 +710,9 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 /* No pane, no line (Server signed out): the center keeps its width, so nothing on it moves. */
 .work.no-side > .center { border-right-color: transparent; }
 .flow { height: 100%; overflow-y: auto; padding: var(--s3) var(--s5) 160px; }
+/* What is scrolled to (a control the keyboard goes to, a button come to) stops above the prompt box laid over the
+   page's foot, never under it. */
+.work.bench .flow { scroll-padding-bottom: calc(var(--s5) + 80px); }
 .flow:focus-visible { outline-offset: -2px; }
 /* Forge's files run on far enough past the last for it to come up to the top (a file just made, opened at the end):
    not the empty foot of the one before it filling the column over it. */

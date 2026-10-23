@@ -82,9 +82,10 @@ function homePane(main: HTMLElement, ctx: Context): HTMLElement {
 function lately(ctx: Context): HTMLElement {
   const list = h('div', {class: 'lately-list'});
   const box = h('section', {class: 'lately', 'aria-labelledby': 'lately-title'}, h('h2', {id: 'lately-title'}, t('Lately')), list);
-  const row = (what: string, line: string, go: () => void, fresh = false) => {
+  const row = (what: string, line: string, go: () => void, fresh = false, quote = '') => {
     const b = h('button', {type: 'button', class: 'lately-row'},
       h('span', {class: 'lately-what'}, h('span', {}, what), fresh ? h('span', {class: 'lately-dot', 'aria-hidden': 'true'}) : null),
+      quote ? h('span', {class: 'lately-quote'}, quote) : null,
       h('span', {class: 'muted small lately-line'}, line));
     b.addEventListener('click', go);
     return b;
@@ -95,7 +96,12 @@ function lately(ctx: Context): HTMLElement {
     const rows: HTMLElement[] = [];
     const left = ctx.leftOff;
     if (left && (await store.list().catch(() => [])).some((r) => r.name === left.repo)) {
-      rows.push(row(left.path.slice(left.path.lastIndexOf('/') + 1), t('{repo} · where you left off', {repo: left.repo}), () => ctx.openRepo(left.repo, left.path, 'end')));
+      // The line it was left at, as it is now: what was being written, to be taken up again.
+      const text = left.at === null ? null : (await store.read(left.repo, left.path).catch(() => null))?.text ?? null;
+      const end = text === null || left.at === null ? -1 : text.indexOf('\n', left.at);
+      const quote = text === null ? '' : text.slice(0, end < 0 ? text.length : end).split('\n').reverse().find((l) => l.trim())?.trim() ?? '';
+      rows.push(row(left.path.slice(left.path.lastIndexOf('/') + 1), t('{repo} · where you left off', {repo: left.repo}),
+        () => ctx.openRepo(left.repo, left.path, left.at === null ? 'end' : {at: left.at}), false, quote));
     }
     if (connection()) {
       const [threads, all] = await Promise.all([inbox.threads().catch(() => []), servers.servers().catch(() => [])]);

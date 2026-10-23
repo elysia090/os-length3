@@ -316,7 +316,8 @@ export function inboxPage(ctx: Context): Node[] {
     // What came to the open conversation since it was drawn is put at its foot.
     const open_ = shownThread;
     const now = open_ && all.find((x) => x.address === open_.address);
-    if (open_ && now && open_.on.behind(now)) await open_.more();
+    // Something there the Remote counts unread is taken in too (and so read), though it may be here already.
+    if (open_ && now && (open_.on.behind(now) || now.unread > 0)) await open_.more();
   };
 
   const show = async (address: string, rows: HTMLElement, pane: HTMLElement) => {
@@ -367,7 +368,14 @@ export function inboxPage(ctx: Context): Node[] {
     let drawn = false;
     on.took(th.messages).forEach(bubble);
     drawn = true;
-    const add = (m: inbox.Message) => { if (on.have(m)) bubble(m); };
+    // Come by the direct line, it is read where it lands, as one taken in through the Remote is: the rail's mark
+    // is not left on a conversation open on the screen.
+    const add = (m: inbox.Message) => {
+      if (!on.have(m)) return;
+      bubble(m);
+      // Theirs, by the direct line: read, and its row in the list says it once the Remote has it too.
+      if (!m.mine) { read(); setTimeout(() => { if (open === address) void paintList(rows, pane); }, 800); }
+    };
     // Accepted both ways: a direct line between the two devices, when both are here.
     const startLive = () => {
       live?.stop();
@@ -381,7 +389,9 @@ export function inboxPage(ctx: Context): Node[] {
       if (!now || asked !== opened || !pane.contains(messages)) return;
       const came = on.took(now.messages);
       came.forEach(bubble);
-      if (came.some((m) => !m.mine)) read();
+      // Any of theirs the Remote still counts unread (one come first by the direct line, marked before the Remote had
+      // it) is read: it is on the screen.
+      if (came.some((m) => !m.mine) || now.messages.some((m) => !m.mine && !m.read)) read();
       // Accepted both ways meanwhile: the direct line can open now.
       if (now.mutual && !live) startLive();
     };
@@ -430,8 +440,8 @@ export function inboxPage(ctx: Context): Node[] {
         drafts.sent(address);
         grow();
         if (r.request) error.textContent = t('Sent as a request: they see it once they accept you.');
-        // The first to someone new: their row comes into the list now, not at the next look.
-        if (!rows.querySelector(`.inbox-row[data-address="${CSS.escape(address)}"]`)) void paintList(rows, pane);
+        // Its row says so now (the first to someone new comes into the list), not at the next look.
+        void paintList(rows, pane);
       } catch (e) { error.textContent = errorText(e); }
       sendB.disabled = false;
     };

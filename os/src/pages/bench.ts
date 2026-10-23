@@ -6,6 +6,7 @@ import {onPlugins, pluginsOpen, setPluginsOpen, slots} from '../plugins.ts';
 import {complete, pathWord, Recall} from '../recall.ts';
 import {onChange, store, type Entry} from '../repos.ts';
 import {Reference} from './reference.ts';
+import type {Writing} from './reader.ts';
 import {sessionFor, sessionIfAny, terminalFor} from './terminal.ts';
 
 // The workbench Forge and Git share: the page's own content in the large
@@ -128,7 +129,7 @@ export interface Bench {
   settle(): void;
 }
 
-export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(path: string, line?: number, write?: boolean | 'end'): void}): Bench {
+export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(path: string, line?: number, write?: Writing): void}): Bench {
   let repo: string | null = null;
   // Named for what one does there: type at the prompt of the repo's sh.
   const termTitle = h('div', {class: 'term-head'}, h('h2', {}, 'Prompt'));
@@ -222,9 +223,20 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   parts.main.addEventListener('wheel', reading, {passive: true});
   parts.main.addEventListener('touchmove', reading, {passive: true});
   parts.main.addEventListener('keydown', (event) => { if (['PageDown', 'PageUp', ' ', 'Home', 'End', 'ArrowDown', 'ArrowUp'].includes(event.key) && !(event.target as HTMLElement).closest('textarea, input')) reading(); });
+  // Stepped back, it comes back when the pointer rests where it is, not as the pointer crosses its place on the way to
+  // something low on the page (it would come up over what was about to be pressed).
+  let coming = 0;
+  const stay = () => { clearTimeout(coming); coming = 0; };
   center.addEventListener('pointermove', (event) => {
-    if (dock.classList.contains('resting') && event.clientY >= dock.getBoundingClientRect().top - 24) rest(false);
+    if (!dock.classList.contains('resting')) return;
+    const r = dock.getBoundingClientRect();
+    if (event.clientY < r.top - 8 || event.clientX < r.left || event.clientX > r.right) { stay(); return; }
+    // On something to press there (a button low on the page, under where the box would be), it stays back: that is
+    // what the pointer came for, and the box coming up would take the press.
+    if ((event.target as Element).closest('button, a[href], select, summary, label, [role="button"]')) { stay(); return; }
+    if (!coming) coming = window.setTimeout(() => { coming = 0; rest(false); }, 220);
   });
+  center.addEventListener('pointerleave', stay);
   prompt.addEventListener('focus', () => rest(false));
   let prompting = false;
   const setPrompting = (on: boolean) => {

@@ -102,6 +102,7 @@ export default {
   'Right pane': '右ペイン',
   'Files: new, rename, delete': 'ファイル：新規・名前の変更・削除',
   'Ctrl+click: open beside': 'Ctrl+クリックで横に開く',
+  'On {issue}: what is written here is for it': '{issue}に取り組み中：ここで書くことはそのためのもの',
   'Close {name} beside': '横の{name}を閉じる',
   'The files of {name}': '{name}のファイル',
   'Open here': 'ここに開く',

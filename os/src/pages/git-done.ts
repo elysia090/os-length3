@@ -6,7 +6,7 @@ import {kindOf} from '../text.ts';
 import {answers, askFoot, SETTLE} from './common.ts';
 import {counted, diffFiles} from './diff-view.ts';
 import {LAND, morph, still} from '../glide.ts';
-import {justClosed, notCommitted, reopenIssue, type IssueEvents} from './git-issue.ts';
+import {justClosed, justMerged, notCommitted, reopenIssue, type IssueEvents} from './git-issue.ts';
 import {errorText} from '../errors.ts';
 
 // What Git shows under the issues: what main has not committed (with its
@@ -112,12 +112,14 @@ export function committedList(list: {repo: string; cut: git.Cut}[], all: boolean
 /** The merged ones opened, by change: the page drawn again (anything saved in the repo does it) keeps them open. */
 const opened = new Set<string>();
 
+
 /** The issues merged into main, newest first: who handed each in and when it was merged; opened, its diff. Only read. */
 export function mergedList(list: {repo: string; change: git.Change}[], all: boolean): HTMLElement {
   return h('div', {class: 'done-list'}, ...list.map(({repo, change: c}) => {
     const inside = h('div', {class: 'done-diff'}, h('p', {class: 'muted small'}, t('Reading…')));
     const meta = t('{who} · merged {when}', {who: c.submittedBy || '—', when: ago(c.updatedAt)});
-    const fold = h('details', {class: 'done-row'},
+    const fresh = justMerged(c.id);
+    const fold = h('details', {class: fresh ? 'done-row landing' : 'done-row', 'data-change': c.id},
       h('summary', {class: 'done-head'}, named(numberOf(c.issue.replace(/^issue\//, '')), c.kind || null, c.title),
         h('span', {class: 'muted small'}, all ? `${repo} · ${meta}` : meta)),
       inside) as HTMLDetailsElement;

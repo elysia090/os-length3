@@ -1,6 +1,6 @@
 import {kindWords} from './todo-box.ts';
 import {ago, h} from '../dom.ts';
-import {arrive, still} from '../glide.ts';
+import {arrive, morph, still} from '../glide.ts';
 import * as git from '../history.ts';
 import {t, tn} from '../i18n.ts';
 import {closeMark, issueName, issuePath, saveIssue, setClosed, type Issue} from '../issues.ts';
@@ -180,12 +180,19 @@ export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEv
  * What is not committed in the copy `at`: its diff in a box of its own, there from the start (named for a screen
  * reader by how many files: "5 files not committed"); a file's name opens it in Forge.
  */
+/** Each copy's diff not committed, as last read: drawn again, it is there at once (as diffsRead keeps a change's). */
+const uncommittedRead = new Map<string, git.FileDiff[]>();
+
 export function notCommitted(at: string, n: number, events: IssueEvents): HTMLElement {
   // Straight on what it is in (main's card, the issue's box), not a box of its own inside it: each file a fold, its
   // name and what it comes to on its head, the first few open, a long one's lines past 30 waiting under "n more lines".
-  const box = h('div', {class: 'changes', role: 'region', 'aria-label': tn('{n} file not committed', '{n} files not committed', n)}, quiet(t('Reading…')));
-  void git.diff(at).then((files) => box.replaceChildren(...diffFiles(files, {reveal: (p) => events.open(at, p), cut: 30, kept: at})),
-    (e) => box.replaceChildren(h('p', {class: 'error'}, errorText(e))));
+  const files = (list: git.FileDiff[]) => diffFiles(list, {reveal: (p) => events.open(at, p), cut: 30, kept: at});
+  const was = uncommittedRead.get(at);
+  const box = h('div', {class: 'changes', role: 'region', 'aria-label': tn('{n} file not committed', '{n} files not committed', n)}, ...(was ? files(was) : [quiet(t('Reading…'))]));
+  void git.diff(at).then((list) => {
+    uncommittedRead.set(at, list);
+    if (!was || JSON.stringify(list) !== JSON.stringify(was)) box.replaceChildren(...files(list));
+  }, (e) => box.replaceChildren(h('p', {class: 'error'}, errorText(e))));
   return box;
 }
 
@@ -269,6 +276,10 @@ function received(change: git.Change): HTMLElement {
  * who approved it, and its button at the right, primary once the version is
  * approved.
  */
+/** Changes merged from here a moment ago (when): each one's line lands under Merged, lit, as its issue goes into it. */
+const mergedNow = new Map<string, number>();
+export const justMerged = (id: string) => Date.now() - (mergedNow.get(id) ?? 0) < 4000;
+
 export function mergeRow(issue: Issue, s: RepoState | undefined, events: IssueEvents, after: () => void): HTMLElement | null {
   const change = connection() ? changeFor(s, issue) : null;
   if (!change || change.state !== 'open') return null;
@@ -279,7 +290,18 @@ export function mergeRow(issue: Issue, s: RepoState | undefined, events: IssueEv
   const merge = button(t('Merge'), approvals.length > 0);
   merge.disabled = !approvals.length;
   // Merged, the work is done: the repo shows main again.
-  merge.addEventListener('click', doing(merge, error, async () => { await git.merge(at, change); if (here) await git.switchWork(at, 'main'); events.moved(at); }, after));
+  // Merged, the issue's box goes down into its line under Merged, which lands lit: the issue is done.
+  let from: DOMRect | null = null;
+  merge.addEventListener('click', doing(merge, error, async () => {
+    await git.merge(at, change);
+    mergedNow.set(change.id, Date.now());
+    from = merge.closest('.issue-slot')?.querySelector('.issue-card')?.getBoundingClientRect() ?? null;
+    if (here) await git.switchWork(at, 'main');
+    events.moved(at);
+  }, () => {
+    after();
+    if (from) morph(from, () => document.querySelector<HTMLElement>(`.done-row[data-change="${CSS.escape(change.id)}"]`), 460, '', 150);
+  }));
   const by = approvals.length ? t('Approved by {who}', {who: [...new Set(approvals.map((r) => r.by))].join(', ')}) : t('Not approved yet');
   const reject = button(t('Reject'));
   reject.title = t('Do not take it into main (its issue stays open)');
@@ -312,6 +334,12 @@ function markedDiff(files: git.FileDiff[], marked: Set<string>, pending: Set<str
  * as a conversation, and room to say more. A change is reviewed the same way
  * without being worked on here.
  */
+/**
+ * Each change's diff as last read (by repo, change and version): the Review drawn again as the page is read again is
+ * as tall as it was at once, not "Reading…" a moment, which closed the page up under the person reading it.
+ */
+const diffsRead = new Map<string, git.FileDiff[]>();
+
 export function reviewBox(issue: Issue, s: RepoState | undefined, after: () => void): HTMLElement | null {
   const at = issue.repo;
   const change = changeFor(s, issue);
@@ -322,8 +350,13 @@ export function reviewBox(issue: Issue, s: RepoState | undefined, after: () => v
   const current = change.reviews.filter((r) => r.version === change.version);
   const marked = new Set(current.flatMap((r) => r.marks ?? []));
   const pending = change.state === 'open' ? new Set<string>() : null;
-  const diff = h('div', {class: 'review-diff'}, h('p', {class: 'muted small'}, t('Reading…')));
-  void git.changeDiff(at, change).then((files) => diff.replaceChildren(...markedDiff(files, marked, pending)), (e) => diff.replaceChildren(h('p', {class: 'error'}, errorText(e))));
+  const read = `${at}\0${change.id}\0${change.version}`;
+  const was = diffsRead.get(read);
+  const diff = h('div', {class: 'review-diff'}, ...(was ? markedDiff(was, marked, pending) : [h('p', {class: 'muted small'}, t('Reading…'))]));
+  void git.changeDiff(at, change).then((files) => {
+    diffsRead.set(read, files);
+    if (!was || JSON.stringify(files) !== JSON.stringify(was)) diff.replaceChildren(...markedDiff(files, marked, pending));
+  }, (e) => diff.replaceChildren(h('p', {class: 'error'}, errorText(e))));
   // What was said, in order: a verdict with its note, or a comment alone.
   // What was said, in order, as a conversation: a verdict with its note, or a comment alone.
   // An approval is the ○ turning green, not a box in the conversation (its note, if any, still shows).

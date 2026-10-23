@@ -378,6 +378,35 @@ test('repos stand side by side: Ctrl+click or a pill dragged in opens one beside
   for (const n of ['hello', 'notes', 'site']) await expect(box(n)).toBeVisible();
 });
 
+test('a file opened beside from its head is the one worked on, and has the keyboard, not the page it came from', async ({app}) => {
+  await app.rail.go('forge');
+  await app.main.getByRole('button', {name: 'Open README.md beside'}).first().click();
+  const box = app.main.locator('.col[data-key="hello:README.md"]');
+  await expect(box).toHaveClass(/\bactive\b/);
+  // Its head's button only peeks once the page it was on is along the row: the keyboard is not given back there,
+  // which would make that page the one worked on again.
+  await expect(box.locator('.flow')).toBeFocused();
+  await expect(app.forge.promptBox).toHaveAttribute('placeholder', 'Run in hello');
+});
+
+test('the prompt box stepped back while reading comes back when the pointer rests on its place, not as it crosses it', async ({app}) => {
+  await app.rail.go('forge');
+  const dock = app.main.locator('.dock');
+  const at = (await app.forge.promptBox.boundingBox())!;
+  const x = at.x + at.width / 2;
+  await app.page.mouse.move(x, at.y - 200);
+  await app.page.mouse.wheel(0, 200);
+  await expect(dock).toHaveClass(/\bresting\b/);
+  // Crossed on the way to something low on the page, and away again: it stays back, not over what was to be pressed.
+  await app.page.mouse.move(x, at.y + at.height / 2, {steps: 2});
+  await app.page.mouse.move(x, at.y - 200, {steps: 2});
+  await app.page.waitForTimeout(400);
+  await expect(dock).toHaveClass(/\bresting\b/);
+  // Rested on: it comes back.
+  await app.page.mouse.move(x, at.y + at.height / 2);
+  await expect(dock).not.toHaveClass(/\bresting\b/);
+});
+
 test('a pill dragged along the band lands where it is let go', async ({app}) => {
   await app.newRepo.make('notes');
   await app.rail.go('forge');
