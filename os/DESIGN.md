@@ -1051,7 +1051,13 @@ pressed into, its files' boxes in `ink`, the others' in `rule`, its pill
 `ink`, theirs outlined in `ink`. Side by side each box has a small head
 (its name, and × to close it; dragged, it moves along the row); Alt+[ and
 Alt+] go along the row. The row is remembered on this device; a narrow
-window shows the one worked on.
+window shows the one worked on. Files dragged in from the desktop go into the
+repo whose box they are let go over (into the folder of the file under the
+pointer, else its top; the dashed outline says where), never over a file
+already there (the new one is "name (2)"), and the first is opened.
+Opened from its card on Home or its row in File, a repo grows from there
+into its box: an `ink` outline goes from the card to the box and fades as
+it lands.
 With nothing left to bring out, ⊕ steps back. Opening a repo from File,
 Home or a new repo puts it on the band. With every pill off, the
 center says how to bring one out. The band is remembered on this device. Below the band the center is the open repo's files one after another,

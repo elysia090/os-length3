@@ -343,7 +343,28 @@ function make(ctx: Context) {
     }
     return {at: boxes.length, instead: false, over: boxes.at(-1) ?? null};
   };
+  // Files dragged in from the desktop go into the repo whose box they are let go over: into the folder of the file
+  // under the pointer, else its top; a name already there is never written over (the new one is "name (2)").
+  const filesIn = (event: DragEvent) => !dragging && !!event.dataTransfer?.types.includes('Files');
+  const dropTarget = (event: DragEvent) => {
+    const el = event.target as HTMLElement;
+    const col = el.closest<HTMLElement>('.col');
+    const file = el.closest<HTMLElement>('section.file')?.dataset.path ?? '';
+    return col?.dataset.repo ? {repo: col.dataset.repo, col, dir: file.includes('/') ? file.slice(0, file.lastIndexOf('/')) : ''} : null;
+  };
   cols.addEventListener('dragover', (event) => {
+    if (filesIn(event)) {
+      const at = dropTarget(event);
+      if (!at) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+      const box = cols.getBoundingClientRect(), r = at.col.getBoundingClientRect();
+      Object.assign(hint.style, {left: `${r.left - box.left}px`, width: `${r.width}px`});
+      hint.dataset.how = 'files';
+      hint.textContent = t('Put in {where}', {where: at.dir ? `${at.repo}/${at.dir}` : at.repo});
+      if (!hint.isConnected) { cols.append(hint); cols.classList.add('dropping'); }
+      return;
+    }
     if (!dragging || matchMedia('(max-width: 760px)').matches) return;
     event.preventDefault();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
@@ -359,6 +380,31 @@ function make(ctx: Context) {
   });
   cols.addEventListener('dragleave', (event) => { if (!cols.contains(event.relatedTarget as Node)) unhint(); });
   cols.addEventListener('drop', (event) => {
+    if (filesIn(event)) {
+      unhint();
+      const at = dropTarget(event);
+      const files = [...event.dataTransfer?.files ?? []];
+      if (!at || !files.length) return;
+      event.preventDefault();
+      void (async () => {
+        const taken = new Set((await store.tree(at.repo, at.dir).catch(() => [])).map((e) => e.name));
+        let first: string | null = null;
+        for (const f of files) {
+          const dot = f.name.lastIndexOf('.') > 0 ? f.name.lastIndexOf('.') : f.name.length;
+          let name = f.name;
+          for (let n = 2; taken.has(name); n++) name = `${f.name.slice(0, dot)} (${n})${f.name.slice(dot)}`;
+          taken.add(name);
+          const path = at.dir ? `${at.dir}/${name}` : name;
+          // A folder dragged in reads as no bytes at all: it is left where it was.
+          const bytes = await f.arrayBuffer().then((b) => new Uint8Array(b), () => null);
+          if (!bytes) continue;
+          await store.put(at.repo, path, bytes);
+          first ??= path;
+        }
+        if (first) show(at.repo, first);
+      })();
+      return;
+    }
     const name = event.dataTransfer?.getData(DRAGGED) || dragging;
     unhint();
     if (!name) return;

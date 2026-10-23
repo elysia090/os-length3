@@ -26,7 +26,7 @@ import {heldInvite, holdInvite, inviteIn} from './servers.ts';
 import {getState, loadState} from './state.ts';
 import {onLang, t, useLang} from './i18n.ts';
 import {NEW_REPO, PURPOSES, RAIL, purpose, restorePurpose, stepPurpose, type PurposeId} from './purposes.ts';
-import {arrive, glide, where} from './glide.ts';
+import {arrive, glide, morph, where} from './glide.ts';
 
 const PURPOSE_KEY = 'length3.os.purpose';
 const REPO_KEY = 'length3.os.repo';
@@ -55,7 +55,10 @@ const ctx: Context = {
     if (current === 'forge' && showInForge(name, path, write)) return;
     ctx.remember(name);
     revealNext(path, write);
-    select('forge');
+    // Pressed on its card or its row, the repo grows from there into its box in Forge.
+    const from = pressedOn?.isConnected && performance.now() - pressedAt < 1500 ? pressedOn.getBoundingClientRect() : null;
+    pressedOn = null;
+    select('forge', !!from && morph(from, () => document.querySelector<HTMLElement>(`.col[data-repo="${CSS.escape(name)}"]:not([hidden]) .file`)));
   },
   remember(name) { openRepo = name; save(REPO_KEY, name); fileTree.mark(name); },
   actOn(repo, path) { void fileTree.actOn(repo, path); },
@@ -122,7 +125,16 @@ function railButton(id: PurposeId): HTMLButtonElement {
   return button;
 }
 
-function select(id: PurposeId) {
+/** What a repo was last opened from (its card, its row in File), to grow from. */
+let pressedOn: HTMLElement | null = null;
+let pressedAt = 0;
+document.addEventListener('pointerdown', (event) => {
+  const el = (event.target as HTMLElement | null)?.closest<HTMLElement>('.card.repo, .tree-row');
+  if (el) { pressedOn = el; pressedAt = performance.now(); }
+}, true);
+
+/** `quiet`: something else carries the eye (a repo growing into its box), so the page does not come from its side. */
+function select(id: PurposeId, quiet = false) {
   const from = current;
   const inkWas = where(tabs.get(from)?.getAttribute('aria-current') ? tabs.get(from) : null);
   current = id;
@@ -141,7 +153,7 @@ function select(id: PurposeId) {
     // The rail's ink goes from the place left to the place come to, and the page comes from that side of the rail.
     glide(inkWas, tabs.get(id)?.getAttribute('aria-current') ? tabs.get(id)! : null, $('rail-tabs'), 'var(--r-place)');
     const order = RAIL.map((p) => p.id);
-    arrive($('page'), Math.sign(order.indexOf(id) - order.indexOf(from)), 'y', 12, 240);
+    if (!quiet) arrive($('page'), Math.sign(order.indexOf(id) - order.indexOf(from)), 'y', 12, 240);
   }
 }
 

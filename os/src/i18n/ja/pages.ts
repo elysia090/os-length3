@@ -100,6 +100,7 @@ export default {
   'The files of {name}': '{name}のファイル',
   'Open here': 'ここに開く',
   'Open beside': '横に開く',
+  'Put in {where}': '{where}に入れる',
   'Search results': '検索結果',
   'The diff of {path}': '{path}の diff',
   'Plugins': 'プラグイン',

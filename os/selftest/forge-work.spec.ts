@@ -390,3 +390,19 @@ test('a pill dragged along the band lands where it is let go', async ({app}) => 
   await first.dragTo(last, {targetPosition: {x: lb.width - 4, y: lb.height / 2}});
   await expect.poll(names).toEqual([...before.slice(1), before[0]]);
 });
+
+test('a file dragged in from the desktop goes into the folder of the box it is let go over, never over one already there', async ({app}) => {
+  const sheet = app.main.locator('section.file[data-path="src/main.c"]');
+  await expect(sheet).toBeVisible();
+  const drop = (names: string[]) => sheet.evaluate((el, names) => {
+    const dt = new DataTransfer();
+    for (const n of names) dt.items.add(new File([`dropped ${n}\n`], n, {type: 'text/plain'}));
+    for (const type of ['dragenter', 'dragover', 'drop']) el.dispatchEvent(new DragEvent(type, {bubbles: true, cancelable: true, dataTransfer: dt}));
+  }, names);
+  await drop(['notes.txt']);
+  await expect(app.forge.editor('src/notes.txt')).toHaveValue('dropped notes.txt\n');
+  // The same name again: it comes in beside, as "notes (2).txt".
+  await drop(['notes.txt']);
+  await expect(app.forge.editor('src/notes (2).txt')).toHaveValue('dropped notes.txt\n');
+  await expect(app.forge.editor('src/notes.txt')).toHaveValue('dropped notes.txt\n');
+});

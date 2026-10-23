@@ -47,3 +47,28 @@ export function arrive(el: HTMLElement, dir: number, axis: 'x' | 'y', by = 12, m
   el.animate([{transform: axis === 'x' ? `translateX(${d}px)` : `translateY(${d}px)`, opacity: 0}, {transform: 'none', opacity: 1}],
     {duration: ms, easing: LAND});
 }
+
+/**
+ * A thing opened from where it was shown (a repo's card on Home, its row in File) becomes the box it opens as:
+ * an outline grows from `from` (measured before the page changed) to the box found by `find` once it is on the
+ * screen, and fades as it lands, so the eye goes with the repo instead of starting over on a new page.
+ */
+export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340) {
+  if (still() || !from.width) return false;
+  let tries = 0;
+  const go = () => {
+    const to = find();
+    const at = to?.getBoundingClientRect();
+    if (!to || !at?.width) { if (++tries < 30) requestAnimationFrame(go); return; }
+    const box = document.createElement('div');
+    box.className = 'morph-box';
+    box.setAttribute('aria-hidden', 'true');
+    document.body.append(box);
+    const rect = (r: DOMRect) => ({left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px`});
+    const done = () => box.remove();
+    box.animate([{...rect(from), opacity: 1}, {...rect(at), opacity: 1, offset: .82}, {...rect(at), opacity: 0}], {duration: ms, easing: LAND, fill: 'forwards'})
+      .finished.then(done, done);
+  };
+  requestAnimationFrame(go);
+  return true;
+}

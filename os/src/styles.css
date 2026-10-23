@@ -104,6 +104,8 @@ a { color: var(--ink); }
 /* The ink of the thing chosen, on its way from the one it was on (glide.ts): under the words and icons; the one
    it is going to waits un-inked, its words in ink, until it lands. */
 .glide-ink { position: absolute; z-index: -1; background: var(--ink); pointer-events: none; }
+/* A repo opened from its card or its row, on its way to its box in Forge (glide.ts morph). */
+.morph-box { position: fixed; z-index: 9; pointer-events: none; border: var(--line-work) solid var(--ink); border-radius: var(--r-place); background: color-mix(in srgb, var(--paper) 35%, transparent); }
 .arriving, .arriving:hover { background: transparent !important; color: var(--ink) !important; transition: none !important; }
 /* A window too short for all of it (a browser's tab under its own bars, a laptop at 200% zoom): the rail stays
    where it is, in the window, as tall as the window, never going with the page (issue #44). Its places close up;
@@ -982,10 +984,11 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: var(--mar
   width: min(clamp(260px, 20vw, 340px), calc(100vw - 2 * var(--outer) - var(--rail) - var(--s2))); max-height: calc(100vh - var(--tree-top, var(--outer-top)) - var(--outer-bottom)); overflow: auto;
   /* Concentric with its rows: the card's corner is the row's corner plus the padding between them. */
   padding: var(--s2); background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-card);
-  visibility: hidden; opacity: 0;
-  transition: opacity var(--motion), visibility 0s var(--motion);
+  /* It comes out of the rail it was opened from: a few pixels from the left and a fade; it goes back the same way. */
+  visibility: hidden; opacity: 0; transform: translateX(calc(-1 * var(--s3)));
+  transition: opacity 160ms ease-out, transform 220ms var(--land), visibility 0s 220ms;
 }
-.tree.open { visibility: visible; opacity: 1; transition: opacity var(--motion), visibility 0s; }
+.tree.open { visibility: visible; opacity: 1; transform: none; transition: opacity 160ms ease-out, transform 220ms var(--land), visibility 0s; }
 .tree ul { list-style: none; margin: 0; padding: 0; }
 .tree-row { display: flex; align-items: center; min-height: var(--h-row); padding-left: calc(var(--depth, 0) * var(--s4)); border-radius: var(--r-field); }
 .tree-name {
