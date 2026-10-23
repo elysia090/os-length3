@@ -136,8 +136,9 @@ function column(id: string, title: string, total: number | null, rows: Node[], e
  */
 const thing = (name: Node | string, size: number | null, note: string, act?: Node | null, why = '', gear?: {gear: HTMLElement; list: HTMLElement}) =>
   h('div', {class: 'space-row'},
-    h('div', {class: 'space-what'}, h('span', {class: 'space-name'}, name), note ? h('span', {class: 'muted small'}, note) : null,
-      why ? h('span', {class: 'muted small space-why'}, why) : null),
+    // Two lines, not three: its name (its size on that line), then what it is and why it stays, said as one.
+    h('div', {class: 'space-what'}, h('span', {class: 'space-name'}, name),
+      note || why ? h('span', {class: 'muted small space-why'}, [note, why].filter(Boolean).join(' · ')) : null),
     // A row with no gear keeps the gear's room, so every size in a column stands on one line.
     size === null ? null : h('span', {class: 'space-size'}, bytes(size)), gear?.gear ?? (act ? null : h('span', {class: 'gear-room', 'aria-hidden': 'true'})), act ?? null, gear?.list ?? null);
 

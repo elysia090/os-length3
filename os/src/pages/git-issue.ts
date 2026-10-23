@@ -1,3 +1,4 @@
+import {kindWords} from './todo-box.ts';
 import {ago, h} from '../dom.ts';
 import * as git from '../history.ts';
 import {t, tn} from '../i18n.ts';
@@ -101,7 +102,7 @@ export function issueHead(issue: Issue, peek = false): HTMLElement {
   const no = issueName(issue);
   if (peek) return h('div', {class: 'issue-big-head peek'}, h('h2', {}, h('span', {class: 'issue-no'}, no || '#')));
   return h('div', {class: 'issue-big-head'},
-    h('h2', {}, no ? h('span', {class: 'issue-no'}, no) : null, no ? ' ' : null, issue.kind ? h('span', {class: 'issue-kind'}, `${issue.kind}：`) : null, issue.title));
+    h('h2', {}, no ? h('span', {class: 'issue-no'}, no) : null, no ? ' ' : null, issue.kind ? h('span', {class: 'issue-kind'}, ...kindWords(issue.kind)) : null, issue.title));
 }
 
 /** The box: the issue's words, where it stands, and the way into its work (or back out). */

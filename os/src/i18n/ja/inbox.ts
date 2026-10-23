@@ -57,4 +57,6 @@ export default {
   '{name} is held for you 30 days; claiming it again takes it back.': '{name}は30日間あなたのために取り置かれます。もう一度取れば戻ります。',
   'its domain no longer names this Remote': 'そのドメインはもうこの Remote を指していません',
   'Inbox has messages not read': 'Inbox に未読のメッセージがあります',
+  'Take a name': '名前を取る',
+  'Take it': '取る',
 } as Record<string, string>;

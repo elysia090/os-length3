@@ -53,6 +53,9 @@ interface Row {
 }
 
 /** A TODO list on screen: its box, and taking in the list as it now is elsewhere. */
+/** A kind as it is written (Fix：), its colon tucked against the word as a colon is beside a Latin word (styles.css). */
+export const kindWords = (kind: string): Node[] => [document.createTextNode(kind), h('span', {class: 'kind-colon'}, '：')];
+
 export interface TodoList {
   element: HTMLElement;
   /** Take in `list` as kept elsewhere: at once, or as soon as nothing in the box is being written. */
@@ -98,7 +101,7 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
   const paint = (td: todo.Todo) => {
     const r = rows.get(td.id)!;
     // Shown as it is written, "Fix：", so the format reads off the screen.
-    r.kind.textContent = td.kind ? `${td.kind}：` : '';
+    r.kind.replaceChildren(...(td.kind ? kindWords(td.kind) : []));
     r.kind.hidden = !td.kind;
     r.item.classList.toggle('done', td.done);
     r.button.replaceChildren(mark(td.done));
@@ -118,7 +121,7 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
   const build = (td: todo.Todo): HTMLElement => {
     if (o.readOnly) {
       // Read, not written: the same lines, as text.
-      const kind = h('span', {class: 'todo-kind', ...(td.kind ? {} : {hidden: ''})}, td.kind ? `${td.kind}：` : '');
+      const kind = h('span', {class: 'todo-kind', ...(td.kind ? {} : {hidden: ''})}, ...(td.kind ? kindWords(td.kind) : []));
       return h('div', {class: `todo-item${td.done ? ' done' : ''}`, role: 'listitem'},
         h('div', {class: 'todo-head'}, h('span', {class: 'todo-mark', 'aria-label': td.done ? t('Done') : t('Not done')}, mark(td.done)), kind,
           h('span', {class: 'todo-title'}, td.title), h('span', {class: 'todo-meta'}, date(td.created))),

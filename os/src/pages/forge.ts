@@ -442,6 +442,11 @@ function make(ctx: Context) {
     if (shown.length < 2 || !repo) return;
     const dx = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.shiftKey ? event.deltaY : 0;
     if (!dx) return;
+    // What can still scroll that way under the pointer (a long line of code) scrolls first; only at its end, or
+    // where nothing scrolls sideways, does the swipe go to the next box.
+    for (let el = event.target as HTMLElement | null; el && el !== cols; el = el.parentElement) {
+      if (el.scrollWidth > el.clientWidth + 1 && (dx > 0 ? el.scrollLeft + el.clientWidth < el.scrollWidth - 1 : el.scrollLeft > 0)) return;
+    }
     event.preventDefault();
     clearTimeout(swipeQuiet);
     swipeQuiet = window.setTimeout(() => { swiped = 0; }, 220);

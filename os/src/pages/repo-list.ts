@@ -54,9 +54,18 @@ function gearCard(ctx: Context, name: string, lines: Node[], away: boolean, agai
 }
 
 function repoCard(ctx: Context, name: string, size: number, modified: number, again: () => Promise<void>): HTMLElement {
-  return gearCard(ctx, name, [h('span', {class: 'muted'}, sizeAndWhen(size, modified)),
+  // What it is, in the words it was made with: its README's first plain line, under its name, once read.
+  const what = h('span', {class: 'card-summary'});
+  void summaryOf(name).then((line) => { what.textContent = line; });
+  return gearCard(ctx, name, [what, h('span', {class: 'muted'}, sizeAndWhen(size, modified)),
     // Where it stands against the Remote; filled in once it is known.
     h('span', {class: 'muted card-sync'})], false, again);
+}
+
+/** A repo's README's first line that is neither a heading nor empty ('' when there is none). */
+async function summaryOf(name: string): Promise<string> {
+  const c = await store.read(name, 'README.md').catch(() => null);
+  return c?.text?.split('\n').map((l) => l.trim()).find((l) => l && !l.startsWith('#')) ?? '';
 }
 
 /** A repo on the Remote and not here: Forge brings it. */

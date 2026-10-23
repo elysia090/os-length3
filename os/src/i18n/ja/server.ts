@@ -22,7 +22,6 @@ export default {
   'Trip': '旅行',
   'Name on this Remote': 'この Remote での名前',
   'A server needs your name. Claim one in Inbox.': 'サーバーにはあなたの名前が要ります。Inbox で取ってください。',
-  'A server is people you know: you add them from your Inbox contacts. Its boards are each a conversation and a TODO you keep together.': 'サーバーは知り合いの集まりです。Inbox の連絡先から人を入れます。板ごとに、話とみんなで持つ TODO があります。',
   // The talk.
   'Posts': '投稿',
   'Today': '今日',
@@ -141,4 +140,5 @@ export default {
   'That repo is not on the Remote': 'その repo は Remote にありません',
   // Who sees a repo (Remote): only you, servers, everyone.
   'Servers': 'サーバー',
+  'People you know, and the boards you keep together': '知り合いと、一緒に使う板',
 } as Record<string, string>;

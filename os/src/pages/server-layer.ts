@@ -411,9 +411,9 @@ export class ServerLayer {
         return b;
       })), (e) => back.replaceChildren(h('p', {class: 'error small'}, errorText(e))));
       track.replaceChildren(h('div', {class: 'slide', 'aria-current': 'true'}, h('div', {class: 'board-card board-new'},
-        h('div', {class: 'board-head'}, h('span', {class: 'muted'}, '+'), h('h2', {}, t('Make a server'))),
+        // Its name and, as a page's head has, what it is in a few quiet words; the fields under them.
+        h('div', {class: 'board-head'}, h('h2', {}, t('Make a server')), h('span', {class: 'muted'}, t('People you know, and the boards you keep together'))),
         h('div', {class: 'board-body'},
-          h('p', {}, t('A server is people you know: you add them from your Inbox contacts. Its boards are each a conversation and a TODO you keep together.')),
           // Fields as New repo's: a label over each, what it means under it.
           h('label', {class: 'field'}, h('span', {class: 'field-label'}, t('Name')), name),
           h('label', {class: 'field'}, h('span', {class: 'field-label'}, t('Name on this Remote')), handle,

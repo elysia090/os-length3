@@ -271,7 +271,10 @@ a { color: var(--ink); }
 .avatar > .mark { width: 50%; height: 50%; color: var(--sub); }
 .home-main .identity h1 { font-size: var(--t-title); }
 .home-main .todo-box { min-height: max(300px, 44vh); }
-.home-main .grid.home-repos .card { min-height: 180px; }
+.home-main .grid.home-repos .card { min-height: 152px; }
+/* What the repo is, under its name: its own words, two lines at most. */
+.card-summary { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--ink); }
+.card-summary:empty { display: none; }
 .home-main .grid.home-repos .card-title { font-size: var(--t-body); }
 
 /* Home: profile */
@@ -286,8 +289,9 @@ a { color: var(--ink); }
 .identity .unset { color: var(--sub); font-weight: 400; }
 .handle { color: var(--sub); }
 .bio { margin-top: var(--s3); max-width: 60ch; white-space: pre-wrap; }
-.counts { margin-top: var(--s3); display: flex; flex-wrap: wrap; gap: 0 var(--s5); color: var(--sub); }
-.counts b { color: var(--ink); }
+/* Figures as Runtime's are: the number large (20/600), the word under it quiet; read at a glance, not as a line. */
+.counts { margin-top: var(--s2); display: flex; flex-wrap: wrap; gap: 0 var(--s5); color: var(--sub); font-size: var(--t-meta); }
+.counts b { display: block; color: var(--ink); font-size: var(--t-card); font-weight: 600; line-height: 1.3; }
 .edit { display: grid; gap: var(--s3); max-width: 520px; }
 /* A field takes its column's width, never its own: on a phone the form stays inside the window. */
 .edit > label, .edit > label > *, .edit input, .edit textarea { min-width: 0; }
@@ -320,6 +324,9 @@ a { color: var(--ink); }
 .todo-box .todo-mark:hover { color: var(--ink); background: var(--ground); }
 /* The kind is a word, not a button: bold, no outline. */
 .todo-kind { font-weight: 700; }
+/* The kind's colon is the issue's own (Fix：), a full-width one; beside a Latin word its empty halves are taken in,
+   so it sits against the word as a colon does, a small space after it: "Fix: The title", not "Fix :   The title". */
+.kind-colon { margin: 0 -.12em 0 -.38em; }
 .todo-title { border: 0; background: transparent; min-height: var(--h-control); padding: 0; font-size: var(--t-body); font-weight: 600; }
 .todo-title::placeholder { color: var(--sub); font-weight: 400; }
 /* Read, the title is text: centred on the mark's line as the field is. */
@@ -340,7 +347,8 @@ span.todo-title { min-height: 0; }
 .todo-box .todo-hint { opacity: 0; transition: opacity 200ms ease-out; }
 .todo-box:focus-within .todo-hint { opacity: 1; }
 /* A key, as the key itself: its name on a small cap, the cap's foot a little heavier, as a key stands on a board. */
-.key-hint { display: inline-flex; align-items: center; gap: var(--s1); white-space: nowrap; }
+.key-hint { display: inline-flex; align-items: center; gap: var(--s1); min-width: 0; }
+.key-hint > kbd { flex: none; }
 kbd {
   display: inline-grid; place-items: center; min-width: 22px; height: 20px; padding: 0 5px;
   border: 1px solid var(--edge); border-bottom-width: 2px; border-radius: 5px; background: var(--paper);
@@ -1130,7 +1138,9 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: var(--mar
 .space-col > h3 { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s3); margin: 0 0 var(--s3); font-size: var(--t-body); font-weight: 600; }
 .space-col > h3 b { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .space-list { display: grid; align-content: start; gap: var(--s1); flex: 1; overflow-y: auto; }
-.space-row { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) 0; }
+.space-row { display: flex; align-items: baseline; gap: var(--s3); padding: var(--s2) 0; }
+/* The size on the name's line; the gear (or its room) centred on the row, as a deed on a card's line is. */
+.space-row > .repo-gear-button, .space-row > .gear-room, .space-row > .button { align-self: center; }
 .space-what { display: grid; min-width: 0; flex: 1; }
 .space-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .space-what .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1459,6 +1469,10 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .stub-code:hover { background: var(--ground); color: var(--ink); }
 .stub-text:hover { background: var(--ground); }
 .stub-in:focus { outline: none; }
+.stub-at { flex: none; padding-right: var(--s3); color: var(--sub); font-weight: 600; white-space: nowrap; }
+.sign-in-card .stub { width: 100%; }
+.sign-in-card .stub-holder { display: grid; gap: var(--s2); justify-items: stretch; margin: 0; }
+.sign-in-card .stub-holder > .stub { min-width: 0; }
 .stub:has(.stub-in:focus-visible) { outline: 2px solid var(--ink); outline-offset: 2px; }
 .stub-gear { display: grid; place-items: center; flex: none; width: var(--h-control); height: calc(var(--h-control) - 2px); padding: 0; border: 0; border-left: 1px solid var(--rule); border-radius: 0 var(--r-field) var(--r-field) 0; background: transparent; color: var(--sub); cursor: pointer; }
 .stub-gear:hover, .stub-gear[aria-expanded='true'] { background: var(--ground); color: var(--ink); }
@@ -1562,6 +1576,9 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 @media (prefers-reduced-motion: reduce) { .slide-track { transition: none; } }
 .slide { flex: 0 0 calc(100% - 2 * var(--peek)); min-width: 0; height: 100%; }
 .board-card { display: flex; flex-direction: column; height: 100%; border: 1px solid var(--rule); border-radius: var(--r-place); }
+/* Making a server: a card as tall as what is in it and as wide as its fields, not a board's whole height. */
+.board-card.board-new { height: auto; max-width: 600px; }
+.board-new > .board-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s1) var(--s3); }
 .slide[aria-current='false'] .board-card { color: var(--sub); }
 /* A neighbour shows its edge and its mark (# a board, + a new one), not a name cut short. */
 .slide[aria-current='false'] .board-head h2 { visibility: hidden; }
@@ -1605,7 +1622,10 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .server-say { flex-wrap: wrap; align-items: center; gap: var(--s2); }
 .server-say .line-in { flex: 1; min-width: 10em; }
 /* The right: who is in it, then their repos. Read only: what changes them is behind the gear. */
-.server-side { display: grid; grid-template-rows: none; align-content: start; gap: var(--s5); overflow-y: auto; padding: var(--band) 0 var(--s5) var(--s5); }
+.server-side { display: grid; grid-template-rows: none; align-content: start; gap: var(--s5); overflow-y: auto; padding: var(--band) var(--s5) var(--s5); }
+/* Server's side is the same tray as Forge's pane, under the boards rather than cut off from them by a line. */
+.work > .side.server-side { border-radius: var(--r-place); background: var(--tray); }
+.work:has(> .side.server-side) > .center { border-right-color: transparent; }
 /* A heading over its list as a section's is over its content. */
 .side-part { display: grid; gap: var(--s3); }
 .side-part h3 { margin: 0; font-size: var(--t-body); font-weight: 600; }

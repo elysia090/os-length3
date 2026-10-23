@@ -47,6 +47,7 @@ function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLE
   const note = h('p', {class: 'muted small'});
   const panel = h('div', {class: 'stub-panel pop', hidden: ''});
   let stub: HTMLElement;
+  let take: HTMLButtonElement | null = null;
   if (me.addresses.length) {
     const a = inbox.shown(me.addresses[0].address);
     const text = h('button', {type: 'button', class: 'stub-text'}, a);
@@ -56,14 +57,19 @@ function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLE
     stub = h('div', {class: 'stub'}, text, code, gear);
   } else {
     const name = h('input', {class: 'stub-in', placeholder: t('name'), 'aria-label': t('Name'), autocapitalize: 'off', spellcheck: 'false', maxlength: '31'}) as HTMLInputElement;
-    name.addEventListener('keydown', async (e) => {
-      if (e.key !== 'Enter' || e.isComposing || !name.value.trim() || name.readOnly) return;
+    // Taken with Enter or with Take it, asked once: pressed again while it is asked, nothing more is claimed.
+    const claim = async () => {
+      if (!name.value.trim() || name.readOnly) { name.focus(); return; }
       error.textContent = '';
-      // Asked once: Enter again while it is asked claims nothing more.
       name.readOnly = true;
-      try { await inbox.claim(name.value); again(); } catch (err) { const plan = planRefused(err, toPlan); if (plan) error.replaceChildren(plan); else error.textContent = errorText(err); } finally { name.readOnly = false; }
-    });
-    stub = h('div', {class: 'stub'}, name, gear);
+      take!.disabled = true;
+      try { await inbox.claim(name.value); again(); } catch (err) { const plan = planRefused(err, toPlan); if (plan) error.replaceChildren(plan); else error.textContent = errorText(err); } finally { name.readOnly = false; take!.disabled = false; }
+    };
+    name.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) void claim(); });
+    take = button(t('Take it'), 'primary');
+    take.addEventListener('click', () => void claim());
+    // What it will be, whole, as it is written: the name, then this Remote's own @ part, quiet.
+    stub = h('div', {class: 'stub'}, name, me.domain ? h('span', {class: 'stub-at', 'aria-hidden': 'true'}, `@${me.domain}`) : null, gear);
     note.textContent = t('A name on this Remote: first come, yours for five years at a time, renewed by you.');
   }
   // The gear's panel, as the person's menu: your names with their terms, then Add a domain, then letting one go.
@@ -141,7 +147,7 @@ function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLE
   // Letting a name go is not offered here; the Remote's way to do it stays (l3 people release uses it).
   const fill = () => panel.replaceChildren(...(me.addresses.length ? [yours(), adding()] : [own()]));
   // The panel lies over the Inbox under it; Escape or a press outside closes it.
-  const holder = h('div', {class: 'stub-holder'}, stub, note, error, panel);
+  const holder = h('div', {class: 'stub-holder'}, stub, note, error, take ? h('div', {class: 'card-foot'}, h('span', {class: 'grow'}), take) : null, panel);
   // Put away by Escape from inside it, the keyboard goes back to the gear rather than to the page.
   const away = (e: Event) => {
     if (!(e instanceof KeyboardEvent ? e.key === 'Escape' : !holder.contains(e.target as Node))) return;
@@ -196,7 +202,8 @@ export function inboxPage(ctx: Context): Node[] {
     }
     let me: inbox.Me;
     try { me = await inbox.me(); } catch (e) { holder.replaceChildren(h('p', {class: 'error'}, errorText(e))); return; }
-    if (!me.addresses.length) { holder.replaceChildren(addressStub(me, () => void paint(), () => goToPlan(ctx))); return; }
+    // No name yet: the one thing to do here, in the middle, as signing in was (the same card, in the same place).
+    if (!me.addresses.length) { holder.replaceChildren(signInPlace(t('Take a name'), addressStub(me, () => void paint(), () => goToPlan(ctx)))); return; }
     mine = me.addresses[0].address;
     // The field to write to someone new is made once: what comes every little while changes only the rows under it.
     const to = h('input', {class: 'line-in', placeholder: t('Write to a name or a code'), 'aria-label': t('Write to a name or a code'), autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
