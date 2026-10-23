@@ -279,6 +279,8 @@ export async function begin() {
   // The Remote's changes are seen within five seconds while the page is in view and someone is at it; nobody for a
   // while, a minute, then ten (runs.ts paced); back at it, at once. While the Remote is away, less often each time.
   polling = every(5000, async () => { if (connection() && mayAsk()) await look(); }, {paced: true});
+  // The window taken up again: what moved meanwhile is looked for at once (one small request), not at the next look.
+  addEventListener('focus', () => { if (connection() && mayAsk()) void look(); });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') void flush(); });
   if (!isNative) addEventListener('pagehide', leave);
   await look();

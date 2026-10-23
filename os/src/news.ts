@@ -80,4 +80,7 @@ export function begin() {
   looking?.stop();
   void look();
   looking = every(EVERY, () => (mayAsk() ? look() : undefined), {paced: true});
+  // The window taken up again: asked at once (one request, when someone is there to see it), not at the next look.
+  if (!focused) { focused = true; window.addEventListener('focus', () => { if (mayAsk()) void look(); }); }
 }
+let focused = false;
