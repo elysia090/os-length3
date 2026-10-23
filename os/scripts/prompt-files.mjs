@@ -22,19 +22,23 @@ import {createHash} from 'node:crypto';
 import {mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {Readable} from 'node:stream';
-import {pinnedRoots} from '../service/releases.ts';
+import {pinnedRoots, shipping} from '../service/releases.ts';
 import {tarMembers} from './l3-tree.mjs';
 
 const here = new URL('..', import.meta.url).pathname;
 const api = process.env.GITHUB_API_URL || 'https://api.github.com';
 const repo = process.env.GITHUB_REPOSITORY || 'elysia090/os-length3';
 const token = process.env.GITHUB_TOKEN;
-const version = readFileSync(join(here, 'RELEASE'), 'utf8').trim();
+const asked = readFileSync(join(here, 'RELEASE'), 'utf8').trim();
+// The pin this tree has comes first: without one, nothing is fetched or taken. RELEASE's, or, while its release is
+// made (RELEASE changed, the release not published and pinned yet), the newest pinned before it (releases.ts shipping).
+const roots = pinnedRoots(readFileSync(join(here, 'core/src/root.rs'), 'utf8'));
+const version = shipping(asked, roots.map((r) => r.version));
+if (!version) throw new Error(`core/src/root.rs pins no l3 ${asked}, nor one before it: release it, then commit the entry it pinned`);
+if (version !== asked) console.log(`prompt-files: RELEASE is ${asked}, not pinned yet: l3 ${version}'s, until ${asked} is released and pinned`);
 const tag = `os-length3-linux-v${version}`;
 const asset = `os-length3-linux-${version}-l3-web.tar`;
-// The pin this tree has comes first: without one, nothing is fetched or taken.
-const pin = pinnedRoots(readFileSync(join(here, 'core/src/root.rs'), 'utf8')).find((r) => r.version === version);
-if (!pin) throw new Error(`core/src/root.rs pins no l3 ${version}: release it, then commit the entry it pinned`);
+const pin = roots.find((r) => r.version === version);
 if (!/^[0-9a-f]{64}$/.test(pin.web)) throw new Error(`core/src/root.rs pins l3 ${version}'s root but no index for the web (web: "${pin.web}"): a release since l3.mjs pins both`);
 
 // Cloudflare's Workers Builds (WORKERS_CI) gives a build the token only from the Worker's Settings → Build →

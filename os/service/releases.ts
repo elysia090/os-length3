@@ -34,6 +34,27 @@ const tagOf = (version: string) => `os-length3-linux-v${version}`;
 export const rootKey = (sha256: string) => `os/${sha256}`;
 export const desktopKey = (file: string) => `desktop/${file}`;
 
+/** Versions compared part by part as numbers (0.10.0 after 0.9.0); a pre-release (0.5.1-rc.1) before its release. */
+export function byVersion(a: string, b: string): number {
+  const [x, xp = ''] = a.split('-', 2), [y, yp = ''] = b.split('-', 2);
+  const xs = x.split('.').map(Number), ys = y.split('.').map(Number);
+  for (let i = 0; i < Math.max(xs.length, ys.length); i++) if ((xs[i] ?? 0) !== (ys[i] ?? 0)) return (xs[i] ?? 0) - (ys[i] ?? 0);
+  return xp === yp ? 0 : !xp ? 1 : !yp ? -1 : xp < yp ? -1 : 1;
+}
+
+/**
+ * The version whose pins a build ships: RELEASE, once this tree pins it. While a release of it is made (RELEASE
+ * changed on main, its files not published and pinned yet), the newest pinned before it: main's build and deploy
+ * go on with what they had, rather than failing (no l3 for the web) or offering no desktop app. Null when none is.
+ */
+export function shipping(release: string, pinned: readonly string[]): string | null {
+  if (pinned.includes(release)) return release;
+  return [...pinned].filter((v) => byVersion(v, release) < 0).sort(byVersion).at(-1) ?? null;
+}
+
+/** The versions shared/desktop-releases.json pins a desktop app for. */
+export const desktopVersions = (pins: DesktopPins = desktopPins as DesktopPins): string[] => Object.keys(pins);
+
 /** A root as core/src/root.rs pins it: its version, and l3's index for the browser made from it (`web`, its sha256; '' before l3 had one). */
 export interface PinnedRoot extends Pinned { version: string; web: string }
 

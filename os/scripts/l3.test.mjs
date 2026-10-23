@@ -104,12 +104,15 @@ test('a Node-only build takes l3 from its release only at the pin, and refuses a
   // A tree as prompt-files.mjs reads it: RELEASE, the pins, and the scripts; and a release that has l3's tar.
   const tree = join(work, 'tree');
   for (const d of ['core/src', 'scripts', 'service', 'shared', 'public']) mkdirSync(join(tree, d), {recursive: true});
-  writeFileSync(join(tree, 'RELEASE'), '9.9.9\n');
   copyFileSync(join(os, 'core/src/root.rs'), join(tree, 'core/src/root.rs'));
   for (const f of ['scripts/prompt-files.mjs', 'scripts/l3-tree.mjs', 'service/releases.ts', 'shared/desktop-releases.json']) copyFileSync(join(os, f), join(tree, f));
+  // A version with no pin, and none before it: nothing is fetched. (One with a pin before it takes that one's, while
+  // its own release is made: releases.ts shipping, held in mirror.test.ts.)
+  writeFileSync(join(tree, 'RELEASE'), '0.0.1\n');
   const refused = node([join(tree, 'scripts/prompt-files.mjs')]);
   assert.notEqual(refused.status, 0);
-  assert.match(refused.stderr, /pins no l3 9\.9\.9/);
+  assert.match(refused.stderr, /pins no l3 0\.0\.1, nor one before it/);
+  writeFileSync(join(tree, 'RELEASE'), '9.9.9\n');
   assert.equal(node([join(os, 'scripts/pin-root.mjs'), rootFile, out, '--rs', join(tree, 'core/src/root.rs')]).status, 0);
 
   const tarOf = (dir) => execFileSync('tar', ['-C', dir, '--sort=name', '--mtime=@0', '--owner=0', '--group=0', '--numeric-owner', '--format=pax', '-cf', '-', '.'], {maxBuffer: 1 << 28});

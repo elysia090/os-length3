@@ -5,6 +5,7 @@ import {bring, onSync, remoteOnly, repoState} from '../lifecycle.ts';
 import {connection, deviceWord, REMOTE_URL} from '../remote.ts';
 import {mark} from '../icons.ts';
 import desktopPins from '../../shared/desktop-releases.json' with {type: 'json'};
+import {shipping} from '../../service/releases.ts';
 import * as dotfiles from '../dotfiles.ts';
 import * as ssh from '../ssh.ts';
 import {free, readSpace} from '../space.ts';
@@ -529,8 +530,14 @@ function dotfilesSection(restarted: () => void, counted: (n: number) => void = (
   return section;
 }
 
-/** The release this build ships (RELEASE, through vite.config.ts). */
-const RELEASE = (import.meta as {env?: Record<string, string>}).env?.VITE_LENGTH3_RELEASE ?? '';
+/**
+ * The desktop app this build offers: RELEASE's (through vite.config.ts), or while its release is made, the newest
+ * pinned before it (service/releases.ts shipping), as the deploy puts on the Remote.
+ */
+const RELEASE = (() => {
+  const r = (import.meta as {env?: Record<string, string>}).env?.VITE_LENGTH3_RELEASE ?? '';
+  return shipping(r, Object.keys(desktopPins)) ?? r;
+})();
 
 /**
  * The desktop app, on the web only: one small card, saying what it is (Length³,

@@ -3,7 +3,7 @@ import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
 import {mirror, type Store} from './mirror.ts';
-import {desktopFile, pinnedDesktop, pinnedRoots, type Pinned} from './releases.ts';
+import {byVersion, desktopFile, desktopVersions, pinnedDesktop, pinnedRoots, shipping, type Pinned} from './releases.ts';
 
 const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 const pin = (file: string, bytes: Uint8Array, tag = 'os-length3-linux-v1.0.0'): Pinned =>
@@ -127,4 +127,19 @@ test('mirror: a file the budget has no room for is neither fetched nor put, the 
   assert.deepEqual(allowed, ['desktop/a.deb', 'desktop/b.AppImage']);
   assert.deepEqual(bucket.puts, ['desktop/a.deb']);
   assert.ok(!gh.asked.includes('/releases/assets/1'));
+});
+
+test('a build ships RELEASE\'s pins, and while its release is made the newest pinned before it', () => {
+  assert.ok(byVersion('0.10.0', '0.9.0') > 0);
+  assert.ok(byVersion('0.5.1-rc.1', '0.5.1') < 0);
+  assert.equal(byVersion('0.5.1', '0.5.1'), 0);
+  assert.equal(shipping('0.5.1', ['0.4.0', '0.5.0', '0.5.1']), '0.5.1');
+  // RELEASE changed on main, not released and pinned yet: what was shipped before, never a version after it.
+  assert.equal(shipping('0.5.1', ['0.4.1', '0.5.0', '0.4.0']), '0.5.0');
+  assert.equal(shipping('0.4.5', ['0.5.0', '0.4.1']), '0.4.1');
+  assert.equal(shipping('0.1.0', ['0.5.0']), null);
+  // This tree's own: whatever RELEASE says, a root and a desktop app are shipped.
+  const release = readFileSync(new URL('../RELEASE', import.meta.url), 'utf8').trim();
+  assert.ok(shipping(release, pinnedRoots(readFileSync(new URL('../core/src/root.rs', import.meta.url), 'utf8')).map((r) => r.version)));
+  assert.ok(shipping(release, desktopVersions()));
 });
