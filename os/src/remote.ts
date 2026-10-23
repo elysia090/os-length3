@@ -14,9 +14,10 @@ import {core, native} from './host.ts';
 import {t} from './i18n.ts';
 import {getState, loadState} from './state.ts';
 import {setEnvironment} from './core-client.ts';
+import {webauthn} from './passkeys.ts';
 
-/** The Remote this OS ships with: one name for the app, the Remote, the DNS records people publish and passkeys. */
-export const DEFAULT_REMOTE = 'https://os.length3.com';
+import {DEFAULT_REMOTE} from './policy.ts';
+export {DEFAULT_REMOTE};
 /** Its name before (0.4.x signed in by it): the same Worker answers it, and a device that kept it goes on by the one name. */
 const FORMER_REMOTE = 'https://remote.length3.com';
 /** A Remote's URL as it is used now (core/src/remote.rs current_url). */
@@ -226,7 +227,6 @@ export const unlink = (providerId: string) => json('/api/auth/unlink-account', {
 
 // ---- passkeys (web) ----
 
-const webauthn = () => import('@simplewebauthn/browser');
 const cancelled = (e: unknown) => (e as {name?: string}).name === 'NotAllowedError';
 
 /** Add a passkey for this device to the account it is signed in to. */

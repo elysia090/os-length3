@@ -2,6 +2,8 @@
 // worker of this tab (core.worker.ts) over files this browser keeps. A page asks it what the app asks
 // through Tauri, by name with JSON; the answers come back in the order asked.
 
+import {coreWorker} from './core-worker.ts';
+
 /** What the core answers (core/src/api.rs answer): a value, or why not; a refusal of the Remote's says its status and detail. */
 export type Answer = {ok: unknown} | {error: string; status?: number; detail?: Record<string, unknown>};
 export type Ask = (name: string, args: Record<string, unknown>) => Promise<Answer>;
@@ -31,7 +33,7 @@ export function setEnvironment(env: Record<string, string>) {
 
 function started(): Worker {
   if (worker) return worker;
-  const w = new Worker(new URL('./core.worker.ts', import.meta.url), {type: 'module'});
+  const w = coreWorker();
   w.postMessage({init: {env: environment, tab}});
   w.onmessage = (e: MessageEvent<{id: number} & Answer>) => {
     const {id, ...answer} = e.data;

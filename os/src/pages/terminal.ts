@@ -3,7 +3,7 @@ import {onChange, store} from '../repos.ts';
 import {bytes, h} from '../dom.ts';
 import {isNative, promptOpen, rootStatus, type Held, type Stopped} from '../host.ts';
 import {currentLang, onLang, t, tn} from '../i18n.ts';
-import {filesNow, loadL3, warmL3, watchLoad, type L3, type Stage} from '../userland.ts';
+import {filesNow, loadL3, promptWorker, warmL3, watchLoad, type L3, type Stage} from '../userland.ts';
 import {every} from '../runs.ts';
 import {errorText} from '../errors.ts';
 
@@ -232,15 +232,17 @@ export class Session {
 
   private async start() {
     try {
-      // In the app the Prompt is the distribution's root; l3 through xlat
-      // only until a root is installed, and the Runtime page says which.
-      let why = '';
-      if (isNative && await this.startRoot().catch((e) => { why = errorText(e); return false; })) return;
+      // In the app the Prompt is the distribution's root on this machine, and nothing else: l3 through xlat
+      // is the browser's (its build carries none). Without a root, Runtime is where one is installed.
+      if (isNative) {
+        if (await this.startRoot()) return;
+        throw new Error(t('There is no root on this device yet: Runtime installs it'));
+      }
       this.on = 'l3';
       // While l3 comes, the status says how far it is and what it is doing.
       const unwatch = watchLoad((s) => { this.status.textContent = loadWords(s); });
       const [l3, copy] = await Promise.all([loadL3(), snapshot(this.repo)]).finally(unwatch);
-      const worker = new Worker(new URL('../../../xlat/runtime/worker.mjs', import.meta.url), {type: 'module'});
+      const worker = promptWorker();
       this.worker = worker;
       worker.onmessage = ({data}) => {
         this.heard = Date.now();
@@ -289,8 +291,7 @@ export class Session {
         this.worker?.postMessage({type: 'put', path: c.path, what});
       });
       // Running is the usual state and says nothing; only what is missing is said.
-      this.status.textContent = why ? t('Could not open on the root ({why})', {why})
-        : copy.complete ? '' : t('Large files and binaries are not included');
+      this.status.textContent = copy.complete ? '' : t('Large files and binaries are not included');
       this.live = true;
       this.l3 = l3;
       this.tell();

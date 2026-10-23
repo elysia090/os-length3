@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
-import {headersOf, webPolicy} from './policy.ts';
+import {DEFAULT_REMOTE, desktopPolicy, headersOf, webPolicy} from './policy.ts';
 
 // The app's files are served by Workers Assets, not the Worker, so only public/_headers can say
 // these (security audit H1: a framable device-approval page; OWASP ASVS 14.4.1-14.4.7).
@@ -34,7 +34,9 @@ test('no referrer, no sniffing, no window shared with another site, no file take
 test('the desktop webview runs only the app\'s own files, under a strict policy, with no host permission but events and its title', () => {
   const conf = JSON.parse(readFileSync(new URL('../src-tauri/tauri.conf.json', import.meta.url), 'utf8'));
   const csp: string = conf.app.security.csp;
-  assert.doesNotMatch(csp, /'unsafe-eval'|'unsafe-inline'|\*|http:\/\/(?!ipc\.localhost)/);
+  // One policy, src/policy.ts's, for the Remote the app ships with (scripts/desktop.sh gives Tauri it for another).
+  assert.equal(csp, desktopPolicy(DEFAULT_REMOTE));
+  assert.doesNotMatch(csp, /'unsafe-eval'|'unsafe-inline'|'wasm-unsafe-eval'|\*|http:\/\/(?!ipc\.localhost)/);
   for (const d of ["default-src 'self'", "object-src 'none'", "base-uri 'none'", "form-action 'none'", "frame-src 'none'"]) assert.ok(csp.includes(d), d);
   assert.equal(conf.build.frontendDist, '../dist');
   assert.ok(conf.app.windows.every((w: {url?: string; useHttpsScheme?: boolean}) => !w.url && w.useHttpsScheme === true));

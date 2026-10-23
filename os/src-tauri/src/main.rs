@@ -19,6 +19,7 @@ mod shells {
     #[tauri::command] pub fn prompt_held(_id: u32) -> Result<Option<length3_core::prompt::Held>, String> { Ok(None) }
     #[tauri::command] pub fn prompt_close(_id: u32) -> Result<length3_core::prompt::Stopped, String> { Err(not_here()) }
     #[tauri::command] pub fn root_status() -> Option<()> { None }
+    #[tauri::command] pub async fn root_list(_path: String) -> Result<Vec<()>, String> { Err(not_here()) }
     #[tauri::command] pub async fn root_fetch() -> Result<(), String> { Err(not_here()) }
     #[tauri::command] pub async fn root_use(_id: String) -> Result<(), String> { Err(not_here()) }
     impl Shells { pub fn open_repos(&self) -> Vec<String> { Vec::new() } }
@@ -160,7 +161,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             core, remote_login_start, plan_open,
             shells::prompt_open, shells::prompt_input, shells::prompt_interrupt, shells::prompt_held, shells::prompt_close,
-            shells::root_status, shells::root_fetch, shells::root_use, ssh_here, ssh_set
+            shells::root_status, shells::root_list, shells::root_fetch, shells::root_use, ssh_here, ssh_set
         ])
         .run(tauri::generate_context!())
         .expect("Length³ OS shell failed to start");

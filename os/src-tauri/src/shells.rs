@@ -224,6 +224,12 @@ fn remote_url() -> String {
     length3_core::remote::connection().map_or_else(length3_core::remote::default_url, |c| c.url)
 }
 
+/// What a directory of the current root holds (File's tree of "/"), read off the window's thread.
+#[tauri::command]
+pub async fn root_list(path: String) -> Result<Vec<root::Entry>, String> {
+    apart(move || root::list(&paths::data_dir(), &path)).await
+}
+
 /// Fetch the release root from the Remote and install it, saying how far it is.
 #[tauri::command]
 pub async fn root_fetch(app: AppHandle) -> Result<root::Installed, String> {

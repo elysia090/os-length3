@@ -9,6 +9,8 @@ export default {
   '{name} · {size}': '{name} · {size}',
   '{name} · through xlat': '{name} · xlat を通して',
   'There is no l3 (npm run l3)': 'l3 がありません（npm run l3）',
+  'There is no root on this device yet: Runtime installs it': 'この端末にはまだ root がありません：Runtime で入れられます',
+  'The app\'s Prompt runs on the root this device installs (Runtime), not through xlat': 'アプリの Prompt はこの端末に入れた root（Runtime）で動きます。xlat は使いません',
   '{n} file kept for the Prompt': 'Prompt のために{n}ファイル',
   '{n} files kept for the Prompt': 'Prompt のために{n}ファイル',
   'Fetched again at the next Prompt': '次の Prompt でまた取ってきます',

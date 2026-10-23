@@ -295,3 +295,6 @@ export const warmL3 = (l3: L3) => warm(l3.index);
 
 /** What a Prompt starting now is given beside the packs: BusyBox, and each other hot program once it is ready. */
 export const filesNow = (l3: L3): L3['files'] => [...l3.files, ...later.values()];
+
+/** The Prompt's Worker: xlat running l3's root (pages/terminal.ts gives it l3 and the repo). */
+export const promptWorker = (): Worker => new Worker(new URL('../../xlat/runtime/worker.mjs', import.meta.url), {type: 'module'});

@@ -5,15 +5,26 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Length³ OS</title>
 <link rel="stylesheet" href="/src/styles.css">
-<!-- Says why when the app cannot start (public/boot.js), rather than leaving the page blank. -->
-<script src="/boot.js"></script>
+<!-- Says why when the app cannot start (public/boot.js), rather than leaving the page blank. data-cfasync: a
+     CDN that defers scripts (Cloudflare's Rocket Loader) leaves this one alone, as vite.config.ts has the app's. -->
+<script src="/boot.js" data-cfasync="false"></script>
 </head>
 <body>
 <nav class="rail" aria-label="Purposes">
   <div class="rail-tabs" id="rail-tabs"></div>
   <div class="rail-me" id="rail-me"></div>
 </nav>
-<main class="page" id="page" tabindex="-1" aria-busy="true"></main>
+<main class="page" id="page" tabindex="-1" aria-busy="true">
+  <!-- Seen only when no script of the page runs at all (boot.js marks the page as it starts, which hides it). -->
+  <section class="boot-static" role="status">
+    <h1>Length³ OS</h1>
+    <p>The page's scripts did not run, so the app cannot start. Either the site serves its sources rather
+      than its build (os/dist, made by npm run build:cloudflare), or this browser runs no script here:
+      JavaScript is off, or something between it and the site changed the page (an extension, a proxy, or a
+      CDN setting such as Rocket Loader).</p>
+    <p lang="ja">ページのスクリプトが動かなかったため、アプリを開けません。サイトがビルド結果（os/dist、npm run build:cloudflare で作るもの）ではなくソースをそのまま配信しているか、このブラウザでスクリプトが動いていません（JavaScript が無効、または拡張機能・プロキシ・Rocket Loader などの CDN の設定がページを書き換えている）。</p>
+  </section>
+</main>
 <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

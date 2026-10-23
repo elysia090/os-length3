@@ -28,7 +28,7 @@ and [`releases/README.md`](releases/README.md) lists them all. A release carries
 
 | File | What it is |
 | --- | --- |
-| `…-desktop-amd64.deb`, `…-desktop-x86_64.AppImage` | the desktop app for x86-64 Linux: `sudo apt install ./….deb`, or `chmod +x` the AppImage and run it |
+| `…-desktop-amd64.deb`, `…-desktop-x86_64.AppImage` | the desktop app for x86-64 Linux, with `l3` beside it: `sudo apt install ./….deb` (then `l3`, or `l3 app` for the window), or `chmod +x` the AppImage and run it |
 | `…-web.zip` | the web app, ready for any static server (`npx serve` in the unzipped folder) |
 | `…-x86_64-<sha256>.tar.zst` | the root (with `/usr/bin/l3`), which the app installs and trusts by that digest |
 | `…-l3-web.tar` | the same root as a browser reads it (packs by package, BusyBox and l3 translated ahead of time) |
