@@ -596,7 +596,7 @@ fn free_with(client: &Client, repos: &Repos, repo: &str) -> Result<u64> {
                 return Err(if changed == 1 {
                     crate::tr!("1 change here is not on the Remote; turn it on to send it first", "ここの変更 1件が Remote にありません。オンにして先に送ってください")
                 } else {
-                    crate::tr!("{} changes here are not on the Remote; turn it on to send them first", "ここの変更 {}件が Remote にありません。オンにして先に送ってください", changed)
+                    if changed == 1 { crate::tr!("1 change here is not on the Remote; turn it on to send it first", "ここの変更 1件が Remote にありません。オンにして先に送ってください") } else { crate::tr!("{} changes here are not on the Remote; turn it on to send them first", "ここの変更 {}件が Remote にありません。オンにして先に送ってください", changed) }
                 });
             }
             checked.push((key, line.clone(), dir, agreed, modes));

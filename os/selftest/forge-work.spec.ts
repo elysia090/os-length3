@@ -328,3 +328,65 @@ test('pressed anywhere in the prompt box, beside its line too, the caret goes in
   await app.page.mouse.click(box.x + 6, box.y + box.height - 4);
   await expect(app.forge.promptBox).toBeFocused();
 });
+
+test('repos stand side by side: Ctrl+click or a pill dragged in opens one beside, its × closes it, and the keyboard goes along the row', async ({app}) => {
+  await app.newRepo.make('notes');
+  await app.newRepo.make('site');
+  await app.rail.go('forge');
+  const more = app.forge.band.getByRole('button', {name: /^Bring every repo out/});
+  if (await more.isEnabled()) await more.click();
+  const box = (n: string) => app.main.locator(`.col[data-repo="${n}"]`);
+  const prompt = app.forge.promptBox;
+  await app.forge.band.getByRole('button', {name: 'hello', exact: true}).click();
+  await expect(box('notes')).toBeHidden();
+
+  // Ctrl+click: beside the one worked on, and worked on; the prompt follows it.
+  await app.forge.band.getByRole('button', {name: 'notes', exact: true}).click({modifiers: ['ControlOrMeta']});
+  await expect(box('hello')).toBeVisible();
+  await expect(box('notes')).toBeVisible();
+  await expect(box('notes')).toHaveClass(/\bactive\b/);
+  await expect(prompt).toHaveAttribute('placeholder', 'Run in notes');
+
+  // A pill dragged to the right end of the center stands there.
+  const row = app.main.locator('.columns');
+  const r = (await row.boundingBox())!;
+  await app.forge.band.locator('.pill[data-repo="site"]').dragTo(row, {targetPosition: {x: r.width - 20, y: 200}});
+  await expect(box('site')).toBeVisible();
+  await expect(box('site')).toHaveClass(/\bactive\b/);
+  const xs = await Promise.all(['hello', 'notes', 'site'].map(async (n) => (await box(n).boundingBox())!.x));
+  expect(xs[0]).toBeLessThan(xs[1]);
+  expect(xs[1]).toBeLessThan(xs[2]);
+
+  // Its × closes a box; the one worked on stays the one worked on.
+  await box('notes').getByRole('button', {name: 'Close notes beside'}).click();
+  await expect(box('notes')).toBeHidden();
+  await expect(box('site')).toHaveClass(/\bactive\b/);
+  await expect(app.forge.band.getByRole('button', {name: 'notes', exact: true})).toBeVisible();
+
+  // Alt+[ goes along the row; Ctrl+\ opens the next on the band beside.
+  await box('site').locator('.flow').focus();
+  await app.page.keyboard.press('Alt+BracketLeft');
+  await expect(box('hello')).toHaveClass(/\bactive\b/);
+  await app.page.keyboard.press('Control+Backslash');
+  await expect(box('notes')).toBeVisible();
+  await expect(box('notes')).toHaveClass(/\bactive\b/);
+
+  // Opened again, the row is as it was left.
+  await app.page.reload();
+  await app.settled();
+  await app.rail.go('forge');
+  for (const n of ['hello', 'notes', 'site']) await expect(box(n)).toBeVisible();
+});
+
+test('a pill dragged along the band lands where it is let go', async ({app}) => {
+  await app.newRepo.make('notes');
+  await app.rail.go('forge');
+  const more = app.forge.band.getByRole('button', {name: /^Bring every repo out/});
+  if (await more.isEnabled()) await more.click();
+  const names = () => app.forge.band.locator('.pill').evaluateAll((ps) => ps.map((p) => (p as HTMLElement).dataset.repo));
+  const before = await names();
+  const first = app.forge.band.locator('.pill').first(), last = app.forge.band.locator('.pill').last();
+  const lb = (await last.boundingBox())!;
+  await first.dragTo(last, {targetPosition: {x: lb.width - 4, y: lb.height / 2}});
+  await expect.poll(names).toEqual([...before.slice(1), before[0]]);
+});

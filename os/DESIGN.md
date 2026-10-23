@@ -37,7 +37,9 @@ Every value in `styles.css` comes from a token (§2).
   apart from hover. Focus is a 2 px `ink` ring. Nothing else marks state
   (no underline, no bold-only).
 - **Selection** is the current-thing state too: `ink` with `ground` text,
-  for selected text and for search matches.
+  for selected text. What the search found is not selected but marked: the
+  `marker`'s stroke over its words, as a highlighter would (the line landed
+  on from it is selected in the marker too, for that moment).
 - **Lines.** 1 px, except the box of a file being edited in Forge, which is
   a little heavier (1.5 px `edge`) because it is the work itself. `rule` between regions and around places; `edge` around
   things you press or type into. A dashed `rule` means one thing: room for
@@ -54,9 +56,32 @@ Every value in `styles.css` comes from a token (§2).
   header, Home's profile, Forge's band and search box. The rail starts one
   place below it, so Home is not first off the mark, and + stands a clear
   step (40 px) under the places, a little below the middle.
-- **Motion.** 120 ms fades, and one movement: the terminal flying between
-  the right pane and the prompt box, 280 ms. Reduced motion turns them off.
-- No shadows, blur, glow or gradients.
+- **Motion, with a reason.** Every move says where something went, never
+  only that it changed, and every one lands the same way (fast off the
+  mark, the last pixels slow: `--land`). The moves are few and each means
+  one thing wherever it is seen:
+  - *The ink travels.* The current thing's ink goes from the one it was on
+    to the one it is on (the rail's places, the band's pills), under their
+    words, 220 ms, so the eye follows the choice.
+  - *What comes in, comes from its side.* Down the rail the next page comes
+    up from below, up the rail from above (12 px and a fade, 240 ms); along
+    the band the next repo comes from the right, back along it from the
+    left (32 px).
+  - *Room is given and taken.* A box opened beside the others grows from
+    nothing as they make room, and closing gives its room back; the right
+    pane opens and closes as a wipe, what it holds cut at the moving edge,
+    never squeezed (280 ms).
+  - *What opens comes out of what opened it.* What the search finds comes
+    down out of its box; the terminal flies between the pane and the box.
+  - *Where one lands is lit for a moment.* A file landed on (from the
+    search, File, Git) has its head lit with the marker, fading in about a
+    second; nothing stays lit.
+  - *Focus is the light.* While the search is out the whole window steps
+    back under one shade (`ink` at 14%) and only the search is lit; it
+    fades in and out, and a press anywhere else closes it.
+  120 ms fades for everything else. Reduced motion turns all of it off:
+  each thing is where it ends at once.
+- No shadows, blur, glow or gradients; the one shade is the search's (above).
 - **Words, one way.** One word for one thing on every page: repo (never
   リポジトリ), サーバー, 板. A button is a verb in its plain form (作る,
   保存する, 外す), never a noun (作成); a time on a line is a noun (3分前に
@@ -115,11 +140,13 @@ Every page:
 | `sub` | `#56595A` | secondary text (5.0:1) |
 | `edge` | `#6B6E6B` | outlines of fields and controls, which must be seen (3.7:1) |
 | `raised` | `#E4E4E0` | field fill, hover (the same small step above ground as before) |
+| `paper` | `#F8F8F5` | what is worked on, on a sheet of its own: a file's box in Forge, what the search found; never a card or a page |
 | `done` | `#2F7D4F` | done and on: a step of an issue's work done, a switch on (its knob), a box ticked (its circle) |
-| `marker` | `#F3E27A` | a line marked in a diff (a review, Forge's diff), as with a highlighter: over its words only (not its indent or number, which turns ink), each wrapped line its own stroke with softened ends; the pointer on a line shows the stroke paler |
+| `marker` | `#F3E27A` | what is marked, as with a highlighter: a line marked in a diff (a review, Forge's diff), over its words only (not its indent or number, which turns ink), each wrapped line its own stroke with softened ends, the pointer on a line showing the stroke paler; the words the search found, in its lines; the head of a file just landed on, for a moment |
 | `off` | `#A63C2C` | a repo turned off: its switch; a removal held, its button red (`ground` words on it 4.5:1) |
 
-No other colours; the last three each mean their one thing only.
+No other colours; the last three each mean their one thing only. The one
+shade is `ink` at 14% over the window while the search is out.
 
 Type: the system sans; monospace only for paths, code and the terminal.
 Sizes 28 (identity), 24 (page title), 20 (card title, figures), 15 (body),
@@ -308,7 +335,7 @@ fix is always a piece from §3, not a new rule.
 | A sentence as a switch's label | A word or two; the sentence goes in the ask |
 | Two ways to confirm (a button that changes its word, a box under the row) | Ask in the card |
 | A name cut short at an edge (a neighbour's title) | Show the mark only, or nothing |
-| + after what it adds to | + first, as the band has it |
+| + at the far end from what it adds to | + right after the last of them, as a browser's new tab |
 | A small grey heading on one page, a 15/600 one on another | 15/600 `ink`, everywhere |
 | An empty state as a plain line of text in the center | The dashed box with a quiet line, where the thing would be; the right pane, which only refers, has one quiet line or nothing |
 | A dashed box as wide as the page around one line | As wide as its words |
@@ -1001,14 +1028,30 @@ Runtime says it: its body the repo itself, its gear Forge or Free.
 ### Forge
 
 Where you work. The repos out to work on run as pills in a band on the top
-line; the search box sits on the same line in the middle of the center, and
-at the center's right end the round switch that puts the right pane away
-and brings it back (put away, the center takes the whole width; what the
-pane showed, what was chosen there and where it was read come back with
-it). ⊕ stands first, at the band's left end, and the pills
-follow it and scroll. One press brings every repo not on the band out at once; this is not adding tabs one at a
-time, and ⊕ stays where it was pressed however many come out.
+line; the search box sits on the same line over the right pane, and at the
+line's right end the round switch that puts the right pane away and brings
+it back. Put away, the pane closes as a wipe, the center takes the whole
+width and the search goes with the pane; the switch stays where it was, the
+way back, and what the pane showed, what was chosen there and where it was
+read come back with it. The files button stands first, at the band's left
+end (File's menu for the file read now: New file, New folder, Rename,
+Delete), the pills follow it and scroll, and ⊕ comes right after the last
+pill. One press brings every repo not on the band out at once; this is not
+adding tabs one at a time.
 Each pill comes off the band with its × (the repo itself is untouched).
+A pill is dragged along the band to where it is let go; the middle button
+takes it off, as it closes a tab. Up to three repos stand side by side in
+the center, tiled: Ctrl+click on a pill opens it beside the one worked on
+(as a link opens in a new tab), a pill dragged into the center stands where
+it is let go (over a box's side third, beside it; over its middle, in its
+place: a dashed outline shows where before it is let go), and Ctrl+\
+opens the next on the band. Each is its own page with its own scroll; the
+one worked on (the prompt, the search and File follow it) is the last one
+pressed into, its files' boxes in `ink`, the others' in `rule`, its pill
+`ink`, theirs outlined in `ink`. Side by side each box has a small head
+(its name, and × to close it; dragged, it moves along the row); Alt+[ and
+Alt+] go along the row. The row is remembered on this device; a narrow
+window shows the one worked on.
 With nothing left to bring out, ⊕ steps back. Opening a repo from File,
 Home or a new repo puts it on the band. With every pill off, the
 center says how to bring one out. The band is remembered on this device. Below the band the center is the open repo's files one after another,

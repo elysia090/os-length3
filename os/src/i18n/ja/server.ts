@@ -23,7 +23,6 @@ export default {
   'Name on this Remote': 'この Remote での名前',
   'A server needs your name. Claim one in Inbox.': 'サーバーにはあなたの名前が要ります。Inbox で取ってください。',
   'A server is people you know: you add them from your Inbox contacts. Its boards are each a conversation and a TODO you keep together.': 'サーバーは知り合いの集まりです。Inbox の連絡先から人を入れます。板ごとに、話とみんなで持つ TODO があります。',
-  'No board is open to everyone. Sign in to make a server with people you know.': '誰でも読める板はまだありません。サインインすると、知り合いとサーバーを作れます。',
   // The talk.
   'Posts': '投稿',
   'Today': '今日',

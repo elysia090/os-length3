@@ -7,6 +7,7 @@ import {connection} from '../remote.ts';
 import {onChange, store} from '../repos.ts';
 import {bench} from './bench.ts';
 import {pageHead} from './common.ts';
+import {icon} from '../icons.ts';
 import type {Context} from './context.ts';
 import {closedList, mainCard, mergedList} from './git-done.ts';
 import {backToMain, issueBox, issueHead, mergeRow, reviewBox, type RepoState} from './git-issue.ts';
@@ -55,9 +56,10 @@ export function git(ctx: Context): Node[] {
   // Written: its repo is the one looked at and worked on, and the new issue is the one shown, with the keyboard on it.
   const form = issueForm({done: (made, back) => {
     write.hidden = false;
+    empty.hidden = false;
     // Asked for from Forge's reference and put back: back there, as it was.
     if (!made && back) { ctx.openRepo(back); return; }
-    if (!made) { write.focus({preventScroll: true}); return; }
+    if (!made) { (write.isConnected ? write : empty.querySelector<HTMLElement>('button') ?? write).focus({preventScroll: true}); return; }
     if (filter && filter !== made.repo) { filter = made.repo; paintChips(); }
     chosen = `${made.repo}/${made.file}`;
     chosenIn.set(made.repo, chosen);
@@ -213,9 +215,14 @@ export function git(ctx: Context): Node[] {
     if (!shown.length) {
       track.replaceChildren();
       stage.hidden = true;
-      empty.replaceChildren(!repos.length && remoteOnly().length ? onlyThere()
-        : h('div', {class: 'empty'}, !repos.length ? t('No repos yet') : issues.length ? t('No open issues') : t('No issues yet')),
-        h('div', {class: 'issue-under'}, h('span'), write));
+      // None to show: where the first would be, the dashed card that writes it (pressed, it becomes the issue
+      // being written), with what is so said quietly under its word. No repo: said once, as wide as its words.
+      if (!repos.length) { empty.replaceChildren(remoteOnly().length ? onlyThere() : h('div', {class: 'empty'}, t('No repos yet'))); return; }
+      const first = h('button', {type: 'button', class: 'card new issue-new'}, icon('new-repo'), h('span', {}, t('Write an issue')),
+        h('small', {class: 'muted'}, issues.length ? t('No open issues') : t('No issues yet'))) as HTMLButtonElement;
+      first.disabled = write.disabled;
+      first.addEventListener('click', () => write.click());
+      empty.replaceChildren(first);
       return;
     }
     empty.replaceChildren();
@@ -246,6 +253,8 @@ export function git(ctx: Context): Node[] {
 
   write.addEventListener('click', () => {
     write.hidden = true;
+    // The dashed card that stood for it becomes the issue being written.
+    empty.hidden = true;
     form.open(repos, filter || at || repos[0]);
   });
 

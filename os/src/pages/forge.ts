@@ -1,4 +1,4 @@
-import {addToBand, offBand, parseBand, removeFromBand} from '../band.ts';
+import {addToBand, closeBeside, moveTo, offBand, openBeside, parseBand, removeFromBand, showIn} from '../band.ts';
 import {currentLang, t} from '../i18n.ts';
 import {getState, setState} from '../state.ts';
 import {h} from '../dom.ts';
@@ -9,13 +9,19 @@ import type {Context} from './context.ts';
 import {bench} from './bench.ts';
 import {Reader} from './reader.ts';
 import {startIssue} from './issue-form.ts';
+import {arrive, glide, LAND, where} from '../glide.ts';
 
 /**
  * Forge, the place you work. The repos out to work on run as pills in a band
  * on the top line; ⊕ brings the rest out and each
  * pill comes off with its ×. The large center is the open repo's files one
  * after another, an endless page you scroll through and edit in place,
- * opened at the file chosen in File; there are no tabs. A prompt box sits at
+ * opened at the file chosen in File; there are no tabs. Up to three repos
+ * stand side by side in it, each its own page, tiled: one is opened beside
+ * the others by dragging its pill into the center (where it is let go is
+ * where it stands), by Ctrl+click on its pill, or Ctrl+\ (the next on the
+ * band); the one worked on (the prompt, the search and File follow it) is
+ * the one last pressed in, drawn in ink. A prompt box sits at
  * the bottom of the center. The narrow right pane holds the search box and a
  * reference switched freely on top and the Prompt below; using the prompt
  * box sends the Prompt up over the center, just above the box, and the
@@ -44,8 +50,19 @@ export function showInForge(repo: string, path: string, write = false): boolean 
 /** Forge is next drawn for the repo just asked for, at `path` ('' for its top). */
 export function revealNext(path: string, write = false) { pending = {path, write}; }
 
-/** One repo's page in the center: what reads it, where it was scrolled to, and whether it must be read again. */
-interface View { reader: Reader; root: HTMLElement; top: number; stale: boolean }
+/**
+ * One repo's page in the center: its box in the row (its head, and the page that scrolls), what reads it, where it
+ * was scrolled to, and whether it must be read again.
+ */
+interface View { col: HTMLElement; flow: HTMLElement; reader: Reader; root: HTMLElement; top: number; stale: boolean }
+
+/** The repos side by side, as last left on this device (a convenience: the band is what is kept). */
+const BESIDE_KEY = 'length3.forge.beside';
+const readBeside = (): string[] => { try { const v: unknown = JSON.parse(localStorage.getItem(BESIDE_KEY) ?? '[]'); return Array.isArray(v) ? v.filter((n): n is string => typeof n === 'string') : []; } catch { return []; } };
+const saveBeside = (shown: string[]) => { try { localStorage.setItem(BESIDE_KEY, JSON.stringify(shown)); } catch { /* a convenience */ } };
+/** What a drag of a repo carries: its name, for the band and the center of this page alone. */
+const DRAGGED = 'application/x-length3-repo';
+const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 let made: {element: HTMLElement; enter(): void; drop(): void} | null = null;
 
@@ -68,26 +85,35 @@ export function forge(ctx: Context): Node[] {
 function make(ctx: Context) {
   const views = new Map<string, View>();
   let repo: string | null = null;
+  /** The repos side by side in the center, left to right; the one worked on is among them. */
+  let shown: string[] = readBeside();
   const view = () => (repo ? views.get(repo) ?? null : null);
   const strip = h('nav', {class: 'repo-strip', 'aria-label': 'repo'});
-  const flow = h('section', {class: 'flow', tabindex: '0', 'aria-label': t('The repo\'s contents')});
+  // The center's row: each repo's box stays in it once made, those not shown hidden, and each stands where CSS
+  // `order` puts it, never moved in the document (a text box taken out of the document loses its Undo).
+  const cols = h('div', {class: 'columns'});
   /** What the center says with no repo out. */
   // ⊕ in the words is the band's own mark (its circle and plus, on the words' line), not a glyph of the font set high.
   const nothing = h('div', {class: 'empty forge-none', hidden: ''},
     ...t('Bring a repo out to the band with ⊕, or open one from File').split('⊕').flatMap((part, i) => (i ? [h('span', {class: 'inline-add', 'aria-label': '⊕'}, mark('plus')), part] : [part])));
-  flow.append(nothing);
-  /**
-   * Each repo's page stays in the center once made, the others hidden: a text box taken
-   * out of the document loses its Undo, so going to another repo and back keeps it.
-   */
-  const put = (root: HTMLElement | null) => {
-    nothing.hidden = root !== null;
-    acts.disabled = root === null;
-    for (const v of views.values()) v.root.hidden = v.root !== root;
-    if (root && root.parentElement !== flow) flow.append(root);
+  cols.append(nothing);
+  /** Drawn as `shown` and `repo` say: which boxes stand, in what order, and which is worked on. */
+  const layout = () => {
+    nothing.hidden = shown.length > 0;
+    acts.disabled = repo === null;
+    cols.classList.toggle('split', shown.length > 1);
+    for (const [name, v] of views) {
+      const at = shown.indexOf(name);
+      v.col.hidden = at < 0;
+      v.col.style.order = String(at);
+      v.col.classList.toggle('active', name === repo);
+      v.col.classList.toggle('first', at === 0);
+      v.col.classList.toggle('last', at === shown.length - 1);
+    }
+    saveBeside(shown);
   };
 
-  const work = bench({strip, main: flow, reveal: (path, line, write) => void view()?.reader.reveal(path, line, write).then(() => track())});
+  const work = bench({strip, main: cols, reveal: (path, line, write) => void view()?.reader.reveal(path, line, write).then(() => track())});
   // The Issue view with none open begins one for this repo on Git; Not now there comes back here.
   work.reference.writeIssue = (r) => { startIssue(r); ctx.go('git'); };
 
@@ -126,18 +152,67 @@ function make(ctx: Context) {
   });
 
   const paintBand = () => {
+    const was = new Map([...pills.querySelectorAll<HTMLElement>('.pill')].map((p) => [p.dataset.repo!, p.getBoundingClientRect()]));
+    const inkWas = where(pills.querySelector('.pill[aria-current]'));
     pills.replaceChildren(...band.map((name) => {
-      const open = h('button', {type: 'button', class: 'pill-name'}, name);
-      open.addEventListener('click', () => show(name));
+      // Pressed, it is worked on in the box worked on; with Ctrl (⌘), it opens beside (as a link opens in a new tab).
+      const open = h('button', {type: 'button', class: 'pill-name', title: t('Ctrl+click: open beside')}, name);
+      open.addEventListener('click', (event) => { if (event.ctrlKey || event.metaKey) beside(name); else show(name); });
       const close = h('button', {type: 'button', class: 'pill-close', 'aria-label': t('Take {name} off the band', {name})}, mark('close'));
       close.addEventListener('click', () => takeOff(name));
-      const pill = h('span', {class: 'pill', 'data-repo': name}, open, close);
-      // The pill shows it (ink); its button says it, which is what is heard.
+      const pill = h('span', {class: 'pill', 'data-repo': name, draggable: 'true'}, open, close);
+      // The middle button takes it off, as it closes a tab.
+      pill.addEventListener('auxclick', (event) => { if (event.button === 1) { event.preventDefault(); takeOff(name); } });
+      pill.addEventListener('dragstart', (event) => {
+        event.dataTransfer?.setData(DRAGGED, name);
+        if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+        dragging = name;
+        requestAnimationFrame(() => pill.classList.add('lifted'));
+      });
+      pill.addEventListener('dragend', () => { dragging = null; pill.classList.remove('lifted'); unhint(); });
+      // The pill shows it (ink); its button says it, which is what is heard. Beside it, its outline in ink.
       if (name === repo) { pill.setAttribute('aria-current', 'page'); open.setAttribute('aria-current', 'page'); }
+      else if (shown.includes(name)) pill.classList.add('beside');
       return pill;
     }));
+    if (!still()) {
+      // What moved along the band glides to where it is now; the ink goes from the pill it was on to the one it is on.
+      for (const p of pills.querySelectorAll<HTMLElement>('.pill')) {
+        const from = was.get(p.dataset.repo!), to = p.getBoundingClientRect();
+        if (from && Math.abs(from.left - to.left) > 1) p.animate([{transform: `translateX(${from.left - to.left}px)`}, {transform: 'none'}], {duration: 240, easing: LAND});
+      }
+    }
+    glide(inkWas, pills.querySelector<HTMLElement>('.pill[aria-current]'), pills, 'var(--r-round)');
     paintAdd();
   };
+
+  // Along the band, a pill dragged lands where it is let go, the others making room.
+  let dragging: string | null = null;
+  const bandSlot = (x: number) => {
+    const ps = [...pills.querySelectorAll<HTMLElement>('.pill')];
+    const i = ps.findIndex((p) => { const r = p.getBoundingClientRect(); return x < r.left + r.width / 2; });
+    return i < 0 ? ps.length : i;
+  };
+  const caret = h('span', {class: 'band-caret', 'aria-hidden': 'true'});
+  pills.addEventListener('dragover', (event) => {
+    if (!dragging || !band.includes(dragging)) return;
+    event.preventDefault();
+    const i = bandSlot(event.clientX), ps = [...pills.querySelectorAll<HTMLElement>('.pill')];
+    const box = pills.getBoundingClientRect();
+    const edge = ps[i] ? ps[i].getBoundingClientRect().left - 5 : ps.at(-1)!.getBoundingClientRect().right + 3;
+    caret.style.left = `${edge - box.left + pills.scrollLeft}px`;
+    if (!caret.isConnected) pills.append(caret);
+  });
+  pills.addEventListener('dragleave', (event) => { if (!pills.contains(event.relatedTarget as Node)) caret.remove(); });
+  pills.addEventListener('drop', (event) => {
+    const name = event.dataTransfer?.getData(DRAGGED) || dragging;
+    caret.remove();
+    if (!name || !band.includes(name)) return;
+    event.preventDefault();
+    band = moveTo(band, name, bandSlot(event.clientX));
+    saveBand();
+    paintBand();
+  });
   /** ⊕, by how many repos are not on the band yet. */
   const paintAdd = () => {
     const rest = offBand(band, every()).length;
@@ -149,20 +224,22 @@ function make(ctx: Context) {
     const r = removeFromBand(band, name, repo);
     band = r.band;
     saveBand();
-    // Off the band, its place is not kept: brought out again, it opens at its top.
-    views.get(name)?.root.remove();
+    // Off the band, its box goes from the row too; its place is not kept: brought out again, it opens at its top.
+    const c = closeBeside(shown, name, repo);
+    shown = c.shown;
+    views.get(name)?.col.remove();
     views.delete(name);
-    if (!r.active) none();
-    else if (r.active !== repo) show(r.active);
-    else paintBand();
+    if (!r.active) { none(); return; }
+    const next = c.active && band.includes(c.active) ? c.active : r.active;
+    if (next !== repo || !shown.includes(next)) show(next); else { layout(); paintBand(); }
   };
 
   /** Nothing on the band: the center says how to bring a repo out (Server is laid over any page, not kept here). */
   const none = () => {
     repo = null;
+    shown = [];
     work.setRepo(null);
-    put(null);
-    flow.scrollTop = 0;
+    layout();
     told(null);
     paintBand();
   };
@@ -171,26 +248,176 @@ function make(ctx: Context) {
   const viewOf = (name: string): View => {
     const had = views.get(name);
     if (had && !had.stale) return had;
+    if (had) {
+      // Read again: the page it was takes its place, in the same box.
+      const reader = new Reader(name, had.flow);
+      const v = {...had, reader, root: reader.directory(''), stale: false};
+      had.root.replaceWith(v.root);
+      views.set(name, v);
+      return v;
+    }
+    // Its head says whose it is and closes it, side by side only; pressed, or dragged along the row, it moves.
+    const label = h('button', {type: 'button', class: 'col-name'}, name);
+    label.addEventListener('click', () => activate(name));
+    const close = h('button', {type: 'button', class: 'col-close', 'aria-label': t('Close {name} beside', {name})}, mark('close'));
+    close.addEventListener('click', () => closeCol(name));
+    const head = h('div', {class: 'col-head', draggable: 'true'}, label, close);
+    head.addEventListener('dragstart', (event) => {
+      event.dataTransfer?.setData(DRAGGED, name);
+      if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+      dragging = name;
+    });
+    head.addEventListener('dragend', () => { dragging = null; unhint(); });
+    const flow = h('section', {class: 'flow', tabindex: '0', 'aria-label': t('The files of {name}', {name})});
+    const col = h('div', {class: 'col', 'data-repo': name, hidden: ''}, head, flow);
+    cols.append(col);
     const reader = new Reader(name, flow);
-    const v = {reader, root: reader.directory(''), top: had?.top ?? 0, stale: false};
-    // Read again: the page it was takes its place.
-    if (had) had.root.replaceWith(v.root);
+    const root = reader.directory('');
+    flow.append(root);
+    const v = {col, flow, reader, root, top: 0, stale: false};
     views.set(name, v);
     return v;
   };
+
+  /** `name`, shown, is the one worked on: the prompt, the search and File follow it, the row as it is. */
+  const activate = (name: string) => {
+    if (name === repo || !shown.includes(name)) return;
+    repo = name;
+    known = name;
+    ctx.remember(name);
+    work.setRepo(name);
+    layout();
+    paintBand();
+    track();
+  };
+
+  /** A box coming into the row grows from nothing as the others make room; going, it gives its room back. */
+  const grow = (col: HTMLElement, on: boolean) => {
+    if (still() || !cols.classList.contains('split') && on) return Promise.resolve();
+    const frames = [{flexGrow: 0, opacity: 0}, {flexGrow: 1, opacity: 1}];
+    return col.animate(on ? frames : frames.reverse(), {duration: 300, easing: LAND}).finished.catch(() => undefined);
+  };
+
+  /** `name` opened beside what is shown (at `at`, an index among the boxes), and worked on. */
+  const beside = (name: string, at?: number) => {
+    if (matchMedia('(max-width: 760px)').matches) { show(name); return; }
+    band = addToBand(band, name);
+    saveBand();
+    const before = shown;
+    shown = openBeside(shown, name, repo, at);
+    const v = viewOf(name);
+    const fresh = !before.includes(name);
+    for (const gone of before.filter((n) => !shown.includes(n))) { const g = views.get(gone); if (g) g.top = g.flow.scrollTop; }
+    repo = null;
+    activate(name);
+    v.flow.scrollTop = v.top;
+    if (fresh) void grow(v.col, true);
+  };
+
+  /** `name`'s box closed (the repo stays on the band); the last one stays. */
+  const closeCol = (name: string) => {
+    if (shown.length < 2 || !shown.includes(name)) return;
+    const v = views.get(name);
+    const c = closeBeside(shown, name, repo);
+    const done = () => {
+      shown = c.shown;
+      if (c.active && c.active !== repo) { repo = null; activate(c.active); } else { layout(); paintBand(); }
+    };
+    if (v) { v.top = v.flow.scrollTop; v.col.classList.add('going'); void grow(v.col, false).then(() => { v.col.classList.remove('going'); done(); }); } else done();
+  };
+
+  // Into the center, a pill (or a box's head) dragged shows where it would stand: over a box's left or right
+  // third, beside it on that side; over its middle, in its place. Let go, it stands there.
+  const hint = h('div', {class: 'drop-hint', 'aria-hidden': 'true'});
+  const unhint = () => { hint.remove(); cols.classList.remove('dropping'); };
+  /** Where a repo let go at x would stand: an index among the shown, and whether it takes that box's place. */
+  const dropAt = (x: number): {at: number; instead: boolean; over: HTMLElement | null} => {
+    const boxes = shown.map((n) => views.get(n)?.col).filter((c): c is HTMLElement => !!c);
+    for (const [i, c] of boxes.entries()) {
+      const r = c.getBoundingClientRect();
+      if (x > r.right) continue;
+      const third = (x - r.left) / r.width;
+      if (third < 1 / 3) return {at: i, instead: false, over: c};
+      if (third > 2 / 3) return {at: i + 1, instead: false, over: c};
+      return {at: i, instead: true, over: c};
+    }
+    return {at: boxes.length, instead: false, over: boxes.at(-1) ?? null};
+  };
+  cols.addEventListener('dragover', (event) => {
+    if (!dragging || matchMedia('(max-width: 760px)').matches) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    const d = dropAt(event.clientX);
+    const box = cols.getBoundingClientRect();
+    const r = d.over?.getBoundingClientRect() ?? box;
+    const left = d.instead ? r.left : d.at <= shown.indexOf(d.over?.dataset.repo ?? '') ? r.left : r.left + r.width / 2;
+    const width = d.instead ? r.width : r.width / 2;
+    Object.assign(hint.style, {left: `${left - box.left}px`, width: `${width}px`});
+    hint.dataset.how = d.instead ? 'instead' : 'beside';
+    hint.textContent = d.instead ? t('Open here') : t('Open beside');
+    if (!hint.isConnected) { cols.append(hint); cols.classList.add('dropping'); }
+  });
+  cols.addEventListener('dragleave', (event) => { if (!cols.contains(event.relatedTarget as Node)) unhint(); });
+  cols.addEventListener('drop', (event) => {
+    const name = event.dataTransfer?.getData(DRAGGED) || dragging;
+    unhint();
+    if (!name) return;
+    event.preventDefault();
+    const d = dropAt(event.clientX);
+    const there = shown[d.at] ?? null;
+    if (shown.includes(name)) {
+      // A box dragged along the row: it stands where it is let go (in a box's middle, the two change places).
+      shown = d.instead && there ? shown.map((n) => (n === name ? there : n === there ? name : n)) : moveTo(shown, name, d.at);
+      repo = null;
+      activate(name);
+      layout();
+      return;
+    }
+    if (d.instead && there) { repo = there; show(name); } else beside(name, d.at);
+  });
+  // Pressed into, a box is the one worked on (what was pressed goes on as pressed); its × closes it, the one
+  // worked on staying as it was.
+  cols.addEventListener('pointerdown', (event) => {
+    const el = event.target as HTMLElement;
+    const c = el.closest<HTMLElement>('.col');
+    if (c?.dataset.repo && !el.closest('.col-close')) activate(c.dataset.repo);
+  }, true);
+  cols.addEventListener('focusin', (event) => {
+    const el = event.target as HTMLElement;
+    const c = el.closest<HTMLElement>('.col');
+    if (c?.dataset.repo && !el.closest('.col-close')) activate(c.dataset.repo);
+  });
+  // Ctrl+\: the next repo on the band opens beside. Alt+[ and Alt+]: the box to the left or right is worked on.
+  work.element.addEventListener('keydown', (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key === '\\') {
+      const next = band.find((n) => !shown.includes(n));
+      if (next) { event.preventDefault(); beside(next); }
+      return;
+    }
+    if (event.altKey && (event.key === '[' || event.key === ']') && shown.length > 1 && repo) {
+      event.preventDefault();
+      const to = shown[(shown.indexOf(repo) + (event.key === ']' ? 1 : shown.length - 1)) % shown.length];
+      activate(to);
+      views.get(to)?.flow.focus({preventScroll: true});
+    }
+  });
 
   /** Show `name` in the band, the center and the terminal, in place; at `path` if given, ready to write with `write`. */
   const show = (name: string, path = '', write = false) => {
     band = addToBand(band, name);
     saveBand();
-    if (repo !== name) {
-      repo = name;
-      known = name;
-      ctx.remember(name);
+    if (repo !== name || !shown.includes(name)) {
+      const from = repo;
+      const was = views.get(from ?? '');
+      if (was) was.top = was.flow.scrollTop;
+      const fresh = !shown.includes(name);
+      shown = showIn(shown.filter((n) => views.has(n) || n === name), name, from);
       const v = viewOf(name);
-      work.setRepo(name);
-      put(v.root);
-      flow.scrollTop = v.top;
+      repo = null;
+      activate(name);
+      v.flow.scrollTop = v.top;
+      // Coming into a box another stood in, it slides in from the side its pill is on along the band.
+      if (fresh && from) arrive(v.flow, Math.sign(band.indexOf(name) - band.indexOf(from)), 'x', 32, 260);
     }
     paintBand();
     // A file just made (from File) is read in now, so the caret lands in it, not in the page about to be read again.
@@ -210,7 +437,7 @@ function make(ctx: Context) {
   let quiet = 0;
   const track = () => {
     clearTimeout(quiet);
-    quiet = window.setTimeout(() => { const v = view(); if (v && flow.isConnected) told(v.reader.reading()); }, 120);
+    quiet = window.setTimeout(() => { const v = view(); if (v && v.flow.isConnected) told(v.reader.reading()); }, 120);
   };
   // Taken off the screen and put back, a place that scrolls starts at its top again: each comes back where it was.
   let restoring = false;
@@ -220,7 +447,8 @@ function make(ctx: Context) {
   work.element.addEventListener('scroll', (event) => {
     if (restoring || !work.element.isConnected) return;
     const el = event.target as Element;
-    if (el === flow) { const v = view(); if (v) v.top = flow.scrollTop; track(); } else tops.set(el, el.scrollTop);
+    const v = el.classList.contains('flow') ? [...views.values()].find((w) => w.flow === el) : undefined;
+    if (v) { v.top = el.scrollTop; if (v === view()) track(); } else tops.set(el, el.scrollTop);
   }, true);
 
   // The repo changed through the store (the shell, l3's twin in the Prompt,
@@ -231,23 +459,25 @@ function make(ctx: Context) {
   const readAgain = (keep = true) => {
     again = 0;
     if (!repo) return;
-    const top = views.get(repo)?.top ?? 0;
-    const reader = new Reader(repo, flow);
-    const fresh = {reader, root: reader.directory(''), top, stale: false};
     const was = views.get(repo);
+    if (!was) return;
+    const top = was.top;
+    const reader = new Reader(repo, was.flow);
+    const fresh = {...was, reader, root: reader.directory(''), top, stale: false};
     // The file being written keeps the keyboard and its caret through the page read again.
-    const writing = was && document.activeElement instanceof HTMLTextAreaElement && was.root.contains(document.activeElement) ? document.activeElement : null;
+    const writing = document.activeElement instanceof HTMLTextAreaElement && was.root.contains(document.activeElement) ? document.activeElement : null;
     const at = writing?.closest<HTMLElement>('section.file')?.dataset.path;
     views.set(repo, fresh);
-    if (was) was.root.replaceWith(fresh.root);
-    put(fresh.root);
-    if (keep) putBack = requestAnimationFrame(() => { flow.scrollTop = top; });
+    was.root.replaceWith(fresh.root);
+    layout();
+    if (keep) putBack = requestAnimationFrame(() => { fresh.flow.scrollTop = top; });
     if (writing && at) void reader.refocus(at, writing.selectionStart, writing.selectionEnd);
   };
   const offChange = onChange((c) => {
     const v = views.get(c.repo);
     if (!v || !v.reader.take(c)) return;
-    if (c.repo !== repo) { v.stale = true; return; }
+    // Beside the one worked on, a box shown is read again as it stands; one out of sight, when it is shown.
+    if (c.repo !== repo) { if (shown.includes(c.repo)) { v.stale = true; viewOf(c.repo); layout(); } else v.stale = true; return; }
     clearTimeout(again);
     again = window.setTimeout(() => readAgain(), 150);
   });
@@ -264,8 +494,7 @@ function make(ctx: Context) {
     revealing = false;
     work.settle();
     requestAnimationFrame(() => {
-      const v = view();
-      if (v && !revealing) flow.scrollTop = v.top;
+      if (!revealing) for (const n of shown) { const v = views.get(n); if (v) v.flow.scrollTop = v.top; }
       for (const [el, top] of tops) { if (el.isConnected) el.scrollTop = top; else tops.delete(el); }
       restoring = false;
     });
@@ -273,16 +502,19 @@ function make(ctx: Context) {
       all = repos.map((r) => r.name);
       band = parseBand(first ? getState('band') : JSON.stringify(band), all, ctx.repo);
       first = false;
-      for (const name of [...views.keys()]) if (!all.includes(name)) { views.get(name)?.root.remove(); views.delete(name); }
+      for (const name of [...views.keys()]) if (!all.includes(name)) { views.get(name)?.col.remove(); views.delete(name); }
+      // What stood side by side, as far as it is still on the band.
+      shown = shown.filter((n) => band.includes(n));
+      for (const n of shown) viewOf(n);
       const asked = pending;
       pending = null;
       const chosen = ctx.repo !== known;
       known = ctx.repo;
       // Opened for a repo (from File, Home or a new repo), or one chosen to work on elsewhere: it goes on the band.
       if (ctx.repo && all.includes(ctx.repo) && (asked || chosen)) { show(ctx.repo, asked?.path ?? '', asked?.write ?? false); return; }
-      if (repo && all.includes(repo)) { paintBand(); track(); return; }
+      if (repo && all.includes(repo) && shown.includes(repo)) { layout(); paintBand(); track(); return; }
       repo = null;
-      const open = ctx.repo && band.includes(ctx.repo) ? ctx.repo : band[0];
+      const open = ctx.repo && band.includes(ctx.repo) ? ctx.repo : shown[0] ?? band[0];
       if (open) show(open); else none();
     });
   };

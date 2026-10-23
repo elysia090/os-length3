@@ -12,7 +12,7 @@ import {gear as gearSheet} from './server-gear.ts';
 import {seeRepo as repoSheet} from './server-repo.ts';
 import {button, initials, type Shown} from './server-parts.ts';
 import {answers, deed} from './common.ts';
-import {goToPlan, planRefused, planSaid} from './remote.ts';
+import {goToPlan, planRefused, planSaid, signInBox, signInPlace} from './remote.ts';
 import {plan as readPlan} from '../plan.ts';
 import {boardNew, onNews, sawBoard, serverNew} from '../news.ts';
 import {errorText} from '../errors.ts';
@@ -535,11 +535,11 @@ export class ServerLayer {
           if (!b) return;
           shown = [b, ...shown.filter((x) => x.id !== b.id)];
         }
+        // Nothing open to everyone: the sign-in card in the middle, as on every page that needs it; signed in,
+        // Server is drawn again as the person's own.
         if (!shown.length) {
-          track.replaceChildren(h('div', {class: 'slide', 'aria-current': 'true'}, h('div', {class: 'board-card board-new'},
-            h('div', {class: 'board-body'}, h('p', {}, t('No board is open to everyone. Sign in to make a server with people you know.'))))));
-          slides.classList.add('single');
-          prev.hidden = next.hidden = true;
+          slides.replaceChildren(signInPlace(t('Sign in'), signInBox(() => { if (this.isOpen) this.element.replaceChildren(this.build()); })));
+          top.hidden = true;
           paintDock(null);
           return;
         }

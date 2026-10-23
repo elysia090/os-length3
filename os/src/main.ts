@@ -25,7 +25,8 @@ import {every} from './runs.ts';
 import {heldInvite, holdInvite, inviteIn} from './servers.ts';
 import {getState, loadState} from './state.ts';
 import {onLang, t, useLang} from './i18n.ts';
-import {NEW_REPO, PURPOSES, purpose, restorePurpose, stepPurpose, type PurposeId} from './purposes.ts';
+import {NEW_REPO, PURPOSES, RAIL, purpose, restorePurpose, stepPurpose, type PurposeId} from './purposes.ts';
+import {arrive, glide, where} from './glide.ts';
 
 const PURPOSE_KEY = 'length3.os.purpose';
 const REPO_KEY = 'length3.os.repo';
@@ -122,6 +123,8 @@ function railButton(id: PurposeId): HTMLButtonElement {
 }
 
 function select(id: PurposeId) {
+  const from = current;
+  const inkWas = where(tabs.get(from)?.getAttribute('aria-current') ? tabs.get(from) : null);
   current = id;
   serverLayer.close();
   for (const [tabId, tab] of tabs) {
@@ -134,6 +137,12 @@ function select(id: PurposeId) {
   render();
   plugState();
   if (id !== 'new-repo') save(PURPOSE_KEY, id);
+  if (from !== id) {
+    // The rail's ink goes from the place left to the place come to, and the page comes from that side of the rail.
+    glide(inkWas, tabs.get(id)?.getAttribute('aria-current') ? tabs.get(id)! : null, $('rail-tabs'), 'var(--r-place)');
+    const order = RAIL.map((p) => p.id);
+    arrive($('page'), Math.sign(order.indexOf(id) - order.indexOf(from)), 'y', 12, 240);
+  }
 }
 
 /** The page's name where the host lists it (a tab, history, the window list): the place, then the OS. */

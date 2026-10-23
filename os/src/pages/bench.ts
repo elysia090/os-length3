@@ -179,7 +179,9 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     const at = inbox.getBoundingClientRect().bottom - side.getBoundingClientRect().top;
     if (at > 0) side.style.setProperty('--prompt-at', `${at}px`);
   };
-  const roomy = new ResizeObserver(() => { searchRoom(); promptAt(); });
+  // The bench's width, for what is laid out from it (the pane's W, which the search box and what opens under it
+  // take): measured, since a box queried for its width would make a layer the search could not rise out of.
+  const roomy = new ResizeObserver(() => { work.style.setProperty('--bench-w', `${work.clientWidth}px`); searchRoom(); promptAt(); });
   roomy.observe(dock);
   roomy.observe(work);
   // The plugin area is the pane's top: brought out by the plug, it brings the pane out with it.

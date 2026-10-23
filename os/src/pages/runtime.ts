@@ -138,7 +138,8 @@ const thing = (name: Node | string, size: number | null, note: string, act?: Nod
   h('div', {class: 'space-row'},
     h('div', {class: 'space-what'}, h('span', {class: 'space-name'}, name), note ? h('span', {class: 'muted small'}, note) : null,
       why ? h('span', {class: 'muted small space-why'}, why) : null),
-    size === null ? null : h('span', {class: 'space-size'}, bytes(size)), gear?.gear ?? null, act ?? null, gear?.list ?? null);
+    // A row with no gear keeps the gear's room, so every size in a column stands on one line.
+    size === null ? null : h('span', {class: 'space-size'}, bytes(size)), gear?.gear ?? (act ? null : h('span', {class: 'gear-room', 'aria-hidden': 'true'})), act ?? null, gear?.list ?? null);
 
 /**
  * This device: the bar and its figures, then the box of three columns. What

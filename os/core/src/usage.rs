@@ -321,16 +321,18 @@ fn repo_item(repos: &crate::repos::Repos, name: &str, connected: bool, open: &[S
     } else if s.changed == 0 && !s.fresh {
         (Room::Free, crate::tr!("The Remote has the same; opening it brings it back", "Remote と同じです。開けばまた来ます"))
     } else {
-        (Room::SyncFree, if s.fresh { crate::tr!("Not on the Remote yet; sent, then freed", "まだ Remote にありません。送ってから空けます") } else { crate::tr!("{} changes are sent, then it is freed", "{}件の変更を送ってから空けます", s.changed) })
+        (Room::SyncFree, if s.fresh { crate::tr!("Not on the Remote yet; sent, then freed", "まだ Remote にありません。送ってから空けます") } else { if s.changed == 1 { crate::tr!("1 change is sent, then it is freed", "1件の変更を送ってから空けます") } else { crate::tr!("{} changes are sent, then it is freed", "{}件の変更を送ってから空けます", s.changed) } })
     };
     // Every copy of it counts: main's and each issue's being worked on; what is derived in it is its own item.
     let works = crate::work::worktrees(name);
     let derived: u64 = crate::owned::derived_in(&dir).iter().map(|p| allocated(p)).sum();
     let size = allocated(&dir).saturating_sub(derived) + works.iter().map(|(_, p)| allocated(p)).sum::<u64>();
+    // One file is one file (1 file, not 1 files); Japanese counts the same either way.
+    let files = if files == 1 { crate::tr!("1 file", "1ファイル") } else { crate::tr!("{} files", "{}ファイル", files) };
     let detail = match works.len() {
-        0 => crate::tr!("repo · {} files", "repo · {}ファイル", files),
-        1 => crate::tr!("repo · {} files · 1 work", "repo · {}ファイル · 作業 1", files),
-        n => crate::tr!("repo · {} files · {} works", "repo · {}ファイル · 作業 {}", files, n),
+        0 => crate::tr!("repo · {}", "repo · {}", files),
+        1 => crate::tr!("repo · {} · 1 work", "repo · {} · 作業 1", files),
+        n => crate::tr!("repo · {} · {} works", "repo · {} · 作業 {}", files, n),
     };
     Some(Item { id: format!("repo:{name}"), what: name.into(), detail, allocated: size, room, why })
 }

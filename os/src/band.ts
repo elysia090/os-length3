@@ -34,3 +34,46 @@ export function removeFromBand(band: readonly string[], name: string, active: st
 export function offBand(band: readonly string[], repos: readonly string[]): string[] {
   return repos.filter((r) => !band.includes(r));
 }
+
+/** The most repos side by side in Forge's center. */
+export const BESIDE = 3;
+
+/**
+ * The repos shown side by side, with `name` opened beside them at `at` (an index among them; by default just right
+ * of `active`). Already shown, it stays where it is. One past the most, the one farthest from where it opens goes.
+ */
+export function openBeside(shown: readonly string[], name: string, active: string | null, at?: number): string[] {
+  if (shown.includes(name)) return [...shown];
+  const where = Math.max(0, Math.min(shown.length, at ?? (active && shown.includes(active) ? shown.indexOf(active) + 1 : shown.length)));
+  const next = [...shown.slice(0, where), name, ...shown.slice(where)];
+  while (next.length > BESIDE) {
+    const i = next.indexOf(name);
+    next.splice(i >= next.length / 2 ? 0 : next.length - 1, 1);
+  }
+  return next;
+}
+
+/** `name` shown in `active`'s place (the one box there is, when none is shown yet); already shown, as it is. */
+export function showIn(shown: readonly string[], name: string, active: string | null): string[] {
+  if (shown.includes(name)) return [...shown];
+  const i = active ? shown.indexOf(active) : -1;
+  if (i < 0) return shown.length ? [...shown.slice(0, -1), name] : [name];
+  return shown.map((n, j) => (j === i ? name : n));
+}
+
+/** `name`'s box closed: the others close up; the one beside it (right, else left) is the one worked on if it was. */
+export function closeBeside(shown: readonly string[], name: string, active: string | null): {shown: string[]; active: string | null} {
+  const at = shown.indexOf(name);
+  if (at < 0) return {shown: [...shown], active};
+  const next = shown.filter((n) => n !== name);
+  return {shown: next, active: active === name ? next[at] ?? next[at - 1] ?? null : active};
+}
+
+/** `name` moved to `to` (an index in the list as it is now, `name` included) in a band or in what is shown. */
+export function moveTo(list: readonly string[], name: string, to: number): string[] {
+  const from = list.indexOf(name);
+  if (from < 0) return [...list];
+  const rest = list.filter((n) => n !== name);
+  const at = Math.max(0, Math.min(rest.length, to > from ? to - 1 : to));
+  return [...rest.slice(0, at), name, ...rest.slice(at)];
+}

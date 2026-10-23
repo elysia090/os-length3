@@ -25,10 +25,10 @@ export interface Purpose {
 export const PURPOSES: readonly Purpose[] = [
   {id: 'home', label: 'Home', role: 'Profile',
     detail: 'A page that reads the same to you and to anyone else, with your repos and servers.', implemented: true},
-  {id: 'forge', label: 'Forge', role: 'Your workshop',
-    detail: 'Edit the files of the repos in the band as one continuous page, with Reference and Prompt on the right.', implemented: true},
   {id: 'file', label: 'File', role: 'The tree of /',
     detail: 'Opens the whole system\'s / over the current page. Choosing something inside a repo opens it there in Forge.', implemented: true},
+  {id: 'forge', label: 'Forge', role: 'Your workshop',
+    detail: 'Edit the files of the repos in the band as one continuous page, with Reference and Prompt on the right.', implemented: true},
   {id: 'git', label: 'Git', role: 'Issues and commits',
     detail: 'Work Issue by Issue: commit, push, and hand it to main as a Change. Changes that come in are settled with Merge or Reject.', implemented: true},
   {id: 'runtime', label: 'Runtime', role: 'This device and its environments',

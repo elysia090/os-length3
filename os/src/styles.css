@@ -8,6 +8,8 @@
   --sub: #56595a;
   --edge: #6b6e6b;
   --raised: #e4e4e0;
+  /* What is worked on, on a sheet of its own: a file's box, what the search found (Forge). */
+  --paper: #f8f8f5;
   /* Three marks that say one thing each: a step done, a line marked in a diff, a repo off. */
   --done: #2f7d4f;
   --marker: #f3e27a;
@@ -26,6 +28,8 @@
   --h-control: 40px; --h-row: 32px; --h-place: 48px;
   --icon: 24px; --stroke: 1.6px;
   --motion: 120ms; --move: 280ms;
+  /* How a thing moves: fast off the mark, settling the last few pixels slowly, as a camera that lands. */
+  --land: cubic-bezier(.2, .9, .25, 1);
   /* Lines are 1px; the file being worked on is drawn a little heavier. */
   --line-work: 1.5px;
   /* Everything, rail included, sits a little inward from the window's edges,
@@ -96,7 +100,11 @@ a { color: var(--ink); }
 /* The icons keep a little more room on the side of the line than on the
    window's side, so they do not crowd it. */
 .rail { border-right: 1px solid var(--rule); padding-right: calc(var(--rail-line-gap) - var(--s3)); height: var(--inner-h); position: sticky; top: var(--outer-top); z-index: 6; display: flex; flex-direction: column; }
-.rail-tabs { display: flex; flex-direction: column; align-items: center; gap: var(--s1); flex: 1; min-height: 0; padding: var(--rail-top) 0 var(--s3); }
+.rail-tabs { position: relative; isolation: isolate; display: flex; flex-direction: column; align-items: center; gap: var(--s1); flex: 1; min-height: 0; padding: var(--rail-top) 0 var(--s3); }
+/* The ink of the thing chosen, on its way from the one it was on (glide.ts): under the words and icons; the one
+   it is going to waits un-inked, its words in ink, until it lands. */
+.glide-ink { position: absolute; z-index: -1; background: var(--ink); pointer-events: none; }
+.arriving, .arriving:hover { background: transparent !important; color: var(--ink) !important; transition: none !important; }
 /* A window too short for all of it (a browser's tab under its own bars, a laptop at 200% zoom): the rail stays
    where it is, in the window, as tall as the window, never going with the page (issue #44). Its places close up;
    the person's icon stays at its foot, and what still does not fit scrolls inside the rail, not the page. */
@@ -388,7 +396,10 @@ span.todo-title { min-height: 0; }
 /* Git keeps one centred column of comfortable width: the form, the rows, the notes and the prompt box line up. */
 .git-flow > * { max-width: 760px; margin-inline: auto; }
 /* No issue yet: the dashed box as wide as the others; gone while one is being written (the form is where it goes). */
-.git-flow .section .empty { width: 100%; }
+/* No issue to show: the dashed card where the first would be, as tall as an issue's card, its word and what is so. */
+.issue-new { width: 100%; min-height: 180px; gap: var(--s1); }
+.issue-new > small { font-size: var(--t-meta); }
+.issue-new:disabled { cursor: default; opacity: .6; }
 .issue-new:not([hidden]) + div { display: none; }
 /* The prompt box as Forge's: its left end a step (s3) left of the boxes behind it, its right end theirs, so it
    reads as its own surface, not the foot of the card under it. */
@@ -516,6 +527,14 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 /* Room round the pills inside their scroller, so a focus ring is not cut by its edges (as .parts has). */
 .repo-strip > .pills { padding: var(--s1); margin: calc(-1 * var(--s1)); }
 .pills:empty { display: none; }
+/* The ink of the pill worked on goes from the pill it was on to the one it is on, under the words (glide.ts). */
+.repo-strip > .pills { position: relative; isolation: isolate; }
+.pill { transition: background var(--motion), color var(--motion), opacity var(--motion); cursor: grab; }
+/* Lifted to be dragged: where it was stays, faint, until it is let go. */
+.pill.lifted { opacity: .35; }
+/* Shown beside the one worked on: its outline in ink. */
+.pill.beside { border-color: var(--ink); border-width: var(--line-work); }
+.band-caret { position: absolute; top: var(--s1); bottom: var(--s1); width: 2px; border-radius: 1px; background: var(--ink); pointer-events: none; }
 .pill {
   flex: none; display: flex; align-items: center; min-height: var(--h-row); padding-left: var(--s3);
   border: 1px solid var(--edge); border-radius: var(--r-round); font-size: var(--t-meta);
@@ -573,8 +592,9 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
   display: flex; flex-direction: column; margin-bottom: var(--s6);
   min-height: min(calc(var(--rail-top) + 8 * var(--h-place) + 7 * var(--s1) - var(--band) - var(--h-row) - 2 * var(--s3)),
     calc(var(--inner-h) - var(--band) - var(--h-row) - 2 * var(--s3) - var(--s5) - var(--h-place) - var(--s6)));
-  border: var(--line-work) solid var(--edge); border-radius: var(--r-place);
+  border: var(--line-work) solid var(--edge); border-radius: var(--r-place); background: var(--paper);
 }
+.file > .path { background: var(--paper); }
 /* A file reads like a plain text editor: line numbers in a quiet gutter,
    the text beside them, on the same lines. */
 .file-state { font-weight: 400; color: var(--sub); white-space: nowrap; }
@@ -587,7 +607,11 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .code.code-edit:focus { outline: none; }
 .file:focus-within > .path { color: var(--ink); }
 .sheet-note { padding: var(--s2) var(--s4) var(--s4); font-size: var(--t-meta); }
-.flow .revealed > .path { background: var(--raised); }
+/* Landed on from a search, File or Git: its head lit with the marker for a moment, then fading back, so the eye is
+   led to where it landed without anything staying lit. The line asked for is selected in the marker too. */
+.flow .revealed > .path { animation: landed 1200ms ease-out; }
+@keyframes landed { from, 30% { background: color-mix(in srgb, var(--marker) 70%, var(--paper)); } }
+.flow .revealed .code-edit::selection { background: var(--marker); color: var(--ink); }
 /* Saved elsewhere while this one had unsaved edits: asked in the box, under
    its head and over the text, which stays to be read and written on. */
 .file-ask { display: grid; gap: var(--s2); padding: var(--s2) var(--s4) var(--s3); }
@@ -607,15 +631,21 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 /* Forge's: at the center's left, not in its middle, so putting the right pane away or bringing it back (the center
    wider or narrower) leaves the box where it was, under the pointer and the eye (issue #45). */
 .work.bench:not(.no-strip) .dock { margin: 0; }
-/* While the search is out (what it found, or what is read from it), the center steps back under a shade: still
-   there to be seen, not to be read across; the search is where to look. Closed, or with Escape, it comes back. */
-.work.bench:has(> .bar .search-box:is(:focus-within, .reading)) > .center::after {
-  content: ''; position: absolute; inset: 0; z-index: 3; pointer-events: none;
-  background: color-mix(in srgb, var(--ink) 16%, transparent); transition: opacity var(--motion);
+/* While the search is out (what it found, or what is read from it), the whole window steps back under one shade,
+   the rail, the band and the pane with the center, to its edges: still there to be seen, not read across; the
+   search and what it found are the one thing lit. It fades in and out; a press on it goes to what is under it, so
+   the search closes. (No box between the search and the window may make a layer of its own, or the search would
+   be shaded with it: the bench's width is measured, not queried.) */
+body::after {
+  content: ''; position: fixed; inset: 0; z-index: 7; pointer-events: none;
+  background: color-mix(in srgb, var(--ink) 14%, transparent); opacity: 0; transition: opacity 180ms ease-out;
 }
-/* The right pane put away takes its search with it; its switch stays, the way to bring both back, and says which
-   it is: brought out, an ink fill, as anything chosen; put away, the outline alone. */
-@media (min-width: 761px) { .work.bench.pane-closed > .bar > .search-box { visibility: hidden; } } /* narrow, it is the way to the pane's parts */
+body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading))::after { opacity: 1; }
+.work.bench > .bar > .search-box { z-index: 8; }
+/* The right pane put away takes its search with it; its switch stays where it was, at the top line's right end,
+   the way to bring both back, and says which it is: brought out, an ink fill, as anything chosen; put away, the
+   outline alone. */
+@media (min-width: 761px) { .work.bench.pane-closed > .bar > .search-box { display: none; } } /* narrow, it is the way to the pane's parts */
 .pane-toggle[aria-expanded='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 .pane-toggle[aria-expanded='true']:hover { background: var(--ink); }
 /* Under the prompt box, the ground to the center's foot: what scrolls under the box does not show below it.
@@ -678,25 +708,79 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
    its width (from the pane's inner left to its inner right); only what opens under it reaches into the
    center, 2 W wide from the box's right end, so that a diff's lines or a run's output are not cut off. With
    nothing searched the pane is straight. The pane's switch is just left of the box; put away, the box stays. */
-.work.bench { container-type: inline-size; grid-template-columns: minmax(0, 1fr) max(280px, 25%); }
+.work.bench { grid-template-columns: minmax(0, 1fr) max(280px, 25%); transition: grid-template-columns var(--move) var(--land); }
 .work.bench > .bar {
-  --pane-w: max(280px, 25cqw);
-  --search-w: calc(var(--pane-w) - 2 * var(--s5));
-  grid-column: 1 / -1; grid-row: 1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto var(--search-w);
+  --pane-w: max(280px, calc(var(--bench-w, 1200px) / 4));
+  --search-w: calc(var(--pane-w) - 2 * var(--s5) - var(--h-row) - var(--s3));
+  grid-column: 1 / -1; grid-row: 1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) var(--search-w) auto;
   align-items: center; gap: var(--s3); padding: var(--band) var(--s5) var(--s3);
 }
 .work.bench > .bar > .repo-strip { grid-column: 1; min-width: 0; padding: 0; border: 0; overflow: visible; }
 .work.bench > .bar > * { grid-row: 1; }
-.work.bench > .bar > .pane-toggle { grid-column: 2; }
-.work.bench > .bar > .search-box { grid-column: 3; }
+.work.bench > .bar > .pane-toggle { grid-column: 3; }
+.work.bench > .bar > .search-box { grid-column: 2; }
 .pane-toggle { display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; color: var(--ink); cursor: pointer; }
 .pane-toggle:hover { background: var(--raised); }
 .pane-toggle .mark { width: var(--s4); height: var(--s4); }
 .work.bench > .center { grid-row: 2; display: flex; flex-direction: column; border-right: 0; }
-.work.bench > .center > .flow { flex: 1; min-height: 0; height: auto; }
-/* Put away, the center takes the whole width; the pane is only out of sight. No pane, no line. */
-.work.bench.pane-closed { grid-template-columns: minmax(0, 1fr); }
-.work.bench.pane-closed > .side { display: none; }
+/* No band (Git): the center reaches up to the top line, so the page's head stands on it as every page's does; the
+   top line's search and switch lie over the pane's end of it, and the rest of that line lets presses through. */
+.work.bench.no-strip > .center { grid-row: 1 / -1; }
+.work.bench.no-strip > .bar { pointer-events: none; }
+.work.bench.no-strip > .bar > * { pointer-events: auto; }
+.work.bench > .center > .flow, .work.bench > .center > .columns, .col > .flow { flex: 1; min-height: 0; height: auto; }
+/* Forge's center: a row of boxes, one per repo shown, tiled. One alone fills it as the page always has; side by
+   side, the pages close in on each other to a narrow gap (each its own scroll), and the one worked on is drawn in
+   ink, the others in the quiet line, as a tiling desk marks the window with the keyboard. */
+.columns { position: relative; display: flex; }
+.col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
+/* Each box's head (whose it is, and its ×) is there side by side only. It grows in as the row splits and the pages
+   ease down under it, rather than everything jumping a row. */
+.col-head {
+  display: flex; align-items: center; gap: var(--s1); flex: none; height: 0; opacity: 0; overflow: hidden; visibility: hidden;
+  transition: height var(--move) var(--land), opacity var(--move) var(--land), visibility 0s var(--move);
+}
+.col > .flow { transition: padding-top var(--move) var(--land); }
+.columns.split > .col > .flow { padding-top: var(--s1); }
+/* Side by side, every box the same width: the row keeps the page's margin (its first box's left edge where the one
+   box's was, under the band), and each page an even half-gap round its box. */
+.columns { transition: padding var(--move) var(--land); }
+.columns.split { padding-inline: calc(var(--s5) - var(--s2)); }
+.columns.split > .col > .flow { padding-inline: var(--s2); }
+.columns.split > .col > .col-head {
+  height: 28px; opacity: 1; visibility: visible; transition: height var(--move) var(--land), opacity var(--move) var(--land);
+  padding: 0 var(--s2) 0 calc(var(--s2) + var(--s3)); cursor: grab;
+}
+
+.col-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 0; padding: 0 var(--s1); border-radius: var(--r-field); background: transparent; color: var(--sub); font-size: var(--t-meta); cursor: pointer; }
+.col.active > .col-head > .col-name { color: var(--ink); font-weight: 600; }
+.col-close { display: grid; place-items: center; width: 24px; height: 24px; margin-left: auto; padding: 0; border: 0; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: pointer; opacity: 0; transition: opacity var(--motion); }
+.col-close .mark { width: var(--s4); height: var(--s4); }
+.col-head:hover > .col-close, .col-close:focus-visible, .col.active > .col-head > .col-close { opacity: 1; }
+.col-close:hover { background: var(--raised); color: var(--ink); }
+/* Side by side, the box worked on is what says where the keyboard is: its page is not ringed as well. */
+.columns.split > .col > .flow:focus-visible { outline: none; }
+.columns.split > .col:not(.active) .file { border-color: var(--rule); }
+.columns.split > .col.active .file { border-color: var(--ink); }
+.col .file { transition: border-color var(--motion); }
+.col.going { pointer-events: none; }
+/* Where a repo dragged in would stand: the half (beside) or the whole (in its place) of a box, outlined in dashes,
+   gliding from place to place as the pointer moves, so where it lands is seen before it is let go. */
+.drop-hint {
+  position: absolute; top: var(--s2); bottom: var(--s5); z-index: 2; pointer-events: none;
+  display: grid; place-items: center; border: var(--line-work) dashed var(--ink); border-radius: var(--r-place);
+  background: color-mix(in srgb, var(--paper) 70%, transparent); color: var(--ink); font-size: var(--t-meta); font-weight: 600;
+  transition: left 160ms var(--land), width 160ms var(--land);
+  animation: hint-in 140ms ease-out;
+}
+@keyframes hint-in { from { opacity: 0; } }
+@media (max-width: 760px) { .columns.split > .col:not(.active) { display: none; } .columns.split > .col > .col-head { height: 0; visibility: hidden; } }
+/* Put away, the center takes the whole width; the pane is only out of sight. No pane, no line. It goes as a wipe:
+   the pane's column closes to nothing, what it holds staying at its width and cut at the moving edge (not squeezed),
+   and is out of sight (and of the keyboard) once closed; brought back, it opens the same way. */
+.work.bench.pane-closed { grid-template-columns: minmax(0, 1fr) 0px; }
+.work.bench > .side { min-width: 0; }
+.work.bench.pane-closed > .side { overflow: clip; visibility: hidden; transition: visibility 0s var(--move); }
 /* The one line, between the center and the pane: from the top line to the prompt box's foot, not edge to edge. */
 /* The pane's top is the plugin area's; the Prompt starts level with the foot of the rail's Inbox (bench.ts measures
    it into --prompt-at), pushed down only by a plugin area opened taller than that. */
@@ -709,9 +793,12 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
    (the file's box, the pane's line) stop that same step short of it, everywhere alike. It starts at the top line's
    foot, so the large box's top is level with the center's file box. */
 .search-results {
-  position: absolute; z-index: 4; top: calc(100% + var(--s3)); right: calc(-1 * var(--s3)); width: calc(2 * var(--pane-w) + 2 * var(--s3));
-  padding: var(--s3); background: var(--ground);
+  position: absolute; z-index: 4; top: calc(100% + var(--s3)); right: calc(-1 * (2 * var(--s3) + var(--h-row))); width: calc(2 * var(--pane-w) + 2 * var(--s3));
+  padding: var(--s3);
+  /* It comes down out of the box it was typed in: a few pixels and a fade, never a jump. */
+  animation: from-box 180ms var(--land);
 }
+@keyframes from-box { from { opacity: 0; transform: translateY(calc(-1 * var(--s2))); } }
 /* Under the box, while it has the keyboard or something chosen is read there: Issue, diff and Output side by
    side, and under them the large box. In it what was searched and read lines up sideways, the one in hand
    filling it, its neighbours a sliver past its edges (pressed to move to them), as Git's issues and Server's
@@ -721,6 +808,8 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 /* Issue, diff and Output at the large box's left end, standing on it: their foot a hair (s1) over its top, up
    beside the search box rather than level with it, so the three and the box they switch read as one. */
 .search-pills { display: flex; gap: var(--s2); position: absolute; left: var(--s3); bottom: calc(100% - var(--s3) + var(--s1)); }
+/* Over the shade they stand on the ground, as they do on the page. */
+.search-pills > .chip:not([aria-pressed='true']) { background: var(--ground); }
 .search-panel { min-width: 0; }
 /* No slivers: ← and → under the box move along. What comes next shows as the edge of a card behind, past the
    box's right end, without narrowing it; what came before is ←'s to say. */
@@ -732,13 +821,13 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 /* As tall as there is room for above the center's Prompt (bench.ts sets --search-room from the box's foot to the
    Prompt's top): the Prompt brought up over the center is never under it. */
 .found-card {
-  display: flex; flex-direction: column; border: 1px solid var(--rule); border-radius: var(--r-place); background: var(--ground);
+  display: flex; flex-direction: column; border: 1px solid var(--rule); border-radius: var(--r-place); background: var(--paper);
   height: max(120px, min(60vh, 560px, calc(var(--search-room, 100vh) - var(--h-row) - 3 * var(--s3) - var(--s2))));
 }
 .slide[aria-current='true'] > .found-card { border-color: var(--ink); }
 .slide[aria-current='false'] > .found-card { color: var(--sub); }
 .search-panel .slide-stage:has(.stage-hit.next:hover) .slide[aria-current='true'] + .slide > .found-card,
-.search-panel .slide-stage:has(.stage-hit.prev:hover) .slide:has(+ .slide[aria-current='true']) > .found-card { background: var(--raised); }
+.search-panel .slide-stage:has(.stage-hit.prev:hover) .slide:has(+ .slide[aria-current='true']) > .found-card { background: var(--ground); }
 .found-body { flex: 1; min-height: 0; overflow: auto; padding: var(--s3); }
 /* What is done to what is read (Put back), at the box's bottom right, under all of it. */
 .found-foot { flex: none; padding: var(--s3) var(--s4); }
@@ -782,7 +871,7 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
    folded away and, brought out with its switch, laid over the center under the top line. */
 @media (max-width: 760px) {
   .work.bench { grid-template-columns: minmax(0, 1fr); }
-  .work.bench > .bar { grid-template-columns: minmax(0, 1fr) auto minmax(96px, 45%); gap: var(--s2); padding-left: var(--s4); padding-right: var(--s2); }
+  .work.bench > .bar { grid-template-columns: minmax(0, 1fr) minmax(96px, 45%) auto; gap: var(--s2); padding-left: var(--s4); padding-right: var(--s2); }
   .work.bench > .side { display: none; }
   .work.bench > .side::before { display: none; }
   .work.bench.pane-out > .side {
@@ -794,7 +883,7 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
   }
   /* Laid over, it is the plugin area: the Prompt is the center's here (its dock, while it is written to). */
   .work.bench.pane-out > .side > .term-home { display: none; }
-  .work.bench .search-results { left: auto; right: 0; transform: none; width: min(360px, calc(100vw - var(--rail) - 2 * var(--s4))); }
+  .work.bench .search-results { left: auto; right: 0; width: min(360px, calc(100vw - var(--rail) - 2 * var(--s4))); }
   /* No room on the top line here: Issue, diff and Output at the top of what opens. */
   .search-pills { position: static; }
 }
@@ -804,6 +893,8 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
   background: var(--raised); color: var(--ink);
 }
 .search-in:disabled { opacity: .5; }
+/* In use, the box's own line turns ink and a little heavier: one line, not a ring drawn round a border. */
+.search-in:focus-visible, .search-in:focus { outline: 1px solid var(--ink); outline-offset: -1px; border-color: var(--ink); background: var(--paper); }
 /* The search box's own clear mark, in the page's ink, not the browser's blue. */
 .search-in::-webkit-search-cancel-button { filter: grayscale(1) brightness(.4); cursor: pointer; }
 .search-count { margin-bottom: var(--s2); }
@@ -864,7 +955,8 @@ button.diff-no:hover { color: var(--ink); background: var(--raised); border-radi
 .diff-line.hunk:first-child { margin-top: 0; }
 .hit-line { color: var(--sub); text-align: right; font-variant-numeric: tabular-nums; }
 .hit-text { white-space: pre; overflow: hidden; text-overflow: ellipsis; }
-mark { background: var(--ink); color: var(--ground); }
+/* What the search found, in its lines: the marker's stroke over the words, as a highlighter (§2). */
+mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: var(--marker); color: var(--ink); }
 .facts { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: var(--s1) var(--s3); margin: 0; }
 .facts dt { color: var(--sub); font-size: var(--t-meta); }
 .facts dd { margin: 0; overflow-wrap: anywhere; }
@@ -991,6 +1083,7 @@ mark { background: var(--ink); color: var(--ground); }
 .space-what .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .space-what .space-why { overflow: visible; white-space: normal; overflow-wrap: anywhere; }
 .space-size { flex: none; font: var(--t-meta) var(--mono); color: var(--sub); }
+.gear-room { flex: none; width: var(--h-row); }
 .space-foot { display: flex; align-items: center; gap: var(--s3); padding-top: var(--s3); }
 .space-foot .grow { flex: 1; }
 .link-name { border: 0; padding: 0; background: transparent; font: inherit; font-weight: 600; color: inherit; text-align: left; cursor: pointer; }
@@ -1526,3 +1619,8 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .seen-text { margin: 0; padding: var(--s3) var(--s4); overflow: auto; white-space: pre; font: var(--t-meta)/1.55 var(--mono); }
 @media (max-width: 760px) { .seen-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); } .seen-files { max-height: 30vh; border-right: 0; border-bottom: 1px solid var(--rule); } }
 .home-servers { display: flex; flex-wrap: wrap; gap: var(--s2); }
+
+/* Asked for less motion, nothing travels or fades: each thing is where it ends at once. */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after { animation-duration: 0s !important; animation-delay: 0s !important; transition-duration: 0s !important; transition-delay: 0s !important; }
+}
