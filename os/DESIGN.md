@@ -1639,8 +1639,8 @@ half written after reading its neighbours or another page.
   **Commit** and **Push**, one row each: where it stands at the left, the
   button at the right; done, the button's place shows the same word with
   the done mark (a circle with a check, `done`), and the green says it is
-  done. In Commit's row, what is not committed (▸ 5 files); its diff opens
-  over what is under it, so neither button moves. Pushing hands the work to
+  done. In Commit's row, what is not committed, its files folded as main's
+  card has them, on the card itself. Pushing hands the work to
   main as its change, again as the next version; Reset, at the Push row's
   left end, takes it back while it is undecided. A change received from
   someone else shows Commit and Push done.
@@ -1677,8 +1677,14 @@ Under the issues, each its own section, shown only when it has something:
 
 - **main**: a card for each repo that shows main and has something not
   committed there (an edit in Forge, an issue written, one closed): its
-  repo, what is not committed (▸ 2 files, whose diff opens over what is
-  under it, as in an issue's Commit row) and Commit at the right. Commit
+  repo, how many files wait (2 files to commit on main) and Commit at the
+  right of that line; under it the files straight on the card, never a box
+  inside it. Each file folds at its head (a small triangle, its name, +n
+  −n and the five squares), the first three open and the rest a line each;
+  a long one shows its first 30 lines with "n more lines" under them,
+  pressed to show the rest, so a large change reads file by file and
+  never as a wall. What is opened or shut by hand stays so while the page
+  is drawn again. The issue's Commit row shows its files the same way. Commit
   asks in the card for the line the commit goes by ("Fix：title"), as
   `l3 commit REPO "Fix：title"` takes it, Not now at the left and Commit
   under the pointer; Enter commits the one line. What is typed is kept

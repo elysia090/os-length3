@@ -181,8 +181,10 @@ export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEv
  * reader by how many files: "5 files not committed"); a file's name opens it in Forge.
  */
 export function notCommitted(at: string, n: number, events: IssueEvents): HTMLElement {
-  const box = h('div', {class: 'step-diff', role: 'region', 'aria-label': tn('{n} file not committed', '{n} files not committed', n)}, quiet(t('Reading…')));
-  void git.diff(at).then((files) => box.replaceChildren(...diffFiles(files, {reveal: (p) => events.open(at, p), beside: true})),
+  // Straight on what it is in (main's card, the issue's box), not a box of its own inside it: each file a fold, its
+  // name and what it comes to on its head, the first few open, a long one's lines past 30 waiting under "n more lines".
+  const box = h('div', {class: 'changes', role: 'region', 'aria-label': tn('{n} file not committed', '{n} files not committed', n)}, quiet(t('Reading…')));
+  void git.diff(at).then((files) => box.replaceChildren(...diffFiles(files, {reveal: (p) => events.open(at, p), cut: 30, kept: at})),
     (e) => box.replaceChildren(h('p', {class: 'error'}, errorText(e))));
   return box;
 }

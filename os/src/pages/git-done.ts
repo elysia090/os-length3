@@ -30,8 +30,10 @@ export function mainCard(repo: string, n: number, events: IssueEvents, after: ()
     card.style.minHeight = '';
     const commit = button(t('Commit'), 'primary');
     commit.addEventListener('click', () => ask(commit));
-    card.replaceChildren(h('span', {class: 'card-title'}, repo),
-      h('div', {class: 'steps'}, h('div', {class: 'step-about step-changes'}, notCommitted(repo, n, events)), h('div', {class: 'step-act'}, commit)));
+    // The repo and how many files wait, Commit at the right of that line; under them the files, on the card itself.
+    card.replaceChildren(h('div', {class: 'main-head'}, h('span', {class: 'card-title'}, repo),
+      h('span', {class: 'muted small'}, tn('{n} file to commit on main', '{n} files to commit on main', n)), h('span', {class: 'grow'}), commit),
+      notCommitted(repo, n, events));
     return commit;
   };
   const ask = (from: Element | null) => {

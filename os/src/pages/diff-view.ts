@@ -35,7 +35,17 @@ export interface DiffOptions {
    * where a file is read whole (issue #20). Unfolded, always open. (A search's diff, narrow, keeps them under.)
    */
   beside?: boolean;
+  /**
+   * A file's lines past this many wait under a quiet "n more lines", pressed to show them: a large change reads
+   * file by file, none of them a wall. Which files are open is kept under `kept` (a repo's name, say) while the
+   * page is drawn again.
+   */
+  cut?: number;
+  kept?: string;
 }
+
+/** The files opened or shut by hand, by `kept` and path, so a page drawn again keeps them so. */
+const folded = new Map<string, boolean>();
 
 /** What putting a file back does, a short line each. */
 const BACK = (f: FileDiff) => (f.status === 'added' ? [t('It was not in the last commit, so it goes')]
@@ -133,10 +143,24 @@ export function diffFiles(files: FileDiff[], o: DiffOptions = {}): HTMLElement[]
       o.line?.(row, `${f.path}:${k}`, l);
       return row;
     }).filter(Boolean) as HTMLElement[];
-    if (f.more) body.push(h('p', {class: 'muted small'}, tn('{n} more line', '{n} more lines', f.more)));
-    if (o.beside) return h('div', {class: 'diff-file beside'}, h('div', {class: 'diff-head'}, ...head.childNodes), h('div', {class: 'diff'}, ...body), ...(foot ? [foot] : []));
-    const fold = h('details', {class: 'diff-file'}, head, h('div', {class: 'diff'}, ...body), ...(foot ? [foot] : [])) as HTMLDetailsElement;
-    fold.open = i < OPEN;
+    // Past `cut` lines, the rest wait under a quiet line that shows them when pressed.
+    const waiting = o.cut && body.length > o.cut + 4 ? body.splice(o.cut) : [];
+    const lines = h('div', {class: 'diff'}, ...body);
+    const rest = waiting.length + f.more;
+    const more = waiting.length ? h('button', {type: 'button', class: 'diff-more'}, tn('{n} more line', '{n} more lines', rest)) as HTMLButtonElement
+      : f.more ? h('p', {class: 'diff-more muted small'}, tn('{n} more line', '{n} more lines', f.more)) : null;
+    if (more instanceof HTMLButtonElement) {
+      more.addEventListener('click', () => {
+        lines.append(...waiting);
+        // What could not be read past 400 lines is still said; the rest are there now.
+        if (f.more) more.replaceWith(h('p', {class: 'diff-more muted small'}, tn('{n} more line', '{n} more lines', f.more))); else more.remove();
+      });
+    }
+    if (o.beside) return h('div', {class: 'diff-file beside'}, h('div', {class: 'diff-head'}, ...head.childNodes), lines, ...(more ? [more] : []), ...(foot ? [foot] : []));
+    const fold = h('details', {class: 'diff-file'}, head, lines, ...(more ? [more] : []), ...(foot ? [foot] : [])) as HTMLDetailsElement;
+    const key = o.kept ? `${o.kept}:${f.path}` : '';
+    fold.open = key && folded.has(key) ? folded.get(key)! : i < OPEN;
+    if (key) fold.addEventListener('toggle', () => folded.set(key, fold.open));
     return fold;
   });
 }
