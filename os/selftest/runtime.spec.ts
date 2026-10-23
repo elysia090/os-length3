@@ -110,6 +110,8 @@ test('the environments are one card two wide, the desktop app at its right and S
 
 test("a repo's name in Runtime is the repo itself; its gear offers Forge or Free, and Free says what it does first", async ({signedIn: app}) => {
   await app.newRepo.make('notes');
+  // Made, it was gone into, and its Prompt keeps it here: stopped, it can be freed.
+  await app.runtime.stopPrompts();
   await app.runtime.open('This browser');
   const panel = app.main.getByRole('tabpanel', {name: /^This browser/});
   const here = panel.getByRole('region', {name: /^In this browser/});
@@ -149,6 +151,7 @@ test("a repo's name in Runtime is the repo itself; its gear offers Forge or Free
 
 test("Home's repo card: its body is the repo itself, its gear Forge or Free, as in Runtime", async ({signedIn: app}) => {
   await app.newRepo.make('notes');
+  await app.runtime.stopPrompts();
   await app.rail.go('home');
   const card = app.main.getByRole('region', {name: 'Repos'}).getByRole('group', {name: 'notes', exact: true});
   await expect(card).toContainText('In step');

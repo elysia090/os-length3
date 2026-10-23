@@ -580,6 +580,14 @@ class Runtime extends Part {
     await expect(this.part(name)).toHaveAttribute('aria-selected', 'true');
   }
   get dotfiles() { return this.main.getByRole('tabpanel', {name: /^Dotfiles/}); }
+  /** Stop every Prompt running (Runtime's Prompts running, each card's Stop): what one had open can then be freed. */
+  async stopPrompts() {
+    await this.open('Prompts running');
+    const panel = this.main.getByRole('tabpanel', {name: /^Prompts running/});
+    const stop = panel.getByRole('button', {name: 'Stop', exact: true});
+    await expect(stop.first()).toBeVisible();
+    while (await stop.count()) await stop.first().click();
+  }
   /** A dotfile's card (its name, then its size). */
   dotfile(name: string) { return this.dotfiles.getByRole('button', {name: new RegExp(`^${escape(name)} `)}); }
   /** The text of the dotfile open under the cards (its field is named by the file). */
