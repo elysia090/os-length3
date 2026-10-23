@@ -80,6 +80,9 @@ export function indent(area: HTMLTextAreaElement) {
 }
 
 /** One repo read top to bottom: only files, directories are just where they come from. */
+/** Where the caret goes in a file opened to write in: its start (true), its end, or not in it (false). */
+export type Writing = boolean | 'end';
+
 export class Reader {
   readonly repo: string;
   /** Directory loaders by path ('' is the repo root). */
@@ -134,9 +137,10 @@ export class Reader {
   /**
    * Load the directories down to `path` and scroll it into view; at `line`,
    * that line is selected with the caret in it; with `write`, the caret is put
-   * at the file's start (a file chosen to work on, from File).
+   * at the file's start (a file chosen to work on, from File), or with 'end' at its end (what was just written there,
+   * as a repo's README once made, to go on writing).
    */
-  async reveal(path: string, line = 0, write = false) {
+  async reveal(path: string, line = 0, write: Writing = false) {
     const parts = path ? path.split('/') : [];
     for (let i = 0; i < parts.length; i++) await this.loads.get(parts.slice(0, i).join('/'))?.();
     const target = path ? this.sections.get(path) : this.sections.get('');
@@ -158,7 +162,7 @@ export class Reader {
     await this.fileLoads.get(path)?.();
     const area = this.editors.get(path);
     if (!area) return;
-    if (!line) { area.focus({preventScroll: true}); area.setSelectionRange(0, 0); return; }
+    if (!line) { const at = write === 'end' ? area.value.length : 0; area.focus({preventScroll: true}); area.setSelectionRange(at, at); return; }
     const lines = area.value.split('\n');
     const at = lines.slice(0, line - 1).reduce((n, l) => n + l.length + 1, 0);
     area.focus({preventScroll: true});

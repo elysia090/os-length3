@@ -55,19 +55,26 @@ export function arrive(el: HTMLElement, dir: number, axis: 'x' | 'y', by = 12, m
  */
 export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340, round = '') {
   if (still() || !from.width) return false;
+  // The outline stands where the thing was at once, so the eye has it while the page it goes to is drawn (a repo read
+  // from the store a moment later); it goes on once its box is there, or fades where it stood if none comes.
+  const box = document.createElement('div');
+  box.className = 'morph-box';
+  box.setAttribute('aria-hidden', 'true');
+  // A field becomes a field: its own corner, not a box's.
+  if (round) box.style.borderRadius = round;
+  const rect = (r: DOMRect) => ({left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px`});
+  Object.assign(box.style, rect(from));
+  document.body.append(box);
+  const done = () => box.remove();
   let tries = 0;
   const go = () => {
     const to = find();
     const at = to?.getBoundingClientRect();
-    if (!to || !at?.width) { if (++tries < 30) requestAnimationFrame(go); return; }
-    const box = document.createElement('div');
-    box.className = 'morph-box';
-    box.setAttribute('aria-hidden', 'true');
-    // A field becomes a field: its own corner, not a box's.
-    if (round) box.style.borderRadius = round;
-    document.body.append(box);
-    const rect = (r: DOMRect) => ({left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px`});
-    const done = () => box.remove();
+    if (!to || !at?.width) {
+      if (++tries < 40) requestAnimationFrame(go);
+      else box.animate([{opacity: 1}, {opacity: 0}], {duration: 160, fill: 'forwards'}).finished.then(done, done);
+      return;
+    }
     box.animate([{...rect(from), opacity: 1}, {...rect(at), opacity: 1, offset: .82}, {...rect(at), opacity: 0}], {duration: ms, easing: LAND, fill: 'forwards'})
       .finished.then(done, done);
   };

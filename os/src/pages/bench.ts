@@ -121,7 +121,7 @@ export interface Bench {
   settle(): void;
 }
 
-export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(path: string, line?: number, write?: boolean): void}): Bench {
+export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(path: string, line?: number, write?: boolean | 'end'): void}): Bench {
   let repo: string | null = null;
   // Named for what one does there: type at the prompt of the repo's sh.
   const termTitle = h('div', {class: 'term-head'}, h('h2', {}, 'Prompt'));

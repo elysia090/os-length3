@@ -2,15 +2,13 @@ import {expect, test} from './fixtures.ts';
 
 // New repo (+): a name, what it is for (into its README, under the title),
 // and the one scaffold (a README, docs/ and issue/), its file named in the box (nothing to choose); made,
-// the page stays and offers Forge. A name taken is said under the name, with
+// it is gone into in Forge, the caret in its README. A name taken is said under the name, with
 // the keyboard back on it. What is written stays while other pages are seen.
 
 test('a repo made from the scaffold has its README, its summary under the title, and no language of its own', async ({signedIn: app}) => {
   await app.newRepo.make('hello', {summary: 'Says hello.'});
-  await expect(app.main.getByText('Made at /root/hello in File')).toBeVisible();
-
-  await app.main.getByRole('button', {name: 'Open in Forge'}).click();
   await expect(app.forge.editor('README.md')).toHaveValue('# hello\n\nSays hello.\n');
+  await expect(app.forge.editor('README.md')).toBeFocused();
   // C's files are `l3 repo new -t c`'s, not every repo's.
   await expect(app.forge.editor('src/main.c')).toHaveCount(0);
   await expect(app.forge.editor('Makefile')).toHaveCount(0);
@@ -23,7 +21,6 @@ test('a file named in the box is made under that name, and what it says does not
   await expect(app.newRepo.fileName('README.md')).toHaveValue('README.md');
 
   await app.newRepo.make('tide', {summary: 'Tide tables.', files: {'README.md': 'README.txt'}});
-  await app.main.getByRole('button', {name: 'Open in Forge'}).click();
   await expect(app.forge.editor('README.txt')).toHaveValue('# tide\n\nTide tables.\n');
   await expect(app.forge.editor('README.md')).toHaveCount(0);
 });
@@ -40,7 +37,7 @@ test('a file name that cannot be is said before Create, and Create takes the key
   await app.newRepo.fileName('README.md').fill('READ-ME.md');
   await expect(app.main.getByRole('alert')).toBeHidden();
   await app.newRepo.create.click();
-  await expect(app.newRepo.made).toHaveText('Made clash');
+  await expect(app.newRepo.madeIn('clash')).toBeVisible();
 });
 
 test('what is written before Create stays while another page is seen, and goes once made', async ({app}) => {
@@ -56,7 +53,7 @@ test('what is written before Create stays while another page is seen, and goes o
   await expect(app.newRepo.fileName('README.md')).toHaveValue('ABOUT.md');
 
   await app.newRepo.create.click();
-  await expect(app.newRepo.made).toHaveText('Made harbour');
+  await expect(app.newRepo.madeIn('harbour')).toBeVisible();
   await app.rail.go('runtime');
   await app.rail.go('new-repo');
   await expect(app.newRepo.name).toHaveValue('');
@@ -65,7 +62,7 @@ test('what is written before Create stays while another page is seen, and goes o
 
 test('a name already taken is said under the name, and the name keeps the keyboard', async ({signedIn: app}) => {
   await app.newRepo.make('notes');
-  await app.main.getByRole('button', {name: 'Make another'}).click();
+  await app.rail.go('new-repo');
   await expect(app.newRepo.name).toHaveValue('');
 
   await app.newRepo.fill('notes');

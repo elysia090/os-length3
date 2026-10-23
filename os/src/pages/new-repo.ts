@@ -206,8 +206,15 @@ export function newRepo(ctx: Context): Node[] {
       if (text === original.get(f.from)) continue;
       try { await store.write(n, f.to, text); } catch (e) { unwritten.push(t('{what} could not be written ({why})', {what: `${n}/${f.to}`, why: errorText(e)})); }
     }
+    // Made, it is gone into at once: what was written becomes its README, the summary's sheet growing into that box
+    // in Forge, the caret in it. Only what could not be written keeps the page, to say so.
+    if (!unwritten.length) {
+      draft = fresh();
+      ctx.openRepo(n, real.find((f) => f.from === 'README.md')?.to ?? '', 'end', summaryBox);
+      return;
+    }
     made(n);
-    if (unwritten.length) error.textContent = unwritten.join(' ');
+    error.textContent = unwritten.join(' ');
   });
   // The repos already there, right under the form; a new one joins them.
   const list = repoList(ctx, {newCard: false});

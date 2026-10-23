@@ -6,14 +6,14 @@ import {connection, onConnection, RemoteError} from '../remote.ts';
 import * as servers from '../servers.ts';
 import type {Context} from './context.ts';
 import {cameTo, timeline} from './talk.ts';
+import {pop} from '../glide.ts';
 import {dockFor} from './server-dock.ts';
 import {boardTodo} from './server-todo.ts';
 import {gear as gearSheet} from './server-gear.ts';
 import {seeRepo as repoSheet} from './server-repo.ts';
 import {button, initials, type Shown} from './server-parts.ts';
-import {answers, deed} from './common.ts';
-import {goToPlan, planRefused, planSaid, signInBox, signInPlace} from './remote.ts';
-import {plan as readPlan} from '../plan.ts';
+import {deed} from './common.ts';
+import {goToPlan, planRefused, signInBox, signInPlace} from './remote.ts';
 import {boardNew, onNews, sawBoard, serverNew} from '../news.ts';
 import {errorText} from '../errors.ts';
 
@@ -161,6 +161,8 @@ export class ServerLayer {
 
     let list: servers.Server[] = [];
     let shown: Shown[] = [];
+    /** A server being named: its chip, in the band where it will stand once made (makeServer). */
+    let naming: HTMLElement | null = null;
     let serverId: string | null = null;
     /** A board shown alone, outside the servers one is in: one written in as a guest, or invited to. */
     let alone: string | null = null;
@@ -322,7 +324,7 @@ export class ServerLayer {
         b.addEventListener('click', () => showAlone({id, name: here.name, member: false, guests: true, server: here.server}));
         return b;
       });
-      chips.replaceChildren(...each, ...guesting);
+      chips.replaceChildren(...each, ...(naming ? [naming] : []), ...guesting);
     };
 
     /** A board outside the servers one is in, shown alone: no server is chosen, so the gear and the side rest. */
@@ -358,51 +360,69 @@ export class ServerLayer {
       return {id: b.id, name: b.name, member: false, guests: true, server: b.server.name};
     };
 
-    /** No server chosen (or none yet): the one box makes a server, with a name on this Remote as a person has (first come, for five years at a time). */
+    /**
+     * No server chosen (or none yet): it is named where it will stand. Its chip is the field, in the band after the
+     * others, and under it the server it will be stands faint: its first board (#general, its TODO and its talk) and,
+     * at the right, its first person, oneself. Made (Enter, or Make), the same shapes stand there whole. Its name on
+     * this Remote follows the name, quiet, in the chip; what that name is, and what the plan allows, is said only when
+     * the Remote says no.
+     */
     const makeServer = () => {
       shown = [];
       alone = null;
       place('boards');
-      const name = h('input', {class: 'line-in', maxlength: '64', placeholder: t('Trip')}) as HTMLInputElement;
-      const handle = h('input', {class: 'line-in mono', maxlength: '31', placeholder: 'trip', autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
+      const name = h('input', {class: 'server-name-in', maxlength: '64', placeholder: t('Trip'), 'aria-label': t('Name')}) as HTMLInputElement;
+      const handle = h('input', {class: 'server-handle-in mono', maxlength: '31', placeholder: 'trip', autocapitalize: 'off', spellcheck: 'false',
+        'aria-label': t('Name on this Remote'),
+        title: t('First come, as a person\'s: nobody else\'s while the server has it, renewed by its owner every five years.')}) as HTMLInputElement;
       // Its address follows its name until it is written itself.
       let own = false;
       const slug = (v: string) => v.toLowerCase().normalize('NFKD').replace(/[^a-z0-9._-]+/g, '-').replace(/^[-._]+|[-._]+$/g, '').slice(0, 31);
-      name.addEventListener('input', () => { if (!own) handle.value = slug(name.value); });
-      handle.addEventListener('input', () => { own = handle.value !== ''; });
-      const make = button(t('Make'), 'primary');
-      const error = h('p', {class: 'error', role: 'alert'});
+      // The chip as wide as what is written in it (or its placeholder), as a chip is.
+      const pen = document.createElement('canvas').getContext('2d');
+      const wide = (f: HTMLInputElement) => {
+        if (!pen || !f.isConnected) return;
+        pen.font = getComputedStyle(f).font;
+        f.style.width = `${Math.ceil(pen.measureText(f.value || f.placeholder).width) + 2}px`;
+      };
+      const fit = () => { wide(name); wide(handle); };
+      name.addEventListener('input', () => { if (!own) handle.value = slug(name.value); fit(); naming?.classList.toggle('named', !!name.value.trim()); });
+      handle.addEventListener('input', () => { own = handle.value !== ''; fit(); });
+      fit();
+      const make = button(t('Make'), 'small-button primary');
+      // What the Remote said no to, at the chip's end: the plan, a name taken, a name of one's own to claim first.
+      const ask = h('span', {class: 'server-ask', role: 'alert'});
+      naming = h('span', {class: 'server-making'}, h('label', {class: 'chip server-naming'}, name, handle), make, ask);
+      paintTop();
+      fit();
       writer(name, () => document.activeElement === name || document.activeElement === handle || !!name.value.trim());
       const done = async () => {
         // Enter pressed again while it is made makes no second server.
-        if (!name.value.trim() || make.disabled) return;
+        if (!name.value.trim() || make.disabled) { name.focus(); return; }
         make.disabled = true;
+        ask.replaceChildren();
         try {
           const s = await servers.makeServer(name.value, handle.value);
           list.push(s);
           show(s.id);
+          // Made: the faint shapes stand whole where they were, its chip taking it in with a pop.
+          const chip = chips.querySelector<HTMLElement>(`[data-server="${CSS.escape(s.id)}"]`);
+          if (chip) pop(chip, .12, 340);
+          track.querySelector('.slide[aria-current="true"] .board-card')?.animate([{opacity: .35}, {opacity: 1}], {duration: 360, easing: 'ease-out'});
         } catch (e) {
           make.disabled = false;
-          // Making a server is the plan's to allow: said here, with the way to the Plan.
           const plan = planRefused(e, () => { this.close(); goToPlan(this.ctx); });
-          // Said once: the line under the form already says it, so the refusal takes its place.
-          if (plan) { paid.replaceChildren(); error.replaceChildren(plan); }
+          if (plan) ask.replaceChildren(plan);
           else if (e instanceof RemoteError && e.status === 409 && /address/i.test(e.message)) {
             const inbox = button(t('Go to Inbox'), 'small-button');
             inbox.addEventListener('click', () => { this.close(); this.ctx.go('inbox'); });
-            error.replaceChildren(t('A server needs your name. Claim one in Inbox.'), ' ', inbox);
-          } else error.textContent = errorText(e);
+            ask.replaceChildren(t('A server needs your name. Claim one in Inbox.'), ' ', inbox);
+          } else ask.textContent = errorText(e);
         }
       };
       make.addEventListener('click', () => void done());
-      // Free, making one is not offered by the Remote: said before anything is written, with the way to the Plan.
-      const paid = h('p', {class: 'muted small'});
-      void readPlan().then((p) => {
-        if (p.plan !== 'free') return;
-        paid.replaceChildren(planSaid({rule: 'server', buy: !!p.buy}, () => { this.close(); goToPlan(this.ctx); }));
-      }, () => {});
       for (const f of [name, handle]) f.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); void done(); } });
-      // What one removed or left last, still held: brought back with its name and boards.
+      // What one removed or left last, still held: brought back with its name and boards, from under the board.
       const back = h('div', {class: 'server-back'});
       void servers.goneServers().then((held) => back.replaceChildren(...held.map((g) => {
         const b = button(t('Bring back {name}', {name: g.name}), 'small-button');
@@ -410,20 +430,27 @@ export class ServerLayer {
         deed(b, async () => { await servers.bringBack(g.id); list = await servers.servers(); show(g.id); });
         return b;
       })), (e) => back.replaceChildren(h('p', {class: 'error small'}, errorText(e))));
-      track.replaceChildren(h('div', {class: 'slide', 'aria-current': 'true'}, h('div', {class: 'board-card board-new'},
-        // Its name and, as a page's head has, what it is in a few quiet words; the fields under them.
-        h('div', {class: 'board-head'}, h('h2', {}, t('Make a server')), h('span', {class: 'muted'}, t('People you know, and the boards you keep together'))),
-        h('div', {class: 'board-body'},
-          // Fields as New repo's: a label over each, what it means under it.
-          h('label', {class: 'field'}, h('span', {class: 'field-label'}, t('Name')), name),
-          h('label', {class: 'field'}, h('span', {class: 'field-label'}, t('Name on this Remote')), handle,
-            h('span', {class: 'muted small'}, t('First come, as a person\'s: nobody else\'s while the server has it, renewed by its owner every five years.'))),
-          paid, answers(null, make), error, back))));
-      slides.classList.add('single');
+      // The server it will be, faint: its first board's head, its TODO's first line, and room for its talk.
+      track.replaceChildren(h('div', {class: 'slide', 'aria-current': 'true'}, h('div', {class: 'board-card board-ghost', 'aria-hidden': 'true'},
+        h('div', {class: 'board-head'}, h('span', {class: 'muted board-mark'}, '#'), h('h2', {}, 'general')),
+        h('p', {class: 'ghost-label'}, 'TODO'),
+        h('div', {class: 'ghost-todo'}, h('span', {class: 'ghost-mark'}), t('Something to do together')),
+        h('div', {class: 'ghost-talk'}, h('span'), h('span'), h('span'))), back),
+        // Beside it, the edge of the box that will make its next board, where it will be.
+        h('div', {class: 'slide', 'aria-current': 'false'}, h('div', {class: 'board-card board-ghost ghost-next', 'aria-hidden': 'true'}, h('span', {class: 'board-head'}, '+'))));
+      slides.classList.remove('single');
+      slides.style.setProperty('--lead', '0');
       track.style.setProperty('--at', '0');
       prev.hidden = next.hidden = true;
       paintDock(null);
-      paintSide();
+      // At the right, its first person: oneself, as its owner.
+      side.replaceChildren();
+      void myself.then((me) => {
+        if (!naming?.isConnected || !me?.addresses[0]) return;
+        const a = me.addresses[0].address;
+        side.replaceChildren(h('div', {class: 'side-ghost', 'aria-hidden': 'true'}, part(t('People'), h('ul', {class: 'people'},
+          h('li', {}, faceOf(a), h('span', {}, named(a)), h('span', {class: 'muted small'}, t('owner')))))));
+      });
       if (this.pinned) name.focus();
     };
 
@@ -431,6 +458,7 @@ export class ServerLayer {
     const show = (id: string, board?: string) => {
       const s = list.find((x) => x.id === id);
       if (!s) { makeServer(); return; }
+      naming = null;
       serverId = id;
       alone = null;
       place('boards');

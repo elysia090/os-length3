@@ -53,12 +53,13 @@ let readingPath: string | null = null;
 const ctx: Context = {
   // Server, like File, is laid over the page rather than being one.
   go: (id) => { if (id === 'server') { serverLayer.open(true); return Promise.resolve(); } return select(id); },
-  openRepo(name, path = '', write = false) {
+  openRepo(name, path = '', write = false, grownFrom) {
     if (current === 'forge' && showInForge(name, path, write)) return;
     ctx.remember(name);
     revealNext(path, write);
-    // Pressed on its card or its row, the repo grows from there into its box in Forge.
-    const from = pressedOn?.isConnected && performance.now() - pressedAt < 1500 ? pressedOn.getBoundingClientRect() : null;
+    // Pressed on its card or its row (or made from a form, which says so), the repo grows from there into its box in Forge.
+    const from = grownFrom?.isConnected ? grownFrom.getBoundingClientRect()
+      : pressedOn?.isConnected && performance.now() - pressedAt < 1500 ? pressedOn.getBoundingClientRect() : null;
     pressedOn = null;
     select('forge', !!from && morph(from, () => document.querySelector<HTMLElement>(`.col[data-repo="${CSS.escape(name)}"]:not([hidden]) .file`)));
   },

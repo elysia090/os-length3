@@ -177,6 +177,8 @@ class NewRepo extends Part {
   /** What is said under the name when it cannot be used. */
   get problem() { return this.main.getByRole('alert'); }
   get made() { return this.main.getByRole('status'); }
+  /** Forge holding `name`'s page: where a repo made is gone into. */
+  madeIn(name: string) { return this.page.getByRole('region', {name: `The files of ${name}`, exact: true}); }
   /** The name a file of the scaffold will have (its field in the box, by the scaffold's path). */
   fileName(path: string) { return this.main.getByRole('textbox', {name: `Name of ${path}`, exact: true}); }
 
@@ -194,12 +196,12 @@ class NewRepo extends Part {
   }
 
   /**
-   * Make a repo and see it made. `template: 'C'`: then C's files are written into it from File, as
+   * Make a repo and see it made: Forge opens it. `template: 'C'`: then C's files are written into it from File, as
    * someone would (src/main.c and its Makefile, as `l3 repo new -t c` makes them), and Forge shows it.
    */
   async make(name: string, o: {template?: 'C'; summary?: string; files?: Record<string, string>} = {}) {
     await this.fill(name, o);
-    await expect(this.made).toHaveText(`Made ${name}`);
+    await expect(this.madeIn(name)).toBeVisible();
     if (o.template !== 'C') return;
     const c = new Map(TEMPLATES.find((t) => t.id === 'c')!.files as [string, string][]);
     await this.app.file.named(name, '', 'New folder', 'src');
@@ -209,10 +211,8 @@ class NewRepo extends Part {
     await this.app.forge.editFile('Makefile', c.get('Makefile')!.replaceAll('{name}', name));
   }
 
-  /** Made: open it in Forge, as the page offers (made with C's files, Forge has it open already). */
+  /** Made: Forge has it open, its README there to write in. */
   async openInForge() {
-    const open = this.main.getByRole('button', {name: 'Open in Forge'});
-    if (await open.isVisible()) await open.click();
     await expect(this.app.forge.editor('README.md')).toBeVisible();
   }
 }
@@ -373,8 +373,11 @@ class FileTree extends Part {
   name(text: string) { return this.tree.getByRole('button', {name: text, exact: true}); }
 
   async openTree() {
-    if (await this.tree.isVisible()) return;
-    await this.app.rail.button('file').click();
+    // Out is what File's button says, not whether the tree is still seen: put away a moment ago, it fades for a
+    // moment while no longer out.
+    const file = this.app.rail.button('file');
+    if (await file.getAttribute('aria-expanded') !== 'true') await file.click();
+    await expect(file).toHaveAttribute('aria-expanded', 'true');
     await expect(this.tree).toBeVisible();
   }
 

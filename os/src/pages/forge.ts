@@ -7,7 +7,7 @@ import {bring, onSync, remoteOnly} from '../lifecycle.ts';
 import {onChange, store} from '../repos.ts';
 import type {Context} from './context.ts';
 import {bench} from './bench.ts';
-import {Reader} from './reader.ts';
+import {Reader, type Writing} from './reader.ts';
 import {startIssue} from './issue-form.ts';
 import {arrive, glide, LAND, where} from '../glide.ts';
 
@@ -35,20 +35,20 @@ import {arrive, glide, LAND, where} from '../glide.ts';
  */
 
 /** Set when Forge is opened for a repo: the path to scroll to ('' for the top), and whether to write there. */
-let pending: {path: string; write: boolean} | null = null;
+let pending: {path: string; write: Writing} | null = null;
 
 /** The Forge on screen, so File can move it in place. */
-let live: {element: HTMLElement; show(repo: string, path: string, write: boolean): void} | null = null;
+let live: {element: HTMLElement; show(repo: string, path: string, write: Writing): void} | null = null;
 
 /** Show `repo` at `path` in the Forge on screen (the caret at its start with `write`); false when Forge is not showing. */
-export function showInForge(repo: string, path: string, write = false): boolean {
+export function showInForge(repo: string, path: string, write: Writing = false): boolean {
   if (!live?.element.isConnected) return false;
   live.show(repo, path, write);
   return true;
 }
 
 /** Forge is next drawn for the repo just asked for, at `path` ('' for its top). */
-export function revealNext(path: string, write = false) { pending = {path, write}; }
+export function revealNext(path: string, write: Writing = false) { pending = {path, write}; }
 
 /**
  * One repo's page in the center: its box in the row (its head, and the page that scrolls), what reads it, where it
@@ -130,7 +130,7 @@ function make(ctx: Context) {
 
   // A place asked for in another file than the one a box beside holds is read in the repo's page, which comes in
   // where that box stood (or is gone to, standing in the row already).
-  const revealAt = (path: string, line = 0, write = false) => {
+  const revealAt = (path: string, line = 0, write: Writing = false) => {
     const file = repo ? fileOf(repo) : null;
     if (repo && file !== null && file !== path) {
       const page = repoOf(repo);
@@ -513,7 +513,7 @@ function make(ctx: Context) {
   });
 
   /** Show `name` in the band, the center and the terminal, in place; at `path` if given, ready to write with `write`. */
-  const show = (name: string, path = '', write = false) => {
+  const show = (name: string, path = '', write: Writing = false) => {
     band = addToBand(band, name);
     saveBand();
     if (repo !== name || !shown.includes(name)) {

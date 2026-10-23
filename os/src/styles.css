@@ -1645,6 +1645,31 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .server-center { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); padding: var(--band) var(--s5) 120px; }
 .server-top { display: flex; align-items: center; gap: var(--s2); margin-bottom: var(--s3); }
 .server-chips { flex: 1; min-width: 0; }
+/* A server being named: its chip is the field, where it will stand once made, dashed until it has a name; its name
+   on this Remote quiet after the name; Make beside it, and what the Remote said no to after that. */
+.server-making { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--s2); min-width: 0; }
+.chip.server-naming { display: inline-flex; align-items: center; gap: var(--s2); border-style: dashed; cursor: text; }
+.chip.server-naming.named, .chip.server-naming:focus-within { border-style: solid; border-color: var(--ink); }
+.server-name-in, .server-handle-in { min-width: 0; padding: 0; border: 0; background: transparent; color: var(--ink); font: inherit; }
+.server-name-in { font-weight: 600; }
+.server-handle-in { color: var(--sub); font-family: var(--mono); }
+.server-name-in:focus, .server-handle-in:focus { outline: none; }
+.server-ask { color: var(--sub); font-size: var(--t-meta); }
+.server-ask:empty { display: none; }
+/* The server it will be, faint under its chip: its first board dashed on the ground, its TODO's first line, room for
+   its talk; nothing in it to press. Made, the same shapes stand there whole. */
+.slide[aria-current='true'] .board-card.board-ghost { border-style: dashed; border-color: var(--rule); background: transparent; color: var(--sub); }
+.board-ghost .board-head h2 { color: var(--sub); }
+.slide .board-card.ghost-next { height: auto; border-style: dashed; border-color: var(--rule); background: transparent; color: var(--sub); }
+.ghost-label { margin: 0 var(--s5) var(--s2); font-size: var(--t-meta); font-weight: 600; }
+.ghost-todo { display: flex; align-items: flex-start; gap: var(--s3); min-height: 45%; margin: 0 var(--s4); padding: var(--s4); border: 1px dashed var(--rule); border-radius: var(--r-place); }
+.ghost-mark { flex: none; width: 18px; height: 18px; border: 1.5px solid var(--rule); border-radius: 50%; }
+.ghost-talk { display: grid; gap: var(--s2); margin-top: auto; padding: var(--s5); }
+.ghost-talk > span { height: var(--s5); border-radius: var(--r-place); background: color-mix(in srgb, var(--rule) 22%, transparent); }
+.ghost-talk > span:nth-child(1) { width: 46%; }
+.ghost-talk > span:nth-child(2) { width: 30%; justify-self: end; }
+.ghost-talk > span:nth-child(3) { width: 38%; }
+.side-ghost { opacity: .45; }
 /* A gear with nothing chosen keeps its place, so nothing beside it moves. */
 .server-gear.unseen { visibility: hidden; }
 .server-gear { display: grid; place-items: center; flex: none; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid transparent; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: pointer; }

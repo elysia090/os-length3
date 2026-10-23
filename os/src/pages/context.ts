@@ -5,7 +5,7 @@ export interface Context {
   /** Go to `id`: settles once its page is drawn (a page may pan in a frame later). */
   go(id: PurposeId): Promise<void>;
   /** Open a repo in Forge, at `path` inside it if given; with `write`, the caret goes to that file's start. */
-  openRepo(name: string, path?: string, write?: boolean): void;
+  openRepo(name: string, path?: string, write?: boolean | 'end', from?: Element): void;
   /** The file Forge's center is reading now (null for none), for File to mark. */
   reading(path: string | null): void;
   /** File's tree out, with the menu of `path` in `repo` ('' for the repo itself): New file, New folder, Rename, Delete as it allows. */

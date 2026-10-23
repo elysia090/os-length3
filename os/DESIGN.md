@@ -1800,9 +1800,19 @@ Server is an overlay (§3), on the bench's shape. Its pieces, from §3:
 
 - **The band**: + first at the top line's left end, to make a server, then
   the servers one is in; the gear at the right end (kept in its place,
-  unpressable, while none is chosen). Making a server is paid (§6, The
-  plan): a free account's box says so under its fields, with See the plan
-  (§3, Paid, said in place); being asked into one, and writing, are free.
+  unpressable, while none is chosen). A server is made where it will
+  stand, not in a form: its chip is the field, in the band after the
+  others (dashed until it has a name, its name on this Remote quiet after
+  the name, following it until written itself), Make beside it; under it
+  the server it will be stands faint, its first board (#general, its TODO's
+  first line, room for its talk) dashed on the ground and, at the right,
+  its first person, oneself as owner. Made (Enter or Make), the same
+  shapes stand there whole and its chip takes it with a pop. What the name
+  on this Remote is (first come, five years) is said when the name is
+  pointed at; what the Remote says no to (the plan: making a server is
+  paid, §6; a name taken; one's own name to claim first) is said at the
+  chip's end when it says it, with the way on (See the plan, Go to Inbox).
+  Being asked into a server, and writing, are free.
 - **Boxes side by side**: its boards, the last box making a new one. A
   board holds **the TODO box** at its top and its talk under it, with
   nothing switched to see one or the other. Outside the server an open
@@ -1892,10 +1902,13 @@ side by side only while what is written keeps a reading width beside the
 card; narrower, they stack: name, what it is for, the files.
 
 Under the form is the list of repos, the same cards as on Home. Once made,
-the page stays where it is: the new repo's card joins the list and lights
-for a moment, the preview card says it is in File under `/root/<name>`, and
-where 作成 was there is "<name> を作りました" with the ways on: Forge で開く
-(primary; it goes on the band) and 続けて作る (a fresh form). A name not
+it is gone into at once: no page saying it was made, no form left greyed
+out. The summary's sheet grows into the README's box in Forge (an outline
+from the one to the other), the repo goes on the band, and the caret is at
+the end of its README, after what was written under the title, to go on
+writing; the form is
+fresh for the next one (+ on the rail). Only a file that could not be
+written keeps the page, to say so. A name not
 allowed, or one already taken, is said right under the name, where it is
 to be put right, and the keyboard goes back to the name as it was
 written; typing in it again clears what was said.
