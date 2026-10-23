@@ -33,6 +33,8 @@ import {errorText} from '../errors.ts';
 
 const OPEN_DELAY = 80;
 const LINGER = 8000;
+/** A press this soon after the hover opened the tree is the same reach for it, not a second press to close it. */
+const HOVER_GRACE = 600;
 
 /** Open folders by absolute path, kept while the app runs. */
 const expandedPaths = new Set<string>(['/root']);
@@ -74,6 +76,8 @@ export class FileTree {
   private folders = new WeakMap<HTMLElement, () => Promise<void>>();
   /** Whether the pointer is over the tree or File, so a hold let go knows to start the linger. */
   private over = false;
+  /** When it last came out. */
+  private openedAt = 0;
 
   constructor(events: FileTreeEvents) {
     this.events = events;
@@ -117,11 +121,12 @@ export class FileTree {
     button.setAttribute('aria-expanded', 'false');
     button.addEventListener('pointerenter', () => this.enter());
     button.addEventListener('pointerleave', () => this.leave());
-    // A press never closes what the hover just opened; from the keyboard
-    // (detail 0) it toggles and moves focus into the tree.
+    // A press never closes what the hover just opened (a moment ago); pressed again after that, it closes, as
+    // the plug and the person's icon do (issue #45). From the keyboard (detail 0) it toggles and moves focus in.
     button.addEventListener('click', (event) => {
       const keyboard = event.detail === 0;
-      if (keyboard && this.isOpen) this.close(); else this.open(keyboard);
+      const settled = this.isOpen && performance.now() - this.openedAt > HOVER_GRACE;
+      if (this.isOpen && (keyboard || settled)) this.close(); else this.open(keyboard);
     });
   }
 
@@ -153,6 +158,7 @@ export class FileTree {
       }
       this.build(focus);
     }
+    if (!this.isOpen) this.openedAt = performance.now();
     this.element.classList.add('open');
     this.trigger?.setAttribute('aria-expanded', 'true');
   }
@@ -162,6 +168,29 @@ export class FileTree {
     this.unpop();
     this.element.classList.remove('open');
     this.trigger?.setAttribute('aria-expanded', 'false');
+  }
+
+  /**
+   * The tree out at `path` in `repo` (its folders opened down to it; '' is the repo itself) with that row's menu
+   * open: what can be done to it, as its own ⌄ gives (issue #49). Nothing is done until a deed is chosen there.
+   */
+  async actOn(repo: string, path: string) {
+    const at = path ? `/root/${repo}/${path}` : `/root/${repo}`;
+    const parts = at.split('/').filter(Boolean);
+    for (let i = 1; i < parts.length; i++) expandedPaths.add(`/${parts.slice(0, i).join('/')}`);
+    this.close();
+    this.open(false);
+    // Drawn as its folders are read: waited for a moment, not for good.
+    for (let i = 0; i < 60; i++) {
+      const name = this.nameAt(at);
+      const more = name?.closest('.tree-row')?.querySelector<HTMLButtonElement>(':scope > .tree-more');
+      if (name && more) {
+        name.scrollIntoView({block: 'nearest'});
+        more.click();
+        return;
+      }
+      await new Promise((go) => setTimeout(go, 50));
+    }
   }
 
   /** Mark the repo Forge shows. */

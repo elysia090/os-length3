@@ -7,6 +7,8 @@ export interface Context {
   openRepo(name: string, path?: string, write?: boolean): void;
   /** The file Forge's center is reading now (null for none), for File to mark. */
   reading(path: string | null): void;
+  /** File's tree out, with the menu of `path` in `repo` ('' for the repo itself): New file, New folder, Rename, Delete as it allows. */
+  actOn(repo: string, path: string): void;
   /** Record the repo Forge shows, without leaving or redrawing the page. */
   remember(name: string): void;
   /** The repo Forge shows, if any. */

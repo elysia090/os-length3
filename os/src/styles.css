@@ -97,11 +97,15 @@ a { color: var(--ink); }
    window's side, so they do not crowd it. */
 .rail { border-right: 1px solid var(--rule); padding-right: calc(var(--rail-line-gap) - var(--s3)); height: var(--inner-h); position: sticky; top: var(--outer-top); z-index: 6; display: flex; flex-direction: column; }
 .rail-tabs { display: flex; flex-direction: column; align-items: center; gap: var(--s1); flex: 1; min-height: 0; padding: var(--rail-top) 0 var(--s3); }
-/* A window too short for the rail (a laptop at 200% zoom): the rail is as tall as its places and goes with the page,
-   so + and the person's icon are reached by scrolling rather than lying under each other. */
-@media (max-height: 700px) {
-  .rail { position: static; height: auto; min-height: var(--inner-h); }
-  .rail-tabs { flex: 1 0 auto; }
+/* A window too short for all of it (a browser's tab under its own bars, a laptop at 200% zoom): the rail stays
+   where it is, in the window, as tall as the window, never going with the page (issue #44). Its places close up;
+   the person's icon stays at its foot, and what still does not fit scrolls inside the rail, not the page. */
+@media (max-height: 820px) {
+  .rail { --rail-top: var(--top-line); }
+  .rail-tabs { gap: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
+  .rail-tabs::-webkit-scrollbar { display: none; }
+  .rail-new { margin-top: var(--s3); }
+  .rail-me { padding: var(--s2) 0 var(--s3); }
 }
 
 /* The person's own icon at the foot of the rail, and what it brings out. It
@@ -222,6 +226,28 @@ a { color: var(--ink); }
 .answers { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); }
 .answers > .grow { flex: 1; }
 
+/* Home: the page in its column, and beside it the right pane Forge and Git have (bench.ts), its switch at its top,
+   kept in view while Home scrolls under it; put away, the switch alone stays, and Home takes the width. */
+.page > .home-layout { max-width: none; display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 22%); column-gap: var(--s5); align-items: start; }
+.home-layout.pane-closed { grid-template-columns: minmax(0, 1fr) var(--h-row); }
+.home-main { min-width: 0; width: 100%; max-width: 1080px; margin: 0 auto; }
+.home-pane { position: sticky; top: var(--top-line); height: calc(var(--inner-h) - var(--top-line)); min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: var(--s3); border-left: 1px solid var(--rule); padding-left: var(--s4); }
+.home-pane > .pane-toggle { justify-self: end; }
+.home-layout.pane-closed .home-pane { border-left: 0; padding-left: 0; }
+.home-layout.pane-closed .home-side { display: none; }
+.home-side { min-height: 0; overflow: auto; }
+.home-side > .plugins { padding: 0; }
+@media (max-width: 760px) {
+  .page > .home-layout, .home-layout.pane-closed { grid-template-columns: minmax(0, 1fr); }
+  .home-pane { display: none; }
+}
+/* Home a size smaller than the pages of work it leads to: the avatar, the name, the TODO box and the cards. */
+.home-main .avatar { width: 88px; height: 88px; font-size: var(--t-card); }
+.home-main .identity h1 { font-size: var(--t-title); }
+.home-main .todo-box { min-height: max(300px, 44vh); }
+.home-main .grid.home-repos .card { min-height: 180px; }
+.home-main .grid.home-repos .card-title { font-size: var(--t-body); }
+
 /* Home: profile */
 .profile { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--s5); align-items: start; }
 .avatar {
@@ -289,7 +315,7 @@ span.todo-title { min-height: 0; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: var(--s5); }
 /* Home's repos, about three across at a laptop's width (a 1180 px window gives the grid about 900 px):
    three need 3 × 280 + 2 × 24; then two, then one as it narrows. The cards keep their height. */
-.grid.home-repos { grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); }
+.grid.home-repos { grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); } /* three across beside the right pane at a laptop's width */
 .card {
   min-height: 240px; padding: var(--s4); border: 1px solid var(--rule); border-radius: var(--r-place);
   display: grid; align-content: start; gap: var(--s2); background: transparent; text-align: left; color: var(--ink);
@@ -486,7 +512,7 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 /* The band: pills for the repos out, ⊕ to bring more out beside them. */
 .pills { display: flex; gap: var(--s2); align-items: center; }
 /* The pills take the band's width and scroll there; ⊕ keeps the band's right end, wherever they reach. */
-.repo-strip > .pills { flex: 1; min-width: 0; overflow-x: auto; }
+.repo-strip > .pills { flex: 0 1 auto; min-width: 0; overflow-x: auto; } /* ⊕ right after the last pill; many, they scroll */
 /* Room round the pills inside their scroller, so a focus ring is not cut by its edges (as .parts has). */
 .repo-strip > .pills { padding: var(--s1); margin: calc(-1 * var(--s1)); }
 .pills:empty { display: none; }
@@ -506,6 +532,12 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .band-add { flex: none; display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; cursor: pointer; }
 /* Nothing left to bring out: ⊕ steps back. */
 .band-add:disabled { opacity: .5; cursor: default; background: transparent; }
+/* The files mark is the band's first, square to the pills' rounded line; ⊕ follows the pills. */
+.band-acts { border-radius: var(--r-field); }
+.band-acts .mark { width: 18px; height: 18px; }
+/* ⊕ in running words: the band's own mark at the words' height, sitting on their line. */
+.inline-add { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 1.4em; height: 1.4em; margin: 0 .2em; vertical-align: middle; border: 1px solid var(--edge); border-radius: var(--r-round); }
+.inline-add .mark { width: .9em; height: .9em; }
 /* A chip picks one of several, like the template choice: round, outlined. */
 .chip {
   flex: none; min-height: var(--h-row); padding: 0 var(--s3); border: 1px solid var(--edge); border-radius: var(--r-round);
@@ -572,6 +604,20 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 /* Its left edge a step left of the files' (s3 from the center's edge, theirs s5), so where the two
    would line up the box reads as its own surface, not the foot of the file behind it. Its right stays. */
 .work.bench .dock { left: var(--s3); }
+/* Forge's: at the center's left, not in its middle, so putting the right pane away or bringing it back (the center
+   wider or narrower) leaves the box where it was, under the pointer and the eye (issue #45). */
+.work.bench:not(.no-strip) .dock { margin: 0; }
+/* While the search is out (what it found, or what is read from it), the center steps back under a shade: still
+   there to be seen, not to be read across; the search is where to look. Closed, or with Escape, it comes back. */
+.work.bench:has(> .bar .search-box:is(:focus-within, .reading)) > .center::after {
+  content: ''; position: absolute; inset: 0; z-index: 3; pointer-events: none;
+  background: color-mix(in srgb, var(--ink) 16%, transparent); transition: opacity var(--motion);
+}
+/* The right pane put away takes its search with it; its switch stays, the way to bring both back, and says which
+   it is: brought out, an ink fill, as anything chosen; put away, the outline alone. */
+@media (min-width: 761px) { .work.bench.pane-closed > .bar > .search-box { visibility: hidden; } } /* narrow, it is the way to the pane's parts */
+.pane-toggle[aria-expanded='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+.pane-toggle[aria-expanded='true']:hover { background: var(--ink); }
 /* Under the prompt box, the ground to the center's foot: what scrolls under the box does not show below it.
    It lies behind the box (still over what scrolls), so the box's focus ring is whole. */
 .dock::after { content: ''; position: absolute; z-index: -1; top: 100%; left: -50vw; right: -50vw; height: var(--s5); background: var(--ground); }

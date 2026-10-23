@@ -94,10 +94,10 @@ export default {
   'Run': '実行する',
   'Run ({keys})': '実行する（{keys}）',
   'Right pane': '右ペイン',
+  'Files: new, rename, delete': 'ファイル：新規・名前の変更・削除',
   'Search results': '検索結果',
   'The diff of {path}': '{path}の diff',
   'Plugins': 'プラグイン',
-  'No plugins yet': 'プラグインはまだありません',
 
   // Writing an issue
   'Not now': 'やめる',

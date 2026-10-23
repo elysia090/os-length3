@@ -173,13 +173,6 @@ export async function keptL3(): Promise<{bytes: number; files: number}> {
   return {bytes: await keptBytes(c), files: (await c.keys()).length};
 }
 
-/** Let every kept copy go: the next Prompt fetches what it needs again. */
-export async function forgetL3(): Promise<number> {
-  const {bytes} = await keptL3();
-  try { await caches.delete(CACHE); localStorage.removeItem(USES); } catch { /* nothing kept */ }
-  return bytes;
-}
-
 /** Whatever the current l3 does not name goes: an l3 before, or what a browser kept of it. */
 async function forgetOthers(live: Set<string>) {
   const c = await open();

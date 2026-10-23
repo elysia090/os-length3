@@ -57,6 +57,7 @@ const ctx: Context = {
     select('forge');
   },
   remember(name) { openRepo = name; save(REPO_KEY, name); fileTree.mark(name); },
+  actOn(repo, path) { void fileTree.actOn(repo, path); },
   reading(path) { readingPath = path; if (current === 'forge') fileTree.markFile(openRepo, path); },
   get repo() { return openRepo; },
   rerender: () => render(),
@@ -90,11 +91,12 @@ function railButton(id: PurposeId): HTMLButtonElement {
     // The plug opens the plugin area at the top of the center, and closes it; elsewhere it opens it in Forge.
     // It says the area is out only where the area is (Forge's, Git's center): on another page it is kept for
     // coming back, not out. Escape on the plug puts it away, as Escape does File's tree.
-    plugState = () => button.setAttribute('aria-expanded', String(pluginsOpen() && (current === 'forge' || current === 'git')));
+    plugState = () => button.setAttribute('aria-expanded', String(pluginsOpen() && (current === 'forge' || current === 'git' || current === 'home')));
     plugState();
     onPlugins(() => plugState());
     button.addEventListener('click', () => {
-      const work = current === 'forge' || current === 'git';
+      // Home, Forge and Git have the right pane the area is at the top of; elsewhere it opens in Forge.
+      const work = current === 'forge' || current === 'git' || current === 'home';
       if (!work) select('forge');
       setPluginsOpen(!work || !pluginsOpen());
     });

@@ -11,7 +11,7 @@ import {connection} from '../remote.ts';
 
 // The way to what the center refers to: the search box over the right pane,
 // reaching a quarter of the pane's width into the center so that what opens
-// under it is not cut off (issue #20); with the pane put away the box stays.
+// under it is not cut off (issue #20); with the pane put away the box goes too, its room kept (issue #45).
 // Out of use, nothing of it is under the box and the right pane is straight.
 // Pressed, under the box at its width: Issue, diff and Output side by side to
 // switch between, and under them a large box: what was searched and read here,

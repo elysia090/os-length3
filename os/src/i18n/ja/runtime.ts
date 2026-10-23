@@ -13,7 +13,7 @@ export default {
   'The app\'s Prompt runs on the root this device installs (Runtime), not through xlat': 'アプリの Prompt はこの端末に入れた root（Runtime）で動きます。xlat は使いません',
   '{n} file kept for the Prompt': 'Prompt のために{n}ファイル',
   '{n} files kept for the Prompt': 'Prompt のために{n}ファイル',
-  'Fetched again at the next Prompt': '次の Prompt でまた取ってきます',
+  'The Prompt runs on it, so it is kept': 'Prompt が動くもとなので残します',
   'Custom': 'カスタム',
   'Not yet': 'まだです',
   'Free': '空ける',

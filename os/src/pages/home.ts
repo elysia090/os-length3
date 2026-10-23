@@ -8,6 +8,9 @@ import {repoList} from './repo-list.ts';
 import {todoBox} from './todo-box.ts';
 import type {Context} from './context.ts';
 import {answers} from './common.ts';
+import {onRightPane, pluginArea, rightPaneOpen, setRightPane} from './bench.ts';
+import {mark} from '../icons.ts';
+import {onPlugins, pluginsOpen} from '../plugins.ts';
 import {errorText} from '../errors.ts';
 
 let editing = false;
@@ -39,10 +42,32 @@ export function home(ctx: Context): Node[] {
   );
   // A setting that could not be read is said here, where the person looks first; it is not written over meanwhile.
   const unread = [...unreadable()].map(([k, why]) => h('p', {class: 'error', role: 'alert'}, t('{what} could not be read ({why})', {what: settingName(k), why})));
-  return [header, ...unread, todoBox(),
+  const main = h('div', {class: 'home-main'}, header, ...unread, todoBox(),
     h('section', {class: 'section', 'aria-labelledby': 'repos-title'}, h('h2', {id: 'repos-title'}, t('Repos')), grid),
     h('section', {class: 'section', 'aria-labelledby': 'servers-title'},
-      h('h2', {id: 'servers-title'}, t('Servers')), ownServers(ctx))];
+      h('h2', {id: 'servers-title'}, t('Servers')), ownServers(ctx)));
+  return [homePane(main)];
+}
+
+/**
+ * Home with the right pane Forge and Git have, in the same place and put away and brought back by the same switch
+ * at its top (one setting for all three): at its top the plugin area (plain until the rail's plug opens it, here
+ * as there). It stays where it is while Home scrolls under the rail; put away, Home takes the width.
+ */
+function homePane(main: HTMLElement): HTMLElement {
+  const side = h('aside', {class: 'home-side', id: 'home-side', 'aria-label': t('Plugins')}, pluginArea());
+  const toggle = h('button', {type: 'button', class: 'pane-toggle', 'aria-label': t('Right pane'), 'aria-controls': 'home-side'}, mark('pane')) as HTMLButtonElement;
+  const layout = h('div', {class: 'home-layout'}, main, h('div', {class: 'home-pane'}, toggle, side));
+  const paint = () => {
+    layout.classList.toggle('pane-closed', !rightPaneOpen());
+    toggle.setAttribute('aria-expanded', String(rightPaneOpen()));
+  };
+  toggle.addEventListener('click', () => setRightPane(!rightPaneOpen()));
+  const off = onRightPane(() => { if (!layout.isConnected) { off(); return; } paint(); });
+  // The plug opens the plugin area here, and the pane with it.
+  const offPlug = onPlugins(() => { if (!layout.isConnected) { offPlug(); return; } if (pluginsOpen()) setRightPane(true); });
+  paint();
+  return layout;
 }
 
 /** The servers the person is in (Server holds them), and how many in the counts. */

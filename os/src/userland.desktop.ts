@@ -12,7 +12,6 @@ export const FIRST: typeof web.FIRST = [];
 export const watchLoad: typeof web.watchLoad = () => () => {};
 export const about: typeof web.about = async () => null;
 export const keptL3: typeof web.keptL3 = async () => ({bytes: 0, files: 0});
-export const forgetL3: typeof web.forgetL3 = async () => 0;
 export const l3Index: typeof web.l3Index = async () => null;
 export const loadL3: typeof web.loadL3 = () => Promise.reject(webOnly());
 export const warmL3: typeof web.warmL3 = () => {};

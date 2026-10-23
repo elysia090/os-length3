@@ -47,21 +47,32 @@ const CHOICES = 24;
 const drafts = new Map<string, string>();
 
 const PANE_KEY = 'length3.os.pane';
-/** Whether the right pane is out when the window is wide, as last left on this device. */
+/** Whether the right pane is out when the window is wide, as last left on this device: one for every page that has it. */
 let paneOpen = (() => { try { return localStorage.getItem(PANE_KEY) !== 'closed'; } catch { return true; } })();
+const paneHearers = new Set<() => void>();
+/** Whether the right pane is out (wide windows), on any page that has one (Forge, Git, Home). */
+export const rightPaneOpen = () => paneOpen;
+/** The right pane put away or brought back, on every page that has one. */
+export function setRightPane(on: boolean) {
+  if (on === paneOpen) return;
+  paneOpen = on;
+  try { localStorage.setItem(PANE_KEY, on ? 'open' : 'closed'); } catch { /* a convenience */ }
+  for (const f of [...paneHearers]) f();
+}
+export function onRightPane(f: () => void): () => void { paneHearers.add(f); return () => paneHearers.delete(f); }
 let benches = 0;
 
 /**
- * The plugin area: nothing until it is opened; opened, the plugins side by side
- * (one in full, ← → or an edge to the next), or with none yet one quiet line.
+ * The plugin area: nothing until it is opened; opened, the plugins side by side (one in full, ← → or an edge to
+ * the next). With none, it stays plain: nothing is put there to fill it (issue #45), the rail's plug is the way in.
  */
-function pluginArea(): HTMLElement {
+export function pluginArea(): HTMLElement {
   const area = h('section', {class: 'plugins', 'aria-label': t('Plugins'), hidden: ''});
   const paint = () => {
     area.hidden = !pluginsOpen();
     if (area.hidden) return;
     const list = slots.all;
-    if (!list.length) { area.replaceChildren(h('div', {class: 'empty plugins-none'}, t('No plugins yet'))); return; }
+    if (!list.length) { area.replaceChildren(); return; }
     const at = slots.shown;
     const track = h('div', {class: 'slide-track', style: `--at:${at}`}, ...list.map((s, i) =>
       h('div', {class: 'slide', role: 'group', 'aria-label': s.label, 'aria-current': String(i === at)}, s.make())));
@@ -153,13 +164,10 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   };
   const setPane = (on: boolean) => {
     if (on === shown()) return;
-    if (narrow.matches) over = on;
-    else {
-      paneOpen = on;
-      try { localStorage.setItem(PANE_KEY, on ? 'open' : 'closed'); } catch { /* a convenience */ }
-    }
-    paintPane();
+    if (narrow.matches) { over = on; paintPane(); } else setRightPane(on);
   };
+  // Put away or brought back on another page (Home's), it is so here too.
+  const offPane = onRightPane(() => { if (!work.isConnected && work.dataset.shown) { offPane(); return; } paintPane(); });
   toggle.addEventListener('click', () => setPane(!shown()));
   // The search's box is only as tall as the room above the center's Prompt, so the Prompt brought up over the
   // center (its output as it grows) is never under it (issue #20).
@@ -309,6 +317,12 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   // Run sends as Ctrl+Enter does; pressed with the pointer, the keyboard stays in the box.
   runIt.addEventListener('pointerdown', (event) => { if (document.activeElement === prompt) event.preventDefault(); });
   form.addEventListener('submit', (event) => { event.preventDefault(); send(); prompt.focus(); });
+  // Pressed anywhere in the box, not on its line alone (its padding, beside Run): the caret goes in.
+  form.addEventListener('pointerdown', (event) => {
+    if (event.target !== form || prompt.disabled) return;
+    event.preventDefault();
+    prompt.focus();
+  });
   /** What is in the box goes to the repo's Prompt (an ended one is started again first). */
   const send = () => {
     if (!repo) return;

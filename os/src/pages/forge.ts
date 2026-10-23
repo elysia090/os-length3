@@ -72,7 +72,9 @@ function make(ctx: Context) {
   const strip = h('nav', {class: 'repo-strip', 'aria-label': 'repo'});
   const flow = h('section', {class: 'flow', tabindex: '0', 'aria-label': t('The repo\'s contents')});
   /** What the center says with no repo out. */
-  const nothing = h('div', {class: 'empty forge-none', hidden: ''}, t('Bring a repo out to the band with ⊕, or open one from File'));
+  // ⊕ in the words is the band's own mark (its circle and plus, on the words' line), not a glyph of the font set high.
+  const nothing = h('div', {class: 'empty forge-none', hidden: ''},
+    ...t('Bring a repo out to the band with ⊕, or open one from File').split('⊕').flatMap((part, i) => (i ? [h('span', {class: 'inline-add', 'aria-label': '⊕'}, mark('plus')), part] : [part])));
   flow.append(nothing);
   /**
    * Each repo's page stays in the center once made, the others hidden: a text box taken
@@ -80,6 +82,7 @@ function make(ctx: Context) {
    */
   const put = (root: HTMLElement | null) => {
     nothing.hidden = root !== null;
+    acts.disabled = root === null;
     for (const v of views.values()) v.root.hidden = v.root !== root;
     if (root && root.parentElement !== flow) flow.append(root);
   };
@@ -97,7 +100,12 @@ function make(ctx: Context) {
   let all: string[] = [];
   const pills = h('div', {class: 'pills'});
   const add = h('button', {type: 'button', class: 'band-add', 'aria-label': t('Bring every repo out to the band')}, mark('plus')) as HTMLButtonElement;
-  strip.append(add, pills);
+  // First on the band, what can be done to the file read now (or the repo itself): File's menu for it, out of the
+  // tree at its row (New file, New folder, Rename, Delete, as each allows); ⊕ after the pills (issue #49).
+  const acts = h('button', {type: 'button', class: 'band-add band-acts', 'aria-label': t('Files: new, rename, delete'),
+    title: t('Files: new, rename, delete')}, mark('files')) as HTMLButtonElement;
+  acts.addEventListener('click', () => { if (repo) ctx.actOn(repo, reading ?? ''); });
+  strip.append(acts, pills, add);
   const saveBand = () => { void setState('band', JSON.stringify(band)).catch(() => { /* the band is a convenience */ }); };
   /** Every repo: here, and only on the Remote (fetched when it comes out, as opening one from Home does). */
   const every = () => [...all, ...remoteOnly().map((r) => r.name).filter((n) => !all.includes(n))];

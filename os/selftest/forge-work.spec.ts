@@ -145,7 +145,7 @@ test('a file found by its name is opened to write in from the keyboard alone, an
   await expect(app.forge.search).toHaveValue('main.c');
 });
 
-test('the right pane put away gives the center the width; the search box stays where it was, and what is read under it', async ({app}) => {
+test('the right pane put away gives the center the width and takes the search with it; brought back, both are where they were', async ({app}) => {
   await app.file.named('hello', '', 'New folder', 'issue');
   await app.file.named('hello', 'issue', 'New file', '001.md');
   await app.forge.editFile('issue/001.md', 'Fix: the first\n');
@@ -160,14 +160,17 @@ test('the right pane put away gives the center the width; the search box stays w
   await expect(app.forge.paneSwitch).toHaveAttribute('aria-expanded', 'false');
   await expect(app.main.getByRole('complementary', {name: 'Plugins and Prompt'})).toBeHidden();
   expect((await center.boundingBox())!.width).toBeGreaterThan(wide + 200);
+  // The search goes with the pane (issue #45); the switch stays, the way back.
+  await expect(app.forge.search).toBeHidden();
+  await expect(app.forge.paneSwitch).toBeVisible();
+
+  // Back: the search where it was, what was read under it still there; and it stays as left when the page is opened again.
+  await app.forge.paneSwitch.click();
+  await expect(app.main.getByRole('complementary', {name: 'Plugins and Prompt'})).toBeVisible();
   const still = (await app.forge.search.boundingBox())!;
   expect(Math.abs(still.x - box.x)).toBeLessThan(1);
   expect(Math.abs(still.width - box.width)).toBeLessThan(1);
   await expect(app.forge.reference.getByRole('button', {name: 'Change its words'})).toBeVisible();
-
-  // Back, and it stays as left when the page is opened again.
-  await app.forge.paneSwitch.click();
-  await expect(app.main.getByRole('complementary', {name: 'Plugins and Prompt'})).toBeVisible();
   await app.forge.paneSwitch.click();
   await app.page.reload();
   await app.settled();
@@ -223,12 +226,21 @@ test('the plug opens a plain plugin area at the top of the center, and closes it
   await expect(area).toBeHidden();
   await app.rail.button('plugin').click();
   await expect(area).toBeVisible();
-  await expect(area).toHaveText('No plugins yet');
+  // With none installed it is a plain area, no words in it (issue #45).
+  await expect(area).toBeEmpty();
   await expect(app.rail.button('plugin')).toHaveAttribute('aria-expanded', 'true');
   await app.rail.button('plugin').click();
   await expect(area).toBeHidden();
-  // From another page it opens Forge with it out.
+  // Home has the same right pane: the plug opens the area there, and the pane with it (issue #45).
   await app.rail.go('home');
+  await app.page.getByRole('button', {name: 'Right pane'}).click();
+  await expect(app.page.getByRole('button', {name: 'Right pane'})).toHaveAttribute('aria-expanded', 'false');
+  await app.rail.button('plugin').click();
+  await expect(app.rail.button('home')).toHaveAttribute('aria-current', 'page');
+  await expect(app.page.getByRole('button', {name: 'Right pane'})).toHaveAttribute('aria-expanded', 'true');
+  await expect(area).not.toHaveAttribute('hidden');
+  // Elsewhere it opens Forge with it out.
+  await app.rail.go('runtime');
   await app.rail.button('plugin').click();
   await expect(app.rail.button('forge')).toHaveAttribute('aria-current', 'page');
   await expect(area).toBeVisible();
@@ -288,4 +300,31 @@ test('the current repo\'s pill shows which part has the keyboard, in ground over
   const scroller = (await app.forge.band.locator('.pills').boundingBox())!;
   const at = (await pill.boundingBox())!;
   expect(at.y - scroller.y).toBeGreaterThanOrEqual(4);
+});
+
+test('the band\'s first button opens File at what is read now, with its menu out (issue #49)', async ({app}) => {
+  await app.rail.go('forge');
+  const band = app.forge.band;
+  // The files button first, ⊕ after the repos.
+  const buttons = band.getByRole('button');
+  await expect(buttons.first()).toHaveAccessibleName('Files: new, rename, delete');
+  await expect(buttons.last()).toHaveAccessibleName(/^Bring every repo out/);
+  await buttons.first().click();
+  await expect(app.file.tree).toBeVisible();
+  // The file read now (the first of the repo, opened with it), its row's menu out by it.
+  const menu = app.page.getByRole('menu', {name: 'Makefile', exact: true});
+  await expect(menu).toBeVisible();
+  await expect(app.file.tree.getByRole('button', {name: 'Makefile', exact: true})).toBeVisible();
+  await expect(menu.getByRole('menuitem').first()).toBeVisible();
+  await app.page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+});
+
+test('pressed anywhere in the prompt box, beside its line too, the caret goes in (issue #45)', async ({app}) => {
+  await app.rail.go('forge');
+  const form = app.main.locator('form.prompt');
+  const box = (await form.boundingBox())!;
+  // Its padding, under the line and left of Run.
+  await app.page.mouse.click(box.x + 6, box.y + box.height - 4);
+  await expect(app.forge.promptBox).toBeFocused();
 });
