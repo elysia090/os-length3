@@ -7,7 +7,7 @@
 #                                                  to be the same tree (l3-parity.mjs)
 #   os-length3-linux-X.Y.Z-web.zip                  the web build, with that l3 (web-release.sh)
 #   os-length3-linux-X.Y.Z-desktop-amd64.deb        the desktop app, its Prompt running that root on the
-#   os-length3-linux-X.Y.Z-desktop-x86_64.AppImage  machine (tauri build)
+#   os-length3-linux-X.Y.Z-desktop-x86_64.AppImage  machine, with l3 beside it (desktop.sh)
 #   SHA256SUMS, manifest                           the digests; what the root was made from
 #
 # and OUT/../notes.md, the release's notes. Before the web build and the app are made, the root is pinned
@@ -55,12 +55,9 @@ L3_READY=1 sh scripts/web-release.sh
 web=os-length3-linux-$version-web.zip
 mv length3-web.zip "$out/$web"
 rm -f length3-web.zip.sha256
-# The app runs its Prompt on the machine, from the root it installs: l3 for the browser stays out of it.
-aside=$(mktemp -d "${TMPDIR:-/tmp}/length3-l3web.XXXXXX")
-mv public/l3 "$aside/"
-trap 'if [ -d "$aside/l3" ]; then rm -rf "$here/public/l3"; mv "$aside/l3" "$here/public/"; fi; rmdir "$aside" 2>/dev/null || true' EXIT
-# The AppImage is bundled by linuxdeploy, itself an AppImage: without FUSE it unpacks itself.
-APPIMAGE_EXTRACT_AND_RUN=1 npx tauri build --config "{\"version\":\"$version\",\"build\":{\"beforeBuildCommand\":\"npx vite build\"}}"
+# The app with l3 beside it (scripts/desktop.sh): the command line, and what its Prompt and SSH run. It runs its
+# Prompt on the machine, from the root it installs: its build leaves l3 for the browser out (vite.config.ts).
+sh scripts/desktop.sh "$version"
 deb=os-length3-linux-$version-desktop-amd64.deb
 appimage=os-length3-linux-$version-desktop-x86_64.AppImage
 cp target/release/bundle/deb/*_"$version"_*.deb "$out/$deb"

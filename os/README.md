@@ -60,9 +60,11 @@ tracked in issue #20.
   (`caches/<repo>`), `/tmp` and `/run` end with the Prompt. Runtime lists
   each part, and what is derived in the repo (node_modules beside
   package.json, target beside Cargo.toml, a venv, anything with a
-  CACHEDIR.TAG), which is never sent to the Remote. Otherwise (and in a
-  browser) the same root through the xlat translator in a Worker, on the
-  open repo: its own BusyBox `sh`, coreutils, git, gcc, make and l3, at the
+  CACHEDIR.TAG), which is never sent to the Remote. The app's Prompt is
+  that root and nothing else: with none installed yet it says so and
+  Runtime installs one (it never falls back to the browser's way, whose
+  files its build does not carry). In a browser, the same root through
+  the xlat translator in a Worker, on the open repo: its own BusyBox `sh`, coreutils, git, gcc, make and l3, at the
   same paths with the same bytes. What the shell changes under `/root/<repo>` is
   written back through the store (text files up to the read limit), and
   what is saved anywhere else is put into the shell's copy, so the shell,
@@ -174,6 +176,12 @@ to it from the command line (`l3 help` says so in a line of its own):
 $ l3 app
 Opened the app. Its window's close button, or l3 app close, closes it
 ```
+
+The .deb and the AppImage carry l3 beside the app (`scripts/desktop.sh`): the
+.deb puts `/usr/bin/l3` on the PATH beside `/usr/bin/length3-os`, so after
+`sudo apt install ./os-length3-linux-X.Y.Z-desktop-amd64.deb` both `l3` and
+`l3 app` work at once, and the app runs that l3 for its Prompts and SSH. It
+is static (musl), with SSH; the root's own `/usr/bin/l3` is built without it.
 
 - **Open**: the app this device has is started on its own, the terminal
   free at once, and waited for until it answers; only then is it said as
@@ -486,7 +494,8 @@ to this repository, and its Settings → Build say, once:
 | Build command | `npm run build:cloudflare`: l3 for the browser from the release `RELEASE` names (`scripts/prompt-files.mjs`, taken only at the index `core/src/root.rs` pins for it), then the app |
 | Deploy command | `node service/deploy.ts`: the migrations on Neon's production branch (no branch is made for a deploy; a contract step waits until the new Worker answers), the bucket, then the Worker with the secrets it lacks (the first build prints the link in its log), then the release's files the Remote serves to anyone (`service/mirror.ts`): each root `core/src/root.rs` pins and the desktop app `shared/desktop-releases.json` pins for `RELEASE`, taken from the GitHub release where the bucket lacks them, checked against those pins, and put with wrangler |
 | Variables and secrets | `NEON_PROJECT_ID`; secrets `NEON_API_KEY` (a Neon API key for the project) and `GITHUB_TOKEN` (read-only, for this private repository's releases: the build's Prompt and the deploy's release files) |
-| Branch control | main; no preview builds |
+| Non-production branch deploy command | `npx wrangler versions upload`: another branch's build uploads a version to preview and never deploys (`service/deploy.ts` refuses to run for a branch other than main). Never `npx wrangler deploy`, which would replace production from any branch, without its migrations or its bucket |
+| Branch control | main deploys; other branches build previews. A build needs the token: without it, a branch's preview is built without the Prompt, and main's build stops (`scripts/prompt-files.mjs`) |
 
 The Prompt the web serves is a released one: a newer one ships by releasing
 it (a new version in `RELEASE`, `.github/workflows/release.yml`; without
@@ -536,9 +545,10 @@ knowing neither, it refuses any Neon host. `-- --production` runs it anyway.
 Linux needs the WebKitGTK toolchain:
 `libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev`.
 The web app runs the same core as the desktop app (`core/`, built for the
-browser by `core/web`), so every build of the page needs Rust with
+browser by `core/web`), so every web build of the page needs Rust with
 `rustup target add wasm32-wasip1`; Vite builds it when `core/` changed, and
-says that command when the target is missing.
+says that command when the target is missing. The desktop app's build does
+not: its core is the app's own.
 
 ### One core, two hosts
 
@@ -552,6 +562,15 @@ take turns under one Web Lock and tell each other each file they wrote.
 Tests run it too: `src/core.node.ts` is the same module in a Node worker,
 its requests answered by the test's own Remote.
 
+Each build carries only its own host's part, decided when it is built
+(`vite.config.ts`: the desktop app's when Tauri's CLI runs the build). The
+web's alone (the browser's core and its worker, l3 for the browser and xlat,
+passkeys) each has a `.desktop.ts` beside it with the same exports, which the
+app's build takes instead, and leaves out `public/l3`; Tauri's API
+(`src/tauri.ts`) has a `.web.ts` the web's build takes. `isNative`
+(`src/host.ts`) is that same fact, so a branch for the other host is dropped
+too. The app's page is about 0.4 MB, the web's 1.3 MB with its core.
+
 ```
 npm ci
 npm run check                  # tsc, then npm test
@@ -561,6 +580,7 @@ npm run selftest:l3            # l3 end to end against a Remote of its own (self
 npm run verify:remote          # the Remote on a real Postgres: DATABASE_URL (see Deploy)
 npx tauri dev                  # window against the Vite dev server
 npx tauri build --debug --no-bundle
+sh scripts/desktop.sh          # the .deb and the AppImage as they ship, l3 beside the app
 ```
 
 ### CI

@@ -16,13 +16,19 @@ compatibility_date = "2026-08-01"
 compatibility_flags = ["nodejs_compat"]
 
 [assets]
+# The build (npm run build:cloudflare; vite.config.ts builds into this directory, and Tauri takes the app's from
+# it), never this tree: served from os/ itself, the page asks for /src/main.ts, which no browser runs, and shows
+# nothing but its background. service/deploy.ts refuses a directory that is not a build.
 directory = "dist"
-# A page of the app that is not a file is the app; the Remote's own paths always reach the Worker.
+# A page of the app that is not a file is the app; the Remote's own paths always reach the Worker (and, in
+# development, vite.config.ts passes the same paths to the Remote it is given).
 not_found_handling = "single-page-application"
 run_worker_first = ["/v1/*", "/api/*", "/.well-known/*"]
 
 [vars]
-# The URL handed on: the app and the Remote are both here.
+# The URL handed on: the app and the Remote are both here. The same name is the page's (src/policy.ts
+# DEFAULT_REMOTE), the core's (core/src/remote/mod.rs DEFAULT_URL) and the desktop app's policy
+# (src-tauri/tauri.conf.json); service/config.test.ts holds them to these.
 BASE_URL = "https://os.length3.com"
 APP_ORIGIN = "https://os.length3.com"
 DOMAIN = "length3.com"

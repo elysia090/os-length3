@@ -3,6 +3,8 @@
 // than a blank page that says nothing. Plain ES5 and no module, so it runs where the app itself cannot;
 // a file of its own, as the page's policy runs no script written into the page.
 (function () {
+  // Scripts run: what index.html says for a page whose scripts never run is not shown (styles.css).
+  document.documentElement.className += ' scripted';
   var failed = [];
   window.addEventListener('error', function (e) {
     var t = e.target;
@@ -33,7 +35,10 @@
     p.textContent = ja ? 'このブラウザで止まった箇所です。報告のときはこの画面をそのまま送ってください。' : 'This is where it stopped in this browser. To report it, send this screen as it is.';
     var pre = document.createElement('pre');
     pre.style.cssText = 'white-space:pre-wrap;word-break:break-word;font:13px/1.4 ui-monospace,monospace;padding:.75rem;border:1px solid currentColor;border-radius:8px;opacity:.85';
-    pre.textContent = (failed.length ? failed.join('\n') : (ja ? '(エラーは届いていません)' : '(no error was reported)')) + '\n\n' + navigator.userAgent;
+    // Which build this is (vite.config.ts), so a report says which deploy it came from.
+    var build = document.querySelector('meta[name="length3-build"]');
+    pre.textContent = (failed.length ? failed.join('\n') : (ja ? '(エラーは届いていません)' : '(no error was reported)')) + '\n\n' + navigator.userAgent
+      + (build ? '\nLength³ OS ' + build.getAttribute('content') : '');
     var again = document.createElement('button');
     again.type = 'button';
     again.style.cssText = 'margin-top:1rem;padding:.5rem 1.25rem;border-radius:999px;border:1px solid currentColor;background:none;font:inherit;color:inherit';

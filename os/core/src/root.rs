@@ -523,6 +523,51 @@ pub fn current(data: &Path) -> Option<(PathBuf, Installed)> {
     Some((dir.join("root"), about))
 }
 
+/// One entry of a directory of the current root, as File's tree of "/" shows it in the app (a browser reads the
+/// same tree from l3's index instead).
+#[derive(Debug, PartialEq, serde::Serialize)]
+pub struct Entry {
+    pub name: String,
+    /// "dir", "file" or "link".
+    pub kind: &'static str,
+    pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+}
+
+/// What `path` (absolute, as the Prompt sees it) holds in the current root, by name. Only the root's own
+/// directories are read: a path with `..`, or through a link (which inside the root may name anything on the
+/// host), is refused rather than followed.
+pub fn list(data: &Path, path: &str) -> Result<Vec<Entry>, String> {
+    let (root, _) = current(data).ok_or_else(|| crate::tr!("There is no root", "root がありません"))?;
+    let rel = Path::new(path).strip_prefix("/").map_err(|_| crate::tr!("Not a path from /: {}", "/ からのパスではありません：{}", path))?;
+    let mut dir = root;
+    for c in rel.components() {
+        let Component::Normal(name) = c else { return Err(crate::tr!("Not a path from /: {}", "/ からのパスではありません：{}", path)) };
+        dir.push(name);
+        if !fs::symlink_metadata(&dir).is_ok_and(|m| m.is_dir()) {
+            return Err(crate::tr!("Not a directory of the root: {}", "root のディレクトリではありません：{}", path));
+        }
+    }
+    let base = path.trim_end_matches('/');
+    let mut out: Vec<Entry> = fs::read_dir(&dir).map_err(|e| e.to_string())?.flatten().filter_map(|e| {
+        let name = e.file_name().to_string_lossy().into_owned();
+        let meta = e.path().symlink_metadata().ok()?;
+        let path = format!("{base}/{name}");
+        Some(if meta.file_type().is_symlink() {
+            Entry { name, kind: "link", path, size: None, target: fs::read_link(e.path()).ok().map(|t| t.to_string_lossy().into_owned()) }
+        } else if meta.is_dir() {
+            Entry { name, kind: "dir", path, size: None, target: None }
+        } else {
+            Entry { name, kind: "file", path, size: Some(meta.len()), target: None }
+        })
+    }).collect();
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(out)
+}
+
 /// Every root held here, the current one first.
 pub fn held(data: &Path) -> Vec<(Installed, bool)> {
     let now = current(data).map(|(_, a)| a.sha256);
@@ -628,6 +673,29 @@ mod tests {
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn the_current_roots_directories_are_listed_and_nothing_through_a_link_or_up() {
+        let data = fresh("list");
+        let sys = system_dir(&data);
+        let root = sys.join("abc").join("root");
+        fs::create_dir_all(root.join("usr/bin")).unwrap();
+        fs::write(root.join("usr/bin/busybox"), b"#!elf").unwrap();
+        symlink("busybox", root.join("usr/bin/sh")).unwrap();
+        symlink("usr/bin", root.join("bin")).unwrap();
+        fs::write(sys.join("abc/installed.json"), r#"{"name":"l3","version":"1","sha256":"abc","files":1,"bytes":5}"#).unwrap();
+        assert!(list(&data, "/").is_err(), "no root current yet");
+        symlink("abc", sys.join("current")).unwrap();
+        let top = list(&data, "/").unwrap();
+        assert_eq!(top.iter().map(|e| (e.name.as_str(), e.kind)).collect::<Vec<_>>(), [("bin", "link"), ("usr", "dir")]);
+        assert_eq!(top[0].target.as_deref(), Some("usr/bin"));
+        let bin = list(&data, "/usr/bin").unwrap();
+        assert_eq!(bin[0], Entry { name: "busybox".into(), kind: "file", path: "/usr/bin/busybox".into(), size: Some(5), target: None });
+        assert_eq!(bin[1].kind, "link");
+        for no in ["/bin", "/usr/../..", "usr", "/usr/bin/busybox", "/nothing"] { assert!(list(&data, no).is_err(), "{no}"); }
+        let _ = fs::remove_dir_all(&data);
     }
 
     #[test]

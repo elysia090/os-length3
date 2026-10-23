@@ -4,6 +4,7 @@
 
 import {ask, type Answer, type Ask} from './core-client.ts';
 import {RemoteError} from './remote.ts';
+import {invoke, listen} from './tauri.ts';
 
 export interface Capacity {
   /** Bytes the measured layer can hold in total. */
@@ -16,7 +17,9 @@ export interface Capacity {
   layer: 'host-filesystem' | 'browser-origin';
 }
 
-export const isNative = '__TAURI_INTERNALS__' in globalThis;
+/** Which host this build is for (vite.config.ts), so each build carries only its own; run from source (the tests), the page says. */
+declare const __LENGTH3_HOST__: 'native' | 'web' | undefined;
+export const isNative: boolean = typeof __LENGTH3_HOST__ === 'string' ? __LENGTH3_HOST__ === 'native' : '__TAURI_INTERNALS__' in globalThis;
 
 /** How a figure is known (core/src/usage.rs). */
 export type Certainty = 'Verified' | 'Estimated' | 'Unknown';
@@ -31,10 +34,7 @@ export interface Freed {
 }
 
 /** A command of the app's own, around the core: what only a host does (open a page, a Prompt on the root, SSH). */
-export async function native<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
-  const {invoke} = await import('@tauri-apps/api/core');
-  return invoke<T>(command, args);
-}
+export const native = <T>(command: string, args: Record<string, unknown> = {}): Promise<T> => invoke<T>(command, args);
 
 let asked: Ask = isNative ? (name, args) => native<Answer>('core', {name, args}) : ask;
 /** Ask another core (tests run it in their own process). */
@@ -101,14 +101,12 @@ export const rootStatus = (): Promise<RootStatus | null> => (isNative ? native<R
 
 /** Fetch and install the release root, hearing how far it is. */
 export async function rootFetch(progress: (got: number, of: number, retry: string | null) => void): Promise<Installed> {
-  const {listen} = await import('@tauri-apps/api/event');
   const unlisten = await listen<{got: number; of: number; retry: string | null}>('root-fetch', (e) => progress(e.payload.got, e.payload.of, e.payload.retry));
   try { return await native<Installed>('root_fetch'); } finally { unlisten(); }
 }
 
 /** Make `id` (l3, ubuntu, debian) the root Prompts run on, fetched first if it is not here. */
 export async function rootUse(id: string, progress: (got: number, of: number, retry: string | null) => void): Promise<Installed> {
-  const {listen} = await import('@tauri-apps/api/event');
   const unlisten = await listen<{got: number; of: number; retry: string | null}>('root-fetch', (e) => progress(e.payload.got, e.payload.of, e.payload.retry));
   try { return await native<Installed>('root_use', {id}); } finally { unlisten(); }
 }
@@ -119,7 +117,6 @@ const call = native;
 export async function promptOpen(repo: string, on: {output(text: string): void; exit(code: number): void}): Promise<{
   id: number; input(text: string): Promise<void>; interrupt(): Promise<void>; held(): Promise<Held | null>; close(): Promise<Stopped>; forget(): void;
 }> {
-  const {listen} = await import('@tauri-apps/api/event');
   type Event = {id: number; kind: string; text: string; code: number};
   let id = -1;
   // What arrives before the id is known is held, then handed on in order.

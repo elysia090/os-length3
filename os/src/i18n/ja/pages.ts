@@ -114,7 +114,6 @@ export default {
   'Not written back to the repo: {list}': 'repo に戻らなかったもの：{list}',
   'Exited ({code})': '終了しました（{code}）',
   'Halted: {message}': '停止しました：{message}',
-  'Could not open on the root ({why})': 'root で開けませんでした（{why}）',
   'Large files and binaries are not included': '大きいファイルとバイナリは入っていません',
   'Could not start': '起動できませんでした',
   'Stopped': '止めました',

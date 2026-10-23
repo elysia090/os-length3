@@ -39,7 +39,7 @@
 
 import {spawn} from 'node:child_process';
 import {randomBytes} from 'node:crypto';
-import {readFileSync} from 'node:fs';
+import {existsSync, readFileSync} from 'node:fs';
 import {sql} from 'drizzle-orm';
 import {enterEmail} from './enter.ts';
 import {mirror, remoteStore} from './mirror.ts';
@@ -48,6 +48,21 @@ import {pinnedDesktop, pinnedRoots} from './releases.ts';
 
 const config = new URL('../wrangler.toml', import.meta.url).pathname;
 const toml = readFileSync(config, 'utf8');
+
+/**
+ * What the Worker serves as the app is the build (dist, made by `npm run build:cloudflare`), never this tree: a page
+ * served from the sources asks for /src/main.ts, which a browser will not run (a .ts file is served as video, MPEG
+ * transport stream), and /boot.js is not there, so all it shows is the page's background. Refused before anything moves.
+ */
+function built(dir: string): string | null {
+  const page = `${dir}/index.html`;
+  if (!existsSync(page)) return `${page} is not there: build the app first (npm run build:cloudflare)`;
+  const html = readFileSync(page, 'utf8');
+  if (/src="\/src\/main\.ts"/.test(html) || !html.includes('name="length3-build"')) return `${page} is the sources' page, not a build's: build the app first (npm run build:cloudflare)`;
+  if (!existsSync(`${dir}/boot.js`)) return `${dir}/boot.js is not there: the build is not whole`;
+  return null;
+}
+
 const vars = (k: string) => new RegExp(`^${k}\\s*=\\s*"([^"]*)"`, 'm').exec(toml)?.[1];
 
 /** wrangler, `input` on its standard input (never on a command line, never in a file); what it printed, when `heard`. */
@@ -129,7 +144,17 @@ async function releaseFiles(bucket: string) {
 }
 
 const step = process.argv[2];
+// On Workers Builds, only main's build deploys (README.md, Deploy): another branch's build uploads a version to
+// preview (`npx wrangler versions upload`), never this, which migrates production's database and replaces its Worker.
+const branch = process.env.WORKERS_CI_BRANCH;
+if (branch && branch !== 'main') {
+  console.error(`deploy: this is a build of ${branch}, not main: production is deployed from main alone (a branch's deploy command is \`npx wrangler versions upload\`)`);
+  process.exit(2);
+}
+
 if (!step) {
+  const unbuilt = built(new URL(`../${vars('directory') ?? 'dist'}`, import.meta.url).pathname);
+  if (unbuilt) { console.error(`deploy: ${unbuilt}`); process.exit(2); }
   const given = process.env.ENTER_KEY || undefined;
   if (given && !/^[A-Za-z0-9_-]{32,}$/.test(given)) { console.error('ENTER_KEY: 32 or more letters, digits, - and _'); process.exit(2); }
   const {url, pool, db} = await owner();
