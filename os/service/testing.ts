@@ -244,16 +244,25 @@ export const count = async (s: Service, query: ReturnType<typeof sql>) => ((awai
 
 export const WEBHOOK_SECRET = 'whsec_test_' + 'x'.repeat(24);
 
-/** A StripeApi that answers at once and keeps what it was asked. */
-export function fakeStripe() {
+/** Each tier's price as the stand-ins have them: its id, and what it costs (US cents, a month). */
+export const PRICES = {go: 'price_test_go', pro: 'price_test_pro', max: 'price_test_max'} as const;
+const COSTS: Record<string, number> = {price_test_go: 700, price_test_pro: 1400, price_test_max: 1900};
+
+/** A StripeApi that answers at once and keeps what it was asked; `prices`, the tiers it sells. */
+export function fakeStripe(prices: Billing['prices'] = PRICES) {
   const asked: {call: string; [k: string]: unknown}[] = [];
   let n = 0;
   const api: StripeApi = {
     async customer(p) { asked.push({call: 'customer', ...p}); return `cus_test${p.user.replace(/[^A-Za-z0-9]/g, '').slice(0, 20)}`; },
     async checkout(p) { asked.push({call: 'checkout', ...p}); return `https://checkout.stripe.test/c/${++n}`; },
     async portal(p) { asked.push({call: 'portal', ...p}); return `https://billing.stripe.test/p/${++n}`; },
+    async price(id) {
+      asked.push({call: 'price', id});
+      if (!(id in COSTS)) throw new Error('Stripe 404');
+      return {amount: COSTS[id], currency: 'usd', interval: 'month', every: 1};
+    },
   };
-  return {api, asked, billing: {stripe: api, webhookSecret: WEBHOOK_SECRET} as Billing};
+  return {api, asked, billing: {stripe: api, webhookSecret: WEBHOOK_SECRET, prices} as Billing};
 }
 
 let events = 0;
@@ -267,7 +276,14 @@ export async function sendEvent(s: Service, payload: string, o: {secret?: string
   return s.call('POST', '/v1/stripe/webhook', {bytes: enc.encode(payload), headers: {'Stripe-Signature': signature, 'Content-Type': 'application/json'}});
 }
 
-/** A subscription object for `user` (as Checkout makes one: the account in its metadata). */
-export const subscription = (user: string, o: Record<string, unknown> = {}) => ({id: `sub_test${user.replace(/[^A-Za-z0-9]/g, '').slice(0, 20)}`, object: 'subscription',
-  customer: `cus_test${user.replace(/[^A-Za-z0-9]/g, '').slice(0, 20)}`, status: 'active', cancel_at_period_end: false, cancel_at: null,
-  current_period_end: Math.floor(Date.now() / 1000) + 30 * 86_400, metadata: {user}, ...o});
+/**
+ * A subscription object for `user` (as Checkout makes one: the account in its metadata), to the tier `tier`
+ * as its one item's price says it (Go unless said).
+ */
+export const subscription = (user: string, o: Record<string, unknown> = {}, tier: keyof typeof PRICES = 'go') => {
+  const id = user.replace(/[^A-Za-z0-9]/g, '').slice(0, 20);
+  return {id: `sub_test${id}`, object: 'subscription',
+    customer: `cus_test${id}`, status: 'active', cancel_at_period_end: false, cancel_at: null,
+    current_period_end: Math.floor(Date.now() / 1000) + 30 * 86_400, metadata: {user},
+    items: {object: 'list', data: [{id: `si_test${id}`, object: 'subscription_item', price: {id: PRICES[tier], object: 'price'}}]}, ...o};
+};

@@ -47,11 +47,20 @@ function wire(env: Local, ctx: Ctx) {
       if (!url.startsWith('https://api.stripe.com/v1/')) return real(input, init);
       const form = new URLSearchParams(String(init?.body ?? ''));
       const path = url.slice('https://api.stripe.com/v1/'.length);
+      // A price, as a GET of prices/<id> (what the Plan shows before anyone pays).
+      if (path.startsWith('prices/')) {
+        const p = await b.api.price(decodeURIComponent(path.slice(7))).catch(() => null);
+        if (!p) return Response.json({error: {message: 'No such price'}}, {status: 404});
+        return Response.json({id: path.slice(7), unit_amount: p.amount, currency: p.currency, recurring: {interval: p.interval, interval_count: p.every}});
+      }
       const id = `${path.replace(/\W/g, '_')}_${Date.now().toString(36)}`;
       if (path === 'customers') return Response.json({id: await b.api.customer({user: form.get('metadata[user]') ?? '', email: form.get('email') ?? '', name: form.get('name') ?? ''})});
       if (path === 'checkout/sessions') return Response.json({id, url: await b.api.checkout({customer: form.get('customer') ?? '', user: form.get('client_reference_id') ?? '',
-        success: form.get('success_url') ?? '', cancel: form.get('cancel_url') ?? ''})});
-      if (path === 'billing_portal/sessions') return Response.json({id, url: await b.api.portal({customer: form.get('customer') ?? '', back: form.get('return_url') ?? ''})});
+        tier: form.get('metadata[tier]') ?? '', price: form.get('line_items[0][price]') ?? '', success: form.get('success_url') ?? '', cancel: form.get('cancel_url') ?? ''})});
+      // The portal; at the step that changes the tier, when the Remote asks for one (flow_data, as Stripe takes it).
+      const to = form.get('flow_data[subscription_update_confirm][items][0][price]');
+      if (path === 'billing_portal/sessions') return Response.json({id, url: await b.api.portal({customer: form.get('customer') ?? '', back: form.get('return_url') ?? '',
+        ...(to ? {change: {subscription: form.get('flow_data[subscription_update_confirm][subscription]') ?? '', item: form.get('flow_data[subscription_update_confirm][items][0][id]'), price: to}} : {})})});
       return Response.json({error: {message: `the stand-in has no ${path}`}}, {status: 404});
     };
   }

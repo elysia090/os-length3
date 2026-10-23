@@ -455,8 +455,9 @@ pub static COMMANDS: &[Command] = &[
             f(Some("devices"), &[], &[], ["each device signed in", "サインインしている端末"], REMOTE, Keep, remote::devices)),
         f(Some("devices"), &[Arg::Choice(&["rm"]), Arg::Number("N")], &[], ["sign one out", "ひとつサインアウトさせる"], REMOTE, Keep, remote::devices_rm),
         offer(&[d(["Plan", "プラン"], On::Page).second()],
-            f(Some("plan"), &[], &[], ["free or paid, and what the Remote keeps against the free allowance", "無料か有料か、Remote に置いている量と無料の枠"], REMOTE, Keep, remote::plan)),
-        f(Some("plan"), &[Arg::Choice(&["subscribe", "manage"])], &[], ["the page to subscribe on, or to manage or cancel on", "登録するページ、管理・解約するページ"], REMOTE, Keep, remote::plan_page),
+            f(Some("plan"), &[], &[], ["the tier you are on, what the Remote keeps against it, and the tiers", "いまのプラン、Remote に置いている量とその枠、プランの種類"], REMOTE, Keep, remote::plan)),
+        f(Some("plan"), &[Arg::Choice(&["subscribe", "manage"])], &[], ["the page to subscribe on (the least tier), or to manage or cancel on", "登録するページ（いちばん小さいプラン）、管理・解約するページ"], REMOTE, Keep, remote::plan_page),
+        f(Some("plan"), &[Arg::Choice(&["subscribe", "switch"]), Arg::Choice(&["go", "pro", "max"])], &[], ["the page to subscribe to a tier on, or to change to it on", "そのプランに登録するページ、そのプランに変えるページ"], REMOTE, Keep, remote::plan_page),
     ]),
     c("login", &[], Group::Remote, ["sign this device in (approved in the browser)", "この端末でサインインする（ブラウザで承認）"], &[
         offer(&[d(["Sign in", "サインイン"], On::Page).when(&[F::SignedOut]).also(&[Group::Git, Group::Server, Group::Inbox])],
