@@ -87,7 +87,8 @@ export interface RepoList {
 }
 
 export function repoList(ctx: Context, options: {newCard: boolean; counted?: (n: number) => void}): RepoList {
-  const grid = h('div', {class: 'grid'}, h('p', {class: 'muted'}, t('Reading…')));
+  // The same cards wherever the list is (Home, New repo): one size, one title.
+  const grid = h('div', {class: 'grid repo-grid'}, h('p', {class: 'muted'}, t('Reading…')));
   const refresh = async (light?: string | null) => {
     let repos;
     try { repos = await store.list(); } catch (e) {

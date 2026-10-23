@@ -8,10 +8,10 @@
   --sub: #56595a;
   --edge: #6b6e6b;
   --raised: #e4e4e0;
-  /* What is worked on, on a sheet of its own: a file's box, what the search found (Forge). */
+  /* The one surface tone besides the ground: a sheet, which is only ever what is worked on (a file, the TODO, the
+     issue or board in hand, Inbox's box, what the search found; Runtime's box, read rather than worked in, stays on the ground). Everything else (the rail, the band,
+     heads, the pane, figures, cards that lead somewhere) stands on the ground itself; a sheet's edge is the line. */
   --paper: #f8f8f5;
-  /* The right pane's tray: a step under the ground, so what refers (the pane) sits under what is worked on. */
-  --tray: #d2d2cd;
   /* Three marks that say one thing each: a step done, a line marked in a diff, a repo off. */
   --done: #2f7d4f;
   --marker: #f3e27a;
@@ -133,7 +133,7 @@ a { color: var(--ink); }
 /* The person fills most of the circle; initials stay type-sized. */
 .me .icon { width: 30px; height: 30px; }
 /* A popover (the person's menu, Inbox's names): one box, a head over each group, a row per item. */
-.pop { display: grid; padding: var(--s2); background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-card); }
+.pop { display: grid; padding: var(--s2); background: var(--paper); border: 1px solid var(--rule); border-radius: var(--r-card); }
 .me-pop {
   position: absolute; left: calc(100% + var(--s3)); bottom: 0; z-index: 6;
   /* As wide as it needs, but never past the window's own gutter (a 320 px phone has 194 px beside the rail). */
@@ -252,12 +252,11 @@ a { color: var(--ink); }
 .home-main { min-width: 0; width: 100%; max-width: 1080px; margin: 0 auto; }
 .home-pane {
   position: sticky; top: var(--outer-top); height: var(--inner-h); min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: var(--s3);
-  /* Forge's tray, where Forge's is: from the page's top to its foot, out to its right edge (over the page's margin). */
+  /* Forge's pane, where Forge's is: from the page's top to its foot, out to its right edge (over the page's margin). */
   margin: calc(-1 * var(--top-line)) calc(-1 * var(--s5)) 0 0; padding: var(--band) var(--s5) var(--s4) var(--s4);
-  border-radius: var(--r-place); background: var(--tray);
 }
 .home-pane > .pane-toggle { justify-self: end; }
-.home-layout.pane-closed .home-pane { background: transparent; padding-left: 0; }
+.home-layout.pane-closed .home-pane { padding-left: 0; }
 .home-layout.pane-closed .home-side { display: none; }
 .home-side { min-height: 0; overflow: auto; }
 .home-side > .plugins { padding: 0; }
@@ -271,14 +270,17 @@ a { color: var(--ink); }
 .avatar > .mark { width: 50%; height: 50%; color: var(--sub); }
 .home-main .identity h1 { font-size: var(--t-title); }
 .home-main .todo-box { min-height: max(300px, 44vh); }
-.home-main .grid.home-repos .card { min-height: 152px; }
+.grid.repo-grid .card { min-height: 152px; }
+.grid.repo-grid .card-title { font-size: var(--t-body); }
 /* What the repo is, under its name: its own words, two lines at most. */
 .card-summary { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--ink); }
 .card-summary:empty { display: none; }
-.home-main .grid.home-repos .card-title { font-size: var(--t-body); }
+.card-summary ~ .muted { font-size: var(--t-meta); }
 
 /* Home: profile */
 .profile { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--s5); align-items: start; }
+/* Its deed centred on the name's line, not hung from the line's top. */
+.profile > .button { margin-top: calc((var(--t-title) * 1.25 - var(--h-control)) / 2); }
 .avatar {
   width: 112px; height: 112px; border-radius: var(--r-round);
   display: grid; place-items: center;
@@ -304,11 +306,11 @@ a { color: var(--ink); }
 
 /* Home: TODO — one tall box to write in; items are a first line and detail lines */
 .todo-box {
-  border: 1px solid var(--edge); border-radius: var(--r-place); background: var(--raised);
+  border: 1px solid var(--rule); border-radius: var(--r-place); background: var(--paper); transition: border-color var(--motion);
   min-height: max(360px, 55vh); display: grid; grid-template-rows: 1fr auto;
 }
-/* Its lines are written straight in it, as the prompt box's are: the box carries the ring. */
-.todo-box:focus-within { outline: 2px solid var(--ink); outline-offset: 2px; }
+/* A sheet: written in, its edge is ink, as a file's is. */
+.todo-box:focus-within { border-color: var(--ink); }
 .todo-items { padding: var(--s3) var(--s3) var(--s2); }
 .todo-item { padding-bottom: var(--s2); }
 .todo-head { display: grid; grid-template-columns: var(--h-control) auto minmax(0, 1fr) auto; align-items: center; column-gap: var(--s1); min-height: var(--h-control); padding-right: var(--s2); }
@@ -326,7 +328,8 @@ a { color: var(--ink); }
 .todo-kind { font-weight: 700; }
 /* The kind's colon is the issue's own (Fix：), a full-width one; beside a Latin word its empty halves are taken in,
    so it sits against the word as a colon does, a small space after it: "Fix: The title", not "Fix :   The title". */
-.kind-colon { margin: 0 -.12em 0 -.38em; }
+.kind-colon { margin: 0 -.38em; }
+.issue-kind { margin-right: .3em; }
 .todo-title { border: 0; background: transparent; min-height: var(--h-control); padding: 0; font-size: var(--t-body); font-weight: 600; }
 .todo-title::placeholder { color: var(--sub); font-weight: 400; }
 /* Read, the title is text: centred on the mark's line as the field is. */
@@ -466,7 +469,7 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .issue-one { display: grid; gap: var(--s2); }
 .issue-one h3 { margin: 0; font-size: var(--t-body); font-weight: 600; }
 .issue-body { white-space: pre-wrap; }
-.issue-form { display: grid; gap: var(--s3); margin-bottom: var(--s4); padding: var(--s4); border: var(--line-work) solid var(--edge); border-radius: var(--r-place); }
+.issue-form { display: grid; gap: var(--s3); margin-bottom: var(--s4); padding: var(--s4); border: 1px solid var(--ink); border-radius: var(--r-place); background: var(--paper); }
 .issue-form[hidden] { display: none; }
 .issue-text { min-height: 96px; padding: var(--s2) var(--s3); resize: none; font: var(--t-body)/1.6 var(--sans); }
 /* A new issue: the repo it goes in before its first line; the room the repos inside took (two rows of chips and the gap under them) is the detail's. */
@@ -517,10 +520,11 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .tree-still .tree-toggle { cursor: default; }
 /* What it is for: a raised box as Home's TODO is, the words written straight in it as a TODO's detail is. */
 .summary-box {
-  display: flex; min-height: 240px; border: 1px solid var(--edge); border-radius: var(--r-place);
-  background: var(--raised); padding: var(--s4); cursor: text;
+  display: flex; min-height: 240px; border: 1px solid var(--rule); border-radius: var(--r-place);
+  background: var(--paper); padding: var(--s4); cursor: text;
 }
-.summary-box:focus-within { outline: 2px solid var(--ink); outline-offset: 2px; }
+.summary-box { transition: border-color var(--motion); }
+.summary-box:focus-within { border-color: var(--ink); }
 .summary-box > .todo-detail { flex: 1; width: 100%; margin: 0; overflow-y: auto; }
 .summary-box > .todo-detail::placeholder { color: var(--sub); }
 .summary-box > .todo-detail:disabled { opacity: .5; }
@@ -589,7 +593,6 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 /* Nothing left to bring out: ⊕ steps back. */
 .band-add:disabled { opacity: .5; cursor: default; background: transparent; }
 /* The files mark is the band's first, square to the pills' rounded line; ⊕ follows the pills. */
-.band-acts { border-radius: var(--r-field); }
 .band-acts .mark { width: 18px; height: 18px; }
 /* ⊕ in running words: the band's own mark at the words' height, sitting on their line. */
 .inline-add { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 1.4em; height: 1.4em; margin: 0 .2em; vertical-align: middle; border: 1px solid var(--edge); border-radius: var(--r-round); }
@@ -629,9 +632,12 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
   display: flex; flex-direction: column; margin-bottom: var(--s6);
   min-height: min(calc(var(--rail-top) + 8 * var(--h-place) + 7 * var(--s1) - var(--band) - var(--h-row) - 2 * var(--s3)),
     calc(var(--inner-h) - var(--band) - var(--h-row) - 2 * var(--s3) - var(--s5) - var(--h-place) - var(--s6)));
-  border: var(--line-work) solid var(--edge); border-radius: var(--r-place); background: var(--paper);
+  border: 1px solid var(--rule); border-radius: var(--r-place); background: var(--paper);
+  transition: border-color var(--motion);
 }
 .file > .path { background: var(--paper); }
+/* The sheet with the keyboard: its edge in ink, nothing drawn round it. */
+.file:focus-within { border-color: var(--ink); }
 /* A file reads like a plain text editor: line numbers in a quiet gutter,
    the text beside them, on the same lines. */
 .file-state { font-weight: 400; color: var(--sub); white-space: nowrap; }
@@ -770,6 +776,8 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
    side, the pages close in on each other to a narrow gap (each its own scroll), and the one worked on is drawn in
    ink, the others in the quiet line, as a tiling desk marks the window with the keyboard. */
 .columns { position: relative; display: flex; }
+/* No repo out: the dashed box where the first box would be, as wide as its words, at the page's margin. */
+.columns > .forge-none { align-self: flex-start; margin: var(--s3) var(--s5); }
 .col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
 /* Each box's head (whose it is, and its ×) is there side by side only. It grows in as the row splits and the pages
    ease down under it, rather than everything jumping a row. */
@@ -834,13 +842,8 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
    it into --prompt-at), pushed down only by a plugin area opened taller than that. */
 .work.bench > .side, .work.bench:is(.unrun, .prompting, .reviewing) > .side { position: relative; grid-row: 2; grid-template-rows: minmax(var(--prompt-at, 40%), auto) minmax(0, 1fr); }
 .work.bench > .side > .term-home { grid-row: 2; margin-top: calc(-1 * var(--s5)); } /* its words, not its padding, on that line */
-/* The pane is a tray a step under the ground, from the top line (the search and the switch lie on it) to the page's
-   foot: it reads as under the work, beside it, not as a column cut off by a hairline. Its ground is laid behind
-   what it holds, reaching up over the top line's row; it closes and opens with the pane's wipe. */
-.work.bench > .side::after {
-  content: ''; position: absolute; z-index: -1; left: 0; right: 0; bottom: 0;
-  top: calc(-1 * (var(--band) + var(--h-row) + var(--s3))); border-radius: var(--r-place); background: var(--tray);
-}
+/* The pane stands on the ground, as the rail does: the work is the sheets in the center, and their edges are the
+   only line between the two. No tray, no hairline. */
 /* What was found, under the box and over the center, while the box (or what was found) has the keyboard. */
 .search-box { position: relative; min-width: 0; }
 /* What opens under the box: its ground runs a step (s3) past the large box on every side, so the lines behind it
@@ -927,7 +930,7 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
   .work.bench { grid-template-columns: minmax(0, 1fr); }
   .work.bench > .bar { grid-template-columns: minmax(0, 1fr) minmax(96px, 45%) auto; gap: var(--s2); padding-left: var(--s4); padding-right: var(--s2); }
   .work.bench > .side { display: none; }
-  .work.bench > .side::after { display: none; }
+
   .work.bench.pane-out > .side {
     /* Placed in the one column, so that column (not an empty second one) is what it is laid over. */
     grid-column: 1; grid-row: 1 / -1;
@@ -1040,7 +1043,7 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: var(--mar
   position: fixed; top: var(--tree-top, var(--outer-top)); left: calc(var(--outer) + var(--rail) + var(--s2) - var(--s3)); z-index: 5;
   width: min(clamp(260px, 20vw, 340px), calc(100vw - 2 * var(--outer) - var(--rail) - var(--s2))); max-height: calc(100vh - var(--tree-top, var(--outer-top)) - var(--outer-bottom)); overflow: auto;
   /* Concentric with its rows: the card's corner is the row's corner plus the padding between them. */
-  padding: var(--s2); background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-card);
+  padding: var(--s2); background: var(--paper); border: 1px solid var(--rule); border-radius: var(--r-card);
   /* It comes out of the rail it was opened from: a few pixels from the left and a fade; it goes back the same way.
      (Moved by its left edge, not a transform, which would make it the frame its row menus are placed in.) */
   visibility: hidden; opacity: 0;
@@ -1105,7 +1108,7 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: var(--mar
 .sign-in-place { display: grid; justify-items: center; align-content: center; min-height: calc(100dvh - 2 * var(--top-line) - var(--s6) * 3); padding-bottom: 5vh; box-sizing: border-box; }
 .sign-in-card {
   width: min(440px, 100%); box-sizing: border-box; display: grid; gap: var(--s4);
-  padding: calc(var(--s4) + var(--s1)) var(--s5) var(--s5); border: 1px solid var(--ink); border-radius: var(--r-place); background: var(--raised);
+  padding: calc(var(--s4) + var(--s1)) var(--s5) var(--s5); border: 1px solid var(--ink); border-radius: var(--r-place); background: var(--paper);
 }
 .sign-in-card h1, .sign-in-card h2 { margin: 0; font-size: var(--t-card); font-weight: 700; }
 .sign-in-card .remote-join { max-width: none; }
@@ -1138,9 +1141,7 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: var(--mar
 .space-col > h3 { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s3); margin: 0 0 var(--s3); font-size: var(--t-body); font-weight: 600; }
 .space-col > h3 b { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .space-list { display: grid; align-content: start; gap: var(--s1); flex: 1; overflow-y: auto; }
-.space-row { display: flex; align-items: baseline; gap: var(--s3); padding: var(--s2) 0; }
-/* The size on the name's line; the gear (or its room) centred on the row, as a deed on a card's line is. */
-.space-row > .repo-gear-button, .space-row > .gear-room, .space-row > .button { align-self: center; }
+.space-row { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) 0; }
 .space-what { display: grid; min-width: 0; flex: 1; }
 .space-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .space-what .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1153,7 +1154,7 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: var(--mar
 .link-name:hover { background: var(--raised); border-radius: var(--r-field); }
 @media (max-width: 900px) { .space-box { grid-template-columns: 1fr; min-height: 0; } .space-col + .space-col { border-left: 0; border-top: 1px solid var(--rule); } }
 /* Inbox: conversations on the left, the one open on the right */
-.inbox-box { display: grid; grid-template-columns: minmax(220px, 1fr) 2fr; margin-top: var(--s4); height: max(420px, calc(var(--inner-h) - 150px)); border: 1px solid var(--rule); border-radius: var(--r-place); overflow: hidden; }
+.inbox-box { display: grid; grid-template-columns: minmax(220px, 1fr) 2fr; margin-top: var(--s4); height: max(420px, calc(var(--inner-h) - 150px)); border: 1px solid var(--rule); border-radius: var(--r-place); overflow: hidden; background: var(--paper); }
 .inbox-list { display: flex; flex-direction: column; gap: var(--s1); padding: var(--s3); border-right: 1px solid var(--rule); overflow-y: auto; }
 .inbox-new .line-in { flex: 1; min-width: 0; }
 /* The rows, drawn again as they come, lie in the list as if it held them itself. */
@@ -1213,15 +1214,15 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: var(--mar
 /* A slot is an issue's column: its card, then its Review and Merge. */
 .issue-slot { flex: 0 0 calc(100% - 2 * var(--peek)); min-width: 0; align-self: start; }
 /* Less room above than below, so the card's weight sits a little high. */
-.issue-card { padding: calc(var(--s4) + var(--s1)) var(--s5) var(--s6); border: 1px solid var(--rule); border-radius: var(--r-place); transition: background var(--motion); }
+.issue-card { padding: calc(var(--s4) + var(--s1)) var(--s5) var(--s6); border: 1px solid var(--rule); border-radius: var(--r-place); background: var(--paper); transition: background var(--motion), border-color var(--motion); }
 .issue-slot[aria-current='false'] .issue-card { color: var(--sub); min-height: var(--card-h, auto); }
-.issue-slot[aria-current='true'] .issue-card { border-color: var(--ink); background: var(--raised); }
+.issue-slot[aria-current='true'] .issue-card { border-color: var(--ink); background: var(--paper); }
 /* A neighbour shows its number at the edge that shows: the one after at its left, the one before at its right. */
 .issue-slot[aria-current='false'] .issue-card { padding-inline: var(--s2); }
 .issue-big-head.peek h2 { font-size: var(--t-body); white-space: nowrap; }
 .issue-slot:has(+ .issue-slot[aria-current='true']) .issue-big-head.peek { text-align: right; }
 .issue-stage:has(.stage-hit.next:hover) .issue-slot[aria-current='true'] + .issue-slot .issue-card,
-.issue-stage:has(.stage-hit.prev:hover) .issue-slot:has(+ .issue-slot[aria-current='true']) .issue-card { background: var(--raised); }
+.issue-stage:has(.stage-hit.prev:hover) .issue-slot:has(+ .issue-slot[aria-current='true']) .issue-card { border-color: var(--edge); color: var(--ink); }
 .stage-hit { position: absolute; top: 0; bottom: 0; z-index: 1; width: var(--peek); padding: 0; border: 0; border-radius: var(--r-place); background: transparent; cursor: pointer; }
 .stage-hit.prev { left: 0; width: calc(var(--lead) * var(--peek)); }
 .stage-hit.next { right: 0; width: calc((2 - var(--lead)) * var(--peek)); }
@@ -1575,18 +1576,18 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .slide-track { --at: 0; display: flex; gap: var(--gap); height: 100%; transform: translateX(calc(var(--lead) * var(--peek) - var(--at) * (100% - 2 * var(--peek) + var(--gap)))); transition: transform var(--move); }
 @media (prefers-reduced-motion: reduce) { .slide-track { transition: none; } }
 .slide { flex: 0 0 calc(100% - 2 * var(--peek)); min-width: 0; height: 100%; }
-.board-card { display: flex; flex-direction: column; height: 100%; border: 1px solid var(--rule); border-radius: var(--r-place); }
+.board-card { display: flex; flex-direction: column; height: 100%; border: 1px solid var(--rule); border-radius: var(--r-place); background: var(--paper); }
 /* Making a server: a card as tall as what is in it and as wide as its fields, not a board's whole height. */
-.board-card.board-new { height: auto; max-width: 600px; }
+.board-card.board-new { height: auto; max-width: 600px; border-color: var(--ink); }
 .board-new > .board-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s1) var(--s3); }
 .slide[aria-current='false'] .board-card { color: var(--sub); }
 /* A neighbour shows its edge and its mark (# a board, + a new one), not a name cut short. */
 .slide[aria-current='false'] .board-head h2 { visibility: hidden; }
 /* The one before shows its right edge: its mark (and its dot) is there, at that edge. */
 .slide:has(+ .slide[aria-current='true']) .board-head { flex-direction: row-reverse; padding-right: var(--s3); }
-.slide[aria-current='true'] .board-card { border-color: var(--ink); }
+.slide[aria-current='true'] .board-card { border-color: var(--ink); background: var(--paper); }
 .slide-stage:has(.stage-hit.next:hover) .slide[aria-current='true'] + .slide .board-card,
-.slide-stage:has(.stage-hit.prev:hover) .slide:has(+ .slide[aria-current='true']) .board-card { background: var(--raised); }
+.slide-stage:has(.stage-hit.prev:hover) .slide:has(+ .slide[aria-current='true']) .board-card { border-color: var(--edge); color: var(--ink); }
 .board-head { display: flex; align-items: baseline; gap: var(--s2); padding: var(--s4) var(--s5) var(--s2); }
 .board-head h2 { min-width: 0; font-size: var(--t-card); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .board-head .grow { flex: 1; }
@@ -1623,8 +1624,7 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .server-say .line-in { flex: 1; min-width: 10em; }
 /* The right: who is in it, then their repos. Read only: what changes them is behind the gear. */
 .server-side { display: grid; grid-template-rows: none; align-content: start; gap: var(--s5); overflow-y: auto; padding: var(--band) var(--s5) var(--s5); }
-/* Server's side is the same tray as Forge's pane, under the boards rather than cut off from them by a line. */
-.work > .side.server-side { border-radius: var(--r-place); background: var(--tray); }
+/* Server's side stands on the ground as Forge's pane does; the board in hand is the sheet, and its edge the line. */
 .work:has(> .side.server-side) > .center { border-right-color: transparent; }
 /* A heading over its list as a section's is over its content. */
 .side-part { display: grid; gap: var(--s3); }

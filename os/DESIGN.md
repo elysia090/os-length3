@@ -40,8 +40,11 @@ Every value in `styles.css` comes from a token (§2).
   for selected text. What the search found is not selected but marked: the
   `marker`'s stroke over its words, as a highlighter would (the line landed
   on from it is selected in the marker too, for that moment).
-- **Lines.** 1 px, except the box of a file being edited in Forge, which is
-  a little heavier (1.5 px `edge`) because it is the work itself. `rule` between regions and around places; `edge` around
+- **Sheets and the ground.** Two surfaces only. A sheet (`paper`) is what
+  is worked on; everything else stands on the ground. Lighter is nearer:
+  nothing lighter than the ground is ever put under something darker. The
+  sheet in hand, or with the keyboard, has its edge in `ink`.
+- **Lines.** 1 px. `rule` between regions and around places; `edge` around
   things you press or type into. A dashed `rule` means one thing: room for
   something that is not here yet. Headings never get a rule.
 - **Words over symbols.** What a thing is reads off the screen as it is
@@ -140,8 +143,7 @@ Every page:
 | `sub` | `#56595A` | secondary text (5.0:1) |
 | `edge` | `#6B6E6B` | outlines of fields and controls, which must be seen (3.7:1) |
 | `raised` | `#E4E4E0` | field fill, hover (the same small step above ground as before) |
-| `paper` | `#F8F8F5` | what is worked on, on a sheet of its own: a file's box in Forge, what the search found; never a card or a page |
-| `tray` | `#D2D2CD` | the right pane (Forge, Git, Home): a step under the ground, from the top line to the page's foot, its corners a place's, so what refers sits under what is worked on and no hairline is needed to say which is which |
+| `paper` | `#F8F8F5` | the sheet: what is worked on, and only that (a file's box, the TODO, the issue or board in hand, Inbox's box, what the search found); never a card that leads somewhere, a pane or a page (Runtime's box, which is read rather than worked in, stays on the ground) |
 | `done` | `#2F7D4F` | done and on: a step of an issue's work done, a switch on (its knob), a box ticked (its circle) |
 | `marker` | `#F3E27A` | what is marked, as with a highlighter: a line marked in a diff (a review, Forge's diff), over its words only (not its indent or number, which turns ink), each wrapped line its own stroke with softened ends, the pointer on a line showing the stroke paler; the words the search found, in its lines; the head of a file just landed on, for a moment |
 | `off` | `#A63C2C` | a repo turned off: its switch; a removal held, its button red (`ground` words on it 4.5:1) |
@@ -387,7 +389,8 @@ fix is always a piece from §3, not a new rule.
 | A box drawn again every little while, taking what was being written and the keyboard with it (Inbox's field to write to someone, every 10 s) | Only what came is drawn: the rows under the field, the messages at the conversation's foot |
 | Items in one row of a band a few pixels off another's (a 40 px gear in a 32 px band) | Everything on the band is 32 px |
 | A divider left where a pane would start when there is none | No pane, no line |
-| A hairline as the only sign of which side is the work and which refers to it | The pane is a tray (`tray`), a step under the ground; the work stands on the ground |
+| A hairline as the only sign of which side is the work and which refers to it; a pane given a tone of its own | The work is a sheet (`paper`); the rail, the band, heads and the pane stand on the ground itself, and a sheet's edge is the line between them |
+| What is worked on drawn one way on one page and another on the next (a raised box, a framed card, a bordered box on the ground) | One sheet everywhere: `paper`, a 1 px `rule` edge, a place's corners; the one in hand (or with the keyboard) has its edge in `ink`, nothing drawn round it |
 | Something painted over a focus ring (the ground under the box over its foot) | The ring is whole: what lies under the box lies behind it |
 | Text, not a field, sitting at the top of a row its mark is centred in (a read-only TODO) | Centred on the mark's line, as the field is |
 | A paid thing greyed out, hidden, or refused with the Remote's bare error; work dropped because the Remote would not keep it | Said in place with See the plan beside; the work stays on the device and waits |
