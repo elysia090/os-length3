@@ -19,9 +19,9 @@
 #
 # The version is RELEASE ($VERSION overrides); the commit is HEAD ($GITHUB_SHA overrides). GITHUB_TOKEN
 # reads this private repository's 0.1.0 release (root-file.mjs). Needs Rust with the targets
-# x86_64-unknown-linux-musl, wasm32-unknown-unknown and wasm32-wasip1, Node 22, musl-gcc, zstd, zip, and
-# the Tauri build's packages (libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev
-# patchelf).
+# x86_64-unknown-linux-musl, wasm32-unknown-unknown and wasm32-wasip1, Node 22, musl-gcc, zstd, zip, the
+# Tauri build's packages (libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev
+# patchelf libgles2), and for the AppImage's smoke test bubblewrap, xvfb and imagemagick.
 set -eu
 here=$(cd "$(dirname "$0")/.." && pwd)
 [ $# -eq 1 ] || { echo "usage: sh scripts/release.sh OUT" >&2; exit 2; }
@@ -62,6 +62,9 @@ deb=os-length3-linux-$version-desktop-amd64.deb
 appimage=os-length3-linux-$version-desktop-x86_64.AppImage
 cp target/release/bundle/deb/*_"$version"_*.deb "$out/$deb"
 cp target/release/bundle/appimage/*_"$version"_*.AppImage "$out/$appimage"
+# Started as a machine without the build's extra libraries starts it (#37): a window, or no release.
+sh scripts/desktop-smoke.sh "$out/$appimage"
+mv "$out/smoke.png" "$out/../smoke.png"
 
 cd "$out"
 sha256sum "$l3web" "$web" "$deb" "$appimage" >> SHA256SUMS
@@ -101,6 +104,6 @@ digest() { sha256sum "$1" | cut -d' ' -f1; }
   echo "}"
   echo '```'
   echo
-  echo "\`manifest\` names the base, the l3 inside and the script that made it. The web build opens with any static server (\`npx serve\` in the unzipped folder). The desktop app: \`sudo apt install ./$deb\`, or \`chmod +x $appimage\` and run it."
+  echo "\`manifest\` names the base, the l3 inside and the script that made it. The web build opens with any static server (\`npx serve\` in the unzipped folder). The desktop app: \`sudo apt install ./$deb\`, or \`chmod +x $appimage\` and run it (x86-64 Linux with glibc 2.39 or newer: Ubuntu 24.04, Debian 13 and later, with a desktop's libEGL)."
 } > ../notes.md
 cat ../notes.md
