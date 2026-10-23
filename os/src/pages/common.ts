@@ -2,11 +2,29 @@ import {h} from '../dom.ts';
 import {errorText} from '../errors.ts';
 import {t} from '../i18n.ts';
 import {icon} from '../icons.ts';
+import {pop} from '../glide.ts';
 import {purpose, RAIL, type PurposeId} from '../purposes.ts';
 
 export function pageHead(id: PurposeId): HTMLElement {
   const p = purpose(id);
-  return h('div', {class: 'page-head'}, icon(id), h('h1', {}, t(p.label)), h('p', {}, t(p.role)));
+  const mark = icon(id);
+  inkAtEdge(mark);
+  return h('div', {class: 'page-head'}, mark, h('h1', {}, t(p.label)), h('p', {}, t(p.role)));
+}
+
+/**
+ * `svg` drawn a little left, by the room its drawing leaves inside its square at the left (each icon its own, two
+ * to four pixels), so that its ink, not its square, stands at the edge the page's words and boxes start at under it.
+ * What it moves it gives back on its right: the title stands where every page's does, not a pixel or two apart.
+ */
+function inkAtEdge(svg: SVGSVGElement) {
+  requestAnimationFrame(() => {
+    const vb = svg.viewBox.baseVal, w = svg.getBoundingClientRect().width;
+    const shape = svg.querySelector<SVGGraphicsElement>('path, circle, rect, line, polyline');
+    if (!svg.isConnected || !vb?.width || !w || !shape) return;
+    const inset = (svg.getBBox().x - vb.x - (parseFloat(getComputedStyle(shape).strokeWidth) || 0) / 2) * (w / vb.width);
+    if (inset > 0) svg.style.margin = `0 ${inset.toFixed(1)}px 0 ${-inset.toFixed(1)}px`;
+  });
 }
 
 /**
@@ -41,7 +59,8 @@ export function deed(b: HTMLButtonElement, f: () => Promise<unknown>) {
     if (b.disabled) return;
     b.disabled = true;
     b.textContent = word;
-    try { await f(); } catch (e) { b.textContent = errorText(e); } finally { b.disabled = false; }
+    // Done, it gives a small beat where it was pressed; failed, it says why there.
+    try { await f(); if (b.isConnected) pop(b, .06, 300); } catch (e) { b.textContent = errorText(e); } finally { b.disabled = false; }
   });
 }
 
@@ -51,6 +70,7 @@ export function copying(el: HTMLElement, text: string) {
     void navigator.clipboard?.writeText(text);
     el.dataset.copiedWord = t('Copied');
     el.dataset.copied = '';
+    pop(el, .04, 260);
     window.setTimeout(() => delete el.dataset.copied, 1200);
   });
   el.title = t('Press to copy');

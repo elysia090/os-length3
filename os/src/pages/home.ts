@@ -12,6 +12,7 @@ import {onRightPane, pluginArea, rightPaneOpen, setRightPane} from './bench.ts';
 import {mark, paneMark} from '../icons.ts';
 import {onPlugins, pluginsOpen} from '../plugins.ts';
 import {errorText} from '../errors.ts';
+import {paneOut} from '../glide.ts';
 
 let editing = false;
 
@@ -57,9 +58,12 @@ function homePane(main: HTMLElement): HTMLElement {
   const side = h('aside', {class: 'home-side', id: 'home-side', 'aria-label': t('Plugins')}, pluginArea());
   const toggle = h('button', {type: 'button', class: 'pane-toggle', 'aria-label': t('Right pane'), 'aria-controls': 'home-side'}, paneMark()) as HTMLButtonElement;
   const layout = h('div', {class: 'home-layout'}, main, h('div', {class: 'home-pane'}, toggle, side));
+  let was = rightPaneOpen();
   const paint = () => {
     layout.classList.toggle('pane-closed', !rightPaneOpen());
     toggle.setAttribute('aria-expanded', String(rightPaneOpen()));
+    if (rightPaneOpen() && !was && layout.isConnected) paneOut(side, toggle);
+    was = rightPaneOpen();
   };
   toggle.addEventListener('click', () => setRightPane(!rightPaneOpen()));
   const off = onRightPane(() => { if (!layout.isConnected) { off(); return; } paint(); });

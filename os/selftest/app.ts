@@ -665,6 +665,8 @@ class Server extends Part {
   async make(name: string, handle: string) {
     await this.openLayer();
     await this.layer.getByRole('textbox', {name: 'Name', exact: true}).fill(name);
+    // Its name on this Remote follows the name unseen; the quiet @ after it shows the field to write it otherwise.
+    await this.layer.getByRole('button', {name: 'Name on this Remote', exact: true}).click();
     await this.layer.getByRole('textbox', {name: /^Name on this Remote/}).fill(handle);
     await this.layer.getByRole('button', {name: 'Make', exact: true}).click();
     await expect(this.layer.getByRole('radiogroup', {name: 'Server'}).getByRole('radio', {name, exact: true})).toBeChecked();

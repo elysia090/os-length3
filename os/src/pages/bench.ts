@@ -1,6 +1,7 @@
 import {h} from '../dom.ts';
 import {t} from '../i18n.ts';
 import {paneMark} from '../icons.ts';
+import {paneOut} from '../glide.ts';
 import {onPlugins, pluginsOpen, setPluginsOpen, slots} from '../plugins.ts';
 import {complete, pathWord, Recall} from '../recall.ts';
 import {onChange, store, type Entry} from '../repos.ts';
@@ -158,10 +159,14 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   /** Narrow, whether the pane is laid over the center now (never on its own: only when asked for). */
   let over = false;
   const shown = () => (narrow.matches ? over : paneOpen);
+  let wasShown = shown();
   const paintPane = () => {
     work.classList.toggle('pane-closed', !paneOpen);
     work.classList.toggle('pane-out', over);
     toggle.setAttribute('aria-expanded', String(shown()));
+    // Brought out (here, or on another page while this one is shown): what it holds comes in after its edge.
+    if (shown() && !wasShown && work.isConnected) paneOut(side, toggle);
+    wasShown = shown();
   };
   const setPane = (on: boolean) => {
     if (on === shown()) return;

@@ -26,7 +26,8 @@ const date = shortDay;
 const CIRCLE = 'M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17z';
 const CHECK = 'M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17zM8 12.2l2.7 2.7L16.2 9.3';
 
-function mark(done: boolean): SVGSVGElement {
+/** A TODO's mark: its circle, ticked once done. */
+export function mark(done: boolean): SVGSVGElement {
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');
   svg.setAttribute('viewBox', '0 0 24 24');

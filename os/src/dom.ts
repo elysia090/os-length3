@@ -7,7 +7,9 @@ export type Child = Node | string | null | undefined | false;
 export function h(tag: string, props: Record<string, string> = {}, ...children: Child[]): HTMLElement {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(props)) {
-    if (k === 'class') el.className = v; else el.setAttribute(k, v);
+    // A style goes through the style object, never as an attribute: the desktop app's policy (style-src 'self')
+    // drops a style attribute written into the page, and with it a row's depth or a slide's place.
+    if (k === 'class') el.className = v; else if (k === 'style') el.style.cssText = v; else el.setAttribute(k, v);
   }
   for (const c of children) if (c) el.append(c);
   return el;

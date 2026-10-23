@@ -67,8 +67,10 @@ const STATE = (s: git.Change['state']) => ({open: t('Undecided'), merged: t('Mer
 const doing = (b: HTMLButtonElement, error: HTMLElement, f: () => Promise<unknown>, after: () => void) => async () => {
   b.disabled = true;
   error.textContent = '';
-  try { await f(); after(); } catch (e) { error.textContent = errorText(e); b.disabled = false; }
+  try { await f(); justDone = {word: b.textContent ?? '', until: performance.now() + 3000}; after(); } catch (e) { error.textContent = errorText(e); b.disabled = false; }
 };
+/** The step just done here, for a moment: its done mark, drawn next, lands rather than being there (slot). */
+let justDone: {word: string; until: number} | null = null;
 
 /** Who is signed in, for the line a close is written with; read once. */
 let whoAmI: Promise<string> | null = null;
@@ -176,8 +178,12 @@ export function backToMain(issue: Issue, s: RepoState | undefined, events: Issue
 }
 
 /** A step's place: its button, or once done the done mark and the same word (green says it is done). */
-const slot = (act: HTMLElement, done: boolean, word: string) => h('div', {class: 'step-act'},
-  done ? h('span', {class: 'step-done'}, h('span', {class: 'done-mark', 'aria-hidden': 'true'}), word) : act);
+const slot = (act: HTMLElement, done: boolean, word: string) => {
+  const fresh = done && justDone?.word === word && performance.now() < justDone.until;
+  if (fresh) justDone = null;
+  return h('div', {class: 'step-act'},
+    done ? h('span', {class: 'step-done'}, h('span', {class: fresh ? 'done-mark fresh' : 'done-mark', 'aria-hidden': 'true'}), word) : act);
+};
 const about = (...n: (Node | null)[]) => h('div', {class: 'step-about'}, ...n);
 const quiet = (text: string) => h('p', {class: 'muted small'}, text);
 

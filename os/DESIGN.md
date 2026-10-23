@@ -100,11 +100,20 @@ Every value in `styles.css` comes from a token (§2).
     (Fix:), takes its form with a small pop; a new TODO unfolds from the
     line it was started from. What the search found is drawn on as it is typed,
     each line's highlighter stroke left to right, one line after the next.
-    What a run prints comes in at the foot a line after another.
+    What a run prints comes in at the foot a line after another. A step
+    of an issue done here (Commit, Push) has its done mark land, in from
+    small past its size and settling, its tick drawn after it; a deed
+    pressed and done gives a small pop where it was pressed, and so does a
+    name or code copied; a message sent comes up out of the box it was
+    written in, one come in from the other's side.
   - *Room is given and taken.* A box opened beside the others grows from
     nothing as they make room, and closing gives its room back; the right
     pane opens and closes as a wipe, what it holds cut at the moving edge,
-    never squeezed (280 ms).
+    never squeezed (280 ms). Brought out (Forge, Git, Home alike) its edge
+    lands a touch past where it stops and settles back (420 ms), its words
+    come in after it from the right a line at a time, and its switch's
+    mark fills from the right as it does, with a beat once it is out; put
+    away, the fill drains back and it goes straight.
   - *What opens comes out of what opened it.* What the search finds comes
     down out of its box; the terminal flies between the pane and the box.
   - *What is made goes where it lives.* An outline goes from what it was
@@ -124,6 +133,15 @@ Every value in `styles.css` comes from a token (§2).
   120 ms fades for everything else. Reduced motion turns all of it off:
   each thing is where it ends at once.
 - No shadows, blur, glow or gradients; the one shade is the search's (above).
+- **One scrollbar.** Everything that scrolls, the page with it, has the
+  same bar: thin, its thumb `edge` (a thing one drags), its track the
+  ground under it, never the browser's own; forced colours draw the
+  system's.
+- **The ink at the edge, not the box.** An icon is drawn inset in its
+  square (two to four pixels, each its own), so a page head's icon stands
+  that much left of its box, its ink on the edge the page's words and
+  boxes start at, and gives it back on its right: the title is where every
+  page's title is.
 - **Words, one way.** One word for one thing on every page: repo (never
   リポジトリ), サーバー, 板. A button is a verb in its plain form (作る,
   保存する, 外す), never a noun (作成); a time on a line is a noun (3分前に
@@ -1713,11 +1731,17 @@ The proof is the Remote's keyed digest of the account and the domain, so
 only the domain's holder can publish it and no other account can reuse it;
 it is looked for while the gear is open, and the address is claimed the
 moment it is found. The same record says which Remote holds the domain's
-addresses, as MX does for mail. SSH is Runtime's, by device, not by name. Then one tall box: conversations on
-the left (requests apart, with Accept and Block), the chosen one on the
-right. Before anyone has written, the box is only its first line, the field
-to write to someone and No messages yet beside it, not a tall sheet of
-nothing; the first conversation opens it to its height. Writing is one line that grows as it is written: a message is named
+addresses, as MX does for mail. SSH is Runtime's, by device, not by name. The page stands on the
+three columns Home's repos and New repo stand on: in the first the stub,
+under it the field to write to someone new, of the stub's width, height and
+shape (Write its end, as the gear is the stub's), and under that the
+conversations (requests apart, with Accept and Block once they have
+written; their words start where the field's do); over the other two, from
+the stub's top to the page's foot, the conversation open, as a sheet.
+Before anyone has written there is no sheet, not a sheet of nothing: No
+messages yet stands under the field, and the first conversation brings its
+sheet in from that side; written to first, its row comes into the list at
+once. Writing is one line that grows as it is written: a message is named
 the way an issue is ("Review：…", "Question：…"), and a `/root/…` path in it
 says what it is about, so there is nothing else to choose. Enter is a new
 line, Ctrl+Enter sends.
@@ -1802,13 +1826,19 @@ Server is an overlay (§3), on the bench's shape. Its pieces, from §3:
   the servers one is in; the gear at the right end (kept in its place,
   unpressable, while none is chosen). A server is made where it will
   stand, not in a form: its chip is the field, in the band after the
-  others (dashed until it has a name, its name on this Remote quiet after
-  the name, following it until written itself), Make beside it; under it
-  the server it will be stands faint, its first board (#general, its TODO's
-  first line, room for its talk) dashed on the ground and, at the right,
-  its first person, oneself as owner. Made (Enter or Make), the same
-  shapes stand there whole and its chip takes it with a pop. What the name
-  on this Remote is (first come, five years) is said when the name is
+  others (dashed until it has a name), saying one name: its name on this
+  Remote follows the name unseen (Trip is trip), and the quiet @ at the
+  chip's end shows it to be written otherwise, the @ staying where it was
+  as its first letter; a name someone else has shows it by itself. Make
+  beside it; under it the server it will be stands faint, its first board
+  dashed on the ground, of the parts a made one is, each where it will
+  stand (#general, its TODO's first line, No posts yet at its talk's foot),
+  under it the box that will write to its people, saying them by the name
+  as it is written, and at the right its first person, oneself as owner.
+  Made (Enter or Make), the same shapes stand there whole and its chip
+  takes it with a pop. The box at the foot is as wide as the board on
+  screen and stands under it, sliding with it board to board. What the name
+  on this Remote is (first come, five years) is said when the @ is
   pointed at; what the Remote says no to (the plan: making a server is
   paid, §6; a name taken; one's own name to claim first) is said at the
   chip's end when it says it, with the way on (See the plan, Go to Inbox).

@@ -49,6 +49,26 @@ export function arrive(el: HTMLElement, dir: number, axis: 'x' | 'y', by = 12, m
 }
 
 /**
+ * The right pane brought out: as its edge lands, what it holds comes in after it, a part at a time from the side it
+ * came from, and its switch's mark gives a small beat. Put away, it only goes (the wipe is the styles' own).
+ */
+export function paneOut(side: HTMLElement, toggle: HTMLElement) {
+  if (still()) return;
+  // Its words, each where it stands (a head, a line), in reading order: not the boxes they are in, and not words
+  // inside words already moving (they would come twice as far).
+  const worded = (el: Element) => [...el.childNodes].some((n) => n.nodeType === Node.TEXT_NODE && n.textContent!.trim());
+  const parts: HTMLElement[] = [];
+  for (const el of side.querySelectorAll<HTMLElement>('*')) {
+    if (parts.length === 8) break;
+    if (worded(el) && el.getBoundingClientRect().height > 0 && !parts.some((p) => p.contains(el))) parts.push(el);
+  }
+  parts.forEach((el, i) => el.animate([{opacity: 0, translate: '24px 0'}, {opacity: 1, translate: '0 0'}],
+    {duration: 340, delay: 140 + i * 50, easing: LAND, fill: 'backwards'}));
+  const m = toggle.querySelector('.mark');
+  if (m) m.animate([{scale: 1}, {scale: 1.18, offset: .45}, {scale: 1}], {duration: 320, delay: 200, easing: 'ease-out'});
+}
+
+/**
  * A thing opened from where it was shown (a repo's card on Home, its row in File) becomes the box it opens as:
  * an outline grows from `from` (measured before the page changed) to the box found by `find` once it is on the
  * screen, and fades as it lands, so the eye goes with the repo instead of starting over on a new page.

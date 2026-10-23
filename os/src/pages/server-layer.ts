@@ -8,6 +8,7 @@ import type {Context} from './context.ts';
 import {cameTo, timeline} from './talk.ts';
 import {pop} from '../glide.ts';
 import {dockFor} from './server-dock.ts';
+import {mark as todoMark} from './todo-box.ts';
 import {boardTodo} from './server-todo.ts';
 import {gear as gearSheet} from './server-gear.ts';
 import {seeRepo as repoSheet} from './server-repo.ts';
@@ -212,7 +213,8 @@ export class ServerLayer {
       if (!count) return;
       k = Math.max(0, Math.min(count - 1, n));
       track.style.setProperty('--at', `${k}`);
-      slides.style.setProperty('--lead', `${count === 1 ? 0 : k === 0 ? 0 : k === count - 1 ? 2 : 1}`);
+      // On the center, so the box at the foot stands under the board on screen as the boards do (styles.css).
+      center.style.setProperty('--lead', `${count === 1 ? 0 : k === 0 ? 0 : k === count - 1 ? 2 : 1}`);
       slides.classList.toggle('single', count === 1);
       [...track.children].forEach((slot, j) => {
         slot.setAttribute('aria-current', String(j === k));
@@ -386,13 +388,20 @@ export class ServerLayer {
         f.style.width = `${Math.ceil(pen.measureText(f.value || f.placeholder).width) + 2}px`;
       };
       const fit = () => { wide(name); wide(handle); };
-      name.addEventListener('input', () => { if (!own) handle.value = slug(name.value); fit(); naming?.classList.toggle('named', !!name.value.trim()); });
+      // Its name on this Remote follows its name unseen (Trip is trip): the chip says one name, not two. The quiet @
+      // after it shows the address to write it otherwise, and it shows itself when the one it would be is taken.
+      const at = h('button', {type: 'button', class: 'server-at', 'aria-label': t('Name on this Remote'), title: t('Name on this Remote')}, '@') as HTMLButtonElement;
+      const address = h('span', {class: 'server-address', hidden: ''}, h('span', {class: 'muted', 'aria-hidden': 'true'}, '@'), handle);
+      const reveal = () => { at.hidden = true; address.hidden = false; fit(); handle.focus(); handle.select(); };
+      at.addEventListener('click', reveal);
+      const say = (v: string) => { for (const e of ghostNames) e.textContent = v.trim() || t('Trip'); };
+      name.addEventListener('input', () => { if (!own) handle.value = slug(name.value); fit(); naming?.classList.toggle('named', !!name.value.trim()); say(name.value); });
       handle.addEventListener('input', () => { own = handle.value !== ''; fit(); });
       fit();
       const make = button(t('Make'), 'small-button primary');
       // What the Remote said no to, at the chip's end: the plan, a name taken, a name of one's own to claim first.
       const ask = h('span', {class: 'server-ask', role: 'alert'});
-      naming = h('span', {class: 'server-making'}, h('label', {class: 'chip server-naming'}, name, handle), make, ask);
+      naming = h('span', {class: 'server-making'}, h('label', {class: 'chip server-naming'}, name, at, address), make, ask);
       paintTop();
       fit();
       writer(name, () => document.activeElement === name || document.activeElement === handle || !!name.value.trim());
@@ -413,7 +422,14 @@ export class ServerLayer {
           make.disabled = false;
           const plan = planRefused(e, () => { this.close(); goToPlan(this.ctx); });
           if (plan) ask.replaceChildren(plan);
-          else if (e instanceof RemoteError && e.status === 409 && /address/i.test(e.message)) {
+          // Told apart by what the Remote said in its own words (service/servers.ts), not by the words shown here.
+          else if (e instanceof RemoteError && (e.status === 409 ? e.detail.error !== 'Claim a name first'
+            : e.status === 400 && /^(Its name|Only on a domain)/.test(String(e.detail.error)))) {
+            // The name on this Remote is someone else's (or held for them), or one it cannot be (a name in other
+            // letters follows to nothing): the address shows, to be written otherwise.
+            reveal();
+            ask.textContent = errorText(e);
+          } else if (e instanceof RemoteError && e.status === 409) {
             const inbox = button(t('Go to Inbox'), 'small-button');
             inbox.addEventListener('click', () => { this.close(); this.ctx.go('inbox'); });
             ask.replaceChildren(t('A server needs your name. Claim one in Inbox.'), ' ', inbox);
@@ -430,19 +446,28 @@ export class ServerLayer {
         deed(b, async () => { await servers.bringBack(g.id); list = await servers.servers(); show(g.id); });
         return b;
       })), (e) => back.replaceChildren(h('p', {class: 'error small'}, errorText(e))));
-      // The server it will be, faint: its first board's head, its TODO's first line, and room for its talk.
+      // The server it will be, faint: its first board as it will open, of the same parts a made one is (its TODO's
+      // first line and its talk's foot in their own words, each where it will stand), and under it the box that will
+      // write to its people, saying them by the name being written.
+      const ghostNames: HTMLElement[] = [];
+      const ghostName = () => { const e = h('span', {}, name.value.trim() || t('Trip')); ghostNames.push(e); return e; };
       track.replaceChildren(h('div', {class: 'slide', 'aria-current': 'true'}, h('div', {class: 'board-card board-ghost', 'aria-hidden': 'true'},
         h('div', {class: 'board-head'}, h('span', {class: 'muted board-mark'}, '#'), h('h2', {}, 'general')),
-        h('p', {class: 'ghost-label'}, 'TODO'),
-        h('div', {class: 'ghost-todo'}, h('span', {class: 'ghost-mark'}), t('Something to do together')),
-        h('div', {class: 'ghost-talk'}, h('span'), h('span'), h('span'))), back),
+        h('section', {class: 'board-todo'}, h('div', {class: 'board-todo-head'}, h('span', {}, 'TODO')),
+          h('div', {class: 'todo-box'}, h('div', {class: 'todo-items'}, h('div', {class: 'todo-item'}, h('div', {class: 'todo-head'},
+            h('span', {class: 'todo-mark'}, todoMark(false)), h('span', {class: 'todo-kind', hidden: ''}),
+            h('span', {class: 'todo-title'}, t('Something to do together'))))))),
+        h('div', {class: 'board-talk'}, h('div', {class: 'timeline tl-empty'}, h('div', {class: 'tl-start muted small'}, t('No posts yet'))))), back),
         // Beside it, the edge of the box that will make its next board, where it will be.
         h('div', {class: 'slide', 'aria-current': 'false'}, h('div', {class: 'board-card board-ghost ghost-next', 'aria-hidden': 'true'}, h('span', {class: 'board-head'}, '+'))));
       slides.classList.remove('single');
-      slides.style.setProperty('--lead', '0');
+      center.style.setProperty('--lead', '0');
       track.style.setProperty('--at', '0');
       prev.hidden = next.hidden = true;
-      paintDock(null);
+      // The box's own words, with the name being written where they put it (before it in Japanese, after in English).
+      const [before, after] = t('To the people of {server}', {server: '\u0000'}).split('\u0000');
+      this.holding = () => false;
+      dock.replaceChildren(h('div', {class: 'prompt ghost-dock', 'aria-hidden': 'true'}, h('span', {}, before, ghostName(), after)));
       // At the right, its first person: oneself, as its owner.
       side.replaceChildren();
       void myself.then((me) => {

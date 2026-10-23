@@ -84,8 +84,9 @@ function nest(scaffold: Map<string, string | null>): Item[] {
   return root.children;
 }
 
-function row(name: Node | string, depth: number, dir: boolean, extra: Partial<{meta: string; repo: boolean}> = {}): HTMLElement {
-  const lead = dir ? h('span', {class: 'tree-toggle', 'aria-hidden': 'true', 'aria-expanded': 'true'}) : h('span', {class: 'tree-spacer', 'aria-hidden': 'true'});
+function row(name: Node | string, depth: number, dir: boolean, extra: Partial<{meta: string; repo: boolean; shut: boolean}> = {}): HTMLElement {
+  // A folder with nothing in it yet is shut, as File shows one: an open triangle over nothing says there is something.
+  const lead = dir ? h('span', {class: 'tree-toggle', 'aria-hidden': 'true', 'aria-expanded': String(!extra.shut)}) : h('span', {class: 'tree-spacer', 'aria-hidden': 'true'});
   if (dir) lead.append(triangle());
   return h('li', {class: extra.repo ? 'tree-repo' : dir ? 'tree-dir' : 'tree-file'},
     h('div', {class: 'tree-row', style: `--depth:${depth}`}, lead,
@@ -103,7 +104,7 @@ export function newRepo(ctx: Context): Node[] {
   const items: HTMLElement[] = [row('root', 0, true, {meta: 'repo'}), repoRow];
   const walk = (nodes: Item[], depth: number) => {
     for (const n of nodes) {
-      if (n.dir) { items.push(row(n.name, depth, true)); walk(n.children, depth + 1); continue; }
+      if (n.dir) { items.push(row(n.name, depth, true, {shut: !n.children.length})); walk(n.children, depth + 1); continue; }
       const field = h('input', {class: 'tree-name-in', autocapitalize: 'off', spellcheck: 'false', maxlength: '255',
         placeholder: n.name, 'aria-label': t('Name of {path}', {path: n.path})}) as HTMLInputElement;
       field.value = draft.names[n.path] ?? n.name;
@@ -113,7 +114,8 @@ export function newRepo(ctx: Context): Node[] {
   };
   walk(nest(scaffold), 2);
   const preview = h('ul', {class: 'tree-children'}, ...items);
-  const caption = h('p', {class: 'muted small tree-caption'}, t('How it will look in File'));
+  // What the card is goes to the ear: the eye sees it is File's tree.
+  const caption = h('p', {class: 'sr-only'}, t('How it will look in File'));
   const card = h('div', {class: 'tree tree-still', 'aria-label': t('What will be made')}, caption, preview);
   // What cannot be made as named is said under the box, where it is put right.
   const filesError = h('p', {class: 'error', role: 'alert', hidden: ''});
@@ -166,7 +168,8 @@ export function newRepo(ctx: Context): Node[] {
   // The name alone on the first line; under it, what it is for, and beside that the scaffold with what it will make.
   const form = h('form', {class: 'new-repo'},
     h('div', {class: 'field name-field'}, h('label', {class: 'field-label', for: 'repo-name'}, t('Name')), name,
-      h('span', {id: 'repo-name-rule', class: 'muted small'}, t('Letters, digits and . _ -, up to 64 characters')), error),
+      // The rule for a name is heard with the field and seen only when it is broken (the error under it).
+      h('span', {id: 'repo-name-rule', class: 'sr-only'}, t('Letters, digits and . _ -, up to 64 characters')), error),
     h('div', {class: 'field summary-field'}, h('span', {class: 'field-label', id: 'repo-summary-label'}, t('Summary')), summaryBox),
     h('div', {class: 'field scaffold-field'}, h('span', {class: 'field-label'}, t('What will be made')), card, filesError),
     actions);
