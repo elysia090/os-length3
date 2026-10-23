@@ -83,11 +83,39 @@ test('a passkey put off for later is offered under the repos instead', async ({s
   await expect(app.main.getByRole('button', {name: 'Add a passkey'})).toHaveCount(1);
 });
 
+test('Cancel at the provider\'s consent comes back to the card, which says so by its name, and it is there to try again', async ({app}, info) => {
+  await app.rail.go('remote');
+  const card = app.main.getByRole('region', {name: 'Sign in'});
+  await card.getByRole('button', {name: 'Continue with Development'}).click();
+  await app.page.getByRole('textbox', {name: 'Name'}).fill(personName(info));
+  await app.page.getByRole('button', {name: 'Continue'}).click();
+  // What length3 asks of the provider, as a real one asks it; called off there.
+  await expect(app.page.getByRole('list', {name: 'What length3 asks for'})).toContainText('Know your name and email');
+  await app.page.getByRole('button', {name: 'Cancel', exact: true}).click();
+  await app.settled();
+  await expect(card.getByRole('alert')).toHaveText('Signing in with Development was cancelled; nothing was shared.');
+  await expect(card.getByRole('button', {name: 'Continue with Development'})).toBeVisible();
+  // Tried again, and allowed: in, and what was said is past.
+  await card.getByRole('button', {name: 'Continue with Development'}).click();
+  await app.atProvider(personName(info));
+  await app.settled();
+  await expect(app.remote.part('Repos')).toBeVisible();
+});
+
+test('signing in from Inbox comes back to Inbox, signed in', async ({app}, info) => {
+  await app.rail.go('inbox');
+  await app.main.getByRole('region', {name: 'Sign in'}).getByRole('button', {name: 'Continue with Development'}).click();
+  await app.atProvider(personName(info));
+  await app.settled();
+  await expect(app.rail.button('inbox')).toHaveAttribute('aria-current', 'page');
+  await expect(app.main.getByRole('region', {name: 'Sign in'})).toHaveCount(0);
+});
+
 test('called off at the provider, the card says so, and the provider is there to try again', async ({app}) => {
   await app.page.goto('/?sign-in-failed&error=access_denied');
   await app.settled();
   const card = app.main.getByRole('region', {name: 'Sign in'});
-  await expect(card.getByRole('alert')).toHaveText('Signing in was called off at the provider.');
+  await expect(card.getByRole('alert')).toHaveText('Signing in was cancelled at the provider; nothing was shared.');
   await expect(card.getByRole('button', {name: 'Continue with Development'})).toBeVisible();
   // Nothing of the address is shown: its words are anyone's to write.
   await app.page.goto('/?sign-in-failed&error=x&error_description=Your%20account%20is%20locked');

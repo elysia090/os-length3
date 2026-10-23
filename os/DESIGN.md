@@ -191,12 +191,14 @@ what is its own.
   its figures at the right end (2 of 3, 25.0 MB of 100 MB) in `sub`. Over
   the allowance it is full and its figures are `ink` 600; it never takes a
   colour of its own (`done`, `marker` and `off` each mean their one thing).
-  With no allowance (paid), the row has its figure alone and no track.
-  Remote's Plan.
+  With no limit (repos on a paid tier), the row has its figure alone and no
+  track. Its share is set through the style object, never a style
+  attribute (the desktop app's policy takes none). Remote's Plan.
 - **Paid, said in place.** Where the Remote refuses something for the
-  plan's sake (a repo or a change past what the free plan keeps, making a
-  server, a name on one's own domain), the place says it in its own words
-  where its error goes, with See the plan beside them: what was written
+  plan's sake (a repo or a change past what the free plan or the account's
+  tier keeps, making a server, a name on one's own domain), the place says
+  it in its own words, by the tier when it is one (Go keeps no more on the
+  Remote), where its error goes, with See the plan beside them: what was written
   stays, the work stays on the device, and the deed is never greyed out or
   hidden without a word. Where it is known before anything is written (a
   free account making a server, or adding a domain), the same line stands
@@ -362,6 +364,10 @@ fix is always a piece from §3, not a new rule.
 | Text, not a field, sitting at the top of a row its mark is centred in (a read-only TODO) | Centred on the mark's line, as the field is |
 | A paid thing greyed out, hidden, or refused with the Remote's bare error; work dropped because the Remote would not keep it | Said in place with See the plan beside; the work stays on the device and waits |
 | A use against an allowance said by a colour (a red bar when over) | The meter: `ink` as far as the use goes, full and its figures 600 when over |
+| One Subscribe for one paid plan, and its price said only once one is sent to pay | Free and each tier side by side as cards, each its price and what it keeps, the account's own current |
+| Signed in from one page and landed on another (Inbox, then Remote's Repos) | Back on the page one began on |
+| How Stripe went said twice, or not at all (back from the portal with nothing said) | Once, in one line above the plan, against how the plan was when the page left for Stripe |
+| A refusal said at the foot of the part, away from what was pressed | Where it was pressed: under the tier's card, in the ask, under Manage |
 
 # Part II. What the OS is under the pages
 
@@ -893,12 +899,18 @@ do (`service/plan.ts`); every client, the web app, the desktop app and l3,
 only shows what it says (Remote → Plan, `l3 remote plan`) and asks. No
 client counts, guesses or greys out on its own.
 
-| | Free | Paid |
-|---|---|---|
-| repos on a device | never limited | never limited |
-| what the Remote keeps | 3 repos and 100 MB (the deployment's `FREE_REPOS`, `FREE_MB`) | more (up to the account's room, `QUOTA_MB`) |
-| servers | joining when asked, writing in them | making them too |
-| names | one on the Remote (`ren`) | names on one's own domain (`ren@ren.dev`), and more on the Remote |
+Free, and three tiers one pays for (`PAID`), each keeping more than the
+last; what any tier adds to free is the same three things:
+
+| | Free | Go, $7 a month | Pro, $14 a month | Max, $19 a month |
+|---|---|---|---|---|
+| repos on a device | never limited | never limited | never limited | never limited |
+| what the Remote keeps | 3 repos and 100 MB (the deployment's `FREE_REPOS`, `FREE_MB`) | 50 GB, repos as many as fit | 256 GB, repos as many as fit | 512 GB, repos as many as fit |
+| servers | joining when asked, writing in them | making them too | making them too | making them too |
+| names | one on the Remote (`ren`) | 5 on the Remote, and names on one's own domain (`ren@ren.dev`) | 10, and on one's own domain | 20, and on one's own domain |
+
+Every account is bounded by its room as well (`QUOTA_MB`), whatever its
+tier: a deployment that sells the tiers sets it at or above the largest.
 
 What counts is read from what the Remote holds, never counted beside it:
 the account's repos on the Remote (those turned off among them, still kept)
@@ -910,19 +922,20 @@ a new repo and a draft that grows (PATCH draft), making a server, claiming
 a name. Going over never loses or blocks local work: the Remote refuses
 only what would exceed (a new repo past the allowance; a change that makes
 a draft larger while the account keeps more than the allowance), with 402,
-the rule and the way to the plan, and the app and l3 keep the work on the
-device and say it waits (it is asked again every few minutes, and goes the
-moment there is room or the plan is paid). A change that does not make a
-draft larger (an edit of the same size, a removal, a commit) is always
-taken, however much is kept.
+the rule, the tier it is about and the way to the plan, and the app and l3
+keep the work on the device and say it waits (it is asked again every few
+minutes, and goes the moment there is room or the plan is paid, or goes up
+a tier). A change that does not make a draft larger (an edit of the same
+size, a removal, a commit) is always taken, however much is kept.
 
-**When a subscription ends**, nothing is taken away and nothing is made
-read-only: servers go on with their people, boards and talk; names on a
-domain go on answering while its DNS says so, and names on the Remote are
-renewed as before; every repo the Remote holds stays, read and written. Only
-what would be new is refused: a server, a name, a repo past the allowance,
-a draft growing while over it. This is the least surprising rule: what a
-person made while paying is theirs as it was; paying again lets it grow.
+**When a subscription ends, or goes down a tier**, nothing is taken away
+and nothing is made read-only: servers go on with their people, boards and
+talk; names on a domain go on answering while its DNS says so, and names on
+the Remote are renewed as before; every repo the Remote holds stays, read
+and written. Only what would be new is refused: a server (ended), a name, a
+repo past the allowance, a draft growing while over it. This is the least
+surprising rule: what a person made while paying is theirs as it was;
+paying again, or more, lets it grow.
 
 **A payment that fails** leaves the plan paid for 14 days from the first
 failure (`GRACE_DAYS`; Stripe retries meanwhile), and the Plan says until
@@ -930,15 +943,43 @@ when; then it reads as free until a payment goes through. A subscription
 whose period ended more than that long ago without word of its renewal
 reads as free too.
 
-**Stripe** sells it, when the Remote has its keys: a Checkout session for
-the one price (`STRIPE_PRICE`), the customer portal to manage or cancel,
-and a webhook (`/v1/stripe/webhook`) whose every event is checked against
-the webhook secret, taken once by its id (one sent again changes nothing)
-and in the order Stripe made them (an older one arriving later changes
-nothing). Without the keys billing is off: the free allowance still holds,
-and the Remote says paid features cannot be bought here yet. A Remote given
-no plan (a Remote of one's own, development unless asked, a Remote for
-research) has no allowance at all.
+**Stripe** sells it, when the Remote has its keys: a price for each tier
+(`STRIPE_PRICE_GO`, `STRIPE_PRICE_PRO`, `STRIPE_PRICE_MAX`; a tier without
+one is not sold there), a Checkout session for the tier chosen, the
+customer portal to change the card, see the invoices and cancel, opened at
+the step that changes the tier when another is chosen on the Plan (Stripe
+says there what it costs now, and asks), and a webhook
+(`/v1/stripe/webhook`) whose every event is checked against the webhook
+secret, taken once by its id (one sent again changes nothing) and in the
+order Stripe made them (an older one arriving later changes nothing). Which
+tier an account is on is read from its subscription's price as each event
+comes, so a change made in the portal is its allowance at once; one
+subscription an account, so another tier is always a change of it, never a
+second Checkout. Without the keys and a price billing is off: the free
+allowance still holds, and the Remote says paid features cannot be bought
+here yet. A Remote given no plan (a Remote of one's own, development unless
+asked, a Remote for research) has no allowance at all.
+
+**Stripe's stand-in** (`service/devbilling.ts`), on a Remote of one's own
+asked for the plan (`LENGTH3_PLAN=1`) and the selftest's, looks and does as
+Stripe's pages do in test mode, so the way from the Plan to paying and back
+is the one people meet; it is Stripe's look, not this language's, and says
+on each page that it is a stand-in and nothing is charged. Checkout: the
+tier, its price and what it keeps at the left; email, the card (its number
+in groups as it is typed, an expiry, a CVC, each checked as Stripe checks
+them), the cardholder's name and country at the right, under a TEST MODE
+badge; Stripe's test cards (4242 4242 4242 4242 pays; 4000 0000 0000 0002 is
+declined, said under the card, and nothing is sent; 4000 0025 0000 3155 asks
+for 3-D Secure first, a page with Complete and Fail as Stripe's test page
+has); Back is the app's cancel page. The portal: the tier and the next
+payment, changing the tier (up, the rest of the period charged; down,
+credited), the card (the same form and test cards), the invoices, cancelling
+at the period's end and Renew plan to keep it, and, marked as not Stripe's,
+test controls (a payment fails, a payment goes through, it ends now). Each
+step sends the Remote the events Stripe would, signed, before the page goes
+on. The development sign-in provider (`service/devoauth.ts`) asks as a real
+one does: a name, then what length3 asks of it (your name and email), Allow
+or Cancel; Cancel comes back with the error a provider sends then.
 
 # Part III. Each place in turn
 
@@ -1509,7 +1550,15 @@ current issue card is, its weight a little high, at most 440 px wide. In
 it: Sign in, then the ways in one under another as wide as the place (the
 first provider filled), and no words around them: the buttons say it. The
 Inbox, signed out, shows the same place. A device's code opens the same place on a page of its own, for
-each step: the code, signing in, letting the device in.
+each step: the code, signing in, letting the device in. Signed in through a
+provider, the person is back on the page they began on (Remote's, or
+Inbox's); cancelled or refused at the provider, back on the same card, which
+says so by the provider's name (Signing in with GitHub was cancelled;
+nothing was shared), with the ways in there to try again.
+
+Nothing else is under the place: what paying is (the tiers, what each keeps
+and costs) is the Plan's, once signed in, not a page of prices put before
+the way in.
 
 Signed in: the header, then the page's parts as a switch (the one
 place a page is switched, because its parts are unrelated):
@@ -1557,19 +1606,40 @@ place a page is switched, because its parts are unrelated):
   nothing to press in its row: it signs out from the person's menu at the
   foot of the rail, which also forgets the session here.
 
-- **Plan**: what the account has, Free plan or Paid plan in a figure's size
-  (20/600), and under it the one date that matters in `sub` (renews, ends,
-  how long a failed payment stays paid; free: what free keeps). Then On the
-  Remote, two **meters** (§3): repos on the Remote and what is kept there,
-  each against the free allowance (paid: the figure alone), and, when over,
-  one quiet line that what is there stays and what is new waits on the
-  device. Then what paid adds, in three plain lines (keep more on the
-  Remote; make servers; names on your own domain). One primary button at
-  the bottom right: Subscribe (Stripe's Checkout) when free, Manage the plan
-  (Stripe's portal) when paid; none, and a quiet line saying so, where the
-  Remote sells nothing yet. Back from Stripe (or the window coming back),
-  the part reads the Remote again. Shown only when the Remote has a plan.
-  A repo card the Remote holds back says it waits, with See the plan.
+- **Plan**: the tier the account is on, Free plan or Pro plan in a figure's
+  size (20/600), and under it the one date that matters in `sub` (renews,
+  ends, how long a failed payment stays paid; free: what free keeps). Then
+  On the Remote, three **meters** (§3): repos on the Remote, what is kept
+  there and names here, each against what that tier keeps (repos as many as
+  fit: the figure alone), and, when over, one quiet line that what is there
+  stays and what is new waits on the device. Then Plans: free and the three
+  tiers side by side as small **cards** (§3), each with its price as Stripe
+  says it, what it keeps, and its one deed at the right of its foot; the
+  account's own is current (an `ink` edge over `raised`) with nothing to
+  press, and one that keeps less than is kept now says that what is there
+  stays. Free, each tier's deed is Subscribe, which never steps into payment
+  at once: what is bought opens under the cards, in plain words a line each
+  (the tier and its price; Renews automatically until you cancel; Cancel any
+  time from Manage the plan, the tier staying until the paid period ends;
+  Nothing you made is lost if it ends; then, small, that one pays on
+  Stripe's page and comes back here), Not now at the left and Continue to
+  payment at the right (Stripe's Checkout). Paying, the other tiers' deed is
+  Upgrade or Downgrade, which opens Stripe's portal at the step that changes
+  the tier (Stripe says what it costs now, and asks); none while a payment
+  that failed is put right. Then what paid adds, in three plain lines (keep
+  more on the Remote; make servers; names on your own domain), and, paid,
+  Manage the plan at the bottom right (the portal: the card, the invoices,
+  cancelling); with nothing sold, a quiet line saying so. Back from Stripe,
+  how it went is said once, in one line above the plan: paid, and to what,
+  once the Remote has heard it from Stripe (Payment went through: you are on
+  Pro now); cancelled, nothing charged (a card declined in Checkout is said
+  there, under the card, and Back comes to this); from the portal, what
+  changed against the plan as it was when the page left for it (You are on
+  Max now; Cancelled: Pro stays until Nov 22, 2026), or nothing. What the
+  Remote refused is said where it was pressed: under the tier's card, in
+  the ask, under Manage. The window coming back reads the Remote again.
+  Shown only when the Remote has a plan. A repo card the Remote holds back
+  says it waits, with See the plan.
 
 Under the parts, while there is no passkey, Add a passkey: the button alone,
 below what the page is about rather than over it.

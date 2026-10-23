@@ -24,6 +24,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {sql} from 'drizzle-orm';
+import {DEV_PRICES} from '../../service/devbilling.ts';
 import {migrateBeforeWorker, migrateRemote, owner, reach, workerRole} from '../../service/neon.ts';
 import {freePort, type Cluster} from './postgres.ts';
 
@@ -156,7 +157,8 @@ export async function remote(pg: Cluster, o: RemoteOptions): Promise<Remote> {
   if (o.enter) vars.ENTER_AS = o.enter.as;
   if (o.plan?.freeRepos) vars.FREE_REPOS = o.plan.freeRepos;
   if (o.plan?.freeMb) vars.FREE_MB = o.plan.freeMb;
-  if (o.plan?.billing) { vars.STRIPE_PRICE = 'price_standin'; vars.LOCAL_STRIPE = '1'; }
+  // Each tier's price as the stand-in for Stripe has it (devbilling.ts DEV_PRICES).
+  if (o.plan?.billing) { Object.assign(vars, {STRIPE_PRICE_GO: DEV_PRICES.go, STRIPE_PRICE_PRO: DEV_PRICES.pro, STRIPE_PRICE_MAX: DEV_PRICES.max}); vars.LOCAL_STRIPE = '1'; }
   const config = [
     `name = "os-length3-prodlike"`,
     `main = ${q(join(OS, 'selftest', 'prod', 'worker.ts'))}`,

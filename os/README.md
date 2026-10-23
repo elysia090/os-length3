@@ -368,19 +368,22 @@ the app.
   copy the Remote holds all of.
 - Remote → Plan (`service/plan.ts`): the Remote decides what an account
   may do; the app, the desktop app and `l3 remote plan` only show it. Free
-  keeps 3 repos and 100 MB on the Remote and one name there; paid adds
-  keeping more, making servers, and names on one's own domain (and more
-  names on the Remote). Repos on a device are never limited: past the
-  allowance the Remote refuses only what would exceed (a new repo, a draft
-  that grows), and the repo stays on the device and waits (この端末に保存 ·
+  keeps 3 repos and 100 MB on the Remote and one name there; three tiers are
+  paid for, Go (50 GB, $7 a month), Pro (256 GB, $14) and Max (512 GB, $19),
+  each adding making servers and names on one's own domain (and more names
+  on the Remote). Repos on a device are never limited: past the allowance
+  the Remote refuses only what would exceed (a new repo, a draft that
+  grows), and the repo stays on the device and waits (この端末に保存 ·
   Remote に空きができるのを待っています), with See the plan beside it; a server
-  or a domain name refused says so in place. The Plan part shows Free or
-  Paid and until when, the use against the allowance as meters, what paid
-  adds, and Subscribe (Stripe Checkout) or Manage the plan (Stripe's
-  portal); `l3 remote plan subscribe|manage` prints the same page. A
-  subscription that ends takes nothing away: servers, names and repos stay
-  as they were, only what would be new is refused. A failed payment stays
-  paid 14 days.
+  or a domain name refused says so in place. The Plan part shows the tier
+  and until when, the use against what it keeps as meters, free and the
+  three tiers side by side (Subscribe, Upgrade, Downgrade), and Manage the
+  plan (Stripe's portal); signed out, the tiers stand under the way in, and
+  one chosen there goes on to its Checkout once signed in. `l3 remote plan
+  subscribe go|pro|max`, `switch go|pro|max` and `manage` print the same
+  pages. A subscription that ends, or goes down a tier, takes nothing away:
+  servers, names and repos stay as they were, only what would be new is
+  refused. A failed payment stays paid 14 days.
 - Runtime: この端末, then everything this OS holds on it in one list,
   largest first — repos, roots, leftovers, Home — each with what can be
   done: 空ける (a repo's changes not on the Remote yet are sent first; it
@@ -438,7 +441,7 @@ of them the app and l3 need: `service/README.md`.
 ```
 node service/dev.ts DIR 8787 http://localhost:1420     # the Remote, here (no plan: everything open)
 node service/dev.ts DIR 8787 http://localhost:1420 --no-bucket   # one that holds no files, as a Worker without R2
-LENGTH3_PLAN=1 node service/dev.ts DIR 8787 http://localhost:1420   # with the plan, bought from a stand-in for Stripe
+LENGTH3_PLAN=1 node service/dev.ts DIR 8787 http://localhost:1420   # with the plan, bought from a stand-in for Stripe (its test cards: 4242 4242 4242 4242 pays, 4000 0000 0000 0002 is declined, 4000 0025 0000 3155 asks for 3-D Secure)
 LENGTH3_DEV_REMOTE=http://127.0.0.1:8787 VITE_LENGTH3_REMOTE= npx vite
 LENGTH3_REMOTE=http://127.0.0.1:8787 l3 login
 ```
@@ -464,28 +467,34 @@ time; a new key ends every old link and session at once).
 **Billing (the plan, Stripe).** On Workers the plan always holds (but on
 a Remote for research, `ENTER_AS`, which is one person's): `FREE_REPOS`
 (3), `FREE_MB` (100) and `GRACE_DAYS` (14) say it otherwise, as variables.
-It is bought with Stripe when all three are given; with any missing,
-billing is off and the Remote says paid features cannot be bought here yet.
-Stripe is reached over its REST API with fetch (`service/stripe.ts`: a
-customer, a Checkout session, a portal session; the webhook's signature
-checked with Web Crypto); tests and dev never reach it. To connect it:
+A tier is bought with Stripe when both keys and its price are given; with a
+key missing, or no price at all, billing is off and the Remote says paid
+features cannot be bought here yet. Stripe is reached over its REST API with
+fetch (`service/stripe.ts`: a customer, a Checkout session for a tier's
+price, a portal session, what a price is; the webhook's signature checked
+with Web Crypto); tests and dev never reach it. To connect it:
 
-1. In Stripe, a product with one recurring price; its id is `STRIPE_PRICE`
-   (a variable in `wrangler.toml` or the Worker's settings).
+1. In Stripe, a product for each tier with one recurring monthly price
+   (Go $7, Pro $14, Max $19); their ids are `STRIPE_PRICE_GO`,
+   `STRIPE_PRICE_PRO` and `STRIPE_PRICE_MAX` (variables in `wrangler.toml` or
+   the Worker's settings). A tier without one is not sold. `QUOTA_MB`, which
+   bounds every account, at or above the largest tier (512 GB: 488282).
 2. The secret key: `npx wrangler secret put STRIPE_SECRET_KEY` (a restricted
-   key may do: Customers, Checkout Sessions and Customer portal, write).
+   key may do: Customers, Checkout Sessions and Customer portal, write;
+   Prices, read).
 3. A webhook endpoint at `https://os.length3.com/v1/stripe/webhook`, sending
    `checkout.session.completed`, `customer.subscription.created`,
    `customer.subscription.updated`, `customer.subscription.deleted`,
    `invoice.payment_failed` and `invoice.paid`; its signing secret:
    `npx wrangler secret put STRIPE_WEBHOOK_SECRET`.
 4. The customer portal turned on in Stripe (Settings → Billing → Customer
-   portal), with cancelling allowed.
+   portal), with cancelling allowed, and switching plans allowed among the
+   three products (the Plan opens it at the step that changes the tier).
 
 Each event is taken once by its id (kept 30 days in `billing_event`; one
 made longer ago is not taken) and in the order Stripe made it; a payment
 that fails leaves the plan paid for `GRACE_DAYS` from the first failure.
-Migration `0006_plan_and_billing` holds each account's plan as Stripe last
+Migrations `0006_plan_and_billing` and `0015_plan_tiers` hold each account's plan (its tier among it) as Stripe last
 said it; what an account uses is read from what the Remote holds.
 
 It ships from main with Cloudflare's Workers Builds: the Worker is connected
@@ -617,8 +626,10 @@ ends (an open PGlite keeps its process up for seconds).
 (`@playwright/test`, `selftest/`). One run builds the app for a Remote on
 its own origin into `selftest/.dist` (again only when a source is newer),
 starts a fresh Remote (`service/dev.ts` with a new temporary data
-directory) and `vite preview` on free ports, runs every `selftest/*.spec.ts`
-in parallel, and stops both whatever happened (`global-setup.ts`). The
+directory) and `vite preview` on free ports, and beside them, at the same
+time, a second pair whose Remote has the plan and Stripe's stand-in
+(`LENGTH3_PLAN=1`, for `billing.spec.ts`), runs every `selftest/*.spec.ts`
+in parallel, and stops them all whatever happened (`global-setup.ts`). The
 browser reaches both as `localhost` (a passkey's relying party is a name,
 never an address); nothing listens on a fixed port and nothing outside the
 repository is read. About 95 journeys take about four minutes on four cores.

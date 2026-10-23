@@ -215,6 +215,8 @@ export async function enterWith(key: string): Promise<boolean> {
  */
 export async function signInWith(provider: Provider, back = signedInURL()): Promise<void> {
   tryingAgain();
+  // Which provider it was, so coming back without a session says it by its name.
+  try { sessionStorage.setItem(SIGNING_WITH, provider); } catch { /* said without its name, then */ }
   const failed = new URL(back);
   failed.searchParams.delete('signed-in');
   failed.searchParams.set('sign-in-failed', '');
@@ -248,10 +250,16 @@ export async function claim(): Promise<boolean> {
  * words (the address's other words are anyone's to write, and are never shown); said on the card.
  */
 export function signInFailed(code: string | null) {
+  let tried: string | null = null;
+  try { tried = sessionStorage.getItem(SIGNING_WITH); sessionStorage.removeItem(SIGNING_WITH); } catch { /* by no name, then */ }
+  const name = tried && tried in PROVIDER_NAME ? PROVIDER_NAME[tried as Provider] : null;
+  // Cancelled at the provider (its Cancel, or a refusal there): nothing was shared, and the way in is there again.
   signInTrouble = code === 'closed' ? t('This Remote takes no new accounts')
-    : code === 'access_denied' ? t('Signing in was called off at the provider.')
+    : code === 'access_denied' ? (name ? t('Signing in with {name} was cancelled; nothing was shared.', {name}) : t('Signing in was cancelled at the provider; nothing was shared.'))
     : t('The provider did not sign you in. Try again.');
 }
+/** The provider a sign-in went to, kept for this tab until it comes back. */
+const SIGNING_WITH = 'length3.signing-with';
 
 /**
  * Why the last sign-in did not take, said on the sign-in card however often it is drawn (the page is drawn again

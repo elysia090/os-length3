@@ -82,10 +82,40 @@ pub fn end_device(token: &str) -> Result<()> {
 #[derive(Serialize, Deserialize, Debug, Default, Clone, Copy)]
 pub struct Allowance { pub repos: u64, pub bytes: u64, #[serde(default)] pub names: u64 }
 
+/// What a tier keeps on the Remote: repos and names here (none: as many as fit), and bytes.
+#[derive(Serialize, Deserialize, Debug, Default, Clone, Copy)]
+pub struct Keeps { #[serde(default)] pub repos: Option<u64>, pub bytes: u64, #[serde(default)] pub names: Option<u64> }
+
+/// A price as Stripe says it: so much in the currency's smallest unit, every so many intervals.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Price { pub amount: u64, pub currency: String, pub interval: String, #[serde(default = "one")] pub every: u64 }
+fn one() -> u64 { 1 }
+
+/// A tier as the Remote says it (free, go, pro, max): what it keeps, whether it is sold there, what it costs.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct TierSaid { pub tier: String, pub allowance: Keeps, #[serde(default)] pub sold: bool, #[serde(default)] pub price: Option<Price> }
+
+/// The tiers one pays for, the least first.
+pub const TIERS: [&str; 3] = ["go", "pro", "max"];
+
+/// A tier's name as every client says it: Go, Pro, Max (free in the language spoken).
+pub fn tier_name(tier: &str) -> String {
+    match tier { "go" => "Go".into(), "pro" => "Pro".into(), "max" => "Max".into(), _ => crate::tr!("free", "無料") }
+}
+
 /// The account's plan as the Remote says it; `plan` is "free", "paid", or "none" (this Remote has no plan).
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Plan {
     pub plan: String,
+    /// The tier the account is on: free, go, pro or max (a Remote from before there were tiers says none).
+    #[serde(default)]
+    pub tier: Option<String>,
+    /// What that tier keeps.
+    #[serde(default)]
+    pub allowance: Option<Keeps>,
+    /// Free and each tier sold there, the least first.
+    #[serde(default)]
+    pub tiers: Vec<TierSaid>,
     #[serde(default)]
     pub status: Option<String>,
     #[serde(default)]
@@ -118,12 +148,14 @@ pub fn plan_page_ok(remote: &str, page: &str) -> bool {
     }
 }
 
-/// The page to subscribe on (`checkout`) or to manage the subscription on (`portal`), as the Remote makes
-/// it for this account: Stripe's, never one this device names.
-pub fn plan_page(kind: &str) -> Result<String> {
+/// The page to subscribe to `tier` on (`checkout`; none, the least sold), or to manage the subscription on
+/// (`portal`; with a tier, at the step that changes to it), as the Remote makes it for this account: Stripe's,
+/// never one this device names.
+pub fn plan_page(kind: &str, tier: Option<&str>) -> Result<String> {
     if kind != "checkout" && kind != "portal" { return Err(crate::tr!("No such page of the plan", "プランにそのページはありません")); }
+    if let Some(t) = tier { if !TIERS.contains(&t) { return Err(crate::tr!("No such tier: go, pro or max", "そのプランはありません。go・pro・max のどれかです")); } }
     let c = Client::open()?;
-    let v = c.json("POST", &format!("/v1/plan/{kind}"), Some(serde_json::json!({})))?;
+    let v = c.json("POST", &format!("/v1/plan/{kind}"), Some(tier.map_or(serde_json::json!({}), |t| serde_json::json!({"tier": t}))))?;
     let url = v["url"].as_str().unwrap_or_default().to_string();
     let remote = crate::remote::connection().map(|c| c.url).unwrap_or_default();
     if !plan_page_ok(&remote, &url) { return Err(crate::tr!("The Remote named a page that is not Stripe's or its own", "Remote が Stripe のものでも自分のものでもないページを示しました")); }
@@ -158,6 +190,14 @@ mod tests {
         assert_eq!((p.plan.as_str(), p.usage.unwrap().repos, p.free.unwrap().bytes, p.buy), ("free", 2, 100_000_000, true));
         let none: super::Plan = serde_json::from_str(r#"{"plan":"none"}"#).unwrap();
         assert!(none.usage.is_none() && !none.buy);
+        // A tier: what it keeps (as many repos as fit: none said), and the tiers beside it with their prices.
+        let pro: super::Plan = serde_json::from_str(r#"{"plan":"paid","tier":"pro","allowance":{"repos":null,"bytes":256000000000,"names":10},
+            "tiers":[{"tier":"free","allowance":{"repos":3,"bytes":100000000,"names":1}},{"tier":"pro","allowance":{"repos":null,"bytes":256000000000,"names":10},"sold":true,
+            "price":{"amount":1400,"currency":"usd","interval":"month","every":1}}],"buy":true,"manage":true}"#).unwrap();
+        let a = pro.allowance.unwrap();
+        assert_eq!((pro.tier.as_deref(), a.repos, a.bytes, a.names, pro.tiers.len(), pro.tiers[1].price.as_ref().map(|p| p.amount)),
+            (Some("pro"), None, 256_000_000_000, Some(10), 2, Some(1400)));
+        assert_eq!(super::tier_name("max"), "Max");
     }
 
     #[test]

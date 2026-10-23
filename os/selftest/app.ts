@@ -38,6 +38,7 @@ export class App {
   readonly runtime: Runtime;
   readonly inbox: Inbox;
   readonly server: Server;
+  readonly stripe: Stripe;
 
   constructor(page: Page) {
     this.page = page;
@@ -52,6 +53,7 @@ export class App {
     this.runtime = new Runtime(this);
     this.inbox = new Inbox(this);
     this.server = new Server(this);
+    this.stripe = new Stripe(this);
   }
 
   /** The page the rail chose. */
@@ -107,15 +109,25 @@ export class App {
 
   /** Sign in through the Remote's development provider as `name`; back on Remote, signed in. */
   async signIn(name: string) {
-    this.person = name;
     await this.rail.go('remote');
     await this.main.getByRole('button', {name: 'Continue with Development'}).click();
-    // The provider's own page: a name, and you are in. (Not reached: the card says why, in its alert.)
-    await expect(this.page.getByRole('heading', {name: 'Development provider'}), 'the provider\'s page').toBeVisible();
-    await this.page.getByRole('textbox', {name: 'Name'}).fill(name);
-    await this.page.getByRole('button', {name: 'Continue'}).click();
+    await this.atProvider(name);
     await this.settled();
     await expect(this.remote.part('Repos')).toBeVisible();
+  }
+
+  /**
+   * At the development provider, gone to from a sign-in card: who one is there (`name`), then what length3 asks
+   * of it, answered `answer` (Allow signs in; Cancel goes back with nothing shared). (Not reached: the card says
+   * why, in its alert.)
+   */
+  async atProvider(name: string, answer: 'Allow' | 'Cancel' = 'Allow') {
+    if (answer === 'Allow') this.person = name;
+    await expect(this.page, 'the provider\'s page').toHaveTitle(/Development provider/);
+    await this.page.getByRole('textbox', {name: 'Name'}).fill(name);
+    await this.page.getByRole('button', {name: 'Continue'}).click();
+    await expect(this.page.getByRole('heading', {name: 'length3 wants to access your Development account'})).toBeVisible();
+    await this.page.getByRole('button', {name: answer, exact: true}).click();
   }
 }
 
@@ -526,10 +538,26 @@ class Git extends Part {
   }
 }
 
-/** Remote: the canonical copy; signed in, its parts (Repos, Sign-in, Devices). */
+/** Remote: the canonical copy; signed in, its parts (Repos, Sign-in, Devices, Plan). */
 class Remote extends Part {
   /** One of its parts, by the heading that switches to it (a count may follow the word). */
-  part(name: 'Repos' | 'Sign-in' | 'Devices') { return this.main.getByRole('tab', {name: new RegExp(`^${name}`)}); }
+  part(name: 'Repos' | 'Sign-in' | 'Devices' | 'Plan') { return this.main.getByRole('tab', {name: new RegExp(`^${name}`)}); }
+  /** The Plan part's panel. */
+  get plan() { return this.main.getByRole('tabpanel', {name: /^Plan/}); }
+  /** A tier's card, by its name (Free plan, Go plan, Pro plan, Max plan): under the Plan signed in, under the way in signed out. */
+  tier(name: string) { return this.main.getByRole('region', {name: 'Plans'}).getByRole('group', {name, exact: true}); }
+  /** What the Plan says of the last trip to Stripe, above it. */
+  get told() { return this.plan.getByRole('status').first(); }
+  /** What is bought, asked before payment: Subscribe to Pro. */
+  asking(tier: string) { return this.main.getByRole('group', {name: `Subscribe to ${tier}`}); }
+
+  /** Subscribe to a tier (Go, Pro, Max) from its card on the Plan, then on to Stripe's Checkout. */
+  async subscribe(tier: string) {
+    await this.part('Plan').click();
+    await this.tier(`${tier} plan`).getByRole('button', {name: 'Subscribe'}).click();
+    await this.asking(tier).getByRole('button', {name: 'Continue to payment'}).click();
+    await expect(this.page.getByText(`Subscribe to ${tier}`, {exact: true})).toBeVisible();
+  }
   /** A repo's card, by its name. */
   card(repo: string) { return this.main.getByRole('tabpanel', {name: /^Repos/}).getByRole('group', {name: repo, exact: true}).first(); }
   /** What a card asks before its repo is turned off (a group of its own, named by the repo, inside the card). */
@@ -706,4 +734,33 @@ class Server extends Part {
     await box.press('Control+Enter');
     await expect(box).toHaveValue('');
   }
+}
+
+/**
+ * Stripe, as the Remote with the plan has it (service/devbilling.ts, its stand-in in test mode): Checkout's card
+ * form, the 3-D Secure step, and the customer portal, found as a person finds them there.
+ */
+class Stripe extends Part {
+  /** The card's number, and what is said under the card's fields. */
+  get number() { return this.page.getByRole('textbox', {name: 'Card number'}); }
+  get cardSays() { return this.page.getByRole('group', {name: 'Card information'}).getByRole('alert'); }
+
+  /** Pay with `card` (one of Stripe's test cards): the card, its expiry and CVC, the cardholder, the country, then `deed` (Subscribe in Checkout). */
+  async pay(card: string, deed = 'Subscribe') {
+    await this.number.fill(card);
+    await this.page.getByRole('textbox', {name: 'Expiration'}).fill('12 / 34');
+    await this.page.getByRole('textbox', {name: 'CVC'}).fill('123');
+    await this.page.getByRole('textbox', {name: 'Cardholder name'}).fill(this.app.person || 'Ada');
+    await this.page.getByRole('combobox', {name: 'Country or region'}).selectOption('JP');
+    await this.page.getByRole('button', {name: deed, exact: true}).click();
+  }
+
+  /** The 3-D Secure step a card asks for, answered Complete or Fail. */
+  async secure(answer: 'Complete' | 'Fail') {
+    await expect(this.page.getByRole('dialog', {name: '3D Secure 2 Test Page'})).toBeVisible();
+    await this.page.getByRole('button', {name: answer, exact: true}).click();
+  }
+
+  /** The portal's subscription, as its page says it. */
+  get subscription() { return this.page.getByRole('region', {name: 'Current subscription'}); }
 }

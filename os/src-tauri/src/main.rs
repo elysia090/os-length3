@@ -81,11 +81,12 @@ fn window_forward(app: tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("main") { let _ = w.unminimize(); let _ = w.show(); let _ = w.set_focus(); }
 }
 
-/// The plan's page, Checkout (`checkout`) or the portal (`portal`), as the Remote makes it for this account,
-/// opened in the browser. Only Stripe's page or the Remote's own is opened (account::plan_page).
+/// The plan's page, Checkout for `tier` (`checkout`) or the portal (`portal`; with a tier, at the step that
+/// changes to it), as the Remote makes it for this account, opened in the browser. Only Stripe's page or the
+/// Remote's own is opened (account::plan_page).
 #[tauri::command]
-async fn plan_open(app: tauri::AppHandle, kind: String) -> Result<(), String> {
-    let url = tauri::async_runtime::spawn_blocking(move || api::call("plan_page", &serde_json::json!({"kind": kind})))
+async fn plan_open(app: tauri::AppHandle, kind: String, tier: Option<String>) -> Result<(), String> {
+    let url = tauri::async_runtime::spawn_blocking(move || api::call("plan_page", &serde_json::json!({"kind": kind, "tier": tier})))
         .await.map_err(|e| e.to_string())??;
     use tauri_plugin_opener::OpenerExt;
     app.opener().open_url(url.as_str().unwrap_or_default(), None::<&str>).map_err(|e| e.to_string())

@@ -182,41 +182,78 @@ fn paid_adds() -> [String; 3] {
         tr!("Names on your own domain (name@yourdomain), and more names here", "自分のドメインの名前（name@yourdomain）と、この Remote での2つ目からの名前")]
 }
 
-/// `l3 remote plan`: free or paid, until when, and what the Remote keeps against the free allowance, as the
-/// Remote says it (it decides; l3 shows). The page to subscribe or manage on is `l3 remote plan subscribe|manage`.
+/// A price in words, as the app's Plan says it: 14.00 USD a month (a currency without cents, 800 JPY).
+fn price_words(p: &account::Price) -> String {
+    let cur = p.currency.to_ascii_uppercase();
+    let money = if ["JPY", "KRW", "VND", "CLP", "ISK", "UGX", "XAF", "XOF"].contains(&cur.as_str()) { format!("{} {cur}", p.amount) }
+        else { format!("{}.{:02} {cur}", p.amount / 100, p.amount % 100) };
+    let per = match (p.interval.as_str(), p.every) {
+        ("day", 1) => tr!("a day", "1日"), ("week", 1) => tr!("a week", "1週間"), ("year", 1) => tr!("a year", "年額"), (_, 1) => tr!("a month", "月額"),
+        ("day", n) => tr!("every {} days", "{}日ごと", n), ("week", n) => tr!("every {} weeks", "{}週間ごと", n), ("year", n) => tr!("every {} years", "{}年ごと", n),
+        (_, n) => tr!("every {} months", "{}か月ごと", n),
+    };
+    format!("{money} {per}")
+}
+
+/// `l3 remote plan`: the tier the account is on, until when, what the Remote keeps against what that tier keeps,
+/// and the tiers beside it, as the Remote says it (it decides; l3 shows). The page to subscribe to a tier on is
+/// `l3 remote plan subscribe TIER`; to change tier or manage, `l3 remote plan switch TIER` and `l3 remote plan manage`.
 pub fn plan(_: &Ctx, _: &Call) -> Result<Reply> {
     let p = account::plan()?;
     if p.plan == "none" {
         return Ok(Reply::data(tr!("Plan  none: this Remote keeps everything for everyone", "プラン  なし：この Remote は誰のものでもすべて置きます"), json!(p)));
     }
     let paid = p.plan == "paid";
+    let tier = p.tier.clone().filter(|t| account::TIERS.contains(&t.as_str()) && paid);
     let when = if let Some(g) = p.grace_until.filter(|_| paid) { tr!(" · a payment did not go through; paid until {}", " · 支払いができませんでした。{}まで有料プラン", out::day(g)) }
         else if let Some(e) = p.ends { if paid { tr!(" · ends {}", " · {}に終了", out::day(e)) } else { tr!(" · ended {}; what you made stays", " · {}に終了。作ったものはそのまま残ります", out::day(e)) } }
         else if let Some(r) = p.renews.filter(|_| paid) { tr!(" · renews {}", " · {}に更新", out::day(r)) }
         else { String::new() };
-    let mut t = vec![format!("{}  {}{when}", tr!("Plan", "プラン"), if paid { tr!("paid", "有料") } else { tr!("free", "無料") })];
+    let name = match &tier { Some(t) => account::tier_name(t), None if paid => tr!("paid", "有料"), None => tr!("free", "無料") };
+    let mut t = vec![format!("{}  {name}{when}", tr!("Plan", "プラン"))];
     let (u, f) = (p.usage.unwrap_or_default(), p.free.unwrap_or_default());
-    let of = |used: String, cap: String| if paid { used } else { tr!("{} of {}", "{} / {}", used, cap) };
-    t.push(format!("  {}  {}", tr!("Repos on the Remote", "Remote にある repo"), of(u.repos.to_string(), f.repos.to_string())));
-    t.push(format!("  {}  {}", tr!("Kept on the Remote", "Remote に置いている量"), of(kept(u.bytes), kept(f.bytes))));
-    if !paid && (u.repos > f.repos || u.bytes > f.bytes) {
+    // Against what the tier keeps; a Remote from before there were tiers says only the free allowance, and paid had none.
+    let keeps = p.allowance.unwrap_or(if paid { account::Keeps {repos: None, bytes: 0, names: None} } else { account::Keeps {repos: Some(f.repos), bytes: f.bytes, names: Some(f.names)} });
+    let of = |used: String, cap: Option<String>| match cap { Some(c) => tr!("{} of {}", "{} / {}", used, c), None => used };
+    t.push(format!("  {}  {}", tr!("Repos on the Remote", "Remote にある repo"), of(u.repos.to_string(), keeps.repos.map(|n| n.to_string()))));
+    t.push(format!("  {}  {}", tr!("Kept on the Remote", "Remote に置いている量"), of(kept(u.bytes), (keeps.bytes > 0).then(|| kept(keeps.bytes)))));
+    if p.allowance.is_some() { t.push(format!("  {}  {}", tr!("Names on this Remote", "この Remote の名前"), of(u.names.to_string(), keeps.names.map(|n| n.to_string())))); }
+    if keeps.repos.is_some_and(|n| u.repos > n) || (keeps.bytes > 0 && u.bytes > keeps.bytes) {
         t.push(tr!("  The Remote keeps what is there; what is new stays on this device until there is room", "  Remote にあるものはそのままです。新しいものは空きができるまでこの端末に残ります"));
+    }
+    // Free and each tier sold, the account's own marked.
+    let sold: Vec<_> = p.tiers.iter().filter(|x| x.tier != "free").collect();
+    if !sold.is_empty() {
+        t.push(tr!("Tiers", "プランの種類"));
+        for x in sold {
+            let mine = tier.as_deref() == Some(x.tier.as_str());
+            t.push(format!("  {}  {}{}{}", account::tier_name(&x.tier), tr!("{} on the Remote", "Remote に {}", kept(x.allowance.bytes).replace(".0 ", " ")),
+                x.price.as_ref().map(|p| format!(" · {}", price_words(p))).unwrap_or_default(), if mine { tr!(" · yours", " · いまのプラン") } else { String::new() }));
+        }
     }
     t.push(if paid { tr!("Paid gives", "有料プランで使えるもの") } else { tr!("Paid adds", "有料プランで増えるもの") });
     for a in paid_adds() { t.push(format!("  {a}")); }
     t.push(if !p.buy { tr!("Paid features cannot be bought on this Remote yet", "この Remote ではまだ有料プランを購入できません") }
-        else if paid && p.manage { tr!("l3 remote plan manage gives the page to manage or cancel it", "l3 remote plan manage で管理・解約するページを出します") }
+        else if paid && p.manage { tr!("l3 remote plan manage gives the page to manage or cancel it; l3 remote plan switch go|pro|max, to change tier",
+            "l3 remote plan manage で管理・解約するページを、l3 remote plan switch go|pro|max でプランを変えるページを出します") }
         else if paid { String::new() }
-        else { tr!("l3 remote plan subscribe gives the page to subscribe on", "l3 remote plan subscribe で登録するページを出します") });
+        else { tr!("l3 remote plan subscribe go|pro|max gives the page to subscribe on", "l3 remote plan subscribe go|pro|max で登録するページを出します") });
     t.retain(|l| !l.is_empty());
     Ok(Reply::data(t.join("\n"), json!(p)))
 }
 
-/// `l3 remote plan subscribe|manage`: the page, as the Remote makes it for this account (Stripe's), to open in a browser.
+/// `l3 remote plan subscribe [TIER]|manage|switch TIER`: the page, as the Remote makes it for this account (Stripe's),
+/// to open in a browser: Checkout for a tier (none named, the least sold), the portal, or the portal at the step
+/// that changes the tier.
 pub fn plan_page(_: &Ctx, call: &Call) -> Result<Reply> {
-    let kind = if call.word(0) == Some("manage") { "portal" } else { "checkout" };
-    let url = account::plan_page(kind)?;
-    let said = if kind == "portal" { tr!("Open this page in a browser to manage or cancel the plan:", "ブラウザでこのページを開くと、プランを管理・解約できます：") }
+    let (kind, tier) = match call.word(0) {
+        Some("manage") => ("portal", None),
+        Some("switch") => ("portal", call.word(1)),
+        _ => ("checkout", call.word(1)),
+    };
+    let url = account::plan_page(kind, tier)?;
+    let said = if kind == "portal" && tier.is_some() { tr!("Open this page in a browser to change the tier:", "ブラウザでこのページを開くと、プランを変えられます：") }
+        else if kind == "portal" { tr!("Open this page in a browser to manage or cancel the plan:", "ブラウザでこのページを開くと、プランを管理・解約できます：") }
         else { tr!("Open this page in a browser to subscribe:", "ブラウザでこのページを開くと登録できます：") };
     Ok(Reply::data(format!("{said}\n  {url}"), json!({"url": url})))
 }

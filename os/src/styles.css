@@ -1054,8 +1054,20 @@ mark { background: var(--ink); color: var(--ground); }
 .sub-part h3 { display: flex; justify-content: space-between; align-items: center; margin: 0 0 var(--s3); font-size: var(--t-body); font-weight: 600; }
 .sub-part h3 small { margin-left: var(--s2); font-weight: 400; color: var(--sub); font-size: var(--t-meta); }
 
-/* Remote's Plan: what one has (a figure's size), the use against the allowance, what paid adds, one deed. */
-.plan-part { max-width: 760px; }
+/* Remote's Plan: what one has (a figure's size), the use against the allowance, the tiers side by side, what paid
+   adds, one deed. What is read keeps to 760 px; the tiers take the room for four small cards. */
+.plan-part { max-width: 1040px; }
+.plan-part > .sub-part:not(.plan-tiers), .plan-part > .plan-told, .plan-part > .error, .plan-part > .answers { max-width: 760px; }
+/* Free and each tier: small cards about four across, the account's own current (an ink edge over raised). */
+.tier-cards { grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); }
+.tier-card { min-height: 168px; gap: var(--s1); }
+.tier-card > .card-title { margin-bottom: var(--s1); }
+.tier-price { font-size: var(--t-card); font-weight: 600; }
+.tier-keeps { margin: var(--s1) 0 0; padding: 0; list-style: none; font-size: var(--t-meta); }
+.tier-keeps li + li { margin-top: var(--s1); }
+.tier-card > p.muted { margin: var(--s2) 0 0; }
+.tier-card > .card-foot { padding-top: var(--s3); }
+.plan-part > .plan-confirm { margin-top: var(--s5); }
 .plan-title { margin: 0; font-size: var(--t-card); font-weight: 600; }
 .plan-now p { margin: var(--s1) 0 0; }
 /* Each meter in the same columns: what it measures, its track, its figures (right-aligned). */

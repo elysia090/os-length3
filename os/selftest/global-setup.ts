@@ -6,7 +6,11 @@
 //   2. a fresh Remote (service/dev.ts) starts on a free port, its data in a
 //      new temporary directory: PGlite, blobs, mail.log, nothing kept;
 //   3. `vite preview` serves the build on another free port and passes /api
-//      and /v1 to that Remote (LENGTH3_DEV_REMOTE), as `vite` does in development.
+//      and /v1 to that Remote (LENGTH3_DEV_REMOTE), as `vite` does in development;
+//   4. beside them, the same again for a Remote with the plan (LENGTH3_PLAN=1:
+//      the free allowance, the tiers, and Stripe's stand-in, devbilling.ts),
+//      started at the same time, for the specs about paying (SELFTEST_PLAN_APP).
+//      Every other spec meets a Remote with no plan, where everything is open.
 //
 // Both are reached by the name localhost (bound to 127.0.0.1): a passkey's
 // relying party is a domain, never an address, so Chromium's virtual
@@ -18,9 +22,10 @@
 // other work on this machine) never meet.
 //
 // SELFTEST_REMOTE_KIND=worker runs the same tests against the Remote as
-// production runs it (selftest/prod/README.md): in place of 2 and 3, the
+// production runs it (selftest/prod/README.md): in place of 2 to 4, the
 // Worker on workerd serving that build and the Remote on one origin, over a
-// Postgres 16 of its own reached as remote_worker through the Neon driver.
+// Postgres 16 of its own reached as remote_worker through the Neon driver
+// (and a second, its people free until they pay, for the specs about paying).
 
 import {spawn, spawnSync, type ChildProcess} from 'node:child_process';
 import {createWriteStream, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync} from 'node:fs';
@@ -110,22 +115,30 @@ async function worker(): Promise<() => Promise<void>> {
   const pg = await cluster();
   const b = await bridgeProcess().catch((e) => { pg.destroy(); throw e; });
   const dir = mkdtempSync(join(tmpdir(), 'length3-selftest-worker-'));
-  let r: Awaited<ReturnType<typeof remote>> | null = null;
+  const made: Awaited<ReturnType<typeof remote>>[] = [];
   const teardown = async () => {
-    if (r) writeFileSync(join(LOGS, 'worker.log'), r.log());
-    await r?.stop();
+    for (const [i, x] of made.entries()) writeFileSync(join(LOGS, i ? 'worker-plan.log' : 'worker.log'), x.log());
+    await Promise.all(made.map((x) => x.stop()));
     await b.stop();
     pg.destroy();
     rmSync(dir, {recursive: true, force: true});
   };
+  let r: Awaited<ReturnType<typeof remote>>, plan: Awaited<ReturnType<typeof remote>>;
   try {
-    // Each person paid (the plan holds outside research; servers are paid), billing through the stand-in for Stripe.
-    r = await remote(pg, {dir, assets: OUT, bridge: b.port, paid: true, plan: {billing: true}});
+    // Each person paid (the plan holds outside research; servers are paid), billing through the stand-in for Stripe;
+    // and, at the same time, one whose people are free until they pay there, for the specs about paying.
+    const both = await Promise.allSettled([remote(pg, {dir: join(dir, 'paid'), assets: OUT, bridge: b.port, paid: true, plan: {billing: true}}),
+      remote(pg, {dir: join(dir, 'plan'), assets: OUT, bridge: b.port, plan: {billing: true}})]);
+    for (const x of both) if (x.status === 'fulfilled') made.push(x.value);
+    const failed = both.find((x) => x.status === 'rejected');
+    if (failed) throw (failed as PromiseRejectedResult).reason;
+    [r, plan] = made;
   } catch (e) {
     await teardown();
     throw e;
   }
   process.env.SELFTEST_APP = process.env.SELFTEST_REMOTE = r.url;
+  process.env.SELFTEST_PLAN_APP = process.env.SELFTEST_PLAN_REMOTE = plan.url;
   process.env.SELFTEST_DATA = dir;
   console.log(`selftest: the app and its Remote on ${r.url}: the Worker on workerd, Postgres 16 as remote_worker`);
   return teardown;
@@ -136,8 +149,8 @@ export default async function globalSetup(_config: FullConfig) {
   build();
   if (process.env.SELFTEST_REMOTE_KIND === 'worker') return worker();
   const data = mkdtempSync(join(tmpdir(), 'length3-selftest-'));
-  const [remotePort, appPort] = [await freePort(), await freePort()];
-  const app = `http://localhost:${appPort}`;
+  const [remotePort, appPort, planRemotePort, planAppPort] = [await freePort(), await freePort(), await freePort(), await freePort()];
+  const app = `http://localhost:${appPort}`, planApp = `http://localhost:${planAppPort}`;
   const remoteURL = `http://localhost:${remotePort}`;
   const children: ChildProcess[] = [];
   const teardown = async () => {
@@ -147,22 +160,30 @@ export default async function globalSetup(_config: FullConfig) {
   // Stopped even when the run itself is cut short (Ctrl-C), not only by the teardown.
   const kill = () => { for (const c of children) if (c.exitCode === null) c.kill('SIGKILL'); };
   process.once('exit', kill);
-  try {
+  /** A Remote (its data in `dir` under the run's) and the preview that passes to it, `name` naming their logs. */
+  const pair = (name: string, dir: string, rPort: number, aPort: number, env: NodeJS.ProcessEnv = {}) => {
+    const at = `http://localhost:${aPort}`;
     // The Remote's own name is localhost too, so the session it sets on sign-in is the app's.
-    children.push(start('remote', ['service/dev.ts', data, String(remotePort), app], {LENGTH3_DEV_BASE: remoteURL}));
-    children.push(start('preview', [join(OS, 'node_modules/vite/bin/vite.js'), 'preview', '--outDir', OUT,
-      '--host', '127.0.0.1', '--port', String(appPort), '--strictPort'], {LENGTH3_DEV_REMOTE: `http://127.0.0.1:${remotePort}`}));
+    children.push(start(`remote${name}`, ['service/dev.ts', join(data, dir), String(rPort), at], {LENGTH3_DEV_BASE: `http://localhost:${rPort}`, ...env}));
+    children.push(start(`preview${name}`, [join(OS, 'node_modules/vite/bin/vite.js'), 'preview', '--outDir', OUT,
+      '--host', '127.0.0.1', '--port', String(aPort), '--strictPort'], {LENGTH3_DEV_REMOTE: `http://127.0.0.1:${rPort}`}));
     // Through the preview, so both are up and the one passes to the other. (Between the servers and
     // from here, the address itself: what localhost names first, ::1 or 127.0.0.1, is the system's.)
-    await ready(`http://127.0.0.1:${appPort}/v1/about`, children);
+    return ready(`http://127.0.0.1:${aPort}/v1/about`, children);
+  };
+  try {
+    // The two at once: the Remote with the plan costs the run no time of its own.
+    await Promise.all([pair('', 'open', remotePort, appPort), pair('-plan', 'plan', planRemotePort, planAppPort, {LENGTH3_PLAN: '1'})]);
   } catch (e) {
     await teardown();
     throw e;
   }
   process.env.SELFTEST_APP = app;
   process.env.SELFTEST_REMOTE = `http://127.0.0.1:${remotePort}`;
-  process.env.SELFTEST_DATA = data;
-  console.log(`selftest: the app on ${app}, its Remote on ${remoteURL}`);
+  process.env.SELFTEST_PLAN_APP = planApp;
+  process.env.SELFTEST_PLAN_REMOTE = `http://127.0.0.1:${planRemotePort}`;
+  process.env.SELFTEST_DATA = join(data, 'open');
+  console.log(`selftest: the app on ${app}, its Remote on ${remoteURL}; with the plan, ${planApp}`);
   return async () => {
     process.off('exit', kill);
     await teardown();

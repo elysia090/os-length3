@@ -102,13 +102,17 @@ export const guard = pgTable('guard', {
  * event that names it finds the account; `eventAt` is when the last event
  * applied was made at Stripe, since Stripe does not send them in order;
  * `failedAt` is the first payment that failed since one last went through
- * (the grace runs from it).
+ * (the grace runs from it). `tier` is what the subscription is to (go, pro,
+ * max), read from its price when the event came; `item` its one line, which
+ * a change of tier in Stripe's portal names.
  */
 export const plan = pgTable('plan', {
   userId: text('user_id').primaryKey().references(() => user.id, {onDelete: 'cascade'}),
   customer: text('customer').unique(),
   subscription: text('subscription'),
   status: text('status'),
+  tier: text('tier'),
+  item: text('item'),
   /** The end of the period paid for. */
   periodEnd: moment('period_end'),
   /** Set to end then (cancelled, or to cancel at the period's end). */
@@ -117,7 +121,8 @@ export const plan = pgTable('plan', {
   eventAt: moment('event_at'),
   updatedAt: moment('updated_at').defaultNow().notNull(),
 }, () => [check('plan_status', sql.raw(`status is null or status in ('incomplete', 'incomplete_expired', 'trialing', 'active', 'past_due', 'canceled', 'unpaid', 'paused')`)),
-  check('plan_ids', sql.raw(`(customer is null or customer ~ '^cus_[A-Za-z0-9_]{1,250}$') and (subscription is null or subscription ~ '^sub_[A-Za-z0-9_]{1,250}$')`))]);
+  check('plan_ids', sql.raw(`(customer is null or customer ~ '^cus_[A-Za-z0-9_]{1,250}$') and (subscription is null or subscription ~ '^sub_[A-Za-z0-9_]{1,250}$')`)),
+  check('plan_tier', sql.raw(`(tier is null or tier in ('go', 'pro', 'max')) and (item is null or item ~ '^si_[A-Za-z0-9_]{1,250}$')`))]);
 
 /**
  * A webhook event from Stripe that was taken, by its id: one sent again (Stripe

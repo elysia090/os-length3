@@ -22,7 +22,7 @@ import {begin as lookForNews, look, marks, news, onNews} from './news.ts';
 import {devicePage} from './pages/device.ts';
 import {checkoutBackPage} from './pages/remote.ts';
 import {about, claim, connection, enterWith, justSignedIn, mayAsk, onConnection, onReach, remoteAway, signInFailed} from './remote.ts';
-import {cameBackFromCheckout} from './plan.ts';
+import {cameBackFromStripe, isPaidTier} from './plan.ts';
 import {every} from './runs.ts';
 import {heldInvite, holdInvite, inviteIn} from './servers.ts';
 import {getState, loadState} from './state.ts';
@@ -229,35 +229,38 @@ if (asking.has('device')) {
   void loadState().finally(async () => {
     useLang(getState('lang'));
     if (entering) await enterWith(decodeURIComponent(entering));
-    // Back from a provider: take up the session it made, then go on as usual (Remote's page offers a passkey next).
+    // Back from a provider: take up the session it made, then go on where the person began (the page they signed
+    // in from is the one kept; Remote's page offers a passkey next, and a tier chosen signed out goes on to Checkout).
     if (asking.has('signed-in')) {
       if (await claim()) justSignedIn();
       const u = new URL(location.href);
       u.searchParams.delete('signed-in');
       history.replaceState(null, '', u);
-      save(PURPOSE_KEY, 'remote');
     }
-    // Back from a provider without a session (called off there, refused, or run out): the card says why.
+    // Back from a provider without a session (cancelled there, refused, or run out): the card they began on says why.
     if (asking.has('sign-in-failed')) {
       signInFailed(asking.get('error'));
       const u = new URL(location.href);
       for (const k of ['sign-in-failed', 'error', 'error_description']) u.searchParams.delete(k);
       history.replaceState(null, '', u);
-      save(PURPOSE_KEY, 'remote');
+      // Said on a sign-in card: Inbox's or Remote's, whichever it began on; Remote's if neither is kept.
+      if (load(PURPOSE_KEY) !== 'inbox') save(PURPOSE_KEY, 'remote');
     }
-    // Back from Checkout: Remote's Plan says how it went (paid, or cancelled with nothing charged). In a browser
-    // not signed in here (the app sent it to pay), a page that says so, and to go back to the app.
+    // Back from Stripe: Remote's Plan says how it went (paid, and to what; cancelled with nothing charged; what
+    // changed in the portal). In a browser not signed in here (the app sent it to pay), a page that says so, and
+    // to go back to the app.
     const how = asking.get('plan');
-    if (how === 'paid' || how === 'cancelled') {
+    if (how === 'paid' || how === 'cancelled' || how === 'managed') {
+      const tier = asking.get('tier');
       const u = new URL(location.href);
-      u.searchParams.delete('plan');
+      for (const k of ['plan', 'tier']) u.searchParams.delete(k);
       history.replaceState(null, '', u);
       if (!connection()) {
-        await new Promise<void>((goOn) => document.body.replaceChildren(checkoutBackPage(how, goOn)));
+        await new Promise<void>((goOn) => document.body.replaceChildren(checkoutBackPage(how, isPaidTier(tier) ? tier : null, goOn)));
         location.reload();
         return;
       }
-      cameBackFromCheckout(how);
+      cameBackFromStripe(how, tier);
       save(PURPOSE_KEY, 'remote');
       try { localStorage.setItem('length3.part.remote', 'plan'); } catch { /* the part kept, then */ }
     }
