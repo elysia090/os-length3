@@ -53,7 +53,7 @@ export function arrive(el: HTMLElement, dir: number, axis: 'x' | 'y', by = 12, m
  * an outline grows from `from` (measured before the page changed) to the box found by `find` once it is on the
  * screen, and fades as it lands, so the eye goes with the repo instead of starting over on a new page.
  */
-export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340) {
+export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340, round = '') {
   if (still() || !from.width) return false;
   let tries = 0;
   const go = () => {
@@ -63,6 +63,8 @@ export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340) {
     const box = document.createElement('div');
     box.className = 'morph-box';
     box.setAttribute('aria-hidden', 'true');
+    // A field becomes a field: its own corner, not a box's.
+    if (round) box.style.borderRadius = round;
     document.body.append(box);
     const rect = (r: DOMRect) => ({left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px`});
     const done = () => box.remove();

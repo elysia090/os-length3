@@ -7,6 +7,7 @@ import {repoList} from './repo-list.ts';
 import type {Context} from './context.ts';
 import {triangle} from './tree.ts';
 import {errorText} from '../errors.ts';
+import {morph, where} from '../glide.ts';
 
 /**
  * +: the repo's name on the first line; under it, in a large box, what it
@@ -158,7 +159,9 @@ export function newRepo(ctx: Context): Node[] {
     again.addEventListener('click', () => { draft = fresh(); ctx.rerender(); });
     actions.replaceChildren(h('p', {class: 'made', role: 'status'}, t('Made {name}', {name: n})), h('span', {class: 'grow'}), again, open);
     open.focus({preventScroll: true});
-    void list.refresh(n);
+    // What was written becomes the repo's card: an outline goes from the summary down to where it joins the others.
+    const from = where(summaryBox)!;
+    void list.refresh(n).then(() => morph(from, () => list.element.querySelector<HTMLElement>(`.card.repo[data-repo="${CSS.escape(n)}"]`), 420));
   };
   // The name alone on the first line; under it, what it is for, and beside that the scaffold with what it will make.
   const form = h('form', {class: 'new-repo'},

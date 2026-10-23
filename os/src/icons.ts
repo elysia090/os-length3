@@ -47,6 +47,19 @@ const MARKS = {
   gear: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z',
 } as const;
 
+/**
+ * The right pane's switch: the window with its pane, the pane filled while it is out. Its state is said by the mark,
+ * not by an ink disc: the pane is out most of the time, and the corner of the screen is not the work.
+ */
+export function paneMark(): SVGSVGElement {
+  const svg = mark('pane');
+  const fill = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  fill.setAttribute('d', 'M14.5 5.5H20v13h-5.5z');
+  fill.classList.add('mark-fill');
+  svg.append(fill);
+  return svg;
+}
+
 /** A small mark drawn like the icons: + to add, × to take off, the gear for settings, a person not named yet, download. */
 export function mark(name: keyof typeof MARKS): SVGSVGElement {
   const ns = 'http://www.w3.org/2000/svg';

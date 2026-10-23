@@ -27,7 +27,7 @@ export default {
   'Cannot reach {address} ({why})': '{address}に届きません（{why}）',
   'You: ': 'あなた：',
   'Requests': 'リクエスト',
-  'No messages yet. Write to someone by their name or code.': 'メッセージはまだありません。名前かコードで誰かに書けます。',
+  'No messages yet': 'メッセージはまだありません',
   'Choose a conversation, or write to a name or a code.': '会話を選ぶか、名前かコードに書いてください。',
   'Through the Remote': 'Remote 経由',
   'change {id}': 'Change {id}',

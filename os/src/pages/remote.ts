@@ -97,9 +97,9 @@ async function pressing(b: HTMLButtonElement, error: HTMLElement, f: () => Promi
  * leaves the page and comes back to `back`.
  */
 /**
- * Signing in, the first thing a person meets: one place in the middle of the
- * page, as the current issue card is (an ink edge over raised, its weight a
- * little high), the ways in one under another.
+ * Signing in, the first thing a person meets: one card where the page's parts will be, at its left under the
+ * header (an ink edge over paper, as the current issue card is), the ways in one under another; what signing in
+ * opens comes in where it stood.
  */
 export function signInPlace(title: string, ...body: Node[]): HTMLElement {
   return h('div', {class: 'sign-in-place'},
@@ -413,7 +413,8 @@ function passkeyOffer(added: () => void): HTMLElement {
   const error = h('p', {class: 'error', role: 'alert'});
   void account.passkeys().then((list) => {
     if (list.length) return;
-    const add = button(t('Add a passkey'), 'small-button primary');
+    // An offer beside the page's work, not the work: the page's ink stays on its repos.
+    const add = button(t('Add a passkey'), 'small-button');
     add.addEventListener('click', () => void pressing(add, error, async () => { await account.addPasskey(); box.hidden = true; added(); }));
     box.hidden = false;
     // An offer goes on: at the right, as every deed that goes on is.
@@ -584,6 +585,19 @@ function awayLine(): HTMLElement {
   return line;
 }
 
+/**
+ * Signed out, under the way in: what it is for. This device's repos stand where the Remote's will, faint, each
+ * saying it is only here; signed in, the same cards stand there whole.
+ */
+function waiting(): HTMLElement {
+  const grid = h('div', {class: 'grid repo-grid waiting'});
+  void store.list().then((repos) => grid.replaceChildren(...repos.map((r) => h('div', {class: 'card ghost'},
+    h('span', {class: 'card-title'}, r.name),
+    h('span', {class: 'muted'}, `${bytes(r.bytes)} · ${t('Changed {when}', {when: ago(r.modified)})}`),
+    h('span', {class: 'muted'}, t('Only on this device'))))), () => {});
+  return grid;
+}
+
 export function remote(ctx: Context): Node[] {
   const holder = h('div', {});
   let shown: string | null = null;
@@ -593,7 +607,7 @@ export function remote(ctx: Context): Node[] {
     if (now === shown) return;
     shown = now;
     if (!c) {
-      holder.replaceChildren(signInPlace(t('Sign in'), signInBox(() => paint())));
+      holder.replaceChildren(signInPlace(t('Sign in'), signInBox(() => paint())), waiting());
       return;
     }
     // One part at a time: the repos it keeps, how this account signs in, the devices in it.

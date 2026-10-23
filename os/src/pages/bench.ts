@@ -1,6 +1,6 @@
 import {h} from '../dom.ts';
 import {t} from '../i18n.ts';
-import {mark} from '../icons.ts';
+import {paneMark} from '../icons.ts';
 import {onPlugins, pluginsOpen, setPluginsOpen, slots} from '../plugins.ts';
 import {complete, pathWord, Recall} from '../recall.ts';
 import {onChange, store, type Entry} from '../repos.ts';
@@ -130,9 +130,11 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   const termSlot = h('div', {class: 'term-slot'});
   const prompt = h('textarea', {class: 'prompt-in', rows: '1', 'aria-label': t('Prompt box'), spellcheck: 'false', autocapitalize: 'off'}) as HTMLTextAreaElement;
   const note = h('p', {class: 'prompt-note muted small', role: 'status'});
-  // Run: Enter is how it is done from the box, as in a terminal, said in its title, not beside the word.
-  const keys = 'Enter';
-  const runIt = h('button', {type: 'submit', class: 'button small-button prompt-run', 'aria-keyshortcuts': 'Enter',
+  // Run: Ctrl+Enter (⌘+Enter) is how it is done from the box, said in its title, not beside the word. Never Enter
+  // alone: Enter is what confirms a Japanese conversion, and a line must not run because a word was chosen.
+  const mac = /Mac|iPhone|iPad/.test(navigator.platform);
+  const keys = mac ? '⌘+Enter' : 'Ctrl+Enter';
+  const runIt = h('button', {type: 'submit', class: 'button small-button prompt-run', 'aria-keyshortcuts': mac ? 'Meta+Enter' : 'Control+Enter',
     title: t('Run ({keys})', {keys})}, t('Run')) as HTMLButtonElement;
   const form = h('form', {class: 'prompt'}, prompt, runIt);
   const dock = h('div', {class: 'dock'}, termSlot, form, note);
@@ -146,7 +148,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   // The right pane: at its top the plugin area, plain until the rail's plug opens it; under it the Prompt.
   // What the center refers to is under the search box, which sits over the pane (reference.ts).
   const side = h('aside', {class: 'side', id: sideId, 'aria-label': t('Plugins and Prompt')}, pluginArea(), termHome);
-  const toggle = h('button', {type: 'button', class: 'pane-toggle', 'aria-label': t('Right pane'), 'aria-controls': sideId}, mark('pane')) as HTMLButtonElement;
+  const toggle = h('button', {type: 'button', class: 'pane-toggle', 'aria-label': t('Right pane'), 'aria-controls': sideId}, paneMark()) as HTMLButtonElement;
   const bar = h('div', {class: 'bar'}, parts.strip ?? h('span', {class: 'bar-room'}), reference.search, toggle);
   const work = h('div', {class: parts.strip ? 'work bench' : 'work bench no-strip'}, bar, center, side);
 
@@ -310,11 +312,8 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
       sessionFor(repo).interrupt();
       return;
     }
-    // The box is a shell's line: Enter runs it, as in every terminal. Shift+Enter, or a line left ending in \ (the
-    // shell's own way to go on), is a new line; Ctrl+Enter (⌘+Enter) runs it from anywhere in it.
-    if (event.key !== 'Enter' || event.isComposing || event.altKey) return;
-    const before = prompt.value.slice(0, prompt.selectionStart);
-    if (!(event.ctrlKey || event.metaKey) && (event.shiftKey || before.endsWith('\\'))) return;
+    // Enter is a new line; Ctrl+Enter (⌘+Enter) sends.
+    if (event.key !== 'Enter' || !(event.ctrlKey || event.metaKey) || event.isComposing) return;
     event.preventDefault();
     send();
   });

@@ -76,6 +76,14 @@ Every value in `styles.css` comes from a token (§2).
     never squeezed (280 ms).
   - *What opens comes out of what opened it.* What the search finds comes
     down out of its box; the terminal flies between the pane and the box.
+  - *What is made goes where it lives.* An outline goes from what it was
+    written in or shown as to what it became: a repo's card or File row to
+    its box in Forge, New repo's summary to the new card, the name taken
+    to the Inbox's stub (340–420 ms).
+  - *What is pressed gives.* Under the pointer (or Enter, Space) anything
+    pressable sinks by the same few pixels whatever its size, so a pill
+    gives more than a card, and comes back past where it was by a third,
+    then home, as a key does (70 ms down, 300 ms back).
   - *Where one lands is lit for a moment.* A file landed on (from the
     search, File, Git) has its head lit with the marker, fading in about a
     second; nothing stays lit.
@@ -358,7 +366,7 @@ fix is always a piece from §3, not a new rule.
 | A hidden label beside a line taller than the line (a run's posts spaced 32, 37, 37) | Nothing beside a line is taller than it: one rhythm down a run |
 | A button not centred on its row's title (Done below 旅行's middle) | The title and its line share a baseline; the row centres the button on them |
 | One thing reaching past its owner in two different ways (a repo's lone "everyone" switch, a board's pair) | The same pair everywhere: to the server's people, to everyone |
-| Enter sending in one box and making a line in another | Enter is a new line, Ctrl+Enter sends, in every box where words are written; the prompt box alone is a shell's line, and runs on Enter as every terminal does (Shift+Enter, or a line ending in \\, goes on to the next line) |
+| Enter sending in one box and making a line in another | Enter is a new line, Ctrl+Enter sends, in every box, the prompt box too: Enter is what confirms a Japanese conversion, so it never sends |
 | Keys said in a sentence under a box (Enter for the detail, Enter on an empty line for the next TODO) | The keys as keys (a small cap with the key's name) and one word beside each, said only while the box is written in |
 | A switch to start what starts by being used (the Prompt's) | None: using it starts it; an ended one says so in its place |
 | Changing a shared piece to fit one place (the TODO box made boxless in a board) | The piece as it is; the place makes room for it |
@@ -383,7 +391,8 @@ fix is always a piece from §3, not a new rule.
 | A noun on a button beside verbs (作成, 編集 beside 見る) | A verb (作る, 編集する) |
 | A full stop on one lone line and none on the next (投稿はここまでです。 / repo はまだありません) | None on one statement; one on each when there are two |
 | A field with only a placeholder for its name, beside a form with labels | A label over the field, what it means under it, as New repo's |
-| Signed out, a sentence and a button on one page and a card on another | The sign-in card, in the middle, on every page that needs it |
+| Signed out, a sentence and a button on one page and a card on another | The sign-in card, where the page's parts will be, on every page that needs it |
+| A card alone in the middle of an empty page, what it opens then coming in somewhere else | The card where what it opens will stand, and under it, faint, what it is for (Remote: this device's repos, dashed, Only on this device) |
 | The Remote away as an error on two pages and as nothing (stale cards with live switches) on the rest; a dead session kept, each page failing on it | The rail's dot and Remote's one line; a dead session signs the device out |
 | Something new said by a count, a badge or a colour of its own, or not said at all until the page is opened | The dot of the place's own colour, on the rail and on the chip and board it is on, gone once seen |
 | A box drawn again every little while, taking what was being written and the keyboard with it (Inbox's field to write to someone, every 10 s) | Only what came is drawn: the rows under the field, the messages at the conversation's foot |
@@ -1061,8 +1070,8 @@ over the row (one box a swipe) or Alt+[ / Alt+] hands it the room in one
 move, the width travelling across. Each box has a small head
 (its name, and × to close it; dragged, it moves along the row); Alt+[ and
 Alt+] go along the row. The keys an editor's hands already know work
-wherever the bench is: Ctrl+K or Ctrl+P (Ctrl+Shift+F too) to the search
-(its keys on caps at the box's right end while it is not in use), Ctrl+` to
+wherever the bench is, unsaid on the screen: Ctrl+K or Ctrl+P (Ctrl+Shift+F
+too) to the search, Ctrl+` to
 the prompt box, Ctrl+B to put the pane away and back (⌘ on a Mac). The row is remembered on this device; a narrow
 window shows the one worked on. Files dragged in from the desktop go into the
 repo whose box they are let go over (into the folder of the file under the
@@ -1565,13 +1574,16 @@ Remote the issues are shown and one line says that history is kept there.
 
 ### Remote
 
-Signed out, the page is the header and one place in the middle of what is
-left, the first thing a person meets: an `ink` edge over `raised` as the
-current issue card is, its weight a little high, at most 440 px wide. In
-it: Sign in, then the ways in one under another as wide as the place (the
-first provider filled), and no words around them: the buttons say it. The
-Inbox, signed out, shows the same place. A device's code opens the same place on a page of its own, for
-each step: the code, signing in, letting the device in.
+Signed out, the page is the header and, where its parts will be, one card,
+the first thing a person meets: an `ink` edge over `paper` as the current
+issue card is, at most 440 px wide, at the page's left. In it: Sign in, then
+the ways in one under another as wide as the card (the first provider
+filled), and no words around them: the buttons say it. Under it, what signing
+in is for: this device's repos where the Remote's cards will stand, faint and
+dashed, each saying Only on this device; signed in, the same cards stand
+there whole. The Inbox, signed out, shows the same card in the same place. A
+device's code opens the card on a page of its own, in its middle, for each
+step: the code, signing in, letting the device in.
 
 Signed in: the header, then the page's parts as a switch (the one
 place a page is switched, because its parts are unrelated):
@@ -1642,7 +1654,8 @@ Your name as a stub: a field-sized place about as wide as a name, the name
 in it, shown alone (§5), and your code beside it (pressing either copies
 it, and it says Copied for a moment in the same place; there is no Copy
 button), its gear at the right end. Before there is one, the stub is the
-name to claim; Enter claims. The gear opens, over what is under it (Escape or a press
+name to claim, in the sign-in card's place; Enter claims, and the field goes
+up into the stub it becomes (an outline from the one to the other). The gear opens, over what is under it (Escape or a press
 outside closes it), a popover: your names with their terms (Renew near the
 end), then Add a domain; its first head starts at the box's own room, with no
 group's step before it. Letting a name go is not offered here (the Remote
@@ -1659,7 +1672,9 @@ it is looked for while the gear is open, and the address is claimed the
 moment it is found. The same record says which Remote holds the domain's
 addresses, as MX does for mail. SSH is Runtime's, by device, not by name. Then one tall box: conversations on
 the left (requests apart, with Accept and Block), the chosen one on the
-right. Writing is one line that grows as it is written: a message is named
+right. Before anyone has written, the box is only its first line, the field
+to write to someone and No messages yet beside it, not a tall sheet of
+nothing; the first conversation opens it to its height. Writing is one line that grows as it is written: a message is named
 the way an issue is ("Review：…", "Question：…"), and a `/root/…` path in it
 says what it is about, so there is nothing else to choose. Enter is a new
 line, Ctrl+Enter sends.

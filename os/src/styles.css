@@ -689,8 +689,9 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
    the way to bring both back, and says which it is: brought out, an ink fill, as anything chosen; put away, the
    outline alone. */
 @media (min-width: 761px) { .work.bench.pane-closed > .bar > .search-box { display: none; } } /* narrow, it is the way to the pane's parts */
-.pane-toggle[aria-expanded='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
-.pane-toggle[aria-expanded='true']:hover { background: var(--ink); }
+/* Out or put away, the switch is the same quiet circle; its mark's pane is filled while the pane is out. */
+.pane-toggle .mark-fill { fill: currentColor; stroke: none; opacity: 0; transition: opacity var(--motion); }
+.pane-toggle[aria-expanded='true'] .mark-fill { opacity: 1; }
 /* Under the prompt box, the ground to the center's foot: what scrolls under the box does not show below it.
    It lies behind the box (still over what scrolls), so the box's focus ring is whole. */
 .dock::after { content: ''; position: absolute; z-index: -1; top: 100%; left: -50vw; right: -50vw; height: var(--s5); background: var(--ground); }
@@ -952,9 +953,6 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 }
 .search-in:disabled { opacity: .5; }
 form.search { position: relative; }
-.search-keys { position: absolute; right: var(--s2); top: 50%; transform: translateY(-50%); display: flex; gap: 2px; pointer-events: none; opacity: .8; }
-.search-keys > kbd { height: 18px; min-width: 18px; font-size: 10px; background: transparent; }
-form.search:focus-within > .search-keys, .search-in:not(:placeholder-shown) ~ .search-keys { display: none; }
 /* In use, the box's own line turns ink and a little heavier: one line, not a ring drawn round a border. */
 .search-in:focus-visible, .search-in:focus { outline: 1px solid var(--ink); outline-offset: -1px; border-color: var(--ink); background: var(--paper); }
 /* The search box's own clear mark, in the page's ink, not the browser's blue. */
@@ -1105,7 +1103,15 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: var(--mar
 /* Signing in (the Remote page signed out, a device's code): one place in the
    middle, an ink edge over raised, its weight a little high as the issue
    card's; the ways in one under another, as wide as the place. */
-.sign-in-place { display: grid; justify-items: center; align-content: center; min-height: calc(100dvh - 2 * var(--top-line) - var(--s6) * 3); padding-bottom: 5vh; box-sizing: border-box; }
+.sign-in-place { display: grid; justify-items: start; margin-top: var(--s5); }
+/* A device's own page has nothing else: there the card stands in the middle, its weight a little high. */
+.device-page.sign-in-place { justify-items: center; align-content: center; margin-top: 0; min-height: calc(100dvh - 2 * var(--top-line) - var(--s6) * 3); padding-bottom: 5vh; box-sizing: border-box; }
+/* What signing in keeps, under it: this device's repos where the Remote's will stand, faint and dashed, not yet
+   kept; nothing to press. */
+.repo-grid.waiting { margin-top: var(--s5); }
+.repo-grid.waiting:empty { display: none; }
+.card.ghost { border-style: dashed; border-color: var(--edge); color: var(--sub); cursor: default; }
+.card.ghost .card-title { color: var(--sub); }
 .sign-in-card {
   width: min(440px, 100%); box-sizing: border-box; display: grid; gap: var(--s4);
   padding: calc(var(--s4) + var(--s1)) var(--s5) var(--s5); border: 1px solid var(--ink); border-radius: var(--r-place); background: var(--paper);
@@ -1155,6 +1161,11 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: var(--mar
 @media (max-width: 900px) { .space-box { grid-template-columns: 1fr; min-height: 0; } .space-col + .space-col { border-left: 0; border-top: 1px solid var(--rule); } }
 /* Inbox: conversations on the left, the one open on the right */
 .inbox-box { display: grid; grid-template-columns: minmax(220px, 1fr) 2fr; margin-top: var(--s4); height: max(420px, calc(var(--inner-h) - 150px)); border: 1px solid var(--rule); border-radius: var(--r-place); overflow: hidden; background: var(--paper); }
+/* Nobody written to or from yet: only as tall as its one line, the field and that nothing came, not a sheet of
+   nothing; the first conversation opens it to its height, growing down from that line. */
+.inbox-box { interpolate-size: allow-keywords; transition: height var(--move) var(--land); }
+.inbox-box.none { height: auto; }
+.inbox-box.none > .inbox-thread > .quiet { margin: auto 0; padding: 0 var(--s4); text-align: left; }
 .inbox-list { display: flex; flex-direction: column; gap: var(--s1); padding: var(--s3); border-right: 1px solid var(--rule); overflow-y: auto; }
 .inbox-new .line-in { flex: 1; min-width: 0; }
 /* The rows, drawn again as they come, lie in the list as if it held them itself. */

@@ -12,6 +12,7 @@ import {goToPlan, planRefused, planSaid, signInBox, signInPlace} from './remote.
 import {plan as readPlan} from '../plan.ts';
 import type {Context} from './context.ts';
 import {errorText} from '../errors.ts';
+import {morph, where} from '../glide.ts';
 
 // Inbox: what comes to you, typed, from people found by address. Not a mail
 // screen: each message says what it is (a message, a review request, a
@@ -203,7 +204,15 @@ export function inboxPage(ctx: Context): Node[] {
     let me: inbox.Me;
     try { me = await inbox.me(); } catch (e) { holder.replaceChildren(h('p', {class: 'error'}, errorText(e))); return; }
     // No name yet: the one thing to do here, in the middle, as signing in was (the same card, in the same place).
-    if (!me.addresses.length) { holder.replaceChildren(signInPlace(t('Take a name'), addressStub(me, () => void paint(), () => goToPlan(ctx)))); return; }
+    if (!me.addresses.length) {
+      // Taken: the field it was written in goes up to where the name now lives, the row at the Inbox's top.
+      const place = signInPlace(t('Take a name'), addressStub(me, () => {
+        const from = where(place.querySelector('.stub'));
+        void paint().then(() => { if (from) morph(from, () => holder.querySelector<HTMLElement>('.stub'), 380, 'var(--r-field)'); });
+      }, () => goToPlan(ctx)));
+      holder.replaceChildren(place);
+      return;
+    }
     mine = me.addresses[0].address;
     // The field to write to someone new is made once: what comes every little while changes only the rows under it.
     const to = h('input', {class: 'line-in', placeholder: t('Write to a name or a code'), 'aria-label': t('Write to a name or a code'), autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
@@ -258,7 +267,9 @@ export function inboxPage(ctx: Context): Node[] {
     if (had) rows.querySelector<HTMLElement>(`.inbox-row[data-address="${CSS.escape(had)}"]`)?.focus();
     // One quiet line in the open pane says what to do; none yet, it says so instead.
     if (!open && !unread) pane.removeAttribute('aria-label');
-    if (!open && !unread) pane.replaceChildren(h('p', {class: 'quiet'}, all.length ? t('Choose a conversation, or write to a name or a code.') : t('No messages yet. Write to someone by their name or code.')));
+    // Nobody written to or from yet, the box is its one line (the field, and that nothing came), not a sheet of nothing.
+    pane.parentElement?.classList.toggle('none', !open && !unread && !all.length);
+    if (!open && !unread) pane.replaceChildren(h('p', {class: 'quiet'}, all.length ? t('Choose a conversation, or write to a name or a code.') : t('No messages yet')));
     // What came to the open conversation since it was drawn is put at its foot.
     const open_ = shownThread;
     const now = open_ && all.find((x) => x.address === open_.address);
@@ -270,6 +281,8 @@ export function inboxPage(ctx: Context): Node[] {
     // so one conversation never gets two panes, nor two direct lines.
     const asked = ++opened;
     open = address;
+    // The first conversation opens the box to its height.
+    pane.parentElement?.classList.remove('none');
     live?.stop();
     live = null;
     shownThread = null;

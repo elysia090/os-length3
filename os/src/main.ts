@@ -27,6 +27,7 @@ import {getState, loadState} from './state.ts';
 import {onLang, t, useLang} from './i18n.ts';
 import {NEW_REPO, PURPOSES, RAIL, purpose, restorePurpose, stepPurpose, type PurposeId} from './purposes.ts';
 import {arrive, glide, morph, where} from './glide.ts';
+import {touch} from './touch.ts';
 
 const PURPOSE_KEY = 'length3.os.purpose';
 const REPO_KEY = 'length3.os.repo';
@@ -77,6 +78,7 @@ const fileTree = new FileTree({
 document.body.append(fileTree.element);
 // A control drawn again or held while its deed runs gives the keyboard back, never to the body (focus.ts).
 keepFocus();
+touch();
 // Server is laid over the page the same way: people one knows, their boards, each board's talk and TODO.
 const serverLayer = new ServerLayer(ctx);
 

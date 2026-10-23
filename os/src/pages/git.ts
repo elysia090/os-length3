@@ -98,7 +98,8 @@ export function git(ctx: Context): Node[] {
     const had = [...chips.children].indexOf(document.activeElement as Element);
     chips.replaceChildren(...[ALL, ...repos].map((r) => {
       const b = h('button', {type: 'button', class: 'chip', role: 'radio', 'aria-checked': String(filter === r)}, r || t('All'));
-      b.addEventListener('click', () => { filter = r; paintChips(); if (r) { look(r, true); form.retarget(r); } void paint(); });
+      // Pressed with the pointer while an issue is being written, it only said where: the words take the keyboard back.
+      b.addEventListener('click', (e) => { filter = r; paintChips(); if (r) { look(r, true); form.retarget(r); if (e.detail && !form.element.hidden) form.writeOn(); } void paint(); });
       return b;
     }));
     if (had >= 0) (chips.children[had] as HTMLElement | undefined)?.focus({preventScroll: true});

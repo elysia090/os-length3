@@ -9,7 +9,7 @@ import {todoBox} from './todo-box.ts';
 import type {Context} from './context.ts';
 import {answers} from './common.ts';
 import {onRightPane, pluginArea, rightPaneOpen, setRightPane} from './bench.ts';
-import {mark} from '../icons.ts';
+import {mark, paneMark} from '../icons.ts';
 import {onPlugins, pluginsOpen} from '../plugins.ts';
 import {errorText} from '../errors.ts';
 
@@ -56,7 +56,7 @@ export function home(ctx: Context): Node[] {
  */
 function homePane(main: HTMLElement): HTMLElement {
   const side = h('aside', {class: 'home-side', id: 'home-side', 'aria-label': t('Plugins')}, pluginArea());
-  const toggle = h('button', {type: 'button', class: 'pane-toggle', 'aria-label': t('Right pane'), 'aria-controls': 'home-side'}, mark('pane')) as HTMLButtonElement;
+  const toggle = h('button', {type: 'button', class: 'pane-toggle', 'aria-label': t('Right pane'), 'aria-controls': 'home-side'}, paneMark()) as HTMLButtonElement;
   const layout = h('div', {class: 'home-layout'}, main, h('div', {class: 'home-pane'}, toggle, side));
   const paint = () => {
     layout.classList.toggle('pane-closed', !rightPaneOpen());

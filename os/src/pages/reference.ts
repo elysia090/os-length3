@@ -195,10 +195,9 @@ export class Reference {
       if (event.key === 'ArrowUp' && at === 0) this.query.focus();
       else all[Math.min(at + (event.key === 'ArrowDown' ? 1 : -1), all.length - 1)]?.focus();
     });
-    // Its keys on caps at its right end while it is not in use (Ctrl K), as the way to it from anywhere.
-    const mod = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl';
-    this.query.setAttribute('aria-keyshortcuts', mod === '⌘' ? 'Meta+K' : 'Control+K');
-    const form = h('form', {class: 'search', role: 'search'}, this.query, h('span', {class: 'search-keys', 'aria-hidden': 'true'}, h('kbd', {}, mod), h('kbd', {}, 'K')));
+    // Ctrl+K (⌘+K) comes to it from anywhere; the box does not say so on itself, as an editor's would.
+    this.query.setAttribute('aria-keyshortcuts', /Mac|iPhone|iPad/.test(navigator.platform) ? 'Meta+K' : 'Control+K');
+    const form = h('form', {class: 'search', role: 'search'}, this.query);
     form.addEventListener('submit', (event) => event.preventDefault());
     this.search = h('div', {class: 'search-box'}, form, this.under);
     this.follow();

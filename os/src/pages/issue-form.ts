@@ -30,6 +30,8 @@ export interface IssueForm {
   resume(repos: readonly string[]): boolean;
   /** Write in `repo` from now on (chosen in the row above), what is written kept. */
   retarget(repo: string): void;
+  /** Give the keyboard back to the line last written in (the repo chosen with the pointer took it), its caret where it was. */
+  writeOn(): void;
 }
 
 /**
@@ -75,10 +77,13 @@ async function held(b: HTMLButtonElement, error: HTMLElement, f: () => Promise<u
 export function issueForm(events: {done(made: {repo: string; file: string} | null, back: string | null): void}): IssueForm {
   const element = h('div', {class: 'issue-form issue-new', hidden: ''});
   let retarget: (repo: string) => void = () => {};
+  /** The field last written in: the first line until the body is. */
+  let typing: HTMLElement | null = null;
   const close = (made: {repo: string; file: string} | null) => {
     const back = made ? null : writing?.back ?? null;
     writing = null;
     retarget = () => {};
+    typing = null;
     element.hidden = true;
     element.replaceChildren();
     events.done(made, back);
@@ -103,6 +108,8 @@ export function issueForm(events: {done(made: {repo: string; file: string} | nul
     keep();
     f.first.addEventListener('input', keep);
     f.body.addEventListener('input', keep);
+    typing = f.first;
+    for (const field of [f.first, f.body]) field.addEventListener('focus', () => { typing = field; });
     const error = h('p', {class: 'error', role: 'alert'});
     const make = h('button', {class: 'button primary', type: 'button'}, t('Create')) as HTMLButtonElement;
     const cancel = h('button', {class: 'button', type: 'button'}, t('Not now'));
@@ -124,7 +131,7 @@ export function issueForm(events: {done(made: {repo: string; file: string} | nul
     open(repos, writing.repo, writing);
     return true;
   };
-  return {element, open, resume, retarget: (repo) => retarget(repo)};
+  return {element, open, resume, retarget: (repo) => retarget(repo), writeOn: () => typing?.focus({preventScroll: true})};
 }
 
 /**
