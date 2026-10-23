@@ -110,9 +110,18 @@ function make(ctx: Context) {
       v.col.classList.toggle('active', name === repo);
       v.col.classList.toggle('first', at === 0);
       v.col.classList.toggle('last', at === shown.length - 1);
+      v.col.classList.toggle('before', at >= 0 && repo !== null && at < shown.indexOf(repo));
     }
+    work.element.classList.toggle('split-on', shown.length > 1);
+    // The row slides so the box worked on stands in it whole and its neighbours' edges show past the frame's lines.
+    // A box just shown takes the row's place first (the reflow), so it slides with the rest rather than appearing.
+    if (cols.clientWidth) cols.style.setProperty('--cols-w', `${cols.clientWidth}px`);
+    const at = repo ? Math.max(0, shown.indexOf(repo)) : 0;
+    cols.style.setProperty('--at', String(at));
+    cols.style.setProperty('--lead', String(at === 0 ? 0 : at === shown.length - 1 ? 2 : 1));
     saveBeside(shown);
   };
+  new ResizeObserver(([e]) => { if (e.contentRect.width) cols.style.setProperty('--cols-w', `${e.contentRect.width}px`); }).observe(cols);
 
   const work = bench({strip, main: cols, reveal: (path, line, write) => void view()?.reader.reveal(path, line, write).then(() => track())});
   // The Issue view with none open begins one for this repo on Git; Not now there comes back here.
@@ -292,12 +301,11 @@ function make(ctx: Context) {
     track();
   };
 
-  /** A box coming into the row grows from nothing as the others make room; going, it gives its room back. */
-  const grow = (col: HTMLElement, on: boolean) => new Promise<void>((done) => {
-    if (still() || (!cols.classList.contains('split') && on)) { done(); return; }
-    // From (or to) no width, by the same transition that hands the width from box to box (styles.css .col).
+  /** A box going from the row gives its room back, the row closing over it, by the move that slides the row. */
+  const shrink = (col: HTMLElement) => new Promise<void>((done) => {
+    if (still()) { done(); return; }
     col.classList.add('nothing');
-    if (on) { void col.offsetWidth; requestAnimationFrame(() => { col.classList.remove('nothing'); done(); }); } else setTimeout(done, 360);
+    setTimeout(done, 420);
   });
 
   /** `name` opened beside what is shown (at `at`, an index among the boxes), and worked on. */
@@ -310,10 +318,13 @@ function make(ctx: Context) {
     const v = viewOf(name);
     const fresh = !before.includes(name);
     for (const gone of before.filter((n) => !shown.includes(n))) { const g = views.get(gone); if (g) g.top = g.flow.scrollTop; }
+    // Come in, it opens from no width where it stands as the row slides to it, so it pushes in from its side.
+    const opening = fresh && shown.length > 1 && !still();
+    if (opening) v.col.classList.add('nothing');
     repo = null;
     activate(name);
     v.flow.scrollTop = v.top;
-    if (fresh) void grow(v.col, true);
+    if (opening) requestAnimationFrame(() => v.col.classList.remove('nothing'));
   };
 
   /** `name`'s box closed (the repo stays on the band); the last one stays. */
@@ -325,7 +336,7 @@ function make(ctx: Context) {
       shown = c.shown;
       if (c.active && c.active !== repo) { repo = null; activate(c.active); } else { layout(); paintBand(); }
     };
-    if (v) { v.top = v.flow.scrollTop; v.col.classList.add('going'); void grow(v.col, false).then(() => { v.col.classList.remove('going', 'nothing'); done(); }); } else done();
+    if (v) { v.top = v.flow.scrollTop; v.col.classList.add('going'); void shrink(v.col).then(() => { v.col.classList.remove('going', 'nothing'); done(); }); } else done();
   };
 
   // Into the center, a pill (or a box's head) dragged shows where it would stand: over a box's left or right

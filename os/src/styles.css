@@ -791,14 +791,30 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
   transition: height var(--move) var(--land), opacity var(--move) var(--land), visibility 0s var(--move);
 }
 .columns.split > .col > .flow { padding-top: var(--s1); }
-/* Side by side, every box the same width: the row keeps the page's margin (its first box's left edge where the one
-   box's was, under the band), and each page an even half-gap round its box. */
-.columns { transition: padding var(--move) var(--land); }
-.columns.split { padding-inline: calc(var(--s5) - var(--s2)); }
-.columns.split > .col > .flow { padding-inline: var(--s2); }
+/* Side by side, a strip that runs on past the center's edges. Every box is as wide as the one worked on, which
+   stands in it whole (the first and the last at the page's margin, under the band, where one alone stands); the
+   ones along from it show only their edge, dimmed and cut by the frame's line (the rail's at the left, the pane's at
+   the right): there is more that way. Pressed (or swiped to, or Alt+[ / ]), one comes in and the whole row slides
+   with it, the one left going out to its edge. forge.ts says which is worked on (--at; --lead 0 for the first,
+   1 between, 2 the last) and how wide the row is (--cols-w). */
+.columns.split {
+  --peek: 64px; --pad: calc(var(--s5) - var(--s3));
+  --colw: calc(var(--cols-w, 100%) - 2 * var(--peek) - 2 * var(--pad));
+}
+.columns.split > .col { flex: 0 0 var(--colw); transform: translateX(calc(var(--pad) + var(--lead, 0) * var(--peek) - var(--at, 0) * var(--colw))); }
+.columns.split > .col > .flow { padding-inline: var(--s3); }
+/* A box to the left of the one worked on shows its right edge: its name is said at that end, as a board's is. */
+.columns.split > .col.before > .col-head { flex-direction: row-reverse; padding: 0 calc(var(--s3) + var(--s4) - var(--s1)) 0 var(--s3); }
+.columns.split > .col.before > .col-head > .col-close { margin-left: 0; }
+/* The pane put away, the strip runs on to the window's edge: what is next goes off the screen, not under a line
+   that is not there. The pane, on the ground, covers it while it wipes shut. */
+.work.bench.split-on.pane-closed > .center { overflow: visible; clip-path: inset(0 calc(-1 * var(--outer)) 0 0); }
+/* The page then reaches the window's edge too (its words where they were), clipped there and never scrolled. */
+.page.page-work:has(> .work.bench.split-on.pane-closed) { overflow: clip; margin-right: calc(-1 * var(--outer)); padding-right: var(--outer); }
+.work.bench > .side { z-index: 1; background: var(--ground); }
 .columns.split > .col > .col-head {
   height: 28px; opacity: 1; visibility: visible; transition: height var(--move) var(--land), opacity var(--move) var(--land);
-  padding: 0 var(--s2) 0 calc(var(--s2) + var(--s3)); cursor: grab;
+  padding: 0 var(--s3) 0 calc(var(--s3) + var(--s4) - var(--s1)); cursor: grab;
 }
 
 .col-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 0; padding: 0 var(--s1); border-radius: var(--r-field); background: transparent; color: var(--sub); font-size: var(--t-meta); cursor: pointer; }
@@ -810,14 +826,10 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 /* Side by side, the box worked on is what says where the keyboard is: its page is not ringed as well. */
 .columns.split > .col > .flow:focus-visible { outline: none; }
 .columns.split > .col:not(.active) .file { border-color: var(--rule); }
-/* Side by side, the box worked on takes most of the row and the others stand beside it narrow, quiet previews of
-   what they hold, as what the search found does: pressed (or swiped to, or Alt+[ / ]), one hands the room to the
-   other in a single move, the width travelling across rather than one box blinking out for another. A box comes in
-   from no width and goes back to none the same way. */
-.col { transition: flex-grow 360ms var(--land); }
-.columns[data-n='2'] > .col.active { flex-grow: 2.6; }
-.columns[data-n='3'] > .col.active { flex-grow: 3; }
-.col.nothing { flex-grow: 0 !important; }
+/* The row slides as one, and a box comes in from no width where it stands (pushing in from its side) and goes back
+   to none the same way, by the same move. */
+.col { transition: flex-basis 420ms var(--land), transform 420ms var(--land); }
+.col.nothing { flex-basis: 0 !important; }
 .col > .flow { transition: padding-top var(--move) var(--land), opacity 240ms ease-out; }
 .columns.split > .col:not(.active) > .flow { opacity: .5; }
 .columns.split > .col:not(.active):hover > .flow { opacity: .75; }
@@ -835,7 +847,11 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
   animation: hint-in 140ms ease-out;
 }
 @keyframes hint-in { from { opacity: 0; } }
-@media (max-width: 760px) { .columns.split > .col:not(.active) { display: none; } .columns.split > .col > .col-head { height: 0; visibility: hidden; } }
+@media (max-width: 760px) {
+  .columns.split > .col:not(.active) { display: none; }
+  .columns.split > .col { flex: 1 1 0; transform: none; }
+  .columns.split > .col > .col-head { height: 0; visibility: hidden; }
+}
 /* Put away, the center takes the whole width; the pane is only out of sight. No pane, no line. It goes as a wipe:
    the pane's column closes to nothing, what it holds staying at its width and cut at the moving edge (not squeezed),
    and is out of sight (and of the keyboard) once closed; brought back, it opens the same way. */

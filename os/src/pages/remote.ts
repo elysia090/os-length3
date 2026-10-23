@@ -591,7 +591,8 @@ function awayLine(): HTMLElement {
  */
 function waiting(): HTMLElement {
   const grid = h('div', {class: 'grid repo-grid waiting'});
-  void store.list().then((repos) => grid.replaceChildren(...repos.map((r) => h('div', {class: 'card ghost'},
+  // In the Remote's own order (by name), so each card is found again where it stood once signed in.
+  void store.list().then((repos) => grid.replaceChildren(...[...repos].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)).map((r) => h('div', {class: 'card ghost'},
     h('span', {class: 'card-title'}, r.name),
     h('span', {class: 'muted'}, `${bytes(r.bytes)} · ${t('Changed {when}', {when: ago(r.modified)})}`),
     h('span', {class: 'muted'}, t('Only on this device'))))), () => {});

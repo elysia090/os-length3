@@ -1066,11 +1066,17 @@ place: a dashed outline shows where before it is let go), and Ctrl+\
 opens the next on the band. Each is its own page with its own scroll; the
 one worked on (the prompt, the search and File follow it) is the last one
 pressed into, its files' boxes in `ink`, the others' in `rule`, its pill
-`ink`, theirs outlined in `ink`. Side by side the one worked on takes most of the row (about seven tenths of
-it beside one other, six beside two) and the others stand beside it as
-narrow, quiet previews of what they hold; pressing one, swiping sideways
-over the row (one box a swipe) or Alt+[ / Alt+] hands it the room in one
-move, the width travelling across. Each box has a small head
+`ink`, theirs outlined in `ink`. Side by side the row is a strip that runs
+on past the center's edges: every box as wide as the one worked on, which
+stands in it whole (the first and the last at the page's margin, where one
+alone stands), and the ones along from it show only their edge (64 px, more
+at the row's ends), dimmed and cut by the frame's line, the rail's at the
+left and the pane's at the right, or by the window's edge with the pane put
+away: there is more that way, not a narrow box beside. One to the left says
+its name at its right end, the end that shows. Pressing one, swiping
+sideways over the row (one box a swipe) or Alt+[ / Alt+] brings it in, and
+the whole row slides with it, the one left going out to its edge; a box
+opened beside opens from no width as the row slides to it. Each box has a small head
 (its name, and × to close it; dragged, it moves along the row); Alt+[ and
 Alt+] go along the row. The keys an editor's hands already know work
 wherever the bench is, unsaid on the screen: Ctrl+K or Ctrl+P (Ctrl+Shift+F
