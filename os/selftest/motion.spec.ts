@@ -27,6 +27,8 @@ test('going along the rail pans to the next page, which stands whole once it lan
   // Landed: one page, the one gone to, and nothing of the last left over it.
   await expect(app.main.locator('.home-repos')).toHaveCount(0);
   expect(await app.page.evaluate(() => document.documentElement.matches(':active-view-transition'))).toBe(false);
+  // And the page is no layer of its own after (named, the search's shade would lie over the search with it).
+  expect(await app.page.evaluate(() => getComputedStyle(document.getElementById('page')!).viewTransitionName)).toBe('none');
 });
 
 test('the right pane brought out lands a touch past its edge and settles, its mark filled; put away, it goes', async ({app}) => {

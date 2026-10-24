@@ -164,7 +164,7 @@ document.addEventListener('pointerdown', (event) => {
 }, true);
 
 /** `quiet`: something else carries the eye (a repo growing into its box), so the page does not come from its side. */
-type Panning = Document & {startViewTransition?(update: () => void): {updateCallbackDone: Promise<void>}};
+type Panning = Document & {startViewTransition?(update: () => void): {updateCallbackDone: Promise<void>; finished: Promise<void>}};
 
 /**
  * Going along the rail, the camera pans with it (styles.css ::view-transition): the page left goes off the way the rail
@@ -177,9 +177,14 @@ function select(id: PurposeId, quiet = false): Promise<void> {
   const pan = Math.sign(order.indexOf(id) - order.indexOf(current));
   const begin = (document as Panning).startViewTransition;
   if (begin && !quiet && pan && $('page').childElementCount && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    document.documentElement.style.setProperty('--pan', String(pan));
+    const root = document.documentElement;
+    root.style.setProperty('--pan', String(pan));
+    root.classList.add('panning');
     letGo($('page'));
-    return begin.call(document, () => draw(id, quiet, true)).updateCallbackDone.catch(() => {});
+    const pass = begin.call(document, () => draw(id, quiet, true));
+    const done = () => root.classList.remove('panning');
+    pass.finished.then(done, done);
+    return pass.updateCallbackDone.catch(() => {});
   }
   draw(id, quiet, false);
   return Promise.resolve();

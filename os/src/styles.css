@@ -12,11 +12,18 @@
      issue or board in hand, Inbox's box, what the search found; Runtime's box, read rather than worked in, stays on the ground). Everything else (the rail, the band,
      heads, the pane, figures, cards that lead somewhere) stands on the ground itself; a sheet's edge is the line. */
   --paper: #f8f8f5;
-  /* Three marks that say one thing each: a step done, a line marked in a diff, a repo off. */
-  --done: #2f7d4f;
-  --marker: #f3e27a;
+  /* Three marks that say one thing each: a step done, a line marked in a diff, a repo off. Each a small family, cool
+     enough to sit with the greys without tiring, strong enough to hold as an accent: the mark itself, the words in
+     it (a step darker, to read small), and the ground of a line (a tint, not the mark thinned). */
+  --done: #127a5f;
+  --add: #0d6b52;
+  --add-tint: #d8eee6;
+  --marker: #f1ea5a;
+  --marker-soft: #f6f1a3;
   /* Dark enough that `ground` words on it (a removal held, its button red) read at 4.5:1. */
-  --off: #a63c2c;
+  --off: #a3304d;
+  --del: #992b46;
+  --del-tint: #f6dfe4;
 
   --sans: system-ui, -apple-system, 'Segoe UI', 'Noto Sans JP', 'Hiragino Sans', sans-serif;
   --mono: ui-monospace, 'SF Mono', Consolas, 'Noto Sans Mono', monospace;
@@ -151,9 +158,10 @@ a { color: var(--ink); }
    below (down the rail; up it, the other way round; --pan is 1 or -1), the rail and the window's edges standing
    still. Only the page moves, and only the page is taken as a picture to move: the rest of the window is not taken
    at all (two pictures of the whole window a pan, for nothing) and goes on being drawn as it is, its own moves (the
-   rail's ink) going on. */
+   rail's ink) going on. The page is named only while it pans: named, it is a layer of its own, and the search's
+   shade would lie over the search with it. */
 :root { view-transition-name: none; }
-#page { view-transition-name: page; }
+.panning #page { view-transition-name: page; }
 ::view-transition-group(page) { animation: none; overflow: clip; }
 /* The page left goes as a thing leaving does, gathering speed a short way off (160 ms); the next is already on its
    way as it goes (from 50 ms), rising the longer way in and slowing into its place (360 ms). The two are never
@@ -1179,7 +1187,7 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .hit-head { display: flex; align-items: center; gap: var(--s2); }
 .hit-head > .hit-file { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
 /* A found file's changes (+3), right after its name in its words, not a pill of its own: pressed, its diff. */
-.hit-diff { flex: none; padding: 0; border: 0; background: transparent; color: var(--sub); font: var(--t-meta) var(--mono); cursor: pointer; }
+.hit-diff { flex: none; display: inline-flex; gap: var(--s2); padding: 0; border: 0; background: transparent; color: var(--sub); font: var(--t-meta) var(--mono); cursor: pointer; }
 .hit-diff:hover { color: var(--ink); text-decoration: underline; }
 .hit-kind { margin: 0 var(--s1) var(--s1); font-size: var(--t-meta); font-weight: 600; color: var(--sub); }
 .hit-issue, .hit-run { font-family: var(--sans); font-weight: 400; overflow-wrap: anywhere; }
@@ -1249,8 +1257,8 @@ button.run-line { margin-inline-start: calc(-1 * var(--s1)); min-width: 0; }
 .diff-file.beside > :not(.diff-head):not(.diff) { grid-column: 1 / -1; }
 /* + or − before a line's words, in its colour; the words start right beside it. */
 .diff-sign { user-select: none; text-align: center; }
-.diff-line.add .diff-sign { color: var(--done); }
-.diff-line.del .diff-sign { color: var(--off); }
+.diff-line.add .diff-sign { color: var(--add); }
+.diff-line.del .diff-sign { color: var(--del); }
 .diff-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 /* Which line it is, quiet at the left of each line. */
 .diff-no { align-self: start; color: var(--sub); text-align: right; font-variant-numeric: tabular-nums; user-select: none; }
@@ -1274,17 +1282,17 @@ button.diff-no:hover { color: var(--ink); background: var(--raised); border-radi
 .diff-name.link:hover { background: var(--raised); }
 /* +n green, −n red, then five small squares shared out as the lines are. */
 .diff-count { display: inline-flex; align-items: center; gap: var(--s2); color: var(--sub); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.diff-add { color: var(--done); font-weight: 600; }
-.diff-del { color: var(--off); font-weight: 600; }
+.diff-add { color: var(--add); font-weight: 600; }
+.diff-del { color: var(--del); font-weight: 600; }
 .diff-bar { display: inline-flex; gap: 2px; }
 .diff-bar > i { width: 7px; height: 7px; border-radius: 2px; background: var(--rule); }
 .diff-bar > i.add { background: var(--done); }
 .diff-bar > i.del { background: var(--off); }
 /* What was added on green, what went on red, what stays quiet, as any diff; yellow is the marker's alone (a line
    marked while reading). */
-.diff-line.add { background: color-mix(in srgb, var(--done) 7%, transparent); border-left-color: var(--done); }
-.diff-line.del { background: color-mix(in srgb, var(--off) 7%, transparent); border-left-color: var(--off); }
-.diff-line.del .diff-words { color: color-mix(in srgb, var(--ink) 80%, var(--off)); }
+.diff-line.add { background: var(--add-tint); border-left-color: var(--done); }
+.diff-line.del { background: var(--del-tint); border-left-color: var(--off); }
+.diff-line.del .diff-words { color: color-mix(in srgb, var(--ink) 75%, var(--del)); }
 .diff-line.same { color: var(--sub); }
 /* Between two parts of a file, a dashed break with a quiet "…". */
 .diff-line.hunk { color: var(--sub); margin-top: var(--s2); padding-top: var(--s1); border-top: 1px dashed var(--rule); }
@@ -1684,7 +1692,7 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
   -webkit-box-decoration-break: clone; box-decoration-break: clone;
 }
 .diff-line.marked .diff-words, .diff-line.marking .diff-words { background: var(--marker); color: var(--ink); }
-.diff-line.markable:hover:not(.marked, .marking) .diff-words { background: color-mix(in srgb, var(--marker) 45%, transparent); }
+.diff-line.markable:hover:not(.marked, .marking) .diff-words { background: var(--marker-soft); }
 .diff-line.marked .diff-no, .diff-line.marking .diff-no { color: var(--ink); font-weight: 600; }
 
 /* The Remote's repos: Home's cards, with Forge at the bottom left and the

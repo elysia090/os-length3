@@ -268,11 +268,17 @@ Every page:
 | `edge` | `#6B6E6B` | outlines of fields and controls, which must be seen (3.7:1) |
 | `raised` | `#E4E4E0` | field fill, hover (the same small step above ground as before) |
 | `paper` | `#F8F8F5` | the sheet: what is worked on, and only that (a file's box, the TODO, the issue or board in hand, Inbox's box, what the search found); never a card that leads somewhere, a pane or a page (Runtime's box, which is read rather than worked in, stays on the ground) |
-| `done` | `#2F7D4F` | done and on: a step of an issue's work done, a switch on (its knob), a box ticked (its circle) |
-| `marker` | `#F3E27A` | what is marked, as with a highlighter: a line marked in a diff (a review, Forge's diff), over its words only (not its indent or number, which turns ink), each wrapped line its own stroke with softened ends, the pointer on a line showing the stroke paler; the words the search found, in its lines; the head of a file just landed on, for a moment |
-| `off` | `#A63C2C` | a repo turned off: its switch; a removal held, its button red (`ground` words on it 4.5:1) |
+| `done` | `#127A5F` | done and on: a step of an issue's work done, a switch on (its knob), a box ticked (its circle), a line added (its bar, its squares); a green leaning to blue, so it sits with the greys and does not tire |
+| `add` | `#0D6B52` | the words of an addition, a step darker than `done` to read small: +n, a line's + (5.3:1 on its tint) |
+| `add-tint` | `#D8EEE6` | the ground of a line added in a diff: a mint of its own, not `done` thinned |
+| `marker` | `#F1EA5A` | what is marked, as with a highlighter: a line marked in a diff (a review, Forge's diff), over its words only (not its indent or number, which turns ink), each wrapped line its own stroke with softened ends; the words the search found, in its lines; the head of a file just landed on, for a moment. A clean lemon, not a cream: `ink` on it 11:1 |
+| `marker-soft` | `#F6F1A3` | the pointer on a line it can mark: the stroke, paler |
+| `off` | `#A3304D` | a repo turned off: its switch; a removal held, its button red (`ground` words on it 4.8:1); a line removed (its bar, its squares); a crimson leaning to blue, not a brick |
+| `del` | `#992B46` | the words of a removal: −n, a line's − (6.0:1 on its tint) |
+| `del-tint` | `#F6DFE4` | the ground of a line removed in a diff |
 
-No other colours; the last three each mean their one thing only. The one
+No other colours; the last three families (`done`, `marker`, `off`, each with
+the words and the ground drawn from it) each mean their one thing only. The one
 shade is `ink` at 14% over the window while the search is out.
 
 Type: the system sans; monospace only for paths, code and the terminal.

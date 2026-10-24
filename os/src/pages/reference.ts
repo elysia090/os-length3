@@ -445,7 +445,7 @@ export class Reference {
 
   private issueButton(i: Issue): HTMLElement {
     const b = h('button', {type: 'button', class: 'choice found-item'}, h('span', {class: 'found-what'},
-      issueName(i) ? h('span', {class: 'issue-no'}, `${issueName(i)} `) : null, ...(i.kind ? kindWords(i.kind) : []), i.title));
+      issueName(i) ? h('span', {class: 'issue-no'}, `${issueName(i)} `) : null, i.kind ? h('span', {class: 'issue-kind'}, ...kindWords(i.kind)) : null, i.title));
     b.addEventListener('click', () => this.readIssue(i));
     return b;
   }
@@ -574,7 +574,7 @@ export class Reference {
       const c = changes.get(g.path);
       // Changed since the last commit: its diff is a press away, read under the box.
       const diff = c ? h('button', {type: 'button', class: 'choice hit-diff', 'aria-label': t('The diff of {path}', {path: fileName(g.path)})},
-        `${c.added ? `+${c.added}` : ''}${c.removed ? ` −${c.removed}` : ''}`.trim() || t('diff')) : null;
+        ...(c.added || c.removed ? [c.added ? h('span', {class: 'diff-add'}, `+${c.added}`) : null, c.removed ? h('span', {class: 'diff-del'}, `−${c.removed}`) : null] : [t('diff')])) : null;
       diff?.addEventListener('click', () => this.readDiff(g.path));
       said.push(h('div', {class: 'hit-group'}, h('div', {class: 'hit-head'}, name, diff), ...g.hits.map((hit) => {
         const b = h('button', {type: 'button', class: 'choice hit'},
