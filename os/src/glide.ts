@@ -15,6 +15,23 @@ export const LAND = 'cubic-bezier(.2, .9, .25, 1)';
  * with them however they are played (the page's clock where there is none). */
 export const clock = () => { const t = document.timeline.currentTime; return typeof t === 'number' ? t : performance.now(); };
 
+/** The pace of the OS's moves (styles.css --pace): each move's length (and its delays) is its own times this; what
+ * answers the hand at once (a press, a "no", the caret) is never paced. Read once it is there to read. */
+let paceIs = 0;
+export const pace = () => {
+  if (!paceIs) paceIs = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pace')) || 0;
+  return paceIs || 1;
+};
+/** A move's length (or a delay in it) at the OS's pace. */
+export const paced = (ms: number) => ms * pace();
+/** `then`, once a move of `ms` (at the OS's pace) is over: timed on the moves' own clock, so it keeps with the move
+ * it waits for however they are played. Cancelled, it never comes. */
+export const after = (ms: number, then: () => void): Animation => {
+  const a = document.documentElement.animate([], {duration: paced(ms)});
+  a.finished.then(then, () => {});
+  return a;
+};
+
 /** Whether motion is turned off (reduced motion): each thing is where it ends, at once. */
 export const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -71,7 +88,7 @@ export function glide(from: DOMRect | null, to: HTMLElement | null, layer: HTMLE
   slug.animate([
     {transform: `translate(${from.left - at.left}px, ${from.top - at.top}px)`, width: `${from.width}px`, height: `${from.height}px`},
     {transform: 'none', width: `${at.width}px`, height: `${at.height}px`},
-  ], {duration: ms, easing: LAND}).finished.then(done, done);
+  ], {duration: paced(ms), easing: LAND}).finished.then(done, done);
 }
 
 type Transitioning = Document & {startViewTransition?(update: () => void): {finished: Promise<void>}};
@@ -99,6 +116,7 @@ export function panAcross(el: HTMLElement, dir: number, update: () => void) {
  * a thing drawn again while it came in, which goes on from there rather than starting over or stopping.
  */
 export function arrive(el: HTMLElement, dir: number, axis: 'x' | 'y', by = 12, ms = 240, into = 0) {
+  ms = paced(ms);
   if (still() || into >= ms) return;
   const d = (dir || 1) * by;
   el.animate([{transform: axis === 'x' ? `translateX(${d}px)` : `translateY(${d}px)`, opacity: 0}, {transform: 'none', opacity: 1}],
@@ -120,9 +138,9 @@ export function paneOut(side: HTMLElement, toggle: HTMLElement) {
     if (worded(el) && el.getBoundingClientRect().height > 0 && !parts.some((p) => p.contains(el))) parts.push(el);
   }
   parts.forEach((el, i) => el.animate([{opacity: 0, translate: '24px 0'}, {opacity: 1, translate: '0 0'}],
-    {duration: 340, delay: 140 + i * 50, easing: LAND, fill: 'backwards'}));
+    {duration: paced(340), delay: paced(140 + i * 50), easing: LAND, fill: 'backwards'}));
   const m = toggle.querySelector('.mark');
-  if (m) m.animate([{scale: 1}, {scale: 1.18, offset: .45}, {scale: 1}], {duration: 320, delay: 200, easing: 'ease-out'});
+  if (m) m.animate([{scale: 1}, {scale: 1.18, offset: .45}, {scale: 1}], {duration: paced(320), delay: paced(200), easing: 'ease-out'});
 }
 
 /**
@@ -150,6 +168,7 @@ export function lift(el: Element | null | undefined): Lifted | null {
 export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340, round = '', patience = 40,
   carry?: {lifted: Lifted; to(target: HTMLElement): Element | null}) {
   if (still() || !from.width) return false;
+  ms = paced(ms);
   // The outline stands where the thing was at once, so the eye has it while the page it goes to is drawn (a repo read
   // from the store a moment later); it goes on once its box is there, or fades where it stood if none comes.
   const box = document.createElement('div');
@@ -171,8 +190,8 @@ export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340, r
     if (!to || !at?.width) {
       if (++tries < patience) requestAnimationFrame(go);
       else {
-        words?.animate([{opacity: 1}, {opacity: 0}], {duration: 160, fill: 'forwards'});
-        box.animate([{opacity: 1}, {opacity: 0}], {duration: 160, fill: 'forwards'}).finished.then(done, done);
+        words?.animate([{opacity: 1}, {opacity: 0}], {duration: paced(160), fill: 'forwards'});
+        box.animate([{opacity: 1}, {opacity: 0}], {duration: paced(160), fill: 'forwards'}).finished.then(done, done);
       }
       return;
     }
@@ -187,9 +206,9 @@ export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340, r
     box.animate([rect(from), rect(at)], {duration: ms, easing: LAND, fill: 'forwards'}).finished.then(() => {
       // Landed: the box is there under it, and the sheet gives way to it.
       shown();
-      to.animate([{opacity: 0}, {opacity: 1}], {duration: 140, easing: 'ease-out'});
-      words?.animate([{opacity: 1}, {opacity: 0}], {duration: 140, easing: 'ease-out', fill: 'forwards'});
-      box.animate([{opacity: 1}, {opacity: 0}], {duration: 140, easing: 'ease-out', fill: 'forwards'}).finished.then(done, done);
+      to.animate([{opacity: 0}, {opacity: 1}], {duration: paced(140), easing: 'ease-out'});
+      words?.animate([{opacity: 1}, {opacity: 0}], {duration: paced(140), easing: 'ease-out', fill: 'forwards'});
+      box.animate([{opacity: 1}, {opacity: 0}], {duration: paced(140), easing: 'ease-out', fill: 'forwards'}).finished.then(done, done);
     }, () => { shown(); done(); });
   };
   requestAnimationFrame(go);
@@ -209,13 +228,13 @@ export function nudge(el: Element | null) {
 /** What stood under something taken away closes up over where it was (`by` pixels), rather than being there at once. */
 export function closeUp(els: Element[], by: number, ms = 220) {
   if (still() || !by) return;
-  for (const el of els) el.animate([{translate: `0 ${by}px`}, {translate: '0 0'}], {duration: ms, easing: LAND});
+  for (const el of els) el.animate([{translate: `0 ${by}px`}, {translate: '0 0'}], {duration: paced(ms), easing: LAND});
 }
 
 /** A thing just done is rewarded: it pops past its size and settles (a TODO's mark once done). */
 export function pop(el: Element, by = .16, ms = 380) {
   if (still()) return;
-  el.animate([{scale: 1 - by * 2}, {scale: 1 + by, offset: .5}, {scale: 1}], {duration: ms, easing: 'ease-out'});
+  el.animate([{scale: 1 - by * 2}, {scale: 1 + by, offset: .5}, {scale: 1}], {duration: paced(ms), easing: 'ease-out'});
 }
 
 /** A figure counted up from nothing to what it says ("7.9 MB", "3"), its unit kept, landing as the camera does. */
@@ -223,6 +242,7 @@ export function countUp(el: HTMLElement, ms = 560) {
   const text = el.textContent ?? '';
   const m = /^(\d+(?:\.\d+)?)(.*)$/s.exec(text);
   if (still() || !m) return;
+  ms = paced(ms);
   const to = parseFloat(m[1]), places = m[1].split('.')[1]?.length ?? 0, rest = m[2];
   if (!to) return;
   // Timed by the frames' own clock from the first frame it is drawn in (not the page's clock, which a frame's time
@@ -291,17 +311,17 @@ export function stage(root: HTMLElement, dir: number) {
       if (seen.has(el)) return;
       seen.add(el);
       // Its turn, as the arrival's clock has it now: still to come, under way (gone on from there), or over.
-      const turn = Math.min(i, 14) * 45 - late;
-      if (turn <= -360) return;
+      const turn = paced(Math.min(i, 14) * 45) - late;
+      if (turn <= -paced(360)) return;
       const from = tight(el, r) ? '0 0' : `0 ${(dir || 1) * 16}px`;
       moving.set(el, el.animate([{opacity: 0, translate: from}, {opacity: 1, translate: '0 0'}],
-        {duration: 360, delay: turn, easing: LAND, fill: 'backwards'}));
+        {duration: paced(360), delay: turn, easing: LAND, fill: 'backwards'}));
     });
     for (const b of root.querySelectorAll<HTMLElement>('.counts b, .legend b')) { if (!seen.has(b)) { seen.add(b); countUp(b); } }
     for (const bar of root.querySelectorAll<HTMLElement>('.meter > span')) {
       if (seen.has(bar) || !bar.style.width) continue;
       seen.add(bar);
-      bar.animate([{width: '0%'}, {width: bar.style.width}], {duration: 700, delay: 120, easing: LAND, fill: 'backwards'});
+      bar.animate([{width: '0%'}, {width: bar.style.width}], {duration: paced(700), delay: paced(120), easing: LAND, fill: 'backwards'});
     }
   };
   run();
@@ -317,7 +337,7 @@ export function stage(root: HTMLElement, dir: number) {
   arriving = end;
   // It lasts as long as its parts' turns do, on their clock.
   const over = () => { heard.disconnect(); if (arriving === end) arriving = null; };
-  root.animate([], {duration: 900}).finished.then(over, over);
+  root.animate([], {duration: paced(900)}).finished.then(over, over);
 }
 
 /**
@@ -328,6 +348,7 @@ export function stage(root: HTMLElement, dir: number) {
 export function keep(from: Element, to: string, ms = 640) {
   const icon = document.getElementById(`purpose-${to}`);
   if (still() || !icon || !from.isConnected) return;
+  ms = paced(ms);
   const a = from.getBoundingClientRect(), b = icon.getBoundingClientRect();
   if (!a.width || !b.width) return;
   const x0 = a.right - 6, y0 = a.top + a.height / 2, x1 = b.left + b.width / 2, y1 = b.top + b.height / 2;

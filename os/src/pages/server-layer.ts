@@ -6,7 +6,7 @@ import {connection, onConnection, RemoteError} from '../remote.ts';
 import * as servers from '../servers.ts';
 import type {Context} from './context.ts';
 import {cameTo, timeline} from './talk.ts';
-import {arrive, nudge, pop} from '../glide.ts';
+import {arrive, nudge, paced, pop} from '../glide.ts';
 import {dockFor} from './server-dock.ts';
 import {mark as todoMark} from './todo-box.ts';
 import {boardTodo} from './server-todo.ts';
@@ -160,7 +160,7 @@ export class ServerLayer {
     if (this.leaving) return;
     // Going, it is no longer pressed: a press lands on what is under it.
     this.element.style.pointerEvents = 'none';
-    this.leaving = this.element.animate([{opacity: 1, transform: 'none'}, {opacity: 0, transform: 'translateX(-16px)'}], {duration: 180, easing: 'ease-in'});
+    this.leaving = this.element.animate([{opacity: 1, transform: 'none'}, {opacity: 0, transform: 'translateX(-16px)'}], {duration: paced(180), easing: 'ease-in'});
     this.leaving.finished.then(gone, () => {});
   }
 
@@ -447,7 +447,7 @@ export class ServerLayer {
           // Made: the faint shapes stand whole where they were, its chip taking it in with a pop.
           const chip = chips.querySelector<HTMLElement>(`[data-server="${CSS.escape(s.id)}"]`);
           if (chip) pop(chip, .12, 340);
-          track.querySelector('.slide[aria-current="true"] .board-card')?.animate([{opacity: .35}, {opacity: 1}], {duration: 360, easing: 'ease-out'});
+          track.querySelector('.slide[aria-current="true"] .board-card')?.animate([{opacity: .35}, {opacity: 1}], {duration: paced(360), easing: 'ease-out'});
         } catch (e) {
           make.disabled = false;
           const plan = planRefused(e, () => { this.close(); goToPlan(this.ctx); });

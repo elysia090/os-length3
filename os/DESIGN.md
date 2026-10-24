@@ -68,8 +68,13 @@ Every value in `styles.css` comes from a token (§2).
   step (40 px) under the places, a little below the middle.
 - **Motion, with a reason.** Every move says where something went, never
   only that it changed, and every one lands the same way (fast off the
-  mark, the last pixels slow: `--land`). The moves are few and each means
-  one thing wherever it is seen:
+  mark, the last pixels slow: `--land`). The moves are unhurried: each
+  length named in this document is the move's own, and the OS plays them
+  all at one pace, twice that (`--pace`), so the eye follows each the whole
+  way and they keep with one another; what answers the hand at once (a
+  hover, a press, the caret, a colour) is never paced, and the Prompt keeps
+  its own lengths. The moves are few and each means one thing wherever it
+  is seen:
   - *The ink travels.* The current thing's ink goes from the one it was on
     to the one it is on (the rail's places, the band's pills), under their
     words, 220 ms, so the eye follows the choice. The words of each it goes

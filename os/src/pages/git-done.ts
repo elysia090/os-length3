@@ -5,7 +5,7 @@ import {closedBy, numberOf, type Issue} from '../issues.ts';
 import {kindOf} from '../text.ts';
 import {answers, askFoot, SETTLE} from './common.ts';
 import {counted, diffFiles} from './diff-view.ts';
-import {LAND, still} from '../glide.ts';
+import {LAND, paced, still} from '../glide.ts';
 import {justClosed, justMerged, notCommitted, reopenIssue, type IssueEvents} from './git-issue.ts';
 import {kindWords} from './todo-box.ts';
 import {errorText} from '../errors.ts';
@@ -33,11 +33,11 @@ async function slideOff(card: HTMLElement): Promise<void> {
   if (still() || !card.isConnected) return;
   card.classList.add('leaving');
   const cs = getComputedStyle(card);
-  const off = card.animate([{transform: 'none', opacity: 1}, {transform: 'translateX(96px)', opacity: 0}], {duration: 340, easing: LAND, fill: 'forwards'});
+  const off = card.animate([{transform: 'none', opacity: 1}, {transform: 'translateX(96px)', opacity: 0}], {duration: paced(340), easing: LAND, fill: 'forwards'});
   const close = card.animate([
     {height: `${card.offsetHeight}px`, paddingTop: cs.paddingTop, paddingBottom: cs.paddingBottom, marginTop: cs.marginTop, borderTopWidth: cs.borderTopWidth, borderBottomWidth: cs.borderBottomWidth},
     {height: '0px', paddingTop: '0px', paddingBottom: '0px', marginTop: '0px', borderTopWidth: '0px', borderBottomWidth: '0px'},
-  ], {duration: 280, delay: 160, easing: LAND, fill: 'forwards'});
+  ], {duration: paced(280), delay: paced(160), easing: LAND, fill: 'forwards'});
   card.style.overflow = 'hidden';
   await Promise.all([off.finished, close.finished]).catch(() => {});
 }
@@ -49,7 +49,7 @@ function resize(card: HTMLElement, from: number) {
   if (Math.abs(to - from) < 2) return;
   card.style.overflow = 'hidden';
   const back = () => { card.style.overflow = ''; };
-  card.animate([{height: `${from}px`}, {height: `${to}px`}], {duration: 280, easing: LAND}).finished.then(back, back);
+  card.animate([{height: `${from}px`}, {height: `${to}px`}], {duration: paced(280), easing: LAND}).finished.then(back, back);
 }
 
 /**

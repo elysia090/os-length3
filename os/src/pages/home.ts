@@ -16,7 +16,7 @@ import {onRightPane, pluginArea, rightPaneOpen, setRightPane} from './bench.ts';
 import {mark, paneMark} from '../icons.ts';
 import {onPlugins, pluginsOpen} from '../plugins.ts';
 import {errorText} from '../errors.ts';
-import {LAND, nudge, paneOut, pop, still} from '../glide.ts';
+import {LAND, nudge, paced, paneOut, pop, still} from '../glide.ts';
 
 let editing = false;
 /** The profile's form was opened from elsewhere (the person's menu): Home drawn next gives the opening its beat. */
@@ -214,13 +214,13 @@ function profileHeader(count: HTMLElement, owner: boolean): HTMLElement {
     const to = header.getBoundingClientRect().height;
     if (Math.abs(to - from) > 1) {
       header.style.overflow = 'clip';
-      header.animate([{height: `${from}px`}, {height: `${to}px`}], {duration: 320, easing: LAND}).finished.then(() => { header.style.overflow = ''; }, () => { header.style.overflow = ''; });
+      header.animate([{height: `${from}px`}, {height: `${to}px`}], {duration: paced(320), easing: LAND}).finished.then(() => { header.style.overflow = ''; }, () => { header.style.overflow = ''; });
     }
     if (beat === 'open') {
-      avatar.animate([{rotate: '0deg'}, {rotate: '-10deg'}, {rotate: '7deg'}, {rotate: '-3deg'}, {rotate: '0deg'}], {duration: 480, easing: 'ease-in-out'});
+      avatar.animate([{rotate: '0deg'}, {rotate: '-10deg'}, {rotate: '7deg'}, {rotate: '-3deg'}, {rotate: '0deg'}], {duration: paced(480), easing: 'ease-in-out'});
       // What was not there comes in under the name, a line after another.
       [...header.querySelectorAll<HTMLElement>('.handle-field, .bio-field, .edit-acts')].forEach((el, i) =>
-        el.animate([{opacity: 0, translate: '0 -6px'}, {opacity: 1, translate: '0 0'}], {duration: 240, delay: 60 + i * 50, easing: LAND, fill: 'backwards'}));
+        el.animate([{opacity: 0, translate: '0 -6px'}, {opacity: 1, translate: '0 0'}], {duration: paced(240), delay: paced(60 + i * 50), easing: LAND, fill: 'backwards'}));
     } else if (beat === 'saved') {
       const name = header.querySelector<HTMLElement>('.identity h1');
       if (name) pop(name, .04, 320);
@@ -229,9 +229,9 @@ function profileHeader(count: HTMLElement, owner: boolean): HTMLElement {
       if (same) { pop(avatar, .06, 300); return; }
       // It turns away showing the face it had, and comes round showing the new one.
       avatar.replaceChildren(...faceWas);
-      avatar.animate([{transform: 'perspective(400px) rotateY(0deg)'}, {transform: 'perspective(400px) rotateY(90deg)'}], {duration: 150, easing: 'ease-in'}).finished.then(() => {
+      avatar.animate([{transform: 'perspective(400px) rotateY(0deg)'}, {transform: 'perspective(400px) rotateY(90deg)'}], {duration: paced(150), easing: 'ease-in'}).finished.then(() => {
         avatar.replaceChildren(...now);
-        avatar.animate([{transform: 'perspective(400px) rotateY(-90deg)'}, {transform: 'perspective(400px) rotateY(0deg)'}], {duration: 300, easing: 'cubic-bezier(.2, 1.4, .32, 1)'});
+        avatar.animate([{transform: 'perspective(400px) rotateY(-90deg)'}, {transform: 'perspective(400px) rotateY(0deg)'}], {duration: paced(300), easing: 'cubic-bezier(.2, 1.4, .32, 1)'});
       }, () => avatar.replaceChildren(...now));
     }
   };
@@ -243,7 +243,7 @@ function profileHeader(count: HTMLElement, owner: boolean): HTMLElement {
   };
   draw(null);
   // Opened from the person's menu: it opens as Edit profile opens it, once Home is on the screen.
-  if (opening) { opening = false; requestAnimationFrame(() => { if (!header.isConnected || still()) return; avatar.animate([{rotate: '0deg'}, {rotate: '-10deg'}, {rotate: '7deg'}, {rotate: '-3deg'}, {rotate: '0deg'}], {duration: 480, easing: 'ease-in-out'}); }); }
+  if (opening) { opening = false; requestAnimationFrame(() => { if (!header.isConnected || still()) return; avatar.animate([{rotate: '0deg'}, {rotate: '-10deg'}, {rotate: '7deg'}, {rotate: '-3deg'}, {rotate: '0deg'}], {duration: paced(480), easing: 'ease-in-out'}); }); }
   return header;
 }
 

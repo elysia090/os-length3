@@ -11,7 +11,7 @@ import {bench} from './bench.ts';
 import {openNext as openConversation} from './inbox.ts';
 import {Reader, type Writing} from './reader.ts';
 import {startIssue} from './issue-form.ts';
-import {glide, LAND, panAcross, where} from '../glide.ts';
+import {after, glide, LAND, paced, panAcross, where} from '../glide.ts';
 
 /**
  * Forge, the place you work. The repos out to work on run as pills in a band
@@ -279,9 +279,9 @@ function make(ctx: Context) {
       let came = 0;
       for (const p of pills.querySelectorAll<HTMLElement>('.pill')) {
         const from = was.get(p.dataset.repo!), to = p.getBoundingClientRect();
-        if (from && Math.abs(from.left - to.left) > 1) p.animate([{transform: `translateX(${from.left - to.left}px)`}, {transform: 'none'}], {duration: 240, easing: LAND});
+        if (from && Math.abs(from.left - to.left) > 1) p.animate([{transform: `translateX(${from.left - to.left}px)`}, {transform: 'none'}], {duration: paced(240), easing: LAND});
         else if (!from && was.size) p.animate([{transform: 'translateX(24px)', opacity: 0}, {transform: 'none', opacity: 1}],
-          {duration: 300, delay: came++ * 60, easing: LAND, fill: 'backwards'});
+          {duration: paced(300), delay: paced(came++ * 60), easing: LAND, fill: 'backwards'});
       }
     }
     glide(inkWas, pills.querySelector<HTMLElement>('.pill[aria-current]'), pills, 'var(--r-round)');
@@ -409,7 +409,7 @@ function make(ctx: Context) {
   const shrink = (col: HTMLElement) => new Promise<void>((done) => {
     if (still()) { done(); return; }
     col.classList.add('nothing');
-    setTimeout(done, 420);
+    after(420, done);
   });
 
   /** `name` opened beside what is shown (at `at`, an index among the boxes), and worked on. */

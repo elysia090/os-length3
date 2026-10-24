@@ -12,7 +12,7 @@ import {goToPlan, planRefused, planSaid, signInBox, signInPlace} from './remote.
 import {plan as readPlan} from '../plan.ts';
 import type {Context} from './context.ts';
 import {errorText} from '../errors.ts';
-import {arrive, LAND, nudge, still, where} from '../glide.ts';
+import {arrive, LAND, nudge, paced, still, where} from '../glide.ts';
 
 // Inbox: what comes to you, typed, from people found by address. Not a mail
 // screen: each message says what it is (a message, a review request, a
@@ -50,12 +50,12 @@ function took(stub: HTMLElement, from: DOMRect) {
   stub.animate([
     {transform: `translate(${from.left - at.left}px, ${from.top - at.top}px) scale(${from.width / at.width}, ${from.height / at.height})`, backgroundColor: 'var(--raised)', borderColor: 'var(--edge)'},
     {transform: 'none'},
-  ], {duration: 380, easing: LAND}).finished.then(back, back);
+  ], {duration: paced(380), easing: LAND}).finished.then(back, back);
   for (const el of stub.querySelectorAll<HTMLElement>('.stub-code, .stub-gear')) {
-    el.animate([{opacity: 0, transform: 'translateX(-8px)'}, {opacity: 1, transform: 'none'}], {duration: 260, delay: 300, easing: LAND, fill: 'backwards'});
+    el.animate([{opacity: 0, transform: 'translateX(-8px)'}, {opacity: 1, transform: 'none'}], {duration: paced(260), delay: paced(300), easing: LAND, fill: 'backwards'});
   }
   const under = stub.closest('.inbox-page')?.querySelector<HTMLElement>('.inbox-list');
-  under?.animate([{opacity: 0, transform: 'translateY(10px)'}, {opacity: 1, transform: 'none'}], {duration: 300, delay: 160, easing: LAND, fill: 'backwards'});
+  under?.animate([{opacity: 0, transform: 'translateY(10px)'}, {opacity: 1, transform: 'none'}], {duration: paced(300), delay: paced(160), easing: LAND, fill: 'backwards'});
 }
 
 /**

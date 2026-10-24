@@ -47,10 +47,12 @@ test('the right pane brought out lands a touch past its edge and settles, its ma
   await expect(side).toBeHidden();
   expect(await filled()).toBeCloseTo(0, 2);
 
-  // Brought out: its width, frame by frame, goes past where it stops and comes back to it.
+  // Brought out: its width, frame by frame, goes past where it stops and comes back to it (for as long as the move
+  // lasts at the OS's pace).
   const widths = app.page.evaluate(() => new Promise<number[]>((done) => {
     const el = document.querySelector('.work.bench:not([hidden]) > .side')!, seen: number[] = [], t0 = performance.now();
-    const tick = () => { seen.push(el.getBoundingClientRect().width); if (performance.now() - t0 < 700) requestAnimationFrame(tick); else done(seen); };
+    const pace = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pace')) || 1;
+    const tick = () => { seen.push(el.getBoundingClientRect().width); if (performance.now() - t0 < 700 * pace) requestAnimationFrame(tick); else done(seen); };
     requestAnimationFrame(tick);
   }));
   await app.forge.paneSwitch.click();

@@ -28,7 +28,7 @@ import {heldInvite, holdInvite, inviteIn} from './servers.ts';
 import {getState, loadState} from './state.ts';
 import {onLang, t, useLang} from './i18n.ts';
 import {NEW_REPO, PURPOSES, RAIL, purpose, restorePurpose, stepPurpose, type PurposeId} from './purposes.ts';
-import {LAND, glide, morph, paneOut, stage, still, where} from './glide.ts';
+import {LAND, glide, morph, paced, paneOut, stage, still, where} from './glide.ts';
 import {letGo, touch} from './touch.ts';
 import {caret} from './caret.ts';
 
@@ -217,7 +217,7 @@ function draw(id: PurposeId, quiet: boolean, panned: boolean) {
     // Panned, the page comes as one, carried by the camera: its parts staged on top of that would leave it standing
     // half empty as it lands. Not panned, its parts come in a beat apart, heading first, from that side (glide.ts stage).
     if (!quiet && !panned) {
-      if (!matchMedia('(prefers-reduced-motion: reduce)').matches) $('page').animate([{opacity: 0}, {opacity: 1}], {duration: 160, easing: 'ease-out'});
+      if (!matchMedia('(prefers-reduced-motion: reduce)').matches) $('page').animate([{opacity: 0}, {opacity: 1}], {duration: paced(160), easing: 'ease-out'});
       stage($('page'), Math.sign(order.indexOf(id) - order.indexOf(from)));
     }
   }
@@ -234,7 +234,7 @@ function railOpening() {
   const drawn = (e: AnimationEvent) => { if (e.pseudoElement === '::after') { root.classList.remove('opening'); rail.removeEventListener('animationend', drawn); } };
   rail.addEventListener('animationend', drawn);
   [...$('rail-tabs').children, ...$('rail-me').children].forEach((el, i) => el.animate([{opacity: 0, translate: '-14px 0'}, {opacity: 1, translate: '0 0'}],
-    {duration: 380, delay: 60 + i * 34, easing: LAND, fill: 'backwards'}));
+    {duration: paced(380), delay: paced(60 + i * 34), easing: LAND, fill: 'backwards'}));
 }
 
 /** The first page, as the OS opens: its parts a beat apart (stage), its right pane's words from the right as when it
@@ -242,7 +242,7 @@ function railOpening() {
 function pageOpening() {
   if (still()) return;
   const page = $('page');
-  page.animate([{opacity: 0}, {opacity: 1}], {duration: 280, delay: 120, easing: 'ease-out', fill: 'backwards'});
+  page.animate([{opacity: 0}, {opacity: 1}], {duration: paced(280), delay: paced(120), easing: 'ease-out', fill: 'backwards'});
   const side = page.querySelector<HTMLElement>('.home-side, .side'), toggle = page.querySelector<HTMLElement>('.pane-toggle');
   if (side?.getClientRects().length && toggle) paneOut(side, toggle);
 }

@@ -4,7 +4,7 @@ import {news, onNews} from '../news.ts';
 import {connection} from '../remote.ts';
 import {t} from '../i18n.ts';
 import {paneMark} from '../icons.ts';
-import {arrive, closeUp, LAND, paneOut, still} from '../glide.ts';
+import {after, arrive, closeUp, LAND, paneOut, still} from '../glide.ts';
 import {fieldMoved} from '../caret.ts';
 import {onPlugins, pluginsOpen, setPluginsOpen, slots} from '../plugins.ts';
 import {complete, pathWord, Recall} from '../recall.ts';
@@ -296,13 +296,13 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   let over = false;
   const shown = () => (narrow.matches ? over : paneOpen);
   let wasShown = shown();
-  let moving = 0;
+  let moving: Animation | null = null;
   const paintPane = () => {
     // Put away or brought back, what stands beside it moves on its curve while it moves (styles.css .pane-moving).
     if (work.classList.contains('pane-closed') === paneOpen) {
       work.classList.add('pane-moving');
-      clearTimeout(moving);
-      moving = window.setTimeout(() => work.classList.remove('pane-moving'), 460);
+      moving?.cancel();
+      moving = after(460, () => work.classList.remove('pane-moving'));
     }
     work.classList.toggle('pane-closed', !paneOpen);
     work.classList.toggle('pane-out', over);
