@@ -1395,11 +1395,11 @@ blur in its top where glass catches the light, a fine raster and a falloff to
 its edges, its corner a card's (16). It is the box at the foot, lit, not a layer
 over the page: no shadow under it, no shade over the window. The pill's glass
 runs along the box's line, slowing into its end, the box's light going from
-under it, then rises into the screen, soon but never in a jump (720 ms, two
+under it, then rises into the screen, soon but never in a jump (580 ms, two
 fifths of it along); the line's words and Run stay where they are and take the
 glass's light as its edge comes over them, the prompt line goes from the pill to
 the line's start. Put back, it sinks to the line at once, gathering, and runs
-back into the pill (500 ms, half and half), the box's light coming back under
+back into the pill (420 ms, half and half), the box's light coming back under
 it, the words taking their ink again as the glass leaves them and the pill's
 lamp lighting as the glass comes to be the pill round it. Its lines are a
 terminal's: the box's line is the line after the output, starting with the

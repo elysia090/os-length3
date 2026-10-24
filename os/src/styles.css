@@ -49,7 +49,7 @@
      how each part moves. Along, it slows into the line's end; it rises soon but not in a jump, so the eye sees it rise
      (most of the way in the first half of the rise, the last pixels slowly); it sinks at once, gathering, and runs
      back as a thing that starts and stops. */
-  --prompt-up: 720ms; --prompt-up-line: .4; --prompt-down: 500ms; --prompt-down-line: .5;
+  --prompt-up: 580ms; --prompt-up-line: .4; --prompt-down: 420ms; --prompt-down-line: .5;
   --prompt-along: cubic-bezier(.3, .1, .25, 1); --prompt-rise: cubic-bezier(.3, .65, .2, 1);
   --prompt-sink: cubic-bezier(.4, .1, .6, .9); --prompt-back: cubic-bezier(.4, 0, .6, 1);
   /* How a thing moves: fast off the mark, settling the last few pixels slowly, as a camera that lands. */
