@@ -1,5 +1,5 @@
 import {h} from '../dom.ts';
-import {glide, where} from '../glide.ts';
+import {glide, paced, still, where} from '../glide.ts';
 import {counted, diffFiles, fileName} from './diff-view.ts';
 import * as gitops from '../history.ts';
 import {issueName, issuePath, readIssues, type Issue} from '../issues.ts';
@@ -208,6 +208,19 @@ export class Reference {
     const form = h('form', {class: 'search', role: 'search'}, this.query);
     form.addEventListener('submit', (event) => event.preventDefault());
     this.search = h('div', {class: 'search-box'}, form, this.under);
+    // Let go (the keyboard gone elsewhere, Escape with nothing typed), what is under the box goes back up into it as it
+    // came down out of it, not at once (styles.css .leaving); come back to meanwhile, it stays.
+    let leaving: Animation | null = null;
+    this.search.addEventListener('focusout', (event) => {
+      const to = event.relatedTarget as Node | null;
+      // (Asked as the keyboard leaves, when it is no longer within: the box itself is what must be on screen.)
+      if ((to && this.search.contains(to)) || this.search.matches('.reading, .moving') || still() || !this.search.getClientRects().length) return;
+      this.search.classList.add('leaving');
+      const a = leaving = this.under.animate([{opacity: 1, transform: 'none'}, {opacity: 0, transform: 'translateY(calc(-1 * var(--s2)))'}],
+        {duration: paced(150), easing: 'cubic-bezier(.4, 0, 1, 1)', fill: 'forwards'});
+      a.finished.then(() => { if (leaving !== a) return; leaving = null; this.search.classList.remove('leaving'); a.cancel(); }, () => {});
+    });
+    this.search.addEventListener('focusin', () => { leaving?.cancel(); leaving = null; this.search.classList.remove('leaving'); });
     this.follow();
   }
 

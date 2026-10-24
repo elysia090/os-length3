@@ -1374,7 +1374,9 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
    side, and under them the large box. In it what was searched and read lines up sideways, the one in hand
    filling it, its neighbours a sliver past its edges (pressed to move to them), as Git's issues and Server's
    boards do; the card in hand scrolls within the box. */
-.search-box:not(:focus-within):not(.reading):not(.moving) > .search-results { display: none; }
+.search-box:not(:focus-within):not(.reading):not(.moving):not(.leaving) > .search-results { display: none; }
+/* Let go, it goes back up into the box before it is gone (reference.ts), and nothing in it is pressed meanwhile. */
+.search-box.leaving > .search-results { animation: none; pointer-events: none; }
 .search-results { display: flex; flex-direction: column; gap: var(--s3); max-height: none; overflow: visible; }
 /* Issue, diff and Output at the large box's left end, standing on it: their foot a hair (s1) over its top, up
    beside the search box rather than level with it, so the three and the box they switch read as one. */
