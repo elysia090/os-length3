@@ -319,13 +319,17 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     work.classList.toggle('prompting', on);
     // Going down, it is still the screen as it goes, until it is the box's line again.
     work.classList.toggle('prompt-leaving', !on);
-    // Up, its line is in the screen's letters (styles.css): as tall as one of them.
+    // Up, its line is in the screen's letters (styles.css): as tall as one of them. No words in it before one writes:
+    // the prompt line says where it runs, as a terminal's does (and back as the box, they are back).
+    if (on) prompt.placeholder = '';
     fit();
     if (on) promptUp(termBox, termSlot, screen);
-    else promptHome(termBox, termHome, screen, () => !prompting, () => { work.classList.remove('prompt-leaving'); fit(); });
+    else promptHome(termBox, termHome, screen, () => !prompting, () => { work.classList.remove('prompt-leaving'); if (!prompting) prompt.placeholder = hint(); fit(); });
     if (!on && parts.back) requestAnimationFrame(() => rest(true));
   };
   const fit = () => { prompt.style.height = 'auto'; prompt.style.height = `${prompt.scrollHeight}px`; };
+  /** What the box says before one writes in it, as the box at the foot. */
+  const hint = () => (repo ? t('Run in {name}', {name: repo}) : t('Open a repo to run in it'));
   prompt.addEventListener('focus', () => { setPrompting(true); following(); });
   const keep = () => { if (repo) { if (prompt.value) drafts.set(repo, prompt.value); else drafts.delete(repo); } };
   /** What Tab last said under the box, which goes as soon as anything else is done there. */
@@ -479,7 +483,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     reference.setRepo(name);
     attach();
     prompt.disabled = runIt.disabled = !name;
-    prompt.placeholder = name ? t('Run in {name}', {name}) : t('Open a repo to run in it');
+    prompt.placeholder = prompting ? '' : hint();
     prompt.value = name ? drafts.get(name) ?? '' : '';
     unsay();
     note.textContent = '';
@@ -510,6 +514,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     work.classList.remove('prompting', 'prompt-leaving');
     for (const a of screen.getAnimations()) a.cancel();
     termHome.append(termBox);
+    prompt.placeholder = hint();
     fit();
   };
   return {element: work, reference, setRepo, settle};

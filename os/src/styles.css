@@ -954,24 +954,24 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 :is(.prompting, .prompt-leaving) .screen .term-out > .ps { color: var(--screen-ps); }
 :is(.prompting, .prompt-leaving) .screen .term-out > .ps.waits { display: none; }
 :is(.prompting, .prompt-leaving) .screen :is(.muted, .term > p) { color: color-mix(in srgb, var(--add-tint) 62%, transparent); text-shadow: none; }
-/* Its lamp, at its head's right end: lit in the green while its shell runs; ended, off, as a repo off is. */
+/* Its lamp, at its head's right end, the app's dot (Lately's): lit in the green as its words are while its shell runs;
+   ended, off, as a repo off is. */
 .term-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
 .term-head > .lamp { display: none; }
-:is(.prompting, .prompt-leaving) .screen .term-head > .lamp { display: block; width: 7px; height: 7px; border-radius: 50%; background: var(--done); box-shadow: 0 0 6px 1px color-mix(in srgb, var(--done) 90%, transparent); }
+:is(.prompting, .prompt-leaving) .screen .term-head > .lamp { display: block; width: 6px; height: 6px; border-radius: 50%; background: var(--done); box-shadow: 0 0 6px color-mix(in srgb, var(--done) 70%, transparent); }
 :is(.prompting, .prompt-leaving) .screen .term-box:has(.term.ended) .term-head > .lamp { background: var(--off); box-shadow: none; }
 /* Its buttons (Run, Interrupt, Start again) are lit outlines on the glass, the app's small buttons otherwise. */
 :is(.prompting, .prompt-leaving) .screen .button { color: var(--add-tint); border-color: color-mix(in srgb, var(--add-tint) 50%, transparent); text-shadow: none; }
 :is(.prompting, .prompt-leaving) .screen .button:hover:not(:disabled), :is(.prompting, .prompt-leaving) .screen .prompt-run:hover:not(:disabled) { background: color-mix(in srgb, var(--add-tint) 12%, transparent); }
 :is(.prompting, .prompt-leaving) .screen :focus-visible { outline-color: var(--add-tint); }
 /* The box's line is the next line after the output, as a terminal's is: the shell's prompt line, what is written, a
-   cell for a caret (caret.ts); Run stands on it without making it taller. */
-:is(.prompting, .prompt-leaving) .screen .prompt { position: relative; z-index: 2; background: transparent; border-color: transparent; border-top-width: 0; box-shadow: none; padding: 0 var(--s4) var(--s3); }
+   cell for a caret (caret.ts); Run stands on it without making it taller. Under it the room the box had round its line:
+   the line and Run stay (within a pixel or two) where they were in the box as the screen comes. */
+:is(.prompting, .prompt-leaving) .screen .prompt { position: relative; z-index: 2; background: transparent; border-color: transparent; border-top-width: 0; box-shadow: none; padding: 0 var(--s4) var(--s4); }
 :is(.prompting, .prompt-leaving) .screen .prompt:focus-within { border-color: transparent; box-shadow: none; }
 :is(.prompting, .prompt-leaving) .screen .prompt-run { margin-block: calc((var(--t-meta) * 1.6 - var(--h-row)) / 2); }
 :is(.prompting, .prompt-leaving) .screen .prompt-in { color: inherit; text-shadow: inherit; font: var(--t-meta)/1.6 var(--mono); --caret: block; }
 :is(.prompting, .prompt-leaving) .screen .prompt-in:not(.os-caret-field) { caret-color: var(--add-tint); }
-/* No words in the line before one writes: the prompt line says where it runs, as a terminal's does. */
-:is(.prompting, .prompt-leaving) .screen .prompt-in::placeholder { color: transparent; }
 .prompt-ps { display: none; }
 :is(.prompting, .prompt-leaving) .screen .prompt-ps:not(:empty) { display: block; flex: none; align-self: flex-start; margin-right: calc(1ch - var(--s3)); color: var(--screen-ps); font: var(--t-meta)/1.6 var(--mono); white-space: pre; cursor: text; }
 .dock > .prompt, .screen > .prompt { min-width: 0; }
