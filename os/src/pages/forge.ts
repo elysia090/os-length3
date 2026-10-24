@@ -119,6 +119,11 @@ function make(ctx: Context) {
       v.col.classList.toggle('after', at >= 0 && repo !== null && at > shown.indexOf(repo));
     }
     work.element.classList.toggle('split-on', shown.length > 1);
+    // A file in a box of its own is only its head in its repo's page.
+    for (const [name, v] of views) {
+      if (fileOf(name) === null) v.reader.fold(shown.filter((k) => repoOf(k) === name && fileOf(k) !== null).map((k) => fileOf(k)!));
+      else if (shown.includes(name)) v.reader.refit();
+    }
     // The row slides so the box worked on stands in it whole and its neighbours' edges show past the frame's lines.
     // A box just shown takes the row's place first (the reflow), so it slides with the rest rather than appearing.
     const at = repo ? Math.max(0, shown.indexOf(repo)) : 0;
@@ -163,7 +168,13 @@ function make(ctx: Context) {
   // where that box stood (or is gone to, standing in the row already).
   const revealAt = (path: string, line = 0, write: Writing = false) => {
     const file = repo ? fileOf(repo) : null;
-    if (repo && file !== null && file !== path) {
+    // A file standing in a box of its own is read there, not in the page where it is only its head.
+    const own = repo ? keyOf(repoOf(repo), path) : '';
+    if (repo && own !== repo && shown.includes(own)) {
+      repo = null;
+      activate(own);
+      paintBand();
+    } else if (repo && file !== null && file !== path) {
       const page = repoOf(repo);
       if (!shown.includes(page)) { shown = showIn(shown, page, repo); viewOf(page); }
       repo = null;
@@ -389,7 +400,8 @@ function make(ctx: Context) {
     work.setRepo(repoOf(name));
     layout();
     paintBand();
-    track();
+    // Only come to (pressed, or come in as another closed): what it reads is said, not taken as where one left off.
+    track(false);
   };
 
   /** A box going from the row gives its room back, the row closing over it, by the move that slides the row. */
@@ -616,7 +628,7 @@ function make(ctx: Context) {
       // center has settled on it a moment later.
       if (path) told(path);
       if (path) { revealing = true; void view()?.reader.reveal(path, 0, write).then(() => track()); }
-      else track();
+      else track(false);
     };
     if (across) panAcross(cols, across, go); else go();
   };
@@ -629,19 +641,28 @@ function make(ctx: Context) {
   let landed: string | null = null;
   const told = (path: string | null) => { if (path !== reading) { reading = path; ctx.reading(path); } };
   let quiet = 0;
-  const track = () => {
+  /** The file read now, said to File and the band; with `place`, also where in it one is (for Home's Lately). */
+  let placing = false;
+  const track = (place = true) => {
     clearTimeout(quiet);
+    placing ||= place;
     quiet = window.setTimeout(() => {
-      const v = view();
+      const v = view(), was = placing;
+      placing = false;
       if (!v || !v.flow.isConnected) return;
       const path = v.reader.reading(landed);
       told(path);
       // Where in it, to come back to (Home's Lately): the caret, or the line read.
-      if (path) ctx.leftAt(v.reader.repo, path, v.reader.place(path));
+      if (was && path) ctx.leftAt(v.reader.repo, path, v.reader.place(path));
     }, 120);
   };
-  // Written in, or the caret moved, is reading too.
-  for (const e of ['input', 'keyup', 'pointerup']) work.element.addEventListener(e, () => { if (view()) track(); }, true);
+  // Where one is is what one did: written in a file, the caret put or moved in it, the page scrolled by hand. A box
+  // coming in (one beside closed, the row sliding to it), a page put back where it was, a button pressed is not, so
+  // Home's Lately never quotes the top of a page that only came back into view.
+  let handAt = 0;
+  for (const e of ['wheel', 'touchmove', 'keydown']) work.element.addEventListener(e, () => { handAt = performance.now(); }, {capture: true, passive: true});
+  const inText = (event: Event) => { const el = event.target as Element; return !!el.closest?.('.flow') && !el.closest('button, .path, .col-head'); };
+  for (const e of ['input', 'keyup', 'pointerup']) work.element.addEventListener(e, (event) => { if (view() && inText(event)) track(); }, true);
   // Taken off the screen and put back, a place that scrolls starts at its top again: each comes back where it was.
   let restoring = false;
   /** A path was asked for since Forge came back on screen (File, Git, a search): that wins over where it was. */
@@ -651,7 +672,7 @@ function make(ctx: Context) {
     if (restoring || !work.element.isConnected) return;
     const el = event.target as Element;
     const v = el.classList.contains('flow') ? [...views.values()].find((w) => w.flow === el) : undefined;
-    if (v) { v.top = el.scrollTop; if (v === view()) track(); } else tops.set(el, el.scrollTop);
+    if (v) { v.top = el.scrollTop; if (v === view() && performance.now() - handAt < 800) track(); } else tops.set(el, el.scrollTop);
   }, true);
 
   // The repo changed through the store (the shell, l3's twin in the Prompt,
@@ -718,10 +739,10 @@ function make(ctx: Context) {
       known = ctx.repo;
       // Opened for a repo (from File, Home or a new repo), or one chosen to work on elsewhere: it goes on the band.
       if (ctx.repo && all.includes(ctx.repo) && (asked || chosen)) { show(ctx.repo, asked?.path ?? '', asked?.write ?? false); return; }
-      if (repo && all.includes(repoOf(repo)) && shown.includes(repo)) { layout(); paintBand(); track(); return; }
+      if (repo && all.includes(repoOf(repo)) && shown.includes(repo)) { layout(); paintBand(); track(false); return; }
       repo = null;
       const open = ctx.repo && band.includes(ctx.repo) ? ctx.repo : shown[0] ?? band[0];
-      if (open && fileOf(open) !== null) { activate(open); paintBand(); track(); } else if (open) show(open); else none();
+      if (open && fileOf(open) !== null) { activate(open); paintBand(); track(false); } else if (open) show(open); else none();
     });
   };
   // Forge's head is its band; its name is still the page's heading, for those who hear the page.

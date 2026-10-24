@@ -389,12 +389,16 @@ test('a file opened beside from its head is the one worked on, and has the keybo
   await expect(app.forge.promptBox).toHaveAttribute('placeholder', 'Run in hello');
 });
 
-test('with the pane away, files side by side stand whole and as wide, their heads on one line; out, the Prompt\'s head is on that line', async ({app}) => {
+test('a file beside is only its head in its page; with the pane away the two stand whole and as wide, heads on one line; out, the Prompt\'s head is on that line', async ({app}) => {
   await app.rail.go('forge');
   await app.main.getByRole('button', {name: 'Open README.md beside'}).first().click();
+  // The page read from its top, so each box's head is where it stands unscrolled.
+  await app.main.locator('.col[data-key="hello"] > .flow').evaluate((f) => { f.scrollTop = 0; });
   const rows = () => app.page.evaluate(() => {
     const cols = [...document.querySelectorAll<HTMLElement>('.col:not([hidden])')].map((c) => {
-      const b = c.getBoundingClientRect(), head = c.querySelector('section.file > .path')!.getBoundingClientRect();
+      // The head standing at the top of what is in view (one scrolled off above is not where the eye is).
+      const b = c.getBoundingClientRect(), top = c.querySelector('.flow')!.getBoundingClientRect().top;
+      const head = [...c.querySelectorAll('section.file > .path')].map((p) => p.getBoundingClientRect()).find((p) => p.bottom > top)!;
       return {l: Math.round(b.left), w: Math.round(b.width), head: Math.round(head.top)};
     });
     const center = document.querySelector('.center')!.getBoundingClientRect();
@@ -407,11 +411,40 @@ test('with the pane away, files side by side stand whole and as wide, their head
       prompt: baseline(document.querySelector('.term-box h2')!), file: baseline(document.querySelector('.col.active section.file > .path > span')!),
     };
   });
+  // In the repo's page beside it, the file is only its head: the same text is not shown twice in the row.
+  const inPage = app.main.locator('.col[data-key="hello"] section.file[data-path="README.md"]');
+  await expect(inPage).toHaveClass(/\belsewhere\b/);
+  await expect(inPage.getByRole('textbox')).toBeHidden();
   await app.forge.paneSwitch.click();
   await expect.poll(async () => { const r = await rows(); return [r.cols.length, r.inside, Math.abs(r.cols[0].w - r.cols[1].w) <= 1, r.cols[0].head === r.cols[1].head, r.dock]; })
     .toEqual([2, true, true, true, [-12, 12]]);
   await app.forge.paneSwitch.click();
   await expect.poll(async () => { const r = await rows(); return r.prompt - r.file; }).toBe(0);
+  // Written on in its box, then that box closed: the page unfolds it again, with what was written showing whole
+  // (measured as it shows, not while it was folded away).
+  const own = app.main.locator('.col[data-key="hello:README.md"]').getByRole('textbox', {name: 'Edit README.md'});
+  await own.click();
+  await app.page.keyboard.press('Control+End');
+  await app.page.keyboard.type('\none\ntwo\nthree');
+  await app.page.keyboard.press('Control+s');
+  await app.main.locator('.col.active .col-close').click();
+  await expect(inPage.getByRole('textbox')).toHaveValue(/three\n?$/);
+  await expect.poll(async () => (await inPage.getByRole('textbox').boundingBox())?.height ?? 0).toBeGreaterThan(60);
+});
+
+test('Home says where one left off: the line last written, not the top of a page that only came back into view', async ({app}) => {
+  await app.rail.go('forge');
+  await app.main.getByRole('button', {name: 'Open README.md beside'}).first().click();
+  const own = app.main.locator('.col[data-key="hello:README.md"]').getByRole('textbox', {name: 'Edit README.md'});
+  await own.click();
+  await app.page.keyboard.press('Control+End');
+  await app.page.keyboard.type('\nWritten here last.');
+  await app.page.waitForTimeout(300);
+  // The box closed, the repo's page comes back in (and takes the keyboard): that is not where one was.
+  await app.main.locator('.col.active .col-close').click();
+  await app.page.waitForTimeout(400);
+  await app.rail.go('home');
+  await expect(app.main.locator('.lately-row').first()).toContainText('Written here last.');
 });
 
 test('the prompt box stepped back while reading comes back when the pointer rests on its place, not as it crosses it', async ({app}) => {

@@ -39,7 +39,7 @@ export default {
   'Direct': '直接',
   'Write to a name or a code': '名前かコードに書く',
   'Write to {address}…': '{address}に書く…',
-  'Review： or Question： first to ask · a /root/… path says what it is about · Ctrl+Enter sends': '頭に Review： か Question： で依頼 · /root/… のパスで対象 · Ctrl+Enter で送信',
+  'Review: or Question: first to ask · a /root/… path says what it is about · Ctrl+Enter sends': '頭に Review： か Question： で依頼 · /root/… のパスで対象 · Ctrl+Enter で送信',
   // Names: letting one go, a domain that lapsed.
   'That name was let go; it is held for its owner until {date}': 'その名前は手放されています。{date}まで元の持ち主のために取り置かれています。',
   // Names: on this Remote, first come, for five years at a time; a code to be found by; a domain's beside.

@@ -7,6 +7,7 @@ import {answers, askFoot, SETTLE} from './common.ts';
 import {counted, diffFiles} from './diff-view.ts';
 import {LAND, morph, still} from '../glide.ts';
 import {justClosed, justMerged, notCommitted, reopenIssue, type IssueEvents} from './git-issue.ts';
+import {kindWords} from './todo-box.ts';
 import {errorText} from '../errors.ts';
 
 // What Git shows under the issues: what main has not committed (with its
@@ -94,7 +95,7 @@ export function mainCard(repo: string, n: number, events: IssueEvents, after: ()
 
 /** "#3 Fix：title", the number quiet, as an issue's head writes it. */
 const named = (n: number | null, kind: string | null, title: string) => h('span', {class: 'done-name'},
-  n === null ? null : h('span', {class: 'issue-no'}, `#${n} `), kind ? h('span', {class: 'issue-kind'}, `${kind}：`) : null, title);
+  n === null ? null : h('span', {class: 'issue-no'}, `#${n} `), kind ? h('span', {class: 'issue-kind'}, ...kindWords(kind)) : null, title);
 
 /** What was committed on main from here: its line, how much it changed, and when; the newest lit as it lands. */
 export function committedList(list: {repo: string; cut: git.Cut}[], all: boolean): HTMLElement {

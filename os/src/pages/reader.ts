@@ -104,9 +104,33 @@ export class Reader {
   private single: string | null = null;
   /** Each file's head opens it beside, in a box of its own, when this is given. */
   private beside: ((path: string) => void) | null;
+  /** The files open beside, each in a box of its own: in the page, only their heads. */
+  private elsewhere = new Set<string>();
+  /** Each editor's height fitted to its text again (after it was out of sight, when it could not be measured). */
+  private fitters = new Map<string, () => void>();
+  /** Editors whose text changed while they were out of sight, so not measured yet. */
+  private stale = new Set<string>();
 
   constructor(repo: string, flow: HTMLElement, opts: {beside?(path: string): void} = {}) {
     this.repo = repo; this.flow = flow; this.beside = opts.beside ?? null;
+  }
+
+  /**
+   * The files open beside (`paths`): in the page each is folded to its head, so the page reads on past it and the
+   * same text never stands twice in the row; closed there, it unfolds.
+   */
+  fold(paths: string[]) {
+    this.elsewhere = new Set(paths);
+    for (const [path, section] of this.sections) {
+      if (!section.classList.contains('file')) continue;
+      section.classList.toggle('elsewhere', this.elsewhere.has(path));
+    }
+    this.refit();
+  }
+
+  /** Written on while out of sight (folded, its box hidden), an editor is fitted to its text once it shows. */
+  refit() {
+    for (const path of [...this.stale]) this.fitters.get(path)?.();
   }
 
   /**
@@ -288,7 +312,7 @@ export class Reader {
       head.append(open);
       head.addEventListener('click', (event) => { if ((event.ctrlKey || event.metaKey) && !(event.target as Element).closest('button')) beside(path); });
     }
-    const section = h('section', {class: 'file', 'data-path': path}, head);
+    const section = h('section', {class: this.elsewhere.has(path) ? 'file elsewhere' : 'file', 'data-path': path}, head);
     this.sections.set(path, section);
     const gutter = h('pre', {class: 'gutter', 'aria-hidden': 'true'});
     const sheet = h('div', {class: 'sheet'}, gutter, h('pre', {class: 'code'}, '…'));
@@ -318,7 +342,13 @@ export class Reader {
       area.value = c.text;
       sheet.replaceChildren(gutter, area);
       this.editors.set(path, area);
-      const fit = () => { area.style.height = 'auto'; area.style.height = `${area.scrollHeight}px`; };
+      // Out of sight (folded, or its page hidden) it cannot be measured: it is fitted again when it shows.
+      const fit = () => {
+        if (!area.offsetParent) { this.stale.add(path); return; }
+        this.stale.delete(path);
+        area.style.height = 'auto'; area.style.height = `${area.scrollHeight}px`;
+      };
+      this.fitters.set(path, fit);
       // The whole box is the place to write. A press beside the text (its numbers, or the room around
       // them) is that line, selected as a line found is; a press below the text puts the caret at its end.
       sheet.addEventListener('pointerdown', (event) => {

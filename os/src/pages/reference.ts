@@ -9,6 +9,7 @@ import {findInText, nameFirst, nameMatches, stillAt, type Hit} from '../search.t
 import {sessionIfAny, type Run} from './terminal.ts';
 import {answers} from './common.ts';
 import {connection} from '../remote.ts';
+import {kindWords} from './todo-box.ts';
 
 // The way to what the center refers to: the search box over the right pane,
 // reaching a quarter of the pane's width into the center so that what opens
@@ -444,7 +445,7 @@ export class Reference {
 
   private issueButton(i: Issue): HTMLElement {
     const b = h('button', {type: 'button', class: 'choice found-item'}, h('span', {class: 'found-what'},
-      issueName(i) ? h('span', {class: 'issue-no'}, `${issueName(i)} `) : null, i.kind ? `${i.kind}：` : '', i.title));
+      issueName(i) ? h('span', {class: 'issue-no'}, `${issueName(i)} `) : null, ...(i.kind ? kindWords(i.kind) : []), i.title));
     b.addEventListener('click', () => this.readIssue(i));
     return b;
   }
@@ -463,7 +464,7 @@ export class Reference {
       const go = h('button', {type: 'button', class: 'button small-button choice'}, t('Change its words'));
       go.addEventListener('click', () => this.events.reveal(issuePath(issue)));
       into.replaceChildren(h('article', {class: 'issue-one'},
-        h('h3', {}, issueName(issue) ? h('span', {class: 'issue-no'}, `${issueName(issue)} `) : null, issue.kind ? h('span', {class: 'issue-kind'}, `${issue.kind}：`) : null, issue.title),
+        h('h3', {}, issueName(issue) ? h('span', {class: 'issue-no'}, `${issueName(issue)} `) : null, issue.kind ? h('span', {class: 'issue-kind'}, ...kindWords(issue.kind)) : null, issue.title),
         issue.detail ? h('p', {class: 'issue-body'}, issue.detail) : null, answers(go)));
     });
   }

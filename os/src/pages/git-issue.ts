@@ -1,6 +1,6 @@
 import {kindWords} from './todo-box.ts';
 import {ago, h} from '../dom.ts';
-import {arrive, morph, still} from '../glide.ts';
+import {arrive, lift, type Lifted, morph, still} from '../glide.ts';
 import * as git from '../history.ts';
 import {t, tn} from '../i18n.ts';
 import {closeMark, issueName, issuePath, saveIssue, setClosed, type Issue} from '../issues.ts';
@@ -292,15 +292,19 @@ export function mergeRow(issue: Issue, s: RepoState | undefined, events: IssueEv
   // Merged, the work is done: the repo shows main again.
   // Merged, the issue's box goes down into its line under Merged, which lands lit: the issue is done.
   let from: DOMRect | null = null;
+  let words: Lifted | null = null;
   merge.addEventListener('click', doing(merge, error, async () => {
     await git.merge(at, change);
     mergedNow.set(change.id, Date.now());
-    from = merge.closest('.issue-slot')?.querySelector('.issue-card')?.getBoundingClientRect() ?? null;
+    const card = merge.closest('.issue-slot')?.querySelector('.issue-card');
+    from = card?.getBoundingClientRect() ?? null;
+    words = lift(card?.querySelector('h2'));
     if (here) await git.switchWork(at, 'main');
     events.moved(at);
   }, () => {
     after();
-    if (from) morph(from, () => document.querySelector<HTMLElement>(`.done-row[data-change="${CSS.escape(change.id)}"]`), 460, '', 150);
+    if (from) morph(from, () => document.querySelector<HTMLElement>(`.done-row[data-change="${CSS.escape(change.id)}"]`), 460, '', 150,
+      words ? {lifted: words, to: (row) => row.querySelector('.done-name')} : undefined);
   }));
   const by = approvals.length ? t('Approved by {who}', {who: [...new Set(approvals.map((r) => r.by))].join(', ')}) : t('Not approved yet');
   const reject = button(t('Reject'));

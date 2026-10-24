@@ -145,6 +145,8 @@ a { color: var(--ink); }
 /* A repo opened from its card or its row, on its way to its box in Forge (glide.ts morph). */
 /* The sheet a thing opened becomes on its way to its box: the box's own paper and line, so it reads as that box. */
 .morph-box { position: fixed; z-index: 9; pointer-events: none; border: var(--line-work) solid var(--ink); border-radius: var(--r-place); background: var(--paper); }
+/* The words a morph carries: a copy of them as they were drawn, going with the box onto the words they become. */
+.morph-words { position: fixed; z-index: 10; margin: 0; white-space: nowrap; overflow: visible; transform-origin: 0 0; pointer-events: none; }
 /* Along the rail the camera pans with it (main.ts select): the page left goes up and away as the next rises in from
    below (down the rail; up it, the other way round; --pan is 1 or -1), the rail and the window's edges standing
    still. Only the page moves, and only the page is taken as a picture to move: the rest of the window is not taken
@@ -811,6 +813,13 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 /* Landed on from a search, File or Git: its head lit with the marker for a moment, then fading back, so the eye is
    led to where it landed without anything staying lit. The line asked for is selected in the marker too. */
 .flow .revealed > .path { animation: landed 1200ms ease-out; }
+/* A file open beside, in a box of its own, is only its head in its repo's page: the page reads on past it, so side
+   by side the row never shows one text twice. Its head quiet, its window-cut mark in ink (it is out, beside):
+   pressed, the row goes to its box. */
+.file.elsewhere { min-height: 0; border-width: 0; }
+.file.elsewhere > :not(.path) { display: none; }
+.file.elsewhere > .path { margin: 0; padding-bottom: var(--s3); border-bottom: 1px solid; border-color: inherit; border-radius: var(--r-place); color: var(--sub); }
+.file.elsewhere .file-beside { opacity: 1; color: var(--ink); }
 @keyframes landed { from, 30% { background: color-mix(in srgb, var(--marker) 70%, var(--paper)); } }
 .flow .revealed .code-edit::selection { background: var(--marker); color: var(--ink); }
 /* Saved elsewhere while this one had unsaved edits: asked in the box, under
@@ -1460,6 +1469,9 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 .inbox-top { display: flex; align-items: baseline; gap: var(--s3); padding: var(--s3) var(--s4); border-bottom: 1px solid var(--rule); }
 .inbox-top .grow { flex: 1; }
 .inbox-messages { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--s3); padding: var(--s4); overflow-y: auto; }
+/* A conversation stands on its foot, by the field it is answered in, as it is read: the last thing said just over
+   where the answer is written, never a sheet's height of nothing between them. */
+.inbox-messages > :first-child { margin-top: auto; }
 .bubble { display: grid; gap: var(--s1); max-width: 75%; padding: var(--s2) var(--s3); border: 1px solid var(--rule); border-radius: var(--r-place); justify-self: start; }
 .bubble[data-mine='true'] { align-self: flex-end; background: var(--raised); }
 .bubble .state-chip { justify-self: start; }

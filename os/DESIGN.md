@@ -1298,7 +1298,11 @@ window cut in two (quiet until the file is pointed at; Ctrl+click on the head
 does the same), and the file comes in as a box of its own, its repo said
 quietly before its name in the box's head; a place asked for in another file
 (the search, File) is read in the repo's page, which comes in where that box
-stood. Each box has a small head
+stood. In the repo's page a file open beside is only its head (quiet, its
+window-cut mark in `ink`): the page reads on past it, so the row never shows
+one text twice, and side by side the file beside stands next to the rest of
+its repo; pressed, the row goes to its box, and with that box closed it
+unfolds again. Each box has a small head
 (its name, and × to close it; dragged, it moves along the row); Alt+[ and
 Alt+] go along the row. The keys an editor's hands already know work
 wherever the bench is, unsaid on the screen: Ctrl+K or Ctrl+P (Ctrl+Shift+F
@@ -1965,7 +1969,9 @@ under it the field to write to someone new, of the stub's width, height and
 shape (Write its end, as the gear is the stub's), and under that the
 conversations (requests apart, with Accept and Block once they have
 written; their words start where the field's do); over the other two, from
-the stub's top to the page's foot, the conversation open, as a sheet.
+the stub's top to the page's foot, the conversation open, as a sheet. It
+stands on its foot: oldest above, the last thing said just over the field
+it is answered in, never a sheet's height of nothing between them.
 Before anyone has written there is no sheet, not a sheet of nothing: No
 messages yet stands under the field, and the first conversation brings its
 sheet in from that side; written to first, its row comes into the list at

@@ -452,7 +452,7 @@ export function inboxPage(ctx: Context): Node[] {
       messages,
       h('div', {class: 'inbox-write'},
         h('div', {class: 'row write-line'}, text, sendB),
-        h('p', {class: 'muted small write-hint'}, t('Review： or Question： first to ask · a /root/… path says what it is about · Ctrl+Enter sends')), error));
+        h('p', {class: 'muted small write-hint'}, t('Review: or Question: first to ask · a /root/… path says what it is about · Ctrl+Enter sends')), error));
     if (text.value) grow();
     text.focus();
     text.setSelectionRange(text.value.length, text.value.length);

@@ -127,7 +127,24 @@ export function paneOut(side: HTMLElement, toggle: HTMLElement) {
  * screen, so the eye goes with the repo instead of starting over on a new page. The box it becomes waits out of
  * sight while the sheet goes to it, and shows as the sheet lands: one box the whole way, never two at once.
  */
-export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340, round = '', patience = 40) {
+/** A thing's words as they stand, copied where and as they are drawn, for a morph to carry (taken before the thing
+ * is drawn again and they are gone). */
+export type Lifted = {el: HTMLElement; rect: DOMRect};
+export function lift(el: Element | null | undefined): Lifted | null {
+  const rect = el?.getBoundingClientRect();
+  if (!el || !rect?.width) return null;
+  const copy = el.cloneNode(true) as HTMLElement;
+  const cs = getComputedStyle(el);
+  copy.removeAttribute('id');
+  copy.setAttribute('aria-hidden', 'true');
+  copy.classList.add('morph-words');
+  Object.assign(copy.style, {left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px`,
+    font: cs.font, color: cs.color, letterSpacing: cs.letterSpacing});
+  return {el: copy, rect};
+}
+
+export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340, round = '', patience = 40,
+  carry?: {lifted: Lifted; to(target: HTMLElement): Element | null}) {
   if (still() || !from.width) return false;
   // The outline stands where the thing was at once, so the eye has it while the page it goes to is drawn (a repo read
   // from the store a moment later); it goes on once its box is there, or fades where it stood if none comes.
@@ -139,22 +156,35 @@ export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340, r
   const rect = (r: DOMRect) => ({left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px`});
   Object.assign(box.style, rect(from));
   document.body.append(box);
-  const done = () => box.remove();
+  // Its words go with it, from where they were read to the words they become (the issue's title onto its line).
+  const words = carry?.lifted.el;
+  if (words) document.body.append(words);
+  const done = () => { box.remove(); words?.remove(); };
   let tries = 0;
   const go = () => {
     const to = find();
     const at = to?.getBoundingClientRect();
     if (!to || !at?.width) {
       if (++tries < patience) requestAnimationFrame(go);
-      else box.animate([{opacity: 1}, {opacity: 0}], {duration: 160, fill: 'forwards'}).finished.then(done, done);
+      else {
+        words?.animate([{opacity: 1}, {opacity: 0}], {duration: 160, fill: 'forwards'});
+        box.animate([{opacity: 1}, {opacity: 0}], {duration: 160, fill: 'forwards'}).finished.then(done, done);
+      }
       return;
     }
     to.style.visibility = 'hidden';
     const shown = () => { to.style.visibility = ''; };
+    const goal = words && carry?.to(to)?.getBoundingClientRect();
+    if (words && goal?.height) {
+      const r0 = carry!.lifted.rect;
+      words.animate([{transform: 'none'}, {transform: `translate(${goal.left - r0.left}px, ${goal.top - r0.top}px) scale(${goal.height / r0.height})`}],
+        {duration: ms, easing: LAND, fill: 'forwards'});
+    }
     box.animate([rect(from), rect(at)], {duration: ms, easing: LAND, fill: 'forwards'}).finished.then(() => {
       // Landed: the box is there under it, and the sheet gives way to it.
       shown();
       to.animate([{opacity: 0}, {opacity: 1}], {duration: 140, easing: 'ease-out'});
+      words?.animate([{opacity: 1}, {opacity: 0}], {duration: 140, easing: 'ease-out', fill: 'forwards'});
       box.animate([{opacity: 1}, {opacity: 0}], {duration: 140, easing: 'ease-out', fill: 'forwards'}).finished.then(done, done);
     }, () => { shown(); done(); });
   };
