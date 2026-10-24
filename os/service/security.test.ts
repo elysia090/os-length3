@@ -17,7 +17,7 @@ import {hmacHex, keyFor, same} from './keys.ts';
 import {workerRole} from './neon.ts';
 import {API_POLICY, throttled} from './request.ts';
 import * as schema from './schema.ts';
-import {APP, BASE, database, freshDb, named, SECRET, service} from './testing.ts';
+import {APP, BASE, database, freshDb, idOf, named, SECRET, service, sessionOf} from './testing.ts';
 
 const EVIL = 'https://evil.example';
 
@@ -296,4 +296,53 @@ test('a session is listed, ended from another, and ends at sign-out; a sign-in i
   assert.equal((await s.call('GET', '/v1/repos', {token: two})).status, 401);
   assert.equal((await s.call('POST', '/api/auth/sign-out', {token: one, body: {}})).status, 200);
   assert.equal((await s.call('GET', '/v1/repos', {token: one})).status, 401);
+});
+
+test('a second sign-in joins an account only by an address its provider proved: one it was told and never proved takes over no one (ASVS 2.5.x; account linking)', async () => {
+  const s = await service();
+  const ren = await s.start('Ren');
+  const renId = await idOf(s, ren);
+  const ways = async (user: string) => (await s.db.select().from(schema.account).where(eq(schema.account.userId, user))).length;
+  /** Signing in as `name` at the stand-in provider, which says what `said` asks of it; the session's token, if one was made. */
+  const signIn = async (name: string, said: Record<string, string>) => {
+    const asked = await s.app.request(`${BASE}/api/auth/sign-in/social`, {method: 'POST', headers: {Origin: APP, 'Content-Type': 'application/json'},
+      body: JSON.stringify({provider: 'dev', callbackURL: `${APP}/?signed-in`})});
+    const cookies = asked.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
+    const go = new URL(((await asked.json()) as {url: string}).url);
+    const approve = new URL(`${BASE}/dev-oauth/approve`);
+    for (const k of ['redirect_uri', 'state']) approve.searchParams.set(k, go.searchParams.get(k) ?? '');
+    for (const [k, v] of Object.entries({name, ...said})) approve.searchParams.set(k, v);
+    const back = (await s.app.request(approve.toString())).headers.get('Location')!;
+    return (await s.app.request(back, {headers: {Cookie: cookies}})).headers.get('set-auth-token');
+  };
+  // Someone else at a provider that lets them say Ren's address without proving it (Google's email_verified: false):
+  // no session of Ren's, and nothing of theirs joined to Ren's account.
+  const mallory = await signIn('Mallory', {email: 'ren@dev.length3.invalid', verified: '0'});
+  if (mallory) assert.notEqual(await idOf(s, mallory), renId);
+  assert.equal(await ways(renId), 1);
+  // The same address, proved by the provider: one person, one account, as before.
+  const elsewhere = await signIn('Ren Elsewhere', {email: 'ren@dev.length3.invalid'});
+  assert.ok(elsewhere);
+  assert.equal(await idOf(s, elsewhere), renId);
+  assert.equal(await ways(renId), 2);
+});
+
+test('Devices: the session cookie alone lists or ends a device only from the app\'s own pages, as every route of the Remote takes it (CSRF: ASVS 4.2.2, 13.2.3; Fetch Metadata)', async () => {
+  const s = await service();
+  const one = await s.start('Ren'), two = await s.start('Ren');
+  const cookie = s.sessions.get(one)!, theirs = await sessionOf(s, two);
+  const end = async (headers: Record<string, string>, also: Record<string, string> = {}) => (await s.app.request(`${BASE}/api/auth/revoke-session`, {method: 'POST',
+    headers: {'Content-Type': 'application/json', Cookie: cookie, ...headers, ...also}, body: JSON.stringify({token: `id:${theirs}`})})).status;
+  const list = async (headers: Record<string, string>) => (await s.app.request(`${BASE}/api/auth/list-sessions`, {headers: {Cookie: cookie, ...headers}})).status;
+  // What a page elsewhere (or a sibling host of the same site) can make the browser send with the cookie: nothing ended.
+  assert.equal(await end({Origin: EVIL}), 403);
+  assert.equal(await end({}), 403);
+  assert.equal(await end({Origin: EVIL}, {Authorization: 'Bearer made-up'}), 401);
+  assert.equal((await s.call('GET', '/v1/repos', {token: two})).status, 200);
+  assert.equal(await list({'Sec-Fetch-Site': 'cross-site'}), 403);
+  assert.equal(await list({'Sec-Fetch-Site': 'same-site', Origin: EVIL}), 403);
+  assert.equal(await list({'Sec-Fetch-Site': 'same-origin'}), 200);
+  // From the app's own page, as Remote → Devices asks: ended.
+  assert.equal(await end({Origin: APP}), 200);
+  assert.equal((await s.call('GET', '/v1/repos', {token: two})).status, 401);
 });

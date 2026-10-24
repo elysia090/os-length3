@@ -145,7 +145,9 @@ L2, RFC 9700, RFC 8628 and WebAuthn, is tested in `security.test.ts`
 - **CORS** (`fromOrigins`): only the app's origins (`APP_ORIGIN`,
   `APP_ORIGINS`) are answered, with credentials; a preflight is kept ten
   minutes.
-- **Cross-site requests** (`auth.ts` `signedIn`). A bearer token is taken
+- **Cross-site requests** (`auth.ts` `fromElsewhere`, asked by `signedIn`
+  and by the session routes the Remote answers itself beside Better Auth's:
+  `list-sessions`, `revoke-session` by `id:`). A bearer token is taken
   from anywhere (no other site's page can send one). The session cookie
   alone is taken for a write only with one of the app's `Origin`s, and for
   a read only when the browser does not say another site started it
@@ -165,6 +167,10 @@ L2, RFC 9700, RFC 8628 and WebAuthn, is tested in `security.test.ts`
   board as a guest (30 an hour), resolving a code signed out (30 an hour).
   Per account: codes looked up, messages, signals, posts, servers made, wrong
   off-codes.
+- **One person, one account**: a second provider joins an account only when
+  it says it verified the same address, and the account's own was verified;
+  no provider is taken at its word without that (Better Auth's
+  `trustedProviders` is empty).
 - **Passkeys** must verify the person (PIN or biometrics) when made and when
   used; the relying party is `APP_ORIGIN`'s host and its origin is checked;
   a counter that goes back is refused (SimpleWebAuthn); attestation is not
