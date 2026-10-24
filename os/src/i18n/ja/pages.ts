@@ -44,6 +44,7 @@ export default {
   'No repos yet': 'repo はまだありません',
   'Open {name}': '{name}を開く',
   'Close {name}': '{name}を閉じる',
+  'System': 'システム',
 
   // Forge: the reader
   'No files yet': 'ファイルはまだありません',

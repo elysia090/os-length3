@@ -1603,6 +1603,9 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 /* What the system is made of (/bin, /dev, /etc, /proc and what is in them) steps back, so /root and the repos in it
    are what the eye finds first; under the pointer or the keyboard a row is in ink again. */
 .tree-sys .tree-row:not(:hover, :focus-within, :has(> [aria-current='page'])) :is(.tree-name, .tree-toggle) { color: var(--sub); }
+/* The rest of / under one quiet row at the tree's foot, a step apart from the repos above it. */
+.tree-system { margin-top: var(--s2); }
+.tree-system > .tree-row > .tree-meta { color: var(--sub); }
 .tree-toggle, .tree-spacer { flex: none; width: var(--s5); height: var(--h-row); }
 .tree-toggle { display: grid; place-items: center; border: 0; background: transparent; color: inherit; cursor: pointer; }
 .tree-toggle .icon { width: var(--s3); height: var(--s3); transition: transform var(--motion); }

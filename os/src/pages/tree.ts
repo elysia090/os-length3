@@ -41,8 +41,9 @@ const OPEN_DELAY = 300;
 const LINGER_PASSED = 450;
 const LINGER = 1200;
 
-/** Open folders by absolute path, kept while the app runs. */
+/** Open folders by absolute path, kept while the app runs; System (the rest of /) by a name no path has. */
 const expandedPaths = new Set<string>(['/root']);
+const SYSTEM = '/:system';
 
 export interface FileTreeEvents {
   /** A repo or a path inside one was chosen; path '' is the repo itself. `file` when it is a file. */
@@ -252,13 +253,46 @@ export class FileTree {
     this.timer = window.setTimeout(() => (open ? this.open() : this.close()), after);
   }
 
-  /** Read the tree afresh each time it comes out, so new repos are there. */
+  /**
+   * Read the tree afresh each time it comes out, so new repos are there. On top, /root with the person's repos open
+   * in it; the rest of / (the kernel's, the distribution's, what is empty here), wanted now and then, put away under
+   * one quiet row at its foot, System, opened as a folder is and kept open once it is.
+   */
   private build(focus: boolean) {
     void list('/').then((top) => {
       this.root.replaceChildren();
-      for (const e of top) this.add(e, this.root, 0);
+      const rest = top.filter((e) => e.origin !== 'repos');
+      for (const e of top) if (e.origin === 'repos') this.add(e, this.root, 0);
+      if (rest.length) this.root.append(this.system(rest));
       if (focus) this.root.querySelector<HTMLElement>('.tree-name')?.focus();
     });
+  }
+
+  /** The rest of /, under System: a folder of its own that holds what / holds besides /root. */
+  private system(entries: SystemEntry[]): HTMLElement {
+    const label = t('System');
+    let open = expandedPaths.has(SYSTEM);
+    const toggle = h('button', {class: 'tree-toggle', type: 'button', tabindex: '-1'}, triangle()) as HTMLButtonElement;
+    const name = h('button', {class: 'tree-name', type: 'button'}, label);
+    const children = h('ul', {class: 'tree-children', role: 'group'});
+    for (const e of entries) this.add(e, children, 1);
+    const item = h('li', {role: 'treeitem', class: 'tree-dir tree-sys tree-system', 'aria-label': label},
+      h('div', {class: 'tree-row', style: '--depth:0'}, toggle, name, h('span', {class: 'tree-meta'}, entries.map((e) => e.name).slice(0, 3).join(' ') + ' …')),
+      children);
+    const show = (now: boolean) => {
+      open = now;
+      if (now) expandedPaths.add(SYSTEM); else expandedPaths.delete(SYSTEM);
+      toggle.setAttribute('aria-expanded', String(now));
+      toggle.setAttribute('aria-label', now ? t('Close {name}', {name: label}) : t('Open {name}', {name: label}));
+      item.setAttribute('aria-expanded', String(now));
+      if (now) { keepOut(children); const was = children.hidden; children.hidden = false; if (was) unfold(children); }
+      else putAway(children, () => { children.hidden = true; }, {fold: true});
+    };
+    toggle.addEventListener('click', () => show(!open));
+    name.addEventListener('click', () => show(!open));
+    this.folders.set(item, async () => show(true));
+    show(open);
+    return item;
   }
 
   /** A repo only on the Remote: its name, and where it is. */
