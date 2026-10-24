@@ -179,3 +179,18 @@ test('a page coming in never shows a part and then takes it away to bring it in'
   await app.rail.go('forge');
   expect(await forge).toEqual([]);
 });
+
+test('the Prompt\'s screen comes up out of the box and goes back into it over its whole length, as built', async ({app}) => {
+  await app.newRepo.make('hello');
+  await app.newRepo.openInForge();
+  // What the glass is doing, as long as each of its moves is: a build writes its lengths its own way (320ms as
+  // .32s), and every one must still be read as the length it is, not a fraction of a millisecond.
+  const lengths = () => app.page.evaluate(() => document.querySelector('.work.bench:not([hidden]) .screen > .glass')!
+    .getAnimations().map((a) => Number(a.effect!.getComputedTiming().duration)));
+  await app.page.keyboard.press('Control+Backquote');
+  expect(Math.max(0, ...await lengths())).toBeGreaterThanOrEqual(400);
+  await still(app);
+  await app.page.keyboard.press('Escape');
+  expect(Math.max(0, ...await lengths())).toBeGreaterThanOrEqual(300);
+  await still(app);
+});

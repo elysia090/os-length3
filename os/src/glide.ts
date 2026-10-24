@@ -22,6 +22,9 @@ export const pace = () => {
   if (!paceIs) paceIs = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pace')) || 0;
   return paceIs || 1;
 };
+/** A length of time as styles.css says it, in ms: '320ms' as written, or '.32s' as a build's minifier writes it. */
+export const msOf = (v: string): number => { const s = v.trim(), n = parseFloat(s); return s.endsWith('ms') ? n : s.endsWith('s') ? n * 1000 : n; };
+
 /** A move's length (or a delay in it) at the OS's pace. */
 export const paced = (ms: number) => ms * pace();
 /** `then`, once a move of `ms` (at the OS's pace) is over: timed on the moves' own clock, so it keeps with the move

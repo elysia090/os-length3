@@ -4,7 +4,7 @@ import {news, onNews} from '../news.ts';
 import {connection} from '../remote.ts';
 import {t} from '../i18n.ts';
 import {paneMark} from '../icons.ts';
-import {after, arrive, closeUp, LAND, paneOut, still} from '../glide.ts';
+import {after, arrive, closeUp, LAND, msOf, paneOut, still} from '../glide.ts';
 import {fieldMoved} from '../caret.ts';
 import {onPlugins, pluginsOpen, setPluginsOpen, slots} from '../plugins.ts';
 import {complete, pathWord, Recall} from '../recall.ts';
@@ -174,7 +174,7 @@ function clipOf(t: HTMLElement, screen: HTMLElement, [top, right, bottom, left, 
 function timing(way: 'up' | 'down'): {duration: number; line: number; first: string; then: string} {
   const cs = getComputedStyle(document.documentElement), v = (n: string) => cs.getPropertyValue(`--prompt-${n}`).trim();
   const [first, then] = way === 'up' ? [v('along'), v('rise')] : [v('sink'), v('back')];
-  return {duration: parseFloat(v(way)) || (way === 'up' ? 460 : 320), line: parseFloat(v(`${way}-line`)) || (way === 'up' ? .38 : .5),
+  return {duration: msOf(v(way)) || (way === 'up' ? 460 : 320), line: parseFloat(v(`${way}-line`)) || (way === 'up' ? .38 : .5),
     first: first || 'ease-out', then: then || 'ease-out'};
 }
 
