@@ -1802,18 +1802,7 @@ Under the issues, each its own section, shown only when it has something:
   a long one shows its first 30 lines with "n more lines" under them,
   pressed to show the rest, so a large change reads file by file and
   never as a wall. What is opened or shut by hand stays so while the page
-  is drawn again. The issue's Commit row shows its files the same way. What
-  waits on main can be the work of an issue instead: the card is taken in
-  hand (pressed and moved; a sheet in hand, paper with its edge in `ink`,
-  a step smaller over where it would go) and laid on the issue in full
-  above, of its repo, whose edge goes dashed and says Commit here; resting
-  on a neighbour's edge, the row goes there. Let go on it, the card goes
-  into the issue, sliding off sideways as it fades, its dashed room
-  closing, and the issue's edge gives a beat: what it held is committed in
-  the issue's work (started if it was not; an issue's own file stays
-  main's), main is as it was committed, and the issue goes on to Push.
-  Let go anywhere else, it goes back. From the keyboard, the card's To #n
-  (the issue in full above) does the same. Commit
+  is drawn again. The issue's Commit row shows its files the same way. Commit
   asks in the card for the line the commit goes by ("Fix：title"), as
   `l3 commit REPO "Fix：title"` takes it, Not now at the left and Commit
   under the pointer; Enter commits the one line, and the card's height goes
