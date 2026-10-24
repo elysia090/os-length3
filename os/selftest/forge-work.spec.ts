@@ -7,8 +7,11 @@ import {expect, test} from './fixtures.ts';
 // it was, every part of it is reached on a narrow window, and the plug opens
 // a plain plugin area. No Prompt is needed for any of it.
 
+// Each test opens the app on 'hello', made from C's files and left open in Forge: made once for the worker and kept
+// (fixtures.ts, helloC), as making it is new-repo.spec.ts's and file.spec.ts's to see.
+test.use({storageState: async ({helloC}, use) => { await use(helloC); }});
+
 test.beforeEach(async ({app}) => {
-  await app.newRepo.make('hello', {template: 'C'});
   await app.newRepo.openInForge();
 });
 
@@ -17,6 +20,8 @@ const state = (app: {forge: {editor(p: string): import('@playwright/test').Locat
   app.forge.editor(path).evaluate((el: HTMLTextAreaElement) => ({text: el.value, start: el.selectionStart, end: el.selectionEnd, direction: el.selectionDirection}));
 
 test('Tab moves the selected lines in, keeps them selected, and one Undo takes it back before and after it is saved', async ({app}) => {
+  // The page's clock is the test's from before anything is written here, so the pause that saves is passed, not waited out.
+  await app.page.clock.install();
   const editor = app.forge.editor('README.md');
   const cases: {name: string; text: string; start: number; end: number; direction?: 'backward'; after: string}[] = [
     {name: 'a caret', text: 'ab\ncd\n', start: 1, end: 1, after: 'a\tb\ncd\n'},
@@ -41,6 +46,7 @@ test('Tab moves the selected lines in, keeps them selected, and one Undo takes i
   await editor.fill('one\ntwo\n');
   await editor.evaluate((el: HTMLTextAreaElement) => { el.focus(); el.setSelectionRange(0, 7); });
   await editor.press('Tab');
+  await app.page.clock.runFor(700);
   await expect(app.forge.fileState('README.md')).toBeHidden();
   await editor.press('Control+z');
   expect(await state(app, 'README.md')).toMatchObject({text: 'one\ntwo\n', start: 0, end: 7});
@@ -73,6 +79,8 @@ test('a press on a line\'s number selects that line; below the text, the caret g
 });
 
 test('what was written is undone after going to Runtime and back, and to another repo and back; Redo writes it again', async ({app}) => {
+  // The page's clock is the test's from before anything is written here, so the pause that saves is passed, not waited out.
+  await app.page.clock.install();
   await app.newRepo.make('other');
   await app.rail.go('forge');
   const more = app.forge.band.getByRole('button', {name: /^Bring every repo out/});
@@ -85,6 +93,8 @@ test('what was written is undone after going to Runtime and back, and to another
   await app.page.keyboard.press('Control+End');
   // One edit, one Undo (typed key by key, each key is its own step, as it was before).
   await app.page.keyboard.insertText('typed here');
+  // A pause in writing saves it.
+  await app.page.clock.runFor(700);
   await expect(app.forge.fileState('README.md')).toBeHidden();
 
   await app.rail.go('runtime');
@@ -146,7 +156,7 @@ test('a file found by its name is opened to write in from the keyboard alone, an
 });
 
 test('the right pane put away gives the center the width and takes the search with it; brought back, both are where they were', async ({app}) => {
-  await app.file.named('hello', '', 'New folder', 'issue');
+  // issue/ is there from the start (the scaffold's).
   await app.file.named('hello', 'issue', 'New file', '001.md');
   await app.forge.editFile('issue/001.md', 'Fix: the first\n');
   await app.forge.show('Issue');
@@ -303,6 +313,8 @@ test('the current repo\'s pill shows which part has the keyboard, in ground over
 });
 
 test('the band\'s first button opens File at what is read now, with its menu out (issue #49)', async ({app}) => {
+  // What is read now: the Makefile, gone to from File (the page opens at its first file, the README).
+  await app.file.open('hello', 'Makefile');
   await app.rail.go('forge');
   const band = app.forge.band;
   // The files button first, ⊕ after the repos.
@@ -311,7 +323,7 @@ test('the band\'s first button opens File at what is read now, with its menu out
   await expect(buttons.last()).toHaveAccessibleName(/^Bring every repo out/);
   await buttons.first().click();
   await expect(app.file.tree).toBeVisible();
-  // The file read now (the first of the repo, opened with it), its row's menu out by it.
+  // The file read now, its row's menu out by it.
   const menu = app.page.getByRole('menu', {name: 'Makefile', exact: true});
   await expect(menu).toBeVisible();
   await expect(app.file.tree.getByRole('button', {name: 'Makefile', exact: true})).toBeVisible();
@@ -448,6 +460,8 @@ test('Home says where one left off: the line last written, not the top of a page
 });
 
 test('the prompt box stepped back while reading comes back when the pointer rests on its place, not as it crosses it', async ({app}) => {
+  // The page's clock is the test's, so the time it stays back once crossed (longer than a rest takes) is passed, not waited out.
+  await app.page.clock.install();
   await app.rail.go('forge');
   const dock = app.main.locator('.dock');
   const at = (await app.forge.promptBox.boundingBox())!;
@@ -458,7 +472,7 @@ test('the prompt box stepped back while reading comes back when the pointer rest
   // Crossed on the way to something low on the page, and away again: it stays back, not over what was to be pressed.
   await app.page.mouse.move(x, at.y + at.height / 2, {steps: 2});
   await app.page.mouse.move(x, at.y - 200, {steps: 2});
-  await app.page.waitForTimeout(400);
+  await app.page.clock.runFor(400);
   await expect(dock).toHaveClass(/\bresting\b/);
   // Rested on: it comes back.
   await app.page.mouse.move(x, at.y + at.height / 2);

@@ -4,7 +4,8 @@
 //   1. the app is built for a Remote on its own origin (VITE_LENGTH3_REMOTE=''),
 //      into selftest/.dist, unless that build is newer than every source;
 //   2. a fresh Remote (service/dev.ts) starts on a free port, its data in a
-//      new temporary directory: PGlite, blobs, mail.log, nothing kept;
+//      new temporary directory: PGlite, blobs, mail.log, nothing kept (off
+//      CI, its database a copy of an empty one made once, in selftest/.pg);
 //   3. `vite preview` serves the build on another free port and passes /api
 //      and /v1 to that Remote (LENGTH3_DEV_REMOTE), as `vite` does in development;
 //   4. beside them, the same again for a Remote with the plan (LENGTH3_PLAN=1:
@@ -28,7 +29,9 @@
 // (and a second, its people free until they pay, for the specs about paying).
 
 import {spawn, spawnSync, type ChildProcess} from 'node:child_process';
-import {createWriteStream, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
+import {createWriteStream, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync} from 'node:fs';
+import {cp} from 'node:fs/promises';
 import {createServer} from 'node:net';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -76,6 +79,63 @@ function build() {
     {cwd: OS, stdio: 'inherit', env: {...process.env, VITE_LENGTH3_REMOTE: ''}});
   if (r.status !== 0) throw new Error('selftest: the build failed');
   writeFileSync(STAMP, carries());
+}
+
+/** Where an empty Remote's database is kept between runs, made once for what it is made from (`emptyDatabase`). */
+const KEPT = join(OS, 'selftest', '.pg');
+
+/** Every file under `path`, walked in order, with its contents, into `hash`. */
+function hashTree(hash: ReturnType<typeof createHash>, path: string) {
+  if (!statSync(path).isDirectory()) { hash.update(path.slice(OS.length)).update(readFileSync(path)); return; }
+  for (const e of readdirSync(path).sort()) hashTree(hash, join(path, e));
+}
+
+/**
+ * An empty Remote's database (PGlite's directory, migrated), made the first time and kept in selftest/.pg, named by
+ * what makes it (PGlite's and drizzle's versions, the migrations): each Remote of a run starts from a copy of it. A
+ * cluster made anew (PGlite's initdb, in WebAssembly) and migrated was two thirds of a Remote's start, the same each
+ * time. What the Remote does with an empty database (the migrations it finds done, the sweep) it still does. Not on
+ * CI, where nothing is kept from one run to the next: there each Remote makes its own, the two at once, as before
+ * (one made first and copied would be the slower).
+ */
+async function emptyDatabase(): Promise<string> {
+  const migrations = join(OS, 'service', 'migrations');
+  const hash = createHash('sha256');
+  for (const pkg of ['@electric-sql/pglite', 'drizzle-orm']) hash.update(readFileSync(join(OS, 'node_modules', pkg, 'package.json')));
+  hashTree(hash, migrations);
+  const name = hash.digest('hex').slice(0, 16);
+  const kept = join(KEPT, name);
+  if (existsSync(kept)) return kept;
+  console.log('selftest: making an empty database for the Remotes to start from');
+  mkdirSync(KEPT, {recursive: true});
+  // Made beside where it is kept, then put there whole: a run that stops halfway leaves nothing taken for it.
+  const making = mkdtempSync(join(KEPT, 'making-'));
+  try {
+    const [{PGlite}, {drizzle}, {migrate}] = await Promise.all([import('@electric-sql/pglite'), import('drizzle-orm/pglite'), import('drizzle-orm/pglite/migrator')]);
+    const pg = new PGlite(join(making, 'pg'));
+    await migrate(drizzle(pg), {migrationsFolder: migrations});
+    await pg.close();
+    // Another run may have kept the same meanwhile: either is the same database.
+    try { renameSync(join(making, 'pg'), kept); } catch (e) { if (!existsSync(kept)) throw e; }
+  } finally {
+    rmSync(making, {recursive: true, force: true});
+  }
+  // What an earlier PGlite or migration made is not started from again.
+  for (const e of readdirSync(KEPT)) if (e !== name && !e.startsWith('making-')) rmSync(join(KEPT, e), {recursive: true, force: true});
+  return kept;
+}
+
+/**
+ * The directory `from` copied as `to`: by the system's cp, which copies a database's thousand small files four times
+ * as fast as node's copy does, or by node's where there is no cp.
+ */
+function copyDir(from: string, to: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let none = false;
+    const c = spawn('cp', ['-R', from, to], {stdio: 'ignore'});
+    c.once('error', () => { none = true; cp(from, to, {recursive: true}).then(resolve, reject); });
+    c.once('close', (code) => { if (!none) { if (code === 0) resolve(); else reject(new Error(`selftest: cp -R ${from} ${to} ended with ${code}`)); } });
+  });
 }
 
 /** Start `args` with node, its output in logs/<name>.log. */
@@ -148,6 +208,7 @@ export default async function globalSetup(_config: FullConfig) {
   mkdirSync(LOGS, {recursive: true});
   build();
   if (process.env.SELFTEST_REMOTE_KIND === 'worker') return worker();
+  const empty = process.env.CI ? null : await emptyDatabase();
   const data = mkdtempSync(join(tmpdir(), 'length3-selftest-'));
   const [remotePort, appPort, planRemotePort, planAppPort] = [await freePort(), await freePort(), await freePort(), await freePort()];
   const app = `http://localhost:${appPort}`, planApp = `http://localhost:${planAppPort}`;
@@ -160,8 +221,12 @@ export default async function globalSetup(_config: FullConfig) {
   // Stopped even when the run itself is cut short (Ctrl-C), not only by the teardown.
   const kill = () => { for (const c of children) if (c.exitCode === null) c.kill('SIGKILL'); };
   process.once('exit', kill);
-  /** A Remote (its data in `dir` under the run's) and the preview that passes to it, `name` naming their logs. */
-  const pair = (name: string, dir: string, rPort: number, aPort: number, env: NodeJS.ProcessEnv = {}) => {
+  /** A Remote (its data in `dir` under the run's; off CI, its database a copy of the empty one) and the preview that passes to it, `name` naming their logs. */
+  const pair = async (name: string, dir: string, rPort: number, aPort: number, env: NodeJS.ProcessEnv = {}) => {
+    if (empty) {
+      mkdirSync(join(data, dir));
+      await copyDir(empty, join(data, dir, 'pg'));
+    }
     const at = `http://localhost:${aPort}`;
     // The Remote's own name is localhost too, so the session it sets on sign-in is the app's.
     children.push(start(`remote${name}`, ['service/dev.ts', join(data, dir), String(rPort), at], {LENGTH3_DEV_BASE: `http://localhost:${rPort}`, ...env}));

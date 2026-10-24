@@ -11,15 +11,31 @@
 //   planApp     the app on the run's other Remote, the one with the plan (the
 //               free allowance, the tiers, and Stripe's stand-in in test mode:
 //               global-setup.ts), in a fresh browser, no one signed in
+//   helloC      (one for each worker) what a browser keeps once someone, no one
+//               signed in, has made 'hello' from C's files there and left it
+//               open in Forge: a spec that starts its tests from it
+//               (test.use({storageState: ({helloC}, use) => use(helloC)})) has
+//               each open the app on that repo in a fresh browser of its own,
+//               as on coming back to it, rather than making it again each time
 //
 // Nothing is read from outside the repository: no saved browser state, no
 // fixed port (global-setup.ts says where the app is).
 
 import {createHash} from 'node:crypto';
-import {test as base, expect, type Browser, type TestInfo} from '@playwright/test';
+import {test as base, expect, type Browser, type BrowserContextOptions, type TestInfo} from '@playwright/test';
 import {App} from './app.ts';
 export {handleOf} from './app.ts';
 import {BROWSER} from './paths.ts';
+
+/** What a browser keeps (its localStorage, and IndexedDB, where the repos are), as Playwright reads and restores it. */
+type Kept = Exclude<BrowserContextOptions['storageState'], string | undefined>;
+
+/** Where the run's app is (global-setup.ts). */
+function appURL(): string {
+  const url = process.env.SELFTEST_APP;
+  if (!url) throw new Error('SELFTEST_APP is not set: run the selftest with `npm run selftest` (global-setup.ts starts the app)');
+  return url;
+}
 
 /** A name for this test's people: deterministic for the test, new for each retry. */
 export function personName(info: TestInfo, who = 'Ada'): string {
@@ -46,12 +62,23 @@ async function opened(browser: Browser, url: string, address: string): Promise<{
   return {app, close: () => context.close()};
 }
 
-export const test = base.extend<{app: App; signedIn: App; another: (who: string) => Promise<App>; planApp: App}>({
+export const test = base.extend<{app: App; signedIn: App; another: (who: string) => Promise<App>; planApp: App}, {helloC: Kept}>({
   baseURL: async ({}, use) => {
-    const url = process.env.SELFTEST_APP;
-    if (!url) throw new Error('SELFTEST_APP is not set: run the selftest with `npm run selftest` (global-setup.ts starts the app)');
-    await use(url);
+    await use(appURL());
   },
+  helloC: [async ({browser}, use, info) => {
+    // Made through the app, as `app.newRepo.make` makes it, by a browser of its own that no test is.
+    const [a, b, c] = createHash('sha256').update(`hello in C, worker ${info.workerIndex}`).digest();
+    const o = await opened(browser, appURL(), `10.${a}.${b}.${c}`);
+    await o.app.newRepo.make('hello', {template: 'C'});
+    await o.app.newRepo.openInForge();
+    // What the last write sets going a moment after (Forge's note of where one is, which Home's Lately reads) has run
+    // before what is kept is read: a timer of the page's own, set after those, fires after them.
+    await o.app.page.evaluate(() => new Promise((done) => setTimeout(done, 300)));
+    const kept = await o.app.page.context().storageState({indexedDB: true});
+    await o.close();
+    await use(kept);
+  }, {scope: 'worker'}],
   app: async ({page}, use, info) => {
     // The run's Remote answers, or the failure says so (and where its log is) rather than timing out in a page.
     const remote = process.env.SELFTEST_REMOTE;
