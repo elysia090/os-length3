@@ -13,6 +13,7 @@ import {freeOff} from '../space.ts';
 import * as servers from '../servers.ts';
 import {answers, askFoot, pageHead, parts, SETTLE} from './common.ts';
 import type {Context} from './context.ts';
+import {keepOut, putAway} from '../glide.ts';
 
 /**
  * The repo to bring into view and light on Remote's Repos once they are drawn (openRepoPlace): kept a moment,
@@ -221,13 +222,13 @@ function passkeyNext(done: () => void, later: () => void): HTMLElement {
     if (list.length) { account.passkeyOfferDone(); return; }
     const no = button(t('Later')), add = button(t('Add a passkey'), 'primary');
     // Put off: gone from the top; the offer under the repos stays until there is a passkey.
-    no.addEventListener('click', () => { account.passkeyOfferDone(); box.hidden = true; later(); });
+    no.addEventListener('click', () => { account.passkeyOfferDone(); putAway(box, () => { box.hidden = true; }, {fold: true}); later(); });
     add.addEventListener('click', () => void pressing(add, error, async () => {
       await account.addPasskey();
       account.passkeyOfferDone();
       box.replaceChildren(h('p', {class: 'sign-in-step done', role: 'status'}, t('Passkey added')));
       // Said, then gone: the page is the repos again.
-      setTimeout(() => { box.hidden = true; }, 6000);
+      setTimeout(() => putAway(box, () => { box.hidden = true; }, {fold: true}), 6000);
       done();
     }));
     box.hidden = false;
@@ -391,7 +392,7 @@ function sharing(now: servers.RepoSeen, error: HTMLElement): HTMLElement {
     if (e instanceof KeyboardEvent ? e.key === 'Escape' : !holder.contains(e.target as Node)) { show(false); if (e instanceof KeyboardEvent) open.focus(); }
   };
   const show = (out: boolean) => {
-    list.hidden = !out;
+    if (out) { keepOut(list); list.hidden = false; } else putAway(list, () => { list.hidden = true; });
     open.setAttribute('aria-expanded', String(out));
     for (const k of ['pointerdown', 'keydown'] as const) (out ? document.addEventListener : document.removeEventListener).call(document, k, away);
   };
@@ -408,7 +409,7 @@ function sharing(now: servers.RepoSeen, error: HTMLElement): HTMLElement {
       h('div', {class: 'pop-head muted small'}, t('Shown in')), ...(rows.length ? rows : [h('p', {class: 'muted small pop-note'}, t('In no server yet'))])));
   };
   open.addEventListener('click', async (event) => {
-    if (!list.hidden) { show(false); return; }
+    if (open.getAttribute('aria-expanded') === 'true') { show(false); return; }
     show(true);
     await fill();
     // Opened from the keyboard, the keyboard goes in with it.

@@ -5,7 +5,7 @@ import {lineCount, readingOrder} from '../reading.ts';
 import {store, type Change, type Entry} from '../repos.ts';
 import {answers} from './common.ts';
 import {mark} from '../icons.ts';
-import {keep as goesTo} from '../glide.ts';
+import {keep as goesTo, keepOut, putAway} from '../glide.ts';
 import {connection} from '../remote.ts';
 import {diffFiles} from './diff-view.ts';
 import {counts, lineOps} from '../linediff.ts';
@@ -303,7 +303,17 @@ export class Reader {
     // Says something only when the file is not simply saved.
     const state = h('span', {class: 'file-state', role: 'status'});
     /** Written and not saved yet: a quiet dot where the word would be (said, not shown); saved, it goes. */
-    const unsaved = () => { if (!state.querySelector('.unsaved-dot')) state.replaceChildren(h('span', {class: 'unsaved-dot', 'aria-hidden': 'true'}), h('span', {class: 'sr-only'}, t('Unsaved'))); };
+    const unsaved = () => {
+      const dot = state.querySelector<HTMLElement>('.unsaved-dot');
+      // Written on again while it was going: it stays.
+      if (dot) { keepOut(dot); return; }
+      state.replaceChildren(h('span', {class: 'unsaved-dot', 'aria-hidden': 'true'}), h('span', {class: 'sr-only'}, t('Unsaved')));
+    };
+    /** Saved: the dot goes as it came, not at once. */
+    const saved = () => {
+      const dot = state.querySelector<HTMLElement>('.unsaved-dot');
+      if (dot) putAway(dot, () => { if (dot.isConnected) state.textContent = ''; }); else state.textContent = '';
+    };
     // The heading is the file's place in "/": the repo part quiet, the rest plain.
     const head = h('h2', {class: 'path'}, h('span', {}, h('span', {class: 'muted'}, `/root/${this.repo}/`), path), state);
     // Beside, in a box of its own: from its head's button, or Ctrl+click (⌘) on the head, as a link opens a tab.
@@ -385,10 +395,12 @@ export class Reader {
         const d = differs(held.theirs, area.value);
         difference.replaceChildren(...diffFiles([{path: t('Yours against the other'), status: 'modified', binary: false, lines: d.lines, more: d.more}]));
       };
-      const settle = () => { ask.remove(); difference.hidden = true; see.setAttribute('aria-expanded', 'false'); };
+      // Answered, the ask folds away over the text, not at once.
+      const settle = () => { putAway(ask, () => ask.remove(), {fold: true}); difference.hidden = true; see.setAttribute('aria-expanded', 'false'); };
       const asking = () => {
         clearTimeout(timer);
         state.textContent = t('Changed elsewhere');
+        keepOut(ask);
         if (!ask.isConnected) {
           ask.replaceChildren(
             h('p', {class: 'muted small'}, t('It was saved elsewhere while you wrote here.')),
@@ -429,7 +441,7 @@ export class Reader {
           const was = held.saved;
           await store.write(this.repo, path, text);
           held.wrote(text);
-          if (area.value === held.saved) state.textContent = ''; else unsaved();
+          if (area.value === held.saved) saved(); else unsaved();
           // Saved: what it changed goes from where it was written to where it is kept, this device's (Runtime) or the
           // Remote's once signed in.
           goesTo(head, connection() ? 'remote' : 'runtime', {...counts(lineOps(was, text)), at: document.activeElement === area ? caretRect(area) : null});
@@ -440,7 +452,7 @@ export class Reader {
       const save = async () => {
         clearTimeout(timer);
         if (!held.canSave) return;
-        if (area.value === held.saved) { state.textContent = ''; return; }
+        if (area.value === held.saved) { saved(); return; }
         await write(area.value);
       };
       area.addEventListener('input', () => {

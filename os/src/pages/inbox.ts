@@ -12,7 +12,7 @@ import {goToPlan, planRefused, planSaid, signInBox, signInPlace} from './remote.
 import {plan as readPlan} from '../plan.ts';
 import type {Context} from './context.ts';
 import {errorText} from '../errors.ts';
-import {arrive, LAND, nudge, paced, still, where} from '../glide.ts';
+import {arrive, keepOut, LAND, nudge, paced, putAway, still, where} from '../glide.ts';
 
 // Inbox: what comes to you, typed, from people found by address. Not a mail
 // screen: each message says what it is (a message, a review request, a
@@ -184,12 +184,12 @@ function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLE
     if (e instanceof KeyboardEvent && inside) gear.focus();
   };
   const toggle = (open: boolean) => {
-    panel.hidden = !open;
+    if (open) { keepOut(panel); panel.hidden = false; } else putAway(panel, () => { panel.hidden = true; });
     gear.setAttribute('aria-expanded', String(open));
     for (const k of ['pointerdown', 'keydown'] as const) (open ? document.addEventListener : document.removeEventListener).call(document, k, away);
     if (open) fill(); else looking?.stop();
   };
-  gear.addEventListener('click', () => toggle(panel.hidden !== false));
+  gear.addEventListener('click', () => toggle(gear.getAttribute('aria-expanded') !== 'true'));
   return holder;
 }
 

@@ -314,9 +314,10 @@ a { color: var(--ink); }
   position: absolute; left: calc(100% + var(--s3)); top: 50%; transform: translateY(-50%); z-index: 4;
   padding: 0 var(--s2); border-radius: var(--r-field); white-space: nowrap;
   background: var(--ink); color: var(--ground); font-size: var(--t-meta); line-height: 1.8;
-  opacity: 0; pointer-events: none; transition: opacity var(--motion);
+  opacity: 0; translate: -6px 0; pointer-events: none; transition: opacity var(--motion), translate var(--move) var(--land);
 }
-.rail-item:hover .rail-tag, .rail-item:focus-visible .rail-tag { opacity: 1; }
+/* Out from the place's edge as the pointer comes on it, and back into it as the pointer leaves: never gone at once. */
+.rail-item:hover .rail-tag, .rail-item:focus-visible .rail-tag { opacity: 1; translate: 0 0; }
 /* While File's tree is out, File is the one filled icon; the page's own
    icon steps back until the tree goes. */
 .rail-tabs:has(.rail-item[aria-expanded='true']) .rail-item[aria-current='page'] { background: transparent; color: var(--ink); }

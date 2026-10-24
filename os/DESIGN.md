@@ -123,6 +123,16 @@ Every value in `styles.css` comes from a token (§2).
     gliding back to the start of one the page empties (a message sent). A
     selection is the browser's own, as is the caret of a file too long to
     measure at every key.
+  - *What ends goes as it came, never at once.* A menu put away (Escape,
+    a press outside, the deed done) goes a few pixels back toward what
+    opened it, a touch smaller, fading, quicker than it came (150 ms of the
+    pace to its 280), inert on its way; a folder closed folds up and one
+    opened unfolds, what stands under it making way; an ask answered, an
+    offer put off, the issue being written put back with Not now fold or
+    fade away before what they stood over comes back; the paths Tab listed
+    under the box go as the next key is pressed; a file's unsaved dot goes
+    as it is saved; a place's name on the rail slides back into its edge as
+    the pointer leaves. Shown again on its way out, it stays where it is.
   - *What is about to come leans in.* The pointer on a box's edge in
     Forge's row, the row leans a step toward it before it is pressed;
     left, it settles back.

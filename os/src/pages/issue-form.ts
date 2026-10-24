@@ -5,6 +5,7 @@ import {store} from '../repos.ts';
 import {kindOf, named} from '../text.ts';
 import {answers} from './common.ts';
 import {errorText} from '../errors.ts';
+import {keepOut, putAway} from '../glide.ts';
 
 // Writing an issue: its first line named like a TODO item ("Fix：件名"),
 // the repo it goes in said quietly before it, then the detail. The repo is
@@ -84,12 +85,13 @@ export function issueForm(events: {done(made: {repo: string; file: string} | nul
     writing = null;
     retarget = () => {};
     typing = null;
-    element.hidden = true;
-    element.replaceChildren();
-    events.done(made, back);
+    const done = () => { element.hidden = true; element.replaceChildren(); events.done(made, back); };
+    // Put back with Not now, it goes as it came before the issues come back; made, it goes to its box (git.ts).
+    if (made) done(); else putAway(element, done);
   };
 
   const open = (repos: readonly string[], chosen: string, was: NonNullable<typeof writing> | null = null) => {
+    keepOut(element);
     let target = repos.includes(chosen) ? chosen : repos[0];
     const back = was?.back;
     // Where it goes, before the first line, in the words a card says its repo in.

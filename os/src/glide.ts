@@ -234,6 +234,53 @@ export function closeUp(els: Element[], by: number, ms = 220) {
   for (const el of els) el.animate([{translate: `0 ${by}px`}, {translate: '0 0'}], {duration: paced(ms), easing: LAND});
 }
 
+/** What is on its way out (putAway), so that shown again meanwhile it stays (keepOut), and whether it was inert. */
+const goingOut = new WeakMap<Element, {a: Animation; inert: boolean}>();
+
+/**
+ * Put away, as it came, never at once: a menu, an ask, a line under a box goes a few pixels back toward where it came
+ * from (its --from, as menu-in brings it), a touch smaller, fading, and only then is it hidden or taken away (`gone`).
+ * A folder closed (`fold`) folds up instead, what stands under it closing up as it does. Going out quicker than it
+ * came (150 ms of the pace to 280): what is done with leaves the eye. Already going, it is not started again. On its
+ * way it is inert: nothing in it is pressed or found (a menu going is no longer a menu).
+ */
+export function putAway(el: HTMLElement, gone: () => void, o: {fold?: boolean; ms?: number} = {}) {
+  if (goingOut.has(el)) return;
+  if (still() || el.hidden || !el.isConnected || !el.getClientRects().length) { gone(); return; }
+  const from = getComputedStyle(el).getPropertyValue('--from').trim() || '0 4px';
+  const frames: Keyframe[] = o.fold
+    ? [{height: `${el.getBoundingClientRect().height}px`, opacity: 1, overflow: 'hidden'}, {height: '0px', opacity: 0, overflow: 'hidden'}]
+    : [{opacity: 1, translate: '0 0', scale: 1}, {opacity: 0, translate: from, scale: .96}];
+  const a = el.animate(frames, {duration: paced(o.ms ?? 150), easing: o.fold ? 'cubic-bezier(.4, 0, .2, 1)' : 'cubic-bezier(.4, 0, 1, 1)', fill: 'forwards'});
+  const going = {a, inert: el.inert};
+  goingOut.set(el, going);
+  el.inert = true;
+  a.finished.then(() => {
+    if (goingOut.get(el) !== going) return;
+    goingOut.delete(el);
+    el.inert = going.inert;
+    gone();
+    a.cancel();
+  }, () => {});
+}
+
+/** Opened (a folder), it unfolds as a closed one folds: from nothing to its height, what stands under it making way. */
+export function unfold(el: HTMLElement, ms = 200) {
+  if (still()) return;
+  const height = el.getBoundingClientRect().height;
+  if (!height) return;
+  el.animate([{height: '0px', opacity: 0, overflow: 'hidden'}, {height: `${height}px`, opacity: 1, overflow: 'hidden'}], {duration: paced(ms), easing: LAND});
+}
+
+/** Shown again while it was going out: it stays, as it was. */
+export function keepOut(el: HTMLElement) {
+  const going = goingOut.get(el);
+  if (!going) return;
+  goingOut.delete(el);
+  el.inert = going.inert;
+  going.a.cancel();
+}
+
 /** A thing just done is rewarded: it pops past its size and settles (a TODO's mark once done). */
 export function pop(el: Element, by = .16, ms = 380) {
   if (still()) return;

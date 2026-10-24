@@ -4,7 +4,7 @@ import {news, onNews} from '../news.ts';
 import {connection} from '../remote.ts';
 import {t} from '../i18n.ts';
 import {paneMark} from '../icons.ts';
-import {after, arrive, closeUp, keep as goesTo, LAND, msOf, paced, paneOut, still} from '../glide.ts';
+import {after, arrive, closeUp, keep as goesTo, keepOut, LAND, msOf, paced, paneOut, putAway, still} from '../glide.ts';
 import {caretRect, fieldMoved} from '../caret.ts';
 import {errorText} from '../errors.ts';
 import {onPlugins, pluginsOpen, setPluginsOpen, slots} from '../plugins.ts';
@@ -456,7 +456,14 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   const keep = () => { if (repo) { if (prompt.value) drafts.set(draft(), prompt.value); else drafts.delete(draft()); } };
   /** What Tab last said under the box, which goes as soon as anything else is done there. */
   let choices = false;
-  const unsay = () => { if (choices) { choices = false; note.textContent = ''; note.classList.remove('paths'); } };
+  const unsay = () => {
+    if (!choices) return;
+    choices = false;
+    // The choices go as the next key is pressed, not at once: put away as they came.
+    putAway(note, () => { note.textContent = ''; note.classList.remove('paths'); });
+  };
+  /** Said under the box, at once (what was going out from there stays, saying this). */
+  const say = (text: string) => { keepOut(note); note.classList.remove('paths'); note.textContent = text; };
   /** `text` in the box as if written there, the caret at its end. */
   const put = (text: string) => {
     prompt.value = text;
@@ -512,8 +519,8 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
       }
       if (c.choices.length) {
         choices = true;
+        say(c.choices.slice(0, CHOICES).join('  ') + (c.choices.length > CHOICES ? '  …' : ''));
         note.classList.add('paths');
-        note.textContent = c.choices.slice(0, CHOICES).join('  ') + (c.choices.length > CHOICES ? '  …' : '');
       }
       else unsay();
       return true;
@@ -564,7 +571,10 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   form.addEventListener('submit', (event) => { event.preventDefault(); send(); prompt.focus(); });
   // Pressed anywhere in the box, not on its line alone (its padding, beside Run): the caret goes in.
   // The pill pressed at rest brings out what the box can do; up as the screen's prompt line, it is the line's start.
-  const menu = modeMenu(chip, {repo: () => repo, chosen: (m) => { choose(m); prompt.focus(); }, closed: () => prompt.focus()});
+  // Put away with Escape, the keyboard goes back to the box if it was there (the Prompt not brought up for it), else
+  // nowhere.
+  const menu = modeMenu(chip, {repo: () => repo, chosen: (m) => { choose(m); prompt.focus(); },
+    closed: (before) => { if (before === prompt) prompt.focus(); else (document.activeElement as HTMLElement | null)?.blur(); }});
   dock.append(menu.element);
   chip.addEventListener('click', () => { if (!prompting && !prompt.disabled) menu.open(); });
   form.addEventListener('pointerdown', (event) => {
@@ -579,10 +589,10 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     if (mode !== 'run') { void write(mode, repo); return; }
     const s = sessionIfAny(repo);
     // Ended: started again, and what was written waits in the box to be sent once it is up.
-    if (s?.ended) { s.restart(); following(); note.textContent = t('Still starting'); return; }
-    if (!sessionFor(repo).send(prompt.value)) { note.textContent = t('Still starting'); return; }
+    if (s?.ended) { s.restart(); following(); say(t('Still starting')); return; }
+    if (!sessionFor(repo).send(prompt.value)) { say(t('Still starting')); return; }
     unsay();
-    note.textContent = '';
+    say('');
     prompt.value = '';
     drafts.delete(draft());
     walk.reset();
@@ -595,12 +605,12 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     const from = caretRect(prompt), off = as === 'issue' ? sendOff(prompt) : null;
     try {
       const sent = await sendAs(as, at, text);
-      if (!sent) { note.textContent = t('Its first line is its title'); return; }
+      if (!sent) { say(t('Its first line is its title')); return; }
       if (prompt.value === text) { off?.(); prompt.value = ''; drafts.delete(draft()); fit(); }
       heard.textContent = sent.said;
       if (sent.to) goesTo(form, sent.to, {label: sent.label, at: from});
       pillSays();
-    } catch (e) { note.textContent = errorText(e); }
+    } catch (e) { say(errorText(e)); }
   };
   /** What the box does now (box-modes.ts). */
   let mode: Mode = boxMode();
@@ -638,7 +648,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
       prompt.value = repo ? drafts.get(draft()) ?? '' : '';
       fit();
       unsay();
-      note.textContent = heard.textContent = '';
+      say(''); heard.textContent = '';
     };
     if (seen && work.isConnected && !prompting) turn(chip, runIt, change); else change();
     setBoxMode(m);
@@ -717,7 +727,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     prompt.value = name ? drafts.get(draft()) ?? '' : '';
     pillSays();
     unsay();
-    note.textContent = '';
+    say('');
     walk.reset();
     room();
     requestAnimationFrame(fit);

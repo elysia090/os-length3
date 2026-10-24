@@ -3,6 +3,7 @@ import {errorText} from '../errors.ts';
 import {t} from '../i18n.ts';
 import {mark} from '../icons.ts';
 import {askFoot, SETTLE} from './common.ts';
+import {keepOut, putAway} from '../glide.ts';
 
 // A repo's gear, the same in every list of repos (Home's cards, Runtime's
 // three columns): near a repo (the pointer on it, or the keyboard in it) a
@@ -52,7 +53,7 @@ export function repoGear(repo: string, w: GearWays): {gear: HTMLButtonElement; l
   };
   const show = (on: boolean) => {
     if (on) { open?.(); open = () => show(false); } else if (open) open = null;
-    list.hidden = !on;
+    if (on) { keepOut(list); list.hidden = false; } else putAway(list, () => { list.hidden = true; });
     gear.setAttribute('aria-expanded', String(on));
     for (const k of ['pointerdown', 'keydown'] as const) (on ? document.addEventListener : document.removeEventListener).call(document, k, away, true);
     if (on) fill();
@@ -94,7 +95,7 @@ export function repoGear(repo: string, w: GearWays): {gear: HTMLButtonElement; l
     });
   };
 
-  gear.addEventListener('click', (e) => { e.stopPropagation(); show(list.hidden !== false); });
+  gear.addEventListener('click', (e) => { e.stopPropagation(); show(gear.getAttribute('aria-expanded') !== 'true'); });
   // Inside a card that is pressed as a whole, the gear and its list are the gear's own.
   list.addEventListener('click', (e) => e.stopPropagation());
   return {gear, list};

@@ -1,6 +1,6 @@
 import {h} from '../dom.ts';
 import {t} from '../i18n.ts';
-import {paced, still} from '../glide.ts';
+import {keepOut, paced, putAway, still} from '../glide.ts';
 import {onChange, store} from '../repos.ts';
 import {nextIssueName, numberOf, writeIssue} from '../issues.ts';
 import * as todo from '../todo.ts';
@@ -91,19 +91,20 @@ export async function sendAs(m: Exclude<Mode, 'run'>, repo: string, text: string
 
 /**
  * The three, out of the pill (`chip`) when it is pressed: each with the pill it gives, its word and its keys, the
- * one in use ticked. Chosen, `chosen` hears it; put away (Escape, a press outside, Tab), `closed` does.
+ * one in use ticked. Chosen, `chosen` hears it; put away with Escape, `closed` does, with what had the keyboard.
  */
-export function modeMenu(chip: HTMLElement, o: {repo: () => string | null; chosen(m: Mode): void; closed(): void}) {
+export function modeMenu(chip: HTMLElement, o: {repo: () => string | null; chosen(m: Mode): void; closed(before: Element | null): void}) {
   const pop = h('div', {class: 'pop box-modes', role: 'menu', 'aria-label': t('What the box does'), hidden: ''});
   let items: HTMLButtonElement[] = [];
+  /** What had the keyboard before they came out: Escape gives it back (a press elsewhere, or Tab, takes it on). */
+  let before: Element | null = null;
   const away = (e: Event) => {
     if (e instanceof KeyboardEvent ? e.key !== 'Escape' && e.key !== 'Tab' : pop.contains(e.target as Node) || chip.contains(e.target as Node)) return;
-    if (e instanceof KeyboardEvent) e.preventDefault();
     show(false);
-    o.closed();
+    if (e instanceof KeyboardEvent && e.key === 'Escape') { e.preventDefault(); o.closed(before); }
   };
   const show = (on: boolean) => {
-    pop.hidden = !on;
+    if (on) { keepOut(pop); pop.hidden = false; } else putAway(pop, () => { pop.hidden = true; });
     chip.setAttribute('aria-expanded', String(on));
     for (const k of ['pointerdown', 'keydown'] as const) (on ? document.addEventListener : document.removeEventListener).call(document, k, away, true);
   };
@@ -115,6 +116,7 @@ export function modeMenu(chip: HTMLElement, o: {repo: () => string | null; chose
     items[(at + step + items.length) % items.length]?.focus();
   });
   const open = () => {
+    before = document.activeElement;
     const repo = o.repo();
     const n = repo ? nextIssue(repo) : null;
     items = MODES.map((m, i) => {
@@ -186,8 +188,8 @@ export function sendOff(field: HTMLTextAreaElement): () => void {
   words.scrollTop = field.scrollTop;
   return () => {
     document.body.append(words);
-    words.animate([{translate: '0 0', opacity: 1, easing: 'cubic-bezier(.2, .9, .25, 1)'},
-      {translate: '56px 0', opacity: 1, offset: .48, easing: 'cubic-bezier(.5, 0, .9, .45)'}, {translate: '60px -34px', opacity: 0}],
-    {duration: paced(440)}).finished.then(() => words.remove(), () => words.remove());
+    words.animate([{translate: '0 0', opacity: 1, easing: 'cubic-bezier(.3, .7, .3, 1)'},
+      {translate: '76px 0', opacity: 1, offset: .4, easing: 'cubic-bezier(.55, 0, .85, .35)'}, {translate: '82px -38px', opacity: 0}],
+    {duration: paced(400)}).finished.then(() => words.remove(), () => words.remove());
   };
 }

@@ -1,5 +1,5 @@
 import {bytes, h} from '../dom.ts';
-import {closeUp, nudge} from '../glide.ts';
+import {closeUp, keepOut, nudge, putAway, unfold} from '../glide.ts';
 import {t} from '../i18n.ts';
 import {mark} from '../icons.ts';
 import {bring, remoteOnly} from '../lifecycle.ts';
@@ -343,7 +343,9 @@ export class FileTree {
       toggle.setAttribute('aria-expanded', String(now));
       toggle.setAttribute('aria-label', now ? t('Close {name}', {name: e.name}) : t('Open {name}', {name: e.name}));
       item.setAttribute('aria-expanded', String(now));
-      children.hidden = !now;
+      // Opened it unfolds, closed it folds up, what stands under it making way either way.
+      if (now) { keepOut(children); const was = children.hidden; children.hidden = false; if (was) unfold(children); }
+      else putAway(children, () => { children.hidden = true; }, {fold: true});
       return now ? fill() : Promise.resolve();
     };
     this.folders.set(item, () => show(true));
@@ -379,7 +381,8 @@ export class FileTree {
   private unpop() {
     if (!this.pop) return;
     this.pop.more.setAttribute('aria-expanded', 'false');
-    this.pop.element.remove();
+    const gone = this.pop.element;
+    putAway(gone, () => gone.remove());
     this.pop = null;
     this.letGo();
   }
