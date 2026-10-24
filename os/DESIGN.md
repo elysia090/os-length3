@@ -133,8 +133,8 @@ Every value in `styles.css` comes from a token (§2).
     kept on this device, to Remote once the Remote keeps it, landing as a dot;
     the icon takes it in with a pop and a ring going out from it: the deed's
     second beat, the eye led back to the rail. Saved again while one is on
-    its way, it carries that too, one chip at a time. An issue or a TODO
-    sent from the box at the foot carries its own words, to Git or Home.
+    its way, it carries that too, one chip at a time. A TODO sent from the
+    box at the foot carries its own words to Home.
   - *What is done is rewarded, once.* A TODO done: its mark pops past its
     size and settles. A TODO's kind, read off its line as it is typed
     (Fix:), takes its form with a small pop; a new TODO unfolds from the
@@ -1466,10 +1466,13 @@ words going up out of it as the new come up into it, its colours crossing,
 with a small beat as it lands; the box's own button says the deed (Run,
 Create, Add) and the empty box where it goes. Only Run brings the screen up.
 An issue or a TODO is written as everywhere, its first line Kind: title and
-the lines under it its detail; sent, the box empties, a quiet line under it
-says where it went (Written as #4 in garden), and the words go in an arc from
-where they were written to their place on the rail, Git or Home. What is half
-written is kept for the repo and for what the box does.
+the lines under it its detail; sent, the box empties and where it went is said
+to be heard (Written as #4 in garden). An issue is a file of the repo, which
+comes in among the repo's own where it is worked on: its words slide on to the
+right and rise out of sight, and the pill's number turns to the next as a
+counter's figure does; a TODO, seen nowhere there, goes in an
+arc from where it was written to Home on the rail. What is half written is kept
+for the repo and for what the box does.
 The box knows the repo's earlier lines, as a terminal does: ↑ with the
 caret on its first line goes back one line run in the repo's Prompt, ↓ on
 its last line forward again, down to what was being written (so a line of

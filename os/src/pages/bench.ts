@@ -14,7 +14,7 @@ import {Reference} from './reference.ts';
 import {kindWords} from './todo-box.ts';
 import type {Writing} from './reader.ts';
 import {sessionFor, sessionIfAny, terminalFor} from './terminal.ts';
-import {boxMode, modeHint, modeMenu, MODES, nextIssue, onBoxMode, pillWords, sendAs, sendTitle, sendWord, setBoxMode, turn, type Mode} from './box-modes.ts';
+import {boxMode, modeHint, modeMenu, MODES, nextIssue, onBoxMode, pillWords, sendAs, sendOff, sendTitle, sendWord, setBoxMode, turn, type Mode} from './box-modes.ts';
 
 // The workbench Forge and Git share: the page's own content in the large
 // center (3/4) with a prompt box at its foot, and a narrow right pane (1/4)
@@ -592,13 +592,13 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   /** An issue or a TODO written in the box: made, the box emptied, and what was written goes where it lives. */
   const write = async (as: Exclude<Mode, 'run'>, at: string) => {
     const text = prompt.value;
-    const from = caretRect(prompt);
+    const from = caretRect(prompt), off = as === 'issue' ? sendOff(prompt) : null;
     try {
       const sent = await sendAs(as, at, text);
       if (!sent) { note.textContent = t('Its first line is its title'); return; }
-      if (prompt.value === text) { prompt.value = ''; drafts.delete(draft()); fit(); }
+      if (prompt.value === text) { off?.(); prompt.value = ''; drafts.delete(draft()); fit(); }
       heard.textContent = sent.said;
-      goesTo(form, sent.to, {label: sent.label, at: from});
+      if (sent.to) goesTo(form, sent.to, {label: sent.label, at: from});
       pillSays();
     } catch (e) { note.textContent = errorText(e); }
   };
@@ -612,8 +612,18 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     runIt.textContent = sendWord(mode);
     runIt.title = sendTitle(mode, keys);
     const n = mode === 'issue' && repo ? nextIssue(repo) : null;
+    if (n instanceof Promise) {
+      void n.then(() => { if (mode === 'issue') pillSays(); });
+      // Read again (its issues changed): it keeps saying the number it said until the new one is read, never none.
+      if (modeWords.dataset.for === `${mode}\n${repo}`) return;
+    }
+    const was = modeWords.querySelector('b')?.textContent;
     modeWords.replaceChildren(...pillWords(mode, repo, typeof n === 'number' ? n : null));
-    if (n instanceof Promise) void n.then(() => { if (mode === 'issue') pillSays(); });
+    modeWords.dataset.for = `${mode}\n${repo}`;
+    // An issue written, the next number comes up into the pill as a counter's figure turns.
+    const b = modeWords.querySelector('b');
+    if (mode === 'issue' && b && was && was !== '#' && b.textContent !== was && !still())
+      b.animate([{translate: '0 11px', opacity: 0}, {translate: '0 0', opacity: 1}], {duration: paced(260), easing: LAND});
   };
   /** The box made to do `m`: its pill turns to it, and what was half written for it comes back. */
   const choose = (m: Mode, seen = true) => {

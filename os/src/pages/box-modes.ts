@@ -12,8 +12,10 @@ import {mark as todoMark} from './todo-box.ts';
 // it runs it in the repo's Prompt (the pill the prompt line the shell waits at, `garden $`), writes it as the repo's
 // next issue (the pill that issue's number, `garden #4`), or puts it in Home's TODO (the pill TODO's circle). The
 // pill pressed, or Alt+↓ in the box, brings the three out of it; Alt+1, 2 and 3 in the box choose one at once. Written
-// for an issue or a TODO, the first line is its Kind: title as everywhere, the lines under it its detail; sent, it
-// goes where it lives, in an arc to its place on the rail (glide.ts keep).
+// for an issue or a TODO, the first line is its Kind: title as everywhere, the lines under it its detail. Sent, an
+// issue is a file of the repo, which comes in among the repo's own where it is worked on: its words slide on to the
+// right and rise out of sight, and the pill's number turns to the next; a TODO, seen nowhere here, goes in an arc to
+// Home on the rail (glide.ts keep).
 
 export type Mode = 'run' | 'issue' | 'todo';
 export const MODES: readonly Mode[] = ['run', 'issue', 'todo'];
@@ -63,8 +65,8 @@ export function pillWords(m: Mode, repo: string | null, number: number | null): 
   return [];
 }
 
-/** Where what was sent went: its place on the rail, the words it carries there, and what is said of it to be heard. */
-export interface Sent { to: string; label: Node[]; said: string }
+/** Where what was sent went: its place on the rail if it goes there, the words it carries, what is said of it to be heard. */
+export interface Sent { to: string | null; label: Node[]; said: string }
 
 /** Write `text` from the box as `m` (an issue of `repo`, or a TODO about it); null when there is nothing to send. */
 export async function sendAs(m: Exclude<Mode, 'run'>, repo: string, text: string): Promise<Sent | null> {
@@ -75,9 +77,10 @@ export async function sendAs(m: Exclude<Mode, 'run'>, repo: string, text: string
   const words = (head: string) => [h('b', {}, head), document.createTextNode(` ${title.trim()}`)];
   if (m === 'issue') {
     const file = await writeIssue(store, repo, kind, title.trim(), detail);
-    nextOf.delete(repo);
-    const issue = `#${numberOf(file) ?? ''}`;
-    return {to: 'git', label: words(issue), said: t('Written as {issue} in {name}', {issue, name: repo})};
+    const n = numberOf(file);
+    if (n !== null) nextOf.set(repo, n + 1);
+    const issue = `#${n ?? ''}`;
+    return {to: null, label: words(issue), said: t('Written as {issue} in {name}', {issue, name: repo})};
   }
   let list = todo.add(todo.parse(getState('todo')), first, repo);
   const made = list.at(-1);
@@ -167,4 +170,24 @@ export function turn(chip: HTMLElement, button: HTMLElement, change: () => void)
   }
   chip.animate([{scale: '1 1'}, {scale: '.96 .9', offset: .3}, {scale: '1.03 1.04', offset: .65}, {scale: '1 1'}], {duration: paced(300), easing: 'ease-out'});
   button.animate([{opacity: 0, translate: '0 5px'}, {opacity: 1, translate: '0 0'}], {duration: ms, easing: 'cubic-bezier(.2, .9, .25, 1)'});
+}
+
+/**
+ * What was written in `field`, sent where it does not go to the rail (an issue: it comes in among the repo's files):
+ * its words slide on to the right, then rise out of sight, as a sheet slid off and taken. Taken as they stand now;
+ * the returned call puts them over the box as it is emptied, and sends them.
+ */
+export function sendOff(field: HTMLTextAreaElement): () => void {
+  if (still() || !field.value.trim()) return () => {};
+  const r = field.getBoundingClientRect(), cs = getComputedStyle(field);
+  const words = h('div', {class: 'sent-off', 'aria-hidden': 'true'}, field.value);
+  Object.assign(words.style, {left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px`, font: cs.font,
+    letterSpacing: cs.letterSpacing, padding: cs.padding, color: cs.color});
+  words.scrollTop = field.scrollTop;
+  return () => {
+    document.body.append(words);
+    words.animate([{translate: '0 0', opacity: 1, easing: 'cubic-bezier(.2, .9, .25, 1)'},
+      {translate: '56px 0', opacity: 1, offset: .48, easing: 'cubic-bezier(.5, 0, .9, .45)'}, {translate: '60px -34px', opacity: 0}],
+    {duration: paced(440)}).finished.then(() => words.remove(), () => words.remove());
+  };
 }

@@ -1093,6 +1093,8 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 /* The old words going up out of the pill as it turns. */
 .prompt-ghost { position: absolute; inset: 0; display: flex; align-items: center; gap: var(--s2); white-space: pre; pointer-events: none; }
 .prompt-ghost > .lamp { position: absolute; }
+/* An issue's words sent from the box, sliding off it to the right and rising out of sight (box-modes.ts sendOff). */
+.sent-off { position: fixed; z-index: 9; box-sizing: border-box; margin: 0; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; pointer-events: none; }
 /* The three, out of the pill: each with the pill it gives, its word, its keys. */
 .box-modes { position: fixed; z-index: 7; min-width: 280px; --from: 0 6px; transform-origin: left bottom; animation: menu-in calc(280ms * var(--pace)) var(--pop-in) both; }
 @media (prefers-reduced-motion: reduce) { .box-modes { animation: none; } }

@@ -358,7 +358,7 @@ const carried = (chip: HTMLElement, added: number, removed: number, label?: Node
  * written (`at`, the caret; else `from`'s end) as a small chip, waits a beat, and goes in an arc to that place's icon
  * on the rail, a short trail behind it as it gathers speed, coming down onto the icon as a dot; the icon takes it in
  * with a pop and a ring going out from it. Saved again from the same place while one is on its way, it carries that
- * too. What was made whole (an issue, a TODO, from the box at the foot) carries its own words (`label`) instead.
+ * too. What was made whole (a TODO, from the box at the foot) carries its own words (`label`) instead.
  * The second beat of the deed, a moment after it, leading the eye back to the rail.
  */
 export function keep(from: Element, to: string, o: {added?: number; removed?: number; label?: Node[]; at?: DOMRect | null} = {}) {
