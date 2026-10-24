@@ -229,7 +229,12 @@ Every value in `styles.css` comes from a token (§2).
   each thing is where it ends at once.
 - No shadows, blur, glow or gradients; the one shade is the search's (above). The one exception is a
   place, not an emphasis: the Prompt up as a screen (§ Forge), a terminal's, which has them all and
-  shares them with nothing.
+  shares them with nothing. The pointer, standing over the window rather than in it, has the one small
+  soft shadow it needs to be seen there.
+- **The OS's own pointers.** Arrow, hand, I-beam, grab and grabbing, copy, wait, not allowed and the
+  resizers, drawn as the window is: `ink`, a `paper` edge round it with round joins, that small shadow
+  under it; sharp at 1x, 4/3 and 2x. Where nothing is to be pressed or written it is the arrow, over
+  read-only text too, as a desktop's is; the film draws these same pictures.
 - **One scrollbar.** Everything that scrolls, the page with it, has the
   same bar: thin, its thumb `edge` (a thing one drags), its track the
   ground under it, never the browser's own; forced colours draw the

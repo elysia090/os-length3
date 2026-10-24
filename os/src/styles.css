@@ -1,7 +1,9 @@
 /* Tokens and components from DESIGN.md §3. Every value below comes from a
    token; nothing is set by eye in one place only. Six colours, 1px lines,
    no shadows, blur, glow or gradients, but in the one place that is a thing of
-   its own: the Prompt up as a screen, a terminal's (its glass and light below). */
+   its own: the Prompt up as a screen, a terminal's (its glass and light below).
+   The pointer, standing over the window rather than in it, has the small soft
+   shadow a pointer has (--cursor-*). */
 :root {
   --ground: #dadad5;
   --ink: #292b2a;
@@ -82,6 +84,40 @@
   /* Rail: 12px from the window's side to the icons, 18px from the icons to its line. */
   --rail-line-gap: 18px;
   --rail: calc(var(--s3) + var(--h-place) + var(--rail-line-gap));
+  /* The OS's own pointers, drawn as the window is: ink, a paper edge round it with its joins round, and under it a
+     soft small shadow, the one a pointer has as it stands over the window rather than in it. Each is a 27 px SVG
+     (under 32, which no browser turns away), its hotspot (the arrow's tip, the finger's, the I-beam's middle), and
+     the keyword it stands for, there if the picture is not. Chromium draws an SVG pointer at the screen's own
+     scale, so with their straight edges on whole pixels these are sharp at 1x and 2x, and 4/3 has a drawing of its
+     own (below); WebKit draws it at 1x and enlarges it, a little soft on a 2x screen but its size. Not
+     image-set(): Chromium draws its choice soft, and WebKit at twice the size. The film draws these same
+     pictures. */
+  --cursor-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='27' height='27'%3E%3Cdefs%3E%3Cg id='b'%3E%3Cpath d='M13.64 13.41L3.2 3.2Q3 3 3 3.28L3 17.9Q3 18.7 3.59 18.16L6.35 15.62Q6.75 15.25 6.97 15.75L8.98 20.23Q9.35 21.05 10.17 20.69L10.93 20.36Q11.75 20 11.4 19.17L9.44 14.46Q9.25 14 9.75 14L13.4 14Q14.25 14 13.64 13.41Z'/%3E%3C/g%3E%3Cfilter id='s' x='-1' y='-1' width='3' height='3'%3E%3CfeDropShadow dx='0' dy='.75' stdDeviation='.85' flood-color='%23292b2a' flood-opacity='.32'/%3E%3C/filter%3E%3C/defs%3E%3Cg filter='url(%23s)'%3E%3Cg fill='%23f8f8f5' stroke='%23f8f8f5' stroke-width='2' stroke-linejoin='round' stroke-linecap='round'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3Cg fill='%23292b2a'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E") 3 3, default;
+  --cursor-hand: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='27' height='27'%3E%3Cdefs%3E%3Cg id='b'%3E%3Cpath d='M10 3C11.1 3 12 3.9 12 5L12 12.5C12 13.6 11.1 14.5 10 14.5C8.9 14.5 8 13.6 8 12.5L8 5C8 3.9 8.9 3 10 3Z'/%3E%3Cpath d='M13.5 8C14.33 8 15 8.67 15 9.5L15 13.5C15 14.33 14.33 15 13.5 15C12.67 15 12 14.33 12 13.5L12 9.5C12 8.67 12.67 8 13.5 8Z'/%3E%3Cpath d='M16.45 9L16.55 9C17.35 9 18 9.65 18 10.45L18 14.05C18 14.85 17.35 15.5 16.55 15.5L16.45 15.5C15.65 15.5 15 14.85 15 14.05L15 10.45C15 9.65 15.65 9 16.45 9Z'/%3E%3Cpath d='M19 11C19.55 11 20 11.45 20 12L20 15C20 15.55 19.55 16 19 16C18.45 16 18 15.55 18 15L18 12C18 11.45 18.45 11 19 11Z'/%3E%3Cpath d='M10.6 11.5L16.4 11.5C18.39 11.5 20 13.11 20 15.1L20 18.4C20 20.39 18.39 22 16.4 22L10.6 22C8.61 22 7 20.39 7 18.4L7 15.1C7 13.11 8.61 11.5 10.6 11.5Z'/%3E%3Cpath d='M5.93 11.3L8.61 13.4C9.32 13.96 9.45 14.99 8.89 15.71C8.33 16.43 7.29 16.56 6.57 16L3.89 13.9C3.18 13.34 3.05 12.31 3.61 11.59C4.17 10.87 5.21 10.74 5.93 11.3Z'/%3E%3C/g%3E%3Cfilter id='s' x='-1' y='-1' width='3' height='3'%3E%3CfeDropShadow dx='0' dy='.75' stdDeviation='.85' flood-color='%23292b2a' flood-opacity='.32'/%3E%3C/filter%3E%3C/defs%3E%3Cg filter='url(%23s)'%3E%3Cg fill='%23f8f8f5' stroke='%23f8f8f5' stroke-width='2' stroke-linejoin='round' stroke-linecap='round'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3Cg fill='%23292b2a'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3Cpath d='M11.5 9V12.6M14.5 11V12.9M17.5 12V13.6' fill='none' stroke='%23f8f8f5' stroke-width='1' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E") 10 3, pointer;
+  --cursor-text: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='27' height='27'%3E%3Cdefs%3E%3Cfilter id='s' x='-1' y='-1' width='3' height='3'%3E%3CfeDropShadow dx='0' dy='.75' stdDeviation='.85' flood-color='%23292b2a' flood-opacity='.32'/%3E%3C/filter%3E%3C/defs%3E%3Cg filter='url(%23s)'%3E%3Cg fill='%23f8f8f5' stroke='%23f8f8f5' stroke-width='2' stroke-linejoin='round' stroke-linecap='round'%3E%3Cpath d='M8.9 4C10.9 4 12 4.5 12 6.3V17.7C12 19.5 10.9 20 8.9 20M15.1 4C13.1 4 12 4.5 12 6.3M15.1 20C13.1 20 12 19.5 12 17.7' fill='none' stroke-width='4'/%3E%3C/g%3E%3Cg fill='%23292b2a'%3E%3Cpath d='M8.9 4C10.9 4 12 4.5 12 6.3V17.7C12 19.5 10.9 20 8.9 20M15.1 4C13.1 4 12 4.5 12 6.3M15.1 20C13.1 20 12 19.5 12 17.7' fill='none' stroke='%23292b2a' stroke-width='2' stroke-linecap='round'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E") 12 12, text;
+  --cursor-grab: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='27' height='27'%3E%3Cdefs%3E%3Cg id='b'%3E%3Cpath d='M8.5 6C9.33 6 10 6.67 10 7.5L10 13.5C10 14.33 9.33 15 8.5 15C7.67 15 7 14.33 7 13.5L7 7.5C7 6.67 7.67 6 8.5 6Z'/%3E%3Cpath d='M11.5 4.3C12.33 4.3 13 4.97 13 5.8L13 13.5C13 14.33 12.33 15 11.5 15C10.67 15 10 14.33 10 13.5L10 5.8C10 4.97 10.67 4.3 11.5 4.3Z'/%3E%3Cpath d='M14.5 5C15.33 5 16 5.67 16 6.5L16 13.5C16 14.33 15.33 15 14.5 15C13.67 15 13 14.33 13 13.5L13 6.5C13 5.67 13.67 5 14.5 5Z'/%3E%3Cpath d='M17 7C17.55 7 18 7.45 18 8L18 14C18 14.55 17.55 15 17 15C16.45 15 16 14.55 16 14L16 8C16 7.45 16.45 7 17 7Z'/%3E%3Cpath d='M10.6 11.5L15.4 11.5C17.39 11.5 19 13.11 19 15.1L19 18.4C19 20.39 17.39 22 15.4 22L10.6 22C8.61 22 7 20.39 7 18.4L7 15.1C7 13.11 8.61 11.5 10.6 11.5Z'/%3E%3Cpath d='M6.19 11.27L8.99 13.98C9.59 14.55 9.61 15.5 9.03 16.1C8.46 16.69 7.51 16.71 6.91 16.13L4.11 13.42C3.51 12.85 3.49 11.9 4.07 11.3C4.64 10.71 5.59 10.69 6.19 11.27Z'/%3E%3C/g%3E%3Cfilter id='s' x='-1' y='-1' width='3' height='3'%3E%3CfeDropShadow dx='0' dy='.75' stdDeviation='.85' flood-color='%23292b2a' flood-opacity='.32'/%3E%3C/filter%3E%3C/defs%3E%3Cg filter='url(%23s)'%3E%3Cg fill='%23f8f8f5' stroke='%23f8f8f5' stroke-width='2' stroke-linejoin='round' stroke-linecap='round'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3Cg fill='%23292b2a'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3Cpath d='M10.5 6.5V12.8M12.5 6V12.8M15.5 8V12.8' fill='none' stroke='%23f8f8f5' stroke-width='1' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E") 12 12, grab;
+  --cursor-grabbing: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='27' height='27'%3E%3Cdefs%3E%3Cg id='b'%3E%3Cpath d='M8.5 9.3C9.33 9.3 10 9.97 10 10.8L10 13.5C10 14.33 9.33 15 8.5 15C7.67 15 7 14.33 7 13.5L7 10.8C7 9.97 7.67 9.3 8.5 9.3Z'/%3E%3Cpath d='M11.5 8.6C12.33 8.6 13 9.27 13 10.1L13 13.5C13 14.33 12.33 15 11.5 15C10.67 15 10 14.33 10 13.5L10 10.1C10 9.27 10.67 8.6 11.5 8.6Z'/%3E%3Cpath d='M14.5 9C15.33 9 16 9.67 16 10.5L16 13.5C16 14.33 15.33 15 14.5 15C13.67 15 13 14.33 13 13.5L13 10.5C13 9.67 13.67 9 14.5 9Z'/%3E%3Cpath d='M17 10C17.55 10 18 10.45 18 11L18 14C18 14.55 17.55 15 17 15C16.45 15 16 14.55 16 14L16 11C16 10.45 16.45 10 17 10Z'/%3E%3Cpath d='M10.6 11.5L15.4 11.5C17.39 11.5 19 13.11 19 15.1L19 18.4C19 20.39 17.39 22 15.4 22L10.6 22C8.61 22 7 20.39 7 18.4L7 15.1C7 13.11 8.61 11.5 10.6 11.5Z'/%3E%3Cpath d='M7.26 12.63L9.54 13.65C10.35 14.01 10.71 14.95 10.35 15.76C9.99 16.57 9.05 16.93 8.24 16.57L5.96 15.55C5.15 15.19 4.79 14.25 5.15 13.44C5.51 12.63 6.45 12.27 7.26 12.63Z'/%3E%3C/g%3E%3Cfilter id='s' x='-1' y='-1' width='3' height='3'%3E%3CfeDropShadow dx='0' dy='.75' stdDeviation='.85' flood-color='%23292b2a' flood-opacity='.32'/%3E%3C/filter%3E%3C/defs%3E%3Cg filter='url(%23s)'%3E%3Cg fill='%23f8f8f5' stroke='%23f8f8f5' stroke-width='2' stroke-linejoin='round' stroke-linecap='round'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3Cg fill='%23292b2a'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3Cpath d='M10.5 10.4V12.8M12.5 10V12.8M15.5 10.6V12.8' fill='none' stroke='%23f8f8f5' stroke-width='1' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E") 12 12, grabbing;
+  --cursor-copy: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='27' height='27'%3E%3Cdefs%3E%3Cg id='b'%3E%3Cpath d='M13.64 13.41L3.2 3.2Q3 3 3 3.28L3 17.9Q3 18.7 3.59 18.16L6.35 15.62Q6.75 15.25 6.97 15.75L8.98 20.23Q9.35 21.05 10.17 20.69L10.93 20.36Q11.75 20 11.4 19.17L9.44 14.46Q9.25 14 9.75 14L13.4 14Q14.25 14 13.64 13.41Z'/%3E%3Cpath d='M13 18.75a4.25 4.25 0 1 0 8.5 0a4.25 4.25 0 1 0 -8.5 0Z'/%3E%3C/g%3E%3Cfilter id='s' x='-1' y='-1' width='3' height='3'%3E%3CfeDropShadow dx='0' dy='.75' stdDeviation='.85' flood-color='%23292b2a' flood-opacity='.32'/%3E%3C/filter%3E%3C/defs%3E%3Cg filter='url(%23s)'%3E%3Cg fill='%23f8f8f5' stroke='%23f8f8f5' stroke-width='2' stroke-linejoin='round' stroke-linecap='round'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3Cg fill='%23292b2a'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3Cpath d='M15.5 18.5H19.5M17.5 16.5V20.5' fill='none' stroke='%23f8f8f5' stroke-width='1' stroke-linecap='butt'/%3E%3C/g%3E%3C/svg%3E") 3 3, copy;
+  --cursor-progress: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='27' height='27'%3E%3Cdefs%3E%3Cg id='b'%3E%3Cpath d='M13.64 13.41L3.2 3.2Q3 3 3 3.28L3 17.9Q3 18.7 3.59 18.16L6.35 15.62Q6.75 15.25 6.97 15.75L8.98 20.23Q9.35 21.05 10.17 20.69L10.93 20.36Q11.75 20 11.4 19.17L9.44 14.46Q9.25 14 9.75 14L13.4 14Q14.25 14 13.64 13.41Z'/%3E%3C/g%3E%3Cfilter id='s' x='-1' y='-1' width='3' height='3'%3E%3CfeDropShadow dx='0' dy='.75' stdDeviation='.85' flood-color='%23292b2a' flood-opacity='.32'/%3E%3C/filter%3E%3C/defs%3E%3Cg filter='url(%23s)'%3E%3Cg fill='%23f8f8f5' stroke='%23f8f8f5' stroke-width='2' stroke-linejoin='round' stroke-linecap='round'%3E%3Cuse href='%23b'/%3E%3Cpath d='M20.35 18.75A3.1 3.1 0 1 1 17.25 15.65' fill='none' stroke-width='3.7'/%3E%3C/g%3E%3Cg fill='%23292b2a'%3E%3Cuse href='%23b'/%3E%3Cpath d='M20.35 18.75A3.1 3.1 0 1 1 17.25 15.65' fill='none' stroke='%23292b2a' stroke-width='1.7' stroke-linecap='round'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E") 3 3, progress;
+  --cursor-not-allowed: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='27' height='27'%3E%3Cdefs%3E%3Cg id='b'%3E%3Cpath d='M13.64 13.41L3.2 3.2Q3 3 3 3.28L3 17.9Q3 18.7 3.59 18.16L6.35 15.62Q6.75 15.25 6.97 15.75L8.98 20.23Q9.35 21.05 10.17 20.69L10.93 20.36Q11.75 20 11.4 19.17L9.44 14.46Q9.25 14 9.75 14L13.4 14Q14.25 14 13.64 13.41Z'/%3E%3C/g%3E%3Cfilter id='s' x='-1' y='-1' width='3' height='3'%3E%3CfeDropShadow dx='0' dy='.75' stdDeviation='.85' flood-color='%23292b2a' flood-opacity='.32'/%3E%3C/filter%3E%3C/defs%3E%3Cg filter='url(%23s)'%3E%3Cg fill='%23f8f8f5' stroke='%23f8f8f5' stroke-width='2' stroke-linejoin='round' stroke-linecap='round'%3E%3Cuse href='%23b'/%3E%3Cpath d='M14 18.75a3.25 3.25 0 1 0 6.5 0a3.25 3.25 0 1 0 -6.5 0Z' fill='none' stroke-width='3.5'/%3E%3Cpath d='M14.95 16.45L19.55 21.05' fill='none' stroke-width='3.5'/%3E%3C/g%3E%3Cg fill='%23292b2a'%3E%3Cuse href='%23b'/%3E%3Cpath d='M14 18.75a3.25 3.25 0 1 0 6.5 0a3.25 3.25 0 1 0 -6.5 0Z' fill='none' stroke='%23292b2a' stroke-width='1.5' stroke-linecap='round'/%3E%3Cpath d='M14.95 16.45L19.55 21.05' fill='none' stroke='%23292b2a' stroke-width='1.5' stroke-linecap='round'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E") 3 3, not-allowed;
+  --cursor-col-resize: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='27' height='27'%3E%3Cdefs%3E%3Cg id='b'%3E%3Cpath d='M11 16.5L11 7.5Q11 7 11.5 7L12.5 7Q13 7 13 7.5L13 16.5Q13 17 12.5 17L11.5 17Q11 17 11 16.5Z'/%3E%3Cpath d='M6.61 15.21L3.72 12.32Q3.4 12 3.72 11.68L6.61 8.79Q7 8.4 7 8.95L7 15.05Q7 15.6 6.61 15.21Z'/%3E%3Cpath d='M10 11L7 11L7 13L10 13Z'/%3E%3Cpath d='M17.39 15.21L20.28 12.32Q20.6 12 20.28 11.68L17.39 8.79Q17 8.4 17 8.95L17 15.05Q17 15.6 17.39 15.21Z'/%3E%3Cpath d='M14 11L17 11L17 13L14 13Z'/%3E%3C/g%3E%3Cfilter id='s' x='-1' y='-1' width='3' height='3'%3E%3CfeDropShadow dx='0' dy='.75' stdDeviation='.85' flood-color='%23292b2a' flood-opacity='.32'/%3E%3C/filter%3E%3C/defs%3E%3Cg filter='url(%23s)'%3E%3Cg fill='%23f8f8f5' stroke='%23f8f8f5' stroke-width='2' stroke-linejoin='round' stroke-linecap='round'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3Cg fill='%23292b2a'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E") 12 12, col-resize;
+  --cursor-row-resize: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='27' height='27'%3E%3Cdefs%3E%3Cg id='b'%3E%3Cpath d='M16.5 11L7.5 11Q7 11 7 11.5L7 12.5Q7 13 7.5 13L16.5 13Q17 13 17 12.5L17 11.5Q17 11 16.5 11Z'/%3E%3Cpath d='M15.21 6.61L12.32 3.72Q12 3.4 11.68 3.72L8.79 6.61Q8.4 7 8.95 7L15.05 7Q15.6 7 15.21 6.61Z'/%3E%3Cpath d='M11 10L11 7L13 7L13 10Z'/%3E%3Cpath d='M15.21 17.39L12.32 20.28Q12 20.6 11.68 20.28L8.79 17.39Q8.4 17 8.95 17L15.05 17Q15.6 17 15.21 17.39Z'/%3E%3Cpath d='M11 14L11 17L13 17L13 14Z'/%3E%3C/g%3E%3Cfilter id='s' x='-1' y='-1' width='3' height='3'%3E%3CfeDropShadow dx='0' dy='.75' stdDeviation='.85' flood-color='%23292b2a' flood-opacity='.32'/%3E%3C/filter%3E%3C/defs%3E%3Cg filter='url(%23s)'%3E%3Cg fill='%23f8f8f5' stroke='%23f8f8f5' stroke-width='2' stroke-linejoin='round' stroke-linecap='round'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3Cg fill='%23292b2a'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E") 12 12, row-resize;
+}
+/* A screen at 4/3 (1440 x 900 drawn on 1920 x 1200): the same pointers with their straight edges on its pixels and the
+   paper edge two of them wide. */
+@media (min-resolution: 1.3dppx) and (max-resolution: 1.36dppx) {
+  :root {
+    --cursor-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='27' height='27'%3E%3Cdefs%3E%3Cg id='b'%3E%3Cpath d='M13.65 13.65L3.2 3.2Q3 3 3 3.28L3 17.9Q3 18.7 3.59 18.16L6.35 15.62Q6.75 15.25 6.97 15.75L8.98 20.23Q9.35 21.05 10.17 20.69L10.93 20.36Q11.75 20 11.39 19.17L9.45 14.71Q9.25 14.25 9.75 14.25L13.4 14.25Q14.25 14.25 13.65 13.65Z'/%3E%3C/g%3E%3Cfilter id='s' x='-1' y='-1' width='3' height='3'%3E%3CfeDropShadow dx='0' dy='.75' stdDeviation='.85' flood-color='%23292b2a' flood-opacity='.32'/%3E%3C/filter%3E%3C/defs%3E%3Cg filter='url(%23s)'%3E%3Cg fill='%23f8f8f5' stroke='%23f8f8f5' stroke-width='3' stroke-linejoin='round' stroke-linecap='round'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3Cg fill='%23292b2a'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E") 3 3, default;
+    --cursor-hand: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='27' height='27'%3E%3Cdefs%3E%3Cg id='b'%3E%3Cpath d='M10.12 3C11.16 3 12 3.84 12 4.88L12 12.62C12 13.66 11.16 14.5 10.12 14.5C9.09 14.5 8.25 13.66 8.25 12.62L8.25 4.88C8.25 3.84 9.09 3 10.12 3Z'/%3E%3Cpath d='M12.8 8.25L13.45 8.25C14.31 8.25 15 8.94 15 9.8L15 13.45C15 14.31 14.31 15 13.45 15L12.8 15C11.94 15 11.25 14.31 11.25 13.45L11.25 9.8C11.25 8.94 11.94 8.25 12.8 8.25Z'/%3E%3Cpath d='M16.12 9C16.75 9 17.25 9.5 17.25 10.12L17.25 14.38C17.25 15 16.75 15.5 16.12 15.5C15.5 15.5 15 15 15 14.38L15 10.12C15 9.5 15.5 9 16.12 9Z'/%3E%3Cpath d='M18.55 10.5L18.95 10.5C19.67 10.5 20.25 11.08 20.25 11.8L20.25 14.7C20.25 15.42 19.67 16 18.95 16L18.55 16C17.83 16 17.25 15.42 17.25 14.7L17.25 11.8C17.25 11.08 17.83 10.5 18.55 10.5Z'/%3E%3Cpath d='M10.35 11.5L16.65 11.5C18.64 11.5 20.25 13.11 20.25 15.1L20.25 18.15C20.25 20.14 18.64 21.75 16.65 21.75L10.35 21.75C8.36 21.75 6.75 20.14 6.75 18.15L6.75 15.1C6.75 13.11 8.36 11.5 10.35 11.5Z'/%3E%3Cpath d='M5.93 11.3L8.61 13.4C9.32 13.96 9.45 14.99 8.89 15.71C8.33 16.43 7.29 16.56 6.57 16L3.89 13.9C3.18 13.34 3.05 12.31 3.61 11.59C4.17 10.87 5.21 10.74 5.93 11.3Z'/%3E%3C/g%3E%3Cfilter id='s' x='-1' y='-1' width='3' height='3'%3E%3CfeDropShadow dx='0' dy='.75' stdDeviation='.85' flood-color='%23292b2a' flood-opacity='.32'/%3E%3C/filter%3E%3C/defs%3E%3Cg filter='url(%23s)'%3E%3Cg fill='%23f8f8f5' stroke='%23f8f8f5' stroke-width='3' stroke-linejoin='round' stroke-linecap='round'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3Cg fill='%23292b2a'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3Cpath d='M11.62 9V12.6M14.62 10.5V12.9M17.62 12V13.6' fill='none' stroke='%23f8f8f5' stroke-width='.75' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E") 10 3, pointer;
+    --cursor-text: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='27' height='27'%3E%3Cdefs%3E%3Cfilter id='s' x='-1' y='-1' width='3' height='3'%3E%3CfeDropShadow dx='0' dy='.75' stdDeviation='.85' flood-color='%23292b2a' flood-opacity='.32'/%3E%3C/filter%3E%3C/defs%3E%3Cg filter='url(%23s)'%3E%3Cg fill='%23f8f8f5' stroke='%23f8f8f5' stroke-width='3' stroke-linejoin='round' stroke-linecap='round'%3E%3Cpath d='M9.28 4.12C11.28 4.12 12.38 4.62 12.38 6.42V17.57C12.38 19.38 11.28 19.88 9.28 19.88M15.47 4.12C13.47 4.12 12.38 4.62 12.38 6.42M15.47 19.88C13.47 19.88 12.38 19.38 12.38 17.57' fill='none' stroke-width='5.25'/%3E%3C/g%3E%3Cg fill='%23292b2a'%3E%3Cpath d='M9.28 4.12C11.28 4.12 12.38 4.62 12.38 6.42V17.57C12.38 19.38 11.28 19.88 9.28 19.88M15.47 4.12C13.47 4.12 12.38 4.62 12.38 6.42M15.47 19.88C13.47 19.88 12.38 19.38 12.38 17.57' fill='none' stroke='%23292b2a' stroke-width='2.25' stroke-linecap='round'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E") 12 12, text;
+    --cursor-grab: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='27' height='27'%3E%3Cdefs%3E%3Cg id='b'%3E%3Cpath d='M8.62 6C9.25 6 9.75 6.5 9.75 7.12L9.75 13.88C9.75 14.5 9.25 15 8.62 15C8 15 7.5 14.5 7.5 13.88L7.5 7.12C7.5 6.5 8 6 8.62 6Z'/%3E%3Cpath d='M11.62 4.3C12.25 4.3 12.75 4.8 12.75 5.42L12.75 13.88C12.75 14.5 12.25 15 11.62 15C11 15 10.5 14.5 10.5 13.88L10.5 5.42C10.5 4.8 11 4.3 11.62 4.3Z'/%3E%3Cpath d='M14.25 5C15.08 5 15.75 5.67 15.75 6.5L15.75 13.5C15.75 14.33 15.08 15 14.25 15C13.42 15 12.75 14.33 12.75 13.5L12.75 6.5C12.75 5.67 13.42 5 14.25 5Z'/%3E%3Cpath d='M16.88 7C17.5 7 18 7.5 18 8.12L18 13.88C18 14.5 17.5 15 16.88 15C16.25 15 15.75 14.5 15.75 13.88L15.75 8.12C15.75 7.5 16.25 7 16.88 7Z'/%3E%3Cpath d='M11.1 11.5L15.15 11.5C17.14 11.5 18.75 13.11 18.75 15.1L18.75 18.15C18.75 20.14 17.14 21.75 15.15 21.75L11.1 21.75C9.11 21.75 7.5 20.14 7.5 18.15L7.5 15.1C7.5 13.11 9.11 11.5 11.1 11.5Z'/%3E%3Cpath d='M6.19 11.27L8.99 13.98C9.59 14.55 9.61 15.5 9.03 16.1C8.46 16.69 7.51 16.71 6.91 16.13L4.11 13.42C3.51 12.85 3.49 11.9 4.07 11.3C4.64 10.71 5.59 10.69 6.19 11.27Z'/%3E%3C/g%3E%3Cfilter id='s' x='-1' y='-1' width='3' height='3'%3E%3CfeDropShadow dx='0' dy='.75' stdDeviation='.85' flood-color='%23292b2a' flood-opacity='.32'/%3E%3C/filter%3E%3C/defs%3E%3Cg filter='url(%23s)'%3E%3Cg fill='%23f8f8f5' stroke='%23f8f8f5' stroke-width='3' stroke-linejoin='round' stroke-linecap='round'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3Cg fill='%23292b2a'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3Cpath d='M10.12 6.5V12.8M13.12 6V12.8M16.12 8V12.8' fill='none' stroke='%23f8f8f5' stroke-width='.75' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E") 12 12, grab;
+    --cursor-grabbing: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='27' height='27'%3E%3Cdefs%3E%3Cg id='b'%3E%3Cpath d='M8.62 9.3C9.25 9.3 9.75 9.8 9.75 10.43L9.75 13.88C9.75 14.5 9.25 15 8.62 15C8 15 7.5 14.5 7.5 13.88L7.5 10.43C7.5 9.8 8 9.3 8.62 9.3Z'/%3E%3Cpath d='M11.62 8.6C12.25 8.6 12.75 9.1 12.75 9.72L12.75 13.88C12.75 14.5 12.25 15 11.62 15C11 15 10.5 14.5 10.5 13.88L10.5 9.72C10.5 9.1 11 8.6 11.62 8.6Z'/%3E%3Cpath d='M14.25 9C15.08 9 15.75 9.67 15.75 10.5L15.75 13.5C15.75 14.33 15.08 15 14.25 15C13.42 15 12.75 14.33 12.75 13.5L12.75 10.5C12.75 9.67 13.42 9 14.25 9Z'/%3E%3Cpath d='M16.88 10C17.5 10 18 10.5 18 11.12L18 13.88C18 14.5 17.5 15 16.88 15C16.25 15 15.75 14.5 15.75 13.88L15.75 11.12C15.75 10.5 16.25 10 16.88 10Z'/%3E%3Cpath d='M11.1 11.5L15.15 11.5C17.14 11.5 18.75 13.11 18.75 15.1L18.75 18.15C18.75 20.14 17.14 21.75 15.15 21.75L11.1 21.75C9.11 21.75 7.5 20.14 7.5 18.15L7.5 15.1C7.5 13.11 9.11 11.5 11.1 11.5Z'/%3E%3Cpath d='M7.26 12.63L9.54 13.65C10.35 14.01 10.71 14.95 10.35 15.76C9.99 16.57 9.05 16.93 8.24 16.57L5.96 15.55C5.15 15.19 4.79 14.25 5.15 13.44C5.51 12.63 6.45 12.27 7.26 12.63Z'/%3E%3C/g%3E%3Cfilter id='s' x='-1' y='-1' width='3' height='3'%3E%3CfeDropShadow dx='0' dy='.75' stdDeviation='.85' flood-color='%23292b2a' flood-opacity='.32'/%3E%3C/filter%3E%3C/defs%3E%3Cg filter='url(%23s)'%3E%3Cg fill='%23f8f8f5' stroke='%23f8f8f5' stroke-width='3' stroke-linejoin='round' stroke-linecap='round'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3Cg fill='%23292b2a'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3Cpath d='M10.12 10.4V12.8M13.12 10V12.8M16.12 10.6V12.8' fill='none' stroke='%23f8f8f5' stroke-width='.75' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E") 12 12, grabbing;
+    --cursor-copy: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='27' height='27'%3E%3Cdefs%3E%3Cg id='b'%3E%3Cpath d='M13.65 13.65L3.2 3.2Q3 3 3 3.28L3 17.9Q3 18.7 3.59 18.16L6.35 15.62Q6.75 15.25 6.97 15.75L8.98 20.23Q9.35 21.05 10.17 20.69L10.93 20.36Q11.75 20 11.39 19.17L9.45 14.71Q9.25 14.25 9.75 14.25L13.4 14.25Q14.25 14.25 13.65 13.65Z'/%3E%3Cpath d='M13 18.75a4.25 4.25 0 1 0 8.5 0a4.25 4.25 0 1 0 -8.5 0Z'/%3E%3C/g%3E%3Cfilter id='s' x='-1' y='-1' width='3' height='3'%3E%3CfeDropShadow dx='0' dy='.75' stdDeviation='.85' flood-color='%23292b2a' flood-opacity='.32'/%3E%3C/filter%3E%3C/defs%3E%3Cg filter='url(%23s)'%3E%3Cg fill='%23f8f8f5' stroke='%23f8f8f5' stroke-width='3' stroke-linejoin='round' stroke-linecap='round'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3Cg fill='%23292b2a'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3Cpath d='M15 18.75H19.5M17.25 16.5V21' fill='none' stroke='%23f8f8f5' stroke-width='1.5' stroke-linecap='butt'/%3E%3C/g%3E%3C/svg%3E") 3 3, copy;
+    --cursor-progress: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='27' height='27'%3E%3Cdefs%3E%3Cg id='b'%3E%3Cpath d='M13.65 13.65L3.2 3.2Q3 3 3 3.28L3 17.9Q3 18.7 3.59 18.16L6.35 15.62Q6.75 15.25 6.97 15.75L8.98 20.23Q9.35 21.05 10.17 20.69L10.93 20.36Q11.75 20 11.39 19.17L9.45 14.71Q9.25 14.25 9.75 14.25L13.4 14.25Q14.25 14.25 13.65 13.65Z'/%3E%3C/g%3E%3Cfilter id='s' x='-1' y='-1' width='3' height='3'%3E%3CfeDropShadow dx='0' dy='.75' stdDeviation='.85' flood-color='%23292b2a' flood-opacity='.32'/%3E%3C/filter%3E%3C/defs%3E%3Cg filter='url(%23s)'%3E%3Cg fill='%23f8f8f5' stroke='%23f8f8f5' stroke-width='3' stroke-linejoin='round' stroke-linecap='round'%3E%3Cuse href='%23b'/%3E%3Cpath d='M20.35 18.75A3.1 3.1 0 1 1 17.25 15.65' fill='none' stroke-width='4.7'/%3E%3C/g%3E%3Cg fill='%23292b2a'%3E%3Cuse href='%23b'/%3E%3Cpath d='M20.35 18.75A3.1 3.1 0 1 1 17.25 15.65' fill='none' stroke='%23292b2a' stroke-width='1.7' stroke-linecap='round'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E") 3 3, progress;
+    --cursor-not-allowed: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='27' height='27'%3E%3Cdefs%3E%3Cg id='b'%3E%3Cpath d='M13.65 13.65L3.2 3.2Q3 3 3 3.28L3 17.9Q3 18.7 3.59 18.16L6.35 15.62Q6.75 15.25 6.97 15.75L8.98 20.23Q9.35 21.05 10.17 20.69L10.93 20.36Q11.75 20 11.39 19.17L9.45 14.71Q9.25 14.25 9.75 14.25L13.4 14.25Q14.25 14.25 13.65 13.65Z'/%3E%3C/g%3E%3Cfilter id='s' x='-1' y='-1' width='3' height='3'%3E%3CfeDropShadow dx='0' dy='.75' stdDeviation='.85' flood-color='%23292b2a' flood-opacity='.32'/%3E%3C/filter%3E%3C/defs%3E%3Cg filter='url(%23s)'%3E%3Cg fill='%23f8f8f5' stroke='%23f8f8f5' stroke-width='3' stroke-linejoin='round' stroke-linecap='round'%3E%3Cuse href='%23b'/%3E%3Cpath d='M14 18.75a3.25 3.25 0 1 0 6.5 0a3.25 3.25 0 1 0 -6.5 0Z' fill='none' stroke-width='4.5'/%3E%3Cpath d='M14.95 16.45L19.55 21.05' fill='none' stroke-width='4.5'/%3E%3C/g%3E%3Cg fill='%23292b2a'%3E%3Cuse href='%23b'/%3E%3Cpath d='M14 18.75a3.25 3.25 0 1 0 6.5 0a3.25 3.25 0 1 0 -6.5 0Z' fill='none' stroke='%23292b2a' stroke-width='1.5' stroke-linecap='round'/%3E%3Cpath d='M14.95 16.45L19.55 21.05' fill='none' stroke='%23292b2a' stroke-width='1.5' stroke-linecap='round'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E") 3 3, not-allowed;
+    --cursor-col-resize: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='27' height='27'%3E%3Cdefs%3E%3Cg id='b'%3E%3Cpath d='M11.25 16.75L11.25 7.25Q11.25 6.75 11.75 6.75L12.25 6.75Q12.75 6.75 12.75 7.25L12.75 16.75Q12.75 17.25 12.25 17.25L11.75 17.25Q11.25 17.25 11.25 16.75Z'/%3E%3Cpath d='M6.38 15.2L3.71 12.33Q3.4 12 3.71 11.67L6.38 8.8Q6.75 8.4 6.75 8.95L6.75 15.05Q6.75 15.6 6.38 15.2Z'/%3E%3Cpath d='M10.5 11.25L6.75 11.25L6.75 12.75L10.5 12.75Z'/%3E%3Cpath d='M17.62 15.2L20.29 12.33Q20.6 12 20.29 11.67L17.62 8.8Q17.25 8.4 17.25 8.95L17.25 15.05Q17.25 15.6 17.62 15.2Z'/%3E%3Cpath d='M13.5 11.25L17.25 11.25L17.25 12.75L13.5 12.75Z'/%3E%3C/g%3E%3Cfilter id='s' x='-1' y='-1' width='3' height='3'%3E%3CfeDropShadow dx='0' dy='.75' stdDeviation='.85' flood-color='%23292b2a' flood-opacity='.32'/%3E%3C/filter%3E%3C/defs%3E%3Cg filter='url(%23s)'%3E%3Cg fill='%23f8f8f5' stroke='%23f8f8f5' stroke-width='3' stroke-linejoin='round' stroke-linecap='round'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3Cg fill='%23292b2a'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E") 12 12, col-resize;
+    --cursor-row-resize: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='27' height='27'%3E%3Cdefs%3E%3Cg id='b'%3E%3Cpath d='M16.75 11.25L7.25 11.25Q6.75 11.25 6.75 11.75L6.75 12.25Q6.75 12.75 7.25 12.75L16.75 12.75Q17.25 12.75 17.25 12.25L17.25 11.75Q17.25 11.25 16.75 11.25Z'/%3E%3Cpath d='M15.2 6.38L12.33 3.71Q12 3.4 11.67 3.71L8.8 6.38Q8.4 6.75 8.95 6.75L15.05 6.75Q15.6 6.75 15.2 6.38Z'/%3E%3Cpath d='M11.25 10.5L11.25 6.75L12.75 6.75L12.75 10.5Z'/%3E%3Cpath d='M15.2 17.62L12.33 20.29Q12 20.6 11.67 20.29L8.8 17.62Q8.4 17.25 8.95 17.25L15.05 17.25Q15.6 17.25 15.2 17.62Z'/%3E%3Cpath d='M11.25 13.5L11.25 17.25L12.75 17.25L12.75 13.5Z'/%3E%3C/g%3E%3Cfilter id='s' x='-1' y='-1' width='3' height='3'%3E%3CfeDropShadow dx='0' dy='.75' stdDeviation='.85' flood-color='%23292b2a' flood-opacity='.32'/%3E%3C/filter%3E%3C/defs%3E%3Cg filter='url(%23s)'%3E%3Cg fill='%23f8f8f5' stroke='%23f8f8f5' stroke-width='3' stroke-linejoin='round' stroke-linecap='round'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3Cg fill='%23292b2a'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E") 12 12, row-resize;
+  }
 }
 
 * { box-sizing: border-box; }
@@ -99,12 +135,19 @@ body {
   font: var(--t-body)/1.6 var(--sans);
 }
 button, input, textarea { font: inherit; color: inherit; }
+/* The OS's pointer wherever one is, never the browser's: the arrow unless a place says otherwise (over words one only
+   reads too, as a desktop has it), the I-beam where one writes, the hand on a link. Of no weight, so a place's own
+   pointer below always wins. */
+html { cursor: var(--cursor-arrow); }
+:where(input:not([type='checkbox'], [type='radio'], [type='range'], [type='button'], [type='submit'], [type='reset'], [type='file'], [type='color']), textarea, [contenteditable]:not([contenteditable='false'])) { cursor: var(--cursor-text); }
+:where(input:disabled, textarea:disabled) { cursor: var(--cursor-arrow); }
+:where(a[href]) { cursor: var(--cursor-hand); }
 /* What goes in a field is said in `sub`, as every quiet word is: the browser's own grey is too pale on `raised`. */
 ::placeholder { color: var(--sub); opacity: 1; }
 /* Japanese breaks where a phrase does, not in the middle of a word, where the browser can tell. */
 :root:lang(ja) { word-break: auto-phrase; }
 /* A box to tick is a circle, the green one when ticked, as a switch on is: never the browser's blue. */
-input[type='checkbox'] { appearance: none; display: inline-grid; place-content: center; flex: none; width: 20px; height: 20px; margin: 0; border: 1.5px solid var(--edge); border-radius: 50%; background: transparent; cursor: pointer; transition: background var(--motion), border-color var(--motion); }
+input[type='checkbox'] { appearance: none; display: inline-grid; place-content: center; flex: none; width: 20px; height: 20px; margin: 0; border: 1.5px solid var(--edge); border-radius: 50%; background: transparent; cursor: var(--cursor-hand); transition: background var(--motion), border-color var(--motion); }
 input[type='checkbox']::after { content: ''; width: 9px; height: 5px; margin-top: -2px; border: 2px solid var(--ground); border-top: 0; border-right: 0; transform: rotate(-45deg); opacity: 0; }
 input[type='checkbox']:hover { border-color: var(--ink); }
 input[type='checkbox']:checked { background: var(--done); border-color: var(--done); }
@@ -260,7 +303,7 @@ a { color: var(--ink); }
 .me-wrap { position: relative; }
 .me {
   display: grid; place-items: center; width: 44px; height: 44px; border-radius: var(--r-round); border: 1px solid var(--rule);
-  background: transparent; cursor: pointer; font: 600 var(--t-meta) var(--sans);
+  background: transparent; cursor: var(--cursor-hand); font: 600 var(--t-meta) var(--sans);
 }
 /* The person fills most of the circle; initials stay type-sized. */
 .me .icon { width: 30px; height: 30px; }
@@ -299,13 +342,13 @@ a { color: var(--ink); }
 .pop-mark { width: 18px; height: 18px; flex: none; color: var(--sub); }
 .pop-item {
   display: flex; justify-content: space-between; align-items: center; gap: var(--s3);
-  min-height: var(--h-row); padding: 0 var(--s3); border: 0; border-radius: var(--r-field); background: transparent; cursor: pointer; text-align: left;
+  min-height: var(--h-row); padding: 0 var(--s3); border: 0; border-radius: var(--r-field); background: transparent; cursor: var(--cursor-hand); text-align: left;
 }
-.pop-item:disabled { cursor: default; color: var(--sub); }
+.pop-item:disabled { cursor: var(--cursor-arrow); color: var(--sub); }
 .rail-item {
   position: relative; display: grid; place-items: center;
   width: var(--h-place); height: var(--h-place); border: 0; border-radius: var(--r-place);
-  background: transparent; color: var(--ink); cursor: pointer;
+  background: transparent; color: var(--ink); cursor: var(--cursor-hand);
 }
 /* + starts something rather than opening a place, so it has the action
    shape: round, outlined like every button, right under the places. */
@@ -371,9 +414,9 @@ a { color: var(--ink); }
 /* Controls */
 .button {
   min-height: var(--h-control); padding: 0 var(--s4); border-radius: var(--r-round);
-  border: 1px solid var(--edge); background: transparent; cursor: pointer;
+  border: 1px solid var(--edge); background: transparent; cursor: var(--cursor-hand);
 }
-.button:disabled { opacity: .5; cursor: default; }
+.button:disabled { opacity: .5; cursor: var(--cursor-arrow); }
 .input, .edit input, .edit textarea {
   min-height: var(--h-control); padding: var(--s2) var(--s3); border: 1px solid var(--edge); border-radius: var(--r-field);
   background: var(--raised); color: var(--ink);
@@ -435,7 +478,7 @@ body:has(.home-pane .search-box:is(:focus-within, .reading))::after { opacity: 1
 .lately { display: grid; gap: var(--s2); }
 .lately h2 { font-size: var(--t-body); font-weight: 600; } /* as Forge's Prompt and Server's People */
 .lately-list { display: grid; gap: var(--s1); margin: 0 calc(-1 * var(--s3)); }
-.lately-row { display: grid; gap: 2px; min-width: 0; padding: var(--s2) var(--s3); border: 0; border-radius: var(--r-card); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.lately-row { display: grid; gap: 2px; min-width: 0; padding: var(--s2) var(--s3); border: 0; border-radius: var(--r-card); background: transparent; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-hand); }
 .lately-row:hover { background: var(--raised); }
 .lately-what { display: flex; align-items: center; gap: var(--s2); min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
 .lately-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -523,7 +566,7 @@ body:has(.home-pane .search-box:is(:focus-within, .reading))::after { opacity: 1
 /* Without a kind, the title starts where the kind would: no gap for an empty column. */
 .todo-head > .todo-kind[hidden] + .todo-title { grid-column: 2 / 4; }
 .todo-head > .todo-meta { grid-column: 4; }
-.todo-mark { display: grid; place-items: center; width: var(--h-control); height: var(--h-control); border: 0; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: pointer; }
+.todo-mark { display: grid; place-items: center; width: var(--h-control); height: var(--h-control); border: 0; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: var(--cursor-hand); }
 /* Inside the raised box, hover is a step back to the ground. */
 .todo-box .todo-mark:hover { color: var(--ink); background: var(--ground); }
 /* The kind is a word, not a button: bold, no outline. */
@@ -582,9 +625,9 @@ kbd {
   min-height: 240px; padding: var(--s4); border: 1px solid var(--rule); border-radius: var(--r-place);
   display: grid; align-content: start; gap: var(--s2); background: transparent; text-align: left; color: var(--ink);
 }
-.card.repo { cursor: pointer; }
+.card.repo { cursor: var(--cursor-hand); }
 .card-title { font-size: var(--t-card); font-weight: 600; overflow-wrap: anywhere; }
-.card.new { border-style: dashed; place-content: center; justify-items: center; cursor: pointer; color: var(--sub); }
+.card.new { border-style: dashed; place-content: center; justify-items: center; cursor: var(--cursor-hand); color: var(--sub); }
 .card.new:hover { color: var(--ink); }
 .note { grid-column: 1 / -1; }
 
@@ -594,13 +637,13 @@ kbd {
    and round, shows near it (the pointer on it, the keyboard in it; always on a touch screen) and offers Forge or
    Free from this device in a popover (repo-gear.ts). Showing it does nothing. */
 .card.repo.gear-card { position: relative; padding: 0; align-content: stretch; }
-.gear-card > .card-open { display: grid; align-content: start; gap: var(--s2); width: 100%; padding: var(--s4); border: 0; border-radius: inherit; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.gear-card > .card-open { display: grid; align-content: start; gap: var(--s2); width: 100%; padding: var(--s4); border: 0; border-radius: inherit; background: transparent; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-hand); }
 .gear-card > .card-open > .card-title { padding-right: calc(var(--h-row) + var(--s2)); }
 .gear-card > .repo-gear { position: absolute; top: var(--s3); right: var(--s3); }
-.gear-card[aria-busy='true'] > .card-open { cursor: progress; }
+.gear-card[aria-busy='true'] > .card-open { cursor: var(--cursor-progress); }
 .repo-gear-button {
   display: grid; place-items: center; flex: none; width: var(--h-row); height: var(--h-row); padding: 0;
-  border: 1px solid var(--edge); border-radius: var(--r-round); background: var(--ground); color: var(--sub); cursor: pointer;
+  border: 1px solid var(--edge); border-radius: var(--r-round); background: var(--ground); color: var(--sub); cursor: var(--cursor-hand);
   opacity: 0; transition: opacity var(--motion);
 }
 .repo-gear-button .mark { width: 18px; height: 18px; }
@@ -664,7 +707,7 @@ kbd {
 /* No issue to show: the dashed card where the first would be, as tall as an issue's card, its word and what is so. */
 .issue-new { width: 100%; min-height: 180px; gap: var(--s1); }
 .issue-new > small { font-size: var(--t-meta); }
-.issue-new:disabled { cursor: default; opacity: .6; }
+.issue-new:disabled { cursor: var(--cursor-arrow); opacity: .6; }
 .issue-new:not([hidden]) + div { display: none; }
 /* The prompt box as Forge's: its left end a step (s3) left of the boxes behind it, its right end theirs, so it
    reads as its own surface, not the foot of the card under it. */
@@ -677,9 +720,9 @@ kbd {
   display: flex; align-items: baseline; gap: var(--s3); min-height: var(--h-row); padding: var(--s1) var(--s3) var(--s1) calc(var(--s3) + var(--depth, 0) * var(--s4));
   border: 0; border-radius: var(--r-field); background: transparent; color: var(--ink); text-align: left; font-size: var(--t-meta); line-height: calc(var(--h-row) - 2 * var(--s1));
 }
-button.row-item { cursor: pointer; width: 100%; }
+button.row-item { cursor: var(--cursor-hand); width: 100%; }
 button.row-item:hover:not(:disabled) { background: var(--raised); }
-button.row-item:disabled { cursor: default; color: var(--sub); }
+button.row-item:disabled { cursor: var(--cursor-arrow); color: var(--sub); }
 .row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-meta { flex: none; color: var(--sub); font: var(--t-meta) var(--mono); }
 /* A phone has no room for a row's name beside its facts: the name takes its own line, the facts the next, the deed
@@ -749,11 +792,11 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 /* Only the new repo is the card's: what stands round it (/root, the repos already there) is where it will be, not
    something to touch here, so it does not light or answer the pointer. */
 .tree-still li:not(.tree-new, .tree-ours) > .tree-row { pointer-events: none; }
-.tree-still .tree-toggle { cursor: default; }
+.tree-still .tree-toggle { cursor: var(--cursor-arrow); }
 /* What it is for: a raised box as Home's TODO is, the words written straight in it as a TODO's detail is. */
 .summary-box {
   display: flex; min-height: 240px; border: 1px solid var(--rule); border-radius: var(--r-place);
-  background: var(--paper); padding: var(--s4); cursor: text;
+  background: var(--paper); padding: var(--s4); cursor: var(--cursor-text);
 }
 .summary-box { transition: border-color var(--motion); }
 .summary-box:focus-within { border-color: var(--ink); }
@@ -762,7 +805,7 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .summary-box > .todo-detail:disabled { opacity: .5; }
 .new-repo .row { align-items: center; flex-wrap: wrap; }
 .made { margin-right: var(--s2); font-weight: 600; }
-.chip:disabled, .line-in:disabled { opacity: .5; cursor: default; }
+.chip:disabled, .line-in:disabled { opacity: .5; cursor: var(--cursor-arrow); }
 
 /* Storage */
 .meter { height: var(--s4); border: 1px solid var(--edge); border-radius: var(--r-field); overflow: hidden; display: flex; }
@@ -802,7 +845,9 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .pills:empty { display: none; }
 /* The ink of the pill worked on goes from the pill it was on to the one it is on, under the words (glide.ts). */
 .repo-strip > .pills { position: relative; isolation: isolate; }
-.pill { transition: background var(--motion), color var(--motion), opacity var(--motion); cursor: grab; }
+.pill { transition: background var(--motion), color var(--motion), opacity var(--motion); cursor: var(--cursor-grab); }
+/* Held, the open hand closes on it, until the drag (the browser's own pointer then) or the hand letting go. */
+.pill:active { cursor: var(--cursor-grabbing); }
 /* Lifted to be dragged: where it was stays, faint, until it is let go. */
 .pill.lifted { opacity: .35; }
 /* Shown beside the one worked on: its outline in ink. */
@@ -812,10 +857,10 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
   flex: none; display: flex; align-items: center; min-height: var(--h-row); padding-left: var(--s3);
   border: 1px solid var(--edge); border-radius: var(--r-round); font-size: var(--t-meta);
 }
-.pill-name { border: 0; padding: 0; background: transparent; color: inherit; cursor: pointer; white-space: nowrap; }
+.pill-name { border: 0; padding: 0; background: transparent; color: inherit; cursor: var(--cursor-hand); white-space: nowrap; }
 /* The issue the repo's copy is for, after its name, while it is not main. */
 .pill-issue { margin-left: .4em; font-family: var(--mono); opacity: .7; }
-.pill-close { display: grid; place-items: center; width: var(--h-row); height: calc(var(--h-row) - 2px); border: 0; padding: 0; background: transparent; color: inherit; cursor: pointer; border-radius: var(--r-round); }
+.pill-close { display: grid; place-items: center; width: var(--h-row); height: calc(var(--h-row) - 2px); border: 0; padding: 0; background: transparent; color: inherit; cursor: var(--cursor-hand); border-radius: var(--r-round); }
 .pill-close .mark, .band-add .mark { width: var(--s4); height: var(--s4); }
 /* The ring is round the part of a pill that has the keyboard, inside the pill: its name, or its ×;
    on the current pill it is ground over the ink, so it does not sink into it. */
@@ -823,9 +868,9 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .pill-name:focus-visible { outline-offset: var(--s1); }
 .pill-close:focus-visible { outline-offset: calc(-1 * var(--s1)); }
 .pill[aria-current] .pill-name:focus-visible, .pill[aria-current] .pill-close:focus-visible { outline-color: var(--ground); }
-.band-add { flex: none; display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; cursor: pointer; }
+.band-add { flex: none; display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; cursor: var(--cursor-hand); }
 /* Nothing left to bring out: ⊕ steps back. */
-.band-add:disabled { opacity: .5; cursor: default; background: transparent; }
+.band-add:disabled { opacity: .5; cursor: var(--cursor-arrow); background: transparent; }
 /* The files mark is the band's first, square to the pills' rounded line; ⊕ follows the pills. */
 .band-acts .mark { width: 18px; height: 18px; }
 /* ⊕ in running words: the band's own mark at the words' height, sitting on their line. */
@@ -834,7 +879,7 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 /* A chip picks one of several, like the template choice: round, outlined. */
 .chip {
   flex: none; min-height: var(--h-row); padding: 0 var(--s3); border: 1px solid var(--edge); border-radius: var(--r-round);
-  background: transparent; cursor: pointer; white-space: nowrap; font-size: var(--t-meta);
+  background: transparent; cursor: var(--cursor-hand); white-space: nowrap; font-size: var(--t-meta);
 }
 .chips { display: flex; flex-wrap: wrap; gap: var(--s2); }
 .center { grid-column: 1; position: relative; min-height: 0; border-right: var(--line-frame) solid var(--ink); overflow: clip; }
@@ -866,7 +911,7 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 /* Beside: at the head's right end, the window cut in two; pressed (or the head with Ctrl), the file opens in a box
    of its own beside the repo's page, the row sliding to it. Quiet until the file is pointed at. */
 .path > .file-state { margin-left: auto; }
-.file-beside { display: grid; place-items: center; flex: none; width: 24px; height: 24px; margin: -5px -6px -5px 0; padding: 0; border: 0; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: pointer; opacity: .55; transition: opacity var(--motion); }
+.file-beside { display: grid; place-items: center; flex: none; width: 24px; height: 24px; margin: -5px -6px -5px 0; padding: 0; border: 0; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: var(--cursor-hand); opacity: .55; transition: opacity var(--motion); }
 .file-beside .mark { width: var(--s4); height: var(--s4); }
 .file:hover .file-beside, .file-beside:focus-visible { opacity: 1; }
 .file-beside:hover { background: var(--raised); color: var(--ink); }
@@ -900,7 +945,7 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .unsaved-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--sub); vertical-align: middle; animation: unsaved-in calc(200ms * var(--pace)) ease-out calc(350ms * var(--pace)) both; }
 @keyframes unsaved-in { from { opacity: 0; scale: .4; } }
 @media (prefers-reduced-motion: reduce) { .unsaved-dot { animation: none; } }
-.sheet { flex: 1; display: grid; grid-template-columns: auto minmax(0, 1fr); align-content: start; column-gap: var(--s4); padding: var(--s2) var(--s4) var(--s4); cursor: text; }
+.sheet { flex: 1; display: grid; grid-template-columns: auto minmax(0, 1fr); align-content: start; column-gap: var(--s4); padding: var(--s2) var(--s4) var(--s4); cursor: var(--cursor-text); }
 .gutter, .code { margin: 0; padding: 0; font: var(--t-meta)/1.6 var(--mono); white-space: pre; tab-size: 4; }
 .gutter { color: var(--sub); text-align: right; user-select: none; min-width: 2ch; font-variant-numeric: tabular-nums; }
 .code { overflow-x: auto; }
@@ -1069,7 +1114,7 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .prompt-chip {
   flex: none; position: relative; display: inline-flex; align-items: center; height: calc(var(--prompt-h) - 2 * var(--pill-in) - 2px);
   padding: 0 var(--s3) 0 calc(var(--s3) + 6px + var(--s2)); border-radius: var(--r-round); background: var(--screen); color: var(--add-tint);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08); font: var(--t-meta)/1.6 var(--mono); cursor: text;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08); font: var(--t-meta)/1.6 var(--mono); cursor: var(--cursor-text);
   text-shadow: 0 0 6px color-mix(in srgb, var(--done) 70%, transparent), 0 0 1px color-mix(in srgb, var(--add-tint) 80%, transparent);
 }
 .prompt-chip:has(> .prompt-ps:empty) { display: none; }
@@ -1082,7 +1127,7 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 /* The pill says what the box does and is pressed to choose it (box-modes.ts): Run on the screen's glass, as above; the
    repo's next issue in ink, its number as an issue's is said; TODO's circle on paper, as Home's TODO box is. Turning
    from one to another its colours cross as its words do. */
-.prompt-chip { margin: 0; border: 0; cursor: pointer; transition: background-color var(--motion), color var(--motion), box-shadow var(--motion); }
+.prompt-chip { margin: 0; border: 0; cursor: var(--cursor-hand); transition: background-color var(--motion), color var(--motion), box-shadow var(--motion); }
 .prompt-chip[data-mode='issue'], .prompt-chip[data-mode='todo'] { gap: var(--s2); padding: 0 var(--s3); text-shadow: none; }
 .prompt-chip[data-mode='issue'] { background: var(--ink); color: var(--ground); box-shadow: none; }
 .prompt-chip[data-mode='todo'] { padding-left: var(--s2); background: var(--paper); color: var(--ink); box-shadow: inset 0 0 0 1px var(--edge); }
@@ -1135,11 +1180,11 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
    not make the box taller; inside the raised box its hover is a step back to the ground. */
 .prompt-run { flex: none; display: inline-flex; align-items: center; gap: var(--s2); margin-block: calc((var(--t-body) * 1.6 - var(--h-row)) / 2); }
 .prompt-run:hover:not(:disabled) { background: var(--ground); }
-.prompt-run:disabled { opacity: .5; cursor: default; }
+.prompt-run:disabled { opacity: .5; cursor: var(--cursor-arrow); }
 .prompt:focus-within { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
 .prompt-in { flex: 1; min-width: 0; max-height: 30vh; border: 0; padding: 0; background: transparent; resize: none; font: var(--t-body)/1.6 var(--sans); }
 .prompt-in:focus { outline: none; }
-.prompt-in:disabled { cursor: default; }
+.prompt-in:disabled { cursor: var(--cursor-arrow); }
 .prompt-note:empty { display: none; }
 /* What a run prints comes in at the foot a line after another (terminal.ts), not all at once. */
 .term-out > .fresh { animation: fresh 240ms ease-out backwards; }
@@ -1194,7 +1239,7 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .work.bench > .bar > * { grid-row: 1; }
 .work.bench > .bar > .pane-toggle { grid-column: 3; }
 .work.bench > .bar > .search-box { grid-column: 2; }
-.pane-toggle { display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; color: var(--ink); cursor: pointer; }
+.pane-toggle { display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; color: var(--ink); cursor: var(--cursor-hand); }
 .pane-toggle:hover { background: var(--raised); }
 .pane-toggle .mark { width: var(--s4); height: var(--s4); }
 .work.bench > .center { grid-row: 2; display: flex; flex-direction: column; border-right: 0; }
@@ -1248,21 +1293,22 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .pane-word:empty { display: none; }
 .pane-word-row {
   display: grid; gap: 2px; padding: var(--s2) var(--s4); text-align: left; border: 1px solid var(--rule); border-radius: var(--r-place);
-  background: var(--paper); color: var(--ink); font: inherit; cursor: pointer;
+  background: var(--paper); color: var(--ink); font: inherit; cursor: var(--cursor-hand);
 }
 .pane-word-row:hover { border-color: var(--edge); }
 .pane-word-who { display: flex; align-items: center; gap: var(--s2); font-weight: 600; }
 .pane-word-what { overflow: hidden; color: var(--sub); font-size: var(--t-meta); white-space: nowrap; text-overflow: ellipsis; }
 .columns.split > .col > .col-head {
   height: 28px; opacity: 1; visibility: visible; transition: height var(--move) var(--land), opacity var(--move) var(--land);
-  padding: 0 var(--s3) 0 calc(var(--s3) + var(--s4) - var(--s1)); cursor: grab;
+  padding: 0 var(--s3) 0 calc(var(--s3) + var(--s4) - var(--s1)); cursor: var(--cursor-grab);
 }
+.columns.split > .col > .col-head:active { cursor: var(--cursor-grabbing); }
 
-.col-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 0; padding: 0 var(--s1); border-radius: var(--r-field); background: transparent; color: var(--sub); font-size: var(--t-meta); cursor: pointer; }
+.col-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 0; padding: 0 var(--s1); border-radius: var(--r-field); background: transparent; color: var(--sub); font-size: var(--t-meta); cursor: var(--cursor-hand); }
 .col.active > .col-head > .col-name { color: var(--ink); font-weight: 600; }
 /* A file beside: its repo said quietly before its name. */
 .col-repo { margin-right: .4em; color: var(--sub); font-weight: 400; }
-.col-close { display: grid; place-items: center; width: 24px; height: 24px; margin-left: auto; padding: 0; border: 0; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: pointer; opacity: 0; transition: opacity var(--motion); }
+.col-close { display: grid; place-items: center; width: 24px; height: 24px; margin-left: auto; padding: 0; border: 0; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: var(--cursor-hand); opacity: 0; transition: opacity var(--motion); }
 .col-close .mark { width: var(--s4); height: var(--s4); }
 .col-head:hover > .col-close, .col-close:focus-visible, .col.active > .col-head > .col-close { opacity: 1; }
 .col-close:hover { background: var(--raised); color: var(--ink); }
@@ -1413,13 +1459,13 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .found-here { flex: 1; min-width: 0; margin: 0; display: flex; align-items: baseline; gap: var(--s2); }
 .found-here > .found-what { min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .found-here > .found-kind, .found-here > .found-at { flex: none; }
-.found-step { display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; color: var(--ink); cursor: pointer; }
+.found-step { display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; color: var(--ink); cursor: var(--cursor-hand); }
 .found-step:hover:not(:disabled) { background: var(--raised); }
-.found-step:disabled { opacity: .35; cursor: default; }
+.found-step:disabled { opacity: .35; cursor: var(--cursor-arrow); }
 .found-at { font: var(--t-meta) var(--mono); color: var(--sub); }
 .work.bench .search-results { max-height: var(--search-room, none); }
 .found-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s1); }
-.found-item { display: flex; align-items: baseline; gap: var(--s2); width: 100%; min-height: var(--h-row); padding: var(--s1); border: 0; border-radius: var(--r-field); background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
+.found-item { display: flex; align-items: baseline; gap: var(--s2); width: 100%; min-height: var(--h-row); padding: var(--s1); border: 0; border-radius: var(--r-field); background: transparent; color: var(--ink); text-align: left; cursor: var(--cursor-hand); }
 .found-item:hover { background: var(--raised); }
 .found-kind { flex: none; font-size: var(--t-meta); color: var(--sub); }
 .found-what { min-width: 0; overflow-wrap: anywhere; }
@@ -1431,7 +1477,7 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .hit-head { display: flex; align-items: center; gap: var(--s2); }
 .hit-head > .hit-file { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
 /* A found file's changes (+3), right after its name in its words, not a pill of its own: pressed, its diff. */
-.hit-diff { flex: none; display: inline-flex; gap: var(--s2); padding: 0; border: 0; background: transparent; color: var(--sub); font: var(--t-meta) var(--mono); cursor: pointer; }
+.hit-diff { flex: none; display: inline-flex; gap: var(--s2); padding: 0; border: 0; background: transparent; color: var(--sub); font: var(--t-meta) var(--mono); cursor: var(--cursor-hand); }
 .hit-diff:hover { color: var(--ink); text-decoration: underline; }
 .hit-kind { margin: 0 var(--s1) var(--s1); font-size: var(--t-meta); font-weight: 600; color: var(--sub); }
 .hit-issue, .hit-run { font-family: var(--sans); font-weight: 400; overflow-wrap: anywhere; }
@@ -1474,10 +1520,10 @@ form.search { position: relative; }
    two boxes. Where a line is written in its own place without a box (an issue's first line), that place says so. */
 :where(.line-in):focus, :where(.line-in):focus-visible { outline: 1px solid var(--ink); outline-offset: -1px; border-color: var(--ink); background: var(--paper); }
 /* The search box's own clear mark, in the page's ink, not the browser's blue. */
-.search-in::-webkit-search-cancel-button { filter: grayscale(1) brightness(.4); cursor: pointer; }
+.search-in::-webkit-search-cancel-button { filter: grayscale(1) brightness(.4); cursor: var(--cursor-hand); }
 .search-count { margin-bottom: var(--s2); padding-left: var(--s1); }
 .hit-group { display: grid; margin-bottom: var(--s3); }
-.hit-file, .hit { border: 0; padding: 0 var(--s1); background: transparent; text-align: left; cursor: pointer; border-radius: var(--r-field); }
+.hit-file, .hit { border: 0; padding: 0 var(--s1); background: transparent; text-align: left; cursor: var(--cursor-hand); border-radius: var(--r-field); }
 .hit-file { min-height: var(--h-row); font: 600 var(--t-meta) var(--mono); }
 .hit { display: grid; grid-template-columns: 4ch minmax(0, 1fr); gap: var(--s2); font: var(--t-meta)/1.6 var(--mono); }
 .hit-file:hover, .hit:hover { background: var(--raised); }
@@ -1495,7 +1541,7 @@ button.run-line { margin-inline-start: calc(-1 * var(--s1)); min-width: 0; }
 .diff-line { display: grid; grid-template-columns: 4ch 1ch minmax(0, 1fr); gap: var(--s2); padding: 0 var(--s2) 0 var(--s1); border-left: 2px solid transparent; }
 /* Git's diffs: the file's name and +n −n at the left, its lines beside them from the same row. */
 .diff-file.beside { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: var(--s4); align-items: start; }
-.diff-file.beside > .diff-head { grid-column: 1; min-height: 0; padding: 0 var(--s1); cursor: default; }
+.diff-file.beside > .diff-head { grid-column: 1; min-height: 0; padding: 0 var(--s1); cursor: var(--cursor-arrow); }
 .diff-file.beside > .diff-head:hover { background: transparent; }
 .diff-file.beside > .diff { grid-column: 2; min-width: 0; }
 .diff-file.beside > :not(.diff-head):not(.diff) { grid-column: 1 / -1; }
@@ -1507,18 +1553,18 @@ button.run-line { margin-inline-start: calc(-1 * var(--s1)); min-width: 0; }
 /* Which line it is, quiet at the left of each line. */
 .diff-no { align-self: start; color: var(--sub); text-align: right; font-variant-numeric: tabular-nums; user-select: none; }
 /* A line's number in the copy here opens the center at it. */
-button.diff-no { padding: 0; border: 0; background: transparent; font: inherit; cursor: pointer; }
+button.diff-no { padding: 0; border: 0; background: transparent; font: inherit; cursor: var(--cursor-hand); }
 button.diff-no:hover { color: var(--ink); background: var(--raised); border-radius: var(--r-field); }
 /* A file of a diff: a fold, its name and what was added and removed. */
 .diff-file { margin-bottom: var(--s3); }
-.diff-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s1) var(--s3); min-height: var(--h-row); padding: var(--s1) var(--s1); border-radius: var(--r-field); cursor: pointer; font: var(--t-meta) var(--mono); }
+.diff-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s1) var(--s3); min-height: var(--h-row); padding: var(--s1) var(--s1); border-radius: var(--r-field); cursor: var(--cursor-hand); font: var(--t-meta) var(--mono); }
 .diff-head:hover { background: var(--raised); }
 .review-box .diff-head:hover, .issue-box .changes .diff-head:hover { background: var(--ground); }
 /* Put back, at the head's right end; pressed, the head asks in its place (its lines stay under it). */
 .diff-head > .grow { flex: 1; }
 /* A short name, its counts and Put back keep one line; with no room, Put back takes the next line, never two. */
 .diff-head .button { align-self: center; margin-left: auto; white-space: nowrap; font-family: var(--sans); }
-.diff-head.asking { display: grid; gap: var(--s2); padding: var(--s2) var(--s1); cursor: default; }
+.diff-head.asking { display: grid; gap: var(--s2); padding: var(--s2) var(--s1); cursor: var(--cursor-arrow); }
 .diff-head.asking:hover { background: transparent; }
 .diff-head.asking > .muted { font-family: var(--sans); }
 .diff-name { font-weight: 600; overflow-wrap: anywhere; }
@@ -1555,13 +1601,13 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 .mono { font-family: var(--mono); font-size: var(--t-meta); }
 .issue-list { list-style: none; margin: 0; padding: 0; }
 /* What leads somewhere from a list (an issue in the reference, what a message is about): a row, never an underlined word. */
-.link { border: 0; padding: var(--s1) var(--s2); margin-inline: calc(-1 * var(--s2)); border-radius: var(--r-field); background: transparent; cursor: pointer; text-align: left; }
+.link { border: 0; padding: var(--s1) var(--s2); margin-inline: calc(-1 * var(--s2)); border-radius: var(--r-field); background: transparent; cursor: var(--cursor-hand); text-align: left; }
 .link:hover { background: var(--raised); }
 .pane { padding: var(--s5); overflow: auto; min-height: 0; }
 .pane h2 { font-size: var(--t-body); font-weight: 600; }
 .pane .empty { margin-top: var(--s3); padding: var(--s5); }
 .term-home { min-height: 0; overflow: hidden; }
-.term-home .term-box { height: 100%; padding: var(--s5); cursor: text; }
+.term-home .term-box { height: 100%; padding: var(--s5); cursor: var(--cursor-text); }
 .term-box { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
 .term-box h2 { font-size: var(--t-body); font-weight: 600; }
 .term-box .empty { margin-top: var(--s3); padding: var(--s5); }
@@ -1583,10 +1629,10 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 .tree ul { list-style: none; margin: 0; padding: 0; }
 .tree-row { display: flex; align-items: center; min-height: var(--h-row); padding-left: calc(var(--depth, 0) * var(--s4)); border-radius: var(--r-field); }
 .tree-name {
-  flex: 1; min-width: 0; min-height: var(--h-row); padding: 0 var(--s1); text-align: left; border: 0; background: transparent; color: inherit; cursor: pointer;
+  flex: 1; min-width: 0; min-height: var(--h-row); padding: 0 var(--s1); text-align: left; border: 0; background: transparent; color: inherit; cursor: var(--cursor-hand);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.tree-name.plain { display: flex; align-items: center; cursor: default; color: var(--sub); }
+.tree-name.plain { display: flex; align-items: center; cursor: var(--cursor-arrow); color: var(--sub); }
 /* The keyboard on a row: the row is ringed, round as the row is, not the name in a square of its own. The row a deed
    just made or renamed has the keyboard without the ring (it is lit for that), until a key is pressed there. */
 .tree-name:focus-visible { outline: none; }
@@ -1607,7 +1653,7 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 .tree-system { margin-top: var(--s2); }
 .tree-system > .tree-row > .tree-meta { color: var(--sub); }
 .tree-toggle, .tree-spacer { flex: none; width: var(--s5); height: var(--h-row); }
-.tree-toggle { display: grid; place-items: center; border: 0; background: transparent; color: inherit; cursor: pointer; }
+.tree-toggle { display: grid; place-items: center; border: 0; background: transparent; color: inherit; cursor: var(--cursor-hand); }
 .tree-toggle .icon { width: var(--s3); height: var(--s3); transition: transform var(--motion); }
 .tree-toggle[aria-expanded='false'] .icon { transform: rotate(-90deg); }
 .tree-note { padding: var(--s1) var(--s2) var(--s1) calc(var(--depth, 0) * var(--s4) + var(--s5) + var(--s1)); font-size: var(--t-meta); }
@@ -1615,7 +1661,7 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
    thing pressed is, shown on the row under the pointer or the keyboard, and
    kept while its menu is out. It keeps its room either way, so nothing moves,
    and is there to be heard while unseen. */
-.tree-more { flex: none; display: grid; place-items: center; width: var(--s5); height: var(--s5); margin-right: var(--s1); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; color: inherit; cursor: pointer; opacity: 0; }
+.tree-more { flex: none; display: grid; place-items: center; width: var(--s5); height: var(--s5); margin-right: var(--s1); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; color: inherit; cursor: var(--cursor-hand); opacity: 0; }
 .tree-more .mark { width: var(--s4); height: var(--s4); }
 .tree-row:hover > .tree-more, .tree-row:focus-within > .tree-more, .tree-more[aria-expanded='true'] { opacity: 1; }
 .tree-more[aria-expanded='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
@@ -1655,7 +1701,7 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
    kept; nothing to press. */
 .repo-grid.waiting { margin-top: var(--s5); }
 .repo-grid.waiting:empty { display: none; }
-.card.ghost { border-style: dashed; border-color: var(--edge); color: var(--sub); cursor: default; }
+.card.ghost { border-style: dashed; border-color: var(--edge); color: var(--sub); cursor: var(--cursor-arrow); }
 .card.ghost .card-title { color: var(--sub); }
 .sign-in-card {
   width: min(440px, 100%); box-sizing: border-box; display: grid; gap: var(--s4);
@@ -1706,7 +1752,7 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 .space-col:has(.gear-room) > h3 b { margin-right: calc(var(--h-row) + var(--s3)); }
 .space-foot { display: flex; align-items: center; gap: var(--s3); padding-top: var(--s3); }
 .space-foot .grow { flex: 1; }
-.link-name { border: 0; padding: 0; background: transparent; font: inherit; font-weight: 600; color: inherit; text-align: left; cursor: pointer; }
+.link-name { border: 0; padding: 0; background: transparent; font: inherit; font-weight: 600; color: inherit; text-align: left; cursor: var(--cursor-hand); }
 .link-name:hover { background: var(--raised); border-radius: var(--r-field); }
 @media (max-width: 900px) { .space-box { grid-template-columns: 1fr; min-height: 0; } .space-col + .space-col { border-left: 0; border-top: 1px solid var(--rule); } }
 /* Inbox on the page's three columns (inbox.ts): the stub, the field to write to someone new and the conversations in
@@ -1740,7 +1786,7 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 /* The rows, drawn again as they come, lie in the list as if it held them itself. */
 .inbox-rows { display: contents; }
 .inbox-head { margin: var(--s3) 0 0; font-size: var(--t-meta); color: var(--sub); }
-.inbox-row { display: grid; gap: 2px; text-align: left; padding: var(--s2); border: 0; border-radius: var(--r-card); background: transparent; cursor: pointer; color: inherit; }
+.inbox-row { display: grid; gap: 2px; text-align: left; padding: var(--s2); border: 0; border-radius: var(--r-card); background: transparent; cursor: var(--cursor-hand); color: inherit; }
 .inbox-row:hover { background: var(--raised); }
 .inbox-row[aria-current='true'] { box-shadow: inset 0 0 0 var(--line-work) var(--edge); }
 .inbox-who { display: flex; justify-content: space-between; gap: var(--s2); }
@@ -1777,7 +1823,7 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 .issue-box { display: grid; gap: var(--s3); }
 .issue-box > .issue-body, .issue-words > .issue-body { margin: 0; max-width: 72ch; }
 /* An issue's words are where they are changed: pressed, they become their fields. */
-.issue-words { display: grid; gap: var(--s3); width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: text; border-radius: var(--r-field); }
+.issue-words { display: grid; gap: var(--s3); width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-text); border-radius: var(--r-field); }
 .issue-words:focus-visible { outline: 2px solid var(--ink); outline-offset: var(--s1); }
 .issue-form.issue-edit { margin: 0; padding: 0; border: 0; }
 .issue-box > .work-act { margin-top: var(--s2); flex-wrap: wrap; }
@@ -1812,7 +1858,7 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 .issue-slot:has(+ .issue-slot[aria-current='true']) .issue-big-head.peek { text-align: right; }
 .issue-stage:has(.stage-hit.next:hover) .issue-slot[aria-current='true'] + .issue-slot .issue-card,
 .issue-stage:has(.stage-hit.prev:hover) .issue-slot:has(+ .issue-slot[aria-current='true']) .issue-card { border-color: var(--edge); color: var(--ink); }
-.stage-hit { position: absolute; top: 0; bottom: 0; z-index: 1; width: var(--peek); padding: 0; border: 0; border-radius: var(--r-place); background: transparent; cursor: pointer; }
+.stage-hit { position: absolute; top: 0; bottom: 0; z-index: 1; width: var(--peek); padding: 0; border: 0; border-radius: var(--r-place); background: transparent; cursor: var(--cursor-hand); }
 .stage-hit.prev { left: 0; width: calc(var(--lead) * var(--peek)); }
 .stage-hit.next { right: 0; width: calc((2 - var(--lead)) * var(--peek)); }
 .stage-hit:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
@@ -1840,7 +1886,7 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 .offer-holder.held { display: none; }
 .part {
   height: var(--h-control); padding: 0 var(--s4); border: 1px solid transparent; border-radius: var(--r-round);
-  background: transparent; color: var(--sub); font: inherit; font-size: var(--t-body); font-weight: 600; cursor: pointer;
+  background: transparent; color: var(--sub); font: inherit; font-size: var(--t-body); font-weight: 600; cursor: var(--cursor-hand);
 }
 .part small { display: inline-block; margin-left: var(--s2); font-weight: 400; font-size: var(--t-meta); }
 .part small:empty { display: none; }
@@ -1929,7 +1975,7 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 @media (prefers-reduced-motion: reduce) { .card.just-stopped > .muted.small { animation: none; } }
 @keyframes tick-in { from { clip-path: inset(0 0 100% 0); } }
 @media (prefers-reduced-motion: reduce) { .done-mark.fresh, .done-mark.fresh::after { animation: none; } }
-.stage-diff summary { cursor: pointer; color: var(--sub); }
+.stage-diff summary { cursor: var(--cursor-hand); color: var(--sub); }
 .stage-diff summary:hover { color: var(--ink); }
 .stage-diff[open] summary { color: var(--ink); }
 /* Review, inside the issue's box: its diff scrolling in place, marked lines as with a highlighter,
@@ -1949,7 +1995,7 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 /* A mark is a highlighter's: drawn over the words only, each wrapped line its
    own stroke with softened ends, so two marked lines read as two; its number
    in ink. The pointer on a line shows the stroke it would make, paler. */
-.diff-line.markable { cursor: pointer; }
+.diff-line.markable { cursor: var(--cursor-hand); }
 .diff-line.marked .diff-words, .diff-line.marking .diff-words,
 .diff-line.markable:hover .diff-words {
   padding: 1px 3px; margin: 0 -3px; border-radius: 3px;
@@ -1962,7 +2008,7 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 /* The Remote's repos: Home's cards, with Forge at the bottom left and the
    power switch at the right. A switch slides: on, its knob green at the
    right; off, at the left on red, and the card quiet. */
-.repo-cards .card { cursor: default; grid-template-rows: auto auto auto 1fr auto; }
+.repo-cards .card { cursor: var(--cursor-arrow); grid-template-rows: auto auto auto 1fr auto; }
 /* Remote's parts are 760 wide (the passkey's offer above them, the plan's): its cards two to a row in that width,
    so their edges are the offer's. */
 .grid.repo-cards { max-width: 760px; }
@@ -1994,13 +2040,13 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 /* Hovered, a step toward ink rather than toward the ground, so its words keep their contrast. */
 .button.off:hover:not(:disabled) { background: color-mix(in srgb, var(--off) 85%, var(--ink)); filter: none; }
 .card.off .card-title, .card.off > .muted { color: var(--sub); }
-.power { position: relative; width: 52px; height: 28px; flex: none; padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: var(--raised); cursor: pointer; transition: background var(--motion), border-color var(--motion); }
+.power { position: relative; width: 52px; height: 28px; flex: none; padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: var(--raised); cursor: var(--cursor-hand); transition: background var(--motion), border-color var(--motion); }
 .power .knob { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: var(--ink); transition: transform var(--move), background var(--move); }
 /* On is the green circle; the switch answers the pointer before it is pressed. */
 .power[aria-checked='true'] .knob { transform: translateX(24px); background: var(--done); }
 .power:hover:not(:disabled) { border-color: var(--ink); }
 /* Waiting (the Remote not answering): there, but not to be pressed now. */
-.power:disabled { opacity: .45; cursor: default; }
+.power:disabled { opacity: .45; cursor: var(--cursor-arrow); }
 /* 廃棄: quiet beside 空ける until the pointer is on it, then filled as the deed it is. */
 .button.discard:hover:not(:disabled), .button.discard:focus-visible { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 /* A switch with its word, inside a card's lines (a Prompt's network). */
@@ -2044,7 +2090,7 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .issue-summary {
   min-height: calc(4 * 1.6em + 2 * var(--s2)); padding: var(--s2) var(--s3); margin-left: calc(-1 * var(--s3));
   width: calc(100% + 2 * var(--s3)); border: 1px solid transparent; border-radius: var(--r-field); background: transparent;
-  color: var(--ink); font: var(--t-body)/1.6 var(--sans); resize: none; cursor: text;
+  color: var(--ink); font: var(--t-body)/1.6 var(--sans); resize: none; cursor: var(--cursor-text);
 }
 .issue-summary::placeholder { color: var(--sub); }
 .issue-summary:hover { border-color: var(--rule); }
@@ -2082,12 +2128,12 @@ details.diff-file > summary.diff-head::before {
 details.diff-file[open] > summary.diff-head::before { rotate: 90deg; }
 /* What waits of a long file, under its lines where they stop, quiet until pressed. */
 .diff-more { justify-self: start; margin-top: var(--s1); padding: 0 var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: var(--sub); font: var(--t-meta) var(--mono); }
-button.diff-more { cursor: pointer; }
+button.diff-more { cursor: var(--cursor-hand); }
 button.diff-more:hover { color: var(--ink); background: var(--raised); }
 /* What is done with (merged, closed): rows, space between them; a merged one opens to its diff. */
 .done-list { display: grid; gap: var(--s1); margin-inline: calc(-1 * var(--s2)); } /* its words on its heading's edge, past each row's own s2 */
 .done-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s1) var(--s3); min-height: var(--h-row); padding: var(--s1) var(--s2); border-radius: var(--r-field); }
-summary.done-head { cursor: pointer; }
+summary.done-head { cursor: var(--cursor-hand); }
 summary.done-head:hover { background: var(--raised); }
 .done-head > .grow { flex: 1; }
 .done-name { font-weight: 600; overflow-wrap: anywhere; }
@@ -2110,7 +2156,7 @@ summary.done-head:hover { background: var(--raised); }
 .small-card .card-title { font-size: var(--t-body); }
 .small-card.mono-title .card-title { font-family: var(--mono); font-weight: 600; }
 .small-card.quiet { border-style: dashed; color: var(--sub); }
-.small-card.openable { cursor: pointer; }
+.small-card.openable { cursor: var(--cursor-hand); }
 .small-card.openable:hover { background: var(--raised); }
 .small-card.current { border-color: var(--ink); background: var(--raised); }
 .small-card.new { min-height: 128px; }
@@ -2152,16 +2198,16 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .stub:has(> .stub-text) { border-color: var(--rule); background: transparent; }
 .stub-text:hover, .stub-code:hover { background: var(--raised); }
 .stub-text, .stub-in { flex: 1; min-width: 0; height: calc(var(--h-control) - 2px); padding: 0 var(--s3); border: 0; border-radius: var(--r-field) 0 0 var(--r-field); background: transparent; color: var(--ink); font: 600 var(--t-body)/1 var(--sans); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.stub-text { cursor: copy; }
+.stub-text { cursor: var(--cursor-copy); }
 /* The code beside the name: six digits to be found by, copied by a press. */
-.stub-code { flex: none; height: calc(var(--h-control) - 2px); padding: 0 var(--s3); border: 0; border-left: 1px solid var(--rule); background: transparent; color: var(--sub); font: var(--t-meta)/1 var(--mono); letter-spacing: .08em; cursor: copy; }
+.stub-code { flex: none; height: calc(var(--h-control) - 2px); padding: 0 var(--s3); border: 0; border-left: 1px solid var(--rule); background: transparent; color: var(--sub); font: var(--t-meta)/1 var(--mono); letter-spacing: .08em; cursor: var(--cursor-copy); }
 .stub-code:hover { color: var(--ink); }
 .stub-in:focus { outline: none; }
 .sign-in-card .stub { width: 100%; }
 .sign-in-card .stub-holder { display: grid; gap: var(--s2); justify-items: stretch; margin: 0; }
 .sign-in-card .stub-holder > .stub { min-width: 0; }
 .stub:has(.stub-in:focus-visible) { outline: 2px solid var(--ink); outline-offset: 2px; }
-.stub-gear { display: grid; place-items: center; flex: none; width: var(--h-control); height: calc(var(--h-control) - 2px); padding: 0; border: 0; border-left: 1px solid var(--rule); border-radius: 0 var(--r-field) var(--r-field) 0; background: transparent; color: var(--sub); cursor: pointer; }
+.stub-gear { display: grid; place-items: center; flex: none; width: var(--h-control); height: calc(var(--h-control) - 2px); padding: 0; border: 0; border-left: 1px solid var(--rule); border-radius: 0 var(--r-field) var(--r-field) 0; background: transparent; color: var(--sub); cursor: var(--cursor-hand); }
 .stub-gear:hover, .stub-gear[aria-expanded='true'] { background: var(--raised); color: var(--ink); }
 .stub-gear svg { width: 20px; height: 20px; }
 .stub-panel { position: absolute; top: calc(100% + var(--s1)); left: 0; z-index: 4; width: min(100%, 400px); }
@@ -2173,7 +2219,7 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .stub-record { display: grid; gap: var(--s1); }
 .stub-record p { margin: 0 0 var(--s1); }
 .record-row { display: grid; grid-template-columns: 4em minmax(0, 1fr); align-items: center; gap: var(--s2); }
-.record-value { min-height: var(--h-row); padding: var(--s1) var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: var(--ink); font: var(--t-meta)/1.4 var(--mono); text-align: left; overflow-wrap: anywhere; cursor: copy; }
+.record-value { min-height: var(--h-row); padding: var(--s1) var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: var(--ink); font: var(--t-meta)/1.4 var(--mono); text-align: left; overflow-wrap: anywhere; cursor: var(--cursor-copy); }
 .record-value:hover { background: var(--raised); }
 .record-found { margin-top: var(--s2) !important; color: var(--sub); }
 /* Words are ink: `done` is the mark's green (3.6:1 on ground), too light for words. */
@@ -2193,9 +2239,9 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 /* The review's procedure under what was said: a comment more in a field tall from the start, then the verdict. */
 .review-verdict { display: flex; align-items: center; gap: var(--s2); }
 /* Approve: a ○ and its word; pressed, the ○ turns into the done mark. */
-.approve-mark { display: inline-flex; align-items: center; gap: var(--s2); min-height: var(--h-control); padding: 0 var(--s3) 0 var(--s1); border: 0; border-radius: var(--r-round); background: transparent; color: var(--ink); font: 600 var(--t-body) var(--sans); cursor: pointer; }
+.approve-mark { display: inline-flex; align-items: center; gap: var(--s2); min-height: var(--h-control); padding: 0 var(--s3) 0 var(--s1); border: 0; border-radius: var(--r-round); background: transparent; color: var(--ink); font: 600 var(--t-body) var(--sans); cursor: var(--cursor-hand); }
 .approve-mark:hover { background: var(--raised); }
-.approve-mark:disabled { cursor: default; opacity: .6; }
+.approve-mark:disabled { cursor: var(--cursor-arrow); opacity: .6; }
 .approve-mark .ring { width: 22px; height: 22px; flex: none; border: 2px solid var(--edge); border-radius: 50%; }
 .approve-mark:hover .ring { border-color: var(--done); }
 .review-verdict .grow { flex: 1; }
@@ -2237,7 +2283,7 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .tl-foot-mark { height: 1px; }
 /* The mark for what came floats just above the box (its holder has no height), so showing it moves nothing. */
 .tl-new-at { position: sticky; bottom: var(--s3); z-index: 3; height: 0; display: flex; justify-content: center; align-items: flex-end; }
-.tl-new { flex: none; min-height: var(--h-row); padding: 0 var(--s4); border: 0; border-radius: var(--r-round); background: var(--ink); color: var(--ground); font: 600 var(--t-meta) var(--sans); cursor: pointer; }
+.tl-new { flex: none; min-height: var(--h-row); padding: 0 var(--s4); border: 0; border-radius: var(--r-round); background: var(--ink); color: var(--ground); font: 600 var(--t-meta) var(--sans); cursor: var(--cursor-hand); }
 .tl-new[hidden] { display: none; }
 /* Server: servers as chips on the top line (the gear at its right end), then
    the boards as boxes side by side, slid as the issues are (one in full, the
@@ -2254,7 +2300,7 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 /* A server being named: its chip is the field, where it will stand once made, dashed until it has a name, and says
    one name; Make beside it, and what the Remote said no to after that. */
 .server-making { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--s2); min-width: 0; }
-.chip.server-naming { display: inline-flex; align-items: center; gap: var(--s2); border-style: dashed; cursor: text; }
+.chip.server-naming { display: inline-flex; align-items: center; gap: var(--s2); border-style: dashed; cursor: var(--cursor-text); }
 .chip.server-naming.named, .chip.server-naming:focus-within { border-style: solid; border-color: var(--ink); }
 .server-name-in, .server-handle-in { min-width: 0; padding: 0; border: 0; background: transparent; color: var(--ink); font: inherit; }
 .server-name-in { font-weight: 600; }
@@ -2265,7 +2311,7 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 /* The quiet @ at the chip's end: the address it follows unseen, to be written otherwise; shown, the @ stays where it
    was, as the address's first letter. */
 .server-at { margin: 0 calc(-1 * var(--s1)); padding: 0 var(--s1); border: 0; border-radius: var(--r-round); background: transparent;
-  color: var(--sub); font: inherit; font-family: var(--mono); line-height: inherit; cursor: pointer; }
+  color: var(--sub); font: inherit; font-family: var(--mono); line-height: inherit; cursor: var(--cursor-hand); }
 .server-at:hover { color: var(--ink); }
 .server-address { display: inline-flex; align-items: baseline; font-family: var(--mono); }
 /* The server it will be, faint under its chip: its first board dashed on the ground as it will open (its TODO's first
@@ -2275,7 +2321,7 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .board-ghost .board-head h2 { color: var(--sub); }
 .slide .board-card.ghost-next { height: auto; border-style: dashed; border-color: var(--rule); background: transparent; color: var(--sub); }
 .board-ghost .todo-box { border-color: color-mix(in srgb, var(--rule) 55%, transparent); background: transparent; }
-.board-ghost .todo-mark { cursor: default; }
+.board-ghost .todo-mark { cursor: var(--cursor-arrow); }
 .board-ghost .todo-title { display: flex; align-items: center; color: var(--sub); font-weight: 400; }
 .board-ghost .board-talk { display: flex; flex-direction: column; overflow: hidden; }
 .board-ghost .timeline { flex: 1; }
@@ -2283,7 +2329,7 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .side-ghost { opacity: .45; }
 /* A gear with nothing chosen keeps its place, so nothing beside it moves. */
 .server-gear.unseen { visibility: hidden; }
-.server-gear { display: grid; place-items: center; flex: none; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid transparent; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: pointer; }
+.server-gear { display: grid; place-items: center; flex: none; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid transparent; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: var(--cursor-hand); }
 .server-gear:hover, .server-gear[aria-expanded='true'] { border-color: var(--edge); color: var(--ink); }
 .server-bar > .server-gear { border-color: var(--edge); color: var(--ink); } /* at the corner, the switch's quiet circle */
 .server-bar > .server-gear:hover { background: var(--raised); }
@@ -2371,7 +2417,7 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .people li > :not(.face) { min-width: 0; overflow-wrap: anywhere; }
 .people li > .muted { flex: none; }
 .face { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--rule); border-radius: var(--r-round); font: 600 11px var(--sans); }
-.side-repo { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s2); width: 100%; padding: var(--s1) var(--s2); margin: 0 calc(-1 * var(--s2)); border: 0; border-radius: var(--r-field); background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+.side-repo { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s2); width: 100%; padding: var(--s1) var(--s2); margin: 0 calc(-1 * var(--s2)); border: 0; border-radius: var(--r-field); background: transparent; color: inherit; text-align: left; font: inherit; cursor: var(--cursor-hand); }
 .side-repo:hover { background: var(--raised); }
 .side-repo > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-repo > .small:not(.seen-mark) { grid-column: 1; }
@@ -2420,7 +2466,7 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 }
 .seen-body { min-height: 0; margin-top: var(--s4); display: grid; grid-template-columns: minmax(10em, 1fr) minmax(0, 3fr); border: 1px solid var(--rule); border-radius: var(--r-place); overflow: hidden; }
 .seen-files { margin: 0; padding: var(--s2); list-style: none; overflow-y: auto; border-right: 1px solid var(--rule); }
-.seen-file { display: block; width: 100%; padding: var(--s1) var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: var(--sub); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.seen-file { display: block; width: 100%; padding: var(--s1) var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: var(--sub); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: var(--cursor-hand); }
 .seen-file:hover, .seen-file[aria-current='true'] { background: var(--raised); color: var(--ink); }
 .seen-text { margin: 0; padding: var(--s3) var(--s4); overflow: auto; white-space: pre; font: var(--t-meta)/1.55 var(--mono); }
 @media (max-width: 760px) { .seen-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); } .seen-files { max-height: 30vh; border-right: 0; border-bottom: 1px solid var(--rule); } }
