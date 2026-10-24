@@ -12,7 +12,7 @@ import {todoBox} from './todo-box.ts';
 import {openNext as openConversation} from './inbox.ts';
 import {Reference} from './reference.ts';
 import type {Context} from './context.ts';
-import {onRightPane, pluginArea, rightPaneOpen, setRightPane} from './bench.ts';
+import {onRightPane, pluginArea, rightPaneOpen, setRightPane} from './pane.ts';
 import {mark, paneMark} from '../icons.ts';
 import {onPlugins, pluginsOpen} from '../plugins.ts';
 import {errorText} from '../errors.ts';

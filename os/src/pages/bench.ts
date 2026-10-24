@@ -1,249 +1,20 @@
 import {h} from '../dom.ts';
-import * as inbox from '../inbox.ts';
-import {news, onNews} from '../news.ts';
-import {connection} from '../remote.ts';
 import {t} from '../i18n.ts';
 import {paneMark} from '../icons.ts';
-import {after, arrive, closeUp, keep as goesTo, keepOut, LAND, msOf, paced, paneOut, putAway, still} from '../glide.ts';
-import {caretRect, fieldMoved} from '../caret.ts';
-import {errorText} from '../errors.ts';
-import {onPlugins, pluginsOpen, setPluginsOpen, slots} from '../plugins.ts';
-import {complete, pathWord, Recall} from '../recall.ts';
-import {onChange, store, type Entry} from '../repos.ts';
-import {Reference} from './reference.ts';
-import {kindWords} from './todo-box.ts';
+import {Box} from './box.ts';
+import {Pane, paneWord, pluginArea} from './pane.ts';
 import type {Writing} from './reader.ts';
-import {sessionFor, sessionIfAny, terminalFor} from './terminal.ts';
-import {boxMode, modeHint, modeMenu, MODES, nextIssue, onBoxMode, pillWords, sendAs, sendOff, sendTitle, sendWord, setBoxMode, turn, type Mode} from './box-modes.ts';
+import {Reference} from './reference.ts';
+import {Screen} from './screen.ts';
 
-// The workbench Forge and Git share: the page's own content in the large
-// center (3/4) with a prompt box at its foot, and a narrow right pane (1/4)
-// with what the center refers to on top and the Prompt (the repo's sh)
-// below. The center's top line holds the band (Forge's), the search box in
-// its middle, and at its right end the switch that puts the right pane away
-// and brings it back: put away, the center takes the whole width, and
-// everything in the pane stays as it was (what was chosen there, where it
-// was read), only out of sight. Narrow, the pane is laid over the center
-// when it is brought out. Under the top line, the plugin area, plain until
-// the rail's plug opens it (plugins.ts). Using the prompt box sends the Prompt flying up
-// over the center, just above the box, and the reference grows down into the
-// room it leaves. Enter is a new line and Ctrl+Enter sends, as in every box
-// one writes in. A Prompt that ended says so in its place, with Start again;
-// sending to it starts it again too.
-//
-// What is written in the box belongs to the repo it was written for: each
-// repo keeps its own while the app runs, so going to another page and back
-// keeps it, and switching repos swaps it for that repo's (or an empty box).
-// Until something is run in the repo's Prompt it holds only its prompt line,
-// so the reference takes the side's room; from the first run on, the Prompt
-// has its 3 parts. While one reads (the center turned by the wheel, a touch
-// or the keys) and the box is empty and not written in, the box steps back
-// and lets what is under it be pressed; the keyboard reaching it, a press on
-// the Prompt, or the pointer coming down to the center's foot brings it back
-// where it was. Something written in it keeps it out.
-//
-// ↑ on the box's first line and ↓ on its last walk the repo's earlier
-// lines (the Prompt's runs), and a run pressed in Output is put back in the
-// box to be changed or sent again. Tab completes the path before the caret
-// from the repo's tree, and says the choices under the box when there are
-// several; with no path to complete, Tab moves on as everywhere.
-
-/** Choices said under the box after Tab, at most. */
-const CHOICES = 24;
-
-/** What was written in the prompt box for each repo and not sent. */
-const drafts = new Map<string, string>();
-
-const PANE_KEY = 'length3.os.pane';
-/** Whether the right pane is out when the window is wide, as last left on this device: one for every page that has it. */
-let paneOpen = (() => { try { return localStorage.getItem(PANE_KEY) !== 'closed'; } catch { return true; } })();
-const paneHearers = new Set<() => void>();
-/** Whether the right pane is out (wide windows), on any page that has one (Forge, Git, Home). */
-export const rightPaneOpen = () => paneOpen;
-/** The right pane put away or brought back, on every page that has one. */
-export function setRightPane(on: boolean) {
-  if (on === paneOpen) return;
-  paneOpen = on;
-  try { localStorage.setItem(PANE_KEY, on ? 'open' : 'closed'); } catch { /* a convenience */ }
-  for (const f of [...paneHearers]) f();
-}
-export function onRightPane(f: () => void): () => void { paneHearers.add(f); return () => paneHearers.delete(f); }
-let benches = 0;
-
-/**
- * The plugin area: nothing until it is opened; opened, the plugins side by side (one in full, ← → or an edge to
- * the next). With none, it stays plain: nothing is put there to fill it (issue #45), the rail's plug is the way in.
- */
-export function pluginArea(): HTMLElement {
-  const area = h('section', {class: 'plugins', 'aria-label': t('Plugins'), hidden: ''});
-  const paint = () => {
-    // Put away, what is under it comes up into its place; opened, it comes down into its own.
-    const was = area.hidden ? 0 : area.getBoundingClientRect().height;
-    area.hidden = !pluginsOpen();
-    if (area.hidden) {
-      if (was && area.nextElementSibling) closeUp([area.nextElementSibling], was, 260);
-      return;
-    }
-    const list = slots.all;
-    if (!list.length) { area.replaceChildren(); return; }
-    const at = slots.shown;
-    const track = h('div', {class: 'slide-track', style: `--at:${at}`}, ...list.map((s, i) =>
-      h('div', {class: 'slide', role: 'group', 'aria-label': s.label, 'aria-current': String(i === at)}, s.make())));
-    const edge = (by: 1 | -1) => {
-      const b = h('button', {type: 'button', class: `stage-hit ${by > 0 ? 'next' : 'prev'}`, 'aria-label': list[at + by]?.label ?? ''});
-      b.hidden = !list[at + by];
-      b.addEventListener('click', () => { slots.step(by); paint(); });
-      return b;
-    };
-    const stage = h('div', {class: 'slide-stage', tabindex: '0', 'aria-label': t('Plugins')}, track, edge(-1), edge(1));
-    stage.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') { event.preventDefault(); setPluginsOpen(false); return; }
-      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-      event.preventDefault();
-      slots.step(event.key === 'ArrowRight' ? 1 : -1);
-      paint();
-      area.querySelector<HTMLElement>('.slide-stage')?.focus();
-    });
-    area.replaceChildren(h('div', {class: `slides${list.length === 1 ? ' single' : ''}`, style: `--lead:${at ? 1 : 0}`}, stage));
-    if (!was && area.dataset.shown) arrive(area, -1, 'y', 10, 280);
-  };
-  const off = onPlugins(() => { if (!area.isConnected && area.dataset.shown) { off(); return; } paint(); });
-  paint();
-  requestAnimationFrame(() => { area.dataset.shown = '1'; });
-  return area;
-}
-
-/** When this app was opened: what came before is Home's Lately's to say, not the pane's. */
-const opened = Date.now();
-/** The conversations whose last word has come into a pane already (the next pane shows it standing, not arriving). */
-const arrived = new Set<string>();
-
-/**
- * Word from someone, come while one works: at the pane's foot, level with the prompt box, a row for each
- * conversation whose last message came since the app was opened and is not read, who and the first line of what
- * they said, sliding in from the window's edge as it comes. Pressed, it opens in Inbox (`open`); read, it goes.
- */
-function paneWord(open: (address: string) => void): HTMLElement {
-  const list = h('section', {class: 'pane-word', 'aria-label': t('New messages')});
-  let asked = 0;
-  const paint = async () => {
-    const mine = ++asked;
-    const come = connection() && news().inbox > 0
-      ? (await inbox.threads().catch(() => [])).filter((x) => x.unread > 0 && !x.last.mine && x.last.time >= opened).slice(0, 2) : [];
-    if (mine !== asked) return;
-    const rows = come.map((th) => {
-      const b = h('button', {type: 'button', class: 'pane-word-row'},
-        h('span', {class: 'pane-word-who'}, h('span', {}, th.name || inbox.shown(th.address)), h('span', {class: 'lately-dot', 'aria-hidden': 'true'})),
-        // What it is, named as it was written (Review：…, Question：…), then its first line.
-        h('span', {class: 'pane-word-what'}, ...(th.last.type === 'message' ? [] : kindWords(th.last.type[0].toUpperCase() + th.last.type.slice(1))), th.last.body.split('\n')[0]));
-      b.addEventListener('click', () => open(th.address));
-      return {b, key: `${th.address} ${th.last.time}`};
-    });
-    list.replaceChildren(...rows.map((r) => r.b));
-    for (const r of rows) if (!arrived.has(r.key)) { arrived.add(r.key); arrive(r.b, 1, 'x', 32, 360); }
-  };
-  void paint();
-  const off = onNews(() => { if (!list.isConnected && list.dataset.shown) { off(); return; } void paint(); });
-  requestAnimationFrame(() => { list.dataset.shown = '1'; });
-  return list;
-}
-
-/** The box at rest, measured in the screen: where its pill stands (from its left and its foot, its size), the box's
- * height and its corner. */
-interface Rest { l: number; b: number; w: number; h: number; box: number; round: number }
-/** A shape in the screen, as insets from its edges and a corner: [top, right, bottom, left, round]. */
-type Shape = [number, number, number, number, number];
-
-/**
- * The shapes the glass goes through: the pill, the box's line (the box at rest), the whole screen. For the Prompt above
- * the line (`above`), the line's shape holds none of it: what it printed comes only as the glass rises.
- */
-function shapes(screen: HTMLElement, r: Rest, above: HTMLElement | null = null): {pill: Shape; line: Shape; whole: Shape} {
-  const s = screen.getBoundingClientRect(), {width: W, height: H} = s;
-  const top = above ? above.getBoundingClientRect().bottom - s.top : H - r.box;
-  return {pill: [H - r.b - r.h, W - r.l - r.w, r.b, r.l, r.h / 2], line: [Math.max(top, H - r.box), 0, 0, 0, r.round],
-    whole: [0, 0, 0, 0, parseFloat(getComputedStyle(screen).borderTopLeftRadius) || 0]};
-}
-/** A shape of the screen as `t`'s clip (t a part of it: the glass, or the Prompt above the line). */
-function clipOf(t: HTMLElement, screen: HTMLElement, [top, right, bottom, left, round]: Shape): string {
-  const s = screen.getBoundingClientRect(), r = t.getBoundingClientRect();
-  return `inset(${top - (r.top - s.top)}px ${right - (s.right - r.right)}px ${bottom - (s.bottom - r.bottom)}px ${left - (r.left - s.left)}px round ${round}px)`;
-}
-
-/** How a way of the screen goes, as styles.css sets it, so the box's light and the words' colours keep with it: how long
- * it takes (--prompt-up), the part of it spent on the line (--prompt-up-line), and how each part moves (`first` and
- * `then`: --prompt-along and --prompt-rise up, --prompt-sink and --prompt-back down). */
-function timing(way: 'up' | 'down'): {duration: number; line: number; first: string; then: string} {
-  const cs = getComputedStyle(document.documentElement), v = (n: string) => cs.getPropertyValue(`--prompt-${n}`).trim();
-  const [first, then] = way === 'up' ? [v('along'), v('rise')] : [v('sink'), v('back')];
-  return {duration: msOf(v(way)) || (way === 'up' ? 460 : 320), line: parseFloat(v(`${way}-line`)) || (way === 'up' ? .38 : .5),
-    first: first || 'ease-out', then: then || 'ease-out'};
-}
-
-/** Each of `els` from where it stood (`was`, its box then) to where it stands now, or (`back`) from here to there. */
-function glide(els: HTMLElement[], was: DOMRect[], o: KeyframeAnimationOptions, back = false) {
-  els.forEach((e, i) => {
-    const r = e.getBoundingClientRect(), dx = was[i].left - r.left, dy = was[i].top - r.top;
-    if (Math.abs(dx) < .5 && Math.abs(dy) < .5) return;
-    const at = {transform: `translate(${dx}px, ${dy}px)`}, here = {transform: 'none'};
-    e.animate(back ? [here, at] : [at, here], {...o, fill: back ? 'both' : 'backwards'});
-  });
-}
-
-/**
- * The Prompt brought up over the center out of the box's pill: the pill's glass runs along the box's line and rises
- * into the screen that holds the Prompt (the box's light going from under it, styles.css); the line's words and Run
- * stay, taking the glass's light as it comes under them, and the prompt line goes from the pill to the line's start.
- * The Prompt above the line comes with the glass, its words never stretched.
- */
-function promptUp(el: HTMLElement, slot: HTMLElement, screen: HTMLElement, glass: HTMLElement, from: Rest | null) {
-  for (const a of [el, screen, glass, slot].flatMap((e) => e.getAnimations())) a.cancel();
-  slot.append(el);
-  if (still() || !from) return;
-  const UP = timing('up');
-  for (const t of [glass, slot]) {
-    const sh = shapes(screen, from, t === slot ? slot : null);
-    t.animate([{clipPath: clipOf(t, screen, sh.pill), easing: UP.first}, {clipPath: clipOf(t, screen, sh.line), offset: UP.line, easing: UP.then},
-      {clipPath: clipOf(t, screen, sh.whole)}], {duration: UP.duration});
-  }
-}
-
-/**
- * Put back, the glass sinks to the line and runs back into the pill, the line's parts (`parts`) going back to where
- * they stood at rest (`rested`); then the Prompt comes into the pane where it lives. `back` says it still goes.
- */
-function promptHome(el: HTMLElement, home: HTMLElement, screen: HTMLElement, glass: HTMLElement, to: Rest | null, parts: HTMLElement[],
-  rested: DOMRect[] | null, back: () => boolean, gone: () => void) {
-  const slot = el.parentElement!;
-  const done: Animation[] = [];
-  const there = (landed = false) => {
-    gone();
-    if (!back()) return;
-    for (const a of el.getAnimations()) a.cancel();
-    home.append(el);
-    for (const a of [...done, ...parts.flatMap((p) => p.getAnimations())]) a.cancel();
-    if (still()) return;
-    // Into the pane from the center's side, where it came from.
-    el.animate([{opacity: 0, transform: 'translateX(-12px)'}, {opacity: 1, transform: 'none'}], {duration: paced(220), easing: LAND});
-    if (!landed) return;
-    // The glass caught in the pill: the pill gives under it, flattened and wider, back past round and settled, as a
-    // thing that lands; its lamp lights as it does.
-    const [lamp] = parts, pill = lamp.parentElement;
-    pill?.animate([{scale: '1 1'}, {scale: '1.07 .8', offset: .22}, {scale: '.97 1.06', offset: .58}, {scale: '1 1'}],
-      {duration: paced(210), easing: 'ease-out'});
-    if (pill?.dataset.state === 'on') lamp.animate([{boxShadow: '0 0 0 3px color-mix(in srgb, var(--done) 30%, transparent), 0 0 12px var(--done)'}, {}],
-      {duration: paced(320), easing: 'ease-out'});
-  };
-  if (still() || slot === home || !to) { there(); return; }
-  const DOWN = timing('down');
-  for (const t of [glass, slot]) {
-    const sh = shapes(screen, to, t === slot ? slot : null);
-    done.push(t.animate([{clipPath: clipOf(t, screen, sh.whole), easing: DOWN.first}, {clipPath: clipOf(t, screen, sh.line), offset: DOWN.line, easing: DOWN.then},
-      {clipPath: clipOf(t, screen, sh.pill)}], {duration: DOWN.duration, fill: 'forwards'}));
-  }
-  if (rested) glide(parts, rested, {duration: DOWN.duration * (1 - DOWN.line), delay: DOWN.duration * DOWN.line, easing: DOWN.then}, true);
-  done[0].finished.then(() => there(true), () => there());
-}
+// The workbench Forge and Git share, put together from its parts: the page's own content in the large center (3/4)
+// with the box at its foot (box.ts), which becomes the Prompt's screen over the center while the Prompt is in use
+// (screen.ts); and the narrow right pane (1/4, pane.ts) with the plugin area at its top, what the center refers to
+// (reference.ts, under the search box that sits over the pane), the Prompt (the repo's sh) under it, and at its foot
+// a conversation's word. The center's top line holds the band (Forge's), the search box in its middle, and at its
+// right end the switch that puts the right pane away and brings it back. Until something is run in the repo's
+// Prompt it holds only its prompt line, so the reference takes the pane's room; from the first run on, the Prompt
+// has its 3 parts.
 
 export interface Bench {
   element: HTMLElement;
@@ -254,509 +25,85 @@ export interface Bench {
   settle(): void;
 }
 
+let benches = 0;
+
 export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(path: string, line?: number, write?: Writing): void;
   /** A conversation's word in the pane pressed: open it in Inbox. */
   word?(address: string): void;
   /** A page read and pressed rather than written in (Git): its box at the foot stands back until it is asked for
    * (Ctrl+`, the pointer resting at the foot), and back again once the Prompt is done with, never over a button. */
   back?: boolean}): Bench {
-  let repo: string | null = null;
-  // Named for what one does there: type at the prompt of the repo's sh.
-  // Up as a screen, a lamp at its head is lit while its shell runs (styles.css).
-  const termTitle = h('div', {class: 'term-head'}, h('h2', {}, 'Prompt'), h('span', {class: 'lamp', 'aria-hidden': 'true'}));
-  const termBox = h('section', {class: 'term-box', 'aria-label': 'Prompt'}, termTitle);
-  const termHome = h('div', {class: 'term-home'}, termBox);
-  const termSlot = h('div', {class: 'term-slot'});
-  const prompt = h('textarea', {class: 'prompt-in', rows: '1', 'aria-label': t('Prompt box'), spellcheck: 'false', autocapitalize: 'off'}) as HTMLTextAreaElement;
-  const note = h('p', {class: 'prompt-note muted small', role: 'status'});
-  // An issue or a TODO sent from the box is seen going where it lives; where it went is said here, to be heard, so the
-  // box does not move as a line under it comes and goes.
-  const heard = h('p', {class: 'sr-only box-said', role: 'status'});
-  // Run: Ctrl+Enter (⌘+Enter) is how it is done from the box, said in its title, not beside the word. Never Enter
-  // alone: Enter is what confirms a Japanese conversion, and a line must not run because a word was chosen.
-  const mac = /Mac|iPhone|iPad/.test(navigator.platform);
-  const keys = mac ? '⌘+Enter' : 'Ctrl+Enter';
-  const runIt = h('button', {type: 'submit', class: 'button small-button prompt-run', 'aria-keyshortcuts': mac ? 'Meta+Enter' : 'Control+Enter',
-    title: t('Run ({keys})', {keys})}, t('Run')) as HTMLButtonElement;
-  // At rest the box's line starts with a pill of the screen's glass: a lamp (the shell running, or not yet) and the
-  // prompt line it waits at. Up as a screen, the pill is gone into the screen and the line starts with that prompt line,
-  // as a terminal's does (the Prompt's own last line, the same words, is not shown there then).
-  const waits = h('span', {class: 'prompt-ps', 'aria-hidden': 'true'});
-  // The pill says what the box does, and pressed brings out what else it can do (box-modes.ts): the shell's prompt
-  // line for Run, the repo's next issue, TODO's circle.
-  const modeWords = h('span', {class: 'prompt-mode', 'aria-hidden': 'true'});
-  const chip = h('button', {type: 'button', class: 'prompt-chip', tabindex: '-1', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
-    'data-mode': 'run'}, h('span', {class: 'lamp'}), waits, modeWords) as HTMLButtonElement;
-  // The keys that bring it up from anywhere, said at rest as keys are (the box's own Run says Ctrl+Enter in its title).
-  const summon = h('span', {class: 'prompt-keys', 'aria-hidden': 'true'}, h('kbd', {}, mac ? '⌘' : 'Ctrl'), h('kbd', {}, '`'));
-  const form = h('form', {class: 'prompt'}, chip, prompt, summon, runIt);
-  // The screen's glass, a layer of its own under its words (styles.css): what runs out of the pill and rises.
-  const glass = h('span', {class: 'glass', 'aria-hidden': 'true'});
-  const screen = h('div', {class: 'screen'}, glass, termSlot, form);
-  const dock = h('div', {class: 'dock'}, screen, note, heard);
-  const center = h('div', {class: 'center'}, parts.main, dock);
-  const reference = new Reference({reveal: parts.reveal, recall: (line) => {
-    if (!repo || prompt.disabled) return;
-    put(line);
-    prompt.focus();
-  }});
+  // Named for what one does there: type at the prompt of the repo's sh. Up as a screen, a lamp at its head is lit
+  // while its shell runs (styles.css).
+  const termHead = h('div', {class: 'term-head'}, h('h2', {}, 'Prompt'), h('span', {class: 'lamp', 'aria-hidden': 'true'}));
+  const term = h('section', {class: 'term-box', 'aria-label': 'Prompt'}, termHead);
+  const termHome = h('div', {class: 'term-home'}, term);
+  const center = h('div', {class: 'center'}, parts.main);
   const sideId = `side-${++benches}`;
-  // The right pane: at its top the plugin area, plain until the rail's plug opens it; under it the Prompt.
-  // What the center refers to is under the search box, which sits over the pane (reference.ts).
   const side = h('aside', {class: 'side', id: sideId, 'aria-label': t('Plugins and Prompt')}, pluginArea(), termHome, ...(parts.word ? [paneWord(parts.word)] : []));
   const toggle = h('button', {type: 'button', class: 'pane-toggle', 'aria-label': t('Right pane'), 'aria-controls': sideId}, paneMark()) as HTMLButtonElement;
+  const work = h('div', {class: parts.strip ? 'work bench' : 'work bench no-strip'});
+
+  const box = new Box({work, main: parts.main, center, term, termHead, back: !!parts.back});
+  // The screen's glass, a layer of its own under its words (styles.css): what runs out of the pill and rises.
+  const glass = h('span', {class: 'glass', 'aria-hidden': 'true'});
+  const slot = h('div', {class: 'term-slot'});
+  const screenEl = h('div', {class: 'screen'}, glass, slot, box.form);
+  box.dock.prepend(screenEl);
+  center.append(box.dock);
+  const screen = new Screen({work, screen: screenEl, glass, slot, term, home: termHome, form: box.form, chip: box.chip, line: box.line,
+    changed: (state) => box.screenChanged(state)});
+  box.screen = screen;
+
+  const reference = new Reference({reveal: parts.reveal, recall: (line) => box.recall(line)});
+  box.onFollow = () => reference.runsAgain();
   const bar = h('div', {class: 'bar'}, parts.strip ?? h('span', {class: 'bar-room'}), reference.search, toggle);
-  const work = h('div', {class: parts.strip ? 'work bench' : 'work bench no-strip'}, bar, center, side);
+  work.append(bar, center, side);
+  const pane = new Pane(work, side, toggle);
 
-  // The right pane put away and brought back. Put away is only out of sight: what it shows,
-  // what was chosen there and where it was read come back with it. Narrow, it is laid over the center.
-  const narrow = matchMedia('(max-width: 760px)');
-  /** Narrow, whether the pane is laid over the center now (never on its own: only when asked for). */
-  let over = false;
-  const shown = () => (narrow.matches ? over : paneOpen);
-  let wasShown = shown();
-  let moving: Animation | null = null;
-  const paintPane = () => {
-    // Put away or brought back, what stands beside it moves on its curve while it moves (styles.css .pane-moving).
-    if (work.classList.contains('pane-closed') === paneOpen) {
-      work.classList.add('pane-moving');
-      moving?.cancel();
-      moving = after(460, () => work.classList.remove('pane-moving'));
-    }
-    work.classList.toggle('pane-closed', !paneOpen);
-    work.classList.toggle('pane-out', over);
-    toggle.setAttribute('aria-expanded', String(shown()));
-    // Brought out (here, or on another page while this one is shown): what it holds comes in after its edge.
-    if (shown() && !wasShown && work.isConnected) paneOut(side, toggle);
-    wasShown = shown();
-  };
-  const setPane = (on: boolean) => {
-    if (on === shown()) return;
-    if (narrow.matches) { over = on; paintPane(); } else setRightPane(on);
-  };
-  // Put away or brought back on another page (Home's), it is so here too.
-  const offPane = onRightPane(() => { if (!work.isConnected && work.dataset.shown) { offPane(); return; } paintPane(); });
-  toggle.addEventListener('click', () => setPane(!shown()));
-  // The search's box is only as tall as the room above the center's Prompt, so the Prompt brought up over the
-  // center (its output as it grows) is never under it (issue #20).
-  const searchRoom = () => work.style.setProperty('--search-room', `${Math.max(0, dock.getBoundingClientRect().top - reference.search.getBoundingClientRect().bottom - 8)}px`);
-  // The pane's Prompt starts level with the foot of the rail's Inbox: one line across the page, rail to pane.
-  const promptAt = () => {
+  // Measured, not queried (a box queried for its width would make a layer the search could not rise out of): the
+  // bench's width, for what is laid out from it (the pane's W, which the search box and what opens under it take);
+  // the search's room above the box, so the Prompt brought up over the center is never under it (issue #20); the
+  // pane's Prompt level with the foot of the rail's Inbox, one line across the page; Run's width, for the line.
+  const roomy = new ResizeObserver(() => {
+    work.style.setProperty('--bench-w', `${work.clientWidth}px`);
+    work.style.setProperty('--search-room', `${Math.max(0, box.dock.getBoundingClientRect().top - reference.search.getBoundingClientRect().bottom - 8)}px`);
     const inbox = document.getElementById('purpose-inbox');
-    if (!inbox || !side.isConnected) return;
-    const at = inbox.getBoundingClientRect().bottom - side.getBoundingClientRect().top;
+    const at = inbox && side.isConnected ? inbox.getBoundingClientRect().bottom - side.getBoundingClientRect().top : 0;
     if (at > 0) side.style.setProperty('--prompt-at', `${at}px`);
-  };
-  // The bench's width, for what is laid out from it (the pane's W, which the search box and what opens under it
-  // take): measured, since a box queried for its width would make a layer the search could not rise out of.
-  const roomy = new ResizeObserver(() => { work.style.setProperty('--bench-w', `${work.clientWidth}px`); searchRoom(); promptAt(); screen.style.setProperty('--run-w', `${runIt.offsetWidth}px`); });
-  roomy.observe(dock);
+    screenEl.style.setProperty('--run-w', `${box.runIt.offsetWidth}px`);
+  });
+  roomy.observe(box.dock);
   roomy.observe(work);
-  // The plugin area is the pane's top: brought out by the plug, it brings the pane out with it.
-  const offPlug = onPlugins(() => { if (!work.isConnected && work.dataset.shown) { offPlug(); return; } if (pluginsOpen()) setPane(true); });
   requestAnimationFrame(() => { work.dataset.shown = '1'; });
-  narrow.addEventListener('change', () => { over = false; paintPane(); });
-  // Laid over the center, it goes with Escape (the keyboard back on the switch) or a press outside it.
-  side.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape' || !over || event.defaultPrevented) return;
-    event.preventDefault();
-    setPane(false);
-    toggle.focus();
-  });
-  document.addEventListener('pointerdown', (event) => {
-    const at = event.target as Node;
-    if (over && !side.contains(at) && !toggle.contains(at)) setPane(false);
-  });
-  paintPane();
 
-  /** The box stepped back while one reads. */
-  const rest = (on: boolean) => {
-    if (on && (prompting || prompt.value || note.textContent || document.activeElement === prompt)) return;
-    dock.classList.toggle('resting', on);
-  };
-  const reading = () => rest(true);
-  if (parts.back) dock.classList.add('resting');
-  parts.main.addEventListener('wheel', reading, {passive: true});
-  parts.main.addEventListener('touchmove', reading, {passive: true});
-  parts.main.addEventListener('keydown', (event) => { if (['PageDown', 'PageUp', ' ', 'Home', 'End', 'ArrowDown', 'ArrowUp'].includes(event.key) && !(event.target as HTMLElement).closest('textarea, input')) reading(); });
-  // Stepped back, it comes back when the pointer rests where it is, not as the pointer crosses its place on the way to
-  // something low on the page (it would come up over what was about to be pressed).
-  let coming = 0;
-  const stay = () => { clearTimeout(coming); coming = 0; };
-  center.addEventListener('pointermove', (event) => {
-    if (!dock.classList.contains('resting')) return;
-    const r = dock.getBoundingClientRect();
-    if (event.clientY < r.top - 8 || event.clientX < r.left || event.clientX > r.right) { stay(); return; }
-    // On something to press there (a button low on the page, under where the box would be), it stays back: that is
-    // what the pointer came for, and the box coming up would take the press.
-    if ((event.target as Element).closest('button, a[href], select, summary, label, [role="button"]')) { stay(); return; }
-    if (!coming) coming = window.setTimeout(() => { coming = 0; rest(false); }, 220);
-  });
-  center.addEventListener('pointerleave', stay);
-  prompt.addEventListener('focus', () => rest(false));
-  let prompting = false;
-  /** The box at rest (its pill, in the screen), and the line's parts where they stood: where it goes back to. */
-  let pill: Rest | null = null;
-  let rested: DOMRect[] | null = null;
-  const lineParts = [chip.firstElementChild as HTMLElement, waits, prompt, runIt];
-  // Up, the screen grows with what the Prompt holds: the room a line takes comes over a moment, the screen's top
-  // rising, not at once. Cleared, it is smaller at once, as a terminal's is.
-  let held = 0;
-  new ResizeObserver(() => {
-    const now = termBox.getBoundingClientRect().height, by = now - held;
-    held = now;
-    if (!prompting || by < 1 || still() || termBox.parentElement !== termSlot || glass.getAnimations().some((a) => a.playState === 'running')) return;
-    const r = parseFloat(getComputedStyle(screen).borderTopLeftRadius) || 0;
-    for (const t of [glass, termSlot]) t.animate([{clipPath: `inset(${by}px 0 0 0 round ${r}px)`}, {clipPath: `inset(0 0 0 0 round ${r}px)`}], {duration: 180, easing: LAND});
-  }).observe(termBox);
-  let unlit: Animation | null = null;
-  const setPrompting = (on: boolean) => {
-    if (on === prompting) return;
-    // Measured at rest, before it goes up: the pill it spreads out of and where the line's parts stand.
-    if (on) {
-      const c = chip.getBoundingClientRect(), r = screen.getBoundingClientRect(), f = form.getBoundingClientRect();
-      pill = c.width ? {l: c.left - r.left, b: r.bottom - c.bottom, w: c.width, h: c.height, box: f.height,
-        round: parseFloat(getComputedStyle(form).borderTopLeftRadius) || 0} : null;
-      rested = lineParts.map((m) => m.getBoundingClientRect());
-    }
-    prompting = on;
-    work.classList.toggle('prompting', on);
-    // Going down, it is still the screen as it goes, until it is the box's line again.
-    work.classList.toggle('prompt-leaving', !on);
-    // The line's words and Run in the glass's light while it is under them: lit going up; going down, unlit as the
-    // glass runs back from under them into the pill.
-    unlit?.cancel();
-    if (on || still()) work.classList.toggle('line-lit', on);
-    else {
-      // As the glass begins to run back along the line: timed on the clock it moves by, so they keep together.
-      const down = timing('down');
-      unlit = glass.animate([], {duration: down.duration * down.line});
-      unlit.finished.then(() => { if (!prompting) work.classList.remove('line-lit'); }, () => {});
-    }
-    said();
-    // Up, its line is in the screen's letters (styles.css): as tall as one of them.
-    fit();
-    if (on) {
-      promptUp(termBox, termSlot, screen, glass, pill);
-      const up = timing('up');
-      if (rested && !still()) glide(lineParts, rested, {duration: up.duration * up.line, easing: up.first});
-    }
-    else promptHome(termBox, termHome, screen, glass, pill, lineParts, rested, () => !prompting,
-      () => { work.classList.remove('prompt-leaving', 'line-lit'); said(); fit(); });
-    // The line goes, and the caret in it with it from the first frame.
-    fieldMoved();
-    if (!on && parts.back) requestAnimationFrame(() => rest(true));
-  };
-  const fit = () => { prompt.style.height = 'auto'; prompt.style.height = `${prompt.scrollHeight}px`; };
-  /** What the box says before one writes in it (to be read, not seen: the pill says where it runs). */
-  const hint = () => modeHint(mode, repo);
-  prompt.addEventListener('focus', () => { if (mode === 'run') setPrompting(true); following(); });
-  /** What is half written is kept for the repo and for what the box does: an issue's words are not a line to run. */
-  const draft = () => (mode === 'run' ? repo! : `${mode}\n${repo}`);
-  const keep = () => { if (repo) { if (prompt.value) drafts.set(draft(), prompt.value); else drafts.delete(draft()); } };
-  /** What Tab last said under the box, which goes as soon as anything else is done there. */
-  let choices = false;
-  const unsay = () => {
-    if (!choices) return;
-    choices = false;
-    // The choices go as the next key is pressed, not at once: put away as they came.
-    putAway(note, () => { note.textContent = ''; note.classList.remove('paths'); });
-  };
-  /** Said under the box, at once (what was going out from there stays, saying this). */
-  const say = (text: string) => { keepOut(note); note.classList.remove('paths'); note.textContent = text; };
-  /** `text` in the box as if written there, the caret at its end. */
-  const put = (text: string) => {
-    prompt.value = text;
-    prompt.setSelectionRange(text.length, text.length);
-    keep();
-    unsay();
-    fit();
-    // A line put back whole (an earlier one, one pressed in Output): the caret is at its end at once, as a terminal's.
-    fieldMoved();
-  };
-  prompt.addEventListener('input', () => {
-    fit();
-    keep();
-    walk.reset();
-    unsay();
-    look();
-  });
-  /** The repo's earlier lines, oldest first. */
-  const walk = new Recall();
-  const lines = () => (repo ? sessionIfAny(repo)?.runs.map((r) => r.line) ?? [] : []);
-  // The repo's directories as Tab reads them: read ahead as a path is
-  // written (so Tab can answer at once), and again once anything changes.
-  const listed = new Map<string, Entry[] | Promise<Entry[]>>();
-  onChange((c) => { if (c.repo === repo) listed.clear(); });
-  const list = (dir: string): Entry[] | Promise<Entry[]> => {
-    const r = repo!, key = `${r}\n${dir}`;
-    let got = listed.get(key);
-    if (!got) {
-      got = store.tree(r, dir).catch(() => [] as Entry[]);
-      listed.set(key, got);
-      void got.then((e) => { if (listed.get(key) instanceof Promise) listed.set(key, e); });
-    }
-    return got;
-  };
-  const look = () => {
-    const w = repo && prompt.selectionStart === prompt.selectionEnd ? pathWord(prompt.value, prompt.selectionStart, repo) : null;
-    if (w) void list(w.dir);
-  };
-  /** Complete the path before the caret; false when there is none to complete. */
-  const tab = (): boolean => {
-    if (!repo || prompt.selectionStart !== prompt.selectionEnd) return false;
-    const at = prompt.selectionStart, w = pathWord(prompt.value, at, repo);
-    if (!w) return false;
-    const fill = (entries: Entry[]) => {
-      const c = complete(w.name, entries);
-      if (!c) return false;
-      if (c.insert) {
-        prompt.setRangeText(c.insert, at, at, 'end');
-        keep();
-        walk.reset();
-        fit();
-        look();
-      }
-      if (c.choices.length) {
-        choices = true;
-        say(c.choices.slice(0, CHOICES).join('  ') + (c.choices.length > CHOICES ? '  …' : ''));
-        note.classList.add('paths');
-      }
-      else unsay();
-      return true;
-    };
-    const got = list(w.dir);
-    if (!(got instanceof Promise)) return fill(got);
-    // Not read yet (rare: it is read while the path is written): completed once it is.
-    void got.then((entries) => { if (prompt.value.length >= at && prompt.selectionStart === at) fill(entries); });
-    return true;
-  };
-  prompt.addEventListener('keydown', (event) => {
-    if (event.key !== 'Tab') unsay();
-    if (event.key === 'Escape') { setPrompting(false); prompt.blur(); return; }
-    // Alt+1, 2, 3 choose what the box does; Alt+↓ brings the three out of the pill.
-    if (event.altKey && !event.ctrlKey && !event.metaKey && !event.isComposing) {
-      const n = /^Digit([1-9])$/.exec(event.code)?.[1];
-      const m = n ? MODES[Number(n) - 1] : undefined;
-      if (m) { event.preventDefault(); choose(m); return; }
-      if (event.key === 'ArrowDown' && !prompting && !prompt.disabled) { event.preventDefault(); menu.open(); return; }
-    }
-    if (mode !== 'run') {
-      if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing) { event.preventDefault(); send(); }
-      return;
-    }
-    const plain = !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey && !event.isComposing;
-    if (event.key === 'Tab' && plain) { if (tab()) event.preventDefault(); return; }
-    // ↑ on the first line and ↓ on the last walk earlier lines; elsewhere they move the caret.
-    if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && plain && prompt.selectionStart === prompt.selectionEnd) {
-      const line = walk.arrow(event.key, prompt.value, prompt.selectionStart, lines());
-      if (line === null) return;
-      event.preventDefault();
-      put(line);
-      return;
-    }
-    // Ctrl-C with nothing selected (so not a copy) interrupts what runs, as in a terminal.
-    if (event.key === 'c' && event.ctrlKey && !event.altKey && !event.metaKey && prompt.selectionStart === prompt.selectionEnd && repo) {
-      event.preventDefault();
-      sessionFor(repo).interrupt();
-      return;
-    }
-    // Enter is a new line; Ctrl+Enter (⌘+Enter) sends.
-    if (event.key !== 'Enter' || !(event.ctrlKey || event.metaKey) || event.isComposing) return;
-    event.preventDefault();
-    send();
-  });
-  // Run sends as Ctrl+Enter does; pressed with the pointer, the keyboard stays in the box.
-  runIt.addEventListener('pointerdown', (event) => { if (document.activeElement === prompt) event.preventDefault(); });
-  form.addEventListener('submit', (event) => { event.preventDefault(); send(); prompt.focus(); });
-  // Pressed anywhere in the box, not on its line alone (its padding, beside Run): the caret goes in.
-  // The pill pressed at rest brings out what the box can do; up as the screen's prompt line, it is the line's start.
-  // Put away with Escape, the keyboard goes back to the box if it was there (the Prompt not brought up for it), else
-  // nowhere.
-  const menu = modeMenu(chip, {repo: () => repo, chosen: (m) => { choose(m); prompt.focus(); },
-    closed: (before) => { if (before === prompt) prompt.focus(); else (document.activeElement as HTMLElement | null)?.blur(); }});
-  dock.append(menu.element);
-  chip.addEventListener('click', () => { if (!prompting && !prompt.disabled) menu.open(); });
-  form.addEventListener('pointerdown', (event) => {
-    if (chip.contains(event.target as Node) && !prompting) return;
-    if ((event.target !== form && !chip.contains(event.target as Node) && event.target !== summon) || prompt.disabled) return;
-    event.preventDefault();
-    prompt.focus();
-  });
-  /** What is in the box goes to the repo's Prompt (an ended one is started again first). */
-  const send = () => {
-    if (!repo) return;
-    if (mode !== 'run') { void write(mode, repo); return; }
-    const s = sessionIfAny(repo);
-    // Ended: started again, and what was written waits in the box to be sent once it is up.
-    if (s?.ended) { s.restart(); following(); say(t('Still starting')); return; }
-    if (!sessionFor(repo).send(prompt.value)) { say(t('Still starting')); return; }
-    unsay();
-    say('');
-    prompt.value = '';
-    drafts.delete(draft());
-    walk.reset();
-    room();
-    fit();
-  };
-  /** An issue or a TODO written in the box: made, the box emptied, and what was written goes where it lives. */
-  const write = async (as: Exclude<Mode, 'run'>, at: string) => {
-    const text = prompt.value;
-    const from = caretRect(prompt), off = as === 'issue' ? sendOff(prompt) : null;
-    try {
-      const sent = await sendAs(as, at, text);
-      if (!sent) { say(t('Its first line is its title')); return; }
-      if (prompt.value === text) { off?.(); prompt.value = ''; drafts.delete(draft()); fit(); }
-      heard.textContent = sent.said;
-      if (sent.to) goesTo(form, sent.to, {label: sent.label, at: from});
-      pillSays();
-    } catch (e) { say(errorText(e)); }
-  };
-  /** What the box does now (box-modes.ts). */
-  let mode: Mode = boxMode();
-  /** The pill's words for the mode, the repo's next issue's number once it is read. */
-  const pillSays = () => {
-    chip.dataset.mode = mode;
-    form.dataset.mode = mode;
-    chip.setAttribute('aria-label', t('What the box does: {what}', {what: sendWord(mode)}));
-    runIt.textContent = sendWord(mode);
-    runIt.title = sendTitle(mode, keys);
-    const n = mode === 'issue' && repo ? nextIssue(repo) : null;
-    if (n instanceof Promise) {
-      void n.then(() => { if (mode === 'issue') pillSays(); });
-      // Read again (its issues changed): it keeps saying the number it said until the new one is read, never none.
-      if (modeWords.dataset.for === `${mode}\n${repo}`) return;
-    }
-    const was = modeWords.querySelector('b')?.textContent;
-    modeWords.replaceChildren(...pillWords(mode, repo, typeof n === 'number' ? n : null));
-    modeWords.dataset.for = `${mode}\n${repo}`;
-    // An issue written, the next number comes up into the pill as a counter's figure turns.
-    const b = modeWords.querySelector('b');
-    if (mode === 'issue' && b && was && was !== '#' && b.textContent !== was && !still())
-      b.animate([{translate: '0 11px', opacity: 0}, {translate: '0 0', opacity: 1}], {duration: paced(260), easing: LAND});
-  };
-  /** The box made to do `m`: its pill turns to it, and what was half written for it comes back. */
-  const choose = (m: Mode, seen = true) => {
-    // Told to the other pages' boxes once this one has turned (it hears its own telling, and is there already).
-    if (m === mode) { setBoxMode(m); return; }
-    if (prompting && m !== 'run') setPrompting(false);
-    const change = () => {
-      keep();
-      mode = m;
-      pillSays();
-      prompt.placeholder = hint();
-      prompt.value = repo ? drafts.get(draft()) ?? '' : '';
-      fit();
-      unsay();
-      say(''); heard.textContent = '';
-    };
-    if (seen && work.isConnected && !prompting) turn(chip, runIt, change); else change();
-    setBoxMode(m);
-  };
-  // Chosen in another page's box, this one does it too (turned there, not here: it is not on screen).
-  onBoxMode((m) => choose(m, false));
-  onChange((c) => { if (c.repo === repo && mode === 'issue') pillSays(); });
-
-  // Leaving the prompt and the Prompt sends it home; losing the window's focus does not.
-  dock.addEventListener('focusout', (event) => {
-    const to = event.relatedTarget as Node | null;
-    if (to && !dock.contains(to)) setPrompting(false);
-  });
-  // Switched on again from the screen, the keyboard is back in the box (the switch it was on is gone with the old one).
-  termBox.addEventListener('click', (event) => {
-    if (prompting && (event.target as Element).closest('.power')) requestAnimationFrame(() => prompt.focus());
-  });
-  termBox.addEventListener('pointerdown', (event) => {
-    if (prompting || (event.target as HTMLElement).closest('button')) return;
-    event.preventDefault();
-    prompt.focus();
-  });
-
-  /**
-   * The repo's Prompt in this bench's box. A Prompt is one element wherever it is shown, so
-   * another page's bench (Git's) takes it while it is there: coming back, it is put back here.
-   */
-  const attach = () => {
-    const term = repo ? terminalFor(repo) : null;
-    if (term ? term.parentElement !== termBox : termBox.childElementCount > 1) termBox.replaceChildren(termTitle, ...(term ? [term] : []));
-    following();
-  };
-  /** The Prompt Output follows: the repo's own, a new one once it is started again. */
-  let followed: unknown = null;
-  let unwatch: (() => void) | null = null;
-  /** The prompt line each repo's shell last waited at: the pill's at rest, while a line runs or before it starts. */
-  const lastLine = new Map<string, string>();
-  let saying = 0, speaking = 0;
-  /**
-   * The prompt line: up, the one the shell waits at now (none while a line runs); at rest, the last it waited at.
-   * Come back after a run, it comes once what the run printed has come in (terminal.ts), as a terminal's does.
-   */
-  const said = () => {
-    const s = repo ? sessionIfAny(repo) : undefined;
-    // Started again: the new one is followed from now on.
-    if (followed && (s ?? null) !== followed) { following(); return; }
-    const line = s?.promptLine.trimEnd() ?? '';
-    if (repo && line) lastLine.set(repo, line);
-    chip.dataset.state = !s ? 'none' : s.ended ? 'ended' : s.running ? 'on' : 'starting';
-    const now = !repo ? '' : prompting ? line : lastLine.get(repo) ?? `${repo} $`;
-    cancelAnimationFrame(saying);
-    clearTimeout(speaking);
-    if (!(prompting && now && !waits.textContent) || still()) { waits.textContent = now; return; }
-    // After the frame that draws what came, so the time its lines take to come in is known; then the prompt line and
-    // the caret after it come together, as the last line comes.
-    saying = requestAnimationFrame(() => {
-      speaking = window.setTimeout(() => {
-        waits.textContent = now;
-        fieldMoved();
-        waits.animate([{opacity: 0}, {opacity: 1}], {duration: 140, easing: 'ease-out'});
-      }, s?.settlesIn() ?? 0);
-    });
-  };
-  const following = () => {
-    const s = repo ? sessionIfAny(repo) ?? null : null;
-    if (s !== followed) { followed = s; reference.runsAgain(); unwatch?.(); unwatch = s ? s.watch(said) : null; }
-    said();
-  };
-  const setRepo = (name: string | null) => {
-    if (name === repo && name) { attach(); return; }
-    repo = name;
-    reference.setRepo(name);
-    attach();
-    prompt.disabled = runIt.disabled = !name;
-    prompt.placeholder = hint();
-    prompt.value = name ? drafts.get(draft()) ?? '' : '';
-    pillSays();
-    unsay();
-    say('');
-    walk.reset();
-    room();
-    requestAnimationFrame(fit);
-  };
-  /** Whether the repo's Prompt has run anything yet, which is what gives it room. */
-  const room = () => work.classList.toggle('unrun', !!repo && !sessionIfAny(repo)?.runs.length);
-  setRepo(null);
   // The keys an editor's hands already know, wherever this bench is on screen: Ctrl+K or Ctrl+P (or Ctrl+Shift+F)
   // to the search, Ctrl+` to the prompt box, Ctrl+B to put the right pane away or bring it back (⌘ on a Mac).
   document.addEventListener('keydown', (event) => {
     if (!(event.ctrlKey || event.metaKey) || event.altKey || event.isComposing || !work.isConnected || work.closest('[hidden]')) return;
     if (document.getElementById('page')?.hasAttribute('inert')) return;
     const k = event.key.toLowerCase();
-    if ((k === 'k' || k === 'p') && !event.shiftKey || (k === 'f' && event.shiftKey)) { event.preventDefault(); if (narrow.matches || paneOpen) reference.findNow(); else { setPane(true); requestAnimationFrame(() => reference.findNow()); } return; }
-    if (event.key === '`' && !prompt.disabled) { event.preventDefault(); choose('run'); prompt.focus(); return; }
-    if (k === 'b' && !event.shiftKey) { event.preventDefault(); setPane(!shown()); }
+    if ((k === 'k' || k === 'p') && !event.shiftKey || (k === 'f' && event.shiftKey)) {
+      event.preventDefault();
+      if (pane.shown || pane.narrow) reference.findNow(); else { pane.set(true); requestAnimationFrame(() => reference.findNow()); }
+      return;
+    }
+    if (event.key === '`' && box.summon()) { event.preventDefault(); return; }
+    if (k === 'b' && !event.shiftKey) { event.preventDefault(); pane.set(!pane.shown); }
   });
+
+  const setRepo = (name: string | null) => {
+    if (name === box.repo && name) { box.attach(); return; }
+    reference.setRepo(name);
+    box.setRepo(name);
+  };
+  setRepo(null);
   // A page taken off the screen loses its focus without a focusout, so the Prompt may still be up.
   const settle = () => {
-    attach();
-    room();
+    box.attach();
+    box.room();
     reference.resume();
-    if (!prompting || dock.contains(document.activeElement)) return;
-    prompting = false;
-    work.classList.remove('prompting', 'prompt-leaving', 'line-lit');
-    for (const a of [screen, glass, termSlot, ...lineParts].flatMap((e) => e.getAnimations())) a.cancel();
-    termHome.append(termBox);
-    said();
-    fit();
+    if (screen.state !== 'rest' && !box.dock.contains(document.activeElement)) screen.drop();
   };
   return {element: work, reference, setRepo, settle};
 }
