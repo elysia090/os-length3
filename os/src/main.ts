@@ -1,5 +1,4 @@
 import {h} from './dom.ts';
-import {isNative} from './host.ts';
 import {setWindowTitle} from './tauri.ts';
 import {icon} from './icons.ts';
 import {placeholder} from './pages/common.ts';
@@ -21,7 +20,7 @@ import {learnHome} from './inbox.ts';
 import {begin as lookForNews, look, marks, news, onNews} from './news.ts';
 import {devicePage} from './pages/device.ts';
 import {checkoutBackPage} from './pages/remote.ts';
-import {about, claim, connection, enterWith, justSignedIn, mayAsk, onConnection, onReach, remoteAway, signInFailed} from './remote.ts';
+import {about, claim, connection, enterWith, holdAsk, justSignedIn, mayAsk, onConnection, onReach, remoteAway, signInFailed} from './remote.ts';
 import {cameBackFromStripe, isPaidTier} from './plan.ts';
 import {every} from './runs.ts';
 import {heldInvite, holdInvite, inviteIn} from './servers.ts';
@@ -250,8 +249,8 @@ function pageOpening() {
 /** The page's name where the host lists it (a tab, history, the window list): the place, then the OS. */
 const named = () => {
   document.title = `${t(purpose(current).label)} · Length³ OS`;
-  // The app's window is named the same in the host's window list; not renamed, it keeps the OS's name.
-  if (isNative) void setWindowTitle(document.title).catch(() => {});
+  // The app's window is named the same in the host's window list (a browser's tab already is); not renamed, it keeps the OS's name.
+  void setWindowTitle(document.title).catch(() => {});
 };
 
 function render() {
@@ -378,6 +377,16 @@ if (asking.has('device')) {
       cameBackFromStripe(how, tier);
       save(PURPOSE_KEY, 'remote');
       try { localStorage.setItem('length3.part.remote', 'plan'); } catch { /* the part kept, then */ }
+    }
+    // Opened by the app at what only the browser does (a passkey's deeds, a provider's): Remote's page, at the part
+    // that does it; a repo's ask opens at its card once the repos are drawn (signed in first, if this browser is not).
+    const asked = holdAsk(asking.get('account'), asking.get('repo'));
+    if (asked) {
+      const u = new URL(location.href);
+      for (const k of ['account', 'repo']) u.searchParams.delete(k);
+      history.replaceState(null, '', u);
+      save(PURPOSE_KEY, 'remote');
+      try { localStorage.setItem('length3.part.remote', asked === 'sign-in' ? 'sign-in' : 'repos'); } catch { /* the part kept, then */ }
     }
     // Which domain is this Remote's, so a name on it is shown alone (`ren`), not as a domain's.
     void learnHome();

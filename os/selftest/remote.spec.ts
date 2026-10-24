@@ -79,6 +79,36 @@ test('a repo is turned off from its card in one ask, kept off, and its switch br
   await expect(card).toContainText('In step');
 });
 
+test('opened by the app at a repo, the browser asks at its card, and once it is off says to go back to the app', async ({signedIn: app}) => {
+  await app.newRepo.make('hello');
+  await app.rail.go('remote');
+  await expect(app.remote.card('hello')).toContainText('In step');
+
+  // The app opens this, where the passkey is (core account::app_page): the ask taken out of the address, Remote's
+  // Repos shown, and the card's own ask pressed for the person.
+  await app.page.goto('/?account=off&repo=hello');
+  const ask = app.remote.ask('hello');
+  await expect(ask).toContainText('This asks for a five-letter code of your own.');
+  expect(new URL(app.page.url()).search).toBe('');
+  const fresh = ask.getByRole('textbox', {name: 'New code'});
+  await fresh.fill('k3y42');
+  await app.answer(ask.getByRole('button', {name: 'Set the code'}), fresh);
+  await ask.getByRole('textbox', {name: 'Your name'}).fill(app.person);
+  await ask.getByRole('textbox', {name: 'The repo\'s name'}).fill('hello');
+  await ask.getByRole('textbox', {name: 'Code', exact: true}).fill('k3y42');
+  await app.answer(ask.getByRole('button', {name: 'Turn off'}), ask);
+
+  await expect(app.remote.power('hello')).not.toBeChecked();
+  await expect(app.main.getByRole('status').filter({hasText: 'Done. Go back to the app: it shows it there.'})).toBeVisible();
+});
+
+test('opened by the app at a repo this account does not have, the browser says so and asks nothing', async ({signedIn: app}) => {
+  await app.newRepo.make('hello');
+  await app.page.goto('/?account=off&repo=elsewhere');
+  await expect(app.main.getByRole('status').filter({hasText: 'elsewhere is not on here to turn off'})).toBeVisible();
+  await expect(app.remote.power('hello')).toBeChecked();
+});
+
 test('a code that is wrong does not turn the repo off, and says so in the card', async ({signedIn: app}) => {
   await app.newRepo.make('hello');
   await app.rail.go('remote');

@@ -2,10 +2,8 @@
 // repos (repos.ts, IndexedDB) and one set of settings (state.ts,
 // localStorage), so each tab hears what the others keep, a repo is kept in
 // step by one tab at a time (draft.ts), and nothing is let go while another
-// tab still holds it (lifecycle.ts). In the app there is one window and none
-// of this is needed: every call here is a no-op there.
-
-import {isNative} from './host.ts';
+// tab still holds it (lifecycle.ts). The app's one window is a tab with no
+// others: the same code, with nobody to tell.
 
 export type Message =
   /** `key`'s copy was kept: these paths of it changed (none: the whole copy). */
@@ -72,8 +70,8 @@ export class Tabs {
 }
 
 // Only in a page: a worker, or the tests' Node, has no tabs.
-const channel = !isNative && typeof document !== 'undefined' && typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('length3') as unknown as Channel : null;
-const tabs = new Tabs(channel, isNative ? undefined : (globalThis.navigator as {locks?: Locks} | undefined)?.locks);
+const channel = typeof document !== 'undefined' && typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('length3') as unknown as Channel : null;
+const tabs = new Tabs(channel, (globalThis.navigator as {locks?: Locks} | undefined)?.locks);
 export const post = (m: Message) => tabs.post(m);
 export const hear = (fn: (m: Message) => void) => tabs.hear(fn);
 export const othersOpen = () => tabs.othersOpen();

@@ -1061,7 +1061,17 @@ a passkey for the device, so the next sign-in needs no provider; a lost
 passkey is replaced by signing in with the provider again. The app and l3
 do not hold passkeys: they show a code, a browser where the person is
 signed in approves it on the Remote's page, and the device gets a session
-of its own. Every device is a session, listed on the Remote page and ended
+of its own. What a passkey or a provider does is the browser's for the
+same reason, yet the app does all of it too, the same page in the same
+place: Remote's Sign-in lists and removes passkeys and unlinks providers
+in the app itself, and adding a passkey, linking a provider and setting
+the code (Add, Link, Set in the browser) open the Remote's own page there
+at Sign-in; a repo's switch and Discard ask in its card as on the web, and
+Continue in the browser opens that repo's card there with its ask already
+open (`core/src/account.rs` app_page names only that page, of the Remote's
+own app, the way a sign-in's page is checked). Done there, the page says
+to go back; the app reads again what changed when its window comes back.
+Every device is a session, listed on the Remote page and ended
 from any other. Sessions are bearer tokens, kept on the device (in the app
 with its settings, 0600).
 
@@ -1572,7 +1582,10 @@ The Prompt never goes silent while something takes time:
   the same after a cut or a server error, a few times with growing waits.
   What came stays for もう一度起動, and later Prompts in the page use it at
   once. Nothing of it stays on the device: it is the OS, and its copy is
-  the release's (the app has it beside itself).
+  the release's (the app has it beside itself). The app's first Prompt on
+  a device with no root yet fetches the release root the same way, its
+  status saying how far it is, rather than sending the person to Runtime
+  (which fetches it ahead, or chooses another).
 - **Running.** A line done within two seconds says nothing. Past that, under
   the output: `実行中 N秒` with 中断 (Ctrl-C in the prompt box, when nothing
   is selected, does the same); `入力待ち` with 中断 only when what runs reads

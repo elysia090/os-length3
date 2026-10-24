@@ -77,6 +77,8 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         "home_sync" => to(remote::sync_home(&a.s("key")?)?),
         // The plan's page (Checkout, or the portal) as the Remote makes it for this account; the host opens it.
         "plan_page" => to(account::plan_page(if a.s("kind")? == "portal" { "portal" } else { "checkout" }, a.opt::<String>("tier")?.as_deref())?),
+        // What only the browser can do (a passkey's), as a page of the Remote's own app; the host opens it.
+        "app_page" => to(account::app_page(&a.s("ask")?, a.opt::<String>("repo")?.as_deref())?),
 
         "history_changes" => to(history::changes(&repos()?, &a.s("repo")?)?),
         "history_diff" => to(history::diff(&repos()?, &a.s("repo")?, DIFF_LIMIT)?),

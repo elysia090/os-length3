@@ -10,7 +10,7 @@
 // Every client holds a session token, sent as a bearer token; each device
 // is a session that can be seen and ended from any other.
 
-import {core, native} from './host.ts';
+import {core, isNative, native} from './host.ts';
 import {t} from './i18n.ts';
 import {getState, loadState} from './state.ts';
 import {setEnvironment} from './core-client.ts';
@@ -336,6 +336,34 @@ export async function signIn(): Promise<void> {
   const r = await api('/api/auth/passkey/verify-authentication', {method: 'POST', body: JSON.stringify({response})}, null);
   await keep(tokenOf(r));
   cameIn('passkey');
+}
+
+// ---- what only the browser does: a passkey's deeds, and a provider's ----
+
+/**
+ * What the app asks the browser to do, where the passkeys are (core account::ASKS): Remote's Sign-in (a passkey
+ * added, a provider linked, the code set), or a repo turned off or discarded at its card.
+ */
+export type BrowserAsk = 'sign-in' | 'off' | 'discard';
+/** Whether this page can make and use a passkey and come back from a provider: the browser's, never the app's window. */
+export const deedsHere = (): boolean => !isNative;
+/** The browser opened on the Remote's own app at `ask` (`repo`'s card for off and discard): the app's way to a passkey's deeds. */
+export const askBrowser = (ask: BrowserAsk, repo?: string) => native<void>('app_open', {ask, ...(repo ? {repo} : {})});
+
+const ASKED = 'length3.asked';
+/** Opened by the app at an ask (…/?account=off&repo=NAME): held for this tab until Remote's page does it, a sign-in on the way included. */
+export function holdAsk(ask: string | null, repo: string | null): BrowserAsk | null {
+  if (ask !== 'sign-in' && ask !== 'off' && ask !== 'discard') return null;
+  try { sessionStorage.setItem(ASKED, JSON.stringify({ask, repo})); } catch { /* asked of a page that cannot keep it: Remote's page all the same */ }
+  return ask;
+}
+/** What the app asked of this tab, once: taken by the part that does it. */
+export function takeAsk(): {ask: BrowserAsk; repo: string | null} | null {
+  try {
+    const held = sessionStorage.getItem(ASKED);
+    sessionStorage.removeItem(ASKED);
+    return held ? JSON.parse(held) as {ask: BrowserAsk; repo: string | null} : null;
+  } catch { return null; }
 }
 
 // ---- turning a repo off: a passkey just now, the names, and the account's five-letter code ----

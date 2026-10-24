@@ -269,7 +269,10 @@ function standing(): HTMLElement {
  */
 function repoSection(ctx: Context, counted: (n: number) => void, keyed: () => void, toPlan: () => void): HTMLElement {
   const grid = h('div', {class: 'grid repo-cards'});
-  const section = h('div', {class: 'sub-part'}, grid);
+  const said = h('p', {class: 'muted small asked-said', role: 'status'});
+  const section = h('div', {class: 'sub-part'}, said, grid);
+  // What the app asked this page to do at a repo's card (a passkey's deed): pressed for the person once the cards are drawn.
+  let asked: {ask: account.BrowserAsk; repo: string | null} | null = null;
   let seen: servers.RepoSeen[] = [];
   // A card asking (or about to), or its Share list out, is not drawn over by a look that crossed the
   // press; what ends the ask draws them all (`ended`).
@@ -338,30 +341,58 @@ function repoSection(ctx: Context, counted: (n: number) => void, keyed: () => vo
       // it, its servers coming out to its right. The switch keeps the right end; turned off, it makes Forge
       // 空ける in the same place, 廃棄 beside it.
       h('div', {class: 'card-foot'}, forge, discard, share, plan, h('span', {class: 'grow'}), power), error);
+    // Asked of this page by the app (…/?account=off&repo=NAME): once it is done, said here, and that the app shows it.
+    const over = (kind: 'off' | 'discard') => (asked?.repo === name && asked.ask === kind ? () => ended().then(() => {
+      const now = remoteAll().find((r) => r.name === name);
+      if (kind === 'off' ? now?.offAt : !now) { asked = null; said.textContent = t('Done. Go back to the app: it shows it there.'); }
+    }) : ended);
     power.addEventListener('click', () => {
       if (off) { void pressing(power, error, async () => { await account.turnOn(name); await look(); await paint(); }); return; }
-      if (isNative) { error.textContent = t('A repo is turned off from the browser, where its passkey is.'); return; }
       // Asking from now on, before the ask is drawn: the cards are not drawn again under it meanwhile.
       el.dataset.asking = '';
-      void confirm(el, power, name, turningOff(name), ended, keyed);
+      if (account.deedsHere()) void confirm(el, power, name, turningOff(name), over('off'), keyed);
+      else inTheBrowser(el, power, name, 'off', turningOff(name), ended);
     });
     discard?.addEventListener('click', () => {
-      if (isNative) { error.textContent = t('A repo is discarded from the browser, where its passkey is.'); return; }
       el.dataset.asking = '';
-      void confirm(el, discard, name, {
+      const ask: Ask = {
         verb: t('Discard'),
         what: [t('It goes from the Remote now, with its history, and cannot be brought back.'), ...(here ? [t('The copy here goes with it.')] : [])],
         // The copy here first: one holding what the Remote lacks is kept, and nothing is discarded.
         act: async (who, typed, code, proven) => { if (here) await freeOff(name); await account.discard(name, who, typed, code, proven); },
-      }, ended, keyed);
+      };
+      if (account.deedsHere()) void confirm(el, discard, name, ask, over('discard'), keyed);
+      else inTheBrowser(el, discard, name, 'discard', ask, ended);
     });
     return el;
   };
-  void look().then(() => paint());
+  void look().then(() => paint()).then(settled).then(() => {
+    // Taken by the section on screen once the page has settled: the first page is drawn again as what the Remote
+    // has comes in, and the one drawn before it is gone.
+    if (!section.isConnected) return;
+    const a = account.takeAsk();
+    asked = a && a.ask !== 'sign-in' && a.repo ? a : null;
+    if (!asked) return;
+    const at = grid.querySelector<HTMLElement>(`.card[data-repo="${CSS.escape(asked.repo!)}"]`);
+    const press = at?.querySelector<HTMLButtonElement>(asked.ask === 'off' ? '.power[aria-checked="true"]' : '.discard');
+    if (press && !press.disabled) { at!.scrollIntoView({block: 'center'}); press.click(); return; }
+    said.textContent = asked.ask === 'off' ? t('{repo} is not on here to turn off: it is off already, or on another account.', {repo: asked.repo!})
+      : t('{repo} is not here to discard: it is gone already, on, or on another account.', {repo: asked.repo!});
+    asked = null;
+  });
   const again = () => { if (!section.isConnected) { stop(); unreach(); return; } void paint(); };
   const stop = onSync(again);
   const unreach = account.onReach(again);
   return section;
+}
+
+/** Once the first page is drawn from what the Remote has (main.ts: no longer busy). */
+function settled(): Promise<void> {
+  const page = document.getElementById('page');
+  return new Promise((done) => {
+    if (!page?.hasAttribute('aria-busy')) { done(); return; }
+    new MutationObserver((_, o) => { if (!page.hasAttribute('aria-busy')) { o.disconnect(); done(); } }).observe(page, {attributes: true, attributeFilter: ['aria-busy']});
+  });
 }
 
 /**
@@ -507,6 +538,51 @@ async function confirm(el: HTMLElement, from: Element, repo: string, ask: Ask, d
   five.focus();
 }
 
+/**
+ * In the app, what a passkey confirms is the browser's (the app's window has none): the card says what will happen
+ * as it does on the web, and Continue in the browser opens the Remote's page there at this repo's card, which asks
+ * the rest. Waiting, the card says so; when the window comes back, what the Remote holds is read again, and the
+ * cards are drawn as they are now once the deed is done there.
+ */
+function inTheBrowser(el: HTMLElement, from: Element, repo: string, kind: 'off' | 'discard', ask: Ask, done: () => Promise<void>) {
+  const answers = askFoot(from, el);
+  el.style.minHeight = `${el.offsetHeight}px`;
+  const error = h('p', {class: 'error', role: 'alert'});
+  const lead = h('p', {class: 'muted small'}, t('It asks for your passkey, which is in your browser: this repo\'s card opens there.'));
+  const cancel = button(t('Not now'), 'small-button');
+  const go = button(t('Continue in the browser'), from.classList.contains('discard') ? 'small-button discard' : 'small-button primary');
+  const back = () => { if (document.activeElement === document.body) document.querySelector<HTMLElement>(`.card[data-repo="${CSS.escape(repo)}"] .power`)?.focus(); };
+  const came = async () => {
+    if (!el.isConnected) { removeEventListener('focus', came); return; }
+    await look().catch(() => {});
+    const now = remoteAll().find((r) => r.name === repo);
+    if (!el.isConnected || !(kind === 'off' ? now?.offAt : !now)) return;
+    removeEventListener('focus', came);
+    await done();
+    back();
+  };
+  cancel.addEventListener('click', () => { removeEventListener('focus', came); void done().then(back); });
+  go.addEventListener('click', () => void pressing(go, error, async () => {
+    await account.askBrowser(kind, repo);
+    addEventListener('focus', came);
+    lead.textContent = t('Open in your browser: confirm there, then come back. This card shows it.');
+    go.textContent = t('Open the browser again');
+  }));
+  el.replaceChildren(h('div', {class: 'off-ask', role: 'group', 'aria-label': repo}, h('span', {class: 'card-title'}, repo),
+    ...ask.what.map((line) => h('p', {class: 'muted small'}, line)), lead, error, answers(cancel, go)));
+  go.focus();
+}
+
+/**
+ * A passkey's deed or a provider's in the app (adding a passkey, linking a provider, setting the code): the browser's,
+ * opened at Remote's Sign-in, and said in `note`; what it changed is read again (`again`) when the window comes back.
+ */
+async function atSignIn(note: HTMLElement, again: () => unknown) {
+  await account.askBrowser('sign-in');
+  note.textContent = t('Open in your browser, at Sign-in. Come back when it is done: this is read again.');
+  addEventListener('focus', () => { note.textContent = ''; void again(); }, {once: true});
+}
+
 /** No passkey yet: the button, which says it; shown once what it stands under is there (`after`), not before it to be pushed down. */
 function passkeyOffer(added: () => void, after: Promise<void>): HTMLElement {
   const box = h('section', {class: 'offer-holder', hidden: ''});
@@ -515,10 +591,16 @@ function passkeyOffer(added: () => void, after: Promise<void>): HTMLElement {
     if (list.length) return;
     // An offer beside the page's work, not the work: the page's ink stays on its repos.
     const add = button(t('Add a passkey'), 'small-button');
-    add.addEventListener('click', () => void pressing(add, error, async () => { await account.addPasskey(); box.hidden = true; added(); }));
+    const note = h('p', {class: 'muted small', role: 'status'});
+    // In the app, made in the browser: gone once the account has one, when the window comes back.
+    const seen = async () => { if ((await account.passkeys().catch(() => [])).length) { box.hidden = true; added(); } };
+    add.addEventListener('click', () => void pressing(add, error, async () => {
+      if (!account.deedsHere()) { await atSignIn(note, seen); return; }
+      await account.addPasskey(); box.hidden = true; added();
+    }));
     box.hidden = false;
     // An offer goes on: at the right, as every deed that goes on is.
-    box.replaceChildren(answers(null, add), error);
+    box.replaceChildren(answers(null, add), note, error);
   }, () => {});
   return box;
 }
@@ -527,18 +609,21 @@ function passkeyOffer(added: () => void, after: Promise<void>): HTMLElement {
 function codeSection(): HTMLElement {
   const section = h('section', {class: 'sub-part', 'aria-labelledby': 'remote-code'});
   const error = h('p', {class: 'error', role: 'alert'});
+  const note = h('p', {class: 'muted small', role: 'status'});
   const paint = async () => {
     const now = await account.offCode().catch(() => ({set: false, setAt: null}));
-    const five = h('input', {class: 'line-in mono code-in', maxlength: '5', placeholder: t('New code'), 'aria-label': t('Code'), autocomplete: 'off', spellcheck: 'false'}) as HTMLInputElement;
-    const set = button(now.set ? t('Set another') : t('Set'), 'small-button');
+    // Set with a passkey: typed here on the web; in the app, in the browser, where the passkey is.
+    const five = account.deedsHere() ? h('input', {class: 'line-in mono code-in', maxlength: '5', placeholder: t('New code'), 'aria-label': t('Code'), autocomplete: 'off', spellcheck: 'false'}) as HTMLInputElement : null;
+    const set = button(five ? now.set ? t('Set another') : t('Set') : now.set ? t('Set another in the browser') : t('Set in the browser'), 'small-button');
     set.addEventListener('click', () => void pressing(set, error, async () => {
+      if (!five) { await atSignIn(note, paint); return; }
       if (!/^[A-Za-z0-9]{5}$/.test(five.value)) throw new Error(t('Five letters or digits.'));
       await account.setOffCode(five.value);
       await paint();
     }));
     section.replaceChildren(h('h3', {id: 'remote-code'}, h('span', {}, t('Code to turn a repo off'))),
       h('div', {class: 'rows'}, h('div', {class: 'row-item usage-prompt'},
-        h('span', {class: 'row-name'}, now.set ? t('Set {when}', {when: ago(now.setAt ?? 0)}) : t('Not set')), five, set)), error);
+        h('span', {class: 'row-name'}, now.set ? t('Set {when}', {when: ago(now.setAt ?? 0)}) : t('Not set')), five, set)), note, error);
   };
   void paint();
   return section;
@@ -547,17 +632,22 @@ function codeSection(): HTMLElement {
 function passkeySection(): HTMLElement {
   const section = h('section', {class: 'sub-part', 'aria-labelledby': 'remote-keys'});
   const error = h('p', {class: 'error', role: 'alert'});
+  const note = h('p', {class: 'muted small', role: 'status'});
   const paint = async () => {
     const list = await account.passkeys().catch((e) => { error.textContent = message(e); return []; });
-    const add = button(t('Add a passkey'), 'small-button');
-    add.addEventListener('click', () => void pressing(add, error, async () => { await account.addPasskey(); await paint(); }));
+    // Made where passkeys are: here on the web, in the browser from the app. Removed from either.
+    const add = button(account.deedsHere() ? t('Add a passkey') : t('Add in the browser'), 'small-button');
+    add.addEventListener('click', () => void pressing(add, error, async () => {
+      if (!account.deedsHere()) { await atSignIn(note, paint); return; }
+      await account.addPasskey(); await paint();
+    }));
     section.replaceChildren(h('h3', {id: 'remote-keys'}, h('span', {}, t('Passkeys'), list.length ? h('small', {}, `${list.length}`) : null), add),
       h('div', {class: 'rows'}, ...(list.length ? list.map((k) => {
         const remove = button(t('Remove'), 'small-button');
         remove.addEventListener('click', () => void pressing(remove, error, async () => { await account.removePasskey(k.id); await paint(); }));
         return h('div', {class: 'row-item usage-prompt'}, h('span', {class: 'row-name'}, k.name || t('Passkey')),
           h('span', {class: 'row-meta'}, `${t('Made {when}', {when: ago(Date.parse(k.createdAt))})}${k.backedUp ? ` · ${t('synced passkey')}` : ''}`), remove);
-      }) : [h('div', {class: 'row-item muted'}, t('No passkeys yet'))])), error);
+      }) : [h('div', {class: 'row-item muted'}, t('No passkeys yet'))])), note, error);
   };
   void paint();
   return section;
@@ -567,6 +657,7 @@ function passkeySection(): HTMLElement {
 function providerSection(): HTMLElement {
   const section = h('section', {class: 'sub-part', 'aria-labelledby': 'remote-providers'});
   const error = h('p', {class: 'error', role: 'alert'});
+  const note = h('p', {class: 'muted small', role: 'status'});
   const paint = async () => {
     let mine: Awaited<ReturnType<typeof account.linked>>, offered: Awaited<ReturnType<typeof account.about>>;
     try { [mine, offered] = await Promise.all([account.linked(), account.about()]); } catch (e) { error.textContent = message(e); return; }
@@ -581,11 +672,12 @@ function providerSection(): HTMLElement {
     });
     const more = offered.providers.filter((p) => !have.has(p)).map((p) => {
       const b = button(t('Link {name}', {name: account.PROVIDER_NAME[p]}), 'small-button');
-      b.addEventListener('click', () => void pressing(b, error, () => account.link(p)));
+      // Linked where a provider comes back to: this page on the web, the browser from the app.
+      b.addEventListener('click', () => void pressing(b, error, () => (account.deedsHere() ? account.link(p) : atSignIn(note, paint))));
       return b;
     });
     section.replaceChildren(h('h3', {id: 'remote-providers'}, h('span', {}, t('Sign-in providers'))), h('div', {class: 'rows'}, ...rows),
-      ...(more.length ? [h('div', {class: 'row work-act'}, ...more)] : []), error);
+      ...(more.length ? [h('div', {class: 'row work-act'}, ...more)] : []), note, error);
   };
   void paint();
   return section;
@@ -704,7 +796,8 @@ function planSection(offered: (on: boolean) => void): {el: HTMLElement; paint():
   const told = h('p', {class: 'plan-told', role: 'status', hidden: ''});
   const tell = (text: string, kind: '' | 'done' = '') => { told.textContent = text; told.hidden = !text; told.classList.toggle('done', kind === 'done'); };
   let came = stripeReturn();
-  let since = Date.now();
+  /** When the person came back from Stripe's page: the web, as this page loads again; the app, as its window comes back (null till then). */
+  let since: number | null = Date.now();
   if (came?.how === 'cancelled') tell(t('Payment was cancelled: nothing was charged, and the plan is as it was.'));
   if (came?.how === 'paid') {
     tell(came.tier ? t('Payment went through. {tier} shows here as soon as Stripe tells the Remote, a moment from now.', {tier: tierName(came.tier)})
@@ -722,15 +815,17 @@ function planSection(offered: (on: boolean) => void): {el: HTMLElement; paint():
       // Paid now, after a Checkout: said once, and nothing more is waited for.
       if (p.plan === 'paid') { tell(t('Payment went through: you are on {tier} now.', {tier: tierName(tierNow)}), 'done'); came = null; }
       // Not heard yet: asked again in a moment, for a minute; then said where to look (the payment itself went through).
-      else if (Date.now() - since < 60_000) setTimeout(() => { if (el.isConnected) void paint(); }, 3000);
+      else if (Date.now() - (since ?? Date.now()) < 60_000) setTimeout(() => { if (el.isConnected) void paint(); }, 3000);
       else { came = null; tell(t('Stripe has not told the Remote yet. The plan shows Paid once it does; nothing is charged twice.')); }
     } else if (came?.how === 'managed') {
       // Back from the portal: what changed there, said against the plan as it was when this tab left; nothing, if nothing did.
       const said = came.left ? changedWords(came.left, p) : null;
+      // The app's window back (the browser had the person meanwhile): from now on, as the web's page loaded again.
+      if (since === null && document.hasFocus()) since = Date.now();
       if (said) { tell(said, 'done'); came = null; }
-      // Not heard yet: the web asks again a few times; the app each time its window comes back (the browser has the person meanwhile).
-      else if (Date.now() - since > (isNative ? 30 * 60_000 : 20_000)) came = null;
-      else if (!isNative) setTimeout(() => { if (el.isConnected) void paint(); }, 3000);
+      // Not heard yet: asked again a few times once back, then left to the next time the plan is read.
+      else if (since !== null && Date.now() - since > 20_000) came = null;
+      else if (since !== null) setTimeout(() => { if (el.isConnected) void paint(); }, 3000);
     }
     // While a payment is asked about, what is asked stays as it is.
     if (confirming && p.plan === 'free') return;
@@ -781,7 +876,7 @@ function planSection(offered: (on: boolean) => void): {el: HTMLElement; paint():
       if (!isNative) return;
       tell(t('The payment page is open in your browser. When you are done there, come back: the plan is read again.'));
       came = {how: 'managed', tier: null, left: {tier: tierNow, ends: p.ends ?? null, paid: p.plan === 'paid'}};
-      since = Date.now();
+      since = null;
     };
     draw();
   };
@@ -841,38 +936,40 @@ export function remote(ctx: Context): Node[] {
     page.panel('plan').append(plan.el);
     void plan.paint();
     page.onShow((k) => { if (k === 'plan') void plan.paint(); });
-    const back = () => { if (!holder.isConnected) { document.removeEventListener('visibilitychange', back); return; } if (!document.hidden) void plan.paint(); };
+    // Come back to (the window focused again: the browser in front of it is not its being hidden).
+    const back = () => {
+      if (!holder.isConnected) { document.removeEventListener('visibilitychange', back); removeEventListener('focus', back); return; }
+      if (!document.hidden) void plan.paint();
+    };
     document.addEventListener('visibilitychange', back);
+    addEventListener('focus', back);
     // Under the repos (it is what lets one be turned off); a passkey added from it shows under Sign-in at once.
     // It waits for the repos to be drawn (or a few seconds, if they cannot be), so it lands under them once.
     let listed = () => {};
     const drawn = new Promise<void>((r) => { listed = r; setTimeout(r, 3000); });
-    const offer = isNative ? null : passkeyOffer(() => { shown = null; paint(); }, drawn);
+    const offer = passkeyOffer(() => { shown = null; paint(); }, drawn);
     // A Remote entered by its link has no passkeys or providers to manage: only the code a repo is turned off with.
-    const signIn = () => {
-      if (isNative) page.panel('sign-in').replaceChildren(h('p', {class: 'muted'}, t('Passkeys and providers are managed in the browser.')));
-      else void account.about().then(({enter}) => page.panel('sign-in').replaceChildren(...(enter
-        ? [h('p', {class: 'muted'}, t('You came in by the link you were given; each time lasts a day.')), codeSection()]
-        : [passkeySection(), codeSection(), providerSection()])));
-    };
+    const signIn = () => void account.about().then(({enter}) => page.panel('sign-in').replaceChildren(...(enter
+      ? [h('p', {class: 'muted'}, t('You came in by the link you were given; each time lasts a day.')), codeSection()]
+      : [passkeySection(), codeSection(), providerSection()])));
     signIn();
     // The code (and a passkey) set while a repo is turned off: the offer has done its work, and Sign-in reads them again when shown.
     let stale = false;
     page.onShow((k) => { if (k === 'sign-in' && stale) { stale = false; signIn(); } });
-    page.panel('repos').append(repoSection(ctx, (n) => { page.count('repos', n); listed(); }, () => { stale = true; if (offer) offer.hidden = true; }, () => page.show('plan')));
+    page.panel('repos').append(repoSection(ctx, (n) => { page.count('repos', n); listed(); }, () => { stale = true; offer.hidden = true; }, () => page.show('plan')));
     page.panel('devices').append(deviceSection((n) => page.count('devices', n)));
     // Just back from a provider: a passkey for next time, offered once, above everything.
     // The offer under the repos waits while this one is up (one offer at a time), and comes back if it is put off.
-    const next = !isNative && account.justSignedInHere() ? passkeyNext(() => { stale = true; if (offer) offer.hidden = true; },
-      () => offer?.classList.remove('held')) : null;
-    if (next) offer?.classList.add('held');
+    const next = account.justSignedInHere() ? passkeyNext(() => { stale = true; offer.hidden = true; },
+      () => offer.classList.remove('held')) : null;
+    if (next) offer.classList.add('held');
     holder.replaceChildren(
       h('div', {class: 'part-bar'}, page.switch),
       standing(),
       page.panel('repos'), page.panel('sign-in'), page.panel('devices'), page.panel('plan'));
     // The passkey offer belongs to the repos it lets be turned off: under them, never under another part; the one
     // just after a provider's sign-in, at their top.
-    if (offer) page.panel('repos').append(offer);
+    page.panel('repos').append(offer);
     if (next) page.panel('repos').prepend(next);
   };
   paint();

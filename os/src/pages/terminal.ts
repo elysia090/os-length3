@@ -1,7 +1,7 @@
 import * as dotfiles from '../dotfiles.ts';
 import {onChange, store} from '../repos.ts';
 import {bytes, h} from '../dom.ts';
-import {isNative, promptOpen, rootStatus, type Held, type Stopped} from '../host.ts';
+import {isNative, promptOpen, rootFetch, rootStatus, type Held, type Stopped} from '../host.ts';
 import {currentLang, onLang, t, tn} from '../i18n.ts';
 import {filesNow, loadL3, promptWorker, warmL3, watchLoad, type L3, type Stage} from '../userland.ts';
 import {every} from '../runs.ts';
@@ -332,8 +332,13 @@ export class Session {
   private async start() {
     try {
       // In the app the Prompt is the distribution's root on this machine, and nothing else: l3 through xlat
-      // is the browser's (its build carries none). Without a root, Runtime is where one is installed.
+      // is the browser's (its build carries none). The first one fetches the root it runs on, as the browser's
+      // first fetches l3, the status saying how far it is (Runtime fetches it ahead, and chooses another).
       if (isNative) {
+        if (await this.startRoot()) return;
+        await rootFetch((got, of, retry) => {
+          this.status.textContent = retry ? t('{why}; continuing where it stopped', {why: retry}) : t('Fetching {got} / {of}', {got: bytes(got), of: bytes(of)});
+        });
         if (await this.startRoot()) return;
         throw new Error(t('There is no root on this device yet: Runtime installs it'));
       }

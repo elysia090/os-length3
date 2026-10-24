@@ -99,10 +99,12 @@ export interface Stopped { before: Held; left: number; ms: number | null }
 /** The roots this machine holds (the app only; a browser has none). */
 export const rootStatus = (): Promise<RootStatus | null> => (isNative ? native<RootStatus>('root_status') : Promise.resolve(null));
 
+/** The release root on its way: asked for again meanwhile (a second Prompt, Runtime's Fetch), the same one is waited on. */
+let fetching: Promise<Installed> | null = null;
 /** Fetch and install the release root, hearing how far it is. */
 export async function rootFetch(progress: (got: number, of: number, retry: string | null) => void): Promise<Installed> {
   const unlisten = await listen<{got: number; of: number; retry: string | null}>('root-fetch', (e) => progress(e.payload.got, e.payload.of, e.payload.retry));
-  try { return await native<Installed>('root_fetch'); } finally { unlisten(); }
+  try { return await (fetching ??= native<Installed>('root_fetch').finally(() => { fetching = null; })); } finally { unlisten(); }
 }
 
 /** Make `id` (l3, ubuntu, debian) the root Prompts run on, fetched first if it is not here. */

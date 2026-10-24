@@ -169,6 +169,33 @@ pub fn plan_page(kind: &str, tier: Option<&str>) -> Result<String> {
     Ok(url)
 }
 
+/// What the app asks the browser to do, where the passkeys are: Remote's Sign-in (a passkey added, a provider
+/// linked, the code set), or a repo turned off or discarded.
+pub const ASKS: [&str; 3] = ["sign-in", "off", "discard"];
+
+/// The page of the Remote's own app (on the origin it says it has, login.rs app_origin) where `ask` is done in the
+/// browser: Remote's Sign-in part, or the card of `repo` asking to turn it off or discard it. Never a page the
+/// window names: the ask is one of ASKS, the repo a plain name.
+pub fn app_page(ask: &str, repo: Option<&str>) -> Result<String> {
+    if !ASKS.contains(&ask) { return Err(crate::tr!("No such ask", "そのような依頼はありません")); }
+    let url = crate::remote::connection().map(|c| c.url).unwrap_or_else(crate::remote::default_url);
+    let app = crate::remote::app_origin(&url);
+    let page = ask_page(app.as_deref().unwrap_or(&url), ask, repo)?;
+    if !crate::remote::device_page_ok(&url, app.as_deref(), &page) {
+        return Err(crate::tr!("The Remote named a page that is not its own", "Remote が自分のものでないページを示しました"));
+    }
+    Ok(page)
+}
+
+fn ask_page(base: &str, ask: &str, repo: Option<&str>) -> Result<String> {
+    let base = base.trim_end_matches('/');
+    if ask == "sign-in" { return Ok(format!("{base}/?account=sign-in")); }
+    match repo {
+        Some(r) if crate::repos::valid_name(r) => Ok(format!("{base}/?account={ask}&repo={r}")),
+        _ => Err(crate::tr!("No such repo", "そのリポジトリはありません")),
+    }
+}
+
 /// What a session is, from its user agent, in the app's words.
 pub fn device_word(ua: Option<&str>) -> String {
     let u = ua.unwrap_or_default();
@@ -195,6 +222,15 @@ mod tests {
         }
         assert!(super::plan_page_ok("http://127.0.0.1:8950", "http://127.0.0.1:8950/dev-billing/portal?c=1"));
         assert!(!super::plan_page_ok("http://127.0.0.1:8950", "http://127.0.0.1:8951/dev-billing/portal"));
+    }
+
+    #[test]
+    fn an_ask_names_only_the_account_page_and_a_plain_repo() {
+        let b = "https://os.length3.com/";
+        assert_eq!(super::ask_page(b, "sign-in", None).unwrap(), "https://os.length3.com/?account=sign-in");
+        assert_eq!(super::ask_page(b, "off", Some("notes-2")).unwrap(), "https://os.length3.com/?account=off&repo=notes-2");
+        for no in [None, Some(""), Some("a&b=c"), Some("../x"), Some(".git"), Some("a#b")] { assert!(super::ask_page(b, "discard", no).is_err(), "{no:?}"); }
+        assert!(super::app_page("delete-everything", None).is_err());
     }
 
     #[test]

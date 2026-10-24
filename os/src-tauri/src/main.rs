@@ -92,6 +92,17 @@ async fn plan_open(app: tauri::AppHandle, kind: String, tier: Option<String>) ->
     app.opener().open_url(url.as_str().unwrap_or_default(), None::<&str>).map_err(|e| e.to_string())
 }
 
+/// What only the browser can do, where the passkeys are (`ask`: Remote's Sign-in, or `repo` turned off or
+/// discarded), opened there on the Remote's own app (account::app_page); the window hears how it went when it
+/// comes back.
+#[tauri::command]
+async fn app_open(app: tauri::AppHandle, ask: String, repo: Option<String>) -> Result<(), String> {
+    let url = tauri::async_runtime::spawn_blocking(move || api::call("app_page", &serde_json::json!({"ask": ask, "repo": repo})))
+        .await.map_err(|e| e.to_string())??;
+    use tauri_plugin_opener::OpenerExt;
+    app.opener().open_url(url.as_str().unwrap_or_default(), None::<&str>).map_err(|e| e.to_string())
+}
+
 /// Network and file walks run off the window's thread.
 async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
     tauri::async_runtime::spawn_blocking(f).await.map_err(|e| e.to_string())?
@@ -185,7 +196,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            core, remote_login_start, remote_login_reopen, window_forward, plan_open,
+            core, remote_login_start, remote_login_reopen, window_forward, plan_open, app_open,
             shells::prompt_open, shells::prompt_input, shells::prompt_interrupt, shells::prompt_held, shells::prompt_close,
             shells::root_status, shells::root_list, shells::root_fetch, shells::root_use, ssh_here, ssh_set
         ])
