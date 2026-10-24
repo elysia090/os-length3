@@ -64,10 +64,12 @@ export function mainCard(repo: string, n: number, events: IssueEvents, after: ()
     const from = card.isConnected ? card.getBoundingClientRect().height : 0;
     const commit = button(t('Commit'), 'primary');
     commit.addEventListener('click', () => ask(commit));
-    // The repo and how many files wait, Commit at the right of that line; under them the files, on the card itself.
-    card.replaceChildren(h('div', {class: 'main-head'}, h('span', {class: 'card-title'}, repo),
-      h('span', {class: 'muted small'}, tn('{n} file to commit on main', '{n} files to commit on main', n)), h('span', {class: 'grow'}), commit),
-      notCommitted(repo, n, events));
+    // Laid out as an issue's box is: its name at the top, the files under it on the card itself, and at its foot how
+    // many wait at the left and Commit at the right, where an issue's next step is.
+    card.replaceChildren(h('h3', {class: 'main-title'}, repo),
+      notCommitted(repo, n, events),
+      h('div', {class: 'issue-foot main-foot'},
+        h('span', {class: 'muted small'}, tn('{n} file to commit on main', '{n} files to commit on main', n)), commit));
     resize(card, from);
     return commit;
   };
@@ -100,7 +102,7 @@ export function mainCard(repo: string, n: number, events: IssueEvents, after: ()
     });
     // One line, nothing to break: Enter commits it, as Ctrl+Enter does.
     line.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); yes.click(); } });
-    card.replaceChildren(h('div', {class: 'off-ask'}, h('span', {class: 'card-title'}, repo),
+    card.replaceChildren(h('div', {class: 'off-ask'}, h('h3', {class: 'main-title'}, repo),
       h('p', {class: 'muted small'}, tn('{n} file to commit on main', '{n} files to commit on main', n)), line, error, foot(no, yes)));
     resize(card, was);
     line.focus({preventScroll: true});

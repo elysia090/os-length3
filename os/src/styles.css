@@ -552,18 +552,22 @@ kbd {
 }
 
 /* Git: issues read from each repo's issue/ */
-.git-filter { margin-top: var(--s5); }
-/* Git's repos are one row that slides sideways, never more rows: a ring kept clear of its edge. */
-.git-filter > .chips { position: relative; isolation: isolate; flex-wrap: nowrap; overflow-x: auto; margin: calc(-1 * var(--s1)); padding: var(--s1); }
-.git-filter > .chips > .chip { flex: none; }
-/* Git's column keeps its width whether it scrolls or not (read, then its words changed). */
-.git-flow { scrollbar-gutter: stable; }
+/* Git's repos are its band, on the top line where Forge's pills are: one row that slides sideways, never more rows,
+   a ring kept clear of its edge. */
+.git-band { display: flex; align-items: center; min-width: 0; }
+.git-band > .chips { position: relative; isolation: isolate; flex-wrap: nowrap; overflow-x: auto; margin: calc(-1 * var(--s1)); padding: var(--s1); }
+.git-band > .chips > .chip { flex: none; }
 .section > h2 > span small { margin-left: var(--s2); }
+/* Git's column keeps its width whether it scrolls or not (read, then its words changed): where scrollbars take room
+   (the desktop's), the room Forge's page has while it scrolls, as it nearly always does. */
+.git-flow { scrollbar-gutter: stable; }
 .issue-kind { font-weight: 700; }
 /* Where an issue is (its repo) is a name: the sans, as every name is. */
 .issue-where { font: var(--t-meta)/1.6 var(--sans); color: var(--sub); }
-/* Git keeps one centred column of comfortable width: the form, the rows, the notes and the prompt box line up. */
-.git-flow > * { max-width: 760px; margin-inline: auto; }
+/* Git stands in Forge's frame: its repos the band on the top line, and under it, from the rail's first place, the
+   page on the band's edges, the boxes as wide as Forge's and the prompt box a step outside them. The first part
+   shown starts at the page's top, wherever parts before it are hidden. */
+.git-flow > .section:first-child, .git-flow > .section[hidden]:first-child + .section { margin-top: 0; }
 /* No issue yet: the dashed box as wide as the others; gone while one is being written (the form is where it goes). */
 /* No issue to show: the dashed card where the first would be, as tall as an issue's card, its word and what is so. */
 .issue-new { width: 100%; min-height: 180px; gap: var(--s1); }
@@ -1779,17 +1783,17 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
    from here under the cards, on those edges too. */
 .main-part { --peek: 48px; --lead: 0; }
 .main-part.single { --peek: 0px; }
-.main-part > .main-card, .main-part > .done-list {
+.main-part > .main-card {
   width: calc(100% - 2 * var(--peek)); margin-left: calc(var(--lead) * var(--peek));
   transition: margin-left var(--move), width var(--move); /* as the track goes */
 }
-.main-part > .done-list { padding-inline: calc(var(--s5) - var(--s2)); } /* its words on the card's, past each row's own s2 */
+/* As an issue's box: the same padding, its name the size of an issue's, the files under it, and its foot (how many
+   wait at the left, Commit at the right) where an issue's next step is. */
 .main-card { display: grid; gap: var(--s3); padding: calc(var(--s4) + var(--s1)) var(--s5) var(--s5); border: 1px solid var(--rule); border-radius: var(--r-place); background: var(--paper); }
+.main-title { margin: 0; font-size: var(--t-card); font-weight: 600; }
 .main-card + .main-card { margin-top: var(--s3); }
 /* main's card: the repo, how many files wait and Commit on one line; the files under it on the card itself, no box
    inside the box. */
-.main-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s1) var(--s3); min-height: var(--h-control); }
-.main-head > .grow { flex: 1; }
 .changes { display: grid; gap: var(--s1); min-width: 0; }
 .changes > .diff-file { margin: 0; }
 /* A file of a diff folds at its head, a small triangle before its name saying which way; turned down, it is open. */
@@ -1805,7 +1809,7 @@ details.diff-file[open] > summary.diff-head::before { rotate: 90deg; }
 button.diff-more { cursor: pointer; }
 button.diff-more:hover { color: var(--ink); background: var(--raised); }
 /* What is done with (merged, closed): rows, space between them; a merged one opens to its diff. */
-.done-list { display: grid; gap: var(--s1); }
+.done-list { display: grid; gap: var(--s1); margin-inline: calc(-1 * var(--s2)); } /* its words on its heading's edge, past each row's own s2 */
 .done-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s1) var(--s3); min-height: var(--h-row); padding: var(--s1) var(--s2); border-radius: var(--r-field); }
 summary.done-head { cursor: pointer; }
 summary.done-head:hover { background: var(--raised); }

@@ -25,6 +25,7 @@ export default {
   'Push': 'Push',
   'Reset': 'Reset',
   'Back to main': 'main に戻る',
+  'Committed': 'Commit 済み',
   '{who} · started {when}': '{who} · 開始 {when}',
   'Approve': '承認',
   'Ask for changes': '直しを頼む',

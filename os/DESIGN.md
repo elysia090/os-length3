@@ -124,7 +124,7 @@ Every value in `styles.css` comes from a token (§2).
     name or code copied; a message sent comes up out of the box it was
     written in, one come in from the other's side. A commit on main: its
     card slides off sideways as it fades, the room it took closing after it,
-    and the line that says so lands lit under main.
+    and the line that says so lands lit under the issues, in Committed.
     A TODO line that becomes an item has its day stamped in at its end, and
     the box's "n of n left" beats as it changes. A name taken in Inbox goes
     up into its place as itself, its code and gear coming in beside it as
@@ -1702,12 +1702,14 @@ What happens between a repo and the outside, in the mental model of the
 issues: an issue hides its branch and worktree, and the operations are
 Commit, Push, Change (with Reset), Review, Merge, and Close for one that
 will not be done. It uses the same workbench
-as Forge: the center (one centred column, 760 px at most) with the prompt
-box at its foot, the top line with the search box and the right pane's
-switch, and the narrow right pane with the reference and the Prompt. Under
-the top line, the page header, then the repo chips (one repo or
-all), one row that slides sideways however many there are, so they never
-push the issues down; choosing a repo also points the right pane and the Prompt at it, and
+as Forge, in Forge's frame: its band on the top line is the repo chips
+(one repo or all), where Forge's pills are, beside the search box and the
+right pane's switch; under it the center, from the rail's first place, its
+boxes on the band's edges as Forge's are, the prompt box at its foot a step
+outside them, and the narrow right pane with the reference and the Prompt.
+There is no page header: the rail says where one is (a heading only a
+screen reader hears). The chips are one row that slides sideways however
+many there are; choosing a repo also points the right pane and the Prompt at it, and
 makes it the repo worked on (§1): Forge opens there next. So does going to
 an issue (an edge, ← →) and starting or continuing one; coming to Git
 opens at the issue last looked at in the repo worked on. An issue written
@@ -1793,18 +1795,18 @@ half written after reading its neighbours or another page.
   approved.
 
 Around the issues, each its own section, shown only when it has something:
-main over them (what is in hand comes before what is planned), Merged and
-Closed under them.
+main over them (what is in hand comes before what is planned); under them
+what is done with, Committed (on main, from here), Merged and Closed.
 
 - **main**: a card for each repo that shows main and has something not
   committed there (an edit in Forge, an issue written, one closed), a
   sheet on `paper` as an issue's box is, never melting into the ground,
   standing in the issues' column with the same edges as the issue in full
-  under it and going with it as the row slides (the lines committed from
-  here under it, their words on its words' edge): its
-  repo, how many files wait (2 files to commit on main) and Commit at the
-  right of that line; under it the files straight on the card, never a box
-  inside it. Each file folds at its head (a small triangle, its name, +n
+  under it and going with it as the row slides, and laid out as an issue's
+  box is: its repo at the top as an issue's name is, the files under it
+  straight on the card (never a box inside it), and at its foot how many
+  files wait (2 files to commit on main) at the left and Commit at the
+  right, where an issue's next step is. Each file folds at its head (a small triangle, its name, +n
   −n and the five squares), the first three open and the rest a line each;
   a long one shows its first 30 lines with "n more lines" under them,
   pressed to show the rest, so a large change reads file by file and
@@ -1816,9 +1818,9 @@ Closed under them.
   from its files to the ask and back (280 ms) rather than held at the
   taller. What is typed is kept with its repo until it is committed or put
   back. Committed, the card slides off sideways as it fades (340 ms), the
-  room it took closing after it so what is under it comes up, and in its
-  place a line under main: the commit's line, +n −n and its squares,
-  Committed just now at its right, lit as it lands; the last few committed from here stay so, newest first. This is Commit, not an
+  room it took closing after it so what is under it comes up, and a line
+  opens under the issues, in Committed: the commit's line, +n −n and its
+  squares, Committed just now at its right, lit as it lands; the last few committed from here stay so, newest first. This is Commit, not an
   issue made of the changes: an issue hides a branch that starts from
   main's last commit, and moving main's draft onto one would be a new
   operation the Remote does not have; a commit on main is already one

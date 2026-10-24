@@ -8,7 +8,6 @@ import {connection} from '../remote.ts';
 import {onChange, store} from '../repos.ts';
 import {bench} from './bench.ts';
 import {openNext as openConversation} from './inbox.ts';
-import {pageHead} from './common.ts';
 import {icon} from '../icons.ts';
 import type {Context} from './context.ts';
 import {closedList, committedIn, committedList, mainCard, mergedList} from './git-done.ts';
@@ -254,17 +253,20 @@ export function git(ctx: Context): Node[] {
     go(was >= 0 ? was : 0, false, had);
   };
 
-  // Over the issues, what main has not committed; under them, what is done with (merged, closed), each its own section.
+  // Over the issues, what main has not committed; under them, what is done with (committed, merged, closed), each its own section.
   const heading = (id: string, text: string, n = 0) => h('h2', {id}, h('span', {}, text, ' ', h('small', {}, n ? `${n}` : '')));
   const mainPart = h('section', {class: 'section main-part', 'aria-labelledby': 'main-title', hidden: ''});
+  // What was committed on main from here is done with: under the issues, with what was merged and closed.
+  const committedPart = h('section', {class: 'section', 'aria-labelledby': 'committed-title', hidden: ''});
   const mergedPart = h('section', {class: 'section', 'aria-labelledby': 'merged-title', hidden: ''});
   const closedPart = h('section', {class: 'section', 'aria-labelledby': 'closed-title', hidden: ''});
   const drawDone = ({dirty, merged, closed}: Laid) => {
-    // main: what it has not committed, each a card, and under them what was committed on it from here.
+    // main: what it has not committed, each a card. What was committed on it from here is under the issues.
     const cuts = committedIn(filter || null);
-    mainPart.hidden = !dirty.length && !cuts.length;
-    mainPart.replaceChildren(heading('main-title', 'main'), ...dirty.map((r) => mainCard(r, states.get(r)!.uncommitted, events, again)),
-      cuts.length ? committedList(cuts, !filter) : '');
+    mainPart.hidden = !dirty.length;
+    mainPart.replaceChildren(heading('main-title', 'main'), ...dirty.map((r) => mainCard(r, states.get(r)!.uncommitted, events, again)));
+    committedPart.hidden = !cuts.length;
+    committedPart.replaceChildren(heading('committed-title', t('Committed')), committedList(cuts, !filter));
     mergedPart.hidden = !merged.length;
     mergedPart.replaceChildren(heading('merged-title', t('Merged'), merged.length), mergedList(merged, !filter));
     closedPart.hidden = !closed.length;
@@ -301,15 +303,14 @@ export function git(ctx: Context): Node[] {
   load();
 
   const main = h('section', {class: 'flow git-flow', tabindex: '0', 'aria-label': 'Git'},
-    pageHead('git'),
-    h('div', {class: 'git-filter'}, chips),
     // What main has not committed comes first, over the issues: what is in hand before what is planned.
     mainPart,
     h('section', {class: 'section', 'aria-labelledby': 'issues-title'},
       h('h2', {id: 'issues-title'}, h('span', {}, t('Issues'), ' ', count)),
       form.element, empty, column),
-    mergedPart, closedPart);
-  const workbench = bench({main, reveal: (path) => { if (at) ctx.openRepo(at, path); }, word: (a) => { openConversation(a); void ctx.go('inbox'); }});
+    committedPart, mergedPart, closedPart);
+  // Its repos are its band, on the top line as Forge's pills are, so the page starts where the rail's places do.
+  const workbench = bench({strip: h('div', {class: 'git-band'}, chips), main, reveal: (path) => { if (at) ctx.openRepo(at, path); }, word: (a) => { openConversation(a); void ctx.go('inbox'); }});
   // Issues written anywhere (here, in the shell, with l3 in the Prompt) show
   // up at once, and any change in the repo looked at is read again; not while
   // something is being written in the box or under it, which would be lost.
@@ -323,5 +324,6 @@ export function git(ctx: Context): Node[] {
   });
   const back = () => { if (!workbench.element.isConnected) { removeEventListener('focus', back); return; } soon(); };
   addEventListener('focus', back);
+  workbench.element.prepend(h('h1', {class: 'sr-only'}, t('Git')));
   return [workbench.element];
 }
