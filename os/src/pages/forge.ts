@@ -10,7 +10,7 @@ import type {Context} from './context.ts';
 import {bench} from './bench.ts';
 import {Reader, type Writing} from './reader.ts';
 import {startIssue} from './issue-form.ts';
-import {arrive, glide, LAND, where} from '../glide.ts';
+import {glide, LAND, panAcross, where} from '../glide.ts';
 
 /**
  * Forge, the place you work. The repos out to work on run as pills in a band
@@ -121,13 +121,43 @@ function make(ctx: Context) {
     work.element.classList.toggle('split-on', shown.length > 1);
     // The row slides so the box worked on stands in it whole and its neighbours' edges show past the frame's lines.
     // A box just shown takes the row's place first (the reflow), so it slides with the rest rather than appearing.
-    if (cols.clientWidth) cols.style.setProperty('--cols-w', `${cols.clientWidth}px`);
     const at = repo ? Math.max(0, shown.indexOf(repo)) : 0;
     cols.style.setProperty('--at', String(at));
     cols.style.setProperty('--lead', String(at === 0 ? 0 : at === shown.length - 1 ? 2 : 1));
+    cols.style.setProperty('--n', String(Math.max(1, shown.length)));
+    room();
     saveBeside(shown);
   };
-  new ResizeObserver(([e]) => { if (e.contentRect.width) cols.style.setProperty('--cols-w', `${e.contentRect.width}px`); }).observe(cols);
+  /**
+   * The prompt box stands under the box worked on, its edges a step (s3) outside that box's: where the box will be
+   * once the row has moved (styles.css: one box s5 in from the center's edges; side by side with the pane out, the
+   * one worked on whole between its neighbours' edges, `--peek` and `--pad`; with the pane away, all of them whole
+   * and as wide), so it moves with the row rather than after it.
+   */
+  const placeDock = (w: number) => {
+    const bench = work.element;
+    const n = shown.length, at = repo ? Math.max(0, shown.indexOf(repo)) : 0;
+    const S3 = 12, PEEK = 64;
+    let left = S3, width = w - 2 * S3;
+    if (n > 1 && bench.classList.contains('pane-closed')) { width = (w - 2 * S3) / n; left = S3 + at * width; }
+    else if (n > 1) { width = w - 2 * PEEK - 2 * S3; left = S3 + (at === 0 ? 0 : at === n - 1 ? 2 : 1) * PEEK; }
+    bench.style.setProperty('--dock-l', `${left}px`);
+    bench.style.setProperty('--dock-r', `${w - left - width}px`);
+  };
+  /**
+   * How wide the row is once the pane has done moving (the bench's width, less the pane's when it is out: styles.css
+   * `.work.bench`, max(280px, 25%); narrow, the pane is laid over the center), not how wide it is this frame: the row
+   * and the prompt box are sent there once, as the pane is put away or brought back, and move on its curve beside its
+   * edge, not after it a step behind each frame.
+   */
+  const room = () => {
+    const W = work.element.clientWidth;
+    if (!W) return;
+    const w = narrow.matches || work.element.classList.contains('pane-closed') ? W : W - Math.max(280, W / 4);
+    cols.style.setProperty('--cols-w', `${w}px`);
+    placeDock(w);
+  };
+  const narrow = matchMedia('(max-width: 760px)');
 
   // A place asked for in another file than the one a box beside holds is read in the repo's page, which comes in
   // where that box stood (or is gone to, standing in the row already).
@@ -143,6 +173,8 @@ function make(ctx: Context) {
     void view()?.reader.reveal(path, line, write).then(() => track());
   };
   const work = bench({strip, main: cols, reveal: (path, line, write) => revealAt(path, line, write)});
+  new ResizeObserver(room).observe(work.element);
+  new MutationObserver(room).observe(work.element, {attributes: true, attributeFilter: ['class']});
   // The Issue view with none open begins one for this repo on Git; Not now there comes back here.
   work.reference.writeIssue = (r) => { startIssue(r); ctx.go('git'); };
 
@@ -556,31 +588,37 @@ function make(ctx: Context) {
   const show = (name: string, path = '', write: Writing = false) => {
     band = addToBand(band, name);
     saveBand();
-    if (repo !== name || !shown.includes(name)) {
-      const from = repo;
-      const was = views.get(from ?? '');
-      if (was) was.top = was.flow.scrollTop;
-      const fresh = !shown.includes(name);
-      shown = showIn(shown.filter((n) => views.has(n) || n === name), name, from);
-      const v = viewOf(name);
-      repo = null;
-      activate(name);
-      v.flow.scrollTop = v.top;
-      // Coming into a box another stood in, it slides in from the side its pill is on along the band.
-      if (fresh && from) arrive(v.flow, Math.sign(band.indexOf(name) - band.indexOf(repoOf(from))), 'x', 32, 260);
-    }
-    paintBand();
-    // A file just made (from File) is read in now, so the caret lands in it, not in the page about to be read again.
-    if (path && again) { clearTimeout(again); readAgain(false); }
-    // Nor does a page just read again put it back where it was, over the place asked for.
-    if (path) cancelAnimationFrame(putBack);
-    // A place asked for is where the center goes: coming back does not put it back where it was.
-    landed = path ?? null;
-    // Gone to, it is the file read from now (File marks it, the band's first button opens at it), not only once the
-    // center has settled on it a moment later.
-    if (path) told(path);
-    if (path) { revealing = true; void view()?.reader.reveal(path, 0, write).then(() => track()); }
-    else track();
+    const from = repo;
+    const switching = repo !== name || !shown.includes(name);
+    // Coming into a box another stood in, the camera pans along the band to it: from the side its pill is on.
+    const across = switching && !!from && !shown.includes(name) ? Math.sign(band.indexOf(name) - band.indexOf(repoOf(from!))) : 0;
+    const go = () => {
+      if (switching) {
+        const was = views.get(from ?? '');
+        if (was) was.top = was.flow.scrollTop;
+        shown = showIn(shown.filter((n) => views.has(n) || n === name), name, from);
+        const v = viewOf(name);
+        repo = null;
+        activate(name);
+        v.flow.scrollTop = v.top;
+      }
+      paintBand();
+      arrived();
+    };
+    const arrived = () => {
+      // A file just made (from File) is read in now, so the caret lands in it, not in the page about to be read again.
+      if (path && again) { clearTimeout(again); readAgain(false); }
+      // Nor does a page just read again put it back where it was, over the place asked for.
+      if (path) cancelAnimationFrame(putBack);
+      // A place asked for is where the center goes: coming back does not put it back where it was.
+      landed = path ?? null;
+      // Gone to, it is the file read from now (File marks it, the band's first button opens at it), not only once the
+      // center has settled on it a moment later.
+      if (path) told(path);
+      if (path) { revealing = true; void view()?.reader.reveal(path, 0, write).then(() => track()); }
+      else track();
+    };
+    if (across) panAcross(cols, across, go); else go();
   };
   live = {element: work.element, show};
 

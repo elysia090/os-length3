@@ -209,9 +209,10 @@ function draw(id: PurposeId, quiet: boolean, panned: boolean) {
     // The rail's ink goes from the place left to the place come to, and the page comes from that side of the rail.
     glide(inkWas, tabs.get(id)?.getAttribute('aria-current') ? tabs.get(id)! : null, $('rail-tabs'), 'var(--r-place)');
     const order = RAIL.map((p) => p.id);
-    // Its parts come in a beat apart, heading first, from that side (glide.ts stage).
-    if (!quiet) {
-      if (!panned && !matchMedia('(prefers-reduced-motion: reduce)').matches) $('page').animate([{opacity: 0}, {opacity: 1}], {duration: 160, easing: 'ease-out'});
+    // Panned, the page comes as one, carried by the camera: its parts staged on top of that would leave it standing
+    // half empty as it lands. Not panned, its parts come in a beat apart, heading first, from that side (glide.ts stage).
+    if (!quiet && !panned) {
+      if (!matchMedia('(prefers-reduced-motion: reduce)').matches) $('page').animate([{opacity: 0}, {opacity: 1}], {duration: 160, easing: 'ease-out'});
       stage($('page'), Math.sign(order.indexOf(id) - order.indexOf(from)));
     }
   }

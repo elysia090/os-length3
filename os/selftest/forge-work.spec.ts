@@ -389,6 +389,31 @@ test('a file opened beside from its head is the one worked on, and has the keybo
   await expect(app.forge.promptBox).toHaveAttribute('placeholder', 'Run in hello');
 });
 
+test('with the pane away, files side by side stand whole and as wide, their heads on one line; out, the Prompt\'s head is on that line', async ({app}) => {
+  await app.rail.go('forge');
+  await app.main.getByRole('button', {name: 'Open README.md beside'}).first().click();
+  const rows = () => app.page.evaluate(() => {
+    const cols = [...document.querySelectorAll<HTMLElement>('.col:not([hidden])')].map((c) => {
+      const b = c.getBoundingClientRect(), head = c.querySelector('section.file > .path')!.getBoundingClientRect();
+      return {l: Math.round(b.left), w: Math.round(b.width), head: Math.round(head.top)};
+    });
+    const center = document.querySelector('.center')!.getBoundingClientRect();
+    const dock = document.querySelector('.dock')!.getBoundingClientRect(), active = document.querySelector('.col.active section.file')!.getBoundingClientRect();
+    /** Where a line of text in it stands: its baseline. */
+    const baseline = (el: Element) => { const m = document.createElement('span'); m.style.display = 'inline-block'; el.append(m); const y = m.getBoundingClientRect().bottom; m.remove(); return Math.round(y); };
+    return {
+      cols, inside: cols.every((c) => c.l >= center.left - 1 && c.l + c.w <= center.right + 1),
+      dock: [Math.round(dock.left - active.left), Math.round(dock.right - active.right)],
+      prompt: baseline(document.querySelector('.term-box h2')!), file: baseline(document.querySelector('.col.active section.file > .path > span')!),
+    };
+  });
+  await app.forge.paneSwitch.click();
+  await expect.poll(async () => { const r = await rows(); return [r.cols.length, r.inside, Math.abs(r.cols[0].w - r.cols[1].w) <= 1, r.cols[0].head === r.cols[1].head, r.dock]; })
+    .toEqual([2, true, true, true, [-12, 12]]);
+  await app.forge.paneSwitch.click();
+  await expect.poll(async () => { const r = await rows(); return r.prompt - r.file; }).toBe(0);
+});
+
 test('the prompt box stepped back while reading comes back when the pointer rests on its place, not as it crosses it', async ({app}) => {
   await app.rail.go('forge');
   const dock = app.main.locator('.dock');

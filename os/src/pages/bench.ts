@@ -167,7 +167,14 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   let over = false;
   const shown = () => (narrow.matches ? over : paneOpen);
   let wasShown = shown();
+  let moving = 0;
   const paintPane = () => {
+    // Put away or brought back, what stands beside it moves on its curve while it moves (styles.css .pane-moving).
+    if (work.classList.contains('pane-closed') === paneOpen) {
+      work.classList.add('pane-moving');
+      clearTimeout(moving);
+      moving = window.setTimeout(() => work.classList.remove('pane-moving'), 460);
+    }
     work.classList.toggle('pane-closed', !paneOpen);
     work.classList.toggle('pane-out', over);
     toggle.setAttribute('aria-expanded', String(shown()));

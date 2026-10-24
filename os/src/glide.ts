@@ -54,11 +54,40 @@ export function glide(from: DOMRect | null, to: HTMLElement | null, layer: HTMLE
     requestAnimationFrame(follow);
   };
   follow();
-  const done = () => { over = true; slug.remove(); to.classList.remove('arriving'); for (const el of row) el.classList.remove('under-ink'); };
+  // Landed, it is inked at once in the slug's place: its own fill does not ease in after the slug has gone.
+  const done = () => {
+    over = true;
+    to.style.transition = 'none';
+    slug.remove();
+    to.classList.remove('arriving');
+    for (const el of row) el.classList.remove('under-ink');
+    void to.offsetWidth;
+    to.style.transition = '';
+  };
   slug.animate([
     {transform: `translate(${from.left - at.left}px, ${from.top - at.top}px)`, width: `${from.width}px`, height: `${from.height}px`},
     {transform: 'none', width: `${at.width}px`, height: `${at.height}px`},
   ], {duration: ms, easing: LAND}).finished.then(done, done);
+}
+
+type Transitioning = Document & {startViewTransition?(update: () => void): {finished: Promise<void>}};
+
+/**
+ * A change of what `el` shows, as a camera pans along a row (the band's repos, left to right): what it showed goes
+ * off the other way, gathering speed a short way, as what comes rises in from `dir`'s side (-1 left, 1 right) and
+ * slows into place, the two never both half seen in one place and the place never empty. Only `el` is taken as a
+ * picture; the window around it goes on as it is (the band's ink, the pane). Where the browser cannot, or less
+ * motion is asked for, the change is made in place.
+ */
+export function panAcross(el: HTMLElement, dir: number, update: () => void) {
+  const begin = (document as Transitioning).startViewTransition;
+  if (still() || !begin || !dir || !el.isConnected) { update(); return; }
+  const root = document.documentElement;
+  root.style.setProperty('--pan-x', String(dir));
+  el.style.setProperty('view-transition-name', 'across');
+  root.classList.add('panning-across');
+  const done = () => { el.style.removeProperty('view-transition-name'); root.classList.remove('panning-across'); };
+  begin.call(document, update).finished.then(done, done);
 }
 
 /**

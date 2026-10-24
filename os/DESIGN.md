@@ -35,7 +35,11 @@ Every value in `styles.css` comes from a token (§2).
   File) is quieter than the thing it is in: a short straight `ink` line at
   its row's left and its name 600, kept while the pointer is elsewhere and
   apart from hover. Focus is a 2 px `ink` ring. Nothing else marks state
-  (no underline, no bold-only).
+  (no underline, no bold-only). Pressed, a thing's fill goes a step darker
+  at once (40 ms; an `ink` one, a step lighter) and, let go, eases back
+  (260 ms) as it gives under the finger; hover comes in quick (90 ms) and
+  goes slow. Only the fill and the edge ease: words and icons turn at once,
+  never half way between ink and ground.
 - **Selection** is the current-thing state too: `ink` with `ground` text,
   for selected text. What the search found is not selected but marked: the
   `marker`'s stroke over its words, as a highlighter would (the line landed
@@ -75,18 +79,21 @@ Every value in `styles.css` comes from a token (§2).
   - *The camera pans along the rail.* Going to another place, the page left
     goes up and away as the next rises in from below (down the rail; up it,
     the other way round), the rail and the window's edges standing still, a
-    floor passed in a lift. The page left is out of the way first (260 ms),
-    the next rising in a beat after it (90 ms on, 440 ms), so the two never
-    stand in one place half seen, their words over each other. Only the page
-    is taken as a picture to move; the rest of the window goes on being
-    drawn as it is. The first page the OS opens on comes in the same way,
+    floor passed in a lift. The page left is out of the way first, gathering
+    speed (150 ms, gone by 90), the next rising in as it goes (50 ms on, 360
+    ms, landing), so there is never an empty frame between them and never
+    the two half seen, their words over each other; it comes as one, not
+    staged. Only the page is taken as a picture to move (cut at the center's
+    edges); the rest of the window goes on being drawn as it is. Along the
+    band the same: another repo come to pans the row sideways, the next one
+    to the right coming from the right (150 ms out, 340 ms in). The first page the OS opens on comes in the same way,
     its parts a beat apart, rising from below; nothing is drawn before it
     (not Home for a moment while the place it opens on is still being
     chosen, as when a provider sends the person back to Remote).
   - *What comes in, comes from its side, a beat at a time.* Down the rail
     the next page comes up from below, up the rail from above; along the
-    band the next repo comes from the right, back along it from the left
-    (32 px). A page come to is staged, not shown at once: its parts (the
+    band the next repo comes from the right, back along it from the left.
+    Where the window cannot pan, a page come to is staged instead: its parts (the
     heading, each section's head, each card, box, pill and file) come in one
     after another in reading order, 45 ms apart (16 px and a fade, 360 ms
     each), so the eye is led through it heading first and the arrival lasts
@@ -156,7 +163,8 @@ Every value in `styles.css` comes from a token (§2).
     comes. The light on a file landed on goes when it has faded, not a
     frame before. motion.spec.ts holds the band and the arrival to it.
   - *Room is given and taken.* A box opened beside the others grows from
-    nothing as they make room, and closing gives its room back; the right
+    nothing as they make room (never passing through no width at all, so
+    no frame stands empty), and closing gives its room back; the right
     pane opens and closes as a wipe, what it holds cut at the moving edge,
     never squeezed (280 ms). Brought out (Forge, Git, Home alike) its edge
     lands a touch past where it stops and settles back (420 ms), its words
@@ -1172,9 +1180,9 @@ or Cancel; Cancel comes back with the error a provider sends then.
   dot of the Remote away. Nothing else on the rail is marked.
 - Item 48×48, radius 12, icon 24 px with a 1.6 px stroke; + is a 40 px
   round button with an `edge` outline. States as everywhere (§1).
-- The person's own icon sits at the foot of the rail, a little above the
-  line of the prompt box at the center's foot (its middle 8 px over the
-  box's), a 44 px circle a
+- The person's own icon sits at the foot of the rail, on the line of the
+  prompt box at the center's foot (its middle the box's middle: one line
+  across the window's foot, rail to center), a 44 px circle a
   little larger than the items: their initials, or a head and shoulders
   (30 px, filling most of it) before there is a name. Touching it brings
   out what is the person's own, in groups under a small heading and with
@@ -1266,9 +1274,22 @@ on past the center's edges: every box as wide as the one worked on, which
 stands in it whole (the first and the last at the page's margin, where one
 alone stands), and the ones along from it show only their edge (64 px, more
 at the row's ends), dimmed and cut by the frame's line, the rail's at the
-left and the pane's at the right, or by the window's edge with the pane put
-away: there is more that way, not a narrow box beside. One to the left says
-its name at its right end, the end that shows. Pressing one, swiping
+left and the pane's at the right: there is more that way, not a narrow box
+beside; only their edge shows, not words cut off by the line. One to the
+left says its name at its right end, the end that shows. With the pane put
+away the row is for reading across: every box stands whole, side by side,
+as wide as the others, at full strength, each name at its left; brought
+back, the one worked on fills the row again and the others step to its
+edges. The pane's switch is the switch between the two, working on one with
+the others to hand or reading them together, and the row moves on the
+pane's own curve, the last box's edge a step inside the pane's the whole
+way, as if pushed by it. The prompt box stands under the box worked on, its
+edges a step (12 px) outside that box's, and goes where the box goes, at its
+pace; side by side, each box is as tall as the row, down to a step over the
+prompt box. A file's head is its box's lid: it carries the box's top edge
+and corners and stays where it stands as the file scrolls under it, so the
+heads of boxes side by side, one scrolled and one not, stand on one line,
+and the right pane's Prompt has its head's words on that line too. Pressing one, swiping
 sideways over the row (one box a swipe) or Alt+[ / Alt+] brings it in, and
 the whole row slides with it, the one left going out to its edge; a box
 opened beside opens from no width as the row slides to it. Another file of

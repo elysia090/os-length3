@@ -28,6 +28,8 @@
   --r-card: calc(var(--r-field) + var(--s2));
   /* Heights: a pressable thing, a row in a list, a place in the rail. */
   --h-control: 40px; --h-row: 32px; --h-place: 48px;
+  /* The prompt box's height (one line of body text, its padding and edge): the foot line the rail's person sits on. */
+  --prompt-h: calc(2 * var(--s3) + var(--t-body) * 1.6 + 2px);
   --icon: 24px; --stroke: 1.6px;
   --motion: 120ms; --move: 280ms;
   /* How a thing moves: fast off the mark, settling the last few pixels slowly, as a camera that lands. */
@@ -112,6 +114,25 @@ a { color: var(--ink); }
 .rail-item[aria-current='page'], .button.primary,
 .chip[aria-current], .chip[aria-checked='true'], .chip[aria-pressed='true'], .pill[aria-current], .tree-row:has(> [aria-current='page']),
 .rail-item[aria-expanded='true'], .me[aria-expanded='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+/* The touch, in light: the give under the finger (touch.ts) is a few pixels, too little to be seen alone, so the
+   surface also takes the finger's shadow the moment it is pressed: an outlined thing a step toward ink, an inked one
+   a step toward the ground. Let go, the light eases back as the spring settles. The pointer coming on fills in
+   quickly and going, slowly, so a pass across the rail leaves a short trail rather than blinking. Only the fill and
+   the edge ease: words and icons turn at once, so ink landing on a place never hides its icon a moment. */
+.rail-item, .button, .chip, .pill, .band-add, .me, .pop-item, .todo-mark, .card.repo, .card.new, .lately-row,
+.inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .tree-row {
+  transition: background-color 260ms ease-out, border-color 260ms ease-out;
+}
+:is(.rail-item, .button, .chip, .pill, .band-add, .me, .pop-item, .todo-mark, .card.repo, .card.new, .lately-row,
+.inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .tree-row):hover { transition-duration: 90ms; }
+:is(.rail-item, .button, .chip, .pill, .band-add, .me, .pop-item, .todo-mark, .card.repo, .card.new, .lately-row,
+.inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .file-beside, .tree-row):active:not(:disabled) {
+  background-color: color-mix(in srgb, var(--ink) 13%, var(--raised)); transition-duration: 40ms;
+}
+:is(.rail-item[aria-current='page'], .button.primary, .chip[aria-current], .chip[aria-checked='true'], .chip[aria-pressed='true'],
+.pill[aria-current], .rail-item[aria-expanded='true'], .me[aria-expanded='true']):active:not(:disabled) {
+  background-color: color-mix(in srgb, var(--ink) 80%, var(--ground)); border-color: color-mix(in srgb, var(--ink) 80%, var(--ground));
+}
 
 /* ---- 1. Rail ---- */
 /* The icons keep a little more room on the side of the line than on the
@@ -131,13 +152,24 @@ a { color: var(--ink); }
    rail's ink) going on. */
 :root { view-transition-name: none; }
 #page { view-transition-name: page; }
-::view-transition-group(page) { animation: none; }
-/* The page left is out of the way first (260 ms), the next rising in a beat after it (90 ms on, 440 ms), so the two
-   never stand in one place half seen, their words over each other. */
-::view-transition-old(page) { animation: pan-out 260ms var(--land) both; }
-::view-transition-new(page) { animation: pan-in 440ms var(--land) 90ms both; }
-@keyframes pan-out { to { transform: translateY(calc(var(--pan, 1) * -38%)); opacity: 0; } }
-@keyframes pan-in { from { transform: translateY(calc(var(--pan, 1) * 46%)); opacity: 0; } }
+::view-transition-group(page) { animation: none; overflow: clip; }
+/* The page left goes as a thing leaving does, gathering speed a short way off (160 ms); the next is already on its
+   way as it goes (from 50 ms), rising the longer way in and slowing into its place (360 ms). The two are never
+   both half seen in one place (the one leaving is well off and nearly gone by the time the next is half there),
+   and there is never a moment with neither: the screen is never empty. The most used move, so it is short. */
+::view-transition-old(page) { animation: pan-out 150ms cubic-bezier(.5, 0, .9, .6) both; }
+::view-transition-new(page) { animation: pan-in 360ms var(--land) 50ms both; }
+@keyframes pan-out { 60% { opacity: 0; } to { transform: translateY(calc(var(--pan, 1) * -9%)); opacity: 0; } }
+@keyframes pan-in { from { transform: translateY(calc(var(--pan, 1) * 14%)); opacity: 0; } 40% { opacity: 1; } }
+/* Along the band the camera pans sideways the same way (glide.ts panAcross): only the center is taken, the repo
+   left going off the other way as the one come to rises in from its pill's side. */
+.panning-across #page { view-transition-name: none; }
+/* It moves inside the center's frame, as the files scroll in it: cut at the center's edges, never over the lines. */
+::view-transition-group(across) { animation: none; overflow: clip; }
+::view-transition-old(across) { animation: across-out 150ms cubic-bezier(.5, 0, .9, .6) both; }
+::view-transition-new(across) { animation: across-in 340ms var(--land) 40ms both; }
+@keyframes across-out { 60% { opacity: 0; } to { transform: translateX(calc(var(--pan-x, 1) * -7%)); opacity: 0; } }
+@keyframes across-in { from { transform: translateX(calc(var(--pan-x, 1) * 11%)); opacity: 0; } 40% { opacity: 1; } }
 /* The OS's caret (caret.ts), a 2 px stroke of ink gliding from where it was to where it is; the browser's own is
    hidden in the field it stands for. Solid while it moves, blinking once it rests. */
 .os-caret-field { caret-color: transparent; }
@@ -168,11 +200,9 @@ a { color: var(--ink); }
   .rail-me { padding: var(--s2) 0 var(--s3); }
 }
 
-/* The person's own icon at the foot of the rail, and what it brings out. It
-   sits a little above the prompt box's line (the box floats s5 over the
-   foot, about a place tall), so the two read as one row with the person
-   just over it, not as the rail's last item dropped to the floor. */
-.rail-me { display: grid; place-items: center; padding: var(--s3) 0 calc(var(--s5) + (var(--h-place) - 44px) / 2 + var(--s2)); }
+/* The person's own icon at the foot of the rail, and what it brings out. Its middle is the prompt box's (the box
+   floats s5 over the foot, --prompt-h tall): one line along the foot of the window, rail to center. */
+.rail-me { display: grid; place-items: center; padding: var(--s3) 0 calc(var(--s5) + (var(--prompt-h) - 44px) / 2); }
 .me-wrap { position: relative; }
 .me {
   display: grid; place-items: center; width: 44px; height: 44px; border-radius: var(--r-round); border: 1px solid var(--rule);
@@ -717,8 +747,15 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 /* Forge's files run on far enough past the last for it to come up to the top (a file just made, opened at the end):
    not the empty foot of the one before it filling the column over it. */
 .col > .flow::after { content: ''; display: block; height: max(0px, calc(100% + var(--s3) - var(--file-min) - var(--s6))); }
+/* A file's head is its box's lid: it carries the box's top edge and corners, and stays where it stands as the file
+   scrolls, the text going under it, so a head never jumps to the window's top to stick (the first box's head does
+   not move at all), and the heads of boxes side by side, one scrolled and one not, stand on one line. What scrolls
+   up past it is hidden by the ground over it: its shadow, wider than its round corners and as tall as the page's
+   top padding twice over, so neither the gap over it nor the notches beside its corners show a line going under.
+   A sticky head stops inside the page's top padding, so 0 is where the first head stands. */
 .path {
-  position: sticky; top: calc(-1 * var(--s3)); z-index: 1;
+  position: sticky; top: 0; z-index: 1;
+  box-shadow: 0 calc(-1 * var(--r-place)) 0 var(--r-place) var(--ground);
   display: flex; align-items: center; gap: var(--s2); justify-content: space-between;
   margin: 0; padding: var(--s3) var(--s4) var(--s2);
   background: var(--ground); border-radius: var(--r-place) var(--r-place) 0 0;
@@ -728,7 +765,7 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 /* Beside: at the head's right end, the window cut in two; pressed (or the head with Ctrl), the file opens in a box
    of its own beside the repo's page, the row sliding to it. Quiet until the file is pointed at. */
 .path > .file-state { margin-left: auto; }
-.file-beside { display: grid; place-items: center; flex: none; width: 24px; height: 24px; margin: -4px -6px -4px 0; padding: 0; border: 0; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: pointer; opacity: .55; transition: opacity var(--motion); }
+.file-beside { display: grid; place-items: center; flex: none; width: 24px; height: 24px; margin: -5px -6px -5px 0; padding: 0; border: 0; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: pointer; opacity: .55; transition: opacity var(--motion); }
 .file-beside .mark { width: var(--s4); height: var(--s4); }
 .file:hover .file-beside, .file-beside:focus-visible { opacity: 1; }
 .file-beside:hover { background: var(--raised); color: var(--ink); }
@@ -748,10 +785,10 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .file {
   display: flex; flex-direction: column; margin-bottom: var(--s6);
   min-height: var(--file-min);
-  border: 1px solid var(--rule); border-radius: var(--r-place); background: var(--paper);
+  border: 1px solid var(--rule); border-top-width: 0; border-radius: var(--r-place); background: var(--paper);
   transition: border-color var(--motion);
 }
-.file > .path { background: var(--paper); }
+.file > .path { margin: 0 -1px; background: var(--paper); border: 1px solid; border-color: inherit; border-bottom: 0; border-radius: var(--r-place) var(--r-place) 0 0; }
 /* The sheet with the keyboard: its edge in ink, nothing drawn round it. */
 .file:focus-within { border-color: var(--ink); }
 /* A file reads like a plain text editor: line numbers in a quiet gutter,
@@ -792,9 +829,13 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 /* Its left edge a step left of the files' (s3 from the center's edge, theirs s5), so where the two
    would line up the box reads as its own surface, not the foot of the file behind it. Its right stays. */
 .work.bench .dock { left: var(--s3); }
-/* Forge's: at the center's left, not in its middle, so putting the right pane away or bringing it back (the center
-   wider or narrower) leaves the box where it was, under the pointer and the eye (issue #45). */
-.work.bench:not(.no-strip) .dock { margin: 0; }
+/* Forge's stands under the box worked on, a step outside its edges (forge.ts placeDock): one box, the center's width
+   but s3; side by side, under the one in hand; moving with the row as it moves. Its left stays where it was as the
+   pane goes or comes (issue #45): only its right end follows the center's. */
+.work.bench:not(.no-strip) .dock {
+  margin: 0; max-width: none; left: var(--dock-l, var(--s3)); right: var(--dock-r, var(--s3));
+  transition: opacity var(--motion), left 420ms var(--land), right 420ms var(--land);
+}
 /* While the search is out (what it found, or what is read from it), the whole window steps back under one shade,
    the rail, the band and the pane with the center, to its edges: still there to be seen, not read across; the
    search and what it found are the one thing lit. It fades in and out; a press on it goes to what is under it, so
@@ -908,7 +949,9 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .columns { position: relative; display: flex; }
 /* No repo out: the dashed box where the first box would be, as wide as its words, at the page's margin. */
 .columns > .forge-none { align-self: flex-start; margin: var(--s3) var(--s5); }
-.col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
+/* Alone, a box is the row's whole width by its basis, not by growing from none: split, its basis goes from that width
+   to its own (and back), so it never passes through no width at all (a frame with the center empty). */
+.col { flex: 1 1 100%; min-width: 0; display: flex; flex-direction: column; }
 /* Each box's head (whose it is, and its ×) is there side by side only. It grows in as the row splits and the pages
    ease down under it, rather than everything jumping a row. */
 .col-head {
@@ -972,6 +1015,26 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .columns.split > .col.active .file { border-color: var(--ink); }
 .col .file { transition: border-color var(--motion); }
 .col.going { pointer-events: none; }
+/* The pane put away, the row has the room to read across: every box stands whole, side by side, as wide as the
+   others, to compare; the one worked on still in ink, the others at full strength. Brought back, the one worked on
+   fills the row again and the others step to its edges. The pane's switch is the switch between the two: working
+   on one with the others to hand, or reading them together. */
+.work.bench.pane-closed .columns.split > .col { flex-basis: calc((var(--cols-w, 100%) - 2 * var(--pad)) / var(--n, 2)); transform: translateX(var(--pad)); translate: none; }
+/* Put away or brought back, the row and its prompt box move on the pane's own curve, sent once to where they will
+   stand (forge.ts room): the last box's edge keeps a step inside the pane's edge all the way, as if pushed by it. */
+.work.bench.pane-moving.pane-closed :is(.columns.split > .col, .dock) { transition-duration: 260ms; transition-timing-function: cubic-bezier(.4, 0, 1, 1); }
+.work.bench.pane-moving:not(.pane-closed) :is(.columns.split > .col, .dock) { transition-duration: 420ms; transition-timing-function: cubic-bezier(.2, 1.4, .32, 1); }
+.work.bench.pane-closed .columns.split > .col:not(.active) > .flow { opacity: 1; }
+.work.bench.pane-closed .columns.split > .col:not(.active) .file-beside { visibility: visible; }
+.work.bench.pane-closed .columns.split > .col.before > .col-head { flex-direction: row; padding: 0 var(--s3) 0 calc(var(--s3) + var(--s4) - var(--s1)); }
+.work.bench.pane-closed .columns.split > .col.before > .col-head > .col-close { margin-left: auto; }
+/* Out at the strip's edges (the pane out), a box shows its edge only, not its words cut off by the frame's line. */
+.columns.split > .col .sheet { transition: opacity 240ms ease-out; }
+.work.bench:not(.pane-closed) .columns.split > .col:is(.before, .after) .sheet { opacity: 0; }
+/* A file beside is as tall as the row it stands in, down to a step over the prompt box: side by side, the boxes are
+   one height, not one short and one running on. */
+.col > .flow > .dir.only { display: flex; flex-direction: column; min-height: calc(100% + 160px - var(--s5) - var(--prompt-h) - var(--s3)); }
+.col > .flow > .dir.only > .file { flex: 1 0 auto; margin-bottom: 0; }
 /* Where a repo dragged in would stand: the half (beside) or the whole (in its place) of a box, outlined in dashes,
    gliding from place to place as the pointer moves, so where it lands is seen before it is let go. */
 .drop-hint {
@@ -1005,7 +1068,11 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 /* The plugin area shut, nothing is over the Prompt: it holds the pane from its top, its head level with the file box's
    top, so the pane reads at once as open and what it is (an empty top would read as nothing, or as put away). */
 .work.bench > .side:has(> .plugins[hidden]) { grid-template-rows: 0 minmax(0, 1fr); }
-.work.bench > .side:has(> .plugins[hidden]) > .term-home { margin-top: 0; }
+/* Its head's words stand on the file heads' line: their baseline, the one of a box s3 under the center's top (the
+   Prompt's words larger, so it sits a step higher); side by side, under the boxes' own heads, as far down as they
+   go, at the pace they go. */
+.work.bench > .side:has(> .plugins[hidden]) > .term-home { margin-top: calc(-1 * var(--s1)); transition: margin-top var(--move) var(--land); }
+.work.bench.split-on > .side:has(> .plugins[hidden]) > .term-home { margin-top: calc(28px - var(--s3)); }
 /* The pane stands on the ground, as the rail does, and is cut from the work by the line the rail is: the same
    weight, in ink, from the top line to the foot, so the center reads at once as the thing framed between the two.
    It goes with the pane (put away, no pane, no line). */
