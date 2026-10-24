@@ -197,7 +197,7 @@ Every value in `styles.css` comes from a token (§2).
     fades in and out, and a press anywhere else closes it.
   120 ms fades for everything else. Reduced motion turns all of it off:
   each thing is where it ends at once.
-- No shadows, blur, glow or gradients; the one shade is the search's (above).
+- No shadows, blur, glow or gradients; the one shade is the search's and the Prompt's (above).
 - **One scrollbar.** Everything that scrolls, the page with it, has the
   same bar: thin, its thumb `edge` (a thing one drags), its track the
   ground under it, never the browser's own; forced colours draw the
@@ -271,18 +271,19 @@ Every page:
 | `edge` | `#6B6E6B` | outlines of fields and controls, which must be seen (3.7:1) |
 | `raised` | `#E4E4E0` | field fill, hover (the same small step above ground as before) |
 | `paper` | `#F8F8F5` | the sheet: what is worked on, and only that (a file's box, the TODO, the issue or board in hand, Inbox's box, what the search found); never a card that leads somewhere, a pane or a page (Runtime's box, which is read rather than worked in, stays on the ground) |
-| `done` | `#127A5F` | done and on: a step of an issue's work done, a switch on (its knob), a box ticked (its circle), a line added (its bar, its squares); a green leaning to blue, so it sits with the greys and does not tire |
-| `add` | `#0D6B52` | the words of an addition, a step darker than `done` to read small: +n, a line's + (5.3:1 on its tint) |
+| `done` | `#1C8A67` | done and on: a step of an issue's work done, a switch on (its knob), a box ticked (its circle), a line added (its bar, its squares); a clean emerald leaning to blue, so it sits with the greys and does not tire, light enough not to read heavy as a filled circle (white on it 4.3:1, it on the ground 3:1) |
+| `add` | `#0F6B50` | the words of an addition, a step darker than `done` to read small: +n, a line's + (5.3:1 on its tint) |
 | `add-tint` | `#D8EEE6` | the ground of a line added in a diff: a mint of its own, not `done` thinned |
-| `marker` | `#F1EA5A` | what is marked, as with a highlighter: a line marked in a diff (a review, Forge's diff), over its words only (not its indent or number, which turns ink), each wrapped line its own stroke with softened ends; the words the search found, in its lines; the head of a file just landed on, for a moment. A clean lemon, not a cream: `ink` on it 11:1 |
-| `marker-soft` | `#F6F1A3` | the pointer on a line it can mark: the stroke, paler; a line just landed on (merged, committed, closed), lit a moment on the ground, solid (a thinned marker on the grey goes olive) |
+| `marker` | `#F5EB7A` | what is marked, as with a highlighter: a line marked in a diff (a review, Forge's diff), over its words only (not its indent or number, which turns ink), each wrapped line its own stroke with softened ends; the words the search found, in its lines; the head of a file just landed on, for a moment. A clean, light lemon, neither cream nor dense: `ink` on it 11.6:1 |
+| `marker-soft` | `#F8F2B9` | the pointer on a line it can mark: the stroke, paler; a line just landed on (merged, committed, closed), lit a moment on the ground, solid (a thinned marker on the grey goes olive) |
 | `off` | `#A3304D` | a repo turned off: its switch; a removal held, its button red (`ground` words on it 4.8:1); a line removed (its bar, its squares); a crimson leaning to blue, not a brick |
 | `del` | `#992B46` | the words of a removal: −n, a line's − (6.0:1 on its tint) |
 | `del-tint` | `#F6DFE4` | the ground of a line removed in a diff |
 
 No other colours; the last three families (`done`, `marker`, `off`, each with
 the words and the ground drawn from it) each mean their one thing only. The one
-shade is `ink` at 14% over the window while the search is out.
+shade is `ink` at 14% over the window while the search is out, or the Prompt
+is up over the center (the Prompt then a lit sheet, `paper`, over its box).
 
 Type: the system sans; monospace only for paths, code and the terminal.
 Sizes 28 (identity), 24 (page title), 20 (card title, figures), 15 (body),
@@ -1376,12 +1377,15 @@ center and the right pane.
 
 A prompt box, like the one for an LLM, sits at the foot of the center. What
 is written there goes to the open repo's `sh` (Enter is a new line,
-Ctrl+Enter sends). While the prompt is in use the terminal flies up from the
-bottom of the right pane to just above the box (280 ms, one quick movement)
-and the reference grows down into the room it leaves. The terminal's box
+Ctrl+Enter sends). While the prompt is in use the terminal comes up over
+the center just above the box, as a sheet (`paper`, lit over the window's
+shade): it unrolls upward out of the box (320 ms, landing a touch past and
+settling), its words never stretched on the way; put back it rolls down
+into the box (160 ms) and comes into the pane where it lives; and the
+reference grows down into the room it leaves. The terminal's box
 is labelled Prompt, after what one does there (the shell is BusyBox sh, so
 it is not called Bash); leaving the prompt
-(or Escape) sends it back the same way. The Prompt has no switch: writing
+(or Escape) sends it back. The Prompt has no switch: writing
 to it starts it, and one that ended says so in its place, with Start
 again; stopping one is Runtime's. What is written in the box and not sent
 is the repo's: another repo shows its own, and coming back finds it.
@@ -1826,7 +1830,9 @@ what is done with, Committed (on main, from here), Merged and Closed.
   sheet on `paper` as an issue's box is, never melting into the ground,
   standing in the issues' column with the same edges as the issue in full
   under it and going with it as the row slides, and laid out as an issue's
-  box is: its repo at the top as an issue's name is, the files under it
+  box is: its repo at the top where an issue's name is (a label at the
+  size of the file named under it, not a title: main is said over it, and
+  a word alone at an issue's size looms over the diff), the files under it
   straight on the card (never a box inside it), and at its foot how many
   files wait (2 files to commit on main) at the left and Commit at the
   right, where an issue's next step is. Each file folds at its head (a small triangle, its name, +n

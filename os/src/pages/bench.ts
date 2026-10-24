@@ -4,7 +4,7 @@ import {news, onNews} from '../news.ts';
 import {connection} from '../remote.ts';
 import {t} from '../i18n.ts';
 import {paneMark} from '../icons.ts';
-import {arrive, closeUp, paneOut} from '../glide.ts';
+import {arrive, closeUp, LAND, paneOut, still} from '../glide.ts';
 import {onPlugins, pluginsOpen, setPluginsOpen, slots} from '../plugins.ts';
 import {complete, pathWord, Recall} from '../recall.ts';
 import {onChange, store, type Entry} from '../repos.ts';
@@ -45,7 +45,6 @@ import {sessionFor, sessionIfAny, terminalFor} from './terminal.ts';
 // from the repo's tree, and says the choices under the box when there are
 // several; with no path to complete, Tab moves on as everywhere.
 
-const MOVE = 280;
 /** Choices said under the box after Tab, at most. */
 const CHOICES = 24;
 
@@ -146,17 +145,30 @@ function paneWord(open: (address: string) => void): HTMLElement {
   return list;
 }
 
-/** Move `el` into `to`, animating from where it was (FLIP). */
-function fly(el: HTMLElement, to: HTMLElement) {
-  const from = el.getBoundingClientRect();
-  to.append(el);
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  const at = el.getBoundingClientRect();
-  if (!at.width || !from.width) return;
-  el.animate([
-    {transformOrigin: 'top left', transform: `translate(${from.left - at.left}px, ${from.top - at.top}px) scale(${from.width / at.width}, ${from.height / at.height})`},
-    {transformOrigin: 'top left', transform: 'none'},
-  ], {duration: MOVE, easing: 'cubic-bezier(.2, .9, .25, 1.06)'});
+/**
+ * The Prompt brought up over the center, moved as a sheet is, its words never stretched: it unrolls upward out of the
+ * box at the foot, rising a little with it and landing a touch past where it stops.
+ */
+function promptUp(el: HTMLElement, slot: HTMLElement) {
+  for (const a of el.getAnimations()) a.cancel();
+  slot.append(el);
+  if (still()) return;
+  el.animate([{clipPath: 'inset(100% 0 0 0 round 12px)', transform: 'translateY(14px)'}, {clipPath: 'inset(0 0 0 0 round 12px)', transform: 'none'}],
+    {duration: 320, easing: 'cubic-bezier(.2, 1.25, .32, 1)'});
+}
+
+/** Put back, it rolls down into the box it came out of, then comes into the pane where it lives; `back` says it still goes. */
+function promptHome(el: HTMLElement, home: HTMLElement, back: () => boolean, gone: () => void) {
+  const there = () => {
+    gone();
+    if (!back()) return;
+    for (const a of el.getAnimations()) a.cancel();
+    home.append(el);
+    if (!still()) el.animate([{opacity: 0, transform: 'translateY(-6px)'}, {opacity: 1, transform: 'none'}], {duration: 220, easing: LAND});
+  };
+  if (still() || el.parentElement === home) { there(); return; }
+  el.animate([{clipPath: 'inset(0 0 0 0 round 12px)', transform: 'none'}, {clipPath: 'inset(100% 0 0 0 round 12px)', transform: 'translateY(10px)'}],
+    {duration: 160, easing: 'cubic-bezier(.5, 0, .9, .6)', fill: 'forwards'}).finished.then(there, there);
 }
 
 export interface Bench {
@@ -295,7 +307,10 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     if (on === prompting) return;
     prompting = on;
     work.classList.toggle('prompting', on);
-    fly(termBox, on ? termSlot : termHome);
+    // Going down, it is still lit over the shade as it goes (the shade fading meanwhile).
+    work.classList.toggle('prompt-leaving', !on);
+    if (on) promptUp(termBox, termSlot);
+    else promptHome(termBox, termHome, () => !prompting, () => work.classList.remove('prompt-leaving'));
     if (!on && parts.back) requestAnimationFrame(() => rest(true));
   };
   const fit = () => { prompt.style.height = 'auto'; prompt.style.height = `${prompt.scrollHeight}px`; };
