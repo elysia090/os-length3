@@ -174,7 +174,7 @@ function clipOf(t: HTMLElement, screen: HTMLElement, [top, right, bottom, left, 
 function timing(way: 'up' | 'down'): {duration: number; line: number; first: string; then: string} {
   const cs = getComputedStyle(document.documentElement), v = (n: string) => cs.getPropertyValue(`--prompt-${n}`).trim();
   const [first, then] = way === 'up' ? [v('along'), v('rise')] : [v('sink'), v('back')];
-  return {duration: parseFloat(v(way)) || (way === 'up' ? 720 : 500), line: parseFloat(v(`${way}-line`)) || (way === 'up' ? .4 : .5),
+  return {duration: parseFloat(v(way)) || (way === 'up' ? 460 : 320), line: parseFloat(v(`${way}-line`)) || (way === 'up' ? .38 : .5),
     first: first || 'ease-out', then: then || 'ease-out'};
 }
 
