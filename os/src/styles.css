@@ -1544,6 +1544,8 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 .space-what .space-why { overflow: visible; white-space: normal; overflow-wrap: anywhere; }
 .space-size { flex: none; font: var(--t-meta) var(--mono); color: var(--sub); }
 .gear-room { flex: none; width: var(--h-row); }
+/* A column's figure stands over its rows' sizes, clear of the room their gear takes: one column of numbers. */
+.space-col:has(.gear-room) > h3 b { margin-right: calc(var(--h-row) + var(--s3)); }
 .space-foot { display: flex; align-items: center; gap: var(--s3); padding-top: var(--s3); }
 .space-foot .grow { flex: 1; }
 .link-name { border: 0; padding: 0; background: transparent; font: inherit; font-weight: 600; color: inherit; text-align: left; cursor: pointer; }
@@ -1803,6 +1805,9 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
    power switch at the right. A switch slides: on, its knob green at the
    right; off, at the left on red, and the card quiet. */
 .repo-cards .card { cursor: default; grid-template-rows: auto auto auto 1fr auto; }
+/* Remote's parts are 760 wide (the passkey's offer above them, the plan's): its cards two to a row in that width,
+   so their edges are the offer's. */
+.grid.repo-cards { max-width: 760px; }
 .repo-cards .card:hover { background: transparent; }
 .card-foot { display: flex; align-items: center; gap: var(--s2); align-self: end; }
 .card-foot .grow { flex: 1; }
@@ -2153,7 +2158,9 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .slide[aria-current='true'] .board-card { border-color: var(--ink); background: var(--paper); }
 .slide-stage:has(.stage-hit.next:hover) .slide[aria-current='true'] + .slide .board-card,
 .slide-stage:has(.stage-hit.prev:hover) .slide:has(+ .slide[aria-current='true']) .board-card { border-color: var(--edge); color: var(--ink); }
-.board-head { display: flex; align-items: baseline; gap: var(--s2); padding: var(--s4) var(--s5) var(--s2); }
+/* Its name as near its top as a file's head is to a file's (a step, s2), so it sits by the line the pane's head (People)
+   is on rather than a step under it: its larger letters keep it 5 px below that line, where they still clear its edge. */
+.board-head { display: flex; align-items: baseline; gap: var(--s2); padding: var(--s2) var(--s5); }
 .board-head h2 { min-width: 0; font-size: var(--t-card); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .board-head .grow { flex: 1; }
 .board-head > .mono, .board-head > .small { flex-shrink: 4; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
