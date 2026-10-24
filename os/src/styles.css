@@ -989,6 +989,18 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 /* The page then reaches the window's edge too (its words where they were), clipped there and never scrolled. */
 .page.page-work:has(> .work.bench.split-on.pane-closed) { overflow: clip; margin-right: calc(-1 * var(--outer)); padding-right: var(--outer); }
 .work.bench > .side { z-index: 1; background: var(--ground); }
+/* Word from someone come while one works (bench.ts paneWord): at the pane's foot, its last row's foot on the prompt
+   box's, a sheet to act on (paper, a rule edge), who and the first line of what they said, the newest come in from
+   the window's edge. Pressed, Inbox at that conversation. */
+.pane-word { position: absolute; left: var(--s5); right: var(--s5); bottom: var(--s5); z-index: 2; display: grid; gap: var(--s2); }
+.pane-word:empty { display: none; }
+.pane-word-row {
+  display: grid; gap: 2px; padding: var(--s2) var(--s4); text-align: left; border: 1px solid var(--rule); border-radius: var(--r-place);
+  background: var(--paper); color: var(--ink); font: inherit; cursor: pointer;
+}
+.pane-word-row:hover { border-color: var(--edge); }
+.pane-word-who { display: flex; align-items: center; gap: var(--s2); font-weight: 600; }
+.pane-word-what { overflow: hidden; color: var(--sub); font-size: var(--t-meta); white-space: nowrap; text-overflow: ellipsis; }
 .columns.split > .col > .col-head {
   height: 28px; opacity: 1; visibility: visible; transition: height var(--move) var(--land), opacity var(--move) var(--land);
   padding: 0 var(--s3) 0 calc(var(--s3) + var(--s4) - var(--s1)); cursor: grab;

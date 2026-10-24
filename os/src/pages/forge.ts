@@ -8,6 +8,7 @@ import {onChange, store} from '../repos.ts';
 import {work as workOn} from '../history.ts';
 import type {Context} from './context.ts';
 import {bench} from './bench.ts';
+import {openNext as openConversation} from './inbox.ts';
 import {Reader, type Writing} from './reader.ts';
 import {startIssue} from './issue-form.ts';
 import {glide, LAND, panAcross, where} from '../glide.ts';
@@ -183,7 +184,7 @@ function make(ctx: Context) {
     }
     void view()?.reader.reveal(path, line, write).then(() => track());
   };
-  const work = bench({strip, main: cols, reveal: (path, line, write) => revealAt(path, line, write)});
+  const work = bench({strip, main: cols, reveal: (path, line, write) => revealAt(path, line, write), word: (a) => { openConversation(a); void ctx.go('inbox'); }});
   new ResizeObserver(room).observe(work.element);
   new MutationObserver(room).observe(work.element, {attributes: true, attributeFilter: ['class']});
   // The Issue view with none open begins one for this repo on Git; Not now there comes back here.

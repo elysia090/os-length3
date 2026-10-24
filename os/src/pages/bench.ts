@@ -1,4 +1,7 @@
 import {h} from '../dom.ts';
+import * as inbox from '../inbox.ts';
+import {news, onNews} from '../news.ts';
+import {connection} from '../remote.ts';
 import {t} from '../i18n.ts';
 import {paneMark} from '../icons.ts';
 import {arrive, closeUp, paneOut} from '../glide.ts';
@@ -6,6 +9,7 @@ import {onPlugins, pluginsOpen, setPluginsOpen, slots} from '../plugins.ts';
 import {complete, pathWord, Recall} from '../recall.ts';
 import {onChange, store, type Entry} from '../repos.ts';
 import {Reference} from './reference.ts';
+import {kindWords} from './todo-box.ts';
 import type {Writing} from './reader.ts';
 import {sessionFor, sessionIfAny, terminalFor} from './terminal.ts';
 
@@ -107,6 +111,41 @@ export function pluginArea(): HTMLElement {
   return area;
 }
 
+/** When this app was opened: what came before is Home's Lately's to say, not the pane's. */
+const opened = Date.now();
+/** The conversations whose last word has come into a pane already (the next pane shows it standing, not arriving). */
+const arrived = new Set<string>();
+
+/**
+ * Word from someone, come while one works: at the pane's foot, level with the prompt box, a row for each
+ * conversation whose last message came since the app was opened and is not read, who and the first line of what
+ * they said, sliding in from the window's edge as it comes. Pressed, it opens in Inbox (`open`); read, it goes.
+ */
+function paneWord(open: (address: string) => void): HTMLElement {
+  const list = h('section', {class: 'pane-word', 'aria-label': t('New messages')});
+  let asked = 0;
+  const paint = async () => {
+    const mine = ++asked;
+    const come = connection() && news().inbox > 0
+      ? (await inbox.threads().catch(() => [])).filter((x) => x.unread > 0 && !x.last.mine && x.last.time >= opened).slice(0, 2) : [];
+    if (mine !== asked) return;
+    const rows = come.map((th) => {
+      const b = h('button', {type: 'button', class: 'pane-word-row'},
+        h('span', {class: 'pane-word-who'}, h('span', {}, th.name || inbox.shown(th.address)), h('span', {class: 'lately-dot', 'aria-hidden': 'true'})),
+        // What it is, named as it was written (Review：…, Question：…), then its first line.
+        h('span', {class: 'pane-word-what'}, ...(th.last.type === 'message' ? [] : kindWords(th.last.type[0].toUpperCase() + th.last.type.slice(1))), th.last.body.split('\n')[0]));
+      b.addEventListener('click', () => open(th.address));
+      return {b, key: `${th.address} ${th.last.time}`};
+    });
+    list.replaceChildren(...rows.map((r) => r.b));
+    for (const r of rows) if (!arrived.has(r.key)) { arrived.add(r.key); arrive(r.b, 1, 'x', 32, 360); }
+  };
+  void paint();
+  const off = onNews(() => { if (!list.isConnected && list.dataset.shown) { off(); return; } void paint(); });
+  requestAnimationFrame(() => { list.dataset.shown = '1'; });
+  return list;
+}
+
 /** Move `el` into `to`, animating from where it was (FLIP). */
 function fly(el: HTMLElement, to: HTMLElement) {
   const from = el.getBoundingClientRect();
@@ -129,7 +168,9 @@ export interface Bench {
   settle(): void;
 }
 
-export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(path: string, line?: number, write?: Writing): void}): Bench {
+export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(path: string, line?: number, write?: Writing): void;
+  /** A conversation's word in the pane pressed: open it in Inbox. */
+  word?(address: string): void}): Bench {
   let repo: string | null = null;
   // Named for what one does there: type at the prompt of the repo's sh.
   const termTitle = h('div', {class: 'term-head'}, h('h2', {}, 'Prompt'));
@@ -155,7 +196,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   const sideId = `side-${++benches}`;
   // The right pane: at its top the plugin area, plain until the rail's plug opens it; under it the Prompt.
   // What the center refers to is under the search box, which sits over the pane (reference.ts).
-  const side = h('aside', {class: 'side', id: sideId, 'aria-label': t('Plugins and Prompt')}, pluginArea(), termHome);
+  const side = h('aside', {class: 'side', id: sideId, 'aria-label': t('Plugins and Prompt')}, pluginArea(), termHome, ...(parts.word ? [paneWord(parts.word)] : []));
   const toggle = h('button', {type: 'button', class: 'pane-toggle', 'aria-label': t('Right pane'), 'aria-controls': sideId}, paneMark()) as HTMLButtonElement;
   const bar = h('div', {class: 'bar'}, parts.strip ?? h('span', {class: 'bar-room'}), reference.search, toggle);
   const work = h('div', {class: parts.strip ? 'work bench' : 'work bench no-strip'}, bar, center, side);

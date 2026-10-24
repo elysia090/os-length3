@@ -7,6 +7,7 @@ import {bring, remoteOnly} from '../lifecycle.ts';
 import {connection} from '../remote.ts';
 import {onChange, store} from '../repos.ts';
 import {bench} from './bench.ts';
+import {openNext as openConversation} from './inbox.ts';
 import {pageHead} from './common.ts';
 import {icon} from '../icons.ts';
 import type {Context} from './context.ts';
@@ -419,7 +420,7 @@ export function git(ctx: Context): Node[] {
       h('h2', {id: 'issues-title'}, h('span', {}, t('Issues'), ' ', count)),
       form.element, empty, column),
     mainPart, mergedPart, closedPart);
-  const workbench = bench({main, reveal: (path) => { if (at) ctx.openRepo(at, path); }});
+  const workbench = bench({main, reveal: (path) => { if (at) ctx.openRepo(at, path); }, word: (a) => { openConversation(a); void ctx.go('inbox'); }});
   // Issues written anywhere (here, in the shell, with l3 in the Prompt) show
   // up at once, and any change in the repo looked at is read again; not while
   // something is being written in the box or under it, which would be lost.

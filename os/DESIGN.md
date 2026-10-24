@@ -1991,6 +1991,13 @@ the way an issue is ("Review：…", "Question：…"), and a `/root/…` path i
 says what it is about, so there is nothing else to choose. Enter is a new
 line, Ctrl+Enter sends.
 
+What comes while one works elsewhere is said where one is: in Forge and Git,
+a conversation whose last word came since the app was opened and is not read
+comes into the right pane's foot, its foot on the prompt box's line, as a
+sheet to act on (who, and what it is and its first line: Review：…), sliding
+in from the window's edge; pressed, Inbox opens at it, and read, it goes.
+What waited from before is Home's Lately's to say, and the rail's mark.
+
 What comes is looked for every little while (10 s) while the page is shown:
 the conversations' rows are drawn again under the field to write to someone
 new, which is never drawn again (what is half written in it, and the

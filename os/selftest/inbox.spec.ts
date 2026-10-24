@@ -35,6 +35,26 @@ test('what one person writes to another arrives in their Inbox, and the rail say
   await expect(ada.inbox.thread(bo.handle).getByText('Yes, with the tent.', {exact: true})).toBeVisible();
 });
 
+test('word that comes while one works comes into the pane\'s foot, and pressed opens the conversation', async ({signedIn: ada, another}) => {
+  const bo = await another('Bo');
+  await bo.inbox.claim();
+  await ada.inbox.claim();
+  await ada.newRepo.make('hello');
+  await ada.newRepo.openInForge();
+
+  await bo.inbox.writeTo(ada.handle, 'Review: hello reads well; louder?');
+  await ada.comeBack();
+  const word = ada.main.locator('.pane-word-row');
+  await expect(word).toContainText('Bo');
+  await expect(word).toContainText('Review');
+  await expect(word).toContainText('hello reads well; louder?');
+  await word.click();
+  await expect(ada.inbox.thread(bo.handle).getByText('hello reads well; louder?', {exact: true})).toBeVisible();
+  // Read, it is gone from the pane.
+  await ada.rail.go('forge');
+  await expect(ada.main.locator('.pane-word-row')).toHaveCount(0);
+});
+
 test('a message half written stays with its conversation', async ({signedIn: ada, another}) => {
   const bo = await another('Bo');
   await bo.inbox.claim();
