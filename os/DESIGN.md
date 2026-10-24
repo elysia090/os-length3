@@ -1382,23 +1382,35 @@ center and the right pane.
 
 A prompt box, like the one for an LLM, sits at the foot of the center. What
 is written there goes to the open repo's `sh` (Enter is a new line,
-Ctrl+Enter sends). While the prompt is in use the box becomes a screen and
-the terminal comes up in it over the center, the one thing in the app that
-is a thing of its own: a terminal's screen, dark glass in the app's ink with
-its words lit in the app's green (§3), the page behind it only a blur in its
-top where glass catches the light, a fine raster and a falloff to its edges,
-its corner a card's (16). It is the box at the foot, lit, not a layer over
-the page: no shadow under it, no shade over the window. Its lines are a
+Ctrl+Enter sends). At rest the box is the box (raised, its edge), its line a
+terminal's: at its left a pill of the screen's glass, round as the band's pill
+for the repo is, with the shell's lamp (lit while it runs, dim before it starts,
+off once it has ended) and the prompt line it last waited at; the line in the
+terminal's letters with an empty cell where the caret will be; the keys that
+bring it up from anywhere (Ctrl `); Run. While the prompt is in use the box
+becomes a screen and the terminal comes up in it over the center, the one thing
+in the app that is a thing of its own: a terminal's screen, dark glass in the
+app's ink with its words lit in the app's green (§3), the page behind it only a
+blur in its top where glass catches the light, a fine raster and a falloff to
+its edges, its corner a card's (16). It is the box at the foot, lit, not a layer
+over the page: no shadow under it, no shade over the window. The pill's glass
+runs along the box's line, the box's light going from under it, then rises into
+the screen (460 ms, landing a touch past); the line's words and Run stay where
+they are and take the glass's light as it comes under them, the prompt line goes
+from the pill to the line's start. Put back, it sinks to the line and runs back
+into the pill (320 ms), the box's light coming back under it. Its lines are a
 terminal's: the box's line is the line after the output, starting with the
-prompt line the shell waits at (`garden $`, the output's own last line then
-not shown), the words written in the terminal's letters and a cell for a
-caret; the prompt lines before are in the green, so what was run stands out
-from what it printed. A lamp at its head is lit while its shell runs. The
-line written in stays where it was as the screen comes: the screen grows up
-out of it (320 ms, landing a touch past and settling), its words never
-stretched on the way; put back it goes down into the line (160 ms), the box
-is the plain box again, and the terminal comes into the pane where it lives
-(there in the page's own colours); and the reference grows down into the
+prompt line the shell waits at (`garden $`, the output's own last line then not
+shown), the words written in the terminal's letters and a cell for a caret, the
+letter under it drawn dark in it. A line sent moves up a line as it is (it does
+not come in again); what it prints comes in a line after another, the screen's
+top rising with it, and the prompt line comes back with the caret as its last
+line does; while it runs, what it is doing (Running 2s, Interrupt) is said on the
+line itself, so nothing above the line comes and goes. `clear` clears the
+screen, and Ctrl+C says ^C where the run was cut. The prompt lines before are in
+the green, so what was run stands out from what it printed. A lamp at its head is
+lit while its shell runs; the terminal, put back, comes into the pane where it
+lives (there in the page's own colours), and the reference grows down into the
 room it leaves. The terminal's box
 is labelled Prompt, after what one does there (the shell is BusyBox sh, so
 it is not called Bash); leaving the prompt

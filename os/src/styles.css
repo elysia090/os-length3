@@ -196,7 +196,8 @@ a { color: var(--ink); }
 .os-caret.jump { transition: none; }
 /* A terminal's line's (the Prompt up as a screen): a cell lit as its words are; the letter under it in the glass's
    dark, as a terminal draws it. */
-.os-caret.block { border-radius: 1px; background: var(--add-tint); box-shadow: 0 0 7px color-mix(in srgb, var(--done) 90%, transparent); mix-blend-mode: difference; }
+.os-caret.block { border-radius: 1px; background: var(--add-tint); color: var(--screen); text-align: center; white-space: pre; overflow: hidden;
+  box-shadow: 0 0 7px color-mix(in srgb, var(--done) 90%, transparent); }
 .os-caret.on.resting { animation: caret-blink 1.06s steps(1) infinite; }
 @keyframes caret-blink { 50% { opacity: 0; } }
 .caret-copy { position: absolute; left: -9999px; top: 0; visibility: hidden; overflow: hidden; }
@@ -931,20 +932,31 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
    light across its top are the screen's own; nothing else in the app has them (DESIGN.md). */
 .work.bench:is(.prompting, .prompt-leaving) .screen {
   position: relative; border-radius: var(--r-card); color: var(--add-tint);
+  text-shadow: 0 0 6px color-mix(in srgb, var(--done) 70%, transparent), 0 0 1px color-mix(in srgb, var(--add-tint) 80%, transparent);
+}
+/* The glass is a layer of its own under the screen's words: it is what runs out of the pill along the line and rises
+   (bench.ts), the words standing where they are and taking its light as it comes under them. */
+.screen > .glass { display: none; }
+.work.bench:is(.prompting, .prompt-leaving) .screen > .glass {
+  display: block; position: absolute; inset: 0; z-index: -1; pointer-events: none; border-radius: inherit;
   background: linear-gradient(to bottom, color-mix(in srgb, var(--screen) 72%, transparent), color-mix(in srgb, var(--screen) 93%, transparent) 42%,
     color-mix(in srgb, var(--screen) 95%, transparent));
   -webkit-backdrop-filter: blur(16px) brightness(.55) saturate(1.6); backdrop-filter: blur(16px) brightness(.55) saturate(1.6);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08), inset 0 0 44px rgba(0, 0, 0, .45);
-  text-shadow: 0 0 6px color-mix(in srgb, var(--done) 70%, transparent), 0 0 1px color-mix(in srgb, var(--add-tint) 80%, transparent);
 }
-.work.bench:is(.prompting, .prompt-leaving) .screen::before, .work.bench:is(.prompting, .prompt-leaving) .screen::after {
-  content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none; border-radius: inherit;
+.work.bench:is(.prompting, .prompt-leaving) .screen > .glass::before, .work.bench:is(.prompting, .prompt-leaving) .screen > .glass::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit;
 }
-.work.bench:is(.prompting, .prompt-leaving) .screen::before {
+.work.bench:is(.prompting, .prompt-leaving) .screen > .glass::before {
   background: radial-gradient(120% 150% at 50% 45%, transparent 56%, rgba(0, 0, 0, .3) 100%),
     repeating-linear-gradient(to bottom, rgba(255, 255, 255, .025) 0 1px, transparent 1px 3px);
 }
-.work.bench:is(.prompting, .prompt-leaving) .screen::after { background: radial-gradient(60% 50% at 28% 6%, rgba(255, 255, 255, .1), transparent 70%); }
+.work.bench:is(.prompting, .prompt-leaving) .screen > .glass::after { background: radial-gradient(60% 50% at 28% 6%, rgba(255, 255, 255, .1), transparent 70%); }
+/* While a line runs, what it is doing (Running 2s, Interrupt) is said on the line itself, at its right before Run, where
+   the line has no prompt: nothing comes in above the line and goes, so the screen does not move as a run starts and
+   ends. */
+:is(.prompting, .prompt-leaving) .screen .term-activity { position: absolute; z-index: 3; right: calc(var(--s4) + 1px + var(--run-w, 52px) + var(--s3));
+  bottom: calc(var(--s4) + 1px + (var(--t-meta) * 1.6 - var(--h-row)) / 2); padding: 0; }
 /* Up it is as tall as what it holds, up to that: before anything is run only its head and the box's line, so it does
    not cover what one reads to write the first line; it grows with the output. Its words start where the box's line
    does, past the box's edge (kept, unseen, so the line does not move as the screen comes). */
@@ -964,20 +976,71 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .term-head > .lamp { display: none; }
 :is(.prompting, .prompt-leaving) .screen .term-head > .lamp { display: block; width: 6px; height: 6px; border-radius: 50%; background: var(--done); box-shadow: 0 0 6px color-mix(in srgb, var(--done) 70%, transparent); }
 :is(.prompting, .prompt-leaving) .screen .term-box:has(.term.ended) .term-head > .lamp { background: var(--off); box-shadow: none; }
-/* Its buttons (Run, Interrupt, Start again) are lit outlines on the glass, the app's small buttons otherwise. */
-:is(.prompting, .prompt-leaving) .screen .button { color: var(--add-tint); border-color: color-mix(in srgb, var(--add-tint) 50%, transparent); text-shadow: none; }
-:is(.prompting, .prompt-leaving) .screen .button:hover:not(:disabled), :is(.prompting, .prompt-leaving) .screen .prompt-run:hover:not(:disabled) { background: color-mix(in srgb, var(--add-tint) 12%, transparent); }
+/* Its buttons (Interrupt, Start again; Run once the glass is under it) are lit outlines on the glass, the app's small
+   buttons otherwise. */
+:is(.prompting, .prompt-leaving) .screen .term-box .button, .line-lit .screen .prompt-run { color: var(--add-tint); border-color: color-mix(in srgb, var(--add-tint) 50%, transparent); text-shadow: none; }
+:is(.prompting, .prompt-leaving) .screen .term-box .button:hover:not(:disabled), .line-lit .screen .prompt-run:hover:not(:disabled) { background: color-mix(in srgb, var(--add-tint) 12%, transparent); }
+/* As the glass comes under them its light takes the line's words, then Run at the line's end (it comes there last). */
+/* Their own ink until then, not the screen's (they stand on the box's light while the glass is not yet, or no longer,
+   under them). */
+.screen .prompt-in { color: var(--ink); transition: color 160ms ease-out, text-shadow 160ms ease-out; }
+.screen .prompt-run { color: var(--ink); transition: color 160ms ease-out, border-color 160ms ease-out, background-color 260ms ease-out; }
+.line-lit .screen .prompt-run { transition-delay: 90ms; }
 :is(.prompting, .prompt-leaving) .screen :focus-visible { outline-color: var(--add-tint); }
 /* The box's line is the next line after the output, as a terminal's is: the shell's prompt line, what is written, a
    cell for a caret (caret.ts); Run stands on it without making it taller. Under it the room the box had round its line:
    the line and Run stay (within a pixel or two) where they were in the box as the screen comes. */
-:is(.prompting, .prompt-leaving) .screen .prompt { position: relative; z-index: 2; background: transparent; border-color: transparent; border-top-width: 0; box-shadow: none; padding: 0 var(--s4) var(--s4); }
+:is(.prompting, .prompt-leaving) .screen .prompt { position: relative; z-index: 2; align-items: flex-end; min-height: 0; background: transparent; border-color: transparent; border-top-width: 0; box-shadow: none; padding: 0 var(--s4) var(--s4); }
 :is(.prompting, .prompt-leaving) .screen .prompt:focus-within { border-color: transparent; box-shadow: none; }
 :is(.prompting, .prompt-leaving) .screen .prompt-run { margin-block: calc((var(--t-meta) * 1.6 - var(--h-row)) / 2); }
-:is(.prompting, .prompt-leaving) .screen .prompt-in { color: inherit; text-shadow: inherit; font: var(--t-meta)/1.6 var(--mono); --caret: block; }
+:is(.prompting, .prompt-leaving) .screen .prompt-in { --caret: block; }
+.line-lit .screen .prompt-in { color: var(--add-tint); --cell: color-mix(in srgb, var(--add-tint) 70%, transparent);
+  text-shadow: 0 0 6px color-mix(in srgb, var(--done) 70%, transparent), 0 0 1px color-mix(in srgb, var(--add-tint) 80%, transparent); }
 :is(.prompting, .prompt-leaving) .screen .prompt-in:not(.os-caret-field) { caret-color: var(--add-tint); }
-.prompt-ps { display: none; }
-:is(.prompting, .prompt-leaving) .screen .prompt-ps:not(:empty) { display: block; flex: none; align-self: flex-start; margin-right: calc(1ch - var(--s3)); color: var(--screen-ps); font: var(--t-meta)/1.6 var(--mono); white-space: pre; cursor: text; }
+/* Up, the pill is gone into the screen: its prompt line the line's start, in the screen's letters, its lamp out (the
+   head's is lit); while a line runs there is no prompt line, and nothing before what is written. */
+:is(.prompting, .prompt-leaving) .screen .prompt-chip { align-self: flex-start; height: auto; padding: 0; margin-right: calc(1ch - var(--s3)); background: none; box-shadow: none; text-shadow: inherit; }
+:is(.prompting, .prompt-leaving) .screen .prompt-chip > .lamp { opacity: 0; }
+.line-lit .screen .prompt-keys { opacity: 0; visibility: hidden; transition: opacity 120ms ease-out, visibility 0s 120ms; }
+
+/* At rest the box is the box (raised, its edge), its line a terminal's: at its left a pill of the screen's glass, round
+   as the band's pill for the repo is, with the shell's lamp and the prompt line it waits at; the line in the screen's
+   letters, an empty cell where the caret will be; the keys that bring it up; Run. Used, the pill's glass spreads over
+   the box and up into the screen (bench.ts), the box's light going from under it. */
+.screen { --pill-in: 7px; }
+.screen > .prompt { align-items: center; min-height: var(--prompt-h); padding: 0 var(--s4) 0 var(--pill-in); }
+.prompt-chip {
+  flex: none; position: relative; display: inline-flex; align-items: center; height: calc(var(--prompt-h) - 2 * var(--pill-in) - 2px);
+  padding: 0 var(--s3) 0 calc(var(--s3) + 6px + var(--s2)); border-radius: var(--r-round); background: var(--screen); color: var(--add-tint);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08); font: var(--t-meta)/1.6 var(--mono); cursor: text;
+  text-shadow: 0 0 6px color-mix(in srgb, var(--done) 70%, transparent), 0 0 1px color-mix(in srgb, var(--add-tint) 80%, transparent);
+}
+.prompt-chip:has(> .prompt-ps:empty) { display: none; }
+.prompt-chip > .lamp { position: absolute; left: var(--s3); top: calc(50% - 3px); width: 6px; height: 6px; border-radius: 50%; background: var(--done);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--done) 70%, transparent); transition: opacity 160ms ease-out, background-color var(--motion), box-shadow var(--motion); }
+/* Not started yet, the lamp is dim; ended, off, as a repo off is. */
+.prompt-chip:is([data-state='none'], [data-state='starting']) > .lamp { background: color-mix(in srgb, var(--done) 35%, var(--screen)); box-shadow: none; }
+.prompt-chip[data-state='ended'] > .lamp { background: var(--off); box-shadow: none; }
+.prompt-ps { color: var(--screen-ps); white-space: pre; }
+.screen .prompt-in { --cell: var(--ink); font: var(--t-meta)/1.6 var(--mono); }
+.screen .prompt-in::placeholder { color: transparent; text-shadow: none; }
+/* Not in use and empty, the line shows where the caret will be: an empty cell, as a terminal not in focus draws it. */
+.screen .prompt-in:placeholder-shown:not(:focus) { background:
+  linear-gradient(var(--cell), var(--cell)) 0 2px / 1ch 1px no-repeat, linear-gradient(var(--cell), var(--cell)) 0 calc(100% - 2px) / 1ch 1px no-repeat,
+  linear-gradient(var(--cell), var(--cell)) 0 2px / 1px calc(100% - 4px) no-repeat, linear-gradient(var(--cell), var(--cell)) calc(1ch - 1px) 2px / 1px calc(100% - 4px) no-repeat; }
+.prompt-keys { flex: none; display: inline-flex; align-items: center; gap: var(--s1); transition: opacity 160ms ease-out 60ms; }
+.prompt-keys > kbd { color: var(--sub); border-color: var(--rule); }
+.prompt-keys > kbd:last-child { font: 600 13px/1 var(--mono); }
+@media (max-width: 760px) { .prompt-keys { display: none; } }
+/* The box at rest, its light, while the glass spreads over it (and back as it gathers into the pill): under the screen. */
+.work.bench > .center > .dock::before { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: var(--prompt-h); z-index: -1; pointer-events: none;
+  box-sizing: border-box; border: 1px solid var(--edge); border-radius: var(--r-place); background: var(--raised); opacity: 0; }
+/* Going, the light fades as the glass runs over it (it is gone once the glass reaches the box's ends); coming back, it
+   comes as the glass runs back from it into the pill. */
+.work.bench.prompting > .center > .dock::before { animation: box-goes 220ms ease-out; }
+.work.bench.prompt-leaving > .center > .dock::before { animation: box-comes 160ms ease-in 160ms both; }
+@keyframes box-goes { from { opacity: 1; } to { opacity: 0; } }
+@keyframes box-comes { from { opacity: 0; } to { opacity: 1; } }
 .dock > .prompt, .screen > .prompt { min-width: 0; }
 .prompt { display: flex; align-items: flex-end; gap: var(--s3); border: 1px solid var(--edge); border-radius: var(--r-place); background: var(--raised); padding: var(--s3) var(--s4); }
 /* Run at the box's bottom right, the word alone (its keys are in its title and name), a small button that does

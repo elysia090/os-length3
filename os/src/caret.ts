@@ -60,6 +60,10 @@ function seenIn(el: Element): DOMRect | null {
   return right > left && bottom > top ? new DOMRect(left, top, right - left, bottom - top) : null;
 }
 
+/** Said by a page that moved a field's words without a key (a prompt line come before them): the caret goes with them. */
+let moved = () => {};
+export const fieldMoved = () => moved();
+
 export function caret() {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const mark = document.createElement('span');
@@ -103,10 +107,15 @@ export function caret() {
     const p = caretAt(f, copy);
     const seen = seenIn(f);
     if (!seen || p.x < seen.left - 1 || p.x > seen.right + 1 || p.y + p.h / 2 < seen.top || p.y + p.h / 2 > seen.bottom) { hide(); return; }
-    // A field that is a terminal's line (the Prompt up as a screen: --caret: block) has a terminal's caret, a cell.
-    const block = getComputedStyle(f).getPropertyValue('--caret').trim() === 'block';
+    // A field that is a terminal's line (the Prompt up as a screen: --caret: block) has a terminal's caret, a cell, the
+    // letter it stands on drawn in it dark (styles.css), as a terminal draws it.
+    const cs = getComputedStyle(f);
+    const block = cs.getPropertyValue('--caret').trim() === 'block';
     mark.classList.toggle('block', block);
     mark.style.width = block ? `${cell(copy)}px` : '';
+    mark.textContent = block ? f.value.slice(f.selectionEnd ?? 0, (f.selectionEnd ?? 0) + 1).replace('\n', '') : '';
+    mark.style.font = block ? cs.font : '';
+    mark.style.lineHeight = block ? `${Math.round(p.h)}px` : '';
     // Come to a field, it is put there; moving in it, it glides.
     mark.classList.toggle('jump', !shown);
     mark.style.transform = `translate(${Math.round(p.x)}px, ${Math.round(p.y)}px)`;
@@ -123,6 +132,7 @@ export function caret() {
     rest = window.setTimeout(() => mark.classList.add('resting'), 500);
   };
   const later = () => { frame ||= requestAnimationFrame(draw); };
+  moved = () => { shown = false; later(); };
 
   const take = (f: Field | null) => {
     if (field) resized.unobserve(field);

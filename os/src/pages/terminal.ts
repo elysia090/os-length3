@@ -20,6 +20,8 @@ const sessions = new Map<string, Session>();
 const LIMIT_FILES = 2000;
 const LIMIT_BYTES = 32 << 20;
 
+/** What clears a terminal's screen (clear, Ctrl+L): the output before it goes. */
+const CLEARS = /\x1b\[H\x1b\[[23]?J|\x1b\[[23]J|\x1bc/g;
 /** Escape sequences are dropped; the console is plain lines for now. */
 const strip = (s: string) => s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\r\n?/g, '\n');
 /** sh -i says this once because the console is not a terminal; it means nothing here. */
@@ -30,6 +32,8 @@ const NO_TTY = "/bin/sh: can't access tty; job control turned off\n";
  * (`/root/x $ `) outside the repo.
  */
 const PROMPT = /(?:^|\n)[^\n]*\S \$ $/;
+/** What a run prints comes in a line after another (styles.css .fresh): this far apart, each over this long. */
+const STAGGER = 30, FADE = 240;
 /** The prompt line it waits at, at the end of what it wrote. */
 const WAITS = /(?:^|\n)([^\n]*\S \$ )$/;
 const RUNS = 50;
@@ -128,6 +132,7 @@ export class Session {
   send(text: string): boolean {
     if (!this.live || (!this.worker && !this.native)) return false;
     const lines = text.endsWith('\n') ? text : `${text}\n`;
+    this.echo = lines;
     this.print(lines);
     this.runs.push({line: lines.trimEnd(), output: '', started: Date.now(), ms: null});
     if (this.runs.length > RUNS) this.runs.shift();
@@ -143,6 +148,10 @@ export class Session {
   }
 
   private print(s: string) {
+    // Cleared: what was on the screen goes, as in a terminal; what comes after the clearing stays.
+    let cleared = -1;
+    for (const m of s.matchAll(CLEARS)) cleared = m.index + m[0].length;
+    if (cleared >= 0) { this.text = ''; s = s.slice(cleared); }
     this.text += strip(s);
     // It may come in pieces; it goes once whole.
     if (!this.ttySaid && this.text.includes(NO_TTY)) { this.text = this.text.replace(NO_TTY, ''); this.ttySaid = true; }
@@ -163,20 +172,36 @@ export class Session {
       this.tail = null;
       const add = this.drawn && this.text.startsWith(this.drawn) ? this.text.slice(this.drawn.length) : null;
       if (add !== null && add.length < 4000 && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
-        this.output.append(...add.split(/(?<=\n)/).map((line, i) => {
+        // The line just sent is the line written moved up a line, as a terminal's is: it does not come in again.
+        const echo = this.echo && add.startsWith(this.echo) ? this.echo : '';
+        if (echo) this.output.append(echo);
+        const lines = add.slice(echo.length).split(/(?<=\n)/).filter(Boolean);
+        this.output.append(...lines.map((line, i) => {
           const s = h('span', {class: 'fresh'}, line);
-          s.style.animationDelay = `${Math.min(i, 24) * 30}ms`;
+          s.style.animationDelay = `${Math.min(i, 24) * STAGGER}ms`;
           return s;
         }));
+        // Its last line under way: what comes after (the prompt line) follows it in.
+        this.settles = lines.length ? performance.now() + Math.min(lines.length - 1, 24) * STAGGER + FADE / 2 : 0;
       } else this.output.replaceChildren(...this.marked(this.text));
+      this.echo = '';
       this.drawn = this.text;
       this.markTail();
-      this.output.scrollTop = this.output.scrollHeight;
+      // Full, what comes in scrolls the rest up, smoothly, as a terminal's screen does (at once when much came at once).
+      const far = this.output.scrollHeight - this.output.clientHeight - this.output.scrollTop;
+      const smooth = add !== null && far < this.output.clientHeight && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+      this.output.scrollTo({top: this.output.scrollHeight, behavior: smooth ? 'smooth' : 'auto'});
     });
   }
   private painting = 0;
   /** What is on the screen of the output now, to add to it what came after. */
   private drawn = '';
+  /** The line just sent, until it is drawn. */
+  private echo = '';
+  /** When what was printed last has all come in (performance.now()). */
+  private settles = 0;
+  /** How long until what was printed last has all come in, in ms: what comes after it (the prompt line) waits that long. */
+  settlesIn(): number { return Math.max(0, this.settles - performance.now()); }
   /** The prompt line the output ends with, in a span of its own: up over the center, the box's line says it instead
    * (bench.ts), so it is not said twice. Once something follows it, it is a prompt line among the output (`.ps`),
    * which the screen tells from what the lines run printed. Its words are what came last; they do not come in again. */
@@ -443,6 +468,8 @@ export class Session {
   /** Ctrl-C: what runs in front of the shell ends, and the shell goes on. */
   interrupt() {
     if (!this.live) return;
+    // Said where the run is cut, as a terminal says it.
+    if (this.runs.at(-1)?.ms === null) this.print('^C');
     if (this.native) { void this.native.interrupt(); return; }
     this.worker?.postMessage({type: 'interrupt'});
     this.inputWait = false;

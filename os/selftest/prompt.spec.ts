@@ -72,10 +72,25 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     // The line run is a prompt line among the output (in the green), and the box's line waits at the next.
     await expect(app.forge.prompt.locator('.term-out > .ps:not(.waits)').first()).toHaveText('hello $ ');
     await expect(waits).toHaveText('hello $');
-    // Put back, the box is the plain box again: no prompt line, its words in the body's letters.
+    // Put back, the box is the box at rest again (no glass), and the prompt line it last waited at is in its pill.
     await app.forge.promptBox.press('Escape');
-    await expect(waits).toBeHidden();
-    await expect(app.forge.promptBox).toHaveCSS('font-family', /system-ui/);
+    await expect(app.main.locator('.screen > .glass')).toBeHidden();
+    await expect(app.main.locator('.prompt-chip')).toHaveText('hello $');
+    await expect(app.main.locator('.prompt-chip')).toHaveCSS('border-radius', /^(9999|999)px$/);
+  });
+
+  test('clear clears what the Prompt shows, and Ctrl+C on a run says ^C where it was cut, as a terminal does', async ({app}) => {
+    const out = app.forge.prompt.locator('.term-out');
+    await app.forge.run('ls');
+    await expect(out).toContainText('Makefile');
+    await app.forge.run('clear');
+    await expect(out).not.toContainText('Makefile');
+    await app.forge.promptBox.fill('sleep 5');
+    await app.forge.promptBox.press('Control+Enter');
+    await expect(app.forge.promptBox).toHaveValue('');
+    await app.forge.promptBox.press('Control+c');
+    await expect(out).toContainText('^C');
+    await expect(app.main.locator('.screen .prompt-ps')).toHaveText('hello $');
   });
 
   test('↑ and ↓ walk the lines run before, and come back to what was being written', async ({app}) => {

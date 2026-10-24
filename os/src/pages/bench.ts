@@ -5,6 +5,7 @@ import {connection} from '../remote.ts';
 import {t} from '../i18n.ts';
 import {paneMark} from '../icons.ts';
 import {arrive, closeUp, LAND, paneOut, still} from '../glide.ts';
+import {fieldMoved} from '../caret.ts';
 import {onPlugins, pluginsOpen, setPluginsOpen, slots} from '../plugins.ts';
 import {complete, pathWord, Recall} from '../recall.ts';
 import {onChange, store, type Entry} from '../repos.ts';
@@ -145,35 +146,85 @@ function paneWord(open: (address: string) => void): HTMLElement {
   return list;
 }
 
-/** The screen cut to its foot (the box's line alone) or whole, round as it is. */
-const cut = (screen: HTMLElement, top: number) => `inset(${top}px 0 0 0 round ${getComputedStyle(screen).borderRadius})`;
+/** The box at rest, measured in the screen: where its pill stands (from its left and its foot, its size), the box's
+ * height and its corner. */
+interface Rest { l: number; b: number; w: number; h: number; box: number; round: number }
+/** A shape in the screen, as insets from its edges and a corner: [top, right, bottom, left, round]. */
+type Shape = [number, number, number, number, number];
 
 /**
- * The Prompt brought up over the center: the box at the foot is a screen, and the screen grows up out of its line to
- * hold it, its words never stretched, landing a touch past where it stops.
+ * The shapes the glass goes through: the pill, the box's line (the box at rest), the whole screen. For the Prompt above
+ * the line (`above`), the line's shape holds none of it: what it printed comes only as the glass rises.
  */
-function promptUp(el: HTMLElement, slot: HTMLElement, screen: HTMLElement) {
-  for (const a of [...el.getAnimations(), ...screen.getAnimations()]) a.cancel();
-  slot.append(el);
-  if (still()) return;
-  screen.animate([{clipPath: cut(screen, slot.offsetHeight)}, {clipPath: cut(screen, 0)}], {duration: 320, easing: 'cubic-bezier(.2, 1.25, .32, 1)'});
+function shapes(screen: HTMLElement, r: Rest, above: HTMLElement | null = null): {pill: Shape; line: Shape; whole: Shape} {
+  const s = screen.getBoundingClientRect(), {width: W, height: H} = s;
+  const top = above ? above.getBoundingClientRect().bottom - s.top : H - r.box;
+  return {pill: [H - r.b - r.h, W - r.l - r.w, r.b, r.l, r.h / 2], line: [Math.max(top, H - r.box), 0, 0, 0, r.round],
+    whole: [0, 0, 0, 0, parseFloat(getComputedStyle(screen).borderTopLeftRadius) || 0]};
+}
+/** A shape of the screen as `t`'s clip (t a part of it: the glass, or the Prompt above the line). */
+function clipOf(t: HTMLElement, screen: HTMLElement, [top, right, bottom, left, round]: Shape): string {
+  const s = screen.getBoundingClientRect(), r = t.getBoundingClientRect();
+  return `inset(${top - (r.top - s.top)}px ${right - (s.right - r.right)}px ${bottom - (s.bottom - r.bottom)}px ${left - (r.left - s.left)}px round ${round}px)`;
 }
 
-/** Put back, the screen goes down into its line, then the Prompt comes into the pane where it lives; `back` says it still goes. */
-function promptHome(el: HTMLElement, home: HTMLElement, screen: HTMLElement, back: () => boolean, gone: () => void) {
-  let down: Animation | null = null;
+/** Up: the glass runs out of the pill along the box's line, then rises into the screen, landing a touch past. */
+const UP = {duration: 460, line: .38};
+/** Down: it sinks to the line, then runs back into the pill. */
+const DOWN = {duration: 320, line: .5};
+const RUN = 'cubic-bezier(.3, .1, .25, 1)', RISE = 'cubic-bezier(.2, 1.15, .32, 1)', SINK = 'cubic-bezier(.45, 0, .8, .6)', BACK = 'cubic-bezier(.4, 0, .6, 1)';
+
+/** Each of `els` from where it stood (`was`, its box then) to where it stands now, or (`back`) from here to there. */
+function glide(els: HTMLElement[], was: DOMRect[], o: KeyframeAnimationOptions, back = false) {
+  els.forEach((e, i) => {
+    const r = e.getBoundingClientRect(), dx = was[i].left - r.left, dy = was[i].top - r.top;
+    if (Math.abs(dx) < .5 && Math.abs(dy) < .5) return;
+    const at = {transform: `translate(${dx}px, ${dy}px)`}, here = {transform: 'none'};
+    e.animate(back ? [here, at] : [at, here], {...o, fill: back ? 'both' : 'backwards'});
+  });
+}
+
+/**
+ * The Prompt brought up over the center out of the box's pill: the pill's glass runs along the box's line and rises
+ * into the screen that holds the Prompt (the box's light going from under it, styles.css); the line's words and Run
+ * stay, taking the glass's light as it comes under them, and the prompt line goes from the pill to the line's start.
+ * The Prompt above the line comes with the glass, its words never stretched.
+ */
+function promptUp(el: HTMLElement, slot: HTMLElement, screen: HTMLElement, glass: HTMLElement, from: Rest | null) {
+  for (const a of [el, screen, glass, slot].flatMap((e) => e.getAnimations())) a.cancel();
+  slot.append(el);
+  if (still() || !from) return;
+  for (const t of [glass, slot]) {
+    const sh = shapes(screen, from, t === slot ? slot : null);
+    t.animate([{clipPath: clipOf(t, screen, sh.pill), easing: RUN}, {clipPath: clipOf(t, screen, sh.line), offset: UP.line, easing: RISE},
+      {clipPath: clipOf(t, screen, sh.whole)}], {duration: UP.duration});
+  }
+}
+
+/**
+ * Put back, the glass sinks to the line and runs back into the pill, the line's parts (`parts`) going back to where
+ * they stood at rest (`rested`); then the Prompt comes into the pane where it lives. `back` says it still goes.
+ */
+function promptHome(el: HTMLElement, home: HTMLElement, screen: HTMLElement, glass: HTMLElement, to: Rest | null, parts: HTMLElement[],
+  rested: DOMRect[] | null, back: () => boolean, gone: () => void) {
+  const slot = el.parentElement!;
+  const done: Animation[] = [];
   const there = () => {
     gone();
     if (!back()) return;
     for (const a of el.getAnimations()) a.cancel();
     home.append(el);
-    down?.cancel();
+    for (const a of [...done, ...parts.flatMap((p) => p.getAnimations())]) a.cancel();
     if (!still()) el.animate([{opacity: 0, transform: 'translateY(-6px)'}, {opacity: 1, transform: 'none'}], {duration: 220, easing: LAND});
   };
-  if (still() || el.parentElement === home) { there(); return; }
-  down = screen.animate([{clipPath: cut(screen, 0)}, {clipPath: cut(screen, el.parentElement!.offsetHeight)}],
-    {duration: 160, easing: 'cubic-bezier(.5, 0, .9, .6)', fill: 'forwards'});
-  down.finished.then(there, there);
+  if (still() || slot === home || !to) { there(); return; }
+  for (const t of [glass, slot]) {
+    const sh = shapes(screen, to, t === slot ? slot : null);
+    done.push(t.animate([{clipPath: clipOf(t, screen, sh.whole), easing: SINK}, {clipPath: clipOf(t, screen, sh.line), offset: DOWN.line, easing: BACK},
+      {clipPath: clipOf(t, screen, sh.pill)}], {duration: DOWN.duration, fill: 'forwards'}));
+  }
+  if (rested) glide(parts, rested, {duration: DOWN.duration * (1 - DOWN.line), delay: DOWN.duration * DOWN.line, easing: BACK}, true);
+  done[0].finished.then(there, there);
 }
 
 export interface Bench {
@@ -206,11 +257,17 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   const keys = mac ? '⌘+Enter' : 'Ctrl+Enter';
   const runIt = h('button', {type: 'submit', class: 'button small-button prompt-run', 'aria-keyshortcuts': mac ? 'Meta+Enter' : 'Control+Enter',
     title: t('Run ({keys})', {keys})}, t('Run')) as HTMLButtonElement;
-  // Up as a screen, the box's line starts with the prompt line the shell waits at, as a terminal's does (the Prompt's
-  // own last line, the same words, is not shown there then).
+  // At rest the box's line starts with a pill of the screen's glass: a lamp (the shell running, or not yet) and the
+  // prompt line it waits at. Up as a screen, the pill is gone into the screen and the line starts with that prompt line,
+  // as a terminal's does (the Prompt's own last line, the same words, is not shown there then).
   const waits = h('span', {class: 'prompt-ps', 'aria-hidden': 'true'});
-  const form = h('form', {class: 'prompt'}, waits, prompt, runIt);
-  const screen = h('div', {class: 'screen'}, termSlot, form);
+  const chip = h('span', {class: 'prompt-chip', 'aria-hidden': 'true'}, h('span', {class: 'lamp'}), waits);
+  // The keys that bring it up from anywhere, said at rest as keys are (the box's own Run says Ctrl+Enter in its title).
+  const summon = h('span', {class: 'prompt-keys', 'aria-hidden': 'true'}, h('kbd', {}, mac ? '⌘' : 'Ctrl'), h('kbd', {}, '`'));
+  const form = h('form', {class: 'prompt'}, chip, prompt, summon, runIt);
+  // The screen's glass, a layer of its own under its words (styles.css): what runs out of the pill and rises.
+  const glass = h('span', {class: 'glass', 'aria-hidden': 'true'});
+  const screen = h('div', {class: 'screen'}, glass, termSlot, form);
   const dock = h('div', {class: 'dock'}, screen, note);
   const center = h('div', {class: 'center'}, parts.main, dock);
   const reference = new Reference({reveal: parts.reveal, recall: (line) => {
@@ -267,7 +324,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   };
   // The bench's width, for what is laid out from it (the pane's W, which the search box and what opens under it
   // take): measured, since a box queried for its width would make a layer the search could not rise out of.
-  const roomy = new ResizeObserver(() => { work.style.setProperty('--bench-w', `${work.clientWidth}px`); searchRoom(); promptAt(); });
+  const roomy = new ResizeObserver(() => { work.style.setProperty('--bench-w', `${work.clientWidth}px`); searchRoom(); promptAt(); screen.style.setProperty('--run-w', `${runIt.offsetWidth}px`); });
   roomy.observe(dock);
   roomy.observe(work);
   // The plugin area is the pane's top: brought out by the plug, it brings the pane out with it.
@@ -313,22 +370,58 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   center.addEventListener('pointerleave', stay);
   prompt.addEventListener('focus', () => rest(false));
   let prompting = false;
+  /** The box at rest (its pill, in the screen), and the line's parts where they stood: where it goes back to. */
+  let pill: Rest | null = null;
+  let rested: DOMRect[] | null = null;
+  const lineParts = [chip.firstElementChild as HTMLElement, waits, prompt, runIt];
+  // Up, the screen grows with what the Prompt holds: the room a line takes comes over a moment, the screen's top
+  // rising, not at once. Cleared, it is smaller at once, as a terminal's is.
+  let held = 0;
+  new ResizeObserver(() => {
+    const now = termBox.getBoundingClientRect().height, by = now - held;
+    held = now;
+    if (!prompting || by < 1 || still() || termBox.parentElement !== termSlot || glass.getAnimations().some((a) => a.playState === 'running')) return;
+    const r = parseFloat(getComputedStyle(screen).borderTopLeftRadius) || 0;
+    for (const t of [glass, termSlot]) t.animate([{clipPath: `inset(${by}px 0 0 0 round ${r}px)`}, {clipPath: `inset(0 0 0 0 round ${r}px)`}], {duration: 180, easing: LAND});
+  }).observe(termBox);
+  let unlit: Animation | null = null;
   const setPrompting = (on: boolean) => {
     if (on === prompting) return;
+    // Measured at rest, before it goes up: the pill it spreads out of and where the line's parts stand.
+    if (on) {
+      const c = chip.getBoundingClientRect(), r = screen.getBoundingClientRect(), f = form.getBoundingClientRect();
+      pill = c.width ? {l: c.left - r.left, b: r.bottom - c.bottom, w: c.width, h: c.height, box: f.height,
+        round: parseFloat(getComputedStyle(form).borderTopLeftRadius) || 0} : null;
+      rested = lineParts.map((m) => m.getBoundingClientRect());
+    }
     prompting = on;
     work.classList.toggle('prompting', on);
     // Going down, it is still the screen as it goes, until it is the box's line again.
     work.classList.toggle('prompt-leaving', !on);
-    // Up, its line is in the screen's letters (styles.css): as tall as one of them. No words in it before one writes:
-    // the prompt line says where it runs, as a terminal's does (and back as the box, they are back).
-    if (on) prompt.placeholder = '';
+    // The line's words and Run in the glass's light while it is under them: lit going up; going down, unlit as the
+    // glass runs back from under them into the pill.
+    unlit?.cancel();
+    if (on || still()) work.classList.toggle('line-lit', on);
+    else {
+      // As the glass begins to run back along the line: timed on the clock it moves by, so they keep together.
+      unlit = glass.animate([], {duration: DOWN.duration * DOWN.line});
+      unlit.finished.then(() => { if (!prompting) work.classList.remove('line-lit'); }, () => {});
+    }
+    said();
+    // Up, its line is in the screen's letters (styles.css): as tall as one of them.
     fit();
-    if (on) promptUp(termBox, termSlot, screen);
-    else promptHome(termBox, termHome, screen, () => !prompting, () => { work.classList.remove('prompt-leaving'); if (!prompting) prompt.placeholder = hint(); fit(); });
+    if (on) {
+      promptUp(termBox, termSlot, screen, glass, pill);
+      if (rested && !still()) glide(lineParts, rested, {duration: UP.duration * UP.line, easing: RUN});
+    }
+    else promptHome(termBox, termHome, screen, glass, pill, lineParts, rested, () => !prompting,
+      () => { work.classList.remove('prompt-leaving', 'line-lit'); said(); fit(); });
+    // The line goes, and the caret in it with it from the first frame.
+    fieldMoved();
     if (!on && parts.back) requestAnimationFrame(() => rest(true));
   };
   const fit = () => { prompt.style.height = 'auto'; prompt.style.height = `${prompt.scrollHeight}px`; };
-  /** What the box says before one writes in it, as the box at the foot. */
+  /** What the box says before one writes in it (to be read, not seen: the pill says where it runs). */
   const hint = () => (repo ? t('Run in {name}', {name: repo}) : t('Open a repo to run in it'));
   prompt.addEventListener('focus', () => { setPrompting(true); following(); });
   const keep = () => { if (repo) { if (prompt.value) drafts.set(repo, prompt.value); else drafts.delete(repo); } };
@@ -429,7 +522,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   form.addEventListener('submit', (event) => { event.preventDefault(); send(); prompt.focus(); });
   // Pressed anywhere in the box, not on its line alone (its padding, beside Run): the caret goes in.
   form.addEventListener('pointerdown', (event) => {
-    if ((event.target !== form && event.target !== waits) || prompt.disabled) return;
+    if ((event.target !== form && !chip.contains(event.target as Node) && event.target !== summon) || prompt.disabled) return;
     event.preventDefault();
     prompt.focus();
   });
@@ -471,7 +564,32 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   /** The Prompt Output follows: the repo's own, a new one once it is started again. */
   let followed: unknown = null;
   let unwatch: (() => void) | null = null;
-  const said = () => { waits.textContent = repo ? sessionIfAny(repo)?.promptLine.trimEnd() ?? '' : ''; };
+  /** The prompt line each repo's shell last waited at: the pill's at rest, while a line runs or before it starts. */
+  const lastLine = new Map<string, string>();
+  let saying = 0, speaking = 0;
+  /**
+   * The prompt line: up, the one the shell waits at now (none while a line runs); at rest, the last it waited at.
+   * Come back after a run, it comes once what the run printed has come in (terminal.ts), as a terminal's does.
+   */
+  const said = () => {
+    const s = repo ? sessionIfAny(repo) : undefined;
+    const line = s?.promptLine.trimEnd() ?? '';
+    if (repo && line) lastLine.set(repo, line);
+    chip.dataset.state = !s ? 'none' : s.ended ? 'ended' : s.running ? 'on' : 'starting';
+    const now = !repo ? '' : prompting ? line : lastLine.get(repo) ?? `${repo} $`;
+    cancelAnimationFrame(saying);
+    clearTimeout(speaking);
+    if (!(prompting && now && !waits.textContent) || still()) { waits.textContent = now; return; }
+    // After the frame that draws what came, so the time its lines take to come in is known; then the prompt line and
+    // the caret after it come together, as the last line comes.
+    saying = requestAnimationFrame(() => {
+      speaking = window.setTimeout(() => {
+        waits.textContent = now;
+        fieldMoved();
+        waits.animate([{opacity: 0}, {opacity: 1}], {duration: 140, easing: 'ease-out'});
+      }, s?.settlesIn() ?? 0);
+    });
+  };
   const following = () => {
     const s = repo ? sessionIfAny(repo) ?? null : null;
     if (s !== followed) { followed = s; reference.runsAgain(); unwatch?.(); unwatch = s ? s.watch(said) : null; }
@@ -483,7 +601,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     reference.setRepo(name);
     attach();
     prompt.disabled = runIt.disabled = !name;
-    prompt.placeholder = prompting ? '' : hint();
+    prompt.placeholder = hint();
     prompt.value = name ? drafts.get(name) ?? '' : '';
     unsay();
     note.textContent = '';
@@ -511,10 +629,10 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     reference.resume();
     if (!prompting || dock.contains(document.activeElement)) return;
     prompting = false;
-    work.classList.remove('prompting', 'prompt-leaving');
-    for (const a of screen.getAnimations()) a.cancel();
+    work.classList.remove('prompting', 'prompt-leaving', 'line-lit');
+    for (const a of [screen, glass, termSlot, ...lineParts].flatMap((e) => e.getAnimations())) a.cancel();
     termHome.append(termBox);
-    prompt.placeholder = hint();
+    said();
     fit();
   };
   return {element: work, reference, setRepo, settle};
