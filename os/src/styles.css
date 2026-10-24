@@ -343,11 +343,15 @@ a { color: var(--ink); }
    pane moves: the page keeps Forge's margin at the right (s5), and the pane is Forge's W (a quarter of the page,
    never under 280 px), less that margin, worked out from the page's own margins. */
 @media (min-width: 761px) { .page:has(> .home-layout) { padding-right: var(--s5); } }
+/* The room under Home's foot is the column's, not the page's: the pane is held in view only within the page's
+   content, so the page's own foot would push it up off the top line as Home is scrolled to its end. */
+.page:has(> .home-layout) { padding-bottom: 0; }
+.home-layout > .home-main { padding-bottom: var(--s6); }
 .page > .home-layout {
   max-width: none; display: grid; column-gap: var(--s5); align-items: start;
   grid-template-columns: minmax(0, 1fr) calc(max(280px, (100% + clamp(var(--s5), 5vw, 72px) + var(--s5)) / 4) - var(--s5));
 }
-.home-layout.pane-closed { grid-template-columns: minmax(0, 1fr) var(--h-row); }
+.home-layout.pane-closed { grid-template-columns: minmax(0, 1fr) calc(var(--h-row) + var(--line-frame)); } /* the switch and the line it no longer draws: the switch stays where it stood */
 /* It opens and closes as Forge's does: a wipe, landing a touch past and settling as it comes out. */
 .page > .home-layout { transition: grid-template-columns var(--move) var(--land); }
 .page > .home-layout:not(.pane-closed) { transition: grid-template-columns 420ms cubic-bezier(.2, 1.4, .32, 1); }
@@ -500,7 +504,9 @@ kbd {
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: var(--s5); }
 /* Home's repos, about three across at a laptop's width (a 1180 px window gives the grid about 900 px):
    three need 3 × 280 + 2 × 24; then two, then one as it narrows. The cards keep their height. */
-.grid.home-repos { grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); } /* three across beside the right pane at a laptop's width */
+/* Never more than three across: with the pane away the column widens and the three widen with it, out to the TODO's
+   edges, rather than a fourth place standing empty at the right. */
+.grid.home-repos { grid-template-columns: repeat(auto-fill, minmax(max(min(100%, 200px), (100% - 2 * var(--s5)) / 3), 1fr)); } /* three across beside the right pane at a laptop's width */
 .card {
   min-height: 240px; padding: var(--s4); border: 1px solid var(--rule); border-radius: var(--r-place);
   display: grid; align-content: start; gap: var(--s2); background: transparent; text-align: left; color: var(--ink);
@@ -867,7 +873,8 @@ body::after {
   background: color-mix(in srgb, var(--ink) 14%, transparent); opacity: 0; transition: opacity 180ms ease-out;
 }
 body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading))::after { opacity: 1; }
-.work.bench > .bar > .search-box { z-index: 8; }
+/* Over the shade only while it is out: at rest it is the page's, under whatever lies over the page (Server's layer). */
+.work.bench > .bar > .search-box:is(:focus-within, .reading, .moving) { z-index: 8; }
 /* The right pane put away takes its search with it; its switch stays where it was, at the top line's right end,
    the way to bring both back, and says which it is: brought out, an ink fill, as anything chosen; put away, the
    outline alone. */
@@ -1496,7 +1503,7 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 /* A conversation stands on its foot, by the field it is answered in, as it is read: the last thing said just over
    where the answer is written, never a sheet's height of nothing between them. */
 .inbox-messages > :first-child { margin-top: auto; }
-.bubble { display: grid; gap: var(--s1); max-width: 75%; padding: var(--s2) var(--s3); border: 1px solid var(--rule); border-radius: var(--r-place); justify-self: start; }
+.bubble { display: grid; gap: var(--s1); max-width: 75%; padding: var(--s2) var(--s3); border: 1px solid var(--rule); border-radius: var(--r-place); justify-self: start; align-self: flex-start; } /* as wide as what it says, at its side; never the column's width */
 .bubble[data-mine='true'] { align-self: flex-end; background: var(--raised); }
 .bubble .state-chip { justify-self: start; }
 .bubble-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -1557,11 +1564,13 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 .stage-hit.prev { left: 0; width: calc(var(--lead) * var(--peek)); }
 .stage-hit.next { right: 0; width: calc((2 - var(--lead)) * var(--peek)); }
 .stage-hit:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
-/* A neighbour runs on past the column's edge: there it goes into the ground, not cut off square as if broken. */
-.slide-stage::before, .slide-stage::after { content: ''; position: absolute; top: 0; bottom: 0; z-index: 1; width: min(var(--peek), var(--s5)); pointer-events: none; opacity: 0; transition: opacity var(--motion); }
-.slide-stage::before { left: 0; background: linear-gradient(to left, transparent, var(--ground)); }
-.slide-stage::after { right: 0; background: linear-gradient(to right, transparent, var(--ground)); }
-.slide-stage:has(.slide[aria-current='true'] + .slide)::after, .slide-stage:has(.slide + .slide[aria-current='true'])::before { opacity: 1; }
+/* A neighbour runs on past the column's edge: there it goes into the ground, not cut off square as if broken (Server's
+   boards, the search's finds, Git's issues alike). */
+.slide-stage::before, .slide-stage::after, .issue-stage::before, .issue-stage::after { content: ''; position: absolute; top: 0; bottom: 0; z-index: 1; width: min(var(--peek), var(--s5)); pointer-events: none; opacity: 0; transition: opacity var(--motion); }
+.slide-stage::before, .issue-stage::before { left: 0; background: linear-gradient(to left, transparent, var(--ground)); }
+.slide-stage::after, .issue-stage::after { right: 0; background: linear-gradient(to right, transparent, var(--ground)); }
+.slide-stage:has(.slide[aria-current='true'] + .slide)::after, .slide-stage:has(.slide + .slide[aria-current='true'])::before,
+.issue-stage:has(.issue-slot[aria-current='true'] + .issue-slot)::after, .issue-stage:has(.issue-slot + .issue-slot[aria-current='true'])::before { opacity: 1; }
 .space-col > h3 small { margin-left: var(--s2); font-weight: 400; color: var(--sub); font-size: var(--t-meta); }
 /* A page in parts (common.ts parts()): the headings are the switch, the
    chosen one an ink fill like anything chosen; only its part is shown. */
@@ -1652,7 +1661,7 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 /* An issue closed from its box lands as its line under Closed: in from above, lit with the marker a moment. */
 .done-row.landing { animation: line-land 360ms var(--land) both, line-lit 1200ms ease-out; border-radius: var(--r-field); }
 @keyframes line-land { from { translate: 0 -12px; opacity: 0; } }
-@keyframes line-lit { from, 30% { background: color-mix(in srgb, var(--marker) 55%, transparent); } }
+@keyframes line-lit { from, 30% { background: var(--marker-soft); } } /* solid, not the marker thinned: on the ground a thinned yellow goes olive */
 @media (prefers-reduced-motion: reduce) { .done-row.landing { animation: none; } }
 /* Committed on main just now: the card's sheet lands on its line (git-done.ts), which is lit as it does. */
 /* The line a commit just made opens where its card went, the issues under it coming down that far rather than at
@@ -1675,11 +1684,14 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
    and what was said as a conversation in the middle. */
 /* The Review: a box of its own under the issue's card, in the same column. */
 /* Given room: it starts well under the issue's box and the line under it, and reads large, as the next thing to do. */
-.review-box { display: grid; gap: var(--s4); margin-top: var(--s6); padding: var(--s5) var(--s5) var(--s6); border: 1px solid var(--ink); border-radius: var(--r-place); background: var(--raised); }
+/* The issue's sheet as the card is one: paper, a rule edge, and the edge in ink while it is in hand (a line being marked,
+   a comment being written). */
+.review-box { display: grid; gap: var(--s4); margin-top: var(--s6); padding: var(--s5) var(--s5) var(--s6); border: 1px solid var(--rule); border-radius: var(--r-place); background: var(--paper); transition: border-color var(--motion); }
+.review-box:focus-within, .review-box:has(.marking) { border-color: var(--ink); }
 .review-box > .stage-head h3 { font-size: var(--t-card); }
 /* On raised, an added line is drawn on ground, so it still stands out. */
 .review-chat { display: grid; gap: var(--s3); justify-items: start; padding: var(--s2) 0; }
-.review-chat .bubble { max-width: min(560px, 85%); background: var(--ground); }
+.review-chat .bubble { max-width: min(560px, 85%); background: var(--raised); } /* said on the review's paper as one's own is in the Inbox */
 .review-chat .state-chip { justify-self: start; }
 .review-diff { max-height: 56vh; overflow: auto; padding-right: var(--s2); }
 /* A mark is a highlighter's: drawn over the words only, each wrapped line its
@@ -1978,7 +1990,10 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
    it and the repos they show. Behind the gear, and a repo shown, take the
    boards' place: a step away from them. */
 .server-center { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); padding: var(--band) var(--s5) 120px; }
-.server-top { display: flex; align-items: center; gap: var(--s2); margin-bottom: var(--s3); }
+/* The band's row, and under it the board's top where Forge's first box's is (its top line's foot, a step down). */
+.server-top { display: flex; align-items: center; gap: var(--s2); margin-bottom: var(--s5); }
+.server-layer > .work { position: relative; }
+.server-bar { position: absolute; top: var(--band); right: var(--s5); display: flex; }
 .server-chips { flex: 1; min-width: 0; }
 /* A server being named: its chip is the field, where it will stand once made, dashed until it has a name, and says
    one name; Make beside it, and what the Remote said no to after that. */
@@ -2014,6 +2029,8 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .server-gear.unseen { visibility: hidden; }
 .server-gear { display: grid; place-items: center; flex: none; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid transparent; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: pointer; }
 .server-gear:hover, .server-gear[aria-expanded='true'] { border-color: var(--edge); color: var(--ink); }
+.server-bar > .server-gear { border-color: var(--edge); color: var(--ink); } /* at the corner, the switch's quiet circle */
+.server-bar > .server-gear:hover { background: var(--raised); }
 .server-gear svg { width: 18px; height: 18px; }
 .slides { --peek: 48px; --gap: var(--s3); --lead: 0; min-height: 0; }
 .slides.single { --peek: 0px; }
@@ -2077,9 +2094,12 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .your-row > .mono { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .server-say { flex-wrap: wrap; align-items: center; gap: var(--s2); }
 .server-say .line-in { flex: 1; min-width: 10em; }
-/* The right: who is in it, then their repos. Read only: what changes them is behind the gear. */
-.server-side { display: grid; grid-template-rows: none; align-content: start; gap: var(--s5); overflow-y: auto; padding: var(--band) var(--s5) var(--s5); }
-/* Server's side stands on the ground as Forge's pane does; the board in hand is the sheet, and its edge the line. */
+/* The right: who is in it, then their repos, Forge's pane as it stands: the line at its edge from the top line to the
+   foot, the top line's right end its switch's place (here the gear, over what it changes), and its first heading on
+   the line Forge's Prompt is on. Read only: what changes them is behind the gear. */
+.server-side { display: grid; grid-template-rows: none; align-content: start; gap: var(--s5); overflow-y: auto;
+  padding: calc(2 * var(--band) + var(--h-row) + var(--s3)) var(--s5) var(--s5); box-shadow: inset var(--line-frame) 0 0 var(--ink); }
+/* The line is the pane's (at its edge, where Forge's is), not the center's a line's width to the left of it. */
 .work:has(> .side.server-side) > .center { border-right-color: transparent; }
 /* A heading over its list as a section's is over its content. */
 .side-part { display: grid; gap: var(--s3); }

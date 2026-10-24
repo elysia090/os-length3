@@ -9,8 +9,9 @@ test('a TODO is written as Kind: title, Enter for its detail, and done strikes i
   await app.rail.go('home');
   const item = app.home.items.first();
 
-  await app.home.title(item).fill('Fix: The tent leaks');
-  // "Fix：" is taken as its kind; the title is what follows.
+  // Typed key by key, as a person does: "Fix：" is taken as its kind the moment its colon is, and the space after it
+  // goes with it; the title is what follows, from its first word.
+  await app.home.title(item).pressSequentially('Fix: The tent leaks');
   await expect(item).toContainText('Fix：');
   await expect(app.home.title(item)).toHaveValue('The tent leaks');
   await expect(app.home.todo).toContainText('1 of 1 left');

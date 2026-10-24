@@ -71,6 +71,18 @@ export function caret() {
     mark.classList.remove('on');
     shown = false;
   };
+  /** Where the field stood when the caret was last put in it. A field that moves with nothing typed (a page still
+   * coming in, a pill sliding, what is above it growing) carries the caret with it: looked at every frame while it
+   * moves, and a little while apart while it stands still. One watch at a time, the latest. */
+  let stood: DOMRect | null = null;
+  let watching = 0;
+  const watch = (n: number) => {
+    const f = field;
+    if (n !== watching || !f || !stood || !mark.classList.contains('on')) return;
+    const r = f.getBoundingClientRect();
+    if (r.left !== stood.left || r.top !== stood.top) { shown = false; later(); return; }
+    window.setTimeout(() => requestAnimationFrame(() => watch(n)), 200);
+  };
   const draw = () => {
     frame = 0;
     const f = field;
@@ -85,6 +97,9 @@ export function caret() {
     mark.style.height = `${Math.round(p.h)}px`;
     mark.classList.add('on');
     shown = true;
+    stood = f.getBoundingClientRect();
+    const n = ++watching;
+    requestAnimationFrame(() => watch(n));
     // Solid while it moves; blinking once it has rested a moment.
     mark.classList.remove('resting');
     clearTimeout(rest);

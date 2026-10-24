@@ -169,10 +169,11 @@ export class ServerLayer {
     const chips = h('div', {class: 'chips server-chips', role: 'radiogroup', 'aria-label': 'Server'});
     const gear = h('button', {type: 'button', class: 'server-gear unseen', 'aria-label': t('Its people, boards and repos'), title: t('Its people, boards and repos'), 'aria-expanded': 'false', disabled: ''}, mark('gear')) as HTMLButtonElement;
     // + makes a server: first, at the band's left end, before the servers, which come and go to its right and so
-    // never move it. The gear changes the one chosen, at the right end; with none chosen it keeps its place, unpressable.
+    // never move it. The gear changes the one chosen: at the top line's right end, where Forge's pane switch is, over
+    // the people and repos it changes; with none chosen it keeps its place, unpressable.
     const plus = h('button', {type: 'button', class: 'band-add', 'aria-label': t('Make a server'), title: t('Make a server'), hidden: ''}, mark('plus')) as HTMLButtonElement;
     plus.addEventListener('click', () => { serverId = null; paintTop(); makeServer(); });
-    const top = h('div', {class: 'server-top'}, plus, chips, gear);
+    const top = h('div', {class: 'server-top'}, plus, chips);
     const track = h('div', {class: 'slide-track'});
     const prev = h('button', {type: 'button', class: 'stage-hit prev', 'aria-label': t('Previous board')}) as HTMLButtonElement;
     const next = h('button', {type: 'button', class: 'stage-hit next', 'aria-label': t('Next board')}) as HTMLButtonElement;
@@ -183,7 +184,7 @@ export class ServerLayer {
     const dock = h('div', {class: 'dock'});
     const side = h('aside', {class: 'side server-side', 'aria-label': t('Who is in it, and the repos they show')});
     const center = h('div', {class: 'center server-center'}, top, slides, sheet, dock);
-    const work = h('div', {class: 'work no-strip'}, center, side);
+    const work = h('div', {class: 'work no-strip'}, center, side, h('div', {class: 'server-bar'}, gear));
     // Signed out, whose a board is is not told: there is no right pane, and so no line where it would start.
     if (!signedIn) { side.hidden = true; work.classList.add('no-side'); }
 

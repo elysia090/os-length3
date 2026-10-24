@@ -272,7 +272,7 @@ Every page:
 | `add` | `#0D6B52` | the words of an addition, a step darker than `done` to read small: +n, a line's + (5.3:1 on its tint) |
 | `add-tint` | `#D8EEE6` | the ground of a line added in a diff: a mint of its own, not `done` thinned |
 | `marker` | `#F1EA5A` | what is marked, as with a highlighter: a line marked in a diff (a review, Forge's diff), over its words only (not its indent or number, which turns ink), each wrapped line its own stroke with softened ends; the words the search found, in its lines; the head of a file just landed on, for a moment. A clean lemon, not a cream: `ink` on it 11:1 |
-| `marker-soft` | `#F6F1A3` | the pointer on a line it can mark: the stroke, paler |
+| `marker-soft` | `#F6F1A3` | the pointer on a line it can mark: the stroke, paler; a line just landed on (merged, committed, closed), lit a moment on the ground, solid (a thinned marker on the grey goes olive) |
 | `off` | `#A3304D` | a repo turned off: its switch; a removal held, its button red (`ground` words on it 4.8:1); a line removed (its bar, its squares); a crimson leaning to blue, not a brick |
 | `del` | `#992B46` | the words of a removal: −n, a line's − (6.0:1 on its tint) |
 | `del-tint` | `#F6DFE4` | the ground of a line removed in a diff |
@@ -386,7 +386,8 @@ what is its own.
   (Share's list over the card, from its left edge up). The band's + comes first, at its left
   end, before what it brings out: the chips come and go to its right, so
   they never move it, and the band reads + → what is out; what else the
-  band holds (a search box, a gear) keeps its right end. A layer keeps its
+  band holds (a search box) keeps its right end; Server's gear stands at
+  the top line's right end, in the pane switch's place. A layer keeps its
   columns whatever is chosen, so nothing anchored to their
   edges moves when something is pressed (Server's side stays, empty, while
   a server is made; its gear keeps its place, unpressable). A list's row keeps its deeds at its right end.
@@ -1787,7 +1788,8 @@ half written after reading its neighbours or another page.
   The first three files are open, the rest wait closed, so a large change
   reads file by file; it scrolls inside its box.
 - **Review**, shown once there is a change to review: a box of its own
-  under the card, the same `raised` with an `ink` edge: the change's diff,
+  under the card, a sheet as the card is (`paper`, a `rule` edge, `ink`
+  while it is in hand: a line being marked, a comment written): the change's diff,
   where a reviewer marks lines as with a highlighter (`marker`); what was
   said, in order (an approval without words is not shown there); then a
   comment more, in a field tall from the start (Ctrl+Enter or Comment sends
@@ -2110,7 +2112,12 @@ Server is an overlay (§3), on the bench's shape. Its pieces, from §3:
   screen again; gone once sent. While it holds words, a press outside does
   not put Server away (Escape and a second press on its icon still do).
 - **The right pane**: who is in it (face, name, owner), then the repos
-  they show in it (name and whose). A repo pressed takes the boards' place
+  they show in it (name and whose), standing as Forge's pane does: its
+  line at its edge from the top line to the foot, its first heading on the
+  line Forge's Prompt is on, and at the top line's right end, where
+  Forge's pane switch is, the gear (the same quiet circle), over the people
+  and repos it changes. The board's top is where Forge's first box's is.
+  A repo pressed takes the boards' place
   with the page head (its name, whose, Forge when one's own, Back) and one
   box in two panes: its files, the one chosen (its README first), as it
   was last pushed.

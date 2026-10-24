@@ -185,6 +185,13 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
         set({kind: m[1], title: title.value});
         title.setSelectionRange(0, 0);
       } else {
+        // The space after the colon goes with the colon: the title starts at its first word.
+        const lead = current().kind ? title.value.length - title.value.trimStart().length : 0;
+        if (lead) {
+          const at = Math.max(0, (title.selectionStart ?? 0) - lead);
+          title.value = title.value.slice(lead);
+          title.setSelectionRange(at, at);
+        }
         set({title: title.value});
       }
       previous = title.value;

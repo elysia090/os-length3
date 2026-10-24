@@ -84,6 +84,20 @@ test('the caret is drawn by the OS: it follows what is written along the line, a
   expect(c.x).toBeLessThan(b.x);
 });
 
+test('a field that moves once the caret is in it (a page still coming in) carries the caret with it', async ({app}) => {
+  await app.rail.go('home');
+  const field = app.home.title(app.home.items.first());
+  await field.focus();
+  const caret = app.page.locator('.os-caret');
+  await expect(caret).toHaveClass(/\bon\b/);
+  // Moved after the caret was put in it, with nothing typed or pressed: the caret goes with it.
+  await field.evaluate((e) => { e.closest<HTMLElement>('[role=listitem]')!.style.translate = '40px 24px'; });
+  await expect.poll(async () => {
+    const [m, r] = await Promise.all([caret.evaluate((e) => new DOMMatrix(getComputedStyle(e).transform)), field.boundingBox()]);
+    return Math.abs(m.e - r!.x) < 2 && m.f > r!.y && m.f < r!.y + r!.height;
+  }).toBe(true);
+});
+
 test('switching repos on the band, the ink goes all the way from one pill to the other, not cut by the band drawn again', async ({app}) => {
   await app.newRepo.make('hello');
   await app.newRepo.make('notes');
