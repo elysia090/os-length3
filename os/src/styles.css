@@ -44,6 +44,14 @@
   --prompt-h: calc(2 * var(--s3) + var(--t-body) * 1.6 + 2px);
   --icon: 24px; --stroke: 1.6px;
   --motion: 120ms; --move: 280ms;
+  /* The Prompt's screen: how long it takes to come up out of the box's pill (running along the line for the first part
+     of it, then rising) and to go back down into it (sinking to the line for the first part, then running back), and
+     how each part moves. Along, it slows into the line's end; it rises soon but not in a jump, so the eye sees it rise
+     (most of the way in the first half of the rise, the last pixels slowly); it sinks at once, gathering, and runs
+     back as a thing that starts and stops. */
+  --prompt-up: 720ms; --prompt-up-line: .4; --prompt-down: 500ms; --prompt-down-line: .5;
+  --prompt-along: cubic-bezier(.3, .1, .25, 1); --prompt-rise: cubic-bezier(.3, .65, .2, 1);
+  --prompt-sink: cubic-bezier(.4, .1, .6, .9); --prompt-back: cubic-bezier(.4, 0, .6, 1);
   /* How a thing moves: fast off the mark, settling the last few pixels slowly, as a camera that lands. */
   --land: cubic-bezier(.2, .9, .25, 1);
   /* Lines are 1px; the file being worked on is drawn a little heavier. */
@@ -982,10 +990,13 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 :is(.prompting, .prompt-leaving) .screen .term-box .button:hover:not(:disabled), .line-lit .screen .prompt-run:hover:not(:disabled) { background: color-mix(in srgb, var(--add-tint) 12%, transparent); }
 /* As the glass comes under them its light takes the line's words, then Run at the line's end (it comes there last). */
 /* Their own ink until then, not the screen's (they stand on the box's light while the glass is not yet, or no longer,
-   under them). */
+   under them): Run lit as the glass's edge comes over it (about three quarters of the way along: it slows into the
+   end), the words going back to ink only as the glass, running back, leaves them at the line's start (its edge
+   crosses a short line near the end of the way back: the change is quick and across that moment). */
 .screen .prompt-in { color: var(--ink); transition: color 160ms ease-out, text-shadow 160ms ease-out; }
-.screen .prompt-run { color: var(--ink); transition: color 160ms ease-out, border-color 160ms ease-out, background-color 260ms ease-out; }
-.line-lit .screen .prompt-run { transition-delay: 90ms; }
+.screen .prompt-run { color: var(--ink); transition: color 120ms ease-out, border-color 120ms ease-out, background-color 260ms ease-out; }
+.line-lit .screen .prompt-run { transition-delay: calc(var(--prompt-up) * var(--prompt-up-line) * .72), calc(var(--prompt-up) * var(--prompt-up-line) * .72), 0s; }
+.prompt-leaving:not(.line-lit) .screen .prompt-in { transition-duration: 100ms; transition-delay: calc(var(--prompt-down) * (1 - var(--prompt-down-line)) * .88 - 50ms); }
 :is(.prompting, .prompt-leaving) .screen :focus-visible { outline-color: var(--add-tint); }
 /* The box's line is the next line after the output, as a terminal's is: the shell's prompt line, what is written, a
    cell for a caret (caret.ts); Run stands on it without making it taller. Under it the room the box had round its line:
@@ -1000,7 +1011,10 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 /* Up, the pill is gone into the screen: its prompt line the line's start, in the screen's letters, its lamp out (the
    head's is lit); while a line runs there is no prompt line, and nothing before what is written. */
 :is(.prompting, .prompt-leaving) .screen .prompt-chip { align-self: flex-start; height: auto; padding: 0; margin-right: calc(1ch - var(--s3)); background: none; box-shadow: none; text-shadow: inherit; }
-:is(.prompting, .prompt-leaving) .screen .prompt-chip > .lamp { opacity: 0; }
+:is(.prompting, .prompt-leaving) .screen .prompt-chip > .lamp { left: calc(-6px - var(--s2)); opacity: 0; }
+/* Going back, the lamp lights again as the glass comes to be the pill round it (it keeps its place before the prompt
+   line all the way, so it never crosses the line's words). */
+.prompt-leaving:not(.line-lit) .screen .prompt-chip > .lamp { opacity: 1; transition-delay: calc(var(--prompt-down) * (1 - var(--prompt-down-line)) * .5); }
 .line-lit .screen .prompt-keys { opacity: 0; visibility: hidden; transition: opacity 120ms ease-out, visibility 0s 120ms; }
 
 /* At rest the box is the box (raised, its edge), its line a terminal's: at its left a pill of the screen's glass, round
@@ -1037,8 +1051,9 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
   box-sizing: border-box; border: 1px solid var(--edge); border-radius: var(--r-place); background: var(--raised); opacity: 0; }
 /* Going, the light fades as the glass runs over it (it is gone once the glass reaches the box's ends); coming back, it
    comes as the glass runs back from it into the pill. */
-.work.bench.prompting > .center > .dock::before { animation: box-goes 220ms ease-out; }
-.work.bench.prompt-leaving > .center > .dock::before { animation: box-comes 160ms ease-in 160ms both; }
+.work.bench.prompting > .center > .dock::before { animation: box-goes calc(var(--prompt-up) * var(--prompt-up-line) * 1.2) ease-out; }
+.work.bench.prompt-leaving > .center > .dock::before {
+  animation: box-comes calc(var(--prompt-down) * (1 - var(--prompt-down-line))) ease-in calc(var(--prompt-down) * var(--prompt-down-line)) both; }
 @keyframes box-goes { from { opacity: 1; } to { opacity: 0; } }
 @keyframes box-comes { from { opacity: 0; } to { opacity: 1; } }
 .dock > .prompt, .screen > .prompt { min-width: 0; }

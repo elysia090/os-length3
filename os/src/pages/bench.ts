@@ -168,11 +168,15 @@ function clipOf(t: HTMLElement, screen: HTMLElement, [top, right, bottom, left, 
   return `inset(${top - (r.top - s.top)}px ${right - (s.right - r.right)}px ${bottom - (s.bottom - r.bottom)}px ${left - (r.left - s.left)}px round ${round}px)`;
 }
 
-/** Up: the glass runs out of the pill along the box's line, then rises into the screen, landing a touch past. */
-const UP = {duration: 460, line: .38};
-/** Down: it sinks to the line, then runs back into the pill. */
-const DOWN = {duration: 320, line: .5};
-const RUN = 'cubic-bezier(.3, .1, .25, 1)', RISE = 'cubic-bezier(.2, 1.15, .32, 1)', SINK = 'cubic-bezier(.45, 0, .8, .6)', BACK = 'cubic-bezier(.4, 0, .6, 1)';
+/** How a way of the screen goes, as styles.css sets it, so the box's light and the words' colours keep with it: how long
+ * it takes (--prompt-up), the part of it spent on the line (--prompt-up-line), and how each part moves (`first` and
+ * `then`: --prompt-along and --prompt-rise up, --prompt-sink and --prompt-back down). */
+function timing(way: 'up' | 'down'): {duration: number; line: number; first: string; then: string} {
+  const cs = getComputedStyle(document.documentElement), v = (n: string) => cs.getPropertyValue(`--prompt-${n}`).trim();
+  const [first, then] = way === 'up' ? [v('along'), v('rise')] : [v('sink'), v('back')];
+  return {duration: parseFloat(v(way)) || (way === 'up' ? 720 : 500), line: parseFloat(v(`${way}-line`)) || (way === 'up' ? .4 : .5),
+    first: first || 'ease-out', then: then || 'ease-out'};
+}
 
 /** Each of `els` from where it stood (`was`, its box then) to where it stands now, or (`back`) from here to there. */
 function glide(els: HTMLElement[], was: DOMRect[], o: KeyframeAnimationOptions, back = false) {
@@ -194,9 +198,10 @@ function promptUp(el: HTMLElement, slot: HTMLElement, screen: HTMLElement, glass
   for (const a of [el, screen, glass, slot].flatMap((e) => e.getAnimations())) a.cancel();
   slot.append(el);
   if (still() || !from) return;
+  const UP = timing('up');
   for (const t of [glass, slot]) {
     const sh = shapes(screen, from, t === slot ? slot : null);
-    t.animate([{clipPath: clipOf(t, screen, sh.pill), easing: RUN}, {clipPath: clipOf(t, screen, sh.line), offset: UP.line, easing: RISE},
+    t.animate([{clipPath: clipOf(t, screen, sh.pill), easing: UP.first}, {clipPath: clipOf(t, screen, sh.line), offset: UP.line, easing: UP.then},
       {clipPath: clipOf(t, screen, sh.whole)}], {duration: UP.duration});
   }
 }
@@ -218,12 +223,13 @@ function promptHome(el: HTMLElement, home: HTMLElement, screen: HTMLElement, gla
     if (!still()) el.animate([{opacity: 0, transform: 'translateY(-6px)'}, {opacity: 1, transform: 'none'}], {duration: 220, easing: LAND});
   };
   if (still() || slot === home || !to) { there(); return; }
+  const DOWN = timing('down');
   for (const t of [glass, slot]) {
     const sh = shapes(screen, to, t === slot ? slot : null);
-    done.push(t.animate([{clipPath: clipOf(t, screen, sh.whole), easing: SINK}, {clipPath: clipOf(t, screen, sh.line), offset: DOWN.line, easing: BACK},
+    done.push(t.animate([{clipPath: clipOf(t, screen, sh.whole), easing: DOWN.first}, {clipPath: clipOf(t, screen, sh.line), offset: DOWN.line, easing: DOWN.then},
       {clipPath: clipOf(t, screen, sh.pill)}], {duration: DOWN.duration, fill: 'forwards'}));
   }
-  if (rested) glide(parts, rested, {duration: DOWN.duration * (1 - DOWN.line), delay: DOWN.duration * DOWN.line, easing: BACK}, true);
+  if (rested) glide(parts, rested, {duration: DOWN.duration * (1 - DOWN.line), delay: DOWN.duration * DOWN.line, easing: DOWN.then}, true);
   done[0].finished.then(there, there);
 }
 
@@ -404,7 +410,8 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     if (on || still()) work.classList.toggle('line-lit', on);
     else {
       // As the glass begins to run back along the line: timed on the clock it moves by, so they keep together.
-      unlit = glass.animate([], {duration: DOWN.duration * DOWN.line});
+      const down = timing('down');
+      unlit = glass.animate([], {duration: down.duration * down.line});
       unlit.finished.then(() => { if (!prompting) work.classList.remove('line-lit'); }, () => {});
     }
     said();
@@ -412,7 +419,8 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     fit();
     if (on) {
       promptUp(termBox, termSlot, screen, glass, pill);
-      if (rested && !still()) glide(lineParts, rested, {duration: UP.duration * UP.line, easing: RUN});
+      const up = timing('up');
+      if (rested && !still()) glide(lineParts, rested, {duration: up.duration * up.line, easing: up.first});
     }
     else promptHome(termBox, termHome, screen, glass, pill, lineParts, rested, () => !prompting,
       () => { work.classList.remove('prompt-leaving', 'line-lit'); said(); fit(); });
@@ -435,6 +443,8 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     keep();
     unsay();
     fit();
+    // A line put back whole (an earlier one, one pressed in Output): the caret is at its end at once, as a terminal's.
+    fieldMoved();
   };
   prompt.addEventListener('input', () => {
     fit();
