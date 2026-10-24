@@ -746,6 +746,9 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .tree-still .tree-new > .tree-row { background: var(--ink); color: var(--ground); }
 .tree-still .tree-new > .tree-row .tree-name.plain { color: var(--ground); }
 .tree-still .tree-other .tree-name.plain, .tree-still .tree-other .tree-toggle { color: var(--sub); }
+/* Only the new repo is the card's: what stands round it (/root, the repos already there) is where it will be, not
+   something to touch here, so it does not light or answer the pointer. */
+.tree-still li:not(.tree-new, .tree-ours) > .tree-row { pointer-events: none; }
 .tree-still .tree-toggle { cursor: default; }
 /* What it is for: a raised box as Home's TODO is, the words written straight in it as a TODO's detail is. */
 .summary-box {

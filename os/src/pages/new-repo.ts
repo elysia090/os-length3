@@ -79,7 +79,8 @@ export function newRepo(ctx: Context): Node[] {
     const rows = [row(name.value.trim() || 'my-repo', 1, true, {kind: 'tree-repo tree-new'})];
     const walk = (nodes: Item[], depth: number) => {
       for (const n of nodes) {
-        rows.push(row(n.name, depth, n.dir, {shut: n.dir && !n.children.length, meta: n.path === 'README.md' ? readmeSize : undefined}));
+        rows.push(row(n.name, depth, n.dir, {kind: `${n.dir ? 'tree-dir' : 'tree-file'} tree-ours`, shut: n.dir && !n.children.length,
+          meta: n.path === 'README.md' ? readmeSize : undefined}));
         if (n.dir) walk(n.children, depth + 1);
       }
     };

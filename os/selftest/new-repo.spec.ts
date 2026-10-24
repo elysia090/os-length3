@@ -27,6 +27,10 @@ test('what will be made is shown as File will show it: /root, the repos there, a
   await expect(card.locator('.tree-name')).toHaveText(['root', 'harbour', 'docs', 'issue', 'README.md', 'tide']);
   await app.newRepo.name.fill('wharf');
   await expect(card.locator('.tree-name')).toHaveText(['root', 'tide', 'wharf', 'docs', 'issue', 'README.md']);
+  // Only the new one is the card's: /root and tide, there already, do not answer the pointer; wharf's rows do.
+  const row = (name: string) => card.locator('.tree-row', {has: app.page.locator('.tree-name', {hasText: new RegExp(`^${name}$`)})});
+  for (const there of ['root', 'tide']) await expect(row(there)).toHaveCSS('pointer-events', 'none');
+  for (const ours of ['wharf', 'docs']) await expect(row(ours)).toHaveCSS('pointer-events', 'auto');
 });
 
 test('what is written before Create stays while another page is seen, and goes once made', async ({app}) => {
