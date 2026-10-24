@@ -30,6 +30,8 @@ const NO_TTY = "/bin/sh: can't access tty; job control turned off\n";
  * (`/root/x $ `) outside the repo.
  */
 const PROMPT = /(?:^|\n)[^\n]*\S \$ $/;
+/** The prompt line it waits at, at the end of what it wrote. */
+const WAITS = /(?:^|\n)([^\n]*\S \$ )$/;
 const RUNS = 50;
 
 /** One line sent from the prompt box and what came out until the prompt returned. */
@@ -108,11 +110,19 @@ export class Session {
     void this.start();
   }
 
+  /** The prompt line the shell waits at (`garden $ `), or nothing while a line runs or it is not running. */
+  get promptLine(): string {
+    if (!this.live || this.runs.at(-1)?.ms === null) return '';
+    return WAITS.exec(this.text)?.[1] ?? '';
+  }
+  /** The prompt line last told to the watchers. */
+  private toldLine = '';
+
   /** Hear when a run starts, grows or ends; returns how to stop. */
   watch(fn: () => void): () => void { this.watchers.add(fn); return () => this.watchers.delete(fn); }
   // Over a copy: a watcher may stop and start watching while it is told,
   // and a Set visits what is added during its iteration.
-  private tell() { for (const fn of [...this.watchers]) fn(); }
+  private tell() { this.toldLine = this.promptLine; for (const fn of [...this.watchers]) fn(); }
 
   /** Type `text` into the shell, one line per line. False while it is not running. */
   send(text: string): boolean {
@@ -145,8 +155,12 @@ export class Session {
     // Chromium: 1 MB of output held the page for 22 s; drawn once for every 17 pieces, 1.3 s.
     this.painting ||= requestAnimationFrame(() => {
       this.painting = 0;
+      if (this.text === this.drawn) return;
       // What came since the last frame goes at the foot, a line after another, so a run is seen coming rather than
       // appearing; a lot at once (or the start cut away) is drawn whole.
+      // The prompt line it waited at stays a prompt line, seen once something follows it.
+      this.tail?.classList.remove('waits');
+      this.tail = null;
       const add = this.drawn && this.text.startsWith(this.drawn) ? this.text.slice(this.drawn.length) : null;
       if (add !== null && add.length < 4000 && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
         this.output.append(...add.split(/(?<=\n)/).map((line, i) => {
@@ -154,14 +168,58 @@ export class Session {
           s.style.animationDelay = `${Math.min(i, 24) * 30}ms`;
           return s;
         }));
-      } else this.output.textContent = this.text;
+      } else this.output.replaceChildren(...this.marked(this.text));
       this.drawn = this.text;
+      this.markTail();
       this.output.scrollTop = this.output.scrollHeight;
     });
   }
   private painting = 0;
   /** What is on the screen of the output now, to add to it what came after. */
   private drawn = '';
+  /** The prompt line the output ends with, in a span of its own: up over the center, the box's line says it instead
+   * (bench.ts), so it is not said twice. Once something follows it, it is a prompt line among the output (`.ps`),
+   * which the screen tells from what the lines run printed. Its words are what came last; they do not come in again. */
+  private tail: HTMLElement | null = null;
+  /** Every prompt line the shell has waited at, to tell them again in output drawn whole. */
+  private prompts = new Set<string>();
+  /** `text` as nodes, a prompt line the shell waited at (at a line's start) in a span of its own. */
+  private marked(text: string): Node[] {
+    const out: Node[] = [];
+    let plain = '';
+    for (const line of text.split(/(?<=\n)/)) {
+      const ps = [...this.prompts].find((p) => line.startsWith(p));
+      if (!ps) { plain += line; continue; }
+      if (plain) out.push(document.createTextNode(plain));
+      out.push(h('span', {class: 'ps'}, ps));
+      plain = line.slice(ps.length);
+    }
+    if (plain) out.push(document.createTextNode(plain));
+    return out;
+  }
+  private markTail() {
+    const waits = WAITS.exec(this.text)?.[1] ?? '';
+    let left = waits.length;
+    if (!left) return;
+    this.prompts.add(waits);
+    // From the end back to where the prompt line starts, through what was drawn whole or a line after another.
+    let node: Node | null = this.output.lastChild;
+    while (node?.lastChild) node = node.lastChild;
+    const walk = document.createTreeWalker(this.output, NodeFilter.SHOW_TEXT);
+    if (node) walk.currentNode = node;
+    for (let at = node?.nodeType === Node.TEXT_NODE ? node as Text : walk.previousNode() as Text | null; at; at = walk.previousNode() as Text | null) {
+      if (at.length < left) { left -= at.length; continue; }
+      const r = document.createRange();
+      r.setStart(at, at.length - left);
+      r.setEnd(this.output, this.output.childNodes.length);
+      const tail = h('span', {class: 'ps waits'});
+      tail.append(r.extractContents());
+      for (const f of tail.querySelectorAll('.fresh')) f.classList.remove('fresh');
+      this.output.append(tail);
+      this.tail = tail;
+      return;
+    }
+  }
 
   /** Output goes on screen and into the run in progress, which ends at the next prompt. */
   private received(s: string) {
@@ -170,7 +228,8 @@ export class Session {
     // so it takes nothing from the first line run.
     if (this.l3 && PROMPT.test(this.text)) { const l3 = this.l3; this.l3 = null; setTimeout(() => warmL3(l3), 3000); }
     const run = this.runs.at(-1);
-    if (!run || run.ms !== null) return;
+    // Waiting at a prompt line it had not shown yet (its first, or after output of its own): watchers hear.
+    if (!run || run.ms !== null) { if (this.promptLine !== this.toldLine) this.tell(); return; }
     run.output += strip(s);
     const end = PROMPT.exec(run.output);
     if (end) {

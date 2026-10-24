@@ -63,6 +63,21 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(app.forge.promptBox).toBeFocused();
   });
 
+  test('up, the box is the terminal\'s line: it starts with the prompt line the shell waits at, said once', async ({app}) => {
+    const waits = app.main.locator('.screen .prompt-ps');
+    await expect(waits).toHaveText('hello $');
+    // The output's own last line, the same words, is not shown then.
+    await expect(app.forge.prompt.locator('.term-out > .ps.waits')).toBeHidden();
+    await app.forge.run('ls');
+    // The line run is a prompt line among the output (in the green), and the box's line waits at the next.
+    await expect(app.forge.prompt.locator('.term-out > .ps:not(.waits)').first()).toHaveText('hello $ ');
+    await expect(waits).toHaveText('hello $');
+    // Put back, the box is the plain box again: no prompt line, its words in the body's letters.
+    await app.forge.promptBox.press('Escape');
+    await expect(waits).toBeHidden();
+    await expect(app.forge.promptBox).toHaveCSS('font-family', /system-ui/);
+  });
+
   test('↑ and ↓ walk the lines run before, and come back to what was being written', async ({app}) => {
     await app.forge.run('echo one');
     await expect(app.forge.prompt).toContainText(/^one$/m);

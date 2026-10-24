@@ -145,30 +145,35 @@ function paneWord(open: (address: string) => void): HTMLElement {
   return list;
 }
 
+/** The screen cut to its foot (the box's line alone) or whole, round as it is. */
+const cut = (screen: HTMLElement, top: number) => `inset(${top}px 0 0 0 round ${getComputedStyle(screen).borderRadius})`;
+
 /**
- * The Prompt brought up over the center, moved as a sheet is, its words never stretched: it unrolls upward out of the
- * box at the foot, rising a little with it and landing a touch past where it stops.
+ * The Prompt brought up over the center: the box at the foot is a screen, and the screen grows up out of its line to
+ * hold it, its words never stretched, landing a touch past where it stops.
  */
-function promptUp(el: HTMLElement, slot: HTMLElement) {
-  for (const a of el.getAnimations()) a.cancel();
+function promptUp(el: HTMLElement, slot: HTMLElement, screen: HTMLElement) {
+  for (const a of [...el.getAnimations(), ...screen.getAnimations()]) a.cancel();
   slot.append(el);
   if (still()) return;
-  el.animate([{clipPath: 'inset(100% 0 0 0 round 12px)', transform: 'translateY(14px)'}, {clipPath: 'inset(0 0 0 0 round 12px)', transform: 'none'}],
-    {duration: 320, easing: 'cubic-bezier(.2, 1.25, .32, 1)'});
+  screen.animate([{clipPath: cut(screen, slot.offsetHeight)}, {clipPath: cut(screen, 0)}], {duration: 320, easing: 'cubic-bezier(.2, 1.25, .32, 1)'});
 }
 
-/** Put back, it rolls down into the box it came out of, then comes into the pane where it lives; `back` says it still goes. */
-function promptHome(el: HTMLElement, home: HTMLElement, back: () => boolean, gone: () => void) {
+/** Put back, the screen goes down into its line, then the Prompt comes into the pane where it lives; `back` says it still goes. */
+function promptHome(el: HTMLElement, home: HTMLElement, screen: HTMLElement, back: () => boolean, gone: () => void) {
+  let down: Animation | null = null;
   const there = () => {
     gone();
     if (!back()) return;
     for (const a of el.getAnimations()) a.cancel();
     home.append(el);
+    down?.cancel();
     if (!still()) el.animate([{opacity: 0, transform: 'translateY(-6px)'}, {opacity: 1, transform: 'none'}], {duration: 220, easing: LAND});
   };
   if (still() || el.parentElement === home) { there(); return; }
-  el.animate([{clipPath: 'inset(0 0 0 0 round 12px)', transform: 'none'}, {clipPath: 'inset(100% 0 0 0 round 12px)', transform: 'translateY(10px)'}],
-    {duration: 160, easing: 'cubic-bezier(.5, 0, .9, .6)', fill: 'forwards'}).finished.then(there, there);
+  down = screen.animate([{clipPath: cut(screen, 0)}, {clipPath: cut(screen, el.parentElement!.offsetHeight)}],
+    {duration: 160, easing: 'cubic-bezier(.5, 0, .9, .6)', fill: 'forwards'});
+  down.finished.then(there, there);
 }
 
 export interface Bench {
@@ -188,7 +193,8 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   back?: boolean}): Bench {
   let repo: string | null = null;
   // Named for what one does there: type at the prompt of the repo's sh.
-  const termTitle = h('div', {class: 'term-head'}, h('h2', {}, 'Prompt'));
+  // Up as a screen, a lamp at its head is lit while its shell runs (styles.css).
+  const termTitle = h('div', {class: 'term-head'}, h('h2', {}, 'Prompt'), h('span', {class: 'lamp', 'aria-hidden': 'true'}));
   const termBox = h('section', {class: 'term-box', 'aria-label': 'Prompt'}, termTitle);
   const termHome = h('div', {class: 'term-home'}, termBox);
   const termSlot = h('div', {class: 'term-slot'});
@@ -200,8 +206,12 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   const keys = mac ? '⌘+Enter' : 'Ctrl+Enter';
   const runIt = h('button', {type: 'submit', class: 'button small-button prompt-run', 'aria-keyshortcuts': mac ? 'Meta+Enter' : 'Control+Enter',
     title: t('Run ({keys})', {keys})}, t('Run')) as HTMLButtonElement;
-  const form = h('form', {class: 'prompt'}, prompt, runIt);
-  const dock = h('div', {class: 'dock'}, termSlot, form, note);
+  // Up as a screen, the box's line starts with the prompt line the shell waits at, as a terminal's does (the Prompt's
+  // own last line, the same words, is not shown there then).
+  const waits = h('span', {class: 'prompt-ps', 'aria-hidden': 'true'});
+  const form = h('form', {class: 'prompt'}, waits, prompt, runIt);
+  const screen = h('div', {class: 'screen'}, termSlot, form);
+  const dock = h('div', {class: 'dock'}, screen, note);
   const center = h('div', {class: 'center'}, parts.main, dock);
   const reference = new Reference({reveal: parts.reveal, recall: (line) => {
     if (!repo || prompt.disabled) return;
@@ -307,10 +317,12 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     if (on === prompting) return;
     prompting = on;
     work.classList.toggle('prompting', on);
-    // Going down, it is still lit over the shade as it goes (the shade fading meanwhile).
+    // Going down, it is still the screen as it goes, until it is the box's line again.
     work.classList.toggle('prompt-leaving', !on);
-    if (on) promptUp(termBox, termSlot);
-    else promptHome(termBox, termHome, () => !prompting, () => work.classList.remove('prompt-leaving'));
+    // Up, its line is in the screen's letters (styles.css): as tall as one of them.
+    fit();
+    if (on) promptUp(termBox, termSlot, screen);
+    else promptHome(termBox, termHome, screen, () => !prompting, () => { work.classList.remove('prompt-leaving'); fit(); });
     if (!on && parts.back) requestAnimationFrame(() => rest(true));
   };
   const fit = () => { prompt.style.height = 'auto'; prompt.style.height = `${prompt.scrollHeight}px`; };
@@ -413,7 +425,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   form.addEventListener('submit', (event) => { event.preventDefault(); send(); prompt.focus(); });
   // Pressed anywhere in the box, not on its line alone (its padding, beside Run): the caret goes in.
   form.addEventListener('pointerdown', (event) => {
-    if (event.target !== form || prompt.disabled) return;
+    if ((event.target !== form && event.target !== waits) || prompt.disabled) return;
     event.preventDefault();
     prompt.focus();
   });
@@ -454,9 +466,12 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   };
   /** The Prompt Output follows: the repo's own, a new one once it is started again. */
   let followed: unknown = null;
+  let unwatch: (() => void) | null = null;
+  const said = () => { waits.textContent = repo ? sessionIfAny(repo)?.promptLine.trimEnd() ?? '' : ''; };
   const following = () => {
     const s = repo ? sessionIfAny(repo) ?? null : null;
-    if (s !== followed) { followed = s; reference.runsAgain(); }
+    if (s !== followed) { followed = s; reference.runsAgain(); unwatch?.(); unwatch = s ? s.watch(said) : null; }
+    said();
   };
   const setRepo = (name: string | null) => {
     if (name === repo && name) { attach(); return; }
@@ -492,8 +507,10 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     reference.resume();
     if (!prompting || dock.contains(document.activeElement)) return;
     prompting = false;
-    work.classList.remove('prompting');
+    work.classList.remove('prompting', 'prompt-leaving');
+    for (const a of screen.getAnimations()) a.cancel();
     termHome.append(termBox);
+    fit();
   };
   return {element: work, reference, setRepo, settle};
 }

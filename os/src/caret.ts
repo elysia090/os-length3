@@ -39,6 +39,14 @@ function caretAt(f: Field, copy: HTMLElement): {x: number; y: number; h: number}
   return {x, y, h};
 }
 
+/** How wide a letter of `f` is (its font monospace: a terminal's cell), laid out in its copy. */
+function cell(copy: HTMLElement): number {
+  const letter = document.createElement('span');
+  letter.textContent = '0';
+  copy.replaceChildren(letter);
+  return letter.getBoundingClientRect().width;
+}
+
 /** The part of the screen `el` can be seen in: its own box, cut by every box above it that clips. */
 function seenIn(el: Element): DOMRect | null {
   let r = el.getBoundingClientRect();
@@ -95,6 +103,10 @@ export function caret() {
     const p = caretAt(f, copy);
     const seen = seenIn(f);
     if (!seen || p.x < seen.left - 1 || p.x > seen.right + 1 || p.y + p.h / 2 < seen.top || p.y + p.h / 2 > seen.bottom) { hide(); return; }
+    // A field that is a terminal's line (the Prompt up as a screen: --caret: block) has a terminal's caret, a cell.
+    const block = getComputedStyle(f).getPropertyValue('--caret').trim() === 'block';
+    mark.classList.toggle('block', block);
+    mark.style.width = block ? `${cell(copy)}px` : '';
     // Come to a field, it is put there; moving in it, it glides.
     mark.classList.toggle('jump', !shown);
     mark.style.transform = `translate(${Math.round(p.x)}px, ${Math.round(p.y)}px)`;

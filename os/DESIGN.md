@@ -197,7 +197,9 @@ Every value in `styles.css` comes from a token (§2).
     fades in and out, and a press anywhere else closes it.
   120 ms fades for everything else. Reduced motion turns all of it off:
   each thing is where it ends at once.
-- No shadows, blur, glow or gradients; the one shade is the search's and the Prompt's (above).
+- No shadows, blur, glow or gradients; the one shade is the search's (above). The one exception is a
+  place, not an emphasis: the Prompt up as a screen (§ Forge), a terminal's, which has them all and
+  shares them with nothing.
 - **One scrollbar.** Everything that scrolls, the page with it, has the
   same bar: thin, its thumb `edge` (a thing one drags), its track the
   ground under it, never the browser's own; forced colours draw the
@@ -282,8 +284,11 @@ Every page:
 
 No other colours; the last three families (`done`, `marker`, `off`, each with
 the words and the ground drawn from it) each mean their one thing only. The one
-shade is `ink` at 14% over the window while the search is out, or the Prompt
-is up over the center (the Prompt then a lit sheet, `paper`, over its box).
+shade is `ink` at 14% over the window while the search is out. The Prompt up
+over the center is a screen made of these colours, not new ones: its glass
+`ink` a step deeper (`ink` 66% with black), lit words `add-tint` glowing in
+`done`, the prompt lines `done` lifted toward `add-tint` for the dark, its
+lamp `done` while its shell runs and `off` once it has ended.
 
 Type: the system sans; monospace only for paths, code and the terminal.
 Sizes 28 (identity), 24 (page title), 20 (card title, figures), 15 (body),
@@ -1377,12 +1382,24 @@ center and the right pane.
 
 A prompt box, like the one for an LLM, sits at the foot of the center. What
 is written there goes to the open repo's `sh` (Enter is a new line,
-Ctrl+Enter sends). While the prompt is in use the terminal comes up over
-the center just above the box, as a sheet (`paper`, lit over the window's
-shade): it unrolls upward out of the box (320 ms, landing a touch past and
-settling), its words never stretched on the way; put back it rolls down
-into the box (160 ms) and comes into the pane where it lives; and the
-reference grows down into the room it leaves. The terminal's box
+Ctrl+Enter sends). While the prompt is in use the box becomes a screen and
+the terminal comes up in it over the center, the one thing in the app that
+is a thing of its own: a terminal's screen, dark glass in the app's ink with
+its words lit in the app's green (§3), the page behind it only a blur in its
+top where glass catches the light, a fine raster and a falloff to its edges,
+its corner a card's (16). It is the box at the foot, lit, not a layer over
+the page: no shadow under it, no shade over the window. Its lines are a
+terminal's: the box's line is the line after the output, starting with the
+prompt line the shell waits at (`garden $`, the output's own last line then
+not shown), the words written in the terminal's letters and a cell for a
+caret; the prompt lines before are in the green, so what was run stands out
+from what it printed. A lamp at its head is lit while its shell runs. The
+line written in stays where it was as the screen comes: the screen grows up
+out of it (320 ms, landing a touch past and settling), its words never
+stretched on the way; put back it goes down into the line (160 ms), the box
+is the plain box again, and the terminal comes into the pane where it lives
+(there in the page's own colours); and the reference grows down into the
+room it leaves. The terminal's box
 is labelled Prompt, after what one does there (the shell is BusyBox sh, so
 it is not called Bash); leaving the prompt
 (or Escape) sends it back. The Prompt has no switch: writing
