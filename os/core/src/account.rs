@@ -141,7 +141,14 @@ pub fn plan() -> Result<Plan> { get("/v1/plan") }
 /// Whether `page` is one the plan may be bought or managed on: Stripe's own (https, on stripe.com), or a
 /// page of the Remote `remote` itself (a Remote of one's own may stand in for Stripe, as in development).
 pub fn plan_page_ok(remote: &str, page: &str) -> bool {
-    let host = |u: &str| u.split_once("://").map(|(s, r)| (s.to_string(), r.split(['/', '?', '#']).next().unwrap_or_default().to_ascii_lowercase()));
+    // The host as a browser reads it, or none: only letters, digits, dots and dashes (and a port), so nothing in it
+    // is read otherwise there (a backslash is a slash to a browser, what is before an @ is no host, %2f is not a dot).
+    let host = |u: &str| u.split_once("://").and_then(|(s, r)| {
+        let h = r.split(['/', '?', '#']).next().unwrap_or_default().to_ascii_lowercase();
+        let (name, port) = h.split_once(':').unwrap_or((&h, ""));
+        let plain = !name.is_empty() && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-') && port.bytes().all(|b| b.is_ascii_digit());
+        plain.then(|| (s.to_string(), h.clone()))
+    });
     match (host(page), host(remote)) {
         (Some((s, h)), Some((rs, rh))) => (s == "https" && (h == "stripe.com" || h.ends_with(".stripe.com"))) || (s == rs && h == rh),
         _ => false,
@@ -180,6 +187,12 @@ mod tests {
         let r = "https://os.length3.com";
         for ok in ["https://checkout.stripe.com/c/pay/cs_1", "https://billing.stripe.com/p/session/x", "https://os.length3.com/dev-billing/checkout?x"] { assert!(super::plan_page_ok(r, ok), "{ok}"); }
         for no in ["http://checkout.stripe.com/c", "https://stripe.com.evil.example/", "https://evilstripe.com/", "https://os.length3.com.evil/", "javascript:alert(1)", ""] { assert!(!super::plan_page_ok(r, no), "{no}"); }
+        // A browser reads a backslash as a slash, and what is before an @ as no host at all: each of these opens
+        // evil.example (or names someone at a host), whatever the text ends with.
+        for no in ["https://evil.example\\.stripe.com/", "https://evil.example\\@checkout.stripe.com/c", "https://evil.example@checkout.stripe.com/c",
+            "https://os.length3.com\\@evil.example/", "https://evil.example%2f.stripe.com/", "https://checkout.stripe.com:443@evil.example/"] {
+            assert!(!super::plan_page_ok(r, no), "{no}");
+        }
         assert!(super::plan_page_ok("http://127.0.0.1:8950", "http://127.0.0.1:8950/dev-billing/portal?c=1"));
         assert!(!super::plan_page_ok("http://127.0.0.1:8950", "http://127.0.0.1:8951/dev-billing/portal"));
     }

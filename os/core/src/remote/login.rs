@@ -85,9 +85,12 @@ pub fn app_origin(url: &str) -> Option<String> {
 /// that Remote itself, or of the app's origin it says it has (`app`, app_origin), which is a bare
 /// origin over https (http only for a Remote itself on http, as in development). The one this OS
 /// ships with is both on os.length3.com; one elsewhere may keep its app on another name. Any other
-/// site, or scheme, is not a page it stands behind.
+/// site, or scheme, is not a page it stands behind; nor is anything under a "Remote" that is not one by its URL
+/// (valid_url: http or https and a plain host), which stands behind nothing (account.rs app_page builds its page
+/// on the device's connection, which is whatever the window signed in with).
 pub fn device_page_ok(url: &str, app: Option<&str>, page: &str) -> bool {
     let url = url.trim_end_matches('/');
+    if !valid_url(url) { return false; }
     if page.starts_with(&format!("{url}/")) { return true; }
     let Some(app) = app.map(|a| a.trim_end_matches('/')) else { return false };
     let bare = valid_url(app) && app.split_once("://").is_some_and(|(_, host)| !host.contains('/'));

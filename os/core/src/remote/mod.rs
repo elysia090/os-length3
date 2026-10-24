@@ -851,10 +851,23 @@ mod tests {
             assert!(!device_page_ok(remote, app, bad), "{bad}");
         }
         // What it names must be a bare origin over https; http only beside a Remote on http.
-        for bad_app in ["http://os.length3.com", "https://os.length3.com/x", "file://os.length3.com", "javascript:x", ""] {
+        // A browser reads a backslash as a slash and what is before an @ as no host: neither is an origin to name
+        // (account.rs app_page asks the same of the page it opens).
+        for bad in ["https://os.length3.com\\@evil.example/?account=off", "https://os.length3.com\\.evil.example/?device"] {
+            assert!(!device_page_ok(remote, app, bad), "{bad}");
+        }
+        for bad_app in ["http://os.length3.com", "https://os.length3.com/x", "file://os.length3.com", "javascript:x", "",
+            "https://evil.example\\@os.length3.com", "https://evil.example@os.length3.com"] {
             assert!(!device_page_ok(remote, Some(bad_app), &format!("{bad_app}/?device")), "{bad_app}");
         }
         assert!(device_page_ok("http://127.0.0.1:8790", Some("http://localhost:1420"), "http://localhost:1420/?device=&user_code=X"));
+        // The Remote a page is checked against is one by its own URL too: the device's connection is set by whoever
+        // signed in (remote_connect takes what the window says), and app_page builds its page on it, so a "Remote"
+        // that is a file, a script or nothing would vouch for a page under itself that the opener hands the desktop.
+        for (bad_remote, page) in [("file:///home/me/x", "file:///home/me/x/?account=off&repo=a"), ("javascript:alert(1)//", "javascript:alert(1)///?account=sign-in"),
+            ("", "/?account=sign-in"), ("https://evil.example\\@os.length3.com", "https://evil.example\\@os.length3.com/?account=off&repo=a")] {
+            assert!(!device_page_ok(bad_remote, None, page), "{bad_remote}");
+        }
     }
 
     #[test]

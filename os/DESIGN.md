@@ -1087,7 +1087,7 @@ What leaves this system is kept to what is said here:
   (core/src/seccomp.rs) over all of it, so the kernel answers none of what a
   sandboxed program has no use for and escapes are found through: ptrace,
   mounting, new namespaces, modules, kexec, bpf, perf, keys, userfaultfd,
-  io_uring (strace and gdb do not run in a Prompt; a shell, compilers,
+  io_uring, typing into the terminal it was started from (TIOCSTI) (strace and gdb do not run in a Prompt; a shell, compilers,
   package managers and a granted network do). Pid 1 is a small init that reaps
   everything and ends what is left with the shell, and it dies with its
   supervisor. The root itself is installed only from a pinned release,
