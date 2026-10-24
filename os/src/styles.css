@@ -443,7 +443,9 @@ body:has(.home-pane .search-box:is(:focus-within, .reading))::after { opacity: 1
    face and the lines, grown out around them so nothing on it moves (at the right, within the column: its edge is
    the TODO box's, clear of the pane's line). */
 .profile { border: 1px solid transparent; border-radius: var(--r-place); transition: background var(--motion), border-color var(--motion); }
-.profile.editing { margin: calc(-1 * var(--s4)) 0 calc(-1 * var(--s4)) calc(-1 * var(--s5)); padding: var(--s4) var(--s4) var(--s4) var(--s5); border-color: var(--ink); background: var(--paper); }
+/* That edge, unseen, lies outside it: the face and Edit profile stand on the TODO box's edges, not a pixel in. */
+.profile:not(.editing) { margin-inline: -1px; }
+.profile.editing { margin: calc(-1 * var(--s4)) 0 calc(-1 * var(--s4)) calc(-1 * var(--s5) - 1px); padding: var(--s4) var(--s4) var(--s4) var(--s5); border-color: var(--ink); background: var(--paper); }
 .edit { display: grid; gap: var(--s3); max-width: 480px; min-width: 0; }
 .edit .name-in, .edit .handle-in, .edit .bio-in {
   width: 100%; min-width: 0; min-height: 0; margin: 0; padding: 0; border: 0; border-bottom: 1px solid var(--rule); border-radius: 0;
@@ -608,6 +610,8 @@ kbd {
    page on the band's edges, the boxes as wide as Forge's and the prompt box a step outside them. The first part
    shown starts at the page's top, wherever parts before it are hidden. */
 .git-flow > .section:first-child, .git-flow > .section[hidden]:first-child + .section { margin-top: 0; }
+/* Its heading then on the line Forge's file heads and the pane's head are on (Prompt, Lately): one line across. */
+.git-flow > .section:first-child > h2, .git-flow > .section[hidden]:first-child + .section > h2 { padding-top: var(--s2); }
 /* No issue yet: the dashed box as wide as the others; gone while one is being written (the form is where it goes). */
 /* No issue to show: the dashed card where the first would be, as tall as an issue's card, its word and what is so. */
 .issue-new { width: 100%; min-height: 180px; gap: var(--s1); }
@@ -1262,7 +1266,7 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .found-at { font: var(--t-meta) var(--mono); color: var(--sub); }
 .work.bench .search-results { max-height: var(--search-room, none); }
 .found-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s1); }
-.found-item { display: flex; align-items: baseline; gap: var(--s2); width: 100%; min-height: var(--h-row); padding: var(--s1) var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
+.found-item { display: flex; align-items: baseline; gap: var(--s2); width: 100%; min-height: var(--h-row); padding: var(--s1); border: 0; border-radius: var(--r-field); background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
 .found-item:hover { background: var(--raised); }
 .found-kind { flex: none; font-size: var(--t-meta); color: var(--sub); }
 .found-what { min-width: 0; overflow-wrap: anywhere; }
@@ -1318,7 +1322,7 @@ form.search { position: relative; }
 :where(.line-in):focus, :where(.line-in):focus-visible { outline: 1px solid var(--ink); outline-offset: -1px; border-color: var(--ink); background: var(--paper); }
 /* The search box's own clear mark, in the page's ink, not the browser's blue. */
 .search-in::-webkit-search-cancel-button { filter: grayscale(1) brightness(.4); cursor: pointer; }
-.search-count { margin-bottom: var(--s2); }
+.search-count { margin-bottom: var(--s2); padding-left: var(--s1); }
 .hit-group { display: grid; margin-bottom: var(--s3); }
 .hit-file, .hit { border: 0; padding: 0 var(--s1); background: transparent; text-align: left; cursor: pointer; border-radius: var(--r-field); }
 .hit-file { min-height: var(--h-row); font: 600 var(--t-meta) var(--mono); }
@@ -1642,7 +1646,9 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 .issue-slot[aria-current='true'] .issue-card { border-color: var(--ink); background: var(--paper); }
 /* A neighbour shows its number at the edge that shows: the one after at its left, the one before at its right. */
 .issue-slot[aria-current='false'] .issue-card { padding-inline: var(--s2); }
-.issue-big-head.peek h2 { font-size: var(--t-body); white-space: nowrap; }
+.issue-big-head.peek h2 { white-space: nowrap; }
+/* Small, on the line the title's words stand on (its line is the title's: the number alone set small in it). */
+.issue-big-head.peek .issue-no { font-size: var(--t-body); }
 .issue-slot:has(+ .issue-slot[aria-current='true']) .issue-big-head.peek { text-align: right; }
 .issue-stage:has(.stage-hit.next:hover) .issue-slot[aria-current='true'] + .issue-slot .issue-card,
 .issue-stage:has(.stage-hit.prev:hover) .issue-slot:has(+ .issue-slot[aria-current='true']) .issue-card { border-color: var(--edge); color: var(--ink); }
