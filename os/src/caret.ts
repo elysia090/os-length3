@@ -60,6 +60,14 @@ function seenIn(el: Element): DOMRect | null {
   return right > left && bottom > top ? new DOMRect(left, top, right - left, bottom - top) : null;
 }
 
+/** Where the caret of `f` is on the screen now (where the OS's own goes, even while it is still on its way there). */
+export function caretRect(f: Field): DOMRect {
+  const copy = document.createElement('div');
+  copy.className = 'caret-copy';
+  document.body.append(copy);
+  try { copyStyle(f, copy); const {x, y, h} = caretAt(f, copy); return new DOMRect(x, y, 1, h); } finally { copy.remove(); }
+}
+
 /** Said by a page that moved a field's words without a key (a prompt line come before them): the caret goes with them. */
 let moved = () => {};
 export const fieldMoved = () => moved();

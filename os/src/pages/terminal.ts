@@ -6,6 +6,7 @@ import {currentLang, onLang, t, tn} from '../i18n.ts';
 import {filesNow, loadL3, promptWorker, warmL3, watchLoad, type L3, type Stage} from '../userland.ts';
 import {every} from '../runs.ts';
 import {errorText} from '../errors.ts';
+import {LAND, paced, still} from '../glide.ts';
 
 // A shell per repo: in a browser, l3's root (its BusyBox sh, and every other
 // program of it) translated in a Worker; in the app, the same root on the
@@ -444,7 +445,9 @@ export class Session {
   private follow() {
     clearInterval(this.ticker);
     const run = this.runs.at(-1);
-    if (!this.live || !run || run.ms !== null) { this.activity.replaceChildren(); return; }
+    if (!this.live || !run || run.ms !== null) { this.unfollow(); return; }
+    this.leaving?.cancel();
+    this.leaving = null;
     // Made once for the run and only moved in or out: a button drawn anew each second would drop the keyboard on it.
     const said = h('span', {class: 'muted'});
     const cut = h('button', {class: 'button small-button', type: 'button'}, t('Interrupt'));
@@ -452,7 +455,7 @@ export class Session {
     const again = h('button', {class: 'button small-button', type: 'button'}, t('Stop and start again'));
     again.addEventListener('click', () => this.restart());
     const paint = () => {
-      if (run.ms !== null || !this.live) { clearInterval(this.ticker); this.activity.replaceChildren(); return; }
+      if (run.ms !== null || !this.live) { clearInterval(this.ticker); this.unfollow(); return; }
       const s = Math.floor((Date.now() - run.started) / 1000);
       // A sleep is quiet but heard: quiet is counted from when it is over.
       const now = Date.now(), quiet = Math.floor((now - Math.max(this.heard, Math.min(this.sleepsUntil, now))) / 1000);
@@ -465,11 +468,30 @@ export class Session {
     this.ticker = window.setInterval(paint, 1000);
   }
 
+  /** What the run was doing, once it is done: put aside to its right, not gone at once. */
+  private unfollow() {
+    if (this.leaving) return;
+    if (!this.activity.firstChild || still()) { this.activity.replaceChildren(); return; }
+    const going = this.leaving = this.activity.animate([{opacity: 1}, {opacity: 0, translate: '12px 0'}], {duration: paced(170), easing: 'ease-in'});
+    going.finished.then(() => { if (this.leaving === going) { this.leaving = null; this.activity.replaceChildren(); } }, () => {});
+  }
+  private leaving: Animation | null = null;
+
   /** Ctrl-C: what runs in front of the shell ends, and the shell goes on. */
   interrupt() {
     if (!this.live) return;
-    // Said where the run is cut, as a terminal says it.
-    if (this.runs.at(-1)?.ms === null) this.print('^C');
+    // Said where the run is cut, as a terminal says it; the screen jolts as it is cut, at once (it answers the hand).
+    if (this.runs.at(-1)?.ms === null) {
+      this.print('^C');
+      // What it was doing goes as it is cut, not once the shell says it is back.
+      clearInterval(this.ticker);
+      this.unfollow();
+      // By its place (left, never a layer of its own, which would come over what stands on it) and, on the screen, the
+      // light of its words.
+      const lit = this.element.closest('.screen') ? '0 0 10px var(--done), 0 0 2px var(--add-tint)' : null;
+      if (!still()) this.output.animate([{left: '0px'}, {left: '4px', ...lit && {textShadow: lit}, offset: .12}, {left: '-3px', offset: .3},
+        {left: '1px', offset: .55}, {left: '0px'}], {duration: 280, easing: 'ease-out'});
+    }
     if (this.native) { void this.native.interrupt(); return; }
     this.worker?.postMessage({type: 'interrupt'});
     this.inputWait = false;
@@ -478,10 +500,30 @@ export class Session {
 
   /** A new shell for this repo in this place. */
   restart() {
-    this.stop();
+    this.restarting = true;
+    if (!this.ended) this.stop();
     sessions.delete(this.repo);
-    this.element.replaceWith(terminalFor(this.repo));
+    const next = terminalFor(this.repo), old = this.element, box = old.parentElement;
+    const swap = () => {
+      const was = box?.getBoundingClientRect().height ?? 0;
+      if (old.isConnected) old.replaceWith(next);
+      // Whoever showed this one hears that another has taken its place.
+      this.tell();
+      if (still() || !box || !next.isConnected) return;
+      // Switched on, as a tube is: the box goes from the old screen's height to the new one's, and the new one opens
+      // out of a bright line across its middle.
+      const now = box.getBoundingClientRect().height;
+      if (Math.abs(now - was) > 1) box.animate([{height: `${was}px`}, {height: `${now}px`}], {duration: paced(300), easing: LAND});
+      next.animate([{scale: '1 .02', filter: 'brightness(2.6)', opacity: .85}, {scale: '1 .02', filter: 'brightness(2.6)', offset: .22},
+        {scale: '1 1', filter: 'brightness(1)', opacity: 1}], {duration: paced(300), easing: LAND});
+    };
+    if (still() || !old.isConnected) { swap(); return; }
+    // The old one goes first, as a tube switched off does: down to a bright line across its middle.
+    old.animate([{scale: '1 1', filter: 'brightness(1)'}, {scale: '1 .02', filter: 'brightness(2.4)'}],
+      {duration: paced(140), easing: 'cubic-bezier(.5, 0, .9, .5)', fill: 'forwards'}).finished.then(swap, swap);
   }
+  /** Started again: its own ending is not shown going dark, the new one comes at once. */
+  private restarting = false;
 
   /** What the ended Prompt says, drawn again in the language chosen meanwhile. */
   private said: (() => string) | null = null;
@@ -506,10 +548,11 @@ export class Session {
     this.memory = 0;
     this.processes = 0;
     this.tell();
-    this.sayEnded();
+    this.sayEnded(true);
   }
 
-  private sayEnded() {
+  /** What it says once ended; `now` as it ends, which is seen: the switch goes over to off, and the screen goes dark. */
+  private sayEnded(now = false) {
     if (!this.ended || !this.said) return;
     // Ended: what happened and, at the Prompt's bottom right under its output, its power switch, off: switched on,
     // it starts again (styles.css). The same switch as SSH's and a repo card's, no taller than the line.
@@ -517,6 +560,12 @@ export class Session {
     restart.addEventListener('click', () => this.restart());
     this.element.classList.add('ended');
     this.status.replaceChildren(h('span', this.why ? {title: this.why} : {}, this.said()), restart);
+    if (!now || this.restarting || still()) return;
+    // From on, its knob across and the green going from under it; the output flares as a tube does and dims to its
+    // rest (styles.css .term.ended).
+    restart.animate([{backgroundColor: 'var(--raised)', borderColor: 'var(--edge)'}, {}], {duration: paced(260), easing: 'ease-out'});
+    restart.firstElementChild!.animate([{transform: 'translateX(24px)', backgroundColor: 'var(--done)'}, {}], {duration: paced(280), easing: LAND});
+    this.output.animate([{filter: 'brightness(1.8)'}, {filter: 'brightness(.5)', offset: .3}, {}], {duration: paced(460), easing: 'ease-out'});
   }
 }
 

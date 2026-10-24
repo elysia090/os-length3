@@ -53,10 +53,11 @@
   /* The Prompt's screen: how long it takes to come up out of the box's pill (running along the line for the first part
      of it, then rising) and to go back down into it (sinking to the line for the first part, then running back), and
      how each part moves. Along, it slows into the line's end; it rises fast off the line, landing a touch past; it
-     sinks as a thing let go, gathering, and runs back as a thing that starts and stops. */
-  --prompt-up: 460ms; --prompt-up-line: .38; --prompt-down: 320ms; --prompt-down-line: .5;
+     sinks as a thing let go, moving from the first frame and gathering, and runs on into the pill at that speed,
+     braking hard there, which gives under it as it is caught (bench.ts). */
+  --prompt-up: 460ms; --prompt-up-line: .38; --prompt-down: 420ms; --prompt-down-line: .42;
   --prompt-along: cubic-bezier(.3, .1, .25, 1); --prompt-rise: cubic-bezier(.2, 1.15, .32, 1);
-  --prompt-sink: cubic-bezier(.45, 0, .8, .6); --prompt-back: cubic-bezier(.4, 0, .6, 1);
+  --prompt-sink: cubic-bezier(.32, .04, .7, .45); --prompt-back: cubic-bezier(.2, 0, 0, 1);
   /* How a thing moves: fast off the mark, settling the last few pixels slowly, as a camera that lands. */
   --land: cubic-bezier(.2, .9, .25, 1);
   /* How a thing out of another grows into its place: a touch past its size, then back (a menu, a popover). */
@@ -226,9 +227,18 @@ a { color: var(--ink); }
 .os-caret.on.resting { animation: caret-blink 1.06s steps(1) infinite; }
 @keyframes caret-blink { 50% { opacity: 0; } }
 .caret-copy { position: absolute; left: -9999px; top: 0; visibility: hidden; overflow: hidden; }
-/* What was made on its way to where it is kept (glide.ts keep): a dot in ink, in an arc to the rail. */
+/* What was written on its way to where it is kept (glide.ts keep): what it changed, a chip in the diff's colours (its
+   lines added in green, removed in red, as a diff's bar), in an arc to the rail with a trail of dots, a dot as it lands,
+   a ring going out from the icon that takes it in. */
 .kept-path { position: fixed; z-index: 9; width: 0; height: 0; pointer-events: none; }
-.kept-dot { position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; border-radius: 50%; background: var(--ink); }
+.kept-lift { position: absolute; left: 0; top: 0; width: 0; height: 0; }
+.kept-chip { position: absolute; left: 0; top: 0; translate: -50% -50%; display: inline-flex; gap: 5px; padding: 1px 8px; border-radius: var(--r-round);
+  background: var(--ink); color: var(--ground); font: 600 12px/18px var(--mono); white-space: nowrap;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--ink) 30%, transparent); }
+.kept-chip > b { font-weight: inherit; color: color-mix(in srgb, var(--done) 55%, var(--ground)); }
+.kept-chip > i { font-style: normal; color: color-mix(in srgb, var(--off) 45%, var(--ground)); }
+.kept-trail { position: absolute; left: -3.5px; top: -3.5px; width: 7px; height: 7px; border-radius: 50%; background: var(--ink); opacity: 0; }
+.kept-ring { position: fixed; z-index: 9; translate: -50% -50%; border: 1.5px solid var(--ink); border-radius: 50%; pointer-events: none; opacity: 0; }
 .arriving, .arriving:hover { background: transparent !important; color: var(--ink) !important; transition: none !important; }
 /* One the ink is going over (leaving, passing, landing on) while half of it or more lies under it: its words light
    on it, as the chosen one's are (glide.ts). */
@@ -1011,6 +1021,7 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .term-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
 .term-head > .lamp { display: none; }
 :is(.prompting, .prompt-leaving) .screen .term-head > .lamp { display: block; width: 6px; height: 6px; border-radius: 50%; background: var(--done); box-shadow: 0 0 6px color-mix(in srgb, var(--done) 70%, transparent); }
+:is(.prompting, .prompt-leaving) .screen .term-head > .lamp { transition: background-color var(--motion), box-shadow var(--motion); }
 :is(.prompting, .prompt-leaving) .screen .term-box:has(.term.ended) .term-head > .lamp { background: var(--off); box-shadow: none; }
 /* Its buttons (Interrupt, Start again; Run once the glass is under it) are lit outlines on the glass, the app's small
    buttons otherwise. */
@@ -1064,6 +1075,34 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .prompt-chip:is([data-state='none'], [data-state='starting']) > .lamp { background: color-mix(in srgb, var(--done) 35%, var(--screen)); box-shadow: none; }
 .prompt-chip[data-state='ended'] > .lamp { background: var(--off); box-shadow: none; }
 .prompt-ps { color: var(--screen-ps); white-space: pre; }
+/* The pill says what the box does and is pressed to choose it (box-modes.ts): Run on the screen's glass, as above; the
+   repo's next issue in ink, its number as an issue's is said; TODO's circle on paper, as Home's TODO box is. Turning
+   from one to another its colours cross as its words do. */
+.prompt-chip { margin: 0; border: 0; cursor: pointer; transition: background-color var(--motion), color var(--motion), box-shadow var(--motion); }
+.prompt-chip[data-mode='issue'], .prompt-chip[data-mode='todo'] { gap: var(--s2); padding: 0 var(--s3); text-shadow: none; }
+.prompt-chip[data-mode='issue'] { background: var(--ink); color: var(--ground); box-shadow: none; }
+.prompt-chip[data-mode='todo'] { padding-left: var(--s2); background: var(--paper); color: var(--ink); box-shadow: inset 0 0 0 1px var(--edge); }
+.prompt-chip:not([data-mode='run']) > :is(.lamp, .prompt-ps) { display: none; }
+.prompt-mode { display: inline-flex; align-items: center; gap: var(--s2); white-space: pre; }
+.prompt-mode:empty { display: none; }
+.prompt-mode > b { font-weight: 600; }
+.prompt-chip[data-mode='issue'] .prompt-mode { gap: 0; }
+.prompt-chip[data-mode='issue'] .prompt-mode-repo { opacity: .66; }
+.prompt-chip[data-mode='todo'] .prompt-mode > .icon { width: 15px; height: 15px; color: var(--done); }
+.prompt-chip:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+/* The old words going up out of the pill as it turns. */
+.prompt-ghost { position: absolute; inset: 0; display: flex; align-items: center; gap: var(--s2); white-space: pre; pointer-events: none; }
+.prompt-ghost > .lamp { position: absolute; }
+/* The three, out of the pill: each with the pill it gives, its word, its keys. */
+.box-modes { position: fixed; z-index: 7; min-width: 280px; --from: 0 6px; transform-origin: left bottom; animation: menu-in calc(280ms * var(--pace)) var(--pop-in) both; }
+@media (prefers-reduced-motion: reduce) { .box-modes { animation: none; } }
+.box-mode { justify-content: flex-start; }
+.box-mode > .box-mode-pill { position: relative; flex: none; display: inline-flex; height: 24px; cursor: inherit; }
+.box-mode > .box-mode-pill[data-mode='run'] { min-width: 0; }
+.box-mode-word { flex: 1; }
+.box-mode-keys { display: inline-flex; gap: var(--s1); }
+.box-mode-keys > kbd { color: var(--sub); border-color: var(--rule); }
+.box-mode[aria-checked='true'] > .box-mode-word { font-weight: 600; }
 .screen .prompt-in { --cell: var(--ink); font: var(--t-meta)/1.6 var(--mono); }
 .screen .prompt-in::placeholder { color: transparent; text-shadow: none; }
 /* Not in use and empty, the line shows where the caret will be: an empty cell, as a terminal not in focus draws it. */
@@ -1585,8 +1624,10 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 .term.ended > p { grid-row: 3; display: flex; justify-content: flex-end; align-items: center; gap: var(--s2); }
 /* What happened wraps in its own room; the power switch stays on its line at the right, so the line is no taller. */
 .term.ended > p > span:first-child { min-width: 0; text-align: right; overflow-wrap: anywhere; }
+/* Ended, its output stays to be read, dimmed as a screen switched off (it flares and dims to this as it ends). */
+.term.ended > .term-out { opacity: .72; }
 .small-button { min-height: var(--h-row); padding: 0 var(--s3); font-size: var(--t-meta); }
-.term-out { margin: 0; overflow: auto; min-height: 0; font: var(--t-meta)/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.term-out { position: relative; margin: 0; overflow: auto; min-height: 0; font: var(--t-meta)/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }

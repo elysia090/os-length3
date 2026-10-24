@@ -126,10 +126,15 @@ Every value in `styles.css` comes from a token (§2).
   - *What is about to come leans in.* The pointer on a box's edge in
     Forge's row, the row leans a step toward it before it is pressed;
     left, it settles back.
-  - *What is made goes where it is kept.* A file saved sends a dot in an
-    arc to the rail, to Runtime while it is kept on this device, to Remote
-    once the Remote keeps it, and the icon takes it in with a pop: the
-    deed's second beat, the eye led back to the rail.
+  - *What is made goes where it is kept.* A file saved sends what it
+    changed (+2 −1, its lines, in the diff's colours on a small ink chip)
+    up off the line where it was written; it waits a beat, then goes in an
+    arc to the rail, a short trail of dots behind it, to Runtime while it is
+    kept on this device, to Remote once the Remote keeps it, landing as a dot;
+    the icon takes it in with a pop and a ring going out from it: the deed's
+    second beat, the eye led back to the rail. Saved again while one is on
+    its way, it carries that too, one chip at a time. An issue or a TODO
+    sent from the box at the foot carries its own words, to Git or Home.
   - *What is done is rewarded, once.* A TODO done: its mark pops past its
     size and settles. A TODO's kind, read off its line as it is typed
     (Fix:), takes its form with a small pop; a new TODO unfolds from the
@@ -1416,10 +1421,13 @@ runs along the box's line, slowing into its end, the box's light going from
 under it, then rises into the screen (460 ms, about two fifths of it along,
 landing a touch past); the line's words and Run stay where they are and take the
 glass's light as its edge comes over them, the prompt line goes from the pill to
-the line's start. Put back, it sinks to the line, gathering, and runs
-back into the pill (320 ms, half and half), the box's light coming back under
-it, the words taking their ink again as the glass leaves them and the pill's
-lamp lighting as the glass comes to be the pill round it. Its lines are a
+the line's start. Put back, it sinks to the line, moving from the first
+frame and gathering, and runs on into the pill at that speed, braking hard
+there (420 ms, two fifths sinking), the box's light coming back under it, the
+words taking their ink again as the glass leaves them; the pill gives under the
+glass it catches (flattened and wider, back past round, settled) and its lamp
+lights with a glow, and the terminal comes into the pane from the center's
+side. Its lines are a
 terminal's: the box's line is the line after the output, starting with the
 prompt line the shell waits at (`garden $`, the output's own last line then not
 shown), the words written in the terminal's letters and a cell for a caret, the
@@ -1427,8 +1435,15 @@ letter under it drawn dark in it. A line sent moves up a line as it is (it does
 not come in again); what it prints comes in a line after another, the screen's
 top rising with it, and the prompt line comes back with the caret as its last
 line does; while it runs, what it is doing (Running 2s, Interrupt) is said on the
-line itself, so nothing above the line comes and goes. `clear` clears the
-screen, and Ctrl+C says ^C where the run was cut. The prompt lines before are in
+line itself, so nothing above the line comes and goes, and once the run is
+done that goes out to its right rather than at once. `clear` clears the
+screen, and Ctrl+C says ^C where the run was cut, the screen's words jolting
+sideways and flaring as they are cut (at once: it answers the hand), what the
+run was doing going as it is cut. Ended (exit, stopped), its switch comes in
+going over from on to off and its output flares and dims as a tube switched
+off does, staying dim to be read; switched on again, the old screen goes down
+to a bright line across its middle, the box takes the new one's height, and
+the new one opens out of the line. The prompt lines before are in
 the green, so what was run stands out from what it printed. A lamp at its head is
 lit while its shell runs; the terminal, put back, comes into the pane where it
 lives (there in the page's own colours), and the reference grows down into the
@@ -1439,6 +1454,22 @@ it is not called Bash); leaving the prompt
 to it starts it, and one that ended says so in its place, with Start
 again; stopping one is Runtime's. What is written in the box and not sent
 is the repo's: another repo shows its own, and coming back finds it.
+
+The box does more than run. Its pill says what it does and, pressed (or
+Alt+↓ in the box), brings out the three it can, out of the pill, each with
+the pill it gives and its keys: Run in the Prompt (the shell's prompt line,
+`garden $`), Write an issue (the repo's next issue, `garden #4`, in ink as an
+issue's number), Add to TODO (TODO's circle, on paper as Home's TODO box);
+Alt+1, 2 and 3 in the box choose one at once, and Ctrl ` is the Prompt's
+again. Turning, the pill goes from the old words' width to the new, the old
+words going up out of it as the new come up into it, its colours crossing,
+with a small beat as it lands; the box's own button says the deed (Run,
+Create, Add) and the empty box where it goes. Only Run brings the screen up.
+An issue or a TODO is written as everywhere, its first line Kind: title and
+the lines under it its detail; sent, the box empties, a quiet line under it
+says where it went (Written as #4 in garden), and the words go in an arc from
+where they were written to their place on the rail, Git or Home. What is half
+written is kept for the repo and for what the box does.
 The box knows the repo's earlier lines, as a terminal does: ↑ with the
 caret on its first line goes back one line run in the repo's Prompt, ↓ on
 its last line forward again, down to what was being written (so a line of
