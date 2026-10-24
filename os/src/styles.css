@@ -44,10 +44,12 @@
   --prompt-h: calc(2 * var(--s3) + var(--t-body) * 1.6 + 2px);
   --icon: 24px; --stroke: 1.6px;
   /* The pace of the OS's moves (a page panned, the pane, a menu, a box coming, a thing landing): each move's length is
-     its own times this, so they keep with one another. What answers the hand at once (a hover, a press, the caret,
-     a colour) is never paced, and the Prompt keeps its own (--prompt-up, --prompt-down). */
+     its own times this, so they keep with one another. Sideways, the camera goes slower still (--slide: the band's
+     repos, the row of boxes, the issues, the boards, the pane), as a long pan does. A hover's light and a colour
+     change go at the same unhurried pace, a little quicker than a move (--motion); only what answers the hand at
+     once (a press, the caret) is not paced, and the Prompt keeps its own (--prompt-up, --prompt-down). */
   --pace: 2;
-  --motion: 120ms; --move: calc(280ms * var(--pace));
+  --motion: calc(90ms * var(--pace)); --move: calc(280ms * var(--pace)); --slide: calc(450ms * var(--pace));
   /* The Prompt's screen: how long it takes to come up out of the box's pill (running along the line for the first part
      of it, then rising) and to go back down into it (sinking to the line for the first part, then running back), and
      how each part moves. Along, it slows into the line's end; it rises fast off the line, landing a touch past; it
@@ -146,10 +148,10 @@ a { color: var(--ink); }
    the edge ease: words and icons turn at once, so ink landing on a place never hides its icon a moment. */
 .rail-item, .button, .chip, .pill, .band-add, .me, .pop-item, .todo-mark, .card.repo, .card.new, .lately-row,
 .inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .tree-row {
-  transition: background-color 260ms ease-out, border-color 260ms ease-out;
+  transition: background-color calc(200ms * var(--pace)) ease-out, border-color calc(200ms * var(--pace)) ease-out;
 }
 :is(.rail-item, .button, .chip, .pill, .band-add, .me, .pop-item, .todo-mark, .card.repo, .card.new, .lately-row,
-.inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .tree-row):hover { transition-duration: 90ms; }
+.inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .tree-row):hover { transition-duration: calc(60ms * var(--pace)); }
 :is(.rail-item, .button, .chip, .pill, .band-add, .me, .pop-item, .todo-mark, .card.repo, .card.new, .lately-row,
 .inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .file-beside, .tree-row):active:not(:disabled) {
   background-color: color-mix(in srgb, var(--ink) 13%, var(--raised)); transition-duration: 40ms;
@@ -200,12 +202,12 @@ a { color: var(--ink); }
 @keyframes pan-in { from { transform: translateY(calc(var(--pan, 1) * 100%)); } }
 /* Along the band the camera pans sideways the same way (glide.ts panAcross): the repos stand side by side in the
    band's order, and only the center is taken, the repo left going off whole the other way as the one come to comes
-   in from its pill's side, the two as one strip (300 ms). */
+   in from its pill's side, the two as one strip (--slide). */
 .panning-across #page { view-transition-name: none; }
 /* It moves inside the center's frame, as the files scroll in it: cut at the center's edges, never over the lines. */
 ::view-transition-group(across) { animation: none; overflow: clip; }
-::view-transition-old(across) { animation: across-out calc(300ms * var(--pace)) var(--land) both; }
-::view-transition-new(across) { animation: across-in calc(300ms * var(--pace)) var(--land) both; }
+::view-transition-old(across) { animation: across-out var(--slide) var(--land) both; }
+::view-transition-new(across) { animation: across-in var(--slide) var(--land) both; }
 @keyframes across-out { to { transform: translateX(calc(var(--pan-x, 1) * -100%)); } }
 @keyframes across-in { from { transform: translateX(calc(var(--pan-x, 1) * 100%)); } }
 /* The OS's caret (caret.ts), a 2 px stroke of ink gliding from where it was to where it is; the browser's own is
@@ -389,8 +391,8 @@ a { color: var(--ink); }
 .home-layout.pane-closed { grid-template-columns: minmax(0, 1fr) calc(var(--h-row) + var(--line-frame)); } /* the switch and the line it no longer draws: the switch stays where it stood */
 /* It opens and closes as Forge's does: a wipe, landing a touch past and settling as it comes out. */
 .page > .home-layout { transition: grid-template-columns var(--move) var(--land); }
-.page > .home-layout:not(.pane-closed) { transition: grid-template-columns calc(420ms * var(--pace)) cubic-bezier(.2, 1.4, .32, 1); }
-.page > .home-layout.pane-closed { transition: grid-template-columns calc(260ms * var(--pace)) cubic-bezier(.4, 0, 1, 1); }
+.page > .home-layout:not(.pane-closed) { transition: grid-template-columns var(--slide) cubic-bezier(.2, 1.4, .32, 1); }
+.page > .home-layout.pane-closed { transition: grid-template-columns calc(var(--slide) * .66) cubic-bezier(.4, 0, 1, 1); }
 @media (prefers-reduced-motion: reduce) { .page > .home-layout, .page > .home-layout:not(.pane-closed), .page > .home-layout.pane-closed, .work.bench, .work.bench:not(.pane-closed) { transition: none; } }
 /* Its first line (the name, Edit profile) centred on the top line, as the pane's switch beside it is. */
 .home-main { min-width: 0; width: 100%; max-width: 1080px; margin: 0 auto; padding-top: calc(var(--band) - var(--top-line)); }
@@ -400,7 +402,7 @@ a { color: var(--ink); }
   margin: calc(-1 * var(--top-line)) calc(-1 * var(--s5)) 0 0; padding: var(--band) var(--s5) var(--s4) calc(var(--s5) - var(--line-frame));
 }
 /* Forge's line, where Forge's is: the pane's edge, top line to foot; put away, no pane, no line. */
-.home-pane { border-left: var(--line-frame) solid var(--ink); background: var(--ground); transition: border-color 120ms; }
+.home-pane { border-left: var(--line-frame) solid var(--ink); background: var(--ground); transition: border-color var(--motion); }
 /* Its top line as Forge's: the search box over the pane, the switch at its right end; put away, the switch alone. */
 .home-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--s3); min-width: 0; }
 .home-bar > .pane-toggle { grid-column: 2; }
@@ -411,9 +413,9 @@ a { color: var(--ink); }
 body:has(.home-pane .search-box:is(:focus-within, .reading))::after { opacity: 1; }
 .home-pane:has(.search-box:is(:focus-within, .reading, .moving)) { z-index: 8; }
 .home-pane::after { content: ''; position: absolute; inset: 0 0 0 calc(-1 * var(--line-frame)); pointer-events: none; background: color-mix(in srgb, var(--ink) 14%, transparent); opacity: 0; }
-.home-pane:has(.search-box:is(:focus-within, .reading))::after { opacity: 1; transition: opacity 180ms ease-out; }
+.home-pane:has(.search-box:is(:focus-within, .reading))::after { opacity: 1; transition: opacity calc(180ms * var(--pace)) ease-out; }
 .home-bar > .search-box { z-index: 1; }
-.home-layout.pane-closed .home-pane { padding-left: 0; border-left-color: transparent; transition: border-color calc(260ms * var(--pace)) cubic-bezier(.7, 0, 1, 1); }
+.home-layout.pane-closed .home-pane { padding-left: 0; border-left-color: transparent; transition: border-color calc(var(--slide) * .66) cubic-bezier(.7, 0, 1, 1); }
 .home-layout.pane-closed .home-side { display: none; }
 /* Its first heading on the line Forge's Prompt and Server's People are on, a band below the top line's foot. */
 .home-side { min-height: 0; overflow: auto; padding-top: var(--band); }
@@ -881,7 +883,7 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
 .file-state { font-weight: 400; color: var(--sub); white-space: nowrap; }
 /* Not saved yet: a dot, not a word that flickers with each key; it shows only once the writing pauses (a save comes
    0.7 s after), so steady typing is not watched over. */
-.unsaved-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--sub); vertical-align: middle; animation: unsaved-in 200ms ease-out 350ms both; }
+.unsaved-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--sub); vertical-align: middle; animation: unsaved-in calc(200ms * var(--pace)) ease-out calc(350ms * var(--pace)) both; }
 @keyframes unsaved-in { from { opacity: 0; scale: .4; } }
 @media (prefers-reduced-motion: reduce) { .unsaved-dot { animation: none; } }
 .sheet { flex: 1; display: grid; grid-template-columns: auto minmax(0, 1fr); align-content: start; column-gap: var(--s4); padding: var(--s2) var(--s4) var(--s4); cursor: text; }
@@ -926,7 +928,7 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
    pane goes or comes (issue #45): only its right end follows the center's. */
 .work.bench:not(.no-strip) .dock {
   margin: 0; max-width: none; left: var(--dock-l, var(--s3)); right: var(--dock-r, var(--s3));
-  transition: opacity var(--motion), left calc(420ms * var(--pace)) var(--land), right calc(420ms * var(--pace)) var(--land);
+  transition: opacity var(--motion), left var(--slide) var(--land), right var(--slide) var(--land);
 }
 /* While the search is out (what it found, or what is read from it), the whole window steps back under one shade,
    the rail, the band and the pane with the center, to its edges: still there to be seen, not read across; the
@@ -935,7 +937,7 @@ button.row-item:disabled { cursor: default; color: var(--sub); }
    be shaded with it: the bench's width is measured, not queried.) */
 body::after {
   content: ''; position: fixed; inset: 0; z-index: 7; pointer-events: none;
-  background: color-mix(in srgb, var(--ink) 14%, transparent); opacity: 0; transition: opacity 180ms ease-out;
+  background: color-mix(in srgb, var(--ink) 14%, transparent); opacity: 0; transition: opacity calc(180ms * var(--pace)) ease-out;
 }
 body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading))::after { opacity: 1; }
 /* Over the shade only while it is out: at rest it is the page's, under whatever lies over the page (Server's layer). */
@@ -1136,7 +1138,7 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .work.bench { grid-template-columns: minmax(0, 1fr) max(280px, 25%); transition: grid-template-columns var(--move) var(--land); }
 /* Brought out, its edge lands a touch past where it stops and settles back, as a thing pushed out does (glide.ts
    paneOut brings what it holds in after it); put away, it goes straight. */
-.work.bench:not(.pane-closed) { transition: grid-template-columns calc(420ms * var(--pace)) cubic-bezier(.2, 1.4, .32, 1); }
+.work.bench:not(.pane-closed) { transition: grid-template-columns var(--slide) cubic-bezier(.2, 1.4, .32, 1); }
 .work.bench > .bar {
   --pane-w: max(280px, calc(var(--bench-w, 1200px) / 4));
   --search-w: calc(var(--pane-w) - 2 * var(--s5) - var(--h-row) - var(--s3));
@@ -1227,7 +1229,7 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .columns.split > .col:not(.active) .file-beside { visibility: hidden; }
 /* The row slides as one, and a box comes in from no width where it stands (pushing in from its side) and goes back
    to none the same way, by the same move. */
-.col { transition: flex-basis calc(420ms * var(--pace)) var(--land), transform calc(420ms * var(--pace)) var(--land), translate calc(260ms * var(--pace)) var(--land); }
+.col { transition: flex-basis var(--slide) var(--land), transform var(--slide) var(--land), translate calc(var(--slide) * .66) var(--land); }
 /* The pointer on a box's edge, the row leans toward it a step before it is pressed: what the press will bring in
    is already on its way, and leaving it, the row settles back. */
 .columns.split:has(> .col.after:hover) > .col { translate: calc(-1 * var(--s4)) 0; }
@@ -1250,8 +1252,8 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .work.bench.pane-closed .columns.split > .col { flex-basis: calc((var(--cols-w, 100%) - 2 * var(--pad)) / var(--n, 2)); transform: translateX(var(--pad)); translate: none; }
 /* Put away or brought back, the row and its prompt box move on the pane's own curve, sent once to where they will
    stand (forge.ts room): the last box's edge keeps a step inside the pane's edge all the way, as if pushed by it. */
-.work.bench.pane-moving.pane-closed :is(.columns.split > .col, .dock) { transition-duration: calc(260ms * var(--pace)); transition-timing-function: cubic-bezier(.4, 0, 1, 1); }
-.work.bench.pane-moving:not(.pane-closed) :is(.columns.split > .col, .dock) { transition-duration: calc(420ms * var(--pace)); transition-timing-function: cubic-bezier(.2, 1.4, .32, 1); }
+.work.bench.pane-moving.pane-closed :is(.columns.split > .col, .dock) { transition-duration: calc(var(--slide) * .66); transition-timing-function: cubic-bezier(.4, 0, 1, 1); }
+.work.bench.pane-moving:not(.pane-closed) :is(.columns.split > .col, .dock) { transition-duration: var(--slide); transition-timing-function: cubic-bezier(.2, 1.4, .32, 1); }
 .work.bench.pane-closed .columns.split > .col:not(.active) .file > :is(.path, .sheet) { opacity: 1; }
 .work.bench.pane-closed .columns.split > .col:not(.active) .file-beside { visibility: visible; }
 .work.bench.pane-closed .columns.split > .col.before > .col-head { flex-direction: row; padding: 0 var(--s3) 0 calc(var(--s3) + var(--s4) - var(--s1)); }
@@ -1269,8 +1271,8 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
   position: absolute; top: var(--s2); bottom: var(--s5); z-index: 2; pointer-events: none;
   display: grid; place-items: center; border: var(--line-work) dashed var(--ink); border-radius: var(--r-place);
   background: color-mix(in srgb, var(--paper) 70%, transparent); color: var(--ink); font-size: var(--t-meta); font-weight: 600;
-  transition: left 160ms var(--land), width 160ms var(--land);
-  animation: hint-in 140ms ease-out;
+  transition: left calc(160ms * var(--pace)) var(--land), width calc(160ms * var(--pace)) var(--land);
+  animation: hint-in calc(140ms * var(--pace)) ease-out;
 }
 @keyframes hint-in { from { opacity: 0; } }
 @media (max-width: 760px) {
@@ -1281,9 +1283,9 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 /* Put away, the center takes the whole width; the pane is only out of sight. No pane, no line. It goes as a wipe:
    the pane's column closes to nothing, what it holds staying at its width and cut at the moving edge (not squeezed),
    and is out of sight (and of the keyboard) once closed; brought back, it opens the same way. */
-.work.bench.pane-closed { grid-template-columns: minmax(0, 1fr) 0px; transition: grid-template-columns calc(260ms * var(--pace)) cubic-bezier(.4, 0, 1, 1); }
+.work.bench.pane-closed { grid-template-columns: minmax(0, 1fr) 0px; transition: grid-template-columns calc(var(--slide) * .66) cubic-bezier(.4, 0, 1, 1); }
 .work.bench > .side { min-width: 0; grid-template-columns: max(280px, calc(var(--bench-w, 1200px) / 4)); }
-.work.bench.pane-closed > .side { overflow-x: clip; visibility: hidden; transition: visibility 0s calc(260ms * var(--pace)); }
+.work.bench.pane-closed > .side { overflow-x: clip; visibility: hidden; transition: visibility 0s calc(var(--slide) * .66); }
 @media (prefers-reduced-motion: reduce) {
   .work.bench.pane-closed, .work.bench > .side::before, .work.bench.pane-closed > .side::before,
   .home-pane, .home-layout.pane-closed .home-pane { transition: none; }
@@ -1306,11 +1308,11 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
    It goes with the pane (put away, no pane, no line). */
 .work.bench > .side::before {
   content: ''; position: absolute; left: 0; bottom: 0; top: calc(-1 * (var(--band) + var(--h-row) + var(--s3)));
-  border-left: var(--line-frame) solid var(--ink); pointer-events: none; transition: opacity 120ms;
+  border-left: var(--line-frame) solid var(--ink); pointer-events: none; transition: opacity var(--motion);
 }
 /* Put away, the line goes with the pane, gathering speed to the right (260 ms), and is gone as it gets there: never
    left standing at the window's edge. */
-.work.bench.pane-closed > .side::before { opacity: 0; transition: opacity calc(260ms * var(--pace)) cubic-bezier(.7, 0, 1, 1); }
+.work.bench.pane-closed > .side::before { opacity: 0; transition: opacity calc(var(--slide) * .66) cubic-bezier(.7, 0, 1, 1); }
 /* What was found, under the box and over the center, while the box (or what was found) has the keyboard. */
 .search-box { position: relative; min-width: 0; }
 /* What opens under the box: its ground runs a step (s3) past the large box on every side, so the lines behind it
@@ -1742,7 +1744,7 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 .issue-column.single { --peek: 0px; }
 .issue-stage { position: relative; overflow-x: clip; }
 .issue-stage:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: var(--r-place); }
-.issue-track { --at: 0; display: flex; gap: var(--gap); transform: translateX(calc(var(--lead) * var(--peek) - var(--at) * (100% - 2 * var(--peek) + var(--gap)))); transition: transform var(--move); }
+.issue-track { --at: 0; display: flex; gap: var(--gap); transform: translateX(calc(var(--lead) * var(--peek) - var(--at) * (100% - 2 * var(--peek) + var(--gap)))); transition: transform var(--slide); }
 @media (prefers-reduced-motion: reduce) { .issue-track, .issue-slot { transition: none; } }
 /* A slot is an issue's column: its card, then its Review and Merge. */
 .issue-slot { flex: 0 0 calc(100% - 2 * var(--peek)); min-width: 0; align-self: start; }
@@ -2006,7 +2008,7 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .main-part.single { --peek: 0px; }
 .main-part > .main-card {
   width: calc(100% - 2 * var(--peek)); margin-left: calc(var(--lead) * var(--peek));
-  transition: margin-left var(--move), width var(--move); /* as the track goes */
+  transition: margin-left var(--slide), width var(--slide); /* as the track goes */
 }
 /* As an issue's box: the same padding, the files under its name, and its foot (how many wait at the left, Commit at
    the right) where an issue's next step is. Its name is only which repo (main is said over it): a label at the size of
@@ -2242,12 +2244,12 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .server-center:has(> .slides.single) { --peek: 0px; }
 .server-center > .slides { --peek: inherit; --lead: inherit; }
 .server-center > .dock { max-width: none; margin: 0; left: calc(var(--s5) + var(--lead) * var(--peek)); right: calc(var(--s5) + (2 - var(--lead)) * var(--peek));
-  transition: left var(--move), right var(--move), opacity var(--motion); }
+  transition: left var(--slide), right var(--slide), opacity var(--motion); }
 @media (max-width: 760px) { .server-center { --peek: var(--s5); } .server-center > .dock { left: calc(var(--s2) + var(--lead) * var(--peek)); right: calc(var(--s2) + (2 - var(--lead)) * var(--peek)); } }
 @media (prefers-reduced-motion: reduce) { .server-center > .dock { transition: none; } }
 .slide-stage { position: relative; height: 100%; overflow-x: clip; }
 .slide-stage:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: var(--r-place); }
-.slide-track { --at: 0; display: flex; gap: var(--gap); height: 100%; transform: translateX(calc(var(--lead) * var(--peek) - var(--at) * (100% - 2 * var(--peek) + var(--gap)))); transition: transform var(--move); }
+.slide-track { --at: 0; display: flex; gap: var(--gap); height: 100%; transform: translateX(calc(var(--lead) * var(--peek) - var(--at) * (100% - 2 * var(--peek) + var(--gap)))); transition: transform var(--slide); }
 @media (prefers-reduced-motion: reduce) { .slide-track { transition: none; } }
 .slide { flex: 0 0 calc(100% - 2 * var(--peek)); min-width: 0; height: 100%; }
 .board-card { display: flex; flex-direction: column; height: 100%; border: 1px solid var(--rule); border-radius: var(--r-place); background: var(--paper); }

@@ -71,9 +71,12 @@ Every value in `styles.css` comes from a token (§2).
   mark, the last pixels slow: `--land`). The moves are unhurried: each
   length named in this document is the move's own, and the OS plays them
   all at one pace, twice that (`--pace`), so the eye follows each the whole
-  way and they keep with one another; what answers the hand at once (a
-  hover, a press, the caret, a colour) is never paced, and the Prompt keeps
-  its own lengths. The moves are few and each means one thing wherever it
+  way and they keep with one another. Sideways the camera goes slower still,
+  as a long pan does (`--slide`, 450 ms of its own: the band's repos, the
+  row of boxes, the issues, the boards, the pane). A hover's light and a
+  colour go at the same unhurried pace, a little quicker than a move; only
+  what answers the hand at once (a press, the caret) is not paced, and the
+  Prompt keeps its own lengths. The moves are few and each means one thing wherever it
   is seen:
   - *The ink travels.* The current thing's ink goes from the one it was on
     to the one it is on (the rail's places, the band's pills), under their
@@ -93,7 +96,7 @@ Every value in `styles.css` comes from a token (§2).
     edges); the rest of the window goes on being drawn as it is. Along the
     band the same: the repos stand side by side in the band's order, and
     another repo come to pans the row sideways the whole way, the next one to
-    the right coming from the right (300 ms).
+    the right coming from the right (`--slide`).
   - *The OS opens.* From its first frame: the frame's line is drawn down the
     rail's edge from the top (620 ms) as the rail's places come in one after
     another down it from the window's edge, 34 ms apart, the person last at

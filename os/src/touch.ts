@@ -3,6 +3,8 @@
 // it never fights a thing's own transform, and a press that becomes a drag is let go at once. Asked for less motion,
 // nothing gives.
 
+import {paced} from './glide.ts';
+
 const WHOLE = '.pill, .card.repo, .card.new, .issue-card, .board-card';
 const ONE = 'button, [role="button"], [role="radio"], [role="tab"], .chip';
 const AWAY = 'input, textarea, select, [contenteditable], .power, .stage-hit, .slide-stage, .tree-row';
@@ -38,7 +40,7 @@ function up() {
   held = null;
   press.cancel();
   // Past where it was by a third of the give, then home: the spring.
-  const a = el.animate([{scale: s}, {scale: 1 + (1 - s) / 3, offset: .45}, {scale: 1}], {duration: 300, easing: 'cubic-bezier(.2, .9, .25, 1)'});
+  const a = el.animate([{scale: s}, {scale: 1 + (1 - s) / 3, offset: .45}, {scale: 1}], {duration: paced(300), easing: 'cubic-bezier(.2, .9, .25, 1)'});
   spring = {el, a};
 }
 

@@ -222,7 +222,7 @@ export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340, r
 export function nudge(el: Element | null) {
   if (still() || !el) return;
   el.animate([{translate: '0 0'}, {translate: '-5px 0'}, {translate: '4px 0'}, {translate: '-2px 0'}, {translate: '1px 0'}, {translate: '0 0'}],
-    {duration: 300, easing: 'ease-out'});
+    {duration: paced(300), easing: 'ease-out'});
 }
 
 /** What stood under something taken away closes up over where it was (`by` pixels), rather than being there at once. */

@@ -409,7 +409,7 @@ function make(ctx: Context) {
   const shrink = (col: HTMLElement) => new Promise<void>((done) => {
     if (still()) { done(); return; }
     col.classList.add('nothing');
-    after(420, done);
+    after(450, done);
   });
 
   /** `name` opened beside what is shown (at `at`, an index among the boxes), and worked on. */
