@@ -1,8 +1,8 @@
 import {h} from '../dom.ts';
-import {arrive, glide, pop, where} from '../glide.ts';
+import {arrive, glide, LAND, pop, still, where} from '../glide.ts';
 import * as gitops from '../history.ts';
 import {t} from '../i18n.ts';
-import {number, readIssues, type Issue} from '../issues.ts';
+import {issueName, number, readIssues, type Issue} from '../issues.ts';
 import {bring, remoteOnly} from '../lifecycle.ts';
 import {connection} from '../remote.ts';
 import {onChange, store} from '../repos.ts';
@@ -11,7 +11,7 @@ import {pageHead} from './common.ts';
 import {icon} from '../icons.ts';
 import type {Context} from './context.ts';
 import {closedList, committedIn, committedList, mainCard, mergedList} from './git-done.ts';
-import {backToMain, issueBox, issueHead, mergeRow, reviewBox, type RepoState} from './git-issue.ts';
+import {backToMain, commitTo, issueBox, issueHead, mergeRow, reviewBox, type RepoState} from './git-issue.ts';
 import {laidOut, type Laid} from '../git-state.ts';
 import {issueForm} from './issue-form.ts';
 import {errorText} from '../errors.ts';
@@ -165,6 +165,7 @@ export function git(ctx: Context): Node[] {
     const edge = document.activeElement === prev || document.activeElement === next;
     prev.hidden = k === 0;
     next.hidden = k === shown.length - 1;
+    aim();
     const slot = track.children[k] as HTMLElement | undefined;
     if (land) { land = false; slot?.querySelector<HTMLElement>('.issue-words')?.focus({preventScroll: true}); return; }
     if (had) (sameDeed(slot, had) ?? stage).focus({preventScroll: true});
@@ -257,13 +258,129 @@ export function git(ctx: Context): Node[] {
   const drawDone = ({dirty, merged, closed}: Laid) => {
     // main: what it has not committed, each a card, and under them what was committed on it from here.
     const cuts = committedIn(filter || null);
-    mainPart.hidden = !dirty.length && !cuts.length;
-    mainPart.replaceChildren(heading('main-title', 'main'), ...dirty.map((r) => mainCard(r, states.get(r)!.uncommitted, events, again)),
-      cuts.length ? committedList(cuts, !filter) : '');
+    const waiting = dirty.filter((r) => !carrying.has(r));
+    mainPart.hidden = !waiting.length && !cuts.length;
+    mainPart.replaceChildren(heading('main-title', 'main'), ...waiting.map((r) => takeable(mainCard(r, states.get(r)!.uncommitted, events, again, toButton(r)), r)),
+      cuts.length ? committedList(cuts, !filter) : '', carryError);
+    aim();
     mergedPart.hidden = !merged.length;
     mergedPart.replaceChildren(heading('merged-title', t('Merged'), merged.length), mergedList(merged, !filter));
     closedPart.hidden = !closed.length;
     closedPart.replaceChildren(heading('closed-title', t('Closed'), closed.length), closedList(closed, !filter, again));
+  };
+
+  // main's box put on an issue: what it holds is committed in the issue's work (git-issue.ts commitTo). Taken in hand
+  // (pressed and moved), it leaves a dashed room where it stood and goes with the pointer; over the issue in full
+  // above, of its repo, the issue shows it would take it; resting on a neighbour's edge, the row goes there. Let go
+  // on the issue, the box goes into it, sliding off sideways as it fades, and its room closes; anywhere else it goes
+  // back. From the keyboard, its To #n does the same for the issue in full.
+  /** Repos whose box is on its way into an issue: not drawn under main again meanwhile, nor the page from half done. */
+  const carrying = new Set<string>();
+  const carryError = h('p', {class: 'error', role: 'alert'});
+  /** The issue in full above, if `repo`'s: the one a box of that repo goes into. */
+  const into = (repo: string) => (shown[k]?.repo === repo ? shown[k] : null);
+  const toButton = (repo: string) => {
+    const b = h('button', {type: 'button', class: 'button to-issue', 'data-repo': repo, hidden: ''}) as HTMLButtonElement;
+    b.addEventListener('click', () => { const card = b.closest<HTMLElement>('.main-card'); if (card) void carry(card, repo, null); });
+    return b;
+  };
+  /** Each box's To #n names the issue in full above, when it is of its repo. */
+  const aim = () => {
+    for (const b of mainPart.querySelectorAll<HTMLButtonElement>('.to-issue')) {
+      const i = into(b.dataset.repo ?? '');
+      b.hidden = !i;
+      b.textContent = i ? t('To {issue}', {issue: issueName(i) || i.title}) : '';
+    }
+  };
+  /** The box goes into the issue: slides off sideways and fades, its room closing, while what it holds is committed there. */
+  const carry = async (card: HTMLElement, repo: string, room: HTMLElement | null) => {
+    const issue = into(repo);
+    if (!issue) return;
+    carrying.add(repo);
+    carryError.textContent = '';
+    const r = card.getBoundingClientRect();
+    if (!room) { room = h('div', {class: 'main-card room', 'aria-hidden': 'true'}); room.style.height = `${r.height}px`; card.before(room); hold(card, r); }
+    document.documentElement.classList.remove('holding');
+    const slot = track.children[k]?.querySelector<HTMLElement>('.issue-card');
+    slot?.classList.remove('taking');
+    // The issue takes it in: its edge gives a beat (styles.css .took).
+    if (slot && !still()) { slot.classList.add('took'); slot.addEventListener('animationend', () => slot.classList.remove('took'), {once: true}); }
+    const gone = room;
+    if (!still()) {
+      const at = card.style.translate || '0px 0px';
+      const [x, y] = at.split(' ');
+      card.animate([{translate: at, opacity: 1}, {translate: `calc(${x} + 64px) ${y ?? '0px'}`, opacity: 0}], {duration: 320, easing: LAND, fill: 'forwards'})
+        .finished.then(() => card.remove(), () => card.remove());
+      gone.animate([{height: `${r.height}px`}, {height: '0px', marginTop: '0px', borderWidth: '0px'}], {duration: 300, delay: 120, easing: LAND, fill: 'forwards'});
+    } else { card.remove(); gone.remove(); }
+    try { await commitTo(issue, states.get(repo)); events.moved(repo); }
+    catch (e) { carryError.textContent = errorText(e); }
+    finally { carrying.delete(repo); void paint(); }
+  };
+  /** The box taken in hand where it stands: laid over the page, at its place, to go with the pointer. */
+  const hold = (card: HTMLElement, r: DOMRect) => {
+    Object.assign(card.style, {left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`});
+    card.classList.add('in-hand');
+    getSelection()?.removeAllRanges();
+    document.documentElement.classList.add('holding');
+  };
+  const takeable = (card: HTMLElement, repo: string) => {
+    card.addEventListener('pointerdown', (down) => {
+      if (down.button !== 0 || (down.target as Element).closest('button, a, input, textarea, [role="button"]')) return;
+      const x0 = down.clientX, y0 = down.clientY;
+      let room: HTMLElement | null = null;
+      let over: HTMLElement | null = null;
+      let edge: HTMLElement | null = null, edgeTimer = 0;
+      const on = (e: PointerEvent, el: Element) => { const b = el.getBoundingClientRect(); return e.clientX >= b.left && e.clientX <= b.right && e.clientY >= b.top && e.clientY <= b.bottom; };
+      const move = (e: PointerEvent) => {
+        const dx = e.clientX - x0, dy = e.clientY - y0;
+        if (!room) {
+          if (Math.hypot(dx, dy) < 6) return;
+          const r = card.getBoundingClientRect();
+          room = h('div', {class: 'main-card room', 'aria-hidden': 'true'});
+          room.style.height = `${r.height}px`;
+          card.before(room);
+          hold(card, r);
+          card.setPointerCapture(e.pointerId);
+        }
+        card.style.translate = `${dx}px ${dy}px`;
+        const issueCard = into(repo) ? track.children[k]?.querySelector<HTMLElement>('.issue-card') ?? null : null;
+        const now = issueCard && on(e, issueCard) ? issueCard : null;
+        if (now !== over) {
+          over?.classList.remove('taking');
+          over = now;
+          if (over) { over.dataset.take = t('Commit here'); over.classList.add('taking'); }
+          card.classList.toggle('over', !!over);
+        }
+        const at = [prev, next].find((b) => !b.hidden && on(e, b)) ?? null;
+        if (at !== edge) { clearTimeout(edgeTimer); edge = at; if (at) edgeTimer = window.setTimeout(() => { at.click(); edge = null; }, 450); }
+      };
+      const end = (e: PointerEvent | KeyboardEvent) => {
+        removeEventListener('pointermove', move, true);
+        removeEventListener('pointerup', end, true);
+        removeEventListener('pointercancel', end, true);
+        removeEventListener('keydown', esc, true);
+        clearTimeout(edgeTimer);
+        document.documentElement.classList.remove('holding');
+        if (!room) return;
+        const was = room;
+        const took = e.type === 'pointerup' && over;
+        over?.classList.remove('taking');
+        card.classList.remove('over');
+        if (took) { void carry(card, repo, was); return; }
+        // Let go elsewhere: back where it stood.
+        const settle = () => { card.classList.remove('in-hand'); Object.assign(card.style, {left: '', top: '', width: '', translate: ''}); was.remove(); };
+        if (still()) { settle(); return; }
+        card.animate([{translate: card.style.translate}, {translate: '0px 0px'}], {duration: 260, easing: LAND}).finished.then(settle, settle);
+        card.style.translate = '0px 0px';
+      };
+      const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); over?.classList.remove('taking'); over = null; end(e); } };
+      addEventListener('pointermove', move, true);
+      addEventListener('pointerup', end, true);
+      addEventListener('pointercancel', end, true);
+      addEventListener('keydown', esc, true);
+    });
+    return card;
   };
 
   write.addEventListener('click', () => {
@@ -308,7 +425,7 @@ export function git(ctx: Context): Node[] {
   // something is being written in the box or under it, which would be lost.
   let timer = 0;
   const typing = () => { const a = document.activeElement; return !!a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA') && (stage.contains(a) || mainPart.contains(a)) && !!(a as HTMLInputElement).value; };
-  const soon = () => { clearTimeout(timer); timer = window.setTimeout(() => { if (typing()) soon(); else void paint(); }, 250); };
+  const soon = () => { clearTimeout(timer); timer = window.setTimeout(() => { if (typing() || carrying.size) soon(); else void paint(); }, 250); };
   const stop = onChange((c) => {
     if (!workbench.element.isConnected) { stop(); return; }
     if (c.what === 'repo' || c.path === 'issue' || c.path.startsWith('issue/') || c.repo === at) soon();

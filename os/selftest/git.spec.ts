@@ -70,6 +70,37 @@ test('a change on main is committed from main\'s card, named by its line', async
   await expect(app.forge.reference.getByText('README.md', {exact: true})).toBeHidden();
 });
 
+test('main\'s box put on an issue is committed there: taken in hand, laid on the issue, it goes into it', async ({signedIn: app}) => {
+  await app.newRepo.make('hello');
+  await app.git.write('hello', 'Fix: Say hello louder');
+  await expect(app.git.issue('#1 Fix：Say hello louder')).toBeVisible();
+  await app.git.commitOnMain('hello', 'Docs: Start');
+  await app.rail.go('forge');
+  await app.forge.editFile('README.md', '# hello\n\nHELLO.\n');
+
+  await app.rail.go('git');
+  const card = app.git.mainCard('hello');
+  // From the keyboard it is the card's To #1, for the issue in full above.
+  await expect(card.getByRole('button', {name: 'To #1', exact: true})).toBeVisible();
+  // In hand, it leaves a dashed room where it stood, and the issue under it says it would take it.
+  const from = (await card.locator('.main-head').boundingBox())!;
+  const to = (await app.main.locator('.issue-slot[aria-current="true"] .issue-card').boundingBox())!;
+  await app.page.mouse.move(from.x + 40, from.y + from.height / 2);
+  await app.page.mouse.down();
+  await app.page.mouse.move(from.x + 60, from.y + from.height / 2, {steps: 3});
+  await expect(app.main.locator('.main-card.room')).toHaveCount(1);
+  await app.page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, {steps: 8});
+  await expect(app.main.locator('.issue-card.taking')).toHaveAttribute('data-take', 'Commit here');
+  await app.page.mouse.up();
+
+  // Gone into the issue: main has nothing left to commit, the issue's work has it committed, and Push is next.
+  await expect(app.git.mainCard('hello')).toBeHidden();
+  await expect(app.main.locator('.main-card.room')).toHaveCount(0);
+  await expect(app.git.step('Push')).toBeEnabled();
+  await app.git.step('Push').click();
+  await expect(app.git.review.getByText('HELLO.')).toBeVisible();
+});
+
 test('an issue that will not be done is closed, listed under Closed, and Reopen brings it back', async ({signedIn: app}) => {
   await app.newRepo.make('hello');
   await app.git.write('hello', 'Idea: Say it in French');

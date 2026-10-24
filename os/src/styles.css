@@ -477,7 +477,7 @@ span.todo-title { min-height: 0; }
 .todo-hint { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s5); padding: var(--s2) var(--s4) var(--s3); color: var(--sub); font-size: var(--t-meta); }
 /* Said only while the box is written in, fading in where it always stands, so nothing moves. */
 .todo-box .todo-hint { opacity: 0; transition: opacity 200ms ease-out; }
-.todo-box:focus-within .todo-hint { opacity: 1; }
+.todo-box:has(:is(textarea, input):focus) .todo-hint { opacity: 1; } /* writing in it, not a mark pressed */
 /* A key, as the key itself: its name on a small cap, the cap's foot a little heavier, as a key stands on a board. */
 .key-hint { display: inline-flex; align-items: center; gap: var(--s1); min-width: 0; }
 .key-hint > kbd { flex: none; }
@@ -1759,7 +1759,25 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .issue-under { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s3); margin-top: var(--s3); }
 .issue-leave { display: grid; gap: var(--s1); justify-items: start; }
 /* main's card on Git, for what it has not committed: a card (rule edge), its repo, Commit at the right. */
-.main-card { display: grid; gap: var(--s3); padding: var(--s4) var(--s5); border: 1px solid var(--rule); border-radius: var(--r-place); }
+.main-card { display: grid; gap: var(--s3); padding: var(--s4) var(--s5); border: 1px solid var(--rule); border-radius: var(--r-place); cursor: grab; }
+/* main's box taken in hand (git.ts takeable): over the page at its place, a sheet in hand (paper, its edge in ink),
+   going with the pointer; over the issue that would take it, a step smaller, as a thing about to be put down. Where
+   it stood, a dashed room (room for what is not there now), closing once it has gone into the issue. */
+.main-card.in-hand { position: fixed; z-index: 8; margin: 0; cursor: grabbing; background: var(--paper); border-color: var(--ink); transition: scale 160ms var(--land); }
+.main-card.in-hand.over { scale: .94; }
+.main-card.room { padding: 0; border-style: dashed; background: transparent; }
+/* While a box is in hand nothing on the page is selected by the pointer going over it. */
+:root.holding, :root.holding * { user-select: none; }
+/* The issue that would take it: its edge dashed in ink, what letting go does said over it; taken, a beat at its edge. */
+.issue-card { position: relative; }
+.issue-card.taking { border-style: dashed; border-color: var(--ink); }
+.issue-card.taking::after {
+  content: attr(data-take); position: absolute; inset: 0; display: grid; place-items: start center; padding-top: var(--s5); border-radius: inherit;
+  background: color-mix(in srgb, var(--paper) 72%, transparent); color: var(--ink); font-size: var(--t-meta); font-weight: 600; pointer-events: none;
+}
+.issue-card.took { animation: took 420ms ease-out; }
+@keyframes took { from { box-shadow: 0 0 0 4px var(--ink); } to { box-shadow: 0 0 0 0 transparent; } }
+@media (prefers-reduced-motion: reduce) { .main-card.in-hand { transition: none; } .issue-card.took { animation: none; } }
 .main-card + .main-card { margin-top: var(--s3); }
 /* main's card: the repo, how many files wait and Commit on one line; the files under it on the card itself, no box
    inside the box. */
@@ -2023,7 +2041,7 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 /* Its first line a little down from the box's top, as Home's is. */
 .board-todo .todo-items { padding: var(--s3) var(--s2) 0; }
 .board-todo .todo-hint { display: none; }
-.board-todo .todo-box:focus-within .todo-hint { display: flex; }
+.board-todo .todo-box:has(:is(textarea, input):focus) .todo-hint { display: flex; }
 .board-todo .error:empty { display: none; }
 .todo-read { white-space: pre-wrap; }
 .board-talk { flex: 1; min-height: 0; overflow-y: auto; padding: var(--s3) var(--s5); overscroll-behavior: contain; }

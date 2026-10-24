@@ -41,7 +41,7 @@ function resize(card: HTMLElement, from: number) {
  * its line ("Fix：title", as `l3 commit REPO "Fix：title"` takes it), Not now
  * at the left and Commit at the right, under the pointer.
  */
-export function mainCard(repo: string, n: number, events: IssueEvents, after: () => void): HTMLElement {
+export function mainCard(repo: string, n: number, events: IssueEvents, after: () => void, to: HTMLElement | null = null): HTMLElement {
   const card = h('div', {class: 'main-card', role: 'group', 'aria-label': t('Not committed on main in {repo}', {repo})});
   const plain = () => {
     const from = card.isConnected ? card.getBoundingClientRect().height : 0;
@@ -49,7 +49,7 @@ export function mainCard(repo: string, n: number, events: IssueEvents, after: ()
     commit.addEventListener('click', () => ask(commit));
     // The repo and how many files wait, Commit at the right of that line; under them the files, on the card itself.
     card.replaceChildren(h('div', {class: 'main-head'}, h('span', {class: 'card-title'}, repo),
-      h('span', {class: 'muted small'}, tn('{n} file to commit on main', '{n} files to commit on main', n)), h('span', {class: 'grow'}), commit),
+      h('span', {class: 'muted small'}, tn('{n} file to commit on main', '{n} files to commit on main', n)), h('span', {class: 'grow'}), to, commit),
       notCommitted(repo, n, events));
     resize(card, from);
     return commit;

@@ -72,6 +72,32 @@ const doing = (b: HTMLButtonElement, error: HTMLElement, f: () => Promise<unknow
 };
 /** The step just done here, for a moment: its done mark, drawn next, lands rather than being there (slot). */
 let justDone: {word: string; until: number} | null = null;
+
+/**
+ * What main has not committed in `issue`'s repo, taken to the issue's work and committed there, main as it was
+ * committed again: the box under main put on the issue (git.ts). Its work is started if it was not; the files go
+ * there as main has them (an issue's own file stays main's) and are committed under the issue. main is put back
+ * only once the work has them committed, so a step that fails loses nothing. The repo shows the issue's work after,
+ * and its Commit, drawn next, lands done.
+ */
+export async function commitTo(issue: Issue, s: RepoState | undefined): Promise<void> {
+  const at = issue.repo;
+  const carried = (await git.changes(at)).folders.flatMap((f) => f.files).filter((f) => !f.path.startsWith('issue/'));
+  if (!carried.length) return;
+  const held = await Promise.all(carried.map(async (f) => ({path: f.path, bytes: f.status === 'removed' ? null : await store.bytes(at, f.path)})));
+  const line = s?.lines.find((l) => l.issue === issuePath(issue));
+  if (line) await git.switchWork(at, line.line); else await git.startWork(at, issue.file);
+  for (const f of held) {
+    if (f.bytes) await store.put(at, f.path, f.bytes);
+    else await store.remove(at, f.path).catch(() => {});
+  }
+  await git.cut(at, null, '', '');
+  const work = (await git.work(at)).line;
+  await git.switchWork(at, 'main');
+  for (const f of carried) await git.putBack(at, f.path);
+  await git.switchWork(at, work);
+  justDone = {word: t('Commit'), until: performance.now() + 3000};
+}
 /** The issue closed here just now, for a moment: its line under Closed lands rather than being there (git-done.ts). */
 let closedNow: {repo: string; path: string; until: number} | null = null;
 export const justClosed = (i: Issue): boolean => {
