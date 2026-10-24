@@ -357,22 +357,35 @@ a { color: var(--ink); }
 .page > .home-layout:not(.pane-closed) { transition: grid-template-columns 420ms cubic-bezier(.2, 1.4, .32, 1); }
 .page > .home-layout.pane-closed { transition: grid-template-columns 260ms cubic-bezier(.4, 0, 1, 1); }
 @media (prefers-reduced-motion: reduce) { .page > .home-layout, .page > .home-layout:not(.pane-closed), .page > .home-layout.pane-closed, .work.bench, .work.bench:not(.pane-closed) { transition: none; } }
-.home-main { min-width: 0; width: 100%; max-width: 1080px; margin: 0 auto; }
+/* Its first line (the name, Edit profile) centred on the top line, as the pane's switch beside it is. */
+.home-main { min-width: 0; width: 100%; max-width: 1080px; margin: 0 auto; padding-top: calc(var(--band) - var(--top-line)); }
 .home-pane {
   position: sticky; top: var(--outer-top); height: var(--inner-h); min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: var(--s3);
   /* Forge's pane, where Forge's is: from the page's top to its foot, out to its right edge (over the page's margin). */
-  margin: calc(-1 * var(--top-line)) calc(-1 * var(--s5)) 0 0; padding: var(--band) var(--s5) var(--s4) var(--s4);
+  margin: calc(-1 * var(--top-line)) calc(-1 * var(--s5)) 0 0; padding: var(--band) var(--s5) var(--s4) calc(var(--s5) - var(--line-frame));
 }
 /* Forge's line, where Forge's is: the pane's edge, top line to foot; put away, no pane, no line. */
-.home-pane { border-left: var(--line-frame) solid var(--ink); transition: border-color 120ms; }
-.home-pane > .pane-toggle { justify-self: end; }
+.home-pane { border-left: var(--line-frame) solid var(--ink); background: var(--ground); transition: border-color 120ms; }
+/* Its top line as Forge's: the search box over the pane, the switch at its right end; put away, the switch alone. */
+.home-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--s3); min-width: 0; }
+.home-bar > .pane-toggle { grid-column: 2; }
+.home-layout.pane-closed .home-bar > .search-box { display: none; }
+/* While the search is out the window steps back under the one shade, as Forge's does. The pane holds itself in
+   place (sticky), so it is a layer of its own the search cannot rise out of: it rises over the shade itself, with a
+   shade of its own over what it holds but the search (put back at once as the search goes, the window's fading). */
+body:has(.home-pane .search-box:is(:focus-within, .reading))::after { opacity: 1; }
+.home-pane:has(.search-box:is(:focus-within, .reading, .moving)) { z-index: 8; }
+.home-pane::after { content: ''; position: absolute; inset: 0 0 0 calc(-1 * var(--line-frame)); pointer-events: none; background: color-mix(in srgb, var(--ink) 14%, transparent); opacity: 0; }
+.home-pane:has(.search-box:is(:focus-within, .reading))::after { opacity: 1; transition: opacity 180ms ease-out; }
+.home-bar > .search-box { z-index: 1; }
 .home-layout.pane-closed .home-pane { padding-left: 0; border-left-color: transparent; transition: border-color 260ms cubic-bezier(.7, 0, 1, 1); }
 .home-layout.pane-closed .home-side { display: none; }
-.home-side { min-height: 0; overflow: auto; }
+/* Its first heading on the line Forge's Prompt and Server's People are on, a band below the top line's foot. */
+.home-side { min-height: 0; overflow: auto; padding-top: var(--band); }
 .home-side > .plugins { padding: 0; }
 /* Lately, in Home's pane: what waits since the person was last here, a row each, the way there pressed. */
 .lately { display: grid; gap: var(--s2); }
-.lately h2 { font-size: var(--t-meta); font-weight: 600; }
+.lately h2 { font-size: var(--t-body); font-weight: 600; } /* as Forge's Prompt and Server's People */
 .lately-list { display: grid; gap: var(--s1); margin: 0 calc(-1 * var(--s3)); }
 .lately-row { display: grid; gap: 2px; min-width: 0; padding: var(--s2) var(--s3); border: 0; border-radius: var(--r-card); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .lately-row:hover { background: var(--raised); }
@@ -575,6 +588,11 @@ kbd {
 /* Git's column keeps its width whether it scrolls or not (read, then its words changed): where scrollbars take room
    (the desktop's), the room Forge's page has while it scrolls, as it nearly always does. */
 .git-flow { scrollbar-gutter: stable; }
+/* Its box at the foot stands back (bench.ts back), so its room under the last line is the page's foot, not the box's:
+   what fits is not left a few pixels scrollable (the heads stepping up as a merge closes the page up). The box up
+   (the Prompt), the room is its again. */
+.flow.git-flow { padding-bottom: var(--s6); }
+.work.bench.prompting .flow.git-flow { padding-bottom: 160px; }
 .issue-kind { font-weight: 700; }
 /* Where an issue is (its repo) is a name: the sans, as every name is. */
 .issue-where { font: var(--t-meta)/1.6 var(--sans); color: var(--sub); }
@@ -1046,11 +1064,13 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
    is already on its way, and leaving it, the row settles back. */
 .columns.split:has(> .col.after:hover) > .col { translate: calc(-1 * var(--s4)) 0; }
 .columns.split:has(> .col.before:hover) > .col { translate: var(--s4) 0; }
-.columns.split > .col:is(.before, .after):hover > .flow { opacity: .8; }
+.columns.split > .col:is(.before, .after):hover .file > :is(.path, .sheet) { opacity: .8; }
 .col.nothing { flex-basis: 0 !important; }
 .col > .flow { transition: padding-top var(--move) var(--land), opacity 240ms ease-out; }
-.columns.split > .col:not(.active) > .flow { opacity: .5; }
-.columns.split > .col:not(.active):hover > .flow { opacity: .75; }
+/* Dimmed, a box along from the one worked on is still a box: its paper and its edge stand as a neighbour issue's or
+   board's do, only its words quiet (a whole box at half strength is a grey slab, not a sheet). */
+.columns.split > .col:not(.active) .file > :is(.path, .sheet) { opacity: .5; transition: opacity 240ms ease-out; }
+.columns.split > .col:not(.active):hover .file > :is(.path, .sheet) { opacity: .75; }
 .col.nothing > .flow { opacity: 0 !important; }
 .columns.split > .col.active .file { border-color: var(--ink); }
 .col .file { transition: border-color var(--motion); }
@@ -1064,7 +1084,7 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
    stand (forge.ts room): the last box's edge keeps a step inside the pane's edge all the way, as if pushed by it. */
 .work.bench.pane-moving.pane-closed :is(.columns.split > .col, .dock) { transition-duration: 260ms; transition-timing-function: cubic-bezier(.4, 0, 1, 1); }
 .work.bench.pane-moving:not(.pane-closed) :is(.columns.split > .col, .dock) { transition-duration: 420ms; transition-timing-function: cubic-bezier(.2, 1.4, .32, 1); }
-.work.bench.pane-closed .columns.split > .col:not(.active) > .flow { opacity: 1; }
+.work.bench.pane-closed .columns.split > .col:not(.active) .file > :is(.path, .sheet) { opacity: 1; }
 .work.bench.pane-closed .columns.split > .col:not(.active) .file-beside { visibility: visible; }
 .work.bench.pane-closed .columns.split > .col.before > .col-head { flex-direction: row; padding: 0 var(--s3) 0 calc(var(--s3) + var(--s4) - var(--s1)); }
 .work.bench.pane-closed .columns.split > .col.before > .col-head > .col-close { margin-left: auto; }
@@ -1472,6 +1492,8 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
    the page's foot, where the rail's line ends; never under 440 px, a short window scrolling to the rest. */
 .page:has(> div > .inbox-page) { display: flex; flex-direction: column; height: var(--inner-h); padding-bottom: 0; }
 .page > div:has(> .inbox-page) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* Each as wide as a page's part is (a column of the page's flex would shrink to what it holds and stand centred). */
+.page:has(> div > .inbox-page) > * { width: 100%; }
 .inbox-page { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: auto minmax(0, 1fr); column-gap: var(--s5);
   row-gap: var(--s3); margin-top: var(--s5); flex: 1; min-height: 440px; }
 .inbox-page > .stub-holder { grid-area: 1 / 1 / 2 / 2; margin: 0; }

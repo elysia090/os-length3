@@ -37,20 +37,20 @@ import {glide, LAND, panAcross, where} from '../glide.ts';
  */
 
 /** Set when Forge is opened for a repo: the path to scroll to ('' for the top), and whether to write there. */
-let pending: {path: string; write: Writing} | null = null;
+let pending: {path: string; write: Writing; line: number} | null = null;
 
 /** The Forge on screen, so File can move it in place. */
-let live: {element: HTMLElement; show(repo: string, path: string, write: Writing): void} | null = null;
+let live: {element: HTMLElement; show(repo: string, path: string, write: Writing, line?: number): void} | null = null;
 
-/** Show `repo` at `path` in the Forge on screen (the caret at its start with `write`); false when Forge is not showing. */
-export function showInForge(repo: string, path: string, write: Writing = false): boolean {
+/** Show `repo` at `path` in the Forge on screen (at `line`; the caret there with `write`); false when Forge is not showing. */
+export function showInForge(repo: string, path: string, write: Writing = false, line = 0): boolean {
   if (!live?.element.isConnected) return false;
-  live.show(repo, path, write);
+  live.show(repo, path, write, line);
   return true;
 }
 
-/** Forge is next drawn for the repo just asked for, at `path` ('' for its top). */
-export function revealNext(path: string, write: Writing = false) { pending = {path, write}; }
+/** Forge is next drawn for the repo just asked for, at `path` ('' for its top), at `line` of it. */
+export function revealNext(path: string, write: Writing = false, line = 0) { pending = {path, write, line}; }
 
 /**
  * One repo's page in the center: its box in the row (its head, and the page that scrolls), what reads it, where it
@@ -598,7 +598,7 @@ function make(ctx: Context) {
   });
 
   /** Show `name` in the band, the center and the terminal, in place; at `path` if given, ready to write with `write`. */
-  const show = (name: string, path = '', write: Writing = false) => {
+  const show = (name: string, path = '', write: Writing = false, line = 0) => {
     band = addToBand(band, name);
     saveBand();
     const from = repo;
@@ -628,7 +628,7 @@ function make(ctx: Context) {
       // Gone to, it is the file read from now (File marks it, the band's first button opens at it), not only once the
       // center has settled on it a moment later.
       if (path) told(path);
-      if (path) { revealing = true; void view()?.reader.reveal(path, 0, write).then(() => track()); }
+      if (path) { revealing = true; void view()?.reader.reveal(path, line, write).then(() => track()); }
       else track(false);
     };
     if (across) panAcross(cols, across, go); else go();
@@ -739,7 +739,7 @@ function make(ctx: Context) {
       const chosen = ctx.repo !== known;
       known = ctx.repo;
       // Opened for a repo (from File, Home or a new repo), or one chosen to work on elsewhere: it goes on the band.
-      if (ctx.repo && all.includes(ctx.repo) && (asked || chosen)) { show(ctx.repo, asked?.path ?? '', asked?.write ?? false); return; }
+      if (ctx.repo && all.includes(ctx.repo) && (asked || chosen)) { show(ctx.repo, asked?.path ?? '', asked?.write ?? false, asked?.line ?? 0); return; }
       if (repo && all.includes(repoOf(repo)) && shown.includes(repo)) { layout(); paintBand(); track(false); return; }
       repo = null;
       const open = ctx.repo && band.includes(ctx.repo) ? ctx.repo : shown[0] ?? band[0];

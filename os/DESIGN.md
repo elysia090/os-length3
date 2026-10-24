@@ -1243,7 +1243,14 @@ it; the face gives a little wiggle as the form opens, and saved, it nods
 while the name settles where it is shown. Enter on the name or the handle
 saves; Escape leaves it as it was. The rail's face is the new one at once.
 
-Home's right pane (the same pane and switch as Forge's and Git's) holds
+Home's right pane (the same pane and switch as Forge's and Git's) has
+their top line: the search box where theirs is, beside the switch, in the
+repo last worked in (or, none yet, the one changed last), named in it
+since Home has no band to say which ("Search garden"); Ctrl+K, Ctrl+P and
+Ctrl+B as there; what is found opens in Forge, a line at that line,
+selected. While it is out the window steps back under the one shade. Its
+first line, the name and Edit profile, stands on that top line too. Under
+it the pane holds
 Lately: what waits since the person was last here, a row each and the way
 there pressed: where they left off (the file last read in Forge and the
 line it was left at, quoted as written; pressed, Forge opens there, that
@@ -1284,7 +1291,9 @@ pressed into, its files' boxes in `ink`, the others' in `rule`, its pill
 on past the center's edges: every box as wide as the one worked on, which
 stands in it whole (the first and the last at the page's margin, where one
 alone stands), and the ones along from it show only their edge (64 px, more
-at the row's ends), dimmed and cut by the frame's line, the rail's at the
+at the row's ends), their words dimmed (the box itself still `paper` with
+its `rule` edge, as a neighbour issue's is, never a grey slab) and cut by
+the frame's line, the rail's at the
 left and the pane's at the right: there is more that way, not a narrow box
 beside; only their edge shows, not words cut off by the line. One to the
 left says its name at its right end, the end that shows. With the pane put
@@ -1385,6 +1394,9 @@ the walk. Tab completes the path before the caret from the repo's files
 are written to what they share and listed in one quiet line under the box
 (monospace, as paths are), gone at the next key. With no path to complete
 Tab moves on, as everywhere.
+On Git, a page read and pressed rather than written in, it stands back
+from the start and again once the Prompt is done with (Escape), never over
+an issue's buttons; Ctrl+` or the pointer resting at the foot brings it.
 While one reads (the center turned by the wheel, a touch or the keys) and
 the box is empty and not being written in, it steps back (a 120 ms fade)
 and lets the text under it be pressed; the keyboard reaching it, a press on

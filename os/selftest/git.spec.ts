@@ -213,3 +213,16 @@ test('Git\'s column keeps its width whether it scrolls or not', async ({app}) =>
   // The room a scrollbar takes is kept while there is none, so reading and changing an issue's words never moves its edge.
   expect(await app.main.getByRole('region', {name: 'Git', exact: true}).evaluate((e) => getComputedStyle(e).scrollbarGutter)).toBe('stable');
 });
+
+test('Git is read and pressed: its box at the foot stands back until asked for, and back again once done with', async ({app}) => {
+  await app.newRepo.make('hello');
+  await app.rail.go('git');
+  // Not over the issue's buttons on arrival.
+  const dock = app.main.locator('.dock:visible');
+  await expect(dock).toHaveCSS('opacity', '0');
+  await app.page.keyboard.press('Control+Backquote');
+  await expect(app.main.getByRole('textbox', {name: 'Prompt box', exact: true})).toBeFocused();
+  await expect(dock).toHaveCSS('opacity', '1');
+  await app.page.keyboard.press('Escape');
+  await expect(dock).toHaveCSS('opacity', '0');
+});

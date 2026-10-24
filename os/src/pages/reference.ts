@@ -115,6 +115,12 @@ export class Reference {
   private query: HTMLInputElement;
   /** The box gets the keyboard, what is written in it selected (Ctrl+K, Ctrl+P: writing replaces it). */
   findNow() { this.query.focus(); this.query.select(); }
+  /** Where no band says which repo it is (Home's), the box names it: "Search garden". */
+  named(repo: string | null) {
+    const say = repo ? t('Search {repo}', {repo}) : t('Search this repo');
+    this.query.placeholder = say;
+    this.query.setAttribute('aria-label', say);
+  }
   /** Under the box: the switch, and under it the large box with what was searched and read in a line. */
   private under: HTMLElement;
   private pillButtons = new Map<Kind, HTMLButtonElement>();

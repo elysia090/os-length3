@@ -170,7 +170,10 @@ export interface Bench {
 
 export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(path: string, line?: number, write?: Writing): void;
   /** A conversation's word in the pane pressed: open it in Inbox. */
-  word?(address: string): void}): Bench {
+  word?(address: string): void;
+  /** A page read and pressed rather than written in (Git): its box at the foot stands back until it is asked for
+   * (Ctrl+`, the pointer resting at the foot), and back again once the Prompt is done with, never over a button. */
+  back?: boolean}): Bench {
   let repo: string | null = null;
   // Named for what one does there: type at the prompt of the repo's sh.
   const termTitle = h('div', {class: 'term-head'}, h('h2', {}, 'Prompt'));
@@ -268,6 +271,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     dock.classList.toggle('resting', on);
   };
   const reading = () => rest(true);
+  if (parts.back) dock.classList.add('resting');
   parts.main.addEventListener('wheel', reading, {passive: true});
   parts.main.addEventListener('touchmove', reading, {passive: true});
   parts.main.addEventListener('keydown', (event) => { if (['PageDown', 'PageUp', ' ', 'Home', 'End', 'ArrowDown', 'ArrowUp'].includes(event.key) && !(event.target as HTMLElement).closest('textarea, input')) reading(); });
@@ -292,6 +296,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     prompting = on;
     work.classList.toggle('prompting', on);
     fly(termBox, on ? termSlot : termHome);
+    if (!on && parts.back) requestAnimationFrame(() => rest(true));
   };
   const fit = () => { prompt.style.height = 'auto'; prompt.style.height = `${prompt.scrollHeight}px`; };
   prompt.addEventListener('focus', () => { setPrompting(true); following(); });

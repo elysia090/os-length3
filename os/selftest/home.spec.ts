@@ -66,3 +66,32 @@ test("Home's repos are three across at a laptop's width, and one under another o
   await app.page.setViewportSize({width: 390, height: 844});
   await expect(async () => expect(new Set(await tops()).size).toBe(4)).toPass();
 });
+
+test('the name written on Home is the account\'s, so what is started, committed and reviewed from here says it', async ({signedIn: app}) => {
+  await app.rail.go('home');
+  await app.main.getByRole('button', {name: 'Edit profile'}).click();
+  const name = app.page.locator('#profile-name');
+  await name.fill('Ada Byron');
+  await name.press('Enter');
+  await expect(app.main.getByRole('button', {name: 'Edit profile'})).toBeVisible();
+  await expect(app.main.getByRole('heading', {name: 'Ada Byron', level: 1})).toBeVisible();
+  // The Remote knows the person by it now.
+  await app.rail.go('remote');
+  await expect(app.main.getByText('Signed in as Ada Byron')).toBeVisible();
+});
+
+test('Home has the search Forge has, where Forge has it: in the repo last worked in, a line found opened in Forge there', async ({app}) => {
+  await app.newRepo.make('hello', {template: 'C'});
+  await app.rail.go('home');
+  // Named, there being no band on Home to say which repo it searches.
+  const search = app.main.getByRole('searchbox', {name: 'Search hello'});
+  await expect(search).toBeVisible();
+  await app.page.keyboard.press('Control+k');
+  await expect(search).toBeFocused();
+  await search.fill('puts');
+  const results = app.main.getByRole('region', {name: 'Search results'});
+  await expect(results.getByText('1 file · 1 line')).toBeVisible();
+  await results.getByRole('button', {name: /puts\("hello"\);/}).click();
+  await expect(app.forge.editor('src/main.c')).toBeFocused();
+  await expect.poll(() => app.forge.selected('src/main.c')).toBe('    puts("hello");');
+});

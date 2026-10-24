@@ -1,7 +1,7 @@
 import {h} from '../dom.ts';
 import {t, tn} from '../i18n.ts';
 import {LIMITS, initials, normalize, parse, type Profile} from '../profile.ts';
-import {connection} from '../remote.ts';
+import {connection, rename} from '../remote.ts';
 import {getState, setState, settingName, unreadable} from '../state.ts';
 import * as servers from '../servers.ts';
 import * as inbox from '../inbox.ts';
@@ -10,6 +10,7 @@ import {store} from '../repos.ts';
 import {repoList} from './repo-list.ts';
 import {todoBox} from './todo-box.ts';
 import {openNext as openConversation} from './inbox.ts';
+import {Reference} from './reference.ts';
 import type {Context} from './context.ts';
 import {onRightPane, pluginArea, rightPaneOpen, setRightPane} from './bench.ts';
 import {mark, paneMark} from '../icons.ts';
@@ -58,7 +59,33 @@ export function home(ctx: Context): Node[] {
 function homePane(main: HTMLElement, ctx: Context): HTMLElement {
   const side = h('aside', {class: 'home-side', id: 'home-side', 'aria-label': t('Lately')}, pluginArea(), lately(ctx));
   const toggle = h('button', {type: 'button', class: 'pane-toggle', 'aria-label': t('Right pane'), 'aria-controls': 'home-side'}, paneMark()) as HTMLButtonElement;
-  const layout = h('div', {class: 'home-layout'}, main, h('div', {class: 'home-pane'}, toggle, side));
+  // The search Forge and Git have, where theirs is: in the repo last worked in (named in it, there being no band to
+  // say which), what is found opened in Forge, at its line.
+  let repo = ctx.repo;
+  const reference = new Reference({reveal: (path, line, write) => { if (repo) ctx.openRepo(repo, path, write ?? false, undefined, line ?? 0); }});
+  const aim = (name: string | null) => { repo = name; reference.setRepo(name); reference.named(name); };
+  aim(repo);
+  const pane = h('div', {class: 'home-pane'}, h('div', {class: 'home-bar'}, reference.search, toggle), side);
+  // None worked in yet (or it is gone): the one changed last, so the box is never there to be pressed for nothing.
+  void store.list().then((all) => {
+    if (!pane.isConnected || (repo && all.some((r) => r.name === repo))) return;
+    aim(all.slice().sort((a, b) => b.modified - a.modified)[0]?.name ?? null);
+  }, () => {});
+  const layout = h('div', {class: 'home-layout'}, main, pane);
+  // What opens under the box is two of the pane wide, as under Forge's (styles.css .search-results).
+  new ResizeObserver(() => pane.style.setProperty('--pane-w', `${pane.offsetWidth}px`)).observe(pane);
+  // The keys Forge and Git know, here too: Ctrl+K or Ctrl+P (or Ctrl+Shift+F) to the search, the pane brought out for
+  // it if it was put away; Ctrl+B to put the pane away or bring it back (⌘ on a Mac).
+  const keys = (event: KeyboardEvent) => {
+    if (!layout.isConnected) { document.removeEventListener('keydown', keys); return; }
+    if (!(event.ctrlKey || event.metaKey) || event.altKey || event.isComposing || document.getElementById('page')?.hasAttribute('inert')) return;
+    const k = event.key.toLowerCase();
+    if ((k === 'k' || k === 'p') && !event.shiftKey || (k === 'f' && event.shiftKey)) {
+      event.preventDefault();
+      if (rightPaneOpen()) reference.findNow(); else { setRightPane(true); requestAnimationFrame(() => reference.findNow()); }
+    } else if (k === 'b' && !event.shiftKey) { event.preventDefault(); setRightPane(!rightPaneOpen()); }
+  };
+  document.addEventListener('keydown', keys);
   let was = rightPaneOpen();
   const paint = () => {
     layout.classList.toggle('pane-closed', !rightPaneOpen());
@@ -255,6 +282,13 @@ function editForm(done: (saved: boolean) => void, faced: (p: {name: string; hand
     try { await setState('profile', JSON.stringify(result.profile)); } catch (e) {
       error.textContent = t('Could not save: {message}', {message: errorText(e)});
       return;
+    }
+    // Signed in, the name is the account's too: what is started, committed and reviewed from here says it.
+    if (result.profile.name) {
+      try { await rename(result.profile.name); } catch (e) {
+        error.textContent = t('Saved here; the Remote still has the name it had ({message})', {message: errorText(e)});
+        return;
+      }
     }
     done(true);
   });

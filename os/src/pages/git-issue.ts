@@ -4,7 +4,7 @@ import {arrive, lift, type Lifted, morph, still} from '../glide.ts';
 import * as git from '../history.ts';
 import {t, tn} from '../i18n.ts';
 import {closeMark, issueName, issuePath, saveIssue, setClosed, type Issue} from '../issues.ts';
-import {connection, me} from '../remote.ts';
+import {connection, myName} from '../remote.ts';
 import {store} from '../repos.ts';
 import {changeFor, type Standing} from '../git-state.ts';
 import {named} from '../text.ts';
@@ -82,12 +82,10 @@ export const justClosed = (i: Issue): boolean => {
 /** The issue started here last, and when: its steps unfold, through a draw again or two (issueBox). */
 let started: {path: string; at: number} | null = null;
 
-/** Who is signed in, for the line a close is written with; read once. */
-let whoAmI: Promise<string> | null = null;
-const myName = () => (whoAmI ??= me().then((m) => m?.name ?? '', () => { whoAmI = null; return ''; }));
 
 /** Close an issue that will not be done: its file says so on its last line (the day, and who). */
-const closeIssue = async (issue: Issue) => setClosed(store, issue, closeMark(await myName()));
+/** Closed, its file says by whom: the name the Remote knows the person by (none, not answered). */
+const closeIssue = async (issue: Issue) => setClosed(store, issue, closeMark(await myName().catch(() => '')));
 /** Open a closed issue again. */
 export const reopenIssue = (issue: Issue) => setClosed(store, issue, null);
 const hereOf = (s: RepoState | undefined, issue: Issue) => !!s?.work && s.work.line !== 'main' && s.work.issue === issuePath(issue);

@@ -59,10 +59,10 @@ let readingPath: string | null = null;
 const ctx: Context = {
   // Server, like File, is laid over the page rather than being one.
   go: (id) => { if (id === 'server') { serverLayer.open(true); return Promise.resolve(); } return select(id); },
-  openRepo(name, path = '', write = false, grownFrom) {
-    if (current === 'forge' && showInForge(name, path, write)) return;
+  openRepo(name, path = '', write = false, grownFrom, line = 0) {
+    if (current === 'forge' && showInForge(name, path, write, line)) return;
     ctx.remember(name);
-    revealNext(path, write);
+    revealNext(path, write, line);
     // Pressed on its card or its row (or made from a form, which says so), the repo grows from there into its box in Forge.
     const from = grownFrom?.isConnected ? grownFrom.getBoundingClientRect()
       : pressedOn?.isConnected && performance.now() - pressedAt < 1500 ? pressedOn.getBoundingClientRect() : null;

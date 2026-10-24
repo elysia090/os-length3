@@ -310,7 +310,7 @@ export function git(ctx: Context): Node[] {
       form.element, empty, column),
     committedPart, mergedPart, closedPart);
   // Its repos are its band, on the top line as Forge's pills are, so the page starts where the rail's places do.
-  const workbench = bench({strip: h('div', {class: 'git-band'}, chips), main, reveal: (path) => { if (at) ctx.openRepo(at, path); }, word: (a) => { openConversation(a); void ctx.go('inbox'); }});
+  const workbench = bench({strip: h('div', {class: 'git-band'}, chips), main, reveal: (path) => { if (at) ctx.openRepo(at, path); }, word: (a) => { openConversation(a); void ctx.go('inbox'); }, back: true});
   // Issues written anywhere (here, in the shell, with l3 in the Prompt) show
   // up at once, and any change in the repo looked at is read again; not while
   // something is being written in the box or under it, which would be lost.

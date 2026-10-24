@@ -477,3 +477,24 @@ export async function me(): Promise<{id: string; name: string} | null> {
   const s = await json<{user: {id: string; name: string}} | null>('/api/auth/get-session');
   return s?.user ?? null;
 }
+
+/** The name the Remote knows the person by (what a commit, a start or a review says), asked once until it changes. */
+let named: {token: string; name: Promise<string>} | null = null;
+export function myName(): Promise<string> {
+  const c = connection();
+  if (!c) return Promise.resolve('');
+  if (named?.token !== c.token) {
+    const token = c.token;
+    const name = me().then((m) => m?.name ?? '');
+    name.catch(() => { if (named?.token === token) named = null; });
+    named = {token, name};
+  }
+  return named.name;
+}
+
+/** One person, one name: the name written on Home's profile is the account's, and so what is done from here says it. */
+export async function rename(name: string): Promise<void> {
+  if (!connection() || name === await myName().catch(() => '')) return;
+  await json('/api/auth/update-user', {method: 'POST', body: JSON.stringify({name})});
+  named = null;
+}

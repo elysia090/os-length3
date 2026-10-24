@@ -86,6 +86,7 @@ export default {
   'diff': 'diff',
   'Output': '実行結果',
   'Search this repo': 'この repo を検索',
+  'Search {repo}': '{repo}を検索',
   'Line {n} of {path}': '{path}の{n}行目',
   'Open a repo to search it': 'repo を開くと検索できます',
   'Open a repo to run in it': 'repo を開くと実行できます',
