@@ -76,20 +76,27 @@ Every value in `styles.css` comes from a token (§2).
     over are light while half of it or more lies on the ink and in ink
     otherwise, the one it leaves and those it passes too: an icon never
     goes ink on ink as the ink goes by.
-  - *The camera pans along the rail.* Going to another place, the page left
-    goes up and away as the next rises in from below (down the rail; up it,
-    the other way round), the rail and the window's edges standing still, a
-    floor passed in a lift. The page left is out of the way first, gathering
-    speed (150 ms, gone by 90), the next rising in as it goes (50 ms on, 360
-    ms, landing), so there is never an empty frame between them and never
-    the two half seen, their words over each other; it comes as one, not
-    staged. Only the page is taken as a picture to move (cut at the center's
+  - *The camera pans along the rail.* The pages stand one above another
+    down the rail, as floors do: going to another place, the camera goes the
+    whole way to it, the page left going up and out of the window whole as
+    the next comes up into it from below (down the rail; up it, the other way
+    round), the two as one sheet, the rail and the window's edges standing
+    still, a floor passed in a lift (440 ms, fast off the mark and landing).
+    Nothing fades: there is never an empty frame between them and never the
+    two seen in one place, their words over each other; it comes as one, not
+    staged. Only the page is taken as a picture to move (cut at the window's
     edges); the rest of the window goes on being drawn as it is. Along the
-    band the same: another repo come to pans the row sideways, the next one
-    to the right coming from the right (150 ms out, 340 ms in). The first page the OS opens on comes in the same way,
-    its parts a beat apart, rising from below; nothing is drawn before it
-    (not Home for a moment while the place it opens on is still being
-    chosen, as when a provider sends the person back to Remote).
+    band the same: the repos stand side by side in the band's order, and
+    another repo come to pans the row sideways the whole way, the next one to
+    the right coming from the right (400 ms).
+  - *The OS opens.* From its first frame: the frame's line is drawn down the
+    rail's edge from the top (620 ms) as the rail's places come in one after
+    another down it from the window's edge, 34 ms apart, the person last at
+    its foot; then the first page comes up, its parts a beat apart, rising
+    from below, its right pane's words from the right as when it is brought
+    out. Nothing is drawn before its turn (not Home for a moment while the
+    place it opens on is still being chosen, as when a provider sends the
+    person back to Remote), and nothing is drawn whole and then again.
   - *What comes in, comes from its side, a beat at a time.* Down the rail
     the next page comes up from below, up the rail from above; along the
     band the next repo comes from the right, back along it from the left.
@@ -1229,8 +1236,11 @@ TODO files. An item is a first line named like an issue ("Fix：件名"),
 then detail lines (starting on the first line's column, with a kind or
 without); Enter on an empty line starts the next item. An input method's Enter
 (the one that takes a Japanese word) is the method's, never a new line or the
-next item. Done strikes through and fades the first line, and its detail goes
-quiet with it, still there to read. The repos are large cards, three across at a
+next item. Done strikes through and fades the first line, the line drawn
+across its words from the kind's start as the mark pops (taken back, it goes
+back the way it came), and its detail goes quiet with it, still there to read.
+A detail opened or put away moves the items under it down or up to make room,
+never jumping them. The repos are large cards, three across at a
 laptop's width (two, then one, as it narrows); each is a repo in a list as
 Runtime says it: its body the repo itself, its gear Forge or Free.
 

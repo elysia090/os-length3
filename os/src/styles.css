@@ -157,6 +157,15 @@ a { color: var(--ink); }
 /* The icons keep a little more room on the side of the line than on the
    window's side, so they do not crowd it. */
 .rail { border-right: var(--line-frame) solid var(--ink); padding-right: calc(var(--rail-line-gap) - var(--s3)); height: var(--inner-h); position: sticky; top: var(--outer-top); z-index: 6; display: flex; flex-direction: column; }
+/* The OS opening (main.ts railOpening; index.html opens with it, so the line is never drawn whole and then again):
+   the frame's line drawn down the rail's edge from the top, fast off the mark and slowing to the foot, before the
+   line is the rail's own edge again. Without the script it is drawn all the same, and stays. */
+@media (prefers-reduced-motion: no-preference) {
+  .opening .rail { border-right-color: transparent; }
+  .opening .rail::after { content: ''; position: absolute; top: 0; bottom: 0; right: calc(-1 * var(--line-frame)); width: var(--line-frame); background: var(--ink);
+    transform-origin: top; animation: frame-drawn 620ms var(--land) both; }
+}
+@keyframes frame-drawn { from { scale: 1 0; } }
 .rail-tabs { position: relative; isolation: isolate; display: flex; flex-direction: column; align-items: center; gap: var(--s1); flex: 1; min-height: 0; padding: var(--rail-top) 0 var(--s3); }
 /* The ink of the thing chosen, on its way from the one it was on (glide.ts): under the words and icons; the one
    it is going to waits un-inked, its words in ink, until it lands. */
@@ -166,32 +175,33 @@ a { color: var(--ink); }
 .morph-box { position: fixed; z-index: 9; pointer-events: none; border: var(--line-work) solid var(--ink); border-radius: var(--r-place); background: var(--paper); }
 /* The words a morph carries: a copy of them as they were drawn, going with the box onto the words they become. */
 .morph-words { position: fixed; z-index: 10; margin: 0; white-space: nowrap; overflow: visible; transform-origin: 0 0; pointer-events: none; }
-/* Along the rail the camera pans with it (main.ts select): the page left goes up and away as the next rises in from
-   below (down the rail; up it, the other way round; --pan is 1 or -1), the rail and the window's edges standing
-   still. Only the page moves, and only the page is taken as a picture to move: the rest of the window is not taken
+/* Along the rail the camera pans with it (main.ts select): the pages stand one above another down the rail, as
+   floors do, and the camera goes down to the next (up it, the other way round; --pan is 1 or -1): the page left goes
+   up and out of the window whole as the next comes up into it from below, the two as one sheet, the rail and the
+   window's edges standing still. Only the page moves, and only the page is taken as a picture to move: the rest of the window is not taken
    at all (two pictures of the whole window a pan, for nothing) and goes on being drawn as it is, its own moves (the
    rail's ink) going on. The page is named only while it pans: named, it is a layer of its own, and the search's
    shade would lie over the search with it. */
 :root { view-transition-name: none; }
 .panning #page { view-transition-name: page; }
 ::view-transition-group(page) { animation: none; overflow: clip; }
-/* The page left goes as a thing leaving does, gathering speed a short way off (160 ms); the next is already on its
-   way as it goes (from 50 ms), rising the longer way in and slowing into its place (360 ms). The two are never
-   both half seen in one place (the one leaving is well off and nearly gone by the time the next is half there),
-   and there is never a moment with neither: the screen is never empty. The most used move, so it is short. */
-::view-transition-old(page) { animation: pan-out 150ms cubic-bezier(.5, 0, .9, .6) both; }
-::view-transition-new(page) { animation: pan-in 360ms var(--land) 50ms both; }
-@keyframes pan-out { 60% { opacity: 0; } to { transform: translateY(calc(var(--pan, 1) * -9%)); opacity: 0; } }
-@keyframes pan-in { from { transform: translateY(calc(var(--pan, 1) * 14%)); opacity: 0; } 40% { opacity: 1; } }
-/* Along the band the camera pans sideways the same way (glide.ts panAcross): only the center is taken, the repo
-   left going off the other way as the one come to rises in from its pill's side. */
+/* The camera goes the whole way, fast off the mark and slowing into the next floor (440 ms): nothing fades, the two
+   are never seen in one place, one over the other, and the window is never empty. The page cut at the window's
+   edges as it goes, as a floor at a lift's door. */
+::view-transition-old(page) { animation: pan-out 440ms var(--land) both; }
+::view-transition-new(page) { animation: pan-in 440ms var(--land) both; }
+@keyframes pan-out { to { transform: translateY(calc(var(--pan, 1) * -100%)); } }
+@keyframes pan-in { from { transform: translateY(calc(var(--pan, 1) * 100%)); } }
+/* Along the band the camera pans sideways the same way (glide.ts panAcross): the repos stand side by side in the
+   band's order, and only the center is taken, the repo left going off whole the other way as the one come to comes
+   in from its pill's side, the two as one strip (400 ms). */
 .panning-across #page { view-transition-name: none; }
 /* It moves inside the center's frame, as the files scroll in it: cut at the center's edges, never over the lines. */
 ::view-transition-group(across) { animation: none; overflow: clip; }
-::view-transition-old(across) { animation: across-out 150ms cubic-bezier(.5, 0, .9, .6) both; }
-::view-transition-new(across) { animation: across-in 340ms var(--land) 40ms both; }
-@keyframes across-out { 60% { opacity: 0; } to { transform: translateX(calc(var(--pan-x, 1) * -7%)); opacity: 0; } }
-@keyframes across-in { from { transform: translateX(calc(var(--pan-x, 1) * 11%)); opacity: 0; } 40% { opacity: 1; } }
+::view-transition-old(across) { animation: across-out 400ms var(--land) both; }
+::view-transition-new(across) { animation: across-in 400ms var(--land) both; }
+@keyframes across-out { to { transform: translateX(calc(var(--pan-x, 1) * -100%)); } }
+@keyframes across-in { from { transform: translateX(calc(var(--pan-x, 1) * 100%)); } }
 /* The OS's caret (caret.ts), a 2 px stroke of ink gliding from where it was to where it is; the browser's own is
    hidden in the field it stands for. Solid while it moves, blinking once it rests. */
 .os-caret-field { caret-color: transparent; }
@@ -484,6 +494,7 @@ body:has(.home-pane .search-box:is(:focus-within, .reading))::after { opacity: 1
 .todo-item { padding-bottom: var(--s2); }
 .todo-head { display: grid; grid-template-columns: var(--h-control) auto minmax(0, 1fr) auto; align-items: center; column-gap: var(--s1); min-height: var(--h-control); padding-right: var(--s2); }
 /* Each in its own column, so a line without a kind keeps its date at the right like the rest. */
+.todo-head > * { grid-row: 1; }
 .todo-head > .todo-mark { grid-column: 1; }
 .todo-head > .todo-kind { grid-column: 2; }
 .todo-head > .todo-title { grid-column: 3; }
@@ -511,8 +522,15 @@ span.todo-title { min-height: 0; }
 }
 .todo-title:focus, .todo-detail:focus { outline: none; }
 .todo-meta { color: var(--sub); font-size: var(--t-meta); font-variant-numeric: tabular-nums; }
-/* Done: only the first line is struck through and quiet, in `sub`, which still reads (an opacity would not). */
-.todo-item.done .todo-head .todo-title, .todo-item.done .todo-head .todo-kind { text-decoration: line-through; color: var(--sub); }
+/* Done: only the first line is struck through and quiet, in `sub`, which still reads (an opacity would not). The line
+   is drawn across its words as it is done, from the kind's start, and goes back the way it came if it is taken back
+   (todo-box.ts measures it to the words); read, not written, it is the words' own. */
+.todo-item.done .todo-head :is(.todo-title, .todo-kind) { color: var(--sub); }
+.todo-item.done .todo-head:not(:has(.todo-strike)) :is(.todo-title, .todo-kind) { text-decoration: line-through; }
+.todo-head :is(.todo-title, .todo-kind) { transition: color 240ms ease-out; }
+.todo-head > .todo-strike { grid-column: 2 / 4; grid-row: 1; justify-self: start; align-self: center; height: 1px; margin-top: 2px; background: var(--sub);
+  pointer-events: none; scale: 0 1; transform-origin: left; transition: scale 300ms cubic-bezier(.6, 0, .25, 1); }
+.todo-item.done .todo-head > .todo-strike { scale: 1 1; }
 /* Its detail goes quiet with it, still there to read. */
 .todo-item.done .todo-detail { color: var(--sub); }
 .todo-detail::placeholder { color: var(--sub); opacity: .7; }

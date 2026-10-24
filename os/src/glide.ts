@@ -11,6 +11,10 @@
 /** The camera's landing (styles.css --land): fast off the mark, the last pixels slow. */
 export const LAND = 'cubic-bezier(.2, .9, .25, 1)';
 
+/** The animations' own clock (ms): what their delays and lengths are counted on, so what is timed against them keeps
+ * with them however they are played (the page's clock where there is none). */
+export const clock = () => { const t = document.timeline.currentTime; return typeof t === 'number' ? t : performance.now(); };
+
 /** Whether motion is turned off (reduced motion): each thing is where it ends, at once. */
 export const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -221,11 +225,14 @@ export function countUp(el: HTMLElement, ms = 560) {
   if (still() || !m) return;
   const to = parseFloat(m[1]), places = m[1].split('.')[1]?.length ?? 0, rest = m[2];
   if (!to) return;
-  const t0 = performance.now();
+  // Timed by the frames' own clock from the first frame it is drawn in (not the page's clock, which a frame's time
+  // can be behind: it would count from below nothing).
+  let t0 = -1;
   const step = (now: number) => {
     // Written over meanwhile (the figure read again): what it says now is left as it is.
     if (!el.isConnected || !(el.textContent ?? '').endsWith(rest)) return;
-    const k = Math.min(1, (now - t0) / ms);
+    if (t0 < 0) t0 = now;
+    const k = Math.min(1, Math.max(0, (now - t0) / ms));
     const eased = 1 - Math.pow(1 - k, 3);
     el.textContent = k < 1 ? `${(to * eased).toFixed(places)}${rest}` : text;
     if (k < 1) requestAnimationFrame(step);
@@ -254,7 +261,7 @@ let arriving: (() => void) | null = null;
 export function stage(root: HTMLElement, dir: number) {
   if (still()) return;
   arriving?.();
-  const t0 = performance.now(), seen = new WeakSet<Element>(), moving = new Map<Element, Animation>();
+  const t0 = clock(), seen = new WeakSet<Element>(), moving = new Map<Element, Animation>();
   /** Whether each box clips what is in it, asked once an arrival (its style is read, not its size). */
   const clipping = new Map<Element, boolean>();
   const clips = (p: Element) => {
@@ -279,7 +286,7 @@ export function stage(root: HTMLElement, dir: number) {
       return r.width > 0 && r.top < tall && r.bottom > 0 && !el.parentElement?.closest(BEATS);
     }).map((el) => ({el, r: el.getBoundingClientRect()}))
       .sort((a, b) => (Math.abs(a.r.top - b.r.top) > 12 ? a.r.top - b.r.top : a.r.left - b.r.left));
-    const late = performance.now() - t0;
+    const late = clock() - t0;
     beats.forEach(({el, r}, i) => {
       if (seen.has(el)) return;
       seen.add(el);
@@ -308,7 +315,9 @@ export function stage(root: HTMLElement, dir: number) {
   // Ended by the next page come to: what it still had coming stands where it is, for the next to stage.
   const end = () => { heard.disconnect(); for (const a of moving.values()) a.cancel(); moving.clear(); if (arriving === end) arriving = null; };
   arriving = end;
-  setTimeout(() => { heard.disconnect(); if (arriving === end) arriving = null; }, 900);
+  // It lasts as long as its parts' turns do, on their clock.
+  const over = () => { heard.disconnect(); if (arriving === end) arriving = null; };
+  root.animate([], {duration: 900}).finished.then(over, over);
 }
 
 /**

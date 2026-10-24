@@ -28,7 +28,7 @@ import {heldInvite, holdInvite, inviteIn} from './servers.ts';
 import {getState, loadState} from './state.ts';
 import {onLang, t, useLang} from './i18n.ts';
 import {NEW_REPO, PURPOSES, RAIL, purpose, restorePurpose, stepPurpose, type PurposeId} from './purposes.ts';
-import {glide, morph, stage, where} from './glide.ts';
+import {LAND, glide, morph, paneOut, stage, still, where} from './glide.ts';
 import {letGo, touch} from './touch.ts';
 import {caret} from './caret.ts';
 
@@ -209,7 +209,7 @@ function draw(id: PurposeId, quiet: boolean, panned: boolean) {
   plugState();
   if (id !== 'new-repo') save(PURPOSE_KEY, id);
   // The first page comes in as any page come to does, its parts a beat apart, rising from below as the OS opens.
-  if (first && !quiet) { stage($('page'), 1); return; }
+  if (first && !quiet) { pageOpening(); stage($('page'), 1); return; }
   if (from !== id) {
     // The rail's ink goes from the place left to the place come to, and the page comes from that side of the rail.
     glide(inkWas, tabs.get(id)?.getAttribute('aria-current') ? tabs.get(id)! : null, $('rail-tabs'), 'var(--r-place)');
@@ -221,6 +221,30 @@ function draw(id: PurposeId, quiet: boolean, panned: boolean) {
       stage($('page'), Math.sign(order.indexOf(id) - order.indexOf(from)));
     }
   }
+}
+
+/**
+ * The OS opening, once, from its first frame: the frame's line is drawn down the rail's edge from the top (styles.css
+ * .opening) as the rail's places come in one after another down it, each from the window's edge, the person last at
+ * its foot; the first page comes up after them (pageOpening).
+ */
+function railOpening() {
+  const root = document.documentElement, rail = $('rail-tabs').parentElement!;
+  if (still()) { root.classList.remove('opening'); return; }
+  const drawn = (e: AnimationEvent) => { if (e.pseudoElement === '::after') { root.classList.remove('opening'); rail.removeEventListener('animationend', drawn); } };
+  rail.addEventListener('animationend', drawn);
+  [...$('rail-tabs').children, ...$('rail-me').children].forEach((el, i) => el.animate([{opacity: 0, translate: '-14px 0'}, {opacity: 1, translate: '0 0'}],
+    {duration: 380, delay: 60 + i * 34, easing: LAND, fill: 'backwards'}));
+}
+
+/** The first page, as the OS opens: its parts a beat apart (stage), its right pane's words from the right as when it
+ * is brought out, nothing of it there before its turn. */
+function pageOpening() {
+  if (still()) return;
+  const page = $('page');
+  page.animate([{opacity: 0}, {opacity: 1}], {duration: 280, delay: 120, easing: 'ease-out', fill: 'backwards'});
+  const side = page.querySelector<HTMLElement>('.home-side, .side'), toggle = page.querySelector<HTMLElement>('.pane-toggle');
+  if (side?.getClientRects().length && toggle) paneOut(side, toggle);
 }
 
 /** The page's name where the host lists it (a tab, history, the window list): the place, then the OS. */
@@ -257,6 +281,7 @@ const me = new Me(ctx, currentProfile, {editProfile: () => startEditing(ctx)});
 $('rail-me').append(me.element);
 
 $('rail-tabs').append(...PURPOSES.map((p) => railButton(p.id)), railButton(NEW_REPO.id));
+railOpening();
 // The rail's name, in the language the OS starts in (index.html has the English).
 document.querySelector('.rail')?.setAttribute('aria-label', t('Purposes'));
 // The Remote not answering is said in one place, on the Remote's own: a red dot, and its name says why.

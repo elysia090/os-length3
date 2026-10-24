@@ -52,6 +52,7 @@ interface Row {
   kind: HTMLElement;
   button: HTMLButtonElement;
   meta: HTMLElement;
+  strike: HTMLElement;
 }
 
 /** A TODO list on screen: its box, and taking in the list as it now is elsewhere. */
@@ -106,7 +107,29 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
     field.setSelectionRange(p, p);
   };
   const neighbour = (id: string, step: number) => items[items.findIndex((td) => td.id === id) + step]?.id;
-  const showDetail = (r: Row, show: boolean) => { r.detail.hidden = !show; if (show) fit(r.detail); };
+  /** Its detail shown or put away: the lines under it make room for it, or close up after it, rather than jump. */
+  const showDetail = (r: Row, show: boolean) => {
+    if (r.detail.hidden !== show) { if (show) fit(r.detail); return; }
+    const below: Element[] = [];
+    for (let e = r.item.nextElementSibling; e && r.item.isConnected; e = e.nextElementSibling) below.push(e);
+    const was = below[0]?.getBoundingClientRect().top;
+    r.detail.hidden = !show;
+    if (show) fit(r.detail);
+    if (was !== undefined) closeUp(below, was - below[0].getBoundingClientRect().top, 200);
+  };
+  /** The line through a done item's words (styles.css draws it across them as it is done): as long as they are, from
+   * its kind's start. Measured once the row is in the page. */
+  let pen: CanvasRenderingContext2D | null = null;
+  const strike = (r: Row) => {
+    if (!r.item.isConnected) { requestAnimationFrame(() => { if (r.item.isConnected) strike(r); }); return; }
+    const cs = getComputedStyle(r.title);
+    pen ??= document.createElement('canvas').getContext('2d');
+    if (!pen) return;
+    pen.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+    const words = Math.min(pen.measureText(r.title.value).width, r.title.clientWidth);
+    const kind = r.kind.hidden ? 0 : r.title.getBoundingClientRect().left - r.kind.getBoundingClientRect().left;
+    r.strike.style.width = `${Math.ceil(kind + words)}px`;
+  };
 
   const paint = (td: todo.Todo) => {
     const r = rows.get(td.id)!;
@@ -119,6 +142,7 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
     // Done just now: its mark pops and settles, the reward for it, once. Taken back, it gives a smaller beat.
     const now = td.done && !r.item.classList.contains('done') && r.item.isConnected;
     const back = !td.done && r.item.classList.contains('done') && r.item.isConnected;
+    if (td.done) strike(r);
     r.item.classList.toggle('done', td.done);
     r.button.replaceChildren(mark(td.done));
     if (now) pop(r.button);
@@ -158,11 +182,12 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
     const detail = h('textarea', {class: 'todo-detail', rows: '1', maxlength: String(todo.DETAIL_LIMIT), 'aria-label': t('Detail'),
       placeholder: t('Detail'), spellcheck: 'false'}) as HTMLTextAreaElement;
     const meta = h('span', {class: 'todo-meta'});
+    const strikeEl = h('span', {class: 'todo-strike', 'aria-hidden': 'true'});
     title.value = td.title;
     detail.value = td.detail;
-    const head = h('div', {class: 'todo-head'}, button, kind, title, meta);
+    const head = h('div', {class: 'todo-head'}, button, kind, title, meta, strikeEl);
     const item = h('div', {class: 'todo-item', role: 'listitem'}, head, detail);
-    const row: Row = {item, title, detail, kind, button, meta};
+    const row: Row = {item, title, detail, kind, button, meta, strike: strikeEl};
     rows.set(td.id, row);
 
     const current = () => items.find((x) => x.id === td.id)!;

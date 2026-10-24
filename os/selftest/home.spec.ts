@@ -27,7 +27,13 @@ test('a TODO is written as Kind: title, Enter for its detail, and done strikes i
 
   await app.home.mark(item).click();
   await expect(app.home.mark(item)).toHaveAttribute('aria-pressed', 'true');
-  await expect(app.home.title(item)).toHaveCSS('text-decoration-line', 'line-through');
+  // Struck through: a line drawn across its words, from its kind's start to the title's end, and no further.
+  const strike = item.locator('.todo-strike');
+  await expect(strike).toHaveCSS('scale', '1');
+  const [line, kind, title] = await Promise.all([strike, item.locator('.todo-kind'), app.home.title(item)].map((l) => l.boundingBox()));
+  expect(Math.abs(line!.x - kind!.x)).toBeLessThan(1.5);
+  expect(line!.x + line!.width).toBeGreaterThan(title!.x + 60);
+  expect(line!.x + line!.width).toBeLessThan(title!.x + title!.width);
   await expect(app.home.todo).toContainText('0 of 1 left');
 });
 
