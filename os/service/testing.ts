@@ -4,10 +4,13 @@
 //
 // A database is made once per process, migrated, and each one after that
 // starts from a copy of it (a fresh Postgres and its migrations take ten
-// seconds and more; a copy, one or two). Each made by `service()` or
-// `freshDb()` is closed when the test that made it ends; `sharedService()`
-// is one for a whole file, closed when the file is done, its tests kept
-// apart by each signing in as people of their own (`person()`).
+// seconds and more; a copy, half a second). One lent by `service()` or
+// `freshDb()` is emptied when the test that took it ends, back to what its
+// migrations left (their rows, where each sequence stood, a session with
+// nothing set), and lent to the next test of the process: emptying takes a
+// few milliseconds, and it is most of what a test of the Remote cost.
+// `sharedService()` is one for a whole file, closed when the file is done,
+// its tests kept apart by each signing in as people of their own (`person()`).
 //
 // Two things the environment can change, for a whole process:
 //   REMOTE_TEST_BUCKET=none          the Remote has no bucket (bucket.ts): files
@@ -75,9 +78,49 @@ const migrated = () => (template ??= (async () => {
   return dump;
 })());
 
-/** Closed when the test that opened them ends. */
-const open: PGlite[] = [];
-afterEach(async () => { await Promise.all(open.splice(0).map((pg) => pg.close())); });
+/** What a database is as its migrations leave it: the rows they put in, and where each sequence stands. */
+type Fresh = {truncate: string; rows: [string, unknown[]][]; sequences: [string, string, boolean][]};
+let fresh: Promise<Fresh> | null = null;
+/** Read off a database no test has used yet, once a process. */
+const freshOf = (pg: PGlite) => (fresh ??= (async () => {
+  const tables = (await pg.query<{t: string}>(`select quote_ident(tablename) as t from pg_tables where schemaname = 'public'`)).rows.map((r) => r.t);
+  const rows: [string, unknown[]][] = [];
+  for (const t of tables) {
+    const [{j}] = (await pg.query<{j: unknown[] | null}>(`select json_agg(x) as j from ${t} x`)).rows;
+    if (j?.length) rows.push([t, j]);
+  }
+  const sequences = (await pg.query<{s: string; v: string; c: boolean}>(`select quote_ident(sequencename) as s,
+    coalesce(last_value, start_value)::text as v, last_value is not null as c from pg_sequences where schemaname = 'public'`)).rows;
+  return {truncate: `truncate ${tables.join(', ')}`, rows, sequences: sequences.map((q) => [q.s, q.v, q.c] as [string, string, boolean])};
+})());
+
+/** A database as its migrations left it again: no row a test wrote, no sequence moved on, nothing set on its session. */
+async function empty(pg: PGlite) {
+  const f = await fresh!;
+  await pg.exec('discard all');
+  await pg.exec(`set session_replication_role = replica; ${f.truncate}`);
+  for (const [t, rows] of f.rows) await pg.query(`insert into ${t} select * from json_populate_recordset(null::${t}, $1)`, [JSON.stringify(rows)]);
+  for (const [q, v, c] of f.sequences) await pg.query('select setval($1, $2, $3)', [q, v, c]);
+  await pg.exec(`set session_replication_role = origin; set timezone to 'UTC'`);
+}
+
+/** Lent to the test running now; emptied and kept for the next when it ends. */
+const lent: PGlite[] = [];
+const idle: PGlite[] = [];
+afterEach(async () => {
+  for (const pg of lent.splice(0)) {
+    if (pg.closed) continue;
+    try { await empty(pg); idle.push(pg); } catch { await pg.close().catch(() => {}); }
+  }
+});
+after(async () => { await Promise.all(idle.splice(0).map((pg) => pg.close())); });
+/** A database as its migrations leave it, for this test: one kept from a test before, or a new one. */
+async function lend(): Promise<PGlite> {
+  let pg = idle.pop();
+  if (!pg) { pg = await database(); await freshOf(pg); }
+  lent.push(pg);
+  return pg;
+}
 
 /** A PGlite migrated as every test's is, for a test that runs a Remote its own way (worker.test.ts). */
 export async function database(): Promise<PGlite> {
@@ -92,9 +135,7 @@ export async function database(): Promise<PGlite> {
 
 /** A migrated database of its own, closed when the test ends. */
 export async function freshDb() {
-  const pg = await database();
-  open.push(pg);
-  return drizzle(pg, {schema});
+  return drizzle(await lend(), {schema});
 }
 
 /** A migrated database for a whole file, closed when the file is done. */
@@ -113,9 +154,7 @@ export interface Options {
 
 /** A Remote of its own for one test: `records` is DNS, a name → its TXT records. */
 export async function service(records: Record<string, string[]> = {}, o: Options = {}): Promise<Service> {
-  const pg = await database();
-  open.push(pg);
-  return make(onPglite(pg), records, o);
+  return make(onPglite(await lend()), records, o);
 }
 
 let shared: Promise<Service> | null = null;

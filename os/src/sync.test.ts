@@ -117,7 +117,8 @@ test('TODO changed on two devices at once: the other\'s edit and this one\'s new
 });
 
 test('more files than one diff carries reach the Remote over several rounds, and are agreed', async () => {
-  const many = Object.fromEntries(Array.from({length: 2300}, (_, i) => [`f/${String(i).padStart(4, '0')}.txt`, `${i}\n`]));
+  // Paths are what a diff carries; ten contents among them, so the time goes on the rounds, not on 2300 uploads.
+  const many = Object.fromEntries(Array.from({length: 2300}, (_, i) => [`f/${String(i).padStart(4, '0')}.txt`, `${i % 10}\n`]));
   await store.create('s-many', '');
   for (const [p, text] of Object.entries(many)) await b.put('s-many', p, text);
   const done = await draft.sync('s-many');
