@@ -5,7 +5,7 @@ import {closedBy, numberOf, type Issue} from '../issues.ts';
 import {kindOf} from '../text.ts';
 import {answers, askFoot, SETTLE} from './common.ts';
 import {counted, diffFiles} from './diff-view.ts';
-import {LAND, morph, still} from '../glide.ts';
+import {LAND, still} from '../glide.ts';
 import {justClosed, justMerged, notCommitted, reopenIssue, type IssueEvents} from './git-issue.ts';
 import {kindWords} from './todo-box.ts';
 import {errorText} from '../errors.ts';
@@ -24,6 +24,23 @@ const naming = new Map<string, string>();
 const committed: {repo: string; cut: git.Cut}[] = [];
 const KEPT = 3;
 export const committedIn = (filter: string | null) => committed.filter((c) => !filter || c.repo === filter);
+
+/**
+ * Committed, the card goes: it slides off sideways as it fades, and the room it took closes after it, so what is under
+ * it comes up rather than jumping. Done once it has gone (the page is drawn again after).
+ */
+async function slideOff(card: HTMLElement): Promise<void> {
+  if (still() || !card.isConnected) return;
+  card.classList.add('leaving');
+  const cs = getComputedStyle(card);
+  const off = card.animate([{transform: 'none', opacity: 1}, {transform: 'translateX(96px)', opacity: 0}], {duration: 340, easing: LAND, fill: 'forwards'});
+  const close = card.animate([
+    {height: `${card.offsetHeight}px`, paddingTop: cs.paddingTop, paddingBottom: cs.paddingBottom, marginTop: cs.marginTop, borderTopWidth: cs.borderTopWidth, borderBottomWidth: cs.borderBottomWidth},
+    {height: '0px', paddingTop: '0px', paddingBottom: '0px', marginTop: '0px', borderTopWidth: '0px', borderBottomWidth: '0px'},
+  ], {duration: 280, delay: 160, easing: LAND, fill: 'forwards'});
+  card.style.overflow = 'hidden';
+  await Promise.all([off.finished, close.finished]).catch(() => {});
+}
 
 /** The card's height goes from what it was to what it now holds (a line asked for is shorter than the files it names). */
 function resize(card: HTMLElement, from: number) {
@@ -76,10 +93,9 @@ export function mainCard(repo: string, n: number, events: IssueEvents, after: ()
         naming.delete(repo);
         committed.unshift({repo, cut});
         committed.splice(KEPT);
-        // The card goes down into the line that says it is committed, under main where it stood.
-        const at = card.getBoundingClientRect();
+        // The card slides off sideways and its room closes; drawn again, its line under main lands lit.
+        await slideOff(card);
         after();
-        morph(at, () => document.querySelector<HTMLElement>(`.done-row[data-cut="${CSS.escape(cut.id)}"]`), 340);
       } catch (e) { error.textContent = errorText(e); yes.disabled = false; }
     });
     // One line, nothing to break: Enter commits it, as Ctrl+Enter does.

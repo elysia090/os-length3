@@ -146,6 +146,9 @@ export function git(ctx: Context): Node[] {
     track.style.setProperty('--at', `${k}`);
     // The first box starts at the column's edge and the last ends at it; between, both neighbours show.
     column.style.setProperty('--lead', `${k === 0 ? 0 : k === shown.length - 1 ? 2 : 1}`);
+    // main's cards stand in the same column as the issue in full, and go with it along the row.
+    mainPart.style.setProperty('--lead', `${k === 0 ? 0 : k === shown.length - 1 ? 2 : 1}`);
+    mainPart.classList.toggle('single', shown.length === 1);
     [...track.children].forEach((slot, j) => {
       const x = shown[j];
       slot.setAttribute('aria-current', String(j === k));
@@ -228,6 +231,7 @@ export function git(ctx: Context): Node[] {
     if (!shown.length) {
       track.replaceChildren();
       stage.hidden = true;
+      mainPart.classList.add('single');
       // None to show: where the first would be, the dashed card that writes it (pressed, it becomes the issue
       // being written), with what is so said quietly under its word. No repo: said once, as wide as its words.
       if (!repos.length) { empty.replaceChildren(remoteOnly().length ? onlyThere() : h('div', {class: 'empty'}, t('No repos yet'))); return; }
@@ -250,9 +254,9 @@ export function git(ctx: Context): Node[] {
     go(was >= 0 ? was : 0, false, had);
   };
 
-  // Under the issues: what main has not committed, then what is done with (merged, closed), each its own section.
+  // Over the issues, what main has not committed; under them, what is done with (merged, closed), each its own section.
   const heading = (id: string, text: string, n = 0) => h('h2', {id}, h('span', {}, text, ' ', h('small', {}, n ? `${n}` : '')));
-  const mainPart = h('section', {class: 'section', 'aria-labelledby': 'main-title', hidden: ''});
+  const mainPart = h('section', {class: 'section main-part', 'aria-labelledby': 'main-title', hidden: ''});
   const mergedPart = h('section', {class: 'section', 'aria-labelledby': 'merged-title', hidden: ''});
   const closedPart = h('section', {class: 'section', 'aria-labelledby': 'closed-title', hidden: ''});
   const drawDone = ({dirty, merged, closed}: Laid) => {
@@ -299,17 +303,20 @@ export function git(ctx: Context): Node[] {
   const main = h('section', {class: 'flow git-flow', tabindex: '0', 'aria-label': 'Git'},
     pageHead('git'),
     h('div', {class: 'git-filter'}, chips),
+    // What main has not committed comes first, over the issues: what is in hand before what is planned.
+    mainPart,
     h('section', {class: 'section', 'aria-labelledby': 'issues-title'},
       h('h2', {id: 'issues-title'}, h('span', {}, t('Issues'), ' ', count)),
       form.element, empty, column),
-    mainPart, mergedPart, closedPart);
+    mergedPart, closedPart);
   const workbench = bench({main, reveal: (path) => { if (at) ctx.openRepo(at, path); }, word: (a) => { openConversation(a); void ctx.go('inbox'); }});
   // Issues written anywhere (here, in the shell, with l3 in the Prompt) show
   // up at once, and any change in the repo looked at is read again; not while
   // something is being written in the box or under it, which would be lost.
   let timer = 0;
   const typing = () => { const a = document.activeElement; return !!a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA') && (stage.contains(a) || mainPart.contains(a)) && !!(a as HTMLInputElement).value; };
-  const soon = () => { clearTimeout(timer); timer = window.setTimeout(() => { if (typing()) soon(); else void paint(); }, 250); };
+  // Not while a committed card is still going off (git-done.ts): it is drawn again once it has gone.
+  const soon = () => { clearTimeout(timer); timer = window.setTimeout(() => { if (typing() || mainPart.querySelector('.leaving')) soon(); else void paint(); }, 250); };
   const stop = onChange((c) => {
     if (!workbench.element.isConnected) { stop(); return; }
     if (c.what === 'repo' || c.path === 'issue' || c.path.startsWith('issue/') || c.repo === at) soon();

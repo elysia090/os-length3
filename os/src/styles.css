@@ -1643,7 +1643,10 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 @keyframes line-lit { from, 30% { background: color-mix(in srgb, var(--marker) 55%, transparent); } }
 @media (prefers-reduced-motion: reduce) { .done-row.landing { animation: none; } }
 /* Committed on main just now: the card's sheet lands on its line (git-done.ts), which is lit as it does. */
-.done-row.just-cut { animation: line-lit 1600ms ease-out both; border-radius: var(--r-field); }
+/* The line a commit just made opens where its card went, the issues under it coming down that far rather than at
+   once, and is lit as it lands. */
+.done-row.just-cut { animation: line-open 260ms var(--land) both, line-lit 1600ms ease-out both; border-radius: var(--r-field); overflow: hidden; }
+@keyframes line-open { from { max-height: 0; opacity: 0; } to { max-height: 48px; opacity: 1; } }
 .done-head > .diff-count { font-size: var(--t-meta); }
 /* A Prompt stopped from its card: what it gave back is lit a moment (runtime.ts). */
 /* A row of the tree a deed made or renamed lands lit where it now is. */
@@ -1771,7 +1774,17 @@ div:has(> #panel-remote-sign-in:not([hidden])) > .offer-holder { display: none; 
 .issue-under { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s3); margin-top: var(--s3); }
 .issue-leave { display: grid; gap: var(--s1); justify-items: start; }
 /* main's card on Git, for what it has not committed: a card (rule edge), its repo, Commit at the right. */
-.main-card { display: grid; gap: var(--s3); padding: var(--s4) var(--s5); border: 1px solid var(--rule); border-radius: var(--r-place); }
+/* main's part stands in the issues' column: each card a sheet (paper, as an issue's box is, never melting into the
+   ground) with the same edges as the issue in full under it, going with it as the row slides; the lines committed
+   from here under the cards, on those edges too. */
+.main-part { --peek: 48px; --lead: 0; }
+.main-part.single { --peek: 0px; }
+.main-part > .main-card, .main-part > .done-list {
+  width: calc(100% - 2 * var(--peek)); margin-left: calc(var(--lead) * var(--peek));
+  transition: margin-left var(--move), width var(--move); /* as the track goes */
+}
+.main-part > .done-list { padding-inline: calc(var(--s5) - var(--s2)); } /* its words on the card's, past each row's own s2 */
+.main-card { display: grid; gap: var(--s3); padding: calc(var(--s4) + var(--s1)) var(--s5) var(--s5); border: 1px solid var(--rule); border-radius: var(--r-place); background: var(--paper); }
 .main-card + .main-card { margin-top: var(--s3); }
 /* main's card: the repo, how many files wait and Commit on one line; the files under it on the card itself, no box
    inside the box. */
