@@ -1468,8 +1468,12 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 /* Inbox on the page's three columns (inbox.ts): the stub, the field to write to someone new and the conversations in
    the first, one width and the field the stub's height and shape; the conversation open as a sheet over the other
    two, from the stub's top to the page's foot. None yet, there is no sheet. */
+/* The page is the window's height and no more (nothing of it scrolls): its head, and under it the three columns to
+   the page's foot, where the rail's line ends; never under 440 px, a short window scrolling to the rest. */
+.page:has(> div > .inbox-page) { display: flex; flex-direction: column; height: var(--inner-h); padding-bottom: 0; }
+.page > div:has(> .inbox-page) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .inbox-page { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: auto minmax(0, 1fr); column-gap: var(--s5);
-  row-gap: var(--s3); margin-top: var(--s5); height: max(440px, calc(var(--inner-h) - 88px)); }
+  row-gap: var(--s3); margin-top: var(--s5); flex: 1; min-height: 440px; }
 .inbox-page > .stub-holder { grid-area: 1 / 1 / 2 / 2; margin: 0; }
 .inbox-page .stub, .inbox-page .stub-panel { width: 100%; }
 .inbox-box { display: contents; }

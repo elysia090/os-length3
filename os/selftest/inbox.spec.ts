@@ -28,6 +28,8 @@ test('what one person writes to another arrives in their Inbox, and the rail say
   // Accepted, the two know each other: Bo's answer goes back, and Ada has it.
   await thread.getByRole('button', {name: 'Accept'}).click();
   await expect(bo.main.getByRole('heading', {name: 'Requests'})).toBeHidden();
+  // The page is the window's height: its conversation reaches the foot, and nothing of the page scrolls away.
+  expect(await bo.page.evaluate(() => document.scrollingElement!.scrollHeight - innerHeight)).toBeLessThanOrEqual(0);
   await bo.inbox.message.fill('Yes, with the tent.');
   await bo.main.getByRole('button', {name: 'Send', exact: true}).click();
   await expect(bo.inbox.message).toHaveValue('');

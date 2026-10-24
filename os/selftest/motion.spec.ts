@@ -98,6 +98,29 @@ test('a field that moves once the caret is in it (a page still coming in) carrie
   }).toBe(true);
 });
 
+test('a box emptied by the page, not by a key (a message sent), has its caret back at its start', async ({app}) => {
+  await app.rail.go('home');
+  // A box of lines as a page's own, emptied a moment after Ctrl+Enter as a sent message's is (after the Remote answers).
+  await app.page.evaluate(() => {
+    const box = Object.assign(document.createElement('textarea'), {className: 'line-in', rows: 1});
+    box.setAttribute('aria-label', 'Say');
+    box.style.cssText = 'position: fixed; left: 300px; top: 300px; width: 400px; z-index: 20';
+    box.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); setTimeout(() => { box.value = ''; }, 150); } });
+    document.body.append(box);
+  });
+  const box = app.page.getByRole('textbox', {name: 'Say'});
+  await box.focus();
+  const caret = app.page.locator('.os-caret');
+  const x = () => caret.evaluate((e) => new DOMMatrix(getComputedStyle(e).transform).e);
+  await expect(caret).toHaveClass(/\bon\b/);
+  const start = await x();
+  await app.page.keyboard.type('Seeds on Saturday');
+  await expect.poll(x).toBeGreaterThan(start + 40);
+  await app.page.keyboard.press('Control+Enter');
+  await expect(box).toHaveValue('');
+  await expect.poll(async () => Math.abs(await x() - start)).toBeLessThan(2);
+});
+
 test('switching repos on the band, the ink goes all the way from one pill to the other, not cut by the band drawn again', async ({app}) => {
   await app.newRepo.make('hello');
   await app.newRepo.make('notes');

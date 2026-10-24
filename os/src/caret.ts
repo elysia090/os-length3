@@ -75,12 +75,16 @@ export function caret() {
    * coming in, a pill sliding, what is above it growing) carries the caret with it: looked at every frame while it
    * moves, and a little while apart while it stands still. One watch at a time, the latest. */
   let stood: DOMRect | null = null;
+  /** And what it held: a field emptied or filled by the page (a message sent, a line taken back) tells no one. */
+  let held = {length: 0, at: 0};
   let watching = 0;
   const watch = (n: number) => {
     const f = field;
     if (n !== watching || !f || !stood || !mark.classList.contains('on')) return;
     const r = f.getBoundingClientRect();
+    // Moved, the caret is carried with it at once; what it holds changed, the caret glides to where it now is.
     if (r.left !== stood.left || r.top !== stood.top) { shown = false; later(); return; }
+    if (f.value.length !== held.length || f.selectionEnd !== held.at) { later(); return; }
     window.setTimeout(() => requestAnimationFrame(() => watch(n)), 200);
   };
   const draw = () => {
@@ -98,6 +102,7 @@ export function caret() {
     mark.classList.add('on');
     shown = true;
     stood = f.getBoundingClientRect();
+    held = {length: f.value.length, at: f.selectionEnd ?? 0};
     const n = ++watching;
     requestAnimationFrame(() => watch(n));
     // Solid while it moves; blinking once it has rested a moment.

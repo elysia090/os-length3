@@ -103,8 +103,11 @@ Every value in `styles.css` comes from a token (§2).
     `ink`): it glides from where it was to where it is (a letter typed, a
     line gone down, a press elsewhere, 70 ms), so what is written is seen
     being written and Enter sweeps it to the next line's start; solid while
-    it moves, blinking once it rests. A selection is the browser's own, as
-    is the caret of a file too long to measure at every key.
+    it moves, blinking once it rests. It keeps to its field whatever moves
+    it: carried at once with a field that moves (a page still coming in), and
+    gliding back to the start of one the page empties (a message sent). A
+    selection is the browser's own, as is the caret of a file too long to
+    measure at every key.
   - *What is about to come leans in.* The pointer on a box's edge in
     Forge's row, the row leans a step toward it before it is pressed;
     left, it settles back.
