@@ -53,6 +53,8 @@
   --prompt-sink: cubic-bezier(.45, 0, .8, .6); --prompt-back: cubic-bezier(.4, 0, .6, 1);
   /* How a thing moves: fast off the mark, settling the last few pixels slowly, as a camera that lands. */
   --land: cubic-bezier(.2, .9, .25, 1);
+  /* How a thing out of another grows into its place: a touch past its size, then back (a menu, a popover). */
+  --pop-in: cubic-bezier(.2, 1.3, .3, 1);
   /* Lines are 1px; the file being worked on is drawn a little heavier. */
   --line-work: 1.5px;
   /* The two lines that frame the work, the rail's and the right pane's: one weight, in ink, top line to foot. */
@@ -185,21 +187,21 @@ a { color: var(--ink); }
 :root { view-transition-name: none; }
 .panning #page { view-transition-name: page; }
 ::view-transition-group(page) { animation: none; overflow: clip; }
-/* The camera goes the whole way, fast off the mark and slowing into the next floor (440 ms): nothing fades, the two
+/* The camera goes the whole way, fast off the mark and slowing into the next floor (330 ms): nothing fades, the two
    are never seen in one place, one over the other, and the window is never empty. The page cut at the window's
    edges as it goes, as a floor at a lift's door. */
-::view-transition-old(page) { animation: pan-out 440ms var(--land) both; }
-::view-transition-new(page) { animation: pan-in 440ms var(--land) both; }
+::view-transition-old(page) { animation: pan-out 330ms var(--land) both; }
+::view-transition-new(page) { animation: pan-in 330ms var(--land) both; }
 @keyframes pan-out { to { transform: translateY(calc(var(--pan, 1) * -100%)); } }
 @keyframes pan-in { from { transform: translateY(calc(var(--pan, 1) * 100%)); } }
 /* Along the band the camera pans sideways the same way (glide.ts panAcross): the repos stand side by side in the
    band's order, and only the center is taken, the repo left going off whole the other way as the one come to comes
-   in from its pill's side, the two as one strip (400 ms). */
+   in from its pill's side, the two as one strip (300 ms). */
 .panning-across #page { view-transition-name: none; }
 /* It moves inside the center's frame, as the files scroll in it: cut at the center's edges, never over the lines. */
 ::view-transition-group(across) { animation: none; overflow: clip; }
-::view-transition-old(across) { animation: across-out 400ms var(--land) both; }
-::view-transition-new(across) { animation: across-in 400ms var(--land) both; }
+::view-transition-old(across) { animation: across-out 300ms var(--land) both; }
+::view-transition-new(across) { animation: across-in 300ms var(--land) both; }
 @keyframes across-out { to { transform: translateX(calc(var(--pan-x, 1) * -100%)); } }
 @keyframes across-in { from { transform: translateX(calc(var(--pan-x, 1) * 100%)); } }
 /* The OS's caret (caret.ts), a 2 px stroke of ink gliding from where it was to where it is; the browser's own is
@@ -248,25 +250,28 @@ a { color: var(--ink); }
 .me .icon { width: 30px; height: 30px; }
 /* A popover (the person's menu, Inbox's names): one box, a head over each group, a row per item. */
 .pop { display: grid; padding: var(--s2); background: var(--paper); border: 1px solid var(--rule); border-radius: var(--r-card); }
-/* A menu out of a row, a card or a gear comes out of it as it shows: a few pixels from the side it opens on, as the
-   person's menu rises from the face (not there at once, as if it had always been). */
-.tree-pop, .repo-gear-pop, .stub-panel, .share-pop { animation: menu-in 200ms var(--land) both; }
-.repo-gear-pop, .stub-panel { --from: 0 -4px; }
-.share-pop { --from: 0 4px; }
+/* A menu out of a row, a card or a gear comes out of it as it shows: grown from the corner it opens at, a few pixels
+   from that side, landing a touch past its size, as the person's menu rises from the face (not there at once, as if
+   it had always been). */
+.tree-pop, .repo-gear-pop, .stub-panel, .share-pop { animation: menu-in 280ms var(--pop-in) both; }
+.repo-gear-pop, .stub-panel { --from: 0 -4px; transform-origin: right top; }
+.stub-panel { transform-origin: top; }
+.share-pop { --from: 0 4px; transform-origin: bottom; }
 /* File's beside the tree, at the row's height: out of the tree, to its right. */
-.tree-pop { --from: -6px 0; }
-@keyframes menu-in { from { opacity: 0; translate: var(--from); } }
+.tree-pop { --from: -6px 0; transform-origin: left top; }
+@keyframes menu-in { from { opacity: 0; translate: var(--from); scale: .92; } }
 @media (prefers-reduced-motion: reduce) { .tree-pop, .repo-gear-pop, .stub-panel, .share-pop { animation: none; } }
 .me-pop {
   position: absolute; left: calc(100% + var(--s3)); bottom: 0; z-index: 6;
   /* As wide as it needs, but never past the window's own gutter (a 320 px phone has 194 px beside the rail). */
   min-width: min(280px, calc(100vw - 2 * var(--outer) - var(--rail)));
   max-width: calc(100vw - 2 * var(--outer) - var(--rail));
-  visibility: hidden; opacity: 0; translate: 0 6px; transition: opacity var(--motion), translate var(--move) var(--land), visibility 0s var(--motion);
+  visibility: hidden; opacity: 0; translate: 0 6px; scale: .92; transform-origin: left bottom;
+  transition: opacity var(--motion), translate var(--move) var(--land), scale 280ms var(--pop-in), visibility 0s var(--motion);
 }
 /* Out, it rises the last few pixels up from the face it came from as it shows. */
-.me-wrap.open .me-pop { visibility: visible; opacity: 1; translate: 0 0; transition: opacity var(--motion), translate var(--move) var(--land), visibility 0s; }
-@media (prefers-reduced-motion: reduce) { .me-pop, .me-wrap.open .me-pop { translate: none; } }
+.me-wrap.open .me-pop { visibility: visible; opacity: 1; translate: 0 0; scale: 1; transition: opacity var(--motion), translate var(--move) var(--land), scale 280ms var(--pop-in), visibility 0s; }
+@media (prefers-reduced-motion: reduce) { .me-pop, .me-wrap.open .me-pop { translate: none; scale: none; } }
 .me-who { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) var(--s3) var(--s3); }
 /* The face again, the size of the button, beside the name. */
 .me-who > :first-child { display: grid; place-items: center; flex: none; width: 36px; height: 36px; border: 1px solid var(--rule); border-radius: var(--r-round); font: 600 var(--t-meta) var(--sans); }

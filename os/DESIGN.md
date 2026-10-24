@@ -81,14 +81,14 @@ Every value in `styles.css` comes from a token (§2).
     whole way to it, the page left going up and out of the window whole as
     the next comes up into it from below (down the rail; up it, the other way
     round), the two as one sheet, the rail and the window's edges standing
-    still, a floor passed in a lift (440 ms, fast off the mark and landing).
+    still, a floor passed in a lift (330 ms, fast off the mark and landing).
     Nothing fades: there is never an empty frame between them and never the
     two seen in one place, their words over each other; it comes as one, not
     staged. Only the page is taken as a picture to move (cut at the window's
     edges); the rest of the window goes on being drawn as it is. Along the
     band the same: the repos stand side by side in the band's order, and
     another repo come to pans the row sideways the whole way, the next one to
-    the right coming from the right (400 ms).
+    the right coming from the right (300 ms).
   - *The OS opens.* From its first frame: the frame's line is drawn down the
     rail's edge from the top (620 ms) as the rail's places come in one after
     another down it from the window's edge, 34 ms apart, the person last at
