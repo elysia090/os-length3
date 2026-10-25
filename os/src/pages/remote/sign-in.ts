@@ -1,0 +1,100 @@
+import {h} from '../../ui/dom.ts';
+import {isNative, native} from '../../app/host.ts';
+import {t} from '../../i18n.ts';
+import * as account from '../../remote/connection.ts';
+import {button, message, pressing} from './parts.ts';
+
+// Signing in: one card where what the Remote holds would be, and the ways in under its title. Remote's page
+// shows it signed out; Inbox, Server and the page a device's code opens show the same card in the same place.
+
+/**
+ * Signing in, the first thing a person meets: one card where the page's parts will be, at its left under the
+ * header (an ink edge over paper, as the current issue card is), the ways in one under another; what signing in
+ * opens comes in where it stood.
+ */
+export function signInPlace(title: string, ...body: Node[]): HTMLElement {
+  return h('div', {class: 'sign-in-place'},
+    h('section', {class: 'sign-in-card', 'aria-labelledby': 'sign-in-title'}, h('h2', {id: 'sign-in-title'}, title), ...body));
+}
+
+/**
+ * The ways in, under the card's title. On the web, the first time is a provider and nothing else (GitHub,
+ * Google or Apple, as this Remote offers them: none is shown that cannot be used); a passkey is made after it.
+ * Once this browser made or used a passkey, the passkey is the way in, the providers under it for a passkey
+ * lost (then a new one is made, after). In the app, the browser signs in: a code it shows, approved there, and the app comes
+ * forward again; waiting, it can be opened again or called off, and a refusal or a code run out is said with
+ * Try again. Each step is said as what it is: waiting for the browser, signed in, then connected (Remote's
+ * page says that last, apart: being signed in is not the same as reaching the Remote). `done` runs once this
+ * device is in; a provider leaves the page and comes back to `back`.
+ */
+export function signInBox(done: () => void, back?: string): HTMLElement {
+  const error = h('p', {class: 'error', role: 'alert'});
+  const box = h('div', {class: 'remote-join'});
+  // Why the card is here, if a session ended or a provider did not sign in: once.
+  error.textContent = account.signInTroubleNow();
+  if (isNative) {
+    const go = button(t('Sign in in the browser'), 'primary');
+    const lead = h('p', {class: 'muted small sign-in-lead'}, t('Your browser opens to sign in.'));
+    const waiting = h('div', {class: 'remote-join sign-in-waiting', hidden: '', role: 'status'});
+    let waited = 0;
+    go.addEventListener('click', () => void pressing(go, error, async () => {
+      const mine = ++waited;
+      const s = await account.appSignIn();
+      const again = button(t('Open the browser again'), 'small-button'), stop = button(t('Cancel'), 'small-button');
+      again.addEventListener('click', () => void native('remote_login_reopen').catch((e: unknown) => { error.textContent = message(e); }));
+      // Called off here: the card is as it was. The code still waits in the browser until it runs out; approved
+      // there after all, this device is signed in then, as asked.
+      stop.addEventListener('click', () => { waited++; waiting.hidden = true; go.hidden = false; lead.hidden = false; go.focus(); });
+      waiting.hidden = false;
+      waiting.replaceChildren(
+        h('p', {class: 'sign-in-step'}, t('Approve this code in the browser')),
+        h('p', {class: 'device-code mono', title: s.url}, s.code),
+        h('div', {class: 'row sign-in-row'}, stop, again));
+      go.hidden = true;
+      lead.hidden = true;
+      try {
+        await s.wait;
+      } catch (e) {
+        if (mine !== waited) return;
+        waiting.hidden = true; go.hidden = false; lead.hidden = false;
+        go.textContent = t('Try again');
+        throw e;
+      }
+      waiting.replaceChildren(h('p', {class: 'sign-in-step done'}, t('Signed in')));
+      // Back from the browser: this window forward, where the person began.
+      void native('window_forward').catch(() => {});
+      done();
+    }));
+    box.append(lead, h('div', {class: 'row sign-in-row'}, go), waiting, error);
+    return box;
+  }
+  const returning = account.wayIn() === 'passkey' && account.passkeysHere();
+  // The buttons say it: no words around them (the card is narrow, and each is one way in).
+  const providers = h('div', {class: 'row sign-in-row'});
+  const passkey = button(t('Sign in with your passkey'), 'primary');
+  const ways = () => void account.about().then(({providers: list, enter, trouble}) => {
+    // Entered by a link alone: no provider, no passkey, and the card says where the way in is.
+    if (enter) passkey.hidden = true;
+    providers.replaceChildren(...list.map((p, i) => {
+      const b = button(t('Continue with {name}', {name: account.PROVIDER_NAME[p]}), i === 0 && !returning ? 'primary' : '');
+      b.addEventListener('click', () => void pressing(b, error, () => account.signInWith(p, back)));
+      return b;
+    }));
+    if (list.length) return;
+    // No ways because it could not be asked is not the same as none offered: why, and Try again (it is also asked
+    // again by itself while it is away, and the ways come once it answers).
+    if (trouble) {
+      const again = button(t('Try again'), 'small-button');
+      again.addEventListener('click', () => { again.disabled = true; ways(); });
+      providers.replaceChildren(h('span', {class: 'muted', role: 'status'}, trouble), again);
+      return;
+    }
+    providers.replaceChildren(h('span', {class: 'muted'}, enter ? t('This Remote is entered by the link you were given.') : t('This Remote offers no way to sign in yet.')));
+  });
+  ways();
+  const stop = account.onReach(() => { if (!box.isConnected) { stop(); return; } if (!account.remoteAway()) ways(); });
+  passkey.addEventListener('click', () => void pressing(passkey, error, async () => { await account.signIn(); done(); }));
+  // Returning, the passkey first and the providers under it; the first time, the providers alone.
+  box.append(...(returning ? [h('div', {class: 'row sign-in-row'}, passkey), providers] : [providers]), error);
+  return box;
+}

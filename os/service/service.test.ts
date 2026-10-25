@@ -193,7 +193,7 @@ test('Setting the code and turning off are confirmed by one passkey, for five mi
   const t = await s.start('Ren');
   for (const r of ['notes', 'trip']) await s.call('PATCH', `/v1/repos/${r}/draft`, {token: t, body: {version: 0, set: {}, remove: []}});
   const off = (repo: string) => s.call('POST', `/v1/repos/${repo}/off`, {token: t, body: {name: 'Ren', repo, code: 'AB12C'}});
-  // The off ask sets the code with a passkey, then turns off without asking for another (src/pages/remote.ts PROOF, four minutes).
+  // The off ask sets the code with a passkey, then turns off without asking for another (src/pages/remote/repo-off.ts PROOF, four minutes).
   await prove(s, t, 4 * 60 * 1000);
   assert.equal((await s.call('POST', '/v1/off-code', {token: t, body: {code: 'AB12C'}})).status, 200);
   assert.equal((await off('notes')).status, 200);

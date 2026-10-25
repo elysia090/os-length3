@@ -15,7 +15,9 @@ import {seeRepo as repoSheet} from './repo.ts';
 import {button, type Shown} from './parts.ts';
 import {personBadge} from '../pane.ts';
 import {deed} from '../common.ts';
-import {goToPlan, planRefused, signInBox, signInPlace, unreachedError, unreachedPlace} from '../remote.ts';
+import {goToPlan, planRefused} from '../remote/plan.ts';
+import {signInBox, signInPlace} from '../remote/sign-in.ts';
+import {unreachedError, unreachedPlace} from '../remote/unreached.ts';
 import {boardNew, onNews, sawBoard, serverNew} from '../../remote/news.ts';
 import {errorText} from '../../app/errors.ts';
 
