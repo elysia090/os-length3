@@ -90,14 +90,21 @@ export class Screen {
   constructor(p: ScreenParts) {
     this.#p = p;
     // Up, it grows with what the Prompt holds: the room a line takes comes over a moment, its top rising, not at
-    // once. Cleared, it is smaller at once, as a terminal's is.
+    // once. Grown again while it is still growing (a line run makes room for its line, then for what it prints, a
+    // frame apart), it rises on from where its top is seen, never jumping the rest of the way. Rising out of the pill
+    // or sinking into it, it grows with that. Cleared, it is smaller at once, as a terminal's is.
     let held = 0;
+    let grows: Animation[] = [];
     new ResizeObserver(() => {
       const now = p.term.getBoundingClientRect().height, by = now - held;
       held = now;
-      if (this.#state !== 'up' || by < 1 || still() || p.term.parentElement !== p.slot || p.glass.getAnimations().some((a) => a.playState === 'running')) return;
-      const r = parseFloat(getComputedStyle(p.screen).borderTopLeftRadius) || 0;
-      for (const t of [p.glass, p.slot]) t.animate([{clipPath: `inset(${by}px 0 0 0 round ${r}px)`}, {clipPath: `inset(0 0 0 0 round ${r}px)`}], {duration: 180, easing: LAND});
+      if (this.#state !== 'up' || by < 1 || still() || p.term.parentElement !== p.slot) return;
+      if (p.glass.getAnimations().some((a) => a.playState === 'running' && !grows.includes(a))) return;
+      const seen = parseFloat(/inset\(([-\d.]+)px/.exec(getComputedStyle(p.slot).clipPath)?.[1] ?? '') || 0;
+      for (const a of grows) a.cancel();
+      const r = parseFloat(getComputedStyle(p.screen).borderTopLeftRadius) || 0, from = seen + by;
+      grows = [p.glass, p.slot].map((t) => t.animate([{clipPath: `inset(${from}px 0 0 0 round ${r}px)`}, {clipPath: `inset(0 0 0 0 round ${r}px)`}],
+        {duration: Math.min(320, 160 + from / 2), easing: LAND}));
     }).observe(p.term);
   }
 
