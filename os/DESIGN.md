@@ -96,7 +96,10 @@ Every value in `styles.css` comes from a token (§2).
     edges); the rest of the window goes on being drawn as it is. Along the
     band the same: the repos stand side by side in the band's order, and
     another repo come to pans the row sideways the whole way, the next one to
-    the right coming from the right (`--slide`).
+    the right coming from the right (`--slide`). Come to from another page (a
+    repo made, opened from File or Home), Forge arrives with it in its box:
+    the camera is already on its way to Forge, and does not pan sideways as
+    well (the box beside passing through on the way).
   - *The OS opens.* From its first frame: the frame's line is drawn down the
     rail's edge from the top (620 ms) as the rail's places come in one after
     another down it from the window's edge, 34 ms apart, the person last at
@@ -149,7 +152,13 @@ Every value in `styles.css` comes from a token (§2).
     size and settles. A TODO's kind, read off its line as it is typed
     (Fix:), takes its form with a small pop; a new TODO unfolds from the
     line it was started from. What the search found is drawn on as it is typed,
-    each line's highlighter stroke left to right, one line after the next.
+    each line's highlighter stroke left to right, one line after the next;
+    come in place of Searching…, its groups come down the page a beat apart
+    as the strokes go, not the whole sheet in one frame. Under it, what was
+    searched or read stands on a strip of ground of its own over the shade,
+    as Issue, diff and Output do, so nothing of the page under it reads
+    through its words; a line found keeps a kind's full-width colon tucked
+    against its Latin word ("Fix："), as everywhere else.
     What a run prints comes in at the foot a line after another. A step
     of an issue done here (Commit, Push) has its done mark land, in from
     small past its size and settling, its tick drawn after it; a deed
@@ -2106,7 +2115,9 @@ and costs) is the Plan's, once signed in, not a page of prices put before
 the way in.
 
 Signed in: the header, then the page's parts as a switch (the one
-place a page is switched, because its parts are unrelated):
+place a page is switched, because its parts are unrelated; a part chosen
+comes in from its heading's side as the ink goes to it, as Runtime's and
+the gear's do, never swapped in one frame):
 
 - **Repos**: every repo the Remote holds, as cards the size of Home's: name,
   size and when it last changed, where it stands. On: Forge at the bottom
@@ -2431,7 +2442,8 @@ scaffold every repo starts from (nothing to choose: shared/templates.json's
 language of its own; C's files are `l3 repo new -t c`'s), shown as File will show it: File's
 own card, only as tall as its rows, /root (repo) and in it the repos already
 there, shut and quiet, and among them, where its name puts it (moving as the
-name is written), the new one filled in ink as File fills the repo worked
+name is written: past another's name, the rows go to their new places on
+their curve), the new one filled in ink as File fills the repo worked
 on, its folders shut, README.md's size at the row's end as File gives it, of
 what it will say (it follows the name and what it is for). Nothing is named
 or laid out in the card: a repo's files are named, made and moved in File,

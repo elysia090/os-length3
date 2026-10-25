@@ -601,13 +601,15 @@ function make(ctx: Context) {
   });
 
   /** Show `name` in the band, the center and the terminal, in place; at `path` if given, ready to write with `write`. */
-  const show = (name: string, path = '', write: Writing = false, line = 0) => {
+  const show = (name: string, path = '', write: Writing = false, line = 0, pan = true) => {
     band = addToBand(band, name);
     saveBand();
     const from = repo;
     const switching = repo !== name || !shown.includes(name);
-    // Coming into a box another stood in, the camera pans along the band to it: from the side its pill is on.
-    const across = switching && !!from && !shown.includes(name) ? Math.sign(band.indexOf(name) - band.indexOf(repoOf(from!))) : 0;
+    // Coming into a box another stood in, the camera pans along the band to it: from the side its pill is on. Come
+    // from another page (a repo made, opened from File or Home), the camera is already going down the rail to Forge:
+    // it arrives with the repo in its box, not panning sideways as well (the neighbour beside it passing through).
+    const across = pan && switching && !!from && !shown.includes(name) ? Math.sign(band.indexOf(name) - band.indexOf(repoOf(from!))) : 0;
     const go = () => {
       if (switching) {
         const was = views.get(from ?? '');
@@ -742,7 +744,7 @@ function make(ctx: Context) {
       const chosen = ctx.repo !== known;
       known = ctx.repo;
       // Opened for a repo (from File, Home or a new repo), or one chosen to work on elsewhere: it goes on the band.
-      if (ctx.repo && all.includes(ctx.repo) && (asked || chosen)) { show(ctx.repo, asked?.path ?? '', asked?.write ?? false, asked?.line ?? 0); return; }
+      if (ctx.repo && all.includes(ctx.repo) && (asked || chosen)) { show(ctx.repo, asked?.path ?? '', asked?.write ?? false, asked?.line ?? 0, false); return; }
       if (repo && all.includes(repoOf(repo)) && shown.includes(repo)) { layout(); paintBand(); track(false); return; }
       repo = null;
       const open = ctx.repo && band.includes(ctx.repo) ? ctx.repo : shown[0] ?? band[0];

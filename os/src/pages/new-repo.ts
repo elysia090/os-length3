@@ -8,7 +8,7 @@ import type {Context} from './context.ts';
 import {triangle} from './tree.ts';
 import {ORIGIN_LABEL} from '../system.ts';
 import {errorText} from '../errors.ts';
-import {morph, nudge, where} from '../glide.ts';
+import {LAND, morph, nudge, paced, still, where} from '../glide.ts';
 
 /**
  * +: the repo's name on the first line; under it, in a large box, what it
@@ -93,8 +93,20 @@ export function newRepo(ctx: Context): Node[] {
   const showFiles = () => {
     const mine = name.value.trim() || 'my-repo';
     const before = others.filter((o) => o.localeCompare(mine) < 0), after = others.filter((o) => o.localeCompare(mine) >= 0);
-    const other = (o: string) => row(o, 1, true, {kind: 'tree-repo tree-other', shut: true});
-    preview.replaceChildren(row('root', 0, true, {meta: t(ORIGIN_LABEL.repos)}), ...before.map(other), ...ours(), ...after.map(other));
+    const other = (o: string) => { const r = row(o, 1, true, {kind: 'tree-repo tree-other', shut: true}); r.dataset.key = `o ${o}`; return r; };
+    // Its name moved past another's, the rows go to their new places on their curve, not swapped in one frame: each
+    // from where it was seen (mid-way, if it was still going), the new repo's rows as one with it.
+    const was = new Map<string, number>();
+    for (const li of preview.children as HTMLCollectionOf<HTMLElement>) if (li.dataset.key) was.set(li.dataset.key, li.getBoundingClientRect().top);
+    const mineRows = ours();
+    mineRows.forEach((r, i) => { r.dataset.key = `n ${i}`; });
+    preview.replaceChildren(row('root', 0, true, {meta: t(ORIGIN_LABEL.repos)}), ...before.map(other), ...mineRows, ...after.map(other));
+    if (still() || !was.size) return;
+    for (const li of preview.children as HTMLCollectionOf<HTMLElement>) {
+      const from = li.dataset.key ? was.get(li.dataset.key) : undefined;
+      const by = from === undefined ? 0 : from - li.getBoundingClientRect().top;
+      if (Math.abs(by) > .5) li.animate([{translate: `0 ${by}px`}, {translate: '0 0'}], {duration: paced(260), easing: LAND});
+    }
   };
   void store.list().then((list) => { others = list.map((r) => r.name).sort((a, b) => a.localeCompare(b)); showFiles(); }, () => {});
   // What the card is goes to the ear: the eye sees it is File's tree.

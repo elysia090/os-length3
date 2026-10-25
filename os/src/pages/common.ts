@@ -2,7 +2,7 @@ import {h} from '../dom.ts';
 import {errorText} from '../errors.ts';
 import {t} from '../i18n.ts';
 import {icon} from '../icons.ts';
-import {glide, pop, where} from '../glide.ts';
+import {arrive, glide, pop, where} from '../glide.ts';
 import {purpose, RAIL, type PurposeId} from '../purposes.ts';
 
 export function pageHead(id: PurposeId): HTMLElement {
@@ -157,6 +157,8 @@ export function parts<K extends string>(page: string, list: readonly {id: K; lab
   const show = (k: K) => {
     // Chosen, the ink goes from the part it was on to this one, as along the rail and the band.
     const was = now !== k && bar.isConnected ? where(tabs.get(now)?.tab) : null;
+    // And what it holds comes in from the side of the part chosen, as the ink goes to it: not swapped in one frame.
+    const by = was ? Math.sign(list.findIndex((p) => p.id === k) - list.findIndex((p) => p.id === now)) : 0;
     now = k;
     for (const [id, x] of tabs) {
       const on = id === k;
@@ -168,6 +170,7 @@ export function parts<K extends string>(page: string, list: readonly {id: K; lab
     }
     try { localStorage.setItem(key, k); } catch { /* convenience only */ }
     glide(was, tabs.get(k)!.tab, bar, 'var(--r-round)');
+    if (by) arrive(tabs.get(k)!.panel, by, 'x', 16, 260);
     for (const f of heard) f(k);
   };
   let kept: string | null = null;

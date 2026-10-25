@@ -1639,10 +1639,16 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .found-foot:empty { display: none; }
 .found-foot > .diff-foot { padding: 0; }
 /* Under the box at its left: ← and → side by side (one at the line's end is there, faint, so neither moves),
-   then what the one in hand is and where in the line. */
-.found-nav { display: flex; align-items: center; gap: var(--s3); margin-top: var(--s2); }
+   then what the one in hand is and where in the line. It stands on the shade over the page, as Issue, diff and
+   Output do: on a strip of ground of its own, so nothing of the page under it (a Commit, a heading) reads
+   through its words. */
+.found-nav {
+  display: flex; align-items: center; gap: var(--s3); width: fit-content; max-width: 100%; min-height: var(--h-row); margin-top: var(--s2);
+  padding-inline: var(--s3); border-radius: var(--r-round); background: var(--ground);
+}
+.found-nav:has(> .found-steps) { padding-left: 0; }
 .found-steps { display: flex; gap: var(--s1); flex: none; }
-.found-here { flex: 1; min-width: 0; margin: 0; display: flex; align-items: baseline; gap: var(--s2); }
+.found-here { flex: 0 1 auto; min-width: 0; margin: 0; display: flex; align-items: baseline; gap: var(--s2); }
 .found-here > .found-what { min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .found-here > .found-kind, .found-here > .found-at { flex: none; }
 .found-step { display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; color: var(--ink); cursor: var(--cursor-hand); }

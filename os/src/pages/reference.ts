@@ -1,5 +1,5 @@
 import {h} from '../dom.ts';
-import {glide, paced, still, where} from '../glide.ts';
+import {glide, LAND, paced, still, where} from '../glide.ts';
 import {counted, diffFiles, fileName} from './diff-view.ts';
 import * as gitops from '../history.ts';
 import {issueName, issuePath, readIssues, shownPath, type Issue} from '../issues.ts';
@@ -10,6 +10,10 @@ import {sessionIfAny, type Run} from './terminal.ts';
 import {answers} from './common.ts';
 import {connection} from '../remote.ts';
 import {kindWords} from './todo-box.ts';
+
+/** A line as written, a full-width colon after a Latin word ("Fix：") tucked against it as kindWords tucks it. */
+const tucked = (text: string): Node[] => text.split(/(?<=[A-Za-z0-9])(：)/).filter(Boolean)
+  .map((x) => x === '：' ? h('span', {class: 'kind-colon'}, x) : document.createTextNode(x));
 
 // The way to what the center refers to: the search box over the right pane,
 // reaching a quarter of the pane's width into the center so that what opens
@@ -595,7 +599,7 @@ export class Reference {
       said.push(h('div', {class: 'hit-group'}, h('div', {class: 'hit-head'}, name, diff), ...g.hits.map((hit) => {
         const b = h('button', {type: 'button', class: 'choice hit'},
           h('span', {class: 'hit-line'}, String(hit.line)),
-          h('span', {class: 'hit-text'}, hit.text.slice(0, hit.from), h('mark', {}, hit.text.slice(hit.from, hit.to)), hit.text.slice(hit.to)));
+          h('span', {class: 'hit-text'}, ...tucked(hit.text.slice(0, hit.from)), h('mark', {}, ...tucked(hit.text.slice(hit.from, hit.to))), ...tucked(hit.text.slice(hit.to))));
         // Through the style object, not an attribute: the desktop app's policy allows no style written inline.
         b.style.setProperty('--i', String(Math.min(stroke++, 16)));
         b.addEventListener('click', () => void this.go(g.path, hit.line, query));
@@ -611,7 +615,12 @@ export class Reference {
     })));
     if (runs.length) said.push(h('div', {class: 'hit-group'}, h('h3', {class: 'hit-kind'}, t('Output')), ...runs.map((r) => this.runButton(r))));
     const had = this.choices().indexOf(document.activeElement as HTMLElement);
+    // Come in place of Searching… (not redrawn as one types on), what was found comes down the page, a group a beat
+    // after the one above it, as its marks are stroked: not the whole sheet in one frame.
+    const fresh = !this.body.querySelector('.hit-group, .search-count');
     this.body.replaceChildren(...said);
+    if (fresh && !still()) said.slice(0, 8).forEach((el, i) => el.animate([{opacity: 0, translate: '0 4px'}, {opacity: 1, translate: '0 0'}],
+      {duration: paced(220), delay: paced(i * 30), easing: LAND, fill: 'backwards'}));
     if (had >= 0) this.choices()[Math.min(had, this.choices().length - 1)]?.focus();
   }
 
