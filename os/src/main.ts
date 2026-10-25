@@ -11,7 +11,7 @@ import {newRepo} from './pages/new-repo.ts';
 import {remote} from './pages/remote/remote.ts';
 import {inboxPage} from './pages/inbox.ts';
 import {ServerLayer} from './pages/server/layer.ts';
-import {runtime} from './pages/runtime.ts';
+import {runtime} from './pages/runtime/runtime.ts';
 import {FileTree} from './pages/tree.ts';
 import {begin} from './remote/lifecycle.ts';
 import {keepFocus} from './ui/focus.ts';

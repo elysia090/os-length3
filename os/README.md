@@ -577,7 +577,7 @@ tests stand beside it (`x.test.ts`).
 | Folder | What is in it |
 | --- | --- |
 | `main.ts` | the shell: the rail, the page drawn for each place, the moves between them |
-| `pages/` | each place on the rail and its parts; Forge, Git and Server have folders of their own, and `bench/` is the work bench Forge and Git stand on (the box, the Prompt's screen and terminal) |
+| `pages/` | each place on the rail and its parts; Forge, Git, Server, Remote and Runtime have folders of their own, and `bench/` is the work bench Forge and Git stand on (the box, the Prompt's screen and terminal) |
 | `ui/` | what every page draws and moves with: elements (`dom.ts`), motion (`glide.ts`), the caret, focus, touch, icons |
 | `core/` | the Rust core as a page runs it: its worker, its ABI, WASI over the browser's files |
 | `prompt/` | the Prompt's machine in a browser: l3's files and guest threads (`userland.ts`), the box's recall, SSH, the tree of `/` |

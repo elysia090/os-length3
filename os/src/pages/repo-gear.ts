@@ -19,7 +19,7 @@ import {keepOut, putAway} from '../ui/glide.ts';
 // Pressed, it asks in its row, saying what it does, before anything goes.
 // Showing the gear, or its list, does nothing; Escape or a press outside puts
 // the list away, and nothing has changed. The repo's body (not the gear) is
-// the repo itself, its own place (repo-list.ts, runtime.ts).
+// the repo itself, its own place (repo-list.ts, runtime/device.ts).
 
 export interface GearWays {
   /** Open it in Forge (brought here first when it is only on the Remote). */
