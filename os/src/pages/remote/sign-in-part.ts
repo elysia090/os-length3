@@ -6,8 +6,17 @@ import {atSignIn, button, message, pressing} from './parts.ts';
 // Remote's Sign-in part: what keeps the account, the passkeys, the code a repo is turned off with, and the
 // providers it can sign in with.
 
+/**
+ * What the Sign-in part holds: the passkeys, the code and the providers; a Remote entered by its link (`enter`) has
+ * no passkeys or providers to manage, only the code a repo is turned off with.
+ */
+export function signInBody(enter: boolean | undefined): Node[] {
+  return enter ? [h('p', {class: 'muted'}, t('You came in by the link you were given; each time lasts a day.')), codeSection()]
+    : [passkeySection(), codeSection(), providerSection()];
+}
+
 /** The code turning a repo off asks for: five letters or digits, set with a passkey. */
-export function codeSection(): HTMLElement {
+function codeSection(): HTMLElement {
   const section = h('section', {class: 'sub-part', 'aria-labelledby': 'remote-code'});
   const error = h('p', {class: 'error', role: 'alert'});
   const note = h('p', {class: 'muted small', role: 'status'});
@@ -30,7 +39,8 @@ export function codeSection(): HTMLElement {
   return section;
 }
 
-export function passkeySection(): HTMLElement {
+/** The passkeys this account has, each with when it was made and Remove; and Add a passkey. */
+function passkeySection(): HTMLElement {
   const section = h('section', {class: 'sub-part', 'aria-labelledby': 'remote-keys'});
   const error = h('p', {class: 'error', role: 'alert'});
   const note = h('p', {class: 'muted small', role: 'status'});
@@ -55,7 +65,7 @@ export function passkeySection(): HTMLElement {
 }
 
 /** The providers this account signs in with: each is also the way back in. */
-export function providerSection(): HTMLElement {
+function providerSection(): HTMLElement {
   const section = h('section', {class: 'sub-part', 'aria-labelledby': 'remote-providers'});
   const error = h('p', {class: 'error', role: 'alert'});
   const note = h('p', {class: 'muted small', role: 'status'});

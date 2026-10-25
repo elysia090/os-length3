@@ -2,7 +2,7 @@ import {h} from '../../ui/dom.ts';
 import {isNative} from '../../app/host.ts';
 import {t} from '../../i18n.ts';
 import {flush} from '../../remote/lifecycle.ts';
-import {takeLeft, takeStripeReturn, tierName, type Back, type Left, type PaidTier} from '../../remote/plan.ts';
+import {changedWords, leftFor, openPlan, takeLeft, takeStripeReturn, tierName, type Back, type Left, type PaidTier, type Plan} from '../../remote/plan.ts';
 import {answers} from '../common.ts';
 import {button} from './parts.ts';
 
@@ -27,13 +27,82 @@ export function checkoutBackPage(how: 'paid' | 'cancelled' | 'managed', tier: Pa
       answers(null, on)));
 }
 
+/** A trip to Stripe as Remote's Plan makes it and hears of it (stripeTrip). */
+export interface StripeTrip {
+  /** How the last trip to Stripe went, said above the plan until the plan says it itself. */
+  told: HTMLElement;
+  /** The plan read again (`p`): what it says of the trip, once the Remote has heard it. */
+  heard(p: Plan): void;
+  /** To Stripe's Checkout for `tier`, or to its portal, from the plan as it is (`p`). */
+  go(p: Plan, kind: 'checkout' | 'portal', tier?: PaidTier): Promise<void>;
+}
+
+/**
+ * The trips to Stripe of one Plan drawn. Back from one, how it went is said once, above the plan: paid, and to
+ * what, once the Remote has heard it; cancelled, nothing charged; what changed in the portal. While the Remote has
+ * not heard yet, `again` reads the plan again in a moment.
+ */
+export function stripeTrip(again: () => void): StripeTrip {
+  const told = h('p', {class: 'plan-told', role: 'status', hidden: ''});
+  const tell = (text: string, kind: '' | 'done' = '') => { told.textContent = text; told.hidden = !text; told.classList.toggle('done', kind === 'done'); };
+  let came = stripeReturn();
+  /** When the person came back from Stripe's page: the web, as this page loads again; the app, as its window comes back (null till then). */
+  let since: number | null = Date.now();
+  if (came?.how === 'cancelled') tell(t('Payment was cancelled: nothing was charged, and the plan is as it was.'));
+  if (came?.how === 'paid') {
+    tell(came.tier ? t('Payment went through. {tier} shows here as soon as Stripe tells the Remote, a moment from now.', {tier: tierName(came.tier)})
+      : t('Payment went through. The plan shows Paid as soon as Stripe tells the Remote, a moment from now.'));
+  }
+  /** Back from Checkout: paid now, said once, and nothing more is waited for. */
+  const paid = (p: Plan) => {
+    if (p.plan === 'paid') { tell(t('Payment went through: you are on {tier} now.', {tier: tierName(p.tier ?? 'free')}), 'done'); came = null; }
+    // Not heard yet: asked again in a moment, for a minute; then said where to look (the payment itself went through).
+    else if (Date.now() - (since ?? Date.now()) < 60_000) setTimeout(again, 3000);
+    else { came = null; tell(t('Stripe has not told the Remote yet. The plan shows Paid once it does; nothing is charged twice.')); }
+  };
+  /** Back from the portal: what changed there, said against the plan as it was when this tab left; nothing, if nothing did. */
+  const managed = (p: Plan, left: Left | null) => {
+    const said = left ? changedWords(left, p) : null;
+    // The app's window back (the browser had the person meanwhile): from now on, as the web's page loaded again.
+    if (since === null && document.hasFocus()) since = Date.now();
+    if (said) { tell(said, 'done'); came = null; }
+    // Not heard yet: asked again a few times once back, then left to the next time the plan is read.
+    else if (since !== null && Date.now() - since > 20_000) came = null;
+    else if (since !== null) setTimeout(again, 3000);
+  };
+  /**
+   * The app opened the browser: said, and the plan read again when the window comes back, where what
+   * changed meanwhile is said against the plan as it was (the browser comes back to no page of the app's to say it).
+   */
+  const opened = (p: Plan) => {
+    if (!isNative) return;
+    tell(t('The payment page is open in your browser. When you are done there, come back: the plan is read again.'));
+    came = {how: 'managed', tier: null, left: {tier: p.tier ?? 'free', ends: p.ends ?? null, paid: p.plan === 'paid'}};
+    since = null;
+  };
+  return {
+    told,
+    heard: (p) => {
+      if (came?.how === 'paid') paid(p);
+      else if (came?.how === 'managed') managed(p, came.left);
+    },
+    // What is written here is sent first (the web leaves this page for it); the plan as it is, kept to say what changed.
+    go: async (p, kind, tier) => {
+      await leaving();
+      leftFor(p);
+      await openPlan(kind, tier ? {tier} : {});
+      opened(p);
+    },
+  };
+}
+
 /**
  * How the trip to Stripe went, read once from where the page that came back kept it (with the plan as it was when
  * this tab left, to say what changed), and held a few minutes for every Plan drawn meanwhile (the page is drawn
  * again as what the Remote says comes in, and the Plan with it).
  */
 let stripeBack: {how: Back['how']; tier: PaidTier | null; left: Left | null; at: number} | null = null;
-export function stripeReturn(): {how: Back['how']; tier: PaidTier | null; left: Left | null} | null {
+function stripeReturn(): {how: Back['how']; tier: PaidTier | null; left: Left | null} | null {
   const back = takeStripeReturn();
   if (back) stripeBack = {...back, left: takeLeft(), at: Date.now()};
   if (stripeBack && Date.now() - stripeBack.at > 3 * 60_000) stripeBack = null;
@@ -41,6 +110,6 @@ export function stripeReturn(): {how: Back['how']; tier: PaidTier | null; left: 
 }
 
 /** Before a page of Stripe's is opened in this tab: every change made here goes to the Remote first. */
-export async function leaving() {
+async function leaving() {
   if (!isNative) await flush().catch(() => {});
 }

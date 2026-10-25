@@ -12,6 +12,7 @@ import {errorText} from '../../app/errors.ts';
 
 const client = (id: string) => (id === 'l3' ? t('l3 (the command line)') : id === 'length3-app' ? t('the Length³ OS app') : id);
 
+/** The page for the code `given` (none: it is typed here first). */
 export function devicePage(given: string): HTMLElement {
   let code = given.trim().toUpperCase();
   const body = h('div', {class: 'remote-join'});
@@ -21,15 +22,7 @@ export function devicePage(given: string): HTMLElement {
   const error = h('p', {class: 'error', role: 'alert'});
   const finish = (text: string) => body.replaceChildren(h('p', {}, text), h('p', {class: 'muted'}, t('You can close this tab.')));
   const ask = async () => {
-    if (!code) {
-      const typed = h('input', {class: 'line-in mono', placeholder: 'XXXXXXXX', 'aria-label': t('The device\'s code'), autocomplete: 'off', spellcheck: 'false'}) as HTMLInputElement;
-      const next = h('button', {class: 'button primary', type: 'button'}, t('Next'));
-      const go = () => { code = typed.value.trim().toUpperCase(); if (code) void ask(); };
-      next.addEventListener('click', go);
-      typed.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) go(); });
-      body.replaceChildren(h('p', {}, t('Enter the code the device shows.')), h('div', {class: 'row'}, typed, next));
-      return;
-    }
+    if (!code) { body.replaceChildren(...typing((typed) => { code = typed; void ask(); })); return; }
     if (!remote.connection() && !(await remote.claim())) {
       body.replaceChildren(signInBox(() => void ask(), remote.signedInURL()));
       return;
@@ -39,22 +32,35 @@ export function devicePage(given: string): HTMLElement {
       body.replaceChildren(h('p', {class: 'error'}, t('This code cannot be used ({why}).', {why: errorText(e)})));
       return;
     }
-    const yes = h('button', {class: 'button primary', type: 'button'}, t('Connect')) as HTMLButtonElement;
-    const no = h('button', {class: 'button', type: 'button'}, t('Refuse')) as HTMLButtonElement;
-    yes.addEventListener('click', async () => {
-      yes.disabled = no.disabled = true;
-      try { await remote.approveDevice(code); finish(t('Connected. Go back to the device.')); } catch (e) { error.textContent = errorText(e); yes.disabled = no.disabled = false; }
-    });
-    no.addEventListener('click', async () => {
-      yes.disabled = no.disabled = true;
-      // Refused only once the Remote says so; until then the device could still be let in.
-      try { await remote.denyDevice(code); finish(t('Refused.')); } catch (e) { error.textContent = errorText(e); yes.disabled = no.disabled = false; }
-    });
-    body.replaceChildren(
-      h('p', {}, t('{client} asks to join this account. Check that the device shows the same code.', {client: client(who.clientId)})),
-      h('p', {class: 'device-code mono'}, code),
-      answers(no, yes), error);
+    body.replaceChildren(...letIn(code, who.clientId, error, finish));
   };
   void ask();
   return page;
+}
+
+/** No code given: the one the device shows, typed here, and Next (`next`, with the code). */
+function typing(next: (code: string) => void): Node[] {
+  const typed = h('input', {class: 'line-in mono', placeholder: 'XXXXXXXX', 'aria-label': t('The device\'s code'), autocomplete: 'off', spellcheck: 'false'}) as HTMLInputElement;
+  const go = () => { const code = typed.value.trim().toUpperCase(); if (code) next(code); };
+  const on = h('button', {class: 'button primary', type: 'button'}, t('Next'));
+  on.addEventListener('click', go);
+  typed.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) go(); });
+  return [h('p', {}, t('Enter the code the device shows.')), h('div', {class: 'row'}, typed, on)];
+}
+
+/** Which device asks (`clientId`) and its code, to check against the device's; Connect or Refuse, then `finish`. */
+function letIn(code: string, clientId: string, error: HTMLElement, finish: (text: string) => void): Node[] {
+  const yes = h('button', {class: 'button primary', type: 'button'}, t('Connect')) as HTMLButtonElement;
+  const no = h('button', {class: 'button', type: 'button'}, t('Refuse')) as HTMLButtonElement;
+  yes.addEventListener('click', async () => {
+    yes.disabled = no.disabled = true;
+    try { await remote.approveDevice(code); finish(t('Connected. Go back to the device.')); } catch (e) { error.textContent = errorText(e); yes.disabled = no.disabled = false; }
+  });
+  no.addEventListener('click', async () => {
+    yes.disabled = no.disabled = true;
+    // Refused only once the Remote says so; until then the device could still be let in.
+    try { await remote.denyDevice(code); finish(t('Refused.')); } catch (e) { error.textContent = errorText(e); yes.disabled = no.disabled = false; }
+  });
+  return [h('p', {}, t('{client} asks to join this account. Check that the device shows the same code.', {client: client(clientId)})),
+    h('p', {class: 'device-code mono'}, code), answers(no, yes), error];
 }
