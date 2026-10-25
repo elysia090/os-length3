@@ -1568,9 +1568,11 @@ to be heard (Written as #4 in garden). What the box made
 comes into the right pane as the Prompt's own lines do, one stream of what
 was done in the repo in the order it was done: a line of its own in the
 Prompt's flow, before the prompt line the shell waits at, on a dot of its own
-(ink for an issue, the green of a step done for a TODO), its head in the pill
+(in ink, an issue or a TODO alike: the green is the live prompt line's), its head in the pill
 the box wore for it (`#4` in ink, `TODO` on paper with its circle) and its
-words in the letters people write in, not the shell's (`#4 Fix：…`). Sent, its first line goes on a
+words in the letters people write in, not the shell's (`#4 Fix：…`), beside
+the pill (a second line goes on under them, never back under the pill), its
+kind in bold as everywhere. Sent, its first line goes on a
 slip of paper out of the box, on to the right as a sheet slid off, then up
 and on into that line, coming down to its size; the slip gives up its paper
 as it lands on the line's words, and the line is lit a moment as a file

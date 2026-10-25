@@ -201,9 +201,10 @@ export class Session {
     const words = line.slice(SAID.length, -1), cut = words.indexOf(' ');
     const head = cut < 0 ? words : words.slice(0, cut), todo = head === 'TODO';
     // Its Kind's colon set as everywhere (todo-box.ts kindWords), the words as they were.
-    const said = words.slice(head.length), kind = /^(\s*[^\s：]+)：/.exec(said);
+    // A TODO's kind may be written with the narrow colon (Buy: …), an issue's is the wide one (Fix：…): either is its kind.
+    const said = words.slice(head.length), kind = /^(\s*(?:[^\s：:]+(?=：)|[A-Za-z][A-Za-z0-9-]{0,15}(?=:(?!\/\/))))([：:])/.exec(said);
     const b = h('button', {type: 'button', class: 'term-said-go'}, h('b', {}, ...(todo ? [todoMark(false)] : []), head),
-      h('span', {class: 'said-words'}, ...(kind ? [kind[1], kindColon(), said.slice(kind[0].length)] : [said])));
+      h('span', {class: 'said-words'}, ...(kind ? [h('b', {class: 'said-kind'}, kind[1], kind[2] === '：' ? kindColon() : ':'), said.slice(kind[0].length)] : [said])));
     b.addEventListener('click', () => goes.get(line)?.(b));
     return h('span', {class: `term-said ${todo ? 'said-todo' : 'said-issue'}`}, SAID, b, '\n');
   }

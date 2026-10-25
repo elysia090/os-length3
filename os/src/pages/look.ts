@@ -220,6 +220,8 @@ export function leftOffLook(repo: string, path: string, at: number | null, open:
       const text = (await store.read(repo, path)).text ?? '';
       const end = at === null ? text.length : Math.max(0, text.indexOf('\n', at) < 0 ? text.length : text.indexOf('\n', at));
       const lines = text.slice(0, end).split('\n').slice(-4);
+      // Its lines, not the empty ones over them: the quote starts with words.
+      while (lines.length > 1 && !lines[0].trim()) lines.shift();
       body.replaceChildren(h('p', {class: 'muted small'}, t('{repo} · where you left off', {repo})), h('pre', {class: 'look-quote'}, lines.join('\n')));
     },
   };
