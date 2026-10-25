@@ -207,6 +207,14 @@ button.row-item, .part):hover { transition-duration: calc(60ms * var(--pace)); }
 .inbox-row, .pane-toggle, .pill-close, .col-close, .approve-mark, .file-beside, .tree-row):active:not(:disabled) {
   background-color: color-mix(in srgb, var(--ink) 13%, var(--raised)); transition-duration: 40ms;
 }
+/* A primary button answers the pointer too: its ink a step toward the ground under it, as quickly as a fill comes
+   (pressed, a step further). Before, only the outlined ones did, and the one deed that matters most said nothing. */
+.button.primary:hover:not(:disabled) { background-color: color-mix(in srgb, var(--ink) 88%, var(--ground)); border-color: color-mix(in srgb, var(--ink) 88%, var(--ground)); }
+/* The box's pill (what the box does) brings out the four when pressed: under the pointer its glass catches a little
+   more light, so it is seen to be pressable. Up as the screen it is the line's start, and says nothing. */
+.work:not(.prompting, .prompt-leaving) .prompt-chip { transition: box-shadow calc(160ms * var(--pace)) ease-out, filter calc(160ms * var(--pace)) ease-out; }
+.work:not(.prompting, .prompt-leaving) .prompt-chip:hover { box-shadow: inset 0 0 0 1px rgb(255 255 255 / .28); filter: brightness(1.18); }
+.work:not(.prompting, .prompt-leaving) .prompt-chip:is([data-mode='todo'], [data-mode='edit']):hover { filter: none; background: var(--raised); }
 :is(.rail-item[aria-current='page'], .button.primary, .chip[aria-current], .chip[aria-checked='true'], .chip[aria-pressed='true'],
 .pill[aria-current], .rail-item[aria-expanded='true'], .me[aria-expanded='true']):active:not(:disabled) {
   background-color: color-mix(in srgb, var(--ink) 80%, var(--ground)); border-color: color-mix(in srgb, var(--ink) 80%, var(--ground));
@@ -487,7 +495,10 @@ body:has(.home-pane .search-box:is(:focus-within, .reading))::after { opacity: 1
 /* Lately, in Home's pane: what waits since the person was last here, a row each, opening where it stands (look.ts).
    The same row as the bench's pane has at its foot for word that comes while one works: one look for both. */
 .lately { display: grid; gap: var(--s2); }
-.lately h2 { font-size: var(--t-body); font-weight: 600; } /* as Forge's Prompt and Server's People */
+/* A pane's own heads (Lately; Forge's and Git's Prompt; Server's People and Repos) are quiet, small and in the quiet
+   colour: they say what is under them, and what is under them is what is read. */
+/* Their line is the line their own letters would have had: a head stays on the line the center's file heads are on. */
+.lately h2, .term-home .term-box h2, .side-part h3 { font: 600 var(--t-meta)/calc(var(--t-body) * 1.6) var(--sans); color: var(--sub); letter-spacing: .02em; }
 .lately-list { display: grid; gap: var(--s2); }
 .lately-row {
   display: grid; gap: 2px; min-width: 0; padding: var(--s2) var(--s4); border: 1px solid var(--rule); border-radius: var(--r-place);
@@ -499,8 +510,12 @@ body:has(.home-pane .search-box:is(:focus-within, .reading))::after { opacity: 1
    of their own round each (boxes round every row, a dot, a rule and three faces of letters read as clutter); their
    words start where Lately's do. Opened, the row is paper edged in ink, its card's head (look.ts, attached). The
    pane's word (pane.ts) stays a box: it stands over the Prompt's lines. */
-.lately .lately-list { gap: 2px; margin-inline: calc(-1 * var(--s3)); }
-.lately .lately-row { border-color: transparent; background: transparent; padding: var(--s2) var(--s3); }
+.lately .lately-list { gap: 0; margin-inline: calc(-1 * var(--s3)); }
+.lately .lately-row { position: relative; border-color: transparent; background: transparent; padding: var(--s3); }
+/* A hairline between rows, from where their words start (not under their badges), as a list read down: rows that
+   wrap to many lines are each seen whole. Under the pointer the row's fill takes its place. */
+.lately .lately-row + .lately-row::before { content: ''; position: absolute; top: 0; left: calc(var(--s3) + 24px + var(--s2)); right: var(--s3); height: 1px; background: var(--rule); }
+.lately .lately-row:is(:hover, .looked)::before, .lately .lately-row:is(:hover, .looked) + .lately-row::before { opacity: 0; }
 .lately .lately-row:hover { border-color: transparent; background: var(--raised); }
 .lately .lately-row.looked { border-color: var(--ink); background: var(--paper); }
 /* Opened, the row is its card's head (look.ts, attached): the two one panel, square where they meet and a quiet rule
@@ -1575,6 +1590,8 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
    box's, a sheet to act on (paper, a rule edge), who and the first line of what they said, the newest come in from
    the window's edge. Pressed, Inbox at that conversation. */
 .pane-word { position: absolute; left: var(--s5); right: var(--s5); bottom: var(--s5); z-index: 2; display: grid; gap: var(--s2); }
+/* What came, over the Prompt's lines: a card lifted a little off them, as something arrived. */
+.pane-word .lately-row { box-shadow: 0 6px 16px -10px color-mix(in srgb, var(--ink) 30%, transparent); }
 .pane-word:empty { display: none; }
 .columns.split > .col > .col-head {
   height: 28px; opacity: 1; visibility: visible; transition: height var(--move) var(--land), opacity var(--move) var(--land);
@@ -2752,7 +2769,7 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .work:has(> .side.server-side) > .center { border-right-color: transparent; }
 /* A heading over its list as a section's is over its content. */
 .side-part { display: grid; gap: var(--s3); }
-.side-part h3 { margin: 0; font-size: var(--t-body); font-weight: 600; }
+.side-part h3 { margin: 0; }
 .server-side .empty { margin-top: 0; padding: var(--s5) var(--s4); }
 .people, .side-repos { display: grid; gap: var(--s1); margin: 0; padding: 0; list-style: none; }
 /* Words of two sizes in a row share a baseline; the face sits centred by them. */

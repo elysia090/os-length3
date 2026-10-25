@@ -114,7 +114,9 @@ export class Box {
       say: (text) => { if (this.#mode === 'edit') this.#say(text); }, moved: () => { if (this.#mode === 'edit') this.#pillSays(); },
       active: () => this.#mode === 'edit' && document.activeElement === this.prompt});
     this.#menu = modeMenu(this.chip, {repo: () => this.#repo, at: () => this.#edit.where(), chosen: (m) => { this.choose(m); this.prompt.focus(); },
-      closed: (before) => { if (before === this.prompt) this.prompt.focus(); else (document.activeElement as HTMLElement | null)?.blur(); }});
+      // Put away without a choice, the keyboard is where one writes (it was in the box, or the pill was pressed to
+      // choose what the box does next); only from somewhere else of its own does it go nowhere in particular.
+      closed: (before) => { if (!before || before === this.prompt || before === this.chip || before === document.body) this.prompt.focus(); else (document.activeElement as HTMLElement | null)?.blur(); }});
     this.dock.append(this.#menu.element);
     this.#wire(summon);
     this.#stepsBack();

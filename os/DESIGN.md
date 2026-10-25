@@ -1327,7 +1327,13 @@ move, delete), its name underlined under the pointer; pressed under the
 last file, on nothing, the caret goes to its end. Server's people are each a
 conversation: someone else pressed opens the Inbox to them, an arrow at the
 row's end under the pointer. Lately's rows, pressed twice, go straight
-there (what their card's own button does).
+there (what their card's own button does). Every pressable thing answers
+the pointer coming, a primary button too (its ink a step toward the ground)
+and the box's pill (its glass catching a little more light). The keyboard
+is never left on nothing: letters typed with it on the rail or the page in
+Forge or Git go into the box; a pill taken off the band hands it to the
+pill worked on next; the box's four put away with Escape give it back to
+the box.
 
 The profile is edited where it is read, not in a form put in its place:
 written in, the top is a sheet of its own as the TODO is when written in
@@ -1353,7 +1359,10 @@ selected. While it is out the window steps back under the one shade. Its
 first line, the name and Edit profile, stands on that top line too. Under
 it the pane holds
 Lately: what waits since the person was last here, a row each on the
-ground (no box round each, a raised fill under the pointer): where they left
+ground (no box round each, a raised fill under the pointer; between rows a
+hairline from where their words start, so rows of many lines are each seen
+whole), under a quiet head (a pane's own heads, Lately, the Prompt, People,
+are small and in the quiet colour, on the line a file's head is on): where they left
 off (the file last read in Forge, its mark, its repo quiet at the right, and
 under it the line it was left at, as written), the conversations with
 something not read (who wrote, their initial on one of four soft tints, the

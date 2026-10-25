@@ -85,6 +85,18 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   // to the search, Ctrl+` to the prompt box, Ctrl+G to the box editing the file in front (Go to line, as editors
   // have it), Ctrl+B to put the right pane away or bring it back (⌘ on a Mac).
   document.addEventListener('keydown', (event) => {
+    // Typed with the keyboard on nothing to write in (the rail just pressed to come here, the box let go of with
+    // Escape): the letters go into the box, where things here are written, never into nothing. A space or Enter on a
+    // button is that button's; a field, a menu, a card or File out keep theirs.
+    if (!event.ctrlKey && !event.metaKey && !event.altKey && (event.key.length === 1 && event.key !== ' ' || event.key === 'Process')
+      && work.isConnected && !work.closest('[hidden]') && !document.getElementById('page')?.hasAttribute('inert')) {
+      const at = document.activeElement as HTMLElement | null;
+      const writes = !!at && (at.isContentEditable || at.matches('input, textarea, select'));
+      // Something out over the page says so on what brought it out (its ⌄, the person's face, File): open, it is that one's.
+      const over = document.querySelector('[aria-expanded="true"]:not(.pane-toggle), .look, .tree.open');
+      if (!writes && !over && !box.prompt.disabled) box.prompt.focus();
+      return;
+    }
     if (!(event.ctrlKey || event.metaKey) || event.altKey || event.isComposing || !work.isConnected || work.closest('[hidden]')) return;
     if (document.getElementById('page')?.hasAttribute('inert')) return;
     const k = event.key.toLowerCase();

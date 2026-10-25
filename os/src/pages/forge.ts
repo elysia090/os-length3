@@ -259,7 +259,11 @@ function make(ctx: Context) {
         name, issue ? h('span', {class: 'pill-issue', 'aria-hidden': 'true'}, issue) : null);
       open.addEventListener('click', (event) => { if (event.ctrlKey || event.metaKey) beside(name); else show(name); });
       const close = h('button', {type: 'button', class: 'pill-close', 'aria-label': t('Take {name} off the band', {name})}, mark('close'));
-      close.addEventListener('click', () => takeOff(name));
+      // Taken off, the keyboard is not left on nothing: it goes to the pill now worked on (or the next), on the band.
+      close.addEventListener('click', () => {
+        takeOff(name);
+        (pills.querySelector<HTMLElement>('.pill[aria-current] .pill-name') ?? pills.querySelector<HTMLElement>('.pill-name'))?.focus({preventScroll: true});
+      });
       const pill = h('span', {class: 'pill', 'data-repo': name, draggable: 'true'}, open, close);
       // The middle button takes it off, as it closes a tab.
       pill.addEventListener('auxclick', (event) => { if (event.button === 1) { event.preventDefault(); takeOff(name); } });
