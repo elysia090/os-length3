@@ -446,8 +446,10 @@ function sshSection(): HTMLElement {
       ...(isNative ? [] : [h('p', {class: 'muted small'}, t('SSH is the desktop app\'s: a device turns it on there, and its addresses stay on it.'))]),
       ...(cards.length ? [h('div', {class: 'grid small-grid'}, ...cards)] : []));
   };
-  // Drawn again now and then while it is on screen, not while the page or app is hidden, slower while nobody is at it.
-  void paint().then(() => every(15_000, paint, {alive: () => section.isConnected, paced: true}));
+  // Drawn again now and then while it is on screen, not while the page or app is hidden, slower while nobody is at it,
+  // and not at all once nobody has been for ten minutes (when each device was last heard is the database's to say,
+  // not the mark's: service/mark.ts), until someone is back, when it is drawn at once.
+  void paint().then(() => every(15_000, paint, {alive: () => section.isConnected, restsWhenAway: true}));
   return section;
 }
 /**

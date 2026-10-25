@@ -16,11 +16,15 @@ import {createAuth, providers} from './auth.ts';
 import {enterEmail} from './enter.ts';
 import {r2Bucket, type R2Bucket} from './bucket.ts';
 import {limitsOf} from './budget.ts';
+import {MarkObject, objectMarks, type MarkNamespace} from './mark.ts';
 import type {Edge} from './files.ts';
 import {planConfig, type Billing} from './plan.ts';
 import {stripeRest} from './stripe.ts';
 import * as schema from './schema.ts';
 import {sweep} from './sweep.ts';
+
+/** The mark's Durable Object (wrangler.toml MARK): a Worker's main module names each class it serves. */
+export {MarkObject};
 
 export interface Env {
   DATABASE_URL: string;
@@ -67,6 +71,8 @@ export interface Env {
   R2_READS_MONTH?: string;
   UPLOAD_MB_DAY?: string;
   PG_MB?: string;
+  /** The mark (mark.ts, wrangler.toml MARK): looks answered without the database while nothing was written. Not bound, every look asks it. */
+  MARK?: MarkNamespace;
   /** How often one session or address may ask (wrangler.toml [[ratelimits]]); not bound, none is counted. */
   LIMITER?: {limit(o: {key: string}): Promise<{success: boolean}>};
 }
@@ -77,6 +83,8 @@ const edge = (): Edge | undefined => (globalThis as {caches?: {default?: Edge}})
 /** Whether `url` is this machine itself (localhost, 127.x, ::1). */
 const loopback = (url: string) => { try { return /^(localhost|127(\.\d{1,3}){3}|\[::1\])$/i.test(new URL(url).hostname); } catch { return false; } };
 interface Ctx { waitUntil(p: Promise<unknown>): void }
+/** Hono's view of a Worker's context: waitUntil, and passThroughOnException, which the Remote never uses. */
+type ExecutionCtx = Ctx & {passThroughOnException(): void; props: unknown};
 
 /**
  * One database for what is made once, that is, within `at(d, f)`, the
@@ -133,6 +141,7 @@ function make(env: Env) {
   const auth = createAuth({db, secret: env.BETTER_AUTH_SECRET, baseURL: env.BASE_URL, appOrigin: env.APP_ORIGIN, origins, github, google, apple, dev,
     only: enter && enterEmail(enter.as)});
   const bucket = env.BLOBS ? r2Bucket(env.BLOBS) : null;
+  const marks = env.MARK ? objectMarks(env.MARK) : undefined;
   const app = createApp({db, auth, bucket, origins: [env.APP_ORIGIN, ...origins], appOrigin: env.APP_ORIGIN, providers: providers({github, google, apple, dev}),
     domain: env.DOMAIN ?? 'length3.com', baseURL: env.BASE_URL, secret: env.BETTER_AUTH_SECRET, enter,
     quota: env.QUOTA_MB ? Number(env.QUOTA_MB) * 1024 ** 2 : undefined,
@@ -140,8 +149,8 @@ function make(env: Env) {
     // The plan holds here (but on a Remote for research, one person's alone); a tier is bought only when
     // Stripe's keys and its price are given.
     plan: enter ? undefined : planConfig(env),
-    billing: billingOf(env)});
-  return {app, at, bucket};
+    billing: billingOf(env), marks});
+  return {app, at, bucket, marks};
 }
 
 /** How the plan is bought here: Stripe's keys and the tiers with a price; none, when either key or every price is missing. */
@@ -155,7 +164,8 @@ export function billingOf(env: Pick<Env, 'STRIPE_SECRET_KEY' | 'STRIPE_WEBHOOK_S
 export default {
   async fetch(request: Request, env: Env, ctx: Ctx) {
     const m = made ??= make(env);
-    return served(env.DATABASE_URL, m.at, async () => m.app.fetch(request), (p) => ctx.waitUntil(p));
+    // With its context, so what a request does once it is answered (the mark moving: mark.ts) is the Worker's waitUntil.
+    return served(env.DATABASE_URL, m.at, async () => m.app.fetch(request, env, ctx as ExecutionCtx), (p) => ctx.waitUntil(p));
   },
   // Once a day (wrangler.toml's trigger): what was held long enough goes. Awaited, not handed to
   // waitUntil: a sweep that fails is said in the log and fails its run, as Cron Events shows it.
@@ -165,6 +175,8 @@ export default {
     try {
       const gone = await sweep(db, m.bucket);
       console.log('sweep', JSON.stringify(gone));
+      // What went is no look's any more: the mark moves, and what it heard of beats a day ago goes.
+      if (m.marks) await Promise.all([m.marks.move(), m.marks.forget(Date.now() - 86_400_000)]).catch((e: unknown) => console.error('sweep: the mark', e));
       // Every step ran; one or more failed (each said in the log): the run fails, as Cron Events shows it.
       if (gone.failed) throw new Error(`${gone.failed} of the sweep's steps failed`);
     } catch (e) {

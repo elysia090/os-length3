@@ -273,7 +273,7 @@ async function askedBy(auth: Auth, req: Request, origins: string[]) {
 }
 
 /** Sessions signedIn looked up, kept a few seconds by this isolate (the Worker's: 10 s). */
-const kept = new Map<string, {until: number; user: string; session: string; name: string}>();
+const kept = new Map<string, {until: number; user: string; session: string; name: string; ends: number}>();
 /** Let go of every session kept: one was ended (sign-out, revoke) and may be among them. */
 export const forgetSessions = () => kept.clear();
 
@@ -293,17 +293,19 @@ export const signedIn = (auth: Auth, origins: string[], keep = 0): MiddlewareHan
   if (fromElsewhere(cred, c.req.raw, origins)) return c.json({error: 'not from the app'}, 403);
   const now = Date.now(), had = keep ? kept.get(cred.key) : undefined;
   if (had && had.until > now) {
-    c.set('userId', had.user); c.set('sessionId', had.session); c.set('name', had.name);
+    c.set('userId', had.user); c.set('sessionId', had.session); c.set('name', had.name); c.set('sessionEnds', had.ends);
     return next();
   }
   const s = await auth.api.getSession({headers: cred.headers});
   if (!s) { kept.delete(cred.key); return c.json({error: 'not signed in'}, 401); }
   if (keep) {
     if (kept.size >= 1000) for (const [k, v] of kept) if (v.until <= now || kept.size >= 1000) kept.delete(k);
-    kept.set(cred.key, {until: Math.min(now + keep, new Date(s.session.expiresAt).getTime()), user: s.user.id, session: s.session.id, name: s.user.name});
+    kept.set(cred.key, {until: Math.min(now + keep, new Date(s.session.expiresAt).getTime()), user: s.user.id, session: s.session.id, name: s.user.name,
+      ends: new Date(s.session.expiresAt).getTime()});
   }
   c.set('userId', s.user.id);
   c.set('sessionId', s.session.id);
   c.set('name', s.user.name);
+  c.set('sessionEnds', new Date(s.session.expiresAt).getTime());
   await next();
 };

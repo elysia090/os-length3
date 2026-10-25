@@ -9,6 +9,7 @@
 //   domain-proof   an Inbox domain's TXT proof (inbox.ts)
 //   invite         what is kept of a guest's invitation and token (servers.ts)
 //   off-code       what is kept of the five-letter code that turns a repo off (repos.ts)
+//   mark           a look's tag, what the Remote answers without its database (mark.ts)
 //
 // Rotating the secret (README.md, Rotating secrets) changes every key at once:
 // everyone signs in again, each custom domain's TXT record is given anew,
@@ -17,7 +18,7 @@
 
 import {hkdfSync} from 'node:crypto';
 
-export type Purpose = 'better-auth' | 'domain-proof' | 'invite' | 'off-code';
+export type Purpose = 'better-auth' | 'domain-proof' | 'invite' | 'off-code' | 'mark';
 
 /** Fixed, public: HKDF's salt only separates this derivation from any other of the same secret. */
 const SALT = 'length3-remote';

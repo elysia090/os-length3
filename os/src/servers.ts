@@ -8,7 +8,8 @@
 // (the same posts, less any taken down), so what a reader holds stays about
 // what is near the screen however far they scroll.
 
-import {api, connection, json, reading, RemoteError, retryAfter} from './remote.ts';
+import {api, connection, json, onWrite, reading, RemoteError, retryAfter} from './remote.ts';
+import {lookAt} from './looks.ts';
 import type {Todo} from './todo.ts';
 import {t} from './i18n.ts';
 import {errorText} from './errors.ts';
@@ -39,10 +40,34 @@ const call = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
   if (!r.ok) throw await failed(r);
   return r.status === 204 ? undefined as T : reading<T>(r);
 };
+/** A GET looked at every little while, asked with its last answer's tag (looks.ts), read as `call` reads it. */
+const looked = async <T>(path: string): Promise<T> => {
+  const r = await lookAt(path);
+  if (!r.ok) throw await failed(r);
+  return reading<T>(r);
+};
 const send = (method: string, body?: unknown): RequestInit => ({method, ...(body === undefined ? {} : {body: JSON.stringify(body)})});
 
 // ---- servers and their people ----
-export const servers = () => (connection() ? call<Server[]>('/v1/servers') : Promise.resolve([]));
+/**
+ * The list as last asked, for what asks again within a moment: a page drawn twice as the OS opens (and Home's two
+ * parts that each name the servers) is drawn from one answer, not four requests. Anything this page writes on the
+ * Remote asks afresh (an invitation accepted in Inbox is a server joined).
+ */
+let listed: {at: number; token: string; list: Promise<Server[]>} | null = null;
+onWrite(() => { listed = null; });
+const SHARED_FOR = 2000;
+export const servers = (): Promise<Server[]> => {
+  const c = connection();
+  if (!c) return Promise.resolve([]);
+  if (!listed || listed.token !== c.token || Date.now() - listed.at > SHARED_FOR) {
+    const list = call<Server[]>('/v1/servers');
+    const kept = listed = {at: Date.now(), token: c.token, list};
+    list.catch(() => { if (listed === kept) listed = null; });
+  }
+  // Each its own copy: what one caller does with its list is not another's.
+  return listed.list.then((l) => structuredClone(l));
+};
 export const makeServer = (name: string, address: string) => call<Server>('/v1/servers', send('POST', {name, address}));
 /** Servers this person removed or left last, still held for them, and until when. */
 export const goneServers = () => call<{id: string; name: string; address: string; until: number}[]>('/v1/servers?gone=1');
@@ -111,7 +136,7 @@ export const setBoard = (id: string, change: {name?: string; open?: boolean; gue
 // ---- a board's TODO: Home's list, kept on the Remote item by item ----
 /** An item as a board keeps it: Home's, with its place in the list and who wrote it first. */
 export interface BoardTodo extends Todo { place: number; by: string }
-export const todos = (id: string, member: boolean) => call<BoardTodo[]>(member ? `/v1/boards/${id}/todos` : `/v1/open/${id}/todos`);
+export const todos = (id: string, member: boolean) => (member ? looked<BoardTodo[]>(`/v1/boards/${id}/todos`) : call<BoardTodo[]>(`/v1/open/${id}/todos`));
 const putTodo = (board: string, id: string, change: Partial<BoardTodo>) => call<BoardTodo>(`/v1/boards/${board}/todos/${encodeURIComponent(id)}`, send('PUT', change));
 const dropTodo = (board: string, id: string) => call<void>(`/v1/boards/${board}/todos/${encodeURIComponent(id)}`, send('DELETE'));
 
@@ -223,7 +248,7 @@ const posts = (id: string, member: boolean) => (member ? `/v1/boards/${id}/posts
 /** The newest, or those older than `before`. */
 export const older = (id: string, member: boolean, before: string | null, limit = 30) => call<Read>(`${posts(id, member)}?limit=${limit}${before ? `&before=${before}` : ''}`);
 /** Those newer than `after`, oldest first (keep asking while `more`). */
-export const newer = (id: string, member: boolean, after: string, limit = 30) => call<Read>(`${posts(id, member)}?limit=${limit}&after=${after}`);
+export const newer = (id: string, member: boolean, after: string, limit = 30) => (member ? looked<Read> : call<Read>)(`${posts(id, member)}?limit=${limit}&after=${after}`);
 /** A page again, by its range. */
 export const range = (id: string, member: boolean, oldest: string, newest: string) => call<Read>(`${posts(id, member)}?limit=100&from=${oldest}&to=${newest}`);
 export const post = (id: string, body: string) => call<Post>(`/v1/boards/${id}/posts`, send('POST', {body}));

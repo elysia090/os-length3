@@ -24,8 +24,8 @@ and `failed`: what no route foresaw is JSON too, `{error, id}`, 503 with
 `Retry-After` when the database is busy or out of reach, else 500, the id
 in the log beside it), `auth.ts` who is asking (`signedIn`: a request that names
 no session is refused before the database is asked, and the Worker keeps a
-session it looked up for 10 s), and `budget.ts` what R2 and the database may be
-asked for.
+session it looked up for 10 s), `budget.ts` what R2 and the database may be
+asked for, and `mark.ts` what is answered without asking the database at all.
 
 ### What R2 and Neon may be asked for
 
@@ -50,6 +50,49 @@ mirror counts each put and the bytes it adds against the same rows, and
 puts nothing past them. The sweep lets go of what was counted of days and
 months gone.
 
+### What is answered without the database
+
+Neon sleeps once nothing has asked it anything for five minutes, and a query
+wakes it for five more: what it costs is the time it is awake, not the
+queries. What clients ask on a timer, whether or not anyone does anything,
+kept it awake around the clock: a page left open looks at what moved and what
+came every few seconds (`GET /v1/moved`, `/v1/news`; a conversation's rows, a
+board's posts and TODO while they are on screen; a minute or ten apart while
+nobody is at it), and a device whose SSH is on asks every 30 s whether it
+still is (`POST /v1/ssh/this/beat`), each a connection, a session looked up
+and a statement (on the Worker over Postgres, `selftest/prod`'s stack: 1
+connection, 2 statements, 3 round trips). Counted on the page's own clock: one
+page left open in view, nobody at it, kept Neon awake 30 of every 60 minutes;
+a page someone reads, all 60; a device listening, all of them, all day.
+
+The mark (`mark.ts`) is a number kept outside the database, in a Durable
+Object (`MarkObject`, `wrangler.toml` `MARK`; this process's memory in
+`dev.ts`), that moves after every request that writes, but those that write
+nothing a look reads (a beat, the live line's signals, a file's bytes, a
+device's sign-in polling), and after the sweep. Each of those looks is
+answered with a tag (its `ETag`; the beat's, `tag` in its JSON) that says,
+under a key of its own (`keys.ts` `mark`), what was asked, by which bearer
+token, at which mark and until when; asked again with it (`If-None-Match`;
+the beat's body) while the mark has not moved, the answer is 304 (the beat:
+`{on: true}`) and nothing else is asked, the session included: no connection,
+no statement (10 to 40 ms on that stack, against 50 to 90). A cookie
+alone is never answered so. A tag holds until the next six hours of UTC and
+never past its session's end, so what changed outside any request (SQL by
+hand, a session ended in the database) is read by then; a session ended
+through the Remote is a write, and moves the mark at once. The page asks
+afresh, without tags, when its window comes back (`src/looks.ts`). A beat
+answered by the mark is heard there: `GET /v1/ssh` says the later of the
+database's moment and the mark's. One mark for the whole Remote: a write by
+anyone has each look read again once, while the database is awake for that
+write anyway. What it costs is a Durable Object request for each look and
+each write (100,000 a day on Cloudflare's free plan; past them, or with the
+object not answering in 3 s, a look is answered from the database as without
+it). Without `MARK` bound every look asks the database, as before, and it is
+not bound yet: binding it (`wrangler.toml`, a `[[durable_objects.bindings]]`
+`MARK` for `MarkObject` and a `[[migrations]]` with `new_sqlite_classes =
+["MarkObject"]`) makes the object at main's next `wrangler deploy`, and until
+main has made it Cloudflare refuses another branch's `versions upload`.
+
 | Part | Module | Routes | Tables | Clients |
 |---|---|---|---|---|
 | What this Remote is | `about.ts` | `GET /v1/about`, `GET /v1/health`, `GET /.well-known/security.txt` (RFC 9116) | (reads nothing; health `select 1`) | page, core (app and l3 read `app` to know where a device code is approved), deploy |
@@ -63,8 +106,9 @@ months gone.
 | Servers, boards, guests | `servers.ts` | `/v1/servers…` (people, boards, renew, back), `/v1/boards/:id…` (todos, posts, seen, archive, invites, guests), `/v1/open…` (anyone: open boards, a guest by invitation) | `server`, `server_member`, `board`, `board_todo`, `board_post`, `board_seen`, `board_invite`, `board_guest`, `throttle` | page, core (l3 server, `archive` as text) |
 | Who sees a repo | `seen.ts` | `GET /v1/seen`, `PUT /v1/repos/:name/seen`, `/v1/servers/:id/repos…`; `GET /v1/seen/:face/:name(/file)` (anyone, when public) | `repo_share`, `repo_public` | page |
 | News | `news.ts` | `GET /v1/news` | reads `message`, `contact`, `board_post`, `board_seen` | page |
-| SSH, per device | `ssh.ts` | `GET /v1/ssh`, `POST /v1/ssh/:device/off` (any session); `PUT/DELETE /v1/ssh/this`, `POST /v1/ssh/this/beat` (the device itself: refused with an Origin) | `ssh` (one row a session: its scope, `device` or `network`, and when; never an address, port or repo) | core (the listener), page (see, stop) |
-| The sweep | `sweep.ts`, `worker.ts` `scheduled` | (none: once a day, and when `dev.ts` starts) | every table above (Stripe's events 30 days old; each changed room counted again from its rows); the bucket's unnamed blobs | |
+| SSH, per device | `ssh.ts` | `GET /v1/ssh`, `POST /v1/ssh/:device/off` (any session); `PUT/DELETE /v1/ssh/this`, `POST /v1/ssh/this/beat` (the device itself: refused with an Origin; with the tag its last answer gave, answered by the mark) | `ssh` (one row a session: its scope, `device` or `network`, and when; never an address, port or repo) | core (the listener), page (see, stop) |
+| What moved, without the database | `mark.ts` (`MarkObject`, `worker.ts` exports it) | (none of its own: it answers `GET /v1/moved`, `/v1/news`, `/v1/inbox/threads`, `/v1/boards/:id/posts`, `/v1/boards/:id/todos` and the beat, given their tags, and every other write moves it) | (none: the Durable Object's own storage, its mark and the beats it heard) | page, core |
+| The sweep | `sweep.ts`, `worker.ts` `scheduled` | (none: once a day, and when `dev.ts` starts) | every table above (Stripe's events 30 days old; each changed room counted again from its rows); the bucket's unnamed blobs; then the mark moves, and lets go of beats heard a day ago | |
 
 `GET /v1/repos/gone` is asked by no client today (a device learns a repo
 went from `GET /v1/repos/:name`'s `gone` and `PATCH draft`'s 410); the tests
@@ -144,7 +188,7 @@ L2, RFC 9700, RFC 8628 and WebAuthn, is tested in `security.test.ts`
   app's own files get theirs from `public/_headers`.
 - **CORS** (`fromOrigins`): only the app's origins (`APP_ORIGIN`,
   `APP_ORIGINS`) are answered, with credentials; a preflight is kept ten
-  minutes.
+  minutes. `If-None-Match` is taken and `ETag` shown, for a look's tag.
 - **Cross-site requests** (`auth.ts` `fromElsewhere`, asked by `signedIn`
   and by the session routes the Remote answers itself beside Better Auth's:
   `list-sessions`, `revoke-session` by `id:`). A bearer token is taken

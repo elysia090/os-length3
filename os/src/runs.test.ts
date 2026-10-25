@@ -193,6 +193,30 @@ test('a look at the Remote slows while nobody is at the page, and is taken at on
   } finally { mock.timers.reset(); heard(); }
 });
 
+test('a look that rests once nobody has been here ten minutes asks nothing until someone is back, then at once', async () => {
+  const t0 = Date.now();
+  heard(t0);
+  mock.timers.enable({apis: ['setTimeout', 'Date'], now: t0});
+  try {
+    let runs = 0;
+    const loop = every(15_000, () => { runs++; }, {hidden: () => false, restsWhenAway: true});
+    mock.timers.tick(15_000); await settle();
+    assert.equal(runs, 1);
+    // Nobody: a minute apart after two, then nothing at all from ten.
+    mock.timers.tick(11 * 60_000); await settle();
+    const resting = runs;
+    for (let i = 0; i < 6; i++) { mock.timers.tick(10 * 60_000); await settle(); }
+    assert.equal(runs, resting, `${runs - resting} looks in the hour nobody was there`);
+    heard();
+    await settle();
+    assert.equal(runs, resting + 1);
+    // Someone here again: at its own pace.
+    mock.timers.tick(15_000); await settle();
+    assert.equal(runs, resting + 2);
+    loop.stop();
+  } finally { mock.timers.reset(); heard(); }
+});
+
 test('how often can be said each time, and a wait told to many is spread over a fifth either way', async () => {
   assert.equal(jitter(1000, 0), 800);
   assert.equal(jitter(1000, 1), 1200);

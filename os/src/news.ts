@@ -4,7 +4,8 @@
 // boards. Looked for every little while, when the window comes back, and at
 // once when something here was just seen.
 
-import {api, connection, json, mayAsk} from './remote.ts';
+import {api, connection, mayAsk, reading} from './remote.ts';
+import {lookAt} from './looks.ts';
 import {every} from './runs.ts';
 
 /** As the Remote says it: each board with the newest post on it by someone else. */
@@ -55,7 +56,8 @@ let asking: Promise<void> | null = null;
 /** Ask the Remote now. Signed out there is nothing; not answered, what was last heard stays. */
 export function look(): Promise<void> {
   if (!connection()) { hear(NONE); return Promise.resolve(); }
-  asking ??= json<News>('/v1/news').then((n) => {
+  // With its last answer's tag: nothing written on the Remote since, it is answered without its database.
+  asking ??= lookAt('/v1/news').then((r) => reading<News>(r)).then((n) => {
     if (n && typeof n.inbox === 'number' && Array.isArray(n.boards)) hear(notTold(n, told));
   }, () => {}).finally(() => { asking = null; });
   return asking;

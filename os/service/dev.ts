@@ -16,6 +16,7 @@ import {createApp} from './app.ts';
 import {createAuth} from './auth.ts';
 import {devBilling} from './devbilling.ts';
 import {enterEmail} from './enter.ts';
+import {memoryMarks} from './mark.ts';
 import {planConfig} from './plan.ts';
 import type {Bucket} from './bucket.ts';
 import * as schema from './schema.ts';
@@ -38,8 +39,10 @@ const bucket: Bucket | null = noBucket ? null : {
 
 const db = drizzle(new PGlite(join(dir, 'pg')), {schema});
 await migrate(db, {migrationsFolder: new URL('./migrations', import.meta.url).pathname});
-// What was held long enough goes: now, and each day while it runs (on Workers, a Cron Trigger).
-const swept = () => sweep(db, bucket).then((gone) => console.log(`sweep ${JSON.stringify(gone)}`), (e: unknown) => console.error('sweep', e));
+// The mark (mark.ts), in this process: looks answered without the database while nothing was written, as on Workers.
+const marks = memoryMarks();
+// What was held long enough goes: now, and each day while it runs (on Workers, a Cron Trigger); the mark moves after.
+const swept = () => sweep(db, bucket).then(async (gone) => { console.log(`sweep ${JSON.stringify(gone)}`); await marks.move(); }, (e: unknown) => console.error('sweep', e));
 await swept();
 setInterval(() => void swept(), 86_400_000).unref();
 const secretFile = join(dir, 'secret');
@@ -62,7 +65,7 @@ const stripe = plan && devBilling(baseURL, hook, [appOrigin, ...others],
   async (payload, signature) => app.fetch(new Request(`${baseURL}/v1/stripe/webhook`, {method: 'POST', body: payload, headers: {'Stripe-Signature': signature, 'Content-Type': 'application/json'}})),
   {load: () => (existsSync(stripeFile) ? readFileSync(stripeFile, 'utf8') : null), save: (text) => { writeFileSync(`${stripeFile}.tmp`, text, {mode: 0o600}); renameSync(`${stripeFile}.tmp`, stripeFile); }});
 const app = createApp({db, auth, bucket, origins: [appOrigin, ...others], appOrigin, providers: enter ? [] : ['dev'], domain: 'length3.test', baseURL, secret, enter,
-  plan, billing: stripe ? {stripe: stripe.api, webhookSecret: hook, prices: stripe.prices} : undefined});
+  plan, billing: stripe ? {stripe: stripe.api, webhookSecret: hook, prices: stripe.prices} : undefined, marks});
 const serve = (r: Request) => (stripe && new URL(r.url).pathname.startsWith('/dev-billing/')
   ? stripe.app.fetch(new Request(r.url.replace('/dev-billing/', '/'), r)) : app.fetch(r));
 

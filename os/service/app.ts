@@ -31,6 +31,7 @@ import {files, type Edge} from './files.ts';
 import {homeRoutes} from './home.ts';
 import {inbox} from './inbox.ts';
 import {keyFor, type Purpose} from './keys.ts';
+import {marked, type Marks} from './mark.ts';
 import {news} from './news.ts';
 import {planRoutes, plans, type Billing, type PlanConfig} from './plan.ts';
 import {repos} from './repos.ts';
@@ -85,14 +86,19 @@ export interface Deps {
   limiter?: {limit(o: {key: string}): Promise<{success: boolean}>};
   /** How long a session looked up is taken as still there by this process (ms; none by default). */
   sessionKept?: number;
+  /**
+   * The mark (mark.ts): looks answered without the database while nothing was written, and moved by every write;
+   * without it, every look asks the database (the tests, a Worker with no MARK).
+   */
+  marks?: Marks;
 }
 
 /**
  * What a request asks that is let through a database at all it may take, though not a GET or a DELETE: signing in
  * (a provider, the stand-in's, a link), reading files many at once, and what only takes away (a repo discarded, a
- * signal taken, SSH turned off) or must be heard (Stripe's word on a payment).
+ * signal taken, SSH turned off, a device's beat saying it still listens) or must be heard (Stripe's word on a payment).
  */
-const ADDS_NOTHING = /^\/(api\/auth\/|dev-oauth\/|v1\/enter$|v1\/blobs\/(missing|read)$|v1\/repos\/[^/]+\/discard$|v1\/inbox\/signals\/take$|v1\/ssh\/[^/]+\/off$|v1\/stripe\/webhook$)/;
+const ADDS_NOTHING = /^\/(api\/auth\/|dev-oauth\/|v1\/enter$|v1\/blobs\/(missing|read)$|v1\/repos\/[^/]+\/discard$|v1\/inbox\/signals\/take$|v1\/ssh\/[^/]+\/off$|v1\/ssh\/this\/beat$|v1\/stripe\/webhook$)/;
 
 export function createApp(d: Deps) {
   const app = new Hono<Vars>();
@@ -118,6 +124,8 @@ export function createApp(d: Deps) {
     });
   }
   app.use('*', bounded);
+  // Before the database is asked anything (the budget's size included): a look answered by the mark asks it nothing.
+  if (d.marks) app.use('*', marked({marks: d.marks, key: key('mark')}));
   const budget = d.limits ? new Budget(d.limits, d.now) : null;
   // Every read of R2 counted first (a put, by the route that makes it); with no budget, the bucket as it is.
   const bucket = d.bucket && budget ? metered(d.bucket, budget, db) : d.bucket;
@@ -145,7 +153,7 @@ export function createApp(d: Deps) {
   servers({db, domain, appOrigin: d.appOrigin, secret: key('invite'), closed, plans: plan, proven: names.proven}, v1, app);
   planRoutes({db, plans: plan, origins: d.origins, appOrigin: d.appOrigin, now: d.now}, v1, app);
   news({db}, v1);
-  sshRoutes({db}, v1);
+  sshRoutes({db, marks: d.marks}, v1);
   seen({db, bucket, domain, closed, edge: d.edge, viewer: async (req) => (await d.auth.api.getSession({headers: req.headers}))?.user.id ?? null}, v1, app);
 
   app.route('/v1', v1);

@@ -7,7 +7,8 @@
 // the signalling, and offers no relay: without a direct path, messages
 // simply go through the Remote as text.
 
-import {api, json, RemoteError} from './remote.ts';
+import {api, json, reading, RemoteError} from './remote.ts';
+import {lookAt} from './looks.ts';
 import {t} from './i18n.ts';
 import {day} from './dom.ts';
 import {every} from './runs.ts';
@@ -83,7 +84,8 @@ export async function learnHome() {
 export const shown = (address: string) => (home && address.endsWith(`@${home}`) ? address.slice(0, -home.length - 1) : address);
 /** A repo's public name the same way: `trip:hello`, `ren@ren.dev:hello`. */
 export const shownAs = (as: string) => { const i = as.lastIndexOf(':'); return i < 0 ? as : `${shown(as.slice(0, i))}${as.slice(i)}`; };
-export const threads = () => json<Thread[]>('/v1/inbox/threads');
+/** The conversations, asked with the last answer's tag (looks.ts): nothing written on the Remote since, read from it. */
+export const threads = async () => reading<Thread[]>(await lookAt('/v1/inbox/threads'));
 export const thread = (address: string) => json<{address: string; state: Thread['state']; mutual: boolean; messages: Message[]}>(`/v1/inbox/threads/${enc(address)}`);
 export const markRead = (address: string) => json(`/v1/inbox/threads/${enc(address)}/read`, {method: 'POST', body: '{}'});
 export const lookup = (address: string) => json<{address?: string; reachable: boolean; why?: string}>(`/v1/inbox/lookup?address=${enc(address)}`);

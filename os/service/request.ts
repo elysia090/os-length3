@@ -17,8 +17,8 @@ import {room, throttle} from './schema.ts';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Db = any;
 
-/** Who is asking: their account, this session, and their name as it is now. */
-export type Vars = {Variables: {userId: string; sessionId: string; name: string}};
+/** Who is asking: their account, this session, their name as it is now, and when this session ends (ms). */
+export type Vars = {Variables: {userId: string; sessionId: string; name: string; sessionEnds: number}};
 
 /**
  * The body, if it was sent as JSON; else null. A form or a text body is not
@@ -150,10 +150,11 @@ export async function sha256(bytes: Uint8Array): Promise<string> {
 /** Only the app's own pages may call from a browser; a passkey's challenge is a cookie between asking and answering. */
 export const fromOrigins = (origins: string[]) => cors({
   origin: (o) => (origins.includes(o) ? o : null),
-  allowHeaders: ['Authorization', 'Content-Type', 'X-Guest'],
+  // If-None-Match: a look's tag (mark.ts), from the desktop app's webview too.
+  allowHeaders: ['Authorization', 'Content-Type', 'X-Guest', 'If-None-Match'],
   allowMethods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  // The bearer plugin hands a new session's token back in this header.
-  exposeHeaders: ['set-auth-token'],
+  // The bearer plugin hands a new session's token back in this header; a look's answer, its tag (ETag).
+  exposeHeaders: ['set-auth-token', 'ETag'],
   credentials: true,
   maxAge: 600,
 });

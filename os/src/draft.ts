@@ -3,7 +3,8 @@
 // built for the web, so a browser and the app are one kind of device to the Remote.
 
 import {core} from './host.ts';
-import {json} from './remote.ts';
+import {reading} from './remote.ts';
+import {lookAt} from './looks.ts';
 import {store} from './repos.ts';
 import {getState, reloadState} from './state.ts';
 
@@ -35,9 +36,12 @@ export async function fetchRepo(repo: string): Promise<Synced> {
 
 export const remoteRepos = (): Promise<RemoteRepo[]> => core<RemoteRepo[]>('remote_repos');
 
-/** What moved on the Remote, in one small read: a stamp of its repos (the list changes when it does) and each setting's version. */
+/**
+ * What moved on the Remote, in one small read: a stamp of its repos (the list changes when it does) and each setting's
+ * version. Asked with its last answer's tag: nothing written on the Remote since, it is answered without its database.
+ */
 export interface Moved { repos: string; home: Record<string, number> }
-export const moved = () => json<Moved>('/v1/moved');
+export const moved = async () => reading<Moved>(await lookAt('/v1/moved'));
 
 /** Where each repo here stands, from what is here alone. */
 export const status = (): Promise<Status[]> => core<Status[]>('remote_status');

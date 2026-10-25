@@ -47,7 +47,16 @@ export interface EveryOptions {
   hidden?: () => boolean;
   /** A look at the Remote: slower while nobody is here (paced), and taken at once when someone comes back. */
   paced?: boolean;
+  /**
+   * Paced, and not taken at all once nobody has been here for AWAY, until someone comes back (then at once): a
+   * look whose answer only someone looking needs, and that the Remote's mark cannot answer without its database
+   * (service/mark.ts), so a page left open on a desk does not wake the database every ten minutes for nobody.
+   */
+  restsWhenAway?: boolean;
 }
+
+/** Whether nobody has been here for AWAY. */
+const nobody = (at = Date.now()) => at - lastHeard >= AWAY;
 
 /**
  * `step` every `ms` (or as often as it says each time), counted from the end of the last one, so two never run at
@@ -58,7 +67,8 @@ export function every(ms: number | (() => number), step: () => unknown, o: Every
   const {alive = () => true, whileHidden = 0, ended, hidden = pageHidden} = o;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let stopped = false, running = false;
-  const next = () => { const m = typeof ms === 'function' ? ms() : ms; return hidden() && whileHidden ? whileHidden : o.paced ? paced(m) : m; };
+  const paces = o.paced || o.restsWhenAway;
+  const next = () => { const m = typeof ms === 'function' ? ms() : ms; return hidden() && whileHidden ? whileHidden : paces ? paced(m) : m; };
   const back = () => { if (!running && !stopped) { clearTimeout(timer); void tick(); } };
   const stop = () => {
     if (stopped) return;
@@ -76,9 +86,11 @@ export function every(ms: number | (() => number), step: () => unknown, o: Every
       try { await step(); } catch (e) { console.error('a look taken every little while failed; the next goes on', e); } finally { running = false; }
     }
     if (stopped) return;
+    // Resting: the next is when someone comes back (back), or, shown again, the window's coming back is someone.
+    if (o.restsWhenAway && nobody()) return;
     timer = setTimeout(tick, next());
   };
-  if (o.paced) backs.add(back);
+  if (paces) backs.add(back);
   timer = setTimeout(tick, next());
   return {stop};
 }

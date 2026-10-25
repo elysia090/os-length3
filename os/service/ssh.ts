@@ -9,7 +9,7 @@
 //
 //   GET    /v1/ssh               each device listening: [{device, agent, scope, since, seen, current}]
 //   PUT    /v1/ssh/this          {scope?}: this device listens (only a device says so: never a page)
-//   POST   /v1/ssh/this/beat     {scope?}: still listening -> {on}; on false, it was turned off elsewhere
+//   POST   /v1/ssh/this/beat     {scope?, tag?}: still listening -> {on, tag?}; on false, it was turned off elsewhere
 //   DELETE /v1/ssh/this          this device stopped
 //   POST   /v1/ssh/:device/off   stop that device's (any session of the account, a page too)
 //
@@ -17,12 +17,15 @@
 // listens as: no session can turn another's on, and a request a browser
 // makes (it always carries Origin, which l3 and the app's core never send)
 // is refused it, so the web can only turn a device's SSH off. A device asks
-// with its beat every few seconds, and stops at once when its row is gone.
-// Whatever else a body carries (an older l3 sent its destinations) is not
-// read, and not kept.
+// with its beat every 30 s or so, and stops at once when its row is gone.
+// The beat carries the tag its last answer gave (`tag`): while nothing was
+// written on the Remote it is answered on without the database (mark.ts),
+// and GET /v1/ssh takes when it was heard from the mark. Whatever else a
+// body carries (an older l3 sent its destinations) is not read, and not kept.
 
 import {and, desc, eq, sql} from 'drizzle-orm';
 import type {Hono} from 'hono';
+import type {Marks} from './mark.ts';
 import {body, ms, type Db, type Vars} from './request.ts';
 import {session, ssh} from './schema.ts';
 
@@ -36,14 +39,16 @@ function scopeOf(v: unknown): Scope | null {
   return SCOPES.includes(v as Scope) ? v as Scope : null;
 }
 
-export function sshRoutes(d: {db: Db}, v1: Hono<Vars>) {
+export function sshRoutes(d: {db: Db; /** Beats answered without the database say when they were heard here (mark.ts). */ marks?: Marks}, v1: Hono<Vars>) {
   const db = d.db;
 
   v1.get('/ssh', async (c) => {
     const list = await db.select({device: ssh.sessionId, agent: session.userAgent, scope: ssh.scope,
       since: ms(sql`${ssh.since}`), seen: ms(sql`${ssh.seenAt}`)})
-      .from(ssh).innerJoin(session, eq(session.id, ssh.sessionId)).where(eq(ssh.userId, c.get('userId'))).orderBy(desc(ssh.since));
-    return c.json(list.map((r: {device: string}) => ({...r, current: r.device === c.get('sessionId')})));
+      .from(ssh).innerJoin(session, eq(session.id, ssh.sessionId)).where(eq(ssh.userId, c.get('userId'))).orderBy(desc(ssh.since)) as {device: string; seen: number}[];
+    // A beat the mark answered was heard there, not here: the later of the two is when the device last said it listens.
+    const heard = d.marks && list.length ? await d.marks.heard(list.map((r) => r.device)).catch(() => ({} as Record<string, number>)) : {};
+    return c.json(list.map((r) => ({...r, seen: Math.max(r.seen, heard[r.device] ?? 0), current: r.device === c.get('sessionId')})));
   });
 
   v1.put('/ssh/this', async (c) => {

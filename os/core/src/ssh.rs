@@ -669,10 +669,19 @@ pub enum Heard {
     Unreachable,
 }
 
+/// The tag the Remote's last answer to a beat carried (service/mark.ts), sent with the next: while nothing was
+/// written on the Remote since, it answers on without asking its database, which sleeps. Before, each beat was a
+/// session looked up and a row written: a device listening kept the database awake around the clock.
+static TAG: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
 /// Ask the Remote whether this device's SSH is still on (and say to whom it listens now).
 pub fn beat(scope: Scope) -> Heard {
     let Some(_) = crate::remote::connection() else { return Heard::SignedOut };
-    let asked = Client::open().and_then(|c| c.json("POST", "/v1/ssh/this/beat", Some(serde_json::json!({"scope": scope.word()}))));
+    let tag = TAG.lock().map(|t| t.clone()).unwrap_or_default();
+    let said = if tag.is_empty() { serde_json::json!({"scope": scope.word()}) } else { serde_json::json!({"scope": scope.word(), "tag": tag}) };
+    let asked = Client::open().and_then(|c| c.json("POST", "/v1/ssh/this/beat", Some(said)));
+    // Whatever it said, the next beat carries its tag, or none (a Remote without the mark gives none).
+    if let Ok(mut t) = TAG.lock() { *t = asked.as_ref().ok().and_then(|v| v["tag"].as_str()).unwrap_or_default().to_string(); }
     match asked {
         Ok(v) if v["on"] == serde_json::json!(true) => Heard::On,
         Ok(v) if v["on"] == serde_json::json!(false) => Heard::Off,

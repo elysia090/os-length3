@@ -96,6 +96,10 @@ export function retryAfter(e: unknown): number | undefined {
 /** How long a request to the Remote is waited on, unless the caller says (its own signal). */
 const ASKED_WAIT = 30_000;
 /** A request to the Remote, as this device's session (or none). */
+/** Told after this page wrote something on its Remote (looks.ts: its next looks are asked afresh). */
+const wrote = new Set<() => void>();
+export const onWrite = (f: () => void) => { wrote.add(f); };
+
 export async function api(path: string, init: RequestInit = {}, c: Connection | null = connection(), url = c?.url ?? REMOTE_URL): Promise<Response> {
   const headers = new Headers(init.headers);
   if (c) headers.set('Authorization', `Bearer ${c.token}`);
@@ -127,6 +131,9 @@ export async function api(path: string, init: RequestInit = {}, c: Connection | 
     }
   }
   if (ours) reached(true);
+  // Written here: what it changed is read at the next look, not answered from a mark the write has not moved yet (the
+  // Remote moves it once it has answered).
+  if (ours && !['GET', 'HEAD', 'OPTIONS'].includes((init.method ?? 'GET').toUpperCase())) for (const f of wrote) f();
   if (r.status === 401 && c) {
     // The session was ended (from another device, or it ran out): this device is signed out, and nothing here is lost.
     if (ours && c.token === connection()?.token) void ended();
