@@ -1510,7 +1510,12 @@ becomes a screen and the terminal comes up in it over the center, the one thing
 in the app that is a thing of its own: a terminal's screen, dark glass in the
 app's ink with its words lit in the app's green (§3), the page behind it only a
 blur in its top where glass catches the light, a fine raster and a falloff to
-its edges, its corner a card's (16). It is the box at the foot, lit, not a layer
+its edges, its corner a card's (16). The rounded light on its face (lit at the
+top left, falling off to the edges, a lip of shade at its foot) is lent, in
+their own colours, to the small things pressed or chosen: the rail's place,
+the band's repo, primary buttons, the screen's pills in the pane, switches'
+knobs, and a step fainter to the outlined buttons and chips on the ground;
+large sheets stay flat paper (on them it reads as gloss, not as a face). It is the box at the foot, lit, not a layer
 over the page: no shadow under it, no shade over the window. The pill's glass
 runs along the box's line, slowing into its end, the box's light going from
 under it, then rises into the screen (460 ms, about two fifths of it along,

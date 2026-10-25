@@ -223,7 +223,8 @@ export function leftOffLook(repo: string, path: string, at: number | null, open:
       const lines = text.slice(0, end).split('\n').slice(-4);
       // Its lines, not the empty ones over them: the quote starts with words.
       while (lines.length > 1 && !lines[0].trim()) lines.shift();
-      body.replaceChildren(h('p', {class: 'muted small'}, t('{repo} · where you left off', {repo})), h('pre', {class: 'look-quote'}, lines.join('\n')));
+      // Its repo is said on the row it opens under: here, what it is.
+      body.replaceChildren(h('p', {class: 'muted small'}, t('Where you left off')), h('pre', {class: 'look-quote'}, lines.join('\n')));
     },
   };
 }

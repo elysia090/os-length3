@@ -8,6 +8,7 @@ export default {
   'A line about you': 'ひとこと',
   'Lately': '最近',
   '{repo} · where you left off': '{repo} · 前回の続き',
+  'Where you left off': '前回の続き',
   '{server} · new posts': '{server} · 新しい投稿',
   'Nothing new': '新しいことはありません',
   'A handle is up to 32 lowercase letters, digits, - and _': 'ハンドルは英小文字・数字・- _ の32文字以内です',

@@ -480,6 +480,9 @@ body:has(.home-pane .search-box:is(:focus-within, .reading))::after { opacity: 1
 .home-layout.pane-closed .home-side { display: none; }
 /* Its first heading on the line Forge's Prompt and Server's People are on, a band below the top line's foot. */
 .home-side { min-height: 0; overflow: auto; padding-top: var(--band); }
+/* Lately's rows reach a step past its words on each side (their fill under the pointer, their edge opened): the pane
+   scrolls, and what scrolls clips, so its room is that much wider, its words where they were. */
+.home-side { margin-inline: calc(-1 * var(--s3)); padding-inline: var(--s3); }
 .home-side > .plugins { padding: 0; }
 /* Lately, in Home's pane: what waits since the person was last here, a row each, opening where it stands (look.ts).
    The same row as the bench's pane has at its foot for word that comes while one works: one look for both. */
@@ -492,26 +495,45 @@ body:has(.home-pane .search-box:is(:focus-within, .reading))::after { opacity: 1
 }
 .lately-row:hover, .lately-row.looked { border-color: var(--edge); }
 .lately-row.looked { border-color: var(--ink); }
+/* Home's Lately refers, as the pane does: its rows stand on the ground, a raised fill under the pointer, with no box
+   of their own round each (boxes round every row, a dot, a rule and three faces of letters read as clutter); their
+   words start where Lately's do. Opened, the row is paper edged in ink, its card's head (look.ts, attached). The
+   pane's word (pane.ts) stays a box: it stands over the Prompt's lines. */
+.lately .lately-list { gap: 2px; margin-inline: calc(-1 * var(--s3)); }
+.lately .lately-row { border-color: transparent; background: transparent; padding: var(--s2) var(--s3); }
+.lately .lately-row:hover { border-color: transparent; background: var(--raised); }
+.lately .lately-row.looked { border-color: var(--ink); background: var(--paper); }
 /* Opened, the row is its card's head (look.ts, attached): the two one panel, square where they meet and a quiet rule
    between them; what the row said in a line is in the card in full, so the row keeps only who or what it is, and at
-   its right the × that pressing it again is. */
+   its end the × that pressing it again is. */
 .lately-row.looked[data-look='under'] { border-bottom-color: var(--rule); border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 .lately-row.looked[data-look='over'] { border-top-color: var(--rule); border-top-left-radius: 0; border-top-right-radius: 0; }
 .lately-row.looked > :is(.lately-line, .lately-quote), .lately-row.looked .lately-dot { display: none; }
-.lately-row.looked > .lately-what::after { content: ''; flex: none; width: 16px; height: 16px; margin-left: auto; background: var(--sub);
-  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 7l10 10M17 7L7 17' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat; }
-.lately-row.looked:hover > .lately-what::after { background: var(--ink); }
-.lately-what { display: flex; align-items: center; gap: var(--s2); min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.lately-what { display: flex; align-items: center; gap: var(--s2); min-width: 0; font-weight: 600; }
+.lately-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Where it is (its repo), quiet, at the right of its name; then the end's one slot. */
+.lately-place { flex: none; max-width: 40%; margin-left: auto; overflow: hidden; color: var(--sub); font: 400 var(--t-meta) var(--sans); text-overflow: ellipsis; white-space: nowrap; }
+.lately-end { flex: none; display: grid; place-items: center; width: 16px; height: 16px; margin-left: auto; }
+.lately-place + .lately-end { margin-left: 0; }
+.lately-end > .lately-dot { grid-area: 1 / 1; transition: opacity calc(120ms * var(--pace)) ease-out; }
+.lately-end::after { content: ''; grid-area: 1 / 1; width: 16px; height: 16px; background: var(--sub); opacity: 0; translate: 0 -2px;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6 9.5l6 6 6-6' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+  transition: opacity calc(120ms * var(--pace)) ease-out, translate calc(160ms * var(--pace)) var(--land); }
+.lately-row:is(:hover, :focus-visible):not(.looked) .lately-end::after { opacity: 1; translate: 0 0; background: var(--ink); }
+.lately-row:is(:hover, :focus-visible):not(.looked) .lately-dot { opacity: 0; }
+.lately-row.looked .lately-end::after { opacity: 1; translate: 0 0;
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 7l10 10M17 7L7 17' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E"); }
+.lately-row.looked:hover .lately-end::after { background: var(--ink); }
 .lately-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* The line it was left at, as written there: mono, as in Forge, on a quiet rule. */
-.lately-quote { overflow: hidden; margin: 2px 0; padding-left: var(--s2); border-left: 2px solid var(--rule); font: var(--t-meta) var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+/* The line it was left at, as written there: mono, as in Forge, its second line. */
+.lately-quote { overflow: hidden; color: var(--sub); font: var(--t-meta) var(--mono); text-overflow: ellipsis; white-space: nowrap; }
 .lately-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--ink); }
-/* What a row is, in a round badge at its head (pane.ts): who wrote, their initial on one of four soft tints (the same
-   for the same name: the marker's, a step done's, a removal's, the sky's), a file, a board. The lines under it start where its
-   name does. Every row is the same rounded box, word from someone too: who it is from is its tinted initial, never a
-   corner cut differently (a lone square corner among round ones reads as broken). */
+/* What a row is, at its head (pane.ts): who wrote, their initial on one of four soft tints (the same for the same name:
+   the marker's, a step done's, a removal's, the sky's), round; a file or a board, its mark alone, quiet, as File's.
+   The lines under it start where its name does. */
 .lately-badge { flex: none; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--raised);
   color: var(--ink); font: 700 12px/1 var(--sans); }
+.lately-badge:not([data-tint]) { background: none; color: var(--sub); }
 .lately-badge > .icon { width: 14px; height: 14px; }
 .lately-badge[data-tint='0'] { background: var(--marker-soft); }
 .lately-badge[data-tint='1'] { background: var(--add-tint); }
@@ -1111,7 +1133,8 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
    terminal's, of the app's colours (its ink, its green): dark glass, the page behind it only a blur in its top where
    glass catches the light, its words lit. Its edge is a fine rim inside it, no shadow under it and no shade over the
    window: it is the box at the foot, lit, not a layer over the page. The raster, the falloff to its edges and the soft
-   light across its top are the screen's own; nothing else in the app has them (DESIGN.md). */
+   light across its top are the screen's own (DESIGN.md); the rounded light on its face is lent to the things pressed
+   or chosen (at the end of this file). */
 .work.bench:is(.prompting, .prompt-leaving) .screen {
   position: relative; border-radius: var(--r-card); color: var(--add-tint);
   text-shadow: 0 0 6px color-mix(in srgb, var(--done) 70%, transparent), 0 0 1px color-mix(in srgb, var(--add-tint) 80%, transparent);
@@ -2771,6 +2794,29 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .seen-text { margin: 0; padding: var(--s3) var(--s4); overflow: auto; white-space: pre; font: var(--t-meta)/1.55 var(--mono); }
 @media (max-width: 760px) { .seen-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); } .seen-files { max-height: 30vh; border-right: 0; border-bottom: 1px solid var(--rule); } }
 .home-servers { display: flex; flex-wrap: wrap; gap: var(--s2); }
+
+/* Rounded as the Prompt's glass is: a thing pressed or chosen has a face that swells toward the eye, lit at its top left
+   where the glass catches its light and falling off to its edges, a lip of shade at its foot. Its colours are its
+   own; only the light on it is the glass's. Ink things take it as the glass does (the screen's pills too); things on
+   the ground, a step fainter. Large sheets stay flat paper: on them it reads as gloss, not as a face. */
+:is(.rail-item[aria-current='page'], .button.primary, .chip[aria-current], .chip[aria-checked='true'], .chip[aria-pressed='true'],
+.pill[aria-current], .term-said-go > b, .tl-new, .part[aria-selected='true'], .power .knob, .prompt-chip:not([data-mode='todo'], [data-mode='edit'])) {
+  background-image: radial-gradient(75% 65% at 30% 0%, rgb(255 255 255 / .17), transparent 72%), radial-gradient(130% 150% at 50% 40%, transparent 55%, rgb(0 0 0 / .3) 100%);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / .06), inset 0 -5px 8px -5px rgb(0 0 0 / .35);
+}
+.term-home .term-out > .ps {
+  background-image: radial-gradient(75% 65% at 30% 0%, rgb(255 255 255 / .17), transparent 72%), radial-gradient(130% 150% at 50% 40%, transparent 55%, rgb(0 0 0 / .3) 100%);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / .06), inset 0 -5px 8px -5px rgb(0 0 0 / .35);
+}
+:is(.button:not(.primary), .chip:not([aria-current], [aria-checked='true'], [aria-pressed='true']), .pill:not([aria-current]), .band-add, .pane-toggle, .me,
+.lately-badge[data-tint]) {
+  background-image: radial-gradient(80% 70% at 30% 0%, rgb(255 255 255 / .8), transparent 72%), radial-gradient(130% 150% at 50% 40%, transparent 58%, rgb(0 0 0 / .07) 100%);
+  box-shadow: inset 0 -5px 8px -6px rgb(0 0 0 / .13);
+}
+/* The box's paper pills (TODO, Edit) keep their edge and take the fainter light. */
+.prompt-chip:is([data-mode='todo'], [data-mode='edit']) {
+  background-image: radial-gradient(80% 70% at 30% 0%, rgb(255 255 255 / .8), transparent 72%), radial-gradient(130% 150% at 50% 40%, transparent 58%, rgb(0 0 0 / .07) 100%);
+}
 
 /* Asked for less motion, nothing travels or fades: each thing is where it ends at once. */
 @media (prefers-reduced-motion: reduce) {

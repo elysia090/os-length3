@@ -121,7 +121,7 @@ function lately(ctx: Context): HTMLElement {
       const text = left.at === null ? null : (await store.read(left.repo, left.path).catch(() => null))?.text ?? null;
       const end = text === null || left.at === null ? -1 : text.indexOf('\n', left.at);
       const quote = text === null ? '' : text.slice(0, end < 0 ? text.length : end).split('\n').reverse().find((l) => l.trim())?.trim() ?? '';
-      rows.push(latelyRow(shownName(left.path), t('{repo} · where you left off', {repo: left.repo}), {quote, badge: 'file',
+      rows.push(latelyRow(shownName(left.path), t('{repo} · where you left off', {repo: left.repo}), {quote, place: left.repo, badge: 'file',
         look: (row) => lookFrom(row, leftOffLook(left.repo, left.path, left.at, () => ctx.openRepo(left.repo, left.path, left.at === null ? 'end' : {at: left.at})))}));
     }
     if (connection()) {
