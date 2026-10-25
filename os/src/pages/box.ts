@@ -1,9 +1,10 @@
 import {fieldMoved} from '../caret.ts';
 import {h} from '../dom.ts';
 import {errorText} from '../errors.ts';
-import {keepOut, LAND, paced, putAway, still} from '../glide.ts';
+import {keepOut, LAND, nudge, paced, putAway, still} from '../glide.ts';
 import {t} from '../i18n.ts';
 import {complete, pathWord, Recall} from '../recall.ts';
+import {kindOf} from '../text.ts';
 import {onChange, store, type Entry} from '../repos.ts';
 import {boxMode, modeHint, modeMenu, MODES, nextIssue, onBoxMode, pillWords, sendAs, sendInto, sendTitle, sendWord, setBoxMode, turn, type Mode} from './box-modes.ts';
 import type {Screen, ScreenState} from './screen.ts';
@@ -234,11 +235,18 @@ export class Box {
   /** Said under the box, at once (what was going out from there stays, saying this). */
   #say(text: string | Node[]) {
     keepOut(this.note);
-    this.note.classList.remove('paths');
+    this.note.classList.remove('paths', 'refused');
     const was = this.note.textContent;
     if (typeof text === 'string') this.note.textContent = text; else this.note.replaceChildren(...text);
     // Something else said in its place comes up out of a light fade, not swapped in one frame (from nothing it is at once).
     if (was && was !== this.note.textContent && !still()) this.note.animate([{opacity: .35}, {opacity: 1}], {duration: paced(140), easing: 'ease-out'});
+  }
+  /** Not done, and why: the line under the box in ink until the box is written in again, the box shaking its head. */
+  #refuse(text: string) {
+    this.#say(text);
+    this.note.classList.add('refused');
+    nudge(this.form);
+    this.prompt.focus();
   }
   /** `text` in the box as if written there, the caret at its end. */
   #put(text: string) {
@@ -347,7 +355,12 @@ export class Box {
     const land = sendInto(this.prompt);
     try {
       const sent = await sendAs(as, at, text);
-      if (!sent) { this.#say(t('Its first line is its title')); return; }
+      // Nothing to make it of: said in ink, and the box shakes its head, keeping the keyboard (Fix： alone has a kind, not a title).
+      if (!sent) {
+        const {kind} = kindOf(text.split('\n')[0] ?? '');
+        this.#refuse(kind ? t('Write its title after {kind}：', {kind}) : t('Its first line is its title'));
+        return;
+      }
       // Pressed, it opens where it stands (look.ts): the issue's summary, the TODO's mark; their page is a deed further.
       const to = sent.to, went = () => this.#p.went(at, 'issue' in to ? {issue: to.issue} : 'todo');
       const row = sessionFor(at).note(sent.head, sent.words,
@@ -503,6 +516,8 @@ export class Box {
       this.#keep();
       this.#walk.reset();
       this.#unsay();
+      // Why it was not done is heard once the box is written in again: it goes as Tab's choices go.
+      if (this.note.classList.contains('refused')) { this.note.classList.remove('refused'); putAway(this.note, () => { this.note.textContent = ''; }); }
       this.#look();
       if (this.#mode === 'edit' && !this.#edit.busy) this.#edit.show();
     });

@@ -150,6 +150,9 @@ html { cursor: var(--cursor-arrow); }
 /* Japanese breaks where a phrase does, not in the middle of a word, where the browser can tell. */
 :root:lang(ja) { word-break: auto-phrase; }
 /* A box to tick is a circle, the green one when ticked, as a switch on is: never the browser's blue. */
+/* A line too long for its field (a TODO's title on a phone, a placeholder) ends in … while it is not written in, not
+   cut through a letter; written in, it scrolls as a field does. */
+input:not([type='checkbox'], [type='radio'], [type='range']) { text-overflow: ellipsis; }
 input[type='checkbox'] { appearance: none; display: inline-grid; place-content: center; flex: none; width: 20px; height: 20px; margin: 0; border: 1.5px solid var(--edge); border-radius: 50%; background: transparent; cursor: var(--cursor-hand); transition: background var(--motion), border-color var(--motion); }
 input[type='checkbox']::after { content: ''; width: 9px; height: 5px; margin-top: -2px; border: 2px solid var(--ground); border-top: 0; border-right: 0; transform: rotate(-45deg); opacity: 0; }
 input[type='checkbox']:hover { border-color: var(--ink); }
@@ -824,6 +827,21 @@ button.row-item:disabled { cursor: var(--cursor-arrow); color: var(--sub); }
 .tree-still .tree-new > .tree-row { background: var(--ink); color: var(--ground); }
 .tree-still .tree-new > .tree-row .tree-name.plain { color: var(--ground); }
 .tree-still .tree-other .tree-name.plain, .tree-still .tree-other .tree-toggle { color: var(--sub); }
+/* A name that cannot be (new-repo.ts judge), said as it is written: the row is not filled (it will not be made), its
+   edge dashed in the off colour; each letter a name cannot have underlined in it where it is; one of the same name,
+   ringed where it stands. */
+.tree-still .tree-new.tree-bad > .tree-row { background: none; outline: 1px dashed var(--off); outline-offset: -1px; }
+.tree-still .tree-new.tree-bad > .tree-row .tree-name.plain { color: var(--ink); }
+.tree-name .bad-char { background: none; color: var(--off); text-decoration: underline 2px var(--off); text-underline-offset: 3px; }
+.tree-still .tree-clash > .tree-row { outline: 1px solid var(--off); outline-offset: -1px; }
+.tree-still .tree-clash .tree-name.plain { color: var(--ink); }
+.new-repo #repo-name[aria-invalid] { border-color: var(--off); box-shadow: inset 0 0 0 1px var(--off); }
+/* Why something written cannot be, under where it is written: in ink, not a hint's quiet colour, an off dot before it
+   (as the rail's dot says the Remote away). The box's note (box.ts #refuse) and the names written in fields. */
+:is(.new-repo .name-field, .inbox-list, .board-new .board-body) > .error:not(:empty), .prompt-note.refused:not(:empty) {
+  display: flex; align-items: baseline; gap: 6px; color: var(--ink); }
+:is(.new-repo .name-field, .inbox-list, .board-new .board-body) > .error::before, .prompt-note.refused::before {
+  content: ''; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--off); translate: 0 -1px; }
 /* Only the new repo is the card's: what stands round it (/root, the repos already there) is where it will be, not
    something to touch here, so it does not light or answer the pointer. */
 .tree-still li:not(.tree-new, .tree-ours) > .tree-row { pointer-events: none; }
@@ -1376,6 +1394,9 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .term-home .term-out > .ps::before { border: 2px solid var(--ink); background: var(--ground); }
 .term-home .term-out > .ps.waits::before { border-color: var(--done); background: var(--done); box-shadow: 0 0 0 3px color-mix(in srgb, var(--done) 22%, transparent); }
 .term-home .term.ended .term-out > .ps.waits::before { border-color: var(--off); background: var(--off); box-shadow: none; }
+/* Ended, its end is the thread's last dot, off. */
+.term-home .term-out > .term-end { position: relative; margin-top: 2px; }
+.term-home .term-out > .term-end::before { content: ''; position: absolute; left: -18px; top: 50%; translate: 0 -50%; width: 10px; height: 10px; border-radius: 50%; background: var(--off); }
 .term-home .term-out > :is(.term-lines, .fresh):has(+ :is(.ps, .term-said)) { margin-bottom: 6px; }
 .term-home .term-out > .term-said { margin: 2px 0 8px; }
 .term-home .term-out > .term-said::before { top: 6px; background: var(--ink); }
@@ -1395,6 +1416,14 @@ body:has(.work.bench:not([hidden]) > .bar .search-box:is(:focus-within, .reading
 .term-home .term-said-go > b { flex: none; }
 /* Its words are a person's, wrapped as words are: the space after the pill is the pill's own margin. */
 .term-home .said-words { min-width: 0; overflow-wrap: anywhere; white-space: normal; line-height: 20px; }
+/* The pane refers, it does not hold: a title that runs on is its first three lines (its issue has the rest), and what
+   a line printed is its last lines (terminal.ts tails): what is above them is not shown, the piece they start in cut
+   to its last lines, faded where more is above (seq 1 20000 a tail on the thread, not the pane's height of numbers).
+   Up as the screen, all of it is there. */
+.term-home .said-words { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
+.term-home .term-out > .cut:not(.above) { display: flex; flex-direction: column; justify-content: flex-end; max-height: calc(var(--tail, 99) * 1lh); overflow: hidden;
+  mask-image: linear-gradient(rgb(0 0 0 / .2), #000 min(1.5lh, 100%)); }
+.term-home .term-out > .above { display: none; }
 .said-kind { font-weight: 700; }
 .term-home .term-said-go:hover, .term-home .term-said-go:focus-visible { text-decoration: none; }
 .term-home .term-said-go:is(:hover, :focus-visible) > .said-words { text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
@@ -1903,12 +1932,14 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 /* What the running line is doing, under its output; empty while it is quick. */
 .term-activity { grid-row: 3; display: flex; align-items: center; gap: var(--s2); min-height: 0; }
 .term-activity:empty { display: none; }
-/* Ended: what happened and Start again side by side, at the Prompt's bottom right under its output. */
-.term.ended > p { grid-row: 3; display: flex; justify-content: flex-end; align-items: center; gap: var(--s2); }
-/* What happened wraps in its own room; the power switch stays on its line at the right, so the line is no taller. */
-.term.ended > p > span:first-child { min-width: 0; text-align: right; overflow-wrap: anywhere; }
-/* Ended, its output stays to be read, dimmed as a screen switched off (it flares and dims to this as it ends). */
-.term.ended > .term-out { opacity: .72; }
+/* Ended: how, and Start again beside it, the last thing under its output (terminal.ts sayEnded), in the words of the
+   page; what happened wraps in its own room, the power switch on its line, so the line is no taller. */
+.term-end { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); font: var(--t-meta)/20px var(--sans); white-space: normal; }
+.term-end > span:first-child { min-width: 0; overflow-wrap: anywhere; color: var(--sub); }
+.screen .term-end > span:first-child { color: color-mix(in srgb, var(--add-tint) 62%, transparent); }
+/* Ended, its output stays to be read, dimmed as a screen switched off (it flares and dims to this as it ends); how it
+   ended, and its switch, are not. */
+.term.ended > .term-out > :not(.term-end) { opacity: .72; }
 .small-button { min-height: var(--h-row); padding: 0 var(--s3); font-size: var(--t-meta); }
 .term-out { position: relative; margin: 0; overflow: auto; min-height: 0; font: var(--t-meta)/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 
@@ -2032,6 +2063,8 @@ mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gr
 /* A conversation stands on its foot, by the field it is answered in, as it is read: the last thing said just over
    where the answer is written, never a sheet's height of nothing between them. */
 .inbox-messages > :first-child { margin-top: auto; }
+/* None said yet: the dashed box in the middle of where they will be, not at its foot. */
+.inbox-messages > .inbox-empty { margin: auto; align-self: center; }
 .bubble { display: grid; gap: var(--s1); max-width: 75%; padding: var(--s2) var(--s3); border: 1px solid var(--rule); border-radius: var(--r-place); justify-self: start; align-self: flex-start; } /* as wide as what it says, at its side; never the column's width */
 .bubble[data-mine='true'] { align-self: flex-end; background: var(--raised); }
 .bubble .state-chip { justify-self: start; }

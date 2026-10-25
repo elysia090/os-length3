@@ -9,7 +9,7 @@ import {mark} from '../icons.ts';
 import {copying, deed, pageHead} from './common.ts';
 import {personBadge} from './pane.ts';
 import {every} from '../runs.ts';
-import {goToPlan, planRefused, planSaid, signInBox, signInPlace} from './remote.ts';
+import {goToPlan, planRefused, planSaid, signInBox, signInPlace, unreachedError, unreachedPlace} from './remote.ts';
 import {plan as readPlan} from '../plan.ts';
 import type {Context} from './context.ts';
 import {errorText} from '../errors.ts';
@@ -237,7 +237,10 @@ export function inboxPage(ctx: Context): Node[] {
       return;
     }
     let me: inbox.Me;
-    try { me = await inbox.me(); } catch (e) { holder.replaceChildren(h('p', {class: 'error'}, errorText(e))); return; }
+    try { me = await inbox.me(); } catch (e) {
+      holder.replaceChildren(unreachedError(e) ? unreachedPlace(t('Your conversations are here again once it answers'), () => void paint()) : h('p', {class: 'error'}, errorText(e)));
+      return;
+    }
     // No name yet: the one thing to do here, in the middle, as signing in was (the same card, in the same place).
     if (!me.addresses.length) {
       // Taken: the field it was written in goes up to where the name now lives, the row at the Inbox's top.
@@ -252,7 +255,7 @@ export function inboxPage(ctx: Context): Node[] {
     // The field to write to someone new is made once: what comes every little while changes only the rows under it.
     const to = h('input', {class: 'line-in', placeholder: t('Write to a name or a code'), 'aria-label': t('Write to a name or a code'), autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
     to.value = drafts.get(TO);
-    to.addEventListener('input', () => drafts.set(TO, to.value));
+    to.addEventListener('input', () => { drafts.set(TO, to.value); error.textContent = ''; });
     const start = button(t('Write'), 'small-button');
     const error = h('p', {class: 'error', role: 'alert'});
     const rows = h('div', {class: 'inbox-rows'});
@@ -260,10 +263,12 @@ export function inboxPage(ctx: Context): Node[] {
     const pane = h('section', {class: 'inbox-thread', 'aria-live': 'polite'});
     to.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) start.click(); });
     start.addEventListener('click', async () => {
-      if (!to.value.trim()) { to.focus(); return; }
+      if (!to.value.trim()) { to.focus(); nudge(to); return; }
       error.textContent = '';
       const found: {address?: string; reachable: boolean; why?: string} = await inbox.lookup(to.value).catch((e) => ({reachable: false, why: errorText(e)}));
-      if (!found.reachable) { error.textContent = t('Cannot reach {address} ({why})', {address: to.value, why: t(found.why ?? '')}); return; }
+      if (!found.reachable) { error.textContent = t('Cannot reach {address} ({why})', {address: to.value, why: t(found.why ?? '')}); nudge(to); return; }
+      // One's own name finds oneself: a conversation with no one else in it is not one.
+      if (me.addresses.some((a) => a.address === found.address)) { error.textContent = t('That is you: write to someone else'); to.focus(); nudge(to); return; }
       // Gone to: the field has done its work.
       to.value = '';
       drafts.sent(TO);
@@ -368,6 +373,7 @@ export function inboxPage(ctx: Context): Node[] {
         go, h('p', {class: 'bubble-text'}, m.body),
         h('span', {class: 'muted small'}, `${ago(m.time)}${m.live ? ` · ${t('direct')}` : ''}`));
       // What was said before goes up to make room for it on the same curve, not a line higher in one frame.
+      messages.querySelector('.inbox-empty')?.remove();
       const before = drawn ? [...messages.children].slice(-12) as HTMLElement[] : [];
       const was = before.at(-1)?.getBoundingClientRect().bottom;
       messages.append(b);
@@ -380,6 +386,8 @@ export function inboxPage(ctx: Context): Node[] {
     // sent or come over the direct line, is drawn once too, and not again when the Remote gives it.
     let drawn = false;
     on.took(th.messages).forEach(bubble);
+    // None yet: said once where the words will come, gone with the first of them.
+    if (!messages.childElementCount) messages.append(h('div', {class: 'empty inbox-empty'}, t('No messages yet')));
     drawn = true;
     // Come by the direct line, it is read where it lands, as one taken in through the Remote is: the rail's mark
     // is not left on a conversation open on the screen.
@@ -440,7 +448,8 @@ export function inboxPage(ctx: Context): Node[] {
     text.addEventListener('input', () => { drafts.set(address, text.value); grow(); });
     const sendB = button(t('Send'), 'primary');
     const go = async () => {
-      if (!text.value.trim() || sendB.disabled) return;
+      if (sendB.disabled) return;
+      if (!text.value.trim()) { text.focus(); nudge(text); return; }
       sendB.disabled = true;
       error.textContent = '';
       try {

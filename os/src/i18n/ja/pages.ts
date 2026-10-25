@@ -124,6 +124,7 @@ export default {
   'It is not in the list any more': 'もうリストにありません',
   'Put the Prompt back': 'Prompt をしまう',
   'Its first line is its title': '一行目が題になります',
+  'Write its title after {kind}：': '{kind}：のあとに題を書きます',
   'Right pane': '右ペイン',
   'Files: new, rename, delete': 'ファイル：新規・名前の変更・削除',
   'Ctrl+click: open beside': 'Ctrl+クリックで横に開く',

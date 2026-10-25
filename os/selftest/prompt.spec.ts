@@ -144,7 +144,7 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     }
   });
 
-  test('a Prompt stopped says so at its bottom right, with its power switch off beside it, under its output', async ({app}) => {
+  test('a Prompt stopped says so as the last thing under its output, with its power switch off beside the words', async ({app}) => {
     await app.forge.run('echo before-stop');
     await expect(app.forge.prompt).toContainText(/^before-stop$/m);
     await app.runtime.open('Prompts running');
@@ -157,10 +157,11 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     expect((await again.boundingBox())!.height).toBeLessThanOrEqual(32);
     const out = (await app.forge.prompt.getByText('before-stop').last().boundingBox())!;
     const at = (await again.boundingBox())!;
-    const box = (await app.forge.prompt.boundingBox())!;
+    const said = (await app.forge.prompt.getByText('Stopped').boundingBox())!;
     expect(at.y).toBeGreaterThan(out.y);
-    expect(box.x + box.width - (at.x + at.width)).toBeLessThan(40);
-    await expect(app.forge.prompt.getByText('Stopped')).toBeVisible();
+    // On the words' line, just after them: not across the Prompt at its other edge.
+    expect(Math.abs(at.y + at.height / 2 - (said.y + said.height / 2))).toBeLessThan(4);
+    expect(at.x - (said.x + said.width)).toBeLessThan(24);
     await again.click();
     await expect(app.forge.prompt).toContainText(/hello \$/);
   });

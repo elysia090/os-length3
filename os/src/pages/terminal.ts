@@ -46,6 +46,8 @@ const KEEP_MOST = 200_000, KEEP_LEAST = 150_000;
 const BLOCK = 8_000;
 /** Of what a run prints in one frame, the lines that come in one after another; the rest comes in with the last of them. */
 const ONE_BY_ONE = 24;
+/** In the pane, what a line printed is its last this many lines (styles.css .term-home .above, .cut). */
+const TAIL = 5;
 
 /**
  * A line of the box's own in the Prompt's flow (an issue written, a TODO added from the box), marked at its start
@@ -285,10 +287,43 @@ export class Session {
     this.drawnLast = this.lastLine;
     this.trim();
     this.markTail();
+    this.tails(add === null);
     // Full, what comes in scrolls the rest up, smoothly, as a terminal's screen does (at once when much came at once).
     const far = this.output.scrollHeight - this.output.clientHeight - this.output.scrollTop;
     const smooth = add !== null && far < this.output.clientHeight && moving;
     this.output.scrollTo({top: this.output.scrollHeight, behavior: smooth ? 'smooth' : 'auto'});
+  }
+
+  /**
+   * The pane refers, it does not hold: of what each line run printed, its last TAIL lines are shown there. From the foot
+   * back, each piece of a run's output past them is marked above (not shown in the pane), the one they start in cut to
+   * its last lines with a fade where more is above. Up as the screen, the marks mean nothing: all of it is there. Only
+   * the runs just drawn are walked (the last two: one ended and the next started in the same frame); drawn whole, all.
+   */
+  private tails(all: boolean) {
+    let left = TAIL, top: HTMLElement | null = null, starts = 0;
+    for (let n = this.output.lastChild; n; n = n.previousSibling) {
+      const el = n instanceof HTMLElement ? n : null;
+      if (el && (el.classList.contains('ps') || el.classList.contains('term-said'))) {
+        if (el.classList.contains('waits')) continue;
+        if (!all && ++starts === 2) return;
+        left = TAIL; top = null;
+        continue;
+      }
+      if (el?.classList.contains('cmd') || el?.classList.contains('term-end')) continue;
+      if (left <= 0) {
+        top?.classList.add('cut');
+        if (el) el.classList.add('above');
+        // A piece of a line between blocks (the rest of a line one frame began) is put in a span to be marked.
+        else if (n.textContent) { const held = h('span', {class: 'above'}); n.replaceWith(held); held.append(n); n = held; }
+        continue;
+      }
+      const text = n.textContent ?? '', lines = text.split('\n').length - 1;
+      if (!el) { left -= lines; continue; }
+      if (lines > left) { el.classList.add('cut'); el.style.setProperty('--tail', String(left)); }
+      left -= Math.max(lines, 1);
+      top = el;
+    }
   }
 
   /** Past KEEP_MOST, the oldest lines go from the top of the screen (whole lines, down to KEEP_LEAST), as from the text. */
@@ -390,6 +425,7 @@ export class Session {
 
   /** Output goes on screen and into the run in progress, which ends at the next prompt. */
   private received(s: string) {
+    if (this.status.textContent === t('Starting…')) this.status.textContent = '';
     this.print(s);
     // Its first prompt line: up. What the Prompts after it are given ahead of time (l3's translation) comes a moment later, quietly,
     // so it takes nothing from the first line run.
@@ -552,8 +588,9 @@ export class Session {
         const what = c.what === 'file' ? new TextEncoder().encode(c.text ?? '') : c.what === 'dir' ? 'dir' : null;
         this.worker?.postMessage({type: 'put', path: c.path, what});
       });
-      // Running is the usual state and says nothing; only what is missing is said.
-      this.status.textContent = copy.complete ? '' : t('Large files and binaries are not included');
+      // Running is the usual state and says nothing; only what is missing is said. Until the shell says its first
+      // line (a cold start is some seconds), it is still starting, and says so: not an empty Prompt.
+      this.status.textContent = copy.complete ? t('Starting…') : t('Large files and binaries are not included');
       this.live = true;
       this.l3 = l3;
       this.tell();
@@ -692,6 +729,8 @@ export class Session {
   private said: (() => string) | null = null;
   /** Why it ended, when it did not start: the title of what it says. */
   private why = '';
+  /** How it ended, at the foot of its output. */
+  private endLine: HTMLElement | null = null;
 
   private end(message: () => string, why = '') {
     this.ended = true;
@@ -722,7 +761,13 @@ export class Session {
     const restart = h('button', {class: 'power', type: 'button', role: 'switch', 'aria-checked': 'false', 'aria-label': t('Start again')}, h('span', {class: 'knob'}));
     restart.addEventListener('click', () => this.restart());
     this.element.classList.add('ended');
-    this.status.replaceChildren(h('span', this.why ? {title: this.why} : {}, this.said()), restart);
+    // The last thing on its thread, under what it printed last: how it ended, and the switch beside it (in the pane a
+    // dot of its own, off), not a row of its own over the box's Run.
+    const end = h('div', {class: 'term-end'}, h('span', this.why ? {title: this.why} : {}, this.said()), restart);
+    if (this.endLine?.isConnected) this.endLine.replaceWith(end); else this.output.append(end);
+    this.endLine = end;
+    this.status.replaceChildren();
+    this.output.scrollTop = this.output.scrollHeight;
     if (!now || this.restarting || still()) return;
     // From on, its knob across and the green going from under it; the output flares as a tube does and dims to its
     // rest (styles.css .term.ended).

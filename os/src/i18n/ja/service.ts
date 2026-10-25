@@ -72,6 +72,7 @@ export default {
   'They are not in this server': 'その人はこのサーバーにいません',
   'Only its owner removes someone else': 'ほかの人を外せるのはオーナーだけです',
   'Too many boards': '板が多すぎます',
+  'There is a board by that name already': 'その名前の板はもうあります',
   'No such board of yours': 'あなたの板にはありません',
   "Only its server's owner opens a board": '板を公開できるのはサーバーのオーナーだけです',
   "Only its server's owner removes a board": '板を外せるのはサーバーのオーナーだけです',

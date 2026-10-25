@@ -189,7 +189,11 @@ Every value in `styles.css` comes from a token (§2).
     it come up into its place, as the rows under a file or folder deleted
     in File do; a row made or renamed there lands lit. A name refused
     (taken, or one it cannot be) shakes its field, a small no, the reason
-    under it. Server's layer put away goes out to the left as it fades
+    under it; so does anything sent with nothing in it (an issue, a TODO,
+    a post, a message, a commit with no title, Fix： with no title after
+    it): the box shakes, the keyboard stays, and why is said under it in
+    ink with an off dot before it (never the quiet grey of a hint, never
+    silence), going as the box is written in again. Server's layer put away goes out to the left as it fades
     (180 ms), and its sheet changed (the gear, Done) comes in; the
     person's menu rises into place; the plugin area comes down into the
     pane's head and, put away, the Prompt rises into its place.
@@ -1695,8 +1699,14 @@ itself scrolls on, this keeps the record). A line pressed there is back in
 the prompt box, the caret at its end, to be changed or sent again; it is
 not run. The Prompt's own status line is
 empty while it simply runs; it speaks only when something is missing (large
-files and binaries not copied in, what could not be written back); once it
-has ended, that and Start again sit side by side at its bottom right. Up
+files and binaries not copied in, what could not be written back). Once it
+has ended, how (Exited (0), Stopped) and Start again, its power switch off,
+are the last thing under its output, the end of its thread (in the pane a
+dot of its own, off), never a row of their own over the box's Run; the
+output dims, they do not. In the pane, what a line printed is its last five
+lines, faded where more is above, and a title the box made is its first
+three: the pane refers, up as the screen all of it is there. Moved between
+the pane and the screen, it reads from its foot. Up
 over the center it is as tall as what it holds, up to 40% of the window, so
 before the first run it does not cover what one reads. The prompt box has
 Run at its right with its keys (Ctrl+Enter), and reaches a step left of the
@@ -2266,8 +2276,16 @@ While no conversation is open there is no sheet, not a sheet of nothing
 (before anyone has written, No messages yet stands under the field): the
 one chosen brings its sheet in from that side, and another chosen while it
 is out comes into the sheet as it stands, faded in, not swapped at once;
-written to first, its row comes into the list at once. Sent, the keyboard
-stays in the field, for the next. Writing is one line that grows as it is written: a message is named
+written to first, its row comes into the list at once; one with nothing
+said in it yet has the dashed box, No messages yet, in the middle of its
+sheet, gone with the first words. One's own name or code is refused under
+the field (That is you), as a name not found is: a conversation with no one
+else in it is not one. Sent, the keyboard stays in the field, for the next.
+The Remote out of reach, the page is the sign-in card's place with the
+card saying so (what comes back once it answers, and Try again): drawn
+again on its own the moment it answers; Try again pressed and still away,
+the card shakes. Server's layer says it the same way, where its boards
+would be. Writing is one line that grows as it is written: a message is named
 the way an issue is ("Review：…", "Question：…"), and a `/root/…` path in it
 says what it is about, so there is nothing else to choose. Enter is a new
 line, Ctrl+Enter sends.
@@ -2378,7 +2396,9 @@ Server is an overlay (§3), on the bench's shape. Its pieces, from §3:
   paid, §6; a name taken; one's own name to claim first) is said at the
   chip's end when it says it, with the way on (See the plan, Go to Inbox).
   Being asked into a server, and writing, are free.
-- **Boxes side by side**: its boards, the last box making a new one. A
+- **Boxes side by side**: its boards, the last box making a new one (a
+  name another board in the server has, whatever its case, is refused under
+  its field, there and on the Remote, made, renamed or brought back). A
   board on screen is one sheet, never a box in a box: its name across it
   over a quiet rule, its talk at the left as tall as the board (the latest
   at its foot, what was said before above, the board open at its foot while
@@ -2470,7 +2490,11 @@ there, shut and quiet, and among them, where its name puts it (moving as the
 name is written: past another's name, the rows go to their new places on
 their curve), the new one filled in ink as File fills the repo worked
 on, its folders shut, README.md's size at the row's end as File gives it, of
-what it will say (it follows the name and what it is for). Nothing is named
+what it will say (it follows the name and what it is for). A name that
+cannot be is said as it is written, not once 作成 is pressed: the reason
+under the field (its edge in the off colour), the new row not filled but
+dashed, each letter no name has underlined where it is in it (a space as
+␣, a dot first), and a repo of the same name ringed where it stands. Nothing is named
 or laid out in the card: a repo's files are named, made and moved in File,
 every repo's alike, once it is made. Then 作成, the one primary action, under both. What is written stays
 while other pages are seen, until the repo is made. The two columns stand

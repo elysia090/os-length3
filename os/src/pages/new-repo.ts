@@ -58,12 +58,12 @@ function nest(scaffold: Map<string, string | null>): Item[] {
   return root.children;
 }
 
-function row(name: string, depth: number, dir: boolean, extra: Partial<{meta: Node | string; kind: string; shut: boolean}> = {}): HTMLElement {
+function row(name: string | Node[], depth: number, dir: boolean, extra: Partial<{meta: Node | string; kind: string; shut: boolean}> = {}): HTMLElement {
   // A folder with nothing in it yet is shut, as File shows one: an open triangle over nothing says there is something.
   const lead = dir ? h('span', {class: 'tree-toggle', 'aria-hidden': 'true', 'aria-expanded': String(!extra.shut)}) : h('span', {class: 'tree-spacer', 'aria-hidden': 'true'});
   if (dir) lead.append(triangle());
   return h('li', {class: extra.kind ?? (dir ? 'tree-dir' : 'tree-file')},
-    h('div', {class: 'tree-row', style: `--depth:${depth}`}, lead, h('span', {class: 'tree-name plain'}, name),
+    h('div', {class: 'tree-row', style: `--depth:${depth}`}, lead, h('span', {class: 'tree-name plain'}, ...(typeof name === 'string' ? [name] : name)),
       typeof extra.meta === 'string' ? h('span', {class: 'tree-meta'}, extra.meta) : extra.meta ?? null));
 }
 
@@ -74,9 +74,20 @@ export function newRepo(ctx: Context): Node[] {
   const scaffold = nest(templateFiles('{name}', SCAFFOLD));
   // The README's size as File gives a file's, of what it will say: it follows the name and what it is for.
   const readmeSize = h('span', {class: 'tree-meta'});
+  /**
+   * Why the name cannot be, as it is written: not a name (a letter no name has, or a dot first), or one taken here
+   * or on the Remote; '' when it can be (or nothing is written yet, the example standing for it).
+   */
+  const why = (n: string): string => !n ? '' : !validName(n) ? t('Use letters, digits and . _ -, and do not start with .')
+    : others.includes(n) || remoteOnly().some((r) => r.name === n) ? t('There is a repo named {name} already', {name: n}) : '';
+  /** The name as it will stand in File, each letter a name cannot have marked where it is (a dot first, too). */
+  const marked = (n: string): Node[] => [...n].map((c, i) => (/[A-Za-z0-9_-]/.test(c) || (c === '.' && i > 0) ? document.createTextNode(c)
+    // A space is seen as one, or it would be nothing between two letters.
+    : h('mark', {class: 'bad-char'}, /\s/.test(c) ? '␣' : c)));
   /** The new repo's own rows: it, filled as File fills the repo in hand, and its scaffold, folders first. */
   const ours = (): HTMLElement[] => {
-    const rows = [row(name.value.trim() || 'my-repo', 1, true, {kind: 'tree-repo tree-new'})];
+    const n = name.value.trim(), bad = !!why(n);
+    const rows = [row(n ? marked(n) : 'my-repo', 1, true, {kind: `tree-repo tree-new${bad ? ' tree-bad' : ''}`})];
     const walk = (nodes: Item[], depth: number) => {
       for (const n of nodes) {
         rows.push(row(n.name, depth, n.dir, {kind: `${n.dir ? 'tree-dir' : 'tree-file'} tree-ours`, shut: n.dir && !n.children.length,
@@ -93,7 +104,8 @@ export function newRepo(ctx: Context): Node[] {
   const showFiles = () => {
     const mine = name.value.trim() || 'my-repo';
     const before = others.filter((o) => o.localeCompare(mine) < 0), after = others.filter((o) => o.localeCompare(mine) >= 0);
-    const other = (o: string) => { const r = row(o, 1, true, {kind: 'tree-repo tree-other', shut: true}); r.dataset.key = `o ${o}`; return r; };
+    // One of the same name is the one it would be taken for: marked where it stands.
+    const other = (o: string) => { const r = row(o, 1, true, {kind: `tree-repo tree-other${o === mine && name.value.trim() ? ' tree-clash' : ''}`, shut: true}); r.dataset.key = `o ${o}`; return r; };
     // Its name moved past another's, the rows go to their new places on their curve, not swapped in one frame: each
     // from where it was seen (mid-way, if it was still going), the new repo's rows as one with it.
     const was = new Map<string, number>();
@@ -108,7 +120,7 @@ export function newRepo(ctx: Context): Node[] {
       if (Math.abs(by) > .5) li.animate([{translate: `0 ${by}px`}, {translate: '0 0'}], {duration: paced(260), easing: LAND});
     }
   };
-  void store.list().then((list) => { others = list.map((r) => r.name).sort((a, b) => a.localeCompare(b)); showFiles(); }, () => {});
+  void store.list().then((list) => { others = list.map((r) => r.name).sort((a, b) => a.localeCompare(b)); showFiles(); judge(); }, () => {});
   // What the card is goes to the ear: the eye sees it is File's tree.
   const caption = h('p', {class: 'sr-only'}, t('How it will look in File'));
   const card = h('div', {class: 'tree tree-still', 'aria-label': t('What will be made')}, caption, preview);
@@ -156,7 +168,13 @@ export function newRepo(ctx: Context): Node[] {
     h('div', {class: 'field summary-field'}, h('span', {class: 'field-label', id: 'repo-summary-label'}, t('Summary')), summaryBox),
     h('div', {class: 'field scaffold-field'}, h('span', {class: 'field-label'}, t('What will be made')), card),
     actions);
-  name.addEventListener('input', () => { error.textContent = ''; keep(); showFiles(); sized(); });
+  // Said as it is written, not only once Create is pressed: why it cannot be, under the name, and where in it.
+  const judge = () => {
+    const said = why(name.value.trim());
+    if (error.textContent !== said) error.textContent = said;
+    if (said) name.setAttribute('aria-invalid', 'true'); else name.removeAttribute('aria-invalid');
+  };
+  name.addEventListener('input', () => { keep(); showFiles(); sized(); judge(); });
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const n = name.value.trim();

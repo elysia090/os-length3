@@ -25,6 +25,8 @@ export default {
   'Conversation with {who}': '{who}との会話',
   'Write': '書く',
   'Cannot reach {address} ({why})': '{address}に届きません（{why}）',
+  'That is you: write to someone else': 'それはあなたです：ほかの人に書いてください',
+  'Your conversations are here again once it answers': 'Remote が答えれば、会話はまたここに出ます',
   'You: ': 'あなた：',
   'Requests': 'リクエスト',
   'No messages yet': 'メッセージはまだありません',

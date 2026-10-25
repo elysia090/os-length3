@@ -25,6 +25,12 @@ type Shape = [number, number, number, number, number];
  * The shapes the glass goes through: the pill, the box's line (the box at rest), the whole screen. For the Prompt above
  * the line (`above`), the line's shape holds none of it: what it printed comes only as the glass rises.
  */
+/** Moved from the pane to the screen or back, the output would read from its top (a move loses where it was scrolled):
+ * it reads from its foot, where a terminal is read, what was printed last over the line it waits at. */
+function atFoot(term: HTMLElement) {
+  for (const out of term.querySelectorAll<HTMLElement>('.term-out')) out.scrollTop = out.scrollHeight;
+}
+
 function shapes(screen: HTMLElement, r: Rest, above: HTMLElement | null = null): {pill: Shape; line: Shape; whole: Shape} {
   const s = screen.getBoundingClientRect(), {width: W, height: H} = s;
   const top = above ? above.getBoundingClientRect().bottom - s.top : H - r.box;
@@ -165,6 +171,7 @@ export class Screen {
     work.classList.remove('prompting', 'prompt-leaving', 'line-lit');
     for (const a of [screen, glass, slot, ...line].flatMap((e) => e.getAnimations())) a.cancel();
     home.append(term);
+    atFoot(term);
     this.#p.changed('rest');
   }
 
@@ -173,6 +180,7 @@ export class Screen {
     const {term, slot, screen, glass} = this.#p, from = this.#rest;
     for (const a of [term, screen, glass, slot].flatMap((e) => e.getAnimations())) a.cancel();
     slot.append(term);
+    atFoot(term);
     if (still() || !from) return;
     const UP = timing('up');
     for (const t of [glass, slot]) {
@@ -196,6 +204,7 @@ export class Screen {
       this.#p.changed('rest');
       for (const a of term.getAnimations()) a.cancel();
       home.append(term);
+      atFoot(term);
       for (const a of [...done, ...line.flatMap((p) => p.getAnimations())]) a.cancel();
       if (still()) return;
       // Into the pane from the center's side, where it came from.

@@ -337,6 +337,12 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
   });
 
   // ---- boards ----
+  // Two boards of one name in a server are one too many to tell apart: a name is taken while its board is there, whatever its case.
+  const named = async (tx: Db, serverId: string, n: string, self = '') => {
+    const [took] = await tx.select({id: board.id}).from(board)
+      .where(and(eq(board.serverId, serverId), isNull(board.goneAt), sql`lower(${board.name}) = lower(${n})`, sql`${board.id} <> ${self}`)).limit(1);
+    if (took) refuse(409, {error: 'There is a board by that name already'});
+  };
   v1.post('/servers/:id/boards', async (c) => {
     const id = c.req.param('id');
     if (!await membership(db, id, c.get('userId'))) return c.json({error: 'No such server of yours'}, 404);
@@ -348,6 +354,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       await lock(tx, `boards:${id}`);
       const [{n: count}] = await tx.select({n: sql<number>`count(*)::int`}).from(board).where(eq(board.serverId, id));
       if (count >= SERVER.boards) refuse(429, {error: 'Too many boards'});
+      await named(tx, id, n);
       await tx.insert(board).values({id: bid, serverId: id, name: n});
     });
     return c.json({id: bid, name: n, open: false, guests: false}, 201);
@@ -376,6 +383,7 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
       set.reach = reach;
     }
     await db.transaction(async (tx: Db) => {
+      if (set.name !== undefined) { await lock(tx, `boards:${at.b.serverId}`); await named(tx, at.b.serverId, set.name, at.b.id); }
       if (Object.keys(set).length) await tx.update(board).set(set).where(eq(board.id, at.b.id));
       // No longer taking guests ends its invitations and its guests: taking them again lets nobody back by an old link.
       if (set.reach !== undefined && set.reach < REACH.guests) {
@@ -399,7 +407,12 @@ export function servers(d: ServerDeps, v1: Hono<Vars>, app: Hono<Vars>) {
     if (!at?.b.goneAt || at.owner === null) return notMine();
     if (!at.owner) return c.json({error: 'Only its server\'s owner brings a board back'}, 403);
     if (Date.now() - at.b.goneAt.getTime() > HOLD) return c.json({error: 'It is held no longer'}, 410);
-    await db.update(board).set({goneAt: null}).where(eq(board.id, at.b.id));
+    // One of its name made meanwhile has the name now: it comes back only once that one is named otherwise.
+    await db.transaction(async (tx: Db) => {
+      await lock(tx, `boards:${at.b.serverId}`);
+      await named(tx, at.b.serverId, at.b.name, at.b.id);
+      await tx.update(board).set({goneAt: null}).where(eq(board.id, at.b.id));
+    });
     return c.json(boardJson({...at, b: {...at.b, goneAt: null}}));
   });
 

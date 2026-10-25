@@ -15,7 +15,7 @@ import {seeRepo as repoSheet} from './server-repo.ts';
 import {button, type Shown} from './server-parts.ts';
 import {personBadge} from './pane.ts';
 import {deed} from './common.ts';
-import {goToPlan, planRefused, signInBox, signInPlace} from './remote.ts';
+import {goToPlan, planRefused, signInBox, signInPlace, unreachedError, unreachedPlace} from './remote.ts';
 import {boardNew, onNews, sawBoard, serverNew} from '../news.ts';
 import {errorText} from '../errors.ts';
 
@@ -297,15 +297,22 @@ export class ServerLayer {
       writer(name, () => document.activeElement === name || !!name.value.trim());
       const done = async () => {
         // Enter pressed again while it is made makes no second board.
-        if (!name.value.trim() || !serverId || make.disabled) return;
+        if (!serverId || make.disabled) return;
+        const n = name.value.trim();
+        if (!n) { name.focus(); nudge(name); return; }
+        if (current()?.boards.some((b) => b.name.trim().toLowerCase() === n.toLowerCase())) {
+          error.textContent = t('There is a board named {name} already', {name: n}); name.focus(); nudge(name); return;
+        }
+        error.textContent = '';
         make.disabled = true;
         try {
           const b = await servers.makeBoard(serverId, name.value);
           current()?.boards.push(b);
           show(serverId, b.id);
-        } catch (e) { error.textContent = errorText(e); make.disabled = false; }
+        } catch (e) { error.textContent = errorText(e); make.disabled = false; name.focus(); nudge(name); }
       };
       make.addEventListener('click', () => void done());
+      name.addEventListener('input', () => { error.textContent = ''; });
       name.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); void done(); } });
       return h('div', {class: 'board-card board-new'},
         h('div', {class: 'board-head'}, h('span', {class: 'muted'}, '+'), h('h2', {}, t('New board'))),
@@ -596,6 +603,14 @@ export class ServerLayer {
     };
 
     // ---- first: what there is ----
+    // Not read: the Remote out of reach is said in the middle, where the boards would be (the card signing in is,
+    // in the same place), and Server is drawn again once it answers; anything else said, plainly.
+    const failed = (e: unknown, what: string) => {
+      if (!unreachedError(e)) { track.replaceChildren(h('p', {class: 'error'}, errorText(e))); return; }
+      slides.replaceChildren(unreachedPlace(what, () => { if (this.isOpen) this.element.replaceChildren(this.build()); }));
+      top.hidden = true;
+      paintDock(null);
+    };
     const held = servers.heldInvite();
     if (signedIn) {
       void servers.servers().then(async (got) => {
@@ -608,7 +623,7 @@ export class ServerLayer {
         }
         const first = list.find((s) => s.id === at.server) ?? list[0];
         if (first) show(first.id); else makeServer();
-      }).catch((e) => track.replaceChildren(h('p', {class: 'error'}, errorText(e))));
+      }).catch((e) => failed(e, t('Your servers are here again once it answers')));
     } else {
       paintTop();
       paintSide();
@@ -631,7 +646,7 @@ export class ServerLayer {
         track.replaceChildren(...shown.map(() => h('div', {class: 'slide'})));
         const i = shown.findIndex((b) => b.id === (held?.board ?? at.board));
         go(i >= 0 ? i : 0);
-      }).catch((e) => track.replaceChildren(h('p', {class: 'error'}, errorText(e))));
+      }).catch((e) => failed(e, t('Boards open to everyone are here again once it answers')));
     }
 
     return work;

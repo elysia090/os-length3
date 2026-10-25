@@ -599,6 +599,10 @@ test('Servers: people who know each other, boards with talk and a TODO kept toge
   assert.equal((await s.call('DELETE', `/v1/boards/${bid}/todos/m1`, {token: mio})).status, 204);
   // A second board, removed by the server's owner: held 30 days, answering nothing, back at once with its TODO.
   const other = (await s.call('POST', `/v1/servers/${sid}/boards`, {token: mio, body: {name: 'food'}})).json.id as string;
+  // Two boards of one name are one too many to tell apart, whatever its case; made or renamed to.
+  const twice = await s.call('POST', `/v1/servers/${sid}/boards`, {token: mio, body: {name: 'Food'}});
+  assert.deepEqual([twice.status, twice.json.error], [409, 'There is a board by that name already']);
+  assert.equal((await s.call('PATCH', `/v1/boards/${bid}`, {token: mio, body: {name: 'FOOD'}})).status, 409);
   await s.call('PUT', `/v1/boards/${other}/todos/f1`, {token: mio, body: {title: 'ramen', place: 1, created: 1}});
   assert.equal((await s.call('DELETE', `/v1/boards/${other}`, {token: mio})).status, 403);
   const removed = await s.call('DELETE', `/v1/boards/${other}`, {token: ren});

@@ -13,7 +13,7 @@ import {freeOff} from '../space.ts';
 import * as servers from '../servers.ts';
 import {answers, askFoot, pageHead, parts, SETTLE} from './common.ts';
 import type {Context} from './context.ts';
-import {keepOut, putAway} from '../glide.ts';
+import {keepOut, nudge, putAway} from '../glide.ts';
 import {summaryOf} from './repo-list.ts';
 
 /**
@@ -108,6 +108,28 @@ async function pressing(b: HTMLButtonElement, error: HTMLElement, f: () => Promi
 export function signInPlace(title: string, ...body: Node[]): HTMLElement {
   return h('div', {class: 'sign-in-place'},
     h('section', {class: 'sign-in-card', 'aria-labelledby': 'sign-in-title'}, h('h2', {id: 'sign-in-title'}, title), ...body));
+}
+
+/** Whether `e` is the Remote not answering at all (not a refusal, nor a failure it said). */
+export const unreachedError = (e: unknown): boolean => e instanceof account.RemoteError && e.trouble === 'unreached';
+
+/** When Try again was last pressed: a card drawn again just after, the Remote still away, shakes its head. */
+let tried = 0;
+
+/**
+ * What only the Remote holds, with the Remote out of reach: said where it would be, as signing in is (the same card,
+ * in the same place), never a line of small print over an empty page. What it is that waits (`what`), and Try
+ * again; `again` is called once, on that press or on its own the moment the Remote answers.
+ */
+export function unreachedPlace(what: string, again: () => void): HTMLElement {
+  const retry = button(t('Try again'), 'small-button primary');
+  const place = signInPlace(t('The Remote cannot be reached'), h('p', {class: 'muted'}, what), retry);
+  let done = false;
+  const once = () => { if (done) return; done = true; stop(); again(); };
+  const stop = account.onReach(() => { if (!place.isConnected) { stop(); return; } if (!account.remoteAway()) once(); });
+  retry.addEventListener('click', () => { retry.disabled = true; tried = Date.now(); once(); });
+  if (Date.now() - tried < 4000) queueMicrotask(() => nudge(place.firstElementChild));
+  return place;
 }
 
 /**

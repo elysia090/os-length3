@@ -1,5 +1,6 @@
 import {h} from '../dom.ts';
 import {t} from '../i18n.ts';
+import {nudge} from '../glide.ts';
 import {RemoteError} from '../remote.ts';
 import * as servers from '../servers.ts';
 import {postNow} from './talk.ts';
@@ -63,7 +64,9 @@ export function dockFor(b: Shown | null, ways: DockWays): Node[] {
       // As every box one writes in: Enter is a new line, Ctrl+Enter (⌘+Enter) sends.
       if (event.key !== 'Enter' || !(event.ctrlKey || event.metaKey) || event.isComposing) return;
       event.preventDefault();
-      if (sending || !field.value.trim()) return;
+      if (sending) return;
+      // Nothing written: the box shakes its head, as every box does sent empty.
+      if (!field.value.trim()) { nudge(field.closest('.prompt')); return; }
       sending = true;
       note.replaceChildren();
       try { await postNow(b.id, field.value, guest?.token); field.value = ''; drafts.sent(key); fit(); } catch (e) {

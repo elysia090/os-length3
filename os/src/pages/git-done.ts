@@ -5,7 +5,7 @@ import {closedBy, numberOf, type Issue} from '../issues.ts';
 import {kindOf} from '../text.ts';
 import {answers, askFoot, SETTLE} from './common.ts';
 import {counted, diffFiles} from './diff-view.ts';
-import {LAND, paced, still} from '../glide.ts';
+import {LAND, nudge, paced, still} from '../glide.ts';
 import {justClosed, justMerged, notCommitted, reopenIssue, type IssueEvents} from './git-issue.ts';
 import {kindWords} from './todo-box.ts';
 import {errorText} from '../errors.ts';
@@ -87,7 +87,7 @@ export function mainCard(repo: string, n: number, events: IssueEvents, after: ()
     const shown = performance.now();
     yes.addEventListener('click', async () => {
       if (performance.now() - shown < SETTLE) return;
-      if (!kindOf(line.value).title.trim()) { error.textContent = t('A commit needs a title (for example Fix：title)'); line.focus(); return; }
+      if (!kindOf(line.value).title.trim()) { error.textContent = t('A commit needs a title (for example Fix：title)'); line.focus(); nudge(line); return; }
       yes.disabled = true;
       error.textContent = '';
       try {
