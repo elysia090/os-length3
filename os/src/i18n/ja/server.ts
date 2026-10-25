@@ -11,6 +11,7 @@ export default {
   'Previous board': '前の板',
   'Next board': '次の板',
   'New board': '新しい板',
+  'Write to {name}': '{name}に書く',
   'Your servers are here again once it answers': 'Remote が答えれば、サーバーはまたここに出ます',
   'Boards open to everyone are here again once it answers': 'Remote が答えれば、公開の板はまたここに出ます',
   'There is a board named {name} already': '{name}という板はもうあります',

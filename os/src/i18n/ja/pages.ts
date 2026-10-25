@@ -134,6 +134,7 @@ export default {
   'The files of {name}': '{name}のファイル',
   'Open here': 'ここに開く',
   'Open beside': '横に開く',
+  '{path} in File': 'File で{path}',
   'Open {path} beside': '{path}を横に開く',
   '{path} is not there any more': '{path}はもうありません',
   'Put in {where}': '{where}に入れる',

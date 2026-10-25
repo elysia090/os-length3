@@ -346,6 +346,17 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
   const hint = o.readOnly ? null : h('p', {class: 'todo-hint', 'aria-hidden': 'true'},
     keys(['Enter'], t('detail')), keys(['Enter'], t('on an empty line, the next')), keys([mod, 'Enter'], t('done')));
   const element = h('div', {class: 'todo-box'}, list, hint);
+  // Pressed on its paper below the items, the line at its foot takes the caret, as a page written on does: the
+  // empty sheet is where the next is written, not a thing to aim at.
+  if (!o.readOnly) element.addEventListener('pointerdown', (event) => {
+    // (Its key hints' line, there unseen until the box is written in, is the sheet too.)
+    if (event.button !== 0 || !(event.target === element || event.target === list || (hint && hint.contains(event.target as Node)))) return;
+    const last = items.at(-1), row = last && rows.get(last.id);
+    if (!row || event.clientY < row.title.getBoundingClientRect().top) return;
+    event.preventDefault();
+    row.title.focus();
+    row.title.setSelectionRange(row.title.value.length, row.title.value.length);
+  });
   // What came from elsewhere waits while something here is being written.
   let waiting: todo.Todo[] | null = null;
   const writing = () => element.contains(document.activeElement);

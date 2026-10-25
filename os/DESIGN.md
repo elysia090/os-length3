@@ -1316,6 +1316,19 @@ never jumping them. The repos are large cards, three across at a
 laptop's width (two, then one, as it narrows); each is a repo in a list as
 Runtime says it: its body the repo itself, its gear Forge or Free.
 
+What a hand goes to without being told answers it, here and on every page:
+each count is the way to its section further down (a raised fill under the
+pointer; pressed, the page goes there and its heading lights as it lands);
+the face, pressed, opens the profile to be written, as Edit profile does;
+the TODO's paper pressed under its items gives the caret to the line at its
+foot, as a page written on does. In Forge a file's head, pressed (not to
+choose its words), is the file in File with what can be done to it (rename,
+move, delete), its name underlined under the pointer; pressed under the
+last file, on nothing, the caret goes to its end. Server's people are each a
+conversation: someone else pressed opens the Inbox to them, an arrow at the
+row's end under the pointer. Lately's rows, pressed twice, go straight
+there (what their card's own button does).
+
 The profile is edited where it is read, not in a form put in its place:
 written in, the top is a sheet of its own as the TODO is when written in
 (`paper`, an `ink` edge, grown out around the face and the lines so nothing
@@ -1339,13 +1352,19 @@ Ctrl+B as there; what is found opens in Forge, a line at that line,
 selected. While it is out the window steps back under the one shade. Its
 first line, the name and Edit profile, stands on that top line too. Under
 it the pane holds
-Lately: what waits since the person was last here, a row each, what it is in
-a round badge at its head: where they left off (a page, the file last read in
-Forge and the line it was left at, quoted as written), the conversations with
-something not read (who wrote, their initial on one of three soft tints, the
-marker's, a step done's, a removal's, the same for the same name; what it is
-and its first line: Review：…; the row the same rounded box as every row,
-who it is from said by the initial, never by a corner cut otherwise), the boards with posts not seen (#). The same round initial
+Lately: what waits since the person was last here, a row each on the
+ground (no box round each, a raised fill under the pointer), and at rest only
+what it is: where they left off (the file last read in Forge, its mark, its
+repo quiet at the right), the conversations with something not read (who
+wrote, their initial on one of four soft tints, the marker's, a step done's,
+a removal's, the sky's, the same for the same name), the boards with posts
+not seen (#); at each row's end one slot, the unread dot, a chevron under the
+pointer (it opens down where it stands), the × once open. The fine words (the
+line it was left at, quoted; Review：… and its first line) are heard with the
+row and read in its card: opened, the pane comes out over the center to a
+reading width (560, its edge casting a soft shade, the center still and
+quieter under it) and goes back as the card is put away; Forge's and Git's
+pane does the same for its word. The same round initial
 heads a conversation in Inbox, a person in a server's People and their posts
 on its board (larger there, a guest's no tint, only a dashed ring). With
 nothing new it says so, quietly: the pane out is never a line with nothing

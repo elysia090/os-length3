@@ -5,7 +5,7 @@ import {lineCount, readingOrder} from '../reading.ts';
 import {store, type Change, type Entry} from '../repos.ts';
 import {answers} from './common.ts';
 import {mark} from '../icons.ts';
-import {keepOut, putAway} from '../glide.ts';
+import {keepOut, putAway, still} from '../glide.ts';
 import {diffFiles} from './diff-view.ts';
 import {shownPath} from '../issues.ts';
 
@@ -111,8 +111,23 @@ export class Reader {
   /** Editors whose text changed while they were out of sight, so not measured yet. */
   private stale = new Set<string>();
 
-  constructor(repo: string, flow: HTMLElement, opts: {beside?(path: string): void} = {}) {
-    this.repo = repo; this.flow = flow; this.beside = opts.beside ?? null;
+  /** Each file's head, pressed, shows it in File with what can be done to it (rename, move, delete). */
+  private act: ((path: string) => void) | null;
+
+  constructor(repo: string, flow: HTMLElement, opts: {beside?(path: string): void; act?(path: string): void} = {}) {
+    this.repo = repo; this.flow = flow; this.beside = opts.beside ?? null; this.act = opts.act ?? null;
+    // Pressed below the last file, on nothing: the caret to its end, as a page of text takes a press under its words.
+    flow.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0 || event.target !== flow) return;
+      // The last file there with its words (a folder, a file beside, a binary has none to write in).
+      const last = [...flow.querySelectorAll<HTMLElement>('section.file:not(.elsewhere)')].filter((el) => el.querySelector('textarea.code')).at(-1);
+      const code = last?.querySelector<HTMLTextAreaElement>('textarea.code');
+      if (!last || !code || event.clientY < last.getBoundingClientRect().bottom) return;
+      event.preventDefault();
+      code.focus({preventScroll: true});
+      code.setSelectionRange(code.value.length, code.value.length);
+      last.scrollIntoView({behavior: still() ? 'auto' : 'smooth', block: 'end'});
+    });
   }
 
   /**
@@ -315,7 +330,7 @@ export class Reader {
     };
     // The heading is the file's place in "/": the repo part quiet, the rest plain; an issue's file is the issue (#3).
     const shown = shownPath(path);
-    const head = h('h2', {class: 'path'}, h('span', {}, h('span', {class: 'muted'}, `/root/${this.repo}/`), shown), state);
+    const head = h('h2', {class: 'path'}, h('span', {}, h('span', {class: 'muted'}, `/root/${this.repo}/`), h('span', {class: 'path-name'}, shown)), state);
     // Beside, in a box of its own: from its head's button, or Ctrl+click (⌘) on the head, as a link opens a tab.
     const beside = this.beside;
     if (beside && this.single === null) {
@@ -323,6 +338,16 @@ export class Reader {
       open.addEventListener('click', () => beside(path));
       head.append(open);
       head.addEventListener('click', (event) => { if ((event.ctrlKey || event.metaKey) && !(event.target as Element).closest('button')) beside(path); });
+    }
+    // Pressed (not to choose its words, nor on its buttons), the head is the file's own place in File.
+    const act = this.act;
+    if (act) {
+      head.classList.add('acts');
+      head.title = t('{path} in File', {path: shown});
+      head.addEventListener('click', (event) => {
+        if (event.ctrlKey || event.metaKey || event.shiftKey || (event.target as Element).closest('button') || !getSelection()?.isCollapsed) return;
+        act(path);
+      });
     }
     const section = h('section', {class: this.elsewhere.has(path) ? 'file elsewhere' : 'file', 'data-path': path}, head);
     this.sections.set(path, section);

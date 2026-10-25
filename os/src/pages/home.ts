@@ -121,24 +121,27 @@ function lately(ctx: Context): HTMLElement {
       const text = left.at === null ? null : (await store.read(left.repo, left.path).catch(() => null))?.text ?? null;
       const end = text === null || left.at === null ? -1 : text.indexOf('\n', left.at);
       const quote = text === null ? '' : text.slice(0, end < 0 ? text.length : end).split('\n').reverse().find((l) => l.trim())?.trim() ?? '';
+      const goOn = () => ctx.openRepo(left.repo, left.path, left.at === null ? 'end' : {at: left.at});
       rows.push(latelyRow(shownName(left.path), t('{repo} · where you left off', {repo: left.repo}), {quote, place: left.repo, badge: 'file',
-        look: (row) => lookFrom(row, leftOffLook(left.repo, left.path, left.at, () => ctx.openRepo(left.repo, left.path, left.at === null ? 'end' : {at: left.at})))}));
+        look: (row) => lookFrom(row, leftOffLook(left.repo, left.path, left.at, goOn)), go: goOn}));
     }
     if (connection()) {
       const [threads, all] = await Promise.all([inbox.threads().catch(() => []), servers.servers().catch(() => [])]);
       for (const th of waiting(threads, 3)) {
         const who = th.name || inbox.shown(th.address);
+        const answer = () => { openConversation(th.address); void ctx.go('inbox'); };
         rows.push(latelyRow(who, wordLine(th), {fresh: true, badge: {who},
-          look: (row) => lookFrom(row, threadLook(th.address, th.name, () => { openConversation(th.address); void ctx.go('inbox'); }))}));
+          look: (row) => lookFrom(row, threadLook(th.address, th.name, answer)), go: answer}));
       }
       for (const b of news().boards.slice(0, 3)) {
         const s = all.find((x) => x.id === b.server);
         const board = s?.boards.find((x) => x.id === b.id);
         if (!s || !board) continue;
-        rows.push(latelyRow(board.name, t('{server} · new posts', {server: s.name}), {fresh: true, badge: 'board', look: (row) => lookFrom(row, boardLook(board.id, board.name, () => {
+        const there = () => {
           try { localStorage.setItem('length3.server.at', JSON.stringify({server: s.id, board: board.id})); } catch { /* a convenience */ }
           void ctx.go('server');
-        }))}));
+        };
+        rows.push(latelyRow(board.name, t('{server} · new posts', {server: s.name}), {fresh: true, badge: 'board', look: (row) => lookFrom(row, boardLook(board.id, board.name, there)), go: there}));
       }
     }
     // A row whose look is out stays while it is (a conversation read as it opened would go from under its card).
@@ -166,6 +169,18 @@ function ownServers(ctx: Context): HTMLElement {
     }));
   }, (e) => box.replaceChildren(h('p', {class: 'error'}, errorText(e))));
   return box;
+}
+
+/** A count that goes to its section (`title` its heading's id): scrolled to, its heading lit as it lands. */
+function toSection(count: HTMLElement, title: string): HTMLElement {
+  const b = h('button', {type: 'button', class: 'count-go'}, count);
+  b.addEventListener('click', () => {
+    const head = document.getElementById(title);
+    if (!head) return;
+    head.closest('section')?.scrollIntoView({behavior: still() ? 'auto' : 'smooth', block: 'start'});
+    head.classList.remove('landed'); void head.offsetWidth; head.classList.add('landed');
+  });
+  return b;
 }
 
 const servers0 = () => { const el = h('span', {id: 'server-count'}); counting(el, 0, 'server', 'servers'); return el; };
@@ -204,11 +219,16 @@ function profileHeader(count: HTMLElement, owner: boolean): HTMLElement {
   const draw = (beat: 'open' | 'saved' | 'cancel' | null, faceWas: Node[] = []) => {
     const from = header.getBoundingClientRect().height;
     avatar.replaceChildren(...face());
-    const counts = h('p', {class: 'counts'}, count, servers0());
+    // Each count is the way to what it counts, further down Home (as a profile's counts are): pressed, there it is.
+    const counts = h('p', {class: 'counts'}, toSection(count, 'repos-title'), toSection(servers0(), 'servers-title'));
     // Written in, the face follows what is written: the initials the name (or the handle) gives, at once.
     const form = editing ? editForm(done, (p) => avatar.replaceChildren(initials(p) || mark('person'))) : null;
     const edit = owner && !editing ? h('button', {class: 'button', type: 'button'}, t('Edit profile')) as HTMLButtonElement : null;
-    edit?.addEventListener('click', () => { editing = true; draw('open'); header.querySelector<HTMLInputElement>('#profile-name')?.focus(); });
+    const open = () => { editing = true; draw('open'); header.querySelector<HTMLInputElement>('#profile-name')?.focus(); };
+    edit?.addEventListener('click', open);
+    // The face is what one changes first: pressed, the profile opens to be written, as Edit profile does.
+    avatar.classList.toggle('pressable', !!edit);
+    avatar.onclick = edit ? open : null;
     header.replaceChildren(avatar, form?.element ?? identity(counts), ...(form ? [form.acts] : edit ? [edit] : []));
     header.classList.toggle('editing', editing);
     if (!beat || still() || !header.isConnected) return;

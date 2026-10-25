@@ -155,7 +155,7 @@ export function personBadge(who: string): HTMLElement {
  * line (what was said, where it is). Every row the same rounded box; who it is from, its initial says. Pressed, it
  * opens where it stands (look.ts), never at once another page.
  */
-export function latelyRow(what: string, line: Node[] | string, o: {fresh?: boolean; quote?: string; place?: string; badge: Badge; look(row: HTMLElement): void}): HTMLButtonElement {
+export function latelyRow(what: string, line: Node[] | string, o: {fresh?: boolean; quote?: string; place?: string; badge: Badge; look(row: HTMLElement): void; go?(): void}): HTMLButtonElement {
   // Its name, where it is (a repo) quiet at its right, and at its end one slot: the dot while something of it is not
   // read; under the pointer, the chevron that says it opens down where it stands; opened, the × that puts it away.
   // A quoted line is its second line, and says where it was left better than words would: the words are heard only.
@@ -166,6 +166,8 @@ export function latelyRow(what: string, line: Node[] | string, o: {fresh?: boole
     o.quote ? h('span', {class: 'lately-quote'}, o.quote) : null,
     h('span', {class: `muted small lately-line${o.quote ? ' sr-only' : ''}`}, ...(typeof line === 'string' ? [line] : line))) as HTMLButtonElement;
   b.addEventListener('click', () => o.look(b));
+  // Pressed twice, as a file is opened: straight there (what its card's own button does), not its card twice.
+  if (o.go) { const go = o.go; b.addEventListener('dblclick', (event) => { event.preventDefault(); go(); }); }
   return b;
 }
 
@@ -199,7 +201,7 @@ export function paneWord(open: (address: string) => void): HTMLElement {
     const rows = come.map((th) => {
       const who = th.name || inbox.shown(th.address);
       // The same row as Home's Lately, opening where it stands: its last lines and a reply; Inbox a deed further.
-      const b = latelyRow(who, wordLine(th), {fresh: true, badge: {who}, look: (row) => lookFrom(row, threadLook(th.address, th.name, () => open(th.address)))});
+      const b = latelyRow(who, wordLine(th), {fresh: true, badge: {who}, look: (row) => lookFrom(row, threadLook(th.address, th.name, () => open(th.address))), go: () => open(th.address)});
       return {b, key: `${th.address} ${th.last.time}`};
     });
     list.replaceChildren(...rows.map((r) => r.b));

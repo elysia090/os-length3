@@ -356,7 +356,7 @@ function make(ctx: Context) {
   /** A repo's page, made the first time it is shown, or again once what it showed changed out of sight. */
   /** What a box reads: the repo's whole page, or the one file it was opened beside for. */
   const pageOf = (name: string, flow: HTMLElement) => {
-    const reader = new Reader(repoOf(name), flow, {beside: (path) => beside(keyOf(repoOf(name), path))});
+    const reader = new Reader(repoOf(name), flow, {beside: (path) => beside(keyOf(repoOf(name), path)), act: (path) => ctx.actOn(repoOf(name), path)});
     const file = fileOf(name);
     return {reader, root: file === null ? reader.directory('') : reader.only(file)};
   };

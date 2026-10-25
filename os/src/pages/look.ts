@@ -220,7 +220,8 @@ export function leftOffLook(repo: string, path: string, at: number | null, open:
     async fill(body) {
       const text = (await store.read(repo, path)).text ?? '';
       const end = at === null ? text.length : Math.max(0, text.indexOf('\n', at) < 0 ? text.length : text.indexOf('\n', at));
-      const lines = text.slice(0, end).split('\n').slice(-4);
+      // As many lines up to it as a reading width holds without crowding: the pane comes out for it.
+      const lines = text.slice(0, end).split('\n').slice(-8);
       // Its lines, not the empty ones over them: the quote starts with words.
       while (lines.length > 1 && !lines[0].trim()) lines.shift();
       // Its repo is said on the row it opens under: here, what it is.

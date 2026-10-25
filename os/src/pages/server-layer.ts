@@ -568,8 +568,17 @@ export class ServerLayer {
       void Promise.all([servers.people(id), servers.shownIn(id)]).then(([people, repos]) => {
         if (mine !== sideToken) return;
         side.replaceChildren(
-          part(t('People'), h('ul', {class: 'people'}, ...people.map((p) => h('li', {}, faceOf(p.address), h('span', {}, named(p.address)),
-            p.owner ? h('span', {class: 'muted small'}, t('owner')) : null)))),
+          part(t('People'), h('ul', {class: 'people'}, ...people.map((p) => {
+            const li = h('li', {}, faceOf(p.address), h('span', {}, named(p.address)), p.owner ? h('span', {class: 'muted small'}, t('owner')) : null);
+            // Someone else pressed is a conversation with them, in the Inbox: who they are is who one writes to.
+            void isMe(p.address).then((me) => {
+              if (me || !li.isConnected) return;
+              const b = h('button', {type: 'button', class: 'person-go', title: t('Write to {name}', {name: named(p.address)})}, ...li.childNodes);
+              b.addEventListener('click', () => void import('./inbox.ts').then((m) => { m.openNext(p.address); this.close(); this.ctx.go('inbox'); }));
+              li.replaceChildren(b);
+            });
+            return li;
+          }))),
           // The repos shown, when there are any: nothing is said of none here.
           repos.length ? part(t('Repos'), h('ul', {class: 'side-repos'}, ...repos.map((r) => {
               const b = h('button', {type: 'button', class: 'side-repo', title: r.as ? t('Everyone sees it as {name}', {name: shownAs(r.as)}) : `${named(r.owner)}:${r.name}`},
